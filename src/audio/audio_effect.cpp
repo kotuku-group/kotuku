@@ -240,10 +240,27 @@ void AudioEffectChain::reset()
    for (auto effect : Effects) {
       effect->ResetPending = true;
       effect->reset_meter(*Generation);
+      for (auto &branch : effect->Branches) branch->reset();
    }
    State = ADS::IDLE;
    DrainFrames = 0;
    Truncated = false;
+}
+
+//********************************************************************************************************************
+// Destroying a chain, e.g. by closing its channel set or freeing its Audio object, also releases the branch chains of
+// any container that it hosts, so that the effects attached to those branches are disconnected with it.
+
+AudioEffectChain::~AudioEffectChain()
+{
+   std::vector<std::shared_ptr<AudioEffectChain>> retired;
+   std::lock_guard lock(*Mutex);
+   for (auto effect : Effects) {
+      for (auto &branch : effect->Branches) retired.push_back(std::move(branch));
+      effect->Branches.clear();
+   }
+   // Branch chains share this mutex, so they are destroyed while it is held.
+   retired.clear();
 }
 
 //********************************************************************************************************************
@@ -306,6 +323,21 @@ void extAudioEffect::skip(int Frames)
    if (processor and (Frames > 0)) processor->skip(Frames);
 }
 
+//********************************************************************************************************************
+// The combined latency of every effect in a branch chain, ignoring bypass, because bypass can be cleared at any time.
+// Exclude names an effect whose latency is not yet committed.  Called under the chain lock.
+
+static int64_t branch_latency(const AudioEffectChain &Chain, const extAudioEffect *Exclude = nullptr)
+{
+   int64_t frames = 0;
+   for (auto effect : Chain.Effects) {
+      if ((effect != Exclude) and (effect->CommittedLatency > 0)) frames += effect->CommittedLatency;
+   }
+   return frames;
+}
+
+//********************************************************************************************************************
+
 ERR extAudioEffect::set_processor(std::unique_ptr<AudioEffectProcessor> Processor)
 {
    if (!Processor) return ERR::NullArgs;
@@ -323,15 +355,35 @@ ERR extAudioEffect::set_processor(std::unique_ptr<AudioEffectProcessor> Processo
       if (auto error = Processor->prepare(rate, stereo, prepared); error != ERR::Okay) return error;
       const auto latency = prepared ? prepared->latency() : Processor->latency();
       if (latency < 0) return ERR::InvalidValue;
+      int64_t budget = -1, total = 0;
       {
          std::lock_guard mixer_lock(*chain->Mutex);
          if (rate != OutputRate or stereo != bool(Stereo)) continue;
          if (processor) return ERR::InvalidState;
-         if (prepared) prepared->publish();
-         CommittedLatency = latency;
-         processor = std::move(Processor);
-         ResetPending = true;
-         reset_meter(++*chain->Generation);
+
+         // A branch cannot be delayed by more than its container's latency budget.  The check can only be made once
+         // the output rate is known; otherwise device activation reports any excess.
+
+         if (chain->Container and (rate > 0)) {
+            const auto limit = budget_frames(chain->LatencyBudget, rate);
+            total = branch_latency(*chain, this) + latency;
+            if (total > limit) budget = limit;
+         }
+
+         if (budget < 0) {
+            if (prepared) prepared->publish();
+            CommittedLatency = latency;
+            processor = std::move(Processor);
+            ResetPending = true;
+            reset_meter(++*chain->Generation);
+         }
+      }
+
+      if (budget >= 0) {
+         kt::Log log(__FUNCTION__);
+         log.warning("Branch %d would have a latency of %" PRId64 " frames, exceeding the container's LatencyBudget "
+            "of %" PRId64 " frames.  Increase the LatencyBudget of the container.", Branch, total, budget);
+         return ERR::OutOfRange;
       }
       return ERR::Okay;
    }
@@ -488,10 +540,36 @@ static ERR commit_audio_output(extAudio *Self, std::span<const int> Layout, ERR 
          set.ScratchBuffer.resize(Self->MixBuffer.size());
          if (set.Effects) prepared.push_back({set.Effects, 0, {}});
       }
+
+      // Branch chains are configured with their container, so rate, layout and latency commit atomically.
+      for (size_t i = 0; i < prepared.size(); i++) {
+         for (auto effect : prepared[i].Chain->Effects) {
+            for (auto &branch : effect->Branches) prepared.push_back({branch, 0, {}});
+         }
+      }
    }
 
    for (auto &chain : prepared) {
       if (auto error = chain.prepare(Self->OutputRate, Layout.size() IS 2); error != ERR::Okay) return error;
+   }
+
+   // Branch effects attached before the output rate was known could not be checked against their container's latency
+   // budget.  Such a branch is delayed as little as possible, but cannot be aligned with the other branches.
+
+   for (auto &chain : prepared) {
+      if (not chain.Chain->Container) continue;
+      int64_t latency = 0;
+      for (auto &entry : chain.Entries) {
+         if (entry.Configuration) latency += std::max(int64_t(0), entry.Configuration->latency());
+         else if (entry.Processor) latency += std::max(int64_t(0), entry.Processor->latency());
+      }
+      const auto budget = budget_frames(chain.Chain->LatencyBudget, Self->OutputRate);
+      if (latency > budget) {
+         AudioLog log(__FUNCTION__);
+         log.warning("A branch of container #%d has a latency of %" PRId64 " frames, exceeding its LatencyBudget of "
+            "%" PRId64 " frames.  The branch output will be late by the excess.", chain.Chain->Container, latency,
+            budget);
+      }
    }
 
    std::lock_guard lock(Self->MixerMutex);

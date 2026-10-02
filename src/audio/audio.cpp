@@ -107,12 +107,14 @@ static OBJECTPTR clAudioEqualiser = nullptr;
 static OBJECTPTR clAudioReverb = nullptr;
 static OBJECTPTR clAudioCompressor = nullptr;
 static OBJECTPTR clAudioLimiter = nullptr;
+static OBJECTPTR clAudioSplitter = nullptr;
 static OBJECTPTR clAudioAnalyser = nullptr;
 static ERR add_audioeffect_class();
 static ERR add_audioequaliser_class();
 static ERR add_audioreverb_class();
 static ERR add_audiocompressor_class();
 static ERR add_audiolimiter_class();
+static ERR add_audiosplitter_class();
 static ERR add_audioanalyser_class();
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
 static std::string glAudioDevice;
@@ -180,6 +182,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (add_audioreverb_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiocompressor_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiolimiter_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audiosplitter_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioanalyser_class() != ERR::Okay) return ERR::AddClass;
    if (add_sound_class() != ERR::Okay) return ERR::AddClass;
    return ERR::Okay;
@@ -203,6 +206,7 @@ static ERR MODExpunge(void)
    glSoundChannels.clear();
 
    if (clAudioAnalyser) { FreeResource(clAudioAnalyser); clAudioAnalyser = nullptr; }
+   if (clAudioSplitter) { FreeResource(clAudioSplitter); clAudioSplitter = nullptr; }
    if (clAudioLimiter) { FreeResource(clAudioLimiter); clAudioLimiter = nullptr; }
    if (clAudioCompressor) { FreeResource(clAudioCompressor); clAudioCompressor = nullptr; }
    if (clAudioReverb) { FreeResource(clAudioReverb); clAudioReverb = nullptr; }
@@ -228,6 +232,7 @@ static ERR MODExpunge(void)
 #include "class_audioreverb.cpp"
 #include "class_audiocompressor.cpp"
 #include "class_audiolimiter.cpp"
+#include "class_audiosplitter.cpp"
 #include "class_audioanalyser.cpp"
 #include "class_audio.cpp"
 #include "class_sound.cpp"
@@ -245,6 +250,7 @@ static ERR MODExpunge(void)
 #include "tests/test_audio_reverb_dsp.cpp"
 #include "tests/test_audio_compressor_dsp.cpp"
 #include "tests/test_audio_limiter_dsp.cpp"
+#include "tests/test_audio_splitter_dsp.cpp"
 #include "tests/test_audio_analyser_dsp.cpp"
 #include "tests/test_mixers.cpp"
 #include "tests/test_audio_format.cpp"
@@ -277,6 +283,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    run("reverb DSP", audio_tests_audio_reverb_dsp::run);
    run("compressor DSP", audio_tests_audio_compressor_dsp::run);
    run("limiter DSP", audio_tests_audio_limiter_dsp::run);
+   run("splitter DSP", audio_tests_audio_splitter_dsp::run);
    run("analyser DSP", audio_tests_audio_analyser_dsp::run);
    run("mixer", audio_tests_mixers::run);
    run("format", audio_tests_audio_format::run);

@@ -1,0 +1,363 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+-- An active Audio object with one channel set and an application splitter on that set.
+
+function new_splitter(Fields:table):<obj, obj, num>
+   audio = obj.new('Audio', { device='null', outputRate=48000 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   Fields.audio = audio
+   Fields.channel = channel
+   return audio, obj.new('AudioSplitter', Fields), channel
+end
+
+function branch_count(Splitter:obj):num
+   err, count = Splitter.mtGetGroupCount('branches')
+   assert(err is ERR_Okay)
+   return count
+end
+
+function enable_branch(Splitter:obj, Index:num, Gain:num)
+   check Splitter.mtSetParameter(f'branches[{Index}].mute', 0)
+   check Splitter.mtSetParameter(f'branches[{Index}].gain', Gain ?? 0)
+end
+
+-- Play a loud square wave on the channel; the null device renders it faster than real time.
+
+function play_loud(Audio:obj, Channel:num)
+   data = array<byte, 16384>
+   for i in {0 to 16384} do data[i] = (i % 64 < 32) ? 255 : 1 end
+   err, sample = Audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(Audio, Channel, sample)
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixVolume(Audio, Channel, 1)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+-- Wait for a valid meter reading and return it, or nil.
+
+function wait_meters(Effect:obj, Predicate:func):any
+   for attempt in {0 to 200} do
+      err, reading = Effect.mtReadMeters()
+      assert(err is ERR_Okay)
+      if (reading.flags has AMF_VALID) and Predicate(reading) then return reading end
+      processing.sleep(0.01)
+   end
+   return nil
+end
+
+function expect_init_error(Class:str, Fields:table, Code:num, Message:str)
+   try
+      effect = obj.new(Class, Fields)
+   except e
+      assert(e.code is Code, f'{Message}: expected error {Code}, got {e.code} ({e.message})')
+      return
+   end
+   raise f'{Message}: initialisation should fail with error {Code}'
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close>, splitter <close> = new_splitter({})
+   schema = splitter.schema
+   assert(schema.find('<effect class="AudioSplitter" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group key="branches" label="Branch"') != nil, 'Branches are published as a group')
+   assert(schema.find('min="1" max="8"') != nil, 'The group holds between one and eight branches')
+   assert(schema.find('<param key="gain" label="Gain"') != nil)
+   assert(schema.find('type="double" unit="dB" scale="linear" min="-48" max="12" default="0"') != nil)
+   assert(schema.find('<param key="mute" label="Mute"') != nil)
+   assert(schema.find('type="bool" scale="linear" min="0" max="1" default="1"') != nil)
+   assert(schema.find('type="curve"') is nil, 'The splitter does not publish a response curve')
+
+   -- A new splitter has one unmuted branch at unity, so it passes audio unchanged.
+
+   assert(branch_count(splitter) is 1)
+   err, value = splitter.mtGetParameter('branches[0].mute')
+   assert(err is ERR_Okay and value is 0, 'The initial branch must be unmuted')
+   err, value = splitter.mtGetParameter('branches[0].gain')
+   assert(err is ERR_Okay and value is 0)
+   assert(splitter.latencyBudget is 0 and splitter.latency is 0)
+
+   err, layout = splitter.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 4, 'Stereo must publish input and output peaks per channel')
+   assert(layout.meters[0].key is 'input_peak_left' and layout.meters[3].key is 'output_peak_right')
+   assert(splitter.mtGetOutput('gain_reduction') is ERR_Search, 'The splitter has no gain reduction meter')
+end
+
+@Test function BranchEdits()
+   audio <close>, splitter <close> = new_splitter({})
+
+   -- Inserted branches are muted, staged until Flush(), and limited to eight.
+
+   check splitter.mtInsertEntry('branches', 1)
+   assert(branch_count(splitter) is 2, 'Staged insertions are counted')
+   err, value = splitter.mtGetParameter('branches[1].mute')
+   assert(err is ERR_Okay and value is 1, 'An inserted branch must default to muted')
+   check splitter.acFlush()
+   assert(branch_count(splitter) is 2)
+
+   for i in {2 to 8} do check splitter.mtInsertEntry('branches', i) end
+   assert(splitter.mtInsertEntry('branches', 8) is ERR_OutOfRange, 'A ninth branch must be rejected')
+   check splitter.acFlush()
+   assert(branch_count(splitter) is 8)
+
+   for i in {0 to 7} do check splitter.mtRemoveEntry('branches', 0) end
+   assert(splitter.mtRemoveEntry('branches', 0) is ERR_OutOfRange, 'The last branch cannot be removed')
+   check splitter.acFlush()
+   assert(branch_count(splitter) is 1)
+
+   -- Values are validated against their ranges.
+
+   assert(splitter.mtSetParameter('branches[0].gain', 12.5) is ERR_InvalidValue)
+   assert(splitter.mtSetParameter('branches[0].gain', -48.5) is ERR_InvalidValue)
+   assert(splitter.mtSetParameter('branches[0].mute', 0.5) is ERR_InvalidValue)
+   assert(splitter.mtSetParameter('branches[0].mute', 2) is ERR_InvalidValue)
+   assert(splitter.mtSetParameter('branches[1].gain', 0) is ERR_OutOfRange)
+   check splitter.mtSetParameter('branches[0].gain', -6)
+   check splitter.acFlush()
+   err, value = splitter.mtGetParameter('branches[0].gain')
+   assert(err is ERR_Okay and value is -6)
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   splitter <close> = obj.new('AudioSplitter')
+   splitter.audio = audio
+   splitter.channel = channel
+   splitter.latencyBudget = 5
+   check splitter.mtInsertEntry('branches', 1)
+   check splitter.mtSetParameter('branches[1].mute', 0)
+   splitter.init()
+   assert(branch_count(splitter) is 2)
+   err, value = splitter.mtGetParameter('branches[1].mute')
+   assert(err is ERR_Okay and value is 0)
+   assert(splitter.latency is 240, f'A 5 ms budget is 240 frames at 48 kHz, got {splitter.latency}')
+
+   -- The budget is init-only and limited to 100 ms.
+
+   try
+      splitter.latencyBudget = 10
+   except e
+   success
+      raise 'LatencyBudget must be immutable after initialisation'
+   end
+   assert(splitter.latencyBudget is 5)
+
+   try
+      obj.new('AudioSplitter', { audio=audio, channel=channel, latencyBudget=101 })
+   except e
+   success
+      raise 'A budget above 100 ms must be rejected'
+   end
+end
+
+@Test function AttachToBranches()
+   audio <close>, splitter <close>, channel = new_splitter({ latencyBudget=5 })
+   check splitter.mtInsertEntry('branches', 1)
+   check splitter.acFlush()
+
+   -- Effects attach by Parent and Branch, or as children of the splitter, and inherit Audio and Channel.
+
+   limiter <close> = obj.new('AudioLimiter', { parent=splitter, branch=1 })
+   assert(limiter.parent.id is splitter.id and limiter.branch is 1)
+   assert(limiter.audio.id is audio.id and limiter.channel is channel)
+   assert(limiter.mutable is 1 and limiter.latency is 240)
+   eq = splitter.new('AudioEqualiser', { branch=0 })
+   assert(eq.parent.id is splitter.id and eq.branch is 0 and eq.channel is channel)
+   reverb <close> = obj.new('AudioReverb', { parent=splitter, branch=1, order=-1 })
+
+   -- The splitter's latency is its budget, independent of its branches.
+
+   assert(splitter.latency is 240)
+   err, app, master, total = audio.mtGetEffectStatus(channel)
+   assert(err is ERR_Okay and app is 240, f'The chain latency must include the budget, got {app}')
+   limiter.flags = AEF_BYPASS
+   assert(splitter.latency is 240, 'Bypass inside a branch does not change the splitter latency')
+   limiter.flags = 0
+
+   -- Branch indexes follow their entries when earlier branches are inserted or removed.
+
+   check splitter.mtInsertEntry('branches', 0)
+   check splitter.acFlush()
+   assert(eq.branch is 1 and limiter.branch is 2 and reverb.branch is 2)
+   check splitter.mtRemoveEntry('branches', 0)
+   check splitter.acFlush()
+   assert(eq.branch is 0 and limiter.branch is 1)
+
+   -- Removing a branch disconnects its effects; others are unaffected.
+
+   check splitter.mtRemoveEntry('branches', 1)
+   check splitter.acFlush()
+   assert(limiter.mutable is 0 and reverb.mutable is 0, 'Effects in a removed branch must be disconnected')
+   err, reading = limiter.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(limiter.mtSetParameter('gain', 1) is ERR_NotInitialised)
+   assert(limiter.branch is 1, 'A disconnected effect retains its last branch index')
+   assert(eq.mutable is 1 and eq.branch is 0)
+
+   -- Freeing the splitter frees its children and disconnects the remaining branch effects.
+
+   check splitter.mtInsertEntry('branches', 1)
+   check splitter.acFlush()
+   external <close> = obj.new('AudioCompressor', { parent=splitter, branch=1 })
+   assert(external.mutable is 1)
+   eq_id = eq.id
+   splitter.free()
+   assert(obj.find(eq_id) is nil, 'Child effects are freed with the splitter')
+   assert(external.mutable is 0, 'Freeing the splitter must disconnect its branch effects')
+end
+
+@Test function AttachmentErrors()
+   audio <close>, splitter <close>, channel = new_splitter({})
+
+   expect_init_error('AudioCompressor', { parent=splitter, branch=1 }, ERR_OutOfRange, 'A missing branch')
+   expect_init_error('AudioCompressor', { parent=splitter, branch=-1 }, ERR_OutOfRange, 'A negative branch')
+   expect_init_error('AudioSplitter', { parent=splitter, branch=0 }, ERR_NoSupport, 'Nesting')
+   expect_init_error('AudioLimiter', { parent=splitter, branch=0 }, ERR_OutOfRange, 'Exceeding a zero budget')
+
+   -- Audio and Channel must match the container if they are set.
+
+   err, other = audio.mtOpenChannels(1)
+   expect_init_error('AudioCompressor', { parent=splitter, channel=other }, ERR_InvalidValue, 'A different channel')
+   second_audio <close> = obj.new('Audio', { device='null' })
+   expect_init_error('AudioCompressor', { parent=splitter, audio=second_audio }, ERR_InvalidValue,
+      'A different Audio object')
+
+   -- Only an initialised container can host effects.
+
+   limiter <close> = obj.new('AudioLimiter', { audio=audio, channel=channel })
+   expect_init_error('AudioCompressor', { parent=limiter }, ERR_InvalidObject, 'A non-container parent')
+   pending <close> = obj.new('AudioSplitter')
+   expect_init_error('AudioCompressor', { parent=pending }, ERR_InvalidObject, 'An uninitialised container')
+
+   -- Closing the channel set disconnects the splitter and its branch effects.
+
+   compressor <close> = obj.new('AudioCompressor', { parent=splitter })
+   check audio.mtCloseChannels(channel)
+   assert(splitter.mutable is 0 and compressor.mutable is 0)
+   expect_init_error('AudioCompressor', { parent=splitter }, ERR_NotInitialised, 'A disconnected container')
+end
+
+@Test function GlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   splitter = audio.new('AudioSplitter')
+   check splitter.mtInsertEntry('branches', 1)
+   splitter.init()
+   assert(splitter.mutable is 0 and branch_count(splitter) is 2)
+   assert(splitter.mtInsertEntry('branches', 0) is ERR_Immutable)
+
+   compressor = splitter.new('AudioCompressor', { branch=1 })
+   assert(compressor.channel is 0 and compressor.mutable is 0, 'Branch effects of a global splitter are immutable')
+   assert(compressor.mtSetParameter('threshold', -30) is ERR_Immutable)
+end
+
+@Test function ParallelSumAndMeters()
+   audio <close>, splitter <close>, channel = new_splitter({ latencyBudget=5 })
+   check splitter.mtInsertEntry('branches', 1)
+   enable_branch(splitter, 1, 0)
+   check splitter.acFlush()
+   limiter <close> = obj.new('AudioLimiter', { parent=splitter, branch=1 })
+   check limiter.mtSetParameter('ceiling', -12)
+   check limiter.acFlush()
+   play_loud(audio, channel)
+
+   -- Two aligned branches sum without normalisation, so the output exceeds the input peak.
+
+   reading = wait_meters(splitter, (Reading => Reading.values[2].value > Reading.values[0].value + 1))
+   assert(reading, 'The summed output must be louder than the input')
+   input_peak = reading.values[0].value
+   output_peak = reading.values[2].value
+   assert(output_peak < input_peak + 6.03, f'The sum is at most 6 dB louder, got {output_peak - input_peak} dB')
+
+   -- Effects in a branch publish their own meters.
+
+   reading = wait_meters(limiter, (Reading => Reading.values[4].value > 1))
+   assert(reading, 'The branch limiter must report gain reduction')
+   assert(reading.values[2].value <= -12 + 1e-6, 'The branch limiter must hold its ceiling')
+
+   -- Bypassing the splitter skips its branches and removes its latency.
+
+   splitter.flags = AEF_BYPASS
+   assert(splitter.latency is 0)
+   err, reading = splitter.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   splitter.flags = 0
+   assert(splitter.latency is 240)
+   check audio.acDeactivate()
+end
+
+@Test function ActivationAfterAttachment()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   splitter <close> = obj.new('AudioSplitter', { audio=audio, channel=channel, latencyBudget=5 })
+   limiter <close> = obj.new('AudioLimiter', { parent=splitter, branch=0 })
+   try
+      latency = splitter.latency
+   except e when ERR_NotInitialised
+   success
+      raise 'Latency must not be readable before the output is configured'
+   end
+
+   -- Activation configures branch effects together with their container.
+
+   check audio.acActivate()
+   assert(splitter.latency is 221 and limiter.latency is 221)
+   err, rate, format, layout, generation = limiter.mtGetProcessingFormat()
+   err2, _, _, _, splitter_generation = splitter.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 44100 and #layout is 2 and generation is splitter_generation)
+
+   check audio.acDeactivate()
+   audio.outputRate = 96000
+   audio.outputLayout = array<int> { SPK_CENTRE }
+   check audio.acActivate()
+   assert(splitter.latency is 480 and limiter.latency is 480)
+   err, rate, format, layout = limiter.mtGetProcessingFormat()
+   assert(rate is 96000 and #layout is 1)
+   check audio.acDeactivate()
+end
+
+-- OnStop is held until a reverb inside a splitter branch has drained.
+
+@Test function SoundStopWaitsForBranchTail()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   stops = 0
+   state_at_stop = -1
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound)
+         stops++
+         err, _, _, _, _, _, state = audio.mtGetEffectStatus(Sound.channelIndex & 0xffff0000)
+         state_at_stop = state
+      end })
+   splitter <close> = obj.new('AudioSplitter', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   check splitter.mtInsertEntry('branches', 1)
+   enable_branch(splitter, 1, -6)
+   check splitter.acFlush()
+   reverb <close> = obj.new('AudioReverb', { parent=splitter, branch=1 })
+   check reverb.mtSetParameter('decay', 2000)
+   check reverb.mtSetParameter('mix', 100)
+   check reverb.acFlush()
+   check sound.acActivate()
+   deadline = mSys.PreciseTime() + 20000000
+   while (stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+   assert(stops is 1, 'OnStop must be delivered once')
+   assert(state_at_stop is ADS_IDLE, f'The branch reverb must have drained before OnStop, state {state_at_stop}')
+   check audio.acDeactivate()
+end
+
+@end

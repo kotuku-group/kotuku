@@ -14,6 +14,7 @@ class objAudioEqualiser;
 class objAudioReverb;
 class objAudioCompressor;
 class objAudioLimiter;
+class objAudioSplitter;
 class objAudioAnalyser;
 class objSound;
 
@@ -613,6 +614,8 @@ class objAudioEffect : public Object {
    int      Order;    // Processing position within the chain.
    AEF      Flags;    // Optional processing flags.
    int      OutputRate; // Output sample rate of the attached Audio object.
+   OBJECTID ParentID; // The container effect that hosts this effect, or zero for an effect in a top-level chain.
+   int      Branch;   // Zero-based index of the container branch that hosts the effect.
 
    // Action stubs
 
@@ -704,6 +707,19 @@ class objAudioEffect : public Object {
       return error;
    }
 
+   inline ERR getParent(OBJECTID &Value) noexcept {
+      Value = this->ParentID;
+      return ERR::Okay;
+   }
+
+   inline ERR getBranch(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getLatency(int64_t &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       SetObjectContext(this, field, AC::NIL);
@@ -754,6 +770,18 @@ class objAudioEffect : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setParent(OBJECTID Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->ParentID = Value;
+      return ERR::Okay;
+   }
+
+   inline ERR setBranch(const int Value) noexcept {
+      if (this->initialised()) return ERR::ImmutableField;
+      this->Branch = Value;
+      return ERR::Okay;
+   }
+
 };
 
 // AudioEqualiser class definition
@@ -775,13 +803,13 @@ class objAudioEqualiser : public objAudioEffect {
    // Customised field getting
 
    inline ERR getBands(std::span<struct AudioEQBand> &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[16];
       auto get_field = (ERR (*)(APTR, std::span<struct AudioEQBand> &))field->GetValue;
       return get_field(this, Value);
    }
 
    inline ERR getGain(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[15];
       return field->GetValue(this, &Value);
    }
 
@@ -789,12 +817,12 @@ class objAudioEqualiser : public objAudioEffect {
    // Customised field setting
 
    inline ERR setBands(std::span<const struct AudioEQBand> Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x00101318, &Value);
    }
 
    inline ERR setGain(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -866,6 +894,42 @@ class objAudioLimiter : public objAudioEffect {
 
 
    // Customised field setting
+
+};
+
+// AudioSplitter class definition
+
+#define VER_AUDIOSPLITTER (1.000000)
+
+class objAudioSplitter : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOSPLITTER;
+   static constexpr CSTRING CLASS_NAME = "AudioSplitter";
+
+   using create = kt::Create<objAudioSplitter>;
+   objAudioSplitter(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+   inline ERR getLatencyBudget(double &Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+
+   // Customised field setting
+
+   inline ERR setLatencyBudget(const double Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, FD_DOUBLE, &Value);
+   }
 
 };
 
