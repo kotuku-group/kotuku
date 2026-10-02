@@ -129,12 +129,14 @@ IDE Integration:
    -- cannot be mounted is a configuration error, while a missing default leaves the server running without API docs.
 
    docs_path = glOptions.sdkDocs ?? defaultDocsPath()
-   if lspMountDocs(docs_path) then
-      lspInitDocs('sdk-docs:')
-   elseif glOptions.sdkDocs then
-      raise f"The API documentation could not be loaded from '{glOptions.sdkDocs}'."
-   else
-      print('The api-docs.zip archive was not found; API documentation is unavailable.  Use sdk-docs to set a path.')
+   docs_loaded = lspMountDocs(docs_path) and lspInitDocs('sdk-docs:')
+   if not docs_loaded then
+      if glOptions.sdkDocs then
+         raise f"The API documentation could not be loaded from '{glOptions.sdkDocs}'."
+      else
+         print('The api-docs.zip archive was not found or is invalid; API documentation is unavailable.  ' ..
+            'Use sdk-docs to set a path.')
+      end
    end
 
    glServer = lspStart(glOptions)

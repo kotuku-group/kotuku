@@ -1,4 +1,5 @@
-extern buildDocCache, buildDocManifest, validateDocCache, loadDocCache, lspMountDocs, CACHE_PATH, glDocsArchive
+extern buildDocCache, buildDocManifest, validateDocCache, loadDocCache, lspMountDocs, lspInitDocs, CACHE_PATH,
+   glDocsArchive
 
 @BeforeAll function SetupCacheTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -10,6 +11,7 @@ end
 @AfterAll function CleanupCacheTests()
    glDocsArchive = nil
    mSys.DeleteFile('temp:tiri_lsp_api_docs.zip')
+   mSys.DeleteFile('temp:tiri_lsp_empty_docs/')
 end
 
 function makeManifest():table
@@ -144,4 +146,10 @@ end
 @Test function MountRejectsMissingDocs()
    assert(not lspMountDocs('temp:tiri_lsp_missing_docs.zip'), 'A missing archive should not be mounted.')
    assert(not lspMountDocs(nil), 'A nil path should not be mounted.')
+end
+
+@Test function InitialisationRejectsEmptyDocsFolder()
+   local folder <close> = obj.new('file', { path='temp:tiri_lsp_empty_docs/', flags=FL_NEW|FL_FOLDER })
+   assert(lspMountDocs('temp:tiri_lsp_empty_docs/'), 'An existing documentation folder should be mounted.')
+   assert(not lspInitDocs('sdk-docs:'), 'A documentation folder containing no API XML should be rejected.')
 end

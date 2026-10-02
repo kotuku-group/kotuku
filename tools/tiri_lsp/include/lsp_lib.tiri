@@ -752,10 +752,11 @@ global function lspInitDocs(DocPath)
    else
       -- Build cache if not found or invalid
       glDocCache = buildDocCache(DocPath)
-      if glDocCache then
+      if glDocCache and validateDocCache(glDocCache, DocPath, glDocCache.sourceManifest) then
          saveDocCache(CACHE_PATH, glDocCache)
          print('Documentation cache built and saved')
       else
+         glDocCache = nil
          print('Failed to build documentation cache')
       end
    end
