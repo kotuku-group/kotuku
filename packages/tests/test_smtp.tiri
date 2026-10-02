@@ -1,0 +1,908 @@
+-- Flute tests for the net/smtp package.  SMTP sessions run against a scripted NetServer on the loopback interface.
+
+   import 'net/smtp'
+   import 'net/oauth2'
+   import 'net/httpserver'
+   module crypto as mCrypto
+
+glPort = 23510
+glServer = nil
+
+@AfterEach
+function freeServer()
+   if glServer then
+      glServer.free()
+      glServer = nil
+   end
+end
+
+-- Decode in chunks that respect the 1 MiB input limit of Base64Decode()
+
+function decode64(Text:str):str
+   parts = array<str> { }
+   for offset in {0 to #Text by 1000000} do
+      chunk = Text.sub(offset, math.min(offset + 1000000, #Text))
+      err, size = mCrypto.Base64Decode(chunk, CC_STANDARD, array<byte> { })
+      assert(err is ERR_Okay, 'Base64 decode size query failed: ' .. mSys.GetErrorMsg(err))
+      output = array<byte, size>
+      err, size = mCrypto.Base64Decode(chunk, CC_STANDARD, output)
+      assert(err is ERR_Okay, 'Base64 decode failed: ' .. mSys.GetErrorMsg(err))
+      parts.push(output.getString(0, size))
+   end
+   return parts.concat('')
+end
+
+function rejects(Callback:func, Pattern:str)
+   rejected = false
+   try
+      Callback()
+   except e
+      rejected = true
+      if Pattern then assert(e.message.find(Pattern), f'Expected "{Pattern}" in error: {e.message}') end
+   end
+   assert(rejected, 'Expected an exception')
+end
+
+-- Scripted SMTP server.  Options: capabilities (array<str> of EHLO keywords), authReply (code for the final AUTH
+-- reply), rejectRecipient (address rejected by RCPT), xoauthError (reply 334 to XOAUTH2), ssl (implicit TLS),
+-- silent (no greeting), greeting (array<str> of raw greeting chunks, sent 0.1 seconds apart), multiConnect (accept
+-- a new connection while a client-closed connection from the same address is still registered).
+-- Returns a record of the session.  The server is retained in glServer until the test completes.
+
+function fakeServer(Options:table):table
+   if glServer then
+      glServer.free()
+      glServer = nil
+   end
+   glPort++
+   rec = { commands=array<str> { }, recipients=array<str> { }, data=nil, port=glPort }
+   caps = Options.capabilities or array<str> { 'SIZE 1000000', 'AUTH PLAIN LOGIN XOAUTH2', '8BITMIME' }
+   local session:table
+
+   function reply(Client, Text:str)
+      check Client.acWrite(Text)
+   end
+
+   function command(Server, Client, Session:table, Line:str)
+      rec.commands.push(Line)
+      upper = Line.upper()
+      if Session.mode is 'login_user' then
+         rec.loginUser = decode64(Line)
+         Session.mode = 'login_pass'
+         reply(Client, '334 UGFzc3dvcmQ6\r\n')
+      elseif Session.mode is 'login_pass' then
+         rec.loginPass = decode64(Line)
+         Session.mode = nil
+         reply(Client, (Options.authReply or 235) .. ' Authentication result\r\n')
+      elseif Session.mode is 'xoauth_error' then
+         rec.xoauthEmptyLine = (Line is '')
+         Session.mode = nil
+         reply(Client, '535 5.7.8 Username and Password not accepted\r\n')
+      elseif upper.startsWith('EHLO ') then
+         lines = array<str> { '250-fake.example Hello' }
+         for i, cap in caps do lines.push((i is #caps - 1 ? '250 ' : '250-') .. cap) end
+         if #caps is 0 then lines[0] = '250 fake.example Hello' end
+         reply(Client, lines.concat('\r\n') .. '\r\n')
+      elseif upper.startsWith('AUTH PLAIN ') then
+         rec.authPlain = decode64(Line.sub(11))
+         reply(Client, (Options.authReply or 235) .. ' Authentication result\r\n')
+      elseif upper is 'AUTH LOGIN' then
+         Session.mode = 'login_user'
+         reply(Client, '334 VXNlcm5hbWU6\r\n')
+      elseif upper.startsWith('AUTH XOAUTH2 ') then
+         rec.xoauth = decode64(Line.sub(13))
+         if Options.xoauthError then
+            Session.mode = 'xoauth_error'
+            reply(Client, '334 eyJzdGF0dXMiOiI0MDAifQ==\r\n')
+         else
+            reply(Client, '235 Accepted\r\n')
+         end
+      elseif upper.startsWith('MAIL FROM:') then
+         rec.mailFrom = Line
+         if Options.closeBeforeData then Server.mtDisconnectSocket(Client)
+         else reply(Client, '250 OK\r\n') end
+      elseif upper.startsWith('RCPT TO:') then
+         address = Line.sub(9, #Line - 1)
+         if address is Options.rejectRecipient then
+            reply(Client, (Options.recipientReply or 550) ..
+               (Options.recipientReply is 450 ? ' 4.1.1' : ' 5.1.1') .. ' No such user\r\n')
+         else
+            rec.recipients.push(address)
+            reply(Client, '250 OK\r\n')
+         end
+      elseif upper is 'DATA' then
+         if Options.dataReply then reply(Client, Options.dataReply .. ' 4.3.0 DATA unavailable\r\n')
+         else
+            Session.mode = 'data'
+            reply(Client, '354 End data with <CR><LF>.<CR><LF>\r\n')
+         end
+      elseif upper is 'QUIT' then
+         rec.quit = true
+         if not Options.silentQuit then
+            if not Options.closeQuit then reply(Client, (Options.quitReply or 221) .. ' Bye\r\n') end
+            Server.mtDisconnectSocket(Client)
+         end
+      else
+         reply(Client, '502 Command not implemented\r\n')
+      end
+   end
+
+   flags = Options.ssl and NSF_SSL or 0
+   if Options.multiConnect then flags = flags | NSF_MULTI_CONNECT end
+   glServer = obj.new('netserver', {
+      name = 'fake_smtp',
+      port = glPort,
+      address = '127.0.0.1',
+      flags = flags,
+      feedback = function(Server, Client, State)
+         if State is NTC_CONNECTED and Client then
+            session = { buffer='' }
+            if Options.greeting then
+               -- Raw greeting chunks, sent at intervals so that the client reads each one separately
+               chunks = Options.greeting
+               index = 0
+               reply(Client, chunks[0])
+               mSys.SubscribeTimer(0.1, function()
+                  index++
+                  if index < #chunks and glServer then reply(Client, chunks[index]) end
+                  if index >= #chunks - 1 then raise ERR_Terminate end
+               end)
+            elseif not Options.silent then
+               reply(Client, (Options.greetingReply or 220) .. ' fake.example ESMTP ready\r\n')
+            end
+         end
+      end,
+      incoming = function(Server, Client)
+         if not session then return end
+         buffer = array<byte, 8192>
+         while true do
+            err, size = Client.acRead(buffer)
+            if err != ERR_Okay or size is 0 then break end
+            session.buffer ..= buffer.getString(0, size)
+         end
+
+         while true do
+            if session.mode is 'data' then
+               pos = session.buffer.find('\r\n.\r\n')
+               if not pos then break end
+               rec.data = session.buffer.sub(0, pos + 2)
+               session.buffer = session.buffer.sub(pos + 5)
+               session.mode = nil
+               if Options.onData then Options.onData() end
+               if Options.closeAfterData then Server.mtDisconnectSocket(Client)
+               elseif not Options.silentAfterData then
+                  reply(Client, (Options.finalReply or 250) ..
+                     (Options.finalReply is 451 ? ' 4.3.0' : (Options.finalReply is 550 ? ' 5.3.0' : ' 2.0.0')) ..
+                     ' Result\r\n')
+               end
+            else
+               pos = session.buffer.find('\r\n')
+               if not pos then break end
+               line = session.buffer.sub(0, pos)
+               session.buffer = session.buffer.sub(pos + 2)
+               command(Server, Client, session, line)
+            end
+         end
+      end
+   })
+
+   return rec
+end
+
+function loopbackClient(Rec:table, Extra:table):table
+   config = { host='127.0.0.1', port=Rec.port, username='user@example.com', password='secret',
+      allowInsecureAuth=true, timeout=5 }
+   for key, value in Extra or { } do config[key] = value end
+   return smtp.smtpClient(config)
+end
+
+function basicMessage():table
+   return { from='Sender <sender@example.com>', to='to@example.com', subject='Test', body='Hello' }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PrepareBuildsNestedMime()
+   message = smtp.prepare({
+      from = 'Sender <sender@example.com>',
+      to = array<str> { 'a@example.com', 'Bee <b@example.com>' },
+      cc = 'c@example.com',
+      bcc = { 'hidden@example.com' },
+      subject = 'Grüße',
+      body = 'Plain line\nsecond line',
+      html = '<p>Hello</p>',
+      attachments = { { content='binary\0data', name='notes.txt' } }
+   })
+
+   assert(message.from is 'sender@example.com', 'Envelope sender is the bare address')
+   assert(message.recipients.concat(',') is 'a@example.com,b@example.com,c@example.com,hidden@example.com',
+      'Envelope recipients include to, cc and bcc: ' .. message.recipients.concat(','))
+
+   data = message.data
+   header_end = data.find('\r\n\r\n')
+   headers = data.sub(0, header_end)
+   assert(not data.find('hidden@example.com'), 'Bcc recipients are not written to the message')
+   assert(headers.find('To: a@example.com,\r\n Bee <b@example.com>'), 'Multiple recipients are folded')
+   assert(headers.find('Subject: =?UTF-8?B?' .. 'R3LDvMOfZQ==' .. '?='), 'Non-ASCII subject uses an encoded-word')
+   assert(r'Date: [A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} \+0000'.test(headers), 'Date header')
+   assert(headers.find('Message-ID: <') and headers.find('@example.com>'), 'Message-ID uses the sender domain')
+   assert(headers.find('Content-Type: multipart/mixed;'), 'Attachments produce multipart/mixed')
+   assert(data.find('Content-Type: multipart/alternative;'), 'Text and HTML are nested in multipart/alternative')
+   assert(data.find('Plain line\r\nsecond line'), 'Bare line feeds are converted to CRLF')
+   assert(not r'[^\r]\n'.test(data), 'The message contains no bare line feeds')
+   assert(data.find('filename="notes.txt"') and data.find('Content-Type: text/plain\r\n'),
+      'Attachment name and inferred content type are present')
+
+   encoded = r'filename="notes.txt"\r\n\r\n([A-Za-z0-9+\/=]+)\r\n'.extract(data)
+   assert(encoded and decode64(encoded) is 'binary\0data', 'Attachment content round-trips through base64')
+end
+
+@Test function PrepareEncodesLongAndNonAsciiBodies()
+   long_line = string.rep('x', 1200)
+   message = smtp.prepare({ from='s@example.com', to='t@example.com', body=long_line })
+   assert(message.data.find('Content-Transfer-Encoding: base64'), 'Lines over 998 bytes force base64')
+
+   message = smtp.prepare({ from='s@example.com', to='t@example.com', body='Kia ora, ā ē ī' })
+   assert(message.data.find('Content-Transfer-Encoding: base64'), 'Non-ASCII text uses base64')
+
+   message = smtp.prepare({ from='s@example.com', to='t@example.com', body='Plain' })
+   assert(message.data.find('Content-Transfer-Encoding: 7bit'), 'ASCII text uses 7bit')
+
+   big = string.rep('0123456789abcdef', 5 * 65536) -- 5 MiB, exceeds the 1 MiB Base64Encode() input limit
+   message = smtp.prepare({ from='s@example.com', to='t@example.com', attachments={ { content=big, name='a.bin' } } })
+   encoded = r'filename="a.bin"\r\n\r\n([\s\S]*?)\r\n\r\n--'.extract(message.data)
+   assert(encoded, 'Large attachment is present')
+   lines = encoded.split('\r\n')
+   assert(#lines[0] is 76, 'Base64 output is wrapped at 76 characters')
+   assert(decode64(encoded.replace('\r\n', '')) is big, 'Large attachment round-trips')
+end
+
+@Test function PrepareRejectsMalformedInput()
+   rejects(function() smtp.prepare({ from='s@example.com', to='t@example.com', subject='Hi\r\nBcc: x@evil.com' }) end,
+      'line break')
+   rejects(function() smtp.prepare({ from='s@example.com\r\nX: y', to='t@example.com' }) end, 'line break')
+   rejects(function() smtp.prepare({ from='s@example.com', to='not an address' }) end, 'Invalid to')
+   rejects(function() smtp.prepare({ from='s@example.com', to='a>b@example.com' }) end, 'Invalid to')
+   rejects(function() smtp.prepare({ from='s@example.com' }) end, 'recipient')
+   rejects(function() smtp.prepare({ to='t@example.com' }) end, 'from')
+   rejects(function() smtp.prepare({ from='s@example.com', to='t@example.com',
+      attachments={ { path='/nonexistent/file.bin' } } }) end, 'Unable to read attachment')
+   rejects(function() smtp.smtpClient({ provider='unknown' }) end, 'Unknown SMTP provider')
+   rejects(function() smtp.smtpClient({ }) end, 'host')
+end
+
+@Test function PrepareQuotesDisplayNames()
+   message = smtp.prepare({
+      from='Doe, Jane <sender@example.com>', to='Jane (Support) <to@example.com>',
+      cc='"Doe, John" <cc@example.com>', replyTo='Jane "JJ" Doe <reply@example.com>', body='Hello'
+   })
+   assert(message.data.find('From: "Doe, Jane" <sender@example.com>'), 'Quote commas in display names')
+   assert(message.data.find('To: "Jane (Support)" <to@example.com>'), 'Quote parentheses in display names')
+   assert(message.data.find('Cc: "Doe, John" <cc@example.com>'), 'Preserve already quoted names without double quoting')
+   assert(message.data.find('Reply-To: "Jane \\"JJ\\" Doe" <reply@example.com>'), 'Escape literal display-name quotes')
+
+   message = smtp.prepare({ from='"Jane \\"JJ\\" Doe" <sender@example.com>', to='to@example.com' })
+   assert(message.data.find('From: "Jane \\"JJ\\" Doe" <sender@example.com>'), 'Preserve escaped quoted display names')
+   message = smtp.prepare({ from='"Grüße" <sender@example.com>', to='to@example.com' })
+   assert(message.data.find('From: =?UTF-8?B?R3LDvMOfZQ==?= <sender@example.com>'), 'Encode unquoted Unicode name')
+end
+
+@Test function PrepareValidatesMailboxSyntax()
+   for _, address in array<str> { 'a,b@example.com', 'a;b@example.com', 'a:b@example.com', 'a(b)@example.com',
+      '.a@example.com', 'a..b@example.com', 'a.@example.com', 'a@example..com', 'a@-example.com',
+      'a@example.com,b', 'Other <other@example.com> <to@example.com>' } do
+      rejects(function() smtp.prepare({ from='sender@example.com', to=address }) end, 'Invalid to')
+   end
+   message = smtp.prepare({ from='"a@b"@example.com', to='"a,b"@example.com' })
+   assert(message.from is '"a@b"@example.com' and message.recipients[0] is '"a,b"@example.com',
+      'Quoted local parts remain valid SMTP envelope addresses')
+   assert(message.data.find('@example.com>'), 'Message-ID uses the domain after the quoted local part')
+   rejects(function() smtp.prepare({ from='"Unclosed <sender@example.com>', to='to@example.com' }) end,
+      'display name')
+end
+
+@Test function PrepareContinuesLongAttachmentNames()
+   for _, name in array<str> { string.rep('a', 1100) .. '.txt', string.rep('ā', 400) .. '.txt',
+      string.rep('"\\', 500) .. '.txt' } do
+      message = smtp.prepare({ from='sender@example.com', to='to@example.com',
+         attachments={ { content='payload', name=name } } })
+      assert(message.data.find("filename*0*=UTF-8''"), 'Long names use encoded parameter continuations')
+      value = ''
+      index = 0
+      for _, line in message.data.split('\r\n') do
+         assert(#line <= 998, 'Generated lines respect the SMTP limit')
+         line = line.trim()
+         if line.startsWith('filename*') then
+            prefix = f'filename*{index}*='
+            assert(line.startsWith(prefix), 'Continuation numbering is consecutive')
+            segment = line.sub(#prefix)
+            if segment.endsWith(';') then segment = segment.sub(0, #segment - 1) end
+            if index is 0 then segment = segment.sub(7) end
+            assert(not r'%(?:[0-9A-F])?$'.test(segment), 'Do not split percent-encoded octets')
+            value ..= segment
+            index++
+         end
+      end
+      decoded = array<str> { }
+      pos = 0
+      while pos < #value do
+         if value.sub(pos, pos + 1) is '%' then
+            decoded.push(string.char(tonumber(value.sub(pos + 1, pos + 3), 16)))
+            pos += 3
+         else
+            decoded.push(value.sub(pos, pos + 1))
+            pos++
+         end
+      end
+      assert(decoded.concat('') is name, 'Continued filenames preserve all input bytes')
+      assert(message.data.find('cGF5bG9hZA=='), 'Attachment payload remains intact')
+   end
+end
+
+@Test function PrepareRejectsOversizedHeaders()
+   rejects(function() smtp.prepare({ from='sender@example.com', to='to@example.com',
+      attachments={ { content='x', name='a.txt', contentType=string.rep('a', 1100) } } }) end, '998 bytes')
+   message = smtp.prepare({ from=string.rep('a', 1100) .. ' <sender@example.com>', to='to@example.com' })
+   for _, line in message.data.split('\r\n') do
+      assert(#line <= 998, 'Long display names use folded encoded-words')
+   end
+end
+
+@Test function SendWithAuthPlain()
+   rec = fakeServer({ })
+   client = loopbackClient(rec)
+   message = basicMessage()
+   message.cc = 'cc@example.com'
+   message.bcc = 'bcc@example.com'
+   message.body = 'Line one\n.leading dot\n..two dots'
+
+   ok, text = client.sendSync(message)
+   assert(ok, 'Send succeeded: ' .. tostring(text))
+   assert(rec.authPlain is '\0user@example.com\0secret', 'AUTH PLAIN credentials are encoded correctly')
+   assert(rec.mailFrom is 'MAIL FROM:<sender@example.com> SIZE=' .. #smtp.prepare(message).data or
+      rec.mailFrom.startsWith('MAIL FROM:<sender@example.com> SIZE='), 'MAIL FROM includes SIZE')
+   assert(rec.recipients.concat(',') is 'to@example.com,cc@example.com,bcc@example.com', 'All RCPT TO sent')
+   assert(rec.data.find('\r\n..leading dot\r\n...two dots\r\n'), 'Leading dots are stuffed')
+   assert(rec.quit, 'QUIT is sent after the message is accepted')
+   assert(not client.isBusy(), 'Client is idle after the session')
+
+   -- The client can be reused for another session
+   ok, text = client.sendSync(basicMessage())
+   assert(ok, 'Second send succeeded: ' .. tostring(text))
+end
+
+@Test function SendWithAuthLogin()
+   rec = fakeServer({ capabilities=array<str> { 'AUTH LOGIN' } })
+   client = loopbackClient(rec)
+   ok, text = client.sendSync(basicMessage())
+   assert(ok, 'Send succeeded: ' .. tostring(text))
+   assert(rec.loginUser is 'user@example.com' and rec.loginPass is 'secret',
+      'AUTH LOGIN exchange: ' .. rec.commands.concat(' | '))
+end
+
+@Test function SendWithXOAuth2()
+   rec = fakeServer({ })
+   client = loopbackClient(rec, { password=nil, oauth2Token='token123' })
+   ok, text = client.sendSync(basicMessage())
+   assert(ok, 'Send succeeded: ' .. tostring(text))
+   assert(rec.xoauth is 'user=user@example.com\x01auth=Bearer token123\x01\x01', 'XOAUTH2 string format')
+
+   rec = fakeServer({ xoauthError=true })
+   client = loopbackClient(rec, { password=nil, oauth2Token='expired' })
+   ok, text = client.sendSync(basicMessage())
+   assert(not ok and text.find('535'), 'XOAUTH2 failure reports the final reply: ' .. tostring(text))
+   assert(rec.xoauthEmptyLine, 'An empty line is sent in response to the XOAUTH2 error challenge')
+end
+
+@Test function AsyncSendCallsBackOnce()
+   rec = fakeServer({ })
+   client = loopbackClient(rec)
+   calls = 0
+   local result
+   proc = processing.new({ timeout=5 })
+   started = client.send(basicMessage(), function(Success, Text)
+      calls++
+      result = Success
+      proc.signal()
+   end)
+   assert(started, 'Session started')
+   assert(client.isBusy(), 'Client is busy during a session')
+
+   busy, busy_text = client.send(basicMessage(), nil)
+   assert(not busy and busy_text.find('busy'), 'A second concurrent send is refused')
+
+   proc.sleep()
+   processing.sleep(0.2)
+   assert(calls is 1 and result is true, 'Callback fired exactly once with success')
+end
+
+@Test function RefusesCredentialsWithoutTls()
+   rec = fakeServer({ })
+   client = loopbackClient(rec, { allowInsecureAuth=false })
+   ok, text = client.sendSync(basicMessage())
+   assert(not ok and text.find('unencrypted'), 'Plaintext authentication is refused: ' .. tostring(text))
+   assert(not rec.authPlain, 'No credentials were sent')
+end
+
+@Test function RequiresStartTlsWhenRequested()
+   rec = fakeServer({ })
+   client = loopbackClient(rec, { starttls=true })
+   ok, text = client.sendSync(basicMessage())
+   assert(not ok and text.find('STARTTLS'), 'A missing STARTTLS capability fails the session: ' .. tostring(text))
+   assert(not rec.authPlain, 'No credentials were sent')
+end
+
+@Test function ReportsRejectedRecipient()
+   rec = fakeServer({ rejectRecipient='bad@example.com' })
+   client = loopbackClient(rec)
+   message = basicMessage()
+   message.to = array<str> { 'to@example.com', 'bad@example.com' }
+   ok, text = client.sendSync(message)
+   assert(not ok and text.find('bad@example.com') and text.find('550'), 'Rejection is reported: ' .. tostring(text))
+   assert(not rec.data, 'No message data was sent')
+end
+
+@Test function ReportsAuthenticationFailure()
+   rec = fakeServer({ authReply=535 })
+   client = loopbackClient(rec)
+   ok, text = client.sendSync(basicMessage())
+   assert(not ok and text.find('535'), 'Authentication failure is reported: ' .. tostring(text))
+end
+
+@Test function EnforcesServerSizeLimit()
+   rec = fakeServer({ capabilities=array<str> { 'SIZE 100' } })
+   client = smtp.smtpClient({ host='127.0.0.1', port=rec.port, timeout=5 })
+   ok, text = client.sendSync(basicMessage())
+   assert(not ok and text.find('exceeds'), 'Oversized message is refused: ' .. tostring(text))
+   assert(not rec.mailFrom, 'MAIL FROM was not sent')
+end
+
+@Test function SessionTimeout()
+   rec = fakeServer({ silent=true })
+   client = smtp.smtpClient({ host='127.0.0.1', port=rec.port, timeout=1 })
+   start_time = mSys.PreciseTime()
+   ok, text = client.sendSync(basicMessage())
+   elapsed = (mSys.PreciseTime() - start_time) / 1000000
+   assert(not ok and text.find('timed out'), 'An unresponsive server times out: ' .. tostring(text))
+   assert(elapsed >= 0.9 and elapsed < 3, 'The session timeout is honoured: ' .. elapsed)
+   assert(not client.isBusy(), 'Client is idle after the timeout')
+end
+
+@Test function SendSyncTimeoutOverridesClient()
+   rec = fakeServer({ silent=true, multiConnect=true })
+   client = smtp.smtpClient({ host='127.0.0.1', port=rec.port, timeout=0.2 })
+   start_time = mSys.PreciseTime()
+   ok, text, details = client.sendSync(basicMessage(), 1)
+   elapsed = (mSys.PreciseTime() - start_time) / 1000000
+   assert(not ok and details.code is 'timeout', 'The session times out: ' .. tostring(text))
+   assert(elapsed >= 0.9 and elapsed < 3, 'The sendSync() timeout replaces the client timeout: ' .. elapsed)
+
+   start_time = mSys.PreciseTime()
+   ok, text, details = client.sendSync(basicMessage())
+   elapsed = (mSys.PreciseTime() - start_time) / 1000000
+   assert(not ok and details.code is 'timeout' and elapsed < 0.8, 'The override applies to one session: ' .. elapsed)
+end
+
+@Test function BlankReplyLineIsMalformed()
+   rec = fakeServer({ greeting=array<str> { '\n220 fake.example ESMTP ready\r\n' } })
+   ok, text, details = loopbackClient(rec).sendSync(basicMessage())
+   assert(not ok and text.find('Malformed server reply') and details.code is 'connection_failed', tostring(text))
+end
+
+@Test function MultiLineReplySizeIsLimited()
+   -- Each chunk is below the input buffer limit, but the reply as a whole exceeds it.
+   line = '220-' .. string.rep('x', 96) .. '\r\n'
+   chunk = string.rep(line, 400)
+   rec = fakeServer({ greeting=array<str> { chunk, chunk, '220 fake.example ESMTP ready\r\n' } })
+   ok, text, details = loopbackClient(rec).sendSync(basicMessage())
+   assert(not ok and text.find('exceeds the size limit') and details.code is 'connection_failed', tostring(text))
+   assert(not rec.mailFrom, 'The session ends before the envelope')
+end
+
+@Test function ConnectionFailureIsReported()
+   glPort++
+   client = smtp.smtpClient({ host='127.0.0.1', port=glPort, timeout=3 })
+   ok, text = client.sendSync(basicMessage())
+   assert(not ok, 'Connection to a closed port fails: ' .. tostring(text))
+   assert(not client.isBusy(), 'Client is idle after failure')
+end
+
+@Test @Requires(ssl=true)
+function SendOverImplicitTls()
+   rec = fakeServer({ ssl=true })
+   client = loopbackClient(rec, { ssl=true, verifyCert=false, allowInsecureAuth=false })
+   ok, text = client.sendSync(basicMessage())
+   assert(ok, 'Send over implicit TLS succeeded: ' .. tostring(text))
+   assert(rec.authPlain is '\0user@example.com\0secret', 'Credentials are permitted over TLS')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EnvelopeOverridesAreIndependent()
+   for _, sender in array<str> { 'sender@example.com', 'bounce@example.net', '' } do
+      rec = fakeServer({ })
+      message = basicMessage()
+      if sender != 'sender@example.com' then message.envelopeFrom = sender end
+      prepared = smtp.prepare(message)
+      assert(prepared.from is sender, 'Selected envelope sender is preserved, including the empty string')
+      assert(prepared.data.find('From: Sender <sender@example.com>'), 'Visible sender is independent')
+      assert(prepared.messageID.endsWith('@example.com>'), 'Message-ID domain comes from visible From')
+      assert(not prepared.data.find('Return-Path:'), 'Return-Path is left to the receiving server')
+      ok, text, details = loopbackClient(rec).sendSync(message)
+      assert(ok and rec.mailFrom.startsWith('MAIL FROM:<' .. sender .. '> SIZE='), text)
+      assert(rec.data.find('Message-ID: ' .. details.messageID), 'Returned Message-ID matches submitted MIME')
+      assert(details.messageID and details.code is 'accepted' and details.acceptance is 'accepted',
+         'Acceptance carries a correlation identifier')
+   end
+   for _, bad in array<any> { 'Name <bounce@example.net>', ' bounce@example.net', 'bad', false, 42,
+      'bā@example.net', 'a@example.net\r\nRCPT TO:<x@y>' } do
+      message = basicMessage()
+      message.envelopeFrom = bad
+      rejects(function() smtp.prepare(message) end)
+   end
+end
+
+@Test function IdentifiersAndOrderedCustomHeaders()
+   message = basicMessage()
+   message.messageID = '<chosen@example.net>'
+   message.inReplyTo = '<parent@example.net>'
+   message.references = array<str> { '<root@example.net>', '<parent@example.net>' }
+   message.headers = { { name='X-Tag', value='first' }, { name='X-Tag', value='second' },
+      { name='X-Encoded', value='=?UTF-8?B?R3LDvMOfZQ==?=' } }
+   prepared = smtp.prepare(message)
+   assert(prepared.messageID is message.messageID, 'Chosen identifier returned for correlation')
+   assert(prepared.data.find('Message-ID: <chosen@example.net>'), 'Chosen Message-ID emitted')
+   assert(prepared.data.find('In-Reply-To: <parent@example.net>'), 'Reply header emitted')
+   assert(prepared.data.find('References: <root@example.net>\r\n <parent@example.net>'), 'References fold in order')
+   assert(prepared.data.find('X-Tag: first\r\nX-Tag: second'), 'Permitted repeated headers retain order')
+   assert(prepared.data.find('X-Encoded: =?UTF-8?B?R3LDvMOfZQ==?='), 'Encoded words pass through')
+   message.headers = { { name='X-Long', value=string.rep('word ', 100) } }
+   prepared = smtp.prepare(message)
+   assert(prepared.data.find('\r\n word'), 'Custom values fold at whitespace')
+   for _, line in prepared.data.split('\r\n') do assert(#line <= 998, 'Physical line length limit') end
+end
+
+@Test function RejectsUnsafeIdentifiersAndHeaders()
+   for _, bad in array<any> { 'bare@example.net', '<a b@example.net>', '<a@example.net> <b@example.net>',
+      '<ā@example.net>', '<a@example.net>\r\nBcc: leak', '', 42 } do
+      for _, field in array<str> { 'messageID', 'inReplyTo' } do
+         message = basicMessage()
+         message[field] = bad
+         rejects(function() smtp.prepare(message) end)
+      end
+      message = basicMessage()
+      message.references = { bad }
+      rejects(function() smtp.prepare(message) end)
+   end
+   for _, name in array<str> { 'bCc', 'rEtUrN-pAtH', 'Received', 'From', 'Subject', 'Content-Type',
+      'Message-ID', 'In-Reply-To', 'References', 'Bad:Name', 'Bad Name', 'X-ā', '' } do
+      message = basicMessage()
+      message.headers = { { name=name, value='hidden@example.net' } }
+      rejects(function() smtp.prepare(message) end)
+   end
+   for _, bad in array<str> { 'ā', 'x\r\nBcc: leak', 'x\0y', 'x\x01y', string.rep('x', 999) } do
+      message = basicMessage()
+      message.headers = { { name='X-Test', value=bad } }
+      rejects(function() smtp.prepare(message) end)
+   end
+   message = basicMessage()
+   message.references = { [1]='<gap@example.net>' }
+   rejects(function() smtp.prepare(message) end)
+end
+
+@Test function InlineResourcesBuildRequiredMimeTree()
+   for _, plain in array<str> { '', 'Text alternative' } do
+      message = basicMessage()
+      message.body = plain
+      message.html = '<img src="cid:logo@example.net">'
+      message.attachments = { { content='\0\1\255binary', name='ā.png', disposition='inline',
+         contentID='logo@example.net' } }
+      prepared = smtp.prepare(message)
+      if #plain > 0 then assert(prepared.data.find('multipart/alternative'), 'Text alternative wraps related HTML')
+      else assert(not prepared.data.find('multipart/alternative'), 'HTML alone omits alternative') end
+      assert(prepared.data.find('multipart/related') and not prepared.data.find('multipart/mixed'),
+         'Inline resources use related without unnecessary mixed')
+      assert(prepared.data.find('Content-ID: <logo@example.net>'), 'Content-ID is emitted')
+      assert(prepared.data.find("Content-Disposition: inline; filename*=UTF-8''%C4%81.png"),
+         'Inline disposition retains Unicode filename encoding')
+      assert(prepared.data.find('AAH/YmluYXJ5'), 'Binary bytes are preserved')
+      message.attachments[1] = { content='ordinary', name='report.txt' }
+      prepared = smtp.prepare(message)
+      assert(prepared.data.find('multipart/mixed'), 'Regular attachments wrap the body outside related')
+      assert(prepared.data.find('Content-Disposition: attachment; filename="report.txt"'), 'Default disposition')
+   end
+end
+
+@Test function RejectsAmbiguousInlineResources()
+   for _, attachment in array<table> { { content='x', disposition='other' },
+      { content='x', contentID='logo@example.net' }, { content='x', disposition='inline' },
+      { content='x', disposition='inline', contentID='' },
+      { content='x', disposition='inline', contentID='<logo@example.net>' },
+      { content='x', disposition='inline', contentID='x\r\nHeader: y' } } do
+      message = basicMessage()
+      message.html = '<p>HTML</p>'
+      message.attachments = { attachment }
+      rejects(function() smtp.prepare(message) end)
+   end
+   message = basicMessage()
+   inline = { content='x', disposition='inline', contentID='logo@example.net' }
+   message.attachments = { inline }
+   rejects(function() smtp.prepare(message) end, 'HTML')
+   message.html = '<p>HTML</p>'
+   message.attachments = { inline, inline }
+   rejects(function() smtp.prepare(message) end, 'Duplicate')
+end
+
+@Test function ImmediateOutcomesAndCallbackExceptions()
+   client = smtp.smtpClient({ host='127.0.0.1' })
+   calls = 0
+   ok, text, details = client.send({}, function(Success, Text, Details)
+      calls++
+      assert(not Success and Details.code is 'invalid_message', 'Preparation callback details')
+      Details.code = 'mutated'
+      raise 'Deliberate callback exception'
+   end)
+   assert(not ok and details.code is 'invalid_message' and details.stage is 'preparation', 'Independent snapshot')
+   assert(details.acceptance is 'not_sent' and not details.retryable and calls is 1, 'Exactly one immediate outcome')
+   ok, text, details = smtp.send({})
+   assert(not ok and details.code is 'invalid_config', 'Combined API reports configuration failure')
+
+   rec = fakeServer({ silent=true })
+   client = loopbackClient(rec)
+   client.send(basicMessage(), function(Success, Text, Details)
+      calls++
+      assert(Details.code is 'cancelled', 'Original session is cancelled once')
+   end)
+   ok, text, details = client.send(basicMessage(), function(Success, Text, Details)
+      calls++
+      assert(Details.code is 'busy', 'Busy outcome reaches the rejected callback')
+      raise 'Deliberate busy callback exception'
+   end)
+   assert(not ok and details.code is 'busy' and details.acceptance is 'not_sent', 'Busy result is independent')
+   client.disconnect()
+   client.disconnect()
+   processing.sleep(0.05)
+   assert(calls is 3 and not client.isBusy(), 'Cancellation and rejected callbacks fire once')
+end
+
+@Test function StructuredServerRejections()
+   for _, code in array<int> { 450, 550 } do
+      rec = fakeServer({ rejectRecipient='bad@example.net', recipientReply=code })
+      client = loopbackClient(rec)
+      message = basicMessage()
+      message.to = { 'to@example.com', 'bad@example.net' }
+      ok, text, details = client.sendSync(message)
+      assert(not ok and details.code is 'recipient_rejected' and details.stage is 'envelope', text)
+      assert(details.smtpCode is code and details.recipient is 'bad@example.net', 'Server code and recipient')
+      assert(details.enhancedStatus is (code is 450 ? '4.1.1' : '5.1.1') and details.acceptance is 'rejected',
+         'Enhanced status retained')
+      assert(details.retryable is (code is 450) and not rec.data, 'Only temporary rejection permits retry')
+   end
+   for _, code in array<int> { 451, 550 } do
+      rec = fakeServer({ finalReply=code })
+      ok, text, details = loopbackClient(rec).sendSync(basicMessage())
+      assert(not ok and details.smtpCode is code and details.code is 'data_rejected', text)
+      assert(details.stage is 'acceptance' and details.acceptance is 'rejected', 'Explicit final rejection')
+      assert(details.enhancedStatus is (code is 451 ? '4.3.0' : '5.3.0'), 'Final enhanced status')
+      assert(details.retryable is (code is 451), 'Temporary final DATA failure permits retry')
+   end
+   rec = fakeServer({ authReply=535 })
+   ok, text, details = loopbackClient(rec).sendSync(basicMessage())
+   assert(not ok and details.code is 'auth_failed' and details.stage is 'authentication', text)
+   assert(details.smtpCode is 535 and not details.retryable and not rec.mailFrom, 'Permanent auth rejection')
+end
+
+@Test function DistinguishesSubmissionUncertainty()
+   rec = fakeServer({ closeBeforeData=true })
+   ok, text, details = loopbackClient(rec).sendSync(basicMessage())
+   assert(not ok and details.acceptance is 'not_sent' and details.retryable, text)
+   assert(details.stage is 'envelope' and not rec.data, 'Disconnect before DATA is definite')
+   rec = fakeServer({ closeAfterData=true })
+   ok, text, details = loopbackClient(rec).sendSync(basicMessage())
+   assert(not ok and details.acceptance is 'unknown' and not details.retryable, text)
+   assert(details.stage is 'acceptance' and rec.data, 'Submission without acknowledgement is uncertain')
+   rec = fakeServer({ silentAfterData=true })
+   ok, text, details = loopbackClient(rec, { timeout=0.15 }).sendSync(basicMessage())
+   assert(not ok and details.code is 'timeout' and details.acceptance is 'unknown' and not details.retryable, text)
+   rec = fakeServer({ silent=true })
+   ok, text, details = loopbackClient(rec, { timeout=0.15 }).sendSync(basicMessage())
+   assert(not ok and details.code is 'timeout' and details.acceptance is 'not_sent' and details.retryable, text)
+end
+
+@Test function AcceptanceSurvivesQuitFailure()
+   for _, options in array<table> { { closeQuit=true }, { quitReply=500 }, { silentQuit=true } } do
+      rec = fakeServer(options)
+      client = loopbackClient(rec, { timeout=0.2 })
+      ok, text, details = client.sendSync(basicMessage())
+      assert(ok and details.code is 'accepted' and details.acceptance is 'accepted' and not details.retryable, text)
+      assert(details.smtpCode is 250 and details.enhancedStatus is '2.0.0', 'Acceptance reply is preserved')
+      assert(not client.isBusy(), 'QUIT failure closes the session')
+   end
+end
+
+@Test function TokenReplacementBetweenSessions()
+   rec = fakeServer({ })
+   client = loopbackClient(rec, { oauth2Token='first-token' })
+   ok, text = client.sendSync(basicMessage())
+   assert(ok and rec.xoauth.find('Bearer first-token'), text)
+   assert(client.setOAuth2Token('second-token'), 'Idle replacement allowed')
+   ok, text = client.sendSync(basicMessage())
+   assert(ok and rec.xoauth.find('Bearer second-token'), 'Next session uses replacement')
+   assert(not client.setOAuth2Token('') and not client.setOAuth2Token(123), 'Invalid tokens refused')
+   client.send(basicMessage(), function() end)
+   assert(not client.setOAuth2Token('third-token'), 'Active replacement refused')
+   client.disconnect()
+end
+
+@Test function ProviderRunsOnceAndTakesPrecedence()
+   rec = fakeServer({ })
+   calls = 0
+   client = smtp.smtpClient({ host='127.0.0.1', port=rec.port, username='user@example.com',
+      allowInsecureAuth=true, oauth2Token='stored-token', password='secret',
+      oauth2TokenProvider=function():str
+         calls++
+         return 'provided-' .. calls
+      end })
+   for i in {1 into 2} do
+      ok, text = client.sendSync(basicMessage())
+      assert(ok and calls is i and rec.xoauth.find('Bearer provided-' .. i), text)
+      assert(not rec.authPlain, 'No password fallback')
+   end
+   rec = fakeServer({ })
+   ok, text, details = smtp.send({ host='127.0.0.1', port=rec.port, username='user@example.com',
+      allowInsecureAuth=true, oauth2TokenProvider=function():str return 'provider-only' end,
+      from='sender@example.com', to='to@example.com', envelopeFrom='', messageID='<combined@example.com>' })
+   assert(ok and rec.xoauth.find('Bearer provider-only'), text)
+   assert(rec.mailFrom.startsWith('MAIL FROM:<>') and details.messageID is '<combined@example.com>',
+      'Combined API forwards provider and message fields')
+end
+
+@Test function ProviderFailuresAreStructuredAndRedacted()
+   for _, provider in array<any> { function():str return '' end, function():any return 123 end,
+      function():any return nil end, function():str raise 'sensitive-provider-token' end } do
+      rec = fakeServer({ })
+      client = loopbackClient(rec, { oauth2TokenProvider=provider })
+      ok, text, details = client.sendSync(basicMessage())
+      assert(not ok and details.code is 'oauth2_provider_failed' and details.stage is 'authentication', text)
+      assert(not text.find('sensitive-provider-token') and not rec.authPlain and not rec.xoauth,
+         'Provider failure reveals no exception or credentials and never falls back')
+   end
+   calls = 0
+   provider = function():str
+      calls++
+      return 'private-token'
+   end
+   rec = fakeServer({ xoauthError=true })
+   ok, text, details = loopbackClient(rec, { oauth2TokenProvider=provider }).sendSync(basicMessage())
+   assert(not ok and details.code is 'auth_failed' and details.smtpCode is 535 and calls is 1, text)
+   rec = fakeServer({ })
+   ok, text, details = loopbackClient(rec, { allowInsecureAuth=false, oauth2TokenProvider=provider })
+      .sendSync(basicMessage())
+   assert(not ok and calls is 1, 'Provider is not invoked before transport security is checked')
+   rec = fakeServer({ capabilities=array<str> { 'AUTH PLAIN LOGIN' } })
+   ok, text = loopbackClient(rec, { oauth2TokenProvider=provider }).sendSync(basicMessage())
+   assert(not ok and calls is 1 and not rec.authPlain, 'Capability failure precedes provider invocation')
+end
+
+@Test @Requires(ssl=true)
+function IndependentTlsAndMimeParser()
+   executable = processing.task().processPath .. 'origo'
+   python = 'python3'
+   if mSys.GetSystemState().platform is 'Windows' then
+      executable ..= '.exe'
+      python = 'python.exe'
+   end
+   _, python_path = check mSys.ResolvePath(python, RSF_PATH)
+   _, fixture = check mSys.ResolvePath('sdk:packages/tests/fixtures/smtp_integration.py', 0)
+   output = ''
+   task <close> = obj.new('task', { location=python_path, flags=TSF_WAIT, timeout=60,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end })
+   check task.mtAddArgument(fixture)
+   check task.mtAddArgument(executable)
+   check task.acActivate()
+   assert(task.returnCode is 0, output)
+   assert(output.find('checks passed'), 'Independent validation completed: ' .. output)
+end
+
+
+@Test function OAuthRefreshRecordFeedsSmtp()
+   refresh_calls = 0
+   server = hslib.start({ port=0, bind='127.0.0.1', folder='temp:', routes={
+      { method='POST', pattern='/token', handler=function(Req, Res)
+         refresh_calls++
+         assert(Req.parsedBody.refresh_token is 'previous-refresh', 'Use previous token record for refresh')
+         Res.send('{"access_token":"renewed-access","refresh_token":"rotated-refresh",' ..
+            '"token_type":"Bearer","expires_in":3600}')
+      end }
+   } })
+   defer server.stop() end
+   account = oauth2.client({ clientID='smtp-fixture', scope='mail', testLoopback=true,
+      custom_endpoints={ auth_endpoint='https://issuer.invalid/authorize',
+         token_endpoint='http://127.0.0.1:' .. server.port .. '/token' } })
+   previous = { access_token='expired-access', refresh_token='previous-refresh', expires_at=1 }
+   assert(not account.validateToken(previous), 'Expired record requires application-owned refresh')
+   current, text = account.refreshToken(previous)
+   assert(current and current.access_token is 'renewed-access' and current.refresh_token is 'rotated-refresh', text)
+   rec = fakeServer({ })
+   client = loopbackClient(rec, { oauth2TokenProvider=function():str return current.access_token end })
+   ok, text = client.sendSync(basicMessage())
+   assert(ok and rec.xoauth.find('Bearer renewed-access') and refresh_calls is 1, text)
+   assert(account.validateToken(current), 'Application retains the complete refreshed record')
+end
+
+@Test function ProviderCancellationDoesNotSendAuth()
+   rec = fakeServer({ })
+   local client:table
+   calls = 0
+   client = loopbackClient(rec, { oauth2TokenProvider=function():str
+      client.disconnect()
+      return 'cancelled-token'
+   end })
+   client.send(basicMessage(), function(Success, Text, Details)
+      calls++
+      assert(not Success and Details.code is 'cancelled' and Details.stage is 'authentication', Text)
+   end)
+   processing.sleep(0.15)
+   assert(calls is 1 and not rec.xoauth and not client.isBusy(), 'Provider cancellation completes once without AUTH')
+   assert(client.setOAuth2Token('replacement'), 'Cancelled session releases its busy state')
+end
+
+@Test function CallbackExceptionsAfterAcceptanceDoNotChangeResult()
+   rec = fakeServer({ closeQuit=true })
+   client = loopbackClient(rec)
+   calls = 0
+   local result:table
+   client.send(basicMessage(), function(Success, Text, Details)
+      calls++
+      assert(Success, Text)
+      result = Details
+      raise 'Deliberate accepted callback exception'
+   end)
+   processing.sleep(0.2)
+   client.disconnect()
+   assert(calls is 1 and result.acceptance is 'accepted' and result.smtpCode is 250,
+      'Accepted result remains stable after callback and QUIT failures')
+end
+
+
+@Test function CancellationAfterSubmissionIsUncertain()
+   local client:table
+   rec = fakeServer({ silentAfterData=true, onData=function() client.disconnect() end })
+   client = loopbackClient(rec)
+   ok, text, details = client.sendSync(basicMessage())
+   assert(not ok and details.code is 'cancelled' and details.stage is 'acceptance', text)
+   assert(details.acceptance is 'unknown' and not details.retryable and rec.data,
+      'Cancellation after submission does not establish rejection')
+end
+
+@Test function SynchronousPreparationAndStartupDetails()
+   client = smtp.smtpClient({ host='127.0.0.1' })
+   ok, text, details = client.sendSync({})
+   assert(not ok and details.code is 'invalid_message' and details.stage is 'preparation', text)
+   glPort++
+   client = smtp.smtpClient({ host='127.0.0.1', port=glPort, timeout=0 })
+   calls = 0
+   local callback_details:table
+   started, text, details = client.send(basicMessage(), function(Success, Text, Details)
+      calls++
+      assert(not Success, Text)
+      callback_details = Details
+   end)
+   if started then processing.sleep(0.2) end
+   assert(calls is 1 and callback_details.messageID, 'Startup failure includes prepared Message-ID once')
+   if not started then
+      assert(details.code is callback_details.code and details.stage is callback_details.stage and
+         details.messageID is callback_details.messageID, 'Immediate result matches its callback')
+   end
+   client.disconnect()
+end
+
+
+@Test @Requires(ssl=true)
+function GreetingRejectionAfterTlsIsConnectionFailure()
+   rec = fakeServer({ ssl=true, greetingReply=550 })
+   ok, text, details = loopbackClient(rec, { ssl=true, verifyCert=false }).sendSync(basicMessage())
+   assert(not ok and details.code is 'connection_failed' and details.stage is 'connection', text)
+   assert(details.smtpCode is 550 and details.acceptance is 'rejected', 'TLS succeeded before SMTP rejection')
+end
