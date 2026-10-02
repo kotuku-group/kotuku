@@ -89,9 +89,9 @@ gui.mtHSV = { -- HSV metatable
    end,
    __tostring = function():str -- Returns an SVG compliant colour string
       if &a is 1 or &a is nil then
-         return string.format('hsv(%d %d %d)', &r ?? -1, &g ?? -1, &b ?? -1)
+         return string.format('hsv(%g %g %g)', &h, &s, &v)
       else
-         return string.format('hsv(%d %d %d / %g)', &r ?? -1, &g ?? -1, &b ?? -1, &a)
+         return string.format('hsv(%g %g %g / %g)', &h, &s, &v, &a)
       end
    end
 }
@@ -486,19 +486,13 @@ gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:n
       name=Name, stops=stops, x1=X1, y1=Y1, x2=X2, y2=Y2, units=(Units ?? 'boundingbox')
    })
 
-   if IgnoreClashes then -- Do not fail if a resource with the same name already exists (nb: will return nil).
-      try
-         Scene.mtAddDef(Name, gradient)
-      except ex
-         if ex.code is ERR_ResourceExists then
-            gradient.free()
-            return
-         else
-            raise
-         end
-      end
-   else
-      Scene.mtAddDef(Name, gradient)
+   local err = Scene.mtAddDef(Name, gradient)
+   if err is ERR_ResourceExists and IgnoreClashes then -- Do not fail if the name is already registered
+      gradient.free()
+      return
+   elseif err != ERR_Okay then
+      gradient.free()
+      raise err, f'Failed to register gradient "{Name}": {mSys.GetErrorMsg(err)}'
    end
 
    return gradient
@@ -535,15 +529,16 @@ gui.createIcon = function(Scene:obj!, Path:str!, Size:num, Theme:any!, Name:str)
 
    Name ??= Path
 
+   if not Path.startsWith('icons:') then
+      Path = f'icons:{Path}.svg'
+   end
+
    if Scene.mtFindDef(Name) is ERR_Okay then -- Return if the icon pattern is already registered
       return { name = Name, theme = Theme, size = Size, path = Path, fill = f'url(#{Name})' }
    end
 
    icon.pattern  = Scene.new('VectorPattern', { pageWidth=Size, pageHeight=Size, spreadMethod=VSPREAD_PAD })
    icon.gradient = gui.simpleGradient(icon.pattern.scene, gname, { lGradient.first, lGradient.last }, 0, 0, 0, 1, 'boundingbox', true)
-   if not Path.startsWith('icons:') then
-      Path = f'icons:{Path}.svg'
-   end
    icon.svg = obj.new('svg', { target=icon.pattern.viewport, path=Path })
 
    gui.forVector(icon.pattern.viewport, function(Vector)
@@ -661,8 +656,8 @@ gui.setTheme = function(Object:obj, Theme:str!):table
          loadFile(f'config:themes/{Theme}.tiri')
          assert(gui.themes[Theme], 'Theme configuration did not initialise correctly.')
       else
-         Theme = 'light' -- Revert to a known default
          print(f'Theme "{Theme}" is not installed.')
+         Theme = 'light' -- Revert to a known default
       end
    end
 
@@ -736,7 +731,6 @@ gui.palettes = {
    -- contrast is a suitable complement to prime and should be of a strongly contrasting hue
    -- neutral is a default background colour for undefined areas (e.g. window background), usually a light grey tone
    -- mid is used for separating an area from bkgd without drawing attention.  E.g. scrollbar and slider tracks
-   -- face is a midtone colour for widgets, normally drawn over 'mid'.  Chroma must be weaker than 'prime'
    -- text is the default colour for text drawn over 'bkgd'
    -- altText is the default colour for text drawn over 'prime' when highlighted or selected.  Can be same as 'text'
    ocean = {
@@ -958,7 +952,7 @@ gui.themes = {
          foreStroke      = 'none',
          foreHighlight   = gui.palette.light.contrast,
          foreStrokeFocus = gui.palette.light.contrast,
-         highlight       = gui.palette.light.face,
+         highlight       = 'none',
          stroke          = 'none',
          strokeFocus     = gui.palette.light.contrast
       },

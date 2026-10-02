@@ -413,7 +413,7 @@ end
       -- Copy, Save As, Info, Zoom, Rotate Left / Right
 
       bkgd = glViewManager.new('VectorRectangle', {
-         x=0, y=0, xOffset=0, height=1, fill=gui.palette.inverse
+         x=0, y=0, xOffset=0, height=1, fill=glWindow.theme.palette.inverse
       })
 
       glAppBar = gui.toolbar({
