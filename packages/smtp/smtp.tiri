@@ -1,0 +1,1393 @@
+@Package(name="net/smtp", version="1.0")
+
+   module network as mNet
+   module crypto as mCrypto
+
+   namespace smtp { }
+
+smtp.providers = {
+   gmail   = { host='smtp.gmail.com', port=587, starttls=true },
+   outlook = { host='smtp-mail.outlook.com', port=587, starttls=true },
+   yahoo   = { host='smtp.mail.yahoo.com', port=587, starttls=true },
+   icloud  = { host='smtp.mail.me.com', port=587, starttls=true }
+}
+
+DAYS <const>   = array<str> { 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat' }
+MONTHS <const> = array<str> { 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' }
+
+MIME_TYPES <const> = {
+   txt='text/plain', htm='text/html', html='text/html', csv='text/csv', xml='application/xml',
+   json='application/json', pdf='application/pdf', zip='application/zip', gz='application/gzip',
+   png='image/png', jpg='image/jpeg', jpeg='image/jpeg', gif='image/gif', webp='image/webp', svg='image/svg+xml',
+   ics='text/calendar', mp3='audio/mpeg', wav='audio/wav', mp4='video/mp4'
+}
+
+B64_CHUNK <const>      = 57 * 1024  -- Input bytes per Base64Encode() call; a multiple of 57 keeps 76 character lines
+WRITE_CHUNK <const>    = 65536      -- Bytes passed to each NetSocket write
+MAX_REPLY_SIZE <const> = 65536      -- Upper limit for buffered server replies
+
+rx_non_ascii     = <{ r'[^\x00-\x7F]' }>
+rx_control       = <{ r'[\x00-\x1F\x7F]' }>
+rx_long_line     = <{ r'[^\r\n]{999}' }>
+rx_display_name  = <{ r'^\s*([^<>]*)<([^<>]+)>\s*$' }>
+rx_mailbox       = <{ r'^("(?:[^"\\\x00-\x1F\x7F]|\\[\x20-\x7E])*"|[^@]+)@([^@]+)$' }>
+rx_dot_atom      = <{ r"^[A-Za-z0-9!#$%&'*+\/=?^_`\{\|\}~\-]+(?:\.[A-Za-z0-9!#$%&'*+\/=?^_`\{\|\}~\-]+)*$" }>
+rx_domain        = <{ r'^[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*$' }>
+rx_domain_literal = <{ r'^\[(?:[0-9]{1,3}(?:\.[0-9]{1,3}){3}|IPv6:[0-9A-Fa-f:.]+)\]$' }>
+rx_quoted_name   = <{ r'^"((?:[^"\\]|\\[\x20-\x7E])*)"$' }>
+rx_quoted_pair   = <{ r'\\(.)' }>
+rx_phrase        = <{ r"^[A-Za-z0-9!#$%&'*+\/=?^_`\{\|\}~ \-]+$" }>
+rx_reply         = <{ r'^(\d{3})([ \-]?)(.*)$' }>
+rx_extension     = <{ r'\.([A-Za-z0-9]+)$' }>
+rx_identifier    = <{ r'^<([^<>@]+)@([^<>@]+)>$' }>
+rx_field_name    = <{ r'^[\x21-\x39\x3B-\x7E]+$' }>
+rx_header_control = <{ r'[\x00-\x08\x0A-\x1F\x7F]' }>
+rx_enhanced      = <{ r'(?:^| )([245]\.[0-9]{1,3}\.[0-9]{1,3})(?: |$)' }>
+rx_basename      = <{ r'([^\/\\:]+)$' }>
+
+----------------------------------------------------------------------------------------------------------------------
+-- Encoding helpers
+
+-- Base64 encode Data (up to B64_CHUNK bytes) as a single unbroken line.
+
+function base64(Data:str):str
+   Data ?! return ''
+   err, size = mCrypto.Base64Encode(Data, CC_STANDARD, array<byte> { })
+   if err != ERR_Okay then raise err, 'Base64 encoding failed: ' .. mSys.GetErrorMsg(err) end
+   output = array<byte, size>
+   err, size = mCrypto.Base64Encode(Data, CC_STANDARD, output)
+   if err != ERR_Okay then raise err, 'Base64 encoding failed: ' .. mSys.GetErrorMsg(err) end
+   return output.getString(0, size)
+end
+
+-- Base64 encode Data of any size as 76 character lines terminated with CRLF, per RFC 2045.
+
+function base64Lines(Data:str):str
+   lines = array<str> { }
+   for offset in {0 to #Data by B64_CHUNK} do
+      encoded = base64(Data.sub(offset, math.min(offset + B64_CHUNK, #Data)))
+      for pos in {0 to #encoded by 76} do
+         lines.push(encoded.sub(pos, math.min(pos + 76, #encoded)))
+      end
+   end
+   lines.push('')
+   return lines.concat('\r\n')
+end
+
+function randomHex(Bytes:num):str
+   data = array<byte, Bytes>
+   check mCrypto.RandomBytes(data)
+   hex = array<str> { }
+   for _, value in data do hex.push(string.format('%02x', value & 0xff)) end
+   return hex.concat('')
+end
+
+function rejectControl(Value:str, Field:str)
+   if Value.find('\r') or Value.find('\n') or Value.find('\0') then
+      raise ERR_InvalidValue, f'The {Field} value contains a line break or null byte.'
+   end
+end
+
+-- RFC 2047 encoded-words for non-ASCII header text.  Words are split on UTF-8 character boundaries.
+
+function encodeWords(Text:str):str
+   words = array<str> { }
+   pos = 0
+   while pos < #Text do
+      stop = math.min(pos + 45, #Text)
+      while stop < #Text and stop > pos + 1 and (Text.byte(stop) & 0xc0) is 0x80 do stop -= 1 end
+      words.push('=?UTF-8?B?' .. base64(Text.sub(pos, stop)) .. '?=')
+      pos = stop
+   end
+   return words.concat('\r\n ')
+end
+
+function headerText(Value:str, Field:str):str
+   rejectControl(Value, Field)
+   if rx_non_ascii.test(Value) or #Value > 900 then return encodeWords(Value) end
+   return Value
+end
+
+-- Return the bare mailbox from 'user@host' or 'Name <user@host>' for use in the SMTP envelope.
+
+function mailbox(Address:str, Field:str):str
+   rejectControl(Address, Field)
+   _, addr = rx_display_name.extract(Address)
+   addr ?= Address
+   addr = addr.trim()
+   local_part, domain = rx_mailbox.extract(addr)
+   if #addr > 254 or rx_non_ascii.test(addr) or rx_control.test(addr) or not local_part or
+      #local_part > 64 or (not local_part.startsWith('"') and not rx_dot_atom.test(local_part)) or
+      not (rx_domain.test(domain) or rx_domain_literal.test(domain)) then
+      raise ERR_InvalidValue, f'Invalid {Field} address "{Address}".'
+   end
+   if not domain.startsWith('[') then
+      for _, label in domain.split('.') do
+         if #label > 63 then raise ERR_InvalidValue, f'Invalid {Field} address "{Address}".' end
+      end
+   end
+   return addr
+end
+
+-- Return an address formatted for a header, encoding a non-ASCII display name.
+
+function headerAddress(Address:str, Field:str):str
+   mailbox(Address, Field)
+   name, addr = rx_display_name.extract(Address)
+   if name is nil then return Address.trim() end
+   name = name.trim()
+   if name.startsWith('"') then
+      quoted = rx_quoted_name.extract(name)
+      if quoted is nil then raise ERR_InvalidValue, f'Invalid {Field} display name "{name}".' end
+      name = rx_quoted_pair.replace(quoted, '$1')
+   end
+   if rx_control.test(name) then raise ERR_InvalidValue, f'Invalid {Field} display name "{name}".' end
+   if #name is 0 then return '<' .. addr.trim() .. '>' end
+   if rx_non_ascii.test(name) or #name > 700 then
+      name = encodeWords(name)
+   elseif not rx_phrase.test(name) then
+      name = '"' .. name.replace('\\', '\\\\').replace('"', '\\"') .. '"'
+   end
+   return name .. ' <' .. addr.trim() .. '>'
+end
+
+-- Normalise a string, array or table of addresses to an array.
+
+function addressList(Value:any, Field:str):array<str>
+   list = array<str> { }
+   if Value is nil then
+      return list
+   end
+
+   if Value is <str> then
+      list.push(Value)
+   elseif Value is <array> or Value is <table> then
+      for _, address in Value do
+         if not (address is <str>) then raise ERR_InvalidValue, f'The {Field} list must only contain strings.' end
+         list.push(address)
+      end
+   else
+      raise ERR_InvalidValue, f'The {Field} value must be a string, array or table.'
+   end
+
+   return list
+end
+
+-- Sequence tables must use consecutive zero-based keys so that header order is unambiguous.
+
+function orderedList(Value:any, Field:str):array<any>
+   result = array<any> { }
+   if Value is nil then return result end
+   if not (Value is <table> or Value is <array>) then
+      raise ERR_InvalidValue, f'The {Field} value must be an ordered array or table.'
+   end
+   count = Value is <array> ? #Value : table.size(Value)
+   for i in {0 to count} do
+      if Value[i] is nil then raise ERR_InvalidValue, f'The {Field} list requires consecutive zero-based keys.' end
+      result.push(Value[i])
+   end
+   return result
+end
+
+function identifier(Value:any, Field:str):str
+   if not (Value is <str>) then raise ERR_InvalidValue, f'Invalid {Field} identifier.' end
+   left, right = rx_identifier.extract(Value)
+   if #Value > 900 or not left or not rx_dot_atom.test(left) or
+      not (rx_dot_atom.test(right) or rx_domain_literal.test(right)) then
+      raise ERR_InvalidValue, f'Invalid {Field} identifier.'
+   end
+   return Value
+end
+
+RESERVED_HEADERS <const> = {
+   ['from']=true, to=true, cc=true, bcc=true, ['reply-to']=true, subject=true, date=true,
+   ['message-id']=true, ['in-reply-to']=true, references=true, ['mime-version']=true,
+   ['content-type']=true, ['content-transfer-encoding']=true, ['content-disposition']=true,
+   ['return-path']=true, received=true
+}
+
+-- Fold unstructured ASCII values at whitespace only; indivisible tokens must fit a 998 byte physical line.
+
+function customHeader(Name:str, Value:str):str
+   if not rx_field_name.test(Name) or RESERVED_HEADERS[Name.lower()] then
+      raise ERR_InvalidValue, 'Invalid or reserved custom header name.'
+   end
+   if rx_non_ascii.test(Value) or rx_header_control.test(Value) then
+      raise ERR_InvalidValue, 'Custom header values must be ASCII without prohibited controls.'
+   end
+   line = Name .. ': '
+   lines = array<str> { }
+   for _, match in r'[^ \t]+[ \t]*'.search(Value) do
+      token = match[0]
+      if #line + #token > 78 and #line > 1 then
+         lines.push(line.rtrim())
+         line = ' '
+      end
+      line ..= token
+      if #line.rtrim() > 998 then raise ERR_InvalidValue, 'A custom header exceeds 998 bytes.' end
+   end
+   lines.push(line.rtrim())
+   return lines.concat('\r\n')
+end
+
+function outcome(Code:str, Stage:str, Acceptance:str, Retryable:bool):table
+   return { code=Code, stage=Stage, acceptance=Acceptance, retryable=Retryable }
+end
+
+function snapshot(Details:table):table
+   copy = { }
+   for key, value in Details do copy[key] = value end
+   return copy
+end
+
+function notify(Callback:func, Success:bool, Text:str, Details:table)
+   if Callback then
+      try
+         Callback(Success, Text, snapshot(Details))
+      except e
+         msg('[SMTP] Completion callback failed.')
+      end
+   end
+end
+
+function formatDate(Micros:num):str
+   seconds = math.floor(Micros / 1000000)
+   days    = math.floor(seconds / 86400)
+   sod     = seconds - days * 86400
+
+   -- Civil date from days since 1970-01-01 (H. Hinnant's algorithm)
+   z     = days + 719468
+   era   = math.floor(z / 146097)
+   doe   = z - era * 146097
+   yoe   = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365)
+   doy   = doe - (365 * yoe + math.floor(yoe / 4) - math.floor(yoe / 100))
+   mp    = math.floor((5 * doy + 2) / 153)
+   day   = doy - math.floor((153 * mp + 2) / 5) + 1
+   month = mp < 10 ? mp + 3 : mp - 9
+   year  = yoe + era * 400 + (month <= 2 ? 1 : 0)
+   weekday = (days + 4) % 7
+   if weekday < 0 then weekday += 7 end
+
+   return string.format('%s, %02d %s %d %02d:%02d:%02d +0000', DAYS[weekday], day, MONTHS[month - 1], year,
+      math.floor(sod / 3600), math.floor(sod / 60) % 60, sod % 60)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- MIME construction.  A part is a table of { headers=array<str>, body=str } or { subtype=str, parts=array }.
+
+function textPart(Type:str, Text:str):table
+   text = Text.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
+
+   if rx_non_ascii.test(text) or rx_long_line.test(text) or text.find('\0') then
+      return {
+         headers = array<str> { f'Content-Type: {Type}; charset=UTF-8', 'Content-Transfer-Encoding: base64' },
+         body = base64Lines(text)
+      }
+   end
+
+   return {
+      headers = array<str> { f'Content-Type: {Type}; charset=UTF-8', 'Content-Transfer-Encoding: 7bit' },
+      body = text
+   }
+end
+
+function attachmentPart(Attachment:any):table
+   if not (Attachment is <table>) then raise ERR_InvalidValue, 'Each attachment must be a table.' end
+
+   local content:str
+   if Attachment.content is <str> then
+      content = Attachment.content
+   elseif Attachment.path is <str> then
+      try
+         content = io.readAll(Attachment.path)
+      except e
+         raise ERR_File, f'Unable to read attachment "{Attachment.path}": {e.message}'
+      end
+   else
+      raise ERR_InvalidValue, 'An attachment requires a path or content string.'
+   end
+
+   name = Attachment.name or (Attachment.path and rx_basename.extract(Attachment.path)) or 'attachment'
+   rejectControl(name, 'attachment name')
+
+   content_type = Attachment.contentType
+   if not content_type then
+      ext = rx_extension.extract(name)
+      content_type = (ext and MIME_TYPES[ext.lower()]) or 'application/octet-stream'
+   end
+
+   rejectControl(content_type, 'attachment contentType')
+
+   kind = Attachment.disposition or 'attachment'
+   local disposition
+   escaped = name.replace('\\', '\\\\').replace('"', '\\"')
+   if rx_non_ascii.test(name) or #escaped > 900 then -- RFC 2231 parameter encoding and continuations
+      encoded = array<str> { }
+      for i in {0 to #name} do
+         b = name.byte(i)
+         if (b >= 0x30 and b <= 0x39) or (b >= 0x41 and b <= 0x5a) or (b >= 0x61 and b <= 0x7a) or b is 0x2e or
+            b is 0x2d or b is 0x5f then
+            encoded.push(string.char(b))
+         else
+            encoded.push(string.format('%%%02X', b))
+         end
+      end
+
+      value = encoded.concat('')
+      if #value <= 60 then
+         disposition = kind .. "; filename*=UTF-8''" .. value
+      else
+         segments = array<str> { }
+         chunk = "UTF-8''"
+         for _, token in encoded do
+            if #chunk + #token > 60 then
+               segments.push(chunk)
+               chunk = ''
+            end
+            chunk ..= token
+         end
+         segments.push(chunk)
+         parameters = array<str> { kind }
+         for i, segment in segments do parameters.push(f'filename*{i}*={segment}') end
+         disposition = parameters.concat(';\r\n ')
+      end
+   else
+      disposition = kind .. '; filename="' .. escaped .. '"'
+   end
+
+   headers = array<str> {
+      'Content-Type: ' .. content_type, 'Content-Transfer-Encoding: base64',
+      'Content-Disposition: ' .. disposition
+   }
+   if Attachment.contentID then headers.push('Content-ID: <' .. Attachment.contentID .. '>') end
+   return { headers=headers, body=base64Lines(content) }
+end
+
+function renderPart(Part:table, Headers:array<str>):str
+   headers = Headers ? Headers.clone() : array<str> { }
+   local body:str
+
+   if Part.parts then
+      boundary = '=_' .. randomHex(16)
+      headers.push(f'Content-Type: multipart/{Part.subtype}; boundary="{boundary}"')
+      sections = array<str> { }
+      for _, child in Part.parts do
+         sections.push('--' .. boundary .. '\r\n' .. renderPart(child, nil) .. '\r\n')
+      end
+
+      sections.push('--' .. boundary .. '--\r\n')
+      body = sections.concat('')
+   else
+      for _, header in Part.headers do headers.push(header) end
+      body = Part.body
+   end
+
+   header_data = headers.concat('\r\n')
+   if rx_long_line.test(header_data) then raise ERR_InvalidValue, 'A generated header exceeds 998 bytes.' end
+   return header_data .. '\r\n\r\n' .. body
+end
+
+@Doc(text=[[
+Validates a message and builds its SMTP envelope and RFC 5322 content without sending it.
+
+This is the function that clients use to prepare each message, and it can be called directly to inspect the generated
+output or to hand a message to another transport.  Addresses must be ASCII mailboxes; display names, the subject and
+attachment names may contain any text and are encoded as required.  Bcc recipients are included in the envelope but are
+never written to the headers.  A `Message-ID` is generated from the sender's domain if `messageID` is not supplied.
+
+The Message table accepts the `from`, `to`, `cc`, `bcc`, `replyTo`, `subject`, `body`, `html`, `attachments`,
+`envelopeFrom`, `messageID`, `inReplyTo`, `references` and `headers` fields.  Refer to the SMTP API manual for the
+format of each field.
+
+An `ERR_InvalidValue` exception is raised for malformed input, and `ERR_File` if an attachment cannot be read.
+
+-INPUT-
+Message: The message to prepare.  The `from` field and at least one `to`, `cc` or `bcc` recipient are required.
+
+-RESULTS-
+table: The envelope, containing `from` (the `MAIL FROM` mailbox, or an empty string for the null reverse-path),
+`recipients` (an array of bare mailboxes), `data` (the message content with CRLF line endings, not dot-stuffed) and
+`messageID`.
+]])
+smtp.prepare = function(Message:table!):table
+   if not (Message.from is <str>) then raise ERR_InvalidValue, 'A from address is required.' end
+
+   to = addressList(Message.to, 'to')
+   cc = addressList(Message.cc, 'cc')
+   bcc = addressList(Message.bcc, 'bcc')
+
+   recipients = array<str> { }
+   for _, address in to do recipients.push(mailbox(address, 'to')) end
+   for _, address in cc do recipients.push(mailbox(address, 'cc')) end
+   for _, address in bcc do recipients.push(mailbox(address, 'bcc')) end
+   if #recipients is 0 then raise ERR_InvalidValue, 'At least one to, cc or bcc recipient is required.' end
+
+   sender = mailbox(Message.from, 'from')
+   _, domain = rx_mailbox.extract(sender)
+   envelope_sender = Message.envelopeFrom
+   envelope_sender ?= sender
+   if not (envelope_sender is <str>) or
+      (#envelope_sender > 0 and mailbox(envelope_sender, 'envelopeFrom') != envelope_sender) then
+      raise ERR_InvalidValue, 'The envelopeFrom value must be a bare ASCII mailbox or an empty string.'
+   end
+   message_id = Message.messageID
+   message_id ?= '<' .. randomHex(16) .. '@' .. domain .. '>'
+   identifier(message_id, 'messageID')
+
+   clock <close> = obj.new('time')
+   check clock.acQuery()
+
+   headers = array<str> { }
+   headers.push('Date: ' .. formatDate(clock.systemTime))
+   headers.push('From: ' .. headerAddress(Message.from, 'from'))
+
+   if #to > 0 then
+      formatted = array<str> { }
+      for _, address in to do formatted.push(headerAddress(address, 'to')) end
+      headers.push('To: ' .. formatted.concat(',\r\n '))
+   end
+
+   if #cc > 0 then
+      formatted = array<str> { }
+      for _, address in cc do formatted.push(headerAddress(address, 'cc')) end
+      headers.push('Cc: ' .. formatted.concat(',\r\n '))
+   end
+
+   if Message.replyTo then headers.push('Reply-To: ' .. headerAddress(Message.replyTo, 'replyTo')) end
+
+   headers.push('Message-ID: ' .. message_id)
+   if Message.inReplyTo != nil then headers.push('In-Reply-To: ' .. identifier(Message.inReplyTo, 'inReplyTo')) end
+   refs = orderedList(Message.references, 'references')
+   if #refs > 0 then
+      formatted = array<str> { }
+      for _, ref in refs do formatted.push(identifier(ref, 'references')) end
+      headers.push('References: ' .. formatted.concat('\r\n '))
+   end
+   for _, header in orderedList(Message.headers, 'headers') do
+      if not (header is <table>) or not (header.name is <str>) or not (header.value is <str>) then
+         raise ERR_InvalidValue, 'Each custom header requires name and value strings.'
+      end
+      headers.push(customHeader(header.name, header.value))
+   end
+   headers.push('Subject: ' .. headerText(Message.subject or '', 'subject'))
+   headers.push('MIME-Version: 1.0')
+
+   has_text = Message.body is <str> and #Message.body > 0
+   has_html = Message.html is <str> and #Message.html > 0
+
+   inline_parts = array<table> { }
+   attachments = array<table> { }
+   content_ids = { }
+   for _, attachment in orderedList(Message.attachments, 'attachments') do
+      if not (attachment is <table>) then raise ERR_InvalidValue, 'Each attachment must be a table.' end
+      kind = attachment.disposition
+      kind ?= 'attachment'
+      if kind != 'attachment' and kind != 'inline' then
+         raise ERR_InvalidValue, 'Unsupported attachment disposition.'
+      end
+      if kind is 'inline' then
+         if not has_html then raise ERR_InvalidValue, 'Inline attachments require a non-empty HTML body.' end
+         if not (attachment.contentID is <str>) or #attachment.contentID is 0 then
+            raise ERR_InvalidValue, 'Inline attachments require a Content-ID.'
+         end
+         identifier('<' .. attachment.contentID .. '>', 'contentID')
+         if content_ids[attachment.contentID] then raise ERR_InvalidValue, 'Duplicate inline Content-ID.' end
+         content_ids[attachment.contentID] = true
+         inline_parts.push(attachmentPart(attachment))
+      else
+         if attachment.contentID != nil then raise ERR_InvalidValue, 'Content-ID requires inline disposition.' end
+         attachments.push(attachmentPart(attachment))
+      end
+   end
+
+   local html_part:table
+   if has_html then
+      html_part = textPart('text/html', Message.html)
+      if #inline_parts > 0 then
+         parts = array<table> { html_part }
+         for _, part in inline_parts do parts.push(part) end
+         html_part = { subtype='related', parts=parts }
+      end
+   end
+
+   local content:table
+   if has_text and has_html then
+      content = { subtype='alternative', parts=array<table> { textPart('text/plain', Message.body), html_part } }
+   elseif has_html then
+      content = html_part
+   else
+      content = textPart('text/plain', Message.body or '')
+   end
+
+   if #attachments > 0 then
+      parts = array<table> { }
+      if has_text or has_html then parts.push(content) end
+      for _, part in attachments do parts.push(part) end
+      content = { subtype='mixed', parts=parts }
+   end
+
+   data = renderPart(content, headers)
+   if not data.endsWith('\r\n') then data ..= '\r\n' end
+
+   return { from=envelope_sender, recipients=recipients, data=data, messageID=message_id }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- SMTP client
+
+@Doc(text=[[
+Creates an SMTP client from a configuration table.
+
+The configuration is validated and copied, so later changes to the Config table have no effect.  No connection is made
+until a message is sent.  Setting `provider` applies a preset from `smtp.providers` (`gmail`, `outlook`, `yahoo` or
+`icloud`), and explicit `host`, `port` and `starttls` values take precedence over the preset.  Setting `ssl` selects
+implicit TLS, and replaces the port and STARTTLS mode of a preset.
+
+Authentication is attempted when `username` is set together with `password`, `oauth2Token` or
+`oauth2TokenProvider`.  OAuth2 credentials select `XOAUTH2`, otherwise `PLAIN` or `LOGIN` is used.  Credentials are
+never sent over an unencrypted connection unless `allowInsecureAuth` is `true`, and they are redacted from result
+messages and log output.
+
+Each send opens a new session and closes it after the message is accepted.  A client handles one session at a time.
+
+An `ERR_InvalidValue` exception is raised if the host is missing, the provider is unknown, the port is out of range,
+the hostname or username contains a line break or null byte, the OAuth2 token is invalid, or `oauth2TokenProvider` is
+not a function.
+
+-INPUT-
+Config: Client configuration.  Supported options are `provider`, `host`, `port`, `ssl`, `starttls`, `username`,
+`password`, `oauth2Token`, `oauth2TokenProvider`, `hostname`, `verifyCert`, `allowInsecureAuth` and `timeout`.
+
+-RESULTS-
+table: The new client, providing `send()`, `sendSync()`, `disconnect()`, `setOAuth2Token()` and `isBusy()`.
+]])
+smtp.smtpClient = function(Config:table):table
+   config = { }
+   for key, value in Config or { } do
+      config[key] = value
+   end
+
+   if config.provider then
+      preset = smtp.providers[config.provider]
+      preset ?! raise ERR_InvalidValue, f'Unknown SMTP provider "{config.provider}".'
+
+      for key, value in preset do
+         -- Implicit TLS overrides the preset's STARTTLS port and mode
+         if not (config.ssl and (key is 'port' or key is 'starttls')) then
+            config[key] ?= value
+         end
+      end
+   end
+
+   if not (config.host is <str>) or #config.host is 0 then
+      raise ERR_InvalidValue, 'An SMTP host is required.'
+   end
+
+   host          = config.host
+   port          = config.port or (config.ssl and 465 or (config.starttls and 587 or 25))
+   use_ssl       = config.ssl is true
+   use_starttls  = config.starttls is true and not use_ssl
+   username      = config.username
+   password      = config.password
+   oauth2_token  = config.oauth2Token
+   token_provider = config.oauth2TokenProvider
+   hostname      = config.hostname or 'localhost'
+   verify_cert   = config.verifyCert != false
+   insecure_auth = config.allowInsecureAuth is true
+   timeout       = config.timeout or 60
+
+   if not (port is <num>) or port < 1 or port > 65535 then raise ERR_InvalidValue, 'Invalid SMTP port.' end
+   rejectControl(hostname, 'hostname')
+   if username then rejectControl(username, 'username') end
+
+   function validToken(Token:any):bool
+      return Token is <str> and #Token > 0 and #Token <= 65536 and not rx_control.test(Token)
+   end
+   if oauth2_token != nil and not validToken(oauth2_token) then
+      raise ERR_InvalidValue, 'An OAuth2 token must be a non-empty string without controls, at most 65536 bytes.'
+   end
+   if token_provider != nil and not (token_provider is <func>) then
+      raise ERR_InvalidValue, 'The oauth2TokenProvider value must be a synchronous function.'
+   end
+
+   client = { }
+
+   -- Session state
+
+   local sock:obj, timer, on_complete, envelope:table, auth_mechanisms:table, caps:table
+   local session_token:str, active_reply:table, completion:table
+   local next_timeout:num -- Set by sendSync() to override the timeout of the session that send() starts
+
+   generation    = 0 -- Incremented per session so that callbacks from a closed socket are ignored
+   state         = 'idle'
+   tls_active    = false
+   tls_pending   = false
+   reported      = false
+   submission_possible = false
+   recipient_idx = 0
+   in_data       = ''
+   reply_lines   = array<str> { }
+   reply_size    = 0 -- Bytes received for the reply in reply_lines, including the line being parsed
+   out_data      = ''
+   out_offset    = 0
+   writing       = false
+   read_buffer   = array<byte, 8192>
+
+   function close()
+      generation++
+      if timer then
+         mSys.UpdateTimer(timer, 0)
+         timer = nil
+      end
+
+      if sock then
+         -- The socket may be in use by the callback that triggered closure, so release it on the next cycle.
+         socket = sock
+         sock = nil
+         processing.delayedCall(function() socket.free() end)
+      end
+
+      state       = 'idle'
+      envelope    = nil
+      in_data     = ''
+      out_data    = ''
+      out_offset  = 0
+      writing     = false
+      reply_lines = array<str> { }
+      reply_size  = 0
+      session_token = nil
+      active_reply = nil
+      tls_pending = false
+   end
+
+   function stage():str
+      if state is 'preparing' then return 'preparation' end
+      if state is 'starttls' or state is 'handshake' or (tls_pending and state is 'greeting') then return 'tls' end
+      if state.startsWith('auth') then return 'authentication' end
+      if state is 'mail' or state is 'rcpt' then return 'envelope' end
+      if state is 'data' then return 'data' end
+      if state is 'message' or state is 'quit' then return 'acceptance' end
+      return 'connection'
+   end
+
+   function details(Code:str, Reply:table, TransportError:num):table
+      result_stage = stage()
+      code = Code
+      if not code then
+         if result_stage is 'authentication' then code = 'auth_failed'
+         elseif state is 'rcpt' then code = 'recipient_rejected'
+         elseif state is 'mail' then code = 'sender_rejected'
+         elseif state is 'data' or state is 'message' then code = 'data_rejected'
+         elseif result_stage is 'tls' then code = 'tls_failed'
+         else code = 'connection_failed' end
+      end
+      reply = Reply
+      if not Code then reply ?= active_reply end
+      negative = reply and reply.code >= 400 and reply.code < 600
+      acceptance = submission_possible ? 'unknown' : 'not_sent'
+      if negative then acceptance = 'rejected' end
+      retryable = acceptance != 'unknown' and (negative and reply.code < 500 or
+         (not negative and (code is 'timeout' or code is 'connection_failed' or code is 'transport_failed')))
+      result = outcome(code, result_stage, acceptance, retryable and true or false)
+      if envelope then result.messageID = envelope.messageID end
+      if state is 'rcpt' and envelope then result.recipient = envelope.recipients[recipient_idx] end
+      if reply then
+         result.smtpCode = reply.code
+         result.enhancedStatus = rx_enhanced.extract(reply.lines.concat(' '))
+      end
+      result.transportError = TransportError
+      return result
+   end
+
+   -- Redact secrets even if a hostile server echoes them in a reply.  Provider exceptions are never exposed.
+
+   function redact(Text:str):str
+      text = Text
+      for _, secret in array<any> { password, oauth2_token, session_token } do
+         if secret is <str> and #secret > 0 then
+            text = text.replace(secret, '<redacted>')
+            text = text.replace(base64(secret), '<redacted>')
+         end
+      end
+      if session_token then
+         text = text.replace(base64('user=' .. username .. '\x01auth=Bearer ' .. session_token .. '\x01\x01'),
+            '<redacted>')
+      end
+      if username and password then
+         text = text.replace(base64('\0' .. username .. '\0' .. password), '<redacted>')
+      end
+      return text
+   end
+
+   function report(Success:bool, Text:str, Details:table)
+      if reported then return end
+      reported = true
+      completion.success = Success
+      completion.text = Text
+      completion.details = snapshot(Details)
+      callback = on_complete
+      on_complete = nil
+      if not Success then msg('[SMTP] ' .. Text) end
+      notify(callback, Success, Text, Details)
+   end
+
+   function fail(Text:str, Code:str, Reply:table, TransportError:num):table
+      result = details(Code, Reply, TransportError)
+      if state is 'idle' then return result end
+      text = redact(Text)
+      close()
+      report(false, text, result)
+      return result
+   end
+
+   function replyText(Reply:table):str
+      if #Reply.lines > 0 then return Reply.code .. ' ' .. Reply.lines.concat(' ') end
+      return tostring(Reply.code)
+   end
+
+   -- Output is chunked so that large messages do not exceed the socket's write queue limits.  When the queue is
+   -- full, the outgoing callback resumes writing after the queue drains.
+
+   function flush():bool
+      while sock and out_offset < #out_data do
+         size = math.min(WRITE_CHUNK, #out_data - out_offset)
+         -- A write containing the DATA terminator can reach the peer before its result is observed.
+         if state is 'message' and out_offset + size >= #out_data then submission_possible = true end
+         session = generation
+         err, written = sock.acWrite(out_data.sub(out_offset, out_offset + size))
+         if session != generation then return true end
+         out_offset += written or 0
+
+         if err is ERR_BufferOverflow or (err is ERR_Okay and (written or 0) < size) then
+            return false
+         elseif err != ERR_Okay then
+            fail('Write failed: ' .. mSys.GetErrorMsg(err), 'transport_failed', nil, err)
+            return true
+         end
+      end
+
+      out_data = ''
+      out_offset = 0
+      return true
+   end
+
+   function onOutgoing():num
+      session = generation
+      if not sock or flush() then
+         if session is generation then writing = false end
+         return ERR_Terminate
+      end
+      return ERR_Okay
+   end
+
+   function write(Data:str, LogText:str)
+      msg('[SMTP] > ' .. (LogText or Data.rtrim()))
+      if out_offset < #out_data then
+         out_data ..= Data
+      else
+         out_data = Data
+         out_offset = 0
+      end
+
+      if not writing and not flush() and sock then
+         writing = true
+         session = generation
+         sock.outgoing = function(Socket):num
+            if session != generation then return ERR_Terminate end
+            return onOutgoing()
+         end
+      end
+   end
+
+   function hasCredentials():bool
+      return username and (password or oauth2_token or token_provider) and true or false
+   end
+
+   function sendEhlo()
+      caps = { }
+      auth_mechanisms = { }
+      state = 'ehlo'
+      write('EHLO ' .. hostname .. '\r\n')
+   end
+
+   function startMail()
+      if caps.SIZE then
+         limit = tonumber(caps.SIZE)
+         if limit and limit > 0 and #envelope.data > limit then
+            state = 'mail'
+            fail(f'The message size of {#envelope.data} bytes exceeds the server limit of {limit} bytes.',
+               'message_too_large')
+            return
+         end
+
+         state = 'mail'
+         write(f'MAIL FROM:<{envelope.from}> SIZE={#envelope.data}\r\n')
+      else
+         state = 'mail'
+         write(f'MAIL FROM:<{envelope.from}>\r\n')
+      end
+   end
+
+   function startAuth()
+      state = 'auth'
+      if not tls_active and not insecure_auth then
+         fail('Refusing to send credentials over an unencrypted connection; enable ssl or starttls.')
+      elseif oauth2_token or token_provider then
+         if not auth_mechanisms.XOAUTH2 then
+            fail('The server does not support XOAUTH2 authentication.')
+            return
+         end
+         session = generation
+         local candidate:any
+         try
+            candidate = token_provider ? token_provider() : oauth2_token
+         except e
+            if session is generation and state != 'idle' then
+               fail('The OAuth2 token provider failed.', 'oauth2_provider_failed')
+            end
+            return
+         end
+         if session != generation or state is 'idle' then return end
+         if not validToken(candidate) then
+            fail('The OAuth2 token provider returned an invalid token.', 'oauth2_provider_failed')
+            return
+         end
+         session_token = candidate
+         state = 'auth_xoauth2'
+         token = base64('user=' .. username .. '\x01auth=Bearer ' .. session_token .. '\x01\x01')
+         write('AUTH XOAUTH2 ' .. token .. '\r\n', 'AUTH XOAUTH2 <redacted>')
+      elseif auth_mechanisms.PLAIN then
+         state = 'auth_plain'
+         write('AUTH PLAIN ' .. base64('\0' .. username .. '\0' .. password) .. '\r\n', 'AUTH PLAIN <redacted>')
+      elseif auth_mechanisms.LOGIN then
+         state = 'auth_login'
+         write('AUTH LOGIN\r\n')
+      else
+         fail('The server does not offer a supported authentication method (PLAIN, LOGIN or XOAUTH2).')
+      end
+   end
+
+   function afterEhlo()
+      if use_starttls and not tls_active then
+         if not caps.STARTTLS then
+            state = 'starttls'
+            fail('The server does not support STARTTLS.')
+            return
+         end
+         state = 'starttls'
+         write('STARTTLS\r\n')
+      elseif hasCredentials() then
+         startAuth()
+      else
+         startMail()
+      end
+   end
+
+   -- Reply handlers, one for each state that awaits a server reply
+
+   handlers = { }
+
+   handlers.greeting = function(Reply:table)
+      if Reply.code is 220 then
+         sendEhlo()
+      else
+         fail('Server rejected the connection: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.ehlo = function(Reply:table)
+      if Reply.code is 250 then
+         for i in {1 to #Reply.lines} do
+            words = Reply.lines[i].split(' ')
+            if #words > 0 then
+               keyword = words[0].upper()
+               if keyword.startsWith('AUTH=') then -- Legacy form
+                  auth_mechanisms[keyword.sub(5)] = true
+                  keyword = 'AUTH'
+               end
+
+               caps[keyword] = #words > 1 ? words[1] : true
+               if keyword is 'AUTH' then
+                  for j in {1 to #words} do auth_mechanisms[words[j].upper()] = true end
+               end
+            end
+         end
+
+         afterEhlo()
+      elseif (Reply.code is 500 or Reply.code is 502) and not use_starttls and not hasCredentials() then
+         state = 'helo'
+         write('HELO ' .. hostname .. '\r\n')
+      else
+         fail('EHLO failed: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.helo = function(Reply:table)
+      if Reply.code is 250 then
+         if hasCredentials() then startAuth() else startMail() end
+      else
+         fail('HELO failed: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.starttls = function(Reply:table)
+      if Reply.code != 220 then
+         fail('STARTTLS failed: ' .. replyText(Reply))
+         return
+      end
+
+      -- Plaintext received after the 220 reply would be treated as if it arrived over TLS (CVE-2011-0411).
+      if #in_data > 0 then
+         fail('Unexpected data received before the TLS handshake.')
+         return
+      end
+
+      err = mNet.SetSSL(sock, 'EnableSSL')
+      if err != ERR_Okay then
+         fail('TLS negotiation failed: ' .. mSys.GetErrorMsg(err), 'tls_failed', nil, err)
+         return
+      end
+
+      tls_active = true
+      if sock.state is NTC_HANDSHAKING then
+         state = 'handshake' -- EHLO is sent from onFeedback() when the handshake completes
+      else
+         sendEhlo()
+      end
+   end
+
+   handlers.auth_plain = function(Reply:table)
+      if Reply.code is 235 then
+         startMail()
+      else
+         fail('Authentication failed: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.auth_login = function(Reply:table)
+      if Reply.code is 334 then
+         state = 'auth_login_user'
+         write(base64(username) .. '\r\n', '<redacted>')
+      else
+         fail('AUTH LOGIN failed: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.auth_login_user = function(Reply:table)
+      if Reply.code is 334 then
+         state = 'auth_login_pass'
+         write(base64(password or '') .. '\r\n', '<redacted>')
+      else
+         fail('Authentication failed: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.auth_login_pass = handlers.auth_plain
+
+   handlers.auth_xoauth2 = function(Reply:table)
+      if Reply.code is 235 then
+         startMail()
+      elseif Reply.code is 334 then
+         -- The server has sent a base64 JSON error.  RFC 7628 requires an empty response to obtain the final reply.
+         state = 'auth_xoauth2_error'
+         write('\r\n', '<empty>')
+      else
+         fail('OAuth2 authentication failed: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.auth_xoauth2_error = function(Reply:table)
+      fail('OAuth2 authentication failed: ' .. replyText(Reply))
+   end
+
+   handlers.mail = function(Reply:table)
+      if Reply.code is 250 then
+         recipient_idx = 0
+         state = 'rcpt'
+         write(f'RCPT TO:<{envelope.recipients[0]}>\r\n')
+      else
+         fail('MAIL FROM rejected: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.rcpt = function(Reply:table)
+      if Reply.code is 250 or Reply.code is 251 then
+         recipient_idx++
+         if recipient_idx < #envelope.recipients then
+            write(f'RCPT TO:<{envelope.recipients[recipient_idx]}>\r\n')
+         else
+            state = 'data'
+            write('DATA\r\n')
+         end
+      else
+         fail(f'Recipient {envelope.recipients[recipient_idx]} rejected: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.data = function(Reply:table)
+      if Reply.code is 354 then
+         state = 'message'
+         content = envelope.data.replace('\r\n.', '\r\n..')
+         write(content .. '.\r\n', f'<message of {#content} bytes>')
+      else
+         fail('DATA rejected: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.message = function(Reply:table)
+      if Reply.code is 250 then
+         result = outcome('accepted', 'acceptance', 'accepted', false)
+         result.smtpCode = Reply.code
+         result.enhancedStatus = rx_enhanced.extract(Reply.lines.concat(' '))
+         result.messageID = envelope.messageID
+         state = 'quit'
+         session = generation
+         report(true, 'Message accepted: ' .. redact(replyText(Reply)), result)
+         if session is generation and state is 'quit' then write('QUIT\r\n') end
+      else
+         fail('Message rejected: ' .. replyText(Reply))
+      end
+   end
+
+   handlers.quit = function(Reply:table)
+      close()
+   end
+
+   -- Split buffered input into complete replies.  Multi-line replies use 'NNN-' on all but the final line.  The
+   -- size limit covers every line of the reply, because continuation lines leave the input buffer as they arrive.
+
+   function processReplies()
+      while sock and #in_data > 0 do
+         pos = in_data.find('\n')
+         if pos is nil then break end
+         reply_size += pos + 1
+         if reply_size > MAX_REPLY_SIZE then
+            fail('The server reply exceeds the size limit.')
+            return
+         end
+         line = in_data.sub(0, pos).rtrim()
+         in_data = in_data.sub(pos + 1)
+         msg('[SMTP] < ' .. redact(line))
+
+         code, separator, text = rx_reply.extract(line)
+         if not code then
+            fail('Malformed server reply: ' .. line)
+            return
+         end
+
+         reply_lines.push(text)
+         if separator is '-' then continue end
+
+         reply = { code=tonumber(code), lines=reply_lines }
+         reply_lines = array<str> { }
+         reply_size  = 0
+
+         handler = handlers[state]
+         if handler then
+            active_reply = reply
+            session = generation
+            handler(reply)
+            if session != generation then return end
+            active_reply = nil
+         else
+            fail(f'Unexpected server reply in the {state} state: ' .. replyText(reply))
+         end
+      end
+   end
+
+   function onIncoming(Socket)
+      while true do
+         err, size = Socket.acRead(read_buffer)
+         if err is ERR_Okay then
+            if size is 0 then break end
+            in_data ..= read_buffer.getString(0, size)
+            if #in_data > MAX_REPLY_SIZE then
+               fail('The server reply exceeds the size limit.')
+               return
+            end
+         elseif err is ERR_InvalidState then -- TLS handshake in progress
+            break
+         elseif state is 'quit' then
+            close()
+            return
+         else
+            fail('Connection error: ' .. mSys.GetErrorMsg(err), 'transport_failed', nil, err)
+            return
+         end
+      end
+      processReplies()
+   end
+
+   function onFeedback(Socket, State)
+      if State is NTC_CONNECTED then
+         tls_pending = false
+         if state is 'handshake' then sendEhlo() end
+      elseif State is NTC_DISCONNECTED then
+         if state is 'quit' then
+            close()
+         else
+            reason = Socket.error != ERR_Okay ? mSys.GetErrorMsg(Socket.error) : 'closed by the server'
+            fail('Connection lost: ' .. reason, stage() is 'tls' ? 'tls_failed' : 'connection_failed',
+               nil, Socket.error != ERR_Okay ? Socket.error : nil)
+         end
+      end
+   end
+
+   function onTimeout()
+      timer = nil
+      if state is 'quit' then close() else fail('The SMTP session timed out.', 'timeout') end
+      raise ERR_Terminate
+   end
+
+   ----------------------------------------------------------------------------------------------------------------
+   -- Public methods
+
+   @Doc(text=[[
+Starts sending a message asynchronously and returns immediately.
+
+The message is prepared with smtp.prepare() and a new session is opened.  The Callback is called exactly once as
+`Callback(Success, Message, Details)` when the outcome is known, including when the send fails immediately.  The
+caller must continue to process messages, for example with `processing.sleep()`, until the callback is received.
+Exceptions raised by the callback are caught and logged.
+
+A failure closes the session before the Callback is called.  An accepted message is reported as soon as the server
+accepts it, while the session remains active until the server replies to `QUIT`.  A send() made from within the
+Callback of an accepted message therefore fails with the `busy` code.  To send another message, wait until isBusy()
+returns `false`, or use sendSync(), which waits for the session to close.
+
+If the message is invalid, the client is busy or the connection fails immediately, the same failure that is passed to
+the callback is also returned.
+
+-INPUT-
+Message: The message to send.  Refer to smtp.prepare() for the supported fields.
+Callback: Optional function that receives the result of the session.
+
+-RESULTS-
+bool: `true` if the session started, or `false` on immediate failure.
+str: Failure message on immediate failure.
+table: Result details on immediate failure, including the `code`, `stage`, `acceptance` and `retryable` fields.
+]])
+   client.send = function(Message:table, Callback:func):<bool, str, table>
+      session_timeout = next_timeout or timeout
+      next_timeout = nil
+
+      if state != 'idle' then
+         text = 'The SMTP client is busy.'
+         result = outcome('busy', 'preparation', 'not_sent', false)
+         notify(Callback, false, text, result)
+         return false, text, result
+      end
+
+      reported = false
+      completion = { }
+      local session_result = completion
+      submission_possible = false
+      on_complete = Callback
+      state = 'preparing'
+      try
+         envelope = smtp.prepare(Message)
+      except e
+         envelope = nil
+         result = fail(e.message, 'invalid_message')
+         return false, e.message, result
+      end
+
+      flags = NSF_KEEP_ALIVE
+      if use_ssl then flags = flags | NSF_SSL end
+      if not verify_cert then flags = flags | NSF_DISABLE_SERVER_VERIFY end
+
+      try
+         session = generation
+         sock = obj.new('netsocket', { name='smtp_client', flags=flags,
+            feedback=function(Socket, State) if session is generation and sock then onFeedback(Socket, State) end end,
+            incoming=function(Socket) if session is generation and sock then onIncoming(Socket) end end
+         })
+      except e
+         state = 'greeting'
+         text = 'Failed to create socket: ' .. e.message
+         result = fail(text, 'connection_failed', nil, e.code)
+         return false, text, result
+      end
+
+      tls_active = use_ssl
+      tls_pending = use_ssl
+      state = 'greeting'
+      in_data = ''
+      reply_lines = array<str> { }
+      reply_size = 0
+
+      err, timer = mSys.SubscribeTimer(session_timeout, onTimeout)
+      if err != ERR_Okay then
+         timer = nil
+         text = 'Failed to start session timer: ' .. mSys.GetErrorMsg(err)
+         result = fail(text, 'startup_failed', nil, err)
+         return false, text, result
+      end
+
+      msg(f'[SMTP] Connecting to {host}:{port}')
+      err = sock.mtConnect(host, port, session_timeout)
+      if session_result.details then
+         if session_result.success then return true end
+         return false, session_result.text, snapshot(session_result.details)
+      end
+      if err != ERR_Okay then
+         text = 'Connection failed: ' .. mSys.GetErrorMsg(err)
+         result = fail(text, 'connection_failed', nil, err)
+         return false, text, result
+      end
+      return true
+   end
+
+   @Doc(text=[[
+Sends a message and waits for the result of the session.
+
+Messages continue to be processed while waiting, so other asynchronous work in the program is not blocked.  After the
+message is accepted, this method waits up to two seconds for the server's reply to `QUIT` before closing the
+connection.  If the program receives a termination request while waiting, the session is cancelled with the
+`cancelled` code.
+
+The Details table is independent of the client.  Its `acceptance` field reports whether the server took
+responsibility for the message (`accepted`, `rejected`, `not_sent` or `unknown`), and `retryable` is `true` only when
+the same message can be safely sent again.  The `messageID`, `smtpCode`, `enhancedStatus`, `recipient` and
+`transportError` fields are included when they apply.
+
+-INPUT-
+Message: The message to send.  Refer to smtp.prepare() for the supported fields.
+Timeout: Optional limit in seconds for the session, overriding the client's `timeout` option for this message only.
+
+-RESULTS-
+bool: `true` if the server accepted the message.
+str: A description of the result, including the server's reply where relevant.
+table: Result details, including the result code in the `code` field.
+]])
+   client.sendSync = function(Message:table, Timeout:num):<bool, str, table>
+      local result:bool
+      local result_text:str, result_details:table
+      done = false
+      proc = processing.new({ timeout=0.1 })
+
+      next_timeout = Timeout
+      started, text, immediate = client.send(Message, function(Success, Text, Details)
+         result      = Success
+         result_text = Text
+         result_details = snapshot(Details)
+         done        = true
+         proc.signal()
+      end)
+
+      if not started then return false, text, immediate end
+
+      start_time = mSys.PreciseTime()
+      limit      = (Timeout or timeout) * 1000000
+      quit_time  = nil
+      while state != 'idle' do
+         if done then
+            quit_time ?= mSys.PreciseTime()
+            if mSys.PreciseTime() - quit_time > 2000000 then break end -- Grace period for the QUIT reply
+         elseif mSys.PreciseTime() - start_time > limit then
+            fail('The SMTP session timed out.', 'timeout')
+            break
+         end
+
+         if proc.sleep() is ERR_Terminate then
+            fail('Interrupted by program termination.', 'cancelled')
+            break
+         end
+      end
+
+      if state != 'idle' then close() end
+      if not done then
+         return false, 'The SMTP session ended without a result.', outcome('connection_failed', 'connection',
+            submission_possible ? 'unknown' : 'not_sent', false)
+      end
+      return result, result_text, result_details
+   end
+
+   @Doc(text=[[
+Aborts the active session.
+
+A pending callback is called with `Success` set to `false` and a `code` of `cancelled`.  If the message content has
+already been transmitted, the result's `acceptance` is `unknown` because the server may have accepted the message.
+This method has no effect on an idle client.
+]])
+   client.disconnect = function()
+      fail('The SMTP session was cancelled.', 'cancelled')
+   end
+
+   @Doc(text=[[
+Replaces the stored OAuth2 access token for subsequent sessions.
+
+The token cannot be changed while a session is active.  A valid token is a non-empty string of at most 65536 bytes
+without control characters.  If the client was created with `oauth2TokenProvider`, the provider continues to take
+precedence over the stored token.
+
+-INPUT-
+Token: The new OAuth2 access token.
+
+-RESULTS-
+bool: `true` if the token was replaced, otherwise `false`.
+str: Failure message if the client is busy or the token is invalid.
+]])
+   client.setOAuth2Token = function(Token:any):<bool, str>
+      if state != 'idle' then return false, 'The SMTP client is busy.' end
+      if not validToken(Token) then return false, 'Invalid OAuth2 token.' end
+      oauth2_token = Token
+      return true
+   end
+
+   @Doc(text=[[
+Checks whether the client has an active session.
+
+Calling send() on a busy client fails with the `busy` code.
+
+-RESULTS-
+bool: `true` while a session is active.
+]])
+   client.isBusy = function():bool
+      return state != 'idle'
+   end
+
+   return client
+end
+
+@Doc(text=[[
+Creates a temporary client and sends a single message synchronously.
+
+The Config table combines the client options of smtp.smtpClient() with the message fields of smtp.prepare().  Unlike
+smtp.smtpClient(), an invalid configuration does not raise an exception; it is reported as a failure with the
+`invalid_config` code.  The session is limited by the `timeout` option.
+
+-INPUT-
+Config: Client options and message fields.
+
+-RESULTS-
+bool: `true` if the server accepted the message.
+str: A description of the result, including the server's reply where relevant.
+table: Result details, including the result code in the `code` field.  Refer to the client's sendSync() method for the
+available fields.
+]])
+smtp.send = function(Config:table!):<bool, str, table>
+   local client
+
+   try
+      client = smtp.smtpClient({
+         provider    = Config.provider,
+         host        = Config.host,
+         port        = Config.port,
+         ssl         = Config.ssl,
+         starttls    = Config.starttls,
+         username    = Config.username,
+         password    = Config.password,
+         oauth2Token = Config.oauth2Token,
+         oauth2TokenProvider = Config.oauth2TokenProvider,
+         hostname    = Config.hostname,
+         verifyCert  = Config.verifyCert,
+         allowInsecureAuth = Config.allowInsecureAuth,
+         timeout = Config.timeout
+      })
+   except e
+      return false, e.message, outcome('invalid_config', 'preparation', 'not_sent', false)
+   end
+
+   return client.sendSync(Config)
+end

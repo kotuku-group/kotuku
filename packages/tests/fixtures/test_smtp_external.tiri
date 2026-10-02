@@ -1,0 +1,40 @@
+-- Invoked by smtp_integration.py against its independent TLS server and MIME parser.
+
+   import 'net/smtp'
+
+@Test function ExternalSmtpIntegration()
+   mode = arg('mode')
+   if mode is 'mime' then
+      for i in {0 to 4} do
+         message = { from='Sender <sender@example.com>', to='to@example.com', bcc='hidden@example.com',
+            html='<p><img src="cid:logo@example.com"></p>', messageID='<parser@example.com>',
+            inReplyTo='<parent@example.com>', references={ '<root@example.com>', '<parent@example.com>' },
+            headers={ { name='X-Tag', value='one' }, { name='X-Tag', value='two' } },
+            attachments={ { name='ā.png', content='\0\1\255binary', disposition='inline',
+               contentID='logo@example.com' } } }
+         if i has 1 then message.body = 'Text alternative' end
+         if i has 2 then message.attachments[1] = { content='ordinary', name='report.txt' } end
+         io.writeAll(arg('output') .. '/' .. i .. '.eml', smtp.prepare(message).data)
+      end
+      return
+   end
+
+   calls = 0
+   client = smtp.smtpClient({ host='127.0.0.1', port=tonumber(arg('port')), timeout=4,
+      starttls=mode != 'implicit-reject', ssl=mode is 'implicit-reject',
+      verifyCert=mode != 'starttls' and mode != 'redact',
+      username='fixture@example.com', oauth2TokenProvider=function():str
+         calls++
+         return 'fixture-private-token'
+      end })
+   ok, text, details = client.sendSync({ from='sender@example.com', to='to@example.com', body='Hello' })
+   if mode is 'starttls' then
+      assert(ok and details.acceptance is 'accepted' and calls is 1, text)
+   elseif mode is 'redact' then
+      assert(not ok and details.code is 'auth_failed' and details.smtpCode is 535, text)
+      assert(not text.find('fixture-private-token'), 'Server-echoed token is redacted from results')
+   else
+      assert(not ok and details.code is 'tls_failed' and details.stage is 'tls', text)
+      assert(calls is 0 and details.acceptance is 'not_sent', 'Certificate failure occurs before token acquisition')
+   end
+end
