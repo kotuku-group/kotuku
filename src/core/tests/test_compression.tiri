@@ -10,6 +10,8 @@ global glScanCount = 0
    mSys.DeleteFile('temp:cmp_icons/')
    mSys.DeleteFile('temp:cmp_test_json.zip')
    mSys.DeleteFile('temp:cmp_test_scripts.zip')
+   mSys.DeleteFile('temp:cmp_large.zip')
+   mSys.DeleteFile('temp:cmp_large.txt')
    mSys.DeleteFile('temp:cmp_empty_args.zip')
    mSys.DeleteFile('temp:cmp_decompress_object.tiri')
    mSys.DeleteFile('temp:scripts.gz')
@@ -21,6 +23,7 @@ global glScanCount = 0
    mSys.DeleteFile('temp:compressed_stream_write_error.gz')
    mSys.DeleteFile('temp:gui.tiri')
    mSys.DeleteFile('temp:window.tiri')
+   glStoredArchive = nil
 end
 
 function deterministicBytes(Size:num):str
@@ -51,7 +54,12 @@ function writeTestFile(Path:str, Content:any)
    file.free()
 end
 
-@BeforeAll function setupFixtures()
+@BeforeAll function setupFixtures(State)
+   -- data/archive_stored.zip holds stored (uncompressed) entries, which the Compression class cannot produce for
+   -- non-empty files.  Entries are empty.txt, alpha.txt and beta.txt (stored) followed by gamma.txt (deflated).
+   global glStoredArchive = obj.new('compression', { path=State.folder .. 'data/archive_stored.zip',
+      archiveName='stored' })
+
    local root <close> = obj.new('file', { path='temp:cmp_fixture/', flags=FL_NEW|FL_FOLDER })
    local scripts <close> = obj.new('file', { path='temp:cmp_fixture/scripts/', flags=FL_NEW|FL_FOLDER })
    writeTestFile('temp:cmp_fixture/gui.tiri', 'fixture GUI source\n')
@@ -587,4 +595,113 @@ end
    assert(encoder.totalInput is 0 and encoder.totalOutput is 0, 'Reset should clear failed encoder counters.')
    repeated = encoder.acWrite('retry')
    assert(repeated is ERR_FileWriteFlag, 'Reset should permit a retry and preserve its new destination error.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Archive reads of a deflated file that spans several internal decompression buffers.  Odd-sized client buffers
+-- ensure that decompressed output is split across read calls.
+
+@Test(priority=16) function ArchiveVolumeLargeFile()
+   local source = ''
+   for i in {0 to 6000} do source ..= f'Line {i}: {(i * 7919) % 104729} archive read boundary test\n' end
+   writeTestFile('temp:cmp_large.txt', source)
+
+   local writer = obj.new('compression', { path='temp:cmp_large.zip', flags=FL_NEW })
+   check writer.mtCompressFile('temp:cmp_large.txt', '')
+   writer = nil
+   processing.collect() -- Flush the compressed file to disk
+
+   local cmp = obj.new('compression', { path='temp:cmp_large.zip', archiveName='large' })
+   local file = obj.new('file', { src='archive:large/cmp_large.txt', flags=FL_READ })
+   assert(file.size is #source, f'Archived file size is {file.size}, expected {#source}.')
+
+   for buffer_size in values(array<int> { #source + 100, 65536, 7919, 1000 }) do
+      check file.acSeek(0, SEEK_START)
+      local buffer = array<byte, buffer_size>
+      local restored = array<byte, #source>
+      local total = 0
+      local len = 0
+      repeat
+         local err
+         err, len = file.acRead(buffer)
+         assert(err is ERR_Okay, f'Read with a {buffer_size} byte buffer failed: {mSys.GetErrorMsg(err)}')
+         assert(len <= buffer_size, f'Read returned {len} bytes for a {buffer_size} byte buffer.')
+         assert(total + len <= #source, f'Reads with a {buffer_size} byte buffer exceeded the file size.')
+         if len > 0 then restored.copy(buffer.getString(0, len), total) end
+         total += len
+      until len is 0
+
+      assert(total is #source, f'Reads with a {buffer_size} byte buffer returned {total} of {#source} bytes.')
+      assert(restored.getString() is source, f'Reads with a {buffer_size} byte buffer did not match the source.')
+   end
+end
+
+-- Read the remainder of an archived file, asserting that no read exceeds the file's size.
+
+function readArchiveItem(File:obj, BufferSize:num):str
+   local buffer = array<byte, BufferSize>
+   local result = ''
+   local len = 0
+   repeat
+      local err
+      err, len = File.acRead(buffer)
+      assert(err is ERR_Okay, f'Read from {File.path} failed: {mSys.GetErrorMsg(err)}')
+      if len > 0 then result ..= buffer.getString(0, len) end
+      assert(File.position <= File.size, f'Read from {File.path} moved to {File.position} of {File.size} bytes.')
+   until len is 0
+   return result
+end
+
+@Test(priority=17) function ArchiveStoredEntryBounds()
+   local expected = {
+      { name='empty.txt', content='' },
+      { name='alpha.txt', content='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' },
+      { name='beta.txt', content='beta entry follows alpha' }
+   }
+
+   for item in values(expected) do
+      local file = obj.new('file', { src='archive:stored/' .. item.name, flags=FL_READ })
+      assert(file.size is #item.content, f'{item.name} size is {file.size}, expected {#item.content}.')
+      local content = readArchiveItem(file, 200)
+      assert(content is item.content, f'{item.name} read {#content} bytes, expected {#item.content}.')
+   end
+end
+
+@Test(priority=18) function ArchiveStoredEntrySeek()
+   local file = obj.new('file', { src='archive:stored/alpha.txt', flags=FL_READ })
+   local buffer = array<byte, 5>
+
+   check file.acSeek(10, SEEK_START)
+   local err, len = file.acRead(buffer)
+   assert(buffer.getString(0, len) is 'KLMNO', f'Read after seeking to 10 returned "{buffer.getString(0, len)}".')
+
+   check file.acSeek(-10, SEEK_CURRENT)
+   assert(file.position is 5, f'Position after seeking back is {file.position}, expected 5.')
+   err, len = file.acRead(buffer)
+   assert(buffer.getString(0, len) is 'FGHIJ', f'Read after seeking back returned "{buffer.getString(0, len)}".')
+
+   check file.acSeek(6, SEEK_END)
+   assert(file.position is 30, f'Position after seeking from the end is {file.position}, expected 30.')
+   local tail = readArchiveItem(file, 200)
+   assert(tail is '456789', f'Read after seeking from the end returned "{tail}".')
+end
+
+@Test(priority=19) function ArchiveSeekClampsToBounds()
+   for name in values(array<str> { 'empty.txt', 'alpha.txt', 'gamma.txt' }) do
+      local file = obj.new('file', { src='archive:stored/' .. name, flags=FL_READ })
+      local size = file.size
+
+      check file.acSeek(size + 10, SEEK_START)
+      assert(file.position is size, f'{name} position after seeking past the end is {file.position}, expected {size}.')
+      assert(readArchiveItem(file, 64) is '', f'{name} returned data after seeking past the end.')
+
+      check file.acSeek(-10, SEEK_END)
+      assert(file.position is size, f'{name} position after seeking beyond SEEK_END is {file.position}.')
+
+      check file.acSeek(-(size + 10), SEEK_CURRENT)
+      assert(file.position is 0, f'{name} position after seeking before the start is {file.position}, expected 0.')
+
+      local content = readArchiveItem(file, 64)
+      assert(#content is size, f'{name} returned {#content} of {size} bytes after seeking to the start.')
+   end
 end
