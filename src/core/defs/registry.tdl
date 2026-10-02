@@ -30,6 +30,7 @@ header({ path="system/registry", copyright="Paul Manias 1996-2026" }, function()
     "AUDIOEQUALISER",
     "AUDIOREVERB",
     "AUDIOCOMPRESSOR",
+    "AUDIOLIMITER",
     "AUDIOANALYSER",
     "CLIPBOARD",
     "DOCUMENT",
@@ -118,5 +119,6 @@ header({ path="system/registry", copyright="Paul Manias 1996-2026" }, function()
     "CONTROLLER",
     "NETCLIENT",
     "XQUERY",
-    "LZMASTREAM")
+    "LZMASTREAM",
+    "HASH")
 end)

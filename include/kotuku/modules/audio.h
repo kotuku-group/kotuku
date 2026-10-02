@@ -13,6 +13,7 @@ class objAudioEffect;
 class objAudioEqualiser;
 class objAudioReverb;
 class objAudioCompressor;
+class objAudioLimiter;
 class objAudioAnalyser;
 class objSound;
 
@@ -833,6 +834,29 @@ class objAudioCompressor : public objAudioEffect {
 
    using create = kt::Create<objAudioCompressor>;
    objAudioCompressor(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioLimiter class definition
+
+#define VER_AUDIOLIMITER (1.000000)
+
+class objAudioLimiter : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOLIMITER;
+   static constexpr CSTRING CLASS_NAME = "AudioLimiter";
+
+   using create = kt::Create<objAudioLimiter>;
+   objAudioLimiter(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 

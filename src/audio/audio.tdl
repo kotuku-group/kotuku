@@ -259,6 +259,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     output="class_audiocompressor_def.c", extended=true }, [[
   ]])
 
+  klass("AudioLimiter", { base="AudioEffect", src="class_audiolimiter.cpp",
+    output="class_audiolimiter_def.c", extended=true }, [[
+  ]])
+
   -- AudioAnalyser method IDs start high enough to give a cushion from inherited AudioEffect methods.
 
   methods("AudioAnalyser", "Ana", {

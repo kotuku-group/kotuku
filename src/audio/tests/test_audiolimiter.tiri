@@ -1,0 +1,267 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+-- Published parameters in schema order, with their defaults, units and scales.
+
+PARAMS = {
+   { key='ceiling', default=-1, unit='dB', scale='linear', min=-24, max=0 },
+   { key='release', default=100, unit='ms', scale='log', min=5, max=1000 },
+   { key='gain', default=0, unit='dB', scale='linear', min=-24, max=24 }
+}
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_limiter(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioLimiter', { audio=Audio, channel=channel }), channel
+end
+
+function meter_layout(Effect:obj):<any, num>
+   err, layout = Effect.mtGetMeterLayout()
+   assert(err is ERR_Okay, 'GetMeterLayout() must succeed for an initialised effect')
+   return layout.meters, layout.id
+end
+
+-- Play a loud square wave on the channel; the null device renders it faster than real time.
+
+function play_loud(Audio:obj, Channel:num)
+   data = array<byte, 16384>
+   for i in {0 to 16384} do data[i] = (i % 64 < 32) ? 255 : 1 end
+   err, sample = Audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(Audio, Channel, sample)
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixVolume(Audio, Channel, 1)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   limiter <close> = new_limiter(audio)
+   schema = limiter.schema
+   assert(schema.find('<effect class="AudioLimiter" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The limiter has no parameter groups')
+   assert(schema.find('type="curve"') is nil, 'The limiter does not publish a response curve')
+   assert(schema.find('key="mix"') is nil and schema.find('key="makeup"') is nil,
+      'Mix and makeup would invalidate the ceiling')
+
+   -- Parameters appear in the published order with their declared attributes.
+
+   position = 0
+   for p in values(PARAMS) do
+      attributes = f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"'
+      start = schema.find(f'<param key="{p.key}"')
+      assert(start != nil and start > position, f'{p.key} must be published in order')
+      position = start
+      assert(schema.find(attributes, start) != nil, f'{p.key} must publish {attributes}')
+      err, value = limiter.mtGetParameter(p.key)
+      assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   assert(schema.find('key="gain_reduction" type="scalar" label="Gain Reduction"') != nil)
+   assert(schema.find('unit="dB" scope="global" semantics="maximum-attenuation" slot="4"') != nil)
+   assert(limiter.mtGetOutput('response') is ERR_Search)
+   assert(limiter.mtGetGroupCount('bands') is ERR_Search)
+
+   -- Stereo expands the channel templates before the global reduction value.
+
+   meters = meter_layout(limiter)
+   expected = array<str> { 'input_peak_left', 'input_peak_right', 'output_peak_left', 'output_peak_right',
+      'gain_reduction' }
+   assert(#meters is 5, f'Stereo must publish five meters, got {#meters}')
+   for i in {0 to 5} do
+      assert(meters[i].key is expected[i] and meters[i].slot is i,
+         f'Meter {i} should be {expected[i]}, got {meters[i].key}')
+   end
+   assert(meters[0].channel is SPK_FRONT_LEFT and meters[1].channel is SPK_FRONT_RIGHT)
+   assert(meters[4].unit is 'dB' and meters[4].scope is 'global' and meters[4].semantics is 'maximum-attenuation')
+   assert(meters[4].channel is 0 and meters[4].label is 'Gain Reduction')
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   limiter <close> = new_limiter(audio)
+   assert(limiter.mutable is 1)
+
+   -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
+
+   for p in values(PARAMS) do
+      check limiter.mtSetParameter(p.key, p.min)
+      check limiter.mtSetParameter(p.key, p.max)
+      assert(limiter.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(limiter.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(limiter.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(limiter.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+   assert(limiter.mtSetParameter('unknown', 1) is ERR_Search)
+   assert(limiter.mtSetParameter('mix', 50) is ERR_Search)
+   check limiter.acFlush()
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
+   -- commits them together.
+
+   check limiter.mtSetParameter('ceiling', -3)
+   check limiter.mtSetParameter('gain', 6)
+   assert(limiter.mtSetParameter('release', 2000) is ERR_InvalidValue)
+   check limiter.mtSetParameter('release', 250)
+   err, value = limiter.mtGetParameter('gain')
+   assert(err is ERR_Okay and value is 6, 'Staged values must be readable')
+   check limiter.acFlush()
+   for key, expected in pairs({ ceiling=-3, gain=6, release=250 }) do
+      err, value = limiter.mtGetParameter(key)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   limiter <close> = obj.new('AudioLimiter')
+   limiter.audio = audio
+   limiter.channel = channel
+   check limiter.mtSetParameter('ceiling', -0.5)
+   check limiter.mtSetParameter('release', 40)
+   assert(limiter.mtSetParameter('gain', 30) is ERR_InvalidValue)
+   limiter.init()
+   err, value = limiter.mtGetParameter('ceiling')
+   assert(err is ERR_Okay and value is -0.5)
+   err, value = limiter.mtGetParameter('release')
+   assert(err is ERR_Okay and value is 40)
+end
+
+@Test function LatencyAndLivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   limiter, channel = new_limiter(audio)
+   try
+      unconfigured = limiter.latency
+   except e when ERR_NotInitialised
+   success
+      raise 'Latency must not be readable before the output is configured'
+   end
+   check audio.acActivate()
+   assert(limiter.latency is 240, f'5 ms at 48 kHz is 240 frames, got {limiter.latency}')
+   err, rate, format, layout, generation, state = limiter.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+   _, first_generation = meter_layout(limiter)
+
+   -- Live edits, including an edit that replaces a gain ramp, never change the latency.
+
+   check limiter.mtSetParameter('gain', 24)
+   check limiter.mtSetParameter('ceiling', -6)
+   check limiter.acFlush()
+   play_loud(audio, channel)
+   check limiter.mtSetParameter('gain', 12)
+   check limiter.mtSetParameter('release', 5)
+   check limiter.acFlush()
+   assert(limiter.latency is 240, 'Parameter changes must not alter the latency')
+
+   -- The loud input exceeds the ceiling, so the reduction meter reports attenuation once an interval is published.
+
+   reduction, output_peak, sequence = 0, 0, 0
+   for attempt in {0 to 200} do
+      err, reading = limiter.mtReadMeters()
+      assert(err is ERR_Okay)
+      if (reading.flags has AMF_VALID) and (reading.values[4].value > 1) then
+         reduction = reading.values[4].value
+         output_peak = reading.values[2].value
+         sequence = reading.sequence
+         break
+      end
+      processing.sleep(0.01)
+   end
+   assert(reduction > 1, f'The limiter must report gain reduction, got {reduction}')
+   assert(output_peak <= -6 + 1e-6, f'Output peaks must respect the ceiling, got {output_peak}')
+   err, again = limiter.mtReadMeters()
+   assert(err is ERR_Okay and again.sequence >= sequence, 'Meter reads are non-destructive')
+
+   -- Bypass removes the latency; leaving bypass restores it.
+
+   limiter.flags = AEF_BYPASS
+   assert(limiter.latency is 0, 'A bypassed limiter has no latency')
+   err, reading = limiter.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   assert(limiter.mtGetOutput('gain_reduction') is ERR_InvalidState)
+   limiter.flags = 0
+   assert(limiter.latency is 240)
+
+   -- Reactivation at 44.1 kHz in mono changes the latency and the meter layout generation.
+
+   check audio.acDeactivate()
+   audio.outputRate = 44100
+   audio.outputLayout = array<int> { SPK_CENTRE }
+   check audio.acActivate()
+   assert(limiter.latency is 221, f'5 ms at 44.1 kHz rounds up to 221 frames, got {limiter.latency}')
+   meters, mono_generation = meter_layout(limiter)
+   assert(mono_generation != first_generation, 'A layout change must publish a new generation')
+   assert(#meters is 3 and meters[0].key is 'input_peak_centre' and meters[2].key is 'gain_reduction')
+
+   -- Closing the channel set disconnects the effect.
+
+   check audio.mtCloseChannels(channel)
+   err, reading = limiter.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(limiter.mtSetParameter('gain', 0) is ERR_NotInitialised)
+   limiter.free()
+end
+
+@Test function IdleFlags()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   limiter <close>, channel = new_limiter(audio)
+   check audio.acActivate()
+   _, generation = meter_layout(limiter)
+
+   -- With no input the chain reaches idle and publishes an idle snapshot rather than a measurement in progress.
+
+   flags = 0
+   for attempt in {0 to 100} do
+      err, reading = limiter.mtReadMeters()
+      flags = reading.flags
+      if flags has AMF_IDLE then break end
+      processing.sleep(0.02)
+   end
+   assert(flags has AMF_IDLE, f'An idle limiter must report AMF_IDLE, got {flags}')
+   check audio.mtResetEffects(channel)
+   err, reading = limiter.mtReadMeters()
+   assert(err is ERR_Okay and reading.id != generation, 'Resetting the chain must advance the generation')
+   check audio.acDeactivate()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   limiter = audio.new('AudioLimiter')
+   check limiter.mtSetParameter('ceiling', -2)
+   limiter.init()
+   assert(limiter.mutable is 0)
+   assert(limiter.mtSetParameter('ceiling', -6) is ERR_Immutable)
+   err, value = limiter.mtGetParameter('ceiling')
+   assert(err is ERR_Okay and value is -2, 'Global effects remain readable')
+   check audio.acActivate()
+   assert(limiter.latency is 221)
+   meters = meter_layout(limiter)
+   assert(#meters is 3, f'Mono must publish three meters, got {#meters}')
+   assert(meters[0].key is 'input_peak_centre' and meters[1].key is 'output_peak_centre')
+   assert(meters[2].key is 'gain_reduction' and meters[2].slot is 2)
+   assert(limiter.schema.find('input_peak_right') is nil, 'Mono must not publish a right channel')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      limiter = obj.new('AudioLimiter', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end
