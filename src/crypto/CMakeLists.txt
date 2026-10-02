@@ -52,9 +52,6 @@ else ()
       "${BEARSSL_ROOT}/src/rsa/rsa_i31_pkcs1_vrfy.c"
       "${BEARSSL_ROOT}/src/rsa/rsa_i31_pub.c"
       "${BEARSSL_ROOT}/src/rsa/rsa_pkcs1_sig_unpad.c")
-
-   install (FILES "${BEARSSL_ROOT}/LICENSE.txt"
-      DESTINATION "${SHARE_TARGET}/licenses" RENAME bearssl.txt)
 endif ()
 
 if (BUILD_TESTS)

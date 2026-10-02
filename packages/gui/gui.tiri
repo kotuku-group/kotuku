@@ -16,11 +16,11 @@
       end
    }
 
-rxPixel    <const> = <{ regex.new([[^(\d+)([a-zA-Z]*)$]]) }>
-rxFontSize <const> = <{ regex.new([[^(-?\d+)%$]]) }>
+rxPixel    <const> = <{ r[[^(\d+)([a-zA-Z]*)$]] }>
+rxFontSize <const> = <{ r[[^(-?\d+)%$]] }>
 
 glStyleConfig = 'user:config/style.cfg'
-glPainter = struct.new('VectorPainter')
+glPainter = struct<VectorPainter>
 
 gui.fontList = thunk():table
    return exec([[
@@ -35,7 +35,7 @@ gui.fontList = thunk():table
 
    -- Merge
    for group_name, option_group in options do
-      local cat_group:table = catalogue[group_name]
+      cat_group:table = catalogue[group_name]
       if not cat_group then
          cat_group = { }
          catalogue[group_name] = cat_group
@@ -232,7 +232,7 @@ end
 -- Return the light value of an RGB colour (i.e. the V in HSV)
 
 function gui.mtRGB.brightness():num
-   local max:num = &b
+   max:num = &b
    if &g > max then max = &g end
    if &r > max then max = &r end
    return max
@@ -254,11 +254,11 @@ end
 -- h is hue in degrees [0,360), s and l are in [0,1].
 
 function gui.mtRGB.toHSL():table
-   local r:num = &r
-   local g:num = &g
-   local b:num = &b
+   r:num = &r
+   g:num = &g
+   b:num = &b
 
-   local max:num = r
+   max:num = r
    if g > max then max = g end
    if b > max then max = b end
 
@@ -365,7 +365,7 @@ gui.getFontHeight = function(Font:table):<num,num>
    try<trace>
       if not Font.height then
          err, handle = mVec.GetFontHandle(Font.face, 'Regular', 0, tonumber(Font.size))
-         metrics = struct.new('FontMetrics')
+         metrics = struct<FontMetrics>
          mVec.GetFontMetrics(handle, metrics)
          Font.height  = metrics.height
          Font.spacing = metrics.lineSpacing
@@ -472,7 +472,7 @@ gui.simpleGradient = function(Scene:obj!, Name:str!, Colours:any!, X1:num!, Y1:n
    stops = { }
    i = 0
    for col in values(colours) do
-      vc = struct.new('GradientStop')
+      vc = struct<GradientStop>
       vc.offset    = col.offset ? col.offset : (i / (#colours - 1))
       vc.rgb.red   = col.r
       vc.rgb.green = col.g
@@ -793,7 +793,7 @@ gui.palettes = {
 
       if mSys.AnalysePath(glStyleConfig) is ERR_Okay then
          try
-            local cfg = obj.new('config', { path=glStyleConfig })
+            local cfg <close> = obj.new('config', { path=glStyleConfig })
             theme = [_*]cfg.mtReadValue('Style', 'Theme')
             palette = [_*]cfg.mtReadValue('Style', 'Palette')
             paletteTheme = [_*]cfg.mtReadValue('Style', 'PaletteTheme')
@@ -807,7 +807,7 @@ gui.palettes = {
             print(f'  Detail: {ex.message}')
          end
       else
-         local file = obj.new('file', { path=glStyleConfig, flags=FL_WRITE|FL_NEW })
+         local file <close> = obj.new('file', { path=glStyleConfig, flags=FL_WRITE|FL_NEW })
          file.acWrite("[Style]\nTheme = light\nPalette = ocean\nPaletteTheme = light\n")
       end
    end
