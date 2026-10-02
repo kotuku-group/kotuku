@@ -240,6 +240,8 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     int Order
     int(AEF) Flags
     int OutputRate
+    oid Parent
+    int Branch
     ~large Latency
     ~int Mutable
     ~string Schema
@@ -261,6 +263,11 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
 
   klass("AudioLimiter", { base="AudioEffect", src="class_audiolimiter.cpp",
     output="class_audiolimiter_def.c", extended=true }, [[
+  ]])
+
+  klass("AudioSplitter", { base="AudioEffect", src="class_audiosplitter.cpp",
+    output="class_audiosplitter_def.c", extended=true }, [[
+    ~double LatencyBudget
   ]])
 
   -- AudioAnalyser method IDs start high enough to give a cushion from inherited AudioEffect methods.

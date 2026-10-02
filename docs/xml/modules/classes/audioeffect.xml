@@ -16,6 +16,9 @@
 <p>AudioEffect is a support class for audio processors.  Use a derived class to perform DSP; the AudioEffect class itself passes samples through unchanged.</p>
 <p>A zero <fl>Channel</fl> applies the effect universally.  Otherwise use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>. Application chains process their channel set before it is added to the master mix.  The global chain processes the master mix before the built-in output filter.  Lower <fl>Order</fl> values run first; ties retain attachment order.</p>
 <p>Attachment, field changes and detachment are serialised with mixing.  Freeing an effect waits for any current mix window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a disconnected effect must be replaced to attach it again.  Global effects are immutable after initialisation.</p>
+<header>Parallel Branches</header>
+<p>Each chain processes its effects one after another.  To divide the signal and process it along separate paths, attach a container effect such as <class name="AudioSplitter">AudioSplitter</class> to the chain.  A container hosts a set of branches, each being an ordinary chain of effects, and sums their outputs.  The container is a single node in its chain, so effects can run before and after it.</p>
+<p>An effect is attached to a branch by setting its <fl>Parent</fl> to the container and its <fl>Branch</fl> to the branch index before initialisation, or by creating it as a child of the container.  It inherits the container's <fl>Audio</fl> and <fl>Channel</fl>, and is ordered by <fl>Order</fl> within its branch.  Branch effects publish meters, accept live changes and can be bypassed in the same way as effects in a top-level chain.  Containers cannot be nested.</p>
 <header>Stop Notifications</header>
 <p>Effects such as reverbs and delays continue to produce output after their source stops.  When a voice's path has effects, being its channel set's chain followed by the global chain, the sample's <code>OnStop</code> notification and the <class name="Sound" field="OnStop">Sound.OnStop</class> callback are held until that output has drained.  They are then delivered after the device queue, as for a path without effects, so the callback marks the approximate end of everything that the voice made audible.</p>
 <header>Parameter Schema</header>
@@ -315,6 +318,17 @@
     </field>
 
     <field>
+      <name>Branch</name>
+      <comment>Zero-based index of the container branch that hosts the effect.</comment>
+      <access read="G" write="I">Get/Init</access>
+      <type>INT</type>
+      <description>
+<p>Set Branch before initialisation, together with <fl>Parent</fl>, to select the branch of a container effect such as <class name="AudioSplitter">AudioSplitter</class> that the effect is attached to.  Initialisation fails with <code>ERR::OutOfRange</code> if the branch does not exist.  The field is ignored if <fl>Parent</fl> is zero.</p>
+<p>Branch indexes change when the container's <code>branches</code> group is edited: removing an earlier branch moves the effect down by one, and inserting an earlier branch moves it up by one.  The effect stays attached to the same branch and reading this field returns its current index.  After the effect's branch is removed, the field retains the last index that the effect had.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Channel</name>
       <comment>Channel-set handle, or zero for the global chain.</comment>
       <access read="R" write="I">Read/Init</access>
@@ -372,6 +386,18 @@
       <type>INT</type>
       <description>
 <p>Updated when the Audio device is activated.  Processors reset before processing the new output configuration.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Parent</name>
+      <comment>The container effect that hosts this effect, or zero for an effect in a top-level chain.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>OBJECTID</type>
+      <description>
+<p>Set Parent before initialisation to attach the effect to a branch of a container effect such as <class name="AudioSplitter">AudioSplitter</class>, instead of attaching it directly to an Audio chain.  The <fl>Branch</fl> field selects the branch.  Creating the effect as a child of a container sets Parent automatically.</p>
+<p>The container must be initialised.  The effect inherits the container's <fl>Audio</fl> and <fl>Channel</fl>; if either field has been set to a different value, initialisation fails with <code>ERR::InvalidValue</code>.  Like the container, the effect is immutable after initialisation if it belongs to the global chain.  A container cannot be attached to the branch of another container.</p>
+<p>Within its branch, the effect is ordered by <fl>Order</fl>.  Removing the branch from the container, freeing the container, or disconnecting the container from its Audio object or channel set disconnects the effect.</p>
       </description>
     </field>
 

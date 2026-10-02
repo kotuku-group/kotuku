@@ -14,6 +14,18 @@ Attachment, field changes and detachment are serialised with mixing.  Freeing an
 window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a
 disconnected effect must be replaced to attach it again.  Global effects are immutable after initialisation.
 
+<header>Parallel Branches</header>
+
+Each chain processes its effects one after another.  To divide the signal and process it along separate paths, attach
+a container effect such as @AudioSplitter to the chain.  A container hosts a set of branches, each being an ordinary
+chain of effects, and sums their outputs.  The container is a single node in its chain, so effects can run before
+and after it.
+
+An effect is attached to a branch by setting its #Parent to the container and its #Branch to the branch index before
+initialisation, or by creating it as a child of the container.  It inherits the container's #Audio and #Channel, and
+is ordered by #Order within its branch.  Branch effects publish meters, accept live changes and can be bypassed in the
+same way as effects in a top-level chain.  Containers cannot be nested.
+
 <header>Stop Notifications</header>
 
 Effects such as reverbs and delays continue to produce output after their source stops.  When a voice's path has
@@ -261,10 +273,34 @@ static ERR AUDIOEFFECT_FreeWarning(extAudioEffect *Self)
 static ERR AUDIOEFFECT_NewOwner(extAudioEffect *Self, struct acNewOwner *Args)
 {
    if (not Args) return ERR::NullArgs;
-   if ((not Self->initialised()) and (not Self->AudioID) and Args->NewOwner and
-       (Args->NewOwner->Class->BaseClassID IS CLASSID::AUDIO)) {
-      Self->AudioID = Args->NewOwner->UID;
+   if ((not Self->initialised()) and Args->NewOwner) {
+      if ((not Self->AudioID) and (Args->NewOwner->Class->BaseClassID IS CLASSID::AUDIO)) {
+         Self->AudioID = Args->NewOwner->UID;
+      }
+      else if ((not Self->ParentID) and is_effect_container(Args->NewOwner->Class->ClassID)) {
+         Self->ParentID = Args->NewOwner->UID;
+      }
    }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Resolves the container and branch for an effect with a Parent.  Audio and Channel are inherited from the container.
+// Called with the container's object lock held; the branch is resolved again under the mixer lock.
+
+static ERR effect_parent(extAudioEffect *Self, extAudioEffect *Parent)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (is_effect_container(Self->Class->ClassID)) {
+      log.warning("A container effect cannot be attached to the branch of another container.");
+      return ERR::NoSupport;
+   }
+   if ((not is_effect_container(Parent->Class->ClassID)) or (not Parent->initialised())) return ERR::InvalidObject;
+   if (Self->AudioID and (Self->AudioID != Parent->AudioID)) return ERR::InvalidValue;
+   if (Self->Channel and (Self->Channel != Parent->Channel)) return ERR::InvalidValue;
+   Self->AudioID = Parent->AudioID;
+   Self->Channel = Parent->Channel;
    return ERR::Okay;
 }
 
@@ -275,9 +311,24 @@ static ERR AUDIOEFFECT_Init(extAudioEffect *Self)
    // A failed derived Init may be retried; never register the same object twice.
 
    Self->detach();
-   if ((not Self->AudioID) and Self->Owner and (Self->Owner->Class->BaseClassID IS CLASSID::AUDIO)) {
+
+   if ((not Self->ParentID) and Self->Owner and is_effect_container(Self->Owner->Class->ClassID)) {
+      Self->ParentID = Self->Owner->UID;
+   }
+
+   // The container stays locked until attachment is complete, so that it cannot be freed in the meantime.
+
+   std::optional<kt::ScopedObjectLock<extAudioEffect>> parent;
+   if (Self->ParentID) {
+      parent.emplace(Self->ParentID, 3000);
+      if (not parent->granted()) return ERR::Search;
+      if ((*parent)->Class->BaseClassID != CLASSID::AUDIOEFFECT) return ERR::InvalidObject;
+      if (auto error = effect_parent(Self, **parent); error != ERR::Okay) return error;
+   }
+   else if ((not Self->AudioID) and Self->Owner and (Self->Owner->Class->BaseClassID IS CLASSID::AUDIO)) {
       Self->AudioID = Self->Owner->UID;
    }
+
    if (not Self->AudioID) return ERR::FieldNotSet;
    if ((Self->Flags & ~AEF::BYPASS) != AEF::NIL) return ERR::InvalidValue;
    if ((not Self->Channel) and (Self->Flags != AEF::NIL)) return ERR::InvalidValue;
@@ -289,7 +340,14 @@ static ERR AUDIOEFFECT_Init(extAudioEffect *Self)
 
    std::lock_guard mixer_lock(audio->MixerMutex);
    auto chain = audio->GlobalEffects;
-   if (Self->Channel) {
+   if (parent) {
+      // A container disconnected from its Audio object or channel set no longer hosts branches.
+      auto container = **parent;
+      if (container->Chain.expired() or container->Branches.empty()) return ERR::NotInitialised;
+      if ((Self->Branch < 0) or (Self->Branch >= std::ssize(container->Branches))) return ERR::OutOfRange;
+      chain = container->Branches[Self->Branch];
+   }
+   else if (Self->Channel) {
       const int index = Self->Channel >> 16;
       if ((Self->Channel < 0) or (Self->Channel & 0xffff) or (index < 1) or
           (index >= std::ssize(audio->Sets)) or audio->Sets[index].Channel.empty()) return ERR::Args;
@@ -831,6 +889,37 @@ Audio: Target Audio object, inherited from an Audio owner if omitted.
 Set before initialisation.  Explicit targets take precedence over ownership.  Ownership changes after attachment do
 not change the target.  Freeing the target disconnects all its effects, including effects owned by other objects.
 
+*********************************************************************************************************************/
+
+/*********************************************************************************************************************
+
+-FIELD-
+Branch: Zero-based index of the container branch that hosts the effect.
+
+Set Branch before initialisation, together with #Parent, to select the branch of a container effect such as
+@AudioSplitter that the effect is attached to.  Initialisation fails with `ERR::OutOfRange` if the branch does not
+exist.  The field is ignored if #Parent is zero.
+
+Branch indexes change when the container's `branches` group is edited: removing an earlier branch moves the effect
+down by one, and inserting an earlier branch moves it up by one.  The effect stays attached to the same branch and
+reading this field returns its current index.  After the effect's branch is removed, the field retains the last index
+that the effect had.
+
+*********************************************************************************************************************/
+
+static ERR AUDIOEFFECT_GET_Branch(extAudioEffect *Self, int *Value)
+{
+   // Containers renumber their branch effects under the mixer lock.
+   if (auto chain = Self->Chain.lock()) {
+      std::lock_guard mixer_lock(*chain->Mutex);
+      *Value = Self->Branch;
+   }
+   else *Value = Self->Branch;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
 -FIELD-
 Channel: Channel-set handle, or zero for the global chain.
 
@@ -957,6 +1046,25 @@ static ERR AUDIOEFFECT_GET_OutputRate(extAudioEffect *Self, int *Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Parent: The container effect that hosts this effect, or zero for an effect in a top-level chain.
+
+Set Parent before initialisation to attach the effect to a branch of a container effect such as @AudioSplitter,
+instead of attaching it directly to an Audio chain.  The #Branch field selects the branch.  Creating the effect as a
+child of a container sets Parent automatically.
+
+The container must be initialised.  The effect inherits the container's #Audio and #Channel; if either field has been
+set to a different value, initialisation fails with `ERR::InvalidValue`.  Like the container, the effect is immutable
+after initialisation if it belongs to the global chain.  A container cannot be attached to the branch of another
+container.
+
+Within its branch, the effect is ordered by #Order.  Removing the branch from the container, freeing the container, or
+disconnecting the container from its Audio object or channel set disconnects the effect.
+
+*********************************************************************************************************************/
+
+/*********************************************************************************************************************
+
+-FIELD-
 Schema: An XML description of the effect's parameters.
 
 The schema describes every parameter that can be read or changed with #GetParameter() and #SetParameter(), including
@@ -1008,6 +1116,8 @@ static const FieldArray clAudioEffectFields[] = {
    { "Order",      FDF_INT|FDF_RW, nullptr, AUDIOEFFECT_SET_Order },
    { "Flags",      FDF_INT|FDF_FLAGS|FDF_RW, nullptr, AUDIOEFFECT_SET_Flags, &clAudioEffectFlags },
    { "OutputRate", FDF_INT|FDF_R, AUDIOEFFECT_GET_OutputRate },
+   { "Parent",     FDF_OBJECTID|FDF_RI, nullptr, nullptr, CLASSID::AUDIOEFFECT },
+   { "Branch",     FDF_INT|FDF_RI, AUDIOEFFECT_GET_Branch },
    // Virtual fields
    { "Latency",    FDF_VIRTUAL|FDF_INT64|FDF_R, AUDIOEFFECT_GET_Latency },
    { "Mutable",    FDF_VIRTUAL|FDF_INT|FDF_R, AUDIOEFFECT_GET_Mutable },
