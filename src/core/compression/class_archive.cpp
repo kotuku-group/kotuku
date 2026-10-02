@@ -42,6 +42,7 @@ struct prvFileArchive {
    uint8_t  InputBuffer[SIZE_COMPRESSION_BUFFER];
    uint8_t  OutputBuffer[SIZE_COMPRESSION_BUFFER];
    uint8_t  *ReadPtr = nullptr;   // Current position within OutputBuffer
+   int64_t  DataOffset = 0;       // Offset of the item's data within the archive file
    int      InputLength = 0;
    bool     InvalidState = false; // Set to true if the archive is corrupt.
 };
@@ -84,8 +85,8 @@ static ERR seek_to_item(objFile *Self)
 
    uint16_t extra_len;
    if (fl::ReadLE(prv->FileStream, &extra_len) != ERR::Okay) return ERR::Read;
-   uint32_t stream_start = item.Offset + HEAD_LENGTH + item.NameLen + extra_len;
-   if (acSeekStart(prv->FileStream, stream_start) != ERR::Okay) return ERR::Seek;
+   prv->DataOffset = int64_t(item.Offset) + HEAD_LENGTH + item.NameLen + extra_len;
+   if (acSeekStart(prv->FileStream, prv->DataOffset) != ERR::Okay) return ERR::Seek;
 
    if (item.CompressedSize > 0) {
       Self->Flags |= FL::FILE;
@@ -298,8 +299,16 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
    if (prv->InvalidState) return ERR::InvalidState;
 
    if (prv->Info.DeflateMethod IS 0) {
-      ERR error = acRead(prv->FileStream, Args->Buffer, &Args->Result);
-      if (!error) Self->Position += Args->Result;
+      // Stored data is read directly from the archive, limited to the item's remaining bytes so that the read
+      // cannot run into the next item.
+
+      Args->Result = 0;
+      auto remaining = Self->Size - Self->Position;
+      if (remaining <= 0) return ERR::Okay; // End of item
+
+      auto span = Args->Buffer.first(size_t(std::min<int64_t>(remaining, length)));
+      ERR error = acRead(prv->FileStream, span, &Args->Result);
+      if (error IS ERR::Okay) Self->Position += Args->Result;
       return error;
    }
    else {
@@ -309,7 +318,9 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
 
       //log.trace("Decompressing %d bytes to %d, buffer size %d", zf.CompressedSize, zf.OriginalSize, length);
 
-      if ((prv->Inflate.active()) and (!prv->Inflate->avail_in)) { // Initial setup
+      if (!prv->ReadPtr) { // Initial setup following seek_to_item()
+         if (!prv->Inflate.active()) return ERR::Okay; // Empty item
+
          struct acRead read = {
             .Buffer = std::span<int8_t>((int8_t *)prv->InputBuffer,
                (zf.CompressedSize < SIZE_COMPRESSION_BUFFER) ? size_t(zf.CompressedSize) : SIZE_COMPRESSION_BUFFER)
@@ -327,10 +338,12 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
       }
 
       while (true) {
-         // Output any buffered data to the client first
+         // Output any buffered data to the client first, limited to the space that remains in the client's buffer.
+         // Undelivered output is retained for the next read.
+
          if (prv->ReadPtr < (uint8_t *)prv->Inflate->next_out) {
             int len = (int)(prv->Inflate->next_out - (Bytef *)prv->ReadPtr);
-            if (len > length) len = length;
+            if (len > length - Args->Result) len = length - Args->Result;
             copymem(prv->ReadPtr, Args->Buffer.data() + Args->Result, len);
             prv->ReadPtr   += len;
             Args->Result   += len;
@@ -339,9 +352,9 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
 
          // Stop if necessary
 
-         if (prv->Inflate->total_out IS zf.OriginalSize) break; // All data decompressed
          if (Args->Result >= length) return ERR::Okay;
-         if (!prv->Inflate.active()) return ERR::Okay;
+         if (!prv->Inflate.active()) return ERR::Okay; // All data has been decompressed and delivered
+         if (prv->Inflate->total_out IS zf.OriginalSize) break; // All data decompressed, output buffer is drained
 
          // Reset the output buffer and decompress more data
 
@@ -355,6 +368,12 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
          if ((result) and (result != Z_STREAM_END)) {
             prv->InvalidState = true;
             return convert_zip_error(prv->Inflate.get(), result);
+         }
+
+         if ((result IS Z_STREAM_END) and (prv->Inflate->total_out != zf.OriginalSize)) {
+            // The stream ended at a size that disagrees with the archive directory
+            prv->InvalidState = true;
+            return ERR::InvalidCompression;
          }
 
          // Read more data from the source if necessary
@@ -384,16 +403,31 @@ static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
 static ERR ARCHIVE_Seek(objFile *Self, struct acSeek *Args)
 {
    Log log;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
    int64_t pos;
 
    log.traceBranch("Seek to offset %.2f from seek position %d", Args->Offset, int(Args->Position));
 
-   if (Args->Position IS SEEK::START) pos = int(Args->Offset);
-   else if (Args->Position IS SEEK::END) pos = Self->Size - int(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + int(Args->Offset);
+   if (Args->Position IS SEEK::START) pos = int64_t(Args->Offset);
+   else if (Args->Position IS SEEK::END) pos = Self->Size - int64_t(Args->Offset);
+   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + int64_t(Args->Offset);
    else return log.warning(ERR::Args);
 
-   if (pos < 0) return log.warning(ERR::OutOfRange);
+   // Clamp to the item boundaries, consistent with the File class.  Archived items are read-only, so a position
+   // beyond the end of the item has no purpose.
+
+   if (pos < 0) pos = 0;
+   else if (pos > Self->Size) pos = Self->Size;
+
+   if (pos IS Self->Position) return ERR::Okay;
+
+   if (prv->InvalidState) return log.warning(ERR::InvalidState);
+
+   if (prv->Info.DeflateMethod IS 0) { // Stored data can be seeked directly
+      if (acSeekStart(prv->FileStream, prv->DataOffset + pos) != ERR::Okay) return log.warning(ERR::Seek);
+      Self->Position = pos;
+      return ERR::Okay;
+   }
 
    if (pos < Self->Position) { // The position must be reset to zero if we need to backtrack
       reset_state(Self);
@@ -402,11 +436,14 @@ static ERR ARCHIVE_Seek(objFile *Self, struct acSeek *Args)
       if (error != ERR::Okay) return log.warning(error);
    }
 
+   // Deflated data has to be decompressed up to the new position
+
    uint8_t buffer[2048];
    while (Self->Position < pos) {
       auto read_size = std::min<size_t>(size_t(pos - Self->Position), sizeof(buffer));
       struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)buffer, read_size) };
-      if (Action(AC::Read, Self, &read) != ERR::Okay) return ERR::Decompression;
+      if (auto error = Action(AC::Read, Self, &read); error != ERR::Okay) return log.warning(error);
+      if (read.Result <= 0) return log.warning(ERR::Seek); // Item data ended early; the archive is inconsistent
    }
 
    return ERR::Okay;
