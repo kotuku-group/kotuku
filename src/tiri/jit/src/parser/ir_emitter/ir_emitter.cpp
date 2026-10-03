@@ -3829,7 +3829,7 @@ ParserResult<ExpDesc> IrEmitter::emit_if_empty_expr(ExpDesc lhs, const ExprNode&
 
    RegisterAllocator allocator(&this->func_state);
    ExpressionValue lhs_value(&this->func_state, lhs);
-   auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
+   auto lhs_reg = lhs_value.to_next_reg(allocator);
 
    FalseyJumpOptions options;
    options.include_empty_array = true;

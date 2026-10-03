@@ -222,6 +222,40 @@ end
    assert(v is "A", "Runtime zero test failed: expected 'A', got '" .. tostring(v) .. "'")
 end
 
+@Test function SourceOperandUnchanged()
+   local nil_value = nil
+   local nil_result = nil_value ?? 'nil fallback'
+   assert(nil_result is 'nil fallback', 'A nil local should produce the fallback value')
+   assert(nil_value is nil, 'A nil local should remain nil after ??')
+
+   local false_value = false
+   local false_result = false_value ?? 'false fallback'
+   assert(false_result is 'false fallback', 'A false local should produce the fallback value')
+   assert(false_value is false, 'A false local should remain false after ??')
+
+   local zero_value = 0
+   local zero_result = zero_value ?? 41
+   assert(zero_result is 41, 'A zero local should produce the fallback value')
+   assert(zero_value is 0, 'A zero local should remain zero after ??')
+
+   local string_value = ''
+   local string_result = string_value ?? 'string fallback'
+   assert(string_result is 'string fallback', 'An empty string local should produce the fallback value')
+   assert(string_value is '', 'An empty string local should remain empty after ??')
+
+   local table_value = {}
+   local original_table = table_value
+   local table_result = table_value ?? 'table fallback'
+   assert(table_result is 'table fallback', 'An empty table local should produce the fallback value')
+   assert(table_value is original_table, 'An empty table local should remain unchanged after ??')
+
+   function preserve_parameter(Value:any):any
+      local _ = Value ?? 'parameter fallback'
+      return Value
+   end
+   assert(preserve_parameter(nil) is nil, 'A nil parameter should remain nil after ??')
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Deferred values must be resolved before the consolidated falsey bytecode tests their logical value.
 
