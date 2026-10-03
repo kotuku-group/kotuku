@@ -650,7 +650,7 @@ class extGradientDistal : public extGradient {
    GFALL OuterFall = GFALL::SMOOTHSTEP; // Alpha fall-off curve for the exterior fade
 
    agg::gradient_sdf *SDFCache = nullptr; // Cached SDF gradient; rebuilt when SDFHash changes
-   uint64_t SDFHash = 0; // Fingerprint of the path that SDFCache was built from
+   uint64_t SDFHash = 0; // Fingerprint of the path and resolution that SDFCache was built from
    double SDFResolution = -1; // Resolution baked into SDFCache; a mismatch forces a rebuild
    double SDFExtent = -1; // Exterior fill extent baked into SDFCache (repeat/reflect); a mismatch forces a rebuild
    int SDFSpread = -1; // Spread mode baked into SDFCache; a mismatch forces a rebuild
