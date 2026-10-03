@@ -49,6 +49,90 @@ end
    assert(eq.mtSetParameter('bands[0].frequency', 500) is ERR_NotInitialised)
 end
 
+@Test function LoudnessCompensation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   check eq.mtInsertEntry('bands', 0)
+   set_band(eq, 0, EQB_PEAK, 3000, -4, 1)
+   check eq.acFlush()
+
+   frequencies = array<double> { 20, 50, 1000, 3000, 12500 }
+   plain = array<double, 5>
+   check eq.mtGetResponse(frequencies, plain)
+
+   -- The listening level is ignored while compensation is off, so the response is unchanged.
+
+   err, value = eq.mtGetParameter('listening_level')
+   assert(err is ERR_Okay and value is -20, 'The listening level defaults to -20 dB')
+   check eq.mtSetParameter('listening_level', -40)
+   check eq.acFlush()
+   magnitudes = array<double, 5>
+   check eq.mtGetResponse(frequencies, magnitudes)
+   for i in {0 to 5} do assert(magnitudes[i] is plain[i], 'Disabled compensation must not alter the response') end
+
+   -- Enabling compensation boosts bass and treble relative to 1 kHz, after the bands.
+
+   check eq.mtSetParameter('loudness', 1)
+   check eq.acFlush()
+   check eq.mtGetResponse(frequencies, magnitudes)
+   assert(magnitudes[0] - plain[0] > 15, f'Expected a bass boost at -40 dB, got {magnitudes[0] - plain[0]}')
+   assert(math.abs(magnitudes[2] - plain[2]) < 1, 'Compensation is nearly flat at 1 kHz')
+   assert(magnitudes[4] - plain[4] > 3, 'Expected a treble boost at 12.5 kHz')
+   assert(magnitudes[3] < magnitudes[2], 'The band remains in the response')
+
+   -- Lower listening levels receive more compensation, and the reference level is flat.
+
+   bass_at_40 = magnitudes[0] - plain[0]
+   check eq.mtSetParameter('listening_level', -60)
+   check eq.acFlush()
+   check eq.mtGetResponse(frequencies, magnitudes)
+   assert(magnitudes[0] - plain[0] > bass_at_40)
+   check eq.mtSetParameter('listening_level', 0)
+   check eq.acFlush()
+   check eq.mtGetResponse(frequencies, magnitudes)
+   for i in {0 to 5} do
+      assert(math.abs(magnitudes[i] - plain[i]) < 1e-9, 'Compensation is flat at the reference level')
+   end
+
+   assert(eq.mtSetParameter('listening_level', -61) is ERR_InvalidValue)
+   assert(eq.mtSetParameter('listening_level', 1) is ERR_InvalidValue)
+   assert(eq.mtSetParameter('loudness', 0.5) is ERR_InvalidValue)
+
+   -- Live edits while playing exercise the crossfaded transitions.
+
+   check eq.mtSetParameter('listening_level', -30)
+   check eq.acFlush()
+   check audio.acActivate()
+   data = array<byte, 4096>
+   data.fill(128)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   check eq.mtSetParameter('listening_level', -50)
+   check eq.acFlush()
+   check eq.mtSetParameter('loudness', 0)
+   check eq.acFlush()
+   err, value = eq.mtGetParameter('loudness')
+   assert(err is ERR_Okay and value is 0)
+   check audio.mtCloseChannels(channel)
+end
+
+@Test function LoudnessSchema()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   schema = eq.schema
+   assert(schema.find('<effect class="AudioEqualiser" version="2"') != nil, 'The equaliser schema is version 2')
+   assert(schema.find('<param key="loudness" label="Loudness"') != nil, 'loudness must be published')
+   assert(schema.find('<rule key="loudness" values="0" inactive="1"/>') != nil,
+      'listening_level is inactive while loudness is off')
+end
+
 @Test function BandListAndGlobalImmutability()
    audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
    eq = audio.new('AudioEqualiser')

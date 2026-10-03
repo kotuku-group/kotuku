@@ -16,6 +16,52 @@ struct EQSection {
    std::array<double, 2> Z1 = {}, Z2 = {};
 };
 
+//********************************************************************************************************************
+// Equal-loudness compensation.  A low and a high shelf approximate the ISO 226:2023 contour at 80 + Level phon minus
+// the contour at 80 phon, less Level, i.e. the boost that restores the balance heard at the reference level.  Corners
+// and slopes are shared by every level.  Gains were fitted offline at 5 dB steps from 0 to -60 dB by
+// tests/fixtures/fit_loudness_shelves.tiri and are interpolated linearly between steps.
+
+static constexpr double LOUDNESS_LOW_FREQUENCY  = 120;
+static constexpr double LOUDNESS_LOW_SLOPE      = 0.5;
+static constexpr double LOUDNESS_HIGH_FREQUENCY = 10000;
+static constexpr double LOUDNESS_HIGH_SLOPE     = 1;
+static constexpr double LOUDNESS_LEVEL_STEP     = 5;
+
+static constexpr std::array<std::array<double, 2>, 13> glLoudnessGains = {{ // { low shelf dB, high shelf dB }
+   { 0, 0 },           { 2.581, 0.8 },     { 5.174, 1.592 },   { 7.792, 2.372 },   { 10.442, 3.136 },
+   { 13.127, 3.878 },  { 15.835, 4.588 },  { 18.542, 5.255 },  { 21.21, 5.862 },   { 23.784, 6.387 },
+   { 26.192, 6.796 },  { 28.344, 7.043 },  { 30.119, 7.054 }
+}};
+
+inline std::array<AudioEQBand, 2> loudness_shelves(double Level)
+{
+   const double position = std::clamp(-Level, 0.0, 60.0) / LOUDNESS_LEVEL_STEP;
+   const auto index = std::min(int(position), int(glLoudnessGains.size()) - 2);
+   const double blend = position - double(index);
+   const auto &above = glLoudnessGains[index], &below = glLoudnessGains[index + 1];
+   return {
+      AudioEQBand { EQB::LOW_SHELF, LOUDNESS_LOW_FREQUENCY, above[0] + (below[0] - above[0]) * blend,
+         LOUDNESS_LOW_SLOPE },
+      AudioEQBand { EQB::HIGH_SHELF, LOUDNESS_HIGH_FREQUENCY, above[1] + (below[1] - above[1]) * blend,
+         LOUDNESS_HIGH_SLOPE }
+   };
+}
+
+// The processor's section list: the bands in order, followed by the compensation shelves if Loudness is enabled.
+
+inline std::vector<AudioEQBand> equaliser_sections(const std::vector<AudioEQBand> &Bands, bool Loudness,
+   double Level)
+{
+   std::vector<AudioEQBand> result;
+   result.reserve(Bands.size() + 2);
+   result.assign(Bands.begin(), Bands.end());
+   if (Loudness) {
+      for (const auto &shelf : loudness_shelves(Level)) result.push_back(shelf);
+   }
+   return result;
+}
+
 class EqualiserProcessor final : public AudioEffectProcessor {
 public:
    extAudioEffect *Owner;

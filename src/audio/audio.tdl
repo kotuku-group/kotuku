@@ -265,6 +265,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     output="class_audiolimiter_def.c", extended=true }, [[
   ]])
 
+  klass("AudioDelay", { base="AudioEffect", src="class_audiodelay.cpp",
+    output="class_audiodelay_def.c", extended=true }, [[
+  ]])
+
   klass("AudioSplitter", { base="AudioEffect", src="class_audiosplitter.cpp",
     output="class_audiosplitter_def.c", extended=true }, [[
     ~double LatencyBudget
