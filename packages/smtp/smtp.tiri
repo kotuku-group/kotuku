@@ -1264,6 +1264,7 @@ table: Result details, including the result code in the `code` field.
       local result:bool
       local result_text:str, result_details:table
       done = false
+      waiting = false
       proc = processing.new({ timeout=0.1 })
 
       next_timeout = Timeout
@@ -1272,7 +1273,7 @@ table: Result details, including the result code in the `code` field.
          result_text = Text
          result_details = snapshot(Details)
          done        = true
-         proc.signal()
+         if waiting then proc.signal() end
       end)
 
       if not started then return false, text, immediate end
@@ -1289,7 +1290,10 @@ table: Result details, including the result code in the `code` field.
             break
          end
 
-         if proc.sleep() is ERR_Terminate then
+         waiting = true
+         sleep_error = proc.sleep()
+         waiting = false
+         if sleep_error is ERR_Terminate then
             fail('Interrupted by program termination.', 'cancelled')
             break
          end
