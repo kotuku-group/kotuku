@@ -889,10 +889,6 @@ Audio: Target Audio object, inherited from an Audio owner if omitted.
 Set before initialisation.  Explicit targets take precedence over ownership.  Ownership changes after attachment do
 not change the target.  Freeing the target disconnects all its effects, including effects owned by other objects.
 
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
-
 -FIELD-
 Branch: Zero-based index of the container branch that hosts the effect.
 
@@ -967,7 +963,6 @@ Setting the `BYPASS` flag reduces the reported latency to zero, because a bypass
 The delay of a complete chain, including the global chain, can be read with the Audio class' `GetEffectStatus()`
 method.
 
--END-
 *********************************************************************************************************************/
 
 static ERR AUDIOEFFECT_GET_Latency(extAudioEffect *Self, int64_t *Value)
@@ -1060,10 +1055,6 @@ container.
 Within its branch, the effect is ordered by #Order.  Removing the branch from the container, freeing the container, or
 disconnecting the container from its Audio object or channel set disconnects the effect.
 
-*********************************************************************************************************************/
-
-/*********************************************************************************************************************
-
 -FIELD-
 Schema: An XML description of the effect's parameters.
 
@@ -1074,6 +1065,7 @@ current meter layout.  Instance-specific bounds, such as the Nyquist frequency, 
 
 The value is empty if the class does not publish a schema.
 
+-END-
 *********************************************************************************************************************/
 
 static ERR AUDIOEFFECT_GET_Schema(extAudioEffect *Self, std::string_view &Value)

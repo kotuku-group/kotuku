@@ -59,6 +59,7 @@ mixing.</li>
       <class>AudioDelay</class>
       <class>AudioEffect</class>
       <class>AudioEqualiser</class>
+      <class>AudioFlanger</class>
       <class>AudioLimiter</class>
       <class>AudioReverb</class>
       <class>AudioSaturator</class>

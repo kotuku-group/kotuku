@@ -273,6 +273,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     output="class_audiochorus_def.c", extended=true }, [[
   ]])
 
+  klass("AudioFlanger", { base="AudioEffect", src="class_audioflanger.cpp",
+    output="class_audioflanger_def.c", extended=true }, [[
+  ]])
+
   klass("AudioSaturator", { base="AudioEffect", src="class_audiosaturator.cpp",
     output="class_audiosaturator_def.c", extended=true }, [[
   ]])
