@@ -1115,19 +1115,18 @@ static uint64_t mix_fingerprint(uint64_t Hash, uint64_t Value)
 // Return the resolution, in buffer pixels per gradient unit, at which a cached gradient field (contour or Worley) is
 // computed.  Transform maps gradient units to the display.  Matching the display resolution keeps the field sharp when
 // the scene is enlarged, as the field is sampled without interpolation.  The larger axis scale is used so that a
-// stretched fill is not magnified in either direction, and the buffer is capped to bound memory and build time.
+// stretched fill is not magnified in either direction, and the buffer is capped to MaxPixels to bound memory and work.
 
-static double field_scale(const agg::trans_affine &Transform, const TClipRectangle<double> &Bounds)
+static double field_scale(const agg::trans_affine &Transform, const TClipRectangle<double> &Bounds,
+   double MaxPixels = 4096.0 * 4096.0)
 {
-   constexpr double MAX_PIXELS = 4096.0 * 4096.0;
-
    const double scale_x = sqrt((Transform.sx * Transform.sx) + (Transform.shy * Transform.shy));
    const double scale_y = sqrt((Transform.shx * Transform.shx) + (Transform.sy * Transform.sy));
    double scale = std::max(scale_x, scale_y);
    if ((not std::isfinite(scale)) or (scale <= 0)) return 1.0;
 
    const double area = (Bounds.width() + 1.0) * (Bounds.height() + 1.0);
-   if ((area > 0) and (area * scale * scale > MAX_PIXELS)) scale = sqrt(MAX_PIXELS / area);
+   if ((area > 0) and (area * scale * scale > MaxPixels)) scale = sqrt(MaxPixels / area);
    return scale;
 }
 
@@ -1545,12 +1544,17 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       apply_transforms(Gradient, transform);
       transform *= Transform;
 
-      // The field is computed at display resolution, so sampling coordinates are scaled to match.
-
-      const double resolution = field_scale(transform, Bounds);
       const auto path_hash = path_fingerprint(*Path);
       const auto resolved_seed = voronoi.Seed ? uint64_t(voronoi.Seed) : path_hash;
       const bool use_points = not voronoi.Points.empty();
+
+      // The field is computed at display resolution, so sampling coordinates are scaled to match.  Each field
+      // sample is compared with every feature, so reduce the pixel limit as the feature count grows to keep build
+      // time bounded.
+
+      constexpr double max_distance_tests = 4096.0 * 4096.0;
+      const auto feature_count = use_points ? voronoi.Points.size() : size_t(std::clamp(voronoi.PointCount, 1, 4096));
+      const double resolution = field_scale(transform, Bounds, max_distance_tests / double(feature_count));
 
       uint64_t hash = mix_fingerprint(path_hash, std::bit_cast<uint64_t>(resolution));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMode)));
