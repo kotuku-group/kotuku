@@ -878,8 +878,10 @@ end
 
 @Test function SynchronousPreparationAndStartupDetails()
    client = smtp.smtpClient({ host='127.0.0.1' })
+   processing.flush()
    ok, text, details = client.sendSync({})
    assert(not ok and details.code is 'invalid_message' and details.stage is 'preparation', text)
+   assert(processing.sleep(0.001) is ERR_Timeout, 'A synchronous result must not leave a pending processing signal')
    glPort++
    client = smtp.smtpClient({ host='127.0.0.1', port=glPort, timeout=0 })
    calls = 0
