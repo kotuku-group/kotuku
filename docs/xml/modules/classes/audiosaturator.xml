@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioSaturator</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>A waveshaper that adds harmonic colour through soft saturation or hard clipping.</comment>
+    <version>1</version>
+    <id>63508959</id>
+    <idstring>AUDIOSATURATOR</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The saturator amplifies its input by the <code>drive</code> level and passes the result through a fixed transfer curve that compresses large values, which adds harmonics to the sound.  Mild settings give warmth and density; high drive produces strong distortion.  The processed signal can be blended with the unprocessed input for parallel saturation.</p>
+<p>Create new saturator objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application saturators accept live changes; global saturators become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>drive</code>: the gain applied before the transfer curve, from 0 to 36 dB.  Higher levels push more of the signal into
+the curved region and increase the distortion.</li>
+<li><code>shape</code>: <code>soft</code> (0) for smooth saturation or <code>hard</code> (1) for hard clipping.</li>
+<li><code>gain</code>: the output trim of the processed signal, from -36 to 12 dB.  It does not affect the dry signal.</li>
+<li><code>mix</code>: the linear blend of dry and processed signals, from 0 to 100 percent.  100 percent outputs only the
+processed signal.</li>
+</list>
+<p>The following adds heavy parallel saturation to a playing channel set, as a single change:</p>
+<pre>saturator = obj.new('AudioSaturator', { audio=audio, channel=channel })
+saturator.mtSetParameter('drive', 24)
+saturator.mtSetParameter('gain', -12)
+saturator.mtSetParameter('mix', 40)
+saturator.acFlush()
+</pre>
+<header>Transfer Curves</header>
+<p>The processed signal is <code>trim * curve(drive * x)</code>, where <code>drive</code> and <code>trim</code> are the linear equivalents of the <code>drive</code> and <code>gain</code> levels.  The soft curve is <code>tanh(z)</code>, which approaches ±1 smoothly.  The hard curve is <code>clamp(z, -1, 1)</code>, which is linear below unity and flat above it.  Both are symmetric, map zero to zero and have unity slope at zero, so quiet signals pass with the drive gain applied and the curve output never exceeds unity.  Symmetric curves add odd harmonics; DC already present in the input is not removed.</p>
+<p>The processed level is not compensated for the drive: raising <code>drive</code> raises the loudness as well as the distortion, and <code>gain</code> is the means of matching levels.  At 0 dB drive the soft curve still compresses peaks, so it is not a bypass.  Each channel is processed independently and no audio passes between channels.</p>
+<header>Oversampling and Latency</header>
+<p>The curve is applied at four times the output rate.  The input is interpolated by a 257-tap linear-phase filter before the curve and band-limited by a matching filter afterwards, which removes most of the harmonics that would otherwise fold back below the Nyquist frequency as inharmonic aliasing.  Oversampling reduces aliasing but cannot remove it: high drive, hard clipping and content close to the Nyquist frequency still alias, most audibly near the top of the band.  The combined response of the two filters is flat within 0.001 dB up to 40% of the output rate and falls to -12 dB at 45%, and each filter attenuates by at least 100 dB from 50% of the output rate, so the processed signal loses content in the top tenth of the band.</p>
+<p>The filters delay the processed signal by exactly 64 output frames at every rate, which the saturator publishes as its <class name="AudioEffect" field="Latency">AudioEffect.Latency</class>.  The dry signal is delayed by the same 64 frames, so the two are time-aligned at every mix setting.  Alignment matches the timing, not the frequency response: only the processed signal is band-limited.</p>
+<header>Levels and Headroom</header>
+<p>Levels are measured in dBFS, where a sample magnitude of 1.0 is 0 dBFS, independently of the output format.  The drive and clipping thresholds do not depend on the output bit depth.  The band-limiting filter rings after the curve, so processed peaks can exceed unity before trim: by about 0.7 dB at an isolated hard-clipped edge, and by no more than 6.4 dB in the worst case.  Positive <code>gain</code> raises them further and the dry signal passes through unchanged, so the saturator is not a peak limiter.  Place an <class name="AudioLimiter">AudioLimiter</class> after it when a sample ceiling is required.  Non-finite samples are outside the normalised mixing contract and are treated as silence.</p>
+<header>Live Changes</header>
+<p>Changes to drive and gain ramp over 10 ms in dB, and changes to mix ramp linearly over 10 ms, from their current values.  A change of shape crossfades the outputs of the two curves over 10 ms.  Drive and shape apply at the oversampled rate as samples reach the curve, so samples already travelling through the interpolation filter can be shaped with the new values; gain and mix apply at the output.  Flush preserves the filter and dry histories.  Setting the mix to zero leaves the saturator running, with the dry signal still delayed.</p>
+<p>Device reactivation, rate or layout changes and leaving bypass discard the histories and apply the latest parameters without a transition.  Hard bypass removes the latency along with the processing.</p>
+<header>Tail and Drain</header>
+<p>One input frame affects 129 output frames, including the 64 frames of latency.  After its input stops, the saturator remains pending for 128 frames and then becomes idle.  The decay estimate used when other audio shares the saturator is the 65 frames of filter ringing beyond the latency.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  The filter histories require approximately 5 KB per channel.</p></description>
+    <source>
+      <file>class_audiosaturator.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>

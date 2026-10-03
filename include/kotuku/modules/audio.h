@@ -16,6 +16,7 @@ class objAudioCompressor;
 class objAudioLimiter;
 class objAudioDelay;
 class objAudioChorus;
+class objAudioSaturator;
 class objAudioSplitter;
 class objAudioAnalyser;
 class objSound;
@@ -933,6 +934,29 @@ class objAudioChorus : public objAudioEffect {
 
    using create = kt::Create<objAudioChorus>;
    objAudioChorus(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioSaturator class definition
+
+#define VER_AUDIOSATURATOR (1.000000)
+
+class objAudioSaturator : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOSATURATOR;
+   static constexpr CSTRING CLASS_NAME = "AudioSaturator";
+
+   using create = kt::Create<objAudioSaturator>;
+   objAudioSaturator(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 
