@@ -1,0 +1,357 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+-- Published numeric parameters in schema order, with their defaults, units and scales.  Shape is an enumeration.
+
+PARAMS = {
+   { key='drive', default=6, unit='dB', scale='linear', min=0, max=36 },
+   { key='gain', default=-6, unit='dB', scale='linear', min=-36, max=12 },
+   { key='mix', default=100, unit='%', scale='linear', min=0, max=100 }
+}
+
+ORDER = { 'drive', 'shape', 'gain', 'mix' }
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_saturator(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioSaturator', { audio=Audio, channel=channel }), channel
+end
+
+function play_square(Audio:obj, Channel:num)
+   data = array<byte, 8192>
+   for i in {0 to 8192} do data[i] = (i % 64 < 32) ? 160 : 96 end
+   err, sample = Audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(Audio, Channel, sample)
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixVolume(Audio, Channel, 1)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+function wait_for_stop(Count:table, Seconds:num)
+   deadline = mSys.PreciseTime() + (Seconds * 1000000)
+   while (Count.stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+end
+
+function wait_for_idle(Audio:obj, Set:num):<num, num>
+   state, truncated = -1, 0
+   deadline = mSys.PreciseTime() + 5000000
+   while mSys.PreciseTime() < deadline do
+      err, _, _, _, _, _, state, truncated = Audio.mtGetEffectStatus(Set)
+      assert(err is ERR_Okay)
+      if state is ADS_IDLE then break end
+      processing.sleep(0.01)
+   end
+   return state, truncated
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   saturator <close> = new_saturator(audio)
+   schema = saturator.schema
+   assert(schema.find('<effect class="AudioSaturator" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The saturator has no parameter groups')
+   assert(schema.find('type="curve"') is nil, 'The saturator does not publish a response curve')
+   assert(schema.find('gain_reduction') is nil, 'The saturator does not publish gain reduction')
+   for p in values(PARAMS) do
+      assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
+      assert(schema.find(f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"') != nil,
+         f'{p.key} must publish its unit, scale, range and default')
+      err, value = saturator.mtGetParameter(p.key)
+      assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   assert(schema.find('<param key="shape" label="Shape"') != nil)
+   assert(schema.find('type="enum" default="0"') != nil, 'Shape must be an enumeration defaulting to soft')
+   assert(schema.find('<option value="0" key="soft" label="Soft"') != nil)
+   assert(schema.find('<option value="1" key="hard" label="Hard"') != nil)
+   err, value = saturator.mtGetParameter('shape')
+   assert(err is ERR_Okay and value is 0)
+
+   last = 0
+   for key in values(ORDER) do
+      position = schema.find(f'<param key="{key}"')
+      assert(position > last, f'{key} is out of order')
+      last = position
+   end
+
+   assert(schema.find('key="input_peak_left" type="scalar"') != nil)
+   assert(schema.find('key="output_peak_right" type="scalar"') != nil)
+   assert(schema.find('unit="dBFS" scope="channel"') != nil)
+   assert(saturator.mtGetOutput('response') is ERR_Search)
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   saturator <close> = new_saturator(audio)
+   assert(saturator.mutable is 1)
+
+   -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
+
+   for p in values(PARAMS) do
+      check saturator.mtSetParameter(p.key, p.min)
+      check saturator.mtSetParameter(p.key, p.max)
+      assert(saturator.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(saturator.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(saturator.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(saturator.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+
+   -- Shape accepts only its option values.
+
+   check saturator.mtSetParameter('shape', 1)
+   check saturator.mtSetParameter('shape', 0)
+   for bad in values({ 2, -1, 0.5, math.huge }) do
+      assert(saturator.mtSetParameter('shape', bad) is ERR_InvalidValue, f'Shape must reject {bad}')
+   end
+   assert(saturator.mtSetParameter('unknown', 1) is ERR_Search)
+   check saturator.acFlush()
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
+   -- commits them together.
+
+   check saturator.mtSetParameter('drive', 18.5)
+   check saturator.mtSetParameter('shape', 1)
+   assert(saturator.mtSetParameter('gain', 13) is ERR_InvalidValue)
+   check saturator.mtSetParameter('gain', -9.25)
+   check saturator.mtSetParameter('mix', 42)
+   err, value = saturator.mtGetParameter('drive')
+   assert(err is ERR_Okay and value is 18.5, 'Staged values must be readable')
+   check saturator.acFlush()
+   for key, expected in pairs({ drive=18.5, shape=1, gain=-9.25, mix=42 }) do
+      err, value = saturator.mtGetParameter(key)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   saturator <close> = obj.new('AudioSaturator')
+   saturator.audio = audio
+   saturator.channel = channel
+   check saturator.mtSetParameter('drive', 30)
+   check saturator.mtSetParameter('shape', 1)
+   assert(saturator.mtSetParameter('mix', 101) is ERR_InvalidValue)
+   saturator.init()
+   for key, expected in pairs({ drive=30, shape=1, gain=-6, mix=100 }) do
+      err, value = saturator.mtGetParameter(key)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected}, got {value}')
+   end
+end
+
+@Test function LatencyAndLivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   saturator, channel = new_saturator(audio)
+   try
+      unconfigured = saturator.latency
+   except e when ERR_NotInitialised
+   success
+      raise 'Latency must not be readable before the output is configured'
+   end
+
+   check saturator.mtSetParameter('drive', 36)
+   check saturator.mtSetParameter('shape', 1)
+   check saturator.mtSetParameter('gain', -36)
+   check saturator.acFlush()
+   check audio.acActivate()
+   assert(saturator.latency is 64, f'The oversampling filters delay by 64 frames, got {saturator.latency}')
+   err, rate, format, layout, generation, state = saturator.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+
+   play_square(audio, channel)
+
+   -- Hard clipping at 36 dB of drive bounds the processed signal near full scale before the -36 dB trim, so output
+   -- peaks are far below the input peaks once an interval is published.
+
+   err, meter_layout = saturator.mtGetMeterLayout()
+   assert(err is ERR_Okay and #meter_layout.meters is 4)
+   assert(meter_layout.meters[0].key is 'input_peak_left' and meter_layout.meters[3].key is 'output_peak_right')
+   input_peak, output_peak = -120, -120
+   for attempt in {0 to 200} do
+      err, reading = saturator.mtReadMeters()
+      assert(err is ERR_Okay)
+      if (reading.flags has AMF_VALID) and (reading.values[0].value > -60) and (reading.values[2].value > -120) then
+         input_peak = reading.values[0].value
+         output_peak = reading.values[2].value
+         break
+      end
+      processing.sleep(0.01)
+   end
+   assert(input_peak > -60, f'The input meter must register the square wave, got {input_peak}')
+   assert(output_peak < input_peak - 12, f'Output {output_peak} dBFS must reflect the trim below input {input_peak}')
+   assert(output_peak < -30, f'Clipped output must be close to -36 dBFS, got {output_peak}')
+
+   -- Live edits, including a shape crossfade, never change the latency.
+
+   check saturator.mtSetParameter('shape', 0)
+   check saturator.mtSetParameter('drive', 12)
+   check saturator.acFlush()
+   check saturator.mtSetParameter('mix', 0)
+   check saturator.acFlush()
+   assert(saturator.latency is 64, 'Parameter changes must not alter the latency')
+
+   -- Bypass removes the latency; leaving bypass restores it.
+
+   saturator.flags = AEF_BYPASS
+   assert(saturator.latency is 0, 'A bypassed saturator has no latency')
+   err, reading = saturator.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   saturator.flags = 0
+   assert(saturator.latency is 64)
+
+   -- The latency is the same at every supported rate.
+
+   check audio.acDeactivate()
+   audio.outputRate = 96000
+   check audio.acActivate()
+   assert(saturator.latency is 64, 'The latency in frames does not depend on the output rate')
+
+   check audio.mtCloseChannels(channel)
+   err, reading = saturator.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(saturator.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   saturator.free()
+end
+
+-- A saturator followed by a limiter: the latencies add along the path.
+
+@Test function SerialChainLatency()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   saturator <close>, channel = new_saturator(audio)
+   limiter <close> = obj.new('AudioLimiter', { audio=audio, channel=channel, order=1 })
+   check audio.acActivate()
+   err, application, _, total = audio.mtGetEffectStatus(channel)
+   assert(err is ERR_Okay)
+   assert(application is 304, f'64 frames of saturator latency plus 240 of limiter lookahead, got {application}')
+   assert(total is 304, f'The global path adds nothing, got {total}')
+   check audio.acDeactivate()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   saturator = audio.new('AudioSaturator')
+   check saturator.mtSetParameter('shape', 1)
+   check saturator.mtSetParameter('drive', 20)
+   saturator.init()
+   assert(saturator.mutable is 0)
+   assert(saturator.mtSetParameter('drive', 12) is ERR_Immutable)
+   err, value = saturator.mtGetParameter('shape')
+   assert(err is ERR_Okay and value is 1, 'Global effects remain readable')
+   check audio.acActivate()
+   assert(saturator.latency is 64)
+   err, layout = saturator.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 2)
+   assert(layout.meters[0].key is 'input_peak_centre' and layout.meters[1].key is 'output_peak_centre')
+   assert(saturator.schema.find('input_peak_right') is nil, 'Mono must not publish a right channel')
+   check audio.acDeactivate()
+end
+
+-- OnStop is held until the filter ringing has drained from the Sound's channel set.
+
+@Test function SoundStopWaitsForTail()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   state_at_stop = -1
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound)
+         count.stops++
+         err, _, _, _, _, _, state = audio.mtGetEffectStatus(Sound.channelIndex & 0xffff0000)
+         state_at_stop = state
+      end })
+   saturator <close> = obj.new('AudioSaturator', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   check saturator.mtSetParameter('drive', 24)
+   check saturator.acFlush()
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once')
+   assert(state_at_stop is ADS_IDLE, f'The filter tail must have drained before OnStop, state {state_at_stop}')
+   check audio.acDeactivate()
+end
+
+-- A Sound on the shared global path stops after its estimated decay, behind a serial global chain.
+
+@Test function GlobalChainStop()
+   audio <close> = obj.new('Audio', { device='null' })
+   first = audio.new('AudioSaturator')
+   first.init()
+   second = audio.new('AudioSaturator')
+   check second.mtSetParameter('shape', 1)
+   second.init()
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) count.stops++ end })
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once on the global path')
+   state = wait_for_idle(audio, 0)
+   assert(state is ADS_IDLE, f'The global chain must reach idle, state {state}')
+   check audio.acDeactivate()
+end
+
+-- Destroying the saturator while its channel set is playing leaves the Sound to finish normally.
+
+@Test function DestroyDuringPlayback()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) count.stops++ end })
+   saturator = obj.new('AudioSaturator', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   check sound.acActivate()
+   processing.sleep(0.05)
+   saturator.free()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once after the saturator is destroyed')
+   check audio.acDeactivate()
+end
+
+-- The shortest MaxDrain of 10 ms exceeds the 129-frame tail of one saturator, so five in series (about 640 frames of
+-- pending output) are needed to reach it.  The truncation is reported and the chain still reaches idle.
+
+@Test function MaxDrainTruncation()
+   audio <close> = obj.new('Audio', { device='null', maxDrain=0.01 })
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) count.stops++ end })
+   set = sound.channelIndex & 0xffff0000
+   chain = array<obj>
+   for i in {0 to 5} do chain.push(obj.new('AudioSaturator', { audio=audio, channel=set, order=i })) end
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once the drain limit is reached')
+   state, truncated = wait_for_idle(audio, set)
+   assert(state is ADS_IDLE, f'The chain must reach idle after truncation, state {state}')
+   assert(truncated is 1, 'A drain cut short by MaxDrain must be reported')
+   check audio.acDeactivate()
+   for saturator in values(chain) do saturator.free() end
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      saturator = obj.new('AudioSaturator', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end
