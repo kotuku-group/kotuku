@@ -8,7 +8,8 @@ Linux joystick backend for the Controller class.
 
 #ifdef __linux__
 
-#include <algorithm>
+#include "controller_mapping.h"
+
 #include <cstring>
 #include <linux/joystick.h>
 #include <string>
@@ -16,7 +17,6 @@ Linux joystick backend for the Controller class.
 namespace {
 
 constexpr int MAX_CONTROLLER_PORTS = 32;
-constexpr double STICK_TOLERANCE = 0.08;
 
 struct LinuxController {
    int fd = -1;
@@ -25,6 +25,7 @@ struct LinuxController {
    bool axis_map_valid = false;
    bool button_map_valid = false;
    std::array<uint8_t, ABS_CNT> axis_map = { };
+   display::linux_controller::AxisProfile axis_profile = { };
    std::array<uint16_t, KEY_MAX - BTN_MISC + 1> button_map = { };
    std::array<double, 6> values = { };
    CON button_state = CON::NIL;
@@ -43,32 +44,6 @@ struct LinuxController {
 std::array<LinuxController, MAX_CONTROLLER_PORTS> glLinuxControllers;
 std::mutex glControllerLock;
 int glPrimaryPort = -1;
-
-//********************************************************************************************************************
-// Converts a signed Linux joystick axis value to Kōtuku's normalised [-1, 1] axis range.
-
-inline double normalise_axis(int16_t Value)
-{
-   return std::clamp(double(Value) * (1.0 / 32767.0), -1.0, 1.0);
-}
-
-// Converts a signed Linux trigger axis value to Kōtuku's normalised [0, 1] trigger range.
-
-inline double normalise_trigger(int16_t Value)
-{
-   return std::clamp((normalise_axis(Value) + 1.0) * 0.5, 0.0, 1.0);
-}
-
-// Applies the shared dead zone to a two-axis thumb stick.
-
-inline void apply_stick_tolerance(double &X, double &Y)
-{
-   if ((X < STICK_TOLERANCE) and (X > -STICK_TOLERANCE) and
-       (Y < STICK_TOLERANCE) and (Y > -STICK_TOLERANCE)) {
-      X = 0;
-      Y = 0;
-   }
-}
 
 // Adds or removes a controller button flag from the current button state.
 
@@ -134,12 +109,12 @@ static CON map_button(const LinuxController &Controller, uint8_t Number)
 static void fallback_axis(LinuxController &Controller, uint8_t Number, int16_t Value)
 {
    switch (Number) {
-      case 0: Controller.values[2] = normalise_axis(Value); break;
-      case 1: Controller.values[3] = -normalise_axis(Value); break;
-      case 2: Controller.values[0] = normalise_trigger(Value); break;
-      case 3: Controller.values[4] = normalise_axis(Value); break;
-      case 4: Controller.values[5] = -normalise_axis(Value); break;
-      case 5: Controller.values[1] = normalise_trigger(Value); break;
+      case 0: Controller.values[2] = display::linux_controller::normaliseAxis(Value); break;
+      case 1: Controller.values[3] = -display::linux_controller::normaliseAxis(Value); break;
+      case 2: Controller.values[0] = display::linux_controller::normaliseTrigger(Value); break;
+      case 3: Controller.values[4] = display::linux_controller::normaliseAxis(Value); break;
+      case 4: Controller.values[5] = -display::linux_controller::normaliseAxis(Value); break;
+      case 5: Controller.values[1] = display::linux_controller::normaliseTrigger(Value); break;
       case 6:
          set_button(Controller.button_state, CON::DPAD_LEFT, Value < 0);
          set_button(Controller.button_state, CON::DPAD_RIGHT, Value > 0);
@@ -162,12 +137,6 @@ static void handle_axis(LinuxController &Controller, uint8_t Number, int16_t Val
    }
 
    switch (Controller.axis_map[Number]) {
-      case ABS_X:  Controller.values[2] = normalise_axis(Value); break;
-      case ABS_Y:  Controller.values[3] = -normalise_axis(Value); break;
-      case ABS_Z:  Controller.values[0] = normalise_trigger(Value); break;
-      case ABS_RX: Controller.values[4] = normalise_axis(Value); break;
-      case ABS_RY: Controller.values[5] = -normalise_axis(Value); break;
-      case ABS_RZ: Controller.values[1] = normalise_trigger(Value); break;
       case ABS_HAT0X:
          set_button(Controller.button_state, CON::DPAD_LEFT, Value < 0);
          set_button(Controller.button_state, CON::DPAD_RIGHT, Value > 0);
@@ -177,6 +146,7 @@ static void handle_axis(LinuxController &Controller, uint8_t Number, int16_t Val
          set_button(Controller.button_state, CON::DPAD_DOWN, Value > 0);
          break;
       default:
+         display::linux_controller::mapAxis(Controller.values, Controller.axis_profile[Number], Value);
          break;
    }
 }
@@ -195,6 +165,7 @@ static void close_controller(LinuxController &Controller)
    Controller.buttons = 0;
    Controller.axis_map_valid = false;
    Controller.button_map_valid = false;
+   Controller.axis_profile.fill(display::linux_controller::AxisTarget::UNUSED);
    Controller.values.fill(0);
    Controller.button_state = CON::NIL;
 }
@@ -228,6 +199,9 @@ static ERR open_controller(int Port)
 
    controller.axis_map.fill(0);
    controller.axis_map_valid = ioctl(controller.fd, JSIOCGAXMAP, controller.axis_map.data()) >= 0;
+   if (controller.axis_map_valid) {
+      controller.axis_profile = display::linux_controller::buildAxisProfile(controller.axis_map, controller.axes);
+   }
 
    controller.button_map.fill(0);
    controller.button_map_valid = ioctl(controller.fd, JSIOCGBTNMAP, controller.button_map.data()) >= 0;
@@ -268,8 +242,8 @@ static ERR read_controller(LinuxController &Controller, int Port)
       else return ERR::SystemCall;
    }
 
-   apply_stick_tolerance(Controller.values[2], Controller.values[3]);
-   apply_stick_tolerance(Controller.values[4], Controller.values[5]);
+   display::linux_controller::applyStickTolerance(Controller.values[2], Controller.values[3]);
+   display::linux_controller::applyStickTolerance(Controller.values[4], Controller.values[5]);
    return ERR::Okay;
 }
 
