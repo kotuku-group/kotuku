@@ -1112,6 +1112,26 @@ static uint64_t mix_fingerprint(uint64_t Hash, uint64_t Value)
 }
 
 //********************************************************************************************************************
+// Return the resolution, in buffer pixels per gradient unit, at which a cached gradient field (contour or Worley) is
+// computed.  Transform maps gradient units to the display.  Matching the display resolution keeps the field sharp when
+// the scene is enlarged, as the field is sampled without interpolation.  The larger axis scale is used so that a
+// stretched fill is not magnified in either direction, and the buffer is capped to bound memory and build time.
+
+static double field_scale(const agg::trans_affine &Transform, const TClipRectangle<double> &Bounds)
+{
+   constexpr double MAX_PIXELS = 4096.0 * 4096.0;
+
+   const double scale_x = sqrt((Transform.sx * Transform.sx) + (Transform.shy * Transform.shy));
+   const double scale_y = sqrt((Transform.shx * Transform.shx) + (Transform.sy * Transform.sy));
+   double scale = std::max(scale_x, scale_y);
+   if ((not std::isfinite(scale)) or (scale <= 0)) return 1.0;
+
+   const double area = (Bounds.width() + 1.0) * (Bounds.height() + 1.0);
+   if ((area > 0) and (area * scale * scale > MAX_PIXELS)) scale = sqrt(MAX_PIXELS / area);
+   return scale;
+}
+
+//********************************************************************************************************************
 // Gradient fills.
 
 static void fill_gradient(VectorState &State, const TClipRectangle<double> &Bounds, agg::path_storage *Path,
@@ -1452,8 +1472,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
    }
    else if (Gradient.classID() IS CLASSID::GRADIENTCONTOUR) {
       auto &contour = (extGradientContour &)Gradient;
-      // The contour's distance transform buffer depends only on the path content, so it is cached with the
-      // gradient and reused until the path's fingerprint changes.  The d1/d2 values only affect a small
+      // The contour's distance transform buffer depends only on the path content and the display resolution, so it
+      // is cached with the gradient and reused until either changes.  The d1/d2 values only affect a small
       // lookup table and can be updated freely on the cached object.
 
       auto multiplier = std::clamp<double>(contour.Multiplier, 0.01, 10.0);
@@ -1469,15 +1489,20 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       gradient_func.d1(floor * 256.0);  // d1 is added to the DT base values
       gradient_func.d2(multiplier);  // d2 is a multiplier of the base DT value
 
-      const auto hash = path_fingerprint(*Path);
-      if ((rebuild) or (hash != contour.ContourHash)) {
-         gradient_func.contour_create(*Path);
-         contour.ContourHash = hash;
-      }
-
       transform.translate(Bounds.left, Bounds.top);
       apply_transforms(Gradient, transform);
       transform *= Transform;
+
+      // The buffer is computed at display resolution, so sampling coordinates are scaled to match.
+
+      const double resolution = field_scale(transform, Bounds);
+      const auto hash = mix_fingerprint(path_fingerprint(*Path), std::bit_cast<uint64_t>(resolution));
+      if ((rebuild) or (hash != contour.ContourHash)) {
+         gradient_func.contour_create(*Path, resolution);
+         contour.ContourHash = hash;
+      }
+
+      transform.premultiply(agg::trans_affine_scaling(1.0 / resolution));
       transform.invert();
 
       // Regarding repeatable spread methods, bear in mind that the nature of the contour gradient
@@ -1500,8 +1525,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
    }
    else if (Gradient.classID() IS CLASSID::GRADIENTVORONOI) {
       auto &voronoi = (extGradientVoronoi &)Gradient;
-      // The Worley field buffer depends on the path and all generation parameters.  The d1/d2 values only affect
-      // the small lookup table, so they can be updated without rebuilding the feature-point field.
+      // The Worley field buffer depends on the path, the display resolution and all generation parameters.  The d1/d2
+      // values only affect the small lookup table, so they can be updated without rebuilding the feature-point field.
 
       auto multiplier = std::clamp<double>(voronoi.Multiplier, 0.01, 10.0);
       auto floor = std::clamp<double>(voronoi.Floor, 0.0, multiplier);
@@ -1516,11 +1541,18 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       gradient_func.d1(floor * 256.0);
       gradient_func.d2(multiplier);
 
+      transform.translate(Bounds.left, Bounds.top);
+      apply_transforms(Gradient, transform);
+      transform *= Transform;
+
+      // The field is computed at display resolution, so sampling coordinates are scaled to match.
+
+      const double resolution = field_scale(transform, Bounds);
       const auto path_hash = path_fingerprint(*Path);
       const auto resolved_seed = voronoi.Seed ? uint64_t(voronoi.Seed) : path_hash;
       const bool use_points = not voronoi.Points.empty();
 
-      uint64_t hash = path_hash;
+      uint64_t hash = mix_fingerprint(path_hash, std::bit_cast<uint64_t>(resolution));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMode)));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMetric)));
       if (use_points) {
@@ -1547,14 +1579,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          }
 
          gradient_func.worley_create(*Path, resolved_seed, voronoi.PointCount, voronoi.WorleyMode,
-            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter,
+            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter, resolution,
             use_points ? &points : nullptr);
          voronoi.WorleyHash = hash;
       }
 
-      transform.translate(Bounds.left, Bounds.top);
-      apply_transforms(Gradient, transform);
-      transform *= Transform;
+      transform.premultiply(agg::trans_affine_scaling(1.0 / resolution));
       transform.invert();
 
       if (Gradient.SpreadMethod IS VSPREAD::REFLECT) {

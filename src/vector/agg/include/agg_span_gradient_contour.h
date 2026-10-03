@@ -51,7 +51,8 @@ namespace agg
          build_lut();
       }
 
-      int8u* contour_create(path_storage &ps);
+      // Scale is the buffer resolution in pixels per path unit; sampling coordinates must be scaled to match.
+      int8u* contour_create(path_storage &ps, double Scale = 1.0);
 
       int    contour_width() { return m_width; }
       int    contour_height() { return m_height; }
@@ -72,7 +73,7 @@ namespace agg
       }
    };
 
-   int8u * gradient_contour::contour_create(path_storage &ps) {
+   int8u * gradient_contour::contour_create(path_storage &ps, double Scale) {
       // Flatten the curves once so that bounding rect computation and both rasterisation passes do not
       // each repeat the curve subdivision.
 
@@ -83,8 +84,9 @@ namespace agg
       double x1, y1, x2, y2;
       if (!agg::bounding_rect_single(flat, 0, &x1, &y1, &x2, &y2)) return nullptr;
 
-      const auto width  = int(ceil(x2 - x1)) + 1;
-      const auto height = int(ceil(y2 - y1)) + 1;
+      if (not (Scale > 0)) Scale = 1.0;
+      const auto width  = int(ceil((x2 - x1) * Scale)) + 1;
+      const auto height = int(ceil((y2 - y1) * Scale)) + 1;
       m_buffer.resize(width * height);
       std::fill(m_buffer.begin(), m_buffer.end(), 255);
 
@@ -97,6 +99,7 @@ namespace agg
 
       agg::trans_affine mtx;
       mtx.translate(-x1, -y1);
+      mtx.scale(Scale);
 
       agg::conv_transform<agg::path_storage> trans(flat, mtx);
 
