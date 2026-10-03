@@ -212,9 +212,11 @@ function customHeader(Name:str, Value:str):str
    if not rx_field_name.test(Name) or RESERVED_HEADERS[Name.lower()] then
       raise ERR_InvalidValue, 'Invalid or reserved custom header name.'
    end
+
    if rx_non_ascii.test(Value) or rx_header_control.test(Value) then
       raise ERR_InvalidValue, 'Custom header values must be ASCII without prohibited controls.'
    end
+
    line = Name .. ': '
    lines = array<str> { }
    for _, match in r'[^ \t]+[ \t]*'.search(Value) do
@@ -291,9 +293,7 @@ function textPart(Type:str, Text:str):table
    }
 end
 
-function attachmentPart(Attachment:any):table
-   if not (Attachment is <table>) then raise ERR_InvalidValue, 'Each attachment must be a table.' end
-
+function attachmentPart(Attachment:table!):table
    local content:str
    if Attachment.content is <str> then
       content = Attachment.content
@@ -424,12 +424,14 @@ smtp.prepare = function(Message:table!):table
 
    sender = mailbox(Message.from, 'from')
    _, domain = rx_mailbox.extract(sender)
+
    envelope_sender = Message.envelopeFrom
    envelope_sender ?= sender
    if not (envelope_sender is <str>) or
       (#envelope_sender > 0 and mailbox(envelope_sender, 'envelopeFrom') != envelope_sender) then
       raise ERR_InvalidValue, 'The envelopeFrom value must be a bare ASCII mailbox or an empty string.'
    end
+
    message_id = Message.messageID
    message_id ?= '<' .. randomHex(16) .. '@' .. domain .. '>'
    identifier(message_id, 'messageID')
@@ -458,17 +460,20 @@ smtp.prepare = function(Message:table!):table
    headers.push('Message-ID: ' .. message_id)
    if Message.inReplyTo != nil then headers.push('In-Reply-To: ' .. identifier(Message.inReplyTo, 'inReplyTo')) end
    refs = orderedList(Message.references, 'references')
+
    if #refs > 0 then
       formatted = array<str> { }
       for _, ref in refs do formatted.push(identifier(ref, 'references')) end
       headers.push('References: ' .. formatted.concat('\r\n '))
    end
+
    for _, header in orderedList(Message.headers, 'headers') do
       if not (header is <table>) or not (header.name is <str>) or not (header.value is <str>) then
          raise ERR_InvalidValue, 'Each custom header requires name and value strings.'
       end
       headers.push(customHeader(header.name, header.value))
    end
+
    headers.push('Subject: ' .. headerText(Message.subject or '', 'subject'))
    headers.push('MIME-Version: 1.0')
 
@@ -480,11 +485,13 @@ smtp.prepare = function(Message:table!):table
    content_ids = { }
    for _, attachment in orderedList(Message.attachments, 'attachments') do
       if not (attachment is <table>) then raise ERR_InvalidValue, 'Each attachment must be a table.' end
+
       kind = attachment.disposition
       kind ?= 'attachment'
       if kind != 'attachment' and kind != 'inline' then
          raise ERR_InvalidValue, 'Unsupported attachment disposition.'
       end
+
       if kind is 'inline' then
          if not has_html then raise ERR_InvalidValue, 'Inline attachments require a non-empty HTML body.' end
          if not (attachment.contentID is <str>) or #attachment.contentID is 0 then
