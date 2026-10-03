@@ -29,6 +29,23 @@ eq.acFlush()
 
 Assign the #Bands field to replace every band at once.
 
+Set the top-level `loudness` parameter to apply equal-loudness compensation, which restores the bass and treble that
+the ear loses when playback is quiet.  The `listening_level` parameter is the playback level in decibels relative to
+the reference level, at which compensation is flat.  The equaliser cannot measure the acoustic playback level, so
+the application sets `listening_level` from its own volume control.  The compensation is a low shelf and a high shelf
+that approximate the difference between the ISO 226:2023 equal-loudness contours at the reference level of 80 phon
+and at the listening level.  The shelves run after the bands and before the output trim, and are included in
+@AudioEffect.GetResponse().  The fit error grows with attenuation; the worst error in the ISO data range of 20 Hz to
+12.5 kHz is about 0.6 dB at -10 dB, 0.9 dB at -20 dB, 2 dB at -40 dB and 3.4 dB at -60 dB, where the 1 kHz level is
+raised by 1.6 dB.  Compensation can boost the bass by up to 30 dB at low listening levels, so place an AudioLimiter
+after the equaliser to prevent clipping.
+
+<pre>
+eq.mtSetParameter('loudness', 1)
+eq.mtSetParameter('listening_level', -30)
+eq.acFlush()
+</pre>
+
 Live changes crossfade the old and new filter chains over 10 ms, including output trim changes.  An edit during a
 crossfade replaces a single queued target, which starts its own crossfade when the current one finishes.  Parameter
 reads and @AudioEffect.GetResponse() describe the latest committed target immediately, even during a transition.
@@ -49,6 +66,8 @@ class extAudioEqualiser : public extAudioEffect {
 public:
    std::vector<AudioEQBand> Bands;
    double Gain = 0;
+   double ListeningLevel = -20;
+   bool Loudness = false;
    EqualiserProcessor *Processor = nullptr;
 
    extAudioEqualiser(objMetaClass *ClassPtr, OBJECTID ObjectID);
@@ -73,11 +92,16 @@ static const AudioParamOption glBandTypes[] = {
      "Removes frequencies below the band frequency, reducing rumble and hum." }
 };
 
+static const int glLoudnessOff[] = { 0 };
+
 static const AudioParamRule glBandGainRules[] = { { .Key = "type", .Values = glPassTypes, .Inactive = true } };
 static const AudioParamRule glBandQRules[]    = { { .Key = "type", .Values = glShelfTypes, .CapMax = 1 } };
+static const AudioParamRule glListeningLevelRules[] = {
+   { .Key = "loudness", .Values = glLoudnessOff, .Inactive = true }
+};
 
 enum { BAND_TYPE = 0, BAND_FREQUENCY, BAND_GAIN, BAND_Q, BAND_MEMBERS };
-enum { EQ_GAIN = 0 };
+enum { EQ_GAIN = 0, EQ_LOUDNESS, EQ_LISTENING_LEVEL };
 enum { EQ_BANDS = 0 };
 
 static const AudioParamDesc glBandMembers[] = {
@@ -100,7 +124,15 @@ static const AudioParamDesc glBandMembers[] = {
 static const AudioParamDesc glEqualiserParams[] = {
    { .Key = "gain", .Label = "Output Trim",
      .Description = "A level adjustment applied after all bands, typically to offset the loudness change of a boost.",
-     .Unit = APU::DB, .Min = -48, .Max = 48, .Default = 0 }
+     .Unit = APU::DB, .Min = -48, .Max = 48, .Default = 0 },
+   { .Key = "loudness", .Label = "Loudness",
+     .Description = "Restores the bass and treble that the ear loses when playback is quiet, according to the "
+        "listening level.",
+     .Type = APT::BOOL, .Min = 0, .Max = 1, .Default = 0 },
+   { .Key = "listening_level", .Label = "Listening Level",
+     .Description = "The playback level relative to the reference level, at which loudness compensation is flat.  "
+        "Set it from the application's volume control.  Lower levels receive more bass and treble.",
+     .Unit = APU::DB, .Min = -60, .Max = 0, .Default = -20, .Rules = glListeningLevelRules }
 };
 
 static const AudioParamGroup glEqualiserGroups[] = {
@@ -130,7 +162,7 @@ static AudioEQBand entry_band(const AudioParamEntry &Entry)
 static void equaliser_read(extAudioEffect *Effect, AudioParamState &State)
 {
    auto Self = (extAudioEqualiser *)Effect;
-   State.Params.assign({ Self->Gain });
+   State.Params.assign({ Self->Gain, double(Self->Loudness), Self->ListeningLevel });
    State.Groups.resize(1);
    auto &entries = State.Groups[EQ_BANDS];
    entries.clear();
@@ -149,28 +181,35 @@ static void equaliser_apply(extAudioEffect *Effect, const AudioParamState &State
    Self->Bands.clear();
    for (const auto &entry : State.Groups[EQ_BANDS]) Self->Bands.push_back(entry_band(entry));
    Self->Gain = State.Params[EQ_GAIN];
+   Self->Loudness = State.Params[EQ_LOUDNESS] != 0;
+   Self->ListeningLevel = State.Params[EQ_LISTENING_LEVEL];
 }
 
 //********************************************************************************************************************
 // Prepared storage is also the retirement container: swaps leave old allocations here to be freed after unlocking.
+// Compensation shelves follow the bands in the section list.  Their origins are resolved on publication so that a
+// listening level edit keeps the history of the committed shelves.
 
 class EqualiserUpdate final : public AudioParamUpdate {
 public:
    std::vector<AudioEQBand> Bands;
    std::vector<EQSection> Sections;
    std::vector<int> Origins;
-   double Gain, Trim;
+   double Gain, Trim, ListeningLevel;
+   bool Loudness;
 
    EqualiserUpdate(extAudioEffect *Effect, const AudioParamState &State, int Rate)
-      : Gain(State.Params[EQ_GAIN]), Trim(std::pow(10.0, Gain / 20.0)) {
+      : Gain(State.Params[EQ_GAIN]), Trim(std::pow(10.0, Gain / 20.0)),
+        ListeningLevel(State.Params[EQ_LISTENING_LEVEL]), Loudness(State.Params[EQ_LOUDNESS] != 0) {
       const auto &entries = State.Groups[EQ_BANDS];
       Bands.reserve(entries.size());
-      Origins.reserve(entries.size());
+      Origins.reserve(entries.size() + 2);
       for (const auto &entry : entries) {
          Bands.push_back(entry_band(entry));
          Origins.push_back(entry.Origin);
       }
-      EqualiserProcessor model(Effect, Bands, Gain);
+      if (Loudness) Origins.insert(Origins.end(), 2, -1);
+      EqualiserProcessor model(Effect, equaliser_sections(Bands, Loudness, ListeningLevel), Gain);
       model.Rate = Rate;
       for (auto &section : model.Sections) model.compute(section);
       Sections.swap(model.Sections);
@@ -178,9 +217,15 @@ public:
 
    void publish(extAudioEffect *Effect) override {
       auto Self = (extAudioEqualiser *)Effect;
+      if (Loudness and Self->Loudness) {
+         Origins[Bands.size()] = int(Self->Bands.size());
+         Origins[Bands.size() + 1] = int(Self->Bands.size()) + 1;
+      }
       if (Self->Processor) Self->Processor->update(Sections, Origins, Trim);
       Self->Bands.swap(Bands);
       Self->Gain = Gain;
+      Self->Loudness = Loudness;
+      Self->ListeningLevel = ListeningLevel;
    }
 };
 
@@ -203,7 +248,7 @@ static ERR equaliser_response(extAudioEffect *Effect, std::span<const double> Fr
    std::span<double> Magnitudes)
 {
    auto Self = (extAudioEqualiser *)Effect;
-   EqualiserProcessor model(Self, Self->Bands, Self->Gain);
+   EqualiserProcessor model(Self, equaliser_sections(Self->Bands, Self->Loudness, Self->ListeningLevel), Self->Gain);
    model.Rate = effect_rate(Self);
    for (auto &section : model.Sections) model.compute(section);
    equaliser_magnitudes(model, Frequencies, Magnitudes);
@@ -214,7 +259,7 @@ static ERR equaliser_response(extAudioEffect *Effect, std::span<const double> Fr
 
 static const AudioEffectSchema glEqualiserSchema = {
    .ClassName   = "AudioEqualiser",
-   .Version     = 1,
+   .Version     = 2,
    .Description = "A parametric equaliser that shapes the tone of the sound with a list of filter bands.",
    .Params      = glEqualiserParams,
    .Groups      = glEqualiserGroups,
@@ -246,7 +291,8 @@ static ERR AUDIOEQUALISER_Init(extAudioEqualiser *Self)
    equaliser_read(Self, state);
    if (validate_state(glEqualiserSchema, state, Self->OutputRate) != ERR::Okay) return ERR::InvalidValue;
 
-   auto processor = std::make_unique<EqualiserProcessor>(Self, Self->Bands, Self->Gain);
+   auto processor = std::make_unique<EqualiserProcessor>(Self,
+      equaliser_sections(Self->Bands, Self->Loudness, Self->ListeningLevel), Self->Gain);
    auto pointer = processor.get();
 
    auto error = Self->set_processor(std::move(processor));
@@ -277,8 +323,8 @@ static ERR AUDIOEQUALISER_SET_Bands(extAudioEqualiser *Self, std::span<const Aud
    if (Value.size() > 64) return ERR::Args;
 
    AudioParamState state;
-   state.Params.assign({ Self->Gain });
-   state.Groups.resize(1);
+   equaliser_read(Self, state);
+   state.Groups[EQ_BANDS].clear();
    for (const auto &band : Value) { // Origins remain -1 so that every band is validated and starts afresh
       state.Groups[EQ_BANDS].push_back({ { double(int(band.Type)), band.Frequency, band.Gain, band.Q } });
    }

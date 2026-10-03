@@ -54,10 +54,14 @@ end
 function choose_values(Params:table, Rate:num):table
    chosen = {}
    for p in values(Params) do
-      if p.type is 'enum' then chosen[p.key] = p.options[#p.options - 1] end
+      if p.type is 'enum' then
+         chosen[p.key] = p.options[#p.options - 1]
+      elseif p.type is 'bool' then
+         chosen[p.key] = 1 - p.default
+      end
    end
    for p in values(Params) do
-      if p.type != 'enum' then
+      if (p.type != 'enum') and (p.type != 'bool') then
          max = (p.max is 'nyquist') ? (Rate * 0.5) : tonumber(p.max)
          for rule in values(p.rules) do
             for v in values(rule.values) do

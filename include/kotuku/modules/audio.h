@@ -14,6 +14,7 @@ class objAudioEqualiser;
 class objAudioReverb;
 class objAudioCompressor;
 class objAudioLimiter;
+class objAudioDelay;
 class objAudioSplitter;
 class objAudioAnalyser;
 class objSound;
@@ -885,6 +886,29 @@ class objAudioLimiter : public objAudioEffect {
 
    using create = kt::Create<objAudioLimiter>;
    objAudioLimiter(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioDelay class definition
+
+#define VER_AUDIODELAY (1.000000)
+
+class objAudioDelay : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIODELAY;
+   static constexpr CSTRING CLASS_NAME = "AudioDelay";
+
+   using create = kt::Create<objAudioDelay>;
+   objAudioDelay(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 

@@ -1,0 +1,263 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+-- Published parameters in schema order, with their defaults, units and scales.  Mode is an enum and is checked
+-- separately.
+
+PARAMS = {
+   { key='time', default=250, unit='ms', scale='log', min=1, max=2000 },
+   { key='feedback', default=30, unit='%', scale='linear', min=0, max=95 },
+   { key='damping', default=25, unit='%', scale='linear', min=0, max=100 },
+   { key='mix', default=25, unit='%', scale='linear', min=0, max=100 }
+}
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_delay(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioDelay', { audio=Audio, channel=channel }), channel
+end
+
+function play_square(Audio:obj, Channel:num)
+   data = array<byte, 8192>
+   for i in {0 to 8192} do data[i] = (i % 64 < 32) ? 160 : 96 end
+   err, sample = Audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(Audio, Channel, sample)
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   delay <close> = new_delay(audio)
+   schema = delay.schema
+   assert(schema.find('<effect class="AudioDelay" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The delay has no parameter groups')
+   assert(schema.find('type="curve"') is nil, 'The delay does not publish a response curve')
+   assert(schema.find('gain_reduction') is nil, 'The delay does not publish gain reduction')
+   for p in values(PARAMS) do
+      assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
+      assert(schema.find(f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"') != nil,
+         f'{p.key} must publish its unit, scale, range and default')
+      err, value = delay.mtGetParameter(p.key)
+      assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   -- Parameters appear in the documented order.
+
+   last = 0
+   for key in values({ 'time', 'feedback', 'damping', 'mode', 'mix' }) do
+      position = schema.find(f'<param key="{key}"')
+      assert(position > last, f'{key} is out of order')
+      last = position
+   end
+
+   assert(schema.find('<param key="mode" label="Mode"') != nil)
+   assert(schema.find('type="enum" default="0"') != nil, 'Mode must be an enum defaulting to normal')
+   assert(schema.find('<option value="0" key="normal"') != nil)
+   assert(schema.find('<option value="1" key="ping_pong"') != nil)
+   err, value = delay.mtGetParameter('mode')
+   assert(err is ERR_Okay and value is 0)
+
+   assert(schema.find('key="input_peak_left" type="scalar"') != nil)
+   assert(schema.find('key="output_peak_right" type="scalar"') != nil)
+   assert(schema.find('unit="dBFS" scope="channel"') != nil)
+   assert(delay.mtGetOutput('response') is ERR_Search)
+   assert(delay.mtGetGroupCount('bands') is ERR_Search)
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   delay <close> = new_delay(audio)
+   assert(delay.mutable is 1)
+
+   -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
+
+   for p in values(PARAMS) do
+      check delay.mtSetParameter(p.key, p.min)
+      check delay.mtSetParameter(p.key, p.max)
+      assert(delay.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(delay.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(delay.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(delay.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+   check delay.mtSetParameter('mode', 1)
+   check delay.mtSetParameter('mode', 0)
+   for bad in values({ -1, 2, 0.5, math.huge }) do
+      assert(delay.mtSetParameter('mode', bad) is ERR_InvalidValue, f'Mode {bad} must be rejected')
+   end
+   assert(delay.mtSetParameter('unknown', 1) is ERR_Search)
+   check delay.acFlush()
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
+   -- commits them together.  Fractional times are kept.
+
+   check delay.mtSetParameter('time', 333.25)
+   check delay.mtSetParameter('mode', 1)
+   check delay.mtSetParameter('feedback', 60)
+   assert(delay.mtSetParameter('damping', 101) is ERR_InvalidValue)
+   check delay.mtSetParameter('damping', 70)
+   err, value = delay.mtGetParameter('time')
+   assert(err is ERR_Okay and value is 333.25, 'Staged values must be readable')
+   check delay.acFlush()
+   for key, expected in pairs({ time=333.25, mode=1, feedback=60, damping=70 }) do
+      err, value = delay.mtGetParameter(key)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   delay <close> = obj.new('AudioDelay')
+   delay.audio = audio
+   delay.channel = channel
+   check delay.mtSetParameter('time', 120)
+   check delay.mtSetParameter('mode', 1)
+   assert(delay.mtSetParameter('feedback', 96) is ERR_InvalidValue)
+   delay.init()
+   for key, expected in pairs({ time=120, mode=1, feedback=30 }) do
+      err, value = delay.mtGetParameter(key)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected}, got {value}')
+   end
+end
+
+@Test function LivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   delay, channel = new_delay(audio)
+   check delay.mtSetParameter('mix', 100)
+   check delay.acFlush()
+   check audio.acActivate()
+   assert(delay.latency is 0, 'The delay publishes no algorithmic latency, even when fully wet')
+   err, rate, format, layout, generation, state = delay.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+
+   play_square(audio, channel)
+
+   -- Simultaneous time and mode edits, then a queued time edit behind the crossfade.
+
+   check delay.mtSetParameter('time', 80)
+   check delay.mtSetParameter('mode', 1)
+   check delay.mtSetParameter('feedback', 85)
+   check delay.acFlush()
+   check delay.mtSetParameter('time', 20)
+   check delay.mtSetParameter('damping', 100)
+   check delay.acFlush()
+   assert(delay.latency is 0, 'Parameter changes must not alter the latency')
+
+   err, layout = delay.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 4)
+   assert(layout.meters[0].key is 'input_peak_left' and layout.meters[3].key is 'output_peak_right')
+
+   delay.flags = AEF_BYPASS
+   err, reading = delay.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   delay.flags = 0
+
+   check audio.mtCloseChannels(channel)
+   err, reading = delay.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(delay.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   delay.free()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   delay = audio.new('AudioDelay')
+   check delay.mtSetParameter('mode', 1)
+   check delay.mtSetParameter('time', 40)
+   delay.init()
+   assert(delay.mutable is 0)
+   assert(delay.mtSetParameter('time', 20) is ERR_Immutable)
+   err, value = delay.mtGetParameter('mode')
+   assert(err is ERR_Okay and value is 1, 'Mono retains the requested mode')
+   check audio.acActivate()
+   err, layout = delay.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 2)
+   assert(layout.meters[0].key is 'input_peak_centre' and layout.meters[1].key is 'output_peak_centre')
+   assert(delay.schema.find('input_peak_right') is nil, 'Mono must not publish a right channel')
+   check audio.acDeactivate()
+end
+
+-- OnStop is held until the echoes have drained from the Sound's channel set.
+
+@Test function SoundStopWaitsForTail()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   stops = 0
+   state_at_stop = -1
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound)
+         stops++
+         err, _, _, _, _, _, state = audio.mtGetEffectStatus(Sound.channelIndex & 0xffff0000)
+         state_at_stop = state
+      end })
+   delay <close> = obj.new('AudioDelay', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   check delay.mtSetParameter('time', 100)
+   check delay.mtSetParameter('feedback', 20)
+   check delay.acFlush()
+   check sound.acActivate()
+   deadline = mSys.PreciseTime() + 20000000
+   while (stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+   assert(stops is 1, 'OnStop must be delivered once')
+   assert(state_at_stop is ADS_IDLE, f'The echoes must have drained before OnStop, state {state_at_stop}')
+   check audio.acDeactivate()
+end
+
+-- A tail far longer than MaxDrain is cut short and reported as truncated, and the chain still reaches idle.
+
+@Test function MaxDrainTruncation()
+   audio <close> = obj.new('Audio', { device='null', maxDrain=0.5 })
+   check audio.acActivate()
+   stops = 0
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) stops++ end })
+   set = sound.channelIndex & 0xffff0000
+   delay <close> = obj.new('AudioDelay', { audio=audio, channel=set })
+   check delay.mtSetParameter('time', 2000)
+   check delay.mtSetParameter('feedback', 95)
+   check delay.mtSetParameter('damping', 0)
+   check delay.acFlush()
+   check sound.acActivate()
+
+   deadline = mSys.PreciseTime() + 20000000
+   while (stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+   assert(stops is 1, 'OnStop must be delivered once the drain limit is reached')
+
+   state, truncated = -1, 0
+   while mSys.PreciseTime() < deadline do
+      err, _, _, _, _, _, state, truncated = audio.mtGetEffectStatus(set)
+      assert(err is ERR_Okay)
+      if state is ADS_IDLE then break end
+      processing.sleep(0.01)
+   end
+   assert(state is ADS_IDLE, f'The chain must reach idle after truncation, state {state}')
+   assert(truncated is 1, 'A drain cut short by MaxDrain must be reported')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      delay = obj.new('AudioDelay', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end

@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioDelay</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>A feedback delay that adds filtered echoes, with optional stereo ping-pong routing.</comment>
+    <version>1</version>
+    <id>59aecf80</id>
+    <idstring>AUDIODELAY</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The delay repeats its input after a fixed interval.  Each repeat is fed back into the delay at a reduced level, so the echoes fade away over time, and a low-pass filter in the feedback path softens each repeat in turn.</p>
+<p>Create new delay objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application delays accept live changes; global delays become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>time</code>: the interval between echoes, from 1 to 2000 milliseconds.  Fractions of a millisecond are honoured.</li>
+<li><code>feedback</code>: the level of each repeat relative to the previous one, from 0 to 95 percent.  Zero produces a single
+echo.</li>
+<li><code>damping</code>: the high-frequency loss applied to every repeat, from 0 to 100 percent.  The first echo is never
+filtered.</li>
+<li><code>mode</code>: <code>normal</code> (0) delays each channel independently; <code>ping_pong</code> (1) bounces the echoes between the left and
+right channels.</li>
+<li><code>mix</code>: the linear blend of dry and wet signals.  Zero passes the input unchanged and 100 percent outputs only the
+echoes.</li>
+</list>
+<p>The following adds a ping-pong echo of 375 ms with gently darkening repeats to a playing channel set, as a single change:</p>
+<pre>delay = obj.new('AudioDelay', { audio=audio, channel=channel })
+delay.mtSetParameter('time', 375)
+delay.mtSetParameter('feedback', 45)
+delay.mtSetParameter('damping', 40)
+delay.mtSetParameter('mode', 1)
+delay.acFlush()
+</pre>
+<header>Routing</header>
+<p>In normal mode every channel has its own delay line, so a stereo image is preserved in the echoes and a mono output is processed as a single channel.  With feedback <code>g</code>, an impulse produces echoes at one, two and three times the delay, at levels of 1, g and g² before damping and the wet mix are applied.</p>
+<p>In ping-pong mode the average of the left and right inputs enters the left delay line and every repeat crosses to the opposite side, so the first echo is heard on the left and later echoes alternate right, left, and so on.  The dry signal is unchanged.  Because the input is averaged, a signal that is identical in both channels produces echoes at its own level, but content with opposite polarity in the two channels cancels and produces no echo.  A mono output always uses normal routing; the <code>mode</code> value is retained and applies if the output becomes stereo.</p>
+<header>Damping</header>
+<p>Damping is a one-pole low-pass filter in the feedback path.  The percentage <code>p</code> maps to a corner frequency of <code>Fmax * (200 / Fmax)^(p / 100)</code> Hz, where <code>Fmax</code> is 20 kHz or 45% of the output rate if that is lower, so 50 percent gives about 2 kHz at 48 kHz and 100 percent gives 200 Hz at every rate.  The filter coefficient is <code>1 - exp(-2 pi fc / rate)</code>.  These corners describe the mapping rather than a measured -3 dB point, which is lower than the nominal corner when it is close to the Nyquist frequency.  Zero damping is exactly unfiltered, and the filter is blended in across the lowest 1 percent so that the sound does not jump between zero and a small value.  Damping never boosts any frequency and does not reduce the level of low frequencies, so the repeats always decay at the rate set by <code>feedback</code> or faster.</p>
+<header>Levels and Headroom</header>
+<p>Levels are measured in dBFS, where a sample magnitude of 1.0 is 0 dBFS, independently of the output format.  The delay does not limit or clip its feedback loop.  A sustained input that reinforces its own echoes can build up to <code>1 / (1 - g)</code> times its level in the delay line, which is 20 times (+26 dB) at the maximum feedback of 95 percent. At high feedback and mix settings, leave headroom or place an <class name="AudioLimiter">AudioLimiter</class> after the delay.</p>
+<p>Non-finite samples are outside the normalised mixing contract and are treated as silence.  Finite input with a magnitude above 1e30 is clamped to that level so that the feedback loop cannot overflow.</p>
+<header>Live Changes</header>
+<p>Changes to feedback, damping, mix and mode ramp linearly over 10 ms and preserve the echoes that are already present.  A mode change moves existing echoes to the new routing rather than discarding them.  A time change crossfades from the old to the new delay over 10 ms rather than sweeping the delay, so there is no pitch change.  An edit that arrives during a time crossfade replaces a single queued time, which is applied when the current crossfade finishes.  Setting the mix to zero leaves the delay running, so raising it again reveals the echoes that are present.</p>
+<p>Device reactivation, leaving bypass and reaching idle discard the echoes and apply the latest parameters without a transition.</p>
+<header>Tail and Drain</header>
+<p>The delay has zero algorithmic latency, even at 100 percent mix: the echo time is the effect itself and is not compensated.  After its input stops, the delay remains pending until every value in its delay memory and filter has stayed at least 120 dB below the largest input sample since it was last cleared, for long enough to overwrite that memory (2 seconds).  This includes silent gaps between widely spaced echoes.  The residual is relative to the input, so quiet sources are not cut short.  Once the delay is no longer pending its remaining history is discarded.</p>
+<p>When other audio shares the delay, a stopped voice's tail is estimated as the time for its echoes to fall by 60 dB. Long settings produce long tails: at the maximum time of 2 seconds and feedback of 95 percent the estimate exceeds four minutes, and draining to the residual bound takes longer still.  Draining is limited by <class name="Audio" field="MaxDrain">Audio.MaxDrain</class>, which then fades and discards the remainder.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  The delay memory always covers the maximum time of 2 seconds and requires approximately 750 KB at 48 kHz in stereo, scaling in proportion to the output rate.</p></description>
+    <source>
+      <file>class_audiodelay.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>
