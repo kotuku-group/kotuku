@@ -1113,11 +1113,12 @@ static uint64_t mix_fingerprint(uint64_t Hash, uint64_t Value)
 
 //********************************************************************************************************************
 // Return the resolution, in buffer pixels per gradient unit, at which a cached gradient field (contour or Worley) is
-// computed.  Transform maps gradient units to the display.  Matching the display resolution keeps the field sharp when
-// the scene is enlarged, as the field is sampled without interpolation.  The larger axis scale is used so that a
-// stretched fill is not magnified in either direction, and the buffer is capped to MaxPixels to bound memory and work.
+// computed.  Transform maps gradient units to the display; its translation is ignored.  Matching the display
+// resolution keeps the field sharp when the scene is enlarged, as the field is sampled without interpolation.  The
+// larger axis scale is used so that a stretched fill is not magnified in either direction, and the buffer, which spans
+// Width x Height gradient units, is capped to MaxPixels to bound memory and build time.
 
-static double field_scale(const agg::trans_affine &Transform, const TClipRectangle<double> &Bounds,
+static double field_scale(const agg::trans_affine &Transform, double Width, double Height,
    double MaxPixels = 4096.0 * 4096.0)
 {
    const double scale_x = sqrt((Transform.sx * Transform.sx) + (Transform.shy * Transform.shy));
@@ -1125,7 +1126,7 @@ static double field_scale(const agg::trans_affine &Transform, const TClipRectang
    double scale = std::max(scale_x, scale_y);
    if ((not std::isfinite(scale)) or (scale <= 0)) return 1.0;
 
-   const double area = (Bounds.width() + 1.0) * (Bounds.height() + 1.0);
+   const double area = (Width + 1.0) * (Height + 1.0);
    if ((area > 0) and (area * scale * scale > MaxPixels)) scale = sqrt(MaxPixels / area);
    return scale;
 }
@@ -1494,14 +1495,14 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       // The buffer is computed at display resolution, so sampling coordinates are scaled to match.
 
-      const double resolution = field_scale(transform, Bounds);
-      const auto hash = mix_fingerprint(path_fingerprint(*Path), std::bit_cast<uint64_t>(resolution));
+      const double pixel_scale = field_scale(transform, Bounds.width(), Bounds.height());
+      const auto hash = mix_fingerprint(path_fingerprint(*Path), std::bit_cast<uint64_t>(pixel_scale));
       if ((rebuild) or (hash != contour.ContourHash)) {
-         gradient_func.contour_create(*Path, resolution);
+         gradient_func.contour_create(*Path, pixel_scale);
          contour.ContourHash = hash;
       }
 
-      transform.premultiply(agg::trans_affine_scaling(1.0 / resolution));
+      transform.premultiply(agg::trans_affine_scaling(1.0 / pixel_scale));
       transform.invert();
 
       // Regarding repeatable spread methods, bear in mind that the nature of the contour gradient
@@ -1554,9 +1555,10 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       constexpr double max_distance_tests = 4096.0 * 4096.0;
       const auto feature_count = use_points ? voronoi.Points.size() : size_t(std::clamp(voronoi.PointCount, 1, 4096));
-      const double resolution = field_scale(transform, Bounds, max_distance_tests / double(feature_count));
+      const double pixel_scale = field_scale(transform, Bounds.width(), Bounds.height(),
+         max_distance_tests / double(feature_count));
 
-      uint64_t hash = mix_fingerprint(path_hash, std::bit_cast<uint64_t>(resolution));
+      uint64_t hash = mix_fingerprint(path_hash, std::bit_cast<uint64_t>(pixel_scale));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMode)));
       hash = mix_fingerprint(hash, uint64_t(int(voronoi.WorleyMetric)));
       if (use_points) {
@@ -1583,12 +1585,12 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          }
 
          gradient_func.worley_create(*Path, resolved_seed, voronoi.PointCount, voronoi.WorleyMode,
-            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter, resolution,
+            voronoi.WorleyMetric, voronoi.HeightMin, voronoi.HeightMax, voronoi.Jitter, pixel_scale,
             use_points ? &points : nullptr);
          voronoi.WorleyHash = hash;
       }
 
-      transform.premultiply(agg::trans_affine_scaling(1.0 / resolution));
+      transform.premultiply(agg::trans_affine_scaling(1.0 / pixel_scale));
       transform.invert();
 
       if (Gradient.SpreadMethod IS VSPREAD::REFLECT) {
@@ -1610,9 +1612,9 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       if (std::isnan(distal.Radius) or std::isnan(distal.InnerRadius)) return;
 
-      // The SDF gradient's signed distance field buffer depends on the path content and the configured padding,
-      // so it is cached with the gradient and reused until the path's fingerprint changes.  Unlike the contour
-      // buffer, it is padded outward so that the exterior half of the colour ramp has room to be rendered.
+      // The SDF gradient's signed distance field buffer depends on the path content, the configured padding and
+      // the display resolution, so it is cached with the gradient and reused until any of them change.  Unlike the
+      // contour buffer, it is padded outward so that the exterior half of the colour ramp has room to be rendered.
 
       auto multiplier = std::clamp<double>(distal.Multiplier, 0.01, 10.0);
       auto floor = std::clamp<double>(distal.Floor, 0.0, multiplier);
@@ -1669,10 +1671,20 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
       const double resolution = std::clamp(Gradient.Resolution, 0.0, 1.0);
       gradient_func.resolution(resolution);
 
-      const auto hash = path_fingerprint(*Path);
+      // The field is computed at display resolution, so sampling coordinates are scaled to match.  Only the linear
+      // part of the gradient transform affects the resolution, so it can be resolved before the buffer's origin is
+      // known.
+
+      agg::trans_affine field_transform;
+      apply_transforms(Gradient, field_transform);
+      field_transform *= Transform;
+      const double pixel_scale = field_scale(field_transform, Bounds.width() + (fill_extent * 2.0),
+         Bounds.height() + (fill_extent * 2.0));
+
+      const auto hash = mix_fingerprint(path_fingerprint(*Path), std::bit_cast<uint64_t>(pixel_scale));
       if ((rebuild) or (hash != distal.SDFHash) or (resolution != distal.SDFResolution) or
           (int(spread) != distal.SDFSpread) or (fill_extent != distal.SDFExtent)) {
-         gradient_func.sdf_create(*Path);
+         gradient_func.sdf_create(*Path, pixel_scale);
          distal.SDFHash = hash;
          distal.SDFResolution = resolution;
          distal.SDFSpread = int(spread);
@@ -1681,16 +1693,19 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
       // The path is rendered into the SDF buffer at an inset of (origin_x, origin_y) to leave a margin for the
       // exterior field.  Offset the gradient sampling transform by the same amount so the outline stays aligned
-      // with the path edge.
+      // with the path edge.  The buffer's origin and dimensions are in pixels and are converted to path units.
 
-      const double margin_x = gradient_func.sdf_origin_x();
-      const double margin_y = gradient_func.sdf_origin_y();
+      const double margin_x = gradient_func.sdf_origin_x() / pixel_scale;
+      const double margin_y = gradient_func.sdf_origin_y() / pixel_scale;
       const double region_x = Bounds.left - margin_x;
       const double region_y = Bounds.top - margin_y;
+      const double region_w = gradient_func.sdf_width() / pixel_scale;
+      const double region_h = gradient_func.sdf_height() / pixel_scale;
 
       transform.translate(region_x, region_y);
       apply_transforms(Gradient, transform);
       transform *= Transform;
+      transform.premultiply(agg::trans_affine_scaling(1.0 / pixel_scale));
       transform.invert();
 
       agg::rasterizer_scanline_aa<> sdf_raster;
@@ -1702,9 +1717,9 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
 
          agg::path_storage region;
          region.move_to(region_x, region_y);
-         region.line_to(region_x + gradient_func.sdf_width(), region_y);
-         region.line_to(region_x + gradient_func.sdf_width(), region_y + gradient_func.sdf_height());
-         region.line_to(region_x, region_y + gradient_func.sdf_height());
+         region.line_to(region_x + region_w, region_y);
+         region.line_to(region_x + region_w, region_y + region_h);
+         region.line_to(region_x, region_y + region_h);
          region.close_polygon();
          agg::conv_transform<agg::path_storage> region_trans(region, Transform);
          sdf_raster.add_path(region_trans);

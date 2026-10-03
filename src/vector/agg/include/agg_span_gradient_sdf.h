@@ -123,8 +123,11 @@ namespace agg
          build_lut();
       }
 
-      int8u* sdf_create(path_storage &ps);
+      // Scale is the buffer resolution in pixels per path unit; sampling coordinates must be scaled to match.  The
+      // padding, inner radius and fill extent remain in path units and are converted internally.
+      int8u* sdf_create(path_storage &ps, double Scale = 1.0);
 
+      // Buffer dimensions and the origin of the path bounds within it, in buffer pixels
       int    sdf_width() { return m_width; }
       int    sdf_height() { return m_height; }
       int    sdf_origin_x() { return m_origin_x; }
@@ -304,7 +307,7 @@ namespace agg
       int m_d2;
    };
 
-   int8u * gradient_sdf::sdf_create(path_storage &ps) {
+   int8u * gradient_sdf::sdf_create(path_storage &ps, double Scale) {
       // Flatten the curves once so that bounding rect computation and both rasterisation passes do not
       // each repeat the curve subdivision.
 
@@ -318,9 +321,14 @@ namespace agg
       // Pad the bounding box so the exterior distance has room to grow.  Without a margin the "outside" ramp
       // half collapses, because the unpadded contour buffer is clipped to the path bounds.
 
-      const double bound_w = x2 - x1;
-      const double bound_h = y2 - y1;
-      double pad = m_padding;
+      // All distances from here on are measured in buffer pixels.
+
+      if (not (Scale > 0)) Scale = 1.0;
+      const double bound_w = (x2 - x1) * Scale;
+      const double bound_h = (y2 - y1) * Scale;
+      const double inner_dist = m_inner_radius * Scale;
+      const double extent = m_fill_extent * Scale;
+      double pad = m_padding * Scale;
       if (pad <= 0) pad = 0.01;
 
       // 'margin' is the colour/alpha cycle length: one fall-off cycle spans the padding Radius.  In pad mode the
@@ -330,7 +338,7 @@ namespace agg
 
       const int margin = int(ceil(pad));
       int outer_margin = margin;
-      if ((m_spread != sdf_spread::pad) and (m_fill_extent > pad)) outer_margin = int(ceil(m_fill_extent));
+      if ((m_spread != sdf_spread::pad) and (extent > pad)) outer_margin = int(ceil(extent));
 
       const auto width  = int(ceil(bound_w)) + 1 + (outer_margin * 2);
       const auto height = int(ceil(bound_h)) + 1 + (outer_margin * 2);
@@ -347,7 +355,9 @@ namespace agg
       // Translate the path into the padded buffer, leaving a margin of empty space on all sides.
 
       agg::trans_affine mtx;
-      mtx.translate(-x1 + outer_margin, -y1 + outer_margin);
+      mtx.translate(-x1, -y1);
+      mtx.scale(Scale);
+      mtx.translate(outer_margin, outer_margin);
 
       agg::conv_transform<agg::path_storage> trans(flat, mtx);
 
@@ -432,7 +442,7 @@ namespace agg
 
          m_alpha.resize(width * height);
          const float inv_margin = (margin > 0) ? (1.0f / float(margin)) : 0.0f;
-         const float inv_inner_radius = (m_inner_radius > 0) ? (1.0f / float(m_inner_radius)) : 0.0f;
+         const float inv_inner_radius = (inner_dist > 0) ? (1.0f / float(inner_dist)) : 0.0f;
 
          // Resolves an exterior distance into a per-cycle phase 'a' (1.0 at the cycle start, 0.0 at the cycle end)
          // for both the colour mapping and the alpha fall-off.  In pad mode the single cycle clamps to 0 beyond the
@@ -481,7 +491,7 @@ namespace agg
 
             if (inside[l]) {
                if (m_inner_fall IS sdf_falloff_curve::clear) m_alpha[l] = 0; // Interior disabled
-               else if (m_inner_radius <= 0) m_alpha[l] = 255; // Interior is fully opaque by default
+               else if (inner_dist <= 0) m_alpha[l] = 255; // Interior is fully opaque by default
                else {
                   float a = 1.0f - (mag * inv_inner_radius); // 1 at the outline, 0 at InnerRadius
                   if (a < 0.0f) a = 0.0f;
