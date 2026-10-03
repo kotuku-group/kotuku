@@ -335,9 +335,11 @@ end
          end })
          check socket.mtConnect('127.0.0.1', port, 1)
       end })
-   defer socket = nil end
+   defer if socket then socket.free() end end
    _, _, err = client.authorizeWeb()
    assert(err.code is 'timeout', 'Oversized callback must not complete authorisation')
+   socket.free()
+   socket = nil
    probe <close> = obj.new('netserver', { address='127.0.0.1', port=port })
    assert(probe.port is port, 'Timeout releases listener')
    probe = nil
