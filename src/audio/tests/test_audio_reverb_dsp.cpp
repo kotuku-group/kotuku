@@ -80,6 +80,15 @@ static void test_configuration(AudioTestContext &Test)
    const auto &target = typical.Processor.Target;
    AUDIO_CHECK(typical.Processor.decay_estimate() IS uint64_t(960 + target.Lengths[REVERB_LINES - 1] + 72000));
 
+   // Audible early reflections add their length to the estimate and the bound.
+   auto early_settings = ReverbSettings();
+   early_settings.EarlyLevel = 50;
+   ReverbFixture early(48000, true, early_settings);
+   AUDIO_CHECK(early.Processor.decay_estimate() IS typical.Processor.decay_estimate() + 1440);
+   early_settings.EarlyLength = 100;
+   ReverbFixture long_early(48000, true, early_settings);
+   AUDIO_CHECK(long_early.Processor.tail_frames() IS typical.Processor.tail_frames() + 4800 - 1440);
+
    // A queued size target includes the current transition's remainder and the full fade that follows it.
    auto first = ReverbSettings();
    first.Size = 80;
@@ -324,6 +333,12 @@ static void test_blocks(AudioTestContext &Test)
    edits[2].Size = 20;         // Queued behind it
    edits[2].Diffusion = 30;
    edits[2].PreDelay = 5;      // Queued behind the pre-delay crossfade
+   edits[0].EarlyLevel = 50;
+   edits[0].EarlyLength = 60;
+   edits[1].EarlyLevel = 50;
+   edits[1].EarlyLength = 90;  // Queued behind the early length crossfade
+   edits[2].EarlyLevel = 70;
+   edits[2].EarlyLength = 10;  // Replaces the queued length
 
    int position = 0;
    const int stops[] = { 4800, 5000, 5200, 19200 };
@@ -347,11 +362,185 @@ static void test_blocks(AudioTestContext &Test)
 }
 
 //********************************************************************************************************************
+// The early reflections alone, isolated as the difference between a wet output with and without them.  The network
+// input does not depend on the early level, so the late reverberation cancels.
+
+static std::vector<double> early_response(int Rate, bool Stereo, ReverbSettings Settings, const std::vector<float> &In)
+{
+   const int channels = Stereo ? 2 : 1;
+   const int frames = int(In.size()) / channels;
+   Settings.Mix = 100;
+   auto with = Settings, without = Settings;
+   without.EarlyLevel = 0;
+   ReverbFixture a(Rate, Stereo, with), b(Rate, Stereo, without);
+   auto x = In, y = In;
+   a.Processor.process(x.data(), frames);
+   b.Processor.process(y.data(), frames);
+   std::vector<double> result(In.size());
+   for (size_t i = 0; i < In.size(); i++) result[i] = double(x[i]) - double(y[i]);
+   return result;
+}
+
+// Tap times follow the prime pattern after the pre-delay, never coincide within a channel, and match the measured
+// impulse response at every supported rate.  Each channel's reflections carry the energy of the input.
+
+static void test_early_taps(AudioTestContext &Test)
+{
+   for (int c = 0; c < 2; c++) {
+      double energy = 0;
+      for (int k = 0; k < REVERB_EARLY_TAPS; k++) {
+         energy += glReverbEarlyGains.Gain[c][k] * glReverbEarlyGains.Gain[c][k];
+         if (k) AUDIO_CHECK(glReverbEarlyGains.Gain[c][k] < glReverbEarlyGains.Gain[c][k - 1]);
+      }
+      AUDIO_CHECK(std::abs(energy - 1.0) < 1e-12);
+   }
+
+   // The shortest length at the lowest rate still separates every tap, and the longest fits the capacity.
+   ReverbEarlyTaps taps;
+   reverb_early_taps(5, REVERB_MIN_RATE, taps);
+   for (int c = 0; c < 2; c++) {
+      for (int k = 1; k < REVERB_EARLY_TAPS; k++) AUDIO_CHECK(taps[c][k] > taps[c][k - 1]);
+   }
+   reverb_early_taps(100, REVERB_MAX_RATE, taps);
+   AUDIO_CHECK(taps[1][REVERB_EARLY_TAPS - 1] IS reverb_early_capacity(REVERB_MAX_RATE) - 1);
+
+   for (int rate : { 44100, 48000, 96000 }) {
+      reverb_early_taps(37, rate, taps);
+      const double length = 37.0 * double(rate) / 1000.0;
+      AUDIO_CHECK(taps[0][0] IS 0 and taps[1][REVERB_EARLY_TAPS - 1] IS int(std::lround(length)));
+      for (int c = 0; c < 2; c++) {
+         for (int k = 0; k < REVERB_EARLY_TAPS; k++) {
+            const double exact = length * double(glReverbEarlyPrime[c][k] - 2) / 99.0;
+            AUDIO_CHECK(std::abs(double(taps[c][k]) - exact) <= 0.5);
+         }
+      }
+
+      ReverbSettings settings { .PreDelay = 40, .EarlyLevel = 100, .EarlyLength = 37 };
+      const int predelay = int(std::lround(40.0 * double(rate) / 1000.0));
+      std::vector<float> impulse(size_t(rate / 5) * 2, 0.0f);
+      impulse[0] = impulse[1] = 1.0f;
+      const auto response = early_response(rate, true, settings, impulse);
+
+      // Every sample is either a tap at its expected gain or silent.
+      bool matched = true;
+      for (int c = 0; c < 2; c++) {
+         std::vector<double> expected(rate / 5, 0.0);
+         for (int k = 0; k < REVERB_EARLY_TAPS; k++) expected[predelay + taps[c][k]] = glReverbEarlyGains.Gain[c][k];
+         for (int i = 0; i < rate / 5; i++) matched &= std::abs(response[i * 2 + c] - expected[i]) < 1e-6;
+      }
+      AUDIO_CHECK(matched);
+   }
+}
+
+//********************************************************************************************************************
+// Identical stereo input produces early reflections that are decorrelated between the channels, while mono uses the
+// left pattern.
+
+static void test_early_decorrelation(AudioTestContext &Test)
+{
+   ReverbSettings settings { .PreDelay = 0, .EarlyLevel = 100, .EarlyLength = 30 };
+   uint32_t seed = 11;
+   std::vector<float> stereo(48000 * 2), mono(48000);
+   for (int i = 0; i < 48000; i++) stereo[i * 2] = stereo[i * 2 + 1] = mono[i] = float(noise(seed) * 0.5);
+
+   const auto both = early_response(48000, true, settings, stereo);
+   double correlation = 0, left = 0, right = 0;
+   for (int i = 4800; i < 48000; i++) {
+      correlation += both[i * 2] * both[i * 2 + 1];
+      left += both[i * 2] * both[i * 2];
+      right += both[i * 2 + 1] * both[i * 2 + 1];
+   }
+   AUDIO_CHECK(std::abs(correlation / std::sqrt(left * right)) < 0.2);
+
+   const auto single = early_response(48000, false, settings, mono);
+   double difference = 0;
+   for (int i = 0; i < 48000; i++) difference = std::max(difference, std::abs(single[i] - both[i * 2]));
+   AUDIO_CHECK(difference < 1e-6);
+}
+
+//********************************************************************************************************************
+// At zero early level the output does not depend on the early length or its edits, and fading the early reflections
+// out returns exactly to the output of a reverberator that never had them.
+
+static void test_early_silent(AudioTestContext &Test)
+{
+   for (int channels = 1; channels <= 2; channels++) {
+      auto settings = wet_settings();
+      settings.Mix = 60;
+      auto lengthy = settings, faded = settings;
+      lengthy.EarlyLength = 100;
+      faded.EarlyLevel = 80;
+      ReverbFixture plain(48000, channels IS 2, settings), other(48000, channels IS 2, lengthy);
+      ReverbFixture fading(48000, channels IS 2, faded);
+
+      uint32_t seed = 5;
+      std::vector<float> a(14400 * channels), b, f;
+      for (auto &sample : a) sample = float(noise(seed) * 0.5);
+      b = f = a;
+
+      plain.Processor.process(a.data(), 4800);
+      other.Processor.process(b.data(), 4800);
+      fading.Processor.process(f.data(), 4800);
+      lengthy.EarlyLength = 7;
+      faded.EarlyLevel = 0;
+      other.change(lengthy);
+      fading.change(faded);
+      plain.Processor.process(a.data() + 4800 * channels, 9600);
+      other.Processor.process(b.data() + 4800 * channels, 9600);
+      fading.Processor.process(f.data() + 4800 * channels, 9600);
+
+      bool identical = true, restored = true, audible = false;
+      for (size_t i = 0; i < a.size(); i++) identical &= a[i] IS b[i];
+      for (size_t i = 0; i < size_t(4800 * channels); i++) audible |= a[i] != f[i];
+      for (size_t i = size_t(5280 * channels); i < a.size(); i++) restored &= a[i] IS f[i];
+      AUDIO_CHECK(identical and audible and restored);
+   }
+}
+
+//********************************************************************************************************************
+// An early-length edit at the crossfade boundary must supersede an older queued length.  Compare against the same
+// render without the superseded edit, both for a new length and for an edit retaining the current length.
+
+static void test_early_crossfade_boundary(AudioTestContext &Test)
+{
+   for (int rate : { 8000, 48000, 192000 }) {
+      const int fade = rate / 100;
+      for (int channels = 1; channels <= 2; channels++) {
+         for (double latest : { 5.0, 50.0 }) {
+            auto settings = wet_settings();
+            settings.EarlyLevel = 100;
+            ReverbFixture fixture(rate, channels IS 2, settings), reference(rate, channels IS 2, settings);
+            settings.EarlyLength = 50;
+            fixture.change(settings);
+            reference.change(settings);
+            settings.EarlyLength = 100;
+            fixture.change(settings);
+            uint32_t seed = 29;
+            std::vector<float> a(fade * 4 * channels);
+            for (auto &sample : a) sample = float(noise(seed) * 0.5);
+            auto b = a;
+            fixture.Processor.process(a.data(), fade);
+            reference.Processor.process(b.data(), fade);
+
+            settings.EarlyLength = latest;
+            fixture.change(settings);
+            reference.change(settings);
+            fixture.Processor.process(a.data() + fade * channels, fade * 3);
+            reference.Processor.process(b.data() + fade * channels, fade * 3);
+            AUDIO_CHECK(a IS b);
+            AUDIO_CHECK(fixture.Processor.longest_early() IS int(std::lround(latest * double(rate) / 1000.0)));
+         }
+      }
+   }
+}
+
+//********************************************************************************************************************
 // Live edits introduce no step larger than the signal's own sample-to-sample movement.
 
 static void test_transitions(AudioTestContext &Test)
 {
    auto settings = wet_settings();
+   settings.EarlyLevel = 50;
    ReverbFixture fixture(48000, true, settings);
    const int frames = 48000;
    std::vector<float> buffer(frames * 2);
@@ -368,6 +557,8 @@ static void test_transitions(AudioTestContext &Test)
    edited.Decay = 800;
    edited.Diffusion = 20;
    edited.Mix = 60;
+   edited.EarlyLevel = 90;
+   edited.EarlyLength = 70;
    fixture.change(edited);
    AUDIO_CHECK(fixture.Processor.pending());
    fixture.Processor.process(buffer.data() + edit_at * 2, frames - edit_at);
@@ -394,6 +585,10 @@ static void run(AudioTestContext &Test)
    test_configuration(Test);
    test_passthrough(Test);
    test_onset(Test);
+   test_early_taps(Test);
+   test_early_decorrelation(Test);
+   test_early_silent(Test);
+   test_early_crossfade_boundary(Test);
    test_decay(Test);
    test_damping(Test);
    test_energy(Test);

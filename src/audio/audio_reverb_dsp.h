@@ -8,6 +8,10 @@
 // one-pole absorption filter whose DC gain sets the decay time and whose response at REVERB_DAMPING_FREQUENCY sets
 // the damping.  Wet output is tapped from the line outputs with orthogonal sign patterns, one per output channel.
 //
+// In parallel with the diffusers, the pre-delay output feeds a per-channel early-reflection line with eight taps.
+// The early output is added to the wet output and never enters the network, so the late reverberation is the same
+// at every early level.
+//
 // The Hadamard matrix is orthogonal and every absorption filter has a magnitude no greater than its DC gain, which is
 // below one.  The loop is therefore strictly contractive for all supported parameters, including while coefficients
 // are ramping between two such states.
@@ -20,9 +24,11 @@
 
 constexpr int REVERB_LINES = 8;
 constexpr int REVERB_DIFFUSERS = 4;
+constexpr int REVERB_EARLY_TAPS = 8;
 constexpr int REVERB_MIN_RATE = 8000;
 constexpr int REVERB_MAX_RATE = 192000;
 constexpr double REVERB_MAX_PREDELAY = 250;         // Milliseconds; matches the published pre_delay maximum
+constexpr double REVERB_MAX_EARLY = 100;            // Milliseconds; matches the published early_length maximum
 constexpr double REVERB_DAMPING_FREQUENCY = 4000;   // Hertz; reference for the high-frequency decay ratio
 constexpr double REVERB_MAX_DIFFUSION = 0.75;       // All-pass coefficient at 100% diffusion
 constexpr double REVERB_RESIDUAL = 1e-6;            // Residual bound relative to the peak input (-120 dB)
@@ -44,14 +50,27 @@ static const double glReverbMonoTap[REVERB_LINES]  = { 1, 1, -1, -1, -1, -1, 1, 
 static const double glReverbLeftTap[REVERB_LINES]  = { 1, -1, -1, 1, 1, -1, -1, 1 };  // Row 3
 static const double glReverbRightTap[REVERB_LINES] = { 1, -1, 1, -1, -1, 1, -1, 1 };  // Row 5
 
+// Early-reflection tap positions, one row per channel.  The rows interleave the primes from 2 to 101 and share no
+// position, so stereo reflections decorrelate.  A tap's delay after the pre-delay is (p - 2) / 99 of early_length,
+// so the first left reflection coincides with the end of the pre-delay and the last right reflection arrives
+// early_length later.  Mono uses the first row.
+
+static const int glReverbEarlyPrime[2][REVERB_EARLY_TAPS] = {
+   { 2, 7, 17, 29, 41, 59, 71, 89 }, { 3, 11, 19, 31, 47, 61, 79, 101 }
+};
+
 struct ReverbSettings {
    double Decay = 1500;     // Milliseconds for a 60 dB decay at DC
    double Size = 50;        // Percent
    double PreDelay = 20;    // Milliseconds
    double Damping = 50;     // Percent
    double Diffusion = 70;   // Percent
+   double EarlyLevel = 0;   // Percent
+   double EarlyLength = 30; // Milliseconds
    double Mix = 20;         // Percent
 };
+
+using ReverbEarlyTaps = std::array<std::array<int, REVERB_EARLY_TAPS>, 2>;
 
 // Coefficients derived from ReverbSettings for one sample rate.  Deriving them performs no allocation.
 
@@ -62,8 +81,10 @@ struct ReverbTarget {
    double Norm = 0;         // Wet energy normalisation
    double Diffusion = 0;    // All-pass coefficient
    double Mix = 0;          // Wet proportion, 0 to 1
+   double EarlyLevel = 0;   // Early-reflection proportion of the wet output, 0 to 1
    double DecayFrames = 0;  // Frames for a 60 dB decay at DC
    int PreDelay = 0;        // Frames
+   ReverbEarlyTaps EarlyTaps {}; // Early-reflection delays after the pre-delay, in frames
 };
 
 //********************************************************************************************************************
@@ -105,6 +126,48 @@ inline int reverb_predelay_capacity(int Rate)
    return int(std::lround(REVERB_MAX_PREDELAY * double(Rate) / 1000.0)) + 1;
 }
 
+inline int reverb_early_capacity(int Rate)
+{
+   return int(std::lround(REVERB_MAX_EARLY * double(Rate) / 1000.0)) + 1;
+}
+
+//********************************************************************************************************************
+// Early-reflection tap delays for a length in milliseconds.  The largest delay is the rounded length, which never
+// exceeds the capacity of the early-reflection line.
+
+inline void reverb_early_taps(double Length, int Rate, ReverbEarlyTaps &Taps)
+{
+   const double frames = std::min(double(reverb_early_capacity(Rate) - 1), Length * double(Rate) / 1000.0);
+   for (int c = 0; c < 2; c++) {
+      for (int k = 0; k < REVERB_EARLY_TAPS; k++) {
+         Taps[c][k] = int(std::lround(frames * double(glReverbEarlyPrime[c][k] - 2) / 99.0));
+      }
+   }
+}
+
+//********************************************************************************************************************
+// Early-reflection tap gains fall in inverse proportion to the distance travelled, taking the end of the pre-delay
+// as a quarter of the room length.  Each row is normalised to unit energy, so that the early reflections of an
+// impulse carry the same energy as the input, as the late reverberation does.
+
+struct ReverbEarlyGains {
+   std::array<std::array<double, REVERB_EARLY_TAPS>, 2> Gain {};
+
+   ReverbEarlyGains() {
+      for (int c = 0; c < 2; c++) {
+         double energy = 0;
+         for (int k = 0; k < REVERB_EARLY_TAPS; k++) {
+            Gain[c][k] = 1.0 / (1.0 + 4.0 * double(glReverbEarlyPrime[c][k] - 2) / 99.0);
+            energy += Gain[c][k] * Gain[c][k];
+         }
+         const double norm = 1.0 / std::sqrt(energy);
+         for (auto &gain : Gain[c]) gain *= norm;
+      }
+   }
+};
+
+static const ReverbEarlyGains glReverbEarlyGains;
+
 //********************************************************************************************************************
 // Pole of a unity-DC one-pole low-pass H(z) = (1 - a) / (1 - a z^-1) whose magnitude at Omega equals Ratio.
 
@@ -128,6 +191,9 @@ inline double reverb_pole(double Ratio, double Omega)
 // reference frequency ten times faster than DC.
 //
 // Diffusion: the input all-pass coefficient is 0.75 * diffusion / 100.
+//
+// Early reflections: eight taps per channel spread over early_length after the pre-delay, scaled by
+// early_level / 100 and added to the wet output.
 //
 // Normalisation: the wet output is scaled by sqrt(1 - g^2), where g is the DC gain of a line of mean length.  This
 // keeps the wet energy of an undamped impulse response close to that of the input, so decay and size change the
@@ -158,9 +224,11 @@ inline bool reverb_target(const ReverbSettings &Settings, int Rate, ReverbTarget
    Target.Norm        = std::sqrt(1.0 - mean_gain * mean_gain);
    Target.Diffusion   = REVERB_MAX_DIFFUSION * Settings.Diffusion / 100.0;
    Target.Mix         = Settings.Mix / 100.0;
+   Target.EarlyLevel  = Settings.EarlyLevel / 100.0;
    Target.DecayFrames = decay_frames;
    Target.PreDelay    = std::min(int(std::lround(Settings.PreDelay * double(Rate) / 1000.0)),
       reverb_predelay_capacity(Rate) - 1);
+   reverb_early_taps(Settings.EarlyLength, Rate, Target.EarlyTaps);
    return true;
 }
 
@@ -277,10 +345,10 @@ public:
 private:
    // Storage prepared for storage_rate and storage_channels, swapped in by Configuration::publish().
    std::array<std::vector<float>, 2> line_storage;
-   std::vector<float> predelay_storage, diffuser_storage;
+   std::vector<float> predelay_storage, diffuser_storage, early_storage;
    std::array<int, REVERB_LINES> line_offsets {};
    std::array<std::array<int, REVERB_DIFFUSERS>, 2> diffuser_offset {}, diffuser_length {}, diffuser_cursor {};
-   int storage_rate = 0, storage_channels = 0, predelay_capacity = 0, line_capacity = 0;
+   int storage_rate = 0, storage_channels = 0, predelay_capacity = 0, line_capacity = 0, early_capacity = 0;
 
    std::array<ReverbNetwork, 2> networks;
    ReverbTarget pending_target;
@@ -292,8 +360,13 @@ private:
    int predelay_cursor = 0, delay = 0, old_delay = 0, pending_delay = 0, delay_left = 0;
    bool has_pending_delay = false;
 
+   ReverbEarlyTaps early_taps {}, old_early_taps {}, pending_early_taps {};
+   int early_cursor = 0, early_left = 0;
+   bool has_pending_early = false;
+
    double diffusion = 0, diffusion_end = 0, diffusion_step = 0;
    double mix = 0, mix_end = 0, mix_step = 0;
+   double early_level = 0, early_level_end = 0, early_level_step = 0;
    int shared_ramp = 0, ramp_frames = 1;
 
    double reference = 0;   // Peak input magnitude since the last reset
@@ -321,6 +394,32 @@ private:
       return predelay_storage[size_t(index) * Channels + Channel];
    }
 
+   void start_early(const ReverbEarlyTaps &Taps) {
+      old_early_taps = early_taps;
+      early_taps = Taps;
+      early_left = ramp_frames;
+   }
+
+   // Sum of the early-reflection taps for one channel.  The current frame has already been written, so a tap of zero
+   // frames reads the pre-delay output of this frame.
+
+   double read_early(const std::array<int, REVERB_EARLY_TAPS> &Taps, int Channel) const {
+      const auto &gains = glReverbEarlyGains.Gain[Channel];
+      double sum = 0;
+      for (int k = 0; k < REVERB_EARLY_TAPS; k++) {
+         int index = early_cursor - Taps[k];
+         if (index < 0) index += early_capacity;
+         sum += gains[k] * early_storage[size_t(index) * Channels + Channel];
+      }
+      return sum;
+   }
+
+   // The early-reflection length in frames, being the longest tap of either channel.
+
+   static int early_frames(const ReverbEarlyTaps &Taps) {
+      return std::max(Taps[0][REVERB_EARLY_TAPS - 1], Taps[1][REVERB_EARLY_TAPS - 1]);
+   }
+
    double diffuse(int Channel, double Input, double &Peak) {
       for (int stage = 0; stage < REVERB_DIFFUSERS; stage++) {
          auto &cursor = diffuser_cursor[Channel][stage];
@@ -341,6 +440,7 @@ private:
       for (auto &lines : line_storage) std::fill(lines.begin(), lines.end(), 0.0f);
       std::fill(predelay_storage.begin(), predelay_storage.end(), 0.0f);
       std::fill(diffuser_storage.begin(), diffuser_storage.end(), 0.0f);
+      std::fill(early_storage.begin(), early_storage.end(), 0.0f);
       dirty = false;
    }
 
@@ -349,10 +449,10 @@ public:
    public:
       ReverbProcessor *Processor;
       std::array<std::vector<float>, 2> Lines;
-      std::vector<float> PreDelay, Diffusers;
+      std::vector<float> PreDelay, Diffusers, Early;
       std::array<int, REVERB_LINES> LineOffsets {};
       std::array<std::array<int, REVERB_DIFFUSERS>, 2> DiffuserOffset {}, DiffuserLength {};
-      int Rate = 0, Channels = 0, PreDelayCapacity = 0, LineCapacity = 0;
+      int Rate = 0, Channels = 0, PreDelayCapacity = 0, LineCapacity = 0, EarlyCapacity = 0;
 
       explicit Configuration(ReverbProcessor *Target) : Processor(Target) { }
 
@@ -362,6 +462,7 @@ public:
          p.line_storage.swap(Lines);
          p.predelay_storage.swap(PreDelay);
          p.diffuser_storage.swap(Diffusers);
+         p.early_storage.swap(Early);
          p.line_offsets = LineOffsets;
          p.diffuser_offset = DiffuserOffset;
          p.diffuser_length = DiffuserLength;
@@ -369,6 +470,7 @@ public:
          p.storage_channels = Channels;
          p.predelay_capacity = PreDelayCapacity;
          p.line_capacity = LineCapacity;
+         p.early_capacity = EarlyCapacity;
          p.active = false;
          p.dirty = false;
       }
@@ -409,6 +511,8 @@ public:
             }
          }
          config->Diffusers.assign(size_t(diffusers), 0.0f);
+         config->EarlyCapacity = reverb_early_capacity(PrepareRate);
+         config->Early.assign(size_t(config->EarlyCapacity) * channels, 0.0f);
          config->Rate = PrepareRate;
          config->Channels = channels;
       }
@@ -427,8 +531,10 @@ public:
       Target = *Next;
       diffusion_end = Next->Diffusion;
       mix_end = Next->Mix;
+      early_level_end = Next->EarlyLevel;
       diffusion_step = (diffusion_end - diffusion) / double(ramp_frames);
       mix_step = (mix_end - mix) / double(ramp_frames);
+      early_level_step = (early_level_end - early_level) / double(ramp_frames);
       shared_ramp = ramp_frames;
 
       if (delay_left) {
@@ -436,6 +542,16 @@ public:
          has_pending_delay = pending_delay != delay;
       }
       else if (Next->PreDelay != delay) start_delay(Next->PreDelay);
+
+      if (early_left) {
+         pending_early_taps = Next->EarlyTaps;
+         has_pending_early = pending_early_taps != early_taps;
+      }
+      else {
+         // A queued length may still await the next frame after a crossfade ended at a block boundary.
+         has_pending_early = false;
+         if (Next->EarlyTaps != early_taps) start_early(Next->EarlyTaps);
+      }
 
       if (Next->Lengths IS networks[current].Length) {
          has_pending_network = false;
@@ -448,26 +564,38 @@ public:
       else start_network(*Next);
    }
 
-   // The finite bound covers the buffers, the fading network and 180 dB of decay at DC.  Internal line levels can
-   // exceed the input peak by several tens of decibels for long decays, so the residual bound of 120 dB below the
-   // input peak is reached within this interval.
+   // The finite bound covers the buffers, the fading network, the early reflections and 180 dB of decay at DC.
+   // Internal line levels can exceed the input peak by several tens of decibels for long decays, so the residual
+   // bound of 120 dB below the input peak is reached within this interval.
 
    AudioTail tail() const override { return AudioTail::FINITE; }
 
    uint64_t tail_frames() const override {
       if (not active) return 0;
-      return uint64_t(memory) * 2 + uint64_t(transition_frames) + uint64_t(std::ceil(3.0 * Target.DecayFrames));
+      return uint64_t(memory) * 2 + uint64_t(transition_frames) + uint64_t(longest_early()) +
+         uint64_t(std::ceil(3.0 * Target.DecayFrames));
    }
 
    bool pending() const override {
       return active and ((transition_left > 0) or (quiet < memory));
    }
 
+   // The longest early-reflection length that is current, fading out or queued.
+
+   int longest_early() const {
+      int frames = early_frames(early_taps);
+      if (early_left) frames = std::max(frames, early_frames(old_early_taps));
+      if (has_pending_early) frames = std::max(frames, early_frames(pending_early_taps));
+      return frames;
+   }
+
    // Pre-delay and the first pass through the longest line, then the 60 dB decay time.  A queued size target cannot
    // start until the current fade finishes and then starts another full fade, so both intervals precede its tail.
+   // Audible early reflections add their length, so the estimate is unchanged while they are silent.
 
    uint64_t decay_estimate() const override {
       if (not active) return 0;
+      const bool early = (early_level != 0) or (early_level_end != 0);
       const int predelay = std::max(delay, has_pending_delay ? pending_delay : 0);
       int longest = 0;
       for (int i = 0; i < REVERB_LINES; i++) {
@@ -475,14 +603,15 @@ public:
          if (has_pending_network) longest = std::max(longest, pending_target.Lengths[i]);
       }
       const uint64_t transitions = has_pending_network ? uint64_t(transition_left + transition_frames) : 0;
-      return transitions + uint64_t(predelay) + uint64_t(longest) + uint64_t(std::ceil(Target.DecayFrames));
+      return transitions + uint64_t(predelay) + uint64_t(longest) + uint64_t(early ? longest_early() : 0) +
+         uint64_t(std::ceil(Target.DecayFrames));
    }
 
    void reset() override {
       Rate = Owner->OutputRate;
       Channels = Owner->Stereo ? 2 : 1;
-      has_pending_network = has_pending_delay = false;
-      transition_left = feed_left = delay_left = shared_ramp = 0;
+      has_pending_network = has_pending_delay = has_pending_early = false;
+      transition_left = feed_left = delay_left = early_left = shared_ramp = 0;
       reference = 0;
 
       if (dirty) clear();
@@ -497,9 +626,12 @@ public:
       predelay_cursor = 0;
       delay = old_delay = Target.PreDelay;
       diffuser_cursor = {};
+      early_cursor = 0;
+      early_taps = old_early_taps = Target.EarlyTaps;
       diffusion = diffusion_end = Target.Diffusion;
       mix = mix_end = Target.Mix;
-      memory = std::max(predelay_capacity, line_capacity);
+      early_level = early_level_end = Target.EarlyLevel;
+      memory = std::max({ predelay_capacity, line_capacity, early_capacity });
       quiet = memory;
    }
 
@@ -518,9 +650,16 @@ public:
             has_pending_delay = false;
          }
 
+         if ((not early_left) and has_pending_early) {
+            start_early(pending_early_taps);
+            has_pending_early = false;
+         }
+
          float *io = Buffer + size_t(frame) * Channels;
-         double dry[2], diffused[2], peak = 0;
+         double dry[2], diffused[2], early[2] = { 0, 0 }, peak = 0;
          const double head_blend = delay_left ? 1.0 - double(delay_left) / double(ramp_frames) : 1.0;
+         const double early_blend = early_left ? 1.0 - double(early_left) / double(ramp_frames) : 1.0;
+         const bool early_audible = (early_level != 0) or (early_level_end != 0);
 
          for (int c = 0; c < Channels; c++) {
             dry[c] = io[c];
@@ -534,10 +673,24 @@ public:
                const double old_head = read_delay(old_delay, c);
                delayed = old_head + (delayed - old_head) * head_blend;
             }
+
+            // The early line is always written, so that raising the level later reads current audio.
+
+            early_storage[size_t(early_cursor) * Channels + c] = float(delayed);
+            peak = std::max(peak, std::abs(delayed));
+            if (early_audible) {
+               early[c] = read_early(early_taps[c], c);
+               if (early_left) {
+                  const double old_early = read_early(old_early_taps[c], c);
+                  early[c] = old_early + (early[c] - old_early) * early_blend;
+               }
+            }
+
             diffused[c] = diffuse(c, delayed, peak);
          }
 
          if (++predelay_cursor IS predelay_capacity) predelay_cursor = 0;
+         if (++early_cursor IS early_capacity) early_cursor = 0;
 
          double inject[REVERB_LINES], outputs[REVERB_LINES];
          if (Channels IS 1) {
@@ -593,20 +746,27 @@ public:
             --transition_left;
          }
 
+         if (early_audible) {
+            for (int c = 0; c < Channels; c++) wet[c] += early[c] * early_level;
+         }
+
          for (int c = 0; c < Channels; c++) io[c] = float(dry[c] + (wet[c] - dry[c]) * mix);
 
          if (shared_ramp) {
             if (--shared_ramp) {
                diffusion += diffusion_step;
                mix += mix_step;
+               early_level += early_level_step;
             }
             else {
                diffusion = diffusion_end;
                mix = mix_end;
+               early_level = early_level_end;
             }
          }
 
          if (delay_left) --delay_left;
+         if (early_left) --early_left;
 
          if (peak > std::max(reference * REVERB_RESIDUAL, 1e-30)) quiet = 0;
          else if (quiet < memory) ++quiet;

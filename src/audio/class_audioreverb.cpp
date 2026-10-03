@@ -3,7 +3,8 @@
 -CLASS-
 AudioReverb: An algorithmic reverberator that simulates room ambience.
 
-The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix.
+The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix, with an optional
+early-reflection stage that simulates the first distinct echoes from the walls of the room.
 
 Create new reverberator objects as a child of an @Audio object or set the inherited #AudioEffect.Audio field.
 Use #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application
@@ -22,6 +23,10 @@ Parameters are published through the inherited @AudioEffect schema and are chang
 rates below 10 kHz the reference frequency is 40% of the output rate.</li>
 <li>`diffusion`: the density of the reflections, controlled by four all-pass diffusers on each input channel.  Their
 coefficient is 0.75 at 100 percent.</li>
+<li>`early_level`: the level of the early reflections in the wet output, from 0 to 100 percent.  The default of zero
+disables them.</li>
+<li>`early_length`: the time from the first to the last early reflection, from 5 to 100 ms, which corresponds to the
+length of the room.</li>
 <li>`mix`: the linear blend of dry and wet signals.  Zero passes the input unchanged and 100 percent outputs only
 the reverberation.</li>
 </list>
@@ -46,15 +51,39 @@ A mono output is processed as a single channel.  A stereo input feeds alternate 
 two outputs are taken from orthogonal combinations of every line, so the wet signal is decorrelated between the
 speakers.
 
+<header>Early Reflections</header>
+
+The early reflections are eight taps on a delay line that each channel feeds after the pre-delay.  Their times follow
+a fixed pattern of prime numbers that is scaled by `early_length`, and the left and right channels use different
+times so that the reflections are decorrelated between the speakers.  The first left reflection arrives at the end of
+the pre-delay and the last right reflection arrives `early_length` later.  A mono output uses the left pattern.  The
+amplitude of each reflection falls with the distance it travels, and the reflections of an impulse carry the same
+energy as the input, as the late reverberation does.
+
+The early reflections are added to the wet output and do not feed the network, so the late reverberation is the same
+at every `early_level`.  At zero, the output is identical to that of a reverberator without early reflections.  Short
+lengths at high levels can sound like a flutter echo; combine them with a moderate `early_level`.
+
+The following adds the reflections of a long room to a small, diffuse reverberation:
+
+<pre>
+reverb.mtSetParameter('early_level', 60)
+reverb.mtSetParameter('early_length', 70)
+reverb.mtSetParameter('size', 30)
+reverb.acFlush()
+</pre>
+
 <header>Live Changes</header>
 
-Changes to decay, damping, diffusion and mix ramp linearly over 10 ms and preserve the reverberation that is already
-present.  A pre-delay change crossfades from the old to the new delay over 10 ms, avoiding a pitch sweep.  A size
+Changes to decay, damping, diffusion, early level and mix ramp linearly over 10 ms and preserve the reverberation that
+is already present.  A pre-delay or early length change crossfades from the old to the new delays over 10 ms, avoiding
+a pitch sweep.  A size
 change crossfades the input to a second network over 10 ms, while the output of the previous network fades out over
 100 ms.
 Both networks are allocated when the processor is configured, so edits never allocate memory, and processing cost is
-up to twice the normal level during a size transition.  An edit that arrives during a pre-delay crossfade or a size
-transition replaces a single queued target, which is applied when the current transition finishes.
+up to twice the normal level during a size transition.  An edit that arrives during a pre-delay or early length
+crossfade, or a size transition, replaces a single queued target, which is applied when the current transition
+finishes.
 
 Device reactivation, leaving bypass and reaching idle discard the reverberation and apply the latest parameters
 without a transition.
@@ -67,13 +96,14 @@ overwrite that memory.  This takes approximately 1.5 times the decay time after 
 after a sustained tone, which builds up a higher internal level.  Add the pre-delay and 250 ms to both figures.  The
 residual is relative to the input, so it is independent of the output bit depth.
 
-When other audio shares the reverb, a stopped voice's tail is estimated as the pre-delay, the longest delay line and
-the decay time.  The published tail bound covers 180 dB of decay.  A 60 dB decay time is not a
+When other audio shares the reverb, a stopped voice's tail is estimated as the pre-delay, the longest delay line, the
+early reflection length when the early reflections are audible, and the decay time.  The published tail bound covers
+the early reflection length and 180 dB of decay.  A 60 dB decay time is not a
 guarantee of complete silence: with long decay settings, draining can reach @Audio.MaxDrain, which then fades and
 discards the remainder.  Hard bypass and destruction cut the tail abruptly.
 
 Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with
-`ERR::NoSupport`.  Memory use is approximately 300 KB at 48 kHz in stereo, and scales in proportion to the output
+`ERR::NoSupport`.  Memory use is approximately 340 KB at 48 kHz in stereo, and scales in proportion to the output
 rate.
 
 -END-
@@ -93,7 +123,7 @@ public:
 //********************************************************************************************************************
 // Parameter descriptors.  Order matches the RV_ indexes.
 
-enum { RV_DECAY = 0, RV_SIZE, RV_PRE_DELAY, RV_DAMPING, RV_DIFFUSION, RV_MIX };
+enum { RV_DECAY = 0, RV_SIZE, RV_PRE_DELAY, RV_DAMPING, RV_DIFFUSION, RV_EARLY_LEVEL, RV_EARLY_LENGTH, RV_MIX };
 
 static const AudioParamDesc glReverbParams[] = {
    { .Key = "decay", .Label = "Decay",
@@ -112,6 +142,12 @@ static const AudioParamDesc glReverbParams[] = {
      .Description = "The density of the reflections.  Low values produce distinct echoes and high values a smooth "
         "wash.",
      .Unit = APU::PERCENT, .Min = 0, .Max = 100, .Default = 70 },
+   { .Key = "early_level", .Label = "Early Level",
+     .Description = "The level of the early reflections in the wet output.  Zero disables them.",
+     .Unit = APU::PERCENT, .Min = 0, .Max = 100, .Default = 0 },
+   { .Key = "early_length", .Label = "Early Length",
+     .Description = "The time from the first to the last early reflection, i.e. the length of the room.",
+     .Unit = APU::MS, .Scale = APS::LOG, .Min = 5, .Max = 100, .Default = 30 },
    { .Key = "mix", .Label = "Mix",
      .Description = "The proportion of reverberation in the output.  Zero leaves the input unchanged.",
      .Unit = APU::PERCENT, .Min = 0, .Max = 100, .Default = 20 }
@@ -129,12 +165,14 @@ static const AudioOutputDesc glReverbOutputs[] = {
 static ReverbSettings state_settings(const AudioParamState &State)
 {
    return ReverbSettings {
-      .Decay     = State.Params[RV_DECAY],
-      .Size      = State.Params[RV_SIZE],
-      .PreDelay  = State.Params[RV_PRE_DELAY],
-      .Damping   = State.Params[RV_DAMPING],
-      .Diffusion = State.Params[RV_DIFFUSION],
-      .Mix       = State.Params[RV_MIX]
+      .Decay       = State.Params[RV_DECAY],
+      .Size        = State.Params[RV_SIZE],
+      .PreDelay    = State.Params[RV_PRE_DELAY],
+      .Damping     = State.Params[RV_DAMPING],
+      .Diffusion   = State.Params[RV_DIFFUSION],
+      .EarlyLevel  = State.Params[RV_EARLY_LEVEL],
+      .EarlyLength = State.Params[RV_EARLY_LENGTH],
+      .Mix         = State.Params[RV_MIX]
    };
 }
 
@@ -142,7 +180,7 @@ static void reverb_read(extAudioEffect *Effect, AudioParamState &State)
 {
    const auto &settings = ((extAudioReverb *)Effect)->Settings;
    State.Params.assign({ settings.Decay, settings.Size, settings.PreDelay, settings.Damping, settings.Diffusion,
-      settings.Mix });
+      settings.EarlyLevel, settings.EarlyLength, settings.Mix });
    State.Groups.clear();
 }
 
@@ -184,7 +222,7 @@ static std::unique_ptr<AudioParamUpdate> reverb_prepare(extAudioEffect *Effect, 
 
 static const AudioEffectSchema glReverbSchema = {
    .ClassName   = "AudioReverb",
-   .Version     = 1,
+   .Version     = 2,
    .Description = "An algorithmic reverberator that simulates room ambience.",
    .Params      = glReverbParams,
    .Outputs     = glReverbOutputs,
