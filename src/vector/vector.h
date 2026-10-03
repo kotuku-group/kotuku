@@ -582,7 +582,7 @@ class extGradientContour : public extGradient {
    double Multiplier = 1;
 
    agg::gradient_contour *ContourCache = nullptr; // Cached contour gradient; rebuilt when ContourHash changes
-   uint64_t ContourHash = 0; // Fingerprint of the path that ContourCache was built from
+   uint64_t ContourHash = 0; // Fingerprint of the path and resolution that ContourCache was built from
 
    extGradientContour(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 
@@ -678,7 +678,7 @@ class extGradientVoronoi : public extGradient {
    WLM WorleyMetric = WLM::EUCLIDEAN;
 
    agg::gradient_worley *WorleyCache = nullptr; // Cached Worley field; rebuilt when WorleyHash changes
-   uint64_t WorleyHash = 0; // Fingerprint of the path and generation parameters that WorleyCache was built from
+   uint64_t WorleyHash = 0; // Fingerprint of the path, resolution and parameters that WorleyCache was built from
 
    extGradientVoronoi(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extGradient(ClassPtr, ObjectID) { }
 

@@ -180,6 +180,31 @@ namespace agg
             MaxValue);
       }
 
+      // Rasterise the path into a Width x Height mask at Scale pixels per path unit.  Inside pixels are marked 0x01
+      // and outside pixels are 0xff.
+
+      static void render_mask(path_storage &Flat, double X, double Y, double Scale, int Width, int Height,
+         std::vector<int8u> &Mask)
+      {
+         Mask.assign(Width * Height, 255);
+
+         agg::rendering_buffer rb(Mask.data(), Width, Height, Width);
+         agg::pixfmt_gray8 pf(rb);
+         agg::renderer_base<agg::pixfmt_gray8> renb(pf);
+
+         agg::trans_affine mtx;
+         mtx.translate(-X, -Y);
+         mtx.scale(Scale);
+         agg::conv_transform<agg::path_storage> trans(Flat, mtx);
+
+         agg::renderer_scanline_aa_solid<agg::renderer_base<agg::pixfmt_gray8>> solid(renb);
+         agg::rasterizer_scanline_aa<> rasterizer;
+         agg::scanline32_p8 sl;
+         rasterizer.add_path(trans);
+         solid.color(agg::gray8(0x01, 0xff));
+         agg::render_scanlines(rasterizer, sl, solid);
+      }
+
       static bool inside_mask(const std::vector<int8u> &Mask, int Width, int Height, int X, int Y) {
          if ((X < 0) or (Y < 0) or (X >= Width) or (Y >= Height)) return false;
          return Mask[(Y * Width) + X] <= 0x01;
@@ -281,8 +306,10 @@ namespace agg
          build_lut();
       }
 
+      // Scale is the buffer resolution in pixels per path unit; sampling coordinates must be scaled to match.
       int8u* worley_create(path_storage &ps, uint64_t Seed, int PointCount, WLF Mode, WLM Metric,
-         double HeightMin, double HeightMax, double Jitter, const std::vector<worley_feature> *Points = nullptr);
+         double HeightMin, double HeightMax, double Jitter, double Scale = 1.0,
+         const std::vector<worley_feature> *Points = nullptr);
 
       int worley_width() { return m_width; }
       int worley_height() { return m_height; }
@@ -304,7 +331,7 @@ namespace agg
    };
 
    int8u * gradient_worley::worley_create(path_storage &ps, uint64_t Seed, int PointCount, WLF Mode, WLM Metric,
-      double HeightMin, double HeightMax, double Jitter, const std::vector<worley_feature> *Points)
+      double HeightMin, double HeightMax, double Jitter, double Scale, const std::vector<worley_feature> *Points)
    {
       agg::conv_curve<agg::path_storage> conv(ps);
       agg::path_storage flat;
@@ -313,30 +340,17 @@ namespace agg
       double x1, y1, x2, y2;
       if (!agg::bounding_rect_single(flat, 0, &x1, &y1, &x2, &y2)) return nullptr;
 
-      const auto width  = int(ceil(x2 - x1)) + 1;
-      const auto height = int(ceil(y2 - y1)) + 1;
-      if ((width <= 0) or (height <= 0)) return nullptr;
+      if (not (Scale > 0)) Scale = 1.0;
 
-      m_buffer.resize(width * height);
-      std::fill(m_buffer.begin(), m_buffer.end(), 255);
+      // Feature points are always placed on a grid of path units, so that the cell layout does not change with the
+      // resolution of the field.
 
-      agg::rendering_buffer rb(m_buffer.data(), width, height, width);
-      agg::pixfmt_gray8 pf(rb);
-      agg::renderer_base<agg::pixfmt_gray8> renb(pf);
+      const auto unit_width  = int(ceil(x2 - x1)) + 1;
+      const auto unit_height = int(ceil(y2 - y1)) + 1;
+      if ((unit_width <= 0) or (unit_height <= 0)) return nullptr;
 
-      agg::trans_affine mtx;
-      mtx.translate(-x1, -y1);
-      agg::conv_transform<agg::path_storage> trans(flat, mtx);
-
-      agg::renderer_scanline_aa_solid<agg::renderer_base<agg::pixfmt_gray8>> solid(renb);
-      agg::rasterizer_scanline_aa<> rasterizer;
-      agg::scanline32_p8 sl;
-      rasterizer.reset();
-      rasterizer.add_path(trans);
-      solid.color(agg::gray8(0x01, 0xff));
-      agg::render_scanlines(rasterizer, sl, solid);
-
-      std::vector<int8u> mask(m_buffer);
+      std::vector<int8u> mask;
+      render_mask(flat, x1, y1, 1.0, unit_width, unit_height, mask);
 
       if (PointCount < 1) PointCount = 1;
       else if (PointCount > 4096) PointCount = 4096;
@@ -345,11 +359,30 @@ namespace agg
 
       splitmix64_generator prng(Seed ? Seed : 0x6a09e667f3bcc909ULL);
       std::vector<worley_feature> features;
-      if ((Points) and (not Points->empty())) create_user_features(features, *Points, width, height);
+      if ((Points) and (not Points->empty())) create_user_features(features, *Points, unit_width, unit_height);
       else if (Jitter > 0.0) {
-         create_jittered_features(features, prng, mask, width, height, PointCount, HeightMin, HeightMax, Jitter);
+         create_jittered_features(features, prng, mask, unit_width, unit_height, PointCount, HeightMin, HeightMax,
+            Jitter);
       }
-      else create_uniform_features(features, prng, mask, width, height, PointCount, HeightMin, HeightMax);
+      else create_uniform_features(features, prng, mask, unit_width, unit_height, PointCount, HeightMin, HeightMax);
+
+      // Feature positions and heights are distances in path units, so they are scaled to the field resolution.
+      // Distances in the field then scale uniformly and its normalised values are unaffected by Scale.
+
+      int width  = unit_width;
+      int height = unit_height;
+      if (Scale != 1.0) {
+         width  = int(ceil((x2 - x1) * Scale)) + 1;
+         height = int(ceil((y2 - y1) * Scale)) + 1;
+         render_mask(flat, x1, y1, Scale, width, height, mask);
+         for (auto &point : features) {
+            point.x *= Scale;
+            point.y *= Scale;
+            point.height *= Scale;
+         }
+      }
+
+      m_buffer.resize(width * height);
 
       if (features.empty()) {
          m_buffer.clear();
