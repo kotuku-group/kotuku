@@ -54,6 +54,7 @@ mixing.</li>
     <classes>
       <class>Audio</class>
       <class>AudioAnalyser</class>
+      <class>AudioChorus</class>
       <class>AudioCompressor</class>
       <class>AudioDelay</class>
       <class>AudioEffect</class>

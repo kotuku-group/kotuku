@@ -14,6 +14,8 @@ PARAMS = {
    { key='pre_delay', default=20, unit='ms', min=0, max=250 },
    { key='damping', default=50, unit='%', min=0, max=100 },
    { key='diffusion', default=70, unit='%', min=0, max=100 },
+   { key='early_level', default=0, unit='%', min=0, max=100 },
+   { key='early_length', default=30, unit='ms', min=5, max=100 },
    { key='mix', default=20, unit='%', min=0, max=100 }
 }
 
@@ -33,7 +35,7 @@ end
    audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
    reverb <close> = new_reverb(audio)
    schema = reverb.schema
-   assert(schema.find('<effect class="AudioReverb" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<effect class="AudioReverb" version="2"') != nil, 'The schema must identify the class')
    assert(schema.find('<group') is nil, 'The reverb has no parameter groups')
    assert(schema.find('type="curve"') is nil, 'The reverb does not publish a response curve')
    for p in values(PARAMS) do
@@ -42,6 +44,17 @@ end
       assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
    end
    assert(schema.find('unit="ms" scale="log" min="100" max="20000" default="1500"') != nil)
+   assert(schema.find('unit="ms" scale="log" min="5" max="100" default="30"') != nil,
+      'early_length must be published with a log scale')
+
+   -- Parameters are published in schema order, with the early reflections between diffusion and mix.
+
+   last = 0
+   for p in values(PARAMS) do
+      pos = schema.find(f'<param key="{p.key}"')
+      assert(pos > last, f'{p.key} is out of order')
+      last = pos
+   end
    assert(schema.find('key="input_peak_left" type="scalar"') != nil)
    assert(schema.find('key="output_peak_right" type="scalar"') != nil)
    assert(reverb.mtGetOutput('response') is ERR_Search)
@@ -121,6 +134,16 @@ end
    check reverb.mtSetParameter('size', 10)
    check reverb.mtSetParameter('pre_delay', 150)
    check reverb.acFlush()
+
+   -- Early reflections fade in, then a length edit crossfades with a queued length behind it.
+
+   check reverb.mtSetParameter('early_level', 60)
+   check reverb.mtSetParameter('early_length', 80)
+   check reverb.acFlush()
+   check reverb.mtSetParameter('early_length', 8)
+   check reverb.acFlush()
+   err, value = reverb.mtGetParameter('early_length')
+   assert(err is ERR_Okay and value is 8, f'early_length should be 8 after Flush(), got {value}')
 
    err, layout = reverb.mtGetMeterLayout()
    assert(err is ERR_Okay and #layout.meters is 4)

@@ -15,6 +15,7 @@ class objAudioReverb;
 class objAudioCompressor;
 class objAudioLimiter;
 class objAudioDelay;
+class objAudioChorus;
 class objAudioSplitter;
 class objAudioAnalyser;
 class objSound;
@@ -909,6 +910,29 @@ class objAudioDelay : public objAudioEffect {
 
    using create = kt::Create<objAudioDelay>;
    objAudioDelay(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioChorus class definition
+
+#define VER_AUDIOCHORUS (1.000000)
+
+class objAudioChorus : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOCHORUS;
+   static constexpr CSTRING CLASS_NAME = "AudioChorus";
+
+   using create = kt::Create<objAudioChorus>;
+   objAudioChorus(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 

@@ -108,6 +108,7 @@ static OBJECTPTR clAudioReverb = nullptr;
 static OBJECTPTR clAudioCompressor = nullptr;
 static OBJECTPTR clAudioLimiter = nullptr;
 static OBJECTPTR clAudioDelay = nullptr;
+static OBJECTPTR clAudioChorus = nullptr;
 static OBJECTPTR clAudioSplitter = nullptr;
 static OBJECTPTR clAudioAnalyser = nullptr;
 static ERR add_audioeffect_class();
@@ -116,6 +117,7 @@ static ERR add_audioreverb_class();
 static ERR add_audiocompressor_class();
 static ERR add_audiolimiter_class();
 static ERR add_audiodelay_class();
+static ERR add_audiochorus_class();
 static ERR add_audiosplitter_class();
 static ERR add_audioanalyser_class();
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
@@ -185,6 +187,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (add_audiocompressor_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiolimiter_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiodelay_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audiochorus_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiosplitter_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioanalyser_class() != ERR::Okay) return ERR::AddClass;
    if (add_sound_class() != ERR::Okay) return ERR::AddClass;
@@ -210,6 +213,7 @@ static ERR MODExpunge(void)
 
    if (clAudioAnalyser) { FreeResource(clAudioAnalyser); clAudioAnalyser = nullptr; }
    if (clAudioSplitter) { FreeResource(clAudioSplitter); clAudioSplitter = nullptr; }
+   if (clAudioChorus) { FreeResource(clAudioChorus); clAudioChorus = nullptr; }
    if (clAudioDelay) { FreeResource(clAudioDelay); clAudioDelay = nullptr; }
    if (clAudioLimiter) { FreeResource(clAudioLimiter); clAudioLimiter = nullptr; }
    if (clAudioCompressor) { FreeResource(clAudioCompressor); clAudioCompressor = nullptr; }
@@ -237,6 +241,7 @@ static ERR MODExpunge(void)
 #include "class_audiocompressor.cpp"
 #include "class_audiolimiter.cpp"
 #include "class_audiodelay.cpp"
+#include "class_audiochorus.cpp"
 #include "class_audiosplitter.cpp"
 #include "class_audioanalyser.cpp"
 #include "class_audio.cpp"
@@ -256,6 +261,7 @@ static ERR MODExpunge(void)
 #include "tests/test_audio_compressor_dsp.cpp"
 #include "tests/test_audio_limiter_dsp.cpp"
 #include "tests/test_audio_delay_dsp.cpp"
+#include "tests/test_audio_chorus_dsp.cpp"
 #include "tests/test_audio_splitter_dsp.cpp"
 #include "tests/test_audio_analyser_dsp.cpp"
 #include "tests/test_mixers.cpp"
@@ -290,6 +296,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    run("compressor DSP", audio_tests_audio_compressor_dsp::run);
    run("limiter DSP", audio_tests_audio_limiter_dsp::run);
    run("delay DSP", audio_tests_audio_delay_dsp::run);
+   run("chorus DSP", audio_tests_audio_chorus_dsp::run);
    run("splitter DSP", audio_tests_audio_splitter_dsp::run);
    run("analyser DSP", audio_tests_audio_analyser_dsp::run);
    run("mixer", audio_tests_mixers::run);
