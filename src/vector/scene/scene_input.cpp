@@ -231,8 +231,12 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          }
       }
       else if (input->Type IS JET::CROSSED_OUT) {
+         // The active vector is cleared so that the cursor's return to the surface is treated as a new entry, even
+         // if it returns to the same position.
+
          if (Self->ActiveVector) {
             kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
+            Self->ActiveVector = 0;
             if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
          }
       }
