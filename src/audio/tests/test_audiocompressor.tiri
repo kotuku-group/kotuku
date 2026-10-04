@@ -49,7 +49,8 @@ end
       assert(start != nil and start > position, f'{p.key} must be published in order')
       position = start
       assert(schema.find(attributes, start) != nil, f'{p.key} must publish {attributes}')
-      err, value = comp.mtGetParameter(p.key)
+      err, value_text = comp.acGetKey(p.key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
    end
 
@@ -81,28 +82,30 @@ end
    -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
 
    for p in values(PARAMS) do
-      check comp.mtSetParameter(p.key, p.min)
-      check comp.mtSetParameter(p.key, p.max)
-      assert(comp.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
-      assert(comp.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
-      assert(comp.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
-      assert(comp.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+      check comp.acSetKey(p.key, p.min)
+      check comp.acSetKey(p.key, p.max)
+      assert(comp.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(comp.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(comp.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(comp.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
    end
-   assert(comp.mtSetParameter('unknown', 1) is ERR_Search)
+   assert(comp.acSetKey('unknown', 1) is ERR_Search)
    check comp.acFlush()
 
    -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
    -- commits them together.
 
-   check comp.mtSetParameter('threshold', -30)
-   check comp.mtSetParameter('ratio', 8)
-   assert(comp.mtSetParameter('knee', 30) is ERR_InvalidValue)
-   check comp.mtSetParameter('makeup', 4.5)
-   err, value = comp.mtGetParameter('ratio')
+   check comp.acSetKey('threshold', -30)
+   check comp.acSetKey('ratio', 8)
+   assert(comp.acSetKey('knee', 30) is ERR_InvalidValue)
+   check comp.acSetKey('makeup', 4.5)
+   err, value_text = comp.acGetKey('ratio')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 8, 'Staged values must be readable')
    check comp.acFlush()
    for key, expected in pairs({ threshold=-30, ratio=8, knee=24, makeup=4.5 }) do
-      err, value = comp.mtGetParameter(key)
+      err, value_text = comp.acGetKey(key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
    end
 end
@@ -114,13 +117,15 @@ end
    comp <close> = obj.new('AudioCompressor')
    comp.audio = audio
    comp.channel = channel
-   check comp.mtSetParameter('attack', 0.5)
-   check comp.mtSetParameter('mix', 35)
-   assert(comp.mtSetParameter('ratio', 0.5) is ERR_InvalidValue)
+   check comp.acSetKey('attack', 0.5)
+   check comp.acSetKey('mix', 35)
+   assert(comp.acSetKey('ratio', 0.5) is ERR_InvalidValue)
    comp.init()
-   err, value = comp.mtGetParameter('mix')
+   err, value_text = comp.acGetKey('mix')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 35)
-   err, value = comp.mtGetParameter('attack')
+   err, value_text = comp.acGetKey('attack')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 0.5)
 end
 
@@ -142,14 +147,14 @@ end
 
    -- Live edits to every parameter, including an edit that replaces one still ramping.
 
-   check comp.mtSetParameter('threshold', -40)
-   check comp.mtSetParameter('ratio', 10)
-   check comp.mtSetParameter('knee', 0)
+   check comp.acSetKey('threshold', -40)
+   check comp.acSetKey('ratio', 10)
+   check comp.acSetKey('knee', 0)
    check comp.acFlush()
-   check comp.mtSetParameter('attack', 1)
-   check comp.mtSetParameter('release', 500)
-   check comp.mtSetParameter('makeup', 12)
-   check comp.mtSetParameter('mix', 50)
+   check comp.acSetKey('attack', 1)
+   check comp.acSetKey('release', 500)
+   check comp.acSetKey('makeup', 12)
+   check comp.acSetKey('mix', 50)
    check comp.acFlush()
 
    assert(#meter_layout(comp) is 5)
@@ -158,7 +163,7 @@ end
    err, reading = comp.mtReadMeters()
    assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
    comp.flags = 0
-   check comp.mtSetParameter('ratio', 2)
+   check comp.acSetKey('ratio', 2)
    check comp.acFlush()
 
    -- Closing the channel set disconnects the effect.
@@ -166,18 +171,19 @@ end
    check audio.mtCloseChannels(channel)
    err, reading = comp.mtReadMeters()
    assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
-   assert(comp.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   assert(comp.acSetKey('mix', 50) is ERR_NotInitialised)
    comp.free()
 end
 
 @Test function MonoAndGlobalImmutability()
    audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
    comp = audio.new('AudioCompressor')
-   check comp.mtSetParameter('threshold', -24)
+   check comp.acSetKey('threshold', -24)
    comp.init()
    assert(comp.mutable is 0)
-   assert(comp.mtSetParameter('threshold', -12) is ERR_Immutable)
-   err, value = comp.mtGetParameter('threshold')
+   assert(comp.acSetKey('threshold', -12) is ERR_Immutable)
+   err, value_text = comp.acGetKey('threshold')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is -24, 'Global effects remain readable')
    check audio.acActivate()
    meters = meter_layout(comp)

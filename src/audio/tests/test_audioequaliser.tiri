@@ -8,10 +8,10 @@ function u8_mono()
 end
 
 function set_band(Eq:obj, Index:num, Type:num, Frequency:num, Gain:num, Q:num)
-   check Eq.mtSetParameter(f'bands[{Index}].type', Type)
-   check Eq.mtSetParameter(f'bands[{Index}].frequency', Frequency)
-   check Eq.mtSetParameter(f'bands[{Index}].gain', Gain)
-   check Eq.mtSetParameter(f'bands[{Index}].q', Q)
+   check Eq.acSetKey(f'bands[{Index}].type', Type)
+   check Eq.acSetKey(f'bands[{Index}].frequency', Frequency)
+   check Eq.acSetKey(f'bands[{Index}].gain', Gain)
+   check Eq.acSetKey(f'bands[{Index}].q', Q)
 end
 
 @Test function BandsAndLiveChanges()
@@ -46,7 +46,7 @@ end
    set_band(eq, 0, EQB_LOW_PASS, 8000, 0, 0.7)
    check eq.acFlush()
    check audio.mtCloseChannels(channel)
-   assert(eq.mtSetParameter('bands[0].frequency', 500) is ERR_NotInitialised)
+   assert(eq.acSetKey('bands[0].frequency', 500) is ERR_NotInitialised)
 end
 
 @Test function LoudnessCompensation()
@@ -64,9 +64,10 @@ end
 
    -- The listening level is ignored while compensation is off, so the response is unchanged.
 
-   err, value = eq.mtGetParameter('listening_level')
+   err, value_text = eq.acGetKey('listening_level')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is -20, 'The listening level defaults to -20 dB')
-   check eq.mtSetParameter('listening_level', -40)
+   check eq.acSetKey('listening_level', -40)
    check eq.acFlush()
    magnitudes = array<double, 5>
    check eq.mtGetResponse(frequencies, magnitudes)
@@ -74,7 +75,7 @@ end
 
    -- Enabling compensation boosts bass and treble relative to 1 kHz, after the bands.
 
-   check eq.mtSetParameter('loudness', 1)
+   check eq.acSetKey('loudness', 1)
    check eq.acFlush()
    check eq.mtGetResponse(frequencies, magnitudes)
    assert(magnitudes[0] - plain[0] > 15, f'Expected a bass boost at -40 dB, got {magnitudes[0] - plain[0]}')
@@ -85,24 +86,24 @@ end
    -- Lower listening levels receive more compensation, and the reference level is flat.
 
    bass_at_40 = magnitudes[0] - plain[0]
-   check eq.mtSetParameter('listening_level', -60)
+   check eq.acSetKey('listening_level', -60)
    check eq.acFlush()
    check eq.mtGetResponse(frequencies, magnitudes)
    assert(magnitudes[0] - plain[0] > bass_at_40)
-   check eq.mtSetParameter('listening_level', 0)
+   check eq.acSetKey('listening_level', 0)
    check eq.acFlush()
    check eq.mtGetResponse(frequencies, magnitudes)
    for i in {0 to 5} do
       assert(math.abs(magnitudes[i] - plain[i]) < 1e-9, 'Compensation is flat at the reference level')
    end
 
-   assert(eq.mtSetParameter('listening_level', -61) is ERR_InvalidValue)
-   assert(eq.mtSetParameter('listening_level', 1) is ERR_InvalidValue)
-   assert(eq.mtSetParameter('loudness', 0.5) is ERR_InvalidValue)
+   assert(eq.acSetKey('listening_level', -61) is ERR_InvalidValue)
+   assert(eq.acSetKey('listening_level', 1) is ERR_InvalidValue)
+   assert(eq.acSetKey('loudness', 0.5) is ERR_InvalidValue)
 
    -- Live edits while playing exercise the crossfaded transitions.
 
-   check eq.mtSetParameter('listening_level', -30)
+   check eq.acSetKey('listening_level', -30)
    check eq.acFlush()
    check audio.acActivate()
    data = array<byte, 4096>
@@ -112,11 +113,12 @@ end
    check mAudio.MixSample(audio, channel, sample)
    check mAudio.MixFrequency(audio, channel, 44100)
    check mAudio.MixPlay(audio, channel, 0)
-   check eq.mtSetParameter('listening_level', -50)
+   check eq.acSetKey('listening_level', -50)
    check eq.acFlush()
-   check eq.mtSetParameter('loudness', 0)
+   check eq.acSetKey('loudness', 0)
    check eq.acFlush()
-   err, value = eq.mtGetParameter('loudness')
+   err, value_text = eq.acGetKey('loudness')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 0)
    check audio.mtCloseChannels(channel)
 end
@@ -145,10 +147,11 @@ end
    eq.init()
    assert(#eq.bands is 2)
    assert(eq.mutable is 0)
-   assert(eq.mtSetParameter('bands[0].gain', 2) is ERR_Immutable)
+   assert(eq.acSetKey('bands[0].gain', 2) is ERR_Immutable)
    assert(eq.mtInsertEntry('bands', 0) is ERR_Immutable)
    assert(eq.mtRemoveEntry('bands', 0) is ERR_Immutable)
-   err, value = eq.mtGetParameter('bands[0].frequency')
+   err, value_text = eq.acGetKey('bands[0].frequency')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 100, 'Global effects remain readable')
    check eq.acFlush()
    try

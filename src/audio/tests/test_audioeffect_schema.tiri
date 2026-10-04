@@ -108,9 +108,10 @@ end
 
    top = choose_values(schema.params, eq.outputRate)
    for p in values(schema.params) do
-      err, value = eq.mtGetParameter(p.key)
+      err, value_text = eq.acGetKey(p.key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}')
-      check eq.mtSetParameter(p.key, top[p.key])
+      check eq.acSetKey(p.key, string.format('%.17g', top[p.key]))
    end
 
    -- Every group gets one new entry, which reports the published defaults before it is edited.
@@ -120,22 +121,25 @@ end
       entry = choose_values(group.members, eq.outputRate)
       for m in values(group.members) do
          path = f'{group.key}[0].{m.key}'
-         err, value = eq.mtGetParameter(path)
+         err, value_text = eq.acGetKey(path)
+         value = tonumber(value_text)
          assert(err is ERR_Okay and value is m.default, f'{path} should default to {m.default}, got {value}')
-         check eq.mtSetParameter(path, entry[m.key])
+         check eq.acSetKey(path, string.format('%.17g', entry[m.key]))
       end
    end
 
    check eq.acFlush()
 
    for p in values(schema.params) do
-      err, value = eq.mtGetParameter(p.key)
+      err, value_text = eq.acGetKey(p.key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is top[p.key], f'{p.key} was not committed')
    end
    for group in values(schema.groups) do
       entry = choose_values(group.members, eq.outputRate)
       for m in values(group.members) do
-         err, value = eq.mtGetParameter(f'{group.key}[0].{m.key}')
+         err, value_text = eq.acGetKey(f'{group.key}[0].{m.key}')
+         value = tonumber(value_text)
          assert(err is ERR_Okay and value is entry[m.key], f'{group.key}[0].{m.key} was not committed')
       end
    end
@@ -147,21 +151,22 @@ end
    check eq.mtInsertEntry('bands', 0)
    check eq.acFlush()
 
-   assert(eq.mtSetParameter('unknown', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[0].unknown', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[x].gain', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[].gain', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[-1].gain', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[0]', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[0]gain', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[0.gain', 1) is ERR_Search)
-   assert(eq.mtSetParameter('', 1) is ERR_Search)
-   assert(eq.mtSetParameter('bands[1].gain', 1) is ERR_OutOfRange)
-   assert(eq.mtSetParameter('gain', 49) is ERR_InvalidValue)
-   assert(eq.mtSetParameter('bands[0].type', 9) is ERR_InvalidValue)
-   assert(eq.mtSetParameter('bands[0].frequency', 0) is ERR_InvalidValue)
-   assert(eq.mtSetParameter('bands[0].frequency', 24000) is ERR_InvalidValue)
-   err, value = eq.mtGetParameter('bands[5].q')
+   assert(eq.acSetKey('unknown', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[0].unknown', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[x].gain', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[].gain', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[-1].gain', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[0]', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[0]gain', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[0.gain', 1) is ERR_Search)
+   assert(eq.acSetKey('', 1) is ERR_Search)
+   assert(eq.acSetKey('bands[1].gain', 1) is ERR_OutOfRange)
+   assert(eq.acSetKey('gain', 49) is ERR_InvalidValue)
+   assert(eq.acSetKey('bands[0].type', 9) is ERR_InvalidValue)
+   assert(eq.acSetKey('bands[0].frequency', 0) is ERR_InvalidValue)
+   assert(eq.acSetKey('bands[0].frequency', 24000) is ERR_InvalidValue)
+   err, value_text = eq.acGetKey('bands[5].q')
+   value = tonumber(value_text)
    assert(err is ERR_OutOfRange)
    assert(eq.mtInsertEntry('unknown', 0) is ERR_Search)
    assert(eq.mtInsertEntry('bands', 5) is ERR_OutOfRange)
@@ -186,8 +191,26 @@ end
    assert(err is ERR_Okay)
    plain <close> = obj.new('AudioEffect', { audio=audio, channel=channel })
    assert(plain.schema is '' or plain.schema is nil)
-   assert(plain.mtSetParameter('gain', 0) is ERR_NoSupport)
+   assert(plain.acSetKey('gain', 0) is ERR_NoSupport)
    check plain.acFlush()
+end
+
+@Test function NumericKeyValues()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_equaliser(audio)
+   for text in values({ '', ' ', 'abc', '1dB', '1 2', '+', '+-1', '1e999', 'nan', 'inf', '-inf' }) do
+      assert(eq.acSetKey('gain', text) is ERR_InvalidValue, f'Invalid numeric text {text} must fail')
+   end
+   check eq.acSetKey('gain', '  +1.2345678901234567e0  ')
+   err, text = eq.acGetKey('gain')
+   assert(err is ERR_Okay and type(text) is 'string')
+   assert(tonumber(text) is 1.2345678901234567, 'GetKey must preserve double precision')
+   check eq.acFlush()
+   err, committed = eq.acGetKey('gain')
+   assert(err is ERR_Okay and committed is text, 'Flush must preserve the numeric string')
+   assert(eq.acSetKey('gain', '2junk') is ERR_InvalidValue)
+   err, unchanged = eq.acGetKey('gain')
+   assert(err is ERR_Okay and unchanged is text, 'Invalid text must leave the value unchanged')
 end
 
 @Test function ParameterBounds()
@@ -195,15 +218,15 @@ end
    eq <close> = new_equaliser(audio)
    check eq.mtInsertEntry('bands', 0)
 
-   check eq.mtSetParameter('gain', -48)
-   check eq.mtSetParameter('gain', 48)
-   assert(eq.mtSetParameter('gain', 48.001) is ERR_InvalidValue)
-   assert(eq.mtSetParameter('gain', math.huge) is ERR_InvalidValue)
-   check eq.mtSetParameter('bands[0].type', EQB_HIGH_PASS)
-   assert(eq.mtSetParameter('bands[0].type', 1.5) is ERR_InvalidValue)
-   check eq.mtSetParameter('bands[0].frequency', 0.001)
-   check eq.mtSetParameter('bands[0].frequency', 23999)
-   assert(eq.mtSetParameter('bands[0].frequency', math.sqrt(-1)) is ERR_InvalidValue)
+   check eq.acSetKey('gain', -48)
+   check eq.acSetKey('gain', 48)
+   assert(eq.acSetKey('gain', 48.001) is ERR_InvalidValue)
+   assert(eq.acSetKey('gain', math.huge) is ERR_InvalidValue)
+   check eq.acSetKey('bands[0].type', EQB_HIGH_PASS)
+   assert(eq.acSetKey('bands[0].type', 1.5) is ERR_InvalidValue)
+   check eq.acSetKey('bands[0].frequency', 0.001)
+   check eq.acSetKey('bands[0].frequency', 23999)
+   assert(eq.acSetKey('bands[0].frequency', math.sqrt(-1)) is ERR_InvalidValue)
    check eq.acFlush()
 
    assert(eq.gain is 48 and eq.bands[0].type is EQB_HIGH_PASS)
@@ -212,7 +235,8 @@ end
    low_rate <close> = obj.new('Audio', { device='null', outputRate=1600 })
    low_eq <close> = new_equaliser(low_rate)
    check low_eq.mtInsertEntry('bands', 0)
-   err, frequency = low_eq.mtGetParameter('bands[0].frequency')
+   err, frequency_text = low_eq.acGetKey('bands[0].frequency')
+   frequency = tonumber(frequency_text)
    assert(err is ERR_Okay and frequency is 400, 'A default frequency must fit below the Nyquist limit')
 end
 
@@ -222,13 +246,14 @@ end
    check eq.acFlush() -- Nothing staged
 
    check eq.mtInsertEntry('bands', 0)
-   check eq.mtSetParameter('bands[0].q', 5)
+   check eq.acSetKey('bands[0].q', 5)
    check eq.acFlush()
 
-   -- Staged changes are visible to GetParameter() but not to the committed Bands.
+   -- Staged changes are visible to GetKey() but not to the committed Bands.
 
-   check eq.mtSetParameter('bands[0].gain', 6)
-   err, value = eq.mtGetParameter('bands[0].gain')
+   check eq.acSetKey('bands[0].gain', 6)
+   err, value_text = eq.acGetKey('bands[0].gain')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 6)
    assert(eq.bands[0].gain is 0)
 
@@ -248,22 +273,24 @@ end
 
    -- Switching a Q 5 peak to a shelf only passes if the Q change is flushed with it.
 
-   check eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
+   check eq.acSetKey('bands[0].type', EQB_LOW_SHELF)
    assert(eq.acFlush() is ERR_InvalidValue)
    assert(eq.bands[0].type is EQB_PEAK and eq.bands[0].q is 5, 'A failed flush must leave the effect unchanged')
-   err, value = eq.mtGetParameter('bands[0].type')
+   err, value_text = eq.acGetKey('bands[0].type')
+   value = tonumber(value_text)
    assert(value is EQB_PEAK, 'A failed flush must discard the working copy')
 
-   check eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
-   check eq.mtSetParameter('bands[0].q', 0.7)
+   check eq.acSetKey('bands[0].type', EQB_LOW_SHELF)
+   check eq.acSetKey('bands[0].q', 0.7)
    check eq.acFlush()
    assert(eq.bands[0].type is EQB_LOW_SHELF and eq.bands[0].q is 0.7)
 
    -- Paths follow the working copy after insertion and removal.
 
    check eq.mtInsertEntry('bands', 0)
-   check eq.mtSetParameter('bands[0].frequency', 250)
-   err, value = eq.mtGetParameter('bands[1].type')
+   check eq.acSetKey('bands[0].frequency', 250)
+   err, value_text = eq.acGetKey('bands[1].type')
+   value = tonumber(value_text)
    assert(value is EQB_LOW_SHELF)
    check eq.mtRemoveEntry('bands', 1)
    assert(#eq.bands is 1 and eq.bands[0].type is EQB_LOW_SHELF)
@@ -281,7 +308,7 @@ end
    eq = audio.new('AudioEqualiser')
    eq.channel = channel
    check eq.mtInsertEntry('bands', 0)
-   check eq.mtSetParameter('bands[0].frequency', 120)
+   check eq.acSetKey('bands[0].frequency', 120)
    assert(#eq.bands is 1 and eq.bands[0].frequency is 120)
    eq.init()
    assert(eq.bands[0].frequency is 120)
@@ -289,8 +316,8 @@ end
    bad = audio.new('AudioEqualiser')
    bad.channel = channel
    check bad.mtInsertEntry('bands', 0)
-   check bad.mtSetParameter('bands[0].type', EQB_HIGH_SHELF)
-   check bad.mtSetParameter('bands[0].q', 3)
+   check bad.acSetKey('bands[0].type', EQB_HIGH_SHELF)
+   check bad.acSetKey('bands[0].q', 3)
    try
       bad.init()
    except e
@@ -304,8 +331,8 @@ end
    audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
    eq <close> = new_equaliser(audio)
    check eq.mtInsertEntry('bands', 0)
-   check eq.mtSetParameter('bands[0].gain', 6)
-   check eq.mtSetParameter('bands[0].q', 1)
+   check eq.acSetKey('bands[0].gain', 6)
+   check eq.acSetKey('bands[0].q', 1)
    check eq.acFlush()
    eq.gain = -2
 
@@ -317,7 +344,7 @@ end
 
    -- Staged changes are not included.
 
-   check eq.mtSetParameter('bands[0].gain', -6)
+   check eq.acSetKey('bands[0].gain', -6)
    check eq.mtGetResponse(frequencies, magnitudes)
    assert(math.abs(magnitudes[1] - 4) < 0.001)
    check eq.acFlush()
@@ -351,8 +378,8 @@ end
    _, count = check eq.mtGetGroupCount('bands')
    assert(count is 0 and #eq.bands is 1, 'Counts must include staged removals')
    check eq.mtInsertEntry('bands', 0)
-   check eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
-   check eq.mtSetParameter('bands[0].q', 5)
+   check eq.acSetKey('bands[0].type', EQB_LOW_SHELF)
+   check eq.acSetKey('bands[0].q', 5)
    check eq.mtInsertEntry('bands', 1)
    assert(eq.acFlush() is ERR_InvalidValue)
    _, count = check eq.mtGetGroupCount('bands')

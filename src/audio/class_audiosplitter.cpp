@@ -42,8 +42,8 @@ set:
 <pre>
 splitter = obj.new('AudioSplitter', { audio=audio, channel=channel })
 splitter.mtInsertEntry('branches', 1)
-splitter.mtSetParameter('branches[1].mute', 0)
-splitter.mtSetParameter('branches[1].gain', -6)
+splitter.acSetKey('branches[1].mute', 0)
+splitter.acSetKey('branches[1].gain', -6)
 splitter.acFlush()
 compressor = splitter.new('AudioCompressor', { branch=1 })
 </pre>

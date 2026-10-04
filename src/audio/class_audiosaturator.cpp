@@ -12,7 +12,7 @@ Create new saturator objects as a child of an @Audio object or set the inherited
 #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application saturators
 accept live changes; global saturators become immutable after initialisation.
 
-Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter()
+Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetKey()
 followed by @AudioEffect.Flush():
 
 <list type="bullet">
@@ -28,9 +28,9 @@ The following adds heavy parallel saturation to a playing channel set, as a sing
 
 <pre>
 saturator = obj.new('AudioSaturator', { audio=audio, channel=channel })
-saturator.mtSetParameter('drive', 24)
-saturator.mtSetParameter('gain', -12)
-saturator.mtSetParameter('mix', 40)
+saturator.acSetKey('drive', 24)
+saturator.acSetKey('gain', -12)
+saturator.acSetKey('mix', 40)
 saturator.acFlush()
 </pre>
 

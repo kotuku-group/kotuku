@@ -60,7 +60,8 @@ end
       assert(start != nil and start > position, f'{p.key} must be published in order')
       position = start
       assert(schema.find(attributes, start) != nil, f'{p.key} must publish {attributes}')
-      err, value = limiter.mtGetParameter(p.key)
+      err, value_text = limiter.acGetKey(p.key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
    end
 
@@ -92,29 +93,31 @@ end
    -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
 
    for p in values(PARAMS) do
-      check limiter.mtSetParameter(p.key, p.min)
-      check limiter.mtSetParameter(p.key, p.max)
-      assert(limiter.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
-      assert(limiter.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
-      assert(limiter.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
-      assert(limiter.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+      check limiter.acSetKey(p.key, p.min)
+      check limiter.acSetKey(p.key, p.max)
+      assert(limiter.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(limiter.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(limiter.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(limiter.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
    end
-   assert(limiter.mtSetParameter('unknown', 1) is ERR_Search)
-   assert(limiter.mtSetParameter('mix', 50) is ERR_Search)
+   assert(limiter.acSetKey('unknown', 1) is ERR_Search)
+   assert(limiter.acSetKey('mix', 50) is ERR_Search)
    check limiter.acFlush()
 
    -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
    -- commits them together.
 
-   check limiter.mtSetParameter('ceiling', -3)
-   check limiter.mtSetParameter('gain', 6)
-   assert(limiter.mtSetParameter('release', 2000) is ERR_InvalidValue)
-   check limiter.mtSetParameter('release', 250)
-   err, value = limiter.mtGetParameter('gain')
+   check limiter.acSetKey('ceiling', -3)
+   check limiter.acSetKey('gain', 6)
+   assert(limiter.acSetKey('release', 2000) is ERR_InvalidValue)
+   check limiter.acSetKey('release', 250)
+   err, value_text = limiter.acGetKey('gain')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 6, 'Staged values must be readable')
    check limiter.acFlush()
    for key, expected in pairs({ ceiling=-3, gain=6, release=250 }) do
-      err, value = limiter.mtGetParameter(key)
+      err, value_text = limiter.acGetKey(key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
    end
 end
@@ -126,13 +129,15 @@ end
    limiter <close> = obj.new('AudioLimiter')
    limiter.audio = audio
    limiter.channel = channel
-   check limiter.mtSetParameter('ceiling', -0.5)
-   check limiter.mtSetParameter('release', 40)
-   assert(limiter.mtSetParameter('gain', 30) is ERR_InvalidValue)
+   check limiter.acSetKey('ceiling', -0.5)
+   check limiter.acSetKey('release', 40)
+   assert(limiter.acSetKey('gain', 30) is ERR_InvalidValue)
    limiter.init()
-   err, value = limiter.mtGetParameter('ceiling')
+   err, value_text = limiter.acGetKey('ceiling')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is -0.5)
-   err, value = limiter.mtGetParameter('release')
+   err, value_text = limiter.acGetKey('release')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 40)
 end
 
@@ -153,12 +158,12 @@ end
 
    -- Live edits, including an edit that replaces a gain ramp, never change the latency.
 
-   check limiter.mtSetParameter('gain', 24)
-   check limiter.mtSetParameter('ceiling', -6)
+   check limiter.acSetKey('gain', 24)
+   check limiter.acSetKey('ceiling', -6)
    check limiter.acFlush()
    play_loud(audio, channel)
-   check limiter.mtSetParameter('gain', 12)
-   check limiter.mtSetParameter('release', 5)
+   check limiter.acSetKey('gain', 12)
+   check limiter.acSetKey('release', 5)
    check limiter.acFlush()
    assert(limiter.latency is 240, 'Parameter changes must not alter the latency')
 
@@ -207,7 +212,7 @@ end
    check audio.mtCloseChannels(channel)
    err, reading = limiter.mtReadMeters()
    assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
-   assert(limiter.mtSetParameter('gain', 0) is ERR_NotInitialised)
+   assert(limiter.acSetKey('gain', 0) is ERR_NotInitialised)
    limiter.free()
 end
 
@@ -236,11 +241,12 @@ end
 @Test function MonoAndGlobalImmutability()
    audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
    limiter = audio.new('AudioLimiter')
-   check limiter.mtSetParameter('ceiling', -2)
+   check limiter.acSetKey('ceiling', -2)
    limiter.init()
    assert(limiter.mutable is 0)
-   assert(limiter.mtSetParameter('ceiling', -6) is ERR_Immutable)
-   err, value = limiter.mtGetParameter('ceiling')
+   assert(limiter.acSetKey('ceiling', -6) is ERR_Immutable)
+   err, value_text = limiter.acGetKey('ceiling')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is -2, 'Global effects remain readable')
    check audio.acActivate()
    assert(limiter.latency is 221)

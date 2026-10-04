@@ -592,8 +592,6 @@ class objAudio : public Object {
 // AudioEffect methods
 
 namespace fx {
-struct SetParameter { std::string_view Path; double Value; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
-struct GetParameter { std::string_view Path; double Value; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct InsertEntry { std::string_view Group; int Index; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct RemoveEntry { std::string_view Group; int Index; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetResponse { std::span<const double> Frequencies; std::span<double> Magnitudes; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
@@ -624,16 +622,16 @@ class objAudioEffect : public Object {
    // Action stubs
 
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
-   inline ERR init() noexcept { return InitObject(this); }
-   inline ERR setParameter(const std::string_view &Path, double Value) noexcept {
-      struct fx::SetParameter args = { Path, Value };
-      return Action(AC(-1), this, &args);
-   }
-   inline ERR getParameter(const std::string_view &Path, double * Value) noexcept {
-      struct fx::GetParameter args = { Path, (double)0 };
-      ERR error = Action(AC(-2), this, &args);
-      if (Value) *Value = args.Value;
+   inline ERR getKey(std::string_view Key, std::string &Value) noexcept {
+      struct acGetKey args = { Key, &Value };
+      auto error = Action(AC::GetKey, this, &args);
+      if (error != ERR::Okay) Value.clear();
       return error;
+   }
+   inline ERR init() noexcept { return InitObject(this); }
+   inline ERR acSetKey(std::string_view FieldName, std::string_view Value) noexcept {
+      struct acSetKey args = { FieldName, Value };
+      return Action(AC::SetKey, this, &args);
    }
    inline ERR insertEntry(const std::string_view &Group, int Index) noexcept {
       struct fx::InsertEntry args = { Group, Index };

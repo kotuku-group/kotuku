@@ -29,8 +29,8 @@ function branch_count(Splitter:obj):num
 end
 
 function enable_branch(Splitter:obj, Index:num, Gain:num)
-   check Splitter.mtSetParameter(f'branches[{Index}].mute', 0)
-   check Splitter.mtSetParameter(f'branches[{Index}].gain', Gain ?? 0)
+   check Splitter.acSetKey(f'branches[{Index}].mute', 0)
+   check Splitter.acSetKey(f'branches[{Index}].gain', Gain ?? 0)
 end
 
 -- Play a loud square wave on the channel; the null device renders it faster than real time.
@@ -85,9 +85,11 @@ end
    -- A new splitter has one unmuted branch at unity, so it passes audio unchanged.
 
    assert(branch_count(splitter) is 1)
-   err, value = splitter.mtGetParameter('branches[0].mute')
+   err, value_text = splitter.acGetKey('branches[0].mute')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 0, 'The initial branch must be unmuted')
-   err, value = splitter.mtGetParameter('branches[0].gain')
+   err, value_text = splitter.acGetKey('branches[0].gain')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 0)
    assert(splitter.latencyBudget is 0 and splitter.latency is 0)
 
@@ -104,7 +106,8 @@ end
 
    check splitter.mtInsertEntry('branches', 1)
    assert(branch_count(splitter) is 2, 'Staged insertions are counted')
-   err, value = splitter.mtGetParameter('branches[1].mute')
+   err, value_text = splitter.acGetKey('branches[1].mute')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 1, 'An inserted branch must default to muted')
    check splitter.acFlush()
    assert(branch_count(splitter) is 2)
@@ -121,14 +124,15 @@ end
 
    -- Values are validated against their ranges.
 
-   assert(splitter.mtSetParameter('branches[0].gain', 12.5) is ERR_InvalidValue)
-   assert(splitter.mtSetParameter('branches[0].gain', -48.5) is ERR_InvalidValue)
-   assert(splitter.mtSetParameter('branches[0].mute', 0.5) is ERR_InvalidValue)
-   assert(splitter.mtSetParameter('branches[0].mute', 2) is ERR_InvalidValue)
-   assert(splitter.mtSetParameter('branches[1].gain', 0) is ERR_OutOfRange)
-   check splitter.mtSetParameter('branches[0].gain', -6)
+   assert(splitter.acSetKey('branches[0].gain', 12.5) is ERR_InvalidValue)
+   assert(splitter.acSetKey('branches[0].gain', -48.5) is ERR_InvalidValue)
+   assert(splitter.acSetKey('branches[0].mute', 0.5) is ERR_InvalidValue)
+   assert(splitter.acSetKey('branches[0].mute', 2) is ERR_InvalidValue)
+   assert(splitter.acSetKey('branches[1].gain', 0) is ERR_OutOfRange)
+   check splitter.acSetKey('branches[0].gain', -6)
    check splitter.acFlush()
-   err, value = splitter.mtGetParameter('branches[0].gain')
+   err, value_text = splitter.acGetKey('branches[0].gain')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is -6)
 end
 
@@ -141,10 +145,11 @@ end
    splitter.channel = channel
    splitter.latencyBudget = 5
    check splitter.mtInsertEntry('branches', 1)
-   check splitter.mtSetParameter('branches[1].mute', 0)
+   check splitter.acSetKey('branches[1].mute', 0)
    splitter.init()
    assert(branch_count(splitter) is 2)
-   err, value = splitter.mtGetParameter('branches[1].mute')
+   err, value_text = splitter.acGetKey('branches[1].mute')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 0)
    assert(splitter.latency is 240, f'A 5 ms budget is 240 frames at 48 kHz, got {splitter.latency}')
 
@@ -206,7 +211,7 @@ end
    assert(limiter.mutable is 0 and reverb.mutable is 0, 'Effects in a removed branch must be disconnected')
    err, reading = limiter.mtReadMeters()
    assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
-   assert(limiter.mtSetParameter('gain', 1) is ERR_NotInitialised)
+   assert(limiter.acSetKey('gain', 1) is ERR_NotInitialised)
    assert(limiter.branch is 1, 'A disconnected effect retains its last branch index')
    assert(eq.mutable is 1 and eq.branch is 0)
 
@@ -263,7 +268,7 @@ end
 
    compressor = splitter.new('AudioCompressor', { branch=1 })
    assert(compressor.channel is 0 and compressor.mutable is 0, 'Branch effects of a global splitter are immutable')
-   assert(compressor.mtSetParameter('threshold', -30) is ERR_Immutable)
+   assert(compressor.acSetKey('threshold', -30) is ERR_Immutable)
 end
 
 @Test function ParallelSumAndMeters()
@@ -272,7 +277,7 @@ end
    enable_branch(splitter, 1, 0)
    check splitter.acFlush()
    limiter <close> = obj.new('AudioLimiter', { parent=splitter, branch=1 })
-   check limiter.mtSetParameter('ceiling', -12)
+   check limiter.acSetKey('ceiling', -12)
    check limiter.acFlush()
    play_loud(audio, channel)
 
@@ -349,8 +354,8 @@ end
    enable_branch(splitter, 1, -6)
    check splitter.acFlush()
    reverb <close> = obj.new('AudioReverb', { parent=splitter, branch=1 })
-   check reverb.mtSetParameter('decay', 2000)
-   check reverb.mtSetParameter('mix', 100)
+   check reverb.acSetKey('decay', 2000)
+   check reverb.acSetKey('mix', 100)
    check reverb.acFlush()
    check sound.acActivate()
    deadline = mSys.PreciseTime() + 20000000

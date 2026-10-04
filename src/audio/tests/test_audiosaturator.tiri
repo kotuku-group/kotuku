@@ -68,7 +68,8 @@ end
       assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
       assert(schema.find(f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"') != nil,
          f'{p.key} must publish its unit, scale, range and default')
-      err, value = saturator.mtGetParameter(p.key)
+      err, value_text = saturator.acGetKey(p.key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
    end
 
@@ -76,7 +77,8 @@ end
    assert(schema.find('type="enum" default="0"') != nil, 'Shape must be an enumeration defaulting to soft')
    assert(schema.find('<option value="0" key="soft" label="Soft"') != nil)
    assert(schema.find('<option value="1" key="hard" label="Hard"') != nil)
-   err, value = saturator.mtGetParameter('shape')
+   err, value_text = saturator.acGetKey('shape')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 0)
 
    last = 0
@@ -100,37 +102,39 @@ end
    -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
 
    for p in values(PARAMS) do
-      check saturator.mtSetParameter(p.key, p.min)
-      check saturator.mtSetParameter(p.key, p.max)
-      assert(saturator.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
-      assert(saturator.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
-      assert(saturator.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
-      assert(saturator.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+      check saturator.acSetKey(p.key, p.min)
+      check saturator.acSetKey(p.key, p.max)
+      assert(saturator.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(saturator.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(saturator.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(saturator.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
    end
 
    -- Shape accepts only its option values.
 
-   check saturator.mtSetParameter('shape', 1)
-   check saturator.mtSetParameter('shape', 0)
+   check saturator.acSetKey('shape', 1)
+   check saturator.acSetKey('shape', 0)
    for bad in values({ 2, -1, 0.5, math.huge }) do
-      assert(saturator.mtSetParameter('shape', bad) is ERR_InvalidValue, f'Shape must reject {bad}')
+      assert(saturator.acSetKey('shape', bad) is ERR_InvalidValue, f'Shape must reject {bad}')
    end
-   assert(saturator.mtSetParameter('unknown', 1) is ERR_Search)
+   assert(saturator.acSetKey('unknown', 1) is ERR_Search)
    check saturator.acFlush()
 
    -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
    -- commits them together.
 
-   check saturator.mtSetParameter('drive', 18.5)
-   check saturator.mtSetParameter('shape', 1)
-   assert(saturator.mtSetParameter('gain', 13) is ERR_InvalidValue)
-   check saturator.mtSetParameter('gain', -9.25)
-   check saturator.mtSetParameter('mix', 42)
-   err, value = saturator.mtGetParameter('drive')
+   check saturator.acSetKey('drive', 18.5)
+   check saturator.acSetKey('shape', 1)
+   assert(saturator.acSetKey('gain', 13) is ERR_InvalidValue)
+   check saturator.acSetKey('gain', -9.25)
+   check saturator.acSetKey('mix', 42)
+   err, value_text = saturator.acGetKey('drive')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 18.5, 'Staged values must be readable')
    check saturator.acFlush()
    for key, expected in pairs({ drive=18.5, shape=1, gain=-9.25, mix=42 }) do
-      err, value = saturator.mtGetParameter(key)
+      err, value_text = saturator.acGetKey(key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
    end
 end
@@ -142,12 +146,13 @@ end
    saturator <close> = obj.new('AudioSaturator')
    saturator.audio = audio
    saturator.channel = channel
-   check saturator.mtSetParameter('drive', 30)
-   check saturator.mtSetParameter('shape', 1)
-   assert(saturator.mtSetParameter('mix', 101) is ERR_InvalidValue)
+   check saturator.acSetKey('drive', 30)
+   check saturator.acSetKey('shape', 1)
+   assert(saturator.acSetKey('mix', 101) is ERR_InvalidValue)
    saturator.init()
    for key, expected in pairs({ drive=30, shape=1, gain=-6, mix=100 }) do
-      err, value = saturator.mtGetParameter(key)
+      err, value_text = saturator.acGetKey(key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is expected, f'{key} should be {expected}, got {value}')
    end
 end
@@ -162,9 +167,9 @@ end
       raise 'Latency must not be readable before the output is configured'
    end
 
-   check saturator.mtSetParameter('drive', 36)
-   check saturator.mtSetParameter('shape', 1)
-   check saturator.mtSetParameter('gain', -36)
+   check saturator.acSetKey('drive', 36)
+   check saturator.acSetKey('shape', 1)
+   check saturator.acSetKey('gain', -36)
    check saturator.acFlush()
    check audio.acActivate()
    assert(saturator.latency is 64, f'The oversampling filters delay by 64 frames, got {saturator.latency}')
@@ -196,10 +201,10 @@ end
 
    -- Live edits, including a shape crossfade, never change the latency.
 
-   check saturator.mtSetParameter('shape', 0)
-   check saturator.mtSetParameter('drive', 12)
+   check saturator.acSetKey('shape', 0)
+   check saturator.acSetKey('drive', 12)
    check saturator.acFlush()
-   check saturator.mtSetParameter('mix', 0)
+   check saturator.acSetKey('mix', 0)
    check saturator.acFlush()
    assert(saturator.latency is 64, 'Parameter changes must not alter the latency')
 
@@ -222,7 +227,7 @@ end
    check audio.mtCloseChannels(channel)
    err, reading = saturator.mtReadMeters()
    assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
-   assert(saturator.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   assert(saturator.acSetKey('mix', 50) is ERR_NotInitialised)
    saturator.free()
 end
 
@@ -243,12 +248,13 @@ end
 @Test function MonoAndGlobalImmutability()
    audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
    saturator = audio.new('AudioSaturator')
-   check saturator.mtSetParameter('shape', 1)
-   check saturator.mtSetParameter('drive', 20)
+   check saturator.acSetKey('shape', 1)
+   check saturator.acSetKey('drive', 20)
    saturator.init()
    assert(saturator.mutable is 0)
-   assert(saturator.mtSetParameter('drive', 12) is ERR_Immutable)
-   err, value = saturator.mtGetParameter('shape')
+   assert(saturator.acSetKey('drive', 12) is ERR_Immutable)
+   err, value_text = saturator.acGetKey('shape')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 1, 'Global effects remain readable')
    check audio.acActivate()
    assert(saturator.latency is 64)
@@ -273,7 +279,7 @@ end
          state_at_stop = state
       end })
    saturator <close> = obj.new('AudioSaturator', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
-   check saturator.mtSetParameter('drive', 24)
+   check saturator.acSetKey('drive', 24)
    check saturator.acFlush()
    check sound.acActivate()
    wait_for_stop(count, 20)
@@ -289,7 +295,7 @@ end
    first = audio.new('AudioSaturator')
    first.init()
    second = audio.new('AudioSaturator')
-   check second.mtSetParameter('shape', 1)
+   check second.acSetKey('shape', 1)
    second.init()
    check audio.acActivate()
    count = { stops=0 }

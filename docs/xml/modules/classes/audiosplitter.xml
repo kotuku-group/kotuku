@@ -33,8 +33,8 @@ effects keep their state and meters.</li>
 <p>An effect is attached to a branch by setting its <class name="AudioEffect" field="Parent">AudioEffect.Parent</class> field to the splitter and its <class name="AudioEffect" field="Branch">AudioEffect.Branch</class> field to the branch index, or by creating it as a child of the splitter.  The splitter must be initialised first. Within a branch, effects are ordered by <class name="AudioEffect" field="Order">AudioEffect.Order</class>.  The following builds a parallel compressor on a channel set:</p>
 <pre>splitter = obj.new('AudioSplitter', { audio=audio, channel=channel })
 splitter.mtInsertEntry('branches', 1)
-splitter.mtSetParameter('branches[1].mute', 0)
-splitter.mtSetParameter('branches[1].gain', -6)
+splitter.acSetKey('branches[1].mute', 0)
+splitter.acSetKey('branches[1].gain', -6)
 splitter.acFlush()
 compressor = splitter.new('AudioCompressor', { branch=1 })
 </pre>
