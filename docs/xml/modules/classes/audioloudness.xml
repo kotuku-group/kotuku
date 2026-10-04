@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioLoudness</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>Adapts playback gain towards a target loudness.</comment>
+    <version>1</version>
+    <id>490f4565</id>
+    <idstring>AUDIOLOUDNESS</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The loudness leveller measures the perceived loudness of the audio passing through it and adjusts its gain so that material from different sources plays at a consistent level.  A quiet recording is raised and a loud one lowered, each within a configurable limit, and the gain changes slowly enough that the dynamics within a recording are preserved.</p>
+<p>Create new leveller objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application levellers accept live changes; global levellers become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>target</code>: the short-term loudness, in LUFS, that the leveller aims for.  Common references are -14 LUFS for music
+streaming, -16 LUFS for podcasts and spoken word, and -23 LUFS for broadcast programmes.</li>
+<li><code>max_boost</code>: the maximum gain, in dB, applied to quiet material.  Zero prevents any boost.</li>
+<li><code>max_cut</code>: the maximum attenuation, in dB, applied to loud material.  Zero prevents any cut.</li>
+<li><code>response</code>: the time constant, in milliseconds, with which the gain moves towards its target.</li>
+<li><code>gate</code>: the loudness, in LUFS, below which the gain is held rather than adjusted.</li>
+<li><code>link</code>: when enabled (the default), one gain is applied to every channel.  When disabled, every channel is
+levelled independently.</li>
+</list>
+<p>The following leveller brings a channel set towards the -16 LUFS spoken-word reference, boosting quiet material by up to 9 dB:</p>
+<pre>leveller = obj.new('AudioLoudness', { audio=audio, channel=channel })
+leveller.acSetKey('target', -16)
+leveller.acSetKey('max_boost', 9)
+leveller.acFlush()
+</pre>
+<p>The leveller does not limit peaks.  A boost can raise peaks above full scale, so place an <class name="AudioLimiter">AudioLimiter</class> after the leveller, with a higher <class name="AudioEffect" field="Order">AudioEffect.Order</class>, whenever <code>max_boost</code> is not zero.</p>
+<header>Measurement</header>
+<p>Loudness is measured as defined by ITU-R BS.1770.  Each channel is K-weighted by a high-frequency shelf and a high-pass filter, both designed for the output rate, and the mean square of the result is accumulated in 100 ms blocks. Momentary loudness is measured over the last 400 ms and short-term loudness over the last 3 s.  Measurements are updated every 100 ms.  After a reset, until a window has filled, it covers the audio received since the reset.</p>
+<p>Every channel is weighted equally.  BS.1770 measures a mono layout as a single channel, so mono material played on two speakers is perceived as louder than its measurement.</p>
+<p>The input of the leveller is measured, not its output, so the gain never influences its own measurement.  This is real-time levelling and is not a measurement of integrated programme loudness or a substitute for ReplayGain-style analysis of a complete file.</p>
+<header>Gain</header>
+<p>The target gain is the difference between <code>target</code> and the short-term loudness, limited to the range from <code>-max_cut</code> to <code>max_boost</code>.  The applied gain follows the target in decibels with an exponential time constant of <code>response</code>: after that time, 63.2% of a change in the target has been traversed.  Since short-term loudness itself spans 3 s, the gain responds to a sudden change in level over the window length plus a few response time constants.</p>
+<p>While either the momentary or the short-term loudness is below <code>gate</code>, the gain is held at its current value, so that silence and background noise between sounds are not raised.  Holding on the momentary loudness stops the gain from rising during the 3 s in which the short-term window empties after a sound ends.  The held gain is still limited by <code>max_boost</code> and <code>max_cut</code>.  Set <code>gate</code> above the noise floor of the material, otherwise noise in long pauses is raised by up to <code>max_boost</code>.</p>
+<header>Linked and Unlinked Operation</header>
+<p>Linked operation measures the loudness of the programme across all channels and applies one gain to every channel, which preserves the stereo image.</p>
+<p>Unlinked operation measures and levels every channel on its own.  Each channel's loudness is scaled to its share of the programme, so balanced material receives the same gain in both modes.  This evens out recordings with one channel quieter than the other, but the stereo image moves as the channel gains diverge.  Changing <code>link</code> moves every channel from its current gain to its new target at the <code>response</code> rate.</p>
+<header>Meters</header>
+<p>In addition to the standard input and output peaks for each channel, the leveller publishes:</p>
+<list type="bullet">
+<li><code>momentary_loudness</code>: the momentary loudness of the input programme, in LUFS, floored at -120 LUFS.</li>
+<li><code>short_term_loudness</code>: the short-term loudness of the input programme, in LUFS, floored at -120 LUFS.</li>
+<li><code>applied_gain_left</code>, <code>applied_gain_right</code> or <code>applied_gain_centre</code>: the signed gain, in dB, applied to the channel at
+the end of the meter interval.  Positive values are boosts.  In linked operation every channel reports the same
+gain.</li>
+</list>
+<p>The loudness meters are measurements of the programme in both linked and unlinked operation.</p>
+<header>Live Changes</header>
+<p>Parameter changes take effect immediately, and the applied gain moves to the new target at the <code>response</code> rate, so edits never click.  The measurement history is retained.</p>
+<p>Device reactivation, leaving bypass and reaching idle discard the measurement history and return the leveller to unity gain.  The leveller has zero latency and no tail, and never delays the completion of a sound.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.</p></description>
+    <source>
+      <file>class_audioloudness.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>

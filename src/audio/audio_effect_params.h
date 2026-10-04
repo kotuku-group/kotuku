@@ -95,7 +95,11 @@ inline std::string_view output_kind_name(AudioOutputKind Kind)
       default:                        return "scalar";
    }
 }
-enum class AudioMeterSource : int8_t { INPUT_PEAK, OUTPUT_PEAK, GAIN_REDUCTION };
+
+// PROCESSOR values are computed by the processor and read with AudioEffectProcessor::meter_value() at the end of every
+// meter interval.  The other sources are measured by extAudioEffect::process().
+
+enum class AudioMeterSource : int8_t { INPUT_PEAK, OUTPUT_PEAK, GAIN_REDUCTION, PROCESSOR };
 
 // Scalar outputs are meter templates.  A `channel` scope publishes one value per channel of the processing layout, with
 // the channel's key and label appended, e.g. `input_peak_left`.  A `global` scope publishes a single value.
@@ -109,6 +113,8 @@ struct AudioOutputDesc {
    std::string_view Scope;
    std::string_view Semantics;
    AudioMeterSource Source = AudioMeterSource::INPUT_PEAK;
+   int Value = 0;       // PROCESSOR only: the processor-defined value index passed to meter_value()
+   double Default = 0;  // PROCESSOR only: the value reported before the first interval is published
 };
 
 // One entry of an effect's meter layout.  The public MeterInfo fields are returned by GetMeterLayout(); the
@@ -117,7 +123,9 @@ struct AudioOutputDesc {
 struct AudioMeterDesc : public MeterInfo {
    std::string_view Description;
    AudioMeterSource Source = AudioMeterSource::INPUT_PEAK;
-   int Index = -1; // Channel index within the processing layout, or -1 for a global value
+   int Value = 0;     // PROCESSOR only: the processor-defined value index
+   double Default = 0;
+   int Index = -1;    // Channel index within the processing layout, or -1 for a global value
 };
 
 struct AudioEffectSchema {

@@ -268,6 +268,10 @@ public:
    virtual uint64_t decay_estimate() const { return 0; }
    virtual int64_t latency() const { return 0; }
    virtual double gain_reduction() const { return 0; }
+   // Values of AudioMeterSource::PROCESSOR meters, read under the mixer lock at the end of every meter interval.
+   // Value is the index declared by the output template, and Channel is the channel index within the processing layout
+   // for a channel-scoped meter, or -1.  Set Floor if the value is at the floor of its range.  Constant-time only.
+   virtual double meter_value(int Value, int Channel, bool &Floor) const { return 0; }
    // Called off the render thread and outside the mixer mutex. Read only immutable configuration here;
    // prepared storage must not reference the owning framework object, whose lifetime may end during preparation.
    virtual ERR prepare(int Rate, bool Stereo, std::unique_ptr<AudioEffectConfiguration> &Result) {

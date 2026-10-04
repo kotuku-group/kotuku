@@ -79,7 +79,8 @@ location in the current meter layout.  A `channel` scope identifies a value meas
 layout, and its `channel` attribute holds the channel identity from the `SPK` constants.  A `global` scope identifies a
 value that applies to every channel, such as linked gain reduction.  Keys are stable, e.g. `input_peak_left`, and only
 channels present in the processing layout are listed.  Sample peaks are not true-peak measurements.  Gain reduction,
-where offered, is non-negative attenuation in decibels.
+where offered, is non-negative attenuation in decibels.  Other scalar outputs, such as the loudness and applied gain of
+an @AudioLoudness, are computed by the processor and described by their `unit` and `semantics`.
 
 The `slot` attributes describe the meter layout that was current when the schema was read.  A change of processing
 layout replaces the meter layout; use #GetMeterLayout() to resolve keys to slots, and repeat the resolution whenever
@@ -749,8 +750,9 @@ Compare the reading's `ID` with the ID returned by #GetMeterLayout().  If they d
 have changed since the descriptors were read, e.g. after a device reconfiguration, so call #GetMeterLayout() again
 before interpreting the values.
 
-Peaks are sample peaks in dBFS, floored at -120 dBFS.  Gain reduction is non-negative attenuation in dB.  The `Flags`
-of each element of `Values` is a combination of the following:
+Peaks are sample peaks in dBFS, floored at -120 dBFS.  Gain reduction is non-negative attenuation in dB.  Values that
+the processor computes, such as loudness, are read at the end of the interval and are flagged `FLOOR` when they are at
+the floor of their range.  The `Flags` of each element of `Values` is a combination of the following:
 
 !AMV
 

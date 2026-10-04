@@ -73,6 +73,7 @@ uint64_t AudioEffectChain::decay_estimate() const
 
 static double meter_default(const AudioMeterDesc &Desc)
 {
+   if (Desc.Source IS AudioMeterSource::PROCESSOR) return Desc.Default;
    return Desc.Source IS AudioMeterSource::GAIN_REDUCTION ? 0 : -120;
 }
 
@@ -104,6 +105,8 @@ void extAudioEffect::set_layout(std::span<const int> NewLayout)
          meter.Channel     = 0;
          meter.Description = output.Description;
          meter.Source      = output.Source;
+         meter.Value       = output.Value;
+         meter.Default     = output.Default;
 
          if (meter.Scope IS "channel") {
             for (size_t c = 0; c < Layout.size(); c++) {
@@ -209,6 +212,12 @@ void extAudioEffect::publish_meter(AMF Flags)
       if (desc.Source IS AudioMeterSource::GAIN_REDUCTION) {
          Meter.Values[i] = Reduction;
          Meter.ValueFlags[i] = int(AMV::VALID);
+         continue;
+      }
+      if (desc.Source IS AudioMeterSource::PROCESSOR) {
+         bool floor = false;
+         Meter.Values[i] = processor ? processor->meter_value(desc.Value, desc.Index, floor) : desc.Default;
+         Meter.ValueFlags[i] = int(AMV::VALID) | (floor ? int(AMV::FLOOR) : 0);
          continue;
       }
       const auto &peaks = desc.Source IS AudioMeterSource::INPUT_PEAK ? InputPeaks : OutputPeaks;

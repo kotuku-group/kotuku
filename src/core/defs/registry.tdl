@@ -35,6 +35,7 @@ header({ path="system/registry", copyright="Paul Manias 1996-2026" }, function()
     "AUDIODELAY",
     "AUDIOCHORUS",
     "AUDIOFLANGER",
+    "AUDIOLOUDNESS",
     "AUDIOSATURATOR",
     "AUDIOSPLITTER",
     "AUDIOANALYSER",
