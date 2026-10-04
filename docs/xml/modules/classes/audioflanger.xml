@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioFlanger</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>A flanger that sweeps a series of comb-filter notches through the sound with a short modulated delay.</comment>
+    <version>1</version>
+    <id>ee2ea85d</id>
+    <idstring>AUDIOFLANGER</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The flanger mixes its input with a copy delayed by a few milliseconds.  Mixing the two cancels a series of evenly spaced frequencies, and a slow oscillator moves the delay so that these notches sweep up and down the spectrum, producing the characteristic jet-plane whoosh.  Feeding part of the delayed signal back into the delay line deepens the effect into a pronounced metallic resonance.</p>
+<p>Create new flanger objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application flangers accept live changes; global flangers become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>rate</code>: the frequency of the sweep, from 0.02 to 10 Hz.  Slow rates give a gradual sweep and fast rates a
+vibrating, warbling tone.</li>
+<li><code>delay</code>: the shortest delay reached by the sweep, from 0.1 to 5 milliseconds.  Shorter delays place the notches
+further apart and higher in the spectrum.</li>
+<li><code>depth</code>: how far the delay sweeps above its minimum, from 0 to 10 milliseconds.  The delay moves between <code>delay</code>
+and <code>delay + depth</code>.</li>
+<li><code>feedback</code>: the signed proportion of the delayed signal fed back into the delay line, from -90 to 90 percent.
+Higher magnitudes give sharper, more resonant peaks between the notches.  Negative values move the peaks and notches
+to give a hollower tone.</li>
+<li><code>mix</code>: the linear blend of dry and wet signals.  Zero passes the input unchanged, 50 percent gives the deepest
+notches and 100 percent outputs only the delayed signal.</li>
+</list>
+<p>The following adds a slow, resonant sweep to a playing channel set, as a single change:</p>
+<pre>flanger = obj.new('AudioFlanger', { audio=audio, channel=channel })
+flanger.mtSetParameter('rate', 0.1)
+flanger.mtSetParameter('depth', 4)
+flanger.mtSetParameter('feedback', 70)
+flanger.acFlush()
+</pre>
+<p>Other useful combinations include a subtle sweep with <code>rate</code> 0.15, <code>depth</code> 1.5, <code>feedback</code> 0 and <code>mix</code> 35; a hollow tone with <code>feedback</code> -60; and a fast vibrato-like warble with <code>rate</code> 6, <code>depth</code> 0.5 and <code>mix</code> 100.</p>
+<header>Modulation</header>
+<p>Every channel has its own delay line, which is read at <code>delay + depth * (1 - cos(phase)) / 2</code> milliseconds.  Both channels follow the same oscillator, so the stereo image is preserved and no audio passes between the channels.  A mono output is processed as a single channel.</p>
+<p>The oscillator phase is zero whenever the flanger is reset, so the sweep starts at the minimum delay.  It advances once per output frame while audio is being processed and does not advance while the chain is idle or bypassed.  The swept delay always stays between 0.1 and 15 milliseconds.  The delay cannot be shorter than one output frame, because the feedback path must read a sample that has already been written.  At output rates below 10 kHz, delays shorter than one frame are therefore lengthened to one frame.</p>
+<p>The delay line is read by linear interpolation between neighbouring samples.  Interpolation never boosts the signal, but it softens high frequencies in the delayed copy, by a varying amount as the delay moves.  At zero depth the delayed copy is a fixed fractional delay and the rate has no effect.  There is no through-zero mode: the delay never passes through zero, so the notches never sweep to infinite frequency.</p>
+<header>Levels and Headroom</header>
+<p>Levels are measured in dBFS, where a sample magnitude of 1.0 is 0 dBFS, independently of the output format. Feedback raises the level of the delayed signal, most strongly at the resonant peaks between the notches.  At the 90 percent limit, the delayed signal of broadband material is about 7 dB louder than the input, and at the resonant frequencies it can reach ten times (20 dB above) the input level.  The flanger is stable for every supported setting, including while parameters change, but material with strong tonal content can exceed 0 dBFS at high feedback.  Lower the input level or follow the flanger with a limiter when high feedback is required.  Non-finite samples are outside the normalised mixing contract and are treated as silence.</p>
+<header>Live Changes</header>
+<p>Changes to rate, depth, feedback and mix ramp linearly over 10 ms from their current values.  The rate ramps as a frequency, so the oscillator continues smoothly from its current phase.  Changes to depth are heard as a brief change in pitch movement while the ramp moves the delay.</p>
+<p>A change to the minimum delay crossfades between two read heads over 10 ms rather than sweeping the delay, so it does not produce an extra pitch bend.  Both heads follow the same oscillator.  An edit that arrives during the crossfade replaces a single queued delay, which is applied when the current crossfade finishes.  Flush preserves the delayed audio and the oscillator phase.  Setting the mix to zero leaves the flanger running, so raising it again reveals the delayed audio that is present.</p>
+<p>Device reactivation, rate or layout changes and leaving bypass discard the delayed audio, return the oscillator phase to zero and apply the latest parameters without a transition.</p>
+<header>Tail and Drain</header>
+<p>The flanger has zero algorithmic latency, even at 100 percent mix: the delay and its modulation are the effect itself and are not compensated.  After its input stops, recirculating audio decays by the feedback proportion on every pass through the delay line.  The flanger remains pending until the stored audio has fallen 120 dB below the loudest input and has then left the delay line, and then becomes idle.  At zero feedback this takes 15 ms plus two frames; at 90 percent feedback and the longest delays it can take a few seconds.  A running oscillator does not keep the flanger pending.  The decay estimate used when other audio shares the flanger covers a 60 dB decay at the longest delay that the current settings can reach.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  The delay memory covers 15 ms and requires approximately 6 KB at 48 kHz in stereo, scaling in proportion to the output rate.</p></description>
+    <source>
+      <file>class_audioflanger.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>

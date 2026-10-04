@@ -579,6 +579,43 @@ static void test_edits(AudioTestContext &Test)
 }
 
 //********************************************************************************************************************
+// An edit between the final crossfade frame and the next block supersedes the queued time, including when the latest
+// edit keeps the current time.
+
+static void test_crossfade_boundary(AudioTestContext &Test)
+{
+   for (int rate : { 8000, 48000, 192000 }) {
+      const int fade = rate / 100;
+      for (int channels = 1; channels <= 2; channels++) {
+         for (double latest : { 10.0, 20.0 }) {
+            DelayFixture fixture(rate, channels IS 2, wet_settings(15, 30));
+            DelayFixture reference(rate, channels IS 2, wet_settings(15, 30));
+            fixture.change(wet_settings(20, 30));
+            reference.change(wet_settings(20, 30));
+            fixture.change(wet_settings(30, 30));
+
+            uint32_t seed = 29;
+            std::vector<float> a(size_t(fade) * 4 * channels);
+            for (auto &sample : a) sample = float(noise(seed) * 0.5);
+            auto b = a;
+            fixture.Processor.process(a.data(), fade);
+            reference.Processor.process(b.data(), fade);
+            AUDIO_CHECK((not fixture.Processor.crossfading()) and fixture.Processor.time_queued());
+
+            fixture.change(wet_settings(latest, 30));
+            reference.change(wet_settings(latest, 30));
+            AUDIO_CHECK(not fixture.Processor.time_queued());
+            AUDIO_CHECK(fixture.Processor.tail_frames() IS reference.Processor.tail_frames());
+            fixture.Processor.process(a.data() + fade * channels, fade * 3);
+            reference.Processor.process(b.data() + fade * channels, fade * 3);
+            AUDIO_CHECK(a IS b);
+            AUDIO_CHECK(fixture.Processor.read_distance() IS latest * double(rate) / 1000.0);
+         }
+      }
+   }
+}
+
+//********************************************************************************************************************
 // Block boundaries do not change the output, including simultaneous time, mode, feedback and damping edits and a
 // queued time target.
 
@@ -713,6 +750,7 @@ static void run(AudioTestContext &Test)
    test_tail(Test);
    test_lifecycle(Test);
    test_edits(Test);
+   test_crossfade_boundary(Test);
    test_blocks(Test);
    test_transitions(Test);
    test_resources(Test);

@@ -338,7 +338,11 @@ public:
          pending_delay = Next->Delay;
          has_pending_delay = pending_delay != delay;
       }
-      else if (Next->Delay != delay) start_delay(Next->Delay);
+      else {
+         // A queued time may still await the next frame after a crossfade ended at a block boundary.
+         has_pending_delay = false;
+         if (Next->Delay != delay) start_delay(Next->Delay);
+      }
 
       refresh_bounds();
    }
