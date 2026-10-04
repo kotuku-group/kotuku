@@ -8,18 +8,19 @@ Gradient Demonstration
 
 local win, viewport, gradientVP, rect
 local focalEllipse, contourShape, distalShape, uiEvent
-local radiusChanged = function() end
-local glColourMap = 'cmap:magma'
-local glSpreadMethod = VSPREAD_REFLECT
-local glRadius = 100
-local glResolution = 1.0
-local glEasing = GEZ_LINEAR
-local glGamma = 1.0
-local glActiveGradient
-local MIN_RADIUS <const> = 2
-local MAX_RADIUS <const> = 400
-local MIN_GAMMA <const> = 0.1
-local MAX_GAMMA <const> = 5
+
+radiusChanged = function() end
+glColourMap = 'cmap:magma'
+glSpreadMethod = VSPREAD_REFLECT
+glRadius = 100
+glResolution = 1.0
+glEasing = GEZ_LINEAR
+glGamma = 1.0
+glActiveGradient = nil
+MIN_RADIUS <const> = 2
+MAX_RADIUS <const> = 400
+MIN_GAMMA <const> = 0.1
+MAX_GAMMA <const> = 5
 
 -- Corner colours for the Gouraud quad, mutated interactively then rebuilt into the mesh.  Each entry is
 -- { r, g, b }.  Order: top-left, top-right, bottom-left, bottom-right.

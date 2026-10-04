@@ -503,7 +503,7 @@ http.acActivate()
       <access read="G" write="S">Get/Set</access>
       <type>struct HTTPUpgrade</type>
       <description>
-<p>Before activation, write an <st>HTTPUpgrade</st> with only !HTTPUgrade.Owner set.  <code>Owner</code> must be alive and outside HTTP's ownership subtree.</p>
+<p>Before activation, write an <st>HTTPUpgrade</st> with only <code>Owner</code> set.  <code>Owner</code> must be alive and outside HTTP's ownership subtree.</p>
 <p>This field is readable during the <code>UPGRADED</code> <fl>StateChanged</fl> notification only.  Each read returns a descriptor snapshot.  Altering it has no effect on HTTP.  The values are valid only during the notification.</p>
       </description>
     </field>
