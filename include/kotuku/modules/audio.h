@@ -18,6 +18,7 @@ class objAudioGate;
 class objAudioDelay;
 class objAudioChorus;
 class objAudioFlanger;
+class objAudioLoudness;
 class objAudioSaturator;
 class objAudioSplitter;
 class objAudioAnalyser;
@@ -980,6 +981,29 @@ class objAudioFlanger : public objAudioEffect {
 
    using create = kt::Create<objAudioFlanger>;
    objAudioFlanger(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioLoudness class definition
+
+#define VER_AUDIOLOUDNESS (1.000000)
+
+class objAudioLoudness : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOLOUDNESS;
+   static constexpr CSTRING CLASS_NAME = "AudioLoudness";
+
+   using create = kt::Create<objAudioLoudness>;
+   objAudioLoudness(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 

@@ -1,0 +1,235 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+-- Published parameters in schema order, with their defaults, units and scales.
+
+PARAMS = {
+   { key='target', default=-16, unit='dB', scale='linear', min=-36, max=-6 },
+   { key='max_boost', default=12, unit='dB', scale='linear', min=0, max=24 },
+   { key='max_cut', default=12, unit='dB', scale='linear', min=0, max=24 },
+   { key='response', default=3000, unit='ms', scale='log', min=500, max=30000 },
+   { key='gate', default=-70, unit='dB', scale='linear', min=-90, max=-30 }
+}
+
+ORDER = { 'target', 'max_boost', 'max_cut', 'response', 'gate', 'link' }
+
+STEREO_METERS = array<str> { 'input_peak_left', 'input_peak_right', 'output_peak_left', 'output_peak_right',
+   'momentary_loudness', 'short_term_loudness', 'applied_gain_left', 'applied_gain_right' }
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_leveller(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioLoudness', { audio=Audio, channel=channel }), channel
+end
+
+function get_number(Effect:obj, Key:str):<num>
+   err, text = Effect.acGetKey(Key)
+   assert(err is ERR_Okay, f'GetKey({Key}) must succeed')
+   return tonumber(text)
+end
+
+function meter_layout(Effect:obj):<any>
+   err, layout = Effect.mtGetMeterLayout()
+   assert(err is ERR_Okay, 'GetMeterLayout() must succeed for an initialised effect')
+   return layout.meters
+end
+
+-- Two seconds of a quiet square wave at about -24 dBFS.
+
+function play_quiet(Audio:obj, Channel:num)
+   data = array<byte, 88200>
+   for i in {0 to 88200} do data[i] = (i % 32 < 16) ? 136 : 120 end
+   err, sample = Audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(Audio, Channel, sample)
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixVolume(Audio, Channel, 1)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   leveller <close> = new_leveller(audio)
+   schema = leveller.schema
+   assert(schema.find('<effect class="AudioLoudness" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The leveller has no parameter groups')
+   assert(schema.find('type="curve"') is nil, 'The leveller does not publish a response curve')
+   assert(schema.find('<rule ') is nil, 'No parameter carries a rule')
+
+   position = 0
+   for key in values(ORDER) do
+      start = schema.find(f'<param key="{key}"')
+      assert(start != nil and start > position, f'{key} must be published in order')
+      position = start
+   end
+
+   for p in values(PARAMS) do
+      attributes = f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"'
+      start = schema.find(f'<param key="{p.key}"')
+      assert(schema.find(attributes, start) != nil, f'{p.key} must publish {attributes}')
+      value = get_number(leveller, p.key)
+      assert(value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   assert(schema.find('<param key="link" label="Link"') != nil)
+   assert(schema.find('type="bool" scale="linear" min="0" max="1" default="1"', schema.find('key="link"')) != nil,
+      'Link must be a bool that defaults to on')
+   assert(get_number(leveller, 'link') is 1)
+
+   assert(schema.find('key="momentary_loudness" type="scalar" label="Momentary Loudness"') != nil)
+   assert(schema.find('unit="LUFS" scope="global" semantics="short-term-loudness" slot="5"') != nil)
+   assert(schema.find('unit="dB" scope="channel" channel="3" semantics="applied-gain" slot="7"') != nil)
+   assert(leveller.mtGetOutput('response') is ERR_Search)
+
+   meters = meter_layout(leveller)
+   assert(#meters is 8, f'Stereo must publish eight meters, got {#meters}')
+   for i in {0 to 8} do
+      assert(meters[i].key is STEREO_METERS[i] and meters[i].slot is i,
+         f'Meter {i} should be {STEREO_METERS[i]}, got {meters[i].key}')
+   end
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   leveller <close> = new_leveller(audio)
+   assert(leveller.mutable is 1)
+
+   for p in values(PARAMS) do
+      check leveller.acSetKey(p.key, p.min)
+      check leveller.acSetKey(p.key, p.max)
+      assert(leveller.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(leveller.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(leveller.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(leveller.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+
+   check leveller.acSetKey('link', 0)
+   check leveller.acSetKey('link', 1)
+   for bad in values({ -1, 2, 0.5 }) do
+      assert(leveller.acSetKey('link', bad) is ERR_InvalidValue, f'Link must reject {bad}')
+   end
+   assert(leveller.acSetKey('unknown', 1) is ERR_Search)
+   check leveller.acFlush()
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact.
+
+   check leveller.acSetKey('target', -23)
+   check leveller.acSetKey('link', 0)
+   assert(leveller.acSetKey('response', 100) is ERR_InvalidValue)
+   check leveller.acSetKey('max_boost', 6.5)
+   assert(get_number(leveller, 'target') is -23, 'Staged values must be readable')
+   check leveller.acFlush()
+   for key, expected in pairs({ target=-23, link=0, max_boost=6.5, response=30000 }) do
+      value = get_number(leveller, key)
+      assert(value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   leveller <close> = obj.new('AudioLoudness')
+   leveller.audio = audio
+   leveller.channel = channel
+   check leveller.acSetKey('target', -14)
+   check leveller.acSetKey('link', 0)
+   assert(leveller.acSetKey('gate', -20) is ERR_InvalidValue)
+   leveller.init()
+   assert(get_number(leveller, 'target') is -14)
+   assert(get_number(leveller, 'link') is 0)
+   assert(get_number(leveller, 'gate') is -70)
+end
+
+@Test function LivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   leveller, channel = new_leveller(audio)
+   check audio.acActivate()
+   assert(leveller.latency is 0, 'The leveller adds no latency')
+
+   check leveller.acSetKey('response', 500)
+   check leveller.acFlush()
+   play_quiet(audio, channel)
+
+   -- The quiet input is measured and boosted.  Linked operation applies the same gain to both channels.
+
+   momentary, gain_left, gain_right = -120, 0, 0
+   for attempt in {0 to 200} do
+      err, reading = leveller.mtReadMeters()
+      assert(err is ERR_Okay)
+      if (reading.flags has AMF_VALID) and (reading.values[6].value > 0.5) then
+         momentary = reading.values[4].value
+         gain_left = reading.values[6].value
+         gain_right = reading.values[7].value
+         assert(reading.values[4].flags is AMV_VALID, 'A measured loudness must not be flagged as the floor')
+         break
+      end
+      processing.sleep(0.01)
+   end
+   assert(momentary > -40 and momentary < -10, f'Momentary loudness should measure the input, got {momentary}')
+   assert(gain_left > 0.5 and gain_left <= 12, f'The quiet input must be boosted, got {gain_left}')
+   assert(gain_left is gain_right, 'Linked channels must report identical gains')
+   err, short_term = leveller.mtGetOutput('short_term_loudness')
+   assert(err is ERR_Okay and short_term > -40 and short_term < -10, f'Short-term loudness: {short_term}')
+
+   -- Live edits, including unlinking.
+
+   check leveller.acSetKey('target', -30)
+   check leveller.acSetKey('link', 0)
+   check leveller.acFlush()
+   check leveller.acSetKey('max_cut', 3)
+   check leveller.acSetKey('gate', -40)
+   check leveller.acFlush()
+
+   leveller.flags = AEF_BYPASS
+   err, reading = leveller.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   assert(leveller.mtGetOutput('applied_gain_left') is ERR_InvalidState)
+   leveller.flags = 0
+
+   check audio.mtCloseChannels(channel)
+   err, reading = leveller.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(leveller.acSetKey('target', -20) is ERR_NotInitialised)
+   leveller.free()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   leveller = audio.new('AudioLoudness')
+   check leveller.acSetKey('target', -23)
+   leveller.init()
+   assert(leveller.mutable is 0)
+   assert(leveller.acSetKey('target', -16) is ERR_Immutable)
+   assert(get_number(leveller, 'target') is -23, 'Global effects remain readable')
+   check audio.acActivate()
+   meters = meter_layout(leveller)
+   expected = array<str> { 'input_peak_centre', 'output_peak_centre', 'momentary_loudness', 'short_term_loudness',
+      'applied_gain_centre' }
+   assert(#meters is 5, f'Mono must publish five meters, got {#meters}')
+   for i in {0 to 5} do
+      assert(meters[i].key is expected[i], f'Meter {i} should be {expected[i]}, got {meters[i].key}')
+   end
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      leveller = obj.new('AudioLoudness', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end
