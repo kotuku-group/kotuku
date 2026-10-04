@@ -34,7 +34,9 @@ enum class HGS : int {
    READING_CONTENT = 5,
    COMPLETED = 6,
    TERMINATED = 7,
-   END = 8,
+   UPGRADE_READY = 8,
+   UPGRADED = 9,
+   END = 10,
 };
 
 // The HTTP Method to use when the object is activated.
@@ -130,13 +132,27 @@ enum class HTF : uint32_t {
    SSL = 0x00000200,
    DISABLE_SERVER_VERIFY = 0x00000400,
    NO_AUTO_REDIRECT = 0x00000800,
+   REQUEST_WEBSOCKET = 0x00001000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(HTF)
 
+struct HTTPUpgrade {
+   OBJECTID OwnerID;         // Intended independent socket owner, configured before activation.
+   objNetSocket * Socket;    // Transferred connection, readable only during UPGRADED.
+   kt::vector<int8_t> Data;  // Binary prefix, including embedded NUL bytes; length is intrinsic.
+};
+
 // HTTP class definition
 
 #define VER_HTTP (1.000000)
+
+// HTTP methods
+
+namespace http {
+struct GetResponseHeaders { std::string *Result; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+
+} // namespace
 
 class objHTTP : public Object {
    public:
@@ -206,6 +222,11 @@ class objHTTP : public Object {
          if (Result) *Result = 0;
          return error;
       }
+   }
+   inline ERR getResponseHeaders(std::string &Result) noexcept {
+      struct http::GetResponseHeaders args = { &Result };
+      ERR error = Action(AC(-1), this, &args);
+      return error;
    }
 
    // Customised field getting
@@ -324,13 +345,18 @@ class objHTTP : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getUpgrade(struct HTTPUpgrade * &Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getBufferSize(int &Value) noexcept {
       Value = this->BufferSize;
       return ERR::Okay;
    }
 
    inline ERR getContentType(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -348,7 +374,7 @@ class objHTTP : public Object {
    }
 
    inline ERR getLocation(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       auto error = get_field(this, Value);
@@ -357,7 +383,7 @@ class objHTTP : public Object {
    }
 
    inline ERR getOutgoing(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[30];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       auto error = get_field(this, Value);
@@ -384,7 +410,7 @@ class objHTTP : public Object {
    }
 
    inline ERR getResponseKeys(std::span<std::string> &Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, std::span<std::string> &))field->GetValue;
       auto error = get_field(this, Value);
@@ -393,7 +419,7 @@ class objHTTP : public Object {
    }
 
    inline ERR getStateChanged(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[32];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       auto error = get_field(this, Value);
@@ -430,7 +456,7 @@ class objHTTP : public Object {
    }
 
    inline ERR setHost(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, 0x00804500, &Value);
    }
 
@@ -440,12 +466,12 @@ class objHTTP : public Object {
    }
 
    inline ERR setOutputFile(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
+      auto field = &this->Class->Dictionary[16];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
    inline ERR setInputFile(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
@@ -505,7 +531,7 @@ class objHTTP : public Object {
    }
 
    inline ERR setProxyServer(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
@@ -514,13 +540,18 @@ class objHTTP : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setUpgrade(const struct HTTPUpgrade & Value) noexcept {
+      auto field = &this->Class->Dictionary[11];
+      return field->WriteValue(this, field, FD_STRUCT, &Value);
+   }
+
    inline ERR setBufferSize(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setContentType(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
@@ -530,12 +561,12 @@ class objHTTP : public Object {
    }
 
    inline ERR setLocation(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
    inline ERR setOutgoing(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[30];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
@@ -545,17 +576,17 @@ class objHTTP : public Object {
    }
 
    inline ERR setStateChanged(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[32];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setUsername(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[37];
+      auto field = &this->Class->Dictionary[38];
       return field->WriteValue(this, field, 0x00804208, &Value);
    }
 
    inline ERR setPassword(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[17];
+      auto field = &this->Class->Dictionary[18];
       return field->WriteValue(this, field, 0x00804208, &Value);
    }
 

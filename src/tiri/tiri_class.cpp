@@ -1081,6 +1081,8 @@ static ERR run_script(extTiri *Self)
          if ((args = Self->ProcArgs)) {
             for (int i=0; i < Self->TotalArgs; i++, args++) {
                int type = args->Type;
+               // An explicit ERR result sink is not a positional callback argument.
+               if ((type & (FD_PTR|FD_RESULT|FD_ERROR)) IS (FD_PTR|FD_RESULT|FD_ERROR)) continue;
 
                if ((type & FDF_SPAN) IS FDF_SPAN) {
                   auto span = (std::span<std::byte> *)args->Address;
@@ -1194,6 +1196,21 @@ static ERR run_script(extTiri *Self)
    if (not pcall_failed) { // If the procedure returned results, copy them to the Results field of the Script.
       int results = lua_gettop(Self->Lua) - top + 1;
 
+      // Capture a typed callback result before conversion or nested message dispatch can overwrite Results.
+      for (int i = 0; Self->ProcArgs and (i < Self->TotalArgs); ++i) {
+         const auto &arg = Self->ProcArgs[i];
+         if (((arg.Type & (FD_PTR|FD_RESULT|FD_ERROR)) IS (FD_PTR|FD_RESULT|FD_ERROR)) and
+             arg.Address and (results > 0)) {
+            auto result = (ERR *)arg.Address;
+            *result = ERR::InvalidValue;
+            if (lua_type(Self->Lua, -results) IS LUA_TNUMBER) {
+               double value = lua_tonumber(Self->Lua, -results);
+               if ((value >= 0) and (value <= std::numeric_limits<int>::max()) and (value IS double(int(value)))) {
+                  *result = ERR(int(value));
+               }
+            }
+         }
+      }
       ERR error = ERR::Okay;
       if (results > 0) {
          kt::vector<std::string> array;

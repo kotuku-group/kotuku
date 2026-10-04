@@ -21,6 +21,8 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
    -- 'Finished' codes start from HGS_COMPLETED
    "COMPLETED: This state indicates that the HTTP request was completed in a normal manner.",
    "TERMINATED: If an HTTP command fails to complete normally - for instance if the connection is broken before completion - then the state is set to `TERMINATED`.",
+   "UPGRADE_READY: Response headers are ready.  Only an explicit Okay result from StateChanged accepts the switch.",
+   "UPGRADED: The connection belongs to Upgrade.Owner; read Upgrade during this notification only.",
    "END: Private")
 
   enums("HTM", { type="int", start=0, comment="The HTTP Method to use when the object is activated." },
@@ -105,7 +107,16 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
     "RECV_BUFFER: Enables buffering of all received HTTP content into a local buffer.  The buffer information can be read at any time during and after the transaction through the #RecvBuffer field.  Note that this option should only be used for limited data transfers to avoid excessive memory usage.",
     "SSL: Force SSL connectivity, irrespective of the HTTP port.  Note that this flag is automatically set (and remains set for all future transfers) if the #Port field is set to `443`.",
     "DISABLE_SERVER_VERIFY: Disable SSL server certificate verification (use with caution).",
-    "NO_AUTO_REDIRECT: Do not automatically follow `301` responses.")
+    "NO_AUTO_REDIRECT: Do not automatically follow `301` responses.",
+    "REQUEST_WEBSOCKET: Request a bodyless WebSocket upgrade; snapshot at activation.")
+
+  structdef("HTTPUpgrade", {}, [[
+    oid Owner                 # Intended independent socket owner, configured before activation.
+    obj(NetSocket) Socket     # Transferred connection, readable only during UPGRADED.
+    vector(char) Data         # Binary prefix, including embedded NUL bytes; length is intrinsic.
+  ]])
+
+  methods("HTTP", "http", { { id=1, name="GetResponseHeaders" } })
 
   klass("HTTP", { src={ "http.cpp", "http_fields.cpp" }, output="http_def.c", extended=true }, [[
    double DataTimeout     # Timeout for receiving data, measured in seconds
@@ -130,6 +141,7 @@ module({ name="HTTP", copyright="Paul Manias © 2005-2026", version=1.0, timesta
    int(HGS) CurrentState  # Current state of the http get operation
    string ProxyServer     # If using a proxy server, this is the name or IP address of the server
    int ProxyPort          # The port of the proxy server
+   ~struct(HTTPUpgrade) Upgrade # Notification-scoped owner, socket and binary prefix descriptor.
    int BufferSize         # Preferred buffer size for things like outgoing operations (sending data)
   ]])
 end)

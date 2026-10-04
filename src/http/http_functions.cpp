@@ -9,6 +9,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
 
    auto Self = (extHTTP *)CurrentContext();
    if (Self->classID() != CLASSID::HTTP) { log.warning(ERR::SystemCorrupt); return; }
+   if ((Self->Socket != Socket) or Self->inHandover()) return;
    if (!Self->locked()) { log.warning(ERR::ResourceNotLocked); return; }
 
    if (State IS NTC::CONNECTING) {
@@ -26,6 +27,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
       log.msg("Connection confirmed.");
       if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
       Self->Connecting = false;
+      SubscribeTimer(Self->DataTimeout, C_FUNCTION(http_timeout), &Self->TimeoutManager);
    }
    else if (State IS NTC::DISCONNECTED) {
       // Socket disconnected.  The HTTP state must change to either COMPLETED (completed naturally) or TERMINATED
@@ -45,13 +47,13 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
       }
       else Self->Connecting = false;
 
-      if (Self->CurrentState >= HGS::COMPLETED) {
+      if (not http_active(Self->CurrentState)) {
          return;
       }
       else if (Self->CurrentState IS HGS::READING_HEADER) {
          auto incoming_error = socket_incoming(Socket);
          if ((incoming_error IS ERR::Okay) or (incoming_error IS ERR::Terminate)) {
-            if (Self->CurrentState >= HGS::COMPLETED) return;
+            if (not http_active(Self->CurrentState)) return;
          }
 
          Self->Error = Socket->Error > ERR::ExceptionThreshold ? Socket->Error : ERR::Disconnected;
@@ -150,7 +152,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
          Self->setCurrentState(HGS::TERMINATED);
       }
    }
-   else if (Self->CurrentState >= HGS::COMPLETED) {
+   else if (not http_active(Self->CurrentState)) {
       // If the state is set to HGS::COMPLETED or HGS::TERMINATED, our code should have returned ERR::Terminate to switch
       // off the socket.  This section is entered if we forgot to do that.
 
@@ -496,10 +498,11 @@ static ERR http_timeout(extHTTP *Self, int64_t Elapsed, int64_t CurrentTime)
 {
    kt::Log log(__FUNCTION__);
 
+   if (http_handed_over(Self->CurrentState) or Self->inHandover()) return ERR::Terminate;
    if (!Self->Socket) {
       log.warning("HTTP timeout fired without an active socket.");
       Self->Error = ERR::TimeOut;
-      if (Self->CurrentState < HGS::COMPLETED) Self->setCurrentState(HGS::TERMINATED);
+      if (http_active(Self->CurrentState)) Self->setCurrentState(HGS::TERMINATED);
       return ERR::Terminate;
    }
 
@@ -537,7 +540,7 @@ static ERR check_incoming_end(extHTTP *Self)
    kt::Log log(__FUNCTION__);
 
    if (Self->CurrentState IS HGS::AUTHENTICATING) return ERR::False;
-   if (Self->CurrentState >= HGS::COMPLETED) return ERR::True;
+   if (not http_active(Self->CurrentState)) return ERR::True;
 
    if ((Self->ContentLength != -1) and (Self->Index >= Self->ContentLength)) {
       log.trace("Transmission over.");
@@ -558,12 +561,12 @@ static void set_http_method(extHTTP *Self, CSTRING Method, std::ostringstream &C
 {
    if ((not Self->ProxyServer.empty()) and ((Self->Flags & HTF::SSL) IS HTF::NIL)) {
       // Normal proxy request without SSL tunneling
-      Cmd << Method << " " << ((Self->Port IS 443) ? "https" : "http") << "://" << Self->Host << ":" <<
-         Self->Port << "/" << Self->Path << " HTTP/1.1" << CRLF;
+      Cmd << Method << " " << ((Self->Port IS 443) ? "https" : "http") << "://" <<
+         http_authority(Self, true) << "/" << Self->Path << " HTTP/1.1" << CRLF;
    }
    else Cmd << Method << " /" << Self->Path << " HTTP/1.1" << CRLF;
 
-   Cmd << "Host: " << Self->Host << CRLF;
+   Cmd << "Host: " << http_authority(Self) << CRLF;
    Cmd << "User-Agent: " << (Self->UserAgent.empty() ? "Kotuku Client" : Self->UserAgent.c_str()) << CRLF;
 }
 

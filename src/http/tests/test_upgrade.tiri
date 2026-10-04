@@ -1,0 +1,470 @@
+-- Deterministic local HTTP upgrade peer.  No WebSocket framing or Crypto dependency is required.
+
+   include 'http', 'network'
+
+glPort = 21960
+glVerifyTLS = arg('verify_tls') is 'true'
+
+function runHandshake(Response:str, Result:any, Options:table):table
+   Options = Options ?? {}
+   local state = { ready=0, upgraded=0, body='', request='', requests={}, tail='', done=false }
+   local requests = {}
+
+   local owner <close> = obj.new('config')
+
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         local buffer = string.alloc(4096)
+         local err, size = Client.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+         local data = buffer.sub(0, size)
+         local request = requests[Client.id] ?? ''
+
+         if request.find('\r\n\r\n') then
+            check Client.acWrite(data)
+         else
+            request ..= data
+            requests[Client.id] = request
+            state.request = request
+            if request.find('\r\n\r\n') then
+               table.insert(state.requests, request)
+               if Options.auth and #state.requests is 1 then
+                  check Client.acWrite('HTTP/1.1 401 Unauthorised\r\nWWW-Authenticate: Basic realm="local"\r\n' ..
+                     'Content-Length: 0\r\nConnection: close\r\n\r\n')
+               else
+                  if Options.stall then
+                     -- Keep the connection open without sending response headers.
+                  elseif Options.split then
+                     check Client.acWrite(Response.sub(0, 25))
+                     mSys.SubscribeTimer(0.02, function()
+                        check Client.acWrite(Response.sub(25))
+                        raise ERR_Terminate
+                     end)
+                  else
+                     check Client.acWrite(Response)
+                  end
+               end
+            end
+         end
+      end
+   })
+
+   glPort = server.port
+   local http <close> = obj.new('http', {
+      location=f'http://127.0.0.1:{glPort}/upgrade?x=1',
+      flags=HTF_NO_DIALOG | (Options.disabled and 0 or HTF_REQUEST_WEBSOCKET),
+      dataTimeout=Options.stall and 0.02 or 2,
+      incoming=function(HTTP, Buffer) state.body ..= Buffer.getString() end,
+      stateChanged=function(HTTP, State)
+         if State is HGS_UPGRADE_READY then
+            state.insideReady = true
+            state.ready++
+            local leaked = false
+            try
+               local invalid = HTTP.upgrade
+               leaked = true
+            except
+            end
+            assert(not leaked, 'Upgrade descriptor was readable before acceptance')
+            if Options.nested then processing.sleep(0) end
+            local err, headers = HTTP.mtGetResponseHeaders()
+            assert(err is ERR_Okay, 'Response header output failed')
+            state.headers = headers
+            if Options.changeFlag then HTTP.flags = HTF_NO_DIALOG end
+            if Options.destroy then HTTP.free() end
+            if Options.cancel then check HTTP.acDeactivate() end
+            if Options.destroyOwner then owner.free() end
+            state.insideReady = false
+            if Options.omitted then return end
+            return Result
+         elseif State is HGS_UPGRADED then
+            state.upgraded++
+            local descriptor = HTTP.upgrade
+            assert(descriptor.owner is owner.id, 'Wrong owner in descriptor')
+            local data = descriptor.data
+            state.data = data
+            state.size = #data
+            state.prefix = data.getString(0, #data)
+            if #data > 0 then
+               local copy = descriptor.data
+               copy[0] = 0
+               assert(HTTP.upgrade.data[0] is data[0], 'Array mutation changed the committed prefix')
+            end
+            descriptor.owner = 0
+            assert(HTTP.upgrade.owner is owner.id, 'Descriptor mutation changed committed ownership')
+            state.socket = descriptor.socket
+            state.socket.incoming = function(Socket)
+               local buffer = string.alloc(4096)
+               local err, size = Socket.acRead(buffer)
+               if err is ERR_Okay then state.tail ..= buffer.sub(0, size) end
+            end
+            state.socket.feedback = function(Socket, State) end
+            state.done = true
+            HTTP.acSignal()
+            if Options.destroyCommitted then HTTP.free() end
+            if Options.upgradedError then return ERR_Failed end
+         elseif State is HGS_COMPLETED or State is HGS_TERMINATED then
+            assert(not state.insideReady, 'Terminal notification interrupted the ready handler')
+            state.done = true
+            HTTP.acSignal()
+         end
+      end
+   })
+
+   if Options.auth then
+      http.username = 'user'
+      http.password = 'password'
+   end
+
+   if Options.compatible then
+      check http.acSetKey('Connection', 'keep-alive, Upgrade')
+      check http.acSetKey('Upgrade', 'websocket')
+   end
+
+   http.upgrade = struct<HTTPUpgrade> { owner=owner.id }
+   check http.acSetKey('Sec-WebSocket-Key', 'sent-only')
+   local proc = processing.new({ timeout=3, signals=array<obj> { http } })
+   check http.acActivate()
+
+   if not Options.destroy then check proc.sleep() else processing.sleep(0.1) end
+
+   if Options.destroyCommitted then
+      check state.socket.acWrite('after-http')
+      for i in {1 into 30} do
+         if state.tail.find('after-http') then break end
+         processing.sleep(0.01)
+      end
+
+      assert(state.tail.find('after-http'), 'Destruction inside UPGRADED closed the transferred socket')
+      state.socket.free()
+      return state
+   end
+
+   if not Options.destroy then
+      state.status = http.status
+      state.error = http.error
+      state.current = http.currentState
+      local err, headers = http.mtGetResponseHeaders()
+      assert(err is ERR_Okay, 'Header output failed')
+      state.headers = headers
+      local accessible = false
+
+      try
+         local invalid = http.upgrade
+         accessible = true
+      end
+
+      assert(not accessible, 'Upgrade descriptor leaked outside notification')
+      if state.upgraded is 1 then
+         if Options.reactivate then
+            http.flags = HTF_NO_DIALOG
+            state.done = false
+            check http.acActivate()
+            check proc.sleep()
+            assert(state.current != HGS_UPGRADE_READY, 'Reactivation retained the previous upgrade snapshot')
+            assert(http.currentState is HGS_TERMINATED, 'Ordinary reactivation accepted unsolicited 101')
+            assert(state.upgraded is 1, 'Reactivation emitted another handover notification')
+         end
+
+         check http.acDeactivate()
+         http.free()
+         check state.socket.acWrite('after-http')
+         for i in {1 into 30} do
+            if state.tail.find('after-http') then break end
+            processing.sleep(0.01)
+         end
+
+         assert(state.tail.find('after-http'), 'Transferred connection did not survive HTTP destruction')
+         state.socket.free()
+      end
+   end
+
+   return state
+end
+
+local valid <const> = 'HTTP/1.1 101 Switching Protocols\r\nConnection: keep-alive, Upgrade\r\n' ..
+   'Upgrade: websocket\r\nX-Repeat: first\r\nx-repeat: second\r\nEmpty:\r\nColon: a:b\r\n\r\n'
+
+@Test function AcceptUpgrade()
+   local state = runHandshake(valid .. 'A\0B', ERR_Okay)
+   assert(state.ready is 1 and state.upgraded is 1, 'Expected exactly one notification per upgrade state')
+   assert(state.body is '', 'Protocol bytes reached the HTTP body callback')
+   assert(state.size is 3 and state.prefix is 'A\0B', 'Binary prefix bytes or length were lost')
+   assert(state.data.getString(0, #state.data) is 'A\0B', 'Vector copy did not survive HTTP destruction')
+   state.data[0] = 90
+   assert(state.prefix is 'A\0B', 'Vector mutation changed the copied binary string')
+   assert(state.current is HGS_UPGRADED, 'Ownership transfer did not reach UPGRADED')
+   assert(state.request.find('GET /upgrade?x=1 HTTP/1.1'), 'Query request target was lost')
+   assert(state.request.find(f'Host: 127.0.0.1:{glPort}\r\n'), 'Host port was lost')
+   assert(state.headers.endsWith('X-Repeat: first\nx-repeat: second\nEmpty: \nColon: a:b\n'),
+      'Header order, repeats, empty values or colons were lost')
+   assert(not state.headers.find('sent-only'), 'Request header leaked into response headers')
+end
+
+@Test function SplitHeadersAndCancellation()
+   local state = runHandshake(valid .. 'split\0prefix', ERR_Okay, { split=true })
+   assert(state.ready is 1 and state.upgraded is 1, 'Split headers did not upgrade exactly once')
+   assert(state.prefix is 'split\0prefix', 'Split header parsing lost the binary prefix')
+   for _, options in {{ cancel=true }, { destroyOwner=true }} do
+      state = runHandshake(valid .. 'rejected', ERR_Okay, options)
+      assert(state.ready is 1 and state.upgraded is 0, 'Cancelled or ownerless request transferred ownership')
+      assert(state.current is HGS_TERMINATED, 'Cancelled request did not terminate')
+   end
+end
+
+@Test function BinaryVectorCopy()
+   local payload = string.char(0, 128, 255)
+   local state = runHandshake(valid .. payload, ERR_Okay)
+   assert(state.size is 3 and state.prefix is payload, 'Vector binding changed NUL or high-bit bytes')
+   assert(state.data.getString(0, #state.data) is payload, 'Retained vector copy lost binary bytes')
+end
+
+@Test function ReactivationAndTimeout()
+   local committed = runHandshake(valid .. 'owned\0bytes', ERR_Okay, { destroyCommitted=true })
+   assert(committed.upgraded is 1 and committed.prefix is 'owned\0bytes', 'Committed destruction lost the prefix')
+   local state = runHandshake(valid, ERR_Okay, { reactivate=true })
+   assert(state.upgraded is 1, 'First activation did not transfer the socket')
+   state = runHandshake(valid, ERR_Okay, { stall=true })
+   assert(state.current is HGS_TERMINATED and state.error is ERR_TimeOut, 'Stalled headers did not time out')
+   assert(state.ready is 0 and state.upgraded is 0, 'Timeout entered a handover state')
+end
+
+@Test function RejectedCallbacks()
+   for result in values(array<int> { ERR_Terminate, ERR_Failed, ERR_Continue }) do
+      local state = runHandshake(valid, result)
+      assert(state.ready is 1 and state.upgraded is 0, 'A rejection transferred ownership')
+      assert(state.current is HGS_TERMINATED, 'Rejection did not terminate')
+   end
+   local string_result = runHandshake(valid, '0')
+   assert(string_result.upgraded is 0, 'A string was treated as an explicit ERR_Okay result')
+   local omitted = runHandshake(valid, nil, { omitted=true })
+   assert(omitted.upgraded is 0 and omitted.current is HGS_TERMINATED, 'An omitted return accepted the switch')
+end
+
+@Test function InvalidResponses()
+   for response in values(array<str> {
+      'HTTP/1.1 101 Switch\r\nUpgrade: websocket\r\n\r\n',
+      'HTTP/1.0 101 Switch\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n',
+      'HTTP/1.1 101 Switch\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n',
+      'HTTP/1.1 101 Switch\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nUpgrade: websocket\r\n\r\n'
+   }) do
+      local state = runHandshake(response, ERR_Okay)
+      assert(state.ready is 0 and state.upgraded is 0, 'Invalid response reached handover')
+      assert(state.current is HGS_TERMINATED, 'Invalid switch was not terminated')
+   end
+   local disabled = runHandshake(valid, ERR_Okay, { disabled=true, compatible=true })
+   assert(disabled.upgraded is 0, 'Flag-disabled request switched protocol')
+end
+
+@Test function InformationalResponses()
+   local state = runHandshake('HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 103 Early Hints\r\nLink: </x>\r\n\r\n' .. valid,
+      ERR_Okay)
+   assert(state.ready is 1 and state.upgraded is 1, 'Buffered informational responses blocked the switch')
+   assert(not state.headers.find('Link:'), 'Interim response fields leaked into final response')
+end
+
+@Test function NonSwitchAndRedirect()
+   for status in values(array<int> { 200, 302, 301, 400 }) do
+      local state = runHandshake(f'HTTP/1.1 {status} Final\r\nLocation: /elsewhere\r\nContent-Length: 0\r\n\r\n', ERR_Okay)
+      assert(state.status is status, 'Final response was replaced by an automatic redirect')
+      assert(state.ready is 0 and state.upgraded is 0, 'Non-101 response reached handover')
+   end
+end
+
+@Test function ActivationSnapshotAndPostCommitError()
+   local changed = runHandshake(valid, ERR_Okay, { changeFlag=true })
+   assert(changed.upgraded is 1, 'Changing Flags revoked the active activation snapshot')
+   local diagnostic = runHandshake(valid, ERR_Okay, { upgradedError=true })
+   assert(diagnostic.current is HGS_UPGRADED, 'UPGRADED error rolled ownership back')
+end
+
+@Test function DestroyDuringReady()
+   local state = runHandshake(valid, ERR_Okay, { destroy=true })
+   assert(state.upgraded is 0, 'Destroying HTTP during readiness did not cancel acceptance')
+end
+
+
+@Test function AuthenticationRetry()
+   local state = runHandshake(valid, ERR_Okay, { auth=true })
+   assert(#state.requests is 2 and state.upgraded is 1, 'Authentication did not retry the complete handshake')
+   assert(state.request.find('Authorization: Basic '), 'Retry omitted credentials')
+   assert(state.request.find('Sec-WebSocket-Key: sent-only'), 'Retry omitted the consumer handshake headers')
+   assert(state.request.find('Upgrade: websocket'), 'Retry omitted generated upgrade headers')
+end
+
+@Test function CompatibleHeaders()
+   local state = runHandshake(valid, ERR_Okay, { compatible=true })
+   assert(state.upgraded is 1, 'Compatible custom upgrade headers were rejected')
+   assert(state.request.count('Connection:') is 1 and state.request.count('Upgrade:') is 1,
+      'Generated upgrade headers were duplicated')
+end
+
+@Test function ConfigurationAndHeaderOutput()
+   local owner <close> = obj.new('config')
+
+   local http <close> = obj.new('http', { location='http://127.0.0.1:1/', flags=HTF_REQUEST_WEBSOCKET })
+   local err, headers = http.mtGetResponseHeaders()
+   assert(err is ERR_Okay and headers is '', 'Empty response collection did not produce an empty string')
+   assert(http.acActivate() != ERR_Okay, 'Upgrade without a handler and owner was activated')
+   local failed = false
+
+   try
+      http.upgrade = struct<HTTPUpgrade> { owner=owner.id, data=array<byte> { 1 } }
+   except
+      failed = true
+   end
+
+   assert(failed, 'Upgrade setter accepted output members')
+   failed = false
+
+   try
+      http.currentState = HGS_UPGRADE_READY
+   except
+      failed = true
+   end
+
+   assert(failed, 'A forged readiness state was accepted')
+   local ipv6 <close> = obj.new('http', { location='http://[::1]:8181?query=yes' })
+   assert(ipv6.host is '::1' and ipv6.port is 8181 and ipv6.path is '?query=yes', 'IPv6 URI parsing failed')
+end
+
+@Test; @Requires(ssl=true)
+function DirectTLS()
+   local owner <close> = obj.new('config')
+   local request = ''
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_SSL | NSF_MULTI_CONNECT,
+      sslCertificate='config:ssl/localhost.p12',
+      incoming=function(Server, Client)
+         local buffer = string.alloc(4096)
+         local err, size = Client.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+         request ..= buffer.sub(0, size)
+         if request.find('\r\n\r\n') then check Client.acWrite(valid .. 'tls\0prefix') end
+      end
+   })
+
+   local received = ''
+   local socket = nil
+   local http <close> = obj.new('http', {
+      location=f'https://localhost:{server.port}/',
+      flags=HTF_REQUEST_WEBSOCKET | HTF_SSL | HTF_NO_DIALOG | (glVerifyTLS and 0 or HTF_DISABLE_SERVER_VERIFY),
+      stateChanged=function(HTTP, State)
+         if State is HGS_UPGRADE_READY then return ERR_Okay end
+         if State is HGS_UPGRADED then
+            local descriptor = HTTP.upgrade
+            local data = descriptor.data
+            received = data.getString(0, #data)
+            socket = descriptor.socket
+            HTTP.acSignal()
+         elseif State is HGS_TERMINATED then HTTP.acSignal() end
+      end
+   })
+
+   http.upgrade = struct<HTTPUpgrade> { owner=owner.id }
+   local proc = processing.new({ timeout=5, signals=array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+   assert(http.currentState is HGS_UPGRADED and received is 'tls\0prefix', 'TLS handover lost state or binary prefix')
+   assert(socket.peerName is 'localhost', 'Direct TLS peer identity was not set')
+   socket.free()
+end
+
+function proxyHandshake(WrongName:bool)
+   local owner <close> = obj.new('config')
+   local request = ''
+   local origin <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_SSL | NSF_MULTI_CONNECT,
+      sslCertificate='config:ssl/localhost.p12',
+      incoming=function(Server, Client)
+         local buffer = string.alloc(4096)
+         local err, size = Client.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+         request ..= buffer.sub(0, size)
+         if request.find('\r\n\r\n') then check Client.acWrite(valid .. 'proxy\0tls') end
+      end
+   })
+
+   local channels = {}
+   local connect = ''
+   local proxy <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         local buffer = string.alloc(4096)
+         local err, size = Client.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+         if channels[Client.id] then
+            check channels[Client.id].acWrite(buffer.sub(0, size))
+         else
+            connect ..= buffer.sub(0, size)
+            if connect.find('\r\n\r\n') then
+               local relay = obj.new('netsocket', {
+                  incoming=function(Socket)
+                     local data = string.alloc(4096)
+                     local err, size = Socket.acRead(data)
+                     if err is ERR_Okay then check Client.acWrite(data.sub(0, size)) end
+                  end,
+                  feedback=function(Socket, State)
+                     if State is NTC_CONNECTED then
+                        check Client.acWrite('HTTP/1.1 200 Connection Established\r\n\r\n')
+                     end
+                  end
+               })
+               channels[Client.id] = relay
+               check relay.mtConnect('127.0.0.1', origin.port, 3)
+            end
+         end
+      end
+   })
+
+   local received = ''
+   local socket = nil
+   local http <close> = obj.new('http', {
+      location=f'https://{WrongName and 'wrong.invalid' or 'localhost'}:{origin.port}/', proxyServer='127.0.0.1', proxyPort=proxy.port,
+      flags=HTF_REQUEST_WEBSOCKET | HTF_SSL | HTF_NO_DIALOG | (glVerifyTLS and 0 or HTF_DISABLE_SERVER_VERIFY),
+      stateChanged=function(HTTP, State)
+         if State is HGS_UPGRADE_READY then return ERR_Okay end
+         if State is HGS_UPGRADED then
+            local descriptor = HTTP.upgrade
+            local data = descriptor.data
+            received = data.getString(0, #data)
+            socket = descriptor.socket
+            HTTP.acSignal()
+         elseif State is HGS_TERMINATED then HTTP.acSignal() end
+      end
+   })
+
+   http.upgrade = struct<HTTPUpgrade> { owner=owner.id }
+   local proc = processing.new({ timeout=5, signals=array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+   if WrongName then
+      assert(http.currentState is HGS_TERMINATED and socket is nil, 'Wrong origin certificate was accepted')
+      for channel in values(channels) do channel.free() end
+      return
+   end
+
+   assert(http.currentState is HGS_UPGRADED and received is 'proxy\0tls', 'CONNECT did not preserve TLS handover')
+   assert(socket.address is '127.0.0.1' and socket.peerName is 'localhost', 'Proxy transport replaced origin identity')
+   assert(connect.find(f'CONNECT localhost:{origin.port} HTTP/1.1'), 'Incorrect CONNECT authority')
+   socket.free()
+   for channel in values(channels) do channel.free() end
+end
+
+@Test; @Requires(ssl=true)
+function ProxyTLS()
+   proxyHandshake(false)
+end
+
+@Test; @Requires(ssl=true)
+function WrongDestinationCertificate()
+   if glVerifyTLS then proxyHandshake(true) end
+end
+
+@Test function PrefixBeyondHeaderRead()
+   local payload = string.rep('Z', 4096) .. '\0end'
+   local state = runHandshake(valid .. payload, ERR_Okay, { nested=true })
+   assert(state.prefix .. state.tail.sub(0, #state.tail - #'after-http') is payload,
+      'Protocol bytes were lost, duplicated or reordered across the dispatch boundary')
+end

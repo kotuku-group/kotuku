@@ -260,7 +260,7 @@ template <class T> ERR tls_connect(T *Self)
 
    if (not Self->TLS.Handle) return ERR::FieldNotSet;
 
-   std::string hostname = Self->Address;
+   std::string hostname = Self->PeerName.empty() ? Self->Address : Self->PeerName;
    auto result = ssl_connect(Self->TLS.Handle, (void *)(size_t)Self->Handle.socket(), hostname);
    auto flush_error = tls_flush_output(Self);
    if ((flush_error != ERR::Okay) and (flush_error != ERR::BufferOverflow)) return flush_error;

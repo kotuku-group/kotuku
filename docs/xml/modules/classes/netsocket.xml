@@ -273,6 +273,16 @@ initially fill the internal write buffer, thereafter it will be called whenever 
     </field>
 
     <field>
+      <name>DispatchSuspended</name>
+      <comment>Temporarily suppresses socket input and output dispatch during protocol handover.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>Set to one while replacing callbacks and consuming an already-read protocol prefix, then restore zero before returning from the incoming handler.  Bytes remain queued while suspended.  This gate does not authorise reading further bytes or pumping messages inside a handover notification.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Error</name>
       <comment>Information about the last error that occurred during a NetSocket operation</comment>
       <access read="R">Read</access>
@@ -388,6 +398,16 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       <description>
 <p>The Outgoing field can be set with a custom function that will be called whenever the socket is ready to send data. For NetSocket clients the function must be in the format <code>ERR Outgoing(*NetSocket, APTR Meta)</code>.  For <class name="NetServer">NetServer</class> listeners, the inherited field uses <code>ERR Outgoing(*NetServer, *ClientSocket, APTR Meta)</code>.</p>
 <p>To send data from a NetSocket object, call the <action>Write</action> action.  To send data from a NetServer to a connected client, call <class name="ClientSocket" method="Write">ClientSocket.Write()</class> on the target client socket.  If the callback function returns an error other than <code>ERR::Okay</code> then the Outgoing field will be cleared and the function will no longer be called.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PeerName</name>
+      <comment>Expected TLS server identity, independent of the transport Address.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Set before connection or before enabling TLS on a proxy tunnel.  An empty value defaults to Address.  DNS names are used for SNI and certificate name checking; IP literals omit SNI and use certificate IP identity checking.</p>
       </description>
     </field>
 
