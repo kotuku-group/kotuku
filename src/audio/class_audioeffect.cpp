@@ -90,10 +90,10 @@ Parameters are addressed by key-paths: `key` for a top-level parameter, or `grou
 
 <header>Staged Changes</header>
 
-Before initialisation, #SetParameter(), #InsertEntry() and #RemoveEntry() change the effect directly and `Init()`
+Before initialisation, #SetKey(), #InsertEntry() and #RemoveEntry() change the effect directly and `Init()`
 validates the result.  After initialisation they change a working copy instead, which is applied as a single change
 when the client calls `Flush()`.  This allows related changes, such as switching a band's type together with its Q,
-without the processor ever running the state between them.  #GetParameter() reports staged values.  A flush that
+without the processor ever running the state between them.  #GetKey() reports staged values.  A flush that
 breaks any rule is rejected in full and the working copy is discarded.
 
 -END-
@@ -232,9 +232,9 @@ static ERR effect_set_state(extAudioEffect *Self, const AudioParamState &State)
 /*********************************************************************************************************************
 
 -ACTION-
-Flush: Applies changes staged by SetParameter(), InsertEntry() and RemoveEntry().
+Flush: Applies changes staged by SetKey(), InsertEntry() and RemoveEntry().
 
-After initialisation, parameter changes made through #SetParameter(), #InsertEntry() and #RemoveEntry() are held in a
+After initialisation, parameter changes made through #SetKey(), #InsertEntry() and #RemoveEntry() are held in a
 working copy.  Flush() validates the working copy as a whole and applies it in a single step, so the processor never
 runs a partially changed state.
 
@@ -390,7 +390,7 @@ static ERR AUDIOEFFECT_Init(extAudioEffect *Self)
 GetGroupCount: Reads the number of entries in a parameter group.
 
 Returns the current entry count for the named group.  Staged insertions and removals are included, matching
-#GetParameter().  A failed Flush() discards staged changes, so subsequent queries return the committed count.
+#GetKey().  A failed Flush() discards staged changes, so subsequent queries return the committed count.
 The count can be read before initialisation or after the effect has been disconnected.
 
 -INPUT-
@@ -431,15 +431,16 @@ static ERR AUDIOEFFECT_GetGroupCount(extAudioEffect *Self, struct fx::GetGroupCo
 
 /*********************************************************************************************************************
 
--METHOD-
-GetParameter: Reads a parameter value by key.
+-ACTION-
+GetKey: Reads a parameter value by key.
 
 Reads the value of a parameter published in the #Schema.  If changes are staged, the staged value is returned, so a
-client always reads back what it has set.  Enumerated values are returned as their numeric value.
+client always reads back what it has set.  Values are returned as numeric strings with sufficient precision to
+preserve the original number.  Convert the result to a number when performing arithmetic.
 
 -INPUT-
-strview Path: A parameter key such as `gain` or `bands[2].frequency`.
-&double Value: The parameter value is returned here.
+strview Key: A parameter key such as `gain` or `bands[2].frequency`.
+&str Value: The parameter value is returned here as a numeric string.
 
 -ERRORS-
 Okay
@@ -447,13 +448,14 @@ NullArgs
 NoSupport: The effect does not publish a schema.
 Search: The key is malformed or names an unknown parameter.
 OutOfRange: The group index does not refer to an existing entry.
+Failed: The value could not be formatted.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR AUDIOEFFECT_GetParameter(extAudioEffect *Self, struct fx::GetParameter *Args)
+static ERR AUDIOEFFECT_GetKey(extAudioEffect *Self, struct acGetKey *Args)
 {
-   if (not Args) return ERR::NullArgs;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
    if (not Self->Schema) return ERR::NoSupport;
 
    AudioParamState committed;
@@ -465,8 +467,11 @@ static ERR AUDIOEFFECT_GetParameter(extAudioEffect *Self, struct fx::GetParamete
 
    double *value;
    const AudioParamDesc *desc;
-   if (auto error = resolve_path(*Self->Schema, *state, Args->Path, value, desc); error != ERR::Okay) return error;
-   Args->Value = *value;
+   if (auto error = resolve_path(*Self->Schema, *state, Args->Key, value, desc); error != ERR::Okay) return error;
+   char buffer[64];
+   auto [end, error] = std::to_chars(buffer, buffer + sizeof(buffer), *value);
+   if (error != std::errc()) return ERR::Failed;
+   Args->Value->assign(buffer, end);
    return ERR::Okay;
 }
 
@@ -839,19 +844,20 @@ static ERR AUDIOEFFECT_RemoveEntry(extAudioEffect *Self, struct fx::RemoveEntry 
 
 /*********************************************************************************************************************
 
--METHOD-
-SetParameter: Changes a parameter value by key.
+-ACTION-
+SetKey: Changes a parameter value by key.
 
 Sets a parameter published in the #Schema.  The value is checked against the parameter's own range immediately.
 Rules that relate parameters to each other are checked when the change is applied: by `Init()` before initialisation,
 or by `Flush()` afterwards.  After initialisation the change is staged and has no effect on the processor until
 `Flush()` is called.
 
-Enumerated values are set with their numeric value.
+Values must be numeric strings, including enumerated values.  Leading and trailing whitespace and an optional
+leading plus sign are accepted.  Empty strings, trailing text and non-finite values are rejected.
 
 -INPUT-
-strview Path: A parameter key such as `gain` or `bands[2].frequency`.
-double Value: The new value, in the parameter's unit.
+strview Key: A parameter key such as `gain` or `bands[2].frequency`.
+strview Value: The new numeric value, in the parameter's unit.
 
 -ERRORS-
 Okay
@@ -859,14 +865,14 @@ NullArgs
 NoSupport: The effect does not publish a schema.
 Search: The key is malformed or names an unknown parameter.
 OutOfRange: The group index does not refer to an existing entry.
-InvalidValue: The value is outside the parameter's range.
+InvalidValue: The value is not a finite number or is outside the parameter's range.
 Immutable: The effect is attached to the global chain.
 NotInitialised: The effect has been disconnected from its Audio object.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR AUDIOEFFECT_SetParameter(extAudioEffect *Self, struct fx::SetParameter *Args)
+static ERR AUDIOEFFECT_SetKey(extAudioEffect *Self, struct acSetKey *Args)
 {
    if (not Args) return ERR::NullArgs;
    const int rate = effect_rate(Self);
@@ -874,9 +880,21 @@ static ERR AUDIOEFFECT_SetParameter(extAudioEffect *Self, struct fx::SetParamete
    return effect_edit(Self, [&](AudioParamState &State) {
       double *value;
       const AudioParamDesc *desc;
-      if (auto error = resolve_path(*Self->Schema, State, Args->Path, value, desc); error != ERR::Okay) return error;
-      if (auto error = check_param(*desc, Args->Value, rate); error != ERR::Okay) return error;
-      *value = Args->Value;
+      if (auto error = resolve_path(*Self->Schema, State, Args->Key, value, desc); error != ERR::Okay) return error;
+      auto text = Args->Value;
+      const auto start = text.find_first_not_of(" \t\r\n");
+      if (start IS std::string_view::npos) return ERR::InvalidValue;
+      text = text.substr(start, text.find_last_not_of(" \t\r\n") - start + 1);
+      if (text.starts_with('+')) {
+         text.remove_prefix(1);
+         if (text.starts_with('-')) return ERR::InvalidValue;
+      }
+      if (text.empty()) return ERR::InvalidValue;
+      double number;
+      auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
+      if ((error != std::errc()) or (end != text.data() + text.size())) return ERR::InvalidValue;
+      if (auto error = check_param(*desc, number, rate); error != ERR::Okay) return error;
+      *value = number;
       return ERR::Okay;
    });
 }
@@ -1058,7 +1076,7 @@ disconnecting the container from its Audio object or channel set disconnects the
 -FIELD-
 Schema: An XML description of the effect's parameters.
 
-The schema describes every parameter that can be read or changed with #GetParameter() and #SetParameter(), including
+The schema describes every parameter that can be read or changed with #GetKey() and #SetKey(), including
 units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class
 documentation.  Scalar outputs are listed for the channels of the current processing layout, with slots from the
 current meter layout.  Instance-specific bounds, such as the Nyquist frequency, are resolved against #OutputRate.

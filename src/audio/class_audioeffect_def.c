@@ -5,8 +5,6 @@ static const struct FieldDef clAudioEffectFlags[] = {
    { nullptr, 0 }
 };
 
-FDEF maSetParameter[] = { { "Path", FDF_CPPSTRING }, { "Value", FD_DOUBLE }, { 0, 0 } };
-FDEF maGetParameter[] = { { "Path", FDF_CPPSTRING }, { "Value", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
 FDEF maInsertEntry[] = { { "Group", FDF_CPPSTRING }, { "Index", FD_INT }, { 0, 0 } };
 FDEF maRemoveEntry[] = { { "Group", FDF_CPPSTRING }, { "Index", FD_INT }, { 0, 0 } };
 FDEF maGetResponse[] = { { "Frequencies", FDF_SPAN|FD_DOUBLE }, { "Magnitudes", FDF_SPAN|FD_MUTABLE|FD_DOUBLE }, { 0, 0 } };
@@ -17,8 +15,6 @@ FDEF maReadMeters[] = { { "MeterReading:Reading", FD_RESULT|FD_PTR|FD_STRUCT|FD_
 FDEF maGetProcessingFormat[] = { { "SampleRate", FD_RESULT|FD_INT }, { "SampleFormat", FD_RESULT|FD_INT }, { "Layout", FD_RESULT|FDF_VECTOR|FD_MUTABLE|FD_INT }, { "Generation", FD_RESULT|FD_INT64 }, { "State", FD_RESULT|FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clAudioEffectMethods[] = {
-   { AC(-1), (APTR)AUDIOEFFECT_SetParameter, "SetParameter", maSetParameter, sizeof(struct fx::SetParameter) },
-   { AC(-2), (APTR)AUDIOEFFECT_GetParameter, "GetParameter", maGetParameter, sizeof(struct fx::GetParameter) },
    { AC(-3), (APTR)AUDIOEFFECT_InsertEntry, "InsertEntry", maInsertEntry, sizeof(struct fx::InsertEntry) },
    { AC(-4), (APTR)AUDIOEFFECT_RemoveEntry, "RemoveEntry", maRemoveEntry, sizeof(struct fx::RemoveEntry) },
    { AC(-5), (APTR)AUDIOEFFECT_GetResponse, "GetResponse", maGetResponse, sizeof(struct fx::GetResponse) },
@@ -44,9 +40,11 @@ static const struct ActionArray clAudioEffectActions[] = {
    { AC::Flush, AUDIOEFFECT_Flush },
    { AC::Free, AUDIOEFFECT_Free },
    { AC::FreeWarning, AUDIOEFFECT_FreeWarning },
+   { AC::GetKey, AUDIOEFFECT_GetKey },
    { AC::Init, AUDIOEFFECT_Init },
    { AC::New, AUDIOEFFECT_New },
    { AC::NewOwner, AUDIOEFFECT_NewOwner },
+   { AC::SetKey, AUDIOEFFECT_SetKey },
    { AC::NIL, nullptr }
 };
 

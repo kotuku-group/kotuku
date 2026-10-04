@@ -11,7 +11,7 @@ Create new limiter objects as a child of an @Audio object or set the inherited #
 #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application
 limiters accept live changes; global limiters become immutable after initialisation.
 
-Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter()
+Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetKey()
 followed by @AudioEffect.Flush():
 
 <list type="bullet">
@@ -25,8 +25,8 @@ The following limits a playing channel set, raising its level by 6 dB with a cei
 
 <pre>
 limiter = obj.new('AudioLimiter', { audio=audio, channel=channel })
-limiter.mtSetParameter('ceiling', -0.5)
-limiter.mtSetParameter('gain', 6)
+limiter.acSetKey('ceiling', -0.5)
+limiter.acSetKey('gain', 6)
 limiter.acFlush()
 </pre>
 

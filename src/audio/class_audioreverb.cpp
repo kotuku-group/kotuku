@@ -11,7 +11,7 @@ Use #AudioEffect.Channel to process one channel set, or leave it at zero to proc
 reverberators accept live changes; global reverberators become immutable after initialisation.
 
 Parameters are published through the inherited @AudioEffect schema and are changed with
-@AudioEffect.SetParameter() followed by @AudioEffect.Flush():
+@AudioEffect.SetKey() followed by @AudioEffect.Flush():
 
 <list type="bullet">
 <li>`decay`: the time, in milliseconds, for the reverberation to fall by 60 dB at low frequencies.</li>
@@ -41,9 +41,9 @@ The following creates a large hall for a playing channel set, then lengthens its
 
 <pre>
 reverb = obj.new('AudioReverb', { audio=audio, channel=channel })
-reverb.mtSetParameter('size', 90)
-reverb.mtSetParameter('decay', 3500)
-reverb.mtSetParameter('mix', 30)
+reverb.acSetKey('size', 90)
+reverb.acSetKey('decay', 3500)
+reverb.acSetKey('mix', 30)
 reverb.acFlush()
 </pre>
 
@@ -67,9 +67,9 @@ lengths at high levels can sound like a flutter echo; combine them with a modera
 The following adds the reflections of a long room to a small, diffuse reverberation:
 
 <pre>
-reverb.mtSetParameter('early_level', 60)
-reverb.mtSetParameter('early_length', 70)
-reverb.mtSetParameter('size', 30)
+reverb.acSetKey('early_level', 60)
+reverb.acSetKey('early_length', 70)
+reverb.acSetKey('size', 30)
 reverb.acFlush()
 </pre>
 

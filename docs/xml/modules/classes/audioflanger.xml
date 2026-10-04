@@ -15,7 +15,7 @@
     <description>
 <p>The flanger mixes its input with a copy delayed by a few milliseconds.  Mixing the two cancels a series of evenly spaced frequencies, and a slow oscillator moves the delay so that these notches sweep up and down the spectrum, producing the characteristic jet-plane whoosh.  Feeding part of the delayed signal back into the delay line deepens the effect into a pronounced metallic resonance.</p>
 <p>Create new flanger objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application flangers accept live changes; global flangers become immutable after initialisation.</p>
-<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <list type="bullet">
 <li><code>rate</code>: the frequency of the sweep, from 0.02 to 10 Hz.  Slow rates give a gradual sweep and fast rates a
 vibrating, warbling tone.</li>
@@ -31,9 +31,9 @@ notches and 100 percent outputs only the delayed signal.</li>
 </list>
 <p>The following adds a slow, resonant sweep to a playing channel set, as a single change:</p>
 <pre>flanger = obj.new('AudioFlanger', { audio=audio, channel=channel })
-flanger.mtSetParameter('rate', 0.1)
-flanger.mtSetParameter('depth', 4)
-flanger.mtSetParameter('feedback', 70)
+flanger.acSetKey('rate', 0.1)
+flanger.acSetKey('depth', 4)
+flanger.acSetKey('feedback', 70)
 flanger.acFlush()
 </pre>
 <p>Other useful combinations include a subtle sweep with <code>rate</code> 0.15, <code>depth</code> 1.5, <code>feedback</code> 0 and <code>mix</code> 35; a hollow tone with <code>feedback</code> -60; and a fast vibrato-like warble with <code>rate</code> 6, <code>depth</code> 0.5 and <code>mix</code> 100.</p>

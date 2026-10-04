@@ -68,7 +68,8 @@ end
       assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
       assert(schema.find(f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"') != nil,
          f'{p.key} must publish its unit, scale, range and default')
-      err, value = flanger.mtGetParameter(p.key)
+      err, value_text = flanger.acGetKey(p.key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
    end
 
@@ -96,30 +97,32 @@ end
    -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
 
    for p in values(PARAMS) do
-      check flanger.mtSetParameter(p.key, p.min)
-      check flanger.mtSetParameter(p.key, p.max)
-      assert(flanger.mtSetParameter(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
-      assert(flanger.mtSetParameter(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
-      assert(flanger.mtSetParameter(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
-      assert(flanger.mtSetParameter(p.key, -math.huge) is ERR_InvalidValue, f'{p.key} must reject -infinity')
-      assert(flanger.mtSetParameter(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+      check flanger.acSetKey(p.key, p.min)
+      check flanger.acSetKey(p.key, p.max)
+      assert(flanger.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(flanger.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(flanger.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(flanger.acSetKey(p.key, -math.huge) is ERR_InvalidValue, f'{p.key} must reject -infinity')
+      assert(flanger.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
    end
-   assert(flanger.mtSetParameter('unknown', 1) is ERR_Search)
+   assert(flanger.acSetKey('unknown', 1) is ERR_Search)
    check flanger.acFlush()
 
    -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
    -- commits them together.  Fractional and negative values are kept.
 
-   check flanger.mtSetParameter('rate', 1.25)
-   check flanger.mtSetParameter('delay', 2.5)
-   check flanger.mtSetParameter('depth', 4.75)
-   assert(flanger.mtSetParameter('feedback', -91) is ERR_InvalidValue)
-   check flanger.mtSetParameter('feedback', -62.5)
-   err, value = flanger.mtGetParameter('feedback')
+   check flanger.acSetKey('rate', 1.25)
+   check flanger.acSetKey('delay', 2.5)
+   check flanger.acSetKey('depth', 4.75)
+   assert(flanger.acSetKey('feedback', -91) is ERR_InvalidValue)
+   check flanger.acSetKey('feedback', -62.5)
+   err, value_text = flanger.acGetKey('feedback')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is -62.5, 'Staged values must be readable')
    check flanger.acFlush()
    for key, expected in pairs({ rate=1.25, delay=2.5, depth=4.75, feedback=-62.5, mix=100 }) do
-      err, value = flanger.mtGetParameter(key)
+      err, value_text = flanger.acGetKey(key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
    end
 end
@@ -131,12 +134,13 @@ end
    flanger <close> = obj.new('AudioFlanger')
    flanger.audio = audio
    flanger.channel = channel
-   check flanger.mtSetParameter('delay', 3)
-   check flanger.mtSetParameter('feedback', -80)
-   assert(flanger.mtSetParameter('depth', 10.5) is ERR_InvalidValue)
+   check flanger.acSetKey('delay', 3)
+   check flanger.acSetKey('feedback', -80)
+   assert(flanger.acSetKey('depth', 10.5) is ERR_InvalidValue)
    flanger.init()
    for key, expected in pairs({ delay=3, feedback=-80, depth=2 }) do
-      err, value = flanger.mtGetParameter(key)
+      err, value_text = flanger.acGetKey(key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is expected, f'{key} should be {expected}, got {value}')
    end
 end
@@ -144,7 +148,7 @@ end
 @Test function LivePlayback()
    audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
    flanger, channel = new_flanger(audio)
-   check flanger.mtSetParameter('mix', 100)
+   check flanger.acSetKey('mix', 100)
    check flanger.acFlush()
    check audio.acActivate()
    assert(flanger.latency is 0, 'The flanger publishes no algorithmic latency, even when fully wet')
@@ -155,13 +159,13 @@ end
 
    -- Simultaneous rate, depth and feedback edits with a delay crossfade, then a queued delay edit.
 
-   check flanger.mtSetParameter('delay', 4.5)
-   check flanger.mtSetParameter('rate', 9)
-   check flanger.mtSetParameter('depth', 10)
-   check flanger.mtSetParameter('feedback', -90)
+   check flanger.acSetKey('delay', 4.5)
+   check flanger.acSetKey('rate', 9)
+   check flanger.acSetKey('depth', 10)
+   check flanger.acSetKey('feedback', -90)
    check flanger.acFlush()
-   check flanger.mtSetParameter('delay', 0.2)
-   check flanger.mtSetParameter('mix', 0)
+   check flanger.acSetKey('delay', 0.2)
+   check flanger.acSetKey('mix', 0)
    check flanger.acFlush()
    assert(flanger.latency is 0, 'Parameter changes must not alter the latency')
 
@@ -177,19 +181,20 @@ end
    check audio.mtCloseChannels(channel)
    err, reading = flanger.mtReadMeters()
    assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
-   assert(flanger.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   assert(flanger.acSetKey('mix', 50) is ERR_NotInitialised)
    flanger.free()
 end
 
 @Test function MonoAndGlobalImmutability()
    audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
    flanger = audio.new('AudioFlanger')
-   check flanger.mtSetParameter('feedback', -45)
-   check flanger.mtSetParameter('delay', 0.5)
+   check flanger.acSetKey('feedback', -45)
+   check flanger.acSetKey('delay', 0.5)
    flanger.init()
    assert(flanger.mutable is 0)
-   assert(flanger.mtSetParameter('delay', 2) is ERR_Immutable)
-   err, value = flanger.mtGetParameter('feedback')
+   assert(flanger.acSetKey('delay', 2) is ERR_Immutable)
+   err, value_text = flanger.acGetKey('feedback')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is -45, 'Global settings are retained')
    check audio.acActivate()
    err, layout = flanger.mtGetMeterLayout()
@@ -214,9 +219,9 @@ end
             state_at_stop = state
          end })
       flanger <close> = obj.new('AudioFlanger', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
-      check flanger.mtSetParameter('delay', 5)
-      check flanger.mtSetParameter('depth', 10)
-      check flanger.mtSetParameter('feedback', feedback)
+      check flanger.acSetKey('delay', 5)
+      check flanger.acSetKey('depth', 10)
+      check flanger.acSetKey('feedback', feedback)
       check flanger.acFlush()
       check sound.acActivate()
       wait_for_stop(count, 20)
@@ -231,12 +236,12 @@ end
 @Test function GlobalChainStop()
    audio <close> = obj.new('Audio', { device='null' })
    first = audio.new('AudioFlanger')
-   check first.mtSetParameter('delay', 5)
-   check first.mtSetParameter('feedback', 90)
+   check first.acSetKey('delay', 5)
+   check first.acSetKey('feedback', 90)
    first.init()
    second = audio.new('AudioFlanger')
-   check second.mtSetParameter('depth', 10)
-   check second.mtSetParameter('feedback', -90)
+   check second.acSetKey('depth', 10)
+   check second.acSetKey('feedback', -90)
    second.init()
    check audio.acActivate()
    count = { stops=0 }
@@ -260,7 +265,7 @@ end
    sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
       onStop=function(Sound) count.stops++ end })
    flanger = obj.new('AudioFlanger', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
-   check flanger.mtSetParameter('feedback', 90)
+   check flanger.acSetKey('feedback', 90)
    check flanger.acFlush()
    check sound.acActivate()
    processing.sleep(0.05)
@@ -280,7 +285,7 @@ end
       onStop=function(Sound) count.stops++ end })
    set = sound.channelIndex & 0xffff0000
    flanger <close> = obj.new('AudioFlanger', { audio=audio, channel=set })
-   check flanger.mtSetParameter('feedback', 90)
+   check flanger.acSetKey('feedback', 90)
    check flanger.acFlush()
    check sound.acActivate()
    wait_for_stop(count, 20)

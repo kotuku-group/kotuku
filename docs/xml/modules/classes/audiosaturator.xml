@@ -15,7 +15,7 @@
     <description>
 <p>The saturator amplifies its input by the <code>drive</code> level and passes the result through a fixed transfer curve that compresses large values, which adds harmonics to the sound.  Mild settings give warmth and density; high drive produces strong distortion.  The processed signal can be blended with the unprocessed input for parallel saturation.</p>
 <p>Create new saturator objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application saturators accept live changes; global saturators become immutable after initialisation.</p>
-<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <list type="bullet">
 <li><code>drive</code>: the gain applied before the transfer curve, from 0 to 36 dB.  Higher levels push more of the signal into
 the curved region and increase the distortion.</li>
@@ -26,9 +26,9 @@ processed signal.</li>
 </list>
 <p>The following adds heavy parallel saturation to a playing channel set, as a single change:</p>
 <pre>saturator = obj.new('AudioSaturator', { audio=audio, channel=channel })
-saturator.mtSetParameter('drive', 24)
-saturator.mtSetParameter('gain', -12)
-saturator.mtSetParameter('mix', 40)
+saturator.acSetKey('drive', 24)
+saturator.acSetKey('gain', -12)
+saturator.acSetKey('mix', 40)
 saturator.acFlush()
 </pre>
 <header>Transfer Curves</header>

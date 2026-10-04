@@ -12,7 +12,7 @@ Create new flanger objects as a child of an @Audio object or set the inherited #
 #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application flangers
 accept live changes; global flangers become immutable after initialisation.
 
-Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter()
+Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetKey()
 followed by @AudioEffect.Flush():
 
 <list type="bullet">
@@ -33,9 +33,9 @@ The following adds a slow, resonant sweep to a playing channel set, as a single 
 
 <pre>
 flanger = obj.new('AudioFlanger', { audio=audio, channel=channel })
-flanger.mtSetParameter('rate', 0.1)
-flanger.mtSetParameter('depth', 4)
-flanger.mtSetParameter('feedback', 70)
+flanger.acSetKey('rate', 0.1)
+flanger.acSetKey('depth', 4)
+flanger.acSetKey('feedback', 70)
 flanger.acFlush()
 </pre>
 

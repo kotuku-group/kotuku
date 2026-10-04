@@ -44,7 +44,7 @@
 <p>The <code>slot</code> attributes describe the meter layout that was current when the schema was read.  A change of processing layout replaces the meter layout; use <method>GetMeterLayout</method> to resolve keys to slots, and repeat the resolution whenever <method>ReadMeters</method> reports a different <code>ID</code>.</p>
 <p>Parameters are addressed by key-paths: <code>key</code> for a top-level parameter, or <code>group[index].key</code> for a group member, e.g. <code>bands[2].frequency</code>.  Values are always in real units, such as hertz or decibels; they are never normalised.</p>
 <header>Staged Changes</header>
-<p>Before initialisation, <method>SetParameter</method>, <method>InsertEntry</method> and <method>RemoveEntry</method> change the effect directly and <code>Init()</code> validates the result.  After initialisation they change a working copy instead, which is applied as a single change when the client calls <code>Flush()</code>.  This allows related changes, such as switching a band's type together with its Q, without the processor ever running the state between them.  <method>GetParameter</method> reports staged values.  A flush that breaks any rule is rejected in full and the working copy is discarded.</p></description>
+<p>Before initialisation, <action>SetKey</action>, <method>InsertEntry</method> and <method>RemoveEntry</method> change the effect directly and <code>Init()</code> validates the result.  After initialisation they change a working copy instead, which is applied as a single change when the client calls <code>Flush()</code>.  This allows related changes, such as switching a band's type together with its Q, without the processor ever running the state between them.  <action>GetKey</action> reports staged values.  A flush that breaks any rule is rejected in full and the working copy is discarded.</p></description>
     <source>
       <file>class_audioeffect.cpp</file>
     </source>
@@ -53,11 +53,11 @@
   <actions>
     <action>
       <name>Flush</name>
-      <comment>Applies changes staged by SetParameter(), InsertEntry() and RemoveEntry().</comment>
+      <comment>Applies changes staged by SetKey(), InsertEntry() and RemoveEntry().</comment>
       <prototype>ERR acFlush(*Object)</prototype>
       <tiriPrototype>err = Object.acFlush()</tiriPrototype>
       <description>
-<p>After initialisation, parameter changes made through <method>SetParameter</method>, <method>InsertEntry</method> and <method>RemoveEntry</method> are held in a working copy.  Flush() validates the working copy as a whole and applies it in a single step, so the processor never runs a partially changed state.</p>
+<p>After initialisation, parameter changes made through <action>SetKey</action>, <method>InsertEntry</method> and <method>RemoveEntry</method> are held in a working copy.  Flush() validates the working copy as a whole and applies it in a single step, so the processor never runs a partially changed state.</p>
 <p>The working copy is discarded whether or not the flush succeeds.  If any value or rule is invalid, the effect is left unchanged and <code>ERR::InvalidValue</code> is returned.  Calling Flush() with no staged changes has no effect.</p>
       </description>
       <result>
@@ -65,6 +65,53 @@
         <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
         <error code="InvalidState">A staged edit would change the configured processor instance's algorithmic latency.</error>
         <error code="InvalidValue">The staged changes break a rule or range.  Nothing was applied.</error>
+        <error code="Immutable">The effect is attached to the global chain.</error>
+      </result>
+    </action>
+
+    <action>
+      <name>GetKey</name>
+      <comment>Reads a parameter value by key.</comment>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
+        <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
+      </input>
+      <description>
+<p>Reads the value of a parameter published in the <fl>Schema</fl>.  If changes are staged, the staged value is returned, so a client always reads back what it has set.  Values are returned as numeric strings with sufficient precision to preserve the original number.  Convert the result to a number when performing arithmetic.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Failed">The value could not be formatted.</error>
+        <error code="Search">The key is malformed or names an unknown parameter.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">The group index does not refer to an existing entry.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </action>
+
+    <action>
+      <name>SetKey</name>
+      <comment>Changes a parameter value by key.</comment>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
+      </input>
+      <description>
+<p>Sets a parameter published in the <fl>Schema</fl>.  The value is checked against the parameter's own range immediately. Rules that relate parameters to each other are checked when the change is applied: by <code>Init()</code> before initialisation, or by <code>Flush()</code> afterwards.  After initialisation the change is staged and has no effect on the processor until <code>Flush()</code> is called.</p>
+<p>Values must be numeric strings, including enumerated values.  Leading and trailing whitespace and an optional leading plus sign are accepted.  Empty strings, trailing text and non-finite values are rejected.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">The key is malformed or names an unknown parameter.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">The group index does not refer to an existing entry.</error>
+        <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">The value is not a finite number or is outside the parameter's range.</error>
         <error code="Immutable">The effect is attached to the global chain.</error>
       </result>
     </action>
@@ -82,7 +129,7 @@
         <param type="INT *" name="Count">The number of entries is returned here.</param>
       </input>
       <description>
-<p>Returns the current entry count for the named group.  Staged insertions and removals are included, matching <method>GetParameter</method>.  A failed Flush() discards staged changes, so subsequent queries return the committed count. The count can be read before initialisation or after the effect has been disconnected.</p>
+<p>Returns the current entry count for the named group.  Staged insertions and removals are included, matching <action>GetKey</action>.  A failed Flush() discards staged changes, so subsequent queries return the committed count. The count can be read before initialisation or after the effect has been disconnected.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -133,27 +180,6 @@
         <error code="NoSupport">The key names a curve or another unsupported output kind.</error>
         <error code="NotInitialised">The effect is disconnected.</error>
         <error code="InvalidState">No current valid measurement is available, or the effect is idle or bypassed.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
-    </method>
-
-    <method>
-      <name>GetParameter</name>
-      <comment>Reads a parameter value by key.</comment>
-      <prototype>ERR fx::GetParameter(OBJECTPTR Object, STRVIEW Path, DOUBLE * Value)</prototype>
-      <tiriPrototype>err, Value:num = GetParameter(Path:str)</tiriPrototype>
-      <input>
-        <param type="STRVIEW" name="Path">A parameter key such as <code>gain</code> or <code>bands[2].frequency</code>.</param>
-        <param type="DOUBLE *" name="Value">The parameter value is returned here.</param>
-      </input>
-      <description>
-<p>Reads the value of a parameter published in the <fl>Schema</fl>.  If changes are staged, the staged value is returned, so a client always reads back what it has set.  Enumerated values are returned as their numeric value.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Search">The key is malformed or names an unknown parameter.</error>
-        <error code="NoSupport">The effect does not publish a schema.</error>
-        <error code="OutOfRange">The group index does not refer to an existing entry.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
     </method>
@@ -279,31 +305,6 @@
       </result>
     </method>
 
-    <method>
-      <name>SetParameter</name>
-      <comment>Changes a parameter value by key.</comment>
-      <prototype>ERR fx::SetParameter(OBJECTPTR Object, STRVIEW Path, DOUBLE Value)</prototype>
-      <tiriPrototype>err = SetParameter(Path:str, Value:num)</tiriPrototype>
-      <input>
-        <param type="STRVIEW" name="Path">A parameter key such as <code>gain</code> or <code>bands[2].frequency</code>.</param>
-        <param type="DOUBLE" name="Value">The new value, in the parameter's unit.</param>
-      </input>
-      <description>
-<p>Sets a parameter published in the <fl>Schema</fl>.  The value is checked against the parameter's own range immediately. Rules that relate parameters to each other are checked when the change is applied: by <code>Init()</code> before initialisation, or by <code>Flush()</code> afterwards.  After initialisation the change is staged and has no effect on the processor until <code>Flush()</code> is called.</p>
-<p>Enumerated values are set with their numeric value.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Search">The key is malformed or names an unknown parameter.</error>
-        <error code="NoSupport">The effect does not publish a schema.</error>
-        <error code="OutOfRange">The group index does not refer to an existing entry.</error>
-        <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-        <error code="InvalidValue">The value is outside the parameter's range.</error>
-        <error code="Immutable">The effect is attached to the global chain.</error>
-      </result>
-    </method>
-
   </methods>
 
   <fields>
@@ -407,7 +408,7 @@
       <access read="G">Get</access>
       <type>STRING</type>
       <description>
-<p>The schema describes every parameter that can be read or changed with <method>GetParameter</method> and <method>SetParameter</method>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  Scalar outputs are listed for the channels of the current processing layout, with slots from the current meter layout.  Instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
+<p>The schema describes every parameter that can be read or changed with <action>GetKey</action> and <action>SetKey</action>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  Scalar outputs are listed for the channels of the current processing layout, with slots from the current meter layout.  Instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
 <p>The value is empty if the class does not publish a schema.</p>
       </description>
     </field>

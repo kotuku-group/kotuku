@@ -15,7 +15,7 @@
     <description>
 <p>The compressor reduces the level of audio that exceeds a threshold, making quiet and loud passages more consistent. It is commonly used to improve the intelligibility of dialogue and to control the dynamics of mixed playback.</p>
 <p>Create new compressor objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application compressors accept live changes; global compressors become immutable after initialisation.</p>
-<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <list type="bullet">
 <li><code>threshold</code>: the detector level, in dB relative to full scale, above which compression is applied.</li>
 <li><code>ratio</code>: the slope of the transfer curve above the threshold.  At 4, a signal that rises 4 dB above the threshold
@@ -29,9 +29,9 @@ between zero and 100 percent provide parallel compression.</li>
 </list>
 <p>The following compresses dialogue on a playing channel set and adds makeup gain as a single change:</p>
 <pre>comp = obj.new('AudioCompressor', { audio=audio, channel=channel })
-comp.mtSetParameter('threshold', -24)
-comp.mtSetParameter('ratio', 3)
-comp.mtSetParameter('makeup', 6)
+comp.acSetKey('threshold', -24)
+comp.acSetKey('ratio', 3)
+comp.acSetKey('makeup', 6)
 comp.acFlush()
 </pre>
 <header>Detection and Transfer Curve</header>

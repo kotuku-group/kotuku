@@ -40,7 +40,8 @@ end
    assert(schema.find('type="curve"') is nil, 'The reverb does not publish a response curve')
    for p in values(PARAMS) do
       assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
-      err, value = reverb.mtGetParameter(p.key)
+      err, value_text = reverb.acGetKey(p.key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
    end
    assert(schema.find('unit="ms" scale="log" min="100" max="20000" default="1500"') != nil)
@@ -70,24 +71,26 @@ end
    -- Every bound is inclusive; values outside it are rejected immediately.
 
    for p in values(PARAMS) do
-      check reverb.mtSetParameter(p.key, p.min)
-      check reverb.mtSetParameter(p.key, p.max)
-      assert(reverb.mtSetParameter(p.key, p.min - 1) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
-      assert(reverb.mtSetParameter(p.key, p.max + 1) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      check reverb.acSetKey(p.key, p.min)
+      check reverb.acSetKey(p.key, p.max)
+      assert(reverb.acSetKey(p.key, p.min - 1) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(reverb.acSetKey(p.key, p.max + 1) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
    end
-   assert(reverb.mtSetParameter('unknown', 1) is ERR_Search)
+   assert(reverb.acSetKey('unknown', 1) is ERR_Search)
    check reverb.acFlush()
 
    -- Staged values are visible before Flush() and committed together.
 
-   check reverb.mtSetParameter('decay', 3200)
-   check reverb.mtSetParameter('size', 85)
-   check reverb.mtSetParameter('pre_delay', 45)
-   err, value = reverb.mtGetParameter('size')
+   check reverb.acSetKey('decay', 3200)
+   check reverb.acSetKey('size', 85)
+   check reverb.acSetKey('pre_delay', 45)
+   err, value_text = reverb.acGetKey('size')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 85, 'Staged values must be readable')
    check reverb.acFlush()
    for key, expected in pairs({ decay=3200, size=85, pre_delay=45 }) do
-      err, value = reverb.mtGetParameter(key)
+      err, value_text = reverb.acGetKey(key)
+      value = tonumber(value_text)
       assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Flush(), got {value}')
    end
 end
@@ -99,12 +102,14 @@ end
    reverb <close> = obj.new('AudioReverb')
    reverb.audio = audio
    reverb.channel = channel
-   check reverb.mtSetParameter('decay', 900)
-   check reverb.mtSetParameter('mix', 35)
+   check reverb.acSetKey('decay', 900)
+   check reverb.acSetKey('mix', 35)
    reverb.init()
-   err, value = reverb.mtGetParameter('mix')
+   err, value_text = reverb.acGetKey('mix')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 35)
-   err, value = reverb.mtGetParameter('decay')
+   err, value_text = reverb.acGetKey('decay')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 900)
 end
 
@@ -126,23 +131,24 @@ end
 
    -- Ordinary edits, a size transition and a queued edit behind it.
 
-   check reverb.mtSetParameter('decay', 4000)
-   check reverb.mtSetParameter('damping', 20)
+   check reverb.acSetKey('decay', 4000)
+   check reverb.acSetKey('damping', 20)
    check reverb.acFlush()
-   check reverb.mtSetParameter('size', 90)
+   check reverb.acSetKey('size', 90)
    check reverb.acFlush()
-   check reverb.mtSetParameter('size', 10)
-   check reverb.mtSetParameter('pre_delay', 150)
+   check reverb.acSetKey('size', 10)
+   check reverb.acSetKey('pre_delay', 150)
    check reverb.acFlush()
 
    -- Early reflections fade in, then a length edit crossfades with a queued length behind it.
 
-   check reverb.mtSetParameter('early_level', 60)
-   check reverb.mtSetParameter('early_length', 80)
+   check reverb.acSetKey('early_level', 60)
+   check reverb.acSetKey('early_length', 80)
    check reverb.acFlush()
-   check reverb.mtSetParameter('early_length', 8)
+   check reverb.acSetKey('early_length', 8)
    check reverb.acFlush()
-   err, value = reverb.mtGetParameter('early_length')
+   err, value_text = reverb.acGetKey('early_length')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 8, f'early_length should be 8 after Flush(), got {value}')
 
    err, layout = reverb.mtGetMeterLayout()
@@ -155,18 +161,19 @@ end
    reverb.flags = 0
 
    check audio.mtCloseChannels(channel)
-   assert(reverb.mtSetParameter('mix', 50) is ERR_NotInitialised)
+   assert(reverb.acSetKey('mix', 50) is ERR_NotInitialised)
    reverb.free()
 end
 
 @Test function MonoAndGlobalImmutability()
    audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
    reverb = audio.new('AudioReverb')
-   check reverb.mtSetParameter('size', 70)
+   check reverb.acSetKey('size', 70)
    reverb.init()
    assert(reverb.mutable is 0)
-   assert(reverb.mtSetParameter('size', 20) is ERR_Immutable)
-   err, value = reverb.mtGetParameter('size')
+   assert(reverb.acSetKey('size', 20) is ERR_Immutable)
+   err, value_text = reverb.acGetKey('size')
+   value = tonumber(value_text)
    assert(err is ERR_Okay and value is 70, 'Global effects remain readable')
    check audio.acActivate()
    err, layout = reverb.mtGetMeterLayout()
@@ -190,8 +197,8 @@ end
          state_at_stop = state
       end })
    reverb <close> = obj.new('AudioReverb', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
-   check reverb.mtSetParameter('decay', 2000)
-   check reverb.mtSetParameter('mix', 50)
+   check reverb.acSetKey('decay', 2000)
+   check reverb.acSetKey('mix', 50)
    check reverb.acFlush()
    check sound.acActivate()
    deadline = mSys.PreciseTime() + 20000000

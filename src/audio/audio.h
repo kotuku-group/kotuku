@@ -331,7 +331,7 @@ public:
    bool ResetPending = true;
    // Set by subclass constructors that publish parameters.  Static storage; never freed.
    const AudioEffectSchema *Schema = nullptr;
-   // Changes staged by SetParameter(), InsertEntry() and RemoveEntry() after initialisation, pending Flush().
+   // Changes staged by SetKey(), InsertEntry() and RemoveEntry() after initialisation, pending Flush().
    std::unique_ptr<AudioParamState> Pending;
 
    std::vector<int> Layout;        // Processing layout.  Input and output layouts are always identical.

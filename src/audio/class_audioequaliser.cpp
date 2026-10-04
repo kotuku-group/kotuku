@@ -20,10 +20,10 @@ The following adds a bass shelf to a playing channel set.  The change is applied
 
 <pre>
 eq.mtInsertEntry('bands', 0)
-eq.mtSetParameter('bands[0].type', EQB_LOW_SHELF)
-eq.mtSetParameter('bands[0].frequency', 100)
-eq.mtSetParameter('bands[0].gain', 4)
-eq.mtSetParameter('bands[0].q', 0.7)
+eq.acSetKey('bands[0].type', EQB_LOW_SHELF)
+eq.acSetKey('bands[0].frequency', 100)
+eq.acSetKey('bands[0].gain', 4)
+eq.acSetKey('bands[0].q', 0.7)
 eq.acFlush()
 </pre>
 
@@ -41,8 +41,8 @@ raised by 1.6 dB.  Compensation can boost the bass by up to 30 dB at low listeni
 after the equaliser to prevent clipping.
 
 <pre>
-eq.mtSetParameter('loudness', 1)
-eq.mtSetParameter('listening_level', -30)
+eq.acSetKey('loudness', 1)
+eq.acSetKey('listening_level', -30)
 eq.acFlush()
 </pre>
 
@@ -306,9 +306,9 @@ static ERR AUDIOEQUALISER_Init(extAudioEqualiser *Self)
 -FIELD-
 Bands: The ordered array of AudioEQBand structures.
 
-The list can contain at most 64 bands.  Replacing the list clears filter history, so use @AudioEffect.SetParameter()
+The list can contain at most 64 bands.  Replacing the list clears filter history, so use @AudioEffect.SetKey()
 for live adjustment.  A global equaliser accepts this field only before initialisation.  Writes return
-`ERR::InvalidState` while changes staged by @AudioEffect.SetParameter() are waiting for @AudioEffect.Flush().
+`ERR::InvalidState` while changes staged by @AudioEffect.SetKey() are waiting for @AudioEffect.Flush().
 
 *********************************************************************************************************************/
 

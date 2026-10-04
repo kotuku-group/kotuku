@@ -15,7 +15,7 @@
     <description>
 <p>The limiter prevents the sample peaks of its output from exceeding a ceiling, while leaving audio below the ceiling unchanged.  It is commonly placed at the end of a chain to protect against clipping after effects that add gain, such as an equaliser, a compressor with makeup gain, or a reverb.</p>
 <p>Create new limiter objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application limiters accept live changes; global limiters become immutable after initialisation.</p>
-<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <list type="bullet">
 <li><code>ceiling</code>: the greatest permitted output sample magnitude, in dB relative to full scale, from -24 to 0 dB.</li>
 <li><code>release</code>: the time constant, in milliseconds, with which gain reduction recovers after a peak has passed.</li>
@@ -24,8 +24,8 @@ of the signal and the limiter holds the result below the ceiling.</li>
 </list>
 <p>The following limits a playing channel set, raising its level by 6 dB with a ceiling of -0.5 dB, as a single change:</p>
 <pre>limiter = obj.new('AudioLimiter', { audio=audio, channel=channel })
-limiter.mtSetParameter('ceiling', -0.5)
-limiter.mtSetParameter('gain', 6)
+limiter.acSetKey('ceiling', -0.5)
+limiter.acSetKey('gain', 6)
 limiter.acFlush()
 </pre>
 <header>Detection and Ceiling</header>

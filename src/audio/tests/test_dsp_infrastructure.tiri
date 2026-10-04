@@ -61,7 +61,7 @@ end
    meters, meter_values, sequence, snapshot = read_meters(eq)
    assert(#meters is 2 and meters[0].key is 'input_peak_centre' and meters[1].key is 'output_peak_centre')
    assert(snapshot has AMF_NO_SAMPLES)
-   assert(eq.mtSetParameter('gain', 1) is ERR_Immutable)
+   assert(eq.acSetKey('gain', 1) is ERR_Immutable)
    check audio.mtResetEffects(0)
 end
 

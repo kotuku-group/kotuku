@@ -10,7 +10,7 @@ Create new compressor objects as a child of an @Audio object or set the inherite
 #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application
 compressors accept live changes; global compressors become immutable after initialisation.
 
-Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter()
+Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetKey()
 followed by @AudioEffect.Flush():
 
 <list type="bullet">
@@ -29,9 +29,9 @@ The following compresses dialogue on a playing channel set and adds makeup gain 
 
 <pre>
 comp = obj.new('AudioCompressor', { audio=audio, channel=channel })
-comp.mtSetParameter('threshold', -24)
-comp.mtSetParameter('ratio', 3)
-comp.mtSetParameter('makeup', 6)
+comp.acSetKey('threshold', -24)
+comp.acSetKey('ratio', 3)
+comp.acSetKey('makeup', 6)
 comp.acFlush()
 </pre>
 

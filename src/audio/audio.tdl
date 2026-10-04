@@ -222,8 +222,6 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
   ]])
 
   methods("AudioEffect", "Fx", {
-    { id=1, name="SetParameter" },
-    { id=2, name="GetParameter" },
     { id=3, name="InsertEntry" },
     { id=4, name="RemoveEntry" },
     { id=5, name="GetResponse" },

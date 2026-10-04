@@ -10,7 +10,7 @@ Create new delay objects as a child of an @Audio object or set the inherited #Au
 #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application delays
 accept live changes; global delays become immutable after initialisation.
 
-Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter()
+Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetKey()
 followed by @AudioEffect.Flush():
 
 <list type="bullet">
@@ -30,10 +30,10 @@ change:
 
 <pre>
 delay = obj.new('AudioDelay', { audio=audio, channel=channel })
-delay.mtSetParameter('time', 375)
-delay.mtSetParameter('feedback', 45)
-delay.mtSetParameter('damping', 40)
-delay.mtSetParameter('mode', 1)
+delay.acSetKey('time', 375)
+delay.acSetKey('feedback', 45)
+delay.acSetKey('damping', 40)
+delay.acSetKey('mode', 1)
 delay.acFlush()
 </pre>
 

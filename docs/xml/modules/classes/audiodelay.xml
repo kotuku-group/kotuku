@@ -15,7 +15,7 @@
     <description>
 <p>The delay repeats its input after a fixed interval.  Each repeat is fed back into the delay at a reduced level, so the echoes fade away over time, and a low-pass filter in the feedback path softens each repeat in turn.</p>
 <p>Create new delay objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application delays accept live changes; global delays become immutable after initialisation.</p>
-<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetParameter">AudioEffect.SetParameter()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
 <list type="bullet">
 <li><code>time</code>: the interval between echoes, from 1 to 2000 milliseconds.  Fractions of a millisecond are honoured.</li>
 <li><code>feedback</code>: the level of each repeat relative to the previous one, from 0 to 95 percent.  Zero produces a single
@@ -29,10 +29,10 @@ echoes.</li>
 </list>
 <p>The following adds a ping-pong echo of 375 ms with gently darkening repeats to a playing channel set, as a single change:</p>
 <pre>delay = obj.new('AudioDelay', { audio=audio, channel=channel })
-delay.mtSetParameter('time', 375)
-delay.mtSetParameter('feedback', 45)
-delay.mtSetParameter('damping', 40)
-delay.mtSetParameter('mode', 1)
+delay.acSetKey('time', 375)
+delay.acSetKey('feedback', 45)
+delay.acSetKey('damping', 40)
+delay.acSetKey('mode', 1)
 delay.acFlush()
 </pre>
 <header>Routing</header>

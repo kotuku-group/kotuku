@@ -11,7 +11,7 @@ Create new chorus objects as a child of an @Audio object or set the inherited #A
 #AudioEffect.Channel to process one channel set, or leave it at zero to process the global mix.  Application choruses
 accept live changes; global choruses become immutable after initialisation.
 
-Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetParameter()
+Parameters are published through the inherited @AudioEffect schema and are changed with @AudioEffect.SetKey()
 followed by @AudioEffect.Flush():
 
 <list type="bullet">
@@ -30,9 +30,9 @@ The following adds a wide, slow chorus to a playing channel set, as a single cha
 
 <pre>
 chorus = obj.new('AudioChorus', { audio=audio, channel=channel })
-chorus.mtSetParameter('rate', 0.4)
-chorus.mtSetParameter('depth', 5)
-chorus.mtSetParameter('spread', 100)
+chorus.acSetKey('rate', 0.4)
+chorus.acSetKey('depth', 5)
+chorus.acSetKey('spread', 100)
 chorus.acFlush()
 </pre>
 
