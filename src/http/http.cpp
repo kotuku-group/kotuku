@@ -709,6 +709,11 @@ static ERR HTTP_Activate(extHTTP *Self)
       }
    };
 
+   bool activation_succeeded = false;
+   auto activation_cleanup = kt::Defer([&]() {
+      if (not activation_succeeded) cleanup_activation_failure();
+   });
+
    std::ostringstream cmd;
 
    if ((not Self->ProxyServer.empty()) and ((Self->Flags & HTF::SSL) != HTF::NIL) and (!Self->Socket)) {
@@ -827,7 +832,6 @@ static ERR HTTP_Activate(extHTTP *Self)
                       // If the file is empty or size is indeterminate then assume nothing is being posted
                       if (!Self->ContentLength) {
                          Self->Error = ERR::NoData;
-                         cleanup_activation_failure();
                          return Self->Error;
                       }
                   }
@@ -986,7 +990,6 @@ static ERR HTTP_Activate(extHTTP *Self)
             fl::Feedback(C_FUNCTION(socket_feedback)),
             fl::Flags(flags)))) {
          Self->Error = ERR::CreateObject;
-         cleanup_activation_failure();
          return log.warning(Self->Error);
       }
    }
@@ -1024,33 +1027,31 @@ static ERR HTTP_Activate(extHTTP *Self)
             if (Self->TimeoutManager) UpdateTimer(Self->TimeoutManager, timeout);
             else SubscribeTimer(timeout, C_FUNCTION(http_timeout), &Self->TimeoutManager);
 
+            activation_succeeded = true;
             return ERR::Okay;
          }
          else if (result IS ERR::HostNotFound) {
             Self->Error = ERR::HostNotFound;
-            cleanup_activation_failure();
             return log.warning(Self->Error);
          }
          else if (result IS ERR::NoSecureSockets) {
             Self->Error = ERR::NoSecureSockets;
-            cleanup_activation_failure();
             return log.warning(Self->Error);
          }
          else {
             Self->Error = ERR::ConnectionRefused;
-            cleanup_activation_failure();
             return log.warning(Self->Error);
          }
       }
       else {
          if (Self->TimeoutManager) UpdateTimer(Self->TimeoutManager, Self->DataTimeout);
          else SubscribeTimer(Self->DataTimeout, C_FUNCTION(http_timeout), &Self->TimeoutManager);
+         activation_succeeded = true;
          return ERR::Okay;
       }
    }
    else {
       Self->Error = ERR::Write;
-      cleanup_activation_failure();
       return log.warning(Self->Error);
    }
 }

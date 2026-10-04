@@ -997,10 +997,10 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       // being pro-active and disconnecting our side early will keep things predictable.
 
       auto &value = it->second;
-      if (kt::iequals(value, "close")) {
+      if (header_contains_token(value, "close")) {
          Self->KeepAlive = false;
       }
-      else if (kt::iequals(value, "keep-alive")) {
+      else if (header_contains_token(value, "keep-alive")) {
          Self->KeepAlive = true;
       }
    }
