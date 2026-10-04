@@ -72,7 +72,8 @@ http.acActivate()
 <p>This action sends an HTTP request to the targeted <fl>Host</fl>.  Based on the desired <fl>Method</fl>, an HTTP request will be sent to the host and the action will return whilst the HTTP object waits for a response from the server.  If the host fails to respond within the time period indicated by the <fl>ConnectTimeout</fl>, the HTTP object will be deactivated and the <fl>CurrentState</fl> set to <code>TERMINATED</code>.</p>
 <p>Successful parsing of the HTTP request at the host will result in a response being received, followed by content data (if applicable). The HTTP response code will be stored in the <fl>Status</fl> field.  The response will be parsed automatically with the header strings stored as key-values.  To receive notice of the parsed response, hook into the <fl>StateChanged</fl> callback.</p>
 <p>Incoming HTTP content can be managed in the following ways: It may be streamed to an object referenced by the <fl>OutputObject</fl> field through data feeds.  It can be written to the target object if the <fl>ObjectMode</fl> is set to <code>READ_WRITE</code>.  Or it can be received through the <fl>Incoming</fl> callback.</p>
-<p>On completion of an HTTP request, the <action>Deactivate</action> action is called, regardless of the level of success.</p>
+<p>On ordinary completion, <action>Deactivate</action> is called after the state notification.  An opt-in WebSocket handover instead enters <code>UPGRADED</code> and transfers the original socket to <fl>Upgrade</fl>.Owner.  HTTP destruction or subsequent activation cannot close that transferred socket.</p>
+<p>Upgrade activation requires <code>HTF::REQUEST_WEBSOCKET</code>, a live <fl>StateChanged</fl> handler, an independent configured owner, GET and no upload body.  Conflicting upgrade headers are rejected before connecting.  Upgrade requests use a fresh connection, preserve headers through authentication retries and expose redirects without following them.</p>
       </description>
       <result>
         <error code="Okay">The HTTP get operation was successfully started.</error>
@@ -137,6 +138,27 @@ http.acActivate()
 
   </actions>
 
+  <methods>
+    <method>
+      <name>GetResponseHeaders</name>
+      <comment>Returns received response fields in their original order.</comment>
+      <prototype>ERR http::GetResponseHeaders(OBJECTPTR Object, STRING * Result)</prototype>
+      <tiriPrototype>err, Result:str = GetResponseHeaders()</tiriPrototype>
+      <input>
+        <param type="STRING *" name="Result">Caller-supplied string to replace with received headers.</param>
+      </input>
+      <description>
+<p>Replaces Result with one Name: value pair per line, each followed by LF.  Repeated fields and empty values are retained. There is no status line, blank terminator or request-header fallback.  Tiri returns one string alongside the ERR status.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+  </methods>
+
   <fields>
     <field>
       <name>BufferSize</name>
@@ -188,7 +210,7 @@ http.acActivate()
       <type lookup="HGS">HGS</type>
       <description>
 <p>The CurrentState is a readable field that tracks the current state of the client in its relationship with the target HTTP server.  The default state is <code>READING_HEADER</code>.  Changes to the state can be monitored through the <fl>StateChanged</fl> field.</p>
-<p>On completion of an HTTP request, the state will be changed to either <code>COMPLETED</code> or <code>TERMINATED</code>.</p>
+<p>Ordinary requests end in <code>COMPLETED</code> or <code>TERMINATED</code>.  A committed protocol handover ends in <code>UPGRADED</code>, with no download completion or HTTP connection ownership.</p>
 <types lookup="HGS"/>
       </description>
     </field>
@@ -458,7 +480,8 @@ http.acActivate()
       <type>FUNCTION</type>
       <description>
 <p>Define a callback routine in StateChanged in order to receive notifications of any change to the <fl>CurrentState</fl> of an HTTP object.  The format for the routine is <code>ERR Function(*HTTP, HGS State)</code>.</p>
-<p>If an error code of <code>ERR::Terminate</code> is returned by the callback routine, the currently executing HTTP request will be cancelled.</p>
+<p>For ordinary state notifications, returning <code>ERR::Terminate</code> cancels the executing request using the existing completion rules.  For an opt-in WebSocket request, <code>UPGRADE_READY</code> is synchronous and only an explicit <code>ERR::Okay</code> return accepts. Rejection reports <code>TERMINATED</code>. The ready handler validates protocol-specific response fields with <method>GetResponseHeaders</method>.  HTTP validates only the HTTP/1.1 envelope, Connection token and WebSocket selection.</p>
+<p>After the ready handler unwinds, HTTP stages and validates the owner change, detaches its socket and notifies <code>UPGRADED</code>. Read <fl>Upgrade</fl> during that notification, install the recipient socket callbacks and consume or copy the binary prefix. Socket dispatch remains suspended until this notification finishes.  Errors in <code>UPGRADED</code> are diagnostic and cannot reclaim the connection.  Do not pump messages or read further socket bytes inside either upgrade notification.</p>
       </description>
     </field>
 
@@ -471,6 +494,17 @@ http.acActivate()
 <p>The Status value is only valid on completion of an HTTP request.  A value of <code>200</code> indicates that the request was successful.  Other values indicate either redirection or an error condition.  For a full list of HTTP status codes, see https://www.w3.org/Protocols/rfc2616/rfc</p>
 <p>If the Status value is <code>NIL</code> on completion, the request has failed without a valid response being received from the server.  Refer to the <fl>Error</fl> field for more information.</p>
 <types lookup="HTS"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Upgrade</name>
+      <comment>Configures the recipient and exposes a notification-scoped connection descriptor.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>struct HTTPUpgrade</type>
+      <description>
+<p>Before activation, write an <st>HTTPUpgrade</st> with only !HTTPUgrade.Owner set.  <code>Owner</code> must be alive and outside HTTP's ownership subtree.</p>
+<p>This field is readable during the <code>UPGRADED</code> <fl>StateChanged</fl> notification only.  Each read returns a descriptor snapshot.  Altering it has no effect on HTTP.  The values are valid only during the notification.</p>
       </description>
     </field>
 
@@ -521,6 +555,8 @@ http.acActivate()
       <const name="SENDING_CONTENT">During the uploading of data to the server (e.g. <code>POST</code>), the HTTP object will remain in this state.</const>
       <const name="SEND_COMPLETE">On successful completion of the send phase, the state changes to <code>SEND_COMPLETE</code>.  Successful completion requires either that the number of bytes indicated in <fl>ContentLength</fl> have been sent, or <code>ERR::Terminate</code> has been returned by the callback functions.</const>
       <const name="TERMINATED">If an HTTP command fails to complete normally - for instance if the connection is broken before completion - then the state is set to <code>TERMINATED</code>.</const>
+      <const name="UPGRADED">The connection belongs to Upgrade.Owner; read Upgrade during this notification only.</const>
+      <const name="UPGRADE_READY">Response headers are ready.  Only an explicit Okay result from StateChanged accepts the switch.</const>
     </constants>
 
     <constants lookup="HOM" comment="Output mode.">
@@ -539,6 +575,7 @@ http.acActivate()
       <const name="RAW">Forcibly turns off chunk detection and chunk handling on incoming data.  Also turns off automatic chunk encoding for outgoing data.</const>
       <const name="RECV_BUFFER">Enables buffering of all received HTTP content into a local buffer.  The buffer information can be read at any time during and after the transaction through the <fl>RecvBuffer</fl> field.  Note that this option should only be used for limited data transfers to avoid excessive memory usage.</const>
       <const name="REDIRECTED">Read-only.  Indicates that the HTTP request was redirected (<code>HTS::TEMP_REDIRECT</code>).</const>
+      <const name="REQUEST_WEBSOCKET">Request a bodyless WebSocket upgrade; snapshot at activation.</const>
       <const name="RESUME">Enables resuming when downloading content.  Only applies when a file is being targeted and the file already exists.</const>
       <const name="SSL">Force SSL connectivity, irrespective of the HTTP port.  Note that this flag is automatically set (and remains set for all future transfers) if the <fl>Port</fl> field is set to <code>443</code>.</const>
     </constants>
@@ -616,5 +653,11 @@ http.acActivate()
 
   </types>
   <structs>
+    <struct name="HTTPUpgrade">
+      <field name="Owner" type="OBJECTID">Intended independent socket owner, configured before activation.</field>
+      <field name="Socket" type="objNetSocket *">Transferred connection, readable only during UPGRADED.</field>
+      <field name="Data" type="kt::vector&lt;int8_t&gt;">Binary prefix, including embedded NUL bytes; length is intrinsic.</field>
+    </struct>
+
   </structs>
 </book>

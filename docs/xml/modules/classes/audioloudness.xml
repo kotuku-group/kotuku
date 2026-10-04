@@ -48,9 +48,9 @@ leveller.acFlush()
 <list type="bullet">
 <li><code>momentary_loudness</code>: the momentary loudness of the input programme, in LUFS, floored at -120 LUFS.</li>
 <li><code>short_term_loudness</code>: the short-term loudness of the input programme, in LUFS, floored at -120 LUFS.</li>
-<li><code>applied_gain_left</code>, <code>applied_gain_right</code> or <code>applied_gain_centre</code>: the signed gain, in dB, applied to the channel at
-the end of the meter interval.  Positive values are boosts.  In linked operation every channel reports the same
-gain.</li>
+<li><code>applied_gain_left</code>, <code>applied_gain_right</code> or <code>applied_gain_centre</code>: the signed gain, in dB, applied to the
+channel at the end of the meter interval.  Positive values are boosts.  In linked operation every channel reports the
+same gain.</li>
 </list>
 <p>The loudness meters are measurements of the programme in both linked and unlinked operation.</p>
 <header>Live Changes</header>

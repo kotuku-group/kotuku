@@ -127,6 +127,11 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       }
    }
 
+   if (Self->DispatchSuspended) {
+      if (Self->IncomingRecursion) Self->IncomingRecursion = 2;
+      return;
+   }
+
    if (Self->Terminating) { // Set by FreeWarning()
       log.trace("Socket terminating...", Self->UID);
       if (Self->Handle.is_valid()) free_socket(Self);
@@ -252,6 +257,11 @@ restart:
       Self->IncomingRecursion = 1;
       goto restart;
    }
+ #else
+   else if (Self->TLS.Handle and (SSL_pending(Self->TLS.Handle) > 0)) {
+      Self->IncomingRecursion = 1;
+      goto restart;
+   }
  #endif
 #endif
 
@@ -273,6 +283,8 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    kt::Log log(__FUNCTION__);
 
    kt::SwitchContext context(Self); // Set context & lock
+
+   if (Self->DispatchSuspended) return;
 
    if (Self->Terminating) return;
 

@@ -141,6 +141,8 @@ typedef int SOCKET_HANDLE;
     int(NSF) Flags    # Optional flags
     int MsgLimit      # Limits the size of messages, in bytes.
     int MaxPacketSize # Maximum size for UDP packets (default 65507 bytes)
+    string PeerName   # Expected TLS identity; empty defaults to Address.
+    int DispatchSuspended # Suppress input/output dispatch during callback rebinding.
     int MulticastTTL  # Time-to-live for multicast packets (UDP only)
   ]])
 

@@ -1116,6 +1116,8 @@ static const FieldArray clSocketFields[] = {
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clNetSocketFlags },
    { "MsgLimit",       FDF_INT|FDF_RI },
    { "MaxPacketSize",  FDF_INT|FDF_RI },
+   { "PeerName", FDF_CPPSTRING|FDF_RW, nullptr, SET_PeerName },
+   { "DispatchSuspended", FDF_INT|FDF_RW, nullptr, SET_DispatchSuspended },
    { "MulticastTTL",   FDF_INT|FDF_RI },
    // Virtual fields
    { "Handle",         FDF_VIRTUAL|FDF_POINTER|FDF_RI,     GET_Handle, SET_Handle },

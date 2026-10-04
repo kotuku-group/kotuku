@@ -635,8 +635,9 @@ static ERR tls_connect(extNetSocket *Self)
    // SNI is critical for modern HTTPS servers that serve multiple domains.  Without a pinned host, SSL_VERIFY_PEER
    // only validates the certificate chain, so any trusted certificate issued for a different domain would be accepted.
 
-   if (!Self->Address.empty()) {
-      auto address = Self->Address.c_str();
+   const auto &peer = Self->PeerName.empty() ? Self->Address : Self->PeerName;
+   if (!peer.empty()) {
+      auto address = peer.c_str();
       bool verify = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) IS NSF::NIL;
 
       struct in6_addr ip_buffer;

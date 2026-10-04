@@ -16,7 +16,7 @@ inline constexpr int32_t CLASS_OFFSET = 96;
 // Image module end
 
 // Network module start
-inline constexpr int32_t CLASS_OFFSET_NETSOCKET = 336;
+inline constexpr int32_t CLASS_OFFSET_NETSOCKET = 368;
 // Network module end
 
 // Processes module start

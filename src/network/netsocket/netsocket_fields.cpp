@@ -349,3 +349,52 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
 
    return ERR::Okay;
 }
+
+/*********************************************************************************************************************
+-FIELD-
+PeerName: Expected TLS server identity, independent of the transport Address.
+
+Set before connection or before enabling TLS on a proxy tunnel.  An empty value defaults to Address.  DNS names are used
+for SNI and certificate name checking; IP literals omit SNI and use certificate IP identity checking.
+-END-
+*********************************************************************************************************************/
+
+static ERR SET_PeerName(extNetSocket *Self, const std::string_view &Value)
+{
+   if (Self->State IS NTC::HANDSHAKING) return ERR::InUse;
+   #ifndef DISABLE_SSL
+      if ((Self->State IS NTC::CONNECTED) and Self->TLS.Handle) return ERR::InUse;
+   #endif
+   if (Value.find_first_of("\r\n") != std::string_view::npos or Value.find('\0') != std::string_view::npos) {
+      return ERR::InvalidValue;
+   }
+   Self->PeerName.assign(Value);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+DispatchSuspended: Temporarily suppresses socket input and output dispatch during protocol handover.
+
+Set to one while replacing callbacks and consuming an already-read protocol prefix, then restore zero before returning
+from the incoming handler.  Bytes remain queued while suspended.  This gate does not authorise reading further bytes
+or pumping messages inside a handover notification.
+-END-
+*********************************************************************************************************************/
+
+static ERR SET_DispatchSuspended(extNetSocket *Self, int Value)
+{
+   if ((Value < 0) or (Value > 1)) return ERR::InvalidValue;
+   bool resume = Self->DispatchSuspended and not Value;
+   Self->DispatchSuspended = Value;
+   if (resume and Self->Handle.is_valid() and not Self->Terminating) {
+      // IOCP notifications consumed by nested dispatch must be requeued, even without another peer write.
+      if (Self->IncomingRecursion) Self->IncomingRecursion = 2;
+      auto error = network_platform().register_read(Self->Handle, &netsocket_incoming, Self);
+      if (error != ERR::Okay) return error;
+      if (not Self->WriteQueue.Buffer.empty() or Self->Outgoing.defined()) {
+         return network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+      }
+   }
+   return ERR::Okay;
+}

@@ -93,7 +93,8 @@ CurrentState: Indicates the current state of an HTTP object during its interacti
 The CurrentState is a readable field that tracks the current state of the client in its relationship with the target HTTP
 server.  The default state is `READING_HEADER`.  Changes to the state can be monitored through the #StateChanged field.
 
-On completion of an HTTP request, the state will be changed to either `COMPLETED` or `TERMINATED`.
+Ordinary requests end in `COMPLETED` or `TERMINATED`.  A committed protocol handover ends in `UPGRADED`, with no
+download completion or HTTP connection ownership.
 
 *********************************************************************************************************************/
 
@@ -105,11 +106,35 @@ static ERR SET_CurrentState(extHTTP *Self, HGS Value)
 
    log.detail("New State: %s, Currently: %s", clHTTPCurrentState[int(Value)].Name, clHTTPCurrentState[int(Self->CurrentState)].Name);
 
-   if ((Value >= HGS::COMPLETED) and (Self->CurrentState < HGS::COMPLETED)) {
+   if ((Value IS HGS::UPGRADE_READY) or (Value IS HGS::UPGRADED)) return ERR::NoFieldAccess;
+
+   if (Self->inHandover() and ((Value != HGS::TERMINATED) or http_handed_over(Self->CurrentState))) return ERR::InUse;
+
+   if (Self->UpgradeState and Self->UpgradeState->ReadyDispatch and (Value IS HGS::TERMINATED)) {
       Self->CurrentState = Value;
-      if (Self->Socket) QueueAction(AC::Deactivate, Self->UID);
+      Self->RequestActive = false;
+      return ERR::Okay; // Handover emits the terminal notification after the ready handler unwinds.
    }
-   else Self->CurrentState = Value;
+
+   bool finished = http_complete(Value) or http_failed(Value);
+   bool was_active = http_active(Self->CurrentState);
+
+   Self->CurrentState = Value;
+   if (finished) Self->RequestActive = false;
+
+   const auto generation = Self->RequestGeneration;
+
+   Self->pin();
+   auto lifetime = kt::Defer([&]() { Self->unpin(); });
+
+   auto completion = kt::Defer([&]() {
+      // Preserve action subscriptions and callback ordering without leaving a stale queued cleanup action.
+      if (finished and was_active and (not Self->collecting()) and
+          ((not Self->inHandover()) or (Value IS HGS::TERMINATED)) and
+          (Self->RequestGeneration IS generation) and (Self->CurrentState IS Value) and Self->Socket) {
+         acDeactivate(Self);
+      }
+   });
 
    if (Self->StateChanged.stale()) clear_callback_function(Self->StateChanged);
 
@@ -127,6 +152,7 @@ static ERR SET_CurrentState(extHTTP *Self, HGS Value)
       }
       else error = ERR::Okay;
 
+      if (Self->collecting()) return ERR::Terminate;
       if (error > ERR::ExceptionThreshold) Self->Error = error; // ERR:Terminate excluded
 
       if (error IS ERR::Terminate) {
@@ -307,17 +333,9 @@ An alternative to setting the Location is to set the #Host, #Path and #Port sepa
 
 static ERR GET_Location(extHTTP *Self, std::string_view &Value)
 {
-   Self->AuthRetries = 0; // Reset the retry counter
-
    std::ostringstream str;
-
-   if (Self->Port IS 80) str << "http://" << Self->Host << '/' << Self->Path; // http
-   else if (Self->Port IS 443) {
-      str << "https://" << Self->Host << '/' << Self->Path; // https
-      Self->Flags |= HTF::SSL;
-   }
-   else if (Self->Port IS 21) str << "ftp://" << Self->Host << '/' << Self->Path; // ftp
-   else str << "http://" << Self->Host << ':' << Self->Port << '/' << Self->Path;
+   str << (((Self->Flags & HTF::SSL) != HTF::NIL) ? "https://" : "http://") <<
+      http_authority(Self) << '/' << Self->Path;
 
    Self->URI = str.str();
    Value = Self->URI;
@@ -342,17 +360,19 @@ static ERR SET_Location(extHTTP *Self, const std::string_view &Value)
    }
    else return ERR::InvalidValue;
 
-   auto host_len = uri.find_first_of(":/");
+   bool bracketed = uri.starts_with("[");
+   auto host_len = bracketed ? uri.find(']') : uri.find_first_of(":/?#");
+   if (bracketed and (host_len IS std::string_view::npos)) return ERR::InvalidValue;
    if (host_len IS std::string_view::npos) host_len = uri.size();
    if (!host_len) return ERR::InvalidValue;
 
-   auto host = uri.substr(0, host_len);
-   auto path = uri.substr(host_len);
+   auto host = bracketed ? uri.substr(1, host_len - 1) : uri.substr(0, host_len);
+   auto path = uri.substr(host_len + (bracketed ? 1 : 0));
 
    if ((!path.empty()) and (path.front() IS ':')) {
       path.remove_prefix(1);
 
-      auto port_end = path.find('/');
+      auto port_end = path.find_first_of("/?#");
       auto port_text = path.substr(0, port_end);
       if (port_text.empty()) return ERR::InvalidValue;
 
@@ -391,8 +411,8 @@ static ERR SET_Location(extHTTP *Self, const std::string_view &Value)
    Self->Path.clear();
 
    if (not path.empty()) { // Parse absolute path
-      path.remove_prefix(1);
-      return SET_Path(Self, path);
+      if (path.front() IS '/') path.remove_prefix(1);
+      return SET_Path(Self, path.substr(0, path.find('#')));
    }
 
    return ERR::Okay;
@@ -658,8 +678,17 @@ StateChanged: This callback reports changes to the HTTP state.
 Define a callback routine in StateChanged in order to receive notifications of any change to the #CurrentState of an
 HTTP object.  The format for the routine is `ERR Function(*HTTP, HGS State)`.
 
-If an error code of `ERR::Terminate` is returned by the callback routine, the currently executing HTTP request will be
-cancelled.
+For ordinary state notifications, returning `ERR::Terminate` cancels the executing request using the existing completion
+rules.  For an opt-in WebSocket request, `UPGRADE_READY` is synchronous and only an explicit `ERR::Okay` return accepts.
+Rejection reports `TERMINATED`.
+The ready handler validates protocol-specific response fields with #GetResponseHeaders().  HTTP validates only the
+HTTP/1.1 envelope, Connection token and WebSocket selection.
+
+After the ready handler unwinds, HTTP stages and validates the owner change, detaches its socket and notifies
+`UPGRADED`.
+Read #Upgrade during that notification, install the recipient socket callbacks and consume or copy the binary prefix.
+Socket dispatch remains suspended until this notification finishes.  Errors in `UPGRADED` are diagnostic and cannot
+reclaim the connection.  Do not pump messages or read further socket bytes inside either upgrade notification.
 
 *********************************************************************************************************************/
 
@@ -732,5 +761,44 @@ presented with a dialog box and asked to enter the correct username and password
 static ERR SET_Username(extHTTP *Self, const std::string_view &Value)
 {
    Self->Username.assign(Value);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+Upgrade: Configures the recipient and exposes a notification-scoped connection descriptor.
+
+Before activation, write an !HTTPUpgrade with only `Owner` set.  `Owner` must be alive and outside HTTP's
+ownership subtree.
+
+This field is readable during the `UPGRADED` #StateChanged notification only.  Each read returns a
+descriptor snapshot.  Altering it has no effect on HTTP.  The values are valid only during the notification.
+
+-RESULT-
+InUse: HTTP is active or handover is in progress.
+InvalidValue: The upgrade descriptor is invalid or the owner is not valid for this HTTP
+NoFieldAccess: The field is not readable outside the UPGRADED notification, or the owner is collecting
+-END-
+*********************************************************************************************************************/
+
+static ERR SET_Upgrade(extHTTP *Self, HTTPUpgrade *Value)
+{
+   if (Self->RequestActive or Self->inHandover()) return ERR::InUse;
+   if ((not Value) or Value->Socket or (not Value->Data.empty())) return ERR::InvalidValue;
+   kt::ScopedObjectLock owner(Value->OwnerID);
+   if ((not owner.granted()) or (not valid_upgrade_owner(Self, *owner))) return ERR::InvalidValue;
+   Self->upgradeState().Owner = Value->OwnerID;
+   return ERR::Okay;
+}
+
+static ERR GET_Upgrade(extHTTP *Self, HTTPUpgrade **Value)
+{
+   *Value = nullptr;
+   auto upgrade = Self->UpgradeState.get();
+   if ((not upgrade) or (not upgrade->Readable) or (not upgrade->Handover)) return ERR::NoFieldAccess;
+   kt::ScopedObjectLock owner(upgrade->Result.OwnerID);
+   if ((not owner.granted()) or owner->collecting()) return ERR::NoFieldAccess;
+   upgrade->Snapshot = upgrade->Result;
+   *Value = &upgrade->Snapshot;
    return ERR::Okay;
 }
