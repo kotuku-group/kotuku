@@ -209,8 +209,10 @@ function check_rules(Effect:obj, Schema:table):bool
             for rule in values(m.rules) do
                if not rule.inactive then
                   local path = f'{group.key}[{index}].'
-                  local _, sibling = Effect.mtGetParameter(path .. rule.key)
-                  local _, value = Effect.mtGetParameter(path .. m.key)
+                  local _, sibling_text = Effect.acGetKey(path .. rule.key)
+                  local sibling = tonumber(sibling_text)
+                  local _, value_text = Effect.acGetKey(path .. m.key)
+                  local value = tonumber(value_text)
                   for v in values(rule.values) do
                      if (sibling is v) and (value > rule.max) then
                         sibling_desc = find_param(Schema, path .. rule.key)
@@ -383,7 +385,8 @@ function describe(Effect:obj, Schema:table)
    if Schema.description != '' then print(wrap(Schema.description, '  ')) end
 
    for p in values(Schema.params) do
-      local _, value = Effect.mtGetParameter(p.key)
+      local _, value_text = Effect.acGetKey(p.key)
+      local value = tonumber(value_text)
       lines.insert('')
       param_lines(p, rate, '', f'  = {format_value(p, value)}', lines)
    end
@@ -405,7 +408,8 @@ function describe(Effect:obj, Schema:table)
       for index in {0 to count} do
          row = string.format('  %-10s', f'{group.key}[{index}]')
          for m in values(group.members) do
-            _, value = Effect.mtGetParameter(f'{group.key}[{index}].{m.key}')
+            _, value_text = Effect.acGetKey(f'{group.key}[{index}].{m.key}')
+            value = tonumber(value_text)
             row ..= string.format('%-14s', format_value(m, value))
          end
          lines.insert(row.rtrim())
@@ -487,7 +491,7 @@ function configure(Fx:table, Assignments:array<any>, Audio:obj, Channel:num):obj
          end
       end
 
-      if effect.mtSetParameter(path, value) != ERR_Okay then
+      if effect.acSetKey(path, string.format('%.17g', value)) != ERR_Okay then
          print(f'{path}: {format_value(param, value)} is not {format_range(param, effect.outputRate)}')
          return nil
       end
@@ -504,7 +508,7 @@ end
 -- Discover the installed effects.  Reading the schema does not require initialisation, so help can be generated
 -- before any audio device is opened.  An effect's option name is its class name without the Audio prefix.
 
-   reserved = { src=true, seek=true, describe=true, help=true }
+   reserved = { src=true, seek=true, describe=true, help=true, ['tail-silence']=true, ['tail-hold']=true }
    effects = array<table>
    for cl in values(get_effects()) do
       local xml = obj.new(cl.name).schema
@@ -520,7 +524,11 @@ end
       { name = 'seek', type = 'num',
         comment = 'Start position as a fraction greater than 0 and at most 1.' },
       { name = 'describe', kind = 'flag',
-        comment = 'Print the settings of each enabled effect, and its response curve if it has one.' }
+        comment = 'Print the settings of each enabled effect, and its response curve if it has one.' },
+      { name = 'tail-silence', type = 'num', default = -60,
+        comment = 'Finish after sustained output below this dBFS level.  Use -120 to wait for the full effect drain.' },
+      { name = 'tail-hold', type = 'num', default = 0.25,
+        comment = 'Minimum quiet interval in seconds.  Increased automatically for delay and reverb gaps.' }
    }
 
    effect_names = {}
@@ -562,6 +570,13 @@ Examples:
    cli = parser.process()
    cli ?! return
 
+   if not (cli['tail-silence'] >= -120 and cli['tail-silence'] <= 0) then
+      raise 'tail-silence must be from -120 to 0 dBFS.'
+   end
+   if not (cli['tail-hold'] > 0 and cli['tail-hold'] < math.huge) then
+      raise 'tail-hold must be a finite positive number of seconds.'
+   end
+
    if not cli.src and not cli.describe then
       raise 'A src file is required unless describe is used.'
    end
@@ -602,9 +617,11 @@ Examples:
 
    proc = processing.new()
 
-   -- Subscribe to OnStop so that we can exit once the sample, including any effect tail, has fully played.
+   -- Keep OnStop as the fallback when meters are unavailable or the full drain finishes first.
 
+   stopped = false
    player.onStop = function(Sound)
+      stopped = true
       proc.signal()
    end
 
@@ -621,13 +638,92 @@ Examples:
 
    -- Play the sound and wait for it to finish
 
+   source_seconds = player.remaining
    if player.acActivate() is ERR_Okay then
+      source_end = mSys.PreciseTime() + source_seconds * 1000000
       print('Press CTRL-C to exit or wait for sound sample to finish.  Duration: ' ..
          string.format('%.2fs', player.duration))
 
-      proc.sleep() -- Wakes on receipt of a signal.  OnStop waits for the tail of any enabled effects.
+      if #active > 0 and cli['tail-silence'] > -120 then
+         -- Serial gaps can combine before the final output.  Cover known echo/pre-delay spans and algorithmic
+         -- latency; tail-hold also lets callers cover silent gaps in other installed effects.
 
-      proc.sleep(player.audio.mixerLag) -- Slight pause to flush any buffered audio before exiting
+         gap = 0
+         for fx in values(active) do
+            gap += fx.effect.latency / fx.effect.outputRate
+            paths = array<str>
+            if fx.class is 'AudioDelay' then paths.push('time') end
+
+            if fx.class is 'AudioReverb' then
+               paths.push('pre_delay')
+               paths.push('early_length')
+            end
+
+            for path in values(paths) do
+               _, text = check fx.effect.acGetKey(path)
+               gap += tonumber(text) / 1000
+            end
+         end
+
+         hold = math.max(cli['tail-hold'], gap + 0.1)
+
+         -- Remaining before activation accounts for seeking.  The elapsed-time fallback is needed because the
+         -- live cursor can revert to Sound's stored position once the mixer has stopped its source channel.
+
+         while not stopped and player.remaining > 0 and mSys.PreciseTime() < source_end do
+            proc.sleep(0.01)
+         end
+
+         final_effect = active[#active - 1].effect
+         _, layout = check final_effect.mtGetMeterLayout()
+         _, initial = check final_effect.mtReadMeters()
+         sequence = initial.sequence
+         quiet = 0
+
+         while not stopped do
+            proc.sleep(0.01)
+            if stopped then break end
+            _, reading = check final_effect.mtReadMeters()
+
+            if reading.id != layout.id then
+               _, layout = check final_effect.mtGetMeterLayout()
+               sequence = reading.sequence
+               quiet = 0
+               continue
+            end
+
+            if reading.sequence is sequence then continue end
+
+            -- Only adjacent, valid measurement intervals count.  A slow poll must not hide a missed echo.
+
+            if reading.sequence != sequence + 1 then quiet = 0 end
+
+            sequence = reading.sequence
+            silent = reading.flags has AMF_VALID
+            outputs = 0
+
+            for meter in values(layout.meters) do
+               if meter.key.startsWith('output_peak_') then
+                  outputs++
+                  value = reading.values[meter.slot]
+                  if not (value.flags has AMV_VALID) or not (value.value <= cli['tail-silence']) then
+                     silent = false
+                  end
+               end
+            end
+
+            if silent and outputs > 0 then quiet += reading.interval / final_effect.outputRate
+            else quiet = 0 end
+
+            if quiet >= hold then break end
+         end
+      else
+         proc.sleep()
+      end
+
+      -- OnStop already accounts for the device queue.  An early silence exit still needs that queue to flush.
+
+      if not stopped then processing.sleep(audio.mixerLag) end
    else
       raise 'Failed to play audio file.'
    end
