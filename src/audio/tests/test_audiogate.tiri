@@ -1,0 +1,253 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+-- Published numeric parameters in schema order, with their defaults, units and scales.  Mode is an enumeration.
+
+PARAMS = {
+   { key='threshold', default=-45, unit='dB', scale='linear', min=-90, max=0 },
+   { key='ratio', default=2, unit='ratio', scale='log', min=1, max=20 },
+   { key='range', default=60, unit='dB', scale='linear', min=0, max=90 },
+   { key='hysteresis', default=3, unit='dB', scale='linear', min=0, max=24 },
+   { key='attack', default=2, unit='ms', scale='log', min=0.1, max=100 },
+   { key='hold', default=50, unit='ms', scale='linear', min=0, max=1000 },
+   { key='release', default=150, unit='ms', scale='log', min=5, max=2000 }
+}
+
+ORDER = { 'mode', 'threshold', 'ratio', 'range', 'hysteresis', 'attack', 'hold', 'release' }
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_gate(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioGate', { audio=Audio, channel=channel }), channel
+end
+
+function get_number(Effect:obj, Key:str):<num>
+   err, text = Effect.acGetKey(Key)
+   assert(err is ERR_Okay, f'GetKey({Key}) must succeed')
+   return tonumber(text)
+end
+
+function meter_layout(Effect:obj):<any>
+   err, layout = Effect.mtGetMeterLayout()
+   assert(err is ERR_Okay, 'GetMeterLayout() must succeed for an initialised effect')
+   return layout.meters
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   gate <close> = new_gate(audio)
+   schema = gate.schema
+   assert(schema.find('<effect class="AudioGate" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The gate has no parameter groups')
+   assert(schema.find('type="curve"') is nil, 'The gate does not publish a response curve')
+
+   -- Parameters appear in the published order.
+
+   position = 0
+   for key in values(ORDER) do
+      start = schema.find(f'<param key="{key}"')
+      assert(start != nil and start > position, f'{key} must be published in order')
+      position = start
+   end
+
+   -- Mode is an enumeration that defaults to the expander.
+
+   assert(schema.find('<param key="mode" label="Mode"') != nil)
+   assert(schema.find('type="enum" default="0"') != nil, 'Mode must be an enumeration defaulting to expander')
+   assert(schema.find('<option value="0" key="expander" label="Expander"') != nil)
+   assert(schema.find('<option value="1" key="gate" label="Gate"') != nil)
+   assert(get_number(gate, 'mode') is 0)
+
+   for p in values(PARAMS) do
+      attributes = f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"'
+      start = schema.find(f'<param key="{p.key}"')
+      assert(schema.find(attributes, start) != nil, f'{p.key} must publish {attributes}')
+      value = get_number(gate, p.key)
+      assert(value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   -- The ratio is declared inactive in gate mode, and no other parameter carries a rule.
+
+   ratio_start = schema.find('<param key="ratio"')
+   rule = schema.find('<rule key="mode" values="1" inactive="1"/>')
+   assert(rule != nil and rule > ratio_start and rule < schema.find('<param key="range"'),
+      'The ratio must be inactive in gate mode')
+   assert(schema.count('<rule ') is 1, 'Only the ratio carries a rule')
+
+   assert(schema.find('key="gain_reduction" type="scalar" label="Gain Reduction"') != nil)
+   assert(schema.find('unit="dB" scope="global" semantics="maximum-attenuation" slot="4"') != nil)
+   assert(gate.mtGetOutput('response') is ERR_Search)
+   assert(gate.mtGetGroupCount('bands') is ERR_Search)
+
+   -- Stereo expands the channel templates before the global reduction value.
+
+   meters = meter_layout(gate)
+   expected = array<str> { 'input_peak_left', 'input_peak_right', 'output_peak_left', 'output_peak_right',
+      'gain_reduction' }
+   assert(#meters is 5, f'Stereo must publish five meters, got {#meters}')
+   for i in {0 to 5} do
+      assert(meters[i].key is expected[i] and meters[i].slot is i,
+         f'Meter {i} should be {expected[i]}, got {meters[i].key}')
+   end
+   assert(meters[4].unit is 'dB' and meters[4].scope is 'global' and meters[4].semantics is 'maximum-attenuation')
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   gate <close> = new_gate(audio)
+   assert(gate.mutable is 1)
+
+   -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
+
+   for p in values(PARAMS) do
+      check gate.acSetKey(p.key, p.min)
+      check gate.acSetKey(p.key, p.max)
+      assert(gate.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(gate.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(gate.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(gate.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+
+   -- Mode accepts only its option values.
+
+   check gate.acSetKey('mode', 1)
+   check gate.acSetKey('mode', 0)
+   for bad in values({ -1, 2, 0.5 }) do
+      assert(gate.acSetKey('mode', bad) is ERR_InvalidValue, f'Mode must reject {bad}')
+   end
+   assert(gate.acSetKey('unknown', 1) is ERR_Search)
+   check gate.acFlush()
+
+   -- The ratio remains writable in gate mode, although the DSP ignores it.
+
+   check gate.acSetKey('mode', 1)
+   check gate.acSetKey('ratio', 8)
+   check gate.acFlush()
+   assert(get_number(gate, 'ratio') is 8 and get_number(gate, 'mode') is 1)
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact, and Flush()
+   -- commits them together.
+
+   check gate.acSetKey('threshold', -60)
+   check gate.acSetKey('hold', 120)
+   assert(gate.acSetKey('hysteresis', 30) is ERR_InvalidValue)
+   check gate.acSetKey('range', 42.5)
+   assert(get_number(gate, 'hold') is 120, 'Staged values must be readable')
+   check gate.acFlush()
+   for key, expected in pairs({ threshold=-60, hold=120, hysteresis=24, range=42.5, mode=1 }) do
+      value = get_number(gate, key)
+      assert(value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   gate <close> = obj.new('AudioGate')
+   gate.audio = audio
+   gate.channel = channel
+   check gate.acSetKey('mode', 1)
+   check gate.acSetKey('attack', 0.5)
+   assert(gate.acSetKey('release', 1) is ERR_InvalidValue)
+   gate.init()
+   assert(get_number(gate, 'mode') is 1)
+   assert(get_number(gate, 'attack') is 0.5)
+   assert(get_number(gate, 'release') is 150)
+end
+
+@Test function LivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   gate, channel = new_gate(audio)
+   check audio.acActivate()
+   assert(gate.latency is 0, 'The gate adds no latency')
+   err, rate, format, layout, generation, state = gate.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+
+   -- Bursts of a square wave separated by near-silence.
+
+   data = array<byte, 16384>
+   for i in {0 to 16384} do
+      if (i % 4096) < 2048 then
+         data[i] = (i % 64 < 32) ? 250 : 6
+      else
+         data[i] = 128
+      end
+   end
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+
+   -- Live edits to every parameter, including a mode change and an edit that replaces one still ramping.
+
+   check gate.acSetKey('mode', 1)
+   check gate.acSetKey('threshold', -30)
+   check gate.acSetKey('range', 40)
+   check gate.acFlush()
+   check gate.acSetKey('hysteresis', 6)
+   check gate.acSetKey('attack', 0.5)
+   check gate.acSetKey('hold', 10)
+   check gate.acSetKey('release', 400)
+   check gate.acFlush()
+   check gate.acSetKey('mode', 0)
+   check gate.acSetKey('ratio', 4)
+   check gate.acFlush()
+
+   assert(#meter_layout(gate) is 5)
+
+   gate.flags = AEF_BYPASS
+   err, reading = gate.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   gate.flags = 0
+   check gate.acSetKey('range', 20)
+   check gate.acFlush()
+
+   -- Closing the channel set disconnects the effect.
+
+   check audio.mtCloseChannels(channel)
+   err, reading = gate.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(gate.acSetKey('range', 50) is ERR_NotInitialised)
+   gate.free()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   gate = audio.new('AudioGate')
+   check gate.acSetKey('threshold', -50)
+   gate.init()
+   assert(gate.mutable is 0)
+   assert(gate.acSetKey('threshold', -40) is ERR_Immutable)
+   assert(gate.acSetKey('mode', 1) is ERR_Immutable)
+   assert(get_number(gate, 'threshold') is -50, 'Global effects remain readable')
+   check audio.acActivate()
+   meters = meter_layout(gate)
+   assert(#meters is 3, f'Mono must publish three meters, got {#meters}')
+   assert(meters[0].key is 'input_peak_centre' and meters[1].key is 'output_peak_centre')
+   assert(meters[2].key is 'gain_reduction' and meters[2].slot is 2)
+   assert(gate.schema.find('input_peak_right') is nil, 'Mono must not publish a right channel')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      gate = obj.new('AudioGate', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end

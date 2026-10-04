@@ -107,6 +107,7 @@ static OBJECTPTR clAudioEqualiser = nullptr;
 static OBJECTPTR clAudioReverb = nullptr;
 static OBJECTPTR clAudioCompressor = nullptr;
 static OBJECTPTR clAudioLimiter = nullptr;
+static OBJECTPTR clAudioGate = nullptr;
 static OBJECTPTR clAudioDelay = nullptr;
 static OBJECTPTR clAudioChorus = nullptr;
 static OBJECTPTR clAudioFlanger = nullptr;
@@ -118,6 +119,7 @@ static ERR add_audioequaliser_class();
 static ERR add_audioreverb_class();
 static ERR add_audiocompressor_class();
 static ERR add_audiolimiter_class();
+static ERR add_audiogate_class();
 static ERR add_audiodelay_class();
 static ERR add_audiochorus_class();
 static ERR add_audioflanger_class();
@@ -190,6 +192,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (add_audioreverb_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiocompressor_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiolimiter_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audiogate_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiodelay_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiochorus_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioflanger_class() != ERR::Okay) return ERR::AddClass;
@@ -223,6 +226,7 @@ static ERR MODExpunge(void)
    if (clAudioFlanger) { FreeResource(clAudioFlanger); clAudioFlanger = nullptr; }
    if (clAudioChorus) { FreeResource(clAudioChorus); clAudioChorus = nullptr; }
    if (clAudioDelay) { FreeResource(clAudioDelay); clAudioDelay = nullptr; }
+   if (clAudioGate) { FreeResource(clAudioGate); clAudioGate = nullptr; }
    if (clAudioLimiter) { FreeResource(clAudioLimiter); clAudioLimiter = nullptr; }
    if (clAudioCompressor) { FreeResource(clAudioCompressor); clAudioCompressor = nullptr; }
    if (clAudioReverb) { FreeResource(clAudioReverb); clAudioReverb = nullptr; }
@@ -248,6 +252,7 @@ static ERR MODExpunge(void)
 #include "class_audioreverb.cpp"
 #include "class_audiocompressor.cpp"
 #include "class_audiolimiter.cpp"
+#include "class_audiogate.cpp"
 #include "class_audiodelay.cpp"
 #include "class_audiochorus.cpp"
 #include "class_audioflanger.cpp"
@@ -270,6 +275,7 @@ static ERR MODExpunge(void)
 #include "tests/test_audio_reverb_dsp.cpp"
 #include "tests/test_audio_compressor_dsp.cpp"
 #include "tests/test_audio_limiter_dsp.cpp"
+#include "tests/test_audio_gate_dsp.cpp"
 #include "tests/test_audio_delay_dsp.cpp"
 #include "tests/test_audio_chorus_dsp.cpp"
 #include "tests/test_audio_flanger_dsp.cpp"
@@ -307,6 +313,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    run("reverb DSP", audio_tests_audio_reverb_dsp::run);
    run("compressor DSP", audio_tests_audio_compressor_dsp::run);
    run("limiter DSP", audio_tests_audio_limiter_dsp::run);
+   run("gate DSP", audio_tests_audio_gate_dsp::run);
    run("delay DSP", audio_tests_audio_delay_dsp::run);
    run("chorus DSP", audio_tests_audio_chorus_dsp::run);
    run("flanger DSP", audio_tests_audio_flanger_dsp::run);

@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioGate</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>A downward expander and noise gate that attenuates quiet passages.</comment>
+    <version>1</version>
+    <id>6b7c75e7</id>
+    <idstring>AUDIOGATE</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The gate attenuates audio whose level falls below a threshold, reducing background noise, hiss and spill in the pauses between sounds.  It does not remove noise that is present at the same time as louder material, such as hiss beneath speech.</p>
+<p>Create new gate objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application gates accept live changes; global gates become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>mode</code>: <code>expander</code> (0) reduces the level progressively as the signal falls further below the threshold.  <code>gate</code>
+(1) switches between no attenuation and the full <code>range</code>.</li>
+<li><code>threshold</code>: the detector level, in dB relative to full scale, at which the gate opens.</li>
+<li><code>ratio</code>: the expansion slope below the threshold.  At 2, every 1 dB that the signal falls below the threshold adds
+1 dB of attenuation.  A ratio of 1 disables expansion.  The ratio is ignored in gate mode.</li>
+<li><code>range</code>: the maximum attenuation, in dB.  Zero disables the effect.</li>
+<li><code>hysteresis</code>: how far, in dB, the detector must fall below the threshold before the gate starts to close.</li>
+<li><code>attack</code>: the time constant, in milliseconds, with which the gate opens.</li>
+<li><code>hold</code>: the time, in milliseconds, for which the gate remains open after the detector falls below the closing
+threshold.</li>
+<li><code>release</code>: the time constant, in milliseconds, with which the gate closes.</li>
+</list>
+<p>The following gate silences the pauses in a voice recording on a playing channel set:</p>
+<pre>gate = obj.new('AudioGate', { audio=audio, channel=channel })
+gate.acSetKey('mode', 1)
+gate.acSetKey('threshold', -50)
+gate.acSetKey('range', 40)
+gate.acFlush()
+</pre>
+<p>For gentler noise reduction that leaves the decay of notes more natural, use the default expander mode with a ratio between 1.5 and 3 and a range of 10 to 20 dB.</p>
+<header>Detection</header>
+<p>The detector measures the absolute value of every sample.  In stereo, the greater of the two channel magnitudes is used and the resulting gain is applied equally to both channels, so the louder channel controls the gate and the stereo image does not move.  Levels are measured in dBFS, where a magnitude of 1.0 is 0 dBFS, independently of the output format.</p>
+<p>The detector level is the greatest magnitude received during the last 25 to 28 ms.  This window covers half a cycle of any frequency above 20 Hz, so a sustained tone is measured by its peaks and does not reopen and close the gate at every zero crossing.  The detector level therefore rises immediately with the input, but falls between 25 and 28 ms after the input does.</p>
+<header>Opening and Closing</header>
+<p>The gate opens as soon as the detector reaches <code>threshold</code>.  It closes once the detector has remained below <code>threshold - hysteresis</code> for longer than <code>hold</code>.  Between the two thresholds an open gate stays open and a closed gate stays closed, so signals that hover around the threshold do not chatter.  In total, the gate starts to close the <code>hold</code> time plus the 25 to 28 ms detector window after the input falls below the closing threshold.</p>
+<p>While the gate is open no attenuation is applied.  While it is closed, the target attenuation is <code>range</code> in gate mode.  In expander mode, for a detector level <code>x</code>, threshold <code>T</code> and ratio <code>R</code>, it is <code>(R - 1) * (T - x)</code> dB, limited to <code>range</code>.  The output level of a closed expander is therefore <code>T - R * (T - x)</code>, until the range is reached. Hysteresis and hold apply in both modes.</p>
+<header>Timing</header>
+<p>The target attenuation is smoothed in the dB domain.  When the attenuation is falling the attack time constant is used, otherwise the release time constant.  Each is an exponential time constant: after that duration, 63.2% of a change in the target has been traversed.</p>
+<p>The gate has zero lookahead and zero latency.  The attenuation starts to fall on the first sample that reaches the threshold, so the onset of a sound that opens a closed gate rises from the closed level at the attack rate.  Short attack times preserve transients; longer ones soften them.  The gate never produces output in response to silence, so it has no tail and never delays the completion of a sound.</p>
+<header>Meters</header>
+<p>In addition to the standard input and output peaks for each channel, the gate publishes a <code>gain_reduction</code> meter.  It reports the greatest attenuation, in dB, applied during the meter interval.  A reading of zero means that the gate was fully open throughout.</p>
+<header>Live Changes</header>
+<p>Changes to every continuous parameter ramp linearly over 10 ms, so edits do not click, and the attenuation then follows the new settings at the current attack and release rates.  A change of <code>mode</code> blends the two target curves over the same 10 ms.  A new <code>hold</code> time applies immediately and shortens a hold that is in progress.  An edit that arrives during a ramp starts a new ramp from the current values.</p>
+<p>Device reactivation, leaving bypass and reaching idle place the gate in the state that a long silence produces: closed, with the attenuation that the current settings apply to silence.  The following sound opens the gate at the attack rate.  Any parameter ramp is discarded and the latest parameters apply without a transition.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.</p></description>
+    <source>
+      <file>class_audiogate.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>

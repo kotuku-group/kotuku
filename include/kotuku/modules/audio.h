@@ -14,6 +14,7 @@ class objAudioEqualiser;
 class objAudioReverb;
 class objAudioCompressor;
 class objAudioLimiter;
+class objAudioGate;
 class objAudioDelay;
 class objAudioChorus;
 class objAudioFlanger;
@@ -887,6 +888,29 @@ class objAudioLimiter : public objAudioEffect {
 
    using create = kt::Create<objAudioLimiter>;
    objAudioLimiter(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioGate class definition
+
+#define VER_AUDIOGATE (1.000000)
+
+class objAudioGate : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOGATE;
+   static constexpr CSTRING CLASS_NAME = "AudioGate";
+
+   using create = kt::Create<objAudioGate>;
+   objAudioGate(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 
