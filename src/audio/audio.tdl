@@ -263,6 +263,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     output="class_audiolimiter_def.c", extended=true }, [[
   ]])
 
+  klass("AudioGate", { base="AudioEffect", src="class_audiogate.cpp",
+    output="class_audiogate_def.c", extended=true }, [[
+  ]])
+
   klass("AudioDelay", { base="AudioEffect", src="class_audiodelay.cpp",
     output="class_audiodelay_def.c", extended=true }, [[
   ]])
