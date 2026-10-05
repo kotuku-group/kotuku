@@ -1030,6 +1030,39 @@ end
    assert(&name is nil, 'Recorded contextual variable-result returns should finish in the root context')
 end
 
+@Test function JITForwardedNativeContextualResultSurvivesSideExit()
+   local sleeper = processing.new({ timeout=0 })
+
+   function run(Value:num, Count:num):num
+      local completed = 0
+      for _ in {0 to Count} do
+         if sleeper.sleep(math.max(0, Value - Value)) != ERR_Terminate then completed++ end
+      end
+      return completed
+   end
+
+   jit.off()
+   local interpreted_positive = run(3, 64)
+   local interpreted_negative = run(-3, 64)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local recorded_positive = run(3, 64)
+   local recorded_negative = run(-3, 64)
+   jit.off()
+
+   local trace_count = 0
+   for trace_no in {1 into 40} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.opt.start()
+
+   assert(recorded_positive is interpreted_positive and recorded_negative is interpreted_negative,
+      'A trace exit must preserve the result count forwarded between native contextual calls')
+   assert(trace_count > 0, 'The forwarded native contextual call workload should produce at least one recorded trace')
+end
+
 @Test function JITComputedContextualResultsMatchInterpreter()
    local outer = entity { name = 'computed outer' }
    local target = entity { name = 'computed target' }

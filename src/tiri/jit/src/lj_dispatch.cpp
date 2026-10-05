@@ -406,6 +406,11 @@ uint32_t lj_dispatch_ins(lua_State* L, const BCIns* pc)
 #ifdef LUA_USE_ASSERT
          ptrdiff_t delta = L->top - L->base;
 #endif
+         // pc follows the call being recorded.  A dynamic contextual call consumes MULTRES in CTXLEAVE, so expose
+         // the interpreter sentinel before recording can take a snapshot or patch the call to a trace instruction.
+         if (bc_op(*pc) IS BC_CTXLEAVE and bc_b(pc[-1]) IS 0) {
+            J->multres = uint16_t(cframe_multres_n(cf));
+         }
          J->L = L;
          lj_trace_ins(J, pc - 1);  //  The interpreter bytecode PC is offset by 1.
 #ifdef LUA_USE_ASSERT

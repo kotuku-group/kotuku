@@ -1141,7 +1141,9 @@ int lj_trace_exit(jit_State *J, void *exptr)
       case BC_RETM:
          return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc) - bc_d(*pc));
       case BC_CTXLEAVE:
-         return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc));
+         // The restored snapshot can already contain CTXLEAVE's compacted result layout, so its stack extent cannot
+         // recover the dynamic call result count.  Preserve the explicit sentinel captured before the side exit.
+         return int(snapshot_multres);
       case BC_TSETM:
          return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc));
       default:

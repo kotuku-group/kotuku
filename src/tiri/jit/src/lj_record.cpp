@@ -1697,6 +1697,7 @@ static void rec_context_leave(jit_State *J, BCREG CallBase, const BCIns *LeavePc
       "CTXLEAVE does not follow an ordinary contextual call");
    ptrdiff_t result_count = bc_b(call_ins) ? ptrdiff_t(bc_b(call_ins)) - 1 :
       ptrdiff_t(J->maxslot) - ptrdiff_t(CallBase);
+   if (bc_b(call_ins) IS 0) J->multres = uint16_t(result_count + 1);
    int32_t result_shift = int32_t(bc_d(*LeavePc));
    if (result_shift IS 0) result_shift = 1;
    SlotView slots(J);
