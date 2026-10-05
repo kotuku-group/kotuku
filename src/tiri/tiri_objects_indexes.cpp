@@ -186,6 +186,13 @@ static ERR object_set_array(lua_State *Lua, OBJECTPTR Object, const Field *Field
 
 static ERR object_set_function(lua_State *Lua, OBJECTPTR Object, const Field *Field, int ValueIndex)
 {
+   if (lua_isnil(Lua, ValueIndex)) {
+      if (Field->SetValue) return Object->set(Field, (const FUNCTION *)nullptr);
+
+      const FUNCTION empty_function;
+      return Object->set(Field, &empty_function);
+   }
+
    FUNCTION func;
    if (auto error = capture_tiri_function(Lua, ValueIndex, func); error != ERR::Okay) return error;
 

@@ -2555,13 +2555,20 @@ ParserResult<std::unique_ptr<BlockStmt>> AstBuilder::parse_imported_file(
    // Runtime loadFile() compilations share imports with the existing state.  Re-emitting an imported body would
    // execute its initialisation again and replace namespace tables, losing extensions installed by other libraries.
    // SaveToObject compiles in a fresh state, so this reuse does not omit dependencies from public bytecode exports.
+   // A non-local module must retain its inline helpers even if the caller already loaded them: its cached initialiser
+   // must also run independently in a fresh state.
    // Diagnose mode still needs the real body on each validation; only deduplicate within that compilation and reuse
    // the existing FileSource index.  Validation never emits or executes the imported initialisation.
 
    auto existing_index = find_file_source(L, Path);
    if (existing_index.has_value()) {
+      const auto &sources = this->root_builder()->ctx.lex().compilation_sources;
+      const bool previous_compilation = std::ranges::none_of(sources, [&](const auto &Source) {
+         return Source.canonical_path IS Path;
+      });
       if (local_seen or
-          (not ModuleInitialiser and not this->ctx.lex().diagnose_mode and not this->cache_manifest())) {
+          (not ModuleInitialiser and not this->unit_builder()->module_initialiser and
+           previous_compilation and not this->ctx.lex().diagnose_mode and not this->cache_manifest())) {
          if (auto manifest = this->cache_manifest()) {
             auto previous = std::ranges::find_if(manifest->Imports, [&](const auto &Import) {
                return Import.Source.ResolvedPath IS Path;
