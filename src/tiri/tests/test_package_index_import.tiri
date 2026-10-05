@@ -125,6 +125,30 @@ end
       "print('REPEATED:' .. tostring(indexed.value))", 'REPEATED:1', false)
 end
 
+@Test function CachedModuleOwnsPreviouslyInlinedHelpers()
+   local packages = glRoot .. 'inline_cache/'
+   make_folder(packages)
+   write_file(packages .. 'index.cfg', '[self-contained]\n1 = main.tiri\n')
+   write_file(packages .. 'helper.tiri',
+      'namespace private_helper { }\nprivate_helper.value = function():num return 42 end')
+   write_file(packages .. 'main.tiri',
+      '@Package(name="self-contained", version="1")\nimport \'./helper\'\n' ..
+      'namespace contained { }\ncontained.value = function():num return private_helper.value() end')
+   write_file(packages .. 'seed.tiri',
+      'import \'./helper\'\nimport \'self-contained\'\nassert(contained.value() is 42)')
+   write_file(packages .. 'reverse.tiri',
+      'import \'self-contained\'\nimport \'./helper\' as direct\nassert(direct.value() is 42)')
+
+   local code, output = run_packages("loadFile('" .. packages .. "seed.tiri')", false, packages)
+   assert(code is 0, 'The initial import must work after the helper was inlined: ' .. output)
+   for attempt in {0 to 2} do
+      code, output = run_packages("import 'self-contained'; assert(contained.value() is 42)", false, packages)
+      assert(code is 0, 'The cached module must initialise its own helper in a fresh process: ' .. output)
+      code, output = run_packages("loadFile('" .. packages .. "reverse.tiri')", false, packages)
+      assert(code is 0, 'Cached source metadata must not suppress an inline helper in the caller: ' .. output)
+   end
+end
+
 @Test function TargetAndConstraintFailures()
    local output = assert_failure("import 'mismatch'", 'selected version 2')
    assert(output.find('malformed', 0, true) is nil, output)

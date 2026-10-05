@@ -363,9 +363,7 @@ WRITE_TABLE * get_write_table(objMetaClass *Class)
    std::span<Field> dict_span;
    if (!Class->getDictionary(dict_span)) {
       for (auto &field : dict_span | std::views::filter([](const auto &f) { return f.Flags & (FD_W|FD_I); })) {
-         char ch[2] = { field.Name[0], 0 };
-         if ((ch[0] >= 'A') and (ch[0] <= 'Z')) ch[0] = ch[0] - 'A' + 'a';
-         auto hash = simple_hash(field.Name+1, simple_hash(ch));
+         auto hash = field.FieldID; // fieldhash() of the name, as for the read table
 
          if (field.Flags & (FD_ARRAY|FD_VECTOR)) {
             jmp.push_back(obj_write(hash, object_set_array, &field));
@@ -424,8 +422,8 @@ ERR classify_object_write_miss(objMetaClass *Class, uint32_t FieldHash)
 //********************************************************************************************************************
 // Usage: object.fieldName = newvalue
 //
-// Using all caps abbreviations is discouraged when designing class fields, e.g. JITOptions won't work out, but
-// JitOptions is fine.
+// Field names follow fieldhash() conventions, so a leading acronym is lower-cased in full, e.g. JITOptions is written
+// as jitOptions.
 //
 // NB: This function is also called directly by the thunk implementation in cases where thunks resolve to objects.
 
