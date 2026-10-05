@@ -6,7 +6,7 @@ set (INC_MOD_XML TRUE PARENT_SCOPE)
 idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
-   ARGS  "output-defs=xml_def.c" "output-proto=xml_def.c"
+   ARGS  "output-defs=${MOD}_def.c" "output-proto=${MOD}_def.c"
    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp"
    APPEND_IDL "${MOD}_def.c")
 

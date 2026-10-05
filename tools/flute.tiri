@@ -101,11 +101,19 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function checkAvailable(Requirement:str, Expectation:bool):bool
+function checkAvailable(Requirement:str, Expectation:any):bool
    if Requirement is 'network' then
       return glNetworkAvailable is Expectation
    elseif Requirement is 'ssl' then
       return glSSLAvailable is Expectation
+   elseif Requirement is 'file' then
+      assert(Expectation is <str>, 'The file requirement must specify a path')
+      local err, location = mSys.AnalysePath(Expectation)
+      if err != ERR_Okay or location != LOC_FILE then
+         print(f'SKIPPED: Required file is unavailable: {Expectation}')
+         return false
+      end
+      return true
    elseif Requirement is 'font' then
       return glFontAvailable is Expectation
    elseif Requirement is 'audio' then

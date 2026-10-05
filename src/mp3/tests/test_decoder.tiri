@@ -1,4 +1,4 @@
--- Deterministic MP3 decoder regressions; the null audio device keeps these tests silent.
+-- Deterministic MP3 decoder regressions; decoding needs no active audio output device.
 
 @if(exists='modules:audio')
 
@@ -6,8 +6,7 @@
 
 @BeforeAll function setup(State)
    global glMP3Folder = State.folder
-   global glMP3Audio = obj.new('Audio', { device='null' })
-   check glMP3Audio.acActivate()
+   global glMP3Audio = obj.new('Audio')
    global glMP3Temp = f'temp:mp3_decoder_{mSys.PreciseTime()}/'
    folder <close> = obj.new('File', { path=glMP3Temp, flags=FL_NEW|FL_FOLDER })
 end
