@@ -1158,6 +1158,10 @@ restart:
       return ERR::Terminate;
    }
 
+   // CONNECT can start an asynchronous TLS handshake during this callback.
+   // Wait for the socket to finish handshaking before reading the origin response.
+   if (Socket->State IS NTC::HANDSHAKING) return ERR::Okay;
+
    if (Self->CurrentState IS HGS::SENDING_CONTENT) {
       // Sanity check failed - we should not be receiving data while we are sending content to the server.
       if (Self->ContentLength IS -1) {

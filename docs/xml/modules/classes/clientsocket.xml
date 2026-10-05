@@ -95,6 +95,17 @@
     </field>
 
     <field>
+      <name>OutQueueSize</name>
+      <comment>The number of bytes waiting in the socket's outgoing queue.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>Data passed to <action>Write</action> that cannot be sent immediately is held in a software queue and written as the connection permits.  OutQueueSize reports the number of queued bytes that have not yet been passed to the operating system, so a value of zero indicates that the queue is empty.  This can be used to pace writes against a slow client, or to wait for queued data to be sent before disconnecting.</p>
+<p>Writes that have been passed to the operating system but not yet completed are not included.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Prev</name>
       <comment>Previous socket in the chain.</comment>
       <access read="R">Read</access>

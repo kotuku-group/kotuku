@@ -742,3 +742,101 @@ function PendingSSLFreeDropsCompletion()
 
    assert(late_client_callbacks is 0, 'Freed SSL client received a late handshake or read callback')
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- An accepted TLS ClientSocket writes more than the kernel buffers hold to a client that is not reading.  SSL_write()
+-- reports WANT_WRITE and Network queues the remainder, then retries from its write queue instead of the caller's
+-- buffer.  OpenSSL rejects that retry as a "bad write retry" unless the ClientSocket accepts moving write buffers,
+-- which broke the connection part way through the transfer.
+
+@Test(priority=47); @Requires(ssl=true)
+function SSLClientSocketQueuedWrites()
+   local TOTAL <const> = 8 * 1024 * 1024
+   local CHUNK <const> = 512 * 1024
+   local state = { received=0, disconnected=false, accepted=nil, mismatch=nil }
+
+   local chunk_bytes = array<byte, CHUNK>
+   for i in {0 to #chunk_bytes} do chunk_bytes[i] = (i * 7) & 255 end
+   local chunk = chunk_bytes.getString(0, #chunk_bytes)
+
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_SSL | NSF_MULTI_CONNECT,
+      feedback = function(Server, Client, State)
+         if State is NTC_CONNECTED then state.accepted = Client end
+      end,
+      incoming = function(Server, Client)
+         local buffer = string.alloc(1024)
+         Client.acRead(buffer)
+      end
+   })
+
+   local client <close> = obj.new('netsocket', {
+      flags = NSF_SSL | NSF_DISABLE_SERVER_VERIFY,
+      feedback = function(Socket, State)
+         if State is NTC_DISCONNECTED then state.disconnected = true end
+      end,
+      incoming = function(Socket)
+         local buffer = array<byte, 65536>
+         local err, size = Socket.acRead(buffer)
+         if err != ERR_Okay then
+            state.disconnected = true
+            return
+         end
+         for i in {0 to size} do
+            local offset = state.received + i
+            if (buffer[i] != ((offset % CHUNK) * 7) & 255) and (not state.mismatch) then state.mismatch = offset end
+         end
+         state.received += size
+      end
+   })
+   check client.mtConnect('127.0.0.1', server.port)
+
+   for i in {0 to 300} do
+      if state.accepted and (state.accepted.state is NTC_CONNECTED) then break end
+      processing.sleep(0.01)
+   end
+   local socket = state.accepted
+   assert(socket and (socket.state is NTC_CONNECTED), 'The TLS connection was not established')
+
+   local written = 0
+   while written < TOTAL do
+      local err, size = socket.acWrite(chunk)
+      assert(err is ERR_Okay or err is ERR_BufferOverflow, f'Write failed with {mSys.GetErrorMsg(err)}')
+      written += size
+      if size < #chunk then break end
+   end
+   assert(socket.outQueueSize > 0, 'Nothing was queued even though the peer was not reading')
+
+   for i in {0 to 1000} do
+      if (state.received >= written) or state.disconnected then break end
+      processing.sleep(0.01)
+   end
+
+   assert(not state.disconnected,
+      f'The connection failed after the client received {state.received} of {written} bytes')
+   assert(state.received is written, f'Wrote {written} bytes but the client received {state.received}')
+   assert(not state.mismatch, f'Received data differs from the written data at offset {state.mismatch}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Fields with a leading acronym can be written directly under the same name used for reading and for obj.new(), e.g.
+-- sslCertificate.
+
+@Test(priority=48); @Requires(ssl=true)
+function SSLFieldsDirectAssignment()
+   local cert_path = 'config:ssl/localhost-password.p12'
+   requireCustomCertificateFile(cert_path)
+
+   glPort++
+
+   local server <close> = obj.new('netserver')
+   server.sslCertificate = cert_path
+   server.sslKeyPassword = 'kotuku-test'
+   server.port  = glPort
+   server.flags = NSF_SSL
+
+   assert(server.sslCertificate is cert_path, f'Read back sslCertificate as {server.sslCertificate}')
+   assert(server.sslKeyPassword is 'kotuku-test', 'The sslKeyPassword value was not stored')
+
+   server.init() -- Raises if the certificate or password did not reach the server
+end

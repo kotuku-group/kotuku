@@ -327,9 +327,12 @@ end
    assert(failed, 'A forged readiness state was accepted')
    local ipv6 <close> = obj.new('http', { location='http://[::1]:8181?query=yes' })
    assert(ipv6.host is '::1' and ipv6.port is 8181 and ipv6.path is '?query=yes', 'IPv6 URI parsing failed')
+   local escaped <close> = obj.new('http', { location='http://127.0.0.1/a%20b c?x=%zz%4' })
+   assert(escaped.path is 'a%20b%20c?x=%25zz%254', 'Existing percent-escapes were not preserved exactly once')
 end
 
-@Test; @Requires(ssl=true)
+-- The build generates and installs this fixture only when a supported openssl executable is available.
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
 function DirectTLS()
    local owner <close> = obj.new('config')
    local request = ''
@@ -452,12 +455,12 @@ function proxyHandshake(WrongName:bool)
    for channel in values(channels) do channel.free() end
 end
 
-@Test; @Requires(ssl=true)
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
 function ProxyTLS()
    proxyHandshake(false)
 end
 
-@Test; @Requires(ssl=true)
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
 function WrongDestinationCertificate()
    if glVerifyTLS then proxyHandshake(true) end
 end

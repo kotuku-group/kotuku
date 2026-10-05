@@ -43,6 +43,7 @@ SSL_ERROR_CODE ssl_prepare_read(SSL_HANDLE SSL)
       }
 
       if (decrypted_data and decrypted_size > 0) {
+         SSL->decrypted_records++;
          SSL->decrypted_buffer.reset();
          SSL->decrypted_buffer.ensure_capacity(decrypted_size);
          std::span<const unsigned char> decrypted_span(decrypted_data, decrypted_size);
@@ -149,6 +150,7 @@ SSL_ERROR_CODE ssl_read(SSL_HANDLE SSL, void *Buffer, int BufferSize, int* Bytes
             }
 
             if (decrypted_data and decrypted_size > 0) {
+               SSL->decrypted_records++;
                SSL->decrypted_buffer.reset();
                SSL->decrypted_buffer.ensure_capacity(decrypted_size);
                std::span<const unsigned char> decrypted_span(decrypted_data, decrypted_size);

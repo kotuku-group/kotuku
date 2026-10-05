@@ -197,7 +197,15 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    Self->InUse++;
    Self->IncomingRecursion++;
 
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   uint64_t records_before = 0;
+#endif
+
 restart:
+
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   if (Self->TLS.Handle) records_before = ssl_decrypted_records(Self->TLS.Handle);
+#endif
 
    // The Incoming callback will normally be defined by the user and is expected to call the Read() action.
    // Otherwise we clear the unprocessed content.
@@ -251,8 +259,11 @@ restart:
    }
 #ifndef DISABLE_SSL
  #ifdef _WIN32
-   else if (Self->TLS.Handle and (ssl_has_decrypted_data(Self->TLS.Handle) or ssl_has_encrypted_data(Self->TLS.Handle))) {
-      // SSL has buffered data that needs processing - continue without waiting for socket notification
+   else if (Self->TLS.Handle and (ssl_has_decrypted_data(Self->TLS.Handle) or
+      (ssl_has_encrypted_data(Self->TLS.Handle) and (ssl_decrypted_records(Self->TLS.Handle) != records_before)))) {
+      // SSL has buffered data that needs processing - continue without waiting for socket notification.  Buffered
+      // encrypted data only justifies another pass if this pass decrypted a record; otherwise it is an incomplete
+      // record, and repeating the callback would spin until the rest arrives.  Network reports new data itself.
       log.trace("SSL has buffered data, continuing processing");
       Self->IncomingRecursion = 1;
       goto restart;

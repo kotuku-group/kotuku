@@ -203,6 +203,10 @@ static ERR convert_error(int Error = 0)
    if (Error IS ERROR_OPERATION_ABORTED) return ERR::Cancelled;
    if (Error IS ERROR_CONNECTION_ABORTED) return ERR::ConnectionAborted;
    if (Error IS ERROR_SEM_TIMEOUT) return ERR::TimeOut;
+   // Failed ConnectEx() completions report Win32 codes rather than their WSAE equivalents
+   if (Error IS ERROR_CONNECTION_REFUSED) return ERR::ConnectionRefused;
+   if (Error IS ERROR_NETWORK_UNREACHABLE) return ERR::NetworkUnreachable;
+   if (Error IS ERROR_HOST_UNREACHABLE) return ERR::HostUnreachable;
 
    return convert_socket_error(Error);
 }
@@ -886,50 +890,52 @@ static ERR post_read_pool(WSW_SOCKET Socket)
 
 static ERR post_send(WSW_SOCKET Socket)
 {
-   IocpCompletionTarget target;
-   IocpSendRequest request;
-   uint64_t generation = 0;
+   IocpOperation *failed_operation = nullptr;
 
    {
       auto record = find_socket_record(Socket);
       if (!record) return ERR::Search;
 
+      // WSASend() is called with the record locked.  Completion threads and the owning thread can both post sends,
+      // and TCP sends are transmitted in the order of the WSASend() calls, so dequeuing and posting must not be
+      // separable.  WSASend() never runs completion code inline here because no completion routine is used.
+
       std::lock_guard<std::mutex> lock(record->Mutex);
       if (record->Cancelled) return ERR::Cancelled;
       if (!tcp_send_post_needed(*record)) return ERR::Okay;
 
-      target = record->Write;
-      generation = record->Generation;
-      request = std::move(record->SendQueue.front());
+      auto request = std::move(record->SendQueue.front());
       record->SendQueue.pop_front();
+      if ((!request.Buffer) or (!request.BufferSize)) return ERR::Okay;
+
       record->SendPendingCount++;
+
+      auto operation = create_operation();
+      operation->Type = IocpOperationType::WRITE;
+      operation->Socket = Socket;
+      operation->Generation = record->Generation;
+      operation->ObjectID = record->Write.ObjectID;
+      operation->Callback = record->Write.Callback;
+      operation->BufferSize = request.BufferSize;
+      operation->SendAccountedSize = request.BufferSize;
+      operation->Buffer = std::move(request.Buffer);
+
+      WSABUF wsabuf;
+      wsabuf.buf = (CHAR *)operation->Buffer.get();
+      wsabuf.len = ULONG(operation->BufferSize);
+
+      DWORD bytes = 0;
+      auto result = WSASend(socket_from_handle(Socket), &wsabuf, 1, &bytes, 0, &operation->Overlapped, nullptr);
+      if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
+         operation->Result = convert_error();
+         operation->BytesTransferred = 0;
+         failed_operation = operation;
+      }
    }
 
-   if ((!request.Buffer) or (!request.BufferSize)) return ERR::Okay;
-
-   auto operation = create_operation();
-   operation->Type = IocpOperationType::WRITE;
-   operation->Socket = Socket;
-   operation->Generation = generation;
-   operation->ObjectID = target.ObjectID;
-   operation->Callback = target.Callback;
-   operation->BufferSize = request.BufferSize;
-   operation->SendAccountedSize = request.BufferSize;
-   operation->Buffer = std::move(request.Buffer);
-
-   WSABUF wsabuf;
-   wsabuf.buf = (CHAR *)operation->Buffer.get();
-   wsabuf.len = ULONG(operation->BufferSize);
-
-   DWORD bytes = 0;
-   auto result = WSASend(socket_from_handle(Socket), &wsabuf, 1, &bytes, 0, &operation->Overlapped, nullptr);
-   if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
-      auto error = convert_error();
-      operation->Result = error;
-      operation->BytesTransferred = 0;
-      queue_operation_completion(*operation, 0, operation->Result);
-      release_operation(operation);
-      return ERR::Okay;
+   if (failed_operation) { // No completion packet will be queued, so report the failure directly
+      queue_operation_completion(*failed_operation, 0, failed_operation->Result);
+      release_operation(failed_operation);
    }
 
    return ERR::Okay;
