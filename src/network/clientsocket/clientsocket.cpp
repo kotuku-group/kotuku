@@ -365,7 +365,12 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
       if (len > 0) {
          error = send_data(ClientSocket, ClientSocket->WriteQueue.Buffer.data() + ClientSocket->WriteQueue.Index, &len);
          if (len > 0) ClientSocket->WriteQueue.Index += len;
-         if ((error != ERR::Okay) or (not len)) break;
+         if ((error != ERR::Okay) or (not len)) {
+            // BufferOverflow is backpressure, not a failure.  Writing resumes on the next notification, and counting
+            // it against ErrorCountdown would disconnect a slow reader with data still queued.
+            if (error IS ERR::BufferOverflow) error = ERR::Okay;
+            break;
+         }
       }
 
       if (ClientSocket->WriteQueue.Index >= ClientSocket->WriteQueue.Buffer.size()) {
@@ -618,6 +623,27 @@ ConnectTime: System time for the creation of this socket.
 Next: Next socket in the chain.
 
 -FIELD-
+OutQueueSize: The number of bytes waiting in the socket's outgoing queue.
+
+Data passed to #Write() that cannot be sent immediately is held in a software queue and written as the connection
+permits.  OutQueueSize reports the number of queued bytes that have not yet been passed to the operating system, so a
+value of zero indicates that the queue is empty.  This can be used to pace writes against a slow client, or to wait
+for queued data to be sent before disconnecting.
+
+Writes that have been passed to the operating system but not yet completed are not included.
+
+*********************************************************************************************************************/
+
+static ERR CS_GET_OutQueueSize(extClientSocket *Self, int *Value)
+{
+   auto &queue = Self->WriteQueue;
+   *Value = (queue.Index < queue.Buffer.size()) ? int(queue.Buffer.size() - queue.Index) : 0;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Prev: Previous socket in the chain.
 
 -FIELD-
@@ -680,6 +706,8 @@ static const FieldArray clClientSocketFields[] = {
    { "Client",      FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::NETCLIENT },
    { "ClientData",  FDF_POINTER|FDF_R },
    { "State",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, CS_SET_State, &clNetSocketState },
+   // Virtual fields
+   { "OutQueueSize", FDF_VIRTUAL|FDF_INT|FDF_R, CS_GET_OutQueueSize },
    END_FIELD
 };
 

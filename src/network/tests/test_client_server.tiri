@@ -214,6 +214,7 @@ end
          elseif (msg.startsWith('COMPLETE:')) then
             logOutput('[Server] Client signalled completion')
             glTestSteps++
+            check Client.acDeactivate()
          end
       end,
       port = glPort,
@@ -234,6 +235,7 @@ end
       incoming = function(Socket)
          buffer = string.alloc(2048)
          err, read_len = Socket.acRead(buffer)
+         if err is ERR_Disconnected then return end
          assert(err is ERR_Okay, '[Client] Failed to read data from server: ' .. mSys.GetErrorMsg(err))
 
          local msg = buffer.sub(0, read_len)
@@ -253,7 +255,6 @@ end
             logOutput('[Client] Server confirmed data receipt, completing test...')
             err, len = Socket.acWrite('COMPLETE:Test finished')
             assert(err is ERR_Okay, '[Client] Failed to send completion: ' .. mSys.GetErrorMsg(err))
-            raise ERR_Terminate
          end
       end
    })
@@ -355,4 +356,187 @@ end
    assert(clientSocket.error is ERR_TimeOut, 'Socket error should be ERR_TimeOut, got: ' .. mSys.GetErrorMsg(clientSocket.error))
    assert(totalElapsed >= timeoutDuration, string.format('Timeout occurred too early: %.2fs < %.2fs', totalElapsed, timeoutDuration))
    assert(totalElapsed <= (timeoutDuration + 1.0), string.format('Timeout occurred too late: %.2fs > %.2fs', totalElapsed, timeoutDuration + 1.0))
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- A ClientSocket reports unsent bytes through OutQueueSize, and Deactivate() disconnects only after its queue has been
+-- written.  The client runs on this thread, so nothing is read until the test sleeps; a write larger than the kernel
+-- buffers is therefore partly queued by Network.
+
+@Test function ClientSocketQueueAndDeactivate()
+   local TOTAL <const> = 8 * 1024 * 1024
+   local state = { received=0, disconnected=false, accepted=nil }
+
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      feedback = function(Server, Client, State)
+         if State is NTC_CONNECTED then state.accepted = Client end
+      end,
+      incoming = function(Server, Client)
+         local buffer = string.alloc(1024)
+         Client.acRead(buffer)
+      end
+   })
+
+   local client <close> = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_DISCONNECTED then state.disconnected = true end
+      end,
+      incoming = function(Socket)
+         local buffer = array<byte, 65536>
+         local err, size = Socket.acRead(buffer)
+         if err != ERR_Okay then
+            state.disconnected = true
+            return
+         end
+         state.received += size
+      end
+   })
+   check client.mtConnect('127.0.0.1', server.port)
+
+   for i in {0 to 300} do
+      if state.accepted then break end
+      processing.sleep(0.01)
+   end
+   local socket = state.accepted
+   assert(socket, 'The connection was not accepted')
+   assert(socket.outQueueSize is 0, 'A new ClientSocket reported queued bytes')
+
+   -- MsgLimit (about 1 MiB) caps what Network queues from one write, so several writes are needed.
+
+   local chunk = string.rep('q', 512 * 1024)
+   local written = 0
+   while written < TOTAL do
+      local err, size = socket.acWrite(chunk)
+      assert(err is ERR_Okay or err is ERR_BufferOverflow, f'Write failed with {err}')
+      written += size
+      if size < #chunk then break end
+   end
+
+   local queued = socket.outQueueSize
+   assert(queued > 0, 'Nothing was queued even though the peer was not reading')
+   assert(queued <= written, f'OutQueueSize {queued} exceeds the {written} bytes written')
+
+   check socket.acDeactivate()
+   assert(not state.disconnected, 'Deactivate disconnected before the queue was written')
+
+   for i in {0 to 1000} do
+      if state.disconnected then break end
+      processing.sleep(0.01)
+   end
+
+   assert(state.disconnected, 'The connection was not closed after the queue drained')
+   assert(state.received is written, f'Wrote {written} bytes but the client received {state.received}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Bytes queued under backpressure must arrive in the order written.  On Windows, sends are posted to IOCP from both
+-- the owning thread and the completion threads, which could reorder blocks if a send was dequeued and posted
+-- separately.
+
+@Test function QueuedWritesKeepOrder()
+   local BLOCK <const> = 16384
+   local COUNT <const> = 512
+   local state = { chunks={}, received=0, connected=false }
+
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming = function(Server, Client)
+         local buffer = array<byte, 65536>
+         local err, size = Client.acRead(buffer)
+         if err is ERR_Okay and size > 0 then
+            state.chunks[#state.chunks] = buffer.getString(0, size)
+            state.received += size
+         end
+      end
+   })
+
+   local client <close> = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then state.connected = true end
+      end
+   })
+   check client.mtConnect('127.0.0.1', server.port)
+
+   for i in {0 to 300} do
+      if state.connected then break end
+      processing.sleep(0.01)
+   end
+   assert(state.connected, 'The client did not connect')
+
+   -- The peer cannot read while this loop runs, so the operating system's buffers fill and Network queues the rest.
+
+   local filler = string.rep('z', BLOCK - 8)
+   local index = 0
+   local remainder = nil
+   local function pump()
+      while index < COUNT do
+         local block = remainder ?? (string.format('%08d', index) .. filler)
+         local err, size = client.acWrite(block)
+         assert(err is ERR_Okay or err is ERR_BufferOverflow, f'Write failed with {err}')
+         if size < #block then
+            remainder = block.sub(size)
+            return false
+         end
+         remainder = nil
+         index++
+      end
+      return true
+   end
+
+   client.outgoing = function(Socket)
+      if pump() then Socket.outgoing = nil end
+   end
+   pump()
+
+   for i in {0 to 3000} do
+      if state.received >= BLOCK * COUNT then break end
+      processing.sleep(0.01)
+   end
+   assert(state.received is BLOCK * COUNT, f'Received {state.received} of {BLOCK * COUNT} bytes')
+
+   local data = table.concat(state.chunks)
+   for i in {0 to COUNT} do
+      local tag = data.sub(i * BLOCK, i * BLOCK + 8)
+      assert(tag is string.format('%08d', i), f'Block {i} arrived out of order (found tag {tag})')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A script can remove its Outgoing callback by assigning nil.  Outgoing is write-only, so the test checks that the
+-- assignment succeeds (it previously dereferenced a null value).
+
+@Test function ClearOutgoingCallback()
+   local socket <close> = obj.new('netsocket', { })
+   socket.outgoing = function(Socket) end
+   socket.outgoing = nil
+   check socket.acWrite('queued')
+   assert(socket.outQueueSize is 6, 'The socket was not usable after Outgoing was cleared')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A refused connection reports ConnectionRefused on every platform.
+
+@Test function ConnectionRefusedError()
+   local state = { disconnected=false, error=nil }
+   -- Keep the operating-system-selected port allocated on another loopback address so that no listener teardown can
+   -- race the connection attempt.  The matching 127.0.0.1 endpoint remains unbound and must refuse the connection.
+   local port_guard <close> = obj.new('netserver', { address='127.0.0.2', port=0 })
+
+   local socket <close> = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_DISCONNECTED then
+            state.disconnected = true
+            state.error = Socket.error
+         end
+      end
+   })
+   check socket.mtConnect('127.0.0.1', port_guard.port)
+
+   for i in {0 to 500} do
+      if state.disconnected then break end
+      processing.sleep(0.01)
+   end
+   assert(state.disconnected, 'The refused connection did not disconnect')
+   assert(state.error is ERR_ConnectionRefused, f'A refused connection reported error {state.error}')
 end

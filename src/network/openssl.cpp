@@ -570,6 +570,12 @@ static ERR tls_accept_client(extClientSocket *Self, extNetServer *Server)
       if (auto client_bio = BIO_new_socket(Self->Handle, BIO_NOCLOSE)) {
          SSL_set_bio(client_ssl, client_bio, client_bio);
 
+         // As for outbound sockets in sslLinkSocket().  A write that fails with SSL_ERROR_WANT_WRITE is retried from
+         // the write queue rather than the caller's buffer, which OpenSSL rejects as a bad write retry unless moving
+         // write buffers are accepted.
+
+         SSL_set_mode(client_ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_ENABLE_PARTIAL_WRITE);
+
          Self->TLS.Handle = client_ssl;
          Self->TLS.BIOHandle = client_bio;
 

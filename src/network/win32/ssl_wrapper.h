@@ -33,6 +33,7 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE, const void *, int);
 void ssl_set_socket(SSL_HANDLE, void* socket_handle);
 bool ssl_has_decrypted_data(SSL_HANDLE);
 bool ssl_has_encrypted_data(SSL_HANDLE);
+uint64_t ssl_decrypted_records(SSL_HANDLE);
 bool ssl_has_pending_output(SSL_HANDLE);
 const void * ssl_pending_output_data(SSL_HANDLE);
 size_t ssl_pending_output_size(SSL_HANDLE);

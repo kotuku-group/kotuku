@@ -178,6 +178,7 @@ struct ssl_context {
    SSLBuffer handshake_buffer;                 // Pending handshake token data for non-blocking sends
    SSLBuffer decrypted_buffer;                 // Buffer for leftover decrypted data
    size_t decrypted_buffer_offset;             // Bytes already returned to user
+   uint64_t decrypted_records = 0;             // Count of records that produced application data
    SECURITY_STATUS last_security_status;
    DWORD last_win32_error;
    std::string hostname;
@@ -506,6 +507,15 @@ bool ssl_has_decrypted_data(SSL_HANDLE SSL)
 bool ssl_has_encrypted_data(SSL_HANDLE SSL)
 {
    return !SSL->recv_buffer.empty();
+}
+
+//********************************************************************************************************************
+// Returns a count that increases each time a received record yields application data.  Callers compare two values to
+// determine whether reading made progress, because buffered encrypted data may be an incomplete record.
+
+uint64_t ssl_decrypted_records(SSL_HANDLE SSL)
+{
+   return SSL->decrypted_records;
 }
 
 //********************************************************************************************************************

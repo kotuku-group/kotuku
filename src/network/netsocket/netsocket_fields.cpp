@@ -198,6 +198,8 @@ static ERR SET_Outgoing(extNetSocket *Self, FUNCTION *Value)
    kt::Log log;
 
    clear_callback_function(Self->Outgoing);
+   if (!Value) return ERR::Okay;
+
    Self->Outgoing = *Value;
    if (Self->Outgoing.defined()) {
       Self->Outgoing.pin();

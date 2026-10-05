@@ -204,8 +204,17 @@ static std::string encode_url_path(std::string_view Input)
    std::string result;
    result.reserve(Input.size() * 3); // Worst case: every char becomes %XX
 
-   for (const char ch : Input) {
-      if (is_valid_url_char(ch, true)) {
+   auto is_hex = [](char Char) {
+      return ((Char >= '0') and (Char <= '9')) or ((Char >= 'a') and (Char <= 'f')) or
+         ((Char >= 'A') and (Char <= 'F'));
+   };
+
+   for (size_t i = 0; i < Input.size(); i++) {
+      const char ch = Input[i];
+      if ((ch IS '%') and (i + 2 < Input.size()) and is_hex(Input[i + 1]) and is_hex(Input[i + 2])) {
+         result += ch; // Preserve an existing percent-encoded octet
+      }
+      else if (is_valid_url_char(ch, true)) {
          result += ch;
       }
       else if (ch IS ' ') {

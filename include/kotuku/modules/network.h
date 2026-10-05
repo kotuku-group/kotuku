@@ -271,6 +271,14 @@ class objClientSocket : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getOutQueueSize(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[10];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
 
    // Customised field setting
 
