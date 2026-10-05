@@ -11,6 +11,8 @@ This file provides guidance to Agentic programs when working with code in this r
 - `UNIT_TESTS=ON` enables compiled C++ unit tests and prolongs the build.  Note that this is not declared as a CMake
   `option()`; it is consumed directly by `src/core/CMakeLists.txt`, so it will not appear in the options listing.
 
+If `build/agents` is already present and configured for a different platform, use `build/agents-[platform]`
+
 **Build and install:**
 - Build and install: `cmake --build build/agents --config Debug --parallel && cmake --install build/agents --config Debug`
 - To build an individual module, append `--target [module]` to the build command, e.g. `--target network`.  In static builds, use `--target [module] origo_cmd` to ensure that the origo executable is rebuilt to include the changes.

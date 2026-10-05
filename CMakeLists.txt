@@ -19,7 +19,7 @@
 #
 # Windows release packages can be created using CPack integration:
 #
-#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DKOTUKU_STATIC=ON -DINSTALL_EXAMPLES=ON -DENABLE_CPACK=ON
+#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=ON -DENABLE_CPACK=ON
 #   cmake --build release --config Release
 #   cmake --install release
 #   cd release && cpack -G ZIP
@@ -1277,8 +1277,11 @@ if (KOTUKU_INSTALL)
    if (NOT DISABLE_SSL)
       install (FILES "${PROJECT_SOURCE_DIR}/data/ssl/ca-bundle.crt" DESTINATION "${CONFIG_TARGET}/ssl")
    endif ()
+
    if (NOT DISABLE_FONT)
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "${CONFIG_TARGET}/fonts")
+      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/"
+         DESTINATION "${CONFIG_TARGET}/fonts"
+         PATTERN "NotoColorEmoji.ttf" EXCLUDE)
    endif ()
 
    install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles/" DESTINATION "${CONFIG_TARGET}/styles")
@@ -1294,25 +1297,32 @@ if (KOTUKU_INSTALL)
       "${PROJECT_SOURCE_DIR}/apps/vuepoint.tiri"
       DESTINATION "${SHARE_TARGET}/apps")
 
-   install (FILES
-      "${PROJECT_SOURCE_DIR}/tools/flute.tiri"
-      DESTINATION "${SHARE_TARGET}/tools")
-
-   install (DIRECTORY "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/include" DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
-   install (FILES
-      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/server.tiri"
-      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/README.md"
-      DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
-
-
    if (INSTALL_EXAMPLES)
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION "${SHARE_TARGET}/examples")
+      install (FILES
+         "${PROJECT_SOURCE_DIR}/examples/data/alarm.mp3"
+         "${PROJECT_SOURCE_DIR}/examples/data/football.svg"
+         "${PROJECT_SOURCE_DIR}/examples/data/mandril.png"
+         "${PROJECT_SOURCE_DIR}/examples/data/wilhelm.mp3"
+         DESTINATION "${SHARE_TARGET}/examples/data")
+
+      install (FILES
+         "${PROJECT_SOURCE_DIR}/examples/benchmark_particles.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/gamepad.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/gradients.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/image_filtering.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/spiral.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/supershape.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/wave.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/wavefunction.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/widgets.tiri"
+         DESTINATION "${SHARE_TARGET}/examples")
    endif ()
 
    if (NOT KOTUKU_STATIC)
-      install (CODE "file(REMOVE \"${KOTUKU_ROOT}/config/classes.bin\")")
-      install (CODE "MESSAGE(STATUS \"${ORIGO_CMD_TARGET} --log-warning --gfx-driver=headless --verify\")")
-      install (CODE "execute_process(COMMAND \"${ORIGO_CMD_TARGET}\" --log-warning --gfx-driver=headless --verify WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}\")")
+      file(RELATIVE_PATH install_origo_path "${CMAKE_INSTALL_PREFIX}" "${ORIGO_CMD_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
+      configure_file("${PROJECT_SOURCE_DIR}/pkg/cmake/verify_install.cmake.in"
+         "${CMAKE_CURRENT_BINARY_DIR}/verify_install.cmake" @ONLY)
+      install (SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/verify_install.cmake")
    endif ()
 
    if (RUN_ANYWHERE)
@@ -1476,7 +1486,7 @@ if(WIN32 AND ENABLE_CPACK)
    # NSIS installer configuration (for modular builds)
    if(NOT KOTUKU_STATIC)
       set(CPACK_NSIS_DISPLAY_NAME "Kotuku ${PROJECT_VERSION}")
-      set(CPACK_NSIS_PACKAGE_NAME "Kotuku")
+      set(CPACK_NSIS_PACKAGE_NAME "Kotuku Runtime")
       set(CPACK_NSIS_INSTALLED_ICON_NAME "origo.exe")
       set(CPACK_NSIS_MUI_ICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
       set(CPACK_NSIS_MUI_UNIICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
@@ -1495,8 +1505,13 @@ if(WIN32 AND ENABLE_CPACK)
          "Delete '$DESKTOP\\\\Origo.lnk'"
       )
 
+      # Remove the class cache generated at runtime before removing installed directories.
+      string(REPLACE "/" "\\\\" nsis_classes_cache "${CONFIG_TARGET}/classes.bin")
+      set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "Delete '$INSTDIR\\\\${nsis_classes_cache}'")
+
       # Add to PATH for command-line access
       set(CPACK_NSIS_MODIFY_PATH ON)
+      set(CPACK_MODULE_PATH "${PROJECT_SOURCE_DIR}/pkg/cpack" ${CMAKE_MODULE_PATH})
 
       # Installation directory
       if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -1506,30 +1521,13 @@ if(WIN32 AND ENABLE_CPACK)
       endif()
    endif()
 
-   # License file (if available)
-   if(EXISTS "${PROJECT_SOURCE_DIR}/LICENSE")
-      set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
-   elseif(EXISTS "${PROJECT_SOURCE_DIR}/LICENSE.md")
-      set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE.md")
-   endif()
+   # Display the project licence in the installer.
+   set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/license.txt")
 
-   # Component configuration (matches existing install structure)
-   set(CPACK_COMPONENTS_ALL Runtime Config Scripts Examples)
-   set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Kotuku Runtime")
-   set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Core Kotuku executable and libraries")
-   set(CPACK_COMPONENT_RUNTIME_REQUIRED TRUE)
-
-   set(CPACK_COMPONENT_CONFIG_DISPLAY_NAME "Configuration Files")
-   set(CPACK_COMPONENT_CONFIG_DESCRIPTION "Fonts, styles, and configuration data")
-   set(CPACK_COMPONENT_CONFIG_REQUIRED TRUE)
-
-   set(CPACK_COMPONENT_SCRIPTS_DISPLAY_NAME "Tiri Scripts")
-   set(CPACK_COMPONENT_SCRIPTS_DESCRIPTION "Standard library and GUI toolkit")
-   set(CPACK_COMPONENT_SCRIPTS_REQUIRED TRUE)
-
-   set(CPACK_COMPONENT_EXAMPLES_DISPLAY_NAME "Examples")
-   set(CPACK_COMPONENT_EXAMPLES_DESCRIPTION "Example applications and demonstrations")
-   set(CPACK_COMPONENT_EXAMPLES_REQUIRED FALSE)
+   # Install rules do not assign components.  Package the complete install tree so that
+   # component-aware generators such as NSIS include all files.  INSTALL_EXAMPLES still
+   # controls whether example scripts are included in the install tree.
+   set(CPACK_MONOLITHIC_INSTALL ON)
 
    # Include CPack
    include(CPack)

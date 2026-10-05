@@ -1,0 +1,18 @@
+# Use the active install prefix, including CPack staging and any DESTDIR relocation.
+set(verify_install_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+set(verify_install_origo "${verify_install_root}/@install_origo_path@")
+set(verify_install_cache "${verify_install_root}/@CONFIG_TARGET@/classes.bin")
+
+file(REMOVE "${verify_install_cache}")
+message(STATUS "${verify_install_origo} --log-warning --gfx-driver=headless --verify")
+execute_process(COMMAND "${verify_install_origo}" --log-warning --gfx-driver=headless --verify
+   WORKING_DIRECTORY "${verify_install_root}"
+   RESULT_VARIABLE verify_install_result)
+
+if(NOT verify_install_result STREQUAL "0")
+   message(FATAL_ERROR "Installed Origo verification failed: ${verify_install_result}")
+endif()
+
+if(NOT EXISTS "${verify_install_cache}")
+   message(FATAL_ERROR "Installed Origo did not generate ${verify_install_cache}")
+endif()
