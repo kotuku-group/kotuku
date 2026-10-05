@@ -138,6 +138,10 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       return;
    }
 
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   uint64_t records_before = Self->TLS.Handle ? ssl_decrypted_records(Self->TLS.Handle) : 0;
+#endif
+
 #ifndef DISABLE_SSL
   #ifdef _WIN32
    if ((Self->TLS.Handle) and (Self->State IS NTC::HANDSHAKING)) {
@@ -197,15 +201,7 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    Self->InUse++;
    Self->IncomingRecursion++;
 
-#if !defined(DISABLE_SSL) and defined(_WIN32)
-   uint64_t records_before = 0;
-#endif
-
 restart:
-
-#if !defined(DISABLE_SSL) and defined(_WIN32)
-   if (Self->TLS.Handle) records_before = ssl_decrypted_records(Self->TLS.Handle);
-#endif
 
    // The Incoming callback will normally be defined by the user and is expected to call the Read() action.
    // Otherwise we clear the unprocessed content.
@@ -255,6 +251,9 @@ restart:
       // of the data.
 
       Self->IncomingRecursion = 1;
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+      if (Self->TLS.Handle) records_before = ssl_decrypted_records(Self->TLS.Handle);
+#endif
       goto restart;
    }
 #ifndef DISABLE_SSL
@@ -266,6 +265,7 @@ restart:
       // record, and repeating the callback would spin until the rest arrives.  Network reports new data itself.
       log.trace("SSL has buffered data, continuing processing");
       Self->IncomingRecursion = 1;
+      records_before = ssl_decrypted_records(Self->TLS.Handle);
       goto restart;
    }
  #else
