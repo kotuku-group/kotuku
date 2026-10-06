@@ -33,6 +33,7 @@
 #endif
 #include <winioctl.h>
 #include <shlobj.h>
+#include <shellapi.h>
 #include <aclapi.h>
 
 #include <tchar.h>
@@ -3090,6 +3091,33 @@ static std::wstring win_utf8_to_wide(std::string_view Text)
    std::wstring result(size, 0);
    MultiByteToWideChar(CP_UTF8, 0, Text.data(), int(Text.size()), result.data(), size);
    return result;
+}
+
+//********************************************************************************************************************
+
+extern "C" ERR winOpenURI(const std::string_view &URI)
+{
+   const auto uri = win_utf8_to_wide(URI);
+   if (uri.empty()) return ERR::InvalidURI;
+
+   const auto result = intptr_t(ShellExecuteW(nullptr, L"open", uri.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+   if (result > 32) return ERR::Okay;
+
+   switch(result) {
+      case SE_ERR_FNF:
+      case SE_ERR_PNF:
+      case SE_ERR_DLLNOTFOUND:
+         return ERR::FileNotFound;
+      case SE_ERR_ACCESSDENIED:
+         return ERR::NoPermission;
+      case SE_ERR_OOM:
+         return ERR::NoMemory;
+      case SE_ERR_ASSOCINCOMPLETE:
+      case SE_ERR_NOASSOC:
+         return ERR::NoSupport;
+      default:
+         return ERR::SystemCall;
+   }
 }
 
 //********************************************************************************************************************

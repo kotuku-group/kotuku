@@ -1,0 +1,482 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>WebSocket</name>
+    <type>class</type>
+    <module>WebSocket</module>
+    <comment>Manages a single RFC 6455 WebSocket connection.</comment>
+    <version>1</version>
+    <id>657193dc</id>
+    <idstring>WEBSOCKET</idstring>
+    <category>Network</category>
+    <copyright>Paul Manias © 2026</copyright>
+    <description>
+<p>The WebSocket class opens a client connection to a <code>ws://</code> or <code>wss://</code> URL and exchanges messages with the server. Set the <fl>Location</fl>, optionally the <fl>Protocols</fl> to request and an <fl>Incoming</fl> callback, then call <action>Activate</action> to start the opening handshake.  The handshake is performed by a privately owned <class name="HTTP">HTTP</class> object, which transfers its connection to the WebSocket once the server's <code>101 Switching Protocols</code> response has been validated.  The connection's TLS state, including certificate verification, is preserved through the transfer.</p>
+<p>Progress is reported through the <fl>StateChanged</fl> callback.  The <fl>State</fl> moves from <code>CONNECTING</code> to <code>OPEN</code> once the handshake is accepted, to <code>CLOSING</code> when the closing handshake starts, and to <code>CLOSED</code> when the connection ends or the handshake fails.  When the handshake fails, the <fl>Error</fl>, <fl>Status</fl>, <fl>CloseReason</fl> and <fl>Redirect</fl> fields describe the reason. Redirects are never followed automatically.</p>
+<p>Received messages are passed to <fl>Incoming</fl>.  Fragmented messages are reassembled before delivery unless the <code>STREAM_MESSAGES</code> flag is set.  Messages are sent with <method>Send</method>, which queues them for transmission.  The queue is bounded by <fl>SendLimit</fl>, its size is reported by <fl>Pending</fl> and the <fl>Outgoing</fl> callback reports when it has been emptied, so that a producer can pace large transfers against a slow peer.</p>
+<p>Received pings are answered automatically.  Keep-alive pings are sent when <fl>PingInterval</fl> is set, and a peer that stops responding is disconnected.  Call <method>Close</method> or <action>Deactivate</action> to end the connection with the closing handshake, which is bounded by <fl>CloseTimeout</fl>.  Freeing an open WebSocket drops the connection immediately: queued messages are discarded, no Close frame is sent and <fl>StateChanged</fl> is not called.</p>
+<p>The following Tiri example connects to an echo server, sends a message once the connection is open and closes the connection when the echo arrives:</p>
+<pre>include 'websocket'
+
+ws = obj.new('websocket', {
+   location  = 'wss://echo.example.com/chat',
+   protocols = 'chat',
+   stateChanged = function(WebSocket:obj, State:num)
+      if State is WSS_OPEN then
+         WebSocket.mtSend('Hello', WSM_TEXT)
+      elseif State is WSS_CLOSED then
+         print(f'Closed with code {WebSocket.closeCode}')
+         processing.signal()
+      end
+   end,
+   incoming = function(WebSocket:obj, Buffer:array&lt;byte&gt;, Type:num, Final:num)
+      print('Received: ' .. Buffer.getString())
+      WebSocket.mtClose(WSC_NORMAL, 'Done')
+   end
+})
+
+ws.acActivate()
+processing.sleep(10)
+</pre>
+<p>A <class name="WebSocketServer">WebSocketServer</class> represents each connection that it accepts as a WebSocket object in the server role.  Such objects are created by the server and reported to its <class name="WebSocketServer" field="Connected">WebSocketServer.Connected</class> callback, already in the <code>OPEN</code> state.  They are used in the same way as client connections, except that they cannot be activated, and they are freed by the server once they have closed.</p>
+<p>The WebSocket class is not thread-safe.  Create, use and free each object on the thread that processes its messages. Callbacks are invoked from the thread's message loop, so a script must process messages, for example with <code>processing.sleep()</code>, for a connection to make progress.</p></description>
+    <source>
+      <file>class_websocket.cpp</file>
+      <file>class_websocket_fields.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Activate</name>
+      <comment>Connects to the server at <fl>Location</fl>.</comment>
+      <prototype>ERR acActivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acActivate()</tiriPrototype>
+      <description>
+<p>Activation starts the opening handshake and returns immediately.  The <fl>State</fl> changes to <code>CONNECTING</code>, then to <code>OPEN</code> once the server's response has been validated, or to <code>CLOSED</code> if the handshake fails.  Monitor the transition with <fl>StateChanged</fl>.</p>
+<p>An object can be activated again once its <fl>State</fl> is <code>CLOSED</code>.</p>
+      </description>
+      <result>
+        <error code="Okay">The handshake was started.</error>
+        <error code="InUse">The object is already connecting or connected.</error>
+        <error code="NoSupport">The object represents a connection accepted by a <class name="WebSocketServer">WebSocketServer</class>.</error>
+        <error code="FieldNotSet">The <fl>Location</fl> has not been set.</error>
+        <error code="CreateObject">The HTTP object for the handshake could not be created.</error>
+      </result>
+    </action>
+
+    <action>
+      <name>Deactivate</name>
+      <comment>Abandons the handshake or closes the connection.</comment>
+      <prototype>ERR acDeactivate(*Object)</prototype>
+      <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
+      <description>
+<p>Deactivating a connecting WebSocket abandons the handshake and the <fl>State</fl> changes to <code>CLOSED</code>.  An open connection starts the closing handshake with status <code>NORMAL</code>, as for <method>Close</method>.  Deactivating a <code>CLOSING</code> or <code>CLOSED</code> connection has no effect.</p>
+      </description>
+    </action>
+
+    <action>
+      <name>SetKey</name>
+      <comment>Adds a custom header to the opening handshake request.</comment>
+      <prototype>ERR acSetKey(*Object, std::string_view Key, std::string_view Value)</prototype>
+      <tiriPrototype>err = Object.acSetKey(Key:str, Value:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">The name of the target key.</param>
+        <param type="STRVIEW" name="Value">The string value to associate with Key.</param>
+      </input>
+      <description>
+<p>Custom headers are sent with every subsequent activation.  Setting an existing name replaces its value.  Headers that are managed by the WebSocket and HTTP classes, including <code>Host</code>, <code>Connection</code>, <code>Upgrade</code>, <code>Origin</code> and any <code>Sec-WebSocket-*</code> name, cannot be set.  Use the <fl>Origin</fl> and <fl>Protocols</fl> fields instead.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">The name is not a valid header name, the value contains a control character, or the header is reserved.</error>
+      </result>
+    </action>
+
+  </actions>
+
+  <methods>
+    <method>
+      <name>Close</name>
+      <comment>Starts the closing handshake.</comment>
+      <prototype>ERR wsk::Close(OBJECTPTR Object, INT Code, CSTRING Reason)</prototype>
+      <tiriPrototype>err = Close(Code:num, Reason:str)</tiriPrototype>
+      <input>
+        <param type="INT" name="Code">The close status code, or zero to send no status.</param>
+        <param type="CSTRING" name="Reason">Optional.  A short UTF-8 description of the reason for closing.</param>
+      </input>
+      <description>
+<p>Close sends a Close frame carrying <code>Code</code> and an optional <code>Reason</code>, and changes the <fl>State</fl> to <code>CLOSING</code>.  Messages that were queued by <method>Send</method> beforehand are transmitted first; further calls to <method>Send</method> fail.  Messages received before the server's Close frame are still delivered to <fl>Incoming</fl>.</p>
+<p>The connection moves to <code>CLOSED</code> once the server has answered with its own Close frame and the TCP connection has ended.  <fl>CloseCode</fl> and <fl>CloseReason</fl> then hold the status from the server's Close frame.  If the server does not answer within <fl>CloseTimeout</fl> seconds, the connection is dropped and <fl>CloseCode</fl> is set to <code>ABNORMAL</code>.</p>
+<p><code>Code</code> must be <code>NORMAL</code> (1000), one of the other codes from 1001 to 1003 and 1007 to 1011 that describe the reason for closing, or an application code from 3000 to 4999.  A <code>Code</code> of zero sends a Close frame without a status, in which case <code>Reason</code> must be empty.  <code>Reason</code> is limited to 123 bytes of UTF-8.</p>
+<p>Calling Close while the handshake is in progress abandons it, as for <action>Deactivate</action>.  Calling it while <code>CLOSING</code> or <code>CLOSED</code> has no effect.</p>
+      </description>
+      <result>
+        <error code="Okay">The closing handshake was started, or the connection is already closing or closed.</error>
+        <error code="OutOfRange"><code>Code</code> is not a permitted close status.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue"><code>Reason</code> exceeds 123 bytes, is not valid UTF-8, or was supplied without a <code>Code</code>.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>Ping</name>
+      <comment>Sends a Ping frame.</comment>
+      <prototype>ERR wsk::Ping(OBJECTPTR Object, std::span&lt;const int8_t&gt; Data)</prototype>
+      <tiriPrototype>err = Ping(Data:array)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">Optional.  Up to 125 bytes of application data to include in the frame.</param>
+      </input>
+      <description>
+<p>Ping queues a Ping frame ahead of any queued messages; it is transmitted as soon as the frame in progress has been written.  The server answers with a Pong frame carrying the same <code>Data</code>, which is reported to the <fl>Heartbeat</fl> callback.</p>
+<p>Automatic keep-alive pings are available through <fl>PingInterval</fl> and do not require this method.</p>
+      </description>
+      <result>
+        <error code="Okay">The Ping was queued.</error>
+        <error code="BufferOverflow">Queuing the frame would exceed the <fl>SendLimit</fl>.</error>
+        <error code="InvalidState">The <fl>State</fl> is not <code>OPEN</code>.</error>
+        <error code="DataSize"><code>Data</code> exceeds 125 bytes.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>Send</name>
+      <comment>Queues a message for transmission.</comment>
+      <prototype>ERR wsk::Send(OBJECTPTR Object, std::span&lt;const int8_t&gt; Data, WSM Type)</prototype>
+      <tiriPrototype>err = Send(Data:array, Type:num)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">The message payload.</param>
+        <param type="WSM" name="Type" lookup="WSM">Either <code>TEXT</code> or <code>BINARY</code>.</param>
+      </input>
+      <description>
+<p>Send copies a complete message to the send queue and starts transmitting it immediately.  The method never blocks: bytes that the connection cannot accept are retained and written as the peer reads them, in order and without duplication.  <fl>Pending</fl> reports the number of queued bytes and the <fl>Outgoing</fl> callback reports when the queue has been emptied.</p>
+<p>A message that would take the queued total beyond <fl>SendLimit</fl> is rejected with <code>BufferOverflow</code>, leaving the queue unchanged, so that a producer can wait for <fl>Outgoing</fl> before sending more.  A message larger than <fl>MaxFrameSize</fl> (or <fl>MaxMessageSize</fl> if <fl>MaxFrameSize</fl> is zero) is divided into fragments of that size; Ping and Pong frames can be sent between the fragments.</p>
+<p>A <code>TEXT</code> message must be valid UTF-8 unless the <code>NO_UTF8_CHECK</code> flag is set.  An empty message is permitted.</p>
+      </description>
+      <result>
+        <error code="Okay">The message was queued.</error>
+        <error code="InvalidData">A <code>TEXT</code> message is not valid UTF-8.</error>
+        <error code="BufferOverflow">Queuing the message would exceed the <fl>SendLimit</fl>.</error>
+        <error code="InvalidState">The <fl>State</fl> is not <code>OPEN</code>.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue"><code>Type</code> is not a valid message type.</error>
+      </result>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>ClientData</name>
+      <comment>Free for user data storage.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>APTR</type>
+    </field>
+
+    <field>
+      <name>CloseCode</name>
+      <comment>The received or generated close status code.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>CloseCode is set before the <fl>State</fl> changes to <code>CLOSED</code>.  It holds the code from the server's Close frame, the code sent when the connection was failed for a protocol error, or <code>ABNORMAL</code> (1006) if the connection was lost, the handshake failed, or the closing handshake did not complete.  A Close frame without a status is reported as <code>NO_STATUS</code> (1005). The codes defined by RFC 6455 are available as the <code>WSC</code> constants:</p>
+<types lookup="WSC"/>
+<p>Codes from 3000 to 4999 are reserved for libraries, frameworks and applications.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CloseReason</name>
+      <comment>The received or generated close reason.</comment>
+      <access read="R">Read</access>
+      <type>STRING</type>
+      <description>
+<p>CloseReason is set alongside <fl>CloseCode</fl>.  It holds the reason from the server's Close frame, a description of a protocol failure, or a description of a failed handshake.  If the server responded with a status other than <code>101</code>, the reason takes the form <code>HTTP 403</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CloseTimeout</name>
+      <comment>The time allowed for the closing handshake, in seconds.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>After a Close frame has been sent, the connection waits up to CloseTimeout seconds for the peer's Close frame and for queued data to be written.  The connection is then dropped and, if the peer's Close frame was not received, <fl>CloseCode</fl> is set to <code>ABNORMAL</code> and <fl>Error</fl> to <code>TimeOut</code>.  The default is 5 seconds.  Zero waits indefinitely, which is not recommended.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ConnectTimeout</name>
+      <comment>The time allowed to connect to the server, in seconds.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The timeout applies to the opening handshake only.  The default is 10 seconds.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>DataTimeout</name>
+      <comment>The time allowed for the server's handshake response, in seconds.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The timeout applies to the opening handshake only.  The default is 5 seconds.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Error</name>
+      <comment>The last error.</comment>
+      <access read="R">Read</access>
+      <type>ERR</type>
+      <description>
+<p>When the handshake fails, Error indicates the cause.  <code>InvalidHTTPResponse</code> means that the server's <code>101</code> response did not satisfy RFC 6455, <code>HTTPStatus</code> means that the server answered with another status (see <fl>Status</fl> and <fl>Redirect</fl>), and <code>NotAuthorised</code> means that the server answered <code>401</code>.  Network failures are reported with the corresponding network error.  <code>InvalidData</code> indicates that the connection was failed because the server broke the protocol, <code>Disconnected</code> that the connection was lost before the closing handshake completed, and <code>TimeOut</code> that the peer did not answer a keep-alive ping or did not complete the closing handshake within <fl>CloseTimeout</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Flags</name>
+      <comment>Optional flags.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="WSF">WSF</type>
+      <description>
+<p>Set <code>STREAM_MESSAGES</code> to receive each message fragment through <fl>Incoming</fl> as it arrives instead of a reassembled message.  <code>NO_UTF8_CHECK</code> disables UTF-8 validation of <code>TEXT</code> messages in both directions, and should only be used to communicate with peers that are known to send invalid text.  <code>DISABLE_SERVER_VERIFY</code> accepts a <code>wss://</code> server whose TLS certificate cannot be verified, which is intended for development only.  <code>NO_AUTO_PONG</code> stops received Ping frames from being answered, which is intended for testing peers' keep-alive handling.  The <code>SSL</code> flag applies to <class name="WebSocketServer">WebSocketServer</class> only.</p>
+<p>Flags that affect the opening handshake must be set before <action>Activate</action> is called.</p>
+<types lookup="WSF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Heartbeat</name>
+      <comment>Receives Ping and Pong frames from the peer.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The C++ prototype is <code>void Function(*WebSocket, const void *Data, int Length, bool Pong, APTR Meta)</code>.  Tiri callbacks receive <code>(WebSocket, Buffer, Pong)</code>, in which <code>Pong</code> is <code>1</code> for a Pong frame and <code>0</code> for a Ping frame.  Test it with <code>Pong is 1</code>, because <code>0</code> is a true value in Tiri.  The payload is at most 125 bytes and is valid only for the duration of the call.</p>
+<p>Pings are answered automatically before the callback is invoked, unless the <code>NO_AUTO_PONG</code> flag is set.  Pongs answer <method>Ping</method> calls and keep-alive pings, although a peer may also send them unsolicited.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Incoming</name>
+      <comment>Receives messages from the peer.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The Incoming callback receives each message from the peer.  The C++ prototype is <code>ERR Function(*WebSocket, const void *Data, int Length, WSM Type, bool Final, APTR Meta)</code>.  Tiri callbacks receive <code>(WebSocket, Buffer, Type, Final)</code>, in which <code>Buffer</code> is a byte buffer that can be read with <code>Buffer.getString()</code> and <code>Final</code> is <code>1</code> or <code>0</code>.  Note that <code>0</code> is a true value in Tiri, so test it with <code>Final is 1</code>.</p>
+<p><code>Type</code> is <code>WSM::TEXT</code> or <code>WSM::BINARY</code>.  Text messages are validated as UTF-8 unless the <code>NO_UTF8_CHECK</code> flag is set. <code>Final</code> is always set unless the <code>STREAM_MESSAGES</code> flag is enabled, in which case each fragment is delivered as it arrives and <code>Final</code> marks the last fragment of a message.</p>
+<p>The buffer is valid only for the duration of the call.  Copy the data, for example with <code>Buffer.getString()</code>, if it is needed afterwards.</p>
+<p>The callback's result is logged if it is an error and otherwise ignored.  To stop receiving messages, call <method>Close</method> or free the WebSocket from within the callback.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Location</name>
+      <comment>The <code>ws://</code> or <code>wss://</code> URL to connect to.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>The Location identifies the server and resource for the connection.  The scheme selects plain TCP (<code>ws://</code>) or TLS (<code>wss://</code>) with default ports of 80 and 443 respectively.  An explicit port, a bracketed IPv6 address and a query string are supported, and the path and query are sent verbatim.  Characters outside printable ASCII must be percent-encoded. Fragments (<code>#</code>) and user information are not permitted.</p>
+<p>The Location cannot be changed while the connection is open.  For a connection accepted by a <class name="WebSocketServer">WebSocketServer</class>, Location reports the URL requested by the client, built from its <code>Host</code> header and request target.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MaxFrameSize</name>
+      <comment>The maximum size of a single received frame, in bytes.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>A frame larger than this limit fails the connection with close code <code>MESSAGE_TOO_BIG</code> before its payload is buffered. Zero, the default, applies <fl>MaxMessageSize</fl>.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MaxMessageSize</name>
+      <comment>The maximum size of a received message, in bytes.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>A message whose frames exceed this limit in total fails the connection with close code <code>MESSAGE_TOO_BIG</code>.  The default is 16 MiB.  Zero removes the limit, which is not recommended for connections to untrusted servers.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Origin</name>
+      <comment>An optional <code>Origin</code> request header.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Browsers send the origin of the page that opens a connection, and some servers use it to restrict access.  Leave this field empty to omit the header.  For a connection accepted by a <class name="WebSocketServer">WebSocketServer</class>, Origin reports the client's <code>Origin</code> header, if any.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Outgoing</name>
+      <comment>Reports that the send queue has been emptied.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The C++ prototype is <code>void Function(*WebSocket, APTR Meta)</code>.  Tiri callbacks receive <code>(WebSocket)</code>.</p>
+<p>Outgoing is invoked when <fl>Pending</fl> drops to zero after a previous <method>Send</method> left data in the queue, or after a <method>Send</method> was rejected with <code>BufferOverflow</code>.  A producer that transfers more data than <fl>SendLimit</fl> permits can send until <code>BufferOverflow</code> is returned and resume from this callback.  It is not invoked for messages that were written in full by the <method>Send</method> call that queued them, and it is not invoked once the closing handshake has started.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Pending</name>
+      <comment>The number of queued bytes awaiting transmission.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>Pending counts the encoded frames held by the WebSocket's send queue, including frame headers.  Bytes that have been passed to the network layer are not included.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PingInterval</name>
+      <comment>Enables keep-alive pings after a period of inactivity, in seconds.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>When PingInterval is greater than zero, a Ping frame is sent once no data has been received from the server for that many seconds.  If nothing is received within a further interval, the connection is dropped with <fl>CloseCode</fl> set to <code>ABNORMAL</code> and <fl>Error</fl> set to <code>TimeOut</code>.  Any received data counts as activity, so a busy connection is never pinged.</p>
+<p>The default is zero, which disables keep-alive.  The interval can be changed while the connection is open.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Protocol</name>
+      <comment>The subprotocol selected by the server.</comment>
+      <access read="R">Read</access>
+      <type>STRING</type>
+      <description>
+<p>Protocol is set when the handshake succeeds.  It is empty if no subprotocol was requested or the server did not select one.  A server that selects a subprotocol that was not requested fails the handshake.  For a connection accepted by a <class name="WebSocketServer">WebSocketServer</class>, Protocol is the subprotocol that the server selected from its <class name="WebSocketServer" field="Protocols">WebSocketServer.Protocols</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Protocols</name>
+      <comment>Comma-separated subprotocols to request, in order of preference.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Each subprotocol must be an HTTP token, for example <code>chat, superchat</code>.  The server may select one of them, which is then reported in <fl>Protocol</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ProxyPort</name>
+      <comment>The port of the <fl>ProxyServer</fl>.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>INT</type>
+      <description>
+<p>ProxyPort must be set whenever <fl>ProxyServer</fl> is set.  It is ignored otherwise.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ProxyServer</name>
+      <comment>An HTTP proxy server for the connection.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>STRING</type>
+      <description>
+<p>When set, the connection is tunnelled through the proxy with an HTTP <code>CONNECT</code> request.  Proxy authentication is not supported; a proxy that answers <code>407</code> fails the handshake.  If this field is empty, the HTTP class's system proxy settings apply.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Redirect</name>
+      <comment>The target of a redirecting handshake response.</comment>
+      <access read="R">Read</access>
+      <type>STRING</type>
+      <description>
+<p>If the server answers the handshake with a <code>3xx</code> status, the handshake fails with <code>HTTPStatus</code> and the response's <code>Location</code> header is stored here.  Redirects are never followed automatically, so that the client can decide whether the new destination is acceptable.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SendLimit</name>
+      <comment>The maximum number of queued bytes awaiting transmission.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>SendLimit bounds the memory used by the send queue when the peer reads more slowly than messages are sent.  A <method>Send</method> or <method>Ping</method> that would take <fl>Pending</fl> beyond this limit fails with <code>BufferOverflow</code>.  Pong and Close frames are exempt. The default is 16 MiB.  Zero removes the limit, which is not recommended.  Negative values are invalid.  A change made while connected applies to subsequent calls and does not affect bytes already queued.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>State</name>
+      <comment>The current connection state.</comment>
+      <access read="R">Read</access>
+      <type lookup="WSS">WSS</type>
+      <description>
+<p>A new WebSocket is <code>CLOSED</code>.  <action>Activate</action> changes the State to <code>CONNECTING</code>, a successful handshake to <code>OPEN</code>, and the start of the closing handshake to <code>CLOSING</code>.  The State returns to <code>CLOSED</code> when the connection ends or the handshake fails, after which the object can be activated again.  Every change is reported to <fl>StateChanged</fl>.</p>
+<types lookup="WSS"/>
+      </description>
+    </field>
+
+    <field>
+      <name>StateChanged</name>
+      <comment>Reports changes to the <fl>State</fl>.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The C++ prototype is <code>void Function(*WebSocket, WSS State, APTR Meta)</code>.  Tiri callbacks receive <code>(WebSocket, State)</code>. The <fl>CloseCode</fl>, <fl>CloseReason</fl> and <fl>Error</fl> fields are set before a <code>CLOSED</code> notification.  The callback may free the WebSocket.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Status</name>
+      <comment>The HTTP status of the handshake response.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>Status is <code>101</code> after a successful handshake.  If the server rejected the handshake, it holds the response status, for example <code>403</code>.  It is zero if no response was received.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="WSC" comment="WebSocket close status codes, as defined by RFC 6455 section 7.4.1.">
+      <const name="ABNORMAL"/>
+      <const name="GOING_AWAY"/>
+      <const name="INTERNAL_ERROR"/>
+      <const name="INVALID_PAYLOAD"/>
+      <const name="MANDATORY_EXTENSION"/>
+      <const name="MESSAGE_TOO_BIG"/>
+      <const name="NORMAL"/>
+      <const name="NO_STATUS"/>
+      <const name="POLICY_VIOLATION"/>
+      <const name="PROTOCOL_ERROR"/>
+      <const name="TLS_HANDSHAKE"/>
+      <const name="UNSUPPORTED_DATA"/>
+    </constants>
+
+    <constants lookup="WSF" comment="WebSocket flags.">
+      <const name="DISABLE_SERVER_VERIFY">Do not verify the server's TLS certificate.</const>
+      <const name="NO_AUTO_PONG">Do not answer received pings automatically.  Intended for test fixtures only.</const>
+      <const name="NO_UTF8_CHECK">Skip UTF-8 validation of text messages.  For interoperability with non-conforming peers only.</const>
+      <const name="SSL">WebSocketServer only.  Accept TLS (<code>wss://</code>) connections.</const>
+      <const name="STREAM_MESSAGES">Deliver message fragments as they arrive instead of assembling complete messages.</const>
+    </constants>
+
+    <constants lookup="WSM" comment="WebSocket message types.">
+      <const name="BINARY">The message payload is binary data.</const>
+      <const name="TEXT">The message payload is UTF-8 text.</const>
+    </constants>
+
+    <constants lookup="WSS" comment="WebSocket connection states.">
+      <const name="CLOSED">The connection is closed or could not be opened.</const>
+      <const name="CLOSING">The closing handshake has started.  No further messages can be sent.</const>
+      <const name="CONNECTING">The opening handshake is in progress.</const>
+      <const name="OPEN">The handshake completed and messages can be exchanged.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

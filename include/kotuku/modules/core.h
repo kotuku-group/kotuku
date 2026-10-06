@@ -32,7 +32,7 @@
 #include "ankerl/unordered_dense.h"
 #endif
 
-#define CORE_BUILD_DATE 20261005
+#define CORE_BUILD_DATE 20261006
 class objMetaClass;
 
 // Predefined cursor styles
@@ -1569,6 +1569,7 @@ struct CoreBase {
    ERR (*_FreeObject)(OBJECTID ObjectID);
    ERR (*_PinResource)(RESOURCEID ResourceID);
    ERR (*_UnpinResource)(RESOURCEID ResourceID);
+   ERR (*_OpenURI)(const std::string_view &URI);
 #endif // KOTUKU_STATIC
 };
 
@@ -1669,6 +1670,7 @@ inline OBJECTPTR PinWeakObject(OBJECTID Object) { return CoreBase->_PinWeakObjec
 inline ERR FreeObject(OBJECTID ObjectID) { return CoreBase->_FreeObject(ObjectID); }
 inline ERR PinResource(RESOURCEID ResourceID) { return CoreBase->_PinResource(ResourceID); }
 inline ERR UnpinResource(RESOURCEID ResourceID) { return CoreBase->_UnpinResource(ResourceID); }
+inline ERR OpenURI(const std::string_view &URI) { return CoreBase->_OpenURI(URI); }
 #else
 extern "C" ERR Action(AC Action, OBJECTPTR Object, APTR Parameters);
 extern "C" void ActionList(kt::vector<ActionTable *> *Actions);
@@ -1765,6 +1767,7 @@ extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);
 extern "C" ERR FreeObject(OBJECTID ObjectID);
 extern "C" ERR PinResource(RESOURCEID ResourceID);
 extern "C" ERR UnpinResource(RESOURCEID ResourceID);
+extern "C" ERR OpenURI(const std::string_view &URI);
 #endif // KOTUKU_STATIC
 
 

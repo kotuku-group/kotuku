@@ -223,7 +223,7 @@ target_link_libraries (core PRIVATE zlib)
 
 if (WIN32)
    target_sources (core PRIVATE microsoft/windows.cpp)
-   target_link_libraries (core PRIVATE wsock32 psapi advapi32 version)
+   target_link_libraries (core PRIVATE wsock32 psapi advapi32 version shell32)
    if (KOTUKU_VLOG OR MSVC)
       # Header generation for libdbghelp: dlltool -k -d dbghelp.def -l libdbghelp.a
       # Copy libdbghelp.a to your MinGW libs folder.

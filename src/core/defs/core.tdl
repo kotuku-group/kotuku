@@ -819,7 +819,8 @@ class objTask;
     "PinWeakObject",
     "FreeObject",
     "PinResource",
-    "UnpinResource")
+    "UnpinResource",
+    "OpenURI")
 
   c_insert([==[
 

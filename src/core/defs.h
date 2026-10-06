@@ -1279,6 +1279,7 @@ extern "C" WINHANDLE winLoadLibrary(CSTRING);
 extern "C" void winLowerPriority(void);
 extern "C" int winGetProcessPriority(void);
 extern "C" int winSetProcessPriority(int Priority);
+extern "C" ERR winOpenURI(const std::string_view &URI);
 extern "C" int64_t winGetProcessAffinityMask(void);
 extern "C" int winSetProcessAffinityMask(int64_t AffinityMask);
 extern "C" void winProcessMessages(void);
