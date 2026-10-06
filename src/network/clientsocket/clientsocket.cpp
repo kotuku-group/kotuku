@@ -668,7 +668,9 @@ static ERR CS_GET_OutQueueSize(extClientSocket *Self, int *Value)
 {
    auto &queue = Self->WriteQueue;
    auto queued = (queue.Index < queue.Buffer.size()) ? queue.Buffer.size() - queue.Index : 0;
-   queued += clientsocket_pending_tls_output(Self);
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   queued += Self->TLS.PendingPlaintext;
+#endif
    *Value = int(std::min(queued, size_t(INT_MAX)));
    return ERR::Okay;
 }

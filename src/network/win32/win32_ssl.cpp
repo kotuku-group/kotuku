@@ -159,6 +159,7 @@ template <class T> ERR tls_flush_output(T *Self)
       else if (error != ERR::Okay) return error;
    }
 
+   Self->TLS.PendingPlaintext = 0;
    return ERR::Okay;
 }
 
