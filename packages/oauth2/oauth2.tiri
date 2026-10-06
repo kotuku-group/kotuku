@@ -432,7 +432,7 @@ This method may be called at any time, including from a callback, and has no eff
    self.cancel = function()
       if control then
          control.cancelled = true
-         if control.wake then control.wake() end
+         control?.wake()
       end
       clearAttempt()
    end
@@ -564,10 +564,13 @@ table: Failure details, including the failure code in the `code` field.
       control = { deadline=monotonicTime() + timeout }
       saved_template = redirect_template
       result:table = nil
-      proc = processing.new()
-      control.wake = function() proc.signal() end
+
       local server:obj
       sockets = {}
+
+      control.wake = function() 
+         server.acSignal() 
+      end
 
       try
          -- The listener accepts one client at a time.  Each connection has five seconds to send a complete request
@@ -586,7 +589,8 @@ table: Failure details, including the failure code in the `code` field.
                elseif State is NTC_DISCONNECTED then
                   sockets[Client.id] = nil
                end
-               proc.signal()
+
+               if not result then server.acSignal() end
             end,
 
             incoming = function(Server, Client)
@@ -608,7 +612,6 @@ table: Failure details, including the failure code in the `code` field.
                parsed:table = nil
                try
                   parsed = oauth_callback.parse(state.buffer, attempt, crypto_api)
-               except e
                end
 
                accepted = parsed != nil
@@ -621,7 +624,8 @@ table: Failure details, including the failure code in the `code` field.
 
                if accepted then
                   result = parsed
-                  proc.signal()
+                  --processing.delayedCall(function() server.acSignal() end)
+                  server.acSignal()
                end
 
                return ERR_Terminate
@@ -629,6 +633,7 @@ table: Failure details, including the failure code in the `code` field.
          })
 
          web_server = server
+         proc = processing.new({ signals=array<obj> { server } })
 
          -- Build the URL against the bound port.  buildAuthUrl() refuses to run while an operation is active, so
          -- control is suspended for the call.
@@ -641,10 +646,10 @@ table: Failure details, including the failure code in the `code` field.
 
          if present(auth_url) is false then return failure('browser_failed') end
 
-         -- Socket changes and cancellation wake the waiter.  Otherwise sleep until the next actual deadline.
+         -- Socket changes and cancellation use a private signal.  Accepted callbacks wake on the next processing
+         -- cycle so the loopback response can be dispatched before the listener is released.
 
          while true do
-            proc.flush()
             if result or control.cancelled or monotonicTime() >= control.deadline then break end
 
             wake_at = control.deadline
@@ -652,6 +657,7 @@ table: Failure details, including the failure code in the `code` field.
                if monotonicTime() >= entry.deadline then server.mtDisconnectSocket(entry.socket)
                else wake_at = math.min(wake_at, entry.deadline) end
             end
+
             if proc.sleep(math.max(0, wake_at - monotonicTime())) is ERR_Terminate then
                control.cancelled = true
             end
@@ -707,9 +713,9 @@ table: Failure details, including the failure code in the `code` field.
       if control or attempt then return failure('busy') end
 
       original_redirect = redirect_template
-      web_token:table = nil
-      web_message:str = nil
-      web_details:table = nil
+      web_token:table
+      web_message:str
+      web_details:table
 
       try
          web_token, web_message, web_details = runWeb(ExtraParams)
@@ -780,8 +786,7 @@ table: Failure details, including the failure code in the `code` field.
       control = {}
 
       result, message, details = tokenRequest(
-         credentials({ grant_type='refresh_token', refresh_token=token }, refresh_client),
-         {
+         credentials({ grant_type='refresh_token', refresh_token=token }, refresh_client), {
             clientID = refresh_client,
             subject  = prior and prior.identity and prior.identity.subject,
             nonce    = prior and prior.nonce,
