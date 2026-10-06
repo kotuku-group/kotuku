@@ -4,7 +4,7 @@
 Internal script for combobox drop-down menus.
 --]]
 
-   import 'gui'
+   import 'gui', 'gui/scrollbar'
    include 'display'
 
    namespace gui
@@ -17,6 +17,7 @@ VMARGIN      <const> = math.floor(ITEM_HEIGHT * 0.33)
 HMARGIN      <const> = 6
 ICON_SIZE    <const> = math.floor(ITEM_HEIGHT * 0.8)
 ITEM_SPACING <const> = 1.2
+SCROLL_WIDTH <const> = 12
 
 gui.dropdown = function(Options)
    local theme = Options.theme ?? gui.getTheme()
@@ -26,11 +27,14 @@ gui.dropdown = function(Options)
       timeShow = 0,
       timeHide = 0,
       visible  = false,
-      client   = Options.client,
       feedback = Options.feedback,
       x        = Options.x ?? 0,
       y        = Options.y ?? 0,
       relative = Options.relative,
+      width    = 0, -- Unscaled width of the menu content
+      height   = 0, -- Unscaled height of the menu content
+      scale    = 1, -- Scale applied to the menu when shown, e.g. to match a scaled client viewport
+      lineLimit = Options.lineLimit, -- Maximum number of visible items before the menu scrolls
       items    = { }
    }
 
@@ -53,12 +57,17 @@ gui.dropdown = function(Options)
       end
    end
 
-   self.selectItem = function()
+   -- Scrolls the menu so that Item is fully visible, with a margin so that a neighbouring item can be glimpsed.
 
-   end
-
-   self.getItem = function()
-
+   function ensureVisible(Item:table)
+      if (not &scrollbar) or (not Item) then return end
+      top = -&page.y
+      bottom = top + &height
+      if Item.y - VMARGIN < top then
+         &scrollbar.scrollPage(0, top - Item.y + VMARGIN)
+      elseif Item.y + Item.height + VMARGIN > bottom then
+         &scrollbar.scrollPage(0, bottom - Item.y - Item.height - VMARGIN)
+      end
    end
 
    self.hide = function()
@@ -69,6 +78,18 @@ gui.dropdown = function(Options)
    self.show = function()
       surface = &surface
       if surface.flags has RNF_VISIBLE then return end
+
+      -- The content is laid out at 1:1 and the view box scales it to fit the surface.
+
+      scale = &scale > 0 ? &scale : 1
+      surface.width  = math.ceil(&width * scale)
+      surface.height = math.ceil(&height * scale)
+      &viewport.viewWidth  = surface.width / scale
+      &viewport.viewHeight = surface.height / scale
+
+      if &scrollbar then
+         if &hItem then ensureVisible(&hItem) else &page.y = 0 end
+      end
 
       if &relative then
          -- Correct the position of the menu according to the relative vector that it is offset from.
@@ -112,13 +133,32 @@ gui.dropdown = function(Options)
       &timeShow = mSys.PreciseTime()
    end
 
+   function selectable(Item:table):bool
+      return not (Item.lineBreak or Item.disabled or Item.config.disabled)
+   end
+
+   function itemIndex(Item:table):num
+      if not Item then return nil end
+      for i in {0 to #&items} do
+         if &items[i] is Item then return i end
+      end
+   end
+
+   -- Returns the first selectable item from index Start, searching in the direction of Step.
+
+   function seek(Start:num!, Step:num!):table
+      i = Start
+      while i >= 0 and i < #&items do
+         if selectable(&items[i]) then return &items[i] end
+         i += Step
+      end
+   end
+
    function highlightItem(Item:table)
       if Item is &hItem then
          return
-      elseif Item then
-         if Item.lineBreak or Item.disabled then
-            return
-         end
+      elseif Item and not selectable(Item) then
+         return
       end
 
       if &hItem then -- Redraw the previously highlighted item
@@ -147,6 +187,58 @@ gui.dropdown = function(Options)
       end
    end
 
+   -- Keyboard navigation.  The menu cannot take the focus, so its owner forwards key presses to these methods.
+
+   -- step() moves the highlight by Count items, e.g. 1 for the next item or lineLimit for the next page, stopping at
+   -- either end and skipping items that cannot be selected.  If nothing is highlighted, the first or last item is
+   -- chosen according to the direction.
+
+   self.step = function(Count:num!)
+      direction = Count > 0 ? 1 : -1
+      index = itemIndex(&hItem)
+      start = index is nil ? (direction > 0 ? 0 : #&items - 1) : math.clamp(index + Count, 0, #&items - 1)
+      item = seek(start, direction) or seek(start, -direction)
+      if item then
+         highlightItem(item)
+         ensureVisible(item)
+      end
+   end
+
+   -- moveToEnd() highlights the first selectable item, or the last if Last is true.
+
+   self.moveToEnd = function(Last:bool)
+      item = Last ? seek(#&items - 1, -1) : seek(0, 1)
+      if item then
+         highlightItem(item)
+         ensureVisible(item)
+      end
+   end
+
+   -- highlightText() highlights the item that matches Text, typically the owner's current value.
+
+   self.highlightText = function(Text:str)
+      for item in values(&items) do
+         if item.config.item is Text then
+            highlightItem(item)
+            ensureVisible(item)
+            return
+         end
+      end
+      highlightItem(nil)
+   end
+
+   -- activate() reports the highlighted item to the client and hides the menu.  Returns false if no item is
+   -- highlighted.
+
+   self.activate = function():bool
+      item = &hItem
+      if (not item) or (not selectable(item)) then return false end
+      item.config?.feedback(self, item.config)
+      self?.feedback(self, item.config)
+      &hide()
+      return true
+   end
+
    -- Main entry point --
 
    using self do
@@ -156,7 +248,7 @@ gui.dropdown = function(Options)
       &surface.name     = 'menu'
       &surface.width    = Options.width ?? 400
       &surface.parent   = Options.target
-      &surface.flags    = RNF_STICK_TO_FRONT|RNF_COMPOSITE
+      &surface.flags    = RNF_STICK_TO_FRONT|RNF_COMPOSITE|RNF_NO_FOCUS -- Key presses are forwarded by the owner
       &surface.x        = -10000
       &surface.y        = -10000
       &surface.presence = SPT_NONE
@@ -178,51 +270,62 @@ gui.dropdown = function(Options)
       &surface.subscribe('show', function(Surface, Args)
          &visible = true
          &timeShow = mSys.PreciseTime()
-
-         -- Keyboard support requires a client reference to grab input from.
-
-         if &client and (not &_subscribedKb) then
-            if &client.mtSubscribeKeyboard(function(Viewport, Qualifiers, Value, Unicode)
-               if not &visible then
-                  &_subscribedKb = false
-                  raise ERR_Terminate
-               end
-
-               if not (Qualifiers has KQ_PRESSED) then return end
-
-               if Value is KEY_UP then
-
-               elseif Value is KEY_DOWN then
-
-               elseif Value is KEY_ENTER then
-
-               end
-            end) is ERR_Okay then
-               &_subscribedKb = true
-            end
-         end
       end)
 
-      &viewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport, Events)
+      showIcons = Options.showIcons is false ? nil : true
+      TEXT_X = HMARGIN
+
+      if showIcons then
+         iconsPresent = false
+         for item in values(Options.config) do
+            if item.icon then
+               iconsPresent = true
+               TEXT_X = HMARGIN + ICON_SIZE + HMARGIN + HMARGIN
+            end
+         end
+      end
+
+      -- Offsets are used for the background and border because they are relative to the view box, whereas a
+      -- resizeEvent reports the scaled dimensions.
+
+      &viewport.new('VectorRectangle', { -- Background
+         fill = theme.dropdown.bkgd,
+         x = 1.5, y = 1.5, xOffset = 1.5, yOffset = 1.5, roundX = 3, roundY = 3
+      })
+
+      -- Items are placed in a page that scrolls within a clipped frame if there are more than lineLimit of them.
+
+      &frame = &viewport.new('VectorViewport', { x=0, y=0, xOffset=0, yOffset=0, overflow=VOF_HIDDEN })
+      &page = &frame.new('VectorViewport', { x=0, y=0, width='100%', height=1 })
+
+      &highlight = &page.new('VectorRectangle', {
+         x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT, fill = theme.menu.highlight, visibility = 'hidden'
+      })
+
+      &viewport.new('VectorRectangle', { -- Menu border
+         stroke = theme.dropdown.stroke,
+         strokeWidth = 1.5, x = 1.5, y = 1.5, xOffset = 1.5, yOffset = 1.5, roundX = 3, roundY = 3
+      })
+
+      -- Input coordinates are relative to the page, so they already account for scaling and scrolling.
+
+      &page.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport, Events)
          ev = Events
          while ev do
             if ev.type is JET_BUTTON_1 then
-               if ev.value is 1 then
-                  if &hItem then -- Menu item activated
-                     &hItem.config?.feedback(self, &hItem.config)
-                     self?.feedback(self, &hItem.config)
-                     &surface.acHide()
-                  end
-               end
+               if ev.value is 1 then &activate() end
             elseif ev.type is JET_ABS_XY then
+               ev_y = ev.y
                highlightFound = false
                for item in values(&items) do
                   if not item.lineBreak then
-                     if (ev.y >= item.y) and (ev.y < item.y + item.height) then
-                        if &hItem != item then
-                           highlightItem(item)
+                     if (ev_y >= item.y) and (ev_y < item.y + item.height) then
+                        if selectable(item) then
+                           if &hItem != item then
+                              highlightItem(item)
+                           end
+                           highlightFound = true
                         end
-                        highlightFound = true
                         break
                      end
                   end
@@ -241,40 +344,6 @@ gui.dropdown = function(Options)
          end
       end)
 
-      showIcons = Options.showIcons is false ? nil : true
-      TEXT_X = HMARGIN
-
-      if showIcons then
-         iconsPresent = false
-         for item in values(Options.config) do
-            if item.icon then
-               iconsPresent = true
-               TEXT_X = HMARGIN + ICON_SIZE + HMARGIN + HMARGIN
-            end
-         end
-      end
-
-      &viewport.new('VectorRectangle', { -- Background
-         fill = theme.dropdown.bkgd,
-         x = 1.5, y = 1.5, roundX = 3, roundY = 3, width = 1, height = 1,
-         resizeEvent = function(Viewport:obj!, Vector:obj!, X:num!, Y:num!, Width:num!, Height:num!)
-            Vector.width  = Width - (Vector.x * 2)
-            Vector.height = Height - (Vector.y * 2)
-         end
-      })
-
-      &highlight = &viewport.new('VectorRectangle', {
-         x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT, fill = theme.menu.highlight, visibility = 'hidden'
-      })
-
-      &viewport.new('VectorRectangle', { -- Menu border
-         stroke = theme.dropdown.stroke,
-         strokeWidth = 1.5, x = 1.5, y = 1.5, roundX = 3, roundY = 3, width = 1, height = 1,
-         resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-            Vector.width  = Width - (Vector.x * 2)
-            Vector.height = Height - (Vector.y * 2)
-         end
-      })
 
       &items = { }
       widestItem = 0
@@ -283,7 +352,7 @@ gui.dropdown = function(Options)
       for item in values(Options.config) do
          if item['item'] then
             mi = { y=y, config=item }
-            vText = &viewport.new('VectorText', {
+            vText = &page.new('VectorText', {
                x        = TEXT_X,
                face     = gui.fonts.menu.face,
                fontSize = string.format('%.2fpt', gui.fonts.menu.size),
@@ -312,7 +381,7 @@ gui.dropdown = function(Options)
                      mi.iconHighlightFill = mi.iconFill
                   end
 
-                  mi.iconView = &viewport.new('VectorRectangle', {
+                  mi.iconView = &page.new('VectorRectangle', {
                      x = HMARGIN, y = math.ceil(y + (ITEM_HEIGHT - ICON_SIZE) * 0.5), width = ICON_SIZE, height = ICON_SIZE, fill = info.fill
                   })
                end
@@ -326,8 +395,26 @@ gui.dropdown = function(Options)
          end
       end
 
-      &surface.width  = TEXT_X + widestItem + (HMARGIN * 3) + widestKey + HMARGIN
-      &surface.height = y + VMARGIN
+      &width  = TEXT_X + widestItem + (HMARGIN * 3) + widestKey + HMARGIN
+      &height = y + VMARGIN
+      &page.height = &height
+
+      if &lineLimit and (&lineLimit > 0) and (#&items > &lineLimit) then
+         &height = &items[&lineLimit].y + VMARGIN
+         &width += SCROLL_WIDTH
+         &scrollbar = gui.scrollbar({
+            target = &viewport, view = &frame, page = &page, direction = 'vertical', breadth = SCROLL_WIDTH
+         })
+
+         -- Inset the bar so that it does not cover the menu border.
+
+         &scrollbar.vbar.viewport.y = 2
+         &scrollbar.vbar.viewport.yOffset = 2
+         &scrollbar.vbar.viewport.xOffset = 2
+      end
+
+      &surface.width  = &width
+      &surface.height = &height
 
       return &&
    end

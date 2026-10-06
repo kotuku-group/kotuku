@@ -879,6 +879,13 @@ If a display is hosted in a desktop window, it may be possible to enforce size r
 from being shrunk or expanded beyond a certain size.  This feature is platform dependent and `ERR::NoSupport`
 will be returned if it is not implemented.
 
+A negative value leaves the corresponding limit at the value set by the previous call, while zero removes it.  This
+convention is honoured by the X11 and Wayland drivers.
+
+Window managers ignore aspect ratio and maximum size hints when a window is maximised.  On X11, setting
+`EnforceAspect` therefore also asks the window manager to remove the window's maximise function, and clearing it
+restores that function.
+
 Wayland applies minimum and maximum dimensions.  It cannot enforce an aspect ratio through xdg-shell; if
 `EnforceAspect` is true, the size limits are still applied and `ERR::NoSupport` is returned.
 

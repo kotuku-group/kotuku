@@ -32,12 +32,15 @@ struct X11WindowRecord {
    XSyncCounter FrameCounter = 0;
    int64_t FrameValue = 0;         // Current value of FrameCounter; odd while a frame is being drawn
    int64_t SyncRequest = 0;        // Value from a pending _NET_WM_SYNC_REQUEST message, or zero
+   int MinWidth = 0, MinHeight = 0; // Size limits last applied by setSizeHints(); zero means no limit
+   int MaxWidth = 0, MaxHeight = 0;
    bool SyncRequestExtended = false;
    bool FrameOpen = false;
    bool Owned = false;
    bool Root = false;
    bool Visible = false;
    bool Adopted = false; // True if the window was created inside a host window supplied by the client
+   bool Maximisable = true; // False while an aspect ratio is enforced, because window managers ignore it when maximised
 };
 
 struct X11BitmapRecord {

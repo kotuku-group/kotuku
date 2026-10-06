@@ -125,7 +125,12 @@ static GC create_graphics_context(X11Driver::State *State, Drawable DrawableID)
 
 //********************************************************************************************************************
 
-static void set_window_decorations(X11Driver::State *State, Window WindowID, bool Enabled)
+// The Motif hints control the window's decorations and the functions that the window manager offers for it.  The
+// property is replaced as a whole, so every update carries the window's full state.  Removing the maximise function
+// is the only way to stop window managers such as Mutter from maximising a window, which they do in disregard of its
+// aspect ratio and maximum size hints.
+
+static void set_motif_hints(X11Driver::State *State, X11WindowRecord *Record)
 {
    struct MotifHints {
       unsigned long Flags;
@@ -135,13 +140,26 @@ static void set_window_decorations(X11Driver::State *State, Window WindowID, boo
       unsigned long StatusValue;
    };
 
+   static constexpr unsigned long motif_hints_functions   = 1 << 0;
    static constexpr unsigned long motif_hints_decorations = 1 << 1;
-   auto property = XInternAtom(State->Connection, "_MOTIF_WM_HINTS", False);
+   static constexpr unsigned long motif_func_resize   = 1 << 1;
+   static constexpr unsigned long motif_func_move     = 1 << 2;
+   static constexpr unsigned long motif_func_minimise = 1 << 3;
+   static constexpr unsigned long motif_func_close    = 1 << 5;
+
+   bool decorated = (not Record->Display) or ((Record->Display->Flags & SCR::BORDERLESS) IS SCR::NIL);
    MotifHints hints = {
       .Flags = motif_hints_decorations,
-      .Decorations = Enabled ? 1UL : 0UL
+      .Decorations = decorated ? 1UL : 0UL
    };
-   XChangeProperty(State->Connection, WindowID, property, property, 32, PropModeReplace,
+
+   if (not Record->Maximisable) {
+      hints.Flags |= motif_hints_functions;
+      hints.Functions = motif_func_resize|motif_func_move|motif_func_minimise|motif_func_close;
+   }
+
+   auto property = XInternAtom(State->Connection, "_MOTIF_WM_HINTS", False);
+   XChangeProperty(State->Connection, Record->Native, property, property, 32, PropModeReplace,
       (const unsigned char *)&hints, 5);
 }
 
@@ -515,7 +533,7 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
 
    XSizeHints hints = { .flags = USPosition|USSize };
    XSetWMNormalHints(State->Connection, native, &hints);
-   set_window_decorations(State, native, (DisplayObject->Flags & SCR::BORDERLESS) IS SCR::NIL);
+   set_motif_hints(State, record);
    if ((not attributes.override_redirect) and (not State->TaskBar)) hide_window_from_taskbar(State, native);
    Record = record;
    return ERR::Okay;
@@ -809,13 +827,33 @@ ERR X11Driver::windowTitle(HOSTWINDOW WindowHandle, std::string &Title)
 ERR X11Driver::setSizeHints(HOSTWINDOW WindowHandle, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect)
 {
    auto window = x11_window(Data, WindowHandle); if (not window) return ERR::NoSupport;
+
+   // WM_NORMAL_HINTS is replaced as a whole, so a negative value retains the limit from the previous call.
+
+   if (MinW >= 0) window->MinWidth  = MinW;
+   if (MinH >= 0) window->MinHeight = MinH;
+   if (MaxW >= 0) window->MaxWidth  = MaxW;
+   if (MaxH >= 0) window->MaxHeight = MaxH;
+
    XSizeHints hints = {};
-   if ((MaxW > 0) and (MaxH > 0)) { hints.max_width = MaxW; hints.max_height = MaxH; hints.flags |= PMaxSize; }
-   if ((MinW > 0) and (MinH > 0)) { hints.min_width = MinW; hints.min_height = MinH; hints.flags |= PMinSize; }
-   if (EnforceAspect and (hints.flags & PMaxSize) and (hints.flags & PMinSize)) {
-      hints.flags |= PAspect; hints.min_aspect = { MinW, MinH }; hints.max_aspect = { MinW, MinH };
+   if ((window->MaxWidth > 0) and (window->MaxHeight > 0)) {
+      hints.max_width = window->MaxWidth; hints.max_height = window->MaxHeight; hints.flags |= PMaxSize;
    }
-   XSetWMNormalHints(Data->Connection, window->Native, &hints); return ERR::Okay;
+   if ((window->MinWidth > 0) and (window->MinHeight > 0)) {
+      hints.min_width = window->MinWidth; hints.min_height = window->MinHeight; hints.flags |= PMinSize;
+   }
+   if (EnforceAspect and (hints.flags & PMinSize)) {
+      hints.flags |= PAspect;
+      hints.min_aspect = { window->MinWidth, window->MinHeight };
+      hints.max_aspect = { window->MinWidth, window->MinHeight };
+   }
+   XSetWMNormalHints(Data->Connection, window->Native, &hints);
+
+   if (window->Owned and (window->Maximisable IS EnforceAspect)) {
+      window->Maximisable = not EnforceAspect;
+      set_motif_hints(Data, window);
+   }
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -1013,7 +1051,7 @@ ERR X11Driver::displayInfo(DisplayInfo &Info)
    if (not Info.Height) Info.Height = Info.MonitorHeight;
    if ((not Info.HDensity) or (not Info.VDensity)) {
       // Densities that are already defined are preserved because they include any user override from the style.
-      int horizontal, vertical;
+      int horizontal = 0, vertical = 0;
       density(nullptr, horizontal, vertical);
       if (not Info.HDensity) Info.HDensity = horizontal;
       if (not Info.VDensity) Info.VDensity = vertical;
@@ -1035,7 +1073,6 @@ ERR X11Driver::displayInfo(DisplayInfo &Info)
 }
 
 //********************************************************************************************************************
-
 // Xft.dpi is the X11 counterpart of the Windows system DPI: desktop environments set it to reflect the user's scaling
 // preference.  As on Windows, values below 96 are not reported.
 

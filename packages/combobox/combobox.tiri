@@ -30,12 +30,24 @@ function reportFeedback()
 end
 
 function toggleMenu()
-   err, bx, by, bw, bh = &viewport.mtGetBoundary(0)
+   -- The boundary is in display coordinates and includes any scaling applied by parent viewports, so the menu is
+   -- scaled to match the input box.
 
-   &menu.x = bx + &labelSize
-   &menu.y = by + BOX_HEIGHT
+   err, bx, by, bw, bh = &inputViewport.mtGetBoundary(0)
+   if err is ERR_Okay then
+      &menu.x = bx
+      &menu.y = by + bh
+      if &inputViewport.width > 0 then &menu.scale = bw / &inputViewport.width end
+   end
+
    if not &unlockMenuWidth then
-      &menu.surface.width = &viewport.width - &labelSize
+      &menu.width = &inputViewport.width
+   end
+
+   if not &menu.visible then
+      &_menuNavigated = false
+      current = &text.string -- Read before the call, as arguments are evaluated in the menu's context
+      &menu.highlightText(current)
    end
 
    &menu.toggle()
@@ -47,6 +59,7 @@ gui.combobox = function(Options)
       label          = Options.label,
       parentViewport = Options.target,
       allowCustom    = Options.allowCustom,
+      _menuNavigated = false,
       text           = nil, -- A VectorText that represents the string
       viewport       = nil  -- The primary viewport
    }
@@ -215,6 +228,46 @@ gui.combobox = function(Options)
       &_textClip.mtSubscribeKeyboard(function(Viewport, Qualifiers, Value, Unicode)
          if not (Qualifiers has KQ_PRESSED) then return end
 
+         -- The menu cannot take the focus, so navigation keys are forwarded to it while it is open.  Home and End
+         -- are left to the caret if the text is editable.
+
+         if &menu.visible then
+            if Value is KEY_UP then
+               &_menuNavigated = true
+               &menu.step(-1)
+               return
+            elseif Value is KEY_DOWN then
+               &_menuNavigated = true
+               &menu.step(1)
+               return
+            elseif (Value is KEY_PAGE_UP) or (Value is KEY_PAGE_DOWN) then
+               page = &menu.lineLimit ?? 8 -- Read before the call, as arguments are evaluated in the menu's context
+               &_menuNavigated = true
+               &menu.step(Value is KEY_PAGE_UP ? -page : page)
+               return
+            elseif (Value is KEY_HOME) and (not &allowCustom) then
+               &_menuNavigated = true
+               &menu.moveToEnd(false)
+               return
+            elseif (Value is KEY_END) and (not &allowCustom) then
+               &_menuNavigated = true
+               &menu.moveToEnd(true)
+               return
+            elseif Value is KEY_ESCAPE then &menu.hide() return
+            elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or ((not &allowCustom) and (Value is KEY_SPACE)) then
+               if (not &allowCustom) or &_menuNavigated then
+                  if &menu.activate() then return end
+               end
+            end
+
+            -- Any other key resumes text editing, so an earlier menu highlight must not replace the edited value.
+
+            if &allowCustom then &_menuNavigated = false end
+         elseif (Value is KEY_UP) or (Value is KEY_DOWN) then
+            toggleMenu()
+            return
+         end
+
          if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or ((not &allowCustom) and (Value is KEY_SPACE)) then
             toggleMenu()
             if &allowCustom then
@@ -234,7 +287,6 @@ gui.combobox = function(Options)
 
       &menu = gui.dropdown({
          relative  = &viewport,
-         client    = &inputViewport,
          config    = Options.items,
          lineLimit = 8,
          feedback = function(Menu:table!, Item:table!)
@@ -247,7 +299,7 @@ gui.combobox = function(Options)
       })
 
       if &unlockMenuWidth then -- Set combobox size to the width of the menu
-         &viewport.width = &menu.surface.width + &labelSize
+         &viewport.width = &menu.width + &labelSize
       end
 
       &events?.show(&&)
