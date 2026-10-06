@@ -34,15 +34,17 @@ silent.  A bypassed analyser does not capture audio, so its readings fall silent
 <header>Measurement</header>
 
 By default the spectrum and waveform measure the mean of every channel in the processing layout.  Audio that is out of
-phase between channels therefore reads lower than it sounds.  Set the `channel_index` parameter with
-@AudioEffect.SetKey() followed by @AudioEffect.Flush() to measure a single channel of the processing layout instead,
-where 0 is the first channel.  This is unrelated to the #AudioEffect.Channel field, which selects the channel set.  A
-display with separate left and right traces uses one analyser for each channel:
+phase between channels therefore reads lower than it sounds.  Set the `channel_index` parameter to measure a single
+channel of the processing layout instead, where 0 is the first channel.  This is unrelated to the #AudioEffect.Channel
+field, which selects the channel set.  After initialisation, change the parameter with @AudioEffect.SetKey() followed by
+@AudioEffect.Flush().  Effects on the global mix are immutable after initialisation, so a display with separate left
+and right traces creates and configures each global analyser in stages:
 
 <pre>
-left = obj.new('AudioAnalyser', { audio=sound.audio })
-left.acSetKey('channel_index', 0)
-left.acFlush()
+left = obj.new('AudioAnalyser')
+left.audio = sound.audio
+check left.acSetKey('channel_index', 0)
+left.init()
 </pre>
 
 Changing `channel_index` discards the captured audio, so readings are silent until audio captured from the new channel
