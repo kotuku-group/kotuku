@@ -68,7 +68,7 @@ gui.scrollbar = function(Options)
          self.vbar.viewport.acMoveToFront()
 
          host_height = self.vbar.sliderHostVP.height
-         if self.hbar?.viewport.visibility is VIS_VISIBLE then
+         if self.hbar?.viewport?.visibility is VIS_VISIBLE then
             host_height -= lBreadth
          end
 
@@ -150,7 +150,7 @@ gui.scrollbar = function(Options)
          end
       else
          vp = lTarget.new('VectorViewport', { name='HBarVP', x = 0, xOffset = 0, yOffset = 0, height = lBreadth })
-         if &vbar?.viewport.visibility is VIS_VISIBLE then vp.xOffset = lBreadth end
+         if &vbar?.viewport?.visibility is VIS_VISIBLE then vp.xOffset = lBreadth end
 
          bar = vp.state()
          bar.viewport  = vp

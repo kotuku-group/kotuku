@@ -79,7 +79,7 @@ gui.window = function(Options:table!)
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
 
-      Options.aspectRatio ?= 'XMin|YMin|Meet'
+      Options.aspectRatio ?= 'XMid|YMid|Meet'
 
       Options.x = 0
       Options.y = 0
@@ -275,8 +275,28 @@ gui.window = function(Options:table!)
       end)()
    }
 
-   surface_opts.minWidth  = Options.minWidth ?? 20
-   surface_opts.minHeight = Options.minHeight ?? 10
+   if Options.aspectRatio then
+      -- The host derives the aspect ratio from the minimum size, so a minimum that is not fully specified takes the
+      -- window's proportions.  It defaults to a quarter of the window's size.
+
+      ratio = surface_opts.width / surface_opts.height
+      if Options.minWidth and Options.minHeight then
+         surface_opts.minWidth  = Options.minWidth
+         surface_opts.minHeight = Options.minHeight
+      elseif Options.minWidth then
+         surface_opts.minWidth  = Options.minWidth
+         surface_opts.minHeight = math.round(Options.minWidth / ratio)
+      elseif Options.minHeight then
+         surface_opts.minWidth  = math.round(Options.minHeight * ratio)
+         surface_opts.minHeight = Options.minHeight
+      else
+         surface_opts.minWidth  = math.round(surface_opts.width / 4)
+         surface_opts.minHeight = math.round(surface_opts.height / 4)
+      end
+   else
+      surface_opts.minWidth  = Options.minWidth or 20
+      surface_opts.minHeight = Options.minHeight or 10
+   end
 
    if Options.maxWidth  then surface_opts.maxWidth  = Options.maxWidth end
    if Options.maxHeight then surface_opts.maxHeight = Options.maxHeight end
@@ -329,7 +349,7 @@ gui.window = function(Options:table!)
    gui.configureScene(self, self.scene) -- Support GUI customisation
 
    self.viewport = self.scene.new('VectorViewport', {
-      x = 0, y = 0, width = '100%', height = '100%', aspectRatio = 'XMin|YMin|Meet'
+      x = 0, y = 0, width = '100%', height = '100%', aspectRatio = 'XMid|YMid|Meet'
    })
 
    self.bkgd = self.viewport.new('VectorRectangle', {

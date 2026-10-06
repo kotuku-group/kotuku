@@ -23,13 +23,14 @@
     "tiri": "1.0"
   },
   "dependencies": {
-    "gui": "1.0"
+    "gui": "1.0",
+    "gui/scrollbar": "1.0"
   },
   "files": [
     {
       "path": "dropdown.tiri",
-      "size": 10647,
-      "sha256": "2cc0c96af986f39cecf8e8748e91b80c476a192ed44689366b57f81410193bca",
+      "size": 13905,
+      "sha256": "82e76e78feb3c243ce75f86b246b73dece1e7f95ac5187b7aa0f3ef7a7a0708c",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]
