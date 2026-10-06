@@ -232,7 +232,7 @@ gui.dropdown = function(Options)
 
    self.activate = function():bool
       item = &hItem
-      if not item then return false end
+      if (not item) or (not selectable(item)) then return false end
       item.config?.feedback(self, item.config)
       self?.feedback(self, item.config)
       &hide()
@@ -320,10 +320,12 @@ gui.dropdown = function(Options)
                for item in values(&items) do
                   if not item.lineBreak then
                      if (ev_y >= item.y) and (ev_y < item.y + item.height) then
-                        if &hItem != item then
-                           highlightItem(item)
+                        if selectable(item) then
+                           if &hItem != item then
+                              highlightItem(item)
+                           end
+                           highlightFound = true
                         end
-                        highlightFound = true
                         break
                      end
                   end
