@@ -120,11 +120,10 @@ end
    check analyser.acFlush()
    assert(get_number(analyser, 'channel_index') is 1)
 
-   -- Configuration before initialisation.
+   -- A global analyser's parameters must be configured before initialisation.
 
    early <close> = obj.new('AudioAnalyser')
    early.audio = audio
-   early.channel = channel
    check early.acSetKey('channel_index', 0)
    early.init()
    assert(get_number(early, 'channel_index') is 0)
