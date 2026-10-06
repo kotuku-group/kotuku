@@ -241,7 +241,8 @@ static void handle_selection_clear(const XSelectionClearEvent &Event)
    {
       const std::lock_guard lock(glEventState->NativeLock);
       if ((Event.window IS glEventState->ClipboardWindow) and
-          (Event.selection IS glEventState->ClipboardAtom)) {
+          (Event.selection IS glEventState->ClipboardAtom) and
+          (XGetSelectionOwner(XDisplay, glEventState->ClipboardAtom) != glEventState->ClipboardWindow)) {
          glEventState->ClipboardText.clear();
          glEventState->ClipboardTimestamp = CurrentTime;
          notify = true;
@@ -346,6 +347,7 @@ static void handle_xfixes_selection(const XFixesSelectionNotifyEvent &Event)
 
    if ((Event.subtype IS XFixesSetSelectionOwnerNotify) and
        (Event.owner != glEventState->ClipboardWindow) and (Event.owner != None)) {
+      if (glDriverCallbacks.ClipboardLost) glDriverCallbacks.ClipboardLost();
       x11_request_clipboard(glEventState, Event.selection_timestamp);
    }
    else if (((Event.subtype IS XFixesSetSelectionOwnerNotify) and (Event.owner IS None)) or
