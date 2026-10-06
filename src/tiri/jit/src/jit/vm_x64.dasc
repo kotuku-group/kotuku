@@ -2431,10 +2431,8 @@ static void build_subroutines(BuildCtx *ctx)
   |  mov CARG1, L:RB
   |  // SAVE_PC must hold the _previous_ PC. The callee updates it with PC.
   |  call extern lj_dispatch_ins // (lua_State *L, const BCIns *pc)
-  |  cmp PC_OP, BC_CTXLEAVE
-  |  jne >6
+  |  // Recording can patch the dispatched instruction before returning, so always restore the captured MULTRES.
   |  mov MULTRES, RDd
-  |6:
   |3:
   |  mov BASE, L:RB->base
   |4:

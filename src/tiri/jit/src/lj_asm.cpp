@@ -2055,8 +2055,10 @@ static void asm_tail_link(ASMState* as)
             pc = retpc;
       }
       emit_loadu64(as, RID_LPC, u64ptr(pc));
-      // BC_CHECK can separate a multi-result call from BC_RETM; its interpreter handoff must retain that count.
-      if (bc_op(*pc) IS BC_JMP or bc_op(*pc) IS BC_CHECK) mres = int32_t(snap->multres);
+      // BC_CHECK can separate a multi-result call from BC_RETM, while BC_CTXLEAVE consumes the dynamic contextual
+      // call result count.  Their interpreter handoffs must retain the count captured by the snapshot.
+      if (bc_op(*pc) IS BC_JMP or bc_op(*pc) IS BC_CHECK or bc_op(*pc) IS BC_CTXLEAVE)
+         mres = int32_t(snap->multres);
       else {
          mres = (int32_t)(snap->nslots - baseslot - LJ_FR2);
          switch (bc_op(*pc)) {
