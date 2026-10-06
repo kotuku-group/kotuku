@@ -25,7 +25,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 11;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 12;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -116,6 +116,7 @@ struct DriverCallbacks {
    void (*ConstrainWindowSize)(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
       int Axis);
    void (*ProcessMessages)();
+   bool (*AcceptsFocus)(OBJECTID SurfaceID);
 };
 
 class DisplayDriver {

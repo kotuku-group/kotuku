@@ -863,9 +863,11 @@ static ERR SURFACE_Focus(extSurface *Self)
       Self->Flags |= RNF::HAS_FOCUS;
       UpdateSurfaceField(Self, &SurfaceRecord::Flags, Self->Flags);
 
-      // Focussing on the display window is important in hosted environments
+      // Focussing on the display window is important in hosted environments.  The surface can be hidden by a focus
+      // subscriber, e.g. a pop-up menu that closes when its owner loses the focus.  A hidden surface's display is
+      // focussed when it is next shown, as the host would reject the focus request for an unmapped window.
 
-      if (Self->DisplayID) {
+      if ((Self->DisplayID) and (Self->visible())) {
          kt::ScopedObjectLock display(Self->DisplayID);
          if (display.granted()) acFocus(*display);
       }

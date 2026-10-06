@@ -217,11 +217,17 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          continue;
       }
 
-      // Focus management - clicking with the LMB can result in a change of focus.
+      // Focus management - clicking with the LMB can result in a change of focus.  Surfaces that cannot receive the
+      // focus, such as pop-up menus, leave the vector focus with their owner so that keyboard input continues to
+      // reach it.
 
       if (((input->Flags & JTYPE::BUTTON) != JTYPE::NIL) and (not ((input->Flags & JTYPE::REPEATED) != JTYPE::NIL)) and
           (input->Type IS JET::LMB) and (input->Value)) {
-         apply_focus(Self, (extVector *)get_viewport_at_xy(Self, input->X, input->Y));
+         RNF surface_flags;
+         if ((gfx::GetSurfaceFlags(Self->SurfaceID, &surface_flags) != ERR::Okay) or
+             ((surface_flags & RNF::NO_FOCUS) IS RNF::NIL)) {
+            apply_focus(Self, (extVector *)get_viewport_at_xy(Self, input->X, input->Y));
+         }
       }
 
       if (input->Type IS JET::WHEEL) {

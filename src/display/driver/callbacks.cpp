@@ -571,6 +571,18 @@ void DriverControllerPorts(int Port, bool Connected, int Total)
 }
 
 //********************************************************************************************************************
+// Reports whether a visible surface can receive the focus.  Drivers check this before focussing a host window that the
+// window manager does not manage, such as a pop-up menu that has been clicked.
+
+bool DriverAcceptsFocus(OBJECTID SurfaceID)
+{
+   RNF flags;
+   if (gfx::GetSurfaceFlags(SurfaceID, &flags) != ERR::Okay) return false;
+   if ((flags & (RNF::NO_FOCUS|RNF::DISABLED)) != RNF::NIL) return false;
+   return (flags & RNF::VISIBLE) != RNF::NIL;
+}
+
+//********************************************************************************************************************
 
 OBJECTID DriverResolveSurface(APTR HostHandle)
 {

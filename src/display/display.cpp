@@ -156,6 +156,7 @@ OBJECTID DriverResolveSurface(APTR HostHandle);
 void DriverConstrainWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
    int Axis);
 void DriverProcessMessages();
+bool DriverAcceptsFocus(OBJECTID SurfaceID);
 }
 
 const DriverCallbacks glDriverCallbacks = {
@@ -186,7 +187,8 @@ const DriverCallbacks glDriverCallbacks = {
    .ControllerPorts = display::DriverControllerPorts,
    .ResolveSurface = display::DriverResolveSurface,
    .ConstrainWindowSize = display::DriverConstrainWindowSize,
-   .ProcessMessages = display::DriverProcessMessages
+   .ProcessMessages = display::DriverProcessMessages,
+   .AcceptsFocus = display::DriverAcceptsFocus
 };
 
 thread_local int16_t tlNoDrawing = 0, tlNoExpose = 0, tlVolatileIndex = 0;
