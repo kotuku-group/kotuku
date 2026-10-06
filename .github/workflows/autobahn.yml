@@ -1,0 +1,127 @@
+# Runs the Autobahn WebSocket testsuite against the WebSocket module.  The fuzzingclient mode tests WebSocketServer
+# through autobahn/echo_server.tiri, and the fuzzingserver mode tests the WebSocket client class through
+# autobahn/echo_client.tiri.  The HTML reports are uploaded as an artifact.  Sections 12 and 13 (permessage-deflate)
+# are excluded because the module does not implement compression.
+
+name: Autobahn
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+  push:
+    branches: [ master ]
+    paths:
+      - 'src/websocket/**'
+      - 'src/network/**'
+      - '.github/workflows/autobahn/**'
+      - '.github/workflows/autobahn.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'src/websocket/**'
+      - 'src/network/**'
+      - '.github/workflows/autobahn/**'
+      - '.github/workflows/autobahn.yml'
+
+jobs:
+  autobahn:
+    name: Autobahn testsuite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      AUTOBAHN_IMAGE: crossbario/autobahn-testsuite:25.10.1
+      ORIGO: install/autobahn/origo
+      AUTOBAHN_DIR: .github/workflows/autobahn
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ccache libssl-dev pkg-config
+
+    - name: Pull Autobahn image
+      run: docker pull $AUTOBAHN_IMAGE
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-autobahn
+        max-size: 500M
+
+    - name: Configure CMake
+      run: |
+        cmake -S . -B build/autobahn \
+          -DCMAKE_BUILD_TYPE=FastBuild \
+          -DCMAKE_INSTALL_PREFIX=install/autobahn \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DRUN_ANYWHERE=TRUE \
+          -DKOTUKU_STATIC=OFF \
+          -DBUILD_DEFS=OFF \
+          -DBUILD_TESTS=OFF \
+          -DDISABLE_AUDIO=ON \
+          -DDISABLE_X11=ON \
+          -DDISABLE_DISPLAY=ON \
+          -DDISABLE_FONT=ON
+
+    - name: Build
+      run: cmake --build build/autobahn --config FastBuild --parallel
+
+    - name: Install
+      run: cmake --install build/autobahn --config FastBuild
+
+    - name: Test WebSocketServer (fuzzingclient)
+      timeout-minutes: 30
+      run: |
+        mkdir -p autobahn-reports
+        $ORIGO $AUTOBAHN_DIR/echo_server.tiri port=9001 --log-warning > autobahn-reports/echo_server.log 2>&1 &
+        SERVER_PID=$!
+        for i in $(seq 1 30); do
+          (echo > /dev/tcp/127.0.0.1/9001) 2>/dev/null && break
+          sleep 1
+        done
+        docker run --rm --network host \
+          -v "$PWD/$AUTOBAHN_DIR:/config:ro" \
+          -v "$PWD/autobahn-reports:/reports" \
+          $AUTOBAHN_IMAGE wstest -m fuzzingclient -s /config/fuzzingclient.json
+        kill $SERVER_PID || true
+
+    - name: Test WebSocket client (fuzzingserver)
+      if: always()
+      timeout-minutes: 30
+      run: |
+        mkdir -p autobahn-reports
+        docker run -d --name autobahn-fuzzingserver --network host \
+          -v "$PWD/$AUTOBAHN_DIR:/config:ro" \
+          -v "$PWD/autobahn-reports:/reports" \
+          $AUTOBAHN_IMAGE wstest -m fuzzingserver -s /config/fuzzingserver.json
+        for i in $(seq 1 30); do
+          (echo > /dev/tcp/127.0.0.1/9002) 2>/dev/null && break
+          sleep 1
+        done
+        $ORIGO $AUTOBAHN_DIR/echo_client.tiri url=ws://127.0.0.1:9002 agent=kotuku \
+          count_file=autobahn-reports/case_count.txt --log-warning
+        docker logs autobahn-fuzzingserver > autobahn-reports/fuzzingserver.log 2>&1 || true
+        docker rm -f autobahn-fuzzingserver || true
+
+    - name: Check results
+      if: always()
+      run: |
+        $ORIGO $AUTOBAHN_DIR/check_reports.tiri \
+          reports=autobahn-reports/servers/index.json,autobahn-reports/clients/index.json \
+          expected_count_file=autobahn-reports/case_count.txt --log-warning
+
+    - name: Upload reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: autobahn-reports
+        path: autobahn-reports
+        retention-days: 30

@@ -1,0 +1,27 @@
+-- $TIRI
+-- Echo server for the Autobahn testsuite's fuzzingclient mode, which tests the WebSocketServer class.  Every message
+-- received is returned to the sender unchanged.  Runs until terminated.
+--
+--   origo .github/workflows/autobahn/echo_server.tiri port=9001
+
+   include 'websocket'
+
+   local port = tonumber(arg('port', '9001'))
+
+   -- Section 9 of the testsuite sends messages of up to 16 MiB, so the limits are raised above the defaults to leave
+   -- headroom for the echo of one message to be queued while the next is received.
+
+   local server = obj.new('websocketserver', {
+      port           = port,
+      maxMessageSize = 64 * 1024 * 1024,
+      sendLimit      = 128 * 1024 * 1024,
+      connected = function(Server:obj, WebSocket:obj)
+         WebSocket.incoming = function(WS:obj, Buffer:array<byte>, Type:num, Final:num)
+            local err = WS.mtSend(Buffer, Type)
+            if err != ERR_Okay then print(f'Echo failed: {mSys.GetErrorMsg(err)}') end
+         end
+      end
+   })
+
+   print(f'Autobahn echo server listening at ws://127.0.0.1:{server.port}/')
+   processing.sleep()
