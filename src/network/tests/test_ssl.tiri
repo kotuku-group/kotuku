@@ -747,7 +747,8 @@ end
 -- An accepted TLS ClientSocket writes more than the kernel buffers hold to a client that is not reading.  SSL_write()
 -- reports WANT_WRITE and Network queues the remainder, then retries from its write queue instead of the caller's
 -- buffer.  OpenSSL rejects that retry as a "bad write retry" unless the ClientSocket accepts moving write buffers,
--- which broke the connection part way through the transfer.
+-- which broke the connection part way through the transfer.  Deactivating under backpressure also verifies that any
+-- encrypted output retained by Schannel is flushed before the socket disconnects.
 
 @Test(priority=47); @Requires(ssl=true)
 function SSLClientSocketQueuedWrites()
@@ -806,14 +807,14 @@ function SSLClientSocketQueuedWrites()
       if size < #chunk then break end
    end
    assert(socket.outQueueSize > 0, 'Nothing was queued even though the peer was not reading')
+   check socket.acDeactivate()
 
    for i in {0 to 1000} do
-      if (state.received >= written) or state.disconnected then break end
+      if state.disconnected then break end
       processing.sleep(0.01)
    end
 
-   assert(not state.disconnected,
-      f'The connection failed after the client received {state.received} of {written} bytes')
+   assert(state.disconnected, 'The server did not disconnect after flushing its queued TLS output')
    assert(state.received is written, f'Wrote {written} bytes but the client received {state.received}')
    assert(not state.mismatch, f'Received data differs from the written data at offset {state.mismatch}')
 end

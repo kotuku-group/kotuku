@@ -22,6 +22,19 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length);
 static CSTRING clientsocket_state(NTC Value);
 
 //********************************************************************************************************************
+// Return encrypted TLS output that has not yet been handed to the operating system.
+
+static size_t clientsocket_pending_tls_output(extClientSocket *Self)
+{
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   return Self->TLS.Handle ? ssl_pending_output_size(Self->TLS.Handle) : 0;
+#else
+   (void)Self;
+   return 0;
+#endif
+}
+
+//********************************************************************************************************************
 // Disconnect a client socket and report the state change.
 
 static void disconnect(extClientSocket *Self)
@@ -351,10 +364,23 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
    ClientSocket->OutgoingRecursion++;
 
    auto error = ERR::Okay;
+   bool tls_output_blocked = false;
+
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   // Schannel can consume all queued plaintext while retaining the encrypted record until IOCP has capacity.  Flush
+   // that record even when WriteQueue is empty, and do not encrypt later plaintext ahead of it.
+   if (clientsocket_pending_tls_output(ClientSocket)) {
+      error = tls_flush_output(ClientSocket);
+      if (error IS ERR::BufferOverflow) {
+         error = ERR::Okay;
+         tls_output_blocked = true;
+      }
+   }
+#endif
 
    // Send out remaining queued data before getting new data to send
 
-   while (not ClientSocket->WriteQueue.Buffer.empty()) {
+   while ((!error) and (!tls_output_blocked) and (not ClientSocket->WriteQueue.Buffer.empty())) {
       size_t len = ClientSocket->WriteQueue.Buffer.size() - ClientSocket->WriteQueue.Index;
       #ifndef DISABLE_SSL
          if ((not ClientSocket->TLS.Handle) and (len > glMaxWriteLen)) len = glMaxWriteLen;
@@ -381,6 +407,7 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
    }
 
    if ((!error) and (ClientSocket->CloseAfterWrite) and (ClientSocket->WriteQueue.Buffer.empty()) and
+       (not clientsocket_pending_tls_output(ClientSocket)) and
        (not network_platform().has_pending_write(ClientSocket->Handle))) {
       ClientSocket->CloseAfterWrite = false;
       disconnect(ClientSocket);
@@ -415,8 +442,10 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
       // If the write queue is empty then we remove the FD-Write registration so that
       // we don't tax system resources.
 
-      if (ClientSocket->WriteQueue.Buffer.empty() and (not network_platform().has_pending_write(ClientSocket->Handle))) {
-         log.trace("[NetSocket:%d] Write-queue listening on FD %d will now stop.", Server->UID, ClientSocket->Handle.int_value());
+      if (ClientSocket->WriteQueue.Buffer.empty() and (not clientsocket_pending_tls_output(ClientSocket)) and
+          (not network_platform().has_pending_write(ClientSocket->Handle))) {
+         log.trace("[NetSocket:%d] Write-queue listening on FD %d will now stop.", Server->UID,
+            ClientSocket->Handle.int_value());
          network_platform().remove_write(ClientSocket->Handle);
       }
    }
@@ -443,7 +472,8 @@ static ERR CLIENTSOCKET_Deactivate(extClientSocket *Self)
    log.branch();
 
    if ((Self->State IS NTC::CONNECTED) and
-       ((not Self->WriteQueue.Buffer.empty()) or network_platform().has_pending_write(Self->Handle))) {
+       ((not Self->WriteQueue.Buffer.empty()) or clientsocket_pending_tls_output(Self) or
+        network_platform().has_pending_write(Self->Handle))) {
       log.msg("Delaying disconnect until queued data is flushed.");
       Self->CloseAfterWrite = true;
       network_platform().register_write(Self->Handle, &clientsocket_outgoing, Self);
@@ -637,7 +667,9 @@ Writes that have been passed to the operating system but not yet completed are n
 static ERR CS_GET_OutQueueSize(extClientSocket *Self, int *Value)
 {
    auto &queue = Self->WriteQueue;
-   *Value = (queue.Index < queue.Buffer.size()) ? int(queue.Buffer.size() - queue.Index) : 0;
+   auto queued = (queue.Index < queue.Buffer.size()) ? queue.Buffer.size() - queue.Index : 0;
+   queued += clientsocket_pending_tls_output(Self);
+   *Value = int(std::min(queued, size_t(INT_MAX)));
    return ERR::Okay;
 }
 
