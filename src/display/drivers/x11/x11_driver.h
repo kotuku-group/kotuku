@@ -71,6 +71,10 @@ public:
    ERR ungrabPointer() override;
    ERR setHostOption(HOST Option, int64_t Value) override;
 
+   ERR clipboardAddText(CSTRING Text) override;
+   ERR clipboardAddFiles(CLIPTYPE Type, const std::vector<std::string> &Paths, bool Cut) override;
+   ERR clipboardClear() override;
+
    void processEvents();
 
 private:
