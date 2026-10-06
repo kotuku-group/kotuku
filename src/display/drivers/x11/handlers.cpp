@@ -232,9 +232,17 @@ void handle_button_release(XEvent *xevent)
 
    XFlush(XDisplay);
 
+   // The window manager does not focus override-redirect windows, so a click focusses them directly.  Wheel buttons
+   // (4 to 7) do not change the focus, nor do surfaces that refuse it, such as a pop-up menu owned by another window.
+
+   if ((xevent->xbutton.button >= 4) and (xevent->xbutton.button <= 7)) return;
+
    XWindowAttributes attributes;
    if ((XGetWindowAttributes(XDisplay, xevent->xany.window, &attributes)) and (attributes.override_redirect)) {
-      XSetInputFocus(XDisplay, xevent->xany.window, RevertToNone, CurrentTime);
+      auto surface_id = resolve_surface(xevent->xany.window);
+      if ((not surface_id) or (glDriverCallbacks.AcceptsFocus(surface_id))) {
+         XSetInputFocus(XDisplay, xevent->xany.window, RevertToNone, CurrentTime);
+      }
    }
 }
 
