@@ -103,16 +103,19 @@ function wireRequest(Options:table):<table, table>
    headers    = {}
    proc       = processing.new({ timeout=0.05 })
    method     = (Options.method or 'GET').lower()
+   request_body = Options.body or ''
+   -- Initialiser table order is unspecified; Flags must not erase TLS enabled by Src.
+   http_flags = HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG
+   if Options.url.startsWith('https://') then http_flags = http_flags | HTF_SSL end
 
    http <close> = obj.new('http', {
       src    = Options.url,
       method = method,
-      flags  = HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG,
+      flags  = http_flags,
       connectTimeout = math.min(10, Options.timeout or 60),
       dataTimeout    = Options.timeout or 60,
       contentType    = 'application/json',
-      inputFile = (method is 'post' or method is 'put' or method is 'patch') ? 'string:' .. (Options.body or '') : nil,
-      size      = (method is 'post' or method is 'put' or method is 'patch') ? #(Options.body or '') : 0,
+      contentLength = (method is 'post' or method is 'put' or method is 'patch') ? #request_body : 0,
       incoming = function(HTTP, Buffer)
          if #body + #Buffer > (Options.maxResponseBytes or 16777216) then
             too_large = true
@@ -135,6 +138,14 @@ function wireRequest(Options:table):<table, table>
          end
       end
    })
+
+   if method is 'post' or method is 'put' or method is 'patch' then
+      -- File paths interpret pipe characters; send JSON directly to preserve the complete body.
+      http.outgoing = function(HTTP)
+         check HTTP.acWrite(request_body)
+         raise ERR_Terminate
+      end
+   end
 
    for name, value in pairs(Options.headers or {}) do
       if not (name is <str>) or not (value is <str>) or http.acSetKey(name, value) != ERR_Okay then
@@ -531,6 +542,10 @@ returns a stream object at once.  Its methods are:
 * `onEvent(Callback)` subscribes to events in order and returns a subscription with `close()`.  Each event has
   `type`, `sequenceNumber`, `delta`, typed `item` and `response` fields where present, and the complete event in
   `raw`.
+* `onComplete(Callback)` calls `Callback(Response, Error)` once after success, failure or cancellation, including
+  transport failures without an SSE event.  Delivery occurs on the next processing cycle, after terminal event
+  callbacks.  Subscribing after completion also schedules delivery.  The returned subscription's `close()` suppresses
+  delivery, including a queued callback.  Closing the stream preserves its completion result.
 * `state()` returns `pending`, `open`, `completed`, `failed`, `incomplete`, `interrupted`, `cancelled` or `closed`.
 * `result()` returns the final response and error once the stream is terminal.  Only `completed` indicates success.
   If a provider omits `output` from the terminal payload, completed Items received through

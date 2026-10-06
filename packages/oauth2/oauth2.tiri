@@ -430,7 +430,10 @@ interrupt a callback or custom transport that blocks without returning.
 This method may be called at any time, including from a callback, and has no effect if nothing is pending.
 ]])
    self.cancel = function()
-      if control then control.cancelled = true end
+      if control then
+         control.cancelled = true
+         if control.wake then control.wake() end
+      end
       clearAttempt()
    end
 
@@ -561,7 +564,8 @@ table: Failure details, including the failure code in the `code` field.
       control = { deadline=monotonicTime() + timeout }
       saved_template = redirect_template
       result:table = nil
-      proc = processing.new({ timeout=0.05 })
+      proc = processing.new()
+      control.wake = function() proc.signal() end
       local server:obj
       sockets = {}
 
@@ -582,6 +586,7 @@ table: Failure details, including the failure code in the `code` field.
                elseif State is NTC_DISCONNECTED then
                   sockets[Client.id] = nil
                end
+               proc.signal()
             end,
 
             incoming = function(Server, Client)
@@ -636,12 +641,19 @@ table: Failure details, including the failure code in the `code` field.
 
          if present(auth_url) is false then return failure('browser_failed') end
 
-         -- Wait for a valid callback, closing any connection that exceeds its deadline.
+         -- Socket changes and cancellation wake the waiter.  Otherwise sleep until the next actual deadline.
 
-         while not result and not control.cancelled and monotonicTime() < control.deadline do
-            proc.sleep()
+         while true do
+            proc.flush()
+            if result or control.cancelled or monotonicTime() >= control.deadline then break end
+
+            wake_at = control.deadline
             for id, entry in pairs(sockets) do
-               if monotonicTime() >= entry.deadline then server.mtDisconnectSocket(entry.socket) end
+               if monotonicTime() >= entry.deadline then server.mtDisconnectSocket(entry.socket)
+               else wake_at = math.min(wake_at, entry.deadline) end
+            end
+            if proc.sleep(math.max(0, wake_at - monotonicTime())) is ERR_Terminate then
+               control.cancelled = true
             end
          end
 

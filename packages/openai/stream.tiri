@@ -1,5 +1,6 @@
 -- Private Responses streaming transport.  HTTP callbacks and user callbacks run serially on the processing thread.
 
+   include 'http'
    import 'json'
    import './sse', './bounded_json'
 
@@ -47,7 +48,7 @@ openai_stream.stream = function(Options:table):table
       value='pending', terminal=false, closed=false, response=nil, error=nil, subscriptions=array<table>,
       eventIndex=0, diagnostic='', diagnosticLimit=options.diagnosticBytes or 4096, diagnosticTruncated=false,
       http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false,
-      completedItems={}, completedItemCount=0, completedItemMax=-1
+      completedItems={}, completedItemCount=0, completedItemMax=-1, completions=array<table>
    }
 
    if state.diagnosticLimit < 0 then raise 'Invalid stream diagnostic limit' end
@@ -72,12 +73,25 @@ openai_stream.stream = function(Options:table):table
       http.acDeactivate()
    end
 
+   function dispatchCompletion(Subscription:table)
+      -- Run after the transport callback returns, so subscribers can safely close the stream.
+      processing.delayedCall(function()
+         if Subscription.closed then return end
+         callback = Subscription.callback
+         Subscription.closed = true
+         Subscription.callback = nil
+         try callback(state.response, state.error) end
+      end)
+   end
+
    function complete(StateName:str, Response:table, Error:table)
       if state.terminal then return end
       state.terminal = true
       state.value = StateName
       state.response = Response
       state.error = translated(Error)
+      for subscription in values(state.completions) do dispatchCompletion(subscription) end
+      state.completions.clear()
    end
 
    function rememberCompletedItem(Raw:table)
@@ -255,6 +269,13 @@ openai_stream.stream = function(Options:table):table
       return subscription
    end
 
+   self.onComplete = function(Callback:func!):table
+      subscription = { callback=Callback, closed=false }
+      subscription.close = function() subscription.closed = true; subscription.callback = nil end
+      if state.terminal then dispatchCompletion(subscription) else state.completions.push(subscription) end
+      return subscription
+   end
+
    self._attachHTTP = function(HTTP:obj)
       if state.terminal or state.closed then HTTP.acDeactivate(); return end
       state.http = HTTP
@@ -271,7 +292,10 @@ openai_stream.stream = function(Options:table):table
          end
       end
 
-      if state.httpStatus < 200 or state.httpStatus >= 300 then
+      if state.httpStatus is 0 then
+         -- No response status was received; this is a transport failure, not an HTTP rejection.
+         finish(HTTP.error is ERR_TimeOut ? 'timeout' : 'connection_terminated')
+      elseif state.httpStatus < 200 or state.httpStatus >= 300 then
          provider:any = nil
          try provider = openai_json.decode(state.diagnostic, state.diagnosticLimit, 32) end
          detail = provider?.error or provider or {}
@@ -310,13 +334,15 @@ openai_stream.request = function(Options:table):<table, table>
    stream = openai_stream.stream(stream_options)
    body = Options.body or ''
    method = (Options.method or 'POST').lower()
+   -- Initialiser table order is unspecified; Flags must not erase TLS enabled by Src.
+   http_flags = HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG
+   if Options.url.startsWith('https://') then http_flags = http_flags | HTF_SSL end
 
    http = obj.new('http', { src=Options.url, method=method,
-      flags = HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG,
+      flags = http_flags,
       connectTimeout = Options.connectTimeout or math.min(10, Options.timeout or 60),
       dataTimeout = Options.timeout or 60, contentType=Options.contentType or 'application/json',
-      inputFile = (method is 'post' or method is 'put' or method is 'patch') ? 'string:' .. body : nil,
-      size = (method is 'post' or method is 'put' or method is 'patch') ? #body : 0,
+      contentLength = (method is 'post' or method is 'put' or method is 'patch') ? #body : 0,
       incoming = function(HTTP, Buffer)
          chunk = Buffer.getString()
          if HTTP.status < 200 or HTTP.status >= 300 then
@@ -331,6 +357,14 @@ openai_stream.request = function(Options:table):<table, table>
          end
       end
    })
+
+   if method is 'post' or method is 'put' or method is 'patch' then
+      -- File paths interpret pipe characters; send JSON directly to preserve the complete body.
+      http.outgoing = function(HTTP)
+         check HTTP.acWrite(body)
+         raise ERR_Terminate
+      end
+   end
 
    stream._attachHTTP(http)
    for name, value in pairs(Options.headers or {}) do

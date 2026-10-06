@@ -3,11 +3,68 @@ import '../openai/sse'
 import '../openai/stream'
 import 'json'
 import 'net/httpserver'
+import 'ai/openai'
+import '../oauth2/transport'
+
+@Test function HTTPCallbackFieldsCanBeCleared()
+   calls = 0
+   http <close> = obj.new('http', { stateChanged=function(HTTP, State) calls++ end })
+   http.currentState = HGS_READING_HEADER
+   assert(calls is 1, 'The assigned callback must receive state changes')
+   http.stateChanged = nil
+   http.incoming = nil
+   http.currentState = HGS_READING_CONTENT
+   assert(calls is 1, 'Clearing a callback must prevent subsequent delivery')
+   http.stateChanged = function(HTTP, State) calls++ end
+   rejected = false
+   try
+      http.stateChanged = 17
+   except e
+      rejected = true
+   end
+   assert(rejected, 'Only functions and nil may be assigned to callback fields')
+   http.currentState = HGS_COMPLETED
+   assert(calls is 2, 'A rejected assignment must preserve the replacement callback')
+end
 
 function eventWire(Type:str, Extra:table):str
    value = { type=Type }
    for key, item in pairs(Extra or {}) do value[key] = item end
    return 'data: ' .. json.encode(value) .. '\n\n'
+end
+
+@Test; @Requires(network=true, ssl=true) function HTTPSRequestsStartWithTLS()
+   first_bytes = array<int>
+   seen = {}
+   server <close> = obj.new('netserver', { address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         buffer = array<byte, 4096>
+         err, size = Client.acRead(buffer)
+         if err is ERR_Disconnected then return end
+         check err
+         if size > 0 and not seen[Client.id] then
+            seen[Client.id] = true
+            first_bytes.push(buffer[0])
+            check Client.acDeactivate()
+         end
+      end
+   })
+   client = openai.client({ credential=openai.apiKey('fixture'),
+      baseURL='https://127.0.0.1:' .. server.port, timeout=1, retry={ maxAttempts=1 } })
+   -- The fixture closes after the first record; no certificate or real credentials are needed.
+   client.models.list()
+   oauth_wire.request('GET', 'https://127.0.0.1:' .. server.port, nil, {
+      timeout=1, elapsed=function() return mSys.PreciseTime() / 1000000 end
+   })
+   stream, err = client.responses.create({ model='fixture', input='test', stream=true })
+   assert(stream and not err, 'The streaming HTTPS request must start')
+   defer stream.close() end
+   deadline = mSys.PreciseTime() + 3000000
+   while #first_bytes < 3 and mSys.PreciseTime() < deadline do processing.sleep(0.01) end
+   assert(#first_bytes is 3, 'OpenAI and sign-in HTTPS transports must connect to the fixture')
+   for byte in values(first_bytes) do
+      assert(byte is 0x16, 'HTTPS must send a TLS handshake, never a plaintext HTTP request')
+   end
 end
 
 function fragmentEveryBoundary(Wire:str, Verify:func!)
@@ -185,6 +242,78 @@ end
       'Events must remain ordered and cancellation from a callback must stop delivery')
 end
 
+@Test function CompletionDeliveryOrderingAndLateSubscriptions()
+   stream = openai_stream.stream({})
+   order = array<str>
+   stream.onEvent(function(Event) order.push(Event.type) end)
+   calls = 0
+   subscription = stream.onComplete(function(Response, Error)
+      calls++
+      assert(Response.id is 'complete' and not Error, 'Completion supplies the successful response')
+      order.push('complete')
+      stream.close()
+   end)
+   stream.feed(eventWire('response.completed', { response={ id='complete' } }))
+   assert(calls is 0 and #order is 1, 'Completion waits until terminal event callbacks have returned')
+   processing.sleep(0)
+   assert(calls is 1 and order[1] is 'complete' and subscription.closed and stream.state() is 'closed',
+      'Completion runs once and may safely close the stream')
+   late_calls = 0
+   stream.onComplete(function(Response, Error)
+      assert(Response.id is 'complete' and not Error, 'A late subscriber retains the result after stream closure')
+      late_calls++
+   end)
+   assert(late_calls is 0, 'Late completion subscriptions also defer delivery')
+   processing.sleep(0)
+   assert(late_calls is 1 and calls is 1, 'Late delivery must not repeat an earlier callback')
+end
+
+@Test function CompletionReportsEveryTerminalFailure()
+   for fixture in values(array<table> {
+      { mode='connection_terminated', code='connection_terminated' },
+      { mode='timeout', code='timeout' }, { mode='eof', code='missing_terminal_event' },
+      { mode='cancel', code='cancelled' }, { mode='close', code='cancelled' },
+      { mode='malformed', code='malformed_event' }, { mode='limit', code='byte_limit' },
+      { mode='provider', code='provider_failure' }, { mode='incomplete', code='response_incomplete' }
+   }) do
+      stream = openai_stream.stream(fixture.mode is 'limit' ? { maxBytes=4 } : {})
+      calls = 0
+      stream.onComplete(function(Response, Error)
+         assert(not Response and Error.code is fixture.code, 'Completion must include the terminal error')
+         calls++
+      end)
+      if fixture.mode is 'cancel' then stream.cancel()
+      elseif fixture.mode is 'close' then stream.close()
+      elseif fixture.mode is 'malformed' then stream.feed('data: invalid\n\n')
+      elseif fixture.mode is 'limit' then stream.feed('12345')
+      elseif fixture.mode is 'provider' then
+         stream.feed(eventWire('response.failed', { error={ code='provider_failure' } }))
+      elseif fixture.mode is 'incomplete' then stream.feed(eventWire('response.incomplete', {}))
+      else stream.finish(fixture.mode) end
+      assert(calls is 0, 'Failure completion must defer delivery outside the transport callback')
+      processing.sleep(0)
+      assert(calls is 1, f'{fixture.mode} must notify completion even without a valid terminal SSE event')
+      stream.close()
+      processing.sleep(0)
+      assert(calls is 1, 'Closing a failed stream must not deliver completion again')
+   end
+end
+
+@Test function CompletionUnsubscriptionAndCallbackIsolation()
+   stream = openai_stream.stream({})
+   cancelled_calls = 0
+   subscription = stream.onComplete(function(Response, Error) cancelled_calls++ end)
+   stream.onComplete(function(Response, Error) raise 'Subscriber failure' end)
+   delivered = 0
+   stream.onComplete(function(Response, Error) delivered++ end)
+   stream.cancel()
+   subscription.close()
+   processing.sleep(0)
+   assert(cancelled_calls is 0 and delivered is 1,
+      'Unsubscription suppresses queued delivery and subscriber exceptions do not block other completions')
+   stream.close()
+end
+
 @Test; @Requires(network=true) function HTTPAdapterStreamsAndPreservesMetadata()
    server = hslib.start({ port=0, bind='127.0.0.1', folder='temp:', routes={
       { method='POST', pattern='/complete', handler=function(Req, Res)
@@ -201,12 +330,18 @@ end
       stream, start_err = openai_stream.request({ url='http://127.0.0.1:' .. server.port .. '/' .. path,
          body='{}', timeout=2 })
       assert(stream and not start_err, 'HTTP stream must activate')
-      deadline = mSys.PreciseTime() + 3000000
-      while stream.state() is 'pending' or stream.state() is 'open' do
-         assert(mSys.PreciseTime() < deadline, 'HTTP fixture timed out')
-         processing.sleep(0.001)
-      end
-      response, err = stream.result()
+      signal <close> = obj.new('File', { flags='buffer' })
+      proc = processing.new({ timeout=3, signals=array<obj> { signal } })
+      response:table = nil
+      err:table = nil
+      calls = 0
+      stream.onComplete(function(Response, Error)
+         response = Response
+         err = Error
+         calls++
+         check signal.acSignal()
+      end)
+      assert(proc.sleep() != ERR_Timeout and calls is 1, 'HTTP completion must wake the waiter without polling')
       if path is 'complete' then
          assert(response.id is 'http-ok' and not err, 'HTTP adapter must decode a completed SSE response')
       else
@@ -214,5 +349,64 @@ end
             not err.diagnostic.find('should-not-escape'), 'HTTP errors must preserve metadata and redact diagnostics')
       end
       stream.close()
+   end
+end
+
+@Test function HTTPFailureBeforeResponseHeaders()
+   for fixture in values(array<table> {
+      { error=ERR_Disconnected, kind='transport', code='connection_terminated' },
+      { error=ERR_TimeOut, kind='timeout', code='timeout' }
+   }) do
+      http <close> = obj.new('http', { error=fixture.error })
+      stream = openai_stream.stream({})
+      defer stream.close() end
+      calls = 0
+      stream.onComplete(function(Response, Error)
+         assert(not Response and Error.kind is fixture.kind and Error.code is fixture.code and Error.retryable,
+            'Failure before HTTP headers must retain its transport cause and allow retry')
+         calls++
+      end)
+      stream._httpEnded(http, true)
+      assert(stream.state() is 'interrupted', 'No HTTP response means an interrupted transport')
+      processing.sleep(0)
+      assert(calls is 1, 'The transport failure must notify completion exactly once')
+   end
+end
+
+@Test; @Requires(network=true) function HTTPRequestPreservesBoardSeparators()
+   prompt = 'Current board:\n1 | 2 | 3\n4 | X | 6\n7 | 8 | 9\nChoose a "corner" — O plays next.'
+   received = array<str>
+   server = hslib.start({ port=0, bind='127.0.0.1', folder='temp:', routes={
+      { method='POST', pattern='/responses', handler=function(Req, Res)
+         received.push(Req.body)
+         request = json.decode(Req.body)
+         response = { id='board-fixture', status='completed', output=array<table> }
+         if request.stream then
+            Res.header('Content-Type', 'text/event-stream').send(
+               eventWire('response.completed', { response=response }))
+         else Res.json(response) end
+      end }
+   } })
+   defer server.stop() end
+   client = openai.client({ credential=openai.apiKey('fixture-key'),
+      baseURL='http://127.0.0.1:' .. server.port, testLoopback=true, timeout=1, retry={ maxAttempts=1 } })
+   for streaming in values(array<any> { true, false }) do
+      result, err = client.responses.create({ model='fixture', input=prompt, stream=streaming })
+      assert(result and not err, 'The request must reach the server with its complete body')
+      if streaming then
+         stream = result
+         defer stream.close() end
+         done = false
+         stream.onComplete(function(Response, Error) result = Response; err = Error; done = true end)
+         deadline = mSys.PreciseTime() + 3000000
+         while not done and mSys.PreciseTime() < deadline do processing.sleep(0.01) end
+         assert(done, 'Streaming completion must arrive before the deadline')
+      end
+      assert(not err and result and result.id is 'board-fixture',
+         'Both transports must send the full JSON body despite pipe characters')
+   end
+   assert(#received is 2, 'Both streaming and non-streaming requests must reach the route')
+   for body in values(received) do
+      assert(json.decode(body).input is prompt, 'Board separators, quotes and UTF-8 must survive transmission')
    end
 end
