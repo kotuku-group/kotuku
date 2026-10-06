@@ -29,7 +29,7 @@
 #   - 7-Zip installed for SFX generation (optional, auto-detected)
 #   - NSIS for installer generation (optional, auto-detected)
 
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.28)
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
    message (STATUS "CMAKE_BUILD_TYPE not set, defaulting to Release")
