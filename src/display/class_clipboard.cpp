@@ -22,9 +22,10 @@ monitors host changes and caches copied data in the local `clipboard:` volume.  
 cost of additional monitoring and storage overhead.
 
 On Wayland, plain UTF-8 text and local file references are exchanged with other desktop applications through the
-compositor's data device.  Incoming transfers complete asynchronously; GetFiles() may return `ERR::NoData` until a new
-selection has finished transferring.  Other non-Windows builds keep clipboard data local unless their display driver
-provides host integration.
+compositor's data device.  On X11, plain UTF-8 text is exchanged with other applications, and incoming file references
+are accepted.  Incoming transfers complete asynchronously, so GetFiles() may return `ERR::NoData` until a new selection
+has finished transferring.  Receiving on X11 requires the XFixes extension.  Text published by an X11 application is
+lost when it exits unless a clipboard manager is running.
 
 When history buffering is active, a fixed number of clip groups is retained and the oldest group is removed when the
 limit is exceeded.  Cached clipboard files are kept under `clipboard:` and stale generated files are cleaned up during
@@ -72,6 +73,11 @@ static std::string get_datatype(CLIPTYPE);
 static ERR add_clip(CLIPTYPE, const std::vector<ClipItem> &, CEF = CEF::NIL);
 static ERR add_clip(std::string_view);
 static ERR CLIPBOARD_AddObjects(objClipboard *, struct clip::AddObjects *);
+
+static bool host_keeps_clipboard()
+{
+   return glDriver and (glDriver->displayType() IS DT::WINGDI);
+}
 
 #ifdef _WIN32
 static std::u16string utf8_to_utf16(std::string_view String, bool SurrogatePairs)
@@ -275,7 +281,8 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
    log.branch("Path: %s", path.c_str());
 
    std::vector<ClipItem> items = { path };
-   if (glDriver and (glDriver->displayType() IS DT::WAYLAND) and
+   if (glDriver and (not host_keeps_clipboard()) and
+         ((glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) and
          ((Self->Flags & CPF::DRAG_DROP) IS CPF::NIL)) {
       if (auto error = add_clip(Args->Datatype, items, Args->Flags & (CEF::DELETE|CEF::EXTEND));
             error != ERR::Okay) return error;
@@ -299,20 +306,8 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
       }
       return ERR::Okay;
    }
-   if (Args->Datatype IS CLIPTYPE::TEXT and glDriver and
-         (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) {
-      std::string resolved;
-      if (ResolvePath(path, RSF::NIL, &resolved) IS ERR::Okay) {
-         std::ifstream stream(resolved, std::ios::binary);
-         if (stream) {
-            std::string content((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
-            glDriver->clipboardAddText(content.c_str());
-            glHostSelectionGone = false;
-         }
-      }
-   }
-   else if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
-      if (glHistoryLimit <= 1 and glDriver and (glDriver->displayType() != DT::WAYLAND)) return ERR::Okay;
+   if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
+      if (glHistoryLimit <= 1 and host_keeps_clipboard()) return ERR::Okay;
    }
 
    return add_clip(Args->Datatype, items, Args->Flags & (CEF::DELETE|CEF::EXTEND));
@@ -395,7 +390,7 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
    }
 
    if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
-      if (glHistoryLimit <= 1 and glDriver and (glDriver->displayType() != DT::WAYLAND)) return ERR::Okay;
+      if (glHistoryLimit <= 1 and host_keeps_clipboard()) return ERR::Okay;
    }
 
    return add_clip(datatype, items, Args->Flags & CEF::EXTEND);

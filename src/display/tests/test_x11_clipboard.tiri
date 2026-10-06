@@ -1,0 +1,39 @@
+   module display as mGfx
+
+function read_file(Path:str):str
+   local file = obj.new('File', { path=Path })
+   local buffer = array<byte, file.size>
+   check mSys.ReadFileToBuffer(Path, buffer)
+   return buffer.getString()
+end
+
+@Test; @Requires(display=true, linux_platform=true)
+function LocalClipboardCache()
+   if mGfx.GetDisplayType() != DT_X11 then return end
+   local clipboard = obj.new('Clipboard', { flags=CPF_HISTORY_BUFFER })
+   defer clipboard.acClear() end
+
+   check clipboard.mtAddText('X11 text ✓')
+   local err, datatype, files, flags = clipboard.mtGetFiles(CLIPTYPE_TEXT, 0)
+   assert(err is ERR_Okay and datatype is CLIPTYPE_TEXT, 'Text clip was not stored')
+   assert(#files is 1 and read_file(files[0]) is 'X11 text ✓', 'Stored text differs from the source')
+
+   local source_path = 'temp:x11_clipboard_source.txt'
+   local source = obj.new('File', { path=source_path, flags=FL_NEW|FL_WRITE })
+   check source.acWrite('local file content')
+   source.free()
+   defer mSys.DeleteFile(source_path) end
+
+   check clipboard.mtAddFile(CLIPTYPE_FILE, source_path, 0)
+   err, datatype, files, flags = clipboard.mtGetFiles(CLIPTYPE_FILE, 0)
+   assert(err is ERR_Okay and datatype is CLIPTYPE_FILE, 'File clip was not retained locally')
+   assert(#files is 1 and files[0] is source_path, 'Stored file path differs from the source')
+
+   err, datatype, files, flags = clipboard.mtGetFiles(0, 1)
+   assert(err is ERR_Okay and datatype is CLIPTYPE_TEXT, 'Clipboard history lost the text clip')
+   assert(#files is 1 and read_file(files[0]) is 'X11 text ✓', 'Clipboard history deleted cached text')
+
+   check clipboard.acClear()
+   assert(read_file(source_path) is 'local file content',
+      'Clearing clipboard must not delete files supplied by the caller')
+end

@@ -2,6 +2,10 @@
 
 #include <X11/Xatom.h>
 
+#include <algorithm>
+#include <chrono>
+#include <limits>
+
 namespace display {
 
 static X11Driver::State *glEventState = nullptr;
@@ -36,6 +40,326 @@ static inline bool adopted_window(Window Window)
    auto it = glEventState->Windows.find(Window);
    return (it != glEventState->Windows.end()) and it->second->Adopted;
 }
+
+//********************************************************************************************************************
+
+static size_t maximum_property_bytes()
+{
+   auto units = XExtendedMaxRequestSize(XDisplay);
+   if (not units) units = XMaxRequestSize(XDisplay);
+   auto bytes = size_t(units) * 4;
+   bytes = bytes > 1024 ? bytes - 1024 : 0;
+   return std::min(bytes, size_t(std::numeric_limits<int>::max()));
+}
+
+//********************************************************************************************************************
+
+static std::string utf8_to_latin1(std::string_view Text)
+{
+   std::string result;
+   result.reserve(Text.size());
+   for (size_t offset = 0; offset < Text.size();) {
+      auto lead = uint8_t(Text[offset]);
+      size_t expected = lead < 0x80 ? 1 : ((lead & 0xe0) IS 0xc0 ? 2 :
+         ((lead & 0xf0) IS 0xe0 ? 3 : ((lead & 0xf8) IS 0xf0 ? 4 : 0)));
+      if ((not expected) or (offset + expected > Text.size())) {
+         result.push_back('?');
+         offset++;
+         continue;
+      }
+      int length = 0;
+      auto codepoint = UTF8ReadValue(Text.data() + offset, &length);
+      if (length <= 0) {
+         result.push_back('?');
+         offset++;
+      }
+      else {
+         result.push_back(codepoint <= 0xff ? char(codepoint) : '?');
+         offset += size_t(length);
+      }
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+
+static std::string latin1_to_utf8(const unsigned char *Data, size_t Length)
+{
+   std::string result;
+   result.reserve(Length * 2);
+   for (size_t i = 0; i < Length; i++) {
+      if (Data[i] < 0x80) result.push_back(char(Data[i]));
+      else {
+         result.push_back(char(0xc0 | (Data[i] >> 6)));
+         result.push_back(char(0x80 | (Data[i] & 0x3f)));
+      }
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+
+static void update_server_timestamp(const XEvent &Event)
+{
+   Time timestamp = CurrentTime;
+   switch (Event.type) {
+      case KeyPress:
+      case KeyRelease: timestamp = Event.xkey.time; break;
+      case ButtonPress:
+      case ButtonRelease: timestamp = Event.xbutton.time; break;
+      case MotionNotify: timestamp = Event.xmotion.time; break;
+      case EnterNotify:
+      case LeaveNotify: timestamp = Event.xcrossing.time; break;
+      case PropertyNotify: timestamp = Event.xproperty.time; break;
+      case SelectionClear: timestamp = Event.xselectionclear.time; break;
+      case SelectionRequest: timestamp = Event.xselectionrequest.time; break;
+      case SelectionNotify: timestamp = Event.xselection.time; break;
+   }
+   if (timestamp != CurrentTime) {
+      const std::lock_guard lock(glEventState->NativeLock);
+      glEventState->LastServerTimestamp = timestamp;
+   }
+}
+
+//********************************************************************************************************************
+
+static void expire_clipboard_transfer()
+{
+   const std::lock_guard lock(glEventState->NativeLock);
+   if (glEventState->ClipboardTransfer and
+       (std::chrono::steady_clock::now() - glEventState->TransferStarted >= std::chrono::seconds(2))) {
+      kt::Log("X11Mgr").trace("Abandoning an X11 clipboard transfer after two seconds.");
+      glEventState->ClipboardTransfer = false;
+      glEventState->TransferGeneration++;
+   }
+}
+
+//********************************************************************************************************************
+
+static bool write_selection_property(Atom Target, Window Requestor, Atom Property)
+{
+   if ((not Property) or (Target IS glEventState->MultipleAtom)) return false;
+
+   if (Target IS glEventState->TargetsAtom) {
+      Atom targets[] = { glEventState->TargetsAtom, glEventState->MultipleAtom, glEventState->TimestampAtom,
+         glEventState->UTF8StringAtom, glEventState->TextUTF8Atom, glEventState->TextPlainAtom, XA_STRING,
+         glEventState->TextAtom };
+      XChangeProperty(XDisplay, Requestor, Property, XA_ATOM, 32, PropModeReplace,
+         (const unsigned char *)targets, std::ssize(targets));
+      return true;
+   }
+
+   if (Target IS glEventState->TimestampAtom) {
+      unsigned long timestamp = glEventState->ClipboardTimestamp;
+      XChangeProperty(XDisplay, Requestor, Property, XA_INTEGER, 32, PropModeReplace,
+         (const unsigned char *)&timestamp, 1);
+      return true;
+   }
+
+   std::string data;
+   if ((Target IS glEventState->UTF8StringAtom) or (Target IS glEventState->TextUTF8Atom) or
+       (Target IS glEventState->TextPlainAtom) or (Target IS glEventState->TextAtom)) {
+      data = glEventState->ClipboardText;
+   }
+   else if (Target IS XA_STRING) data = utf8_to_latin1(glEventState->ClipboardText);
+   else return false;
+
+   if (data.size() > maximum_property_bytes()) {
+      kt::Log("X11Mgr").warning("Clipboard request for %zu bytes exceeds the X11 property limit.", data.size());
+      return false;
+   }
+
+   XChangeProperty(XDisplay, Requestor, Property, Target, 8, PropModeReplace,
+      (const unsigned char *)data.data(), int(data.size()));
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool write_multiple_selection(const XSelectionRequestEvent &Request)
+{
+   if (Request.property IS None) return false;
+
+   Atom actual_type = None;
+   int actual_format = 0;
+   unsigned long count = 0, remaining = 0;
+   unsigned char *property = nullptr;
+   auto maximum_longs = std::min<size_t>(maximum_property_bytes() / 4,
+      size_t(std::numeric_limits<long>::max()));
+   auto status = XGetWindowProperty(XDisplay, Request.requestor, Request.property, 0, long(maximum_longs), False,
+      glEventState->AtomPairAtom, &actual_type, &actual_format, &count, &remaining, &property);
+   if ((status != Success) or remaining or (actual_type != glEventState->AtomPairAtom) or
+       (actual_format != 32) or (count & 1)) {
+      if (property) XFree(property);
+      return false;
+   }
+
+   auto pairs = (Atom *)property;
+   for (unsigned long i = 0; i < count; i += 2) {
+      if (not write_selection_property(pairs[i], Request.requestor, pairs[i + 1])) pairs[i] = None;
+   }
+   XChangeProperty(XDisplay, Request.requestor, Request.property, glEventState->AtomPairAtom, 32, PropModeReplace,
+      property, int(count));
+   if (property) XFree(property);
+   return true;
+}
+
+//********************************************************************************************************************
+
+static void handle_selection_request(const XSelectionRequestEvent &Request)
+{
+   XSelectionEvent reply = {};
+   reply.type = SelectionNotify;
+   reply.display = Request.display;
+   reply.requestor = Request.requestor;
+   reply.selection = Request.selection;
+   reply.target = Request.target;
+   reply.time = Request.time;
+   reply.property = None;
+
+   const std::lock_guard lock(glEventState->NativeLock);
+   if ((Request.owner IS glEventState->ClipboardWindow) and
+       (Request.selection IS glEventState->ClipboardAtom) and
+       (XGetSelectionOwner(XDisplay, glEventState->ClipboardAtom) IS glEventState->ClipboardWindow)) {
+      if (Request.target IS glEventState->MultipleAtom) {
+         if (write_multiple_selection(Request)) reply.property = Request.property;
+      }
+      else {
+         auto property = Request.property IS None ? Request.target : Request.property;
+         if (write_selection_property(Request.target, Request.requestor, property)) reply.property = property;
+      }
+   }
+
+   XSendEvent(XDisplay, Request.requestor, False, NoEventMask, (XEvent *)&reply);
+}
+
+//********************************************************************************************************************
+
+static void handle_selection_clear(const XSelectionClearEvent &Event)
+{
+   bool notify = false;
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if ((Event.window IS glEventState->ClipboardWindow) and
+          (Event.selection IS glEventState->ClipboardAtom)) {
+         glEventState->ClipboardText.clear();
+         glEventState->ClipboardTimestamp = CurrentTime;
+         notify = true;
+      }
+   }
+   if (notify and glDriverCallbacks.ClipboardLost) glDriverCallbacks.ClipboardLost();
+}
+
+//********************************************************************************************************************
+
+static void handle_selection_notify(const XSelectionEvent &Event)
+{
+   std::string data;
+   std::string mime;
+   bool deliver = false;
+
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if ((Event.requestor != glEventState->ClipboardWindow) or
+          (Event.selection != glEventState->ClipboardAtom) or (not glEventState->ClipboardTransfer) or
+          (Event.time != glEventState->TransferTimestamp)) return;
+
+      if (Event.property IS None) {
+         kt::Log("X11Mgr").trace("The X11 clipboard owner refused target %lu.", Event.target);
+         glEventState->ClipboardTransfer = false;
+         return;
+      }
+
+      Atom actual_type = None;
+      int actual_format = 0;
+      unsigned long count = 0, remaining = 0;
+      unsigned char *property = nullptr;
+      auto maximum_longs = std::min<size_t>(maximum_property_bytes() / 4,
+         size_t(std::numeric_limits<long>::max()));
+      auto status = XGetWindowProperty(XDisplay, glEventState->ClipboardWindow, Event.property, 0,
+         long(maximum_longs), True, AnyPropertyType, &actual_type, &actual_format, &count, &remaining, &property);
+      if ((status != Success) or remaining or (actual_type IS glEventState->IncrAtom)) {
+         if (property) XFree(property);
+         kt::Log("X11Mgr").trace("The X11 clipboard transfer requires an unsupported incremental read.");
+         glEventState->ClipboardTransfer = false;
+         return;
+      }
+
+      if (Event.target IS glEventState->TargetsAtom) {
+         Atom selected = None;
+         if ((actual_type IS XA_ATOM) and (actual_format IS 32)) {
+            auto targets = (Atom *)property;
+            const Atom preferences[] = { glEventState->URIListAtom, glEventState->UTF8StringAtom,
+               glEventState->TextUTF8Atom, glEventState->TextPlainAtom, XA_STRING };
+            for (auto preference : preferences) {
+               for (unsigned long i = 0; i < count; i++) if (targets[i] IS preference) {
+                  selected = preference;
+                  break;
+               }
+               if (selected != None) break;
+            }
+         }
+         if (property) XFree(property);
+         if (selected IS None) {
+            glEventState->ClipboardTransfer = false;
+            return;
+         }
+         glEventState->TransferTarget = selected;
+         glEventState->TransferStarted = std::chrono::steady_clock::now();
+         XConvertSelection(XDisplay, glEventState->ClipboardAtom, selected,
+            glEventState->ClipboardPropertyAtom, glEventState->ClipboardWindow,
+            glEventState->TransferTimestamp);
+         return;
+      }
+
+      if (actual_format != 8) {
+         if (property) XFree(property);
+         glEventState->ClipboardTransfer = false;
+         return;
+      }
+
+      if ((glEventState->TransferTarget IS XA_STRING) or (actual_type IS XA_STRING))
+         data = latin1_to_utf8(property, count);
+      else if (count) data.assign((const char *)property, count);
+      if (property) XFree(property);
+      mime = glEventState->TransferTarget IS glEventState->URIListAtom ? "text/uri-list" :
+         "text/plain;charset=utf-8";
+      glEventState->ClipboardTransfer = false;
+      deliver = true;
+   }
+
+   if (deliver and glDriverCallbacks.ClipboardData)
+      glDriverCallbacks.ClipboardData(mime.c_str(), data.data(), data.size(), false, 0);
+}
+
+#ifdef XFIXES_ENABLED
+//********************************************************************************************************************
+
+static void handle_xfixes_selection(const XFixesSelectionNotifyEvent &Event)
+{
+   if ((Event.selection != glEventState->ClipboardAtom) or
+       (Event.window != glEventState->ClipboardWindow)) return;
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      glEventState->LastServerTimestamp = Event.timestamp;
+   }
+
+   if ((Event.subtype IS XFixesSetSelectionOwnerNotify) and
+       (Event.owner != glEventState->ClipboardWindow) and (Event.owner != None)) {
+      x11_request_clipboard(glEventState, Event.selection_timestamp);
+   }
+   else if (((Event.subtype IS XFixesSetSelectionOwnerNotify) and (Event.owner IS None)) or
+            (Event.subtype IS XFixesSelectionWindowDestroyNotify) or
+            (Event.subtype IS XFixesSelectionClientCloseNotify)) {
+      {
+         const std::lock_guard lock(glEventState->NativeLock);
+         glEventState->ClipboardTransfer = false;
+         glEventState->TransferGeneration++;
+      }
+      if (glDriverCallbacks.ClipboardLost) glDriverCallbacks.ClipboardLost();
+   }
+}
+#endif
 
 //********************************************************************************************************************
 // X11 desktop environments announce a change of display scaling by updating Xft.dpi in the root window's resource
@@ -74,14 +398,28 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
 
    if (not XDisplay) return;
 
-   while (XPending(XDisplay)) {
+   while (true) {
+      {
+         const std::lock_guard lock(glEventState->NativeLock);
+         if (not XPending(XDisplay)) break;
+         XNextEvent(XDisplay, &xevent);
+      }
       processed_events = true;
-      XNextEvent(XDisplay, &xevent);
+      update_server_timestamp(xevent);
+      expire_clipboard_transfer();
       if ((xevent.type != MotionNotify) and (last_motion.xany.window)) {
          // Buffered MotionNotify event detected, process it now
          process_movement(last_motion.xany.window, last_motion.xmotion.x_root, last_motion.xmotion.y_root);
          last_motion.xany.window = 0;
       }
+
+#ifdef XFIXES_ENABLED
+      if (glEventState->XFixes and
+          (xevent.type IS glEventState->XFixesEventBase + XFixesSelectionNotify)) {
+         handle_xfixes_selection(*(XFixesSelectionNotifyEvent *)&xevent);
+         continue;
+      }
+#endif
 
       switch (xevent.type) {
          case ButtonPress:      handle_button_press(&xevent); break;
@@ -93,6 +431,9 @@ void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
          case KeyPress:         handle_key_press(&xevent); break;
          case KeyRelease:       handle_key_release(&xevent); break;
          case CirculateNotify:  handle_stack_change(&xevent.xcirculate); break;
+         case SelectionRequest: handle_selection_request(xevent.xselectionrequest); break;
+         case SelectionClear:   handle_selection_clear(xevent.xselectionclear); break;
+         case SelectionNotify:  handle_selection_notify(xevent.xselection); break;
 
          case PropertyNotify:
             if ((xevent.xproperty.window IS DefaultRootWindow(XDisplay)) and
