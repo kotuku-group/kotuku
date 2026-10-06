@@ -142,6 +142,99 @@ objTask * CurrentTask(void)
 /*********************************************************************************************************************
 
 -FUNCTION-
+OpenURI: Opens a URI with the application registered by the host desktop.
+
+This function passes an absolute URI to the host operating system for opening with the user's preferred application.
+For example, an `http` or `https` URI will normally open in the default web browser.
+
+The operation is asynchronous.  A successful result confirms that the URI was handed to the host desktop, but does
+not guarantee that the receiving application opened or processed it successfully.
+
+On Linux, this function requires `xdg-open` and an active desktop session.  Other platforms may return `NoSupport` if
+they do not provide a desktop URI handler.
+
+-INPUT-
+strview URI: The absolute URI to open.
+
+-ERRORS-
+Okay:      The URI was handed to the host desktop.
+InvalidURI: The URI is empty, malformed or contains unescaped whitespace.
+NoSupport: The platform does not support opening URIs, or no desktop URI handler is available.
+NoMemory
+NoPermission
+FileNotFound: The registered desktop handler could not be found.
+ProcessCreation
+SystemCall
+
+-TAGS-
+blocking
+-END-
+
+*********************************************************************************************************************/
+
+ERR OpenURI(const std::string_view &URI)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (URI.empty()) return log.warning(ERR::InvalidURI);
+
+   auto colon = URI.find(':');
+   if ((colon IS std::string_view::npos) or (colon IS 0) or
+       (not (((URI[0] >= 'A') and (URI[0] <= 'Z')) or ((URI[0] >= 'a') and (URI[0] <= 'z'))))) {
+      return log.warning(ERR::InvalidURI);
+   }
+
+   for (size_t i = 1; i < colon; i++) {
+      const auto ch = URI[i];
+      if (((ch >= 'A') and (ch <= 'Z')) or ((ch >= 'a') and (ch <= 'z')) or ((ch >= '0') and (ch <= '9')) or
+          (ch IS '+') or (ch IS '-') or (ch IS '.')) continue;
+      return log.warning(ERR::InvalidURI);
+   }
+
+   constexpr std::string_view uri_punctuation = "-._~:/?#[]@!$&'()*+,;=";
+   auto is_hex = [](uint8_t Value) {
+      return ((Value >= '0') and (Value <= '9')) or ((Value >= 'A') and (Value <= 'F')) or
+         ((Value >= 'a') and (Value <= 'f'));
+   };
+
+   for (size_t i = colon + 1; i < URI.size(); i++) {
+      const auto ch = uint8_t(URI[i]);
+      if (ch IS '%') {
+         if ((i + 2 >= URI.size()) or (not is_hex(uint8_t(URI[i + 1]))) or (not is_hex(uint8_t(URI[i + 2])))) {
+            return log.warning(ERR::InvalidURI);
+         }
+         i += 2;
+         continue;
+      }
+      if (((ch >= 'A') and (ch <= 'Z')) or ((ch >= 'a') and (ch <= 'z')) or
+          ((ch >= '0') and (ch <= '9')) or (uri_punctuation.find(char(ch)) != std::string_view::npos)) continue;
+      return log.warning(ERR::InvalidURI);
+   }
+
+   #ifdef _WIN32
+      return winOpenURI(URI);
+   #elif defined(__linux__) and !defined(__ANDROID__)
+      std::string launcher;
+      if (ResolvePath("xdg-open", RSF::PATH, &launcher) != ERR::Okay) return log.warning(ERR::NoSupport);
+
+      objTask::create task;
+      if (not task.ok()) return log.warning(task.error);
+
+      task->Location = launcher;
+      task->Parameters.emplace_back(URI);
+      task->Flags = TSF::QUIET;
+
+      if (auto error = task->init(); error != ERR::Okay) return log.warning(error);
+      if (auto error = task->activate(); error != ERR::Okay) return log.warning(error);
+      return ERR::Okay;
+   #else
+      return log.warning(ERR::NoSupport);
+   #endif
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 GetErrorMsg: Translates error codes into human readable strings.
 Category: Logging
 

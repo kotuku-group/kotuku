@@ -95,3 +95,4 @@ extern "C" OBJECTPTR PinWeakObject(OBJECTID Object);
 extern "C" ERR FreeObject(OBJECTID ObjectID);
 extern "C" ERR PinResource(RESOURCEID ResourceID);
 extern "C" ERR UnpinResource(RESOURCEID ResourceID);
+extern "C" ERR OpenURI(const std::string_view & URI);

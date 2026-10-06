@@ -31,6 +31,18 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
+@Test function OpenURIValidation()
+   for uri in values(array<str> { '', 'relative/path', '1https://example.com', 'https //example.com',
+      'https://example.com/space here', 'https://example.com/line\nbreak', 'https://example.com/%',
+      'https://example.com/%2', 'https://example.com/%ZZ', 'https://example.com/%2G',
+      'https://example.com/café', [[https://example.com/\path]], 'https://example.com/<value>' }) do
+      local err = mSys.OpenURI(uri)
+      assert(err is ERR_InvalidURI, 'Expected InvalidURI for "' .. uri .. '", got ' .. mSys.GetErrorMsg(err))
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
 @Test function TaskStringViewMethodInputs()
    task = mSys.CurrentTask()
 

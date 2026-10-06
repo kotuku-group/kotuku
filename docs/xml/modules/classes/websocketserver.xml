@@ -1,0 +1,322 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>WebSocketServer</name>
+    <type>class</type>
+    <module>WebSocket</module>
+    <comment>Accepts RFC 6455 WebSocket connections.</comment>
+    <version>1</version>
+    <id>c03eff6a</id>
+    <idstring>WEBSOCKETSERVER</idstring>
+    <category>Network</category>
+    <copyright>Paul Manias © 2026</copyright>
+    <description>
+<p>The WebSocketServer class listens for WebSocket clients on a TCP port and represents each accepted connection as a <class name="WebSocket">WebSocket</class> object.  Set the <fl>Port</fl> (zero selects an ephemeral port, which can be read back after initialisation), optionally the <fl>Path</fl> and <fl>Protocols</fl> to serve, and a <fl>Connected</fl> callback, then initialise the object to start listening. Set the <code>SSL</code> flag to accept <code>wss://</code> connections; the <fl>SSLCertificate</fl> and <fl>SSLPrivateKey</fl> fields select the certificate, otherwise a localhost development certificate is used.</p>
+<p>Each client's opening handshake is validated before it is accepted.  Malformed requests are answered with <code>400 Bad Request</code>, a <code>Sec-WebSocket-Version</code> other than 13 with <code>426 Upgrade Required</code>, a request for a path other than <fl>Path</fl> with <code>404 Not Found</code>, and a request that exceeds 16 KiB with <code>431 Request Header Fields Too Large</code>.  A client that does not complete its request within <fl>HandshakeTimeout</fl> seconds is disconnected.  The <fl>Accept</fl> callback can inspect a valid request and reject it with <code>403 Forbidden</code>, for example to enforce an <code>Origin</code> policy.  The first subprotocol from <fl>Protocols</fl> that the client requested is selected and reported in the connection's <class name="WebSocket" field="Protocol">WebSocket.Protocol</class> field.</p>
+<p>Accepted connections are reported to <fl>Connected</fl>, which is the place to install the connection's <class name="WebSocket" field="Incoming">WebSocket.Incoming</class> and <class name="WebSocket" field="StateChanged">WebSocket.StateChanged</class> callbacks.  Messages are exchanged with <class name="WebSocket" method="Send">WebSocket.Send()</class> as for a client connection, and <method>Broadcast</method> sends a message to every open connection.  When a connection reaches the <code>CLOSED</code> state it is reported to <fl>Disconnected</fl> and then freed automatically, so references to it must not be retained beyond that callback.  <method>DisconnectClient</method> starts the closing handshake for a single connection.</p>
+<p>The <fl>MaxMessageSize</fl>, <fl>MaxFrameSize</fl>, <fl>SendLimit</fl>, <fl>PingInterval</fl> and <fl>CloseTimeout</fl> values, and the <code>STREAM_MESSAGES</code>, <code>NO_UTF8_CHECK</code> and <code>NO_AUTO_PONG</code> flags, are applied to each connection when it is accepted.  They can also be changed on an individual connection.</p>
+<p>Freeing the server closes all of its connections abortively.  Each connection reports <code>CLOSED</code> to its own <class name="WebSocket" field="StateChanged">WebSocket.StateChanged</class> callback, but <fl>Disconnected</fl> is not called.</p>
+<p>The following Tiri example runs an echo server at <code>ws://localhost:8080/echo</code> until the process is terminated:</p>
+<pre>include 'websocket'
+
+server = obj.new('websocketserver', {
+   port = 8080,
+   path = '/echo',
+   accept = function(Server:obj, Request:table)
+      if Request.origin != 'https://example.com' then return ERR_Failed end
+      return ERR_Okay
+   end,
+   connected = function(Server:obj, WebSocket:obj)
+      WebSocket.incoming = function(WS:obj, Buffer:array&lt;byte&gt;, Type:num, Final:num)
+         WS.mtSend(Buffer.getString(), Type)
+      end
+   end,
+   disconnected = function(Server:obj, WebSocket:obj)
+      print(f'Connection closed with code {WebSocket.closeCode}')
+   end
+})
+
+processing.sleep()
+</pre>
+<p>Initialisation fails if the <fl>Port</fl> cannot be bound, for example because it is already in use.</p>
+<p>The WebSocketServer class is not thread-safe.  Create, use and free each object on the thread that processes its messages.</p></description>
+    <source>
+      <file>class_websocket_server.cpp</file>
+    </source>
+  </info>
+
+  <methods>
+    <method>
+      <name>Broadcast</name>
+      <comment>Sends a message to every open connection.</comment>
+      <prototype>ERR wsv::Broadcast(OBJECTPTR Object, std::span&lt;const int8_t&gt; Data, WSM Type, INT * Recipients)</prototype>
+      <tiriPrototype>err, Recipients:num = Broadcast(Data:array, Type:num)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">The message payload.</param>
+        <param type="WSM" name="Type" lookup="WSM">Either <code>TEXT</code> or <code>BINARY</code>.</param>
+        <param type="INT *" name="Recipients">The number of connections that accepted the message.</param>
+      </input>
+      <description>
+<p>Broadcast queues a copy of the message on every connection whose <class name="WebSocket" field="State">WebSocket.State</class> is <code>OPEN</code>, as if <class name="WebSocket" method="Send">WebSocket.Send()</class> had been called for each of them.  Connections that are not open, and connections whose <class name="WebSocket" field="SendLimit">WebSocket.SendLimit</class> would be exceeded by the message, are skipped.  The number of connections that accepted the message is returned in <code>Recipients</code>.</p>
+<p>A <code>TEXT</code> message must be valid UTF-8 unless the <code>NO_UTF8_CHECK</code> flag is set on the server.</p>
+      </description>
+      <result>
+        <error code="Okay">The message was queued on every connection that could accept it, which may be none.</error>
+        <error code="InvalidData">A <code>TEXT</code> message is not valid UTF-8.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue"><code>Type</code> is not a valid message type.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>DisconnectClient</name>
+      <comment>Starts the closing handshake for one connection.</comment>
+      <prototype>ERR wsv::DisconnectClient(OBJECTPTR Object, objWebSocket * WebSocket, INT Code, CSTRING Reason)</prototype>
+      <tiriPrototype>err = DisconnectClient(WebSocket:obj, Code:num, Reason:str)</tiriPrototype>
+      <input>
+        <param type="objWebSocket *" name="WebSocket">A connection accepted by this server.</param>
+        <param type="INT" name="Code">The close status code, or zero to send no status.</param>
+        <param type="CSTRING" name="Reason">Optional.  A short UTF-8 description of the reason for closing.</param>
+      </input>
+      <description>
+<p>DisconnectClient closes a connection that was accepted by this server, as for <class name="WebSocket" method="Close">WebSocket.Close()</class>.  Messages already queued on the connection are sent first.  The connection is reported to <fl>Disconnected</fl> once it reaches <code>CLOSED</code>.</p>
+      </description>
+      <result>
+        <error code="Okay">The closing handshake was started, or the connection is already closing.</error>
+        <error code="NotFound"><code>WebSocket</code> is not an open connection of this server.</error>
+        <error code="OutOfRange"><code>Code</code> is not a permitted close status.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="WrongClass"><code>WebSocket</code> is not a <class name="WebSocket">WebSocket</class>.</error>
+        <error code="InvalidValue"><code>Reason</code> exceeds 123 bytes, is not valid UTF-8, or was supplied without a <code>Code</code>.</error>
+      </result>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>Accept</name>
+      <comment>Approves or refuses opening handshake requests.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The Accept callback is invoked for each request that satisfies RFC 6455 and the <fl>Path</fl> filter, before the <code>101 Switching Protocols</code> response is sent.  The C++ prototype is <code>ERR Function(*WebSocketServer, struct WSRequest *Request, APTR Meta)</code>.  Tiri callbacks receive <code>(WebSocketServer, Request)</code>.  The request is described by a <st>WSRequest</st> structure, which is valid only for the duration of the call:</p>
+<struct lookup="WSRequest"/>
+<p>Tiri callbacks receive the structure as a table with the same fields in lower camel-case, for example <code>Request.origin</code> and <code>Request.path</code>.  Fields that are absent from the request are empty strings.</p>
+<p>Only an explicit <code>ERR::Okay</code> accepts the request.  Any other value, including a Tiri callback that returns nothing, refuses it with <code>403 Forbidden</code>.  If Accept is not defined, every valid request is accepted.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Address</name>
+      <comment>The local address to bind.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>STRING</type>
+      <description>
+<p>Set Address to an IPv4 or IPv6 address to accept connections on one interface only, for example <code>127.0.0.1</code>.  If Address is empty, connections are accepted on all interfaces.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ClientData</name>
+      <comment>Free for user data storage.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>APTR</type>
+    </field>
+
+    <field>
+      <name>CloseTimeout</name>
+      <comment>The time allowed for the closing handshake, in seconds.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value is applied to each connection when it is accepted.  Refer to <class name="WebSocket" field="CloseTimeout">WebSocket.CloseTimeout</class> for details.  The default is 5 seconds.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Connected</name>
+      <comment>Reports connections that have completed the opening handshake.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The C++ prototype is <code>void Function(*WebSocketServer, *WebSocket, APTR Meta)</code>.  Tiri callbacks receive <code>(WebSocketServer, WebSocket)</code>.</p>
+<p>Connected is invoked after the <code>101 Switching Protocols</code> response has been sent, with the connection in the <code>OPEN</code> state.  Install the connection's <class name="WebSocket" field="Incoming">WebSocket.Incoming</class>, <class name="WebSocket" field="StateChanged">WebSocket.StateChanged</class> and other callbacks here; messages that the client sent immediately after its request are delivered once this callback returns.  The callback may send messages, close the connection or free it.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Disconnected</name>
+      <comment>Reports connections that have closed.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The C++ prototype is <code>void Function(*WebSocketServer, *WebSocket, APTR Meta)</code>.  Tiri callbacks receive <code>(WebSocketServer, WebSocket)</code>.</p>
+<p>Disconnected is invoked once a connection has reached the <code>CLOSED</code> state, after its own <class name="WebSocket" field="StateChanged">WebSocket.StateChanged</class> callback.  The connection's <class name="WebSocket" field="CloseCode">WebSocket.CloseCode</class>, <class name="WebSocket" field="CloseReason">WebSocket.CloseReason</class> and <class name="WebSocket" field="Error">WebSocket.Error</class> fields describe how it ended.  The connection is freed automatically after the callback returns, so references to it must not be retained.</p>
+<p>Disconnected is not invoked for a connection that is freed by the application, or for the connections that are closed when the server is freed.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Flags</name>
+      <comment>Optional flags.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="WSF">WSF</type>
+      <description>
+<p>Set <code>SSL</code> before initialisation to accept <code>wss://</code> connections.  The <code>STREAM_MESSAGES</code>, <code>NO_UTF8_CHECK</code> and <code>NO_AUTO_PONG</code> flags are applied to each connection when it is accepted, and <code>NO_UTF8_CHECK</code> also disables validation of text messages sent with <method>Broadcast</method>.</p>
+<types lookup="WSF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>HandshakeTimeout</name>
+      <comment>The time allowed for a client to send its opening handshake request, in seconds.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>A client that has not sent a complete request within this period after connecting is disconnected without a response. The same period bounds the time that a rejected client is given to read its error response.  The default is 10 seconds.  Zero disables the timeout, which is not recommended for servers exposed to untrusted clients.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MaxFrameSize</name>
+      <comment>The maximum size of a single received frame, in bytes.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>The value is applied to each connection when it is accepted.  Refer to <class name="WebSocket" field="MaxFrameSize">WebSocket.MaxFrameSize</class> for details.  Zero, the default, applies <fl>MaxMessageSize</fl>.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MaxMessageSize</name>
+      <comment>The maximum size of a received message, in bytes.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>The value is applied to each connection when it is accepted.  A client that sends a larger message is disconnected with close code <code>MESSAGE_TOO_BIG</code>.  The default is 16 MiB.  Zero removes the limit, which is not recommended for servers exposed to untrusted clients.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Path</name>
+      <comment>Restricts the server to one request path.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>STRING</type>
+      <description>
+<p>If Path is set, requests for any other path are answered with <code>404 Not Found</code>.  The comparison is exact and case-sensitive, and excludes the query string, so a Path of <code>/chat</code> accepts <code>/chat?room=1</code> but not <code>/chat/</code> or <code>/Chat</code>.  If Path is empty, any path is accepted; the <fl>Accept</fl> callback can then filter requests by <code>WSRequest.Path</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PingInterval</name>
+      <comment>Enables keep-alive pings after a period of inactivity, in seconds.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The value is applied to each connection when it is accepted.  Refer to <class name="WebSocket" field="PingInterval">WebSocket.PingInterval</class> for details.  The default is zero, which disables keep-alive.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Port</name>
+      <comment>The local port to bind.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>INT</type>
+      <description>
+<p>The default is zero, which selects an ephemeral port.  After initialisation, Port holds the port in use.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Protocols</name>
+      <comment>Comma-separated subprotocols supported by the server, in order of preference.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Each subprotocol must be an HTTP token, for example <code>chat, superchat</code>.  For each request, the first of these that the client also requested is selected, sent in the <code>Sec-WebSocket-Protocol</code> response header and reported in the connection's <class name="WebSocket" field="Protocol">WebSocket.Protocol</class> field.  Names are compared case-sensitively.  If none matches, or Protocols is empty, the response carries no subprotocol and the connection is still accepted; use <fl>Accept</fl> to refuse such requests.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SSLCertificate</name>
+      <comment>The TLS certificate file for <code>wss://</code> connections.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>STRING</type>
+      <description>
+<p>Set SSLCertificate to the path of a PEM, CRT or PKCS#12 certificate when the <code>SSL</code> flag is set.  If no certificate is defined, a localhost development certificate is used.  Refer to <class name="NetServer" field="SSLCertificate">NetServer.SSLCertificate</class> for details.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SSLKeyPassword</name>
+      <comment>The password for an encrypted TLS private key.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>STRING</type>
+      <description>
+<p>Set SSLKeyPassword only if the <fl>SSLPrivateKey</fl>, or the key included in the <fl>SSLCertificate</fl>, is encrypted.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SSLPrivateKey</name>
+      <comment>The TLS private key file for <code>wss://</code> connections.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>STRING</type>
+      <description>
+<p>Set SSLPrivateKey to the path of a PEM or KEY private key when <fl>SSLCertificate</fl> does not include the key.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SendLimit</name>
+      <comment>The maximum number of queued bytes awaiting transmission on each connection.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p>The value is applied to each connection when it is accepted.  Refer to <class name="WebSocket" field="SendLimit">WebSocket.SendLimit</class> for details.  <method>Broadcast</method> skips connections whose limit would be exceeded.  The default is 16 MiB.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>TotalConnections</name>
+      <comment>The number of open connections.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>TotalConnections counts the connections that have completed the opening handshake and have not yet reached the <code>CLOSED</code> state.  Clients that are still performing the handshake are not included.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="WSF" comment="WebSocket flags.">
+      <const name="DISABLE_SERVER_VERIFY">Do not verify the server's TLS certificate.</const>
+      <const name="NO_AUTO_PONG">Do not answer received pings automatically.  Intended for test fixtures only.</const>
+      <const name="NO_UTF8_CHECK">Skip UTF-8 validation of text messages.  For interoperability with non-conforming peers only.</const>
+      <const name="SSL">WebSocketServer only.  Accept TLS (<code>wss://</code>) connections.</const>
+      <const name="STREAM_MESSAGES">Deliver message fragments as they arrive instead of assembling complete messages.</const>
+    </constants>
+
+    <constants lookup="WSM" comment="WebSocket message types.">
+      <const name="BINARY">The message payload is binary data.</const>
+      <const name="TEXT">The message payload is UTF-8 text.</const>
+    </constants>
+
+  </types>
+  <structs>
+    <struct name="WSRequest" comment="Describes an opening handshake request received by a WebSocketServer.">
+      <field name="Path" type="STRING">The request path, excluding the query string.</field>
+      <field name="Query" type="STRING">The query string without its leading <code>?</code>, or empty.</field>
+      <field name="Host" type="STRING">The value of the Host header.</field>
+      <field name="Origin" type="STRING">The value of the Origin header, or empty.</field>
+      <field name="Protocols" type="STRING">The requested subprotocols as a comma-separated list, or empty.</field>
+      <field name="Protocol" type="STRING">The subprotocol that the server will select, or empty.</field>
+      <field name="Address" type="STRING">The client's IP address.</field>
+      <field name="Headers" type="STRING">The request's header fields, one <code>Name: Value</code> pair per line.</field>
+    </struct>
+
+  </structs>
+</book>

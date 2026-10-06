@@ -56,6 +56,7 @@ FDEF argsMoveFile[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FDF_CPPSTRING 
 FDEF argsNewObject[] = { { "Error", FD_INT|FD_ERROR }, { "ClassID", FD_INT|FD_UNSIGNED }, { "Flags", FD_INT }, { "Object", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsNotifySubscribers[] = { { "Void", FD_VOID }, { "Object", FD_OBJECTPTR }, { "Action", FD_INT }, { "Args", FD_PTR }, { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
 FDEF argsOpenDir[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { "DirInfo:Info", FD_RESULT|FD_PTR|FD_STRUCT|FD_RESOURCE|FD_ALLOC }, { 0, 0 } };
+FDEF argsOpenURI[] = { { "Error", FD_INT|FD_ERROR }, { "URI", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsParentContext[] = { { "Object", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsPinResource[] = { { "Error", FD_INT|FD_ERROR }, { "ResourceID", FD_INT }, { 0, 0 } };
 FDEF argsPinWeakObject[] = { { "Object", FD_OBJECTPTR }, { "Object", FD_OBJECTID }, { 0, 0 } };
@@ -196,6 +197,7 @@ const struct Function glFunctions[] = {
    { (APTR)FreeObject, "FreeObject", argsFreeObject },
    { (APTR)PinResource, "PinResource", argsPinResource },
    { (APTR)UnpinResource, "UnpinResource", argsUnpinResource },
+   { (APTR)OpenURI, "OpenURI", argsOpenURI },
    { nullptr, nullptr, nullptr }
 };
 

@@ -1236,6 +1236,33 @@ kotuku:images/      kotuku:documents    kotuku:documents (Existing documents fol
   </function>
 
   <function>
+    <name>OpenURI</name>
+    <category>System</category>
+    <comment>Opens a URI with the application registered by the host desktop.</comment>
+    <prototype>ERR OpenURI(STRVIEW URI)</prototype>
+    <tiriPrototype>err = OpenURI(URI:str)</tiriPrototype>
+    <tags>blocking</tags>
+    <input>
+      <param type="STRVIEW" name="URI">The absolute URI to open.</param>
+    </input>
+    <description>
+<p>This function passes an absolute URI to the host operating system for opening with the user's preferred application. For example, an <code>http</code> or <code>https</code> URI will normally open in the default web browser.</p>
+<p>The operation is asynchronous.  A successful result confirms that the URI was handed to the host desktop, but does not guarantee that the receiving application opened or processed it successfully.</p>
+<p>On Linux, this function requires <code>xdg-open</code> and an active desktop session.  Other platforms may return <code>NoSupport</code> if they do not provide a desktop URI handler.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The URI was handed to the host desktop.</error>
+      <error code="NoMemory">Not enough memory available</error>
+      <error code="FileNotFound">The registered desktop handler could not be found.</error>
+      <error code="NoSupport">The platform does not support opening URIs, or no desktop URI handler is available.</error>
+      <error code="NoPermission">General security violation</error>
+      <error code="ProcessCreation">Process creation has failed</error>
+      <error code="SystemCall">A call to the host system has failed</error>
+      <error code="InvalidURI">The URI is empty, malformed or contains unescaped whitespace.</error>
+    </result>
+  </function>
+
+  <function>
     <name>ParentContext</name>
     <category>Objects</category>
     <comment>Returns the context of the client.</comment>
