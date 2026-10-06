@@ -95,6 +95,7 @@ void extAudioEffect::set_layout(std::span<const int> NewLayout)
    if (Schema) {
       for (const auto &output : Schema->Outputs) {
          if (output.Kind != AudioOutputKind::SCALAR) continue;
+         if (output.Channels and (std::ssize(Layout) != output.Channels)) continue;
 
          AudioMeterDesc meter;
          meter.Key         = output.Key;
@@ -155,6 +156,7 @@ void extAudioEffect::reset_meter(uint64_t Generation)
    std::fill(InputPeaks.begin(), InputPeaks.end(), 0.0);
    std::fill(OutputPeaks.begin(), OutputPeaks.end(), 0.0);
    Reduction = 0;
+   if (processor) processor->meter_reset();
 }
 
 //********************************************************************************************************************
@@ -229,6 +231,7 @@ void extAudioEffect::publish_meter(AMF Flags)
    std::fill(InputPeaks.begin(), InputPeaks.end(), 0.0);
    std::fill(OutputPeaks.begin(), OutputPeaks.end(), 0.0);
    Reduction = 0;
+   if (processor) processor->meter_reset();
 }
 
 //********************************************************************************************************************

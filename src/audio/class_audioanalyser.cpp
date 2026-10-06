@@ -1,7 +1,7 @@
 /*********************************************************************************************************************
 
 -CLASS-
-AudioAnalyser: Measures the spectrum and waveform of audio in a mixing chain, for visualisation.
+AudioAnalyser: Measures the spectrum, waveform and level of audio in a mixing chain, for visualisation.
 
 The analyser captures the audio that passes through its position in an effect chain without changing it.  Use it to
 drive spectrum analysers, oscilloscopes and level displays that follow what the listener hears.
@@ -33,15 +33,42 @@ silent.  A bypassed analyser does not capture audio, so its readings fall silent
 
 <header>Measurement</header>
 
-The analyser measures a mono downmix, which is the mean of every channel in the processing layout.  Audio that is out
-of phase between channels therefore reads lower than it sounds.
+By default the spectrum and waveform measure the mean of every channel in the processing layout.  Audio that is out of
+phase between channels therefore reads lower than it sounds.  Set the `channel_index` parameter with
+@AudioEffect.SetKey() followed by @AudioEffect.Flush() to measure a single channel of the processing layout instead,
+where 0 is the first channel.  This is unrelated to the #AudioEffect.Channel field, which selects the channel set.  A
+display with separate left and right traces uses one analyser for each channel:
+
+<pre>
+left = obj.new('AudioAnalyser', { audio=sound.audio })
+left.acSetKey('channel_index', 0)
+left.acFlush()
+</pre>
+
+Changing `channel_index` discards the captured audio, so readings are silent until audio captured from the new channel
+is heard.  If the processing layout has no channel at `channel_index`, for instance because the output has changed from
+stereo to mono, #GetSpectrum() and #GetWaveform() fail with `ERR::OutOfRange` until the channel is available again.
 
 The spectrum is computed with a Hann window over the most recent 32 to 47 ms of audio, depending on the output rate.
 At 44.1 and 48 kHz the window is 2048 frames long and the frequency resolution is about 23 Hz.  Band levels are
 calibrated so that a full-scale sinusoid within a band reads 0 dBFS.
 
-In addition to the spectrum and waveform, the standard input and output peaks are published for each channel.  The
-analyser adds no latency and has no tail.
+<header>Meters</header>
+
+The following meters are read with @AudioEffect.ReadMeters() and @AudioEffect.GetOutput().  Each interval is
+approximately 50 ms long.
+
+<list type="bullet">
+<li>`input_peak` and `output_peak`: the standard sample peaks, in dBFS, for each channel.</li>
+<li>`rms`: the RMS level of each channel over the interval, in dBFS.  A full-scale sinusoid reads -3.01 dBFS and a
+full-scale square wave reads 0 dBFS.  The floor is -120 dBFS.</li>
+<li>`correlation`: the correlation between the left and right channels over the interval, from -1 to +1.  A
+value of +1 indicates identical channels, 0 indicates unrelated channels and -1 indicates channels that cancel when
+they are mixed to mono.  The value is 0 if either channel is at the RMS floor.  This meter is only published for
+stereo layouts.</li>
+</list>
+
+The meters measure every channel regardless of `channel_index`.  The analyser adds no latency and has no tail.
 
 Output rates from 8000 to 192000 Hz are supported.  Configuring the analyser for any other rate fails with
 `ERR::NoSupport`.
@@ -55,6 +82,7 @@ Output rates from 8000 to 192000 Hz are supported.  Configuring the analyser for
 class extAudioAnalyser : public extAudioEffect {
 public:
    AnalyserProcessor *Processor = nullptr;
+   int ChannelIndex = -1; // Committed `channel_index`
 
    extAudioAnalyser(objMetaClass *ClassPtr, OBJECTID ObjectID);
 };
@@ -65,27 +93,52 @@ static const AudioOutputDesc glAnalyserOutputs[] = {
    { "spectrum", AudioOutputKind::SPECTRUM, "Spectrum",
       "Levels of frequency bands in the audio that is currently audible, read with GetSpectrum()." },
    { "waveform", AudioOutputKind::WAVEFORM, "Waveform",
-      "The mono waveform that is currently audible, read with GetWaveform()." },
+      "The waveform that is currently audible, read with GetWaveform().  It is the channel selected by "
+      "channel_index, or the mean of every channel." },
    { "input_peak", AudioOutputKind::SCALAR, "Input Peak", "Maximum input sample peak.", "dBFS", "channel",
       "sample-peak", AudioMeterSource::INPUT_PEAK },
    { "output_peak", AudioOutputKind::SCALAR, "Output Peak", "Maximum output sample peak.", "dBFS", "channel",
-      "sample-peak", AudioMeterSource::OUTPUT_PEAK }
+      "sample-peak", AudioMeterSource::OUTPUT_PEAK },
+   { "rms", AudioOutputKind::SCALAR, "RMS", "RMS level over the meter interval.", "dBFS", "channel", "rms",
+      AudioMeterSource::PROCESSOR, ANALYSER_RMS, ANALYSER_FLOOR_DB },
+   { "correlation", AudioOutputKind::SCALAR, "Correlation",
+      "Correlation of the left and right channels over the meter interval, from -1 for opposite phase to +1 for "
+      "identical channels.  Zero if either channel is silent.", "", "global", "stereo-correlation",
+      AudioMeterSource::PROCESSOR, ANALYSER_CORRELATION, 0, 2 }
 };
 
-// The analyser has no parameters.
+// Parameter descriptors.  Order matches the AN_ indexes.
+
+enum { AN_CHANNEL_INDEX = 0 };
+
+static const AudioParamDesc glAnalyserParams[] = {
+   { .Key = "channel_index", .Label = "Channel Index",
+     .Description = "The zero-based channel of the processing layout that the spectrum and waveform measure.  The "
+        "default of -1 measures the mean of every channel.",
+     .Type = APT::INT, .Min = -1, .Max = MAX_FORMAT_CHANNELS - 1, .Default = -1, .Step = 1 }
+};
 
 static void analyser_read(extAudioEffect *Effect, AudioParamState &State)
 {
-   State.Params.clear();
+   State.Params.assign({ double(((extAudioAnalyser *)Effect)->ChannelIndex) });
    State.Groups.clear();
 }
 
-static void analyser_apply(extAudioEffect *Effect, const AudioParamState &State) { }
+// Before initialisation there is no processor.  Afterwards this runs under the mixer lock.
+
+static void analyser_apply(extAudioEffect *Effect, const AudioParamState &State)
+{
+   auto Self = (extAudioAnalyser *)Effect;
+   Self->ChannelIndex = int(State.Params[AN_CHANNEL_INDEX]);
+   if (Self->Processor) Self->Processor->select(Self->ChannelIndex);
+}
 
 static const AudioEffectSchema glAnalyserSchema = {
    .ClassName   = "AudioAnalyser",
-   .Version     = 1,
-   .Description = "Measures the spectrum and waveform of audio in a mixing chain, for visualisation.",
+   .Version     = 2,
+   .Description = "Measures the spectrum, waveform, level and stereo correlation of audio in a mixing chain, for "
+      "visualisation.",
+   .Params      = glAnalyserParams,
    .Outputs     = glAnalyserOutputs,
    .Read        = analyser_read,
    .Apply       = analyser_apply
@@ -114,6 +167,7 @@ static ERR analyser_capture(extAudioAnalyser *Self, std::vector<float> &Output, 
    std::lock_guard mixer_lock(*chain->Mutex);
    const auto &processor = *Self->Processor;
    if ((processor.Rate < 2) or processor.History.empty()) return ERR::NotInitialised;
+   if (processor.selected() >= std::ssize(Self->Layout)) return ERR::OutOfRange;
 
    Rate = processor.Rate;
    const int count = Frames ? Frames : analyser_window(Rate);
@@ -148,6 +202,7 @@ NullArgs
 Args: Fewer than two edges, more than 1025 edges, or `Levels` is not one entry shorter than `Frequencies`.
 InvalidValue: The edges are not ascending, or lie outside of the range from zero to half of the output rate.
 NotInitialised: The analyser is not connected to an effect chain.
+OutOfRange: The processing layout has no channel at `channel_index`.
 AccessObject: The @Audio object could not be locked.
 -END-
 
@@ -182,9 +237,10 @@ static ERR AUDIOANALYSER_GetSpectrum(extAudioAnalyser *Self, struct ana::GetSpec
 -METHOD-
 GetWaveform: Reads the waveform of the audio that is currently audible.
 
-GetWaveform() fills `Samples` with the most recent audible frames, oldest first.  Each value is the mean of every
-channel in the processing layout, where a magnitude of 1.0 is full scale.  Frames that have not been captured, such as
-those after a source has stopped, are zero.
+GetWaveform() fills `Samples` with the most recent audible frames, oldest first.  Each value is a sample of the
+channel selected by `channel_index`, or by default the mean of every channel in the processing layout, where a magnitude
+of 1.0 is full scale.  Frames that have not been captured, such as those after a source has stopped or from before
+`channel_index` was changed, are zero.
 
 The length of `Samples` determines the duration that is read, e.g. 1024 samples cover 21 ms at 48 kHz.
 
@@ -196,6 +252,7 @@ Okay
 NullArgs
 Args: `Samples` is empty or longer than 16384 entries.
 NotInitialised: The analyser is not connected to an effect chain.
+OutOfRange: The processing layout has no channel at `channel_index`.
 AccessObject: The @Audio object could not be locked.
 -END-
 
@@ -219,7 +276,7 @@ static ERR AUDIOANALYSER_Init(extAudioAnalyser *Self)
 {
    if (Self->Processor) return ERR::InvalidState;
 
-   auto processor = std::make_unique<AnalyserProcessor>(Self);
+   auto processor = std::make_unique<AnalyserProcessor>(Self, Self->ChannelIndex);
    auto pointer = processor.get();
 
    auto error = Self->set_processor(std::move(processor));

@@ -1,11 +1,12 @@
-// Spectrum and waveform capture for the AudioAnalyser class.
+// Spectrum, waveform and level measurement for the AudioAnalyser class.
 //
-// The render thread writes a mono downmix of the processed audio into a ring buffer and leaves the audio unchanged.
-// Analysis runs on the client thread from a copy of the ring, so the render cost is one sum per sample and the mixer
-// lock is only held for the copy.
+// The render thread writes the measured channel, or the mean of every channel, into a ring buffer and leaves the audio
+// unchanged.  Analysis runs on the client thread from a copy of the ring, so the render cost is one sum per sample and
+// the mixer lock is only held for the copy.  RMS and stereo correlation are accumulated over each meter interval.
 
 #pragma once
 
+#include <array>
 #include <bit>
 #include <complex>
 #include <numbers>
@@ -17,6 +18,11 @@ constexpr int ANALYSER_MAX_WAVEFORM = 16384;  // Largest GetWaveform() request, 
 constexpr int ANALYSER_MAX_BANDS    = 1024;
 constexpr double ANALYSER_HISTORY   = 1.0;    // Seconds of device queue that the ring can compensate for
 constexpr double ANALYSER_FLOOR_DB  = -120;
+constexpr double ANALYSER_FLOOR_POWER = 1e-12; // ANALYSER_FLOOR_DB as a mean square
+
+// Processor meter value indexes
+
+enum { ANALYSER_RMS = 0, ANALYSER_CORRELATION };
 
 //********************************************************************************************************************
 // FFT size in frames: the largest power of two not exceeding Rate/16, e.g. 2048 at 44.1 and 48 kHz.  The window spans
@@ -131,15 +137,38 @@ inline void analyser_bands(std::span<const double> Power, double BinWidth, std::
 class AnalyserProcessor final : public AudioEffectProcessor {
 public:
    extAudioEffect *Owner;
-   std::vector<float> History; // Mono downmix ring; the size is a power of two, or zero until configured
+   std::vector<float> History; // Capture ring; the size is a power of two, or zero until configured
    uint64_t Written = 0;       // Captured and silent frames since History was configured
+   uint64_t Origin = 0;        // Frames before this position predate the current channel selection
    int64_t RenderTime = 0;     // PreciseTime() for the most recent captured or skipped block, or zero
    int Rate = 0;               // Sample rate of History
 
 private:
    int channels = 0;
+   int selection = -1;         // Captured channel index, or -1 for the mean of every channel
    bool active = false;
    bool resume = true;
+
+   // Sums over the current meter interval, restarted by meter_reset().
+
+   std::array<double, MAX_FORMAT_CHANNELS> squares {};
+   double cross = 0;           // Sum of the products of the first two channels
+   uint64_t measured = 0;
+
+   void measure(const float *Buffer, int Frames) {
+      const int count = std::min(channels, MAX_FORMAT_CHANNELS);
+      if (count < 1) return;
+      for (int frame = 0; frame < Frames; frame++) {
+         const float *in = Buffer + size_t(frame) * channels;
+         for (int c = 0; c < count; c++) squares[c] += double(in[c]) * double(in[c]);
+      }
+      if (channels IS 2) {
+         for (int frame = 0; frame < Frames; frame++) {
+            cross += double(Buffer[size_t(frame) * 2]) * double(Buffer[size_t(frame) * 2 + 1]);
+         }
+      }
+      measured += uint64_t(Frames);
+   }
 
    // Silent spans are bounded by the ring capacity even if the device has been idle for hours.
 
@@ -184,6 +213,7 @@ public:
          p.History.swap(Storage);
          p.Rate       = Rate;
          p.Written    = 0;
+         p.Origin     = 0;
          p.RenderTime = 0;
          p.resume     = true;
       }
@@ -191,7 +221,7 @@ public:
       int64_t latency() const override { return 0; }
    };
 
-   explicit AnalyserProcessor(extAudioEffect *Effect) : Owner(Effect) { }
+   explicit AnalyserProcessor(extAudioEffect *Effect, int Selection = -1) : Owner(Effect), selection(Selection) { }
 
    ERR prepare(int PrepareRate, bool Stereo, std::unique_ptr<AudioEffectConfiguration> &Result) override {
       if ((PrepareRate > 0) and ((PrepareRate < ANALYSER_MIN_RATE) or (PrepareRate > ANALYSER_MAX_RATE))) {
@@ -207,23 +237,76 @@ public:
       channels = int(Owner->Layout.size());
       active = (Rate > 0) and (Owner->OutputRate IS Rate) and (channels > 0) and (not History.empty());
       resume = true;
+      meter_reset();
    }
+
+   void meter_reset() override {
+      squares.fill(0);
+      cross = 0;
+      measured = 0;
+   }
+
+   // RMS is the level of the mean square over the interval, so a full-scale sinusoid reads -3.01 dBFS.  Correlation
+   // is zero if either channel is at the floor, because the phase of silence is undefined.
+
+   double meter_value(int Value, int Channel, bool &Floor) const override {
+      if (Value IS ANALYSER_RMS) {
+         const double power = ((measured > 0) and (Channel >= 0) and (Channel < MAX_FORMAT_CHANNELS)) ?
+            squares[Channel] / double(measured) : 0;
+         if (not (power > ANALYSER_FLOOR_POWER)) { // Also catches NaN
+            Floor = true;
+            return ANALYSER_FLOOR_DB;
+         }
+         return 10.0 * std::log10(power);
+      }
+      else if (Value IS ANALYSER_CORRELATION) {
+         if ((channels != 2) or (measured < 1)) return 0;
+         const double floor = ANALYSER_FLOOR_POWER * double(measured);
+         if (not ((squares[0] > floor) and (squares[1] > floor))) return 0;
+         const double result = cross / std::sqrt(squares[0] * squares[1]);
+         return std::isfinite(result) ? std::clamp(result, -1.0, 1.0) : 0;
+      }
+      return 0;
+   }
+
+   // Selects the captured channel.  History captured from the previous selection is discarded, so that a read never
+   // mixes two selections.  Called under the mixer lock.
+
+   void select(int Selection) {
+      if (Selection IS selection) return;
+      selection = Selection;
+      Origin = Written;
+   }
+
+   int selected() const { return selection; }
 
    void process(float *Buffer, int Frames) override {
       process(Buffer, Frames, PreciseTime());
    }
 
    void process(float *Buffer, int Frames, int64_t Now) {
-      if ((not active) or (Frames <= 0)) return;
+      if (Frames <= 0) return;
+      measure(Buffer, Frames);
+      if (not active) return;
       resume_at(Now, Frames);
 
       const size_t mask = History.size() - 1;
-      const float scale = 1.0f / float(channels);
-      for (int frame = 0; frame < Frames; frame++) {
-         const float *in = Buffer + size_t(frame) * channels;
-         float sum = 0;
-         for (int c = 0; c < channels; c++) sum += in[c];
-         History[size_t(Written + frame) & mask] = sum * scale;
+      if (selection < 0) {
+         const float scale = 1.0f / float(channels);
+         for (int frame = 0; frame < Frames; frame++) {
+            const float *in = Buffer + size_t(frame) * channels;
+            float sum = 0;
+            for (int c = 0; c < channels; c++) sum += in[c];
+            History[size_t(Written + frame) & mask] = sum * scale;
+         }
+      }
+      else if (selection < channels) {
+         for (int frame = 0; frame < Frames; frame++) {
+            History[size_t(Written + frame) & mask] = Buffer[size_t(frame) * channels + size_t(selection)];
+         }
+      }
+      else { // The layout has narrowed since selection; reads fail with ERR::OutOfRange
+         for (int frame = 0; frame < Frames; frame++) History[size_t(Written + frame) & mask] = 0.0f;
       }
       Written += Frames;
       RenderTime = Now;
@@ -252,13 +335,13 @@ public:
       return int64_t(Written) - std::llround(lag * Rate) + std::llround(elapsed * Rate);
    }
 
-   // Copies Output.size() frames that end at End, oldest first.  Frames that were never written or have since been
-   // overwritten are silent.  The caller holds the mixer lock.
+   // Copies Output.size() frames that end at End, oldest first.  Frames that were never written, have since been
+   // overwritten or predate the channel selection are silent.  The caller holds the mixer lock.
 
    void copy(int64_t End, std::span<float> Output) const {
       const int64_t count = std::ssize(Output);
       const int64_t written = int64_t(Written);
-      const int64_t oldest = written - std::ssize(History);
+      const int64_t oldest = std::max(written - std::ssize(History), int64_t(Origin));
       const size_t mask = History.empty() ? 0 : History.size() - 1;
       for (int64_t i = 0; i < count; i++) {
          const int64_t position = End - count + i;

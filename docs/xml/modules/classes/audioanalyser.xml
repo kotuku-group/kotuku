@@ -6,7 +6,7 @@
     <name>AudioAnalyser</name>
     <type>class</type>
     <module>Audio</module>
-    <comment>Measures the spectrum and waveform of audio in a mixing chain, for visualisation.</comment>
+    <comment>Measures the spectrum, waveform and level of audio in a mixing chain, for visualisation.</comment>
     <version>1</version>
     <id>499e3f3f</id>
     <idstring>AUDIOANALYSER</idstring>
@@ -27,9 +27,25 @@ end
 <p>Audio is mixed ahead of the device, which then queues it before it is heard.  Readings are aligned with the audio that is being heard, not the audio that was most recently mixed.  The analyser estimates the audible position from the device queue and the time that has elapsed since the last mix.  Up to one second of device queue is compensated for.</p>
 <p>After a source stops, the remaining queued audio is still reported until it has been heard, after which readings are silent.  A bypassed analyser does not capture audio, so its readings fall silent in the same way.</p>
 <header>Measurement</header>
-<p>The analyser measures a mono downmix, which is the mean of every channel in the processing layout.  Audio that is out of phase between channels therefore reads lower than it sounds.</p>
+<p>By default the spectrum and waveform measure the mean of every channel in the processing layout.  Audio that is out of phase between channels therefore reads lower than it sounds.  Set the <code>channel_index</code> parameter with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class> to measure a single channel of the processing layout instead, where 0 is the first channel.  This is unrelated to the <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> field, which selects the channel set.  A display with separate left and right traces uses one analyser for each channel:</p>
+<pre>left = obj.new('AudioAnalyser', { audio=sound.audio })
+left.acSetKey('channel_index', 0)
+left.acFlush()
+</pre>
+<p>Changing <code>channel_index</code> discards the captured audio, so readings are silent until audio captured from the new channel is heard.  If the processing layout has no channel at <code>channel_index</code>, for instance because the output has changed from stereo to mono, <method>GetSpectrum</method> and <method>GetWaveform</method> fail with <code>ERR::OutOfRange</code> until the channel is available again.</p>
 <p>The spectrum is computed with a Hann window over the most recent 32 to 47 ms of audio, depending on the output rate. At 44.1 and 48 kHz the window is 2048 frames long and the frequency resolution is about 23 Hz.  Band levels are calibrated so that a full-scale sinusoid within a band reads 0 dBFS.</p>
-<p>In addition to the spectrum and waveform, the standard input and output peaks are published for each channel.  The analyser adds no latency and has no tail.</p>
+<header>Meters</header>
+<p>The following meters are read with <class name="AudioEffect" method="ReadMeters">AudioEffect.ReadMeters()</class> and <class name="AudioEffect" method="GetOutput">AudioEffect.GetOutput()</class>.  Each interval is approximately 50 ms long.</p>
+<list type="bullet">
+<li><code>input_peak</code> and <code>output_peak</code>: the standard sample peaks, in dBFS, for each channel.</li>
+<li><code>rms</code>: the RMS level of each channel over the interval, in dBFS.  A full-scale sinusoid reads -3.01 dBFS and a
+full-scale square wave reads 0 dBFS.  The floor is -120 dBFS.</li>
+<li><code>correlation</code>: the correlation between the left and right channels over the interval, from -1 to +1.  A
+value of +1 indicates identical channels, 0 indicates unrelated channels and -1 indicates channels that cancel when
+they are mixed to mono.  The value is 0 if either channel is at the RMS floor.  This meter is only published for
+stereo layouts.</li>
+</list>
+<p>The meters measure every channel regardless of <code>channel_index</code>.  The analyser adds no latency and has no tail.</p>
 <p>Output rates from 8000 to 192000 Hz are supported.  Configuring the analyser for any other rate fails with <code>ERR::NoSupport</code>.</p></description>
     <source>
       <file>class_audioanalyser.cpp</file>
@@ -53,6 +69,7 @@ end
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Args">Fewer than two edges, more than 1025 edges, or <code>Levels</code> is not one entry shorter than <code>Frequencies</code>.</error>
+        <error code="OutOfRange">The processing layout has no channel at <code>channel_index</code>.</error>
         <error code="AccessObject">The <class name="Audio">Audio</class> object could not be locked.</error>
         <error code="NotInitialised">The analyser is not connected to an effect chain.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
@@ -70,12 +87,13 @@ end
         <param type="std::span&lt;float&gt;" name="Samples">Receives the waveform.  Up to 16384 samples can be read.</param>
       </input>
       <description>
-<p>GetWaveform() fills <code>Samples</code> with the most recent audible frames, oldest first.  Each value is the mean of every channel in the processing layout, where a magnitude of 1.0 is full scale.  Frames that have not been captured, such as those after a source has stopped, are zero.</p>
+<p>GetWaveform() fills <code>Samples</code> with the most recent audible frames, oldest first.  Each value is a sample of the channel selected by <code>channel_index</code>, or by default the mean of every channel in the processing layout, where a magnitude of 1.0 is full scale.  Frames that have not been captured, such as those after a source has stopped or from before <code>channel_index</code> was changed, are zero.</p>
 <p>The length of <code>Samples</code> determines the duration that is read, e.g. 1024 samples cover 21 ms at 48 kHz.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="Args"><code>Samples</code> is empty or longer than 16384 entries.</error>
+        <error code="OutOfRange">The processing layout has no channel at <code>channel_index</code>.</error>
         <error code="AccessObject">The <class name="Audio">Audio</class> object could not be locked.</error>
         <error code="NotInitialised">The analyser is not connected to an effect chain.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>

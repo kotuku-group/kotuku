@@ -272,6 +272,9 @@ public:
    // Value is the index declared by the output template, and Channel is the channel index within the processing layout
    // for a channel-scoped meter, or -1.  Set Floor if the value is at the floor of its range.  Constant-time only.
    virtual double meter_value(int Value, int Channel, bool &Floor) const { return 0; }
+   // Called under the mixer lock once the values of an interval have been read, and whenever the meter is reset, so
+   // that measurements over the meter interval can restart.  May run on the render thread, so it must not allocate.
+   virtual void meter_reset() { }
    // Called off the render thread and outside the mixer mutex. Read only immutable configuration here;
    // prepared storage must not reference the owning framework object, whose lifetime may end during preparation.
    virtual ERR prepare(int Rate, bool Stereo, std::unique_ptr<AudioEffectConfiguration> &Result) {
