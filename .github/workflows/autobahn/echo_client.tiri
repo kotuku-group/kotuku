@@ -1,0 +1,67 @@
+-- $TIRI
+-- Client driver for the Autobahn testsuite's fuzzingserver mode, which tests the WebSocket class.  The case count is
+-- retrieved from the fuzzing server, each case is run with every received message echoed back, then the server is
+-- asked to write its reports.
+--
+--   origo .github/workflows/autobahn/echo_client.tiri url=ws://127.0.0.1:9002 agent=kotuku
+
+   include 'websocket'
+
+   local base_url   = arg('url', 'ws://127.0.0.1:9002')
+   local agent      = arg('agent', 'kotuku')
+   local timeout    = tonumber(arg('timeout', '120'))
+   local count_file = arg('count_file')
+
+----------------------------------------------------------------------------------------------------------------------
+-- Opens a connection to Location and waits for it to close.  Messages are passed to Handler.  Returns the close code.
+-- Activation failures and timeouts raise an exception so that an incomplete run cannot be reported as successful.
+
+function runConnection(Location:str, Handler:func):num
+   local proc = processing.new({ timeout = timeout })
+   local ws <close> = obj.new('websocket', {
+      location       = Location,
+      maxMessageSize = 64 * 1024 * 1024,
+      sendLimit      = 128 * 1024 * 1024,
+      stateChanged = function(WebSocket:obj, State:num)
+         if State is WSS_CLOSED then proc.signal() end
+      end,
+      incoming = function(WebSocket:obj, Buffer:array<byte>, Type:num, Final:num)
+         Handler(WebSocket, Buffer, Type)
+      end
+   })
+
+   local err = ws.acActivate()
+   if err != ERR_Okay then
+      raise err, f'Activation of {Location} failed: {mSys.GetErrorMsg(err)}'
+   end
+
+   if proc.sleep() is ERR_Timeout then
+      raise ERR_Timeout, f'Timed out waiting for {Location} to close'
+   end
+   return ws.closeCode
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   local case_count = 0
+   runConnection(f'{base_url}/getCaseCount', function(WebSocket:obj, Buffer:array<byte>, Type:num)
+      case_count = tonumber(Buffer.getString()) ?? 0
+   end)
+
+   if case_count is 0 then raise f'No test cases were reported by {base_url}' end
+   if not count_file?? then raise 'A count_file argument is required' end
+   io.writeAll(count_file, tostring(case_count))
+   print(f'Running {case_count} cases against {base_url} as agent "{agent}"')
+
+   local echo = function(WebSocket:obj, Buffer:array<byte>, Type:num)
+      local err = WebSocket.mtSend(Buffer, Type)
+      if err != ERR_Okay then raise err, f'Echo failed: {mSys.GetErrorMsg(err)}' end
+   end
+
+   for i in {1 into case_count} do
+      local code = runConnection(f'{base_url}/runCase?case={i}&agent={agent}', echo)
+      print(f'Case {i}/{case_count} closed with code {code}')
+   end
+
+   runConnection(f'{base_url}/updateReports?agent={agent}', function(WebSocket:obj, Buffer:array<byte>, Type:num) end)
+   print('Reports updated')
