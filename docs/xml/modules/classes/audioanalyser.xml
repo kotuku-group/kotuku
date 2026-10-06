@@ -27,10 +27,11 @@ end
 <p>Audio is mixed ahead of the device, which then queues it before it is heard.  Readings are aligned with the audio that is being heard, not the audio that was most recently mixed.  The analyser estimates the audible position from the device queue and the time that has elapsed since the last mix.  Up to one second of device queue is compensated for.</p>
 <p>After a source stops, the remaining queued audio is still reported until it has been heard, after which readings are silent.  A bypassed analyser does not capture audio, so its readings fall silent in the same way.</p>
 <header>Measurement</header>
-<p>By default the spectrum and waveform measure the mean of every channel in the processing layout.  Audio that is out of phase between channels therefore reads lower than it sounds.  Set the <code>channel_index</code> parameter with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class> to measure a single channel of the processing layout instead, where 0 is the first channel.  This is unrelated to the <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> field, which selects the channel set.  A display with separate left and right traces uses one analyser for each channel:</p>
-<pre>left = obj.new('AudioAnalyser', { audio=sound.audio })
-left.acSetKey('channel_index', 0)
-left.acFlush()
+<p>By default the spectrum and waveform measure the mean of every channel in the processing layout.  Audio that is out of phase between channels therefore reads lower than it sounds.  Set the <code>channel_index</code> parameter to measure a single channel of the processing layout instead, where 0 is the first channel.  This is unrelated to the <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> field, which selects the channel set.  After initialisation, change the parameter with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>.  Effects on the global mix are immutable after initialisation, so a display with separate left and right traces creates and configures each global analyser in stages:</p>
+<pre>left = obj.new('AudioAnalyser')
+left.audio = sound.audio
+check left.acSetKey('channel_index', 0)
+left.init()
 </pre>
 <p>Changing <code>channel_index</code> discards the captured audio, so readings are silent until audio captured from the new channel is heard.  If the processing layout has no channel at <code>channel_index</code>, for instance because the output has changed from stereo to mono, <method>GetSpectrum</method> and <method>GetWaveform</method> fail with <code>ERR::OutOfRange</code> until the channel is available again.</p>
 <p>The spectrum is computed with a Hann window over the most recent 32 to 47 ms of audio, depending on the output rate. At 44.1 and 48 kHz the window is 2048 frames long and the frequency resolution is about 23 Hz.  Band levels are calibrated so that a full-scale sinusoid within a band reads 0 dBFS.</p>

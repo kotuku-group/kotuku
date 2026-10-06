@@ -111,6 +111,7 @@ static OBJECTPTR clAudioGate = nullptr;
 static OBJECTPTR clAudioDelay = nullptr;
 static OBJECTPTR clAudioChorus = nullptr;
 static OBJECTPTR clAudioFlanger = nullptr;
+static OBJECTPTR clAudioPhaser = nullptr;
 static OBJECTPTR clAudioLoudness = nullptr;
 static OBJECTPTR clAudioSaturator = nullptr;
 static OBJECTPTR clAudioSplitter = nullptr;
@@ -124,6 +125,7 @@ static ERR add_audiogate_class();
 static ERR add_audiodelay_class();
 static ERR add_audiochorus_class();
 static ERR add_audioflanger_class();
+static ERR add_audiophaser_class();
 static ERR add_audioloudness_class();
 static ERR add_audiosaturator_class();
 static ERR add_audiosplitter_class();
@@ -198,6 +200,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (add_audiodelay_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiochorus_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioflanger_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audiophaser_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioloudness_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiosaturator_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiosplitter_class() != ERR::Okay) return ERR::AddClass;
@@ -227,6 +230,7 @@ static ERR MODExpunge(void)
    if (clAudioSplitter) { FreeResource(clAudioSplitter); clAudioSplitter = nullptr; }
    if (clAudioSaturator) { FreeResource(clAudioSaturator); clAudioSaturator = nullptr; }
    if (clAudioLoudness) { FreeResource(clAudioLoudness); clAudioLoudness = nullptr; }
+   if (clAudioPhaser) { FreeResource(clAudioPhaser); clAudioPhaser = nullptr; }
    if (clAudioFlanger) { FreeResource(clAudioFlanger); clAudioFlanger = nullptr; }
    if (clAudioChorus) { FreeResource(clAudioChorus); clAudioChorus = nullptr; }
    if (clAudioDelay) { FreeResource(clAudioDelay); clAudioDelay = nullptr; }
@@ -260,6 +264,7 @@ static ERR MODExpunge(void)
 #include "class_audiodelay.cpp"
 #include "class_audiochorus.cpp"
 #include "class_audioflanger.cpp"
+#include "class_audiophaser.cpp"
 #include "class_audioloudness.cpp"
 #include "class_audiosaturator.cpp"
 #include "class_audiosplitter.cpp"
@@ -284,6 +289,7 @@ static ERR MODExpunge(void)
 #include "tests/test_audio_delay_dsp.cpp"
 #include "tests/test_audio_chorus_dsp.cpp"
 #include "tests/test_audio_flanger_dsp.cpp"
+#include "tests/test_audio_phaser_dsp.cpp"
 #include "tests/test_audio_loudness_dsp.cpp"
 #include "tests/test_audio_saturator_dsp.cpp"
 #include "tests/test_audio_splitter_dsp.cpp"
@@ -323,6 +329,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    run("delay DSP", audio_tests_audio_delay_dsp::run);
    run("chorus DSP", audio_tests_audio_chorus_dsp::run);
    run("flanger DSP", audio_tests_audio_flanger_dsp::run);
+   run("phaser DSP", audio_tests_audio_phaser_dsp::run);
    run("loudness DSP", audio_tests_audio_loudness_dsp::run);
    run("saturator DSP", audio_tests_audio_saturator_dsp::run);
    if (Options.find("saturator-spectra") != std::string_view::npos) {
