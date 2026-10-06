@@ -373,6 +373,42 @@ end
    release({}, state)
 end
 
+@Test function RuntimeHandshakeTimeout()
+   local state = newServer({ handshakeTimeout = 0 })
+
+   -- Enabling the timeout starts a timer for a client that is already waiting.
+
+   local enabled = rawClient(state.server.port, nil)
+   waitFor((() => enabled.connected))
+   processing.sleep(0.05)
+   state.server.handshakeTimeout = 0.1
+   waitFor((() => enabled.disconnected), 1)
+   assert(enabled.disconnected, 'Enabling HandshakeTimeout did not affect a pending client')
+   enabled.socket.free()
+
+   -- Shortening a positive timeout reschedules the existing timer.
+
+   state.server.handshakeTimeout = 2
+   local shortened = rawClient(state.server.port, nil)
+   waitFor((() => shortened.connected))
+   processing.sleep(0.05)
+   state.server.handshakeTimeout = 0.1
+   waitFor((() => shortened.disconnected), 1)
+   assert(shortened.disconnected, 'Changing HandshakeTimeout did not reschedule the timer')
+   shortened.socket.free()
+
+   -- Disabling the timeout cancels the timer while leaving the pending client connected.
+
+   state.server.handshakeTimeout = 0.1
+   local disabled = rawClient(state.server.port, nil)
+   waitFor((() => disabled.connected))
+   processing.sleep(0.05)
+   state.server.handshakeTimeout = 0
+   processing.sleep(0.3)
+   assert(not disabled.disconnected, 'Disabling HandshakeTimeout did not cancel the timer')
+   release(disabled, state)
+end
+
 @Test function ProtocolViolations()
    local cases = {
       { 'unmasked frame', clientFrame(1, 'plain', true, false), WSC_PROTOCOL_ERROR },

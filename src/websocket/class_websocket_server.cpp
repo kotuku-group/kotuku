@@ -109,6 +109,26 @@ static ERR handshake_timer(extWebSocketServer *, int64_t, int64_t);
 
 //********************************************************************************************************************
 
+static double handshake_timer_interval(double Timeout)
+{
+   return std::clamp(Timeout / 4.0, 0.02, 1.0);
+}
+
+//********************************************************************************************************************
+
+static ERR start_handshake_timer(extWebSocketServer *Self)
+{
+   if ((Self->HandshakeTimeout <= 0) or Self->Pending.empty() or Self->HandshakeTimer) return ERR::Okay;
+
+   kt::SwitchContext context(Self);
+   auto error = SubscribeTimer(handshake_timer_interval(Self->HandshakeTimeout), C_FUNCTION(handshake_timer),
+      &Self->HandshakeTimer);
+   if (error != ERR::Okay) Self->HandshakeTimer = nullptr;
+   return error;
+}
+
+//********************************************************************************************************************
+
 static void update_total(extWebSocketServer *Self)
 {
    Self->TotalConnections = int(Self->Upgraded.size());
@@ -479,13 +499,7 @@ static void server_feedback(objNetServer *NetServer, objClientSocket *Socket, NT
 
    if (State IS NTC::CONNECTED) {
       Self->Pending[Socket->UID] = PendingConnection { Socket, {}, PreciseTime(), false };
-      if ((Self->HandshakeTimeout > 0) and (not Self->HandshakeTimer)) {
-         auto interval = std::clamp(Self->HandshakeTimeout / 4.0, 0.02, 1.0);
-         kt::SwitchContext context(Self);
-         if (SubscribeTimer(interval, C_FUNCTION(handshake_timer), &Self->HandshakeTimer) != ERR::Okay) {
-            Self->HandshakeTimer = nullptr;
-         }
-      }
+      start_handshake_timer(Self);
    }
    else if (State IS NTC::DISCONNECTED) {
       Self->Pending.erase(Socket->UID);
@@ -896,7 +910,14 @@ static ERR SRV_SET_HandshakeTimeout(extWebSocketServer *Self, double Value)
 {
    if (Value < 0) return ERR::OutOfRange;
    Self->HandshakeTimeout = Value;
-   return ERR::Okay;
+   if (Value <= 0) {
+      cancel_timer(Self->HandshakeTimer);
+      return ERR::Okay;
+   }
+   else if (Self->HandshakeTimer) {
+      return UpdateTimer(Self->HandshakeTimer, handshake_timer_interval(Value));
+   }
+   else return start_handshake_timer(Self);
 }
 
 /*********************************************************************************************************************
