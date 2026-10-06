@@ -19,6 +19,7 @@ extern "C" ModHeader * register_regex_module();
 extern "C" ModHeader * register_scintilla_module();
 extern "C" ModHeader * register_svg_module();
 extern "C" ModHeader * register_vector_module();
+extern "C" ModHeader * register_websocket_module();
 extern "C" ModHeader * register_xml_module();
 extern "C" ModHeader * register_xquery_module();
 
@@ -97,6 +98,10 @@ static void register_static_modules(void)
 
    #ifdef INC_MOD_VECTOR
    glStaticModules["vector"] = register_vector_module();
+   #endif
+
+   #ifdef INC_MOD_WEBSOCKET
+   glStaticModules["websocket"] = register_websocket_module();
    #endif
 
    #ifdef INC_MOD_XML
