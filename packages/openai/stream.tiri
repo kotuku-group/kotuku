@@ -78,9 +78,13 @@ openai_stream.stream = function(Options:table):table
       processing.delayedCall(function()
          if Subscription.closed then return end
          callback = Subscription.callback
+         context = Subscription.context
          Subscription.closed = true
          Subscription.callback = nil
-         try callback(state.response, state.error) end
+         Subscription.context = nil
+         using context do
+            try callback(state.response, state.error) end
+         end
       end)
    end
 
@@ -279,8 +283,12 @@ openai_stream.stream = function(Options:table):table
    end
 
    self.onComplete = function(Callback:func!):table
-      subscription = { callback=Callback, closed=false }
-      subscription.close = function() subscription.closed = true; subscription.callback = nil end
+      subscription = { callback=Callback, context=&&, closed=false }
+      subscription.close = function()
+         subscription.closed = true
+         subscription.callback = nil
+         subscription.context = nil
+      end
       if state.terminal and state.eventDispatchDepth is 0 then dispatchCompletion(subscription)
       else state.completions.push(subscription) end
       return subscription

@@ -320,6 +320,22 @@ end
    stream.close()
 end
 
+@Test function CompletionPreservesRegistrationContext()
+   stream = openai_stream.stream({})
+   owner = entity { expected='registration context', observed=nil }
+   using owner do
+      stream.onComplete(function(Response, Error)
+         assert(Response.id is 'context' and not Error, 'Contextual completion receives the stream result')
+         &observed = &expected
+      end)
+   end
+   stream.feed(eventWire('response.completed', { response={ id='context' } }))
+   processing.sleep(0)
+   assert(owner.observed is owner.expected, 'Completion must run under the context active at registration')
+   assert(&expected is nil, 'Completion must restore the caller context after delivery')
+   stream.close()
+end
+
 @Test; @Requires(network=true) function HTTPAdapterStreamsAndPreservesMetadata()
    server = hslib.start({ port=0, bind='127.0.0.1', folder='temp:', routes={
       { method='POST', pattern='/complete', handler=function(Req, Res)

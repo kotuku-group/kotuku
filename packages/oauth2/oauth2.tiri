@@ -568,8 +568,8 @@ table: Failure details, including the failure code in the `code` field.
       local server:obj
       sockets = {}
 
-      control.wake = function() 
-         server.acSignal() 
+      control.wake = function()
+         server.acSignal()
       end
 
       try
