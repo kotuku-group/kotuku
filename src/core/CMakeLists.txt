@@ -153,17 +153,15 @@ idl_gen ("defs/time.tdl" NAME time_defs OUTPUT "${INCLUDE_OUTPUT}/modules/time.h
    BYPRODUCTS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time_def.c" "${DOCS}/modules/classes/time.xml"
    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/classes/class_time.cpp")
 
-if (NOT MSVC)
-   # A bug in (MinGW?) GCC requires the following flag is applied to ensure that __packed__ works correctly.
-   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mno-ms-bitfields")
-   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mno-ms-bitfields")
-   #target_compile_options (core PRIVATE "$<${GCC_COMPAT}:$<BUILD_INTERFACE:-mno-ms-bitfields>>")
-endif ()
-
 # DBG_DIAGNOSTICS: Print enhanced diagnostic messages on crash - e.g. semaphore and memory locks.
 # DBG_SLEEP: Debug any area of the system that puts the process to sleep.
 
 add_library (core)
+
+if (NOT MSVC)
+   # A bug in (MinGW?) GCC requires this option so that __packed__ works correctly.
+   target_compile_options (core PRIVATE -mno-ms-bitfields)
+endif ()
 
 target_compile_definitions (core PRIVATE "__system__" "DBG_DIAGNOSTICS" "PRV_METACLASS" "RESOURCE_POOL")
 
