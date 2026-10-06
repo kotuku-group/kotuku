@@ -1,0 +1,901 @@
+-- Flute tests: WebSocket client against a scripted raw peer.  The peer computes the accept key with the Crypto module
+-- and writes handshake responses and server frames verbatim, so that every byte boundary is under test control.  The
+-- open-connection fixture parses the client's masked frames so that sending, control frames and closing can be checked.
+
+   include 'websocket', 'network', 'crypto'
+   module crypto as mCrypto
+
+local GUID <const> = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+
+function acceptKey(Key:str):str
+   local digest = array<byte, 20>
+   check mCrypto.Hash(HASH_SHA1, Key .. GUID, digest)
+   local output = array<byte, 28>
+   local err, written = mCrypto.Base64Encode(digest, CC_STANDARD, output)
+   assert(err is ERR_Okay, 'Accept key encoding failed')
+   return output.getString(0, written)
+end
+
+-- Encodes an unmasked server frame.
+
+function frame(Opcode:num, Payload:str, Fin:any):str
+   local first = (Fin is false ? 0 : 0x80) | Opcode
+   local length = #Payload
+   if length < 126 then return string.char(first, length) .. Payload end
+   if length < 65536 then return string.char(first, 126, length >> 8, length & 255) .. Payload end
+   local header = string.char(first, 127)
+   for shift in values(array<int> { 56, 48, 40, 32, 24, 16, 8, 0 }) do
+      header ..= string.char((length >> shift) & 255)
+   end
+   return header .. Payload
+end
+
+function switching(Accept:str, Extra:str):str
+   return 'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' ..
+      f'Sec-WebSocket-Accept: {Accept}\r\n' .. (Extra or '') .. '\r\n'
+end
+
+function waitFor(Condition:func, Seconds:num)
+   local limit = (Seconds or 3) * 100
+   for i in {0 to limit} do
+      if Condition() then return end
+      processing.sleep(0.01)
+   end
+end
+
+-- Runs one connection.  Options.respond(key) returns the bytes written once the request is complete.  Options.later
+-- is written 50ms afterwards, and Options.drop closes the connection after the response.
+
+function runClient(Options:table):table
+   local state = { request='', received='', states=array<int>, messages={}, types={}, finals={}, opened=0 }
+
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         local buffer = string.alloc(8192)
+         local err, size = Client.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+         local data = buffer.sub(0, size)
+
+         if state.request.find('\r\n\r\n') then
+            state.received ..= data
+            return
+         end
+
+         state.request ..= data
+         if not state.request.find('\r\n\r\n') then return end
+
+         local key = ''
+         for line in values(state.request.split('\r\n')) do
+            if line.startsWith('Sec-WebSocket-Key:') then key = line.sub(18).trim() end
+         end
+
+         state.key = key
+
+         if Options.stall then return end
+
+         check Client.acWrite(Options.respond(acceptKey(key)))
+
+         if Options.later then
+            local err, timer = mSys.SubscribeTimer(0.05, function()
+               if state.laterSent then return end
+               state.laterSent = true
+               Client.acWrite(Options.later)
+            end)
+
+            state.timer = timer
+         end
+
+         if Options.drop then raise ERR_Terminate end
+      end
+   })
+
+   local ws <close> = obj.new('websocket', {
+      location = Options.location or f'ws://127.0.0.1:{server.port}/chat?room=a%20b',
+      dataTimeout = Options.stall and 0.3 or 2,
+      stateChanged = function(WebSocket, State)
+         state.states.push(State)
+         if State is WSS_OPEN then state.opened++ end
+         if State is WSS_CLOSED then
+            state.closeCode = WebSocket.closeCode
+            state.closeReason = WebSocket.closeReason
+            state.error = WebSocket.error
+         end
+      end,
+      incoming = function(WebSocket, Buffer, Type, Final)
+         table.insert(state.messages, Buffer.getString())
+         table.insert(state.types, Type)
+         table.insert(state.finals, Final)
+      end
+   })
+
+   if Options.protocols then ws.protocols = Options.protocols end
+   if Options.origin then ws.origin = Options.origin end
+   if Options.maxMessageSize then ws.maxMessageSize = Options.maxMessageSize end
+   if Options.flags then ws.flags = Options.flags end
+   if Options.header then check ws.acSetKey(Options.header[0], Options.header[1]) end
+
+   check ws.acActivate()
+   assert(ws.state is WSS_CONNECTING, 'Activation did not enter CONNECTING')
+
+   if Options.cancel then
+      waitFor((() => state.key != nil), 2)
+      check ws.acDeactivate()
+   end
+
+   local expected = Options.expect or 0
+   waitFor(function()
+      if ws.state is WSS_CLOSED then return true end
+      return (ws.state is WSS_OPEN) and (#state.messages >= expected) and (not Options.waitClose)
+   end, Options.wait)
+
+   if Options.settle then processing.sleep(Options.settle) end
+   if state.timer then
+      mSys.UpdateTimer(state.timer, 0)
+      state.timer = nil
+   end
+
+   state.state = ws.state
+   state.protocol = ws.protocol
+   state.status = ws.status
+   state.redirect = ws.redirect
+   state.closeCode ?= ws.closeCode
+   state.closeReason ?= ws.closeReason
+   state.error ?= ws.error
+   return state
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function HandshakeAndPrefixMessage()
+   local state = runClient({
+      respond = (Accept => switching(Accept) .. frame(1, 'hello')),
+      expect = 1
+   })
+
+   assert(state.state is WSS_OPEN, f'Connection did not open: {state.closeReason}')
+   assert(state.opened is 1 and state.states[0] is WSS_CONNECTING, 'Expected CONNECTING then exactly one OPEN')
+   assert(state.status is 101, 'Status was not recorded')
+   assert(#state.messages is 1 and state.messages[0] is 'hello', 'Prefix frame was not delivered as a message')
+   assert(state.types[0] is WSM_TEXT and state.finals[0] is 1, 'Prefix message type or finality is wrong')
+
+   local request = state.request
+   assert(request.startsWith('GET /chat?room=a%20b HTTP/1.1\r\n'), 'Request target was not preserved verbatim')
+   assert(request.find('Sec-WebSocket-Version: 13\r\n'), 'Version header is missing')
+   assert(request.find('Upgrade: websocket\r\n') and request.find('Connection: Upgrade\r\n'), 'Upgrade headers missing')
+   assert(#state.key is 24 and state.key.endsWith('=='), 'Sec-WebSocket-Key is not a 16 byte nonce')
+   assert(not request.find('Sec-WebSocket-Protocol'), 'Subprotocol header sent without Protocols')
+end
+
+@Test function PrefixBoundaries()
+   -- A complete frame, a frame with NUL bytes and the first half of a third frame arrive with the response; the rest
+   -- of the third frame arrives later through the socket.
+   local third = frame(1, 'third')
+   local state = runClient({
+      respond = (Accept => switching(Accept) .. frame(1, 'first') .. frame(2, 'A\0B\0') .. third.sub(0, 3)),
+      later = third.sub(3) .. frame(2, string.rep('x', 300)),
+      expect = 4
+   })
+
+   assert(state.opened is 1, 'Expected exactly one OPEN transition')
+   assert(#state.messages is 4, f'Expected 4 messages, got {#state.messages}')
+   assert(state.messages[0] is 'first', 'First prefix message is wrong')
+   assert(state.messages[1] is 'A\0B\0' and state.types[1] is WSM_BINARY, 'Binary prefix lost NUL bytes')
+   assert(state.messages[2] is 'third', 'Frame split across the prefix and the socket was not reassembled')
+   assert(state.messages[3] is string.rep('x', 300), '16-bit length frame was not delivered')
+end
+
+@Test function FragmentsAndInterleavedPing()
+   -- U+20AC (E2 82 AC) is split across two continuation frames, with a ping between the fragments.
+   local fragments = frame(1, 'Price: \xe2', false) .. frame(0x9, 'ping') .. frame(0, '\x82', false) ..
+      frame(0, '\xac!', true)
+   local state = runClient({ respond = (Accept => switching(Accept)), later = fragments, expect = 1 })
+
+   assert(#state.messages is 1, 'Fragmented message was not delivered once')
+   assert(state.messages[0] is 'Price: \xe2\x82\xac!', 'Fragmented text was not reassembled')
+   assert(state.state is WSS_OPEN, 'Interleaved ping disturbed the connection')
+
+   local stream = runClient({
+      respond = (Accept => switching(Accept)), later = fragments, expect = 3, flags = WSF_STREAM_MESSAGES
+   })
+   assert(#stream.messages is 3, 'Streaming mode did not deliver each fragment')
+   assert(stream.finals[0] is 0 and stream.finals[2] is 1, 'Streaming finality flags are wrong')
+   assert(stream.messages[0] .. stream.messages[1] .. stream.messages[2] is 'Price: \xe2\x82\xac!',
+      'Streamed fragments are incomplete')
+end
+
+@Test function MalformedHandshakes()
+   local cases = {
+      { 'wrong accept',       (Accept => switching('AAAAAAAAAAAAAAAAAAAAAAAAAAA=')) },
+      { 'missing accept',
+         (Accept => 'HTTP/1.1 101 Switching\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n') },
+      { 'duplicate accept',   (Accept => switching(Accept, f'Sec-WebSocket-Accept: {Accept}\r\n')) },
+      { 'unrequested proto',  (Accept => switching(Accept, 'Sec-WebSocket-Protocol: chat\r\n')) },
+      { 'extension',          (Accept => switching(Accept, 'Sec-WebSocket-Extensions: permessage-deflate\r\n')) }
+   }
+
+   for case in values(cases) do
+      local state = runClient({ respond = case[1] })
+      assert(state.state is WSS_CLOSED, f'{case[0]}: handshake was not rejected')
+      assert(state.opened is 0, f'{case[0]}: connection opened')
+      assert(state.error is ERR_InvalidHTTPResponse, f'{case[0]}: unexpected error {state.error}')
+      assert(state.closeCode is WSC_ABNORMAL, f'{case[0]}: close code should be 1006')
+      assert(#state.closeReason > 0, f'{case[0]}: no close reason')
+      assert(#state.messages is 0, f'{case[0]}: data was delivered')
+   end
+
+   local state = runClient({ protocols='chat', respond = (Accept => switching(Accept,
+      'Sec-WebSocket-Protocol: chat\r\nSec-WebSocket-Protocol: chat\r\n')) })
+   assert(state.error is ERR_InvalidHTTPResponse, 'Repeated Sec-WebSocket-Protocol was accepted')
+
+   state = runClient({ protocols='chat', respond = (Accept => switching(Accept, 'Sec-WebSocket-Protocol: other\r\n')) })
+   assert(state.error is ERR_InvalidHTTPResponse, 'A subprotocol outside the requested list was accepted')
+end
+
+@Test function SubprotocolNegotiation()
+   local state = runClient({
+      protocols = 'chat, superchat',
+      origin = 'https://example.com',
+      header = { 'X-Client', 'flute' },
+      respond = (Accept => switching(Accept, 'sec-websocket-protocol: superchat\r\n')),
+      expect = 0
+   })
+
+   assert(state.state is WSS_OPEN, f'Connection did not open: {state.closeReason}')
+   assert(state.protocol is 'superchat', 'Selected subprotocol was not recorded')
+   assert(state.request.find('Sec-WebSocket-Protocol: chat, superchat\r\n'), 'Requested subprotocols were not sent')
+   assert(state.request.find('Origin: https://example.com\r\n'), 'Origin was not sent')
+   assert(state.request.find('X-Client: flute\r\n'), 'Custom header was not sent')
+
+   local none = runClient({ protocols='chat', respond = (Accept => switching(Accept)) })
+   assert(none.state is WSS_OPEN and (none.protocol or '') is '', 'A response without a subprotocol should be accepted')
+end
+
+@Test function NonSwitchingResponses()
+   local redirect = runClient({
+      respond = (Accept => 'HTTP/1.1 302 Found\r\nLocation: ws://elsewhere.example/\r\nContent-Length: 0\r\n\r\n')
+   })
+   assert(redirect.state is WSS_CLOSED and redirect.opened is 0, 'Redirect opened the connection')
+   assert(redirect.status is 302 and redirect.error is ERR_HTTPStatus, 'Redirect status or error is wrong')
+   assert(redirect.redirect is 'ws://elsewhere.example/', 'Redirect target was not recorded')
+   assert(redirect.closeCode is WSC_ABNORMAL and redirect.closeReason is 'HTTP 302', 'Redirect close status is wrong')
+
+   for status in values(array<int> { 403, 500 }) do
+      local state = runClient({
+         respond = (Accept => f'HTTP/1.1 {status} Refused\r\nContent-Length: 2\r\nConnection: close\r\n\r\nno')
+      })
+      assert(state.status is status and state.error is ERR_HTTPStatus, f'{status}: status or error is wrong')
+      assert(state.closeReason is f'HTTP {status}' and (state.redirect or '') is '', f'{status}: close reason is wrong')
+   end
+
+   local unauthorised = runClient({
+      respond = (Accept => 'HTTP/1.1 401 Unauthorised\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+   })
+   assert(unauthorised.status is 401 and unauthorised.error is ERR_NotAuthorised, '401 was not reported')
+end
+
+@Test function ProtocolViolations()
+   local masked = string.char(0x81, 0x82, 1, 2, 3, 4, string.byte('h') ^ 1, string.byte('i') ^ 2)
+   local cases = {
+      { 'masked server frame', masked, WSC_PROTOCOL_ERROR },
+      { 'invalid UTF-8', frame(1, 'bad \xc0\xaf'), WSC_INVALID_PAYLOAD },
+      { 'reserved opcode', frame(3, 'x'), WSC_PROTOCOL_ERROR },
+      { 'continuation without start', frame(0, 'x'), WSC_PROTOCOL_ERROR },
+      { 'oversized message', frame(2, string.rep('z', 64)), WSC_MESSAGE_TOO_BIG }
+   }
+
+   for case in values(cases) do
+      local state = runClient({
+         respond = (Accept => switching(Accept)), later = case[1], maxMessageSize = 32, settle = 0.05
+      })
+      assert(state.state is WSS_CLOSED, f'{case[0]}: connection was not failed')
+      assert(state.closeCode is case[2], f'{case[0]}: expected close code {case[2]}, got {state.closeCode}')
+      assert(state.error is ERR_InvalidData, f'{case[0]}: unexpected error {state.error}')
+      assert(#state.messages is 0, f'{case[0]}: invalid data was delivered')
+      -- The client's Close frame is masked and carries the failure code.
+      local received = state.received
+      assert(#received >= 8 and received.byte(0) is 0x88 and (received.byte(1) & 0x80) != 0,
+         f'{case[0]}: client did not send a masked Close frame')
+      local code = ((received.byte(6) ^ received.byte(2)) << 8) | (received.byte(7) ^ received.byte(3))
+      assert(code is case[2], f'{case[0]}: Close frame carried code {code}')
+   end
+end
+
+@Test function PeerCloseAndDisconnect()
+   local closing = runClient({
+      respond = (Accept => switching(Accept) .. frame(1, 'last') .. frame(8, string.char(0x03, 0xe8) .. 'bye')),
+      settle = 0.05
+   })
+   assert(closing.state is WSS_CLOSED, 'Peer Close did not close the connection')
+   assert(#closing.messages is 1 and closing.messages[0] is 'last', 'Message before Close was lost')
+   assert(closing.closeCode is 1000 and closing.closeReason is 'bye', 'Peer close status was not recorded')
+   assert(closing.error is ERR_Okay, 'A clean close reported an error')
+   assert(#closing.received >= 8 and closing.received.byte(0) is 0x88, 'Close was not echoed')
+
+   local dropped = runClient({
+      respond = (Accept => switching(Accept) .. frame(1, 'gone')), drop = true, waitClose = true
+   })
+   assert(dropped.state is WSS_CLOSED and dropped.closeCode is WSC_ABNORMAL,
+      f'TCP drop did not report 1006: {dropped.state} {dropped.closeCode} {dropped.closeReason}')
+   assert(#dropped.messages is 1 and dropped.messages[0] is 'gone', 'Data before the drop was lost')
+   assert(dropped.opened is 1, 'OPEN was not reported before the drop')
+end
+
+@Test function CancelAndTimeout()
+   local cancelled = runClient({ stall = true, cancel = true })
+   assert(cancelled.state is WSS_CLOSED and cancelled.error is ERR_Cancelled, 'Deactivate did not cancel the handshake')
+
+   local timed_out = runClient({ stall = true })
+   assert(timed_out.state is WSS_CLOSED and timed_out.opened is 0, 'A stalled handshake did not fail')
+   assert(timed_out.error is ERR_TimeOut, f'Stalled handshake reported {timed_out.error}')
+end
+
+@Test function LocationAndKeyValidation()
+   local ws <close> = obj.new('websocket')
+   for location in values(array<str> { 'ws://example.com', 'WSS://[::1]:8443/a?b=c', 'ws://h:65535/?q' }) do
+      ws.location = location
+      assert(ws.location is location, 'A valid location was rejected')
+   end
+
+   for location in values(array<str> {
+      'http://example.com/', 'ws://example.com/#frag', 'ws://user@example.com/', 'ws://example.com:0/',
+      'ws://example.com:65536/', 'ws://[::1/', 'ws:///path', 'ws://exa mple.com/', 'ws://example.com:/'
+   }) do
+      local rejected = false
+      try
+         ws.location = location
+      except
+         rejected = true
+      end
+      assert(rejected, f'Invalid location accepted: {location}')
+   end
+
+   assert(ws.acSetKey('Sec-WebSocket-Key', 'x') is ERR_InvalidValue, 'A reserved header was accepted')
+   assert(ws.acSetKey('Connection', 'close') is ERR_InvalidValue, 'Connection header was accepted')
+   assert(ws.acSetKey('Bad Name', 'x') is ERR_InvalidValue, 'An invalid header name was accepted')
+   assert(ws.acSetKey('X-Value', 'a\r\nb') is ERR_InvalidValue, 'A header value with CRLF was accepted')
+   assert(ws.acSetKey('X-Value', 'fine') is ERR_Okay, 'A valid custom header was rejected')
+
+   local rejected = false
+   try
+      ws.protocols = 'chat, bad token'
+   except
+      rejected = true
+   end
+   assert(rejected, 'An invalid subprotocol list was accepted')
+
+   local empty <close> = obj.new('websocket')
+   assert(empty.acActivate() is ERR_FieldNotSet, 'Activation without a location was permitted')
+   assert(empty.state is WSS_CLOSED, 'A new WebSocket should report CLOSED')
+end
+
+@Test function ConnectionRefused()
+   local state = runClient({ location = 'ws://127.0.0.1:1/', respond = (Accept => '') })
+   assert(state.state is WSS_CLOSED and state.opened is 0, 'Refused connection opened')
+   assert(state.error is ERR_ConnectionRefused, f'Unexpected error {state.error}')
+   assert(state.closeCode is WSC_ABNORMAL, 'Refused connection did not report 1006')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Open-connection fixture.  The peer completes the handshake, then parses the client's masked frames incrementally.
+-- Payloads up to Parser.keepLimit bytes are kept whole; larger payloads keep only their first 16 bytes.
+
+function newParser(KeepLimit:num):table
+   return { buffer='', frames={}, keepLimit=KeepLimit or 1048576 }
+end
+
+function parseFrames(Parser:table, Data:str)
+   local buffer = Parser.buffer .. Data
+   local position = 0
+
+   while true do
+      local available = #buffer - position
+      if available < 2 then break end
+      local first = buffer.byte(position)
+      local second = buffer.byte(position + 1)
+      local length = second & 0x7f
+      local header = 2
+
+      if length is 126 then
+         if available < 4 then break end
+         length = (buffer.byte(position + 2) << 8) | buffer.byte(position + 3)
+         header = 4
+      elseif length is 127 then
+         if available < 10 then break end
+         length = 0
+         for i in {2 to 10} do length = (length * 256) + buffer.byte(position + i) end
+         header = 10
+      end
+
+      local masked = (second & 0x80) != 0
+      local mask = masked and buffer.sub(position + header, position + header + 4) or ''
+      if masked then header += 4 end
+      if available < header + length then break end
+
+      local start = position + header
+      local keep = (length <= Parser.keepLimit) and length or math.min(length, 16)
+      table.insert(Parser.frames, {
+         fin = (first & 0x80) != 0, opcode = first & 0x0f, rsv = first & 0x70, masked = masked, mask = mask,
+         length = length, raw = buffer.sub(start, start + keep)
+      })
+
+      position = start + length
+   end
+   Parser.buffer = buffer.sub(position)
+end
+
+-- Returns the unmasked payload kept for Frame.
+
+function unmask(Frame:table):str
+   local raw = Frame.raw
+   if #raw is 0 then return '' end
+   if not Frame.masked then return raw end
+   local output = array<byte, #raw>
+   for i in {0 to #raw} do output[i] = raw.byte(i) ^ Frame.mask.byte(i & 3) end
+   return output.getString(0, #raw)
+end
+
+function closeCodeOf(Frame:table):num
+   local payload = unmask(Frame)
+   if #payload < 2 then return 0 end
+   return (payload.byte(0) << 8) | payload.byte(1)
+end
+
+function framesWith(Session:table, Opcode:num):table
+   local result = {}
+   for frame in values(Session.parser.frames) do
+      if frame.opcode is Opcode then table.insert(result, frame) end
+   end
+   return result
+end
+
+-- Options: fields (applied to the WebSocket before activation), keepLimit, answerClose (peer replies with this Close
+-- payload and drops TCP), closeOnClose (peer drops TCP on receiving a Close), autoPong, incoming, stateChanged and
+-- outgoing (extra callbacks).
+
+function openSession(Options:table):table
+   local session = {
+      request='', parser=newParser(Options.keepLimit), states=array<int>, messages={}, heartbeats={}, outgoing=0,
+      mute=false
+   }
+   local read_buffer = string.alloc(65536)
+
+   session.server = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         local err, size = Client.acRead(read_buffer)
+         if err != ERR_Okay then return end
+         local data = read_buffer.sub(0, size)
+         session.client = Client
+
+         if not session.handshaken then
+            session.request ..= data
+            if not session.request.find('\r\n\r\n') then return end
+            session.handshaken = true
+            local key = ''
+            for line in values(session.request.split('\r\n')) do
+               if line.startsWith('Sec-WebSocket-Key:') then key = line.sub(18).trim() end
+            end
+            check Client.acWrite(switching(acceptKey(key)))
+            return
+         end
+
+         local before = #session.parser.frames
+         parseFrames(session.parser, data)
+         local terminate = false
+         for i in {before to #session.parser.frames} do
+            local received = session.parser.frames[i]
+            if (received.opcode is 9) and Options.autoPong and (not session.mute) then
+               check Client.acWrite(frame(10, unmask(received)))
+            elseif received.opcode is 8 then
+               if Options.answerClose then Client.acWrite(frame(8, Options.answerClose)) end
+               if Options.answerClose or Options.closeOnClose then terminate = true end
+            end
+         end
+
+         -- Closing through a delayed call keeps exceptions out of cleanup paths, where they would replace the
+         -- error being reported.
+
+         if terminate then processing.delayedCall(function() Client.free() end) end
+      end
+   })
+
+   local ws = obj.new('websocket', {
+      location = f'ws://127.0.0.1:{session.server.port}/',
+      stateChanged = function(WebSocket, State)
+         session.states.push(State)
+         if Options.stateChanged then Options.stateChanged(session, WebSocket, State) end
+      end,
+      incoming = function(WebSocket, Buffer, Type, Final)
+         table.insert(session.messages, Buffer.getString())
+         if Options.incoming then Options.incoming(session, WebSocket) end
+      end,
+      heartbeat = function(WebSocket, Buffer, Pong)
+         table.insert(session.heartbeats, { data=Buffer.getString(), pong=Pong })
+      end,
+      outgoing = function(WebSocket)
+         session.outgoing++
+         if Options.outgoing then Options.outgoing(session, WebSocket) end
+      end
+   })
+
+   for name, value in pairs(Options.fields or {}) do ws.set(name, value) end
+
+   check ws.acActivate()
+   waitFor((() => ws.state is WSS_OPEN), 2)
+   assert(ws.state is WSS_OPEN, 'Session did not open')
+   session.ws = ws
+   return session
+end
+
+function closeSession(Session:table)
+   if Session.ws then
+      Session.ws.free()
+      Session.ws = nil
+   end
+   Session.server.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SendMessages()
+   local session = openSession({})
+   defer closeSession(session) end
+   local ws = session.ws
+
+   local big = string.rep('0123456789abcdef', 4375) -- 70000 bytes, sent with a 64-bit length
+   check ws.mtSend('hello', WSM_TEXT)
+   check ws.mtSend('A\0B', WSM_BINARY)
+   check ws.mtSend('', WSM_TEXT)
+   check ws.mtSend(big, WSM_BINARY)
+   waitFor(() => #session.parser.frames >= 4)
+
+   local frames = session.parser.frames
+   assert(#frames is 4, f'Expected 4 frames, got {#frames}')
+   for frame in values(frames) do
+      assert(frame.masked and frame.fin and frame.rsv is 0, 'Client frames must be masked, final and without RSV bits')
+   end
+   assert(frames[0].opcode is 1 and unmask(frames[0]) is 'hello', 'Text frame is wrong')
+   assert(frames[1].opcode is 2 and unmask(frames[1]) is 'A\0B', 'Binary frame lost NUL bytes')
+   assert(frames[2].opcode is 1 and frames[2].length is 0, 'Empty message was not sent as an empty frame')
+   assert(frames[3].opcode is 2 and frames[3].length is 70000 and unmask(frames[3]) is big, 'Large frame is wrong')
+   assert(frames[0].mask != frames[1].mask or frames[1].mask != frames[3].mask, 'Masking keys are being reused')
+   assert(ws.pending is 0, 'Pending bytes remain after the queue drained')
+
+   assert(ws.mtSend('bad \xc0\xaf', WSM_TEXT) is ERR_InvalidData, 'Invalid UTF-8 text was accepted')
+   assert(ws.mtSend('x', 7) is ERR_InvalidValue, 'An invalid message type was accepted')
+
+   local closed <close> = obj.new('websocket')
+   assert(closed.mtSend('x', WSM_TEXT) is ERR_InvalidState, 'Send was accepted before the connection opened')
+   assert(closed.mtPing('x') is ERR_InvalidState, 'Ping was accepted before the connection opened')
+end
+
+@Test function SendFragmented()
+   local session = openSession({})
+   defer closeSession(session) end
+
+   session.ws.maxFrameSize = 1000
+
+   local text = string.rep('\xe2\x82\xac', 833) .. '!'  -- 2500 bytes, with code points split across fragments
+   check session.ws.mtSend(text, WSM_TEXT)
+   waitFor(() => #session.parser.frames >= 3)
+
+   local frames = session.parser.frames
+   assert(#frames is 3, f'Expected 3 fragments, got {#frames}')
+   assert(frames[0].opcode is 1 and (not frames[0].fin) and frames[0].length is 1000, 'First fragment is wrong')
+   assert(frames[1].opcode is 0 and (not frames[1].fin) and frames[1].length is 1000, 'Middle fragment is wrong')
+   assert(frames[2].opcode is 0 and frames[2].fin and frames[2].length is 500, 'Final fragment is wrong')
+   assert(unmask(frames[0]) .. unmask(frames[1]) .. unmask(frames[2]) is text, 'Fragments do not reassemble')
+end
+
+@Test function UpdateReceiveLimit()
+   local session = openSession({ answerClose=string.char(0x03, 0xe8) })
+   defer closeSession(session) end
+
+   session.ws.maxMessageSize = 32
+   check session.client.acWrite(frame(2, string.rep('z', 64)))
+   waitFor(() => session.ws.state is WSS_CLOSED)
+
+   assert(session.ws.state is WSS_CLOSED, 'Runtime message limit did not reject an oversized message')
+   assert(session.ws.closeCode is WSC_MESSAGE_TOO_BIG, 'Runtime message limit reported the wrong close code')
+end
+
+@Test function PingPongAndHeartbeat()
+   local session = openSession({})
+   defer closeSession(session) end
+   local ws = session.ws
+
+   check session.client.acWrite(frame(9, 'abc'))
+   waitFor(() => #framesWith(session, 10) >= 1)
+   local pongs = framesWith(session, 10)
+   assert(#pongs is 1 and unmask(pongs[0]) is 'abc' and pongs[0].masked, 'Ping was not answered with a masked Pong')
+   assert(#session.heartbeats is 1 and session.heartbeats[0].data is 'abc' and session.heartbeats[0].pong is 0,
+      'Received Ping was not reported to Heartbeat')
+
+   check session.client.acWrite(frame(10, 'xyz'))
+   waitFor(() => #session.heartbeats >= 2)
+   assert(session.heartbeats[1].data is 'xyz' and session.heartbeats[1].pong is 1, 'Pong was not reported')
+   assert(#framesWith(session, 10) is 1, 'A Pong was answered')
+
+   check ws.mtPing('hi')
+   waitFor(() => #framesWith(session, 9) >= 1)
+   local pings = framesWith(session, 9)
+   assert(#pings is 1 and unmask(pings[0]) is 'hi', 'Ping method did not send a Ping frame')
+   assert(ws.mtPing(string.rep('x', 126)) is ERR_DataSize, 'An oversized Ping payload was accepted')
+
+   local quiet = openSession({ fields = { flags=WSF_NO_AUTO_PONG } })
+   defer closeSession(quiet) end
+   check quiet.client.acWrite(frame(9, 'abc'))
+   waitFor(() => #quiet.heartbeats >= 1)
+   processing.sleep(0.05)
+   assert(#quiet.heartbeats is 1, 'Ping was not reported with NO_AUTO_PONG')
+   assert(#framesWith(quiet, 10) is 0, 'NO_AUTO_PONG did not suppress the Pong')
+end
+
+@Test function LocalCloseHandshake()
+   for method in values(array<str> { 'close', 'deactivate' }) do
+      local session = openSession({ answerClose = string.char(0x03, 0xe8) .. 'ok' })
+      defer closeSession(session) end
+      local ws = session.ws
+
+      local started = mSys.PreciseTime()
+      if method is 'close' then
+         check ws.mtClose(WSC_NORMAL, 'done')
+      else
+         check ws.acDeactivate()
+      end
+      assert(ws.state is WSS_CLOSING, f'{method}: state did not change to CLOSING')
+      assert(ws.mtSend('late', WSM_TEXT) is ERR_InvalidState, f'{method}: Send was accepted while closing')
+
+      waitFor(() => ws.state is WSS_CLOSED)
+      local elapsed = (mSys.PreciseTime() - started) / 1000000
+      assert(ws.state is WSS_CLOSED, f'{method}: connection did not close')
+      assert(elapsed < 0.9, f'{method}: closing took {elapsed}s although the server closed TCP')
+      assert(ws.closeCode is WSC_NORMAL and ws.closeReason is 'ok', f'{method}: server close status not recorded')
+      assert(ws.error is ERR_Okay, f'{method}: a clean close reported {ws.error}')
+      assert(session.states[#session.states - 2] is WSS_CLOSING, f'{method}: CLOSING was not reported')
+
+      local closes = framesWith(session, 8)
+      assert(#closes is 1 and closeCodeOf(closes[0]) is WSC_NORMAL, f'{method}: Close frame was not sent')
+      local expected_reason = (method is 'close') ? 'done' : ''
+      assert(unmask(closes[0]).sub(2) is expected_reason, f'{method}: Close reason is wrong')
+   end
+end
+
+@Test function CloseTimeout()
+   local session = openSession({ fields = { closeTimeout=0.3 } })
+   defer closeSession(session) end
+   local ws = session.ws
+
+   local started = mSys.PreciseTime()
+   check ws.mtClose(4000, '')
+   waitFor((() => ws.state is WSS_CLOSED), 2)
+   local elapsed = (mSys.PreciseTime() - started) / 1000000
+
+   assert(ws.state is WSS_CLOSED, 'Unanswered Close did not time out')
+   assert(elapsed >= 0.25 and elapsed < 1, f'CloseTimeout was not honoured: {elapsed}s')
+   assert(ws.closeCode is WSC_ABNORMAL and ws.error is ERR_TimeOut, f'Timeout reported {ws.closeCode} {ws.error}')
+   local closes = framesWith(session, 8)
+   assert(#closes is 1 and closeCodeOf(closes[0]) is 4000, 'Application close code was not sent')
+end
+
+@Test function CloseArguments()
+   local session = openSession({ closeOnClose = true })
+   defer closeSession(session) end
+   local ws = session.ws
+
+   for code in values(array<int> { 999, 1004, 1005, 1006, 1015, 2999, 5000 }) do
+      assert(ws.mtClose(code, '') is ERR_OutOfRange, f'Close code {code} was accepted')
+   end
+   assert(ws.mtClose(1000, string.rep('x', 124)) is ERR_InvalidValue, 'A 124 byte reason was accepted')
+   assert(ws.mtClose(1000, 'bad \xc0') is ERR_InvalidValue, 'A reason that is not UTF-8 was accepted')
+   assert(ws.mtClose(0, 'why') is ERR_InvalidValue, 'A reason without a code was accepted')
+   assert(ws.state is WSS_OPEN, 'Rejected Close calls changed the state')
+
+   check ws.mtClose(0, '')
+   assert(ws.mtClose(1000, '') is ERR_Okay, 'A second Close should be ignored')
+   waitFor(() => ws.state is WSS_CLOSED)
+   local closes = framesWith(session, 8)
+   assert(#closes is 1 and closes[0].length is 0, 'Close without a status should have an empty payload')
+   assert(ws.closeCode is WSC_ABNORMAL, 'A Close that was never answered should report 1006')
+end
+
+@Test function PeerCloseCodes()
+   local cases = {}
+   for code in values(array<int> { 1000, 1001, 1003, 1007, 1011, 3000, 4999 }) do
+      table.insert(cases, { string.char(code >> 8, code & 255) .. 'r', code, 'r', code, ERR_Okay })
+   end
+   table.insert(cases, { '', WSC_NO_STATUS, '', WSC_NORMAL, ERR_Okay })
+   for code in values(array<int> { 0, 999, 1004, 1005, 1006, 1015, 1016, 2999, 5000 }) do
+      table.insert(cases, { string.char(code >> 8, code & 255), WSC_PROTOCOL_ERROR, nil, WSC_PROTOCOL_ERROR,
+         ERR_InvalidData })
+   end
+   table.insert(cases, { string.char(3), WSC_PROTOCOL_ERROR, nil, WSC_PROTOCOL_ERROR, ERR_InvalidData })
+   table.insert(cases, { string.char(0x03, 0xe8, 0xc0), WSC_INVALID_PAYLOAD, nil, WSC_INVALID_PAYLOAD,
+      ERR_InvalidData })
+
+   for case in values(cases) do
+      local session = openSession({ closeOnClose = true })
+      defer closeSession(session) end
+      local ws = session.ws
+      local label = f'Close payload of {#case[0]} bytes, expected {case[1]}'
+
+      check session.client.acWrite(frame(8, case[0]))
+      waitFor(() => ws.state is WSS_CLOSED)
+      assert(ws.state is WSS_CLOSED, f'{label}: connection did not close')
+      assert(ws.closeCode is case[1], f'{label}: CloseCode is {ws.closeCode}')
+      if case[2] then assert((ws.closeReason or '') is case[2], f'{label}: CloseReason is {ws.closeReason}') end
+      assert(ws.error is case[4], f'{label}: Error is {ws.error}')
+      local closes = framesWith(session, 8)
+      assert(#closes is 1 and closeCodeOf(closes[0]) is case[3], f'{label}: client did not answer with {case[3]}')
+   end
+end
+
+-- Sends binary messages until the WebSocket reports BufferOverflow and returns the number accepted.  The peer cannot
+-- read during the loop, so a broken SendLimit would grow memory without bound: the loop is capped at MAX_FILL bytes so
+-- that such a regression fails the test instead of exhausting system memory.
+
+local MAX_FILL <const> = 64 * 1024 * 1024
+
+function fillQueue(WebSocket:obj, Message:func):num
+   local accepted = 0
+   local total = 0
+   while true do
+      local payload = Message(accepted)
+      local err = WebSocket.mtSend(payload, WSM_BINARY)
+      if err is ERR_BufferOverflow then return accepted end
+      assert(err is ERR_Okay, f'Send failed with {err}')
+      accepted++
+      total += #payload
+      assert(total < MAX_FILL, 'SendLimit was never reached')
+   end
+end
+
+@Test function SlowReaderBackpressure()
+   -- The peer runs on this thread, so it reads nothing while the loop below sends.  The kernel buffers fill, then
+   -- the WebSocket queue, which must stop at SendLimit.
+
+   local LIMIT <const> = 65536
+   local SIZE <const> = 16384
+   local filler = string.rep('z', SIZE - 8)
+   local resumed = false
+   local session = openSession({
+      keepLimit = 0,
+      fields = { sendLimit=LIMIT },
+      outgoing = function(Session, WebSocket)
+         if resumed then return end
+         resumed = true
+         check WebSocket.mtSend('tail', WSM_TEXT)
+      end
+   })
+   defer closeSession(session) end
+   local ws = session.ws
+
+   local accepted = fillQueue(ws, function(Index)
+      assert(ws.pending <= LIMIT, f'Pending {ws.pending} exceeded SendLimit')
+      return string.format('%08d', Index) .. filler
+   end)
+
+   local pending = ws.pending
+   assert(pending > 0 and pending <= LIMIT, f'Pending is {pending} after the overflow')
+   assert(ws.mtSend(string.format('%08d', accepted) .. filler, WSM_BINARY) is ERR_BufferOverflow,
+      'A repeated Send was accepted beyond the limit')
+   assert(ws.pending is pending, 'A rejected Send changed the queue')
+
+   waitFor((() => resumed and #session.parser.frames >= accepted + 1), 30)
+   assert(resumed and session.outgoing >= 1, 'Outgoing was not invoked when the queue drained')
+   assert(ws.pending is 0, 'Pending bytes remain after draining')
+
+   local frames = session.parser.frames
+   for i in {0 to accepted} do
+      local frame = frames[i]
+      assert(frame.opcode is 2 and frame.fin and frame.length is SIZE, f'Frame {i} has the wrong header')
+      assert(unmask(frame).sub(0, 8) is string.format('%08d', i), f'Frame {i} is out of order')
+   end
+   assert(#frames is accepted + 1, f'Expected {accepted + 1} frames, received {#frames}')
+   local last = frames[#frames - 1]
+   assert(last.opcode is 1 and unmask(last) is 'tail', 'The message sent from Outgoing was not last')
+end
+
+@Test function CloseUnderBackpressure()
+   local LIMIT <const> = 65536
+   local filler = string.rep('q', 16376)
+
+   -- The Close frame follows all queued data, and the handshake completes once the peer has read it.
+
+   local session = openSession({
+      keepLimit = 0, answerClose = string.char(0x03, 0xe8), fields = { sendLimit=LIMIT, closeTimeout=10 }
+   })
+   defer closeSession(session) end
+   local ws = session.ws
+   local accepted = fillQueue(ws, (Index => string.format('%08d', Index) .. filler))
+   check ws.mtClose(WSC_NORMAL, '')
+   waitFor((() => ws.state is WSS_CLOSED), 30)
+   assert(ws.state is WSS_CLOSED and ws.closeCode is WSC_NORMAL, f'Close under backpressure reported {ws.closeCode}')
+   local frames = session.parser.frames
+   assert(#frames is accepted + 1 and frames[#frames - 1].opcode is 8, 'Close did not follow all queued data')
+
+   -- A peer that never answers is dropped after CloseTimeout, whether or not the queue has drained.
+
+   local silent = openSession({ keepLimit = 0, fields = { sendLimit=LIMIT, closeTimeout=0.5 } })
+   defer closeSession(silent) end
+   local quiet_ws = silent.ws
+   fillQueue(quiet_ws, (Index => filler))
+   local started = mSys.PreciseTime()
+   check quiet_ws.mtClose(WSC_NORMAL, '')
+   waitFor((() => quiet_ws.state is WSS_CLOSED), 5)
+   local elapsed = (mSys.PreciseTime() - started) / 1000000
+   assert(quiet_ws.state is WSS_CLOSED, 'Close under backpressure did not time out')
+   assert(elapsed >= 0.45 and elapsed < 2, f'CloseTimeout under backpressure took {elapsed}s')
+   assert(quiet_ws.closeCode is WSC_ABNORMAL and quiet_ws.error is ERR_TimeOut, 'Timeout was not reported')
+end
+
+@Test function KeepAlive()
+   local session = openSession({ autoPong = true, fields = { pingInterval=0.2 } })
+   defer closeSession(session) end
+   local ws = session.ws
+
+   processing.sleep(1.3)
+   assert(ws.state is WSS_OPEN, f'Keep-alive closed a responsive connection: {ws.closeReason}')
+   local pings = #framesWith(session, 9)
+   assert(pings >= 2, f'Expected keep-alive pings, observed {pings}')
+   assert(#session.heartbeats >= 2 and session.heartbeats[0].pong is 1, 'Keep-alive Pongs were not reported')
+
+   session.mute = true
+   waitFor((() => ws.state is WSS_CLOSED), 3)
+   assert(ws.state is WSS_CLOSED, 'An unresponsive peer was not disconnected')
+   assert(ws.closeCode is WSC_ABNORMAL and ws.error is ERR_TimeOut, f'Keep-alive failure reported {ws.closeCode}')
+end
+
+@Test function FreeFromCallbacks()
+   -- Freeing the WebSocket inside its own callbacks must not disturb the dispatch that invoked them.
+
+   local session = openSession({
+      incoming = function(Session, WebSocket)
+         Session.ws = nil
+         Session.freedID = WebSocket.id
+         WebSocket.free()
+      end
+   })
+
+   defer closeSession(session) end
+   check session.client.acWrite(frame(1, 'one') .. frame(1, 'two') .. frame(9, 'p'))
+   waitFor(() => session.ws is nil)
+   processing.sleep(0.1)
+   assert(session.ws is nil and #session.messages is 1, 'Messages were delivered after the WebSocket was freed')
+   assert(obj.find(session.freedID) is nil, 'The WebSocket freed in Incoming was not destroyed')
+
+   local closing = openSession({
+      stateChanged = function(Session, WebSocket, State)
+         if State is WSS_CLOSING then
+            Session.ws = nil
+            Session.freedID = WebSocket.id
+            WebSocket.free()
+         end
+      end
+   })
+
+   defer closeSession(closing) end
+   check closing.ws.mtClose(WSC_NORMAL, 'bye')
+   assert(closing.ws is nil, 'StateChanged did not free the WebSocket')
+   processing.sleep(0.1)
+   assert(obj.find(closing.freedID) is nil, 'The WebSocket freed in StateChanged(CLOSING) was not destroyed')
+
+   local peer_close = openSession({
+      closeOnClose = true,
+      stateChanged = function(Session, WebSocket, State)
+         if State is WSS_CLOSED then
+            Session.ws = nil
+            Session.freedID = WebSocket.id
+            WebSocket.free()
+         end
+      end
+   })
+
+   defer closeSession(peer_close) end
+   check peer_close.client.acWrite(frame(8, string.char(0x03, 0xe8)))
+   waitFor(() => peer_close.ws is nil)
+   assert(peer_close.ws is nil, 'The WebSocket was not freed from its CLOSED notification')
+   processing.sleep(0.1)
+   assert(obj.find(peer_close.freedID) is nil, 'The WebSocket freed in StateChanged(CLOSED) was not destroyed')
+end

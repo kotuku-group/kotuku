@@ -32,6 +32,7 @@
 #cmakedefine INC_MOD_SVG
 #cmakedefine INC_MOD_TIRI
 #cmakedefine INC_MOD_VECTOR
+#cmakedefine INC_MOD_WEBSOCKET
 #cmakedefine INC_MOD_XML
 #cmakedefine INC_MOD_XQUERY
 #cmakedefine INC_MOD_XRANDR

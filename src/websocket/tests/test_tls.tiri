@@ -1,0 +1,463 @@
+-- Flute tests: wss:// connections over direct TLS and through an HTTP CONNECT proxy tunnel.
+--
+-- The peers use the development certificate fixture (CN=localhost, SAN localhost/127.0.0.1/::1), which the build
+-- installs only when a supported openssl executable is available.  The certificate is self-signed, so certificate
+-- verification succeeds only when the process trusts it.  OpenSSL builds trust it through the SSL_CERT_FILE environment
+-- variable, which CMake sets for this test on non-Windows platforms; run with verify_tls=false to ignore it.  When the
+-- fixture is trusted, connections that are expected to succeed verify the server, and the wrong-name case checks the
+-- host name alone.  When it is not trusted, those connections disable verification and the verification test checks
+-- that the untrusted certificate is refused.
+
+   include 'websocket', 'network', 'crypto'
+   module crypto as mCrypto
+
+local GUID <const> = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+local CERTIFICATE <const> = 'config:ssl/localhost.p12'
+
+glTrusted = false
+
+function waitFor(Condition:func, Seconds:num)
+   local limit = (Seconds or 3) * 100
+   for i in {0 to limit} do
+      if Condition() then return end
+      processing.sleep(0.01)
+   end
+end
+
+function acceptKey(Key:str):str
+   local digest = array<byte, 20>
+   check mCrypto.Hash(HASH_SHA1, Key .. GUID, digest)
+   local output = array<byte, 28>
+   local err, written = mCrypto.Base64Encode(digest, CC_STANDARD, output)
+   assert(err is ERR_Okay, 'Accept key encoding failed')
+   return output.getString(0, written)
+end
+
+-- Encodes an unmasked server frame with a payload of less than 126 bytes.
+
+function frame(Opcode:num, Payload:str, Fin:any):str
+   return string.char((Fin is false ? 0 : 0x80) | Opcode, #Payload) .. Payload
+end
+
+-- Decodes complete masked client frames with payloads of less than 126 bytes from the front of Buffer.  Returns the
+-- frames and the unconsumed remainder.
+
+function clientFrames(Buffer:str):<table, str>
+   local frames = {}
+   local position = 0
+   while #Buffer - position >= 6 do
+      local length = Buffer.byte(position + 1) & 0x7f
+      assert(length < 126, 'The TLS fixture only decodes short client frames')
+      assert((Buffer.byte(position + 1) & 0x80) != 0, 'Client frame is not masked')
+      if #Buffer - position < 6 + length then break end
+      local mask = Buffer.sub(position + 2, position + 6)
+      local payload = array<byte, length>
+      for i in {0 to length} do payload[i] = Buffer.byte(position + 6 + i) ^ mask.byte(i & 3) end
+      table.insert(frames, {
+         opcode = Buffer.byte(position) & 0x0f, payload = (length > 0) ? payload.getString(0, length) : ''
+      })
+      position += 6 + length
+   end
+   return frames, Buffer.sub(position)
+end
+
+function pattern(Size:num, Seed:num):str
+   local bytes = array<byte, Size>
+   for i in {0 to Size} do bytes[i] = (i * 31 + Seed) & 255 end
+   return (Size > 0) ? bytes.getString(0, Size) : ''
+end
+
+-- Verification is enabled for connections expected to succeed only when the fixture is trusted.
+
+function verifyFlags():num
+   return glTrusted ? 0 : WSF_DISABLE_SERVER_VERIFY
+end
+
+-- Starts a TLS WebSocketServer that echoes every message.  Accepted requests are recorded in state.requests.
+
+function newServer(Options:table):table
+   local state = { connections=array<obj>, requests={}, disconnected=0, received={} }
+   -- Tiri's direct indexing does not map sslCertificate to SSLCertificate, so the TLS fields are set at creation.
+   local server = obj.new('websocketserver', { port=0, flags=WSF_SSL, sslCertificate=CERTIFICATE })
+
+   server.accept = function(Server, Request)
+      table.insert(state.requests, { host=Request.host, path=Request.path })
+      return ERR_Okay
+   end
+
+   server.connected = function(Server, WebSocket)
+      state.connections.push(WebSocket)
+      WebSocket.incoming = function(WS, Buffer, Type, Final)
+         if Options.incoming then
+            Options.incoming(WS, Buffer.getString(), state)
+         else
+            WS.mtSend(Buffer.getString(), Type)
+         end
+      end
+   end
+
+   server.disconnected = function(Server, WebSocket)
+      state.disconnected++
+      state.closeCode = WebSocket.closeCode
+      state.error = WebSocket.error
+   end
+
+   state.server = server
+   return state
+end
+
+-- Creates and activates a client.  Returns a table that records the client's states, messages and close status.
+
+function newClient(Location:str, Fields:table):table
+   local client = { opened=0, messages={}, types={}, state=WSS_CLOSED }
+   local ws = obj.new('websocket', {
+      location = Location,
+      flags = verifyFlags(),
+      connectTimeout = 3,
+      dataTimeout = 3,
+      stateChanged = function(WebSocket, State)
+         client.state = State
+         if State is WSS_OPEN then client.opened++ end
+         if State is WSS_CLOSED then
+            client.closeCode = WebSocket.closeCode
+            client.closeReason = WebSocket.closeReason
+            client.error = WebSocket.error
+         end
+      end,
+      incoming = function(WebSocket, Buffer, Type, Final)
+         table.insert(client.messages, Buffer.getString())
+         table.insert(client.types, Type)
+      end
+   })
+   for name, value in pairs(Fields or {}) do ws.set(name, value) end
+   client.ws = ws
+   check ws.acActivate()
+   return client
+end
+
+-- A CONNECT proxy that relays bytes between each client and a fresh connection to 127.0.0.1, whatever authority the
+-- request names.  A disconnection on either side closes the other.
+
+function newProxy(OriginPort:num):table
+   local proxy = { connect='', channels={} }
+   local read_buffer = string.alloc(65536)
+
+   proxy.server = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         local err, size = Client.acRead(read_buffer)
+         if err != ERR_Okay then
+            local relay = proxy.channels[Client.id]
+            proxy.channels[Client.id] = nil
+            if relay then processing.delayedCall(function() relay.free() end) end
+            return
+         end
+         if size is 0 then return end
+
+         local relay = proxy.channels[Client.id]
+         if relay then
+            check relay.acWrite(read_buffer.sub(0, size))
+            return
+         end
+
+         proxy.connect ..= read_buffer.sub(0, size)
+         if not proxy.connect.find('\r\n\r\n') then return end
+
+         local client_id = Client.id
+         relay = obj.new('netsocket', {
+            incoming=function(Socket)
+               local data = string.alloc(65536)
+               local err, size = Socket.acRead(data)
+               if (err is ERR_Okay) and (size > 0) then check Client.acWrite(data.sub(0, size)) end
+            end,
+            feedback=function(Socket, State)
+               if State is NTC_CONNECTED then
+                  check Client.acWrite('HTTP/1.1 200 Connection Established\r\n\r\n')
+               elseif State is NTC_DISCONNECTED then
+                  proxy.channels[client_id] = nil
+                  processing.delayedCall(function()
+                     local target = obj.find(client_id)
+                     if target then target.free() end
+                  end)
+               end
+            end
+         })
+         proxy.channels[client_id] = relay
+         check relay.mtConnect('127.0.0.1', OriginPort, 3)
+      end
+   })
+   proxy.port = proxy.server.port
+   return proxy
+end
+
+function freeProxy(Proxy:table)
+   for relay in values(Proxy.channels) do relay.free() end
+   Proxy.channels = {}
+   Proxy.server.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@BeforeAll
+function init(State)
+   local _, cert_file = mSys.CurrentTask().mtGetEnv('SSL_CERT_FILE')
+   glTrusted = (arg('verify_tls') != 'false') and (cert_file != nil) and cert_file.endsWith('localhost.pem')
+   if glTrusted then
+      print('The certificate fixture is trusted; server verification is enabled.')
+   else
+      print('The certificate fixture is not trusted; server verification is disabled for successful connections.')
+   end
+end
+
+-- A raw TLS peer answers the handshake with a binary frame and half of a text frame in the same write, so the HTTP
+-- handover prefix is decrypted data that the WebSocket must decode before reading the socket.  The rest of the text
+-- frame, an echo and the closing handshake then continue over the same TLS session.
+
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
+function DirectTLSHandover()
+   local peer = { request='', handshaken=false, buffer='', frames={} }
+   local text = frame(1, 'over tls')
+   local read_buffer = string.alloc(65536)
+
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_SSL | NSF_MULTI_CONNECT, sslCertificate=CERTIFICATE,
+      incoming=function(Server, Client)
+         local err, size = Client.acRead(read_buffer)
+         if (err != ERR_Okay) or (size is 0) then return end
+         local data = read_buffer.sub(0, size)
+
+         if not peer.handshaken then
+            peer.request ..= data
+            if not peer.request.find('\r\n\r\n') then return end
+            peer.handshaken = true
+            local key = ''
+            for line in values(peer.request.split('\r\n')) do
+               if line.startsWith('Sec-WebSocket-Key:') then key = line.sub(18).trim() end
+            end
+            check Client.acWrite('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' ..
+               f'Sec-WebSocket-Accept: {acceptKey(key)}\r\n\r\n' .. frame(2, 'tls\0prefix') .. text.sub(0, 4))
+            return
+         end
+
+         local frames
+         frames, peer.buffer = clientFrames(peer.buffer .. data)
+         local terminate = false
+         for received in values(frames) do
+            table.insert(peer.frames, received)
+            if received.opcode is 1 then
+               -- The rest of the split frame precedes the echo, in new TLS records written after the handover.
+               check Client.acWrite(text.sub(4) .. frame(1, 'echo: ' .. received.payload))
+            elseif received.opcode is 8 then
+               check Client.acWrite(frame(8, received.payload))
+               terminate = true
+            end
+         end
+         if terminate then processing.delayedCall(function() Client.free() end) end
+      end
+   })
+
+   local client = newClient(f'wss://localhost:{server.port}/tls?x=1')
+   defer client.ws.free() end
+
+   waitFor((() => (client.state is WSS_CLOSED) or (#client.messages >= 1)))
+   assert(client.state is WSS_OPEN, f'TLS connection did not open: {client.closeReason} ({client.error})')
+   assert(client.opened is 1, 'Expected exactly one OPEN transition')
+   assert(peer.request.startsWith('GET /tls?x=1 HTTP/1.1\r\n'), 'Request target was not preserved')
+   assert(peer.request.find(f'\r\nHost: localhost:{server.port}\r\n'), 'Host does not name the origin')
+   assert(client.messages[0] is 'tls\0prefix' and client.types[0] is WSM_BINARY,
+      'The decrypted handover prefix was not delivered intact')
+
+   processing.sleep(0.05)
+   assert(#client.messages is 1, 'An incomplete frame was delivered early')
+
+   check client.ws.mtSend('hello', WSM_TEXT)
+   waitFor((() => #client.messages >= 3))
+   assert(#client.messages is 3, f'Expected 3 messages, received {#client.messages}')
+   assert(client.messages[1] is 'over tls', 'A frame split across the prefix and the TLS stream was not reassembled')
+   assert(client.messages[2] is 'echo: hello', 'The masked client frame did not survive the TLS session')
+
+   check client.ws.mtClose(WSC_NORMAL, 'done')
+   waitFor((() => client.state is WSS_CLOSED))
+   assert(client.state is WSS_CLOSED, 'The closing handshake did not complete')
+   assert(client.closeCode is WSC_NORMAL and client.closeReason is 'done', 'The echoed Close status was not recorded')
+   assert(client.error is ERR_Okay, f'A clean TLS close reported {client.error}')
+   local last = peer.frames[#peer.frames - 1]
+   assert(last.opcode is 8 and last.payload is string.char(0x03, 0xe8) .. 'done', 'The peer did not receive the Close')
+end
+
+-- The module's client against the module's server over TLS.  Messages that span TLS records and the module's 64 KiB
+-- write chunks are echoed byte-exactly, and the closing handshake completes cleanly at both ends.
+
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
+function ServerRoundTrips()
+   local server = newServer({})
+   defer server.server.free() end
+   local client = newClient(f'wss://localhost:{server.server.port}/echo')
+   defer client.ws.free() end
+
+   waitFor((() => (client.state != WSS_CONNECTING) and (#server.connections > 0)))
+   assert(client.state is WSS_OPEN, f'TLS connection did not open: {client.closeReason} ({client.error})')
+   assert(#server.requests is 1 and server.requests[0].host is f'localhost:{server.server.port}',
+      'The server did not receive the origin Host')
+
+   local expected = {}
+   for _, size in array<int> { 0, 125, 16384, 65537, 1048576 } do
+      local binary = pattern(size, size)
+      check client.ws.mtSend(binary, WSM_BINARY)
+      table.insert(expected, binary)
+   end
+   check client.ws.mtSend('text over tls', WSM_TEXT)
+   table.insert(expected, 'text over tls')
+
+   waitFor((() => #client.messages >= #expected), 20)
+   assert(#client.messages is #expected, f'Expected {#expected} echoes, received {#client.messages}')
+   for i, message in ipairs(expected) do
+      assert(client.messages[i] is message, f'Echo {i} ({#message} bytes) is not byte-exact')
+   end
+   assert(client.types[#expected - 1] is WSM_TEXT, 'The text echo has the wrong type')
+
+   check client.ws.mtClose(WSC_NORMAL, 'bye')
+   waitFor((() => (client.state is WSS_CLOSED) and (server.disconnected > 0)))
+   assert(client.closeCode is WSC_NORMAL and server.closeCode is WSC_NORMAL, 'The closing handshake did not complete')
+   assert(client.error is ERR_Okay and server.error is ERR_Okay, 'A clean TLS close reported an error')
+   assert(server.server.totalConnections is 0, 'The connection was not removed')
+end
+
+-- Each end in turn produces 4 MiB for a peer that is not being read, with a SendLimit of 64 KiB.  TLS write paths
+-- differ between ClientSocket (server role) and NetSocket (client role), so both directions are exercised.  Messages
+-- must arrive complete, in order and without interleaving, and Pending must stay within SendLimit.
+
+function produceUnderBackpressure(Sender:obj, Received:func):table
+   local LIMIT <const> = 65536
+   local SIZE <const> = 32768
+   local TOTAL <const> = 128
+   local filler = string.rep('z', SIZE - 8)
+   local producer = { sent=0, overflowed=0, resumed=0, finished=false, maxPending=0 }
+
+   Sender.sendLimit = LIMIT
+
+   function produce(WebSocket:obj)
+      while producer.sent < TOTAL do
+         local err = WebSocket.mtSend(string.format('%08d', producer.sent) .. filler, WSM_BINARY)
+         producer.maxPending = math.max(producer.maxPending, WebSocket.pending)
+         if err is ERR_BufferOverflow then
+            producer.overflowed++
+            return
+         end
+         assert(err is ERR_Okay, f'Send failed with {err}')
+         producer.sent++
+      end
+      producer.finished = true
+   end
+
+   Sender.outgoing = function(WebSocket)
+      producer.resumed++
+      produce(WebSocket)
+   end
+
+   produce(Sender)
+   assert(producer.overflowed > 0, 'The producer never met SendLimit')
+
+   waitFor((() => producer.finished and (#Received() >= TOTAL)), 30)
+   assert(producer.finished, f'The producer stalled after {producer.sent} messages')
+   assert(producer.resumed > 0, 'Outgoing never resumed the producer')
+   assert(producer.maxPending <= LIMIT, f'Pending reached {producer.maxPending}, beyond SendLimit')
+
+   local messages = Received()
+   assert(#messages is TOTAL, f'Sent {TOTAL} messages, received {#messages}')
+   for i, message in ipairs(messages) do
+      if (#message != SIZE) or (message.sub(0, 8) != string.format('%08d', i)) then
+         assert(false, f'Message {i} is incomplete or out of order')
+      end
+   end
+   return producer
+end
+
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
+function BackpressureOverTLS()
+   local server = newServer({ incoming = function(WS, Text, State) table.insert(State.received, Text) end })
+   defer server.server.free() end
+   local client = newClient(f'wss://localhost:{server.server.port}/')
+   defer client.ws.free() end
+   waitFor((() => (client.state is WSS_OPEN) and (#server.connections > 0)))
+   assert(client.state is WSS_OPEN, f'TLS connection did not open: {client.closeReason} ({client.error})')
+
+   produceUnderBackpressure(server.connections[0], (() => client.messages))  -- ClientSocket writes
+   produceUnderBackpressure(client.ws, (() => server.received))               -- NetSocket writes
+
+   check client.ws.mtClose(WSC_NORMAL, nil)
+   waitFor((() => (client.state is WSS_CLOSED) and (server.disconnected > 0)))
+   assert(client.closeCode is WSC_NORMAL and client.error is ERR_Okay, 'The connection did not close cleanly')
+end
+
+-- A wss:// connection through a CONNECT proxy.  The proxy is reached at 127.0.0.1 while the origin is named
+-- localhost, so the CONNECT authority, the Host header, SNI and certificate verification must all use the origin name.
+
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
+function ProxyTunnel()
+   local server = newServer({})
+   defer server.server.free() end
+   local proxy = newProxy(server.server.port)
+   defer freeProxy(proxy) end
+
+   local client = newClient(f'wss://localhost:{server.server.port}/via-proxy', {
+      proxyServer = '127.0.0.1', proxyPort = proxy.port
+   })
+   defer client.ws.free() end
+
+   waitFor((() => (client.state != WSS_CONNECTING) and (#server.connections > 0)))
+   assert(client.state is WSS_OPEN, f'Tunnelled connection did not open: {client.closeReason} ({client.error})')
+   assert(proxy.connect.startsWith(f'CONNECT localhost:{server.server.port} HTTP/1.1\r\n'),
+      f'Incorrect CONNECT request: {proxy.connect.sub(0, 60)}')
+   assert(#server.requests is 1 and server.requests[0].host is f'localhost:{server.server.port}',
+      'The tunnelled request did not name the origin in Host')
+   assert(server.requests[0].path is '/via-proxy', 'The tunnelled request target is wrong')
+
+   local large = pattern(200000, 7)
+   check client.ws.mtSend('through the tunnel', WSM_TEXT)
+   check client.ws.mtSend(large, WSM_BINARY)
+   waitFor((() => #client.messages >= 2), 10)
+   assert(client.messages[0] is 'through the tunnel' and client.messages[1] is large, 'Tunnelled echoes are wrong')
+
+   check client.ws.mtClose(WSC_NORMAL, 'tunnel done')
+   waitFor((() => (client.state is WSS_CLOSED) and (server.disconnected > 0)))
+   assert(client.closeCode is WSC_NORMAL and client.error is ERR_Okay, 'The tunnelled connection did not close cleanly')
+   assert(server.closeCode is WSC_NORMAL, 'The server did not record the tunnelled Close')
+end
+
+-- Server verification is enabled.  A certificate that does not name the requested host is always refused.  The
+-- self-signed fixture is accepted for localhost only when it is trusted, and refused otherwise.  A refusal must not
+-- open the connection or reach the server's Accept callback.
+
+@Test; @Requires(ssl=true, file='config:ssl/localhost.p12')
+function CertificateVerification()
+   local server = newServer({})
+   defer server.server.free() end
+   local proxy = newProxy(server.server.port)
+   defer freeProxy(proxy) end
+
+   -- The name check is performed through the proxy so that wrong.invalid can reach the loopback server.
+
+   local wrong = newClient(f'wss://wrong.invalid:{server.server.port}/', {
+      flags = 0, proxyServer = '127.0.0.1', proxyPort = proxy.port
+   })
+   defer wrong.ws.free() end
+   waitFor((() => wrong.state is WSS_CLOSED), 5)
+   assert(wrong.state is WSS_CLOSED and wrong.opened is 0, 'A certificate for the wrong host name was accepted')
+   assert(wrong.error != ERR_Okay and wrong.closeCode is WSC_ABNORMAL,
+      f'The refused certificate reported error {wrong.error} and close code {wrong.closeCode}')
+   assert(proxy.connect.find(f'CONNECT wrong.invalid:{server.server.port} HTTP/1.1'), 'The tunnel was not requested')
+
+   local direct = newClient(f'wss://localhost:{server.server.port}/', { flags = 0 })
+   defer direct.ws.free() end
+   waitFor((() => (direct.state is WSS_CLOSED) or (direct.state is WSS_OPEN)), 5)
+   if glTrusted then
+      assert(direct.state is WSS_OPEN, f'A trusted certificate was refused: {direct.closeReason} ({direct.error})')
+      assert(#server.requests is 1, 'The verified request did not reach the server once')
+   else
+      assert(direct.state is WSS_CLOSED and direct.opened is 0, 'An untrusted certificate was accepted')
+      assert(direct.error != ERR_Okay and direct.closeCode is WSC_ABNORMAL,
+         f'The untrusted certificate reported error {direct.error} and close code {direct.closeCode}')
+      assert(#server.requests is 0, 'A refused connection reached the server')
+   end
+end
