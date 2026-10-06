@@ -10,14 +10,12 @@ idl_gen ("${MOD}.tdl"
    APPEND_IDL "font_def.c"
    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/font.cpp")
 
-# A bug in (MinGW?) GCC requires that mno-ms-bitfields is applied to ensure that __packed__ works correctly.
-
-if (NOT MSVC)
-   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mno-ms-bitfields")
-   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mno-ms-bitfields")
-endif ()
-
 add_library (${MOD})
+
+# A bug in (MinGW?) GCC requires this option so that __packed__ works correctly.
+if (NOT MSVC)
+   target_compile_options (${MOD} PRIVATE -mno-ms-bitfields)
+endif ()
 
 set_module_defaults (${MOD} "Font")
 

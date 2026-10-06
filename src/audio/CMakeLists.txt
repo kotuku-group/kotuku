@@ -18,13 +18,16 @@ idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
    APPEND_IDL "module_def.c"
    ARGS "output-defs=module_def.c" "output-proto=module_def.c")
 
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-pointer-to-int-cast -Wno-int-to-pointer-cast")
-
 if (WIN32)
    set (C_INCLUDE_PATH "")
 endif ()
 
 add_library (${MOD})
+
+if (NOT MSVC)
+   target_compile_options (${MOD} PRIVATE
+      "$<$<COMPILE_LANGUAGE:C>:-Wno-pointer-to-int-cast;-Wno-int-to-pointer-cast>")
+endif ()
 
 set_module_defaults (${MOD} "Audio")
 

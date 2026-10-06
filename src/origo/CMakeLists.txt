@@ -120,30 +120,31 @@ else ()
 endif ()
 
 if (KOTUKU_INSTALL)
-   if (WIN32 AND NOT MSVC)
-      # MSYS2/MinGW builds have library dependencies that we need to take a copy of.
-      find_file(MSYS_DEP2 "libstdc++-6.dll" HINTS "/mingw64/bin")
-      if (NOT MSYS_DEP2 STREQUAL "MSYS_DEP2-NOTFOUND")
-         install (FILES ${MSYS_DEP2} DESTINATION .)
-      endif ()
-
-      find_file(MSYS_DEP4 "libgcc_s_seh-1.dll" HINTS "/mingw64/bin")
-      if (NOT MSYS_DEP4 STREQUAL "MSYS_DEP4-NOTFOUND")
-         install (FILES ${MSYS_DEP4} DESTINATION .)
-      endif ()
-
-      find_file(MSYS_DEP5 "libwinpthread-1.dll" HINTS "/mingw64/bin")
-      if (NOT MSYS_DEP5 STREQUAL "MSYS_DEP5-NOTFOUND")
-         install (FILES ${MSYS_DEP5} DESTINATION .)
-      endif ()
-   endif ()
-
    if (RUN_ANYWHERE)
-      install (TARGETS origo_cmd DESTINATION .)
+      set (ORIGO_INSTALL_DESTINATION .)
       set (TIRI_SYMLINK_DIR "${CMAKE_INSTALL_PREFIX}")
    else ()
-      install (TARGETS origo_cmd DESTINATION "bin")
+      set (ORIGO_INSTALL_DESTINATION "bin")
       set (TIRI_SYMLINK_DIR "${CMAKE_INSTALL_PREFIX}/bin")
+   endif ()
+
+   if (WIN32 AND NOT MSVC)
+      cmake_host_system_information (RESULT MSYSTEM_PREFIX QUERY MSYSTEM_PREFIX)
+      set (ORIGO_RUNTIME_SEARCH_ARGUMENTS)
+      if (MSYSTEM_PREFIX)
+         list (APPEND ORIGO_RUNTIME_SEARCH_ARGUMENTS DIRECTORIES "${MSYSTEM_PREFIX}/bin")
+      endif ()
+
+      install (TARGETS origo_cmd
+         RUNTIME_DEPENDENCY_SET origo_runtime_dependencies
+         RUNTIME DESTINATION "${ORIGO_INSTALL_DESTINATION}")
+      install (RUNTIME_DEPENDENCY_SET origo_runtime_dependencies
+         ${ORIGO_RUNTIME_SEARCH_ARGUMENTS}
+         PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+         POST_EXCLUDE_REGEXES ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\][Ss][Yy][Ss][Tt][Ee][Mm]32[/\\\\].*"
+         RUNTIME DESTINATION "${ORIGO_INSTALL_DESTINATION}")
+   else ()
+      install (TARGETS origo_cmd RUNTIME DESTINATION "${ORIGO_INSTALL_DESTINATION}")
    endif ()
 
    if (NOT WIN32)

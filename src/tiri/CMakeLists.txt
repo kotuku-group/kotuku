@@ -143,8 +143,8 @@ set (JIT_TIRI_HEADER_DEPENDENCIES
 # against headers that are themselves generated.
 
 if (CMAKE_GENERATOR MATCHES "Ninja"
-    OR (CMAKE_GENERATOR MATCHES "Makefiles" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.20)
-    OR (CMAKE_GENERATOR STREQUAL "Xcode" AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.21))
+    OR CMAKE_GENERATOR MATCHES "Makefiles"
+    OR CMAKE_GENERATOR STREQUAL "Xcode")
    set (JIT_USE_DEPFILES TRUE)
    set (JIT_HEADER_DEPENDENCIES "")
 else ()
@@ -196,8 +196,8 @@ endif ()
 
 if (WIN32)
    # Convert paths to forward slashes for safe use in C string literals.
-   file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" LJ_PDB_BUILD_PATH)
-   file(TO_CMAKE_PATH "${CMAKE_INSTALL_PREFIX}" LJ_PDB_INSTALL_PATH)
+   cmake_path (CONVERT "${CMAKE_BINARY_DIR}" TO_CMAKE_PATH_LIST LJ_PDB_BUILD_PATH NORMALIZE)
+   cmake_path (CONVERT "${CMAKE_INSTALL_PREFIX}" TO_CMAKE_PATH_LIST LJ_PDB_INSTALL_PATH NORMALIZE)
 endif ()
 
 # Common host tool sources (used by both MSVC and non-MSVC builds)
@@ -392,8 +392,8 @@ if (MSVC)
       ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/jit/lib"
    )
    # Convert paths to forward slashes for safe use in C string literals
-   file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" LJ_PDB_BUILD_PATH)
-   file(TO_CMAKE_PATH "${CMAKE_INSTALL_PREFIX}" LJ_PDB_INSTALL_PATH)
+   cmake_path (CONVERT "${CMAKE_BINARY_DIR}" TO_CMAKE_PATH_LIST LJ_PDB_BUILD_PATH NORMALIZE)
+   cmake_path (CONVERT "${CMAKE_INSTALL_PREFIX}" TO_CMAKE_PATH_LIST LJ_PDB_INSTALL_PATH NORMALIZE)
 
    target_compile_definitions(jit_lib PRIVATE
       ${JIT_COMMON_DEFS}

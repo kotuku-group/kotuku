@@ -175,8 +175,7 @@ elseif (ANDROID)
    # GL2 Link: -ljnigraphics -lEGL -lGLESv2 -DGLES2
    # GL3 Link: -ljnigraphics -lEGL -lGLESv3 -DGLES3
 else ()
-	set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-strict-overflow")
-	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-strict-overflow")
+   add_compile_options (-Wno-strict-overflow)
 
    target_sources (${MOD} PRIVATE ${FUNCTIONS} ${DISPLAY_DRIVERS} ${CLASSES} "linux/controller.cpp")
    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")

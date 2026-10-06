@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.28)
 
 project (libffi VERSION 3.5.2 LANGUAGES C)
 
@@ -56,19 +56,19 @@ include_directories (src)
 if (MSVC)
    set (CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
    set (CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
-
-   # Disable MSVC run-time checks for libffi because its alloca-heavy trampolines trigger benign stack checks.
-   string(REGEX REPLACE "/RTC(su|[1su])" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
-   set (CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}" CACHE STRING
-      "Flags used by the C compiler during DEBUG builds." FORCE)
-else ()
-   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer -fstrict-aliasing -ffast-math")
 endif ()
 
 message(STATUS "Building for TARGET_PLATFORM: ${TARGET_PLATFORM}")
 
 add_library (libffi STATIC)
 set_property (TARGET libffi PROPERTY POSITION_INDEPENDENT_CODE 1)
+
+if (MSVC)
+   # Disable run-time checks because libffi's alloca-heavy trampolines trigger benign stack checks.
+   target_compile_options (libffi PRIVATE "$<$<CONFIG:Debug>:/RTC->")
+else ()
+   target_compile_options (libffi PRIVATE -fomit-frame-pointer -fstrict-aliasing -ffast-math)
+endif ()
 
 target_sources (libffi PRIVATE
    src/closures.c src/java_raw_api.c src/prep_cif.c src/raw_api.c src/tramp.c src/types.c

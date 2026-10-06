@@ -17,7 +17,9 @@ else ()
    include (FetchContent)
    FetchContent_Declare (bearssl
       GIT_REPOSITORY https://www.bearssl.org/git/BearSSL
-      GIT_TAG 7bea48e5e850ab4cafbe68d3765cdaba13a86d6f)
+      GIT_TAG 7bea48e5e850ab4cafbe68d3765cdaba13a86d6f
+      EXCLUDE_FROM_ALL
+      SYSTEM)
    FetchContent_MakeAvailable (bearssl)
 
    set (BEARSSL_ROOT "${bearssl_SOURCE_DIR}")
