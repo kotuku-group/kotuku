@@ -102,7 +102,8 @@ inline std::string_view output_kind_name(AudioOutputKind Kind)
 enum class AudioMeterSource : int8_t { INPUT_PEAK, OUTPUT_PEAK, GAIN_REDUCTION, PROCESSOR };
 
 // Scalar outputs are meter templates.  A `channel` scope publishes one value per channel of the processing layout, with
-// the channel's key and label appended, e.g. `input_peak_left`.  A `global` scope publishes a single value.
+// the channel's key and label appended, e.g. `input_peak_left`.  A `global` scope publishes a single value.  A template
+// that sets Channels is omitted from layouts of any other width.
 
 struct AudioOutputDesc {
    std::string_view Key;
@@ -115,6 +116,7 @@ struct AudioOutputDesc {
    AudioMeterSource Source = AudioMeterSource::INPUT_PEAK;
    int Value = 0;       // PROCESSOR only: the processor-defined value index passed to meter_value()
    double Default = 0;  // PROCESSOR only: the value reported before the first interval is published
+   int Channels = 0;    // Published only for processing layouts with this many channels, or zero for any layout
 };
 
 // One entry of an effect's meter layout.  The public MeterInfo fields are returned by GetMeterLayout(); the

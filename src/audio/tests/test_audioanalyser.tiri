@@ -1,5 +1,5 @@
--- AudioAnalyser: schema, argument validation and live capture on the null device.  The null device is unpaced, so
--- live tests play a looping tone and poll until a reading reflects it.
+-- AudioAnalyser: schema, argument validation, channel selection, meters and live capture on the null device.  The null
+-- device is unpaced, so live tests play a looping tone and poll until a reading reflects it.
 
 @if(exists='modules:audio')
 
@@ -27,11 +27,36 @@ function tone_sample(Audio:obj):num
    return sample
 end
 
-function play_tone(Audio:obj, Channel:num)
+function play_tone(Audio:obj, Channel:num, Pan:num)
    check mAudio.MixSample(Audio, Channel, tone_sample(Audio))
    check mAudio.MixFrequency(Audio, Channel, 44100)
    check mAudio.MixVolume(Audio, Channel, 1)
+   if Pan then check mAudio.MixPan(Audio, Channel, Pan) end
    check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+function get_number(Effect:obj, Key:str):<num>
+   err, text = Effect.acGetKey(Key)
+   assert(err is ERR_Okay, f'GetKey({Key}) must succeed')
+   return tonumber(text)
+end
+
+-- Poll until a valid meter reading satisfies Accept, and return its values indexed by meter key.
+
+function await_meters(Analyser:obj, Accept:func):table
+   err, layout = Analyser.mtGetMeterLayout()
+   assert(err is ERR_Okay)
+   meters = { }
+   for attempt in {0 to 200} do
+      err, reading = Analyser.mtReadMeters()
+      assert(err is ERR_Okay)
+      if (reading.flags has AMF_VALID) and (reading.id is layout.id) then
+         for i in {0 to #layout.meters} do meters[layout.meters[i].key] = reading.values[i].value end
+         if Accept(meters) then return meters end
+      end
+      processing.sleep(0.01)
+   end
+   assert(false, 'The meters did not reach the expected reading')
 end
 
 -- Poll until the tone band dominates the spectrum, and return the final levels.
@@ -53,19 +78,88 @@ end
    audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
    analyser <close> = audio.new('AudioAnalyser', { })
    schema = analyser.schema
-   assert(schema.find('<effect class="AudioAnalyser" version="1"') != nil, 'The schema must identify the class')
-   assert(schema.find('<param') is nil, 'The analyser has no parameters')
+   assert(schema.find('<effect class="AudioAnalyser" version="2"') != nil, 'The schema must identify the class')
+   assert(schema.find('<param key="channel_index"') != nil, 'The channel_index parameter must be published')
    assert(schema.find('<output key="spectrum" type="spectrum"') != nil, 'The spectrum output must be published')
    assert(schema.find('<output key="waveform" type="waveform"') != nil, 'The waveform output must be published')
    assert(analyser.mtGetOutput('spectrum') is ERR_NoSupport, 'Spectrum data is not a scalar output')
    assert(analyser.mtGetOutput('waveform') is ERR_NoSupport, 'Waveform data is not a scalar output')
    err, layout = analyser.mtGetMeterLayout()
    assert(err is ERR_Okay)
-   expected = array<str> { 'input_peak_left', 'input_peak_right', 'output_peak_left', 'output_peak_right' }
-   assert(#layout.meters is #expected, f'Stereo must publish four meters, got {#layout.meters}')
+   expected = array<str> { 'input_peak_left', 'input_peak_right', 'output_peak_left', 'output_peak_right',
+      'rms_left', 'rms_right', 'correlation' }
+   assert(#layout.meters is #expected, f'Stereo must publish seven meters, got {#layout.meters}')
    for i in {0 to #expected} do
       assert(layout.meters[i].key is expected[i], f'Meter {i} should be {expected[i]}, got {layout.meters[i].key}')
    end
+   assert(layout.meters[4].unit is 'dBFS' and layout.meters[4].semantics is 'rms')
+   assert(layout.meters[6].scope is 'global' and layout.meters[6].semantics is 'stereo-correlation')
+
+   -- Before the first interval, RMS reads the floor and correlation reads zero.
+
+   err, reading = analyser.mtReadMeters()
+   assert(err is ERR_Okay and (reading.flags has AMF_NO_SAMPLES))
+   assert(reading.values[4].value is -120, f'RMS must default to the floor, got {reading.values[4].value}')
+   assert(reading.values[6].value is 0, f'Correlation must default to zero, got {reading.values[6].value}')
+   assert(analyser.mtGetOutput('rms_left') is ERR_InvalidState, 'No interval has been measured')
+end
+
+@Test function ChannelIndexParameter()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   analyser <close> = obj.new('AudioAnalyser', { audio=audio, channel=channel })
+   assert(get_number(analyser, 'channel_index') is -1, 'The default measures every channel')
+   for _, value in ipairs({ -1, 0, 63 }) do
+      check analyser.acSetKey('channel_index', value)
+   end
+   for _, value in ipairs({ -2, 64, 0.5, math.huge, math.sqrt(-1) }) do
+      assert(analyser.acSetKey('channel_index', value) is ERR_InvalidValue, f'channel_index must reject {value}')
+   end
+   check analyser.acSetKey('channel_index', 1)
+   check analyser.acFlush()
+   assert(get_number(analyser, 'channel_index') is 1)
+
+   -- Configuration before initialisation.
+
+   early <close> = obj.new('AudioAnalyser')
+   early.audio = audio
+   early.channel = channel
+   check early.acSetKey('channel_index', 0)
+   early.init()
+   assert(get_number(early, 'channel_index') is 0)
+
+   -- Analysers of the global mix are immutable once initialised.
+
+   mix <close> = audio.new('AudioAnalyser', { })
+   assert(mix.acSetKey('channel_index', 0) is ERR_Immutable)
+end
+
+-- A mono output has no correlation meter, and a channel beyond the layout cannot be read until it exists.
+
+@Test function MonoLayout()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000, outputLayout=array<int> { SPK_CENTRE } })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   analyser <close> = obj.new('AudioAnalyser', { audio=audio, channel=channel })
+   check audio.acActivate()
+   err, layout = analyser.mtGetMeterLayout()
+   assert(err is ERR_Okay)
+   expected = array<str> { 'input_peak_centre', 'output_peak_centre', 'rms_centre' }
+   assert(#layout.meters is #expected, f'Mono must publish three meters, got {#layout.meters}')
+   for i in {0 to #expected} do
+      assert(layout.meters[i].key is expected[i], f'Meter {i} should be {expected[i]}, got {layout.meters[i].key}')
+   end
+   assert(analyser.schema.find('key="correlation"') is nil, 'Correlation is only published for stereo')
+   assert(analyser.mtGetOutput('correlation') is ERR_Search)
+
+   check analyser.acSetKey('channel_index', 1)
+   check analyser.acFlush()
+   assert(analyser.mtGetSpectrum(EDGES, array<double, 6>) is ERR_OutOfRange, 'Channel 1 does not exist in mono')
+   assert(analyser.mtGetWaveform(array<float, 64>) is ERR_OutOfRange, 'Channel 1 does not exist in mono')
+   check analyser.acSetKey('channel_index', 0)
+   check analyser.acFlush()
+   check analyser.mtGetWaveform(array<float, 64>)
 end
 
 @Test function ArgumentValidation()
@@ -143,6 +237,45 @@ end
    assert(analyser.mtGetSpectrum(EDGES, levels) is ERR_NotInitialised)
    assert(analyser.mtGetWaveform(wave) is ERR_NotInitialised)
    analyser.free()
+end
+
+-- A centred tone is identical in both channels.  Panned hard left, the right channel is silent: channel_index 1 reads
+-- silence, and correlation is zero because the phase of silence is undefined.
+
+@Test function LiveMeters()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   analyser <close> = obj.new('AudioAnalyser', { audio=audio, channel=channel })
+   check audio.acActivate()
+   play_tone(audio, channel, 0)
+
+   meters = await_meters(analyser, function(Values) return Values.rms_left > -40 end)
+   assert(meters.rms_left < 0, f'RMS must be below full scale, got {meters.rms_left}')
+   assert(math.abs(meters.rms_left - meters.rms_right) < 0.01, 'A centred tone must read equally on both channels')
+   assert(meters.correlation > 0.99, f'Identical channels must correlate, got {meters.correlation}')
+   assert(meters.rms_left < meters.output_peak_left, 'RMS must be below the peak of a sinusoid')
+
+   check mAudio.MixPan(audio, channel, -1)
+   meters = await_meters(analyser, function(Values) return Values.rms_right is -120 end)
+   assert(meters.rms_left > -40, f'The left channel must carry the tone, got {meters.rms_left}')
+   assert(meters.correlation is 0, f'Correlation with a silent channel must be zero, got {meters.correlation}')
+
+   -- channel_index 0 measures the tone; channel_index 1 measures silence once its new history is audible.
+
+   check analyser.acSetKey('channel_index', 0)
+   check analyser.acFlush()
+   await_tone(analyser)
+
+   check analyser.acSetKey('channel_index', 1)
+   check analyser.acFlush()
+   levels = array<double, 6>
+   for attempt in {0 to 20} do
+      check analyser.mtGetSpectrum(EDGES, levels)
+      processing.sleep(0.01)
+   end
+   assert(levels[TONE_BAND] < -80, f'The silent right channel must not read the tone, got {levels[TONE_BAND]}')
+   check audio.mtCloseChannels(channel)
 end
 
 @Test function GlobalMix()

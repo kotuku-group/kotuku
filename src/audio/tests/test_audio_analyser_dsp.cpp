@@ -354,6 +354,291 @@ static void test_reconfiguration(AudioTestContext &Test)
 }
 
 //********************************************************************************************************************
+// Channel selection captures one channel of the layout, and discards history captured from the previous selection.
+
+static std::vector<float> interleave(const std::vector<float> &Left, const std::vector<float> &Right)
+{
+   std::vector<float> buffer(Left.size() * 2);
+   for (size_t i = 0; i < Left.size(); i++) {
+      buffer[i * 2] = Left[i];
+      buffer[i * 2 + 1] = Right[i];
+   }
+   return buffer;
+}
+
+static bool all_equal(std::span<const float> Values, float Expected)
+{
+   return std::all_of(Values.begin(), Values.end(), [Expected](float Value) { return Value IS Expected; });
+}
+
+static void test_selection(AudioTestContext &Test)
+{
+   const std::vector<float> left_only = interleave(std::vector<float>(64, 0.5f), std::vector<float>(64, 0.0f));
+   const std::vector<float> anti_phase = interleave(std::vector<float>(64, 0.5f), std::vector<float>(64, -0.5f));
+   std::vector<float> out(64);
+
+   // A left-only signal reads at its level on index 0, as silence on index 1 and at half level in the mean.
+
+   for (int selection : { -1, 0, 1 }) {
+      AnalyserFixture fixture(48000, 2);
+      fixture.Processor.select(selection);
+      AUDIO_CHECK(fixture.Processor.selected() IS selection);
+      auto buffer = left_only;
+      fixture.process(buffer);
+      AUDIO_CHECK(buffer IS left_only); // Audio passes through unchanged
+      fixture.Processor.copy(64, out);
+      AUDIO_CHECK(all_equal(out, (selection IS -1) ? 0.25f : (selection IS 0) ? 0.5f : 0.0f));
+   }
+
+   // Anti-phase stereo cancels in the mean but reads at full level on each channel.
+
+   for (int selection : { -1, 0, 1 }) {
+      AnalyserFixture fixture(48000, 2);
+      fixture.Processor.select(selection);
+      auto buffer = anti_phase;
+      fixture.process(buffer);
+      fixture.Processor.copy(64, out);
+      AUDIO_CHECK(all_equal(out, (selection IS -1) ? 0.0f : (selection IS 0) ? 0.5f : -0.5f));
+   }
+
+   // Changing the selection discards the captured history.  Selecting the current channel does not.
+
+   AnalyserFixture fixture(48000, 2);
+   auto &p = fixture.Processor;
+   auto buffer = left_only;
+   fixture.process(buffer);
+   p.select(-1);
+   AUDIO_CHECK(p.Origin IS 0);
+   p.select(0);
+   AUDIO_CHECK(p.Origin IS 64 and p.Written IS 64);
+   p.copy(64, out);
+   AUDIO_CHECK(all_equal(out, 0.0f));
+   fixture.process(buffer);
+   p.copy(96, out);
+   AUDIO_CHECK(all_equal(std::span(out).first(32), 0.0f) and all_equal(std::span(out).last(32), 0.5f));
+
+   // Reconfiguring the rate restarts the history, including its origin.
+
+   fixture.configure(44100, 2);
+   AUDIO_CHECK(p.Written IS 0 and p.Origin IS 0 and p.selected() IS 0);
+
+   // A selection beyond the layout captures silence, keeping the timeline intact.
+
+   AnalyserFixture mono(48000, 1);
+   mono.Processor.select(1);
+   std::vector<float> single(64, 0.5f);
+   mono.process(single);
+   AUDIO_CHECK(mono.Processor.Written IS 64);
+   mono.Processor.copy(64, out);
+   AUDIO_CHECK(all_equal(out, 0.0f));
+}
+
+//********************************************************************************************************************
+// Integration with extAudioEffect: schema, meter layout and processor meter values.  The chain is declared after the
+// effect so that it is destroyed first.
+
+struct AnalyserChain {
+   extAudioAnalyser Effect { nullptr, 1 };
+   std::shared_ptr<AudioEffectChain> Chain =
+      std::make_shared<AudioEffectChain>(std::make_shared<std::recursive_mutex>());
+   ERR Prepared;
+
+   AnalyserChain(int Rate, std::span<const int> Layout) {
+      Chain->Rate = Rate;
+      Chain->Stereo = Layout.size() IS 2;
+      Chain->Layout.assign(Layout.begin(), Layout.end());
+      Effect.Chain = Chain;
+      Effect.OutputRate = Rate;
+      Effect.set_layout(Layout);
+      Chain->Effects.push_back(&Effect);
+      auto processor = std::make_unique<AnalyserProcessor>(&Effect, Effect.ChannelIndex);
+      Effect.Processor = processor.get();
+      Prepared = Effect.set_processor(std::move(processor));
+   }
+
+   // Processes one block and reports whether the audio passed through unchanged.
+
+   bool process(const std::vector<float> &Left, const std::vector<float> &Right) {
+      auto buffer = interleave(Left, Right);
+      const auto original = buffer;
+      Effect.process(buffer.data(), int(Left.size()));
+      return buffer IS original;
+   }
+};
+
+static std::vector<float> noise(uint32_t Seed, int Frames)
+{
+   auto buffer = std::vector<float>(size_t(Frames));
+   for (auto &value : buffer) {
+      Seed = Seed * 1664525u + 1013904223u;
+      value = float(double(Seed >> 8) / double(1u << 24) - 0.5);
+   }
+   return buffer;
+}
+
+static void test_schema(AudioTestContext &Test)
+{
+   AudioParamState state;
+   for (double value : { -1.0, 0.0, 63.0 }) {
+      state.Params.assign({ value });
+      AUDIO_CHECK(validate_state(glAnalyserSchema, state, 48000) IS ERR::Okay);
+   }
+   for (double value : { -2.0, 64.0, 0.5 }) {
+      state.Params.assign({ value });
+      AUDIO_CHECK(validate_state(glAnalyserSchema, state, 48000) IS ERR::InvalidValue);
+   }
+
+   AnalyserChain stereo(48000, glLayoutStereo);
+   AUDIO_REQUIRE(stereo.Prepared IS ERR::Okay);
+   const auto &meters = stereo.Effect.Meters;
+   const char *keys[] = { "input_peak_left", "input_peak_right", "output_peak_left", "output_peak_right", "rms_left",
+      "rms_right", "correlation" };
+   AUDIO_REQUIRE(meters.size() IS 7);
+   for (int i = 0; i < 7; i++) AUDIO_CHECK(std::string_view(meters[i].Key) IS keys[i]);
+   AUDIO_CHECK(std::string_view(meters[4].Unit) IS "dBFS" and std::string_view(meters[4].Scope) IS "channel" and
+      std::string_view(meters[4].Semantics) IS "rms" and meters[5].Channel IS int(SPK::FRONT_RIGHT));
+   AUDIO_CHECK(std::string_view(meters[6].Unit).empty() and std::string_view(meters[6].Scope) IS "global" and
+      std::string_view(meters[6].Semantics) IS "stereo-correlation");
+
+   // Before the first interval, RMS holds the floor and correlation holds zero.
+
+   AUDIO_CHECK(stereo.Effect.Meter.Values[4] IS ANALYSER_FLOOR_DB and stereo.Effect.Meter.Values[6] IS 0);
+
+   auto xml = build_schema_xml(glAnalyserSchema, meters);
+   AUDIO_CHECK(xml.find("<effect class=\"AudioAnalyser\" version=\"2\"") != std::string::npos);
+   AUDIO_CHECK(xml.find("<param key=\"channel_index\" label=\"Channel Index\"") != std::string::npos);
+   AUDIO_CHECK(xml.find("key=\"correlation\" type=\"scalar\"") != std::string::npos);
+
+   // Correlation is not published for mono.
+
+   AnalyserChain mono(48000, glLayoutMono);
+   const char *mono_keys[] = { "input_peak_centre", "output_peak_centre", "rms_centre" };
+   AUDIO_REQUIRE(mono.Effect.Meters.size() IS 3);
+   for (int i = 0; i < 3; i++) AUDIO_CHECK(std::string_view(mono.Effect.Meters[i].Key) IS mono_keys[i]);
+   xml = build_schema_xml(glAnalyserSchema, mono.Effect.Meters);
+   AUDIO_CHECK(xml.find("key=\"correlation\"") IS std::string::npos);
+
+   // Committing channel_index selects the processor's channel; Read() returns the committed value.
+
+   state.Params.assign({ 1 });
+   glAnalyserSchema.Apply(&stereo.Effect, state);
+   AUDIO_CHECK(stereo.Effect.ChannelIndex IS 1 and stereo.Effect.Processor->selected() IS 1);
+   AudioParamState read;
+   glAnalyserSchema.Read(&stereo.Effect, read);
+   AUDIO_CHECK(read.Params.size() IS 1 and read.Params[0] IS 1);
+}
+
+static void test_meters(AudioTestContext &Test)
+{
+   const int rate = 48000, interval = 2400;
+   AnalyserChain fixture(rate, glLayoutStereo);
+   AUDIO_REQUIRE(fixture.Prepared IS ERR::Okay);
+   auto &meter = fixture.Effect.Meter;
+   const std::vector<float> silence(size_t(interval), 0.0f);
+
+   auto tone = [&](double Frequency, double Amplitude) {
+      return sine(Frequency, Amplitude, rate, interval);
+   };
+
+   auto negate = [](std::vector<float> Values) {
+      for (auto &value : Values) value = -value;
+      return Values;
+   };
+
+   // In-phase: a full-scale sinusoid is 3.01 dB below full scale.  Odd block sizes span the interval.
+
+   const auto full = tone(1000, 1.0);
+   auto buffer = interleave(full, full);
+   const auto original = buffer;
+   int position = 0;
+   for (int block : { 7, 1000, 393, 1000 }) {
+      fixture.Effect.process(buffer.data() + position * 2, block);
+      position += block;
+   }
+   AUDIO_CHECK(buffer IS original);
+   AUDIO_CHECK(meter.Sequence IS 1 and meter.Interval IS interval);
+   AUDIO_CHECK(std::abs(meter.Values[4] + 3.0103) < 0.001 and std::abs(meter.Values[5] + 3.0103) < 0.001);
+   AUDIO_CHECK(meter.ValueFlags[4] IS int(AMV::VALID) and meter.ValueFlags[6] IS int(AMV::VALID));
+   AUDIO_CHECK(std::abs(meter.Values[6] - 1.0) < 1e-9);
+
+   // Inverted.
+
+   AUDIO_CHECK(fixture.process(full, negate(full)));
+   AUDIO_CHECK(std::abs(meter.Values[6] + 1.0) < 1e-9);
+
+   // Orthogonal sinusoids complete whole cycles in the interval and are uncorrelated, as is independent noise.
+
+   AUDIO_CHECK(fixture.process(tone(1000, 0.5), tone(1500, 0.5)));
+   AUDIO_CHECK(std::abs(meter.Values[6]) < 1e-4);
+   AUDIO_CHECK(fixture.process(noise(1, interval), noise(2, interval)));
+   AUDIO_CHECK(std::abs(meter.Values[6]) < 0.1);
+
+   // Quadrature sinusoids are uncorrelated too.
+
+   auto cosine = std::vector<float>(size_t(interval));
+   for (int i = 0; i < interval; i++) cosine[size_t(i)] = float(std::cos(2.0 * std::numbers::pi * 1000 * i / rate));
+   AUDIO_CHECK(fixture.process(full, cosine));
+   AUDIO_CHECK(std::abs(meter.Values[6]) < 1e-4);
+
+   // A square wave at half scale is exactly -6.02 dBFS.  A silent channel reads the floor, so correlation is zero.
+
+   auto square = std::vector<float>(size_t(interval));
+   for (int i = 0; i < interval; i++) square[size_t(i)] = ((i / 24) & 1) ? -0.5f : 0.5f;
+   AUDIO_CHECK(fixture.process(square, silence));
+   AUDIO_CHECK(std::abs(meter.Values[4] + 6.0206) < 1e-4);
+   AUDIO_CHECK(meter.Values[5] IS ANALYSER_FLOOR_DB and meter.ValueFlags[5] IS int(AMV::VALID | AMV::FLOOR));
+   AUDIO_CHECK(meter.Values[6] IS 0 and meter.ValueFlags[6] IS int(AMV::VALID));
+
+   // Each interval is measured on its own: a silent interval after a loud one reads the floor.
+
+   auto loud_then_silent = full;
+   loud_then_silent.insert(loud_then_silent.end(), silence.begin(), silence.begin() + interval / 2);
+   const auto sequence = meter.Sequence;
+   AUDIO_CHECK(fixture.process(loud_then_silent, loud_then_silent));
+   AUDIO_CHECK(meter.Sequence IS sequence + 1 and std::abs(meter.Values[4] + 3.0103) < 0.001);
+   AUDIO_CHECK(fixture.process(std::vector<float>(silence.begin(), silence.begin() + interval / 2),
+      std::vector<float>(silence.begin(), silence.begin() + interval / 2)));
+   AUDIO_CHECK(meter.Sequence IS sequence + 2 and meter.Values[4] IS ANALYSER_FLOOR_DB);
+
+   // Idle publishes the partial interval.  A chain reset discards a partial interval.
+
+   AUDIO_CHECK(fixture.process(tone(1000, 0.5), tone(1000, 0.5)));
+   AUDIO_CHECK(fixture.process(std::vector<float>(100, 1.0f), std::vector<float>(100, 1.0f)));
+   fixture.Effect.idle();
+   AUDIO_CHECK((meter.Flags & AMF::IDLE) != AMF::NIL and meter.Interval IS 100);
+   AUDIO_CHECK(std::abs(meter.Values[4]) < 1e-9);
+
+   AUDIO_CHECK(fixture.process(std::vector<float>(100, 1.0f), std::vector<float>(100, 1.0f)));
+   fixture.Chain->reset();
+   AUDIO_CHECK(fixture.process(silence, silence));
+   AUDIO_CHECK(meter.Values[4] IS ANALYSER_FLOOR_DB);
+
+   // Meters measure every channel regardless of the channel selection.
+
+   AudioParamState state;
+   state.Params.assign({ 1 });
+   glAnalyserSchema.Apply(&fixture.Effect, state);
+   AUDIO_CHECK(fixture.process(tone(1000, 0.5), silence));
+   AUDIO_CHECK(std::abs(meter.Values[4] + 9.0309) < 0.001 and meter.Values[5] IS ANALYSER_FLOOR_DB);
+
+   // Non-finite input never publishes NaN.
+
+   auto bad = full;
+   bad[10] = std::numeric_limits<float>::quiet_NaN();
+   AUDIO_CHECK(not fixture.process(bad, bad)); // NaN never compares equal, but the samples are untouched
+   AUDIO_CHECK(meter.Values[4] IS ANALYSER_FLOOR_DB and meter.Values[6] IS 0);
+
+   // In mono, only the per-channel meters are published.
+
+   AnalyserChain mono(rate, glLayoutMono);
+   auto single = tone(1000, 1.0);
+   const auto mono_original = single;
+   mono.Effect.process(single.data(), interval);
+   AUDIO_CHECK(single IS mono_original);
+   AUDIO_CHECK(std::abs(mono.Effect.Meter.Values[2] + 3.0103) < 0.001);
+}
+
+//********************************************************************************************************************
 
 static void run(AudioTestContext &Test)
 {
@@ -366,6 +651,9 @@ static void run(AudioTestContext &Test)
    test_capture_gaps(Test);
    test_mixer_gaps(Test);
    test_reconfiguration(Test);
+   test_selection(Test);
+   test_schema(Test);
+   test_meters(Test);
 }
 
 }
