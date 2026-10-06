@@ -245,7 +245,12 @@ end
 @Test function CompletionDeliveryOrderingAndLateSubscriptions()
    stream = openai_stream.stream({})
    order = array<str>
-   stream.onEvent(function(Event) order.push(Event.type) end)
+   stream.onEvent(function(Event)
+      order.push('event-one')
+      processing.sleep(0)
+      order.push('event-one-returned')
+   end)
+   stream.onEvent(function(Event) order.push('event-two') end)
    calls = 0
    subscription = stream.onComplete(function(Response, Error)
       calls++
@@ -254,9 +259,10 @@ end
       stream.close()
    end)
    stream.feed(eventWire('response.completed', { response={ id='complete' } }))
-   assert(calls is 0 and #order is 1, 'Completion waits until terminal event callbacks have returned')
+   assert(calls is 0 and #order is 3 and order[0] is 'event-one' and order[1] is 'event-one-returned' and
+      order[2] is 'event-two', 'Completion waits until every terminal event callback has returned')
    processing.sleep(0)
-   assert(calls is 1 and order[1] is 'complete' and subscription.closed and stream.state() is 'closed',
+   assert(calls is 1 and order[3] is 'complete' and subscription.closed and stream.state() is 'closed',
       'Completion runs once and may safely close the stream')
    late_calls = 0
    stream.onComplete(function(Response, Error)

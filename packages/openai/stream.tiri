@@ -47,7 +47,7 @@ openai_stream.stream = function(Options:table):table
    state = {
       value='pending', terminal=false, closed=false, response=nil, error=nil, subscriptions=array<table>,
       eventIndex=0, diagnostic='', diagnosticLimit=options.diagnosticBytes or 4096, diagnosticTruncated=false,
-      http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false,
+      http=nil, httpStatus=0, requestID=nil, contentType=nil, inCallback=false, eventDispatchDepth=0,
       completedItems={}, completedItemCount=0, completedItemMax=-1, completions=array<table>
    }
 
@@ -84,14 +84,18 @@ openai_stream.stream = function(Options:table):table
       end)
    end
 
-   function complete(StateName:str, Response:table, Error:table)
+   function dispatchCompletions()
+      for subscription in values(state.completions) do dispatchCompletion(subscription) end
+      state.completions.clear()
+   end
+
+   function complete(StateName:str, Response:table, Error:table, DeferDispatch:bool)
       if state.terminal then return end
       state.terminal = true
       state.value = StateName
       state.response = Response
       state.error = translated(Error)
-      for subscription in values(state.completions) do dispatchCompletion(subscription) end
-      state.completions.clear()
+      if not DeferDispatch and state.eventDispatchDepth is 0 then dispatchCompletions() end
    end
 
    function rememberCompletedItem(Raw:table)
@@ -123,6 +127,7 @@ openai_stream.stream = function(Options:table):table
    end
 
    function notify(Event:table)
+      state.eventDispatchDepth++
       for subscription in values(state.subscriptions) do
          if state.closed then break end
          if not subscription.closed then
@@ -136,7 +141,9 @@ openai_stream.stream = function(Options:table):table
             state.inCallback = false
          end
       end
+      state.eventDispatchDepth -= 1
       if state.terminal or state.closed then releaseSubscriptions() end
+      if state.terminal and state.eventDispatchDepth is 0 then dispatchCompletions() end
    end
 
    function decoded(SSEEvent:table):any
@@ -172,20 +179,22 @@ openai_stream.stream = function(Options:table):table
          eventName=SSEEvent.event, index=state.eventIndex
       }
 
+      -- Completion must not be queued until every terminal event subscriber has returned.  A callback may pump
+      -- processing and would otherwise run completion re-entrantly, allowing stream.close() to suppress subscribers.
       if raw.type is 'response.completed' then
          restoreCompletedItems(decoded_response)
-         complete('completed', decoded_response or raw, nil)
+         complete('completed', decoded_response or raw, nil, true)
       elseif raw.type is 'response.failed' then
          provider = raw.response?.error or raw.error or {}
          addDiagnostic(state, SSEEvent.data)
          complete('failed', nil, streamError(apiKind(provider.code), provider.code or 'response_failed',
             provider.message is <str> and redactDiagnostic(provider.message).sub(0, 1024) or 'Response failed',
-            state, { param=provider.param }))
+            state, { param=provider.param }), true)
       elseif raw.type is 'response.incomplete' then
          details = raw.response?.incomplete_details or raw.incomplete_details or {}
          addDiagnostic(state, SSEEvent.data)
          complete('incomplete', nil, streamError('response', details.reason or 'response_incomplete',
-            'Response incomplete', state))
+            'Response incomplete', state), true)
       end
 
       notify(event)
@@ -272,7 +281,8 @@ openai_stream.stream = function(Options:table):table
    self.onComplete = function(Callback:func!):table
       subscription = { callback=Callback, closed=false }
       subscription.close = function() subscription.closed = true; subscription.callback = nil end
-      if state.terminal then dispatchCompletion(subscription) else state.completions.push(subscription) end
+      if state.terminal and state.eventDispatchDepth is 0 then dispatchCompletion(subscription)
+      else state.completions.push(subscription) end
       return subscription
    end
 
