@@ -46,6 +46,24 @@ function rejects(Callback:func)
    assert(rejected, 'Expected rejection')
 end
 
+function assertListenerReleased(Port:num, Message:str)
+   -- NetServer destruction completes asynchronously, so allow its worker a bounded interval to release the port.
+   deadline = mSys.PreciseTime() + 500000
+   while mSys.PreciseTime() < deadline do
+      probe:obj = nil
+      try
+         probe = obj.new('netserver', { address='127.0.0.1', port=Port })
+      except e
+      success
+         assert(probe.port is Port, Message)
+         probe.free()
+         return
+      end
+      processing.sleep(0.005)
+   end
+   assert(false, Message)
+end
+
 @Test function StrictJsonRejectsAmbiguityAndLimits()
    for bad in values(array<str> { '{"a":1,"a":2}', '{"a":1,"\\u0061":2}', '{"a":null,"a":2}',
       '{"a":1,}', '[1,]', '01', '1e9999', 'true false', '"\\q"', '"\\uD800"', '"\\uDC00"',
@@ -223,15 +241,36 @@ end
    processing.sleep(0.01)
    assert(response.startsWith('HTTP/1.1 200 OK'), 'Callback response')
    assert(client.state is nil and client.pkce is nil, 'Attempt cleaned')
-   probe <close> = obj.new('netserver', { address='127.0.0.1', port=used_port })
-   assert(probe.port is used_port, 'Listener released promptly')
-   probe = nil
+   assertListenerReleased(used_port, 'Listener released promptly')
    client.open_browser = function(URL) client.cancel() end
    _, _, err = client.authorizeWeb()
    assert(err.code is 'cancelled', 'Presentation callback can cancel')
    client.open_browser = function(URL) raise 'secret-browser-error' end
    _, message, err = client.authorizeWeb()
    assert(err.code is 'web_flow_failed' and not message.find('secret'), 'Browser exception redacted')
+end
+
+@Test function WebCancellationWakesSleepingListener()
+   client:table = nil
+   timer_handle:any = nil
+   port = 0
+   client = offlineClient({ redirectURI='http://127.0.0.1:0/callback', authorizationTimeout=2,
+      open_browser=function(URL)
+         redirect = url.parse(url.parseQuery(url.parse(URL).query).redirect_uri)
+         port = redirect.port
+         _, timer_handle = check mSys.SubscribeTimer(0.02, function(Subscriber, Elapsed, CurrentTime)
+            timer_handle = nil
+            client.cancel()
+            raise ERR_Terminate
+         end)
+      end })
+   defer if timer_handle then mSys.UpdateTimer(timer_handle, 0) end end
+   started = mSys.PreciseTime()
+   _, _, err = client.authorizeWeb()
+   assert(err.code is 'cancelled', 'Asynchronous cancellation interrupts browser sign-in')
+   assert(mSys.PreciseTime() - started < 1000000, 'Cancellation wakes the listener before its two-second deadline')
+   assert(client.state is nil and client.pkce is nil, 'Cancellation clears the pending attempt')
+   assertListenerReleased(port, 'Cancellation releases the listener')
 end
 
 @Test function DeviceFlowSuccessAndCancellation()
@@ -340,9 +379,7 @@ end
    assert(err.code is 'timeout', 'Oversized callback must not complete authorisation')
    socket.free()
    socket = nil
-   probe <close> = obj.new('netserver', { address='127.0.0.1', port=port })
-   assert(probe.port is port, 'Timeout releases listener')
-   probe = nil
+   assertListenerReleased(port, 'Timeout releases listener')
    client.open_browser = function(URL) return false end
    _, _, err = client.authorizeWeb()
    assert(err.code is 'browser_failed' and client.state is nil, 'Explicit browser failure cleans attempt')

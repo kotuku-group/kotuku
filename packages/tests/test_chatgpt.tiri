@@ -1,6 +1,8 @@
 import 'ai/chatgpt'
 import 'json'
 import '../openai/stream'
+import '../openai/chatgpt/storage'
+module crypto as mCrypto
 
 function memoryStore(Initial:table):table
    saved:any = Initial
@@ -13,7 +15,8 @@ end
 
 function signedInState():table
    return {
-      schemaVersion=1, hostID='urn:uuid:00000000-0000-4000-8000-000000000001', activeID='account-1',
+      schemaVersion=1, applicationID='Fixture',
+      hostID='urn:uuid:00000000-0000-4000-8000-000000000001', activeID='account-1',
       accounts=array<table> { {
          id='account-1', clientID='oaiapp_fixture', subject='subject-1', email='person@example.test',
          label='person@example.test', status=chatgpt.status.enabled,
@@ -65,6 +68,87 @@ end
    _, err = policy.validate({ model='model-a', input=array<table> { { role='system', content='No' } } })
    assert(err.category is 'unsupported_capability' and err.param is 'input',
       'System message Items are rejected before transport')
+end
+
+@Test function ApplicationsCannotReuseAnotherApplicationsStore()
+   store = memoryStore(signedInState())
+   renamed = chatgpt.accountManager({ applicationName='Renamed Fixture', applicationID='Fixture', storage=store })
+   assert(renamed.active().info().id is 'account-1', 'A stable application ID survives display-name changes')
+   rejected = false
+   try
+      chatgpt.accountManager({ applicationName='Another application', storage=store })
+   except e
+      rejected = true
+      assert(e.message.find('another application') != nil, 'A mismatched store reports its ownership conflict')
+   end
+   assert(rejected, 'Shared custom storage must not expose another application\'s saved account')
+   assert(store.value().applicationID is 'Fixture' and store.value().accounts[0].token.access_token is 'fixture-access',
+      'Rejecting another application does not overwrite or clear the owner\'s credentials')
+end
+
+@Test function LegacyStoresAreNeverClaimedByAnApplication()
+   state = signedInState()
+   state.applicationID = nil
+   store = memoryStore(state)
+   rejected = false
+   try
+      chatgpt.accountManager({ applicationName='Fixture', storage=store })
+   except e
+      rejected = true
+      assert(e.message.find('Unbound') != nil, 'A legacy store requires a new application-specific sign-in')
+   end
+   assert(rejected and store.value().applicationID is nil and store.value().accounts[0].token,
+      'Unbound credentials must not be silently assigned to whichever application opens them first')
+end
+
+@Test function ExplicitCredentialPathsRetainApplicationBinding()
+   path = f'temp:chatgpt_application_binding_{mSys.PreciseTime()}.json'
+   defer mSys.DeleteFile(path) end
+   store = chatgpt.protectedStore(path)
+   store.saveState(signedInState())
+   owner = chatgpt.accountManager({ applicationName='Fixture', storagePath=path })
+   assert(owner.active().info().id is 'account-1', 'The owning application can reopen its explicit credential file')
+   rejected = false
+   try
+      chatgpt.accountManager({ applicationName='Another application', storagePath=path })
+   except e
+      rejected = true
+   end
+   assert(rejected and store.loadState().applicationID is 'Fixture',
+      'Choosing the same explicit path cannot bypass ownership or overwrite the file')
+end
+
+@Test function DefaultCredentialFilesAreScopedToStableApplicationIDs()
+   suffix = tostring(mSys.PreciseTime())
+   first_id = 'kotuku.fixture.first.' .. suffix
+   second_id = 'kotuku.fixture.second.' .. suffix
+   first_path = chatgpt_storage.applicationPath(first_id, mCrypto.SHA256)
+   second_path = chatgpt_storage.applicationPath(second_id, mCrypto.SHA256)
+   defer mSys.DeleteFile(first_path); mSys.DeleteFile(second_path) end
+   assert(first_path != second_path and first_path is chatgpt_storage.applicationPath(first_id, mCrypto.SHA256),
+      'Different IDs use distinct files and the same ID always resolves to the same file')
+   chatgpt.accountManager({ applicationName='Same display name', applicationID=first_id })
+   chatgpt.accountManager({ applicationName='Same display name', applicationID=second_id })
+   first = chatgpt.protectedStore(first_path).loadState()
+   second = chatgpt.protectedStore(second_path).loadState()
+   assert(first.applicationID is first_id and second.applicationID is second_id and first.hostID != second.hostID,
+      'Default files bind independent registrations even when the applications have identical display names')
+   chatgpt.accountManager({ applicationName='New display name', applicationID=first_id })
+   assert(chatgpt.protectedStore(first_path).loadState().hostID is first.hostID,
+      'Renaming an application with a stable ID preserves its store')
+end
+
+@Test function ApplicationIDValidationRejectsInvalidIdentifiers()
+   for invalid in values(array<any> { '', false, 1, string.rep('x', 129), 'line\nbreak' }) do
+      store = memoryStore()
+      rejected = false
+      try
+         chatgpt.accountManager({ applicationName='Fixture', applicationID=invalid, storage=store })
+      except e
+         rejected = true
+      end
+      assert(rejected and not store.value(), 'Invalid application IDs fail before a credential store is created')
+   end
 end
 
 @Test function PolicyRejectsEveryFrozenUnsupportedCapability()

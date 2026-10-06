@@ -39,14 +39,15 @@ function randomBytes(Buffer:any):num return mCrypto.RandomBytes(Buffer) end
 function writeProtectedFile(Path:str, Data:any):num return mCrypto.WriteProtectedFile(Path, Data) end
 
 @Doc(text=[[
-Creates the default file-backed credential store used by accountManager().
+Creates a file-backed credential store for use as custom accountManager() storage.
 
 Every save validates the complete account state and replaces the file atomically with owner-only permissions through
 the Crypto module.  Loading rejects files larger than 1 MiB and any record that fails validation.  The store does not
 coordinate refreshes between processes; run one accountManager per credential file.
 
 -INPUT-
-Path: Optional file path.  Defaults to `user:config/ai_chatgpt_credentials.json`.
+Path: Optional file path.  Defaults to the legacy `user:config/ai_chatgpt_credentials.json` path.
+accountManager() uses an application-specific path by default; prefer that default for separate applications.
 
 -RESULTS-
 table: A store with `loadState()` and `saveState(State)` functions.
@@ -84,10 +85,15 @@ end
 @Doc(text=[[
 Creates a manager for Sign in with ChatGPT registrations and their ChatGPT-plan credentials.
 
-The manager loads its state when created, generating and saving a stable random `ext_agent_host_id` for the
-installation if none exists.  Each registration keeps its own issued client ID, verified subject, email and token set,
+The manager loads its application-bound state when created, generating and saving a stable random `ext_agent_host_id`
+for that application's store if none exists.  Each registration keeps its own issued client ID, subject and token set,
 even when two registrations share an email address.  Refresh and ID tokens never leave the manager; applications
 receive account objects, credential providers and `ai/openai` clients.
+
+The default filename contains the SHA-256 hash of the application ID.  Every store, including custom storage, must
+match that ID before credentials can be used or saved.  Legacy stores without an application ID are rejected and are
+never automatically migrated; sign in again using the application's default store.  This isolates library use, but
+does not protect credentials against programs with the same OS user's file access or a caller spoofing the ID.
 
 Sign-in, refresh and revocation are synchronous.  They process messages on the calling thread, and the `openBrowser`,
 `presentAuthorization` and `openSettings` callbacks run on that thread.  The authorisation URL passed to the browser
@@ -103,8 +109,11 @@ Methods return `nil` (or `false`) and an error table on failure.  Errors have `k
 
 -INPUT-
 Options: `applicationName` is required (at most 128 bytes) and is sent as the registration name hint.
+`applicationID` is a stable identifier of at most 128 bytes; it defaults to `applicationName`.  Use an explicit ID to
+retain the same registration when renaming the application.  Distinct applications must use distinct IDs.
 `openBrowser(URL)` or `presentAuthorization(URL)` presents the sign-in page.  `storage` replaces the default
-protectedStore() and `storagePath` changes its file.  Optional `openSettings(URL)` opens the ChatGPT usage settings.
+application-specific protected store and `storagePath` changes its file; neither bypasses application binding.
+Optional `openSettings(URL)` opens the ChatGPT usage settings.
 `authTimeout` and `authorizationTimeout` bound the OAuth requests and the browser sign-in (defaults 30 and 300
 seconds).
 
@@ -117,7 +126,13 @@ chatgpt.accountManager = function(Options:table):table
       #options.applicationName > 128 or r'[\x00-\x1f\x7f]'.test(options.applicationName) then
       raise 'accountManager requires a valid applicationName'
    end
-   store = options.storage or chatgpt_storage.protectedStore(options.storagePath, writeProtectedFile)
+   application_id:any = options.applicationID is nil ? options.applicationName : options.applicationID
+   if not (application_id is <str>) or application_id is '' or #application_id > 128 or
+      r'[\x00-\x1f\x7f]'.test(application_id) then
+      raise 'accountManager requires a valid applicationID'
+   end
+   storage_path = options.storagePath or chatgpt_storage.applicationPath(application_id, mCrypto.SHA256)
+   store = options.storage or chatgpt_storage.protectedStore(storage_path, writeProtectedFile)
    load_state:any = store.loadState or store['load']
    save_state:any = store.saveState or store['save']
    if not (load_state is <func>) or not (save_state is <func>) then
@@ -126,7 +141,15 @@ chatgpt.accountManager = function(Options:table):table
 
    loaded = load_state()
    state:table = nil
-   if loaded then state = chatgpt_storage.validate(loaded) else state = chatgpt_storage.newState(randomBytes) end
+   if loaded then
+      state = chatgpt_storage.validate(loaded)
+      if state.applicationID is nil then
+         raise 'Unbound ChatGPT credential store; sign in again using this application\'s default store'
+      end
+      if state.applicationID != application_id then
+         raise 'ChatGPT credential store belongs to another application'
+      end
+   else state = chatgpt_storage.newState(randomBytes, application_id) end
    if not loaded then save_state(state) end
    refreshing = {}
    self = {}
@@ -140,6 +163,9 @@ chatgpt.accountManager = function(Options:table):table
 
    function commit(NewState:table)
       chatgpt_storage.validate(NewState)
+      if NewState.applicationID != application_id then
+         raise 'ChatGPT credential store belongs to another application'
+      end
       save_state(NewState)
       state = NewState
    end

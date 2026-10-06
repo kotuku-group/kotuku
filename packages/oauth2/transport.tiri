@@ -62,8 +62,11 @@ oauth_wire.request = function(Method:str, URL:str, Form:table, Options:table, Co
          headers = {}
          proc = processing.new({ timeout=0.05 })
          form = Form and url.buildQuery(Form) or ''
+         -- Initialiser table order is unspecified; Flags must not erase TLS enabled by Src.
+         http_flags = HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG
+         if URL.startsWith('https://') then http_flags = http_flags | HTF_SSL end
          http <close> = obj.new('http', {
-            src=URL, method=Method.lower(), flags=HTF_NO_HEAD|HTF_NO_AUTO_REDIRECT|HTF_NO_DIALOG,
+            src=URL, method=Method.lower(), flags=http_flags,
             connectTimeout=math.min(10, Options.timeout or 30),
             contentType='application/x-www-form-urlencoded',
             inputFile=Method is 'POST' ? 'string:' .. form : nil,

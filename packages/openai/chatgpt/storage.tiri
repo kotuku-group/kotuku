@@ -37,6 +37,9 @@ function validated(State:any):table
       not (State.accounts is <array>) or #State.accounts > 64 then
       raise 'Invalid ai/chatgpt credential store'
    end
+   if State.applicationID != nil and not validText(State.applicationID, 128) then
+      raise 'Invalid ai/chatgpt application ID'
+   end
 
    seen = {}
    for account_record in values(State.accounts) do
@@ -80,8 +83,18 @@ function validated(State:any):table
    return State
 end
 
-chatgpt_storage.newState = function(RandomBytes:func!):table
-   return { schemaVersion=1, hostID=chatgpt_storage.hostID(RandomBytes), activeID=nil, accounts=array<table> }
+chatgpt_storage.newState = function(RandomBytes:func!, ApplicationID:str):table
+   return { schemaVersion=1, applicationID=ApplicationID, hostID=chatgpt_storage.hostID(RandomBytes),
+      activeID=nil, accounts=array<table> }
+end
+
+chatgpt_storage.applicationPath = function(ApplicationID:str!, SHA256:func!):str
+   if not validText(ApplicationID, 128) then raise 'Invalid ai/chatgpt application ID' end
+   digest = array<byte, 32>
+   check SHA256(ApplicationID, digest)
+   encoded = array<str>
+   for byte in values(digest) do encoded.push(hexByte(byte)) end
+   return 'user:config/ai_chatgpt_' .. encoded.concat() .. '.json'
 end
 
 chatgpt_storage.protectedStore = function(Path:str, WriteProtectedFile:func!):table
