@@ -1,0 +1,355 @@
+-- AudioPitchShift: schema, validation, staged changes, latency, live transposition measured by a following
+-- AudioAnalyser, mono, global immutability, tail draining and unsupported rates.  The null device is unpaced, so live
+-- tests play a looping tone and poll until a reading reflects the latest settings.  Numerical accuracy is covered by
+-- the native tests in test_audio_pitchshift_dsp.cpp.
+
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+-- Published parameters in schema order, with their defaults, units and ranges.  semitones has no unit.
+
+PARAMS = {
+   { key='semitones', default=0, unit=nil, min=-12, max=12 },
+   { key='mix', default=100, unit='%', min=0, max=100 },
+   { key='gain', default=0, unit='dB', min=-24, max=12 }
+}
+
+-- Analyser bands around 500 Hz, 1 kHz, 1498 Hz (a fifth above) and 2 kHz, separated by unmeasured gaps.
+
+EDGES = array<double> { 450, 550, 900, 1100, 1400, 1600, 1900, 2100 }
+BAND_500 = 0
+BAND_1000 = 2
+BAND_1498 = 4
+BAND_2000 = 6
+
+-- A looping 1 kHz sine at half of full scale.  4410 frames at 44.1 kHz hold exactly 100 cycles, so it loops seamlessly.
+
+function tone_sample(Audio:obj):num
+   frames = 4410
+   data = array<byte, 8820>
+   for i in {0 to frames} do
+      value = math.floor(16384 * math.sin(2 * math.pi * 1000 * i / 44100))
+      if value < 0 then value += 65536 end
+      data[i * 2] = value & 0xff
+      data[(i * 2) + 1] = (value >> 8) & 0xff
+   end
+   format = struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_S16, layout=array<int> { SPK_CENTRE } })
+   loop = struct.new('AudioLoop', { loopMode=LOOP_SINGLE, loop1Type=LTYPE_UNIDIRECTIONAL, loop1Start=0,
+      loop1End=frames * 2 })
+   err, sample = Audio.mtAddSample(nil, format, data, loop)
+   assert(err is ERR_Okay, f'AddSample() failed: {err}')
+   return sample
+end
+
+function play_tone(Audio:obj, Channel:num)
+   check mAudio.MixSample(Audio, Channel, tone_sample(Audio))
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixVolume(Audio, Channel, 1)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+function new_shifter(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioPitchShift', { audio=Audio, channel=channel }), channel
+end
+
+function get_number(Effect:obj, Key:str):<num>
+   err, text = Effect.acGetKey(Key)
+   assert(err is ERR_Okay, f'GetKey({Key}) must succeed')
+   return tonumber(text)
+end
+
+function configure(Effect:obj, Values:table)
+   for key, value in pairs(Values) do check Effect.acSetKey(key, value) end
+   check Effect.acFlush()
+end
+
+-- Poll the analyser until the Expected band holds the tone, every other measured band is at least 30 dB below it, and
+-- every band named in Also is within 1 dB of it.
+
+function await_band(Analyser:obj, Expected:num, Description:str, Also:table)
+   levels = array<double, 7>
+   for attempt in {0 to 300} do
+      check Analyser.mtGetSpectrum(EDGES, levels)
+      top = levels[Expected]
+      found = top > -40
+      for band in values(array<int> { BAND_500, BAND_1000, BAND_1498, BAND_2000 }) do
+         if band is Expected then continue end
+         if (Also != nil) and (Also[band] != nil) then
+            found = found and (math.abs(levels[band] - top) < 1)
+         else
+            found = found and (levels[band] < top - 30)
+         end
+      end
+      if found then return end
+      processing.sleep(0.01)
+   end
+   assert(false, f'{Description}: bands read {levels[BAND_500]}, {levels[BAND_1000]}, {levels[BAND_1498]}, ' ..
+      f'{levels[BAND_2000]} dBFS')
+end
+
+-- Poll the shifter's meters until the output peak is within Tolerance dB of the input peak plus Offset.
+
+function await_peak(Effect:obj, Offset:num, Tolerance:num, Description:str)
+   input_peak, output_peak = -120, -120
+   for attempt in {0 to 300} do
+      err, reading = Effect.mtReadMeters()
+      assert(err is ERR_Okay)
+      if reading.flags has AMF_VALID then
+         input_peak = reading.values[0].value
+         output_peak = reading.values[2].value
+         if (input_peak > -20) and (math.abs(output_peak - (input_peak + Offset)) < Tolerance) then return end
+      end
+      processing.sleep(0.01)
+   end
+   assert(false, f'{Description}: input peak {input_peak}, output peak {output_peak} dBFS')
+end
+
+function wait_for_stop(Count:table, Seconds:num)
+   deadline = mSys.PreciseTime() + (Seconds * 1000000)
+   while (Count.stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   shifter <close> = new_shifter(audio)
+   schema = shifter.schema
+   assert(schema.find('<effect class="AudioPitchShift" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The effect has no parameter groups')
+   assert(schema.find('<rule ') is nil, 'No parameter carries a rule')
+   assert(schema.find('type="enum"') is nil, 'The effect has no enumerated parameters')
+   assert(schema.find('type="curve"') is nil, 'The effect does not publish a response curve')
+   assert(schema.find('gain_reduction') is nil, 'The effect does not publish gain reduction')
+   for p in values(PARAMS) do
+      unit = (p.unit != nil) ? f' unit="{p.unit}"' : ''
+      text = f'<param key="{p.key}"'
+      assert(schema.find(text) != nil, f'{p.key} must be published')
+      text = f'type="double"{unit} scale="linear" min="{p.min}" max="{p.max}" default="{p.default}"'
+      assert(schema.find(text) != nil, f'{p.key} must publish its type, unit, scale, range and default')
+      value = get_number(shifter, p.key)
+      assert(value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   last = 0
+   for p in values(PARAMS) do
+      position = schema.find(f'<param key="{p.key}"')
+      assert(position > last, f'{p.key} is out of order')
+      last = position
+   end
+
+   assert(schema.find('key="input_peak_left" type="scalar"') != nil)
+   assert(schema.find('key="output_peak_right" type="scalar"') != nil)
+   assert(shifter.mtGetOutput('response') is ERR_Search)
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   shifter <close> = new_shifter(audio)
+   assert(shifter.mutable is 1)
+
+   for p in values(PARAMS) do
+      check shifter.acSetKey(p.key, p.min)
+      check shifter.acSetKey(p.key, p.max)
+      assert(shifter.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(shifter.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(shifter.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(shifter.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+   assert(shifter.acSetKey('unknown', 1) is ERR_Search)
+   check shifter.acFlush()
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact.  Fractional
+   -- semitones are accepted for detuning.
+
+   check shifter.acSetKey('semitones', -0.15)
+   check shifter.acSetKey('mix', 62.5)
+   assert(shifter.acSetKey('gain', 12.5) is ERR_InvalidValue)
+   check shifter.acSetKey('gain', -7.25)
+   assert(get_number(shifter, 'semitones') is -0.15, 'Staged values must be readable')
+   check shifter.acFlush()
+   for key, expected in pairs({ semitones=-0.15, mix=62.5, gain=-7.25 }) do
+      value = get_number(shifter, key)
+      assert(value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   shifter <close> = obj.new('AudioPitchShift')
+   shifter.audio = audio
+   shifter.channel = channel
+   check shifter.acSetKey('semitones', 7)
+   check shifter.acSetKey('mix', 40)
+   assert(shifter.acSetKey('semitones', -13) is ERR_InvalidValue)
+   shifter.init()
+   for key, expected in pairs({ semitones=7, mix=40, gain=0 }) do
+      value = get_number(shifter, key)
+      assert(value is expected, f'{key} should be {expected}, got {value}')
+   end
+end
+
+-- The latency is one analysis window, independent of the settings, and is removed by bypass.
+
+@Test function Latency()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   shifter <close>, channel = new_shifter(audio)
+   try
+      unconfigured = shifter.latency
+   except e when ERR_NotInitialised
+   success
+      raise 'Latency must not be readable before the output is configured'
+   end
+
+   check audio.acActivate()
+   assert(shifter.latency is 2048, f'The window delays by 2048 frames at 48 kHz, got {shifter.latency}')
+   err, application, _, total = audio.mtGetEffectStatus(channel)
+   assert(err is ERR_Okay and application is 2048 and total is 2048, f'The path latency is {application} / {total}')
+
+   configure(shifter, { semitones=-12, mix=0 })
+   assert(shifter.latency is 2048, 'Parameter changes, including zero mix, must not alter the latency')
+
+   shifter.flags = AEF_BYPASS
+   assert(shifter.latency is 0, 'A bypassed shifter has no latency')
+   shifter.flags = 0
+   assert(shifter.latency is 2048)
+
+   -- The window, and with it the latency, scales with the rate.
+   for rate, expected in pairs({ [44100]=2048, [96000]=4096, [8000]=256, [192000]=8192 }) do
+      check audio.acDeactivate()
+      audio.outputRate = rate
+      check audio.acActivate()
+      assert(shifter.latency is expected, f'The latency at {rate} Hz should be {expected}, got {shifter.latency}')
+   end
+   check audio.acDeactivate()
+end
+
+-- A 1 kHz tone is transposed to the expected band of a following analyser; the level is preserved and the dry blend
+-- restores the original frequency.
+
+@Test function LiveTransposition()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   shifter <close>, channel = new_shifter(audio)
+   analyser <close> = obj.new('AudioAnalyser', { audio=audio, channel=channel, order=1 })
+   check audio.acActivate()
+   err, rate, format, layout = shifter.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+   play_tone(audio, channel)
+
+   await_band(analyser, BAND_1000, 'Zero semitones leaves the tone unchanged')
+   await_peak(shifter, 0, 0.1, 'Zero semitones preserves the level')
+
+   configure(shifter, { semitones=12 })
+   await_band(analyser, BAND_2000, 'An octave up doubles the frequency')
+   await_peak(shifter, 0, 0.5, 'An octave up preserves the level of a sustained tone')
+
+   configure(shifter, { semitones=7 })
+   await_band(analyser, BAND_1498, 'Seven semitones up gives a fifth')
+
+   configure(shifter, { semitones=-12 })
+   await_band(analyser, BAND_500, 'An octave down halves the frequency')
+
+   configure(shifter, { mix=50 })
+   await_band(analyser, BAND_500, 'An equal mix contains the dry and shifted tones', { [BAND_1000]=true })
+
+   configure(shifter, { mix=0, gain=-6 })
+   await_band(analyser, BAND_1000, 'Zero mix outputs the dry tone')
+   await_peak(shifter, -6, 0.1, 'Gain trims the output')
+
+   err, meter_layout = shifter.mtGetMeterLayout()
+   assert(err is ERR_Okay and #meter_layout.meters is 4)
+   assert(meter_layout.meters[0].key is 'input_peak_left' and meter_layout.meters[3].key is 'output_peak_right')
+
+   configure(shifter, { semitones=12, mix=100, gain=0 })
+   shifter.flags = AEF_BYPASS
+   err, reading = shifter.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   await_band(analyser, BAND_1000, 'Bypass passes the original tone')
+   shifter.flags = 0
+   await_band(analyser, BAND_2000, 'Leaving bypass restores the shift')
+
+   check audio.mtCloseChannels(channel)
+   err, reading = shifter.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(shifter.acSetKey('semitones', 1) is ERR_NotInitialised)
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   shifter = audio.new('AudioPitchShift')
+   check shifter.acSetKey('semitones', -5)
+   check shifter.acSetKey('gain', -3)
+   shifter.init()
+   assert(shifter.mutable is 0)
+   assert(shifter.acSetKey('semitones', 3) is ERR_Immutable)
+   assert(get_number(shifter, 'semitones') is -5, 'Global settings are retained')
+   check audio.acActivate()
+   assert(shifter.latency is 2048)
+   err, layout = shifter.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 2)
+   assert(layout.meters[0].key is 'input_peak_centre' and layout.meters[1].key is 'output_peak_centre')
+   check audio.acDeactivate()
+end
+
+-- OnStop waits for the buffered window to drain when a Sound plays through the shifter.
+
+@Test function SoundStopWaitsForTail()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   state_at_stop = -1
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound)
+         count.stops++
+         err, _, _, _, _, _, state = audio.mtGetEffectStatus(Sound.channelIndex & 0xffff0000)
+         state_at_stop = state
+      end })
+   shifter <close> = obj.new('AudioPitchShift', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   configure(shifter, { semitones=-7 })
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once')
+   assert(state_at_stop is ADS_IDLE, f'The shifter must have drained before OnStop, state {state_at_stop}')
+   check audio.acDeactivate()
+end
+
+-- Destroying the effect while its channel set is playing leaves the Sound to finish normally.
+
+@Test function DestroyDuringPlayback()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) count.stops++ end })
+   shifter = obj.new('AudioPitchShift', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   configure(shifter, { semitones=5 })
+   check sound.acActivate()
+   processing.sleep(0.05)
+   shifter.free()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once after the effect is destroyed')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      shifter = obj.new('AudioPitchShift', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end
