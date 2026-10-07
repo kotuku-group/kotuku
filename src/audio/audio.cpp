@@ -116,6 +116,7 @@ static OBJECTPTR clAudioLoudness = nullptr;
 static OBJECTPTR clAudioSaturator = nullptr;
 static OBJECTPTR clAudioSplitter = nullptr;
 static OBJECTPTR clAudioStereo = nullptr;
+static OBJECTPTR clAudioCrossfeed = nullptr;
 static OBJECTPTR clAudioAnalyser = nullptr;
 static ERR add_audioeffect_class();
 static ERR add_audioequaliser_class();
@@ -131,6 +132,7 @@ static ERR add_audioloudness_class();
 static ERR add_audiosaturator_class();
 static ERR add_audiosplitter_class();
 static ERR add_audiostereo_class();
+static ERR add_audiocrossfeed_class();
 static ERR add_audioanalyser_class();
 static ankerl::unordered_dense::map<OBJECTID, int> glSoundChannels;
 static std::string glAudioDevice;
@@ -207,6 +209,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (add_audiosaturator_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiosplitter_class() != ERR::Okay) return ERR::AddClass;
    if (add_audiostereo_class() != ERR::Okay) return ERR::AddClass;
+   if (add_audiocrossfeed_class() != ERR::Okay) return ERR::AddClass;
    if (add_audioanalyser_class() != ERR::Okay) return ERR::AddClass;
    if (add_sound_class() != ERR::Okay) return ERR::AddClass;
    return ERR::Okay;
@@ -230,6 +233,7 @@ static ERR MODExpunge(void)
    glSoundChannels.clear();
 
    if (clAudioAnalyser) { FreeResource(clAudioAnalyser); clAudioAnalyser = nullptr; }
+   if (clAudioCrossfeed) { FreeResource(clAudioCrossfeed); clAudioCrossfeed = nullptr; }
    if (clAudioStereo) { FreeResource(clAudioStereo); clAudioStereo = nullptr; }
    if (clAudioSplitter) { FreeResource(clAudioSplitter); clAudioSplitter = nullptr; }
    if (clAudioSaturator) { FreeResource(clAudioSaturator); clAudioSaturator = nullptr; }
@@ -273,6 +277,7 @@ static ERR MODExpunge(void)
 #include "class_audiosaturator.cpp"
 #include "class_audiosplitter.cpp"
 #include "class_audiostereo.cpp"
+#include "class_audiocrossfeed.cpp"
 #include "class_audioanalyser.cpp"
 #include "class_audio.cpp"
 #include "class_sound.cpp"
@@ -299,6 +304,7 @@ static ERR MODExpunge(void)
 #include "tests/test_audio_saturator_dsp.cpp"
 #include "tests/test_audio_splitter_dsp.cpp"
 #include "tests/test_audio_stereo_dsp.cpp"
+#include "tests/test_audio_crossfeed_dsp.cpp"
 #include "tests/test_audio_analyser_dsp.cpp"
 #include "tests/test_mixers.cpp"
 #include "tests/test_audio_format.cpp"
@@ -343,6 +349,7 @@ static void MODTest(std::string_view Options, int *Passed, int *Total)
    }
    run("splitter DSP", audio_tests_audio_splitter_dsp::run);
    run("stereo DSP", audio_tests_audio_stereo_dsp::run);
+   run("crossfeed DSP", audio_tests_audio_crossfeed_dsp::run);
    run("analyser DSP", audio_tests_audio_analyser_dsp::run);
    run("mixer", audio_tests_mixers::run);
    run("format", audio_tests_audio_format::run);
