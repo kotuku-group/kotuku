@@ -65,9 +65,8 @@ class NetSocketTransport final : public Transport {
 public:
    NetSocketTransport(objNetSocket *Socket, OBJECTPTR Owner, FUNCTION Incoming, FUNCTION Feedback,
       FUNCTION Outgoing) noexcept
-      : socket(Socket), owner(Owner), outgoing(Outgoing)
+      : socket(Socket), outgoing(Outgoing)
    {
-      kt::SwitchContext context(Owner); // Network invokes the callbacks within this context
       socket->setIncoming(Incoming);
       socket->setFeedback(Feedback);
       socket->ClientData = Owner;
@@ -96,7 +95,6 @@ public:
    void watch_writes(bool Enable) noexcept override {
       if (detached or (Enable IS watching)) return;
       watching = Enable;
-      kt::SwitchContext context(owner);
       socket->setOutgoing(Enable ? outgoing : FUNCTION{});
    }
 
@@ -112,7 +110,6 @@ public:
 
 private:
    objNetSocket *socket;
-   OBJECTPTR owner;
    FUNCTION outgoing;
    bool watching = false;
    bool detached = false;

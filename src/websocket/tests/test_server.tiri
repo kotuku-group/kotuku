@@ -108,6 +108,7 @@ function newServer(Options:table):table
    if Options.protocols then server.protocols = Options.protocols end
    if Options.maxMessageSize then server.maxMessageSize = Options.maxMessageSize end
    if Options.accept then server.accept = Options.accept end
+   if Options.closeTimeout then server.closeTimeout = Options.closeTimeout end
 
    server.connected = function(Server, WebSocket)
       state.connected++
@@ -139,6 +140,7 @@ function newServer(Options:table):table
       state.closeReason = WebSocket.closeReason
       state.error = WebSocket.error
       state.totalInDisconnected = Server.totalConnections
+      if Options.disconnected then Options.disconnected(Server, WebSocket) end
    end
 
    check server.init()
@@ -475,6 +477,35 @@ end
    waitFor((() => client.disconnected and state.disconnected > 0))
    assert(client.disconnected, 'The server did not close the TCP connection')
    assert(state.closeCode is 4000, f'CloseCode is {state.closeCode}')
+   release(client, state)
+end
+
+-- A connection closed by its CloseTimeout is reported to Disconnected outside of any server callback.  A server freed
+-- by Disconnected at that point must still be destroyed.  The raw client never answers the server's Close frame.
+
+@Test function FreeServerInDisconnected()
+   local destroyed = false
+   local state = newServer({
+      closeTimeout = 0.2,
+      disconnected = function(Server, WebSocket)
+         Server.free()
+      end
+   })
+   local server = state.server
+   server.subscribe('Free', function()
+      destroyed = true
+   end)
+
+   local client = rawClient(server.port, request())
+   waitFor((() => state.connected > 0))
+   check server.mtDisconnectClient(state.ws, WSC_NORMAL, nil)
+   waitFor((() => destroyed), 3)
+
+   assert(state.disconnected is 1, 'The timed out connection was not reported to Disconnected')
+   assert(state.closeCode is WSC_ABNORMAL, f'The timed out connection reported {state.closeCode}')
+   assert(destroyed, 'The server freed in Disconnected was not destroyed')
+   state.server = nil
+   server = nil
    release(client, state)
 end
 

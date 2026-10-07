@@ -39,3 +39,4 @@ static const struct ActionArray clWebSocketServerActions[] = {
    { AC::New, WEBSOCKETSERVER_New },
    { AC::NIL, nullptr }
 };
+
