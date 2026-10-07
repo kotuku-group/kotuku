@@ -114,6 +114,8 @@ static thread_local std::unordered_map<OBJECTID, OBJECTID> glProtocolSockets;
 
 static ERR handshake_timer(extWebSocketServer *, int64_t, int64_t);
 
+static void external_socket_freed(OBJECTPTR, ACTIONID, ERR, APTR);
+
 //********************************************************************************************************************
 
 static double handshake_timer_interval(double Timeout)
@@ -665,12 +667,15 @@ static ERR WEBSOCKETSERVER_Adopt(extWebSocketServer *Self, struct wsv::Adopt *Ar
    auto lifetime = kt::Defer([&]() { release_pin(socket); });
 
    const auto id = socket->UID;
+   auto error = SubscribeAction(socket, AC::Free, C_FUNCTION(external_socket_freed));
+   if (error != ERR::Okay) return error;
+
    Self->Managed[id] = socket;
    glProtocolSockets[id] = Self->UID;
 
    Self->Pending[id] = PendingConnection { socket, {}, PreciseTime(), false };
 
-   auto error = start_handshake_timer(Self);
+   error = start_handshake_timer(Self);
 
    if (error IS ERR::Okay) error = complete_request(Self, socket,
       std::string_view((const char *)Args->RequestData.data(), Args->RequestData.size()), &Args->Connection);
@@ -683,6 +688,7 @@ static ERR WEBSOCKETSERVER_Adopt(extWebSocketServer *Self, struct wsv::Adopt *Ar
    }
 
    if (error != ERR::Okay) {
+      UnsubscribeAction(socket, AC::Free);
       Self->Pending.erase(id);
       Self->Managed.erase(id);
       glProtocolSockets.erase(id);
@@ -848,6 +854,7 @@ static ERR WEBSOCKETSERVER_Dispatch(extWebSocketServer *Self, struct wsv::Dispat
    if (not Self->Managed.contains(socket->UID)) return ERR::NotFound;
 
    if (Args->Event IS WSE::DISCONNECTED) {
+      UnsubscribeAction(socket, AC::Free);
       Self->Pending.erase(socket->UID);
       Self->Managed.erase(socket->UID);
       glProtocolSockets.erase(socket->UID);
@@ -873,10 +880,34 @@ static ERR WEBSOCKETSERVER_Dispatch(extWebSocketServer *Self, struct wsv::Dispat
 
 //********************************************************************************************************************
 
+// An external NetServer can suppress its Feedback callback while it is being freed.  Observe the ClientSocket itself
+// so that its transport is detached before the socket's storage is released.
+
+static void external_socket_freed(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+{
+   auto Self = (extWebSocketServer *)CurrentContext();
+   auto socket = (objClientSocket *)Object;
+   const auto id = socket->UID;
+
+   if (not Self->Managed.contains(id)) return;
+
+   Self->Pending.erase(id);
+   Self->Managed.erase(id);
+   glProtocolSockets.erase(id);
+
+   if (auto it = Self->Upgraded.find(id); it != Self->Upgraded.end()) {
+      if (owns_socket(it->second, socket)) transport_disconnected(it->second);
+   }
+}
+
+//********************************************************************************************************************
+
 extWebSocketServer::~extWebSocketServer()
 {
    Terminating = true;
    cancel_timer(HandshakeTimer);
+
+   for (auto &[id, socket] : Managed) UnsubscribeAction(socket, AC::Free);
 
    if (NetServer) {
       NetServer->setIncoming(FUNCTION{});

@@ -506,8 +506,6 @@ end
    local client = rawClient(state.listener.port, request())
    defer release(client, state) end
    waitFor(() => state.connected > 0)
-   -- The caller must forward shutdown disconnections while both objects and sockets are still live.
-   check state.server.mtDispatch(state.socket, WSE_DISCONNECTED)
    state.listener.free()
    state.listener = nil
    waitFor(() => state.disconnected > 0)
