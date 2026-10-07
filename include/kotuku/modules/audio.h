@@ -23,6 +23,7 @@ class objAudioPhaser;
 class objAudioSaturator;
 class objAudioSplitter;
 class objAudioStereo;
+class objAudioCrossfeed;
 class objAudioAnalyser;
 class objSound;
 
@@ -1111,6 +1112,29 @@ class objAudioStereo : public objAudioEffect {
 
    using create = kt::Create<objAudioStereo>;
    objAudioStereo(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
+
+};
+
+// AudioCrossfeed class definition
+
+#define VER_AUDIOCROSSFEED (1.000000)
+
+class objAudioCrossfeed : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOCROSSFEED;
+   static constexpr CSTRING CLASS_NAME = "AudioCrossfeed";
+
+   using create = kt::Create<objAudioCrossfeed>;
+   objAudioCrossfeed(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
 
    // Action stubs
 

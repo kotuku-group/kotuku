@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioCrossfeed</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>Blends a filtered portion of each stereo channel into the opposite ear for headphone listening.</comment>
+    <version>1</version>
+    <id>323f9a01</id>
+    <idstring>AUDIOCROSSFEED</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>When stereo recordings are played through loudspeakers, each ear hears both speakers: the far speaker arrives slightly later and with its treble shaded by the head.  Headphones remove that acoustic crosstalk, so sounds that are panned hard to one side are heard in one ear only, which can be fatiguing and places the image inside the head.  The crossfeed effect restores a simplified form of the crosstalk by mixing a low-passed and slightly delayed copy of each channel into the other.</p>
+<p>This is a simple crossfeed and not HRTF spatialisation: it does not model the outer ear, room reflections or elevation, and it does not externalise sound the way a binaural renderer can.</p>
+<p>Create new crossfeed objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application effects accept live changes; global effects become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>amount</code>: the level of the opposite channel's contribution, from 0 to 50 percent.  Zero disables the crossfeed.</li>
+<li><code>cutoff</code>: the low-pass corner of the crossfed signal, from 100 to 2000 Hz.  Lower values leave only the bass in
+the opposite ear.</li>
+<li><code>delay</code>: the additional delay of the crossfed signal, from 0 to 1 ms.  The distance between the ears gives about
+0.3 ms.</li>
+<li><code>gain</code>: the output trim, from -12 to 12 dB.</li>
+</list>
+<p>The defaults (20 percent, 700 Hz and 0.3 ms) are a moderate setting suitable for most music.  The following gives a stronger effect for recordings with hard-panned instruments, as a single change:</p>
+<pre>crossfeed = obj.new('AudioCrossfeed', { audio=audio, channel=channel })
+crossfeed.acSetKey('amount', 35)
+crossfeed.acSetKey('cutoff', 650)
+crossfeed.acFlush()
+</pre>
+<p>Other useful combinations include a subtle setting with <code>amount</code> 10 and <code>cutoff</code> 700, and a bass-only blend with <code>amount</code> 30 and <code>cutoff</code> 300.</p>
+<header>Processing</header>
+<p>For left and right inputs <code>L</code> and <code>R</code>, with <code>a</code> the amount divided by 100, the outputs are <code>(L + a * LP(R)) / (1 + a)</code> and <code>(R + a * LP(L)) / (1 + a)</code>, delayed in the crossfed term only, followed by the trim. <code>LP</code> is a first-order low-pass at the cutoff, which falls by 6 dB per octave above it.</p>
+<p>The division by <code>1 + a</code> keeps low-frequency sounds at the centre of the image at their original level, because both channels receive their own signal plus <code>a</code> times the other.  Above the cutoff the crossfed term fades, so centred treble settles at <code>1 / (1 + a)</code> of its level: -1.6 dB at the default amount and -3.5 dB at 50 percent.  Around the cutoff, the phase shift of the filtered and delayed term reduces centred content a little further.  At the defaults it is -0.6 dB at 300 Hz and -2.2 dB at 700 Hz, and with 50 percent, a 100 Hz cutoff and a 1 ms delay it reaches -5 dB at 300 Hz.  Sounds panned to one side are reduced by <code>1 + a</code> in their own channel and appear in the other at up to <code>a / (1 + a)</code> of their level.  Raise <code>gain</code> to compensate if required.</p>
+<p>A mono output has no stereo image.  The amount, cutoff and delay have no effect and only the trim is applied.  With <code>amount</code> at zero and <code>gain</code> at zero the output is identical to the input.</p>
+<p>The low-pass corner is limited to 45 percent of the output rate, as for <class name="AudioEqualiser">AudioEqualiser</class> filters, while the requested value is retained.  The highest cutoff is below this limit at every supported rate, so no clamping occurs in practice.</p>
+<header>Levels and Headroom</header>
+<p>Levels are measured in dBFS, where a sample magnitude of 1.0 is 0 dBFS, independently of the output format.  The filter and the delay interpolation only average past values, so before the trim neither output can exceed the peak input.  Non-finite samples are outside the normalised mixing contract and are treated as silence.</p>
+<header>Live Changes</header>
+<p>Changes to <code>amount</code>, <code>cutoff</code> and <code>gain</code> ramp linearly over 10 ms from their current values; the cutoff ramps the filter pole, which keeps the low-frequency level constant throughout.  A change to <code>delay</code> crossfades from the old delay to the new one over 10 ms; further changes during a crossfade take effect when it ends.  Flush preserves the filter and delay history.</p>
+<p>Device reactivation, rate or layout changes and leaving bypass discard the history and apply the latest parameters without a transition.</p>
+<header>Tail and Drain</header>
+<p>The effect has zero latency because the direct signal is never delayed.  The crossfed signal continues briefly after the input stops: the effect remains pending until the delayed and filtered history is 140 dB below the loudest input, which takes 4 to 5 ms at the default cutoff and up to 25 ms at the lowest cutoff with the longest delay.  With <code>amount</code> at zero, or with a mono output, there is no tail.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  The effect allocates no audio memory.</p></description>
+    <source>
+      <file>class_audiocrossfeed.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>

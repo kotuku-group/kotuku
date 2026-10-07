@@ -300,6 +300,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     output="class_audiostereo_def.c", extended=true }, [[
   ]])
 
+  klass("AudioCrossfeed", { base="AudioEffect", src="class_audiocrossfeed.cpp",
+    output="class_audiocrossfeed_def.c", extended=true }, [[
+  ]])
+
   -- AudioAnalyser method IDs start high enough to give a cushion from inherited AudioEffect methods.
 
   methods("AudioAnalyser", "Ana", {
