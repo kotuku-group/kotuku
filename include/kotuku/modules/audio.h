@@ -22,6 +22,7 @@ class objAudioLoudness;
 class objAudioPhaser;
 class objAudioSaturator;
 class objAudioSplitter;
+class objAudioStereo;
 class objAudioAnalyser;
 class objSound;
 
@@ -1096,6 +1097,29 @@ class objAudioSplitter : public objAudioEffect {
       auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
+
+};
+
+// AudioStereo class definition
+
+#define VER_AUDIOSTEREO (1.000000)
+
+class objAudioStereo : public objAudioEffect {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::AUDIOSTEREO;
+   static constexpr CSTRING CLASS_NAME = "AudioStereo";
+
+   using create = kt::Create<objAudioStereo>;
+   objAudioStereo(objMetaClass *pClass, OBJECTID pUID) noexcept : objAudioEffect(pClass, pUID) {}
+
+   // Action stubs
+
+   inline ERR init() noexcept { return InitObject(this); }
+
+   // Customised field getting
+
+
+   // Customised field setting
 
 };
 
