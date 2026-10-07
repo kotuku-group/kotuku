@@ -41,18 +41,14 @@ See interface.tiri for the REST interface.
 #include <unordered_set>
 #include <vector>
 
-#ifdef BACKSTAGE_WEBSOCKET
 #include <kotuku/modules/websocket.h>
-#endif
 
 using namespace kt;
 
 static OBJECTPTR modNetwork = nullptr;
 static OBJECTPTR modRegex = nullptr;
-#ifdef BACKSTAGE_WEBSOCKET
 static OBJECTPTR modWebSocket = nullptr;
 static objWebSocketServer *glWebSocketServer = nullptr;
-#endif
 
 JUMPTABLE_CORE
 JUMPTABLE_NETWORK
@@ -64,6 +60,14 @@ static void release_backstage_routes();
 static void release_backstage_websockets();
 
 objNetServer *glServer = nullptr;
+
+// glRequestBuffers accumulates the raw bytes of each client's HTTP request, keyed by ClientSocket UID.  A request
+// can arrive over several Incoming callbacks, so server_incoming() appends to the client's entry until
+// analyse_buffer() reports it as complete or rejected, at which point the entry is removed.  Entries are also
+// removed when the client disconnects and cleared on expunge.  The map is global because the NetServer callbacks
+// are plain functions that receive only the ClientSocket, and Backstage runs a single server.  All access must
+// hold glRequestLock.
+
 static std::mutex glRequestLock;
 static std::unordered_map<OBJECTID, std::string> glRequestBuffers;
 
@@ -183,19 +187,14 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODExpunge(void)
 {
-   {
-      std::lock_guard<std::mutex> lock(glRequestLock);
-      glRequestBuffers.clear();
-   }
    release_backstage_websockets();
    release_backstage_logs();
    release_backstage_routes();
-   if (glServer)   { FreeResource(glServer);   glServer = nullptr; }
-#ifdef BACKSTAGE_WEBSOCKET
+
+   if (glServer)     { FreeResource(glServer);     glServer = nullptr; }
    if (modWebSocket) { FreeResource(modWebSocket); modWebSocket = nullptr; }
-#endif
-   if (modRegex)   { FreeResource(modRegex);   modRegex = nullptr; }
-   if (modNetwork) { FreeResource(modNetwork); modNetwork = nullptr; }
+   if (modRegex)     { FreeResource(modRegex);     modRegex = nullptr; }
+   if (modNetwork)   { FreeResource(modNetwork);   modNetwork = nullptr; }
    return ERR::Okay;
 }
 

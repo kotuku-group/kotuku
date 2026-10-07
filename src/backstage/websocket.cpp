@@ -5,7 +5,6 @@ static bool websocket_request_targets_streaming(const BackstageHttpRequest &Requ
    return Request.line.path IS "/streaming";
 }
 
-#ifdef BACKSTAGE_WEBSOCKET
 static constexpr size_t MAX_WEBSOCKET_MESSAGE = 64 * 1024;
 
 struct BackstageWebSocketSession {
@@ -393,12 +392,11 @@ static void backstage_disconnected(objWebSocketServer *Server, objWebSocket *Con
    std::lock_guard<std::mutex> lock(glWebSocketLock);
    glWebSocketSessions.erase(Connection->UID);
 }
-#endif
 
 static void init_backstage_websockets()
 {
-#ifdef BACKSTAGE_WEBSOCKET
    if (objModule::load("websocket", &modWebSocket) != ERR::Okay) return;
+
    glWebSocketServer = objWebSocketServer::create::global({
       fl::Flags(WSF::EXTERNAL_LISTENER),
       fl::Path("/streaming"),
@@ -408,40 +406,33 @@ static void init_backstage_websockets()
       FieldValue(kt::fieldhash("Connected"), C_FUNCTION(backstage_connected)),
       FieldValue(kt::fieldhash("Disconnected"), C_FUNCTION(backstage_disconnected))
    });
-#endif
 }
 
 static void release_backstage_websockets()
 {
-#ifdef BACKSTAGE_WEBSOCKET
    auto server = glWebSocketServer;
    glWebSocketServer = nullptr;
    if (server) FreeResource(server);
    std::lock_guard<std::mutex> lock(glWebSocketLock);
    glWebSocketSessions.clear();
-#endif
 }
 
 enum class BackstageSocketEvent { INCOMING, OUTGOING, DISCONNECTED };
 
 static ERR dispatch_backstage_websocket(objClientSocket *Client, BackstageSocketEvent Event)
 {
-#ifdef BACKSTAGE_WEBSOCKET
    if (glWebSocketServer) return glWebSocketServer->dispatch(Client, WSE(int(Event)));
-#endif
    return ERR::NotFound;
 }
 
 static ERR backstage_websocket_upgrade(objClientSocket *Client, std::string_view Request)
 {
-#ifdef BACKSTAGE_WEBSOCKET
    if (glWebSocketServer) {
       objWebSocket *connection = nullptr;
       auto error = glWebSocketServer->adopt(Client,
          std::span<const int8_t>((const int8_t *)Request.data(), Request.size()), &connection);
       return (error IS ERR::Okay) ? ERR::Okay : ERR::Terminate;
    }
-#endif
    BackstageHttpResponse::plain(501, "WebSocket streaming is unavailable").write(Client);
    return ERR::Okay;
 }
