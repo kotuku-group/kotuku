@@ -121,6 +121,7 @@ class objWebSocketServer : public Object {
    int     Port;                  // The local port to bind.
    WSF     Flags;                 // Optional flags.
    int     TotalConnections;      // The number of open connections.
+   int     ConnectionRateLimit;   // The maximum number of TCP connections accepted during a one-second window.
 
    // Action stubs
 
@@ -228,6 +229,11 @@ class objWebSocketServer : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getConnectionRateLimit(int &Value) noexcept {
+      Value = this->ConnectionRateLimit;
+      return ERR::Okay;
+   }
+
    inline ERR getAccept(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[11];
       SetObjectContext(this, field, AC::NIL);
@@ -238,7 +244,7 @@ class objWebSocketServer : public Object {
    }
 
    inline ERR getConnected(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       auto error = get_field(this, Value);
@@ -247,7 +253,7 @@ class objWebSocketServer : public Object {
    }
 
    inline ERR getDisconnected(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[15];
       SetObjectContext(this, field, AC::NIL);
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       auto error = get_field(this, Value);
@@ -264,7 +270,7 @@ class objWebSocketServer : public Object {
    }
 
    inline ERR setMaxFrameSize(const int64_t Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT64, &Value);
    }
 
@@ -274,12 +280,12 @@ class objWebSocketServer : public Object {
    }
 
    inline ERR setPingInterval(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setCloseTimeout(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[19];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -338,18 +344,23 @@ class objWebSocketServer : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setConnectionRateLimit(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setAccept(const FUNCTION Value) noexcept {
       auto field = &this->Class->Dictionary[11];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setConnected(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[13];
+      auto field = &this->Class->Dictionary[14];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setDisconnected(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 

@@ -202,6 +202,16 @@ processing.sleep()
     </field>
 
     <field>
+      <name>ConnectionRateLimit</name>
+      <comment>The maximum number of TCP connections accepted during a one-second window.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The dedicated listener defaults to 100 accepted connections per second.  Connections above the limit are immediately closed.  Set ConnectionRateLimit to zero to disable rate limiting.  Changes are applied immediately and start a new measurement window.  Negative values are invalid.  In <code>EXTERNAL_LISTENER</code> mode this field is ignored because the external <class name="NetServer">NetServer</class> controls admission.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Disconnected</name>
       <comment>Reports connections that have closed.</comment>
       <access read="G" write="S">Get/Set</access>

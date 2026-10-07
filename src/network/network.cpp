@@ -178,6 +178,9 @@ class extNetServer : public extNetSocket {
    int    ClientLimit = 1024;  // The maximum number of client IP addresses that can be connected to the NetServer.
    int    SocketLimit = 256;   // Limits the number of connected sockets per client IP address.
    int    TotalClients;        // Indicates the total number of clients currently connected to the NetServer.
+   int    ConnectionRateLimit = 100; // Maximum accepted connections per one-second window; zero disables the limit.
+   int    ConnectionRateCount = 0;
+   int64_t ConnectionRateWindow = 0;
 
    objNetClient *LastClient;   // For linked-list management.
 

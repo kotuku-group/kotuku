@@ -1100,7 +1100,7 @@ if (NOT DISABLE_WEBSOCKET)
    endif ()
 endif ()
 
-if (NOT DISABLE_BACKSTAGE AND NOT DISABLE_NETWORK AND NOT DISABLE_WEBSOCKET AND NOT DISABLE_HTTP)
+if (NOT DISABLE_BACKSTAGE AND TARGET network AND TARGET websocket AND TARGET http)
    add_subdirectory (src/backstage)
    list (APPEND LIB_LIST backstage)
 endif()

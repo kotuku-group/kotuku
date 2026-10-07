@@ -83,6 +83,7 @@ module({ name="WebSocket", copyright="Paul Manias © 2026", version=1.0, timesta
     int Port                # Local port to bind.  Zero selects an ephemeral port.
     int(WSF) Flags          # Optional flags.
     int TotalConnections    # Number of open connections.
+    int ConnectionRateLimit # Maximum accepted connections per second.  Zero disables the limit.
   ]])
 
   klass("WebSocket", { src={ "class_websocket.cpp", "class_websocket_fields.cpp" },

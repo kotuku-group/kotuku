@@ -98,12 +98,13 @@ class extWebSocketServer : public objWebSocketServer {
    bool Terminating = false;
 
    extWebSocketServer(objMetaClass *ClassPtr, OBJECTID ObjectID) : objWebSocketServer(ClassPtr, ObjectID) {
-      MaxMessageSize   = 16 * 1024 * 1024;
-      MaxFrameSize     = 0;
-      SendLimit        = 16 * 1024 * 1024;
-      PingInterval     = 0;
-      CloseTimeout     = 5.0;
-      HandshakeTimeout = 10.0;
+      MaxMessageSize      = 16 * 1024 * 1024;
+      MaxFrameSize        = 0;
+      SendLimit           = 16 * 1024 * 1024;
+      PingInterval        = 0;
+      CloseTimeout        = 5.0;
+      HandshakeTimeout    = 10.0;
+      ConnectionRateLimit = 100;
    }
 
    ~extWebSocketServer();
@@ -980,6 +981,8 @@ static ERR WEBSOCKETSERVER_Init(extWebSocketServer *Self)
 
    if (error IS ERR::Okay) error = server->setFlags(flags);
 
+   if (error IS ERR::Okay) error = server->setConnectionRateLimit(Self->ConnectionRateLimit);
+
    if ((error IS ERR::Okay) and (not Self->SSLCertificate.empty())) {
       error = server->setSSLCertificate(Self->SSLCertificate);
    }
@@ -1290,6 +1293,28 @@ static ERR SRV_SET_Protocols(extWebSocketServer *Self, const std::string_view &V
 /*********************************************************************************************************************
 
 -FIELD-
+ConnectionRateLimit: The maximum number of TCP connections accepted during a one-second window.
+
+The dedicated listener defaults to 100 accepted connections per second.  Connections above the limit are immediately
+closed.  Set ConnectionRateLimit to zero to disable rate limiting.  Changes are applied immediately and start a new
+measurement window.  Negative values are invalid.  In `EXTERNAL_LISTENER` mode this field is ignored because the
+external @NetServer controls admission.
+
+*********************************************************************************************************************/
+
+static ERR SRV_SET_ConnectionRateLimit(extWebSocketServer *Self, int Value)
+{
+   if (Value < 0) return ERR::OutOfRange;
+   if (Self->NetServer) {
+      if (auto error = Self->NetServer->setConnectionRateLimit(Value); error != ERR::Okay) return error;
+   }
+   Self->ConnectionRateLimit = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 SendLimit: The maximum number of queued bytes awaiting transmission on each connection.
 
 The value is applied to each connection when it is accepted.  Refer to @WebSocket.SendLimit for details.  #Broadcast()
@@ -1350,6 +1375,7 @@ static const FieldArray clWebSocketServerFields[] = {
    { "Port",             FDF_INT|FDF_RI },
    { "Flags",            FDF_INTFLAGS|FDF_RW, nullptr, SRV_SET_Flags, &clWebSocketServerFlags },
    { "TotalConnections", FDF_INT|FDF_R },
+   { "ConnectionRateLimit", FDF_INT|FDF_RW, nullptr, SRV_SET_ConnectionRateLimit },
    // Virtual fields
    { "Accept",           FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, SRV_GET_Accept, SRV_SET_Accept },
    { "Connected",        FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, SRV_GET_Connected, SRV_SET_Connected },

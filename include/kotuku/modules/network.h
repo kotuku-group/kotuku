@@ -936,6 +936,11 @@ class objNetServer : public objNetSocket {
       return ERR::Okay;
    }
 
+   inline ERR getConnectionRateLimit(int &Value) noexcept {
+      Value = *((int *)(((int8_t *)this) + CLASS_OFFSET_NETSOCKET + 120));
+      return ERR::Okay;
+   }
+
 
    // Customised field setting
 
@@ -951,17 +956,22 @@ class objNetServer : public objNetSocket {
    }
 
    inline ERR setBacklog(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[26];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setClientLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setSocketLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[27];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setConnectionRateLimit(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
