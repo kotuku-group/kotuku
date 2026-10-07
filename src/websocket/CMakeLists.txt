@@ -17,7 +17,7 @@ if (UNIT_TESTS)
    flute_test (websocket_unit_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_unit_tests.tiri")
 endif ()
 
-foreach (TEST_NAME client server loopback tls)
+foreach (TEST_NAME client server adoption loopback tls)
    flute_test (websocket_${TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_${TEST_NAME}.tiri")
 endforeach ()
 

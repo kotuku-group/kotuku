@@ -63,7 +63,10 @@ processing.sleep()
 Initialisation fails if the #Port cannot be bound, for example because it is already in use.
 
 The WebSocketServer class is not thread-safe.  Create, use and free each object on the thread that processes its
-messages.
+messages.  In `EXTERNAL_LISTENER` mode no listener is created: #Port remains zero and Address and certificate fields
+are ignored.  TLS belongs to the external listener, so combining `SSL` and `EXTERNAL_LISTENER` is invalid.  Use
+#Adopt() and #Dispatch() to serve WebSockets alongside HTTP on an existing listener.  Freeing this server closes its
+adopted sockets without freeing the external listener.
 
 -END-
 
@@ -90,6 +93,7 @@ class extWebSocketServer : public objWebSocketServer {
    std::vector<std::string> SupportedProtocols;
    std::unordered_map<OBJECTID, PendingConnection> Pending; // Keyed by ClientSocket UID
    std::unordered_map<OBJECTID, extWebSocket *> Upgraded;   // Keyed by ClientSocket UID
+   std::unordered_map<OBJECTID, objClientSocket *> Managed; // External sockets, retained until Disconnected
    APTR HandshakeTimer = nullptr;
    bool Terminating = false;
 
@@ -104,6 +108,9 @@ class extWebSocketServer : public objWebSocketServer {
 
    ~extWebSocketServer();
 };
+
+// External listeners share the message-processing thread; a socket may belong to only one protocol server.
+static thread_local std::unordered_map<OBJECTID, OBJECTID> glProtocolSockets;
 
 static ERR handshake_timer(extWebSocketServer *, int64_t, int64_t);
 
@@ -203,7 +210,8 @@ static bool server_announce(extWebSocket *WebSocket)
 {
    auto Self = WebSocket->Server;
    if ((not Self) or Self->Terminating) return not WebSocket->collecting();
-   return call_connection_callback(Self, Self->Connected, WebSocket);
+   auto alive = call_connection_callback(Self, Self->Connected, WebSocket);
+   return alive and (not Self->collecting());
 }
 
 //********************************************************************************************************************
@@ -269,7 +277,10 @@ static ERR reject_request(extWebSocketServer *Self, objClientSocket *Socket, int
 
    auto response = ws::rejection_response(Status);
    int accepted = 0;
-   ws::write_object(Socket, std::span((const uint8_t *)response.data(), response.size()), accepted);
+   auto error = ws::write_object(Socket, std::span((const uint8_t *)response.data(), response.size()), accepted);
+   if (((error != ERR::Okay) and (error != ERR::BufferOverflow)) or (size_t(accepted) != response.size())) {
+      return (error != ERR::Okay) ? error : ERR::BufferOverflow;
+   }
 
    if (auto it = Self->Pending.find(Socket->UID); it != Self->Pending.end()) {
       it->second.Rejected = true;
@@ -292,21 +303,23 @@ static ERR reject_request(extWebSocketServer *Self, objClientSocket *Socket, int
 // the request are processed by complete_handover(), which runs from transport_incoming().
 
 static extWebSocket * create_connection(extWebSocketServer *Self, objClientSocket *Socket,
-   const ws::Request &Request, std::string_view Protocol, std::string_view Prefix)
+   const ws::Request &Request, std::string_view Protocol, std::string_view Prefix, ERR &Error)
 {
    kt::Log log(__FUNCTION__);
 
    extWebSocket *websocket;
    {
       kt::SwitchContext context(Self); // The connection is owned by the server
-      if (NewObject(CLASSID::WEBSOCKET, &websocket) != ERR::Okay) {
-         log.warning(ERR::NewObject);
+      Error = NewObject(CLASSID::WEBSOCKET, &websocket);
+      if (Error != ERR::Okay) {
+         log.warning(Error);
          return nullptr;
       }
    }
 
    constexpr auto inherited = WSF::STREAM_MESSAGES | WSF::NO_UTF8_CHECK | WSF::NO_AUTO_PONG;
 
+   websocket->ExternalListener = (Self->Flags & WSF::EXTERNAL_LISTENER) != WSF::NIL;
    websocket->Role           = ws::Role::SERVER;
    websocket->Server         = Self;
    websocket->ServerSocketID = Socket->UID;
@@ -324,10 +337,11 @@ static extWebSocket * create_connection(extWebSocketServer *Self, objClientSocke
    websocket->Location.append(Request.host);
    websocket->Location.append(Request.target);
 
-   if (InitObject(websocket) != ERR::Okay) {
+   Error = InitObject(websocket);
+   if (Error != ERR::Okay) {
       websocket->Server = nullptr;
       FreeResource(websocket);
-      log.warning(ERR::Init);
+      log.warning(Error);
       return nullptr;
    }
 
@@ -347,47 +361,20 @@ static extWebSocket * create_connection(extWebSocketServer *Self, objClientSocke
 }
 
 //********************************************************************************************************************
-// Buffers and validates the opening handshake request of a pending connection.
+// Shared opening validation, response and handover for dedicated and external listeners.
 
-static ERR handshake_incoming(extWebSocketServer *Self, objClientSocket *Socket)
+static ERR complete_request(extWebSocketServer *Self, objClientSocket *Socket, std::string_view Data,
+   objWebSocket **Connection)
 {
    kt::Log log(__FUNCTION__);
-
    const auto socket_id = Socket->UID;
-   std::string data;
-
-   {
-      auto &pending = Self->Pending[socket_id];
-      std::array<char, REQUEST_READ_SIZE> buffer;
-      while (pending.Buffer.size() <= MAX_REQUEST_SIZE) {
-         int length = 0;
-         if (Socket->read(std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &length) != ERR::Okay) {
-            return ERR::Okay; // The connection is lost and its pending record may already have been removed
-         }
-         if (length <= 0) break;
-         pending.Buffer.append(buffer.data(), size_t(length));
-         if (ws::find_request_end(pending.Buffer)) break;
-      }
-
-      auto end = ws::find_request_end(pending.Buffer);
-      if (not end) {
-         if (pending.Buffer.size() > MAX_REQUEST_SIZE) {
-            return reject_request(Self, Socket, ws::STATUS_HEADERS_TOO_BIG, "Request is too large");
-         }
-         return ERR::Okay; // Waiting for the rest of the request
-      }
-
-      if (end > MAX_REQUEST_SIZE) {
-         return reject_request(Self, Socket, ws::STATUS_HEADERS_TOO_BIG, "Request is too large");
-      }
-
-      data = std::move(pending.Buffer);
-      pending.Buffer.clear();
+   const auto end = ws::find_request_end(Data);
+   if ((not end) or (end > MAX_REQUEST_SIZE)) {
+      return reject_request(Self, Socket, end ? ws::STATUS_HEADERS_TOO_BIG : ws::STATUS_BAD_REQUEST,
+         "Opening request is incomplete or too large");
    }
-
-   const auto end = ws::find_request_end(data);
-   const auto head = std::string_view(data).substr(0, end);
-   const auto prefix = std::string_view(data).substr(end);
+   const auto head = std::string_view(Data).substr(0, end);
+   const auto prefix = std::string_view(Data).substr(end);
 
    ws::Request request;
    std::string_view reason;
@@ -441,28 +428,80 @@ static ERR handshake_incoming(extWebSocketServer *Self, objClientSocket *Socket)
    if (auto error = ws::compute_accept_key(request.key, accept_key); error != ERR::Okay) {
       log.warning("Accept key computation failed: %s", GetErrorMsg(error));
       Self->Pending.erase(socket_id);
-      return ERR::Terminate;
+      return error;
    }
 
    auto response = ws::switching_response(accept_key, protocol);
    int accepted = 0;
    auto error = ws::write_object(Socket, std::span((const uint8_t *)response.data(), response.size()), accepted);
-   if ((error != ERR::Okay) or (size_t(accepted) != response.size())) {
+   if (((error != ERR::Okay) and (error != ERR::BufferOverflow)) or (size_t(accepted) != response.size())) {
       log.warning("Handshake response could not be written: %s", GetErrorMsg(error));
       Self->Pending.erase(socket_id);
-      return ERR::Terminate;
+      return (error != ERR::Okay) ? error : ERR::BufferOverflow;
    }
 
    Self->Pending.erase(socket_id);
 
-   auto websocket = create_connection(Self, Socket, request, protocol, prefix);
-   if (not websocket) return ERR::Terminate;
+   auto websocket = create_connection(Self, Socket, request, protocol, prefix, error);
+   if (not websocket) return error;
 
    Self->Upgraded[socket_id] = websocket;
    update_total(Self);
 
    log.msg("Accepted connection #%d for %.*s", websocket->UID, int(request.target.size()), request.target.data());
+   if (Connection) *Connection = websocket;
+   websocket->pin();
+   auto lifetime = kt::Defer([&]() {
+      if (Connection and (Self->collecting() or websocket->collecting() or (websocket->State IS WSS::CLOSED))) {
+         *Connection = nullptr;
+      }
+      release_pin(websocket);
+   });
    return transport_incoming(websocket);
+}
+
+//********************************************************************************************************************
+// Buffers and validates the opening handshake request of a pending connection.
+
+static ERR handshake_incoming(extWebSocketServer *Self, objClientSocket *Socket)
+{
+   kt::Log log(__FUNCTION__);
+
+   const auto socket_id = Socket->UID;
+   std::string data;
+
+   {
+      auto &pending = Self->Pending[socket_id];
+      std::array<char, REQUEST_READ_SIZE> buffer;
+      while (pending.Buffer.size() <= MAX_REQUEST_SIZE) {
+         int length = 0;
+         if (Socket->read(std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &length) != ERR::Okay) {
+            return ERR::Okay; // The connection is lost and its pending record may already have been removed
+         }
+         if (length <= 0) break;
+         pending.Buffer.append(buffer.data(), size_t(length));
+         if (ws::find_request_end(pending.Buffer)) break;
+      }
+
+      auto end = ws::find_request_end(pending.Buffer);
+      if (not end) {
+         if (pending.Buffer.size() > MAX_REQUEST_SIZE) {
+            return reject_request(Self, Socket, ws::STATUS_HEADERS_TOO_BIG, "Request is too large");
+         }
+         return ERR::Okay; // Waiting for the rest of the request
+      }
+
+      if (end > MAX_REQUEST_SIZE) {
+         return reject_request(Self, Socket, ws::STATUS_HEADERS_TOO_BIG, "Request is too large");
+      }
+
+      data = std::move(pending.Buffer);
+      pending.Buffer.clear();
+   }
+
+   auto error = complete_request(Self, Socket, data, nullptr);
+   if ((error != ERR::Okay) and (error != ERR::Terminate)) return ERR::Terminate;
+   return error;
 }
 
 //********************************************************************************************************************
@@ -498,10 +537,12 @@ static void server_feedback(objNetServer *NetServer, objClientSocket *Socket, NT
    auto lifetime = kt::Defer([&]() { release_pin(Self); });
 
    if (State IS NTC::CONNECTED) {
+      glProtocolSockets[Socket->UID] = Self->UID;
       Self->Pending[Socket->UID] = PendingConnection { Socket, {}, PreciseTime(), false };
       start_handshake_timer(Self);
    }
    else if (State IS NTC::DISCONNECTED) {
+      glProtocolSockets.erase(Socket->UID);
       Self->Pending.erase(Socket->UID);
 
       if (auto it = Self->Upgraded.find(Socket->UID); it != Self->Upgraded.end()) {
@@ -551,10 +592,146 @@ static ERR handshake_timer(extWebSocketServer *Self, int64_t Elapsed, int64_t Cu
          kt::Log(__FUNCTION__).msg("Client socket #%d did not complete its handshake in time.", id);
          auto socket = it->second.Socket;
          Self->Pending.erase(it);
+         if (Self->Managed.contains(id)) socket->setState(NTC::DISCONNECTED);
          FreeResource(socket);
       }
    }
 
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+Adopt: Handles a complete opening request on an external listener's socket.
+
+Requires an initialised server with `EXTERNAL_LISTENER` and a connected, unmanaged @ClientSocket.  RequestData is
+copied synchronously, including every byte after the header terminator.  Validation, path filtering, subprotocol
+selection and #Accept are identical to a dedicated listener.  #Connected runs before prefix messages are delivered.
+
+A protocol rejection returns `Okay` with a null Connection after sending the HTTP rejection.  Operational failures
+return an error; the caller must terminate the socket.  Connection may also be null if a callback frees it during
+handover.  A duplicate adoption returns `InUse` without changing the original connection.
+
+The external @NetServer remains the socket's framework owner.  Once this method handles a request, forward all
+Incoming, Outgoing and Disconnected notifications through #Dispatch() and do not read or write the socket directly.
+Both servers and their callbacks must run on the same message-processing thread.  Release this server before the
+listener, or forward the listener's Disconnected events before releasing this server.  NetServer suppresses Feedback
+callbacks during destruction: when shutting down the listener first, explicitly dispatch `DISCONNECTED` for each
+adopted socket before freeing the listener.  Keep callback targets valid through shutdown.
+
+-INPUT-
+obj(ClientSocket) Socket: A connected socket accepted by the external listener.
+array(char) RequestData: Complete HTTP opening request, optionally followed by WebSocket frames.
+&obj(WebSocket) Connection: Accepted connection, or null for a rejection or a connection freed by a callback.
+
+-ERRORS-
+Okay
+NullArgs
+WrongClass
+InvalidState: The server is not initialised in external-listener mode, or the socket is disconnected.
+InUse: The socket is already managed by a protocol server.
+BufferOverflow: The opening response could not be queued completely.
+CreateObject
+-END-
+
+*********************************************************************************************************************/
+
+static ERR WEBSOCKETSERVER_Adopt(extWebSocketServer *Self, struct wsv::Adopt *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   Args->Connection = nullptr;
+   if (not Args->Socket) return ERR::NullArgs;
+   if (Args->Socket->classID() != CLASSID::CLIENTSOCKET) return ERR::WrongClass;
+   if ((not Self->initialised()) or Self->Terminating or
+       ((Self->Flags & WSF::EXTERNAL_LISTENER) IS WSF::NIL)) return ERR::InvalidState;
+   auto socket = (objClientSocket *)Args->Socket;
+   if (glProtocolSockets.contains(socket->UID)) return ERR::InUse;
+   if ((socket->State != NTC::CONNECTED) or socket->collecting()) return ERR::InvalidState;
+
+   Self->pin();
+   socket->pin();
+   auto lifetime = kt::Defer([&]() { release_pin(socket); release_pin(Self); });
+   const auto id = socket->UID;
+   Self->Managed[id] = socket;
+   glProtocolSockets[id] = Self->UID;
+   Self->Pending[id] = PendingConnection { socket, {}, PreciseTime(), false };
+   auto error = start_handshake_timer(Self);
+   if (error IS ERR::Okay) error = complete_request(Self, socket,
+      std::string_view((const char *)Args->RequestData.data(), Args->RequestData.size()), &Args->Connection);
+   if (error IS ERR::Terminate) {
+      // Adopt has no Network callback return channel.  Release after its caller leaves Incoming.
+      socket->deactivate();
+      free_deferred(id);
+      return ERR::Okay;
+   }
+   if (error != ERR::Okay) {
+      Self->Pending.erase(id);
+      Self->Managed.erase(id);
+      glProtocolSockets.erase(id);
+   }
+   return error;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+Dispatch: Forwards an external listener event to a managed socket.
+
+Forward Incoming before reading the socket; `NotFound` selects the listener's ordinary HTTP processing without
+changing the socket.  Propagate an Incoming `Terminate` result to Network.  Outgoing always returns `Okay` for a
+managed socket because Network clears the listener's global callback after errors.  Disconnected removes protocol
+state and reports `CLOSED` before #Disconnected, exactly once.  Continue forwarding events until disconnection even
+when the WebSocket has already closed or was freed by a callback.
+
+-INPUT-
+obj(ClientSocket) Socket: The external listener socket.
+int(WSE) Event: Incoming, Outgoing or Disconnected notification.
+
+-ERRORS-
+Okay
+NullArgs
+WrongClass
+InvalidState: The server is not initialised in external-listener mode.
+InvalidValue: Event is not a WSE event.
+NotFound: The socket is unmanaged; no socket operation was performed.
+Terminate: Incoming requires Network to terminate the socket.
+-END-
+
+*********************************************************************************************************************/
+
+static ERR WEBSOCKETSERVER_Dispatch(extWebSocketServer *Self, struct wsv::Dispatch *Args)
+{
+   if ((not Args) or (not Args->Socket)) return ERR::NullArgs;
+   if (Args->Socket->classID() != CLASSID::CLIENTSOCKET) return ERR::WrongClass;
+   if ((not Self->initialised()) or Self->Terminating or
+       ((Self->Flags & WSF::EXTERNAL_LISTENER) IS WSF::NIL)) return ERR::InvalidState;
+   if ((Args->Event != WSE::INCOMING) and (Args->Event != WSE::OUTGOING) and
+       (Args->Event != WSE::DISCONNECTED)) return ERR::InvalidValue;
+   auto socket = (objClientSocket *)Args->Socket;
+   if (not Self->Managed.contains(socket->UID)) return ERR::NotFound;
+
+   Self->pin();
+   auto lifetime = kt::Defer([&]() { release_pin(Self); });
+   if (Args->Event IS WSE::DISCONNECTED) {
+      Self->Pending.erase(socket->UID);
+      Self->Managed.erase(socket->UID);
+      glProtocolSockets.erase(socket->UID);
+      if (auto it = Self->Upgraded.find(socket->UID); it != Self->Upgraded.end()) {
+         if (owns_socket(it->second, socket)) transport_disconnected(it->second);
+      }
+      if (not socket->collecting()) free_deferred(socket->UID);
+   }
+   else if (auto it = Self->Upgraded.find(socket->UID); it != Self->Upgraded.end()) {
+      if (owns_socket(it->second, socket)) {
+         if (Args->Event IS WSE::INCOMING) return transport_incoming(it->second);
+         transport_writable(it->second);
+      }
+   }
+   else if (Args->Event IS WSE::INCOMING) discard_input(socket);
+   else if (auto it = Self->Pending.find(socket->UID); it != Self->Pending.end()) {
+      if (it->second.Rejected) free_deferred(socket->UID); // Rejection queue drained
+   }
    return ERR::Okay;
 }
 
@@ -691,6 +868,16 @@ extWebSocketServer::~extWebSocketServer()
 
    Upgraded.clear();
    Pending.clear();
+   std::vector<OBJECTID> managed_ids;
+   for (auto &[id, socket] : Managed) managed_ids.push_back(id);
+   for (auto id : managed_ids) {
+      glProtocolSockets.erase(id);
+      kt::ScopedObjectLock<objClientSocket> socket(id);
+      if (socket.granted()) socket->setState(NTC::DISCONNECTED);
+      free_deferred(id);
+   }
+   Managed.clear();
+   std::erase_if(glProtocolSockets, [&](const auto &Entry) { return Entry.second IS UID; });
 
    if (NetServer) { FreeResource(NetServer); NetServer = nullptr; }
 
@@ -704,6 +891,12 @@ extWebSocketServer::~extWebSocketServer()
 static ERR WEBSOCKETSERVER_Init(extWebSocketServer *Self)
 {
    kt::Log log;
+
+   if ((Self->Flags & WSF::EXTERNAL_LISTENER) != WSF::NIL) {
+      if ((Self->Flags & WSF::SSL) != WSF::NIL) return log.warning(ERR::InvalidValue);
+      Self->Port = 0;
+      return ERR::Okay;
+   }
 
    if ((Self->Port < 0) or (Self->Port > 65535)) return log.warning(ERR::OutOfRange);
 
@@ -894,7 +1087,9 @@ Flags: Optional flags.
 
 Set `SSL` before initialisation to accept `wss://` connections.  The `STREAM_MESSAGES`, `NO_UTF8_CHECK` and
 `NO_AUTO_PONG` flags are applied to each connection when it is accepted, and `NO_UTF8_CHECK` also disables validation
-of text messages sent with #Broadcast().
+of text messages sent with #Broadcast().  `EXTERNAL_LISTENER` creates no listener; use #Adopt() and #Dispatch()
+instead.  TLS belongs to the external listener, so `SSL` cannot be combined with `EXTERNAL_LISTENER`.  Listener flags
+cannot change after initialisation.
 
 -FIELD-
 HandshakeTimeout: The time allowed for a client to send its opening handshake request, in seconds.
@@ -905,6 +1100,16 @@ seconds.  Zero disables the timeout, which is not recommended for servers expose
 values are invalid.
 
 *********************************************************************************************************************/
+
+static ERR SRV_SET_Flags(extWebSocketServer *Self, WSF Value)
+{
+   if (Self->initialised()) {
+      constexpr auto listener_flags = WSF::EXTERNAL_LISTENER | WSF::SSL;
+      if ((Value & listener_flags) != (Self->Flags & listener_flags)) return ERR::InvalidState;
+   }
+   Self->Flags = Value;
+   return ERR::Okay;
+}
 
 static ERR SRV_SET_HandshakeTimeout(extWebSocketServer *Self, double Value)
 {
@@ -986,6 +1191,7 @@ static ERR SRV_SET_PingInterval(extWebSocketServer *Self, double Value)
 Port: The local port to bind.
 
 The default is zero, which selects an ephemeral port.  After initialisation, Port holds the port in use.
+In `EXTERNAL_LISTENER` mode Port remains zero and no address, port or certificate field is used.
 
 -FIELD-
 Protocols: Comma-separated subprotocols supported by the server, in order of preference.
@@ -1073,7 +1279,7 @@ static const FieldArray clWebSocketServerFields[] = {
    { "SSLPrivateKey",    FDF_CPPSTRING|FDF_RI },
    { "SSLKeyPassword",   FDF_CPPSTRING|FDF_RI },
    { "Port",             FDF_INT|FDF_RI },
-   { "Flags",            FDF_INTFLAGS|FDF_RW, nullptr, nullptr, &clWebSocketServerFlags },
+   { "Flags",            FDF_INTFLAGS|FDF_RW, nullptr, SRV_SET_Flags, &clWebSocketServerFlags },
    { "TotalConnections", FDF_INT|FDF_R },
    // Virtual fields
    { "Accept",           FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, SRV_GET_Accept, SRV_SET_Accept },

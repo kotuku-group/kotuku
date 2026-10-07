@@ -1,0 +1,699 @@
+-- Flute tests: external-listener WebSocketServer against a scripted raw client.  The client writes handshake requests
+-- and masked frames verbatim, and parses the server's responses and unmasked frames, so every byte is under test control.
+
+   include 'websocket', 'network'
+
+local KEY <const> = 'dGhlIHNhbXBsZSBub25jZQ=='        -- RFC 6455 section 4.2.2
+local ACCEPT <const> = 's3pPLMBiTxaQ9kYGzzhZRbK+xOo='
+
+function waitFor(Condition:func, Seconds:num)
+   local limit = (Seconds or 3) * 100
+   for i in {0 to limit} do
+      if Condition() then return end
+      processing.sleep(0.01)
+   end
+end
+
+-- Returns a valid opening handshake request.  Each pair in Changes replaces the first occurrence of its first element.
+
+function request(Changes:table):str
+   local text = 'GET /chat?room=1 HTTP/1.1\r\n' ..
+      'Host: 127.0.0.1\r\n' ..
+      'Upgrade: websocket\r\n' ..
+      'Connection: Upgrade\r\n' ..
+      f'Sec-WebSocket-Key: {KEY}\r\n' ..
+      'Origin: https://example.com\r\n' ..
+      'Sec-WebSocket-Version: 13\r\n\r\n'
+   for change in values(Changes or {}) do
+      local start = text.find(change[0])
+      assert(start, f'Request does not contain {change[0]}')
+      text = text.sub(0, start) .. change[1] .. text.sub(start + #change[0])
+   end
+   return text
+end
+
+-- Encodes a client frame, masked unless Mask is false.
+
+function clientFrame(Opcode:num, Payload:str, Fin:any, Mask:any):str
+   local first = (Fin is false ? 0 : 0x80) | Opcode
+   local mask_bit = (Mask is false) ? 0 : 0x80
+   local length = #Payload
+   local header
+   if length < 126 then
+      header = string.char(first, mask_bit | length)
+   elseif length < 65536 then
+      header = string.char(first, mask_bit | 126, length >> 8, length & 255)
+   else
+      header = string.char(first, mask_bit | 127)
+      for shift in values(array<int> { 56, 48, 40, 32, 24, 16, 8, 0 }) do
+         header ..= string.char((length >> shift) & 255)
+      end
+   end
+   if Mask is false then return header .. Payload end
+
+   local key = string.char(0x37, 0xfa, 0x21, 0x3d)
+   local bytes = array<byte, length>
+   for i in {0 to length} do bytes[i] = Payload.byte(i) ^ key.byte(i % 4) end
+   return header .. key .. ((length > 0) ? bytes.getString(0, length) : '')
+end
+
+function closePayload(Code:num, Reason:str):str
+   return string.char(Code >> 8, Code & 255) .. (Reason or '')
+end
+
+-- Parses unmasked server frames from Data.
+
+function parseFrames(Data:str):table
+   local frames = {}
+   local position = 0
+   while #Data - position >= 2 do
+      local first = Data.byte(position)
+      local second = Data.byte(position + 1)
+      local length = second & 0x7f
+      local header = 2
+      if length is 126 then
+         length = (Data.byte(position + 2) << 8) | Data.byte(position + 3)
+         header = 4
+      elseif length is 127 then
+         length = 0
+         for i in {2 to 10} do length = (length * 256) + Data.byte(position + i) end
+         header = 10
+      end
+      if (second & 0x80) != 0 then header += 4 end
+      if #Data - position < header + length then break end
+      local payload = Data.sub(position + header, position + header + length)
+      local frame = { fin = (first & 0x80) != 0, opcode = first & 0x0f, masked = (second & 0x80) != 0,
+         payload = payload }
+      if frame.opcode is 8 and #payload >= 2 then
+         frame.code = (payload.byte(0) << 8) | payload.byte(1)
+         frame.reason = payload.sub(2)
+      end
+      table.insert(frames, frame)
+      position += header + length
+   end
+   return frames
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Server fixture.  Connections are recorded and, if Options.echo is set, every message is sent back.
+
+function newServer(Options:table):table
+   local state = { connected=0, disconnected=0, messages={}, types={}, states=array<int>, server=nil }
+
+   local server = obj.new('websocketserver')
+   server.flags = WSF_EXTERNAL_LISTENER
+   server.handshakeTimeout = Options.handshakeTimeout or 2
+   if Options.path then server.path = Options.path end
+   if Options.protocols then server.protocols = Options.protocols end
+   if Options.maxMessageSize then server.maxMessageSize = Options.maxMessageSize end
+   if Options.closeTimeout then server.closeTimeout = Options.closeTimeout end
+   if Options.sendLimit then server.sendLimit = Options.sendLimit end
+   if Options.accept then server.accept = Options.accept end
+
+   server.connected = function(Server, WebSocket)
+      state.connected++
+      state.ws = WebSocket
+      state.wsState = WebSocket.state
+      state.protocol = WebSocket.protocol
+      state.location = WebSocket.location
+      state.origin = WebSocket.origin
+      state.totalInConnected = Server.totalConnections
+
+      WebSocket.incoming = function(WS, Buffer, Type, Final)
+         local text = Buffer.getString()
+         table.insert(state.messages, text)
+         table.insert(state.types, Type)
+         if Options.echo then WS.mtSend(text, Type) end
+      end
+
+      WebSocket.stateChanged = function(WS, State)
+         state.states.push(State)
+         if State is WSS_CLOSED then state.closedCode = WS.closeCode end
+      end
+
+      if Options.connected then Options.connected(Server, WebSocket) end
+   end
+
+   server.disconnected = function(Server, WebSocket)
+      state.disconnected++
+      state.closeCode = WebSocket.closeCode
+      state.closeReason = WebSocket.closeReason
+      state.error = WebSocket.error
+      state.totalInDisconnected = Server.totalConnections
+   end
+
+   check server.init()
+   assert(server.port is 0, 'An external server bound a port')
+   state.server = server
+   local requests = {}
+   state.listener = obj.new('netserver', {
+      port = 0, flags = NSF_MULTI_CONNECT,
+      incoming = function(Listener, Socket):num
+         if not state.server then return ERR_Terminate end
+         local dispatched = state.server.mtDispatch(Socket, WSE_INCOMING)
+         if dispatched != ERR_NotFound then return dispatched end
+         state.foreignDispatch = dispatched
+         state.socket = Socket
+         local buffer = string.alloc(4096)
+         local err, size = Socket.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+         local data = (requests[Socket.id] or '') .. buffer.sub(0, size)
+         requests[Socket.id] = data
+         if not data.find('\r\n\r\n') then return ERR_Okay end
+         requests[Socket.id] = nil
+         local adopted, connection = server.mtAdopt(Socket, data)
+         state.adopted = adopted
+         state.result = connection
+         state.duplicate = server.mtAdopt(Socket, data)
+         if adopted != ERR_Okay then return ERR_Terminate end
+         return ERR_Okay
+      end,
+      outgoing = function(Listener, Socket):num
+         if state.server then state.server.mtDispatch(Socket, WSE_OUTGOING) end
+         return ERR_Okay
+      end,
+      feedback = function(Listener, Socket, Status)
+         if Status is NTC_DISCONNECTED then
+            if not Socket.exists() then return end
+            local id = Socket.id
+            if state.server then state.server.mtDispatch(Socket, WSE_DISCONNECTED) end
+            requests[id] = nil
+         end
+      end
+   })
+   return state
+end
+
+-- Connects a raw client to Port and writes Data once connected.  Everything received is accumulated.
+
+function rawClient(Port:num, Data:str):table
+   local client = { received='', connected=false, disconnected=false }
+   client.socket = obj.new('netsocket', {
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            client.connected = true
+            if Data then Socket.acWrite(Data) end
+         elseif State is NTC_DISCONNECTED then
+            client.disconnected = true
+         end
+      end,
+      incoming = function(Socket)
+         local buffer = string.alloc(65536)
+         local err, size = Socket.acRead(buffer)
+         if err != ERR_Okay then
+            client.disconnected = true
+            return
+         end
+         if size > 0 then client.received ..= buffer.sub(0, size) end
+      end
+   })
+   check client.socket.mtConnect('127.0.0.1', Port)
+   return client
+end
+
+-- Splits the received data into the HTTP response head and the frames that follow it.
+
+function response(Client:table):<str, table>
+   local position = Client.received.find('\r\n\r\n')
+   if not position then return Client.received, {} end
+   return Client.received.sub(0, position + 4), parseFrames(Client.received.sub(position + 4))
+end
+
+function release(Client:table, State:table)
+   if Client.socket then Client.socket.free() end
+   if State.server then
+      local server = State.server
+      State.server = nil
+      server.free()
+   end
+   if State.listener then State.listener.free() end
+   processing.sleep(0.02)
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ValidHandshakeAndPrefix()
+   -- The first message is written in the same packet as the request, so it is buffered with the handshake.
+
+   local state = newServer({ echo = true })
+   local client = rawClient(state.listener.port, request() .. clientFrame(1, 'hello'))
+   waitFor(function()
+      local _, frames = response(client)
+      return #frames >= 1
+   end)
+
+   local head, frames = response(client)
+   assert(head.startsWith('HTTP/1.1 101 Switching Protocols\r\n'), f'Unexpected response: {head}')
+   assert(head.find(f'\r\nSec-WebSocket-Accept: {ACCEPT}\r\n'), 'Accept key is wrong')
+   assert(head.find('\r\nUpgrade: websocket\r\n') and head.find('\r\nConnection: Upgrade\r\n'),
+      'Upgrade fields missing')
+   assert(not head.find('Sec-WebSocket-Protocol'), 'A subprotocol was selected without being configured')
+
+   assert(state.foreignDispatch is ERR_NotFound, 'Dispatch touched an unmanaged socket')
+   assert(state.adopted is ERR_Okay and state.result, 'Adopt did not return the accepted connection')
+   assert(state.duplicate is ERR_InUse, 'A duplicate adoption changed the connection')
+   assert(state.connected is 1, 'Connected was not called once')
+   assert(state.wsState is WSS_OPEN, 'Connection was not OPEN in the Connected callback')
+   assert(state.totalInConnected is 1, 'TotalConnections did not count the connection')
+   assert(state.location is 'ws://127.0.0.1/chat?room=1', f'Location is wrong: {state.location}')
+   assert(state.origin is 'https://example.com', 'Origin was not recorded')
+   assert(#state.messages is 1 and state.messages[0] is 'hello', 'Message sent with the request was not delivered')
+   assert(state.types[0] is WSM_TEXT, 'Message type is wrong')
+
+   assert(#frames is 1 and frames[0].opcode is 1 and frames[0].payload is 'hello', 'Echo was not received')
+   assert(not frames[0].masked, 'Server frames must not be masked')
+
+   -- A Ping is answered with a Pong carrying the same payload.
+
+   client.socket.acWrite(clientFrame(9, 'are you there'))
+   waitFor(function()
+      local _, list = response(client)
+      return #list >= 2
+   end)
+   _, frames = response(client)
+   assert(#frames >= 2 and frames[1].opcode is 10 and frames[1].payload is 'are you there', 'Ping was not answered')
+
+   -- The client starts the closing handshake; the server echoes the code and closes the TCP connection first.
+
+   client.socket.acWrite(clientFrame(8, closePayload(1000, 'done')))
+   waitFor((() => client.disconnected and state.disconnected > 0))
+
+   _, frames = response(client)
+   local close = frames[#frames - 1]
+   assert(close.opcode is 8 and close.code is 1000, 'Server did not echo the Close frame')
+   assert(client.disconnected, 'Server did not close the TCP connection')
+   assert(state.disconnected is 1, 'Disconnected was not called once')
+   assert(state.closeCode is 1000 and state.closeReason is 'done', 'Close status was not recorded')
+   assert(state.error is ERR_Okay, f'A clean close reported {state.error}')
+   assert(state.states[0] is WSS_CLOSING and state.states[1] is WSS_CLOSED, 'States were not CLOSING then CLOSED')
+   assert(state.totalInDisconnected is 0 and state.server.totalConnections is 0, 'Connection was not removed')
+
+   release(client, state)
+end
+
+@Test function FragmentedRequest()
+   local state = newServer({})
+   local text = request()
+   local client = rawClient(state.listener.port, text.sub(0, 20))
+   waitFor((() => client.connected))
+   processing.sleep(0.05)
+   assert(state.connected is 0, 'Connection accepted before the request was complete')
+   client.socket.acWrite(text.sub(20, 60))
+   processing.sleep(0.05)
+   client.socket.acWrite(text.sub(60))
+   waitFor((() => state.connected > 0))
+
+   local head = response(client)
+   assert(head.startsWith('HTTP/1.1 101 '), 'Request delivered in pieces was not accepted')
+   release(client, state)
+end
+
+@Test function RejectedRequests()
+   local cases = {
+      { 'wrong version', request({ { 'Version: 13', 'Version: 8' } }), 426 },
+      { 'missing key', request({ { f'Sec-WebSocket-Key: {KEY}\r\n', '' } }), 400 },
+      { 'invalid key', request({ { KEY, 'c2hvcnQ=' } }), 400 },
+      { 'bad connection', request({ { 'Connection: Upgrade', 'Connection: keep-alive' } }), 400 },
+      { 'missing upgrade', request({ { 'Upgrade: websocket\r\n', '' } }), 400 },
+      { 'missing host', request({ { 'Host: 127.0.0.1\r\n', '' } }), 400 },
+      { 'post method', request({ { 'GET ', 'POST ' } }), 400 },
+      { 'http 1.0', request({ { 'HTTP/1.1', 'HTTP/1.0' } }), 400 },
+      { 'wrong path', request({ { '/chat?room=1', '/other' } }), 404 },
+      { 'oversized', 'GET /chat HTTP/1.1\r\nX-Pad: ' .. string.rep('a', 17000) .. '\r\n\r\n', 431 }
+   }
+
+   local state = newServer({ path = '/chat' })
+   for case in values(cases) do
+      local client = rawClient(state.listener.port, case[1])
+      waitFor((() => client.disconnected))
+
+      local head = response(client)
+      assert(head.startsWith(f'HTTP/1.1 {case[2]} '), f'{case[0]}: expected {case[2]}, got {head.sub(0, 40)}')
+      assert(head.find('\r\nConnection: close\r\n'), f'{case[0]}: response does not close the connection')
+      if case[2] is 426 then
+         assert(head.find('\r\nSec-WebSocket-Version: 13\r\n'), 'A 426 response must name the supported version')
+      end
+      assert(client.disconnected, f'{case[0]}: socket was not released')
+      client.socket.free()
+   end
+
+   processing.sleep(0.05)
+   assert(state.connected is 0, 'A rejected request was reported as connected')
+   assert(state.server.totalConnections is 0, 'A rejected request was counted')
+   release({}, state)
+end
+
+@Test function AcceptCallback()
+   local seen = {}
+   local verdict = ERR_Okay
+   local state = newServer({
+      protocols = 'v2, chat',
+      accept = function(Server, Request)
+         seen.path = Request.path
+         seen.query = Request.query
+         seen.host = Request.host
+         seen.origin = Request.origin
+         seen.protocols = Request.protocols
+         seen.protocol = Request.protocol
+         seen.address = Request.address
+         seen.headers = Request.headers
+         return verdict
+      end
+   })
+
+   local extra = 'X-Custom: yes\r\nSec-WebSocket-Protocol: chat, v2\r\nOrigin:'
+   local client = rawClient(state.listener.port, request({ { 'Origin:', extra } }))
+   waitFor((() => state.connected > 0))
+   local head = response(client)
+   assert(head.startsWith('HTTP/1.1 101 '), 'Accepted request was refused')
+   assert(head.find('\r\nSec-WebSocket-Protocol: v2\r\n'), 'Server preference was not applied to the subprotocol')
+   assert(state.protocol is 'v2', 'Selected subprotocol was not recorded on the connection')
+   assert(seen.path is '/chat' and seen.query is 'room=1', 'Path and query were not reported')
+   assert(seen.host is '127.0.0.1' and seen.origin is 'https://example.com', 'Host or Origin was not reported')
+   assert(seen.protocols is 'chat, v2' and seen.protocol is 'v2', 'Subprotocols were not reported')
+   assert(seen.address is '127.0.0.1', f'Client address was not reported: {seen.address}')
+   assert(seen.headers.find('X-Custom: yes\n'), 'Header fields were not reported')
+   client.socket.free()
+
+   verdict = ERR_Failed
+   client = rawClient(state.listener.port, request())
+   waitFor((() => client.disconnected))
+   assert(response(client).startsWith('HTTP/1.1 403 '), 'A refused request was not answered with 403')
+   client.socket.free()
+
+   -- A Tiri callback that returns nothing must not accept the request.
+
+   state.server.accept = function(Server, Request) end
+   client = rawClient(state.listener.port, request())
+   waitFor((() => client.disconnected))
+   assert(response(client).startsWith('HTTP/1.1 403 '), 'A callback without a result accepted the request')
+   client.socket.free()
+
+   assert(state.connected is 1, 'Refused requests were reported as connected')
+   release({}, state)
+end
+
+@Test function SubprotocolSelection()
+   local state = newServer({ protocols = 'v2, chat' })
+   local client = rawClient(state.listener.port, request({ { 'Origin:', 'Sec-WebSocket-Protocol: other\r\nOrigin:' } }))
+   waitFor((() => state.connected > 0))
+   local head = response(client)
+   assert(head.startsWith('HTTP/1.1 101 '), 'A request without a supported subprotocol was refused')
+   assert(not head.find('Sec-WebSocket-Protocol'), 'A subprotocol was selected that the client did not request')
+   assert((state.protocol or '') is '', 'Protocol should be empty when nothing matches')
+   release(client, state)
+end
+
+@Test function ProtocolViolations()
+   local cases = {
+      { 'unmasked frame', clientFrame(1, 'plain', true, false), WSC_PROTOCOL_ERROR },
+      { 'oversized control frame', clientFrame(9, string.rep('p', 126)), WSC_PROTOCOL_ERROR },
+      { 'reserved opcode', clientFrame(3, 'x'), WSC_PROTOCOL_ERROR },
+      { 'invalid UTF-8', clientFrame(1, 'bad \xc0\xaf'), WSC_INVALID_PAYLOAD },
+      { 'oversized message', clientFrame(2, string.rep('z', 64)), WSC_MESSAGE_TOO_BIG }
+   }
+
+   for case in values(cases) do
+      local state = newServer({ maxMessageSize = 32 })
+      local client = rawClient(state.listener.port, request())
+      waitFor((() => state.connected > 0))
+      client.socket.acWrite(case[1])
+      waitFor((() => client.disconnected and state.disconnected > 0))
+
+      local _, frames = response(client)
+      local close = frames[#frames - 1]
+      assert(close and close.opcode is 8, f'{case[0]}: server did not send a Close frame')
+      assert(close.code is case[2], f'{case[0]}: Close frame carried {close.code}, expected {case[2]}')
+      assert(not close.masked, f'{case[0]}: the Close frame was masked')
+      assert(client.disconnected, f'{case[0]}: the connection was not closed')
+      assert(state.closeCode is case[2], f'{case[0]}: CloseCode is {state.closeCode}')
+      assert(state.error is ERR_InvalidData, f'{case[0]}: unexpected error {state.error}')
+      assert(#state.messages is 0, f'{case[0]}: invalid data was delivered')
+      release(client, state)
+   end
+end
+
+@Test function ClientDisconnect()
+   local state = newServer({})
+   local client = rawClient(state.listener.port, request())
+   waitFor((() => state.connected > 0))
+   client.socket.free()
+   client.socket = nil
+   waitFor((() => state.disconnected > 0))
+
+   assert(state.disconnected is 1, 'A TCP drop was not reported to Disconnected')
+   assert(state.closeCode is WSC_ABNORMAL, f'A TCP drop reported {state.closeCode}')
+   assert(state.error is ERR_Disconnected, f'A TCP drop reported error {state.error}')
+   assert(state.server.totalConnections is 0, 'The dropped connection was not removed')
+   release({}, state)
+end
+
+@Test function DisconnectClient()
+   local state = newServer({})
+   local client = rawClient(state.listener.port, request())
+   waitFor((() => state.connected > 0))
+
+   local other <close> = obj.new('websocket')
+   assert(state.server.mtDisconnectClient(other, 1000, nil) is ERR_NotFound, 'A foreign WebSocket was accepted')
+   assert(state.server.mtDisconnectClient(state.ws, 999, nil) is ERR_OutOfRange, 'An invalid code was accepted')
+
+   check state.server.mtDisconnectClient(state.ws, 4000, 'finished')
+   waitFor(function()
+      local _, frames = response(client)
+      return #frames >= 1
+   end)
+   local _, frames = response(client)
+   assert(#frames is 1 and frames[0].opcode is 8, 'DisconnectClient did not send a Close frame')
+   assert(frames[0].code is 4000 and frames[0].reason is 'finished', 'Close frame content is wrong')
+
+   client.socket.acWrite(clientFrame(8, closePayload(4000)))
+   waitFor((() => client.disconnected and state.disconnected > 0))
+   assert(client.disconnected, 'The server did not close the TCP connection')
+   assert(state.closeCode is 4000, f'CloseCode is {state.closeCode}')
+   release(client, state)
+end
+
+@Test function FreeServerWithConnection()
+   local state = newServer({})
+   local client = rawClient(state.listener.port, request())
+   waitFor((() => state.connected > 0))
+
+   local server = state.server
+   state.server = nil
+   server.free()
+   waitFor((() => client.disconnected))
+
+   assert(state.states[#state.states - 1] is WSS_CLOSED, 'The connection did not report CLOSED')
+   assert(state.closedCode is WSC_ABNORMAL, 'An abortive close should report 1006')
+   assert(state.disconnected is 0, 'Disconnected should not be called while the server is freed')
+   assert(client.disconnected, 'The client socket was not closed')
+   release(client, state)
+end
+
+@Test function FragmentedMessageWithInterleavedPing()
+   local state = newServer({ echo=true })
+   local client = rawClient(state.listener.port, request() .. clientFrame(1, 'hel', false) ..
+      clientFrame(9, 'ping') .. clientFrame(0, 'lo'))
+   defer release(client, state) end
+   waitFor(() => #state.messages > 0)
+   assert(#state.messages is 1 and state.messages[0] is 'hello', 'Fragments were not assembled exactly once')
+   local _, frames = response(client)
+   assert(#frames is 2 and frames[0].opcode is 10 and frames[1].payload is 'hello', 'Control ordering changed')
+end
+
+@Test function ExternalListenerShutdownFirst()
+   local state = newServer({})
+   local client = rawClient(state.listener.port, request())
+   defer release(client, state) end
+   waitFor(() => state.connected > 0)
+   -- The caller must forward shutdown disconnections while both objects and sockets are still live.
+   check state.server.mtDispatch(state.socket, WSE_DISCONNECTED)
+   state.listener.free()
+   state.listener = nil
+   waitFor(() => state.disconnected > 0)
+   assert(state.disconnected is 1 and state.server.totalConnections is 0, 'Listener shutdown leaked a connection')
+end
+
+@Test function FreeConnectionInConnected()
+   local state = newServer({ connected=function(Server, WS) WS.free() end })
+   local client = rawClient(state.listener.port, request() .. clientFrame(1, 'undelivered'))
+   defer release(client, state) end
+   waitFor(() => client.disconnected)
+   assert(state.connected is 1 and #state.messages is 0, 'Prefix was delivered after callback destruction')
+   assert(state.result is nil and state.server.totalConnections is 0, 'Destroyed connection was returned or retained')
+end
+
+@Test function DisconnectBeforeAdoption()
+   local state = newServer({})
+   local client = rawClient(state.listener.port, 'GET /chat HTTP/1.1\r\n')
+   waitFor(() => client.connected)
+   client.socket.free()
+   client.socket = nil
+   processing.sleep(0.1)
+   assert(state.connected is 0 and state.server.totalConnections is 0, 'Partial HTTP request was adopted')
+   release(client, state)
+end
+
+@Test function ExternalFlags()
+   local ws <close> = obj.new('websocket')
+   ws.flags = WSF_EXTERNAL_LISTENER
+   try
+      ws.init()
+   except e when ERR_InvalidValue
+   success
+      raise 'Client accepted a listener-only flag'
+   end
+   local server <close> = obj.new('websocketserver')
+   server.flags = WSF_EXTERNAL_LISTENER | WSF_SSL
+   try
+      server.init()
+   except e when ERR_InvalidValue
+   success
+      raise 'External server accepted SSL ownership'
+   end
+end
+
+@Test function AdoptedSlowReader()
+   local LIMIT <const> = 65536
+   local SIZE <const> = 16384
+   local state = newServer({ sendLimit=LIMIT })
+   local client = rawClient(state.listener.port, request())
+   defer release(client, state) end
+   waitFor(() => state.connected > 0)
+   local ws = state.ws
+   local resumed = false
+   ws.outgoing = function(WS)
+      if resumed then return end
+      resumed = true
+      check WS.mtSend('tail', WSM_TEXT)
+   end
+   local accepted = 0
+   local filler = string.rep('z', SIZE - 8)
+   while accepted * SIZE < 64 * 1024 * 1024 do
+      local err = ws.mtSend(string.format('%08d', accepted) .. filler, WSM_BINARY)
+      if err is ERR_BufferOverflow then break end
+      check err
+      accepted++
+      assert(ws.pending <= LIMIT, 'SendLimit was exceeded')
+   end
+   assert(ws.pending > 0 and ws.pending <= LIMIT, 'Slow reader never reached SendLimit')
+   waitFor(function()
+      local _, frames = response(client)
+      return resumed and #frames >= accepted + 1
+   end, 30)
+   local _, frames = response(client)
+   assert(resumed and #frames is accepted + 1, 'Forwarded Outgoing did not resume transmission')
+   for i in {0 to accepted} do
+      assert(frames[i].opcode is 2 and frames[i].payload is string.format('%08d', i) .. filler,
+         f'Frame {i} was truncated, duplicated or reordered')
+   end
+   assert(frames[accepted].payload is 'tail' and ws.pending is 0, 'Outgoing tail or queue drain was lost')
+end
+
+@Test function DuplicateAcrossServersAndForeignEvents()
+   local state = newServer({})
+   local client = rawClient(state.listener.port, request())
+   defer release(client, state) end
+   waitFor(() => state.connected > 0)
+   local other <close> = obj.new('websocketserver', { flags=WSF_EXTERNAL_LISTENER })
+   assert(other.mtDispatch(state.socket, WSE_INCOMING) is ERR_NotFound, 'Foreign Incoming was accepted')
+   assert(other.mtDispatch(state.socket, WSE_OUTGOING) is ERR_NotFound, 'Foreign Outgoing was accepted')
+   assert(other.mtDispatch(state.socket, WSE_DISCONNECTED) is ERR_NotFound, 'Foreign disconnect changed the socket')
+   assert(other.mtAdopt(state.socket, request()) is ERR_InUse, 'Another server adopted an already managed socket')
+   assert(state.server.totalConnections is 1, 'Duplicate adoption or foreign dispatch removed the connection')
+   assert(state.server.mtDispatch(state.socket, 99) is ERR_InvalidValue, 'Invalid event was accepted')
+end
+
+@Test function FreeFromIncomingAndStateChanged()
+   for callback in values(array<str> { 'incoming', 'stateChanged' }) do
+      local state = newServer({})
+      local client = rawClient(state.listener.port, request())
+      defer release(client, state) end
+      waitFor(() => state.connected > 0)
+      local freed = false
+      local delivered = 0
+      if callback is 'incoming' then
+         state.ws.incoming = function(WS, Buffer, Type, Final)
+            delivered++
+            freed = true
+            WS.free()
+         end
+         check client.socket.acWrite(clientFrame(1, 'one') .. clientFrame(1, 'two'))
+      else
+         state.ws.stateChanged = function(WS, Status)
+            if Status is WSS_CLOSING then
+               freed = true
+               WS.free()
+            end
+         end
+         check client.socket.acWrite(clientFrame(8, closePayload(1000)))
+      end
+      waitFor(() => client.disconnected)
+      assert(freed and client.disconnected, f'{callback}: callback destruction did not close the socket')
+      assert(state.server.totalConnections is 0, f'{callback}: freed connection was retained')
+      if callback is 'incoming' then assert(delivered is 1, 'Messages arrived after destruction') end
+   end
+end
+
+@Test function FreeServerFromAcceptAndConnected()
+   for callback in values(array<str> { 'accept', 'connected' }) do
+      local state
+      local options = {}
+      local freed = false
+      if callback is 'accept' then
+         options.accept = function(Server, Request):num
+            freed = true
+            state.server = nil
+            Server.free()
+            return ERR_Okay
+         end
+      else
+         options.connected = function(Server, WS)
+            freed = true
+            state.server = nil
+            Server.free()
+         end
+      end
+      state = newServer(options)
+      local client = rawClient(state.listener.port, request() .. clientFrame(1, 'prefix'))
+      defer release(client, state) end
+      waitFor(() => client.disconnected)
+      assert(freed and client.disconnected, f'{callback}: server destruction did not release adopted sockets')
+      assert(state.result is nil, f'{callback}: adoption returned a destroyed connection')
+      assert(#state.messages is 0, f'{callback}: prefix was delivered after server destruction')
+   end
+end
+
+@Test function AdoptedCloseTimeout()
+   local state = newServer({ closeTimeout=0.1 })
+   local client = rawClient(state.listener.port, request())
+   defer release(client, state) end
+   waitFor(() => state.connected > 0)
+   check state.ws.mtClose(1000, 'unanswered')
+   waitFor(() => state.disconnected > 0)
+   assert(state.disconnected is 1 and state.closeCode is WSC_ABNORMAL, 'Timeout did not close exactly once')
+   assert(state.error is ERR_TimeOut and state.server.totalConnections is 0, 'Timed-out connection was retained')
+end
+
+@Test function FreeFromOutgoing()
+   local state = newServer({ sendLimit=65536 })
+   local client = rawClient(state.listener.port, request())
+   defer release(client, state) end
+   waitFor(() => state.connected > 0)
+   local freed = false
+   state.ws.outgoing = function(WS)
+      freed = true
+      WS.free()
+   end
+   local payload = string.rep('x', 16384)
+   local full = false
+   for i in {0 to 4096} do
+      local err = state.ws.mtSend(payload, WSM_BINARY)
+      if err is ERR_BufferOverflow then full = true; break end
+      check err
+   end
+   assert(full, 'The send queue never filled')
+   waitFor(() => freed and client.disconnected, 30)
+   assert(freed and client.disconnected, 'Outgoing destruction did not close the socket')
+   assert(state.server.totalConnections is 0, 'Outgoing destruction retained the connection')
+end

@@ -8,6 +8,8 @@
 
 #define MODVERSION_WEBSOCKET (1)
 
+#include <kotuku/modules/network.h>
+
 class objWebSocketServer;
 class objWebSocket;
 
@@ -38,9 +40,19 @@ enum class WSF : uint32_t {
    DISABLE_SERVER_VERIFY = 0x00000004,
    NO_AUTO_PONG = 0x00000008,
    SSL = 0x00000010,
+   EXTERNAL_LISTENER = 0x00000020,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(WSF)
+
+// External listener events forwarded to WebSocketServer.Dispatch().
+
+enum class WSE : int {
+   NIL = 0,
+   INCOMING = 0,
+   OUTGOING = 1,
+   DISCONNECTED = 2,
+};
 
 // WebSocket close status codes, as defined by RFC 6455 section 7.4.1.
 
@@ -80,6 +92,8 @@ struct WSRequest {
 namespace wsv {
 struct Broadcast { std::span<const int8_t> Data; WSM Type; int Recipients; static const AC id = AC(-1); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct DisconnectClient { objWebSocket *WebSocket; int Code; CSTRING Reason; static const AC id = AC(-2); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Adopt { objClientSocket *Socket; std::span<const int8_t> RequestData; objWebSocket *Connection; static const AC id = AC(-3); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct Dispatch { objClientSocket *Socket; WSE Event; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -120,6 +134,16 @@ class objWebSocketServer : public Object {
    inline ERR disconnectClient(objWebSocket * WebSocket, int Code, CSTRING Reason) noexcept {
       struct wsv::DisconnectClient args = { WebSocket, Code, Reason };
       return Action(AC(-2), this, &args);
+   }
+   inline ERR adopt(objClientSocket * Socket, std::span<const int8_t> RequestData, objWebSocket ** Connection) noexcept {
+      struct wsv::Adopt args = { Socket, RequestData, (objWebSocket *)0 };
+      ERR error = Action(AC(-3), this, &args);
+      if (Connection) *Connection = args.Connection;
+      return error;
+   }
+   inline ERR dispatch(objClientSocket * Socket, WSE Event) noexcept {
+      struct wsv::Dispatch args = { Socket, Event };
+      return Action(AC(-4), this, &args);
    }
 
    // Customised field getting
@@ -310,8 +334,8 @@ class objWebSocketServer : public Object {
    }
 
    inline ERR setFlags(const WSF Value) noexcept {
-      this->Flags = Value;
-      return ERR::Okay;
+      auto field = &this->Class->Dictionary[3];
+      return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAccept(const FUNCTION Value) noexcept {

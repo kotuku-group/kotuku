@@ -245,7 +245,7 @@ processing.sleep(10)
       <access read="R" write="W">Read/Write</access>
       <type lookup="WSF">WSF</type>
       <description>
-<p>Set <code>STREAM_MESSAGES</code> to receive each message fragment through <fl>Incoming</fl> as it arrives instead of a reassembled message.  <code>NO_UTF8_CHECK</code> disables UTF-8 validation of <code>TEXT</code> messages in both directions, and should only be used to communicate with peers that are known to send invalid text.  <code>DISABLE_SERVER_VERIFY</code> accepts a <code>wss://</code> server whose TLS certificate cannot be verified, which is intended for development only.  <code>NO_AUTO_PONG</code> stops received Ping frames from being answered, which is intended for testing peers' keep-alive handling.  The <code>SSL</code> flag applies to <class name="WebSocketServer">WebSocketServer</class> only.</p>
+<p>Set <code>STREAM_MESSAGES</code> to receive each message fragment through <fl>Incoming</fl> as it arrives instead of a reassembled message.  <code>NO_UTF8_CHECK</code> disables UTF-8 validation of <code>TEXT</code> messages in both directions, and should only be used to communicate with peers that are known to send invalid text.  <code>DISABLE_SERVER_VERIFY</code> accepts a <code>wss://</code> server whose TLS certificate cannot be verified, which is intended for development only.  <code>NO_AUTO_PONG</code> stops received Ping frames from being answered, which is intended for testing peers' keep-alive handling.  The <code>SSL</code> and <code>EXTERNAL_LISTENER</code> flags apply to <class name="WebSocketServer">WebSocketServer</class> only; <code>EXTERNAL_LISTENER</code> is invalid on WebSocket.</p>
 <p>Flags that affect the opening handshake must be set before <action>Activate</action> is called.</p>
 <types lookup="WSF"/>
       </description>
@@ -458,6 +458,7 @@ processing.sleep(10)
 
     <constants lookup="WSF" comment="WebSocket flags.">
       <const name="DISABLE_SERVER_VERIFY">Do not verify the server's TLS certificate.</const>
+      <const name="EXTERNAL_LISTENER">WebSocketServer only.  Adopt sockets from an external NetServer without binding a listener.</const>
       <const name="NO_AUTO_PONG">Do not answer received pings automatically.  Intended for test fixtures only.</const>
       <const name="NO_UTF8_CHECK">Skip UTF-8 validation of text messages.  For interoperability with non-conforming peers only.</const>
       <const name="SSL">WebSocketServer only.  Accept TLS (<code>wss://</code>) connections.</const>

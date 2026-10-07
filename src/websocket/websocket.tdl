@@ -1,6 +1,8 @@
 --$TIRI:Include
 
 module({ name="WebSocket", copyright="Paul Manias © 2026", version=1.0, timestamp=20240611 }, function()
+  c_include("<kotuku/modules/network.h>")
+
   enums("WSS", { type="int", start=0, comment="WebSocket connection states." },
     "CONNECTING: The opening handshake is in progress.",
     "OPEN: The handshake completed and messages can be exchanged.",
@@ -16,7 +18,13 @@ module({ name="WebSocket", copyright="Paul Manias © 2026", version=1.0, timesta
     "NO_UTF8_CHECK: Skip UTF-8 validation of text messages.  For interoperability with non-conforming peers only.",
     "DISABLE_SERVER_VERIFY: Do not verify the server's TLS certificate.",
     "NO_AUTO_PONG: Do not answer received pings automatically.  Intended for test fixtures only.",
-    "SSL: WebSocketServer only.  Accept TLS (`wss://`) connections.")
+    "SSL: WebSocketServer only.  Accept TLS (`wss://`) connections.",
+    "EXTERNAL_LISTENER: WebSocketServer only.  Adopt sockets from an external NetServer without binding a listener.")
+
+  enums("WSE", { type="int", start=0, comment="External listener events forwarded to WebSocketServer.Dispatch()." },
+    "INCOMING: Read and process available socket input.",
+    "OUTGOING: Resume transmission when the socket becomes writable.",
+    "DISCONNECTED: Release protocol state after socket disconnection.")
 
   constants("WSC", { type="int", comment="WebSocket close status codes, as defined by RFC 6455 section 7.4.1." }, {
     NORMAL              = 1000,
@@ -52,7 +60,9 @@ module({ name="WebSocket", copyright="Paul Manias © 2026", version=1.0, timesta
 
   methods("WebSocketServer", "wsv", {
     { id=1, name="Broadcast" },
-    { id=2, name="DisconnectClient" }
+    { id=2, name="DisconnectClient" },
+    { id=3, name="Adopt" },
+    { id=4, name="Dispatch" }
   })
 
   klass("WebSocketServer", { src="class_websocket_server.cpp", output="class_websocket_server_def.c",

@@ -41,13 +41,39 @@ server = obj.new('websocketserver', {
 processing.sleep()
 </pre>
 <p>Initialisation fails if the <fl>Port</fl> cannot be bound, for example because it is already in use.</p>
-<p>The WebSocketServer class is not thread-safe.  Create, use and free each object on the thread that processes its messages.</p></description>
+<p>The WebSocketServer class is not thread-safe.  Create, use and free each object on the thread that processes its messages.  In <code>EXTERNAL_LISTENER</code> mode no listener is created: <fl>Port</fl> remains zero and Address and certificate fields are ignored.  TLS belongs to the external listener, so combining <code>SSL</code> and <code>EXTERNAL_LISTENER</code> is invalid.  Use <method>Adopt</method> and <method>Dispatch</method> to serve WebSockets alongside HTTP on an existing listener.  Freeing this server closes its adopted sockets without freeing the external listener.</p></description>
     <source>
       <file>class_websocket_server.cpp</file>
     </source>
   </info>
 
   <methods>
+    <method>
+      <name>Adopt</name>
+      <comment>Handles a complete opening request on an external listener's socket.</comment>
+      <prototype>ERR wsv::Adopt(OBJECTPTR Object, objClientSocket * Socket, std::span&lt;const int8_t&gt; RequestData, objWebSocket ** Connection)</prototype>
+      <tiriPrototype>err, Connection:obj = Adopt(Socket:obj, RequestData:array)</tiriPrototype>
+      <input>
+        <param type="objClientSocket *" name="Socket">A connected socket accepted by the external listener.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="RequestData">Complete HTTP opening request, optionally followed by WebSocket frames.</param>
+        <param type="objWebSocket **" name="Connection">Accepted connection, or null for a rejection or a connection freed by a callback.</param>
+      </input>
+      <description>
+<p>Requires an initialised server with <code>EXTERNAL_LISTENER</code> and a connected, unmanaged <class name="ClientSocket">ClientSocket</class>.  RequestData is copied synchronously, including every byte after the header terminator.  Validation, path filtering, subprotocol selection and <fl>Accept</fl> are identical to a dedicated listener.  <fl>Connected</fl> runs before prefix messages are delivered.</p>
+<p>A protocol rejection returns <code>Okay</code> with a null Connection after sending the HTTP rejection.  Operational failures return an error; the caller must terminate the socket.  Connection may also be null if a callback frees it during handover.  A duplicate adoption returns <code>InUse</code> without changing the original connection.</p>
+<p>The external <class name="NetServer">NetServer</class> remains the socket's framework owner.  Once this method handles a request, forward all Incoming, Outgoing and Disconnected notifications through <method>Dispatch</method> and do not read or write the socket directly. Both servers and their callbacks must run on the same message-processing thread.  Release this server before the listener, or forward the listener's Disconnected events before releasing this server.  NetServer suppresses Feedback callbacks during destruction: when shutting down the listener first, explicitly dispatch <code>DISCONNECTED</code> for each adopted socket before freeing the listener.  Keep callback targets valid through shutdown.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="InUse">The socket is already managed by a protocol server.</error>
+        <error code="BufferOverflow">The opening response could not be queued completely.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
+        <error code="InvalidState">The server is not initialised in external-listener mode, or the socket is disconnected.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="WrongClass">An object is not of the required class type</error>
+      </result>
+    </method>
+
     <method>
       <name>Broadcast</name>
       <comment>Sends a message to every open connection.</comment>
@@ -90,6 +116,29 @@ processing.sleep()
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="WrongClass"><code>WebSocket</code> is not a <class name="WebSocket">WebSocket</class>.</error>
         <error code="InvalidValue"><code>Reason</code> exceeds 123 bytes, is not valid UTF-8, or was supplied without a <code>Code</code>.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>Dispatch</name>
+      <comment>Forwards an external listener event to a managed socket.</comment>
+      <prototype>ERR wsv::Dispatch(OBJECTPTR Object, objClientSocket * Socket, WSE Event)</prototype>
+      <tiriPrototype>err = Dispatch(Socket:obj, Event:num)</tiriPrototype>
+      <input>
+        <param type="objClientSocket *" name="Socket">The external listener socket.</param>
+        <param type="WSE" name="Event" lookup="WSE">Incoming, Outgoing or Disconnected notification.</param>
+      </input>
+      <description>
+<p>Forward Incoming before reading the socket; <code>NotFound</code> selects the listener's ordinary HTTP processing without changing the socket.  Propagate an Incoming <code>Terminate</code> result to Network.  Outgoing always returns <code>Okay</code> for a managed socket because Network clears the listener's global callback after errors.  Disconnected removes protocol state and reports <code>CLOSED</code> before <fl>Disconnected</fl>, exactly once.  Continue forwarding events until disconnection even when the WebSocket has already closed or was freed by a callback.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Terminate">Incoming requires Network to terminate the socket.</error>
+        <error code="NotFound">The socket is unmanaged; no socket operation was performed.</error>
+        <error code="InvalidState">The server is not initialised in external-listener mode.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="WrongClass">An object is not of the required class type</error>
+        <error code="InvalidValue">Event is not a WSE event.</error>
       </result>
     </method>
 
@@ -162,10 +211,10 @@ processing.sleep()
     <field>
       <name>Flags</name>
       <comment>Optional flags.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="WSF">WSF</type>
       <description>
-<p>Set <code>SSL</code> before initialisation to accept <code>wss://</code> connections.  The <code>STREAM_MESSAGES</code>, <code>NO_UTF8_CHECK</code> and <code>NO_AUTO_PONG</code> flags are applied to each connection when it is accepted, and <code>NO_UTF8_CHECK</code> also disables validation of text messages sent with <method>Broadcast</method>.</p>
+<p>Set <code>SSL</code> before initialisation to accept <code>wss://</code> connections.  The <code>STREAM_MESSAGES</code>, <code>NO_UTF8_CHECK</code> and <code>NO_AUTO_PONG</code> flags are applied to each connection when it is accepted, and <code>NO_UTF8_CHECK</code> also disables validation of text messages sent with <method>Broadcast</method>.  <code>EXTERNAL_LISTENER</code> creates no listener; use <method>Adopt</method> and <method>Dispatch</method> instead.  TLS belongs to the external listener, so <code>SSL</code> cannot be combined with <code>EXTERNAL_LISTENER</code>.  Listener flags cannot change after initialisation.</p>
 <types lookup="WSF"/>
       </description>
     </field>
@@ -226,7 +275,7 @@ processing.sleep()
       <access read="R" write="I">Read/Init</access>
       <type>INT</type>
       <description>
-<p>The default is zero, which selects an ephemeral port.  After initialisation, Port holds the port in use.</p>
+<p>The default is zero, which selects an ephemeral port.  After initialisation, Port holds the port in use. In <code>EXTERNAL_LISTENER</code> mode Port remains zero and no address, port or certificate field is used.</p>
       </description>
     </field>
 
@@ -292,8 +341,15 @@ processing.sleep()
 
   </fields>
   <types>
+    <constants lookup="WSE" comment="External listener events forwarded to WebSocketServer.Dispatch().">
+      <const name="DISCONNECTED">Release protocol state after socket disconnection.</const>
+      <const name="INCOMING">Read and process available socket input.</const>
+      <const name="OUTGOING">Resume transmission when the socket becomes writable.</const>
+    </constants>
+
     <constants lookup="WSF" comment="WebSocket flags.">
       <const name="DISABLE_SERVER_VERIFY">Do not verify the server's TLS certificate.</const>
+      <const name="EXTERNAL_LISTENER">WebSocketServer only.  Adopt sockets from an external NetServer without binding a listener.</const>
       <const name="NO_AUTO_PONG">Do not answer received pings automatically.  Intended for test fixtures only.</const>
       <const name="NO_UTF8_CHECK">Skip UTF-8 validation of text messages.  For interoperability with non-conforming peers only.</const>
       <const name="SSL">WebSocketServer only.  Accept TLS (<code>wss://</code>) connections.</const>

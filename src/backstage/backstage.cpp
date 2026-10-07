@@ -41,12 +41,18 @@ See interface.tiri for the REST interface.
 #include <unordered_set>
 #include <vector>
 
-#include "../link/base64.h"
+#ifdef BACKSTAGE_WEBSOCKET
+#include <kotuku/modules/websocket.h>
+#endif
 
 using namespace kt;
 
 static OBJECTPTR modNetwork = nullptr;
 static OBJECTPTR modRegex = nullptr;
+#ifdef BACKSTAGE_WEBSOCKET
+static OBJECTPTR modWebSocket = nullptr;
+static objWebSocketServer *glWebSocketServer = nullptr;
+#endif
 
 JUMPTABLE_CORE
 JUMPTABLE_NETWORK
@@ -185,6 +191,9 @@ static ERR MODExpunge(void)
    release_backstage_logs();
    release_backstage_routes();
    if (glServer)   { FreeResource(glServer);   glServer = nullptr; }
+#ifdef BACKSTAGE_WEBSOCKET
+   if (modWebSocket) { FreeResource(modWebSocket); modWebSocket = nullptr; }
+#endif
    if (modRegex)   { FreeResource(modRegex);   modRegex = nullptr; }
    if (modNetwork) { FreeResource(modNetwork); modNetwork = nullptr; }
    return ERR::Okay;

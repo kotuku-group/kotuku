@@ -1,15 +1,22 @@
 
-static BackstageHttpResponse process_http_request(objClientSocket *Client, std::string_view RawRequest)
+static ERR process_http_request(objClientSocket *Client, std::string_view RawRequest)
 {
    BackstageHttpRequest request;
    auto status = request.parse(RawRequest);
 
-   if (status IS HttpParseStatus::BAD_REQUEST) return BackstageHttpResponse::plain(400, "Bad Request");
-   if (status IS HttpParseStatus::PAYLOAD_TOO_LARGE) return BackstageHttpResponse::plain(413, "Payload Too Large");
+   if (status IS HttpParseStatus::BAD_REQUEST) {
+      BackstageHttpResponse::plain(400, "Bad Request").write(Client);
+      return ERR::Okay;
+   }
+   if (status IS HttpParseStatus::PAYLOAD_TOO_LARGE) {
+      BackstageHttpResponse::plain(413, "Payload Too Large").write(Client);
+      return ERR::Okay;
+   }
 
-   if (websocket_request_targets_streaming(request)) return backstage_websocket_upgrade(Client, request);
+   if (websocket_request_targets_streaming(request)) return backstage_websocket_upgrade(Client, RawRequest);
 
-   return dispatch_route_request(Client, request);
+   dispatch_route_request(Client, request).write(Client);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -23,9 +30,9 @@ static void server_feedback(objNetServer *Server, class objClientSocket *Client,
    }
    else if (State IS NTC::DISCONNECTED) {
       log.msg("Client socket #%d disconnected.", Client->UID);
+      dispatch_backstage_websocket(Client, BackstageSocketEvent::DISCONNECTED);
       std::lock_guard<std::mutex> lock(glRequestLock);
       glRequestBuffers.erase(Client->UID);
-      release_backstage_websocket(Client->UID);
    }
    else log.msg("Unknown state: %d", int(State));
 }
@@ -35,6 +42,9 @@ static void server_feedback(objNetServer *Server, class objClientSocket *Client,
 static ERR server_incoming(objNetServer *Server, objClientSocket *Client, APTR Meta)
 {
    kt::Log log(__FUNCTION__);
+   auto dispatched = dispatch_backstage_websocket(Client, BackstageSocketEvent::INCOMING);
+   if (dispatched != ERR::NotFound) return dispatched;
+
    std::array<char, 4096> buffer;
    int len = 0;
 
@@ -44,10 +54,6 @@ static ERR server_incoming(objNetServer *Server, objClientSocket *Client, APTR M
    if (not len) return ERR::Okay;
 
    log.trace("Received %d bytes from client socket #%d", len, Client->UID);
-
-   if (backstage_websocket_has_session(Client->UID)) {
-      return backstage_websocket_process(Client, std::string_view(buffer.data(), size_t(len)));
-   }
 
    std::string request;
    HttpBufferState buffer_state = HttpBufferState::INCOMPLETE;
@@ -74,8 +80,16 @@ static ERR server_incoming(objNetServer *Server, objClientSocket *Client, APTR M
       return ERR::Okay;
    }
 
-   if (buffer_state IS HttpBufferState::COMPLETE) process_http_request(Client, request).write(Client);
+   if (buffer_state IS HttpBufferState::COMPLETE) return process_http_request(Client, request);
 
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR server_outgoing(objNetServer *Server, objClientSocket *Client, APTR Meta)
+{
+   dispatch_backstage_websocket(Client, BackstageSocketEvent::OUTGOING);
    return ERR::Okay;
 }
 
@@ -90,12 +104,15 @@ static ERR init_backstage(int Port)
 
    if (auto error = compile_backstage_routes(); error != ERR::Okay) return error;
 
+   init_backstage_websockets();
+
    glServer = objNetServer::create::global({
       FieldValue(strhash("address"), std::string_view("127.0.0.1")),
       fl::Port(Port),
       fl::Flags(int(NSF::MULTI_CONNECT|NSF::KEEP_ALIVE)),
       fl::Feedback((CPTR)server_feedback),
-      fl::Incoming((CPTR)server_incoming)
+      fl::Incoming((CPTR)server_incoming),
+      FieldValue(kt::fieldhash("Outgoing"), C_FUNCTION(server_outgoing))
    });
 
    if (not glServer) {

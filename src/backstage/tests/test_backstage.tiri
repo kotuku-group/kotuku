@@ -1,6 +1,7 @@
 -- Backstage interface tests
 
    include 'network'
+   import 'json'
 
 SERVER_PORT <const> = 18876
 
@@ -11,7 +12,7 @@ glBackstageTask = nil
 
    glBackstageTask = obj.new('task', {
       location = current_task.processPath .. 'origo',
-      args = f'--backstage {SERVER_PORT} --statement "processing.sleep(10)" --log-warning',
+      args = f'--backstage {SERVER_PORT} --statement "processing.sleep(120)" --log-warning',
       outputCallback = function(Task:obj, Buffer)
          print(Buffer.getString())
       end,
@@ -90,10 +91,10 @@ function websocket_handshake(ExtraHeaders:str):str
       '\r\n'
 end
 
-function websocket_frame(Payload:str, Opcode:num):str
+function websocket_frame(Payload:str, Opcode:num, Final:any):str
    mask = string.char(0x11, 0x22, 0x33, 0x44)
    len = #Payload
-   frame = string.char(0x80 | Opcode)
+   frame = string.char((Final is false ? 0 : 0x80) | Opcode)
 
    if len < 126 then
       frame ..= string.char(0x80 | len)
@@ -114,7 +115,7 @@ function websocket_frame(Payload:str, Opcode:num):str
    return frame
 end
 
-function websocket_exchange(Frames:array<str>, ExpectedTokens:array<str>):str
+function websocket_exchange(Frames:array<str>, ExpectedTokens:array<str>, Prefix:str):str
    response = ''
    frames_sent = false
 
@@ -122,7 +123,7 @@ function websocket_exchange(Frames:array<str>, ExpectedTokens:array<str>):str
       name = 'BackstageStreamingClient',
       feedback = function(Socket:obj, State:num)
          if State is NTC_CONNECTED then
-            request = websocket_handshake('')
+            request = websocket_handshake('') .. (Prefix or '')
             err, len = Socket.acWrite(request)
             check err
             assert(len is #request, 'WebSocket handshake write length mismatch.')
@@ -500,6 +501,7 @@ function UnsupportedTransferEncodingReturnsBadRequest()
    assert(response.find('HTTP/1.1 400 Bad Request'), 'Expected transfer encoding 400, got: ' .. response)
 end
 
+@if(exists='modules:websocket')
 @Test; @Requires(network=true)
 function StreamingHandshakeReturnsSwitchingProtocols()
    response = websocket_exchange(array<str> { }, array<str> {
@@ -525,22 +527,19 @@ end
 @Test; @Requires(network=true)
 function StreamingRejectsLookalikeOrigin()
    request = websocket_handshake('Origin: http://localhost.attacker.example\r\n')
-   response = request_backstage(request, 'HTTP/1.1 400 Bad Request')
+   response = request_backstage(request, 'HTTP/1.1 403 Forbidden')
 
-   assert(response.find('HTTP/1.1 400 Bad Request'), 'Expected lookalike localhost origin 400, got: ' .. response)
-   assert(response.find('Origin not allowed'), 'Expected origin rejection, got: ' .. response)
+   assert(response.find('HTTP/1.1 403 Forbidden'), 'Expected lookalike localhost origin 403, got: ' .. response)
 
    request = websocket_handshake('Origin: http://127.0.0.1.evil.example\r\n')
-   response = request_backstage(request, 'HTTP/1.1 400 Bad Request')
+   response = request_backstage(request, 'HTTP/1.1 403 Forbidden')
 
-   assert(response.find('HTTP/1.1 400 Bad Request'), 'Expected lookalike 127.0.0.1 origin 400, got: ' .. response)
-   assert(response.find('Origin not allowed'), 'Expected origin rejection, got: ' .. response)
+   assert(response.find('HTTP/1.1 403 Forbidden'), 'Expected lookalike 127.0.0.1 origin 403, got: ' .. response)
 
    request = websocket_handshake('Origin: http://localhost:notaport\r\n')
-   response = request_backstage(request, 'HTTP/1.1 400 Bad Request')
+   response = request_backstage(request, 'HTTP/1.1 403 Forbidden')
 
-   assert(response.find('HTTP/1.1 400 Bad Request'), 'Expected invalid origin port 400, got: ' .. response)
-   assert(response.find('Origin not allowed'), 'Expected origin rejection, got: ' .. response)
+   assert(response.find('HTTP/1.1 403 Forbidden'), 'Expected invalid origin port 403, got: ' .. response)
 end
 
 @Test; @Requires(network=true)
@@ -552,10 +551,10 @@ function StreamingRejectsInvalidVersion()
       'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n' ..
       'Sec-WebSocket-Version: 12\r\n\r\n'
 
-   response = request_backstage(request, 'HTTP/1.1 400 Bad Request')
+   response = request_backstage(request, 'HTTP/1.1 426 Upgrade Required')
 
-   assert(response.find('HTTP/1.1 400 Bad Request'), 'Expected invalid version to return 400, got: ' .. response)
-   assert(response.find('Unsupported WebSocket version'), 'Expected version error, got: ' .. response)
+   assert(response.find('HTTP/1.1 426 Upgrade Required'), 'Expected invalid version to return 426, got: ' .. response)
+   assert(response.find('Sec-WebSocket-Version: 13'), 'Expected version error, got: ' .. response)
 end
 
 @Test; @Requires(network=true)
@@ -570,7 +569,6 @@ function StreamingRejectsInvalidKey()
    response = request_backstage(request, 'HTTP/1.1 400 Bad Request')
 
    assert(response.find('HTTP/1.1 400 Bad Request'), 'Expected invalid key to return 400, got: ' .. response)
-   assert(response.find('Invalid WebSocket key'), 'Expected key error, got: ' .. response)
 end
 
 @Test; @Requires(network=true)
@@ -629,4 +627,114 @@ function StreamingCloseDisconnectsSession()
 
    assert(response.find('HTTP/1.1 101 Switching Protocols'), 'Expected WebSocket handshake, got: ' .. response)
    assert(disconnected, 'Expected WebSocket close frame to disconnect the session.')
+end
+
+@Test function StreamingPrefixDeliveredOnce()
+   local command = '{"id":"prefix","type":"subscribe","topics":["system"]}'
+   local response = websocket_exchange(array<str> {}, array<str> { '"id":"prefix"', '"event":"subscribed"' },
+      websocket_frame(command, 1))
+   assert(response.count('"id":"prefix"') is 1, 'Coalesced command was duplicated')
+   assert(response.count('"event":"connected"') is 1, 'Connected event was duplicated')
+end
+
+@Test function StreamingFragmentedSubscription()
+   local response = websocket_exchange(array<str> {
+      websocket_frame('{"id":"fragments","type":"sub', 1, false),
+      websocket_frame('interleaved', 9),
+      websocket_frame('scribe","topics":["system"]}', 0)
+   }, array<str> { '"id":"fragments"', '"event":"subscribed"', 'interleaved' })
+   assert(response.count('"id":"fragments"') is 1, 'Fragments were delivered separately or duplicated')
+end
+
+@Test function StreamingProtocolCloseCodes()
+   local cases = {
+      { websocket_frame('binary', 2), 1003 },
+      { websocket_frame('bad \xc0\xaf', 1), 1007 },
+      { websocket_frame(string.char(3), 8), 1002 },
+      { string.char(0x81, 1) .. 'x', 1002 },
+      { string.char(0x81, 0x80 | 127, 0, 0, 0, 0, 0, 1, 0, 1, 0x11, 0x22, 0x33, 0x44), 1009 }
+   }
+   for case in values(cases) do
+      local code = string.char(case[1] >> 8, case[1] & 255)
+      local response = websocket_exchange(array<str> { case[0] }, array<str> { string.char(0x88), code })
+      assert(response.find(code), f'Expected close {case[1]}')
+   end
+end
+
+@Test function StreamingAbruptDisconnectKeepsRestAvailable()
+   local response = request_backstage(websocket_handshake(''), '"event":"heartbeat"')
+   assert(response.find('HTTP/1.1 101 Switching Protocols'), 'Streaming did not open before the TCP drop')
+   -- request_backstage frees the raw client without a Close frame.
+   PingReturnsJsonPong()
+end
+
+@Test function StreamingUnknownCommand()
+   local response = websocket_exchange(array<str> { websocket_frame('{"id":"bad","type":"other"}', 1) },
+      array<str> { '"code":"unknown_command"' })
+   assert(response.find('"id":"bad"'), 'Command error lost the request ID')
+end
+
+-- Decode complete server frames so ordered token matches cannot conceal truncated or malformed JSON.
+function streaming_messages(Response:str):array<table>
+   local position = Response.find('\r\n\r\n')
+   assert(position, 'Opening response was incomplete')
+   position += 4
+   local messages = array<table>
+   while position < #Response do
+      assert(#Response - position >= 2, 'Truncated frame header')
+      assert(Response.byte(position) is 0x81, 'Expected a complete text frame')
+      local length = Response.byte(position + 1)
+      assert((length & 0x80) is 0, 'Server frame was masked')
+      local header = 2
+      if length is 126 then
+         assert(#Response - position >= 4, 'Truncated extended frame header')
+         length = (Response.byte(position + 2) << 8) | Response.byte(position + 3)
+         header = 4
+      elseif length is 127 then
+         assert(#Response - position >= 10, 'Truncated extended frame header')
+         length = 0
+         for i in {2 to 10} do length = length * 256 + Response.byte(position + i) end
+         header = 10
+      end
+      assert(#Response - position >= header + length, 'Truncated JSON frame')
+      local message = json.decode(Response.sub(position + header, position + header + length))
+      messages.push(message)
+      position += header + length
+   end
+   return messages
+end
+
+@Test function StreamingBurstKeepsEventOrder()
+   local frames = array<str>
+   for i in {0 to 100} do
+      frames.push(websocket_frame(f'{{"id":"{i}","type":"subscribe","topics":["system"]}}', 1))
+   end
+   local response = websocket_exchange(frames, array<str> { '"seq":102,"data":{"topic":"system"}}' })
+   local sequence = 0
+   local acknowledgements = 0
+   local messages = streaming_messages(response)
+   assert(#messages is 202, 'Burst frames were lost or duplicated')
+   for message in values(messages) do
+      if message.type is 'event' then
+         sequence++
+         assert(message.seq is sequence, f'Event {sequence} was lost or reordered')
+      elseif message.type is 'ack' then
+         assert(message.id is tostring(acknowledgements), 'Acknowledgements were reordered')
+         acknowledgements++
+      else
+         raise 'Unexpected streaming message'
+      end
+   end
+   assert(sequence is 102 and acknowledgements is 100, 'Burst events or acknowledgements were lost')
+end
+@end
+
+@Test function StreamingBuildAvailability()
+   local expected = 'HTTP/1.1 501 Not Implemented'
+   @if(exists='modules:websocket')
+      expected = 'HTTP/1.1 101 Switching Protocols'
+   @end
+   local response = request_backstage(websocket_handshake(''), expected)
+   assert(response.find(expected), f'Streaming availability did not match this build: {response}')
+   PingReturnsJsonPong()
 end

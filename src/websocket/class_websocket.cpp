@@ -101,6 +101,7 @@ class extWebSocket : public objWebSocket {
    int64_t PingSentAt = 0;                // PreciseTime() of the outstanding keep-alive ping
    ws::Role Role = ws::Role::CLIENT;
    bool HandoverPending = false;          // The connection was transferred but OPEN has not been announced
+   bool ExternalListener = false;         // Report disconnection before destruction for script event forwarders
    bool InSocketCallback = false;         // Running inside the transport's Incoming or Feedback callback
    bool InOutgoing = false;               // Running inside the transport's Outgoing callback
    bool InFeedback = false;               // Running inside a disconnection notification for the transport
@@ -740,6 +741,12 @@ static void retire_http(extWebSocket *Self)
 static void release_client_socket(extWebSocket *Self, objClientSocket *Socket, bool Busy)
 {
    if (Self->InFeedback) return;
+   else if (Self->ExternalListener) {
+      // Tiri cannot dispatch a collecting object.  Notify while the socket is still live, before deferred release.
+      const auto id = Socket->UID;
+      Socket->deactivate();
+      if (not Busy) free_deferred(id);
+   }
    else if (Self->InSocketCallback) {
       if (Busy) Socket->deactivate();
       else Self->TerminateSocket = true;
@@ -1105,6 +1112,7 @@ static ERR WEBSOCKET_Activate(extWebSocket *Self)
 {
    kt::Log log;
 
+   if ((Self->Flags & WSF::EXTERNAL_LISTENER) != WSF::NIL) return log.warning(ERR::InvalidValue);
    if (Self->Role IS ws::Role::SERVER) return log.warning(ERR::NoSupport);
    if (Self->State != WSS::CLOSED) return log.warning(ERR::InUse);
    if (Self->Target.host.empty()) return log.warning(ERR::FieldNotSet);
@@ -1302,7 +1310,12 @@ extWebSocket::~extWebSocket()
    if (Transport) {
       auto socket = Transport->object();
       Transport.reset();
-      if ((Role IS ws::Role::SERVER) and InOutgoing) free_deferred(socket->UID);
+      if (ExternalListener) {
+         const auto id = socket->UID;
+         ((objClientSocket *)socket)->setState(NTC::DISCONNECTED);
+         free_deferred(id);
+      }
+      else if ((Role IS ws::Role::SERVER) and InOutgoing) free_deferred(socket->UID);
       else FreeResource(socket);
    }
 
@@ -1317,6 +1330,7 @@ extWebSocket::~extWebSocket()
 
 static ERR WEBSOCKET_Init(extWebSocket *Self)
 {
+   if ((Self->Flags & WSF::EXTERNAL_LISTENER) != WSF::NIL) return ERR::InvalidValue;
    return ERR::Okay;
 }
 

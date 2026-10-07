@@ -1043,10 +1043,6 @@ if (NOT DISABLE_AUDIO)
    list (APPEND LIB_LIST audio)
 endif ()
 
-if (NOT DISABLE_BACKSTAGE AND NOT DISABLE_NETWORK)
-   add_subdirectory (src/backstage)
-   list (APPEND LIB_LIST backstage)
-endif()
 
 if (NOT DISABLE_DISPLAY)
    add_subdirectory (src/display)
@@ -1103,6 +1099,11 @@ if (NOT DISABLE_WEBSOCKET)
       message (STATUS "WebSocket module disabled: requires the Network, HTTP and Crypto modules.")
    endif ()
 endif ()
+
+if (NOT DISABLE_BACKSTAGE AND NOT DISABLE_NETWORK)
+   add_subdirectory (src/backstage)
+   list (APPEND LIB_LIST backstage)
+endif()
 
 if (NOT DISABLE_IMAGE AND NOT DISABLE_DISPLAY)
    add_subdirectory (src/image)
