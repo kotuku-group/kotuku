@@ -65,6 +65,7 @@ mixing.</li>
       <class>AudioLimiter</class>
       <class>AudioLoudness</class>
       <class>AudioPhaser</class>
+      <class>AudioPitchShift</class>
       <class>AudioReverb</class>
       <class>AudioSaturator</class>
       <class>AudioSplitter</class>

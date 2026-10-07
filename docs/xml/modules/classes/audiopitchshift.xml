@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioPitchShift</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>Transposes audio by up to an octave in either direction without changing its speed.</comment>
+    <version>1</version>
+    <id>84291cb0</id>
+    <idstring>AUDIOPITCHSHIFT</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The pitch shifter raises or lowers the frequencies of its input by a fixed musical interval while the audio continues to play at its original speed and duration.  Typical uses include transposing music into another key, creative vocal effects and adding a shifted copy of a sound for thickening or harmony.</p>
+<p>Create new pitch shift objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application effects accept live changes; global effects become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>semitones</code>: the pitch offset, from -12 to 12 semitones.  Fractional values are accepted, so 0.1 detunes by ten
+cents.  Zero leaves the pitch unchanged.</li>
+<li><code>mix</code>: the linear blend of the dry and shifted signals, from 0 to 100 percent.  100 percent outputs only the
+shifted signal.</li>
+<li><code>gain</code>: the output trim, from -24 to 12 dB, applied to the blended signal.</li>
+</list>
+<p>The following adds a fifth above a playing channel set, blended equally with the original, as a single change:</p>
+<pre>shifter = obj.new('AudioPitchShift', { audio=audio, channel=channel })
+shifter.acSetKey('semitones', 7)
+shifter.acSetKey('mix', 50)
+shifter.acFlush()
+</pre>
+<p>Other useful combinations include a one-octave drop with <code>semitones</code> -12 and <code>mix</code> 100, and a light doubling effect with <code>semitones</code> 0.15 and <code>mix</code> 50.</p>
+<header>Processing</header>
+<p>The shifter is a phase vocoder.  It analyses overlapping windows of the input into their frequency components, moves each spectral peak and the bins around it to the transposed frequency, and resynthesises the result.  Each window spans 32 to 47 ms depending on the output rate (2048 frames at 44.1 and 48 kHz) and a new window starts every eighth of that.  The partials of a sustained sound leave at exactly the transposed frequency.</p>
+<p>Every frequency moves by the same ratio, so the spectral envelope moves with the pitch: voices raised by several semitones take on a smaller, brighter character and lowered voices sound larger.  Formants are not preserved.  This is transposition, not automatic pitch correction, and the interval is not adjusted to follow the input.</p>
+<p>Transients are the main limitation.  Each window is processed as a whole, so the onset of a sharp sound such as a drum hit or a consonant is spread across the window.  Most of its energy stays within 5 ms of the original timing, but a faint pre-echo can precede it by up to the window length and percussive material softens noticeably at large shifts. Sustained tones, chords and most music shift cleanly.  Raising the pitch discards content that would move above the Nyquist frequency, so upward shifts narrow the bandwidth by the same ratio.</p>
+<p>Stereo channels are analysed together and receive identical processing, so the level and phase differences between them, and with them the stereo image, are preserved.  Mono output is shifted in the same way.</p>
+<header>Latency</header>
+<p>The shifted signal is delayed by exactly one window: 2048 frames (42.7 ms) at 48 kHz, 46.4 ms at 44.1 kHz and between 32 and 47 ms at other rates.  The pitch shifter publishes this as its <class name="AudioEffect" field="Latency">AudioEffect.Latency</class>.  The dry signal is delayed by the same amount so that the two are time-aligned at every <code>mix</code> setting.  The latency is the same at every setting, including zero semitones and zero mix.</p>
+<p>At zero semitones the shifted signal reproduces the input exactly, apart from rounding, so any <code>mix</code> setting gives the delayed input.  After a shift returns to zero, the components of the shifted signal take up to two windows to realign with the dry signal, during which partials are detuned by no more than 6 Hz at 48 kHz.</p>
+<header>Levels and Headroom</header>
+<p>Levels are measured in dBFS, where a sample magnitude of 1.0 is 0 dBFS, independently of the output format.  Sustained tones keep their level within 0.05 dB at every shift.  Noise-like content, such as cymbals, breath and distorted guitars, loses between 0.5 dB and 1.4 dB, more for larger shifts, so dense material can play slightly quieter: a heavily distorted rock recording measured 0.3 to 0.9 dB quieter and an orchestral recording within 0.15 dB.  Raise <code>gain</code> to compensate if required.</p>
+<p>The partials of a complex sound leave with new relative phases, so the peaks of the shifted waveform can be higher than those of the input at the same loudness, by 4 dB or more on heavily compressed recordings.  Place an <class name="AudioLimiter">AudioLimiter</class> after the shifter when a sample ceiling is required.  Non-finite samples are outside the normalised mixing contract and are treated as silence.</p>
+<header>Live Changes</header>
+<p>A change to <code>semitones</code> applies from the next analysis window, within 5.3 ms at 48 kHz, and the new pitch blends in over the overlapping windows.  Changes to <code>mix</code> and <code>gain</code> ramp linearly over 10 ms from their current values.  Flush preserves the analysis history and the dry delay.</p>
+<p>Device reactivation, rate or layout changes and leaving bypass discard the history and apply the latest parameters without a transition.  Hard bypass removes the latency along with the processing.</p>
+<header>Tail and Drain</header>
+<p>After its input stops, the shifter outputs one latency period of buffered audio followed by the remainder of the last windows: up to two window lengths in total.  The effect then stops reporting pending output.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  Storage is allocated when the output is configured and is about 300 KB for stereo at 48 kHz.</p></description>
+    <source>
+      <file>class_audiopitchshift.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>
