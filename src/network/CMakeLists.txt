@@ -84,6 +84,9 @@ elseif (OPENSSL_FOUND)
       list (APPEND NETWORK_LIBS OpenSSL::SSL OpenSSL::Crypto)
    endif ()
 
+   # Shared with the WebRTC DTLS transport so that both link OpenSSL identically.
+   set (KOTUKU_OPENSSL_LIBS "${NETWORK_LIBS}" PARENT_SCOPE)
+
    target_include_directories (${MOD} PRIVATE "${OPENSSL_INCLUDE_DIR}")
 else ()
    message (STATUS "Network module will not be compiled with SSL support (OpenSSL not found).")

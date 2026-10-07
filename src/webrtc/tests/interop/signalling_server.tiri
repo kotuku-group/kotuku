@@ -1,0 +1,300 @@
+-- $TIRI
+-- Signalling server and Kōtuku ICE probe for the WebRTC browser interop harness (Phase 0).
+--
+--   origo src/webrtc/tests/interop/signalling_server.tiri port=9310 --log-warning
+--
+-- Clients exchange JSON text messages over a WebSocket connection:
+--
+--   { type='join', room=Name }   Join a relay room.  Existing members receive { type='peer-joined' }, and every later
+--                                message from a member is relayed verbatim to the other members of its room.
+--   { type='probe', sdp=Offer }  Answer the offer as an ICE-lite peer whose only candidate is a UDP NetServer owned by
+--                                this script.  The answer is returned as { type='probe-answer', sdp=Answer }.
+--
+-- The probe authenticates each STUN Binding Request (USERNAME, MESSAGE-INTEGRITY and FINGERPRINT) and answers it with
+-- a Binding Success Response, so the browser completes ICE against the Kōtuku socket and begins DTLS.  Progress is
+-- reported to the client as { type='probe-report', event='stun'|'dtls'|'other', ... }.  The probe does not answer
+-- DTLS; the first ClientHello is reported and the browser's handshake is left to time out.
+
+   include 'websocket', 'network'
+   module network as mNet
+   module crypto as mCrypto
+   import 'json'
+
+   local port = tonumber(arg('port', '9310'))
+   local probe_port = tonumber(arg('probe-port', tostring(port + 1)))
+
+   local MAGIC <const> = string.char(0x21, 0x12, 0xa4, 0x42)
+   local FINGERPRINT_XOR <const> = 0x5354554e
+   local ATTR_USERNAME <const> = 0x0006
+   local ATTR_INTEGRITY <const> = 0x0008
+   local ATTR_XOR_MAPPED <const> = 0x0020
+   local ATTR_FINGERPRINT <const> = 0x8028
+
+   local rooms = {}        -- Room name -> table of WebSocket objects keyed by object ID
+   local membership = {}   -- WebSocket object ID -> room name
+   local probe = nil       -- The active probe: { ws, ufrag, pwd, remote_ufrag, stun, dtls }
+
+   local rx_ufrag = regex.new([[a=ice-ufrag:([^\r\n]+)]])
+   local rx_mid = regex.new([[a=mid:([^\r\n]+)]])
+
+------------------------------------------------------------------------------------------------------------------------
+-- Byte helpers.  STUN fields are big-endian.
+
+function u16(Value:num):str
+   return string.char((Value >> 8) & 255, Value & 255)
+end
+
+function u32(Value:num):str
+   return string.char((Value >> 24) & 255, (Value >> 16) & 255, (Value >> 8) & 255, Value & 255)
+end
+
+function read16(Data:str, Pos:num):num
+   return (Data.byte(Pos) << 8) | Data.byte(Pos + 1)
+end
+
+function read32(Data:str, Pos:num):num
+   return (read16(Data, Pos) << 16) | read16(Data, Pos + 2)
+end
+
+function random_text(Bytes:num):str
+   local raw = array<byte, Bytes>
+   check mCrypto.RandomBytes(raw)
+   local text = ''
+   for _, b in raw do text ..= string.format('%02x', b) end
+   return text
+end
+
+function sdp_fingerprint():str
+   local raw = array<byte, 32>
+   check mCrypto.RandomBytes(raw)
+   local text = ''
+   for i, b in raw do text ..= ((i > 0) ? ':' : '') .. string.format('%02X', b) end
+   return text
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- STUN (RFC 8489)
+
+-- Parses a STUN message.  Returns nil if Data is not a well-formed STUN message.
+
+function parse_stun(Data:str):table
+   if #Data < 20 then return nil end
+   if Data.sub(4, 8) != MAGIC then return nil end
+   if 20 + read16(Data, 2) != #Data then return nil end
+
+   local msg = { type=read16(Data, 0), txid=Data.sub(8, 20), attrs={}, offsets={} }
+   local pos = 20
+   while pos + 4 <= #Data do
+      local attr_type = read16(Data, pos)
+      local attr_len = read16(Data, pos + 2)
+      if pos + 4 + attr_len > #Data then return nil end
+      msg.attrs[attr_type] = Data.sub(pos + 4, pos + 4 + attr_len)
+      msg.offsets[attr_type] = pos
+      pos += 4 + ((attr_len + 3) & 0xfffc)
+   end
+   return msg
+end
+
+-- HMAC-SHA1 over the message preceding Offset, with the header length rewritten to end at a MESSAGE-INTEGRITY
+-- attribute placed at Offset (RFC 8489 section 14.5).
+
+function integrity(Data:str, Offset:num, Key:str):str
+   local input = Data.sub(0, 2) .. u16(Offset - 20 + 24) .. Data.sub(4, Offset)
+   local output = array<byte, 20>
+   check mCrypto.HMAC(HASH_SHA1, Key, input, output)
+   return output.getString(0, 20)
+end
+
+-- CRC-32 of the message preceding a FINGERPRINT attribute (RFC 8489 section 14.7).  The header length of Data must
+-- already include the FINGERPRINT attribute.
+
+function fingerprint(Data:str):str
+   return u32(mSys.GenCRC32(0, Data, #Data) ^ FINGERPRINT_XOR)
+end
+
+-- Validates a Binding Request from the browser.  Returns nil on success, otherwise a reason.
+
+function validate_request(Data:str, Msg:table):str
+   if Msg.type != 0x0001 then return f'not a Binding Request (type {Msg.type})' end
+
+   local expected = f'{probe.ufrag}:{probe.remote_ufrag}'
+   local username = Msg.attrs[ATTR_USERNAME]
+   if username != expected then return f'USERNAME {username} does not match {expected}' end
+
+   local mi_offset = Msg.offsets[ATTR_INTEGRITY]
+   if not mi_offset then return 'MESSAGE-INTEGRITY missing' end
+   if integrity(Data, mi_offset, probe.pwd) != Msg.attrs[ATTR_INTEGRITY] then return 'MESSAGE-INTEGRITY invalid' end
+
+   local fp_offset = Msg.offsets[ATTR_FINGERPRINT]
+   if not fp_offset then return 'FINGERPRINT missing' end
+   if fingerprint(Data.sub(0, fp_offset)) != Msg.attrs[ATTR_FINGERPRINT] then return 'FINGERPRINT invalid' end
+   return nil
+end
+
+-- Builds a Binding Success Response carrying XOR-MAPPED-ADDRESS, MESSAGE-INTEGRITY and FINGERPRINT.
+
+function binding_success(Msg:table, Address:str, Port:num):str
+   local octets = Address.split('.')
+   local ip = 0
+   for _, octet in octets do ip = (ip << 8) | tonumber(octet) end
+
+   local mapped = u16(ATTR_XOR_MAPPED) .. u16(8) .. string.char(0, 1) .. u16(Port ^ 0x2112) ..
+      u32(ip ^ 0x2112a442)
+   local head = u16(0x0101) .. u16(#mapped) .. MAGIC .. Msg.txid
+   local body = head .. mapped
+   local mi = integrity(body, #body, probe.pwd)
+
+   local signed = u16(0x0101) .. u16(#mapped + 24 + 8) .. MAGIC .. Msg.txid .. mapped ..
+      u16(ATTR_INTEGRITY) .. u16(20) .. mi
+   return signed .. u16(ATTR_FINGERPRINT) .. u16(4) .. fingerprint(signed)
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- Messaging
+
+function send_json(WS:obj, Message:table)
+   local err = WS.mtSend(json.encode(Message), WSM_TEXT)
+   if err != ERR_Okay then print(f'Send failed: {mSys.GetErrorMsg(err)}') end
+end
+
+function report(Message:table)
+   if probe and probe.ws then
+      Message.type = 'probe-report'
+      send_json(probe.ws, Message)
+   end
+end
+
+-- Answers an offer with an ICE-lite description whose only candidate is the probe socket.  The fingerprint is random
+-- because the probe never completes DTLS.
+
+function start_probe(WS:obj, Offer:str)
+   local remote_ufrag = rx_ufrag.extract(Offer, 0)
+   local mid = rx_mid.extract(Offer, 0)
+   if (not remote_ufrag) or (not mid) then
+      send_json(WS, { type='error', message='The offer has no ice-ufrag or mid' })
+      return
+   end
+
+   probe = { ws=WS, ufrag=random_text(4), pwd=random_text(12), remote_ufrag=remote_ufrag, stun=0, dtls=0 }
+
+   local answer = 'v=0\r\n' ..
+      'o=- 1 1 IN IP4 127.0.0.1\r\n' ..
+      's=-\r\n' ..
+      't=0 0\r\n' ..
+      f'a=group:BUNDLE {mid}\r\n' ..
+      'a=ice-lite\r\n' ..
+      f'm=application {probe_port} UDP/DTLS/SCTP webrtc-datachannel\r\n' ..
+      'c=IN IP4 127.0.0.1\r\n' ..
+      f'a=mid:{mid}\r\n' ..
+      f'a=ice-ufrag:{probe.ufrag}\r\n' ..
+      f'a=ice-pwd:{probe.pwd}\r\n' ..
+      f'a=fingerprint:sha-256 {sdp_fingerprint()}\r\n' ..
+      'a=setup:passive\r\n' ..
+      'a=sctp-port:5000\r\n' ..
+      'a=max-message-size:262144\r\n' ..
+      f'a=candidate:1 1 udp 2130706431 127.0.0.1 {probe_port} typ host\r\n' ..
+      'a=end-of-candidates\r\n'
+
+   send_json(WS, { type='probe-answer', sdp=answer })
+end
+
+------------------------------------------------------------------------------------------------------------------------
+-- The probe socket.  Datagrams are classified by first byte as the WebRTC demultiplexer will (RFC 7983).
+
+   local rx_buffer = string.alloc(2048)
+   local rx_source = struct.new('IPAddress')
+
+   local probe_socket = obj.new('netserver', {
+      name    = 'WebRTCProbe',
+      port    = probe_port,
+      address = '127.0.0.1',
+      flags   = NSF_UDP,
+      incoming = function(Socket)
+         while true do
+            local err, bytes_read = Socket.mtRecvFrom(rx_source, rx_buffer)
+            if (err != ERR_Okay) or (bytes_read <= 0) then return end
+            if not probe then continue end
+
+            local data = rx_buffer.sub(0, bytes_read)
+            local first = data.byte(0)
+            local _, source = mNet.AddressToStr(rx_source)
+
+            if first <= 3 then
+               local msg = parse_stun(data)
+               if not msg then
+                  report({ event='stun', valid=false, reason='malformed' })
+                  continue
+               end
+
+               local reason = validate_request(data, msg)
+               probe.stun++
+               if reason then
+                  report({ event='stun', valid=false, reason=reason, count=probe.stun })
+               else
+                  local response = binding_success(msg, source, rx_source.port)
+                  local send_err = Socket.mtSendTo(rx_source, response)
+                  report({ event='stun', valid=true, count=probe.stun, username=msg.attrs[ATTR_USERNAME],
+                     use_candidate=(msg.attrs[0x0025] != nil), source=f'{source}:{rx_source.port}',
+                     responded=(send_err is ERR_Okay) })
+               end
+            elseif (first >= 20) and (first <= 63) then
+               probe.dtls++
+               report({ event='dtls', first_byte=first, content_type=first, handshake_type=data.byte(13),
+                  length=bytes_read, count=probe.dtls })
+            else
+               report({ event='other', first_byte=first, length=bytes_read })
+            end
+         end
+      end
+   })
+
+------------------------------------------------------------------------------------------------------------------------
+-- The signalling server
+
+   local server = obj.new('websocketserver', {
+      port    = port,
+      address = '127.0.0.1',
+      connected = function(Server:obj, WebSocket:obj)
+         WebSocket.incoming = function(WS:obj, Buffer:array<byte>, Type:num, Final:num)
+            local text = Buffer.getString()
+            local msg:any = nil
+            try
+               msg = json.decode(text)
+            except e
+               msg = nil
+            end
+            if type(msg) != 'table' then
+               send_json(WS, { type='error', message='Messages must be JSON objects' })
+               return
+            end
+
+            if msg.type is 'join' then
+               local room = tostring(msg.room ?? 'default')
+               rooms[room] ?= {}
+               for _, member in rooms[room] do send_json(member, { type='peer-joined' }) end
+               rooms[room][WS.id] = WS
+               membership[WS.id] = room
+            elseif msg.type is 'probe' then
+               start_probe(WS, tostring(msg.sdp ?? ''))
+            else
+               local room = membership[WS.id]
+               if not room then
+                  send_json(WS, { type='error', message='Join a room before sending messages' })
+                  return
+               end
+               for id, member in rooms[room] do
+                  if id != WS.id then member.mtSend(text, WSM_TEXT) end
+               end
+            end
+         end
+      end,
+      disconnected = function(Server:obj, WebSocket:obj)
+         local room = membership[WebSocket.id]
+         if room and rooms[room] then rooms[room][WebSocket.id] = nil end
+         membership[WebSocket.id] = nil
+         if probe and (probe.ws.id is WebSocket.id) then probe = nil end
+      end
+   })
+
+   print(f'WebRTC signalling server listening at ws://127.0.0.1:{server.port}/, probe on udp://127.0.0.1:{probe_port}')
+   processing.sleep()

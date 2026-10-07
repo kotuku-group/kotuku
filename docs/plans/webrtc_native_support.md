@@ -1,6 +1,6 @@
 # Plan: Native WebRTC Support for Kōtuku
 
-Status: Draft for review
+Status: Phase 0 complete on Linux (Windows spike pending, undertaken separately)
 Created: 2026-10-07
 Owner: Unassigned
 
@@ -47,16 +47,17 @@ signalling.send({ sdp = offer })
 | Non-blocking UDP sockets | Available | `NetSocket` with `NSF::UDP`, `SendTo`/`RecvFrom`, IPv4/IPv6, multicast.  Linux uses `RegisterFD()`, Windows uses IOCP with datagram queues (`src/network/win32/iocp.cpp`). |
 | TCP + TLS | Available | Needed for TURN-over-TCP/TLS and for the WebSocket signalling example. |
 | DNS | Available | `NetLookup` for resolving STUN/TURN hostnames. |
-| TLS backend | Partial | OpenSSL on Linux (`src/network/openssl.cpp`), Schannel on Windows (`src/network/win32/ssl_*.cpp`).  Both are wired to a socket handle via `BIO_new_socket()` / direct socket I/O.  WebRTC needs DTLS over a *shared, demultiplexed* UDP socket, so a memory-fed transport is required (see §5.3). |
+| TLS backend | Partial | OpenSSL on Linux (`src/network/openssl.cpp`), Schannel on Windows (`src/network/win32/ssl_*.cpp`).  Both are wired to a socket handle via `BIO_new_socket()` / direct socket I/O.  WebRTC needs DTLS over a *shared, demultiplexed* UDP socket.  Phase 0 proved this on OpenSSL with a custom datagram BIO (§5.3, §6 Phase 0 results). |
 | Hashes and HMAC | Available | Crypto module: MD5, SHA-1, SHA-256, SHA-512, HMAC, `RandomBytes`, base64.  BearSSL subset on Linux, CNG on Windows. |
 | Symmetric ciphers | Missing | No AES.  SRTP needs AES-128-CTR + HMAC-SHA1-80 and ideally AES-GCM.  BearSSL provides both (`aes_ct64`, `ghash`), so this is a matter of extending the fetched source list in `src/crypto/CMakeLists.txt` and adding a CNG implementation on Windows. |
 | Asymmetric keys / certificates | Missing | Need a self-signed ECDSA P-256 certificate per PeerConnection and its SHA-256 fingerprint.  OpenSSL covers Linux; Windows needs `CertCreateSelfSignCertificate` or BCrypt ECDSA plus a small DER writer. |
-| CRC32 | Available | zlib is already a project dependency; STUN FINGERPRINT uses CRC32. |
+| CRC32 | Available | Core's `GenCRC32()` is the IEEE CRC-32 that STUN FINGERPRINT requires; Phase 0 validated it against Chromium's checks. |
+| UDP receive limits | Gaps | Phase 0 found that `RecvFrom()` silently truncates oversized datagrams on Linux, and NetSocket cannot set `SO_RCVBUF`.  Both are Phase 1 prerequisites (§6). |
 | Timers | Available | `SubscribeTimer()` for ICE retransmits, SCTP RTO, RTCP intervals, consent freshness. |
 | Audio playback | Available | `Audio.AddStream()` can be fed decoded PCM for remote audio tracks. |
 | Audio capture | Missing | `Audio.InputRate` exists but there is no capture API in either the ALSA or WASAPI backends.  WebRTC will not wait for it: send-side audio uses stub capture sources (§5.4) until native capture lands in the Audio module. |
 | Protocol-module precedent | Available | WebSocket module: pure protocol files (`ws_frame.cpp`, `ws_handshake.cpp`), `UNIT_TESTS`-gated `unit_protocol.cpp`, Flute loopback and TLS tests, scheduled Autobahn conformance run. |
-| Browser for interop tests | Available | Chromium is pre-installed in cloud sessions with Playwright configured, which makes automated browser interop testing feasible. |
+| Browser for interop tests | Available | Phase 0 harness in `src/webrtc/tests/interop/` drives headless Chromium through Playwright (ctest label `webrtc_interop`, workflow `webrtc_interop.yml`). |
 
 ## 4. Standards Checklist
 
@@ -114,7 +115,7 @@ Each layer lives in its own source files with no object-system dependencies so t
 | `ice.cpp/.h` | Candidate gathering, pair formation, connectivity checks, nomination, consent, restart. |
 | `turn.cpp/.h` | Allocation, permissions, channel binding, refresh over UDP/TCP/TLS. |
 | `sdp.cpp/.h` | SDP parse/serialise, JSEP offer/answer generation and validation, candidate lines. |
-| `dtls_transport.cpp/.h` | Platform-neutral DTLS façade: `feed(datagram)`, `drain()`, handshake state, fingerprint check, SRTP key export.  Backends `dtls_openssl.cpp` and `dtls_schannel.cpp`. |
+| `dtls_transport.h`, `dtls_openssl.cpp` | Platform-neutral DTLS façade: `feed(datagram)`, `Send` callback per outbound datagram, `timeout_us()`/`handle_timeout()`, deferred fingerprint verification, SRTP key export.  Exists from Phase 0 with an OpenSSL backend; a `dtls_schannel.cpp` backend follows the Windows spike. |
 | `sctp_*.cpp/.h` | Association state, chunk codec, reliable/unreliable delivery, congestion control (RFC 4960 §7), stream reset, DCEP. |
 | `rtp.cpp/.h`, `rtcp.cpp/.h`, `srtp.cpp/.h` | Packetisation, jitter buffer, SR/RR/NACK/PLI, SRTP protect/unprotect with replay window. |
 | `payload_opus.cpp`, `payload_vp8.cpp`, `payload_h264.cpp` | Codec-specific packetisers/depacketisers. |
@@ -128,9 +129,11 @@ Each layer lives in its own source files with no object-system dependencies so t
 - Audio and video encode/decode run on worker threads (precedent: `src/audio/audio_worker.h`), handing packets
   back via lock-free queues and `QueueAction()` wake-ups.  Only the media pipeline is multithreaded.
 - DTLS must not own the socket.  The ICE layer owns every UDP socket and demultiplexes each datagram by first byte
-  (RFC 7983); DTLS and SRTP receive bytes through memory buffers.  On OpenSSL this means `BIO_s_mem()` pairs with
-  `DTLS_method()`, `SSL_set_mtu()`, and `DTLSv1_handle_timeout()`; on Schannel it means `ISC_REQ_DATAGRAM` with
-  explicit buffer passing.  This is a new transport abstraction, separate from the stream TLS code in the Network
+  (RFC 7983); DTLS and SRTP receive bytes through memory buffers.  On OpenSSL this means a custom datagram BIO
+  with `DTLS_method()`, `SSL_OP_NO_QUERY_MTU` plus `SSL_set_mtu()`, `DTLS_set_timer_cb()` and
+  `DTLSv1_handle_timeout()`.  `BIO_s_mem()` is unsuitable because it is a byte stream: it merges the datagrams of a
+  fragmented flight and loses the boundaries DTLS depends on.  `BIO_s_dgram_mem()` would work but needs OpenSSL 3.2,
+  above the project's 1.1.1 minimum.  On Schannel it means `ISC_REQ_DATAGRAM` with explicit buffer passing.  This is a new transport abstraction, separate from the stream TLS code in the Network
   module, but it should share certificate loading and error mapping where practical.
 
 ### 5.4 Audio source abstraction and capture stubs
@@ -215,30 +218,112 @@ gathering results arrive through `OnIceCandidate` and the `GatheringState` feedb
 Estimates assume one experienced engineer and include tests and documentation.  Each phase ends with a merged PR,
 green CI on Linux and Windows, and the plan file updated.
 
-### Phase 0 — Spikes and decisions (1–2 weeks)
+### Phase 0 — Spikes and decisions (1–2 weeks) — complete on Linux
 
-1. **Windows DTLS feasibility.**  Prove a Schannel DTLS 1.2 client and server handshake with an ECDSA
-   self-signed certificate using memory buffers, and check whether `SECPKG_ATTR_KEYING_MATERIAL` (RFC 5705) and the
-   `use_srtp` extension are obtainable.  Outcome decides whether Windows media uses Schannel, requires OpenSSL on
-   Windows for the webrtc module only, or is deferred to data channels until a later release.
+1. **Windows DTLS feasibility.**  *Pending; undertaken separately.*  Prove a Schannel DTLS 1.2 client and server
+   handshake with an ECDSA self-signed certificate using memory buffers, and check whether
+   `SECPKG_ATTR_KEYING_MATERIAL` (RFC 5705) and the `use_srtp` extension are obtainable.  Outcome decides whether
+   Windows media uses Schannel, requires OpenSSL on Windows for the webrtc module only, or is deferred to data
+   channels until a later release.  The `dtls_transport.h` interface is the contract a Schannel backend must meet.
 2. **OpenSSL DTLS over memory BIOs** with `SSL_CTX_set_tlsext_use_srtp()` and `SSL_export_keying_material()`.
+   *Done:* `src/webrtc/dtls_transport.h`, `src/webrtc/dtls_openssl.cpp`, test `src/webrtc/tests/test_dtls.cpp`
+   (ctest `webrtc_dtls`, label `webrtc`, built with `UNIT_TESTS`).
 3. **Browser interop harness.**  A Playwright script driving headless Chromium against an `origo` process over a
    WebSocket signalling channel, runnable from CMake as a labelled test (precedent: Autobahn job).
+   *Done:* `src/webrtc/tests/interop/` (ctest `webrtc_interop`, label `webrtc_interop`), scheduled workflow
+   `.github/workflows/webrtc_interop.yml`.
 4. **UDP demux throughput** measurement with the existing NetSocket path on both platforms (packets/second at
-   1200-byte MTU) to confirm no per-packet allocation surprises in `RecvFrom`.
+   1200-byte MTU) to confirm no per-packet allocation surprises in `RecvFrom`.  *Done for Linux:*
+   `src/webrtc/tests/bench_udp.cpp` (ctest `webrtc_udp_bench`, label `webrtc_bench`).  Windows IOCP measurement is
+   part of the separate Windows work.
+
+The spikes live in `src/webrtc/`, which is enabled by a new `DISABLE_WEBRTC` option and builds only on Linux for
+now.  The Network module exports its resolved OpenSSL link list as `KOTUKU_OPENSSL_LIBS` so that the DTLS code links
+OpenSSL identically.
+
+#### Phase 0 results
+
+**DTLS-SRTP on OpenSSL (OpenSSL 3.0.13).**  All 13 spike tests pass.  The transport never touches a socket.
+
+| Measurement | Result |
+| --- | --- |
+| Handshake over a lossless in-process link | 1.8 ms, two datagrams from each side |
+| Largest handshake datagram at 1200-byte MTU | 548 bytes (client), 672 bytes (server) |
+| Application payload ceiling at 1200-byte MTU | 1163 bytes (`DTLS_get_data_mtu()`), so SCTP packets must stay within this |
+| 300-byte MTU | Handshake fragments correctly: 3 client and 4 server datagrams, none over 300 bytes |
+| Loss and reordering | Recovers from a lost first flight, 33% loss in both directions, and reversed flights |
+| SRTP negotiation | `SRTP_AEAD_AES_128_GCM` preferred; falls back to `SRTP_AES128_CM_SHA1_80`; keys agree in both directions |
+| Fingerprints | Mismatch rejected with `bad_certificate`; verification can be deferred until after the handshake |
+
+OpenSSL behaviours that the Phase 1 code must respect:
+
+- A memory BIO cannot be used; the custom datagram BIO maps each `BIO_write()` and `BIO_read()` to one datagram.
+- OpenSSL coalesces the records of a flight into one datagram when they fit, and fragments handshake messages when
+  they do not.  The ICE layer must transmit each `Send` callback as exactly one datagram.
+- `SSL_CTX_set_tlsext_use_srtp()` returns zero on success, unlike most OpenSSL calls.
+- `DTLSv1_get_timeout()` reports any remaining time under 15 ms as expired, so retransmission timers below about
+  20 ms are not meaningful.  The spike uses `DTLS_set_timer_cb()` with a 100 ms initial timeout, doubling to 6 s.
+- The DTLS server reaches CONNECTED one flight before the client, which matters for fingerprint verification when
+  the SDP answer races the handshake.  Records from a peer that has not yet been verified are discarded.
+
+**Chromium interop (Chromium 141, headless).**  All checks pass and were stable over five consecutive runs.
+
+- *Pair scenario:* two Chromium peers negotiate a data channel through the Kōtuku WebSocket relay with trickle ICE
+  and exchange a message.  The offer and answer are saved as `src/webrtc/tests/fixtures/chromium_141_*.sdp` for the
+  Phase 1 SDP parser.  The fixtures are stored with LF line endings per repository policy; the parser must accept
+  both CRLF and LF, as RFC 8866 recommends.
+- *Probe scenario:* Chromium negotiates against a Kōtuku ICE-lite answer whose only candidate is a Kōtuku UDP
+  NetServer.  The Tiri probe authenticated every Chromium connectivity check (USERNAME, MESSAGE-INTEGRITY with
+  HMAC-SHA1, FINGERPRINT with CRC-32), answered with Binding Success responses, and Chromium reached ICE
+  `connected` and sent its DTLS ClientHello to the Kōtuku socket.
+- Chromium sends the ClientHello as soon as the first check succeeds, *before* it nominates with USE-CANDIDATE in
+  the following check.  The DTLS layer must therefore accept handshake traffic on any pair that has passed a check,
+  not only the nominated pair.  Chromium retransmitted the unanswered ClientHello six times in three seconds.
+- Single-host testing needs `--allow-loopback-in-peer-connection` and
+  `--disable-features=WebRtcHideLocalIpsWithMdns`; without them Chromium offers only mDNS host candidates.
+- An ICE-lite responder is enough for a browser to connect to a Kōtuku server on a reachable address.  This makes
+  it a cheap first milestone for Phase 1, ahead of the full agent.
+
+**NetSocket UDP receive path (Linux, loopback, 1200-byte datagrams, 4 cores).**
+
+| Receiver | Flood rate (sender-bound) | Flood loss | Paced 20k pkt/s | Allocations per packet |
+| --- | --- | --- | --- | --- |
+| Raw `poll()` + `recv()` baseline | ~250k pkt/s | 0% | No loss | 0 |
+| NetServer, callback drains with `RecvFrom()` | ~250–440k pkt/s | 0% | No loss | 0 |
+| NetServer, one `RecvFrom()` per callback | ~235k pkt/s | 54% | No loss | 0 |
+
+- `RecvFrom()` and its dispatch path make no per-packet heap allocation.  The paced runs show a constant handful of
+  allocations from the message loop (about 0.006 per packet at 20k pkt/s), unrelated to packet count.
+- Throughput is far above WebRTC needs (a busy peer receives a few thousand packets per second), provided the
+  Incoming callback drains the socket.  Reading one datagram per callback halves capacity and loses packets under
+  bursts, so the webrtc module must always drain.
+- RFC 7983 classification of every datagram has no measurable cost.
+- The default `SO_RCVBUF` of 208 KiB holds only about 90 datagrams of this size, which is about 4.5 ms of traffic at
+  20k pkt/s.  Occasional loss of a few packets in paced runs was seen equally in the raw baseline, so it is host
+  scheduling jitter rather than NetSocket.  WebRTC sockets need a larger receive buffer.
+- **Defect:** a datagram larger than the caller's buffer is silently truncated.  `RecvFrom()` returns `ERR::Okay`
+  with `BytesRead` equal to the buffer size.  Its documentation promises `ERR::BufferOverflow`, but Linux
+  `recvfrom()` never reports `EMSGSIZE` without `MSG_TRUNC`.  A truncated SRTP or DTLS packet must never reach the
+  protocol layers.
 
 ### Phase 1 — Foundations (4–5 weeks)
 
+- Network module prerequisites from Phase 0: detect truncation in `RecvFrom()` (pass `MSG_TRUNC` on Linux and
+  return `ERR::BufferOverflow` as documented), and add a way to set `SO_RCVBUF`/`SO_SNDBUF` on UDP sockets.  Check
+  the IOCP datagram path for the same truncation behaviour during the Windows work.
 - Crypto module: add AES-128/256-CTR, AES-GCM, SHA-1-HMAC fast path, CRC32 wrapper, ECDSA P-256 key generation
   and self-signed certificate creation (OpenSSL + CNG), constant-time compare already exists.  Unit tests against
   RFC test vectors.
 - `stun.cpp`: full RFC 8489 codec with short-term and long-term credentials.  Fuzz target.
 - `sdp.cpp`: parser/serialiser and JSEP offer/answer with BUNDLE, rtcp-mux, `a=setup`, `a=fingerprint`,
-  `a=ice-ufrag/pwd`, `a=sctp-port`, `a=max-message-size`.  Fuzz target.
-- `ice.cpp`: host candidates (IPv4/IPv6), server-reflexive via STUN, full agent with aggressive nomination
+  `a=ice-ufrag/pwd`, `a=sctp-port`, `a=max-message-size`.  Fuzz target.  Test against the Chromium fixtures
+  captured in Phase 0, and accept LF as well as CRLF line endings.
+- `ice.cpp`: start with an ICE-lite responder, which Phase 0 showed is enough for Chromium to connect, then extend
+  to host candidates (IPv4/IPv6), server-reflexive via STUN, and the full agent with aggressive nomination
   disabled (regular nomination), trickle, consent freshness, ICE restart.  Tests with a simulated network in the
   unit executable (packet loss, reordering).
-- `dtls_transport`: OpenSSL backend complete; Schannel backend per Phase 0 outcome.
+- `dtls_transport`: promote the Phase 0 OpenSSL backend into the module unchanged in shape; Schannel backend per
+  the Windows spike outcome.
 - `PeerConnection` class skeleton: states, feedback callbacks, certificate per object, gathering, offer/answer
   with a data-channel m-line only.
 - **Milestone:** DTLS handshake completes with headless Chromium over host candidates; Flute loopback test
@@ -317,6 +402,8 @@ OpenSSL is linked for the webrtc module only.
 
 **Full ICE agent, not ICE-lite.**  ICE-lite would simplify Phase 1 but restricts Kōtuku to public-address
 server deployments and cannot connect two Kōtuku peers behind NATs.  The extra cost is moderate and front-loaded.
+Phase 0 showed that an ICE-lite responder already satisfies Chromium, so it is built first as a stepping stone; the
+full agent remains the Phase 1 goal.
 
 **Media after data channels.**  Data channels have no codec dependencies, exercise every transport layer, and
 give a complete, shippable feature early.
@@ -369,3 +456,8 @@ term "data channel" (RFC 8831) is still used when describing the SCTP layer.
 - 2026-10-07: Renamed the `DataChannel` class to `WebChannel`.
 - 2026-10-07: Decided that send-side audio uses stub sources (silence, tone, application buffer) until native
   capture is added to the Audio module (§5.4).
+- 2026-10-07: Phase 0 completed on Linux.  DTLS-SRTP over OpenSSL proven with a custom datagram BIO; Chromium
+  completes ICE against a Kōtuku ICE-lite probe and sends its ClientHello to a Kōtuku socket; NetSocket UDP receive
+  has no per-packet allocation and ample throughput.  Found that `RecvFrom()` silently truncates oversized datagrams
+  and that NetSocket cannot size its receive buffer; both added to Phase 1.  The Windows spike is pending and will
+  be undertaken separately.

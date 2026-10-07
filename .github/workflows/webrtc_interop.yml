@@ -1,0 +1,95 @@
+# Runs the WebRTC Phase 0 spikes on Linux: the DTLS-SRTP transport test, the UDP receive benchmark, and the browser
+# interop harness, which drives headless Chromium through Playwright against the Kotuku signalling server and ICE
+# probe in src/webrtc/tests/interop.  The harness report and captured SDP are uploaded as an artifact.
+
+name: WebRTC interop
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'
+  push:
+    branches: [ master ]
+    paths:
+      - 'src/webrtc/**'
+      - 'src/network/**'
+      - 'src/websocket/**'
+      - '.github/workflows/webrtc_interop.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'src/webrtc/**'
+      - 'src/network/**'
+      - 'src/websocket/**'
+      - '.github/workflows/webrtc_interop.yml'
+
+jobs:
+  webrtc:
+    name: WebRTC spikes and Chromium interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      PLAYWRIGHT_VERSION: 1.56.1
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ccache libssl-dev pkg-config
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+
+    - name: Install Playwright and Chromium
+      run: |
+        npm install --global playwright@$PLAYWRIGHT_VERSION
+        playwright install --with-deps chromium
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ runner.os }}-webrtc
+        max-size: 500M
+
+    - name: Configure CMake
+      run: |
+        cmake -S . -B build/webrtc \
+          -DCMAKE_BUILD_TYPE=FastBuild \
+          -DCMAKE_INSTALL_PREFIX=install/webrtc \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DRUN_ANYWHERE=TRUE \
+          -DKOTUKU_STATIC=OFF \
+          -DBUILD_DEFS=OFF \
+          -DBUILD_TESTS=ON \
+          -DUNIT_TESTS=ON \
+          -DDISABLE_AUDIO=ON \
+          -DDISABLE_X11=ON \
+          -DDISABLE_DISPLAY=ON \
+          -DDISABLE_FONT=ON
+
+    - name: Build
+      run: cmake --build build/webrtc --config FastBuild --parallel
+
+    - name: Install
+      run: cmake --install build/webrtc --config FastBuild
+
+    - name: Run WebRTC tests
+      run: ctest --build-config FastBuild --test-dir build/webrtc --output-on-failure -L "^webrtc"
+
+    - name: Upload interop results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: webrtc-interop
+        path: build/webrtc/src/webrtc/interop
+        retention-days: 30
+        if-no-files-found: ignore
