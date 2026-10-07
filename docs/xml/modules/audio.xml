@@ -67,6 +67,7 @@ mixing.</li>
       <class>AudioReverb</class>
       <class>AudioSaturator</class>
       <class>AudioSplitter</class>
+      <class>AudioStereo</class>
       <class>Sound</class>
     </classes>
   </info>

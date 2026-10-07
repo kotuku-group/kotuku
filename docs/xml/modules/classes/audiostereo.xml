@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioStereo</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>Adjusts the stereo width, balance and channel order of the sound.</comment>
+    <version>1</version>
+    <id>43a78c0e</id>
+    <idstring>AUDIOSTEREO</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The stereo effect separates its input into a mid signal, which is the part common to both channels, and a side signal, which is the difference between them.  Scaling the side signal narrows or widens the stereo image without changing sounds at the centre: zero width collapses the image to mono, 100 percent leaves it unchanged and 200 percent doubles the difference between the channels.  Balance then attenuates one channel, and a final trim sets the output level.</p>
+<p>The width can optionally be split at a crossover frequency, so that bass and treble receive different widths.  The most common use is mono bass, which keeps low frequencies centred for speakers, subwoofers and vinyl mastering while the upper frequencies keep their width.  The opposite arrangement widens only the upper frequencies, giving a broader image without a diffuse bass.</p>
+<p>Create new stereo objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application effects accept live changes; global effects become immutable after initialisation.</p>
+<p>Parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema and are changed with <class name="AudioEffect" method="SetKey">AudioEffect.SetKey()</class> followed by <class name="AudioEffect" method="Flush">AudioEffect.Flush()</class>:</p>
+<list type="bullet">
+<li><code>width</code>: the side level, from 0 to 200 percent.  Zero gives mono output and 100 leaves the image unchanged.</li>
+<li><code>balance</code>: from -100 to 100 percent.  Negative values attenuate the right channel and positive values the left,
+linearly, so that the far ends silence that channel.</li>
+<li><code>swap</code>: when enabled, exchanges the left and right channels before the width is applied.</li>
+<li><code>split</code>: when enabled, applies <code>bass_width</code> instead of <code>width</code> below the crossover frequency.</li>
+<li><code>crossover</code>: the frequency below which <code>bass_width</code> applies, from 40 to 1000 Hz.  Ignored unless <code>split</code> is
+enabled.</li>
+<li><code>bass_width</code>: the side level below the crossover, from 0 to 200 percent.  Zero gives mono bass.  Ignored unless
+<code>split</code> is enabled.</li>
+<li><code>gain</code>: the output trim, from -24 to 12 dB.</li>
+</list>
+<p>The following centres everything below 120 Hz while leaving the rest of the image unchanged, as a single change:</p>
+<pre>stereo = obj.new('AudioStereo', { audio=audio, channel=channel })
+stereo.acSetKey('split', 1)
+stereo.acSetKey('crossover', 120)
+stereo.acSetKey('bass_width', 0)
+stereo.acFlush()
+</pre>
+<p>Other useful combinations include a wider image with <code>width</code> 140; a mono check with <code>width</code> 0; a broader image with an unchanged bass, by enabling <code>split</code> with <code>width</code> 150 and <code>bass_width</code> 100; and correcting reversed wiring with <code>swap</code>.</p>
+<header>Processing</header>
+<p>For left and right inputs <code>L</code> and <code>R</code>, the mid signal is <code>M = (L + R) / 2</code> and the side signal is <code>S = (L - R) / 2</code>. The outputs are <code>M + w * S</code> and <code>M - w * S</code>, where <code>w</code> is the width divided by 100, followed by the balance and the trim.  At the default settings the output is identical to the input.</p>
+<p>With <code>split</code> enabled, the side signal is divided into <code>S_high</code>, a second-order Butterworth high-pass of <code>S</code> at the crossover, and <code>S_low = S - S_high</code>.  The processed side signal is <code>b * S_low + w * S_high</code>, where <code>b</code> is the bass width divided by 100.  Because <code>S_low</code> is the exact complement of <code>S_high</code>, equal widths give exactly the unsplit result.  The high band falls by 12 dB per octave below the crossover, so with a bass width of zero the remaining side level is -3 dB at the crossover, -12 dB an octave below it and -28 dB at a fifth of it, with no boost at any frequency.  The complementary low band falls by only 6 dB per octave above the crossover and is still at -9 dB two octaves above it, so a non-zero bass width that differs from the width shades the side level well above the crossover.  Only the side signal is filtered, so the mid signal, and with it any sound in the centre of the image, is never phase-shifted.</p>
+<p>A mono output has no stereo image.  Width, balance, swap and split have no effect and only the trim is applied.</p>
+<header>Levels and Headroom</header>
+<p>Levels are measured in dBFS, where a sample magnitude of 1.0 is 0 dBFS, independently of the output format.  A width above 100 percent amplifies the side signal and can raise peaks above those of the input: a signal present in only one channel peaks 50 percent higher at the maximum width.  Wide settings also deepen the cancellation heard when the output is summed to mono, because the side signal is removed by the sum while the listener has grown used to it.  The effect does not normalise these changes away; reduce <code>gain</code> or follow the effect with a limiter if required.  Balance only attenuates.  Non-finite samples are outside the normalised mixing contract and are treated as silence.</p>
+<header>Live Changes</header>
+<p>Changes to <code>width</code>, <code>bass_width</code>, <code>balance</code>, <code>gain</code> and <code>split</code> ramp linearly over 10 ms from their current values. Enabling or disabling <code>split</code> leaves content well above the crossover at its width throughout the ramp. A change to <code>swap</code> ramps the side signal through zero to its inverse over 10 ms, so the image passes briefly through mono rather than jumping.  A change to <code>crossover</code> crossfades from the old filter to the new one over 10 ms; further changes during a crossfade take effect when it ends.  Flush preserves the filter history.</p>
+<p>Device reactivation, rate or layout changes and leaving bypass discard the filter history and apply the latest parameters without a transition.</p>
+<header>Tail and Drain</header>
+<p>The effect has zero latency.  Without <code>split</code>, or with equal widths, each output frame depends only on the input frame, and the effect has no tail.  Otherwise the crossover filter rings briefly after the side signal stops: the effect remains pending until the filter history is 180 dB below the loudest side input, which takes 20 to 30 ms at the default crossover and up to 100 ms at the lowest crossover.  The side signal of mono content is zero, so it never excites the filter.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  The effect allocates no audio memory.</p></description>
+    <source>
+      <file>class_audiostereo.cpp</file>
+    </source>
+  </info>
+  <structs>
+  </structs>
+</book>

@@ -1,0 +1,320 @@
+-- AudioStereo: schema, validation, staged changes, live processing measured through the peak meters, mono, global
+-- immutability, tail draining and unsupported rates.  The null device is unpaced, so live tests play a looping tone
+-- and poll until a reading reflects the latest settings.
+
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+-- Published parameters in schema order, with their defaults, types, units and scales.
+
+PARAMS = {
+   { key='width', default=100, type='double', unit='%', scale='linear', min=0, max=200 },
+   { key='balance', default=0, type='double', unit='%', scale='linear', min=-100, max=100 },
+   { key='swap', default=0, type='bool', scale='linear', min=0, max=1 },
+   { key='split', default=0, type='bool', scale='linear', min=0, max=1 },
+   { key='crossover', default=150, type='double', unit='Hz', scale='log', min=40, max=1000 },
+   { key='bass_width', default=0, type='double', unit='%', scale='linear', min=0, max=200 },
+   { key='gain', default=0, type='double', unit='dB', scale='linear', min=-24, max=12 }
+}
+
+FLOOR = -120
+
+-- A looping 1 kHz sine at half of full scale.  4410 frames at 44.1 kHz hold exactly 100 cycles, so it loops seamlessly.
+
+function tone_sample(Audio:obj):num
+   frames = 4410
+   data = array<byte, 8820>
+   for i in {0 to frames} do
+      value = math.floor(16384 * math.sin(2 * math.pi * 1000 * i / 44100))
+      if value < 0 then value += 65536 end
+      data[i * 2] = value & 0xff
+      data[(i * 2) + 1] = (value >> 8) & 0xff
+   end
+   format = struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_S16, layout=array<int> { SPK_CENTRE } })
+   loop = struct.new('AudioLoop', { loopMode=LOOP_SINGLE, loop1Type=LTYPE_UNIDIRECTIONAL, loop1Start=0,
+      loop1End=frames * 2 })
+   err, sample = Audio.mtAddSample(nil, format, data, loop)
+   assert(err is ERR_Okay, f'AddSample() failed: {err}')
+   return sample
+end
+
+-- Play the tone in the left channel only, so that the side signal equals the mid signal.
+
+function play_left(Audio:obj, Channel:num)
+   check mAudio.MixSample(Audio, Channel, tone_sample(Audio))
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixVolume(Audio, Channel, 1)
+   check mAudio.MixPan(Audio, Channel, -1)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+function new_stereo(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioStereo', { audio=Audio, channel=channel }), channel
+end
+
+function get_number(Effect:obj, Key:str):<num>
+   err, text = Effect.acGetKey(Key)
+   assert(err is ERR_Okay, f'GetKey({Key}) must succeed')
+   return tonumber(text)
+end
+
+function configure(Effect:obj, Values:table)
+   for key, value in pairs(Values) do check Effect.acSetKey(key, value) end
+   check Effect.acFlush()
+end
+
+-- Poll until a valid meter reading has the expected output levels relative to the left input peak, within Tolerance
+-- dB.  An expected level of FLOOR requires the floor exactly.
+
+function await_levels(Effect:obj, Left:num, Right:num, Description:str)
+   err, layout = Effect.mtGetMeterLayout()
+   assert(err is ERR_Okay)
+   meters = { }
+   near = function(Value, Expected, Input)
+      if Expected is FLOOR then return Value is FLOOR end
+      return math.abs(Value - (Input + Expected)) < 0.25
+   end
+   for attempt in {0 to 300} do
+      err, reading = Effect.mtReadMeters()
+      assert(err is ERR_Okay)
+      if (reading.flags has AMF_VALID) and (reading.id is layout.id) then
+         for i in {0 to #layout.meters} do meters[layout.meters[i].key] = reading.values[i].value end
+         reference = meters.input_peak_left
+         if (reference > -20) and (meters.input_peak_right is FLOOR) and near(meters.output_peak_left, Left, reference) and
+            near(meters.output_peak_right, Right, reference) then
+            return
+         end
+      end
+      processing.sleep(0.01)
+   end
+   assert(false, f'{Description}: expected {Left} / {Right} dB relative to the input, got input ' ..
+      f'{meters.input_peak_left}, output {meters.output_peak_left} / {meters.output_peak_right}')
+end
+
+function wait_for_stop(Count:table, Seconds:num)
+   deadline = mSys.PreciseTime() + (Seconds * 1000000)
+   while (Count.stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   stereo <close> = new_stereo(audio)
+   schema = stereo.schema
+   assert(schema.find('<effect class="AudioStereo" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The effect has no parameter groups')
+   assert(schema.find('type="enum"') is nil, 'The effect has no enumerated parameters')
+   assert(schema.find('type="curve"') is nil, 'The effect does not publish a response curve')
+   assert(schema.find('gain_reduction') is nil, 'The effect does not publish gain reduction')
+   for p in values(PARAMS) do
+      assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
+      unit = p.unit ? f' unit="{p.unit}"' : ''
+      text = f'type="{p.type}"{unit} scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"'
+      assert(schema.find(text) != nil, f'{p.key} must publish its type, unit, scale, range and default')
+      value = get_number(stereo, p.key)
+      assert(value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   last = 0
+   for p in values(PARAMS) do
+      position = schema.find(f'<param key="{p.key}"')
+      assert(position > last, f'{p.key} is out of order')
+      last = position
+   end
+
+   -- crossover and bass_width are inactive while split is off, and no other parameter carries a rule.
+
+   rule = '<rule key="split" values="0" inactive="1"/>'
+   assert(schema.count('<rule ') is 2, 'Only crossover and bass_width carry rules')
+   first = schema.find(rule, schema.find('<param key="crossover"'))
+   assert(first != nil and first < schema.find('<param key="bass_width"'), 'crossover is inactive without split')
+   second = schema.find(rule, schema.find('<param key="bass_width"'))
+   assert(second != nil and second < schema.find('<param key="gain"'), 'bass_width is inactive without split')
+
+   assert(schema.find('key="input_peak_left" type="scalar"') != nil)
+   assert(schema.find('key="output_peak_right" type="scalar"') != nil)
+   assert(stereo.mtGetOutput('response') is ERR_Search)
+end
+
+@Test function StagedChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   stereo <close> = new_stereo(audio)
+   assert(stereo.mutable is 1)
+
+   for p in values(PARAMS) do
+      check stereo.acSetKey(p.key, p.min)
+      check stereo.acSetKey(p.key, p.max)
+      assert(stereo.acSetKey(p.key, p.min - 0.001) is ERR_InvalidValue, f'{p.key} below {p.min} must fail')
+      assert(stereo.acSetKey(p.key, p.max + 0.001) is ERR_InvalidValue, f'{p.key} above {p.max} must fail')
+      assert(stereo.acSetKey(p.key, math.huge) is ERR_InvalidValue, f'{p.key} must reject infinity')
+      assert(stereo.acSetKey(p.key, math.sqrt(-1)) is ERR_InvalidValue, f'{p.key} must reject NaN')
+   end
+   assert(stereo.acSetKey('swap', 0.5) is ERR_InvalidValue, 'Boolean parameters reject fractions')
+   assert(stereo.acSetKey('unknown', 1) is ERR_Search)
+   check stereo.acFlush()
+
+   -- Staged values are readable before Flush(); a rejected value leaves earlier staged changes intact.
+
+   check stereo.acSetKey('width', 137.5)
+   check stereo.acSetKey('balance', -42.25)
+   check stereo.acSetKey('split', 1)
+   assert(stereo.acSetKey('crossover', 39) is ERR_InvalidValue)
+   check stereo.acSetKey('crossover', 85.5)
+   assert(get_number(stereo, 'crossover') is 85.5, 'Staged values must be readable')
+   check stereo.acFlush()
+   for key, expected in pairs({ width=137.5, balance=-42.25, split=1, crossover=85.5, swap=1, gain=12 }) do
+      value = get_number(stereo, key)
+      assert(value is expected, f'{key} should be {expected} after Flush(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   stereo <close> = obj.new('AudioStereo')
+   stereo.audio = audio
+   stereo.channel = channel
+   check stereo.acSetKey('width', 60)
+   check stereo.acSetKey('split', 1)
+   check stereo.acSetKey('bass_width', 0)
+   assert(stereo.acSetKey('gain', 13) is ERR_InvalidValue)
+   stereo.init()
+   for key, expected in pairs({ width=60, split=1, bass_width=0, gain=0 }) do
+      value = get_number(stereo, key)
+      assert(value is expected, f'{key} should be {expected}, got {value}')
+   end
+end
+
+-- Each setting is verified from the output peaks of a left-only tone, relative to its input peak.
+
+@Test function LiveProcessing()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   stereo, channel = new_stereo(audio)
+   check audio.acActivate()
+   assert(stereo.latency is 0, 'The effect has no latency')
+   err, rate, format, layout = stereo.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+   play_left(audio, channel)
+
+   await_levels(stereo, 0, FLOOR, 'Defaults pass the input unchanged')
+
+   configure(stereo, { width=0 })
+   await_levels(stereo, -6.02, -6.02, 'Zero width gives the mid signal in both channels')
+
+   configure(stereo, { balance=-50 })
+   await_levels(stereo, -6.02, -12.04, 'Negative balance attenuates the right channel linearly')
+
+   configure(stereo, { width=200, balance=0 })
+   await_levels(stereo, 3.52, -6.02, 'Double width gives 1.5 and -0.5 times the left input')
+
+   configure(stereo, { width=100, swap=1 })
+   await_levels(stereo, FLOOR, 0, 'Swap exchanges the channels')
+
+   configure(stereo, { swap=0, gain=-6 })
+   await_levels(stereo, -6, FLOOR, 'Gain trims the output')
+
+   -- Mono bass with the crossover at the tone frequency: the side signal is -3 dB and +90 degrees, so both outputs
+   -- are |0.5 + 0.354i| = 0.612 times the input.
+
+   configure(stereo, { gain=0, split=1, crossover=1000, bass_width=0 })
+   await_levels(stereo, -4.26, -4.26, 'The split high-pass halves the side power at the crossover')
+
+   -- Equal widths with split reproduce the unsplit result.
+
+   configure(stereo, { bass_width=100 })
+   await_levels(stereo, 0, FLOOR, 'Equal widths are unchanged by split')
+
+   err, meter_layout = stereo.mtGetMeterLayout()
+   assert(err is ERR_Okay and #meter_layout.meters is 4)
+   assert(meter_layout.meters[0].key is 'input_peak_left' and meter_layout.meters[3].key is 'output_peak_right')
+
+   stereo.flags = AEF_BYPASS
+   err, reading = stereo.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   stereo.flags = 0
+
+   check audio.mtCloseChannels(channel)
+   err, reading = stereo.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(stereo.acSetKey('width', 50) is ERR_NotInitialised)
+   stereo.free()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   stereo = audio.new('AudioStereo')
+   check stereo.acSetKey('width', 0)
+   check stereo.acSetKey('gain', -3)
+   stereo.init()
+   assert(stereo.mutable is 0)
+   assert(stereo.acSetKey('width', 50) is ERR_Immutable)
+   assert(get_number(stereo, 'width') is 0, 'Global settings are retained')
+   check audio.acActivate()
+   err, layout = stereo.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 2)
+   assert(layout.meters[0].key is 'input_peak_centre' and layout.meters[1].key is 'output_peak_centre')
+   check audio.acDeactivate()
+end
+
+-- OnStop waits for the split filter to drain when a panned Sound plays through a mono bass setting.
+
+@Test function SoundStopWaitsForTail()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   state_at_stop = -1
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav', pan=-1,
+      onStop=function(Sound)
+         count.stops++
+         err, _, _, _, _, _, state = audio.mtGetEffectStatus(Sound.channelIndex & 0xffff0000)
+         state_at_stop = state
+      end })
+   stereo <close> = obj.new('AudioStereo', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   configure(stereo, { split=1, crossover=40, bass_width=0 })
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once')
+   assert(state_at_stop is ADS_IDLE, f'The filter must have drained before OnStop, state {state_at_stop}')
+   check audio.acDeactivate()
+end
+
+-- Destroying the effect while its channel set is playing leaves the Sound to finish normally.
+
+@Test function DestroyDuringPlayback()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav', pan=-1,
+      onStop=function(Sound) count.stops++ end })
+   stereo = obj.new('AudioStereo', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   configure(stereo, { split=1, width=200 })
+   check sound.acActivate()
+   processing.sleep(0.05)
+   stereo.free()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once after the effect is destroyed')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      stereo = obj.new('AudioStereo', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+@end
