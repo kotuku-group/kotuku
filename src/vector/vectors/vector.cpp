@@ -2299,20 +2299,47 @@ extVector::~extVector() {
       scene->InputSubscriptions.erase(this);
       scene->KeyboardSubscriptions.erase(this);
 
+      // Input boundaries are only regenerated when the scene is drawn, so remove this vector's entries now to prevent
+      // input from targeting it in the meantime.  Buffered viewports cache the boundaries of their content for replay
+      // on frames that skip re-rendering, so their caches are purged too.
+
+      auto is_this = [uid = UID](const InputBoundary &Bounds) { return Bounds.vector_id IS uid; };
+      std::erase_if(scene->InputBoundaries, is_this);
+      for (auto view = ParentView; view; view = view->ParentView) {
+         if (view->vpInputBounds) std::erase_if(*view->vpInputBounds, is_this);
+      }
+
+      // A button lock held by this vector would otherwise never be released, because the button release is only
+      // processed if the lock holder can be accessed.  This would block all further input to the scene.
+
+      if (scene->ButtonLock IS UID) scene->ButtonLock = 0;
+
       if (scene->ActiveVector IS UID) {
          if (scene->Cursor != PTC::DEFAULT) {
+            scene->Cursor = PTC::DEFAULT;
             kt::ScopedObjectLock<objSurface> surface(scene->SurfaceID);
             if ((surface.granted()) and (surface.obj->Cursor != PTC::DEFAULT)) {
                surface.obj->setCursor(PTC::DEFAULT);
             }
          }
+         scene->ActiveVector = 0;
       }
    }
 
    {
       const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
+      // The focus list runs from the most foreground vector to its ancestors, so the entries ahead of this vector are
+      // its descendants.  They are removed with it, while the ancestors retain the focus.
+
       auto pos = std::find(glVectorFocusList.begin(), glVectorFocusList.end(), this);
-      if (pos != glVectorFocusList.end()) glVectorFocusList.erase(pos, glVectorFocusList.end());
+      if (pos != glVectorFocusList.end()) {
+         glVectorFocusList.erase(glVectorFocusList.begin(), pos + 1);
+         if (not glVectorFocusList.empty()) {
+            auto focus = glVectorFocusList.front();
+            kt::ScopedObjectLock<extVector> vector(focus, 1000);
+            if (vector.granted()) send_feedback(focus, FM::HAS_FOCUS, focus);
+         }
+      }
    }
 
    {
