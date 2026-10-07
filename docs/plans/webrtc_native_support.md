@@ -20,7 +20,7 @@ browser-side signalling code and server-side Kōtuku code share the same vocabul
 local pc = obj.new('peerconnection', {
    iceServers = 'stun:stun.l.google.com:19302',
    onIceCandidate = function(PC, Candidate) signalling.send({ candidate = Candidate }) end,
-   onDataChannel  = function(PC, Channel)
+   onWebChannel   = function(PC, Channel)
       Channel.onMessage = function(Ch, Data, Binary) print('peer says: ' .. Data) end
    end,
    feedback = function(PC, State) print('connection state: ' .. State) end
@@ -81,7 +81,7 @@ The minimum set a browser requires to connect (RFC 8825/8826/8827/8834 "WebRTC o
 
 ### 5.1 Module placement and dependencies
 
-- New module `src/webrtc/`, TDL `webrtc.tdl`, prefix `rtc`, class names `PeerConnection`, `DataChannel`,
+- New module `src/webrtc/`, TDL `webrtc.tdl`, prefix `rtc`, class names `PeerConnection`, `WebChannel`,
   `MediaTrack` (Phase 4+).  Enabled in the root `CMakeLists.txt` under `if (NOT DISABLE_WEBRTC)` and only when
   `TARGET network AND TARGET crypto`, mirroring the WebSocket block.
 - Depends on Network (UDP/TCP/DNS), Crypto (hashes, HMAC, AES, random), Core (timers, FDs).  Audio is an optional
@@ -94,7 +94,7 @@ The minimum set a browser requires to connect (RFC 8825/8826/8827/8834 "WebRTC o
 ### 5.2 Layering
 
 ```
-  Tiri / C++ API        PeerConnection ── DataChannel ── MediaTrack
+  Tiri / C++ API        PeerConnection ── WebChannel ── MediaTrack
                               │
   Session layer          SDP + JSEP state machine, BUNDLE, transceivers, candidate signalling
                               │
@@ -118,7 +118,7 @@ Each layer lives in its own source files with no object-system dependencies so t
 | `sctp_*.cpp/.h` | Association state, chunk codec, reliable/unreliable delivery, congestion control (RFC 4960 §7), stream reset, DCEP. |
 | `rtp.cpp/.h`, `rtcp.cpp/.h`, `srtp.cpp/.h` | Packetisation, jitter buffer, SR/RR/NACK/PLI, SRTP protect/unprotect with replay window. |
 | `payload_opus.cpp`, `payload_vp8.cpp`, `payload_h264.cpp` | Codec-specific packetisers/depacketisers. |
-| `class_peerconnection.cpp`, `class_datachannel.cpp`, `class_mediatrack.cpp` | Object-system classes, field docs, callback dispatch. |
+| `class_peerconnection.cpp`, `class_webchannel.cpp`, `class_mediatrack.cpp` | Object-system classes, field docs, callback dispatch. |
 
 ### 5.3 Threading and event model
 
@@ -163,7 +163,7 @@ module({ name="WebRTC", prefix="rtc", ... }, function()
   enums("RTCICE", { comment="ICE connection states." },
     "NEW", "CHECKING", "CONNECTED", "COMPLETED", "FAILED", "DISCONNECTED", "CLOSED")
   enums("RTCGATHER", { comment="ICE gathering states." }, "NEW", "GATHERING", "COMPLETE")
-  enums("RTCDC", { comment="DataChannel states." }, "CONNECTING", "OPEN", "CLOSING", "CLOSED")
+  enums("RTCWC", { comment="WebChannel states." }, "CONNECTING", "OPEN", "CLOSING", "CLOSED")
 
   flags("RTCF", { comment="PeerConnection options." },
     "RELAY_ONLY: Use TURN relay candidates only.",
@@ -178,7 +178,7 @@ module({ name="WebRTC", prefix="rtc", ... }, function()
   methods("PeerConnection", "rtc", {
     { id=1, name="CreateOffer" },      { id=2, name="CreateAnswer" },
     { id=3, name="SetLocalDescription" }, { id=4, name="SetRemoteDescription" },
-    { id=5, name="AddIceCandidate" },  { id=6, name="CreateDataChannel" },
+    { id=5, name="AddIceCandidate" },  { id=6, name="CreateWebChannel" },
     { id=7, name="AddTrack" },         { id=8, name="RemoveTrack" },
     { id=9, name="RestartIce" },       { id=10, name="GetStats" },
     { id=11, name="Close" }
@@ -191,13 +191,13 @@ module({ name="WebRTC", prefix="rtc", ... }, function()
     string CertificateFingerprint # sha-256 fingerprint of the local DTLS certificate
     int(RTCS)   State  int(RTCSIG) SignalingState  int(RTCICE) IceState  int(RTCGATHER) GatheringState
     int(RTCF) Flags  error Error  ptr ClientData
-    # Callback fields (documented in class_peerconnection.cpp): Feedback, OnIceCandidate, OnDataChannel,
+    # Callback fields (documented in class_peerconnection.cpp): Feedback, OnIceCandidate, OnWebChannel,
     # OnTrack, OnNegotiationNeeded
   ]])
 
-  methods("DataChannel", "rtcdc", { { id=1, name="Send" }, { id=2, name="Close" } })
-  klass("DataChannel", { ... }, [[
-    string Label  string Protocol  int ID  int(RTCDC) State
+  methods("WebChannel", "rtcwc", { { id=1, name="Send" }, { id=2, name="Close" } })
+  klass("WebChannel", { ... }, [[
+    string Label  string Protocol  int ID  int(RTCWC) State
     int Ordered  int MaxRetransmits  int MaxPacketLifeTime  large BufferedAmount  large BufferedAmountLowThreshold
     large MaxMessageSize  ptr ClientData
     # Callbacks: OnMessage(Channel, Data, Binary), OnOpen, OnClose, OnBufferedAmountLow, OnError
@@ -251,7 +251,7 @@ green CI on Linux and Windows, and the plan file updated.
   for channel close, HEARTBEAT, graceful SHUTDOWN.  I-DATA (RFC 8260) is optional and can follow.
 - DCEP open/ack, negotiated channels (`negotiated = true, id = n`), `BufferedAmount` back-pressure,
   `MaxMessageSize` negotiation.
-- `DataChannel` class, Tiri bindings, string and binary payload handling consistent with `WebSocket.Send`.
+- `WebChannel` class, Tiri bindings, string and binary payload handling consistent with `WebSocket.Send`.
 - Tests: unit tests for chunk codec and state machine under simulated loss; Flute loopback for ordered,
   unordered, lifetime-limited and large (16 MiB) messages; browser interop test exchanging text and binary;
   throughput and latency benchmark.
@@ -327,7 +327,9 @@ Audio module scheduling, gives tests a deterministic signal, and means native ca
 
 **API shape mirrors W3C.**  Developers arriving from browser WebRTC should recognise `createOffer`,
 `setRemoteDescription`, `addIceCandidate`, `ondatachannel`.  Names are adapted to Kōtuku conventions (methods are
-`mtCreateOffer`, callbacks are fields, state is an enum field with `Feedback`).
+`mtCreateOffer`, callbacks are fields, state is an enum field with `Feedback`).  The W3C `RTCDataChannel` is exposed
+as `WebChannel` so that the class name signals its WebRTC origin inside the Kōtuku class namespace; the protocol-level
+term "data channel" (RFC 8831) is still used when describing the SCTP layer.
 
 ## 8. Risks
 
@@ -364,5 +366,6 @@ Audio module scheduling, gives tests a deterministic signal, and means native ca
 ## 11. Progress Log
 
 - 2026-10-07: Plan drafted after surveying the Network, Crypto, WebSocket and Audio modules.  No code yet.
+- 2026-10-07: Renamed the `DataChannel` class to `WebChannel`.
 - 2026-10-07: Decided that send-side audio uses stub sources (silence, tone, application buffer) until native
   capture is added to the Audio module (§5.4).
