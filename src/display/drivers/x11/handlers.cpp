@@ -751,6 +751,21 @@ KEY xkeysym_to_pkey(KeySym KSym)
       case XK_KP_Divide:    return KEY::NP_DIVIDE;
       case XK_KP_Enter:     return KEY::NP_ENTER;
 
+      // Keypad keys are looked up at level 0, which is the Num Lock off symbol of a digit or decimal key.  They report
+      // the keypad position regardless of Num Lock, as in the Wayland driver; the Unicode value indicates the state.
+
+      case XK_KP_Insert:    return KEY::NP_0;
+      case XK_KP_End:       return KEY::NP_1;
+      case XK_KP_Down:      return KEY::NP_2;
+      case XK_KP_Next:      return KEY::NP_3;
+      case XK_KP_Left:      return KEY::NP_4;
+      case XK_KP_Begin:     return KEY::NP_5;
+      case XK_KP_Right:     return KEY::NP_6;
+      case XK_KP_Home:      return KEY::NP_7;
+      case XK_KP_Up:        return KEY::NP_8;
+      case XK_KP_Prior:     return KEY::NP_9;
+      case XK_KP_Delete:    return KEY::NP_DOT;
+
       case XK_Shift_L:      return KEY::L_SHIFT;
       case XK_Shift_R:      return KEY::R_SHIFT;
       case XK_Control_L:    return KEY::L_CONTROL;

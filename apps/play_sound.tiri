@@ -712,8 +712,11 @@ Examples:
                end
             end
 
-            if silent and outputs > 0 then quiet += reading.interval / final_effect.outputRate
-            else quiet = 0 end
+            if silent and outputs > 0 then
+               quiet += reading.interval / final_effect.outputRate
+            else
+               quiet = 0
+            end
 
             if quiet >= hold then break end
          end

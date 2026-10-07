@@ -33,13 +33,10 @@ function setDisplayIcon(Display:obj, Icon:str)
    end
 end
 
-lStyle = (function()
-   if mSys.AnalysePath('style:window.tiri') is ERR_Okay then
-      return loadFile('style:window.tiri')
-   else
-      return loadFile('styles:default/window.tiri')
-   end
-end)()
+lStyle = choose mSys.AnalysePath('style:window.tiri') from
+   ERR_Okay -> loadFile('style:window.tiri')
+   else -> loadFile('styles:default/window.tiri')
+end
 
 gui.window = function(Options:table!)
    self = setmetatable({
