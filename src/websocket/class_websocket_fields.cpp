@@ -68,8 +68,8 @@ Set `STREAM_MESSAGES` to receive each message fragment through #Incoming as it a
 message.  `NO_UTF8_CHECK` disables UTF-8 validation of `TEXT` messages in both directions, and should only be used
 to communicate with peers that are known to send invalid text.  `DISABLE_SERVER_VERIFY` accepts a `wss://` server
 whose TLS certificate cannot be verified, which is intended for development only.  `NO_AUTO_PONG` stops received Ping
-frames from being answered, which is intended for testing peers' keep-alive handling.  The `SSL` flag applies to
-@WebSocketServer only.
+frames from being answered, which is intended for testing peers' keep-alive handling.  The `SSL` and `EXTERNAL_LISTENER` flags apply to
+@WebSocketServer only; `EXTERNAL_LISTENER` is invalid on WebSocket.
 
 Flags that affect the opening handshake must be set before #Activate() is called.
 

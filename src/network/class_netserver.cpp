@@ -270,6 +270,26 @@ static ERR NETSERVER_SET_ClientLimit(extNetServer *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+ConnectionRateLimit: The maximum number of TCP connections accepted during a one-second window.
+
+The limit is applied independently to each NetServer and defaults to 100 connections per second.  Connections above
+the limit are accepted and immediately closed.  Set ConnectionRateLimit to zero to disable rate limiting.  Changing
+the value starts a new measurement window.  Negative values are invalid.
+
+*********************************************************************************************************************/
+
+static ERR NETSERVER_SET_ConnectionRateLimit(extNetServer *Self, int Value)
+{
+   if (Value < 0) return ERR::OutOfRange;
+   Self->ConnectionRateLimit = Value;
+   Self->ConnectionRateCount = 0;
+   Self->ConnectionRateWindow = 0;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 SocketLimit: The maximum number of sockets that can be connected from a single client IP address.
 
 The SocketLimit value limits how many simultaneous ClientSocket connections may be opened by one NetClient record.
@@ -361,19 +381,16 @@ static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetServer *Self)
       return;
    }
 
-   // Basic rate limiting - prevent connection floods
+   if (Self->ConnectionRateLimit > 0) {
+      constexpr int64_t one_second = 1000000;
+      const auto current_time = PreciseTime();
 
-   time_t current_time = time(nullptr);
-   static time_t last_accept = 0;
-   static int accept_count = 0;
-
-   if (current_time != last_accept) {
-      accept_count = 1;
-      last_accept = current_time;
-   }
-   else {
-      accept_count++;
-      if (accept_count > 100) { // Maximum 100 accepts per second
+      if ((Self->ConnectionRateCount IS 0) or
+          (current_time - Self->ConnectionRateWindow >= one_second)) {
+         Self->ConnectionRateWindow = current_time;
+         Self->ConnectionRateCount = 1;
+      }
+      else if (++Self->ConnectionRateCount > Self->ConnectionRateLimit) {
          log.warning("Connection rate limit exceeded, rejecting connection");
          network_platform().close_socket(clientfd);
          return;
@@ -557,6 +574,7 @@ static const FieldArray clNetServerFields[] = {
    { "ClientLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_ClientLimit },
    { "SocketLimit",    FDF_INT|FDF_RW,       nullptr, NETSERVER_SET_SocketLimit },
    { "TotalClients",   FDF_INT|FDF_R },
+   { "ConnectionRateLimit", FDF_INT|FDF_RW,  nullptr, NETSERVER_SET_ConnectionRateLimit },
    END_FIELD
 };
 

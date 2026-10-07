@@ -6,6 +6,7 @@ Tests include:
 - NSF::MULTI_CONNECT flag functionality
 - Multiple simultaneous client connections
 - Client limit enforcement via ClientLimit field
+- Configurable connection-rate limiting
 - Per-client message isolation and delivery
 - Connection management and cleanup
 - Resource allocation under load
@@ -211,6 +212,78 @@ end
       'Too many connections accepted. Limit: ' .. limit .. ', Accepted: ' .. successfulConnections)
 
    assert(successfulConnections > 0, 'No connections were successful - test setup issue')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function DisabledConnectionRateLimit()
+   local target <const> = 110
+   local accepted = 0
+   local clients = array<obj>
+
+   local server = obj.new('netserver', {
+      address = '127.0.0.1',
+      port = 0,
+      flags = 'MULTI_CONNECT',
+      socketLimit = target,
+      connectionRateLimit = 0,
+      feedback = function(Server:obj, Client:obj, State:num)
+         if State is NTC_CONNECTED then
+            accepted++
+            if accepted is target then check Server.acSignal() end
+         end
+      end,
+   })
+
+   assert(server.connectionRateLimit is 0, 'ConnectionRateLimit did not retain the disabled value')
+
+   local proc = processing.new({ timeout = 5.0, signals = array<obj> { server } })
+   for _ in {0 to target} do
+      local client = obj.new('netsocket', {})
+      clients.push(client)
+      check client.mtConnect('127.0.0.1', server.port)
+      processing.sleep(0)
+   end
+
+   check proc.sleep()
+   assert(accepted is target, f'Expected {target} accepted connections, got {accepted}')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function IndependentConnectionRateLimits()
+   local accepted = 0
+   local signal = obj.new('time', {})
+   local feedback = function(Server:obj, Client:obj, State:num)
+      if State is NTC_CONNECTED then
+         accepted++
+         if accepted is 2 then check signal.acSignal() end
+      end
+   end
+
+   local first = obj.new('netserver', {
+      address = '127.0.0.1',
+      port = 0,
+      flags = 'MULTI_CONNECT',
+      connectionRateLimit = 1,
+      feedback = feedback,
+   })
+   local second = obj.new('netserver', {
+      address = '127.0.0.1',
+      port = 0,
+      flags = 'MULTI_CONNECT',
+      connectionRateLimit = 1,
+      feedback = feedback,
+   })
+   local first_client = obj.new('netsocket', {})
+   local second_client = obj.new('netsocket', {})
+   local proc = processing.new({ timeout = 2.0, signals = array<obj> { signal } })
+
+   check first_client.mtConnect('127.0.0.1', first.port)
+   processing.sleep(0)
+   check second_client.mtConnect('127.0.0.1', second.port)
+   check proc.sleep()
+   assert(accepted is 2, f'Expected both listeners to accept independently, got {accepted}')
 end
 
 -----------------------------------------------------------------------------------------------------------------------

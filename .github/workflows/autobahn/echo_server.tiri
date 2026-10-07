@@ -12,9 +12,10 @@
    -- headroom for the echo of one message to be queued while the next is received.
 
    local server = obj.new('websocketserver', {
-      port           = port,
-      maxMessageSize = 64 * 1024 * 1024,
-      sendLimit      = 128 * 1024 * 1024,
+      port                = port,
+      connectionRateLimit = 0,
+      maxMessageSize      = 64 * 1024 * 1024,
+      sendLimit           = 128 * 1024 * 1024,
       connected = function(Server:obj, WebSocket:obj)
          WebSocket.incoming = function(WS:obj, Buffer:array<byte>, Type:num, Final:num)
             local err = WS.mtSend(Buffer, Type)

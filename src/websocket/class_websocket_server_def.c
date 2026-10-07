@@ -6,15 +6,20 @@ static const struct FieldDef clWebSocketServerFlags[] = {
    { "DisableServerVerify", 0x00000004 },
    { "NoAutoPong", 0x00000008 },
    { "SSL", 0x00000010 },
+   { "ExternalListener", 0x00000020 },
    { nullptr, 0 }
 };
 
 FDEF maBroadcast[] = { { "Data", FDF_SPAN|FD_BYTE }, { "Type", FD_INT }, { "Recipients", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maDisconnectClient[] = { { "WebSocket", FD_OBJECTPTR }, { "Code", FD_INT }, { "Reason", FD_STR }, { 0, 0 } };
+FDEF maAdopt[] = { { "Socket", FD_OBJECTPTR }, { "RequestData", FDF_SPAN|FD_BYTE }, { "Connection", FD_RESULT|FD_OBJECTPTR }, { 0, 0 } };
+FDEF maDispatch[] = { { "Socket", FD_OBJECTPTR }, { "Event", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clWebSocketServerMethods[] = {
    { AC(-1), (APTR)WEBSOCKETSERVER_Broadcast, "Broadcast", maBroadcast, sizeof(struct wsv::Broadcast) },
    { AC(-2), (APTR)WEBSOCKETSERVER_DisconnectClient, "DisconnectClient", maDisconnectClient, sizeof(struct wsv::DisconnectClient) },
+   { AC(-3), (APTR)WEBSOCKETSERVER_Adopt, "Adopt", maAdopt, sizeof(struct wsv::Adopt) },
+   { AC(-4), (APTR)WEBSOCKETSERVER_Dispatch, "Dispatch", maDispatch, sizeof(struct wsv::Dispatch) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 
@@ -34,3 +39,4 @@ static const struct ActionArray clWebSocketServerActions[] = {
    { AC::New, WEBSOCKETSERVER_New },
    { AC::NIL, nullptr }
 };
+

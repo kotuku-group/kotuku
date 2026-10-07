@@ -101,6 +101,7 @@ class extWebSocket : public objWebSocket {
    int64_t PingSentAt = 0;                // PreciseTime() of the outstanding keep-alive ping
    ws::Role Role = ws::Role::CLIENT;
    bool HandoverPending = false;          // The connection was transferred but OPEN has not been announced
+   bool ExternalListener = false;         // Report disconnection before destruction for script event forwarders
    bool InSocketCallback = false;         // Running inside the transport's Incoming or Feedback callback
    bool InOutgoing = false;               // Running inside the transport's Outgoing callback
    bool InFeedback = false;               // Running inside a disconnection notification for the transport
@@ -192,6 +193,10 @@ static void free_deferred(OBJECTID ObjectID)
 // Releases a pin taken at a callback entry point.  An object that is freed while pinned, for example by a user
 // callback, is only marked for collection, and a plain unpin() does not collect it.  Its destruction is completed by a
 // deferred message so that it never runs inside the Network or timer callback that is still on the stack.
+//
+// Every entry point either runs with the WebSocket locked (actions, timers, client-role socket callbacks and the
+// deferred message handler) or pins it and releases it here (HTTP notifications and server-role transport events).
+// Routines that invoke user callbacks rely on this, so Self remains valid after a callback frees it.
 
 static void release_pin(Object *Target)
 {
@@ -245,8 +250,7 @@ static bool set_state(extWebSocket *Self, WSS State)
 
    auto callback = Self->StateChanged;
    callback.pin();
-   Self->pin();
-   auto lifetime = kt::Defer([&]() { callback.unpin(); Self->unpin(); });
+   auto lifetime = kt::Defer([&]() { callback.unpin(); });
 
    if (callback.isC()) {
       auto routine = (void (*)(extWebSocket *, WSS, APTR))callback.Routine;
@@ -301,8 +305,7 @@ static bool deliver_message(extWebSocket *Self, std::span<const uint8_t> Data, W
 
    auto callback = Self->Incoming; // The callback may replace Incoming while running
    callback.pin();
-   Self->pin();
-   auto lifetime = kt::Defer([&]() { callback.unpin(); Self->unpin(); });
+   auto lifetime = kt::Defer([&]() { callback.unpin(); });
 
    ERR error = ERR::Okay;
    if (callback.isC()) {
@@ -337,8 +340,7 @@ static bool deliver_heartbeat(extWebSocket *Self, std::span<const uint8_t> Data,
 
    auto callback = Self->Heartbeat;
    callback.pin();
-   Self->pin();
-   auto lifetime = kt::Defer([&]() { callback.unpin(); Self->unpin(); });
+   auto lifetime = kt::Defer([&]() { callback.unpin(); });
 
    if (callback.isC()) {
       auto routine = (void (*)(extWebSocket *, const void *, int, bool, APTR))callback.Routine;
@@ -367,8 +369,7 @@ static bool deliver_outgoing(extWebSocket *Self)
 
    auto callback = Self->Outgoing;
    callback.pin();
-   Self->pin();
-   auto lifetime = kt::Defer([&]() { callback.unpin(); Self->unpin(); });
+   auto lifetime = kt::Defer([&]() { callback.unpin(); });
 
    if (callback.isC()) {
       auto routine = (void (*)(extWebSocket *, APTR))callback.Routine;
@@ -740,6 +741,12 @@ static void retire_http(extWebSocket *Self)
 static void release_client_socket(extWebSocket *Self, objClientSocket *Socket, bool Busy)
 {
    if (Self->InFeedback) return;
+   else if (Self->ExternalListener) {
+      // Tiri cannot dispatch a collecting object.  Notify while the socket is still live, before deferred release.
+      const auto id = Socket->UID;
+      Socket->deactivate();
+      if (not Busy) free_deferred(id);
+   }
    else if (Self->InSocketCallback) {
       if (Busy) Socket->deactivate();
       else Self->TerminateSocket = true;
@@ -856,7 +863,10 @@ static void transport_writable(extWebSocket *Self)
    Self->pin();
    auto in_outgoing = Self->InOutgoing;
    Self->InOutgoing = true;
-   auto lifetime = kt::Defer([&]() { Self->InOutgoing = in_outgoing; release_pin(Self); });
+   auto lifetime = kt::Defer([&]() {
+      Self->InOutgoing = in_outgoing;
+      release_pin(Self);
+   });
 
    flush(Self);
 }
@@ -891,16 +901,14 @@ static ERR socket_outgoing(objNetSocket *Socket, APTR Meta)
 }
 
 //********************************************************************************************************************
-// CloseTimeout expired, or a client finished waiting for the server to close the TCP connection.
+// CloseTimeout expired, or a client finished waiting for the server to close the TCP connection.  Timer callbacks run
+// with Self locked, so a user callback that frees it defers its destruction until the timer returns.
 
 static ERR close_timer(extWebSocket *Self, int64_t Elapsed, int64_t CurrentTime)
 {
    Self->CloseTimer = nullptr; // Removed by ERR::Terminate
 
    if (Self->State != WSS::CLOSING) return ERR::Terminate;
-
-   Self->pin();
-   auto lifetime = kt::Defer([&]() { release_pin(Self); });
 
    if (Self->AwaitingServerClose and (not Self->DisconnectReady)) {
       // Close the connection from this side.  CloseTimeout bounds the wait for the transport to drain.
@@ -930,9 +938,6 @@ static ERR ping_timer(extWebSocket *Self, int64_t Elapsed, int64_t CurrentTime)
       Self->PingTimer = nullptr;
       return ERR::Terminate;
    }
-
-   Self->pin();
-   auto lifetime = kt::Defer([&]() { release_pin(Self); });
 
    if (Self->PingOutstanding) {
       if (Self->LastReceived < Self->PingSentAt) {
@@ -1073,6 +1078,11 @@ static ERR http_state_changed(objHTTP *HTTP, HGS State, APTR Meta)
    auto Self = (extWebSocket *)Meta;
    if (Self->HTTP != HTTP) return (State IS HGS::UPGRADE_READY) ? ERR::Failed : ERR::Okay;
 
+   // HTTP does not lock the WebSocket for its notifications, and a failed handshake reports CLOSED to the client.
+
+   Self->pin();
+   auto lifetime = kt::Defer([&]() { release_pin(Self); });
+
    switch (State) {
       case HGS::UPGRADE_READY: return validate_handshake(Self, HTTP);
       case HGS::UPGRADED:      return take_connection(Self, HTTP);
@@ -1105,6 +1115,7 @@ static ERR WEBSOCKET_Activate(extWebSocket *Self)
 {
    kt::Log log;
 
+   if ((Self->Flags & WSF::EXTERNAL_LISTENER) != WSF::NIL) return log.warning(ERR::InvalidValue);
    if (Self->Role IS ws::Role::SERVER) return log.warning(ERR::NoSupport);
    if (Self->State != WSS::CLOSED) return log.warning(ERR::InUse);
    if (Self->Target.host.empty()) return log.warning(ERR::FieldNotSet);
@@ -1302,7 +1313,12 @@ extWebSocket::~extWebSocket()
    if (Transport) {
       auto socket = Transport->object();
       Transport.reset();
-      if ((Role IS ws::Role::SERVER) and InOutgoing) free_deferred(socket->UID);
+      if (ExternalListener) {
+         const auto id = socket->UID;
+         ((objClientSocket *)socket)->setState(NTC::DISCONNECTED);
+         free_deferred(id);
+      }
+      else if ((Role IS ws::Role::SERVER) and InOutgoing) free_deferred(socket->UID);
       else FreeResource(socket);
    }
 
@@ -1317,6 +1333,7 @@ extWebSocket::~extWebSocket()
 
 static ERR WEBSOCKET_Init(extWebSocket *Self)
 {
+   if ((Self->Flags & WSF::EXTERNAL_LISTENER) != WSF::NIL) return ERR::InvalidValue;
    return ERR::Okay;
 }
 

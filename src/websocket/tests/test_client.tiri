@@ -376,6 +376,30 @@ end
    assert(state.closeCode is WSC_ABNORMAL, 'Refused connection did not report 1006')
 end
 
+-- HTTP does not lock the WebSocket while reporting a failed handshake.  A WebSocket freed by StateChanged(CLOSED) at
+-- that point must still be destroyed.  The reference is retained so that garbage collection cannot free it instead.
+
+@Test function FreeAfterRefusedConnection()
+   local closed = false
+   local destroyed = false
+   local ws = obj.new('websocket', { location = 'ws://127.0.0.1:1/' })
+   ws.subscribe('Free', function()
+      destroyed = true
+   end)
+   ws.stateChanged = function(WebSocket, State)
+      if State is WSS_CLOSED then
+         closed = true
+         WebSocket.free()
+      end
+   end
+
+   check ws.acActivate()
+   waitFor((() => destroyed), 3)
+   assert(closed, 'The refused connection did not report CLOSED')
+   assert(destroyed, 'The WebSocket freed in StateChanged(CLOSED) was not destroyed')
+   ws = nil
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Open-connection fixture.  The peer completes the handshake, then parses the client's masked frames incrementally.
 -- Payloads up to Parser.keepLimit bytes are kept whole; larger payloads keep only their first 16 bytes.

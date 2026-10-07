@@ -7,8 +7,11 @@ idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h")
 
 add_library (${MOD})
-target_link_libraries (${MOD} PUBLIC unicode base64)
+target_link_libraries (${MOD} PUBLIC unicode)
 set_module_defaults (${MOD} "Bk")
+if (KOTUKU_STATIC)
+   target_link_libraries (${MOD} PRIVATE websocket)
+endif ()
 
 target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp")
 

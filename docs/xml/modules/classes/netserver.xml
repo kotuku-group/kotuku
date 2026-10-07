@@ -137,6 +137,16 @@
     </field>
 
     <field>
+      <name>ConnectionRateLimit</name>
+      <comment>The maximum number of TCP connections accepted during a one-second window.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>The limit is applied independently to each NetServer and defaults to 100 connections per second.  Connections above the limit are accepted and immediately closed.  Set ConnectionRateLimit to zero to disable rate limiting.  Changing the value starts a new measurement window.  Negative values are invalid.</p>
+      </description>
+    </field>
+
+    <field>
       <name>SSLCertificate</name>
       <comment>SSL certificate file to use for SSL NetServer listeners.</comment>
       <access read="R" write="S">Read/Set</access>
