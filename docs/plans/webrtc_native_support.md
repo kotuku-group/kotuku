@@ -54,7 +54,7 @@ signalling.send({ sdp = offer })
 | CRC32 | Available | zlib is already a project dependency; STUN FINGERPRINT uses CRC32. |
 | Timers | Available | `SubscribeTimer()` for ICE retransmits, SCTP RTO, RTCP intervals, consent freshness. |
 | Audio playback | Available | `Audio.AddStream()` can be fed decoded PCM for remote audio tracks. |
-| Audio capture | Missing | `Audio.InputRate` exists but there is no capture API in either the ALSA or WASAPI backends.  Required for sending a local microphone track (Phase 4 prerequisite). |
+| Audio capture | Missing | `Audio.InputRate` exists but there is no capture API in either the ALSA or WASAPI backends.  WebRTC will not wait for it: send-side audio uses stub capture sources (§5.4) until native capture lands in the Audio module. |
 | Protocol-module precedent | Available | WebSocket module: pure protocol files (`ws_frame.cpp`, `ws_handshake.cpp`), `UNIT_TESTS`-gated `unit_protocol.cpp`, Flute loopback and TLS tests, scheduled Autobahn conformance run. |
 | Browser for interop tests | Available | Chromium is pre-installed in cloud sessions with Playwright configured, which makes automated browser interop testing feasible. |
 
@@ -133,7 +133,24 @@ Each layer lives in its own source files with no object-system dependencies so t
   explicit buffer passing.  This is a new transport abstraction, separate from the stream TLS code in the Network
   module, but it should share certificate loading and error mapping where practical.
 
-### 5.4 Public API sketch (TDL)
+### 5.4 Audio source abstraction and capture stubs
+
+Send-side audio must not depend on microphone capture existing in the Audio module.  The media layer consumes PCM
+through a small internal `AudioSource` interface (`pull(frames, format)` on the media worker thread, plus `start()`,
+`stop()` and format negotiation).  Three implementations ship with the webrtc module from Phase 4:
+
+| Source | Purpose |
+| --- | --- |
+| `SilenceSource` | Default when a send track has no source.  Keeps RTP timing, RTCP and DTX behaviour exercised with zero-cost input. |
+| `ToneSource` | Deterministic sine or chirp generator with configurable frequency and level.  Used by Flute tests and the browser interop job to verify audio arrives intact (checked with `AudioAnalyser` on the far side). |
+| `BufferSource` | Application-fed PCM via `MediaTrack.mtWriteAudio()` from Tiri or C++.  Lets a program stream file audio, synthesised audio, or audio captured by its own means today. |
+
+When the Audio module gains native capture, a fourth `DeviceSource` adapter plugs into the same interface and
+becomes the default for tracks created with a device name.  No PeerConnection or MediaTrack API changes are
+expected at that point; the Audio capture feature is tracked and scheduled separately from this plan.  Receive-side
+audio has no such dependency because `Audio.AddStream()` already accepts PCM for playback.
+
+### 5.5 Public API sketch (TDL)
 
 ```lua
 module({ name="WebRTC", prefix="rtc", ... }, function()
@@ -255,15 +272,16 @@ green CI on Linux and Windows, and the plan file updated.
 
 ### Phase 4 — Audio media (5–7 weeks)
 
-- Prerequisite: Audio module capture API (ALSA `snd_pcm` capture stream, WASAPI capture client) delivering PCM
-  frames through a callback.  This is a standalone Audio feature and should be planned and merged separately.
+- No capture prerequisite.  Send tracks draw from the `AudioSource` stubs in §5.4 (silence, tone, application
+  buffer).  Native capture (ALSA `snd_pcm` capture stream, WASAPI capture client) is a separate Audio module
+  deliverable; when it merges, a `DeviceSource` adapter is added here without API changes.
 - RTP/RTCP: packetiser, sequence/timestamp handling, jitter buffer, SR/RR, NACK and RTX, SRTP with
   AES-CM-128-HMAC-SHA1-80 and AEAD_AES_128_GCM, replay protection, DTLS-SRTP key export, rtcp-mux.
 - Opus via libopus (fetched, pinned); `MediaTrack` class for send/receive, `AddTrack` with transceivers,
-  `OnTrack` callback; helpers to bridge a receive track to `Audio.AddStream()` and a capture source to a send
+  `OnTrack` callback; helpers to bridge a receive track to `Audio.AddStream()` and an `AudioSource` to a send
   track.
-- Tests: SRTP vectors from RFC 3711/7714, RTP loopback, browser interop with echo loop, audio quality check via
-  the existing `AudioAnalyser` level meters.
+- Tests: SRTP vectors from RFC 3711/7714, RTP loopback, browser interop sending a `ToneSource` and checking the
+  received signal with the existing `AudioAnalyser` level meters, `BufferSource` round trip from Tiri.
 
 ### Phase 5 — Video transport (3–4 weeks)
 
@@ -301,7 +319,11 @@ OpenSSL is linked for the webrtc module only.
 server deployments and cannot connect two Kōtuku peers behind NATs.  The extra cost is moderate and front-loaded.
 
 **Media after data channels.**  Data channels have no codec dependencies, exercise every transport layer, and
-give a complete, shippable feature early.  Audio capture work in the Audio module can proceed in parallel.
+give a complete, shippable feature early.
+
+**Stub audio sources instead of waiting for capture.**  Decision taken 2026-10-07: the webrtc module ships with
+silence, tone and application-buffer sources behind one `AudioSource` interface.  This keeps Phase 4 independent of
+Audio module scheduling, gives tests a deterministic signal, and means native capture is a drop-in adapter later.
 
 **API shape mirrors W3C.**  Developers arriving from browser WebRTC should recognise `createOffer`,
 `setRemoteDescription`, `addIceCandidate`, `ondatachannel`.  Names are adapted to Kōtuku conventions (methods are
@@ -314,7 +336,7 @@ give a complete, shippable feature early.  Audio capture work in the Audio modul
 | Schannel lacks `use_srtp` / keying export | No Windows media via Schannel | Phase 0 spike; fall back to OpenSSL for webrtc on Windows or defer Windows media. |
 | SCTP congestion control subtleties | Poor throughput or stalls with browsers | Simulated-network unit tests, Chromium interop benchmark, compare against RFC 4960 test cases. |
 | Browser behaviour drift | Interop breaks silently | Scheduled interop job against current Chromium, like the Autobahn job. |
-| Audio capture absent | Blocks send-side audio | Treat as an independent Audio module deliverable started during Phase 2. |
+| Audio capture absent | Microphone tracks unavailable at first release | Stub `AudioSource` implementations (§5.4) keep send-side audio shippable and testable; native capture is a separate Audio module deliverable that slots in as `DeviceSource`. |
 | H.264 licensing | Legal exposure if a codec were bundled | Transport-only video; never bundle an H.264 implementation. |
 | Scope creep toward a full media engine | Schedule | Non-goals in §2; simulcast/BWE explicitly later. |
 
@@ -342,3 +364,5 @@ give a complete, shippable feature early.  Audio capture work in the Audio modul
 ## 11. Progress Log
 
 - 2026-10-07: Plan drafted after surveying the Network, Crypto, WebSocket and Audio modules.  No code yet.
+- 2026-10-07: Decided that send-side audio uses stub sources (silence, tone, application buffer) until native
+  capture is added to the Audio module (§5.4).
