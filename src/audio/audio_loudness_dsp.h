@@ -306,6 +306,25 @@ public:
       block_left = active ? Target.BlockFrames : 1;
    }
 
+   // Idle starts a fresh measurement window but keeps the applied gain for continuity between adjacent sounds.
+   // Device reconfiguration and leaving bypass still use reset(), which returns the gain to unity.
+
+   void idle() override {
+      std::array<double, LOUDNESS_CHANNELS> gains {}, linear {};
+      const int channels = Channels;
+      for (int c = 0; c < channels; c++) {
+         gains[c] = state[c].Gain;
+         linear[c] = state[c].Linear;
+      }
+
+      reset();
+      for (int c = 0; c < std::min(channels, Channels); c++) {
+         state[c].Gain = gains[c];
+         state[c].Goal = gains[c];
+         state[c].Linear = linear[c];
+      }
+   }
+
    void process(float *Buffer, int Frames) override {
       if (not active) return;
 

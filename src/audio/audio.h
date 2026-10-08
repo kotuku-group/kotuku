@@ -258,6 +258,9 @@ public:
    // Notify observers of output frames that bypass processing or belong to an idle chain.
    virtual void skip(int Frames) { }
    virtual void reset() = 0;
+   // Called when the chain reaches idle.  Most processors discard all state; processors whose control state should
+   // span adjacent sounds may override this while still clearing signal history.
+   virtual void idle() { reset(); }
    virtual bool pending() const { return false; }
    // Queries are bounded and allocation-free. FINITE bounds include buffered output and serial internal stages.
    // A processor with NONE may still have buffered output (for example a lookahead limiter).
