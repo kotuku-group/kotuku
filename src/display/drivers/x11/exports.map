@@ -3,6 +3,7 @@
       ModHeader;
       create_display_driver;
       destroy_display_driver;
+      x11_process_driver_events;
    local:
       *;
 };

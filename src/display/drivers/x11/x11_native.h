@@ -22,6 +22,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace display {
 
@@ -62,6 +63,16 @@ struct X11BitmapRecord {
    bool OwnsDrawable = false;
 };
 
+struct X11ClipboardWrite {
+   Window Requestor = 0;
+   Atom Property = None;
+   Atom Type = None;
+   std::string Data;
+   size_t Offset = 0;
+   long PreviousEventMask = 0;
+   std::chrono::steady_clock::time_point Updated = {};
+};
+
 struct X11Driver::State {
    Display *Connection = nullptr;
    const DriverCallbacks *Callbacks = nullptr;
@@ -88,18 +99,28 @@ struct X11Driver::State {
    Atom TextPlainAtom = 0;
    Atom TextUTF8Atom = 0;
    Atom URIListAtom = 0;
+   Atom GnomeFilesAtom = 0;
    Atom TimestampAtom = 0;
    Atom IncrAtom = 0;
    Atom MultipleAtom = 0;
    Atom AtomPairAtom = 0;
-   Atom ClipboardPropertyAtom = 0;
+   Atom ClipboardManagerAtom = 0;
+   Atom SaveTargetsAtom = 0;
+   Atom SaveTargetsPropertyAtom = 0;
    Atom TimestampPropertyAtom = 0;
    Window ClipboardWindow = 0;
+   Window TransferOwner = 0;
    Time ClipboardTimestamp = CurrentTime;
    Time LastServerTimestamp = CurrentTime;
    Time TransferTimestamp = CurrentTime;
    Atom TransferTarget = None;
+   Atom TransferProperty = None;
+   Atom TransferDataType = None;
    std::string ClipboardText;
+   std::string ClipboardUris;
+   std::string ClipboardGnomeFiles;
+   std::string TransferData;
+   std::vector<X11ClipboardWrite> ClipboardWrites;
    uint64_t TransferGeneration = 0;
    std::chrono::steady_clock::time_point TransferStarted = {};
    GC GraphicsContext = 0;
@@ -116,6 +137,12 @@ struct X11Driver::State {
    std::atomic<int> DPI = 0;   // Logical DPI declared by Xft.dpi, or zero if the desktop does not define it
    bool FrameSync = false; // True if the XSync extension is available for compositor frame synchronisation
    bool ClipboardTransfer = false;
+   bool ClipboardIsFiles = false;
+   bool TransferIncremental = false;
+   bool TransferDiscard = false;
+   bool SaveTargetsPending = false;
+   bool SaveTargetsComplete = false;
+   bool SaveTargetsSucceeded = false;
 #ifdef XFIXES_ENABLED
    bool XFixes = false;
    int XFixesEventBase = 0;
@@ -133,7 +160,8 @@ void x11_process_events(X11Driver::State *State);
 void x11_begin_frame(X11Driver::State *State, X11WindowRecord *Window);
 void x11_end_frame(X11Driver::State *State, X11WindowRecord *Window);
 void x11_install_bitmap_routines(extBitmap *Bitmap);
-void x11_request_clipboard(X11Driver::State *State, Time Timestamp);
+void x11_request_clipboard(X11Driver::State *State, Time Timestamp, Window Owner);
+void x11_save_clipboard(X11Driver::State *State, Time Timestamp);
 
 void handle_button_press(XEvent *Event);
 void handle_button_release(XEvent *Event);

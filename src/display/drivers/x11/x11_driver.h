@@ -75,10 +75,16 @@ public:
    ERR clipboardAddFiles(CLIPTYPE Type, const std::vector<std::string> &Paths, bool Cut) override;
    ERR clipboardClear() override;
 
+#ifdef X11_DRIVER_TESTS
    void processEvents();
+#endif
 
 private:
    State *Data;
 };
+
+#ifdef X11_DRIVER_TESTS
+extern "C" DISPLAY_DRIVER_EXPORT void x11_process_driver_events(DisplayDriver *Driver);
+#endif
 
 }

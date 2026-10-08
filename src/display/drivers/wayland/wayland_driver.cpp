@@ -1,5 +1,6 @@
 #include "wayland_driver.h"
 #include "../../defs.h"
+#include "../../driver/clipboard_utils.h"
 #include "xdg-shell-client-protocol.h"
 #include "decorations.h"
 #ifdef WAYLAND_FRACTIONAL_SCALE
@@ -2534,26 +2535,12 @@ ERR WaylandDriver::clipboardAddText(CSTRING Text)
    return ERR::Okay;
 }
 
-ERR WaylandDriver::clipboardAddFiles(CLIPTYPE Type, const std::vector<std::string> &Paths, bool)
+ERR WaylandDriver::clipboardAddFiles(CLIPTYPE Type, const std::vector<std::string> &Paths, bool Cut)
 {
    if ((not Data->DataManager) or (Type != CLIPTYPE::FILE)) return ERR::NoSupport;
-   std::string uris;
-   constexpr char hex[] = "0123456789ABCDEF";
-   for (auto &item : Paths) {
-      std::string path;
-      if (ResolvePath(item, RSF::NIL, &path) != ERR::Okay) continue;
-      if (path.empty() or (path[0] != '/')) continue;
-      uris.append("file://");
-      for (unsigned char ch : path) {
-         if (((ch >= 'A') and (ch <= 'Z')) or ((ch >= 'a') and (ch <= 'z')) or
-               ((ch >= '0') and (ch <= '9')) or (ch IS '/') or (ch IS '-') or (ch IS '_') or
-               (ch IS '.') or (ch IS '~')) uris.push_back(char(ch));
-         else { uris.push_back('%'); uris.push_back(hex[ch >> 4]); uris.push_back(hex[ch & 15]); }
-      }
-      uris.append("\r\n");
-   }
-   if (uris.find("file://") IS std::string::npos) return ERR::InvalidPath;
-   Data->ClipboardUris = std::move(uris);
+   ClipboardFilePayload payload;
+   if (auto error = encode_clipboard_files(Paths, Cut, payload); error != ERR::Okay) return error;
+   Data->ClipboardUris = std::move(payload.URIList);
    Data->ClipboardText.clear();
    Data->ClipboardIsFiles = true;
    Data->ClipboardGeneration++;

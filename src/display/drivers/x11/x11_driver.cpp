@@ -1,4 +1,5 @@
 #include "x11_native.h"
+#include "../../driver/clipboard_utils.h"
 
 #include <X11/Xatom.h>
 
@@ -93,29 +94,48 @@ static void event_loop(HOSTHANDLE, APTR Data) { x11_process_events((X11Driver::S
 
 //********************************************************************************************************************
 
+static Bool timestamp_event(Display *, XEvent *Event, XPointer Data)
+{
+   auto state = (X11Driver::State *)Data;
+   return (Event->type IS PropertyNotify) and (Event->xproperty.window IS state->ClipboardWindow) and
+      (Event->xproperty.atom IS state->TimestampPropertyAtom);
+}
+
+//********************************************************************************************************************
+
 static Time server_timestamp(X11Driver::State *State)
 {
    XChangeProperty(State->Connection, State->ClipboardWindow, State->TimestampPropertyAtom, XA_INTEGER, 8,
       PropModeAppend, nullptr, 0);
    XEvent event;
-   XWindowEvent(State->Connection, State->ClipboardWindow, PropertyChangeMask, &event);
+   XIfEvent(State->Connection, &event, timestamp_event, (XPointer)State);
    State->LastServerTimestamp = event.xproperty.time;
    return State->LastServerTimestamp;
 }
 
 //********************************************************************************************************************
 
-void x11_request_clipboard(X11Driver::State *State, Time Timestamp)
+void x11_request_clipboard(X11Driver::State *State, Time Timestamp, Window Owner)
 {
    const std::lock_guard lock(State->NativeLock);
    if ((not State->Connection) or (not State->ClipboardWindow)) return;
 
    State->TransferGeneration++;
+   char property_name[40];
+   snprintf(property_name, sizeof(property_name), "KOTUKU_CLIP_%u",
+      unsigned(State->TransferGeneration % 64));
+   State->TransferProperty = XInternAtom(State->Connection, property_name, False);
+   XDeleteProperty(State->Connection, State->ClipboardWindow, State->TransferProperty);
+   State->TransferOwner = Owner;
    State->TransferTimestamp = Timestamp;
    State->TransferTarget = State->TargetsAtom;
+   State->TransferDataType = None;
+   State->TransferData.clear();
    State->TransferStarted = std::chrono::steady_clock::now();
    State->ClipboardTransfer = true;
-   XConvertSelection(State->Connection, State->ClipboardAtom, State->TargetsAtom, State->ClipboardPropertyAtom,
+   State->TransferIncremental = false;
+   State->TransferDiscard = false;
+   XConvertSelection(State->Connection, State->ClipboardAtom, State->TargetsAtom, State->TransferProperty,
       State->ClipboardWindow, Timestamp);
    XFlush(State->Connection);
 }
@@ -288,6 +308,15 @@ X11Driver::~X11Driver() { delete Data; }
 CSTRING X11Driver::name() const { return "x11"; }
 DT X11Driver::displayType() const { return DT::X11; }
 
+#ifdef X11_DRIVER_TESTS
+extern "C" DISPLAY_DRIVER_EXPORT void x11_process_driver_events(DisplayDriver *Driver)
+{
+   if (Driver) ((X11Driver *)Driver)->processEvents();
+}
+
+void X11Driver::processEvents() { x11_process_events(Data); }
+#endif
+
 //********************************************************************************************************************
 
 DCAP X11Driver::capabilities() const
@@ -382,11 +411,14 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
    Data->TextPlainAtom = XInternAtom(Data->Connection, "text/plain", False);
    Data->TextUTF8Atom = XInternAtom(Data->Connection, "text/plain;charset=utf-8", False);
    Data->URIListAtom = XInternAtom(Data->Connection, "text/uri-list", False);
+   Data->GnomeFilesAtom = XInternAtom(Data->Connection, "x-special/gnome-copied-files", False);
    Data->TimestampAtom = XInternAtom(Data->Connection, "TIMESTAMP", False);
    Data->IncrAtom = XInternAtom(Data->Connection, "INCR", False);
    Data->MultipleAtom = XInternAtom(Data->Connection, "MULTIPLE", False);
    Data->AtomPairAtom = XInternAtom(Data->Connection, "ATOM_PAIR", False);
-   Data->ClipboardPropertyAtom = XInternAtom(Data->Connection, "KOTUKU_CLIP", False);
+   Data->ClipboardManagerAtom = XInternAtom(Data->Connection, "CLIPBOARD_MANAGER", False);
+   Data->SaveTargetsAtom = XInternAtom(Data->Connection, "SAVE_TARGETS", False);
+   Data->SaveTargetsPropertyAtom = XInternAtom(Data->Connection, "KOTUKU_SAVE_TARGETS", False);
    Data->TimestampPropertyAtom = XInternAtom(Data->Connection, "KOTUKU_TIME", False);
 
    clipboard_attributes.event_mask = PropertyChangeMask;
@@ -405,7 +437,7 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
             XFixesSelectionClientCloseNotifyMask);
          auto owner = XGetSelectionOwner(Data->Connection, Data->ClipboardAtom);
          if ((owner != None) and (owner != Data->ClipboardWindow)) {
-            x11_request_clipboard(Data, server_timestamp(Data));
+            x11_request_clipboard(Data, server_timestamp(Data), owner);
          }
       }
    }
@@ -460,6 +492,8 @@ fail:
 
 ERR X11Driver::close()
 {
+   if (Data->Open and Data->Connection and Data->ClipboardWindow)
+      x11_save_clipboard(Data, server_timestamp(Data));
    const std::lock_guard lock(Data->NativeLock);
    const bool was_open = Data->Open;
    Data->Closing = true;
@@ -490,9 +524,16 @@ ERR X11Driver::close()
    Data->Connection = nullptr;
    Data->ClipboardWindow = 0;
    Data->ClipboardText.clear();
+   Data->ClipboardUris.clear();
+   Data->ClipboardGnomeFiles.clear();
+   Data->TransferData.clear();
+   Data->ClipboardWrites.clear();
    Data->ClipboardTimestamp = Data->LastServerTimestamp = Data->TransferTimestamp = CurrentTime;
-   Data->TransferTarget = None;
+   Data->TransferTarget = Data->TransferProperty = Data->TransferDataType = None;
+   Data->TransferOwner = 0;
    Data->ClipboardTransfer = false;
+   Data->ClipboardIsFiles = Data->TransferIncremental = Data->TransferDiscard = false;
+   Data->SaveTargetsPending = Data->SaveTargetsComplete = Data->SaveTargetsSucceeded = false;
 #ifdef XFIXES_ENABLED
    Data->XFixes = false;
    Data->XFixesEventBase = 0;
@@ -512,6 +553,9 @@ ERR X11Driver::clipboardAddText(CSTRING Text)
 
    auto timestamp = server_timestamp(Data);
    Data->ClipboardText = Text ? Text : "";
+   Data->ClipboardUris.clear();
+   Data->ClipboardGnomeFiles.clear();
+   Data->ClipboardIsFiles = false;
    Data->ClipboardTimestamp = timestamp;
    Data->ClipboardTransfer = false;
    Data->TransferGeneration++;
@@ -526,9 +570,32 @@ ERR X11Driver::clipboardAddText(CSTRING Text)
 
 //********************************************************************************************************************
 
-ERR X11Driver::clipboardAddFiles(CLIPTYPE, const std::vector<std::string> &, bool)
+ERR X11Driver::clipboardAddFiles(CLIPTYPE Type, const std::vector<std::string> &Paths, bool Cut)
 {
-   return ERR::NoSupport;
+   if (Type != CLIPTYPE::FILE) return ERR::NoSupport;
+   ClipboardFilePayload payload;
+   if (auto error = encode_clipboard_files(Paths, Cut, payload); error != ERR::Okay) return error;
+
+   const std::lock_guard lock(Data->NativeLock);
+   if ((not Data->Open) or (not Data->Connection) or (not Data->ClipboardWindow)) return ERR::NoSupport;
+
+   auto timestamp = server_timestamp(Data);
+   Data->ClipboardText.clear();
+   Data->ClipboardUris = std::move(payload.URIList);
+   Data->ClipboardGnomeFiles = std::move(payload.GnomeFiles);
+   Data->ClipboardIsFiles = true;
+   Data->ClipboardTimestamp = timestamp;
+   Data->ClipboardTransfer = false;
+   Data->TransferGeneration++;
+   XSetSelectionOwner(Data->Connection, Data->ClipboardAtom, Data->ClipboardWindow, timestamp);
+   XFlush(Data->Connection);
+   if (XGetSelectionOwner(Data->Connection, Data->ClipboardAtom) != Data->ClipboardWindow) {
+      Data->ClipboardUris.clear();
+      Data->ClipboardGnomeFiles.clear();
+      Data->ClipboardIsFiles = false;
+      return ERR::SystemCall;
+   }
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -543,6 +610,9 @@ ERR X11Driver::clipboardClear()
       XFlush(Data->Connection);
    }
    Data->ClipboardText.clear();
+   Data->ClipboardUris.clear();
+   Data->ClipboardGnomeFiles.clear();
+   Data->ClipboardIsFiles = false;
    Data->ClipboardTimestamp = CurrentTime;
    Data->ClipboardTransfer = false;
    Data->TransferGeneration++;
@@ -575,10 +645,10 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    attributes.win_gravity = CenterGravity;
    attributes.cursor = State->Cursors[0];
 
-   // Borderless windows remain managed so that they retain normal focus, stacking and taskbar behaviour.  Composite
-   // windows still need override-redirect because their alpha visual represents an application-managed pop-up.
+   // Presence controls whether the window manager participates.  Borderless taskbar windows remain managed, while
+   // presence-less and tray windows bypass the manager.  Compositing only selects an alpha-capable visual.
 
-   attributes.override_redirect = (DisplayObject->Flags & SCR::COMPOSITE) != SCR::NIL;
+   attributes.override_redirect = ((DisplayObject->Flags & SCR::BORDERLESS) != SCR::NIL) and (not State->TaskBar);
    attributes.event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
       KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
    int flags = CWEventMask|CWOverrideRedirect|CWCursor|CWBitGravity;
@@ -586,7 +656,7 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    Visual *visual = CopyFromParent;
    Colormap colormap = 0;
 
-   if (attributes.override_redirect and State->Composite) {
+   if (((DisplayObject->Flags & SCR::COMPOSITE) != SCR::NIL) and State->Composite) {
       colormap = XCreateColormap(State->Connection, DefaultRootWindow(State->Connection), State->AlphaVisual.visual,
          AllocNone);
       attributes.colormap = colormap;
