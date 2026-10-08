@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <limits>
 #include <poll.h>
 
@@ -316,6 +317,28 @@ static void handle_selection_clear(const XSelectionClearEvent &Event)
 
 //********************************************************************************************************************
 
+static Atom select_clipboard_target(const Atom *Targets, size_t Count)
+{
+   const Atom preferences[] = { glEventState->URIListAtom, glEventState->UTF8StringAtom,
+      glEventState->TextUTF8Atom, glEventState->TextPlainAtom, XA_STRING };
+   for (auto preference : preferences) {
+      for (size_t i = 0; i < Count; i++) if (Targets[i] IS preference) return preference;
+   }
+   return None;
+}
+
+//********************************************************************************************************************
+
+static void request_clipboard_target(Atom Target)
+{
+   glEventState->TransferTarget = Target;
+   glEventState->TransferStarted = std::chrono::steady_clock::now();
+   XConvertSelection(XDisplay, glEventState->ClipboardAtom, Target,
+      glEventState->TransferProperty, glEventState->ClipboardWindow, glEventState->TransferTimestamp);
+}
+
+//********************************************************************************************************************
+
 static void handle_selection_notify(const XSelectionEvent &Event)
 {
    if ((Event.requestor IS glEventState->ClipboardWindow) and
@@ -374,6 +397,7 @@ static void handle_selection_notify(const XSelectionEvent &Event)
          glEventState->TransferData.clear();
          if (expected <= MAX_CLIPBOARD_TRANSFER) glEventState->TransferData.reserve(size_t(expected));
          glEventState->TransferDataType = None;
+         glEventState->TransferDataFormat = 0;
          glEventState->TransferIncremental = true;
          glEventState->TransferDiscard = expected > MAX_CLIPBOARD_TRANSFER;
          glEventState->TransferStarted = std::chrono::steady_clock::now();
@@ -383,27 +407,14 @@ static void handle_selection_notify(const XSelectionEvent &Event)
       if (Event.target IS glEventState->TargetsAtom) {
          Atom selected = None;
          if ((actual_type IS XA_ATOM) and (actual_format IS 32)) {
-            auto targets = (Atom *)property;
-            const Atom preferences[] = { glEventState->URIListAtom, glEventState->UTF8StringAtom,
-               glEventState->TextUTF8Atom, glEventState->TextPlainAtom, XA_STRING };
-            for (auto preference : preferences) {
-               for (unsigned long i = 0; i < count; i++) if (targets[i] IS preference) {
-                  selected = preference;
-                  break;
-               }
-               if (selected != None) break;
-            }
+            selected = select_clipboard_target((Atom *)property, count);
          }
          if (property) XFree(property);
          if (selected IS None) {
             glEventState->ClipboardTransfer = false;
             return;
          }
-         glEventState->TransferTarget = selected;
-         glEventState->TransferStarted = std::chrono::steady_clock::now();
-         XConvertSelection(XDisplay, glEventState->ClipboardAtom, selected,
-            glEventState->TransferProperty, glEventState->ClipboardWindow,
-            glEventState->TransferTimestamp);
+         request_clipboard_target(selected);
          return;
       }
 
@@ -479,7 +490,8 @@ static void receive_incremental_chunk(const XPropertyEvent &Event)
          size_t(std::numeric_limits<long>::max()));
       auto status = XGetWindowProperty(XDisplay, glEventState->ClipboardWindow, Event.atom, 0,
          long(maximum_longs), True, AnyPropertyType, &actual_type, &actual_format, &count, &remaining, &property);
-      if ((status != Success) or remaining or (actual_format != 8)) {
+      auto expected_format = glEventState->TransferTarget IS glEventState->TargetsAtom ? 32 : 8;
+      if ((status != Success) or remaining or (actual_format != expected_format)) {
          if (property) XFree(property);
          glEventState->ClipboardTransfer = false;
          glEventState->TransferIncremental = false;
@@ -489,11 +501,16 @@ static void receive_incremental_chunk(const XPropertyEvent &Event)
 
       glEventState->TransferStarted = std::chrono::steady_clock::now();
       if (count) {
-         if (glEventState->TransferDataType IS None) glEventState->TransferDataType = actual_type;
-         else if (actual_type != glEventState->TransferDataType) glEventState->TransferDiscard = true;
+         if (glEventState->TransferDataType IS None) {
+            glEventState->TransferDataType = actual_type;
+            glEventState->TransferDataFormat = actual_format;
+         }
+         else if ((actual_type != glEventState->TransferDataType) or
+                  (actual_format != glEventState->TransferDataFormat)) glEventState->TransferDiscard = true;
+         auto bytes = actual_format IS 32 ? size_t(count) * sizeof(Atom) : size_t(count);
          if ((not glEventState->TransferDiscard) and
-             (glEventState->TransferData.size() + count <= MAX_CLIPBOARD_TRANSFER)) {
-            glEventState->TransferData.append((const char *)property, count);
+             (bytes <= MAX_CLIPBOARD_TRANSFER - glEventState->TransferData.size())) {
+            glEventState->TransferData.append((const char *)property, bytes);
          }
          else glEventState->TransferDiscard = true;
          if (property) XFree(property);
@@ -502,7 +519,26 @@ static void receive_incremental_chunk(const XPropertyEvent &Event)
       if (property) XFree(property);
 
       if (not glEventState->TransferDiscard) {
-         if ((glEventState->TransferTarget IS XA_STRING) or
+         if (glEventState->TransferTarget IS glEventState->TargetsAtom) {
+            Atom selected = None;
+            if ((glEventState->TransferDataType IS XA_ATOM) and
+                (glEventState->TransferDataFormat IS 32) and
+                (not (glEventState->TransferData.size() % sizeof(Atom)))) {
+               auto count = glEventState->TransferData.size() / sizeof(Atom);
+               std::vector<Atom> targets(count);
+               std::memcpy(targets.data(), glEventState->TransferData.data(), glEventState->TransferData.size());
+               selected = select_clipboard_target(targets.data(), targets.size());
+            }
+            glEventState->TransferIncremental = false;
+            glEventState->TransferData.clear();
+            glEventState->TransferDataType = None;
+            glEventState->TransferDataFormat = 0;
+            if (selected != None) {
+               request_clipboard_target(selected);
+               return;
+            }
+         }
+         else if ((glEventState->TransferTarget IS XA_STRING) or
              (glEventState->TransferDataType IS XA_STRING)) {
             data = latin1_to_utf8((const unsigned char *)glEventState->TransferData.data(),
                glEventState->TransferData.size());
@@ -740,6 +776,45 @@ void x11_process_events(X11Driver::State *State)
 
 //********************************************************************************************************************
 
+static Bool clipboard_save_event(Display *, XEvent *Event, XPointer Data)
+{
+   auto state = (X11Driver::State *)Data;
+   if (Event->type IS SelectionRequest) {
+      return (Event->xselectionrequest.owner IS state->ClipboardWindow) and
+         (Event->xselectionrequest.selection IS state->ClipboardAtom);
+   }
+   if (Event->type IS SelectionNotify) {
+      return (Event->xselection.requestor IS state->ClipboardWindow) and
+         (Event->xselection.selection IS state->ClipboardManagerAtom) and
+         (Event->xselection.target IS state->SaveTargetsAtom);
+   }
+   if (Event->type != PropertyNotify) return False;
+   return std::any_of(state->ClipboardWrites.begin(), state->ClipboardWrites.end(),
+      [Event](const X11ClipboardWrite &Write) {
+         return (Write.Requestor IS Event->xproperty.window) and (Write.Property IS Event->xproperty.atom);
+      });
+}
+
+//********************************************************************************************************************
+
+static void process_clipboard_save_events(X11Driver::State *State)
+{
+   glEventState = State;
+   XEvent event = {};
+   bool processed = false;
+   while (XCheckIfEvent(State->Connection, &event, clipboard_save_event, (XPointer)State)) {
+      processed = true;
+      update_server_timestamp(event);
+      if (event.type IS SelectionRequest) handle_selection_request(event.xselectionrequest);
+      else if (event.type IS SelectionNotify) handle_selection_notify(event.xselection);
+      else if (event.type IS PropertyNotify) send_incremental_chunk(event.xproperty);
+   }
+   if (processed) XFlush(State->Connection);
+   glEventState = nullptr;
+}
+
+//********************************************************************************************************************
+
 void x11_save_clipboard(X11Driver::State *State, Time Timestamp)
 {
    {
@@ -762,7 +837,7 @@ void x11_save_clipboard(X11Driver::State *State, Time Timestamp)
 
    auto deadline = std::chrono::steady_clock::now() + CLIPBOARD_TIMEOUT;
    while (std::chrono::steady_clock::now() < deadline) {
-      x11_process_events(State);
+      process_clipboard_save_events(State);
       {
          const std::lock_guard lock(State->NativeLock);
          if (State->SaveTargetsComplete) break;

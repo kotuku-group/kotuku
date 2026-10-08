@@ -530,6 +530,7 @@ ERR X11Driver::close()
    Data->ClipboardWrites.clear();
    Data->ClipboardTimestamp = Data->LastServerTimestamp = Data->TransferTimestamp = CurrentTime;
    Data->TransferTarget = Data->TransferProperty = Data->TransferDataType = None;
+   Data->TransferDataFormat = 0;
    Data->TransferOwner = 0;
    Data->ClipboardTransfer = false;
    Data->ClipboardIsFiles = Data->TransferIncremental = Data->TransferDiscard = false;

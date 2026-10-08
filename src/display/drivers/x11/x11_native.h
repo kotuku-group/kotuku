@@ -116,6 +116,7 @@ struct X11Driver::State {
    Atom TransferTarget = None;
    Atom TransferProperty = None;
    Atom TransferDataType = None;
+   int TransferDataFormat = 0;
    std::string ClipboardText;
    std::string ClipboardUris;
    std::string ClipboardGnomeFiles;

@@ -127,7 +127,7 @@ static bool request_selection(DisplayDriver *Driver, Display *Connection, Window
 }
 
 static bool receive_external_selection(DisplayDriver *Driver, Display *Connection, Atom Target,
-   const std::string &Mime, const std::string &Data, bool Incremental)
+   const std::string &Mime, const std::string &Data, bool Incremental, bool IncrementalTargets = false)
 {
    auto selection = XInternAtom(Connection, "CLIPBOARD", False);
    auto targets_atom = XInternAtom(Connection, "TARGETS", False);
@@ -142,6 +142,7 @@ static bool receive_external_selection(DisplayDriver *Driver, Display *Connectio
    Atom property = None;
    size_t offset = 0;
    bool sending = false;
+   bool sending_targets = false;
    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
    while ((std::chrono::steady_clock::now() < deadline) and (glClipboardData != Data)) {
       display::x11_process_driver_events(Driver);
@@ -160,9 +161,22 @@ static bool receive_external_selection(DisplayDriver *Driver, Display *Connectio
             reply.property = reply_property;
             reply.time = request.time;
             if (request.target IS targets_atom) {
-               Atom targets[] = { Target };
-               XChangeProperty(Connection, request.requestor, reply_property, XA_ATOM, 32, PropModeReplace,
-                  (const unsigned char *)targets, 1);
+               if (IncrementalTargets) {
+                  unsigned long length = sizeof(Atom);
+                  requestor = request.requestor;
+                  property = reply_property;
+                  offset = 0;
+                  sending = true;
+                  sending_targets = true;
+                  XSelectInput(Connection, requestor, PropertyChangeMask);
+                  XChangeProperty(Connection, requestor, property, incr_atom, 32, PropModeReplace,
+                     (const unsigned char *)&length, 1);
+               }
+               else {
+                  Atom targets[] = { Target };
+                  XChangeProperty(Connection, request.requestor, reply_property, XA_ATOM, 32, PropModeReplace,
+                     (const unsigned char *)targets, 1);
+               }
             }
             else if (request.target IS Target) {
                if (Incremental) {
@@ -171,6 +185,7 @@ static bool receive_external_selection(DisplayDriver *Driver, Display *Connectio
                   property = reply_property;
                   offset = 0;
                   sending = true;
+                  sending_targets = false;
                   XSelectInput(Connection, requestor, PropertyChangeMask);
                   XChangeProperty(Connection, requestor, property, incr_atom, 32, PropModeReplace,
                      (const unsigned char *)&length, 1);
@@ -186,9 +201,18 @@ static bool receive_external_selection(DisplayDriver *Driver, Display *Connectio
          }
          else if (sending and (event.type IS PropertyNotify) and (event.xproperty.state IS PropertyDelete) and
                   (event.xproperty.window IS requestor) and (event.xproperty.atom IS property)) {
-            auto length = std::min<size_t>(32768, Data.size() - offset);
-            XChangeProperty(Connection, requestor, property, Target, 8, PropModeAppend,
-               (const unsigned char *)Data.data() + offset, int(length));
+            size_t length = 0;
+            if (sending_targets) {
+               Atom targets[] = { Target };
+               length = offset ? 0 : 1;
+               XChangeProperty(Connection, requestor, property, XA_ATOM, 32, PropModeAppend,
+                  (const unsigned char *)targets, int(length));
+            }
+            else {
+               length = std::min<size_t>(32768, Data.size() - offset);
+               XChangeProperty(Connection, requestor, property, Target, 8, PropModeAppend,
+                  (const unsigned char *)Data.data() + offset, int(length));
+            }
             offset += length;
             if (not length) sending = false;
             XFlush(Connection);
@@ -379,10 +403,12 @@ static bool save_with_clipboard_manager(DisplayDriver *Driver, Display *Connecti
       }
    });
 
+   auto lost_before = glClipboardLost;
    auto close_error = Driver->close();
    worker.join();
    auto succeeded = (close_error IS ERR::DoNotExpunge) and complete and
-      (saved IS "Persisted X11 clipboard ✓") and (XGetSelectionOwner(Connection, Selection) IS manager);
+      (saved IS "Persisted X11 clipboard ✓") and (XGetSelectionOwner(Connection, Selection) IS manager) and
+      (glClipboardLost IS lost_before);
    XDestroyWindow(Connection, manager);
    XFlush(Connection);
    return succeeded;
@@ -464,6 +490,8 @@ static void test_clipboard(DisplayDriver *Driver, const std::optional<std::strin
    std::string incoming_large(256 * 1024, 'i');
    Failures += check(receive_external_selection(Driver, peer, utf8, "text/plain;charset=utf-8",
       incoming_large, true));
+   Failures += check(receive_external_selection(Driver, peer, utf8, "text/plain;charset=utf-8",
+      "External text with incremental targets", false, true));
    Failures += check(replace_unresponsive_owner(Driver, peer, utf8));
    Failures += check(reject_stale_reply(Driver, peer, utf8));
 
