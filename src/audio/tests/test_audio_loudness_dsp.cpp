@@ -631,7 +631,8 @@ static void test_effect_integration(AudioTestContext &Test)
    effect.process(resumed.data(), 1);
    AUDIO_CHECK(leveller->gain(0) IS 0 and leveller->filled() IS 0 and resumed IS resumed_input);
 
-   // Idle publishes a final interval and returns to unity gain.
+   // Idle publishes a final interval, clears measurement history and preserves the applied gain.  This gives the
+   // following sound the previous level while its new measurement window fills.
 
    for (int i = 0; i < 40; i++) {
       auto block = tone.next(2400, 2, db_to_gain(-23), db_to_gain(-23));
@@ -642,8 +643,19 @@ static void test_effect_integration(AudioTestContext &Test)
    effect.process(partial.data(), 100);
    effect.idle();
    AUDIO_CHECK((effect.Meter.Flags & AMF::IDLE) != AMF::NIL);
-   AUDIO_CHECK(effect.Meter.Values[6] > 0);  // The final interval reports the gain before the reset
-   AUDIO_CHECK(leveller->gain(0) IS 0 and leveller->short_term_loudness() IS LOUDNESS_FLOOR);
+   AUDIO_CHECK(effect.Meter.Values[6] > 0);  // The final interval reports the gain before idle cleanup
+   const double idle_gain = leveller->gain(0);
+   AUDIO_CHECK(idle_gain > 0 and leveller->short_term_loudness() IS LOUDNESS_FLOOR and leveller->filled() IS 0);
+   std::vector<float> next = { 0.1f, 0.1f };
+   effect.process(next.data(), 1);
+   AUDIO_CHECK(std::abs(leveller->gain(0) - idle_gain) < 1e-12 and next[0] > 0.1f and next[1] > 0.1f);
+
+   // A hard reset requested while the chain is idle must still return the gain to unity.
+
+   fixture.Chain->reset();
+   AUDIO_CHECK(effect.ResetPending);
+   effect.idle();
+   AUDIO_CHECK(leveller->gain(0) IS 0 and !effect.ResetPending);
    AUDIO_CHECK(not effects_pending(*fixture.Chain));
 }
 

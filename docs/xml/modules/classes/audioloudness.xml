@@ -55,7 +55,7 @@ same gain.</li>
 <p>The loudness meters are measurements of the programme in both linked and unlinked operation.</p>
 <header>Live Changes</header>
 <p>Parameter changes take effect immediately, and the applied gain moves to the new target at the <code>response</code> rate, so edits never click.  The measurement history is retained.</p>
-<p>Device reactivation, leaving bypass and reaching idle discard the measurement history and return the leveller to unity gain.  The leveller has zero latency and no tail, and never delays the completion of a sound.</p>
+<p>Reaching idle discards the measurement history but preserves the applied gain, so adjacent sounds start at a consistent level.  Device reactivation and leaving bypass discard the history and return the leveller to unity gain. The leveller has zero latency and no tail, and never delays the completion of a sound.</p>
 <p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.</p></description>
     <source>
       <file>class_audioloudness.cpp</file>

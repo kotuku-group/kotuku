@@ -30,13 +30,8 @@ static bool windows_render(void *Context, float *Output, unsigned Frames, unsign
    else {
       self->QueuedFrames = Padding;
       std::fill_n(self->FilterHistory, 4, 0.0f);
-      auto reset = [](AudioEffectChain &Chain) {
-         for (auto effect : Chain.Effects) effect->ResetPending = true;
-      };
-      reset(*self->GlobalEffects);
-      for (auto &set : self->Sets) {
-         if (set.Effects) reset(*set.Effects);
-      }
+      // audio_playing() has already idled each effect chain.  Stopping the transport must not turn that ordinary idle
+      // transition into a hard reset, because some processor control state spans adjacent sounds.
    }
    glAudioWorker = false;
    return active;
