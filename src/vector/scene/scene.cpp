@@ -1104,7 +1104,7 @@ static void scene_key_event(evKey *Event, int Size, extVectorScene *Self)
 
          if ((Event->Qualifiers & KQ::RELEASED) IS KQ::NIL) return;
 
-         cycle_focus(Self, (Event->Qualifiers & KQ::SHIFT) IS KQ::SHIFT);
+         cycle_focus(Self, (Event->Qualifiers & KQ::SHIFT) != KQ::NIL);
          return;
       }
    }
