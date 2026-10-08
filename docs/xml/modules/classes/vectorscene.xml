@@ -53,6 +53,20 @@
     </action>
 
     <action>
+      <name>Next</name>
+      <comment>Cycles the focus to the next control.</comment>
+      <prototype>ERR acNext(*Object)</prototype>
+      <tiriPrototype>err = Object.acNext()</tiriPrototype>
+    </action>
+
+    <action>
+      <name>Prev</name>
+      <comment>Cycles the focus to the previous control.</comment>
+      <prototype>ERR acPrev(*Object)</prototype>
+      <tiriPrototype>err = Object.acPrev()</tiriPrototype>
+    </action>
+
+    <action>
       <name>Redimension</name>
       <comment>Redefines the size of the page.</comment>
       <prototype>ERR acRedimension(*Object, DOUBLE X, DOUBLE Y, DOUBLE Z, DOUBLE Width, DOUBLE Height, DOUBLE Depth)</prototype>
@@ -249,6 +263,7 @@
   <types>
     <constants lookup="VPF" comment="Optional flags for the VectorScene object.">
       <const name="BITMAP_SIZED">Automatically adjust the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> to match the target <class name="Bitmap" field="Width">Bitmap.Width</class> and <class name="Bitmap" field="Height">Bitmap.Height</class>.</const>
+      <const name="IGNORE_TAB">Ignore the Tab key for cycling through keyboard subscribers.</const>
       <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
       <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
       <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
