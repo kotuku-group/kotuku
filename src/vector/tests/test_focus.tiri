@@ -84,3 +84,30 @@ end
    assert(hits.root is 2, 'Freeing an unfocused vector removed the focus from the root')
    assert(hits.child is 2, 'Freeing an unfocused vector removed the focus from the focused child')
 end
+
+@Test function ExplicitFocusTransfersKeyboardAndFeedback()
+   local surface <close>, vectors, hits, focus_events = focusedScene(array<str> { 'root', 'child' })
+   local prior_focus = focus_events.root.has
+   check vectors.root.acFocus()
+   sendKey(KEY_A)
+   assert(focus_events.root.has is prior_focus + 1, 'Focus must notify the new primary vector')
+   assert(hits.root is 2 and hits.child is 1, 'Focus must remove the previous child from keyboard routing')
+   check vectors.child.acFocus()
+   sendKey(KEY_A)
+   assert(hits.root is 3 and hits.child is 2, 'Focus must restore routing to a child and its ancestor')
+end
+
+@Test function ExplicitFocusRejectsHiddenDisabledAndInactiveTargets()
+   local surface <close>, vectors, hits = focusedScene(array<str> { 'root', 'child' })
+   check vectors.root.acFocus()
+   vectors.child.acHide()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'Hidden vectors must not gain focus')
+   vectors.child.acShow()
+   vectors.root.acDisable()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'Disabled ancestors must prevent focus')
+   vectors.root.acEnable()
+   sendKey(KEY_A)
+   assert(hits.root is 2 and hits.child is 1, 'Rejected focus requests must preserve the current focus')
+   surface.acLostFocus()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'An inactive surface must not acquire vector focus')
+end
