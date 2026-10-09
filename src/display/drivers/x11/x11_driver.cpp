@@ -173,7 +173,6 @@ static GC create_graphics_context(X11Driver::State *State, Drawable DrawableID)
 }
 
 //********************************************************************************************************************
-
 // The Motif hints control the window's decorations and the functions that the window manager offers for it.  The
 // property is replaced as a whole, so every update carries the window's full state.  Removing the maximise function
 // is the only way to stop window managers such as Mutter from maximising a window, which they do in disregard of its
@@ -646,10 +645,11 @@ static ERR create_window_record(X11Driver::State *State, extDisplay *DisplayObje
    attributes.win_gravity = CenterGravity;
    attributes.cursor = State->Cursors[0];
 
-   // Presence controls whether the window manager participates.  Borderless taskbar windows remain managed, while
-   // presence-less and tray windows bypass the manager.  Compositing only selects an alpha-capable visual.
+   // Presence controls whether the window manager participates.
+   // override_redirect explicitly prevents the window manager from decorating or managing the window.
+   // Also see _MOTIF_WM_HINTS and _NET_WM_STATE_SKIP_TASKBAR
 
-   attributes.override_redirect = ((DisplayObject->Flags & SCR::BORDERLESS) != SCR::NIL) and (not State->TaskBar);
+   attributes.override_redirect = not State->TaskBar;
    attributes.event_mask = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask|
       KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
    int flags = CWEventMask|CWOverrideRedirect|CWCursor|CWBitGravity;
