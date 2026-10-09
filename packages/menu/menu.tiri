@@ -5,7 +5,7 @@ Documentation is available in the Kotuku Wiki.
 To be used in conjunction with the gui.menubar or as an independent pop-up only.
 --]]
 
-   import 'gui'
+   import 'gui', 'gui/tooltip'
    include 'display'
 
    namespace gui
@@ -29,7 +29,7 @@ gui.menu = function(Options)
       reverseX = false,
       timeShow = 0,
       timeHide = 0,
-      tipDelay = 500,
+      tipDelay = 0.5,
       visible  = false,
       client   = Options.client,
       feedback = Options.feedback,

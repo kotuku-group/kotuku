@@ -36,7 +36,7 @@ gui.button = function(Options)
 
    self.enable = function()
       self.disabled = false
-      self.viewport.acDisable()
+      self.viewport.acEnable()
       self.text?.opacity = 1.0
       self.bkgd.fill = theme.button.bkgd
       self.events?.enable(self)

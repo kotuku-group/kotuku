@@ -23,7 +23,8 @@
     "tiri": "1.0"
   },
   "dependencies": {
-    "gui": "1.0"
+    "gui": "1.0",
+    "tooltip": "1.0"
   },
   "files": [
     {

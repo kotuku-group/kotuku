@@ -926,7 +926,7 @@ gui.fileview = function(Options)
                type     = 'question',
                options  = { { id=-1, text='No', icon='items/cancel' },
                             { id=1, text='Yes', icon='items/checkmark' } },
-               popover  = self._surface,
+               popOver  = self._surface,
                modal    = true,
                feedback = function(Dialog, Response, State)
                   if mSys.MoveFile(Dialog.var.src, Dialog.var.dest) is ERR_Okay then
@@ -1105,7 +1105,7 @@ gui.fileview = function(Options)
             options   = { { id=-1, text='Cancel', icon='items/cancel' },
                           { id=1, text='Okay', icon='items/checkmark' } },
             modal     = true,
-            popover   = self._surface,
+            popOver   = self._surface,
             userInput = true,
             inputRequired = true,
             feedback = function(Dialog, Response, State)
@@ -1149,7 +1149,7 @@ gui.fileview = function(Options)
          icon    = 'folders/folder',
          type    = 'request',
          message = Message,
-         popover = self._surface,
+         popOver = self._surface,
          options = {
             { id=-1, text='Cancel', icon='items/cancel' },
             { id=1, text='Okay', icon='items/checkmark' }
@@ -1191,7 +1191,7 @@ gui.fileview = function(Options)
          options  = { { id=-1, text='No', icon='items/cancel' },
                       { id=1, text='Yes', icon='items/checkmark' } },
          message  = msg,
-         popover  = self._surface,
+         popOver  = self._surface,
          modal    = true,
          feedback = function(Dialog, Response, State)
             if Response.id > 0 then
@@ -1277,7 +1277,7 @@ gui.fileview = function(Options)
                        { id=1, text='Okay', icon='items/checkmark' } },
          modal     = true,
          userInput = sel,
-         popover   = self._surface,
+         popOver   = self._surface,
          inputRequired = true,
          feedback  = responseRename
       })

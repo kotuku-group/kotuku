@@ -38,8 +38,8 @@
     },
     {
       "path": "chatgpt/chatgpt.tiri",
-      "size": 25988,
-      "sha256": "e3465aad00ff7e895b64a2f8fc0f99375a37d6ba749188ca3216e53f7cea0786",
+      "size": 27733,
+      "sha256": "b574461fab99f9c975a266013504cd085239913ea80c56fed36836dbe81e713a",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -50,14 +50,14 @@
     },
     {
       "path": "chatgpt/storage.tiri",
-      "size": 4872,
-      "sha256": "b4ef520e85e86a85ea9f9865f8bc8fbce1989e1297f7dfcc78b182cec9f6a22c",
+      "size": 5463,
+      "sha256": "dc996e9b9bb1afbc8c31b6fac8e5eccebbc8b23933c197c58bcd061e1204d90d",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "openai.tiri",
-      "size": 24993,
-      "sha256": "fc818a336527a6f6c31c0a2755e1ee28a415000019c142ef2a464b0842df2ea6",
+      "size": 25832,
+      "sha256": "57f8d7c00f652c6a14514d9bbaefe41f8437d98e0d42abec6d9482135cb8b6b3",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -74,8 +74,8 @@
     },
     {
       "path": "stream.tiri",
-      "size": 14042,
-      "sha256": "a8361fba9abedd3011e1edeeb2843f0da400c912990f5d4e43f7f42989460c30",
+      "size": 16397,
+      "sha256": "b3c30dafd8366e7f61ebc334095ff018e3bb43dd5df060fac7fe939e9500701d",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ],

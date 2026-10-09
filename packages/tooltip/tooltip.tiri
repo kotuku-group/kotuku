@@ -12,11 +12,12 @@ Documentation is available in the Kotuku Wiki.
 gui.tooltip = function(Options)
    local self = { } -- Public variables
 
-   theme = gui.getTheme()
+   theme = Options.theme ?? gui.getTheme(Options.target)
 
    self.free = function()
-      self.surface.free()
-      self.clear()
+      local surface = self.surface
+      self.surface = nil
+      surface?.free()
    end
 
    local ptr = obj.find('systempointer')
