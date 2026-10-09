@@ -387,6 +387,10 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
    if (list[Index].SurfaceID != Self->UID) Index = find_surface_list(Self, list.size());
    if ((Index < 0) or (Index >= int(list.size()))) return;
 
+   // Explicitly managed buffers survive redraws, including queued redraws and composite-window damage.
+
+   if ((Self->Flags & RNF::MANUAL_RENDER) != RNF::NIL) return;
+
    // Prepare the buffer so that it matches the exposed area
 
    uint8_t *data;

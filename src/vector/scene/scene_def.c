@@ -7,6 +7,7 @@ static const struct FieldDef clVectorSceneFlags[] = {
    { "OutlineViewports", 0x00000008 },
    { "StableRender", 0x00000010 },
    { "IgnoreTab", 0x00000020 },
+   { "ManualRender", 0x00000040 },
    { nullptr, 0 }
 };
 

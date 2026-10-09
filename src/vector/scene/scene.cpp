@@ -159,6 +159,8 @@ static void send_dummy_input_event(extVectorScene *Self)
 
 static void render_to_surface(extVectorScene *Self, objSurface *Surface, objBitmap *Bitmap)
 {
+   if ((Self->Flags & VPF::MANUAL_RENDER) != VPF::NIL) return;
+
    auto prev_bitmap = Self->Bitmap;
    Self->Bitmap = Bitmap;
 
@@ -455,6 +457,11 @@ returned.
 
 The #RenderTime field will be updated if the `RENDER_TIME` flag is defined.
 
+With `MANUAL_RENDER`, Draw locks and clears the entire target bitmap before rasterising, and does not dispatch
+resize or pointer callbacks.  The client must keep the scene graph unchanged until Draw completes.  For direct
+window rendering, use the surface's independently owned buffer as #Bitmap and enable `Surface` `MANUAL_RENDER`
+to preserve it across automatic redraws.  Call Flush and expose the completed buffer from the main thread.
+
 -ERRORS-
 Okay
 FieldNotSet: The Bitmap field is NULL.
@@ -467,6 +474,19 @@ static ERR VECTORSCENE_Draw(extVectorScene *Self, struct acDraw *Args)
    kt::Log log;
 
    if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
+
+   if ((Self->Flags & VPF::MANUAL_RENDER) != VPF::NIL) {
+      // Surface exposure also locks its bitmap.  Do not acquire the surface or dispatch callbacks while holding
+      // this lock: surface drawing uses the opposite lock order and script callbacks belong on the main thread.
+      kt::ScopedObjectLock<objBitmap> bitmap(Self->Bitmap->UID);
+      if (not bitmap.granted()) return bitmap.error;
+      auto clip = bitmap->Clip;
+      bitmap->Clip = { 0, 0, bitmap->Width, bitmap->Height };
+      gfx::DrawRectangle(*bitmap, 0, 0, bitmap->Width, bitmap->Height, 0, BAF::FILL);
+      render_scene_from_viewport(Self, *bitmap, Self->Viewport);
+      bitmap->Clip = clip;
+      return ERR::Okay;
+   }
 
    if (Self->BorderlessSurface) {
       // Borderless surfaces get a slightly different approach that cuts down on jitter
@@ -559,17 +579,29 @@ static ERR VECTORSCENE_FindDef(extVectorScene *Self, struct sc::FindDef *Args)
    else return ERR::Search;
 }
 
-//********************************************************************************************************************
-// Flush pending activity messages.
+/*********************************************************************************************************************
+
+-ACTION-
+Flush: Dispatches pending scene resize and pointer events on the main thread.
+
+Use Flush after a manual Draw has completed and before exposing the surface.  This dispatches pending resize
+notifications and refreshes pointer hit testing without rasterising the scene.  If a callback changes geometry, the
+client must render another frame before those changes become visible.  Never call Flush concurrently with Draw.
+
+-ERRORS-
+Okay
+OutsideMainThread
+Recursion
+
+*********************************************************************************************************************/
 
 static ERR VECTORSCENE_Flush(extVectorScene *Self)
 {
+   if (not GetResource(RES::MAIN_THREAD)) return ERR::OutsideMainThread;
    if (Self->ProcessingMessages) return ERR::Recursion;
    Self->ProcessingMessages = true;
-
    process_resize_msgs(Self);
    send_dummy_input_event(Self);
-
    Self->ProcessingMessages = false;
    return ERR::Okay;
 }

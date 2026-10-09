@@ -33,6 +33,7 @@ static const struct FieldDef clSurfaceFlags[] = {
    { "IgnoreFocus", 0x00800000 },
    { "InitOnly", 0x00cb0e81 },
    { "AspectRatio", 0x01000000 },
+   { "ManualRender", 0x02000000 },
    { nullptr, 0 }
 };
 
