@@ -3798,6 +3798,7 @@ class objVector : public Object {
       return Action(AC::Draw, this, &args);
    }
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
+   inline ERR focus() noexcept { return Action(AC::Focus, this, nullptr); }
    inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR moveToBack() noexcept { return Action(AC::MoveToBack, this, nullptr); }
