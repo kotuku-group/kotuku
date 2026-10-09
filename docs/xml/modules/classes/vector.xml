@@ -53,6 +53,16 @@
     </action>
 
     <action>
+      <name>Focus</name>
+      <comment>Gives keyboard focus to the vector within its focused surface.</comment>
+      <prototype>ERR acFocus(*Object)</prototype>
+      <tiriPrototype>err = Object.acFocus()</tiriPrototype>
+      <description>
+<p>The vector must belong to a scene linked to a surface that already has focus.  Hidden or disabled vectors and their descendants cannot receive focus.  Focus feedback is sent to the affected vectors and their ancestors.</p>
+      </description>
+    </action>
+
+    <action>
       <name>Hide</name>
       <comment>Changes the vector's visibility setting to hidden.</comment>
       <prototype>ERR acHide(*Object)</prototype>

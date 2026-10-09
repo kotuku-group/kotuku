@@ -227,6 +227,33 @@ static ERR VECTOR_Enable(extVector *Self)
 }
 
 /*********************************************************************************************************************
+-ACTION-
+Focus: Gives keyboard focus to the vector within its focused surface.
+
+The vector must belong to a scene linked to a surface that already has focus.  Hidden or disabled vectors and their
+descendants cannot receive focus.  Focus feedback is sent to the affected vectors and their ancestors.
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTOR_Focus(extVector *Self)
+{
+   if ((not Self->Scene) or (not Self->Scene->SurfaceID)) return ERR::FieldNotSet;
+
+   RNF flags;
+   if (auto error = gfx::GetSurfaceFlags(Self->Scene->SurfaceID, &flags); error != ERR::Okay) return error;
+   if (((flags & RNF::HAS_FOCUS) IS RNF::NIL) or ((flags & RNF::NO_FOCUS) != RNF::NIL)) return ERR::NothingDone;
+
+   for (auto node=Self; node; node=(extVector *)node->Parent) {
+      if (node->Class->BaseClassID != CLASSID::VECTOR) break;
+      if (((node->Flags & VF::DISABLED) != VF::NIL) or (node->Visibility IS VIS::HIDDEN) or
+          (node->Visibility IS VIS::COLLAPSE)) return ERR::NothingDone;
+   }
+
+   apply_focus((extVectorScene *)Self->Scene, Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -METHOD-
 FreeMatrix: Remove an allocated VectorMatrix structure.
