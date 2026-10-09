@@ -14,53 +14,93 @@ VMARGIN   = gui.sizing.widget.margin
 GAP       <const> = 26
 ICON_SIZE <const> = 12
 
-count = 0
-
-function counter()
-   count++
-   return count
+function selectable(Item:table):bool
+   return Item and not Item.disabled
 end
 
-function activateItem(self) -- Activate the current menu item.
-   self._currentItem ?! return
+function hasMenu(Item:table):bool
+   return Item and ((Item.prepare != nil) or (Item.menuConfig and (#Item.menuConfig > 0)))
+end
 
-   self._currentItem?.callback(self._currentItem.id, self._currentItem.name)
-
-   menu = self._currentItem.menu
+function itemMenu(self, Item:table!):table
+   menu = Item.menu
    if not menu then
-      if not (#self._currentItem.menuConfig > 0) then
-         self._lastMenu?.hide()
-         return
-      end
-
       menu = gui.menu({
-         client       = self.viewport,
          relative     = self.viewport,
-         x            = self._currentItem.x,
+         x            = Item.x,
          y            = self.viewport.height - 2,
-         keyMonitor   = self.viewport,
-         config       = self._currentItem.menuConfig
+         config       = Item.menuConfig,
+         prepare      = Item.prepare,
+         theme        = self.theme
       })
-      self._currentItem.menu = menu
+      Item.menu = menu
    end
 
-   menu.x = self._currentItem.x
+   return menu
+end
+
+function findShortcut(self, Qualifiers:num!, Code:num!, Unicode:num):<table, array<table>>
+   if self._disabled then return nil end
+   item = self._first
+   while item do
+      if selectable(item) and hasMenu(item) then
+         path = gui.findMenuShortcut(item.menu ? item.menu.config : item.menuConfig, Qualifiers, Code, Unicode)
+         if path then return item, path end
+      end
+      item = item.next
+   end
+end
+
+function showItemMenu(self, Item:table!) -- Open an item's menu, switching away from any previously open menu.
+   if not selectable(Item) or not hasMenu(Item) then return false end
+   Item?.callback(Item.id, Item.name)
+   menu = itemMenu(self, Item)
+   menu.x = Item.x
 
    if self._lastMenu and self._lastMenu != menu then
       self._lastMenu.hide()
    end
 
-   if menu.toggle() is 1 then
-      self._lastMenu = menu
+   menu.show()
+   self._lastMenu = menu
+   return true
+end
+
+function activateItem(self) -- Activate the current menu item.
+   item = self._currentItem
+   if self._disabled or not selectable(item) then return false end
+
+   if hasMenu(item) then
+      if item.menu?.visible then
+         item.menu.hide()
+         self._lastMenu = nil
+      else
+         showItemMenu(self, item)
+      end
+   else
+      item?.callback(item.id, item.name)
+      self._lastMenu?.hide()
+      self._lastMenu = nil
    end
+   return true
 end
 
 function firstItem(self):table -- Return the first item
-   return self._first
+   item = self._first
+   while item and not selectable(item) do item = item.next end
+   return item
 end
 
 function lastItem(self):table -- Return the last item
-   return self._last
+   item = self._last
+   while item and not selectable(item) do item = item.prev end
+   return item
+end
+
+function adjacentItem(self, Item:table, Direction:num!):table
+   scan = Direction < 0 ? Item?.prev : Item?.next
+   while scan and not selectable(scan) do scan = Direction < 0 ? scan.prev : scan.next end
+   return scan ?? (Direction < 0 ? lastItem(self) : firstItem(self))
 end
 
 function newItem(self, Name, ID) -- Append an item to the menu bar
@@ -94,6 +134,7 @@ end
 -- Highlight selected item (for keyboard item selection)
 
 function highlightItem(self, Item)
+   if not selectable(Item) then return end
    self._currentItem = Item
 
    self._highlight.x          = Item.x
@@ -113,7 +154,6 @@ function arrangeItems(self)
    item = self._first
    x = 0
    y = 0
-   spanCount = 0
    while item do
       item.x        = x
       item.y        = y
@@ -126,9 +166,7 @@ function arrangeItems(self)
          iconWidth = ICON_SIZE + VMARGIN
          item.icon.x = x + VMARGIN
          item.icon.y = y + VMARGIN
-         if self._disabled or item.disabled then
-            item.vectorIcon.opacity = 0.5
-         end
+         item.icon.opacity = (self._disabled or item.disabled) ? 0.5 : 1
       end
 
       if item.displayName?? then
@@ -145,18 +183,18 @@ function arrangeItems(self)
          item.width = item.gfxWidth + GAP
          item.vectorText.y = math.floor((self.viewport.height + item.vectorText.displaySize) * 0.5)
 
-         if self._disabled or item.disabled then
-            item.vectorText.opacity = 0.5
-         end
+         item.vectorText.opacity = (self._disabled or item.disabled) ? 0.5 : 1
+      else
+         item.vectorText = nil
       end
 
       x += item.width
-      spanCount++
 
       item = item.next
    end
 
    self._arranged = true
+   self.viewport.acDraw()
 end
 
 gui.menubar = function(Options)
@@ -171,10 +209,12 @@ gui.menubar = function(Options)
    -- Add a clickable item to the menubar.  The Name acts as the item text that is displayed in the menubar if no
    -- icon can be displayed.  The icon string must be in the standard format of 'category/icon'.
 
-   self.addItem = function(ID, Name, Icon, Function, Menu)
+   self.addItem = function(ID, Name, Icon, Function, Menu, Prepare:func)
       item = newItem(self, Name, ID)
       item.callback = Function
+      if Prepare and Menu is nil then Menu = array<table> end
       item.menuConfig = Menu
+      item.prepare = Prepare
 
       if Icon then
          icon = gui.createIcon(self.viewport.scene, Icon, ICON_SIZE, gui.rgbToIconTheme(self.theme.menubar.text))
@@ -184,6 +224,41 @@ gui.menubar = function(Options)
       end
 
       self._arranged = false
+      if self._ready then arrangeItems(self) end
+      return item
+   end
+
+   self.removeItem = function(ID):bool
+      item = self._lookup[ID]
+      if not item then return false end
+
+      if item.prev then item.prev.next = item.next else self._first = item.next end
+      if item.next then item.next.prev = item.prev else self._last = item.prev end
+      self._lookup[ID] = nil
+
+      item.menu?.surface?.free()
+      item.icon?.free()
+      if self._currentItem is item then
+         self._currentItem = nil
+         self._highlight.visibility = 'hidden'
+      end
+      if self._lastMenu and self._lastMenu is item.menu then self._lastMenu = nil end
+
+      arrangeItems(self)
+      return true
+   end
+
+   self.setItemText = function(ID, Text:str):bool
+      item = self._lookup[ID]
+      if not item then return false end
+      item.name = Text
+      item.displayName = Text
+      arrangeItems(self)
+      return true
+   end
+
+   self.arrange = function()
+      arrangeItems(self)
    end
 
    -- Individual menubar items can be disabled with this method.  Reverse this action with enableItem().
@@ -192,7 +267,15 @@ gui.menubar = function(Options)
       item = self._lookup[ID]
       if item and (not item.disabled) then
          item.disabled = true
-         self.viewport.acDraw()
+         if self._currentItem is item then
+            self._currentItem = nil
+            self._highlight.visibility = 'hidden'
+         end
+         if self._lastMenu and self._lastMenu is item.menu then
+            self._lastMenu.hide()
+            self._lastMenu = nil
+         end
+         arrangeItems(self)
       end
    end
 
@@ -202,23 +285,31 @@ gui.menubar = function(Options)
       item = self._lookup[ID]
       if item and item.disabled then
          item.disabled = false
-         self.viewport.acDraw()
+         arrangeItems(self)
       end
    end
 
    function hoverUpdate(Item, StateChanged) -- Highlight items that the user hovers over.
+      if self._hasFocus and not self._disabled and not selectable(Item) then
+         Item = selectable(self._currentItem) ? self._currentItem : firstItem(self)
+      end
       if (self._currentItem is Item) and (StateChanged != true) then return end
 
+      open_menu = self._lastMenu?.visible
       self._highlight.visibility = 'hidden'
       self._currentItem = Item
-
-      if self._prevItem and (self._prevItem != self._currentItem) then
-         -- Reset prevItem presentation if necessary
-      end
 
       if self._currentItem and (not self._currentItem.disabled) and (not self._disabled) then
          highlightItem(self, self._currentItem)
          self._prevItem = self._currentItem
+         if open_menu and self._currentItem.menu != self._lastMenu then
+            if hasMenu(self._currentItem) then
+               showItemMenu(self, self._currentItem)
+            else
+               self._lastMenu.hide()
+               self._lastMenu = nil
+            end
+         end
       end
 
       self.viewport.acDraw()
@@ -239,7 +330,21 @@ gui.menubar = function(Options)
       self.viewport.init()
 
       self.viewport.subscribe('free', function(Viewport, Args)
-         self = { }
+         self._shortcutKeyboard?.unsubscribe()
+         self._shortcutKeyboard = nil
+         item = self._first
+         while item do
+            next_item = item.next
+            item.menu?.surface?.free()
+            item.prev = nil
+            item.next = nil
+            item = next_item
+         end
+         self._first = nil
+         self._last = nil
+         self._currentItem = nil
+         self._lastMenu = nil
+         self.viewport = nil
       end)
 
       self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport, Event)
@@ -252,6 +357,10 @@ gui.menubar = function(Options)
             self._lastMenu?.hide()
          else
             self._hasFocus = true
+            if self._ready and not self._disabled then
+               item = selectable(self._currentItem) ? self._currentItem : firstItem(self)
+               highlightItem(self, item)
+            end
          end
 
          self.viewport.acDraw()
@@ -259,12 +368,15 @@ gui.menubar = function(Options)
 
       self.enable = function()
          self._disabled = false
-         self.viewport.acDraw()
+         arrangeItems(self)
       end
 
       self.disable = function()
          self._disabled = true
-         self.viewport.acDraw()
+         self._lastMenu?.hide()
+         self._lastMenu = nil
+         self._highlight.visibility = 'hidden'
+         arrangeItems(self)
       end
 
       self.viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT | JTYPE_CROSSING, function(Viewport, Events)
@@ -273,7 +385,7 @@ gui.menubar = function(Options)
             if ev.type is JET_CROSSED_IN then
 
             elseif ev.type is JET_CROSSED_OUT then
-               if self._currentItem then
+               if self._currentItem and not self._lastMenu?.visible then
                   hoverUpdate(nil)
                end
             elseif ev.flags has JTYPE_MOVEMENT then
@@ -304,29 +416,51 @@ gui.menubar = function(Options)
          end
       end)
 
-      self.viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
+      function keyboardInput(Qualifiers, Code, Unicode)
+         if self._disabled then return end
          if Qualifiers has KQ_PRESSED then
-            if (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) or (Code is KEY_SPACE) then
+            if (Code is KEY_SPACE) and self._lastMenu?.visible and not self._lastMenu.hItem then
+               self._lastMenu.hide()
+               self._lastMenu = nil
+               return
+            end
+            if self._lastMenu?.visible then
+               if self._lastMenu.handleKey(Qualifiers, Code) then return end
+               if Code is KEY_UP then
+                  self._lastMenu.hide()
+                  self._lastMenu = nil
+                  self.viewport.acFocus()
+                  highlightItem(self, self._currentItem)
+                  return
+               end
+            end
+            if (Code is KEY_L_ALT) or (Code is KEY_R_ALT) then
+               item = firstItem(self)
+               if item then highlightItem(self, item) end
+            elseif (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) or (Code is KEY_SPACE) or (Code is KEY_DOWN) then
                activateItem(self)
             elseif (Code is KEY_UP) or (Code is KEY_LEFT) then
                if self._currentItem then
-                  scan = self._currentItem.prev
-                  scan ?= lastItem(self)
+                  scan = adjacentItem(self, self._currentItem, -1)
                   highlightItem(self, scan)
+                  if self._lastMenu?.visible then showItemMenu(self, scan) end
                else
                   highlightItem(self, firstItem(self))
                end
-            elseif (Code is KEY_DOWN) or (Code is KEY_RIGHT) or (Code is KEY_TAB) then
+            elseif Code is KEY_RIGHT then
                if self._currentItem then
-                  scan = self._currentItem.next
-                  scan ?= firstItem(self)
+                  scan = adjacentItem(self, self._currentItem, 1)
                   highlightItem(self, scan)
+                  if self._lastMenu?.visible then showItemMenu(self, scan) end
                else
                   highlightItem(self, firstItem(self))
                end
             end
          end
-      end)
+      end
+
+      -- Keep the viewport in vector focus traversal; the window listener handles each key exactly once.
+      self.viewport.mtSubscribeKeyboard(function() end)
 
       self._bkgd = self.viewport.new('VectorGroup', { name='ItemBackground' })
 
@@ -349,6 +483,29 @@ gui.menubar = function(Options)
       })
 
       arrangeItems(self)
+      self._ready = true
+      if self._hasFocus and not self._disabled then highlightItem(self, firstItem(self)) end
+      self._shortcutKeyboard = input.keyboard(self.viewport.scene.surface,
+         function(Handle, SurfaceID, Qualifiers, Code, Unicode)
+            if self._disabled or not (Qualifiers has KQ_PRESSED) then return end
+            if not (self.viewport.scene.surface.flags has RNF_HAS_FOCUS) then return end
+            if (Code != KEY_F10) or (Qualifiers has (KQ_CTRL | KQ_SHIFT | KQ_ALT | KQ_COMMAND)) then
+               item, path = findShortcut(self, Qualifiers, Code, Unicode)
+               if item and itemMenu(self, item).activateShortcut(path) then
+                  self._lastMenu?.hide()
+                  self._lastMenu = nil
+               elseif not item and self._hasFocus then
+                  keyboardInput(Qualifiers, Code, Unicode)
+               end
+               return
+            end
+            item = firstItem(self)
+            if not item then return end
+            if self.viewport.acFocus() != ERR_Okay then return end
+            self._lastMenu?.hide()
+            self._lastMenu = nil
+            highlightItem(self, item)
+         end)
    except ex
       print(ex.message)
    end
