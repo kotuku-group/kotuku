@@ -90,6 +90,7 @@ module({
     "FULL_SCREEN: Allow the surface to open as a new screen display",
     "IGNORE_FOCUS: Focus is diverted directly to the parent",
     "ASPECT_RATIO: When resizing, enforce the aspect ratio as defined by the diagonal from @Surface.MinWidth, @Surface.MinHeight to @Surface.MaxWidth, @Surface.MaxHeight.",
+    "MANUAL_RENDER: Skip bitmap clearing, skip draw callbacks, expose retained pixels.",
     { VOLATILE = "PRECOPY|AFTER_COPY|CURSOR" },
     { READ_ONLY = "HAS_FOCUS|CURSOR|AFTER_COPY" },
     { INIT_ONLY = "HOST|TRANSPARENT|DISABLED|PRECOPY|VIDEO|FIXED_BUFFER|PERVASIVE_COPY|FIXED_DEPTH|FULL_SCREEN|IGNORE_FOCUS" })
