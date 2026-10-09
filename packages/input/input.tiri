@@ -59,7 +59,7 @@ gui.input = function(Options)
 
    self.enable = function()
       self.disabled = false
-      self.viewport.acDisable()
+      self.viewport.acEnable()
       self.text.opacity = 1.0
       self.bkgd.fill = theme.page.bkgd
       self.events?.enable(self)
@@ -103,7 +103,7 @@ gui.input = function(Options)
 
    if not vps.x and not vps.xOffset then vps.x = 0 end
    if not vps.y and not vps.yOffset then vps.y = 0 end
-   if not vps.width and not vps.xOffset then vps.width = gui.sizing.width end
+   if not vps.width and not vps.xOffset then vps.width = gui.sizing.widget.width end
 
    self.viewport = self.parentViewport.new('VectorViewport', vps)
 

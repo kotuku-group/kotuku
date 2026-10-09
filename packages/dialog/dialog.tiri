@@ -170,7 +170,7 @@ gui.dialog.message = function(Options)
          inputOptions = ''
          if Options.secret then inputOptions = 'secret="true"' end
 
-         msg = Options.userInput is <str> ? Options.userInput : ''
+         msg = string.escXML(Options.userInput is <str> ? Options.userInput : '')
 
          doc ..= f'<p><input name="input" {inputOptions} width="16em" value="{msg}"/></p>\n'
       end
@@ -178,7 +178,8 @@ gui.dialog.message = function(Options)
       if Options.checkboxLabel then
          checkbox_value = 'false'
          if Options.checkboxState then checkbox_value = 'true' end
-         doc ..= f'<p><checkbox name="checkbox" label="{Options.checkboxLabel}" value="{checkbox_value}"/></p>\n'
+         label = string.escXML(Options.checkboxLabel)
+         doc ..= f'<p><checkbox name="checkbox" label="{label}" value="{checkbox_value}"/></p>\n'
       end
 
       if Options.inject then
@@ -254,8 +255,7 @@ gui.dialog.message = function(Options)
          insideWidth  = dlg_width,
          insideHeight = 300,
          quit         = Options.quit ?? false,
-         popover      = Options.popover,
-         parent       = Options.target,
+         popOver      = Options.popOver,
          aspectRatio  = true,
          icon         = Options.icon ?? 'items/question',
          title        = Options.title ?? 'Confirmation Required',
@@ -271,6 +271,7 @@ gui.dialog.message = function(Options)
       })
 
       &viewport = &window.clientViewport()
+      &windowID = &window.surface.id
 
       lDoc = &viewport.new('document', {
          eventMask     = 'LinkActivated',
@@ -308,7 +309,7 @@ end
 
 @if(imported=false)
    dlg = gui.dialog.message({
-      popover    = arg('popover'),
+      popOver    = arg('popOver'),
       target     = arg('target'),
       modal      = arg('modal'),
       options    = arg('options'),

@@ -90,7 +90,6 @@ gui.dialog.file = function(Options)
       minHeight    = 150,
       quit         = false,
       popOver      = Options.popOver,
-      parent       = Options.target,
       icon         = Options.icon ?? 'icons:folders/folder',
       title        = Options.title ?? 'Select a file',
       modal        = Options.modal ?? false,
@@ -102,6 +101,8 @@ gui.dialog.file = function(Options)
          end
       }
    })
+
+   self.windowID = self.window.surface.id
 
    theme = self.window.theme
 

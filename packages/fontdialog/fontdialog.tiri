@@ -183,7 +183,6 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       maxHeight    = 800,
       quit         = false,
       popOver      = lOptions.popOver,
-      parent       = lOptions.target,
       icon         = 'items/font',
       title        = lOptions.title ?? 'Select a font',
       modal        = lOptions.modal ?? false,
@@ -194,6 +193,8 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          end
       }
    })
+
+   self.windowID = lWindow.surface.id
 
    self.viewport = lWindow.clientViewport({
       resizeEvent = function(Window:obj!)
@@ -386,7 +387,7 @@ end
    -- This sub-routine is provided for languages other than Tiri to utilise the module.
 
 @if(imported=false)
-   dlg = font.dialog({
+   dlg = gui.dialog.font({
       popOver    = arg('popOver'),
       target     = arg('target'),
       modal      = arg('modal'),

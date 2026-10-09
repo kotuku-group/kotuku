@@ -35,8 +35,8 @@
     },
     {
       "path": "oauth2.tiri",
-      "size": 39186,
-      "sha256": "b65d67abc2405748f5f64998c3d995b0704837362ca4c78207d6ac8c990d0843",
+      "size": 39773,
+      "sha256": "6e4e45a611132b33eeadd6290dbc89d5ea609a71b48fb6e384177e96c095c564",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -53,8 +53,8 @@
     },
     {
       "path": "transport.tiri",
-      "size": 5975,
-      "sha256": "40551fbe1e4eda7273f423538205ed38bba12d80056a246476668f36bd2d2cfb",
+      "size": 6183,
+      "sha256": "f24c5089bcbf3f714da33df16b785e6939225770bb7ec8d26c1829331919d181",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]
