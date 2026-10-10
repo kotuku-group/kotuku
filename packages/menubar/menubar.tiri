@@ -4,8 +4,8 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui'
-   import 'gui/menu'
+   import 'gui', 'gui/menu'
+
    include 'vector'
 
    namespace gui
@@ -26,12 +26,13 @@ function itemMenu(self, Item:table!):table
    menu = Item.menu
    if not menu then
       menu = gui.menu({
-         relative     = self.viewport,
-         x            = Item.x,
-         y            = self.viewport.height - 2,
-         config       = Item.menuConfig,
-         prepare      = Item.prepare,
-         theme        = self.theme.menu
+         hostScene = self.viewport.scene,
+         relative  = self.viewport,
+         x         = Item.x,
+         y         = self.viewport.height - 2,
+         config    = Item.menuConfig,
+         prepare   = Item.prepare,
+         theme     = self.theme.menu
       })
       Item.menu = menu
    end
@@ -54,6 +55,7 @@ end
 function showItemMenu(self, Item:table!, Hover:bool) -- Open an item's menu, switching away from any previously open menu.
    if not selectable(Item) or not hasMenu(Item) then return false end
    if not Hover then Item?.callback(Item.id, Item.name) end
+
    menu = itemMenu(self, Item)
    menu.x = Item.x
 
@@ -241,9 +243,9 @@ end
 
 gui.menubar = function(Options:table)
    self = entity { -- Public interface
-      host = nil,
-      viewport = nil,
-      _lookup = { },
+      host      = nil,
+      viewport  = nil,
+      _lookup   = { },
       _disabled = false,
       _arranged = false
    }
@@ -341,6 +343,7 @@ gui.menubar = function(Options:table)
       if self._hasFocus and not self._disabled and not selectable(Item) then
          Item = selectable(self._currentItem) ? self._currentItem : firstItem(self)
       end
+
       if (self._currentItem is Item) and (StateChanged != true) then return end
 
       open_menu = self._lastMenu?.visible
@@ -437,7 +440,9 @@ gui.menubar = function(Options:table)
 
             elseif ev.type is JET_CROSSED_OUT then
                if self._currentItem and not self._lastMenu?.visible then
-                  hoverUpdate(nil)
+                  self._currentItem = nil
+                  self._highlight.visibility = 'hidden'
+                  self.viewport.acDraw()
                end
             elseif ev.flags has JTYPE_MOVEMENT then
                if self._clicked then return end
@@ -526,11 +531,8 @@ gui.menubar = function(Options:table)
       self.viewport.height = ICON_SIZE + (VMARGIN * 2)
 
       self._bkgd.new('VectorRectangle', table.merge({ -- Main background
-         fill   = 'none',
-         x      = 0,
-         y      = 0,
-         width  = '100%',
-         height = self.viewport.height
+         fill = 'none',
+         x = 0, y = 0, width  = '100%', height = self.viewport.height
       }, self.theme.bkgd))
 
       self._highlight = self._bkgd.new('VectorRectangle', table.merge({ -- Highlight for items

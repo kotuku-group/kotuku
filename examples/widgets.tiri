@@ -99,38 +99,38 @@ end
             { group='Documents' },
             {
                id='new', item='New File', icon='items/file_new', qualifier='CTRL', key='N',
-               tip='Create a new document', feedback=itemClicked
+               onActivate=itemClicked
             },
             {
                menu={
                   id='open_recent', text='Open Recent', icon='office/documents', items=array<table> {
-                     { id='recent_one', item='Project Notes.tiri', feedback=itemClicked },
-                     { id='recent_two', item='Widget Ideas.txt', feedback=itemClicked },
-                     { id='recent_missing', item='Missing Document', disabled=true, feedback=itemClicked }
+                     { id='recent_one', item='Project Notes.tiri', onActivate=itemClicked },
+                     { id='recent_two', item='Widget Ideas.txt', onActivate=itemClicked },
+                     { id='recent_missing', item='Missing Document', disabled=true, onActivate=itemClicked }
                   }
                }
             },
-            { id='reload', item='Reload Document', icon='items/reload', key='F5', feedback=itemClicked },
+            { id='reload', item='Reload Document', icon='items/reload', key='F5', onActivate=itemClicked },
             { group='Save' },
             {
                id='save', item='Save File', icon='items/file_save', qualifier='CTRL', key='S',
-               tip='Press Ctrl+S to save without opening the menu', feedback=itemClicked
+               onActivate=itemClicked
             },
             {
                id='save_as', item='Save As...', icon='items/file_saveas', qualifier='CTRL+SHIFT', key='S',
-               disabled=true, tip='Disabled items cannot be selected', feedback=itemClicked
+               disabled=true, onActivate=itemClicked
             }
          })
          Bar.addItem('edit', 'Edit', 'tools/edit', menuCallback, array<table> {
-            { id='undo', item='Undo', icon='items/undo', qualifier='CTRL', key='Z', feedback=itemClicked },
+            { id='undo', item='Undo', icon='items/undo', qualifier='CTRL', key='Z', onActivate=itemClicked },
             { id='redo', item='Redo', icon='items/redo', qualifier='CTRL', key='Y', disabled=true,
-              feedback=itemClicked },
+              onActivate=itemClicked },
             {
                menu={
                   id='clipboard', text='Clipboard', icon='items/clipboard', items=array<table> {
-                     { id='cut', item='Cut', icon='tools/cut', qualifier='CTRL', key='X', feedback=itemClicked },
-                     { id='copy', item='Copy', icon='tools/copy', qualifier='CTRL', key='C', feedback=itemClicked },
-                     { id='paste', item='Paste', icon='tools/paste', qualifier='CTRL', key='V', feedback=itemClicked }
+                     { id='cut', item='Cut', icon='tools/cut', qualifier='CTRL', key='X', onActivate=itemClicked },
+                     { id='copy', item='Copy', icon='tools/copy', qualifier='CTRL', key='C', onActivate=itemClicked },
+                     { id='paste', item='Paste', icon='tools/paste', qualifier='CTRL', key='V', onActivate=itemClicked }
                   }
                }
             }
@@ -138,27 +138,27 @@ end
          Bar.addItem('view', 'View', 'page/page', menuCallback, array<table> {
             { group='Layout' },
             { id='show_grid', item='Show Grid', checkable=true, checked=false, qualifier='CTRL', key='G',
-              feedback=function(Menu, Item) print(f'Grid display enabled: {Item.checked}') end },
-            { id='columns', item='Column View', icon='layout/column_three', feedback=itemClicked },
-            { id='list', item='List View', icon='layout/list', feedback=itemClicked },
+              onActivate=function(Menu, Item) print(f'Grid display enabled: {Item.checked}') end },
+            { id='columns', item='Column View', icon='layout/column_three', onActivate=itemClicked },
+            { id='list', item='List View', icon='layout/list', onActivate=itemClicked },
             {
                menu={
                   id='zoom', text='Zoom', icon='tools/magnifier', items=array<table> {
-                     { id='zoom_in', item='Zoom In', qualifier='CTRL', key='+', feedback=itemClicked },
-                     { id='zoom_out', item='Zoom Out', qualifier='CTRL', key='-', feedback=itemClicked },
-                     { id='zoom_reset', item='Actual Size', qualifier='CTRL', key='0', feedback=itemClicked }
+                     { id='zoom_in', item='Zoom In', qualifier='CTRL', key='+', onActivate=itemClicked },
+                     { id='zoom_out', item='Zoom Out', qualifier='CTRL', key='-', onActivate=itemClicked },
+                     { id='zoom_reset', item='Actual Size', qualifier='CTRL', key='0', onActivate=itemClicked }
                   }
                }
             }
          })
          Bar.addItem('tools', 'Tools', 'tools/wizard', menuCallback, array<table> {
             { group='Menubar API' },
-            { id='add_dynamic', item='Add Dynamic Item', feedback=addDynamicMenuItem },
-            { id='rename_dynamic', item='Rename Dynamic Item', feedback=renameDynamicMenuItem },
-            { id='remove_dynamic', item='Remove Dynamic Item', feedback=removeDynamicMenuItem },
+            { id='add_dynamic', item='Add Dynamic Item', onActivate=addDynamicMenuItem },
+            { id='rename_dynamic', item='Rename Dynamic Item', onActivate=renameDynamicMenuItem },
+            { id='remove_dynamic', item='Remove Dynamic Item', onActivate=removeDynamicMenuItem },
             { group='Item State' },
-            { id='disable_view', item='Disable View Menu', feedback=disableViewMenu },
-            { id='enable_view', item='Enable View Menu', feedback=enableViewMenu }
+            { id='disable_view', item='Disable View Menu', onActivate=disableViewMenu },
+            { id='enable_view', item='Enable View Menu', onActivate=enableViewMenu }
          })
          Bar.addItem('help', 'Help', 'items/help', menuCallback, array<table> {
             { group='Keyboard' },
@@ -166,7 +166,7 @@ end
             { item='Arrow keys move between menus', disabled=true },
             { item='Tab continues normal focus traversal', disabled=true },
             { group='About' },
-            { id='about', item='About Widget Examples', icon='items/info', feedback=itemClicked }
+            { id='about', item='About Widget Examples', icon='items/info', onActivate=itemClicked }
          })
       end
    })
@@ -201,16 +201,18 @@ end
 
    popupMenu = gui.menu({
       --target = win.surface,
-      theme  = win.theme,
+      theme  = win.theme.menu,
       x      = 30,
       y      = 50,
       popup  = true,
-      feedback = itemClicked,
+      onActivate = itemClicked,
+      onHighlight = function(Menu, Item)
+         print(f'Highlighted menu item: {Item.item}')
+      end,
       config = array<table> {
          { group='Files' },
          {
-            id='new', item='New File', icon='items/file_new', qualifier='CTRL', key='N',
-            tip='Create a new document'
+            id='new', item='New File', icon='items/file_new', qualifier='CTRL', key='N'
          },
          {
             menu={
@@ -423,6 +425,7 @@ end
          focus = widgetFocus
       }
    })
+
    y += combobox.viewport.height + 12
 
    local input = gui.input({

@@ -12,10 +12,10 @@ menu.activateShortcut() with their own keyboard listener.
 Qualifiers are case-insensitive CTRL/CONTROL, SHIFT, ALT and CMD/COMMAND tokens joined with '+'.  Modifier matching
 is exact and ignores lock flags.  Key names accept letters, digits, F1-F20, navigation keys and common punctuation.
 The '+' key also accepts Shift+Equals and keypad Plus.  Bare F10 is reserved by the menubar; duplicate shortcuts use
-the first enabled item in menu order.  Shortcut feedback receives the owning menu and original item configuration.
+the first enabled item in menu order.  Shortcut activation callbacks receive the owning menu and original item configuration.
 --]]
 
-   import 'gui', 'gui/tooltip'
+   import 'gui'
    include 'display'
 
    namespace gui
@@ -124,7 +124,6 @@ end
 gui.findMenuShortcut = findMenuShortcut
 
 gui.menu = function(Options:table!)
-   tooltip_theme = Options.tooltipTheme ?? gui.getTheme(Options.relative)
    theme:table
    if Options.theme then
       theme = table.merge(gui.getTheme().menu, Options.theme)
@@ -133,23 +132,23 @@ gui.menu = function(Options:table!)
    end
 
    self = entity { -- Public interface
-      surface    = nil,
-      reverseX   = false,
-      timeShow   = 0,
-      timeHide   = 0,
-      tipDelay   = 0.5,
-      visible    = false,
-      client     = Options.client,
-      feedback   = Options.feedback,
-      prepare    = Options.prepare,
-      config     = Options.config,
-      x          = Options.x ?? 0,
-      y          = Options.y ?? 0,
-      popup      = Options.popup ?? false,
-      relative   = Options.relative,
-      parentMenu = Options.parentMenu,
-      parentItem = Options.parentItem,
-      items      = array<table>
+      surface     = nil,
+      reverseX    = false,
+      timeShow    = 0,
+      timeHide    = 0,
+      visible     = false,
+      client      = Options.client,
+      onActivate  = Options.onActivate,
+      onHighlight = Options.onHighlight,
+      prepare     = Options.prepare,
+      config      = Options.config,
+      x           = Options.x ?? 0,
+      y           = Options.y ?? 0,
+      popup       = Options.popup ?? false,
+      relative    = Options.relative,
+      parentMenu  = Options.parentMenu,
+      parentItem  = Options.parentItem,
+      items       = array<table>
    }
 
    function selectable(Item:table):bool
@@ -217,7 +216,7 @@ gui.menu = function(Options:table!)
          }, theme.highlight))
 
          &content.new('VectorRectangle', table.merge({ -- Foreground border
-            stroke = 'none', strokeWidth = 1.5, opacity=0.5,
+            stroke = 'none', strokeWidth = 1.5,
             x = 1, y = 1, xOffset = 1, yOffset = 1,
             resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
                Vector.width  = Width - (Vector.x * 2)
@@ -237,7 +236,7 @@ gui.menu = function(Options:table!)
             end
 
             if item.item then
-               mi = { y=y, config=item, source=source, tip=item.tip, submenuConfig=item.items }
+               mi = { y=y, config=item, source=source, submenuConfig=item.items }
 
                vText = &content.new('VectorText', table.merge({
                   x        = TEXT_X,
@@ -257,7 +256,7 @@ gui.menu = function(Options:table!)
 
                if showIcons and item['icon'] then
                   try
-                     info = gui.createIcon(&viewport.scene, item.icon, ICON_SIZE, theme.icon)
+                     info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, ICON_SIZE, theme.icon)
 
                      item.iconView = &content.new('VectorRectangle', {
                         x = icon_x, y = y + math.floor((ITEM_HEIGHT - ICON_SIZE) * 0.5),
@@ -318,7 +317,8 @@ gui.menu = function(Options:table!)
 
                &items.push(mi)
             elseif source.group then
-               mi = { y=y, height=ITEM_HEIGHT, config=source, lineBreak=true }
+               mi = { y = y, height = ITEM_HEIGHT, config = source, lineBreak = true }
+
                group_text = &content.new('VectorText', table.merge({
                   x         = 0,
                   y         = 0,
@@ -410,7 +410,7 @@ gui.menu = function(Options:table!)
       return resolveItem(Reference)?.config
    end
 
-   -- Programmatic updates change state and presentation without invoking activation feedback.
+   -- Programmatic updates change state and presentation without invoking activation callbacks.
 
    self.setChecked = function(Reference:any, Checked:bool!):bool
       item = resolveItem(Reference)
@@ -616,6 +616,7 @@ gui.menu = function(Options:table!)
          &highlight.visibility = 'visible'
          &surface.mtScheduleRedraw()
          if Item.submenuConfig then openSubmenu(Item) end
+         self?.onHighlight(self, Item.config)
       else
          &highlight.visibility = 'hidden'
          &surface.mtScheduleRedraw()
@@ -633,9 +634,9 @@ gui.menu = function(Options:table!)
             prepare      = Item.config.prepare,
             showIcons    = Options.showIcons,
             theme        = theme,
-            tooltipTheme = tooltip_theme,
+            onHighlight  = Options.onHighlight,
             hostScene    = Options.hostScene,
-            feedback     = Options.feedback
+            onActivate   = Options.onActivate
          })
       end
       return Item.submenu
@@ -669,8 +670,8 @@ gui.menu = function(Options:table!)
       if item.submenuConfig then return openSubmenu(item) end
       if item.checkmark then &setChecked(item, not item.config.checked) end
 
-      item.config?.feedback(self, item.config)
-      self?.feedback(self, item.config)
+      item.config?.onActivate(self, item.config)
+      self?.onActivate(self, item.config)
 
       menu = self
       while menu do
@@ -741,14 +742,6 @@ gui.menu = function(Options:table!)
       return true
    end
 
-   function timer(Elapsed, CurrentTime)
-      if &hItem and &hItem.tip?? then
-         gui.tooltip({ target=&viewport, theme=tooltip_theme, text=&hItem.tip })
-      end
-      &tipTimer = nil
-      raise ERR_Terminate
-   end
-
    -- Main entry point --
 
    assert(Options.config, 'A config value is required to define the Menu items')
@@ -782,8 +775,6 @@ gui.menu = function(Options:table!)
       end
 
       &surface.subscribe('free', function()
-         if &tipTimer then mSys.UpdateTimer(&tipTimer, 0) end
-
          for item in values(&items) do
             item.submenu?.surface?.free()
          end
@@ -800,11 +791,6 @@ gui.menu = function(Options:table!)
       end
 
       &surface.subscribe('hide', function(Surface:obj!, Args:table!)
-         if &tipTimer then
-            mSys.UpdateTimer(&tipTimer, 0)
-            &tipTimer = nil
-         end
-
          &currentMenu?.hide()
          &currentMenu   = nil
          &_keyboardMenu = nil
@@ -880,14 +866,6 @@ gui.menu = function(Options:table!)
 
                if not highlightFound and &hItem then
                   highlightItem(nil)
-               end
-
-               if highlightFound then
-                  if &tipTimer then
-                     mSys.UpdateTimer(&tipTimer, &tipDelay)
-                  else
-                     _, &tipTimer = mSys.SubscribeTimer(&tipDelay, timer)
-                  end
                end
             elseif ev.type is JET_CROSSED_OUT then
                if &hItem and not &currentMenu?.visible then highlightItem(nil) end
