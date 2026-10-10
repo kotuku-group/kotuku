@@ -31,7 +31,7 @@ function itemMenu(self, Item:table!):table
          y            = self.viewport.height - 2,
          config       = Item.menuConfig,
          prepare      = Item.prepare,
-         theme        = self.theme
+         theme        = self.theme.menu
       })
       Item.menu = menu
    end
@@ -213,13 +213,12 @@ function arrangeItems(self)
       end
 
       if item.displayName?? then
-         item.vectorText = self._vg.new('VectorText', {
+         item.vectorText = self._vg.new('VectorText', table.merge({
             x        = x + iconWidth + VMARGIN,
             face     = gui.fonts.menu.face,
             fontSize = string.format('%.2fpt', gui.fonts.menu.size),
-            fill     = self.theme.menubar.text,
             string   = item.displayName
-         })
+         }, self.theme.text))
 
          err, bx, by, bw, bh = item.vectorText.mtGetBoundary(0)
          item.gfxWidth = iconWidth + bw + (VMARGIN * 2)
@@ -240,8 +239,8 @@ function arrangeItems(self)
    self.viewport.acDraw()
 end
 
-gui.menubar = function(Options)
-   self = { -- Public variables
+gui.menubar = function(Options:table)
+   self = entity { -- Public interface
       host = nil,
       viewport = nil,
       _lookup = { },
@@ -260,7 +259,8 @@ gui.menubar = function(Options)
       item.prepare = Prepare
 
       if Icon then
-         icon = gui.createIcon(self.viewport.scene, Icon, ICON_SIZE, gui.rgbToIconTheme(self.theme.menubar.text))
+         icon = gui.createIcon(self.viewport.scene, Icon, ICON_SIZE, gui.rgbToIconTheme(self.theme.text.fill))
+
          item.icon = self.viewport.new('VectorRectangle', {
             x=0, y=0, width=ICON_SIZE, height=ICON_SIZE, fill = icon.fill
          })
@@ -285,7 +285,10 @@ gui.menubar = function(Options)
          self._currentItem = nil
          self._highlight.visibility = 'hidden'
       end
-      if self._lastMenu and self._lastMenu is item.menu then self._lastMenu = nil end
+
+      if self._lastMenu and self._lastMenu is item.menu then
+         self._lastMenu = nil
+      end
 
       arrangeItems(self)
       return true
@@ -314,10 +317,12 @@ gui.menubar = function(Options)
             self._currentItem = nil
             self._highlight.visibility = 'hidden'
          end
+
          if self._lastMenu and self._lastMenu is item.menu then
             self._lastMenu.hide()
             self._lastMenu = nil
          end
+
          arrangeItems(self)
       end
    end
@@ -363,7 +368,7 @@ gui.menubar = function(Options)
    try
       assert(Options.target, 'A target viewport is required.')
 
-      self.theme = gui.getTheme(Options.target)
+      self.theme = gui.getTheme(Options.target).menubar
       self.viewport = Options.target.new('vectorviewport')
       self.viewport.x      = Options.x ?? 0
       self.viewport.y      = Options.y ?? 0
@@ -376,6 +381,7 @@ gui.menubar = function(Options)
          self._shortcutKeyboard?.unsubscribe()
          self._shortcutKeyboard = nil
          self._mnemonics = nil
+
          item = self._first
          while item do
             next_item = item.next
@@ -384,6 +390,7 @@ gui.menubar = function(Options)
             item.next = nil
             item = next_item
          end
+
          self._first = nil
          self._last = nil
          self._currentItem = nil
@@ -461,12 +468,14 @@ gui.menubar = function(Options)
 
       function keyboardInput(Qualifiers, Code, Unicode)
          if self._disabled then return end
+
          if Qualifiers has KQ_PRESSED then
             if (Code is KEY_SPACE) and self._lastMenu?.visible and not self._lastMenu.hItem then
                self._lastMenu.hide()
                self._lastMenu = nil
                return
             end
+
             if self._lastMenu?.visible then
                if self._lastMenu.handleKey(Qualifiers, Code) then return end
                if Code is KEY_UP then
@@ -477,6 +486,7 @@ gui.menubar = function(Options)
                   return
                end
             end
+
             if (Code is KEY_L_ALT) or (Code is KEY_R_ALT) then
                item = firstItem(self)
                if item then highlightItem(self, item) end
@@ -486,7 +496,9 @@ gui.menubar = function(Options)
                if self._currentItem then
                   scan = adjacentItem(self, self._currentItem, -1)
                   highlightItem(self, scan)
-                  if self._lastMenu?.visible then showItemMenu(self, scan) end
+                  if self._lastMenu?.visible then
+                     showItemMenu(self, scan)
+                  end
                else
                   highlightItem(self, firstItem(self))
                end
@@ -494,7 +506,9 @@ gui.menubar = function(Options)
                if self._currentItem then
                   scan = adjacentItem(self, self._currentItem, 1)
                   highlightItem(self, scan)
-                  if self._lastMenu?.visible then showItemMenu(self, scan) end
+                  if self._lastMenu?.visible then
+                     showItemMenu(self, scan)
+                  end
                else
                   highlightItem(self, firstItem(self))
                end
@@ -511,23 +525,26 @@ gui.menubar = function(Options)
 
       self.viewport.height = ICON_SIZE + (VMARGIN * 2)
 
-      self._bkgd.new('VectorRectangle', { -- Main background
-         fill   = self.theme.menubar.bkgd,
+      self._bkgd.new('VectorRectangle', table.merge({ -- Main background
+         fill   = 'none',
          x      = 0,
          y      = 0,
          width  = '100%',
          height = self.viewport.height
-      })
+      }, self.theme.bkgd))
 
-      self._highlight = self._bkgd.new('VectorRectangle', { -- Highlight for items
-         fill = self.theme.menubar.highlight,
+      self._highlight = self._bkgd.new('VectorRectangle', table.merge({ -- Highlight for items
+         fill = 'none',
          x = 0, y = 0, width = 1, height = self.viewport.height - 1,
          visibility = 'hidden'
-      })
+      }, self.theme.highlight))
 
       arrangeItems(self)
       self._ready = true
-      if self._hasFocus and not self._disabled then highlightItem(self, firstItem(self)) end
+      if self._hasFocus and not self._disabled then
+         highlightItem(self, firstItem(self))
+      end
+
       self._shortcutKeyboard = input.keyboard(self.viewport.scene.surface,
          function(Handle, SurfaceID, Qualifiers, Code, Unicode)
             if self._disabled or not (Qualifiers has KQ_PRESSED) then return end
@@ -543,9 +560,13 @@ gui.menubar = function(Options)
                   if not selectable(item) then return end
                   if self.viewport.acFocus() != ERR_Okay then return end
                   highlightItem(self, item)
-                  if hasMenu(item) then showItemMenu(self, item)
-                  else activateItem(self)
+
+                  if hasMenu(item) then
+                     showItemMenu(self, item)
+                  else
+                     activateItem(self)
                   end
+
                   return
                end
             end
@@ -564,6 +585,7 @@ gui.menubar = function(Options)
             item = firstItem(self)
             if not item then return end
             if self.viewport.acFocus() != ERR_Okay then return end
+
             self._lastMenu?.hide()
             self._lastMenu = nil
             highlightItem(self, item)
