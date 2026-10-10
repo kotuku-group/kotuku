@@ -531,8 +531,10 @@ gui.menubar = function(Options)
       self._shortcutKeyboard = input.keyboard(self.viewport.scene.surface,
          function(Handle, SurfaceID, Qualifiers, Code, Unicode)
             if self._disabled or not (Qualifiers has KQ_PRESSED) then return end
+
             if not (self.viewport.scene.surface.flags has RNF_HAS_FOCUS) then return end
-            if (Qualifiers has KQ_ALT) and not (Qualifiers has (KQ_CTRL | KQ_SHIFT | KQ_COMMAND)) and
+
+            if (Qualifiers has KQ_L_ALT) and not (Qualifiers has (KQ_CTRL | KQ_SHIFT | KQ_COMMAND)) and
                Code >= KEY_A and Code <= KEY_Z then
                letter = string.char(65 + Code - KEY_A)
                item = self._mnemonics[letter]
@@ -547,6 +549,7 @@ gui.menubar = function(Options)
                   return
                end
             end
+
             if (Code != KEY_F10) or (Qualifiers has (KQ_CTRL | KQ_SHIFT | KQ_ALT | KQ_COMMAND)) then
                item, path = findShortcut(self, Qualifiers, Code, Unicode)
                if item and itemMenu(self, item).activateShortcut(path) then
@@ -557,6 +560,7 @@ gui.menubar = function(Options)
                end
                return
             end
+
             item = firstItem(self)
             if not item then return end
             if self.viewport.acFocus() != ERR_Okay then return end
