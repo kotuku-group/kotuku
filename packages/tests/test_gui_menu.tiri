@@ -1074,3 +1074,104 @@ end
       'Disabling the wrapper again must apply without rebuilding the menu')
 end
 
+@Test function MenubarMnemonicsReserveCapitalsBeforeResolvingConflicts()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File')
+      Bar.addItem('format', 'Format')
+      Bar.addItem('open', 'Open')
+      Bar.addItem('lower', 'tools')
+      Bar.addItem('embedded', 'my Help')
+      Bar.addItem('duplicate', 'FFF')
+      Bar.addItem('empty', '')
+      Bar.addItem('punctuation', '123!?')
+   end })
+   assert(bar._lookup.file.mnemonic is 'F' and bar._lookup.open.mnemonic is 'O',
+      'The first pass must reserve first capitals for all items')
+   assert(bar._lookup.format.mnemonic is 'R', 'Conflicts must skip letters reserved by later items')
+   assert(bar._lookup.lower.mnemonic is 'T' and bar._lookup.embedded.mnemonic is 'H',
+      'Lowercase labels need a fallback; embedded capitals take priority')
+   assert(not bar._lookup.duplicate.mnemonic and not bar._lookup.empty.mnemonic and
+      not bar._lookup.punctuation.mnemonic, 'Items without an available letter must remain unbound')
+   bar.disableItem('file')
+   assert(bar._lookup.file.mnemonic is 'F' and bar._lookup.format.mnemonic is 'R',
+      'Disabling an item must not reassign mnemonics')
+   bar.setItemText('open', 'View')
+   assert(bar._lookup.open.mnemonic is 'V' and bar._lookup.format.mnemonic is 'O',
+      'Renaming must recompute both mnemonic passes')
+   bar.removeItem('file')
+   assert(bar._lookup.format.mnemonic is 'F', 'Removing an item must release its letter')
+   local item = bar.addItem('find', 'Find')
+   assert(item.mnemonic is 'I', 'Items added later must receive an available letter')
+end
+
+@Test function AltMnemonicsFocusOpenAndSwitchMenus()
+   local surface <close>, target = newTarget()
+   local sibling = target.new('VectorViewport', { y=50, width=100, height=50, tabOrder=1 })
+   sibling.mtSubscribeKeyboard(function() end)
+   local calls, shortcut_hits, action_hits, unmatched_hits = 0, 0, 0, 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { item='Other action', qualifier='ALT', key='F', feedback=function() shortcut_hits++ end },
+         { item='Unassigned letter', qualifier='ALT', key='Z', feedback=function() unmatched_hits++ end }
+      }, function() calls++ end)
+      Bar.addItem('edit', 'Edit', nil, nil, array<table> { { item='Copy' } })
+      Bar.addItem('help', 'Help', nil, function() action_hits++ end)
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   check sibling.acFocus()
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT | KQ_CTRL)
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT | KQ_SHIFT)
+   sendKey(KEY_F, KQ_ALT)
+   assert(not bar._hasFocus and calls is 0, 'Only pressed Alt-letter without other modifiers may activate')
+   sendKey(KEY_Z, KQ_PRESSED | KQ_ALT)
+   assert(unmatched_hits is 1 and calls is 0 and not bar._hasFocus,
+      'Unassigned Alt letters must still dispatch explicit shortcuts without taking focus')
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(bar._hasFocus and bar._currentItem is bar._lookup.file and bar._lastMenu.visible and calls is 1,
+      'Alt-letter must focus the bar and prepare and open its menu')
+   assert(shortcut_hits is 0, 'Assigned mnemonics must take priority over matching menu shortcuts')
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(bar._lastMenu.visible and calls is 1, 'Repeating a mnemonic must leave its menu open')
+   local file_menu = bar._lastMenu
+   sendKey(KEY_E, KQ_PRESSED | KQ_ALT)
+   assert(not file_menu.visible and bar._lookup.edit.menu.visible and bar._currentItem is bar._lookup.edit,
+      'Alt-letter must switch from an open menu to the matching menu')
+   sendKey(KEY_DOWN)
+   assert(bar._lastMenu.hItem, 'The opened menu must accept normal keyboard navigation')
+   sendKey(KEY_H, KQ_PRESSED | KQ_ALT)
+   assert(action_hits is 1 and not bar._lastMenu, 'Action-only items must activate exactly once')
+   bar.disableItem('file')
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(calls is 1 and shortcut_hits is 0, 'Disabled mnemonics must not activate or fall through to shortcuts')
+   bar.disable()
+   check sibling.acFocus()
+   sendKey(KEY_E, KQ_PRESSED | KQ_ALT)
+   assert(not bar._hasFocus, 'Disabled menubars must not take focus through mnemonics')
+end
+
+@Test function AltMnemonicsIgnoreInactiveWindowsAndReleaseBindingsOnFree()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, function() hits++ end)
+   end })
+   local other_surface <close>, other_target = newTarget()
+   other_target.mtSubscribeKeyboard(function() end)
+   surface.acShow()
+   other_surface.acShow()
+   other_surface.acFocus()
+   surface.acLostFocus()
+   processing.sleep(0)
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(hits is 0, 'Mnemonics must ignore inactive windows')
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(hits is 1, 'The active window must handle its mnemonic')
+   bar.viewport.free()
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(hits is 1, 'Freeing the menubar must release mnemonic handling')
+end
