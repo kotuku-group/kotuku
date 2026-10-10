@@ -146,7 +146,50 @@ function highlightItem(self, Item)
    self.viewport.acDraw()
 end
 
+-- Reserve first capitals before assigning fallback letters, so conflicts cannot steal another item's first choice.
+function assignMnemonics(self)
+   self._mnemonics = { }
+   item = self._first
+   while item do
+      item.mnemonic = nil
+      item._mnemonicStart = 0
+      name = item.displayName ?? ''
+      for i in {0 to #name} do
+         byte = name.byte(i)
+         if byte >= 65 and byte <= 90 then
+            letter = name.sub(i, i + 1)
+            item._mnemonicStart = i + 1
+            if not self._mnemonics[letter] then
+               item.mnemonic = letter
+               self._mnemonics[letter] = item
+            end
+            break
+         end
+      end
+      item = item.next
+   end
+
+   item = self._first
+   while item do
+      name = item.displayName ?? ''
+      if not item.mnemonic then
+         for offset in {0 to #name} do
+            index = (item._mnemonicStart + offset) % #name
+            letter = name.sub(index, index + 1).upper()
+            byte = letter.byte()
+            if byte >= 65 and byte <= 90 and not self._mnemonics[letter] then
+               item.mnemonic = letter
+               self._mnemonics[letter] = item
+               break
+            end
+         end
+      end
+      item = item.next
+   end
+end
+
 function arrangeItems(self)
+   assignMnemonics(self)
    self._vg?.free()
 
    self._vg = self.viewport.new('VectorGroup', { name='ItemGroup' })
@@ -332,6 +375,7 @@ gui.menubar = function(Options)
       self.viewport.subscribe('free', function(Viewport, Args)
          self._shortcutKeyboard?.unsubscribe()
          self._shortcutKeyboard = nil
+         self._mnemonics = nil
          item = self._first
          while item do
             next_item = item.next
@@ -488,6 +532,21 @@ gui.menubar = function(Options)
          function(Handle, SurfaceID, Qualifiers, Code, Unicode)
             if self._disabled or not (Qualifiers has KQ_PRESSED) then return end
             if not (self.viewport.scene.surface.flags has RNF_HAS_FOCUS) then return end
+            if (Qualifiers has KQ_ALT) and not (Qualifiers has (KQ_CTRL | KQ_SHIFT | KQ_COMMAND)) and
+               Code >= KEY_A and Code <= KEY_Z then
+               letter = string.char(65 + Code - KEY_A)
+               item = self._mnemonics[letter]
+               if item then
+                  -- Reserve assigned mnemonics even while disabled, keeping other bindings predictable.
+                  if not selectable(item) then return end
+                  if self.viewport.acFocus() != ERR_Okay then return end
+                  highlightItem(self, item)
+                  if hasMenu(item) then showItemMenu(self, item)
+                  else activateItem(self)
+                  end
+                  return
+               end
+            end
             if (Code != KEY_F10) or (Qualifiers has (KQ_CTRL | KQ_SHIFT | KQ_ALT | KQ_COMMAND)) then
                item, path = findShortcut(self, Qualifiers, Code, Unicode)
                if item and itemMenu(self, item).activateShortcut(path) then
