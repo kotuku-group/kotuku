@@ -13,6 +13,7 @@
 #include <ranges>
 
 #include "xquery_errors.h"
+#include "xquery_functions.h"
 #include "../functions/accessor_support.h"
 #include "../../xml/uri_utils.h"
 

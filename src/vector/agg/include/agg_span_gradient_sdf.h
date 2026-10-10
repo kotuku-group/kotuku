@@ -307,7 +307,7 @@ namespace agg
       int m_d2;
    };
 
-   int8u * gradient_sdf::sdf_create(path_storage &ps, double Scale) {
+   inline int8u * gradient_sdf::sdf_create(path_storage &ps, double Scale) {
       // Flatten the curves once so that bounding rect computation and both rasterisation passes do not
       // each repeat the curve subdivision.
 

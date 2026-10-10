@@ -330,7 +330,7 @@ namespace agg
       }
    };
 
-   int8u * gradient_worley::worley_create(path_storage &ps, uint64_t Seed, int PointCount, WLF Mode, WLM Metric,
+   inline int8u * gradient_worley::worley_create(path_storage &ps, uint64_t Seed, int PointCount, WLF Mode, WLM Metric,
       double HeightMin, double HeightMax, double Jitter, double Scale, const std::vector<worley_feature> *Points)
    {
       agg::conv_curve<agg::path_storage> conv(ps);
