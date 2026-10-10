@@ -981,3 +981,96 @@ end
    menu.show()
    assert(calls is 2 and menu.visible, 'A failed prepare must not prevent later opening')
 end
+
+@Test function FocusedMenubarRejectsClicksOutsideEnabledItems()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, function() hits++ end,
+         array<table> { { item='Open' } })
+      Bar.addItem('disabled', 'Disabled')
+   end })
+   bar.disableItem('disabled')
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   feed(JET_ABS_XY, surface.absX + 450, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0 and not bar._lastMenu, 'Blank space must not activate the keyboard-selected item')
+   feed(JET_ABS_XY, surface.absX + bar._lookup.disabled.x + 5, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0 and not bar._lastMenu, 'Disabled rows must not activate the keyboard-selected item')
+   assert(bar._currentItem is bar._lookup.file, 'Ignored clicks must preserve keyboard selection')
+   sendKey(KEY_DOWN)
+   assert(hits is 1 and bar._lastMenu.visible, 'Keyboard activation must still open the selected menu')
+   feed(JET_ABS_XY, surface.absX + 450, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1 and bar._lastMenu.visible, 'Blank clicks must not toggle an already open menu')
+end
+
+@Test function MenubarHoverSwitchesWithoutActivationCallbacks()
+   local surface <close>, target = newTarget()
+   local hits, prepares = 0, 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> { { item='Open' } })
+      Bar.addItem('edit', 'Edit', nil, function() hits++ end,
+         array<table> { { item='Copy' } }, function() prepares++ end)
+      Bar.addItem('help', 'Help', nil, function() hits++ end)
+   end })
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   local file_menu = bar._lastMenu
+   feed(JET_ABS_XY, surface.absX + bar._lookup.edit.x + 5, surface.absY + 5)
+   assert(not file_menu.visible and bar._lookup.edit.menu.visible,
+      'Hovering another menu must switch the open dropdown')
+   assert(hits is 0 and prepares is 1, 'Hover switching must prepare the menu without activating its callback')
+   feed(JET_ABS_XY, surface.absX + bar._lookup.help.x + 5, surface.absY + 5)
+   assert(hits is 0 and not bar._lastMenu, 'Hovering an action-only item must close the menu without activation')
+   feed(JET_ABS_XY, surface.absX + bar._lookup.edit.x + 5, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1 and prepares is 2 and bar._lastMenu.visible,
+      'Explicit pointer activation must invoke the callback once and prepare the menu again')
+end
+
+@Test function WrappedSubmenusRespectLiveDisabledState()
+   local surface <close>, target = newTarget()
+   local wrapper = { disabled=true, menu={ id='wrapped', text='Wrapped', items=array<table> {
+      { item='Child', key='G', qualifier='CTRL' }
+   } } }
+   local menu = gui.menu({ target=surface, relative=target, config=array<table> {
+      wrapper, { item='Enabled' }
+   } })
+   assert(not menu.selectItem('wrapped') and not menu.activate('wrapped'),
+      'Disabled wrappers must reject selection and activation')
+   surface.acShow()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu.items[0].y + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(not menu.currentMenu, 'Pointer input must not open a disabled wrapped submenu')
+   menu.handleKey(KQ_PRESSED, KEY_DOWN)
+   assert(menu.hItem is menu.items[1], 'Keyboard navigation must skip disabled wrappers')
+   wrapper.disabled = false
+   assert(menu.selectItem('wrapped') and menu.currentMenu.visible, 'Enabling the wrapper must allow opening')
+   menu.currentMenu.hide()
+   wrapper.menu.disabled = true
+   assert(not menu.selectItem('wrapped') and not menu.activate('wrapped'),
+      'The inner menu disabled state must also prevent opening')
+   wrapper.menu.disabled = false
+   wrapper.disabled = true
+   assert(not menu.selectItem('wrapped') and not menu.activate('wrapped'),
+      'Disabling the wrapper again must apply without rebuilding the menu')
+end
+

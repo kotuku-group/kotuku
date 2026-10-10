@@ -51,9 +51,9 @@ function findShortcut(self, Qualifiers:num!, Code:num!, Unicode:num):<table, arr
    end
 end
 
-function showItemMenu(self, Item:table!) -- Open an item's menu, switching away from any previously open menu.
+function showItemMenu(self, Item:table!, Hover:bool) -- Open an item's menu, switching away from any previously open menu.
    if not selectable(Item) or not hasMenu(Item) then return false end
-   Item?.callback(Item.id, Item.name)
+   if not Hover then Item?.callback(Item.id, Item.name) end
    menu = itemMenu(self, Item)
    menu.x = Item.x
 
@@ -304,7 +304,7 @@ gui.menubar = function(Options)
          self._prevItem = self._currentItem
          if open_menu and self._currentItem.menu != self._lastMenu then
             if hasMenu(self._currentItem) then
-               showItemMenu(self, self._currentItem)
+               showItemMenu(self, self._currentItem, true)
             else
                self._lastMenu.hide()
                self._lastMenu = nil
@@ -398,11 +398,10 @@ gui.menubar = function(Options)
                if ev.type != JET_BUTTON_1 then return end
 
                if ev.value != 0 then
-                  if self._currentItem then
-                     if self._currentItem.disabled or self._disabled then return end
-
-                     self._clicked = self._currentItem
-                     hoverUpdate(self._currentItem, true)
+                  item = getCursorItem(self, ev.x, ev.y)
+                  if selectable(item) and not self._disabled then
+                     self._clicked = item
+                     highlightItem(self, item)
                      activateItem(self)
                   end
                elseif self._clicked then

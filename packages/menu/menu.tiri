@@ -129,7 +129,7 @@ gui.menu = function(Options)
    }
 
    function selectable(Item:table):bool
-      return Item and not (Item.lineBreak or Item.disabled or Item.config.disabled)
+      return Item and not (Item.lineBreak or Item.disabled or Item.config.disabled or Item.source?.disabled)
    end
 
    function itemIndex(Item:table):num
@@ -216,7 +216,7 @@ gui.menu = function(Options)
             end
 
             if item.item then
-               mi = { y=y, config=item, tip=item.tip, submenuConfig=item.items }
+               mi = { y=y, config=item, source=source, tip=item.tip, submenuConfig=item.items }
                vText = &content.new('VectorText', {
                   x        = TEXT_X,
                   face     = gui.fonts.menu.face,
