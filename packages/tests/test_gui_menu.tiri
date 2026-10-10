@@ -119,6 +119,52 @@ function resetPointer()
    if obj.find('SystemPointer') then feed(JET_ABS_XY, 1000, 1000) end
 end
 
+@Test function MenuReportsHighlightChanges()
+   local surface <close>, target = newTarget()
+   local events = array<table>
+   local first = { id='first', item='First' }
+   local second = { id='second', item='Second' }
+   local child = { id='child', item='Child' }
+   local parent = { id='parent', item='Parent', items=array<table> { child } }
+   local menu = gui.menu({ target=surface, relative=target,
+      config=array<table> { first, { group='Heading' }, { item='Disabled', disabled=true }, second, parent },
+      onHighlight=function(Menu, Item)
+         events.push({ menu=Menu, item=Item })
+      end
+   })
+   defer menu.surface?.free() end
+
+   assert(not menu.selectItem('Disabled'), 'Disabled rows must reject selection')
+   assert(menu.selectItem('first') and events[0].menu is menu and events[0].item is first,
+      'Programmatic highlighting must pass the owning menu and original item')
+   menu.selectItem('first')
+   assert(#events is 1, 'Selecting the same row twice must not repeat the callback')
+   menu.step(1)
+   assert(#events is 2 and events[1].item is second, 'Keyboard navigation must report the next selectable row')
+
+   surface.acShow()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu.items[0].y + 5)
+   assert(#events is 3 and events[2].item is first, 'Pointer highlighting must report the new row')
+   feed(JET_ABS_XY, menu.surface.absX + 11, menu.surface.absY + menu.items[0].y + 5)
+   assert(#events is 3, 'Pointer movement within one row must not repeat the callback')
+
+   menu.selectItem('parent')
+   local submenu = menu.currentMenu
+   submenu.selectItem('child')
+   assert(#events is 5 and events[3].menu is menu and events[3].item is parent and
+      events[4].menu is submenu and events[4].item is child,
+      'Submenu highlighting must inherit the callback and report its own menu')
+
+   menu.hide()
+   menu.show()
+   assert(#events is 5, 'Clearing a highlight while hiding must not invoke the callback')
+   menu.selectItem('first')
+   assert(#events is 6 and events[5].item is first, 'Reopening must allow the row to be reported again')
+end
+
 @Test function DisabledBarRejectsKeyboard()
    local surface <close>, target = newTarget()
    local hits = 0
@@ -170,7 +216,7 @@ end
    local hits = 0
    local menu = gui.menu({ target=surface, relative=target, x=0, y=0,
       config=array<table> {
-         { id='enabled', item='Enabled', feedback=function() hits++ end },
+         { id='enabled', item='Enabled', onActivate=function() hits++ end },
          { id='disabled', item='Disabled', disabled=true }
       } })
    defer menu.surface?.free() end
@@ -197,7 +243,7 @@ end
       target=target,
       createItems=function(Bar)
          Bar.addItem('file', 'File', nil, nil, array<table> {
-            { item='Open' }, { item='Save', feedback=function() hits++ end }
+            { item='Open' }, { item='Save', onActivate=function() hits++ end }
          })
          Bar.addItem('edit', 'Edit', nil, nil, array<table> { { item='Copy' } })
       end
@@ -229,7 +275,7 @@ end
    local hits = 0
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('file', 'File', nil, nil, array<table> {
-         { item='Open', feedback=function() hits++ end }
+         { item='Open', onActivate=function() hits++ end }
       })
    end })
    surface.acShow()
@@ -257,7 +303,7 @@ end
       target=surface, relative=target, client=target,
       config=array<table> {
          { id='parent', item='Parent', items=array<table> {
-            { item='First', feedback=function() hits++ end }, { item='Second' }
+            { item='First', onActivate=function() hits++ end }, { item='Second' }
          } }
       }
    })
@@ -318,7 +364,7 @@ end
    local hits = 0
    local menu = gui.menu({
       target=surface, relative=target,
-      config=array<table> { { item='Copy', feedback=function() hits++ end } }
+      config=array<table> { { item='Copy', onActivate=function() hits++ end } }
    })
    target.mtSubscribeKeyboard(function() end)
    target.mtSubscribeFeedback(FM_LOST_FOCUS, function() menu.hide() end)
@@ -528,9 +574,11 @@ end
       'Returning focus must restore the highlight on the existing enabled selection')
    feed(JET_ABS_XY, surface.absX + 10, surface.absY + 5)
    feed(JET_ABS_XY, surface.absX + 450, surface.absY + 5)
-   feed(JET_ABS_XY, 1000, 1000)
    assert(bar._currentItem is bar._lookup.edit and bar._highlight.visibility is VIS_VISIBLE,
-      'Hovering a disabled item, empty space or leaving the bar must preserve its keyboard focus indicator')
+      'Hovering a disabled item or empty space must preserve the keyboard focus indicator')
+   feed(JET_ABS_XY, 1000, 1000)
+   assert(not bar._currentItem and bar._highlight.visibility is VIS_HIDDEN,
+      'Leaving the bar without an open menu must clear the selected item and its highlight')
 end
 
 @Test function ShortcutsActivateUnopenedNestedMenusWithoutTakingFocus()
@@ -541,10 +589,10 @@ end
    local calls = 0
    local opens = 0
    local received_menu:table
-   local config = { id='copy', item='Copy', qualifier='ctrl', key='c', feedback=function(Menu, Item)
+   local config = { id='copy', item='Copy', qualifier='ctrl', key='c', onActivate=function(Menu, Item)
       calls++
       received_menu = Menu
-      assert(Item.id is 'copy', 'The feedback must receive the original shortcut item')
+      assert(Item.id is 'copy', 'The activation callback must receive the original shortcut item')
    end }
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('edit', 'Edit', nil, function() opens++ end, array<table> {
@@ -569,11 +617,11 @@ end
    local saves = 0
    local save_as = 0
    local config = { item='Save As', qualifier='Ctrl + Shift', key='S', disabled=true,
-      feedback=function() save_as++ end }
+      onActivate=function() save_as++ end }
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('file', 'File', nil, nil, array<table> {
-         { item='Save', qualifier='CONTROL', key='S', feedback=function() saves++ end }, config,
-         { item='Invalid', qualifier='TYPO', key='S', feedback=function() raise 'Invalid modifier matched' end }
+         { item='Save', qualifier='CONTROL', key='S', onActivate=function() saves++ end }, config,
+         { item='Invalid', qualifier='TYPO', key='S', onActivate=function() raise 'Invalid modifier matched' end }
       })
    end })
    surface.acShow()
@@ -605,10 +653,10 @@ end
    local hits = { reload=0, plus=0, minus=0, zero=0 }
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('view', 'View', nil, nil, array<table> {
-         { item='Reload', key='F5', feedback=function() hits.reload++ end },
-         { item='Zoom In', key='+', qualifier='CTRL', feedback=function() hits.plus++ end },
-         { item='Zoom Out', key='-', qualifier='CTRL', feedback=function() hits.minus++ end },
-         { item='Reset', key='0', qualifier='CTRL', feedback=function() hits.zero++ end }
+         { item='Reload', key='F5', onActivate=function() hits.reload++ end },
+         { item='Zoom In', key='+', qualifier='CTRL', onActivate=function() hits.plus++ end },
+         { item='Zoom Out', key='-', qualifier='CTRL', onActivate=function() hits.minus++ end },
+         { item='Reset', key='0', qualifier='CTRL', onActivate=function() hits.zero++ end }
       })
    end })
    surface.acShow()
@@ -631,8 +679,8 @@ end
    local wrong_hits = 0
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('file', 'File', nil, nil, array<table> {
-         { item='Selected', feedback=function() wrong_hits++ end },
-         { item='Shortcut', key='Space', qualifier='CTRL', feedback=function() hits++ end }
+         { item='Selected', onActivate=function() wrong_hits++ end },
+         { item='Shortcut', key='Space', qualifier='CTRL', onActivate=function() hits++ end }
       })
    end })
    surface.acShow()
@@ -651,7 +699,7 @@ end
    local hits = 0
    local wrong_hits = 0
    local branch = { text='Clipboard', disabled=true, items=array<table> {
-      { item='Copy', qualifier='CTRL', key='C', feedback=function() hits++ end }
+      { item='Copy', qualifier='CTRL', key='C', onActivate=function() hits++ end }
    } }
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('edit', 'Edit', nil, nil, array<table> { { menu=branch } })
@@ -664,7 +712,7 @@ end
    branch.disabled = false
    sendKey(KEY_C, KQ_PRESSED | KQ_CTRL)
    bar.addItem('duplicate', 'Duplicate', nil, nil, array<table> {
-      { item='Other Copy', qualifier='CTRL', key='C', feedback=function() wrong_hits++ end }
+      { item='Other Copy', qualifier='CTRL', key='C', onActivate=function() wrong_hits++ end }
    })
    sendKey(KEY_C, KQ_PRESSED | KQ_CTRL)
    assert(hits is 2 and wrong_hits is 0, 'Duplicate shortcuts must dispatch only the first enabled match')
@@ -682,7 +730,7 @@ end
    local hits = 0
    bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('file', 'File', nil, nil, array<table> {
-         { item='Remove Menu', qualifier='CTRL', key='D', feedback=function()
+         { item='Remove Menu', qualifier='CTRL', key='D', onActivate=function()
             hits++
             bar.removeItem('file')
          end }
@@ -693,7 +741,7 @@ end
    processing.sleep(0)
    sendKey(KEY_D, KQ_PRESSED | KQ_CTRL)
    sendKey(KEY_D, KQ_PRESSED | KQ_CTRL)
-   assert(hits is 1 and not bar._lookup.file, 'Shortcut cleanup must tolerate feedback freeing its own menu')
+   assert(hits is 1 and not bar._lookup.file, 'Shortcut cleanup must tolerate activation freeing its own menu')
 end
 
 @Test function ShortcutMatcherSupportsNamedKeysAndRejectsUnknownBindings()
@@ -720,9 +768,9 @@ end
    local menu = gui.menu({ popup=true, config=array<table> {
       { group='Files' },
       { item='Disabled', disabled=true },
-      { item='Open', feedback=function() hits++ end },
+      { item='Open', onActivate=function() hits++ end },
       { item='Recent', items=array<table> {
-         { item='First', feedback=function() hits++ end }, { item='Second' }
+         { item='First', onActivate=function() hits++ end }, { item='Second' }
       } }
    } })
    defer menu.surface?.free() end
@@ -752,7 +800,7 @@ end
    target.mtSubscribeKeyboard(function() end)
    local hits = 0
    local menu = gui.menu({ target=surface, popup=true, client=target, config=array<table> {
-      { item='Save', key='S', qualifier='CTRL', feedback=function() hits++ end }
+      { item='Save', key='S', qualifier='CTRL', onActivate=function() hits++ end }
    } })
    surface.acShow()
    surface.acFocus()
@@ -766,14 +814,14 @@ end
    assert(hits is 1, 'A hidden popup must not retain an active shortcut listener on its client')
 end
 
-@Test function CheckableItemsToggleBeforePointerAndKeyboardFeedback()
+@Test function CheckableItemsToggleBeforePointerAndKeyboardActivation()
    local surface <close>, target = newTarget()
    local states = array<any>
-   local feedback_states = array<any>
+   local menu_states = array<any>
    local config = { id='grid', item='Show Grid', checkable=true,
-      feedback=function(Menu, Item) states.push(Item.checked) end }
+      onActivate=function(Menu, Item) states.push(Item.checked) end }
    local menu = gui.menu({ target=surface, relative=target, showIcons=false,
-      feedback=function(Menu, Item) feedback_states.push(Item.checked) end,
+      onActivate=function(Menu, Item) menu_states.push(Item.checked) end,
       config=array<table> { config, { item='Disabled', checkable=true, checked=true, disabled=true } }
    })
    assert(menu.getChecked('grid') is false, 'Checkable items must default to unchecked')
@@ -786,13 +834,13 @@ end
    feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu.items[0].y + 5)
    feed(JET_LMB, 1, 0)
    feed(JET_LMB, 0, 0)
-   assert(config.checked and states[0] and feedback_states[0], 'Pointer activation must toggle before both callbacks')
+   assert(config.checked and states[0] and menu_states[0], 'Pointer activation must toggle before both callbacks')
    menu.show()
    assert(menu.items[0].checkmark.visibility is VIS_VISIBLE, 'A checkmark must persist after reopening')
    menu.selectItem('grid')
    menu.handleKey(KQ_PRESSED, KEY_SPACE)
-   assert(not config.checked and not states[1] and not feedback_states[1], 'Keyboard activation must toggle off')
-   assert(#states is 2 and #feedback_states is 2 and not menu.visible, 'Each activation must notify once and dismiss')
+   assert(not config.checked and not states[1] and not menu_states[1], 'Keyboard activation must toggle off')
+   assert(#states is 2 and #menu_states is 2 and not menu.visible, 'Each activation must notify once and dismiss')
    assert(not menu.activate(1) and menu.getChecked(1), 'Disabled checkable items must not toggle')
 end
 
@@ -801,7 +849,7 @@ end
    local hits = 0
    local config = { id='checked', item='Checked', checkable=true, checked=true, icon='items/file_new',
       qualifier='CTRL', key='G',
-      feedback=function() hits++ end }
+      onActivate=function() hits++ end }
    local menu = gui.menu({ target=surface, relative=target, config=array<table> {
       config, { id='ordinary', item='A much longer ordinary menu item' }, { group='Heading' },
       { id='parent', item='Submenu', checkable=true, items=array<table> { { item='Child' } } },
@@ -822,7 +870,7 @@ end
    assert(menu.setChecked(config, false) and not menu.getChecked('checked'),
       'setChecked must update the original config')
    assert(menu.items[0].checkmark.visibility is VIS_HIDDEN and hits is 0,
-      'Programmatic changes must not invoke feedback')
+      'Programmatic changes must not invoke activation callbacks')
    assert(not menu.setChecked('ordinary', true) and menu.getChecked('ordinary') is nil,
       'Ordinary items must not be converted into checkable items')
    assert(not menu.setChecked('parent', true) and not menu.setChecked('missing', true),
@@ -838,7 +886,7 @@ end
    local surface <close>, target = newTarget()
    local states = array<any>
    local config = { id='grid', item='Show Grid', checkable=true, qualifier='CTRL', key='G',
-      feedback=function(Menu, Item) states.push(Item.checked) end }
+      onActivate=function(Menu, Item) states.push(Item.checked) end }
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('view', 'View', nil, nil, array<table> {
          { menu={ text='Display', items=array<table> { config } } }
@@ -850,7 +898,7 @@ end
    sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
    sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
    assert(#states is 2 and states[0] and not states[1] and not config.checked,
-      'Nested shortcuts must toggle once before feedback on each activation')
+      'Nested shortcuts must toggle once before the callback on each activation')
    config.disabled = true
    sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
    assert(#states is 2 and not config.checked, 'Disabled shortcut items must preserve checked state')
@@ -947,7 +995,7 @@ end
       entry = Bar.addItem('file', 'File', nil, nil, nil, function(Menu, Config)
          calls++
          Menu.config = array<table> { { item='Dynamic action', key='G', qualifier='CTRL',
-            feedback=function() hits++ end } }
+            onActivate=function() hits++ end } }
       end)
    end })
    surface.acShow()
@@ -1040,6 +1088,10 @@ end
    feed(JET_LMB, 0, 0)
    assert(hits is 1 and prepares is 2 and bar._lastMenu.visible,
       'Explicit pointer activation must invoke the callback once and prepare the menu again')
+   local selected = bar._currentItem
+   feed(JET_ABS_XY, 1000, 1000)
+   assert(bar._currentItem is selected and bar._lastMenu.visible and bar._highlight.visibility is VIS_VISIBLE,
+      'Leaving the bar while a menu is open must preserve its selection and highlight')
 end
 
 @Test function WrappedSubmenusRespectLiveDisabledState()
@@ -1112,8 +1164,8 @@ end
    local calls, shortcut_hits, action_hits, unmatched_hits = 0, 0, 0, 0
    local bar = gui.menubar({ target=target, createItems=function(Bar)
       Bar.addItem('file', 'File', nil, nil, array<table> {
-         { item='Other action', qualifier='ALT', key='F', feedback=function() shortcut_hits++ end },
-         { item='Unassigned letter', qualifier='ALT', key='Z', feedback=function() unmatched_hits++ end }
+         { item='Other action', qualifier='ALT', key='F', onActivate=function() shortcut_hits++ end },
+         { item='Unassigned letter', qualifier='ALT', key='Z', onActivate=function() unmatched_hits++ end }
       }, function() calls++ end)
       Bar.addItem('edit', 'Edit', nil, nil, array<table> { { item='Copy' } })
       Bar.addItem('help', 'Help', nil, function() action_hits++ end)

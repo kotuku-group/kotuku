@@ -54,6 +54,7 @@ end
 function showItemMenu(self, Item:table!, Hover:bool) -- Open an item's menu, switching away from any previously open menu.
    if not selectable(Item) or not hasMenu(Item) then return false end
    if not Hover then Item?.callback(Item.id, Item.name) end
+
    menu = itemMenu(self, Item)
    menu.x = Item.x
 
@@ -241,9 +242,9 @@ end
 
 gui.menubar = function(Options:table)
    self = entity { -- Public interface
-      host = nil,
-      viewport = nil,
-      _lookup = { },
+      host      = nil,
+      viewport  = nil,
+      _lookup   = { },
       _disabled = false,
       _arranged = false
    }
@@ -341,6 +342,7 @@ gui.menubar = function(Options:table)
       if self._hasFocus and not self._disabled and not selectable(Item) then
          Item = selectable(self._currentItem) ? self._currentItem : firstItem(self)
       end
+
       if (self._currentItem is Item) and (StateChanged != true) then return end
 
       open_menu = self._lastMenu?.visible
@@ -437,7 +439,9 @@ gui.menubar = function(Options:table)
 
             elseif ev.type is JET_CROSSED_OUT then
                if self._currentItem and not self._lastMenu?.visible then
-                  hoverUpdate(nil)
+                  self._currentItem = nil
+                  self._highlight.visibility = 'hidden'
+                  self.viewport.acDraw()
                end
             elseif ev.flags has JTYPE_MOVEMENT then
                if self._clicked then return end
