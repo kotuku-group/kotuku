@@ -372,7 +372,7 @@ function buildLayout(self, Options)
       y      = dy,
       width  = rainbow.width,
       shadowLabel = 'Colour',
-      inputMask = [[^rgb\(%d+,%d+,%d+\)$]],
+      inputMask = [[^rgb\(\d+,\d+,\d+\)$]],
       events = {
          activate = function(Widget, Event)
             updateRGBInput(self, gui.strToRGB(Event.text))
@@ -433,8 +433,8 @@ function arrangePicker(self)
       val = (self._picker.y * 255) / (getRainbowBitmap().height * 0.75)
       if val > 255 then val = 255 end
 
-      self.vecPicker.cX = self._rainbowX + self._picker.x
-      self.vecPicker.cY = self._rainbowY + self._picker.y
+      self.vecPicker.cx = self._rainbowX + self._picker.x
+      self.vecPicker.cy = self._rainbowY + self._picker.y
 
       self.vecPicker.stroke     = f'rgba({val},{val},{val},1)'
       self.vecPicker.visibility = VIS_VISIBLE
@@ -578,7 +578,6 @@ gui.dialog.colour = function(Options)
       stickToFront = true,
       aspectRatio  = true,
       popOver      = Options.popOver,
-      parent       = Options.target,
       icon         = 'tools/palette',
       title        = Options.title ?? 'Select a colour',
       modal        = Options.modal ?? false,
@@ -590,6 +589,8 @@ gui.dialog.colour = function(Options)
          end
       }
    })
+
+   self.windowID = self._window.surface.id
 
    self.scene = self._window.scene
 
@@ -623,7 +624,7 @@ end
 -- This sub-routine is provided for languages other than Tiri to use the interface.
 
 @if(imported=false)
-   dlg = colour.dialog({
+   dlg = gui.dialog.colour({
       popOver    = arg('popOver'),
       target     = arg('target'),
       modal      = arg('modal'),

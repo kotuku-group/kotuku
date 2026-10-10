@@ -145,6 +145,7 @@ static const struct ActionArray clVectorActions[] = {
    { AC::Disable, VECTOR_Disable },
    { AC::Draw, VECTOR_Draw },
    { AC::Enable, VECTOR_Enable },
+   { AC::Focus, VECTOR_Focus },
    { AC::Free, VECTOR_Free },
    { AC::Hide, VECTOR_Hide },
    { AC::Init, VECTOR_Init },

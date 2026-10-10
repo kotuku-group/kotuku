@@ -853,6 +853,7 @@ the surface area first).</li>
       <const name="HOST">Define host on initialisation to create a container that can host surfaces from other processes.</const>
       <const name="IGNORE_FOCUS">Focus is diverted directly to the parent</const>
       <const name="INIT_ONLY">Synonym for <code>HOST | TRANSPARENT | DISABLED | PRECOPY | VIDEO | FIXED_BUFFER | PERVASIVE_COPY | FIXED_DEPTH | FULL_SCREEN | IGNORE_FOCUS</code></const>
+      <const name="MANUAL_RENDER">Skip bitmap clearing, skip draw callbacks, expose retained pixels.</const>
       <const name="NO_FOCUS">Prevents any kind of focussing on this object; no circumvention is possible</const>
       <const name="NO_HORIZONTAL">Turns off all horizontal movement (applies to the <code>Move()</code> action only).</const>
       <const name="NO_PRECOMPOSITE">Do not copy background information into the surface buffer - composite on the fly instead</const>

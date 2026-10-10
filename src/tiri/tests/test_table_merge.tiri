@@ -1,0 +1,268 @@
+-- Raw, shallow table merging and live-shape sequence concatenation.
+
+@BeforeEach(hotpath=true)
+function enforce_hotpath() end
+
+@Test function MapsAndDefaults()
+   local first = { a=1, b=2 }
+   local second = { b=3, c=4 }
+   for option in values({ true, false }) do
+      local result = table.merge(first, second, option)
+      assert(result.a is 1 and result.c is 4)
+      assert(result.b is (option and 3 or 2))
+      assert(result != first and result != second)
+   end
+   assert(table.merge(first, second).b is 3)
+   assert(table.merge(first, second, nil).b is 3)
+   assert(first.b is 2 and second.b is 3)
+   assert(first.merge(second, false).b is 2)
+   local merge = table.merge
+   assert(merge(first, second, nil).b is 3)
+   assert(merge(first, second, false, 'ignored').b is 2)
+end
+
+@Test function NilInputsAreEmptyTables()
+   local merge = table.merge
+   local empty = table.merge(nil, nil)
+   assert(empty.size() is 0 and #empty is 0 and getmetatable(empty) is nil)
+   assert(empty != merge(nil, nil), 'Two nil inputs must still produce a fresh table')
+   local nested = { value=42 }
+   for source in values({ { 10, 20 }, { child=nested, [1000]=false }, {} }) do
+      for option in values({ true, false }) do
+         local left = table.merge(nil, source, option)
+         local right = table.merge(source, nil, option)
+         local indirect = merge(nil, source, option)
+         local method = source.merge(nil, option)
+         for result in values({ left, right, indirect, method }) do
+            assert(result != source and result.size() is source.size())
+            for key, value in source do assert(rawget(result, key) is value) end
+         end
+      end
+   end
+   assert(table.merge(nil, { 7 }, nil)[0] is 7)
+   assert(table.merge({ 7 }, nil, nil)[0] is 7)
+   assert(merge(nil, nil, false).size() is 0)
+   local nullable:table = nil
+   assert(table.merge(nullable, { 9 })[0] is 9)
+end
+
+@Test function DenseSequencesAndEmptyInputs()
+   for option in values({ true, false }) do
+      local result = table.merge({ 10, 20 }, { 30, 40 }, option)
+      assert(result.size() is 4 and #result is 4)
+      assert(result[0] is 10 and result[1] is 20 and result[2] is 30 and result[3] is 40)
+   end
+   assert(table.merge({}, {}).size() is 0)
+   assert(table.merge({}, { 7 })[0] is 7)
+   assert(table.merge({ 7 }, {})[0] is 7)
+   local source = { 1, 2 }
+   local doubled = table.merge(source, source)
+   assert(doubled[2] is 1 and doubled[3] is 2 and source.size() is 2)
+   local ordered = { [1]=20, [0]=10 }
+   assert(table.merge(ordered, { 30 })[2] is 30)
+end
+
+@Test function SparseMixedAndNumericKeys()
+   local first = { [2]='a', [-1]='negative', [0.5]='fraction', [1e20]='huge' }
+   local second = { [2]='b', [1000000]='distant' }
+   local result = table.merge(first, second, false)
+   assert(result[2] is 'a' and result[1000000] is 'distant')
+   assert(result[-1] is 'negative' and result[0.5] is 'fraction' and result[1e20] is 'huge')
+   assert(result.size() is 5 and result[0] is nil)
+   local boolean_keys = table.merge({ [true]=false, [false]=0 }, { [true]=1 }, false)
+   assert(boolean_keys[true] is false and boolean_keys[false] is 0)
+   result = table.merge({ 10, 20 }, { name='x', [0]=99 })
+   assert(result[0] is 99 and result[1] is 20 and result.name is 'x' and result.size() is 3)
+   local holes = { 10, 20, 30 }
+   holes[1] = nil
+   result = table.merge(holes, { 99 })
+   assert(result[0] is 99 and result[1] is nil and result[2] is 30)
+   assert(table.merge({ [2]='a' }, { [2]='b' }, false)[2] is 'a')
+   assert(table.merge({ [2.0]='a' }, { [2]='b' })[2] is 'b')
+end
+
+@Test function LiveShapeIgnoresHistoryAndCapacity()
+   local source = table.new(128, 16)
+   source[0] = 10
+   source[1] = 20
+   source.name = true
+   source.name = nil
+   source[1000] = true
+   source[1000] = nil
+   assert(source.kind() is 'associative')
+   local result = table.merge(source, { 30 })
+   assert(result[2] is 30 and result.size() is 3 and result.kind() is 'sequence')
+   assert(source.kind() is 'associative')
+   source.clear()
+   assert(table.merge(source, { 40 })[0] is 40)
+end
+
+@Test function FalseyCollisions()
+   local first = { a=false, b=0, c='' }
+   local second = { a=1, b=2, c=3, d=false }
+   local result = table.merge(first, second, false)
+   assert(result.a is false and result.b is 0 and result.c is '' and result.d is false)
+   result = table.merge(second, first)
+   assert(result.a is false and result.b is 0 and result.c is '')
+end
+
+@Test function ShallowIdentityAndRawMetatables()
+   local nested = { value=42 }
+   local key = {}
+   local function function_key() end
+   local source = { child=nested, [key]=nested, [function_key]=false }
+   source.self = source
+   local function forbidden() raise 'merge invoked a metamethod' end
+   local hooks = { __index=forbidden, __newindex=forbidden, __pairs=forbidden,
+      __len=forbidden, __contains=forbidden }
+   setmetatable(source, hooks)
+   local other = setmetatable({ other=nested }, hooks)
+   local result = table.merge(source, other, false)
+   assert(result.child is nested and result[key] is nested and result[function_key] is false)
+   assert(result.self is source and result.other is nested and getmetatable(result) is nil)
+   assert(result.size() is 5)
+   local identical = table.merge(source, source)
+   assert(identical.self is source and identical.size() is 4)
+   local dense = setmetatable({ nested }, hooks)
+   assert(table.merge(dense, dense)[1] is nested)
+end
+
+function expect_merge_error(Arguments:table)
+   local merge = table.merge
+   local caught = false
+   try
+      if #Arguments is 0 then merge()
+      elseif #Arguments is 1 then merge(Arguments[0])
+      else merge(Arguments[0], Arguments[1], Arguments[2])
+      end
+   except e
+      caught = true
+   end
+   assert(caught, 'Invalid merge arguments must raise')
+   assert(merge({ 1 }, { 2 })[1] is 2, 'Execution must recover after an argument error')
+end
+
+@Test function RuntimeArgumentValidation()
+   expect_merge_error({})
+   expect_merge_error({ {} })
+   expect_merge_error({ false, {} })
+   local merge = table.merge
+   local caught = false
+   try
+      merge(nil, nil, 1)
+   except e
+      caught = true
+   end
+   assert(caught, 'Nil inputs must still validate the overwrite option')
+   expect_merge_error({ {}, 'text' })
+   expect_merge_error({ array<int> { 1 }, {} })
+   expect_merge_error({ {}, array<int> { 1 } })
+   local object <close> = obj.new('tiri')
+   expect_merge_error({ object, {} })
+   expect_merge_error({ {}, object })
+   for invalid in values({ 0, '', {}, function() end }) do
+      expect_merge_error({ {}, {}, invalid })
+   end
+end
+
+@Test function CallEvaluationAndResults()
+   assert(({ 1 } |> table.merge({ 2 }))[1] is 2)
+   local calls = ''
+   local function first() calls ..= 'a'; return { x=1 } end
+   local function second() calls ..= 'b'; return { x=2 } end
+   local function option() calls ..= 'c'; return false end
+   local result, extra = table.merge(first(), second(), option())
+   assert(calls is 'abc' and result.x is 1 and extra is nil)
+   local function arguments() return { x=2 }, false end
+   assert(table.merge({ x=1 }, arguments()).x is 1)
+   table.merge(first(), second())
+   assert(calls is 'abcab')
+   local table = { ['merge']=function(A, B) return A + B end }
+   assert(table['merge'](2, 3) is 5, 'Shadowed namespace must keep its own callable')
+   local custom = { ['merge']=function(Value) return Value + 1 end }
+   assert(custom['merge'](4) is 5, 'User merge fields must remain callable')
+end
+
+@Test function WeakSourcesStayConsistentAcrossAllocation()
+   for iteration in {0 to 32} do
+      local weak = setmetatable(table.new(0, 64), { __mode='v' })
+      for i in {0 to 32} do weak[i] = { index=i } end
+      local result = table.merge(weak, weak)
+      local count = 0
+      local maximum = -1
+      for key, value in weak do
+         count++
+         if key > maximum then maximum = key end
+         assert(result[key] is value)
+      end
+      local dense = maximum is count - 1
+      assert(result.size() is (dense and count * 2 or count))
+      if dense then
+         for i in {0 to count} do assert(result[count + i] is weak[i]) end
+      end
+   end
+end
+
+@Test function EntityDesignationIsNotCopied()
+   local outer = &&
+   local source = entity { read=function() return && end }
+   assert(source.read() is source)
+   local result = table.merge(source, {})
+   assert(result.read() is outer, 'A fresh merge result must remain an ordinary table')
+end
+
+@Test function MetadataAndDirectDiagnostics()
+   assert(debug.validate('local result:table = table.merge({}, {}, nil)').success)
+   assert(debug.validate('local result:table = table.merge(nil, nil)').success)
+   assert(debug.validate('local result:table = ({}).merge({}, false)').success)
+   assert(not debug.validate('table.merge({}, {}, 1)').success)
+   assert(not debug.validate('table.merge({}, {}, false, 1)').success)
+   assert(not debug.validate('table.merge(array<int> {}, {})').success)
+end
+
+@Test function BytecodeRoundTrip()
+   local function factory():table return table.merge({ 1, 2 }, { 3 }, nil) end
+   for stripped in values({ false, true }) do
+      local result = exec(string.dump(factory, stripped))
+      assert(result.size() is 3 and result[2] is 3)
+   end
+end
+
+@Test function ChangingShapesAndCollectableEntries()
+   local saved = {}
+   for iteration in {0 to 160} do
+      local first = {}
+      local second = {}
+      local count = iteration % 17
+      for i in {0 to count} do
+         first[i] = { value=i }
+         second[i] = 'value' .. i
+      end
+      if iteration % 2 is 0 then second.name = { iteration=iteration } end
+      local key = {}
+      if iteration % 3 is 0 then first[key] = { iteration=iteration } end
+      local result = table.merge(first, second, false)
+      local maps = iteration % 2 is 0 or iteration % 3 is 0
+      assert(result.size() is (maps and count or count * 2) +
+         (iteration % 2 is 0 and 1 or 0) + (iteration % 3 is 0 and 1 or 0))
+      if count > 0 then
+         assert(result[0] is first[0])
+         if not maps then assert(result[count] is second[0]) end
+      end
+      if iteration % 3 is 0 then assert(result[key].iteration is iteration) end
+      saved[iteration] = result
+      if iteration % 16 is 0 then processing.collect('full') end
+   end
+   assert(saved.size() is 160, 'Results escape and remain live across allocation pressure')
+   for iteration in {0 to 160 by 3} do
+      local result = saved[iteration]
+      local found = false
+      for key, value in result do
+         if type(key) is 'table' then
+            assert(value.iteration is iteration)
+            found = true
+         end
+      end
+      assert(found, 'Collectable keys and values must survive full collection')
+   end
+end

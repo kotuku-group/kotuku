@@ -1,0 +1,113 @@
+-- Verifies that the vector focus list survives the destruction of vectors in the focus chain.  Freeing the focused
+-- vector, or one of its ancestors, must leave the focus with the surviving ancestors so that their keyboard
+-- subscriptions continue to receive key presses.
+
+   include 'display', 'vector'
+
+-- Broadcast a key press in the form of an evKey record: { int64 EventID; KQ Qualifiers; KEY Code; int Unicode },
+-- padded to 24 bytes.  The 64-bit event ID is composed as GetEventID() does, because a Tiri number cannot represent it
+-- exactly.
+
+function sendKey(Code:num!)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = KQ_PRESSED
+   ev[3] = Code
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+-- Create a focused scene with a keyboard subscription on every vector in Names.  Vectors are nested in the order
+-- given, with the last receiving the focus by virtue of having the lowest tab order.  Returns the surface, a table of
+-- vectors by name, a table of key press counts by name, and a table of focus-event counts by name.
+
+function focusedScene(Names:array<str>!):<obj, table, table, table>
+   local surface = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local parent:obj = scene
+   local vectors = { }
+   local hits = { }
+   local focus_events = { }
+   for i, name in Names do
+      local key = name
+      local vp = parent.new('VectorViewport', { x=0, y=0, width=100, height=100, tabOrder=#Names - i })
+      vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) hits[key]++ end)
+      focus_events[key] = { has=0, child=0 }
+      vp.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS, function(Vector, EventFlag, EventObject)
+         if EventFlag is FM_HAS_FOCUS then focus_events[key].has++
+         elseif EventFlag is FM_CHILD_HAS_FOCUS then focus_events[key].child++ end
+      end)
+      vectors[key] = vp
+      hits[key] = 0
+      parent = vp
+   end
+
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   sendKey(KEY_A)
+   for name in values(Names) do
+      assert(hits[name] is 1, f'{name} did not receive the key press before any vector was freed')
+   end
+   return surface, vectors, hits, focus_events
+end
+
+@Test function FreeFocusedChild()
+   local surface <close>, vectors, hits, focus_events = focusedScene(array<str> { 'root', 'child' })
+
+   local prior_has_focus = focus_events.root.has
+   vectors.child.free()
+   assert(focus_events.root.has is prior_has_focus + 1,
+      'Freeing the focused child did not report that its parent gained the primary focus')
+   sendKey(KEY_A)
+   assert(hits.root is 2, 'Freeing the focused child removed the focus from its parent')
+end
+
+@Test function FreeFocusedAncestor()
+   local surface <close>, vectors, hits = focusedScene(array<str> { 'root', 'container', 'leaf' })
+
+   vectors.container.free() -- Also frees the focused leaf
+   sendKey(KEY_A)
+   assert(hits.root is 2, 'Freeing an ancestor of the focused vector removed the focus from the root')
+   assert(hits.container is 1, 'A freed container received a key press')
+   assert(hits.leaf is 1, 'A freed leaf received a key press')
+end
+
+@Test function FreeUnfocusedSibling()
+   local surface <close>, vectors, hits = focusedScene(array<str> { 'root', 'child' })
+
+   sibling = vectors.root.new('VectorViewport', { x=0, y=0, width=10, height=10 })
+   sibling.free()
+   sendKey(KEY_A)
+   assert(hits.root is 2, 'Freeing an unfocused vector removed the focus from the root')
+   assert(hits.child is 2, 'Freeing an unfocused vector removed the focus from the focused child')
+end
+
+@Test function ExplicitFocusTransfersKeyboardAndFeedback()
+   local surface <close>, vectors, hits, focus_events = focusedScene(array<str> { 'root', 'child' })
+   local prior_focus = focus_events.root.has
+   check vectors.root.acFocus()
+   sendKey(KEY_A)
+   assert(focus_events.root.has is prior_focus + 1, 'Focus must notify the new primary vector')
+   assert(hits.root is 2 and hits.child is 1, 'Focus must remove the previous child from keyboard routing')
+   check vectors.child.acFocus()
+   sendKey(KEY_A)
+   assert(hits.root is 3 and hits.child is 2, 'Focus must restore routing to a child and its ancestor')
+end
+
+@Test function ExplicitFocusRejectsHiddenDisabledAndInactiveTargets()
+   local surface <close>, vectors, hits = focusedScene(array<str> { 'root', 'child' })
+   check vectors.root.acFocus()
+   vectors.child.acHide()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'Hidden vectors must not gain focus')
+   vectors.child.acShow()
+   vectors.root.acDisable()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'Disabled ancestors must prevent focus')
+   vectors.root.acEnable()
+   sendKey(KEY_A)
+   assert(hits.root is 2 and hits.child is 1, 'Rejected focus requests must preserve the current focus')
+   surface.acLostFocus()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'An inactive surface must not acquire vector focus')
+end

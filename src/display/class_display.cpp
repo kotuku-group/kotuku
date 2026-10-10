@@ -1734,7 +1734,8 @@ The icon is rendered at a range of sizes, from 16 to 256 pixels, at the time tha
 host to select the most appropriate size for each context in which the icon is shown.  SVG sources are rendered
 directly from their vector data.  Bitmap sources are loaded at their native resolution and resampled by the vector
 renderer, which produces a higher quality result than simple pixel scaling.  Sources that are not square are centred
-and scaled to fit, preserving their aspect ratio.
+and scaled to fit, preserving their aspect ratio.  A white circle is drawn behind the source, which is centred
+in an inset square occupying 68% of the icon size.  Pixels outside the circle remain transparent.
 
 The Icon can be set before or after initialisation, and is automatically reapplied if the host window is recreated.
 Setting an empty string removes the icon.
@@ -1828,6 +1829,21 @@ static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
       }
    }
 
+   // Fit even square artwork inside the circular backing, retaining the source's colours and aspect ratio.
+   // Both documents render at the final size so the circle and source retain antialiased edges at small sizes.
+
+   if (not svg->Viewport) return log.warning(ERR::InvalidObject);
+   auto viewport = svg->Viewport;
+   if (auto error = viewport->setX(Unit(0.16, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   if (auto error = viewport->setY(Unit(0.16, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   if (auto error = viewport->setWidth(Unit(0.68, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   if (auto error = viewport->setHeight(Unit(0.68, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+
+   objSVG::create backing { fl::Statement(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\">"
+      "<circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"white\"/></svg>"), fl::Flags(SVF::AUTOSCALE) };
+   if (not backing.ok()) return log.warning(ERR::CreateObject);
+
    std::vector<DisplayIcon> icons;
    icons.reserve(std::size(glIconSizes));
 
@@ -1838,6 +1854,7 @@ static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
 
       clearmem(bmp->Data, bmp->LineWidth * bmp->Height);
 
+      if (auto error = backing->render(*bmp, 0, 0, size, size); error != ERR::Okay) return log.warning(error);
       if (auto error = svg->render(*bmp, 0, 0, size, size); error != ERR::Okay) return log.warning(error);
 
       if ((bmp->Flags & BMF::PREMUL) != BMF::NIL) bmp->demultiply();

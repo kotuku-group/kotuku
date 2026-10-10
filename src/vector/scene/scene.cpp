@@ -86,6 +86,35 @@ static void scene_key_event(evKey *, int, extVectorScene *);
 static bool process_resize_msgs(extVectorScene *);
 
 //********************************************************************************************************************
+
+static void cycle_focus(extVectorScene *Self, bool Reverse)
+{
+   const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
+
+   if (Self->KeyboardSubscriptions.size() > 1) {
+      for (auto it=glVectorFocusList.begin(); it != glVectorFocusList.end(); it++) {
+         if (auto find = Self->KeyboardSubscriptions.find(*it); find != Self->KeyboardSubscriptions.end()) {
+            if (Reverse) {
+               if (find IS Self->KeyboardSubscriptions.begin()) {
+                  apply_focus(Self, *Self->KeyboardSubscriptions.rbegin());
+               }
+               else apply_focus(Self, *(--find));
+            }
+            else {
+               if (++find IS Self->KeyboardSubscriptions.end()) find = Self->KeyboardSubscriptions.begin();
+               apply_focus(Self, *find);
+            }
+            return;
+         }
+      }
+   }
+
+   if (not Self->KeyboardSubscriptions.empty()) {
+      apply_focus(Self, *Self->KeyboardSubscriptions.begin());
+   }
+}
+
+//********************************************************************************************************************
 // Send a dummy input event to the mouse cursor to ensure that changes to underlying vector paths will generate the
 // necessary crossing events.
 
@@ -130,6 +159,8 @@ static void send_dummy_input_event(extVectorScene *Self)
 
 static void render_to_surface(extVectorScene *Self, objSurface *Surface, objBitmap *Bitmap)
 {
+   if ((Self->Flags & VPF::MANUAL_RENDER) != VPF::NIL) return;
+
    auto prev_bitmap = Self->Bitmap;
    Self->Bitmap = Bitmap;
 
@@ -426,6 +457,11 @@ returned.
 
 The #RenderTime field will be updated if the `RENDER_TIME` flag is defined.
 
+With `MANUAL_RENDER`, Draw locks and clears the entire target bitmap before rasterising, and does not dispatch
+resize or pointer callbacks.  The client must keep the scene graph unchanged until Draw completes.  For direct
+window rendering, use the surface's independently owned buffer as #Bitmap and enable `Surface` `MANUAL_RENDER`
+to preserve it across automatic redraws.  Call Flush and expose the completed buffer from the main thread.
+
 -ERRORS-
 Okay
 FieldNotSet: The Bitmap field is NULL.
@@ -438,6 +474,19 @@ static ERR VECTORSCENE_Draw(extVectorScene *Self, struct acDraw *Args)
    kt::Log log;
 
    if (not Self->Bitmap) return log.warning(ERR::FieldNotSet);
+
+   if ((Self->Flags & VPF::MANUAL_RENDER) != VPF::NIL) {
+      // Surface exposure also locks its bitmap.  Do not acquire the surface or dispatch callbacks while holding
+      // this lock: surface drawing uses the opposite lock order and script callbacks belong on the main thread.
+      kt::ScopedObjectLock<objBitmap> bitmap(Self->Bitmap->UID);
+      if (not bitmap.granted()) return bitmap.error;
+      auto clip = bitmap->Clip;
+      bitmap->Clip = { 0, 0, bitmap->Width, bitmap->Height };
+      gfx::DrawRectangle(*bitmap, 0, 0, bitmap->Width, bitmap->Height, 0, BAF::FILL);
+      render_scene_from_viewport(Self, *bitmap, Self->Viewport);
+      bitmap->Clip = clip;
+      return ERR::Okay;
+   }
 
    if (Self->BorderlessSurface) {
       // Borderless surfaces get a slightly different approach that cuts down on jitter
@@ -530,17 +579,29 @@ static ERR VECTORSCENE_FindDef(extVectorScene *Self, struct sc::FindDef *Args)
    else return ERR::Search;
 }
 
-//********************************************************************************************************************
-// Flush pending activity messages.
+/*********************************************************************************************************************
+
+-ACTION-
+Flush: Dispatches pending scene resize and pointer events on the main thread.
+
+Use Flush after a manual Draw has completed and before exposing the surface.  This dispatches pending resize
+notifications and refreshes pointer hit testing without rasterising the scene.  If a callback changes geometry, the
+client must render another frame before those changes become visible.  Never call Flush concurrently with Draw.
+
+-ERRORS-
+Okay
+OutsideMainThread
+Recursion
+
+*********************************************************************************************************************/
 
 static ERR VECTORSCENE_Flush(extVectorScene *Self)
 {
+   if (not GetResource(RES::MAIN_THREAD)) return ERR::OutsideMainThread;
    if (Self->ProcessingMessages) return ERR::Recursion;
    Self->ProcessingMessages = true;
-
    process_resize_msgs(Self);
    send_dummy_input_event(Self);
-
    Self->ProcessingMessages = false;
    return ERR::Okay;
 }
@@ -618,6 +679,55 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
       }
    }
 
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-ACTION-
+Next: Cycles the focus to the next control.
+
+Moves the focus forward to the next vector in the scene's tab order.  Only vectors that have called
+@Vector.SubscribeKeyboard() take part in the cycle, and they are ordered by their @Vector.TabOrder value.  The cycle
+starts from the subscriber that currently holds the focus, or the nearest ancestor of the focused vector that has a
+subscription.  When the last subscriber in the tab order is reached, the focus wraps around to the first.
+
+If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no
+keyboard subscribers, the call has no effect.
+
+This action produces the same result as pressing the Tab key, but works regardless of the `IGNORE_TAB` flag.
+
+-ERRORS-
+Okay
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTORSCENE_Next(extVectorScene *Self)
+{
+   cycle_focus(Self, false);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-ACTION-
+Prev: Cycles the focus to the previous control.
+
+Moves the focus back to the previous vector in the scene's tab order.  This is the reverse of #Next(), and it
+selects subscribers and determines the starting point in the same way.  When the first subscriber in the tab order is
+reached, the focus wraps around to the last.
+
+If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no
+keyboard subscribers, the call has no effect.
+
+This action produces the same result as pressing Shift+Tab, but works regardless of the `IGNORE_TAB` flag.
+
+-ERRORS-
+Okay
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTORSCENE_Prev(extVectorScene *Self)
+{
+   cycle_focus(Self, true);
    return ERR::Okay;
 }
 
@@ -1019,37 +1129,16 @@ static void scene_key_event(evKey *Event, int Size, extVectorScene *Self)
 {
    const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
 
-   if (Event->Code IS KEY::TAB) {
-      if ((Event->Qualifiers & KQ::RELEASED) IS KQ::NIL) return;
+   if ((Self->Flags & VPF::IGNORE_TAB) IS VPF::NIL) {
+      if ((Event->Code IS KEY::TAB) and ((Event->Qualifiers & (KQ::ALT|KQ::CTRL|KQ::COMMAND)) IS KQ::NIL)) {
+         // Tab is intercepted to allow cycling through the keyboard subscribers in tab order.  If the Shift key is
+         // held, the order is reversed.
 
-      bool reverse = (((Event->Qualifiers & KQ::QUALIFIERS) & KQ::SHIFT) != KQ::NIL);
+         if ((Event->Qualifiers & KQ::RELEASED) IS KQ::NIL) return;
 
-      if (((Event->Qualifiers & KQ::QUALIFIERS) IS KQ::NIL) or (reverse)) {
-         if (Self->KeyboardSubscriptions.size() > 1) {
-            for (auto it=glVectorFocusList.begin(); it != glVectorFocusList.end(); it++) {
-               auto find = Self->KeyboardSubscriptions.find(*it);
-               if (find != Self->KeyboardSubscriptions.end()) {
-                  if (reverse) {
-                     if (find IS Self->KeyboardSubscriptions.begin()) {
-                        apply_focus(Self, *Self->KeyboardSubscriptions.rbegin());
-                     }
-                     else apply_focus(Self, *(--find));
-                  }
-                  else {
-                     if (++find IS Self->KeyboardSubscriptions.end()) find = Self->KeyboardSubscriptions.begin();
-                     apply_focus(Self, *find);
-                  }
-                  return;
-               }
-            }
-         }
+         cycle_focus(Self, (Event->Qualifiers & KQ::SHIFT) != KQ::NIL);
+         return;
       }
-
-      if (!Self->KeyboardSubscriptions.empty()) {
-         apply_focus(Self, *Self->KeyboardSubscriptions.begin());
-      }
-
-      return;
    }
 
    // Iterate over a snapshot because vector_keyboard_events() can erase vectors from KeyboardSubscriptions.

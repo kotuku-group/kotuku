@@ -107,8 +107,8 @@ function selectGradient(Text):obj
       })
 
       uiEvent = function(ev:table!)
-         gradient.fX = (ev.x / gradientVP.width * 100) .. '%'
-         gradient.fY = (ev.y / gradientVP.height * 100) .. '%'
+         gradient.fx = (ev.x / gradientVP.width * 100) .. '%'
+         gradient.fy = (ev.y / gradientVP.height * 100) .. '%'
       end
 
       radiusChanged = function(Radius:num!)

@@ -14,6 +14,11 @@ Documentation is available in the Kotuku Wiki.
 DEFAULT_WIDTH  <const> = 600
 DEFAULT_HEIGHT <const> = 400
 
+function surfaceReference(Value)
+   if Value is <table> then return Value.surface end
+   return Value
+end
+
 -- The host window icon is represented in the desktop taskbar and task switcher.  Icon names in the format
 -- 'category/name' are resolved to the icons: volume, while paths that include a volume are used as-is.
 --
@@ -33,13 +38,10 @@ function setDisplayIcon(Display:obj, Icon:str)
    end
 end
 
-lStyle = (function()
-   if mSys.AnalysePath('style:window.tiri') is ERR_Okay then
-      return loadFile('style:window.tiri')
-   else
-      return loadFile('styles:default/window.tiri')
-   end
-end)()
+lStyle = choose mSys.AnalysePath('style:window.tiri') from
+   ERR_Okay -> loadFile('style:window.tiri')
+   else -> loadFile('styles:default/window.tiri')
+end
 
 gui.window = function(Options:table!)
    self = setmetatable({
@@ -54,7 +56,7 @@ gui.window = function(Options:table!)
       focus        = Options.focus??,
       quit         = Options.quit is false ? nil : true, -- Construction-only; defaults to true.
       title        = Options.title ?? 'Window',
-      icon         = Options.icon ?? 'devices/monitor',
+      icon         = Options.icon,
       restore      = nil, -- { x, y, width, height }
       orientation  = Options.orientation ?? 'landscape',
       client       = { }, -- Client margins
@@ -148,7 +150,7 @@ gui.window = function(Options:table!)
    -- Run the minimise procedure for the window (environment dependent).
 
    self.minimise = function()
-      if self.MinimiseEnabled then
+      if self.minimiseEnabled then
          self?.events?.minimise(self)
       end
    end
@@ -256,12 +258,12 @@ gui.window = function(Options:table!)
 
    surface_opts = {
       name      = 'winsurface',
-      parent    = self._desktop,
+      parent    = surfaceReference(Options.parent) ?? self._desktop,
       width     = Options.insideWidth ?? Options.width ?? DEFAULT_WIDTH,
       height    = Options.insideHeight ?? Options.height ?? DEFAULT_HEIGHT,
       type      = RT_ROOT,
       modal     = Options.modal ?? false,
-      popOver   = Options.popOver,
+      popOver   = surfaceReference(Options.popOver),
       presence  = Options.presence, -- SPT HOST/NONE/TASKBAR/ICON_TRAY
       flags = (function()
          local flags = 0
@@ -270,6 +272,9 @@ gui.window = function(Options:table!)
          end
          if Options.aspectRatio then
             flags = flags | RNF_ASPECT_RATIO
+         end
+         if Options.stickToFront then
+            flags = flags | RNF_STICK_TO_FRONT
          end
          return flags
       end)()

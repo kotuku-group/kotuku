@@ -491,6 +491,8 @@ enum class VPF : uint32_t {
    RESIZE = 0x00000004,
    OUTLINE_VIEWPORTS = 0x00000008,
    STABLE_RENDER = 0x00000010,
+   IGNORE_TAB = 0x00000020,
+   MANUAL_RENDER = 0x00000040,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(VPF)
@@ -856,6 +858,8 @@ class objVectorScene : public Object {
    }
    inline ERR flush() noexcept { return Action(AC::Flush, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
+   inline ERR next() noexcept { return Action(AC::Next, this, nullptr); }
+   inline ERR prev() noexcept { return Action(AC::Prev, this, nullptr); }
    inline ERR redimension(double X, double Y, double Z, double Width, double Height, double Depth) noexcept {
       struct acRedimension args = { X, Y, Z, Width, Height, Depth };
       return Action(AC::Redimension, this, &args);
@@ -3794,6 +3798,7 @@ class objVector : public Object {
       return Action(AC::Draw, this, &args);
    }
    inline ERR enable() noexcept { return Action(AC::Enable, this, nullptr); }
+   inline ERR focus() noexcept { return Action(AC::Focus, this, nullptr); }
    inline ERR hide() noexcept { return Action(AC::Hide, this, nullptr); }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR moveToBack() noexcept { return Action(AC::MoveToBack, this, nullptr); }

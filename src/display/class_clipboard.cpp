@@ -22,10 +22,11 @@ monitors host changes and caches copied data in the local `clipboard:` volume.  
 cost of additional monitoring and storage overhead.
 
 On Wayland, plain UTF-8 text and local file references are exchanged with other desktop applications through the
-compositor's data device.  On X11, plain UTF-8 text is exchanged with other applications, and incoming file references
-are accepted.  Incoming transfers complete asynchronously, so GetFiles() may return `ERR::NoData` until a new selection
-has finished transferring.  Receiving on X11 requires the XFixes extension.  Text published by an X11 application is
-lost when it exits unless a clipboard manager is running.
+compositor's data device.  X11 exchanges plain UTF-8 text and local file references through the `CLIPBOARD` selection
+and supports incremental transfers for large payloads.  Incoming transfers complete asynchronously, so GetFiles() may
+return `ERR::NoData` until a new selection has finished transferring.  Receiving on X11 requires the XFixes extension.
+When an X11 application exits, it asks an available clipboard manager to preserve its selection; without a clipboard
+manager, the published data is lost.
 
 When history buffering is active, a fixed number of clip groups is retained and the oldest group is removed when the
 limit is exceeded.  Cached clipboard files are kept under `clipboard:` and stale generated files are cleaned up during

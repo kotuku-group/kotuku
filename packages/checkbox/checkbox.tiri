@@ -49,7 +49,7 @@ gui.checkbox = function(Options)
 
    self.enable = function()
       self.disabled = false
-      self.viewport.acDisable()
+      self.viewport.acEnable()
       self.text.opacity = 1.0
       self.bkgd.fill = self.theme.page.bkgd
       self.events?.enable(self)

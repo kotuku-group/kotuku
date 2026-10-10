@@ -227,6 +227,33 @@ static ERR VECTOR_Enable(extVector *Self)
 }
 
 /*********************************************************************************************************************
+-ACTION-
+Focus: Gives keyboard focus to the vector within its focused surface.
+
+The vector must belong to a scene linked to a surface that already has focus.  Hidden or disabled vectors and their
+descendants cannot receive focus.  Focus feedback is sent to the affected vectors and their ancestors.
+-END-
+*********************************************************************************************************************/
+
+static ERR VECTOR_Focus(extVector *Self)
+{
+   if ((not Self->Scene) or (not Self->Scene->SurfaceID)) return ERR::FieldNotSet;
+
+   RNF flags;
+   if (auto error = gfx::GetSurfaceFlags(Self->Scene->SurfaceID, &flags); error != ERR::Okay) return error;
+   if (((flags & RNF::HAS_FOCUS) IS RNF::NIL) or ((flags & RNF::NO_FOCUS) != RNF::NIL)) return ERR::NothingDone;
+
+   for (auto node=Self; node; node=(extVector *)node->Parent) {
+      if (node->Class->BaseClassID != CLASSID::VECTOR) break;
+      if (((node->Flags & VF::DISABLED) != VF::NIL) or (node->Visibility IS VIS::HIDDEN) or
+          (node->Visibility IS VIS::COLLAPSE)) return ERR::NothingDone;
+   }
+
+   apply_focus((extVectorScene *)Self->Scene, Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -METHOD-
 FreeMatrix: Remove an allocated VectorMatrix structure.
@@ -2299,20 +2326,47 @@ extVector::~extVector() {
       scene->InputSubscriptions.erase(this);
       scene->KeyboardSubscriptions.erase(this);
 
+      // Input boundaries are only regenerated when the scene is drawn, so remove this vector's entries now to prevent
+      // input from targeting it in the meantime.  Buffered viewports cache the boundaries of their content for replay
+      // on frames that skip re-rendering, so their caches are purged too.
+
+      auto is_this = [uid = UID](const InputBoundary &Bounds) { return Bounds.vector_id IS uid; };
+      std::erase_if(scene->InputBoundaries, is_this);
+      for (auto view = ParentView; view; view = view->ParentView) {
+         if (view->vpInputBounds) std::erase_if(*view->vpInputBounds, is_this);
+      }
+
+      // A button lock held by this vector would otherwise never be released, because the button release is only
+      // processed if the lock holder can be accessed.  This would block all further input to the scene.
+
+      if (scene->ButtonLock IS UID) scene->ButtonLock = 0;
+
       if (scene->ActiveVector IS UID) {
          if (scene->Cursor != PTC::DEFAULT) {
+            scene->Cursor = PTC::DEFAULT;
             kt::ScopedObjectLock<objSurface> surface(scene->SurfaceID);
             if ((surface.granted()) and (surface.obj->Cursor != PTC::DEFAULT)) {
                surface.obj->setCursor(PTC::DEFAULT);
             }
          }
+         scene->ActiveVector = 0;
       }
    }
 
    {
       const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
+      // The focus list runs from the most foreground vector to its ancestors, so the entries ahead of this vector are
+      // its descendants.  They are removed with it, while the ancestors retain the focus.
+
       auto pos = std::find(glVectorFocusList.begin(), glVectorFocusList.end(), this);
-      if (pos != glVectorFocusList.end()) glVectorFocusList.erase(pos, glVectorFocusList.end());
+      if (pos != glVectorFocusList.end()) {
+         glVectorFocusList.erase(glVectorFocusList.begin(), pos + 1);
+         if (not glVectorFocusList.empty()) {
+            auto focus = glVectorFocusList.front();
+            kt::ScopedObjectLock<extVector> vector(focus, 1000);
+            if (vector.granted()) send_feedback(focus, FM::HAS_FOCUS, focus);
+         }
+      }
    }
 
    {

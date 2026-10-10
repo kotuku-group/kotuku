@@ -404,8 +404,10 @@ else ()
       endif ()
 
       if (UNIT_TESTS AND NOT KOTUKU_STATIC)
+         target_compile_definitions (display-x11 PRIVATE X11_DRIVER_TESTS)
          add_executable (test_display_x11_driver "tests/test_x11_driver.cpp")
-         target_link_libraries (test_display_x11_driver PRIVATE display-x11)
+         target_compile_definitions (test_display_x11_driver PRIVATE X11_DRIVER_TESTS)
+         target_link_libraries (test_display_x11_driver PRIVATE display-x11 X11)
          set_target_properties (test_display_x11_driver PROPERTIES CXX_STANDARD 20)
          add_test (NAME display_x11_driver COMMAND test_display_x11_driver)
          set_tests_properties (display_x11_driver PROPERTIES LABELS display)
@@ -413,7 +415,8 @@ else ()
    endif ()
 endif ()
 
-# Flute runs under headless mode - these tests have to be run manually.
+# Flute normally runs under headless mode.  Run these tests manually against their native display driver, for example:
+# origo tools/flute.tiri file=src/display/tests/test_x11_clipboard.tiri --gfx-driver=x11 --log-warning
 # "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wayland_window_state.tiri")
 # "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_wayland_clipboard.tiri")
 # "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_x11_clipboard.tiri")

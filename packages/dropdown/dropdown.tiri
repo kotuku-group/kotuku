@@ -299,7 +299,7 @@ gui.dropdown = function(Options)
       &page = &frame.new('VectorViewport', { x=0, y=0, width='100%', height=1 })
 
       &highlight = &page.new('VectorRectangle', {
-         x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT, fill = theme.menu.highlight, visibility = 'hidden'
+         x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT, fill = theme.menu.highlight.fill, visibility = 'hidden'
       })
 
       &viewport.new('VectorRectangle', { -- Menu border

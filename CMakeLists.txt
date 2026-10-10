@@ -664,6 +664,9 @@ if (MSVC)
       add_link_options ("/fsanitize=address")
    endif ()
 
+   # Remove CMake's default exception model so it does not conflict with the configuration-specific flags below.
+   string (REGEX REPLACE "(^|[ \t])[-/]EHsc([ \t]|$)" "\\1\\2" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
    # We don't use exceptions in optimised configurations, so disable exception support there.
    add_compile_definitions ("$<$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>:_HAS_EXCEPTIONS=0>")
    add_compile_options (

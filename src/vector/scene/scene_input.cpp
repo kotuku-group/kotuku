@@ -355,8 +355,10 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
             }
 
             kt::ScopedObjectLock<extVector> lock(bounds.vector_id);
-            if (not lock.granted()) {
-               log.warning("Unable to lock vector #%d", bounds.vector_id);
+            if (not lock.granted()) { // Most likely the vector was destroyed
+               if (CheckResourceExists(bounds.vector_id) IS ERR::True) {
+                  log.warning("Unable to lock vector #%d", bounds.vector_id);
+               }
                continue;
             }
             auto vector = lock.obj;

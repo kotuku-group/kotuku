@@ -6,6 +6,8 @@ static const struct FieldDef clVectorSceneFlags[] = {
    { "Resize", 0x00000004 },
    { "OutlineViewports", 0x00000008 },
    { "StableRender", 0x00000010 },
+   { "IgnoreTab", 0x00000020 },
+   { "ManualRender", 0x00000040 },
    { nullptr, 0 }
 };
 
@@ -52,6 +54,8 @@ static const struct ActionArray clVectorSceneActions[] = {
    { AC::Free, VECTORSCENE_Free },
    { AC::Init, VECTORSCENE_Init },
    { AC::New, VECTORSCENE_New },
+   { AC::Next, VECTORSCENE_Next },
+   { AC::Prev, VECTORSCENE_Prev },
    { AC::Redimension, VECTORSCENE_Redimension },
    { AC::Reset, VECTORSCENE_Reset },
    { AC::Resize, VECTORSCENE_Resize },

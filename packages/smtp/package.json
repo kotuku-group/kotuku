@@ -24,8 +24,8 @@
   "files": [
     {
       "path": "smtp.tiri",
-      "size": 52543,
-      "sha256": "a81d8b70e45e5ab42cb2a171ea0696be13f91f20b7d9cc2cde0b3352c29fb4c3",
+      "size": 52578,
+      "sha256": "34e8c3cb3403fdbcbb8590528c087833f140195ab8b908e623bb43fa1d9cf4ce",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

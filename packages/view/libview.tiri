@@ -189,8 +189,58 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
       activeChange    = Options.activeChange,
       events          = Options.events ?? {},
       top             = { },
-      totalTop        = 0
+      totalTop        = 0,
+      _built          = false
    }
+
+   function seekKeyboardItem(Start:num!, Step:num!):table
+      index = Start
+      while index >= 0 and index < #vw.items do
+         item = vw.items[index]
+         if not item.hidden then return item end
+         index += Step
+      end
+   end
+
+   function moveKeyboardHighlight(Step:num!)
+      index = nil
+      if vw.hItem then
+         for i in {0 to #vw.items} do
+            if vw.items[i] is vw.hItem then index = i; break end
+         end
+      end
+
+      start = index is nil ? (Step > 0 ? 0 : #vw.items - 1) : math.clamp(index + Step, 0, #vw.items - 1)
+      item = seekKeyboardItem(start, Step > 0 ? 1 : -1)
+      if not item then item = seekKeyboardItem(start, Step > 0 ? -1 : 1) end
+      if item then
+         highlightItem(vw, item)
+         vw.revealItem(item)
+      end
+   end
+
+   function selectHighlighted(Activate:bool!)
+      item = vw.hItem
+      if not item then return end
+
+      if item._selected then
+         if not Activate then
+            deselectItem(vw, item)
+            reportItemDeselected(vw, 'user', item)
+         end
+      else
+         if not Options.multiSelect and vw.sItem then
+            previous = vw.sItem
+            deselectItem(vw, previous)
+            reportItemDeselected(vw, 'user', previous)
+         end
+         selectItem(vw, item)
+         reportItemSelected(vw, 'user', item)
+      end
+
+      if Activate then reportItemActivated(vw, 'user', item) end
+      vw.scene.surface.mtScheduleRedraw()
+   end
 
    vw.addItem = function(Item)
       assert(Item, 'No Item provided')
@@ -229,7 +279,9 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
          glItemCounter++
       end
 
-      if NewItems and (#new_items > 0) then NewItems(vw, new_items) end -- Report new items to view manager
+      if vw._built and NewItems and (#new_items > 0) then
+         NewItems(vw, new_items) -- Report new items to view manager
+      end
    end
 
    -- Generic callback for the user hovering and interacting with listed items
@@ -586,6 +638,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
       vw.page.y = 0
 
       BuildUI(vw)
+      vw._built = true
       cursorActivity() -- Reset the cursor
       vw.border?.acMoveToFront()
       vw.scene.surface.mtScheduleRedraw()
@@ -672,31 +725,21 @@ gui.initView = function(Options:table!, BuildUI, NewItems)
    end)
 
    vw.viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
-      if Qualifiers has KQ_PRESSED then
-         if (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) or (Code is KEY_SPACE) then
-            -- TODO: item activation
+      if (Qualifiers has KQ_PRESSED) and not vw.disabled then
+         if (Code is KEY_ENTER) or (Code is KEY_NP_ENTER) then
+            selectHighlighted(true)
+         elseif Code is KEY_SPACE then
+            selectHighlighted(false)
          elseif (Code is KEY_UP) or (Code is KEY_LEFT) then
-            if vw.hItem then
-               scan = vw.hItem.prev
-               while scan do
-                  scan = scan.prev -- TODO: prev is not supported yet
-               end
-               scan ?= lastItem(vw)
-               highlightItem(vw, scan)
-            else
-               highlightItem(vw, vw.items)
-            end
+            moveKeyboardHighlight(-1)
          elseif (Code is KEY_DOWN) or (Code is KEY_RIGHT) then
-            if vw.hItem then
-               scan = vw.hItem.next
-               while scan do
-                  scan = scan.next -- TODO: next is not supported yet
-               end
-               scan ?= vw.items
-               highlightItem(vw, scan)
-            else
-               highlightItem(vw, vw.items)
-            end
+            moveKeyboardHighlight(1)
+         elseif Code is KEY_HOME then
+            item = seekKeyboardItem(0, 1)
+            if item then highlightItem(vw, item); vw.revealItem(item) end
+         elseif Code is KEY_END then
+            item = seekKeyboardItem(#vw.items - 1, -1)
+            if item then highlightItem(vw, item); vw.revealItem(item) end
          end
       end
    end)

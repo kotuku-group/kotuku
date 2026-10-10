@@ -118,6 +118,40 @@ static ERR VECTORVIEWPORT_Clear(extVectorViewport *Self)
 
 //********************************************************************************************************************
 
+static void detach_viewport_subtree(extVectorViewport *View)
+{
+   std::unordered_set<OBJECTID> subtree_ids;
+   std::vector<extVector *> branches;
+   if (View->Child) branches.push_back((extVector *)View->Child);
+
+   while (not branches.empty()) {
+      auto vector = branches.back();
+      branches.pop_back();
+
+      while (vector) {
+         subtree_ids.insert(vector->UID);
+         vector->ParentView = nullptr;
+         if (vector->Child) branches.push_back((extVector *)vector->Child);
+         vector = (extVector *)vector->Next;
+      }
+   }
+
+   if ((subtree_ids.empty()) or (!View->Scene) or (View->Scene->collecting())) return;
+
+   auto is_descendant = [&subtree_ids](const InputBoundary &Bounds) {
+      return subtree_ids.contains(Bounds.vector_id);
+   };
+   auto scene = (extVectorScene *)View->Scene;
+   std::erase_if(scene->InputBoundaries, is_descendant);
+
+   if (View->vpInputBounds) std::erase_if(*View->vpInputBounds, is_descendant);
+   for (auto view = View->ParentView; view; view = view->ParentView) {
+      if (view->vpInputBounds) std::erase_if(*view->vpInputBounds, is_descendant);
+   }
+}
+
+//********************************************************************************************************************
+
 extVectorViewport::~extVectorViewport()
 {
    if ((Scene) and (!Scene->collecting()) and (!((extVectorScene *)Scene)->ResizeSubscriptions.empty())) {
@@ -126,6 +160,12 @@ extVectorViewport::~extVectorViewport()
          ((extVectorScene *)Scene)->ResizeSubscriptions.erase(this);
       }
    }
+
+   // Core child collection starts after this destructor has destroyed vpInputBounds.  Detach the descendants now so
+   // their destructors cannot follow ParentView back into this dead viewport, and purge their cached boundaries while
+   // every viewport in the chain is still alive.
+
+   detach_viewport_subtree(this);
 
    if (vpDragCallback.defined()) {
       release_callback(vpDragCallback);

@@ -240,7 +240,10 @@ void extAudioEffect::idle()
 {
    publish_meter(AMF::IDLE);
    Meter.Flags |= AMF::IDLE;
-   if (processor) processor->reset();
+   if (processor) {
+      if (ResetPending) processor->reset();
+      else processor->idle();
+   }
    ResetPending = false;
 }
 

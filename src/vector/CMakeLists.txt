@@ -81,6 +81,8 @@ flute_test(vector_voronoi_gradient "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_voron
 flute_test(vector_isolated_bitmap_pool "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_isolated_bitmap_pool.tiri")
 flute_test(vector_shared_invalidation "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shared_invalidation.tiri")
 flute_test(vector_callback_lifetimes "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_callback_lifetimes.tiri")
+flute_test(vector_viewport_input_free "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_viewport_input_free.tiri")
+flute_test(vector_focus "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_focus.tiri")
 flute_test(vector_path_command_spans "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_path_command_spans.tiri")
 flute_test(vector_dash_array "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dash_array.tiri")
 flute_test(vector_text_path_length "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_path_length.tiri")
