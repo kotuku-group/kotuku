@@ -4,8 +4,8 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui'
-   import 'gui/menu'
+   import 'gui', 'gui/menu'
+
    include 'vector'
 
    namespace gui
@@ -26,12 +26,13 @@ function itemMenu(self, Item:table!):table
    menu = Item.menu
    if not menu then
       menu = gui.menu({
-         relative     = self.viewport,
-         x            = Item.x,
-         y            = self.viewport.height - 2,
-         config       = Item.menuConfig,
-         prepare      = Item.prepare,
-         theme        = self.theme.menu
+         hostScene = self.viewport.scene,
+         relative  = self.viewport,
+         x         = Item.x,
+         y         = self.viewport.height - 2,
+         config    = Item.menuConfig,
+         prepare   = Item.prepare,
+         theme     = self.theme.menu
       })
       Item.menu = menu
    end
@@ -530,11 +531,8 @@ gui.menubar = function(Options:table)
       self.viewport.height = ICON_SIZE + (VMARGIN * 2)
 
       self._bkgd.new('VectorRectangle', table.merge({ -- Main background
-         fill   = 'none',
-         x      = 0,
-         y      = 0,
-         width  = '100%',
-         height = self.viewport.height
+         fill = 'none',
+         x = 0, y = 0, width  = '100%', height = self.viewport.height
       }, self.theme.bkgd))
 
       self._highlight = self._bkgd.new('VectorRectangle', table.merge({ -- Highlight for items

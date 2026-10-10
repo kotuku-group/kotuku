@@ -867,7 +867,8 @@ gui.themes = {
             fill = gui.palette.dark.bkgd
          },
          border = { -- VectorRectangle
-            stroke = gui.palette.dark.inverse
+            stroke = gui.palette.dark.inverse,
+            opacity = 0.5
          },
          highlight = { -- VectorRectangle
             fill = gui.palette.dark.contrast
@@ -958,7 +959,8 @@ gui.themes = {
             fill = gui.palette.light.inverse
          },
          border = {
-            stroke = gui.palette.light.neutral
+            stroke = gui.palette.light.neutral,
+            opacity = 0.5
          },
          highlight = {
             fill = gui.palette.light.contrast

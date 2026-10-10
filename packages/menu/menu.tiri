@@ -216,7 +216,7 @@ gui.menu = function(Options:table!)
          }, theme.highlight))
 
          &content.new('VectorRectangle', table.merge({ -- Foreground border
-            stroke = 'none', strokeWidth = 1.5, opacity=0.5,
+            stroke = 'none', strokeWidth = 1.5,
             x = 1, y = 1, xOffset = 1, yOffset = 1,
             resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
                Vector.width  = Width - (Vector.x * 2)
@@ -256,7 +256,7 @@ gui.menu = function(Options:table!)
 
                if showIcons and item['icon'] then
                   try
-                     info = gui.createIcon(&viewport.scene, item.icon, ICON_SIZE, theme.icon)
+                     info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, ICON_SIZE, theme.icon)
 
                      item.iconView = &content.new('VectorRectangle', {
                         x = icon_x, y = y + math.floor((ITEM_HEIGHT - ICON_SIZE) * 0.5),
