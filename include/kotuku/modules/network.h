@@ -554,6 +554,7 @@ struct SendTo { struct IPAddress *Dest; std::span<const int8_t> Data; int BytesS
 struct RecvFrom { struct IPAddress *Source; std::span<int8_t> Buffer; int BytesRead; static const AC id = AC(-4); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct JoinMulticastGroup { std::string_view Group; static const AC id = AC(-5); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct LeaveMulticastGroup { std::string_view Group; static const AC id = AC(-6); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct SetBufferSizes { int ReceiveBytes; int SendBytes; static const AC id = AC(-9); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -647,6 +648,10 @@ class objNetSocket : public Object {
    inline ERR leaveMulticastGroup(const std::string_view &Group) noexcept {
       struct ns::LeaveMulticastGroup args = { Group };
       return Action(AC(-6), this, &args);
+   }
+   inline ERR setBufferSizes(int ReceiveBytes, int SendBytes) noexcept {
+      struct ns::SetBufferSizes args = { ReceiveBytes, SendBytes };
+      return Action(AC(-9), this, &args);
    }
 
    // Customised field getting

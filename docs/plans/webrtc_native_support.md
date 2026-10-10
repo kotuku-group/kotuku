@@ -1,6 +1,6 @@
 # Plan: Native WebRTC Support for Kōtuku
 
-Status: Phase 0 complete on Linux (Windows spike pending, undertaken separately)
+Status: Phase 1 underway on Linux (Windows spike pending, undertaken separately)
 Created: 2026-10-07
 Owner: Unassigned
 
@@ -461,3 +461,10 @@ term "data channel" (RFC 8831) is still used when describing the SCTP layer.
   has no per-packet allocation and ample throughput.  Found that `RecvFrom()` silently truncates oversized datagrams
   and that NetSocket cannot size its receive buffer; both added to Phase 1.  The Windows spike is pending and will
   be undertaken separately.
+- 2026-10-10: Phase 1 started.  Linux `RecvFrom()` now rejects truncated datagrams; `NetSocket.SetBufferSizes()`
+  exposes UDP receive/send buffer settings on Linux and Windows.  Added a socket regression test.  Added an isolated
+  STUN codec covering strict message framing, HMAC-SHA1/SHA-256, FINGERPRINT, XOR-MAPPED-ADDRESS and long-term key
+  derivation, with RFC 5769 request and IPv4/IPv6 response vectors.  The STUN code currently uses OpenSSL on Linux;
+  integration with the Crypto module and Windows support remain.  Crypto cipher work, SDP, ICE, the PeerConnection
+  skeleton, fuzz targets and the browser DTLS handshake milestone remain outstanding, so Phase 1 is not complete.
+  Debug builds and the `network_udp_basic`, `webrtc_stun` and `webrtc_dtls` tests pass on Linux; Windows was not built.

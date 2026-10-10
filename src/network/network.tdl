@@ -121,7 +121,8 @@ typedef int SOCKET_HANDLE;
     { id=3, name="SendTo" },
     { id=4, name="RecvFrom" },
     { id=5, name="JoinMulticastGroup" },
-    { id=6, name="LeaveMulticastGroup" }
+    { id=6, name="LeaveMulticastGroup" },
+    { id=9, name="SetBufferSizes" }
   })
 
   methods("NetServer", "ns", {

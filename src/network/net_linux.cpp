@@ -307,6 +307,17 @@ public:
       return setsockopt(Handle, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) ? ERR::SystemCall : ERR::Okay;
    }
 
+   ERR set_socket_buffer_sizes(SocketHandle Handle, int ReceiveBytes, int SendBytes) override
+   {
+      if (ReceiveBytes > 0) {
+         if (setsockopt(Handle, SOL_SOCKET, SO_RCVBUF, &ReceiveBytes, sizeof(ReceiveBytes))) return ERR::SystemCall;
+      }
+      if (SendBytes > 0) {
+         if (setsockopt(Handle, SOL_SOCKET, SO_SNDBUF, &SendBytes, sizeof(SendBytes))) return ERR::SystemCall;
+      }
+      return ERR::Okay;
+   }
+
    ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) override
    {
       if (IPv6) {
@@ -433,9 +444,11 @@ public:
       BytesRead = 0;
       struct sockaddr_storage source_address;
       socklen_t addr_len = sizeof(source_address);
-      auto result = recvfrom(Handle, Buffer, BufferSize, MSG_DONTWAIT, (struct sockaddr *)&source_address, &addr_len);
+      auto result = recvfrom(Handle, Buffer, BufferSize, MSG_DONTWAIT | MSG_TRUNC,
+         (struct sockaddr *)&source_address, &addr_len);
 
       if (result > 0) {
+         if (size_t(result) > BufferSize) return ERR::BufferOverflow;
          BytesRead = size_t(result);
          return endpoint_to_ip(source_address, SourceAddress);
       }

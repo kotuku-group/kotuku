@@ -221,6 +221,7 @@ public:
 
    virtual ERR enable_keep_alive(SocketHandle Handle) = 0;
    virtual ERR enable_broadcast(SocketHandle Handle) = 0;
+   virtual ERR set_socket_buffer_sizes(SocketHandle Handle, int ReceiveBytes, int SendBytes) = 0;
    virtual ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) = 0;
    virtual ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) = 0;
    virtual ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) = 0;

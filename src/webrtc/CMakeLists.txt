@@ -1,13 +1,13 @@
 # WebRTC
 #
-# Phase 0 of docs/plans/webrtc_native_support.md.  The webrtc module itself arrives in Phase 1; for now this directory
-# builds the feasibility spikes:
+# Phase 0 spikes and Phase 1 protocol foundations from docs/plans/webrtc_native_support.md:
 #
+#   test_webrtc_stun   STUN codec and RFC 5769 vectors (unit test, label `webrtc`)
 #   test_webrtc_dtls   DTLS-SRTP transport over OpenSSL with a datagram BIO (unit test, label `webrtc`)
 #   bench_webrtc_udp   NetSocket UDP receive throughput at WebRTC packet sizes (benchmark, label `webrtc_bench`)
 #   tests/interop/     Chromium interop harness driven by Playwright (label `webrtc_interop`)
 #
-# Linux only.  Windows feasibility is assessed separately.
+# Linux only until the Windows DTLS feasibility work is complete.
 
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
    message (STATUS "WebRTC spikes disabled: only Linux is supported in Phase 0.")
@@ -22,6 +22,13 @@ endif ()
 find_package (Threads REQUIRED)
 
 if (UNIT_TESTS)
+   add_executable (test_webrtc_stun tests/test_stun.cpp stun.cpp)
+   set_target_properties (test_webrtc_stun PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+   target_include_directories (test_webrtc_stun PRIVATE "${OPENSSL_INCLUDE_DIR}")
+   target_link_libraries (test_webrtc_stun PRIVATE ${KOTUKU_OPENSSL_LIBS})
+   add_test (NAME webrtc_stun COMMAND test_webrtc_stun)
+   set_tests_properties (webrtc_stun PROPERTIES LABELS webrtc TIMEOUT 60)
+
    add_executable (test_webrtc_dtls tests/test_dtls.cpp dtls_openssl.cpp)
    set_target_properties (test_webrtc_dtls PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
    target_include_directories (test_webrtc_dtls PRIVATE "${OPENSSL_INCLUDE_DIR}")

@@ -100,6 +100,50 @@ end
 end
 
 ------------------------------------------------------------------------------------------------------------------------
+-- A short receive buffer must discard the whole datagram and preserve the following packet.
+
+@Test function UDPTruncationAndSocketBuffers()
+   glBasePort++
+   local source = struct.new('IPAddress')
+   local buffer = string.alloc(16)
+   local overflow_seen = false
+   local short_seen = false
+
+   local server = obj.new('netserver', {
+      port = glBasePort,
+      address = '127.0.0.1',
+      flags = NSF_UDP,
+      incoming = function(Socket)
+         local err, bytes_read = Socket.mtRecvFrom(source, buffer)
+         if not overflow_seen then
+            assert(err is ERR_BufferOverflow, 'Oversized datagram must report BufferOverflow')
+            assert(bytes_read is 0, 'Truncated datagram must not expose payload bytes')
+            overflow_seen = true
+         elseif bytes_read > 0 then
+            assert(err is ERR_Okay, 'Following datagram must be readable')
+            assert(buffer.sub(0, bytes_read) is 'ok', 'Following datagram was corrupted')
+            short_seen = true
+            Socket.acSignal()
+         end
+      end
+   })
+
+   assert(server.mtSetBufferSizes(262144, 262144) is ERR_Okay, 'Could not set UDP socket buffers')
+   assert(server.mtSetBufferSizes(-1, 0) is ERR_Args, 'Negative buffer size must be rejected')
+
+   local client = obj.new('netsocket', { flags = NSF_UDP })
+   local destination = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', destination)
+   destination.port = server.port
+   check client.mtSendTo(destination, 'x'.rep(32))
+   check client.mtSendTo(destination, 'ok')
+
+   local proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
+   check proc.sleep()
+   assert(overflow_seen and short_seen, 'Server did not receive both datagrams')
+end
+
+------------------------------------------------------------------------------------------------------------------------
 -- Test UDP error conditions
 
 @Test function UDPErrorHandling()

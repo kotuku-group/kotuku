@@ -248,6 +248,28 @@ initially fill the internal write buffer, thereafter it will be called whenever 
       <tags>non-blocking, consumes-input</tags>
     </method>
 
+    <method>
+      <name>SetBufferSizes</name>
+      <comment>Set the operating system's UDP receive and send buffer sizes.</comment>
+      <prototype>ERR ns::SetBufferSizes(OBJECTPTR Object, INT ReceiveBytes, INT SendBytes)</prototype>
+      <tiriPrototype>err = SetBufferSizes(ReceiveBytes:num, SendBytes:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="ReceiveBytes">Requested receive buffer size in bytes, or zero to leave it unchanged.</param>
+        <param type="INT" name="SendBytes">Requested send buffer size in bytes, or zero to leave it unchanged.</param>
+      </input>
+      <description>
+<p>Call this method after initialisation.  A value of zero leaves that buffer unchanged.  The operating system may round or cap the requested size.  Both buffers are configured independently, so an error from the second setting does not undo a successful first setting.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">A buffer size is negative.</error>
+        <error code="NoSupport">The socket is not configured for UDP.</error>
+        <error code="NotInitialised">The socket has not been initialised.</error>
+        <error code="SystemCall">The operating system rejected a requested size.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
   </methods>
 
   <fields>

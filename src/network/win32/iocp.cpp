@@ -1860,6 +1860,22 @@ ERR iocp_enable_broadcast(WSW_SOCKET Socket)
    return ERR::Okay;
 }
 
+ERR iocp_set_socket_buffer_sizes(WSW_SOCKET Socket, int ReceiveBytes, int SendBytes)
+{
+   auto socket = socket_from_handle(Socket);
+   if (ReceiveBytes > 0) {
+      if (setsockopt(socket, SOL_SOCKET, SO_RCVBUF, (char *)&ReceiveBytes, sizeof(ReceiveBytes)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+   if (SendBytes > 0) {
+      if (setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char *)&SendBytes, sizeof(SendBytes)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+   return ERR::Okay;
+}
+
 //********************************************************************************************************************
 
 ERR iocp_set_multicast_ttl(WSW_SOCKET Socket, int TTL, bool IPv6)

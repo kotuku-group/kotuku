@@ -1036,6 +1036,40 @@ static ERR NETSOCKET_RecvFrom(extNetSocket *Self, struct ns::RecvFrom *Args)
 /*********************************************************************************************************************
 
 -METHOD-
+SetBufferSizes: Set the operating system's UDP receive and send buffer sizes.
+
+Call this method after initialisation.  A value of zero leaves that buffer unchanged.  The operating system may
+round or cap the requested size.  Both buffers are configured independently, so an error from the second setting
+does not undo a successful first setting.
+
+-INPUT-
+int ReceiveBytes: Requested receive buffer size in bytes, or zero to leave it unchanged.
+int SendBytes: Requested send buffer size in bytes, or zero to leave it unchanged.
+
+-ERRORS-
+Okay
+Args: A buffer size is negative.
+NoSupport: The socket is not configured for UDP.
+NotInitialised: The socket has not been initialised.
+SystemCall: The operating system rejected a requested size.
+NullArgs
+
+-END-
+
+*********************************************************************************************************************/
+
+static ERR NETSOCKET_SetBufferSizes(extNetSocket *Self, struct ns::SetBufferSizes *Args)
+{
+   if (!Args) return ERR::NullArgs;
+   if ((Self->Flags & NSF::UDP) IS NSF::NIL) return ERR::NoSupport;
+   if ((Args->ReceiveBytes < 0) or (Args->SendBytes < 0)) return ERR::Args;
+   if (Self->Handle.is_invalid()) return ERR::NotInitialised;
+   return network_platform().set_socket_buffer_sizes(Self->Handle, Args->ReceiveBytes, Args->SendBytes);
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
 SendTo: Send a datagram packet to a specific address (UDP only).
 
 This method sends a datagram packet to a specified IP address and port.  It is only available for sockets configured

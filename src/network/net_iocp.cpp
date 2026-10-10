@@ -407,6 +407,11 @@ public:
       return iocp_enable_broadcast(Handle.socket());
    }
 
+   ERR set_socket_buffer_sizes(SocketHandle Handle, int ReceiveBytes, int SendBytes) override
+   {
+      return iocp_set_socket_buffer_sizes(Handle.socket(), ReceiveBytes, SendBytes);
+   }
+
    ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) override
    {
       return iocp_set_multicast_ttl(Handle.socket(), TTL, IPv6);

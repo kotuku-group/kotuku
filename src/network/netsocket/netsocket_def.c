@@ -28,6 +28,7 @@ FDEF maSendTo[] = { { "Dest", FD_PTR }, { "Data", FDF_SPAN|FD_BYTE }, { "BytesSe
 FDEF maRecvFrom[] = { { "Source", FD_PTR }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { "BytesRead", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maJoinMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maLeaveMulticastGroup[] = { { "Group", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maSetBufferSizes[] = { { "ReceiveBytes", FD_INT }, { "SendBytes", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clNetSocketMethods[] = {
    { AC(-1), (APTR)NETSOCKET_Connect, "Connect", maConnect, sizeof(struct ns::Connect) },
@@ -36,6 +37,7 @@ static const struct MethodEntry clNetSocketMethods[] = {
    { AC(-4), (APTR)NETSOCKET_RecvFrom, "RecvFrom", maRecvFrom, sizeof(struct ns::RecvFrom) },
    { AC(-5), (APTR)NETSOCKET_JoinMulticastGroup, "JoinMulticastGroup", maJoinMulticastGroup, sizeof(struct ns::JoinMulticastGroup) },
    { AC(-6), (APTR)NETSOCKET_LeaveMulticastGroup, "LeaveMulticastGroup", maLeaveMulticastGroup, sizeof(struct ns::LeaveMulticastGroup) },
+   { AC(-9), (APTR)NETSOCKET_SetBufferSizes, "SetBufferSizes", maSetBufferSizes, sizeof(struct ns::SetBufferSizes) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 
