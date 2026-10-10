@@ -851,16 +851,31 @@ gui.themes = {
          highlight = gui.palette.dark.contrast
       },
       menubar = {
-         bkgd      = 'rgb(0 0 0 / .5)',
-         text      = gui.palette.dark.text,
-         highlight = gui.palette.dark.contrast
+         bkgd = {
+            fill = 'rgb(0 0 0 / .5)'
+         },
+         text = {
+            fill = gui.palette.dark.text
+         },
+         highlight = {
+            fill = gui.palette.dark.contrast
+         }
+         -- 'menu' item reference is inserted post-construction
       },
       menu = {
-         bkgd      = gui.palette.dark.bkgd,
-         stroke    = gui.palette.dark.inverse,
-         highlight = gui.palette.dark.contrast,
-         text      = gui.palette.dark.text,
-         icon      = 'pearl'
+         bkgd = { -- VectorRectangle
+            fill = gui.palette.dark.bkgd
+         },
+         border = { -- VectorRectangle
+            stroke = gui.palette.dark.inverse
+         },
+         highlight = { -- VectorRectangle
+            fill = gui.palette.dark.contrast
+         },
+         text = { -- VectorText
+            fill = gui.palette.dark.text
+         },
+         icon = 'pearl'
       },
       dropdown = {
          bkgd          = gui.palette.dark.bkgd,
@@ -927,15 +942,30 @@ gui.themes = {
          highlight = gui.palette.light.contrast
       },
       menubar = {
-         bkgd = gui.palette.light.inverse,
-         text = gui.palette.light.altText,
-         highlight = gui.palette.light.contrast
+         bkgd = {
+            fill = gui.palette.light.inverse,
+         },
+         text = {
+            fill = gui.palette.light.altText,
+         },
+         highlight = {
+            fill = gui.palette.light.contrast
+         }
+         -- 'menu' item reference is inserted post-construction
       },
       menu = {
-         bkgd      = gui.palette.light.inverse,
-         stroke    = gui.palette.light.neutral,
-         highlight = gui.palette.light.contrast,
-         text      = gui.palette.light.altText,
+         bkgd = {
+            fill = gui.palette.light.inverse
+         },
+         border = {
+            stroke = gui.palette.light.neutral
+         },
+         highlight = {
+            fill = gui.palette.light.contrast
+         },
+         text = {
+            fill = gui.palette.light.altText
+         },
          icon      = 'pearl'
       },
       dropdown = {
@@ -967,6 +997,9 @@ gui.themes = {
       }
    }
 }
+
+gui.themes.dark.menubar.menu = gui.themes.dark.menu
+gui.themes.light.menubar.menu = gui.themes.light.menu
 
 gui.style = gui.themes[gui.theme] -- Default user theme; but using gui.setTheme() is the preferred approach
 

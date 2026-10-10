@@ -44,8 +44,10 @@ SHORTCUT_KEYS <const> = {
 
 function shortcutMatches(Item:table!, Qualifiers:num!, Code:num!, Unicode:num):bool
    if not (Item.key is <str>) then return false end
+
    key = Item.key.trim().upper()
    wanted = 0
+
    if Item.qualifier?? then
       if not (Item.qualifier is <str>) then return false end
       for token in values(Item.qualifier.upper().split('+')) do
@@ -58,6 +60,7 @@ function shortcutMatches(Item:table!, Qualifiers:num!, Code:num!, Unicode:num):b
          end
       end
    end
+
    actual = 0
    if Qualifiers has KQ_CTRL then actual = actual | KQ_CTRL end
    if Qualifiers has KQ_SHIFT then actual = actual | KQ_SHIFT end
@@ -67,36 +70,51 @@ function shortcutMatches(Item:table!, Qualifiers:num!, Code:num!, Unicode:num):b
    if key is '+' or key is 'PLUS' then
       if (Code is KEY_EQUALS and (Qualifiers has KQ_SHIFT)) or Unicode is 43 then
          -- Shift is part of typing '+', rather than an extra accelerator modifier.
-         if not (wanted has KQ_SHIFT) then actual = actual & ~KQ_SHIFT end
+         if not (wanted has KQ_SHIFT) then
+            actual = actual & ~KQ_SHIFT
+         end
       elseif Code != KEY_PLUS and Code != KEY_NP_PLUS then
          return false
       end
+
       return actual is wanted
    end
+
    if actual != wanted then return false end
    key_code:num = SHORTCUT_KEYS[key]
+
    if #key is 1 then
       byte = key.byte()
-      if byte >= 65 and byte <= 90 then key_code = KEY_A + byte - 65
-      elseif byte >= 49 and byte <= 57 then key_code = KEY_ONE + byte - 49 end
+      if byte >= 65 and byte <= 90 then
+         key_code = KEY_A + byte - 65
+      elseif byte >= 49 and byte <= 57 then
+         key_code = KEY_ONE + byte - 49
+      end
    elseif key.startsWith('F') then
       number = tonumber(key.sub(1))
       if number and number >= 1 and number <= 17 and number is math.floor(number) then
          key_code = KEY_F1 + number - 1
       end
    end
+
    return key_code is Code
 end
 
 -- Return the original configuration path without constructing or showing any menus.
+
 function findMenuShortcut(Config, Qualifiers:num!, Code:num!, Unicode:num):array<table>
    if not (Qualifiers has KQ_PRESSED) then return nil end
+
    for source in values(Config) do
       item = source.menu ?? source
       if source.disabled or item.disabled then continue end
+
       if item.items then
          path = findMenuShortcut(item.items, Qualifiers, Code, Unicode)
-         if path then path.insert(0, item); return path end
+         if path then
+            path.insert(0, item)
+            return path
+         end
       elseif item.item and shortcutMatches(item, Qualifiers, Code, Unicode) then
          return array<table> { item }
       end
@@ -105,27 +123,33 @@ end
 
 gui.findMenuShortcut = findMenuShortcut
 
-gui.menu = function(Options)
-   local theme = Options.theme ?? gui.getTheme()
+gui.menu = function(Options:table!)
+   tooltip_theme = Options.tooltipTheme ?? gui.getTheme(Options.relative)
+   theme:table
+   if Options.theme then
+      theme = table.merge(gui.getTheme().menu, Options.theme)
+   else
+      theme = gui.getTheme().menu
+   end
 
    self = entity { -- Public interface
-      surface  = nil,
-      reverseX = false,
-      timeShow = 0,
-      timeHide = 0,
-      tipDelay = 0.5,
-      visible  = false,
-      client   = Options.client,
-      feedback = Options.feedback,
-      prepare  = Options.prepare,
-      config   = Options.config,
-      x        = Options.x ?? 0,
-      y        = Options.y ?? 0,
-      popup    = Options.popup ?? false,
-      relative = Options.relative,
+      surface    = nil,
+      reverseX   = false,
+      timeShow   = 0,
+      timeHide   = 0,
+      tipDelay   = 0.5,
+      visible    = false,
+      client     = Options.client,
+      feedback   = Options.feedback,
+      prepare    = Options.prepare,
+      config     = Options.config,
+      x          = Options.x ?? 0,
+      y          = Options.y ?? 0,
+      popup      = Options.popup ?? false,
+      relative   = Options.relative,
       parentMenu = Options.parentMenu,
       parentItem = Options.parentItem,
-      items    = array<table>
+      items      = array<table>
    }
 
    function selectable(Item:table):bool
@@ -160,8 +184,7 @@ gui.menu = function(Options)
       end
    end
 
-   local highlightItem:func
-   local openSubmenu:func
+   local highlightItem:func, openSubmenu:func
 
    function initVectorScene()
       using self do
@@ -174,35 +197,33 @@ gui.menu = function(Options)
             if item.checkable and not item.items then checks_present = true end
             if showIcons and (item.icon or source.icon) then icons_present = true end
          end
+
          icon_x = HMARGIN
          TEXT_X = icon_x + (icons_present ? ICON_SIZE + HMARGIN + HMARGIN : 0)
 
-         &content.new('VectorRectangle', {
-            fill = theme.menu.bkgd, x = 0, y = 0, xOffset = 0, yOffset = 0,
+         -- Clients can use the hostScene option to gain access to external fills via url()
+
+         &content.new('VectorRectangle', table.merge({ -- Background fill
+            x = 0, y = 0, xOffset = 0, yOffset = 0,
             resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
                Vector.width  = Width - (Vector.x * 2)
                Vector.height = Height - (Vector.y * 2)
             end
-         })
---[[
-         if showIcons then -- Icon strip
-            &content.new('VectorRectangle', {
-               fill = ICON_STRIP, x = 0, y = 0, width = HMARGIN + ICON_SIZE + HMARGIN, height = '100%'
-            })
-         end
---]]
-         &highlight = &content.new('VectorRectangle', {
-            x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT, fill = theme.menu.highlight, visibility = 'hidden'
-         })
+         }, theme.bkgd))
 
-         &content.new('VectorRectangle', { -- Border
-            stroke = theme.menu.stroke, strokeWidth = 1.5, opacity=0.5,
+         &highlight = &content.new('VectorRectangle', table.merge({ -- Item highlighting
+            x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT,
+            fill = theme.highlight, visibility = 'hidden'
+         }, theme.highlight))
+
+         &content.new('VectorRectangle', table.merge({ -- Foreground border
+            stroke = 'none', strokeWidth = 1.5, opacity=0.5,
             x = 1, y = 1, xOffset = 1, yOffset = 1,
             resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
                Vector.width  = Width - (Vector.x * 2)
                Vector.height = Height - (Vector.y * 2)
             end
-         })
+         }, theme.border))
 
          &items = array<table>
          widestItem = 0
@@ -217,14 +238,15 @@ gui.menu = function(Options)
 
             if item.item then
                mi = { y=y, config=item, source=source, tip=item.tip, submenuConfig=item.items }
-               vText = &content.new('VectorText', {
+
+               vText = &content.new('VectorText', table.merge({
                   x        = TEXT_X,
                   face     = gui.fonts.menu.face,
+                  fill     = 'black',
                   fontSize = string.format('%.2fpt', gui.fonts.menu.size),
-                  fill     = theme.menu.text,
                   align    = 'left',
                   string   = item['item']
-               })
+               }, theme.text))
 
                err, bx, by, bw, bh = vText.mtGetBoundary(0)
 
@@ -235,7 +257,8 @@ gui.menu = function(Options)
 
                if showIcons and item['icon'] then
                   try
-                     info = gui.createIcon(&viewport.scene, item.icon, ICON_SIZE, theme.menu.icon)
+                     info = gui.createIcon(&viewport.scene, item.icon, ICON_SIZE, theme.icon)
+
                      item.iconView = &content.new('VectorRectangle', {
                         x = icon_x, y = y + math.floor((ITEM_HEIGHT - ICON_SIZE) * 0.5),
                         width = ICON_SIZE, height = ICON_SIZE, fill = info.fill
@@ -256,14 +279,14 @@ gui.menu = function(Options)
                      roundX = ITEM_HEIGHT * 0.5, roundY = ITEM_HEIGHT * 0.5
                   })
 
-                  vKey = &content.new('VectorText', {
+                  vKey = &content.new('VectorText', table.merge({
                      x        = &surface.width,
                      face     = gui.fonts.menu.face,
                      fontSize = string.format('%.2fpt', gui.fonts.menu.size),
-                     fill     = theme.menu.text,
+                     fill     = 'black',
                      align    = 'right',
                      string   = key
-                  })
+                  }, theme.text))
 
                   err, bx, by, bw, bh = vKey.mtGetBoundary(0)
 
@@ -274,14 +297,15 @@ gui.menu = function(Options)
                   mi.keyText = vKey
                   kb_highlight.width = keyWidth + HMARGIN + HMARGIN
                elseif mi.submenuConfig then
-                  vKey = &content.new('VectorText', {
+                  vKey = &content.new('VectorText', table.merge({
                      x        = &surface.width,
                      face     = gui.fonts.menu.face,
                      fontSize = string.format('%.2fpt', gui.fonts.menu.size),
-                     fill     = theme.menu.text,
+                     fill     = 'black',
                      align    = 'right',
                      string   = '>'
-                  })
+                  }, theme.text))
+
                   _, _, _, bw = vKey.mtGetBoundary(0)
                   vKey.y = mi.textY
                   widestKey = math.max(widestKey, bw)
@@ -295,18 +319,20 @@ gui.menu = function(Options)
                &items.push(mi)
             elseif source.group then
                mi = { y=y, height=ITEM_HEIGHT, config=source, lineBreak=true }
-               group_text = &content.new('VectorText', {
+               group_text = &content.new('VectorText', table.merge({
                   x         = 0,
                   y         = 0,
                   face      = gui.fonts.menu.face,
                   fontSize  = string.format('%.2fpt', gui.fonts.menu.size * 0.85),
                   fontStyle = gui.fonts.menu.style,
                   align     = 'middle',
-                  fill      = theme.menu.text,
+                  fill      = 'black',
                   opacity   = 0.7,
                   string    = source.group
-               })
+               }, theme.text))
+
                _, bx, by, bw, bh = group_text.mtGetBoundary(0)
+
                group_text.y = y + (ITEM_HEIGHT - bh) * 0.5 - by
                mi.text = group_text
                mi.textWidth = bw
@@ -326,8 +352,10 @@ gui.menu = function(Options)
          for item in values(&items) do
             if not item.lineBreak and item.config.checkable and not item.submenuConfig then
                check_y = item.y + (ITEM_HEIGHT - ICON_SIZE) * 0.5
+
+               -- Checkmark icon
                item.checkmark = &content.new('VectorPath', {
-                  stroke = theme.menu.text, strokeWidth = 2, fill = 'none',
+                  stroke = theme.text?.fill ?? 'white', strokeWidth = 2, fill = 'none',
                   visibility = item.config.checked ? 'visible' : 'hidden',
                   sequence = string.format('M%f,%f L%f,%f L%f,%f',
                      check_x + ICON_SIZE * 0.15, check_y + ICON_SIZE * 0.5,
@@ -335,12 +363,13 @@ gui.menu = function(Options)
                      check_x + ICON_SIZE * 0.85, check_y + ICON_SIZE * 0.2)
                })
             end
+
             if item.lineBreak then
                item.text.x = width * 0.5
-               line_y = math.floor(item.y + ITEM_HEIGHT * 0.5) + 0.5
-               line_end = (width - item.textWidth) * 0.5 - HMARGIN
+               line_y      = math.floor(item.y + ITEM_HEIGHT * 0.5) + 0.5
+               line_end    = (width - item.textWidth) * 0.5 - HMARGIN
                &content.new('VectorPath', {
-                  stroke = theme.menu.text, strokeWidth = 1, opacity = 0.35,
+                  stroke = theme.text?.fill ?? 'white', strokeWidth = 1, opacity = 0.35,
                   sequence = string.format('M%f,%f H%f M%f,%f H%f',
                      HMARGIN * 2, line_y, line_end, width - line_end, line_y, width - HMARGIN * 2)
                })
@@ -382,6 +411,7 @@ gui.menu = function(Options)
    end
 
    -- Programmatic updates change state and presentation without invoking activation feedback.
+
    self.setChecked = function(Reference:any, Checked:bool!):bool
       item = resolveItem(Reference)
       if not item?.checkmark then return false end
@@ -595,15 +625,17 @@ gui.menu = function(Options)
    function getSubmenu(Item:table!):table
       if not Item.submenu then
          Item.submenu = gui.menu({
-            target     = Options.target,
-            parentMenu = self,
-            parentItem = Item,
-            client     = Options.client,
-            config     = Item.submenuConfig,
-            prepare    = Item.config.prepare,
-            showIcons  = Options.showIcons,
-            theme      = theme,
-            feedback   = Options.feedback
+            target       = Options.target,
+            parentMenu   = self,
+            parentItem   = Item,
+            client       = Options.client,
+            config       = Item.submenuConfig,
+            prepare      = Item.config.prepare,
+            showIcons    = Options.showIcons,
+            theme        = theme,
+            tooltipTheme = tooltip_theme,
+            hostScene    = Options.hostScene,
+            feedback     = Options.feedback
          })
       end
       return Item.submenu
@@ -636,26 +668,33 @@ gui.menu = function(Options)
       if not selectable(item) then return false end
       if item.submenuConfig then return openSubmenu(item) end
       if item.checkmark then &setChecked(item, not item.config.checked) end
+
       item.config?.feedback(self, item.config)
       self?.feedback(self, item.config)
+
       menu = self
       while menu do
          parent = menu.parentMenu
          menu.hide()
          menu = parent
       end
+
       return true
    end
 
    self.activateShortcut = function(Path:array<table>!, Index:num):bool
       index = Index ?? 0
       item = resolveItem(Path[index])
+
       if not selectable(item) then return false end
+
       if index + 1 < #Path then
          if not item.submenuConfig then return false end
          return getSubmenu(item).activateShortcut(Path, index + 1)
       end
+
       if item.submenuConfig then return false end
+
       return &activate(item.config)
    end
 
@@ -663,6 +702,7 @@ gui.menu = function(Options)
 
    self.handleKey = function(Qualifiers:num!, Value:num!):bool
       if not &surface or not &visible or not (Qualifiers has KQ_PRESSED) then return false end
+
       if &_keyboardMenu?.visible then
          return &_keyboardMenu.handleKey(Qualifiers, Value)
       end
@@ -703,7 +743,7 @@ gui.menu = function(Options)
 
    function timer(Elapsed, CurrentTime)
       if &hItem and &hItem.tip?? then
-         gui.tooltip({ target=&viewport, theme=theme, text=&hItem.tip })
+         gui.tooltip({ target=&viewport, theme=tooltip_theme, text=&hItem.tip })
       end
       &tipTimer = nil
       raise ERR_Terminate
@@ -725,11 +765,12 @@ gui.menu = function(Options)
       &surface.height   = 400
       &surface.init()
 
-      &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface })
+      &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=Options.hostScene })
       &viewport = &scene.new('VectorViewport', { })
 
       -- A popup takes surface focus, so its own viewport must receive keys rather than the invoking widget.
       -- Register before focusing the surface so the scene can choose this viewport as its keyboard target.
+
       if &popup and not &parentMenu then
          &viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
             if not &visible then return end
@@ -742,7 +783,11 @@ gui.menu = function(Options)
 
       &surface.subscribe('free', function()
          if &tipTimer then mSys.UpdateTimer(&tipTimer, 0) end
-         for item in values(&items) do item.submenu?.surface?.free() end
+
+         for item in values(&items) do
+            item.submenu?.surface?.free()
+         end
+
          &currentMenu = nil
          &_keyboardMenu = nil
          &surface = nil
@@ -755,15 +800,20 @@ gui.menu = function(Options)
       end
 
       &surface.subscribe('hide', function(Surface:obj!, Args:table!)
-         if &tipTimer then mSys.UpdateTimer(&tipTimer, 0); &tipTimer = nil end
+         if &tipTimer then
+            mSys.UpdateTimer(&tipTimer, 0)
+            &tipTimer = nil
+         end
+
          &currentMenu?.hide()
-         &currentMenu = nil
+         &currentMenu   = nil
          &_keyboardMenu = nil
-         &visible = false
-         &hItem = nil
+         &visible       = false
+         &hItem         = nil
          &highlight.visibility = 'hidden'
          &timeHide = mSys.PreciseTime()
          parent_menu = &parentMenu
+
          if parent_menu?.currentMenu is self then parent_menu.currentMenu = nil end
          if parent_menu?._keyboardMenu is self then parent_menu._keyboardMenu = nil end
       end)
@@ -772,11 +822,14 @@ gui.menu = function(Options)
          for item in values(&items) do
             if item.checkmark then item.checkmark.visibility = item.config.checked ? 'visible' : 'hidden' end
          end
+
          &visible = true
+
          if &popup then
             &surface.acFocus()
             &viewport.acFocus()
          end
+
          &timeShow = mSys.PreciseTime()
 
          -- A root menu owns keyboard routing for its entire submenu chain.
