@@ -73,7 +73,7 @@ namespace agg
       }
    };
 
-   int8u * gradient_contour::contour_create(path_storage &ps, double Scale) {
+   inline int8u * gradient_contour::contour_create(path_storage &ps, double Scale) {
       // Flatten the curves once so that bounding rect computation and both rasterisation passes do not
       // each repeat the curve subdivision.
 

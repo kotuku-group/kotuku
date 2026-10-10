@@ -31,6 +31,9 @@ Transitions are most effective when used in conjunction with the @Vector.GuidePa
 
 *********************************************************************************************************************/
 
+#include <format>
+#include <sstream>
+
 // Applies the correct transform when given a relative Index position between 0.0 and 1.0
 
 void apply_transition(extVectorTransition *Self, double Index, agg::trans_affine &Transform)

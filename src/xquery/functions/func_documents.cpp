@@ -11,7 +11,7 @@ namespace fs = std::filesystem;
 // Load (or retrieve from cache) a text resource.  Returns true if successful.
 // TODO: Support Encoding parameters other than UTF-8 (converts the source to UTF-8).
 
-[[maybe_unused]] static bool read_text_resource(XPathEvaluator &Eval, const std::string &URI, const std::optional<std::string> &Encoding,
+bool read_text_resource(XPathEvaluator &Eval, const std::string &URI, const std::optional<std::string> &Encoding,
    std::string * &Result)
 {
    kt::Log log(__FUNCTION__);
