@@ -74,7 +74,9 @@ constexpr uint8_t BCDUMP_HEAD3 = 0x4a;
 // Version 0xa9 invalidates roots whose imported modules used caller-specific resolution observations.
 // Version 0xaa adds immutable compilation-unit package metadata.
 // Version 0xab adds the canonical transitive runtime-compatibility manifest.
-constexpr uint8_t BCDUMP_VERSION = 0xac;
+// Version 0xad adds table.merge and shifts the generated fast-function ordering.
+// Version 0xae adds table.clone and shifts the generated fast-function ordering.
+constexpr uint8_t BCDUMP_VERSION = 0xae;
 
 // Compatibility flags.
 
