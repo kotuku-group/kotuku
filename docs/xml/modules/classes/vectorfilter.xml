@@ -18,6 +18,7 @@
 </pre>
 <p>Filter pipelines are constructed from effects based on the <class name="FilterEffect">FilterEffect</class> class, such as <class name="CompositeFX">CompositeFX</class> and <class name="FloodFX">FloodFX</class>. Construct a new pipeline by creating effect objects and placing them under the ownership of the VectorFilter that will be supporting them.  The VectorFilter will detect the filter objects and they will be processed in the order in which they are added.  It is most optimal to create each pipeline in advance, and a new VectorFilter object should be created for each pipeline as necessary.</p>
 <p>The filter's output is composited into the target with the blend mode resolved for the client vector, as described for <class name="Vector" field="ColourSpace">Vector.ColourSpace</class>, and the filter's <fl>Opacity</fl> is applied at the same time.  The filter's own <fl>ColourSpace</fl> governs effect processing only and does not affect how the output is composited.</p>
+<p>Effects can read content that lies beyond the edges of the page, within the filter region, so a filtered vector that touches or crosses a page edge is processed as if the page were larger.  Samples outside of the filter region are transparent black.  The output is clipped to the page and any clipping imposed by container viewports.</p>
 <p>It is important to note that filter effects are CPU intensive tasks and real-time performance may be disappointing. If this is an issue, consider pre-rendering the filter effects in advance and caching the results in memory or files.</p>
 <p>It is a requirement that VectorFilter objects are owned by the <class name="VectorScene">VectorScene</class> they are targeting.</p></description>
     <source>
@@ -56,8 +57,9 @@
       <type lookup="VCS">VCS</type>
       <description>
 <p>By default, colour filters are processed in SRGB format.  This is the same colour space as used by the rest of the graphics system, which means that no special conversion is necessary prior to and post filter processing.  However, linear RGB is better suited for producing high quality results at a cost of speed.</p>
+<p>Intermediate images are always stored in sRGB encoding.  When <code>LINEAR_RGB</code> is selected, effects that honour this setting decode their inputs, process them in linear RGB and encode the result for storage.  These are <class name="BlurFX">BlurFX</class>, <class name="ColourFX">ColourFX</class>, <class name="ConvolveFX">ConvolveFX</class>, <class name="DisplacementFX">DisplacementFX</class> (for the displacement map), <class name="LightingFX">LightingFX</class>, <class name="MergeFX">MergeFX</class>, <class name="MorphologyFX">MorphologyFX</class>, <class name="RemapFX">RemapFX</class> and the <code>ARITHMETIC</code> operator of <class name="CompositeFX">CompositeFX</class>.  The other <class name="CompositeFX">CompositeFX</class> operators that mix colour components always do so in linear RGB. Colours that are input values, such as the colour of a <class name="FloodFX">FloodFX</class>, are stored as given and are not converted.</p>
 <p>This setting applies only to the processing of effects within the pipeline.  The composite of the filter's output into the target is governed by the client vector's <class name="Vector" field="ColourSpace">Vector.ColourSpace</class>.</p>
-<p>Note that if SVG compatibility is required, linear RGB must be used as the default.</p>
+<p>The SVG standard defaults to linear RGB for filter effects, so the SVG parser selects <code>LINEAR_RGB</code> unless the <code>color-interpolation-filters</code> attribute states otherwise.  Filters created through the API retain the SRGB default.</p>
 <types lookup="VCS"/>
       </description>
     </field>

@@ -42,7 +42,8 @@ Lr,Lg,Lb = RGB components of light
 <p>The definition of <code>H</code> reflects our assumption of the constant eye vector <code>E = (0,0,1)</code>:</p>
 <pre>H = (L + E) / Norm(L + E)
 </pre>
-<p>where <code>L</code> is the light unit vector.</p></description>
+<p>where <code>L</code> is the light unit vector.</p>
+<p>The light is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>.  In <code>SRGB</code> the light <fl>Colour</fl> and the result are sRGB values.  In <code>LINEAR_RGB</code> the light <fl>Colour</fl> is converted to linear RGB and the result is encoded to sRGB for storage, so a result of 0.5 is stored as approximately 0.735.</p></description>
     <source>
       <file path="filters/">filter_lighting.cpp</file>
     </source>
