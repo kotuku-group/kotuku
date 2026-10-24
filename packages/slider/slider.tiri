@@ -155,7 +155,7 @@ gui.slider = function(Options:table!)
       end,
 
       prvApplyStyle = function()
-         theme = &prvTheme.slider
+         theme = &prvTheme
          gui.applyStyle(&prvBarBkgd, table.merge({ opacity = 1 }, theme.bkgd))
          gui.applyStyle(&button, theme.fore)
 
@@ -170,7 +170,7 @@ gui.slider = function(Options:table!)
       end,
 
       prvStyleTicks = function(Path:obj!)
-         theme = &prvTheme.slider
+         theme = &prvTheme
          gui.applyStyle(Path, table.merge({ opacity = 1 }, theme.tick ?? { }))
          if &disabled then gui.applyStyle(Path, theme.disabled) end
       end,
@@ -368,7 +368,7 @@ gui.slider = function(Options:table!)
          &value = Value
          &prvPlaceSlider()
          &viewport.scene.surface.mtScheduleRedraw()
-         if not Silent then &events?.activate(Value) end
+         if not Silent then &events.activate?(Value) end
       end,
 
       -- The increment defaults to the step, or one percent of the range for continuous sliders.
@@ -414,6 +414,13 @@ gui.slider = function(Options:table!)
          else
             return &min + ((&max - &min) * math.clamp(Position / track, 0, 1))
          end
+      end,
+
+      -- A theme with overhang places the thumb centre on each end of the track at the range limits, so the track is
+      -- inset from the host by half the thumb length.  The inset is whole pixels to keep the track ends sharp.
+
+      prvTrackInset = function():num
+         return &prvTheme.overhang ? math.floor(&prvThumbLength * 0.5) : 0
       end,
 
       -- Reachable values are min + (n * step) and max, so the readout needs the decimal places of all three.
@@ -493,7 +500,7 @@ gui.slider = function(Options:table!)
          end
 
          if &trackVP and &prvAutoWidth and (&orientation is 'H') and &valuePos.startsWith('in-') then
-            extra = &prvValueWidth + (MARGIN * 2) - &trackVP.width
+            extra = &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2) - &trackVP.width
             if extra > 0 then &viewport.width += extra end
          end
       end,
@@ -506,6 +513,19 @@ gui.slider = function(Options:table!)
          outside = &valuePos.startsWith('out-')
          position = &valuePos.sub(outside ? 4 : 3)
          tick_space = (&tickPos != 'start') ? &prvTickSpace : 0 -- out-centre text is placed beyond end ticks
+
+         -- Inside text is drawn over the track, which is inset from the host for an overhanging thumb.
+
+         if not outside then
+            inset = &prvTrackInset()
+            if &orientation is 'H' then
+               x += inset
+               Width -= inset * 2
+            else
+               y += inset
+               Height -= inset * 2
+            end
+         end
 
          if &orientation is 'H' then
             if outside and (position is 'min') then
@@ -584,16 +604,25 @@ gui.slider = function(Options:table!)
          width = (Width != nil) ? Width : &trackVP.width
          height = (Height != nil) ? Height : &trackVP.height
          fraction = (&value - &min) / (&max - &min)
+         inset = &prvTrackInset()
 
          if &orientation is 'V' then
             track = math.max(0, height - &prvThumbLength)
             &thumbVP.y = track - (fraction * track)
             &thumbVP.x = math.floor((width - &prvThumbSize) * 0.5)
             &prvBarBkgd.x = math.floor((width - &thickness) * 0.5)
+            if &prvTheme.overhang then
+               &prvBarBkgd.y = inset
+               &prvBarBkgd.height = math.max(0, height - (inset * 2))
+            end
          else
             &thumbVP.x = fraction * math.max(0, width - &prvThumbLength)
             &thumbVP.y = math.floor((height - &prvThumbSize) * 0.5)
             &prvBarBkgd.y = math.floor((height - &thickness) * 0.5)
+            if &prvTheme.overhang then
+               &prvBarBkgd.x = inset
+               &prvBarBkgd.width = math.max(0, width - (inset * 2))
+            end
          end
 
          if &valueText then &prvPlaceValue(width, height) end
@@ -624,8 +653,8 @@ gui.slider = function(Options:table!)
       assert((&tickPos is 'start') or (&tickPos is 'end') or (&tickPos is 'both'), f"Invalid tickPos '{&tickPos}'")
       &prvCheckTicks(&ticks)
 
-      base_theme = gui.getTheme(target)
-      &prvTheme = Options.theme ? table.merge(base_theme, { slider = table.merge(base_theme.slider, Options.theme, true, true) }) : base_theme
+      base_theme = gui.getTheme(target).slider
+      &prvTheme = Options.theme ? table.merge(base_theme, Options.theme, true, true) : base_theme
       &orientation = (Options.orientation is 'vertical') ? 'V' : 'H'
 
       -- Ticks occupy the host's start and/or end side across the track: below a horizontal track or to the right of a
@@ -690,7 +719,7 @@ gui.slider = function(Options:table!)
             fontStyle = gui.fonts.label.style,
             string    = &label,
             lineLimit = 1
-         }, &prvTheme.window.text))
+         }, &prvTheme.text))
 
          &prvTextHeight, ascent = textMetrics(&labelText)
          &prvTextBaseline = (&prvTextHeight + ascent) * 0.5
@@ -738,7 +767,7 @@ gui.slider = function(Options:table!)
             name='Value', x=0, y=0, face=gui.fonts.label.face,
             fontSize=string.format('%.2fpt', gui.fonts.label.size), fontStyle=gui.fonts.label.style,
             lineLimit=1
-         }, &prvTheme.window.text))
+         }, &prvTheme.text))
 
          &prvValueFontSize = tonumber(&valueText.fontSize) -- Unscaled size in pixels
          &valueText.align = 'start'
@@ -764,7 +793,7 @@ gui.slider = function(Options:table!)
 
          if &prvAutoWidth and (&orientation is 'H') and &valuePos.startsWith('in-') then
             available = &viewport.width - host.x - host.xOffset
-            needed = &prvValueWidth + (MARGIN * 2)
+            needed = &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2)
             if needed > available then &viewport.width += needed - available end
          end
 
@@ -779,7 +808,7 @@ gui.slider = function(Options:table!)
          x = 0, y = 0,
          width = (&orientation is 'V') ? &thickness : '100%',
          height = (&orientation is 'V') ? '100%' : &thickness
-      }, &prvTheme.slider.bkgd))
+      }, &prvTheme.bkgd))
 
       &thumbVP = &trackVP.new('VectorViewport', {
          width  = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength,
@@ -809,14 +838,14 @@ gui.slider = function(Options:table!)
          &prvPlaceSlider(Width, Height)
       end
 
-      GAP <const> = &prvTheme.slider.bkgd.strokeWidth
+      GAP <const> = &prvTheme.bkgd.strokeWidth
       -- Reduce each inset independently to leave at least one pixel, or the full dimension for subpixel thumbs.
       x_gap = math.min(GAP, math.max(0, (&thumbVP.width - 1) * 0.5))
       y_gap = math.min(GAP, math.max(0, (&thumbVP.height - 1) * 0.5))
 
       &button = &thumbVP.new('VectorRectangle', table.merge({
          x = x_gap, y = y_gap, width = &thumbVP.width-(x_gap*2), height = &thumbVP.height-(y_gap*2)
-      }, &prvTheme.slider.fore))
+      }, &prvTheme.fore))
 
       if &valueText then
          &valueText.acMoveToFront()
@@ -830,9 +859,9 @@ gui.slider = function(Options:table!)
          Viewport.acDraw()
 
          if Event is FM_LOST_FOCUS then
-            &events?.lostFocus()
+            &events.lostFocus?()
          elseif not &disabled then
-            &events?.focus()
+            &events.focus?()
          end
       end
 
@@ -916,7 +945,7 @@ gui.slider = function(Options:table!)
       &trackVP.mtSubscribeInput(JTYPE_BUTTON, trackInput)
 
       if Options.disabled then &disable() end
-      &events?.show()
+      &events.show?()
       return &&
    end
 end

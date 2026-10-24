@@ -89,7 +89,7 @@ function createMenu(Items:any)
    end
 end
 
-gui.combobox = function(Options)
+gui.combobox = function(Options:table)
    self = entity { -- Public interface
       events         = Options.events ?? { },
       label          = Options.label,
@@ -154,7 +154,10 @@ gui.combobox = function(Options)
       assert(Options.allowCustom or firstItem(Options.items), 'A list of items is required.')
 
       &theme = gui.getTheme(&parentViewport)
-      &input_theme = table.merge(&theme.input, Options.theme, true, true)
+      if Options.theme then
+         &theme = table.merge(&theme, Options.theme, true, true)
+      end
+      &input_theme = &theme.input
 
       BOX_HEIGHT <const> = Options.height ?? DEFAULT_HEIGHT
 
@@ -238,9 +241,13 @@ gui.combobox = function(Options)
          defaultText = firstItem(Options.items).label
       end
 
+      -- The text is inset from the left by the space above it, so that the margins look even at any box height.
+
+      text_inset = math.floor((BOX_HEIGHT - FONT_HEIGHT - (&input_theme.bkgd.strokeWidth * 2)) * 0.5)
+
       &text = &_textClip.new('VectorText', table.merge({
-         x         = 4,
-         y         = FONT_HEIGHT + math.floor((BOX_HEIGHT - FONT_HEIGHT - (&input_theme.bkgd.strokeWidth * 2)) * 0.5),
+         x         = text_inset,
+         y         = FONT_HEIGHT + text_inset,
          string    = defaultText,
          lineLimit = 1,
          textFlags = (function()
@@ -342,6 +349,10 @@ gui.combobox = function(Options)
       &dropdownTheme = table.clone(&theme.dropdown)
       if &input_theme.text then
          &dropdownTheme.text = table.merge(&dropdownTheme.text, &input_theme.text, true)
+      end
+
+      if Options.theme?.dropdown then
+         &dropdownTheme = table.merge(&dropdownTheme, Options.theme.dropdown, true, true)
       end
 
       createMenu(Options.items)

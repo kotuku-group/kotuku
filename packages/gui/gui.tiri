@@ -1152,6 +1152,9 @@ end
 --
 -- Bounding box units are scaled by the normalised diagonal of the bounds, so a blur or offset covers the same distance
 -- on both axes and the region adds the same margin to every side, whatever the shape of the target.
+--
+-- The effects are processed in linear RGB.  The emboss lighting and arithmetic mix are tuned for it, and the other
+-- effects only read the alpha of the blurred input.
 
 function effectFilter(Scene:obj!, Theme:table!, Ctx:table!):<str, bool>
    name = f'effect_filter_{Theme.effectKey}'
@@ -1159,7 +1162,7 @@ function effectFilter(Scene:obj!, Theme:table!, Ctx:table!):<str, bool>
 
    extent = Theme.extent
    filter = Scene.new('VectorFilter', {
-      primitiveUnits = VUNIT_BOUNDING_BOX, aspectRatio = VFA_NONE,
+      primitiveUnits = VUNIT_BOUNDING_BOX, aspectRatio = VFA_NONE, colourSpace = VCS_LINEAR_RGB,
       x = -extent, y = -extent, width = 1 + (extent * 2), height = 1 + (extent * 2)
    })
 
@@ -1179,8 +1182,8 @@ function effectFilter(Scene:obj!, Theme:table!, Ctx:table!):<str, bool>
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Returns the handle for gui.applyFillEffect().  Each entry of Defs is a { name, id } pair, and free() only removes a
--- definition if the name still refers to the object that was registered.
+-- Returns the handle for gui.applyFillEffect() and gui.registerFill().  Each entry of Defs is a { name, id } pair, and
+-- free() only removes a definition if the name still refers to the object that was registered.
 
 function fillEffectHandle(Scene:obj!, Defs:array<table>!):table
    handle = { defs=Defs }
@@ -1193,6 +1196,95 @@ function fillEffectHandle(Scene:obj!, Defs:array<table>!):table
       end
       Defs.clear()
    end
+   return handle
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Register the fill gradient, paint servers and filter of a parsed fill effect in Scene, reusing any that exist.
+-- Returns the base painter, the layered fill of the base and paint overlays, the filter name (nil if there are no
+-- filter effects), and the { name, id } list of the definitions that this call registered.
+
+function registerFillDefs(Scene:obj!, Spec:table!, ID:str, Viewport:obj):<str, str, str, array<table>>
+   config = Spec.fill.config
+   registered = array<table>
+   function register(Name:str!)
+      _, def = check Scene.mtFindDef(Name)
+      registered.push({ name=Name, id=def.id })
+   end
+
+   base:str
+   if config.colour then
+      base = config.colour
+   else
+      ID ??= f'effect_{Spec.fill.key}'
+      if Scene.mtFindDef(ID) != ERR_Okay then
+         gui.simpleGradient(Scene, ID, config, 0, 0, 0, 1, 'boundingbox')
+         register(ID)
+      end
+      base = f'url(#{ID})'
+   end
+
+   -- Overlays are registered before the fill is assigned, because the vector parser silently skips a layer that it
+   -- cannot resolve.  Layers are listed bottom to top.
+
+   ctx = { scene=Scene, viewport=Viewport, fill=Spec.fill, base=base }
+   fill = base
+   for paint in values(Spec.paints) do
+      id = f'effect_paint_{paint.key}'
+      painter = f'url(#{id})'
+      if Scene.mtFindDef(id) != ERR_Okay then
+         ctx.id = id
+         painter = paint.def.build(ctx, paint.args) ?? painter
+         if Scene.mtFindDef(id) != ERR_Okay then
+            raise f'Effect {paint.name}() did not register its paint server as "{id}".'
+         end
+         register(id)
+      end
+      fill ..= f';{painter}'
+   end
+
+   filter:str
+   if Spec.effectKey then
+      name, created = effectFilter(Scene, Spec, ctx)
+      if created then register(name) end
+      filter = name
+   end
+
+   return base, fill, filter, registered
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+Registers a fill effect in a scene without applying it, for use as the fill of any vector.
+
+The result can be assigned to vectors directly, or used in a theme, e.g. `bkgd = { fill = wood.fill }`.  The fill
+layers the paint effects over the base fill, and filter effects are returned as a separate filter for the vector's
+filter field.  Vector effects such as outline() modify existing vectors, so they are not accepted.
+
+Definitions are registered in the hosting scene and are shared with gui.applyFillEffect().  They are never removed
+automatically.  The returned handle lists the definitions that this call registered, and its free() method removes
+them.  A definition that already existed is reused and not listed.
+
+-INPUT-
+Scene: The scene that will draw the fill.  Definitions are registered in its host scene, if it has one.
+FillEffect: An effect spec such as 'fill(pearl) wood()', or a custom fill table.
+ID: Definition name for the base fill.  Defaults to a name derived from the fill.
+
+-RESULTS-
+table: Handle with the fill, base and filter painters, a defs list of the definitions registered by this call, and
+a free() method that removes them.  The filter is nil if there are no filter effects.
+]])
+gui.registerFill = function(Scene:obj!, FillEffect:any!, ID:str):table
+   spec = gui.parseFill(FillEffect)
+   if #spec.vectors > 0 then
+      raise f'{spec.vectors[0].name}() modifies vectors and cannot be registered as a fill.'
+   end
+
+   scene = Scene.hostScene ?? Scene
+   base, fill, filter, registered = registerFillDefs(scene, spec, ID)
+   handle = fillEffectHandle(scene, registered)
+   handle.{ fill = fill, base = base, filter = filter ? f'url(#{filter})' : nil }
    return handle
 end
 
@@ -1221,7 +1313,6 @@ table: Handle with a defs list of the definitions registered by this call, and a
 ]])
 gui.applyFillEffect = function(FillEffect:any!, Viewport:obj!, ID:str):table
    spec = gui.parseFill(FillEffect)
-   config = spec.fill.config
 
    -- Definitions must be owned by the scene that holds them, or freeing a pattern would remove definitions that other
    -- users still reference.
@@ -1229,52 +1320,16 @@ gui.applyFillEffect = function(FillEffect:any!, Viewport:obj!, ID:str):table
    scene = Viewport.scene
    scene = scene.hostScene ?? scene
 
-   registered = array<table>
-   function register(Name:str!)
-      _, def = check scene.mtFindDef(Name)
-      registered.push({ name=Name, id=def.id })
-   end
+   base, fill, filter, registered = registerFillDefs(scene, spec, ID, Viewport)
 
-   base:str
-   if config.colour then
-      base = config.colour
-   else
-      ID ??= f'effect_{spec.fill.key}'
-      if scene.mtFindDef(ID) != ERR_Okay then
-         gui.simpleGradient(scene, ID, config, 0, 0, 0, 1, 'boundingbox')
-         register(ID)
-      end
-      base = f'url(#{ID})'
-   end
-
-   -- Overlays are registered before the fill is assigned, because the vector parser silently skips a layer that it
-   -- cannot resolve.  Layers are listed bottom to top.
-
-   ctx = { scene=scene, viewport=Viewport, fill=spec.fill, base=base }
-   fill = base
-   for paint in values(spec.paints) do
-      id = f'effect_paint_{paint.key}'
-      painter = f'url(#{id})'
-      if scene.mtFindDef(id) != ERR_Okay then
-         ctx.id = id
-         painter = paint.def.build(ctx, paint.args) ?? painter
-         if scene.mtFindDef(id) != ERR_Okay then
-            raise f'Effect {paint.name}() did not register its paint server as "{id}".'
-         end
-         register(id)
-      end
-      fill ..= f';{painter}'
-   end
-
-   if spec.effectKey then
-      name, created = effectFilter(scene, spec, ctx)
-      if created then register(name) end
-      Viewport.filter = f'url(#{name})'
+   if filter then
+      Viewport.filter = f'url(#{filter})'
    elseif Viewport.filter then
       Viewport.filter = nil
    end
 
    handle = fillEffectHandle(scene, registered)
+   ctx = { scene=scene, viewport=Viewport, fill=spec.fill, base=base }
 
    Viewport.child ?! return handle
 
@@ -1663,10 +1718,13 @@ end
 -- view box is fitted to a box that is not square.  Draw(Pattern, Viewport) adds the content, and the pattern is
 -- registered as Ctx.id.
 
-function paintPattern(Ctx:table!, AspectRatio:num!, Draw:func!):str
-   pattern = Ctx.scene.new('VectorPattern', {
-      units=VUNIT_BOUNDING_BOX, width='100%', height='100%', aspectRatio=AspectRatio
-   })
+function paintPattern(Ctx:table!, AspectRatio:num!, Draw:func!, Size:num):str
+   options = { units=VUNIT_BOUNDING_BOX, width='100%', height='100%', aspectRatio=AspectRatio }
+   if (Size ?? 0) > 0 then
+      -- A fixed tile is reflected at its edges, so that a texture that does not tile still joins without a seam.
+      options = { units=VUNIT_USERSPACE, x=0, y=0, width=Size, height=Size, spreadMethod=VSPREAD_REFLECT }
+   end
+   pattern = Ctx.scene.new('VectorPattern', options)
 
    try
       pattern.viewport.{ viewX=0, viewY=0, viewWidth=100, viewHeight=100 }
@@ -1757,7 +1815,8 @@ gui.effects = {
    -- shading.  Knots is the number of knots (up to 6), which the fibres part around.  The angle rotates the grain
    -- clockwise in degrees, so that 0 is vertical and 90 is horizontal.  The seed selects a different plank, and knots
    -- are drawn from their own sequence so that adding one does not change the rest of the plank.  The colour is
-   -- opaque, so it hides the base fill unless it is translucent.
+   -- opaque, so it hides the base fill unless it is translucent.  The plank covers the bounding box by default; a size
+   -- draws it as a square of that many units in the user space of the target, reflected beyond its edges.
 
    wood = {
       kind   = 'paint',
@@ -1767,7 +1826,8 @@ gui.effects = {
          { name='contrast', type='num', default=1 },
          { name='knots',    type='num', default=0 },
          { name='angle',    type='num', default=0 },
-         { name='seed',     type='num', default=1 }
+         { name='seed',     type='num', default=1 },
+         { name='size',     type='num', default=0 }
       },
       build = function(Ctx:table!, Args:table!):str
          rnd      = effectRandom(Args.seed)
@@ -1919,7 +1979,8 @@ gui.effects = {
             ellipse(pith, k.x, k.y, k.rx * 0.15, k.ry * 0.13, k.tilt)
          end
 
-         -- The view box is scaled uniformly to cover the box, so that the grain keeps its shape on wide targets.
+         -- The view box is scaled uniformly to cover the box, so that the grain keeps its shape on wide targets.  A size
+         -- fixes the scale instead, so that targets of different sizes share the same grain.
 
          return paintPattern(Ctx, ARF_X_MID|ARF_Y_MID|ARF_SLICE, function(Pattern:obj, Viewport:obj)
             Viewport.new('VectorRectangle', { width=100, height=100, fill=shadeColour(colour, 0, 1) })
@@ -1930,7 +1991,7 @@ gui.effects = {
                check mVec.Rotate(matrix, angle, 50, 50)
             end
             addTextureLayers(grain, colour, layers)
-         end)
+         end, Args.size)
       end
    },
 
@@ -2336,6 +2397,7 @@ gui.themes = <table{ linkThemes({
          fore          = { fill = gui.palette.dark.inverse, stroke = 'none', opacity = 0.75, roundX = 4, roundY = 4, strokeWidth = 2 },
          foreHighlight = { fill = gui.palette.dark.contrast, opacity = 1 },
          foreFocus     = { stroke = gui.palette.dark.contrast, strokeWidth = 2 },
+         text          = { fill = gui.palette.dark.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
          tick          = { stroke = gui.palette.dark.text, strokeWidth = 1, opacity = 0.6 },
          disabled      = { opacity = 0.5 }
       },
@@ -2448,6 +2510,7 @@ gui.themes = <table{ linkThemes({
          foreHighlight = { fill = gui.palette.light.contrast, opacity = 1 },
          foreFocus     = { stroke = gui.palette.light.contrast, strokeWidth = 2 },
          tick          = { stroke = gui.palette.light.text, strokeWidth = 1, opacity = 0.6 },
+         text          = { fill = gui.palette.light.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
          disabled      = { opacity = 0.5 }
       },
       scrollbar = {

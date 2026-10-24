@@ -19,25 +19,25 @@ ITEM_SPACING <const> = 1.2
 SCROLL_WIDTH <const> = 12
 
 gui._dropdown = function(Options)
-   theme_name = gui.getThemeName(Options.relative.scene) -- Adopt the theme of the window that opens the dropdown
-   dropdown = table.merge(gui.themes[theme_name].dropdown, Options.theme, true, true)
+   theme_name     = gui.getThemeName(Options.relative.scene) -- Adopt the theme of the window that opens the dropdown
+   dropdown       = table.merge(gui.themes[theme_name].dropdown, Options.theme, true, true)
    parent_surface = Options.target
    parent_surface ?= Options.relative.scene.surface
 
    self = entity { -- Public variables
-      surface  = nil,
-      timeShow = 0,
-      timeHide = 0,
-      visible  = false,
-      feedback = Options.feedback,
-      x        = Options.x ?? 0,
-      y        = Options.y ?? 0,
-      relative = Options.relative,
-      width    = 0, -- Unscaled width of the menu content
-      height   = 0, -- Unscaled height of the menu content
-      scale    = 1, -- Scale applied to the menu when shown, e.g. to match a scaled client viewport
+      surface   = nil,
+      timeShow  = 0,
+      timeHide  = 0,
+      visible   = false,
+      feedback  = Options.feedback,
+      x         = Options.x ?? 0,
+      y         = Options.y ?? 0,
+      relative  = Options.relative,
+      width     = 0, -- Unscaled width of the menu content
+      height    = 0, -- Unscaled height of the menu content
+      scale     = 1, -- Scale applied to the menu when shown, e.g. to match a scaled client viewport
       lineLimit = Options.lineLimit, -- Maximum number of visible items before the menu scrolls
-      items    = { }
+      items     = { }
    }
 
    -- toggle() alternates the visible state of the menu.  A TimeLapse is supported so that rapid changes to
@@ -112,10 +112,8 @@ gui._dropdown = function(Options)
       -- The content is laid out at 1:1 and the view box scales it to fit the surface.
 
       scale = &scale > 0 ? &scale : 1
-      surface.width  = math.ceil(&width * scale)
-      surface.height = math.ceil(&height * scale)
-      &viewport.viewWidth  = surface.width / scale
-      &viewport.viewHeight = surface.height / scale
+      surface.{ width = math.ceil(&width * scale), height = math.ceil(&height * scale) }
+      &viewport.{ viewWidth = surface.width / scale, viewHeight = surface.height / scale }
 
       if &scrollbar then
          if &hItem then ensureVisible(&hItem) else &page.y = 0 end
@@ -132,9 +130,7 @@ gui._dropdown = function(Options)
             if parent_surface and parent_surface != 0 then
                local err, info = mGfx.GetSurfaceInfo(parent_surface)
                if err is ERR_Okay then
-                  target.absX   = info.absX
-                  target.absY   = info.absY
-                  target.height = info.height
+                  target.{ absX = info.absX, absY = info.absY, height = info.height }
                end
             else
                -- Desktop-hosted menus are bound by the monitor that hosts the invoking surface, as per the tooltip.
@@ -143,6 +139,7 @@ gui._dropdown = function(Options)
                if (err != ERR_Okay) or ((display.monitorHeight ?? 0) <= 0) then
                   err, display = mGfx.GetDisplayInfo(0)
                end
+
                if err is ERR_Okay then
                   target.top = display.monitorY ?? 0
                   mh = (display.monitorHeight ?? 0) > 0 ? display.monitorHeight : display.height
@@ -211,9 +208,7 @@ gui._dropdown = function(Options)
       if Item then -- Draw the newly highlighted area
          Item.text.fill = dropdown.textHighlight.fill
          Item.iconView?.fill = Item.iconHighlightFill
-         &highlight.y = Item.y
-         &highlight.height = Item.height
-         &highlight.visibility = 'visible'
+         &highlight.{ y = Item.y, height = Item.height, visibility = 'visible' }
          &surface.mtScheduleRedraw()
       else
          &highlight.visibility = 'hidden'
@@ -268,7 +263,7 @@ gui._dropdown = function(Options)
       item = &hItem
       if (not item) or (not selectable(item)) then return false end
       item.config?.feedback(item.config)
-      self?.feedback(item.config)
+      self.feedback?(item.config)
       &hide()
       return true
    end
@@ -279,15 +274,21 @@ gui._dropdown = function(Options)
       assert(Options.config, 'A config value is required to define the Menu items')
 
       &surface = obj.new('surface')
-      &surface.name     = 'menu'
-      &surface.width    = Options.width ?? 400
-      &surface.parent   = parent_surface ?? 0 -- Zero explicitly selects the host desktop
-      if not parent_surface or parent_surface is 0 then &surface.popOver = Options.relative?.scene.surface end
-      &surface.flags    = RNF_STICK_TO_FRONT|RNF_COMPOSITE|RNF_NO_FOCUS -- Key presses are forwarded by the owner
-      &surface.x        = -10000
-      &surface.y        = -10000
-      &surface.presence = SPT_NONE
-      &surface.height   = 400
+      &surface.{
+         name     = 'menu',
+         width    = Options.width ?? 400,
+         parent   = parent_surface ?? 0, -- Zero explicitly selects the host desktop
+         flags    = RNF_STICK_TO_FRONT|RNF_COMPOSITE|RNF_NO_FOCUS, -- Key presses are forwarded by the owner
+         x        = -10000,
+         y        = -10000,
+         presence = SPT_NONE,
+         height   = 400
+      }
+
+      if not parent_surface or parent_surface is 0 then
+         &surface.popOver = Options.relative?.scene.surface
+      end
+
       &surface.init()
 
       &scene = obj.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=&relative.scene })
@@ -441,9 +442,11 @@ gui._dropdown = function(Options)
 
             _, bx, by, bw, bh = vText.mtGetBoundary(0)
 
-            mi.text = vText
-            mi.textWidth = bw
-            mi.height = math.round(vText.lineSpacing * ITEM_SPACING)
+            mi.{
+               text      = vText,
+               textWidth = bw,
+               height    = math.round(vText.lineSpacing * ITEM_SPACING)
+            }
             vText.y = y + (mi.height - bh) * 0.5 - by
             if bw > widestItem then widestItem = bw end
             y += mi.height
