@@ -85,13 +85,38 @@ class extBlurFX : public extFilterEffect {
    double SX = 0, SY = 0;
 
    extBlurFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
+   // Computes the stack blur radius of each axis in bitmap pixels.  The radius is twice the standard deviation.
+
+   void radii(double &RX, double &RY) const {
+      double scale = 1.0;
+      if (Filter->ClientVector) scale = Filter->ClientVector->Transform.scale();
+
+      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+         if (Filter->AspectRatio IS VFA::NONE) {
+            // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
+            double diag = dist(0, 0, Filter->BoundWidth, Filter->BoundHeight) * INV_SQRT2;
+            RX = SX * diag * 2 * scale;
+            RY = SY * diag * 2 * scale;
+         }
+         else {
+            // Scaling is stretched independently of each axis
+            RX = SX * Filter->BoundWidth * 2 * scale;
+            RY = SY * Filter->BoundHeight * 2 * scale;
+         }
+      }
+      else {
+         RX = SX * 2 * scale;
+         RY = SY * 2 * scale;
+      }
+   }
 };
 
 //********************************************************************************************************************
 // SSE2 implementation of the stack blur pass.  The algorithm is identical to the scalar version below, but the
 // per-channel running sums are held in packed 32-bit lanes so that all four channels advance per operation.  All
 // arithmetic is integral, so the output is bit-identical to the scalar path.  Channel byte order is irrelevant
-// because every channel is processed independently and identically.
+// because every channel is processed independently and identically.  Samples outside of the line are transparent.
 
 #ifdef FILTER_SSE2
 
@@ -156,18 +181,21 @@ static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int Li
       auto sum_in  = _mm_setzero_si128();
       auto sum_out = _mm_setzero_si128();
 
+      // Pixels outside of the line are transparent, so only the first pixel contributes to the left half.
+
       auto src = line_in;
-      for (int i=0; i <= Radius; i++) {
-         const auto px = blur_read32(src);
-         stack[i] = px;
-         const auto v = blur_unpack(px);
-         sum     = _mm_add_epi32(sum, blur_mullo32(v, _mm_set1_epi32(i + 1)));
-         sum_out = _mm_add_epi32(sum_out, v);
-      }
+      for (int i=0; i < Radius; i++) stack[i] = 0;
+      stack[Radius] = blur_read32(src);
+      const auto first = blur_unpack(stack[Radius]);
+      sum     = blur_mullo32(first, _mm_set1_epi32(Radius + 1));
+      sum_out = first;
 
       for (int i=1; i <= Radius; i++) {
-         if (i <= max_index) src += PixelStep;
-         const auto px = blur_read32(src);
+         uint32_t px = 0;
+         if (i <= max_index) {
+            src += PixelStep;
+            px = blur_read32(src);
+         }
          stack[i + Radius] = px;
          const auto v = blur_unpack(px);
          sum    = _mm_add_epi32(sum, blur_mullo32(v, _mm_set1_epi32(Radius + 1 - i)));
@@ -175,7 +203,7 @@ static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int Li
       }
 
       uint32_t stack_ptr = Radius;
-      int xp = (Radius > max_index) ? max_index : Radius;
+      int xp = (Radius > max_index) ? max_index : Radius; // Index of the last pixel read from the line
       src = line_in + (xp * PixelStep);
       auto dst = line_out;
       for (int i=0; i < Count; i++) {
@@ -188,12 +216,13 @@ static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int Li
          if (stack_start >= div) stack_start -= div;
          sum_out = _mm_sub_epi32(sum_out, blur_unpack(stack[stack_start]));
 
+         uint32_t px = 0;
          if (xp < max_index) {
             src += PixelStep;
             ++xp;
+            px = blur_read32(src);
          }
 
-         const auto px = blur_read32(src);
          stack[stack_start] = px;
          sum_in = _mm_add_epi32(sum_in, blur_unpack(px));
          sum    = _mm_add_epi32(sum, sum_in);
@@ -210,9 +239,12 @@ static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int Li
 #endif
 
 //********************************************************************************************************************
-// Scalar implementation of the stack blur pass, with the same interface and output as the SSE2 version.
+// Scalar implementation of the stack blur pass, with the same interface and output as the SSE2 version.  Samples
+// outside of the line are treated as transparent black, matching the SVG edge mode of 'none'.
 
 #ifndef FILTER_SSE2
+
+static const uint8_t BLUR_ZERO[4] = { 0, 0, 0, 0 }; // Transparent pixel for samples outside of the line
 
 static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineStep, int PixelStep,
    int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum)
@@ -227,26 +259,31 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
 
       uint32_t sum[4] = { 0, 0, 0, 0 }, sum_in[4] = { 0, 0, 0, 0 }, sum_out[4] = { 0, 0, 0, 0 };
 
+      // Pixels outside of the line are transparent, so only the first pixel contributes to the left half.
+
       auto src = line_in;
-      for (int i=0; i <= Radius; i++) {
-         for (int c=0; c < 4; c++) {
-            stack[i][c] = src[c];
-            sum[c]     += src[c] * (i + 1);
-            sum_out[c] += src[c];
-         }
+      for (int i=0; i < Radius; i++) stack[i] = { 0, 0, 0, 0 };
+      for (int c=0; c < 4; c++) {
+         stack[Radius][c] = src[c];
+         sum[c]     = src[c] * (Radius + 1);
+         sum_out[c] = src[c];
       }
 
       for (int i=1; i <= Radius; i++) {
-         if (i <= max_index) src += PixelStep;
+         const uint8_t *in = BLUR_ZERO;
+         if (i <= max_index) {
+            src += PixelStep;
+            in = src;
+         }
          for (int c=0; c < 4; c++) {
-            stack[i + Radius][c] = src[c];
-            sum[c]    += src[c] * (Radius + 1 - i);
-            sum_in[c] += src[c];
+            stack[i + Radius][c] = in[c];
+            sum[c]    += in[c] * (Radius + 1 - i);
+            sum_in[c] += in[c];
          }
       }
 
       uint32_t stack_ptr = Radius;
-      int xp = (Radius > max_index) ? max_index : Radius;
+      int xp = (Radius > max_index) ? max_index : Radius; // Index of the last pixel read from the line
       src = line_in + (xp * PixelStep);
       auto dst = line_out;
       for (int i=0; i < Count; i++) {
@@ -257,16 +294,18 @@ static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineSte
          if (stack_start >= div) stack_start -= div;
          auto &start = stack[stack_start];
 
+         const uint8_t *in = BLUR_ZERO;
          if (xp < max_index) {
             src += PixelStep;
             ++xp;
+            in = src;
          }
 
          for (int c=0; c < 4; c++) {
             sum[c]     -= sum_out[c];
             sum_out[c] -= start[c];
-            start[c]    = src[c];
-            sum_in[c]  += src[c];
+            start[c]    = in[c];
+            sum_in[c]  += in[c];
             sum[c]     += sum_in[c];
          }
 
@@ -357,27 +396,8 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    auto outBmp = Self->Target;
    if (outBmp->BytesPerPixel != 4) return ERR::InvalidState;
 
-   double scale = 1.0;
-   if (Self->Filter->ClientVector) scale = Self->Filter->ClientVector->Transform.scale();
-
    double rx, ry;
-   if (Self->Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (Self->Filter->AspectRatio IS VFA::NONE) {
-         // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
-         double diag = dist(0, 0, Self->Filter->BoundWidth, Self->Filter->BoundHeight) * INV_SQRT2;
-         rx = Self->SX * diag * 2 * scale;
-         ry = Self->SY * diag * 2 * scale;
-      }
-      else {
-         // Scaling is stretched independently of each axis
-         rx = Self->SX * Self->Filter->BoundWidth * 2 * scale;
-         ry = Self->SY * Self->Filter->BoundHeight * 2 * scale;
-      }
-   }
-   else {
-      rx = Self->SX * 2 * scale;
-      ry = Self->SY * 2 * scale;
-   }
+   Self->radii(rx, ry);
 
    const bool blur_x = rx >= MIN_BLUR_RADIUS;
    const bool blur_y = ry >= MIN_BLUR_RADIUS;

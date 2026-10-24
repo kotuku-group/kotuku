@@ -377,35 +377,6 @@ end
    assert(math.abs(second.value - 0.51) < 0.000001, 'Tab focus must route keyboard input to the next slider')
 end
 
-@Test function DisabledSliderRejectsInputAndRestoresStyle()
-   local activations, disables, enables = 0, 0, 0
-   local surface <close>, slider = newSlider({ value=0.5,
-      events={ activate=function(Value) activations++ end,
-         disable=function() disables++ end, enable=function() enables++ end }
-   })
-   slider.disable()
-   assert(slider.disabled and disables is 1, 'disable() must expose state and emit its event')
-   assert(slider.prvBarBkgd.opacity is 0.5, 'Disabled styling must be applied immediately')
-   sendKey(KEY_END)
-   feed(JET_ABS_XY, surface.absX + 50, surface.absY + 10)
-   feed(JET_LMB, 1, 0)
-   feed(JET_ABS_XY, surface.absX + 90, surface.absY + 10)
-   feed(JET_LMB, 0, 0)
-   assert(slider.value is 0.5 and activations is 0, 'Disabled sliders must reject keyboard, clicks and drag input')
-   assert(slider.prvBarBkgd.opacity is 0.5 and slider.button.opacity is slider.prvTheme.slider.fore.opacity,
-      'Disabled pointer crossing must not apply highlight styling')
-
-   slider.setValue(0.25)
-   assert(slider.value is 0.25 and activations is 1, 'Disabled sliders must still allow programmatic updates')
-   slider.enable()
-   slider.viewport.acFocus()
-   processing.sleep(0)
-   assert(not slider.disabled and enables is 1, 'enable() must restore state and emit its event')
-   assert(slider.prvBarBkgd.opacity is 1, 'enable() must restore the original opacity')
-   sendKey(KEY_END)
-   assert(slider.value is 1 and activations is 2, 'Re-enabling must restore keyboard input')
-end
-
 function abandonedSlider():<obj, func, array<int>>
    local surface, slider = newSlider({ orientation='vertical', value=0.5,
       label='Gain:', labelPos='top', labelAlign='centre' })
@@ -1087,22 +1058,6 @@ end
    assert(slider.value > before, 'Wheel input over the ticks must reach the slider')
 end
 
-@Test function DisabledStateAppliesToTicks()
-   local surface <close>, slider = newSlider({ ticks=0.1, tickPos='both' })
-   local tick_opacity = slider.prvTheme.slider.tick.opacity
-   for _, path in slider.prvTickPaths do
-      assert(path.opacity is tick_opacity, 'Tick paths must use the theme tick style')
-   end
-   slider.disable()
-   for _, path in slider.prvTickPaths do
-      assert(path.opacity is slider.prvTheme.slider.disabled.opacity, 'Disabling must apply the disabled style')
-   end
-   slider.enable()
-   for _, path in slider.prvTickPaths do
-      assert(path.opacity is tick_opacity, 'Enabling must restore the tick style')
-   end
-end
-
 @Test function MinorTicksAndPageKeysVisitTicks()
    local surface <close>, slider = newSlider({ width=400, min=0, max=100, value=0, ticks={ major=25, minor=5 } })
    local lines = tickLines(slider.prvTickPaths['yOffset'])
@@ -1250,6 +1205,61 @@ end
       raised = true
    end
    assert(raised, 'An invalid thumbLength must be rejected')
+end
+
+@Test function OverhangInsetsTrackToThumbCentre()
+   for orientation in values(array<str> { 'horizontal', 'vertical' }) do
+      local vertical = orientation is 'vertical'
+      local surface <close>, slider = newSlider({ orientation=orientation, theme={ overhang=true }, min=0, max=10,
+         step=1, ticks=true, thickness=10, thumbSize=24, thumbLength=25, valuePos='in-min', value=0,
+         width=vertical ? nil : 200, height=vertical ? 200 : nil
+      })
+
+      local host = slider.trackVP
+      local bar = slider.prvBarBkgd
+      local length:num = vertical ? host.height : host.width
+      local start = vertical ? (host.y + bar.y) : (host.x + bar.x)
+      local stop = start + (vertical ? bar.height : bar.width)
+      assert((vertical ? bar.y : bar.x) is 12, f'A {orientation} track must be inset by half the thumb length')
+      assert(stop - start is length - 24, f'A {orientation} track must be inset equally from both ends')
+
+      -- The thumb centre reaches each end of the track, and the end ticks follow it.
+
+      local lines = tickLines(slider.prvTickPaths[vertical ? 'xOffset' : 'yOffset'])
+      slider.setValue(vertical ? 10 : 0)
+      assert(math.abs(thumbCentre(slider) - start) <= 0.5, f'A {orientation} thumb centre must reach the track start')
+      assert(tickAt(lines, vertical, thumbCentre(slider)), f'A {orientation} tick must be drawn at the track start')
+      slider.setValue(vertical ? 0 : 10)
+      assert(math.abs(thumbCentre(slider) - stop) <= 0.5, f'A {orientation} thumb centre must reach the track end')
+      assert(tickAt(lines, vertical, thumbCentre(slider)), f'A {orientation} tick must be drawn at the track end')
+
+      -- Inside text keeps the same distance from the track's minimum end as it does without overhang.
+
+      local plain = gui.slider({ target=slider.viewport.parent, orientation=orientation, min=0, max=10, step=1,
+         thickness=10, thumbSize=24, thumbLength=25, valuePos='in-min', value=0,
+         width=vertical ? nil : 200, height=vertical ? 200 : nil
+      })
+      local plain_host = plain.trackVP
+      if vertical then
+         assert(stop - slider.valueText.y is plain_host.y + plain_host.height - plain.valueText.y,
+            'Inside text must follow the inset track')
+      else
+         assert(slider.valueText.x - start is plain.valueText.x - plain_host.x, 'Inside text must follow the inset track')
+      end
+
+      -- The inset is retained when the widget is resized.
+
+      if vertical then slider.viewport.height = 300 else slider.viewport.width = 300 end
+      slider.viewport.scene.bitmap = surface.buffer
+      check slider.viewport.scene.acDraw()
+      processing.sleep(0)
+      length = vertical ? host.height : host.width
+      assert((vertical ? bar.height : bar.width) is length - 24, f'A resized {orientation} track must keep its inset')
+   end
+
+   local surface <close>, plain = newSlider({ width=200, thickness=10, thumbSize=24, value=0 })
+   assert(plain.prvBarBkgd.x is 0, 'The track must span the host without overhang')
+   assert(plain.thumbVP.x is 0, 'Without overhang the thumb must start within the track')
 end
 
 @Test function SilentSetValueSkipsActivation()

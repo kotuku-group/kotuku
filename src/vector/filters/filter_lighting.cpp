@@ -79,6 +79,10 @@ H = (L + E) / Norm(L + E)
 
 where `L` is the light unit vector.
 
+The light is computed in the colour space of the parent @VectorFilter.  In `SRGB` the light #Colour and the result
+are sRGB values.  In `LINEAR_RGB` the light #Colour is converted to linear RGB and the result is encoded to sRGB for
+storage, so a result of 0.5 is stored as approximately 0.735.
+
 -END-
 
 *********************************************************************************************************************/
@@ -157,6 +161,8 @@ class extLightingFX : public extFilterEffect {
    LT     Type = LT::DIFFUSE;               // Diffuse or Specular light scattering
 
    FRGB   LinearColour = { 1.0, 1.0, 1.0, 1.0 }; // Colour of the light source in linear sRGB space.
+   FRGB   LightColour = { 1.0, 1.0, 1.0, 1.0 };  // Colour of the light source in the filter's colour space.
+   bool   Linear = false;                         // True if lighting is computed in linear RGB.
    double X, Y, Z;          // Position of light source.
    LS     LightSource;      // Light source identifier, recorded for SVG output purposes only.
    bool   UnitXProvided = false, UnitYProvided = false;
@@ -287,11 +293,13 @@ FRGB extLightingFX::colour_spot_light(point3 &Point)
          scale = scale * (cosAngle - CosOuterConeAngle);
          scale *= ConeScale;
       }
-      return FRGB(LinearColour.Red * scale, LinearColour.Green * scale, LinearColour.Blue * scale, LinearColour.Alpha * scale);
+      return FRGB(LightColour.Red * scale, LightColour.Green * scale, LightColour.Blue * scale,
+         LightColour.Alpha * scale);
    }
    else {
       const double scale = pow(std::max(0.0, -Point.dot(SpotDelta)), SpotExponent);
-      return FRGB(LinearColour.Red * scale, LinearColour.Green * scale, LinearColour.Blue * scale, LinearColour.Alpha * scale);
+      return FRGB(LightColour.Red * scale, LightColour.Green * scale, LightColour.Blue * scale,
+         LightColour.Alpha * scale);
    }
 }
 
@@ -302,9 +310,16 @@ inline void extLightingFX::diffuse_light(const point3 &Normal, const point3 &STL
 {
    double scale = std::clamp((Constant * Normal.dot(STL)) * 255.0, 0.0, 255.0);
 
-   Output[R] = glLinearRGB.invert(int(Colour.Red * scale));
-   Output[G] = glLinearRGB.invert(int(Colour.Green * scale));
-   Output[B] = glLinearRGB.invert(int(Colour.Blue * scale));
+   if (Linear) {
+      Output[R] = glLinearRGB.invert(int(Colour.Red * scale));
+      Output[G] = glLinearRGB.invert(int(Colour.Green * scale));
+      Output[B] = glLinearRGB.invert(int(Colour.Blue * scale));
+   }
+   else {
+      Output[R] = int(Colour.Red * scale);
+      Output[G] = int(Colour.Green * scale);
+      Output[B] = int(Colour.Blue * scale);
+   }
    Output[A] = 255;
 }
 
@@ -320,9 +335,17 @@ inline void extLightingFX::specular_light(const point3 &Normal, const point3 &ST
    const uint8_t g = int(Colour.Green * scale);
    const uint8_t b = int(Colour.Blue * scale);
 
-   Output[R] = glLinearRGB.invert(r);
-   Output[G] = glLinearRGB.invert(g);
-   Output[B] = glLinearRGB.invert(b);
+   if (Linear) {
+      Output[R] = glLinearRGB.invert(r);
+      Output[G] = glLinearRGB.invert(g);
+      Output[B] = glLinearRGB.invert(b);
+   }
+   else {
+      Output[R] = r;
+      Output[G] = g;
+      Output[B] = b;
+   }
+
    if (LightSource IS LS::DISTANT) {
       // Alpha is chosen from the max of the linear R,G,B light value
       Output[A] = Output[R] > Output[G] ? (Output[R] > Output[B] ? Output[R] : Output[B]) : (Output[G] > Output[B] ? Output[G] : Output[B]);
@@ -369,7 +392,7 @@ void extLightingFX::render_distant(int StartY, int EndY, objBitmap *Bitmap, cons
 
       if (Type IS LT::DIFFUSE) {
          // Process left edge pixel
-         diffuse_light(leftNormal(m, NormalHeight), Direction, LinearColour, dptr, R, G, B, A);
+         diffuse_light(leftNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -377,18 +400,18 @@ void extLightingFX::render_distant(int StartY, int EndY, objBitmap *Bitmap, cons
             m[2] = row0[A]; row0 += bpp;
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
-            diffuse_light(interiorNormal(m, NormalHeight), Direction, LinearColour, dptr, R, G, B, A);
+            diffuse_light(interiorNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          // Process right edge pixel
          if (Width > 1) {
             shiftMatrixLeft(m);
-            diffuse_light(rightNormal(m, NormalHeight), Direction, LinearColour, dptr, R, G, B, A);
+            diffuse_light(rightNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
          }
       }
       else { // SPECULAR
-         specular_light(leftNormal(m, NormalHeight), Direction, LinearColour, dptr, R, G, B, A);
+         specular_light(leftNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -396,13 +419,13 @@ void extLightingFX::render_distant(int StartY, int EndY, objBitmap *Bitmap, cons
             m[2] = row0[A]; row0 += bpp;
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
-            specular_light(interiorNormal(m, NormalHeight), Direction, LinearColour, dptr, R, G, B, A);
+            specular_light(interiorNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          if (Width > 1) {
             shiftMatrixLeft(m);
-            specular_light(rightNormal(m, NormalHeight), Direction, LinearColour, dptr, R, G, B, A);
+            specular_light(rightNormal(m, NormalHeight), Direction, LightColour, dptr, R, G, B, A);
          }
       }
    }
@@ -541,7 +564,7 @@ void extLightingFX::render_point(int StartY, int EndY, objBitmap *Bitmap, const 
 
       if (Type IS LT::DIFFUSE) {
          point3 stl = read_light_delta(0, y, m[4]);
-         diffuse_light(leftNormal(m, NormalHeight), stl, LinearColour, dptr, R, G, B, A);
+         diffuse_light(leftNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
          if (Width <= 1) continue;
 
          dptr += bpp;
@@ -552,17 +575,17 @@ void extLightingFX::render_point(int StartY, int EndY, objBitmap *Bitmap, const 
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
             stl = read_light_delta(x, y, m[4]);
-            diffuse_light(interiorNormal(m, NormalHeight), stl, LinearColour, dptr, R, G, B, A);
+            diffuse_light(interiorNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          shiftMatrixLeft(m);
          stl = read_light_delta(Width-1, y, m[4]);
-         diffuse_light(rightNormal(m, NormalHeight), stl, LinearColour, dptr, R, G, B, A);
+         diffuse_light(rightNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
       }
       else { // SPECULAR
          point3 stl = read_light_delta(0, y, m[4]);
-         specular_light(leftNormal(m, NormalHeight), stl, LinearColour, dptr, R, G, B, A);
+         specular_light(leftNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
          dptr += bpp;
 
          for (int x=1; x < Width - 1; ++x) {
@@ -571,14 +594,14 @@ void extLightingFX::render_point(int StartY, int EndY, objBitmap *Bitmap, const 
             m[5] = row1[A]; row1 += bpp;
             m[8] = row2[A]; row2 += bpp;
             stl = read_light_delta(x, y, m[4]);
-            specular_light(interiorNormal(m, NormalHeight), stl, LinearColour, dptr, R, G, B, A);
+            specular_light(interiorNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
             dptr += bpp;
          }
 
          if (Width > 1) {
             shiftMatrixLeft(m);
             stl = read_light_delta(Width-1, y, m[4]);
-            specular_light(rightNormal(m, NormalHeight), stl, LinearColour, dptr, R, G, B, A);
+            specular_light(rightNormal(m, NormalHeight), stl, LightColour, dptr, R, G, B, A);
          }
       }
    }
@@ -601,6 +624,12 @@ static ERR LIGHTINGFX_Draw(extLightingFX *Self, struct acDraw *Args)
 
 void extLightingFX::draw()
 {
+   // Light is computed in the filter's colour space.  Bitmaps are always sRGB encoded, so linear results are encoded
+   // on output.
+
+   Linear = Filter->ColourSpace IS VCS::LINEAR_RGB;
+   LightColour = Linear ? LinearColour : Colour;
+
    auto lt = point3(X, Y, Z); // Light source
    auto pt = Spotlight; // Target for the light source, used by LS::SPOT only.
 
@@ -621,7 +650,7 @@ void extLightingFX::draw()
       }
    }
 
-   auto &t = Filter->ClientVector->Transform;
+   auto &t = Filter->Transform; // Maps the client's coordinates to the filter bitmaps
 
    const double scale = (t.sx IS t.sy) ? t.sx : sqrt((t.sx*t.sx) + (t.sy*t.sy)) * SQRT2DIV2;
 

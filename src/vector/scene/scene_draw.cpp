@@ -114,6 +114,24 @@ static agg::trans_affine build_matrix_transform(const VectorMatrix *Matrices)
 
 //********************************************************************************************************************
 
+// Scanlines are expressed in scene coordinates, while mask storage starts at its own origin.
+
+class scene_alpha_mask : public agg::alpha_mask_gray8 {
+   int mOriginX, mOriginY;
+
+public:
+   scene_alpha_mask(agg::rendering_buffer &Buffer, int OriginX, int OriginY) :
+      agg::alpha_mask_gray8(Buffer), mOriginX(OriginX), mOriginY(OriginY) { }
+
+   cover_type pixel(int X, int Y) const {
+      return agg::alpha_mask_gray8::pixel(X - mOriginX, Y - mOriginY);
+   }
+
+   void combine_hspan(int X, int Y, cover_type *Dest, int Count) const {
+      agg::alpha_mask_gray8::combine_hspan(X - mOriginX, Y - mOriginY, Dest, Count);
+   }
+};
+
 class SceneRenderer
 {
 private:
@@ -137,6 +155,7 @@ public:
       public:
       agg::rendering_buffer m_renderer;
       extVectorClip *m_clip;
+      int m_origin_x = 0, m_origin_y = 0;
 
       public:
 
@@ -153,7 +172,8 @@ public:
       void draw_userspace(SceneRenderer &);
       bool use_cached_mask(const agg::trans_affine &, double, double);
       void store_cached_mask(const agg::trans_affine &, double, double);
-      void resize_bitmap(int, int);
+      void resize_bitmap(int, int, int = 0, int = 0);
+      scene_alpha_mask mask() { return scene_alpha_mask(m_renderer, m_origin_x, m_origin_y); }
    };
 
 private:
@@ -616,18 +636,36 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
    }
 
    if (Viewport) {
+      // A render origin maps the bitmap onto a region of the scene that can start at negative coordinates, as for
+      // a filter's SourceGraphic.  This uses the same offset convention as buffered viewports.
+
+      mBitmapOriginX = Scene->RenderOriginX;
+      mBitmapOriginY = Scene->RenderOriginY;
+      auto save_data = Bitmap->offset(-mBitmapOriginX, -mBitmapOriginY);
+
       mBitmap = Bitmap;
       mFormat.setBitmap(*Bitmap);
       mRenderBase.attach(mFormat);
 
       mView = nullptr; // Current view
-      mRenderBase.clip_box(Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right-1, Bitmap->Clip.Bottom-1);
+
+      // The clip box is assigned directly because clip_box() would clip it to the dimensions of the pixel format,
+      // which do not apply when there is a render origin.
+
+      mRenderBase.m_clip_box = agg::rect_i(Bitmap->Clip.Left + mBitmapOriginX, Bitmap->Clip.Top + mBitmapOriginY,
+         Bitmap->Clip.Right - 1 + mBitmapOriginX, Bitmap->Clip.Bottom - 1 + mBitmapOriginY);
 
       // Pre-size the input boundary buffer based on the previous frame's boundary count to avoid growth reallocations.
       mInputBounds.reserve(Scene->InputBoundaries.size());
 
       VectorState state;
+      if (mBitmapOriginX < 0) state.mClip.left = mBitmapOriginX;
+      if (mBitmapOriginY < 0) state.mClip.top = mBitmapOriginY;
       draw_vectors((extVector *)Viewport, state);
+
+      Bitmap->Data = save_data;
+      mBitmapOriginX = 0;
+      mBitmapOriginY = 0;
 
       Scene->InputBoundaries = std::move(mInputBounds);
       Scene->SubtreeDirty = false;
@@ -714,8 +752,8 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
       if (not mClipStack.empty()) {
-         agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
-         agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
+         auto alpha_mask = mClipStack.top().mask();
+         agg::scanline_u8_am<scene_alpha_mask> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
       }
       else agg::render_scanlines(raster, mScanLine, renderer);
@@ -725,8 +763,8 @@ void SceneRenderer::render_stroke(VectorState &State, extVector &Vector)
       renderer.color(agg::rgba(Vector.Stroke.Colour, Vector.Stroke.Colour.Alpha * Vector.StrokeOpacity * State.mOpacity));
 
       if (not mClipStack.empty()) {
-         agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
-         agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
+         auto alpha_mask = mClipStack.top().mask();
+         agg::scanline_u8_am<scene_alpha_mask> mScanLineMasked(alpha_mask);
          agg::render_scanlines(raster, mScanLineMasked, renderer);
       }
       else agg::render_scanlines(raster, mScanLine, renderer);
@@ -810,17 +848,24 @@ bool SceneRenderer::shape_intersects_clip(extVector *Shape)
 //********************************************************************************************************************
 // Composites a filter's output into the render target.  The output is an sRGB-encoded source image that is drawn 1:1
 // through the render target with the vector's resolved blend mode, so the result is the same whether or not a mask
-// applies.  Filter bitmaps use absolute clip coordinates, which suits buffered viewport targets because their Data
-// pointer is shifted so that rasterisation can address absolute scene coordinates.
+// applies.  Filter bitmaps use local coordinates in which (0,0) is the top-left of Filter->VectorClip.  The render
+// target is addressed in absolute scene coordinates, including buffered viewport targets because their Data pointer
+// is shifted for rasterisation.
 
 void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filter, BLM BlendMode, double Opacity)
 {
    // Restrict only the final copy.  Filter inputs must retain pixels outside this clip for offsets and blur kernels.
+   // The (dest_x, dest_y) values are absolute scene coordinates and (src_x, src_y) are local to the filter bitmap.
+
+   const int origin_x = Filter->VectorClip.left;
+   const int origin_y = Filter->VectorClip.top;
    const auto &clip = mRenderBase.clip_box();
-   const int src_x = std::max(Bitmap->Clip.Left, clip.x1);
-   const int src_y = std::max(Bitmap->Clip.Top, clip.y1);
-   const int width = std::min(Bitmap->Clip.Right, clip.x2 + 1) - src_x;
-   const int height = std::min(Bitmap->Clip.Bottom, clip.y2 + 1) - src_y;
+   const int dest_x = std::max(Bitmap->Clip.Left + origin_x, clip.x1);
+   const int dest_y = std::max(Bitmap->Clip.Top + origin_y, clip.y1);
+   const int width = std::min(Bitmap->Clip.Right + origin_x, clip.x2 + 1) - dest_x;
+   const int height = std::min(Bitmap->Clip.Bottom + origin_y, clip.y2 + 1) - dest_y;
+   const int src_x = dest_x - origin_x;
+   const int src_y = dest_y - origin_y;
 
    if ((width <= 0) or (height <= 0)) return;
 
@@ -836,10 +881,10 @@ void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filte
          // CopyArea() clips against the bitmap dimensions, so a buffered target is addressed in local coordinates.
          auto save_data = mBitmap->offset(mBitmapOriginX, mBitmapOriginY);
          gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height,
-            src_x - mBitmapOriginX, src_y - mBitmapOriginY);
+            dest_x - mBitmapOriginX, dest_y - mBitmapOriginY);
          mBitmap->Data = save_data;
       }
-      else gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height, src_x, src_y);
+      else gfx::CopyArea(Bitmap, mBitmap, BAF::BLEND|BAF::COPY, src_x, src_y, width, height, dest_x, dest_y);
       return;
    }
 
@@ -850,10 +895,11 @@ void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filte
 
    if (not mClipStack.empty()) {
       agg::rasterizer_scanline_aa<> raster;
-      basic_path(raster, src_x, src_y, src_x + width, src_y + height);
-      agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
-      agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
-      drawBitmap(masked_scanline, VSM::NEIGHBOUR, mRenderBase, raster, Bitmap, VSPREAD::CLIP, opacity);
+      basic_path(raster, dest_x, dest_y, dest_x + width, dest_y + height);
+      auto alpha_mask = mClipStack.top().mask();
+      agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
+      drawBitmap(masked_scanline, VSM::NEIGHBOUR, mRenderBase, raster, Bitmap, VSPREAD::CLIP, opacity, nullptr,
+         -origin_x, -origin_y);
       return;
    }
 
@@ -879,7 +925,7 @@ void SceneRenderer::copy_filter_bitmap(objBitmap *Bitmap, extVectorFilter *Filte
             span[i] = agg::rgba8(s[order.Red], s[order.Green], s[order.Blue], s[order.Alpha]);
          }
       }
-      mFormat.blend_color_hspan(src_x, y, width, span, nullptr, 255);
+      mFormat.blend_color_hspan(dest_x, y + origin_y, width, span, nullptr, 255);
    }
 }
 
@@ -939,7 +985,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          if ((not container) and (shape->classID() IS CLASSID::VECTORVIEWPORT)) container = (extVectorViewport *)shape;
 
          objBitmap *bmp;
-         if ((container) and (not render_filter(filter, container, shape, mBitmap, state.mColourSpace, &bmp))) {
+         if ((container) and (not render_filter(filter, container, shape, mBitmap, state.mColourSpace, &bmp,
+               mBitmapOriginX, mBitmapOriginY))) {
             copy_filter_bitmap(bmp, filter, state.mBlendMode, state.mOpacity);
          }
          continue;
@@ -964,13 +1011,17 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       objBitmap *bmpSave = nullptr;
       int save_origin_x = 0;
       int save_origin_y = 0;
+      int isolated_x = 0, isolated_y = 0;
+      uint8_t *isolated_data = nullptr;
       if ((shape->Flags & VF::ISOLATED) != VF::NIL) {
          if (not shape->IsolatedBuffer) shape->IsolatedBuffer.reset(new (std::nothrow) filter_bitmap);
          if (shape->IsolatedBuffer) {
             auto &clip_box = mRenderBase.clip_box();
-            TClipRectangle<int> isolated_clip(clip_box.x1, clip_box.y1, clip_box.x2 + 1, clip_box.y2 + 1);
+            isolated_x = clip_box.x1;
+            isolated_y = clip_box.y1;
+            TClipRectangle<int> isolated_clip(0, 0, clip_box.x2 + 1 - isolated_x, clip_box.y2 + 1 - isolated_y);
 
-            bmpBkgd = shape->IsolatedBuffer->get_bitmap(mBitmap->Width, mBitmap->Height, isolated_clip, false,
+            bmpBkgd = shape->IsolatedBuffer->get_bitmap(isolated_clip.right, isolated_clip.bottom, isolated_clip, false,
                shape->UID, "isolated_bkgd");
          }
 
@@ -982,10 +1033,11 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
             mBitmap = bmpBkgd;
             save_origin_x = mBitmapOriginX;
             save_origin_y = mBitmapOriginY;
-            mBitmapOriginX = 0;
-            mBitmapOriginY = 0;
+            mBitmapOriginX = isolated_x;
+            mBitmapOriginY = isolated_y;
+            isolated_data = bmpBkgd->offset(-isolated_x, -isolated_y);
             mFormat.setBitmap(*bmpBkgd);
-            clearmem(bmpBkgd->CreatorMeta, bmpBkgd->LineWidth * (bmpBkgd->Clip.Bottom - bmpBkgd->Clip.Top));
+            clearmem(bmpBkgd->CreatorMeta, bmpBkgd->LineWidth * bmpBkgd->Height);
             state.mIsolated = true;
          }
       }
@@ -1263,8 +1315,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                      mFormat.setBlendMode(composite_blend_mode(state.mBlendMode));
 
                      if (not mClipStack.empty()) {
-                        agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
-                        agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+                        auto alpha_mask = mClipStack.top().mask();
+                        agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
                         drawBitmap(masked_scanline, VSM::AUTO, mRenderBase, raster, view->vpBuffer, VSPREAD::CLIP, view->Opacity,
                            &transform);
                      }
@@ -1366,7 +1418,8 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
       if (bmpBkgd) {
          agg::rasterizer_scanline_aa raster;
 
-         basic_path(raster, bmpBkgd->Clip.Left, bmpBkgd->Clip.Top, bmpBkgd->Clip.Right, bmpBkgd->Clip.Bottom);
+         bmpBkgd->Data = isolated_data;
+         basic_path(raster, isolated_x, isolated_y, isolated_x + bmpBkgd->Width, isolated_y + bmpBkgd->Height);
 
          mBitmap = bmpSave;
          mBitmapOriginX = save_origin_x;
@@ -1374,13 +1427,15 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
          mFormat.setBitmap(*mBitmap);
          mFormat.setBlendMode(composite_blend_mode(state.mBlendMode));
          if (not mClipStack.empty()) {
-            agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
-            agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
-            drawBitmap(masked_scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
+            auto alpha_mask = mClipStack.top().mask();
+            agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
+            drawBitmap(masked_scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0,
+               nullptr, -isolated_x, -isolated_y);
          }
          else {
             agg::scanline_u8 scanline;
-            drawBitmap(scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0);
+            drawBitmap(scanline, shape->Scene->SampleMethod, mRenderBase, raster, bmpBkgd, VSPREAD::CLIP, 1.0,
+               nullptr, -isolated_x, -isolated_y);
          }
       }
    } // for loop

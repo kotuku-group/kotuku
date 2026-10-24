@@ -355,13 +355,13 @@ end
 @Test global function W3Struct08() hashTestSVG('struct/w3-struct-group-01-t.svg', 0xb87251f5) end
 @Test global function W3Struct09() hashTestSVG('struct/w3-struct-group-02-b.svg', 0x38b67cdb) end
 
-@Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0xedc2c5e4) end
+@Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0x8a817d23) end
 @Test global function Composite()          hashTestSVG('filters/composite.svg', 0x4f27d768) end
 @Test global function CompositeClamp()     hashTestSVG('filters/composite_linear_clamp.svg', 0x137886b9) end
 @Test global function Convolve()           hashTestSVG('filters/convolve.svg', 0xb178111b) end
 @Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x87bad74f) end
 @Test global function ConvolveUnit05()     hashTestSVG('filters/kernel_unit_length_0_5.svg', 0x19e54151) end
-@Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0x4e4b38f5) end
+@Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0x5d1fa547) end
 @Test global function ScaledLighting()     hashTestSVG('filters/lighting_scale.svg', 0x0ba5705d) end
 @Test global function W3Composite1()       hashTestSVG('filters/w3-composite.svg', 0xbb92e235) end
 @Test global function W3Composite2()       hashTestSVG('filters/w3-filters-composite-02-b.svg', 0x02b30491) end
@@ -389,7 +389,7 @@ end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0x18a4ae74) end
 @Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x6503125d) end
 @Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x67fadbc7) end
-@Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x8806e9ac) end
+@Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x2a996913) end
 @Test global function WaveFunction()       hashTestSVG('filters/wavefunction.svg', 0x9dbdcd62) end
 
 @Test global function Transformations()   hashTestSVG('transforms/transformations.svg', 0x310b69c3) end
