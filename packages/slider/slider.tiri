@@ -4,7 +4,7 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui'
+   import 'gui', 'gui/layout'
 
    module vector as mVec
    include 'vector'
@@ -17,7 +17,6 @@ MARGIN <const>            = math.floor(FONT_HEIGHT * 0.5) + 1
 VALUE_INSET <const>       = 2 -- Minimum space between vertical value text and the track's sides
 DIGITS <const>            = r'[0-9]'
 MAX_PLACES <const>        = 10 -- Maximum decimal places in the value readout
-TEXT_METRICS <const>      = { } -- Cache of line spacing and cap height, keyed by font
 TICK_LENGTH <const>       = math.floor(FONT_HEIGHT * 0.5) -- Length of major ticks
 TICK_MINOR_LENGTH <const> = math.round(TICK_LENGTH * 0.6)
 TICK_GAP <const>          = math.floor(FONT_HEIGHT * 0.25) -- Space between the track's host and its ticks
@@ -34,22 +33,6 @@ function decimalPlaces(Value:num!):num
       if scaled >= 1e12 then return nil end
    end
    return nil
-end
-
--- Measure the font that a label or value text actually renders with.  Theme text styles can override the label font,
--- and gui.getFontHeight() treats numeric gui.fonts sizes as pixels whereas the text renders them as points.
-
-function textMetrics(Text:obj!):<num, num>
-   key = f'{Text.face}|{Text.fontStyle}|{Text.fontSize}'
-   cached = TEXT_METRICS[key]
-   if not cached then
-      _, handle = check mVec.GetFontHandle(Text.face, Text.fontStyle, 0, tonumber(Text.fontSize))
-      metrics = struct<FontMetrics>
-      check mVec.GetFontMetrics(handle, metrics)
-      cached = { lineSpacing = metrics.lineSpacing, ascent = metrics.ascent }
-      TEXT_METRICS[key] = cached
-   end
-   return cached.lineSpacing, cached.ascent
 end
 
 -- Thin a sorted list of tick values until adjacent ticks are at least TICK_MIN_SPACING pixels apart.  Every Nth tick
@@ -99,6 +82,7 @@ gui.slider = function(Options:table!)
       valuePos   = Options.valuePos,
       labelPos   = Options.labelPos ?? 'left',
       labelAlign = Options.labelAlign ?? 'left',
+      labelWidth = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
       thickness  = Options.thickness ?? DEFAULT_THICKNESS, -- Breadth of the track
       thumbSize  = Options.thumbSize ? Options.thumbSize : '100%', -- Pixels or % of thickness
       thumbLength = Options.thumbLength, -- Thumb size along the track in pixels or % of thickness; defaults to thumbSize
@@ -480,7 +464,7 @@ gui.slider = function(Options:table!)
             end
          end
 
-         &prvValueHeight, ascent = textMetrics(&valueText)
+         &prvValueHeight, ascent = gui.layout.textMetrics(&valueText)
          &prvValueBaseline = (&prvValueHeight + ascent) * 0.5
          &valueText.string = string.format(format, &value)
 
@@ -556,45 +540,47 @@ gui.slider = function(Options:table!)
          &valueText.y = y
       end,
 
-      -- Labels are placed in a line of prvTextHeight across the reading direction, with their capitals centred in
-      -- it.  Centred labels follow the track, which excludes space reserved for outside value text.
+      -- Labels are placed in a line of the label's lineHeight across the reading direction, with their capitals
+      -- centred in it.  Centred stacked labels on vertical sliders follow the track, which excludes space reserved
+      -- for outside value text.  Rotated side labels align their breadth within the slot.
 
       prvPlaceLabel = function(Width:num!, Height:num!)
+         label = &prvLabel
          host = &trackVP
          if &orientation is 'V' then
+            label.place(Width, Height)
             label_height = &labelText.textWidth
-            side = (&labelPos is 'left') or (&labelPos is 'right')
-            track_x = host ? host.x : 0
-            track_width = Width - track_x - (host ? host.xOffset : 0)
+            line_height = label.lineHeight
+            local x:num, y:num
 
-            x = side ? ((&labelPos is 'right') ? Width - &prvTextHeight : 0) :
-               ((&labelAlign is 'centre') ? track_x + ((track_width - &prvTextHeight) * 0.5) :
-                  ((&labelAlign is 'right') ? Width - &prvTextHeight : 0))
-
-            y = side ? (Height - label_height) * 0.5 :
-               ((&labelPos is 'bottom') ? Height - label_height : 0)
+            if label.stacked then
+               track_x = host ? host.x : 0
+               track_width = Width - track_x - (host ? host.xOffset : 0)
+               x = choose &labelAlign from
+                  'centre' -> track_x + ((track_width - line_height) * 0.5)
+                  'right'  -> Width - line_height
+                  else     -> 0
+               end
+               y = 0
+            else
+               x = choose &labelAlign from
+                  'centre' -> (label.breadth - line_height) * 0.5
+                  'right'  -> label.breadth - line_height
+                  else     -> 0
+               end
+               y = (Height - label_height) * 0.5
+            end
 
             -- The rotated capitals extend to the left of the baseline.
 
-            &labelText.x = math.round(x + &prvTextBaseline)
+            &labelText.x = math.round(x + label.baseline)
             &labelText.y = y + label_height
 
             check mVec.ResetMatrix(&prvLabelMatrix)
             check mVec.Rotate(&prvLabelMatrix, -90, &labelText.x, &labelText.y)
-         elseif (&labelPos is 'left') or (&labelPos is 'right') then
-            track_y = host ? host.y : 0
-            track_height = Height - track_y - (host ? host.yOffset : 0)
-            &labelText.x = (&labelPos is 'right') ? Width - &labelText.textWidth : 0
-            &labelText.y = math.round(track_y + &prvTextBaseline + ((track_height - &prvTextHeight) * 0.5))
          else
-            &labelText.x = choose &labelAlign from
-               'centre' -> Width * 0.5
-               'right'  -> Width
-               else     -> 0
-            end
-
-            &labelText.y = math.round((&labelPos is 'top') ? &prvTextBaseline :
-               Height - &prvTextHeight + &prvTextBaseline)
+            track_y = host ? host.y : 0
+            label.place(Width, Height, track_y, Height - track_y - (host ? host.yOffset : 0))
          end
       end,
 
@@ -642,10 +628,7 @@ gui.slider = function(Options:table!)
       assert(target, 'A target viewport is required.')
       assert(&max > &min, 'The min/max values are invalid.')
       assert(&step >= 0, 'The step value cannot be negative.')
-      assert((&labelPos is 'left') or (&labelPos is 'right') or (&labelPos is 'top') or (&labelPos is 'bottom'),
-         f"Invalid labelPos '{&labelPos}'")
-      assert((&labelAlign is 'left') or (&labelAlign is 'centre') or (&labelAlign is 'right'),
-         f"Invalid labelAlign '{&labelAlign}'")
+      gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       assert((&valuePos is nil) or (&valuePos is 'in-min') or (&valuePos is 'in-centre')
          or (&valuePos is 'in-max') or (&valuePos is 'out-min') or (&valuePos is 'out-centre')
@@ -666,7 +649,6 @@ gui.slider = function(Options:table!)
       &prvTickPaths = { }
       &prvTickStops = array<double>
       &prvTickSpace = 0
-      &prvLabelSize = 0
       &value = &prvSnap(&value)
 
       assert((&thickness is <num>) and (&thickness > 0), f"Invalid thickness '{&thickness}'")
@@ -708,56 +690,30 @@ gui.slider = function(Options:table!)
       &viewport = target.new('VectorViewport', vps)
 
       host = { x = 0, y = 0, xOffset = 0, yOffset = 0 }
+
       if &label then
-         stacked = (&labelPos is 'top') or (&labelPos is 'bottom')
-         &labelText = &viewport.new('VectorText', table.merge({
-            name      = 'Label',
-            x         = 0,
-            y         = 0,
-            face      = gui.fonts.label.face,
-            fontSize  = string.format('%.2fpt', gui.fonts.label.size),
-            fontStyle = gui.fonts.label.style,
-            string    = &label,
-            lineLimit = 1
-         }, &prvTheme.text))
+         &prvLabel = gui.layout.label(&viewport, {
+            string = &label, pos = &labelPos, align = &labelAlign, width = &labelWidth, style = &prvTheme.text,
+            rotated = &orientation is 'V'
+         })
+         &labelText = &prvLabel.text
 
-         &prvTextHeight, ascent = textMetrics(&labelText)
-         &prvTextBaseline = (&prvTextHeight + ascent) * 0.5
-
-         vertical_label = &orientation is 'V'
-         &labelText.align = (not vertical_label and stacked and (&labelAlign is 'centre')) ? 'middle' :
-            ((not vertical_label and stacked and (&labelAlign is 'right')) ? 'end' : 'start')
-         if vertical_label then
+         if &orientation is 'V' then
             _, matrix = check &labelText.mtNewMatrix(false)
             &prvLabelMatrix = matrix
          end
 
-         label_width   = vertical_label ? &prvTextHeight : &labelText.textWidth
-         label_height  = vertical_label ? &labelText.textWidth : &prvTextHeight
-         &prvLabelSize = (stacked ? label_height : label_width) + MARGIN
-
-         choose &labelPos from
-            'left'   -> host.x       = &prvLabelSize
-            'right'  -> host.xOffset = &prvLabelSize
-            'top'    -> host.y       = &prvLabelSize
-            'bottom' -> host.yOffset = &prvLabelSize
-         end
+         &prvLabel.reserve(host)
 
          -- Expand default dimensions for the label; explicit and stretched dimensions include it.
 
-         if Options.width is nil and not (Options.x != nil and Options.xOffset != nil) then
-            &viewport.width = stacked ? math.max(&viewport.width, label_width) : &viewport.width + &prvLabelSize
-         end
-
-         if Options.height is nil and not (Options.y != nil and Options.yOffset != nil) then
-            &viewport.height = stacked ? &viewport.height + &prvLabelSize : math.max(&viewport.height, label_height)
-         end
+         width, height = &prvLabel.expand(&viewport.width, &viewport.height)
+         if &prvAutoWidth then &viewport.width = width end
+         if &prvAutoHeight then &viewport.height = height end
 
          &prvPlaceLabel(&viewport.width, &viewport.height)
 
-         local label_text = &labelText
-
-         label_text.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+         &prvLabel.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
             &prvPlaceLabel(Width, Height)
          end
       end

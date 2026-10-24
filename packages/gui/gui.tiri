@@ -1632,7 +1632,9 @@ end
 
 thunk scaledPixels(Values:table!):table
    scale = gui.interface.dpi / 96
-   for k, v in Values do Values[k] = math.round(v * scale) end
+   for k, v in Values do
+      Values[k] = math.round(v * scale)
+   end
    return Values
 end
 
@@ -1646,7 +1648,8 @@ gui.sizing = { -- Universal sizing information
    widget = scaledPixels({
       width  = 160, -- Default width for common widgets (px at 96 DPI)
       gap    = 6,   -- Recommended gap between widgets (px at 96 DPI)
-      margin = 6    -- Recommended internal margin for widgets (px at 96 DPI)
+      margin = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
+      labelGap = 12 -- Spacing between labels and the widget parts
    })
 }
 
@@ -2088,6 +2091,7 @@ gui.effects = {
          { name='k3',        type='num', default=0.552 }
          -- 218, 23, 0.0292, specular, 0.87, 1.131, 4, 1.81, 0.412, 0.552
          -- 87, 65, 0.006, specular, 1.34, 0.5, 42, 1, 0.26, 0.56
+         -- highlight: 214 24 0.0328 specular 0.87 1.447 14 1.464 0.492 0.269
       },
       build = function(Ctx:table!, Args:table!):obj
          filter = Ctx.filter

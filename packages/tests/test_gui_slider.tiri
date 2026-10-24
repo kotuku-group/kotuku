@@ -1,5 +1,6 @@
    import 'gui', 'gui/slider', 'gui/scrollbar'
    include 'display', 'vector'
+   module display as mGfx
    module vector as mVec
 
 function newSlider(Options:table!):<obj, table>
@@ -52,6 +53,13 @@ function feed(Type:num!, X:num!, Y:num!, Flags:num)
    processing.sleep(0)
 end
 
+-- Return the label text origin in the slider viewport's coordinates.  The text is positioned within its slot.
+
+function labelOrigin(Slider:table!):<num, num>
+   local slot = Slider.prvLabel.slot
+   return slot.x + Slider.labelText.x, slot.y + Slider.labelText.y
+end
+
 @BeforeEach function resetPointer()
    if obj.find('SystemPointer') then feed(JET_ABS_XY, 1000, 1000) end
 end
@@ -60,7 +68,7 @@ end
    local surface <close>, slider = newSlider({ width=240, height=40, label='Resolution:', value=0.5 })
    assert(slider.viewport.width is 240 and slider.viewport.height is 40,
       'Explicit dimensions must describe the whole labelled widget')
-   assert(slider.trackVP.width is 240 - slider.prvLabelSize,
+   assert(slider.trackVP.width is 240 - slider.prvLabel.size,
       'The horizontal track must occupy the width remaining after the label')
    assert(slider.thumbVP.y is math.floor((40 - slider.prvThumbSize) * 0.5),
       'The horizontal thumb must be centred within an explicit height')
@@ -78,7 +86,7 @@ end
 
    local default_slider = gui.slider({ target=slider.viewport.parent, label='Resolution:' })
    assert(default_slider.trackVP.width is 100
-      and default_slider.viewport.width is 100 + default_slider.prvLabelSize,
+      and default_slider.viewport.width is 100 + default_slider.prvLabel.size,
       'The default horizontal track must remain 100 pixels long, excluding the label')
    local default_vertical = gui.slider({ target=slider.viewport.parent, orientation='vertical' })
    assert(default_vertical.viewport.height is 100
@@ -383,7 +391,7 @@ function abandonedSlider():<obj, func, array<int>>
    local weak_slider <weak> = slider
    return surface, function():table return weak_slider end,
       array<int> { slider.viewport.id, slider.trackVP.id, slider.thumbVP.id, slider.button.id,
-         slider.labelText.id }
+         slider.labelText.id, slider.prvLabel.slot.id }
 end
 
 @Test function NativeCallbacksDoNotRetainSlider()
@@ -429,19 +437,20 @@ end
          local stacked = (position is 'top') or (position is 'bottom')
          assert(slider.viewport.width is 240 and slider.viewport.height is 180,
             'Label placement must preserve explicit widget dimensions')
-         assert(host.x is ((position is 'left') ? slider.prvLabelSize : 0)
-            and host.y is ((position is 'top') ? slider.prvLabelSize : 0),
+         assert(host.x is ((position is 'left') ? slider.prvLabel.size : 0)
+            and host.y is ((position is 'top') ? slider.prvLabel.size : 0),
             'Left and top labels must shift the track origin')
-         assert(host.width is 240 - (stacked ? 0 : slider.prvLabelSize)
-            and host.height is 180 - (stacked ? slider.prvLabelSize : 0),
+         assert(host.width is 240 - (stacked ? 0 : slider.prvLabel.size)
+            and host.height is 180 - (stacked ? slider.prvLabel.size : 0),
             'Every label position must reserve space outside the track')
          if orientation is 'horizontal' then
-            assert(slider.labelText.x is ((position is 'right') ? 240 - slider.labelText.textWidth : 0),
+            local label_x, label_y = labelOrigin(slider)
+            assert(label_x is ((position is 'right') ? 240 - slider.labelText.textWidth : 0),
                'Horizontal labels must use the expected text origin')
             if position is 'top' then
-               assert(slider.labelText.y < host.y, 'The top label baseline must remain above the track')
+               assert(label_y < host.y, 'The top label baseline must remain above the track')
             elseif position is 'bottom' then
-               assert(slider.labelText.y > host.height, 'The bottom label baseline must remain below the track')
+               assert(label_y > host.height, 'The bottom label baseline must remain below the track')
             end
          else
             slider.viewport.scene.bitmap = surface.buffer
@@ -491,21 +500,21 @@ end
             local anchor = (alignment is 'centre') ? 0.5 : ((alignment is 'right') ? 1 : 0)
             local native_align = (alignment is 'centre') ? ALIGN_HORIZONTAL :
                ((alignment is 'right') ? ALIGN_RIGHT : ALIGN_LEFT)
+            local initial_x, baseline = labelOrigin(slider)
             if orientation is 'horizontal' then
-               assert(slider.labelText.x is slider.viewport.width * anchor and slider.labelText.align is native_align,
+               assert(initial_x is slider.viewport.width * anchor and slider.labelText.align is native_align,
                   'Horizontal top/bottom labels must use the requested text anchor and alignment')
             else
                assert(slider.labelText.align is ALIGN_LEFT, 'Rotated labels must retain their baseline origin')
             end
-            local initial_x = slider.labelText.x
-            local baseline = slider.labelText.y
             slider.viewport.parent.width = 600
             slider.viewport.parent.height = 400
             slider.viewport.scene.bitmap = surface.buffer
             check slider.viewport.scene.acDraw()
-            assert(math.abs(slider.labelText.x - initial_x - (100 * anchor)) < 0.000001,
+            local label_x, label_y = labelOrigin(slider)
+            assert(math.abs(label_x - initial_x - (100 * anchor)) < 0.000001,
                'Resizing must preserve alignment against the whole widget width')
-            assert(slider.labelText.y is baseline + ((position is 'bottom') ? 100 : 0),
+            assert(label_y is baseline + ((position is 'bottom') ? 100 : 0),
                'Only bottom labels must move their baseline when height increases')
          end
       end
@@ -781,6 +790,146 @@ end
    end
 end
 
+@Test function LabelWidthReservesFixedSlot()
+   local gap = gui.sizing.widget.labelGap
+   for position in values(array<str> { 'left', 'right' }) do
+      local surface <close>, slider = newSlider({ label='Gain:', labelPos=position, labelWidth=90 })
+      local parent = slider.viewport.parent
+      local plain = gui.slider({ target=parent, y=60, label='Gain:', labelPos=position })
+      assert(slider.prvLabel.size is 90 + gap and slider.prvLabel.slot.width is 90,
+         f'{position}: labelWidth must set the slot breadth, not the text width')
+      assert(plain.prvLabel.size is plain.labelText.textWidth + gap,
+         f'{position}: the slot must default to the text width')
+      assert(slider.trackVP.width is 100 and slider.viewport.width is 100 + 90 + gap,
+         f'{position}: default dimensions must add the fixed slot to the default track')
+      assert(((position is 'left') ? slider.trackVP.x : slider.trackVP.xOffset) is 90 + gap,
+         f'{position}: the track must start after the slot and the gap')
+
+      local stretched = gui.slider({ target=parent, y=120, x=0, xOffset=0, label='Gain:', labelPos=position,
+         labelWidth=90 })
+      assert(stretched.trackVP.width is 500 - 90 - gap, f'{position}: stretched widgets must include the slot')
+      parent.width = 600
+      slider.viewport.scene.bitmap = surface.buffer
+      check slider.viewport.scene.acDraw()
+      local slot_x = (position is 'right') ? 600 - 90 : 0
+      assert(stretched.prvLabel.slot.x is slot_x and stretched.prvLabel.slot.width is 90,
+         f'{position}: the slot must follow resizing without changing its breadth')
+   end
+end
+
+@Test function SharedLabelWidthAlignsTracks()
+   for position in values(array<str> { 'left', 'right' }) do
+      local surface <close>, short = newSlider({ label='A:', labelPos=position, labelWidth=120, width=300 })
+      local long = gui.slider({ target=short.viewport.parent, y=60, label='Resolution:', labelPos=position,
+         labelWidth=120, width=300 })
+      assert(short.labelText.textWidth < long.labelText.textWidth, 'The labels must differ in width')
+      assert(short.trackVP.x is long.trackVP.x and short.trackVP.width is long.trackVP.width,
+         f'{position}: sliders sharing a labelWidth must start and end their tracks together')
+   end
+end
+
+@Test function SideLabelAlignmentWithinSlot()
+   for orientation in values(array<str> { 'horizontal', 'vertical' }) do
+      for position in values(array<str> { 'left', 'right' }) do
+         local surface <close>, slider = newSlider({ x=-1000, label='Gain:' })
+         local bounds = { }
+         for alignment in values(array<str> { 'left', 'centre', 'right' }) do
+            local s = gui.slider({ target=slider.viewport.parent, x=20, y=20, width=240, height=180,
+               orientation=orientation, label='Gain:', labelPos=position, labelAlign=alignment, labelWidth=60 })
+            slider.viewport.scene.bitmap = surface.buffer
+            check slider.viewport.scene.acDraw()
+            local _, x, _, width = check s.labelText.mtGetBoundary(0)
+            -- Rotated labels align their line height across the slot, not the breadth of the ink.
+
+            bounds[alignment] = { x = x, breadth = (orientation is 'vertical') ? s.prvLabel.lineHeight :
+               s.labelText.textWidth }
+            local slot_x = 20 + ((position is 'right') ? 240 - 60 : 0)
+            assert(x >= slot_x - 1 and x + width <= slot_x + 61,
+               f'{orientation}/{position}/{alignment}: the label must stay within its slot')
+            s.viewport.free()
+         end
+
+         local left, centre, right = bounds.left, bounds.centre, bounds.right
+         local spare = 60 - left.breadth
+         assert(spare > 10, 'The slot must be wider than the label')
+         assert(math.abs(right.x - left.x - spare) <= 1.5,
+            f'{orientation}/{position}: right alignment must move the label to the end of the slot')
+         assert(math.abs(centre.x - left.x - (spare * 0.5)) <= 1,
+            f'{orientation}/{position}: centre alignment must centre the label in the slot')
+      end
+   end
+end
+
+@Test function OverlongLabelsClipToSlot()
+   local surface <close>, slider = newSlider({ x=-1000 })
+   local root = slider.viewport.parent
+   root.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,0,255)' })
+   local clipped = gui.slider({ target=root, x=0, y=0, label='WWWWWWWWWWWW', labelWidth=20 })
+   assert(clipped.prvLabel.slot.width is 20 and clipped.trackVP.x is 20 + gui.sizing.widget.labelGap,
+      'Overlong text must not grow the slot')
+   assert(clipped.labelText.textWidth > 60, 'The label must be much wider than its slot')
+
+   clipped.viewport.scene.bitmap = surface.buffer
+   check clipped.viewport.scene.acDraw()
+
+   function inked(X1:num!, X2:num!):bool
+      for y in {0 to clipped.viewport.height} do
+         for x in {X1 to X2} do
+            local p = mGfx.ReadRGBPixel(surface.buffer, x, y)
+            if (p.red != 255) or (p.green != 0) or (p.blue != 255) then return true end
+         end
+      end
+      return false
+   end
+
+   -- The clip edge is antialiased, so the pixel column immediately beyond the slot can carry coverage.
+
+   assert(inked(0, 20), 'Label text must be drawn within the slot')
+   assert(not inked(21, clipped.trackVP.x), 'Label text must be clipped at the end of the slot')
+end
+
+@Test function LabelWidthAppliesToRotatedSideLabels()
+   local gap = gui.sizing.widget.labelGap
+   for position in values(array<str> { 'left', 'right' }) do
+      local surface <close>, slider = newSlider({ orientation='vertical', label='Gain:', labelPos=position,
+         labelWidth=50 })
+      assert(slider.prvLabel.size is 50 + gap, f'{position}: labelWidth must set the rotated slot breadth')
+      assert(slider.viewport.width is slider.thickness + 50 + gap,
+         f'{position}: default widths must add the fixed slot to the track breadth')
+      assert(((position is 'left') ? slider.trackVP.x : slider.trackVP.xOffset) is 50 + gap,
+         f'{position}: the track must start after the rotated slot and the gap')
+   end
+end
+
+@Test function LabelWidthIgnoredForStackedLabels()
+   for orientation in values(array<str> { 'horizontal', 'vertical' }) do
+      for position in values(array<str> { 'top', 'bottom' }) do
+         local surface <close>, slider = newSlider({ orientation=orientation, label='Gain:', labelPos=position,
+            labelWidth=300 })
+         local plain = gui.slider({ target=slider.viewport.parent, x=300, orientation=orientation, label='Gain:',
+            labelPos=position })
+         assert(slider.prvLabel.size is plain.prvLabel.size and slider.viewport.width is plain.viewport.width
+            and slider.viewport.height is plain.viewport.height,
+            f'{orientation}/{position}: stacked labels must ignore labelWidth')
+         assert(slider.prvLabel.slot.width is slider.viewport.width and slider.prvLabel.slot.overflowX is VOF_VISIBLE,
+            f'{orientation}/{position}: stacked slots must span the widget width without clipping')
+      end
+   end
+end
+
+@Test function InvalidLabelWidthIsRejected()
+   local surface <close>, slider = newSlider({ })
+   for invalid in values(array<any> { 0, -5, '50%', '80', true }) do
+      local raised = false
+      try
+         gui.slider({ target=slider.viewport.parent, label='Gain:', labelWidth=invalid })
+      except
+         raised = true
+      end
+      assert(raised, f'An invalid labelWidth of {invalid} must be rejected')
+   end
+end
+
 -- Measure the label's font independently of the slider, from the text's own rendered size.
 
 function capHeight(Text:obj!):num
@@ -800,7 +949,8 @@ end
    }
    for s in values(horizontal) do
       local track_centre = s.trackVP.y + s.prvBarBkgd.y + (s.prvBarBkgd.height * 0.5)
-      local cap_centre = s.labelText.y - (capHeight(s.labelText) * 0.5)
+      local _, label_y = labelOrigin(s)
+      local cap_centre = label_y - (capHeight(s.labelText) * 0.5)
       assert(math.abs(cap_centre - track_centre) <= 0.5,
          f'Side label capitals must centre on the track ({cap_centre} vs {track_centre})')
    end
@@ -813,7 +963,8 @@ end
    }
    for s in values(vertical) do
       local track_centre = s.trackVP.x + s.prvBarBkgd.x + (s.prvBarBkgd.width * 0.5)
-      local cap_centre = s.labelText.x - (capHeight(s.labelText) * 0.5) -- Rotated capitals extend left
+      local label_x = labelOrigin(s)
+      local cap_centre = label_x - (capHeight(s.labelText) * 0.5) -- Rotated capitals extend left
       assert(math.abs(cap_centre - track_centre) <= 0.5,
          f'Centred vertical label capitals must centre on the track ({cap_centre} vs {track_centre})')
    end
