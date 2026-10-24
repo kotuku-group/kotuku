@@ -1565,7 +1565,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
    if ((Source.empty()) or (Dest.empty())) return log.warning(ERR::NullArgs);
 
-   log.traceBranch("\"%s\" to \"%s\"", Source.data(), Dest.data());
+   log.traceBranch("\"%.*s\" to \"%.*s\"", int(Source.size()), Source.data(), int(Dest.size()), Dest.data());
 
    std::string src, dest;
    const auto source_flags = Move ? RSF::NO_FOLLOW : RSF::NIL;
@@ -1579,11 +1579,13 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
    bool srcdir = (src.ends_with('/') or src.ends_with('\\'));
 
    // If the destination is a folder, we need to copy the name of the source to create the new file or dir.
+   // The source must not be modified here, as its trailing separator identifies it as a folder.
 
    if (dest.ends_with('/') or dest.ends_with('\\') or dest.ends_with(':')) {
-      if (src.ends_with('/') or src.ends_with('\\') or src.ends_with(':')) src.pop_back();
-      auto len = src.find_last_of("/\\:");
-      dest.append(src, len, std::string::npos);
+      std::string_view name(src);
+      while (name.ends_with('/') or name.ends_with('\\')) name.remove_suffix(1);
+      if (auto i = name.find_last_of("/\\:"); i != std::string::npos) name.remove_prefix(i + 1);
+      dest.append(name);
    }
 
    log.trace("Copy: %s TO %s", src.c_str(), dest.c_str());
@@ -1606,7 +1608,7 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
 
       // Open the source and destination
 
-      extFile::create srcfile = { fl::Path(Source.data()), fl::Flags(FL::READ) };
+      extFile::create srcfile = { fl::Path(src), fl::Flags(FL::READ) };
 
       if (srcfile.ok()) {
          if ((Move) and (srcvirtual.VirtualID IS destvirtual.VirtualID)) {
@@ -1618,8 +1620,8 @@ ERR fs_copy(std::string_view Source, std::string_view Dest, FUNCTION *Callback, 
       else return ERR::FileNotFound;
 
       extFile::create destfile = {
-         fl::Path(Dest),
-         fl::Flags(FL::WRITE|FL::NEW),
+         fl::Path(dest),
+         fl::Flags(FL::WRITE|FL::NEW|(srcfile->Flags & FL::FOLDER)),
          fl::Permissions(srcfile->Permissions)
       };
 
@@ -2031,15 +2033,24 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
    if ((not Source.ends_with('/')) and (not Source.ends_with('\\')) and (not Source.ends_with(':'))) Source.append("/");
    if ((not Dest.ends_with('/')) and (not Dest.ends_with('\\')) and (not Dest.ends_with(':'))) Dest.append("/");
 
+   // Each entry is appended to the folder paths, which are restored before the next entry is processed.
+
+   const auto src_folder_len = Source.size();
+   const auto dest_folder_len = Dest.size();
+
    DirInfo *dir;
-   if (auto error = OpenDir(Source, RDF::FILE|RDF::FOLDER|RDF::PERMISSIONS, &dir); !error) {
+   auto error = OpenDir(Source, RDF::FILE|RDF::FOLDER|RDF::PERMISSIONS, &dir);
+   if (!error) {
       while (!(error = ScanDir(dir))) {
+         Source.resize(src_folder_len);
+         Dest.resize(dest_folder_len);
+
          FileInfo *file = dir->Info;
+         Source.append(file->Name);
+         Dest.append(file->Name);
+
          if ((file->Flags & RDF::LINK) != RDF::NIL) {
             if ((vsrc.ReadLink) and (vdest.CreateLink)) {
-               Source.append(file->Name);
-               Dest.append(file->Name);
-
                if ((Callback) and (Callback->defined())) {
                   Feedback->Path = Source.data();
                   Feedback->Dest = Dest.data();
@@ -2060,16 +2071,11 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
             }
          }
          else if ((file->Flags & RDF::FILE) != RDF::NIL) {
-            Source.append(file->Name);
-            Dest.append(file->Name);
-
             AdjustLogLevel(1);
                error = fs_copy(Source, Dest, Callback, false);
             AdjustLogLevel(-1);
          }
          else if ((file->Flags & RDF::FOLDER) != RDF::NIL) {
-            Dest.append(file->Name);
-
             if ((Callback) and (Callback->defined())) {
                Feedback->Path = Source.data();
                Feedback->Dest = Dest.data();
@@ -2092,24 +2098,19 @@ ERR fs_copydir(std::string &Source, std::string &Dest, FileFeedback *Feedback, F
 
             // Copy everything under the folder to the destination
 
-            if (!error) {
-               Source.append(file->Name);
-               fs_copydir(Source, Dest, Feedback, Callback, Move);
-            }
+            if (!error) error = fs_copydir(Source, Dest, Feedback, Callback, Move);
          }
+
+         if (error != ERR::Okay) break; // The first failure terminates the copy
       }
 
       FreeResource(dir);
+   }
+   else if (error != ERR::EndOfSequence) log.msg("Folder list failed for \"%s\"", Source.c_str());
 
-      Source.resize(src_len);
-      Dest.resize(dest_len);
-      return error;
-   }
-   else if (error IS ERR::EndOfSequence) return ERR::Okay;
-   else {
-      log.msg("Folder list failed for \"%s\"", Source.c_str());
-      return error;
-   }
+   Source.resize(src_len);
+   Dest.resize(dest_len);
+   return (error IS ERR::EndOfSequence) ? ERR::Okay : error;
 }
 
 //********************************************************************************************************************

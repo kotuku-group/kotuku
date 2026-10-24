@@ -30,7 +30,8 @@ function readFile(Path:str):str
    return buffer.getString()
 end
 
-@BeforeAll function init()
+@BeforeAll function init(State)
+   global glTestFolder = State.folder
    global glRawPath = glTempRoot .. 'test.out'
    mSys.DeleteFile(glTempRoot)
    ensureFolder(glTempRoot)
@@ -558,6 +559,161 @@ end
       end
       err = mSys.AnalysePath(dest_path)
       assert(err != ERR_Okay, 'Skipped or aborted copies must not create the destination')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Folder copies.  A source folder is expressed with a trailing separator.  A destination with a trailing separator
+-- receives the source by name, otherwise the destination is the new folder.
+
+function folderCopyFixture(Root:str!)
+   mSys.DeleteFile(Root)
+   ensureFolder(Root .. 'src/tree/deep/')
+   ensureFolder(Root .. 'src/tree/empty/')
+   ensureFolder(Root .. 'dst/')
+   writeFile(Root .. 'src/tree/one.txt', 'one')
+   writeFile(Root .. 'src/tree/two.txt', 'two')
+   writeFile(Root .. 'src/tree/three.txt', 'three')
+   writeFile(Root .. 'src/tree/deep/four.txt', 'four')
+end
+
+function assertTreeCopied(Folder:str!, Context:str!)
+   for name, content in pairs({ ['one.txt']='one', ['two.txt']='two', ['three.txt']='three',
+         ['deep/four.txt']='four' }) do
+      assert(mSys.AnalysePath(Folder .. name) is ERR_Okay, f'{Context}: {name} was not copied')
+      assert(readFile(Folder .. name) is content, f'{Context}: {name} has the wrong content')
+   end
+   local err, type = mSys.AnalysePath(Folder .. 'empty/')
+   assert(err is ERR_Okay and type is LOC_FOLDER, f'{Context}: the empty sub-folder was not copied')
+end
+
+@Test function CopyFolderIntoFolder()
+   local root = glTempRoot .. 'copy_folder_into/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/')
+   assert(err is ERR_Okay, 'Copying a folder into a folder failed: ' .. mSys.GetErrorMsg(err))
+   assertTreeCopied(root .. 'dst/tree/', 'Copy into')
+   assertTreeCopied(root .. 'src/tree/', 'Source after copy')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderToNamedFolder()
+   local root = glTempRoot .. 'copy_folder_named/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/renamed')
+   assert(err is ERR_Okay, 'Copying a folder to a new name failed: ' .. mSys.GetErrorMsg(err))
+   assertTreeCopied(root .. 'dst/renamed/', 'Copy to name')
+   assert(mSys.AnalysePath(root .. 'dst/renamed/tree/') != ERR_Okay, 'A named destination must not nest the source')
+
+   -- An existing destination folder receives the additional content.
+
+   writeFile(root .. 'src/tree/five.txt', 'five')
+   err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/renamed')
+   assert(err is ERR_Okay, 'Merging a folder copy failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'dst/renamed/five.txt') is 'five', 'An existing folder must receive new content')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderIntoMatchingFolder()
+   local root = glTempRoot .. 'copy_folder_nested/'
+   folderCopyFixture(root)
+   ensureFolder(root .. 'dst/tree/')
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/tree/')
+   assert(err is ERR_Okay, 'Copying a folder into a same-named folder failed: ' .. mSys.GetErrorMsg(err))
+   assertTreeCopied(root .. 'dst/tree/tree/', 'Copy into a same-named folder')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFileIntoFolder()
+   local root = glTempRoot .. 'copy_file_into/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/one.txt', root .. 'dst/')
+   assert(err is ERR_Okay, 'Copying a file into a folder failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'dst/one.txt') is 'one', 'The file must keep its name in the destination folder')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderRejectsRecursion()
+   local root = glTempRoot .. 'copy_folder_loop/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'src/tree/deep/')
+   assert(err is ERR_Loop, 'Copying a folder into its own descendant must fail with ERR_Loop, got ' ..
+      mSys.GetErrorMsg(err))
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderFeedback()
+   local root = glTempRoot .. 'copy_folder_feedback/'
+   folderCopyFixture(root)
+
+   -- Skipping a sub-folder or a file must not affect the paths of the entries that follow it.
+
+   local paths = array<str>
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/', function(Size, Position, Path, Dest):num
+      if Position is 0 then paths.push(Path) end
+      if Path.endsWith('deep') or Path.endsWith('two.txt') then return FFR_SKIP end
+      return FFR_OKAY
+   end)
+   assert(err is ERR_Okay, 'A folder copy with skipped entries failed: ' .. mSys.GetErrorMsg(err))
+   local entries = array<str> { 'one.txt', 'two.txt', 'three.txt', 'deep', 'empty', 'four.txt' }
+   for path in values(paths) do
+      local _, name = io.splitPath(path)
+      assert(name in entries, 'Feedback must report each entry by its own path, got ' .. path)
+   end
+   assert(#paths >= 4, f'Feedback must be received for each entry, got {#paths}')
+   assert(readFile(root .. 'dst/tree/one.txt') is 'one' and readFile(root .. 'dst/tree/three.txt') is 'three',
+      'Entries that were not skipped must be copied')
+   assert(mSys.AnalysePath(root .. 'dst/tree/two.txt') != ERR_Okay, 'A skipped file must not be copied')
+   assert(mSys.AnalysePath(root .. 'dst/tree/deep/') != ERR_Okay, 'A skipped folder must not be copied')
+
+   err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/aborted', function():num
+      return FFR_ABORT
+   end)
+   assert(err is ERR_Cancelled, 'Aborting a folder copy must return ERR_Cancelled, got ' .. mSys.GetErrorMsg(err))
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFileFromVirtualVolume()
+   local root = glTempRoot .. 'copy_virtual/'
+   mSys.DeleteFile(root)
+   ensureFolder(root)
+   local archive <close> = obj.new('compression', { path=glTestFolder .. 'data/archive_stored.zip',
+      archiveName='fs_copy_stored' })
+
+   local err = mSys.CopyFile('archive:fs_copy_stored/alpha.txt', root)
+   assert(err is ERR_Okay, 'Copying from a virtual volume into a folder failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'alpha.txt') is 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+      'A virtual source copied into a folder must keep its name')
+
+   err = mSys.CopyFile('archive:fs_copy_stored/beta.txt', root .. 'named.txt')
+   assert(err is ERR_Okay, 'Copying from a virtual volume to a file failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'named.txt') is 'beta entry follows alpha', 'A virtual source must copy to a named file')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderFromVirtualVolume()
+   local root = glTempRoot .. 'copy_virtual_folder/'
+   mSys.DeleteFile(root)
+   ensureFolder(root .. 'src/tree/')
+   ensureFolder(root .. 'dst/')
+   writeFile(root .. 'src/tree/one.txt', 'one')
+   writeFile(root .. 'src/tree/two.txt', 'two')
+   do
+      local archive <close> = obj.new('compression', { path=root .. 'tree.zip', flags=FL_NEW })
+      check archive.mtCompressFile(root .. 'src/tree/', 'tree/')
+   end
+   local archive <close> = obj.new('compression', { path=root .. 'tree.zip', archiveName='fs_copy_tree' })
+
+   local err = mSys.CopyFile('archive:fs_copy_tree/tree/', root .. 'dst/')
+   assert(err is ERR_Okay, 'Copying a virtual folder into a folder failed: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.CopyFile('archive:fs_copy_tree/tree/', root .. 'dst/renamed')
+   assert(err is ERR_Okay, 'Copying a virtual folder to a new name failed: ' .. mSys.GetErrorMsg(err))
+   for folder in values(array<str> { root .. 'dst/tree/', root .. 'dst/renamed/' }) do
+      local err, type = mSys.AnalysePath(folder)
+      assert(err is ERR_Okay and type is LOC_FOLDER, 'The virtual copy must create a folder at ' .. folder)
+      assert(readFile(folder .. 'one.txt') is 'one', 'The first virtual file must be copied to ' .. folder)
+      assert(readFile(folder .. 'two.txt') is 'two', 'The second virtual file must be copied to ' .. folder)
    end
 end
 
