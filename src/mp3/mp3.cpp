@@ -909,6 +909,8 @@ static ERR MP3_Free(objMP3 *Self)
    return ERR::NothingDone;
 }
 
+//********************************************************************************************************************
+
 static const struct ActionArray clMP3Actions[] = {
    { AC::Free, MP3_Free },
    { AC::Init, MP3_Init },

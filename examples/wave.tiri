@@ -6,25 +6,22 @@ The VectorWave class is a dedicated path generator for waveforms.  This example 
 used to generate various waveforms.
 --]]
 
-   import 'gui'
-   import 'gui/window'
-   import 'gui/combobox'
-   import 'gui/slider'
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider'
 
 local glWindow, glViewport, glWaveVP, glWave
 
-glDecay = 1
+glDecay     = 1
 glAmplitude = 50
-glClose = 'top'
+glClose     = 'top'
 glFrequency = 6
-glNoise = 0
+glNoise     = 0
 
-MIN_DECAY <const> = -4
-MAX_DECAY <const> = 4
+MIN_DECAY <const>     = -4
+MAX_DECAY <const>     = 4
 MIN_FREQUENCY <const> = 0.01
 MAX_FREQUENCY <const> = 100
-MIN_NOISE <const> = 0
-MAX_NOISE <const> = 1
+MIN_NOISE <const>     = 0
+MAX_NOISE <const>     = 1
 MIN_AMPLITUDE <const> = 0
 MAX_AMPLITUDE <const> = 500
 
@@ -45,15 +42,16 @@ end
 
 function buildScene()
    glWaveVP = glViewport.new('VectorViewport', {
-      name='vp_gradient', x = 0, y = 20, xOffset = 0, yOffset=0, overflow='hidden', buffered = true
+      name = 'vp_gradient', x = 0, y = 20, xOffset = 0, yOffset = 0, overflow = 'hidden', buffered = true
    })
+
    glWave = glWaveVP.new('VectorWave', { name='wave',
       x = '2%', y = '50%', length='96%', amplitude = glAmplitude,
-      fill='white', stroke='black', strokeWidth=1, thickness=10,
+      fill = 'white', stroke = 'black', strokeWidth = 1, thickness = 10,
       decay = glDecay, close = glClose, frequency = glFrequency, noise = glNoise
    })
 
-   cmbWave = gui.combobox({
+   global cmbWave = gui.combobox({
       target = glViewport,
       label  = 'Wave:',
       text   = 'Sine',
@@ -72,13 +70,13 @@ function buildScene()
       }
    })
 
-   cmbEnvelope = gui.combobox({
+   global cmbEnvelope = gui.combobox({
       target = glViewport,
       label  = 'Envelope:',
       text   = 'Linear',
       x      = cmbWave.viewport.x + cmbWave.viewport.width + 10,
       y      = 10,
-      items = array<table> {
+      items  = array<table> {
          { label = 'Linear' },
          { label = 'Quadratic' },
          { label = 'Smoothstep' },
@@ -97,14 +95,18 @@ function buildScene()
       }
    })
 
-   slAmplitude = gui.slider({
+   -- Sliders occupy a second row, so that both rows fit the window.
+
+   slider_y = cmbWave.viewport.y + cmbWave.viewport.height + 8
+
+   global slAmplitude = gui.slider({
       target = glViewport,
       label  = 'Amplitude:',
       value  = glAmplitude,
       min    = MIN_AMPLITUDE,
       max    = MAX_AMPLITUDE,
-      x      = cmbEnvelope.viewport.x + cmbEnvelope.viewport.width + 10,
-      y      = 10,
+      x      = glWindow.margins.left,
+      y      = slider_y,
       events = {
          activate = function(Value:num!)
             glAmplitude = Value
@@ -114,14 +116,14 @@ function buildScene()
       }
    })
 
-   slFrequency = gui.slider({
+   global slFrequency = gui.slider({
       target = glViewport,
       label  = 'Frequency:',
       value  = glFrequency,
       min    = MIN_FREQUENCY,
       max    = MAX_FREQUENCY,
       x      = slAmplitude.viewport.x + slAmplitude.viewport.width + 10,
-      y      = 10,
+      y      = slider_y,
       events = {
          activate = function(Value:num!)
             glFrequency = Value
@@ -131,14 +133,14 @@ function buildScene()
       }
    })
 
-   slDecay = gui.slider({
+   global slDecay = gui.slider({
       target = glViewport,
       label  = 'Decay:',
       value  = glDecay,
       min    = MIN_DECAY,
       max    = MAX_DECAY,
       x      = slFrequency.viewport.x + slFrequency.viewport.width + 10,
-      y      = 10,
+      y      = slider_y,
       events = {
          activate = function(Value:num!)
             glDecay = Value
@@ -148,14 +150,14 @@ function buildScene()
       }
    })
 
-   slNoise = gui.slider({
+   global slNoise = gui.slider({
       target = glViewport,
       label  = 'Noise:',
       value  = glNoise,
       min    = MIN_NOISE,
       max    = MAX_NOISE,
       x      = slDecay.viewport.x + slDecay.viewport.width + 10,
-      y      = 10,
+      y      = slider_y,
       events = {
          activate = function(Value:num!)
             glNoise = Value
@@ -167,7 +169,7 @@ function buildScene()
 
    -- FrequencyEnd
 
-   glWaveVP.y = cmbWave.viewport.y + cmbWave.viewport.height + 12
+   glWaveVP.y = slAmplitude.viewport.y + slAmplitude.viewport.height + 12
 
    selectWave('Sine')
 end

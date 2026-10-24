@@ -119,7 +119,7 @@ gui.combobox = function(Options:table)
       &menu?.hide()
       &viewport.acDisable()
       gui.applyStyle(&bkgd, &input_theme.disabled)
-      &events?.disable()
+      &events.disable?()
       &viewport.acDraw()
    end
 
@@ -127,7 +127,7 @@ gui.combobox = function(Options:table)
       &disabled = false
       &viewport.acEnable()
       gui.applyStyle(&bkgd, &input_theme.bkgd)
-      &events?.enable()
+      &events.enable?()
       &viewport.acDraw()
    end
 
@@ -271,7 +271,7 @@ gui.combobox = function(Options:table)
       &viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport, Event)
          if Event is FM_LOST_FOCUS then
             gui.applyStyle(&bkgd, &input_theme.bkgd)
-            &events?.lostFocus()
+            &events.lostFocus?()
             if &allowCustom then
                reportFeedback()
             end
@@ -283,7 +283,7 @@ gui.combobox = function(Options:table)
                gui.applyStyle(&bkgd, &input_theme.bkgd)
             else
                gui.applyStyle(&bkgd, &input_theme.focus)
-               &events?.focus()
+               &events.focus?()
             end
          end
 
@@ -364,7 +364,7 @@ gui.combobox = function(Options:table)
 
       createMenu(Options.items)
 
-      &events?.show()
+      &events.show?()
 
       return &&
    end

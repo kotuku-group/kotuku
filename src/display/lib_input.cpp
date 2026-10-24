@@ -274,7 +274,7 @@ void input_event_loop(HOSTHANDLE FD, APTR Data) // Data is undefined
       }
       else if (sub.callback.isScript()) {
          sc::Call(sub.callback, std::to_array<ScriptArg>({
-            { "Events:InputEvent", sub.events.data(), FD_PTR|FDF_STRUCT },
+            { "InputEvent:Events", sub.events.data(), FD_PTR|FDF_STRUCT },
             { "Handle", sub.handle }
          }));
       }
