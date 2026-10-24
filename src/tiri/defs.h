@@ -281,15 +281,19 @@ struct eventsub {
 
 //********************************************************************************************************************
 
+// A pending input.requestItem() call.  The source answers with a DATA::RECEIPT whose id attribute is the Item.
+
 struct datarequest {
    OBJECTID SourceID;
+   int Item;
    FUNCTION Callback;
    int64_t TimeCreated;
 
-   datarequest(OBJECTID pSourceID, FUNCTION pCallback) : SourceID(pSourceID), Callback(pCallback) {
-      TimeCreated = PreciseTime();
-   }
+   datarequest(OBJECTID pSourceID, int pItem, FUNCTION pCallback) :
+      SourceID(pSourceID), Item(pItem), Callback(pCallback), TimeCreated(PreciseTime()) { }
 };
+
+constexpr int64_t DATA_REQUEST_EXPIRY = 60LL * 1000000LL; // Unanswered requests are released after 60 seconds
 
 //********************************************************************************************************************
 // Variable information captured during parsing when JOF::DIAGNOSE is enabled.
@@ -426,6 +430,7 @@ void cleanup_argbuffer(lua_State *, const struct FunctionField *, int, int8_t *,
 [[nodiscard]] ERR capture_tiri_function(lua_State *, int, FUNCTION &);
 [[nodiscard]] ERR push_tiri_function(lua_State *, const FUNCTION &, LuaCallbackContextGuard &);
 void release_tiri_function(lua_State *, FUNCTION *);
+void expire_data_requests(extTiri *);
 void release_consumed_tiri_function(lua_State *, FUNCTION *);
 const char * code_reader(lua_State *, void *, size_t *);
 [[maybe_unused]] int code_writer_id(lua_State *, CPTR, size_t, void *);

@@ -48,6 +48,7 @@ identity.
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <charconv>
 #include <format>
 #include <limits>
 #include <memory>
@@ -615,68 +616,90 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
    else if (Args->Datatype IS DATA::RECEIPT) {
       log.branch("Incoming data receipt from #%d", Args->Object ? Args->Object->UID : 0);
 
-      for (auto it = Self->Requests.begin(); it != Self->Requests.end(); ) {
-         if ((Args->Object) and (it->SourceID IS Args->Object->UID)) {
-            LuaContextRootGuard context_guard(Self->Lua);
-            // Execute the callback associated with this input subscription: function({Items...})
+      if (not Args->Object) return ERR::Okay;
+      auto source_id = Args->Object->UID;
 
-            int step = GetResource(RES::LOG_DEPTH); // Required as thrown errors cause the debugger to lose its step position
+      expire_data_requests(Self);
 
-            {
-               LuaCallbackContextGuard callback_context(Self->Lua);
-               if (push_tiri_function(Self->Lua, it->Callback, callback_context) != ERR::Okay) {
-                  SetResource(RES::LOG_DEPTH, step);
-                  release_tiri_function(Self->Lua, &it->Callback);
-                  it = Self->Requests.erase(it);
-                  continue;
-               }
-               lua_newtable(Self->Lua); // +1 Item table
+      auto xml = objXML::create::local(fl::Statement(
+         std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())));
+      if (not xml) return log.warning(ERR::InvalidData);
 
-               if (auto xml = objXML::create::local(fl::Statement(
-                     std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())))) {
-                  // <file path="blah.exe"/> becomes { item='file', path='blah.exe' }
+      const XTag *receipt = nullptr;
+      if ((not xml->Tags.empty()) and (iequals("receipt", xml->Tags[0].name()))) receipt = &xml->Tags[0];
 
-                  if (not xml->Tags.empty()) {
-                     auto &tag = xml->Tags[0];
-                     int i = 0;
-                     if (iequals("receipt", tag.name())) {
-                        for (auto &scan : tag.Children) {
-                           lua_pushinteger(Self->Lua, i++);
-                           lua_newtable(Self->Lua);
+      // The receipt's id attribute identifies the requested item.  A receipt without a numeric id is matched to the
+      // oldest pending request for the source.
 
-                           lua_pushstring(Self->Lua, "item");
-                           lua_pushstring(Self->Lua, scan.name());
-                           lua_settable(Self->Lua, -3);
-
-                           for (unsigned a=1; a < scan.Attribs.size(); a++) {
-                              lua_pushstring(Self->Lua, scan.Attribs[a].Name.c_str());
-                              lua_pushstring(Self->Lua, scan.Attribs[a].Value.c_str());
-                              lua_settable(Self->Lua, -3);
-                           }
-
-                           lua_settable(Self->Lua, -3);
-                        }
-                     }
-                  }
-
-                  FreeResource(xml);
-
-                  if (lua_pcall(Self->Lua, 1, 0, 0)) { // function(Items)
-                     process_callback_error(Self, "Data Receipt Callback");
-                  }
-               }
-               else lua_pop(Self->Lua, 2);
+      std::optional<int> receipt_id;
+      if (receipt) {
+         if (auto id = receipt->attrib("id")) {
+            int value;
+            auto end = id->data() + id->size();
+            if (auto [ptr, ec] = std::from_chars(id->data(), end, value); (ec IS std::errc()) and (ptr IS end)) {
+               receipt_id = value;
             }
-
-            SetResource(RES::LOG_DEPTH, step);
-
-            release_tiri_function(Self->Lua, &it->Callback);
-            it = Self->Requests.erase(it);
-            continue;
          }
-         it++;
       }
 
+      auto it = std::ranges::find_if(Self->Requests, [&](const datarequest &Request) {
+         return (Request.SourceID IS source_id) and ((not receipt_id) or (Request.Item IS *receipt_id));
+      });
+
+      if (it IS Self->Requests.end()) {
+         log.msg("No pending request matches the receipt for item %d.", receipt_id.value_or(-1));
+         FreeResource(xml);
+         return ERR::Okay;
+      }
+
+      // The request is removed before its callback runs, so that each receipt is delivered once and the callback can
+      // issue new requests.
+
+      auto callback = it->Callback;
+      Self->Requests.erase(it);
+
+      {
+         LuaContextRootGuard context_guard(Self->Lua);
+         // Required as thrown errors cause the debugger to lose its step position
+         int step = GetResource(RES::LOG_DEPTH);
+
+         {
+            LuaCallbackContextGuard callback_context(Self->Lua);
+            if (push_tiri_function(Self->Lua, callback, callback_context) IS ERR::Okay) {
+               // +1 Item table: <file path="blah.exe"/> becomes { item='file', path='blah.exe' }
+               lua_newtable(Self->Lua);
+
+               if (receipt) {
+                  int i = 0;
+                  for (auto &scan : receipt->Children) {
+                     lua_pushinteger(Self->Lua, i++);
+                     lua_newtable(Self->Lua);
+
+                     lua_pushstring(Self->Lua, "item");
+                     lua_pushstring(Self->Lua, scan.name());
+                     lua_settable(Self->Lua, -3);
+
+                     for (unsigned a=1; a < scan.Attribs.size(); a++) {
+                        lua_pushstring(Self->Lua, scan.Attribs[a].Name.c_str());
+                        lua_pushstring(Self->Lua, scan.Attribs[a].Value.c_str());
+                        lua_settable(Self->Lua, -3);
+                     }
+
+                     lua_settable(Self->Lua, -3);
+                  }
+               }
+
+               if (lua_pcall(Self->Lua, 1, 0, 0)) { // function(Items)
+                  process_callback_error(Self, "Data Receipt Callback");
+               }
+            }
+         }
+
+         SetResource(RES::LOG_DEPTH, step);
+      }
+
+      release_tiri_function(Self->Lua, &callback);
+      FreeResource(xml);
       collect_garbage(Self->Lua);
    }
 

@@ -212,6 +212,35 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
 }
 
 //********************************************************************************************************************
+// Releases requests that have not been answered within DATA_REQUEST_EXPIRY.
+
+void expire_data_requests(extTiri *Self)
+{
+   auto now = PreciseTime();
+   for (auto it = Self->Requests.begin(); it != Self->Requests.end(); ) {
+      if (now - it->TimeCreated > DATA_REQUEST_EXPIRY) {
+         kt::Log(__FUNCTION__).msg("Request for item %d from #%d has expired.", it->Item, it->SourceID);
+         release_tiri_function(Self->Lua, &it->Callback);
+         it = Self->Requests.erase(it);
+      }
+      else it++;
+   }
+}
+
+// Removes a request if it is still pending.  A synchronous receipt may have consumed it already.
+
+static void cancel_data_request(lua_State *Lua, extTiri *Self, OBJECTID SourceID, int Item, const FUNCTION &Callback)
+{
+   for (auto it = Self->Requests.begin(); it != Self->Requests.end(); it++) {
+      if ((it->SourceID IS SourceID) and (it->Item IS Item) and it->Callback.identical(Callback)) {
+         release_tiri_function(Lua, &it->Callback);
+         Self->Requests.erase(it);
+         return;
+      }
+   }
+}
+
+//********************************************************************************************************************
 // Usage: req = input.requestItem(Source, Item, DataType, ReceiptFunction)
 //
 // Request an item of data from an existing object that can provision data.  Used to support drag and drop operations.
@@ -253,7 +282,8 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
 
    FUNCTION callback;
    if (capture_tiri_function(Lua, 4, callback) != ERR::Okay) luaL_argerror(Lua, 4, "Function expected.");
-   tiri->Requests.emplace_back(source_id, callback);
+   expire_data_requests(tiri);
+   tiri->Requests.emplace_back(source_id, item, callback);
 
    {
       // The source will return a DATA::RECEIPT for the items that we've asked for (see the DataFeed action).
@@ -269,27 +299,14 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
          auto error = acDataFeed(*src, Lua->script, DATA::REQUEST,
             std::span<const int8_t>((const int8_t *)&dcr, sizeof(dcr)));
          if (error != ERR::Okay) {
-            for (auto it = tiri->Requests.begin(); it != tiri->Requests.end(); it++) {
-               if ((it->SourceID IS source_id) and it->Callback.identical(callback)) {
-                  release_tiri_function(Lua, &it->Callback);
-                  tiri->Requests.erase(it);
-                  break;
-               }
-            }
-
+            cancel_data_request(Lua, tiri, source_id, item, callback);
             src.unlock();
             luaL_error(Lua, error, "Failed to request item %d from source #%d: %s", item, source_id,
                GetErrorMsg(error));
          }
       }
       else {
-         for (auto it = tiri->Requests.begin(); it != tiri->Requests.end(); it++) {
-            if ((it->SourceID IS source_id) and it->Callback.identical(callback)) {
-               release_tiri_function(Lua, &it->Callback);
-               tiri->Requests.erase(it);
-               break;
-            }
-         }
+         cancel_data_request(Lua, tiri, source_id, item, callback);
          luaL_error(Lua, ERR::AccessObject, "Failed to access data source #%d.", source_id);
       }
    }
