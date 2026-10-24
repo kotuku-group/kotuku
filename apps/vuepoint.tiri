@@ -406,15 +406,11 @@ end
       -- Document viewer on the right
 
       glViewManager = glViewport.new('VectorViewport', {
-        x=glFileView.viewport.x + glFileView.viewport.width + 6, y=0,
+        x=glFileView.view.viewport.x + glFileView.view.viewport.width + 6, y=0,
         xOffset=glWindow.margins.right, yOffset=glWindow.margins.top
       })
 
-      -- Copy, Save As, Info, Zoom, Rotate Left / Right
-
-      bkgd = glViewManager.new('VectorRectangle', {
-         x=0, y=0, xOffset=0, height=1, fill=glWindow.theme.palette.bkgd
-      })
+      -- TODO: Copy, Save As, Info, Zoom, Rotate Left / Right
 
       glAppBar = gui.toolbar({
          target  = glViewManager,
@@ -458,8 +454,6 @@ end
          end
       })
 
-      bkgd.height = glAppBar.viewport.height
-
       advance = gui.separator(glViewManager, 'h', glAppBar.viewport.height)
 
       glViewArea = glViewManager.new('VectorViewport', {
@@ -468,7 +462,7 @@ end
       })
 
       gui.divider({
-         left = glFileView.viewport, right = glViewManager,
+         left = glFileView.view.viewport, right = glViewManager,
          minA = 100, maxA = glWindow.surface.width * 0.4, minB = 100
       })
    end

@@ -24,6 +24,10 @@ The filter's output is composited into the target with the blend mode resolved f
 for @Vector.ColourSpace, and the filter's #Opacity is applied at the same time.  The filter's own #ColourSpace
 governs effect processing only and does not affect how the output is composited.
 
+Effects can read content that lies beyond the edges of the page, within the filter region, so a filtered vector that
+touches or crosses a page edge is processed as if the page were larger.  Samples outside of the filter region are
+transparent black.  The output is clipped to the page and any clipping imposed by container viewports.
+
 It is important to note that filter effects are CPU intensive tasks and real-time performance may be disappointing.
 If this is an issue, consider pre-rendering the filter effects in advance and caching the results in memory or files.
 
@@ -35,6 +39,8 @@ It is a requirement that VectorFilter objects are owned by the @VectorScene they
 
 //#define DEBUG_FILTER_BITMAP
 //#define EXPORT_FILTER_BITMAP
+
+constexpr int64_t MAX_FILTER_MARGIN_AREA = 4096 * 4096; // Processing regions with margins are limited to this area
 
 struct target {
    double bound_x, bound_y, bound_width, bound_height;
@@ -95,7 +101,7 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
    agg::trans_affine img_transform;
    img_transform.scale(x_scale, y_scale);
    img_transform.translate(p_x, p_y);
-   img_transform *= filter->ClientVector->Transform;
+   img_transform *= filter->Transform;
    img_transform.invert();
 
    if (img_transform.is_complex()) {
@@ -239,8 +245,8 @@ static void compute_target_area(extVectorFilter *Self)
 
 //********************************************************************************************************************
 // Return a bitmap from the bank.  In order to save memory, bitmap data is managed internally so that it always
-// reflects the size of the clipping region.  The bitmap's size reflects the Filter's (X,Y), (Width,Height) values in
-// accordance with the unit setting.
+// reflects the size of the clipping region.  The bitmap uses local coordinates, so (0,0) is the top-left of
+// VectorClip and the bitmap size matches the processing region.
 //
 // Effects can call this function while they are the current context, so the filter is set as the owner explicitly.
 // The bank frees its bitmaps, which must not be freed earlier with an effect.
@@ -254,12 +260,11 @@ static ERR get_banked_bitmap(extVectorFilter *Self, objBitmap **BitmapResult)
 
    if (bi >= Self->Bank.size()) Self->Bank.emplace_back(std::make_unique<filter_bitmap>());
 
+   auto clip = Self->scratch_clip();
    #ifdef DEBUG_FILTER_BITMAP
-      auto bmp = Self->Bank[bi].get()->get_bitmap(Self->ClientViewport->Scene->PageWidth,
-         Self->ClientViewport->Scene->PageHeight, Self->VectorClip, true, Self->UID);
+      auto bmp = Self->Bank[bi].get()->get_bitmap(clip.right, clip.bottom, clip, true, Self->UID);
    #else
-      auto bmp = Self->Bank[bi].get()->get_bitmap(Self->ClientViewport->Scene->PageWidth,
-         Self->ClientViewport->Scene->PageHeight, Self->VectorClip, false, Self->UID);
+      auto bmp = Self->Bank[bi].get()->get_bitmap(clip.right, clip.bottom, clip, false, Self->UID);
    #endif
 
    if (bmp) {
@@ -322,18 +327,21 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
       if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
 
       if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         gfx::CopyArea(Self->BkgdBitmap, bmp, BAF::NIL, Self->VectorClip.left, Self->VectorClip.top,
-            Self->VectorClip.right - Self->VectorClip.left, Self->VectorClip.bottom - Self->VectorClip.top,
-            bmp->Clip.Left, bmp->Clip.Top);
+         // The renderer shifts Data for scene-coordinate drawing.  CopyArea expects local bitmap coordinates.
+         auto save_data = Self->BkgdBitmap->offset(Self->BkgdOriginX, Self->BkgdOriginY);
+         gfx::CopyArea(Self->BkgdBitmap, bmp, BAF::NIL,
+            Self->VectorClip.left - Self->BkgdOriginX, Self->VectorClip.top - Self->BkgdOriginY,
+            Self->VectorClip.width(), Self->VectorClip.height(), bmp->Clip.Left, bmp->Clip.Top);
+         Self->BkgdBitmap->Data = save_data;
       }
    }
    else if (SourceType IS VSF::BKGD_ALPHA) {
       if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
       if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         int src_left = std::max(Self->VectorClip.left, Self->BkgdBitmap->Clip.Left);
-         int src_top = std::max(Self->VectorClip.top, Self->BkgdBitmap->Clip.Top);
-         int src_right = std::min(Self->VectorClip.right, Self->BkgdBitmap->Clip.Right);
-         int src_bottom = std::min(Self->VectorClip.bottom, Self->BkgdBitmap->Clip.Bottom);
+         int src_left = std::max(Self->VectorClip.left, Self->BkgdBitmap->Clip.Left + Self->BkgdOriginX);
+         int src_top = std::max(Self->VectorClip.top, Self->BkgdBitmap->Clip.Top + Self->BkgdOriginY);
+         int src_right = std::min(Self->VectorClip.right, Self->BkgdBitmap->Clip.Right + Self->BkgdOriginX);
+         int src_bottom = std::min(Self->VectorClip.bottom, Self->BkgdBitmap->Clip.Bottom + Self->BkgdOriginY);
 
          int dest_x = bmp->Clip.Left + (src_left - Self->VectorClip.left);
          int dest_y = bmp->Clip.Top + (src_top - Self->VectorClip.top);
@@ -425,15 +433,14 @@ objBitmap * get_source_graphic(extVectorFilter *Self)
 
    kt::SwitchContext ctx(Self);
 
-   // The bitmap spans the scene page, but its pixel data only covers the clip region.  A page-sized buffer would be
-   // retained for the lifetime of the filter, which is costly for large scenes that hold many filter definitions.
+   // The bitmap covers the processing region only, using the same local coordinates as the banked bitmaps.  The
+   // client is rendered with a matching origin, which allows content to the left of or above the page to be drawn.
 
+   auto clip = Self->scratch_clip();
    #ifdef DEBUG_FILTER_BITMAP
-      auto sg = Self->SourceGraphic.get_bitmap(Self->ClientViewport->Scene->PageWidth,
-         Self->ClientViewport->Scene->PageHeight, Self->VectorClip, true, 0, "source_graphic");
+      auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, true, 0, "source_graphic");
    #else
-      auto sg = Self->SourceGraphic.get_bitmap(Self->ClientViewport->Scene->PageWidth,
-         Self->ClientViewport->Scene->PageHeight, Self->VectorClip, false, 0, "source_graphic");
+      auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, false, 0, "source_graphic");
    #endif
 
    if (!sg) return nullptr;
@@ -476,7 +483,11 @@ objBitmap * get_source_graphic(extVectorFilter *Self)
 
    gfx::DrawRectangle(sg, 0, 0, sg->Width, sg->Height, 0x00000000, BAF::FILL);
    Self->SourceScene->Bitmap = sg;
+   Self->SourceScene->RenderOriginX = Self->VectorClip.left;
+   Self->SourceScene->RenderOriginY = Self->VectorClip.top;
    acDraw(Self->SourceScene);
+   Self->SourceScene->RenderOriginX = 0;
+   Self->SourceScene->RenderOriginY = 0;
 
    Self->Disabled = false;
    Self->ClientVector->Next = save_vector;
@@ -487,9 +498,84 @@ objBitmap * get_source_graphic(extVectorFilter *Self)
 }
 
 //********************************************************************************************************************
-// Defines the VectorClip values utilised by the filter renderers.  Retain the processing region within the scene page,
-// including source pixels outside the drawing clip that effects may move into it.  The scene renderer clips the final
-// composite to the drawable area, including any clipping imposed by container viewports.
+// Estimates the distance, in bitmap pixels, over which the effect pipeline can move content or sample neighbouring
+// pixels.  Pixels further than this from the page cannot affect the visible output.  The estimate is the sum over
+// every effect, so it is safe for any arrangement of the pipeline.  Effects with no fixed limit, such as a wrapping
+// convolution or a displacement map, return infinity.
+
+static void filter_reach(extVectorFilter *Self, double &ReachX, double &ReachY)
+{
+   constexpr double UNBOUNDED = std::numeric_limits<double>::infinity();
+
+   ReachX = ReachY = 0;
+   for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
+      double x = 0, y = 0;
+      switch (e->classID()) {
+         case CLASSID::BLURFX:
+            ((extBlurFX *)e)->radii(x, y);
+            x = std::ceil(std::min(x, MAX_BLUR_RADIUS)) + 1;
+            y = std::ceil(std::min(y, MAX_BLUR_RADIUS)) + 1;
+            break;
+
+         case CLASSID::OFFSETFX: {
+            int dx, dy;
+            ((extOffsetFX *)e)->pixel_offset(dx, dy);
+            x = std::abs(dx);
+            y = std::abs(dy);
+            break;
+         }
+
+         case CLASSID::LIGHTINGFX: // Surface normals are computed from a 3x3 kernel
+            x = y = 2;
+            break;
+
+         case CLASSID::MORPHOLOGYFX:
+            x = std::max(((extMorphologyFX *)e)->RadiusX, 0) + 1;
+            y = std::max(((extMorphologyFX *)e)->RadiusY, 0) + 1;
+            break;
+
+         case CLASSID::CONVOLVEFX: {
+            auto convolve = (extConvolveFX *)e;
+            if (convolve->EdgeMode IS EM::WRAP) x = y = UNBOUNDED;
+            else {
+               x = std::ceil(convolve->MatrixColumns * convolve->unitPixelSpacingX()) + 1;
+               y = std::ceil(convolve->MatrixRows * convolve->unitPixelSpacingY()) + 1;
+            }
+            break;
+         }
+
+         // Effects that process each pixel independently of its neighbours
+
+         case CLASSID::COLOURFX:
+         case CLASSID::COMPOSITEFX:
+         case CLASSID::FLOODFX:
+         case CLASSID::IMAGEFX:
+         case CLASSID::MERGEFX:
+         case CLASSID::REMAPFX:
+         case CLASSID::SOURCEFX:
+         case CLASSID::TURBULENCEFX:
+         case CLASSID::WAVEFUNCTIONFX:
+            break;
+
+         default: // Including DISPLACEMENTFX, which can sample at any distance
+            x = y = UNBOUNDED;
+            break;
+      }
+
+      ReachX += x;
+      ReachY += y;
+   }
+}
+
+//********************************************************************************************************************
+// Defines the VectorClip values utilised by the filter renderers.  The processing region is the filter region,
+// limited to the scene page and a margin around it.  The margin allows effects such as blurs and offsets to read
+// content that lies beyond the page edges, and it retains source pixels outside the drawing clip that effects may move
+// into it.  The scene renderer clips the final composite to the drawable area, including any clipping imposed by
+// container viewports.
+//
+// VectorClip is measured in scene coordinates and can extend beyond the page on every side.  Filter bitmaps are
+// addressed in local coordinates relative to its top-left corner.
 
 static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector)
 {
@@ -588,10 +674,30 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
       Self->VectorClip = get_bounds<agg::conv_transform<agg::path_storage, agg::trans_affine>, int>(path);
    }
 
-   Self->VectorClip.left   = std::max(Self->VectorClip.left, 0);
-   Self->VectorClip.top    = std::max(Self->VectorClip.top, 0);
-   Self->VectorClip.right  = std::min(Self->VectorClip.right, Viewport->Scene->PageWidth);
-   Self->VectorClip.bottom = std::min(Self->VectorClip.bottom, Viewport->Scene->PageHeight);
+   // The margin is limited so that unbounded effects do not process an excessive area around the page, and it is
+   // dropped if the processing region would become unreasonably large.
+
+   const int page_width  = Viewport->Scene->PageWidth;
+   const int page_height = Viewport->Scene->PageHeight;
+   const double max_margin = std::max(page_width, page_height);
+
+   double reach_x, reach_y;
+   filter_reach(Self, reach_x, reach_y);
+
+   const auto region = Self->VectorClip;
+   auto limit_region = [&](int MarginX, int MarginY) {
+      Self->VectorClip.left   = std::max(region.left, -MarginX);
+      Self->VectorClip.top    = std::max(region.top, -MarginY);
+      Self->VectorClip.right  = std::min(region.right, page_width + MarginX);
+      Self->VectorClip.bottom = std::min(region.bottom, page_height + MarginY);
+   };
+
+   limit_region(int(std::ceil(std::min(reach_x, max_margin))), int(std::ceil(std::min(reach_y, max_margin))));
+
+   const int64_t area = int64_t(Self->VectorClip.width()) * int64_t(Self->VectorClip.height());
+   if ((area > MAX_FILTER_MARGIN_AREA) and (area > int64_t(page_width) * int64_t(page_height))) {
+      limit_region(0, 0);
+   }
 
    if ((Self->VectorClip.bottom <= Self->VectorClip.top) or (Self->VectorClip.right <= Self->VectorClip.left)) {
       return log.warning(ERR::InvalidDimension);
@@ -606,7 +712,7 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
 // a physical ancestor, e.g. the viewport that consumes a live pattern.
 
 ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector,
-   objBitmap *BkgdBitmap, VCS ColourSpace, objBitmap **Output)
+   objBitmap *BkgdBitmap, VCS ColourSpace, objBitmap **Output, int BkgdOriginX, int BkgdOriginY)
 {
    kt::Log log(__FUNCTION__);
 
@@ -626,15 +732,21 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    Self->ClientViewport = Viewport;
    Self->ClientVector   = Vector;
    Self->BkgdBitmap     = BkgdBitmap; // For VSF::BKGD and VSF::BKGD_ALPHA
+   Self->BkgdOriginX = BkgdOriginX;
+   Self->BkgdOriginY = BkgdOriginY;
    Self->ClientColourSpace = ColourSpace;
    Self->Rendered       = false; // Set to true when SourceGraphic is rendered
    Self->BankIndex      = 0;
 
-   if (auto error = set_clip_region(Self, Viewport, Vector); error != ERR::Okay) return error;
-
-   // Calculate Self->Target* and Self->Bound* values
+   // Calculate Self->Target* and Self->Bound* values.  The reach of the effects depends on these, so they are
+   // computed before the clip region.
 
    compute_target_area(Self);
+
+   if (auto error = set_clip_region(Self, Viewport, Vector); error != ERR::Okay) return error;
+
+   Self->Transform = Vector->Transform;
+   Self->Transform.translate(-Self->VectorClip.left, -Self->VectorClip.top);
 
    // Render the effect pipeline in sequence.  Linked effects get their own bitmap, everything else goes to a shared
    // output bitmap.  After all effects are rendered, the shared output bitmap is returned for rendering to the scene graph.
@@ -780,10 +892,18 @@ By default, colour filters are processed in SRGB format.  This is the same colou
 graphics system, which means that no special conversion is necessary prior to and post filter processing.  However,
 linear RGB is better suited for producing high quality results at a cost of speed.
 
+Intermediate images are always stored in sRGB encoding.  When `LINEAR_RGB` is selected, effects that honour this
+setting decode their inputs, process them in linear RGB and encode the result for storage.  These are @BlurFX,
+@ColourFX, @ConvolveFX, @DisplacementFX (for the displacement map), @LightingFX, @MergeFX, @MorphologyFX, @RemapFX
+and the `ARITHMETIC` operator of @CompositeFX.  The other @CompositeFX operators that mix colour components always do so
+in linear RGB.
+Colours that are input values, such as the colour of a @FloodFX, are stored as given and are not converted.
+
 This setting applies only to the processing of effects within the pipeline.  The composite of the filter's output into
 the target is governed by the client vector's @Vector.ColourSpace.
 
-Note that if SVG compatibility is required, linear RGB must be used as the default.
+The SVG standard defaults to linear RGB for filter effects, so the SVG parser selects `LINEAR_RGB` unless the
+`color-interpolation-filters` attribute states otherwise.  Filters created through the API retain the SRGB default.
 
 -FIELD-
 EffectXML: Returns a SVG XML string that defines the filter's effects.

@@ -48,6 +48,8 @@ bool SceneRenderer::ClipBuffer::use_cached_mask(const agg::trans_affine &Transfo
 
    m_width = cache->Width;
    m_height = cache->Height;
+   m_origin_x = cache->OriginX;
+   m_origin_y = cache->OriginY;
    if (m_clip) m_clip->Bounds = cache->Bounds;
    m_renderer.attach(cache->Bitmap.data(), m_width - 1, m_height - 1, m_width);
    return true;
@@ -76,6 +78,8 @@ void SceneRenderer::ClipBuffer::store_cached_mask(const agg::trans_affine &Trans
    cache.PathTimestamp = m_shape->PathTimestamp;
    cache.Width = m_width;
    cache.Height = m_height;
+   cache.OriginX = m_origin_x;
+   cache.OriginY = m_origin_y;
    cache.ParentWidth = ParentWidth;
    cache.ParentHeight = ParentHeight;
    cache.Units = m_clip ? m_clip->Units : VUNIT::UNDEFINED;
@@ -97,6 +101,7 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
          if (node->Visibility != VIS::VISIBLE);
          else if (!node->BasePath.empty()) {
             auto t = node->Transform * Transform;
+            t.translate(-m_origin_x, -m_origin_y);
 
             // Flatten any curved geometry (e.g. ellipses) to the resolution of the final composed transform.
             // Without this the path is flattened at scale 1.0 and any subsequent upscale (such as a bounding-box
@@ -221,8 +226,12 @@ void SceneRenderer::ClipBuffer::draw_clips(SceneRenderer &Render, extVector *Sha
 
 //********************************************************************************************************************
 
-void SceneRenderer::ClipBuffer::resize_bitmap(int Width, int Height)
+void SceneRenderer::ClipBuffer::resize_bitmap(int Width, int Height, int OriginX, int OriginY)
 {
+   m_origin_x = OriginX;
+   m_origin_y = OriginY;
+   Width -= OriginX;
+   Height -= OriginY;
    if ((Width <= 0) or (Height <= 0)) Width = Height = 1;
 
    if (Width > 8192)  Width = 8192;
@@ -247,7 +256,8 @@ void SceneRenderer::ClipBuffer::draw_viewport(SceneRenderer &Render)
 
    if (use_cached_mask(vp->Transform, 0, 0)) return;
 
-   resize_bitmap(int(vp->vpBounds.right) + 2, int(vp->vpBounds.bottom) + 2);
+   resize_bitmap(int(vp->vpBounds.right) + 2, int(vp->vpBounds.bottom) + 2,
+      std::min(0, int(std::floor(vp->vpBounds.left))), std::min(0, int(std::floor(vp->vpBounds.top))));
 
    m_renderer.attach(m_bitmap.data(), m_width-1, m_height-1, m_width);
    agg::pixfmt_gray8 pixf(m_renderer);
@@ -259,7 +269,9 @@ void SceneRenderer::ClipBuffer::draw_viewport(SceneRenderer &Render)
 
    if (!vp->BasePath.empty()) {
       agg::scanline32_p8 sl;
-      agg::path_storage final_path(vp->BasePath);
+      agg::trans_affine origin;
+      origin.translate(-m_origin_x, -m_origin_y);
+      agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(vp->BasePath, origin);
 
       rasterizer.reset();
       rasterizer.add_path(final_path);
@@ -323,7 +335,8 @@ void SceneRenderer::ClipBuffer::draw_userspace(SceneRenderer &Scene)
    agg::path_storage clip_bound_path = m_clip->Bounds.as_path();
    auto clip_bound_final = get_bounds(clip_bound_path);
 
-   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
+   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2,
+      std::min(0, int(std::floor(clip_bound_final.left))), std::min(0, int(std::floor(clip_bound_final.top))));
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 
@@ -369,7 +382,8 @@ void SceneRenderer::ClipBuffer::draw_bounding_box(SceneRenderer &Render)
    auto clip_bound_path = m_clip->Bounds.as_path(m_shape->Transform);
    auto clip_bound_final = get_bounds(clip_bound_path);
 
-   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2);
+   resize_bitmap(int(clip_bound_final.right) + 2, int(clip_bound_final.bottom) + 2,
+      std::min(0, int(std::floor(clip_bound_final.left))), std::min(0, int(std::floor(clip_bound_final.top))));
 
    // Every child vector of the VectorClip that exports a path will be rendered to the mask.
 

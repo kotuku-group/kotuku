@@ -455,6 +455,7 @@ struct ClipMaskCache {
    uint64_t ContentVersion;
    int PathTimestamp;
    int Width, Height;
+   int OriginX = 0, OriginY = 0;
    double ParentWidth, ParentHeight;
    VUNIT Units;
    VCLF Flags;
@@ -471,6 +472,7 @@ struct ClipMaskCache {
       ContentVersion = 0;
       PathTimestamp = 0;
       Width = Height = 0;
+      OriginX = OriginY = 0;
       ParentWidth = ParentHeight = 0;
       Units = VUNIT::UNDEFINED;
       Flags = VCLF::NIL;
@@ -722,12 +724,14 @@ class extVectorFilter : public objVectorFilter {
    extVectorScene *Scene;              // Scene that the filter belongs to.
    filter_bitmap SourceGraphic;        // Rendering of the vector client for SourceGraphic and SourceAlpha.  Clip-sized.
    objBitmap *BkgdBitmap;              // Target bitmap supplied by Scene.acDraw()
+   int BkgdOriginX = 0, BkgdOriginY = 0; // Scene coordinates of the background bitmap origin.
    VCS ClientColourSpace = VCS::INHERIT; // Colour space the client resolves to in the scene graph renderer
    extFilterEffect *ActiveEffect;      // Current effect being processed by the pipeline.
    extFilterEffect *Effects;           // Pointer to the first effect in the chain.
    extFilterEffect *LastEffect;
    std::vector<std::unique_ptr<filter_bitmap>> Bank;
-   TClipRectangle<int> VectorClip;     // Clipping region of the vector client (reflects the vector bounds)
+   TClipRectangle<int> VectorClip;     // Processing region in scene coordinates.  Can extend beyond the page.
+   agg::trans_affine Transform;        // ClientVector->Transform, offset so that VectorClip's top-left is (0,0)
    uint8_t BankIndex;
    double BoundWidth, BoundHeight;     // Filter boundary, computed on acDraw()
    double TargetX, TargetY, TargetWidth, TargetHeight; // Target boundary, computed on acDraw()
@@ -748,6 +752,13 @@ class extVectorFilter : public objVectorFilter {
    }
 
    ~extVectorFilter();
+
+   // Filter bitmaps use local coordinates, in which (0,0) is the top-left of VectorClip.  This allows the processing
+   // region to extend beyond the top and left edges of the page.
+
+   TClipRectangle<int> scratch_clip() const {
+      return { 0, 0, VectorClip.right - VectorClip.left, VectorClip.bottom - VectorClip.top };
+   }
 };
 
 class extFilterEffect : public objFilterEffect {
@@ -933,6 +944,7 @@ class extVectorScene : public objVectorScene {
    bool BorderlessSurface;
    bool DropRouting; // True if the scene is the drop router for its surface.
    uint8_t BufferCount; // Active tally of viewports that are buffered.
+   int RenderOriginX = 0, RenderOriginY = 0; // Scene coordinates that map to (0,0) of the target bitmap.
 
    extVectorScene(objMetaClass *ClassPtr, OBJECTID ObjectID) :
       objVectorScene(ClassPtr, ObjectID), ShareVersion(1), SubtreeDirty(true) {
@@ -1307,7 +1319,7 @@ extern GRADIENT_TABLE * get_fill_gradient_table(extPainter &, double);
 extern GRADIENT_TABLE * get_stroke_gradient_table(extVector &);
 extern objBitmap * get_source_graphic(extVectorFilter *);
 extern ERR read_path(std::vector<PathCommand> &, std::string_view);
-extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, VCS, objBitmap **);
+extern ERR render_filter(extVectorFilter *, extVectorViewport *, extVector *, objBitmap *, VCS, objBitmap **, int, int);
 extern ERR scene_input_events(const InputEvent *, int);
 extern void send_feedback(extVector *, FM, OBJECTPTR = nullptr);
 extern void apply_focus(extVectorScene *, extVector *);

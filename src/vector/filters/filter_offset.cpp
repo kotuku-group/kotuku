@@ -25,31 +25,37 @@ class extOffsetFX : public extFilterEffect {
    double XOffset = 0, YOffset = 0;
 
    extOffsetFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
+   // Computes the offset in bitmap pixels.
+
+   void pixel_offset(int &DX, int &DY) const {
+      double dx = XOffset, dy = YOffset;
+      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+         if (Filter->AspectRatio IS VFA::NONE) {
+            double diag = dist(0, 0, Filter->BoundWidth, Filter->BoundHeight) * INV_SQRT2;
+            dx *= diag;
+            dy *= diag;
+         }
+         else {
+            dx *= Filter->BoundWidth;
+            dy *= Filter->BoundHeight;
+         }
+      }
+
+      DX = int(std::lround(dx * Filter->ClientVector->Transform.sx));
+      DY = int(std::lround(dy * Filter->ClientVector->Transform.sy));
+   }
 };
 
 //********************************************************************************************************************
 
 static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
 {
-   auto filter = Self->Filter;
-   double dx = Self->XOffset, dy = Self->YOffset;
-   if (filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (filter->AspectRatio IS VFA::NONE) {
-         double diag = dist(0, 0, filter->BoundWidth, filter->BoundHeight) * INV_SQRT2;
-         dx *= diag;
-         dy *= diag;
-      }
-      else {
-         dx *= filter->BoundWidth;
-         dy *= filter->BoundHeight;
-      }
-   }
-
    objBitmap *inBmp;
    if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
-      gfx::CopyArea(inBmp, Self->Target, BAF::NIL, 0, 0, inBmp->Width, inBmp->Height,
-         int(std::lround(dx * filter->ClientVector->Transform.sx)),
-         int(std::lround(dy * filter->ClientVector->Transform.sy)));
+      int dx, dy;
+      Self->pixel_offset(dx, dy);
+      gfx::CopyArea(inBmp, Self->Target, BAF::NIL, 0, 0, inBmp->Width, inBmp->Height, dx, dy);
       return ERR::Okay;
    }
    else return ERR::NoData;

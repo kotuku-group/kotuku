@@ -29,8 +29,8 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
          renderer.color(colour);
 
          if (!mClipStack.empty()) {
-            agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
-            agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
+            auto alpha_mask = mClipStack.top().mask();
+            agg::scanline_u8_am<scene_alpha_mask> mScanLineMasked(alpha_mask);
             agg::render_scanlines(Raster, mScanLineMasked, renderer);
          }
          else agg::render_scanlines(Raster, mScanLine, renderer);
@@ -40,8 +40,8 @@ void SceneRenderer::render_fill(VectorState &State, extVector &Vector, agg::rast
          renderer.color(colour);
 
          if (!mClipStack.empty()) {
-            agg::alpha_mask_gray8 alpha_mask(mClipStack.top().m_renderer);
-            agg::scanline_u8_am<agg::alpha_mask_gray8> mScanLineMasked(alpha_mask);
+            auto alpha_mask = mClipStack.top().mask();
+            agg::scanline_u8_am<scene_alpha_mask> mScanLineMasked(alpha_mask);
             agg::render_scanlines(Raster, mScanLineMasked, renderer);
          }
          else agg::render_scanlines(Raster, mScanLine, renderer);
@@ -127,8 +127,8 @@ static void fill_image(VectorState &State, const TClipRectangle<double> &Bounds,
    }
 
    if ((Render) and (!Render->clip_stack_empty())) {
-      agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
-      agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+      auto alpha_mask = Render->clip_stack_top().mask();
+      agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
       drawBitmap(masked_scanline, SampleMethod, RenderBase, Raster, Image.Bitmap, Image.SpreadMethod, Alpha,
          &transform);
    }
@@ -265,21 +265,12 @@ static bool build_gouraud_path_mask(agg::rasterizer_scanline_aa<> &Raster,
    agg::render_scanlines(Raster, scanline, solid);
 
    if ((Render) and (!Render->clip_stack_empty())) {
-      auto &clip = Render->clip_stack_top().m_renderer;
-      const unsigned clip_width = clip.width();
-      const unsigned clip_height = clip.height();
-
+      auto alpha_mask = Render->clip_stack_top().mask();
       for (unsigned y=0; y < height; y++) {
          auto mask_row = Buffer.row_ptr(int(y));
-         if (y >= clip_height) {
-            std::fill(mask_row, mask_row + width, 0);
-            continue;
-         }
-
-         auto clip_row = clip.row_ptr(int(y));
          for (unsigned x=0; x < width; x++) {
-            if (x >= clip_width) mask_row[x] = 0;
-            else mask_row[x] = uint8_t((int(mask_row[x]) * int(clip_row[x]) + 127) / 255);
+            const auto coverage = alpha_mask.pixel(int(x), int(y));
+            mask_row[x] = uint8_t((int(mask_row[x]) * int(coverage) + 127) / 255);
          }
       }
    }
@@ -1069,8 +1060,8 @@ static void fill_diffusion(VectorState &State, const TClipRectangle<double> &Bou
    agg::span_converter converted_span(span_gen, span_converter);
 
    if ((Render) and (!Render->clip_stack_empty())) {
-      agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
-      agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+      auto alpha_mask = Render->clip_stack_top().mask();
+      agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
       drawBitmapRender(masked_scanline, RenderBase, Raster, converted_span, Opacity);
    }
    else {
@@ -1174,8 +1165,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          agg::render_scanlines(*active_raster, scanline, solidrender_gradient);
       }
       else { // Masked gradient
-         agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
-         agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+         auto alpha_mask = Render->clip_stack_top().mask();
+         agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
          agg::render_scanlines(*active_raster, masked_scanline, solidrender_gradient);
       }
    };
@@ -1741,8 +1732,8 @@ static void fill_gradient(VectorState &State, const TClipRectangle<double> &Boun
          agg::render_scanlines(*active_raster, scanline, sdf_render);
       }
       else {
-         agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
-         agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+         auto alpha_mask = Render->clip_stack_top().mask();
+         agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
          agg::render_scanlines(*active_raster, masked_scanline, sdf_render);
       }
    }
@@ -1900,8 +1891,8 @@ static void fill_pattern(VectorState &State, const TClipRectangle<double> &Bound
    }
 
    if ((Render) and (!Render->clip_stack_empty())) {
-      agg::alpha_mask_gray8 alpha_mask(Render->clip_stack_top().m_renderer);
-      agg::scanline_u8_am<agg::alpha_mask_gray8> masked_scanline(alpha_mask);
+      auto alpha_mask = Render->clip_stack_top().mask();
+      agg::scanline_u8_am<scene_alpha_mask> masked_scanline(alpha_mask);
       drawBitmap(masked_scanline, SampleMethod, RenderBase, Raster, Pattern.Bitmap, Pattern.SpreadMethod,
          Pattern.Opacity * Alpha, &transform);
    }

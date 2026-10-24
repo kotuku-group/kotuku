@@ -686,7 +686,29 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
                uint8_t *in  = inBmp->Data + (inBmp->Clip.Left * 4) + (inBmp->Clip.Top * inBmp->LineWidth);
                uint8_t *mix = mixBmp->Data + (mixBmp->Clip.Left * 4) + (mixBmp->Clip.Top * mixBmp->LineWidth);
                constexpr double alpha_scale = 1.0 / 255.0;
-               constexpr double linear_scale = 1.0 / 65535.0;
+
+               // The arithmetic is performed in the filter's colour space.  Bitmaps are always sRGB encoded, so
+               // linear processing decodes the inputs and encodes the result.
+
+               const bool linear = Self->Filter->ColourSpace IS VCS::LINEAR_RGB;
+
+               auto decode = [linear](uint8_t Value) -> double {
+                  if (linear) return double(glLinearRGB.convert16(Value)) * (1.0 / 65535.0);
+                  else return double(Value) * alpha_scale;
+               };
+
+               auto encode = [linear](double Value) -> uint8_t {
+                  if (linear) {
+                     const int v = int(Value * 65535.0);
+                     if (v > 0xffff) return 0xff;
+                     else if (v < 0) return 0;
+                     else return glLinearRGB.invert16(v);
+                  }
+                  else if (Value >= 1.0) return 0xff;
+                  else if (Value <= 0.0) return 0;
+                  else return uint8_t(std::lround(Value * 255.0));
+               };
+
                for (int y=0; y < height; y++) {
                   auto dp = dest;
                   auto sp = in;
@@ -695,14 +717,14 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
                      if ((mp[A]) or (sp[A])) {
                         // Scale RGB to 0 - 1.0 and premultiply the values.
                         const double sA = double(sp[A]) * alpha_scale;
-                        const double sR = double(glLinearRGB.convert16(sp[R])) * linear_scale * sA;
-                        const double sG = double(glLinearRGB.convert16(sp[G])) * linear_scale * sA;
-                        const double sB = double(glLinearRGB.convert16(sp[B])) * linear_scale * sA;
+                        const double sR = decode(sp[R]) * sA;
+                        const double sG = decode(sp[G]) * sA;
+                        const double sB = decode(sp[B]) * sA;
 
                         const double mA = double(mp[A]) * alpha_scale;
-                        const double mR = double(glLinearRGB.convert16(mp[R])) * linear_scale * mA;
-                        const double mG = double(glLinearRGB.convert16(mp[G])) * linear_scale * mA;
-                        const double mB = double(glLinearRGB.convert16(mp[B])) * linear_scale * mA;
+                        const double mR = decode(mp[R]) * mA;
+                        const double mG = decode(mp[G]) * mA;
+                        const double mB = decode(mp[B]) * mA;
 
                         double dA = (Self->K1 * sA * mA) + (Self->K2 * sA) + (Self->K3 * mA) + Self->K4;
 
@@ -710,25 +732,12 @@ static ERR COMPOSITEFX_Draw(extCompositeFX *Self, struct acDraw *Args)
                            if (dA > 1.0) dA = 1.0;
 
                            double demul = 1.0 / dA;
-                           int dr = int(((Self->K1 * sR * mR) + (Self->K2 * sR) + (Self->K3 * mR) + Self->K4) *
-                              demul * 65535.0);
-                           int dg = int(((Self->K1 * sG * mG) + (Self->K2 * sG) + (Self->K3 * mG) + Self->K4) *
-                              demul * 65535.0);
-                           int db = int(((Self->K1 * sB * mB) + (Self->K2 * sB) + (Self->K3 * mB) + Self->K4) *
-                              demul * 65535.0);
-
-                           if (dr > 0xffff) dp[R] = 0xff;
-                           else if (dr < 0) dp[R] = 0;
-                           else dp[R] = glLinearRGB.invert16(dr);
-
-                           if (dg > 0xffff) dp[G] = 0xff;
-                           else if (dg < 0) dp[G] = 0;
-                           else dp[G] = glLinearRGB.invert16(dg);
-
-                           if (db > 0xffff) dp[B] = 0xff;
-                           else if (db < 0) dp[B] = 0;
-                           else dp[B] = glLinearRGB.invert16(db);
-
+                           dp[R] = encode(((Self->K1 * sR * mR) + (Self->K2 * sR) + (Self->K3 * mR) + Self->K4) *
+                              demul);
+                           dp[G] = encode(((Self->K1 * sG * mG) + (Self->K2 * sG) + (Self->K3 * mG) + Self->K4) *
+                              demul);
+                           dp[B] = encode(((Self->K1 * sB * mB) + (Self->K2 * sB) + (Self->K3 * mB) + Self->K4) *
+                              demul);
                            dp[A] = int(dA * 255.0);
                         }
                      }
@@ -801,20 +810,33 @@ static ERR COMPOSITEFX_Init(extCompositeFX *Self)
 -FIELD-
 K1: Input value for the arithmetic operation.
 
+The `ARITHMETIC` operator computes `result = K1 * i1 * i2 + K2 * i1 + K3 * i2 + K4` for each premultiplied colour
+component, where `i1` is the @FilterEffect.Input and `i2` is the @FilterEffect.Mix.
+
 -FIELD-
 K2: Input value for the arithmetic operation.
+
+Refer to #K1 for the arithmetic formula.
 
 -FIELD-
 K3: Input value for the arithmetic operation.
 
+Refer to #K1 for the arithmetic formula.
+
 -FIELD-
 K4: Input value for the arithmetic operation.
+
+Refer to #K1 for the arithmetic formula.
 
 -FIELD-
 Operator: The compositing algorithm to use for rendering.
 Lookup: OP
 
 Setting the Operator will determine the algorithm that is used for compositing.  The default is `OVER`.
+
+The `ARITHMETIC` operator is computed in the colour space of the parent @VectorFilter, so the #K1 - #K4 values
+operate on sRGB values by default, or on linear RGB values when `LINEAR_RGB` is selected.  The other operators that
+mix colour components always do so in linear RGB, while `IN` and `OUT` only modify the alpha channel.
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the filter.

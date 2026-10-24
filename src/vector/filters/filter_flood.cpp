@@ -60,7 +60,7 @@ static ERR FLOODFX_Draw(extFloodFX *Self, struct acDraw *Args)
    path.close_polygon();
 
    agg::renderer_scanline_bin_solid< agg::renderer_base<agg::pixfmt_psl> > solid_render(renderBase);
-   agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(path, filter->ClientVector->Transform);
+   agg::conv_transform<agg::path_storage, agg::trans_affine> final_path(path, filter->Transform);
    raster.add_path(final_path);
    renderBase.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right - 1, Self->Target->Clip.Bottom - 1);
    solid_render.color(col);

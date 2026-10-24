@@ -31,6 +31,8 @@ class extSourceFX : public extFilterEffect {
    objVector *Source = nullptr;     // The vector branch to render as source graphic.
    objVectorScene *Scene = nullptr; // Internal scene for rendering.
    std::vector<uint8_t> BitmapData;
+   agg::trans_affine CacheTransform; // The filter transform used for rendering the cache.
+   TClipRectangle<int> CacheClip = { 0, 0, 0, 0 }; // The filter clip region used for rendering the cache.
    bool Render = true;              // Must be true if the bitmap cache needs to be rendered.
 
    extSourceFX(objMetaClass *ClassPtr, OBJECTID ObjectID) : extFilterEffect(ClassPtr, ObjectID) {
@@ -102,9 +104,11 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       acResize(Self->Scene, filter->ClientViewport->Scene->PageWidth, filter->ClientViewport->Scene->PageHeight, 0);
    }
 
-   if ((filter->VectorClip.right > Self->Bitmap->Clip.Right) or
-       (filter->VectorClip.bottom > Self->Bitmap->Clip.Bottom)) {
-      acResize(Self->Bitmap, filter->ClientViewport->Scene->PageWidth, filter->ClientViewport->Scene->PageHeight, 0);
+   // The cache uses the filter's local bitmap coordinates.
+
+   const auto clip = filter->scratch_clip();
+   if ((clip.right > Self->Bitmap->Width) or (clip.bottom > Self->Bitmap->Height)) {
+      acResize(Self->Bitmap, std::max(clip.right, Self->Bitmap->Width), std::max(clip.bottom, Self->Bitmap->Height), 0);
    }
 
    auto vp = (extVectorViewport *)Self->Scene->Viewport;
@@ -112,9 +116,16 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Render = true;
    }
 
+   if ((not Self->CacheTransform.is_equal(filter->Transform)) or
+       (Self->CacheClip.right != clip.right) or (Self->CacheClip.bottom != clip.bottom)) {
+      Self->Render = true;
+   }
+
    if (Self->Render) {
       auto &cache = Self->Bitmap;
-      cache->Clip = { filter->VectorClip.left, filter->VectorClip.top, filter->VectorClip.right, filter->VectorClip.bottom };
+      cache->Clip = { clip.left, clip.top, clip.right, clip.bottom };
+      Self->CacheTransform = filter->Transform;
+      Self->CacheClip = clip;
 
       // Manual data management - bitmap data is restricted to the clipping region.
 
@@ -135,7 +146,7 @@ static ERR SOURCEFX_Draw(extSourceFX *Self, struct acDraw *Args)
       Self->Scene->Viewport->setHeight(img_height);
       Self->Scene->Viewport->setAspectRatio(Self->AspectRatio);
 
-      agg::trans_affine &t = filter->ClientVector->Transform;
+      auto &t = filter->Transform;
       auto viewport = (extVectorViewport *)Self->Scene->Viewport;
 
       // Temporarily inject the client's transform as the viewport's sole matrix for the duration of the render.
