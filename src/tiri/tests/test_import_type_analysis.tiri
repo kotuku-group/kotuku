@@ -235,18 +235,21 @@ function run_cold(Source:str):<num, str>
    write_file(script, Source)
 
    local output = ''
+   local errors = ''
    local executable = processing.task().processPath .. 'origo'
    if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
    local task <close> = obj.new('task', {
       location=executable, flags=TSF_WAIT, timeout=20,
       outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
-      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+      errorCallback=function(Task, Buffer) errors ..= Buffer.getString() end
    })
    for parameter in values(array<str> { script, '--log-trace', '--set-volume', 'packages=' .. packages,
          '--set-volume', 'temp=' .. glRoot }) do
       check task.mtAddArgument(parameter)
    end
    check task.acActivate()
+   -- Keep each stream contiguous: stdout can arrive between chunks of a stderr diagnostic.
+   output ..= '\n' .. errors
    assert(output.find('Imported-module cache hit') is nil,
       'Every imported module must be compiled from source: ' .. output)
    return task.returnCode, output
