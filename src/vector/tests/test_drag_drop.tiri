@@ -263,6 +263,74 @@ end
    assert(requested and received, 'The vector bridge must preserve synchronous request and receipt delivery')
 end
 
+-- Receipts are correlated with requests by source and item.  These call input.requestItem() directly, without a
+-- pointer session.
+
+function itemReceipt(Item:num!):str
+   return f'<receipt id="{Item}"><file path="/item{Item}"/></receipt>'
+end
+
+@Test function ReceiptCallbackCanRequestFromTheSameSource()
+   local results = array<str>
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes)
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT, itemReceipt(Item))
+      end
+   })
+   input.requestItem(source, 1, 'file', function(Items)
+      results.push('first:' .. Items[0].path)
+      input.requestItem(source, 2, 'file', function(Items)
+         results.push('second:' .. Items[0].path)
+      end)
+   end)
+   assert(#results is 2, f'Each request must be answered exactly once, got {#results} callbacks')
+   assert(results[0] is 'first:/item1' and results[1] is 'second:/item2',
+      f'A nested request must receive its own receipt, got {results[0]} and {results[1]}')
+end
+
+@Test function DeferredReceiptsAreMatchedByItem()
+   local requester
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes)
+         requester = Requester -- Answered later
+      end
+   })
+   local results = { }
+   input.requestItem(source, 1, 'file', function(Items) results.first = Items[0].path end)
+   input.requestItem(source, 2, 'file', function(Items) results.second = Items[0].path end)
+   assert(requester, 'The source must receive the requests')
+
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(9))
+   assert(results.first is nil and results.second is nil, 'A receipt for an unrequested item must be ignored')
+
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(2))
+   assert(results.second is '/item2' and results.first is nil, 'A receipt must only answer the matching request')
+
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(1))
+   assert(results.first is '/item1', 'An earlier request must still be answered after a later one')
+
+   results.first = nil
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(1))
+   assert(results.first is nil, 'A request must not be answered twice')
+end
+
+@Test function ReceiptWithoutIdAnswersTheOldestRequest()
+   local requester
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes) requester = Requester end
+   })
+   local order = array<int>
+   input.requestItem(source, 5, 'file', function(Items) order.push(5) end)
+   input.requestItem(source, 6, 'file', function(Items) order.push(6) end)
+   check requester.acDataFeed(source, DATA_RECEIPT, '<receipt><file path="/anonymous"/></receipt>')
+   assert(#order is 1 and order[0] is 5, 'A receipt without an id must answer only the oldest request')
+   check requester.acDataFeed(source, DATA_RECEIPT, '<receipt><file path="/anonymous"/></receipt>')
+   assert(#order is 2 and order[1] is 6, 'The next receipt without an id must answer the remaining request')
+end
+
 @Test function ClipboardSourceIsToldHowTheSessionEnded()
    local surface <close>, scene, root = newScene()
    root.dropTarget = 1
