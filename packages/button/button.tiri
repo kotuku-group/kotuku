@@ -17,267 +17,278 @@ gui.button = function(Options)
       events         = Options.events ?? { },
       parentViewport = Options.target,
       pulse          = Options.pulse ?? false, -- If true, activate on press and repeatedly while the button is held
-      text           = nil, -- A VectorText that represents the string
       tip            = Options.tip, -- Hover tip text; recommended for buttons that only show an icon
       viewport       = nil, -- The button's primary viewport
    }
 
-   base_theme = gui.getTheme(self.parentViewport)
-   theme = table.merge(base_theme.button, Options.theme, true, true)
+   using self do
+      base_theme = gui.getTheme(&parentViewport)
+      theme = table.merge(base_theme.button, Options.theme, true, true)
 
-   -- Icon size and text padding scale with the button height
+      -- Icon size and label padding scale with the button height
 
-   HEIGHT    <const> = Options.height ?? DEFAULT_HEIGHT
-   ICON_SIZE <const> = HEIGHT * 0.56
-   GAP       <const> = HEIGHT * 0.35
+      HEIGHT    <const> = Options.height ?? DEFAULT_HEIGHT
+      ICON_SIZE <const> = HEIGHT * 0.56
+      GAP       <const> = HEIGHT * 0.35
 
-   calc_width = false -- True if the button width is computed from its content at initialisation
-   icon_margin = 0 -- Padding around the icon's pattern tile, see gui.createIcon()
+      calc_width = false -- True if the button width is computed from its content at initialisation
+      icon_margin = 0 -- Padding around the icon's pattern tile, see gui.createIcon()
 
-   -- The hover tip is shown when the pointer rests on the button.  The tooltip removes itself when the pointer moves,
-   -- and is retained in _tooltip because it is freed when the returned object is garbage collected.
+      -- The hover tip is shown when the pointer rests on the button.  The tooltip removes itself when the pointer moves,
+      -- and is retained in _tooltip because it is freed when the returned object is garbage collected.
 
-   function cancelTip()
-      if self._tipTimer then
-         mSys.UpdateTimer(self._tipTimer, 0)
-         self._tipTimer = nil
-      end
-   end
-
-   function startTip()
-      cancelTip()
-      self.tip ?! return
-      err, self._tipTimer = mSys.SubscribeTimer(TIP_DELAY, function()
-         self._tipTimer = nil
-         if self.tip and obj.find(self._viewportID) then
-            self._tooltip = gui.tooltip({ target = self.viewport, text = self.tip })
-         end
-         raise ERR_Terminate
-      end)
-   end
-
-   -- Compose the background style from the current hover, focus and disabled states.  Hover and focus styling is
-   -- suppressed while the button is disabled.
-
-   function refreshStyle()
-      style = table.clone(theme.bkgd)
-      if self.disabled then
-         gui.applyStyle(style, theme.disabled)
-      else
-         if self._hover then gui.applyStyle(style, theme.highlight) end
-         if self.hasFocus then gui.applyStyle(style, theme.focus) end
-      end
-      gui.applyStyle(self.bkgd, style)
-   end
-
-   -- Position the icon and text.  If Resize is true and the width was not fixed by the client, the width is computed
-   -- from the content.  Resizing is limited to initialisation; later content changes are clipped to the existing size.
-
-   function arrange(Resize:bool)
-      label_offset = 0
-      if self.iconRender then
-         self.iconRender.x = GAP - icon_margin
-         label_offset = (GAP * 0.5) + ICON_SIZE
-      end
-
-      if self.text then self.text.x = GAP + label_offset end
-
-      if calc_width then
-         if Resize then
-            self.viewport.width = self.text ? (GAP + label_offset + self.text.textWidth + GAP) : HEIGHT
-         end
-
-         if self.iconRender and not self.text then
-            self.iconRender.x = ((self.viewport.width - ICON_SIZE) * 0.5) - icon_margin
+      function cancelTip()
+         if &_tipTimer then
+            mSys.UpdateTimer(&_tipTimer, 0)
+            &_tipTimer = nil
          end
       end
-   end
 
-   function createIcon(Path:str!):obj
-      icon = gui.createIcon(self.viewport.scene, Path, ICON_SIZE, gui.rgbToIconTheme(theme.text.fill))
-      icon_margin = icon.margin
-      return self.viewport.new('VectorViewport', {
-         x      = GAP - icon.margin,
-         y      = ((HEIGHT - icon.size) * 0.5) - icon.margin,
-         width  = icon.size + (icon.margin * 2),
-         height = icon.size + (icon.margin * 2),
-         fill   = icon.fill
-      })
-   end
+      function startTip()
+         cancelTip()
+         &tip ?! return
+         err, &_tipTimer = mSys.SubscribeTimer(TIP_DELAY, function()
+            &_tipTimer = nil
+            if &tip and obj.find(&_viewportID) then
+               &_tooltip = gui.tooltip({ target = &viewport, text = &tip })
+            end
+            raise ERR_Terminate
+         end)
+      end
 
-   -- Change the active state of the button to disabled or enabled
+      -- Compose the background style from the current hover, focus and disabled states.  Hover and focus styling is
+      -- suppressed while the button is disabled.
 
-   self.disable = function()
-      self.disabled = true
-      self.clicked = false
-      cancelTip()
-      self.viewport.acDisable()
-      refreshStyle()
-      self.events.disable?(self)
-      self.viewport.acDraw()
-   end
-
-   self.enable = function()
-      self.disabled = false
-      self.viewport.acEnable()
-      refreshStyle()
-      self.events.enable?(self)
-      self.viewport.acDraw()
-   end
-
-   -- Change the button label.  A nil or empty string removes the label.
-
-   self.setLabel = function(Label:str)
-      if Label?? then
-         if self.text then
-            self.text.string = Label
+      function refreshStyle()
+         style = table.clone(theme.bkgd)
+         if &disabled then
+            gui.applyStyle(style, theme.disabled)
          else
-            self.text = self._textClip.new('VectorText', table.merge({
-               x         = GAP,
-               y         = FONT_HEIGHT + math.floor((HEIGHT - FONT_HEIGHT - (theme.bkgd.strokeWidth * 2)) * 0.5),
-               string    = Label,
-               lineLimit = 1
-            }, theme.text))
+            if &_hover then gui.applyStyle(style, theme.highlight) end
+            if &hasFocus then gui.applyStyle(style, theme.focus) end
          end
-      elseif self.text then
-         self.text.free()
-         self.text = nil
+         gui.applyStyle(&bkgd, style)
       end
 
-      arrange()
-      self.viewport.acDraw()
-   end
+      -- Position the icon and text.  If Resize is true and the width was not fixed by the client, the width is computed
+      -- from the content.  Resizing is limited to initialisation; later content changes are clipped to the existing size.
 
-   -- Change the button icon.  A nil Path removes the icon.  If the icon cannot be loaded, an exception is raised and
-   -- the current icon is retained.
-
-   self.setIcon = function(Path:str)
-      replacement = Path ?? createIcon(Path) : nil
-      self.iconRender?.free()
-      self.iconRender = replacement
-      self.icon = Path?? ? Path : nil
-      arrange()
-      self.viewport.acDraw()
-   end
-
-   -- Main entry point --
-
-   assert(Options.target, 'A target viewport is required.')
-
-   vps = { -- Viewport settings
-      x       = Options.x,
-      y       = Options.y,
-      width   = Options.width,
-      height  = HEIGHT,
-      xOffset = Options.xOffset,
-      yOffset = Options.yOffset
-   }
-
-   if not vps.x and not vps.xOffset then vps.x = 0 end
-   if not vps.y and not vps.yOffset then vps.y = 0 end
-   if not vps.width and not (vps.xOffset and vps.x) then
-      vps.width = gui.sizing.widget.width
-      calc_width = true
-   end
-
-   self.viewport = self.parentViewport.new('VectorViewport', vps)
-   self._viewportID = self.viewport.id
-
-   self.bkgd = self.viewport.new('VectorRectangle', table.merge({
-      x      = theme.bkgd.strokeWidth * 0.5,
-      y      = theme.bkgd.strokeWidth * 0.5,
-      width  = self.viewport.width - theme.bkgd.strokeWidth,
-      height = HEIGHT - theme.bkgd.strokeWidth,
-      resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-         if Vector.width != Width then
-            Vector.width = Width - theme.bkgd.strokeWidth
+      function arrange(Resize:bool)
+         label_offset = 0
+         if &iconRender then
+            &iconRender.x = GAP - icon_margin
+            label_offset = (GAP * 0.5) + ICON_SIZE
          end
 
-         if Vector.height != Height then
-            Vector.height = Height - theme.bkgd.strokeWidth
-         end
-      end
-   }, theme.bkgd))
+         if calc_width then
+            if Resize then
+               &viewport.width = &_label ? (GAP + label_offset + &_label.textWidth + GAP) : HEIGHT
+            end
 
-   if Options.icon then -- A missing icon is reported but is not fatal to the button
-      try
-         self.iconRender = createIcon(Options.icon)
-         self.icon = Options.icon
-      except e
-         msg(f'Failed to load button icon "{Options.icon}": {e.message}')
-      end
-   end
-
-   self._textClip = self.viewport.new('VectorViewport', {
-      x = theme.bkgd.strokeWidth, y = theme.bkgd.strokeWidth,
-      xOffset = theme.bkgd.strokeWidth, yOffset = theme.bkgd.strokeWidth,
-      overflow = VOF_HIDDEN
-   })
-
-   if Options.label then self.setLabel(Options.label) end
-   arrange(true)
-
-   self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport:obj!, Event)
-      if Event is FM_LOST_FOCUS then
-         self.hasFocus = false
-         self.events.lostFocus?(self)
-      elseif not self.disabled then
-         self.hasFocus = true
-         self.events.focus?(self)
-      end
-
-      refreshStyle()
-
-      Viewport.acDraw()
-   end)
-
-   self.viewport.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
-      if self.disabled or not (Qualifiers has KQ_PRESSED) then return end
-
-      if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
-         self.events.activate?(self)
-      end
-   end)
-
-   self.viewport.mtSubscribeInput(JTYPE_CROSSING|JTYPE_BUTTON|JTYPE_REPEATED, function(Viewport:obj!, Msg)
-      repeat
-         if Msg.type is JET_CROSSED_IN then
-            self._hover = true
-            refreshStyle()
-            startTip()
-            self.events.cursorEntry?(self)
-         elseif Msg.type is JET_CROSSED_OUT then
-            self._hover = false
-            cancelTip()
-            refreshStyle()
-            self.events.cursorExit?(self)
-         elseif Msg.type is JET_LMB then
-            cancelTip()
-            if self.disabled then
-               self.clicked = false
-            elseif Msg.value > 0 then
-               -- A click is triggered on release, unless the button pulses.  A pulsing button activates on the
-               -- initial press and on each repeat while the button is held.
-               if self.pulse then
-                  self.clicked = false
-                  self.events.activate?(self)
-               elseif not (Msg.flags has JTYPE_REPEATED) then
-                  self.{ clicked = true, clickX = Msg.x, clickY = Msg.y }
-               end
-            elseif self.clicked then
-               self.clicked = false
-               if (math.abs(Msg.x - self.clickX) < 4) and (math.abs(Msg.y - self.clickY) < 4) then
-                  self.events.activate?(self)
-               end
+            if &iconRender and not &_label then -- Center icon, no text
+               &iconRender.x = ((&viewport.width - ICON_SIZE) * 0.5) - icon_margin
             end
          end
-         Msg = Msg.next
-      until not Msg
 
-      Viewport.acDraw()
-   end)
+         if &_label then
+            if &iconRender then
+               &_label.x = GAP + label_offset
+               &_label.align = ALIGN_LEFT
+            else -- No icon, centre text
+               &_label.x = &viewport.width / 2
+               &_label.align = ALIGN_HORIZONTAL
+            end
+         end
+      end
 
-   self.events.show?(self)
+      function createIcon(Path:str!):obj
+         icon = gui.createIcon(&viewport.scene, Path, ICON_SIZE, gui.rgbToIconTheme(theme.text.fill))
+         icon_margin = icon.margin
+         return &viewport.new('VectorViewport', {
+            x      = GAP - icon.margin,
+            y      = ((HEIGHT - icon.size) * 0.5) - icon.margin,
+            width  = icon.size + (icon.margin * 2),
+            height = icon.size + (icon.margin * 2),
+            fill   = icon.fill
+         })
+      end
 
-   return self
+      -- Change the active state of the button to disabled or enabled
+
+      &disable = function()
+         &disabled = true
+         &clicked = false
+         cancelTip()
+         &viewport.acDisable()
+         refreshStyle()
+         &events.disable?(self)
+         &viewport.acDraw()
+      end
+
+      &enable = function()
+         &disabled = false
+         &viewport.acEnable()
+         refreshStyle()
+         &events.enable?(self)
+         &viewport.acDraw()
+      end
+
+      -- Change the button label.  A nil or empty string removes the label.
+
+      &setLabel = function(Label:str)
+         if Label?? then
+            if &_label then
+               &_label.string = Label
+            else
+               &_label = &_labelClip.new('VectorText', table.merge({
+                  x         = 0,
+                  y         = FONT_HEIGHT + math.floor((HEIGHT - FONT_HEIGHT - (theme.bkgd.strokeWidth * 2)) * 0.5),
+                  string    = Label,
+                  lineLimit = 1
+               }, theme.text))
+            end
+         elseif &_label then
+            &_label.free()
+            &_label = nil
+         end
+
+         arrange()
+         &viewport.acDraw()
+      end
+
+      -- Change the button icon.  A nil Path removes the icon.  If the icon cannot be loaded, an exception is raised and
+      -- the current icon is retained.
+
+      &setIcon = function(Path:str)
+         replacement = Path ?? createIcon(Path) : nil
+         &iconRender?.free()
+         &iconRender = replacement
+         &icon = Path?? ? Path : nil
+         arrange()
+         &viewport.acDraw()
+      end
+
+      -- Main entry point --
+
+      assert(Options.target, 'A target viewport is required.')
+
+      vps = { -- Viewport settings
+         x       = Options.x,
+         y       = Options.y,
+         width   = Options.width,
+         height  = HEIGHT,
+         xOffset = Options.xOffset,
+         yOffset = Options.yOffset
+      }
+
+      if not vps.x and not vps.xOffset then vps.x = 0 end
+      if not vps.y and not vps.yOffset then vps.y = 0 end
+      if not vps.width and not (vps.xOffset and vps.x) then
+         vps.width = gui.sizing.widget.width
+         calc_width = true
+      end
+
+      &viewport = &parentViewport.new('VectorViewport', vps)
+      &_viewportID = &viewport.id
+
+      &bkgd = &viewport.new('VectorRectangle', table.merge({
+         x      = theme.bkgd.strokeWidth * 0.5,
+         y      = theme.bkgd.strokeWidth * 0.5,
+         width  = &viewport.width - theme.bkgd.strokeWidth,
+         height = HEIGHT - theme.bkgd.strokeWidth,
+         resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+            if Vector.width != Width then
+               Vector.width = Width - theme.bkgd.strokeWidth
+            end
+
+            if Vector.height != Height then
+               Vector.height = Height - theme.bkgd.strokeWidth
+            end
+
+            arrange()
+         end
+      }, theme.bkgd))
+
+      if Options.icon then -- A missing icon is reported but is not fatal to the button
+         try
+            &iconRender = createIcon(Options.icon)
+            &icon = Options.icon
+         except e
+            msg(f'Failed to load button icon "{Options.icon}": {e.message}')
+         end
+      end
+
+      &_labelClip = &viewport.new('VectorViewport', {
+         x = theme.bkgd.strokeWidth, y = theme.bkgd.strokeWidth,
+         xOffset = theme.bkgd.strokeWidth, yOffset = theme.bkgd.strokeWidth,
+         overflow = VOF_HIDDEN
+      })
+
+      if Options.label then &setLabel(Options.label) end
+      arrange(true)
+
+      &viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function[&&](Viewport:obj!, Event)
+         if Event is FM_LOST_FOCUS then
+            &hasFocus = false
+            &events.lostFocus?(self)
+         elseif not &disabled then
+            &hasFocus = true
+            &events.focus?(self)
+         end
+
+         refreshStyle()
+
+         Viewport.acDraw()
+      end)
+
+      &viewport.mtSubscribeKeyboard(function[&&](Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+         if &disabled or not (Qualifiers has KQ_PRESSED) then return end
+
+         if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
+            &events.activate?(self)
+         end
+      end)
+
+      &viewport.mtSubscribeInput(JTYPE_CROSSING|JTYPE_BUTTON|JTYPE_REPEATED, function[&&](Viewport:obj!, Msg)
+         repeat
+            if Msg.type is JET_CROSSED_IN then
+               &_hover = true
+               refreshStyle()
+               startTip()
+               &events.cursorEntry?(self)
+            elseif Msg.type is JET_CROSSED_OUT then
+               &_hover = false
+               cancelTip()
+               refreshStyle()
+               &events.cursorExit?(self)
+            elseif Msg.type is JET_LMB then
+               cancelTip()
+               if &disabled then
+                  &clicked = false
+               elseif Msg.value > 0 then
+                  -- A click is triggered on release, unless the button pulses.  A pulsing button activates on the
+                  -- initial press and on each repeat while the button is held.
+                  if &pulse then
+                     &clicked = false
+                     &events.activate?(self)
+                  elseif not (Msg.flags has JTYPE_REPEATED) then
+                     &&.{ clicked = true, clickX = Msg.x, clickY = Msg.y }
+                  end
+               elseif &clicked then
+                  &clicked = false
+                  if (math.abs(Msg.x - &clickX) < 4) and (math.abs(Msg.y - &clickY) < 4) then
+                     &events.activate?(self)
+                  end
+               end
+            end
+            Msg = Msg.next
+         until not Msg
+
+         Viewport.acDraw()
+      end)
+
+      &events.show?(self)
+
+      return self
+   end
 end

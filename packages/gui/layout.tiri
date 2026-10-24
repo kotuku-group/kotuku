@@ -1,0 +1,161 @@
+@Package(name="gui", version="1.0")
+
+--[[
+Internal layout helpers shared by the widget packages.
+--]]
+
+   import 'gui'
+
+   module vector as mVec
+   include 'vector'
+
+   namespace gui
+
+LABEL_GAP <const>    = gui.sizing.widget.labelGap
+TEXT_METRICS <const> = { } -- Cache of line spacing and cap height, keyed by font
+
+gui.layout = { }
+
+-- Measure the font that a text actually renders with.  Theme text styles can override the label font, and
+-- gui.getFontHeight() treats numeric gui.fonts sizes as pixels whereas the text renders them as points.
+
+gui.layout.textMetrics = function(Text:obj!):<num, num>
+   key = f'{Text.face}|{Text.fontStyle}|{Text.fontSize}'
+   cached = TEXT_METRICS[key]
+   if not cached then
+      _, handle = check mVec.GetFontHandle(Text.face, Text.fontStyle, 0, tonumber(Text.fontSize))
+      metrics = struct<FontMetrics>
+      check mVec.GetFontMetrics(handle, metrics)
+      cached = { lineSpacing = metrics.lineSpacing, ascent = metrics.ascent }
+      TEXT_METRICS[key] = cached
+   end
+   return cached.lineSpacing, cached.ascent
+end
+
+-- Validate the label options of a widget.  The checks apply whether or not the widget has a label.
+
+gui.layout.checkLabel = function(Pos:any, Width:any, Align:any)
+   assert((Pos is 'left') or (Pos is 'right') or (Pos is 'top') or (Pos is 'bottom'), f"Invalid labelPos '{Pos}'")
+   assert((Width is nil) or ((Width is <num>) and (Width > 0)), f"Invalid labelWidth '{Width}'")
+   assert((Align is 'left') or (Align is 'centre') or (Align is 'right'), f"Invalid labelAlign '{Align}'")
+end
+
+-- Create a label slot and its text in a widget viewport.  Options are string, pos, align and width (the labelPos,
+-- labelAlign and labelWidth values), style (a text style that overrides gui.fonts.label) and rotated.  The text of a
+-- rotated label runs down the widget; placing it is left to the widget, which applies its own matrix.
+--
+-- A side label's slot spans the widget height and is breadth wide.  A stacked label's slot spans the widget width and
+-- is length high.  The reservation (size) adds the label gap between the slot and the widget body.
+
+gui.layout.label = function(Target:obj!, Options:table!):table
+   gui.layout.checkLabel(Options.pos, Options.width, Options.align)
+
+   self = entity {
+      pos     = Options.pos,
+      align   = Options.align,
+      width   = Options.width, -- Explicit slot breadth for side labels
+      rotated = Options.rotated ?? false,
+      stacked = (Options.pos is 'top') or (Options.pos is 'bottom'),
+
+      -- Recompute the slot and reservation from the text.  The label's own extents (boxWidth, boxHeight) exclude
+      -- the gap and any explicit width.
+
+      measure = function()
+         text_length = &text.textWidth
+         &boxWidth   = &rotated ? &lineHeight : text_length
+         &boxHeight  = &rotated ? text_length : &lineHeight
+         &breadth    = &stacked ? &boxWidth : (&width ?? &boxWidth)
+         &length     = &boxHeight
+         &size       = (&stacked ? &length : &breadth) + LABEL_GAP
+      end,
+
+      -- Add the reservation to a host's x, xOffset, y or yOffset value.
+
+      reserve = function(Host:any!)
+         side = choose &pos from
+            'left'  -> 'x'
+            'right' -> 'xOffset'
+            'top'   -> 'y'
+            else    -> 'yOffset'
+         end
+         Host[side] = Host[side] + &size
+      end,
+
+      -- Return the default widget dimensions for a body of the given default size.  The label never shrinks the
+      -- body.
+
+      expand = function(Width:num!, Height:num!):<num, num>
+         if &stacked then
+            return math.max(Width, &boxWidth), Height + &size
+         else
+            return Width + &size, math.max(Height, &boxHeight)
+         end
+      end,
+
+      -- Position the slot for a widget size.  Unrotated text is aligned within the slot, and a side label centres
+      -- its capitals on the body's vertical extent.
+
+      place = function(Width:num!, Height:num!, BodyY:num, BodyHeight:num)
+         slot = &slot
+         if &stacked then
+            slot.x      = 0
+            slot.y      = (&pos is 'bottom') ? Height - &length : 0
+            slot.width  = Width
+            slot.height = &length
+         else
+            slot.x      = (&pos is 'right') ? Width - &breadth : 0
+            slot.y      = 0
+            slot.width  = &breadth
+            slot.height = Height
+         end
+
+         if &rotated then return end
+
+         &text.x = choose &align from
+            'centre' -> slot.width * 0.5
+            'right'  -> slot.width
+            else     -> 0
+         end
+
+         if &stacked then
+            &text.y = math.round(&baseline)
+         else
+            BodyY ?= 0
+            BodyHeight ?= Height - BodyY
+            &text.y = math.round(BodyY + &baseline + ((BodyHeight - &lineHeight) * 0.5))
+         end
+      end
+   }
+
+   using self do
+      -- Only an explicit side slot clips, across its breadth.  Text that fits its own slot is never clipped, so
+      -- glyph overhang remains visible.
+
+      &slot = Target.new('VectorViewport', {
+         name      = 'LabelSlot',
+         x         = 0,
+         y         = 0,
+         width     = 1,
+         height    = 1,
+         overflowX = (&width and not &stacked) ? VOF_HIDDEN : VOF_VISIBLE
+      })
+
+      &text = &slot.new('VectorText', table.merge({
+         name      = 'Label',
+         x         = 0,
+         y         = 0,
+         face      = gui.fonts.label.face,
+         fontSize  = string.format('%.2fpt', gui.fonts.label.size),
+         fontStyle = gui.fonts.label.style,
+         string    = Options.string,
+         lineLimit = 1
+      }, Options.style))
+
+      &text.align = (&rotated or (&align is 'left')) ? 'start' : ((&align is 'centre') ? 'middle' : 'end')
+
+      &lineHeight, ascent = gui.layout.textMetrics(&text)
+      &baseline = (&lineHeight + ascent) * 0.5 -- Offset from the top of a line that centres the capitals in it
+      &measure()
+      return &&
+   end
+end

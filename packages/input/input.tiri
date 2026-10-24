@@ -4,7 +4,7 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui'
+   import 'gui', 'gui/layout'
 
    namespace gui
 
@@ -58,6 +58,9 @@ gui.input = function(Options)
    self = entity { -- Public interface
       events         = Options.events ?? { },
       label          = Options.label,
+      labelPos       = Options.labelPos ?? 'left',
+      labelAlign     = Options.labelAlign ?? 'left',
+      labelWidth     = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
       parentViewport = Options.target,
       inputMask      = Options.inputMask ?? regex.new(Options.inputMask) : nil,
       maskMode       = Options.maskMode ?? 'commit', -- 'commit' or 'keystroke'
@@ -162,16 +165,17 @@ gui.input = function(Options)
 
       theme = gui.getTheme(Options.target)
       input_theme = table.merge(theme.input, Options.theme, true, true)
+      gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       font_max_height, font_height = gui.getFontHeight(gui.fonts.input)
-      box_height = Options.height ?? (math.floor(font_max_height * 1.35) + 1)
+      default_height = math.floor(font_max_height * 1.35) + 1
 
       vps = { -- Viewport settings
          name    = 'vp_input',
          x       = Options.x,
          y       = Options.y,
          width   = Options.width,
-         height  = box_height,
+         height  = Options.height ?? default_height,
          xOffset = Options.xOffset,
          yOffset = Options.yOffset
       }
@@ -182,39 +186,32 @@ gui.input = function(Options)
 
       &viewport = &parentViewport.new('VectorViewport', vps)
 
-      &inputViewport = &viewport.new('VectorViewport', {
-         name    = 'vp_input_box',
-         cursor  = 'text',
-         x       = 0,
-         y       = 0,
-         width   = &viewport.width,
-         yOffset = 0,
-         resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-            new_width = Width - &labelWidth
-            if Vector.width != new_width then
-               Vector.width = new_width
-            end
+      -- The box takes the space that remains after the label reservation.  Explicit dimensions include the label, and
+      -- default dimensions grow to fit it.
 
-            if Vector.height != Height then
-               Vector.height = Height
-            end
-         end
-      })
+      box = { name = 'vp_input_box', cursor = 'text', x = 0, y = 0, xOffset = 0, yOffset = 0 }
 
       if &label then
-         &labelText = &viewport.new('VectorText', table.merge({
-            name      = 'vt_input_label',
-            x         = 0,
-            y         = math.round(font_height + math.floor((box_height - font_height) * 0.5)),
-            string    = &label,
-            lineLimit = 1
-         }, theme.window.text))
+         &_label = gui.layout.label(&viewport, {
+            string = &label, pos = &labelPos, align = &labelAlign, width = &labelWidth, style = theme.window.text
+         })
+         &labelText = &_label.text
+         &_label.reserve(box)
 
-         &labelWidth          = &labelText.textWidth + gui.sizing.widget.margin
-         &inputViewport.x     = &labelText.x + &labelWidth
-         &inputViewport.width = &viewport.width - &labelWidth
-      else
-         &labelWidth = 0
+         width, height = &_label.expand(&viewport.width, default_height)
+         if not Options.width and not Options.xOffset then &viewport.width = width end
+         if &_label.stacked and not Options.height then &viewport.height = height end
+      end
+
+      box_height = &viewport.height - box.y - box.yOffset
+
+      &inputViewport = &viewport.new('VectorViewport', box)
+
+      if &_label then
+         &_label.place(&viewport.width, &viewport.height, box.y, box_height)
+         &_label.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+            &_label.place(Width, Height, box.y, box_height)
+         end
       end
 
       &bkgd = &inputViewport.new('VectorRectangle', table.merge({

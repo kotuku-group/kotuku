@@ -389,14 +389,18 @@ function buildScene()
       }
    })
 
+   -- Sliders occupy a second row, so that both rows fit the window.
+
+   slider_y = cmbGradient.viewport.y + cmbGradient.viewport.height + 8
+
    slResolution = gui.slider({
       target = viewport,
       label  = 'Resolution:',
       value  = 1,
       min    = 0.5,
       max    = 1,
-      x      = cmbEasing.viewport.x + cmbEasing.viewport.width + 10,
-      y      = 10,
+      x      = win.margins.left,
+      y      = slider_y,
       events = {
          activate = function(Value)
             glResolution = Value
@@ -413,7 +417,7 @@ function buildScene()
       min    = MIN_RADIUS,
       max    = MAX_RADIUS,
       x      = slResolution.viewport.x + slResolution.viewport.width + 10,
-      y      = 10,
+      y      = slider_y,
       events = {
          activate = function(Value:num!)
             glRadius = Value
@@ -430,7 +434,7 @@ function buildScene()
       min    = MIN_GAMMA,
       max    = MAX_GAMMA,
       x      = slRadius.viewport.x + slRadius.viewport.width + 10,
-      y      = 10,
+      y      = slider_y,
       events = {
          activate = function(Value:num!)
             glGamma = Value
@@ -443,7 +447,7 @@ function buildScene()
    iSave = gui.button({
       target  = viewport,
       xOffset = win.margins.right,
-      y       = 10,
+      y       = slider_y,
       icon    = 'items/file_saveas',
       size    = cmbColours.viewport.height,
       events  = {
@@ -478,7 +482,7 @@ function buildScene()
       }
    })
 
-   gradientVP.y = cmbGradient.viewport.y + cmbGradient.viewport.height + 12
+   gradientVP.y = slResolution.viewport.y + slResolution.viewport.height + 12
 
    glActiveGradient = selectGradient('Radial')
 end

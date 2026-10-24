@@ -4,7 +4,7 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui', './dropdown'
+   import 'gui', 'gui/layout', './dropdown'
 
    namespace gui
 
@@ -51,7 +51,11 @@ function toggleMenu()
       if &inputViewport.width > 0 then &menu.scale = bw / &inputViewport.width end
    end
 
-   if not &unlockMenuWidth then
+   -- An unlocked menu keeps its natural width if that is wider than the box, but never appears narrower than it.
+
+   if &unlockMenuWidth then
+      &menu.width = math.max(&_menuWidth, &inputViewport.width)
+   else
       &menu.width = &inputViewport.width
    end
 
@@ -84,8 +88,12 @@ function createMenu(Items:any)
       theme = &dropdownTheme
    })
 
-   if &unlockMenuWidth then -- Set combobox size to the width of the menu, but never below the default
-      &viewport.width = math.max(&menu.width + &labelSize, gui.sizing.widget.width)
+   &_menuWidth = &menu.width -- The natural width of the menu content
+
+   if &unlockMenuWidth then -- Size the box to the width of the menu, but never below the default
+      width = math.max(&menu.width, gui.sizing.widget.width)
+      if &_label then width = &_label.expand(width, &_boxHeight) end
+      &viewport.width = width
    end
 end
 
@@ -93,6 +101,9 @@ gui.combobox = function(Options:table)
    self = entity { -- Public interface
       events         = Options.events ?? { },
       label          = Options.label,
+      labelPos       = Options.labelPos ?? 'left',
+      labelAlign     = Options.labelAlign ?? 'left',
+      labelWidth     = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
       parentViewport = Options.target,
       allowCustom    = Options.allowCustom,
       menuIcon       = Options.menuIcon ?? 'arrows/down',
@@ -158,14 +169,13 @@ gui.combobox = function(Options:table)
          &theme = table.merge(&theme, Options.theme, true, true)
       end
       &input_theme = &theme.input
-
-      BOX_HEIGHT <const> = Options.height ?? DEFAULT_HEIGHT
+      gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       vps = { -- Viewport settings
          x       = Options.x,
          y       = Options.y,
          width   = Options.width,
-         height  = BOX_HEIGHT,
+         height  = Options.height ?? DEFAULT_HEIGHT,
          xOffset = Options.xOffset,
          yOffset = Options.yOffset
       }
@@ -179,37 +189,34 @@ gui.combobox = function(Options:table)
 
       &viewport = &parentViewport.new('VectorViewport', vps)
 
-      &inputViewport = &viewport.new('VectorViewport', {
-         x = 0,
-         y = 0,
-         width = &viewport.width,
-         yOffset = 0,
-         resizeEvent = function(Viewport:obj, Vector:obj, X:num, Y:num, Width:num, Height:num)
-            new_width = Width - &labelSize
-            if Vector.width != new_width then
-               Vector.width = new_width
-            end
+      -- The box takes the space that remains after the label reservation.  Explicit dimensions include the label, and
+      -- a default height grows to fit a stacked label.
 
-            if Vector.height != Height then
-               Vector.height = Height
-            end
-         end
-      })
+      box = { x = 0, y = 0, xOffset = 0, yOffset = 0 }
 
       if &label then
-         &labelText = &viewport.new('VectorText', table.merge({
-            name      = 'Label',
-            x         = 0,
-            y         = FONT_HEIGHT + math.floor((BOX_HEIGHT - FONT_HEIGHT) * 0.5),
-            string    = &label,
-            lineLimit = 1
-         }, &theme.window.text))
+         &_label = gui.layout.label(&viewport, {
+            string = &label, pos = &labelPos, align = &labelAlign, width = &labelWidth, style = &theme.window.text
+         })
+         &labelText = &_label.text
+         &_label.reserve(box)
 
-         &labelSize = &labelText.textWidth + MARGIN
-         &inputViewport.x = &labelText.x + &labelSize
-         &inputViewport.width = &viewport.width - &labelSize
-      else
-         &labelSize = 0
+         if &_label.stacked and not Options.height then
+            _, height = &_label.expand(0, DEFAULT_HEIGHT)
+            &viewport.height = height
+         end
+      end
+
+      &_boxHeight = &viewport.height - box.y - box.yOffset
+      BOX_HEIGHT <const> = &_boxHeight
+
+      &inputViewport = &viewport.new('VectorViewport', box)
+
+      if &_label then
+         &_label.place(&viewport.width, &viewport.height, box.y, BOX_HEIGHT)
+         &_label.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+            &_label.place(Width, Height, box.y, &_boxHeight)
+         end
       end
 
       &bkgd = &inputViewport.new('VectorRectangle', table.merge({
@@ -219,9 +226,9 @@ gui.combobox = function(Options:table)
       ICON_SIZE = math.min(FONT_HEIGHT, BOX_HEIGHT - (&input_theme.bkgd.strokeWidth * 2))
       down_icon = gui.createIcon(&viewport.scene, self.menuIcon, ICON_SIZE, iconTheme(self))
 
-      &iconRender = &viewport.new('VectorViewport', { -- Padded to suit the pattern tile, see gui.createIcon()
+      &iconRender = &inputViewport.new('VectorViewport', { -- Padded to suit the pattern tile, see gui.createIcon()
          xOffset = MARGIN - down_icon.margin,
-         y       = ((&viewport.height - ICON_SIZE) * 0.5) - down_icon.margin,
+         y       = ((BOX_HEIGHT - ICON_SIZE) * 0.5) - down_icon.margin,
          width   = ICON_SIZE + (down_icon.margin * 2),
          height  = ICON_SIZE + (down_icon.margin * 2),
          fill    = down_icon.fill

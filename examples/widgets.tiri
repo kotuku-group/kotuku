@@ -10,7 +10,7 @@ A demonstration of standard widgets
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
-   win = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
+   win = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=500 })
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
@@ -29,9 +29,9 @@ function itemClicked(Item)
    print(f'Selected menu item "{Item.label}" (id: {Item.id ?? "none"})')
 end
 
-local menubar:table
-local dynamic_item_added = false
-local dynamic_name_long = false
+   menubar:table
+   dynamic_item_added = false
+   dynamic_name_long = false
 
 function dynamicMenuCallback(ID, Name)
    print(f'Dynamic menubar item selected: {ID}, {Name}')
@@ -367,11 +367,13 @@ end
       }
    })
 
-   y += msgButton.viewport.height + 12
+   y += msgButton.viewport.height + gui.sizing.widget.gap
 
    toggle = gui.toggle({
       target = viewport,
-      label  = 'Toggle',
+      label  = 'Toggle:',
+      labelWidth = 90,
+      labelPos = 'left',
       x      = win.margins.left,
       y      = y,
       events = {
@@ -398,28 +400,12 @@ end
       }
    })
 
-   hslider = gui.slider({
-      target = viewport,
-      label  = 'Slider:',
-      labelPos = 'left',
-      orientation = 'horizontal',
-      valuePos = 'in-centre',
-      value  = 1,
-      min    = 0.5,
-      max    = 1,
-      x      = (win.viewport.width / 2) + 40,
-      y      = y,
-      events = {
-         activate = function(Value)
-         end
-      }
-   })
-
-   y += toggle.viewport.height + 12
+   y += toggle.viewport.height + gui.sizing.widget.gap
 
    combobox = gui.combobox({
       target = viewport,
       label  = 'Combobox:',
+      labelWidth = 90,
       text   = 'Your text here',
       x      = win.margins.left, y = y,
       allowCustom = true,
@@ -440,14 +426,15 @@ end
       }
    })
 
-   y += combobox.viewport.height + 12
+   y += combobox.viewport.height + gui.sizing.widget.gap
 
    local input = gui.input({
       target = viewport,
       x      = win.margins.left,
       y      = y,
       width  = 260,
-      label  = 'Inputbox: ',
+      labelWidth = 90,
+      label  = 'Inputbox:',
       text   = 'Your text here',
       events = {
          activate = function(Event)
@@ -458,7 +445,28 @@ end
          end
       }
    })
-   y += input.viewport.height + 16
+
+   y += input.viewport.height + gui.sizing.widget.gap
+
+   hslider = gui.slider({
+      target = viewport,
+      label  = 'Slider:',
+      labelPos = 'left',
+      labelWidth = 90,
+      orientation = 'horizontal',
+      valuePos = 'in-centre',
+      value  = 1,
+      min    = 0.5,
+      max    = 1,
+      x      = win.margins.left,
+      y      = y,
+      events = {
+         activate = function(Value)
+         end
+      }
+   })
+
+   y += input.viewport.height + 80
 
    try
       global sndAlarm = obj.new('sound', { path=glPath .. 'data/alarm.mp3', volume=0.2 })
@@ -472,7 +480,7 @@ end
       label  = 'Alarm',
       size   = 80,
       draggable = true,
-      theme = { effect = 'fill(orange) emboss()' },
+      theme = { effect = 'fill(cmap:flare) sheen() emboss() glow(black)' },
       events = {
          show = function()
             vfx.fadeIn(&viewport, { seconds=1.0, delay=0.1 })
