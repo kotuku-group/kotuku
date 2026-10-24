@@ -64,7 +64,7 @@ glIntroduction = [[
                print(Parser.getHelp())
                raise ERR_Terminate
             end
-      }
+         }
       }
    })
 
@@ -392,7 +392,7 @@ end
          toolbar     = { navigation=true, views=true },
          displayPath = true,
          path        = glArgs.path,
-         filterList = glOpenFilter,
+         filterList  = glOpenFilter,
          fileSelected = function(FileView:table!)
             displayFile(FileView.selectionPath())
             title = FileView.selectionFile()

@@ -8,9 +8,9 @@ function id_file(Path)
    try
       err, cl = mSys.IdentifyFile(Path)
 
-      if cl is string.hash('Sound') then
+      if cl is 'Sound'.hash() then
          return obj.new('sound', { path=Path })
-      elseif cl is string.hash('Music') then
+      elseif cl is 'Music'.hash() then
          return obj.new('music', { path=Path })
       else
          raise 'Unrecognised file type'
