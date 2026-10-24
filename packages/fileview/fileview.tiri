@@ -14,22 +14,6 @@ Documentation is available in the Kotuku Wiki.
 
 glState <const> = mSys.GetSystemState()
 
-glCopyList <const> = [[
-   import 'gui/file'
-   source_size = arg('source:size')
-   glList = array<str>
-   if source_size?? then
-      source_size = tonumber(source_size)
-      for i in {0 to source_size} do
-         glList.push(arg('source(' .. i .. ')'))
-      end
-   else
-      glList.push(arg('source'))
-   end
-   if arg('move') then Move = true end
-   file.ui.copy(glList, arg('dest'), { move=Move })
-]]
-
 TBID <const> = {
    ROOT=1, PARENT=2, FILTER=3, PREV=5, NEXT=6, CUT=8, COPY=9, PASTE=10,
    BOOKMARK=12, CREATE_FOLDER=13, RENAME=14, DELETE=15, COL_VIEW=17, LIST_VIEW=18, FONT=19
@@ -414,44 +398,6 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-lBkgdTasks = { }
-
--- Paste from a list of files to a destination folder.
-
-function copyFromList(self, Folder:str!, List, Move:bool)
-   assert(io.isFolder(Folder), 'Invalid folder target of ' .. Folder)
-
-   try
-      msg(f'copyFromList({Folder})')
-
-      params = array<str> { '--dest', Folder }
-      if Move then params.push('--move') end
-      params.push('--source')
-      params.push('{')
-      for src in values(List) do
-         params.push(src)
-      end
-      params.push('}')
-
-      task = obj.new('task', {
-         location   = 'kotuku:tiri',
-         parameters = params,
-         flags      = '!Pipe',
-         exitCallback = function(Task)
-            if not self.watch then self.refresh() end
-            lBkgdTasks[Task.id] = nil
-         end
-      })
-
-      task.acActivate()
-      task.acWrite(glCopyList)
-      task.acWrite(nil)
-      lBkgdTasks[task.id] = task
-   except ex
-      gui.dialog.error('Copy File Failure', 'File copy attempt failed with exception: ' .. ex.message)
-   end
-end
-
 -- Paste from a clipboard to a folder using a new thread
 
 function pasteFromClipboard(self, Folder:str!)
@@ -459,7 +405,7 @@ function pasteFromClipboard(self, Folder:str!)
 
    paste_script = obj.new('tiri', { statement = [[
    import 'io/filemgr'
-   file.ui.paste(arg('dest'))
+   io.ui.paste(arg('dest'))
 ]] })
    paste_script.acSetKey('dest', Folder)
 
@@ -1084,19 +1030,16 @@ gui.fileview = function(Options)
       end
    end
 
-   -- Copies selected files to a destination path.  This method may return immediately and copy the files in the
-   -- background.  If a failure occurs, the user will be notified with an error dialog.
+   -- Copies selected files and folders to a destination folder with transferFiles().  The copy is performed on the next
+   -- message cycle.  If a failure occurs, the user will be notified with an error dialog.
 
-   self.copyFilesTo = function(Dest)
+   self.copyFilesTo = function(Dest:str)
       if self.path and Dest?? then
-         for items in values(self.view.selectedItems()) do
-            file_list = { }
-            for item in values(items) do
-               file_list.insert(self.path .. item.name)
-            end
-            copyFromList(self, Dest, file_list)
+         local paths = array<str>
+         for item in values(self.view.selectedItems()) do
+            if (item.type is 'file' or item.type is 'folder') and item.path then paths.push(item.path) end
          end
-
+         if #paths > 0 then self.transferFiles(paths, Dest, 'copy') end
          self.view.deselectAll()
       end
    end
@@ -1256,23 +1199,10 @@ gui.fileview = function(Options)
       self.refresh()
    end
 
-   -- Moves selected files to a destination path.  The MoveFilesTo method may return immediately following the
-   -- initial call and then move the files in the background.  If a failure occurs, the user will be notified with an
-   -- error dialog.
+   -- Moving files is not supported until transferFiles() defines the move operation.
 
-   self.moveFilesTo = function(Dest)
-      if self.path and Dest?? then
-         items = self.view.selectedItems()
-         if #items > 0 then
-            file_list = { }
-            for item in values(items) do
-               file_list.insert(self.path .. item.name.value)
-            end
-            copyFromList(self, Dest, file_list, true)
-         end
-
-         self.view.deselectAll()
-      end
+   self.moveFilesTo = function(Dest:str)
+      raise ERR_NoSupport, 'Moving files is not supported.'
    end
 
    -- Copies files and folders to a destination folder.  Sources is a list of fully qualified paths, with folders

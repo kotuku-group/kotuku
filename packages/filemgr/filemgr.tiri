@@ -8,8 +8,23 @@
 io.ui ?= { }
 
 rxCopy = <{ regex.new('^[A-Z].+') }>
+rxStripFolder = <{ regex.new([[^(.*?)[\/\\]*$]], regex.DOT_ALL) }> -- Remove trailing folder separators
 
 local progress_status, progress_dialog:table, progress_time
+
+-- Resets the progress state at the start of an operation, so that a cancelled operation cannot affect the next one.
+
+function startProgress()
+   progress_status = nil
+   progress_dialog = nil
+   progress_time = mSys.PreciseTime()
+end
+
+function endProgress()
+   progress_dialog?.window?.hide()
+   progress_dialog = nil
+   progress_status = nil
+end
 
 -- copyFeedback() is called for every file that is copied, or multiple times for large files.
 
@@ -103,22 +118,36 @@ io.ui.copy = function(Source:any!, Dest:str!, Move:bool)
       raise 'Provided Source is not a collection'
    end
 
+   local last = Dest.sub(-1)
+   if last != '/' and last != '\\' and last != ':' then Dest ..= '/' end
+
    -- Scan the file list and move or copy each file to the Dest folder
 
-   progress_time = mSys.PreciseTime()
+   startProgress()
+   defer endProgress() end
    local response = 'yes'
    local err:num = ERR_Okay
    for src_path in values(Source) do
       if response != 'yes-all' and response != 'no-all' then response = 'yes' end -- Reset to the default
 
       msg('Processing file source ' .. src_path)
-      local _, src_file = io.splitPath(src_path)
+
+      -- A folder source ends with a separator.  Its name is the last path component, and the destination path is
+      -- expressed without a trailing separator so that CopyFile() creates or merges a folder of the same name.
+
+      local src_stripped = rxStripFolder.extract(src_path)
+      local is_folder = #src_stripped < #src_path
+      local _, src_file = io.splitPath(src_stripped)
+      if src_file is '' then
+         msg(f'Skipping "{src_path}", it has no name to copy to.')
+         continue
+      end
       local dest_path = Dest .. src_file
 
       -- Check if the destination already exists
 
       if response != 'yes-all' then
-         if src_path is dest_path then
+         if src_stripped is dest_path then
             if Move then
                continue -- Do nothing for move operations when the source and destination are identical
             elseif rxCopy.test(dest_path) then
@@ -152,7 +181,9 @@ io.ui.copy = function(Source:any!, Dest:str!, Move:bool)
                            { id=1, label='Yes', icon='items/checkmark' },
                            { id=2, label='Yes to All', icon='items/checkmark_many' } },
                title   = 'Confirmation Required',
-               message = 'You are about to overwrite this file.  Should it be replaced?\n\n' .. src_file,
+               message = is_folder ?
+                  'A folder with this name already exists.  Should its contents be replaced?\n\n' .. src_file :
+                  'You are about to overwrite this file.  Should it be replaced?\n\n' .. src_file,
                feedback = function(Dialog, Response, State)
                   response = choose Response?.id from
                      -1 -> 'no'
@@ -220,8 +251,10 @@ io.ui.delete = function(Paths)
       raise 'Path must be a string or collection.'
    end
 
+   startProgress()
+   defer endProgress() end
    for path in values(Paths) do
-      mSys.DeleteFile(path, function(Feedback)
+      mSys.DeleteFile(path, function(Size, Position, Path)
          if progress_status is 'cancel' then
             return FFR_ABORT
          elseif progress_status is 'closed' then
@@ -248,7 +281,7 @@ io.ui.delete = function(Paths)
          end
 
          if progress_dialog then
-            local folder, file = io.splitPath(Feedback.path)
+            local folder, file = io.splitPath(Path)
             progress_dialog.setMessage('Deleting: ' .. file, false)
             progress_time = mSys.PreciseTime()
             processing.sleep(0)
