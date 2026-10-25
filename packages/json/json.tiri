@@ -9,6 +9,7 @@ in_char  = array<str> { '\\', '"', '/', '\b', '\f', '\n', '\r', '\t' }
 out_char = array<str> { '\\', '"', '/',  'b',  'f',  'n',  'r',  't' }
 num_regex = <{ r"^-?[0-9]+\.?[0-9]*[eE]?[+\-]?[0-9]*" }>
 rx_whitespace = <{ r"[^ \t\n\r\f\v]" }>
+rx_hex4 = <{ r"^[0-9a-fA-F]{4}$" }>
 
 function escape_str(String:str!):str
    for i, c in in_char do
@@ -34,6 +35,49 @@ function skip_delim(String:str!, Pos:num, Delimiter:str!, ThrowIfMissing:bool):<
    return Pos + 1, true
 end
 
+-- Encode a Unicode code point as UTF-8.
+
+function utf8_char(Code:num!):str
+   if Code < 0x80 then return string.char(Code) end
+   if Code < 0x800 then return string.char(0xc0 | (Code >> 6), 0x80 | (Code & 0x3f)) end
+   if Code < 0x10000 then
+      return string.char(0xe0 | (Code >> 12), 0x80 | ((Code >> 6) & 0x3f), 0x80 | (Code & 0x3f))
+   end
+   return string.char(0xf0 | (Code >> 18), 0x80 | ((Code >> 12) & 0x3f), 0x80 | ((Code >> 6) & 0x3f),
+      0x80 | (Code & 0x3f))
+end
+
+-- Read the four hex digits of a \u escape at Pos, which is the position of the backslash.
+
+function read_hex4(String:str!, Pos:num!):num
+   digits = String.sub(Pos + 2, Pos + 6)
+   if not rx_hex4.test(digits) then
+      raise ERR_Syntax, f'Invalid unicode escape near position {Pos}.'
+   end
+   return tonumber(digits, 16)
+end
+
+-- Decode the \u escape at Pos, the position of the backslash.  A UTF-16 surrogate pair spans two escapes and is
+-- combined into one code point; an unpaired surrogate becomes U+FFFD.  Returns the UTF-8 text and the position after
+-- the escape.
+
+function decode_unicode_escape(String:str!, Pos:num!):<str, num>
+   code = read_hex4(String, Pos)
+   next_pos = Pos + 6
+   if (code >= 0xd800) and (code <= 0xdbff) then
+      if String.sub(next_pos, next_pos + 2) is '\\u' then
+         low = read_hex4(String, next_pos)
+         if (low >= 0xdc00) and (low <= 0xdfff) then
+            return utf8_char(0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00)), next_pos + 6
+         end
+      end
+      return utf8_char(0xfffd), next_pos
+   elseif (code >= 0xdc00) and (code <= 0xdfff) then
+      return utf8_char(0xfffd), next_pos
+   end
+   return utf8_char(code), next_pos
+end
+
 -- Expects the given pos to be the first character after the opening quote.
 -- Returns val, pos; the returned pos is after the closing quote character.
 
@@ -48,6 +92,10 @@ function decode_str_val(String:str!, pos:num!, val:str):<any, num>
    esc_map = {b = '\b', f = '\f', n = '\n', r = '\r', t = '\t'}
    nextc = String.sub(pos + 1, pos + 2)
    assert(nextc, early_end_error)
+   if nextc is 'u' then
+      text, next_pos = decode_unicode_escape(String, pos)
+      return decode_str_val(String, next_pos, val .. text)
+   end
    return decode_str_val(String, pos + 2, val .. (esc_map[nextc] or nextc))
 end
 
@@ -139,7 +187,8 @@ end
 
 @Doc(text=[[
 Decode JSON text into a Tiri value.  JSON objects become tables, arrays become native Tiri arrays.  Unicode escape
-sequences are not decoded.
+sequences (`\uXXXX`) are decoded to UTF-8, and a UTF-16 surrogate pair is combined into a single character.  An
+unpaired surrogate is replaced with U+FFFD.  An escape that does not have four hex digits raises `ERR_Syntax`.
 
 Tiri has no representation for null as a JSON value. In order to prevent the loss of keys with a null value, this
 function uses the empty table value `json.null` to indicate null values.  Check for null values with the conditional

@@ -204,11 +204,13 @@ end
       x      = 30,
       y      = 50,
       popup  = true,
-      onActivate = itemClicked,
-      onHighlight = function(Item)
-         print(f'Highlighted menu item: {Item.label}')
-      end,
-      config = array<table> {
+      events = {
+         activate = itemClicked,
+         highlight = function(Item)
+            print(f'Highlighted menu item: {Item.label}')
+         end
+      },
+      items = array<table> {
          { group='Files' },
          {
             id='new', label='New File', icon='items/file_new', qualifier='CTRL', key='N'

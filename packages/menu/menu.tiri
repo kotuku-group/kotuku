@@ -141,17 +141,16 @@ gui.menu = function(Options:table!)
       timeHide    = 0,
       visible     = false,
       client      = Options.client,
-      onActivate  = Options.onActivate,
-      onHighlight = Options.onHighlight,
+      events      = Options.events ?? {},
       prepare     = Options.prepare,
-      config      = Options.config,
+      items       = Options.items,
       x           = Options.x ?? 0,
       y           = Options.y ?? 0,
       popup       = Options.popup ?? false,
       relative    = Options.relative,
       parentMenu  = Options.parentMenu,
       parentItem  = Options.parentItem,
-      items       = array<table>
+      _rows       = array<table>
    }
 
    function selectable(Item:table):bool
@@ -160,29 +159,29 @@ gui.menu = function(Options:table!)
 
    function itemIndex(Item:table):num
       if not Item then return nil end
-      for i in {0 to #&items} do
-         if &items[i] is Item then return i end
+      for i in {0 to #&_rows} do
+         if &_rows[i] is Item then return i end
       end
    end
 
    function seek(Start:num!, Step:num!):table
       i = Start
-      while i >= 0 and i < #&items do
-         if selectable(&items[i]) then return &items[i] end
+      while i >= 0 and i < #&_rows do
+         if selectable(&_rows[i]) then return &_rows[i] end
          i += Step
       end
    end
 
    function resolveItem(Reference:any):table
       if Reference is <table> then
-         for item in values(&items) do
+         for item in values(&_rows) do
             if (item is Reference) or (item.config is Reference) then return item end
          end
       else
-         for item in values(&items) do
+         for item in values(&_rows) do
             if (item.config.id is Reference) or (item.config.label is Reference) then return item end
          end
-         if Reference is <num> and Reference >= 0 and Reference < #&items then return &items[Reference] end
+         if Reference is <num> and Reference >= 0 and Reference < #&_rows then return &_rows[Reference] end
       end
    end
 
@@ -194,7 +193,7 @@ gui.menu = function(Options:table!)
          showIcons = Options.showIcons is nil ? true : Options.showIcons
          checks_present = false
          icons_present = false
-         for source in values(&config) do
+         for source in values(&items) do
             item = source.menu ?? source
             if item.checkable and not item.items then checks_present = true end
             if showIcons and (item.icon or source.icon) then icons_present = true end
@@ -227,11 +226,11 @@ gui.menu = function(Options:table!)
             end
          }, theme.border))
 
-         &items = array<table>
+         &_rows = array<table>
          widestItem = 0
          widestKey = 0
          y = VMARGIN
-         for source in values(&config) do
+         for source in values(&items) do
             item = source.menu ?? source
             if source.menu then item.icon ?= source.icon end
 
@@ -315,7 +314,7 @@ gui.menu = function(Options:table!)
                mi.height = ITEM_HEIGHT
                y = math.ceil(y + mi.height)
 
-               &items.push(mi)
+               &_rows.push(mi)
             elseif source.group then
                mi = { y = y, height = ITEM_HEIGHT, config = source, lineBreak = true }
 
@@ -338,7 +337,7 @@ gui.menu = function(Options:table!)
                mi.textWidth = bw
                if bw > widestItem then widestItem = bw end
                y += ITEM_HEIGHT
-               &items.push(mi)
+               &_rows.push(mi)
             end
          end
 
@@ -349,7 +348,7 @@ gui.menu = function(Options:table!)
          &surface.width  = width
          &surface.height = y + VMARGIN
 
-         for item in values(&items) do
+         for item in values(&_rows) do
             if not item.lineBreak and item.config.checkable and not item.submenuConfig then
                check_y = item.y + (ITEM_HEIGHT - ICON_SIZE) * 0.5
 
@@ -442,14 +441,14 @@ gui.menu = function(Options:table!)
       if &prepare then
          &_preparing = true
          defer &_preparing = false end
-         &prepare(&config)
+         &prepare(&items)
          if not &surface then return end
          if &parentItem then
-            &parentItem.config.items = &config
-            &parentItem.submenuConfig = &config
+            &parentItem.config.items = &items
+            &parentItem.submenuConfig = &items
          end
          &currentMenu?.hide()
-         for item in values(&items) do item.submenu?.surface?.free() end
+         for item in values(&_rows) do item.submenu?.surface?.free() end
          &currentMenu = nil
          &_keyboardMenu = nil
          &hItem = nil
@@ -620,7 +619,7 @@ gui.menu = function(Options:table!)
          &highlight.visibility = 'visible'
          &surface.mtScheduleRedraw()
          if Item.submenuConfig then openSubmenu(Item) end
-         self?.onHighlight(Item.config)
+         if &events.highlight then &events.highlight(Item.config) end
       else
          &highlight.visibility = 'hidden'
          &surface.mtScheduleRedraw()
@@ -634,13 +633,12 @@ gui.menu = function(Options:table!)
             parentMenu   = self,
             parentItem   = Item,
             client       = Options.client,
-            config       = Item.submenuConfig,
+            items        = Item.submenuConfig,
             prepare      = Item.config.prepare,
             showIcons    = Options.showIcons,
             theme        = theme,
-            onHighlight  = Options.onHighlight,
-            hostScene    = Options.hostScene,
-            onActivate   = Options.onActivate
+            events       = &events,
+            hostScene    = Options.hostScene
          })
       end
       return Item.submenu
@@ -658,13 +656,13 @@ gui.menu = function(Options:table!)
    self.step = function(Count:num!)
       direction = Count > 0 ? 1 : -1
       index = itemIndex(&hItem)
-      start = index is nil ? (direction > 0 ? 0 : #&items - 1) : math.clamp(index + Count, 0, #&items - 1)
+      start = index is nil ? (direction > 0 ? 0 : #&_rows - 1) : math.clamp(index + Count, 0, #&_rows - 1)
       item = seek(start, direction) or seek(start, -direction)
       if item then highlightItem(item) end
    end
 
    self.moveToEnd = function(Last:bool)
-      item = Last ? seek(#&items - 1, -1) : seek(0, 1)
+      item = Last ? seek(#&_rows - 1, -1) : seek(0, 1)
       if item then highlightItem(item) end
    end
 
@@ -675,7 +673,7 @@ gui.menu = function(Options:table!)
       if item.checkmark then &setChecked(item, not item.config.checked) end
 
       item.config?.onActivate(item.config)
-      if &onActivate then &onActivate(item.config) end
+      if &events.activate then &events.activate(item.config) end
 
       menu = &&
       while menu do
@@ -748,7 +746,7 @@ gui.menu = function(Options:table!)
 
    -- Main entry point --
 
-   assert(Options.config, 'A config value is required to define the Menu items')
+   assert(Options.items, 'An items value is required to define the Menu items')
 
    using self do
       &surface = obj.new('surface')
@@ -772,7 +770,7 @@ gui.menu = function(Options:table!)
       if &popup and not &parentMenu then
          &viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
             if not &visible then return end
-            path = findMenuShortcut(&config, Qualifiers, Code, Unicode)
+            path = findMenuShortcut(&items, Qualifiers, Code, Unicode)
             if path then &activateShortcut(path)
             else &handleKey(Qualifiers, Code)
             end
@@ -780,7 +778,7 @@ gui.menu = function(Options:table!)
       end
 
       &surface.subscribe('free', function()
-         for item in values(&items) do
+         for item in values(&_rows) do
             item.submenu?.surface?.free()
          end
 
@@ -810,7 +808,7 @@ gui.menu = function(Options:table!)
       end)
 
       &surface.subscribe('show', function(Surface:obj!, Args:table!)
-         for item in values(&items) do
+         for item in values(&_rows) do
             if item.checkmark then
                item.checkmark.visibility = item.config.checked ? 'visible' : 'hidden'
             end
@@ -841,7 +839,7 @@ gui.menu = function(Options:table!)
          while ev do
             if ev.type is JET_BUTTON_1 then
                if ev.value is 1 then
-                  for item in values(&items) do
+                  for item in values(&_rows) do
                      if ev.y >= item.y and ev.y < item.y + item.height then
                         if selectable(item) then
                            -- Focus loss can hide the chain before this click is delivered.  Leaf actions may
@@ -859,7 +857,7 @@ gui.menu = function(Options:table!)
             elseif ev.type is JET_ABS_XY then
                if not &visible then return end
                highlightFound = false
-               for item in values(&items) do
+               for item in values(&_rows) do
                   if selectable(item) then
                      if (ev.y >= item.y) and (ev.y < item.y + item.height) then
                         highlightItem(item)

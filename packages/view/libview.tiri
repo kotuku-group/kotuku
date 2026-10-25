@@ -380,7 +380,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       window     = nil, -- Host of the page
       -- Utilises the 'page' theme for inner view and 'widget' for titlebars etc
       theme      = nil,
-      noIcons    = Options.noIcons,
+      showIcons  = Options.showIcons != false,
       events          = Options.events ?? {},
       top             = { },
       totalTop        = 0,
@@ -443,6 +443,13 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       highlightItem(vw, Item)
       setKeyboardTarget(vw, Item)
       vw.revealItem(Item)
+   end
+
+   -- Makes a visible item the keyboard target, as keyboard navigation does: it is highlighted and scrolled into view.
+
+   vw.targetItem = function(Item:table!)
+      if not selectionEligible(vw, Item) then return end
+      navigateTo(Item)
    end
 
    function moveKeyboardHighlight(Step:num!)

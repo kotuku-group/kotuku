@@ -69,7 +69,7 @@ function screenBounds(Target:any, PointerX:num!, PointerY:num!):<num, num, num, 
    return left, top, right, bottom
 end
 
-gui.tooltip = function(Options)
+gui.tooltip = function(Options:table)
    -- New tooltips are refused until the previous tooltip's surface has been removed.
 
    if (glLastTip != 0) and obj.find(glLastTip) then return nil end
@@ -182,6 +182,7 @@ gui.tooltip = function(Options)
       if &surface.x + &surface.width > right then
          &surface.x = math.max(left, right - &surface.width)
       end
+
       if &surface.y + &surface.height > bottom then
          &surface.y = math.max(top, bottom - &surface.height)
       end

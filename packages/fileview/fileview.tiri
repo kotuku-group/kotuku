@@ -490,7 +490,7 @@ function createFileItem(self, Info)
          freespace   = free_space
       }
    elseif Info.flags has RDF_FOLDER then
-      display_name:str = self.view.noIcons ? Info.name : rxStripFolder.extract(Info.name)
+      display_name:str = self.view.showIcons ? rxStripFolder.extract(Info.name) : Info.name
 
       if not Info.name.endsWith('/') then
          display_name ..= '/'
@@ -569,7 +569,7 @@ gui.fileview = function(Options)
       enableSysKeys  = Options.sysKeys ?? false,
       hideExtensions = Options.hideExtensions,
       hideFiles      = Options.hideFiles,
-      pathChanged    = Options.pathChanged,
+      events         = Options.events ?? {},
       filterList     = Options.filterList,
       strictFilter   = Options.strictFilter,
       theme          = nil -- Determined by target viewport
@@ -1005,7 +1005,7 @@ gui.fileview = function(Options)
          end
       end
 
-      self.pathChanged?(self, self.path)
+      self.events.pathChanged?(self, self.path)
 
       return self.path
    end

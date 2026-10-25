@@ -256,12 +256,14 @@ gui.dialog.file = function(Options)
       style         = 'column', -- column, list, tree
       toolbar       = { clipboard=true, settings=true },
       viewOptions   = { },
-      pathChanged = function(FileView:table!, Path:str)
-         if Path then
-            self.currentPath = Path
-            self.pathbox.setText(Path)
+      events = {
+         pathChanged = function(FileView:table!, Path:str)
+            if Path then
+               self.currentPath = Path
+               self.pathbox.setText(Path)
+            end
          end
-      end
+      }
    })
 
    self.currentPath = self.fileview.path -- Ensure consistency
