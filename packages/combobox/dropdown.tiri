@@ -271,7 +271,7 @@ gui._dropdown = function(Options)
    -- Main entry point --
 
    using self do
-      assert(Options.config, 'A config value is required to define the Menu items')
+      assert(Options.items, 'An items value is required to define the Menu items')
 
       &surface = obj.new('surface')
       &surface.{
@@ -313,7 +313,7 @@ gui._dropdown = function(Options)
 
       if showIcons then
          iconsPresent = false
-         for item in values(Options.config) do
+         for item in values(Options.items) do
             if item.icon then
                iconsPresent = true
                TEXT_X = HMARGIN + ICON_SIZE + HMARGIN + HMARGIN
@@ -386,7 +386,7 @@ gui._dropdown = function(Options)
       y          = VMARGIN
       _, _, ascent = gui.getFontHeight(dropdown.text, false)
 
-      for item in values(Options.config) do
+      for item in values(Options.items) do
          if item.label then
             mi = { y=y, config=item }
             vText = &page.new('VectorText', table.merge({

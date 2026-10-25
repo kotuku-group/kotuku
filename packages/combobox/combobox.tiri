@@ -78,7 +78,7 @@ function createMenu(Items:any)
    &menu = gui._dropdown({
       target    = 0, -- Open on the host desktop so the menu can extend beyond the combobox window
       relative  = &viewport,
-      config    = Items ?? { },
+      items     = Items ?? { },
       lineLimit = 8,
       feedback = function[<weak> &&](Item:table!)
          &text.string = Item.label
@@ -118,6 +118,7 @@ gui.combobox = function(Options:table)
       &disabled = true
       &menu?.hide()
       &viewport.acDisable()
+      &viewport.opacity = 0.5
       gui.applyStyle(&bkgd, &input_theme.disabled)
       &events.disable?()
       &viewport.acDraw()
@@ -126,6 +127,7 @@ gui.combobox = function(Options:table)
    self.enable = function()
       &disabled = false
       &viewport.acEnable()
+      &viewport.opacity = 1
       gui.applyStyle(&bkgd, &input_theme.bkgd)
       &events.enable?()
       &viewport.acDraw()

@@ -290,7 +290,7 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
 
    kt::SwitchContext ctx(Self);
 
-   log.branch("%s #%d <- ID: #%u, Type: %d", Self->ActiveEffect->Class->ClassName.c_str(),
+   log.msg(VLF::BRANCH|VLF::DETAIL, "%s #%d <- ID: #%u, Type: %d", Self->ActiveEffect->Class->ClassName.c_str(),
       Self->ActiveEffect->UID, Effect ? Effect->UID : 0, int(SourceType));
 
    objBitmap *bmp = nullptr;
@@ -726,7 +726,7 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    if ((!filter_name) or (!filter_name[0])) filter_name = "Unnamed";
    CSTRING vector_name = Vector->Name;
    if ((!vector_name) or (!vector_name[0])) vector_name = "Unnamed";
-   log.branch("Rendering '%s' filter content for %s #%d '%s'.", filter_name,
+   log.msg(VLF::BRANCH|VLF::DETAIL, "Rendering '%s' filter content for %s #%d '%s'.", filter_name,
       Vector->Class->ClassName.c_str(), Vector->UID, vector_name);
 
    Self->ClientViewport = Viewport;

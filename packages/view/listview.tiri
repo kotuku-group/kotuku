@@ -93,9 +93,9 @@ gui.listView = function(Options:table!):table
       vp = Item._vectors.viewport
 
       icon_margin = 0
-      if not Options.noIcons then icon_margin = m.iconSize + m.margin end
+      if View.showIcons then icon_margin = m.iconSize + m.margin end
 
-      if Item.icon then
+      if View.showIcons and Item.icon then
          try
             if not View.icons[Item.icon] then -- Records the icon's margin, see gui.createIcon()
                View.icons[Item.icon] = gui.createIcon(View.scene, Item.icon, m.iconSize, View.theme.page.icon,

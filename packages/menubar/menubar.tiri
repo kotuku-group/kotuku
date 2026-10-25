@@ -19,7 +19,7 @@ function selectable(Item:table):bool
 end
 
 function hasMenu(Item:table):bool
-   return Item and ((Item.prepare != nil) or (Item.menuConfig and (#Item.menuConfig > 0)))
+   return Item and ((Item.prepare != nil) or (Item.menuItems and (#Item.menuItems > 0)))
 end
 
 function itemMenu(Item:table!):table
@@ -30,7 +30,7 @@ function itemMenu(Item:table!):table
          relative  = &viewport,
          x         = Item.x,
          y         = &viewport.height - 2,
-         config    = Item.menuConfig,
+         items     = Item.menuItems,
          prepare   = Item.prepare,
          theme     = &theme.menu
       })
@@ -45,7 +45,7 @@ function findShortcut(Qualifiers:num!, Code:num!, Unicode:num):<table, array<tab
    item = &_first
    while item do
       if selectable(item) and hasMenu(item) then
-         path = gui.findMenuShortcut(item.menu ? item.menu.config : item.menuConfig, Qualifiers, Code, Unicode)
+         path = gui.findMenuShortcut(item.menu ? item.menu.items : item.menuItems, Qualifiers, Code, Unicode)
          if path then return item, path end
       end
       item = item.next
@@ -257,7 +257,7 @@ gui.menubar = function(Options:table)
       item = newItem(Name, ID)
       item.callback = Function
       if Prepare and Menu is nil then Menu = array<table> end
-      item.menuConfig = Menu
+      item.menuItems = Menu
       item.prepare = Prepare
 
       if Icon then

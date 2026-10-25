@@ -260,7 +260,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          target     = &viewport,
          style      = 'LongList',
          sensitive  = true,
-         noIcons    = true,
+         showIcons  = false,
          textAttrib = 'name',
          events = {
             itemSelected = function(View:table!, Reason:str!, Item:table!)
@@ -285,7 +285,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          width        = vwSize.viewport.x - gui.sizing.widget.gap - &window.margins.left,
          target       = &viewport,
          sensitive    = true,
-         noIcons      = true,
+         showIcons    = false,
          textAttrib   = 'name',
          events = {
             itemSelected = function(View:table!, Reason:str!, Item:table!)
