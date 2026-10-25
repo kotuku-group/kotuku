@@ -25,7 +25,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 13;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 14;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -186,6 +186,14 @@ public:
    virtual ERR fillBitmap(extBitmap *Destination, int X, int Y, int Width, int Height, uint32_t Colour) = 0;
    virtual ERR flush() = 0;
 
+   // Copies a rectangle of the host desktop to Dest at XDest, YDest.  The caller has clipped the destination to the
+   // bitmap's clip region and holds a write lock on it.  The driver clips the source to the desktop, writes opaque
+   // pixels as presented on screen, and returns ERR::OutOfRange if nothing remains after clipping.
+
+   virtual ERR captureDisplay(int X, int Y, int Width, int Height, extBitmap *Dest, int XDest, int YDest) {
+      return ERR::NoSupport;
+   }
+
    virtual ERR allocBitmap(extBitmap *Bitmap) = 0;
    virtual ERR freeBitmap(extBitmap *Bitmap) = 0;
    virtual ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) = 0;
@@ -207,6 +215,11 @@ public:
    virtual ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) = 0;
    virtual ERR showCursor(HOSTWINDOW Window, bool Visible) = 0;
    virtual ERR warpPointer(HOSTWINDOW Window, int X, int Y) = 0;
+
+   // Reports the live host pointer position in desktop coordinates, the space used for the SystemPointer and
+   // captureDisplay().  It must remain valid while the pointer is outside of our windows.  Return NoSupport if the
+   // host has no global pointer position; the caller then uses the last SystemPointer position.
+
    virtual ERR pointerPosition(double &X, double &Y) = 0;
    virtual ERR grabPointer(HOSTWINDOW Window) { return ERR::NoSupport; }
    virtual ERR ungrabPointer() { return ERR::NoSupport; }

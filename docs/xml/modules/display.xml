@@ -49,6 +49,39 @@
   </function>
 
   <function>
+    <name>CaptureDisplay</name>
+    <category>Display</category>
+    <comment>Copies a rectangle of the host desktop to a bitmap.</comment>
+    <prototype>ERR gfx::CaptureDisplay(INT X, INT Y, INT Width, INT Height, objBitmap * Bitmap, INT XDest, INT YDest)</prototype>
+    <tiriPrototype>err = CaptureDisplay(X:num, Y:num, Width:num, Height:num, Bitmap:obj, XDest:num, YDest:num)</tiriPrototype>
+    <tags>mutates-object, blocking</tags>
+    <input>
+      <param type="INT" name="X">Horizontal desktop coordinate of the area to capture.</param>
+      <param type="INT" name="Y">Vertical desktop coordinate of the area to capture.</param>
+      <param type="INT" name="Width">Width of the area to capture.</param>
+      <param type="INT" name="Height">Height of the area to capture.</param>
+      <param type="objBitmap *" name="Bitmap">The bitmap that will receive the captured pixels.</param>
+      <param type="INT" name="XDest">Horizontal position in the bitmap to copy the area to.</param>
+      <param type="INT" name="YDest">Vertical position in the bitmap to copy the area to.</param>
+    </input>
+    <description>
+<p>CaptureDisplay() reads the pixels currently presented by the host desktop and copies them to <code>Bitmap</code>.  It allows tools such as colour pickers and magnifiers to sample content that is not owned by a Kōtuku surface.</p>
+<p><code>X</code> and <code>Y</code> are desktop coordinates, i.e. the same coordinate space as <function>GetCursorPos</function> and the <class name="Pointer">Pointer</class> <code>X</code> and <code>Y</code> fields.  On multi-monitor systems they can be negative.  The source rectangle is clipped to the desktop, and the destination is clipped to the bitmap's <code>Clip</code> region.  Pixels outside the clipped area are left untouched.</p>
+<p>Captured pixels are written as the display presents them, i.e. as sRGB-encoded values with an alpha of 255.  No conversion is applied if the bitmap uses the <code>CS::LINEAR_RGB</code> colour space.  The mouse cursor is not included. Kōtuku's own windows are included as they appear on screen.</p>
+<p>Desktop capture is not available on all platforms.  Wayland sessions (including X11 clients running under XWayland), headless sessions and Android return <code>ERR::NoSupport</code>, and callers should fall back to an alternative where possible.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">At least part of the area was copied.</error>
+      <error code="NoSupport">The display driver cannot read the host desktop.</error>
+      <error code="OutOfRange">The area lies entirely outside of the desktop or the bitmap's clip region.</error>
+      <error code="AllocMemory">A temporary host image could not be allocated.</error>
+      <error code="SystemCall">The host capture request failed.</error>
+      <error code="NullArgs"><code>Bitmap</code> was not specified, or <code>Width</code> or <code>Height</code> is less than 1.</error>
+      <error code="InvalidObject"><code>Bitmap</code> does not refer to a Bitmap object.</error>
+    </result>
+  </function>
+
+  <function>
     <name>CheckIfChild</name>
     <category>Surfaces</category>
     <comment>Check if a surface is the child of another surface.</comment>
@@ -305,7 +338,9 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <param type="DOUBLE *" name="Y">Variable that will store the pointer's vertical coordinate.</param>
     </input>
     <description>
-<p>This function will return the current coordinates of the mouse cursor.  If the device is touch-screen based then the coordinates will reflect the last position that a touch event occurred.</p>
+<p>This function returns the current coordinates of the mouse cursor in desktop coordinates.  On a hosted display this is the virtual desktop that spans all monitors, which is the same space as the <code>MonitorX</code>, <code>MonitorY</code>, <code>VirtualX</code> and <code>VirtualY</code> values reported by <function>GetDisplayInfo</function>, and the space that <function>CaptureDisplay</function> reads from.  The coordinates can be negative if a monitor is positioned to the left of or above the primary monitor.</p>
+<p>On X11 and Windows the position is read from the host, so it remains current while the cursor is outside of Kōtuku's windows.  Other drivers, including Wayland and headless, report the last position recorded by the <code>SystemPointer</code>. On Wayland that position is not updated while the cursor is outside of Kōtuku's windows.  If the device is touch-screen based then the coordinates will reflect the last position that a touch event occurred.</p>
+<p>The result can differ from the <class name="Pointer">Pointer</class> <code>X</code> and <code>Y</code> fields, which are only updated when the input event that moved the pointer has been processed.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -395,7 +430,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <param type="DOUBLE *" name="Y">Variable that will store the pointer's vertical coordinate.</param>
     </input>
     <description>
-<p>This function is used to retrieve the current coordinates of the pointer cursor. The coordinates are relative to the surface object that is specified in the Surface argument.</p>
+<p>This function is used to retrieve the current coordinates of the pointer cursor. The coordinates are relative to the surface object that is specified in the Surface argument.  The cursor position is read in the same way as <function>GetCursorPos</function>.</p>
 <p>The X and Y parameters will not be set if a failure occurs.</p>
     </description>
     <result type="ERR">

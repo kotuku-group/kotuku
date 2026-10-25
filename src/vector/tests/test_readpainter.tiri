@@ -617,3 +617,59 @@ end
          f'Red cross-check failed between format {i} and {i+1}')
    end
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- color()
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReadColorSrgb()
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "color(srgb 1 0.5 0)", painter)
+   assert(checkRGB(painter, 1.0, 0.5, 0, 1.0), 'Failed color(srgb)')
+
+   check mVec.ReadPainter(nil, "color(srgb 100% 50% 0% / 25%)", painter)
+   assert(checkRGB(painter, 1.0, 0.5, 0, 0.25), 'Failed color(srgb) with percentages and alpha')
+
+   check mVec.ReadPainter(nil, "color( SRGB none 1 none / 0.5 )", painter)
+   assert(checkRGB(painter, 0, 1.0, 0, 0.5), 'Failed color(srgb) with none, space case and whitespace')
+end
+
+@Test function ReadColorSrgbLinear()
+   -- Linear 0.2158605 is sRGB 128/255
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "color(srgb-linear 0.21586050011 1 0)", painter)
+   assert(checkRGB(painter, 128/255, 1.0, 0, 1.0), 'Failed color(srgb-linear)')
+end
+
+@Test function ReadColorDisplayP3()
+   -- sRGB red is color(display-p3 0.9175 0.2003 0.1386) in CSS Color 4
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "color(display-p3 0.9175 0.2003 0.1386)", painter)
+   rgb = painter.colour
+   assert(math.abs(rgb.red - 1) < 0.001 and math.abs(rgb.green) < 0.001 and math.abs(rgb.blue) < 0.001,
+      f'P3 sRGB red: got {rgb.red} {rgb.green} {rgb.blue}')
+
+   check mVec.ReadPainter(nil, "color(display-p3 1 1 1 / 0.5)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.5), 'P3 white must be sRGB white')
+
+   -- P3 green is outside sRGB, so its channels are unclamped
+   check mVec.ReadPainter(nil, "color(display-p3 0 1 0)", painter)
+   rgb = painter.colour
+   assert(rgb.red < 0 and rgb.green > 1, f'P3 green must be outside sRGB: got {rgb.red} {rgb.green} {rgb.blue}')
+end
+
+@Test function ReadColorFollowedByFallback()
+   painter = struct.new('VectorPainter')
+   err, result = mVec.ReadPainter(nil, "color(display-p3 1 1 1), red", painter)
+   assert(err is ERR_Okay and result is ', red', f'The content after color() must be returned, got "{result}"')
+end
+
+@Test function RejectInvalidColor()
+   painter = struct.new('VectorPainter')
+   for iri in values(array<str> {
+      'color(rec2020 1 0 0)', 'color(1 0 0)', 'color(display-p3 1 0)', 'color(display-p3 1 x 0)', 'color()'
+   }) do
+      err = mVec.ReadPainter(nil, iri, painter)
+      assert(err is ERR_Syntax, f'{iri} must return ERR_Syntax, got {err}')
+   end
+end

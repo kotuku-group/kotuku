@@ -2,6 +2,7 @@
 
 namespace gfx {
 extern objPointer * AccessPointer();
+extern ERR CaptureDisplay(int X, int Y, int Width, int Height, objBitmap * Bitmap, int XDest, int YDest);
 extern ERR CheckIfChild(OBJECTID Parent, OBJECTID Child);
 extern ERR CopyArea(objBitmap * Bitmap, objBitmap * Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
 extern ERR CopyRawBitmap(struct BitmapSurface * Surface, objBitmap * Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);

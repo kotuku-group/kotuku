@@ -55,6 +55,7 @@ public:
       int Height, int XDest, int YDest) override;
    ERR fillBitmap(extBitmap *Destination, int X, int Y, int Width, int Height, uint32_t Colour) override;
    ERR flush() override;
+   ERR captureDisplay(int X, int Y, int Width, int Height, extBitmap *Dest, int XDest, int YDest) override;
    ERR allocBitmap(extBitmap *Bitmap) override;
    ERR freeBitmap(extBitmap *Bitmap) override;
    ERR resizeBitmap(extBitmap *Bitmap, int Width, int Height) override;
@@ -87,6 +88,7 @@ private:
 #ifdef X11_DRIVER_TESTS
 extern "C" DISPLAY_DRIVER_EXPORT void x11_process_driver_events(DisplayDriver *Driver);
 extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_clipboard_window(DisplayDriver *Driver);
+extern "C" DISPLAY_DRIVER_EXPORT size_t x11_driver_bitmap_size();
 #endif
 
 }

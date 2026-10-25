@@ -16,6 +16,74 @@ namespace gfx {
 /*********************************************************************************************************************
 
 -FUNCTION-
+CaptureDisplay: Copies a rectangle of the host desktop to a bitmap.
+
+CaptureDisplay() reads the pixels currently presented by the host desktop and copies them to `Bitmap`.  It allows
+tools such as colour pickers and magnifiers to sample content that is not owned by a Kōtuku surface.
+
+`X` and `Y` are desktop coordinates, i.e. the same coordinate space as ~GetCursorPos() and the @Pointer `X` and
+`Y` fields.  On multi-monitor systems they can be negative.  The source rectangle is clipped to the desktop, and the
+destination is clipped to the bitmap's `Clip` region.  Pixels outside the clipped area are left untouched.
+
+Captured pixels are written as the display presents them, i.e. as sRGB-encoded values with an alpha of 255.  No
+conversion is applied if the bitmap uses the `CS::LINEAR_RGB` colour space.  The mouse cursor is not included.
+Kōtuku's own windows are included as they appear on screen.
+
+Desktop capture is not available on all platforms.  Wayland sessions (including X11 clients running under XWayland),
+headless sessions and Android return `ERR::NoSupport`, and callers should fall back to an alternative where possible.
+
+-INPUT-
+int X: Horizontal desktop coordinate of the area to capture.
+int Y: Vertical desktop coordinate of the area to capture.
+int Width: Width of the area to capture.
+int Height: Height of the area to capture.
+obj(Bitmap) Bitmap: The bitmap that will receive the captured pixels.
+int XDest: Horizontal position in the bitmap to copy the area to.
+int YDest: Vertical position in the bitmap to copy the area to.
+
+-ERRORS-
+Okay: At least part of the area was copied.
+NullArgs: `Bitmap` was not specified, or `Width` or `Height` is less than 1.
+InvalidObject: `Bitmap` does not refer to a Bitmap object.
+OutOfRange: The area lies entirely outside of the desktop or the bitmap's clip region.
+NoSupport: The display driver cannot read the host desktop.
+SystemCall: The host capture request failed.
+AllocMemory: A temporary host image could not be allocated.
+
+-TAGS-
+mutates-object, blocking
+
+*********************************************************************************************************************/
+
+ERR CaptureDisplay(int X, int Y, int Width, int Height, objBitmap *Bitmap, int XDest, int YDest)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((not Bitmap) or (Width < 1) or (Height < 1)) return log.warning(ERR::NullArgs);
+   if (Bitmap->classID() != CLASSID::BITMAP) return log.warning(ERR::InvalidObject);
+   if (not glDriver) return ERR::NoSupport;
+
+   auto bitmap = (extBitmap *)Bitmap;
+   const int left = std::max(bitmap->Clip.Left, 0);
+   const int top = std::max(bitmap->Clip.Top, 0);
+   const int right = std::min(bitmap->Clip.Right, bitmap->Width);
+   const int bottom = std::min(bitmap->Clip.Bottom, bitmap->Height);
+
+   if (XDest < left) { X += left - XDest; Width -= left - XDest; XDest = left; }
+   if (YDest < top) { Y += top - YDest; Height -= top - YDest; YDest = top; }
+   if (XDest + Width > right) Width = right - XDest;
+   if (YDest + Height > bottom) Height = bottom - YDest;
+   if ((Width < 1) or (Height < 1)) return ERR::OutOfRange;
+
+   if (auto error = lock_surface(bitmap, SURFACE_WRITE); error != ERR::Okay) return log.warning(error);
+   auto error = glDriver->captureDisplay(X, Y, Width, Height, bitmap, XDest, YDest);
+   unlock_surface(bitmap);
+   return error;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 GetDisplayInfo: Retrieves display information.
 
 The GetDisplayInfo() function returns information about a display, such as its size and bit depth.  If the system is

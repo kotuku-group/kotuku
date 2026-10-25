@@ -9,6 +9,7 @@ static constexpr auto HASH_LCH   = kt::strhash("lch");
 static constexpr auto HASH_HSL   = kt::strhash("hsl");
 static constexpr auto HASH_HSLA  = kt::strhash("hsla");
 static constexpr auto HASH_HSV   = kt::strhash("hsv");
+static constexpr auto HASH_COLOR = kt::strhash("color");
 
 inline char read_nibble(const char Alpha)
 {
@@ -18,10 +19,22 @@ inline char read_nibble(const char Alpha)
    else return char(0xff);
 }
 
+// Remove the sRGB transfer function.  Negative values are mirrored, as in CSS Color 4.
+
+inline double srgb_to_linear(double V)
+{
+   const double sign = (V < 0) ? -1.0 : 1.0;
+   V = std::abs(V);
+   if (V <= 0.04045) return sign * V / 12.92;
+   return sign * pow((V + 0.055) / 1.055, 2.4);
+}
+
 inline double linear_to_srgb(double V)
 {
-   if (V <= 0.0031308) return 12.92 * V;
-   return 1.055 * pow(V, 1.0 / 2.4) - 0.055;
+   const double sign = (V < 0) ? -1.0 : 1.0;
+   V = std::abs(V);
+   if (V <= 0.0031308) return sign * 12.92 * V;
+   return sign * (1.055 * pow(V, 1.0 / 2.4) - 0.055);
 }
 
 // Store linear sRGB values into a VectorPainter, computing both the sRGB colour and the CIE XYZ representation.
@@ -325,6 +338,74 @@ static ERR parse_oklch(std::string_view IRI, VectorPainter *Painter, std::string
 }
 
 //********************************************************************************************************************
+// Parse a channel of the CSS color() function.  Channels are numbers or percentages (100% = 1), or 'none' for zero.
+
+static bool parse_color_channel(std::string_view &IRI, double &Value)
+{
+   skip_whitespace(IRI);
+   if (IRI.starts_with("none")) {
+      IRI.remove_prefix(4);
+      Value = 0;
+   }
+   else {
+      std::errc error;
+      Value = parse_number(IRI, &error);
+      if (error != std::errc()) return false;
+      if (IRI.starts_with('%')) { Value *= 0.01; IRI.remove_prefix(1); }
+   }
+   skip_whitespace(IRI);
+   return true;
+}
+
+//********************************************************************************************************************
+// CSS color() function: color(space R G B [/ alpha]), where space is srgb, srgb-linear or display-p3.  Display P3
+// uses the sRGB transfer function and white point.  Channels outside 0 - 1 are accepted, so a P3 colour outside sRGB
+// produces sRGB values outside 0 - 1.
+
+static ERR parse_color(std::string_view IRI, VectorPainter *Painter, std::string_view &Result)
+{
+   // Linear Display P3 to linear sRGB, from the CSS Color 4 P3 to XYZ and XYZ to sRGB matrices
+
+   static constexpr double P3_TO_SRGB[3][3] = {
+      {  1.22494017628056,    -0.22494017628056,    0.0 },
+      { -0.04205695470968816,  1.042056954709688,   0.0 },
+      { -0.01963755459033443, -0.07863604555063189, 1.098273600140966 }
+   };
+
+   skip_whitespace(IRI);
+
+   std::size_t len = 0;
+   while ((len < IRI.size()) and ((std::isalnum(uint8_t(IRI[len]))) or (IRI[len] IS '-'))) len++;
+   auto space = IRI.substr(0, len);
+   IRI.remove_prefix(len);
+
+   double r, g, b;
+   if ((not parse_color_channel(IRI, r)) or (not parse_color_channel(IRI, g)) or
+       (not parse_color_channel(IRI, b))) return ERR::Syntax;
+   float alpha = parse_css_alpha(IRI);
+
+   if (kt::iequals(space, "srgb")) {
+      auto &rgb = Painter->Colour;
+      rgb.Red   = float(r);
+      rgb.Green = float(g);
+      rgb.Blue  = float(b);
+      rgb.Alpha = alpha;
+   }
+   else if (kt::iequals(space, "srgb-linear")) linear_rgb_to_painter(r, g, b, alpha, Painter);
+   else if (kt::iequals(space, "display-p3")) {
+      const double lr = srgb_to_linear(r), lg = srgb_to_linear(g), lb = srgb_to_linear(b);
+      const auto &m = P3_TO_SRGB;
+      linear_rgb_to_painter(m[0][0] * lr + m[0][1] * lg + m[0][2] * lb,
+         m[1][0] * lr + m[1][1] * lg + m[1][2] * lb,
+         m[2][0] * lr + m[2][1] * lg + m[2][2] * lb, alpha, Painter);
+   }
+   else return ERR::Syntax;
+
+   advance_function_result(IRI, Result);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 // CSS lab() colour function: lab(L a b [/ alpha])
 // L: lightness 0-100 (or 0%-100%), a: ~-125 to 125 (or percentage), b: ~-125 to 125 (or percentage)
 // Values are space-separated; alpha is optional, preceded by '/'
@@ -607,6 +688,11 @@ Alpha (`A`) is optional, preceded by `/`, and ranges from `0.0` to `1.0` or `0%`
 `0`-`100` or `0%`-`100%`.  Chroma (`C`) is an unbounded positive value, or a percentage where `100%` equals `150`.
 Hue (`H`) is in degrees.  Alpha (`A`) is optional, preceded by `/`, and ranges from `0.0` to `1.0` or
 `0%` to `100%`.</type>
+<type name="color(space R G B [/ A])">CSS Color Level 4 `color()` function.  The supported spaces are `srgb`,
+`srgb-linear` and `display-p3`.  Channels range from `0` to `1`, or `0%` to `100%`, and `none` is read as zero.
+Display P3 colours are converted to sRGB, so a colour outside the sRGB gamut has channels outside `0` to `1`.  Alpha
+(`A`) is optional, preceded by `/`, and ranges from `0.0` to `1.0` or `0%` to `100%`.  Any other space is a syntax
+error.</type>
 </types>
 
 A Gradient, Image or Pattern can be referenced using the `url(#name)` format, where `name` is a definition
@@ -697,6 +783,7 @@ ERR ReadPainter(objVectorScene *Scene, const std::string_view &IRI, VectorPainte
             case HASH_HSL:
             case HASH_HSLA:  error = parse_hsl(body, Painter, result); break;
             case HASH_HSV:   error = parse_hsv(body, Painter, result); break;
+            case HASH_COLOR: error = parse_color(body, Painter, result); break;
             default:         error = ERR::Syntax;
          }
       }

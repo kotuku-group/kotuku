@@ -88,6 +88,7 @@ if (UNIT_TESTS)
 endif ()
 
 flute_test (display_surface_focus "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_surface_focus.tiri")
+flute_test (display_capture "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_capture_display.tiri")
 
 if (WIN32)
    target_compile_definitions (${MOD} PRIVATE DISPLAY_WINDOWS_DRIVER WIN_DRAGDROP)

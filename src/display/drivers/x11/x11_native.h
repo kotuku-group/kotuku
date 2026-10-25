@@ -130,6 +130,7 @@ struct X11Driver::State {
    bool Open = false;
    bool Manager = true;
    bool WSLg = false;
+   bool XWayland = false;  // True if the server is XWayland, whose root window does not show Wayland clients
    bool SharedImages = false;
    bool Composite = false;
    bool RandR = false;

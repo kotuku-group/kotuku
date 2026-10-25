@@ -174,14 +174,14 @@ static void send_enter_event(extVector *Vector, const InputEvent *Event, double 
 
 //********************************************************************************************************************
 
-static void send_left_event(extVector *Vector, const InputEvent *Event, double X = 0, double Y = 0)
+static void send_left_event(extVector *Vector, extVector *NewVector, const InputEvent *Event, double X = 0, double Y = 0)
 {
    InputEvent event = {
       .Next        = nullptr,
       .Value       = double(Vector->UID),
       .Timestamp   = Event->Timestamp,
       .RecipientID = Vector->UID,
-      .OverID      = Vector->UID,
+      .OverID      = NewVector ? NewVector->UID : 0,
       .AbsX        = Event->X,
       .AbsY        = Event->Y,
       .X           = Event->X - X,
@@ -275,7 +275,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          if (Self->ActiveVector) {
             kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             Self->ActiveVector = 0;
-            if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+            if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
          }
       }
       else if (input->Type IS JET::CROSSED_IN);
@@ -341,7 +341,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                      if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
                         kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
-                        if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+                        if (lock.granted()) send_left_event(lock.obj, vector, input, Self->ActiveVectorX, Self->ActiveVectorY);
                      }
 
                      Self->ActiveVector  = vector->UID;
@@ -361,7 +361,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                if ((Self->ActiveVector) and (not processed)) {
                   kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
                   Self->ActiveVector = 0;
-                  if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+                  if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
                }
             }
          }
@@ -439,7 +439,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                   if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
                      kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
-                     if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+                     if (lock.granted()) send_left_event(lock.obj, vector, input, Self->ActiveVectorX, Self->ActiveVectorY);
                   }
 
                   Self->ActiveVector  = vector->UID;
@@ -460,7 +460,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          if ((Self->ActiveVector) and (not processed)) {
             kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             Self->ActiveVector = 0;
-            if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+            if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
          }
       }
       else log.warning("Unrecognised movement type %d", int(input->Type));

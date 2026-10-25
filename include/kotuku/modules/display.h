@@ -2330,6 +2330,7 @@ class objSurface : public Object {
 struct DisplayBase {
 #ifndef KOTUKU_STATIC
    objPointer * (*_AccessPointer)(void);
+   ERR (*_CaptureDisplay)(int X, int Y, int Width, int Height, objBitmap *Bitmap, int XDest, int YDest);
    ERR (*_CheckIfChild)(OBJECTID Parent, OBJECTID Child);
    ERR (*_CopyArea)(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
    ERR (*_CopyRawBitmap)(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
@@ -2377,6 +2378,7 @@ struct DisplayBase {
 extern struct DisplayBase *DisplayBase;
 namespace gfx {
 inline objPointer * AccessPointer(void) { return DisplayBase->_AccessPointer(); }
+inline ERR CaptureDisplay(int X, int Y, int Width, int Height, objBitmap *Bitmap, int XDest, int YDest) { return DisplayBase->_CaptureDisplay(X,Y,Width,Height,Bitmap,XDest,YDest); }
 inline ERR CheckIfChild(OBJECTID Parent, OBJECTID Child) { return DisplayBase->_CheckIfChild(Parent,Child); }
 inline ERR CopyArea(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyArea(Bitmap,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
 inline ERR CopyRawBitmap(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest) { return DisplayBase->_CopyRawBitmap(Surface,Dest,Flags,X,Y,Width,Height,XDest,YDest); }
@@ -2421,6 +2423,7 @@ inline ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback) { return
 #else
 namespace gfx {
 extern objPointer * AccessPointer(void);
+extern ERR CaptureDisplay(int X, int Y, int Width, int Height, objBitmap *Bitmap, int XDest, int YDest);
 extern ERR CheckIfChild(OBJECTID Parent, OBJECTID Child);
 extern ERR CopyArea(objBitmap *Bitmap, objBitmap *Dest, BAF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);
 extern ERR CopyRawBitmap(struct BitmapSurface *Surface, objBitmap *Dest, CSRF Flags, int X, int Y, int Width, int Height, int XDest, int YDest);

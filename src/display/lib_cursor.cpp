@@ -8,6 +8,24 @@ Name: Cursor
 
 #include "defs.h"
 
+//********************************************************************************************************************
+// Desktop drivers report the live host position, which stays current while the pointer is outside of our windows.
+// Drivers that have no global pointer position (Wayland, headless) fall back to the position held by the
+// SystemPointer.  Both are in the same coordinate space because the drivers feed the SystemPointer with desktop
+// coordinates.
+
+static ERR cursor_position(double &X, double &Y)
+{
+   if ((glDriver) and (glDriver->pointerPosition(X, Y) IS ERR::Okay)) return ERR::Okay;
+
+   if (auto pointer = gfx::AccessPointer()) {
+      X = pointer->X;
+      Y = pointer->Y;
+      ReleaseObject(pointer);
+      return ERR::Okay;
+   }
+   else return ERR::AccessObject;
+}
 
 namespace gfx {
 
@@ -99,8 +117,18 @@ ERR GetCursorInfo(CursorInfo *Info)
 -FUNCTION-
 GetCursorPos: Returns the coordinates of the UI pointer.
 
-This function will return the current coordinates of the mouse cursor.  If the device is touch-screen based then the
-coordinates will reflect the last position that a touch event occurred.
+This function returns the current coordinates of the mouse cursor in desktop coordinates.  On a hosted display this
+is the virtual desktop that spans all monitors, which is the same space as the `MonitorX`, `MonitorY`, `VirtualX` and
+`VirtualY` values reported by ~GetDisplayInfo(), and the space that ~CaptureDisplay() reads from.  The coordinates
+can be negative if a monitor is positioned to the left of or above the primary monitor.
+
+On X11 and Windows the position is read from the host, so it remains current while the cursor is outside of Kōtuku's
+windows.  Other drivers, including Wayland and headless, report the last position recorded by the `SystemPointer`.
+On Wayland that position is not updated while the cursor is outside of Kōtuku's windows.  If the device is touch-screen
+based then the coordinates will reflect the last position that a touch event occurred.
+
+The result can differ from the @Pointer `X` and `Y` fields, which are only updated when the input event that moved the
+pointer has been processed.
 
 -INPUT-
 &double X: Variable that will store the pointer's horizontal coordinate.
@@ -117,15 +145,15 @@ blocking, pure-query
 
 ERR GetCursorPos(double *X, double *Y)
 {
-   if (auto pointer = gfx::AccessPointer()) {
-      if (X) *X = pointer->X;
-      if (Y) *Y = pointer->Y;
-      ReleaseObject(pointer);
+   double x, y;
+   if (auto error = cursor_position(x, y); error IS ERR::Okay) {
+      if (X) *X = x;
+      if (Y) *Y = y;
       return ERR::Okay;
    }
    else {
       kt::Log log(__FUNCTION__);
-      return log.warning(ERR::AccessObject);
+      return log.warning(error);
    }
 }
 
@@ -135,7 +163,8 @@ ERR GetCursorPos(double *X, double *Y)
 GetRelativeCursorPos: Returns the coordinates of the pointer cursor, relative to a surface object.
 
 This function is used to retrieve the current coordinates of the pointer cursor. The coordinates are relative to the
-surface object that is specified in the Surface argument.
+surface object that is specified in the Surface argument.  The cursor position is read in the same way as
+~GetCursorPos().
 
 The X and Y parameters will not be set if a failure occurs.
 
@@ -164,13 +193,13 @@ ERR GetRelativeCursorPos(OBJECTID SurfaceID, double *X, double *Y)
       return ERR::Search;
    }
 
-   if (auto pointer = gfx::AccessPointer()) {
-      if (X) *X = pointer->X - absx;
-      if (Y) *Y = pointer->Y - absy;
-      ReleaseObject(pointer);
+   double x, y;
+   if (auto error = cursor_position(x, y); error IS ERR::Okay) {
+      if (X) *X = x - absx;
+      if (Y) *Y = y - absy;
       return ERR::Okay;
    }
-   else return log.warning(ERR::AccessObject);
+   else return log.warning(error);
 }
 
 /*********************************************************************************************************************
@@ -658,11 +687,22 @@ ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes
             pointer->DragParent = info->ParentID;
          }
 
-         log.trace("Moving draggable surface %d to %dx%d", Surface, pointer->X, pointer->Y);
+         double sx = pointer->X + DRAG_XOFFSET;
+         double sy = pointer->Y + DRAG_YOFFSET;
+         if (pointer->DragParent) {
+            int absx, absy;
+            if (gfx::GetSurfaceCoords(pointer->DragParent, nullptr, nullptr, &absx, &absy,
+                  nullptr, nullptr) IS ERR::Okay) {
+               sx -= absx;
+               sy -= absy;
+            }
+         }
+
+         log.trace("Moving draggable surface %d to %.2fx%.2f", Surface, sx, sy);
 
          kt::ScopedObjectLock surface(Surface);
          if (surface.granted()) {
-            acMoveToPoint(*surface, pointer->X+DRAG_XOFFSET, pointer->Y+DRAG_YOFFSET, 0, MTF::X|MTF::Y);
+            acMoveToPoint(*surface, sx, sy, 0, MTF::X|MTF::Y);
             acShow(*surface);
             acMoveToFront(*surface);
          }

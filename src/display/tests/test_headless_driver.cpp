@@ -34,6 +34,7 @@ int main()
    failures += check(driver.grabPointer(nullptr) IS ERR::NoSupport);
    failures += check(driver.ungrabPointer() IS ERR::NoSupport);
    failures += check(driver.pointerPosition(pointer_x, pointer_y) IS ERR::NoSupport);
+   failures += check(driver.captureDisplay(0, 0, 1, 1, nullptr, 0, 0) IS ERR::NoSupport);
    failures += check(driver.close() IS ERR::Okay);
    failures += check(driver.close() IS ERR::Okay);
 

@@ -1,0 +1,53 @@
+-- Verifies the argument handling of CaptureDisplay().  Under the headless driver the desktop cannot be read, so valid
+-- requests must report NoSupport and leave the target bitmap untouched.  Desktop pixel checks are covered by the X11
+-- driver's unit test, which runs against a private X server.
+
+   module display as mGfx
+
+-- Return the RGB values of a pixel as a table, because ReadRGBPixel() results share a buffer.
+
+function readPixel(Bitmap:obj!, X:num, Y:num):table
+   local rgb = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return { red=rgb.red, green=rgb.green, blue=rgb.blue, alpha=rgb.alpha }
+end
+
+@Test function MissingArguments()
+   local bmp <close> = obj.new('Bitmap', { width=4, height=4, bitsPerPixel=32 })
+   assert(mGfx.CaptureDisplay(0, 0, 4, 4, nil, 0, 0) is ERR_NullArgs, 'A nil bitmap must return NullArgs')
+   assert(mGfx.CaptureDisplay(0, 0, 0, 4, bmp, 0, 0) is ERR_NullArgs, 'A zero width must return NullArgs')
+   assert(mGfx.CaptureDisplay(0, 0, 4, -1, bmp, 0, 0) is ERR_NullArgs, 'A negative height must return NullArgs')
+end
+
+@Test function InvalidTarget()
+   local surface <close> = obj.new('Surface', { width=4, height=4 })
+   local err = mGfx.CaptureDisplay(0, 0, 4, 4, surface, 0, 0)
+   assert(err is ERR_InvalidObject, f'A non-bitmap target must return InvalidObject, got {mSys.GetErrorMsg(err)}')
+end
+
+-- The destination is clipped before the driver is called, so this is reported on every platform.
+
+@Test function DestinationOutsideClip()
+   local bmp <close> = obj.new('Bitmap', { width=4, height=4, bitsPerPixel=32 })
+   assert(mGfx.CaptureDisplay(0, 0, 4, 4, bmp, 4, 0) is ERR_OutOfRange, 'Capturing beyond the right edge')
+   assert(mGfx.CaptureDisplay(0, 0, 4, 4, bmp, 0, -4) is ERR_OutOfRange, 'Capturing above the top edge')
+
+   bmp.{ clipLeft=1, clipTop=1, clipRight=2, clipBottom=2 }
+   assert(mGfx.CaptureDisplay(0, 0, 1, 1, bmp, 0, 0) is ERR_OutOfRange, 'Capturing outside the clip region')
+end
+
+@Test function HeadlessNoSupport()
+   if mGfx.GetDisplayType() != DT_NATIVE then return end
+
+   local bmp <close> = obj.new('Bitmap', { width=4, height=4, bitsPerPixel=32 })
+   mGfx.DrawRGBPixel(bmp, 1, 1, struct.new('RGB8', { red=0x10, green=0x20, blue=0x30, alpha=0xff }))
+   local before = readPixel(bmp, 1, 1)
+   assert(before.green is 0x20, 'The sentinel pixel was not drawn')
+
+   local err = mGfx.CaptureDisplay(0, 0, 4, 4, bmp, 0, 0)
+   assert(err is ERR_NoSupport, f'Headless capture must return NoSupport, got {mSys.GetErrorMsg(err)}')
+
+   local after = readPixel(bmp, 1, 1)
+   for _, channel in { 'red', 'green', 'blue', 'alpha' } do
+      assert(after[channel] is before[channel], f'Failed capture altered the {channel} channel')
+   end
+end

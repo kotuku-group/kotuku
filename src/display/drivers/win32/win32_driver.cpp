@@ -124,7 +124,11 @@ public:
    ERR setCustomCursor(HOSTWINDOW Window, extBitmap *Image, int HotX, int HotY) override { return ERR::NoSupport; }
    ERR showCursor(HOSTWINDOW Window, bool Visible) override;
    ERR warpPointer(HOSTWINDOW Window, int X, int Y) override;
-   ERR pointerPosition(double &X, double &Y) override { return ERR::NoSupport; }
+   ERR pointerPosition(double &X, double &Y) override {
+      int x, y;
+      if (auto error = winGetCursorPos(x, y); error != ERR::Okay) return error;
+      X = x; Y = y; return ERR::Okay;
+   }
 
    ERR setHostOption(HOST Option, int64_t Value) override;
    ERR readController(int Port, double *Axes, CON &Buttons) override;
