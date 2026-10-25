@@ -40,14 +40,14 @@
     },
     {
       "path": "gui.tiri",
-      "size": 101869,
-      "sha256": "479efa6e53bdff40bb64bb74b784cb7711d8691e815ef7aaa3bad69e8fe0d99c",
+      "size": 101947,
+      "sha256": "e37aaeab0dc265a56abf1ec9b3b2fe37d932e09447db8174e6297adb4e0969fb",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "layout.tiri",
-      "size": 6244,
-      "sha256": "315c30ccb621a01ecf99df1cbb3c980f690d90929815cddb7c0821382269b6b1",
+      "size": 5964,
+      "sha256": "f19eb95d905aa96cd9665f7648a2bf68eac9b818879001b4bb0185316b642e52",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

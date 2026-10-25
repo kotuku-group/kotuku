@@ -4,10 +4,12 @@
 #include <X11/Xatom.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdlib>
 #include <fcntl.h>
 #include <sys/shm.h>
+#include <string_view>
 #include <unistd.h>
 
 namespace display {
@@ -60,6 +62,34 @@ static bool detect_wslg()
 {
    if (auto enabled = std::getenv("WSL2_GUI_APPS_ENABLED"); enabled and (enabled[0] IS '1')) return true;
    return access("/mnt/wslg", F_OK) IS 0;
+}
+
+//********************************************************************************************************************
+
+// XWayland advertises an XWAYLAND extension.  Older servers that lack it are recognised by their RandR output names.
+
+static bool detect_xwayland(Display *Connection)
+{
+   int opcode = 0, event = 0, error = 0;
+   if (XQueryExtension(Connection, "XWAYLAND", &opcode, &event, &error)) return true;
+
+#ifdef XRANDR_ENABLED
+   int event_base = 0, error_base = 0;
+   if (not XRRQueryExtension(Connection, &event_base, &error_base)) return false;
+   auto resources = XRRGetScreenResourcesCurrent(Connection, DefaultRootWindow(Connection));
+   if (not resources) return false;
+   bool result = false;
+   for (int i=0; (i < resources->noutput) and (not result); i++) {
+      if (auto info = XRRGetOutputInfo(Connection, resources, resources->outputs[i])) {
+         result = (info->name) and (std::string_view(info->name).starts_with("XWAYLAND"));
+         XRRFreeOutputInfo(info);
+      }
+   }
+   XRRFreeScreenResources(resources);
+   return result;
+#else
+   return false;
+#endif
 }
 
 //********************************************************************************************************************
@@ -324,6 +354,10 @@ extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_clipboard_window(Displ
 }
 
 unsigned long X11Driver::clipboardWindow() const { return Data->ClipboardWindow; }
+
+// Tests cannot see the extBitmap definition, so they reserve this much space for the bitmaps that they construct.
+
+extern "C" DISPLAY_DRIVER_EXPORT size_t x11_driver_bitmap_size() { return sizeof(extBitmap); }
 #endif
 
 //********************************************************************************************************************
@@ -464,6 +498,7 @@ ERR X11Driver::open(const DriverCallbacks &Callbacks)
    }
 
    XGetWindowAttributes(Data->Connection, root, &Data->RootAttributes);
+   Data->XWayland = detect_xwayland(Data->Connection);
    Data->Composite = XMatchVisualInfo(Data->Connection, DefaultScreen(Data->Connection), 32, TrueColor,
       &Data->AlphaVisual) != 0;
 
@@ -550,6 +585,7 @@ ERR X11Driver::close()
 #endif
    Data->GraphicsContext = Data->ClipGraphicsContext = 0;
    Data->Open = Data->Closing = Data->WSLg = Data->SharedImages = Data->Composite = Data->RandR = false;
+   Data->XWayland = false;
    Data->Manager = true;
    return was_open ? ERR::DoNotExpunge : ERR::Okay;
 }
@@ -1578,6 +1614,100 @@ ERR X11Driver::flush()
 {
    if (not Data->Open) return ERR::NotInitialised;
    XSync(Data->Connection, 0);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Scales one colour channel of an XImage pixel to 8 bits.  Deriving the channels from the image's masks supports 16,
+// 24 and 30-bit visuals alike.
+
+struct x11_channel {
+   unsigned long Mask;
+   unsigned long Max = 0;
+   int Shift = 0;
+
+   x11_channel(unsigned long pMask) : Mask(pMask) {
+      if (not Mask) return;
+      while (not ((Mask >> Shift) & 1)) Shift++;
+      Max = Mask >> Shift;
+   }
+
+   inline uint8_t operator()(unsigned long Pixel) const {
+      if (not Max) return 0;
+      return uint8_t((((Pixel & Mask) >> Shift) * 255 + (Max>>1)) / Max);
+   }
+};
+
+//********************************************************************************************************************
+// The root window shows the composited desktop under compositing managers, so reading it captures what the user sees.
+// Under XWayland the root window holds X clients only, so the request is refused rather than returning black areas.
+
+ERR X11Driver::captureDisplay(int X, int Y, int Width, int Height, extBitmap *Dest, int XDest, int YDest)
+{
+   if (not Data->Open) return ERR::NotInitialised;
+   if ((not Dest) or (Width < 1) or (Height < 1)) return ERR::NullArgs;
+   if (Data->XWayland) return ERR::NoSupport;
+
+   const std::lock_guard lock(Data->NativeLock);
+
+   // XGetImage() fails with BadMatch if the area extends beyond the root window, so the source is clipped first.
+
+   if (X < 0) { XDest -= X; Width += X; X = 0; }
+   if (Y < 0) { YDest -= Y; Height += Y; Y = 0; }
+   if (X + Width > Data->RootAttributes.width) Width = Data->RootAttributes.width - X;
+   if (Y + Height > Data->RootAttributes.height) Height = Data->RootAttributes.height - Y;
+   if ((Width < 1) or (Height < 1)) return ERR::OutOfRange;
+
+   // A failed request returns null.  The installed error handler logs the failure instead of terminating.
+
+   auto image = XGetImage(Data->Connection, DefaultRootWindow(Data->Connection), X, Y, Width, Height, AllPlanes,
+      ZPixmap);
+   if (not image) return ERR::SystemCall;
+
+   const x11_channel red(image->red_mask), green(image->green_mask), blue(image->blue_mask);
+   const auto format = Dest->ColourFormat;
+   const auto record = x11_bitmap(Dest);
+
+   if ((Dest->BytesPerPixel IS 4) and Dest->Data and ((not record) or (not record->DrawableID))) {
+      // A memory bitmap is written directly.  Rows are copied unchanged if the pixel layouts match.
+
+      const auto alpha = uint32_t(format->AlphaMask) << format->AlphaPos;
+      const bool direct = (image->bits_per_pixel IS 32) and
+         (image->byte_order IS (std::endian::native IS std::endian::little ? LSBFirst : MSBFirst)) and
+         (format->RedShift IS 0) and (format->GreenShift IS 0) and (format->BlueShift IS 0) and
+         (image->red_mask IS (unsigned long)(format->RedMask) << format->RedPos) and
+         (image->green_mask IS (unsigned long)(format->GreenMask) << format->GreenPos) and
+         (image->blue_mask IS (unsigned long)(format->BlueMask) << format->BluePos);
+
+      for (int y=0; y < Height; y++) {
+         auto target = (uint32_t *)(Dest->Data + ((YDest + y) * Dest->LineWidth)) + XDest;
+         if (direct) {
+            auto source = (const uint32_t *)(image->data + (y * image->bytes_per_line));
+            for (int x=0; x < Width; x++) target[x] = source[x] | alpha;
+         }
+         else {
+            for (int x=0; x < Width; x++) {
+               auto pixel = XGetPixel(image, x, y);
+               target[x] = Dest->packPixel(red(pixel), green(pixel), blue(pixel), 255);
+            }
+         }
+      }
+   }
+   else if (Dest->DrawUCRPixel) {
+      for (int y=0; y < Height; y++) {
+         for (int x=0; x < Width; x++) {
+            auto pixel = XGetPixel(image, x, y);
+            RGB8 rgb = { red(pixel), green(pixel), blue(pixel), 255 };
+            Dest->DrawUCRPixel(Dest, XDest + x, YDest + y, &rgb);
+         }
+      }
+   }
+   else {
+      XDestroyImage(image);
+      return ERR::NoSupport;
+   }
+
+   XDestroyImage(image);
    return ERR::Okay;
 }
 

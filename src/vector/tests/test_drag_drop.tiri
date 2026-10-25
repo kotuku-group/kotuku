@@ -374,3 +374,28 @@ end
    feed(JET_LMB, 0, 0)
    assert(notified is 0 and hits is 0, 'A freed source must be neither notified nor delivered')
 end
+
+@Test function ParentedDragPreviewStartsAndMovesAtPointerOffset()
+   local surface <close>, scene, root = newScene()
+   surface.x, surface.y = 100, 80
+   root.dropTarget = 1
+   local parent = surface.new('Surface', { x=20, y=15, width=150, height=90 })
+   parent.acShow()
+   local preview <close> = parent.new('Surface', {
+      width=32, height=32, flags=RNF_COMPOSITE | RNF_NO_FOCUS
+   })
+   local source <close> = obj.new('Clipboard', { flags=CPF_DRAG_DROP })
+   moveTo(surface, 10, 10)
+   feed(JET_LMB, 1, 0)
+   check mGfx.StartCursorDrag(source.id, 1, string.char(DATA_XML), preview.id)
+   local pointer = obj.find('SystemPointer')
+   assert(preview.flags has RNF_VISIBLE, 'Starting a drag shows the preview')
+   assert(preview.absX is pointer.x + 10 and preview.absY is pointer.y + 12,
+      'Initial placement accounts for every ancestor of the preview')
+   moveTo(surface, 15, 15)
+   assert(preview.absX is pointer.x + 10 and preview.absY is pointer.y + 12,
+      'Movement uses the same offset as the initial placement')
+   feed(JET_LMB, 0, 0)
+   assert(not (preview.flags has RNF_VISIBLE), 'Dropping hides the preview without freeing it')
+   assert(obj.find(preview.id), 'The client retains ownership after a drop')
+end

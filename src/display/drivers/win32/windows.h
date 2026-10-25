@@ -120,6 +120,7 @@ extern HANDLE winFindWindow(char *, char *);
 extern void winFocus(HWND);
 extern void winFreeDragDrop(void);
 extern ERR winGetCoords(HWND, int &, int &, int &, int &, int &, int &, int &, int &);
+extern ERR winGetCursorPos(int &, int &);
 extern int winGetDesktopSize(int *, int *);
 extern ERR winGetDisplayGeometry(HWND, int &, int &, int &, int &, int &, int &, int &, int &, int &, int &);
 extern int winGetDisplaySettings(HWND, int *, int *, int *, double *);

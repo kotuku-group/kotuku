@@ -16,6 +16,8 @@
 #include <string>
 #include <thread>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 static std::string glClipboardData;
 static std::string glClipboardMime;
@@ -541,6 +543,181 @@ static void test_clipboard(DisplayDriver *Driver, const std::optional<std::strin
    XCloseDisplay(peer);
 }
 
+// A 32-bit BGRA memory bitmap for capture tests.  The extBitmap layout is private to the driver, so the storage is
+// sized by the driver and only the public objBitmap fields that captureDisplay() reads are set.
+
+struct CaptureBitmap {
+   ColourFormat Format = {};
+   std::vector<uint32_t> Pixels;
+   objBitmap *Bitmap = nullptr;
+
+   CaptureBitmap(int Width, int Height) : Pixels(size_t(Width) * Height, 0x12345678) {
+      Bitmap = (objBitmap *)std::calloc(1, display::x11_driver_bitmap_size());
+      Format.RedMask = Format.GreenMask = Format.BlueMask = Format.AlphaMask = 0xff;
+      Format.BluePos = 0;
+      Format.GreenPos = 8;
+      Format.RedPos = 16;
+      Format.AlphaPos = 24;
+      Format.BitsPerPixel = 32;
+      Bitmap->ColourFormat = &Format;
+      Bitmap->Data = (uint8_t *)Pixels.data();
+      Bitmap->Width = Width;
+      Bitmap->Height = Height;
+      Bitmap->LineWidth = Width * 4;
+      Bitmap->ByteWidth = Width * 4;
+      Bitmap->BytesPerPixel = 4;
+      Bitmap->BitsPerPixel = 32;
+      Bitmap->Clip.Right = Width;
+      Bitmap->Clip.Bottom = Height;
+   }
+
+   ~CaptureBitmap() { std::free(Bitmap); }
+
+   extBitmap * target() { return (extBitmap *)Bitmap; }
+   uint32_t pixel(int X, int Y) const { return Pixels[size_t(Y) * Bitmap->Width + X]; }
+};
+
+static unsigned long alloc_colour(Display *Connection, uint16_t Red, uint16_t Green, uint16_t Blue)
+{
+   XColor colour = { .red = Red, .green = Green, .blue = Blue, .flags = DoRed|DoGreen|DoBlue };
+   XAllocColor(Connection, DefaultColormap(Connection, DefaultScreen(Connection)), &colour);
+   return colour.pixel;
+}
+
+// Draws a window that is red on its left half and blue on its right, then captures areas of the desktop that cross
+// the boundary and the screen edges.  The window is override-redirect so that the driver, which takes the window
+// manager role on a bare X server, does not intercept the map request.
+
+static void test_capture(DisplayDriver *Driver, const std::optional<std::string> &KotukuDisplay,
+   const std::optional<std::string> &DisplayName, int &Failures)
+{
+   auto display_name = KotukuDisplay ? *KotukuDisplay : (DisplayName ? *DisplayName : std::string());
+   if (display_name.empty()) return;
+
+   CaptureBitmap bitmap(4, 4);
+   Failures += check(Driver->captureDisplay(0, 0, 1, 1, bitmap.target(), 0, 0) IS ERR::NotInitialised);
+
+   auto peer = XOpenDisplay(display_name.c_str());
+   if (not peer) { Failures++; return; }
+
+   DriverCallbacks callbacks = { .Version = DISPLAY_DRIVER_INTERFACE_VERSION };
+   Failures += check(Driver->open(callbacks) IS ERR::Okay);
+
+   const int win_x = 100, win_y = 100, win_width = 40, win_height = 20;
+   XSetWindowAttributes attributes = {};
+   attributes.override_redirect = True;
+   attributes.event_mask = ExposureMask;
+   auto window = XCreateWindow(peer, DefaultRootWindow(peer), win_x, win_y, win_width, win_height, 0,
+      CopyFromParent, InputOutput, CopyFromParent, CWOverrideRedirect|CWEventMask, &attributes);
+   XMapRaised(peer, window);
+
+   bool exposed = false;
+   auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+   while ((not exposed) and (std::chrono::steady_clock::now() < deadline)) {
+      while (XPending(peer)) {
+         XEvent event = {};
+         XNextEvent(peer, &event);
+         if ((event.type IS Expose) and (event.xexpose.window IS window)) exposed = true;
+      }
+      if (not exposed) usleep(1000);
+   }
+   Failures += check(exposed);
+
+   auto gc = XCreateGC(peer, window, 0, nullptr);
+   XSetForeground(peer, gc, alloc_colour(peer, 0xffff, 0, 0));
+   XFillRectangle(peer, window, gc, 0, 0, win_width / 2, win_height);
+   XSetForeground(peer, gc, alloc_colour(peer, 0, 0, 0xffff));
+   XFillRectangle(peer, window, gc, win_width / 2, 0, win_width / 2, win_height);
+   XSync(peer, False);
+
+   auto error = Driver->captureDisplay(win_x + (win_width / 2) - 2, win_y + 5, 4, 2, bitmap.target(), 0, 1);
+   if (error IS ERR::NoSupport) { // XWayland cannot read the desktop
+      XFreeGC(peer, gc);
+      XDestroyWindow(peer, window);
+      XCloseDisplay(peer);
+      Driver->close();
+      return;
+   }
+
+   Failures += check(error IS ERR::Okay);
+   for (int y=1; y < 3; y++) {
+      for (int x=0; x < 4; x++) {
+         Failures += check(bitmap.pixel(x, y) IS (x < 2 ? 0xffff0000u : 0xff0000ffu));
+      }
+   }
+   Failures += check(bitmap.pixel(0, 0) IS 0x12345678u); // Rows outside the requested area are untouched
+   Failures += check(bitmap.pixel(3, 3) IS 0x12345678u);
+
+   // A request that crosses the top-left corner of the desktop is clipped, and its destination is offset to match.
+
+   std::fill(bitmap.Pixels.begin(), bitmap.Pixels.end(), 0x12345678);
+   Failures += check(Driver->captureDisplay(-2, -2, 4, 4, bitmap.target(), 0, 0) IS ERR::Okay);
+   Failures += check(bitmap.pixel(1, 1) IS 0x12345678u);
+   Failures += check(bitmap.pixel(2, 1) IS 0x12345678u);
+   Failures += check(bitmap.pixel(1, 2) IS 0x12345678u);
+   Failures += check((bitmap.pixel(2, 2) >> 24) IS 0xffu);
+   Failures += check((bitmap.pixel(3, 3) >> 24) IS 0xffu);
+
+   // The bottom-right corner is clipped in the same way.
+
+   const int root_width = DisplayWidth(peer, DefaultScreen(peer));
+   const int root_height = DisplayHeight(peer, DefaultScreen(peer));
+   std::fill(bitmap.Pixels.begin(), bitmap.Pixels.end(), 0x12345678);
+   Failures += check(Driver->captureDisplay(root_width - 2, root_height - 2, 4, 4, bitmap.target(), 0, 0) IS
+      ERR::Okay);
+   Failures += check((bitmap.pixel(1, 1) >> 24) IS 0xffu);
+   Failures += check(bitmap.pixel(2, 1) IS 0x12345678u);
+   Failures += check(bitmap.pixel(1, 2) IS 0x12345678u);
+
+   Failures += check(Driver->captureDisplay(-10, -10, 4, 4, bitmap.target(), 0, 0) IS ERR::OutOfRange);
+   Failures += check(Driver->captureDisplay(root_width, 0, 4, 4, bitmap.target(), 0, 0) IS ERR::OutOfRange);
+   Failures += check(Driver->captureDisplay(0, root_height, 4, 4, bitmap.target(), 0, 0) IS ERR::OutOfRange);
+   Failures += check(Driver->captureDisplay(0, 0, 4, 4, nullptr, 0, 0) IS ERR::NullArgs);
+   Failures += check(Driver->captureDisplay(0, 0, 0, 4, bitmap.target(), 0, 0) IS ERR::NullArgs);
+
+   XFreeGC(peer, gc);
+   XDestroyWindow(peer, window);
+   XCloseDisplay(peer);
+   Driver->close();
+}
+
+//********************************************************************************************************************
+// The driver has no windows here, so the position must come from the host rather than from pointer events.  It
+// must also lie in the desktop area that displayInfo() reports.
+
+static void test_pointer_position(DisplayDriver *Driver, const std::optional<std::string> &KotukuDisplay,
+   const std::optional<std::string> &DisplayName, int &Failures)
+{
+   auto display_name = KotukuDisplay ? *KotukuDisplay : (DisplayName ? *DisplayName : std::string());
+   if (display_name.empty()) return;
+
+   double x = -1, y = -1;
+   Failures += check(Driver->pointerPosition(x, y) IS ERR::NotInitialised);
+
+   auto peer = XOpenDisplay(display_name.c_str());
+   if (not peer) { Failures++; return; }
+
+   DriverCallbacks callbacks = { .Version = DISPLAY_DRIVER_INTERFACE_VERSION };
+   Failures += check(Driver->open(callbacks) IS ERR::Okay);
+
+   DisplayInfo info = {};
+   Failures += check(Driver->displayInfo(info) IS ERR::Okay);
+
+   for (auto [warp_x, warp_y] : { std::pair { 37, 23 }, std::pair { 211, 145 } }) {
+      XWarpPointer(peer, None, DefaultRootWindow(peer), 0, 0, 0, 0, warp_x, warp_y);
+      XSync(peer, False);
+      Failures += check(Driver->pointerPosition(x, y) IS ERR::Okay);
+      Failures += check((x IS warp_x) and (y IS warp_y));
+      Failures += check((x >= info.VirtualX) and (x < info.VirtualX + info.VirtualWidth));
+      Failures += check((y >= info.VirtualY) and (y < info.VirtualY + info.VirtualHeight));
+   }
+
+   XCloseDisplay(peer);
+   Driver->close();
+}
+
+//********************************************************************************************************************
+
 int main()
 {
    const auto original_kotuku_display = environment_value("KOTUKU_XDISPLAY");
@@ -587,6 +764,8 @@ int main()
    restore_environment("KOTUKU_XDISPLAY", original_kotuku_display);
    restore_environment("DISPLAY", original_display);
    test_clipboard(driver, original_kotuku_display, original_display, failures);
+   test_capture(driver, original_kotuku_display, original_display, failures);
+   test_pointer_position(driver, original_kotuku_display, original_display, failures);
 
 #ifdef KOTUKU_STATIC
    display::destroy_x11_display_driver(driver);

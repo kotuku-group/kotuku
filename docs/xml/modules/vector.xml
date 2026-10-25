@@ -510,6 +510,11 @@ Alpha (<code>A</code>) is optional, preceded by <code>/</code>, and ranges from 
 <code>0</code>-<code>100</code> or <code>0%</code>-<code>100%</code>.  Chroma (<code>C</code>) is an unbounded positive value, or a percentage where <code>100%</code> equals <code>150</code>.
 Hue (<code>H</code>) is in degrees.  Alpha (<code>A</code>) is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> or
 <code>0%</code> to <code>100%</code>.</type>
+<type name="color(space R G B [/ A])">CSS Color Level 4 <code>color()</code> function.  The supported spaces are <code>srgb</code>,
+<code>srgb-linear</code> and <code>display-p3</code>.  Channels range from <code>0</code> to <code>1</code>, or <code>0%</code> to <code>100%</code>, and <code>none</code> is read as zero.
+Display P3 colours are converted to sRGB, so a colour outside the sRGB gamut has channels outside <code>0</code> to <code>1</code>.  Alpha
+(<code>A</code>) is optional, preceded by <code>/</code>, and ranges from <code>0.0</code> to <code>1.0</code> or <code>0%</code> to <code>100%</code>.  Any other space is a syntax
+error.</type>
 </types>
 <p>A Gradient, Image or Pattern can be referenced using the <code>url(#name)</code> format, where <code>name</code> is a definition registered with the provided <code>Scene</code> object.  If <code>Scene</code> is <code>NULL</code> then it will not be possible to find the reference.  Any failure to look up a reference will result in an error.  The <code>Scene</code> parameter accepts either a <class name="VectorScene">VectorScene</class> or a <class name="Vector">Vector</class> object if its Scene field value is defined.</p>
 <p>To access one of the pre-defined colourmaps, use the format <code>url(#cmap:name)</code>.  The colourmap will be accessible as a linear gradient that belongs to the <code>Scene</code>.  Valid colourmap names are <code>cmap:crest</code>, <code>cmap:flare</code>, <code>cmap:icefire</code>, <code>cmap:inferno</code>, <code>cmap:magma</code>, <code>cmap:mako</code>, <code>cmap:plasma</code>, <code>cmap:rocket</code>, <code>cmap:viridis</code>.</p>

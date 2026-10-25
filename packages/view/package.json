@@ -35,14 +35,14 @@
     },
     {
       "path": "libview.tiri",
-      "size": 42446,
-      "sha256": "a452f2f43b7cad6d49f166c9fe14a063bb2832d11b18256d7693eb2ea826b200",
+      "size": 42706,
+      "sha256": "eefc536302cea0c52dacb728ebc314c5927b017ce2d6bd8b7a7d70f65450c529",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "listview.tiri",
-      "size": 18989,
-      "sha256": "7618a874276e532628932cfd382bc125750979f3cb9c96ee8ccaf6cf498bf8a8",
+      "size": 19003,
+      "sha256": "9b7788c30a607c95ec74d6f04666e40cd2b88e9f74d19dd8f01e02801311272d",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

@@ -5,6 +5,7 @@
 #endif
 
 FDEF argsAccessPointer[] = { { "Object", FD_OBJECTPTR }, { 0, 0 } };
+FDEF argsCaptureDisplay[] = { { "Error", FD_INT|FD_ERROR }, { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "Bitmap", FD_OBJECTPTR }, { "XDest", FD_INT }, { "YDest", FD_INT }, { 0, 0 } };
 FDEF argsCheckIfChild[] = { { "Error", FD_INT|FD_ERROR }, { "Parent", FD_OBJECTID }, { "Child", FD_OBJECTID }, { 0, 0 } };
 FDEF argsCopyArea[] = { { "Error", FD_INT|FD_ERROR }, { "Bitmap", FD_OBJECTPTR }, { "Dest", FD_OBJECTPTR }, { "Flags", FD_INT }, { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "XDest", FD_INT }, { "YDest", FD_INT }, { 0, 0 } };
 FDEF argsCopyRawBitmap[] = { { "Error", FD_INT|FD_ERROR }, { "BitmapSurface:Surface", FD_PTR|FD_STRUCT }, { "Dest", FD_OBJECTPTR }, { "Flags", FD_INT }, { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "XDest", FD_INT }, { "YDest", FD_INT }, { 0, 0 } };
@@ -48,6 +49,7 @@ FDEF argsWindowHook[] = { { "Error", FD_INT|FD_ERROR }, { "SurfaceID", FD_OBJECT
 
 const struct Function glFunctions[] = {
    { (APTR)gfx::AccessPointer, "AccessPointer", argsAccessPointer },
+   { (APTR)gfx::CaptureDisplay, "CaptureDisplay", argsCaptureDisplay },
    { (APTR)gfx::CheckIfChild, "CheckIfChild", argsCheckIfChild },
    { (APTR)gfx::CopyArea, "CopyArea", argsCopyArea },
    { (APTR)gfx::CopyRawBitmap, "CopyRawBitmap", argsCopyRawBitmap },

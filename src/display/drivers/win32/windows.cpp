@@ -1428,6 +1428,18 @@ void winDisableBatching(void)
 }
 
 //********************************************************************************************************************
+// Returns the cursor position in virtual screen coordinates, which can be negative on multi-monitor layouts.
+
+ERR winGetCursorPos(int &X, int &Y)
+{
+   POINT point;
+   if (not GetCursorPos(&point)) return ERR::SystemCall;
+   X = point.x;
+   Y = point.y;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 
 int winGetDesktopSize(int *width, int *height)
 {
