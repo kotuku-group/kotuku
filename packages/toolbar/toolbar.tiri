@@ -737,48 +737,48 @@ gui.toolbar = function(Options:table)
       end
 
       &host = Options.target
-      &viewport = Options.target.new('VectorViewport')
-      &viewport.x = Options.x ?? 0
-      &viewport.y = Options.y ?? 0
-      &viewport.overflow = 'hidden'
+      vps = { }
+      vps.x = Options.x ?? 0
+      vps.y = Options.y ?? 0
+      vps.overflow = 'hidden'
 
       -- The toolbar's length fits its content unless an offset or explicit length is given.  Its breadth is set by
       -- updateLayout().
 
       if &_horizontal then
          if Options.yOffset then
-            &viewport.yOffset = Options.yOffset
+            vps.yOffset = Options.yOffset
          else
-            &viewport.height = 1
+            vps.height = 1
          end
 
          if Options.xOffset then
-            &viewport.xOffset = Options.xOffset
+            vps.xOffset = Options.xOffset
          else
-            &viewport.width = Options.target.width - &viewport.x
+            vps.width = &host.width - vps.x
             &_arrangedSize = true
          end
 
          if Options.width then
-            &viewport.width = Options.width
+            vps.width = Options.width
             &_arrangedSize = false
          end
       else
          if Options.xOffset then
-            &viewport.xOffset = Options.xOffset
+            vps.xOffset = Options.xOffset
          else
-            &viewport.width = 1
+            vps.width = 1
          end
 
          if Options.yOffset then
-            &viewport.yOffset = Options.yOffset
+            vps.yOffset = Options.yOffset
          else
-            &viewport.height = Options.target.height - &viewport.y
+            vps.height = &host.height - vps.y
             &_arrangedSize = true
          end
 
          if Options.height then
-            &viewport.height = Options.height
+            vps.height = Options.height
             &_arrangedSize = false
          end
       end
@@ -788,26 +788,26 @@ gui.toolbar = function(Options:table)
          &_groupMargin = 0
       end
 
-      &viewport.init()
+      &viewport = &host.new('VectorViewport', vps)
 
       &viewport.subscribe('free', function(Viewport, Args)
          if self._tipTimer then mSys.UpdateTimer(self._tipTimer, 0) end
          self = { }
       end)
 
-      &viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport, Event)
+      &viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function[<weak> &&](Viewport, Event)
          if Event is FM_LOST_FOCUS then
-            self._hasFocus = false
-            if self._kbItem then
-               self.kbIcon.visibility = 'hidden'
-               self._kbItem  = nil
-               self._current = nil
+            &_hasFocus = false
+            if &_kbItem then
+               &kbIcon.visibility = 'hidden'
+               &_kbItem  = nil
+               &_current = nil
             end
          else
-            self._hasFocus = true
+            &_hasFocus = true
          end
 
-         self.viewport.acDraw()
+         &viewport.acDraw()
       end)
 
       &viewport.mtSubscribeKeyboard(kbFeedback)

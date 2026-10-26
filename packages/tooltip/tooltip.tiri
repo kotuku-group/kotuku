@@ -77,9 +77,7 @@ gui.tooltip = function(Options:table)
    local self = setmetatable(entity { }, -- Public interface
    {
       __gc = function()
-         local surface = &surface
-         &surface = nil
-         surface?.free()
+         &surface?.free()
       end
    })
 
