@@ -101,6 +101,7 @@ struct SurfaceRecord {
    OBJECTID DisplayID;     // Display
    OBJECTID RootID;        // RootLayer
    OBJECTID PopOverID;
+   OBJECTID PopOverAnchorID; // Original pop-over reference, retained for modal scope checks
    RNF      Flags;         // Surface flags (RNF::VISIBLE etc)
    int      X;             // Horizontal coordinate
    int      Y;             // Vertical coordinate
@@ -335,6 +336,7 @@ class extSurface : public objSurface {
    double   Opacity;
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
    OBJECTID PrevModalID;          // Previous surface to have been modal
+   OBJECTID PopOverAnchorID = 0;  // Original pop-over reference before resolving the stacking sibling
    OBJECTID BitmapOwnerID;        // The surface object that owns the root bitmap
    OBJECTID RevertFocusID;
    int      LineWidth;            // Bitmap line width, in bytes
@@ -468,6 +470,8 @@ extern ERR  create_display_class(void);
 extern ERR  create_pointer_class(void);
 extern ERR  create_surface_class(void);
 extern ERR  get_surface_abs(OBJECTID, int *, int *, int *, int *);
+extern bool in_modal_scope(OBJECTID, OBJECTID);
+extern void resolve_popover(extSurface *);
 extern void input_event_loop(HOSTHANDLE, APTR);
 extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);

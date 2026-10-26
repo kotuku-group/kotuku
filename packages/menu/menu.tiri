@@ -758,6 +758,16 @@ gui.menu = function(Options:table!)
       &surface.y        = -10000
       &surface.presence = SPT_NONE
       &surface.height   = 400
+
+      -- Desktop menus pop over the surface that opened them, which also places them within the scope of a modal
+      -- window.
+
+      if not Options.target or Options.target is 0 then
+         anchor = Options.parentMenu?.surface ?? Options.relative?.scene?.surface ?? Options.hostScene?.surface ??
+            Options.client?.scene?.surface
+         if anchor then &surface.popOver = anchor end
+      end
+
       &surface.init()
 
       &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=Options.hostScene })

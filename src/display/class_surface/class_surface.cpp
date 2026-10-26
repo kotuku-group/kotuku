@@ -734,16 +734,10 @@ static ERR SURFACE_Focus(extSurface *Self)
    FOCUSMSG("Focussing...  HasFocus: %c", (Self->hasFocus()) ? 'Y' : 'N');
 
    if (auto modal = gfx::GetModalSurface()) {
-      if (modal != Self->UID) {
-         ERR error;
-         error = gfx::CheckIfChild(modal, Self->UID);
-
-         if ((error != ERR::True) and (error != ERR::LimitedSuccess)) {
-            // Focussing is not OK - surface is out of the modal's scope
-            log.warning("Surface #%d is not within modal #%d's scope.", Self->UID, modal);
-            glLastFocusTime = PreciseTime();
-            return ERR::Failed|ERR::Notified;
-         }
+      if (not in_modal_scope(modal, Self->UID)) {
+         log.warning("Surface #%d is not within modal #%d's scope.", Self->UID, modal);
+         glLastFocusTime = PreciseTime();
+         return ERR::Failed|ERR::Notified;
       }
    }
 
@@ -1120,6 +1114,8 @@ static ERR SURFACE_Init(extSurface *Self)
       }
    }
 
+   resolve_popover(Self);
+
    ERR error = ERR::Okay;
    if (Self->ParentID) {
       kt::ScopedObjectLock<extSurface> parent(Self->ParentID, 3000);
@@ -1494,7 +1490,9 @@ static ERR SURFACE_Init(extSurface *Self)
 
       if (!Self->PopOverID) {
          log.warning("PopOver surface #%d is not a sibling of this surface.", popover_id);
+         Self->PopOverAnchorID = 0;
          UpdateSurfaceField(Self, &SurfaceRecord::PopOverID, Self->PopOverID);
+         UpdateSurfaceField(Self, &SurfaceRecord::PopOverAnchorID, Self->PopOverAnchorID);
       }
    }
 
