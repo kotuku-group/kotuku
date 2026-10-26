@@ -2358,7 +2358,13 @@ gui.themes = <table{ linkThemes({
          highlight = { fill = gui.palette.dark.contrast },
          focus     = { stroke = gui.palette.dark.contrast },
          text      = { fill = gui.palette.dark.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
-         disabled  = { opacity = 0.5 }
+         disabled  = { opacity = 0.5 },
+         primary   = { -- Overrides for buttons created with the primary option; hover moves prime towards inverse
+            bkgd      = { fill = gui.palette.dark.prime, stroke = gui.palette.dark.prime },
+            highlight = { fill = gui.palette.dark.contrast },
+            focus     = { stroke = gui.palette.dark.text, strokeWidth = gui.sizing.widget.edgeWidth * 2 },
+            text      = { fill = gui.palette.dark.altText }
+         }
       },
       dropdown = { -- Exclusive to combobox
          bkgd          = { fill = gui.palette.dark.bkgd },
@@ -2471,7 +2477,13 @@ gui.themes = <table{ linkThemes({
          highlight = { fill = gui.palette.light.contrast },
          focus     = { stroke = gui.palette.light.contrast },
          text      = { fill = gui.palette.light.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
-         disabled  = { opacity = 0.5 }
+         disabled  = { opacity = 0.5 },
+         primary   = { -- Overrides for buttons created with the primary option; hover moves prime towards inverse
+            bkgd      = { fill = gui.palette.light.prime, stroke = gui.palette.light.edge },
+            highlight = { fill = gui.palette.light.contrast },
+            focus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 2 },
+            text      = { fill = gui.palette.light.altText }
+         }
       },
       dropdown = {
          bkgd          = { fill = gui.palette.light.bkgd },

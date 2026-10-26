@@ -22,7 +22,11 @@ gui.button = function(Options)
 
    using self do
       base_theme = gui.getTheme(&parentViewport)
-      theme = table.merge(base_theme.button, Options.theme, true, true)
+      theme = base_theme.button
+      if Options.primary then -- Primary buttons mark the main action of a dialog or form
+         theme = table.merge(theme, theme.primary, true, true)
+      end
+      theme = table.merge(theme, Options.theme, true, true)
 
       -- Icon size and label padding scale with the button height
 

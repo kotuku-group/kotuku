@@ -882,10 +882,11 @@ end
       return false
    end
 
-   -- The clip edge is antialiased, so the pixel column immediately beyond the slot can carry coverage.
+   -- The clip edge is antialiased, so the pixel column immediately beyond the slot can carry coverage.  The column at
+   -- trackVP.x belongs to the track's edge stroke.
 
    assert(inked(0, 20), 'Label text must be drawn within the slot')
-   assert(not inked(21, clipped.trackVP.x), 'Label text must be clipped at the end of the slot')
+   assert(not inked(21, clipped.trackVP.x - 1), 'Label text must be clipped at the end of the slot')
 end
 
 @Test function LabelWidthAppliesToRotatedSideLabels()
@@ -1300,11 +1301,12 @@ end
 end
 
 @Test function ShortThumbsKeepDrawableForeground()
+   local default_gap = gui.sizing.widget.edgeWidth -- The theme's slider inset
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
-      for gap in values(array<int> { 2, 6 }) do
+      for gap in values(array<int> { default_gap, 6 }) do
          for size in values(array<double> { 0.5, 1, 2, 4, 5, 8, 18 }) do
             local surface <close>, slider = newSlider({ orientation=orientation, thumbLength=size,
-               thumbSize=18, value=1, theme=(gap is 2) ? nil : { bkgd={ strokeWidth=gap } }
+               thumbSize=18, value=1, theme=(gap is default_gap) ? nil : { bkgd={ strokeWidth=gap } }
             })
             local thumb, button = slider.thumbVP, slider.button
             assert(button.width > 0 and button.height > 0,
