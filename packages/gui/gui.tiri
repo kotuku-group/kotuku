@@ -2400,7 +2400,7 @@ gui.themes = <table{ linkThemes({
          icon      = iconTheme('fill(pearl)')
       },
       slider = {
-         bkgd          = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
+         bkgd          = { fill = gui.palette.dark.mid, stroke = gui.palette.dark.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
          fore          = { fill = gui.palette.dark.inverse, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
          foreHighlight = { fill = gui.palette.dark.contrast, opacity = 1 },
          foreFocus     = { stroke = gui.palette.dark.contrast, strokeWidth = 2 },
@@ -2519,7 +2519,7 @@ gui.themes = <table{ linkThemes({
          icon      = iconTheme('fill(pearl)')
       },
       slider = {
-         bkgd          = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
+         bkgd          = { fill = gui.palette.light.mid, stroke = gui.palette.light.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
          fore          = { fill = gui.palette.light.inverse, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
          foreHighlight = { fill = gui.palette.light.contrast, opacity = 1 },
          foreFocus     = { stroke = gui.palette.light.contrast, strokeWidth = 2 },

@@ -98,15 +98,19 @@ gui.layout.label = function(Target:obj!, Options:table!):table
       place = function(Width:num!, Height:num!, BodyY:num, BodyHeight:num)
          slot = &slot
          if &stacked then
-            slot.x      = 0
-            slot.y      = (&pos is 'bottom') ? Height - &length : 0
-            slot.width  = Width
-            slot.height = &length
+            slot.{
+               x      = 0,
+               y      = (&pos is 'bottom') ? Height - &length : 0,
+               width  = Width,
+               height = &length
+            }
          else
-            slot.x      = (&pos is 'right') ? Width - &breadth : 0
-            slot.y      = 0
-            slot.width  = &breadth
-            slot.height = Height
+            slot.{
+               x      = (&pos is 'right') ? Width - &breadth : 0,
+               y      = 0,
+               width  = &breadth,
+               height = Height
+            }
          end
 
          if &rotated then return end

@@ -48,9 +48,12 @@ function beginDrag(Surface:obj!, Source:obj!, Types:str!)
 end
 
 @AfterEach function releaseButtons()
-   obj.find('SystemPointer').acDeactivate()
-   feed(JET_LMB, 0, 0)
-   feed(JET_RMB, 0, 0)
+   local pointer = obj.find('SystemPointer')
+   if pointer then
+      pointer.acDeactivate()
+      feed(JET_LMB, 0, 0)
+      feed(JET_RMB, 0, 0)
+   end
 end
 
 @Test function AdjacentNestedAndEmptyTargets()
