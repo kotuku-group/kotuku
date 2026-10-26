@@ -594,7 +594,7 @@ the surface area first).</li>
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>If set to <code>true</code>, the surface becomes the program's modal surface when shown.  This prevents interaction with other surfaces until the modal surface is hidden, destroyed or no longer modal.  Children of the modal surface remain interactive.</p>
+<p>If set to <code>true</code>, the surface becomes the program's modal surface when shown.  This prevents interaction with other surfaces until the modal surface is hidden, destroyed or no longer modal.  Children of the modal surface remain interactive, as do surfaces whose <fl>PopOver</fl> chain leads to the modal surface or one of its children.  This allows menus and drop-down lists that are opened from a modal window to receive user input.</p>
 <p>Clearing this field restores the previous modal surface if one was recorded.</p>
       </description>
     </field>
@@ -628,7 +628,8 @@ the surface area first).</li>
       <access read="R" write="S">Read/Set</access>
       <type>OBJECTID</type>
       <description>
-<p>Set <code>PopOver</code> before initialisation to the object ID of a sibling <class name="Surface">Surface</class> that this surface should stay in front of. For dialog windows, combine this field with <fl>Modal</fl> to keep the dialog in front and prevent interaction with other surfaces in the current program.</p>
+<p>Set <code>PopOver</code> before initialisation to the object ID of a sibling <class name="Surface">Surface</class> that this surface should stay in front of. A descendant of the sibling is also accepted; it is resolved to the sibling that contains it on initialisation. Pop-over surfaces share the scope of the surface that they pop over when a <fl>Modal</fl> surface is active.</p>
+<p>For dialog windows, combine this field with <fl>Modal</fl> to keep the dialog in front and prevent interaction with other surfaces in the current program.</p>
 <p>Set <code>PopOver</code> to zero before initialisation to use normal Z-order behaviour.</p>
 <p>This field cannot be changed after initialisation.  The value must identify a <class name="Surface">Surface</class>; otherwise <code>ERR::InvalidObject</code> is returned.</p>
       </description>

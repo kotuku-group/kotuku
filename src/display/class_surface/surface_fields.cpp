@@ -156,7 +156,8 @@ Modal: Sets the surface as modal (prevents user interaction with other surfaces)
 
 If set to `true`, the surface becomes the program's modal surface when shown.  This prevents interaction with other
 surfaces until the modal surface is hidden, destroyed or no longer modal.  Children of the modal surface remain
-interactive.
+interactive, as do surfaces whose #PopOver chain leads to the modal surface or one of its children.  This allows
+menus and drop-down lists that are opened from a modal window to receive user input.
 
 Clearing this field restores the previous modal surface if one was recorded.
 
@@ -279,6 +280,9 @@ static ERR SET_Parent(extSurface *Self, int Value)
 PopOver: Keeps a surface in front of another surface in the Z order.
 
 Set `PopOver` before initialisation to the object ID of a sibling @Surface that this surface should stay in front of.
+A descendant of the sibling is also accepted; it is resolved to the sibling that contains it on initialisation.
+Pop-over surfaces share the scope of the surface that they pop over when a #Modal surface is active.
+
 For dialog windows, combine this field with #Modal to keep the dialog in front and prevent interaction with other
 surfaces in the current program.
 

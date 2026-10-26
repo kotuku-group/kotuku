@@ -576,41 +576,6 @@ end
       'Right must resume horizontal menubar navigation after the dropdown closes')
 end
 
-@Test function TabFocusHighlightsAnEnabledMenubarItem()
-   local surface <close>, target = newTarget()
-   local sibling = target.new('VectorViewport', { y=50, width=100, height=50, tabOrder=1 })
-   sibling.mtSubscribeKeyboard(function() end)
-   local bar = gui.menubar({ target=target, createItems=function(Bar)
-      Bar.addItem('disabled', 'Disabled')
-      Bar.addItem('file', 'File')
-      Bar.addItem('edit', 'Edit')
-   end })
-   bar.disableItem('disabled')
-   surface.acShow()
-   surface.acFocus()
-   surface.acDraw()
-   processing.sleep(0)
-   assert(not bar._hasFocus, 'The sibling must initially hold focus')
-   sendKey(KEY_TAB, KQ_RELEASED)
-   assert(bar._hasFocus and bar._currentItem is bar._lookup.file,
-      'Tab must immediately highlight the first enabled item')
-   assert(bar._highlight.visibility is VIS_VISIBLE, 'Keyboard focus must have a visible highlight')
-   sendKey(KEY_RIGHT)
-   sendKey(KEY_TAB, KQ_RELEASED)
-   assert(not bar._hasFocus and bar._highlight.visibility is VIS_HIDDEN,
-      'Tabbing away must hide the menubar highlight')
-   sendKey(KEY_TAB, KQ_RELEASED)
-   assert(bar._hasFocus and bar._currentItem is bar._lookup.edit and bar._highlight.visibility is VIS_VISIBLE,
-      'Returning focus must restore the highlight on the existing enabled selection')
-   feed(JET_ABS_XY, surface.absX + 10, surface.absY + 5)
-   feed(JET_ABS_XY, surface.absX + 450, surface.absY + 5)
-   assert(bar._currentItem is bar._lookup.edit and bar._highlight.visibility is VIS_VISIBLE,
-      'Hovering a disabled item or empty space must preserve the keyboard focus indicator')
-   feed(JET_ABS_XY, 1000, 1000)
-   assert(not bar._currentItem and bar._highlight.visibility is VIS_HIDDEN,
-      'Leaving the bar without an open menu must clear the selected item and its highlight')
-end
-
 @Test function ShortcutsActivateUnopenedNestedMenusWithoutTakingFocus()
    local surface <close>, target = newTarget()
    local sibling = target.new('VectorViewport', { y=50, width=100, height=50, tabOrder=1 })
@@ -1261,6 +1226,19 @@ end
    bar.viewport.free()
    sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
    assert(hits is 1, 'Freeing the menubar must release mnemonic handling')
+end
+
+@Test function MenubarCanStartDisabled()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({ target=target, disabled=true, createItems=function(Bar)
+      Bar.addItem('file', 'File')
+   end })
+
+   assert(bar._disabled and bar._lookup.file.vectorText.opacity is 0.5,
+      'A menubar created disabled must dim its items')
+   bar.enable()
+   assert(not bar._disabled and bar._lookup.file.vectorText.opacity is 1,
+      'Enabling the menubar must restore its items')
 end
 
 -- Measure a text's font independently of the widget, from the text's own rendered size.

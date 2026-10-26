@@ -468,6 +468,8 @@ extern ERR  create_display_class(void);
 extern ERR  create_pointer_class(void);
 extern ERR  create_surface_class(void);
 extern ERR  get_surface_abs(OBJECTID, int *, int *, int *, int *);
+extern bool in_modal_scope(OBJECTID, OBJECTID);
+extern void resolve_popover(extSurface *);
 extern void input_event_loop(HOSTHANDLE, APTR);
 extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);

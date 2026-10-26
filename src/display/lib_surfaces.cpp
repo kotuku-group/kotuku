@@ -13,6 +13,52 @@ static OBJECTID glModalID = 0;
 static std::recursive_mutex glModalLock;
 
 //********************************************************************************************************************
+// Returns true if a surface is within the scope of a modal surface.  This is the case if the surface is the modal,
+// one of its children, or a pop-over (such as a menu) that is anchored to a surface within the modal's scope.
+
+bool in_modal_scope(OBJECTID ModalID, OBJECTID SurfaceID)
+{
+   if ((!ModalID) or (!SurfaceID)) return false;
+
+   const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
+
+   for (int depth=0; (SurfaceID) and (depth < 8); depth++) { // The depth limit guards against pop-over cycles
+      auto id = SurfaceID;
+      SurfaceID = 0;
+      while (id) {
+         if (id IS ModalID) return true;
+         auto i = find_surface_list(id);
+         if (i IS -1) return false;
+         if ((glSurfaces[i].PopOverID) and (!SurfaceID)) SurfaceID = glSurfaces[i].PopOverID;
+         id = glSurfaces[i].ParentID;
+      }
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
+// Resolves a pop-over reference to the ancestor that is a sibling of the surface, so that clients can refer to any
+// surface within a window.  The reference is unchanged if no such ancestor exists.
+
+void resolve_popover(extSurface *Self)
+{
+   if (!Self->PopOverID) return;
+
+   const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
+
+   for (auto id = Self->PopOverID; id; ) {
+      auto i = find_surface_list(id);
+      if (i IS -1) return;
+      if (glSurfaces[i].ParentID IS Self->ParentID) {
+         Self->PopOverID = id;
+         return;
+      }
+      id = glSurfaces[i].ParentID;
+   }
+}
+
+//********************************************************************************************************************
 // Called when windows has an item to be dropped on our display area.
 
 #ifdef _WIN32
@@ -28,7 +74,7 @@ void winDragDropFromHost_Drop(int SurfaceID, char *Datatypes)
       // will send a DATA::REQUEST to the relevant display object.  See DISPLAY_DataFeed() and winGetData().
 
       OBJECTID modal_id = gfx::GetModalSurface();
-      if (modal_id IS SurfaceID) modal_id = 0;
+      if (in_modal_scope(modal_id, SurfaceID)) modal_id = 0;
 
       if (!modal_id) {
          SURFACEINFO *info;

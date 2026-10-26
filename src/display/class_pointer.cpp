@@ -245,20 +245,11 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
    }
 
    // Check for a modal surface.  The modal_id variable is set if a modal surface is active and the pointer is not
-   // positioned over that surface (or its children).  The modal_id is therefore zero if the pointer is over the modal
-   // surface, or if no modal surface is defined.
+   // positioned within its scope (the modal, its children, or pop-overs anchored to them, such as menus).  The
+   // modal_id is therefore zero if the pointer is within the modal's scope, or if no modal surface is defined.
 
    auto modal_id = gfx::GetModalSurface();
-   if (modal_id) {
-      if (modal_id IS Self->OverObjectID) {
-         // If the pointer is interacting with the modal surface, modality is irrelevant.
-         modal_id = 0;
-      }
-      else { // Check if the OverObject is one of the children of modal_id.
-         ERR error = gfx::CheckIfChild(modal_id, Self->OverObjectID);
-         if ((error IS ERR::True) or (error IS ERR::LimitedSuccess)) modal_id = 0;
-      }
-   }
+   if ((modal_id) and (in_modal_scope(modal_id, Self->OverObjectID))) modal_id = 0;
 
    // Button Press Handler
 
