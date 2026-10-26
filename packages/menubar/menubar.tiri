@@ -105,12 +105,12 @@ function adjacentItem(Item:table, Direction:num!):table
    return scan ?? (Direction < 0 ? lastItem() : firstItem())
 end
 
-function newItem(Name, ID) -- Append an item to the menu bar
+function newItem(Label, ID) -- Append an item to the menu bar
    if ID and &_lookup[ID] then raise f'An item with identifier {ID} already exists.' end
 
-   item = { id=ID, name=Name }
-   if Name?? then
-      item.displayName = Name
+   item = { id=ID, name=Label }
+   if Label?? then
+      item.displayName = Label
    end
 
    if &_last then &_last.next = item end
@@ -267,11 +267,11 @@ gui.menubar = function(Options:table)
       _arranged = false
    }
 
-   -- Add a clickable item to the menubar.  The Name acts as the item text that is displayed in the menubar if no
+   -- Add a clickable item to the menubar.  The Label acts as the item text that is displayed in the menubar if no
    -- icon can be displayed.  The icon string must be in the standard format of 'category/icon'.
 
-   self.addItem = function(ID, Name, Icon, Function, Menu, Prepare:func)
-      item = newItem(Name, ID)
+   self.addItem = function(ID, Label, Icon, Function, Menu, Prepare:func)
+      item = newItem(Label, ID)
       item.callback = Function
       if Prepare and Menu is nil then Menu = array<table> end
       item.menuItems = Menu
@@ -614,6 +614,8 @@ gui.menubar = function(Options:table)
                &_lastMenu = nil
                highlightItem(item)
             end)
+
+         if Options.disabled then &disable() end
       except ex
          print(ex.message)
       end

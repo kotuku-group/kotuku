@@ -259,7 +259,7 @@ gui.input = function(Options)
 
       if &readOnly then self.setReadOnly(true) end
 
-      if Options.selected then &text.mtSelectArea(0, 0, -1, -1) end -- Select all of the text
+      if Options.selectAll then &text.mtSelectArea(0, 0, -1, -1) end -- Select all of the text
 
       &viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event)
          if Event is FM_LOST_FOCUS then
@@ -306,6 +306,7 @@ gui.input = function(Options)
          end)
       end
 
+      if Options.disabled then &disable() end
       &events?.show()
 
       return &&

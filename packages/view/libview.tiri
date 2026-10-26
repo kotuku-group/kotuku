@@ -1238,6 +1238,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       if Options.items then vw.addItems(Options.items) end
 
       vw.rebuild()
+      if Options.disabled then vw.disable() end
    except e
       -- No caller receives this view on failure.  Release its rows without selection notifications, preserving
       -- the construction error even if a client cleanup hook fails.

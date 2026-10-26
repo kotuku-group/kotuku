@@ -48,12 +48,12 @@ gui.toolbar = function(Options:table)
       return item
    end
 
-   function newItem(Type, Name, ID)
+   function newItem(Type, Label, ID)
       if ID and &_lookup[ID] then raise 'An item with identifier ' .. ID .. ' already exists.' end
 
-      item = { type=Type, id=ID, name=Name, x=0, y=0, width=0, height=0 }
-      if Name?? then
-         item.displayName = Name
+      item = { type=Type, id=ID, name=Label, x=0, y=0, width=0, height=0 }
+      if Label?? then
+         item.displayName = Label
       end
 
       if &_last then &_last.next = item end
@@ -419,12 +419,12 @@ gui.toolbar = function(Options:table)
       return item
    end
 
-   -- Add a clickable item to the toolbar.  The Name acts as the item text that is displayed in the toolbar if no
+   -- Add a clickable item to the toolbar.  The Label acts as the item text that is displayed in the toolbar if no
    -- icon can be displayed.  Set the Tip string for a user hint during hover events.  The icon string must be in the
    -- standard format of 'category/icon'.
 
-   self.addItem = function(ID:num!, Name:str!, Tip:str, Icon:str, Function:func!)
-      item = newItem(TI_ICON, Name, ID)
+   self.addItem = function(ID:num!, Label:str!, Tip:str, Icon:str, Function:func!)
+      item = newItem(TI_ICON, Label, ID)
       item.callback = Function
 
       if Tip then
