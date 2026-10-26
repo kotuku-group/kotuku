@@ -10,7 +10,6 @@ Documentation is available in the Kotuku Wiki.
 
 LINE_SPACING, FONT_HEIGHT = gui.getFontHeight(gui.fonts.button)
 DEFAULT_HEIGHT <const> = math.floor(LINE_SPACING * 1.75) + 1
-TIP_DELAY <const> = 0.75 -- Seconds that the pointer must rest on the button before its tip is shown, as for toolbars
 
 gui.button = function(Options)
    self = entity { -- Public interface
@@ -33,28 +32,6 @@ gui.button = function(Options)
 
       calc_width = false -- True if the button width is computed from its content at initialisation
       icon_margin = 0 -- Padding around the icon's pattern tile, see gui.createIcon()
-
-      -- The hover tip is shown when the pointer rests on the button.  The tooltip removes itself when the pointer moves,
-      -- and is retained in _tooltip because it is freed when the returned object is garbage collected.
-
-      function cancelTip()
-         if &_tipTimer then
-            mSys.UpdateTimer(&_tipTimer, 0)
-            &_tipTimer = nil
-         end
-      end
-
-      function startTip()
-         cancelTip()
-         &tip ?! return
-         err, &_tipTimer = mSys.SubscribeTimer(TIP_DELAY, function()
-            &_tipTimer = nil
-            if &tip and obj.find(&_viewportID) then
-               &_tooltip = gui.tooltip({ target = &viewport, text = &tip })
-            end
-            raise ERR_Terminate
-         end)
-      end
 
       -- Compose the background style from the current hover, focus and disabled states.  Hover and focus styling is
       -- suppressed while the button is disabled.
@@ -118,7 +95,7 @@ gui.button = function(Options)
       &disable = function()
          &disabled = true
          &clicked = false
-         cancelTip()
+         &_hoverTip.cancel()
          &viewport.acDisable()
          &viewport.opacity = 0.5
          refreshStyle()
@@ -191,7 +168,11 @@ gui.button = function(Options)
       end
 
       &viewport = &parentViewport.new('VectorViewport', vps)
-      &_viewportID = &viewport.id
+
+      -- The tip is shown when the pointer rests on the button (see gui.hoverTip()).  It is read when the delay
+      -- expires, so the tip field can be changed at any time.
+
+      &_hoverTip = gui.hoverTip({ target = &viewport, text = function[&&]() return &tip end })
 
       &bkgd = &viewport.new('VectorRectangle', table.merge({
          x      = theme.bkgd.strokeWidth * 0.5,
@@ -259,11 +240,9 @@ gui.button = function(Options)
                &events.cursorEntry?(&&)
             elseif Msg.type is JET_CROSSED_OUT then
                &_hover = false
-               cancelTip()
                refreshStyle()
                &events.cursorExit?(&&)
             elseif Msg.type is JET_LMB then
-               cancelTip()
                if &disabled then
                   &clicked = false
                elseif Msg.value > 0 then

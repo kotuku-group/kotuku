@@ -14,8 +14,9 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
-DEFAULT_MAX_WIDTH <const> = 360 -- Text that would exceed this width (in pixels) is word-wrapped
-MOVE_LIMIT <const> = 6 -- Pointer movement (in pixels) that dismisses the tooltip
+DEFAULT_MAX_WIDTH <const> = 360  -- Text that would exceed this width (in pixels) is word-wrapped
+MOVE_LIMIT <const>        = 16   -- Pointer movement (in pixels) that dismisses the tooltip
+HOVER_DELAY <const>       = 0.75 -- Seconds that the pointer must rest on a hover target before its tip is shown
 
 glLastTip = 0 -- Surface ID of the most recent tooltip.  Only one tooltip can be displayed at a time.
 
@@ -53,8 +54,8 @@ function screenBounds(Target:any, PointerX:num!, PointerY:num!):<num, num, num, 
       if err != ERR_Okay then return 0, 0, math.huge, math.huge end
    end
 
-   left = info.monitorX
-   top  = info.monitorY
+   left   = info.monitorX
+   top    = info.monitorY
    right  = left + ((info.monitorWidth > 0) ? info.monitorWidth : info.width)
    bottom = top + ((info.monitorHeight > 0) ? info.monitorHeight : info.height)
 
@@ -74,12 +75,12 @@ gui.tooltip = function(Options:table)
 
    if (glLastTip != 0) and obj.find(glLastTip) then return nil end
 
-   local self = setmetatable(entity { }, -- Public interface
-   {
-      __gc = function()
-         &surface?.free()
-      end
-   })
+   local self = setmetatable(entity { -- Public interface
+      }, {
+         __gc = function()
+            &surface?.free()
+         end
+      })
 
    using self do
       theme = Options.theme ?? gui.getTheme(Options.target).tooltip
@@ -100,7 +101,7 @@ gui.tooltip = function(Options:table)
 
       glLastTip = &surface.id
 
-      &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface })
+      &scene = &surface.new('VectorScene', { flags = VPF_RESIZE, surface = &surface })
 
       &viewport = &scene.new('VectorViewport', { })
 
@@ -136,9 +137,11 @@ gui.tooltip = function(Options:table)
       -- spacing.
 
       line_height = (pad * 1.5) + tonumber(&text.fontSize)
-      &surface.height = line_height + ((#lines - 1) * &text.lineSpacing)
-      &surface.width  = (pad * 2) + &text.textWidth
-      &surface.y = ptr.y - &surface.height
+      &surface.{
+         height = line_height + ((#lines - 1) * &text.lineSpacing),
+         width  = (pad * 2) + &text.textWidth,
+         y      = ptr.y - &surface.height
+      }
       &text.y = math.floor((line_height * 0.5) + (&text.displaySize * 0.5))
 
       -- The tooltip is terminated when a button is pressed, or when the pointer has moved at least MOVE_LIMIT
@@ -161,13 +164,26 @@ gui.tooltip = function(Options:table)
          obj.find(surface_id)?.free()
       end
 
-      dismiss = input.subscribe(JTYPE_MOVEMENT | JTYPE_BUTTON, nil, 0, dismissTip)
-
+      local dismiss
       local function[] releaseDismiss()
          dismiss.unsubscribe()
       end
 
-      &surface.subscribe('free', releaseDismiss)
+      if Options.bind then
+         -- Tie tooltip visibility to viewport-cursor interaction
+         Options.bind.mtSubscribeInput(JTYPE_CROSSING, function[<weak> &&](Viewport:obj!, Msg:any!)
+            repeat
+               if Msg.type is JET_CROSSED_OUT then
+                  &surface.acFree()
+                  return ERR_Terminate
+               end
+               Msg = Msg.next
+            until not Msg
+         end)
+      else
+         dismiss = input.subscribe(JTYPE_CROSSING | JTYPE_MOVEMENT | JTYPE_BUTTON, nil, 0, dismissTip)
+         &surface.subscribe('free', releaseDismiss)
+      end
 
       -- Adjust the position of the tooltip so that it fits on the screen.
 
@@ -186,6 +202,90 @@ gui.tooltip = function(Options:table)
       end
 
       &surface.acShow()
+
+      return &&
+   end
+end
+
+-- Show a tooltip for a viewport after the pointer has rested on it.  The delay starts when the pointer enters the
+-- target, and is cancelled when the pointer leaves it or a button is pressed.  The subscription holds the returned
+-- table, so it lasts as long as the target.
+
+gui.hoverTip = function(Options:table!)
+   target = Options.target
+   target ?! raise ERR_NullArgs
+   target_id = target.id
+
+   self = setmetatable(entity {
+      target   = target,
+      text     = Options.text, -- A string, or a function that returns the text when the delay expires
+      delay    = (Options.delay != nil) ? Options.delay : HOVER_DELAY,
+      maxWidth = Options.maxWidth,
+      theme    = Options.theme,
+      tooltip  = nil, -- The displayed tooltip, retained because it is removed when its table is collected
+      timer    = nil
+   }, {
+      __gc = function()
+         &cancel()
+      end
+   })
+
+   using self do
+      function stopTimer()
+         if &timer then
+            mSys.UpdateTimer(&timer, 0)
+            &timer = nil
+         end
+      end
+
+      -- Show the tooltip now, if the target still exists and there is text to show.
+
+      &show = function()
+         stopTimer()
+         if not obj.find(target_id) then return end
+         text = &text
+         if text is <func> then text = text() end
+         if (text != <str>) or (#text is 0) then return end
+         &tooltip = gui.tooltip({ target = &target, text = text, maxWidth = &maxWidth, theme = &theme })
+      end
+
+      -- Start the delay, or restart it if it is already running.
+
+      &start = function()
+         if &delay <= 0 then
+            &show()
+         elseif &timer then
+            mSys.UpdateTimer(&timer, &delay)
+         else
+            err, &timer = mSys.SubscribeTimer(&delay, function()
+               &timer = nil
+               &show()
+               raise ERR_Terminate
+            end)
+         end
+      end
+
+      -- Stop the delay and remove the tooltip if it is displayed.
+
+      &cancel = function()
+         stopTimer()
+         tip = &tooltip
+         &tooltip = nil
+         tip?.surface?.free()
+      end
+
+      target.mtSubscribeInput(JTYPE_CROSSING | JTYPE_BUTTON, function[&&](Viewport:obj!, Msg:any!)
+         repeat
+            if Msg.type is JET_CROSSED_IN then
+               &start()
+            elseif Msg.type is JET_CROSSED_OUT then
+               &cancel()
+            elseif (Msg.flags has JTYPE_BUTTON) and (Msg.value > 0) then
+               &cancel()
+            end
+            Msg = Msg.next
+         until not Msg
+      end)
 
       return &&
    end

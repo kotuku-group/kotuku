@@ -29,8 +29,8 @@
   "files": [
     {
       "path": "toolbar.tiri",
-      "size": 26188,
-      "sha256": "db8eb3bc4a422964e7ce6167ee7cce4db8e848e4e7cb1104278a944d38616b5b",
+      "size": 25610,
+      "sha256": "02c7b44ed0ff69ef51b558052c216b2143b62e181917b23a6490336c813fb1d2",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

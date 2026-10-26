@@ -10,8 +10,6 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
-lTipDelay <const> = 0.75
-
 TI_ICON  <const> = 1
 TI_BREAK <const> = 2
 TI_GROUP <const> = 3
@@ -66,28 +64,6 @@ gui.toolbar = function(Options:table)
 
       if ID then &_lookup[ID] = item end
       return item
-   end
-
-   function cancelTipTimer()
-      if &_tipTimer then
-         mSys.UpdateTimer(&_tipTimer, 0)
-         &_tipTimer = nil
-      end
-   end
-
-   function startTipTimer()
-      if &_tipTimer then -- Reset existing timer
-         mSys.UpdateTimer(&_tipTimer, lTipDelay)
-      else
-         local err
-         err, &_tipTimer = mSys.SubscribeTimer(lTipDelay, function(Elapsed, CurrentTime)
-            if &_current and &_current.tip?? then
-               &_tooltip = gui.tooltip({ target=&viewport, text=&_current.tip })
-            end
-            &_tipTimer = nil
-            raise ERR_Terminate
-         end)
-      end
    end
 
    -- Return the toolbar item located at position (x,y)
@@ -625,7 +601,7 @@ gui.toolbar = function(Options:table)
             if ev.type is JET_CROSSED_IN then
 
             elseif ev.type is JET_CROSSED_OUT then
-               cancelTipTimer()
+               &_hoverTip.cancel()
                if &_current then
                   hoverUpdate(nil)
                end
@@ -635,15 +611,15 @@ gui.toolbar = function(Options:table)
                   hoverUpdate(item)
 
                   if item and item.tip then
-                     startTipTimer()
+                     &_hoverTip.start()
                   else
-                     cancelTipTimer()
+                     &_hoverTip.cancel()
                   end
                end
             elseif ev.flags has JTYPE_BUTTON then
                if ev.value > 0 then
                   if not &_disabled then
-                     cancelTipTimer()
+                     &_hoverTip.cancel()
 
                      if &_current and (not &_current.disabled) and (ev.type is JET_BUTTON_1) then
                         &_clicked = &_current
@@ -790,8 +766,12 @@ gui.toolbar = function(Options:table)
 
       &viewport = &host.new('VectorViewport', vps)
 
+      -- The tip of the item under the pointer is shown when the pointer rests on it.  Moving to another item restarts
+      -- the delay (see inputFeedback()).
+
+      &_hoverTip = gui.hoverTip({ target = &viewport, text = function[&&]() return &_current?.tip end })
+
       &viewport.subscribe('free', function(Viewport, Args)
-         if self._tipTimer then mSys.UpdateTimer(self._tipTimer, 0) end
          self = { }
       end)
 
