@@ -306,6 +306,7 @@ static ERR SET_PopOver(extSurface *Self, OBJECTID Value)
    }
 
    Self->PopOverID = Value;
+   Self->PopOverAnchorID = Value;
    return ERR::Okay;
 }
 

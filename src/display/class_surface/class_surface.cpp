@@ -1490,7 +1490,9 @@ static ERR SURFACE_Init(extSurface *Self)
 
       if (!Self->PopOverID) {
          log.warning("PopOver surface #%d is not a sibling of this surface.", popover_id);
+         Self->PopOverAnchorID = 0;
          UpdateSurfaceField(Self, &SurfaceRecord::PopOverID, Self->PopOverID);
+         UpdateSurfaceField(Self, &SurfaceRecord::PopOverAnchorID, Self->PopOverAnchorID);
       }
    }
 

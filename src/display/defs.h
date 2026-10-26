@@ -101,6 +101,7 @@ struct SurfaceRecord {
    OBJECTID DisplayID;     // Display
    OBJECTID RootID;        // RootLayer
    OBJECTID PopOverID;
+   OBJECTID PopOverAnchorID; // Original pop-over reference, retained for modal scope checks
    RNF      Flags;         // Surface flags (RNF::VISIBLE etc)
    int      X;             // Horizontal coordinate
    int      Y;             // Vertical coordinate
@@ -335,6 +336,7 @@ class extSurface : public objSurface {
    double   Opacity;
    WINHANDLE DisplayWindow;       // Reference to the platform dependent window representing the Surface object
    OBJECTID PrevModalID;          // Previous surface to have been modal
+   OBJECTID PopOverAnchorID = 0;  // Original pop-over reference before resolving the stacking sibling
    OBJECTID BitmapOwnerID;        // The surface object that owns the root bitmap
    OBJECTID RevertFocusID;
    int      LineWidth;            // Bitmap line width, in bytes

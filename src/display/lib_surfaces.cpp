@@ -29,7 +29,7 @@ bool in_modal_scope(OBJECTID ModalID, OBJECTID SurfaceID)
          if (id IS ModalID) return true;
          auto i = find_surface_list(id);
          if (i IS -1) return false;
-         if ((glSurfaces[i].PopOverID) and (!SurfaceID)) SurfaceID = glSurfaces[i].PopOverID;
+         if ((glSurfaces[i].PopOverID) and (!SurfaceID)) SurfaceID = glSurfaces[i].PopOverAnchorID;
          id = glSurfaces[i].ParentID;
       }
    }
@@ -573,6 +573,7 @@ ERR track_layer(extSurface *Self)
    record.BitmapID      = Self->BufferID;
    record.DisplayID     = Self->DisplayID;
    record.PopOverID     = Self->PopOverID;
+   record.PopOverAnchorID = Self->PopOverAnchorID;
    record.Flags         = Self->Flags;
    record.X             = Self->FixedX;
    record.Y             = Self->FixedY;
@@ -689,6 +690,7 @@ ERR update_surface_copy(extSurface *Self)
       list[i].BitmapID      = Self->BufferID;
       list[i].DisplayID     = Self->DisplayID;
       list[i].PopOverID     = Self->PopOverID;
+      list[i].PopOverAnchorID = Self->PopOverAnchorID;
       list[i].X             = Self->FixedX;
       list[i].Y             = Self->FixedY;
       list[i].Left          = absx;        // Synonym: Left

@@ -195,6 +195,32 @@ end
    assert(root.userFocus is sibling.id, 'Hiding the modal surface did not clear the modal state')
 end
 
+@Test function DesktopPopupPreservesNestedModalScope()
+   local root <close> = rootSurface()
+   local modal = childSurface(root, { width=100, height=100, modal=1 })
+   local anchor = childSurface(modal, { width=20, height=20 })
+   modal.acFocus()
+
+   local popup <close> = obj.new('Surface', { width=50, height=50, popOver=anchor, presence=SPT_NONE })
+   popup.acShow()
+   assert(popup.acFocus() is ERR_Okay,
+      'A desktop popup anchored inside a nested modal must receive focus')
+   assert(root.userFocus is popup.id, 'The popup must hold the primary focus')
+
+   -- Updating the surface record must retain the logical anchor as well as its resolved stacking sibling.
+
+   popup.acMoveToPoint(10, 10, 0, MTF_X | MTF_Y)
+   local child = childSurface(popup, { width=20, height=20 })
+   assert(child.acFocus() is ERR_Okay, 'Children of the modal popup must receive focus')
+   root.acFocus()
+   assert(root.userFocus is child.id, 'The popup anchor must not admit the modal parent into the modal scope')
+
+   local submenu <close> = obj.new('Surface', { width=30, height=30, popOver=child, presence=SPT_NONE })
+   submenu.acShow()
+   assert(submenu.acFocus() is ERR_Okay, 'A nested popup must inherit the original modal scope')
+   assert(root.userFocus is submenu.id, 'The nested popup must hold the primary focus')
+end
+
 @Test function FreeFocusedChild()
    local root <close> = rootSurface()
    local child = childSurface(root)
