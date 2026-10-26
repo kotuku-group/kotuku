@@ -263,6 +263,12 @@ void input_event_loop(HOSTHANDLE FD, APTR Data) // Data is undefined
    for (auto &sub : input_buffer) {
       if (sub.events.empty()) continue;
 
+      {
+         // An earlier callback in this cycle may have removed the subscription, e.g. by freeing its owner.
+         const std::lock_guard<std::recursive_mutex> lock(glInputLock);
+         if (not glInputCallbacks.contains(sub.handle)) continue;
+      }
+
       auto &cb = sub.callback;
       if (sub.callback.isC()) {
          kt::ScopedObjectLock lock(OBJECTPTR(cb.Context), 2000); // Ensure that the object can't be removed until after input processing
