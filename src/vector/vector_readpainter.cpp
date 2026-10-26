@@ -358,18 +358,52 @@ static bool parse_color_channel(std::string_view &IRI, double &Value)
 }
 
 //********************************************************************************************************************
-// CSS color() function: color(space R G B [/ alpha]), where space is srgb, srgb-linear or display-p3.  Display P3
-// uses the sRGB transfer function and white point.  Channels outside 0 - 1 are accepted, so a P3 colour outside sRGB
-// produces sRGB values outside 0 - 1.
+// Transfer functions of the Rec. 2020 and Adobe RGB (1998) spaces, from encoded to linear values.  Negative values are
+// mirrored, as in CSS Color 4.
+
+static double rec2020_to_linear(double Value)
+{
+   // CSS Color 4 uses the BT.1886 display transfer function with zero black lift and unit gain.
+   return std::copysign(std::pow(std::abs(Value), 2.4), Value);
+}
+
+static double a98_to_linear(double Value)
+{
+   return std::copysign(std::pow(std::abs(Value), 563.0 / 256.0), Value);
+}
+
+//********************************************************************************************************************
+// CSS color() function: color(space R G B [/ alpha]), where space is srgb, srgb-linear, display-p3, a98-rgb or
+// rec2020.  Display P3 uses the sRGB transfer function, and all of the spaces use the D65 white point.  Channels
+// outside 0 - 1 are accepted, so a colour outside sRGB produces sRGB values outside 0 - 1.  Rec. 2020 is read as an
+// SDR container gamut.
 
 static ERR parse_color(std::string_view IRI, VectorPainter *Painter, std::string_view &Result)
 {
-   // Linear Display P3 to linear sRGB, from the CSS Color 4 P3 to XYZ and XYZ to sRGB matrices
+   // Linear RGB to linear sRGB, composed from the CSS Color 4 space to XYZ and XYZ to sRGB matrices
 
    static constexpr double P3_TO_SRGB[3][3] = {
       {  1.22494017628056,    -0.22494017628056,    0.0 },
       { -0.04205695470968816,  1.042056954709688,   0.0 },
       { -0.01963755459033443, -0.07863604555063189, 1.098273600140966 }
+   };
+
+   static constexpr double REC2020_TO_SRGB[3][3] = {
+      {  1.6604910021084343,  -0.5876411387885496,  -0.0728498633198848 },
+      { -0.12455047452159085,  1.1328998971259603,  -0.00834942260436947 },
+      { -0.01815076335490531, -0.10057889800800737,  1.1187296613629127 }
+   };
+
+   static constexpr double A98_TO_SRGB[3][3] = {
+      { 1.3983557439607786, -0.3983557439607784,  0.0 },
+      { 0.0,                 1.0,                 0.0 },
+      { 0.0,                -0.04292898929447327, 1.0429289892944733 }
+   };
+
+   auto convert = [Painter](const double (&M)[3][3], double R, double G, double B, float Alpha) {
+      linear_rgb_to_painter(M[0][0] * R + M[0][1] * G + M[0][2] * B,
+         M[1][0] * R + M[1][1] * G + M[1][2] * B,
+         M[2][0] * R + M[2][1] * G + M[2][2] * B, Alpha, Painter);
    };
 
    skip_whitespace(IRI);
@@ -393,11 +427,13 @@ static ERR parse_color(std::string_view IRI, VectorPainter *Painter, std::string
    }
    else if (kt::iequals(space, "srgb-linear")) linear_rgb_to_painter(r, g, b, alpha, Painter);
    else if (kt::iequals(space, "display-p3")) {
-      const double lr = srgb_to_linear(r), lg = srgb_to_linear(g), lb = srgb_to_linear(b);
-      const auto &m = P3_TO_SRGB;
-      linear_rgb_to_painter(m[0][0] * lr + m[0][1] * lg + m[0][2] * lb,
-         m[1][0] * lr + m[1][1] * lg + m[1][2] * lb,
-         m[2][0] * lr + m[2][1] * lg + m[2][2] * lb, alpha, Painter);
+      convert(P3_TO_SRGB, srgb_to_linear(r), srgb_to_linear(g), srgb_to_linear(b), alpha);
+   }
+   else if (kt::iequals(space, "rec2020")) {
+      convert(REC2020_TO_SRGB, rec2020_to_linear(r), rec2020_to_linear(g), rec2020_to_linear(b), alpha);
+   }
+   else if (kt::iequals(space, "a98-rgb")) {
+      convert(A98_TO_SRGB, a98_to_linear(r), a98_to_linear(g), a98_to_linear(b), alpha);
    }
    else return ERR::Syntax;
 
@@ -689,8 +725,9 @@ Alpha (`A`) is optional, preceded by `/`, and ranges from `0.0` to `1.0` or `0%`
 Hue (`H`) is in degrees.  Alpha (`A`) is optional, preceded by `/`, and ranges from `0.0` to `1.0` or
 `0%` to `100%`.</type>
 <type name="color(space R G B [/ A])">CSS Color Level 4 `color()` function.  The supported spaces are `srgb`,
-`srgb-linear` and `display-p3`.  Channels range from `0` to `1`, or `0%` to `100%`, and `none` is read as zero.
-Display P3 colours are converted to sRGB, so a colour outside the sRGB gamut has channels outside `0` to `1`.  Alpha
+`srgb-linear`, `display-p3`, `a98-rgb` and `rec2020`.  Channels range from `0` to `1`, or `0%` to `100%`, and `none`
+is read as zero.  Colours are converted to sRGB, so a colour outside the sRGB gamut has channels outside `0` to `1`.
+Rec. 2020 is read with its SDR transfer function, as a container gamut rather than an HDR signal.  Alpha
 (`A`) is optional, preceded by `/`, and ranges from `0.0` to `1.0` or `0%` to `100%`.  Any other space is a syntax
 error.</type>
 </types>

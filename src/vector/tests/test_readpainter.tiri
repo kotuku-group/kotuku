@@ -660,6 +660,60 @@ end
       f'P3 green conversion: got {rgb.red} {rgb.green} {rgb.blue}')
 end
 
+@Test function ReadColorRec2020()
+   -- sRGB red encoded with the CSS Color 4 BT.1886 transfer function
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "color(rec2020 0.82346410 0.32842945 0.18033933)", painter)
+   rgb = painter.colour
+   assert(math.abs(rgb.red - 1) < 0.001 and math.abs(rgb.green) < 0.001 and math.abs(rgb.blue) < 0.001,
+      f'Rec. 2020 sRGB red: got {rgb.red} {rgb.green} {rgb.blue}')
+
+   check mVec.ReadPainter(nil, "color(rec2020 100% 100% 100% / 0.5)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.5), 'Rec. 2020 white must be sRGB white')
+
+   -- Rec. 2020 green is far outside sRGB
+   check mVec.ReadPainter(nil, "color(rec2020 0 1 0)", painter)
+   rgb = painter.colour
+   assert(math.abs(rgb.red + 0.790375) < 0.001 and math.abs(rgb.green - 1.056302) < 0.001 and
+      math.abs(rgb.blue + 0.350164) < 0.001,
+      f'Rec. 2020 green conversion: got {rgb.red} {rgb.green} {rgb.blue}')
+
+   -- BT.1886 remains a power function near black: 0.045 is linear 0.000585747
+   check mVec.ReadPainter(nil, "color(rec2020 0.045 0.045 0.045)", painter)
+   rgb = painter.colour
+   assert(math.abs(rgb.red - 0.00756785) < 0.00001 and math.abs(rgb.green - rgb.red) < 0.00001 and
+      math.abs(rgb.blue - rgb.red) < 0.00001,
+      f'Rec. 2020 dark grey: got {rgb.red} {rgb.green} {rgb.blue}')
+
+   -- Neutral midtones distinguish BT.1886 from the inverse camera encoding curve.
+   for value in values(array<double> { 0.5, -0.5 }) do
+      check mVec.ReadPainter(nil, f"color(rec2020 {value} {value} {value})", painter)
+      rgb = painter.colour
+      expected = value < 0 ? -0.4725 : 0.4725
+      assert(math.abs(rgb.red - expected) < 0.00001 and math.abs(rgb.green - expected) < 0.00001 and
+         math.abs(rgb.blue - expected) < 0.00001,
+         f'Rec. 2020 grey {value}: got {rgb.red} {rgb.green} {rgb.blue}')
+   end
+end
+
+@Test function ReadColorA98Rgb()
+   -- sRGB red is color(a98-rgb 0.8586 0 0) in CSS Color 4
+   painter = struct.new('VectorPainter')
+   check mVec.ReadPainter(nil, "color(a98-rgb 0.85859 0 0)", painter)
+   rgb = painter.colour
+   assert(math.abs(rgb.red - 1) < 0.001 and math.abs(rgb.green) < 0.001 and math.abs(rgb.blue) < 0.001,
+      f'A98 sRGB red: got {rgb.red} {rgb.green} {rgb.blue}')
+
+   check mVec.ReadPainter(nil, "color(A98-RGB 1 1 1 / 25%)", painter)
+   assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.25), 'A98 white must be sRGB white')
+
+   check mVec.ReadPainter(nil, "color(a98-rgb 0 1 0)", painter)
+   rgb = painter.colour
+   assert(math.abs(rgb.red + 0.66395) < 0.001 and math.abs(rgb.green - 1) < 0.001 and
+      math.abs(rgb.blue + 0.229161) < 0.001,
+      f'A98 green conversion: got {rgb.red} {rgb.green} {rgb.blue}')
+end
+
 @Test function ReadColorFollowedByFallback()
    painter = struct.new('VectorPainter')
    err, result = mVec.ReadPainter(nil, "color(display-p3 1 1 1), red", painter)
@@ -669,7 +723,7 @@ end
 @Test function RejectInvalidColor()
    painter = struct.new('VectorPainter')
    for iri in values(array<str> {
-      'color(rec2020 1 0 0)', 'color(1 0 0)', 'color(display-p3 1 0)', 'color(display-p3 1 x 0)', 'color()'
+      'color(prophoto-rgb 1 0 0)', 'color(a98 1 0 0)', 'color(1 0 0)', 'color(display-p3 1 0)', 'color(display-p3 1 x 0)', 'color()'
    }) do
       err = mVec.ReadPainter(nil, iri, painter)
       assert(err is ERR_Syntax, f'{iri} must return ERR_Syntax, got {err}')

@@ -1646,10 +1646,12 @@ gui.interface = {
 
 gui.sizing = { -- Universal sizing information
    widget = scaledPixels({
-      width  = 160, -- Default width for common widgets (px at 96 DPI)
-      gap    = 6,   -- Recommended gap between widgets (px at 96 DPI)
-      margin = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
-      labelGap = 12 -- Spacing between labels and the widget parts
+      width     = 160, -- Default width for common widgets (px at 96 DPI)
+      gap       = 6,   -- Recommended gap between widgets (px at 96 DPI)
+      margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
+      labelGap  = 12,  -- Spacing between labels and the widget parts
+      edgeWidth = 1,   -- Default stroke-width for widget edges (px at 96 DPI)
+      edgeRound = 5    -- Default corner radius for widget edges (px at 96 DPI)
    })
 }
 
@@ -2351,28 +2353,31 @@ gui.themes = <table{ linkThemes({
          strokeFocus = { stroke = gui.palette.dark.contrast },
          disabled    = { opacity = 0.5 }
       },
+      button = {
+         bkgd      = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
+         highlight = { fill = gui.palette.dark.contrast },
+         focus     = { stroke = gui.palette.dark.contrast },
+         text      = { fill = gui.palette.dark.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
+         disabled  = { opacity = 0.5 }
+      },
+      dropdown = { -- Exclusive to combobox
+         bkgd          = { fill = gui.palette.dark.bkgd },
+         border        = { stroke = gui.palette.dark.inverse },
+         highlight     = { fill = gui.palette.dark.contrast },
+         text          = { fill = gui.palette.dark.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         textHighlight = { fill = gui.palette.dark.altText, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         icon          = iconTheme('fill(pearl)'),
+         iconHighlight = iconTheme('fill(pearl)')
+      },
       icon = {
          text = { fill = gui.palette.dark.text, face = gui.fonts.icon.face, fontSize = string.format('%.2fpt', gui.fonts.icon.size), fontStyle = gui.fonts.icon.style },
          effect = iconTheme('fill(pearl)')
       },
       input = { -- Used by checkbox, input, combobox
-         bkgd  = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = 2, roundX = 4, roundY = 4, opacity = 1 },
+         bkgd  = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
          focus = { stroke = gui.palette.dark.contrast },
          text  = { fill = gui.palette.dark.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
          disabled = { opacity = 0.5 }
-      },
-      window = {
-         bkgd   = { fill = gui.palette.dark.neutral },
-         text   = { fill = gui.palette.dark.text, face = gui.fonts.window.face, fontSize =  string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
-         stroke = { stroke = modifyAlpha(gui.palette.dark.text, 0.25), strokeWidth = 2 }, -- Stroking of lines/paths (not borders of widgets)
-         icon   = iconTheme('fill(pearl)')
-      },
-      button = {
-         bkgd      = { fill = gui.palette.dark.neutral, stroke = gui.palette.dark.edge, strokeWidth = 2, roundX = 4, roundY = 4, opacity = 1 },
-         highlight = { fill = gui.palette.dark.contrast },
-         focus     = { stroke = gui.palette.dark.contrast },
-         text      = { fill = gui.palette.dark.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
-         disabled  = { opacity = 0.5 }
       },
       menubar = {
          bkgd      = { fill = 'rgb(0 0 0 / .5)' },
@@ -2388,18 +2393,9 @@ gui.themes = <table{ linkThemes({
          text      = { fill = gui.palette.dark.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style }, -- VectorText
          icon      = iconTheme('fill(pearl)')
       },
-      dropdown = { -- Exclusive to combobox
-         bkgd          = { fill = gui.palette.dark.bkgd },
-         border        = { stroke = gui.palette.dark.inverse },
-         highlight     = { fill = gui.palette.dark.contrast },
-         text          = { fill = gui.palette.dark.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
-         textHighlight = { fill = gui.palette.dark.altText, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
-         icon          = iconTheme('fill(pearl)'),
-         iconHighlight = iconTheme('fill(pearl)')
-      },
       slider = {
-         bkgd          = { fill = gui.palette.dark.mid, stroke = 'none', roundX = 4, roundY = 4, strokeWidth = 2, opacity = 1 },
-         fore          = { fill = gui.palette.dark.inverse, stroke = 'none', opacity = 0.75, roundX = 4, roundY = 4, strokeWidth = 2 },
+         bkgd          = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
+         fore          = { fill = gui.palette.dark.inverse, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
          foreHighlight = { fill = gui.palette.dark.contrast, opacity = 1 },
          foreFocus     = { stroke = gui.palette.dark.contrast, strokeWidth = 2 },
          text          = { fill = gui.palette.dark.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
@@ -2429,6 +2425,12 @@ gui.themes = <table{ linkThemes({
       tooltip = {
          bkgd = { fill = gui.palette.dark.bkgd, roundX = gui.pixel('4pt'), roundY = gui.pixel('4pt'), strokeWidth = 2, stroke = gui.palette.dark.edge },
          text = { fill = gui.palette.dark.text }
+      },
+      window = {
+         bkgd   = { fill = gui.palette.dark.neutral },
+         text   = { fill = gui.palette.dark.text, face = gui.fonts.window.face, fontSize =  string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
+         stroke = { stroke = modifyAlpha(gui.palette.dark.text, 0.25), strokeWidth = 2 }, -- Stroking of direct lines/paths (not widget edges)
+         icon   = iconTheme('fill(pearl)')
       },
       desktop = {
          bkgd = 'rgb(160 160 160)'
@@ -2464,28 +2466,31 @@ gui.themes = <table{ linkThemes({
          strokeFocus = { stroke = gui.palette.light.contrast },
          disabled    = { opacity = 0.5 }
       },
+      button = {
+         bkgd      = { fill = gui.palette.light.inverse, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
+         highlight = { fill = gui.palette.light.contrast },
+         focus     = { stroke = gui.palette.light.contrast },
+         text      = { fill = gui.palette.light.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
+         disabled  = { opacity = 0.5 }
+      },
+      dropdown = {
+         bkgd          = { fill = gui.palette.light.bkgd },
+         border        = { stroke = gui.palette.light.inverse },
+         highlight     = { fill = gui.palette.light.contrast },
+         text          = { fill = gui.palette.light.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         textHighlight = { fill = gui.palette.light.altText, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         icon          = iconTheme('fill(carbon)'),
+         iconHighlight = iconTheme('fill(pearl)')
+      },
       icon = {
          text = { fill = gui.palette.light.altText, face = gui.fonts.icon.face, fontSize = string.format('%.2fpt', gui.fonts.icon.size), fontStyle = gui.fonts.icon.style },
          effect = iconTheme('fill(carbon)')
       },
       input = {
-         bkgd  = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth = 2, roundX = 4, roundY = 4, opacity = 1 },
+         bkgd  = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
          focus = { stroke = gui.palette.light.contrast },
          text  = { fill = gui.palette.light.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
          disabled = { opacity = 0.5 }
-      },
-      window = {
-         bkgd   = { fill = gui.palette.light.neutral },
-         text   = { fill = gui.palette.light.text, face = gui.fonts.window.face, fontSize = string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
-         stroke = { stroke = modifyAlpha(gui.palette.light.inverse, 0.5), strokeWidth = 2 },
-         icon   = iconTheme('fill(carbon)')
-      },
-      button = {
-         bkgd      = { fill = gui.palette.light.inverse, stroke = gui.palette.light.edge, strokeWidth = 2, roundX = 4, roundY = 4, opacity = 1 },
-         highlight = { fill = gui.palette.light.contrast },
-         focus     = { stroke = gui.palette.light.contrast },
-         text      = { fill = gui.palette.light.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
-         disabled  = { opacity = 0.5 }
       },
       menubar = {
          bkgd      = { fill = gui.palette.light.inverse, },
@@ -2501,18 +2506,9 @@ gui.themes = <table{ linkThemes({
          text      = { fill = gui.palette.light.altText, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
          icon      = iconTheme('fill(pearl)')
       },
-      dropdown = {
-         bkgd          = { fill = gui.palette.light.bkgd },
-         border        = { stroke = gui.palette.light.inverse },
-         highlight     = { fill = gui.palette.light.contrast },
-         text          = { fill = gui.palette.light.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
-         textHighlight = { fill = gui.palette.light.altText, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
-         icon          = iconTheme('fill(carbon)'),
-         iconHighlight = iconTheme('fill(pearl)')
-      },
       slider = {
-         bkgd          = { fill = gui.palette.light.mid, stroke = 'none', roundX = 4, roundY = 4, strokeWidth = 2, opacity = 1 },
-         fore          = { fill = gui.palette.light.inverse, stroke = 'none', opacity = 0.75, roundX = 4, roundY = 4, strokeWidth = 2 },
+         bkgd          = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
+         fore          = { fill = gui.palette.light.inverse, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
          foreHighlight = { fill = gui.palette.light.contrast, opacity = 1 },
          foreFocus     = { stroke = gui.palette.light.contrast, strokeWidth = 2 },
          tick          = { stroke = gui.palette.light.text, strokeWidth = 1, opacity = 0.6 },
@@ -2536,6 +2532,12 @@ gui.themes = <table{ linkThemes({
       tooltip = {
          bkgd = { fill = gui.palette.light.bkgd, roundX = 4, roundY = 4, strokeWidth = 2, stroke = gui.palette.light.edge },
          text = { fill = gui.palette.light.text }
+      },
+      window = {
+         bkgd   = { fill = gui.palette.light.neutral },
+         text   = { fill = gui.palette.light.text, face = gui.fonts.window.face, fontSize = string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
+         stroke = { stroke = modifyAlpha(gui.palette.light.inverse, 0.5), strokeWidth = 2 },
+         icon   = iconTheme('fill(carbon)')
       },
       desktop = {
          bkgd = 'rgb(160 160 160)'
