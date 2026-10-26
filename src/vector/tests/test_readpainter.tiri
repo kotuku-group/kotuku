@@ -652,10 +652,12 @@ end
    check mVec.ReadPainter(nil, "color(display-p3 1 1 1 / 0.5)", painter)
    assert(checkRGB(painter, 1.0, 1.0, 1.0, 0.5), 'P3 white must be sRGB white')
 
-   -- P3 green is outside sRGB, so its channels are unclamped
+   -- P3 green is outside sRGB; negative channels use the mirrored sRGB transfer function.
    check mVec.ReadPainter(nil, "color(display-p3 0 1 0)", painter)
    rgb = painter.colour
-   assert(rgb.red < 0 and rgb.green > 1, f'P3 green must be outside sRGB: got {rgb.red} {rgb.green} {rgb.blue}')
+   assert(math.abs(rgb.red + 0.511605) < 0.001 and math.abs(rgb.green - 1.018266) < 0.001 and
+      math.abs(rgb.blue + 0.310675) < 0.001,
+      f'P3 green conversion: got {rgb.red} {rgb.green} {rgb.blue}')
 end
 
 @Test function ReadColorFollowedByFallback()

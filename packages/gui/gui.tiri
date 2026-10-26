@@ -2375,9 +2375,10 @@ gui.themes = <table{ linkThemes({
          disabled  = { opacity = 0.5 }
       },
       menubar = {
-         bkgd = { fill = 'rgb(0 0 0 / .5)' },
-         text = { fill = gui.palette.dark.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
+         bkgd      = { fill = 'rgb(0 0 0 / .5)' },
+         text      = { fill = gui.palette.dark.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
          highlight = { fill = gui.palette.dark.contrast }
+         focus     = { fill = gui.palette.dark.contrast }
          -- 'menu' item reference is inserted post-construction
       },
       menu = {
@@ -2490,6 +2491,7 @@ gui.themes = <table{ linkThemes({
          bkgd      = { fill = gui.palette.light.inverse, },
          text      = { fill = gui.palette.light.altText, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
          highlight = { fill = gui.palette.light.contrast }
+         focus     = { fill = gui.palette.light.contrast }
          -- 'menu' item reference is inserted post-construction
       },
       menu = {

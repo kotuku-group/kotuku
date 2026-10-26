@@ -133,18 +133,35 @@ function getCursorItem(X, Y):table
    end
 end
 
+-- While the menubar has the focus, its bottom edge is highlighted
+
+function updateFocusEdge()
+   if not &_focusEdge then return end
+   show = &_hasFocus and (not &_disabled)
+   &_focusEdge.visibility = show ? 'visible' : 'hidden'
+end
+
+function hideHighlight()
+   &_highlight.visibility = 'hidden'
+   updateFocusEdge()
+end
+
 -- Highlight selected item (for keyboard item selection)
 
 function highlightItem(Item)
    if not selectable(Item) then return end
+
    &_currentItem = Item
 
-   &_highlight.x          = Item.x
-   &_highlight.y          = 0
-   &_highlight.width      = Item.width
-   &_highlight.height     = &viewport.height
-   &_highlight.visibility = 'visible'
+   &_highlight.{
+      x          = Item.x,
+      y          = 0,
+      width      = Item.width,
+      height     = &viewport.height,
+      visibility = 'visible'
+   }
 
+   updateFocusEdge()
    &viewport.acDraw()
 end
 
@@ -286,7 +303,7 @@ gui.menubar = function(Options:table)
       item.icon?.free()
       if &_currentItem is item then
          &_currentItem = nil
-         &_highlight.visibility = 'hidden'
+         hideHighlight()
       end
 
       if &_lastMenu and &_lastMenu is item.menu then
@@ -318,7 +335,7 @@ gui.menubar = function(Options:table)
          item.disabled = true
          if &_currentItem is item then
             &_currentItem = nil
-            &_highlight.visibility = 'hidden'
+            hideHighlight()
          end
 
          if &_lastMenu and &_lastMenu is item.menu then
@@ -341,14 +358,16 @@ gui.menubar = function(Options:table)
    end
 
    function hoverUpdate(Item, StateChanged) -- Highlight items that the user hovers over.
+      -- While focused, an existing selection survives hovering over empty space.  Without one, the focus edge is shown.
+
       if &_hasFocus and not &_disabled and not selectable(Item) then
-         Item = selectable(&_currentItem) ? &_currentItem : firstItem()
+         Item = selectable(&_currentItem) ? &_currentItem : nil
       end
 
       if (&_currentItem is Item) and (StateChanged != true) then return end
 
       open_menu = &_lastMenu?.visible
-      &_highlight.visibility = 'hidden'
+      hideHighlight()
       &_currentItem = Item
 
       if &_currentItem and (not &_currentItem.disabled) and (not &_disabled) then
@@ -406,16 +425,14 @@ gui.menubar = function(Options:table)
          &viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport, Event)
             if Event is FM_LOST_FOCUS then
                &_hasFocus = false
-               if &_currentItem then
-                  &_highlight.visibility = 'hidden' -- Turn off highlighting
-               end
-
+               hideHighlight()
                &_lastMenu?.hide()
             else
                &_hasFocus = true
-               if &_ready and not &_disabled then
-                  item = selectable(&_currentItem) ? &_currentItem : firstItem()
-                  highlightItem(item)
+               if &_ready and not &_disabled and selectable(&_currentItem) then
+                  highlightItem(&_currentItem) -- Restore the existing selection
+               else
+                  updateFocusEdge()
                end
             end
 
@@ -424,6 +441,7 @@ gui.menubar = function(Options:table)
 
          &enable = function()
             &_disabled = false
+            updateFocusEdge()
             arrangeItems()
          end
 
@@ -431,7 +449,7 @@ gui.menubar = function(Options:table)
             &_disabled = true
             &_lastMenu?.hide()
             &_lastMenu = nil
-            &_highlight.visibility = 'hidden'
+            hideHighlight()
             arrangeItems()
          end
 
@@ -443,7 +461,7 @@ gui.menubar = function(Options:table)
                elseif ev.type is JET_CROSSED_OUT then
                   if &_currentItem and not &_lastMenu?.visible then
                      &_currentItem = nil
-                     &_highlight.visibility = 'hidden'
+                     hideHighlight()
                      &viewport.acDraw()
                   end
                elseif ev.flags has JTYPE_MOVEMENT then
@@ -541,11 +559,14 @@ gui.menubar = function(Options:table)
             visibility = 'hidden'
          }, &theme.highlight))
 
+         &_focusEdge = &_bkgd.new('VectorRectangle', table.merge({ -- Focus indicator
+            fill = 'none', x = 0, y = &viewport.height - 2, width = '100%', height = 2,
+            visibility = 'hidden'
+         }, &theme.focus ? &theme.focus : &theme.highlight))
+
          arrangeItems()
          &_ready = true
-         if &_hasFocus and not &_disabled then
-            highlightItem(firstItem())
-         end
+         updateFocusEdge()
 
          &_shortcutKeyboard = input.keyboard(&viewport.scene.surface,
             function(Handle, SurfaceID, Qualifiers, Code, Unicode)
