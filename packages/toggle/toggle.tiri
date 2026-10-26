@@ -102,7 +102,7 @@ gui.toggle = function(Options)
       end
 
       HEIGHT    <const> = &viewport.height - box.y - box.yOffset
-      ICON_SIZE <const> = HEIGHT * 0.56
+      ICON_SIZE <const> = math.round(HEIGHT * 0.56)
 
       if &_label then
          packed_width, _ = &_label.expand(HEIGHT, HEIGHT)
@@ -121,8 +121,8 @@ gui.toggle = function(Options)
       icon_margin = chk_icon.margin -- Padding around the icon's pattern tile, see gui.createIcon()
 
       &iconRender = &viewport.new('VectorViewport', {
-         x      = box.x + ((HEIGHT - ICON_SIZE) * 0.5) - icon_margin,
-         y      = box.y + ((HEIGHT - ICON_SIZE) * 0.5) - icon_margin,
+         x      = box.x + math.floor((HEIGHT - ICON_SIZE) * 0.5) - icon_margin,
+         y      = box.y + math.floor((HEIGHT - ICON_SIZE) * 0.5) - icon_margin,
          width  = ICON_SIZE + (icon_margin * 2),
          height = ICON_SIZE + (icon_margin * 2),
          fill   = chk_icon.fill,

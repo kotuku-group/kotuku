@@ -284,6 +284,7 @@ end
 
 function beginDrag(View:table!, Press:table!)
    View._dragPress = nil
+   View._dragged   = true -- The release that ends this press must not select or activate, even if the drag is refused
    local handler = View.events?.dragStart
    handler ?! return
    if not selectionEligible(View, Press.item) or View._dragSession then return end
@@ -315,7 +316,6 @@ function beginDrag(View:table!, Press:table!)
    local datatypes = payload.datatypes ?? (session.files ? string.char(DATA_FILE) : '')
    session._payload = payload
    session.preview  = payload.preview
-   View._dragged    = true -- The release that ends this press must not select or activate
 
    local clipboard = dragClipboard(View)
    session._sourceID = clipboard.id
@@ -1150,16 +1150,19 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
                if vw.hItem and not vw.activeZone then
                   setKeyboardTarget(vw, vw.hItem)
                end
-            elseif vw._dragged then -- Release of a press that started a drag
+            elseif vw._dragged then -- Release of a press that passed the drag threshold
                vw._dragged = nil
                vw._dragPress = nil
                vw._modifiedClick = nil
                ev = ev.next
                continue
-            elseif vw._dragPress then -- Release without a drag; apply any selection deferred by the press
+            elseif vw._dragPress then -- Release without a drag; apply the selection deferred by the press
                local press = vw._dragPress
                vw._dragPress = nil
-               if press.deferSelect and selectionEligible(vw, press.item) then selectUserItem(press.item, 0) end
+               if (math.abs(ev.x - press.x) < DRAG_THRESHOLD) and (math.abs(ev.y - press.y) < DRAG_THRESHOLD) and
+                  selectionEligible(vw, press.item) then
+                  selectUserItem(press.item, press.qualifiers)
+               end
             end
 
             if vw.activeZone then -- Custom zone for click activity
@@ -1182,11 +1185,11 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
 
             if (ev.value is 1) and vw.hItem and not vw.disabled then
                if vw.dragDrop and vw.events?.dragStart then
-                  -- Pressing an item that is already part of a multiple selection keeps the group intact, so that
-                  -- the group can be dragged.  An ordinary click collapses the selection on release instead.
-                  local defer_select = vw.multiSelect and vw.hItem._selected and not vw._modifiedClick
-                  vw._dragPress = { item=vw.hItem, x=ev.x, y=ev.y, deferSelect=defer_select }
-                  if not defer_select then selectUserItem(vw.hItem, vw.qualifiers) end
+                  -- The press might start a drag, so selection waits for a release near the press.  Pressing an
+                  -- item that is already part of a multiple selection keeps the group intact, so that the group
+                  -- can be dragged.  An ordinary click collapses the selection on release instead.
+                  local collapse = vw.multiSelect and vw.hItem._selected and not vw._modifiedClick
+                  vw._dragPress = { item=vw.hItem, x=ev.x, y=ev.y, qualifiers=collapse ? 0 : vw.qualifiers }
                else
                   selectUserItem(vw.hItem, vw.qualifiers)
                end

@@ -218,10 +218,10 @@ gui.input = function(Options)
          x = 0, y = 0, width = '100%', height = '100%'
       }, input_theme.bkgd))
 
+      clip_inset = math.ceil(input_theme.bkgd.strokeWidth) -- Whole pixels keep the text sharp
       &_textClip = &inputViewport.new('VectorViewport', {
          name = 'vp_input_clip',
-         x = input_theme.bkgd.strokeWidth, y = input_theme.bkgd.strokeWidth,
-         xOffset = input_theme.bkgd.strokeWidth, yOffset = input_theme.bkgd.strokeWidth,
+         x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset,
          overflow = VOF_HIDDEN
       })
 

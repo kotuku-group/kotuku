@@ -10,7 +10,7 @@ Documentation is available in the Kotuku Wiki.
 
 FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
 DEFAULT_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
-MARGIN     <const> = math.floor(FONT_HEIGHT * 0.5) + 1
+MARGIN <const> = math.floor(FONT_HEIGHT * 0.5) + 1
 
 function iconTheme(Widget:table!):str
    return gui.rgbToIconTheme(Widget.input_theme.text?.fill ?? Widget.theme.window.text.fill)
@@ -174,12 +174,12 @@ gui.combobox = function(Options:table)
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       vps = { -- Viewport settings
-         x       = Options.x,
-         y       = Options.y,
+         x       = Options.x is <num> ? math.floor(Options.x) : Options.x,
+         y       = Options.y is <num> ? math.floor(Options.y) : Options.y,
          width   = Options.width,
          height  = Options.height ?? DEFAULT_HEIGHT,
-         xOffset = Options.xOffset,
-         yOffset = Options.yOffset
+         xOffset = Options.xOffset is <num> ? math.floor(Options.xOffset) : Options.xOffset,
+         yOffset = Options.yOffset is <num> ? math.floor(Options.yOffset) : Options.yOffset
       }
 
       if not vps.x and not vps.xOffset then vps.x = 0 end
@@ -225,12 +225,13 @@ gui.combobox = function(Options:table)
          x = 0, y = 0, width = '100%', height = '100%'
       }, &input_theme.bkgd))
 
-      ICON_SIZE = math.min(FONT_HEIGHT, BOX_HEIGHT - (&input_theme.bkgd.strokeWidth * 2))
+      clip_inset = math.ceil(&input_theme.bkgd.strokeWidth) -- Whole pixels keep the text and icon sharp
+      ICON_SIZE = math.min(FONT_HEIGHT, BOX_HEIGHT - (clip_inset * 2))
       down_icon = gui.createIcon(&viewport.scene, self.menuIcon, ICON_SIZE, iconTheme(self))
 
       &iconRender = &inputViewport.new('VectorViewport', { -- Padded to suit the pattern tile, see gui.createIcon()
          xOffset = MARGIN - down_icon.margin,
-         y       = ((BOX_HEIGHT - ICON_SIZE) * 0.5) - down_icon.margin,
+         y       = math.floor((BOX_HEIGHT - ICON_SIZE) * 0.5) - down_icon.margin,
          width   = ICON_SIZE + (down_icon.margin * 2),
          height  = ICON_SIZE + (down_icon.margin * 2),
          fill    = down_icon.fill
@@ -240,8 +241,7 @@ gui.combobox = function(Options:table)
          cursor = (function()
             if &allowCustom then return 'text' end
          end)(),
-         x = &input_theme.bkgd.strokeWidth, y = &input_theme.bkgd.strokeWidth,
-         xOffset = ICON_SIZE + MARGIN + MARGIN, yOffset = &input_theme.bkgd.strokeWidth,
+         x = clip_inset, y = clip_inset, xOffset = ICON_SIZE + MARGIN + MARGIN, yOffset = clip_inset,
          overflow = VOF_HIDDEN
       })
 
@@ -252,7 +252,7 @@ gui.combobox = function(Options:table)
 
       -- The text is inset from the left by the space above it, so that the margins look even at any box height.
 
-      text_inset = math.floor((BOX_HEIGHT - FONT_HEIGHT - (&input_theme.bkgd.strokeWidth * 2)) * 0.5)
+      text_inset = math.floor((BOX_HEIGHT - FONT_HEIGHT - (clip_inset * 2)) * 0.5)
 
       &text = &_textClip.new('VectorText', table.merge({
          x         = text_inset,

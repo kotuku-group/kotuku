@@ -101,7 +101,7 @@ gui.button = function(Options)
          &clicked = false
          &_hoverTip.cancel()
          &viewport.acDisable()
-         &viewport.opacity = 0.5
+         &viewport.opacity = base_theme.scheme is 'light' ? 0.75 : 0.5
          refreshStyle()
          &events.disable?(&&)
          &viewport.acDraw()
@@ -205,9 +205,9 @@ gui.button = function(Options)
          end
       end
 
+      clip_inset = math.ceil(theme.bkgd.strokeWidth) -- Whole pixels keep the label sharp
       &_labelClip = &viewport.new('VectorViewport', {
-         x = theme.bkgd.strokeWidth, y = theme.bkgd.strokeWidth,
-         xOffset = theme.bkgd.strokeWidth, yOffset = theme.bkgd.strokeWidth,
+         x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset,
          overflow = VOF_HIDDEN
       })
 

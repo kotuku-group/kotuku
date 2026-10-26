@@ -59,11 +59,12 @@ gui.icon = function(Options:table!)
       if &disabled then return end
 
       repeat
-         local activation:str
+         activation:str
          if Msg.type is JET_BUTTON_1 then
             if Msg.value > 0 then
                click_state.{ held = true, x = Msg.absX, y = Msg.absY }
                Viewport.opacity = 0.5
+               Viewport.acMoveToFront()
             else
                held = click_state.held
                click_state.held = false
@@ -161,7 +162,7 @@ gui.icon = function(Options:table!)
       text_group = &viewport.new('VectorGroup', { })
 
       text_group.new('VectorRectangle', {
-         fill   = 'rgba(0,0,0,.5)',
+         fill   = gui.getTheme(Options.target).palette.shade,
          x      = 0,
          y      = math.floor(y),
          roundX = 5,
@@ -291,7 +292,7 @@ gui.icon = function(Options:table!)
 
       local vp = &viewport
       if Options.draggable then
-         vp.dragCallback = function[<weak> self](Viewport:obj!, X:num!, Y:num!)
+         vp.dragCallback = function[<weak> &&](Viewport:obj!, X:num!, Y:num!)
             if &disabled then return end
             Viewport.{ x = X, y = Y }
             Viewport.acDraw()
