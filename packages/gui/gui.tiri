@@ -451,14 +451,18 @@ gui.pixel = function(Val:str, Density:num):num
    num = tonumber(num)
    assert(num, f'Invalid graphics unit \'{Val}\'')
    dpi = Density ?? gui.interface.dpi
-   return math.round(choose alpha from
+   return choose alpha from
       'px' -> num                -- direct pixel escape hatch
       'in' -> dpi * num
       'mm' -> dpi * (num / 25.4) -- 25.4 units per inch
       'pt' -> dpi * (num / 72)   -- 72 units per inch, matches Freetype default
       'dp' -> num * (dpi / 160)  -- density independent; 160 units per inch
       else -> num
-   end)
+   end
+end
+
+gui.rpixel = function(Val:str, Density:num):num
+   return math.round(gui.pixel(Val, Density))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1628,12 +1632,13 @@ thunk displayDensity():num
    return dpi
 end
 
--- Scales a table of pixel values from a 96 DPI baseline to the interface density.
+-- Scales a table of pixel values from a 96 DPI baseline to the interface density.  Values are rounded to whole pixels
+-- for layout, except for the keys in Exact, which are drawing values such as stroke widths and corner radii.
 
-thunk scaledPixels(Values:table!):table
+thunk scaledPixels(Values:table!, Exact:table):table
    scale = gui.interface.dpi / 96
    for k, v in Values do
-      Values[k] = math.round(v * scale)
+      Values[k] = (Exact and Exact[k]) ? v * scale : math.round(v * scale)
    end
    return Values
 end
@@ -1650,9 +1655,9 @@ gui.sizing = { -- Universal sizing information
       gap       = 6,   -- Recommended gap between widgets (px at 96 DPI)
       margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
       labelGap  = 12,  -- Spacing between labels and the widget parts
-      edgeWidth = 1,   -- Default stroke-width for widget edges (px at 96 DPI)
+      edgeWidth = 1.5, -- Default stroke-width for widget edges (px at 96 DPI)
       edgeRound = 5    -- Default corner radius for widget edges (px at 96 DPI)
-   })
+   }, { edgeWidth = true, edgeRound = true })
 }
 
 -- Converts percentage font sizes to points, scales all point sizes to the interface density and sets the default
@@ -2330,7 +2335,7 @@ gui.themes = <table{ linkThemes({
             fill = gui.palette.dark.bkgd
          },
          border = { -- Standard stroke for page borders
-            stroke      = gui.palette.dark.mid,
+            stroke      = 'none', --gui.palette.dark.mid,
             strokeWidth = 2
          }
          borderFocus = {  -- Stroke to use when 'bkgd' has the user's focus
@@ -2356,13 +2361,13 @@ gui.themes = <table{ linkThemes({
       button = {
          bkgd      = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
          highlight = { fill = gui.palette.dark.contrast },
-         focus     = { stroke = gui.palette.dark.contrast },
+         focus     = { stroke = gui.palette.dark.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
          text      = { fill = gui.palette.dark.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
-         disabled  = { opacity = 0.5 },
-         primary   = { -- Overrides for buttons created with the primary option; hover moves prime towards inverse
+         disabled  = { },
+         primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = gui.palette.dark.prime, stroke = gui.palette.dark.prime },
-            highlight = { fill = gui.palette.dark.contrast },
-            focus     = { stroke = gui.palette.dark.text, strokeWidth = gui.sizing.widget.edgeWidth * 2 },
+            highlight = { fill = gui.palette.dark.contrast, stroke = gui.palette.dark.edge },
+            focus     = { stroke = gui.palette.dark.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
             text      = { fill = gui.palette.dark.altText }
          }
       },
@@ -2386,7 +2391,7 @@ gui.themes = <table{ linkThemes({
          disabled = { opacity = 0.5 }
       },
       menubar = {
-         bkgd      = { fill = 'rgb(0 0 0 / .5)' },
+         bkgd      = { fill = gui.palette.dark.shade },
          text      = { fill = gui.palette.dark.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
          highlight = { fill = gui.palette.dark.contrast }
          focus     = { fill = gui.palette.dark.contrast }
@@ -2401,30 +2406,30 @@ gui.themes = <table{ linkThemes({
       },
       slider = {
          bkgd          = { fill = gui.palette.dark.mid, stroke = gui.palette.dark.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
-         fore          = { fill = gui.palette.dark.inverse, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
+         fore          = { fill = gui.palette.dark.handle, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
          foreHighlight = { fill = gui.palette.dark.contrast, opacity = 1 },
-         foreFocus     = { stroke = gui.palette.dark.contrast, strokeWidth = 2 },
+         foreFocus     = { stroke = gui.palette.dark.contrast, strokeWidth = gui.sizing.widget.edgeWidth },
          text          = { fill = gui.palette.dark.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
          tick          = { stroke = gui.palette.dark.text, strokeWidth = 1, opacity = 0.6 },
          disabled      = { opacity = 0.5 }
       },
       scrollbar_v = {
          bkgd          = { fill = gui.palette.dark.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = f'{gui.palette.dark.inverse};url(#dark_vslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         fore          = { fill = f'{gui.palette.dark.handle};url(#dark_vslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
          foreHighlight = { fill = f'{gui.palette.dark.contrast};url(#dark_vslider)', opacity = 1 },
-         thickness     = gui.pixel('18dp')
+         thickness     = gui.rpixel('18dp')
       },
       scrollbar_h = {
          bkgd          = { fill = gui.palette.dark.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = f'{gui.palette.dark.inverse};url(#dark_hslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         fore          = { fill = f'{gui.palette.dark.handle};url(#dark_hslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
          foreHighlight = { fill = f'{gui.palette.dark.contrast};url(#dark_hslider)', opacity = 1 },
-         thickness     = gui.pixel('18dp')
+         thickness     = gui.rpixel('18dp')
       },
       toolbar = {
          bkgd          = { fill = gui.palette.dark.bkgd },
          groupBorder   = { stroke = gui.palette.dark.edge, strokeWidth = gui.pixel('1.5pt') },
          highlight     = { fill = gui.palette.dark.contrast },
-         iconSize      = gui.pixel('16pt'),
+         iconSize      = gui.rpixel('16pt'),
          icon          = iconTheme('fill(pearl)'),
          iconHighlight = iconTheme('fill(pearl)')
       },
@@ -2451,7 +2456,7 @@ gui.themes = <table{ linkThemes({
          },
          border = {
             stroke      = gui.palette.light.mid,
-            strokeWidth = 2
+            strokeWidth = gui.pixel('1.5dp')
          },
          borderFocus = {
             stroke = gui.palette.light.contrast,
@@ -2475,13 +2480,13 @@ gui.themes = <table{ linkThemes({
       button = {
          bkgd      = { fill = gui.palette.light.inverse, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
          highlight = { fill = gui.palette.light.contrast },
-         focus     = { stroke = gui.palette.light.contrast },
+         focus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
          text      = { fill = gui.palette.light.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
-         disabled  = { opacity = 0.5 },
-         primary   = { -- Overrides for buttons created with the primary option; hover moves prime towards inverse
+         disabled  = { },
+         primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = gui.palette.light.prime, stroke = gui.palette.light.edge },
-            highlight = { fill = gui.palette.light.contrast },
-            focus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 2 },
+            highlight = { fill = gui.palette.light.contrast, stroke = gui.palette.light.edge },
+            focus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
             text      = { fill = gui.palette.light.altText }
          }
       },
@@ -2520,24 +2525,24 @@ gui.themes = <table{ linkThemes({
       },
       slider = {
          bkgd          = { fill = gui.palette.light.mid, stroke = gui.palette.light.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
-         fore          = { fill = gui.palette.light.inverse, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
+         fore          = { fill = gui.palette.light.handle, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
          foreHighlight = { fill = gui.palette.light.contrast, opacity = 1 },
-         foreFocus     = { stroke = gui.palette.light.contrast, strokeWidth = 2 },
+         foreFocus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth },
          tick          = { stroke = gui.palette.light.text, strokeWidth = 1, opacity = 0.6 },
          text          = { fill = gui.palette.light.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
          disabled      = { opacity = 0.5 }
       },
       scrollbar = {
          bkgd          = { fill = gui.palette.light.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = gui.palette.light.inverse, stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         fore          = { fill = gui.palette.light.handle, stroke = 'none', opacity = 0.75, strokeWidth = 2 },
          foreHighlight = { fill = gui.palette.light.contrast, opacity = 1 },
-         thickness     = gui.pixel('12dp')
+         thickness     = gui.rpixel('18dp')
       },
       toolbar = {
          bkgd          = { fill = gui.palette.light.bkgd },
          groupBorder   = { stroke = gui.palette.light.inverse, strokeWidth = gui.pixel('1.5pt') },
          highlight     = { fill = gui.palette.light.contrast },
-         iconSize      = gui.pixel('16pt'),
+         iconSize      = gui.rpixel('16pt'),
          icon          = iconTheme('fill(carbon)'),
          iconHighlight = iconTheme('fill(pearl)')
       },

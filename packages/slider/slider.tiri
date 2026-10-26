@@ -794,7 +794,7 @@ gui.slider = function(Options:table!)
          &prvPlaceSlider(Width, Height)
       end
 
-      GAP <const> = &prvTheme.bkgd.strokeWidth
+      GAP <const> = math.ceil(&prvTheme.bkgd.strokeWidth) -- Whole pixels keep the thumb edges sharp
       -- Reduce each inset independently to leave at least one pixel, or the full dimension for subpixel thumbs.
       x_gap = math.min(GAP, math.max(0, (&thumbVP.width - 1) * 0.5))
       y_gap = math.min(GAP, math.max(0, (&thumbVP.height - 1) * 0.5))

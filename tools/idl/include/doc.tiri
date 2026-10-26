@@ -84,8 +84,8 @@ setAction('Clear', {
 
 setAction('Clipboard', {
    comment   = 'Copy and paste information to and from clipboard objects.',
-   prototype = 'ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)',
-   tiriPrototype = 'err = Object.acClipboard(Clipboard:obj, Mode:CLIPMODE)'
+   prototype = 'ERR acClipboard(*Object, CLIPMODE Mode)',
+   tiriPrototype = 'err = Object.acClipboard(Mode:CLIPMODE)'
    params    = {
       { name='Mode', type='CLIPMODE', lookup='CLIPMODE', comment='The mode that will be used to shift data between the target object and clipboard system.' }
    }

@@ -1301,7 +1301,7 @@ end
 end
 
 @Test function ShortThumbsKeepDrawableForeground()
-   local default_gap = gui.sizing.widget.edgeWidth -- The theme's slider inset
+   local default_gap = math.ceil(gui.sizing.widget.edgeWidth) -- The theme's slider inset, in whole pixels
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
       for gap in values(array<int> { default_gap, 6 }) do
          for size in values(array<double> { 0.5, 1, 2, 4, 5, 8, 18 }) do

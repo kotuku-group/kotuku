@@ -5,7 +5,7 @@ A demonstration of standard widgets
 
    import 'gui', 'gui/toolbar', 'gui/menubar', 'gui/colourdialog', 'gui/fontdialog'
    import 'gui/dialog', 'gui/filedialog', 'gui/icon', 'gui/input', 'gui/button'
-   import 'gui/toggle', 'gui/combobox', 'gui/slider', 'gui/window', 'vfx'
+   import 'gui/toggle', 'gui/combobox', 'gui/slider', 'gui/window', 'vfx', 'json'
 
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
@@ -200,7 +200,7 @@ end
 
    popupMenu = gui.menu({
       --target = win.surface,
-      theme  = win.theme.menu,
+      theme  = win.theme,
       x      = 30,
       y      = 50,
       popup  = true,
@@ -254,6 +254,7 @@ end
       label  = 'Message Box',
       x      = win.margins.left,
       y      = y,
+      disabled = true,
       icon   = 'items/question',
       events = {
          activate = function()
@@ -322,8 +323,8 @@ end
       events = {
          activate = function()
             gui.dialog.font({
-               modal      = true,
-               popOver    = win.surface,
+               modal    = true,
+               popOver  = win.surface,
                feedback = function(Accepted)
                   if not Accepted then
                      print('Dialog was cancelled.')
@@ -380,6 +381,11 @@ end
       y      = y,
       events = {
          activate = function()
+            if &value?? then
+               msgButton.enable()
+            else
+               msgButton.disable()
+            end
          end,
          focus = widgetFocus
       }
