@@ -32,7 +32,7 @@ function itemMenu(Item:table!):table
          y         = &viewport.height - 2,
          items     = Item.menuItems,
          prepare   = Item.prepare,
-         theme     = &theme.menu
+         theme     = { menu = &menuTheme }
       })
       Item.menu = menu
    end
@@ -220,7 +220,7 @@ function arrangeItems()
       item.x        = x
       item.y        = y
       item.width    = ICON_SIZE + (VMARGIN * 2)
-      item.height   = ICON_SIZE + (VMARGIN * 2)
+      item.height   = &viewport.height
       item.gfxWidth = item.width
 
       iconWidth = 0
@@ -242,7 +242,11 @@ function arrangeItems()
          err, bx, by, bw, bh = item.vectorText.mtGetBoundary(0)
          item.gfxWidth = iconWidth + bw + (VMARGIN * 2)
          item.width = item.gfxWidth + GAP
-         item.vectorText.y = math.floor((&viewport.height + item.vectorText.displaySize) * 0.5)
+         if &_customFont then
+            item.vectorText.y = math.floor((&viewport.height - bh) * 0.5 - by)
+         else
+            item.vectorText.y = math.floor((&viewport.height + item.vectorText.displaySize) * 0.5)
+         end
 
          item.vectorText.opacity = (&_disabled or item.disabled) ? 0.5 : 1
       else
@@ -392,7 +396,12 @@ gui.menubar = function(Options:table)
       try
          assert(Options.target, 'A target viewport is required.')
 
-         &theme = gui.getTheme(Options.target).menubar
+         base_theme = gui.getTheme(Options.target)
+         &theme = table.merge(base_theme.menubar, Options.theme?.menubar, true, true)
+         &menuTheme = table.merge(base_theme.menu, Options.theme?.menu, true, true)
+         &_customFont = &theme.text.face != base_theme.menubar.text.face or
+            &theme.text.fontSize != base_theme.menubar.text.fontSize or
+            &theme.text.fontStyle != base_theme.menubar.text.fontStyle
          &viewport = Options.target.new('vectorviewport')
          &viewport.x      = Options.x ?? 0
          &viewport.y      = Options.y ?? 0
@@ -549,6 +558,10 @@ gui.menubar = function(Options:table)
          Options.createItems(&&)
 
          &viewport.height = ICON_SIZE + (VMARGIN * 2)
+         if &_customFont then
+            spacing = gui.getFontHeight(&theme.text, false)
+            &viewport.height = math.max(&viewport.height, math.ceil(spacing + (VMARGIN * 2)))
+         end
 
          &_bkgd.new('VectorRectangle', table.merge({ -- Main background
             fill = 'none', x = 0, y = 0, width  = '100%', height = &viewport.height

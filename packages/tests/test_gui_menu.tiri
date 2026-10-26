@@ -20,6 +20,114 @@ function newTarget():<obj, obj>
    return surface, viewport
 end
 
+@Test function SectionedThemesStyleMenusAndMenubarsWithoutLeaking()
+   for name in values(array<str> { 'light', 'dark' }) do
+      local surface <close>, target = newTarget()
+      gui.setTheme(target.scene, name)
+      local base = gui.themes[name]
+      local base_fill = base.menu.text.fill
+      local base_bar_fill = base.menubar.text.fill
+      local overrides = {
+         menubar={ text={ fill='#abcdef' }, bkgd={ fill='#182332' },
+            highlight={ fill='#355c7d' }, focus={ fill='#487da8' } },
+         menu={ text={ fill='#fedcba' }, bkgd={ fill='#202e40' },
+            border={ stroke='#7994ad', opacity=0.75 }, highlight={ fill='#654321' }, icon='fill(pearl)' }
+      }
+      local bar = gui.menubar({ target=target, theme=overrides, createItems=function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table> { { label='Open' } })
+      end })
+      local icon_item = { label='Copy', icon='items/file_new' }
+      local menu = gui.menu({ target=surface, relative=target, theme=overrides,
+         items=array<table> { icon_item } })
+      defer menu.surface?.free() end
+
+      assert(bar._lookup.file.vectorText.fill is '#abcdef' and bar._bkgd.child.fill is '#182332',
+         'The menubar must read its own theme section')
+      assert(bar._highlight.fill is '#355c7d' and bar._focusEdge.fill is '#487da8',
+         'Menubar highlight and focus overrides must reach the vectors')
+      assert(menu._rows[0].text.fill is '#fedcba' and menu.content.child.fill is '#202e40',
+         'A standalone menu must read the menu section of the same table')
+      assert(menu.highlight.fill is '#654321' and menu.highlight.next.stroke is '#7994ad' and
+         menu.highlight.next.opacity is 0.75, 'Menu highlight and border overrides must reach the vectors')
+      assert(icon_item.iconView, 'Custom menu icons must render')
+      local spacing = gui.getFontHeight(gui.fonts.menu)
+      local icon_size = math.floor(math.floor(spacing * 1.5) * 0.8)
+      local expected_icon = gui.createIcon(menu.viewport.scene, icon_item.icon, icon_size, overrides.menu.icon)
+      assert(icon_item.iconView.fill is expected_icon.fill, 'Menu icons must use the supplied icon theme')
+      assert(not overrides.menu.text.face and not overrides.menubar.text.face,
+         'Resolving defaults must not modify caller tables')
+      assert(base.menu.text.fill is base_fill and base.menubar.text.fill is base_bar_fill,
+         'Customisation must not modify either shared theme section')
+      overrides.menu.text.fill = '#123456'
+      overrides.menubar.text.fill = '#123456'
+      assert(menu._rows[0].text.fill is '#fedcba' and bar._lookup.file.vectorText.fill is '#abcdef',
+         'Later changes to caller tables must not restyle existing widgets')
+
+      local plain = gui.menu({ target=surface, relative=target, items=array<table> { { label='Plain' } } })
+      defer plain.surface?.free() end
+      local plain_bar = gui.menubar({ target=target, createItems=function(Bar)
+         Bar.addItem('plain', 'Plain', nil, nil)
+      end })
+      assert(menu._rows[0].text.face is plain._rows[0].text.face and
+         menu._rows[0].text.fontSize is plain._rows[0].text.fontSize,
+         'Unspecified text defaults must survive the merge')
+      assert(plain._rows[0].text.fill is base_fill and plain_bar._lookup.plain.vectorText.fill is base_bar_fill,
+         'Subsequent widgets must retain the window theme')
+   end
+end
+
+@Test function MenuThemeSurvivesMenubarPreparationAndNestedRebuilds()
+   local surface <close>, target = newTarget()
+   local calls = 0
+   local bar = gui.menubar({ target=target,
+      theme={ menubar={ text={ fill='#abcdef' } }, menu={ text={ fill='#fedcba' } } },
+      createItems=function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table>, function(Items)
+            calls++
+            &items = array<table> { { label='Parent', items=array<table> { { label=f'Child {calls}' } } } }
+         end)
+      end
+   })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   local menu = bar._lookup.file.menu
+   assert(menu._rows[0].text.fill is '#fedcba', 'Dropdowns must use the sibling menu section')
+   menu.selectItem(0)
+   assert(menu.currentMenu._rows[0].text.fill is '#fedcba', 'Nested menus must inherit dropdown overrides')
+   menu.hide()
+   menu.show()
+   menu.selectItem(0)
+   assert(calls is 2 and menu.currentMenu._rows[0].text.string is 'Child 2' and
+      menu.currentMenu._rows[0].text.fill is '#fedcba', 'Prepared replacement items must keep the menu theme')
+end
+
+@Test function CustomMenuFontsExpandGeometryAndHitRegions()
+   local surface <close>, target = newTarget()
+   local overrides = { menubar={ text={ fontSize='30pt' } }, menu={ text={ fontSize='30pt' } } }
+   local bar = gui.menubar({ target=target, theme=overrides, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil)
+   end })
+   local item = bar._lookup.file
+   local _, _, by, _, bh = item.vectorText.mtGetBoundary(0)
+   assert(by >= 0 and by + bh <= bar.viewport.height and item.height is bar.viewport.height,
+      'Custom menubar fonts and hit regions must fit the viewport')
+   local menu = gui.menu({ target=surface, relative=target, theme=overrides,
+      items=array<table> { { label='Large text', key='L' }, { label='Second' } } })
+   defer menu.surface?.free() end
+   local first = menu._rows[0]
+   local _, _, text_y, _, text_height = first.text.mtGetBoundary(0)
+   assert(text_y >= first.y and text_y + text_height <= first.y + first.height,
+      'Custom menu text must fit its row')
+   local _, _, key_y, _, key_height = first.keyText.mtGetBoundary(0)
+   assert(key_y >= first.y and key_y + key_height <= first.y + first.height,
+      'Shortcut text must fit the same row')
+   assert(menu._rows[1].y >= first.y + first.height and menu.selectItem(1) and
+      menu.highlight.height is menu._rows[1].height, 'Rows and selection highlights must use the custom font geometry')
+end
+
 @Test function MenuRejectsDisabledItemsAndOpensSubmenus()
    local surface <close>, target = newTarget()
    local menu = gui.menu({

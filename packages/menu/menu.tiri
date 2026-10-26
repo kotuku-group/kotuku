@@ -22,11 +22,7 @@ the first enabled item in menu order.  Shortcut activation callbacks receive the
 
    module display as mGfx
 
-FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.menu)
-ITEM_HEIGHT  <const> = math.floor(FONT_MAX_HEIGHT * 1.5)
-VMARGIN      <const> = math.floor(ITEM_HEIGHT * 0.33)
 HMARGIN      <const> = 6
-ICON_SIZE    <const> = math.floor(ITEM_HEIGHT * 0.8)
 KB_HIGHLIGHT <const> = 'rgb(0 0 0 / .5)'
 ICON_STRIP   <const> = 'rgb(255 255 255 / .15)'
 
@@ -132,7 +128,16 @@ gui.menu = function(Options:table!)
 
    MARGIN <const> = gui.sizing.widget.margin
 
-   theme = table.merge(gui.themes[theme_name].menu, Options.theme, true, true)
+   theme = table.merge(gui.themes[theme_name].menu, Options.theme?.menu, true, true)
+
+   base_text = gui.themes[theme_name].menu.text
+   custom_font = theme.text.face != base_text.face or theme.text.fontSize != base_text.fontSize or
+      theme.text.fontStyle != base_text.fontStyle
+   -- Preserve the default geometry; custom fonts use the renderer's resolved units.
+   font_spacing = gui.getFontHeight(custom_font ? theme.text : gui.fonts.menu, false)
+   item_height <const> = math.floor(font_spacing * 1.5)
+   vmargin <const> = math.floor(item_height * 0.33)
+   icon_size <const> = math.floor(item_height * 0.8)
 
    self = entity { -- Public interface
       surface     = nil,
@@ -200,7 +205,7 @@ gui.menu = function(Options:table!)
          end
 
          icon_x = HMARGIN
-         TEXT_X = icon_x + (icons_present ? ICON_SIZE + HMARGIN + HMARGIN : 0)
+         TEXT_X = icon_x + (icons_present ? icon_size + HMARGIN + HMARGIN : 0)
 
          -- Clients can use the hostScene option to gain access to external fills via url()
 
@@ -213,7 +218,7 @@ gui.menu = function(Options:table!)
          }, theme.bkgd))
 
          &highlight = &content.new('VectorRectangle', table.merge({ -- Item highlighting
-            x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT,
+            x = 2, y = 0, xOffset = 2, height = item_height,
             fill = theme.highlight, visibility = 'hidden'
          }, theme.highlight))
 
@@ -229,7 +234,7 @@ gui.menu = function(Options:table!)
          &_rows = array<table>
          widestItem = 0
          widestKey = 0
-         y = VMARGIN
+         y = vmargin
          for source in values(&items) do
             item = source.menu ?? source
             if source.menu then item.icon ?= source.icon end
@@ -255,11 +260,11 @@ gui.menu = function(Options:table!)
 
                if showIcons and item['icon'] then
                   try
-                     info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, ICON_SIZE, theme.icon)
+                     info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, icon_size, theme.icon)
 
                      item.iconView = &content.new('VectorRectangle', {
-                        x = icon_x - info.margin, y = y + math.floor((ITEM_HEIGHT - ICON_SIZE) * 0.5) - info.margin,
-                        width = ICON_SIZE + (info.margin * 2), height = ICON_SIZE + (info.margin * 2), fill = info.fill
+                        x = icon_x - info.margin, y = y + math.floor((item_height - icon_size) * 0.5) - info.margin,
+                        width = icon_size + (info.margin * 2), height = icon_size + (info.margin * 2), fill = info.fill
                      })
                   end
                end
@@ -273,8 +278,8 @@ gui.menu = function(Options:table!)
                   end
 
                   kb_highlight = &content.new('VectorRectangle', {
-                     fill = KB_HIGHLIGHT, xOffset = HMARGIN, y = y + 2, width = 1, height = ITEM_HEIGHT - 4,
-                     roundX = ITEM_HEIGHT * 0.5, roundY = ITEM_HEIGHT * 0.5
+                     fill = KB_HIGHLIGHT, xOffset = HMARGIN, y = y + 2, width = 1, height = item_height - 4,
+                     roundX = item_height * 0.5, roundY = item_height * 0.5
                   })
 
                   vKey = &content.new('VectorText', table.merge({
@@ -311,12 +316,12 @@ gui.menu = function(Options:table!)
                end
 
                vText.y = mi.textY
-               mi.height = ITEM_HEIGHT
+               mi.height = item_height
                y = math.ceil(y + mi.height)
 
                &_rows.push(mi)
             elseif source.group then
-               mi = { y = y, height = ITEM_HEIGHT, config = source, lineBreak = true }
+               mi = { y = y, height = item_height, config = source, lineBreak = true }
 
                group_text = &content.new('VectorText', table.merge({
                   x         = 0,
@@ -332,40 +337,40 @@ gui.menu = function(Options:table!)
 
                _, bx, by, bw, bh = group_text.mtGetBoundary(0)
 
-               group_text.y = y + (ITEM_HEIGHT - bh) * 0.5 - by
+               group_text.y = y + (item_height - bh) * 0.5 - by
                mi.text = group_text
                mi.textWidth = bw
                if bw > widestItem then widestItem = bw end
-               y += ITEM_HEIGHT
+               y += item_height
                &_rows.push(mi)
             end
          end
 
-         check_column = checks_present ? ICON_SIZE + HMARGIN : 0
+         check_column = checks_present ? icon_size + HMARGIN : 0
          check_x = TEXT_X + widestItem + HMARGIN * 4
          width = TEXT_X + widestItem + (HMARGIN * 6) + check_column + widestKey + HMARGIN
 
          &surface.width  = width
-         &surface.height = y + VMARGIN
+         &surface.height = y + vmargin
 
          for item in values(&_rows) do
             if not item.lineBreak and item.config.checkable and not item.submenuConfig then
-               check_y = item.y + (ITEM_HEIGHT - ICON_SIZE) * 0.5
+               check_y = item.y + (item_height - icon_size) * 0.5
 
                -- Checkmark icon
                item.checkmark = &content.new('VectorPath', {
                   stroke = theme.text?.fill ?? 'white', strokeWidth = 2, fill = 'none',
                   visibility = item.config.checked ? 'visible' : 'hidden',
                   sequence = string.format('M%f,%f L%f,%f L%f,%f',
-                     check_x + ICON_SIZE * 0.15, check_y + ICON_SIZE * 0.5,
-                     check_x + ICON_SIZE * 0.4, check_y + ICON_SIZE * 0.75,
-                     check_x + ICON_SIZE * 0.85, check_y + ICON_SIZE * 0.2)
+                     check_x + icon_size * 0.15, check_y + icon_size * 0.5,
+                     check_x + icon_size * 0.4, check_y + icon_size * 0.75,
+                     check_x + icon_size * 0.85, check_y + icon_size * 0.2)
                })
             end
 
             if item.lineBreak then
                item.text.x = width * 0.5
-               line_y      = math.floor(item.y + ITEM_HEIGHT * 0.5) + 0.5
+               line_y      = math.floor(item.y + item_height * 0.5) + 0.5
                line_end    = (width - item.textWidth) * 0.5 - HMARGIN
                &content.new('VectorPath', {
                   stroke = theme.text?.fill ?? 'white', strokeWidth = 1, opacity = 0.35,
@@ -536,7 +541,7 @@ gui.menu = function(Options:table!)
 
             x = parent.absX - target.absX + parent.width - MARGIN
             parent_item = &parentItem
-            y = parent.absY - target.absY + (parent_item?.y ?? 0) - VMARGIN
+            y = parent.absY - target.absY + (parent_item?.y ?? 0) - vmargin
             if x + surface.width > target.width then
                x = parent.absX - target.absX - surface.width + MARGIN
                &reverseX = true
@@ -636,7 +641,7 @@ gui.menu = function(Options:table!)
             items        = Item.submenuConfig,
             prepare      = Item.config.prepare,
             showIcons    = Options.showIcons,
-            theme        = theme,
+            theme        = { menu = theme },
             events       = &events,
             hostScene    = Options.hostScene
          })
