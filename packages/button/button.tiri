@@ -267,6 +267,7 @@ gui.button = function(Options)
          Viewport.acDraw()
       end)
 
+      if Options.disabled then &disable() end
       &events.show?(&&)
 
       return &&

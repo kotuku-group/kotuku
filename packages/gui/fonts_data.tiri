@@ -27,10 +27,10 @@ gui.fonts = scaledFonts({
    -- All sizes are scaled to gui.interface.dpi on first access
    default  = { face='Noto Sans,Source Sans Pro', size='100%' },
    window   = { face='Noto Sans,Source Sans Pro', size='100%' }, -- For non-widget text
-   button   = { face='Noto Sans,Source Sans Pro', size=12 }, -- Text inside buttons
+   button   = { face='Noto Sans,Source Sans Pro', size=11 }, -- Text inside buttons
    filesys  = { face='Inconsolata', size=12 }, -- Text for files, folders
    icon     = { face='Noto Sans,Source Sans Pro', size='100%' }, -- Labeling for icons
-   menu     = { face='Noto Sans,Source Sans Pro', size=12 }, -- Menu & dropdown item text
+   menu     = { face='Noto Sans,Source Sans Pro', size=10 }, -- Menu & dropdown item text
    page     = { face='Noto Sans,Source Sans Pro', size=12 }, -- Multiple lines of text
    titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text
    small    = { face='Noto Sans,Source Sans Pro', size=9 }, -- Recommended text for small sizes
