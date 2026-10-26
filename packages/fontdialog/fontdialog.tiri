@@ -56,8 +56,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          end
          &guidelines.sequence = seq
 
-         &exampleText.inlineSize = x2 - x1
-         &exampleText.x = gap
+         &exampleText.{ inlineSize = x2 - x1, x = gap }
       else
          &guidelines.sequence = 'M-1,-1 Z'
       end
@@ -191,16 +190,17 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
       footer = &window.margins.bottom
 
-      cancel = gui.button({
+      okay = gui.button({
          target  = &viewport,
-         label   = 'Cancel',
+         label   = 'OK',
          xOffset = gui.sizing.widget.gap,
          yOffset = footer,
-         icon    = 'items/cancel',
-         events = {
+         icon    = 'items/checkmark',
+         primary = true,
+         events  = {
             activate = function()
                using self do
-                  if &feedback then &feedback(false) end
+                  &feedback?(true)
                   &window = nil
                   processing.collect('defer')
                end
@@ -208,16 +208,16 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          }
       })
 
-      okay = gui.button({
+      cancel = gui.button({
          target  = &viewport,
-         label   = 'OK',
-         xOffset = cancel.viewport.width + (gui.sizing.widget.gap * 2),
+         label   = 'Cancel',
+         xOffset = okay.viewport.width + (gui.sizing.widget.gap * 2),
          yOffset = footer,
-         icon    = 'items/checkmark',
-         events = {
+         icon    = 'items/cancel',
+         events  = {
             activate = function()
                using self do
-                  if &feedback then &feedback(true) end
+                  &feedback?(false)
                   &window = nil
                   processing.collect('defer')
                end

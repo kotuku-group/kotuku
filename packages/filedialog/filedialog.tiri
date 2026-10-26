@@ -156,10 +156,22 @@ gui.dialog.file = function(Options)
 
    footer = self.window.margins.bottom
 
+   lOkayButton = gui.button({
+      target  = self.viewport,
+      label   = Options.okLabel ?? 'Okay',
+      xOffset = GAP,
+      yOffset = footer,
+      icon    = 'items/checkmark',
+      primary = true,
+      events  = {
+         activate = processFeedback
+      }
+   })
+
    lCancelButton = gui.button({
       target  = self.viewport,
       label   = Options.cancelLabel ?? 'Cancel',
-      xOffset = GAP,
+      xOffset = lOkayButton.viewport.width + (GAP * 2),
       yOffset = footer,
       icon    = 'items/cancel',
       events = {
@@ -170,17 +182,6 @@ gui.dialog.file = function(Options)
             closeDialog()
             processing.collect()
          end
-      }
-   })
-
-   lOkayButton = gui.button({
-      target  = self.viewport,
-      label   = Options.okLabel ?? 'Okay',
-      xOffset = lCancelButton.viewport.width + (GAP * 2),
-      yOffset = footer,
-      icon    = 'items/checkmark',
-      events  = {
-         activate = processFeedback
       }
    })
 
