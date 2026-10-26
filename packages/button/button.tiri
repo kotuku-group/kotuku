@@ -13,7 +13,7 @@ DEFAULT_HEIGHT <const> = math.floor(LINE_SPACING * 1.75) + 1
 TIP_DELAY <const> = 0.75 -- Seconds that the pointer must rest on the button before its tip is shown, as for toolbars
 
 gui.button = function(Options)
-   self = entity { -- Public variables
+   self = entity { -- Public interface
       events         = Options.events ?? { },
       parentViewport = Options.target,
       pulse          = Options.pulse ?? false, -- If true, activate on press and repeatedly while the button is held
@@ -120,16 +120,18 @@ gui.button = function(Options)
          &clicked = false
          cancelTip()
          &viewport.acDisable()
+         &viewport.opacity = 0.5
          refreshStyle()
-         &events.disable?(self)
+         &events.disable?(&&)
          &viewport.acDraw()
       end
 
       &enable = function()
          &disabled = false
          &viewport.acEnable()
+         &viewport.opacity = 1
          refreshStyle()
-         &events.enable?(self)
+         &events.enable?(&&)
          &viewport.acDraw()
       end
 
@@ -230,10 +232,10 @@ gui.button = function(Options)
       &viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function[&&](Viewport:obj!, Event)
          if Event is FM_LOST_FOCUS then
             &hasFocus = false
-            &events.lostFocus?(self)
+            &events.lostFocus?(&&)
          elseif not &disabled then
             &hasFocus = true
-            &events.focus?(self)
+            &events.focus?(&&)
          end
 
          refreshStyle()
@@ -245,7 +247,7 @@ gui.button = function(Options)
          if &disabled or not (Qualifiers has KQ_PRESSED) then return end
 
          if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
-            &events.activate?(self)
+            &events.activate?(&&)
          end
       end)
 
@@ -254,13 +256,12 @@ gui.button = function(Options)
             if Msg.type is JET_CROSSED_IN then
                &_hover = true
                refreshStyle()
-               startTip()
-               &events.cursorEntry?(self)
+               &events.cursorEntry?(&&)
             elseif Msg.type is JET_CROSSED_OUT then
                &_hover = false
                cancelTip()
                refreshStyle()
-               &events.cursorExit?(self)
+               &events.cursorExit?(&&)
             elseif Msg.type is JET_LMB then
                cancelTip()
                if &disabled then
@@ -270,14 +271,14 @@ gui.button = function(Options)
                   -- initial press and on each repeat while the button is held.
                   if &pulse then
                      &clicked = false
-                     &events.activate?(self)
+                     &events.activate?(&&)
                   elseif not (Msg.flags has JTYPE_REPEATED) then
                      &&.{ clicked = true, clickX = Msg.x, clickY = Msg.y }
                   end
                elseif &clicked then
                   &clicked = false
                   if (math.abs(Msg.x - &clickX) < 4) and (math.abs(Msg.y - &clickY) < 4) then
-                     &events.activate?(self)
+                     &events.activate?(&&)
                   end
                end
             end
@@ -287,8 +288,8 @@ gui.button = function(Options)
          Viewport.acDraw()
       end)
 
-      &events.show?(self)
+      &events.show?(&&)
 
-      return self
+      return &&
    end
 end
