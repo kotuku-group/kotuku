@@ -228,12 +228,40 @@
     </field>
 
     <field>
+      <name>DragDatatypes</name>
+      <comment>The datatypes offered by the current drag operation.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>When a drag-and-drop operation is active, this field returns the datatypes that the source can provide, expressed as a sequence of numeric <code>DATA</code> values with one byte per type, e.g. <code>DATA::FILE</code>.  The sequence is in the source's order of preference and is limited to eight entries.  At all other times the string is empty.</p>
+<p>Destinations can test this field while the pointer hovers over them to decide whether to accept the drop, without requesting any data from the source.  The data itself is only retrieved after the drop is delivered.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>DragFeedback</name>
+      <comment>Destination feedback for the current drag operation.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>INT</type>
+      <description>
+<p>While a drag-and-drop operation is active, the destination under the pointer can set this field to indicate whether it will accept the drop.  It is typically written in response to <code>JTYPE::DRAG_ITEM</code> input events, or during delivery of the <action>DragDrop</action> action.  The supported values are:</p>
+<types type="Value">
+<type name="-1">Acceptance is unspecified.  This is the default, and it applies to recipients that do not provide feedback.  The drop is delivered and treated as accepted.</type>
+<type name="0">The destination rejects the drop.</type>
+<type name="1">The destination accepts the drop as a copy operation.</type>
+</types>
+<p>The value is reset to <code>-1</code> when a drag starts, on each pointer movement during the drag, and when the session ends. When a drop is reported as rejected, the drag source is notified with <code>ERR::Cancelled</code>.  For drops originating from the host platform, the value determines the drop effect reported to the host, e.g. <code>DROPEFFECT_COPY</code> or <code>DROPEFFECT_NONE</code> on Windows.</p>
+<p>Acceptance means that the destination has accepted the payload for processing.  It does not confirm the completion of any resulting file operation, which the recipient is responsible for reporting separately.</p>
+      </description>
+    </field>
+
+    <field>
       <name>DragItem</name>
       <comment>The currently dragged item, as defined by <function module="Display">StartCursorDrag</function>.</comment>
       <access read="R">Read</access>
       <type>INT</type>
       <description>
-<p>When a drag-and-drop operation is active, this field contains the custom item number supplied to <function module="Display">StartCursorDrag</function>. At all other times it is zero.</p>
+<p>When a drag-and-drop operation is active, this field contains the custom item number supplied to <function module="Display">StartCursorDrag</function>. For drops originating from the host platform, the value is <code>-1</code>.  At all other times it is zero.</p>
       </description>
     </field>
 
@@ -243,7 +271,7 @@
       <access read="R">Read</access>
       <type>OBJECTID</type>
       <description>
-<p>When a drag-and-drop operation is active, this field refers to the object managing the source data.  At all other times it is zero.</p>
+<p>When a drag-and-drop operation is active, this field refers to the object managing the source data.  For drops originating from the host platform, it refers to the Display object that receives the host's data offer.  At all other times it is zero.</p>
 <p>Item dragging is managed by <function module="Display">StartCursorDrag</function>.</p>
       </description>
     </field>

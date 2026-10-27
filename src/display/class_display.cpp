@@ -33,6 +33,7 @@ static ERR DISPLAY_Resize(extDisplay *, struct acResize *);
 
 static void alloc_display_buffer(extDisplay *Self);
 static void apply_window_icon(extDisplay *Self);
+static std::string escape_xml_attrib(std::string_view Value);
 
 
 
@@ -169,10 +170,10 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
          xml << "<receipt totalitems=\"" << total_items << "\" id=\"" << request.Item << "\">";
          for (int i=0; i < total_items; i++) {
             if (DATA(data[i].Datatype) IS DATA::FILE) {
-               xml << "<file path=\"" << (CSTRING)data[i].Data << "\"/>";
+               xml << "<file path=\"" << escape_xml_attrib((CSTRING)data[i].Data) << "\"/>";
             }
             else if (DATA(data[i].Datatype) IS DATA::TEXT) {
-               xml << "<text>" << (CSTRING)data[i].Data << "</text>";
+               xml << "<text>" << escape_xml_attrib((CSTRING)data[i].Data) << "</text>";
             }
             //else TODO: other types like images need their data saved to disk and referenced as a path, e.g. <image path="clipboard:abc.001"/>
          }

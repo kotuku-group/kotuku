@@ -581,6 +581,7 @@ module({
     int    DragItem        # If drag & drop is active, refers to the custom ID of the item being dragged
     oid    OverObject      # Object positioned under the pointer
     int    ClickSlop       # Leniency value for determining whether the user intended to make a click or drag.
+    int    DragFeedback    # Destination feedback: -1 unspecified, 0 rejected, 1 copy accepted.
   ]])
 
   methods('surface', 'Drw', {

@@ -350,6 +350,74 @@ function itemAtPoint(View:table!, X:num!, Y:num!):table
    end
 end
 
+-- Feedback is independent of ordinary hover/capture.  No data is requested until the actual drop.
+
+function clearDropFeedback(View:table!)
+   if View._dropTimer then
+      if not View._dropTick then mSys.UpdateTimer(View._dropTimer, 0) end
+      View._dropTimer = nil
+   end
+   if not View._dropActive then return end
+   View._dropActive = nil
+   View._dropOutline?.visibility = VIS_HIDDEN
+   highlightItem(View, nil)
+   mGfx.RestoreCursor(PTC_DEFAULT, View.frame.id)
+   View.events?.dragLeave(View, View._dropItem, View._dropInfo)
+   View._dropItem = nil
+   View._dropInfo = nil
+   View.viewport?.acDraw()
+end
+
+function updateDropFeedback(View:table!)
+   local pointer = obj.find('SystemPointer')
+   if not View.viewport or not pointer?.dragSource or View.scene.dropTarget?.id != View.frame.id then
+      clearDropFeedback(View)
+      return
+   end
+   local x = View.scene.dropX
+   local y = View.scene.dropY
+   local item = itemAtPoint(View, x - View.page.x, y - View.page.y)
+   local source = pointer.dragSource
+   local drop = {
+      source=source, item=pointer.dragItem, datatypes=pointer.dragDatatypes,
+      x=x - View.page.x, y=y - View.page.y, qualifiers=View.qualifiers, operation='copy',
+      session=(glDragSession and glDragSession._sourceID is source.id) ? glDragSession : nil
+   }
+   local accepted = not View.disabled and View.events?.dragDrop and
+      not (View.qualifiers has (KQ_SHIFT | KQ_ALT))
+   if accepted and View.events?.dragOver then accepted = View.events.dragOver(View, item, drop) is true end
+   View.viewport ?! return
+   pointer.dragFeedback = accepted ? 1 : 0
+   View._dropActive = true
+   View._dropItem = item
+   View._dropInfo = drop
+   View._dropOutline.visibility = accepted ? VIS_VISIBLE : VIS_HIDDEN
+   highlightItem(View, accepted ? item : nil)
+   mGfx.SetCursor(0, 0, accepted ? PTC_DEFAULT : PTC_STOP, '', View.frame.id)
+
+   -- OLE invokes feedback inside its nested message loop; scroll there as well as from the regular timer.
+   local now = mSys.PreciseTime()
+   if accepted and now - (View._dropScrollTime ?? 0) >= 50000 then
+      View._dropScrollTime = now
+      local dx = x < 18 ? 12 : (x > View.frame.width - 18 ? -12 : 0)
+      local dy = y < 18 ? 12 : (y > View.frame.height - 18 ? -12 : 0)
+      if View.scrollDirection is 'vertical' then dx = 0 end
+      if View.scrollDirection is 'horizontal' then dy = 0 end
+      if dx != 0 or dy != 0 then View.scrollbar.scrollPage(dx, dy) end
+   end
+   if not View._dropTimer then
+      local err
+      err, View._dropTimer = mSys.SubscribeTimer(0.05, function()
+         View._dropTick = true
+         updateDropFeedback(View)
+         View._dropTick = nil
+         if not View._dropActive then return ERR_Terminate end
+      end)
+   end
+   View.viewport.acDraw()
+end
+
+
 ----------------------------------------------------------------------------------------------------------------------
 
 gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
@@ -1044,19 +1112,23 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    -- pressed in another widget still apply to the first click here.
 
    vw._modifierKeyboard = input.keyboard(nil, function(Handle, SurfaceID, Qualifiers, Code, Unicode)
-      vw.qualifiers = Qualifiers & (KQ_SHIFT | KQ_CTRL)
+      vw.qualifiers = Qualifiers & (KQ_SHIFT | KQ_CTRL | KQ_ALT)
       if Qualifiers has KQ_RELEASED then
          if Code is KEY_L_SHIFT then vw.qualifiers = vw.qualifiers & ~KQ_L_SHIFT end
          if Code is KEY_R_SHIFT then vw.qualifiers = vw.qualifiers & ~KQ_R_SHIFT end
          if Code is KEY_L_CONTROL then vw.qualifiers = vw.qualifiers & ~KQ_L_CONTROL end
          if Code is KEY_R_CONTROL then vw.qualifiers = vw.qualifiers & ~KQ_R_CONTROL end
+         if Code is KEY_L_ALT then vw.qualifiers = vw.qualifiers & ~KQ_L_ALT end
+         if Code is KEY_R_ALT then vw.qualifiers = vw.qualifiers & ~KQ_R_ALT end
       end
+      if vw._dropActive then updateDropFeedback(vw) end
    end)
 
    -- If the view is destroyed by its parent rather than free(), client cleanup callbacks still run once for each row
    -- while the row viewports remain valid.  The graphics are released by the parent.
 
    vw.viewport.subscribe('free', function()
+      clearDropFeedback(vw)
       vw._modifierKeyboard?.unsubscribe()
       vw._modifierKeyboard = nil
       if vw._dragSession or vw._dragClipboard then
@@ -1128,6 +1200,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
          if ev.type is JET_CROSSED_IN then
             vw.cursorX = ev.x
             vw.cursorY = ev.y
+            cursorActivity()
             checkCursorImage(vw)
          elseif ev.type is JET_CROSSED_OUT then
             vw.cursorX = nil
@@ -1217,21 +1290,39 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
 
    if vw.dragDrop then
       vw.frame.dropTarget = 1
+      vw._dropOutline = vw.frame.new('VectorRectangle', {
+         x=1, y=1, xOffset=1, yOffset=1, fill='none', stroke='#4388dd', strokeWidth=2, visibility=VIS_HIDDEN
+      })
+      vw.frame.mtSubscribeInput(JTYPE_DRAG_ITEM, function(Frame, Events)
+         if Events.type is JET_CROSSED_OUT then clearDropFeedback(vw) else updateDropFeedback(vw) end
+      end)
       vw.frame.subscribe('DragDrop', function(Frame, Args)
          local handler = vw.events?.dragDrop
          if not handler or vw.disabled or vw.scene.dropTarget?.id != vw.frame.id then return end
-
+         local pointer = obj.find('SystemPointer')
+         if vw.qualifiers has (KQ_SHIFT | KQ_ALT) then
+            pointer.dragFeedback = 0
+            clearDropFeedback(vw)
+            return
+         end
          local x = vw.scene.dropX - vw.page.x
          local y = vw.scene.dropY - vw.page.y
          local source = Args.source
-         handler(vw, itemAtPoint(vw, x, y), {
-            source    = source,
-            item      = Args.item,
-            datatypes = Args.datatype,
-            x         = x,
-            y         = y,
-            session   = (glDragSession and source and glDragSession._sourceID is source.id) ? glDragSession : nil
-         })
+         local item = itemAtPoint(vw, x, y)
+         local drop = {
+            source=source, item=Args.item, datatypes=Args.datatype, x=x, y=y,
+            qualifiers=vw.qualifiers, operation='copy',
+            session=(glDragSession and source and glDragSession._sourceID is source.id) ? glDragSession : nil
+         }
+         if vw.events?.dragOver and not vw.events.dragOver(vw, item, drop) then
+            pointer.dragFeedback = 0
+            clearDropFeedback(vw)
+            return
+         end
+         local accepted = handler(vw, item, drop)
+         -- Existing handlers have no return value.  An explicit false reports refusal to the source/OLE.
+         pointer.dragFeedback = accepted is false ? 0 : 1
+         if vw.viewport then clearDropFeedback(vw) end
       end)
    end
 

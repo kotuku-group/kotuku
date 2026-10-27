@@ -352,7 +352,13 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
    if (not get_pointer_position(Self, false, x, y)) return;
 
    auto target = get_drop_target_at_xy(Self, x, y);
-   if (not target) return;
+   if (not target) {
+      if (auto pointer = gfx::AccessPointer()) {
+         pointer->DragFeedback = 0;
+         ReleaseObject(pointer);
+      }
+      return;
+   }
 
    auto invert = ~target->Transform;
    invert.transform(&x, &y);
@@ -807,7 +813,8 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
       }
 
       auto callback = C_FUNCTION(scene_input_events);
-      if (gfx::SubscribeInput(&callback, Self->SurfaceID, JTYPE::MOVEMENT|JTYPE::CROSSING|JTYPE::BUTTON|JTYPE::REPEATED|JTYPE::EXT_MOVEMENT, 0, &Self->InputHandle) != ERR::Okay) {
+      const auto mask = JTYPE::MOVEMENT|JTYPE::CROSSING|JTYPE::BUTTON|JTYPE::REPEATED|JTYPE::EXT_MOVEMENT|JTYPE::DRAG_ITEM;
+      if (gfx::SubscribeInput(&callback, Self->SurfaceID, mask, 0, &Self->InputHandle) != ERR::Okay) {
          return ERR::Function;
       }
    }

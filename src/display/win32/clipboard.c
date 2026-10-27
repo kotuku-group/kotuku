@@ -72,6 +72,8 @@ typedef struct rkDropTarget {
    int    TotalItems;
 	char   *tb_pDragFile;
    IDataObject *CurrentDataObject;
+   char Datatypes[8];
+   int DatatypeCount;
    void *ItemData;
 } RK_IDROPTARGET;
 
@@ -87,6 +89,8 @@ typedef struct rkDropTargetVTable
       HRESULT (STDMETHODCALLTYPE *Drop)(struct rkDropTarget *pThis, IDataObject *pDataObject, DWORD dwKeyState, POINT pt, DWORD *pdwEffect);
    END_INTERFACE
 } RK_IDROPTARGET_VTBL;
+
+static void clear_data(struct rkDropTarget *Self);
 
 static HANDLE glHeap = NULL;
 static UINT fmtShellIDList;
@@ -140,6 +144,7 @@ int winClipboardChanged(void)
 void winDisableDragDrop(HWND Window)
 {
    RevokeDragDrop(Window);
+   winDragDropFromHost_Leave();
 }
 
 //********************************************************************************************************************
@@ -147,54 +152,22 @@ void winDisableDragDrop(HWND Window)
 
 static int STDMETHODCALLTYPE RKDT_AssessDatatype(struct rkDropTarget *Self, IDataObject *Data, char *Result, int Length)
 {
-   IEnumFORMATETC *eformat;
-   FORMATETC fmt;
-   int i;
-   char dt;
-
-   i = 0;
-   if (Data->lpVtbl->EnumFormatEtc(Data, DATADIR_GET, &eformat) IS S_OK) {
-      while (eformat->lpVtbl->Next(eformat, 1, &fmt, NULL) IS S_OK) {
-         TCHAR szBuf[100];
-         if (GetClipboardFormatName(fmt.cfFormat, szBuf, sizeof(szBuf))) {
-            MSG("Format name: %d '%s'\n", fmt.cfFormat, szBuf);
-         }
-         else MSG("Format: %d\n", fmt.cfFormat);
-
-         switch (fmt.cfFormat) {
-            case CF_TEXT:
-            case CF_UNICODETEXT:
-            case CF_OEMTEXT:
-               dt = DATA_TEXT; break;
-
-            case CF_HDROP:
-               dt = DATA_FILE; break;
-
-            case CF_BITMAP:
-            case CF_DIB:
-            case CF_METAFILEPICT:
-            case CF_TIFF:
-               dt = DATA_IMAGE; break;
-
-            case CF_RIFF:
-            case CF_WAVE:
-               dt = DATA_AUDIO; break;
-
-            //case CF_HTML:
-            //   dt = DATA_XML; break;
-
-            default:
-               dt = 0; break;
-         }
-
-         if (dt) Result[i++] = dt;
-         if (i >= Length-1) break;
-      }
-      eformat->lpVtbl->Release(eformat);
+   // Advertise only formats that get_data() can actually retrieve.  QueryGetData also avoids duplicate
+   // text formats consuming all slots in the datatype list.
+   const UINT formats[] = { CF_HDROP, CF_UNICODETEXT, CF_TEXT, CF_TIFF, CF_RIFF };
+   const char types[] = { DATA_FILE, DATA_TEXT, DATA_TEXT, DATA_IMAGE, DATA_AUDIO };
+   int count = 0, i, j;
+   (void)Self;
+   for (i=0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+      FORMATETC format = { formats[i], NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
+      if (Data->lpVtbl->QueryGetData(Data, &format) != S_OK) continue;
+      for (j=0; j < count; j++) if (Result[j] IS types[i]) break;
+      if (j < count) continue;
+      if (count >= Length-1) break;
+      Result[count++] = types[i];
    }
-
-   Result[i] = 0;
-   return i;
+   Result[count] = 0;
+   return count;
 }
 
 //********************************************************************************************************************
@@ -232,15 +205,8 @@ static ULONG STDMETHODCALLTYPE RKDT_Release(struct rkDropTarget *Self)
 
    LONG nCount;
    if ((nCount = InterlockedDecrement(&Self->lRefCount)) == 0) {
-      if (Self->ItemData) {
-         free(Self->ItemData);
-         Self->ItemData = NULL;
-      }
-
-      if (Self->DataItems) {
-         free(Self->DataItems);
-         Self->DataItems = NULL;
-      }
+      clear_data(Self);
+      if (Self->CurrentDataObject) Self->CurrentDataObject->lpVtbl->Release(Self->CurrentDataObject);
       if (glHeap) HeapFree(glHeap, 0, Self);
    }
 
@@ -250,74 +216,80 @@ static ULONG STDMETHODCALLTYPE RKDT_Release(struct rkDropTarget *Self)
 //********************************************************************************************************************
 // The drag action continues
 
-static HRESULT STDMETHODCALLTYPE RKDT_DragOver(struct rkDropTarget *Self, DWORD grfKeyState, POINTL pt, DWORD * pdwEffect)
+static void release_offer(struct rkDropTarget *Self)
 {
-   MSG("rkDropTarget::DragOver()\n");
-	*pdwEffect = DROPEFFECT_COPY;
-	return S_OK;
+   IDataObject *data = Self->CurrentDataObject;
+   Self->CurrentDataObject = NULL;
+   Self->DatatypeCount = 0;
+   memset(Self->Datatypes, 0, sizeof(Self->Datatypes));
+   if (data) data->lpVtbl->Release(data);
+   winDragDropFromHost_Leave();
 }
 
-//********************************************************************************************************************
-// The drag action leaves your window - no dropping
+static DWORD assess_drop(struct rkDropTarget *Self, DWORD Keys, POINTL Point, DWORD Effects)
+{
+   POINT point = { Point.x, Point.y };
+   HWND window = WindowFromPoint(point);
+   int surface = winResolveSurfaceID(window);
+   RECT client;
+   POINT local = point;
+   if ((!surface) OR (!Self->DatatypeCount) OR (!(Effects & DROPEFFECT_COPY)) OR
+       (Keys & MK_SHIFT) OR (Keys & MK_ALT) OR
+       (!ScreenToClient(window, &local)) OR (!GetClientRect(window, &client)) OR (!PtInRect(&client, local))) {
+      winDragDropFromHost_Leave();
+      return DROPEFFECT_NONE;
+   }
+   return winDragDropFromHost_Over(surface, point.x, point.y, Self->Datatypes, Self->DatatypeCount) ?
+      DROPEFFECT_COPY : DROPEFFECT_NONE;
+}
+
+static HRESULT STDMETHODCALLTYPE RKDT_DragOver(struct rkDropTarget *Self, DWORD Keys, POINTL Point, DWORD *Effect)
+{
+   if (!Effect) return E_POINTER;
+   *Effect = assess_drop(Self, Keys, Point, *Effect);
+   return S_OK;
+}
 
 static HRESULT STDMETHODCALLTYPE RKDT_DragLeave(struct rkDropTarget *Self)
 {
-   MSG("rkDropTarget::DragLeave()\n");
-	return S_OK;
+   release_offer(Self);
+   return S_OK;
 }
 
-//********************************************************************************************************************
-// The drag action enters your window - get the item
-
-static HRESULT STDMETHODCALLTYPE RKDT_DragEnter(struct rkDropTarget *Self, IDataObject *Data, DWORD grfKeyState, POINTL pt, DWORD *pdwEffect)
+static HRESULT STDMETHODCALLTYPE RKDT_DragEnter(struct rkDropTarget *Self, IDataObject *Data, DWORD Keys,
+   POINTL Point, DWORD *Effect)
 {
-   MSG("rkDropTarget::DragEnter %dx%d\n", (int)pt.x, (int)pt.y);
-
-   //HWND window = WindowFromPoint(pt);
-
-   // Use DROPEFFECT_NONE if the datatype isn't supported, otherwise use DROPEFFECT_COPY.
-
-	*pdwEffect = DROPEFFECT_COPY;
-	return S_OK;
-}
-
-//********************************************************************************************************************
-// The data have been dropped here, so process it
-
-static HRESULT STDMETHODCALLTYPE RKDT_Drop(struct rkDropTarget *Self, IDataObject *Data, DWORD grfKeyState, POINT pt, DWORD * pdwEffect)
-{
-   HWND window;
-   int surface_id, total;
-   char datatypes[10];
-
-   MSG("rkDropTarget::Drop(%dx%d)\n", (int)pt.x, (int)pt.y);
-
-	*pdwEffect = DROPEFFECT_NONE;
-
-   window = WindowFromPoint(pt);
-   surface_id = winResolveSurfaceID(window);
-   if (!surface_id) {
-      MSG("rkDropTarget::Drop() Unable to determine surface ID from window, aborting.\n");
-      return S_OK;
-   }
-
-   if (!(total = RKDT_AssessDatatype(Self, Data, datatypes, sizeof(datatypes)))) {
-      MSG("rkDropTarget::Drop() Datatype not recognised or supported.\n");
-      return S_OK;
-   }
-
-   // Calling winDragDropFromHost() will send an AC::DragDrop to the underlying surface.  If an object accepts the data,
-   // it will send a DATA_REQUEST to the Display that represents the surface.  At this point we can copy the
-   // clipboard from the host and send it to the client.  This entire process will occur within this call, so long as
-   // all the calls are direct and the messaging system isn't used.  Otherwise the data will be lost as Windows
-   // cannot be expected to hold onto the data after this method returns.
-
+   if ((!Data) OR (!Effect)) return E_INVALIDARG;
+   release_offer(Self);
+   Data->lpVtbl->AddRef(Data);
    Self->CurrentDataObject = Data;
-   winDragDropFromHost_Drop(surface_id, datatypes);
-   Self->CurrentDataObject = NULL;
+   Self->DatatypeCount = RKDT_AssessDatatype(Self, Data, Self->Datatypes, sizeof(Self->Datatypes));
+   *Effect = assess_drop(Self, Keys, Point, *Effect);
+   return S_OK;
+}
 
-	*pdwEffect = DROPEFFECT_COPY;
-
+static HRESULT STDMETHODCALLTYPE RKDT_Drop(struct rkDropTarget *Self, IDataObject *Data, DWORD Keys,
+   POINT Point, DWORD *Effect)
+{
+   POINTL point = { Point.x, Point.y };
+   DWORD allowed;
+   int surface;
+   if ((!Data) OR (!Effect)) return E_INVALIDARG;
+   allowed = *Effect;
+   *Effect = DROPEFFECT_NONE;
+   if (Data != Self->CurrentDataObject) {
+      release_offer(Self);
+      Data->lpVtbl->AddRef(Data);
+      Self->CurrentDataObject = Data;
+   }
+   Self->DatatypeCount = RKDT_AssessDatatype(Self, Data, Self->Datatypes, sizeof(Self->Datatypes));
+   if (assess_drop(Self, Keys, point, allowed) IS DROPEFFECT_COPY) {
+      POINT location = { Point.x, Point.y };
+      surface = winResolveSurfaceID(WindowFromPoint(location));
+      if (winDragDropFromHost_Drop(surface, Point.x, Point.y, Self->Datatypes)) *Effect = DROPEFFECT_COPY;
+   }
+   // All receivers must snapshot data synchronously.  Only the copied path list may outlive this callback.
+   release_offer(Self);
    return S_OK;
 }
 
@@ -331,6 +303,9 @@ static void clear_data(struct rkDropTarget *Self)
    }
 
    if (Self->DataItems) {
+      int i;
+      for (i=0; i < Self->TotalItems; i++) free(Self->DataItems[i].Data);
+      Self->TotalItems = 0;
       free(Self->DataItems);
       Self->DataItems = NULL;
    }
@@ -417,58 +392,37 @@ static int get_data(struct rkDropTarget *Self, char *Preference, struct WinDT **
 
    clear_data(Self);
 
+   *OutData = NULL;
+   *OutTotal = 0;
    data = Self->CurrentDataObject;
+   if (!data) return ERR_NoData;
    for (p=0; p < 4; p++) { // Up to 4 data preferences may be specified
       switch (Preference[p]) {
          case DATA_TEXT:
          case DATA_XML: {
             STGMEDIUM stgm;
             void *raw_data;
-            int chars, u8len, i, found;
-            unsigned short value;
-            unsigned char *u8str;
-            unsigned short *wstr;
+            int size, found;
 
             error = lock_hglobal_data(data, CF_UNICODETEXT, &stgm, &raw_data, &found);
             if (found) {
+               const WCHAR *text = (const WCHAR *)raw_data;
+               size_t length = 0, limit;
                if (!(error IS ERR_Okay)) return error;
-
-               wstr = (unsigned short *)raw_data;
-               u8len = 0;
-               for (chars=0; wstr[chars]; chars++) {
-                  if (wstr[chars] < 128) u8len++;
-                  else if (wstr[chars] < 0x800) u8len += 2;
-                  else u8len += 3;
-               }
-
-               if ((Self->ItemData = malloc(u8len+1))) {
-                  u8str = (unsigned char *)Self->ItemData;
-                  i = 0;
-                  for (chars=0; wstr[chars]; chars++) {
-                     value = wstr[chars];
-                     if (value < 128) {
-                        u8str[i++] = (unsigned char)value;
-                     }
-                     else if (value < 0x800) {
-                        u8str[i+1] = (value & 0x3f) | 0x80;
-                        value  = value>>6;
-                        u8str[i] = value | 0xc0;
-                        i += 2;
-                     }
-                     else {
-                        u8str[i+2] = (value & 0x3f)|0x80;
-                        value  = value>>6;
-                        u8str[i+1] = (value & 0x3f)|0x80;
-                        value  = value>>6;
-                        u8str[i] = value | 0xe0;
-                        i += 3;
-                     }
+               limit = GlobalSize(stgm.hGlobal) / sizeof(WCHAR);
+               while ((length < limit) AND text[length]) length++;
+               if (length IS limit) error = ERR_InvalidData;
+               else {
+                  size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, (int)length + 1,
+                     NULL, 0, NULL, NULL);
+                  if (!size) error = ERR_InvalidData;
+                  else if ((Self->ItemData = malloc(size))) {
+                     WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text, (int)length + 1,
+                        Self->ItemData, size, NULL, NULL);
+                     error = publish_single_data(Self, DATA_TEXT, size, OutData, OutTotal);
                   }
-                  u8str[i++] = 0;
-                  error = publish_single_data(Self, DATA_TEXT, i, OutData, OutTotal);
+                  else error = ERR_AllocMemory;
                }
-               else error = ERR_AllocMemory;
-
                unlock_hglobal_data(&stgm);
                return error;
             }
@@ -499,45 +453,51 @@ static int get_data(struct rkDropTarget *Self, char *Preference, struct WinDT **
 
          case DATA_FILE: {
             STGMEDIUM stgm;
-            HDROP raw;
             void *raw_data;
-            int i, total, item, len, size, found;
-            TCHAR path[MAX_PATH];
-            char *str;
+            int i, total, size, found;
 
             error = lock_hglobal_data(data, CF_HDROP, &stgm, &raw_data, &found);
             if (found) {
+               HDROP drop;
                if (!(error IS ERR_Okay)) return error;
-
-               raw = (HDROP)raw_data;
-               total = DragQueryFile(raw, 0xffffffff, NULL, 0);
-
-               size = 0;
-               for (i=0; i < total; i++) {
-                  size += DragQueryFile(raw, i, path, sizeof(path)) + 1;
-               }
-
-               error = ERR_Okay;
-               if (!size);
-               else if ((Self->ItemData = malloc(size))) {
-                  if ((Self->DataItems = (struct WinDT *)malloc(sizeof(struct WinDT) * total))) {
-                     str = (char *)Self->ItemData;
-                     for (item=0; item < total; item++) {
-                        len = DragQueryFile(raw, item, str, MAX_PATH) + 1;
-
-                        Self->DataItems[item].Datatype = DATA_FILE;
-                        Self->DataItems[item].Length   = len;
-                        Self->DataItems[item].Data     = str;
-                        str += len;
-                     }
-                     *OutData  = Self->DataItems;
-                     *OutTotal = total;
-                     error = ERR_Okay;
+               // DragQueryFile expects the HGLOBAL handle, not the address returned by GlobalLock.
+               drop = (HDROP)stgm.hGlobal;
+               total = DragQueryFileW(drop, 0xffffffff, NULL, 0);
+               Self->DataItems = (struct WinDT *)calloc(total, sizeof(struct WinDT));
+               error = total ? ERR_Okay : ERR_NoData;
+               if ((total) AND (!Self->DataItems)) error = ERR_AllocMemory;
+               for (i=0; (i < total) AND (error IS ERR_Okay); i++) {
+                  UINT length = DragQueryFileW(drop, i, NULL, 0);
+                  WCHAR *path = (WCHAR *)malloc((length + 2) * sizeof(WCHAR));
+                  DWORD attrib;
+                  char *utf8;
+                  if (!path) { error = ERR_AllocMemory; break; }
+                  if (DragQueryFileW(drop, i, path, length + 1) != length) {
+                     free(path);
+                     error = ERR_Failed;
+                     break;
                   }
-                  else error = ERR_AllocMemory;
+                  // The shell names folders without a trailing separator; Kotuku file APIs require one.
+                  attrib = GetFileAttributesW(path);
+                  if ((attrib != INVALID_FILE_ATTRIBUTES) AND (attrib & FILE_ATTRIBUTE_DIRECTORY) AND (length) AND
+                      (path[length-1] != L'\\') AND (path[length-1] != L'/')) {
+                     path[length] = L'\\';
+                     path[length+1] = 0;
+                  }
+                  size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, NULL, 0, NULL, NULL);
+                  utf8 = size ? (char *)malloc(size) : NULL;
+                  if (utf8) WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, utf8, size, NULL, NULL);
+                  free(path);
+                  if (!utf8) { error = ERR_AllocMemory; break; }
+                  Self->DataItems[i].Datatype = DATA_FILE;
+                  Self->DataItems[i].Length = size;
+                  Self->DataItems[i].Data = utf8;
+                  Self->TotalItems = i + 1;
                }
-               else error = ERR_AllocMemory;
-
+               if (error IS ERR_Okay) {
+                  *OutData = Self->DataItems;
+                  *OutTotal = total;
+               }
                unlock_hglobal_data(&stgm);
                return error;
             }
@@ -547,7 +507,7 @@ static int get_data(struct rkDropTarget *Self, char *Preference, struct WinDT **
                LPIDA pida;
                TCHAR path[MAX_PATH], folderpath[MAX_PATH];
                LPCITEMIDLIST item, folder;
-               int pos, j, index, folderlen;
+               int pos, j, index, folderlen, size;
 
                MSG("ShellIDList discovered.\n");
 
@@ -682,6 +642,7 @@ int winInitDragDrop(HWND Window)
 
    if (RegisterDragDrop(Window, &glDropTarget->idt) != S_OK) {
       MSG("RegisterDragDrop() failed.\n");
+      return ERR_Failed;
    }
 
    return ERR_Okay;

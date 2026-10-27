@@ -299,7 +299,8 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
       SubscribeTimer(0.02, C_FUNCTION(repeat_timer), &glRepeatTimer); // Use a timer subscription so that repeat button clicks can be supported (the interval indicates the rate of the repeat)
    }
 
-   if ((Self->DragSourceID) and (bi IS 0) and (userinput.Value <= 0) and (not Self->DragDelivering)) {
+   if ((Self->DragSourceID) and (bi IS 0) and (userinput.Value <= 0) and
+       (not Self->DragDelivering) and (not Self->NativeDrag)) {
       // Drag and drop has been released with the primary button.  The session is copied so that it remains intact if
       // the destination cancels it, frees the source or attempts to start a new drag during delivery.
 
@@ -322,7 +323,7 @@ static void process_ptr_button(extPointer *Self, struct dcDeviceInput *Input)
             kt::ScopedObjectLock surface(Self->OverObjectID);
             if (surface.granted()) {
                acDragDrop(*surface, *src, item, std::string_view(datatypes.data(), size));
-               result = ERR::Okay;
+               result = Self->DragFeedback IS 0 ? ERR::Cancelled : ERR::Okay;
             }
          }
       }
@@ -362,6 +363,18 @@ void end_cursor_drag(extPointer *Self, bool Unsubscribe)
    Self->DragParent   = 0;
    Self->DragDataSize = 0;
    Self->DragData.fill(0);
+   Self->DragFeedback = -1;
+   Self->NativeDrag = false;
+
+   // A final drag event clears destination feedback even if the pointer does not move after cancellation.
+   InputEvent event = {};
+   event.Type = JET::ABS_XY;
+   event.Flags = event.Mask = JTYPE::DRAG_ITEM;
+   event.RecipientID = event.OverID = Self->OverObjectID;
+   event.X = Self->OverX;
+   event.Y = Self->OverY;
+   const std::lock_guard lock(glInputLock);
+   glInputEvents.push_back(event);
 }
 
 //********************************************************************************************************************
@@ -413,6 +426,8 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
    userinput.DeviceID  = Input->DeviceID;
 
    if (!userinput.Timestamp) userinput.Timestamp = PreciseTime();
+
+   if (Self->DragSourceID) Self->DragFeedback = -1;
 
    bool moved = false, underlying_change = false;
    double current_x = Self->X;
@@ -962,16 +977,48 @@ A double-click is recognised when two presses of the same logical button occur w
 measured in seconds and defaults to the user's pointer preference.
 
 -FIELD-
+DragDatatypes: The datatypes offered by the current drag operation.
+
+When a drag-and-drop operation is active, this field returns the datatypes that the source can provide, expressed as
+a sequence of numeric `DATA` values with one byte per type, e.g. `DATA::FILE`.  The sequence is in the source's order
+of preference and is limited to eight entries.  At all other times the string is empty.
+
+Destinations can test this field while the pointer hovers over them to decide whether to accept the drop, without
+requesting any data from the source.  The data itself is only retrieved after the drop is delivered.
+
+-FIELD-
+DragFeedback: Destination feedback for the current drag operation.
+
+While a drag-and-drop operation is active, the destination under the pointer can set this field to indicate whether
+it will accept the drop.  It is typically written in response to `JTYPE::DRAG_ITEM` input events, or during delivery
+of the #DragDrop() action.  The supported values are:
+
+<types type="Value">
+<type name="-1">Acceptance is unspecified.  This is the default, and it applies to recipients that do not provide feedback.  The drop is delivered and treated as accepted.</type>
+<type name="0">The destination rejects the drop.</type>
+<type name="1">The destination accepts the drop as a copy operation.</type>
+</types>
+
+The value is reset to `-1` when a drag starts, on each pointer movement during the drag, and when the session ends.
+When a drop is reported as rejected, the drag source is notified with `ERR::Cancelled`.  For drops originating from
+the host platform, the value determines the drop effect reported to the host, e.g. `DROPEFFECT_COPY` or
+`DROPEFFECT_NONE` on Windows.
+
+Acceptance means that the destination has accepted the payload for processing.  It does not confirm the completion of
+any resulting file operation, which the recipient is responsible for reporting separately.
+
+-FIELD-
 DragItem: The currently dragged item, as defined by ~Display.StartCursorDrag().
 
 When a drag-and-drop operation is active, this field contains the custom item number supplied to ~Display.StartCursorDrag().
-At all other times it is zero.
+For drops originating from the host platform, the value is `-1`.  At all other times it is zero.
 
 -FIELD-
 DragSource: The object managing the current drag operation, as defined by ~Display.StartCursorDrag().
 
-When a drag-and-drop operation is active, this field refers to the object managing the source data.  At all other times
-it is zero.
+When a drag-and-drop operation is active, this field refers to the object managing the source data.  For drops
+originating from the host platform, it refers to the Display object that receives the host's data offer.  At all other
+times it is zero.
 
 Item dragging is managed by ~Display.StartCursorDrag().
 
@@ -1267,6 +1314,12 @@ static const MethodEntry clPointerMethods[] = {
    { AC::NIL, nullptr, nullptr, nullptr, 0 }
 };
 
+static ERR GET_DragDatatypes(extPointer *Self, std::string_view &Value)
+{
+   Value = std::string_view(Self->DragData.data(), Self->DragDataSize);
+   return ERR::Okay;
+}
+
 static const FieldArray clPointerFields[] = {
    { "Speed",        FDF_DOUBLE|FDF_RW },
    { "Acceleration", FDF_DOUBLE|FDF_RW },
@@ -1292,6 +1345,8 @@ static const FieldArray clPointerFields[] = {
    { "DragItem",     FDF_INT|FDF_R },
    { "OverObject",   FDF_OBJECTID|FDF_R },
    { "ClickSlop",    FDF_INT|FDF_RW },
+   { "DragFeedback", FDF_INT|FDF_RW },
+   { "DragDatatypes", FDF_CPPSTRING|FDF_R|FDF_PURE, GET_DragDatatypes },
    // Virtual Fields
    { "ButtonState",  FDF_INT|FDF_R|FDF_PURE, GET_ButtonState },
    { "ButtonOrder",  FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_ButtonOrder, SET_ButtonOrder },

@@ -434,12 +434,12 @@ function parentFolder(Path:str!):str
    return rxParentFolder.extract(rxStripFolder.extract(Path))
 end
 
--- Normalises a path for comparison: volumes are resolved and trailing separators are removed.
+-- Normalises a path for comparison: resolves volumes, removes trailing separators and folds Windows separators/case.
 
 function pathKey(Path:str!):str
    local err, resolved = mSys.ResolvePath(Path, RSF_NO_FILE_CHECK)
    local key = rxStripFolder.extract(err is ERR_Okay ? resolved : Path)
-   return glState.platform is 'Windows' ? key.lower() : key
+   return glState.platform is 'Windows' ? key.replace('\\', '/').lower() : key
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1225,7 +1225,7 @@ gui.fileview = function(Options)
       local dest_key = pathKey(Dest)
       local accepted = array<str>
       for src in values(Sources) do
-         local folder = src.endsWith('/') or src.endsWith('\\')
+         local folder = src.endsWith('/') or src.endsWith('\\') or io.isFolder(src)
          if pathKey(parentFolder(src) ?? '') is dest_key then
             msg(f'Skipping "{src}", it is already in "{Dest}".')
          elseif folder and (dest_key .. '/').startsWith(pathKey(src) .. '/') then
@@ -1429,10 +1429,26 @@ gui.fileview = function(Options)
          if #files > 0 then return { files = files } end
       end
 
-      self.view.events.dragDrop = function(View, Item, Drop)
-         if not Drop.datatypes?.find(string.char(DATA_FILE), 0, true) then return end
+      self.view.events.dragOver = function(View, Item, Drop)
+         if not Drop.datatypes?.find(string.char(DATA_FILE), 0, true) then return false end
          local dest = dropDestination(Item)
-         dest ?! return
+         if not dest or not io.isFolder(dest) then return false end
+         if Drop.session?.files then
+            local dest_key = pathKey(dest)
+            for src in values(Drop.session.files) do
+               local folder = src.endsWith('/') or src.endsWith('\\') or io.isFolder(src)
+               if pathKey(parentFolder(src) ?? '') != dest_key and
+                  not (folder and (dest_key .. '/').startsWith(pathKey(src) .. '/')) then return true end
+            end
+            return false
+         end
+         return true
+      end
+
+      self.view.events.dragDrop = function(View, Item, Drop)
+         if not Drop.datatypes?.find(string.char(DATA_FILE), 0, true) then return false end
+         local dest = dropDestination(Item)
+         dest ?! return false
 
          -- The data is retrieved within the drop, while the source can still answer.
          local sources = array<str>
@@ -1444,10 +1460,10 @@ gui.fileview = function(Options)
             end)
          except ex
             msg(f'Failed to retrieve dropped files: {ex.message}')
-            return
+            return false
          end
 
-         if #sources > 0 then self.transferFiles(sources, dest, 'copy') end
+         return #sources > 0 and self.transferFiles(sources, dest, 'copy') > 0
       end
 
       if Options.toolbar then

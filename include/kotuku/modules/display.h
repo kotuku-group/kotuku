@@ -882,17 +882,17 @@ class objBitmap : public Object {
       return ERR::Okay;
    }
 
-   inline ERR getClipRight(int &Value) noexcept {
+   inline ERR getClipTop(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 100));
       return ERR::Okay;
    }
 
-   inline ERR getClipBottom(int &Value) noexcept {
+   inline ERR getClipRight(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 104));
       return ERR::Okay;
    }
 
-   inline ERR getClipTop(int &Value) noexcept {
+   inline ERR getClipBottom(int &Value) noexcept {
       Value = *((int *)(((int8_t *)this) + CLASS_OFFSET + 108));
       return ERR::Okay;
    }
@@ -1008,6 +1008,11 @@ class objBitmap : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setClipTop(const int Value) noexcept {
+      auto field = &this->Class->Dictionary[15];
+      return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
    inline ERR setClipRight(const int Value) noexcept {
       auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
@@ -1015,11 +1020,6 @@ class objBitmap : public Object {
 
    inline ERR setClipBottom(const int Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      return field->WriteValue(this, field, FD_INT, &Value);
-   }
-
-   inline ERR setClipTop(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[15];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1684,6 +1684,7 @@ class objPointer : public Object {
    int      DragItem;      // The currently dragged item, as defined by ~Display.StartCursorDrag().
    OBJECTID OverObjectID;  // Readable field that gives the ID of the object under the pointer.
    int      ClickSlop;     // A leniency value that assists in determining if the user intended to click or drag.
+   int      DragFeedback;  // Destination feedback for the current drag operation.
 
    // Action stubs
 
@@ -1822,13 +1823,24 @@ class objPointer : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getDragFeedback(int &Value) noexcept {
+      Value = this->DragFeedback;
+      return ERR::Okay;
+   }
+
+   inline ERR getDragDatatypes(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      return get_field(this, Value);
+   }
+
    inline ERR getButtonState(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[14];
+      auto field = &this->Class->Dictionary[16];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getButtonOrder(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[9];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       return get_field(this, Value);
    }
@@ -1857,17 +1869,17 @@ class objPointer : public Object {
    }
 
    inline ERR setX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[18];
+      auto field = &this->Class->Dictionary[20];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[10];
+      auto field = &this->Class->Dictionary[12];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMaxSpeed(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[23];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -1903,8 +1915,13 @@ class objPointer : public Object {
       return ERR::Okay;
    }
 
+   inline ERR setDragFeedback(const int Value) noexcept {
+      this->DragFeedback = Value;
+      return ERR::Okay;
+   }
+
    inline ERR setButtonOrder(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[7];
+      auto field = &this->Class->Dictionary[9];
       return field->WriteValue(this, field, 0x00904300, &Value);
    }
 

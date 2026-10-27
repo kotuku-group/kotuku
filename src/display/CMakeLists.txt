@@ -145,6 +145,21 @@ if (WIN32)
       endif ()
       add_test (NAME display_windows_driver COMMAND test_display_windows_driver)
       set_tests_properties (display_windows_driver PROPERTIES LABELS display)
+
+# For manual testing only
+#      add_executable (test_display_windows_drop "tests/test_windows_drop.c")
+#      target_include_directories (test_display_windows_drop PRIVATE "${PROJECT_SOURCE_DIR}/include")
+#      target_link_libraries (test_display_windows_drop PRIVATE ole32 shell32 user32 uuid)
+#      add_test (NAME display_windows_drop COMMAND test_display_windows_drop)
+#      set_tests_properties (display_windows_drop PROPERTIES LABELS display RUN_SERIAL TRUE)
+#      if (BUILD_TESTS)
+#         add_test (NAME display_windows_drop_import
+#            COMMAND "${CMAKE_INSTALL_PREFIX}/origo" --no-crash-handler --log-warning --gfx-driver=windows
+#               "${FLUTE_SCRIPT}" "file=${CMAKE_CURRENT_SOURCE_DIR}/tests/test_windows_drop.tiri"
+#               "source=$<TARGET_FILE:test_display_windows_drop>"
+#            WORKING_DIRECTORY "${CMAKE_INSTALL_PREFIX}")
+#         set_tests_properties (display_windows_drop_import PROPERTIES LABELS display RUN_SERIAL TRUE TIMEOUT 30)
+#      endif ()
    endif ()
 elseif (ANDROID)
    target_compile_definitions (${MOD} PRIVATE DISPLAY_ANDROID_DRIVER)
@@ -376,6 +391,7 @@ else ()
                LIBRARY DESTINATION "${LIB_TARGET}")
          endif ()
       endif ()
+
       add_dependencies (display-x11 ${REQUIRED_MODS})
       target_sources (display-x11 PRIVATE
          "drivers/x11/module.cpp"
@@ -384,10 +400,12 @@ else ()
          "drivers/x11/lib_pixels.cpp")
       target_link_libraries (display-x11 PRIVATE unicode Xrender Xext X11)
       set (X11_DRIVER_DEFINITIONS)
+
       if (X11_Xrandr_FOUND)
          target_link_libraries (display-x11 PRIVATE Xrandr)
          list (APPEND X11_DRIVER_DEFINITIONS XRANDR_ENABLED)
       endif ()
+
       if (X11_Xfixes_FOUND)
          target_include_directories (display-x11 PRIVATE "${X11_Xfixes_INCLUDE_PATH}")
          target_link_libraries (display-x11 PRIVATE "${X11_Xfixes_LIB}")
@@ -396,6 +414,7 @@ else ()
       else ()
          message (STATUS "XFixes not found - X11 clipboard receive support disabled")
       endif ()
+
       # Applied at target level because x11_native.h guards its extension headers on these definitions, and every
       # file that includes it must agree on the layout of the structures that the header declares.
 
