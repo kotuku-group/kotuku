@@ -402,3 +402,24 @@ end
    assert(not (preview.flags has RNF_VISIBLE), 'Dropping hides the preview without freeing it')
    assert(obj.find(preview.id), 'The client retains ownership after a drop')
 end
+
+@Test function WindowsDragOutsideRegisteredWindowsIsCancelled()
+   if mGfx.GetDisplayType() != DT_WINGDI then return end
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local pointer = obj.find('SystemPointer')
+   pointer.surface = surface
+   local hits = 0
+   local result
+   root.subscribe('DragDrop', function() hits++ end)
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP, dragEndHandler=function(Clipboard, Item, Result) result = Result end
+   })
+   beginDrag(surface, source, string.char(DATA_TEXT))
+   -- Windows reports surface zero while capture continues outside the application's client windows.
+   pointer.surface = 0
+   feed(JET_ABS_XY, surface.absX + surface.width + 40, surface.absY + surface.height + 40)
+   assert(pointer.overObject is nil, 'Leaving registered windows must clear the internal drop destination')
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0 and result is ERR_Cancelled, 'An outside release must cancel without dispatching a drop')
+end

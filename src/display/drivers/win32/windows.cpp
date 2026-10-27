@@ -809,11 +809,33 @@ int winGetWindowInfo(HWND Window, int *X, int *Y, int *Width, int *Height, int *
 
 static void UpdateCursorPosition(HWND Window, int WinX, int WinY, bool NonClient)
 {
-   if (auto surface_id = winLookupSurfaceID(Window)) {
-      POINT point;
-      GetCursorPos(&point);
-      MsgMovement(surface_id, point.x, point.y, WinX, WinY, NonClient);
+   POINT point;
+   if (not GetCursorPos(&point)) return;
+
+   auto target = Window;
+   if (GetCapture() IS Window) {
+      // Capture keeps delivering to the source window.  Resolve the actual destination independently, including
+      // leaving our windows, while the framework continues sending the gesture to its original recipient.
+
+      target = WindowFromPoint(point);
+      while (target) {
+         DWORD process_id = 0;
+         GetWindowThreadProcessId(target, &process_id);
+         if (process_id != GetCurrentProcessId()) {
+            target = nullptr;
+            break;
+         }
+         if (winLookupSurfaceID(target)) break;
+         target = GetParent(target);
+      }
+      if (target) {
+         auto client_point = point;
+         RECT client;
+         if ((not ScreenToClient(target, &client_point)) or (not GetClientRect(target, &client)) or
+             (not PtInRect(&client, client_point))) target = nullptr;
+      }
    }
+   MsgMovement(target ? winLookupSurfaceID(target) : 0, point.x, point.y, WinX, WinY, NonClient);
 }
 
 //********************************************************************************************************************
@@ -893,10 +915,11 @@ static void HandleButtonPress(HWND window, int button)
 
 //********************************************************************************************************************
 
-static void HandleButtonRelease(HWND window, int button)
+static void HandleButtonRelease(HWND Window, int Button, WPARAM Keys)
 {
-   ReleaseCapture();
-   MsgButtonPress(button, 0);
+   UpdateCursorPosition(Window, 0, 0, false);
+   if (not (Keys & (MK_LBUTTON|MK_RBUTTON|MK_MBUTTON|MK_XBUTTON1|MK_XBUTTON2))) ReleaseCapture();
+   MsgButtonPress(Button, 0);
 }
 
 //********************************************************************************************************************
@@ -1287,9 +1310,9 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
       case WM_LBUTTONDBLCLK: HandleButtonPress(window, WIN_DBL|WIN_LMB); return 0;
       case WM_RBUTTONDBLCLK: HandleButtonPress(window, WIN_DBL|WIN_RMB); return 0;
       case WM_MBUTTONDBLCLK: HandleButtonPress(window, WIN_DBL|WIN_MMB); return 0;
-      case WM_LBUTTONUP:     HandleButtonRelease(window, WIN_LMB); return 0;
-      case WM_RBUTTONUP:     HandleButtonRelease(window, WIN_RMB); return 0;
-      case WM_MBUTTONUP:     HandleButtonRelease(window, WIN_MMB); return 0;
+      case WM_LBUTTONUP:     HandleButtonRelease(window, WIN_LMB, wParam); return 0;
+      case WM_RBUTTONUP:     HandleButtonRelease(window, WIN_RMB, wParam); return 0;
+      case WM_MBUTTONUP:     HandleButtonRelease(window, WIN_MMB, wParam); return 0;
 
       case WM_XBUTTONDOWN:
          if (auto button = WinXButtonFlag(wParam)) {
@@ -1300,7 +1323,7 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
 
       case WM_XBUTTONUP:
          if (auto button = WinXButtonFlag(wParam)) {
-            HandleButtonRelease(window, button);
+            HandleButtonRelease(window, button, wParam);
             return TRUE;
          }
          else return DefWindowProc(window, msgcode, wParam, lParam);
@@ -1728,16 +1751,9 @@ void winFocus(HWND Window)
 
 void winMoveToFront(HWND Window)
 {
-   // Note: The window will require the focus if it is to be moved in front of other MS Windows on the desktop (a window can gain the focus with SetForegroundWindow()).
+   // Raising a drag preview must preserve the source window's keyboard focus and mouse capture.
 
-   SetWindowPos(Window, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
-
-/* This code demonstrates a way to move a window to the front without giving
-   it the focus.
-
-  SetWindowPos(Window, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
-  SetWindowPos(Window, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
-*/
+   SetWindowPos(Window, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
 }
 
 //********************************************************************************************************************

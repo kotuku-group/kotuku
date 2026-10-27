@@ -1097,23 +1097,31 @@ static bool get_over_object(extPointer *Self)
 
    if (glSurfaces.empty()) return false;
 
-   size_t index;
-   if (!Self->SurfaceID) {
-      Self->SurfaceID = glSurfaces[0].SurfaceID;
-      index = 0;
-   }
-   else for (index=0; (index < glSurfaces.size()) and (glSurfaces[index].SurfaceID != Self->SurfaceID); index++);
-   if (index >= glSurfaces.size()) {
-      Self->SurfaceID = glSurfaces[0].SurfaceID;
-      index = 0;
-   }
+   OBJECTID li_objectid = 0;
+   double li_left = 0, li_top = 0;
+   auto cursor_image = PTC::NIL;
 
-   auto i = examine_chain(Self, index, glSurfaces, glSurfaces.size());
+   // A captured Windows gesture can leave all of our windows.  Zero then means no destination, rather than the
+   // first registered surface.  Headless and native input retain their default surface lookup.
 
-   OBJECTID li_objectid = glSurfaces[i].SurfaceID;
-   double li_left       = glSurfaces[i].Left;
-   double li_top        = glSurfaces[i].Top;
-   auto cursor_image    = PTC(glSurfaces[i].Cursor); // Preferred cursor ID
+   if ((Self->SurfaceID) or (glHeadless) or (not glDriver) or (glDriver->displayType() != DT::WINGDI)) {
+      size_t index;
+      if (!Self->SurfaceID) {
+         Self->SurfaceID = glSurfaces[0].SurfaceID;
+         index = 0;
+      }
+      else for (index=0; (index < glSurfaces.size()) and (glSurfaces[index].SurfaceID != Self->SurfaceID); index++);
+      if (index >= glSurfaces.size()) {
+         Self->SurfaceID = glSurfaces[0].SurfaceID;
+         index = 0;
+      }
+
+      auto i = examine_chain(Self, index, glSurfaces, glSurfaces.size());
+      li_objectid = glSurfaces[i].SurfaceID;
+      li_left = glSurfaces[i].Left;
+      li_top = glSurfaces[i].Top;
+      cursor_image = PTC(glSurfaces[i].Cursor);
+   }
 
    if (Self->OverObjectID != li_objectid) {
       kt::Log log(__FUNCTION__);
