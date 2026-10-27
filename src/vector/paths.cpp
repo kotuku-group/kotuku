@@ -1,6 +1,8 @@
 
 #include "agg_trans_single_path.h"
 
+extern void morph_text_carets(extVectorText *, const agg::trans_single_path &, double);
+
 //********************************************************************************************************************
 
 extVectorViewport * get_parent_view(extVector *Vector)
@@ -268,10 +270,12 @@ void gen_vector_path(extVector *Vector)
 
                if (guide->BasePath.total_vertices()) {
                   double bx1, bx2, by1, by2;
+                  double caret_y_offset = 0;
 
                   if ((Vector->GuideFlags & VMF::Y_MID) != VMF::NIL) {
                      bounding_rect_single(Vector->BasePath, 0, &bx1, &by1, &bx2, &by2);
-                     Vector->BasePath.translate(0, -by1 - ((by2 - by1) * 0.5));
+                     caret_y_offset = -by1 - ((by2 - by1) * 0.5);
+                     Vector->BasePath.translate(0, caret_y_offset);
                   }
                   else if ((Vector->GuideFlags & VMF::Y_MIN) != VMF::NIL) {
                      if (Vector->classID() != CLASSID::VECTORTEXT) {
@@ -282,7 +286,8 @@ void gen_vector_path(extVector *Vector)
                   else { // VMF::Y_MAX
                      if (Vector->classID() IS CLASSID::VECTORTEXT) { // Only VectorText needs to be reset for yMax
                         bounding_rect_single(Vector->BasePath, 0, &bx1, &by1, &bx2, &by2);
-                        Vector->BasePath.translate(0, -by1);
+                        caret_y_offset = -by1;
+                        Vector->BasePath.translate(0, caret_y_offset);
                      }
                   }
 
@@ -295,6 +300,9 @@ void gen_vector_path(extVector *Vector)
                   }
 
                   Vector->BasePath.transform(trans_path); // Apply manipulation to the base path.
+                  if (Vector->classID() IS CLASSID::VECTORTEXT) {
+                     morph_text_carets((extVectorText *)Vector, trans_path, caret_y_offset);
+                  }
                }
             }
          }

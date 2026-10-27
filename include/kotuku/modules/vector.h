@@ -4449,6 +4449,10 @@ class objVectorText : public objVector {
 
    // Action stubs
 
+   inline ERR clipboard(CLIPMODE Mode) noexcept {
+      struct acClipboard args = { Mode };
+      return Action(AC::Clipboard, this, &args);
+   }
    inline ERR init() noexcept { return InitObject(this); }
    inline ERR deleteLine(int Line) noexcept {
       struct vt::DeleteLine args = { Line };
@@ -4467,12 +4471,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTextFlags(VTXF &Value) noexcept {
-      auto field = &this->Class->Dictionary[63];
+      auto field = &this->Class->Dictionary[64];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[69];
+      auto field = &this->Class->Dictionary[70];
       return field->GetValue(this, &Value);
    }
 
@@ -4482,7 +4486,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getWeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[72];
+      auto field = &this->Class->Dictionary[74];
       return field->GetValue(this, &Value);
    }
 
@@ -4499,7 +4503,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getFace(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[66];
+      auto field = &this->Class->Dictionary[67];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       return get_field(this, Value);
    }
@@ -4520,7 +4524,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDescent(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[68];
+      auto field = &this->Class->Dictionary[69];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4528,7 +4532,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDisplayHeight(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[74];
+      auto field = &this->Class->Dictionary[76];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4544,7 +4548,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getDX(std::span<double> &Value) noexcept {
-      auto field = &this->Class->Dictionary[73];
+      auto field = &this->Class->Dictionary[75];
       auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
       return get_field(this, Value);
    }
@@ -4566,7 +4570,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getLineSpacing(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[67];
+      auto field = &this->Class->Dictionary[68];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4590,12 +4594,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTextLength(double &Value) noexcept {
-      auto field = &this->Class->Dictionary[79];
+      auto field = &this->Class->Dictionary[81];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTextWidth(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[76];
+      auto field = &this->Class->Dictionary[78];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4614,7 +4618,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getCursorColumn(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[77];
+      auto field = &this->Class->Dictionary[79];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -4630,7 +4634,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR getTotalLines(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[75];
+      auto field = &this->Class->Dictionary[77];
       return field->GetValue(this, &Value);
    }
 
@@ -4640,18 +4644,36 @@ class objVectorText : public objVector {
    }
 
    inline ERR getSelectColumn(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[71];
+      auto field = &this->Class->Dictionary[73];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getLineLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[65];
+      auto field = &this->Class->Dictionary[66];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getCharLimit(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[70];
+      auto field = &this->Class->Dictionary[71];
       return field->GetValue(this, &Value);
+   }
+
+   inline ERR getSelectedText(std::string &Value) noexcept {
+      auto field = &this->Class->Dictionary[63];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
+   }
+
+   inline ERR getSelectFill(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[72];
+      SetObjectContext(this, field, AC::NIL);
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      auto error = get_field(this, Value);
+      RestoreObjectContext();
+      return error;
    }
 
 
@@ -4663,12 +4685,12 @@ class objVectorText : public objVector {
    }
 
    inline ERR setTextFlags(const VTXF Value) noexcept {
-      auto field = &this->Class->Dictionary[63];
+      auto field = &this->Class->Dictionary[64];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[69];
+      auto field = &this->Class->Dictionary[70];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -4678,7 +4700,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setWeight(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[72];
+      auto field = &this->Class->Dictionary[74];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4693,7 +4715,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setFace(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[66];
+      auto field = &this->Class->Dictionary[67];
       return field->WriteValue(this, field, 0x00904308, &Value);
    }
 
@@ -4708,7 +4730,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setDX(std::span<const double> Value) noexcept {
-      auto field = &this->Class->Dictionary[73];
+      auto field = &this->Class->Dictionary[75];
       return field->WriteValue(this, field, 0x80101308, &Value);
    }
 
@@ -4738,7 +4760,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setTextLength(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[79];
+      auto field = &this->Class->Dictionary[81];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -4758,7 +4780,7 @@ class objVectorText : public objVector {
    }
 
    inline ERR setCursorColumn(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[77];
+      auto field = &this->Class->Dictionary[79];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -4768,13 +4790,18 @@ class objVectorText : public objVector {
    }
 
    inline ERR setLineLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[65];
+      auto field = &this->Class->Dictionary[66];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setCharLimit(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[70];
+      auto field = &this->Class->Dictionary[71];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setSelectFill(const std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[72];
+      return field->WriteValue(this, field, 0x00804308, &Value);
    }
 
 };
