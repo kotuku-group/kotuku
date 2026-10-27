@@ -89,6 +89,7 @@ private:
 extern "C" DISPLAY_DRIVER_EXPORT void x11_process_driver_events(DisplayDriver *Driver);
 extern "C" DISPLAY_DRIVER_EXPORT unsigned long x11_driver_clipboard_window(DisplayDriver *Driver);
 extern "C" DISPLAY_DRIVER_EXPORT size_t x11_driver_bitmap_size();
+extern "C" DISPLAY_DRIVER_EXPORT int x11_driver_bitmap_shmid(extBitmap *Bitmap);
 #endif
 
 }
