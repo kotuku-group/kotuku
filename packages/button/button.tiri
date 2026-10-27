@@ -36,6 +36,7 @@ gui.button = function(Options)
 
       calc_width = false -- True if the button width is computed from its content at initialisation
       icon_margin = 0 -- Padding around the icon's pattern tile, see gui.createIcon()
+      clip_inset = math.ceil(theme.bkgd.strokeWidth) -- Inset of the label clip; whole pixels keep the label sharp
 
       -- Compose the background style from the current hover, focus and disabled states.  Hover and focus styling is
       -- suppressed while the button is disabled.
@@ -53,6 +54,7 @@ gui.button = function(Options)
 
       -- Position the icon and text.  If Resize is true and the width was not fixed by the client, the width is computed
       -- from the content.  Resizing is limited to initialisation; later content changes are clipped to the existing size.
+      -- The label is positioned within the label clip, which is inset from the viewport by clip_inset.
 
       function arrange(Resize:bool)
          label_offset = 0
@@ -61,22 +63,20 @@ gui.button = function(Options)
             label_offset = (GAP * 0.5) + ICON_SIZE
          end
 
-         if calc_width then
-            if Resize then
-               &viewport.width = &_label ? (GAP + label_offset + &_label.textWidth + GAP) : HEIGHT
-            end
+         if calc_width and Resize then
+            &viewport.width = &_label ? (GAP + label_offset + &_label.textWidth + GAP) : HEIGHT
+         end
 
-            if &iconRender and not &_label then -- Center icon, no text
-               &iconRender.x = ((&viewport.width - ICON_SIZE) * 0.5) - icon_margin
-            end
+         if &iconRender and not &_label then -- Center icon, no text
+            &iconRender.x = ((&viewport.width - ICON_SIZE) * 0.5) - icon_margin
          end
 
          if &_label then
             if &iconRender then
-               &_label.x = GAP + label_offset
+               &_label.x = GAP + label_offset - clip_inset
                &_label.align = ALIGN_LEFT
             else -- No icon, centre text
-               &_label.x = &viewport.width / 2
+               &_label.x = (&viewport.width * 0.5) - clip_inset
                &_label.align = ALIGN_HORIZONTAL
             end
          end
@@ -205,7 +205,6 @@ gui.button = function(Options)
          end
       end
 
-      clip_inset = math.ceil(theme.bkgd.strokeWidth) -- Whole pixels keep the label sharp
       &_labelClip = &viewport.new('VectorViewport', {
          x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset,
          overflow = VOF_HIDDEN
