@@ -42,9 +42,8 @@ jobs:
         submodules: recursive
 
     - name: Install Linux dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake ccache libssl-dev pkg-config
+      timeout-minutes: 10
+      run: bash .github/scripts/apt_install.sh ccache libssl-dev pkg-config
 
     - name: Pull Autobahn image
       run: docker pull $AUTOBAHN_IMAGE

@@ -29,23 +29,11 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Cache apt packages
-      if: runner.os == 'Linux'
-      uses: actions/cache@v4
-      with:
-        path: |
-          /var/cache/apt/archives/*.deb
-        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-
-
     - name: Install Linux dependencies
       if: runner.os == 'Linux'
+      timeout-minutes: 10
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
+        bash .github/scripts/apt_install.sh \
           ccache \
           libx11-dev \
           libxext-dev \
