@@ -1,0 +1,230 @@
+-- Tonal Ramp panel for the colour picker: a row of step buttons whose lightness falls linearly from L_MAX to L_MIN at
+-- the hue and chroma of the ramp's base colour.  The chroma of each step is reduced to fit the target gamut.  Clicking
+-- a step passes its colour to onPick, and the plus and minus buttons change the step count.
+--
+-- The base is the edited colour, except while the edited colour is the step that was picked.  A light or dark step
+-- has less chroma than the base, so rebasing on it would wash out the rest of the ramp.
+
+   import 'gui', 'gui/button', 'gui/colourpicker/colour', './parts'
+   include 'display'
+
+   namespace colourpicker_ramp { }
+
+PANEL_HEADER_H <const> = 32 -- Panel header including its divider
+PAD            <const> = 12 -- Horizontal padding inside the panel
+TOP            <const> = 10 -- Top of the step row
+COUNT_BUTTON   <const> = 18 -- Size of the plus and minus buttons, which are stacked
+COUNT_GAP      <const> = 2  -- Between the plus and minus buttons
+ROW            <const> = (COUNT_BUTTON * 2) + COUNT_GAP -- Height of the step buttons, matching the stack
+STEPS          <const> = 5  -- Default step count
+MIN_STEPS      <const> = 4
+MAX_STEPS      <const> = 8  -- Limited by the width of the step labels
+GAP            <const> = 3  -- Between the steps, leaving room for the selection ring
+ROUND          <const> = 4
+L_MAX          <const> = 0.98 -- Lightness of the first and last steps
+L_MIN          <const> = 0.18
+INK_BLACK      <const> = { r = 0, g = 0, b = 0 } -- Step label colours, chosen by contrast with the step
+INK_WHITE      <const> = { r = 1, g = 1, b = 1 }
+
+colourpicker_ramp.HEIGHT    = PANEL_HEADER_H + TOP + ROW + 10
+colourpicker_ramp.MIN_STEPS = MIN_STEPS
+colourpicker_ramp.MAX_STEPS = MAX_STEPS
+
+function stepColour(Base:table!, Index:num!, Count:num!, Clamp:str):<num, num, num>
+   l = L_MAX - ((L_MAX - L_MIN) * Index / (Count - 1))
+   return colourmath.gamutMap(l, Base.c, Base.h, Clamp)
+end
+
+function sameColour(A:table!, B:table!):bool
+   return (math.abs(A.l - B.l) < 1e-6) and (math.abs(A.c - B.c) < 1e-6) and (math.abs(A.h - B.h) < 1e-6)
+end
+
+function enableButton(Button:table!, Enabled:bool)
+   if Enabled is (not Button.disabled) then return end
+   if Enabled then Button.enable() else Button.disable() end
+end
+
+@Doc(text=[[
+@desc Create the Tonal Ramp panel.
+@input Target viewport
+@input Options: x, y, width, tokens, srgb (function(L, C, H, Clamp) returning the displayed sRGB channels, 0 - 1) and
+onPick (function(L, C, H) called when a step is clicked)
+@result Table with `panel`, `steps`, `count`, `update(State)`, `setCount(Count)`, `pick(Index)` and `buttons()`.
+State is the picker state, of which l, c, h and clamp are read.
+]])
+colourpicker_ramp.new = function(Target:obj!, Options:table!):table
+   t = Options.tokens
+   width = Options.width
+   inner_w = width - (PAD * 2)
+
+   self = {
+      panel = colourpicker_parts.panel(Target, {
+         x = Options.x, y = Options.y, width = width, height = colourpicker_ramp.HEIGHT, title = 'Tonal Ramp',
+         meta = 'linear', tokens = t
+      }),
+      count  = STEPS,
+      steps  = array<table>,
+      base   = nil, -- Hue and chroma of the ramp
+      picked = nil, -- The colour of the step that was last picked
+      state  = nil  -- The state given to update()
+   }
+   body = self.panel.body
+
+   -- The step count buttons are stacked on the right of the steps, plus above minus
+
+   btn_x = PAD + inner_w - COUNT_BUTTON
+
+   self.btnMore = gui.button({
+      target = body, x = btn_x, y = TOP, width = COUNT_BUTTON, height = COUNT_BUTTON,
+      icon = 'items/add', tip = 'Add a step', 
+      events = { 
+         activate = function() 
+            self.setCount(self.count + 1) 
+         end 
+      }
+   })
+
+   self.btnLess = gui.button({
+      target = body, x = btn_x, y = TOP + COUNT_BUTTON + COUNT_GAP, width = COUNT_BUTTON, height = COUNT_BUTTON,
+      icon = 'items/minus', tip = 'Remove a step', 
+      events = { 
+         activate = function() 
+            self.setCount(self.count - 1) 
+         end 
+      }
+   })
+
+   row_w = btn_x - 8 - PAD
+
+   -- The steps are created up front so that they keep their place in the tab order, and layout() shows the ones in
+   -- use.  Each button has a transparent background over a swatch, so that its hover and focus styling still apply.
+
+   theme = {
+      bkgd      = { fill = 'rgba(0,0,0,0)', stroke = t.swatchBorder, roundX = ROUND, roundY = ROUND },
+      highlight = { fill = 'rgba(0,0,0,0)' },
+      text      = {
+         face = colourpicker_parts.FACE_MONO, fontSize = '11px', y = colourpicker_parts.baseline(0, ROW - 2, 10)
+      }
+   }
+
+   for i in {0 to MAX_STEPS} do
+      step = { shown = true }
+      step.swatch = body.new('VectorRectangle', {
+         y = TOP + 0.5, width = 1, height = ROW - 1, roundX = ROUND, roundY = ROUND
+      })
+
+      step.button = gui.button({
+         target = body, y = TOP, width = 1, height = ROW, label = ' ', theme = theme,
+         events = { 
+            activate = function() 
+               self.pick(i) 
+            end 
+         }
+      })
+      self.steps.push(step)
+   end
+
+   -- The ring marks the step that matches the edited colour
+
+   self.ring = body.new('VectorRectangle', {
+      y = TOP - 1.5, width = 1, height = ROW + 3, roundX = ROUND + 1.5, roundY = ROUND + 1.5,
+      fill = 'none', stroke = t.accent, strokeWidth = 1.5, visibility = VIS_HIDDEN
+   })
+
+   -- Divide the row between the steps in use, in whole pixels, and label each step with its lightness.  The unused
+   -- steps are hidden and disabled, which removes them from the tab order.
+
+   function layout()
+      count = self.count
+      span = (row_w + GAP) / count
+
+      for i, step in self.steps do
+         shown = i < count
+
+         if shown then
+            x = math.round(i * span)
+            w = math.round((i + 1) * span) - GAP - x
+            step.swatch.{ x = PAD + x + 0.5, width = w - 1 }
+            step.button.viewport.{ x = PAD + x, width = w }
+            l = stepColour({ c = 0, h = 0 }, i, count, 'none')
+            step.button.setLabel(tostring(math.round(l * 100)))
+         end
+
+         if shown != step.shown then
+            step.shown = shown
+            step.swatch.visibility = shown ? VIS_VISIBLE : VIS_HIDDEN
+            step.button.viewport.visibility = shown ? VIS_VISIBLE : VIS_HIDDEN
+            enableButton(step.button, shown)
+         end
+      end
+
+      enableButton(self.btnLess, count > MIN_STEPS)
+      enableButton(self.btnMore, count < MAX_STEPS)
+   end
+
+   -- Recolour the steps for the edited colour and target gamut of State.
+
+   self.update = function(State:table!)
+      self.state = State
+      if not (self.picked and sameColour(self.picked, State)) then
+         self.picked = nil
+         self.base = { c = State.c, h = State.h }
+      end
+
+      self.ring.visibility = VIS_HIDDEN
+      for i in {0 to self.count} do
+         step = self.steps[i]
+         l, c, h = stepColour(self.base, i, self.count, State.clamp)
+         step.colour = { l = l, c = c, h = h }
+
+         r, g, b = Options.srgb(l, c, h, State.clamp)
+         rgb = { r = r, g = g, b = b }
+         step.swatch.fill = colourmath.toHex(r, g, b)
+
+         dark = colourmath.wcagContrast(INK_BLACK, rgb) >= colourmath.wcagContrast(INK_WHITE, rgb)
+         step.button._label.fill = dark ? '#000000' : '#FFFFFF'
+         step.button.tip = colourmath.toOklchString(l, c, h, 1)
+
+         if sameColour(step.colour, State) then
+            vp = step.button.viewport
+            self.ring.{ x = vp.x - 1.5, width = vp.width + 3, visibility = VIS_VISIBLE }
+         end
+      end
+   end
+
+   -- Change the step count, within MIN_STEPS and MAX_STEPS.  The base is kept.
+
+   self.setCount = function(Count:num!)
+      Count = math.clamp(Count, MIN_STEPS, MAX_STEPS)
+      if Count is self.count then return end
+      self.count = Count
+      layout()
+      if self.state then self.update(self.state) end
+      self.panel.viewport.acDraw()
+   end
+
+   -- Pass the colour of the step at Index to onPick.
+
+   self.pick = function(Index:num!)
+      if Index >= self.count then return end
+      colour = self.steps[Index].colour
+      colour ?! return
+      self.picked = { l = colour.l, c = colour.c, h = colour.h }
+      Options.onPick(colour.l, colour.c, colour.h)
+   end
+
+   -- Every button of the panel, in tab order
+
+   self.buttons = function():array<table>
+      list = array<table>
+      for step in values(self.steps) do 
+         list.push(step.button) 
+      end
+      list.push(self.btnMore)
+      list.push(self.btnLess)
+      return list
+   end
+
+   layout()
+   return self
+end
