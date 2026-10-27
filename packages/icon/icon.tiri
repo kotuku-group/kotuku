@@ -49,7 +49,7 @@ gui.icon = function(Options:table!)
    click_state  = { held=false, x=0, y=0 }
    words        = array<table>
    lines        = array<str>
-   icon_size    = Options.size ?? 66
+   icon_size    = Options.size ?? gui.rpixel('100dp')
    icon_width   = icon_size
    font_size_pt = 0
    margin       = 0
@@ -165,9 +165,9 @@ gui.icon = function(Options:table!)
          fill   = gui.getTheme(Options.target).palette.shade,
          x      = 0,
          y      = math.floor(y),
-         roundX = 5,
-         roundY = 5,
-         width  = icon_width - 1.0,
+         roundX = gui.pixel('7.5dp'),
+         roundY = gui.pixel('7.5dp'),
+         width  = icon_width,
          height = box_height
       })
 

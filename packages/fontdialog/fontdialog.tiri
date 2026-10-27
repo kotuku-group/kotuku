@@ -159,12 +159,12 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       end
 
       &window = gui.window({
-         insideWidth  = 700,
-         insideHeight = 600,
-         minWidth     = 500,
-         minHeight    = 400,
-         maxWidth     = 1024,
-         maxHeight    = 800,
+         insideWidth  = gui.rpixel('1000dp'),
+         insideHeight = gui.rpixel('900dp'),
+         minWidth     = gui.rpixel('700dp'),
+         minHeight    = gui.rpixel('600dp'),
+         maxWidth     = gui.rpixel('1500dp'),
+         maxHeight    = gui.rpixel('1200dp'),
          quit         = false,
          popOver      = Options.popOver,
          icon         = 'items/font',
@@ -230,7 +230,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       -- Font example area
 
       &exampleVP = &viewport.new('VectorViewport', {
-         x       = 210,
+         x       = gui.rpixel('310dp'),
          y       = &window.margins.top,
          xOffset = &window.margins.right,
          yOffset = footer
@@ -241,7 +241,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       }, table.merge(&window.theme.page.bkgd, &window.theme.page.border)))
 
       &exampleView = &exampleVP.new('VectorViewport', {
-         x = 4, y = 4, xOffset = 4, yOffset = 4, overflow = VOF_HIDDEN
+         x = gui.sizing.widget.gap, y = gui.sizing.widget.gap, xOffset = gui.sizing.widget.gap, yOffset = gui.sizing.widget.gap, overflow = VOF_HIDDEN
       })
 
       &examplePage = &exampleView.new('VectorViewport', {
@@ -253,10 +253,10 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       -- Font size selection
 
       vwSize = gui.listView({
-         x          = &exampleVP.x - gui.sizing.widget.gap - 60,
+         x          = &exampleVP.x - gui.sizing.widget.gap - gui.rpixel('90dp'),
          yOffset    = footer,
-         height     = 140,
-         width      = 60,
+         height     = gui.rpixel('210dp'),
+         width      = gui.rpixel('90dp'),
          target     = &viewport,
          style      = 'LongList',
          sensitive  = true,
@@ -281,7 +281,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       vwStyle = gui.listView({
          x            = &window.margins.left,
          yOffset      = footer,
-         height       = 140,
+         height       = gui.rpixel('210dp'),
          width        = vwSize.viewport.x - gui.sizing.widget.gap - &window.margins.left,
          target       = &viewport,
          sensitive    = true,

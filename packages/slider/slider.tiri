@@ -808,7 +808,7 @@ gui.slider = function(Options:table!)
          &prvPlaceValue(&trackVP.width, &trackVP.height)
       end
 
-      function[<weak> self] focusFeedback(Viewport, Event)
+      function[<weak> &&] focusFeedback(Viewport, Event)
          &hasFocus = Event != FM_LOST_FOCUS
 
          &prvApplyStyle()
@@ -826,7 +826,7 @@ gui.slider = function(Options:table!)
       -- Keyboard registration makes the whole widget a single stop in the scene's tab order.  The arrow keys move one
       -- increment; Page Up/Down move to the next tick, or ten increments if the slider has no ticks.
 
-      function[<weak> self] keyboardInput(Viewport:obj!, Qualifiers:num!, Code:num!, Unicode)
+      function[<weak> &&] keyboardInput(Viewport:obj!, Qualifiers:num!, Code:num!, Unicode)
          if &disabled or not (Qualifiers has KQ_PRESSED) then return end
 
          increment = &prvIncrement()
@@ -847,7 +847,7 @@ gui.slider = function(Options:table!)
 
       if Options.keyboard != false then &viewport.mtSubscribeKeyboard(keyboardInput) end
 
-      function[<weak> self] wheelInput(Viewport:obj!, Msg)
+      function[<weak> &&] wheelInput(Viewport:obj!, Msg)
          if &disabled then return end
 
          -- Upward rotation is reported as a negative value and increases the slider.  Display drivers scale the value
@@ -869,7 +869,7 @@ gui.slider = function(Options:table!)
 
       &viewport.mtSubscribeInput(JTYPE_EXT_MOVEMENT, wheelInput)
 
-      function[<weak> self] crossingInput(Viewport, Msg)
+      function[<weak> &&] crossingInput(Viewport, Msg)
          if &disabled then return end
 
          repeat
@@ -887,7 +887,7 @@ gui.slider = function(Options:table!)
 
       &thumbVP.mtSubscribeInput(JTYPE_CROSSING, crossingInput)
 
-      function[<weak> self] trackInput(Viewport:obj!, Msg)
+      function[<weak> &&] trackInput(Viewport:obj!, Msg)
          repeat
             if (Msg.type is JET_LMB) and (Msg.value > 0) and (not &disabled) then
                -- Centre the slider on the click position.

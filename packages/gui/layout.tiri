@@ -78,7 +78,7 @@ gui.layout.label = function(Target:obj!, Options:table!):table
             'top'   -> 'y'
             else    -> 'yOffset'
          end
-         Host[side] = Host[side] + &size
+         Host[side] += &size
       end,
 
       -- Return the default widget dimensions for a body of the given default size.  The label never shrinks the

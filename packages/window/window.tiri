@@ -12,8 +12,8 @@ Documentation is available in the Kotuku Wiki.
 
    module display as mGfx
 
-DEFAULT_WIDTH  <const> = 600
-DEFAULT_HEIGHT <const> = 400
+DEFAULT_WIDTH  <const> = gui.rpixel('900dp')
+DEFAULT_HEIGHT <const> = gui.rpixel('600dp')
 
 function surfaceReference(Value)
    if Value is <table> then return Value.surface end
@@ -88,7 +88,7 @@ gui.window = function(Options:table!)
          x      = &surface.x - &client.left,
          y      = &surface.y - &client.top,
          width  = &surface.width + &client.left + &client.right,
-         height =  &surface.height + &client.top + &client.bottom
+         height = &surface.height + &client.top + &client.bottom
       }
    end
 
@@ -299,7 +299,7 @@ gui.window = function(Options:table!)
          &margins = { left = 0, top = 0, right = 0, bottom = 0 }
          &client = { left = 0, top = 0, right = 0, bottom = 0 }
       else
-         &margins = { left = 6, top = 6, right = 6, bottom = 6 }
+         &margins = { left = gui.sizing.widget.gap, top = gui.sizing.widget.gap, right = gui.sizing.widget.gap, bottom = gui.sizing.widget.gap }
 
          -- Retrieve the available client area from the host
          local display = &surface.display

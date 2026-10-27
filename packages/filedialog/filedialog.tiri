@@ -104,10 +104,10 @@ gui.dialog.file = function(Options)
    end
 
    self.window = gui.window({
-      insideWidth  = 500,
-      insideHeight = 550,
-      minWidth     = 250,
-      minHeight    = 150,
+      insideWidth  = gui.rpixel('750dp'),
+      insideHeight = gui.rpixel('825dp'),
+      minWidth     = gui.rpixel('375dp'),
+      minHeight    = gui.rpixel('225dp'),
       quit         = false,
       popOver      = Options.popOver,
       icon         = Options.icon ?? 'icons:folders/folder',

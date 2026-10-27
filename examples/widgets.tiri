@@ -10,7 +10,7 @@ A demonstration of standard widgets
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
-   win = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=500 })
+   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('900dp'), insideHeight=gui.rpixel('750dp') })
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
@@ -247,7 +247,7 @@ end
    }, win.theme.window.text))
    font_size = tonumber(text.fontSize)
    text.y += font_size
-   y += font_size + 14
+   y += font_size + gui.rpixel('12pt')
 
    msgButton = gui.button({
       target = viewport,
@@ -291,7 +291,7 @@ end
    colourButton = gui.button({
       target = viewport,
       label  = 'Select Colour',
-      x      = msgButton.viewport.x + msgButton.viewport.width + 4,
+      x      = msgButton.viewport.x + msgButton.viewport.width + gui.sizing.widget.gap,
       y      = y,
       icon   = 'tools/palette',
       events = {
@@ -317,7 +317,7 @@ end
    fontButton = gui.button({
       target = viewport,
       label  = 'Select Font',
-      x      = colourButton.viewport.x + colourButton.viewport.width + 4,
+      x      = colourButton.viewport.x + colourButton.viewport.width + gui.sizing.widget.gap,
       y      = y,
       icon   = 'items/font',
       events = {
@@ -341,7 +341,7 @@ end
    fileButton = gui.button({
       target = viewport,
       label  = 'Select File',
-      x      = fontButton.viewport.x + fontButton.viewport.width + 4,
+      x      = fontButton.viewport.x + fontButton.viewport.width + gui.sizing.widget.gap,
       y      = y,
       icon   = 'folders/folder',
       events = {
@@ -375,7 +375,7 @@ end
    toggle = gui.toggle({
       target = viewport,
       label  = 'Toggle:',
-      labelWidth = 90,
+      labelWidth = gui.pixel('150dp'),
       labelPos = 'left',
       x      = win.margins.left,
       y      = y,
@@ -392,17 +392,17 @@ end
    })
 
    vslider = gui.slider({
-      target = viewport,
-      label  = 'Slider:',
-      labelPos = 'bottom',
+      target      = viewport,
+      label       = 'Slider:',
+      labelPos    = 'bottom',
       orientation = 'vertical',
-      value  = 1,
+      value    = 1,
       valuePos = 'in-centre',
-      min    = 0.5,
-      max    = 1,
-      x      = win.viewport.width / 2,
-      y      = y,
-      events = {
+      min      = 0.5,
+      max      = 1,
+      xOffset  = gui.rpixel('10dp'),
+      y        = y,
+      events   = {
          activate = function(Value)
          end
       }
@@ -411,21 +411,22 @@ end
    y += toggle.viewport.height + gui.sizing.widget.gap
 
    combobox = gui.combobox({
-      target = viewport,
-      label  = 'Combobox:',
-      labelWidth = 90,
-      text   = 'Your text here',
-      x      = win.margins.left, y = y,
+      target      = viewport,
+      label       = 'Combobox:',
+      labelWidth  = gui.rpixel('150dp'),
+      text        = 'Your text here',
+      x           = win.margins.left,
+      y           = y,
       allowCustom = true,
-      items = {
-         { group='Office' },
-         { label='Address Book', icon='office/addressbook' },
-         { label='Inbox', icon='office/cabinet_in' },
-         { label='Tasks', icon='office/tasks' },
-         { label='Finances', icon='office/money' },
-         { group='Weather' },
-         { label='Snow', icon='weather/snow' },
-         { label='Thunder', icon='weather/thunder' }
+      items       = {
+         { group = 'Office' },
+         { label = 'Address Book', icon='office/addressbook' },
+         { label = 'Inbox', icon='office/cabinet_in' },
+         { label = 'Tasks', icon='office/tasks' },
+         { label = 'Finances', icon='office/money' },
+         { group = 'Weather' },
+         { label = 'Snow', icon='weather/snow' },
+         { label = 'Thunder', icon='weather/thunder' }
       },
       events = {
          activate = function()
@@ -437,14 +438,14 @@ end
    y += combobox.viewport.height + gui.sizing.widget.gap
 
    local input = gui.input({
-      target = viewport,
-      x      = win.margins.left,
-      y      = y,
-      width  = 260,
-      labelWidth = 90,
-      label  = 'Inputbox:',
-      text   = 'Your text here',
-      events = {
+      target     = viewport,
+      x          = win.margins.left,
+      y          = y,
+      width      = combobox.viewport.width,
+      labelWidth = gui.rpixel('150dp'),
+      label      = 'Inputbox:',
+      text       = 'Your text here',
+      events     = {
          activate = function(Event)
             print('Input state set to "' .. (Event.state ?? 'NIL') .. '", text "' .. (Event.text ?? 'NIL') .. '"')
          end,
@@ -457,24 +458,25 @@ end
    y += input.viewport.height + gui.sizing.widget.gap
 
    hslider = gui.slider({
-      target = viewport,
-      label  = 'Slider:',
-      labelPos = 'left',
-      labelWidth = 90,
+      target      = viewport,
+      label       = 'Slider:',
+      labelPos    = 'left',
+      labelWidth  = gui.rpixel('150dp'),
       orientation = 'horizontal',
-      valuePos = 'in-centre',
-      value  = 1,
-      min    = 0.5,
-      max    = 1,
-      x      = win.margins.left,
-      y      = y,
-      events = {
+      valuePos    = 'in-centre',
+      value       = 1,
+      min         = 0.5,
+      max         = 1,
+      x           = win.margins.left,
+      y           = y,
+      width       = input.viewport.width,
+      events      = {
          activate = function(Value)
          end
       }
    })
 
-   y += input.viewport.height + 80
+   y += input.viewport.height + gui.rpixel('120dp')
 
    try
       global sndAlarm = obj.new('sound', { path=glPath .. 'data/alarm.mp3', volume=0.2 })
@@ -482,11 +484,11 @@ end
 
    glAlarmIcon = gui.icon({
       target = viewport,
-      x      = 20,
+      x      = gui.rpixel('30dp'),
       y      = y,
       image  = 'time/alarm',
       label  = 'Alarm',
-      size   = 80,
+      size   = gui.rpixel('120dp'),
       draggable = true,
       theme = { effect = 'fill(cmap:flare) sheen() emboss() glow(black)' },
       events = {
@@ -514,7 +516,7 @@ end
 
    glHouseIcon = gui.icon({
       target = viewport,
-      x      = 120,
+      x      = gui.rpixel('180dp'),
       y      = y,
       image  = 'programs/filemanager',
       label  = 'Wilhelm\'s House',
