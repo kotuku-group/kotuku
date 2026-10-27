@@ -28,6 +28,34 @@
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Clipboard</name>
+      <comment>Copies, cuts or pastes selected text through the system clipboard.</comment>
+      <prototype>ERR acClipboard(*Object, CLIPMODE Mode)</prototype>
+      <tiriPrototype>err = Object.acClipboard(Mode:CLIPMODE)</tiriPrototype>
+      <input>
+        <param type="CLIPMODE" name="Mode" lookup="CLIPMODE">The mode that will be used to shift data between the target object and clipboard system.</param>
+      </input>
+      <description>
+<p><code>CLIPMODE::COPY</code> copies <fl>SelectedText</fl> as UTF-8.  <code>CLIPMODE::CUT</code> copies the selection and removes it only after the clipboard accepts the text.  Both operations leave the clipboard and text unchanged when nothing is selected or <code>VTXF::SECRET</code> is set in <fl>TextFlags</fl>.</p>
+<p><code>CLIPMODE::PASTE</code> replaces the selection, or inserts at the cursor when nothing is selected.  CRLF and CR line endings are normalised to LF.  With <fl>LineLimit</fl> set to 1, each line ending becomes a space.  Other line limits reject a paste that would exceed the limit after replacing the selected rows.  <fl>CharLimit</fl> truncates each resulting line in character columns, matching keyboard editing.  Text after a null byte is ignored.</p>
+<p>Cut and paste require <code>VTXF::EDITABLE</code>.  Copy does not change the selection or call <fl>OnChange</fl>.  Cut and paste call <fl>OnChange</fl> once if the text changes.</p>
+      </description>
+      <result>
+        <error code="Okay">The operation completed, or there was nothing to copy or change.</error>
+        <error code="Args">The clipboard mode is not supported.</error>
+        <error code="NoData">No text is available to paste.</error>
+        <error code="OutOfRange">The clipboard file is too large to read.</error>
+        <error code="CreateObject">The Clipboard object could not be created.</error>
+        <error code="OpenFile">The clipboard file could not be opened.</error>
+        <error code="ReadOnly">Cut or paste was requested for non-editable text.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </action>
+
+  </actions>
+
   <methods>
     <method>
       <name>DeleteLine</name>
@@ -61,7 +89,7 @@
       <description>
 <p>SelectArea() marks a region of text as selected, starting at the position given by <code>Row</code> and <code>Column</code>.  The cursor is moved to the end of the region at <code>EndRow</code> and <code>EndColumn</code>, which may come before the start for a reversed selection. Columns are character positions, so UTF-8 sequences count as one column each.  A negative <code>EndRow</code> refers to the last line and a negative <code>EndColumn</code> refers to the end of its line, so <code>SelectArea(0, 0, -1, -1)</code> selects all of the text.  Positions beyond the text are clamped to its limits.</p>
 <p>While an area is selected the <code>AREA_SELECTED</code> bit is set in <fl>TextFlags</fl>.  The next character typed, or a press of Backspace, Delete, Clear or Enter, will replace or delete the selected text.  Moving the cursor deselects the area.</p>
-<p>The selected area is not highlighted when the text is drawn.</p>
+<p>Editable text displays the selected area with the <fl>SelectFill</fl> painter.  The highlight is hidden when focus is lost and restored when focus returns; the selection range is retained.</p>
 <p>If the start and end positions are identical, the cursor is moved and no area is selected.</p>
       </description>
       <result>
@@ -306,7 +334,17 @@
       <type>INT</type>
       <description>
 <p>If the user has selected an area of text, the starting column of that area will be indicated by this field.  If an area has not been selected, the value of the SelectColumn field is undefined.</p>
-<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <class name="Vector" field="Flags">Vector.Flags</class> field.</p>
+<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <fl>TextFlags</fl> field.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>SelectFill</name>
+      <comment>The painter used to highlight selected editable text.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Accepts the same colours, paint servers and layered painters as <class name="Vector" field="Fill">Vector.Fill</class>.  The default is <code>rgba(0,120,215,0.35)</code>.  The highlight is drawn over the glyphs, so a translucent painter keeps them legible. Selection highlights follow the text's transforms and are hidden while focus is lost.</p>
       </description>
     </field>
 
@@ -317,8 +355,19 @@
       <type>INT</type>
       <description>
 <p>If the user has selected an area of text, the starting row of that area will be indicated by this field.  If an area has not been selected, the value of the SelectRow field is undefined.</p>
-<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <class name="Vector" field="Flags">Vector.Flags</class> field.</p>
+<p>To check whether or not an area has been selected, test the <code>AREA_SELECTED</code> bit in the <fl>TextFlags</fl> field.</p>
       </description>
+    </field>
+
+    <field>
+      <name>SelectedText</name>
+      <comment>The selected text, with line breaks separating selected lines.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>Returns an empty string when there is no selection or the <code>SECRET</code> flag is set in <fl>TextFlags</fl>.</p>
+      </description>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>

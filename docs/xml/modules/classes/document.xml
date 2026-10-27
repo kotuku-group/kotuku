@@ -47,8 +47,8 @@
     <action>
       <name>Clipboard</name>
       <comment>Full support for clipboard activity is provided through this action.</comment>
-      <prototype>ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)</prototype>
-      <tiriPrototype>err = Object.acClipboard(Clipboard:obj, Mode:CLIPMODE)</tiriPrototype>
+      <prototype>ERR acClipboard(*Object, CLIPMODE Mode)</prototype>
+      <tiriPrototype>err = Object.acClipboard(Mode:CLIPMODE)</tiriPrototype>
       <input>
         <param type="CLIPMODE" name="Mode" lookup="CLIPMODE">The mode that will be used to shift data between the target object and clipboard system.</param>
       </input>

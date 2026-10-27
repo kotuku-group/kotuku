@@ -35,6 +35,7 @@ static ERR VECTORTEXT_Free(extVectorText *Self) {
 }
 
 static const struct ActionArray clVectorTextActions[] = {
+   { AC::Clipboard, VECTORTEXT_Clipboard },
    { AC::Free, VECTORTEXT_Free },
    { AC::Init, VECTORTEXT_Init },
    { AC::New, VECTORTEXT_New },

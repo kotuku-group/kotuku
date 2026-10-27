@@ -337,15 +337,21 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             //log.trace("Char '%c' is at (%.2f %.2f) to (%.2f %.2f), angle: %.2f, remaining dist: %.2f", unicode, tx, ty, start_x, start_y, angle / DEG2RAD, dist);
 
+            transform.rotate(angle); // Rotate the character in accordance with its position on the path angle.
+            transform.translate(tx, ty); // Move the character to its correct position on the path.
             if (unicode > 0x20) {
-               transform.rotate(angle); // Rotate the character in accordance with its position on the path angle.
-               transform.translate(tx, ty); // Move the character to its correct position on the path.
                agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
                Path.concat_path(trans_char);
             }
 
-            //dx += char_width;
-            //dy += glyph.adv_y + ky;
+            if (Vector->txCursor.vector) {
+               calc_caret_position(line, transform, pt.ascent);
+               if (not *str) {
+                  transform.tx = start_x;
+                  transform.ty = start_y;
+                  calc_caret_position(line, transform, pt.ascent);
+               }
+            }
 
             prev_glyph_index = glyph.glyph_index;
          }
@@ -362,7 +368,9 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
          line.chars.clear();
          auto wrap_state = WS_NO_WORD;
          if ((line.empty()) and (Vector->txCursor.vector)) {
-            calc_caret_position(line, Vector->txFontSize);
+            agg::trans_affine transform;
+            transform.translate(dx, dy);
+            calc_caret_position(line, transform, pt.ascent);
          }
          else for (auto str=line.c_str(); *str; ) {
             int char_len;
@@ -438,6 +446,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    }
 
    if (Vector->txCursor.vector) Vector->txCursor.reset_vector(Vector);
+   rebuild_selection(Vector);
 
    // Text paths are always oriented around (0,0) and are transformed later
 

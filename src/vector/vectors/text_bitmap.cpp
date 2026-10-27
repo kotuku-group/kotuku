@@ -26,11 +26,13 @@ static void raster_text_to_bitmap(extVectorText *Vector)
       }
    }
    else {
-      agg::path_storage cursor_path;
-
       for (auto &line : Vector->txLines) {
          line.chars.clear();
          auto wrap_state = WS_NO_WORD;
+         if (line.empty() and Vector->txCursor.vector) {
+            const auto top = dy - Vector->txBitmapFont->Leading;
+            line.chars.emplace_back(0, top, 0, top + Vector->txBitmapFont->Height);
+         }
          for (auto str=line.c_str(); *str; ) {
             int char_len;
             auto unicode = UTF8ReadValue(std::string_view(line).substr(size_t(str - line.data())), &char_len);
@@ -65,9 +67,11 @@ static void raster_text_to_bitmap(extVectorText *Vector)
             str += char_len;
 
             if (Vector->txCursor.vector) {
-               line.chars.emplace_back(dx, dx, dy + 1, dy - ((double)Vector->txBitmapFont->Height * 1.2));
+               const auto top = dy - Vector->txBitmapFont->Leading;
+               line.chars.emplace_back(dx, top, dx, top + Vector->txBitmapFont->Height);
                if (!*str) { // Last character reached, add a final cursor entry past the character position.
-                  line.chars.emplace_back(dx + char_width, dy, dx + char_width, dy - ((double)Vector->txBitmapFont->Height * 1.2));
+                  line.chars.emplace_back(dx + char_width, top, dx + char_width,
+                     top + Vector->txBitmapFont->Height);
                }
             }
 
@@ -95,6 +99,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
    if (Vector->txCursor.vector) {
       Vector->txCursor.reset_vector(Vector);
    }
+   rebuild_selection(Vector);
 
    if (!Vector->txBitmapImage) {
       if (!(Vector->txAlphaBitmap = objBitmap::create::local(

@@ -1800,8 +1800,10 @@ static ERR VECTOR_SET_GuidePath(extVector *Self, extVector *Value)
 {
    kt::Log log;
 
+   // The guide is applied during base path generation, so a path generated earlier must be rebuilt.
+
    if (not Value) {
-      if (Self->GuidePath) { Self->GuidePath->unpinWeak(); Self->GuidePath = nullptr; }
+      if (Self->GuidePath) { Self->GuidePath->unpinWeak(); Self->GuidePath = nullptr; reset_path(Self); }
       return ERR::Okay;
    }
    else if (Value->Class->BaseClassID IS CLASSID::VECTOR) {
@@ -1809,7 +1811,7 @@ static ERR VECTOR_SET_GuidePath(extVector *Self, extVector *Value)
          if (Self->GuidePath) Self->GuidePath->unpinWeak();
          Value->pinWeak();
          Self->GuidePath = Value;
-         mark_buffers_for_refresh(Self);
+         reset_path(Self);
          return ERR::Okay;
       }
       else return log.warning(ERR::NotInitialised);
@@ -1827,7 +1829,7 @@ GuideFlags: Optional flags that affect #GuidePath.
 static ERR VECTOR_SET_GuideFlags(extVector *Self, VMF Value)
 {
    Self->GuideFlags = Value;
-   mark_buffers_for_refresh(Self);
+   reset_path(Self);
    return ERR::Okay;
 }
 
@@ -2335,10 +2337,13 @@ static ERR VECTOR_SET_Transition(extVector *Self, extVectorTransition *Value)
 {
    kt::Log log;
 
+   // Transitions are applied during base path generation, so a path generated earlier must be rebuilt.
+
    if (not Value) {
       if (Self->Transition) {
          Self->Transition->unpinWeak();
          Self->Transition = nullptr;
+         reset_path(Self);
       }
       return ERR::Okay;
    }
@@ -2347,7 +2352,7 @@ static ERR VECTOR_SET_Transition(extVector *Self, extVectorTransition *Value)
          if (Self->Transition) Self->Transition->unpinWeak();
          Value->pinWeak();
          Self->Transition = Value;
-         mark_buffers_for_refresh(Self);
+         reset_path(Self);
          return ERR::Okay;
       }
       else return log.warning(ERR::NotInitialised);
