@@ -922,9 +922,17 @@ void lose_host_clipboard()
    glHostSelectionGone = true;
 }
 
-void receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, OBJECTID SurfaceID)
+void clear_host_drop()
 {
-   if (not Mime) return;
+   const std::lock_guard lock(glClipboardLock);
+   glDropType = CLIPTYPE::NIL;
+   glDropPaths.clear();
+   glDropText.clear();
+}
+
+bool receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, OBJECTID SurfaceID)
+{
+   if (not Mime) return false;
    const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
    if (Dropped) { glDropType = CLIPTYPE::NIL; glDropPaths.clear(); glDropText.clear(); }
    if (std::string_view(Mime) IS "text/uri-list") {
@@ -955,7 +963,13 @@ void receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, O
             }
             path.push_back(line[i]);
          }
-         if (not path.empty()) items.emplace_back(path);
+         if (not path.empty()) {
+            // URI lists do not distinguish folders, but CopyFile requires their trailing separator.
+            LOC type;
+            if ((AnalysePath(path, &type) IS ERR::Okay) and (type IS LOC::DIRECTORY) and
+                  (path.back() != '/')) path.push_back('/');
+            items.emplace_back(path);
+         }
       }
       if (not items.empty()) {
          if (Dropped) {
@@ -975,6 +989,7 @@ void receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, O
       const char datatype[] = { char(glDropType IS CLIPTYPE::FILE ? DATA::FILE : DATA::TEXT), 0 };
       display::DriverDragDropped(SurfaceID, datatype);
    }
+   return (not Dropped) or (glDropType != CLIPTYPE::NIL);
 }
 
 static void append_xml(std::string &Output, std::string_view Text)

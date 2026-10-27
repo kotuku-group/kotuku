@@ -286,7 +286,7 @@ class extPointer : public objPointer {
    std::array<char, 8> DragData = {}; // Data preferences for current drag & drop item, as numeric DATA bytes
    uint8_t  DragDataSize = 0;     // Number of valid bytes in DragData
    bool     DragDelivering = false; // True while the drop is being dispatched to its destination
-   bool     NativeDrag = false; // Windows owns the primary-button and offer lifetime
+   bool     NativeDrag = false; // The host owns the primary-button and offer lifetime
    APTR     DragKeyHandle = nullptr; // Keyboard subscription that cancels the drag on Escape
    char     Device[32];
    std::string ButtonOrder;       // The order of the first 11 buttons can be changed here
@@ -539,8 +539,9 @@ extern std::unique_ptr<std::array<uint16_t, 256 * 256>> glDemultiply;
 extern std::array<uint8_t, 256 * 256> glAlphaLookup;
 extern std::list<ClipRecord> glClips;
 extern std::recursive_mutex glClipboardLock;
-extern void receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, OBJECTID SurfaceID);
+extern bool receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, OBJECTID SurfaceID);
 extern void lose_host_clipboard();
+extern void clear_host_drop();
 extern ERR respond_wayland_drop_request(OBJECTPTR Display, OBJECTPTR Requester, int Item, char Preference);
 namespace display {
    void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);

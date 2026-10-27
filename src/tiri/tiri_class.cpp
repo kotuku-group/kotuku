@@ -666,7 +666,9 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
          {
             LuaCallbackContextGuard callback_context(Self->Lua);
             if (push_tiri_function(Self->Lua, callback, callback_context) IS ERR::Okay) {
-               // +1 Item table: <file path="blah.exe"/> becomes { item='file', path='blah.exe' }
+               // +1 Item table: <file path="blah.exe"/> becomes { item='file', path='blah.exe' }.  Element content is
+               // exposed as 'content', so <text>Hello</text> becomes { item='text', content='Hello' }.  An attribute
+               // named 'content' takes precedence.
                lua_newtable(Self->Lua);
 
                if (receipt) {
@@ -678,6 +680,12 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
                      lua_pushstring(Self->Lua, "item");
                      lua_pushstring(Self->Lua, scan.name());
                      lua_settable(Self->Lua, -3);
+
+                     if (auto content = scan.getContent(); not content.empty()) {
+                        lua_pushstring(Self->Lua, "content");
+                        lua_pushlstring(Self->Lua, content.data(), content.size());
+                        lua_settable(Self->Lua, -3);
+                     }
 
                      for (unsigned a=1; a < scan.Attribs.size(); a++) {
                         lua_pushstring(Self->Lua, scan.Attribs[a].Name.c_str());

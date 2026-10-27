@@ -158,6 +158,10 @@ void DriverConstrainWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int 
    int Axis);
 void DriverProcessMessages();
 bool DriverAcceptsFocus(OBJECTID SurfaceID);
+bool DriverDragOver(OBJECTID SurfaceID, double X, double Y, CSTRING Datatypes, size_t Length);
+bool DriverDragStart(NativeDrop &Drop);
+bool DriverDragData(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t Length);
+void DriverDragLeave();
 }
 
 const DriverCallbacks glDriverCallbacks = {
@@ -189,7 +193,11 @@ const DriverCallbacks glDriverCallbacks = {
    .ResolveSurface = display::DriverResolveSurface,
    .ConstrainWindowSize = display::DriverConstrainWindowSize,
    .ProcessMessages = display::DriverProcessMessages,
-   .AcceptsFocus = display::DriverAcceptsFocus
+   .AcceptsFocus = display::DriverAcceptsFocus,
+   .DragOver = display::DriverDragOver,
+   .DragStart = display::DriverDragStart,
+   .DragData = display::DriverDragData,
+   .DragLeave = display::DriverDragLeave
 };
 
 thread_local int16_t tlNoDrawing = 0, tlNoExpose = 0, tlVolatileIndex = 0;
@@ -835,6 +843,17 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 
 #include "driver/callbacks.cpp"
 
+#if defined(UNIT_TESTS) and defined(__linux__)
+#include "tests/unit_native_drop.cpp"
+#endif
+
+static void MODTest(std::string_view Options, int *Passed, int *Total)
+{
+#if defined(UNIT_TESTS) and defined(__linux__)
+   native_drop_tests(*Passed, *Total);
+#endif
+}
+
 //********************************************************************************************************************
 
 static ModHeader::STRUCTS glStructures = {
@@ -846,5 +865,5 @@ static ModHeader::STRUCTS glStructures = {
    { "SurfaceInfo",   { sizeof(SurfaceInfo),   alignof(SurfaceInfo)   } }
 };
 
-KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, MODTest, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_display_module() { return &ModHeader; }

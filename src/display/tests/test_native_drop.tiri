@@ -1,0 +1,7 @@
+   include 'display'
+
+@Test function NativeDropSnapshotsAndReceipts()
+   local passed, total = mod.test('display')
+   assert(total > 0, 'Native drop unit tests must be available')
+   assert(passed is total, f'Passed {passed} of {total} native drop checks; use --log-api for details')
+end

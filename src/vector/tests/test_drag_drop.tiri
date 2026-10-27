@@ -334,6 +334,27 @@ end
    assert(#order is 2 and order[1] is 6, 'The next receipt without an id must answer the remaining request')
 end
 
+-- Native text receipts (Windows and Wayland) carry the text as element content rather than an attribute.
+
+@Test function ReceiptElementContentIsExposed()
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes)
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT,
+            f'<receipt id="{Item}"><text>one &amp; &lt;two&gt; 三</text><text/>' ..
+            '<file path="/a"/><note content="attrib">ignored</note></receipt>')
+      end
+   })
+   local items
+   input.requestItem(source, 3, 'text', function(Items) items = Items end)
+   assert(items, 'The receipt must be delivered')
+   assert(items[0].item is 'text' and items[0].content is 'one & <two> 三',
+      f'Text content must be unescaped and exposed as content, got {items[0].content}')
+   assert(items[1].item is 'text' and items[1].content is nil, 'An empty element must have no content field')
+   assert(items[2].path is '/a' and items[2].content is nil, 'An attribute-only element must have no content field')
+   assert(items[3].content is 'attrib', 'A content attribute must take precedence over element content')
+end
+
 @Test function ClipboardSourceIsToldHowTheSessionEnded()
    local surface <close>, scene, root = newScene()
    root.dropTarget = 1

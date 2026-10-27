@@ -547,6 +547,123 @@ void DriverClipboardLost()
    lose_host_clipboard();
 }
 
+// Native offers use the same feedback path as internal drags.  The host retains ownership of button release.
+
+void DriverDragLeave()
+{
+   if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+      if (pointer->NativeDrag) end_cursor_drag(pointer, false);
+      ReleaseObject(pointer);
+      input_event_loop(HOSTHANDLE{}, nullptr);
+   }
+}
+
+bool DriverDragOver(OBJECTID SurfaceID, double X, double Y, CSTRING Datatypes, size_t Length)
+{
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return false;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if ((pointer->DragSourceID) and (not pointer->NativeDrag)) return false;
+
+   const auto modal = gfx::GetModalSurface();
+   SURFACEINFO *info;
+   if ((not SurfaceID) or (not Length) or ((modal) and (not in_modal_scope(modal, SurfaceID))) or
+         (gfx::GetSurfaceInfo(SurfaceID, &info) != ERR::Okay)) {
+      DriverDragLeave();
+      return false;
+   }
+   int abs_x, abs_y;
+   if (gfx::GetSurfaceCoords(SurfaceID, nullptr, nullptr, &abs_x, &abs_y, nullptr, nullptr) != ERR::Okay)
+      return false;
+
+   pointer->NativeDrag = true;
+   pointer->DragSourceID = info->DisplayID;
+   pointer->DragItem = -1;
+   pointer->DragFeedback = -1;
+   pointer->DragData.fill(0);
+   pointer->DragDataSize = uint8_t(std::min(Length, pointer->DragData.size()));
+   copymem(Datatypes, pointer->DragData.data(), pointer->DragDataSize);
+   watch_drag_keys(pointer);
+   DriverMovement(SurfaceID, X + abs_x, Y + abs_y, false);
+
+   InputEvent event = {};
+   event.Type = JET::ABS_XY;
+   event.Flags = event.Mask = JTYPE::DRAG_ITEM;
+   event.RecipientID = event.OverID = pointer->OverObjectID;
+   event.X = pointer->OverX;
+   event.Y = pointer->OverY;
+   {
+      const std::lock_guard lock(glInputLock);
+      glInputEvents.push_back(event);
+   }
+   input_event_loop(HOSTHANDLE{}, nullptr);
+   return pointer->NativeDrag and (pointer->DragFeedback != 0);
+}
+
+bool DriverDragStart(NativeDrop &Drop)
+{
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return false;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if (not pointer->NativeDrag) return false;
+   const auto datatypes = pointer->DragData;
+   const auto size = pointer->DragDataSize;
+   if (not DriverDragOver(Drop.SurfaceID, Drop.X, Drop.Y, datatypes.data(), size)) return false;
+   const auto modal = gfx::GetModalSurface();
+   if ((modal) and (not in_modal_scope(modal, pointer->OverObjectID))) return false;
+   if (not in_modal_scope(Drop.SurfaceID, pointer->OverObjectID)) return false;
+   Drop.TargetID = pointer->OverObjectID;
+   Drop.DisplayID = pointer->DragSourceID;
+   Drop.X = pointer->OverX;
+   Drop.Y = pointer->OverY;
+   return true;
+}
+
+// Read the imported payload only during synchronous delivery.  Restore the live pointer afterwards: it may already
+// be over another window, or carrying another drag, when the asynchronous pipe finishes.
+
+bool DriverDragData(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t Length)
+{
+   const auto modal = gfx::GetModalSurface();
+   if ((modal) and (not in_modal_scope(modal, Drop.TargetID))) return false;
+   if (not in_modal_scope(Drop.SurfaceID, Drop.TargetID)) return false;
+   kt::ScopedObjectLock destination(Drop.TargetID);
+   kt::ScopedObjectLock source(Drop.DisplayID);
+   if ((not destination.granted()) or (not source.granted())) return false;
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return false;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if (pointer->DragDelivering) return false;
+   const std::lock_guard clipboard_lock(glClipboardLock);
+
+   const auto over_id = pointer->OverObjectID;
+   const auto over_x = pointer->OverX;
+   const auto over_y = pointer->OverY;
+   const auto feedback = pointer->DragFeedback;
+   const auto live_surface = pointer->SurfaceID;
+   const auto live_x = pointer->X;
+   const auto live_y = pointer->Y;
+   auto restore = kt::Defer([&]() {
+      if ((pointer->SurfaceID IS live_surface) and (pointer->X IS live_x) and (pointer->Y IS live_y)) {
+         pointer->OverObjectID = over_id;
+         pointer->OverX = over_x;
+         pointer->OverY = over_y;
+         pointer->DragFeedback = feedback;
+      }
+      pointer->DragDelivering = false;
+      clear_host_drop();
+   });
+   pointer->OverObjectID = Drop.TargetID;
+   pointer->OverX = Drop.X;
+   pointer->OverY = Drop.Y;
+   pointer->DragFeedback = -1;
+   pointer->DragDelivering = true;
+   if (not receive_host_clipboard(Mime, std::string_view(Data, Length), true, 0)) return false;
+   const char datatype = std::string_view(Mime) IS "text/uri-list" ? char(DATA::FILE) : char(DATA::TEXT);
+   acDragDrop(*destination, *source, -1, std::string_view(&datatype, 1));
+   return pointer->DragFeedback != 0;
+}
+
 //********************************************************************************************************************
 
 ERR DriverEnableDragDrop(APTR HostHandle)
