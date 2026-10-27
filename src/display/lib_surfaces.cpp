@@ -79,6 +79,7 @@ int winDragDropFromHost_Over(int SurfaceID, int X, int Y, const char *Datatypes,
 
    pointer->NativeDrag = true;
    pointer->DragSourceID = info->DisplayID;
+   watch_drag_keys(pointer);
    pointer->DragItem = -1;
    pointer->DragFeedback = -1;
    pointer->DragData.fill(0);

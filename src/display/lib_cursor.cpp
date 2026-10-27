@@ -678,6 +678,7 @@ ERR StartCursorDrag(OBJECTID Source, int Item, const std::string_view &Datatypes
       pointer->DragItem     = Item;
       pointer->DragSourceID = Source;
       pointer->DragFeedback = -1;
+      watch_drag_keys(pointer);
       pointer->DragData.fill(0);
       pointer->DragDataSize = uint8_t(std::min(pointer->DragData.size(), Datatypes.size()));
       copymem(Datatypes.data(), pointer->DragData.data(), pointer->DragDataSize);

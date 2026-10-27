@@ -69,7 +69,7 @@
       <description>
 <p>Moves the focus forward to the next vector in the scene's tab order.  Only vectors that have called <class name="Vector" method="SubscribeKeyboard">Vector.SubscribeKeyboard()</class> take part in the cycle, and they are ordered by their <class name="Vector" field="TabOrder">Vector.TabOrder</class> value.  The cycle starts from the subscriber that currently holds the focus, or the nearest ancestor of the focused vector that has a subscription.  When the last subscriber in the tab order is reached, the focus wraps around to the first.</p>
 <p>If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no keyboard subscribers, the call has no effect.</p>
-<p>This action produces the same result as pressing the Tab key, but works regardless of the <code>IGNORE_TAB</code> flag.</p>
+<p>This action produces the same result as pressing the Tab key, but works regardless of the <code>IGNORE_TAB</code> flag.  The focused vector and each of its ancestors receive a <code>TAB_FOCUS</code> feedback event, even if the focus did not move.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -84,7 +84,7 @@
       <description>
 <p>Moves the focus back to the previous vector in the scene's tab order.  This is the reverse of <action>Next</action>, and it selects subscribers and determines the starting point in the same way.  When the first subscriber in the tab order is reached, the focus wraps around to the last.</p>
 <p>If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no keyboard subscribers, the call has no effect.</p>
-<p>This action produces the same result as pressing Shift+Tab, but works regardless of the <code>IGNORE_TAB</code> flag.</p>
+<p>This action produces the same result as pressing Shift+Tab, but works regardless of the <code>IGNORE_TAB</code> flag.  The focused vector and each of its ancestors receive a <code>TAB_FOCUS</code> feedback event, even if the focus did not move.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
