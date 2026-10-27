@@ -261,8 +261,14 @@ gui.input = function(Options)
 
       if Options.selectAll then &text.mtSelectArea(0, 0, -1, -1) end -- Select all of the text
 
-      &viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event)
-         if Event is FM_LOST_FOCUS then
+      focus_mask = FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS | FM_TAB_FOCUS
+      &viewport.mtSubscribeFeedback(focus_mask, function(Viewport:obj!, Event)
+         if Event is FM_TAB_FOCUS then
+            -- Focus that arrives by keyboard selects all of the text.  Pointer focus leaves the caret where the user
+            -- clicked.
+
+            if not &disabled then &text.mtSelectArea(0, 0, -1, -1) end
+         elseif Event is FM_LOST_FOCUS then
             gui.applyStyle(&bkgd, input_theme.bkgd)
             &events?.lostFocus()
             if validateInput() then

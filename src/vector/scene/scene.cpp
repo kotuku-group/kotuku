@@ -114,30 +114,50 @@ static void finish_key_dispatch(evKey *Event, int Size, APTR Meta)
 
 //********************************************************************************************************************
 
+// Moves the focus to the next or previous keyboard subscriber, then sends FM::TAB_FOCUS to the focused vector and its
+// ancestors.  The event is sent even if the focus did not move, e.g. when the scene has a single subscriber.
+
 static void cycle_focus(extVectorScene *Self, bool Reverse)
 {
    const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
 
+   if (Self->KeyboardSubscriptions.empty()) return;
+
+   auto target = *Self->KeyboardSubscriptions.begin();
    if (Self->KeyboardSubscriptions.size() > 1) {
       for (auto it=glVectorFocusList.begin(); it != glVectorFocusList.end(); it++) {
          if (auto find = Self->KeyboardSubscriptions.find(*it); find != Self->KeyboardSubscriptions.end()) {
             if (Reverse) {
-               if (find IS Self->KeyboardSubscriptions.begin()) {
-                  apply_focus(Self, *Self->KeyboardSubscriptions.rbegin());
-               }
-               else apply_focus(Self, *(--find));
+               if (find IS Self->KeyboardSubscriptions.begin()) target = *Self->KeyboardSubscriptions.rbegin();
+               else target = *(--find);
             }
             else {
                if (++find IS Self->KeyboardSubscriptions.end()) find = Self->KeyboardSubscriptions.begin();
-               apply_focus(Self, *find);
+               target = *find;
             }
-            return;
+            break;
          }
       }
    }
 
-   if (not Self->KeyboardSubscriptions.empty()) {
-      apply_focus(Self, *Self->KeyboardSubscriptions.begin());
+   auto target_id = target->UID;
+   apply_focus(Self, target);
+
+   // A focus callback may have moved the focus elsewhere or destroyed the target, in which case the event is stale.
+
+   if ((glVectorFocusList.empty()) or (glVectorFocusList.front()->UID != target_id)) return;
+
+   std::vector<OBJECTID> nodes;
+   for (auto node=target; node; node=(extVector *)node->Parent) {
+      if (node->Class->BaseClassID IS CLASSID::VECTOR) nodes.push_back(node->UID);
+      else break;
+   }
+
+   for (auto id : nodes) {
+      kt::ScopedObjectLock<extVector> vec(id, 1000);
+      if (not vec.granted()) continue;
+      if ((glVectorFocusList.empty()) or (glVectorFocusList.front()->UID != target_id)) return;
+      send_feedback(vec.obj, FM::TAB_FOCUS, glVectorFocusList.front());
    }
 }
 
@@ -834,7 +854,8 @@ subscription.  When the last subscriber in the tab order is reached, the focus w
 If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no
 keyboard subscribers, the call has no effect.
 
-This action produces the same result as pressing the Tab key, but works regardless of the `IGNORE_TAB` flag.
+This action produces the same result as pressing the Tab key, but works regardless of the `IGNORE_TAB` flag.  The
+focused vector and each of its ancestors receive a `TAB_FOCUS` feedback event, even if the focus did not move.
 
 -ERRORS-
 Okay
@@ -858,7 +879,8 @@ reached, the focus wraps around to the last.
 If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no
 keyboard subscribers, the call has no effect.
 
-This action produces the same result as pressing Shift+Tab, but works regardless of the `IGNORE_TAB` flag.
+This action produces the same result as pressing Shift+Tab, but works regardless of the `IGNORE_TAB` flag.  The
+focused vector and each of its ancestors receive a `TAB_FOCUS` feedback event, even if the focus did not move.
 
 -ERRORS-
 Okay

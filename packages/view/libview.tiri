@@ -350,9 +350,10 @@ function itemAtPoint(View:table!, X:num!, Y:num!):table
    end
 end
 
--- Feedback is independent of ordinary hover/capture.  No data is requested until the actual drop.
+-- Feedback is independent of ordinary hover/capture.  No data is requested until the actual drop.  Destroying is set
+-- when the view's viewport is being freed, which cannot be redrawn.
 
-function clearDropFeedback(View:table!)
+function clearDropFeedback(View:table!, Destroying:bool)
    if View._dropTimer then
       if not View._dropTick then mSys.UpdateTimer(View._dropTimer, 0) end
       View._dropTimer = nil
@@ -365,7 +366,7 @@ function clearDropFeedback(View:table!)
    View.events?.dragLeave(View, View._dropItem, View._dropInfo)
    View._dropItem = nil
    View._dropInfo = nil
-   View.viewport?.acDraw()
+   if not Destroying then View.viewport?.acDraw() end
 end
 
 function updateDropFeedback(View:table!)
@@ -1128,7 +1129,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    -- while the row viewports remain valid.  The graphics are released by the parent.
 
    vw.viewport.subscribe('free', function()
-      clearDropFeedback(vw)
+      clearDropFeedback(vw, true)
       vw._modifierKeyboard?.unsubscribe()
       vw._modifierKeyboard = nil
       if vw._dragSession or vw._dragClipboard then

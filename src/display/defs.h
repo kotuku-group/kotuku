@@ -287,6 +287,7 @@ class extPointer : public objPointer {
    uint8_t  DragDataSize = 0;     // Number of valid bytes in DragData
    bool     DragDelivering = false; // True while the drop is being dispatched to its destination
    bool     NativeDrag = false; // Windows owns the primary-button and offer lifetime
+   APTR     DragKeyHandle = nullptr; // Keyboard subscription that cancels the drag on Escape
    char     Device[32];
    std::string ButtonOrder;       // The order of the first 11 buttons can be changed here
    int16_t     ButtonOrderFlags[12]; // Button order represented as JD flags
@@ -478,6 +479,7 @@ extern ERR  lock_surface(extBitmap *, int16_t);
 extern ERR  unlock_surface(extBitmap *);
 extern ERR  pointer_window(OBJECTID, HOSTWINDOW &);
 extern void end_cursor_drag(extPointer *, bool = true);
+extern void watch_drag_keys(extPointer *);
 extern void notify_drag_source_free(OBJECTPTR, ACTIONID, ERR, APTR);
 extern void notify_drag_end(OBJECTID, int, ERR);
 extern ERR  get_display_info(OBJECTID, DisplayInfo *);

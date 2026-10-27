@@ -715,7 +715,19 @@ Use this method to receive feedback for events that have affected the state of a
 To remove an existing subscription, call this method again with the same `Callback` and an empty `Mask`.
 Alternatively have the callback function return `ERR::Terminate`.
 
-The prototype for the `Callback` is `ERR callback(*Vector, FM Event)`
+The prototype for the `Callback` is `ERR callback(*Vector, FM Event, OBJECTPTR EventObject, APTR Meta)`.  Scripts
+receive `Vector`, `Event` and `EventObject`.  The `EventObject` depends on the event:
+
+<types>
+<type name="PATH_CHANGED">Not defined.</>
+<type name="HAS_FOCUS">The vector that received the focus, which is either the subscriber or one of its children.</>
+<type name="CHILD_HAS_FOCUS">The vector that received the focus.</>
+<type name="LOST_FOCUS">The vector that received the focus, or `NULL` if no vector has it.</>
+<type name="TAB_FOCUS">The vector that received the focus through tab cycling.  This event follows any `HAS_FOCUS` and
+`CHILD_HAS_FOCUS` events for the same change, and it is sent on every Tab press, the scene's `Next` and `Prev`
+actions included, even if the focus did not move.  It is never sent for focus changes made by the pointer or by
+the `Focus` action.</>
+</types>
 
 -INPUT-
 int(FM) Mask: Defines the feedback events required by the client.  Set to `0xffffffff` if all messages are required.

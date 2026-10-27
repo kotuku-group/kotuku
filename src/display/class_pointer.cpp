@@ -357,6 +357,8 @@ void end_cursor_drag(extPointer *Self, bool Unsubscribe)
       }
    }
 
+   if (Self->DragKeyHandle) { UnsubscribeEvent(Self->DragKeyHandle); Self->DragKeyHandle = nullptr; }
+
    Self->DragSourceID = 0;
    Self->DragItem     = 0;
    Self->DragSurface  = 0;
@@ -375,6 +377,28 @@ void end_cursor_drag(extPointer *Self, bool Unsubscribe)
    event.Y = Self->OverY;
    const std::lock_guard lock(glInputLock);
    glInputEvents.push_back(event);
+}
+
+//********************************************************************************************************************
+// Monitor broadcast Escape presses so that synthetic key events also cancel an active drag and drop session.
+// DriverKeyPress() cancels native drags immediately, before queuing the keyboard event.
+
+static void drag_key_event(evKey *Event, int Size, APTR Meta)
+{
+   auto Self = (extPointer *)CurrentContext();
+   if ((Event->Code IS KEY::ESCAPE) and ((Event->Qualifiers & KQ::PRESSED) != KQ::NIL) and (Self->DragSourceID)) {
+      acDeactivate(Self);
+   }
+}
+
+// Subscribe to key events for the duration of a drag.  Event subscribers are called in reverse order of subscription,
+// so the drag is cancelled before the key reaches the application's existing keyboard handlers.
+
+void watch_drag_keys(extPointer *Self)
+{
+   if (Self->DragKeyHandle) return;
+   kt::SwitchContext ctx(Self);
+   SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(drag_key_event), &Self->DragKeyHandle);
 }
 
 //********************************************************************************************************************
@@ -571,6 +595,7 @@ extPointer::~extPointer()
 {
    acHide(this);
 
+   if (DragKeyHandle) UnsubscribeEvent(DragKeyHandle);
    if (Bitmap) FreeResource(Bitmap);
 
 /*
@@ -589,6 +614,8 @@ Deactivate: Cancels the active drag and drop operation.
 If a drag and drop operation was started with ~Display.StartCursorDrag(), it is cancelled without delivering a drop.
 The drag preview surface, if any, is hidden but not freed.  A @Clipboard source is notified through its
 @Clipboard.DragEndHandler with `ERR::Cancelled`.  This action has no effect if no drag and drop operation is active.
+
+The pointer calls this action when a press of the Escape key is broadcast during a drag and drop operation.
 -END-
 *********************************************************************************************************************/
 

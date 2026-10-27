@@ -20,6 +20,8 @@ void DriverKeyPress(KQ Flags, KEY Value, int Printable)
 {
    if (Value IS KEY::NIL) return;
 
+   // Cancel before queuing the key event: a following pointer release can deliver a drop synchronously.
+
    if (Value IS KEY::ESCAPE) {
       if (auto pointer = gfx::AccessPointer()) {
          if (pointer->DragSourceID) acDeactivate(pointer);

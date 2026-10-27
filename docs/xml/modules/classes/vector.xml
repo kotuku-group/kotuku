@@ -232,7 +232,17 @@
       <description>
 <p>Use this method to receive feedback for events that have affected the state of a vector.</p>
 <p>To remove an existing subscription, call this method again with the same <code>Callback</code> and an empty <code>Mask</code>. Alternatively have the callback function return <code>ERR::Terminate</code>.</p>
-<p>The prototype for the <code>Callback</code> is <code>ERR callback(*Vector, FM Event)</code></p>
+<p>The prototype for the <code>Callback</code> is <code>ERR callback(*Vector, FM Event, OBJECTPTR EventObject, APTR Meta)</code>.  Scripts receive <code>Vector</code>, <code>Event</code> and <code>EventObject</code>.  The <code>EventObject</code> depends on the event:</p>
+<types>
+<type name="PATH_CHANGED">Not defined.</type>
+<type name="HAS_FOCUS">The vector that received the focus, which is either the subscriber or one of its children.</type>
+<type name="CHILD_HAS_FOCUS">The vector that received the focus.</type>
+<type name="LOST_FOCUS">The vector that received the focus, or <code>NULL</code> if no vector has it.</type>
+<type name="TAB_FOCUS">The vector that received the focus through tab cycling.  This event follows any <code>HAS_FOCUS</code> and
+<code>CHILD_HAS_FOCUS</code> events for the same change, and it is sent on every Tab press, the scene's <code>Next</code> and <code>Prev</code>
+actions included, even if the focus did not move.  It is never sent for focus changes made by the pointer or by
+the <code>Focus</code> action.</type>
+</types>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -788,6 +798,7 @@ Z: Close Path
       <const name="HAS_FOCUS">The vector has gained the user focus.</const>
       <const name="LOST_FOCUS">The vector has lost the user focus.</const>
       <const name="PATH_CHANGED">The vector path has been modified or affected by a transform.</const>
+      <const name="TAB_FOCUS">The user focus was moved to this vector or one of its children by tab cycling.</const>
     </constants>
 
     <constants lookup="JTYPE" comment="JTYPE flags are used to categorise input types">
