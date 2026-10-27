@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/colourpicker",
+  "version": "1.0",
+  "description": "OKLCH colour picker dialog with palette relationships for Tiri graphical interfaces.",
+  "entry": "colourpicker.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-Widgets#colour-picker",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "colour",
+    "dialog",
+    "gui",
+    "oklch"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/button": "1.0",
+    "gui/combobox": "1.0",
+    "gui/dialog": "1.0",
+    "gui/input": "1.0",
+    "gui/scrollbar": "1.0",
+    "gui/slider": "1.0",
+    "gui/tooltip": "1.0",
+    "gui/view": "1.0",
+    "gui/window": "1.0",
+    "json": "1.0"
+  },
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "size": 3402,
+      "sha256": "b9121b9acfe5b6614e482c2782ba2557e22d3f7097a22c1e88d00559456dba81",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": "codeview.tiri",
+      "size": 9821,
+      "sha256": "043e6a03b9c56d754736bf79ee3d2174fc1ba28d533b0ea08300cc3dd5306bf1",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "colour.tiri",
+      "size": 39187,
+      "sha256": "371329342b84bd7122c3e8ac422301a3e4882d7b43f96dce3eaae877774606fa",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "colourpicker.tiri",
+      "size": 137084,
+      "sha256": "31d98c8a94bbe46b6b308d586cec18e85d516f69aad41123216f1a7367a3c79a",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "export.tiri",
+      "size": 13804,
+      "sha256": "c7edea6d7f2cfc43f38ea51b83b90bc8b30ac30e0c5cd83914e45369c51a1351",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "eyedropper.tiri",
+      "size": 6517,
+      "sha256": "1bae12d961114982fca104984107b09b512e97ba72a97513998f44361fdb8607",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "palette.tiri",
+      "size": 40898,
+      "sha256": "cfe3d5aec4c08e0ede25935139e79ed1de1c567e8bbd69872384b7d04a02c4d4",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "parts.tiri",
+      "size": 35458,
+      "sha256": "6ece1208274180d028655dd38472a1cc53783129b450681889ac4ef620d95b29",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "preview.tiri",
+      "size": 29136,
+      "sha256": "b7a3ab9056a09af0caeeacd91fb2028a6519fa7bd988d929af14464ad3fc51a5",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "theme.tiri",
+      "size": 13395,
+      "sha256": "1542c14862d32f46f672b6b144d2e76a55e40df0c11850f536cdff983daffa30",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "wheel.tiri",
+      "size": 21920,
+      "sha256": "385eeca03d78fc9f0c19ef198293da1f4ba1345f59b19ce57f082ba998e20487",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ],
+  "exports": [
+    {
+      "gui/colourpicker": "colourpicker.tiri"
+    },
+    {
+      "gui/colourpicker/colour": "colour.tiri"
+    },
+    {
+      "gui/colourpicker/palette": "palette.tiri"
+    },
+    {
+      "gui/colourpicker/export": "export.tiri"
+    }
+  ]
+}

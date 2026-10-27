@@ -1,7 +1,7 @@
 {
   "files.associations":{
-    "*.tdl": "lua",
-    "*.tiri": "lua",
+    "*.tdl": "tiri",
+    "*.tiri": "tiri",
     "bitset": "cpp",
     "algorithm": "cpp",
     "format": "cpp",

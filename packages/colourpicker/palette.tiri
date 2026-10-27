@@ -1,0 +1,1068 @@
+@Package(name="gui/colourpicker", version="1.0")
+
+--[[
+Palette model for the colour picker.  A palette is a table of { name, mode, swatches } where swatches is an array<table>
+of up to MAX_SWATCHES entries.  Each swatch is { name, l, c, h, alpha } in OKLCH, and a linked swatch also has
+`base` (the index of the swatch it follows) and `link`, which has one entry per channel:
+
+   link = { l = { mode = 'delta', v = 0.14 }, c = { mode = 'abs', v = 0.01 }, h = { mode = 'delta', v = -180 } }
+
+A 'delta' entry is added to the base swatch's value and an 'abs' entry replaces it.  Changing a swatch recomputes
+every swatch that is linked to it, directly or through other swatches.  Editing a linked swatch rewrites its own
+link entries relative to its base, so the link is kept.
+
+A palette may also have a `mode` (see MODES), which reserves its first swatches for the mode's roles.  Reserved
+swatches are named after their roles and can't be renamed or removed.  A palette without a mode is a Custom palette.
+
+A swatch that the user has added is owned by the user and is marked with `user = true`.  A swatch that the user has
+renamed is marked with `customName = true`.
+
+The module has no display dependency.
+
+Usage:
+   import 'gui/colourpicker/palette'
+   palette = colourpalette.demo(0.62, 0.18, 258, 1)
+   colourpalette.setSwatch(palette, 0, 0.92, 0.01, 200) -- Surface, which the other roles follow
+--]]
+
+   import 'json'
+   import 'gui/colourpicker/colour'
+
+   namespace colourpalette { }
+
+MAX_SWATCHES <const> = 32
+FILE_VERSION <const> = 1
+EXPORT_FORMAT <const> = 'kotuku-palette'
+LINK_EPSILON <const> = 0.000001 -- Smallest change that rewrites a link entry
+PRECISION    <const> = 1000000  -- Stored values are rounded to 1 / PRECISION
+
+CHANNELS <const> = array<str> { 'l', 'c', 'h' }
+
+colourpalette.MAX_SWATCHES = MAX_SWATCHES
+colourpalette.FILE         = 'user:config/colourpicker.json'
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- Normalise a hue to [0, 360).
+
+function normHue(H:num):num
+   h = H % 360
+   if h < 0 then h += 360 end
+   return h
+end
+
+-- Wrap a hue difference to [-180, 180).
+
+function wrapHue(H:num):num
+   h = (H + 180) % 360
+   if h < 0 then h += 360 end
+   return h - 180
+end
+
+function finite(Value:any):bool
+   return (Value is <num>) and (Value is Value) and (math.abs(Value) != math.huge)
+end
+
+function rounded(Value:num):num
+   scaled = Value * PRECISION
+   if not finite(scaled) then return Value end
+   return math.round(scaled) / PRECISION
+end
+
+-- Format a number with up to Places decimals, dropping trailing zeros.
+
+function trim(Value:num, Places:num):str
+   s = string.format(f'%.{Places}f', Value)
+   if s.find('.', 0, true) then
+      while s.endsWith('0') do s = s.sub(0, -1) end
+      if s.endsWith('.') then s = s.sub(0, -1) end
+   end
+   if s is '-0' then s = '0' end
+   return s
+end
+
+function clampChannel(Channel:str, Value:num):num
+   if Channel is 'l' then return math.clamp(Value, 0, 1) end
+   if Channel is 'c' then return math.max(Value, 0) end
+   return normHue(Value)
+end
+
+-- The value of one channel produced by a link entry from the base swatch.
+
+function linkedValue(Base:table, Channel:str, Entry:table):num
+   if Entry.mode is 'abs' then return clampChannel(Channel, Entry.v) end
+   return clampChannel(Channel, Base[Channel] + Entry.v)
+end
+
+-- The link entry value that reproduces Swatch's channel from the base swatch.
+
+function linkEntryValue(Base:table, Swatch:table, Channel:str, Mode:str):num
+   if Mode is 'abs' then return Swatch[Channel] end
+   if Channel is 'h' then return wrapHue(Swatch.h - Base.h) end
+   return Swatch[Channel] - Base[Channel]
+end
+
+function entry(Mode:str, Value:num):table
+   return { mode = Mode, v = Value }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Palette modes.  A mode reserves the first #roles swatches of the palette for its roles, in order and named after
+-- them.  Each role has a default that fills it when no swatch of that name can be adopted: either a colour
+-- { l, c, h }, or a link { base, link } that follows another role of the mode (the first role if base is nil).  A
+-- role can also set the alpha of the swatch that it creates.
+-- `background` names the role that the Contrast panel measures against.
+
+function colour(L:num, C:num, H:num):table
+   return { l = L, c = C, h = H }
+end
+
+function delta(Value:num):table
+   return entry('delta', Value)
+end
+
+function abs(Value:num):table
+   return entry('abs', Value)
+end
+
+function follows(Base:str, L:table, C:table, H:table):table
+   return { base = Base, link = { l = L, c = C, h = H } }
+end
+
+function role(Name:str, Default:table, Alpha:num):table
+   return { name = Name, default = Default, alpha = Alpha }
+end
+
+MODES <const> = array<table> {
+   { id = 'custom', label = 'Custom Palette', roles = array<table> { } },
+
+   -- The Interface roles mirror the fields of a gui palette (see gui/palettes_data): Surface is `neutral`,
+   -- Background `bkgd`, Mid Tone `mid`, Border `edge`, Ink `text`, Inverse `inverse`, Primary `prime`, Accent
+   -- `contrast`, Selected Ink `altText`, Handle `handle`, Shade `shade`, Error `error` and Success `success`.  Error
+   -- and Success keep fixed hues, since their meaning relies on them.
+
+   { id = 'interface', label = 'Interface Palette', background = 'Surface', roles = array<table> {
+      role('Surface',      colour(0.90, 0.008, 250)),
+      role('Background',   follows(nil, abs(0.97), abs(0.004), delta(0))),
+      role('Mid Tone',     follows(nil, delta(-0.09), delta(0), delta(0))),
+      role('Border',       follows(nil, delta(-0.18), delta(0), delta(0))),
+      role('Ink',          follows(nil, abs(0.22), abs(0.015), delta(0))),
+      role('Inverse',      follows(nil, abs(0.36), abs(0.04), delta(0))),
+      role('Primary',      follows(nil, abs(0.65), abs(0.14), delta(0))),
+      role('Accent',       follows('Primary', delta(0.14), delta(-0.04), delta(-180))),
+      role('Selected Ink', follows('Primary', abs(0.99), abs(0.005), delta(0))),
+      role('Handle',       follows('Inverse', delta(0), delta(0), delta(0))),
+      role('Shade',        follows(nil, abs(0.15), abs(0.03), delta(0)), 0.5),
+      role('Error',        colour(0.55, 0.20, 27)),
+      role('Success',      colour(0.52, 0.14, 148))
+   } },
+
+   { id = 'web', label = 'Web Site Palette', background = 'Background', roles = array<table> {
+      role('Background', follows('Button', abs(0.99), abs(0.004), delta(0))),
+      role('Text',       follows('Button', abs(0.30), abs(0.015), delta(0))),
+      role('Heading',    follows('Button', abs(0.24), abs(0.04), delta(0))),
+      role('Link',       follows('Button', delta(-0.06), delta(0), delta(0))),
+      role('Button',     colour(0.58, 0.17, 258)),
+      role('Border',     follows('Button', abs(0.90), abs(0.01), delta(0))),
+      role('Highlight',  follows('Button', abs(0.93), abs(0.08), delta(-160)))
+   } },
+
+   { id = 'dataviz', label = 'Data Vis. Palette', background = 'Background', roles = array<table> {
+      role('Background', follows('Series 1', abs(0.99), abs(0.003), delta(0))),
+      role('Text',       follows('Series 1', abs(0.30), abs(0.01), delta(0))),
+      role('Grid',       follows('Series 1', abs(0.90), abs(0.005), delta(0))),
+      -- The series default to the Okabe-Ito colours, which stay apart with a colour vision deficiency
+      role('Series 1',   colour(0.532, 0.131, 244)),
+      role('Series 2',   follows('Series 1', abs(0.753), abs(0.158), delta(-167))),
+      role('Series 3',   follows('Series 1', abs(0.620), abs(0.130), delta(-78.5))),
+      role('Series 4',   follows('Series 1', abs(0.621), abs(0.170), delta(163.5))),
+      role('Series 5',   follows('Series 1', abs(0.679), abs(0.118), delta(102.3))),
+      role('Series 6',   follows('Series 1', abs(0.902), abs(0.172), delta(-139)))
+   } },
+
+   { id = 'code', label = 'Code Theme Palette', background = 'Background', roles = array<table> {
+      role('Background', colour(0.21, 0.015, 260)),
+      role('Text',       follows(nil, abs(0.88), abs(0.01), delta(0))),
+      role('Comment',    follows(nil, abs(0.60), abs(0.02), delta(0))),
+      role('Keyword',    follows(nil, abs(0.72), abs(0.14), delta(40))),
+      role('String',     follows(nil, abs(0.78), abs(0.13), delta(-120))),
+      role('Number',     follows(nil, abs(0.78), abs(0.12), delta(160))),
+      role('Function',   follows(nil, abs(0.80), abs(0.11), delta(-50))),
+      role('Type',       follows(nil, abs(0.80), abs(0.10), delta(-80))),
+      role('Error',      follows(nil, abs(0.65), abs(0.20), delta(130))),
+      role('Selection',  follows(nil, abs(0.32), abs(0.04), delta(0)))
+   } },
+
+   -- The ANSI colours keep fixed hues, since programs choose them by name.  Each bright colour follows its normal
+   -- colour, and the greys follow Background.
+
+   { id = 'terminal', label = 'Terminal Palette', background = 'Background', roles = array<table> {
+      role('Background',     colour(0.20, 0.012, 260)),
+      role('Foreground',     follows(nil, abs(0.88), abs(0.01), delta(0))),
+      role('Cursor',         follows('Foreground', delta(0.06), delta(0), delta(0))),
+      role('Selection',      follows(nil, abs(0.34), abs(0.04), delta(0))),
+      role('Black',          follows(nil, abs(0.32), abs(0.015), delta(0))),
+      role('Red',            colour(0.64, 0.17, 25)),
+      role('Green',          colour(0.72, 0.16, 145)),
+      role('Yellow',         colour(0.82, 0.15, 95)),
+      role('Blue',           colour(0.64, 0.14, 255)),
+      role('Magenta',        colour(0.66, 0.16, 330)),
+      role('Cyan',           colour(0.76, 0.11, 200)),
+      role('White',          follows(nil, abs(0.84), abs(0.008), delta(0))),
+      role('Bright Black',   follows('Black', delta(0.18), delta(0), delta(0))),
+      role('Bright Red',     follows('Red', delta(0.08), delta(-0.01), delta(0))),
+      role('Bright Green',   follows('Green', delta(0.08), delta(-0.01), delta(0))),
+      role('Bright Yellow',  follows('Yellow', delta(0.08), delta(-0.02), delta(0))),
+      role('Bright Blue',    follows('Blue', delta(0.08), delta(-0.01), delta(0))),
+      role('Bright Magenta', follows('Magenta', delta(0.08), delta(-0.01), delta(0))),
+      role('Bright Cyan',    follows('Cyan', delta(0.08), delta(-0.01), delta(0))),
+      role('Bright White',   follows('White', delta(0.13), delta(-0.004), delta(0)))
+   } }
+}
+
+colourpalette.MODES = MODES
+
+function findMode(ID:str):table
+   for m in values(MODES) do
+      if m.id is ID then return m end
+   end
+   return nil
+end
+
+function roleIndex(Mode:table, Name:str):num
+   for i, r in Mode.roles do
+      if r.name is Name then return i end
+   end
+   return nil
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create an unlinked swatch.
+@result Table of { name, l, c, h, alpha }
+]])
+colourpalette.swatch = function(Name:str!, L:num!, C:num!, H:num!, Alpha:num):table
+   return {
+      name  = Name,
+      l     = math.clamp(L, 0, 1),
+      c     = math.max(C, 0),
+      h     = normHue(H),
+      alpha = (Alpha != nil) ? math.clamp(Alpha, 0, 1) : 1
+   }
+end
+
+@Doc(text=[[
+@desc Recompute a linked swatch from its base.  Unlinked swatches are left unchanged.
+]])
+colourpalette.resolve = function(Palette:table!, Index:num!)
+   if (Index < 0) or (Index >= #Palette.swatches) or (Index % 1 != 0) then return nil end
+   s = Palette.swatches[Index]
+   if s.base is nil then return end
+   base = Palette.swatches[s.base]
+   for ch in values(CHANNELS) do
+      s[ch] = linkedValue(base, ch, s.link[ch])
+   end
+end
+
+-- Recompute every swatch that follows Index, directly or through other swatches.  Visited guards against cycles.
+
+function propagate(Palette:table, Index:num, Visited:table):nil
+   for j, s in Palette.swatches do
+      if (s.base is Index) and (not Visited[j]) then
+         Visited[j] = true
+         colourpalette.resolve(Palette, j)
+         propagate(Palette, j, Visited)
+      end
+   end
+end
+
+@Doc(text=[[
+@desc Recompute every linked swatch in the palette from the unlinked swatches.
+]])
+colourpalette.resolveAll = function(Palette:table!)
+   visited = { }
+   for i, s in Palette.swatches do
+      if s.base is nil then
+         visited[i] = true
+         propagate(Palette, i, visited)
+      end
+   end
+end
+
+@Doc(text=[[
+@desc Set the colour of a swatch and recompute the swatches that follow it.  If the swatch is linked, each link
+entry whose result no longer matches is rewritten relative to the base, so a channel that the base clamps (for
+example ΔL +0.14 on a base at L 0.95) keeps its offset while another channel is edited.
+@input Palette
+@input Index of the swatch
+@input L, C, H and Alpha (alpha is optional)
+]])
+colourpalette.setSwatch = function(Palette:table!, Index:num!, L:num!, C:num!, H:num!, Alpha:num)
+   if (Index < 0) or (Index >= #Palette.swatches) or (Index % 1 != 0) then return nil end
+   s = Palette.swatches[Index]
+   s.l = math.clamp(L, 0, 1)
+   s.c = math.max(C, 0)
+   s.h = normHue(H)
+   if Alpha != nil then s.alpha = math.clamp(Alpha, 0, 1) end
+
+   if s.base != nil then
+      base = Palette.swatches[s.base]
+      for ch in values(CHANNELS) do
+         link = s.link[ch]
+         diff = s[ch] - linkedValue(base, ch, link)
+         if ch is 'h' then diff = wrapHue(diff) end
+         if math.abs(diff) > LINK_EPSILON then
+            link.v = linkEntryValue(base, s, ch, link.mode)
+         end
+      end
+   end
+
+   visited = { }
+   visited[Index] = true
+   propagate(Palette, Index, visited)
+end
+
+@Doc(text=[[
+@desc Set one link entry of a linked swatch, then recompute the swatch and the swatches that follow it.  Unlinked
+swatches are left unchanged.
+@input Palette
+@input Index of the swatch
+@input Channel: 'l', 'c' or 'h'
+@input Mode: 'delta' or 'abs'
+@input Value of the entry.  Hue deltas are wrapped to [-180, 180).
+]])
+colourpalette.setLink = function(Palette:table!, Index:num!, Channel:str!, Mode:str!, Value:num!)
+   if (Index < 0) or (Index >= #Palette.swatches) or (Index % 1 != 0) then return nil end
+   if not (Channel in CHANNELS) or ((Mode != 'delta') and (Mode != 'abs')) then return end
+   s = Palette.swatches[Index]
+   if s.base is nil then return end
+   if (Mode is 'delta') and (Channel is 'h') then Value = wrapHue(Value) end
+   s.link[Channel] = entry(Mode, Value)
+   colourpalette.resolve(Palette, Index)
+   visited = { }
+   visited[Index] = true
+   propagate(Palette, Index, visited)
+end
+
+@Doc(text=[[
+@desc Change the mode of one link entry without changing the swatch's colour.  The entry's value is recomputed so
+that it reproduces the current colour from the base.  Unlinked swatches are left unchanged.
+@input Palette
+@input Index of the swatch
+@input Channel: 'l', 'c' or 'h'
+@input Mode: 'delta' or 'abs'
+]])
+colourpalette.setLinkMode = function(Palette:table!, Index:num!, Channel:str!, Mode:str!)
+   if (Index < 0) or (Index >= #Palette.swatches) or (Index % 1 != 0) then return nil end
+   if not (Channel in CHANNELS) or ((Mode != 'delta') and (Mode != 'abs')) then return end
+   s = Palette.swatches[Index]
+   if s.base is nil then return end
+   if s.link[Channel].mode is Mode then return end
+   s.link[Channel] = entry(Mode, linkEntryValue(Palette.swatches[s.base], s, Channel, Mode))
+end
+
+@Doc(text=[[
+@desc Exchange the colours of the swatch at Index and the swatch that it follows.  Links are unchanged: the base takes
+the swatch's colour, the swatch's link entries are rewritten so that it takes the base's former colour, and the
+swatches that follow either of them are recomputed.
+@result True if the colours were swapped, false if the swatch has no base
+]])
+colourpalette.swapColours = function(Palette:table!, Index:num!):bool
+   if (Index < 0) or (Index >= #Palette.swatches) or (Index % 1 != 0) then return false end
+   s = Palette.swatches[Index]
+   if s.base is nil then return false end
+   b = Palette.swatches[s.base]
+   sc = { l = s.l, c = s.c, h = s.h, alpha = s.alpha }
+   bc = { l = b.l, c = b.c, h = b.h, alpha = b.alpha }
+   colourpalette.setSwatch(Palette, s.base, sc.l, sc.c, sc.h, sc.alpha)
+   colourpalette.setSwatch(Palette, Index, bc.l, bc.c, bc.h, bc.alpha)
+   return true
+end
+
+@Doc(text=[[
+@desc Remove the link of the swatch at Index, so that it no longer follows a base.  Its colour is unchanged, and the
+swatches that follow it keep following it.
+@result True if the swatch was unlinked, false if Index is out of range or the swatch has no base
+]])
+colourpalette.unlinkSwatch = function(Palette:table!, Index:num!):bool
+   if (Index < 0) or (Index >= #Palette.swatches) then return false end
+   s = Palette.swatches[Index]
+   if s.base is nil then return false end
+   s.base = nil
+   s.link = nil
+   return true
+end
+
+@Doc(text=[[
+@desc Link the swatch at Index to the swatch at Base, replacing any link that it has.  The entries reproduce the
+swatch's current colour, so colours are unchanged.  A linked swatch keeps the modes of its entries; an unlinked swatch
+gets delta entries.  The swatches that follow Index keep following it.
+@result True if the swatch was linked, false if an index is out of range or Base follows Index (which would make a
+cycle)
+]])
+colourpalette.linkSwatch = function(Palette:table!, Index:num!, Base:num!):bool
+   n = #Palette.swatches
+   if (Index < 0) or (Index >= n) or (Base < 0) or (Base >= n) then return false end
+
+   -- Base can't be Index or a swatch that follows it.  A visited set guards against invalid external links.
+
+   b = Base
+   visited = { }
+   while b != nil do
+      if (b is Index) or visited[b] then return false end
+      visited[b] = true
+      b = Palette.swatches[b].base
+   end
+
+   s = Palette.swatches[Index]
+   base = Palette.swatches[Base]
+   old_link = s.link
+   s.base = Base
+   s.link = { }
+   for ch in values(CHANNELS) do
+      mode = old_link ? old_link[ch].mode : 'delta'
+      s.link[ch] = entry(mode, linkEntryValue(base, s, ch, mode))
+   end
+   return true
+end
+
+@Doc(text=[[
+@desc Return true if any swatch is linked to the swatch at Index.
+]])
+colourpalette.hasDependants = function(Palette:table!, Index:num!):bool
+   for s in values(Palette.swatches) do
+      if s.base is Index then return true end
+   end
+   return false
+end
+
+@Doc(text=[[
+@desc Return a swatch name that isn't used in the palette, of the form `Prefix n`.
+]])
+colourpalette.uniqueName = function(Palette:table!, Prefix:str!):str
+   n = #Palette.swatches + 1
+   while true do
+      name = f'{Prefix} {n}'
+      used = false
+      for s in values(Palette.swatches) do
+         if s.name is name then used = true end
+      end
+      if not used then return name end
+      n++
+   end
+end
+
+@Doc(text=[[
+@desc Append a swatch.  If Base is given, the new swatch is linked to it with delta entries that reproduce the
+given colour.
+@result The index of the new swatch, or nil if the palette is full or Base is invalid
+]])
+colourpalette.addSwatch = function(Palette:table!, Name:str!, L:num!, C:num!, H:num!, Alpha:num, Base:num):num
+   if #Palette.swatches >= MAX_SWATCHES then return nil end
+   if (Base != nil) and ((Base < 0) or (Base >= #Palette.swatches) or (Base % 1 != 0)) then return nil end
+   s = colourpalette.swatch(Name, L, C, H, Alpha)
+   if Base != nil then
+      base = Palette.swatches[Base]
+      s.base = Base
+      s.link = { }
+      for ch in values(CHANNELS) do
+         s.link[ch] = entry('delta', linkEntryValue(base, s, ch, 'delta'))
+      end
+   end
+   Palette.swatches.push(s)
+   return #Palette.swatches - 1
+end
+
+@Doc(text=[[
+@desc Rename the palette.  Surrounding white space is removed.
+@result True if the palette was renamed, false if the name is blank
+]])
+colourpalette.renamePalette = function(Palette:table!, Name:str!):bool
+   name = Name.trim()
+   if #name is 0 then return false end
+   Palette.name = name
+   return true
+end
+
+@Doc(text=[[
+@desc Rename the swatch at Index.  Surrounding white space is removed.  Names need not be unique; exports number
+duplicate identifiers.  The swatches reserved for the roles of the palette's mode keep their role names.  A swatch
+that is given a new name is marked with `customName = true`.
+@result True if the swatch was renamed, false if Index is out of range or reserved, or the name is blank
+]])
+colourpalette.renameSwatch = function(Palette:table!, Index:num!, Name:str!):bool
+   if (Index < 0) or (Index >= #Palette.swatches) then return false end
+   if colourpalette.isReserved(Palette, Index) then return false end
+   name = Name.trim()
+   if #name is 0 then return false end
+   s = Palette.swatches[Index]
+   if s.name != name then
+      s.name = name
+      s.customName = true
+   end
+   return true
+end
+
+@Doc(text=[[
+@desc Name the swatch at Index after its closest CSS named colour, if it is owned by the user (`user = true`) and
+hasn't been given a custom name (`customName`).
+@result True if the name was changed
+]])
+colourpalette.nameAfterColour = function(Palette:table!, Index:num!):bool
+   if (Index < 0) or (Index >= #Palette.swatches) then return false end
+   s = Palette.swatches[Index]
+   if (not s.user) or s.customName then return false end
+   name = colourmath.closestNamed(colourmath.oklchToOklab(s.l, s.c, s.h))
+   if name is s.name then return false end
+   s.name = name
+   return true
+end
+
+@Doc(text=[[
+@desc Remove the swatch at Index.  The swatches that follow it directly are unlinked and keep their current
+colours, so swatches further down the chain keep following them.  The base indices of the other swatches are
+adjusted for the removal.  The swatches reserved for the roles of the palette's mode can not be removed, because
+the following swatch would take the role.
+@result True if the swatch was removed, false if Index is out of range or reserved
+]])
+colourpalette.removeSwatch = function(Palette:table!, Index:num!):bool
+   if (Index < 0) or (Index >= #Palette.swatches) then return false end
+   if colourpalette.isReserved(Palette, Index) then return false end
+   Palette.swatches.remove(Index)
+   for s in values(Palette.swatches) do
+      if s.base is Index then
+         s.base = nil
+         s.link = nil
+      elseif (s.base != nil) and (s.base > Index) then
+         s.base -= 1
+      end
+   end
+   return true
+end
+
+@Doc(text=[[
+@desc Return the definition of the palette's mode: { id, label, roles, background }.  Roles is an array of
+{ name, default }, and background names the role that contrast is measured against (nil for Custom).  A palette
+without a known mode is a Custom palette.
+]])
+colourpalette.mode = function(Palette:table!):table
+   return findMode(Palette.mode) ?? MODES[0]
+end
+
+@Doc(text=[[
+@desc Return the number of swatches reserved for the roles of the palette's mode.  They are the first swatches of
+the palette.
+]])
+colourpalette.reserved = function(Palette:table!):num
+   return #colourpalette.mode(Palette).roles
+end
+
+@Doc(text=[[
+@desc Return true if the swatch at Index is reserved for a role of the palette's mode.  Reserved swatches can not be
+renamed or removed.
+]])
+colourpalette.isReserved = function(Palette:table!, Index:num!):bool
+   return (Index >= 0) and (Index < colourpalette.reserved(Palette))
+end
+
+@Doc(text=[[
+@desc Reorder the swatches.  Order lists the current index of each swatch in its new position, so the swatch at
+Order[i] moves to i.  Every `base` index is rewritten to follow its swatch.
+@result True if the swatches were reordered, false if Order is not a permutation of the swatch indices
+]])
+colourpalette.reorder = function(Palette:table!, Order:array<any>!):bool
+   n = #Palette.swatches
+   if #Order != n then return false end
+
+   new_index = { }
+   for i, old in Order do
+      if (not (old is <num>)) or (old < 0) or (old >= n) or (math.floor(old) != old) or new_index[old] then
+         return false
+      end
+      new_index[old] = i
+   end
+
+   swatches = array<table>
+   for old in values(Order) do
+      swatches.push(Palette.swatches[old])
+   end
+   for s in values(swatches) do
+      if s.base != nil then s.base = new_index[s.base] end
+   end
+   Palette.swatches = swatches
+   return true
+end
+
+@Doc(text=[[
+@desc Change the palette's mode.  The reserved swatches of the old mode become ordinary swatches.  Each role of the
+new mode adopts the first swatch named after it (ignoring case), which moves to the role's position and takes the
+role's spelling, and loses its `user` and `customName` marks.  Roles without such a swatch are filled with new
+swatches from the mode's defaults.  The other swatches follow the roles in their current order.  Switching to Custom
+only clears the reservation, and the palette name is never changed.
+@result True if the mode was set.  Otherwise false and a reason, and the palette is unchanged.
+]])
+colourpalette.setMode = function(Palette:table!, ModeID:str!):<bool, str>
+   mode = findMode(ModeID)
+   mode ?! return false, f'unknown palette mode "{ModeID}"'
+
+   swatches = Palette.swatches
+   n = #swatches
+   roles = mode.roles
+
+   -- Adopt the swatches named after the roles before anything is changed, so that a refusal leaves the palette alone
+
+   adopted = { }
+   taken = { }
+   missing = 0
+   for r, def in roles do
+      wanted = def.name.lower()
+      for i, s in swatches do
+         if (not taken[i]) and (s.name.lower() is wanted) then
+            adopted[r] = i
+            taken[i] = true
+            break
+         end
+      end
+      if adopted[r] is nil then missing++ end
+   end
+
+   excess = n + missing - MAX_SWATCHES
+   if excess > 0 then
+      return false, f'palette full: remove {excess} swatch{(excess is 1) ? "" : "es"}'
+   end
+
+   created = { }
+   for r, def in roles do
+      if adopted[r] is nil then
+         d = def.default
+         src = d.link ? colour(0, 0, 0) : d
+         swatches.push(colourpalette.swatch(def.name, src.l, src.c, src.h, def.alpha ?? 1))
+         adopted[r] = #swatches - 1
+         created[r] = true
+      end
+   end
+
+   order = array<int>
+   for r in {0 to #roles} do
+      order.push(adopted[r])
+   end
+   for i in {0 to #swatches} do
+      if (i < n) and (not taken[i]) then order.push(i) end
+   end
+   colourpalette.reorder(Palette, order)
+
+   for r, def in roles do
+      s = Palette.swatches[r]
+      s.name = def.name
+      s.user = nil
+      s.customName = nil
+      d = def.default
+      if created[r] and d.link then
+         s.base = (d.base != nil) ? roleIndex(mode, d.base) : 0
+         s.link = { }
+         for ch in values(CHANNELS) do
+            s.link[ch] = entry(d.link[ch].mode, d.link[ch].v)
+         end
+      end
+   end
+
+   Palette.mode = mode.id
+   colourpalette.resolveAll(Palette)
+   return true
+end
+
+-- The swatches owned by the user, with each base rewritten for the new positions.  A swatch whose base isn't kept
+-- is unlinked and keeps its colour.
+
+function userSwatches(Palette:table):array<table>
+   index = { }
+   kept = array<table>
+   for i, s in Palette.swatches do
+      if s.user then
+         index[i] = #kept
+         kept.push(s)
+      end
+   end
+   for s in values(kept) do
+      if s.base != nil then
+         s.base = index[s.base]
+         if s.base is nil then s.link = nil end
+      end
+   end
+   return kept
+end
+
+@Doc(text=[[
+@desc Switch the palette to a new mode, as chosen by the user.  Only the swatches owned by the user (`user = true`)
+are kept; the others are removed, and the new mode's roles adopt and fill in swatches as in setMode().  A swatch
+that followed a removed swatch is unlinked and keeps its colour.  A Custom palette left without swatches gets Black
+and White, as in reset().
+@result True if the mode was set.  Otherwise false and a reason, and the palette is unchanged.
+]])
+colourpalette.switchMode = function(Palette:table!, ModeID:str!):<bool, str>
+   -- Try the switch on copies of the user's swatches, so that a refusal leaves the palette alone
+
+   trial = { name = Palette.name, mode = 'custom', swatches = array<table> }
+   for s in values(Palette.swatches) do
+      if s.user then trial.swatches.push(table.clone(s)) end
+   end
+   ok, err = colourpalette.setMode(trial, ModeID)
+   if not ok then return false, err end
+
+   Palette.swatches = userSwatches(Palette)
+   colourpalette.setMode(Palette, ModeID)
+   if #Palette.swatches is 0 then colourpalette.reset(Palette) end
+   return true
+end
+
+@Doc(text=[[
+@desc Return the swatches of the palette mode's roles.  Role i is swatch i.
+@result Table keyed by role name.  It is empty for a Custom palette.
+]])
+colourpalette.roles = function(Palette:table!):table
+   result = { }
+   for i, def in colourpalette.mode(Palette).roles do
+      result[def.name] = Palette.swatches[i]
+   end
+   return result
+end
+
+@Doc(text=[[
+@desc Describe a swatch's relationship for its palette row: `— base` for an unlinked swatch that others follow, the
+non-zero link entries for a linked swatch (for example `ΔL +14  ΔH -180°` or `L=0.96  C=0.008`), or an empty string.
+]])
+colourpalette.describe = function(Palette:table!, Index:num!):str
+   s = Palette.swatches[Index]
+   if s.base is nil then
+      return colourpalette.hasDependants(Palette, Index) ? '— base' : ''
+   end
+
+   function sign(Value:num):str
+      return (Value < 0) ? '-' : '+'
+   end
+
+   parts = array<str>
+   l, c, h = s.link.l, s.link.c, s.link.h
+
+   if l.mode is 'abs' then
+      parts.push(f'L={trim(l.v, 2)}')
+   elseif math.round(math.abs(l.v) * 100) != 0 then
+      parts.push(f'ΔL {sign(l.v)}{math.round(math.abs(l.v) * 100)}')
+   end
+
+   if c.mode is 'abs' then
+      parts.push(f'C={trim(c.v, 3)}')
+   elseif math.round(math.abs(c.v) * 1000) != 0 then
+      parts.push(f'ΔC {sign(c.v)}{trim(math.abs(c.v), 3)}')
+   end
+
+   if h.mode is 'abs' then
+      parts.push(f'H={math.round(h.v) % 360}°')
+   elseif math.round(math.abs(h.v)) != 0 then
+      parts.push(f'ΔH {sign(h.v)}{math.round(math.abs(h.v))}°')
+   end
+
+   if #parts is 0 then return f'= {Palette.swatches[s.base].name}' end
+   return parts.concat('  ')
+end
+
+@Doc(text=[[
+@desc Remove every swatch and recreate the defaults of the palette's mode.  A Custom palette gets unlinked Black and
+White swatches, which are owned by the user.  The palette's name and mode are kept.
+]])
+colourpalette.reset = function(Palette:table!)
+   mode = colourpalette.mode(Palette)
+   Palette.swatches = array<table>
+   if #mode.roles > 0 then
+      colourpalette.setMode(Palette, mode.id) -- Can't be refused, as every role fits in an empty palette
+   else
+      Palette.swatches.push(colourpalette.swatch('Black', 0, 0, 0, 1))
+      Palette.swatches.push(colourpalette.swatch('White', 1, 0, 0, 1))
+      for s in values(Palette.swatches) do s.user = true end
+   end
+end
+
+@Doc(text=[[
+@desc Return an independent copy of a palette.
+]])
+colourpalette.duplicate = function(Palette:table!):table
+   copy = { name = Palette.name, mode = Palette.mode, swatches = array<table> }
+   for s in values(Palette.swatches) do
+      copy.swatches.push(table.clone(s))
+   end
+   return copy
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create the demonstration palette, an Interface palette with the mode's default roles and Primary set to the
+given colour.  Surface is the base of the palette: every role follows it, except Accent and Selected Ink, which
+follow Primary.  Primary keeps its link to Surface, with entries that reproduce the given colour.
+]])
+colourpalette.demo = function(L:num!, C:num!, H:num!, Alpha:num):<table, num>
+   palette = { name = 'default', swatches = array<table> }
+   colourpalette.setMode(palette, 'interface')
+   primary = roleIndex(findMode('interface'), 'Primary')
+   colourpalette.setSwatch(palette, primary, L, C, H, (Alpha != nil) ? Alpha : 1)
+   return palette, primary
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Serialisation
+
+function encodeSwatch(S:table, Precise:bool):table
+   for ch in values(array<str> { 'l', 'c', 'h', 'alpha' }) do
+      if not finite(S[ch]) then raise f'Swatch "{S.name}" has a non-finite {ch} value' end
+   end
+   out = { name = S.name }
+   if S.user then out.user = true end
+   if S.customName then out.customName = true end
+   if Precise then
+      out.l, out.c, out.h, out.alpha = rounded(S.l), rounded(S.c), rounded(S.h), rounded(S.alpha)
+   else
+      out.colour = colourmath.toOklchString(S.l, S.c, S.h, S.alpha)
+   end
+
+   if S.base != nil then
+      if not finite(S.base) then raise f'Swatch "{S.name}" has a non-finite base index' end
+      out.base = S.base
+      out.link = { }
+      for ch in values(CHANNELS) do
+         if not finite(S.link[ch].v) then raise f'Swatch "{S.name}" has a non-finite {ch} link' end
+         out.link[ch] = { mode = S.link[ch].mode, v = rounded(S.link[ch].v) }
+      end
+   end
+   return out
+end
+
+@Doc(text=[[
+@desc Convert a palette to a table that can be passed to json.encode().  Precise output stores the channels as
+numbers (l, c, h, alpha), otherwise each swatch has a CSS `colour` string.
+]])
+colourpalette.encode = function(Palette:table!, Precise:bool):table
+   swatches = array<table>
+   for s in values(Palette.swatches) do
+      swatches.push(encodeSwatch(s, Precise))
+   end
+   return { name = Palette.name, mode = colourpalette.mode(Palette).id, swatches = swatches }
+end
+
+@Doc(text=[[
+@desc Build a palette from a decoded table, as produced by encode().  A swatch may give its colour as l, c and h
+numbers or as a CSS `colour` string.  Swatches beyond MAX_SWATCHES are dropped, invalid or circular `base`
+references are removed, missing link entries are derived from the stored colours, and linked swatches are then
+recomputed from their bases.  A palette without a known `mode` is a Custom palette.  If the names of the swatches
+reserved by the mode don't match its roles, the roles adopt swatches as in setMode(), and the palette becomes a Custom
+palette if that fails.
+@result The palette, or nil and an error message
+]])
+colourpalette.decode = function(Data:any):<table, str>
+   if not (Data is <table>) then return nil, 'The palette is not an object' end
+   list = Data.swatches
+   if not (list is <array>) then return nil, 'The palette has no swatch list' end
+   if #list is 0 then return nil, 'The palette is empty' end
+
+   palette = { name = (Data.name is <str>) ? Data.name : 'imported', mode = 'custom', swatches = array<table> }
+
+   for i, src in list do
+      if i >= MAX_SWATCHES then break end
+      if not (src is <table>) then return nil, f'Swatch {i} is not an object' end
+
+      local l:num, c:num, h:num, alpha:num
+      if (src.l is <num>) and (src.c is <num>) and (src.h is <num>) then
+         l, c, h = src.l, src.c, src.h
+         alpha = (src.alpha is <num>) ? src.alpha : 1
+      elseif src.colour is <str> then
+         parsed = colourmath.parseColour(src.colour)
+         if not parsed then return nil, f'Swatch {i} has an invalid colour "{src.colour}"' end
+         l, c, h, alpha = parsed.l, parsed.c, parsed.h, parsed.alpha
+      else
+         return nil, f'Swatch {i} has no colour'
+      end
+
+      if not (finite(l) and finite(c) and finite(h) and finite(alpha)) then
+         return nil, f'Swatch {i} has a non-finite colour'
+      end
+
+      name = ((src.name is <str>) and (#src.name > 0)) ? src.name : f'Swatch {i + 1}'
+      s = colourpalette.swatch(name, l, c, h, alpha)
+      if src.user is true then s.user = true end
+      if src.customName is true then s.customName = true end
+
+      if finite(src.base) then
+         s.base = math.floor(src.base)
+         s.link = { }
+         if src.link is <table> then
+            for ch in values(CHANNELS) do
+               e = src.link[ch]
+               if (e is <table>) and finite(e.v) then
+                  s.link[ch] = entry((e.mode is 'abs') ? 'abs' : 'delta', e.v)
+               end
+            end
+         end
+      end
+
+      palette.swatches.push(s)
+   end
+
+   n = #palette.swatches
+
+   for i, s in palette.swatches do
+      if (s.base != nil) and ((s.base < 0) or (s.base >= n) or (s.base is i)) then
+         s.base = nil
+         s.link = nil
+      end
+   end
+
+   -- Break a link only when its chain returns to this swatch.  Chains entering another cycle keep their links.
+
+   for i, s in palette.swatches do
+      j = s.base
+      steps = 0
+      while (j != nil) and (j != i) and (steps < n) do
+         j = palette.swatches[j].base
+         steps++
+      end
+      if j is i then
+         s.base = nil
+         s.link = nil
+      end
+   end
+
+   for s in values(palette.swatches) do
+      if s.base != nil then
+         base = palette.swatches[s.base]
+         for ch in values(CHANNELS) do
+            if not s.link[ch] then s.link[ch] = entry('delta', linkEntryValue(base, s, ch, 'delta')) end
+         end
+      end
+   end
+
+   colourpalette.resolveAll(palette)
+
+   mode = (Data.mode is <str>) ? findMode(Data.mode) : nil
+   if mode then
+      intact = #palette.swatches >= #mode.roles
+      for i, def in mode.roles do
+         if (not intact) or (palette.swatches[i].name != def.name) then
+            intact = false
+            break
+         end
+      end
+      if intact then
+         palette.mode = mode.id
+         for i in {0 to #mode.roles} do palette.swatches[i].{ user = nil, customName = nil } end
+      else
+         colourpalette.setMode(palette, mode.id) -- A refusal leaves the palette as a Custom palette
+      end
+   end
+   return palette
+end
+
+@Doc(text=[[
+@desc Return the palette as JSON text for the clipboard.  Swatch colours are written as CSS oklch() strings.
+]])
+colourpalette.toJSON = function(Palette:table!):str
+   data = colourpalette.encode(Palette, false)
+   data.format = EXPORT_FORMAT
+   data.version = FILE_VERSION
+   return json.encode(data)
+end
+
+@Doc(text=[[
+@desc Parse palette JSON, as written by toJSON() or found in the `palette` section of the picker's settings file.
+@result The palette, or nil and an error message
+]])
+colourpalette.fromJSON = function(Text:str):<table, str>
+   Text ?! return nil, 'There is no text to import'
+   local data:any
+   try
+      data = json.decode(Text.trim())
+   except e
+      return nil, 'The text is not valid JSON'
+   end
+   if (data is <table>) and (data.palette is <table>) then data = data.palette end
+   return colourpalette.decode(data)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Persistence
+
+@Doc(text=[[
+@desc Load the picker settings.  If the settings file is missing or invalid, the demonstration palette is created
+from Seed.
+@input Path of the settings file
+@input Seed: { l, c, h, alpha } for the demonstration palette's Primary swatch
+@result Table of { palette, scheme, clamp, inputFormat, firstRun }.  Scheme, clamp and inputFormat are nil if the file
+doesn't set them.
+]])
+colourpalette.load = function(Path:str!, Seed:table!):table
+   local text:str
+   try
+      text = io.readAll(Path)
+   end
+
+   if text then
+      try
+         data = json.decode(text)
+         palette, err = colourpalette.decode((data is <table>) ? data.palette : nil)
+         if palette then
+            return {
+               palette  = palette,
+               scheme   = (data.scheme is <str>) ? data.scheme : nil,
+               clamp    = (data.clamp is <str>) ? data.clamp : nil,
+               inputFormat = (data.inputFormat is <str>) ? data.inputFormat : nil,
+               firstRun = false
+            }
+         end
+         msg(f'Ignoring {Path}: {err}')
+      except e
+         msg(f'Ignoring {Path}: {e.message}')
+      end
+
+      -- Preserve damaged settings before the demonstration palette can be saved over them.
+
+      try
+         file <close> = obj.new('File', { path = Path })
+         check file.acRename(Path .. '.bak')
+      except e
+         msg(f'Failed to back up {Path}: {e.message}')
+      end
+   end
+
+   palette, primary = colourpalette.demo(Seed.l, Seed.c, Seed.h, Seed.alpha)
+   return { palette = palette, firstRun = true, initialActive = primary }
+end
+
+@Doc(text=[[
+@desc Save the picker settings.
+@input Path of the settings file
+@input Settings: { palette, scheme, clamp, inputFormat }
+@result True if the file was written
+]])
+colourpalette.save = function(Path:str!, Settings:table!):bool
+   temporary = Path .. '.tmp'
+   try
+      data = {
+         version = FILE_VERSION,
+         scheme  = Settings.scheme,
+         clamp   = Settings.clamp,
+         inputFormat = Settings.inputFormat,
+         palette = colourpalette.encode(Settings.palette, true)
+      }
+      text = json.encode(data)
+      io.writeAll(temporary, text)
+      file <close> = obj.new('File', { path = temporary })
+      check file.acRename(Path)
+      return true
+   except e
+      msg(f'Failed to save {Path}: {e.message}')
+      try
+         file <close> = obj.new('File', { path = temporary })
+         file.mtDelete()
+      end
+      return false
+   end
+end

@@ -1,8 +1,8 @@
 #!/usr/bin/env origo
--- Colour Dialog test
+-- Colour Picker test
 
    import 'gui'
-   import 'gui/colourdialog'
+   import 'gui/colourpicker'
 
    proc = processing.new()
 
@@ -12,7 +12,7 @@
          if not Colour then
             print('Dialog was cancelled.')
          else
-            print(f'The user selected colour is {Colour}')
+            print(f'The user selected colour is {Colour} (sRGB), {Colour.css} in the {Colour.gamut} target')
          end
          proc.signal()
       end

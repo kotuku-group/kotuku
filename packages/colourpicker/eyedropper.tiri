@@ -1,0 +1,154 @@
+-- Samples the 9x9 area around the cursor.  Kōtuku surfaces are read from their backing bitmaps, which gives exact
+-- values and handles linear colour spaces.  Anywhere else, including host windows, the area is copied from the screen
+-- with CaptureDisplay().  Drivers that cannot read the screen (Wayland, XWayland, headless) only sample Kōtuku
+-- surfaces.
+
+   module display as mGfx
+   import 'gui/colourpicker/colour'
+
+   namespace colourpicker_eyedropper { }
+
+   local desktop_support -- nil until a capture has been attempted
+   local sampling_error_logged = false
+
+-- Read the loupe area from the Surface's backing bitmap, or return nil if (PX, PY) is outside of the Surface.  A child
+-- surface can share its backing bitmap with an ancestor, whose origin must be used for bitmap coordinates.  Copy every
+-- RGB8 result immediately: ReadRGBPixel reuses its result storage.
+
+function surfacePixels(Surface:obj, PX:num!, PY:num!):array<byte>
+   if not Surface then return nil end
+   sx, sy = Surface.absX, Surface.absY
+   if (PX < sx) or (PY < sy) or (PX >= sx + Surface.width) or (PY >= sy + Surface.height) then return nil end
+
+   bitmap = Surface.buffer
+   if not bitmap then return nil end
+   owner = Surface
+   while owner.parent do
+      parent = owner.parent
+      if not parent or (parent.buffer?.id != bitmap.id) then break end
+      owner = parent
+   end
+
+   ox, oy = owner.absX, owner.absY
+   x, y = PX - ox, PY - oy
+   left, top = math.max(0, sx - ox), math.max(0, sy - oy)
+   right = math.min(bitmap.width, sx - ox + Surface.width) - 1
+   bottom = math.min(bitmap.height, sy - oy + Surface.height) - 1
+   pixels = array<byte, 243>
+
+   with bitmap do
+      if (x < 0) or (y < 0) or (x >= bitmap.width) or (y >= bitmap.height) then return nil end
+      linear = bitmap.colourSpace is CS_LINEAR_RGB
+      for cy in {0 to 9} do
+         for cx in {0 to 9} do
+            -- At a surface edge repeat its edge pixels, rather than reading a neighbouring surface's buffer area.
+            bx = math.clamp(x + cx - 4, left, right)
+            by = math.clamp(y + cy - 4, top, bottom)
+            rgb = mGfx.ReadRGBPixel(bitmap, bx, by)
+            r, g, b = rgb.red, rgb.green, rgb.blue
+            if linear then
+               r = math.round(colourmath.srgbEncode(r / 255) * 255)
+               g = math.round(colourmath.srgbEncode(g / 255) * 255)
+               b = math.round(colourmath.srgbEncode(b / 255) * 255)
+            end
+            i = (cy * 9 + cx) * 3
+            pixels[i], pixels[i + 1], pixels[i + 2] = b, g, r
+         end
+      end
+   end
+   return pixels
+end
+
+-- Copy the loupe area from the screen, or return nil if the driver cannot read it.  The area is clipped to the
+-- virtual desktop and edge pixels are repeated where it was clipped.  Captured pixels are sRGB as displayed.
+
+function desktopPixels(PX:num!, PY:num!):array<byte>
+   if desktop_support is false then return nil end
+
+   err, info = mGfx.GetDisplayInfo(0)
+   if err != ERR_Okay then return nil end
+   left = math.max(PX - 4, info.virtualX)
+   top = math.max(PY - 4, info.virtualY)
+   right = math.min(PX + 4, info.virtualX + info.virtualWidth - 1)
+   bottom = math.min(PY + 4, info.virtualY + info.virtualHeight - 1)
+   if (left > right) or (top > bottom) then return nil end
+
+   local bitmap <close> = obj.new('Bitmap', { width = 9, height = 9, bitsPerPixel = 32 })
+   err = mGfx.CaptureDisplay(left, top, right - left + 1, bottom - top + 1, bitmap, 0, 0)
+   if err is ERR_NoSupport then desktop_support = false end
+   if err != ERR_Okay then
+      return nil
+   end
+   desktop_support = true
+
+   pixels = array<byte, 243>
+   for cy in {0 to 9} do
+      for cx in {0 to 9} do
+         rgb = mGfx.ReadRGBPixel(bitmap, math.clamp(PX + cx - 4, left, right) - left,
+            math.clamp(PY + cy - 4, top, bottom) - top)
+         i = (cy * 9 + cx) * 3
+         pixels[i], pixels[i + 1], pixels[i + 2] = rgb.blue, rgb.green, rgb.red
+      end
+   end
+   return pixels
+end
+
+-- The position comes from GetCursorPos(), which stays current outside Kōtuku windows.  Pointer.surface is only
+-- trusted while the Pointer has recorded that same position: once the cursor leaves our windows (including onto a
+-- host window covering one of them) the Pointer keeps the last surface it entered.  Without a Pointer only the screen
+-- is sampled.
+
+colourpicker_eyedropper.sample = function(Pointer:obj):table
+   try
+      err, cursor_x, cursor_y = mGfx.GetCursorPos()
+      if err != ERR_Okay then return nil end
+      px, py = math.floor(cursor_x), math.floor(cursor_y)
+
+      pixels = nil
+      if Pointer and (math.floor(Pointer.x) is px) and (math.floor(Pointer.y) is py) then
+         pixels = surfacePixels(Pointer.surface, px, py)
+      end
+      if not pixels then pixels = desktopPixels(px, py) end
+      if not pixels then return nil end
+
+      i = (4 * 9 + 4) * 3
+      r, g, b = pixels[i + 2] / 255, pixels[i + 1] / 255, pixels[i] / 255
+      l, c, h = colourmath.srgbToOklch(r, g, b)
+      return { l = l, c = c, h = h, hex = colourmath.toHex(r, g, b), pixels = pixels }
+   except e
+      -- The surface or its backing store can disappear between pointer updates.  Report the first failure so that
+      -- programming errors remain visible without flooding the log from the sampling timer.
+
+      if not sampling_error_logged then
+         sampling_error_logged = true
+         msg(f'Eyedropper sampling failed: {e.message}')
+      end
+      return nil
+   end
+end
+
+-- Returns true if colours can be sampled outside of Kōtuku surfaces.  The answer is fixed by the display driver, so
+-- it is probed once with a single pixel capture of the desktop origin.
+
+colourpicker_eyedropper.readsDesktop = function():bool
+   if desktop_support is nil then
+      local bitmap <close> = obj.new('Bitmap', { width = 1, height = 1, bitsPerPixel = 32 })
+      desktop_support = mGfx.CaptureDisplay(0, 0, 1, 1, bitmap, 0, 0) != ERR_NoSupport
+   end
+   return desktop_support
+end
+
+colourpicker_eyedropper.listen = function(Callback:func!):num
+   _, handle = check mGfx.SubscribeInput(Callback, 0, JTYPE_BUTTON, 0)
+   return handle
+end
+
+colourpicker_eyedropper.unlisten = function(Handle:num)
+   if Handle then mGfx.UnsubscribeInput(Handle) end
+end
+
+-- Shared Display bridge for the scratch row; native Display calls must remain in this source file.
+
+colourpicker_eyedropper.startDrag = function(Source:obj!, Item:num!, Datatypes:str!, Preview:obj):num
+   return mGfx.StartCursorDrag(Source.id, Item, Datatypes, Preview?.id ?? 0)
+end

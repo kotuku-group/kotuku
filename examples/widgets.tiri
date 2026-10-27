@@ -3,7 +3,7 @@
 A demonstration of standard widgets
 --]]
 
-   import 'gui', 'gui/toolbar', 'gui/menubar', 'gui/colourdialog', 'gui/fontdialog'
+   import 'gui', 'gui/toolbar', 'gui/menubar', 'gui/colourpicker', 'gui/fontdialog'
    import 'gui/dialog', 'gui/filedialog', 'gui/icon', 'gui/input', 'gui/button'
    import 'gui/toggle', 'gui/combobox', 'gui/slider', 'gui/window', 'vfx', 'json'
 
@@ -306,7 +306,7 @@ end
                      return
                   end
 
-                  print(f'The user selected colour is {Colour}')
+                  print(f'Result: {json.encode(Colour)}')
                end
             })
          end,

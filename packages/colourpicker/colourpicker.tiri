@@ -1,0 +1,3380 @@
+@Package(name="gui/colourpicker", version="1.0")
+
+--[[
+OKLCH colour picker dialog.  Open it with:
+
+   import 'gui/colourpicker'
+
+   gui.dialog.colour({
+      colour   = 'oklch(0.62 0.18 258)', -- CSS string, or an RGB table such as a previous feedback result
+      gamut    = 'p3', -- Optional target gamut for this window: 'srgb', 'p3', 'a98', 'rec2020' or 'none'
+      feedback = function(Colour) ... end -- gui RGB table (gui.nrgb), or nil on cancel
+   })
+
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui', 'gui/window', 'gui/button', 'gui/combobox', 'gui/input', 'gui/slider', 'gui/listview'
+   import 'gui/dialog'
+   import 'gui/tooltip', 'gui/colourpicker/colour', 'gui/colourpicker/palette', 'gui/colourpicker/export'
+   import './theme', './parts', './wheel', './preview', './codeview', './eyedropper'
+
+   include 'display'
+
+   namespace gui
+
+   gui.dialog ?= { }
+
+CLIENT_WIDTH   <const> = 1022
+MODEBAR_HEIGHT <const> = 36
+FOOTER_HEIGHT  <const> = 42
+FOOTER_PAD     <const> = 12
+FOOTER_GAP     <const> = 8
+BUTTON_HEIGHT  <const> = 26
+SCREEN_FILL    <const> = 0.9 -- Maximum share of the monitor that the initial window may occupy
+FOOTER_FONT    <const> = 11.5
+FOOTER_BTN_PAD <const> = 12
+
+-- The columns abut.  Panels in adjacent columns are 12 px apart, matching the vertical gap between panels: each column
+-- leaves 6 px beside its neighbour.
+
+COLUMN_WIDTHS <const> = array<int> { 292, 478, 252 }
+
+DEFAULT_COLOUR <const> = 'rgb(200,200,200)'
+GREY_CHROMA    <const> = 0.0002 -- Parsed colours with less chroma than this keep the current hue
+
+-- Left column
+
+LEFT_PAD       <const> = 14
+LEFT_INNER     <const> = 272 -- Left column width less its padding
+LEFT_GAP       <const> = 12  -- Between panels
+PANEL_HEADER_H <const> = 32  -- Panel header including its divider
+LIST_PAD_X     <const> = 8
+LIST_PAD_TOP   <const> = 8
+LIST_PAD_BTM   <const> = 10
+ROW_HEIGHT     <const> = 22
+ROW_GAP        <const> = 2
+SCRATCH_DRAG_THRESHOLD <const> = 6 -- Pointer travel before a scratch press becomes a drag
+MIN_PALETTE_ROWS <const> = 4 -- Minimum visible capacity; the palette fills the remaining column height
+VIEW_EDGE      <const> = 4  -- Inset of the rows within a listview
+SCRATCH_GAP    <const> = 8  -- Between the scratch row and the palette list
+LIST_TOP       <const> = LIST_PAD_TOP + ROW_HEIGHT + SCRATCH_GAP -- Top of the first palette row
+SMALL_BUTTON   <const> = 22
+PANEL_META_PAD <const> = 12 -- Horizontal padding of a panel header, as drawn by colourpicker_parts.panel()
+PANEL_META_GAP <const> = 16 -- Least space between a panel title and its meta text
+EYEDROP_H      <const> = 144
+PREVIEW_H      <const> = 210
+PREVIEW_META   <const> = 'palette in context'
+FLASH_TIME     <const> = 1.2 -- Seconds that the palette meta shows a message
+PALETTE_NAME_LIMIT <const> = 60 -- Characters in a palette name typed into the palette panel
+
+-- The palette mode combobox items, in the order of colourpalette.MODES
+
+PALETTE_MODE_ITEMS <const> = colourpalette.MODES.map(Mode => { id = Mode.id, label = Mode.label })
+
+-- Centre column
+
+CENTRE_PAD_X     <const> = 6
+CENTRE_PAD_Y     <const> = 14
+CENTRE_INNER     <const> = 466 -- Centre column width less its padding
+SELECT_HEIGHT    <const> = 26
+WHEEL_Y          <const> = 78
+READOUT_Y        <const> = 396
+READOUT_ROW      <const> = 34  -- Readout cell height: a label and its value on one line
+READOUT_ROWS     <const> = 3
+READOUT_PAD_X    <const> = 10
+READOUT_LABEL    <const> = 12   -- Font sizes of the readout labels and values
+READOUT_VALUE    <const> = 13.8
+READOUT_H        <const> = 1 + (READOUT_ROWS * (READOUT_ROW + 1))
+CHANNEL_PANEL_Y  <const> = READOUT_Y + READOUT_H + 12
+CHANNEL_PANEL_H  <const> = 228
+PANEL_PAD        <const> = 12
+CHANNEL_ROW      <const> = 26
+CHANNEL_KEY_W    <const> = 20
+CHANNEL_VALUE_W  <const> = 48
+VALUE_FIELD_H    <const> = 20 -- Editable value fields of the channel and Relationship rows
+CHANNEL_GAP      <const> = 10
+SLIDER_THUMB     <const> = 24  -- Thumb box: the 18 px bar plus its rings
+SLIDER_TRACK     <const> = 10  -- Breadth of the channel slider tracks
+NAME_LIMIT       <const> = 40 -- Characters allowed in a swatch name typed into the palette list
+TRACK_STOPS      <const> = 13  -- OKLCH-sampled stops in the L and C track gradients
+HUE_STOPS        <const> = 16
+HUE_TRACK_MIN_C  <const> = 0.05 -- The hue track is drawn with at least this chroma so that it stays readable
+C_MAX            <const> = 0.4  -- Chroma slider range; 100% chroma in CSS Color 4
+COPIED_TIME      <const> = 1.2  -- Seconds that a readout cell shows "Copied"
+SNAP_HUE         <const> = 4    -- Degrees within which a linked colour dragged on the wheel snaps to a scheme hue
+
+-- Right column
+
+RIGHT_PAD      <const> = 14 -- Above and below the panels
+RIGHT_PAD_X    <const> = 6  -- Left of the panels
+RIGHT_INNER    <const> = 232 -- Right column width less its padding
+RIGHT_GAP      <const> = 12  -- Between panels
+REL_PANEL_H    <const> = 136 -- The header and three channel rows
+CONTRAST_H     <const> = 118
+REL_KEY_W      <const> = 34  -- Width of the channel mode toggles
+REL_VALUE_W    <const> = 56
+REL_ROW        <const> = 24
+REL_ROW_GAP    <const> = 6
+CONTRAST_ROW_H <const> = 46
+CONTRAST_SW    <const> = 28  -- Contrast pair swatch size
+BADGE_H        <const> = 16
+WCAG_AA        <const> = 4.5
+WCAG_AAA       <const> = 7
+EXPORT_MIN_H   <const> = 200 -- Includes the panel header, code tabs and scrollable text
+
+-- Fixed panels contribute their full height; Palette and Export contribute only their minimum height.
+-- Each flexible panel receives all space left by its fixed neighbours, without an upper height limit.
+
+function minimumBodyHeight():num
+   rows_h = (MIN_PALETTE_ROWS * ROW_HEIGHT) + ((MIN_PALETTE_ROWS - 1) * ROW_GAP) + (VIEW_EDGE * 2)
+   palette_h = PANEL_HEADER_H + LIST_TOP + rows_h + LIST_PAD_BTM + SMALL_BUTTON + LIST_PAD_BTM
+   left_h = (LEFT_PAD * 2) + palette_h + (LEFT_GAP * 2) + EYEDROP_H + PREVIEW_H
+   centre_h = CHANNEL_PANEL_Y + CHANNEL_PANEL_H + CENTRE_PAD_Y
+   right_h = (RIGHT_PAD * 2) + REL_PANEL_H + CONTRAST_H + (RIGHT_GAP * 2) + EXPORT_MIN_H
+   return math.max(left_h, centre_h, right_h)
+end
+
+-- Ranges of the Relationship sliders for delta and absolute link entries
+
+REL_CHANNELS <const> = array<table> {
+   { id = 'l', key = 'L', name = 'lightness', delta = 1,     abs = 1,     def = 'cpRelL' },
+   { id = 'c', key = 'C', name = 'chroma',    delta = C_MAX, abs = C_MAX, def = 'cpRelC' },
+   { id = 'h', key = 'H', name = 'hue',       delta = 180,   abs = 360,   def = 'cpRelH' }
+}
+
+-- The export panel meta is the tab's meta followed by the target gamut (see exportMeta()).  Android colours are
+-- always sRGB, so its meta names that gamut instead.
+
+EXPORT_TABS <const> = array<table> {
+   { id = 'css',     label = 'CSS',     meta = 'oklch · css' },
+   { id = 'tokens',  label = 'Tokens',  meta = 'dtcg · json' },
+   { id = 'tiri',    label = 'Tiri',    meta = 'oklch · tiri' },
+   { id = 'android', label = 'Android', meta = 'colors.xml · srgb', srgb = true }
+}
+
+EXPORT_GAMUT <const> = { none = 'unmapped', srgb = 'srgb', p3 = 'p3', a98 = 'a98', rec2020 = 'rec2020' }
+
+SCHEME_ITEMS <const> = array<table> {
+   { id = 'none',          name = '— none —' },
+   { id = 'analogous',     name = 'Analogous' },
+   { id = 'complementary', name = 'Complementary' },
+   { id = 'triadic',       name = 'Triadic' },
+   { id = 'split',         name = 'Split complementary' },
+   { id = 'square',        name = 'Square' },
+   { id = 'monochrome',    name = 'Monochrome' }
+}
+
+-- The target gamut, saved as the 'clamp' setting.  The edited colour is kept unmapped and only the output is mapped:
+-- targetOklch() maps it into the target, and 'none' leaves it unmapped.  The sRGB result is always present.  Every
+-- target other than 'none' gamut-maps it into sRGB, and 'none' clips each channel (see clampedSrgb()).  The IDs other
+-- than 'none' are colourmath space IDs.  Rec. 2020 is treated as an SDR container gamut.
+
+CLAMP_ITEMS <const> = array<table> {
+   { id = 'none',    name = '— none —' },
+   { id = 'srgb',    name = 'sRGB' },
+   { id = 'p3',      name = 'Display P3' },
+   { id = 'a98',     name = 'Adobe RGB' },
+   { id = 'rec2020', name = 'Rec. 2020' }
+}
+
+CHANNELS <const> = array<table> {
+   { id = 'l',     key = 'L', min = 0, max = 1,     def = 'cpTrackL' },
+   { id = 'c',     key = 'C', min = 0, max = C_MAX, def = 'cpTrackC' },
+   { id = 'h',     key = 'H', min = 0, max = 360,   def = 'cpTrackH' },
+   { id = 'alpha', key = 'α', min = 0, max = 1,     def = 'cpTrackA' }
+}
+
+-- Mode bar tabs.  Only the Picker is implemented.
+
+MODE_TABS <const> = array<table> {
+   { label = 'Picker',     glyph = 'picker',     enabled = true },
+   { label = 'Palette',    glyph = 'palette',    enabled = false, tip = 'Palette mode is planned' }
+}
+
+-- Keyboard nudge for each channel; Shift multiplies it by NUDGE_COARSE
+
+NUDGE <const> = { l = 0.01, c = 0.005, h = 1, alpha = 0.01 }
+NUDGE_COARSE <const> = 10
+
+-- Readout cells, in grid order (left to right, then down).
+
+READOUT_CELLS <const> = array<table> {
+   { id = 'oklch', label = 'OKLCH' },
+   { id = 'hex',   label = 'Hex · sRGB' },
+   { id = 'rgb',   label = 'RGB' },
+   { id = 'hsl',   label = 'HSL' },
+   { id = 'hsv',   label = 'HSV' },
+   { id = 'lab',   label = 'CIE Lab' }
+}
+
+-- Formats of the colour input, in the order that clicking the format chip cycles through them.  Typed text in any
+-- format that colourmath.parseColour() accepts is applied; text in one of these formats also selects it.  The space
+-- formats show the target colour as a CSS color() string in that space (see inputText()).  A format marked target is
+-- only included in the cycle while it is the target gamut, so that the cycle stays short.
+
+INPUT_FORMATS <const> = array<table> {
+   { id = 'hex',     label = 'HEX' },
+   { id = 'rgb',     label = 'RGB' },
+   { id = 'hsl',     label = 'HSL' },
+   { id = 'oklch',   label = 'OKLCH' },
+   { id = 'p3',      label = 'P3',   space = true },
+   { id = 'a98',     label = 'A98',  space = true, target = true },
+   { id = 'rec2020', label = '2020', space = true, target = true }
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- The colour returned to the client, as encoded sRGB channels (0 - 1).  Colours outside sRGB are gamut-mapped unless
+-- the clamp setting is 'none', in which case each channel is clipped.  Display P3 is mapped to sRGB as well, because
+-- the client receives an sRGB colour.
+
+function clampedSrgb(L:num, C:num, H:num, Clamp:str):<num, num, num>
+   l, c, h = L, C, H
+   if Clamp != 'none' then
+      l, c, h = colourmath.gamutMap(l, c, h, 'srgb')
+   end
+   r, g, b = colourmath.oklchToSrgb(l, c, h)
+   return math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1)
+end
+
+-- The edited colour mapped into the target gamut, or unmapped if the target is 'none'.
+
+function targetOklch(State:table):<num, num, num>
+   return colourmath.gamutMap(State.l, State.c, State.h, State.clamp)
+end
+
+function outputSrgb(State:table):<num, num, num>
+   return clampedSrgb(State.l, State.c, State.h, State.clamp)
+end
+
+-- Derive the dependent state fields from the authoritative OKLCH and alpha values.  The sRGB fields hold the colour
+-- that Apply returns (see clampedSrgb()), so that the readouts, the colour input and the copies all agree with it.
+-- The target field is the colour in the target gamut (see targetOklch()).  Call again after a clamp change.
+
+function deriveState(State:table)
+   _, _, _, in_srgb = colourmath.oklchToSrgb(State.l, State.c, State.h)
+   r, g, b = clampedSrgb(State.l, State.c, State.h, State.clamp)
+   State.rgb      = { r = r, g = g, b = b }
+   State.hex      = colourmath.toHex(r, g, b)
+   State.inSRGB   = in_srgb
+   State.inP3     = colourmath.inGamut(State.l, State.c, State.h, 'p3')
+   State.inTarget = (State.clamp is 'none') or colourmath.inGamut(State.l, State.c, State.h, State.clamp)
+   tl, tc, th     = targetOklch(State)
+   State.target   = { l = tl, c = tc, h = th }
+end
+
+-- The target colour as encoded channels of an RGB colour space, for example 'p3'.  The gamut test allows a small
+-- tolerance on the linear channels, which the transfer function enlarges near zero, so a mapped colour can encode
+-- slightly outside 0 - 1.  The channels are clipped as the sRGB ones are, except for the 'none' target, where they are
+-- left unclipped to keep the unmapped colour.
+
+function targetSpace(State:table, Space:str):<num, num, num>
+   t = State.target
+   r, g, b = colourmath.oklchToSpace(t.l, t.c, t.h, Space)
+   if State.clamp is 'none' then return r, g, b end
+   return math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1)
+end
+
+-- The colour returned to the client.  The r, g and b channels are the sRGB result (see clampedSrgb()), so existing
+-- clients and tostring() are unaffected.  The extra fields describe the colour in the target gamut without loss:
+-- oklch and css hold the target colour, p3 holds it as encoded Display P3 and space holds it in the target's own
+-- space (see targetSpace()), and inSRGB and inP3 describe the edited colour before mapping.  The 'none' target has no
+-- space field.  Call deriveState() first.
+
+function outputColour(State:table):table
+   r, g, b = outputSrgb(State)
+   t = State.target
+   pr, pg, pb = targetSpace(State, 'p3')
+   space = nil
+   if State.clamp != 'none' then
+      sr, sg, sb = targetSpace(State, State.clamp)
+      space = { id = State.clamp, r = sr, g = sg, b = sb }
+   end
+   return gui.nrgb(r, g, b, State.alpha, {
+      oklch  = { l = t.l, c = t.c, h = t.h },
+      css    = colourmath.toOklchString(t.l, t.c, t.h, State.alpha),
+      p3     = { r = pr, g = pg, b = pb },
+      space  = space,
+      gamut  = State.clamp,
+      inSRGB = State.inSRGB,
+      inP3   = State.inP3
+   })
+end
+
+-- The initial colour is a CSS string or an RGB table such as a previous feedback result.  The oklch field of a feedback
+-- table is preferred because its r, g and b channels are clamped to sRGB.
+
+function parseInitial(Value:any):table
+   parsed = nil
+   if Value is nil then
+      parsed = colourmath.parseColour(DEFAULT_COLOUR)
+   elseif Value is <str> then
+      parsed = colourmath.parseColour(Value)
+   elseif Value is <table> then
+      alpha = (Value.a is <num>) ? Value.a : 1
+      ok = Value.oklch
+      if (ok is <table>) and (ok.l is <num>) and (ok.c is <num>) and (ok.h is <num>) then
+         parsed = colourmath.parseColour(f'oklch({ok.l} {ok.c} {ok.h} / {alpha})')
+      elseif (Value.r is <num>) and (Value.g is <num>) and (Value.b is <num>) then
+         parsed = colourmath.parseColour(f'color(srgb {Value.r} {Value.g} {Value.b} / {alpha})')
+      end
+   end
+   if not parsed then
+      msg(f'Unrecognised colour "{Value}", using the default.')
+      parsed = colourmath.parseColour(DEFAULT_COLOUR)
+   end
+   return parsed
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildBody()
+   t = &tokens
+   vp = &viewport
+
+   -- Tab host
+   &modebar = vp.new('VectorViewport', { x = 0, y = 0, width = CLIENT_WIDTH, height = MODEBAR_HEIGHT })
+   -- Tab bar divider
+   &modebar.new('VectorRectangle', { x = 0, y = MODEBAR_HEIGHT - 1, width = '100%', height = 1, fill = t.border })
+
+   &modeTabs = colourpicker_parts.tabStrip(&modebar, {
+      width = CLIENT_WIDTH, height = MODEBAR_HEIGHT - 1, items = MODE_TABS, active = 0, tokens = t.onWindow
+   })
+
+   &columns = array<obj>
+   x = 0
+   for _, width in COLUMN_WIDTHS do
+      col = vp.new('VectorViewport', { x = x, y = MODEBAR_HEIGHT, width = width, height = &bodyHeight })
+      &columns.push(col)
+      x += width
+   end
+end
+
+-- The mode bar meta: the bit depth of each output channel and the output.  Output is 8-bit sRGB unless the display
+-- has fewer bits per channel.  The sRGB output is always present, and a target other than sRGB is named after it.
+
+TARGET_META <const> = {
+   srgb = 'sRGB', p3 = 'sRGB + P3', a98 = 'sRGB + A98', rec2020 = 'sRGB + Rec. 2020', none = 'sRGB + unmapped'
+}
+
+function updateModebar(self:table)
+   bpp = self.window.surface.bitsPerPixel ?? 32
+   bits = (bpp >= 24) ? 8 : math.floor(bpp / 3)
+   self.modeTabs.setMeta(f'{bits}-bit  ·  {TARGET_META[self.state.clamp] ?? "sRGB"}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A footer button in the design's 11.5 px text, sized to its label.
+
+function footerButton(self:table, Text:str, Primary:bool, Activate:func):table
+   theme = {
+      text = { fontSize = f'{FOOTER_FONT}px', y = colourpicker_parts.baseline(0, BUTTON_HEIGHT - 2, FOOTER_FONT) }
+   }
+
+   btn = gui.button({
+      target = self.footer, y = (FOOTER_HEIGHT - BUTTON_HEIGHT) * 0.5, width = 100, height = BUTTON_HEIGHT,
+      label = Text, primary = Primary, theme = theme, events = { activate = Activate }
+   })
+
+   return btn
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function buildFooter(self:table, Options:table)
+   t = &tokens
+   top = MODEBAR_HEIGHT + &bodyHeight
+
+   &footer = &viewport.new('VectorViewport', { x = 0, y = top, width = CLIENT_WIDTH, height = FOOTER_HEIGHT })
+   &footer.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = 1, fill = t.border })
+
+   colourpicker_parts.hints(&footer, {
+      x = FOOTER_PAD, y = 0, height = FOOTER_HEIGHT, tokens = t.onWindow,
+      items = array<table> {
+         { key = 'Tab', text = 'next control' },
+         { key = 'Alt / Ctrl', text = '+ drag = fine' },
+         { key = 'I', text = 'eyedropper' }
+      }
+   })
+
+   -- The buttons are laid out right to left, so each is created before its x position is known.
+
+   &btnApply = footerButton(self, Options.okLabel ?? 'Apply', true, function[&&]() &apply() end)
+   &btnCancel = footerButton(self, Options.cancelLabel ?? 'Cancel', false, function[&&]() &cancel() end)
+   &btnReset = footerButton(self, 'Reset', false, function[&&]() &reset() end)
+
+   x = CLIENT_WIDTH - FOOTER_PAD
+   for btn in values(array<table> { &btnApply, &btnCancel, &btnReset }) do
+      x -= btn.viewport.width
+      btn.viewport.x = x
+      x -= FOOTER_GAP
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Resize the window to fit the monitor.  The client viewport scales the calculated layout to the window.
+
+function fitWindow(self:table)
+   width, height = self.window.parentSize()
+   scale = 1
+   if width and height and (width > 0) and (height > 0) then
+      scale = math.min(1, (width * SCREEN_FILL) / CLIENT_WIDTH, (height * SCREEN_FILL) / self.clientHeight)
+   end
+
+   if scale < 1 then
+      self.window.resizeClientArea(math.floor(CLIENT_WIDTH * scale), math.floor(self.clientHeight * scale))
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Value formatting for the readouts and channel labels.
+
+function fixed(Value:num, Places:num):str
+   s = string.format(f'%.{Places}f', Value)
+   if (s is '-0.0') or (s is '-0.00') or (s is '-0.000') or (s is '-0') then s = s.sub(1) end
+   return s
+end
+
+-- Hue with one decimal place, wrapping a rounded 360 degrees back to zero.
+
+function hueText(H:num):str
+   s = fixed(H, 1)
+   if s is '360.0' then s = '0.0' end
+   return s
+end
+
+function percent(Value:num):str
+   return tostring(math.round(Value * 100))
+end
+
+-- The CSS alpha component of a colour function, for example ' / 50%', or '' for an opaque colour.
+
+function alphaSuffix(Alpha:num):str
+   return (Alpha < 1) ? f' / {percent(Alpha)}%' : ''
+end
+
+-- The colour input text for a format ID.  OKLCH keeps colours outside sRGB, and the space formats show the target
+-- colour in their space, as the result's p3 and space fields hold it (see outputColour()).  The other formats show
+-- the sRGB result.
+
+function inputText(State:table, Format:str):str
+   if Format is 'oklch' then return colourmath.toOklchString(State.l, State.c, State.h, State.alpha) end
+   if INPUT_FORMATS.find(F => (F.id is Format) and F.space) then
+      sr, sg, sb = targetSpace(State, Format)
+      return colourmath.formatColor(sr, sg, sb, State.alpha, Format)
+   end
+   r, g, b = State.rgb.r, State.rgb.g, State.rgb.b
+   if Format is 'hex' then return colourmath.toHex(r, g, b, State.alpha) end
+   alpha = alphaSuffix(State.alpha)
+   if Format is 'rgb' then
+      return f'rgb({math.round(r * 255)} {math.round(g * 255)} {math.round(b * 255)}{alpha})'
+   end
+   h, sl, l = colourmath.srgbToHsl(r, g, b)
+   return f'hsl({math.round(h) % 360} {percent(sl)}% {percent(l)}%{alpha})'
+end
+
+-- The input format of typed colour text, or nil if it isn't in one of INPUT_FORMATS.
+
+function textFormat(Text:str):str
+   text = Text.lower()
+   if text.startsWith('#') then return 'hex' end
+   if text.startsWith('rgb(') or text.startsWith('rgba(') then return 'rgb' end
+   if text.startsWith('hsl(') or text.startsWith('hsla(') then return 'hsl' end
+   if text.startsWith('oklch(') then return 'oklch' end
+   if text.startsWith('color(') then
+      args = text.sub(6).trim()
+      for format in values(INPUT_FORMATS) do
+         css = format.space ? colourmath.spaceInfo(format.id).css : nil
+         if css and args.startsWith(css .. ' ') then return format.id end
+      end
+   end
+   return nil
+end
+
+-- Return the display strings and the clipboard text of every readout cell, keyed by cell ID.  The copies keep the
+-- alpha of a translucent colour, and the HEX cell shows it as the copy does.
+
+function readoutValues(State:table):<table, table>
+   r, g, b = State.rgb.r, State.rgb.g, State.rgb.b
+   hl, sl, ll = colourmath.srgbToHsl(r, g, b)
+   hv, sv, vv = colourmath.srgbToHsv(r, g, b)
+   lab_l, lab_a, lab_b = colourmath.srgbToCieLab(r, g, b)
+   rgb = f'{math.round(r * 255)}  {math.round(g * 255)}  {math.round(b * 255)}'
+   hsl_h = math.round(hl) % 360
+   hsv_h = math.round(hv) % 360
+
+   display = {
+      oklch = f'{fixed(State.l, 3)}   {fixed(State.c, 3)}   {hueText(State.h)}°',
+      hex   = colourmath.toHex(r, g, b, State.alpha),
+      rgb   = rgb,
+      hsl   = f'{hsl_h}°  {percent(sl)}%  {percent(ll)}%',
+      hsv   = f'{hsv_h}°  {percent(sv)}%  {percent(vv)}%',
+      lab   = f'{fixed(lab_l, 1)}  {fixed(lab_a, 1)}  {fixed(lab_b, 1)}'
+   }
+
+   alpha = alphaSuffix(State.alpha)
+   copies = {
+      oklch = colourmath.toOklchString(State.l, State.c, State.h, State.alpha),
+      hex   = colourmath.toHex(r, g, b, State.alpha),
+      rgb   = f'rgb({math.round(r * 255)} {math.round(g * 255)} {math.round(b * 255)}{alpha})',
+      hsl   = f'hsl({hsl_h} {percent(sl)}% {percent(ll)}%{alpha})',
+      hsv   = f'hsv({hsv_h} {percent(sv)}% {percent(vv)}%{alpha})',
+      lab   = f'lab({fixed(lab_l, 1)} {fixed(lab_a, 1)} {fixed(lab_b, 1)}{alpha})'
+   }
+
+   return display, copies
+end
+
+-- The gamut notice text, which only refers to the gamuts that matter for the target.  For a colour outside sRGB it
+-- names the sRGB colour that Apply returns and how it was converted.  With a wide target, it also says whether the
+-- target value is exact or mapped, and for a colour inside sRGB it gives the target's headroom beyond sRGB.
+
+TARGET_SHORT <const> = { p3 = 'P3', a98 = 'A98', rec2020 = 'Rec. 2020' }
+
+function noticeText(State:table):str
+   wide = (State.clamp != 'none') and (State.clamp != 'srgb')
+   short = wide ? (TARGET_SHORT[State.clamp] ?? colourmath.spaceInfo(State.clamp).name) : nil
+   if State.inSRGB then
+      if not wide then return 'In sRGB gamut  ·  No conversion needed' end
+      return f'In sRGB gamut  ·  {short} headroom: {percent(colourmath.headroom(State.l, State.h, State.clamp))}%'
+   end
+   hex = State.hex
+   if State.clamp is 'none' then
+      return f'Outside sRGB  ·  Apply clips each channel: {hex}'
+   elseif State.clamp is 'srgb' then
+      return f'Outside sRGB  ·  Apply maps to {hex}'
+   end
+   name = colourmath.spaceInfo(State.clamp).name
+   if State.inTarget then return f'Inside {name}  ·  {short} exact, Apply maps sRGB to {hex}' end
+   return f'Outside {name}  ·  Apply maps to {short}, and sRGB to {hex}'
+end
+
+-- The gamuts whose edges are marked on the C track and the wheel.  The target's edge comes first, and the sRGB edge
+-- follows for a wider target.  Apply clips the 'none' target to sRGB, so it marks the sRGB edge on the C track, but
+-- the wheel has no outline for it.
+
+function edgeSpaces(Clamp:str):array<str>
+   if (Clamp is 'srgb') or (Clamp is 'none') then return array<str> { 'srgb' } end
+   return array<str> { Clamp, 'srgb' }
+end
+
+-- Build Count gradient stops for a channel track.  Fn(Fraction) returns L, C, H and alpha for a position along the
+-- track.  Out-of-gamut colours are clipped per channel, as on the wheel.
+
+function trackStops(Count:num!, Fn:func!):table
+   stops = { }
+   for i in {0 to Count} do
+      fraction = i / (Count - 1)
+      l, c, h, a = Fn(fraction)
+      r, g, b = colourmath.oklchToSrgb(l, c, h)
+      stop = struct<GradientStop>
+      stop.offset = fraction
+      stop.rgb.{ red = math.clamp(r, 0, 1), green = math.clamp(g, 0, 1), blue  = math.clamp(b, 0, 1), alpha = a }
+      stops.insert(stop)
+   end
+   return stops
+end
+
+function channelStops(Channel:str, State:table):table
+   l, c, h = State.l, State.c, State.h
+   if Channel is 'l' then
+      return trackStops(TRACK_STOPS, function(F:num):<num, num, num, num> return F, c, h, 1 end)
+   elseif Channel is 'c' then
+      return trackStops(TRACK_STOPS, function(F:num):<num, num, num, num> return l, F * C_MAX, h, 1 end)
+   elseif Channel is 'h' then
+      hue_c = math.max(c, HUE_TRACK_MIN_C)
+      return trackStops(HUE_STOPS, function(F:num):<num, num, num, num> return l, hue_c, F * 360, 1 end)
+   else
+      return trackStops(2, function(F:num):<num, num, num, num> return l, c, h, F end)
+   end
+end
+
+function channelValue(Channel:str, State:table):num
+   if Channel is 'alpha' then return State.alpha end
+   return State[Channel]
+end
+
+function channelText(Channel:str, Value:num):str
+   if Channel is 'h' then return f'{fixed(Value, 1)}°' end
+   return fixed(Value, 3)
+end
+
+-- Parse a number typed into a value field.  A trailing degree sign is ignored, and a percentage is accepted if
+-- Percent is true.  Returns nil for invalid text.
+
+function parseValue(Text:str, Percent:bool):num
+   text = Text.trim()
+   if text.endsWith('°') then text = text.sub(0, -#'°').rtrim() end
+   scale = 1
+   if Percent and text.endsWith('%') then
+      text = text.sub(0, -1).rtrim()
+      scale = 0.01
+   end
+   if text.startsWith('+') then text = text.sub(1) end
+   v = tonumber(text)
+   if (v is nil) or (v != v) or (math.abs(v) is math.huge) then return nil end
+   return v * scale
+end
+
+-- Record the value field that has the focus.  Focus gains are reported before losses, so a loss only clears the
+-- record if it belongs to the field that lost the focus.
+
+function fieldFocusChanged(self:table, Has:bool, Field:table)
+   if Has then
+      self.fieldFocus = Field
+   elseif self.fieldFocus is Field then
+      self.fieldFocus = nil
+   end
+end
+
+-- Commit text typed into a channel's value field.  Hue wraps; the other channels are held to the slider range.
+
+function commitChannelText(self:table, Ch:table, Text:str):bool
+   if self.finished then return true end
+   v = parseValue(Text, (Ch.id is 'l') or (Ch.id is 'alpha'))
+   v ?! return false
+   if Ch.id is 'h' then
+      v = v % 360
+      if v < 0 then v += 360 end
+   else
+      v = math.clamp(v, Ch.min, Ch.max)
+   end
+   self.setChannel(Ch.id, v, 'field')
+   return true
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Widget theme override for 11 px mono text in a box of the given height.  The widgets position their text from the
+-- default widget font, so the baseline and inset are given as well.  The text sits in a clip inset by the 1 px border.
+
+function monoText(Height:num, Inset:num):table
+   return {
+      text = {
+         face = colourpicker_parts.FACE_MONO, fontSize = '14px', x = Inset - 1,
+         y = colourpicker_parts.baseline(0, Height - 2, 11)
+      }
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Replace a combobox's drop-down icon with the design's small caret.
+
+function smallCaret(Box:table, Tokens:table)
+   icon = Box.iconRender
+   icon.fill = 'none'
+   x = math.round((icon.width - 7) * 0.5)
+   y = math.round((icon.height - 4) * 0.5)
+   icon.new('VectorPolygon', { points = f'{x},{y} {x + 7},{y} {x + 3.5},{y + 4}', closed = true, fill = Tokens.fg2 })
+end
+
+-- Small button text
+
+function smallText():table
+   return { text = { fontSize = '11px', y = colourpicker_parts.baseline(0, SMALL_BUTTON - 2, 11) } }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A labelled read-only combobox.  OnSelect receives the ID of the chosen item.
+
+function selector(self:table, Target:obj, X:num, Y:num, Width:num, Label:str, Items:array<table>, Selected:str,
+   OnSelect:func):table
+
+   t = self.tokens
+   label = colourpicker_parts.text(Target, {
+      x = X,
+      y = colourpicker_parts.baseline(Y, SELECT_HEIGHT, 10),
+      size = 12,
+      face = colourpicker_parts.FACE_MONO,
+      fill = t.onWindow.fg0,
+      string = Label.upper()
+   })
+
+   box_x = X + math.ceil(label.textWidth) + 8
+   items = array<table> { }
+   selected_name = Items[0].name
+   for item in values(Items) do
+      items.push({ id=item.id, label = item.name })
+      if item.id is Selected then selected_name = item.name end
+   end
+
+   box = gui.combobox({
+      target = Target,
+      x = box_x, y = Y, width = X + Width - box_x, height = SELECT_HEIGHT,
+      items = items,
+      text = selected_name,
+      allowCustom = false,
+      theme = { input = monoText(SELECT_HEIGHT, 9) },
+      events = {
+         activate = function(Item:table!)
+            OnSelect(Item)
+         end
+      }
+   })
+   smallCaret(box, t)
+   return box
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Make the readout cell at Index the keyboard target and move the focus outline to it.
+
+function focusReadoutCell(self:table, Index:num!)
+   cell = self.readoutCells[Index]
+   self.readoutIndex = Index
+   self.readoutRing.{ x = cell.x + 1.5, y = cell.y + 1.5, width = cell.width - 3, height = cell.height - 3 }
+   self.readoutVP.acDraw()
+end
+
+-- The readout grid: three rows of two cells, each with its label on the left and its value right-aligned on the
+-- same baseline.  All cells share the panel fill, so the grid is a rounded card with 1 px dividers.  Clicking a cell
+-- copies its value.  The grid is a tab stop: the arrow keys, Home and End move the outlined cell, and Enter, Space or
+-- Ctrl+C copy it.
+
+function buildReadout(self:table, Target:obj, X:num, Y:num, Width:num)
+   t       = self.tokens
+   height  = READOUT_H
+   left_w  = math.ceil((Width - 3) * 0.5)
+   split_x = 1 + left_w
+
+   vp = Target.new('VectorViewport', { x = X, y = Y, width = Width, height = height, cursor = 'hand' })
+   self.readoutVP = vp
+
+   vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = Width - 1, height = height - 1, roundX = 5, roundY = 5,
+      fill = t.panel, stroke = t.border, strokeWidth = 1
+   })
+
+   cells = array<table>
+   for i, def in READOUT_CELLS do
+      top = 1 + (math.floor(i / 2) * (READOUT_ROW + 1))
+      left = ((i % 2) is 0) ? 1 : split_x + 1
+      width = (left is 1) ? left_w : Width - split_x - 2
+      baseline = colourpicker_parts.baseline(top, READOUT_ROW, READOUT_VALUE)
+      cells.push({
+         def = def, x = left, y = top, width = width, height = READOUT_ROW,
+         label = colourpicker_parts.text(vp, {
+            x = left + READOUT_PAD_X, y = baseline, size = READOUT_LABEL, fill = t.fg2, string = def.label.upper()
+         }),
+         value = colourpicker_parts.text(vp, {
+            y = baseline, size = READOUT_VALUE, face = colourpicker_parts.FACE_MONO, fill = t.fg0
+         })
+      })
+   end
+
+   -- Dividers
+
+   for row in {1 to READOUT_ROWS} do
+      vp.new('VectorRectangle', {
+         x = 1, y = row * (READOUT_ROW + 1), width = Width - 2, height = 1, fill = t.border
+      })
+   end
+
+   vp.new('VectorRectangle', { x = split_x, y = 1, width = 1, height = height - 2, fill = t.border })
+
+   self.readoutCells = cells
+   self.readoutIndex = 0
+
+   -- The keyboard target is outlined while the grid has the focus
+
+   self.readoutRing = vp.new('VectorRectangle', {
+      roundX = 3, roundY = 3, fill = 'none', stroke = t.accent, strokeWidth = 1, visibility = VIS_HIDDEN
+   })
+
+   vp.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
+      repeat
+         if (Msg.type is JET_LMB) and (Msg.value is 0) then
+            for i, cell in self.readoutCells do
+               if (Msg.x >= cell.x) and (Msg.x < cell.x + cell.width) and
+                  (Msg.y >= cell.y) and (Msg.y < cell.y + cell.height) then
+                  Viewport.acFocus()
+                  focusReadoutCell(self, i)
+                  self.copyCell(cell)
+                  break
+               end
+            end
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   vp.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+      if self.finished or not (Qualifiers has KQ_PRESSED) then return end
+      index = self.readoutIndex
+      if (Value is KEY_LEFT) and ((index % 2) is 1) then
+         focusReadoutCell(self, index - 1)
+      elseif (Value is KEY_RIGHT) and ((index % 2) is 0) then
+         focusReadoutCell(self, index + 1)
+      elseif (Value is KEY_UP) and (index >= 2) then
+         focusReadoutCell(self, index - 2)
+      elseif (Value is KEY_DOWN) and (index + 2 < #self.readoutCells) then
+         focusReadoutCell(self, index + 2)
+      elseif Value is KEY_HOME then
+         focusReadoutCell(self, 0)
+      elseif Value is KEY_END then
+         focusReadoutCell(self, #self.readoutCells - 1)
+      elseif Qualifiers has KQ_REPEAT then
+         return
+      elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or (Value is KEY_SPACE) or
+         ((Value is KEY_C) and (Qualifiers has KQ_CTRL)) then
+         self.copyCell(self.readoutCells[index])
+         Viewport.acDraw()
+      end
+   end)
+
+   vp.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event:num!)
+      if self.finished then return end
+      self.readoutRing.visibility = (Event is FM_LOST_FOCUS) ? VIS_HIDDEN : VIS_VISIBLE
+      focusReadoutCell(self, self.readoutIndex)
+   end)
+end
+
+function updateReadout(self:table)
+   display, copies = readoutValues(self.state)
+   self.readoutCopies = copies
+   for cell in values(self.readoutCells) do
+      cell.value.string = display[cell.def.id]
+      cell.value.x = cell.x + cell.width - READOUT_PAD_X - cell.value.textWidth
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Gamut edge marks for the C track: a notch above and below the track at the most chroma that a gamut holds for the
+-- current lightness and hue.  The first mark is the target's edge and the second is the smaller and fainter sRGB edge
+-- (see edgeSpaces()).  The marks are placed behind the thumb, and x is the mark's position in the track viewport.
+
+function trackEdges(Slider:table!, Tokens:table!):array<table>
+   edges = array<table>
+   for style in values(array<table> { { fill = Tokens.fg1, notch = 3 }, { fill = Tokens.fg3, notch = 2 } }) do
+      path = Slider.trackVP.new('VectorPath', { fill = style.fill, visibility = VIS_HIDDEN })
+      path.acMoveToBack()
+      edges.push({ path = path, notch = style.notch, x = 0 })
+   end
+   return edges
+end
+
+-- The OKLCH panel: channel sliders with live gradient tracks, the HEX field and the gamut notice.
+
+function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
+   t = self.tokens
+   scene = Target.scene
+
+   self.channelPanel = colourpicker_parts.panel(Target, {
+      x = X, y = Y, width = Width, height = CHANNEL_PANEL_H, title = 'OKLCH', meta = 'primary channel set',
+      tokens = t
+   })
+
+   body = self.channelPanel.body
+   inner_w = Width - (PANEL_PAD * 2)
+   track_x = PANEL_PAD + CHANNEL_KEY_W + CHANNEL_GAP
+   track_w = inner_w - CHANNEL_KEY_W - CHANNEL_VALUE_W - (CHANNEL_GAP * 2)
+   value_x = PANEL_PAD + inner_w
+
+   -- The checkerboard behind the alpha track
+
+   checker = scene.new('VectorPattern', {
+      x = 0, y = 0, pageWidth = 8, pageHeight = 8, width = 8, height = 8, units = VUNIT_USERSPACE,
+      spreadMethod = VSPREAD_REPEAT
+   })
+   checker.viewport.new('VectorRectangle', { x = 0, y = 0, width = 8, height = 8, fill = t.panel })
+   checker.viewport.new('VectorRectangle', { x = 0, y = 0, width = 4, height = 4, fill = t.border })
+   checker.viewport.new('VectorRectangle', { x = 4, y = 4, width = 4, height = 4, fill = t.border })
+   check scene.mtAddDef('cpChecker', checker)
+
+   self.channels = { }
+   y = 6
+   for i, ch in CHANNELS do
+      if ch.id is 'alpha' then y += 4 end
+
+      gradient = scene.new('GradientLinear', {
+         stops = channelStops(ch.id, self.state), units = 'userspace',
+         x1 = SLIDER_THUMB * 0.5, y1 = 0, x2 = track_w - (SLIDER_THUMB * 0.5), y2 = 0
+      })
+
+      check scene.mtAddDef(ch.def, gradient)
+
+      key_baseline = colourpicker_parts.baseline(y, CHANNEL_ROW, 10.5)
+
+      if ch.id is 'alpha' then -- The mono face has no Greek glyphs, so α is drawn as a path
+         colourpicker_parts.alphaGlyph(body, { x = PANEL_PAD, y = key_baseline, size = 10.5, fill = t.fg2 })
+      else
+         colourpicker_parts.text(body, {
+            x = PANEL_PAD, y = key_baseline, size = 10.5, face = colourpicker_parts.FACE_MONO, fill = t.fg2,
+            string = ch.key
+         })
+      end
+
+      channel = { def = ch, gradient = gradient }
+
+      ch_theme = choose ch.id from
+         'alpha'-> f'url(#cpChecker);url(#{ch.def})'
+         else -> f'url(#{ch.def})'
+      end
+
+      channel.slider = gui.slider({
+         target    = body, x = track_x, y = y + ((CHANNEL_ROW - SLIDER_THUMB) * 0.5), width = track_w,
+         thickness = SLIDER_TRACK, thumbSize = SLIDER_THUMB, min = ch.min, max = ch.max,
+         value     = channelValue(ch.id, self.state),
+         theme     = colourpicker_theme.channelSlider(self.themeName, SLIDER_THUMB, ch_theme),
+         events = {
+            activate = function(Value)
+               if self.refreshing then return end
+               self.setChannel(ch.id, Value)
+            end
+         }
+      })
+
+      -- Keyboard focus covers the whole slider, so that clicking the track also selects the channel for the arrow
+      -- keys.  The keyboard subscription puts the slider in the scene's tab chain.  The channels come first, after
+      -- the client viewport, and Tab then continues through the other widgets.
+
+      outer = channel.slider.viewport
+      outer.tabOrder = 2
+      outer.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event:num!)
+         if self.finished then return end -- Focus is dropped while the window is torn down
+         if Event is FM_LOST_FOCUS then
+            channel.ring?.fill = t.fg0
+            if self.focusedChannel is ch.id then self.focusedChannel = nil end
+         else
+            channel.ring?.fill = t.accent
+            self.focusedChannel = ch.id
+         end
+         Viewport.acDraw()
+      end)
+
+      outer.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+         if not (Qualifiers has KQ_PRESSED) then return end
+         direction = 0
+         if (Value is KEY_RIGHT) or (Value is KEY_UP) then
+            direction = 1
+         elseif (Value is KEY_LEFT) or (Value is KEY_DOWN) then
+            direction = -1
+         end
+         if direction != 0 then self.nudgeChannel(ch.id, direction, Qualifiers has KQ_SHIFT) end
+      end)
+
+      channel.ring = colourpicker_parts.thumbRings(channel.slider, t)
+      if ch.id is 'c' then channel.edges = trackEdges(channel.slider, t) end
+
+      channel.value = colourpicker_parts.valueField(body, {
+         x = value_x, y = y + ((CHANNEL_ROW - VALUE_FIELD_H) * 0.5), width = CHANNEL_VALUE_W + 4,
+         height = VALUE_FIELD_H, size = 11, tokens = t,
+         commit = function(Text) return commitChannelText(self, ch, Text) end,
+         blur = function() self.blurField() end,
+         focus = function(Has, Field) fieldFocusChanged(self, Has, Field) end
+      })
+
+      self.channels[ch.id] = channel
+      y += CHANNEL_ROW
+   end
+
+   -- Format chip, colour input and copy button.  The chip is as wide as its longest label, so that the input stays in
+   -- place as the format changes.  Clicking the chip cycles the input through INPUT_FORMATS.
+
+   y += 10
+   hex_h = 24
+   chip_opts = { x = PANEL_PAD, y = y + 2, text = 'OKLCH', colour = self.state.hex, cursor = 'hand', tokens = t }
+   self.formatChip = colourpicker_parts.chip(body, chip_opts)
+   chip_opts.minWidth = self.formatChip.width
+
+   chip_vp = self.formatChip.viewport
+   chip_vp.mtSubscribeInput(JTYPE_CROSSING | JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
+      repeat
+         if (Msg.type is JET_LMB) and (Msg.value is 0) then
+            self.cycleInputFormat()
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   self.btnCopy = gui.button({
+      target = body, y = y + 1, height = 22, icon = 'tools/copy', tip = 'Copy colour value',
+      events = {
+         activate = function()
+            self.copyText(self.inputShown)
+         end
+      }
+   })
+   self.btnCopy.viewport.x = value_x - self.btnCopy.viewport.width
+
+   input_x = PANEL_PAD + self.formatChip.width + 6
+   self.colourInput = gui.input({
+      target = body, x = input_x, y = y, width = self.btnCopy.viewport.x - 6 - input_x, height = hex_h,
+      text = self.state.hex, theme = monoText(hex_h, 8),
+      events = {
+         activate = function(Event)
+            if self.refreshing then return end
+            self.applyColourText(Event.text)
+         end
+      }
+   })
+
+   y += hex_h + 10
+   self.notice = colourpicker_parts.notice(body, { x = PANEL_PAD, y = y, width = inner_w, tokens = t })
+end
+
+-- Place the C track's edge marks (see trackEdges()) for the current lightness, hue and target.
+
+function updateTrackEdges(self:table)
+   state = self.state
+   slider = self.channels.c.slider
+   track = slider.trackVP
+   thumb = slider.thumbVP
+   spaces = edgeSpaces(state.clamp)
+
+   -- The track is centred in its viewport, and the notches sit in the space that the thumb overhangs
+
+   top = (track.height - SLIDER_TRACK) * 0.5
+   bottom = top + SLIDER_TRACK
+   for i, edge in self.channels.c.edges do
+      c = (i < #spaces) ? colourmath.maxChroma(state.l, state.h, spaces[i]) : nil
+      if c and (c <= C_MAX) then
+         x = ((track.width - thumb.width) * (c / C_MAX)) + (thumb.width * 0.5)
+         edge.space = spaces[i]
+         edge.x = x
+         n = edge.notch
+         edge.path.sequence = string.format('M%.2f,%.2f l%d,%d l%d,%d Z M%.2f,%.2f l%d,%d l%d,%d Z',
+            x - n, top - n - 1, n, n, n, -n, x - n, bottom + n + 1, n, -n, n, n)
+         edge.path.visibility = VIS_VISIBLE
+      else
+         edge.space = nil
+         edge.path.visibility = VIS_HIDDEN
+      end
+   end
+end
+
+function updateChannels(self:table, Source:str)
+   state = self.state
+   for id, channel in self.channels do
+      value = channelValue(id, state)
+      if Source != id then channel.slider.setValue(value) end
+      channel.value.set(channelText(id, value))
+      channel.gradient.stops = channelStops(id, state)
+   end
+   updateTrackEdges(self)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Left column: the palette, the eyedropper loupe and the preview.
+
+-- The hex value of an OKLCH colour table, brought into sRGB as Apply would be under the Clamp setting.
+
+function colourHex(S:table, Clamp:str):str
+   r, g, b = clampedSrgb(S.l, S.c, S.h, Clamp)
+   return colourmath.toHex(r, g, b)
+end
+
+-- The hex value shown in a palette row, which includes the alpha of a translucent colour.  The row's swatch is opaque.
+
+function rowHex(S:table, Clamp:str):str
+   r, g, b = clampedSrgb(S.l, S.c, S.h, Clamp)
+   return colourmath.toHex(r, g, b, S.alpha)
+end
+
+-- Read text from the clipboard, or nil if it holds none.
+
+function clipboardText():str
+   try
+      local clipboard <close> = obj.new('clipboard')
+      err, datatype, files = clipboard.mtGetFiles(CLIPTYPE_TEXT, 0)
+      text = nil
+      if (err is ERR_Okay) and files and (#files > 0) then text = io.readAll(files[0]) end
+      return text
+   except e
+      return nil
+   end
+end
+
+function itemId(Items:array<table>, ID:str, Default:str):str
+   for item in values(Items) do
+      if item.id is ID then return ID end
+   end
+   return Default
+end
+
+-- Display order follows the link hierarchy, so a swatch index isn't necessarily its row index.
+
+function paletteItem(View:table, Index:num):table
+   for item in values(View.items) do
+      if item.index is Index then return item end
+   end
+   return nil
+end
+
+-- Select the row of the active swatch and scroll it into view, or clear the selection when there is no active swatch.
+
+function syncPaletteSelection(self:table)
+   view = self.paletteView
+   active = self.state.active
+   item = (active != nil) ? paletteItem(view, active) : nil
+   if item is view.sItem then return end
+
+   if item then
+      view.selectItems(Item => Item is item)
+      view.revealItem(item)
+   else
+      view.deselectAll()
+   end
+end
+
+-- Give the palette list the focus with Item (or the active swatch's row, or the first row) as the keyboard target.
+
+function focusPaletteList(self:table, Item:table)
+   view = self.paletteView
+   if self.finished or not view or (#view.items is 0) then return end
+   active = self.state.active
+   Item ?= (active != nil) ? paletteItem(view, active) : nil
+   Item ?= view.items[0]
+   view.viewport.acFocus()
+   view.targetItem(Item)
+end
+
+-- The scratch row shows the scratch colour.  It is highlighted while the scratch colour is being edited, and outlined
+-- while it has the focus otherwise.
+
+function updateScratchRow(self:table)
+   row = self.scratchRow
+   scratch, clamp = self.state.scratch, self.state.clamp
+   row.set({ name = 'Scratch', colour = colourHex(scratch, clamp), hex = rowHex(scratch, clamp) })
+   if self.state.active is nil then
+      row.setHighlight('active')
+   else
+      row.setHighlight(self.scratchFocused ? 'focus' : nil)
+   end
+end
+
+-- The scratch row sits above the palette list and draws like a palette row, but it isn't part of the list or the
+-- palette.  Selecting it makes the scratch colour the editing target.  It is a tab stop: Enter or Space selects it,
+-- and Down moves the focus to the first palette row.
+
+function buildScratchRow(self:table, Target:obj, Width:num)
+   vp = Target.new('VectorViewport', { x = LIST_PAD_X, y = LIST_PAD_TOP, width = Width, height = ROW_HEIGHT })
+
+   -- The background gives the row the hand cursor and makes all of it respond to the pointer
+
+   vp.new('VectorRectangle', { width = '100%', height = '100%', fill = self.tokens.panel, cursor = 'hand' })
+
+   self.scratchRow = colourpicker_parts.paletteRow(vp, { tokens = self.tokens })
+
+   vp.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function(Viewport:obj!, Msg:any!)
+      repeat
+         if Msg.type is JET_LMB then
+            self.scratchPress = nil
+            if (Msg.value is 1) and not (Msg.flags has JTYPE_DRAG_ITEM) then
+               self.scratchPress = { x = Msg.x, y = Msg.y }
+               Viewport.acFocus()
+               self.selectScratch()
+            end
+         elseif (Msg.type is JET_ABS_XY) and self.scratchPress then
+            dx = Msg.x - self.scratchPress.x
+            dy = Msg.y - self.scratchPress.y
+            if (dx * dx) + (dy * dy) >= SCRATCH_DRAG_THRESHOLD * SCRATCH_DRAG_THRESHOLD then
+               self.scratchPress = nil
+               self.startScratchDrag()
+            end
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   vp.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+      if self.finished or self.renaming or not (Qualifiers has KQ_PRESSED) then return end
+      if Value is KEY_DOWN then
+         processing.delayedCall(function() focusPaletteList(self, self.paletteView?.items[0]) end)
+      elseif Qualifiers has KQ_REPEAT then
+         return
+      elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or (Value is KEY_SPACE) then
+         self.selectScratch()
+      end
+   end)
+
+   -- Dropping a dragged colour (such as a scheme colour) gives scratch the colour without selecting it.  As with the
+   -- palette list, only drags started by this picker are accepted.
+
+   vp.dropTarget = 1
+   vp.subscribe('DragDrop', function(Viewport:obj, Args:table)
+      session = self.scratchDrag
+      if not session or self.finished or self.renaming then return end
+      if Viewport.scene.dropTarget?.id != Viewport.id then return end
+      if (Args.source?.id != self.scratchClipboard?.id) or (Args.item != session.id) then return end
+      input.requestItem(Args.source, Args.item, 'xml', function(Items:table)
+         if self.finished or self.renaming then return end
+         colour = Items[0]
+         if colour?.item != 'colour' then return end
+         self.dropColour(nil, tonumber(colour.l), tonumber(colour.c), tonumber(colour.h), tonumber(colour.alpha))
+         Viewport.acFocus()
+      end)
+   end)
+
+   vp.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event:num!)
+      if self.finished then return end
+      self.scratchFocused = (Event != FM_LOST_FOCUS)
+      updateScratchRow(self)
+      Viewport.acDraw()
+   end)
+end
+
+-- The palette mode combobox takes the place of the panel title.  It is created before the scratch row, so that it
+-- precedes the row in the tab order.  It is as wide as its longest label.
+
+function buildModeBox(self:table, Panel:table)
+   t = self.tokens
+   label = colourpalette.mode(self.state.palette).label
+   box = gui.combobox({
+      target = Panel.viewport, x = LIST_PAD_X, y = math.floor((PANEL_HEADER_H - 1 - SMALL_BUTTON) * 0.5),
+      height = SMALL_BUTTON, items = PALETTE_MODE_ITEMS, text = label, allowCustom = false,
+      theme = { input = smallText() },
+      events = {
+         activate = function[&&](Item:table!)
+            if self.refreshing then return end
+            self.setPaletteMode(Item.id)
+         end
+      }
+   })
+   smallCaret(box, t)
+
+   label_w = 0
+   for item in values(PALETTE_MODE_ITEMS) do
+      box.text.string = item.label
+      label_w = math.max(label_w, math.ceil(box.text.textWidth))
+   end
+   box.text.string = label
+   box.viewport.width = box._textClip.x + (box.text.x * 2) + label_w + 2 + box._textClip.xOffset
+   self.paletteModeBox = box
+end
+
+function buildPalette(self:table, Target:obj)
+   t = self.tokens
+   list_w = LEFT_INNER - (LIST_PAD_X * 2) + VIEW_EDGE - 1
+
+   panel = colourpicker_parts.panel(Target, {
+      x = LEFT_PAD, y = LEFT_PAD, width = LEFT_INNER, height = 100, title = '', tokens = t
+   })
+   self.palettePanel = panel
+
+   buildModeBox(self, panel)
+
+   -- The palette name is edited in place.  It replaces the panel meta, which is only used for flashed messages.  Its
+   -- width is set by updatePaletteMeta().  Blank names are refused, which restores the current name.
+
+   field_h = SMALL_BUTTON
+   self.paletteName = colourpicker_parts.valueField(panel.viewport, {
+      x = LEFT_INNER - PANEL_META_PAD, y = panel.meta.y - colourpicker_parts.baseline(0, field_h, 14), width = 100,
+      height = field_h, size = 14, fill = t.fg2, charLimit = PALETTE_NAME_LIMIT, tokens = t,
+      commit = function(Text)
+         if self.finished then return true end
+         if not colourpalette.renamePalette(self.state.palette, Text) then return false end
+         self.refresh('rename-palette')
+         return true
+      end,
+      blur = function() self.blurField() end,
+      focus = function(Has, Field) fieldFocusChanged(self, Has, Field) end
+   })
+
+   buildScratchRow(self, panel.body, list_w)
+
+   -- The list insets its rows by VIEW_EDGE, so it is enlarged by that amount to keep the rows at the list padding.
+   -- Its height is set by layoutLeft().  The list's selection mirrors the active swatch: selecting a row makes its
+   -- swatch the editing target, and syncPaletteSelection() follows changes made elsewhere.
+
+   self.paletteView = gui.listView({
+      target     = panel.body,
+      x          = LIST_PAD_X - VIEW_EDGE,
+      y          = LIST_TOP - VIEW_EDGE,
+      width      = list_w + (VIEW_EDGE * 2),
+      height     = VIEW_EDGE * 2,
+      borderless = true,
+      dragDrop   = true,
+      showIcons  = false,
+      rowHeight  = ROW_HEIGHT,
+      rowSpacing = ROW_GAP,
+      scrollDirection = 'vertical',
+      theme      = { page = { bkgd = { fill = t.panel } } },
+
+      constructItem = function(Item:table, Viewport:obj, Reason:str)
+         if Reason is 'create' then
+            Item.content = colourpicker_parts.paletteRow(Viewport, {
+               tokens = t, unlink = function() self.unlinkSwatch(Item.index) end
+            })
+            Item.content.set(Item)
+         elseif Reason is 'update' then
+            Item.content.set(Item)
+         elseif Reason is 'layout' then
+            Item.content.layout()
+         elseif Reason is 'destroy' then
+            Item.content.destroy()
+            Item.content = nil
+         end
+      end,
+
+      -- Pointer hover is not shown.  The keyboard target is outlined while the list has the focus.
+
+      constructHighlight = function(Item:table, Viewport:obj, Reason:str)
+         if Reason is 'selected' then
+            Item.content.setHighlight('active')
+         else
+            Item.content.setHighlight(Item.viewState.focused ? 'focus' : nil)
+         end
+      end,
+
+      events = {
+         -- The user's own swatches can be dragged.  The drag is the picker's colour drag rather than the list's, so
+         -- that every colour target accepts it.  The list's drag is refused.  A locked swatch can be dragged for its
+         -- colour only, so its Index is withheld and the swatch is never moved.
+
+         dragStart = function(View:table, Session:table)
+            item = Session.items[0]
+            palette = self.state.palette
+            swatch = palette.swatches[item.index]
+            if swatch?.user then
+               self.startScratchDrag(swatch, item.index)
+            elseif swatch and colourpalette.isReserved(palette, item.index) then
+               self.startScratchDrag(swatch)
+            end
+            return nil
+         end,
+
+         -- Dropping a colour on a row gives the row's swatch that colour without selecting it.  A swatch dropped on
+         -- a base or linked row is moved instead, and is selected: it is linked to the base of that row's group, keeping its colour.  A user swatch
+         -- dropped on another user swatch is always moved, so an unlinked target becomes its base.
+
+         dragDrop = function(View:table, Item:table, Drop:table)
+            session = self.scratchDrag
+            if not Item or not session or self.finished or self.renaming then return end
+            if (Drop.source?.id != self.scratchClipboard?.id) or (Drop.item != session.id) then return end
+            palette = self.state.palette
+            index = Item.index
+            target = palette.swatches[index]
+            if (session.index != nil) and (palette.swatches[session.index] is session.swatch) then
+               base = target.base
+               if (base is nil) and (target.user or colourpalette.hasDependants(palette, index)) then base = index end
+               if base != nil then
+                  self.moveSwatch(session.index, base)
+                  View.viewport.acFocus()
+                  return
+               end
+            end
+            input.requestItem(Drop.source, Drop.item, 'xml', function(Items:table)
+               if self.finished or (self.state.palette != palette) or
+                  (palette.swatches[index] != target) then return end
+               colour = Items[0]
+               if colour?.item != 'colour' then return end
+               self.dropColour(index, tonumber(colour.l), tonumber(colour.c), tonumber(colour.h),
+                  tonumber(colour.alpha))
+               View.viewport.acFocus()
+            end)
+         end,
+
+         itemSelected = function(View:table, Reason:str, Item:table)
+            if Reason is 'user' then self.selectSwatch(Item.index) end
+         end,
+
+         -- Gaining the focus from the keyboard leaves the list without a keyboard target, so the active swatch's row
+         -- is outlined.  A press on a row sets the target in the same message cycle, so the check is deferred.
+
+         focus = function(View:table)
+            processing.delayedCall(function()
+               if self.paletteView and View.hasFocus and not View.kItem then focusPaletteList(self) end
+            end)
+         end,
+
+         -- Space toggles the selection, which would otherwise leave the active swatch unmarked.
+
+         itemDeselected = function(View:table, Reason:str, Item:table)
+            if Reason is 'user' then
+               processing.delayedCall(function()
+                  if self.paletteView then syncPaletteSelection(self) end
+               end)
+            end
+         end
+      }
+   })
+
+   -- A divider in the middle of the gap separates the scratch row from the list, and another marks the end of the
+   -- list.  They are created after the list, whose viewport extends VIEW_EDGE beyond the rows and would otherwise
+   -- cover them.  The lower divider is positioned by layoutLeft().
+
+   panel.body.new('VectorRectangle', {
+      x = 0, y = LIST_PAD_TOP + ROW_HEIGHT + (SCRATCH_GAP * 0.5), xOffset = 0, height = 1, fill = t.divider
+   })
+
+   self.paletteEnd = panel.body.new('VectorRectangle', { x = 0, y = 0, xOffset = 0, height = 1, fill = t.divider })
+
+   -- A background on the list's page gives the rows the hand cursor.  The cursor is set at creation, because setting
+   -- it on an initialised vector sends a synthetic pointer event.
+
+   self.paletteView.page.new('VectorRectangle', {
+      width = '100%', height = '100%', fill = t.panel, cursor = 'hand'
+   }).acMoveToBack()
+
+   -- Double-clicking a row renames its swatch.  The first click has selected it, so the row under the pointer is the
+   -- active one.  The edit starts after the list has handled the click, which would otherwise take the focus back.
+
+   self.paletteView.page.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Events)
+      ev = Events
+      while ev do
+         if (ev.type is JET_BUTTON_1) and (ev.value is 0) and (ev.flags has JTYPE_DBL_CLICK) then
+            index = self.state.active
+            item = (index != nil) ? paletteItem(self.paletteView, index) : nil
+            row = item?.content?.viewport
+            if row and (ev.y >= row.y) and (ev.y < row.y + row.height) then
+               processing.delayedCall(function() self.renameSwatch() end)
+            end
+         end
+         ev = ev.next
+      end
+   end)
+
+   -- The buttons are positioned vertically by layoutLeft().  The icon buttons are aligned to the right of the list:
+   -- Add, the palette actions (load, paste, copy and reset), then Delete for the active swatch.
+
+   btn_x = LIST_PAD_X + list_w - 2 - (SMALL_BUTTON * 6) - (5 * 6)
+
+   function iconButton(Index:num, Icon:str, Tip:str, Activate:func):table
+      return gui.button({
+         target = panel.body, x = btn_x + (Index * (SMALL_BUTTON + 6)), height = SMALL_BUTTON,
+         icon = Icon, tip = Tip, events = { activate = Activate }
+      })
+   end
+
+   self.btnAddSwatch = iconButton(0, 'items/add', 'Add swatch', function() self.addSwatch() end)
+   -- Loading palettes from the user database isn't supported yet, so Load starts disabled and does nothing.
+
+   self.btnLoadPalette = iconButton(1, 'folders/folder_open', 'Load palette', function() end)
+   self.btnLoadPalette.disable()
+   self.btnImport = iconButton(2, 'tools/paste', 'Paste palette from clipboard', function() self.importPalette() end)
+   self.btnExport = iconButton(3, 'tools/copy', 'Copy palette to clipboard', function() self.exportPalette() end)
+   self.btnResetPalette = iconButton(4, 'items/reload', 'Reset palette to defaults', function() self.resetPalette() end)
+   self.btnDeleteSwatch = iconButton(5, 'items/trash', 'Delete swatch (Delete)', function() self.deleteSwatch() end)
+
+   -- The swatch count sits opposite the buttons, on the same row
+
+   self.paletteCount = colourpicker_parts.text(panel.body, {
+      x = LIST_PAD_X + 2, size = 14, face = colourpicker_parts.FACE_MONO, fill = t.fg2
+   })
+end
+
+function buildEyedropper(self:table, Target:obj)
+   t = self.tokens
+   text = colourpicker_parts.text
+   mono = colourpicker_parts.FACE_MONO
+   loupe_size = colourpicker_wheel.LOUPE_SIZE
+   box_w = LEFT_INNER - 24
+   box_h = loupe_size + 16
+
+   panel = colourpicker_parts.panel(Target, {
+      x = LEFT_PAD, y = 0, width = LEFT_INNER, height = EYEDROP_H, title = 'Eyedropper', tokens = t
+   })
+
+   -- Clicks outside Kōtuku windows reach the other application, so the screen tip directs the user to the keyboard.
+
+   pick_tip = colourpicker_eyedropper.readsDesktop() ?
+      'Pick a colour from the screen (I). Click or Enter to accept; right-click or Escape to cancel. ' ..
+         'Outside this window, use Enter or Escape instead of clicking.' :
+      'Pick a Kōtuku surface colour (I). Click or Enter to accept; right-click or Escape to cancel.'
+
+   self.eyedropPanel = panel
+   self.btnPick = gui.button({
+      target = panel.viewport, x = LEFT_INNER - 12 - SMALL_BUTTON, y = 5, height = SMALL_BUTTON,
+      icon = 'tools/colourpicker',
+      tip  = pick_tip,
+      events = { activate = function() self.startEyedropper() end }
+   })
+   body = panel.body
+
+   body.new('VectorRectangle', {
+      x = 12.5, y = 12.5, width = box_w - 1, height = box_h - 1, roundX = 5, roundY = 5,
+      fill = t.sunk, stroke = t.border, strokeWidth = 1
+   })
+
+   self.loupe = colourpicker_wheel.loupe(body, { x = 20, y = 20, tokens = t })
+
+   -- The readout names the closest CSS colour and its distance.  The mono face lacks Δ, so the ΔE key uses the UI
+   -- face and the distance follows it.
+
+   info_x = 20 + loupe_size + 10
+   info_top = 12 + math.round((box_h - 47) * 0.5) -- Three lines, 47 px in all
+   self.pickedLabel = text(body, { x = info_x, y = info_top + 7, size = 14, fill = t.fg3, string = 'Picked' })
+   self.namedName = text(body, { x = info_x, y = info_top + 27, size = 14, face = mono, fill = t.fg0 })
+   self.namedWidth = 12 + box_w - 10 - info_x
+   self.namedDelta = text(body, { x = info_x, y = info_top + 49, size = 14, fill = t.fg3, string = 'ΔE' })
+   self.namedDist = text(body, { y = info_top + 49, size = 14, face = mono, fill = t.fg2 })
+end
+
+function buildPreview(self:table, Target:obj)
+   self.previewPanel = colourpicker_parts.panel(Target, {
+      x = LEFT_PAD, y = 0, width = LEFT_INNER, height = PREVIEW_H, title = 'Preview', meta = PREVIEW_META,
+      tokens = self.tokens
+   })
+end
+
+-- Create the preview of the palette's mode if it isn't shown already.  The panel is hidden for a mode that has no
+-- preview.
+
+function syncPreview(self:table)
+   mode = colourpalette.mode(self.state.palette).id
+   if self.preview?.mode is mode then return end
+   self.preview?.free()
+   self.preview = colourpicker_preview.new(self.previewPanel.body, {
+      x = 10, y = 10, width = LEFT_INNER - 20, mode = mode, tokens = self.tokens
+   })
+   self.previewPanel.viewport.visibility = self.preview ? VIS_VISIBLE : VIS_HIDDEN
+end
+
+-- Fill the space above the fixed Eyedropper and Preview panels.  The list scrolls when its rows exceed that space.
+-- The palette also takes the Preview panel's space when the palette mode has no preview.
+
+function layoutLeft(self:table)
+   syncPreview(self)
+   preview_h = self.preview ? (PREVIEW_H + LEFT_GAP) : 0
+   palette_h = self.bodyHeight - (LEFT_PAD * 2) - LEFT_GAP - EYEDROP_H - preview_h
+   list_h = palette_h - PANEL_HEADER_H - LIST_TOP - (LIST_PAD_BTM * 2) - SMALL_BUTTON
+   self.paletteView.viewport.height = list_h
+   self.paletteEnd.y = LIST_TOP - VIEW_EDGE + list_h - 1
+
+   btn_y = LIST_TOP + list_h + LIST_PAD_BTM
+   buttons = array<table> {
+      self.btnAddSwatch, self.btnLoadPalette, self.btnImport, self.btnExport,
+      self.btnResetPalette, self.btnDeleteSwatch
+   }
+   for btn in values(buttons) do
+      btn.viewport.y = btn_y
+   end
+   self.paletteCount.y = colourpicker_parts.baseline(btn_y, SMALL_BUTTON, 14)
+
+   self.palettePanel.setHeight(palette_h)
+   self.eyedropPanel.viewport.y = LEFT_PAD + palette_h + LEFT_GAP
+   self.previewPanel.viewport.y = self.eyedropPanel.viewport.y + EYEDROP_H + LEFT_GAP
+end
+
+function buildLeft()
+   col = &columns[0]
+   buildPalette(&&, col)
+   buildEyedropper(&&, col)
+   buildPreview(&&, col)
+   layoutLeft(&&)
+end
+
+-- A swatch can be deleted if one is being edited, it isn't reserved for a role of the palette mode, and it isn't the
+-- last.  An empty palette isn't saved (the settings would load as the demonstration palette), so at least one swatch
+-- is kept.
+
+function canDeleteSwatch(State:table):bool
+   return (State.active != nil) and (#State.palette.swatches > 1) and
+      (not colourpalette.isReserved(State.palette, State.active))
+end
+
+function updatePaletteMeta(self:table)
+   palette = self.state.palette
+   panel = self.palettePanel
+   box = self.paletteModeBox.viewport
+   space = LEFT_INNER - PANEL_META_PAD - (box.x + box.width) - PANEL_META_GAP
+   panel.setMeta('')
+   self.paletteName.setWidth(space + (colourpicker_parts.FIELD_PAD * 2))
+   self.paletteName.set(palette.name)
+   self.paletteName.viewport.visibility = VIS_VISIBLE
+end
+
+-- Refresh rows in parent-first order, keeping siblings in palette order.  Each item retains its model index;
+-- grouping changes only the display order.  Rows are reused, with additions and removals at the end of the list.
+
+function updatePalette(self:table)
+   state = self.state
+   palette = state.palette
+   view = self.paletteView
+   n = #palette.swatches
+   clamp = state.clamp
+
+   while #view.items > n do
+      view.removeItem(view.items[#view.items - 1])
+   end
+
+   order = array<table>
+   visited = { }
+   function appendBranch(Index:num, Depth:num):nil
+      if visited[Index] then return end
+      visited[Index] = true
+      order.push({ index = Index, depth = Depth })
+      for i, s in palette.swatches do
+         if s.base is Index then appendBranch(i, Depth + 1) end
+      end
+   end
+   for i, s in palette.swatches do
+      if s.base is nil then appendBranch(i, 0) end
+   end
+   -- Keep every swatch visible even if an externally supplied palette has an invalid link.
+   for i in {0 to n} do appendBranch(i, 0) end
+
+   added = { }
+   for row, entry in order do
+      i = entry.index
+      s = palette.swatches[i]
+      glyph = ''
+      if s.base != nil then
+         glyph = 'link'
+      elseif colourpalette.hasDependants(palette, i) then
+         glyph = 'base'
+      end
+
+      info = {
+         index = i, name = s.name, colour = colourHex(s, clamp), hex = rowHex(s, clamp), glyph = glyph,
+         locked = colourpalette.isReserved(palette, i), depth = entry.depth
+      }
+
+      if row < #view.items then
+         view.setItem(view.items[row], info)
+      else
+         added.insert(info)
+      end
+   end
+   if #added > 0 then view.addItems(added) end
+
+   syncPaletteSelection(self)
+   updateScratchRow(self)
+
+   mode_label = colourpalette.mode(palette).label
+   if self.paletteModeBox.text.string != mode_label then self.paletteModeBox.setText(mode_label) end
+
+   if not self.flashTimer then updatePaletteMeta(self) end
+   self.paletteCount.string = f'{#palette.swatches} / {colourpalette.MAX_SWATCHES}'
+
+   full = #palette.swatches >= colourpalette.MAX_SWATCHES
+   if full and (not self.btnAddSwatch.disabled) then
+      self.btnAddSwatch.disable()
+   elseif (not full) and self.btnAddSwatch.disabled then
+      self.btnAddSwatch.enable()
+   end
+
+   deletable = canDeleteSwatch(state)
+   if deletable and self.btnDeleteSwatch.disabled then
+      self.btnDeleteSwatch.enable()
+   elseif (not deletable) and (not self.btnDeleteSwatch.disabled) then
+      self.btnDeleteSwatch.disable()
+   end
+end
+
+-- Show the closest named colour to L, C, H in the eyedropper readout.  Long names (for example Light Goldenrod
+-- Yellow) are shortened to fit beside the loupe.
+
+function showNamed(self:table, L:num, C:num, H:num)
+   name, distance = colourmath.closestNamed(colourmath.oklchToOklab(L, C, H))
+   colourpicker_parts.fitText(self.namedName, '', name, self.namedWidth)
+   self.namedDelta.string = 'ΔE'
+   self.namedDist.x = self.namedDelta.x + math.ceil(self.namedDelta.textWidth) + 6
+   self.namedDist.string = fixed(distance * 100, 1)
+end
+
+function updateEyedropper(self:table)
+   s = self.state
+   if self.picking then return end
+
+   if self.pickedSample then
+      self.loupe.showPixels(self.pickedSample.pixels)
+   else
+      self.loupe.update(s.l, s.c, s.h)
+   end
+
+   showNamed(self, s.l, s.c, s.h)
+end
+
+function updateLeft(self:table)
+   updatePalette(self)
+   updateEyedropper(self)
+   if self.preview then
+      self.preview.update(self.state.palette)
+      -- A preview's own meta is set in the UI face, which has the Δ glyph that the monospaced face lacks
+      meta = self.previewPanel.meta
+      face = self.preview.meta ? colourpicker_parts.FACE_UI : colourpicker_parts.FACE_MONO
+      if meta.face != face then meta.face = face end
+      self.previewPanel.setMeta(self.preview.meta ?? PREVIEW_META)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- A linked colour dragged on the wheel snaps to the hue of its base, or of a companion of the base in the current
+-- scheme, when it comes within SNAP_HUE degrees.  Other colours don't snap.
+
+function snapHue(self:table, H:num):num
+   state = self.state
+   if state.active is nil then return H end
+   b = state.palette.swatches[state.active].base
+   if b is nil then return H end
+   base = state.palette.swatches[b]
+   hues = array<double> { base.h }
+   for target in values(colourpicker_wheel.targets(base.c, base.h, state.scheme)) do hues.push(target.h) end
+   for hue in values(hues) do
+      d = ((((H - hue) % 360) + 540) % 360) - 180
+      if math.abs(d) <= SNAP_HUE then return ((hue % 360) + 360) % 360 end
+   end
+   return H
+end
+
+function buildCentre()
+   t    = &tokens
+   col  = &columns[1]
+   half = (CENTRE_INNER - 4 - 8) * 0.5
+
+   &schemeBox = selector(&&, col, CENTRE_PAD_X + 2, CENTRE_PAD_Y, half, 'Scheme', SCHEME_ITEMS,
+      &state.scheme, function[&&](Item:table!)
+         &state.scheme = Item.id
+         &refresh('scheme')
+      end)
+
+   &clampBox = selector(&&, col, CENTRE_PAD_X + 2 + half + 8, CENTRE_PAD_Y, half, 'Clamp to', CLAMP_ITEMS,
+      &state.clamp, function[&&](Item:table!)
+         &state.clamp = Item.id
+         &savedClamp = Item.id
+         deriveState(&state)
+         &colour = outputColour(&state)
+         &refresh('clamp')
+      end)
+
+   &schemeChip = colourpicker_parts.chip(col, { y = CENTRE_PAD_Y + SELECT_HEIGHT + 8, text = '', tokens = t })
+
+   -- The colours that the scheme represents are stacked under the chip, one box each.  updateCentre() sizes and
+   -- fills them; a translucent colour is drawn over the checkerboard.  Dragging a box drops its colour as for the
+   -- scratch row.
+
+   &schemeSwatches = array<table>
+   chip_h = &schemeChip.viewport.height
+   for i in {0 to colourpicker_wheel.MAX_SWATCHES} do
+      swatch = {
+         viewport = col.new('VectorViewport', {
+            y = &schemeChip.viewport.y + ((i + 1) * (chip_h + 4)), height = chip_h, visibility = VIS_HIDDEN
+         })
+      }
+      swatch.box = swatch.viewport.new('VectorRectangle', {
+         x = 0.5, y = 0.5, height = chip_h - 1, roundX = 3, roundY = 3, stroke = t.border, strokeWidth = 1,
+         cursor = 'hand'
+      })
+      swatch.viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function[&&](Viewport:obj!, Msg:any!)
+         repeat
+            if Msg.type is JET_LMB then
+               swatch.press = nil
+               if (Msg.value is 1) and not (Msg.flags has JTYPE_DRAG_ITEM) then
+                  swatch.press = { x = Msg.x, y = Msg.y }
+               end
+            elseif (Msg.type is JET_ABS_XY) and swatch.press then
+               dx = Msg.x - swatch.press.x
+               dy = Msg.y - swatch.press.y
+               if (dx * dx) + (dy * dy) >= SCRATCH_DRAG_THRESHOLD * SCRATCH_DRAG_THRESHOLD then
+                  swatch.press = nil
+                  &startScratchDrag(swatch.colour)
+               end
+            end
+            Msg = Msg.next
+         until not Msg
+      end)
+      &schemeSwatches.push(swatch)
+   end
+
+   &wheel = colourpicker_wheel.new(col, {
+      x = CENTRE_PAD_X + ((CENTRE_INNER - colourpicker_wheel.SIZE) * 0.5), y = WHEEL_Y, l = &state.l,
+      onPick = function[&&](H, C)
+         s = &state
+         if H is nil then
+            H = s.h -- ?? would discard a hue of 0
+         elseif not &fine then
+            H = snapHue(&&, H)
+         end
+         &setColour(s.l, C, H, s.alpha, 'wheel')
+      end,
+      onFine = function() return &fine end
+   })
+
+   buildReadout(&&, col, CENTRE_PAD_X, READOUT_Y, CENTRE_INNER)
+   buildChannels(&&, col, CENTRE_PAD_X, CHANNEL_PANEL_Y, CENTRE_INNER)
+end
+
+function updateCentre(self:table, Source:str)
+   state = self.state
+
+   count = colourpicker_wheel.SWATCH_COUNT[state.scheme] ?? 1
+   self.schemeChip.set(f'{count} swatch{(count is 1) ? "" : "es"}')
+   self.schemeChip.viewport.x = CENTRE_PAD_X + CENTRE_INNER - 2 - self.schemeChip.width
+
+   -- The scheme is anchored on the current colour, or on its base if it is a linked swatch, so that the companions
+   -- are targets for the link instead of following the colour as it moves.
+
+   base = nil
+   if state.active != nil then
+      b = state.palette.swatches[state.active].base
+      if b != nil then base = state.palette.swatches[b] end
+   end
+   anchor = base ?? { l = state.l, c = state.c, h = state.h, alpha = state.alpha }
+
+   -- The anchor colour comes first, then its companions.  A scheme without companions shows no boxes.
+
+   colours = colourpicker_wheel.targets(anchor.c, anchor.h, state.scheme)
+   if #colours > 0 then colours.insert(0, { c = anchor.c, h = anchor.h }) end
+   for i, swatch in self.schemeSwatches do
+      if i < #colours then
+         c, h = colours[i].c, ((colours[i].h % 360) + 360) % 360
+         r, g, b = clampedSrgb(anchor.l, c, h, state.clamp)
+         swatch.colour = { l = anchor.l, c = c, h = h, alpha = anchor.alpha }
+         swatch.viewport.x     = self.schemeChip.viewport.x
+         swatch.viewport.width = self.schemeChip.width
+         swatch.box.width      = self.schemeChip.width - 1
+         swatch.box.fill       = (anchor.alpha < 1) ?
+            f'url(#cpChecker);{colourmath.toHex(r, g, b, anchor.alpha)}' : colourmath.toHex(r, g, b)
+         swatch.viewport.visibility = VIS_VISIBLE
+      else
+         swatch.press = nil
+         swatch.viewport.visibility = VIS_HIDDEN
+      end
+   end
+
+   self.wheel.update(state.c, state.h, state.scheme, base ? { c = base.c, h = base.h } : nil)
+   self.wheel.setLightness(state.l)
+   self.wheel.setEdges((state.clamp is 'none') ? array<str> : edgeSpaces(state.clamp)) -- No wheel outline when unmapped
+
+   updateReadout(self)
+   updateChannels(self, Source)
+
+   format = INPUT_FORMATS.find(F => F.id is self.inputFormat)
+   self.inputShown = inputText(state, format.id)
+   self.formatChip.set(format.label, state.hex)
+   self.colourInput.setText(self.inputShown)
+
+   -- Outside sRGB, the notice swatch is split into the clipped preview colour and the mapped result, unless the
+   -- result is the clipped colour.
+
+   clipped = nil
+   if (not state.inSRGB) and (state.clamp != 'none') then clipped = colourHex(state, 'none') end
+   self.notice.set(noticeText(state), not state.inSRGB, (not state.inSRGB) ? state.hex : nil, clipped)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Right column: the Relationship, Contrast and Export panels.
+
+-- Format a link value with a sign, except for zero.
+
+function signed(Value:num, Places:num):str
+   s = fixed(Value, Places)
+   if (Value > 0) and (tonumber(s) != 0) then s = '+' .. s end
+   return s
+end
+
+function relationText(Channel:str, Entry:table):str
+   if Channel is 'h' then
+      v = (Entry.mode is 'abs') ? hueText(Entry.v) : signed(Entry.v, 1)
+      if v.endsWith('.0') then v = v.sub(0, -2) end
+      return v .. '°'
+   end
+   return (Entry.mode is 'abs') ? fixed(Entry.v, 3) : signed(Entry.v, 3)
+end
+
+-- Commit text typed into a Relationship value field.  Values are held to the range of the row's slider; an absolute
+-- hue wraps instead.
+
+function commitRelationText(self:table, Row:table, Text:str):bool
+   if self.finished then return true end
+   ch = Row.def
+   v = parseValue(Text, (ch.id is 'l') and (Row.mode is 'abs'))
+   v ?! return false
+   if Row.mode is 'abs' then
+      if ch.id is 'h' then
+         v = v % 360
+         if v < 0 then v += 360 end
+      else
+         v = math.clamp(v, 0, ch.abs)
+      end
+   else
+      v = math.clamp(v, -ch.delta, ch.delta)
+   end
+   self.setLinkValue(ch.id, v, 'field')
+   return true
+end
+
+-- Gradient stops for the hue track of the Relationship panel.  A delta track is centred on the base hue.
+
+function relHueStops(Swatch:table, Base:table, Mode:str):table
+   l = math.clamp(Swatch.l, 0.45, 0.8)
+   c = math.max(Swatch.c, HUE_TRACK_MIN_C)
+   start = (Mode is 'abs') ? 0 : Base.h - 180
+   return trackStops(HUE_STOPS, function(F:num):<num, num, num, num> return l, c, start + (F * 360), 1 end)
+end
+
+-- A rectangle with the corners on one side rounded, as a path.
+
+function halfRound(X:num, Y:num, W:num, H:num, R:num, Left:bool):str
+   if Left then
+      return f'M{X + R},{Y} H{X + W} V{Y + H} H{X + R} Q{X},{Y + H} {X},{Y + H - R} V{Y + R} Q{X},{Y} {X + R},{Y} Z'
+   end
+   return f'M{X},{Y} H{X + W - R} Q{X + W},{Y} {X + W},{Y + R} V{Y + H - R} Q{X + W},{Y + H} {X + W - R},{Y + H} H{X} Z'
+end
+
+-- A WCAG grade badge.  Failed grades are struck through.
+
+function badge(Target:obj, Label:str, Tokens:table):table
+   self = { viewport = Target.new('VectorViewport', { x = 0, y = 0, width = 1, height = BADGE_H }) }
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      x = 0, y = 0, width = 1, height = BADGE_H, roundX = 3, roundY = 3
+   })
+   self.label = colourpicker_parts.text(self.viewport, {
+      x = 6, y = colourpicker_parts.baseline(0, BADGE_H, 9.5), size = 9.5, face = colourpicker_parts.FACE_MONO,
+      string = Label
+   })
+   self.width = math.ceil(self.label.textWidth) + 12
+   self.viewport.width = self.width
+   self.bkgd.width = self.width
+   self.strike = self.viewport.new('VectorRectangle', {
+      x = 6, y = math.floor(BADGE_H * 0.5), width = self.width - 12, height = 1
+   })
+
+   self.set = function(Pass:bool)
+      colours = Pass ? Tokens.pass : Tokens.fail
+      self.bkgd.fill = colours.bkgd
+      self.label.fill = colours.text
+      self.strike.fill = colours.text
+      self.strike.visibility = Pass ? VIS_HIDDEN : VIS_VISIBLE
+   end
+
+   return self
+end
+
+-- A button that toggles between two states.  The pressed state is drawn in the accent colours, and is restored
+-- after the button's own hover, focus and enable styling.
+
+function toggleButton(Options:table):table
+   t = Options.tokens
+   base = gui.getTheme(Options.target).button
+   self = { pressed = false, hover = false }
+
+   -- The button restores its own background on hover and focus changes, so the pressed style is reapplied after each.
+   -- Focus events precede the button's restyle, so they reapply on the next cycle.  The label follows the background:
+   -- the base theme's button text can be light on its dark background.
+
+   function restyle()
+      if not self.pressed then return end
+      gui.applyStyle(self.button.bkgd, { fill = t.accentSoft, stroke = t.accent })
+      self.button._label?.fill = t.fg0
+   end
+
+   function restyleLater() -- The picker may have been closed in the meantime
+      if obj.find(self.bkgdID) then restyle() end
+   end
+
+   function release()
+      style = { fill = self.hover ? (base.highlight?.fill ?? base.bkgd.fill) : base.bkgd.fill }
+      style.stroke = self.button.hasFocus ? (base.focus?.stroke ?? base.bkgd.stroke) : base.bkgd.stroke
+      gui.applyStyle(self.button.bkgd, style)
+      self.button._label?.fill = base.text.fill
+   end
+
+   self.button = gui.button({
+      target = Options.target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      label = Options.label, theme = Options.theme, tip = Options.tip,
+      events = {
+         activate    = function() Options.onToggle(not self.pressed) end,
+         cursorEntry = function()
+            self.hover = true
+            restyle()
+         end,
+         cursorExit  = function()
+            self.hover = false
+            restyle()
+         end,
+         focus       = function() processing.delayedCall(restyleLater) end,
+         lostFocus   = function() processing.delayedCall(restyleLater) end,
+         enable      = restyle
+      }
+   })
+   self.bkgdID = self.button.bkgd.id
+
+   self.set = function(Pressed:bool)
+      if Pressed is self.pressed then return end
+      self.pressed = Pressed
+      if Pressed then restyle() else release() end
+   end
+
+   return self
+end
+
+function buildRelationship(self:table, Target:obj)
+   t = self.tokens
+   scene = Target.scene
+   inner_w = RIGHT_INNER - (PANEL_PAD * 2)
+
+   panel = colourpicker_parts.panel(Target, {
+      x = RIGHT_PAD_X, y = RIGHT_PAD, width = RIGHT_INNER, height = REL_PANEL_H, title = 'Relationship', tokens = t
+   })
+   self.relPanel = panel
+   body = panel.body
+
+   -- The swap button sits in the header.  The meta names the base and ends before the button.
+
+   self.btnSwap = gui.button({
+      target = panel.viewport, x = RIGHT_INNER - 12 - SMALL_BUTTON, y = 5, height = SMALL_BUTTON,
+      icon = 'layout/swap', tip = 'Swap colour with base',
+      events = { activate = function() self.swapColours() end }
+   })
+   panel.meta.x = self.btnSwap.viewport.x - 8
+   self.relMetaWidth = panel.meta.x - (panel.title.x + math.ceil(panel.title.textWidth) + PANEL_META_GAP)
+
+   -- The channel rows are held in a viewport of their own
+
+   self.relRows = body.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0 })
+
+   -- One row per channel.  The key is a toggle: released, the channel is relative to the base (ΔL); pressed, it is
+   -- absolute (L) and keeps its value when the base changes.
+
+   neutral = { }
+   for i, c in array<str> { t.sunk, t.border } do
+      rgb = gui.strToRGB(c)
+      stop = struct<GradientStop>
+      stop.offset = i
+      stop.rgb.red, stop.rgb.green, stop.rgb.blue, stop.rgb.alpha = rgb.r, rgb.g, rgb.b, 1
+      neutral.insert(stop)
+   end
+
+   track_x = PANEL_PAD + REL_KEY_W + CHANNEL_GAP
+   track_w = inner_w - REL_KEY_W - REL_VALUE_W - (CHANNEL_GAP * 2)
+
+   self.relSliders = { }
+   y = 10
+   for ch in values(REL_CHANNELS) do
+      gradient = scene.new('GradientLinear', {
+         stops = (ch.id is 'h') ? relHueStops({ l = 0.65, c = 0.15, h = 0 }, { h = 0 }, 'delta') : neutral,
+         units = 'userspace', x1 = SLIDER_THUMB * 0.5, y1 = 0, x2 = track_w - (SLIDER_THUMB * 0.5), y2 = 0
+      })
+      check scene.mtAddDef(ch.def, gradient)
+
+      row = { def = ch, gradient = gradient, mode = 'delta' }
+
+      row.key = toggleButton({
+         target = self.relRows, x = PANEL_PAD, y = y + ((REL_ROW - SMALL_BUTTON) * 0.5), width = REL_KEY_W,
+         height = SMALL_BUTTON, label = 'Δ' .. ch.key, theme = smallText(), tokens = t,
+         tip = f'Click to switch {ch.name} between relative to the base (Δ{ch.key}) and absolute ({ch.key})',
+         onToggle = function[&&](Pressed)
+            self.setChannelMode(ch.id, Pressed ? 'abs' : 'delta')
+         end
+      })
+
+      row.slider = gui.slider({
+         target = self.relRows, x = track_x, y = y + ((REL_ROW - SLIDER_THUMB) * 0.5), width = track_w,
+         thickness = SLIDER_TRACK, thumbSize = SLIDER_THUMB, min = -ch.delta, max = ch.delta, value = 0,
+         theme = colourpicker_theme.channelSlider(self.themeName, SLIDER_THUMB, f'url(#{ch.def})'),
+         events = {
+            activate = function[&&](Value)
+               if self.refreshing then return end
+               self.setLinkValue(ch.id, Value)
+            end,
+            focus = function[&&]() row.ring?.fill = t.accent end,
+            lostFocus = function[&&]() row.ring?.fill = t.fg0 end
+         }
+      })
+
+      row.ring, row.innerRing = colourpicker_parts.thumbRings(row.slider, t)
+
+      -- The slider dims its track when disabled, and the shim dims the thumb as well
+      -- Hook directly into the existing disable/enable methods
+
+      base_disable = row.slider.disable
+      row.slider.disable = function[row.slider]()
+         base_disable()
+         for v in values(array<obj> { &button, row.ring, row.innerRing }) do
+            v.opacity = 0.3
+         end
+      end
+
+      base_enable = row.slider.enable
+      row.slider.enable = function[row.slider]()
+         base_enable()
+         for v in values(array<obj> { &button, row.ring, row.innerRing }) do
+            v.opacity = 1
+         end
+      end
+
+      row.value = colourpicker_parts.valueField(self.relRows, {
+         x      = PANEL_PAD + inner_w,
+         y      = y + ((REL_ROW - VALUE_FIELD_H) * 0.5),
+         width  = REL_VALUE_W + 4,
+         height = VALUE_FIELD_H, size = 11, tokens = t,
+         commit = function(Text) return commitRelationText(self, row, Text) end,
+         blur   = function() self.blurField() end,
+         focus  = function(Has, Field) fieldFocusChanged(self, Has, Field) end
+      })
+
+      self.relSliders[ch.id] = row
+      y += REL_ROW + REL_ROW_GAP
+   end
+
+   self.relEnabled = true
+end
+
+function buildContrast(self:table, Target:obj)
+   t       = self.tokens
+   inner_w = RIGHT_INNER - (PANEL_PAD * 2)
+   mono    = colourpicker_parts.FACE_MONO
+   text    = colourpicker_parts.text
+
+   panel = colourpicker_parts.panel(Target, {
+      x = RIGHT_PAD_X, y = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP, width = RIGHT_INNER, height = CONTRAST_H,
+      title = 'Contrast', tokens = t
+   })
+
+   self.contrastPanel = panel
+   self.contrastMetaWidth = RIGHT_INNER - PANEL_META_PAD - math.ceil(panel.title.x + panel.title.textWidth) -
+      PANEL_META_GAP
+   body = panel.body
+
+   -- A colour dropped on the panel replaces the automatic contrast target until that target changes.  As with the
+   -- scratch row, only drags started by this picker are accepted.  A user swatch keeps its name; other colours are
+   -- named after the closest CSS colour.
+
+   -- While a dropped colour is the target, clicking the "vs" label restores the automatic target.  The click area
+   -- covers the label and is shown only while there is a dropped colour.
+
+   self.contrastRevert = panel.viewport.new('VectorViewport', {
+      y = 0, width = 1, height = PANEL_HEADER_H - 1, visibility = VIS_HIDDEN
+   })
+
+   revert = self.contrastRevert
+   revert.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)', cursor = 'hand' })
+   revert.mtSubscribeInput(JTYPE_CROSSING | JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
+      repeat
+         if Msg.type is JET_CROSSED_IN then
+            self.contrastTip?.cancel()
+            self.contrastTip = gui.tooltip({ target = revert, text = 'Click to restore the automatic contrast colour' })
+         elseif Msg.type is JET_CROSSED_OUT then
+            self.contrastTip?.cancel()
+            self.contrastTip = nil
+         elseif (Msg.type is JET_LMB) and (Msg.value is 0) and not (Msg.flags has JTYPE_DRAG_ITEM) then
+            self.clearContrastColour()
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   panel.viewport.dropTarget = 1
+
+   panel.viewport.subscribe('DragDrop', function(Viewport:obj, Args:table)
+      session = self.scratchDrag
+
+      if not session or self.finished or self.renaming then return end
+      if Viewport.scene.dropTarget?.id != Viewport.id then return end
+      if (Args.source?.id != self.scratchClipboard?.id) or (Args.item != session.id) then return end
+
+      swatch = session.swatch
+      name = swatch?.user ? swatch.name : nil
+      input.requestItem(Args.source, Args.item, 'xml', function(Items:table)
+         if self.finished then return end
+         colour = Items[0]
+         if colour?.item != 'colour' then return end
+         self.setContrastColour({
+            l = tonumber(colour.l), c = tonumber(colour.c), h = tonumber(colour.h), alpha = tonumber(colour.alpha)
+         }, name)
+      end)
+   end)
+
+   row_y = 8
+   body.new('VectorRectangle', {
+      x = PANEL_PAD + 0.5, y = row_y + 0.5, width = inner_w - 1, height = CONTRAST_ROW_H - 1, roundX = 5, roundY = 5,
+      fill = t.sunk, stroke = t.border, strokeWidth = 1
+   })
+
+   sw_x = PANEL_PAD + 11
+   sw_y = row_y + ((CONTRAST_ROW_H - CONTRAST_SW) * 0.5)
+   self.contrastFg = body.new('VectorPath', {
+      sequence = halfRound(sw_x + 0.5, sw_y + 0.5, CONTRAST_SW - 0.5, CONTRAST_SW - 1, 4, true),
+      stroke = t.swatchBorder, strokeWidth = 1
+   })
+
+   self.contrastBg = body.new('VectorPath', {
+      sequence = halfRound(sw_x + CONTRAST_SW, sw_y + 0.5, CONTRAST_SW - 0.5, CONTRAST_SW - 1, 4, false),
+      stroke = t.swatchBorder, strokeWidth = 1
+   })
+
+   ratio_base = colourpicker_parts.baseline(row_y, CONTRAST_ROW_H, 14)
+   self.contrastRatio = text(body, {
+      x = sw_x + (CONTRAST_SW * 2) + 10, y = ratio_base, size = 14, face = mono, fill = t.fg0
+   })
+   self.contrastSuffix = text(body, { y = ratio_base, size = 14, face = mono, fill = t.fg0, string = ':1' })
+
+   badge_y = row_y + ((CONTRAST_ROW_H - BADGE_H) * 0.5)
+
+   self.badgeAAA = badge(body, 'AAA', t)
+   self.badgeAAA.viewport.{ x = PANEL_PAD + inner_w - 10 - self.badgeAAA.width, y = badge_y }
+
+   self.badgeAA = badge(body, 'AA', t)
+   self.badgeAA.viewport.{ x = self.badgeAAA.viewport.x - 4 - self.badgeAA.width, y = badge_y }
+
+   info_y = row_y + CONTRAST_ROW_H + 8
+   info_base = colourpicker_parts.baseline(info_y, 12, 10)
+
+   self.contrastApca = text(body, {
+      x = PANEL_PAD + 2, y = info_base, size = 10, face = mono, fill = t.fg2
+   })
+
+   self.contrastDL = text(body, {
+      x = PANEL_PAD + inner_w - 2, y = info_base, size = 10, face = mono, fill = t.fg2, align = 'right'
+   })
+
+   self.contrastDLKey = text(body, { y = info_base, size = 10, fill = t.fg2, string = 'ΔL', align = 'right' })
+end
+
+function exportMeta(self:table):str
+   tab = EXPORT_TABS[self.exportTab]
+   if tab.srgb then return tab.meta end
+   return f'{tab.meta} · {EXPORT_GAMUT[self.state.clamp] ?? self.state.clamp}'
+end
+
+function updateExport(self:table)
+   tab = EXPORT_TABS[self.exportTab]
+   lines = colourexport.generate(self.state.palette, tab.id, { gamut = self.state.clamp })
+   self.exportText = colourexport.toText(lines)
+   self.code.setLines(lines, self.exportText)
+   self.code.setTab(self.exportTab)
+   if not self.exportFlash then self.exportPanel.setMeta(exportMeta(self)) end
+end
+
+function buildExport(Target:obj)
+   t = &tokens
+   top = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP + CONTRAST_H + RIGHT_GAP
+   height = &bodyHeight - top - RIGHT_PAD
+
+   panel = colourpicker_parts.panel(Target, {
+      x = RIGHT_PAD_X, y = top, width = RIGHT_INNER, height = height,
+      title = 'Export', meta = EXPORT_TABS[0].meta,
+      tokens = t
+   })
+
+   &exportPanel = panel
+   &exportTab = 0
+
+   labels = array<str>
+   for tab in values(EXPORT_TABS) do
+      labels.push(tab.label)
+   end
+
+   &code = colourpicker_code.new(panel.body, {
+      x = PANEL_PAD, y = 8,
+      width = RIGHT_INNER - (PANEL_PAD * 2),
+      height = height - PANEL_HEADER_H - 8 - PANEL_PAD,
+      tokens = t, tabs = labels,
+      onTab = function[&&](Index)
+         &exportTab = Index
+         &code.scrollTo(0)
+         updateExport(&&)
+         &viewport.acDraw()
+      end,
+      onClick = function[&&]()
+         &copyExport()
+      end
+   })
+end
+
+function buildRight()
+   col = &columns[2]
+   buildRelationship(&&, col)
+   buildContrast(&&, col)
+   buildExport(col)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- Stack the right column's panels.  The Relationship panel is only shown for a linked colour; without it, the
+-- Contrast panel moves up and the Export panel takes the space.
+
+function layoutRight(self:table, ShowRel:bool)
+   if ShowRel is self.relShown then return end
+   self.relShown = ShowRel
+   top = RIGHT_PAD
+   self.relPanel.viewport.visibility = ShowRel ? VIS_VISIBLE : VIS_HIDDEN
+   if ShowRel then top += REL_PANEL_H + RIGHT_GAP end
+   self.contrastPanel.viewport.y = top
+   top += CONTRAST_H + RIGHT_GAP
+   height = self.bodyHeight - top - RIGHT_PAD
+   self.exportPanel.viewport.y = top
+   self.exportPanel.setHeight(height)
+   self.code.setHeight(height - PANEL_HEADER_H - 8 - PANEL_PAD)
+end
+
+function setRelEnabled(self:table, Enabled:bool)
+   if Enabled is self.relEnabled then return end
+
+   self.relEnabled = Enabled
+
+   widgets = array<table> { self.btnSwap }
+   for row in values(self.relSliders) do
+      widgets.push(row.slider)
+      widgets.push(row.key.button)
+      widgets.push(row.value)
+   end
+
+   for w in values(widgets) do
+      if Enabled then w.enable() else w.disable() end
+   end
+end
+
+function updateRelationship(self:table, Source:str)
+   state = self.state
+   palette = state.palette
+   swatch = (state.active != nil) ? palette.swatches[state.active] : nil
+   base = (swatch and (swatch.base != nil)) ? palette.swatches[swatch.base] : nil
+   meta = self.relPanel.meta
+
+   -- The hidden panel's controls are disabled, so that they leave the tab order
+
+   if not base then
+      setRelEnabled(self, false)
+      layoutRight(self, false)
+      return
+   end
+
+   setRelEnabled(self, true)
+   layoutRight(self, true)
+   colourpicker_parts.fitText(meta, 'base ', base.name, self.relMetaWidth)
+
+   for id, row in self.relSliders do
+      entry = swatch.link[id]
+
+      if entry.mode != row.mode then
+         row.mode = entry.mode
+         ch = row.def
+         row.key.button.setLabel((entry.mode is 'abs') ? ch.key : 'Δ' .. ch.key)
+         if entry.mode is 'abs' then
+            row.slider.setRange(0, ch.abs)
+         else
+            row.slider.setRange(-ch.delta, ch.delta)
+         end
+      end
+
+      row.key.set(entry.mode is 'abs')
+
+      if Source != f'rel-{id}' then row.slider.setValue(entry.v) end
+      row.value.set(relationText(id, entry))
+   end
+
+   self.relSliders.h.gradient.stops = relHueStops(swatch, base, swatch.link.h.mode)
+end
+
+-- The automatic contrast target: the swatch of the palette mode's background role, or white if the mode has none
+-- (Custom) or the background swatch is the colour being edited.
+
+function autoContrastTarget(self:table):<table, str>
+   state = self.state
+   role = colourpalette.mode(state.palette).background
+   if role then
+      target = colourpalette.roles(state.palette)[role]
+      active = (state.active != nil) ? state.palette.swatches[state.active] : nil
+      if target and (target != active) then return target, role end
+   end
+   return { l = 1, c = 0, h = 0 }, 'white'
+end
+
+-- The contrast target: a dropped colour, or the automatic target.  A dropped colour is discarded once the automatic
+-- target changes, as when the palette mode changes or its background swatch becomes the colour being edited.
+
+function contrastTarget(self:table):<table, str>
+   target, name = autoContrastTarget(self)
+   dropped = self.contrastDrop
+   if dropped then
+      if dropped.auto is name then return dropped.colour, dropped.name end
+      self.contrastDrop = nil
+   end
+   return target, name
+end
+
+function updateContrast(self:table)
+   state = self.state
+   target, target_name = contrastTarget(self)
+   backing = gui.strToRGB(self.tokens.sunk)
+   -- The name is shortened to fit the header, keeping the ' on panel' suffix of a translucent target.
+
+   meta = self.contrastPanel.meta
+   suffix = ((target.alpha != nil) and (target.alpha < 1)) ? ' on panel' : ''
+   meta.string = suffix
+   suffix_w = (#suffix > 0) ? meta.textWidth : 0
+   colourpicker_parts.fitText(meta, 'vs ', target_name, self.contrastMetaWidth - suffix_w)
+   meta.string ..= suffix
+
+   revert = self.contrastRevert
+   if self.contrastDrop then
+      revert.width = math.ceil(meta.textWidth) + (PANEL_META_PAD * 2)
+      revert.x = RIGHT_INNER - revert.width
+      revert.visibility = VIS_VISIBLE
+   else
+      revert.visibility = VIS_HIDDEN
+      self.contrastTip?.cancel()
+      self.contrastTip = nil
+   end
+
+   fr, fg, fb = outputSrgb(state)
+   br, bg, bb = clampedSrgb(target.l, target.c, target.h, state.clamp)
+   -- Resolve the background against the panel first, then the foreground against that visible background.
+   back = colourmath.compositeSrgb({ r = br, g = bg, b = bb }, backing, target.alpha)
+   fore = colourmath.compositeSrgb({ r = fr, g = fg, b = fb }, back, state.alpha)
+
+   self.contrastFg.fill = colourmath.toHex(fore.r, fore.g, fore.b)
+   self.contrastBg.fill = colourmath.toHex(back.r, back.g, back.b)
+
+   -- The ratio is truncated so that a value just below a threshold is never displayed as passing
+
+   ratio = colourmath.wcagContrast(fore, back)
+   self.contrastRatio.string = string.format('%.2f', math.floor(ratio * 100) / 100)
+   self.contrastSuffix.x = self.contrastRatio.x + self.contrastRatio.textWidth + 2
+   self.badgeAA.set(ratio >= WCAG_AA)
+   self.badgeAAA.set(ratio >= WCAG_AAA)
+
+   self.contrastApca.string = f'APCA Lc {fixed(colourmath.apcaLc(fore, back), 1)}'
+   fore_l = colourmath.srgbToOklch(fore.r, fore.g, fore.b)
+   back_l = colourmath.srgbToOklch(back.r, back.g, back.b)
+   self.contrastDL.string = fixed(math.abs(fore_l - back_l), 2)
+   self.contrastDLKey.x = self.contrastDL.x - math.ceil(self.contrastDL.textWidth) - 4
+end
+
+function updateRight(self:table, Source:str)
+   updateRelationship(self, Source)
+   updateContrast(self)
+   updateExport(self)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Record which widget that handles Enter itself (buttons, the HEX input, the comboboxes, the palette list, the
+-- scratch row and the readout grid) holds the focus, so that the dialog's Enter key doesn't also apply.  Focus gains are reported before
+-- losses, so a loss only clears the record if it belongs to the widget that lost the focus.
+
+function trackKeyOwners(self:table)
+   widgets = array<table> {
+      self.btnApply, self.btnCancel, self.btnReset, self.btnAddSwatch, self.btnLoadPalette,
+      self.btnImport, self.btnExport, self.btnResetPalette, self.btnDeleteSwatch, self.btnCopy, self.btnSwap,
+      self.btnPick, self.colourInput, self.schemeBox, self.clampBox, self.paletteModeBox, self.paletteView,
+      self.scratchRow
+   }
+   for row in values(self.relSliders) do widgets.push(row.key.button) end
+   widgets.push({ viewport = self.readoutVP })
+
+   for widget in values(widgets) do
+      id = widget.viewport.id
+      widget.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS,
+         function[&&](Viewport:obj!, Event:num!)
+            if Event is FM_LOST_FOCUS then
+               if self.keyOwner is id then self.keyOwner = nil end
+            else
+               self.keyOwner = id
+            end
+         end)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.dialog.colour = function(Options:table)
+   Options ?= { }
+
+   initial = parseInitial(Options.colour)
+
+   -- On the first run the demonstration palette is seeded from the initial colour and its Primary swatch is the
+   -- editing target.  Otherwise the scratch colour (active = nil) is the editing target.  The scratch colour starts as
+   -- the initial colour and is kept while a swatch is being edited, so that the scratch row can return to it.
+
+   settings = colourpalette.load(colourpalette.FILE, initial)
+   initial_active = settings.initialActive
+   saved_clamp = itemId(CLAMP_ITEMS, settings.clamp, 'srgb')
+   option_gamut = Options.gamut
+   if option_gamut and ((not (option_gamut is <str>)) or (itemId(CLAMP_ITEMS, option_gamut) is nil)) then
+      msg(f'Unrecognised gamut "{option_gamut}", using the saved setting.')
+      option_gamut = nil
+   end
+   option_feedback = Options.feedback
+   if option_feedback and not (option_feedback is <func>) then
+      msg('The feedback option is not a function and will be ignored.')
+      option_feedback = nil
+   end
+
+   self = entity { -- Public variables and resources that need to be retained
+      windowID  = nil,
+      colour    = nil, -- Always the current output colour (gui.mtRGB)
+      feedback  = option_feedback,
+      themeName = nil, -- The picker theme, derived from the window's theme
+      initial   = initial,
+      initialPalette = colourpalette.duplicate(settings.palette), -- Restored by Reset
+      initialActive  = initial_active,
+      savedClamp     = saved_clamp, -- The clamp setting to save; the gamut option doesn't change it
+      inputFormat    = itemId(INPUT_FORMATS, settings.inputFormat, 'hex'), -- Format of the colour input
+      state     = {
+         l = initial.l, c = initial.c, h = initial.h, alpha = initial.alpha,
+         scheme  = itemId(SCHEME_ITEMS, settings.scheme, 'triadic'),
+         clamp   = itemId(CLAMP_ITEMS, option_gamut, saved_clamp), -- The target gamut
+         palette = settings.palette,
+         active  = initial_active, -- Index of the swatch being edited, or nil for the scratch colour
+         scratch = { l = initial.l, c = initial.c, h = initial.h, alpha = initial.alpha }
+      }
+   }
+
+   using self do
+
+      &bodyHeight = minimumBodyHeight()
+      &clientHeight = MODEBAR_HEIGHT + &bodyHeight + FOOTER_HEIGHT
+
+      &tokens = nil -- The picker theme's tokens, set when the window is created
+
+      -- The single mutator for the authoritative colour.  The active swatch takes the new colour and the swatches
+      -- linked to it follow.  With no active swatch, the scratch colour takes it.  Source identifies the view that made
+      -- the change, so that refresh() can skip it.
+
+      &setColour = function(L:num!, C:num!, H:num!, Alpha:num, Source:str)
+         if Source != 'eyedropper' then &pickedSample = nil end
+         state = &state
+         state.l = math.clamp(L, 0, 1)
+         state.c = math.max(C, 0)
+         state.h = H % 360
+         if state.h < 0 then state.h += 360 end
+         state.alpha = math.clamp((Alpha != nil) ? Alpha : state.alpha, 0, 1) -- ?? would discard an alpha of 0
+         if state.active != nil then
+            colourpalette.setSwatch(state.palette, state.active, state.l, state.c, state.h, state.alpha)
+            colourpalette.nameAfterColour(state.palette, state.active)
+         else
+            state.scratch = { l = state.l, c = state.c, h = state.h, alpha = state.alpha }
+         end
+         deriveState(state)
+         &colour = outputColour(state)
+         &refresh(Source)
+      end
+
+      -- Update every view from the state.  Source names the view that made the change, so that its value isn't written
+      -- back to it.  Widget setters fire their own events, so the refreshing flag makes those events no-ops.
+
+      &refresh = function(Source:str)
+         if &refreshing or &finished then return end
+         &refreshing = true
+         defer
+            &refreshing = false
+         end
+
+         updateModebar(self)
+         updateCentre(self, Source)
+         updateLeft(self)
+         updateRight(self, Source)
+         &viewport.acDraw()
+      end
+
+      -- Change one OKLCH or alpha channel.  Source defaults to the channel, whose slider made the change.
+
+      &setChannel = function(Channel:str!, Value:num!, Source:str)
+         s = &state
+         l, c, h, a = s.l, s.c, s.h, s.alpha
+         if Channel is 'l' then
+            l = Value
+         elseif Channel is 'c' then
+            c = Value
+         elseif Channel is 'h' then
+            h = Value
+         else
+            a = Value
+         end
+         &setColour(l, c, h, a, Source ?? Channel)
+      end
+
+      -- Preview without changing the editing target.  A fresh sample is required at confirmation, so moving onto
+      -- an unreadable area cannot commit the last available pixel.
+
+      &sampleEyedropper = function():table
+         sample = colourpicker_eyedropper.sample(obj.find('SystemPointer'))
+         &eyedropSample = sample
+         if sample then
+            &loupe.showPixels(sample.pixels)
+            showNamed(self, sample.l, sample.c, sample.h)
+         else
+            &namedName.string = 'Unavailable'
+            &namedDelta.string = ''
+            &namedDist.x = &namedDelta.x
+            &namedDist.string = colourpicker_eyedropper.readsDesktop() ? 'Screen not readable' : 'Kōtuku surfaces only'
+         end
+         &viewport.acDraw()
+         return sample
+      end
+
+      &stopEyedropper = function()
+         &picking = false
+         &eyedropOverlay?.free()
+         &eyedropOverlay = nil
+         colourpicker_parts.cancelTimer(&eyedropTimer)
+         colourpicker_eyedropper.unlisten(&eyedropInput)
+         &eyedropTimer = nil
+         &eyedropInput = nil
+         &eyedropSample = nil
+         if not &finished then
+            &btnPick?.enable()
+            if &pickedLabel then &pickedLabel.string = 'Picked' end
+         end
+      end
+
+      &acceptEyedropper = function()
+         if not &picking or &finished then return end
+         sample = &sampleEyedropper()
+         if not sample then return end
+         &stopEyedropper()
+         &pickedSample = sample
+         &setColour(sample.l, sample.c, sample.h, 1, 'eyedropper')
+      end
+
+      &startEyedropper = function()
+         if &picking or &finished or &renaming then return end
+         &picking = true
+         &btnPick.disable()
+         &pickedLabel.string = 'Press enter to select'
+         &viewport.acFocus()
+         &eyedropOverlay = &viewport.new('VectorViewport', { width = '100%', height = '100%' })
+         shield = &eyedropOverlay.new('VectorRectangle', {
+            width = '100%', height = '100%', fill = '#00000000', cursor = 'crosshair'
+         })
+         shield.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function() end)
+         &viewport.acDraw()
+
+         try
+            &eyedropInput = colourpicker_eyedropper.listen(function[&&](Events, Handle)
+               ev = Events
+               while ev do
+                  -- Keep the input shield until the scene has dispatched the release.
+                  if (ev.type is JET_BUTTON_1) and (ev.value is 0) then
+                     processing.delayedCall(function()
+                        &acceptEyedropper()
+                     end)
+                     break
+                  elseif (ev.type is JET_BUTTON_2) and (ev.value is 0) then
+                     processing.delayedCall(function()
+                        if &picking then
+                           &stopEyedropper()
+                           &refresh()
+                        end
+                     end)
+                     break
+                  end
+                  ev = ev.next
+               end
+            end)
+
+            &eyedropTimer = colourpicker_parts.every(0.05, function()
+               if &picking and not &finished then &sampleEyedropper() end
+            end)
+            &sampleEyedropper()
+         except e
+            &stopEyedropper()
+            raise
+         end
+      end
+
+      -- Nudge a channel by its keyboard step in Direction (1 or -1), or by ten steps if Coarse.  Hue wraps around.  A
+      -- value beyond the slider's range (chroma from a typed colour) can still be nudged towards the range.
+
+      &nudgeChannel = function(Channel:str!, Direction:num!, Coarse:bool)
+         slider = &channels[Channel].slider
+         value = channelValue(Channel, &state)
+         nudged = value + (NUDGE[Channel] * Direction * (Coarse ? NUDGE_COARSE : 1))
+         if Channel is 'h' then
+            nudged = nudged % 360
+            if nudged < 0 then nudged += 360 end
+         else
+            nudged = math.clamp(nudged, slider.min, math.max(slider.max, value))
+         end
+         if nudged != value then &setChannel(Channel, nudged, 'key') end
+      end
+
+      function titleText():str
+         return "Colour Picker"
+      end
+
+      -- Apply a CSS colour typed into the colour input.  Text that is unchanged from the displayed value is ignored,
+      -- so that leaving the field doesn't round the colour.  Text in one of INPUT_FORMATS selects that format, and
+      -- the input is rewritten in the selected format.  Invalid text reverts to the current value.
+
+      &applyColourText = function(Text:str)
+         text = (Text ?? '').trim()
+         if text.lower() is &inputShown.lower() then return end
+         parsed = colourmath.parseColour(text)
+         if not parsed then
+            &colourInput.setText(&inputShown)
+            return
+         end
+         &inputFormat = textFormat(text) ?? &inputFormat
+         h = (parsed.c < GREY_CHROMA) ? &state.h : parsed.h
+         &setColour(parsed.l, parsed.c, h, parsed.alpha, 'input')
+      end
+
+      -- Show the colour input in the next of INPUT_FORMATS, skipping a target format that isn't the target gamut.
+
+      &cycleInputFormat = function()
+         index = INPUT_FORMATS.findIndex(F => F.id is &inputFormat)
+         local format:table
+         repeat
+            index = (index + 1) % #INPUT_FORMATS
+            format = INPUT_FORMATS[index]
+         until (not format.target) or (format.id is &state.clamp)
+         &inputFormat = format.id
+         &refresh()
+      end
+
+      &copyText = function(Text:str):bool
+         Text ?! return false
+         try
+            local clipboard <close> = obj.new('clipboard')
+            check clipboard.mtAddText(Text)
+            return true
+         except e
+            msg(f'Failed to copy to the clipboard: {e.message}')
+            return false
+         end
+      end
+
+      -- Give a dropped colour to the swatch at Index, or to scratch if Index is nil, without changing the editing
+      -- target.  The editing colour is reloaded in case the target's followers include the active swatch.
+
+      &dropColour = function(Index:num, L:num!, C:num!, H:num!, Alpha:num!)
+         s = &state
+         if Index is s.active then
+            &setColour(L, C, H, Alpha, 'drop')
+            return
+         end
+         &pickedSample = nil
+         h = H % 360
+         if h < 0 then h += 360 end
+         l, c, a = math.clamp(L, 0, 1), math.max(C, 0), math.clamp(Alpha, 0, 1)
+         if Index is nil then
+            s.scratch = { l = l, c = c, h = h, alpha = a }
+         else
+            colourpalette.setSwatch(s.palette, Index, l, c, h, a)
+            colourpalette.nameAfterColour(s.palette, Index)
+            if s.active != nil then
+               active = s.palette.swatches[s.active]
+               s.{ l = active.l, c = active.c, h = active.h, alpha = active.alpha }
+            end
+         end
+         deriveState(s)
+         &colour = outputColour(s)
+         &refresh('drop')
+      end
+
+      -- Make a palette swatch the editing target.
+
+      &selectSwatch = function(Index:num!)
+         swatch = &state.palette.swatches[Index]
+         &state.active = Index
+         &setColour(swatch.l, swatch.c, swatch.h, swatch.alpha, 'palette')
+      end
+
+      -- Make the scratch colour the editing target.  Later changes leave the palette unchanged.
+
+      &selectScratch = function()
+         if &finished or &renaming then return end
+         s = &state
+         s.active = nil
+         &setColour(s.scratch.l, s.scratch.c, s.scratch.h, s.scratch.alpha, 'scratch')
+      end
+
+      -- Snapshot scratch at drag start, or Colour ({ l, c, h, alpha }) if given, as for a scheme colour.  A drag from
+      -- the palette passes the Index of its swatch, which lets the palette list move the swatch instead of copying its
+      -- colour.  A private clipboard serves only this drag's XML colour receipt and never changes the system clipboard.
+      -- Display calls stay in eyedropper.tiri, the package's Display module owner.
+
+      &startScratchDrag = function(Colour:table, Index:num)
+         if &finished or &renaming or &picking or &scratchDrag then return end
+         if not &scratchClipboard then
+            &scratchClipboard = &window.surface.new('Clipboard', {
+               flags = CPF_DRAG_DROP,
+               requestHandler = function(Clipboard, Requester, Item, Datatypes):num
+                  session = &scratchDrag
+                  if not session or (session.id != Item) or not Requester or
+                     (Datatypes[0] != DATA_XML) then return ERR_NoSupport end
+                  c = session.colour
+                  receipt = f'<receipt totalItems="1" id="{Item}"><colour l="{c.l}" c="{c.c}" ' ..
+                     f'h="{c.h}" alpha="{c.alpha}"/></receipt>'
+                  return Requester.acDataFeed(Clipboard, DATA_RECEIPT, receipt)
+               end,
+               dragEndHandler = function(Clipboard, Item, Result)
+                  if &scratchDrag?.id is Item then
+                     &scratchDrag.preview?.free()
+                     &scratchDrag = nil
+                  end
+               end
+            })
+         end
+         &scratchDragSerial = (&scratchDragSerial ?? 0) + 1
+         c = Colour ?? &state.scratch
+         &scratchDrag = { id = &scratchDragSerial, colour = { l = c.l, c = c.c, h = c.h, alpha = c.alpha } }
+         if Index != nil then
+            &scratchDrag.index = Index
+            &scratchDrag.swatch = &state.palette.swatches[Index]
+         end
+         try
+            &scratchDrag.preview = colourpicker_parts.dragPreview(&window.surface,
+               f'oklch({c.l} {c.c} {c.h} / {c.alpha})', &tokens, Index != nil)
+            err = colourpicker_eyedropper.startDrag(&scratchClipboard, &scratchDragSerial,
+               string.char(DATA_XML), &scratchDrag.preview)
+            if err != ERR_Okay then &stopScratchDrag() end
+         except e
+            &stopScratchDrag()
+            raise
+         end
+      end
+
+      -- Use Colour ({ l, c, h, alpha }) as the contrast target until the automatic target changes.  Name defaults to
+      -- the closest CSS colour name.
+
+      &setContrastColour = function(Colour:table!, Name:str)
+         _, auto = autoContrastTarget(&&)
+         name = Name ?? colourmath.closestNamed(colourmath.oklchToOklab(Colour.l, Colour.c, Colour.h))
+         &contrastDrop = { colour = Colour, name = name, auto = auto }
+         &refresh()
+      end
+
+      -- Restore the automatic contrast target.
+
+      &clearContrastColour = function()
+         if &finished or not &contrastDrop then return end
+         &contrastDrop = nil
+         &refresh()
+      end
+
+      &stopScratchDrag = function()
+         &scratchPress = nil
+         &scratchClipboard?.free()
+         &scratchClipboard = nil
+         &scratchDrag?.preview?.free()
+         &scratchDrag = nil
+      end
+
+      -- Add the current colour as an independent swatch and select it.  The new swatch is owned by the user.
+
+      &addSwatch = function()
+         s = &state
+         index = colourpalette.addSwatch(s.palette, colourpalette.uniqueName(s.palette, 'Swatch'), s.l, s.c, s.h,
+            s.alpha)
+         if index is nil then return end
+         s.palette.swatches[index].user = true
+         layoutLeft(self)
+         &selectSwatch(index)
+      end
+
+      -- Delete the active swatch.  Its direct dependants are unlinked and keep their colours.  The swatch that takes
+      -- its place in the list (or the new last swatch) becomes the editing target.
+
+      &deleteSwatch = function()
+         s = &state
+         if &finished or not canDeleteSwatch(s) then return end
+         index = s.active
+         if not colourpalette.removeSwatch(s.palette, index) then return end
+         layoutLeft(self)
+         &selectSwatch(math.min(index, #s.palette.swatches - 1))
+         &flashPaletteMeta('deleted')
+      end
+
+      -- Rename the active swatch in its palette row.  The list is disabled while the editor is open, so that its
+      -- navigation keys and clicks don't act on the rows.  The list gets the focus back if the edit ended with a key.
+
+      &renameSwatch = function()
+         s = &state
+         if &finished or &renaming or (s.active is nil) then return end
+         if colourpalette.isReserved(s.palette, s.active) then
+            &flashPaletteMeta('role names are fixed')
+            return
+         end
+         view  = &paletteView
+         index = s.active
+         item  = paletteItem(view, index)
+         item ?! return
+         palette = s.palette
+         view.revealItem(item)
+         view.disable()
+         &renaming = true
+         item.content.beginEdit({
+            text = palette.swatches[index].name, charLimit = NAME_LIMIT,
+            -- Bound to the dialog because the row editor runs this from a deferred call in another context.
+            done = function[&&](Text:str, Reason:str)
+               &renaming = false
+               if &finished then return end
+               view.enable()
+               if Text and (&state.palette is palette) then
+                  colourpalette.renameSwatch(palette, index, Text)
+               end
+               if Reason is 'key' then view.viewport.acFocus() end
+               &refresh('rename')
+            end
+         })
+      end
+
+      -- Change the palette mode.  Only the swatches that the user has added are kept (see switchMode()).  If the
+      -- active swatch is kept, it stays the editing target wherever the switch moves it.  A refused switch (the user's
+      -- swatches leave no room for the new roles) is reported in the palette meta, and the refresh returns the
+      -- combobox to the current mode.
+
+      &setPaletteMode = function(ID:str!)
+         s = &state
+         if &finished or &renaming then return end
+         if colourpalette.mode(s.palette).id is ID then return end
+
+         active = (s.active != nil) ? s.palette.swatches[s.active] : nil
+         ok, err = colourpalette.switchMode(s.palette, ID)
+
+         if not ok then
+            &flashPaletteMeta(err)
+            &refresh('palette-mode')
+            return
+         end
+
+         layoutLeft(self)
+         index = active ? s.palette.swatches.findIndex(Swatch => rawequal(Swatch, active)) : nil
+
+         if index != nil then
+            &selectSwatch(index)
+         else
+            &selectScratch()
+         end
+      end
+
+      -- Replace the swatches with the defaults of the palette mode, once the user confirms it.  The scratch colour
+      -- becomes the editing target.
+
+      &resetPalette = function()
+         if &finished or &renaming or &paletteDialog then return end
+         palette = &state.palette
+         mode = colourpalette.mode(palette)
+         defaults = (mode.id is 'custom') ? 'Black and White swatches' : f'default {mode.label} swatches'
+         &paletteDialog = gui.dialog.message({
+            title   = 'Reset Palette',
+            message = f'Are you sure?  Every swatch in "{palette.name}" will be removed and replaced with the ' ..
+               f'{defaults}.  This can not be undone.',
+            type    = 'question',
+            image   = 'items/reload',
+            modal   = true,
+            popOver = &window.surface,
+            options = {
+               { id = 0, label = 'Cancel', icon = 'items/cancel' },
+               { id = 1, label = 'Reset', icon = 'items/checkmark' }
+            },
+            feedback = function(Dialog:table, Response:table, State:table)
+               self.paletteDialog = nil
+               if self.finished or (Response?.id != 1) or (self.state.palette != palette) then return end
+               colourpalette.reset(palette)
+               layoutLeft(self)
+               self.selectScratch()
+               self.flashPaletteMeta('reset')
+            end
+         })
+      end
+
+      -- Show a short message in place of the palette meta.
+
+      &flashPaletteMeta = function(Text:str!)
+         if &paletteName.hasFocus() then return end -- The name is being edited
+
+         colourpicker_parts.cancelTimer(&flashTimer)
+         &paletteName.viewport.visibility = VIS_HIDDEN
+         &palettePanel.setMeta(Text)
+
+         &flashTimer = colourpicker_parts.after(FLASH_TIME, function()
+            &flashTimer = nil
+            if &finished then return end
+            updatePaletteMeta(self)
+            &viewport.acDraw()
+         end)
+
+         &viewport.acDraw()
+      end
+
+      &exportPalette = function()
+         if &copyText(colourpalette.toJSON(&state.palette)) then &flashPaletteMeta('copied') end
+      end
+
+      -- Replace the palette with palette JSON from the clipboard.  The scratch colour becomes the editing target.
+
+      &importPalette = function()
+         palette, err = colourpalette.fromJSON(clipboardText())
+         if not palette then
+            msg(f'Palette import failed: {err}')
+            &flashPaletteMeta('no palette on clipboard')
+            return
+         end
+
+         &state.palette = palette
+         layoutLeft(self)
+         &selectScratch()
+         &flashPaletteMeta('imported')
+      end
+
+      -- Relationship panel actions.  Each one edits the active swatch's link and then passes the swatch's resulting
+      -- colour through setColour(), which leaves the link unchanged because the colour already matches it.
+
+      function linkedSwatch():table
+         s = &state
+         if s.active is nil then return nil end
+         swatch = s.palette.swatches[s.active]
+         if swatch.base is nil then return nil end
+         return swatch
+      end
+
+      &setLinkValue = function(Channel:str!, Value:num!, Source:str)
+         swatch = linkedSwatch()
+         swatch ?! return
+         colourpalette.setLink(&state.palette, &state.active, Channel, swatch.link[Channel].mode, Value)
+         &setColour(swatch.l, swatch.c, swatch.h, swatch.alpha, Source ?? f'rel-{Channel}')
+      end
+
+      -- Move the focus from a value field back to the client viewport, so that the dialog's keys apply again.  The
+      -- move is deferred, so that the dialog's key handler still sees the field's focus for the current key.
+
+      &blurField = function()
+         processing.delayedCall(function()
+            if not &finished then &viewport.acFocus() end
+         end)
+      end
+
+      -- Make one channel of the active swatch's link relative to its base ('delta') or absolute ('abs').  The colour
+      -- is unchanged.
+
+      &setChannelMode = function(Channel:str!, Mode:str!)
+         swatch = linkedSwatch()
+         swatch ?! return
+         colourpalette.setLinkMode(&state.palette, &state.active, Channel, Mode)
+         &setColour(swatch.l, swatch.c, swatch.h, swatch.alpha, 'mode')
+      end
+
+      -- Link the swatch at Index to Base and make it the active swatch.  Nothing changes if Base follows Index.
+
+      &moveSwatch = function(Index:num!, Base:num!)
+         palette = &state.palette
+         if palette.swatches[Index].base != Base then
+            if not colourpalette.linkSwatch(palette, Index, Base) then return end
+         end
+         &selectSwatch(Index)
+      end
+
+      -- Remove the link of the swatch at Index, making it a base swatch, and make it the active swatch.  It keeps its
+      -- colour.
+
+      &unlinkSwatch = function(Index:num!)
+         if &finished or &renaming then return end
+         if not colourpalette.unlinkSwatch(&state.palette, Index) then return end
+         &selectSwatch(Index)
+      end
+
+      -- Exchange the colours of the active swatch and its base.  The link hierarchy is unchanged.
+
+      &swapColours = function()
+         swatch = linkedSwatch()
+         swatch ?! return
+         palette = &state.palette
+         colourpalette.swapColours(palette, &state.active)
+         colourpalette.nameAfterColour(palette, swatch.base)
+         &setColour(swatch.l, swatch.c, swatch.h, swatch.alpha, 'swap')
+      end
+
+      -- Copy the export text and show "copied" in the Export panel meta for a moment.
+
+      &copyExport = function()
+         if not &copyText(&exportText) then return end
+         colourpicker_parts.cancelTimer(&exportFlash)
+         &exportPanel.setMeta('copied')
+         &exportFlash = colourpicker_parts.after(FLASH_TIME, function()
+            &exportFlash = nil
+            if &finished then return end
+            &exportPanel.setMeta(exportMeta(self))
+            &viewport.acDraw()
+         end)
+         &viewport.acDraw()
+      end
+
+      -- The settings that Apply and closing the window save.  The clamp is the saved one unless the user chose a target
+      -- in the Clamp box, so that the gamut option applies to this dialog only.
+
+      &settingsToSave = function():table
+         s = &state
+         return { palette = s.palette, scheme = s.scheme, clamp = &savedClamp, inputFormat = &inputFormat }
+      end
+
+      &saveSettings = function()
+         if not colourpalette.save(colourpalette.FILE, &settingsToSave()) then
+            mSys.FuncError('ColourPicker', ERR_Write)
+         end
+      end
+
+      -- Copy a readout cell's value and show "Copied" in place of its label for a moment.
+
+      &copyCell = function(Cell:table!)
+         &copyText(&readoutCopies[Cell.def.id])
+         if &copiedCell then &copiedCell.label.string = &copiedCell.def.label.upper() end
+         colourpicker_parts.cancelTimer(&copyTimer)
+         &copiedCell = Cell
+         Cell.label.string = 'COPIED'
+         &copyTimer = colourpicker_parts.after(COPIED_TIME, function()
+            &copyTimer = nil
+            if &copiedCell then
+               &copiedCell.label.string = &copiedCell.def.label.upper()
+               &copiedCell = nil
+               &viewport?.acDraw()
+            end
+         end)
+         &viewport.acDraw()
+      end
+
+      -- Close the window and notify the client once.  Colour is nil for a cancellation.
+
+      &finish = function(Colour:table)
+         if &finished then return end
+         &finished = true
+         &stopScratchDrag()
+         &stopEyedropper()
+
+         feedback = &feedback
+         &feedback = nil
+         &wheel?.free()
+         colourpicker_parts.cancelTimer(&copyTimer)
+         colourpicker_parts.cancelTimer(&flashTimer)
+         colourpicker_parts.cancelTimer(&exportFlash)
+         &modeTabs?.cancelTip()
+         &contrastTip?.cancel()
+         &contrastTip = nil
+         &paletteDialog?.window?.surface?.free()
+         &paletteDialog = nil
+         &modeTabs = nil
+         &copyTimer = nil
+         &flashTimer = nil
+         &exportFlash = nil
+         &relPanel = nil
+         &relSliders = nil
+         &relRows = nil
+         &btnSwap = nil
+         &contrastPanel = nil
+         &exportPanel = nil
+         &code = nil
+         &copiedCell = nil
+         &wheel = nil
+         &loupe = nil
+         &btnPick = nil
+         &pickedSample = nil
+         &preview = nil
+         &paletteView = nil
+         &paletteModeBox = nil
+         &scratchRow = nil
+         &palettePanel = nil
+         &eyedropPanel = nil
+         &previewPanel = nil
+         &btnAddSwatch = nil
+         &btnLoadPalette = nil
+         &btnImport = nil
+         &btnExport = nil
+         &btnResetPalette = nil
+         &btnDeleteSwatch = nil
+         &channels = nil
+         &readoutCells = nil
+         &readoutRing = nil
+         &readoutVP = nil
+         &window = nil
+         &viewport = nil
+         &footer = nil
+         &modebar = nil
+         &columns = nil
+         &btnApply = nil
+         &btnCancel = nil
+         &btnReset = nil
+
+         if feedback then feedback(Colour) end
+         processing.collect('defer')
+      end
+
+      -- Apply and closing the window save the palette, scheme and clamp settings.  Cancel discards them.
+
+      &apply = function()
+         if &finished then return end
+         &saveSettings()
+         &finish(&colour)
+      end
+
+      &cancel = function() &finish(nil) end
+
+      -- Reset restores the initial colour and the palette as it was when the picker opened.  The scratch colour returns
+      -- to the initial colour.
+
+      &reset = function()
+         &state.{
+            palette = colourpalette.duplicate(&initialPalette),
+            active  = &initialActive,
+            scratch = { l = initial.l, c = initial.c, h = initial.h, alpha = initial.alpha }
+         }
+         &contrastDrop = nil
+         layoutLeft(self)
+         &setColour(initial.l, initial.c, initial.h, initial.alpha, 'reset')
+      end
+
+      &window = gui.window({
+         insideWidth  = CLIENT_WIDTH,
+         insideHeight = &clientHeight,
+         quit         = false,
+         stickToFront = true,
+         aspectRatio  = true,
+         popOver      = Options.popOver,
+         icon         = Options.icon ?? 'tools/palette',
+         title        = Options.title ?? "Colour Picker",
+         modal        = Options.modal ?? false,
+         dragDrop     = true,
+         theme        = Options.theme,
+         events = {
+            close = function(Window)
+               if self.finished then return end
+               self.saveSettings()
+               self.finish(nil)
+            end
+         }
+      })
+
+      &window.surface.subscribe('free', function()
+         self.finish(nil)
+      end)
+      &windowID = &window.surface.id
+
+      -- The window is created with the requested or default gui theme, as for any other window.  The picker theme is
+      -- derived from it before any content is created.
+
+      &themeName = colourpicker_theme.apply(&window.scene)
+      &tokens = colourpicker_theme.tokens(&themeName)
+
+      &viewport = &window.clientViewport({
+         viewX = 0, viewY = 0, viewWidth = CLIENT_WIDTH, viewHeight = &clientHeight
+      })
+
+      -- Dialog keys.  The handler receives every key while the focus is anywhere in the client area:
+      --
+      --   Alt     Alt-drag or Ctrl-drag on the wheel moves the crosshair at a finer scale.  Ctrl is the alternative
+      --   Ctrl    for desktops that use Alt-drag to move windows.  Input events don't carry the qualifiers, so the
+      --           modifier state is tracked from the keyboard.
+      --   Enter   Applies, unless the focus is on a widget that uses Enter itself.
+      --   Escape  Cancels, unless a combobox menu is open; the combobox closes its menu instead.  This handler runs
+      --           before the combobox's own, because the client viewport is older and has a higher tab priority.
+      --           While the palette list has the focus and a swatch is being edited, Escape selects the scratch row
+      --           instead, so a second Escape cancels.
+      --   Delete  Deletes the active swatch while the palette list has the focus.
+      --   F2      Renames the active swatch while the palette list has the focus.
+      --   U       Unlinks the active swatch from its base while the palette list has the focus, as clicking its hook
+      --           arrow does.
+      --   Up      Moves the focus from the first palette row to the scratch row.  The list's own handler runs after
+      --           this one, so the keyboard target is still the row that Up was pressed on.
+      --
+      -- While a swatch is being renamed the editor handles Enter and Escape, and the other keys go to the text.  The
+      -- same applies while a channel or Relationship value field has the focus.
+      --   I       Starts eyedropper sampling; Enter accepts, Escape (or a right-click) cancels sampling.
+      --
+      -- Apply and Cancel are deferred so that the window isn't freed during the scene's key dispatch.
+
+      -- The client viewport is first in the tab order, so the scene gives it the focus when the window receives the
+      -- focus.  Enter and Escape therefore work before anything is clicked, and the first Tab moves to the L slider.
+
+      &viewport.tabOrder = 1
+      &viewport.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+         -- A modifier's own event may not include its qualifier, so each modifier is tracked separately.
+
+         if (Value is KEY_L_ALT) or (Value is KEY_R_ALT) then
+            &fineAlt = Qualifiers has KQ_PRESSED
+         elseif (Value is KEY_L_CONTROL) or (Value is KEY_R_CONTROL) then
+            &fineCtrl = Qualifiers has KQ_PRESSED
+         else
+            &fineAlt = Qualifiers has KQ_ALT
+            &fineCtrl = Qualifiers has KQ_CTRL
+         end
+         &fine = &fineAlt or &fineCtrl
+         if (Value is KEY_L_ALT) or (Value is KEY_R_ALT) or (Value is KEY_L_CONTROL) or (Value is KEY_R_CONTROL) then
+            return
+         end
+
+         if &finished or not (Qualifiers has KQ_PRESSED) then return end
+
+         if (Qualifiers has KQ_REPEAT) or &renaming or &fieldFocus then
+            return
+         elseif &scratchDrag then
+            if Value is KEY_ESCAPE then &stopScratchDrag() end
+         elseif &picking then
+            if Value is KEY_ESCAPE then
+               &stopEyedropper()
+               &refresh()
+            elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+               &acceptEyedropper()
+            end
+         elseif (Value is KEY_I) and (&keyOwner != &colourInput.viewport.id) and
+            not (Qualifiers has (KQ_CTRL | KQ_ALT | KQ_COMMAND)) then
+            &startEyedropper()
+         elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+            if not &keyOwner then processing.delayedCall(function() &apply() end) end
+         elseif Value is KEY_ESCAPE then
+            for box in values(array<table> { &schemeBox, &clampBox, &paletteModeBox }) do
+               if box.menu?.visible then return end
+            end
+            if &paletteView.hasFocus and (&state.active != nil) then
+               processing.delayedCall(function()
+                  if &finished then return end
+                  &scratchRow?.viewport.acFocus()
+                  &selectScratch()
+               end)
+            else
+               processing.delayedCall(function() &cancel() end)
+            end
+         elseif Value is KEY_DELETE then
+            if &paletteView.hasFocus then processing.delayedCall(function() &deleteSwatch() end) end
+         elseif Value is KEY_F2 then
+            if &paletteView.hasFocus then processing.delayedCall(function() &renameSwatch() end) end
+         elseif Value is KEY_U then
+            if &paletteView.hasFocus and (&state.active != nil) and
+               not (Qualifiers has (KQ_CTRL | KQ_ALT | KQ_COMMAND)) then
+               index = &state.active
+               processing.delayedCall(function()
+                  &unlinkSwatch(index)
+                  if &state?.active is index then focusPaletteList(&&) end
+               end)
+            end
+         elseif Value is KEY_UP then
+            if &paletteView.hasFocus and (&paletteView.kItem is &paletteView.items[0]) then
+               processing.delayedCall(function() &scratchRow?.viewport.acFocus() end)
+            end
+         end
+      end)
+
+      deriveState(&state)
+      buildBody()
+      buildLeft()
+      buildCentre()
+      buildRight()
+      buildFooter(&&, Options)
+
+      trackKeyOwners(&&)
+
+      &setColour(initial.l, initial.c, initial.h, initial.alpha, 'init')
+
+      fitWindow(&&)
+
+      &window.moveToFront()
+      &window.show(true)
+
+      return &&
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- This sub-routine is provided for languages other than Tiri to use the interface.  Options are passed as script keys
+-- and the window ID is returned as the first result.  The dialog stays open after the script returns, so its outcome
+-- is written back to the script's keys before the window closes: 'response' is 'apply' or 'cancel', and on Apply
+-- 'rgb' holds the sRGB colour as an SVG string and 'css' the target colour as an oklch() string.
+
+@if(imported=false)
+   script = obj.find('self')
+   modal = arg('modal')
+
+   dlg = gui.dialog.colour({
+      colour      = arg('colour'),
+      gamut       = arg('gamut'),
+      title       = arg('title'),
+      icon        = arg('icon'),
+      theme       = arg('theme'),
+      modal       = (modal is '1') or (modal is 'true'),
+      popOver     = tonumber(arg('popOver')),
+      okLabel     = arg('okLabel'),
+      cancelLabel = arg('cancelLabel'),
+      feedback    = function(Colour:table)
+         if Colour then
+            script.setKey('rgb', tostring(Colour))
+            script.setKey('css', Colour.css)
+         end
+         script.setKey('response', Colour ? 'apply' : 'cancel')
+      end
+   })
+
+   return dlg.windowID
+@end

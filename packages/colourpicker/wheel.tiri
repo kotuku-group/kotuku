@@ -1,0 +1,555 @@
+-- Hue/chroma wheel for the colour picker.  The disc is a generated bitmap in which angle is hue (0° on the +x axis,
+-- increasing anticlockwise) and radius is chroma, from 0 at the centre to WHEEL_MAX_C at the rim.  The crosshair,
+-- hue mark, scheme companions and their dashed links are drawn over it.  For a linked colour, the companions are those
+-- of its base, which is also marked.  Outlines mark the gamut edges at the disc's lightness, because the disc clips
+-- each channel and doesn't show where a gamut ends.
+
+   import 'gui/colourpicker/colour', './parts'
+   include 'vector', 'display'
+
+   namespace colourpicker_wheel { }
+
+WHEEL_SIZE  <const> = 308
+WHEEL_MAX_C <const> = 0.22
+MARGIN      <const> = 12 -- Room around the disc for the hue mark, which overhangs the rim
+MARK_LENGTH <const> = 10 -- Distance from the rim to the triangle's outer edge
+MARK_HALF_W <const> = 4.5
+BUFFER_SIZE <const> = 308 * 308 * 4
+ENCODE_SIZE <const> = 4096 -- Entries in the sRGB transfer table; the error is under one 8-bit level
+FINE_SCALE  <const> = 0.25 -- Movement scale for Alt-drag or Ctrl-drag
+QUANTISE_L  <const> = 100  -- The disc is rendered at L rounded to 1 / QUANTISE_L
+REGEN_DELAY <const> = 0.05 -- Seconds to wait before regenerating the disc after a lightness change
+EDGE_STEP   <const> = 3    -- Degrees of hue between the points of a gamut outline
+
+colourpicker_wheel.SIZE  = WHEEL_SIZE
+colourpicker_wheel.MAX_C = WHEEL_MAX_C
+
+-- Hue offsets of the companion markers for each scheme, relative to the base hue.  Monochrome markers keep the base
+-- hue and vary the chroma instead.
+
+SCHEMES <const> = {
+   none          = array<double> { },
+   analogous     = array<double> { -30, 30 },
+   complementary = array<double> { 180 },
+   triadic       = array<double> { 120, 240 },
+   split         = array<double> { 150, 210 },
+   square        = array<double> { 90, 180, 270 },
+   monochrome    = array<double> { }
+}
+
+MONOCHROME_C <const> = array<double> { 0.06, 0.22 }
+
+local lEncode:array<byte> -- sRGB transfer table, built on first use
+
+colourpicker_wheel.SWATCH_COUNT = {
+   none = 1, analogous = 3, complementary = 2, triadic = 3, split = 3, square = 4, monochrome = 3
+}
+colourpicker_wheel.MAX_SWATCHES = 4 -- The most colours that any scheme represents
+
+@Doc(text=[[
+@desc Return the companion colours of a scheme for a base chroma and hue, as an array of { c, h }.  The base colour
+is not included.  Hues are not wrapped.
+]])
+colourpicker_wheel.targets = function(C:num!, H:num!, Scheme:str):array<table>
+   targets = array<table>
+   if Scheme is 'monochrome' then
+      for c in values(MONOCHROME_C) do targets.push({ h = H, c = c }) end
+   else
+      for offset in values(SCHEMES[Scheme] ?? SCHEMES.none) do targets.push({ h = H + offset, c = C }) end
+   end
+   return targets
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Encoded sRGB bytes for linear values from 0 to 1, indexed by math.floor(Linear * ENCODE_SIZE).
+
+function encodeTable():array<byte>
+   if not lEncode then
+      lEncode = array<byte, 4097>
+      for i in {0 into ENCODE_SIZE} do
+         x = i / ENCODE_SIZE
+         v = (x <= 0.0031308) ? 12.92 * x : (1.055 * (x ** (1 / 2.4))) - 0.055
+         lEncode[i] = math.round(v * 255)
+      end
+   end
+   return lEncode
+end
+
+-- Fill Buffer (BGRA) with the disc at lightness L.  OKLab a and b are proportional to the pixel's offset from the
+-- centre, so no trigonometry is needed.  Pixels beyond the rim take the rim colour, and the circle that displays the
+-- bitmap clips them.  Out-of-gamut values are clipped per channel.  The loop bounds are constant so that the loops
+-- compile.
+
+function generate(Buffer:array<byte>!, L:num!)
+   enc = encodeTable()
+   radius = WHEEL_SIZE * 0.5
+   rim_k = WHEEL_MAX_C / radius
+   i = 0
+   for y in {0 to WHEEL_SIZE} do
+      dy = radius - (y + 0.5)
+      for x in {0 to WHEEL_SIZE} do
+         dx = (x + 0.5) - radius
+         r = math.sqrt((dx * dx) + (dy * dy))
+         k = (r > radius) ? WHEEL_MAX_C / r : rim_k
+         a = dx * k
+         b = dy * k
+
+         l_ = L + (0.3963377774 * a) + (0.2158037573 * b)
+         m_ = L - (0.1055613458 * a) - (0.0638541728 * b)
+         s_ = L - (0.0894841775 * a) - (1.2914855480 * b)
+         ll = l_ * l_ * l_
+         mm = m_ * m_ * m_
+         ss = s_ * s_ * s_
+
+         lr = (4.0767416621 * ll) - (3.3077115913 * mm) + (0.2309699292 * ss)
+         lg = (-1.2684380046 * ll) + (2.6097574011 * mm) - (0.3413193965 * ss)
+         lb = (-0.0041960863 * ll) - (0.7034186147 * mm) + (1.7076147010 * ss)
+
+         if lr < 0 then lr = 0 elseif lr > 1 then lr = 1 end
+         if lg < 0 then lg = 0 elseif lg > 1 then lg = 1 end
+         if lb < 0 then lb = 0 elseif lb > 1 then lb = 1 end
+
+         Buffer[i]     = enc[math.floor(lb * ENCODE_SIZE)]
+         Buffer[i + 1] = enc[math.floor(lg * ENCODE_SIZE)]
+         Buffer[i + 2] = enc[math.floor(lr * ENCODE_SIZE)]
+         Buffer[i + 3] = 255
+         i += 4
+      end
+   end
+end
+
+-- Return the points of a triangle whose tip is at (CX, CY) on the rim and whose base points outward.
+
+function rimTriangle(CX:num, CY:num, Angle:num):str
+   ux, uy = math.cos(Angle), -math.sin(Angle)
+   bx, by = CX + (ux * MARK_LENGTH), CY + (uy * MARK_LENGTH)
+   tx, ty = -uy * MARK_HALF_W, ux * MARK_HALF_W
+   return string.format('%.2f,%.2f %.2f,%.2f %.2f,%.2f', CX, CY, bx + tx, by + ty, bx - tx, by - ty)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create the wheel.  The disc is generated at lightness Options.l and regenerated (throttled) by setLightness().
+@input Target viewport
+@input Options: x, y (top-left of the disc), l, onPick(H, C), onFine() returning true if fine movement is active.
+The hue given to onPick() is nil at the exact centre, where it is undefined.
+@result Table with `viewport`, `update(C, H, Scheme, Base)`, `setLightness(L)`, `toPolar(X, Y)`, `renderTime` (ms of
+the last disc generation) and `free()`
+]])
+colourpicker_wheel.new = function(Target:obj!, Options:table!):table
+   radius = WHEEL_SIZE * 0.5
+   centre = MARGIN + radius
+
+   self = {
+      viewport = Target.new('VectorViewport', {
+         x = Options.x - MARGIN, y = Options.y - MARGIN, width = WHEEL_SIZE + (MARGIN * 2),
+         height = WHEEL_SIZE + (MARGIN * 2), cursor = 'crosshair'
+      }),
+      buffer   = array<byte, BUFFER_SIZE>,
+      renderedL = -1,
+      wantedL   = (Options.l != nil) ? Options.l : 0.7,
+      companions = array<table>,
+      edges      = array<table>,
+      edgeSpaces = array<str> { 'srgb' }
+   }
+
+   -- Draw the gamut outlines at the disc's lightness.  Each point is at the gamut's maximum chroma for its hue, held
+   -- inside the rim.  The gamut is a single point at L = 0 and L = 1, so no outline is drawn there.
+
+   self.drawEdges = function()
+      l = self.renderedL
+      for i, edge in self.edges do
+         if (i < #self.edgeSpaces) and (l > 0) and (l < 1) then
+            space = self.edgeSpaces[i]
+            list = array<str>
+            for h in {0 to 360 by EDGE_STEP} do
+               x, y = self.polar(h, colourmath.maxChroma(l, h, space))
+               list.push(string.format('%.2f,%.2f', x, y))
+            end
+            points = list.concat(' ')
+            edge.space = space
+            edge.shadow.points = points
+            edge.line.points = points
+            edge.shadow.visibility = VIS_VISIBLE
+            edge.line.visibility = VIS_VISIBLE
+         else
+            edge.space = nil
+            edge.shadow.visibility = VIS_HIDDEN
+            edge.line.visibility = VIS_HIDDEN
+         end
+      end
+   end
+
+   -- Set the gamuts to outline, as an array of space IDs.  The first is drawn solid and the second dotted.
+
+   self.setEdges = function(Spaces:array<str>!)
+      if Spaces.concat(' ') is self.edgeSpaces.concat(' ') then return end
+      self.edgeSpaces = Spaces
+      self.drawEdges()
+      self.viewport.acDraw()
+   end
+
+   -- The scene owns the disc bitmap, so that it lasts as long as the scene that draws it.  A script-owned bitmap
+   -- could be collected after the picker closes while a redraw of the window is still pending.
+
+   scene = self.viewport.scene
+   self.bitmap = scene.new('Bitmap', { width = WHEEL_SIZE, height = WHEEL_SIZE, bitsPerPixel = 32 })
+
+   -- Render the disc at the requested lightness, rounded to 0.01.
+
+   self.render = function()
+      l = math.round(math.clamp(self.wantedL, 0, 1) * QUANTISE_L) / QUANTISE_L
+      if l is self.renderedL then return end
+      t0 = colourpicker_parts.now()
+      generate(self.buffer, l)
+      self.bitmap.acSeek(0, SEEK_START)
+      self.bitmap.acWrite(self.buffer)
+      self.renderedL = l
+      self.drawEdges()
+      self.renderTime = (colourpicker_parts.now() - t0) / 1000
+      self.viewport.acDraw()
+   end
+
+   self.render()
+
+   self.image = scene.new('VectorImage', { bitmap = self.bitmap })
+   check scene.mtAddDef('cpWheel', self.image)
+
+   self.viewport.new('VectorEllipse', {
+      cx = centre, cy = centre, radius = radius, fill = 'url(#cpWheel)'
+   })
+
+   self.viewport.new('VectorEllipse', {
+      cx = centre, cy = centre, radius = radius - 0.5, stroke = 'oklch(0 0 0 / 0.1)', strokeWidth = 1
+   })
+
+   for dashed in values(array<any> { false, true }) do
+      dashes = dashed ? array<double> { 1.5, 2.5 } : nil
+      self.edges.push({
+         shadow = self.viewport.new('VectorPolygon', {
+            points = '0,0 1,0 1,1', closed = true, stroke = 'oklch(0 0 0 / 0.35)', strokeWidth = 2.4,
+            dashArray = dashes, visibility = VIS_HIDDEN
+         }),
+         line = self.viewport.new('VectorPolygon', {
+            points = '0,0 1,0 1,1', closed = true, stroke = 'oklch(1 0 0 / 0.5)', strokeWidth = 1.2, dashArray = dashes,
+            visibility = VIS_HIDDEN
+         })
+      })
+   end
+
+   self.hueMark = self.viewport.new('VectorPolygon', {
+      points = '0,0 1,0 1,1', closed = true, fill = '#FFFFFF', stroke = 'oklch(0 0 0 / 0.95)', strokeWidth = 1
+   })
+
+   self.links = array<table>
+   for _ in {1 to colourpicker_wheel.MAX_SWATCHES} do
+      link = {
+         shadow = self.viewport.new('VectorPolygon', {
+            x1 = 0, y1 = 0, x2 = 0, y2 = 0, closed = false, stroke = 'rgba(0,0,0,0.45)', strokeWidth = 2.2,
+            dashArray = array<double> { 3, 3 }, visibility = VIS_HIDDEN
+         }),
+         line = self.viewport.new('VectorPolygon', {
+            x1 = 0, y1 = 0, x2 = 0, y2 = 0, closed = false, stroke = '#FFFFFF', strokeWidth = 1.2, opacity = 0.85,
+            dashArray = array<double> { 3, 3 }, visibility = VIS_HIDDEN
+         })
+      }
+      self.links.push(link)
+   end
+
+   -- The base of a linked colour: a solid dot, under the crosshair
+
+   self.baseOutline = self.viewport.new('VectorEllipse', {
+      cx = centre, cy = centre, radius = 5, fill = 'oklch(0 0 0 / 0.6)', visibility = VIS_HIDDEN
+   })
+
+   self.baseDot = self.viewport.new('VectorEllipse', {
+      cx = centre, cy = centre, radius = 3.5, fill = '#FFFFFF', visibility = VIS_HIDDEN
+   })
+
+   self.crossOutline = self.viewport.new('VectorEllipse', {
+      cx = centre, cy = centre, radius = 7.5, stroke = 'oklch(0 0 0 / 0.6)', strokeWidth = 1
+   })
+
+   self.crossRing = self.viewport.new('VectorEllipse', {
+      cx = centre, cy = centre, radius = 6, stroke = '#FFFFFF', strokeWidth = 2
+   })
+
+   for _ in {1 to colourpicker_wheel.MAX_SWATCHES} do
+      self.companions.push({
+         outline = self.viewport.new('VectorEllipse', {
+            cx = centre, cy = centre, radius = 6.5, stroke = 'oklch(0 0 0 / 0.55)', strokeWidth = 1,
+            visibility = VIS_HIDDEN
+         }),
+         ring = self.viewport.new('VectorEllipse', {
+            cx = centre, cy = centre, radius = 5, stroke = '#FFFFFF', strokeWidth = 2,
+            dashArray = array<double> { 2.5, 2.1 }, visibility = VIS_HIDDEN
+         })
+      })
+   end
+
+   -- Convert a hue and chroma to wheel coordinates.  Chroma beyond the rim is pinned to it.
+
+   function polar(H:num, C:num):<num, num>
+      a = math.rad(H)
+      r = (math.min(C, WHEEL_MAX_C) / WHEEL_MAX_C) * radius
+      return centre + (math.cos(a) * r), centre - (math.sin(a) * r)
+   end
+
+   self.polar = polar
+   self.drawEdges()
+
+   -- Convert wheel coordinates to hue and chroma.  Points beyond the rim are pinned to it.  The hue is nil at the
+   -- centre, where it is undefined.
+
+   self.toPolar = function(X:num!, Y:num!):<num, num>
+      dx = X - centre
+      dy = centre - Y
+      r = math.sqrt((dx * dx) + (dy * dy))
+      if r < 0.5 then return nil, 0 end
+      h = math.deg(math.atan2(dy, dx))
+      if h < 0 then h += 360 end
+      return h, (math.min(r, radius) / radius) * WHEEL_MAX_C
+   end
+
+   -- Move the crosshair and hue mark to C, H.  The scheme's companions are drawn for Base ({ c, h }) if given, which
+   -- is marked, or otherwise for C, H.  The dashed links join the companions to the colour that they are drawn for.
+
+   self.update = function(C:num!, H:num!, Scheme:str, Base:table)
+      cx, cy = polar(H, C)
+      self.crossOutline.cx, self.crossOutline.cy = cx, cy
+      self.crossRing.cx, self.crossRing.cy = cx, cy
+
+      mx, my = polar(H, WHEEL_MAX_C)
+      self.hueMark.points = rimTriangle(mx, my, math.rad(H))
+
+      anchor = Base ?? { c = C, h = H }
+      bx, by = polar(anchor.h, anchor.c)
+      self.baseOutline.cx, self.baseOutline.cy = bx, by
+      self.baseDot.cx, self.baseDot.cy = bx, by
+      self.baseOutline.visibility = Base ? VIS_VISIBLE : VIS_HIDDEN
+      self.baseDot.visibility = self.baseOutline.visibility
+
+      targets = colourpicker_wheel.targets(anchor.c, anchor.h, Scheme)
+
+      for i, comp in self.companions do
+         link = self.links[i]
+         if i < #targets then
+            x, y = polar(targets[i].h, targets[i].c)
+            comp.outline.cx, comp.outline.cy = x, y
+            comp.ring.cx, comp.ring.cy = x, y
+            for line in values(array<obj> { link.shadow, link.line }) do
+               line.x1, line.y1, line.x2, line.y2 = bx, by, x, y
+               line.visibility = VIS_VISIBLE
+            end
+            comp.outline.visibility = VIS_VISIBLE
+            comp.ring.visibility    = VIS_VISIBLE
+         else
+            link.shadow.visibility  = VIS_HIDDEN
+            link.line.visibility    = VIS_HIDDEN
+            comp.outline.visibility = VIS_HIDDEN
+            comp.ring.visibility    = VIS_HIDDEN
+         end
+      end
+   end
+
+   -- Request a disc at a new lightness.  Regeneration is throttled with a timer so that a lightness drag stays
+   -- responsive in Debug builds.
+
+   self.setLightness = function(L:num!)
+      self.wantedL = L
+      if self.timer then return end
+      l = math.round(math.clamp(L, 0, 1) * QUANTISE_L) / QUANTISE_L
+      if l is self.renderedL then return end
+
+      self.timer = colourpicker_parts.after(REGEN_DELAY, function()
+         self.timer = nil
+         self.render()
+      end)
+   end
+
+   -- Dragging starts on a button press inside the disc.  Normal movement follows the pointer directly; a fine
+   -- (Alt or Ctrl) drag follows a virtual pointer scaled by FINE_SCALE.  The picked position is held inside the rim.
+
+   function pick(X:num, Y:num)
+      dx = X - centre
+      dy = Y - centre
+      r = math.sqrt((dx * dx) + (dy * dy))
+      if r > radius then
+         self.vx = centre + (dx * radius / r)
+         self.vy = centre + (dy * radius / r)
+      end
+      h, c = self.toPolar(self.vx, self.vy)
+      if Options.onPick then Options.onPick(h, c) end
+   end
+
+   self.viewport.mtSubscribeInput(JTYPE_BUTTON|JTYPE_MOVEMENT, function(Viewport:obj!, Msg:any!)
+      repeat
+         if Msg.type is JET_LMB then
+            if Msg.value > 0 then
+               dx = Msg.x - centre
+               dy = Msg.y - centre
+               if ((dx * dx) + (dy * dy)) <= ((radius + 2) * (radius + 2)) then
+                  self.dragging = true
+                  self.vx, self.vy = Msg.x, Msg.y
+                  self.lastX, self.lastY = Msg.x, Msg.y
+                  pick(self.vx, self.vy)
+               end
+            else
+               self.dragging = false
+            end
+         elseif (Msg.type is JET_ABS_XY) and self.dragging then
+            if Options.onFine and Options.onFine() then
+               self.vx += (Msg.x - self.lastX) * FINE_SCALE
+               self.vy += (Msg.y - self.lastY) * FINE_SCALE
+            else
+               self.vx, self.vy = Msg.x, Msg.y
+            end
+            self.lastX, self.lastY = Msg.x, Msg.y
+            pick(self.vx, self.vy)
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   self.free = function()
+      colourpicker_parts.cancelTimer(self.timer)
+      self.timer = nil
+   end
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Loupe: a magnified view of the wheel around the crosshair.  Each cell shows the wheel's colour field one disc pixel
+-- from its neighbours, so the loupe is a LOUPE_CELL × magnification of the disc.  The field is sampled around the
+-- picked colour itself, so the centre cell is always the picked colour (clipped to sRGB) even when the crosshair is
+-- pinned to the rim.
+
+LOUPE_CELLS <const> = 9
+LOUPE_CELL  <const> = 8
+LOUPE_SIZE  <const> = 72 -- LOUPE_CELLS * LOUPE_CELL
+LOUPE_BYTES <const> = 72 * 72 * 4
+LOUPE_MID   <const> = 4  -- Index of the centre cell
+
+colourpicker_wheel.LOUPE_SIZE = LOUPE_SIZE
+colourpicker_wheel.LOUPE_ZOOM = LOUPE_CELL
+
+-- Fill Buffer (BGRA) with the loupe cells around OKLab (L, A, B).  Cell colours go into Cells (BGR) first, then each
+-- is expanded to an 8 × 8 block.
+
+function generateLoupe(Buffer:array<byte>!, Cells:array<byte>!, L:num!, A:num!, B:num!)
+   enc = encodeTable()
+   step = WHEEL_MAX_C / (WHEEL_SIZE * 0.5)
+
+   k = 0
+   for cy in {0 to LOUPE_CELLS} do
+      b = B + ((LOUPE_MID - cy) * step)
+      for cx in {0 to LOUPE_CELLS} do
+         a = A + ((cx - LOUPE_MID) * step)
+         l_ = L + (0.3963377774 * a) + (0.2158037573 * b)
+         m_ = L - (0.1055613458 * a) - (0.0638541728 * b)
+         s_ = L - (0.0894841775 * a) - (1.2914855480 * b)
+         ll = l_ * l_ * l_
+         mm = m_ * m_ * m_
+         ss = s_ * s_ * s_
+         lr = math.clamp((4.0767416621 * ll) - (3.3077115913 * mm) + (0.2309699292 * ss), 0, 1)
+         lg = math.clamp((-1.2684380046 * ll) + (2.6097574011 * mm) - (0.3413193965 * ss), 0, 1)
+         lb = math.clamp((-0.0041960863 * ll) - (0.7034186147 * mm) + (1.7076147010 * ss), 0, 1)
+         Cells[k]     = enc[math.floor(lb * ENCODE_SIZE)]
+         Cells[k + 1] = enc[math.floor(lg * ENCODE_SIZE)]
+         Cells[k + 2] = enc[math.floor(lr * ENCODE_SIZE)]
+         k += 3
+      end
+   end
+
+   i = 0
+   for y in {0 to LOUPE_SIZE} do
+      row = math.floor(y / LOUPE_CELL) * LOUPE_CELLS
+      for x in {0 to LOUPE_SIZE} do
+         k = (row + math.floor(x / LOUPE_CELL)) * 3
+         Buffer[i]     = Cells[k]
+         Buffer[i + 1] = Cells[k + 1]
+         Buffer[i + 2] = Cells[k + 2]
+         Buffer[i + 3] = 255
+         i += 4
+      end
+   end
+end
+
+@Doc(text=[[
+@desc Create a loupe: a LOUPE_SIZE square showing the wheel's colours around a picked colour, magnified LOUPE_ZOOM
+times, with a cell grid and a marker on the centre cell.
+@input Target viewport
+@input Options: x, y, tokens
+@result Table with `viewport` and `update(L, C, H)`
+]])
+colourpicker_wheel.loupe = function(Target:obj!, Options:table!):table
+   t = Options.tokens
+
+   self = {
+      viewport = Target.new('VectorViewport', {
+         x = Options.x, y = Options.y, width = LOUPE_SIZE, height = LOUPE_SIZE
+      }),
+      buffer = array<byte, LOUPE_BYTES>,
+      cells  = array<byte, 243>
+   }
+
+   -- The scene owns the bitmap for the same reason as the wheel's disc bitmap.
+
+   scene = self.viewport.scene
+   self.bitmap = scene.new('Bitmap', { width = LOUPE_SIZE, height = LOUPE_SIZE, bitsPerPixel = 32 })
+   self.image = scene.new('VectorImage', { bitmap = self.bitmap })
+   check scene.mtAddDef('cpLoupe', self.image)
+
+   self.viewport.new('VectorRectangle', {
+      x = 0, y = 0, width = LOUPE_SIZE, height = LOUPE_SIZE, roundX = 4, roundY = 4, fill = 'url(#cpLoupe)'
+   })
+
+   grid = array<str>
+   for i in {1 to LOUPE_CELLS} do
+      p = (i * LOUPE_CELL) + 0.5
+      grid.push(f'M{p} 0 V{LOUPE_SIZE} M0 {p} H{LOUPE_SIZE}')
+   end
+   self.viewport.new('VectorPath', { sequence = grid.concat(' '), stroke = 'oklch(0 0 0 / 0.08)', strokeWidth = 1 })
+
+   mid = LOUPE_MID * LOUPE_CELL
+   self.viewport.new('VectorRectangle', {
+      x = mid - 2.5, y = mid - 2.5, width = LOUPE_CELL + 5, height = LOUPE_CELL + 5,
+      stroke = 'oklch(0 0 0 / 0.8)', strokeWidth = 1
+   })
+   self.viewport.new('VectorRectangle', {
+      x = mid - 1, y = mid - 1, width = LOUPE_CELL + 2, height = LOUPE_CELL + 2, stroke = '#FFFFFF', strokeWidth = 2
+   })
+
+   self.viewport.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = LOUPE_SIZE - 1, height = LOUPE_SIZE - 1, roundX = 4, roundY = 4,
+      stroke = t.border, strokeWidth = 1
+   })
+
+   -- Sampled cells are BGR bytes, enlarged without interpolation.
+
+   self.showPixels = function(Pixels:array<byte>!)
+      for y in {0 to LOUPE_SIZE} do
+         for x in {0 to LOUPE_SIZE} do
+            cell = (math.floor(y / LOUPE_CELL) * LOUPE_CELLS + math.floor(x / LOUPE_CELL)) * 3
+            i = (y * LOUPE_SIZE + x) * 4
+            self.buffer[i] = Pixels[cell]
+            self.buffer[i + 1] = Pixels[cell + 1]
+            self.buffer[i + 2] = Pixels[cell + 2]
+            self.buffer[i + 3] = 255
+         end
+      end
+      self.bitmap.acSeek(0, SEEK_START)
+      self.bitmap.acWrite(self.buffer)
+   end
+
+   self.update = function(L:num!, C:num!, H:num!)
+      a = math.rad(H)
+      generateLoupe(self.buffer, self.cells, L, C * math.cos(a), C * math.sin(a))
+      self.bitmap.acSeek(0, SEEK_START)
+      self.bitmap.acWrite(self.buffer)
+   end
+
+   return self
+end
