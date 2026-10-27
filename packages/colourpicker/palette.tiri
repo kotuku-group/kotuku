@@ -995,8 +995,8 @@ end
 from Seed.
 @input Path of the settings file
 @input Seed: { l, c, h, alpha } for the demonstration palette's Primary swatch
-@result Table of { palette, scheme, clamp, inputFormat, firstRun }.  Scheme, clamp and inputFormat are nil if the file
-doesn't set them.
+@result Table of { palette, scheme, clamp, inputFormat, rampSteps, firstRun }.  Scheme, clamp, inputFormat and
+rampSteps are nil if the file doesn't set them.
 ]])
 colourpalette.load = function(Path:str!, Seed:table!):table
    local text:str
@@ -1014,6 +1014,7 @@ colourpalette.load = function(Path:str!, Seed:table!):table
                scheme   = (data.scheme is <str>) ? data.scheme : nil,
                clamp    = (data.clamp is <str>) ? data.clamp : nil,
                inputFormat = (data.inputFormat is <str>) ? data.inputFormat : nil,
+               rampSteps   = (data.rampSteps is <num>) ? data.rampSteps : nil,
                firstRun = false
             }
          end
@@ -1039,7 +1040,7 @@ end
 @Doc(text=[[
 @desc Save the picker settings.
 @input Path of the settings file
-@input Settings: { palette, scheme, clamp, inputFormat }
+@input Settings: { palette, scheme, clamp, inputFormat, rampSteps }
 @result True if the file was written
 ]])
 colourpalette.save = function(Path:str!, Settings:table!):bool
@@ -1050,6 +1051,7 @@ colourpalette.save = function(Path:str!, Settings:table!):bool
          scheme  = Settings.scheme,
          clamp   = Settings.clamp,
          inputFormat = Settings.inputFormat,
+         rampSteps   = Settings.rampSteps,
          palette = colourpalette.encode(Settings.palette, true)
       }
       text = json.encode(data)

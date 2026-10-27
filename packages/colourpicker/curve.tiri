@@ -1,0 +1,297 @@
+-- Curve editor for the colour picker: a graph of a curve over x = 0 to 1, drawn through its two end points and the
+-- points between them.  Both axes run from 0 to 1.  The curve is a monotone cubic (PCHIP), so it never overshoots its
+-- points, and a curve of only the two end points is a straight line.  Up to two of the points are handles that can be
+-- moved: either the points between the ends, or the end points themselves, which move vertically only.
+--
+-- The editor is a tab stop.  The arrow keys move the selected handle, and Home and End select the first and last
+-- handle.
+
+   include 'display'
+
+   namespace colourpicker_curve { }
+
+PAD      <const> = 7    -- Inset of the graph in the box, leaving room for the handles
+HANDLE_R <const> = 4
+END_R    <const> = 2
+GRAB_R   <const> = 9    -- Distance from a handle within which a press grabs it
+MIN_GAP  <const> = 0.05 -- Least horizontal distance between neighbouring points
+SAMPLES  <const> = 40   -- Segments in the drawn curve
+KEY_STEP <const> = 0.02 -- Movement of a handle per arrow key press
+
+----------------------------------------------------------------------------------------------------------------------
+-- PCHIP tangents of Points, as in Fritsch and Butland: the weighted harmonic mean of the neighbouring slopes at an
+-- interior point, or zero where the curve turns.  The end tangents are from a three-point estimate, limited so that the
+-- curve keeps the direction of its first and last segments.
+
+function sign(V:num):num
+   return (V > 0) ? 1 : ((V < 0) ? -1 : 0)
+end
+
+function endTangent(H0:num, H1:num, D0:num, D1:num):num
+   m = (((2 * H0) + H1) * D0 - (H0 * D1)) / (H0 + H1)
+   if sign(m) != sign(D0) then
+      return 0
+   elseif (sign(D0) != sign(D1)) and (math.abs(m) > math.abs(3 * D0)) then
+      return 3 * D0
+   end
+   return m
+end
+
+function tangents(Points:array<table>):array<double>
+   n = #Points
+   h = array<double>
+   d = array<double>
+   for k in {0 to n - 1} do
+      h.push(Points[k + 1].x - Points[k].x)
+      d.push((Points[k + 1].y - Points[k].y) / h[k])
+   end
+
+   m = array<double>
+   if n is 2 then
+      m.push(d[0])
+      m.push(d[0])
+      return m
+   end
+
+   m.push(endTangent(h[0], h[1], d[0], d[1]))
+   for k in {1 to n - 1} do
+      if (d[k - 1] * d[k]) <= 0 then
+         m.push(0)
+      else
+         w1 = (2 * h[k]) + h[k - 1]
+         w2 = h[k] + (2 * h[k - 1])
+         m.push((w1 + w2) / ((w1 / d[k - 1]) + (w2 / d[k])))
+      end
+   end
+   m.push(endTangent(h[n - 2], h[n - 3], d[n - 2], d[n - 3]))
+   return m
+end
+
+@Doc(text=[[
+@desc Return the value of the curve through Points at X.  Points is an array of `{ x, y }` tables in increasing order
+of x, of which the first is at x = 0 and the last at x = 1.
+]])
+colourpicker_curve.evaluate = function(Points:array<table>!, X:num!):num
+   m = tangents(Points)
+   k = 0
+   while (k < #Points - 2) and (X > Points[k + 1].x) do k += 1 end
+   a = Points[k]
+   b = Points[k + 1]
+   h = b.x - a.x
+   t = math.clamp((X - a.x) / h, 0, 1)
+   t2 = t * t
+   t3 = t2 * t
+   return (((2 * t3) - (3 * t2) + 1) * a.y) + ((t3 - (2 * t2) + t) * h * m[k]) +
+      (((-2 * t3) + (3 * t2)) * b.y) + ((t3 - t2) * h * m[k + 1])
+end
+
+@Doc(text=[[
+@desc Return a copy of Points.
+]])
+colourpicker_curve.copy = function(Points:array<table>!):array<table>
+   copy = array<table>
+   for p in values(Points) do copy.push({ x = p.x, y = p.y }) end
+   return copy
+end
+
+@Doc(text=[[
+@desc Create a curve editor.
+@input Target viewport
+@input Options: x, y, width, height, tokens, points (see evaluate()), movableEnds (true if the end points are the
+handles), guide (a value at which a reference line is drawn, optional), caption and face (an optional caption in the
+top left, and its font face) and onChange (function(Points) called when a handle is moved)
+@result Table with `viewport`, `points`, `movable` (the indices of the points that are handles), `handles` (the handle
+ellipses, one for each point), `selected` (the index of the selected point), `setPoints(Points, MovableEnds)`,
+`moveHandle(Index, X, Y)` and `toGraph(X, Y)`.
+]])
+colourpicker_curve.new = function(Target:obj!, Options:table!):table
+   t = Options.tokens
+   width = Options.width
+   height = Options.height
+   graph_w = width - (PAD * 2)
+   graph_h = height - (PAD * 2)
+
+   self = {
+      viewport = Target.new('VectorViewport', { x = Options.x, y = Options.y, width = width, height = height }),
+      points   = array<table>,
+      movable  = array<int>,
+      handles  = array<obj>,
+      ends     = array<obj>,
+      selected = 0,
+      dragging = nil, -- Index of the point being dragged
+      focused  = false
+   }
+   vp = self.viewport
+
+   self.bkgd = vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      fill = t.sunk, stroke = t.border, strokeWidth = 1
+   })
+
+   self.toGraph = function(X:num!, Y:num!):<num, num>
+      return PAD + (X * graph_w), PAD + ((1 - Y) * graph_h)
+   end
+
+   if Options.guide then
+      _, gy = self.toGraph(0, Options.guide)
+      vp.new('VectorRectangle', { x = PAD, y = math.round(gy), width = graph_w, height = 1, fill = t.divider })
+   end
+
+   if Options.caption then
+      vp.new('VectorText', {
+         x = PAD - 1, y = PAD + 6, face = Options.face, fontSize = '10px', fill = t.fg0, string = Options.caption
+      })
+   end
+
+   self.line = vp.new('VectorPath', { fill = 'none', stroke = t.fg1, strokeWidth = 1.5 })
+
+   for _ in {0 to 2} do
+      self.ends.push(vp.new('VectorEllipse', { radiusX = END_R, radiusY = END_R, fill = t.fg1 }))
+   end
+
+   for _ in {0 to 4} do
+      self.handles.push(vp.new('VectorEllipse', {
+         radiusX = HANDLE_R, radiusY = HANDLE_R, fill = t.panel, stroke = t.accent, strokeWidth = 1.5,
+         visibility = VIS_HIDDEN
+      }))
+   end
+
+   -- Redraw the curve and its points.  The selected handle is filled while the editor has the focus.
+
+   function draw()
+      path = array<str>
+      for i in {0 into SAMPLES} do
+         x = i / SAMPLES
+         gx, gy = self.toGraph(x, colourpicker_curve.evaluate(self.points, x))
+         path.push(f'{(i is 0) ? "M" : "L"}{gx} {gy}')
+      end
+      self.line.sequence = path.concat(' ')
+
+      last = #self.points - 1
+      for i, dot in self.ends do
+         index = (i is 0) ? 0 : last
+         p = self.points[index]
+         dot.cx, dot.cy = self.toGraph(p.x, p.y)
+         dot.visibility = (index in self.movable) ? VIS_HIDDEN : VIS_VISIBLE
+      end
+
+      for i, handle in self.handles do
+         if (i <= last) and (i in self.movable) then
+            p = self.points[i]
+            handle.cx, handle.cy = self.toGraph(p.x, p.y)
+            handle.fill = (self.focused and (i is self.selected)) ? t.accent : t.panel
+            handle.visibility = VIS_VISIBLE
+         else
+            handle.visibility = VIS_HIDDEN
+         end
+      end
+
+      self.bkgd.stroke = self.focused ? t.accent : t.border
+      vp.acDraw()
+   end
+
+   -- Replace the points without reporting a change.  If MovableEnds is true, the end points are the handles; otherwise
+   -- the points between them are.  The first handle is selected.
+
+   self.setPoints = function(Points:array<table>!, MovableEnds:bool)
+      last = #Points - 1
+      movable = array<int>
+      if MovableEnds then
+         movable.push(0)
+         movable.push(last)
+      else
+         for i in {1 to last} do movable.push(i) end
+      end
+      assert((last >= 1) and (#movable <= 2) and ((#Points is 2) or not MovableEnds),
+         'A curve has two end points and up to two handles.')
+
+      self.points = colourpicker_curve.copy(Points)
+      self.movable = movable
+      self.selected = movable[0] ?? 0
+      self.dragging = nil
+      draw()
+   end
+
+   -- Move the handle at Index to (X, Y), keeping it between its neighbours and within the graph, and report the change.
+   -- End points keep their x.
+
+   self.moveHandle = function(Index:num!, X:num!, Y:num!)
+      if not (Index in self.movable) then return end
+      p = self.points[Index]
+      x = p.x
+      if (Index > 0) and (Index < #self.points - 1) then
+         x = math.clamp(X, self.points[Index - 1].x + MIN_GAP, self.points[Index + 1].x - MIN_GAP)
+      end
+      y = math.clamp(Y, 0, 1)
+      if (x is p.x) and (y is p.y) then return end
+      p.x, p.y = x, y
+      draw()
+      if Options.onChange then Options.onChange(self.points) end
+   end
+
+   function fromGraph(X:num!, Y:num!):<num, num>
+      return (X - PAD) / graph_w, 1 - ((Y - PAD) / graph_h)
+   end
+
+   -- A press grabs the nearest handle within GRAB_R.  The handle then follows the pointer until the button is
+   -- released.
+
+   vp.mtSubscribeInput(JTYPE_BUTTON|JTYPE_MOVEMENT, function(Viewport:obj!, Msg:any!)
+      repeat
+         if Msg.type is JET_LMB then
+            if Msg.value > 0 then
+               best = nil
+               best_d = GRAB_R * GRAB_R
+               for i in values(self.movable) do
+                  hx, hy = self.toGraph(self.points[i].x, self.points[i].y)
+                  dist = ((Msg.x - hx) * (Msg.x - hx)) + ((Msg.y - hy) * (Msg.y - hy))
+                  if dist <= best_d then
+                     best = i
+                     best_d = dist
+                  end
+               end
+               if best then
+                  self.dragging = best
+                  self.selected = best
+                  Viewport.acFocus()
+                  draw()
+               end
+            else
+               self.dragging = nil
+            end
+         elseif (Msg.type is JET_ABS_XY) and self.dragging then
+            self.moveHandle(self.dragging, fromGraph(Msg.x, Msg.y))
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   vp.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+      if #self.movable is 0 then return end
+      p = self.points[self.selected]
+      if Value is KEY_UP then
+         self.moveHandle(self.selected, p.x, p.y + KEY_STEP)
+      elseif Value is KEY_DOWN then
+         self.moveHandle(self.selected, p.x, p.y - KEY_STEP)
+      elseif Value is KEY_LEFT then
+         self.moveHandle(self.selected, p.x - KEY_STEP, p.y)
+      elseif Value is KEY_RIGHT then
+         self.moveHandle(self.selected, p.x + KEY_STEP, p.y)
+      elseif Value is KEY_HOME then
+         self.selected = self.movable[0]
+         draw()
+      elseif Value is KEY_END then
+         self.selected = self.movable.last()
+         draw()
+      end
+   end)
+
+   vp.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event:num!)
+      self.focused = (Event != FM_LOST_FOCUS)
+      draw()
+   end)
+
+   self.setPoints(Options.points, Options.movableEnds)
+   return self
+end

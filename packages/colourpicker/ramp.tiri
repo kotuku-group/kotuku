@@ -1,11 +1,14 @@
--- Tonal Ramp panel for the colour picker: a row of step buttons whose lightness falls linearly from L_MAX to L_MIN at
--- the hue and chroma of the ramp's base colour.  The chroma of each step is reduced to fit the target gamut.  Clicking
--- a step passes its colour to onPick, and the plus and minus buttons change the step count.
+-- Tonal Ramp panel for the colour picker: a row of step buttons whose lightness lies between L_MAX and L_MIN at the hue
+-- of the ramp's base colour.  Two curves shape the ramp.  The L curve maps the position of a step to its progress from
+-- L_MAX to L_MIN, and the C curve maps it to a multiple of the base chroma, from 0 to C_RANGE.  The chroma of each step
+-- is then reduced to fit the target gamut.  Each curve has a combobox of presets, which reads "Custom" once a handle
+-- is moved.  Clicking a step passes its colour to onPick, dragging it passes its colour to onDrag, and the plus and
+-- minus buttons change the step count.
 --
 -- The base is the edited colour, except while the edited colour is the step that was picked.  A light or dark step
 -- has less chroma than the base, so rebasing on it would wash out the rest of the ramp.
 
-   import 'gui', 'gui/button', 'gui/colourpicker/colour', './parts'
+   import 'gui', 'gui/button', 'gui/combobox', 'gui/colourpicker/colour', './parts', './curve'
    include 'display'
 
    namespace colourpicker_ramp { }
@@ -21,19 +24,51 @@ MIN_STEPS      <const> = 4
 MAX_STEPS      <const> = 8  -- Limited by the width of the step labels
 GAP            <const> = 3  -- Between the steps, leaving room for the selection ring
 ROUND          <const> = 4
+DRAG_THRESHOLD <const> = 4  -- Pointer travel on either axis that makes a step press a drag; a button click is less
 L_MAX          <const> = 0.98 -- Lightness of the first and last steps
 L_MIN          <const> = 0.18
+C_RANGE        <const> = 1.5  -- Multiple of the base chroma at the top of the C curve
 INK_BLACK      <const> = { r = 0, g = 0, b = 0 } -- Step label colours, chosen by contrast with the step
 INK_WHITE      <const> = { r = 1, g = 1, b = 1 }
 
-colourpicker_ramp.HEIGHT    = PANEL_HEADER_H + TOP + ROW + 10
+CURVE_TOP      <const> = TOP + ROW + 12 -- Top of the curve presets
+BOX_H          <const> = 22 -- Preset combobox height
+CURVE_GAP      <const> = 6  -- Between a preset combobox and its curve
+CURVE_H        <const> = 60
+COLUMN_GAP     <const> = 8  -- Between the L and C columns
+CUSTOM         <const> = 'Custom'
+
+colourpicker_ramp.HEIGHT    = PANEL_HEADER_H + CURVE_TOP + BOX_H + CURVE_GAP + CURVE_H + 12
 colourpicker_ramp.MIN_STEPS = MIN_STEPS
 colourpicker_ramp.MAX_STEPS = MAX_STEPS
+colourpicker_ramp.C_RANGE   = C_RANGE
 
-function stepColour(Base:table!, Index:num!, Count:num!, Clamp:str):<num, num, num>
-   l = L_MAX - ((L_MAX - L_MIN) * Index / (Count - 1))
-   return colourmath.gamutMap(l, Base.c, Base.h, Clamp)
+-- Curve presets, as x, y pairs.  Linear is a straight line whose end points are its handles.  The ease handles sample
+-- the CSS easing functions of the same names at a third and two thirds.  The C values are multiples of the base chroma.
+
+function curve(Values:array<double>!, Scale:num):array<table>
+   points = array<table>
+   for i in {0 to #Values by 2} do points.push({ x = Values[i], y = Values[i + 1] / (Scale ?? 1) }) end
+   return points
 end
+
+L_PRESETS <const> = array<table> {
+   { id = 'linear',    label = 'Linear',      points = curve(array<double> { 0, 0, 1, 1 }), movableEnds = true },
+   { id = 'easeIn',    label = 'Ease In',     points = curve(array<double> { 0, 0, 0.33, 0.15, 0.67, 0.5, 1, 1 }) },
+   { id = 'easeOut',   label = 'Ease Out',    points = curve(array<double> { 0, 0, 0.33, 0.5, 0.67, 0.85, 1, 1 }) },
+   { id = 'easeInOut', label = 'Ease In-Out', points = curve(array<double> { 0, 0, 0.33, 0.2, 0.67, 0.8, 1, 1 }) }
+}
+
+C_PRESETS <const> = array<table> {
+   { id = 'flat',    label = 'Flat',    points = curve(array<double> { 0, 1, 0.5, 1, 1, 1 }, C_RANGE) },
+   { id = 'natural', label = 'Natural', points = curve(array<double> { 0, 0.35, 0.5, 1, 1, 0.35 }, C_RANGE) },
+   { id = 'punchy',  label = 'Punchy',
+     points = curve(array<double> { 0, 0.8, 0.35, 1.35, 0.65, 1.35, 1, 0.8 }, C_RANGE) },
+   { id = 'pastel',  label = 'Pastel',  points = curve(array<double> { 0, 0.2, 0.5, 0.45, 1, 0.2 }, C_RANGE) }
+}
+
+colourpicker_ramp.L_PRESETS = L_PRESETS
+colourpicker_ramp.C_PRESETS = C_PRESETS
 
 function sameColour(A:table!, B:table!):bool
    return (math.abs(A.l - B.l) < 1e-6) and (math.abs(A.c - B.c) < 1e-6) and (math.abs(A.h - B.h) < 1e-6)
@@ -47,10 +82,12 @@ end
 @Doc(text=[[
 @desc Create the Tonal Ramp panel.
 @input Target viewport
-@input Options: x, y, width, tokens, srgb (function(L, C, H, Clamp) returning the displayed sRGB channels, 0 - 1) and
-onPick (function(L, C, H) called when a step is clicked)
-@result Table with `panel`, `steps`, `count`, `update(State)`, `setCount(Count)`, `pick(Index)` and `buttons()`.
-State is the picker state, of which l, c, h and clamp are read.
+@input Options: x, y, width, tokens, steps (the initial step count, which is limited to MIN_STEPS - MAX_STEPS; the
+default is 5), srgb (function(L, C, H, Clamp) returning the displayed sRGB channels, 0 - 1),
+onPick (function(L, C, H) called when a step is clicked) and onDrag (function(L, C, H) called when a step is dragged)
+@result Table with `panel`, `steps`, `count`, `lCurve`, `cCurve`, `lBox`, `cBox`, `update(State)`, `setCount(Count)`,
+`setPreset(Curve, ID)`, `pick(Index)`, `stepColour(Index)` and `widgets()`.  State is the picker state, of which l, c,
+h and clamp are read.
 ]])
 colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    t = Options.tokens
@@ -60,7 +97,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    self = {
       panel = colourpicker_parts.panel(Target, {
          x = Options.x, y = Options.y, width = width, height = colourpicker_ramp.HEIGHT, title = 'Tonal Ramp',
-         meta = 'linear', tokens = t
+         tokens = t
       }),
       count  = STEPS,
       steps  = array<table>,
@@ -76,21 +113,21 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
 
    self.btnMore = gui.button({
       target = body, x = btn_x, y = TOP, width = COUNT_BUTTON, height = COUNT_BUTTON,
-      icon = 'items/add', tip = 'Add a step', 
-      events = { 
-         activate = function() 
-            self.setCount(self.count + 1) 
-         end 
+      icon = 'items/add', tip = 'Add a step',
+      events = {
+         activate = function()
+            self.setCount(self.count + 1)
+         end
       }
    })
 
    self.btnLess = gui.button({
       target = body, x = btn_x, y = TOP + COUNT_BUTTON + COUNT_GAP, width = COUNT_BUTTON, height = COUNT_BUTTON,
-      icon = 'items/minus', tip = 'Remove a step', 
-      events = { 
-         activate = function() 
-            self.setCount(self.count - 1) 
-         end 
+      icon = 'items/minus', tip = 'Remove a step',
+      events = {
+         activate = function()
+            self.setCount(self.count - 1)
+         end
       }
    })
 
@@ -115,12 +152,37 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
 
       step.button = gui.button({
          target = body, y = TOP, width = 1, height = ROW, label = ' ', theme = theme,
-         events = { 
-            activate = function() 
-               self.pick(i) 
-            end 
+         events = {
+            activate = function()
+               self.pick(i)
+            end
          }
       })
+
+      -- A press becomes a drag once the pointer has moved DRAG_THRESHOLD pixels on either axis, which is beyond the
+      -- button's click tolerance.  The button's pending click is cancelled, so that returning to the step and
+      -- releasing doesn't also pick it.
+
+      step.button.viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function(Viewport:obj!, Msg:any!)
+         repeat
+            if Msg.type is JET_LMB then
+               step.press = nil
+               if (Msg.value > 0) and not (Msg.flags has JTYPE_DRAG_ITEM) then
+                  step.press = { x = Msg.x, y = Msg.y }
+               end
+            elseif (Msg.type is JET_ABS_XY) and step.press then
+               if (math.abs(Msg.x - step.press.x) >= DRAG_THRESHOLD) or
+                  (math.abs(Msg.y - step.press.y) >= DRAG_THRESHOLD) then
+                  step.press = nil
+                  step.button.clicked = false
+                  colour = step.colour
+                  if colour and Options.onDrag then Options.onDrag(colour.l, colour.c, colour.h) end
+               end
+            end
+            Msg = Msg.next
+         until not Msg
+      end)
+
       self.steps.push(step)
    end
 
@@ -130,6 +192,22 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
       y = TOP - 1.5, width = 1, height = ROW + 3, roundX = ROUND + 1.5, roundY = ROUND + 1.5,
       fill = 'none', stroke = t.accent, strokeWidth = 1.5, visibility = VIS_HIDDEN
    })
+
+   -- Return the lightness of the step at Index from the L curve, and its chroma before gamut mapping from the C curve.
+
+   function stepLC(Index:num!):<num, num>
+      x = Index / (self.count - 1)
+      l = L_MAX - ((L_MAX - L_MIN) * colourpicker_curve.evaluate(self.lCurve.points, x))
+      scale = math.max(0, colourpicker_curve.evaluate(self.cCurve.points, x)) * C_RANGE
+      return l, (self.base?.c ?? 0) * scale
+   end
+
+   -- Return the colour of the step at Index for the base and the target gamut of the last update().
+
+   self.stepColour = function(Index:num!):<num, num, num>
+      l, c = stepLC(Index)
+      return colourmath.gamutMap(l, c, self.base?.h ?? 0, self.state?.clamp ?? 'none')
+   end
 
    -- Divide the row between the steps in use, in whole pixels, and label each step with its lightness.  The unused
    -- steps are hidden and disabled, which removes them from the tab order.
@@ -146,7 +224,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
             w = math.round((i + 1) * span) - GAP - x
             step.swatch.{ x = PAD + x + 0.5, width = w - 1 }
             step.button.viewport.{ x = PAD + x, width = w }
-            l = stepColour({ c = 0, h = 0 }, i, count, 'none')
+            l = stepLC(i)
             step.button.setLabel(tostring(math.round(l * 100)))
          end
 
@@ -174,7 +252,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
       self.ring.visibility = VIS_HIDDEN
       for i in {0 to self.count} do
          step = self.steps[i]
-         l, c, h = stepColour(self.base, i, self.count, State.clamp)
+         l, c, h = self.stepColour(i)
          step.colour = { l = l, c = c, h = h }
 
          r, g, b = Options.srgb(l, c, h, State.clamp)
@@ -192,15 +270,21 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
       end
    end
 
+   -- Recalculate the ramp after a change to its shape
+
+   function refresh()
+      layout()
+      if self.state then self.update(self.state) end
+      self.panel.viewport.acDraw()
+   end
+
    -- Change the step count, within MIN_STEPS and MAX_STEPS.  The base is kept.
 
    self.setCount = function(Count:num!)
       Count = math.clamp(Count, MIN_STEPS, MAX_STEPS)
       if Count is self.count then return end
       self.count = Count
-      layout()
-      if self.state then self.update(self.state) end
-      self.panel.viewport.acDraw()
+      refresh()
    end
 
    -- Pass the colour of the step at Index to onPick.
@@ -213,17 +297,76 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
       Options.onPick(colour.l, colour.c, colour.h)
    end
 
-   -- Every button of the panel, in tab order
+   -- The L and C columns: a preset combobox over a curve editor, which is captioned with its key.  A preset replaces
+   -- the curve, and moving a handle changes the combobox to "Custom".
 
-   self.buttons = function():array<table>
+   col_w = math.floor((inner_w - COLUMN_GAP) * 0.5)
+
+   function column(X:num!, Key:str!, Presets:array<table>!, Guide:num):<table, table>
+      items = array<table>
+      for preset in values(Presets) do items.push({ id = preset.id, label = preset.label }) end
+
+      editor = nil
+      box = gui.combobox({
+         target = body, x = X, y = CURVE_TOP, width = col_w, height = BOX_H, items = items,
+         allowCustom = false,
+         theme = { input = { text = { fontSize = '11px', y = colourpicker_parts.baseline(0, BOX_H - 2, 11) } } },
+         events = {
+            activate = function(Item:table!)
+               self.setPreset(editor, Item.id)
+            end
+         }
+      })
+      colourpicker_parts.smallCaret(box, t)
+
+      editor = colourpicker_curve.new(body, {
+         x = X, y = CURVE_TOP + BOX_H + CURVE_GAP, width = col_w, height = CURVE_H, tokens = t,
+         points = Presets[0].points, movableEnds = Presets[0].movableEnds, guide = Guide, caption = Key,
+         face = colourpicker_parts.FACE_MONO,
+         onChange = function()
+            box.setText(CUSTOM)
+            refresh()
+         end
+      })
+      editor.presets = Presets
+      editor.box = box
+      return box, editor
+   end
+
+   self.lBox, self.lCurve = column(PAD, 'L', L_PRESETS)
+   self.cBox, self.cCurve = column(PAD + col_w + COLUMN_GAP, 'C', C_PRESETS, 1 / C_RANGE)
+
+   -- Apply the preset ID to Curve (lCurve or cCurve)
+
+   self.setPreset = function(Curve:table!, ID:str!)
+      for preset in values(Curve.presets) do
+         if preset.id is ID then
+            Curve.box.setText(preset.label)
+            Curve.setPoints(preset.points, preset.movableEnds)
+            refresh()
+            return
+         end
+      end
+   end
+
+   -- Every widget of the panel that handles Enter itself, in tab order
+
+   self.widgets = function():array<table>
       list = array<table>
-      for step in values(self.steps) do 
-         list.push(step.button) 
+      for step in values(self.steps) do
+         list.push(step.button)
       end
       list.push(self.btnMore)
       list.push(self.btnLess)
+      list.push(self.lBox)
+      list.push(self.cBox)
       return list
    end
+
+   -- A step count that isn't a whole number is ignored, and one outside the range is limited to it
+
+   steps = Options.steps
+   if (steps is <num>) and ((steps % 1) is 0) then self.count = math.clamp(steps, MIN_STEPS, MAX_STEPS) end
 
    layout()
    return self

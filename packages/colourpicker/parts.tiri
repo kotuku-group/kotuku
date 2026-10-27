@@ -116,6 +116,19 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text=[[
+@desc Replace a combobox's drop-down icon with the design's small caret.
+]])
+colourpicker_parts.smallCaret = function(Box:table!, Tokens:table!)
+   icon = Box.iconRender
+   icon.fill = 'none'
+   x = math.round((icon.width - 7) * 0.5)
+   y = math.round((icon.height - 4) * 0.5)
+   icon.new('VectorPolygon', { points = f'{x},{y} {x + 7},{y} {x + 3.5},{y + 4}', closed = true, fill = Tokens.fg2 })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
 @desc Create a chip: a small sunk label with an optional colour dot, as used for the current colour and swatch
 counts.
 @input Target viewport
