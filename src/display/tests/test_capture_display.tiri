@@ -1,6 +1,6 @@
 -- Verifies the argument handling of CaptureDisplay().  Under the headless driver the desktop cannot be read, so valid
--- requests must report NoSupport and leave the target bitmap untouched.  Desktop pixel checks are covered by the X11
--- driver's unit test, which runs against a private X server.
+-- requests must report NoSupport and leave the target bitmap untouched.  Known desktop colours are checked by the
+-- native driver tests.  Run this file with --gfx-driver=windows to also exercise native API clipping and packing.
 
    module display as mGfx
 
@@ -49,5 +49,53 @@ end
    local after = readPixel(bmp, 1, 1)
    for _, channel in { 'red', 'green', 'blue', 'alpha' } do
       assert(after[channel] is before[channel], f'Failed capture altered the {channel} channel')
+   end
+end
+
+@Test function WindowsDestinationClip()
+   if mGfx.GetDisplayType() != DT_WINGDI then return end
+
+   local bmp <close> = obj.new('Bitmap', { width=6, height=6, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL })
+   local sentinel = struct.new('RGB8', { red=16, green=32, blue=48, alpha=64 })
+   for y in {0 to 6} do
+      for x in {0 to 6} do mGfx.DrawRGBPixel(bmp, x, y, sentinel) end
+   end
+   bmp.{ clipLeft=1, clipTop=1, clipRight=4, clipBottom=4 }
+   check mGfx.CaptureDisplay(100, 100, 6, 6, bmp, -1, -1)
+   bmp.{ clipLeft=0, clipTop=0, clipRight=6, clipBottom=6 }
+   for y in {0 to 6} do
+      for x in {0 to 6} do
+         local pixel = readPixel(bmp, x, y)
+         if (x >= 1) and (x < 4) and (y >= 1) and (y < 4) then
+            assert(pixel.alpha is 255, 'Captured pixels must be opaque')
+         else
+            assert((pixel.red is 16) and (pixel.green is 32) and (pixel.blue is 48) and (pixel.alpha is 64),
+               'Destination clipping must leave all other pixels untouched')
+         end
+      end
+   end
+end
+
+@Test function WindowsSourceClip()
+   if mGfx.GetDisplayType() != DT_WINGDI then return end
+
+   local err, info = mGfx.GetDisplayInfo(0)
+   check err
+   local left, top = info.virtualX, info.virtualY
+   local bmp <close> = obj.new('Bitmap', { width=4, height=4, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL })
+   local sentinel = struct.new('RGB8', { red=16, green=32, blue=48, alpha=64 })
+   for y in {0 to 4} do
+      for x in {0 to 4} do mGfx.DrawRGBPixel(bmp, x, y, sentinel) end
+   end
+   check mGfx.CaptureDisplay(left - 2, top - 2, 4, 4, bmp, 0, 0)
+   for y in {0 to 4} do
+      for x in {0 to 4} do
+         local pixel = readPixel(bmp, x, y)
+         if (x >= 2) and (y >= 2) then
+            assert(pixel.alpha is 255, 'The visible source area must be captured')
+         else
+            assert(pixel.alpha is 64, 'Off-screen source pixels must leave the destination untouched')
+         end
+      end
    end
 end

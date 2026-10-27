@@ -54,6 +54,22 @@ int winLookupSurfaceID(HWND);
 #ifdef __cplusplus
 namespace display {
 
+struct Win32Capture {
+   HDC Screen = nullptr;
+   HDC Memory = nullptr;
+   HBITMAP Bitmap = nullptr;
+   void *Previous = nullptr;
+   uint8_t *Data = nullptr;
+   int X = 0, Y = 0, Width = 0, Height = 0;
+
+   Win32Capture() = default;
+   Win32Capture(const Win32Capture &) = delete;
+   Win32Capture & operator=(const Win32Capture &) = delete;
+   ~Win32Capture();
+};
+
+extern ERR winCaptureDisplay(int X, int Y, int Width, int Height, Win32Capture &Image);
+
 extern void winTerminate(void);
 extern HDC winGetDC(HWND);
 extern void winReleaseDC(HWND, HDC);

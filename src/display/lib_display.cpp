@@ -29,6 +29,9 @@ Captured pixels are written as the display presents them, i.e. as sRGB-encoded v
 conversion is applied if the bitmap uses the `CS::LINEAR_RGB` colour space.  The mouse cursor is not included.
 Kōtuku's own windows are included as they appear on screen.
 
+On Windows, layered windows are included.  Protected content such as DRM video and windows excluded from screen
+capture may appear black or be omitted by the host.
+
 Desktop capture is not available on all platforms.  Wayland sessions (including X11 clients running under XWayland),
 headless sessions and Android return `ERR::NoSupport`, and callers should fall back to an alternative where possible.
 
@@ -151,7 +154,7 @@ pure-query
 
 DT GetDisplayType(void)
 {
-   if ((glDriver) and (not glHeadless)) return glDriver->displayType();
+   if (glDriver) return glDriver->displayType();
 #ifdef _WIN32
    return DT::WINGDI;
 #else
