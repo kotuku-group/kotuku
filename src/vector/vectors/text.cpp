@@ -137,6 +137,8 @@ public:
 
 //********************************************************************************************************************
 
+enum class TextCharClass : uint8_t { WORD, SPACE, SEPARATOR };
+
 class TextLine : public std::string {
 public:
    TextLine() : std::string { } { }
@@ -145,6 +147,13 @@ public:
    TextLine(std::string Value) : std::string{ Value } { }
 
    std::vector<CharPos> chars;
+   std::vector<TextCharClass> characterClasses;
+   bool classesValid = false;
+
+   void invalidate_text() {
+      classesValid = false;
+      chars.clear(); // Retain layout storage for the next generation.
+   }
 
    inline int charLength(uint32_t Offset = 0) const { // Total number of bytes used by the char at Offset
       return UTF8CharLength(c_str() + Offset);
@@ -155,7 +164,7 @@ public:
    }
 
    inline int utf8Length() const { // Total number of unicode characters in the string
-      return UTF8Length(c_str());
+      return classesValid ? int(characterClasses.size()) : UTF8Length(c_str());
    }
 
    inline int lastChar() const { // Return a direct offset to the start of the last character.
@@ -1818,8 +1827,6 @@ static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
 
 //********************************************************************************************************************
 
-enum class TextCharClass { WORD, SPACE, SEPARATOR };
-
 static TextCharClass text_character_class(uint32_t Unicode)
 {
    auto in_ranges = [Unicode](const auto &Ranges) {
@@ -1833,9 +1840,11 @@ static TextCharClass text_character_class(uint32_t Unicode)
 }
 
 // Shared Unicode classification for keyboard boundaries and mouse word/separator/whitespace runs.
-static std::vector<TextCharClass> text_character_classes(const TextLine &Line)
+static const std::vector<TextCharClass> & text_character_classes(TextLine &Line)
 {
-   std::vector<TextCharClass> classes;
+   if (Line.classesValid) return Line.characterClasses;
+   auto &classes = Line.characterClasses;
+   classes.clear();
    auto remaining = std::string_view(Line);
    while (not remaining.empty()) {
       int length;
@@ -1843,13 +1852,14 @@ static std::vector<TextCharClass> text_character_classes(const TextLine &Line)
       classes.push_back(text_character_class(unicode));
       remaining.remove_prefix(std::max(1, length));
    }
+   Line.classesValid = true;
    return classes;
 }
 
 static void select_mouse_word(extVectorText *Self, TextPosition Position)
 {
    if (Self->txLines.empty()) return;
-   const auto classes = text_character_classes(Self->txLines[Position.row]);
+   const auto &classes = text_character_classes(Self->txLines[Position.row]);
    if (classes.empty()) {
       Self->txCursor.move(Self, Position.row, 0);
       return;
@@ -1862,32 +1872,25 @@ static void select_mouse_word(extVectorText *Self, TextPosition Position)
    Self->txCursor.extend(Self, Position.row, last);
 }
 
-// Decode each visited row once.  A logical line break is whitespace, so word movement can cross empty lines.
-// Keeping classification and run boundaries together also provides the word rules for mouse selection.
+// Classification survives navigation and is invalidated only when a line's text changes.
+// A logical line break is whitespace, so word movement can cross empty lines.
 static TextPosition word_boundary(extVectorText *Self, TextPosition Position, bool Forward)
 {
-   int cached_row = -1;
-   std::vector<TextCharClass> classes;
-   auto load_row = [&](int Row) {
-      if (cached_row IS Row) return;
-      cached_row = Row;
-      classes = text_character_classes(Self->txLines[Row]);
-   };
    auto character = [&](TextPosition At) -> std::optional<TextCharClass> {
-      load_row(At.row);
+      const auto &classes = text_character_classes(Self->txLines[At.row]);
       if (At.column < std::ssize(classes)) return classes[At.column];
       if (At.row + 1 < std::ssize(Self->txLines)) return TextCharClass::SPACE;
       return std::nullopt;
    };
    auto advance = [&]() {
-      load_row(Position.row);
+      const auto &classes = text_character_classes(Self->txLines[Position.row]);
       if (Position.column < std::ssize(classes)) Position.column++;
       else { Position.row++; Position.column = 0; }
    };
    auto previous = [&]() -> std::optional<TextPosition> {
       if (Position.column > 0) return TextPosition { Position.row, Position.column - 1 };
       if (Position.row IS 0) return std::nullopt;
-      load_row(Position.row - 1);
+      const auto &classes = text_character_classes(Self->txLines[Position.row - 1]);
       return TextPosition { Position.row - 1, int(classes.size()) };
    };
 
@@ -2149,6 +2152,7 @@ static void rebuild_selection(extVectorText *Self)
          auto run_start = line.chars[start];
          auto run_end = run_start;
          bool have_run = false;
+         int byte_offset = 0, byte_column = 0;
          for (int col=start; col < end; col++) {
             const auto &left = line.chars[col];
             auto right = line.chars[col + 1];
@@ -2156,7 +2160,10 @@ static void rebuild_selection(extVectorText *Self)
                // A wrapped word starts on another visual line.  Finish this glyph on its own line instead
                // of joining its highlight diagonally to the next line's first caret.
                int char_length;
-               const auto glyph = std::string_view(line).substr(line.utf8CharOffset(col));
+               // Advance from the previous wrap boundary, never rescan the line prefix.
+               byte_offset += UTF8CharOffset(line.c_str() + byte_offset, col - byte_column);
+               byte_column = col;
+               const auto glyph = std::string_view(line).substr(byte_offset);
                const auto unicode = UTF8ReadValue(glyph, &char_length);
                const auto width = Self->txBitmapFont ? fnt::CharWidth(Self->txBitmapFont, unicode) :
                   string_width(Self, glyph.substr(0, char_length));
@@ -2242,6 +2249,32 @@ static bool replace_selection(extVectorText *Self, std::string_view Value)
          Self->txCursor.row(), Self->txCursor.column() };
    }
 
+   // Most keystrokes only change one line.  Preserve its buffers and leave subsequent rows in place.
+   if ((range->row IS range->end_row) and (Value.find('\n') IS std::string_view::npos)) {
+      auto &line = Self->txLines[range->row];
+      const auto start = line.utf8CharOffset(range->column);
+      const auto end = line.utf8CharOffset(range->end_column);
+      int inserted_columns = 0;
+      for (auto remaining = Value; not remaining.empty();) {
+         int length;
+         UTF8ReadValue(remaining, &length);
+         remaining.remove_prefix(std::max(1, length));
+         inserted_columns++;
+      }
+      const auto total_columns = line.utf8Length() - (range->end_column - range->column) + inserted_columns;
+      // Limit truncation uses the general path, which compares the final result before reporting a change.
+      if (Value.empty() or (total_columns <= Self->txCharLimit)) {
+         const bool changed = std::string_view(line).substr(start, end - start) != Value;
+         if (changed) {
+            line.replace(start, end - start, Value);
+            line.invalidate_text();
+            mark_dirty(Self, RC::BASE_PATH);
+         }
+         Self->txCursor.move(Self, range->row, range->column + inserted_columns, true);
+         return changed;
+      }
+   }
+
    std::vector<TextLine> replacement;
    auto prefix = Self->txLines[range->row].substr(0, Self->txLines[range->row].utf8CharOffset(range->column));
    replacement.emplace_back(prefix);
@@ -2280,8 +2313,22 @@ static bool replace_selection(extVectorText *Self, std::string_view Value)
       return false;
    }
 
-   Self->txLines.erase(Self->txLines.begin() + range->row, Self->txLines.begin() + range->end_row + 1);
-   Self->txLines.insert(Self->txLines.begin() + range->row, replacement.begin(), replacement.end());
+   // Reuse overlapping rows; shift the remaining rows only when the line count changes.
+   const auto old_rows = range->end_row - range->row + 1;
+   const auto common_rows = std::min(old_rows, int(replacement.size()));
+   for (int i=0; i < common_rows; i++) {
+      auto &line = Self->txLines[range->row + i];
+      line.assign(replacement[i]);
+      line.invalidate_text();
+   }
+   if (int(replacement.size()) < old_rows) {
+      Self->txLines.erase(Self->txLines.begin() + range->row + common_rows,
+         Self->txLines.begin() + range->end_row + 1);
+   }
+   else if (int(replacement.size()) > old_rows) {
+      Self->txLines.insert(Self->txLines.begin() + range->end_row + 1,
+         std::make_move_iterator(replacement.begin() + common_rows), std::make_move_iterator(replacement.end()));
+   }
    mark_dirty(Self, RC::BASE_PATH);
    Self->txCursor.move(Self, cursor_row, cursor_column, true);
    return true;
