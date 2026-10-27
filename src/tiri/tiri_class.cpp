@@ -456,6 +456,20 @@ static ERR stack_args(lua_State *Lua, OBJECTID ObjectID, const FunctionField *ar
 }
 
 //********************************************************************************************************************
+// Release a subscription record whose object is being destroyed.  The record's ObjectID is cleared to suppress the
+// destructor's unsubscribe attempt.
+
+static void release_destroyed_subscription(lua_State *Lua, actionmonitor &Item)
+{
+   if (Item.Function.defined()) release_tiri_function(Lua, &Item.Function);
+   if (Item.Reference) {
+      luaL_unref(Lua, LUA_REGISTRYINDEX, Item.Reference);
+      Item.Reference = 0;
+   }
+   Item.ObjectID = 0;
+}
+
+//********************************************************************************************************************
 // Action notifications arrive when the user has used object.subscribe() in the Tiri script.  One native subscription
 // serves every Tiri subscription to the same object and action, so each matching subscription is called in the order
 // of registration.  Callbacks may subscribe or unsubscribe, so subscriptions are identified by serial number and
@@ -474,7 +488,7 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
       if ((Object->UID IS scan.ObjectID) and (ActionID IS scan.ActionID)) serials.push_back(scan.Serial);
    }
 
-   if (serials.empty()) return;
+   if (serials.empty() and (ActionID != AC::Free)) return;
 
    for (auto serial : serials) {
       auto it = std::find_if(Self->ActionList.begin(), Self->ActionList.end(), [&](auto &item) {
@@ -524,23 +538,33 @@ void notify_action(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
    if (ActionID IS AC::Free) {
       std::erase_if(Self->ActionList, [&](auto &item) {
          if (item.ObjectID IS Object->UID) {
-            if (item.Function.defined()) {
-               release_tiri_function(Self->Lua, &item.Function);
-            }
-            if (item.Reference) {
-               luaL_unref(Self->Lua, LUA_REGISTRYINDEX, item.Reference);
-               item.Reference = 0;
-            }
-
-            // The object is already being destroyed, so suppress destructor-time unsubscribe attempts.
-            item.ObjectID = 0;
+            release_destroyed_subscription(Self->Lua, item);
             return true;
          }
          else return false;
       });
+      Self->FreeWatch.erase(Object->UID);
+      if (auto it = Self->StateMap.find(Object->UID); it != Self->StateMap.end()) {
+         luaL_unref(Self->Lua, LUA_REGISTRYINDEX, it->second);
+         Self->StateMap.erase(it);
+      }
    }
 
-   collect_garbage(Self->Lua);
+   if (not serials.empty()) collect_garbage(Self->Lua);
+}
+
+//********************************************************************************************************************
+// Ensure that notify_action() handles destruction even without user Free callbacks.
+
+ERR watch_object_free(extTiri *Self, OBJECTPTR Object)
+{
+   if (Self->FreeWatch.contains(Object->UID)) return ERR::Okay;
+
+   auto callback = C_FUNCTION(notify_action);
+   callback.Context = Self;
+   if (auto error = SubscribeAction(Object, AC::Free, &callback); error != ERR::Okay) return error;
+   Self->FreeWatch.insert(Object->UID);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -719,6 +743,17 @@ static ERR TIRI_DataFeed(extTiri *Self, struct acDataFeed *Args)
 extTiri::~extTiri()
 {
    if (FocusEventHandle) { UnsubscribeEvent(FocusEventHandle); FocusEventHandle = nullptr; }
+
+   for (auto uid : FreeWatch) {
+      OBJECTPTR obj;
+      if (AccessObject(uid, 3000, &obj) IS ERR::Okay) {
+         auto callback = C_FUNCTION(notify_action);
+         callback.Context = this;
+         UnsubscribeAction(obj, AC::Free, &callback);
+         ReleaseObject(obj);
+      }
+   }
+   FreeWatch.clear();
 
    auto lua = Lua;
    Lua = nullptr; // Release the Lua state now because the Free action manager can reference it on return
