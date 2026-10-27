@@ -657,16 +657,6 @@ function monoText(Height:num, Inset:num):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Replace a combobox's drop-down icon with the design's small caret.
-
-function smallCaret(Box:table, Tokens:table)
-   icon = Box.iconRender
-   icon.fill = 'none'
-   x = math.round((icon.width - 7) * 0.5)
-   y = math.round((icon.height - 4) * 0.5)
-   icon.new('VectorPolygon', { points = f'{x},{y} {x + 7},{y} {x + 3.5},{y + 4}', closed = true, fill = Tokens.fg2 })
-end
-
 -- Small button text
 
 function smallText():table
@@ -710,7 +700,7 @@ function selector(self:table, Target:obj, X:num, Y:num, Width:num, Label:str, It
          end
       }
    })
-   smallCaret(box, t)
+   colourpicker_parts.smallCaret(box, t)
    return box
 end
 
@@ -1229,7 +1219,7 @@ function buildModeBox(self:table, Panel:table)
          end
       }
    })
-   smallCaret(box, t)
+   colourpicker_parts.smallCaret(box, t)
 
    label_w = 0
    for item in values(PALETTE_MODE_ITEMS) do
@@ -1239,6 +1229,15 @@ function buildModeBox(self:table, Panel:table)
    box.text.string = label
    box.viewport.width = box._textClip.x + (box.text.x * 2) + label_w + 2 + box._textClip.xOffset
    self.paletteModeBox = box
+end
+
+-- True if Y (in the coordinates of the palette list's page) is below the last row of the list.  Drops between rows
+-- are not below the rows.
+
+function belowPaletteRows(View:table!, Y:num!):bool
+   bottom = 0
+   for zone in values(View.zones ?? { }) do bottom = math.max(bottom, zone.y + zone.height) end
+   return Y >= bottom
 end
 
 function buildPalette(self:table, Target:obj)
@@ -1333,14 +1332,33 @@ function buildPalette(self:table, Target:obj)
          end,
 
          -- Dropping a colour on a row gives the row's swatch that colour without selecting it.  A swatch dropped on
-         -- a base or linked row is moved instead, and is selected: it is linked to the base of that row's group, keeping its colour.  A user swatch
-         -- dropped on another user swatch is always moved, so an unlinked target becomes its base.
+         -- a base or linked row is moved instead, and is selected: it is linked to the base of that row's group,
+         -- keeping its colour.  A user swatch dropped on another user swatch is always moved, so an unlinked target
+         -- becomes its base.  A colour dropped below the rows is added as a new swatch, unless it is a swatch dragged
+         -- from the list.
 
          dragDrop = function(View:table, Item:table, Drop:table)
             session = self.scratchDrag
-            if not Item or not session or self.finished or self.renaming then return end
+            if not session or self.finished or self.renaming then return end
             if (Drop.source?.id != self.scratchClipboard?.id) or (Drop.item != session.id) then return end
             palette = self.state.palette
+
+            if not Item then
+               if (session.index != nil) or not belowPaletteRows(View, Drop.y) then return end
+               if #palette.swatches >= colourpalette.MAX_SWATCHES then
+                  self.flashPaletteMeta('palette full')
+                  return false
+               end
+               input.requestItem(Drop.source, Drop.item, 'xml', function(Items:table)
+                  if self.finished or (self.state.palette != palette) then return end
+                  colour = Items[0]
+                  if colour?.item != 'colour' then return end
+                  self.addColour(tonumber(colour.l), tonumber(colour.c), tonumber(colour.h), tonumber(colour.alpha))
+                  View.viewport.acFocus()
+               end)
+               return
+            end
+
             index = Item.index
             target = palette.swatches[index]
             if (session.index != nil) and (palette.swatches[session.index] is session.swatch) then
@@ -2271,9 +2289,12 @@ function buildRight()
 
    &ramp = colourpicker_ramp.new(col, {
       x = RIGHT_PAD_X, y = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP + CONTRAST_H + RIGHT_GAP, width = RIGHT_INNER,
-      tokens = &tokens, srgb = clampedSrgb,
+      tokens = &tokens, srgb = clampedSrgb, steps = &savedRampSteps,
       onPick = function[&&](L:num, C:num, H:num)
          &setColour(L, C, H, nil, 'ramp')
+      end,
+      onDrag = function[&&](L:num, C:num, H:num) -- The drag carries the alpha of the edited colour, as a pick keeps it
+         &startScratchDrag({ l = L, c = C, h = H, alpha = &state.alpha })
       end
    })
 
@@ -2455,7 +2476,7 @@ function trackKeyOwners(self:table)
       self.scratchRow
    }
    for row in values(self.relSliders) do widgets.push(row.key.button) end
-   for button in values(self.ramp.buttons()) do widgets.push(button) end
+   for widget in values(self.ramp.widgets()) do widgets.push(widget) end
    widgets.push({ viewport = self.readoutVP })
 
    for widget in values(widgets) do
@@ -2506,6 +2527,7 @@ gui.dialog.colour = function(Options:table)
       initialActive  = initial_active,
       savedClamp     = saved_clamp, -- The clamp setting to save; the gamut option doesn't change it
       inputFormat    = itemId(INPUT_FORMATS, settings.inputFormat, 'hex'), -- Format of the colour input
+      savedRampSteps = settings.rampSteps, -- The Tonal Ramp step count; the ramp checks it
       state     = {
          l = initial.l, c = initial.c, h = initial.h, alpha = initial.alpha,
          scheme  = itemId(SCHEME_ITEMS, settings.scheme, 'triadic'),
@@ -2759,6 +2781,25 @@ gui.dialog.colour = function(Options:table)
          &refresh('drop')
       end
 
+      -- Add a colour as a new swatch, owned by the user and named after its colour, without changing the editing
+      -- target.  Returns the index of the swatch, or nil if the palette is full.
+
+      &addColour = function(L:num!, C:num!, H:num!, Alpha:num!):num
+         s = &state
+         h = H % 360
+         if h < 0 then h += 360 end
+         index = colourpalette.addSwatch(s.palette, colourpalette.uniqueName(s.palette, 'Swatch'), math.clamp(L, 0, 1),
+            math.max(C, 0), h, math.clamp(Alpha, 0, 1))
+         if index is nil then return nil end
+         s.palette.swatches[index].user = true
+         colourpalette.nameAfterColour(s.palette, index)
+         layoutLeft(self)
+         &refresh('drop')
+         item = paletteItem(&paletteView, index)
+         if item then &paletteView.revealItem(item) end
+         return index
+      end
+
       -- Make a palette swatch the editing target.
 
       &selectSwatch = function(Index:num!)
@@ -2926,7 +2967,7 @@ gui.dialog.colour = function(Options:table)
             return
          end
 
-         layoutLeft(self)
+         layoutLeft(&&)
          index = active ? s.palette.swatches.findIndex(Swatch => rawequal(Swatch, active)) : nil
 
          if index != nil then
@@ -2956,13 +2997,13 @@ gui.dialog.colour = function(Options:table)
                { id = 0, label = 'Cancel', icon = 'items/cancel' },
                { id = 1, label = 'Reset', icon = 'items/checkmark' }
             },
-            feedback = function(Dialog:table, Response:table, State:table)
-               self.paletteDialog = nil
-               if self.finished or (Response?.id != 1) or (self.state.palette != palette) then return end
+            feedback = function[&&](Dialog:table, Response:table, State:table)
+               &paletteDialog = nil
+               if &finished or (Response?.id != 1) or (&state.palette != palette) then return end
                colourpalette.reset(palette)
-               layoutLeft(self)
-               self.selectScratch()
-               self.flashPaletteMeta('reset')
+               layoutLeft(&&)
+               &selectScratch()
+               &flashPaletteMeta('reset')
             end
          })
       end
@@ -2979,7 +3020,7 @@ gui.dialog.colour = function(Options:table)
          &flashTimer = colourpicker_parts.after(FLASH_TIME, function()
             &flashTimer = nil
             if &finished then return end
-            updatePaletteMeta(self)
+            updatePaletteMeta(&&)
             &viewport.acDraw()
          end)
 
@@ -3001,7 +3042,7 @@ gui.dialog.colour = function(Options:table)
          end
 
          &state.palette = palette
-         layoutLeft(self)
+         layoutLeft(&&)
          &selectScratch()
          &flashPaletteMeta('imported')
       end
@@ -3082,7 +3123,7 @@ gui.dialog.colour = function(Options:table)
          &exportFlash = colourpicker_parts.after(FLASH_TIME, function()
             &exportFlash = nil
             if &finished then return end
-            &exportPanel.setMeta(exportMeta(self))
+            &exportPanel.setMeta(exportMeta(&&))
             &viewport.acDraw()
          end)
          &viewport.acDraw()
@@ -3093,7 +3134,10 @@ gui.dialog.colour = function(Options:table)
 
       &settingsToSave = function():table
          s = &state
-         return { palette = s.palette, scheme = s.scheme, clamp = &savedClamp, inputFormat = &inputFormat }
+         return {
+            palette = s.palette, scheme = s.scheme, clamp = &savedClamp, inputFormat = &inputFormat,
+            rampSteps = &ramp?.count ?? &savedRampSteps
+         }
       end
 
       &saveSettings = function()
@@ -3187,7 +3231,8 @@ gui.dialog.colour = function(Options:table)
          processing.collect('defer')
       end
 
-      -- Apply and closing the window save the palette, scheme and clamp settings.  Cancel discards them.
+      -- Apply and closing the window save the palette, scheme, clamp, input format and ramp step count settings.
+      -- Cancel discards them.
 
       &apply = function()
          if &finished then return end
@@ -3207,7 +3252,7 @@ gui.dialog.colour = function(Options:table)
             scratch = { l = initial.l, c = initial.c, h = initial.h, alpha = initial.alpha }
          }
          &contrastDrop = nil
-         layoutLeft(self)
+         layoutLeft(&&)
          &setColour(initial.l, initial.c, initial.h, initial.alpha, 'reset')
       end
 
@@ -3224,16 +3269,16 @@ gui.dialog.colour = function(Options:table)
          dragDrop     = true,
          theme        = Options.theme,
          events = {
-            close = function(Window)
-               if self.finished then return end
-               self.saveSettings()
-               self.finish(nil)
+            close = function[<weak> &&](Window)
+               if &finished then return end
+               &saveSettings()
+               &finish(nil)
             end
          }
       })
 
-      &window.surface.subscribe('free', function()
-         self.finish(nil)
+      &window.surface.subscribe('free', function[<weak> &&]()
+         &finish(nil)
       end)
       &windowID = &window.surface.id
 
@@ -3309,7 +3354,7 @@ gui.dialog.colour = function(Options:table)
          elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
             if not &keyOwner then processing.delayedCall(function() &apply() end) end
          elseif Value is KEY_ESCAPE then
-            for box in values(array<table> { &schemeBox, &clampBox, &paletteModeBox }) do
+            for box in values(array<table> { &schemeBox, &clampBox, &paletteModeBox, &ramp.lBox, &ramp.cBox }) do
                if box.menu?.visible then return end
             end
             if &paletteView.hasFocus and (&state.active != nil) then
