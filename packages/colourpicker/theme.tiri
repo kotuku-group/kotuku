@@ -1,0 +1,298 @@
+-- Colour picker themes.  Derives the picker theme from the theme of the picker's window and builds the per-instance
+-- widget overrides used by the picker.
+
+   import 'gui'
+
+   namespace colourpicker_theme { }
+
+-- Design tokens, converted from the design's OKLCH values with the vector painter.  The accent tokens are defaults;
+-- buildTheme() takes the accent colours from the user's gui palette when it defines them.
+
+TOKENS <const> = {
+   light = {
+      bg0 = 'oklch(0.982 0.004 91.446)', -- Button hover highlight
+      bg1 = 'oklch(0.905 0.005 78.298)', -- Toolbar background
+      panel = 'oklch(1.000 0.000 89.876)',
+      sunk = 'oklch(0.971 0.003 67.783)',
+      border = 'oklch(0.851 0.006 84.568)',
+      borderStrong = 'oklch(0.821 0.009 84.577)',
+      divider = 'oklch(0.929 0.005 67.761)',
+      fg0 = 'oklch(0.119 0.011 80.573)', -- Primary text: values, swatch names, input and button text; slider thumbs
+      fg1 = 'oklch(0.230 0.011 84.593)', -- Secondary text: window text, chip labels and prose such as "Closest named"
+      fg2 = 'oklch(0.300 0.008 80.707)', -- Panel titles, channel and relationship keys, swatch hex values and footer key caps
+      fg3 = 'oklch(0.490 0.006 84.573)', -- Muted text: cell labels, panel meta, sub-labels, units and separators; small glyphs
+      accent = 'oklch(0.550 0.180 258.028)', accentFg = 'oklch(1.000 0.000 89.876)', accentSoft = 'oklch(0.949 0.025 249.951)'
+   },
+   dark = { -- The same roles as the light tokens
+      bg0 = 'oklch(0.179 0.007 78.130)', bg1 = 'oklch(0.210 0.008 84.585)', panel = 'oklch(0.250 0.009 75.203)', sunk = 'oklch(0.189 0.008 67.334)',
+      border = 'oklch(0.320 0.010 73.540)', borderStrong = 'oklch(0.400 0.011 78.195)', divider = 'oklch(0.278 0.010 80.640)',
+      fg0 = 'oklch(0.959 0.005 78.298)', fg1 = 'oklch(0.821 0.006 84.569)', fg2 = 'oklch(0.771 0.011 81.792)', fg3 = 'oklch(0.717 0.009 73.717)',
+      accent = 'oklch(0.713 0.152 255.234)', accentFg = 'oklch(0.149 0.009 263.967)', accentSoft = 'oklch(0.301 0.061 258.288)'
+   }
+}
+
+-- Picker-only values that other widgets ignore.
+
+EXTRAS <const> = {
+   light = {
+      warn = 'oklch(0.7 0.16 55)', ok = 'oklch(0.65 0.14 155)',
+      swatchBorder = 'oklch(0 0 0 / 0.12)', dotBorder = 'oklch(0 0 0 / 0.15)',
+      notice = { bkgd = 'oklch(0.97 0.02 80)', stroke = 'oklch(0.85 0.08 80)', text = 'oklch(0.4 0.1 55)' },
+      pass   = { bkgd = 'oklch(0.92 0.08 155)', text = 'oklch(0.3 0.12 155)' },
+      fail   = { bkgd = 'oklch(0.92 0.05 30)', text = 'oklch(0.4 0.1 30)' },
+      code   = {
+         bkgd = TOKENS.light.sunk, stroke = TOKENS.light.border, text = TOKENS.light.fg0,
+         key = 'oklch(0.43 0.12 230)', value = 'oklch(0.44 0.10 65)', comment = 'oklch(0.52 0.008 80)',
+         punct = 'oklch(0.48 0.15 300)', tab = TOKENS.light.bg1, tabText = TOKENS.light.fg2,
+         tabActive = TOKENS.light.panel, tabActiveText = TOKENS.light.fg0
+      }
+   },
+   dark = {
+      warn = 'oklch(0.7 0.16 55)', ok = 'oklch(0.65 0.14 155)',
+      swatchBorder = 'oklch(0 0 0 / 0.12)', dotBorder = 'oklch(0 0 0 / 0.15)',
+      notice = { bkgd = 'oklch(0.3 0.04 80)', stroke = 'oklch(0.45 0.08 80)', text = 'oklch(0.85 0.1 55)' },
+      pass   = { bkgd = 'oklch(0.32 0.08 155)', text = 'oklch(0.85 0.1 155)' },
+      fail   = { bkgd = 'oklch(0.32 0.06 30)', text = 'oklch(0.75 0.08 30)' },
+      code   = {
+         bkgd = 'oklch(0.13 0.01 80)', stroke = 'oklch(0.28 0.01 80)', text = 'oklch(0.92 0.005 80)',
+         key = 'oklch(0.72 0.12 200)', value = 'oklch(0.82 0.12 85)', comment = 'oklch(0.62 0.008 80)',
+         punct = 'oklch(0.75 0.15 300)', tab = 'oklch(0.22 0.008 80)', tabText = 'oklch(0.65 0.005 80)',
+         tabActive = 'oklch(0.3 0.008 80)', tabActiveText = 'oklch(0.95 0.005 80)'
+      }
+   }
+}
+
+THUMB_WIDTH  <const> = 3  -- Channel slider thumb bar
+THUMB_HEIGHT <const> = 18
+
+TEXT_CONTRAST <const> = 4.5   -- WCAG 2 AA minimum for normal text; no picker text reaches the large-text size
+MID_LUMINANCE <const> = 0.179 -- Background luminance at which black and white text have equal contrast
+
+ACCENT_SOFT_MIX <const> = { light = 0.12, dark = 0.2 } -- Proportion of the palette's prime colour in accentSoft
+
+-- The neutral tokens take their hue from the palette's bkgd colour.  Their chroma is scaled by the bkgd chroma relative
+-- to TINT_REFERENCE (the typical chroma of the design's neutrals), up to TINT_MAX_SCALE so that strongly coloured
+-- backgrounds give a tint rather than a colour.  An achromatic bkgd produces pure greys.
+
+TINT_REFERENCE <const> = 0.005
+TINT_MAX_SCALE <const> = 3
+
+NEUTRAL_KEYS <const> = array<str> {
+   'bg0', 'bg1', 'panel', 'sunk', 'border', 'borderStrong', 'divider', 'fg0', 'fg1', 'fg2', 'fg3'
+}
+
+CODE_NEUTRAL_KEYS <const> = array<str> {
+   'bkgd', 'stroke', 'text', 'comment', 'tab', 'tabText', 'tabActive', 'tabActiveText'
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- WCAG 2 contrast ratio between two gui RGB tables.
+
+function contrast(A:table, B:table):num
+   la = A.luminance()
+   lb = B.luminance()
+   return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+end
+
+-- Return Colour with its OKLCH lightness moved away from Bkgd until the pair reaches TEXT_CONTRAST, keeping the hue
+-- and chroma.  A colour that already passes is returned unchanged.
+
+function ensureContrast(Colour:str, Bkgd:table):str
+   rgb = gui.strToRGB(Colour)
+   if contrast(rgb, Bkgd) >= TEXT_CONTRAST then return Colour end
+
+   lch = rgb.toOKLCH()
+   step = (Bkgd.luminance() > MID_LUMINANCE) ? -0.005 : 0.005
+   l = lch.okl
+   result = Colour
+   while (contrast(rgb, Bkgd) < TEXT_CONTRAST) and (l > 0) and (l < 1) do
+      l = math.clamp(l + step, 0, 1)
+      result = string.format('oklch(%.3f %.3f %.3f)', l, lch.okc, lch.okh)
+      rgb = gui.strToRGB(result)
+   end
+   return result
+end
+
+-- The text tokens meet TEXT_CONTRAST on the picker's own panel and sunk backgrounds.  The mode bar, centre column
+-- labels and footer are drawn on the window background, which comes from the user's gui palette, so their text
+-- colours are derived from the tokens against that background.  Only the fg values differ in the returned tokens.
+
+function windowTokens(Tokens:table, Theme:table):table
+   result = table.clone(Tokens)
+   fill = Theme.window?.bkgd?.fill
+   if fill is nil then return result end
+
+   try
+      bkgd = gui.strToRGB(fill)
+      for key in values(array<str> { 'fg0', 'fg1', 'fg2', 'fg3' }) do
+         result[key] = ensureContrast(Tokens[key], bkgd)
+      end
+   except ex
+      msg(f'Window background "{fill}" is not a plain colour; window text is unadjusted.')
+   end
+   return result
+end
+
+-- Return the hue and chroma scale for tinting the neutral tokens to the palette's bkgd colour, or nil if the palette
+-- has no usable bkgd.
+
+function paletteTint(Palette:table):<num, num>
+   if not Palette?.bkgd then return nil end
+   try
+      lch = gui.strToRGB(Palette.bkgd).toOKLCH()
+      return lch.okh, math.min(lch.okc / TINT_REFERENCE, TINT_MAX_SCALE)
+   except ex
+      msg(f'Palette bkgd colour "{Palette.bkgd}" is not a plain colour; the neutral tokens are untinted.')
+   end
+   return nil
+end
+
+-- Rewrite the Keys of Tokens in place, giving each colour the Hue and its chroma multiplied by Scale.  Lightness and
+-- alpha are retained.
+
+function tint(Tokens:table, Keys:array<str>, Hue:num, Scale:num):nil
+   for key in values(Keys) do
+      lch = gui.strToRGB(Tokens[key]).toOKLCH()
+      lch.okh = Hue
+      lch.okc *= Scale
+      Tokens[key] = tostring(lch)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Write the values of Source into Target in place.  Nested tables are merged so that shared references in the
+-- target, such as the menubar.menu alias, keep pointing at the modified table.
+
+function overlay(Target:table, Source:table):nil
+   for k, v in Source do
+      if (v is <table>) and (Target[k] is <table>) then
+         overlay(Target[k], v)
+      else
+         Target[k] = v
+      end
+   end
+end
+
+-- The design tokens for a base theme's scheme, with the neutral tokens tinted to the hue of the palette's bkgd and the
+-- accent colours taken from the base theme's palette: prime for the accent and altText for text drawn on it.  The
+-- palette's values are used as given.  accentSoft is prime blended into the panel colour.  The design's accent tokens
+-- remain if the palette has no prime colour.
+
+function themeTokens(Scheme:str, Palette:table):table
+   t = table.clone(TOKENS[Scheme])
+   hue, scale = paletteTint(Palette)
+   if hue != nil then tint(t, NEUTRAL_KEYS, hue, scale) end
+   if not Palette?.prime then return t end
+
+   try
+      soft = gui.strToRGB(t.panel).interpolate(gui.strToRGB(Palette.prime), ACCENT_SOFT_MIX[Scheme])
+      t.accentSoft = tostring(soft.toOKLCH())
+      t.accent     = Palette.prime
+      t.accentFg   = Palette.altText ?? t.accentFg
+   except ex
+      msg(f'Palette prime colour "{Palette.prime}" is not a plain colour; the default accent is used.')
+   end
+   return t
+end
+
+-- Derive the picker theme from a gui theme.  The picker's design applies to the base theme's scheme, and the base
+-- theme's palette supplies the accent colours.
+
+function buildTheme(Base:table):table
+   scheme = (Base.scheme is 'dark') ? 'dark' : 'light'
+   t = themeTokens(scheme, Base.palette)
+   theme = table.clone(Base) -- Keeps the scheme, palette and init fields and the menubar.menu alias
+
+   -- Scrollbars use the directional styles in preference to the generic style, if the base theme defines them.
+
+   scrollbar = {
+      bkgd          = { fill = t.sunk },
+      fore          = { fill = t.borderStrong, opacity = 1 }
+   }
+
+   overlay(theme, {
+      window = {
+         text   = { fill = t.fg1 },
+         stroke = { stroke = t.border, strokeWidth = 1 }
+      },
+      page = {
+         bkgd              = { fill = t.sunk },
+         border            = { stroke = t.border, strokeWidth = 1 },
+         borderFocus       = { stroke = t.accent, strokeWidth = 1 },
+         text              = { fill = t.fg0 },
+         textHighlight     = t.accentFg,
+         textHighlightBkgd = t.accent,
+         textSelect        = t.accentFg,
+         textSelectBkgd    = t.accent
+      },
+      input = { -- Also used by combobox and checkbox
+         bkgd  = { fill = t.sunk, stroke = t.border }
+      },
+      dropdown = {
+         bkgd          = { fill = t.panel },
+         border        = { stroke = t.borderStrong, strokeWidth = 1 },
+         text          = { fill = t.fg0 },
+      },
+      slider = {
+         bkgd          = { fill = t.border },
+         fore          = { fill = t.fg0, opacity = 1 },
+         foreFocus     = { stroke = t.accent }
+      }
+   })
+
+   extras = table.clone(EXTRAS[scheme])
+   hue, scale = paletteTint(Base.palette)
+   if hue != nil then tint(extras.code, CODE_NEUTRAL_KEYS, hue, scale) end
+   theme.colourpicker = table.merge(table.clone(t), extras)
+   theme.colourpicker.onWindow = windowTokens(theme.colourpicker, theme)
+   return theme
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Derive the picker theme from the theme of a window's scene and assign it to the scene.  The base theme is the
+one that the window was created with, so the picker follows the same theme and palette rules as other windows.  The
+derived theme is registered in gui.themes as `colourpicker-<Base>` and rebuilt on each call, so that a dialog opened
+later reflects the current base theme.
+@input The window's VectorScene
+@result The name of the picker theme
+]])
+colourpicker_theme.apply = function(Scene:obj!):str
+   base_name = gui.getThemeName(Scene)
+   name = f'colourpicker-{base_name}'
+   gui.themes[name] = buildTheme(gui.themes[base_name])
+   gui.setTheme(Scene, name)
+   return name
+end
+
+@Doc(text=[[
+@desc Return the picker token table (colours and picker-only values) for a theme name.  The `onWindow` field holds a
+copy of the tokens whose text colours are adjusted for the window background, for text drawn outside the panels.
+]])
+colourpicker_theme.tokens = function(Name:str!):table
+   return gui.themes[Name].colourpicker
+end
+
+@Doc(text=[[
+@desc Return the per-instance slider override for a channel slider: a track with a 2 px radius and a 3×18 bar thumb
+centred in the thumb box.  The slider's `thickness` option sets the track breadth.  ThumbSize must match the slider's
+`thumbSize` option in pixels and should leave room for the thumb's rings (see colourpicker_parts.thumbRings()).
+Fill is the track fill, for example a url() reference to a gradient whose stops are inset by ThumbSize / 2 so that
+they line up with the thumb's travel.
+]])
+colourpicker_theme.channelSlider = function(Name:str!, ThumbSize:num!, Fill:str):table
+   t = gui.themes[Name].colourpicker
+   return {
+      bkgd = {
+         roundX = 2, roundY = 2,
+         fill = Fill ?? t.border, stroke = t.border, strokeWidth = 1, opacity = 1
+      },
+      fore = {
+         x = (ThumbSize - THUMB_WIDTH) * 0.5, y = (ThumbSize - THUMB_HEIGHT) * 0.5, width = THUMB_WIDTH,
+         height = THUMB_HEIGHT, roundX = 1, roundY = 1, fill = t.fg0, stroke = 'none', strokeWidth = 0, opacity = 1
+      },
+      foreHighlight = { fill = t.fg0 },
+      foreFocus     = { fill = t.fg0 }
+   }
+end

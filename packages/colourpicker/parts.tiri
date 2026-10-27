@@ -1,0 +1,899 @@
+-- Vector building blocks for the colour picker: panels, chips and key hints.  Every builder takes a target viewport
+-- and an Options table that includes the picker `tokens` (see colourpicker_theme.tokens()).
+
+   import 'gui'
+
+   namespace colourpicker_parts { }
+
+colourpicker_parts.FACE_UI   = gui.fonts.default.face
+colourpicker_parts.FACE_MONO = gui.fonts.filesys.face
+
+PANEL_RADIUS  <const> = 6
+PANEL_HEADER  <const> = 31 -- Header height, excluding the divider
+PANEL_PAD_X   <const> = 12
+CHIP_HEIGHT   <const> = 20
+CHIP_PAD      <const> = 7
+CHIP_DOT      <const> = 8
+CHIP_GAP      <const> = 6
+KEY_PAD       <const> = 4
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Return the baseline that vertically centres a line of text of the given pixel size in a box.
+]])
+colourpicker_parts.baseline = function(Top:num!, Height:num!, Size:num!):num
+   return math.round(Top + ((Height + (Size * 0.72)) * 0.5))
+end
+
+function text(Viewport:obj, Options:table):obj
+   return Viewport.new('VectorText', {
+      x         = Options.x ?? 0,
+      y         = Options.y,
+      face      = Options.face ?? colourpicker_parts.FACE_UI,
+      fontSize  = f'{Options.size}px',
+      fontStyle = Options.style ?? 'Medium',
+      fill      = Options.fill,
+      string    = Options.string ?? '',
+      align     = Options.align ?? 'left',
+      lineLimit = 1
+   })
+end
+
+colourpicker_parts.text = text
+
+@Doc(text=[[
+@desc Set a VectorText to Prefix followed by Text, shortening Text with an ellipsis until the string is no wider than
+MaxWidth.  Text is cut at UTF-8 character boundaries.
+]])
+colourpicker_parts.fitText = function(Vector:obj!, Prefix:str!, Text:str!, MaxWidth:num!)
+   Vector.string = Prefix .. Text
+   if Vector.textWidth <= MaxWidth then return end
+   cut = #Text
+   while cut > 0 do
+      cut -= 1
+      while (cut > 0) and ((Text.byte(cut) & 0xc0) is 0x80) do cut -= 1 end -- Step back over continuation bytes
+      Vector.string = f'{Prefix}{Text.sub(0, cut).rtrim()}…'
+      if Vector.textWidth <= MaxWidth then return end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create a panel: a rounded card with an uppercase title, optional right-aligned meta text and a divider under
+the header.
+@input Target viewport
+@input Options: x, y, width, height, title, meta, tokens
+@result Table with `viewport`, `body` (a viewport below the header), `title`, `meta`, `setMeta(Text)` and
+`setHeight(Height)`
+]])
+colourpicker_parts.panel = function(Viewport:obj!, Options:table!):table
+   t = Options.tokens
+   width = Options.width
+   height = Options.height
+
+   self = {
+      viewport = Viewport.new('VectorViewport', { x = Options.x, y = Options.y, width = width, height = height })
+   }
+
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = PANEL_RADIUS, roundY = PANEL_RADIUS,
+      fill = t.panel, stroke = t.borderStrong, strokeWidth = 1
+   })
+
+   title_y = colourpicker_parts.baseline(10, 13, 11)
+
+   self.title = text(self.viewport, {
+      x = PANEL_PAD_X, y = title_y, size = 12, style = 'Medium', fill = t.fg2, string = (Options.title ?? '')
+   })
+
+   self.meta = text(self.viewport, {
+      x = width - PANEL_PAD_X, y = title_y, size = 14, face = colourpicker_parts.FACE_MONO, fill = t.fg2,
+      string = Options.meta ?? '', align = 'right'
+   })
+
+   self.viewport.new('VectorRectangle', {
+      x = 1, y = PANEL_HEADER, width = width - 2, height = 1, fill = t.divider
+   })
+
+   self.body = self.viewport.new('VectorViewport', {
+      x = 0, y = PANEL_HEADER + 1, xOffset = 0, yOffset = 0
+   })
+
+   self.setMeta = function(Text:str)
+      self.meta.string = Text ?? ''
+   end
+
+   self.setHeight = function(Height:num!)
+      self.viewport.height = Height
+      self.bkgd.height = Height - 1
+   end
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create a chip: a small sunk label with an optional colour dot, as used for the current colour and swatch
+counts.
+@input Target viewport
+@input Options: x, y, text, colour (dot fill, or nil for no dot), minWidth, cursor, tokens
+@result Table with `viewport`, `width` and `set(Text, Colour)`.  The chip is at least minWidth wide, so that its
+neighbours can stay in place while its text changes.
+]])
+colourpicker_parts.chip = function(Viewport:obj!, Options:table!):table
+   t = Options.tokens
+
+   self = {
+      viewport = Viewport.new('VectorViewport', {
+         x = Options.x ?? 0, y = Options.y ?? 0, width = 1, height = CHIP_HEIGHT, cursor = Options.cursor
+      })
+   }
+
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = 1, height = CHIP_HEIGHT - 1, roundX = 3, roundY = 3,
+      fill = t.sunk, stroke = t.border, strokeWidth = 1
+   })
+
+   self.dot = self.viewport.new('VectorEllipse', {
+      cx = CHIP_PAD + (CHIP_DOT * 0.5), cy = CHIP_HEIGHT * 0.5, radiusX = CHIP_DOT * 0.5, radiusY = CHIP_DOT * 0.5,
+      stroke = t.dotBorder, strokeWidth = 1
+   })
+
+   self.label = text(self.viewport, {
+      y = colourpicker_parts.baseline(0, CHIP_HEIGHT, 10), size = 10, face = colourpicker_parts.FACE_MONO,
+      fill = t.fg1
+   })
+
+   self.set = function(Text:str, Colour:str)
+      self.label.string = Text ?? ''
+      x = CHIP_PAD
+      if Colour then
+         self.dot.fill = Colour
+         self.dot.visibility = VIS_VISIBLE
+         x += CHIP_DOT + CHIP_GAP
+      else
+         self.dot.visibility = VIS_HIDDEN
+      end
+      self.label.x = x
+      self.width = math.max(math.ceil(x + self.label.textWidth + CHIP_PAD), Options.minWidth ?? 0)
+      self.viewport.width = self.width
+      self.bkgd.width = self.width - 1
+   end
+
+   self.set(Options.text, Options.colour)
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Draw a line of keyboard hints, for example `[Tab] cycle channel · [Alt / Ctrl] + drag = fine`.  Keys are drawn in
+small bordered boxes.
+@input Target viewport
+@input Options: x, y (top), height (line box), items (array of { key, text }), tokens
+@result The total width
+]])
+colourpicker_parts.hints = function(Viewport:obj!, Options:table!):num
+   t          = Options.tokens
+   height     = Options.height ?? 20
+   top        = Options.y ?? 0
+   x          = Options.x ?? 0
+   key_height = 20
+   key_top    = top + ((height - key_height) * 0.5)
+   baseline   = colourpicker_parts.baseline(top, height, 10)
+
+   for i, item in Options.items do
+      if i > 0 then
+         sep = text(Viewport, {
+            x = x, y = baseline, size = 10, face = colourpicker_parts.FACE_MONO, fill = t.fg3, string = '  ·  '
+         })
+         x += sep.textWidth
+      end
+
+      box = Viewport.new('VectorRectangle', {
+         x = x + 0.5, y = key_top + 0.5, width = 1, height = key_height - 1, roundX = 3, roundY = 3,
+         fill = t.panel, stroke = t.border, strokeWidth = 1
+      })
+
+      key = text(Viewport, {
+         x = x + KEY_PAD + 1, y = colourpicker_parts.baseline(key_top, key_height, 12), size = 12,
+         face = colourpicker_parts.FACE_MONO, fill = t.fg0, string = item.key
+      })
+
+      box.width = key.textWidth + (KEY_PAD * 2) + 1
+      x += box.width + 1
+
+      label = text(Viewport, {
+         x = x + 5, y = baseline, size = 14, face = colourpicker_parts.FACE_MONO, fill = t.fg1, string = item.text
+      })
+      x += 5 + label.textWidth
+   end
+
+   return x - (Options.x ?? 0)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- A lowercase alpha drawn as one stroke in a 10-unit box: down from the upper right to the base, around the bowl and
+-- out to the tail.  The baseline is at y = 9 and the x-height at y = 3.
+
+ALPHA_PATH <const> = 'M8.8 3.2 C8.2 6.4 7.3 9 4.4 9 C2.6 9 1.4 7.7 1.4 6 C1.4 4.3 2.6 3 4.4 3 C7 3 7.6 8.8 9.4 9'
+ALPHA_SCALE <const> = 0.08 -- Box units per pixel of font size; gives an x-height close to the mono face's
+
+@Doc(text=[[
+@desc Draw a lowercase α as a vector path, for faces that lack the glyph.  It is sized to sit with text of the given
+pixel size on the same baseline.
+@input Target viewport
+@input Options: x (left edge), y (baseline), size (font size in pixels), fill
+@result The glyph's viewport
+]])
+colourpicker_parts.alphaGlyph = function(Viewport:obj!, Options:table!):obj
+   unit = Options.size * ALPHA_SCALE
+   vp = Viewport.new('VectorViewport', {
+      x = Options.x - unit, y = Options.y - (9 * unit), width = 10 * unit, height = 10 * unit,
+      viewX = 0, viewY = 0, viewWidth = 10, viewHeight = 10
+   })
+   vp.new('VectorPath', {
+      sequence = ALPHA_PATH, stroke = Options.fill, strokeWidth = 1.0, lineCap = 'round', lineJoin = 'round'
+   })
+   return vp
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+NOTICE_HEIGHT <const> = 26
+
+@Doc(text=[[
+@desc Create a gamut notice: a bordered strip with one line of text.  Warning colours and the warning glyph are shown
+only when OutOfGamut is true.  If set() is given a Colour, a swatch of it precedes the text.  If it is also given a
+Clipped colour, the swatch is split and Clipped fills its left half.  The tip set by setTip() is shown in a tooltip
+when the pointer rests on the notice.
+@input Target viewport
+@input Options: x, y, width, tokens
+@result Table with `viewport`, `height`, `swatch`, `clipped`, `tip`, `set(Text, OutOfGamut, Colour, Clipped)`,
+`setTip(Text)` and `cancelTip()`
+]])
+colourpicker_parts.notice = function(Viewport:obj!, Options:table!):table
+   t = Options.tokens
+   colours = t.notice
+
+   self = {
+      height   = NOTICE_HEIGHT,
+      viewport = Viewport.new('VectorViewport', {
+         x = Options.x, y = Options.y, width = Options.width, height = NOTICE_HEIGHT
+      })
+   }
+
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = Options.width - 1, height = NOTICE_HEIGHT - 1, roundX = 4, roundY = 4,
+      fill = t.sunk, stroke = t.border, strokeWidth = 1
+   })
+
+   self.glyph = self.viewport.new('VectorViewport', {
+      x = Options.width - 20, y = (NOTICE_HEIGHT - 12) * 0.5, width = 12, height = 12, visibility = VIS_HIDDEN
+   })
+   self.glyph.new('VectorPath', {
+      sequence = 'M6 1.5 L11 10.5 L1 10.5 Z', stroke = colours.text, strokeWidth = 1.4, lineJoin = 'round'
+   })
+   self.glyph.new('VectorPath', {
+      sequence = 'M6 5 V7.2 M6 8.3 V8.5', stroke = colours.text, strokeWidth = 1.4, lineCap = 'round'
+   })
+
+   self.swatch = self.viewport.new('VectorRectangle', {
+      x = 8.5, y = ((NOTICE_HEIGHT - 12) * 0.5) + 0.5, width = 11, height = 11, roundX = 2, roundY = 2,
+      stroke = t.swatchBorder, strokeWidth = 1, visibility = VIS_HIDDEN
+   })
+
+   -- The left half of a split swatch, inset so that the swatch border keeps its width
+
+   self.clipped = self.viewport.new('VectorPath', {
+      sequence = 'M14 8 H10.5 A1.5 1.5 0 0 0 9 9.5 V16.5 A1.5 1.5 0 0 0 10.5 18 H14 Z', visibility = VIS_HIDDEN
+   })
+
+   self.label = text(self.viewport, {
+      x = 8, y = colourpicker_parts.baseline(0, NOTICE_HEIGHT, 11), size = 11, fill = t.fg1
+   })
+
+   self.set = function(Text:str, OutOfGamut:bool!, Colour:str, Clipped:str)
+      if Colour then self.swatch.fill = Colour end
+      if Clipped then self.clipped.fill = Clipped end
+      self.swatch.visibility  = Colour ? VIS_VISIBLE : VIS_HIDDEN
+      self.clipped.visibility = (Colour and Clipped) ? VIS_VISIBLE : VIS_HIDDEN
+      self.label.x          = Colour ? 26 : 8
+      self.label.string     = Text ?? ''
+      self.bkgd.fill        = t.sunk
+      self.bkgd.stroke      = t.border
+      self.glyph.visibility = OutOfGamut ? VIS_VISIBLE : VIS_HIDDEN
+      self.label.fill       = OutOfGamut ? colours.text : t.fg1
+   end
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Add the design's rings to a channel slider's thumb: a 2 px ring in the panel colour inside a 1 px outer ring.
+The rings are placed behind the thumb bar, so the slider's thumbSize must be at least the bar height plus 6.
+@input Slider created with colourpicker_theme.channelSlider()
+@input tokens
+@result The outer ring, whose fill can be changed to show focus, and the inner ring
+]])
+colourpicker_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj>
+   bar = Slider.button
+   outer = Slider.thumbVP.new('VectorRectangle', {
+      x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, roundX = 3, roundY = 3,
+      fill = Tokens.fg0
+   })
+   inner = Slider.thumbVP.new('VectorRectangle', {
+      x = bar.x - 2, y = bar.y - 2, width = bar.width + 4, height = bar.height + 4, roundX = 2, roundY = 2,
+      fill = Tokens.panel
+   })
+   inner.acMoveToBack()
+   outer.acMoveToBack()
+   return outer, inner
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+ROW_SWATCH <const> = 14
+ROW_PAD    <const> = 4
+ROW_TEXT_X <const> = 26 -- Swatch column (18) plus the 8 px gap
+ROW_FONT   <const> = 12 -- Swatch name size
+ROW_HEX    <const> = 11 -- Hex value size
+ROW_GLYPH  <const> = 10 -- Glyph box size
+ROW_INDENT <const> = 16 -- Space per level of linked swatches
+ROW_GAP    <const> = 8
+EDIT_PAD   <const> = 4 -- Editor text inset; the editor's left edge is this far left of the name
+EDIT_INSET <const> = 2 -- Vertical inset of the editor in the row
+
+@Doc(text=[[
+@desc Draw the content of a palette row: a swatch, name, lock and relationship glyphs and hex value, over a highlight.
+The content is created in the row viewport, which is owned by the palette list and freed with the row.
+@input Row viewport
+@input Options: tokens, unlink
+@result Table with `viewport`, `set(Info)`, `layout()`, `setHighlight(State)`, `beginEdit(Options)`, `editing()`
+and `destroy()`.  Info is { name, colour, hex, glyph, locked, depth }.  A `glyph` of 'link' shows a hooked arrow;
+other values show no relationship icon.  `locked` shows a padlock before the hex value for a swatch that is
+reserved for a role of the palette mode.  `depth` indents linked swatches,
+with their hooked arrow in the left margin.  If Options has an `unlink()` function, clicking the hooked arrow calls
+it.  layout() fits the content to the current size of the row viewport.
+State is 'active' for the swatch being edited, 'focus' for the keyboard target, or nil.
+
+beginEdit() replaces the name with an inline editor and gives it the focus.  Options are `text`, `charLimit` and
+`done(Text, Reason)`.  Enter commits, Escape cancels and a focus loss commits.  done() is called on the next message
+cycle with the edited text (nil if cancelled) and a Reason of 'key', 'focus' or 'destroyed'; deferring the call means
+that other key handlers for the same key press still see the edit in progress.  destroy() is called before the row
+viewport is freed.
+]])
+colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
+   t = Options.tokens
+
+   self = { viewport = Viewport, depth = 0, linked = false }
+
+   self.highlight = Viewport.new('VectorRectangle', {
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4,
+      fill = t.accentSoft, stroke = t.accent, strokeWidth = 1, visibility = VIS_HIDDEN
+   })
+
+   self.swatch = Viewport.new('VectorRectangle', {
+      x = ROW_PAD + 0.5, y = 0.5, width = ROW_SWATCH - 1, height = ROW_SWATCH - 1, roundX = 3, roundY = 3,
+      stroke = t.swatchBorder, strokeWidth = 1
+   })
+
+   self.name = text(Viewport, { size = ROW_FONT, x = ROW_TEXT_X, fill = t.fg0 })
+
+   self.hex = text(Viewport, {
+      size = ROW_HEX, face = colourpicker_parts.FACE_MONO, fill = t.fg2, align = 'right', string = '#000000'
+   })
+   hex_w = math.ceil(self.hex.textWidth)
+
+   -- The glyph is only shown for a linked swatch, so it only takes clicks then.  The background gives it the hand
+   -- cursor when the arrow can be clicked.
+
+   self.glyph = Viewport.new('VectorViewport', { width = ROW_GLYPH, height = ROW_GLYPH, visibility = VIS_HIDDEN })
+
+   if Options.unlink then
+      self.glyph.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)', cursor = 'hand' })
+      self.glyph.mtSubscribeInput(JTYPE_BUTTON, function(Glyph:obj!, Msg:any!)
+         repeat
+            if (Msg.type is JET_LMB) and (Msg.value is 0) and self.linked and
+               not (Msg.flags has JTYPE_DRAG_ITEM) then Options.unlink() end
+            Msg = Msg.next
+         until not Msg
+      end)
+   end
+
+   self.hook = self.glyph.new('VectorPath', {
+      sequence = 'M2.5 1.5 V6.5 H8.5 M6.5 4.5 L8.5 6.5 L6.5 8.5', stroke = t.fg3, strokeWidth = 1,
+      lineCap = 'round', lineJoin = 'round'
+   })
+
+   self.lock = Viewport.new('VectorViewport', { width = ROW_GLYPH, height = ROW_GLYPH, visibility = VIS_HIDDEN })
+
+   self.lock.new('VectorPath', {
+      sequence = 'M3 4.5 V3.25 A2 2 0 0 1 7 3.25 V4.5', stroke = t.fg3, strokeWidth = 1, lineCap = 'round'
+   })
+   self.lock.new('VectorRectangle', { x = 1.5, y = 4.5, width = 7, height = 5, roundX = 1, roundY = 1, fill = t.fg3 })
+
+   -- The editor covers the name and glyph columns, up to the hex value.
+
+   function layoutEditor(Editor:table!)
+      clip = Editor.clip
+      clip.x = self.name.x - EDIT_PAD
+      clip.y = EDIT_INSET
+      clip.width = Viewport.width - ROW_PAD - hex_w - ROW_GAP - clip.x
+      clip.height = Viewport.height - (EDIT_INSET * 2)
+      Editor.text.y = colourpicker_parts.baseline(0, Viewport.height, ROW_FONT) - EDIT_INSET
+   end
+
+   self.layout = function()
+      width = Viewport.width
+      height = Viewport.height
+      -- Limit deep nesting to leave room for the name and the fixed columns on the right.
+      indent = math.min(self.depth * ROW_INDENT, math.max(0, width - ROW_TEXT_X - hex_w - 100))
+      self.swatch.x = ROW_PAD + indent + 0.5
+      self.swatch.y = math.floor((height - ROW_SWATCH) * 0.5) + 0.5
+      self.name.x = ROW_TEXT_X + indent
+      self.name.y = colourpicker_parts.baseline(0, height, ROW_FONT)
+      self.hex.x = width - ROW_PAD
+      self.hex.y = colourpicker_parts.baseline(0, height, ROW_HEX)
+      glyph_x = width - ROW_PAD - hex_w - ROW_GAP - ROW_GLYPH
+      self.glyph.x = self.linked ? ROW_PAD + math.max(0, indent - ROW_INDENT) : glyph_x
+      self.glyph.y = math.floor((height - ROW_GLYPH) * 0.5)
+      self.lock.x = glyph_x
+      self.lock.y = self.glyph.y
+      if self.editor then layoutEditor(self.editor) end
+   end
+
+   self.editing = function():bool
+      return self.editor != nil
+   end
+
+   -- The VectorText edits while its nearest viewport (the clip) has the focus.  VTXF_EDITABLE must be set at
+   -- initialisation for editing to be supported.
+
+   self.beginEdit = function(Options:table!)
+      if self.editor then return end
+      ed = { done = false }
+      ed.clip = Viewport.new('VectorViewport', { overflow = VOF_HIDDEN, cursor = 'text' })
+      ed.clip.new('VectorRectangle', {
+         x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
+         fill = t.sunk, stroke = t.accent, strokeWidth = 1
+      })
+      ed.text = ed.clip.new('VectorText', {
+         x = EDIT_PAD, face = colourpicker_parts.FACE_UI, fontSize = f'{ROW_FONT}px', fontStyle = 'Regular',
+         fill = t.fg0, string = Options.text ?? '', lineLimit = 1, charLimit = Options.charLimit,
+         textFlags = VTXF_EDITABLE
+      })
+      self.editor = ed
+      layoutEditor(ed)
+      self.name.visibility = VIS_HIDDEN
+
+      function finish(Text:str, Reason:str)
+         if ed.done then return end
+         ed.done = true
+         processing.delayedCall(function()
+            if self.editor is ed then
+               self.editor = nil
+               self.name.visibility = VIS_VISIBLE
+               ed.clip.free()
+               Viewport.acDraw()
+            end
+            Options.done(Text, Reason)
+         end)
+      end
+      ed.finish = finish
+
+      ed.clip.mtSubscribeKeyboard(function(Clip:obj!, Qualifiers:num!, Value:num!, Unicode)
+         if not (Qualifiers has KQ_PRESSED) then return end
+         if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+            finish(ed.text.string ?? '', 'key')
+         elseif Value is KEY_ESCAPE then
+            finish(nil, 'key')
+         end
+      end)
+
+      ed.clip.mtSubscribeFeedback(FM_LOST_FOCUS, function(Clip:obj!, Event:num!)
+         finish(ed.text.string ?? '', 'focus')
+      end)
+
+      ed.text.mtSelectArea(0, 0, -1, -1) -- Typing replaces the name
+      ed.clip.acFocus()
+      Viewport.acDraw()
+   end
+
+   -- The row viewport and the editor are freed by the list.  An edit in progress is cancelled.
+
+   self.destroy = function()
+      ed = self.editor
+      ed ?! return
+      self.editor = nil
+      ed.finish(nil, 'destroyed')
+   end
+
+   self.set = function(Info:table!)
+      self.depth = Info.depth ?? 0
+      self.linked = Info.glyph is 'link'
+      self.swatch.fill = Info.colour
+      self.hex.string = Info.hex ?? ''
+      hex_w = math.ceil(self.hex.textWidth) -- Wider for a translucent colour's #RRGGBBAA
+      self.name.string = Info.name ?? ''
+      self.hook.visibility = (Info.glyph is 'link') ? VIS_VISIBLE : VIS_HIDDEN
+      self.glyph.visibility = self.hook.visibility
+      self.lock.visibility = Info.locked ? VIS_VISIBLE : VIS_HIDDEN
+      self.layout()
+   end
+
+   self.setHighlight = function(State:str)
+      if State is 'active' then
+         self.highlight.fill = t.accentSoft
+         self.highlight.visibility = VIS_VISIBLE
+      elseif State is 'focus' then
+         self.highlight.fill = 'none'
+         self.highlight.visibility = VIS_VISIBLE
+      else
+         self.highlight.visibility = VIS_HIDDEN
+      end
+   end
+
+   self.layout()
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+FIELD_PAD <const> = 4 -- Horizontal text inset of a value field
+colourpicker_parts.FIELD_PAD = FIELD_PAD
+
+@Doc(text=[[
+@desc Create a value field: right-aligned mono text that can be edited in place.  Clicking the field gives it the
+focus and selects its text, so that typing replaces the value.  Enter commits and calls `blur()`, Escape restores the
+displayed value and calls `blur()`, and a focus loss commits.  `blur()` is expected to move the focus elsewhere.  `commit(Text)` receives the trimmed text and returns
+false if it is invalid, which restores the displayed value.  Text that is too wide for the field is shortened with an
+ellipsis while it isn't being edited.
+@input Target viewport
+@input Options: x (right edge of the text), y (top), width, height, size, fill, charLimit (default 16), tokens,
+commit(Text), blur(), focus(Has, Field)
+@result Table with `viewport`, `text`, `set(Text)`, `setWidth(Width)`, `hasFocus()`, `enable()` and `disable()`.
+set() leaves the text alone while the field has the focus.
+]])
+colourpicker_parts.valueField = function(Viewport:obj!, Options:table!):table
+   t = Options.tokens
+   width = Options.width
+   height = Options.height
+   size = Options.size ?? 11
+
+   self = { shown = '', focused = false }
+
+   self.viewport = Viewport.new('VectorViewport', {
+      x = Options.x - width + FIELD_PAD, y = Options.y, width = width, height = height, overflow = VOF_HIDDEN,
+      cursor = 'text'
+   })
+   vp = self.viewport
+
+   self.bkgd = vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3, fill = t.sunk, stroke = t.accent,
+      strokeWidth = 1, visibility = VIS_HIDDEN
+   })
+
+   -- Right-aligned text isn't placed correctly while it is edited, and the cursor doesn't follow the text if it moves.
+   -- The text is therefore left-aligned at a fixed position, and the viewport is moved instead: it has the full width
+   -- while the field is edited, and is otherwise narrowed to the text so that the text ends at the right edge.
+
+   self.text = vp.new('VectorText', {
+      x = FIELD_PAD, y = colourpicker_parts.baseline(0, height, size), face = colourpicker_parts.FACE_MONO,
+      fontSize = f'{size}px', fill = Options.fill ?? t.fg0, lineLimit = 1, charLimit = Options.charLimit ?? 16,
+      textFlags = VTXF_EDITABLE
+   })
+
+   right = Options.x + FIELD_PAD -- Right edge of the viewport
+
+   -- Show the displayed value: in full while the field is edited, otherwise fitted to the field.  The viewport is
+   -- then fitted to the text.
+
+   function show()
+      if self.focused then
+         self.text.string = self.shown
+      else
+         colourpicker_parts.fitText(self.text, '', self.shown, width - (FIELD_PAD * 2))
+      end
+      w = self.focused ? width : math.min(width, math.ceil(self.text.textWidth) + (FIELD_PAD * 2))
+      vp.x = right - w
+      vp.width = w
+   end
+
+   function restore()
+      show()
+      if self.focused then self.text.mtSelectArea(0, 0, -1, -1) end
+      vp.acDraw()
+   end
+
+   function commit()
+      typed = (self.text.string ?? '').trim()
+      if (typed is self.shown) or not Options.commit(typed) then restore() end
+   end
+
+   self.set = function(Text:str)
+      self.shown = Text ?? ''
+      if not self.focused then show() end
+   end
+
+   self.setWidth = function(Width:num!)
+      width = Width
+      show()
+   end
+
+   self.hasFocus = function():bool
+      return self.focused
+   end
+
+   self.enable = function() vp.acEnable() end
+   self.disable = function() vp.acDisable() end
+
+   vp.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
+      repeat
+         if (Msg.type is JET_LMB) and (Msg.value is 1) and not self.focused then vp.acFocus() end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   vp.mtSubscribeKeyboard(function(Input:obj!, Qualifiers:num!, Value:num!, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+      if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+         commit()
+         show()
+         vp.acDraw()
+         if Options.blur then Options.blur() end
+      elseif Value is KEY_ESCAPE then
+         restore()
+         if Options.blur then Options.blur() end
+      end
+   end)
+
+   vp.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Input:obj!, Event:num!)
+      gained = Event != FM_LOST_FOCUS
+      if gained is self.focused then return end
+      self.focused = gained
+      self.bkgd.visibility = gained ? VIS_VISIBLE : VIS_HIDDEN
+      if gained then
+         show()
+         -- A click that gave the focus also places the cursor, so the text is selected after the click is handled
+         self.text.mtSelectArea(0, 0, -1, -1)
+         processing.delayedCall(function()
+            if self.focused and obj.find(vp.id) then
+               self.text.mtSelectArea(0, 0, -1, -1)
+               vp.acDraw()
+            end
+         end)
+      else
+         commit()
+         show()
+      end
+      if Options.focus then Options.focus(gained, self) end
+      vp.acDraw()
+   end)
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A native composite surface lets Pointer move the colour tile independently of the dialog's vector layout.  If Move
+-- is true the swatch itself is being dragged, which a move badge on the tile's lower right corner indicates.  The
+-- surface is enlarged to fit the badge, keeping the tile at the same pointer offset.
+
+DRAG_TILE  <const> = 32
+DRAG_BADGE <const> = 10 -- Radius of the move badge, centred on the tile's corner
+
+-- A four-way arrow centred on (X, Y): a cross with filled heads.
+
+function moveArrow(X:num!, Y:num!):<str, str>
+   seq = f'M{X-4} {Y} H{X+4} M{X} {Y-4} V{Y+4}'
+   heads = f'M{X} {Y-7} L{X+3} {Y-4} L{X-3} {Y-4} Z M{X} {Y+7} L{X+3} {Y+4} L{X-3} {Y+4} Z ' ..
+      f'M{X-7} {Y} L{X-4} {Y-3} L{X-4} {Y+3} Z M{X+7} {Y} L{X+4} {Y-3} L{X+4} {Y+3} Z'
+   return seq, heads
+end
+
+colourpicker_parts.dragPreview = function(Parent:obj!, Fill:str!, Tokens:table!, Move:bool):obj
+   size = Move ? DRAG_TILE + DRAG_BADGE - 1 : DRAG_TILE
+   preview = Parent.new('Surface', {
+      width = size, height = size, flags = RNF_COMPOSITE | RNF_NO_FOCUS | RNF_STICK_TO_FRONT
+   })
+
+   try
+      preview.buffer.mtDrawRectangle(0, 0, size, size, 0, BAF_FILL) -- Transparent; a new buffer is uninitialised
+      scene = preview.new('VectorScene', { surface = preview, bitmap = preview.buffer })
+      vp = scene.new('VectorViewport', { width = size, height = size })
+
+      vp.new('VectorRectangle', {
+         x = 1, y = 1, width = DRAG_TILE - 2, height = DRAG_TILE - 2, fill = Fill, stroke = 'white', strokeWidth = 2,
+         roundX = 4, roundY = 4
+      })
+
+      if Move then
+         c = DRAG_TILE - 1
+         vp.new('VectorEllipse', {
+            cx = c, cy = c, radiusX = DRAG_BADGE - 1, radiusY = DRAG_BADGE - 1, fill = Tokens.accent,
+            stroke = 'white', strokeWidth = 1.5
+         })
+         shafts, heads = moveArrow(c, c)
+         vp.new('VectorPath', { sequence = shafts, stroke = Tokens.accentFg, strokeWidth = 1.5 })
+         vp.new('VectorPath', { sequence = heads, fill = Tokens.accentFg })
+      end
+
+      scene.acDraw()
+      return preview
+   except e
+      preview.free()
+      raise
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+TAB_HEIGHT   <const> = 28
+TAB_PAD      <const> = 11
+TAB_GLYPH    <const> = 12
+TAB_GAP      <const> = 2  -- Between tabs
+TAB_FONT     <const> = 11.5
+TAB_DIMMED   <const> = 0.45 -- Opacity of a disabled tab
+STRIP_PAD    <const> = 8
+
+-- Draw a tab's 12 px glyph.  Colour is the tab's text colour, used by the line glyphs.
+
+function tabGlyph(Viewport:obj!, Kind:str!, Colour:str!)
+   if Kind is 'picker' then
+      Viewport.new('VectorRectangle', {
+         x = 0, y = 0, width = 12, height = 12, roundX = 3, roundY = 3, fill = 'oklch(0.62 0.18 258)'
+      })
+   elseif Kind is 'palette' then
+      cells = array<str> { 'oklch(0.65 0.18 258)', 'oklch(0.7 0.14 150)', 'oklch(0.6 0.16 30)', 'oklch(0.8 0.08 90)' }
+      for i, fill in cells do
+         Viewport.new('VectorRectangle', {
+            x = (i % 2) * 6.5, y = math.floor(i / 2) * 6.5, width = 5.5, height = 5.5, roundX = 1, roundY = 1,
+            fill = fill
+         })
+      end
+   elseif Kind is 'gradient' then
+      bars = array<str> { 'oklch(0.35 0.08 258)', 'oklch(0.55 0.14 258)', 'oklch(0.75 0.12 258)', 'oklch(0.9 0.05 258)' }
+      for i, fill in bars do
+         Viewport.new('VectorRectangle', {
+            x = i * 3.25, y = 0, width = 2.25, height = 12, roundX = 1, roundY = 1, fill = fill
+         })
+      end
+   end
+end
+
+@Doc(text=[[
+@desc Create the mode bar's tab strip: tabs with a glyph and a label, a separator after the last tab and right-aligned
+meta text.  Disabled tabs are dimmed and show their tip in a tooltip when the pointer rests on them.
+@input Target viewport, which the strip fills
+@input Options: width, height, items (array of { label, glyph, enabled, tip }), active (index), meta, tokens
+@result Table with `tabs` (each with `viewport` and `width`), `meta`, `setMeta(Text)` and `cancelTip()`
+]])
+colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
+   t      = Options.tokens
+   height = Options.height
+   top    = (height - TAB_HEIGHT) * 0.5
+   self   = { tabs = array<table> }
+
+   function cancelTip()
+      self.tooltip?.cancel()
+   end
+
+   self.cancelTip = cancelTip
+
+   x = STRIP_PAD
+   for i, item in Options.items do
+      active = (i is Options.active)
+      fill = active ? t.fg0 : t.fg2
+      vp = Viewport.new('VectorViewport', { x = x, y = top, width = 1, height = TAB_HEIGHT })
+
+      bkgd = nil
+      if active then
+         bkgd = vp.new('VectorRectangle', {
+            x = 0.5, y = 0.5, width = 1, height = TAB_HEIGHT - 1, roundX = 5, roundY = 5,
+            fill = t.panel, stroke = t.border, strokeWidth = 1
+         })
+      end
+
+      glyph = vp.new('VectorViewport', {
+         x = TAB_PAD, y = (TAB_HEIGHT - TAB_GLYPH) * 0.5, width = TAB_GLYPH, height = TAB_GLYPH
+      })
+      tabGlyph(glyph, item.glyph, fill)
+
+      label = text(vp, {
+         x = TAB_PAD + TAB_GLYPH + 6, y = colourpicker_parts.baseline(0, TAB_HEIGHT, TAB_FONT), size = TAB_FONT,
+         fill = fill, string = item.label
+      })
+
+      width = math.ceil(TAB_PAD + TAB_GLYPH + 6 + label.textWidth + TAB_PAD)
+      vp.width = width
+      bkgd?.width = width - 1
+
+      if not item.enabled then
+         vp.opacity = TAB_DIMMED
+         tip = item.tip
+         index = i
+         vp.mtSubscribeInput(JTYPE_CROSSING | JTYPE_BUTTON, function(Input:obj!, Msg:any!)
+            repeat
+               if Msg.type is JET_CROSSED_IN then
+                  cancelTip()
+                  self.tipTab = index
+                  if tip then self.tooltip = gui.tooltip({ target = vp, text = tip }) end
+               elseif (Msg.type != JET_CROSSED_OUT) or (self.tipTab is index) then
+                  cancelTip() -- Leaving this tab may be reported after entering the next one
+               end
+               Msg = Msg.next
+            until not Msg
+         end)
+      end
+
+      self.tabs.push({ viewport = vp, width = width, label = label, enabled = item.enabled })
+      x += width + TAB_GAP
+   end
+
+   -- Separator after the last tab, and the meta text on the right
+
+   x += 6 - TAB_GAP
+   Viewport.new('VectorRectangle', { x = x, y = math.round((height - 16) * 0.5), width = 1, height = 16, fill = t.divider })
+
+   self.meta = text(Viewport, {
+      x = Options.width - STRIP_PAD - 6, y = colourpicker_parts.baseline(0, height, 10.5), size = 10.5,
+      face = colourpicker_parts.FACE_MONO, fill = t.fg3, align = 'right', string = Options.meta ?? ''
+   })
+
+   self.setMeta = function(Text:str)
+      self.meta.string = Text ?? ''
+   end
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Timer helpers.  Every Core (mSys) call in the package is made here, because the compile-time interface of a
+-- package rejects the same native module being referenced from more than one of its source files.
+
+@Doc(text=[[
+@desc Call Function once after a delay.
+@result Timer handle for cancelTimer()
+]])
+colourpicker_parts.after = function(Seconds:num!, Function:func!):any
+   local handle:any
+   err, handle = mSys.SubscribeTimer(Seconds, function()
+      -- Release the subscription first, including when Function raises or dispatches more messages.
+
+      mSys.UpdateTimer(handle, 0)
+      try
+         Function()
+      except e
+         msg(f'Colour picker timer failed: {e.message}')
+      end
+   end)
+   if err != ERR_Okay then return nil end
+   return handle
+end
+
+@Doc(text=[[
+@desc Cancel a timer returned by after().  A nil handle is ignored.
+]])
+colourpicker_parts.cancelTimer = function(Handle:any)
+   if Handle then mSys.UpdateTimer(Handle, 0) end
+end
+
+@Doc(text=[[
+@desc Return a timestamp in microseconds.
+]])
+colourpicker_parts.now = function():num
+   return mSys.PreciseTime()
+end
+
+-- Repeating timer used while the eyedropper is armed, including movement outside Kōtuku windows.
+
+colourpicker_parts.every = function(Seconds:num!, Function:func!):any
+   _, handle = mSys.SubscribeTimer(Seconds, Function)
+   return handle
+end

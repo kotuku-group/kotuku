@@ -1,0 +1,353 @@
+@Package(name="gui/colourpicker", version="1.0")
+
+--[[
+Palette export for the colour picker.  generate() returns the output as lines of segments, where each segment is
+{ role, text } and the role selects a syntax colour:
+
+   'c' comment, 'p' punctuation and keywords, 'k' key (a name), 'v' value, 't' plain text
+
+toText() joins the segments into the text that is copied to the clipboard.  The formats are:
+
+   css      A :root rule of custom properties with oklch() values
+   tokens   W3C Design Tokens (DTCG 2025.10) JSON, with oklch components (or components in the target space for a
+            display-p3, a98-rgb or rec2020 target) and an sRGB hex fallback
+   tiri     A Tiri table entry of oklch() strings, keyed by the palette name.  The swatches are keyed by camel-case
+            name, except that an Interface palette is written as a gui palette (see gui/palettes_data), so that the
+            entry can be added to gui.palettes: `['name'] = { light = { type = 'light', bkgd = ..., ... } }`, with
+            the gui field names and `dark` in place of `light` for a dark palette
+   android  A colors.xml resource file of #AARRGGBB values, which are always sRGB
+
+The gamut option names the target gamut: 'none' (the default) exports the swatches unmapped, and 'srgb', 'p3', 'a98'
+or 'rec2020' maps them into that gamut first.  Swatch names are converted to identifiers that are valid in each
+format, and duplicates are numbered.  Colours that a format can't represent are gamut-mapped (chroma reduction)
+rather than clipped.
+
+The module has no display dependency.
+
+Usage:
+   import 'gui/colourpicker/export'
+   text = colourexport.toText(colourexport.generate(palette, 'css', { gamut = 'p3' }))
+--]]
+
+   import 'gui/colourpicker/colour', 'gui/colourpicker/palette'
+
+   namespace colourexport { }
+
+FORMATS <const> = array<str> { 'css', 'tokens', 'tiri', 'android' }
+
+colourexport.FORMATS = FORMATS
+
+lWordSplit = regex.new('[^A-Za-z0-9]+')
+
+-- The gui palette field of each Interface role
+
+GUI_FIELDS <const> = {
+   Surface = 'neutral', Background = 'bkgd', ['Mid Tone'] = 'mid', Border = 'edge', Ink = 'text', Inverse = 'inverse',
+   Primary = 'prime', Accent = 'contrast', ['Selected Ink'] = 'altText', Handle = 'handle', Shade = 'shade',
+   Error = 'error', Success = 'success'
+}
+
+WHITE <const> = { r = 1, g = 1, b = 1 }
+BLACK <const> = { r = 0, g = 0, b = 0 }
+
+----------------------------------------------------------------------------------------------------------------------
+-- Names
+
+-- Split a name into its ASCII alphanumeric words, lowercased.
+
+function words(Name:str):array<str>
+   result = array<str>
+   for part in values(lWordSplit.split(Name ?? '')) do
+      if #part > 0 then result.push(part.lower()) end
+   end
+   return result
+end
+
+function capitalise(Word:str):str
+   return Word.sub(0, 1).upper() .. Word.sub(1)
+end
+
+function startsWithDigit(Text:str):bool
+   b = Text.byte(0)
+   return (b >= 48) and (b <= 57)
+end
+
+-- Return Name, or Name with the lowest number appended that makes it unique in Used.  The result is added to Used.
+
+function unique(Name:str, Used:table, Separator:str):str
+   result = Name
+   n = 2
+   while Used[result] do
+      result = f'{Name}{Separator}{n}'
+      n++
+   end
+   Used[result] = true
+   return result
+end
+
+function kebabName(Name:str, Index:num):str
+   w = words(Name)
+   if #w is 0 then return f'swatch-{Index + 1}' end
+   return w.concat('-')
+end
+
+function snakeName(Name:str, Index:num):str
+   w = words(Name)
+   if #w is 0 then return f'swatch_{Index + 1}' end
+   s = w.concat('_')
+   if startsWithDigit(s) then s = 'color_' .. s end
+   return s
+end
+
+function camelName(Name:str, Index:num):str
+   w = words(Name)
+   if #w is 0 then return f'swatch{Index + 1}' end
+   s = w[0]
+   for i in {1 to #w} do s ..= capitalise(w[i]) end
+   return s
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Values
+
+-- Format a number with up to Places decimals, dropping trailing zeros.
+
+function num(Value:num, Places:num):str
+   s = string.format(f'%.{Places}f', Value)
+   if s.find('.', 0, true) then
+      while s.endsWith('0') do s = s.sub(0, -1) end
+      if s.endsWith('.') then s = s.sub(0, -1) end
+   end
+   if s is '-0' then s = '0' end
+   return s
+end
+
+-- The swatch mapped into the target gamut.  Mapped chroma is rounded down to 3 decimals.  For OKLCH output, test
+-- the lightness, chroma and hue at their exported precision and reduce chroma if rounding leaves the gamut.
+
+function target(S:table, Gamut:str, Oklch:bool):<num, num, num>
+   l, c, h = colourmath.gamutMap(S.l, S.c, S.h, Gamut)
+   if c != S.c then c = math.floor(c * 1000) / 1000 end
+   if Oklch and (Gamut != 'none') then
+      rounded_l = tonumber(num(l, 3))
+      rounded_c = tonumber(num(c, 3))
+      rounded_h = tonumber(num(h, 1))
+      if not colourmath.inGamut(rounded_l, rounded_c, rounded_h, Gamut) then
+         c = math.floor(colourmath.maxChroma(rounded_l, rounded_h, Gamut) * 1000) / 1000
+      end
+   end
+   return l, c, h
+end
+
+-- The swatch as encoded sRGB (0 - 1), gamut-mapped if it lies outside sRGB.
+
+function srgb(S:table):<num, num, num>
+   l, c, h = colourmath.gamutMap(S.l, S.c, S.h, 'srgb')
+   r, g, b = colourmath.oklchToSrgb(l, c, h)
+   return math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1)
+end
+
+-- The colourmath space of a target gamut that is wider than sRGB, or nil for 'srgb' and 'none'.
+
+function wideSpace(Gamut:str):table
+   if (Gamut is 'srgb') or (Gamut is 'none') then return nil end
+   return colourmath.spaceInfo(Gamut)
+end
+
+-- The gui palette type of an Interface palette: 'light' if text contrasts more strongly with its Background in black
+-- than in white, otherwise 'dark'.
+
+function paletteType(Background:table):str
+   r, g, b = srgb(Background)
+   bkgd = { r = r, g = g, b = b }
+   return (colourmath.wcagContrast(BLACK, bkgd) >= colourmath.wcagContrast(WHITE, bkgd)) ? 'light' : 'dark'
+end
+
+-- Free text as a single-quoted Tiri string on one line.
+
+function quoted(Text:str):str
+   result = (Text ?? '').replace('\\', '\\\\').replace("'", "\\'").replace('\r', ' ').replace('\n', ' ')
+   return f"'{result}'"
+end
+
+-- A comment-safe version of free text.
+
+function commentText(Text:str, Terminator:str, Replacement:str):str
+   result = Text ?? ''
+   while result.find(Terminator, 0, true) do
+      result = result.replace(Terminator, Replacement)
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Line building
+
+function seg(Role:str, Text:str):table
+   return { role = Role, text = Text }
+end
+
+function css(Palette:table, Gamut:str):array<array>
+   lines = array<array>
+   used = { }
+   lines.push(array<table> { seg('c', f'/* {commentText(Palette.name, "*/", "* /")} palette */') })
+   lines.push(array<table> { seg('p', ':root'), seg('t', ' {') })
+   for i, s in Palette.swatches do
+      l, c, h = target(s, Gamut, true)
+      lines.push(array<table> {
+         seg('t', '  '), seg('k', '--' .. unique(kebabName(s.name, i), used, '-')), seg('t', ': '),
+         seg('v', colourmath.toOklchString(l, c, h, s.alpha)), seg('t', ';')
+      })
+   end
+   lines.push(array<table> { seg('t', '}') })
+   return lines
+end
+
+-- A target wider than sRGB gives components in its space, for example display-p3.  The DTCG colorSpace values are the
+-- CSS color() keywords.  Mapping can leave a channel a rounding error outside 0 - 1, so the components are clipped.
+
+function tokens(Palette:table, Gamut:str):array<array>
+   lines = array<array>
+   used = { }
+   n = #Palette.swatches
+   wide = wideSpace(Gamut)
+   lines.push(array<table> { seg('t', '{') })
+   lines.push(array<table> { seg('t', '  '), seg('k', '"color"'), seg('t', ': {') })
+   lines.push(array<table> {
+      seg('t', '    '), seg('p', '"$type"'), seg('t', ': '), seg('v', '"color"'), seg('t', (n > 0) ? ',' : '')
+   })
+
+   for i, s in Palette.swatches do
+      r, g, b = srgb(s)
+      l, c, h = target(s, Gamut, not wide)
+      value = f'"colorSpace": "oklch", "components": [{num(l, 3)}, {num(c, 3)}, {num(h, 1)}]'
+      if wide then
+         pr, pg, pb = colourmath.oklchToSpace(l, c, h, wide.id)
+         value = f'"colorSpace": "{wide.css}", "components": [{num(math.clamp(pr, 0, 1), 4)}, ' ..
+            f'{num(math.clamp(pg, 0, 1), 4)}, {num(math.clamp(pb, 0, 1), 4)}]'
+      end
+      if s.alpha < 1 then value ..= f', "alpha": {num(s.alpha, 2)}' end
+      value ..= f', "hex": "{colourmath.toHex(r, g, b).lower()}"'
+
+      lines.push(array<table> {
+         seg('t', '    '), seg('k', f'"{unique(kebabName(s.name, i), used, "-")}"'), seg('t', ': {')
+      })
+      lines.push(array<table> {
+         seg('t', '      '), seg('p', '"$value"'), seg('t', ': { '), seg('v', value), seg('t', ' }')
+      })
+      lines.push(array<table> { seg('t', (i < n - 1) ? '    },' : '    }') })
+   end
+
+   lines.push(array<table> { seg('t', '  }') })
+   lines.push(array<table> { seg('t', '}') })
+   return lines
+end
+
+-- The output is a table entry keyed by the palette name.  Keywords are valid table keys in Tiri, so only names that
+-- start with a digit need the bracketed form.  An Interface palette is written as a gui palette entry, with its
+-- swatches in a `light` or `dark` table: the roles take their gui palette field names, after a `type` entry, and the
+-- names are reserved so that other swatches can't take them.  Kōtuku renders sRGB, so a
+-- palette in a wider target gets a comment that says so.
+
+function tiri(Palette:table, Gamut:str):array<array>
+   lines = array<array>
+   used = { }
+   n = #Palette.swatches
+   name = commentText(commentText(Palette.name, '\r', ' '), '\n', ' ')
+   lines.push(array<table> { seg('c', f'-- {name} palette') })
+   wide = wideSpace(Gamut)
+   if wide then
+      lines.push(array<table> {
+         seg('c', f'-- {wide.name} colours.  Kōtuku renders sRGB and clips colours outside it.')
+      })
+   end
+   lines.push(array<table> { seg('t', '['), seg('k', quoted(Palette.name)), seg('t', '] = {') })
+
+   indent = '   '
+   gui_roles = (Palette.mode is 'interface') ? colourpalette.reserved(Palette) : 0
+   if gui_roles > 0 then
+      used.type = true
+      for field in values(GUI_FIELDS) do used[field] = true end
+      variant = paletteType(colourpalette.roles(Palette).Background)
+      lines.push(array<table> { seg('t', indent), seg('k', variant), seg('t', ' = {') })
+      indent = '      '
+      lines.push(array<table> {
+         seg('t', indent), seg('k', 'type'), seg('t', ' = '), seg('v', f"'{variant}'"), seg('t', (n > 0) ? ',' : '')
+      })
+   end
+
+   for i, s in Palette.swatches do
+      local ident:str
+      if i < gui_roles then
+         ident = GUI_FIELDS[s.name]
+      else
+         ident = unique(camelName(s.name, i), used, '')
+         if startsWithDigit(ident) then ident = f"['{ident}']" end
+      end
+      l, c, h = target(s, Gamut, true)
+      lines.push(array<table> {
+         seg('t', indent), seg('k', ident), seg('t', ' = '),
+         seg('v', f"'{colourmath.toOklchString(l, c, h, s.alpha)}'"), seg('t', (i < n - 1) ? ',' : '')
+      })
+   end
+   if gui_roles > 0 then lines.push(array<table> { seg('t', '   }') }) end
+   lines.push(array<table> { seg('t', '}') })
+   return lines
+end
+
+function android(Palette:table):array<array>
+   lines = array<array>
+   used = { }
+   lines.push(array<table> { seg('c', '<?xml version="1.0" encoding="utf-8"?>') })
+   lines.push(array<table> { seg('c', f'<!-- {commentText(Palette.name, "--", "-").escXML()} palette -->') })
+   lines.push(array<table> { seg('p', '<resources>') })
+   for i, s in Palette.swatches do
+      r, g, b = srgb(s)
+      hex = colourmath.toHex(r, g, b).sub(1)
+      alpha = string.format('%02X', math.round(math.clamp(s.alpha, 0, 1) * 255))
+      lines.push(array<table> {
+         seg('t', '    '), seg('p', '<color name='), seg('k', f'"{unique(snakeName(s.name, i), used, "_")}"'),
+         seg('p', '>'), seg('v', f'#{alpha}{hex}'), seg('p', '</color>')
+      })
+   end
+   lines.push(array<table> { seg('p', '</resources>') })
+   return lines
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Generate the export of a palette in one of the FORMATS.
+@input Palette (see gui/colourpicker/palette)
+@input Format: 'css', 'tokens', 'tiri' or 'android'
+@input Options (optional): gamut is the target gamut, 'none' (the default), 'srgb', 'p3', 'a98' or 'rec2020'.  The
+swatches are mapped into it before formatting.  Android output is always mapped into sRGB, as is the sRGB hex
+fallback in tokens.
+@result array<array> of lines, or nil and an error message for an unknown format or gamut.  Each line is an
+array<table> of { role, text } segments, and may be empty.
+]])
+colourexport.generate = function(Palette:table!, Format:str!, Options:table):<array<any>, str>
+   if not (Format in FORMATS) then return nil, f'Unknown export format: {Format}' end
+   gamut = Options?.gamut
+   if gamut is nil then gamut = 'none' end
+   if not (gamut is <str>) or ((gamut != 'none') and not colourmath.spaceInfo(gamut)) then
+      return nil, f'Unknown export gamut: {gamut}'
+   end
+   if Format is 'tokens' then return tokens(Palette, gamut) end
+   if Format is 'tiri' then return tiri(Palette, gamut) end
+   if Format is 'android' then return android(Palette) end
+   return css(Palette, gamut)
+end
+
+@Doc(text=[[
+@desc Join generated lines into text, with a newline after every line.
+]])
+colourexport.toText = function(Lines:array<any>!):str
+   out = array<str>
+   for line in values(Lines) do
+      parts = array<str>
+      for s in values(line) do parts.push(s.text) end
+      out.push(parts.concat(''))
+   end
+   return out.concat('\n') .. '\n'
+end

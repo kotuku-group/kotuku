@@ -1,0 +1,1022 @@
+@Package(name="gui/colourpicker", version="1.0")
+
+--[[
+Colour maths for the colour picker.  The functions take and return plain numbers or tables, and have no dependency on
+the display.  sRGB channels are normalised to the range 0 - 1, OKLCH hues are in degrees and the OKLab and OKLCH
+lightness is in the range 0 - 1.
+
+Usage:
+   import 'gui/colourpicker/colour'
+   r, g, b, in_gamut = colourmath.oklchToSrgb(0.62, 0.18, 258)
+--]]
+
+   include 'vector'
+
+   module vector as mVec
+
+   namespace colourmath { }
+
+GAMUT_EPSILON <const> = 0.0001 -- Tolerance applied to linear channels when testing gamut membership
+ACHROMATIC    <const> = 0.0002 -- OKLCH chroma below this value is treated as grey, so the hue is undefined
+CHROMA_LIMIT  <const> = 0.5    -- Upper bound of the chroma search; exceeds every colour in the RGB spaces (0.47 in
+                               -- Rec. 2020)
+
+-- D65 XYZ matrices from CSS Color 4.  The RGB space matrices are composed from these by multiply().
+
+SRGB_TO_XYZ <const> = {
+   { 0.41239079926595934, 0.357584339383878,   0.1804807884018343 },
+   { 0.21263900587151027, 0.715168678767756,   0.07219231536073371 },
+   { 0.01933081871559182, 0.11919477979462598, 0.9505321522496607 }
+}
+
+XYZ_TO_P3 <const> = {
+   { 2.493496911941425,   -0.9313836179191239,  -0.40271078445071684 },
+   { -0.8294889695615747,  1.7626640603183463,   0.023624685841943577 },
+   { 0.03584583024378447, -0.07617238926804182,  0.9568845240076872 }
+}
+
+XYZ_TO_SRGB <const> = {
+   { 12831 / 3959,      -329 / 214,        -1974 / 3959 },
+   { -851781 / 878810,  1648619 / 878810,  36519 / 878810 },
+   { 705 / 12673,       -2585 / 12673,     705 / 667 }
+}
+
+P3_TO_XYZ <const> = {
+   { 608311 / 1250200, 189793 / 714400, 198249 / 1000160 },
+   { 35783 / 156275,   247089 / 357200, 198249 / 2500400 },
+   { 0,                32229 / 714400,  5220557 / 5000800 }
+}
+
+REC2020_TO_XYZ <const> = {
+   { 63426534 / 99577255, 20160776 / 139408157,  47086771 / 278816314 },
+   { 26158966 / 99577255, 472592308 / 697040785, 8267143 / 139408157 },
+   { 0,                   19567812 / 697040785,  295819943 / 278816314 }
+}
+
+XYZ_TO_REC2020 <const> = {
+   { 30757411 / 17917100,  -6372589 / 17917100,  -4539589 / 17917100 },
+   { -19765991 / 29648200, 47925759 / 29648200,  467509 / 29648200 },
+   { 792561 / 44930125,    -1921689 / 44930125,  42328811 / 44930125 }
+}
+
+A98_TO_XYZ <const> = {
+   { 573536 / 994567,  263643 / 1420810,  187206 / 994567 },
+   { 591459 / 1989134, 6239551 / 9945670, 374412 / 4972835 },
+   { 53769 / 1989134,  351524 / 4972835,  4929758 / 4972835 }
+}
+
+XYZ_TO_A98 <const> = {
+   { 1829569 / 896150,  -506331 / 896150,  -308931 / 896150 },
+   { -851781 / 878810,  1648619 / 878810,  36519 / 878810 },
+   { 16779 / 1248040,   -147721 / 1248040, 1266979 / 1248040 }
+}
+
+-- Bradford chromatic adaptation from D65 to D50, so that CIE Lab matches the painter's lab() interpretation.
+
+D65_TO_D50 <const> = {
+   { 1.0479298208405488,    0.022946793341019088, -0.05019222954313557 },
+   { 0.029627815688159344,  0.990434484573249,    -0.01707382502938514 },
+   { -0.009243058152591178, 0.015055144896577895,  0.7518742899580008 }
+}
+
+D50_WHITE <const> = { 0.3457 / 0.3585, 1, (1 - 0.3457 - 0.3585) / 0.3585 }
+
+LAB_EPSILON <const> = 216 / 24389
+LAB_KAPPA   <const> = 24389 / 27
+
+function multiply(A:table, B:table):table
+   result = { }
+   for row in {0 to 3} do
+      result[row] = { }
+      for col in {0 to 3} do
+         sum = 0
+         for k in {0 to 3} do
+            sum += A[row][k] * B[k][col]
+         end
+         result[row][col] = sum
+      end
+   end
+   return result
+end
+
+lSRGBToD50 = multiply(D65_TO_D50, SRGB_TO_XYZ)
+
+lPainter = struct<VectorPainter>
+
+----------------------------------------------------------------------------------------------------------------------
+-- CSS named colours, stored in PascalCase.  The display name puts a space between the words ('Alice Blue') and the
+-- CSS keyword is the lower case form ('aliceblue').  Duplicate spellings (grey/gray, aqua/cyan, fuchsia/magenta)
+-- resolve to the first match in closestNamed().
+
+NAMED <const> = [[
+   AliceBlue:F0F8FF AntiqueWhite:FAEBD7 Aqua:00FFFF Aquamarine:7FFFD4 Azure:F0FFFF Beige:F5F5DC Bisque:FFE4C4
+   Black:000000 BlanchedAlmond:FFEBCD Blue:0000FF BlueViolet:8A2BE2 Brown:A52A2A Burlywood:DEB887 CadetBlue:5F9EA0
+   Chartreuse:7FFF00 Chocolate:D2691E Coral:FF7F50 CornflowerBlue:6495ED Cornsilk:FFF8DC Crimson:DC143C Cyan:00FFFF
+   DarkBlue:00008B DarkCyan:008B8B DarkGoldenrod:B8860B DarkGray:A9A9A9 DarkGreen:006400 DarkGrey:A9A9A9
+   DarkKhaki:BDB76B DarkMagenta:8B008B DarkOliveGreen:556B2F DarkOrange:FF8C00 DarkOrchid:9932CC DarkRed:8B0000
+   DarkSalmon:E9967A DarkSeaGreen:8FBC8F DarkSlateBlue:483D8B DarkSlateGray:2F4F4F DarkSlateGrey:2F4F4F
+   DarkTurquoise:00CED1 DarkViolet:9400D3 DeepPink:FF1493 DeepSkyBlue:00BFFF DimGray:696969 DimGrey:696969
+   DodgerBlue:1E90FF Firebrick:B22222 FloralWhite:FFFAF0 ForestGreen:228B22 Fuchsia:FF00FF Gainsboro:DCDCDC
+   GhostWhite:F8F8FF Gold:FFD700 Goldenrod:DAA520 Gray:808080 Green:008000 GreenYellow:ADFF2F Grey:808080
+   Honeydew:F0FFF0 HotPink:FF69B4 IndianRed:CD5C5C Indigo:4B0082 Ivory:FFFFF0 Khaki:F0E68C Lavender:E6E6FA
+   LavenderBlush:FFF0F5 LawnGreen:7CFC00 LemonChiffon:FFFACD LightBlue:ADD8E6 LightCoral:F08080 LightCyan:E0FFFF
+   LightGoldenrodYellow:FAFAD2 LightGray:D3D3D3 LightGreen:90EE90 LightGrey:D3D3D3 LightPink:FFB6C1 LightSalmon:FFA07A
+   LightSeaGreen:20B2AA LightSkyBlue:87CEFA LightSlateGray:778899 LightSlateGrey:778899 LightSteelBlue:B0C4DE
+   LightYellow:FFFFE0 Lime:00FF00 LimeGreen:32CD32 Linen:FAF0E6 Magenta:FF00FF Maroon:800000 MediumAquamarine:66CDAA
+   MediumBlue:0000CD MediumOrchid:BA55D3 MediumPurple:9370DB MediumSeaGreen:3CB371 MediumSlateBlue:7B68EE
+   MediumSpringGreen:00FA9A MediumTurquoise:48D1CC MediumVioletRed:C71585 MidnightBlue:191970 MintCream:F5FFFA
+   MistyRose:FFE4E1 Moccasin:FFE4B5 NavajoWhite:FFDEAD Navy:000080 OldLace:FDF5E6 Olive:808000 OliveDrab:6B8E23
+   Orange:FFA500 OrangeRed:FF4500 Orchid:DA70D6 PaleGoldenrod:EEE8AA PaleGreen:98FB98 PaleTurquoise:AFEEEE
+   PaleVioletRed:DB7093 PapayaWhip:FFEFD5 PeachPuff:FFDAB9 Peru:CD853F Pink:FFC0CB Plum:DDA0DD PowderBlue:B0E0E6
+   Purple:800080 RebeccaPurple:663399 Red:FF0000 RosyBrown:BC8F8F RoyalBlue:4169E1 SaddleBrown:8B4513 Salmon:FA8072
+   SandyBrown:F4A460 SeaGreen:2E8B57 Seashell:FFF5EE Sienna:A0522D Silver:C0C0C0 SkyBlue:87CEEB SlateBlue:6A5ACD
+   SlateGray:708090 SlateGrey:708090 Snow:FFFAFA SpringGreen:00FF7F SteelBlue:4682B4 Tan:D2B48C Teal:008080
+   Thistle:D8BFD8 Tomato:FF6347 Turquoise:40E0D0 Violet:EE82EE Wheat:F5DEB3 White:FFFFFF WhiteSmoke:F5F5F5 Yellow:FFFF00
+   YellowGreen:9ACD32
+]]
+
+local lNamedList:array<table>  -- { name, keyword, hex } tables, built on first use
+local lNamedHex:table          -- CSS keyword -> hex, built on first use
+local lNamedOklab:array<table> -- { name, l, a, b } tables, built on first use
+
+rxFunction  <const> = <{ regex.new([[^\s*([a-z]+)\(\s*([^\)]*)\)\s*$]], regex.ICASE) }>
+rxKeyword   <const> = <{ regex.new([[^[a-z]+$]]) }>
+rxHex       <const> = <{ regex.new([[^\s*#([0-9a-f]+)\s*$]], regex.ICASE) }>
+rxNumber    <const> = <{ regex.new([[^([+\-]?[0-9]*\.?[0-9]+(?:e[+\-]?[0-9]+)?)([a-z%]*)$]], regex.ICASE) }>
+rxSpace     <const> = <{ regex.new([[[\s,]+]]) }>
+rxWordBreak <const> = <{ regex.new([[([a-z])([A-Z])]]) }>
+
+----------------------------------------------------------------------------------------------------------------------
+
+function cbrt(X:num):num
+   if X < 0 then return -((-X) ** (1/3)) end
+   return X ** (1/3)
+end
+
+function normaliseHue(H:num):num
+   H = H % 360
+   if H < 0 then H += 360 end
+   return H
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Convert OKLCH to OKLab.  The hue is in degrees.
+@input Lightness (0 - 1)
+@input Chroma
+@input Hue (degrees)
+@result L, a and b
+]])
+colourmath.oklchToOklab = function(L:num!, C:num!, H:num!):<num, num, num>
+   hr = math.rad(H)
+   return L, C * math.cos(hr), C * math.sin(hr)
+end
+
+@Doc(text=[[
+@desc Convert OKLab to OKLCH.  The hue of a grey colour is undefined, so PrevH is returned as the hue when the
+chroma is approximately zero.  This allows the hue to survive a round-trip through grey.
+@input Lightness (0 - 1)
+@input a axis
+@input b axis
+@input Optional hue to retain for greys, otherwise 0
+@result L, C and H (degrees in the range 0 - 360)
+]])
+colourmath.oklabToOklch = function(L:num!, A:num!, B:num!, PrevH:num):<num, num, num>
+   c = math.sqrt((A * A) + (B * B))
+   if c < ACHROMATIC then return L, c, PrevH ?? 0 end
+   return L, c, normaliseHue(math.deg(math.atan2(B, A)))
+end
+
+@Doc(text=[[
+@desc Convert OKLab to linear sRGB.  The result is unclamped, so channels outside 0 - 1 indicate a colour that is
+outside the sRGB gamut.
+]])
+colourmath.oklabToLinearSrgb = function(L:num!, A:num!, B:num!):<num, num, num>
+   l_ = L + (0.3963377774 * A) + (0.2158037573 * B)
+   m_ = L - (0.1055613458 * A) - (0.0638541728 * B)
+   s_ = L - (0.0894841775 * A) - (1.2914855480 * B)
+
+   l = l_ * l_ * l_
+   m = m_ * m_ * m_
+   s = s_ * s_ * s_
+
+   return (4.0767416621 * l) - (3.3077115913 * m) + (0.2309699292 * s),
+      (-1.2684380046 * l) + (2.6097574011 * m) - (0.3413193965 * s),
+      (-0.0041960863 * l) - (0.7034186147 * m) + (1.7076147010 * s)
+end
+
+@Doc(text=[[
+@desc Convert linear sRGB to OKLab.
+]])
+colourmath.linearSrgbToOklab = function(R:num!, G:num!, B:num!):<num, num, num>
+   l = cbrt((0.4122214708 * R) + (0.5363325363 * G) + (0.0514459929 * B))
+   m = cbrt((0.2119034982 * R) + (0.6806995451 * G) + (0.1073969566 * B))
+   s = cbrt((0.0883024619 * R) + (0.2817188376 * G) + (0.6299787005 * B))
+
+   return (0.2104542553 * l) + (0.7936177850 * m) - (0.0040720468 * s),
+      (1.9779984951 * l) - (2.4285922050 * m) + (0.4505937099 * s),
+      (0.0259040371 * l) + (0.7827717662 * m) - (0.8086757660 * s)
+end
+
+@Doc(text=[[
+@desc Apply the sRGB transfer function to a linear channel.  Negative values are mirrored, as in CSS Color 4.
+]])
+colourmath.srgbEncode = function(X:num!):num
+   sign = 1
+   if X < 0 then
+      sign = -1
+      X = -X
+   end
+   if X <= 0.0031308 then return sign * 12.92 * X end
+   return sign * ((1.055 * (X ** (1 / 2.4))) - 0.055)
+end
+
+@Doc(text=[[
+@desc Remove the sRGB transfer function from an encoded channel.  Negative values are mirrored, as in CSS Color 4.
+]])
+colourmath.srgbDecode = function(X:num!):num
+   sign = 1
+   if X < 0 then
+      sign = -1
+      X = -X
+   end
+   if X <= 0.04045 then return sign * X / 12.92 end
+   return sign * (((X + 0.055) / 1.055) ** 2.4)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function linearInGamut(R:num, G:num, B:num):bool
+   return (R >= -GAMUT_EPSILON) and (R <= 1 + GAMUT_EPSILON) and
+      (G >= -GAMUT_EPSILON) and (G <= 1 + GAMUT_EPSILON) and
+      (B >= -GAMUT_EPSILON) and (B <= 1 + GAMUT_EPSILON)
+end
+
+function linearTransfer(X:num):num
+   return X
+end
+
+-- The Rec. 2020 transfer function (ITU-R BT.2020, as in CSS Color 4).  Negative values are mirrored.
+
+REC2020_ALPHA <const> = 1.09929682680944
+REC2020_BETA  <const> = 0.018053968510807
+
+function rec2020Encode(X:num):num
+   sign = 1
+   if X < 0 then
+      sign = -1
+      X = -X
+   end
+   if X < REC2020_BETA then return sign * 4.5 * X end
+   return sign * ((REC2020_ALPHA * (X ** 0.45)) - (REC2020_ALPHA - 1))
+end
+
+function rec2020Decode(X:num):num
+   sign = 1
+   if X < 0 then
+      sign = -1
+      X = -X
+   end
+   if X < REC2020_BETA * 4.5 then return sign * X / 4.5 end
+   return sign * (((X + REC2020_ALPHA - 1) / REC2020_ALPHA) ** (1 / 0.45))
+end
+
+-- The Adobe RGB (1998) transfer function: a pure gamma of 563/256.  Negative values are mirrored.
+
+function a98Encode(X:num):num
+   if X < 0 then return -((-X) ** (256 / 563)) end
+   return X ** (256 / 563)
+end
+
+function a98Decode(X:num):num
+   if X < 0 then return -((-X) ** (563 / 256)) end
+   return X ** (563 / 256)
+end
+
+-- Apply a 3x3 matrix to linear channels.  A nil matrix is the identity.
+
+function transform(M:table, R:num, G:num, B:num):<num, num, num>
+   M ?! return R, G, B
+   return (M[0][0] * R) + (M[0][1] * G) + (M[0][2] * B),
+      (M[1][0] * R) + (M[1][1] * G) + (M[1][2] * B),
+      (M[2][0] * R) + (M[2][1] * G) + (M[2][2] * B)
+end
+
+-- RGB colour spaces, keyed by ID.  Each space has a display name, its CSS color() keyword, the matrices that convert
+-- linear sRGB to and from its linear channels (nil for sRGB itself) and its transfer function pair.  All of the
+-- spaces use the D65 white point.  Rec. 2020 is treated as an SDR container gamut: the engine has no HDR output, so
+-- only its primaries and SDR transfer function apply.
+
+SPACES <const> = {
+   srgb = {
+      id = 'srgb', name = 'sRGB', css = 'srgb', encode = colourmath.srgbEncode, decode = colourmath.srgbDecode
+   },
+   ['srgb-linear'] = {
+      id = 'srgb-linear', name = 'Linear sRGB', css = 'srgb-linear', encode = linearTransfer, decode = linearTransfer
+   },
+   p3 = {
+      id = 'p3', name = 'Display P3', css = 'display-p3',
+      fromSrgb = multiply(XYZ_TO_P3, SRGB_TO_XYZ), toSrgb = multiply(XYZ_TO_SRGB, P3_TO_XYZ),
+      encode = colourmath.srgbEncode, decode = colourmath.srgbDecode
+   },
+   a98 = {
+      id = 'a98', name = 'Adobe RGB (1998)', css = 'a98-rgb',
+      fromSrgb = multiply(XYZ_TO_A98, SRGB_TO_XYZ), toSrgb = multiply(XYZ_TO_SRGB, A98_TO_XYZ),
+      encode = a98Encode, decode = a98Decode
+   },
+   rec2020 = {
+      id = 'rec2020', name = 'Rec. 2020', css = 'rec2020',
+      fromSrgb = multiply(XYZ_TO_REC2020, SRGB_TO_XYZ), toSrgb = multiply(XYZ_TO_SRGB, REC2020_TO_XYZ),
+      encode = rec2020Encode, decode = rec2020Decode
+   }
+}
+
+lCssSpaces = { } -- CSS color() keyword -> space
+for _, space in SPACES do
+   if space.css then lCssSpaces[space.css] = space end
+end
+
+@Doc(text=[[
+@desc Describe a colour space.  The supported IDs are 'srgb', 'srgb-linear', 'p3' (Display P3), 'a98' (Adobe RGB
+1998) and 'rec2020' (Rec. 2020, as an SDR container gamut).
+@input Space ID
+@result Table of { id, name, css }, where css is the keyword used by the CSS color() function, or nil if the space
+is unknown
+]])
+colourmath.spaceInfo = function(Space:str):table
+   space = SPACES[Space ?? '']
+   space ?! return nil
+   return { id = space.id, name = space.name, css = space.css }
+end
+
+@Doc(text=[[
+@desc Convert OKLCH to sRGB.  The channels are unclamped and the fourth result indicates whether the colour is
+inside the sRGB gamut.
+@result R, G, B (encoded, unclamped) and an in-gamut flag
+]])
+colourmath.oklchToSrgb = function(L:num!, C:num!, H:num!):<num, num, num, bool>
+   l, a, b = colourmath.oklchToOklab(L, C, H)
+   lr, lg, lb = colourmath.oklabToLinearSrgb(l, a, b)
+   return colourmath.srgbEncode(lr), colourmath.srgbEncode(lg), colourmath.srgbEncode(lb), linearInGamut(lr, lg, lb)
+end
+
+@Doc(text=[[
+@desc Convert OKLCH to an RGB colour space.  The channels are unclamped and the fourth result indicates whether the
+colour is inside the space's gamut.
+@input Lightness (0 - 1)
+@input Chroma
+@input Hue (degrees)
+@input Space ID, for example 'srgb' or 'p3' (see spaceInfo())
+@result R, G, B (encoded, unclamped) and an in-gamut flag, or nil if the space is unknown
+]])
+colourmath.oklchToSpace = function(L:num!, C:num!, H:num!, Space:str!):<num, num, num, bool>
+   space = SPACES[Space]
+   space ?! return nil
+   l, a, b = colourmath.oklchToOklab(L, C, H)
+   lr, lg, lb = transform(space.fromSrgb, colourmath.oklabToLinearSrgb(l, a, b))
+   return space.encode(lr), space.encode(lg), space.encode(lb), linearInGamut(lr, lg, lb)
+end
+
+@Doc(text=[[
+@desc Convert OKLCH to Display P3.  P3 uses the sRGB transfer function.  The channels are unclamped and the fourth
+result indicates whether the colour is inside the P3 gamut.
+@result R, G, B (encoded, unclamped) and an in-gamut flag
+]])
+colourmath.oklchToP3 = function(L:num!, C:num!, H:num!):<num, num, num, bool>
+   return colourmath.oklchToSpace(L, C, H, 'p3')
+end
+
+@Doc(text=[[
+@desc Convert encoded sRGB (0 - 1) to OKLCH.  PrevH is the hue to keep if the colour is grey.
+]])
+colourmath.srgbToOklch = function(R:num!, G:num!, B:num!, PrevH:num):<num, num, num>
+   l, a, b = colourmath.linearSrgbToOklab(colourmath.srgbDecode(R), colourmath.srgbDecode(G), colourmath.srgbDecode(B))
+   return colourmath.oklabToOklch(l, a, b, PrevH)
+end
+
+@Doc(text=[[
+@desc Convert encoded channels of an RGB colour space to OKLCH.  This is the inverse of oklchToSpace().  Channels
+outside 0 - 1 are accepted.
+@input Red, green and blue channels
+@input Space ID, for example 'srgb' or 'p3' (see spaceInfo())
+@input Optional hue to retain for greys, otherwise 0
+@result L, C and H, or nil if the space is unknown
+]])
+colourmath.spaceToOklch = function(R:num!, G:num!, B:num!, Space:str!, PrevH:num):<num, num, num>
+   space = SPACES[Space]
+   space ?! return nil
+   l, a, b = colourmath.linearSrgbToOklab(transform(space.toSrgb, space.decode(R), space.decode(G), space.decode(B)))
+   return colourmath.oklabToOklch(l, a, b, PrevH)
+end
+
+-- Resolve the space for a gamut test.  An unknown or missing ID is treated as sRGB.
+
+function gamutSpace(Space:str):table
+   return SPACES[Space ?? ''] or SPACES.srgb
+end
+
+function spaceInGamut(Space:table, L:num, C:num, H:num):bool
+   l, a, b = colourmath.oklchToOklab(L, C, H)
+   return linearInGamut(transform(Space.fromSrgb, colourmath.oklabToLinearSrgb(l, a, b)))
+end
+
+@Doc(text=[[
+@desc Test whether an OKLCH colour is inside a colour space gamut.
+@input Lightness (0 - 1)
+@input Chroma
+@input Hue (degrees)
+@input Space ID: 'srgb' (default), 'p3' or another ID known to spaceInfo().  An unknown ID tests against sRGB.
+]])
+colourmath.inGamut = function(L:num!, C:num!, H:num!, Space:str):bool
+   return spaceInGamut(gamutSpace(Space), L, C, H)
+end
+
+@Doc(text=[[
+@desc Return the maximum chroma that stays inside a gamut at a fixed lightness and hue.  A binary search of 16
+iterations is used, so the result is accurate to about 0.00001.
+@input Lightness (0 - 1)
+@input Hue (degrees)
+@input Space ID: 'srgb' (default), 'p3' or another ID known to spaceInfo().  An unknown ID uses sRGB.
+]])
+colourmath.maxChroma = function(L:num!, H:num!, Space:str):num
+   if (L <= 0) or (L >= 1) then return 0 end
+   space = gamutSpace(Space)
+   lo = 0
+   hi = CHROMA_LIMIT
+   for _ in {0 to 16} do
+      mid = (lo + hi) * 0.5
+      if spaceInGamut(space, L, mid, H) then
+         lo = mid
+      else
+         hi = mid
+      end
+   end
+   return lo
+end
+
+@Doc(text=[[
+@desc Map an OKLCH colour into a gamut by reducing its chroma at a fixed lightness and hue.  This is a simplified
+form of the CSS Color 4 gamut mapping algorithm.  Colours already inside the gamut are returned unchanged, and a
+Space of 'none' disables mapping.
+@result L, C, H
+]])
+colourmath.gamutMap = function(L:num!, C:num!, H:num!, Space:str):<num, num, num>
+   if Space is 'none' then return L, C, H end
+   if L >= 1 then return 1, 0, H end
+   if L <= 0 then return 0, 0, H end
+   if colourmath.inGamut(L, C, H, Space) then return L, C, H end
+   return L, colourmath.maxChroma(L, H, Space), H
+end
+
+@Doc(text=[[
+@desc Return the share of a gamut that lies beyond sRGB at the colour's lightness and hue, as a fraction of the
+gamut's maximum chroma.  Used for the headroom readout of a wide target gamut.
+]])
+colourmath.headroom = function(L:num!, H:num!, Space:str!):num
+   wide = colourmath.maxChroma(L, H, Space)
+   if wide <= 0 then return 0 end
+   return math.max(0, (wide - colourmath.maxChroma(L, H, 'srgb')) / wide)
+end
+
+@Doc(text=[[
+@desc Return the share of the Display P3 gamut that lies beyond sRGB at the colour's lightness and hue, as a
+fraction of the P3 maximum chroma.  Equivalent to `headroom(L, H, 'p3')`.
+]])
+colourmath.p3Headroom = function(L:num!, H:num!):num
+   return colourmath.headroom(L, H, 'p3')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Convert encoded sRGB (0 - 1) to HSL.
+@result H (degrees), S (0 - 1), L (0 - 1)
+]])
+colourmath.srgbToHsl = function(R:num!, G:num!, B:num!):<num, num, num>
+   R = math.clamp(R, 0, 1)
+   G = math.clamp(G, 0, 1)
+   B = math.clamp(B, 0, 1)
+   max = math.max(R, G, B)
+   min = math.min(R, G, B)
+   l = (max + min) * 0.5
+   d = max - min
+   if d <= 0 then return 0, 0, l end
+
+   s = (l > 0.5) ? d / (2 - max - min) : d / (max + min)
+   local h:num
+   if max is R then
+      h = ((G - B) / d) + ((G < B) ? 6 : 0)
+   elseif max is G then
+      h = ((B - R) / d) + 2
+   else
+      h = ((R - G) / d) + 4
+   end
+   return h * 60, s, l
+end
+
+@Doc(text=[[
+@desc Convert encoded sRGB (0 - 1) to HSV.
+@result H (degrees), S (0 - 1), V (0 - 1)
+]])
+colourmath.srgbToHsv = function(R:num!, G:num!, B:num!):<num, num, num>
+   R = math.clamp(R, 0, 1)
+   G = math.clamp(G, 0, 1)
+   B = math.clamp(B, 0, 1)
+   max = math.max(R, G, B)
+   min = math.min(R, G, B)
+   d = max - min
+   s = (max > 0) ? d / max : 0
+   if d <= 0 then return 0, s, max end
+
+   local h:num
+   if max is R then
+      h = ((G - B) / d) + ((G < B) ? 6 : 0)
+   elseif max is G then
+      h = ((B - R) / d) + 2
+   else
+      h = ((R - G) / d) + 4
+   end
+   return h * 60, s, max
+end
+
+@Doc(text=[[
+@desc Convert encoded sRGB (0 - 1) to CIE Lab with a D50 white point (Bradford adaptation), which matches the
+interpretation of lab() in CSS and the vector painter.
+@result L (0 - 100), a, b
+]])
+colourmath.srgbToCieLab = function(R:num!, G:num!, B:num!):<num, num, num>
+   lr = colourmath.srgbDecode(R)
+   lg = colourmath.srgbDecode(G)
+   lb = colourmath.srgbDecode(B)
+   m = lSRGBToD50
+   x = ((m[0][0] * lr) + (m[0][1] * lg) + (m[0][2] * lb)) / D50_WHITE[0]
+   y = ((m[1][0] * lr) + (m[1][1] * lg) + (m[1][2] * lb)) / D50_WHITE[1]
+   z = ((m[2][0] * lr) + (m[2][1] * lg) + (m[2][2] * lb)) / D50_WHITE[2]
+
+   fx = (x > LAB_EPSILON) ? cbrt(x) : ((LAB_KAPPA * x) + 16) / 116
+   fy = (y > LAB_EPSILON) ? cbrt(y) : ((LAB_KAPPA * y) + 16) / 116
+   fz = (z > LAB_EPSILON) ? cbrt(z) : ((LAB_KAPPA * z) + 16) / 116
+
+   return (116 * fy) - 16, 500 * (fx - fy), 200 * (fy - fz)
+end
+
+@Doc(text=[[
+@desc Format encoded sRGB (0 - 1) as an uppercase hex string.  Channels are clamped.  The alpha channel is appended
+only if Alpha is less than 1.
+]])
+colourmath.toHex = function(R:num!, G:num!, B:num!, Alpha:num):str
+   r = math.round(math.clamp(R, 0, 1) * 255)
+   g = math.round(math.clamp(G, 0, 1) * 255)
+   b = math.round(math.clamp(B, 0, 1) * 255)
+   if Alpha and (Alpha < 1) then
+      return string.format('#%02X%02X%02X%02X', r, g, b, math.round(math.clamp(Alpha, 0, 1) * 255))
+   end
+   return string.format('#%02X%02X%02X', r, g, b)
+end
+
+-- Format a number with a fixed number of decimal places, then remove trailing zeros.
+
+function trimmed(Value:num, Places:num):str
+   s = string.format(f'%.{Places}f', Value)
+   if s.find('.', 0, true) then
+      while s.endsWith('0') do s = s.sub(0, -1) end
+      if s.endsWith('.') then s = s.sub(0, -1) end
+   end
+   if s is '-0' then s = '0' end
+   return s
+end
+
+@Doc(text=[[
+@desc Format an OKLCH colour as a CSS oklch() string, for example 'oklch(0.62 0.18 258)'.  The alpha component is
+included only if it is less than 1.
+]])
+colourmath.toOklchString = function(L:num!, C:num!, H:num!, Alpha:num):str
+   s = f'oklch({trimmed(L, 3)} {trimmed(C, 3)} {trimmed(H, 1)}'
+   if Alpha and (Alpha < 1) then s ..= f' / {trimmed(Alpha, 2)}' end
+   return s .. ')'
+end
+
+@Doc(text=[[
+@desc Format encoded channels of an RGB colour space as a CSS color() string, for example
+'color(display-p3 0.9175 0.2003 0.1386)'.  The channels are formatted as given, without clipping.  The alpha component
+is included only if it is less than 1.
+@input Red, green and blue channels
+@input Alpha (0 - 1), or nil for opaque
+@input Space ID, for example 'srgb' or 'p3' (see spaceInfo())
+@input Decimal places for the channels; the default is 4.  Trailing zeros are removed.
+@result The string, or nil if the space is unknown or has no color() keyword
+]])
+colourmath.formatColor = function(R:num!, G:num!, B:num!, Alpha:num, Space:str!, Places:num):str
+   space = SPACES[Space]
+   if (not space) or (not space.css) then return nil end
+   places = (Places != nil) ? Places : 4
+   s = f'color({space.css} {trimmed(R, places)} {trimmed(G, places)} {trimmed(B, places)}'
+   if Alpha and (Alpha < 1) then s ..= f' / {trimmed(Alpha, 2)}' end
+   return s .. ')'
+end
+
+@Doc(text=[[
+@desc Format an OKLCH colour as a CSS color() string in an RGB colour space, for example
+'color(display-p3 0.9175 0.2003 0.1386)'.  The channels are not clipped, so a colour outside the space's gamut gives
+values outside 0 - 1.  Map the colour with gamutMap() first if this is unwanted.  The alpha component is included
+only if it is less than 1.
+@input Lightness (0 - 1)
+@input Chroma
+@input Hue (degrees)
+@input Alpha (0 - 1), or nil for opaque
+@input Space ID, for example 'srgb' or 'p3' (see spaceInfo())
+@input Decimal places for the channels; the default is 4.  Trailing zeros are removed.
+@result The string, or nil if the space is unknown or has no color() keyword
+]])
+colourmath.toColorString = function(L:num!, C:num!, H:num!, Alpha:num, Space:str!, Places:num):str
+   r, g, b = colourmath.oklchToSpace(L, C, H, Space)
+   if r is nil then return nil end
+   return colourmath.formatColor(r, g, b, Alpha, Space, Places)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function namedList():array<table>
+   if not lNamedList then
+      lNamedList = array<table>
+      for token in values(NAMED.trim().split()) do
+         token = token.trim()
+         if #token > 0 then
+            sep = token.find(':', 0, true)
+            id = token.sub(0, sep)
+            lNamedList.push({
+               name = rxWordBreak.replace(id, '$1 $2'), keyword = id.lower(), hex = token.sub(sep + 1)
+            })
+         end
+      end
+   end
+   return lNamedList
+end
+
+function namedHex():table
+   if not lNamedHex then
+      lNamedHex = { }
+      for entry in values(namedList()) do
+         lNamedHex[entry.keyword] = entry.hex
+      end
+   end
+   return lNamedHex
+end
+
+function hexToSrgb(Hex:str):<num, num, num, num>
+   n = #Hex
+   if (n is 3) or (n is 4) then
+      r = tonumber(Hex.sub(0, 1), 16)
+      g = tonumber(Hex.sub(1, 2), 16)
+      b = tonumber(Hex.sub(2, 3), 16)
+      a = (n is 4) ? tonumber(Hex.sub(3, 4), 16) : 15
+      return (r * 17) / 255, (g * 17) / 255, (b * 17) / 255, (a * 17) / 255
+   elseif (n is 6) or (n is 8) then
+      r = tonumber(Hex.sub(0, 2), 16)
+      g = tonumber(Hex.sub(2, 4), 16)
+      b = tonumber(Hex.sub(4, 6), 16)
+      a = (n is 8) ? tonumber(Hex.sub(6, 8), 16) : 255
+      return r / 255, g / 255, b / 255, a / 255
+   end
+   return nil
+end
+
+-- Parse a numeric CSS component.  Percentages are scaled by PercentScale (the value that 100% represents).
+
+function component(Token:str, PercentScale:num):num
+   if Token is 'none' then return 0 end
+   value, unit = rxNumber.extract(Token, 0)
+   value = tonumber(value)
+   if value is nil then return nil end
+   unit = unit.lower()
+   return choose unit from
+      ''     -> value
+      '%'    -> value * PercentScale / 100
+      'deg'  -> value
+      'rad'  -> math.deg(value)
+      'grad' -> value * 0.9
+      'turn' -> value * 360
+      else   -> nil
+   end
+end
+
+-- Parse an RGB channel of the CSS color() function, where 100% is 1.  Units other than % are invalid.
+
+function rgbComponent(Token:str):num
+   if Token is 'none' then return 0 end
+   value, unit = rxNumber.extract(Token, 0)
+   value = tonumber(value)
+   if value is nil then return nil end
+   if unit is '' then return value end
+   if unit is '%' then return value / 100 end
+   return nil
+end
+
+-- Parse the optional alpha component of a colour function.  A missing alpha is opaque.
+
+function alphaComponent(Token:str):num
+   if Token is nil then return 1 end
+   return component(Token, 1)
+end
+
+-- Split the arguments of a colour function into its components and optional alpha.
+
+function splitArgs(Args:str):<array<str>, str>
+   alpha = nil
+   slash = Args.find('/', 0, true)
+   if slash then
+      alpha = Args.sub(slash + 1).trim()
+      Args = Args.sub(0, slash)
+   end
+   parts = array<str>
+   for v in values(rxSpace.split(Args.trim())) do
+      if #v > 0 then parts.push(v) end
+   end
+   return parts, alpha
+end
+
+function finite(Value:num):bool
+   return (Value is Value) and (math.abs(Value) != math.huge)
+end
+
+function oklchResult(L:num, C:num, H:num, Alpha:num):table
+   if not (finite(L) and finite(C) and finite(H) and finite(Alpha)) then return nil end
+   return { l = math.clamp(L, 0, 1), c = math.max(C, 0), h = normaliseHue(H), alpha = math.clamp(Alpha, 0, 1) }
+end
+
+function srgbResult(R:num, G:num, B:num, Alpha:num):table
+   if not (finite(R) and finite(G) and finite(B) and finite(Alpha)) then return nil end
+   l, c, h = colourmath.srgbToOklch(R, G, B)
+   return oklchResult(l, c, h, Alpha)
+end
+
+@Doc(text=[[
+@desc Parse a CSS colour string into OKLCH.  The oklch() and oklab() functions, and the color() function with the
+srgb, srgb-linear, display-p3, a98-rgb and rec2020 spaces, are interpreted directly, so colours outside sRGB are
+kept.  A color() string with another space, such as prophoto-rgb, is rejected.  Hex values and named colours are
+parsed locally, and other formats (rgb(), hsl(), lab() and so on) are passed to the vector painter.
+@input Colour string
+@result Table of { l, c, h, alpha }, or nil if the string is not a valid colour
+]])
+colourmath.parseColour = function(Str:str):table
+   Str ?! return nil
+   text = Str.trim().lower()
+
+   fn, args = rxFunction.extract(text, 0)
+   if (fn is 'oklch') or (fn is 'oklab') then
+      parts, alpha_str = splitArgs(args)
+      if #parts != 3 then return nil end
+      alpha = alphaComponent(alpha_str)
+      if alpha is nil then return nil end
+
+      l = component(parts[0], 1)
+      if fn is 'oklch' then
+         if parts[2].endsWith('%') then return nil end
+         c = component(parts[1], 0.4)
+         h = component(parts[2], 1)
+         if (not l) or (not c) or (not h) then return nil end
+         return oklchResult(l, c, h, alpha)
+      else
+         a = component(parts[1], 0.4)
+         b = component(parts[2], 0.4)
+         if (not l) or (not a) or (not b) then return nil end
+         ol, oc, oh = colourmath.oklabToOklch(l, a, b)
+         return oklchResult(ol, oc, oh, alpha)
+      end
+   end
+
+   if fn is 'color' then
+      parts, alpha_str = splitArgs(args)
+      if #parts != 4 then return nil end
+      space = lCssSpaces[parts[0]]
+      space ?! return nil
+      alpha = alphaComponent(alpha_str)
+      r = rgbComponent(parts[1])
+      g = rgbComponent(parts[2])
+      b = rgbComponent(parts[3])
+      if (alpha is nil) or (r is nil) or (g is nil) or (b is nil) then return nil end
+      ol, oc, oh = colourmath.spaceToOklch(r, g, b, space.id)
+      return oklchResult(ol, oc, oh, alpha)
+   end
+
+   hex = rxHex.extract(text, 0)
+   if hex then
+      r, g, b, a = hexToSrgb(hex)
+      if r is nil then return nil end
+      return srgbResult(r, g, b, a)
+   end
+
+   if text is 'transparent' then return oklchResult(0, 0, 0, 0) end
+
+   named = namedHex()[text]
+   if named then
+      r, g, b, a = hexToSrgb(named)
+      return srgbResult(r, g, b, a)
+   end
+
+   -- Only a whole-string function with well-formed numeric arguments, or a single bare keyword, is passed to the
+   -- painter.  ReadPainter stops at the first unrecognised character and would otherwise accept trailing junk.
+
+   if fn then
+      parts, alpha_str = splitArgs(args)
+      if (#parts != 3) and not ((#parts is 4) and (alpha_str is nil) and args.find(',', 0, true)) then return nil end
+      if alpha_str then parts.push(alpha_str) end
+      for v in values(parts) do
+         if v != 'none' then
+            value = rxNumber.extract(v, 0)
+            value = tonumber(value)
+            if (value is nil) or (not finite(value)) then return nil end
+         end
+      end
+   elseif not rxKeyword.test(text) then
+      return nil
+   end
+
+   if mVec.ReadPainter(nil, text, lPainter) != ERR_Okay then return nil end
+   col = lPainter.colour
+   return srgbResult(col.red, col.green, col.blue, col.alpha)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Return the WCAG 2 relative luminance of an encoded sRGB colour table with r, g and b fields (0 - 1).
+]])
+colourmath.luminance = function(RGB:table!):num
+   return (0.2126 * colourmath.srgbDecode(math.clamp(RGB.r, 0, 1))) +
+      (0.7152 * colourmath.srgbDecode(math.clamp(RGB.g, 0, 1))) +
+      (0.0722 * colourmath.srgbDecode(math.clamp(RGB.b, 0, 1)))
+end
+
+@Doc(text=[[
+@desc Composite an encoded sRGB foreground over an opaque sRGB background.  Both tables have r, g and b fields
+in the range 0 - 1.  Alpha is the foreground opacity; nil means opaque.
+@result Opaque sRGB table with r, g and b fields
+]])
+colourmath.compositeSrgb = function(Fore:table!, Back:table!, Alpha:num):table
+   alpha = (Alpha != nil) ? math.clamp(Alpha, 0, 1) : 1
+   return {
+      r = (Fore.r * alpha) + (Back.r * (1 - alpha)),
+      g = (Fore.g * alpha) + (Back.g * (1 - alpha)),
+      b = (Fore.b * alpha) + (Back.b * (1 - alpha))
+   }
+end
+
+@Doc(text=[[
+@desc Return the WCAG 2 contrast ratio (1 - 21) between two sRGB colour tables with r, g and b fields (0 - 1).
+]])
+colourmath.wcagContrast = function(A:table!, B:table!):num
+   la = colourmath.luminance(A)
+   lb = colourmath.luminance(B)
+   if la < lb then la, lb = lb, la end
+   return (la + 0.05) / (lb + 0.05)
+end
+
+-- APCA-W3 0.0.98G-4g constants
+
+APCA <const> = {
+   mainTRC = 2.4, sRco = 0.2126729, sGco = 0.7151522, sBco = 0.0721750,
+   normBG = 0.56, normTXT = 0.57, revTXT = 0.62, revBG = 0.65,
+   blkThrs = 0.022, blkClmp = 1.414, scaleBoW = 1.14, scaleWoB = 1.14,
+   loBoWoffset = 0.027, loWoBoffset = 0.027, deltaYmin = 0.0005, loClip = 0.1
+}
+
+function apcaY(RGB:table):num
+   y = (APCA.sRco * (math.clamp(RGB.r, 0, 1) ** APCA.mainTRC)) +
+      (APCA.sGco * (math.clamp(RGB.g, 0, 1) ** APCA.mainTRC)) +
+      (APCA.sBco * (math.clamp(RGB.b, 0, 1) ** APCA.mainTRC))
+   if y > APCA.blkThrs then return y end
+   return y + ((APCA.blkThrs - y) ** APCA.blkClmp)
+end
+
+@Doc(text=[[
+@desc Return the APCA lightness contrast (Lc) of a text colour against a background colour, using the APCA-W3
+0.0.98G constants.  The result is positive for dark text on a light background and negative for light text on a
+dark background.
+]])
+colourmath.apcaLc = function(Text:table!, Bkgd:table!):num
+   ytxt = apcaY(Text)
+   ybg  = apcaY(Bkgd)
+   if math.abs(ybg - ytxt) < APCA.deltaYmin then return 0 end
+
+   if ybg > ytxt then
+      sapc = ((ybg ** APCA.normBG) - (ytxt ** APCA.normTXT)) * APCA.scaleBoW
+      if sapc < APCA.loClip then return 0 end
+      return (sapc - APCA.loBoWoffset) * 100
+   else
+      sapc = ((ybg ** APCA.revBG) - (ytxt ** APCA.revTXT)) * APCA.scaleWoB
+      if sapc > -APCA.loClip then return 0 end
+      return (sapc + APCA.loWoBoffset) * 100
+   end
+end
+
+@Doc(text=[[
+@desc Return the Euclidean distance between two OKLab colours, given as tables with l, a and b fields.
+]])
+colourmath.deltaEOK = function(A:table!, B:table!):num
+   dl = A.l - B.l
+   da = A.a - B.a
+   db = A.b - B.b
+   return math.sqrt((dl * dl) + (da * da) + (db * db))
+end
+
+@Doc(text=[[
+@desc Find the CSS named colour closest to an OKLab colour.
+@result The colour's display name, with spaces between its words (for example `Alice Blue`), and its OKLab distance
+]])
+colourmath.closestNamed = function(L:num!, A:num!, B:num!):<str, num>
+   if not lNamedOklab then
+      lNamedOklab = array<table>
+      for named in values(namedList()) do
+         r, g, b = hexToSrgb(named.hex)
+         nl, na, nb = colourmath.linearSrgbToOklab(colourmath.srgbDecode(r), colourmath.srgbDecode(g),
+            colourmath.srgbDecode(b))
+         lNamedOklab.push({ name = named.name, l = nl, a = na, b = nb })
+      end
+   end
+
+   target = { l = L, a = A, b = B }
+   best_name = ''
+   best = math.huge
+   for _, entry in lNamedOklab do
+      d = colourmath.deltaEOK(target, entry)
+      if d < best then
+         best = d
+         best_name = entry.name
+      end
+   end
+   return best_name, best
+end
+
+@Doc(text=[[
+@desc Return the number of CSS named colours known to closestNamed() and parseColour().
+]])
+colourmath.namedCount = function():num
+   return #namedList()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Colour vision deficiency simulation.  The matrices are those of Machado, Oliveira and Fernandes (2009) at
+-- severity 1, which act on linear sRGB.
+
+CVD_MATRICES <const> = {
+   protanopia = {
+      {  0.152286,  1.052583, -0.204868 },
+      {  0.114503,  0.786281,  0.099216 },
+      { -0.003882, -0.048116,  1.051998 }
+   },
+   deuteranopia = {
+      {  0.367322,  0.860646, -0.227968 },
+      {  0.280085,  0.672501,  0.047413 },
+      { -0.011820,  0.042940,  0.968881 }
+   },
+   tritanopia = {
+      {  1.255528, -0.076749, -0.178779 },
+      { -0.078411,  0.930809,  0.147602 },
+      {  0.004733,  0.691367,  0.303900 }
+   }
+}
+
+colourmath.CVD_KINDS = array<str> { 'protanopia', 'deuteranopia', 'tritanopia' }
+
+@Doc(text=[[
+@desc Simulate how a linear sRGB colour appears with a colour vision deficiency: `protanopia`, `deuteranopia` or
+`tritanopia`.  Any other Kind (including nil) returns the colour unchanged.
+@result Linear sRGB channels, clipped to 0 - 1
+]])
+colourmath.simulateCvd = function(R:num!, G:num!, B:num!, Kind:str):<num, num, num>
+   m = CVD_MATRICES[Kind ?? '']
+   m ?! return R, G, B
+   return math.clamp((m[0][0] * R) + (m[0][1] * G) + (m[0][2] * B), 0, 1),
+      math.clamp((m[1][0] * R) + (m[1][1] * G) + (m[1][2] * B), 0, 1),
+      math.clamp((m[2][0] * R) + (m[2][1] * G) + (m[2][2] * B), 0, 1)
+end
+
+@Doc(text=[[
+@desc Return the smallest OKLab distance between any two of a list of OKLCH colours, as they are displayed in sRGB
+(clipped per channel) and optionally seen with a colour vision deficiency (see simulateCvd()).  This measures how
+easily the most similar pair of a categorical palette can be told apart.
+@input Colours: array of tables with l, c and h fields
+@input Kind: nil for normal vision, or a deficiency name
+@result The distance and the indices of the closest pair, or nil if there are fewer than two colours
+]])
+colourmath.minDistance = function(Colours:array<any>!, Kind:str):<num, num, num>
+   labs = array<table>
+   for col in values(Colours) do
+      r, g, b = colourmath.oklchToSrgb(col.l, col.c, col.h)
+      lr, lg, lb = colourmath.simulateCvd(colourmath.srgbDecode(math.clamp(r, 0, 1)),
+         colourmath.srgbDecode(math.clamp(g, 0, 1)), colourmath.srgbDecode(math.clamp(b, 0, 1)), Kind)
+      l, a, ob = colourmath.linearSrgbToOklab(lr, lg, lb)
+      labs.push({ l = l, a = a, b = ob })
+   end
+
+   best, best_i, best_j = nil, nil, nil
+   for i in {0 to #labs} do
+      for j in {i + 1 to #labs} do
+         d = colourmath.deltaEOK(labs[i], labs[j])
+         if (best is nil) or (d < best) then best, best_i, best_j = d, i, j end
+      end
+   end
+   return best, best_i, best_j
+end
