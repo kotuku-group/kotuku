@@ -413,6 +413,96 @@ end
    assert(calls.concat(',') is 'a,b,a,b,c,e,free1,free2', 'Resubscription and Free must notify every subscriber')
 end
 
+-- Subscriptions to actions other than Free must be released when their object is freed, so that their callbacks
+-- (and whatever the callbacks reference) can be collected.
+
+function subscriptionCollected(Setup:func):bool
+   weak = setmetatable({ }, { __mode = 'k' })
+   do
+      owner = { }
+      weak[owner] = true
+      f = obj.new('time', { })
+      Setup(f, owner)
+      f.free()
+      owner = nil
+      f = nil
+   end
+   processing.collect()
+   processing.collect()
+   return next(weak) is nil
+end
+
+@Test function FreedObjectsReleaseActionSubscriptions()
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Query', function() Owner.x = 1 end)
+   end), 'A Query subscription must be released when its object is freed')
+
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Query', function() Owner.x = 1 end)
+      F.subscribe('Free', function() Owner.y = 1 end)
+   end), 'Query and Free subscriptions must both be released')
+
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Free', function() end)
+      F.subscribe('Query', function() Owner.x = 1 end)
+      F.unsubscribe('Free')
+   end), 'Unsubscribing from Free must keep the release of the remaining subscriptions')
+
+   removed_free_called = false
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Query', function()
+         Owner.x = 1
+         F.unsubscribe('Free')
+      end)
+      F.subscribe('Free', function() removed_free_called = true end)
+      check F.acQuery()
+   end), 'Unsubscribing from Free during notification must preserve subscription cleanup')
+   assert(not removed_free_called, 'Unsubscribed Free callback must not run')
+
+   free_state_updated = false
+   assert(subscriptionCollected(function(F, Owner)
+      state = F.state()
+      F.subscribe('Free', function()
+         F.unsubscribe('Free')
+         state.owner = Owner
+         free_state_updated = true
+      end)
+   end), 'State updated by a Free callback must be released after the callbacks finish')
+   assert(free_state_updated, 'The Free callback must update its captured state table successfully')
+
+   -- Free callbacks still run when the object also has other subscriptions, in either subscription order.
+
+   calls = array<str>
+   f = obj.new('time', { })
+   f.subscribe('Query', function() calls.push('query') end)
+   f.subscribe('Free', function() calls.push('free') end)
+   check f.acQuery()
+   f.free()
+   g = obj.new('time', { })
+   g.subscribe('Free', function() calls.push('free') end)
+   g.subscribe('Query', function() calls.push('query') end)
+   g.free()
+   assert(calls.concat(',') is 'query,free,free', 'Free callbacks must still run: ' .. calls.concat(','))
+end
+
+@Test function FreedObjectsReleaseStateTables()
+   assert(subscriptionCollected(function(F, Owner)
+      F.state().owner = Owner
+   end), 'A state table must be released when its object is freed')
+
+   assert(subscriptionCollected(function(F, Owner)
+      F.state().owner = Owner
+      F.subscribe('Free', function() end)
+      F.unsubscribe('Free')
+   end), 'Unsubscribing from Free must keep the release of the state table')
+
+   f = obj.new('time', { })
+   f.state().value = 42
+   processing.collect()
+   assert(f.state().value is 42, 'A live object keeps its state table')
+   f.free()
+end
+
 -----------------------------------------------------------------------------------------------------------------------
 -- Actions appended to AC must have a matching Tiri jump-table entry.  A missing entry dispatches through null.
 

@@ -728,6 +728,18 @@ LJLIB_INTRINSIC LJLIB_CF(object_state)
       lua_createtable(L, 0, 0);
       auto state_ref = luaL_ref(L, LUA_REGISTRYINDEX);
       L->script->StateMap[def->uid] = state_ref;
+
+      // The state table is released by notify_action() when the object is destroyed.
+
+      OBJECTPTR obj;
+      if (access_object(def, obj) IS ERR::Okay) {
+         if (auto error = watch_object_free(L->script, obj); error != ERR::Okay) {
+            kt::Log log("obj.state");
+            log.warning("State of #%d will not be released when it is freed: %s", def->uid, GetErrorMsg(error));
+         }
+         release_object(def);
+      }
+
       lua_rawgeti(L, LUA_REGISTRYINDEX, state_ref);
       return 1;
    }
@@ -926,7 +938,11 @@ static int object_subscribe(lua_State *Lua)
 
    auto callback = C_FUNCTION(notify_action);
    callback.Context = Lua->script;
-   if (auto error = subscribed ? ERR::Okay : SubscribeAction(obj, action_id, &callback); !error) {
+   auto error = watch_object_free(Lua->script, obj);
+   if ((error IS ERR::Okay) and (action_id != AC::Free) and not subscribed) {
+      error = SubscribeAction(obj, action_id, &callback);
+   }
+   if (error IS ERR::Okay) {
       auto &acsub = Lua->script->ActionList.emplace_back();
       acsub.Serial = ++Lua->script->ActionSerial;
 

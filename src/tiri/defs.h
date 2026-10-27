@@ -212,7 +212,8 @@ struct actionmonitor {
    actionmonitor() {}
 
    ~actionmonitor() {
-      if (ObjectID) {
+      // The per-object lifetime watch owns the native Free subscription.
+      if (ObjectID and (ActionID != AC::Free)) {
          kt::Log log(__FUNCTION__);
          log.trace("Unsubscribe action %s from object #%d", glActions[int(ActionID)].Name, ObjectID);
          OBJECTPTR obj;
@@ -506,6 +507,7 @@ void make_struct_array(lua_State *, std::string_view, int, CPTR, int = 0, struct
 ERR make_struct_ptr_array(lua_State *, std::string_view, int, CPTR *, struct_record * = nullptr);
 void make_struct_serial_array(lua_State *, std::string_view, int, CPTR, struct_record * = nullptr);
 void notify_action(OBJECTPTR, ACTIONID, ERR, APTR);
+ERR watch_object_free(extTiri *, OBJECTPTR);
 void process_error(extTiri *, CSTRING);
 void process_callback_error(extTiri *, CSTRING);
 ERR push_object_id(lua_State *, OBJECTID ObjectID);
@@ -610,6 +612,7 @@ class extTiri : public objTiri {
    lua_State *Lua;                        // Lua instance
    std::vector<actionmonitor> ActionList; // Action subscriptions managed by subscribe()
    uint32_t ActionSerial = 0;             // Source of actionmonitor.Serial values
+   std::unordered_set<OBJECTID> FreeWatch; // Objects whose Free is monitored by notify_action()
    std::vector<eventsub> EventList;       // Event subscriptions managed by subscribeEvent()
    std::vector<datarequest> Requests;     // For drag and drop requests
    std::vector<VariableInfo> CapturedVariables; // Variable declarations captured during parsing (JOF::DIAGNOSE)
