@@ -934,6 +934,7 @@ class extVectorScene : public objVectorScene {
    int64_t KeyDispatchSkip; // A key dispatch to ignore because the scene gained the focus while it was in progress.
    int64_t KeySubscribedDispatch; // The key dispatch in progress when the scene subscribed to key events, if any.
    OBJECTID DropTargetID; // The viewport receiving the drop that is currently being delivered.
+   OBJECTID DragHoverID = 0; // Hover target, independently of normal pointer capture.
    double DropX, DropY; // Drop coordinates relative to DropTargetID, captured before delivery.
    int InputHandle;
    PTC Cursor; // Current cursor image

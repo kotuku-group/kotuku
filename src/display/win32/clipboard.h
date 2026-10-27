@@ -19,7 +19,9 @@ int winClipboardChanged(void);
 void winDisableDragDrop(HWND Window);
 void winCreateScreenClassClipboard(void);
 void winInitialiseClipboard(void);
-void winDragDropFromHost_Drop(int, char *);
+int winDragDropFromHost_Over(int, int, int, const char *, int);
+int winDragDropFromHost_Drop(int, int, int, const char *);
+void winDragDropFromHost_Leave(void);
 void win_clipboard_updated(void);
 void winTerminateClipboard(void);
 

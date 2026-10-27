@@ -1,0 +1,97 @@
+-- End-to-end OLE import from a separate native process.  Run with --gfx-driver=windows and
+-- source=<absolute path to test_display_windows_drop.exe>.  These tests temporarily move and restore the cursor.
+
+   import 'gui/window', 'gui/fileview'
+   module display as mGfx
+
+glBase = nil
+
+@BeforeEach function prepare()
+   glBase = f'temp:windows_drop_{mSys.PreciseTime()}/'
+   for folder in values(array<str> { 'src/', 'src/sub/', 'dst/' }) do
+      check mSys.CreateFolder(glBase .. folder, PERMIT_USER_READ | PERMIT_USER_WRITE | PERMIT_USER_EXEC)
+   end
+   local file <close> = obj.new('File', { path=glBase .. 'src/space & 三😀.txt', flags=FL_NEW | FL_WRITE })
+   check file.acWrite('native Unicode & XML receipt')
+   local nested <close> = obj.new('File', { path=glBase .. 'src/sub/child.txt', flags=FL_NEW | FL_WRITE })
+   check nested.acWrite('native folder')
+end
+
+@AfterEach function cleanup()
+   if glBase then mSys.DeleteFile(glBase); glBase = nil end
+end
+
+function nativeDrop(X:num!, Y:num!):num
+   local executable = arg('source')
+   assert(executable, 'The native OLE source executable must be provided')
+   local _, first = check mSys.ResolvePath(glBase .. 'src/space & 三😀.txt', 0)
+   local _, second = check mSys.ResolvePath(glBase .. 'src/sub', 0)
+   local done = false
+   local output = ''
+   local task <close> = obj.new('Task', {
+      location=executable,
+      exitCallback=function() done = true end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   for value in values(array<str> { 'source', f'{math.floor(X)}', f'{math.floor(Y)}', first, second }) do
+      check task.mtAddArgument(value)
+   end
+   check task.acActivate()
+   local deadline = mSys.PreciseTime() + 10000000
+   while not done and mSys.PreciseTime() < deadline do processing.sleep(0.02) end
+   assert(done, 'The external OLE source must complete: ' .. output)
+   if task.returnCode != 0 then print(output) end
+   return task.returnCode
+end
+
+@Test function NativeFilesAndFoldersAreCopiedFromTheRetainedOffer()
+   assert(mGfx.GetDisplayType() is DT_WINGDI, 'This test requires the Windows display driver')
+   local win = gui.window({ quit=false, dragDrop=true, stickToFront=true, x=100, y=100, insideWidth=500, insideHeight=300 })
+   defer win.surface?.free() end
+   local completed = 0
+   local received = array<str>
+   local view = gui.fileview({ target=win.clientViewport(), path=glBase .. 'dst/', style='list',
+      transferComplete=function(View, Sources, Dest, Error)
+         assert(Error is ERR_Okay, 'The deferred native copy must succeed')
+         completed++
+         for path in values(Sources) do received.push(path) end
+      end })
+   win.show()
+   win.surface.acMoveToFront()
+   win.surface.acFocus()
+   win.surface.acDraw()
+   processing.sleep(0)
+   local frame = view.view.frame
+   local x = win.surface.absX + frame.absX + 150
+   local y = win.surface.absY + frame.absY + 100
+   assert(nativeDrop(x, y) is 0, 'An accepted native drop must report DROPEFFECT_COPY')
+   local deadline = mSys.PreciseTime() + 3000000
+   while completed is 0 and mSys.PreciseTime() < deadline do processing.sleep(0.02) end
+   assert(completed is 1 and #received is 2, 'The receiver must retain exactly the two offered paths')
+   assert(io.readAll(glBase .. 'dst/space & 三😀.txt') is 'native Unicode & XML receipt',
+      'Native Unicode filenames and XML metacharacters must survive the full receipt path')
+   assert(io.readAll(glBase .. 'dst/sub/child.txt') is 'native folder',
+      'A native folder without a trailing slash must be copied as a folder')
+   assert(not obj.find('SystemPointer').dragSource and not view.view._dropTimer,
+      'The offer, feedback and autoscroll session must end after Drop')
+end
+
+@Test function ModalWindowsRejectInboundDropsOutsideTheirScope()
+   local win = gui.window({ quit=false, dragDrop=true, stickToFront=true, x=100, y=100, insideWidth=500, insideHeight=300 })
+   defer win.surface?.free() end
+   local view = gui.fileview({ target=win.clientViewport(), path=glBase .. 'dst/', style='list' })
+   win.show()
+   win.surface.acMoveToFront()
+   win.surface.acFocus()
+   local modal <close> = obj.new('Surface', { x=700, y=100, width=100, height=100 })
+   modal.acShow()
+   local previous = mGfx.SetModalSurface(modal.id)
+   defer mGfx.SetModalSurface(previous) end
+   win.surface.acDraw()
+   processing.sleep(0)
+   local frame = view.view.frame
+   assert(nativeDrop(win.surface.absX + frame.absX + 150, win.surface.absY + frame.absY + 100) is 2,
+      'OLE must report DROPEFFECT_NONE for a drop blocked by another modal window')
+   assert(mSys.AnalysePath(glBase .. 'dst/space & 三😀.txt') != ERR_Okay, 'Rejected drops must not copy files')
+   assert(not obj.find('SystemPointer').dragSource, 'Modal rejection must leave no native drag session')
+end

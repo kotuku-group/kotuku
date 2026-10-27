@@ -62,37 +62,79 @@ void resolve_popover(extSurface *Self)
 // Called when windows has an item to be dropped on our display area.
 
 #ifdef _WIN32
-void winDragDropFromHost_Drop(int SurfaceID, char *Datatypes)
+int winDragDropFromHost_Over(int SurfaceID, int X, int Y, const char *Datatypes, int Length)
 {
-#ifdef WIN_DRAGDROP
-   kt::Log log(__FUNCTION__);
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return 0;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if ((pointer->DragSourceID) and (not pointer->NativeDrag)) return 0;
 
-   log.branch("Surface: %d", SurfaceID);
-
-   if (auto pointer = gfx::AccessPointer()) {
-      // Pass AC::DragDrop to the surface underneath the mouse cursor.  If a surface subscriber accepts the data, it
-      // will send a DATA::REQUEST to the relevant display object.  See DISPLAY_DataFeed() and winGetData().
-
-      OBJECTID modal_id = gfx::GetModalSurface();
-      if (in_modal_scope(modal_id, SurfaceID)) modal_id = 0;
-
-      if (!modal_id) {
-         SURFACEINFO *info;
-         if (!gfx::GetSurfaceInfo(pointer->OverObjectID, &info)) {
-            kt::ScopedObjectLock display(info->DisplayID);
-            if (display.granted()) {
-               kt::ScopedObjectLock obj(pointer->OverObjectID);
-               if (obj.granted()) acDragDrop(*obj, *display, -1, Datatypes);
-            }
-         }
-         else log.warning(ERR::GetSurfaceInfo);
-      }
-      else log.msg("Program is modal - drag/drop cancelled.");
-
-      ReleaseObject(pointer);
+   const auto modal = gfx::GetModalSurface();
+   SURFACEINFO *info;
+   if ((not SurfaceID) or ((modal) and (not in_modal_scope(modal, SurfaceID))) or
+       (gfx::GetSurfaceInfo(SurfaceID, &info) != ERR::Okay)) {
+      winDragDropFromHost_Leave();
+      return 0;
    }
-#endif
+
+   pointer->NativeDrag = true;
+   pointer->DragSourceID = info->DisplayID;
+   pointer->DragItem = -1;
+   pointer->DragFeedback = -1;
+   pointer->DragData.fill(0);
+   pointer->DragDataSize = uint8_t(std::min(size_t(Length), pointer->DragData.size()));
+   copymem(Datatypes, pointer->DragData.data(), pointer->DragDataSize);
+   display::DriverMovement(SurfaceID, X, Y, false);
+
+   InputEvent event = {};
+   event.Type = JET::ABS_XY;
+   event.Flags = event.Mask = JTYPE::DRAG_ITEM;
+   event.RecipientID = event.OverID = pointer->OverObjectID;
+   event.X = pointer->OverX;
+   event.Y = pointer->OverY;
+   {
+      const std::lock_guard lock(glInputLock);
+      glInputEvents.push_back(event);
+   }
+   // OLE runs a nested message loop.  Feedback cannot wait for the application's next input cycle.
+   input_event_loop(HOSTHANDLE{}, nullptr);
+   // Legacy recipients leave DragFeedback at -1; only an explicit zero refuses the offer.
+   return (pointer->NativeDrag) and (pointer->DragFeedback != 0);
 }
+
+int winDragDropFromHost_Drop(int SurfaceID, int X, int Y, const char *Datatypes)
+{
+   kt::Log log(__FUNCTION__);
+   log.branch("Surface: %d, Position: %d,%d", SurfaceID, X, Y);
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return 0;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   const auto modal = gfx::GetModalSurface();
+   if ((modal) and (not in_modal_scope(modal, SurfaceID))) return 0;
+
+   // Refresh the position from OLE's snapshot, not GetCursorPos() or the last ordinary mouse message.
+   display::DriverMovement(SurfaceID, X, Y, false);
+   SURFACEINFO *info;
+   if (gfx::GetSurfaceInfo(SurfaceID, &info) != ERR::Okay) return 0;
+   kt::ScopedObjectLock display(info->DisplayID);
+   kt::ScopedObjectLock destination(pointer->OverObjectID);
+   if ((not display.granted()) or (not destination.granted())) return 0;
+   pointer->DragFeedback = -1;
+   pointer->DragDelivering = true;
+   acDragDrop(*destination, *display, -1, Datatypes);
+   pointer->DragDelivering = false;
+   return pointer->DragFeedback != 0;
+}
+
+void winDragDropFromHost_Leave(void)
+{
+   if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+      if (pointer->NativeDrag) end_cursor_drag(pointer, false);
+      ReleaseObject(pointer);
+      input_event_loop(HOSTHANDLE{}, nullptr);
+   }
+}
+
 #endif
 
 //********************************************************************************************************************

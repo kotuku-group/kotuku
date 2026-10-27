@@ -20,6 +20,13 @@ void DriverKeyPress(KQ Flags, KEY Value, int Printable)
 {
    if (Value IS KEY::NIL) return;
 
+   if (Value IS KEY::ESCAPE) {
+      if (auto pointer = gfx::AccessPointer()) {
+         if (pointer->DragSourceID) acDeactivate(pointer);
+         ReleaseObject(pointer);
+      }
+   }
+
    if ((Printable < 0x20) or (Printable IS 127)) Flags |= KQ::NOT_PRINTABLE;
 
    evKey key = {
@@ -572,7 +579,10 @@ extern "C" int winResolveSurfaceID(HWND Window)
 void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes)
 {
    #ifdef _WIN32
-      winDragDropFromHost_Drop(SurfaceID, (char *)Datatypes);
+      if (auto pointer = gfx::AccessPointer()) {
+         winDragDropFromHost_Drop(SurfaceID, pointer->HostX, pointer->HostY, Datatypes);
+         ReleaseObject(pointer);
+      }
    #else
       if (auto pointer = gfx::AccessPointer()) {
          auto target_id = pointer->OverObjectID ? pointer->OverObjectID : SurfaceID;

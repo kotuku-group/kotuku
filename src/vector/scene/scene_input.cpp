@@ -242,6 +242,46 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          }
       }
 
+      if ((Self->DropRouting) and (((input->Flags & JTYPE::DRAG_ITEM) != JTYPE::NIL) or Self->DragHoverID)) {
+         // Drag hit testing must not use ActiveVector or ButtonLock.  Route feedback even to targets that have no
+         // ordinary pointer subscription, and explicitly notify the previous target when it is left.
+         double x = 0, y = 0;
+         auto target = get_drag_target(Self, x, y);
+         auto target_id = target ? target->UID : 0;
+         if (not target_id) {
+            if (auto pointer = gfx::AccessPointer()) {
+               if ((pointer->DragSourceID) and (pointer->OverObjectID IS Self->SurfaceID)) {
+                  pointer->DragFeedback = 0;
+                  gfx::SetCursor(0, CRF::NIL, PTC::STOP, "", 0);
+               }
+               ReleaseObject(pointer);
+            }
+         }
+         const auto scene_id = Self->UID;
+         InputEvent event = *input;
+         event.Next = nullptr;
+         event.Flags = event.Mask = JTYPE::DRAG_ITEM;
+         if ((Self->DragHoverID) and (Self->DragHoverID != target_id)) {
+            kt::ScopedObjectLock<extVector> previous(Self->DragHoverID);
+            Self->DragHoverID = 0;
+            event.Type = JET::CROSSED_OUT;
+            if (previous.granted()) send_input_events(previous.obj, &event);
+            if (CheckResourceExists(scene_id) != ERR::True) return ERR::Okay;
+         }
+         if (target_id) {
+            Self->DragHoverID = target_id;
+            event.Type = JET::ABS_XY;
+            event.X = x;
+            event.Y = y;
+            event.OverID = target_id;
+            kt::ScopedObjectLock<extVector> destination(target_id);
+            if (destination.granted()) send_input_events(destination.obj, &event);
+            if (CheckResourceExists(scene_id) != ERR::True) return ERR::Okay;
+         }
+         // Synthetic feedback-only events must not change ordinary focus or capture.
+         if (input->Flags IS JTYPE::DRAG_ITEM) continue;
+      }
+
       if ((input->OverID != Self->SurfaceID) and ((input->Flags & JTYPE::CROSSING) IS JTYPE::NIL)) {
          // Activity occurring on another surface may be reported to us in circumstances where our surface is modal.
          continue;
