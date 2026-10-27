@@ -132,7 +132,7 @@ if (WIN32)
       set_tests_properties (display_windows_controller PROPERTIES LABELS display)
 
       add_executable (test_display_windows_driver "tests/test_windows_driver.cpp")
-      target_link_libraries (test_display_windows_driver PRIVATE display-windows)
+      target_link_libraries (test_display_windows_driver PRIVATE display-windows gdi32 user32 dwmapi)
       if (KOTUKU_STATIC)
          target_link_libraries (test_display_windows_driver PRIVATE kotuku_static)
       endif ()

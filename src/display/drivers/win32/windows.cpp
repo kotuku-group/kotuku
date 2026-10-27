@@ -23,6 +23,7 @@
 #include <string>
 
 #include <kotuku/system/errors.h>
+#include <kotuku/config.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -1436,6 +1437,58 @@ ERR winGetCursorPos(int &X, int &Y)
    if (not GetCursorPos(&point)) return ERR::SystemCall;
    X = point.x;
    Y = point.y;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+Win32Capture::~Win32Capture()
+{
+   if (Previous) SelectObject(Memory, Previous);
+   if (Bitmap) DeleteObject(Bitmap);
+   if (Memory) DeleteDC(Memory);
+   if (Screen) ReleaseDC(nullptr, Screen);
+}
+
+ERR winCaptureDisplay(int X, int Y, int Width, int Height, Win32Capture &Image)
+{
+   // Use widened arithmetic: a request can start outside the virtual screen or span either integer limit.
+
+   const int64_t left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+   const int64_t top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+   const auto x = (std::max)(int64_t(X), left);
+   const auto y = (std::max)(int64_t(Y), top);
+   const auto right = (std::min)(int64_t(X) + Width, left + GetSystemMetrics(SM_CXVIRTUALSCREEN));
+   const auto bottom = (std::min)(int64_t(Y) + Height, top + GetSystemMetrics(SM_CYVIRTUALSCREEN));
+   if ((right <= x) or (bottom <= y)) return ERR::OutOfRange;
+
+   Image.X = int(x);
+   Image.Y = int(y);
+   Image.Width = int(right - x);
+   Image.Height = int(bottom - y);
+
+   Image.Screen = GetDC(nullptr);
+   if (not Image.Screen) return ERR::SystemCall;
+   Image.Memory = CreateCompatibleDC(Image.Screen);
+   if (not Image.Memory) return ERR::SystemCall;
+
+   BITMAPINFO info = {};
+   info.bmiHeader.biSize = sizeof(info.bmiHeader);
+   info.bmiHeader.biWidth = Image.Width;
+   info.bmiHeader.biHeight = -Image.Height; // Top-down BGRA rows, without scan-line padding at 32 bits per pixel.
+   info.bmiHeader.biPlanes = 1;
+   info.bmiHeader.biBitCount = 32;
+   info.bmiHeader.biCompression = BI_RGB;
+   Image.Bitmap = CreateDIBSection(Image.Screen, &info, DIB_RGB_COLORS, (void **)&Image.Data, nullptr, 0);
+   if (not Image.Bitmap) return ERR::AllocMemory;
+
+   auto previous = SelectObject(Image.Memory, Image.Bitmap);
+   if ((not previous) or (previous IS HGDI_ERROR)) return ERR::SystemCall;
+   Image.Previous = previous;
+
+   if (not BitBlt(Image.Memory, 0, 0, Image.Width, Image.Height, Image.Screen, Image.X, Image.Y,
+         SRCCOPY | CAPTUREBLT)) return ERR::SystemCall;
+   if (not GdiFlush()) return ERR::SystemCall;
    return ERR::Okay;
 }
 

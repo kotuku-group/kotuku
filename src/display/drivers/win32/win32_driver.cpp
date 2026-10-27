@@ -112,6 +112,7 @@ public:
       int Height, int XDest, int YDest) override;
    ERR fillBitmap(extBitmap *Destination, int X, int Y, int Width, int Height, uint32_t Colour) override;
    ERR flush() override { return ERR::Okay; }
+   ERR captureDisplay(int X, int Y, int Width, int Height, extBitmap *Dest, int XDest, int YDest) override;
 
    ERR allocBitmap(extBitmap *Bitmap) override;
    ERR freeBitmap(extBitmap *Bitmap) override;
@@ -562,6 +563,37 @@ ERR Win32Driver::fillBitmap(extBitmap *Destination, int X, int Y, int Width, int
    return ERR::Okay;
 }
 
+ERR Win32Driver::captureDisplay(int X, int Y, int Width, int Height, extBitmap *Dest, int XDest, int YDest)
+{
+   if (not Open) return ERR::NotInitialised;
+   if ((not Dest) or (Width < 1) or (Height < 1)) return ERR::NullArgs;
+
+   const bool memory = (Dest->BytesPerPixel IS 4) and Dest->Data and (not Dest->DriverData);
+   if ((not memory) and (not Dest->DrawUCRPixel)) return ERR::NoSupport;
+
+   Win32Capture image;
+   if (auto error = winCaptureDisplay(X, Y, Width, Height, image); error != ERR::Okay) return error;
+   XDest += image.X - X;
+   YDest += image.Y - Y;
+
+   for (int y=0; y < image.Height; y++) {
+      auto source = image.Data + (size_t(y) * image.Width * 4);
+      if (memory) {
+         auto target = (uint32_t *)(Dest->Data + (size_t(YDest + y) * Dest->LineWidth)) + XDest;
+         for (int x=0; x < image.Width; x++, source += 4) {
+            target[x] = Dest->packPixel(source[2], source[1], source[0], 255);
+         }
+      }
+      else {
+         for (int x=0; x < image.Width; x++, source += 4) {
+            RGB8 rgb = { source[2], source[1], source[0], 255 };
+            Dest->DrawUCRPixel(Dest, XDest + x, YDest + y, &rgb);
+         }
+      }
+   }
+   return ERR::Okay;
+}
+
 ERR Win32Driver::allocBitmap(extBitmap *Bitmap)
 {
    if (not Bitmap) return ERR::NullArgs;
@@ -676,5 +708,9 @@ void destroy_win32_display_driver(DisplayDriver *Driver)
 {
    delete Driver;
 }
+
+#ifdef WIN32_DRIVER_TESTS
+extern "C" __declspec(dllexport) size_t win32_driver_bitmap_size() { return sizeof(extBitmap); }
+#endif
 
 } // namespace display

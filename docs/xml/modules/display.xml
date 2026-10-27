@@ -68,6 +68,7 @@
 <p>CaptureDisplay() reads the pixels currently presented by the host desktop and copies them to <code>Bitmap</code>.  It allows tools such as colour pickers and magnifiers to sample content that is not owned by a Kōtuku surface.</p>
 <p><code>X</code> and <code>Y</code> are desktop coordinates, i.e. the same coordinate space as <function>GetCursorPos</function> and the <class name="Pointer">Pointer</class> <code>X</code> and <code>Y</code> fields.  On multi-monitor systems they can be negative.  The source rectangle is clipped to the desktop, and the destination is clipped to the bitmap's <code>Clip</code> region.  Pixels outside the clipped area are left untouched.</p>
 <p>Captured pixels are written as the display presents them, i.e. as sRGB-encoded values with an alpha of 255.  No conversion is applied if the bitmap uses the <code>CS::LINEAR_RGB</code> colour space.  The mouse cursor is not included. Kōtuku's own windows are included as they appear on screen.</p>
+<p>On Windows, layered windows are included.  Protected content such as DRM video and windows excluded from screen capture may appear black or be omitted by the host.</p>
 <p>Desktop capture is not available on all platforms.  Wayland sessions (including X11 clients running under XWayland), headless sessions and Android return <code>ERR::NoSupport</code>, and callers should fall back to an alternative where possible.</p>
     </description>
     <result type="ERR">
