@@ -291,7 +291,7 @@ gui._dropdown = function(Options)
 
       &surface.init()
 
-      &scene = obj.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=&relative.scene })
+      &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=&relative.scene })
       &viewport = &scene.new('VectorViewport', { })
 
       &surface.subscribe('free', function(Surface, Args)

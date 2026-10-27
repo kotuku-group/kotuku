@@ -191,6 +191,12 @@ gui.combobox = function(Options:table)
 
       &viewport = &parentViewport.new('VectorViewport', vps)
 
+      -- The menu lives on the desktop rather than inside the combobox, so it is not freed with the viewport.
+
+      &viewport.subscribe('free', function(Viewport, Args)
+         &menu?.surface?.free()
+      end)
+
       -- The box takes the space that remains after the label reservation.  Explicit dimensions include the label, and
       -- a default height grows to fit a stacked label.
 
