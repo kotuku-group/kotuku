@@ -4,17 +4,22 @@
 
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/XShm.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
 #include <chrono>
+#include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
 #include <limits>
 #include <optional>
 #include <string>
 #include <thread>
+#include <sys/shm.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -22,6 +27,7 @@
 static std::string glClipboardData;
 static std::string glClipboardMime;
 static int glClipboardLost = 0;
+static bool glSharedImageAttachFailed = false;
 
 static int check(bool Condition)
 {
@@ -577,6 +583,132 @@ struct CaptureBitmap {
    uint32_t pixel(int X, int Y) const { return Pixels[size_t(Y) * Bitmap->Width + X]; }
 };
 
+// A server can advertise MIT-SHM without sharing the client's IPC namespace.  Probe an actual attachment on a
+// separate connection so that a driver regression cannot silently skip the shared image tests.
+
+static bool shared_images_available(Display *Connection)
+{
+   if ((not Connection) or (not XShmQueryExtension(Connection))) return false;
+
+   XShmSegmentInfo shm = {};
+   shm.shmid = shmget(IPC_PRIVATE, 4096, IPC_CREAT|IPC_EXCL|0600);
+   if (shm.shmid IS -1) return false;
+   shm.shmaddr = (char *)shmat(shm.shmid, nullptr, 0);
+   if (shm.shmaddr IS (char *)-1) {
+      shmctl(shm.shmid, IPC_RMID, nullptr);
+      return false;
+   }
+
+   // The clipboard worker has already joined, so no other test thread uses Xlib while this handler is installed.
+
+   XSync(Connection, False);
+   glSharedImageAttachFailed = false;
+   auto previous_handler = XSetErrorHandler([](Display *, XErrorEvent *) {
+      glSharedImageAttachFailed = true;
+      return 0;
+   });
+   const bool requested = XShmAttach(Connection, &shm) != 0;
+   XSync(Connection, False);
+   const bool attached = requested and (not glSharedImageAttachFailed);
+   if (attached) {
+      XShmDetach(Connection, &shm);
+      XSync(Connection, False);
+   }
+   XSetErrorHandler(previous_handler);
+   shmdt(shm.shmaddr);
+   shmctl(shm.shmid, IPC_RMID, nullptr);
+   return attached;
+}
+
+// Marking storage for deletion must not invalidate it while the bitmap is alive, but both normal cleanup and
+// abrupt process death must release the segment.  Use a private X server via the existing CTest registration.
+
+static void test_shared_images(DisplayDriver *Driver, const std::optional<std::string> &KotukuDisplay,
+   const std::optional<std::string> &DisplayName, int &Failures)
+{
+   if ((not KotukuDisplay) and (not DisplayName)) return;
+   DriverCallbacks callbacks = { .Version = DISPLAY_DRIVER_INTERFACE_VERSION };
+   if (Driver->open(callbacks) != ERR::Okay) { Failures++; return; }
+
+   auto display_name = KotukuDisplay ? *KotukuDisplay : *DisplayName;
+   auto peer = XOpenDisplay(display_name.c_str());
+   const bool shared_images = shared_images_available(peer);
+   if (peer) XCloseDisplay(peer);
+
+   CaptureBitmap bitmap(32, 32);
+   bitmap.Bitmap->Data = nullptr;
+   bitmap.Bitmap->Size = 32 * 32 * 4;
+   bitmap.Bitmap->MemType = BMT::DATA;
+   bitmap.Bitmap->Type = BMP::CHUNKY;
+   Failures += check(Driver->allocBitmap(bitmap.target()) IS ERR::Okay);
+   int shmid = display::x11_driver_bitmap_shmid(bitmap.target());
+   if (shmid IS -1) { // MIT-SHM may be unavailable, e.g. on a remote display.
+      Failures += check(not shared_images);
+      Failures += check(bitmap.Bitmap->Data IS nullptr); // BITMAP_Init supplies ordinary pixel memory on fallback.
+      Driver->freeBitmap(bitmap.target());
+      Driver->close();
+      return;
+   }
+
+   shmid_ds status = {};
+   Failures += check(shmctl(shmid, IPC_STAT, &status) IS 0);
+   Failures += check((status.shm_perm.mode & SHM_DEST) != 0);
+   bitmap.Bitmap->Data[0] = 42;
+
+   // Failed resize leaves the original shared image and its pixels intact.
+
+   Failures += check(Driver->resizeBitmap(bitmap.target(), 0, 0) != ERR::Okay);
+   Failures += check(display::x11_driver_bitmap_shmid(bitmap.target()) IS shmid);
+   Failures += check(bitmap.Bitmap->Data[0] IS 42);
+
+   for (int width : { 64, 16, 48 }) {
+      Failures += check(Driver->resizeBitmap(bitmap.target(), width, 32) IS ERR::Okay);
+      Failures += check(shmctl(shmid, IPC_STAT, &status) IS -1);
+      shmid = display::x11_driver_bitmap_shmid(bitmap.target());
+      Failures += check(shmctl(shmid, IPC_STAT, &status) IS 0);
+      Failures += check((status.shm_perm.mode & SHM_DEST) != 0);
+      bitmap.Bitmap->Data[width * 32 * 4 - 1] = 23;
+   }
+   Driver->freeBitmap(bitmap.target());
+   Failures += check(shmctl(shmid, IPC_STAT, &status) IS -1);
+   Driver->close();
+
+   for (bool resize : { false, true }) {
+      int descriptors[2];
+      if (pipe(descriptors) != 0) { Failures++; return; }
+      auto child = fork();
+      if (child IS 0) {
+         close(descriptors[0]);
+         int child_shmid = -1;
+         if (Driver->open(callbacks) IS ERR::Okay) {
+            bitmap.Bitmap->Data = nullptr;
+            if (Driver->allocBitmap(bitmap.target()) IS ERR::Okay) {
+               if ((not resize) or (Driver->resizeBitmap(bitmap.target(), 80, 64) IS ERR::Okay))
+                  child_shmid = display::x11_driver_bitmap_shmid(bitmap.target());
+            }
+         }
+         if (write(descriptors[1], &child_shmid, sizeof(child_shmid)) != sizeof(child_shmid)) _exit(1);
+         close(descriptors[1]);
+         for (;;) pause();
+      }
+      close(descriptors[1]);
+      if (child IS -1) { close(descriptors[0]); Failures++; return; }
+      int child_shmid = -1;
+      Failures += check(read(descriptors[0], &child_shmid, sizeof(child_shmid)) IS sizeof(child_shmid));
+      close(descriptors[0]);
+      Failures += check(child_shmid != -1);
+      kill(child, SIGKILL);
+      int child_status = 0;
+      waitpid(child, &child_status, 0);
+      Failures += check(WIFSIGNALED(child_status) and (WTERMSIG(child_status) IS SIGKILL));
+      auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+      while ((shmctl(child_shmid, IPC_STAT, &status) IS 0) and
+            (std::chrono::steady_clock::now() < deadline)) usleep(1000);
+      Failures += check((shmctl(child_shmid, IPC_STAT, &status) IS -1) and
+         ((errno IS EINVAL) or (errno IS EIDRM)));
+   }
+}
+
 static unsigned long alloc_colour(Display *Connection, uint16_t Red, uint16_t Green, uint16_t Blue)
 {
    XColor colour = { .red = Red, .green = Green, .blue = Blue, .flags = DoRed|DoGreen|DoBlue };
@@ -765,6 +897,7 @@ int main()
    restore_environment("DISPLAY", original_display);
    test_clipboard(driver, original_kotuku_display, original_display, failures);
    test_capture(driver, original_kotuku_display, original_display, failures);
+   test_shared_images(driver, original_kotuku_display, original_display, failures);
    test_pointer_position(driver, original_kotuku_display, original_display, failures);
 
 #ifdef KOTUKU_STATIC

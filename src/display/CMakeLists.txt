@@ -410,7 +410,7 @@ else ()
          target_compile_definitions (display-x11 PRIVATE X11_DRIVER_TESTS)
          add_executable (test_display_x11_driver "tests/test_x11_driver.cpp")
          target_compile_definitions (test_display_x11_driver PRIVATE X11_DRIVER_TESTS)
-         target_link_libraries (test_display_x11_driver PRIVATE display-x11 X11)
+         target_link_libraries (test_display_x11_driver PRIVATE display-x11 X11 Xext)
          set_target_properties (test_display_x11_driver PROPERTIES CXX_STANDARD 20)
          # The clipboard tests take ownership of CLIPBOARD and CLIPBOARD_MANAGER, so run them on a private X server
          # when one is available rather than disturbing the developer's desktop session.

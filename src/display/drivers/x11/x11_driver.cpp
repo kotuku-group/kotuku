@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <bit>
+#include <cerrno>
+#include <cstring>
 #include <cmath>
 #include <cstdlib>
 #include <fcntl.h>
@@ -15,6 +17,17 @@
 namespace display {
 
 static X11Driver::State *glX11State = nullptr;
+
+// XSync delivers errors on the calling thread while the display is locked.  Capture only the attach request's
+// error, leaving the process-wide X error handler and errors from other connections unchanged.
+
+struct X11AttachError {
+   Display *Connection;
+   unsigned long Serial;
+   bool Failed = false;
+};
+
+static thread_local X11AttachError *glAttachError = nullptr;
 
 //********************************************************************************************************************
 
@@ -104,6 +117,9 @@ static int catch_redirect_error(Display *, XErrorEvent *)
 
 static int catch_x_error(Display *Connection, XErrorEvent *Event)
 {
+   if (glAttachError and (glAttachError->Connection IS Connection) and
+         (glAttachError->Serial IS Event->serial)) glAttachError->Failed = true;
+
    char message[128] = {};
    XGetErrorText(Connection, Event->error_code, message, sizeof(message));
    kt::Log("X11").warning("Request %d failed: %s", Event->request_code, message);
@@ -358,6 +374,12 @@ unsigned long X11Driver::clipboardWindow() const { return Data->ClipboardWindow;
 // Tests cannot see the extBitmap definition, so they reserve this much space for the bitmaps that they construct.
 
 extern "C" DISPLAY_DRIVER_EXPORT size_t x11_driver_bitmap_size() { return sizeof(extBitmap); }
+
+extern "C" DISPLAY_DRIVER_EXPORT int x11_driver_bitmap_shmid(extBitmap *Bitmap)
+{
+   auto record = x11_bitmap(Bitmap);
+   return (record and record->SharedImage) ? record->Shm.shmid : -1;
+}
 #endif
 
 //********************************************************************************************************************
@@ -1712,6 +1734,56 @@ ERR X11Driver::captureDisplay(int X, int Y, int Width, int Height, extBitmap *De
 }
 
 //********************************************************************************************************************
+// Both initial allocation and resize must mark shared storage for deletion while it is still attached.  The
+// kernel then reclaims it after the last detach, including when the client crashes or is forcibly terminated.
+
+static ERR allocate_shared_image(Display *Connection, int Size, XShmSegmentInfo &Shm)
+{
+   kt::Log log("X11");
+   Shm.shmid = shmget(IPC_PRIVATE, Size, IPC_CREAT|IPC_EXCL|0600);
+   if (Shm.shmid IS -1) {
+      log.warning("shmget(%d bytes) failed: %s", Size, strerror(errno));
+      return ERR::Memory;
+   }
+
+   Shm.shmaddr = (char *)shmat(Shm.shmid, nullptr, 0);
+   if (Shm.shmaddr IS (char *)-1) {
+      log.warning("shmat(%d, %d bytes) failed: %s", Shm.shmid, Size, strerror(errno));
+      shmctl(Shm.shmid, IPC_RMID, nullptr);
+      return ERR::LockFailed;
+   }
+
+   Shm.readOnly = 0;
+   XLockDisplay(Connection);
+   X11AttachError attach_error = { Connection, NextRequest(Connection) };
+   auto previous_error = glAttachError;
+   glAttachError = &attach_error;
+   const bool attached = XShmAttach(Connection, &Shm) != 0;
+   XSync(Connection, False);
+   glAttachError = previous_error;
+   XUnlockDisplay(Connection);
+
+   if ((not attached) or attach_error.Failed) {
+      shmdt(Shm.shmaddr);
+      shmctl(Shm.shmid, IPC_RMID, nullptr);
+      return ERR::SystemCall;
+   }
+
+   // XShmAttach is asynchronous: the server must have attached before marking the segment for deletion.
+
+   if (shmctl(Shm.shmid, IPC_RMID, nullptr) IS -1) {
+      log.warning("shmctl(IPC_RMID, %d, %d bytes) failed: %s", Shm.shmid, Size, strerror(errno));
+      XShmDetach(Connection, &Shm);
+      XSync(Connection, False);
+      shmdt(Shm.shmaddr);
+      shmctl(Shm.shmid, IPC_RMID, nullptr);
+      return ERR::SystemCall;
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 
 ERR X11Driver::allocBitmap(extBitmap *Bitmap)
 {
@@ -1731,34 +1803,14 @@ ERR X11Driver::allocBitmap(extBitmap *Bitmap)
    record->DefaultGraphicsContext = Data->GraphicsContext;
    if (Data->SharedImages and (Bitmap->MemType IS BMT::DATA) and (not Bitmap->Data) and
          ((Bitmap->Flags & BMF::NO_DATA) IS BMF::NIL) and (Bitmap->Size > 0)) {
-      record->Shm.shmid = shmget(IPC_PRIVATE, Bitmap->Size, IPC_CREAT|IPC_EXCL|0600);
-      if (record->Shm.shmid IS -1) {
-         delete record;
-         return ERR::Memory;
+      if (allocate_shared_image(Data->Connection, Bitmap->Size, record->Shm) IS ERR::Okay) {
+         record->SharedImage = true;
+         Bitmap->Data = (uint8_t *)record->Shm.shmaddr;
+         Bitmap->prvAFlags |= BF_DRIVER_DATA;
+         initialise_image(Bitmap, record);
+         record->Image.obdata = (char *)&record->Shm;
       }
-
-      record->Shm.shmaddr = (char *)shmat(record->Shm.shmid, nullptr, 0);
-      if (record->Shm.shmaddr IS (char *)-1) {
-         shmctl(record->Shm.shmid, IPC_RMID, nullptr);
-         delete record;
-         return ERR::LockFailed;
-      }
-
-      record->Shm.readOnly = 0;
-      Bitmap->Data = (uint8_t *)record->Shm.shmaddr;
-      initialise_image(Bitmap, record);
-      record->Image.obdata = (char *)&record->Shm;
-
-      if (XShmAttach(Data->Connection, &record->Shm)) record->SharedImage = true;
-      else {
-         shmdt(record->Shm.shmaddr);
-         shmctl(record->Shm.shmid, IPC_RMID, nullptr);
-         Bitmap->Data = nullptr;
-         delete record;
-         return ERR::SystemCall;
-      }
-
-      if (record->SharedImage) Bitmap->prvAFlags |= BF_DRIVER_DATA;
+      // On failure, BITMAP_Init allocates ordinary pixel memory and present() uses XPutImage instead.
    }
 
    Bitmap->DriverData = record;
@@ -1776,15 +1828,16 @@ ERR X11Driver::freeBitmap(extBitmap *Bitmap)
    if (not record) return ERR::Okay;
    const bool clear_data = record->SharedImage or record->Readable;
 
-   if (Data->Connection) {
-      if (record->SharedImage) {
+   if (record->SharedImage) {
+      if (Data->Connection) {
          XShmDetach(Data->Connection, &record->Shm);
          XSync(Data->Connection, 0);
-         shmdt(record->Shm.shmaddr);
-         shmctl(record->Shm.shmid, IPC_RMID, nullptr);
-         Bitmap->Data = nullptr;
       }
+      shmdt(record->Shm.shmaddr);
+      Bitmap->Data = nullptr;
+   }
 
+   if (Data->Connection) {
       if (record->Readable) XDestroyImage(record->Readable);
       if (record->OwnsDrawable and record->DrawableID) XFreePixmap(Data->Connection, record->DrawableID);
    }
@@ -1834,25 +1887,11 @@ ERR X11Driver::resizeBitmap(extBitmap *Bitmap, int Width, int Height)
    const int size = Bitmap->Type IS BMP::PLANAR ? plane_mod * Bitmap->BitsPerPixel : plane_mod;
 
    XShmSegmentInfo next = {};
-   next.shmid = shmget(IPC_PRIVATE, size, IPC_CREAT|IPC_EXCL|0600);
-   if (next.shmid IS -1) return ERR::Memory;
-   next.shmaddr = (char *)shmat(next.shmid, nullptr, 0);
-   if (next.shmaddr IS (char *)-1) {
-      shmctl(next.shmid, IPC_RMID, nullptr);
-      return ERR::LockFailed;
-   }
-
-   next.readOnly = 0;
-   if (not XShmAttach(Data->Connection, &next)) {
-      shmdt(next.shmaddr);
-      shmctl(next.shmid, IPC_RMID, nullptr);
-      return ERR::SystemCall;
-   }
+   if (auto error = allocate_shared_image(Data->Connection, size, next); error != ERR::Okay) return error;
 
    XShmDetach(Data->Connection, &record->Shm);
    XSync(Data->Connection, 0);
    shmdt(record->Shm.shmaddr);
-   shmctl(record->Shm.shmid, IPC_RMID, nullptr);
    record->Shm = next;
    Bitmap->Data = (uint8_t *)next.shmaddr;
    Bitmap->Width = Width;
