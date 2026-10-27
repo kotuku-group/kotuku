@@ -117,6 +117,88 @@ static BOOL CALLBACK monitor_rect(HMONITOR, HDC, RECT *Rect, LPARAM Data)
    return TRUE;
 }
 
+struct PointerInput {
+   OBJECTID Surface = 0;
+   OBJECTID ReleasedOver = 0;
+   int Releases = 0;
+};
+
+static PointerInput glPointerInput;
+
+static void test_captured_pointer(DisplayDriver *Driver, int &Failures)
+{
+   glPointerInput = {};
+   DriverCallbacks callbacks = {
+      .Version = DISPLAY_DRIVER_INTERFACE_VERSION,
+      .Movement = [](OBJECTID SurfaceID, double, double, bool) { glPointerInput.Surface = SurfaceID; },
+      .ButtonInput = [](int Buttons, bool Pressed) {
+         if ((Buttons & 0x0001) and (not Pressed)) { // The driver callback's primary-button bit.
+            glPointerInput.ReleasedOver = glPointerInput.Surface;
+            glPointerInput.Releases++;
+         }
+      }
+   };
+   const auto error = Driver->open(callbacks);
+   Failures += expect(error IS ERR::Okay, "Open driver for captured pointer tests");
+   if (error != ERR::Okay) return;
+   SavedCursor saved_cursor;
+   {
+      CaptureWindow source, target, foreign;
+      RECT work = {};
+      SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0);
+      const auto instance = GetModuleHandle(nullptr);
+      source.Window = CreateWindowExA(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "ScreenClass", "Drag source",
+         WS_POPUP, work.left + 40, work.top + 40, 120, 100, nullptr, nullptr, instance, nullptr);
+      target.Window = CreateWindowExA(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "ScreenClass", "Drag target",
+         WS_POPUP, work.left + 220, work.top + 40, 120, 100, nullptr, nullptr, instance, nullptr);
+      foreign.Window = CreateWindowExA(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, "ScreenClass", "Unregistered window",
+         WS_POPUP, work.left + 400, work.top + 40, 120, 100, nullptr, nullptr, instance, nullptr);
+      Failures += expect(source.Window and target.Window and foreign.Window, "Create captured pointer test windows");
+      if (source.Window and target.Window and foreign.Window) {
+         Driver->setWindowSurface(source.Window, 101);
+         Driver->setWindowSurface(target.Window, 102);
+         ShowWindow(source.Window, SW_SHOWNOACTIVATE);
+         ShowWindow(target.Window, SW_SHOWNOACTIVATE);
+         ShowWindow(foreign.Window, SW_SHOWNOACTIVATE);
+
+         SetCursorPos(work.left + 60, work.top + 60);
+         SendMessage(source.Window, WM_LBUTTONDOWN, MK_LBUTTON, 0);
+         Failures += expect(GetCapture() IS source.Window, "Primary press captures the source window");
+         const auto focus = GetFocus();
+         Driver->raiseWindow(target.Window);
+         Failures += expect(GetFocus() IS focus and GetCapture() IS source.Window,
+            "Raising a separate preview window preserves source focus and capture");
+         SetCursorPos(work.left + 240, work.top + 60);
+         SendMessage(source.Window, WM_MOUSEMOVE, MK_LBUTTON, 0);
+         Failures += expect(glPointerInput.Surface IS 102, "Captured movement resolves the destination window");
+         SendMessage(source.Window, WM_RBUTTONDOWN, MK_LBUTTON | MK_RBUTTON, 0);
+         SendMessage(source.Window, WM_RBUTTONUP, MK_LBUTTON, 0);
+         Failures += expect(GetCapture() IS source.Window, "Secondary release retains primary capture");
+         Failures += expect(glPointerInput.Releases IS 0, "Secondary release does not finish a primary drag");
+
+         SetCursorPos(work.left + 420, work.top + 60);
+         SendMessage(source.Window, WM_MOUSEMOVE, MK_LBUTTON, 0);
+         Failures += expect(glPointerInput.Surface IS 0, "An unregistered window is not an internal destination");
+
+         // The final release can precede the next WM_MOUSEMOVE.  It must refresh the destination before delivery.
+
+         SetCursorPos(work.left + 240, work.top + 60);
+         SendMessage(source.Window, WM_LBUTTONUP, 0, 0);
+         Failures += expect(glPointerInput.Releases IS 1 and glPointerInput.ReleasedOver IS 102,
+            "Release uses the current destination without requiring a prior motion message");
+         Failures += expect(GetCapture() IS nullptr, "Last button release relinquishes native capture");
+
+         SendMessage(source.Window, WM_LBUTTONDOWN, MK_LBUTTON, 0);
+         SetCursorPos(work.left + 420, work.top + 60);
+         SendMessage(source.Window, WM_LBUTTONUP, 0, 0);
+         Failures += expect(glPointerInput.Releases IS 2 and glPointerInput.ReleasedOver IS 0,
+            "Releasing outside registered windows has no internal destination");
+      }
+      ReleaseCapture();
+   }
+   Failures += expect(Driver->close() IS ERR::Okay, "Close driver after captured pointer tests");
+}
+
 static void test_capture(DisplayDriver *Driver, int &Failures)
 {
    CaptureBitmap bitmap(8, 6);
@@ -320,6 +402,7 @@ int main()
    failures += check(driver->close() IS ERR::Okay);
 
    test_capture(driver, failures);
+   test_captured_pointer(driver, failures);
 
 #ifdef KOTUKU_STATIC
    display::destroy_win32_display_driver(driver);

@@ -699,8 +699,11 @@ end
 
 colourpicker_parts.dragPreview = function(Parent:obj!, Fill:str!, Tokens:table!, Move:bool):obj
    size = Move ? DRAG_TILE + DRAG_BADGE - 1 : DRAG_TILE
+   -- Wayland requires a child surface for this preview; standalone windows cannot request persistent front stacking.
+   parent_id = (Parent.display.displayType is DT_WAYLAND) ? Parent.id : 0
    preview = Parent.new('Surface', {
-      width = size, height = size, flags = RNF_COMPOSITE | RNF_NO_FOCUS | RNF_STICK_TO_FRONT
+      parent = parent_id, presence = SPT_NONE, width = size, height = size,
+      flags = RNF_COMPOSITE | RNF_NO_FOCUS | RNF_STICK_TO_FRONT
    })
 
    try

@@ -125,6 +125,7 @@ if (WIN32)
    endif ()
 
    if (UNIT_TESTS)
+      target_compile_definitions (display-windows PRIVATE WIN32_DRIVER_TESTS)
       add_executable (test_display_windows_controller "tests/test_windows_controller.cpp"
          "drivers/win32/controller_mapping.cpp")
       set_target_properties (test_display_windows_controller PROPERTIES CXX_STANDARD 20)
