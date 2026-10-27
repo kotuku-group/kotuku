@@ -25,7 +25,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 14;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 15;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -83,6 +83,16 @@ struct DisplayIcon {
    std::vector<uint32_t> Pixels;
 };
 
+// An asynchronous native import retains the destination surface and its local position at button release.
+struct NativeDrop {
+   OBJECTID SurfaceID = 0;
+   OBJECTID TargetID = 0;
+   OBJECTID DisplayID = 0;
+   double X = 0;
+   double Y = 0;
+   uint64_t Session = 0;
+};
+
 // The module owns this immutable table and keeps it alive until the driver has closed.  Driver callbacks may be
 // invoked only while open() is active.  Callback implementations acquire any object and global locks they require.
 struct DriverCallbacks {
@@ -119,6 +129,13 @@ struct DriverCallbacks {
       int Axis);
    void (*ProcessMessages)();
    bool (*AcceptsFocus)(OBJECTID SurfaceID);
+   // Positions passed to DragOver and DragStart are relative to SurfaceID.  DragStart snapshots an accepted offer
+   // before reading it.  DragLeave ends hover feedback independently of the
+   // transfer.  DragData delivers its snapshot synchronously and returns whether the recipient accepted the data.
+   bool (*DragOver)(OBJECTID SurfaceID, double X, double Y, CSTRING Datatypes, size_t Length);
+   bool (*DragStart)(NativeDrop &Drop);
+   bool (*DragData)(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t Length);
+   void (*DragLeave)();
 };
 
 class DisplayDriver {

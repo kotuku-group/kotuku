@@ -42,6 +42,10 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
+#ifdef WAYLAND_DRIVER_TESTS
+#include <sys/socket.h>
+#include "../../tests/wayland_drop_fixture.h"
+#endif
 
 namespace display {
 
@@ -230,6 +234,7 @@ struct WaylandDriver::State {
    bool ClipboardIsFiles = false;
    uint64_t ClipboardGeneration = 0;
    uint64_t SelectionGeneration = 0;
+   uint64_t DropGeneration = 0;
    std::vector<struct WaylandOffer *> Offers;
    std::vector<struct WaylandSource *> Sources;
    std::vector<struct WaylandTransfer *> Transfers;
@@ -271,13 +276,15 @@ static void dispose_buffer(WaylandBuffer *Buffer);
 static void destroy_protocol_window(WaylandWindow *Window);
 static void publish_selection(WaylandSeat *Seat);
 static WaylandWindow *surface_window(WaylandDriver::State *State, wl_surface *Surface);
+static KQ key_qualifiers(WaylandSeat *Seat);
 
 struct WaylandOffer {
    WaylandDriver::State *Owner = nullptr;
    wl_data_offer *Handle = nullptr;
    std::vector<std::string> Mimes;
    uint32_t Actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY;
-   uint32_t Action = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY;
+   uint32_t Action = 0;
+   bool ActionKnown = false;
    bool PendingDrop = false;
 };
 
@@ -294,14 +301,15 @@ struct WaylandTransfer {
    std::string Data;
    size_t Offset = 0;
    std::string Mime;
-   OBJECTID SurfaceID = 0;
    bool Dropped = false;
    bool Sending = false;
    uint64_t SelectionGeneration = 0;
    WaylandOffer *Offer = nullptr;
+   NativeDrop Drop;
 };
 
 static void dispose_offer(WaylandOffer *Offer);
+static bool drag_feedback(WaylandSeat *Seat, bool Negotiate = true);
 
 static void finish_transfer(WaylandTransfer *Transfer, bool Success)
 {
@@ -310,15 +318,21 @@ static void finish_transfer(WaylandTransfer *Transfer, bool Success)
    close(Transfer->FD);
    const bool current_selection = Transfer->Dropped or
       (Transfer->SelectionGeneration IS state->SelectionGeneration);
-   if (Success and not Transfer->Sending and current_selection and state->Callbacks and
-         state->Callbacks->ClipboardData)
-      state->Callbacks->ClipboardData(Transfer->Mime.c_str(), Transfer->Data.data(), Transfer->Data.size(),
-         Transfer->Dropped, Transfer->SurfaceID);
+   bool accepted = false;
+   if (Success and not Transfer->Sending and current_selection and state->Callbacks) {
+      if (Transfer->Dropped and state->Callbacks->DragData)
+         accepted = state->Callbacks->DragData(Transfer->Drop, Transfer->Mime.c_str(),
+            Transfer->Data.data(), Transfer->Data.size());
+      else if (not Transfer->Dropped and state->Callbacks->ClipboardData)
+         state->Callbacks->ClipboardData(Transfer->Mime.c_str(), Transfer->Data.data(), Transfer->Data.size(),
+            false, 0);
+   }
    if (Transfer->Offer) {
-      if (Success and Transfer->Dropped and
+      if (accepted and Transfer->Dropped and (Transfer->Offer->Action IS WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY) and
             (wl_data_offer_get_version(Transfer->Offer->Handle) >= WL_DATA_OFFER_FINISH_SINCE_VERSION))
          wl_data_offer_finish(Transfer->Offer->Handle);
       dispose_offer(Transfer->Offer);
+      wl_display_flush(state->Connection);
    }
    auto &transfers = state->Transfers;
    transfers.erase(std::remove(transfers.begin(), transfers.end(), Transfer), transfers.end());
@@ -393,14 +407,36 @@ static void offer_mime(void *Data, wl_data_offer *, const char *Mime)
    if (Mime) offer->Mimes.emplace_back(Mime);
 }
 
+static bool active_drag(WaylandDriver::State *State, WaylandSeat *Seat, WaylandOffer *Offer)
+{
+   if (std::find(State->Seats.begin(), State->Seats.end(), Seat) IS State->Seats.end()) return false;
+   if (std::find(State->Offers.begin(), State->Offers.end(), Offer) IS State->Offers.end()) return false;
+   return Seat->DragOffer IS Offer;
+}
+
 static void offer_actions(void *Data, wl_data_offer *, uint32_t Actions)
 {
-   ((WaylandOffer *)Data)->Actions = Actions;
+   auto offer = (WaylandOffer *)Data;
+   auto state = offer->Owner;
+   const auto seats = state->Seats;
+   offer->Actions = Actions;
+   for (auto seat : seats) {
+      if (active_drag(state, seat, offer) and not offer->PendingDrop) drag_feedback(seat);
+   }
 }
 
 static void offer_action(void *Data, wl_data_offer *, uint32_t Action)
 {
-   ((WaylandOffer *)Data)->Action = Action;
+   auto offer = (WaylandOffer *)Data;
+   auto state = offer->Owner;
+   const auto seats = state->Seats;
+   offer->Action = Action;
+   offer->ActionKnown = true;
+   for (auto seat : seats) {
+      if (not active_drag(state, seat, offer) or offer->PendingDrop) continue;
+      if (Action IS WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY) drag_feedback(seat, false);
+      else if (state->Callbacks and state->Callbacks->DragLeave) state->Callbacks->DragLeave();
+   }
 }
 
 static const wl_data_offer_listener data_offer_listener = { offer_mime, offer_actions, offer_action };
@@ -426,29 +462,30 @@ static const char *preferred_mime(WaylandOffer *Offer)
    return nullptr;
 }
 
-static void receive_offer(WaylandSeat *Seat, WaylandOffer *Offer, bool Dropped)
+static bool receive_offer(WaylandSeat *Seat, WaylandOffer *Offer, bool Dropped, const NativeDrop &Drop = {})
 {
-   if (not Offer) return;
+   if (not Offer) return false;
    auto mime = preferred_mime(Offer);
-   if (not mime) return;
+   if (not mime) return false;
    int pipes[2];
-   if (pipe2(pipes, O_CLOEXEC|O_NONBLOCK) < 0) return;
+   if (pipe2(pipes, O_CLOEXEC) < 0) return false;
    auto transfer = new(std::nothrow) WaylandTransfer;
-   if (not transfer) { close(pipes[0]); close(pipes[1]); return; }
+   if (not transfer) { close(pipes[0]); close(pipes[1]); return false; }
    transfer->Owner = Seat->Owner;
    transfer->FD = pipes[0];
    transfer->Mime = mime;
    transfer->Dropped = Dropped;
+   transfer->Drop = Drop;
    transfer->SelectionGeneration = Seat->Owner->SelectionGeneration;
    if (Dropped) transfer->Offer = Offer;
-   transfer->SurfaceID = Dropped and Seat->DragWindow ? Seat->DragWindow->SurfaceID : 0;
    if (not watch_transfer(transfer)) {
-      close(pipes[0]); close(pipes[1]); delete transfer; return;
+      close(pipes[0]); close(pipes[1]); delete transfer; return false;
    }
    if (Dropped) Offer->PendingDrop = true;
    wl_data_offer_receive(Offer->Handle, mime, pipes[1]);
    close(pipes[1]);
    wl_display_flush(Seat->Owner->Connection);
+   return true;
 }
 
 static void data_offer(void *Data, wl_data_device *, wl_data_offer *Handle)
@@ -468,6 +505,47 @@ static WaylandOffer *find_offer(WaylandSeat *Seat, wl_data_offer *Handle)
    return nullptr;
 }
 
+static bool copy_modifiers_allowed(WaylandSeat *Seat)
+{
+   if ((key_qualifiers(Seat) & (KQ::SHIFT|KQ::ALT)) != KQ::NIL) return false;
+   // A modifier may have been pressed in the source application, before this client received keyboard focus.
+   if (Seat->KeyState) {
+      for (auto name : { XKB_MOD_NAME_SHIFT, XKB_MOD_NAME_ALT }) {
+         if (xkb_state_mod_name_is_active(Seat->KeyState, name, XKB_STATE_MODS_EFFECTIVE) > 0) return false;
+      }
+   }
+   return true;
+}
+
+static bool drag_feedback(WaylandSeat *Seat, bool Negotiate)
+{
+   auto state = Seat->Owner;
+   const auto serial = Seat->DragSerial;
+   auto offer = Seat->DragOffer;
+   auto window = Seat->DragWindow;
+   auto callbacks = Seat->Owner->Callbacks;
+   const auto mime = offer ? preferred_mime(offer) : nullptr;
+   bool accepted = mime and window and window->SurfaceID and window_frame(window).contains(Seat->X, Seat->Y) and
+      ((offer->Actions & WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY) != 0) and
+      copy_modifiers_allowed(Seat);
+   if (accepted and callbacks and callbacks->DragOver) {
+      const char datatype = std::string_view(mime) IS "text/uri-list" ? char(DATA::FILE) : char(DATA::TEXT);
+      accepted = callbacks->DragOver(window->SurfaceID, Seat->X, Seat->Y, &datatype, 1);
+   }
+   else accepted = false;
+   if (not accepted and callbacks and callbacks->DragLeave) callbacks->DragLeave();
+   // Widget callbacks can close the window, ending and destroying this offer synchronously.
+   if (not active_drag(state, Seat, offer)) return false;
+   if ((Seat->DragSerial != serial) or (Seat->DragWindow != window)) return false;
+   if (offer and (Negotiate or not accepted))
+      wl_data_offer_accept(offer->Handle, serial, accepted ? mime : nullptr);
+   // Keep negotiating MIME acceptance when entering a new target, but do not show copy feedback while the
+   // compositor's current action refuses it (for example, Shift held in the source application).
+   if (accepted and offer->ActionKnown and (offer->Action != WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY) and
+         callbacks and callbacks->DragLeave) callbacks->DragLeave();
+   return accepted;
+}
+
 static void data_enter(void *Data, wl_data_device *, uint32_t Serial, wl_surface *Surface,
    wl_fixed_t X, wl_fixed_t Y, wl_data_offer *Handle)
 {
@@ -479,27 +557,30 @@ static void data_enter(void *Data, wl_data_device *, uint32_t Serial, wl_surface
    seat->X = wl_fixed_to_double(X) - frame.Border;
    seat->Y = wl_fixed_to_double(Y) - frame.Top;
    if (seat->DragOffer) {
-      auto mime = frame.contains(seat->X, seat->Y) ? preferred_mime(seat->DragOffer) : nullptr;
-      wl_data_offer_accept(Handle, Serial, mime);
       if (wl_data_offer_get_version(Handle) >= WL_DATA_OFFER_SET_ACTIONS_SINCE_VERSION)
          wl_data_offer_set_actions(Handle, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY,
             WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY);
    }
    if (seat->DragWindow and seat->DragWindow->SurfaceID and seat->Owner->Callbacks) {
       seat->Owner->Callbacks->Crossing(seat->DragWindow->SurfaceID, true, seat->X, seat->Y);
-      seat->Owner->Callbacks->Movement(seat->DragWindow->SurfaceID, seat->X, seat->Y, false);
    }
+   drag_feedback(seat);
 }
 
 static void data_leave(void *Data, wl_data_device *)
 {
    auto seat = (WaylandSeat *)Data;
-   if (seat->DragWindow and seat->DragWindow->SurfaceID and seat->Owner->Callbacks)
-      seat->Owner->Callbacks->Crossing(seat->DragWindow->SurfaceID, false, seat->X, seat->Y);
+   auto callbacks = seat->Owner->Callbacks;
+   const auto surface_id = seat->DragWindow ? seat->DragWindow->SurfaceID : 0;
+   const auto x = seat->X, y = seat->Y;
+   auto offer = seat->DragOffer;
+   // Detach before notifying widgets: a dragLeave callback can itself close the window or remove the seat.
    seat->DragWindow = nullptr;
    seat->DragSerial = 0;
-   if (seat->DragOffer and not seat->DragOffer->PendingDrop) dispose_offer(seat->DragOffer);
    seat->DragOffer = nullptr;
+   if (offer and not offer->PendingDrop) dispose_offer(offer);
+   if (callbacks and callbacks->DragLeave) callbacks->DragLeave();
+   if (surface_id and callbacks) callbacks->Crossing(surface_id, false, x, y);
 }
 
 static void data_motion(void *Data, wl_data_device *, uint32_t, wl_fixed_t X, wl_fixed_t Y)
@@ -508,17 +589,30 @@ static void data_motion(void *Data, wl_data_device *, uint32_t, wl_fixed_t X, wl
    const auto frame = seat->DragWindow ? window_frame(seat->DragWindow) : WaylandFrame(0, 0, false);
    seat->X = wl_fixed_to_double(X) - frame.Border;
    seat->Y = wl_fixed_to_double(Y) - frame.Top;
-   if (seat->DragOffer) wl_data_offer_accept(seat->DragOffer->Handle, seat->DragSerial,
-      frame.contains(seat->X, seat->Y) ? preferred_mime(seat->DragOffer) : nullptr);
-   if (seat->DragWindow and seat->DragWindow->SurfaceID and seat->Owner->Callbacks)
-      seat->Owner->Callbacks->Movement(seat->DragWindow->SurfaceID, seat->X, seat->Y, false);
+   drag_feedback(seat);
 }
 
 static void data_drop(void *Data, wl_data_device *)
 {
    auto seat = (WaylandSeat *)Data;
-   if (seat->DragOffer and seat->DragWindow and window_frame(seat->DragWindow).contains(seat->X, seat->Y))
-      receive_offer(seat, seat->DragOffer, true);
+   auto offer = seat->DragOffer;
+   auto callbacks = seat->Owner->Callbacks;
+   if (offer and offer->PendingDrop) return;
+   // The final compositor-selected action must be honoured; moves and links are not supported.
+   if (offer and seat->DragWindow and callbacks and callbacks->DragStart and
+         window_frame(seat->DragWindow).contains(seat->X, seat->Y) and
+         ((offer->Actions & WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY) != 0) and
+         copy_modifiers_allowed(seat) and
+         ((wl_data_offer_get_version(offer->Handle) < WL_DATA_OFFER_ACTION_SINCE_VERSION) or
+          (offer->Action IS WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY))) {
+      NativeDrop drop;
+      drop.SurfaceID = seat->DragWindow->SurfaceID;
+      drop.X = seat->X;
+      drop.Y = seat->Y;
+      drop.Session = ++seat->Owner->DropGeneration;
+      if (callbacks->DragStart(drop)) receive_offer(seat, offer, true, drop);
+   }
+   if (callbacks and callbacks->DragLeave) callbacks->DragLeave();
 }
 
 static void data_selection(void *Data, wl_data_device *, wl_data_offer *Handle)
@@ -1161,6 +1255,8 @@ static void keyboard_leave(void *Data, wl_keyboard *, uint32_t, wl_surface *)
    seat->KeyboardWindow = nullptr;
    seat->KeyboardSerial = 0;
    seat->HeldModifiers.clear();
+   // Keyboard leave resets modifier state; releases in another client need not be reported to us.
+   if (seat->KeyState) xkb_state_update_mask(seat->KeyState, 0, 0, 0, 0, 0, 0);
    if (seat->ComposeState) xkb_compose_state_reset(seat->ComposeState);
    if (window and window->SurfaceID and seat->Owner->Callbacks)
       seat->Owner->Callbacks->FocusState(window->SurfaceID, false);
@@ -1206,6 +1302,7 @@ static void keyboard_modifiers(void *Data, wl_keyboard *, uint32_t, uint32_t Dep
 {
    auto seat = (WaylandSeat *)Data;
    if (seat->KeyState) xkb_state_update_mask(seat->KeyState, Depressed, Latched, Locked, 0, 0, Group);
+   if (seat->DragOffer and not seat->DragOffer->PendingDrop) drag_feedback(seat);
 }
 
 static void keyboard_repeat_info(void *Data, wl_keyboard *, int32_t Rate, int32_t Delay)
@@ -1754,13 +1851,14 @@ static void registry_global(void *Data, wl_registry *Registry, uint32_t Name, co
 
 static void dispose_seat(WaylandSeat *Seat)
 {
+   if (Seat->DragOffer or Seat->DragWindow) data_leave(Seat, nullptr);
    if (Seat->DataDevice) {
       if (wl_data_device_get_version(Seat->DataDevice) >= WL_DATA_DEVICE_RELEASE_SINCE_VERSION)
          wl_data_device_release(Seat->DataDevice);
       else wl_data_device_destroy(Seat->DataDevice);
    }
    if (Seat->SelectionOffer) dispose_offer(Seat->SelectionOffer);
-   if (Seat->DragOffer) dispose_offer(Seat->DragOffer);
+   if (Seat->DragOffer and not Seat->DragOffer->PendingDrop) dispose_offer(Seat->DragOffer);
    Seat->SelectionSource = nullptr;
    stop_repeat(Seat);
    cancel_touches(Seat);
@@ -2585,5 +2683,9 @@ ERR WaylandDriver::clipboardClear()
    }
    return flush();
 }
+
+#ifdef WAYLAND_DRIVER_TESTS
+#include "../../tests/wayland_drop_fixture.cpp"
+#endif
 
 }
