@@ -17,7 +17,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui', 'gui/window', 'gui/button', 'gui/combobox', 'gui/input', 'gui/slider', 'gui/listview'
    import 'gui/dialog'
    import 'gui/tooltip', 'gui/colourpicker/colour', 'gui/colourpicker/palette', 'gui/colourpicker/export'
-   import './theme', './parts', './wheel', './preview', './codeview', './eyedropper'
+   import './theme', './parts', './wheel', './preview', './codeview', './eyedropper', './ramp'
 
    include 'display'
 
@@ -131,7 +131,7 @@ function minimumBodyHeight():num
    palette_h = PANEL_HEADER_H + LIST_TOP + rows_h + LIST_PAD_BTM + SMALL_BUTTON + LIST_PAD_BTM
    left_h = (LEFT_PAD * 2) + palette_h + (LEFT_GAP * 2) + EYEDROP_H + PREVIEW_H
    centre_h = CHANNEL_PANEL_Y + CHANNEL_PANEL_H + CENTRE_PAD_Y
-   right_h = (RIGHT_PAD * 2) + REL_PANEL_H + CONTRAST_H + (RIGHT_GAP * 2) + EXPORT_MIN_H
+   right_h = (RIGHT_PAD * 2) + REL_PANEL_H + CONTRAST_H + colourpicker_ramp.HEIGHT + (RIGHT_GAP * 3) + EXPORT_MIN_H
    return math.max(left_h, centre_h, right_h)
 end
 
@@ -1844,7 +1844,7 @@ function updateCentre(self:table, Source:str)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Right column: the Relationship, Contrast and Export panels.
+-- Right column: the Relationship, Contrast, Tonal Ramp and Export panels.
 
 -- Format a link value with a sign, except for zero.
 
@@ -2230,7 +2230,7 @@ end
 
 function buildExport(Target:obj)
    t = &tokens
-   top = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP + CONTRAST_H + RIGHT_GAP
+   top = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP + CONTRAST_H + RIGHT_GAP + colourpicker_ramp.HEIGHT + RIGHT_GAP
    height = &bodyHeight - top - RIGHT_PAD
 
    panel = colourpicker_parts.panel(Target, {
@@ -2268,13 +2268,22 @@ function buildRight()
    col = &columns[2]
    buildRelationship(&&, col)
    buildContrast(&&, col)
+
+   &ramp = colourpicker_ramp.new(col, {
+      x = RIGHT_PAD_X, y = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP + CONTRAST_H + RIGHT_GAP, width = RIGHT_INNER,
+      tokens = &tokens, srgb = clampedSrgb,
+      onPick = function[&&](L:num, C:num, H:num)
+         &setColour(L, C, H, nil, 'ramp')
+      end
+   })
+
    buildExport(col)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
 -- Stack the right column's panels.  The Relationship panel is only shown for a linked colour; without it, the
--- Contrast panel moves up and the Export panel takes the space.
+-- Contrast and Tonal Ramp panels move up and the Export panel takes the space.
 
 function layoutRight(self:table, ShowRel:bool)
    if ShowRel is self.relShown then return end
@@ -2284,6 +2293,8 @@ function layoutRight(self:table, ShowRel:bool)
    if ShowRel then top += REL_PANEL_H + RIGHT_GAP end
    self.contrastPanel.viewport.y = top
    top += CONTRAST_H + RIGHT_GAP
+   self.ramp.panel.viewport.y = top
+   top += colourpicker_ramp.HEIGHT + RIGHT_GAP
    height = self.bodyHeight - top - RIGHT_PAD
    self.exportPanel.viewport.y = top
    self.exportPanel.setHeight(height)
@@ -2427,6 +2438,7 @@ end
 function updateRight(self:table, Source:str)
    updateRelationship(self, Source)
    updateContrast(self)
+   self.ramp.update(self.state)
    updateExport(self)
 end
 
@@ -2443,6 +2455,7 @@ function trackKeyOwners(self:table)
       self.scratchRow
    }
    for row in values(self.relSliders) do widgets.push(row.key.button) end
+   for button in values(self.ramp.buttons()) do widgets.push(button) end
    widgets.push({ viewport = self.readoutVP })
 
    for widget in values(widgets) do
@@ -3136,6 +3149,7 @@ gui.dialog.colour = function(Options:table)
          &relRows = nil
          &btnSwap = nil
          &contrastPanel = nil
+         &ramp = nil
          &exportPanel = nil
          &code = nil
          &copiedCell = nil

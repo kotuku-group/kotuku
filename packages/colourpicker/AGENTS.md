@@ -9,7 +9,7 @@ used through `import 'gui/colourpicker'` and `gui.dialog.colour(...)`.
 | File | Responsibility |
 | --- | --- |
 | `package.json` | Package metadata, dependencies, file manifest and public export paths. |
-| `colourpicker.tiri` | Dialog entry point.  Owns the picker state, window and three-column layout, input handling, scratch row, palette list (a `gui.listView` with custom rows) and editing, readouts, contrast and export panels, and Apply/Cancel behaviour. |
+| `colourpicker.tiri` | Dialog entry point.  Owns the picker state, window and three-column layout, input handling, scratch row, palette list (a `gui.listView` with custom rows) and editing, readouts, contrast and export panels, and Apply/Cancel behaviour.  Hosts the Tonal Ramp panel and applies its picks through `setColour()`. |
 | `colour.tiri` | Display-independent colour maths: OKLCH/OKLab and RGB conversions, gamut handling, CSS colour parsing and formatting, contrast calculations, colour vision deficiency simulation and named colours.  Exported as `gui/colourpicker/colour`. |
 | `palette.tiri` | Display-independent palette model: swatches, linked colour relationships, palette modes and their reserved role swatches, reordering, serialisation and persistence.  Exported as `gui/colourpicker/palette`. |
 | `export.tiri` | Display-independent generation of CSS, design token JSON, Tiri and Android palette output.  Produces text segments for `codeview.tiri` and clipboard text.  Exported as `gui/colourpicker/export`. |
@@ -18,6 +18,7 @@ used through `import 'gui/colourpicker'` and `gui.dialog.colour(...)`.
 | `wheel.tiri` | Hue/chroma wheel bitmap, interaction markers, palette relationship markers, gamut edge outlines and magnified loupe. |
 | `eyedropper.tiri` | Samples the loupe area at `GetCursorPos()`: Kōtuku surface bitmaps first (resolving shared bitmap origins and converting linear RGB), then the screen through `CaptureDisplay()` where the driver supports it.  Also manages the global sampling button subscription. |
 | `preview.tiri` | Per-mode palette previews: the Interface application mockup, a Web Site page, a Code Theme snippet, a Data Vis. chart and a Terminal session.  Each preview has a builder and a colour function that maps the palette mode's roles to its paint roles, and optionally a meta function for the panel meta (the Data Vis. distinctness readout). |
+| `ramp.tiri` | Tonal Ramp panel: a row of step buttons with a linear lightness ramp at the edited colour's hue and chroma (gamut-limited), plus/minus buttons for the step count, and the selection ring.  Keeps its base while the edited colour is a picked step. |
 | `codeview.tiri` | Tabbed, syntax-coloured and scrollable display for generated export text. |
 
 The dialog imports `colour.tiri`, `palette.tiri` and `export.tiri` through their package paths.  It imports the UI helpers
@@ -28,4 +29,4 @@ references to the same native module from more than one source file.
 
 `examples/colourpicker.tiri` shows how to open the dialog and receive its result.  The model and export Flute tests live
 in `packages/tests/test_colourpicker_colour.tiri`, `test_colourpicker_palette.tiri` and
-`test_colourpicker_export.tiri`; the dialog/surface tests are in `test_colourpicker_eyedropper.tiri`.  Their registrations are in `packages/CMakeLists.txt`.
+`test_colourpicker_export.tiri`; the dialog/surface tests are in `test_colourpicker_eyedropper.tiri` and `test_colourpicker_rows.tiri`, which also covers the Tonal Ramp.  Their registrations are in `packages/CMakeLists.txt`.
