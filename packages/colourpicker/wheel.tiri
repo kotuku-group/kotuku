@@ -1,8 +1,9 @@
 -- Hue/chroma wheel for the colour picker.  The disc is a generated bitmap in which angle is hue (0° on the +x axis,
 -- increasing anticlockwise) and radius is chroma, from 0 at the centre to WHEEL_MAX_C at the rim.  The crosshair,
 -- hue mark, scheme companions and their dashed links are drawn over it.  For a linked colour, the companions are those
--- of its base, which is also marked.  Outlines mark the gamut edges at the disc's lightness, because the disc clips
--- each channel and doesn't show where a gamut ends.
+-- of its base, which is also marked.  For a base swatch, the swatches linked to it are marked with diamonds.
+-- Outlines mark the gamut edges at the disc's lightness, because the disc clips each channel and doesn't show where a
+-- gamut ends.
 
    import 'gui/colourpicker/colour', './parts'
    include 'vector', 'display'
@@ -20,6 +21,7 @@ FINE_SCALE  <const> = 0.25 -- Movement scale for Alt-drag or Ctrl-drag
 QUANTISE_L  <const> = 100  -- The disc is rendered at L rounded to 1 / QUANTISE_L
 REGEN_DELAY <const> = 0.05 -- Seconds to wait before regenerating the disc after a lightness change
 EDGE_STEP   <const> = 3    -- Degrees of hue between the points of a gamut outline
+DIAMOND_R   <const> = 5.5  -- Distance from a linked swatch's diamond centre to its corners
 
 colourpicker_wheel.SIZE  = WHEEL_SIZE
 colourpicker_wheel.MAX_C = WHEEL_MAX_C
@@ -134,7 +136,7 @@ end
 @input Target viewport
 @input Options: x, y (top-left of the disc), l, onPick(H, C), onFine() returning true if fine movement is active.
 The hue given to onPick() is nil at the exact centre, where it is undefined.
-@result Table with `viewport`, `update(C, H, Scheme, Base)`, `setLightness(L)`, `toPolar(X, Y)`, `renderTime` (ms of
+@result Table with `viewport`, `update(C, H, Scheme, Base, Linked)`, `setLightness(L)`, `toPolar(X, Y)`, `renderTime` (ms of
 the last disc generation) and `free()`
 ]])
 colourpicker_wheel.new = function(Target:obj!, Options:table!):table
@@ -242,8 +244,10 @@ colourpicker_wheel.new = function(Target:obj!, Options:table!):table
       points = '0,0 1,0 1,1', closed = true, fill = '#FFFFFF', stroke = 'oklch(0 0 0 / 0.95)', strokeWidth = 1
    })
 
+   -- One link per scheme colour: the companions and their anchor
+
    self.links = array<table>
-   for _ in {1 to colourpicker_wheel.MAX_SWATCHES} do
+   for _ in {0 to colourpicker_wheel.MAX_SWATCHES} do
       link = {
          shadow = self.viewport.new('VectorPolygon', {
             x1 = 0, y1 = 0, x2 = 0, y2 = 0, closed = false, stroke = 'rgba(0,0,0,0.45)', strokeWidth = 2.2,
@@ -267,6 +271,16 @@ colourpicker_wheel.new = function(Target:obj!, Options:table!):table
       cx = centre, cy = centre, radius = 3.5, fill = '#FFFFFF', visibility = VIS_HIDDEN
    })
 
+   -- The swatches linked to a base swatch: diamond outlines, one path for all of them, under the crosshair
+
+   self.linkedOutline = self.viewport.new('VectorPath', {
+      sequence = 'M0 0 Z', stroke = 'oklch(0 0 0 / 0.6)', strokeWidth = 3.2, visibility = VIS_HIDDEN
+   })
+
+   self.linkedDiamonds = self.viewport.new('VectorPath', {
+      sequence = 'M0 0 Z', stroke = '#FFFFFF', strokeWidth = 1.5, visibility = VIS_HIDDEN
+   })
+
    self.crossOutline = self.viewport.new('VectorEllipse', {
       cx = centre, cy = centre, radius = 7.5, stroke = 'oklch(0 0 0 / 0.6)', strokeWidth = 1
    })
@@ -274,6 +288,9 @@ colourpicker_wheel.new = function(Target:obj!, Options:table!):table
    self.crossRing = self.viewport.new('VectorEllipse', {
       cx = centre, cy = centre, radius = 6, stroke = '#FFFFFF', strokeWidth = 2
    })
+
+   -- One ring per companion.  A scheme's anchor is one of its MAX_SWATCHES colours, so it has at most MAX_SWATCHES - 1
+   -- companions.
 
    for _ in {1 to colourpicker_wheel.MAX_SWATCHES} do
       self.companions.push({
@@ -307,15 +324,17 @@ colourpicker_wheel.new = function(Target:obj!, Options:table!):table
       dy = centre - Y
       r = math.sqrt((dx * dx) + (dy * dy))
       if r < 0.5 then return nil, 0 end
-      h = math.deg(math.atan2(dy, dx))
-      if h < 0 then h += 360 end
+      h = colourmath.normaliseHue(math.deg(math.atan2(dy, dx)))
       return h, (math.min(r, radius) / radius) * WHEEL_MAX_C
    end
 
    -- Move the crosshair and hue mark to C, H.  The scheme's companions are drawn for Base ({ c, h }) if given, which
-   -- is marked, or otherwise for C, H.  The dashed links join the companions to the colour that they are drawn for.
+   -- is marked, or otherwise for C, H.  The dashed links run from the centre of the disc to each companion and, if
+   -- there are companions, to the colour that they are drawn for.
+   -- Linked is an optional array of { c, h } for the swatches linked to the colour, each marked with a diamond.
+   -- SchemeAnchor overrides the scheme geometry with the displayed, gamut-mapped colour without moving the crosshair.
 
-   self.update = function(C:num!, H:num!, Scheme:str, Base:table)
+   self.update = function(C:num!, H:num!, Scheme:str, Base:table, Linked:array<table>, SchemeAnchor:table)
       cx, cy = polar(H, C)
       self.crossOutline.cx, self.crossOutline.cy = cx, cy
       self.crossRing.cx, self.crossRing.cy = cx, cy
@@ -323,32 +342,58 @@ colourpicker_wheel.new = function(Target:obj!, Options:table!):table
       mx, my = polar(H, WHEEL_MAX_C)
       self.hueMark.points = rimTriangle(mx, my, math.rad(H))
 
-      anchor = Base ?? { c = C, h = H }
+      anchor = SchemeAnchor ?? Base ?? { c = C, h = H }
       bx, by = polar(anchor.h, anchor.c)
       self.baseOutline.cx, self.baseOutline.cy = bx, by
       self.baseDot.cx, self.baseDot.cy = bx, by
       self.baseOutline.visibility = Base ? VIS_VISIBLE : VIS_HIDDEN
       self.baseDot.visibility = self.baseOutline.visibility
 
+      if Linked and (#Linked > 0) then
+         seq = array<str>
+         for swatch in values(Linked) do
+            x, y = polar(swatch.h, swatch.c)
+            seq.push(string.format('M%.2f %.2f L%.2f %.2f L%.2f %.2f L%.2f %.2f Z', x, y - DIAMOND_R,
+               x + DIAMOND_R, y, x, y + DIAMOND_R, x - DIAMOND_R, y))
+         end
+         sequence = seq.concat(' ')
+         self.linkedOutline.sequence = sequence
+         self.linkedDiamonds.sequence = sequence
+         self.linkedOutline.visibility = VIS_VISIBLE
+      else
+         self.linkedOutline.visibility = VIS_HIDDEN
+      end
+      self.linkedDiamonds.visibility = self.linkedOutline.visibility
+
       targets = colourpicker_wheel.targets(anchor.c, anchor.h, Scheme)
 
-      for i, comp in self.companions do
-         link = self.links[i]
+      -- The link after the companions' links goes to the anchor.  There are MAX_SWATCHES links, one more than the
+      -- most companions that a scheme has, so there is always a link for it.
+
+      for i, link in self.links do
+         comp = (i < #self.companions) ? self.companions[i] : nil -- No ring for the last link
+         x, y = nil, nil
          if i < #targets then
             x, y = polar(targets[i].h, targets[i].c)
             comp.outline.cx, comp.outline.cy = x, y
             comp.ring.cx, comp.ring.cy = x, y
-            for line in values(array<obj> { link.shadow, link.line }) do
-               line.x1, line.y1, line.x2, line.y2 = bx, by, x, y
-               line.visibility = VIS_VISIBLE
-            end
             comp.outline.visibility = VIS_VISIBLE
             comp.ring.visibility    = VIS_VISIBLE
          else
-            link.shadow.visibility  = VIS_HIDDEN
-            link.line.visibility    = VIS_HIDDEN
-            comp.outline.visibility = VIS_HIDDEN
-            comp.ring.visibility    = VIS_HIDDEN
+            if (i is #targets) and (i > 0) then x, y = bx, by end
+            if comp then
+               comp.outline.visibility = VIS_HIDDEN
+               comp.ring.visibility    = VIS_HIDDEN
+            end
+         end
+
+         for line in values(array<obj> { link.shadow, link.line }) do
+            if x != nil then
+               line.x1, line.y1, line.x2, line.y2 = centre, centre, x, y
+               line.visibility = VIS_VISIBLE
+            else
+               line.visibility = VIS_HIDDEN
+            end
          end
       end
    end
