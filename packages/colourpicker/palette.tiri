@@ -19,6 +19,8 @@ renamed is marked with `customName = true`.  Palettes and swatches may have a `d
 
 The palette database (DATABASE) holds every palette known to the palette manager, as { palettes, active } where
 active is the stable ID of the palette that the picker edits.  Settings store only activePalette, never swatches.
+The read-only starter palettes (STARTERS) are bundled with the package in the database format, and are never part of
+the database; insertCopy() adds an editable copy of one.
 
 The module has no display dependency.
 
@@ -47,6 +49,8 @@ CHANNELS <const> = array<str> { 'l', 'c', 'h' }
 colourpalette.MAX_SWATCHES = MAX_SWATCHES
 colourpalette.FILE         = 'user:config/colourpicker.json'
 colourpalette.DATABASE     = 'user:config/palettes.json'
+-- Bundled beside this source file, read-only; see loadStarters().
+colourpalette.STARTERS     = io.splitPath(debug.getInfo(function() end, 'S').source) .. 'palettes.json'
 colourpalette.MAX_PALETTES = MAX_PALETTES
 colourpalette.DESCRIPTION_LIMIT = DESCRIPTION_LIMIT
 
@@ -1159,13 +1163,52 @@ end
 ]])
 colourpalette.copyPalette = function(Database:table!, Index:num!):num
    palettes = Database.palettes
-   if (Index < 0) or (Index >= #palettes) or (#palettes >= MAX_PALETTES) then return nil end
-   source = palettes[Index]
-   copy = colourpalette.duplicate(source)
+   if (Index < 0) or (Index >= #palettes) then return nil end
+   return colourpalette.insertCopy(Database, palettes[Index], Index + 1)
+end
+
+@Doc(text=[[
+@desc Insert a copy of Palette, which need not belong to the database (such as a starter palette), at Index.  The copy
+has a new ID and a unique name.  It is not a starter palette, so it can be edited.
+@input Database: { palettes, active }
+@input Palette to copy
+@input Index of the copy, from 0 to the number of palettes.  The copy is added at the end if Index is nil.
+@result The index of the copy, or nil if Index is out of range or the database is full
+]])
+colourpalette.insertCopy = function(Database:table!, Palette:table!, Index:num):num
+   palettes = Database.palettes
+   Index ?= #palettes
+   if (Index < 0) or (Index > #palettes) or (#palettes >= MAX_PALETTES) then return nil end
+   copy = colourpalette.duplicate(Palette)
    copy.id = colourpalette.newID()
-   copy.name = colourpalette.uniquePaletteName(palettes, source.name)
-   palettes.insert(Index + 1, copy)
-   return Index + 1
+   copy.name = colourpalette.uniquePaletteName(palettes, Palette.name)
+   palettes.insert(Index, copy)
+   return Index
+end
+
+@Doc(text=[[
+@desc Load the starter palettes: read-only palettes bundled with the package in a palette database file (STARTERS).
+Each is marked with `starter = true`, which encode() and duplicate() don't keep, and they are never part of the palette
+database: copy one into the database with insertCopy() to edit it.
+@input Path of the starter database, STARTERS by default
+@result The starter palettes, which are empty if the file is missing or invalid (the reason is logged)
+]])
+colourpalette.loadStarters = function(Path:str):array<table>
+   Path ?= colourpalette.STARTERS
+   local text:str
+   try
+      text = io.readAll(Path)
+   except e
+      msg(f'Starter palettes are unavailable: {e.message}')
+      return array<table>
+   end
+   data, err = colourpalette.databaseFromJSON(text)
+   if not data then
+      msg(f'Starter palettes in {Path} are unavailable: {err}')
+      return array<table>
+   end
+   for p in values(data.palettes) do p.starter = true end
+   return data.palettes
 end
 
 @Doc(text=[[
