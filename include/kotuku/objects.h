@@ -490,6 +490,9 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
    inline std::pair<ERR, APTR> get_field_value(Object *Object, const struct Field &Field, int8_t (&Buffer)[sizeof(std::string_view)]) {
       if (Field.GetValue) {
+         // Owning string getters require a constructed std::string, rather than this temporary value buffer.
+         if ((Field.Flags & FD_STRING) and (Field.Flags & FD_STORE)) return { ERR::FieldTypeMismatch, nullptr };
+
          SetObjectContext(Object, &Field, AC::NIL);
          auto get_field = (ERR (*)(APTR, APTR))Field.GetValue;
          auto pair = std::make_pair(get_field(Object, Buffer), Buffer);
@@ -622,6 +625,8 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
          if (field->Flags & FD_STRING) {
             if (field->GetValue) { // Virtual std::string_view
+               if (field->Flags & FD_STORE) return ERR::FieldTypeMismatch;
+
                SetObjectContext(target, field, AC::NIL);
                auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
                auto error = get_field(target, Value);

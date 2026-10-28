@@ -494,9 +494,10 @@ else ()
       file(WRITE "${JIT_BUILD_DIR}/test_arch.c" "#include <lj_arch.h>\n")
    endif ()
 
-   # Write the dynasm runner script
+   # Write the dynasm runner script.  file(CONFIGURE) only touches the file when its content changes; file(WRITE) would
+   # refresh the timestamp on every reconfigure and force dynasm, buildvm and the entire Tiri library to rebuild.
 
-   file(WRITE ${DYNASM_SCRIPT}
+   string(CONCAT DYNASM_SCRIPT_CONTENT
          "# Use architecture determined by CMake\n"
          "set(ARCH \"${JIT_TARGET_ARCH}\")\n"
          "set(DASM_DASC \"${JIT_SRC}/jit/vm_\${ARCH}.dasc\")\n"
@@ -561,6 +562,8 @@ else ()
          "   message(FATAL_ERROR \"Dynasm failed with exit code \${DYNASM_RESULT}\")\n"
          "endif()\n"
       )
+
+   file(CONFIGURE OUTPUT ${DYNASM_SCRIPT} CONTENT "${DYNASM_SCRIPT_CONTENT}" @ONLY NEWLINE_STYLE UNIX)
 
    add_custom_command(
       OUTPUT ${BUILDVM_ARCH_H}

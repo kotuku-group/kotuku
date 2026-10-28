@@ -4490,10 +4490,11 @@ class objVectorText : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getString(std::string_view &Value) noexcept {
+   inline ERR getString(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[53];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
+      auto error = get_field(this, Value);
+      return error;
    }
 
    inline ERR getFill(std::string_view &Value) noexcept {
@@ -4706,7 +4707,7 @@ class objVectorText : public objVector {
 
    inline ERR setString(const std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[53];
-      return field->WriteValue(this, field, 0x00904308, &Value);
+      return field->WriteValue(this, field, 0x00904328, &Value);
    }
 
    inline ERR setFill(const std::string_view &Value) noexcept {

@@ -5,7 +5,7 @@
 static void notify_input_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   std::string_view str;
+   std::string str;
    Vector->getString(str);
 
    Self->Vars[Vector->Name].assign(str);
@@ -22,7 +22,7 @@ static void notify_input_onchange(objVectorText *Vector)
 static void notify_combo_onchange(objVectorText *Vector)
 {
    auto Self = (extDocument *)CurrentContext();
-   std::string_view str;
+   std::string str;
    Vector->getString(str);
 
    Self->Vars[Vector->Name].assign(str);
@@ -55,7 +55,7 @@ static ERR combo_feedback(objVectorViewport *Viewport, FM Event, OBJECTPTR Event
       }
    }
    else if ((Event IS FM::HAS_FOCUS) or (Event IS FM::CHILD_HAS_FOCUS)) {
-      std::string_view input_string;
+      std::string input_string;
       combo->input->getString(input_string);
       combo->last_good_input = input_string;
       if (!combo->name.empty()) {

@@ -397,9 +397,10 @@
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
       <description>
-<p>The string for drawing the glyphs is defined here in UTF-8 format.</p>
-<p>When retrieving a string that contains return codes, only the first line of text is returned.</p>
+<p>The string for drawing the glyphs is defined here in UTF-8 format.  Lines are separated by line feeds.</p>
+<p>The retrieved string contains every line of the text, separated by line feeds, including any changes made by the user while editing.  Line breaks introduced by word-wrapping (see <fl>InlineSize</fl>) are not included.</p>
       </description>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>

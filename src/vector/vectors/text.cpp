@@ -326,6 +326,25 @@ inline void report_change(extVectorText *Self)
 }
 
 //********************************************************************************************************************
+// Measure the word at the start of String, for word-wrapping.  The word ends at whitespace, a control character or
+// the end of the string.  Bytes are compared unsigned, so that the bytes of multi-byte UTF-8 characters belong to the
+// word.  Returns the length of the word in bytes and in characters.
+
+struct WordExtent {
+   int bytes, chars;
+};
+
+static WordExtent word_extent(const char *String)
+{
+   WordExtent word = { 0, 0 };
+   while ((String[word.bytes]) and (uint8_t(String[word.bytes]) > 0x20)) {
+      for (++word.bytes; (String[word.bytes] & 0xc0) IS 0x80; word.bytes++);
+      word.chars++;
+   }
+   return word;
+}
+
+//********************************************************************************************************************
 
 static int string_width(extVectorText *Self, const std::string_view &String)
 {
@@ -1445,22 +1464,21 @@ static ERR TEXT_SET_ShapeSubtract(extVectorText *Self, OBJECTID Value)
 -FIELD-
 String: The string to use for drawing the glyphs is defined here.
 
-The string for drawing the glyphs is defined here in UTF-8 format.
+The string for drawing the glyphs is defined here in UTF-8 format.  Lines are separated by line feeds.
 
-When retrieving a string that contains return codes, only the first line of text is returned.
+The retrieved string contains every line of the text, separated by line feeds, including any changes made by the user
+while editing.  Line breaks introduced by word-wrapping (see #InlineSize) are not included.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_String(extVectorText *Self, std::string_view &Value)
+static ERR TEXT_GET_String(extVectorText *Self, std::string &Value)
 {
-   if (Self->txLines.size() > 0) {
-      Value = Self->txLines[0];
-      return ERR::Okay;
+   Value.clear();
+   for (size_t i=0; i < Self->txLines.size(); i++) {
+      if (i > 0) Value.push_back('\n');
+      Value.append(Self->txLines[i]);
    }
-   else {
-      Value = std::string_view{};
-      return ERR::Okay;
-   }
+   return ERR::Okay;
 }
 
 static ERR TEXT_SET_String(extVectorText *Self, const std::string_view &Value)
@@ -2487,7 +2505,7 @@ static const FieldArray clTextFields[] = {
    { "X",             FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_X, TEXT_SET_X },
    { "Y",             FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_Y, TEXT_SET_Y },
    { "Weight",        FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_Weight, TEXT_SET_Weight },
-   { "String",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_String, TEXT_SET_String },
+   { "String",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW|FDF_PURE, TEXT_GET_String, TEXT_SET_String },
    { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
    { "Fill",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Fill, TEXT_SET_Fill }, // Override
    { "Face",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Face, TEXT_SET_Face },

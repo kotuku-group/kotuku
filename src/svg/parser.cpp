@@ -2001,7 +2001,7 @@ ERR svgState::process_tag(XTag &Tag, XTag &ParentTag, OBJECTPTR Parent, objVecto
       case SVF_text: {
          if (!proc_shape(CLASSID::VECTORTEXT, Tag, Parent, Vector)) {
             if (!Tag.Children.empty()) {
-               std::string_view existing_str;
+               std::string existing_str;
                ((objVectorText *)Vector)->getString(existing_str);
 
                if (auto buffer = Tag.getContent(); !buffer.empty()) {
