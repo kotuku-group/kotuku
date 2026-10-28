@@ -210,3 +210,18 @@ extern ankerl::unordered_dense::map<uint32_t, std::unique_ptr<bmp_font>> glBitma
 extern ankerl::unordered_dense::map<uint32_t, std::unique_ptr<freetype_font>> glFreetypeFonts;
 
 extern FT_Library glFTLibrary;
+
+// Shared by VectorText layout and direct text drawing; callers must hold glFontMutex.
+
+inline void get_kerning_xy(FT_Face Face, int Glyph, int PrevGlyph, double &X, double &Y)
+{
+   FT_Vector delta;
+   if (!FT_Get_Kerning(Face, PrevGlyph, Glyph, FT_KERNING_DEFAULT, &delta)) {
+      X = int26p6_to_dbl(delta.x);
+      Y = int26p6_to_dbl(delta.y);
+   }
+   else {
+      X = 0;
+      Y = 0;
+   }
+}

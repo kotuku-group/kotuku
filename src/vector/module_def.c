@@ -11,6 +11,7 @@ FDEF argsClosePath[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { 0, 0 } };
 FDEF argsCurve3[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { "CtrlX", FD_DOUBLE }, { "CtrlY", FD_DOUBLE }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
 FDEF argsCurve4[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { "CtrlX1", FD_DOUBLE }, { "CtrlY1", FD_DOUBLE }, { "CtrlX2", FD_DOUBLE }, { "CtrlY2", FD_DOUBLE }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
 FDEF argsDrawPath[] = { { "Error", FD_INT|FD_ERROR }, { "Bitmap", FD_OBJECTPTR }, { "Path", FD_PTR }, { "StrokeWidth", FD_DOUBLE }, { "StrokeStyle", FD_OBJECTPTR }, { "FillStyle", FD_OBJECTPTR }, { 0, 0 } };
+FDEF argsDrawText[] = { { "Error", FD_INT|FD_ERROR }, { "Bitmap", FD_OBJECTPTR }, { "FontHandle", FD_PTR }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "String", FDF_CPPSTRING }, { "FillStyle", FD_OBJECTPTR }, { "Advance", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
 FDEF argsFlushMatrix[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsGenerateEllipse[] = { { "Error", FD_INT|FD_ERROR }, { "CX", FD_DOUBLE }, { "CY", FD_DOUBLE }, { "RX", FD_DOUBLE }, { "RY", FD_DOUBLE }, { "Vertices", FD_INT }, { "Path", FD_RESULT|FD_PTR }, { 0, 0 } };
 FDEF argsGeneratePath[] = { { "Error", FD_INT|FD_ERROR }, { "Sequence", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_PTR }, { 0, 0 } };
@@ -38,6 +39,7 @@ FDEF argsTranslatePath[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { "X", FD_
 
 const struct Function glFunctions[] = {
    { (APTR)vec::DrawPath, "DrawPath", argsDrawPath },
+   { (APTR)vec::DrawText, "DrawText", argsDrawText },
    { (APTR)vec::GenerateEllipse, "GenerateEllipse", argsGenerateEllipse },
    { (APTR)vec::GeneratePath, "GeneratePath", argsGeneratePath },
    { (APTR)vec::GenerateRectangle, "GenerateRectangle", argsGenerateRectangle },

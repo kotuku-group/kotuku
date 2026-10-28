@@ -375,13 +375,15 @@ uint KChar: A unicode character to use for calculating the font kerning (optiona
 double: The pixel width of the character, or `0` if `FontHandle` is `NULL`.
 
 -TAGS-
-pure-query
+blocking, pure-query
 
 *********************************************************************************************************************/
 
 double CharWidth(APTR Handle, uint32_t Char, uint32_t KChar, double *Kerning)
 {
    if (not Handle) return 0;
+
+   const std::lock_guard lock(glFontMutex);
 
    if (((common_font *)Handle)->type IS CF_FREETYPE) {
       auto pt = (freetype_font::ft_point *)Handle;
@@ -522,6 +524,111 @@ ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeS
    }
 
    ((SimpleVector *)Path)->DrawPath(Bitmap, StrokeWidth, StrokeStyle, FillStyle);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+DrawText: Draws a single UTF-8 text run directly into a bitmap.
+
+Draws using a font handle returned by ~GetFontHandle().  X and Y specify the first glyph's baseline origin in bitmap
+pixels.  Scalable fonts preserve fractional coordinates and use the same cached outlines and kerning as @VectorText.
+Missing characters use the face's missing-glyph outline; no fallback face is selected.  The run must contain no line
+breaks.  An empty run draws nothing and returns an advance of zero.
+
+FillStyle accepts the same @VectorColour, @VectorImage, @Gradient and @VectorPattern objects as ~DrawPath().
+Bitmap fonts accept only @VectorColour and round the origin to whole pixels.  Drawing respects @Bitmap.Clip.
+The optional Advance result includes kerning and equals ~StringWidth() for the same single-line run.
+
+Concurrent calls must use separate Bitmap objects.  Their pixel memory may be shared provided their Clip regions do
+not overlap.  Callers must keep the bitmap storage and fill resources alive and unchanged during drawing.  Scalable
+outlines are copied under the font lock and rasterised after releasing it.  Bitmap-font drawing holds the font lock
+throughout, because the underlying font object is shared.  Fills that maintain rendering state, such as gradients
+and patterns, require separate fill objects for concurrent calls.
+
+-INPUT-
+obj(Bitmap) Bitmap: Target bitmap.
+ptr FontHandle: Font handle returned by ~GetFontHandle().
+double X: Horizontal baseline origin in bitmap pixels.
+double Y: Vertical baseline origin in bitmap pixels.
+strview String: Single-line UTF-8 text to draw.
+obj FillStyle: Fill object accepted by ~DrawPath(); bitmap fonts require @VectorColour.
+&double Advance: Receives the run's advance in pixels, or NULL if not required.  Cleared on error.
+
+-ERRORS-
+Okay
+NullArgs: Bitmap, FontHandle or FillStyle is NULL.
+Args: Unsupported fill or font type, non-finite origin, or a run containing a line break.
+
+-TAGS-
+mutates-input, blocking, thread-safe
+-END-
+
+*********************************************************************************************************************/
+
+ERR DrawText(objBitmap *Bitmap, APTR FontHandle, double X, double Y, const std::string_view &String,
+   OBJECTPTR FillStyle, double *Advance)
+{
+   if (Advance) *Advance = 0;
+   if ((not Bitmap) or (not FontHandle) or (not FillStyle)) return ERR::NullArgs;
+   if ((not std::isfinite(X)) or (not std::isfinite(Y)) or
+       (String.find_first_of("\r\n") != std::string_view::npos)) return ERR::Args;
+
+   const auto fill_class = FillStyle->classID();
+   if ((fill_class != CLASSID::VECTORCOLOUR) and (fill_class != CLASSID::VECTORIMAGE) and
+       (fill_class != CLASSID::VECTORPATTERN) and (FillStyle->baseClassID() != CLASSID::GRADIENT)) {
+      return ERR::Args;
+   }
+
+   if (((common_font *)FontHandle)->type IS CF_BITMAP) {
+      if (fill_class != CLASSID::VECTORCOLOUR) return ERR::Args;
+      const std::lock_guard lock(glFontMutex);
+      auto font = ((bmp_font *)FontHandle)->font;
+      auto colour = (objVectorColour *)FillStyle;
+      if (auto error = font->setString(String); error != ERR::Okay) return error;
+      font->Bitmap = Bitmap;
+      font->X = std::round(X);
+      font->Y = std::round(Y) - font->Ascent + font->Leading;
+      font->Colour = RGB8(FRGB(colour->Red, colour->Green, colour->Blue, colour->Alpha));
+      const double advance = fnt::StringWidth(font, String, -1);
+      const auto wrap_edge = font->WrapEdge;
+      font->WrapEdge = 0; // Scene text may have enabled wrapping on this shared font.
+      const auto error = acDraw(font);
+      font->WrapEdge = wrap_edge;
+      font->Bitmap = nullptr;
+      if ((error IS ERR::Okay) and Advance) *Advance = advance;
+      return error;
+   }
+   else if (((common_font *)FontHandle)->type != CF_FREETYPE) return ERR::Args;
+
+   thread_local SimpleVector text;
+   text.mPath.remove_all();
+   double pen_x = 0;
+   double pen_y = 0;
+   {
+      const std::lock_guard lock(glFontMutex);
+      auto pt = (freetype_font::ft_point *)FontHandle;
+      FT_Activate_Size(pt->ft_size);
+      int prev_glyph = 0;
+      for (size_t i = 0; i < String.size();) {
+         uint32_t unicode;
+         i += get_utf8(String, unicode, i);
+         auto &glyph = pt->get_glyph(unicode);
+         double kx, ky;
+         get_kerning_xy(pt->font->face, glyph.glyph_index, prev_glyph, kx, ky);
+         pen_x += kx;
+         agg::trans_affine_translation transform(X + pen_x, Y + pen_y);
+         agg::conv_transform<agg::path_storage, agg::trans_affine> path(glyph.path, transform);
+         text.mPath.concat_path(path);
+         pen_x += glyph.adv_x;
+         pen_y += glyph.adv_y + ky;
+         prev_glyph = glyph.glyph_index;
+      }
+   }
+
+   if (not text.mPath.empty()) text.DrawPath(Bitmap, 0, nullptr, FillStyle);
+   if (Advance) *Advance = pen_x;
    return ERR::Okay;
 }
 

@@ -110,7 +110,7 @@
     <comment>Returns the rendered width of a single character.</comment>
     <prototype>DOUBLE vec::CharWidth(APTR FontHandle, UINT Char, UINT KChar, DOUBLE * Kerning)</prototype>
     <tiriPrototype>num, Kerning:num = CharWidth(FontHandle:any, Char:num, KChar:num)</tiriPrototype>
-    <tags>pure-query</tags>
+    <tags>blocking, pure-query</tags>
     <input>
       <param type="APTR" name="FontHandle">The font to use for calculating the character width.</param>
       <param type="UINT" name="Char">A 32-bit unicode character.</param>
@@ -197,6 +197,33 @@
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>DrawText</name>
+    <comment>Draws a single UTF-8 text run directly into a bitmap.</comment>
+    <prototype>ERR vec::DrawText(objBitmap * Bitmap, APTR FontHandle, DOUBLE X, DOUBLE Y, STRVIEW String, OBJECTPTR FillStyle, DOUBLE * Advance)</prototype>
+    <tiriPrototype>err, Advance:num = DrawText(Bitmap:obj, FontHandle:any, X:num, Y:num, String:str, FillStyle:obj)</tiriPrototype>
+    <tags>mutates-input, blocking, thread-safe</tags>
+    <input>
+      <param type="objBitmap *" name="Bitmap">Target bitmap.</param>
+      <param type="APTR" name="FontHandle">Font handle returned by <function>GetFontHandle</function>.</param>
+      <param type="DOUBLE" name="X">Horizontal baseline origin in bitmap pixels.</param>
+      <param type="DOUBLE" name="Y">Vertical baseline origin in bitmap pixels.</param>
+      <param type="STRVIEW" name="String">Single-line UTF-8 text to draw.</param>
+      <param type="OBJECTPTR" name="FillStyle">Fill object accepted by <function>DrawPath</function>; bitmap fonts require <class name="VectorColour">VectorColour</class>.</param>
+      <param type="DOUBLE *" name="Advance">Receives the run's advance in pixels, or NULL if not required.  Cleared on error.</param>
+    </input>
+    <description>
+<p>Draws using a font handle returned by <function>GetFontHandle</function>.  X and Y specify the first glyph's baseline origin in bitmap pixels.  Scalable fonts preserve fractional coordinates and use the same cached outlines and kerning as <class name="VectorText">VectorText</class>. Missing characters use the face's missing-glyph outline; no fallback face is selected.  The run must contain no line breaks.  An empty run draws nothing and returns an advance of zero.</p>
+<p>FillStyle accepts the same <class name="VectorColour">VectorColour</class>, <class name="VectorImage">VectorImage</class>, <class name="Gradient">Gradient</class> and <class name="VectorPattern">VectorPattern</class> objects as <function>DrawPath</function>. Bitmap fonts accept only <class name="VectorColour">VectorColour</class> and round the origin to whole pixels.  Drawing respects <class name="Bitmap" field="Clip">Bitmap.Clip</class>. The optional Advance result includes kerning and equals <function>StringWidth</function> for the same single-line run.</p>
+<p>Concurrent calls must use separate Bitmap objects.  Their pixel memory may be shared provided their Clip regions do not overlap.  Callers must keep the bitmap storage and fill resources alive and unchanged during drawing.  Scalable outlines are copied under the font lock and rasterised after releasing it.  Bitmap-font drawing holds the font lock throughout, because the underlying font object is shared.  Fills that maintain rendering state, such as gradients and patterns, require separate fill objects for concurrent calls.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Args">Unsupported fill or font type, non-finite origin, or a run containing a line break.</error>
+      <error code="NullArgs">Bitmap, FontHandle or FillStyle is NULL.</error>
     </result>
   </function>
 
