@@ -785,16 +785,18 @@ end
 
 @Doc(text=[[
 @desc Create the mode bar's tab strip: tabs with a glyph and a label, a separator after the last tab and right-aligned
-meta text.  Disabled tabs are dimmed and show their tip in a tooltip when the pointer rests on them.
+meta text.  Disabled tabs are dimmed and show their tip in a tooltip when the pointer rests on them.  Clicking an
+enabled tab that isn't active calls `onSelect(Index)`, which is expected to call `setActive()`.
 @input Target viewport, which the strip fills
-@input Options: width, height, items (array of { label, glyph, enabled, tip }), active (index), meta, tokens
-@result Table with `tabs` (each with `viewport` and `width`), `meta`, `setMeta(Text)` and `cancelTip()`
+@input Options: width, height, items (array of { label, glyph, enabled, tip }), active (index), meta, tokens, onSelect
+@result Table with `tabs` (each with `viewport` and `width`), `active`, `meta`, `setMeta(Text)`, `setActive(Index)`
+and `cancelTip()`
 ]])
 colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
    t      = Options.tokens
    height = Options.height
    top    = (height - TAB_HEIGHT) * 0.5
-   self   = { tabs = array<table> }
+   self   = { tabs = array<table>, active = Options.active }
 
    function cancelTip()
       self.tooltip?.cancel()
@@ -808,13 +810,10 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
       fill = active ? t.fg0 : t.fg2
       vp = Viewport.new('VectorViewport', { x = x, y = top, width = 1, height = TAB_HEIGHT })
 
-      bkgd = nil
-      if active then
-         bkgd = vp.new('VectorRectangle', {
-            x = 0.5, y = 0.5, width = 1, height = TAB_HEIGHT - 1, roundX = 5, roundY = 5,
-            fill = t.panel, stroke = t.border, strokeWidth = 1
-         })
-      end
+      bkgd = vp.new('VectorRectangle', {
+         x = 0.5, y = 0.5, width = 1, height = TAB_HEIGHT - 1, roundX = 5, roundY = 5,
+         fill = t.panel, stroke = t.border, strokeWidth = 1, visibility = active ? VIS_VISIBLE : VIS_HIDDEN
+      })
 
       glyph = vp.new('VectorViewport', {
          x = TAB_PAD, y = (TAB_HEIGHT - TAB_GLYPH) * 0.5, width = TAB_GLYPH, height = TAB_GLYPH
@@ -828,9 +827,22 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
 
       width = math.ceil(TAB_PAD + TAB_GLYPH + 6 + label.textWidth + TAB_PAD)
       vp.width = width
-      bkgd?.width = width - 1
+      bkgd.width = width - 1
 
-      if not item.enabled then
+      if item.enabled then
+         index = i
+         vp.new('VectorRectangle', {
+            width = '100%', height = '100%', fill = 'rgba(0,0,0,0)', cursor = 'hand'
+         }).acMoveToBack()
+         vp.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
+            repeat
+               if (Msg.type is JET_LMB) and (Msg.value is 0) and (index != self.active) and Options.onSelect then
+                  Options.onSelect(index)
+               end
+               Msg = Msg.next
+            until not Msg
+         end)
+      else
          vp.opacity = TAB_DIMMED
          tip = item.tip
          index = i
@@ -848,7 +860,7 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
          end)
       end
 
-      self.tabs.push({ viewport = vp, width = width, label = label, enabled = item.enabled })
+      self.tabs.push({ viewport = vp, width = width, label = label, bkgd = bkgd, enabled = item.enabled })
       x += width + TAB_GAP
    end
 
@@ -866,6 +878,15 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
       self.meta.string = Text ?? ''
    end
 
+   self.setActive = function(Index:num!)
+      self.active = Index
+      for i, tab in self.tabs do
+         active = (i is Index)
+         tab.bkgd.visibility = active ? VIS_VISIBLE : VIS_HIDDEN
+         tab.label.fill = active ? t.fg0 : t.fg2
+      end
+   end
+
    return self
 end
 
@@ -878,26 +899,42 @@ end
 @result Timer handle for cancelTimer()
 ]])
 colourpicker_parts.after = function(Seconds:num!, Function:func!):any
-   local handle:any
+   timer = { handle = nil, pending = false }
    err, handle = mSys.SubscribeTimer(Seconds, function()
-      -- Release the subscription first, including when Function raises or dispatches more messages.
+      if timer.pending then return end
+      timer.pending = true
 
-      mSys.UpdateTimer(handle, 0)
-      try
-         Function()
-      except e
-         msg(f'Colour picker timer failed: {e.message}')
-      end
+      -- Remove the subscription after its native callback returns.  Removing a running timer reports
+      -- ERR_AlreadyLocked.  Keep the queued call cancellable until it starts, including during dialog teardown.
+
+      processing.delayedCall(function()
+         if not timer.handle then return end
+         mSys.UpdateTimer(timer.handle, 0)
+         timer.handle = nil
+         try
+            Function()
+         except e
+            msg(f'Colour picker timer failed: {e.message}')
+         end
+      end)
    end)
    if err != ERR_Okay then return nil end
-   return handle
+   timer.handle = handle
+   return timer
 end
 
 @Doc(text=[[
 @desc Cancel a timer returned by after().  A nil handle is ignored.
 ]])
 colourpicker_parts.cancelTimer = function(Handle:any)
-   if Handle then mSys.UpdateTimer(Handle, 0) end
+   if Handle is <table> then
+      if Handle.handle then
+         mSys.UpdateTimer(Handle.handle, 0)
+         Handle.handle = nil
+      end
+   elseif Handle then
+      mSys.UpdateTimer(Handle, 0)
+   end
 end
 
 @Doc(text=[[

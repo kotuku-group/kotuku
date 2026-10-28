@@ -15,7 +15,10 @@ A palette may also have a `mode` (see MODES), which reserves its first swatches 
 swatches are named after their roles and can't be renamed or removed.  A palette without a mode is a Custom palette.
 
 A swatch that the user has added is owned by the user and is marked with `user = true`.  A swatch that the user has
-renamed is marked with `customName = true`.
+renamed is marked with `customName = true`.  Palettes and swatches may have a `description` string.
+
+The palette database (DATABASE) holds every palette known to the palette manager, as { palettes, active } where
+active is the index of the palette that the picker edits.
 
 The module has no display dependency.
 
@@ -33,6 +36,9 @@ Usage:
 MAX_SWATCHES <const> = 32
 FILE_VERSION <const> = 1
 EXPORT_FORMAT <const> = 'kotuku-palette'
+DATABASE_FORMAT <const> = 'kotuku-palettes'
+MAX_PALETTES <const> = 500
+DESCRIPTION_LIMIT <const> = 2000 -- Characters kept in a decoded description
 LINK_EPSILON <const> = 0.000001 -- Smallest change that rewrites a link entry
 PRECISION    <const> = 1000000  -- Stored values are rounded to 1 / PRECISION
 
@@ -40,16 +46,10 @@ CHANNELS <const> = array<str> { 'l', 'c', 'h' }
 
 colourpalette.MAX_SWATCHES = MAX_SWATCHES
 colourpalette.FILE         = 'user:config/colourpicker.json'
+colourpalette.DATABASE     = 'user:config/palettes.json'
+colourpalette.MAX_PALETTES = MAX_PALETTES
 
 ----------------------------------------------------------------------------------------------------------------------
-
--- Normalise a hue to [0, 360).
-
-function normHue(H:num):num
-   h = H % 360
-   if h < 0 then h += 360 end
-   return h
-end
 
 -- Wrap a hue difference to [-180, 180).
 
@@ -84,7 +84,7 @@ end
 function clampChannel(Channel:str, Value:num):num
    if Channel is 'l' then return math.clamp(Value, 0, 1) end
    if Channel is 'c' then return math.max(Value, 0) end
-   return normHue(Value)
+   return colourmath.normaliseHue(Value)
 end
 
 -- The value of one channel produced by a link entry from the base swatch.
@@ -247,7 +247,7 @@ colourpalette.swatch = function(Name:str!, L:num!, C:num!, H:num!, Alpha:num):ta
       name  = Name,
       l     = math.clamp(L, 0, 1),
       c     = math.max(C, 0),
-      h     = normHue(H),
+      h     = colourmath.normaliseHue(H),
       alpha = (Alpha != nil) ? math.clamp(Alpha, 0, 1) : 1
    }
 end
@@ -303,7 +303,7 @@ colourpalette.setSwatch = function(Palette:table!, Index:num!, L:num!, C:num!, H
    s = Palette.swatches[Index]
    s.l = math.clamp(L, 0, 1)
    s.c = math.max(C, 0)
-   s.h = normHue(H)
+   s.h = colourmath.normaliseHue(H)
    if Alpha != nil then s.alpha = math.clamp(Alpha, 0, 1) end
 
    if s.base != nil then
@@ -787,7 +787,7 @@ end
 @desc Return an independent copy of a palette.
 ]])
 colourpalette.duplicate = function(Palette:table!):table
-   copy = { name = Palette.name, mode = Palette.mode, swatches = array<table> }
+   copy = { name = Palette.name, mode = Palette.mode, description = Palette.description, swatches = array<table> }
    for s in values(Palette.swatches) do
       copy.swatches.push(table.clone(s))
    end
@@ -819,6 +819,7 @@ function encodeSwatch(S:table, Precise:bool):table
    out = { name = S.name }
    if S.user then out.user = true end
    if S.customName then out.customName = true end
+   if S.description?? then out.description = S.description end
    if Precise then
       out.l, out.c, out.h, out.alpha = rounded(S.l), rounded(S.c), rounded(S.h), rounded(S.alpha)
    else
@@ -846,7 +847,9 @@ colourpalette.encode = function(Palette:table!, Precise:bool):table
    for s in values(Palette.swatches) do
       swatches.push(encodeSwatch(s, Precise))
    end
-   return { name = Palette.name, mode = colourpalette.mode(Palette).id, swatches = swatches }
+   out = { name = Palette.name, mode = colourpalette.mode(Palette).id, swatches = swatches }
+   if Palette.description?? then out.description = Palette.description end
+   return out
 end
 
 @Doc(text=[[
@@ -865,6 +868,7 @@ colourpalette.decode = function(Data:any):<table, str>
    if #list is 0 then return nil, 'The palette is empty' end
 
    palette = { name = (Data.name is <str>) ? Data.name : 'imported', mode = 'custom', swatches = array<table> }
+   if Data.description is <str> then palette.description = Data.description.sub(0, DESCRIPTION_LIMIT) end
 
    for i, src in list do
       if i >= MAX_SWATCHES then break end
@@ -890,6 +894,7 @@ colourpalette.decode = function(Data:any):<table, str>
       s = colourpalette.swatch(name, l, c, h, alpha)
       if src.user is true then s.user = true end
       if src.customName is true then s.customName = true end
+      if src.description is <str> then s.description = src.description.sub(0, DESCRIPTION_LIMIT) end
 
       if finite(src.base) then
          s.base = math.floor(src.base)
@@ -1067,4 +1072,136 @@ colourpalette.save = function(Path:str!, Settings:table!):bool
       end
       return false
    end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Palette database
+
+@Doc(text=[[
+@desc Return a palette name that isn't used by any palette in the list: Name itself if it is free, otherwise
+`Name n` for the lowest free n from 2.
+]])
+colourpalette.uniquePaletteName = function(Palettes:array<table>!, Name:str!):str
+   used = { }
+   for p in values(Palettes) do used[p.name] = true end
+   if not used[Name] then return Name end
+   n = 2
+   while used[f'{Name} {n}'] do n++ end
+   return f'{Name} {n}'
+end
+
+@Doc(text=[[
+@desc Create an empty Custom palette with Black and White swatches, as for reset().
+]])
+colourpalette.newPalette = function(Name:str!):table
+   palette = { name = Name, mode = 'custom', swatches = array<table> }
+   colourpalette.reset(palette)
+   return palette
+end
+
+@Doc(text=[[
+@desc Return the palette database as JSON text, as saved to DATABASE and written by the manager's export.
+@input Database: { palettes, active }
+]])
+colourpalette.databaseToJSON = function(Database:table!):str
+   list = array<table>
+   for p in values(Database.palettes) do list.push(colourpalette.encode(p, true)) end
+   return json.encode({
+      format = DATABASE_FORMAT, version = FILE_VERSION, active = Database.active ?? 0, palettes = list
+   })
+end
+
+@Doc(text=[[
+@desc Parse palette database JSON, as written by databaseToJSON().  Invalid palettes are skipped and reported in the
+log; the database is refused only if it has none that are valid.  Palettes beyond MAX_PALETTES are dropped.
+@result The database { palettes, active }, or nil and an error message
+]])
+colourpalette.databaseFromJSON = function(Text:str):<table, str>
+   Text ?! return nil, 'There is no text to import'
+   local data:any
+   try
+      data = json.decode(Text.trim())
+   except e
+      return nil, 'The text is not valid JSON'
+   end
+   if not (data is <table>) then return nil, 'The database is not an object' end
+   if data.format != DATABASE_FORMAT then return nil, 'The file is not a palette database' end
+   if not (data.palettes is <array>) then return nil, 'The database has no palette list' end
+
+   palettes = array<table>
+   for i, src in data.palettes do
+      if #palettes >= MAX_PALETTES then break end
+      palette, err = colourpalette.decode(src)
+      if palette then
+         palettes.push(palette)
+      else
+         msg(f'Skipping palette {i}: {err}')
+      end
+   end
+   if #palettes is 0 then return nil, 'The database has no valid palettes' end
+
+   active = (finite(data.active) and (data.active >= 0) and (data.active < #palettes)) ? math.floor(data.active) : 0
+   return { palettes = palettes, active = active }
+end
+
+@Doc(text=[[
+@desc Load the palette database.
+@result The database { palettes, active }, or nil if the file is missing or invalid.  An invalid file is renamed
+with a .bak extension so that it isn't overwritten.
+]])
+colourpalette.loadDatabase = function(Path:str!):table
+   local text:str
+   try
+      text = io.readAll(Path)
+   end
+   if not text then return nil end
+
+   db, err = colourpalette.databaseFromJSON(text)
+   if db then return db end
+
+   msg(f'Ignoring {Path}: {err}')
+   try
+      file <close> = obj.new('File', { path = Path })
+      check file.acRename(Path .. '.bak')
+   except e
+      msg(f'Failed to back up {Path}: {e.message}')
+   end
+   return nil
+end
+
+@Doc(text=[[
+@desc Save the palette database.  The file is written to a temporary path first and then renamed over the target.
+@result True if the file was written
+]])
+colourpalette.saveDatabase = function(Path:str!, Database:table!):bool
+   temporary = Path .. '.tmp'
+   try
+      io.writeAll(temporary, colourpalette.databaseToJSON(Database))
+      file <close> = obj.new('File', { path = temporary })
+      check file.acRename(Path)
+      return true
+   except e
+      msg(f'Failed to save {Path}: {e.message}')
+      try
+         file <close> = obj.new('File', { path = temporary })
+         file.mtDelete()
+      end
+      return false
+   end
+end
+
+@Doc(text=[[
+@desc Add the palettes of an imported database to Database.  Imported palettes whose names are taken are renamed
+with a number, so that no existing palette is replaced.
+@result The number of palettes added, which is limited by MAX_PALETTES
+]])
+colourpalette.mergeDatabase = function(Database:table!, Imported:table!):num
+   added = 0
+   for p in values(Imported.palettes) do
+      if #Database.palettes >= MAX_PALETTES then break end
+      p.name = colourpalette.uniquePaletteName(Database.palettes, p.name)
+      Database.palettes.push(p)
+      added++
+   end
+   return added
 end
