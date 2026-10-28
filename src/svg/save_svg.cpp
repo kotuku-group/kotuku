@@ -1039,8 +1039,9 @@ static ERR save_svg_scan_text(extSVG *Self, objXML *XML, objVector *Vector, int 
    if ((!error) and (!(error = vt->getWeight(weight))) and (weight != 400))
       xml::NewAttrib(tag, "font-weight", weight);
 
-   if ((!error) and (!(error = vt->getString(sv))))
-      error = XML->insertContent(tag->ID, XMI::CHILD, sv, nullptr);
+   std::string text;
+   if ((!error) and (!(error = vt->getString(text))))
+      error = XML->insertContent(tag->ID, XMI::CHILD, text, nullptr);
 
    // TODO: lengthAdjust, font, font-size-adjust, font-stretch, font-style, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
 

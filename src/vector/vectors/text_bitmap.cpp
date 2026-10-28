@@ -49,13 +49,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
             // TODO: Wrapping information should be cached for speeding up subsequent redraws.
 
             if ((wrap_state IS WS_NEW_WORD) and (Vector->txInlineSize)) {
-               int word_length = 0;
-               for (int c=0; (str[c]) and (str[c] > 0x20); ) {
-                  for (++c; ((str[c] & 0xc0) IS 0x80); c++);
-                  word_length++;
-               }
-
-               int word_width = fnt::StringWidth(Vector->txBitmapFont, str, word_length);
+               int word_width = fnt::StringWidth(Vector->txBitmapFont, str, word_extent(str).chars);
 
                if (dx + word_width >= Vector->txInlineSize) {
                   if (dx > longest_line_width) longest_line_width = dx;

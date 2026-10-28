@@ -206,6 +206,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    }
 
    auto guide = Vector->GuidePath;
+   int wrapped_lines = 0; // Extra lines created by InlineSize word-wrapping
    double start_x, start_y, end_vx, end_vy;
    double advance_scale = 1.0;
    if (guide) {
@@ -394,17 +395,13 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             // TODO: Wrapping information should be cached for speeding up subsequent redraws.
 
             if ((wrap_state IS WS_NEW_WORD) and (Vector->txInlineSize)) {
-               int word_length = 0;
-               for (int c=0; (str[c]) and (str[c] > 0x20); ) {
-                  for (++c; ((str[c] & 0xc0) IS 0x80); c++);
-                  word_length++;
-               }
-
-               auto word_width = string_width(Vector, std::string_view(str, word_length));
+               auto word_width = string_width(Vector, std::string_view(str, word_extent(str).bytes));
 
                if ((dx + word_width) * std::abs(transform.sx) >= Vector->txInlineSize) {
+                  if (dx > longest_line_width) longest_line_width = dx;
                   dx = 0;
                   dy += pt.line_spacing;
+                  wrapped_lines++;
                }
             }
 
@@ -451,7 +448,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    // Text paths are always oriented around (0,0) and are transformed later
 
    Vector->Bounds = { 0.0, double(-pt.ascent), Vector->txWidth, 1.0 };
-   if (Vector->txLines.size() > 1) Vector->Bounds.bottom += (Vector->txLines.size() - 1) * pt.line_spacing;
+   auto total_lines = std::ssize(Vector->txLines) + wrapped_lines;
+   if (total_lines > 1) Vector->Bounds.bottom += (total_lines - 1) * pt.line_spacing;
 
    // If debugging the above boundary calculation, use this for verification of the true values (bear in
    // mind it will provide tighter numbers, which is normal).
