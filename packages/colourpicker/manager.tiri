@@ -1,11 +1,11 @@
 -- Palette manager: the Palette tab of the colour picker.  The left panel lists the palettes of the palette database
--- under a search filter, with the New, Import and Export buttons.  The centre panel shows the swatches of the selected
--- palette as cards, and the right panel shows the details of the palette and of the selected swatch, with editable
--- descriptions.  Double-clicking a palette or a swatch card opens it in the Picker tab.
+-- under a search filter, with icon buttons for New, Duplicate, Delete, Import and Export.  The centre panel shows the
+-- swatches of the selected palette as cards, and the right panel shows the details of the palette and of the selected
+-- swatch, with editable descriptions.  Double-clicking a palette or a swatch card opens it in the Picker tab.
 --
 -- The picker owns the database (picker.db) and supplies the callbacks in Options; see colourpicker_manager.build().
 
-   import 'gui', 'gui/button', 'gui/input', 'gui/listview', 'gui/scrollbar', 'gui/filedialog'
+   import 'gui', 'gui/button', 'gui/input', 'gui/listview', 'gui/scrollbar', 'gui/filedialog', 'gui/dialog'
    import 'gui/colourpicker/colour', 'gui/colourpicker/palette'
    import './parts'
 
@@ -18,6 +18,8 @@ RIGHT_W      <const> = 260
 INSET        <const> = 10 -- Padding inside a panel body
 SEARCH_H     <const> = 26
 BUTTON_H     <const> = 26
+ICON_BUTTON  <const> = 22 -- The palette list's icon buttons, as the picker's palette buttons
+ICON_GAP     <const> = 6
 LIST_ROW_H   <const> = 40
 LIST_EDGE    <const> = 4  -- Inset of the rows within a listview
 STRIP_X      <const> = 8
@@ -31,7 +33,7 @@ AREA_H       <const> = 84 -- Description areas
 AREA_PAD     <const> = 7
 AREA_FONT    <const> = 12
 NAME_LIMIT   <const> = 60
-TEXT_LIMIT   <const> = 2000
+TEXT_LIMIT   <const> = colourpalette.DESCRIPTION_LIMIT
 FLASH_TIME   <const> = 1.6
 LABEL_FONT   <const> = 10.5
 PROP_ROW     <const> = 34
@@ -170,7 +172,7 @@ function textArea(Target:obj!, Options:table!):table
    self.text = vp.new('VectorText', {
       x = AREA_PAD, y = baseline, face = colourpicker_parts.FACE_UI, fontSize = f'{AREA_FONT}px',
       fontStyle = 'Regular', fill = t.fg0, inlineSize = Options.width - (AREA_PAD * 2), lineLimit = 0,
-      textFlags = VTXF_EDITABLE
+      textFlags = VTXF_EDITABLE, charLimit = TEXT_LIMIT
    })
 
    function showPlaceholder()
@@ -212,7 +214,8 @@ function textArea(Target:obj!, Options:table!):table
       showPlaceholder()
       if not gained then
          text = self.get()
-         if #text > TEXT_LIMIT then text = text.sub(0, TEXT_LIMIT) end
+         text = colourpalette.limitDescription(text)
+         self.text.string = text
          Options.commit(text)
       end
       if Options.focus then Options.focus(gained, self) end
@@ -287,7 +290,8 @@ end
 the picker edits)
 @input Target viewport
 @input Options: x, y, width, height, and the callbacks open(Index, Swatch), save(), sync() (stores the picker's palette
-in the database), focus(Has, Field) and blur()
+in the database), removePalette(Index) (removes a database palette, switching the picker to another if it edits that
+palette), focus(Has, Field) and blur()
 @result Table with `viewport`, `show()`, `hide()`, `refresh()`, `widgets()` and `destroy()`
 ]])
 colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!):table
@@ -344,7 +348,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       end)
 
    list_y = INSET + SEARCH_H + 8
-   buttons_y = body_h - INSET - BUTTON_H
+   buttons_y = body_h - INSET - ICON_BUTTON
    list_h = buttons_y - 8 - list_y
 
    self.list = gui.listView({
@@ -406,18 +410,26 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       style = 'Regular'
    })
 
-   function button(X:num, W:num, Label:str, Activate:func):table
+   -- The icon buttons: the palette actions on the left, and the database's Import and Export on the right.
+
+   function button(X:num, Icon:str, Tip:str, Activate:func):table
       return gui.button({
-         target = left.body, x = X, y = buttons_y, width = W, height = BUTTON_H, label = Label,
-         theme = { text = { fontSize = '11.5px', y = colourpicker_parts.baseline(0, BUTTON_H - 2, 11.5) } },
+         target = left.body, x = X, y = buttons_y, height = ICON_BUTTON, icon = Icon, tip = Tip,
          events = { activate = Activate }
       })
    end
 
-   btn_w = math.floor((inner_w - 12) / 3)
-   self.btnNew = button(INSET, btn_w, '+ New', function() self.newPalette() end)
-   self.btnImport = button(INSET + btn_w + 6, btn_w, 'Import…', function() self.importDatabase() end)
-   self.btnExport = button(INSET + ((btn_w + 6) * 2), btn_w, 'Export…', function() self.exportDatabase() end)
+   step = ICON_BUTTON + ICON_GAP
+   right_btn = INSET + inner_w - ICON_BUTTON
+   self.btnNew = button(INSET, 'items/add', 'New palette', function() self.newPalette() end)
+   self.btnDuplicate = button(INSET + step, 'page/duplicate', 'Duplicate palette', function()
+      self.duplicatePalette()
+   end)
+   self.btnDelete = button(INSET + (step * 2), 'items/trash', 'Delete palette', function() self.deletePalette() end)
+   self.btnImport = button(right_btn - step, 'items/download', 'Import palettes…', function()
+      self.importDatabase()
+   end)
+   self.btnExport = button(right_btn, 'items/upload', 'Export palettes…', function() self.exportDatabase() end)
 
    ---------------------------------------------------------------------------------------------------------------
    -- Centre: the swatches of the selected palette
@@ -465,11 +477,14 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          activate = function(Event)
             palette = selectedPalette()
             if not palette or self.refreshing then return end
-            if colourpalette.renamePalette(palette, Event.text ?? '') then
+            renamed, reason = colourpalette.renamePalette(palette, Event.text ?? '', db().palettes)
+            if renamed then
                Options.save()
                self.refresh()
             else
+               msg(reason)
                self.nameInput.setText(palette.name)
+               if (Event.text ?? '').trim()?? then self.flash('name in use') end
             end
          end
       }
@@ -579,6 +594,13 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    end
    self.flash = flash
 
+   -- Duplicate and Delete act on the selected palette.  The last palette can not be deleted.
+
+   function updateButtons()
+      if self.selected != nil then self.btnDuplicate.enable() else self.btnDuplicate.disable() end
+      if (self.selected != nil) and (#db().palettes > 1) then self.btnDelete.enable() else self.btnDelete.disable() end
+   end
+
    function matches(Palette:table):bool
       if not self.filter?? then return true end
       if Palette.name.lower().find(self.filter, 0, true) then return true end
@@ -589,11 +611,12 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       items = array<table>
       for i, p in db().palettes do
          if matches(p) then
-            items.push({ index = i, name = p.name, palette = p, current = (i is Picker.dbIndex) })
+            items.push({ index = i, name = p.name, palette = p, current = (p.id is Picker.dbID) })
          end
       end
       self.list.loadItems(items)
       self.empty.visibility = (#items is 0) ? VIS_VISIBLE : VIS_HIDDEN
+      updateButtons()
       if not self.flashTimer then left.setMeta(tostring(#db().palettes)) end
 
       for item in values(self.list.items) do
@@ -707,6 +730,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.swatch = (palette and (#palette.swatches > 0)) ? 0 : nil
       updateCards()
       updateInfo()
+      updateButtons()
       self.viewport.acDraw()
    end
 
@@ -727,21 +751,95 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          return
       end
       palettes.push(colourpalette.newPalette(colourpalette.uniquePaletteName(palettes, 'New Palette')))
-      Options.save()
+      saved = Options.save()
       self.filter = ''
       self.search.setText('')
       self.selected = nil
       self.selectPalette(#palettes - 1)
       self.updateList()
-      flash('created')
+      if saved then flash('created') end
    end
+
+   -- The copy is inserted after the selected palette and selected.  It has the same name, numbered.
+
+   self.duplicatePalette = function()
+      if self.selected is nil then return end
+      Options.sync()
+      index = colourpalette.copyPalette(db(), self.selected)
+      if index is nil then
+         flash('database full')
+         return
+      end
+      saved = Options.save()
+      self.selected = nil
+      self.selectPalette(index)
+      self.updateList()
+      if saved then flash('duplicated') end
+   end
+
+   -- A modal message over the picker.  Done(Response) is called unless the manager has been destroyed.
+
+   function message(Spec:table!, Done:func)
+      if self.messageDialog then return end
+      Spec.{ modal = true, popOver = Picker.window.surface }
+      Spec.feedback = function(Dialog, Response, State)
+         self.messageDialog = nil
+         if self.list and Done then Done(Response) end
+      end
+      self.messageDialog = gui.dialog.message(Spec)
+   end
+
+   -- Ask before Action() replaces or removes something.  Label names the action on the confirming button.
+
+   function confirm(Title:str, Text:str, Image:str, Label:str, Action:func)
+      message({
+         title = Title, message = Text, type = 'question', image = Image,
+         options = {
+            { id = 0, label = 'Cancel', icon = 'items/cancel' },
+            { id = 1, label = Label, icon = 'items/checkmark' }
+         }
+      }, function(Response)
+         if Response?.id is 1 then Action() end
+      end)
+   end
+
+   function report(Title:str, Text:str, Type:str)
+      message({ title = Title, message = Text, type = Type, options = { { id = 0, label = 'OK' } } })
+   end
+
+   -- Deleting the palette that the picker edits switches the picker to the palette that takes its place.  The
+   -- selection moves to that palette as well.
+
+   self.deletePalette = function()
+      palette = selectedPalette()
+      if not palette or (#db().palettes <= 1) then return end
+      text = f'Are you sure?  The palette "{palette.name}" and its {plural(#palette.swatches, "colour")} will be ' ..
+         'deleted.  This can not be undone.'
+      if palette.id is Picker.dbID then
+         text ..= '  The picker will edit the next palette in the list.'
+      end
+      confirm('Delete Palette', text, 'items/trash', 'Delete', function()
+         index = colourpalette.paletteIndex(db(), palette.id)
+         if index is nil then return end
+         saved = Options.removePalette(index)
+         if colourpalette.paletteIndex(db(), palette.id) != nil then return end -- Refused
+         self.selected = nil
+         self.selectPalette(math.min(index, #db().palettes - 1))
+         self.updateList()
+         if saved then flash('deleted') end
+      end)
+   end
+
+   -- The file dialog opens in the folder last used for Import or Export.  That folder is saved with the picker's
+   -- preferences.
 
    function fileDialog(Title:str, OkLabel:str, Save:bool, Done:func)
       if self.dialog then return end
+      folder = Picker.paletteFolder ?? 'user:'
       self.dialog = gui.dialog.file({
          title       = Title,
          okLabel     = OkLabel,
-         path        = Save ? f'user:{EXPORT_NAME}' : 'user:',
+         path        = Save ? (folder .. EXPORT_NAME) : folder,
          filterList  = FILE_FILTER,
          allowNew    = Save,
          warnExists  = Save,
@@ -750,42 +848,81 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          feedback    = function(Dialog, Path, Files)
             self.dialog = nil
             if not self.list or not Files or (#Files is 0) then return end
+            if Path?? then Picker.paletteFolder = Path end
             Done((Path ?? '') .. Files[0].filename)
          end
       })
    end
 
+   -- Import merges the file's palettes into the database.  The result, or the reason that the file was refused, is
+   -- reported in a dialog.
+
    self.importDatabase = function()
       fileDialog('Import Palettes', 'Import', false, function(Path:str)
+         _, file = io.splitPath(Path)
          local text:str
          try
             text = io.readAll(Path)
          except e
             msg(f'Palette import failed: {e.message}')
-            flash('import failed')
+            report('Import Failed', f'"{file}" could not be read.  {e.message}', 'error')
             return
          end
          imported, err = colourpalette.databaseFromJSON(text)
          if not imported then
             msg(f'Palette import from {Path} failed: {err}')
-            flash('not a palette database')
+            report('Import Failed', f'"{file}" could not be imported.  {err}.', 'error')
             return
          end
-         added = colourpalette.mergeDatabase(db(), imported)
-         Options.save()
+         Options.sync()
+         added, renamed, full = colourpalette.mergeDatabase(db(), imported)
+         saved = Options.save()
          self.refresh()
-         flash(f'{added} imported')
+         if not saved then return end -- The picker reports the failure
+
+         lines = array<str> { f'{plural(added, "palette")} imported from "{file}".' }
+         if renamed > 0 then
+            lines.push(f'{plural(renamed, "palette")} renamed because the name was already in use.')
+         end
+         if imported.skipped > 0 then
+            lines.push(f'{plural(imported.skipped, "palette")} skipped because the data was not valid.')
+         end
+         if full > 0 then
+            lines.push(f'{plural(full, "palette")} not imported because the database is full ' ..
+               f'({colourpalette.MAX_PALETTES} palettes).')
+         end
+         report('Import Palettes', lines.concat('\n'), (added > 0) ? 'info' : 'warning')
       end)
+   end
+
+   -- Export writes a copy of the whole database.  A name without an extension is given .json; as the file dialog
+   -- checked the name without it, replacing an existing file is confirmed here.
+
+   function writeExport(Path:str, File:str)
+      Options.sync()
+      saved, reason = colourpalette.saveDatabase(Path, db(), true)
+      if saved then
+         flash('exported')
+      else
+         msg(f'Palette export failed: {reason}')
+         report('Export Failed', f'The palettes could not be exported to "{File}".  {reason}', 'error')
+      end
    end
 
    self.exportDatabase = function()
       fileDialog('Export Palettes', 'Export', true, function(Path:str)
-         Options.sync()
-         if colourpalette.saveDatabase(Path, db()) then
-            flash('exported')
-         else
-            flash('export failed')
+         folder, file = io.splitPath(Path)
+         if not file.find('.') then
+            file ..= '.json'
+            Path = (folder ?? '') .. file
+            _, location = mSys.AnalysePath(Path)
+            if location is LOC_FILE then
+               confirm('Export Palettes', f'"{file}" already exists.  Do you want to replace it?', 'items/upload',
+                  'Replace', function() writeExport(Path, file) end)
+               return
+            end
          end
+         writeExport(Path, file)
       end)
    end
 
@@ -813,7 +950,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    -- The widgets that handle Enter themselves
 
    self.widgets = function():array<table>
-      return array<table> { self.list, self.btnNew, self.btnImport, self.btnExport, self.btnEdit }
+      return array<table> {
+         self.list, self.btnNew, self.btnDuplicate, self.btnDelete, self.btnImport, self.btnExport, self.btnEdit
+      }
    end
 
    self.destroy = function()
@@ -821,6 +960,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.flashTimer = nil
       self.dialog?.window?.surface?.free()
       self.dialog = nil
+      self.messageDialog?.window?.surface?.free()
+      self.messageDialog = nil
       self.list = nil
       self.cards = nil
    end
