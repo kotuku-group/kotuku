@@ -345,7 +345,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                Path.concat_path(trans_char);
             }
 
-            if (Vector->txCursor.vector) {
+            if (Vector->needs_caret_geometry()) {
                calc_caret_position(line, transform, pt.ascent);
                if (not *str) {
                   transform.tx = start_x;
@@ -368,7 +368,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       for (auto &line : Vector->txLines) {
          line.chars.clear();
          auto wrap_state = WS_NO_WORD;
-         if ((line.empty()) and (Vector->txCursor.vector)) {
+         if ((line.empty()) and (Vector->needs_caret_geometry())) {
             agg::trans_affine transform;
             transform.translate(dx, dy);
             calc_caret_position(line, transform, pt.ascent);
@@ -419,7 +419,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
             Path.concat_path(trans_char);
 
-            if (Vector->txCursor.vector) {
+            if (Vector->needs_caret_geometry()) {
                calc_caret_position(line, transform, pt.ascent);
 
                if (!*str) { // Last character reached, add a final cursor entry past the character position.
@@ -442,7 +442,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       Vector->txWidth = longest_line_width;
    }
 
-   if (Vector->txCursor.vector) Vector->txCursor.reset_vector(Vector);
+   if (Vector->needs_caret_geometry()) Vector->txCursor.reset_vector(Vector);
    rebuild_selection(Vector);
 
    // Text paths are always oriented around (0,0) and are transformed later

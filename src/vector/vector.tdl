@@ -163,12 +163,13 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "OVERLINE: Enable overlining of the text.",
     "LINE_THROUGH: Enable a strike-through line in the text.",
     "BLINK: Enable animated blinking (not supported - exists as SVG dummy option).",
-    "EDITABLE|EDIT: Allow user editing of the text if the nearest viewport has the focus.",
+    "EDITABLE|EDIT: Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.",
     "AREA_SELECTED: Automatically set if a region of text has been selected.",
     "NO_SYS_KEYS: Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.",
     "OVERWRITE: Turns on overwrite mode (if off, insert mode is enabled).",
     "SECRET: Hide all characters from the UI by using generic symbols in place of glyphs.",
-    "RASTER: Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.")
+    "RASTER: Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.",
+    "SELECTABLE: Allow mouse and keyboard selection and copying without user editing or a visible caret.  Set before initialisation.")
 
   flags("VMF", { comment="Guide path flags" },
     "STRETCH: Applicable when used on @VectorText, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.",
