@@ -88,8 +88,8 @@
       </input>
       <description>
 <p>SelectArea() marks a region of text as selected, starting at the position given by <code>Row</code> and <code>Column</code>.  The cursor is moved to the end of the region at <code>EndRow</code> and <code>EndColumn</code>, which may come before the start for a reversed selection. Columns are character positions, so UTF-8 sequences count as one column each.  A negative <code>EndRow</code> refers to the last line and a negative <code>EndColumn</code> refers to the end of its line, so <code>SelectArea(0, 0, -1, -1)</code> selects all of the text.  Positions beyond the text are clamped to its limits.</p>
-<p>While an area is selected the <code>AREA_SELECTED</code> bit is set in <fl>TextFlags</fl>.  The next character typed, or a press of Backspace, Delete, Clear or Enter, will replace or delete the selected text.  Moving the cursor deselects the area.</p>
-<p>Editable text displays the selected area with the <fl>SelectFill</fl> painter.  The highlight is hidden when focus is lost and restored when focus returns; the selection range is retained.</p>
+<p>While an area is selected the <code>AREA_SELECTED</code> bit is set in <fl>TextFlags</fl>.  For editable text, the next character typed, or a press of Backspace, Delete, Clear or Enter, will replace or delete the selected text.  Moving the cursor without extending the selection deselects the area.</p>
+<p>Text with <code>VTXF::EDITABLE</code> or <code>VTXF::SELECTABLE</code> displays the selected area with the <fl>SelectFill</fl> painter.  The highlight is hidden when focus is lost and restored when focus returns; the selection range is retained.</p>
 <p>If the start and end positions are identical, the cursor is moved and no area is selected.</p>
       </description>
       <result>
@@ -221,7 +221,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>OBJECTID</type>
       <description>
-<p>A VectorText object in edit mode will become active when its nearest viewport receives the focus.  Setting the Focus field to a different vector in the scene graph will redirect monitoring to it.</p>
+<p>A VectorText object with <code>VTXF::EDITABLE</code> or <code>VTXF::SELECTABLE</code> becomes active when its nearest viewport receives the focus.  Setting the Focus field to a different vector in the scene graph redirects monitoring to it.</p>
 <p>Changing this value post-initialisation has no effect.</p>
       </description>
     </field>
@@ -405,7 +405,7 @@
 
     <field>
       <name>TextFlags</name>
-      <comment>Optional flags.</comment>
+      <comment>Controls text presentation, editing and selection.</comment>
       <access read="G" write="S">Get/Set</access>
       <type lookup="VTXF">VTXF</type>
       <description>
@@ -488,14 +488,15 @@
     <constants lookup="VTXF" comment="VectorText flags.">
       <const name="AREA_SELECTED">Automatically set if a region of text has been selected.</const>
       <const name="BLINK">Enable animated blinking (not supported - exists as SVG dummy option).</const>
-      <const name="EDIT">Allow user editing of the text if the nearest viewport has the focus.</const>
-      <const name="EDITABLE">Allow user editing of the text if the nearest viewport has the focus.</const>
+      <const name="EDIT">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
+      <const name="EDITABLE">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
       <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
       <const name="NO_SYS_KEYS">Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</const>
       <const name="OVERLINE">Enable overlining of the text.</const>
       <const name="OVERWRITE">Turns on overwrite mode (if off, insert mode is enabled).</const>
       <const name="RASTER">Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.</const>
       <const name="SECRET">Hide all characters from the UI by using generic symbols in place of glyphs.</const>
+      <const name="SELECTABLE">Allow mouse and keyboard selection and copying without user editing or a visible caret.  Set before initialisation.</const>
       <const name="UNDERLINE">Enable underlining of the text.</const>
     </constants>
 
