@@ -114,31 +114,54 @@ static void finish_key_dispatch(evKey *Event, int Size, APTR Meta)
 
 //********************************************************************************************************************
 
-// Moves the focus to the next or previous keyboard subscriber, then sends FM::TAB_FOCUS to the focused vector and its
-// ancestors.  The event is sent even if the focus did not move, e.g. when the scene has a single subscriber.
+// A subscriber can take the focus from the tab cycle only if neither it nor a vector ancestor is disabled or hidden,
+// as for Vector.Focus().
+
+static bool tab_focusable(extVector *Vector)
+{
+   for (auto node=Vector; node; node=(extVector *)node->Parent) {
+      if (node->Class->BaseClassID != CLASSID::VECTOR) break;
+      if (((node->Flags & VF::DISABLED) != VF::NIL) or (node->Visibility IS VIS::HIDDEN) or
+          (node->Visibility IS VIS::COLLAPSE)) return false;
+   }
+   return true;
+}
+
+// Moves the focus to the next or previous focusable keyboard subscriber, then sends FM::TAB_FOCUS to the focused vector
+// and its ancestors.  The event is sent even if the focus did not move, e.g. when the scene has a single subscriber.
 
 static void cycle_focus(extVectorScene *Self, bool Reverse)
 {
    const std::lock_guard<std::recursive_mutex> lock(glVectorFocusLock);
 
-   if (Self->KeyboardSubscriptions.empty()) return;
+   auto &subs = Self->KeyboardSubscriptions;
+   if (subs.empty()) return;
 
-   auto target = *Self->KeyboardSubscriptions.begin();
-   if (Self->KeyboardSubscriptions.size() > 1) {
-      for (auto it=glVectorFocusList.begin(); it != glVectorFocusList.end(); it++) {
-         if (auto find = Self->KeyboardSubscriptions.find(*it); find != Self->KeyboardSubscriptions.end()) {
-            if (Reverse) {
-               if (find IS Self->KeyboardSubscriptions.begin()) target = *Self->KeyboardSubscriptions.rbegin();
-               else target = *(--find);
-            }
-            else {
-               if (++find IS Self->KeyboardSubscriptions.end()) find = Self->KeyboardSubscriptions.begin();
-               target = *find;
-            }
-            break;
-         }
-      }
+   // Start from the subscriber that holds the focus.  If none does, the search starts before the first subscriber
+   // in either direction.
+
+   auto current = subs.end();
+   for (auto it=glVectorFocusList.begin(); it != glVectorFocusList.end(); it++) {
+      if (auto find = subs.find(*it); find != subs.end()) { current = find; break; }
    }
+   if (current IS subs.end()) Reverse = false;
+
+   // Step through the cycle, wrapping at either end, until a focusable subscriber is found.  The current subscriber is
+   // the last candidate, so the focus stays where it is if nothing else can take it.
+
+   extVector *target = nullptr;
+   auto it = current;
+   for (size_t i=0; i < subs.size(); i++) {
+      if (Reverse) {
+         if (it IS subs.begin()) it = subs.end();
+         --it;
+      }
+      else if ((it IS subs.end()) or (++it IS subs.end())) it = subs.begin();
+
+      if (tab_focusable(*it)) { target = *it; break; }
+   }
+
+   if (not target) return;
 
    auto target_id = target->UID;
    apply_focus(Self, target);
@@ -847,12 +870,14 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
 Next: Cycles the focus to the next control.
 
 Moves the focus forward to the next vector in the scene's tab order.  Only vectors that have called
-@Vector.SubscribeKeyboard() take part in the cycle, and they are ordered by their @Vector.TabOrder value.  The cycle
-starts from the subscriber that currently holds the focus, or the nearest ancestor of the focused vector that has a
-subscription.  When the last subscriber in the tab order is reached, the focus wraps around to the first.
+@Vector.SubscribeKeyboard() take part in the cycle, and they are ordered by their @Vector.TabOrder value.  Subscribers
+that are disabled or hidden, or that have a disabled or hidden ancestor, are skipped because they cannot receive the
+focus.  The cycle starts from the subscriber that currently holds the focus, or the nearest ancestor of the focused
+vector that has a subscription.  When the last subscriber in the tab order is reached, the focus wraps around to the
+first.
 
-If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no
-keyboard subscribers, the call has no effect.
+If no subscriber currently has the focus, the first focusable subscriber in the tab order receives it.  If the scene
+has no focusable keyboard subscribers, the call has no effect.
 
 This action produces the same result as pressing the Tab key, but works regardless of the `IGNORE_TAB` flag.  The
 focused vector and each of its ancestors receive a `TAB_FOCUS` feedback event, even if the focus did not move.
@@ -876,8 +901,8 @@ Moves the focus back to the previous vector in the scene's tab order.  This is t
 selects subscribers and determines the starting point in the same way.  When the first subscriber in the tab order is
 reached, the focus wraps around to the last.
 
-If no subscriber currently has the focus, the first subscriber in the tab order receives it.  If the scene has no
-keyboard subscribers, the call has no effect.
+If no subscriber currently has the focus, the first focusable subscriber in the tab order receives it.  If the scene
+has no focusable keyboard subscribers, the call has no effect.
 
 This action produces the same result as pressing Shift+Tab, but works regardless of the `IGNORE_TAB` flag.  The
 focused vector and each of its ancestors receive a `TAB_FOCUS` feedback event, even if the focus did not move.

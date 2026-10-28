@@ -448,6 +448,49 @@ end
    assert(#events.root is 3 and events.root[2].id is controls[2].id, 'Prev did not wrap to the last control')
 end
 
+-- Disabled and hidden subscribers, and those within a disabled or hidden ancestor, can't take the focus, so the tab
+-- cycle skips them in both directions.
+
+@Test function TabSkipsDisabledAndHiddenControls()
+   local surface <close>, scene, controls, events = tabFocusScene(6)
+   local group = controls[4]
+   local nested = group.new('VectorViewport', { x=0, y=0, width=5, height=5 }) -- Last in the tab order
+   nested.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) end)
+   controls[1].acDisable()
+   controls[2].visibility = VIS_HIDDEN
+   group.visibility = VIS_HIDDEN
+   check controls[0].acFocus()
+   processing.sleep(0)
+
+   check scene.acNext()
+   assert(events.root[0].id is controls[3].id, 'Next did not skip the disabled and hidden controls')
+   check scene.acNext()
+   assert(events.root[1].id is controls[5].id, 'Next did not skip the hidden group and its child')
+   check scene.acPrev()
+   check scene.acPrev()
+   assert(events.root[3].id is controls[0].id, 'Prev did not skip the disabled and hidden controls')
+
+   controls[1].acEnable()
+   group.visibility = VIS_VISIBLE
+   check scene.acNext()
+   assert(events.root[4].id is controls[1].id, 'An enabled control did not rejoin the tab cycle')
+   check scene.acPrev()
+   check scene.acPrev()
+   assert(events.root[6].id is nested.id, 'The child of a shown group did not rejoin the tab cycle')
+end
+
+-- When nothing else can take the focus, Tab leaves it where it is.
+
+@Test function TabKeepsTheFocusWithNoOtherFocusableControl()
+   local surface <close>, scene, controls, events = tabFocusScene(3)
+   controls[1].acDisable()
+   controls[2].visibility = VIS_HIDDEN
+   check controls[0].acFocus()
+   processing.sleep(0)
+   check scene.acNext()
+   assert(#events.root is 1 and events.root[0].id is controls[0].id, 'Next moved the focus to an unfocusable control')
+end
+
 -- With one subscriber the focus cannot move, but Tab still confirms where the focus is.
 
 @Test function TabFocusWithSingleSubscriber()
