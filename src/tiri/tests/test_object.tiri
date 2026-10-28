@@ -427,6 +427,9 @@ function subscriptionCollected(Setup:func):bool
       owner = nil
       f = nil
    end
+   -- JIT traces can retain callbacks and their captured owner after the native subscriptions have been released.
+   -- Remove those roots so this checks subscription and state ownership independently of test order.
+   jit.flush()
    processing.collect()
    processing.collect()
    return next(weak) is nil
