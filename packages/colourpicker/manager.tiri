@@ -17,6 +17,7 @@ LEFT_W       <const> = 268
 RIGHT_W      <const> = 260
 INSET        <const> = 10 -- Padding inside a panel body
 SEARCH_H     <const> = 26
+CLEAR_W      <const> = 22 -- The search box's clear button
 BUTTON_H     <const> = 26
 ICON_BUTTON  <const> = 22 -- The palette list's icon buttons, as the picker's palette buttons
 ICON_GAP     <const> = 6
@@ -32,11 +33,15 @@ CARD_H       <const> = CARD_SWATCH + 56
 AREA_H       <const> = 84 -- Description areas
 AREA_PAD     <const> = 7
 AREA_FONT    <const> = 12
+AREA_INSET   <const> = 1  -- The border of a description area
+AREA_BAR     <const> = 8  -- Thickness of a description area's scrollbar
 NAME_LIMIT   <const> = 60
 TEXT_LIMIT   <const> = colourpalette.DESCRIPTION_LIMIT
 FLASH_TIME   <const> = 1.6
 LABEL_FONT   <const> = 10.5
 PROP_ROW     <const> = 34
+MARKER       <const> = 10 -- The box of a swatch card's state markers
+MARKER_GAP   <const> = 4
 EXPORT_NAME  <const> = 'palettes.json'
 FILE_FILTER  <const> = { { name = 'Palette Databases', ext = '.json' }, { name = 'All Files', ext = '' } }
 
@@ -47,6 +52,46 @@ function swatchHex(S:table):str
    l, c, h = colourmath.gamutMap(S.l, S.c, S.h, 'srgb')
    r, g, b = colourmath.oklchToSrgb(l, c, h)
    return colourmath.toHex(math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1))
+end
+
+-- The fill that shows a swatch: its sRGB colour, over the picker's checkerboard (cpChecker) if it is translucent.
+
+function swatchFill(S:table):str
+   if S.alpha >= 1 then return swatchHex(S) end
+   l, c, h = colourmath.gamutMap(S.l, S.c, S.h, 'srgb')
+   r, g, b = colourmath.oklchToSrgb(l, c, h)
+   return 'url(#cpChecker);' .. colourmath.toHex(math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1),
+      S.alpha)
+end
+
+-- Swatch state markers in a 10 px box, with the shapes of the picker's palette rows and gamut notice.
+
+function lockGlyph(Target:obj!, X:num!, Y:num!, Fill:str!):obj
+   vp = Target.new('VectorViewport', { x = X, y = Y, width = MARKER, height = MARKER })
+   vp.new('VectorPath', {
+      sequence = 'M3 4.5 V3.25 A2 2 0 0 1 7 3.25 V4.5', stroke = Fill, strokeWidth = 1, lineCap = 'round'
+   })
+   vp.new('VectorRectangle', { x = 1.5, y = 4.5, width = 7, height = 5, roundX = 1, roundY = 1, fill = Fill })
+   return vp
+end
+
+function linkGlyph(Target:obj!, X:num!, Y:num!, Stroke:str!):obj
+   vp = Target.new('VectorViewport', { x = X, y = Y, width = MARKER, height = MARKER })
+   vp.new('VectorPath', {
+      sequence = 'M2.5 1.5 V6.5 H8.5 M6.5 4.5 L8.5 6.5 L6.5 8.5', stroke = Stroke, strokeWidth = 1,
+      lineCap = 'round', lineJoin = 'round'
+   })
+   return vp
+end
+
+function warnGlyph(Target:obj!, X:num!, Y:num!, Stroke:str!):obj
+   vp = Target.new('VectorViewport', {
+      x = X, y = Y, width = MARKER, height = MARKER, viewX = 0, viewY = 0, viewWidth = 12, viewHeight = 12
+   })
+   vp.new('VectorPath', { sequence = 'M6 1.5 L11 10.5 L1 10.5 Z', stroke = Stroke, strokeWidth = 1.4,
+      lineJoin = 'round' })
+   vp.new('VectorPath', { sequence = 'M6 5 V7.2 M6 8.3 V8.5', stroke = Stroke, strokeWidth = 1.4, lineCap = 'round' })
+   return vp
 end
 
 function plural(Count:num, Noun:str):str
@@ -73,11 +118,17 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- A palette row in the list: a strip of the palette's colours, its name and a summary.  The palette that the picker
--- is editing is tagged.
+-- is editing is tagged.  The selected palette stays listed while the search hides it; it is dimmed, and its summary
+-- says that it is filtered out.  The whole row shows the hand cursor.
 
 function paletteRow(Viewport:obj!, Tokens:table!):table
    t = Tokens
    self = { viewport = Viewport, cells = array<obj> }
+
+   -- The cursor is set on a shape rather than the row viewport: a viewport with a cursor takes the input from the
+   -- list, but a shape without input subscriptions passes it through.
+
+   Viewport.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)', cursor = 'hand' })
 
    self.highlight = Viewport.new('VectorRectangle', {
       x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4, fill = t.accentSoft, stroke = t.accent,
@@ -109,7 +160,9 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
       space = right - self.name.x - ((self.tag.visibility is VIS_VISIBLE) ? (self.tag.textWidth + 8) : 0)
       colourpicker_parts.fitText(self.name, '', self.palette?.name ?? '', space)
       if self.palette then
-         colourpicker_parts.fitText(self.sub, '', paletteSummary(self.palette), right - self.sub.x)
+         summary = self.filtered ? f'filtered out  ·  {plural(#self.palette.swatches, "colour")}' :
+            paletteSummary(self.palette)
+         colourpicker_parts.fitText(self.sub, '', summary, right - self.sub.x)
       end
    end
 
@@ -122,20 +175,29 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
       w = STRIP_W / n
       for i, s in palette.swatches do
          self.cells.push(self.strip.new('VectorRectangle', {
-            x = i * w, y = 0, width = w + 0.5, height = STRIP_H, fill = swatchHex(s)
+            x = i * w, y = 0, width = w + 0.5, height = STRIP_H, fill = swatchFill(s)
          }))
       end
       self.tag.visibility = Item.current ? VIS_VISIBLE : VIS_HIDDEN
+      self.filtered = Item.filtered is true
+      self.name.fill = self.filtered ? t.fg3 : t.fg0
+      self.strip.opacity = self.filtered ? 0.45 : 1
       fit()
    end
 
    self.layout = function() fit() end
 
-   self.setHighlight = function(State:str)
+   -- State is 'active' for the selected palette, 'hover' for the row under the pointer, or nil.  Focused outlines the
+   -- list's keyboard target.
+
+   self.setHighlight = function(State:str, Focused:bool)
       if State is 'active' then
          self.highlight.{ visibility = VIS_VISIBLE, fill = t.accentSoft, stroke = t.accent }
-      elseif State is 'focus' then
-         self.highlight.{ visibility = VIS_VISIBLE, fill = 'none', stroke = t.accent }
+      elseif (State is 'hover') or Focused then
+         self.highlight.{
+            visibility = VIS_VISIBLE, fill = (State is 'hover') ? t.sunk : 'none',
+            stroke = Focused ? t.accent : t.border
+         }
       else
          self.highlight.visibility = VIS_HIDDEN
       end
@@ -146,43 +208,155 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- A multi-line text area.  Clicking gives it the focus, which makes the text editable.  A focus loss commits the
--- text through commit(Text).  The placeholder is shown while the area is empty and unfocused.
+-- text through commit(Text).  The placeholder is shown while the area is empty and unfocused.  Text that is taller
+-- than the area scrolls: a narrow scrollbar appears, the mouse wheel scrolls, and the caret is kept in view while
+-- editing.
+--
+-- The text is drawn on a page that is moved within a clipping frame inside the border.  The page is the editing
+-- viewport (`viewport`): the VectorText edits while its nearest viewport has the focus.  `box` is the bordered area.
 
 function textArea(Target:obj!, Options:table!):table
    t = Options.tokens
    self = { focused = false }
 
-   vp = Target.new('VectorViewport', {
+   box = Target.new('VectorViewport', {
       x = Options.x, y = Options.y, width = Options.width, height = Options.height, overflow = VOF_HIDDEN,
       cursor = 'text'
    })
-   self.viewport = vp
+   self.box = box
 
-   self.bkgd = vp.new('VectorRectangle', {
+   self.bkgd = box.new('VectorRectangle', {
       x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4, fill = t.sunk, stroke = t.border,
       strokeWidth = 1
    })
 
    baseline = AREA_PAD + math.round(AREA_FONT * 0.9)
-   self.placeholder = colourpicker_parts.text(vp, {
+   self.placeholder = colourpicker_parts.text(box, {
       x = AREA_PAD, y = baseline, size = AREA_FONT, fill = t.fg3, string = Options.placeholder ?? '',
       style = 'Regular'
    })
 
-   self.text = vp.new('VectorText', {
-      x = AREA_PAD, y = baseline, face = colourpicker_parts.FACE_UI, fontSize = f'{AREA_FONT}px',
-      fontStyle = 'Regular', fill = t.fg0, inlineSize = Options.width - (AREA_PAD * 2), lineLimit = 0,
-      textFlags = VTXF_EDITABLE, charLimit = TEXT_LIMIT
+   -- The scroll area is inset by the border, so that the scrollbar doesn't cover it.
+
+   frame_h = Options.height - (AREA_INSET * 2)
+   area = box.new('VectorViewport', { x = AREA_INSET, y = AREA_INSET, xOffset = AREA_INSET, yOffset = AREA_INSET })
+   frame = area.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN })
+   page = frame.new('VectorViewport', { x = 0, y = 0, width = '100%', height = frame_h, cursor = 'text' })
+   self.viewport = page
+   self.frame = frame
+
+   -- The scrollbar uses the theme's vertical style if it has one, narrowed for the small area.
+
+   bar_style = gui.getTheme(area).scrollbar_v ? 'scrollbar_v' : 'scrollbar'
+   self.scrollbar = gui.scrollbar({
+      target = area, view = frame, page = page, direction = 'vertical',
+      theme = { [bar_style] = { thickness = AREA_BAR } }
    })
+
+   local fitPage, reveal
+
+   text_style = {
+      x = AREA_PAD - AREA_INSET, y = baseline - AREA_INSET, face = colourpicker_parts.FACE_UI,
+      fontSize = f'{AREA_FONT}px', fontStyle = 'Regular', lineLimit = 0,
+      inlineSize = Options.width - (AREA_PAD * 2) - AREA_BAR
+   }
+
+   self.text = page.new('VectorText', table.merge({
+      fill = t.fg0, textFlags = VTXF_EDITABLE, charLimit = TEXT_LIMIT,
+      onChange = function()
+         fitPage()
+         reveal()
+      end
+   }, text_style))
+
+   -- A hidden copy measures the full text extent and the caret's wrapped line without the editor's scroll offset.
+
+   probe = page.new('VectorText', table.merge({ visibility = VIS_HIDDEN }, text_style))
+
+   -- The bottom of a text vector's last line (its baseline), from the top of the page.  Boundaries are in scene
+   -- coordinates, which the page's own boundary converts.
+
+   function textBottom(Vector:obj!):num
+      err, _, ty, _, th = Vector.mtGetBoundary(0)
+      if err != ERR_Okay then return Vector.y end
+      _, _, py = page.mtGetBoundary(0)
+      return ty + th - py
+   end
+
+   -- The page covers the frame and is as tall as the text.  The scroll position is kept unless the page has become
+   -- too short for it.
+
+   fitPage = function()
+      vt = self.text
+      text = vt.string ?? ''
+      -- A final glyph preserves an empty last line in the non-editable probe.
+      if (#text is 0) or text.endsWith('\n') then text ..= '|' end
+      probe.string = text
+      height = math.max(frame_h, math.ceil(textBottom(probe) + vt.descent + AREA_PAD))
+      if height != page.height then
+         page.height = height
+         -- The VectorText offsets itself to keep the caret inside its viewport; a move to the same position
+         -- recomputes that offset for the new height.
+         vt.cursorRow = vt.cursorRow
+      end
+      min_y = math.min(0, frame_h - height)
+      if page.y < min_y then page.y = min_y end
+   end
+
+   -- The text up to the caret (its row and its column in characters), followed by the rest of the caret's word, so
+   -- that the probe wraps the caret's line as the text does.  A caret at the start of a line is given a character
+   -- to measure, as a trailing empty line has no extent.
+
+   function caretText():str
+      text = self.text.string ?? ''
+      n = #text
+      i = 0
+      for _ in {0 to self.text.cursorRow} do
+         nl = text.find('\n', i)
+         if nl is nil then break end
+         i = nl + 1
+      end
+      column = self.text.cursorColumn
+      while (column > 0) and (i < n) do
+         i++
+         while (i < n) and ((text.byte(i) & 0xc0) is 0x80) do i++ end
+         column -= 1
+      end
+      while (i < n) and (text.byte(i) > 0x20) do i++ end
+      prefix = text.sub(0, i)
+      if (#prefix is 0) or prefix.endsWith('\n') then prefix ..= '|' end
+      return prefix
+   end
+
+   -- Scroll the caret's line into view, with the area's padding around it.  The padding matches the page's, so the
+   -- first and last lines scroll to the ends of the page.
+
+   reveal = function()
+      vt = self.text
+      probe.string = caretText()
+      line = textBottom(probe)
+      top = line - AREA_FONT - AREA_PAD
+      bottom = line + vt.descent + AREA_PAD
+      view_top = -page.y
+      if top < view_top then
+         page.y = -math.max(0, top)
+      elseif bottom > view_top + frame_h then
+         page.y = -math.min(page.height - frame_h, bottom - frame_h)
+      end
+   end
 
    function showPlaceholder()
       empty = not ((self.text.string ?? '')??)
       self.placeholder.visibility = (empty and not self.focused) ? VIS_VISIBLE : VIS_HIDDEN
    end
 
+   -- Setting the text scrolls back to the top.
+
    self.set = function(Text:str)
       if self.focused then return end
       self.text.string = Text ?? ''
+      page.y = 0
+      fitPage()
       showPlaceholder()
    end
 
@@ -190,23 +364,39 @@ function textArea(Target:obj!, Options:table!):table
       return (self.text.string ?? '').trim()
    end
 
-   self.enable = function() vp.acEnable() end
-   self.disable = function() vp.acDisable() end
+   -- True if the text is taller than the area, so that it can be scrolled.
 
-   vp.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
+   self.scrolls = function():bool
+      return page.height > frame_h
+   end
+
+   self.enable = function() box.acEnable() end
+   self.disable = function() box.acDisable() end
+
+   -- Clicks are taken from the page: the scrollbar subscribes it to input for the wheel, and it covers the frame.
+
+   page.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
       repeat
-         if (Msg.type is JET_LMB) and (Msg.value is 1) and not self.focused then vp.acFocus() end
+         if (Msg.type is JET_LMB) and (Msg.value is 1) and not self.focused then page.acFocus() end
          Msg = Msg.next
       until not Msg
    end)
 
-   -- Escape leaves the area.  Enter starts a new line, which the VectorText handles.
+   -- Escape leaves the area.  Enter starts a new line, which the VectorText handles.  Other keys can move the caret,
+   -- which is revealed once the VectorText has handled the key.
 
-   vp.mtSubscribeKeyboard(function(Input:obj!, Qualifiers:num!, Value:num!, Unicode)
-      if (Qualifiers has KQ_PRESSED) and (Value is KEY_ESCAPE) and Options.blur then Options.blur() end
+   page.mtSubscribeKeyboard(function(Input:obj!, Qualifiers:num!, Value:num!, Unicode)
+      if not (Qualifiers has KQ_PRESSED) then return end
+      if Value is KEY_ESCAPE then
+         if Options.blur then Options.blur() end
+      else
+         processing.delayedCall(function()
+            if self.focused then reveal() end
+         end)
+      end
    end)
 
-   vp.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Input:obj!, Event:num!)
+   page.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Input:obj!, Event:num!)
       gained = Event != FM_LOST_FOCUS
       if gained is self.focused then return end
       self.focused = gained
@@ -216,10 +406,11 @@ function textArea(Target:obj!, Options:table!):table
          text = self.get()
          text = colourpalette.limitDescription(text)
          self.text.string = text
+         fitPage()
          Options.commit(text)
       end
       if Options.focus then Options.focus(gained, self) end
-      vp.acDraw()
+      box.acDraw()
    end)
 
    showPlaceholder()
@@ -227,17 +418,20 @@ function textArea(Target:obj!, Options:table!):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- A swatch card in the centre panel: the colour, the swatch name, its hex value and its OKLCH channels.  The card
--- grid takes the keyboard focus as a whole (see colourpicker_manager.build()).
+-- A swatch card in the centre panel: the colour, the swatch name, its hex value and its OKLCH channels.  A translucent
+-- colour is drawn over the checkerboard.  Markers after the name show a swatch reserved for a role of the palette
+-- mode (padlock) and a linked swatch (hooked arrow), and a warning after the hex value shows a colour outside sRGB,
+-- whose hex value is gamut-mapped.  The pointer outlines the card.  The card grid takes the keyboard focus as a
+-- whole (see colourpicker_manager.build()).
 
-function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Tokens:table!):table
+function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, State:table!, Tokens:table!):table
    t = Tokens
-   self = { }
+   self = { locked = State.locked is true, linked = State.linked is true, hovered = false }
 
    vp = Target.new('VectorViewport', { x = X, y = Y, width = Width, height = CARD_H, cursor = 'hand' })
    self.viewport = vp
 
-   vp.new('VectorRectangle', {
+   self.bkgd = vp.new('VectorRectangle', {
       x = 0.5, y = 0.5, width = Width - 1, height = CARD_H - 1, roundX = 5, roundY = 5, fill = t.panel,
       stroke = t.border, strokeWidth = 1
    })
@@ -245,26 +439,51 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Toke
    -- The colour block has rounded top corners only, as a path.
 
    w, r = Width - 1, 5
-   vp.new('VectorPath', {
+   self.block = vp.new('VectorPath', {
       sequence = f'M0.5 {CARD_SWATCH + 0.5} V{r + 0.5} A{r} {r} 0 0 1 {r + 0.5} 0.5 H{w - r} ' ..
          f'A{r} {r} 0 0 1 {w} {r + 0.5} V{CARD_SWATCH + 0.5} Z',
-      fill = swatchHex(Swatch)
+      fill = swatchFill(Swatch)
    })
 
+   -- The alpha label's α is drawn, as the mono face lacks the glyph.
+
    if Swatch.alpha < 1 then
-      colourpicker_parts.text(vp, {
+      alpha = colourpicker_parts.text(vp, {
          x = Width - 8, y = 16, size = 10, face = colourpicker_parts.FACE_MONO, fill = t.fg0, align = 'right',
-         string = f'α {math.round(Swatch.alpha * 100)}%'
+         string = f'{math.round(Swatch.alpha * 100)}%'
       })
+      colourpicker_parts.alphaGlyph(vp, { x = Width - 8 - alpha.textWidth - 10, y = 16, size = 10, fill = t.fg0 })
    end
 
-   name = colourpicker_parts.text(vp, { x = 9, y = CARD_SWATCH + 18, size = 12, fill = t.fg0 })
-   colourpicker_parts.fitText(name, '', Swatch.name, Width - 18)
+   -- The markers are right-aligned on the name line, and the name is fitted to the space before them.
 
-   colourpicker_parts.text(vp, {
+   name_y = CARD_SWATCH + 18
+   marker_x = Width - 9
+   marker_y = name_y - MARKER + 1
+   if self.linked then
+      marker_x -= MARKER
+      self.linkMarker = linkGlyph(vp, marker_x, marker_y, t.fg3)
+      marker_x -= MARKER_GAP
+   end
+   if self.locked then
+      marker_x -= MARKER
+      self.lockMarker = lockGlyph(vp, marker_x, marker_y, t.fg3)
+      marker_x -= MARKER_GAP
+   end
+
+   name = colourpicker_parts.text(vp, { x = 9, y = name_y, size = 12, fill = t.fg0 })
+   colourpicker_parts.fitText(name, '', Swatch.name, marker_x - 9 - 2)
+
+   hex = colourpicker_parts.text(vp, {
       x = 9, y = CARD_SWATCH + 33, size = 11, face = colourpicker_parts.FACE_MONO, fill = t.fg2,
       string = swatchHex(Swatch)
    })
+
+   _, _, _, in_srgb = colourmath.oklchToSrgb(Swatch.l, Swatch.c, Swatch.h)
+   self.inGamut = in_srgb
+   if not in_srgb then
+      self.gamutMarker = warnGlyph(vp, 9 + math.ceil(hex.textWidth) + 6, CARD_SWATCH + 24, t.warn)
+   end
 
    colourpicker_parts.text(vp, {
       x = 9, y = CARD_SWATCH + 47, size = 10, face = colourpicker_parts.FACE_MONO, fill = t.fg3,
@@ -287,6 +506,19 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Toke
       self.ring.visibility = Selected ? VIS_VISIBLE : VIS_HIDDEN
       self.focusRing.visibility = (Selected and Focused) ? VIS_VISIBLE : VIS_HIDDEN
    end
+
+   vp.mtSubscribeInput(JTYPE_CROSSING, function(Input:obj!, Msg:any!)
+      repeat
+         if Msg.type is JET_CROSSED_IN then
+            self.hovered = true
+         elseif Msg.type is JET_CROSSED_OUT then
+            self.hovered = false
+         end
+         Msg = Msg.next
+      until not Msg
+      self.bkgd.stroke = self.hovered ? t.fg3 : t.border
+      vp.acDraw()
+   end)
 
    return self
 end
@@ -314,6 +546,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       selected = Picker.dbIndex, -- Index of the palette shown in the centre and right panels
       swatch   = nil,            -- Index of the selected swatch in that palette
       filter   = '',
+      matches  = 0,              -- The number of palettes that match the filter
+      pinned   = nil,            -- Index of the selected palette if it is listed although the filter hides it
       cards    = array<table>,
       cardsFocused = false       -- True while the card grid has the keyboard focus
    }
@@ -369,6 +603,33 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          Options.focus(Event != FM_LOST_FOCUS, self.search)
       end)
 
+   -- The clear button is at the right of the search box while it has text.  The text is clipped before the button.
+
+   self.search._textClip.xOffset += CLEAR_W
+   self.clearButton = self.search.inputViewport.new('VectorViewport', {
+      xOffset = 0, y = 0, width = CLEAR_W, height = '100%', cursor = 'hand', visibility = VIS_HIDDEN
+   })
+   self.clearButton.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)' })
+   clear_glyph = self.clearButton.new('VectorViewport', {
+      x = math.floor((CLEAR_W - 12) * 0.5), y = math.floor((SEARCH_H - 12) * 0.5), width = 12, height = 12
+   })
+   clear_glyph.new('VectorEllipse', { cx = 6, cy = 6, radius = 6, fill = t.fg3 })
+   clear_glyph.new('VectorPath', {
+      sequence = 'M4 4 L8 8 M8 4 L4 8', stroke = t.sunk, strokeWidth = 1.4, lineCap = 'round'
+   })
+   self.clearButton.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
+      repeat
+         if (Msg.type is JET_LMB) and (Msg.value is 0) then
+            processing.delayedCall(function()
+               if not self.list then return end
+               self.clearSearch()
+               self.search._textClip.acFocus()
+            end)
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
    list_y = INSET + SEARCH_H + 8
    buttons_y = body_h - INSET - ICON_BUTTON
    list_h = buttons_y - 8 - list_y
@@ -403,7 +664,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          if Reason is 'selected' then
             Item.content.setHighlight('active')
          else
-            Item.content.setHighlight(Item.viewState.focused ? 'focus' : nil)
+            Item.content.setHighlight((Reason is 'highlighted') ? 'hover' : nil, Item.viewState.focused)
          end
       end,
 
@@ -437,8 +698,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       width = '100%', height = '100%', fill = t.panel, cursor = 'hand'
    }).acMoveToBack()
 
+   empty_y = list_y + 28
    self.empty = colourpicker_parts.text(left.body, {
-      x = LEFT_W * 0.5, y = list_y + 28, size = 12, fill = t.fg3, align = 'center', string = 'No matching palettes',
+      x = LEFT_W * 0.5, y = empty_y, size = 12, fill = t.fg3, align = 'center', string = 'No matching palettes',
       style = 'Regular'
    })
 
@@ -683,13 +945,20 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    ---------------------------------------------------------------------------------------------------------------
    -- Updates
 
+   -- The list's meta is the number of palettes, or the number that match the search and the total.
+
+   function listMeta():str
+      total = #db().palettes
+      return (self.filter??) ? f'{self.matches} of {total}' : tostring(total)
+   end
+
    function flash(Text:str)
       colourpicker_parts.cancelTimer(self.flashTimer)
       left.setMeta(Text)
       self.flashTimer = colourpicker_parts.after(FLASH_TIME, function()
          self.flashTimer = nil
          if not self.list then return end
-         left.setMeta(tostring(#db().palettes))
+         left.setMeta(listMeta())
          self.viewport.acDraw()
       end)
       self.viewport.acDraw()
@@ -709,22 +978,33 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       return (Palette.description ?? '').lower().find(self.filter, 0, true) != nil
    end
 
+   -- The selected palette is listed even if the search hides it, so that the selection is kept.  Its row is marked as
+   -- filtered out, and is dropped from the list when another palette is selected.
+
    self.updateList = function()
       items = array<table>
+      self.matches = 0
+      self.pinned = nil
       for i, p in db().palettes do
-         if matches(p) then
-            items.push({ index = i, name = p.name, palette = p, current = (p.id is Picker.dbID) })
+         match = matches(p)
+         if match then self.matches++ end
+         if match or (i is self.selected) then
+            items.push({ index = i, name = p.name, palette = p, current = (p.id is Picker.dbID), filtered = not match })
+            if not match then self.pinned = i end
          end
       end
       self.list.loadItems(items)
-      self.empty.visibility = (#items is 0) ? VIS_VISIBLE : VIS_HIDDEN
+      self.empty.visibility = (self.matches is 0) ? VIS_VISIBLE : VIS_HIDDEN
+      self.empty.y = empty_y + ((#items > 0) ? (LIST_ROW_H + 2) : 0)
+      self.clearButton.visibility = (self.search.getText()??) ? VIS_VISIBLE : VIS_HIDDEN
       updateButtons()
-      if not self.flashTimer then left.setMeta(tostring(#db().palettes)) end
+      if not self.flashTimer then left.setMeta(listMeta()) end
 
       for item in values(self.list.items) do
          if item.index is self.selected then
             self.list.selectItems(Item => Item is item)
             self.list.revealItem(item)
+            if self.list.hasFocus then self.list.targetItem(item) end
             break
          end
       end
@@ -748,7 +1028,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       for i, s in palette.swatches do
          x = (i % CARD_COLS) * (card_w + CARD_GAP)
          y = math.floor(i / CARD_COLS) * (CARD_H + CARD_GAP)
-         card = swatchCard(self.page, x, y, card_w, s, t)
+         card = swatchCard(self.page, x, y, card_w, s, {
+            locked = colourpalette.isReserved(palette, i), linked = s.base != nil
+         }, t)
          card.setSelected(i is self.swatch, self.cardsFocused)
          index = i
          card.viewport.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
@@ -799,8 +1081,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.noSwatch.visibility = s ? VIS_HIDDEN : VIS_VISIBLE
       if not s then return end
 
-      hex = swatchHex(s)
-      self.swatchBlock.fill = hex
+      self.swatchBlock.fill = swatchFill(s)
       colourpicker_parts.fitText(self.swatchName, '', s.name, RIGHT_W - INSET - 60 - INSET)
       self.swatchCss.string = colourmath.toOklchString(s.l, s.c, s.h, s.alpha)
       self.swatchNotes.set(s.description ?? '')
@@ -829,6 +1110,10 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.selectPalette = function(Index:num)
       if Index is self.selected then return end
+      if (self.pinned != nil) and (self.pinned != Index) then
+         self.pinned = nil
+         processing.delayedCall(function() if self.list then self.updateList() end end)
+      end
       self.selected = Index
       palette = selectedPalette()
       self.swatch = (palette and (#palette.swatches > 0)) ? 0 : nil

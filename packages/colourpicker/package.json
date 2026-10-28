@@ -40,8 +40,8 @@
   "files": [
     {
       "path": "AGENTS.md",
-      "size": 7459,
-      "sha256": "5da232a6a1322d8757ce9dcfc2173398351698e285fc1da4c43515ec540d57f0",
+      "size": 7645,
+      "sha256": "83575a2df418c27307135e333b33942f1ca88fd23c508b829a3230d1e04d08d5",
       "mediaType": "text/markdown"
     },
     {
@@ -58,8 +58,8 @@
     },
     {
       "path": "colourpicker.tiri",
-      "size": 150777,
-      "sha256": "5e48033f9585160937132dfe6ab831cede36929008f126239c77b009d06083d8",
+      "size": 152840,
+      "sha256": "e41c70f66df40ac9ce9e3b2fd6b6fcb4d3a44d7696d85139602f4a26083178ba",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -82,8 +82,8 @@
     },
     {
       "path": "manager.tiri",
-      "size": 43581,
-      "sha256": "014bbd365e2aecf5783cd56b4e9c26512ecf3db78f765afa5f87037c285ed0e2",
+      "size": 56001,
+      "sha256": "a2220318c6c3c6e02c4bbe0d4891227f7f79f6a4e6b39ffc4d6e4a72bffea125",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
