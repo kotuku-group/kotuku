@@ -756,42 +756,67 @@ function moveArrow(X:num!, Y:num!):<str, str>
    return seq, heads
 end
 
-colourpicker_parts.dragPreview = function(Parent:obj!, Fill:str!, Tokens:table!, Move:bool):obj
-   size = Move ? DRAG_TILE + DRAG_BADGE - 1 : DRAG_TILE
+-- A transparent preview surface whose content Build(Viewport) draws.
+
+function previewSurface(Parent:obj!, Width:num!, Height:num!, Build:func!):obj
    -- Wayland requires a child surface for this preview; standalone windows cannot request persistent front stacking.
    parent_id = (Parent.display.displayType is DT_WAYLAND) ? Parent.id : 0
    preview = Parent.new('Surface', {
-      parent = parent_id, presence = SPT_NONE, width = size, height = size,
+      parent = parent_id, presence = SPT_NONE, width = Width, height = Height,
       flags = RNF_COMPOSITE | RNF_NO_FOCUS | RNF_STICK_TO_FRONT
    })
 
    try
-      preview.buffer.mtDrawRectangle(0, 0, size, size, 0, BAF_FILL) -- Transparent; a new buffer is uninitialised
+      preview.buffer.mtDrawRectangle(0, 0, Width, Height, 0, BAF_FILL) -- Transparent; a new buffer is uninitialised
       scene = preview.new('VectorScene', { surface = preview, bitmap = preview.buffer })
-      vp = scene.new('VectorViewport', { width = size, height = size })
-
-      vp.new('VectorRectangle', {
-         x = 1, y = 1, width = DRAG_TILE - 2, height = DRAG_TILE - 2, fill = Fill, stroke = 'white', strokeWidth = 2,
-         roundX = 4, roundY = 4
-      })
-
-      if Move then
-         c = DRAG_TILE - 1
-         vp.new('VectorEllipse', {
-            cx = c, cy = c, radiusX = DRAG_BADGE - 1, radiusY = DRAG_BADGE - 1, fill = Tokens.accent,
-            stroke = 'white', strokeWidth = 1.5
-         })
-         shafts, heads = moveArrow(c, c)
-         vp.new('VectorPath', { sequence = shafts, stroke = Tokens.accentFg, strokeWidth = 1.5 })
-         vp.new('VectorPath', { sequence = heads, fill = Tokens.accentFg })
-      end
-
+      Build(scene.new('VectorViewport', { width = Width, height = Height }))
       scene.acDraw()
       return preview
    except e
       preview.free()
       raise
    end
+end
+
+colourpicker_parts.dragPreview = function(Parent:obj!, Fill:str!, Tokens:table!, Move:bool):obj
+   size = Move ? DRAG_TILE + DRAG_BADGE - 1 : DRAG_TILE
+   return previewSurface(Parent, size, size, function(Viewport:obj!)
+      Viewport.new('VectorRectangle', {
+         x = 1, y = 1, width = DRAG_TILE - 2, height = DRAG_TILE - 2, fill = Fill, stroke = 'white', strokeWidth = 2,
+         roundX = 4, roundY = 4
+      })
+
+      if Move then
+         c = DRAG_TILE - 1
+         Viewport.new('VectorEllipse', {
+            cx = c, cy = c, radiusX = DRAG_BADGE - 1, radiusY = DRAG_BADGE - 1, fill = Tokens.accent,
+            stroke = 'white', strokeWidth = 1.5
+         })
+         shafts, heads = moveArrow(c, c)
+         Viewport.new('VectorPath', { sequence = shafts, stroke = Tokens.accentFg, strokeWidth = 1.5 })
+         Viewport.new('VectorPath', { sequence = heads, fill = Tokens.accentFg })
+      end
+   end)
+end
+
+-- A palette being dragged is shown as a strip of its colours (CSS colour values) in a white frame.
+
+PALETTE_DRAG_W <const> = 72
+PALETTE_DRAG_H <const> = 24
+
+colourpicker_parts.paletteDragPreview = function(Parent:obj!, Fills:array<str>!):obj
+   return previewSurface(Parent, PALETTE_DRAG_W, PALETTE_DRAG_H, function(Viewport:obj!)
+      Viewport.new('VectorRectangle', {
+         x = 0, y = 0, width = PALETTE_DRAG_W, height = PALETTE_DRAG_H, roundX = 4, roundY = 4, fill = 'white'
+      })
+      inner_w = PALETTE_DRAG_W - 4
+      w = inner_w / math.max(1, #Fills)
+      for i, fill in Fills do
+         Viewport.new('VectorRectangle', {
+            x = 2 + (i * w), y = 2, width = w + 0.5, height = PALETTE_DRAG_H - 4, fill = fill
+         })
+      end
+   end)
 end
 
 ----------------------------------------------------------------------------------------------------------------------

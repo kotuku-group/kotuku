@@ -3,6 +3,10 @@
 -- swatches of the selected palette as cards, and the right panel shows the details of the palette and of the selected
 -- swatch, with editable descriptions.  Double-clicking a palette or a swatch card opens it in the Picker tab.
 --
+-- The read-only starter palettes bundled with the package (colourpalette.loadStarters()) are listed in a second panel
+-- under the palette list.  A starter palette can be viewed but not edited or opened: Duplicate, or dragging it to the
+-- palette list, adds an editable copy to the database.
+--
 -- The picker owns the database (picker.db) and supplies the callbacks in Options; see colourpicker_manager.build().
 
    import 'gui', 'gui/button', 'gui/input', 'gui/listview', 'gui/scrollbar', 'gui/filedialog', 'gui/dialog'
@@ -23,6 +27,9 @@ ICON_BUTTON  <const> = 22 -- The palette list's icon buttons, as the picker's pa
 ICON_GAP     <const> = 6
 LIST_ROW_H   <const> = 40
 LIST_EDGE    <const> = 4  -- Inset of the rows within a listview
+LIST_GAP     <const> = 2  -- Between list rows
+STARTER_ROWS <const> = 5  -- The starter list's most visible rows; it scrolls beyond them
+HEADER_H     <const> = 32 -- A panel's header, above its body
 STRIP_X      <const> = 8
 STRIP_W      <const> = 56
 STRIP_H      <const> = 16
@@ -297,7 +304,7 @@ function textArea(Target:obj!, Options:table!):table
          page.height = height
          -- The VectorText offsets itself to keep the caret inside its viewport; a move to the same position
          -- recomputes that offset for the new height.
-         vt.cursorRow = vt.cursorRow
+         if self.focused then vt.cursorRow = vt.cursorRow end
       end
       min_y = math.min(0, frame_h - height)
       if page.y < min_y then page.y = min_y end
@@ -544,12 +551,14 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self = {
       selected = Picker.dbIndex, -- Index of the palette shown in the centre and right panels
+      starter  = false,          -- True if selected is an index of the starter palettes, not of the database
       swatch   = nil,            -- Index of the selected swatch in that palette
       filter   = '',
       matches  = 0,              -- The number of palettes that match the filter
       pinned   = nil,            -- Index of the selected palette if it is listed although the filter hides it
       cards    = array<table>,
-      cardsFocused = false       -- True while the card grid has the keyboard focus
+      cardsFocused = false,      -- True while the card grid has the keyboard focus
+      starters = colourpalette.loadStarters() -- Read-only; never part of the database
    }
 
    self.viewport = Target.new('VectorViewport', {
@@ -561,18 +570,55 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    end
 
    function selectedPalette():table
-      return (self.selected != nil) ? db().palettes[self.selected] : nil
+      if self.selected is nil then return nil end
+      return self.starter ? self.starters[self.selected] : db().palettes[self.selected]
+   end
+
+   -- True if the database palette at Index is selected
+
+   function isSelected(Index:num):bool
+      return (not self.starter) and (Index is self.selected)
    end
 
    ---------------------------------------------------------------------------------------------------------------
-   -- Left: the search box, the palette list and the database buttons
+   -- Left: the search box, the palette list and the database buttons, and the starter palettes below them.  The
+   -- starter panel fits its rows, up to STARTER_ROWS; it is omitted if there are no starter palettes.
+
+   body_h = panel_h - HEADER_H
+   starter_count = math.min(#self.starters, STARTER_ROWS)
+   starter_list_h = (starter_count * (LIST_ROW_H + LIST_GAP)) - LIST_GAP
+   starter_h = (starter_count > 0) ? (HEADER_H + (INSET * 2) + starter_list_h) : 0
+   left_h = panel_h - ((starter_h > 0) ? (starter_h + GAP) : 0)
 
    left = colourpicker_parts.panel(self.viewport, {
-      x = PAD, y = PAD, width = LEFT_W, height = panel_h, title = 'My Palettes', tokens = t
+      x = PAD, y = PAD, width = LEFT_W, height = left_h, title = 'My Palettes', tokens = t
    })
    self.leftPanel = left
-   body_h = panel_h - 32
+   left_body_h = left_h - HEADER_H
    inner_w = LEFT_W - (INSET * 2)
+
+   -- The palette and starter lists draw their rows with paletteRow()
+
+   function constructRow(Item:table, Viewport:obj, Reason:str)
+      if Reason is 'create' then
+         Item.content = paletteRow(Viewport, t)
+         Item.content.set(Item)
+      elseif Reason is 'update' then
+         Item.content.set(Item)
+      elseif Reason is 'layout' then
+         Item.content.layout()
+      elseif Reason is 'destroy' then
+         Item.content = nil
+      end
+   end
+
+   function highlightRow(Item:table, Viewport:obj, Reason:str)
+      if Reason is 'selected' then
+         Item.content.setHighlight('active')
+      else
+         Item.content.setHighlight((Reason is 'highlighted') ? 'hover' : nil, Item.viewState.focused)
+      end
+   end
 
    self.search = gui.input({
       target = left.body, x = INSET, y = INSET, width = inner_w, height = SEARCH_H, placeholder = 'Search palettes…',
@@ -631,7 +677,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    end)
 
    list_y = INSET + SEARCH_H + 8
-   buttons_y = body_h - INSET - ICON_BUTTON
+   buttons_y = left_body_h - INSET - ICON_BUTTON
    list_h = buttons_y - 8 - list_y
 
    self.list = gui.listView({
@@ -642,35 +688,33 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       height     = list_h + (LIST_EDGE * 2),
       borderless = true,
       showIcons  = false,
+      dragDrop   = true,
       rowHeight  = LIST_ROW_H,
-      rowSpacing = 2,
+      rowSpacing = LIST_GAP,
       scrollDirection = 'vertical',
       theme      = { page = { bkgd = { fill = t.panel } } },
-
-      constructItem = function(Item:table, Viewport:obj, Reason:str)
-         if Reason is 'create' then
-            Item.content = paletteRow(Viewport, t)
-            Item.content.set(Item)
-         elseif Reason is 'update' then
-            Item.content.set(Item)
-         elseif Reason is 'layout' then
-            Item.content.layout()
-         elseif Reason is 'destroy' then
-            Item.content = nil
-         end
-      end,
-
-      constructHighlight = function(Item:table, Viewport:obj, Reason:str)
-         if Reason is 'selected' then
-            Item.content.setHighlight('active')
-         else
-            Item.content.setHighlight((Reason is 'highlighted') ? 'hover' : nil, Item.viewState.focused)
-         end
-      end,
+      constructItem = constructRow,
+      constructHighlight = highlightRow,
 
       events = {
          itemSelected = function(View:table, Reason:str, Item:table)
-            if Reason is 'user' then self.selectPalette(Item.index) end
+            if Reason is 'user' then self.selectPalette(Item.index, false) end
+         end,
+
+         -- Only starter palettes can be dropped on the list.  The copy is inserted after the row under the pointer,
+         -- or at the end of the list.
+
+         dragOver = function(View:table, Item:table, Drop:table):bool
+            return Drop.session?.starter != nil
+         end,
+
+         dragDrop = function(View:table, Item:table, Drop:table)
+            starter = Drop.session?.starter
+            if not starter then return false end
+            index = Item ? (Item.index + 1) : nil
+            processing.delayedCall(function()
+               if self.list then self.copyStarter(starter, index) end
+            end)
          end,
 
          -- Gaining the focus from the keyboard leaves the list without a keyboard target, so the selected palette's
@@ -725,6 +769,75 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    end)
    self.btnExport = button(right_btn, 'items/upload', 'Export palettes…', function() self.exportDatabase() end)
 
+   -- The starter palettes.  Activating one (double-click or Enter) explains how to edit it; dragging one to the
+   -- palette list adds a copy.  The drag carries no data that other applications can use.
+
+   if starter_h > 0 then
+      starter_panel = colourpicker_parts.panel(self.viewport, {
+         x = PAD, y = PAD + left_h + GAP, width = LEFT_W, height = starter_h, title = 'Starter Palettes',
+         meta = tostring(#self.starters), tokens = t
+      })
+      self.starterPanel = starter_panel
+
+      starter_items = array<table>
+      for i, p in self.starters do
+         starter_items.push({ index = i, name = p.name, palette = p, current = false, filtered = false })
+      end
+
+      self.starterList = gui.listView({
+         target     = starter_panel.body,
+         x          = INSET - LIST_EDGE,
+         y          = INSET - LIST_EDGE,
+         width      = inner_w + (LIST_EDGE * 2),
+         height     = starter_list_h + (LIST_EDGE * 2),
+         borderless = true,
+         showIcons  = false,
+         dragDrop   = true,
+         rowHeight  = LIST_ROW_H,
+         rowSpacing = LIST_GAP,
+         scrollDirection = 'vertical',
+         theme      = { page = { bkgd = { fill = t.panel } } },
+         items      = starter_items,
+         constructItem = constructRow,
+         constructHighlight = highlightRow,
+
+         events = {
+            itemSelected = function(View:table, Reason:str, Item:table)
+               if Reason is 'user' then self.selectPalette(Item.index, true) end
+            end,
+
+            focus = function(View:table)
+               processing.delayedCall(function()
+                  if self.list and View.hasFocus and not View.kItem and View.sItem then View.targetItem(View.sItem) end
+               end)
+            end,
+
+            itemActivated = function(View:table, Reason:str, Item:table)
+               if Reason is 'user' then self.flash('read-only', true) end
+            end,
+
+            dragStart = function(View:table, Session:table):table
+               palette = self.starters[Session.items[0].index]
+               palette ?! return nil
+               Session.starter = palette
+               fills = array<str>
+               for s in values(palette.swatches) do
+                  if s.base is nil then fills.push(swatchHex(s)) end
+               end
+               return {
+                  datatypes = string.char(DATA_XML),
+                  receipt   = function() return nil end,
+                  preview   = colourpicker_parts.paletteDragPreview(Picker.window.surface, fills)
+               }
+            end
+         }
+      })
+
+      self.starterList.page.new('VectorRectangle', {
+         width = '100%', height = '100%', fill = t.panel, cursor = 'hand'
+      }).acMoveToBack()
+   end
+
    ---------------------------------------------------------------------------------------------------------------
    -- Centre: the swatches of the selected palette
 
@@ -743,6 +856,18 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    self.page.new('VectorRectangle', { width = '100%', height = '100%', fill = t.panel })
    self.scrollbar = gui.scrollbar({ target = self.area, view = self.frame, page = self.page, direction = 'vertical' })
    card_w = math.floor((area_w - self.scrollbar.v_thickness - 4 - (CARD_GAP * (CARD_COLS - 1))) / CARD_COLS)
+
+   -- Edit the swatch at Index of the selected palette in the picker.  Starter palettes can't be edited.
+
+   function openSwatch(Index:num)
+      if self.selected is nil then return end
+      if self.starter then
+         self.flash('read-only', true)
+         return
+      end
+      sel = self.selected
+      processing.delayedCall(function() Options.open(sel, Index) end)
+   end
 
    -- Scroll the card at Index into view
 
@@ -768,9 +893,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
       i = self.swatch
       if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
-         if i is nil then return end
-         sel = self.selected
-         processing.delayedCall(function() Options.open(sel, i) end)
+         if i != nil then openSwatch(i) end
          return
       elseif i is nil then
          if (Value is KEY_LEFT) or (Value is KEY_RIGHT) or (Value is KEY_UP) or (Value is KEY_DOWN) or
@@ -840,7 +963,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       events = {
          activate = function(Event)
             palette = selectedPalette()
-            if not palette or self.refreshing then return end
+            if not palette or palette.starter or self.refreshing then return end
             renamed, reason = colourpalette.renamePalette(palette, Event.text ?? '', db().palettes)
             if renamed then
                Options.save()
@@ -865,7 +988,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       x = INSET, y = y, width = right_inner, height = AREA_H, tokens = t, placeholder = 'Notes about this palette…',
       commit = function(Text:str)
          palette = selectedPalette()
-         if not palette or ((palette.description ?? '') is Text) then return end
+         if not palette or palette.starter or ((palette.description ?? '') is Text) then return end
          palette.description = (#Text > 0) ? Text : nil
          Options.save()
       end,
@@ -898,7 +1021,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       x = INSET, y = y, width = right_inner, height = AREA_H, tokens = t, placeholder = 'Notes about this colour…',
       commit = function(Text:str)
          palette = selectedPalette()
-         s = (palette and (self.swatch != nil)) ? palette.swatches[self.swatch] : nil
+         s = (palette and not palette.starter and (self.swatch != nil)) ? palette.swatches[self.swatch] : nil
          if not s or ((s.description ?? '') is Text) then return end
          s.description = (#Text > 0) ? Text : nil
          Options.save()
@@ -932,7 +1055,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       theme = { text = { fontSize = '11.5px', y = colourpicker_parts.baseline(0, BUTTON_H - 2, 11.5) } },
       events = {
          activate = function()
-            if self.selected != nil then Options.open(self.selected, self.swatch) end
+            if (self.selected != nil) and not self.starter then Options.open(self.selected, self.swatch) end
          end
       }
    })
@@ -952,24 +1075,38 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       return (self.filter??) ? f'{self.matches} of {total}' : tostring(total)
    end
 
-   function flash(Text:str)
+   function restoreMeta()
+      left.setMeta(listMeta())
+      self.starterPanel?.setMeta(tostring(#self.starters))
+   end
+
+   -- Show Text in place of the meta of the palette list, or of the starter list if Starter is true, for a moment.
+
+   function flash(Text:str, Starter:bool)
       colourpicker_parts.cancelTimer(self.flashTimer)
-      left.setMeta(Text)
+      restoreMeta()
+      self.flashStarter = (Starter is true) and (self.starterPanel != nil)
+      panel = self.flashStarter ? self.starterPanel : left
+      panel.setMeta(Text)
       self.flashTimer = colourpicker_parts.after(FLASH_TIME, function()
          self.flashTimer = nil
          if not self.list then return end
-         left.setMeta(listMeta())
+         restoreMeta()
          self.viewport.acDraw()
       end)
       self.viewport.acDraw()
    end
    self.flash = flash
 
-   -- Duplicate and Delete act on the selected palette.  The last palette can not be deleted.
+   -- Duplicate and Delete act on the selected palette.  The last palette and starter palettes can not be deleted.
 
    function updateButtons()
       if self.selected != nil then self.btnDuplicate.enable() else self.btnDuplicate.disable() end
-      if (self.selected != nil) and (#db().palettes > 1) then self.btnDelete.enable() else self.btnDelete.disable() end
+      if (self.selected != nil) and not self.starter and (#db().palettes > 1) then
+         self.btnDelete.enable()
+      else
+         self.btnDelete.disable()
+      end
    end
 
    function matches(Palette:table):bool
@@ -988,7 +1125,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       for i, p in db().palettes do
          match = matches(p)
          if match then self.matches++ end
-         if match or (i is self.selected) then
+         if match or isSelected(i) then
             items.push({ index = i, name = p.name, palette = p, current = (p.id is Picker.dbID), filtered = not match })
             if not match then self.pinned = i end
          end
@@ -998,10 +1135,10 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.empty.y = empty_y + ((#items > 0) ? (LIST_ROW_H + 2) : 0)
       self.clearButton.visibility = (self.search.getText()??) ? VIS_VISIBLE : VIS_HIDDEN
       updateButtons()
-      if not self.flashTimer then left.setMeta(listMeta()) end
+      if self.flashStarter or not self.flashTimer then left.setMeta(listMeta()) end
 
       for item in values(self.list.items) do
-         if item.index is self.selected then
+         if isSelected(item.index) then
             self.list.selectItems(Item => Item is item)
             self.list.revealItem(item)
             if self.list.hasFocus then self.list.targetItem(item) end
@@ -1039,8 +1176,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
                   if not self.cardsFocused then self.area.acFocus() end
                elseif (Msg.type is JET_LMB) and (Msg.value is 0) then
                   if Msg.flags has JTYPE_DBL_CLICK then
-                     sel = self.selected
-                     processing.delayedCall(function() Options.open(sel, index) end)
+                     openSwatch(index)
                   else
                      self.selectSwatch(index)
                   end
@@ -1063,18 +1199,24 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          self.refreshing = false
       end
 
+      -- A starter palette is shown, but its name and descriptions can't be edited.
+
       palette = selectedPalette()
-      if palette then
-         self.nameInput.setText(palette.name)
+      editable = palette and not palette.starter
+      self.nameInput.setText(palette?.name ?? '')
+      self.paletteNotes.set(palette?.description ?? '')
+      if editable then
          self.nameInput.enable()
-         self.paletteNotes.set(palette.description ?? '')
          self.paletteNotes.enable()
+         self.swatchNotes.enable()
+         self.btnEdit.enable()
       else
-         self.nameInput.setText('')
          self.nameInput.disable()
-         self.paletteNotes.set('')
          self.paletteNotes.disable()
+         self.swatchNotes.disable()
+         self.btnEdit.disable()
       end
+      info.setMeta(palette?.starter ? 'read-only' : '')
 
       s = (palette and (self.swatch != nil)) ? palette.swatches[self.swatch] : nil
       self.swatchGroup.visibility = s ? VIS_VISIBLE : VIS_HIDDEN
@@ -1099,7 +1241,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    end
 
    self.refresh = function()
-      if (self.selected != nil) and (self.selected >= #db().palettes) then self.selected = nil end
+      count = self.starter ? #self.starters : #db().palettes
+      if (self.selected != nil) and (self.selected >= count) then self.selected = nil end
       palette = selectedPalette()
       if palette and (self.swatch != nil) and (self.swatch >= #palette.swatches) then self.swatch = nil end
       self.updateList()
@@ -1108,13 +1251,19 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.viewport.acDraw()
    end
 
-   self.selectPalette = function(Index:num)
-      if Index is self.selected then return end
-      if (self.pinned != nil) and (self.pinned != Index) then
+   -- Select the palette at Index of the database, or of the starter palettes if Starter is true.  Only one of the
+   -- lists has a selected row.
+
+   self.selectPalette = function(Index:num, Starter:bool)
+      Starter = Starter is true
+      if (Index is self.selected) and (Starter is self.starter) then return end
+      if (self.pinned != nil) and (Starter or (self.pinned != Index)) then
          self.pinned = nil
          processing.delayedCall(function() if self.list then self.updateList() end end)
       end
       self.selected = Index
+      self.starter = Starter
+      if Starter then self.list.deselectAll() else self.starterList?.deselectAll() end
       palette = selectedPalette()
       self.swatch = (palette and (#palette.swatches > 0)) ? 0 : nil
       updateCards()
@@ -1162,7 +1311,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          processing.delayedCall(function() if self.list then self.deletePalette() end end)
          return true
       elseif Value is KEY_F2 then
-         if self.selected is nil then return false end
+         if (self.selected is nil) or self.starter then return false end
          processing.delayedCall(function() if self.list then focusInput(self.nameInput) end end)
          return true
       end
@@ -1188,10 +1337,15 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       if saved then flash('created') end
    end
 
-   -- The copy is inserted after the selected palette and selected.  It has the same name, numbered.
+   -- The copy is inserted after the selected palette and selected.  It has the same name, numbered if that is in use.
+   -- A copy of a starter palette is added to the end of the palette list.
 
    self.duplicatePalette = function()
       if self.selected is nil then return end
+      if self.starter then
+         self.copyStarter(selectedPalette(), nil)
+         return
+      end
       Options.sync()
       index = colourpalette.copyPalette(db(), self.selected)
       if index is nil then
@@ -1203,6 +1357,21 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.selectPalette(index)
       self.updateList()
       if saved then flash('duplicated') end
+   end
+
+   -- Add an editable copy of a starter palette to the database at Index (the end if nil), and select it.
+
+   self.copyStarter = function(Starter:table!, Index:num)
+      index = colourpalette.insertCopy(db(), Starter, Index)
+      if index is nil then
+         flash('database full')
+         return
+      end
+      saved = Options.save()
+      self.selected = nil
+      self.selectPalette(index, false)
+      self.updateList()
+      if saved then flash('added') end
    end
 
    -- A modal message over the picker.  Done(Response) is called unless the manager has been destroyed.
@@ -1358,8 +1527,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.show = function()
       Options.sync()
-      if (self.selected is nil) or (self.selected is Picker.dbIndex) then
+      if (self.selected is nil) or isSelected(Picker.dbIndex) then
          self.selected = Picker.dbIndex
+         self.starter = false
          active = Picker.state.active
          self.swatch = (active != nil) ? active : ((#selectedPalette().swatches > 0) ? 0 : nil)
       end
@@ -1378,10 +1548,12 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    -- The widgets that handle Enter themselves
 
    self.widgets = function():array<table>
-      return array<table> {
+      widgets = array<table> {
          self.list, self.btnNew, self.btnDuplicate, self.btnDelete, self.btnImport, self.btnExport, self.btnEdit,
          { viewport = self.area }
       }
+      if self.starterList then widgets.push(self.starterList) end
+      return widgets
    end
 
    self.destroy = function()
@@ -1392,6 +1564,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.messageDialog?.window?.surface?.free()
       self.messageDialog = nil
       self.list = nil
+      self.starterList = nil
       self.cards = nil
    end
 
