@@ -554,19 +554,43 @@ colourpalette.renameSwatch = function(Palette:table!, Index:num!, Name:str!):boo
    return true
 end
 
+-- Name a swatch after its closest CSS named colour if it is a user swatch without a custom name.
+
+function nameSwatch(S:table):bool
+   if (not S.user) or S.customName then return false end
+   name = colourmath.closestNamed(colourmath.oklchToOklab(S.l, S.c, S.h))
+   if name is S.name then return false end
+   S.name = name
+   return true
+end
+
+-- Name every swatch that follows Index, directly or through other swatches.  Visited guards against cycles.
+
+function nameFollowers(Palette:table, Index:num, Visited:table):bool
+   changed = false
+   for j, s in Palette.swatches do
+      if (s.base is Index) and (not Visited[j]) then
+         Visited[j] = true
+         if nameSwatch(s) then changed = true end
+         if nameFollowers(Palette, j, Visited) then changed = true end
+      end
+   end
+   return changed
+end
+
 @Doc(text=[[
 @desc Name the swatch at Index after its closest CSS named colour, if it is owned by the user (`user = true`) and
-hasn't been given a custom name (`customName`).
-@result True if the name was changed
+hasn't been given a custom name (`customName`).  The swatches that follow it, directly or through other swatches,
+are named by the same rule, because a change to the colour of a swatch also changes theirs.
+@result True if any name was changed
 ]])
 colourpalette.nameAfterColour = function(Palette:table!, Index:num!):bool
    if (Index < 0) or (Index >= #Palette.swatches) then return false end
-   s = Palette.swatches[Index]
-   if (not s.user) or s.customName then return false end
-   name = colourmath.closestNamed(colourmath.oklchToOklab(s.l, s.c, s.h))
-   if name is s.name then return false end
-   s.name = name
-   return true
+   changed = nameSwatch(Palette.swatches[Index])
+   visited = { }
+   visited[Index] = true
+   if nameFollowers(Palette, Index, visited) then changed = true end
+   return changed
 end
 
 @Doc(text=[[
