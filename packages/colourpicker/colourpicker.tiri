@@ -42,6 +42,7 @@ COLUMN_WIDTHS <const> = array<int> { 292, 478, 252 }
 
 DEFAULT_COLOUR <const> = 'rgb(200,200,200)'
 GREY_CHROMA    <const> = 0.0002 -- Parsed colours with less chroma than this keep the current hue
+DRAG_ESCAPE_TIME <const> = 250000 -- Microseconds in which an Escape press is taken as the one that cancelled a drag
 
 -- Left column
 
@@ -370,12 +371,17 @@ end
 
 -- The mode bar meta: the bit depth of each output channel and the output.  Output is 8-bit sRGB unless the display
 -- has fewer bits per channel.  The sRGB output is always present, and a target other than sRGB is named after it.
+-- On the Palette tab, the meta names the palette database instead.
 
 TARGET_META <const> = {
    srgb = 'sRGB', p3 = 'sRGB + P3', a98 = 'sRGB + A98', rec2020 = 'sRGB + Rec. 2020', none = 'sRGB + unmapped'
 }
 
 function updateModebar()
+   if &tab is TAB_PALETTE then
+      &modeTabs.setMeta(colourpalette.DATABASE)
+      return
+   end
    bpp = &window.surface.bitsPerPixel ?? 32
    bits = (bpp >= 24) ? 8 : math.floor(bpp / 3)
    &modeTabs.setMeta(f'{bits}-bit  ·  {TARGET_META[&state.clamp] ?? "sRGB"}')
@@ -404,12 +410,27 @@ function buildFooter(Options:table)
    &footer = &viewport.new('VectorViewport', { x = 0, y = top, width = CLIENT_WIDTH, height = FOOTER_HEIGHT })
    &footer.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = 1, fill = t.border })
 
-   colourpicker_parts.hints(&footer, {
+   -- Each tab has its own key hints.  selectTab() shows the set for the tab.
+
+   &pickerHints = &footer.new('VectorViewport', { x = 0, y = 0, width = '100%', height = '100%' })
+   colourpicker_parts.hints(&pickerHints, {
       x = FOOTER_PAD, y = 0, height = FOOTER_HEIGHT, tokens = t.onWindow,
       items = array<table> {
          { key = 'Tab', text = 'next control' },
          { key = 'Alt / Ctrl', text = '+ drag = fine' },
          { key = 'I', text = 'eyedropper' }
+      }
+   })
+
+   &managerHints = &footer.new('VectorViewport', {
+      x = 0, y = 0, width = '100%', height = '100%', visibility = VIS_HIDDEN
+   })
+   colourpicker_parts.hints(&managerHints, {
+      x = FOOTER_PAD, y = 0, height = FOOTER_HEIGHT, tokens = t.onWindow,
+      items = array<table> {
+         { key = 'Ctrl+F', text = 'search' },
+         { key = 'Enter', text = 'open' },
+         { key = 'Del', text = 'delete' }
       }
    })
 
@@ -2837,6 +2858,9 @@ gui.dialog.colour = function(Options:table)
                   if &scratchDrag?.id is Item then
                      &scratchDrag.preview?.free()
                      &scratchDrag = nil
+                     -- The pointer cancels a drag on Escape before the key reaches the picker, so the time is
+                     -- kept for the keyboard handler to recognise that press.
+                     if Result is ERR_Cancelled then &scratchCancelTime = mSys.PreciseTime() end
                   end
                end
             })
@@ -2879,6 +2903,7 @@ gui.dialog.colour = function(Options:table)
       end
 
       &stopScratchDrag = function()
+         &scratchCancelTime = nil
          &scratchGesture?.cancel()
          &scratchClipboard?.free()
          &scratchClipboard = nil
@@ -3283,6 +3308,14 @@ gui.dialog.colour = function(Options:table)
          &modeTabs.setActive(Index)
          picker = Index is TAB_PICKER
          for col in values(&columns) do col.visibility = picker ? VIS_VISIBLE : VIS_HIDDEN end
+
+         -- The footer follows the tab.  Reset restores the picker's colour and palette, which the Palette tab doesn't
+         -- show, so it is hidden there.  Apply still returns the picker's colour.
+
+         &pickerHints.visibility = picker ? VIS_VISIBLE : VIS_HIDDEN
+         &managerHints.visibility = picker ? VIS_HIDDEN : VIS_VISIBLE
+         &btnReset.viewport.visibility = picker ? VIS_VISIBLE : VIS_HIDDEN
+         updateModebar()
          if picker then
             &manager.hide()
             &refresh()
@@ -3493,9 +3526,17 @@ gui.dialog.colour = function(Options:table)
 
          if &finished or not (Qualifiers has KQ_PRESSED) then return end
 
+         -- An Escape that the pointer has just used to cancel a drag ends the drag rather than closing the picker.
+         -- The cancellation is consumed by the next key press.
+
+         cancel_time = &scratchCancelTime
+         &scratchCancelTime = nil
+         drag_escape = (Value is KEY_ESCAPE) and cancel_time and
+            (mSys.PreciseTime() - cancel_time < DRAG_ESCAPE_TIME)
+
          if (Qualifiers has KQ_REPEAT) or &renaming or &fieldFocus then
             return
-         elseif &scratchDrag then
+         elseif &scratchDrag or drag_escape then
             if Value is KEY_ESCAPE then &stopScratchDrag() end
          elseif &picking then
             if Value is KEY_ESCAPE then
