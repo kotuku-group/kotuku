@@ -12,6 +12,7 @@ static const struct FieldDef clVectorTextVTXF[] = {
    { "Overwrite", 0x00000080 },
    { "Secret", 0x00000100 },
    { "Raster", 0x00000200 },
+   { "Selectable", 0x00000400 },
    { nullptr, 0 }
 };
 

@@ -17,7 +17,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
    int dx = 0, dy = Vector->txBitmapFont->Leading;
    int longest_line_width = 0;
 
-   if ((!Vector->txInlineSize) and (!(Vector->txCursor.vector))) { // Fast calculation if no wrapping or active cursor
+   if ((not Vector->txInlineSize) and (not Vector->needs_caret_geometry())) { // No wrapping or selection
       for (auto &line : Vector->txLines) {
          line.chars.clear();
          int line_width = fnt::StringWidth(Vector->txBitmapFont, line, -1);
@@ -29,7 +29,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
       for (auto &line : Vector->txLines) {
          line.chars.clear();
          auto wrap_state = WS_NO_WORD;
-         if (line.empty() and Vector->txCursor.vector) {
+         if (line.empty() and Vector->needs_caret_geometry()) {
             const auto top = dy - Vector->txBitmapFont->Leading;
             line.chars.emplace_back(0, top, 0, top + Vector->txBitmapFont->Height);
          }
@@ -60,7 +60,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
 
             str += char_len;
 
-            if (Vector->txCursor.vector) {
+            if (Vector->needs_caret_geometry()) {
                const auto top = dy - Vector->txBitmapFont->Leading;
                line.chars.emplace_back(dx, top, dx, top + Vector->txBitmapFont->Height);
                if (!*str) { // Last character reached, add a final cursor entry past the character position.
@@ -90,7 +90,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
 
    Vector->txWidth = longest_line_width;
 
-   if (Vector->txCursor.vector) {
+   if (Vector->needs_caret_geometry()) {
       Vector->txCursor.reset_vector(Vector);
    }
    rebuild_selection(Vector);

@@ -436,12 +436,12 @@ function buildFooter(Options:table)
 
    -- The buttons are laid out right to left, so each is created before its x position is known.
 
-   &btnApply  = footerButton(Options.okLabel ?? 'Apply', true, function[&&]() &apply() end)
+   &btnSelect  = footerButton(Options.okLabel ?? 'Select', true, function[&&]() &apply() end)
    &btnCancel = footerButton(Options.cancelLabel ?? 'Cancel', false, function[&&]() &cancel() end)
    &btnReset  = footerButton('Reset', false, function[&&]() &reset() end)
 
    x = CLIENT_WIDTH - FOOTER_PAD
-   for btn in values(array<table> { &btnApply, &btnCancel, &btnReset }) do
+   for btn in values(array<table> { &btnSelect, &btnCancel, &btnReset }) do
       x -= btn.viewport.width
       btn.viewport.x = x
       x -= FOOTER_GAP
@@ -2441,7 +2441,7 @@ end
 
 function trackKeyOwners(self:table)
    widgets = array<table> {
-      self.btnApply, self.btnCancel, self.btnReset, self.btnAddSwatch, self.btnLoadPalette,
+      self.btnSelect, self.btnCancel, self.btnReset, self.btnAddSwatch, self.btnLoadPalette,
       self.btnImport, self.btnExport, self.btnResetPalette, self.btnDeleteSwatch, self.btnCopy, self.btnSwap,
       self.btnApplyScheme, self.btnPick, self.colourInput, self.schemeBox, self.clampBox, self.paletteModeBox,
       self.paletteView, self.scratchRow
@@ -3406,7 +3406,7 @@ gui.dialog.colour = function(Options:table)
             'copiedCell', 'wheel', 'loupe', 'btnPick', 'pickedSample', 'preview', 'paletteView', 'paletteModeBox',
             'scratchRow', 'palettePanel', 'eyedropPanel', 'previewPanel', 'btnAddSwatch', 'btnLoadPalette',
             'btnImport', 'btnExport', 'btnResetPalette', 'btnDeleteSwatch', 'channels', 'readoutCells',
-            'readoutRing', 'readoutVP', 'window', 'viewport', 'footer', 'modebar', 'columns', 'btnApply',
+            'readoutRing', 'readoutVP', 'window', 'viewport', 'footer', 'modebar', 'columns', 'btnSelect',
             'btnCancel', 'btnReset', 'scratchGesture', 'paletteItems'
          }
          for field in values(fields) do self[field] = nil end

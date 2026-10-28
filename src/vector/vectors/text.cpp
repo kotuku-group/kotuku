@@ -241,6 +241,10 @@ class extVectorText : public extVector {
    bool txScaledFontSize;
 // bool txSpacingAndGlyphs:1;
 
+   bool needs_caret_geometry() const {
+      return (txFlags & (VTXF::EDITABLE|VTXF::SELECTABLE)) != VTXF::NIL;
+   }
+
    extVectorText(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
       txFontStyle     = "Regular";
       GeneratePath    = (void (*)(extVector *, agg::path_storage &))&generate_text;
@@ -519,11 +523,12 @@ Columns are character positions, so UTF-8 sequences count as one column each.  A
 last line and a negative `EndColumn` refers to the end of its line, so `SelectArea(0, 0, -1, -1)` selects all of the
 text.  Positions beyond the text are clamped to its limits.
 
-While an area is selected the `AREA_SELECTED` bit is set in #TextFlags.  The next character typed, or a press of
-Backspace, Delete, Clear or Enter, will replace or delete the selected text.  Moving the cursor deselects the area.
+While an area is selected the `AREA_SELECTED` bit is set in #TextFlags.  For editable text, the next character typed,
+or a press of Backspace, Delete, Clear or Enter, will replace or delete the selected text.  Moving the cursor without
+extending the selection deselects the area.
 
-Editable text displays the selected area with the #SelectFill painter.  The highlight is hidden when focus is lost
-and restored when focus returns; the selection range is retained.
+Text with `VTXF::EDITABLE` or `VTXF::SELECTABLE` displays the selected area with the #SelectFill painter.  The highlight
+is hidden when focus is lost and restored when focus returns; the selection range is retained.
 
 If the start and end positions are identical, the cursor is moved and no area is selected.
 
@@ -568,7 +573,7 @@ static ERR VECTORTEXT_SelectArea(extVectorText *Self, struct vt::SelectArea *Arg
 
 static ERR VECTORTEXT_Init(extVectorText *Self)
 {
-   if ((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) {
+   if (Self->needs_caret_geometry()) {
       if (not Self->txFocusID) {
          if (Self->ParentView) Self->txFocusID = Self->ParentView->UID;
       }
@@ -577,24 +582,25 @@ static ERR VECTORTEXT_Init(extVectorText *Self)
          focus->subscribeFeedback(FM::HAS_FOCUS|FM::CHILD_HAS_FOCUS|FM::LOST_FOCUS, C_FUNCTION(text_focus_event));
       }
 
-      // The editing cursor will inherit transforms from the VectorText as long as it is a direct child.
+      // The editing cursor inherits transforms from the VectorText as a direct child.
 
-      if ((Self->txCursor.vector = extVectorPolygon::create::global(
+      if ((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) {
+         Self->txCursor.vector = extVectorPolygon::create::global(
             fl::Name("VTCursor"),
             fl::X1(0), fl::Y1(0), fl::X2(1), fl::Y2(1),
             fl::Closed(false),
             fl::Stroke("rgb(255,0,0,255)"),
             fl::StrokeWidth(1.25),
-            fl::Visibility(VIS::HIDDEN)))) {
+            fl::Visibility(VIS::HIDDEN));
+         if (not Self->txCursor.vector) return ERR::CreateObject;
       }
-      else return ERR::CreateObject;
 
       Self->txSelection = extVectorPath::create::global(
          fl::Name("VTSelection"), fl::Owner(Self->UID), fl::Fill(Self->txSelectFill),
          fl::StrokeWidth(0), fl::Visibility(VIS::HIDDEN));
       if (not Self->txSelection) return ERR::CreateObject;
       Self->txSelection->DisableHitTesting = true;
-      acMoveToFront(Self->txCursor.vector);
+      if (Self->txCursor.vector) acMoveToFront(Self->txCursor.vector);
 
       if (Self->txLines.empty()) Self->txLines.emplace_back(std::string(""));
 
@@ -896,8 +902,8 @@ static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
 -FIELD-
 Focus: Refers to the object that will be monitored for user focussing.
 
-A VectorText object in edit mode will become active when its nearest viewport receives the focus.  Setting the Focus
-field to a different vector in the scene graph will redirect monitoring to it.
+A VectorText object with `VTXF::EDITABLE` or `VTXF::SELECTABLE` becomes active when its nearest viewport receives the
+focus.  Setting the Focus field to a different vector in the scene graph redirects monitoring to it.
 
 Changing this value post-initialisation has no effect.
 
@@ -1269,7 +1275,7 @@ static ERR TEXT_SET_StartOffset(extVectorText *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-TextFlags: Optional flags.
+TextFlags: Controls text presentation, editing and selection.
 
 -END-
 *********************************************************************************************************************/
@@ -1282,7 +1288,13 @@ static ERR TEXT_GET_Flags(extVectorText *Self, VTXF *Value)
 
 static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
 {
+   const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
+   if (Self->needs_caret_geometry() and not had_caret_geometry) reset_path(Self);
+   if ((Value & VTXF::EDITABLE) IS VTXF::NIL) {
+      if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
+      if (Self->txCursor.timer) { UpdateTimer(Self->txCursor.timer, 0); Self->txCursor.timer = nullptr; }
+   }
    selection_changed(Self);
    return ERR::Okay;
 }
@@ -1680,22 +1692,21 @@ static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventOb
    auto Self = (extVectorText *)CurrentContext();
 
    if ((Event & FM::HAS_FOCUS) != FM::NIL) {
-      if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and (Self->txCursor.vector)) {
+      if (Self->needs_caret_geometry()) {
          Self->txSelectionHidden = false;
          selection_changed(Self);
-         acMoveToFront(Self->txCursor.vector);
 
-         if (Self->txCursor.timer) UpdateTimer(Self->txCursor.timer, 1.0);
-         else {
-            SubscribeTimer(0.8, C_FUNCTION(cursor_timer), &Self->txCursor.timer);
-
-            if (not Self->txKeyEvent) {
-               SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, Self), &Self->txKeyEvent);
-            }
+         if (not Self->txKeyEvent) {
+            SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, Self), &Self->txKeyEvent);
          }
 
-         Self->txCursor.resetFlash();
-         Self->txCursor.vector->setVisibility(VIS::VISIBLE);
+         if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and Self->txCursor.vector) {
+            acMoveToFront(Self->txCursor.vector);
+            if (Self->txCursor.timer) UpdateTimer(Self->txCursor.timer, 1.0);
+            else SubscribeTimer(0.8, C_FUNCTION(cursor_timer), &Self->txCursor.timer);
+            Self->txCursor.resetFlash();
+            Self->txCursor.vector->setVisibility(VIS::VISIBLE);
+         }
          acDraw(Self);
       }
    }
@@ -1783,6 +1794,7 @@ static ERR text_drag_timer(extVectorText *Self, int64_t Elapsed, int64_t Current
 static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
 {
    auto Self = (extVectorText *)CurrentContext();
+   if (not Self->needs_caret_geometry()) return ERR::Okay;
    for (; Events; Events = Events->Next) {
       if ((Events->Type IS JET::LMB) and ((Events->Flags & JTYPE::REPEATED) IS JTYPE::NIL)) {
          if (Events->Value <= 0) {
@@ -1998,6 +2010,7 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
 
 static void key_event(evKey *Event, int Size, extVectorText *Self)
 {
+   if (not Self->needs_caret_geometry()) return;
    Self->txMouseShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
    if ((Event->Qualifiers & KQ::PRESSED) IS KQ::NIL) return;
 
@@ -2005,8 +2018,10 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
 
    log.trace("$%.8x, Value: %d", int(Event->Qualifiers), int(Event->Code));
 
-   Self->txCursor.resetFlash(); // Reset the flashing cursor to make it visible
-   Self->txCursor.vector->setVisibility(VIS::VISIBLE);
+   if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and Self->txCursor.vector) {
+      Self->txCursor.resetFlash(); // Reset the flashing cursor to make it visible
+      Self->txCursor.vector->setVisibility(VIS::VISIBLE);
+   }
 
    if (((Self->txFlags & VTXF::NO_SYS_KEYS) IS VTXF::NIL) and ((Event->Qualifiers & KQ::CTRL) != KQ::NIL)) {
       switch(Event->Code) {
@@ -2044,13 +2059,10 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
 
    if (navigate_text(Self, Event)) return;
 
+   if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
+
    if ((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) { // and (!(Flags & KQ::INSTRUCTIONKEYS))
       // Printable character handling
-
-      if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) {
-         log.trace("Object does not have the EDIT flag set.");
-         return;
-      }
 
       insert_char(Self, Event->Unicode);
       return;
@@ -2395,18 +2407,20 @@ void TextCursor::extend(extVectorText *Vector, int Row, int Column)
 
 void TextCursor::reset_vector(extVectorText *Vector) const
 {
-   if (Vector->txCursor.vector and not Vector->txLines.empty()) {
+   if (Vector->needs_caret_geometry() and not Vector->txLines.empty()) {
       auto &line = Vector->txLines[mRow];
 
       if (not line.chars.empty()) {
          auto col = mColumn;
          if ((size_t)col >= line.chars.size()) col = line.chars.size() - 1;
-         Vector->txCursor.vector->Points[0].X = line.chars[col].x1 + 0.5;
-         Vector->txCursor.vector->Points[0].Y = line.chars[col].y1;
-         Vector->txCursor.vector->Points[1].X = line.chars[col].x2 + 0.5;
-         Vector->txCursor.vector->Points[1].Y = line.chars[col].y2;
-         reset_path(Vector->txCursor.vector);
-         mark_dirty(Vector->txCursor.vector, RC::TRANSFORM);
+         if (Vector->txCursor.vector) {
+            Vector->txCursor.vector->Points[0].X = line.chars[col].x1 + 0.5;
+            Vector->txCursor.vector->Points[0].Y = line.chars[col].y1;
+            Vector->txCursor.vector->Points[1].X = line.chars[col].x2 + 0.5;
+            Vector->txCursor.vector->Points[1].Y = line.chars[col].y2;
+            reset_path(Vector->txCursor.vector);
+            mark_dirty(Vector->txCursor.vector, RC::TRANSFORM);
+         }
 
          Unit x = Vector->txX, y = Vector->txY;
 
