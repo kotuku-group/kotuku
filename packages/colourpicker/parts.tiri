@@ -406,9 +406,9 @@ EDIT_INSET <const> = 2 -- Vertical inset of the editor in the row
 The content is created in the row viewport, which is owned by the palette list and freed with the row.
 @input Row viewport
 @input Options: tokens, unlink
-@result Table with `viewport`, `set(Info)`, `layout()`, `setHighlight(State)`, `beginEdit(Options)`, `editing()`
-and `destroy()`.  Info is { name, colour, hex, glyph, locked, depth }.  A `glyph` of 'link' shows a hooked arrow;
-other values show no relationship icon.  `locked` shows a padlock before the hex value for a swatch that is
+@result Table with `viewport`, `set(Info)`, `layout()`, `setHighlight(State)`, `beginEdit(Options)`, `editing()`,
+`commitEdit()` and `destroy()`.  Info is { name, colour, hex, glyph, locked, depth }.  A `glyph` of 'link' shows a
+hooked arrow; other values show no relationship icon.  `locked` shows a padlock before the hex value for a swatch that is
 reserved for a role of the palette mode.  `depth` indents linked swatches,
 with their hooked arrow in the left margin.  If Options has an `unlink()` function, clicking the hooked arrow calls
 it.  layout() fits the content to the current size of the row viewport.
@@ -417,8 +417,8 @@ State is 'active' for the swatch being edited, 'focus' for the keyboard target, 
 beginEdit() replaces the name with an inline editor and gives it the focus.  Options are `text`, `charLimit` and
 `done(Text, Reason)`.  Enter commits, Escape cancels and a focus loss commits.  done() is called on the next message
 cycle with the edited text (nil if cancelled) and a Reason of 'key', 'focus' or 'destroyed'; deferring the call means
-that other key handlers for the same key press still see the edit in progress.  destroy() is called before the row
-viewport is freed.
+that other key handlers for the same key press still see the edit in progress.  commitEdit() ends an edit as a focus
+loss does.  destroy() is called before the row viewport is freed.
 ]])
 colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
    t = Options.tokens
@@ -555,6 +555,14 @@ colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
       ed.text.mtSelectArea(0, 0, -1, -1) -- Typing replaces the name
       ed.clip.acFocus()
       Viewport.acDraw()
+   end
+
+   -- End an edit in progress as a focus loss does, keeping the edited text.
+
+   self.commitEdit = function()
+      ed = self.editor
+      ed ?! return
+      ed.finish(ed.text.string ?? '', 'focus')
    end
 
    -- The row viewport and the editor are freed by the list.  An edit in progress is cancelled.

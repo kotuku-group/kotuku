@@ -3001,11 +3001,13 @@ gui.dialog.colour = function(Options:table)
          view.revealItem(item)
          view.disable()
          &renaming = true
+         &renameRow = item.content
          item.content.beginEdit({
             text = palette.swatches[index].name, charLimit = NAME_LIMIT,
             -- Bound to the dialog because the row editor runs this from a deferred call in another context.
             done = function[&&](Text:str, Reason:str)
                &renaming = false
+               &renameRow = nil
                if &finished then return end
                view.enable()
                if Text and (&state.palette is palette) then
@@ -3262,10 +3264,19 @@ gui.dialog.colour = function(Options:table)
          return true
       end
 
-      -- Show the Picker (TAB_PICKER) or the palette manager (TAB_PALETTE) in the dialog body.
+      -- Show the Picker (TAB_PICKER) or the palette manager (TAB_PALETTE) in the dialog body.  A swatch rename in
+      -- progress is committed first; the editor reports the end of the edit on the next message cycle, so the switch
+      -- follows it.
 
       &selectTab = function(Index:num!)
-         if &finished or (Index is &tab) or &renaming then return end
+         if &finished or (Index is &tab) then return end
+         if &renaming then
+            &renameRow?.commitEdit()
+            processing.delayedCall(function()
+               if not &finished and not &renaming then &selectTab(Index) end
+            end)
+            return
+         end
          if &picking then &stopEyedropper() end
          if &scratchDrag then &stopScratchDrag() end
          &tab = Index
@@ -3448,6 +3459,11 @@ gui.dialog.colour = function(Options:table)
       --           arrow does.
       --   Up      Moves the focus from the first palette row to the scratch row.  The list's own handler runs after
       --           this one, so the keyboard target is still the row that Up was pressed on.
+      --   Ctrl+Tab      Switches between the Picker and Palette tabs.
+      --   Ctrl+1/2      Shows the Picker or the Palette tab.
+      --
+      -- On the Palette tab, Enter and Escape apply and cancel as above, and the manager handles its own shortcuts
+      -- (see colourpicker_manager keyPress()).  The palette keys of the picker do not apply.
       --
       -- While a swatch is being renamed the editor handles Enter and Escape, and the other keys go to the text.  The
       -- same applies while a channel or Relationship value field has the focus.
@@ -3488,8 +3504,16 @@ gui.dialog.colour = function(Options:table)
             elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
                &acceptEyedropper()
             end
-         elseif &tab != TAB_PICKER then -- The palette manager only uses the dialog's Enter and Escape
-            if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+         elseif (Value is KEY_TAB) and (Qualifiers has KQ_CTRL) then
+            index = (&tab is TAB_PICKER) ? TAB_PALETTE : TAB_PICKER
+            processing.delayedCall(function() &selectTab(index) end)
+         elseif ((Value is KEY_ONE) or (Value is KEY_TWO)) and (Qualifiers has KQ_CTRL) then
+            index = (Value is KEY_ONE) ? TAB_PICKER : TAB_PALETTE
+            processing.delayedCall(function() &selectTab(index) end)
+         elseif &tab != TAB_PICKER then
+            if &manager.keyPress(Qualifiers, Value) then
+               return
+            elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
                if not &keyOwner then processing.delayedCall(function() &apply() end) end
             elseif Value is KEY_ESCAPE then
                processing.delayedCall(function() &cancel() end)

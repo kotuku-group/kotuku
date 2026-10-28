@@ -227,7 +227,8 @@ function textArea(Target:obj!, Options:table!):table
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- A swatch card in the centre panel: the colour, the swatch name, its hex value and its OKLCH channels.
+-- A swatch card in the centre panel: the colour, the swatch name, its hex value and its OKLCH channels.  The card
+-- grid takes the keyboard focus as a whole (see colourpicker_manager.build()).
 
 function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Tokens:table!):table
    t = Tokens
@@ -275,8 +276,16 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Toke
       stroke = t.accent, strokeWidth = 2, visibility = VIS_HIDDEN
    })
 
-   self.setSelected = function(Selected:bool)
+   -- While the card grid has the focus, the selected card has a second, inner ring.
+
+   self.focusRing = vp.new('VectorRectangle', {
+      x = 4.5, y = 4.5, width = Width - 9, height = CARD_H - 9, roundX = 3, roundY = 3, fill = 'none',
+      stroke = t.accent, strokeWidth = 1, visibility = VIS_HIDDEN
+   })
+
+   self.setSelected = function(Selected:bool, Focused:bool)
       self.ring.visibility = Selected ? VIS_VISIBLE : VIS_HIDDEN
+      self.focusRing.visibility = (Selected and Focused) ? VIS_VISIBLE : VIS_HIDDEN
    end
 
    return self
@@ -292,7 +301,8 @@ the picker edits)
 @input Options: x, y, width, height, and the callbacks open(Index, Swatch), save(), sync() (stores the picker's palette
 in the database), removePalette(Index) (removes a database palette, switching the picker to another if it edits that
 palette), focus(Has, Field) and blur()
-@result Table with `viewport`, `show()`, `hide()`, `refresh()`, `widgets()` and `destroy()`
+@result Table with `viewport`, `show()`, `hide()`, `refresh()`, `widgets()`, `keyPress(Qualifiers, Value)` and
+`destroy()`
 ]])
 colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!):table
    t = Picker.tokens
@@ -304,7 +314,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       selected = Picker.dbIndex, -- Index of the palette shown in the centre and right panels
       swatch   = nil,            -- Index of the selected swatch in that palette
       filter   = '',
-      cards    = array<table>
+      cards    = array<table>,
+      cardsFocused = false       -- True while the card grid has the keyboard focus
    }
 
    self.viewport = Target.new('VectorViewport', {
@@ -338,6 +349,17 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
             processing.delayedCall(function()
                if self.list then self.updateList() end
             end)
+         end,
+
+         -- Escape clears the search, then leaves the box, so that a further Escape cancels the dialog.
+
+         keypress = function(Event)
+            if Event.value != KEY_ESCAPE then return end
+            if self.search.getText()?? then
+               self.clearSearch()
+            else
+               Options.blur()
+            end
          end
       }
    })
@@ -388,6 +410,16 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       events = {
          itemSelected = function(View:table, Reason:str, Item:table)
             if Reason is 'user' then self.selectPalette(Item.index) end
+         end,
+
+         -- Gaining the focus from the keyboard leaves the list without a keyboard target, so the selected palette's
+         -- row becomes the target.  A press on a row sets the target in the same message cycle, so the check is
+         -- deferred.
+
+         focus = function(View:table)
+            processing.delayedCall(function()
+               if self.list and View.hasFocus and not View.kItem and View.sItem then View.targetItem(View.sItem) end
+            end)
          end,
 
          -- Double-clicking a row, or Enter on it, opens the palette in the picker
@@ -449,6 +481,76 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    self.page.new('VectorRectangle', { width = '100%', height = '100%', fill = t.panel })
    self.scrollbar = gui.scrollbar({ target = self.area, view = self.frame, page = self.page, direction = 'vertical' })
    card_w = math.floor((area_w - self.scrollbar.v_thickness - 4 - (CARD_GAP * (CARD_COLS - 1))) / CARD_COLS)
+
+   -- Scroll the card at Index into view
+
+   function revealCard(Index:num!)
+      top = math.floor(Index / CARD_COLS) * (CARD_H + CARD_GAP)
+      view_top = -self.page.y
+      if top < view_top then
+         self.scrollbar.scrollPage(0, view_top - top)
+      elseif top + CARD_H > view_top + area_h then
+         self.scrollbar.scrollPage(0, (view_top + area_h) - (top + CARD_H))
+      end
+   end
+
+   -- The card grid is a single stop in the tab order.  The arrow keys, Home and End select a card, and Enter edits
+   -- the selected swatch in the picker.
+
+   self.area.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+      if not (Qualifiers has KQ_PRESSED) or (Qualifiers has (KQ_CTRL | KQ_ALT | KQ_COMMAND)) then return end
+      palette = selectedPalette()
+      palette ?! return
+      count = #palette.swatches
+      if count is 0 then return end
+
+      i = self.swatch
+      if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+         if i is nil then return end
+         sel = self.selected
+         processing.delayedCall(function() Options.open(sel, i) end)
+         return
+      elseif i is nil then
+         if (Value is KEY_LEFT) or (Value is KEY_RIGHT) or (Value is KEY_UP) or (Value is KEY_DOWN) or
+            (Value is KEY_HOME) or (Value is KEY_END) then
+            i = 0
+         else
+            return
+         end
+      elseif Value is KEY_LEFT then
+         i = math.max(0, i - 1)
+      elseif Value is KEY_RIGHT then
+         i = math.min(count - 1, i + 1)
+      elseif Value is KEY_UP then
+         if i >= CARD_COLS then i -= CARD_COLS end
+      elseif Value is KEY_DOWN then
+         -- From the row above a shorter last row, Down moves to the last card.
+         if math.floor(i / CARD_COLS) < math.floor((count - 1) / CARD_COLS) then
+            i = math.min(count - 1, i + CARD_COLS)
+         end
+      elseif Value is KEY_HOME then
+         i = 0
+      elseif Value is KEY_END then
+         i = count - 1
+      else
+         return
+      end
+
+      if i != self.swatch then self.selectSwatch(i) end
+      revealCard(i)
+   end)
+
+   self.area.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Input:obj!, Event:num!)
+      focused = Event != FM_LOST_FOCUS
+      if focused is self.cardsFocused then return end
+      self.cardsFocused = focused
+      if focused and (self.swatch is nil) and (#self.cards > 0) then
+         self.selectSwatch(0)
+      else
+         for i, card in self.cards do card.setSelected(i is self.swatch, focused) end
+         self.viewport.acDraw()
+      end
+   end)
 
    self.noPalette = colourpicker_parts.text(centre.body, {
       x = centre_w * 0.5, y = 60, size = 12, fill = t.fg3, align = 'center', string = 'Select a palette',
@@ -647,11 +749,13 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          x = (i % CARD_COLS) * (card_w + CARD_GAP)
          y = math.floor(i / CARD_COLS) * (CARD_H + CARD_GAP)
          card = swatchCard(self.page, x, y, card_w, s, t)
-         card.setSelected(i is self.swatch)
+         card.setSelected(i is self.swatch, self.cardsFocused)
          index = i
          card.viewport.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
             repeat
-               if (Msg.type is JET_LMB) and (Msg.value is 0) then
+               if (Msg.type is JET_LMB) and (Msg.value is 1) then
+                  if not self.cardsFocused then self.area.acFocus() end
+               elseif (Msg.type is JET_LMB) and (Msg.value is 0) then
                   if Msg.flags has JTYPE_DBL_CLICK then
                      sel = self.selected
                      processing.delayedCall(function() Options.open(sel, index) end)
@@ -736,9 +840,48 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.selectSwatch = function(Index:num)
       self.swatch = Index
-      for i, card in self.cards do card.setSelected(i is Index) end
+      for i, card in self.cards do card.setSelected(i is Index, self.cardsFocused) end
       updateInfo()
       self.viewport.acDraw()
+   end
+
+   self.clearSearch = function()
+      self.search.setText('')
+      self.filter = ''
+      self.updateList()
+   end
+
+   -- Give an input box the focus, with its text selected so that typing replaces it.
+
+   function focusInput(Input:table!)
+      Input._textClip.acFocus()
+      Input.text.mtSelectArea(0, 0, -1, -1)
+      self.viewport.acDraw()
+   end
+
+   -- Keys that the dialog passes on while the manager is shown and no text field has the focus.  Returns true if the
+   -- key was used.
+   --   Ctrl+F, Ctrl+K  Focus the search box.
+   --   Delete          Deletes the selected palette while the palette list has the focus (after confirmation).
+   --   F2              Renames the selected palette while the palette list has the focus: the name field takes
+   --                   the focus, with its text selected.
+
+   self.keyPress = function(Qualifiers:num!, Value:num!):bool
+      ctrl = Qualifiers has KQ_CTRL
+      if ctrl and ((Value is KEY_F) or (Value is KEY_K)) then
+         focusInput(self.search)
+         return true
+      end
+      if ctrl or not self.list.hasFocus then return false end
+      if Value is KEY_DELETE then
+         processing.delayedCall(function() if self.list then self.deletePalette() end end)
+         return true
+      elseif Value is KEY_F2 then
+         if self.selected is nil then return false end
+         processing.delayedCall(function() if self.list then focusInput(self.nameInput) end end)
+         return true
+      end
+      return false
    end
 
    ---------------------------------------------------------------------------------------------------------------
@@ -951,7 +1094,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.widgets = function():array<table>
       return array<table> {
-         self.list, self.btnNew, self.btnDuplicate, self.btnDelete, self.btnImport, self.btnExport, self.btnEdit
+         self.list, self.btnNew, self.btnDuplicate, self.btnDelete, self.btnImport, self.btnExport, self.btnEdit,
+         { viewport = self.area }
       }
    end
 
