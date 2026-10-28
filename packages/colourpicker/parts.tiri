@@ -1,7 +1,7 @@
 -- Vector building blocks for the colour picker: panels, chips and key hints.  Every builder takes a target viewport
 -- and an Options table that includes the picker `tokens` (see colourpicker_theme.tokens()).
 
-   import 'gui'
+   import 'gui', 'gui/button', 'gui/colourpicker/colour'
 
    namespace colourpicker_parts { }
 
@@ -16,6 +16,44 @@ CHIP_PAD      <const> = 7
 CHIP_DOT      <const> = 8
 CHIP_GAP      <const> = 6
 KEY_PAD       <const> = 4
+
+colourpicker_parts.BADGE_HEIGHT = 16
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Watch a viewport for a left press followed by pointer travel of at least threshold pixels (default 6).
+Drag-item presses are ignored.  onPress(Viewport), if given, runs on press; onDrag() runs once at the threshold.
+@result Table with cancel() to discard a pending press.
+]])
+colourpicker_parts.dragGesture = function(Viewport:obj!, Options:table!):table
+   self = { }
+   threshold = Options.threshold ?? 6
+
+   self.cancel = function() self.press = nil end
+
+   Viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function(Input:obj!, Msg:any!)
+      repeat
+         if Msg.type is JET_LMB then
+            self.press = nil
+            if (Msg.value is 1) and not (Msg.flags has JTYPE_DRAG_ITEM) then
+               self.press = { x = Msg.x, y = Msg.y }
+               if Options.onPress then Options.onPress(Input) end
+            end
+         elseif (Msg.type is JET_ABS_XY) and self.press then
+            dx = Msg.x - self.press.x
+            dy = Msg.y - self.press.y
+            if (dx * dx) + (dy * dy) >= threshold * threshold then
+               self.press = nil
+               Options.onDrag()
+            end
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   return self
+end
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -885,6 +923,138 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
          tab.bkgd.visibility = active ? VIS_VISIBLE : VIS_HIDDEN
          tab.label.fill = active ? t.fg0 : t.fg2
       end
+   end
+
+   return self
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Build Count gradient stops for a channel track.  Fn(Fraction) returns L, C, H and alpha for a position along the
+-- track.  Out-of-gamut colours are clipped per channel, as on the wheel.
+
+colourpicker_parts.trackStops = function(Count:num!, Fn:func!):table
+   stops = { }
+   for i in {0 to Count} do
+      fraction = i / (Count - 1)
+      l, c, h, a = Fn(fraction)
+      r, g, b = colourmath.oklchToSrgb(l, c, h)
+      stop = struct<GradientStop>
+      stop.offset = fraction
+      stop.rgb.{ red = math.clamp(r, 0, 1), green = math.clamp(g, 0, 1), blue  = math.clamp(b, 0, 1), alpha = a }
+      stops.insert(stop)
+   end
+
+   return stops
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- Widget theme override for 11 px mono text in a box of the given height.  The widgets position their text from the
+-- default widget font, so the baseline and inset are given as well.  The text sits in a clip inset by the 1 px border.
+
+colourpicker_parts.monoText = function(Height:num, Inset:num):table
+   return {
+      text = {
+         face = colourpicker_parts.FACE_MONO, fontSize = '14px', x = Inset - 1,
+         y = colourpicker_parts.baseline(0, Height - 2, 11)
+      }
+   }
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- A rectangle with the corners on one side rounded, as a path.
+
+colourpicker_parts.halfRound = function(X:num, Y:num, W:num, H:num, R:num, Left:bool):str
+   if Left then
+      return f'M{X + R},{Y} H{X + W} V{Y + H} H{X + R} Q{X},{Y + H} {X},{Y + H - R} V{Y + R} Q{X},{Y} {X + R},{Y} Z'
+   end
+   return f'M{X},{Y} H{X + W - R} Q{X + W},{Y} {X + W},{Y + R} V{Y + H - R} Q{X + W},{Y + H} {X + W - R},{Y + H} H{X} Z'
+end
+
+-- A WCAG grade badge.  Failed grades are struck through.
+
+colourpicker_parts.badge = function(Target:obj, Label:str, Tokens:table):table
+   height = colourpicker_parts.BADGE_HEIGHT
+   self = { viewport = Target.new('VectorViewport', { x = 0, y = 0, width = 1, height = height }) }
+   self.bkgd = self.viewport.new('VectorRectangle', {
+      x = 0, y = 0, width = 1, height = height, roundX = 3, roundY = 3
+   })
+   self.label = colourpicker_parts.text(self.viewport, {
+      x = 6, y = colourpicker_parts.baseline(0, height, 9.5), size = 9.5, face = colourpicker_parts.FACE_MONO,
+      string = Label
+   })
+   self.width = math.ceil(self.label.textWidth) + 12
+   self.viewport.width = self.width
+   self.bkgd.width = self.width
+   self.strike = self.viewport.new('VectorRectangle', {
+      x = 6, y = math.floor(height * 0.5), width = self.width - 12, height = 1
+   })
+
+   self.set = function(Pass:bool)
+      colours = Pass ? Tokens.pass : Tokens.fail
+      self.bkgd.fill = colours.bkgd
+      self.label.fill = colours.text
+      self.strike.fill = colours.text
+      self.strike.visibility = Pass ? VIS_HIDDEN : VIS_VISIBLE
+   end
+
+   return self
+end
+
+-- A button that toggles between two states.  The pressed state is drawn in the accent colours, and is restored
+-- after the button's own hover, focus and enable styling.
+
+colourpicker_parts.toggleButton = function(Options:table):table
+   t = Options.tokens
+   base = gui.getTheme(Options.target).button
+   self = { pressed = false, hover = false }
+
+   -- The button restores its own background on hover and focus changes, so the pressed style is reapplied after each.
+   -- Focus events precede the button's restyle, so they reapply on the next cycle.  The label follows the background:
+   -- the base theme's button text can be light on its dark background.
+
+   function restyle()
+      if not self.pressed then return end
+      gui.applyStyle(self.button.bkgd, { fill = t.accentSoft, stroke = t.accent })
+      self.button._label?.fill = t.fg0
+   end
+
+   function restyleLater() -- The picker may have been closed in the meantime
+      if obj.find(self.bkgdID) then restyle() end
+   end
+
+   function release()
+      style = { fill = self.hover ? (base.highlight?.fill ?? base.bkgd.fill) : base.bkgd.fill }
+      style.stroke = self.button.hasFocus ? (base.focus?.stroke ?? base.bkgd.stroke) : base.bkgd.stroke
+      gui.applyStyle(self.button.bkgd, style)
+      self.button._label?.fill = base.text.fill
+   end
+
+   self.button = gui.button({
+      target = Options.target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      label = Options.label, theme = Options.theme, tip = Options.tip,
+      events = {
+         activate    = function() Options.onToggle(not self.pressed) end,
+         cursorEntry = function()
+            self.hover = true
+            restyle()
+         end,
+         cursorExit  = function()
+            self.hover = false
+            restyle()
+         end,
+         focus       = function() processing.delayedCall(restyleLater) end,
+         lostFocus   = function() processing.delayedCall(restyleLater) end,
+         enable      = restyle
+      }
+   })
+   self.bkgdID = self.button.bkgd.id
+
+   self.set = function(Pressed:bool)
+      if Pressed is self.pressed then return end
+      self.pressed = Pressed
+      if Pressed then restyle() else release() end
    end
 
    return self

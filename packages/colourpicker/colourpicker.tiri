@@ -54,7 +54,6 @@ LIST_PAD_TOP   <const> = 8
 LIST_PAD_BTM   <const> = 10
 ROW_HEIGHT     <const> = 22
 ROW_GAP        <const> = 2
-SCRATCH_DRAG_THRESHOLD <const> = 6 -- Pointer travel before a scratch press becomes a drag
 MIN_PALETTE_ROWS <const> = 4 -- Minimum visible capacity; the palette fills the remaining column height
 VIEW_EDGE      <const> = 4  -- Inset of the rows within a listview
 SCRATCH_GAP    <const> = 8  -- Between the scratch row and the palette list
@@ -118,7 +117,6 @@ REL_ROW        <const> = 24
 REL_ROW_GAP    <const> = 6
 CONTRAST_ROW_H <const> = 46
 CONTRAST_SW    <const> = 28  -- Contrast pair swatch size
-BADGE_H        <const> = 16
 WCAG_AA        <const> = 4.5
 WCAG_AAA       <const> = 7
 EXPORT_MIN_H   <const> = 200 -- Includes the panel header, code tabs and scrollable text
@@ -156,13 +154,13 @@ EXPORT_TABS <const> = array<table> {
 EXPORT_GAMUT <const> = { none = 'unmapped', srgb = 'srgb', p3 = 'p3', a98 = 'a98', rec2020 = 'rec2020' }
 
 SCHEME_ITEMS <const> = array<table> {
-   { id = 'none',          name = '— none —' },
-   { id = 'analogous',     name = 'Analogous' },
-   { id = 'complementary', name = 'Complementary' },
-   { id = 'triadic',       name = 'Triadic' },
-   { id = 'split',         name = 'Split complementary' },
-   { id = 'square',        name = 'Square' },
-   { id = 'monochrome',    name = 'Monochrome' }
+   { id = 'none',          label = '— none —' },
+   { id = 'analogous',     label = 'Analogous' },
+   { id = 'complementary', label = 'Complementary' },
+   { id = 'triadic',       label = 'Triadic' },
+   { id = 'split',         label = 'Split complementary' },
+   { id = 'square',        label = 'Square' },
+   { id = 'monochrome',    label = 'Monochrome' }
 }
 
 -- The target gamut, saved as the 'clamp' setting.  The edited colour is kept unmapped and only the output is mapped:
@@ -171,11 +169,11 @@ SCHEME_ITEMS <const> = array<table> {
 -- than 'none' are colourmath space IDs.  Rec. 2020 is treated as an SDR container gamut.
 
 CLAMP_ITEMS <const> = array<table> {
-   { id = 'none',    name = '— none —' },
-   { id = 'srgb',    name = 'sRGB' },
-   { id = 'p3',      name = 'Display P3' },
-   { id = 'a98',     name = 'Adobe RGB' },
-   { id = 'rec2020', name = 'Rec. 2020' }
+   { id = 'none',    label = '— none —' },
+   { id = 'srgb',    label = 'sRGB' },
+   { id = 'p3',      label = 'Display P3' },
+   { id = 'a98',     label = 'Adobe RGB' },
+   { id = 'rec2020', label = 'Rec. 2020' }
 }
 
 CHANNELS <const> = array<table> {
@@ -570,35 +568,19 @@ function edgeSpaces(Clamp:str):array<str>
    return array<str> { Clamp, 'srgb' }
 end
 
--- Build Count gradient stops for a channel track.  Fn(Fraction) returns L, C, H and alpha for a position along the
--- track.  Out-of-gamut colours are clipped per channel, as on the wheel.
-
-function trackStops(Count:num!, Fn:func!):table
-   stops = { }
-   for i in {0 to Count} do
-      fraction = i / (Count - 1)
-      l, c, h, a = Fn(fraction)
-      r, g, b = colourmath.oklchToSrgb(l, c, h)
-      stop = struct<GradientStop>
-      stop.offset = fraction
-      stop.rgb.{ red = math.clamp(r, 0, 1), green = math.clamp(g, 0, 1), blue  = math.clamp(b, 0, 1), alpha = a }
-      stops.insert(stop)
-   end
-
-   return stops
-end
-
 function channelStops(Channel:str, State:table):table
    l, c, h = State.l, State.c, State.h
    if Channel is 'l' then
-      return trackStops(TRACK_STOPS, function(F:num):<num, num, num, num> return F, c, h, 1 end)
+      return colourpicker_parts.trackStops(TRACK_STOPS, function(F:num):<num, num, num, num> return F, c, h, 1 end)
    elseif Channel is 'c' then
-      return trackStops(TRACK_STOPS, function(F:num):<num, num, num, num> return l, F * C_MAX, h, 1 end)
+      return colourpicker_parts.trackStops(TRACK_STOPS,
+         function(F:num):<num, num, num, num> return l, F * C_MAX, h, 1 end)
    elseif Channel is 'h' then
       hue_c = math.max(c, HUE_TRACK_MIN_C)
-      return trackStops(HUE_STOPS, function(F:num):<num, num, num, num> return l, hue_c, F * 360, 1 end)
+      return colourpicker_parts.trackStops(HUE_STOPS,
+         function(F:num):<num, num, num, num> return l, hue_c, F * 360, 1 end)
    else
-      return trackStops(2, function(F:num):<num, num, num, num> return l, c, h, F end)
+      return colourpicker_parts.trackStops(2, function(F:num):<num, num, num, num> return l, c, h, F end)
    end
 end
 
@@ -703,19 +685,6 @@ function commitChannelText(self:table, Ch:table, Text:str):bool
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- Widget theme override for 11 px mono text in a box of the given height.  The widgets position their text from the
--- default widget font, so the baseline and inset are given as well.  The text sits in a clip inset by the 1 px border.
-
-function monoText(Height:num, Inset:num):table
-   return {
-      text = {
-         face = colourpicker_parts.FACE_MONO, fontSize = '14px', x = Inset - 1,
-         y = colourpicker_parts.baseline(0, Height - 2, 11)
-      }
-   }
-end
-
-----------------------------------------------------------------------------------------------------------------------
 -- Small button text
 
 function smallText():table
@@ -739,20 +708,15 @@ function selector(self:table, Target:obj, X:num, Y:num, Width:num, Label:str, It
    })
 
    box_x = X + math.ceil(label.textWidth) + 8
-   items = array<table> { }
-   selected_name = Items[0].name
-   for item in values(Items) do
-      items.push({ id=item.id, label = item.name })
-      if item.id is Selected then selected_name = item.name end
-   end
+   selected = Items.find(Item => Item.id is Selected) ?? Items[0]
 
    box = gui.combobox({
       target = Target,
       x = box_x, y = Y, width = X + Width - box_x, height = SELECT_HEIGHT,
-      items = items,
-      text = selected_name,
+      items = Items,
+      text = selected.label,
       allowCustom = false,
-      theme = { input = monoText(SELECT_HEIGHT, 9) },
+      theme = { input = colourpicker_parts.monoText(SELECT_HEIGHT, 9) },
       events = {
          activate = function(Item:table!)
             OnSelect(Item)
@@ -1045,7 +1009,7 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
    input_x = PANEL_PAD + self.formatChip.width + 6
    self.colourInput = gui.input({
       target = body, x = input_x, y = y, width = self.btnCopy.viewport.x - 6 - input_x, height = hex_h,
-      text = self.state.hex, theme = monoText(hex_h, 8),
+      text = self.state.hex, theme = colourpicker_parts.monoText(hex_h, 8),
       events = {
          activate = function(Event)
             if self.refreshing then return end
@@ -1126,19 +1090,7 @@ function clipboardText():str
 end
 
 function itemId(Items:array<table>, ID:str, Default:str):str
-   for item in values(Items) do
-      if item.id is ID then return ID end
-   end
-   return Default
-end
-
--- Display order follows the link hierarchy, so a swatch index isn't necessarily its row index.
-
-function paletteItem(View:table, Index:num):table
-   for item in values(View.items) do
-      if item.index is Index then return item end
-   end
-   return nil
+   return Items.find(Item => Item.id is ID)?.id ?? Default
 end
 
 -- Select the row of the active swatch and scroll it into view, or clear the selection when there is no active swatch.
@@ -1146,7 +1098,7 @@ end
 function syncPaletteSelection(self:table)
    view = self.paletteView
    active = self.state.active
-   item = (active != nil) ? paletteItem(view, active) : nil
+   item = (active != nil) ? self.paletteItems[active] : nil
    if item is view.sItem then return end
 
    if item then
@@ -1163,7 +1115,7 @@ function focusPaletteList(self:table, Item:table)
    view = self.paletteView
    if self.finished or not view or (#view.items is 0) then return end
    active = self.state.active
-   Item ?= (active != nil) ? paletteItem(view, active) : nil
+   Item ?= (active != nil) ? self.paletteItems[active] : nil
    Item ?= view.items[0]
    view.viewport.acFocus()
    view.targetItem(Item)
@@ -1197,26 +1149,13 @@ function buildScratchRow(self:table, Target:obj, Width:num)
 
    self.scratchRow = colourpicker_parts.paletteRow(vp, { tokens = self.tokens })
 
-   vp.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function(Viewport:obj!, Msg:any!)
-      repeat
-         if Msg.type is JET_LMB then
-            self.scratchPress = nil
-            if (Msg.value is 1) and not (Msg.flags has JTYPE_DRAG_ITEM) then
-               self.scratchPress = { x = Msg.x, y = Msg.y }
-               Viewport.acFocus()
-               self.selectScratch()
-            end
-         elseif (Msg.type is JET_ABS_XY) and self.scratchPress then
-            dx = Msg.x - self.scratchPress.x
-            dy = Msg.y - self.scratchPress.y
-            if (dx * dx) + (dy * dy) >= SCRATCH_DRAG_THRESHOLD * SCRATCH_DRAG_THRESHOLD then
-               self.scratchPress = nil
-               self.startScratchDrag()
-            end
-         end
-         Msg = Msg.next
-      until not Msg
-   end)
+   self.scratchGesture = colourpicker_parts.dragGesture(vp, {
+      onPress = function(Viewport:obj!)
+         Viewport.acFocus()
+         self.selectScratch()
+      end,
+      onDrag = function() self.startScratchDrag() end
+   })
 
    vp.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
       if self.finished or self.renaming or not (Qualifiers has KQ_PRESSED) then return end
@@ -1468,7 +1407,7 @@ function buildPalette(Target:obj)
       while ev do
          if (ev.type is JET_BUTTON_1) and (ev.value is 0) and (ev.flags has JTYPE_DBL_CLICK) then
             index = &state.active
-            item = (index != nil) ? paletteItem(&paletteView, index) : nil
+            item = (index != nil) ? &paletteItems[index] : nil
             row = item?.content?.viewport
             if row and (ev.y >= row.y) and (ev.y < row.y + row.height) then
                processing.delayedCall(function[&&]() &renameSwatch() end)
@@ -1694,6 +1633,11 @@ function updatePalette(self:table)
    end
    if #added > 0 then view.addItems(added) end
 
+   -- Display order follows the link hierarchy.  Rebuild the model-index lookup after row reuse and additions.
+
+   self.paletteItems = { }
+   for item in values(view.items) do self.paletteItems[item.index] = item end
+
    syncPaletteSelection(self)
    updateScratchRow(self)
 
@@ -1802,24 +1746,9 @@ function buildCentre()
          x = 0.5, y = 0.5, height = chip_h - 1, roundX = 3, roundY = 3, stroke = t.border, strokeWidth = 1,
          cursor = 'hand'
       })
-      swatch.viewport.mtSubscribeInput(JTYPE_BUTTON | JTYPE_MOVEMENT, function[&&](Viewport:obj!, Msg:any!)
-         repeat
-            if Msg.type is JET_LMB then
-               swatch.press = nil
-               if (Msg.value is 1) and not (Msg.flags has JTYPE_DRAG_ITEM) then
-                  swatch.press = { x = Msg.x, y = Msg.y }
-               end
-            elseif (Msg.type is JET_ABS_XY) and swatch.press then
-               dx = Msg.x - swatch.press.x
-               dy = Msg.y - swatch.press.y
-               if (dx * dx) + (dy * dy) >= SCRATCH_DRAG_THRESHOLD * SCRATCH_DRAG_THRESHOLD then
-                  swatch.press = nil
-                  &startScratchDrag(swatch.colour)
-               end
-            end
-            Msg = Msg.next
-         until not Msg
-      end)
+      swatch.gesture = colourpicker_parts.dragGesture(swatch.viewport, {
+         onDrag = function[&&]() &startScratchDrag(swatch.colour) end
+      })
       &schemeSwatches.push(swatch)
    end
 
@@ -1911,7 +1840,7 @@ function updateCentre(self:table, Source:str)
             f'url(#cpChecker);{colourmath.toHex(r, g, b, anchor.alpha)}' : colourmath.toHex(r, g, b)
          swatch.viewport.visibility = VIS_VISIBLE
       else
-         swatch.press = nil
+         swatch.gesture.cancel()
          swatch.viewport.visibility = VIS_HIDDEN
       end
    end
@@ -2000,103 +1929,8 @@ function relHueStops(Swatch:table, Base:table, Mode:str):table
    l = math.clamp(Swatch.l, 0.45, 0.8)
    c = math.max(Swatch.c, HUE_TRACK_MIN_C)
    start = (Mode is 'abs') ? 0 : Base.h - 180
-   return trackStops(HUE_STOPS, function(F:num):<num, num, num, num> return l, c, start + (F * 360), 1 end)
-end
-
--- A rectangle with the corners on one side rounded, as a path.
-
-function halfRound(X:num, Y:num, W:num, H:num, R:num, Left:bool):str
-   if Left then
-      return f'M{X + R},{Y} H{X + W} V{Y + H} H{X + R} Q{X},{Y + H} {X},{Y + H - R} V{Y + R} Q{X},{Y} {X + R},{Y} Z'
-   end
-   return f'M{X},{Y} H{X + W - R} Q{X + W},{Y} {X + W},{Y + R} V{Y + H - R} Q{X + W},{Y + H} {X + W - R},{Y + H} H{X} Z'
-end
-
--- A WCAG grade badge.  Failed grades are struck through.
-
-function badge(Target:obj, Label:str, Tokens:table):table
-   self = { viewport = Target.new('VectorViewport', { x = 0, y = 0, width = 1, height = BADGE_H }) }
-   self.bkgd = self.viewport.new('VectorRectangle', {
-      x = 0, y = 0, width = 1, height = BADGE_H, roundX = 3, roundY = 3
-   })
-   self.label = colourpicker_parts.text(self.viewport, {
-      x = 6, y = colourpicker_parts.baseline(0, BADGE_H, 9.5), size = 9.5, face = colourpicker_parts.FACE_MONO,
-      string = Label
-   })
-   self.width = math.ceil(self.label.textWidth) + 12
-   self.viewport.width = self.width
-   self.bkgd.width = self.width
-   self.strike = self.viewport.new('VectorRectangle', {
-      x = 6, y = math.floor(BADGE_H * 0.5), width = self.width - 12, height = 1
-   })
-
-   self.set = function(Pass:bool)
-      colours = Pass ? Tokens.pass : Tokens.fail
-      self.bkgd.fill = colours.bkgd
-      self.label.fill = colours.text
-      self.strike.fill = colours.text
-      self.strike.visibility = Pass ? VIS_HIDDEN : VIS_VISIBLE
-   end
-
-   return self
-end
-
--- A button that toggles between two states.  The pressed state is drawn in the accent colours, and is restored
--- after the button's own hover, focus and enable styling.
-
-function toggleButton(Options:table):table
-   t = Options.tokens
-   base = gui.getTheme(Options.target).button
-   self = { pressed = false, hover = false }
-
-   -- The button restores its own background on hover and focus changes, so the pressed style is reapplied after each.
-   -- Focus events precede the button's restyle, so they reapply on the next cycle.  The label follows the background:
-   -- the base theme's button text can be light on its dark background.
-
-   function restyle()
-      if not self.pressed then return end
-      gui.applyStyle(self.button.bkgd, { fill = t.accentSoft, stroke = t.accent })
-      self.button._label?.fill = t.fg0
-   end
-
-   function restyleLater() -- The picker may have been closed in the meantime
-      if obj.find(self.bkgdID) then restyle() end
-   end
-
-   function release()
-      style = { fill = self.hover ? (base.highlight?.fill ?? base.bkgd.fill) : base.bkgd.fill }
-      style.stroke = self.button.hasFocus ? (base.focus?.stroke ?? base.bkgd.stroke) : base.bkgd.stroke
-      gui.applyStyle(self.button.bkgd, style)
-      self.button._label?.fill = base.text.fill
-   end
-
-   self.button = gui.button({
-      target = Options.target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
-      label = Options.label, theme = Options.theme, tip = Options.tip,
-      events = {
-         activate    = function() Options.onToggle(not self.pressed) end,
-         cursorEntry = function()
-            self.hover = true
-            restyle()
-         end,
-         cursorExit  = function()
-            self.hover = false
-            restyle()
-         end,
-         focus       = function() processing.delayedCall(restyleLater) end,
-         lostFocus   = function() processing.delayedCall(restyleLater) end,
-         enable      = restyle
-      }
-   })
-   self.bkgdID = self.button.bkgd.id
-
-   self.set = function(Pressed:bool)
-      if Pressed is self.pressed then return end
-      self.pressed = Pressed
-      if Pressed then restyle() else release() end
-   end
-
-   return self
+   return colourpicker_parts.trackStops(HUE_STOPS,
+      function(F:num):<num, num, num, num> return l, c, start + (F * 360), 1 end)
 end
 
 function buildRelationship(self:table, Target:obj)
@@ -2150,7 +1984,7 @@ function buildRelationship(self:table, Target:obj)
 
       row = { def = ch, gradient = gradient, mode = 'delta' }
 
-      row.key = toggleButton({
+      row.key = colourpicker_parts.toggleButton({
          target = self.relRows, x = PANEL_PAD, y = y + ((REL_ROW - SMALL_BUTTON) * 0.5), width = REL_KEY_W,
          height = SMALL_BUTTON, label = 'Δ' .. ch.key, theme = smallText(), tokens = t,
          tip = f'Click to switch {ch.name} between relative to the base (Δ{ch.key}) and absolute ({ch.key})',
@@ -2276,12 +2110,13 @@ function buildContrast(self:table, Target:obj)
    sw_x = PANEL_PAD + 11
    sw_y = row_y + ((CONTRAST_ROW_H - CONTRAST_SW) * 0.5)
    self.contrastFg = body.new('VectorPath', {
-      sequence = halfRound(sw_x + 0.5, sw_y + 0.5, CONTRAST_SW - 0.5, CONTRAST_SW - 1, 4, true),
+      sequence = colourpicker_parts.halfRound(sw_x + 0.5, sw_y + 0.5, CONTRAST_SW - 0.5, CONTRAST_SW - 1, 4, true),
       stroke = t.swatchBorder, strokeWidth = 1
    })
 
    self.contrastBg = body.new('VectorPath', {
-      sequence = halfRound(sw_x + CONTRAST_SW, sw_y + 0.5, CONTRAST_SW - 0.5, CONTRAST_SW - 1, 4, false),
+      sequence = colourpicker_parts.halfRound(sw_x + CONTRAST_SW, sw_y + 0.5,
+         CONTRAST_SW - 0.5, CONTRAST_SW - 1, 4, false),
       stroke = t.swatchBorder, strokeWidth = 1
    })
 
@@ -2291,12 +2126,12 @@ function buildContrast(self:table, Target:obj)
    })
    self.contrastSuffix = text(body, { y = ratio_base, size = 14, face = mono, fill = t.fg0, string = ':1' })
 
-   badge_y = row_y + ((CONTRAST_ROW_H - BADGE_H) * 0.5)
+   badge_y = row_y + ((CONTRAST_ROW_H - colourpicker_parts.BADGE_HEIGHT) * 0.5)
 
-   self.badgeAAA = badge(body, 'AAA', t)
+   self.badgeAAA = colourpicker_parts.badge(body, 'AAA', t)
    self.badgeAAA.viewport.{ x = PANEL_PAD + inner_w - 10 - self.badgeAAA.width, y = badge_y }
 
-   self.badgeAA = badge(body, 'AA', t)
+   self.badgeAA = colourpicker_parts.badge(body, 'AA', t)
    self.badgeAA.viewport.{ x = self.badgeAAA.viewport.x - 4 - self.badgeAA.width, y = badge_y }
 
    info_y = row_y + CONTRAST_ROW_H + 8
@@ -2898,7 +2733,7 @@ gui.dialog.colour = function(Options:table)
          colourpalette.nameAfterColour(s.palette, index)
          layoutLeft(self)
          &refresh('drop')
-         item = paletteItem(&paletteView, index)
+         item = &paletteItems[index]
          if item then &paletteView.revealItem(item) end
          return index
       end
@@ -2985,7 +2820,7 @@ gui.dialog.colour = function(Options:table)
       end
 
       &stopScratchDrag = function()
-         &scratchPress = nil
+         &scratchGesture?.cancel()
          &scratchClipboard?.free()
          &scratchClipboard = nil
          &scratchDrag?.preview?.free()
@@ -3101,7 +2936,7 @@ gui.dialog.colour = function(Options:table)
          end
          view  = &paletteView
          index = s.active
-         item  = paletteItem(view, index)
+         item  = &paletteItems[index]
          item ?! return
          palette = s.palette
          view.revealItem(item)
@@ -3414,57 +3249,23 @@ gui.dialog.colour = function(Options:table)
          &feedback = nil
          &wheel?.free()
          &manager?.destroy()
-         &manager = nil
          colourpicker_parts.cancelTimer(&copyTimer)
          colourpicker_parts.cancelTimer(&flashTimer)
          colourpicker_parts.cancelTimer(&exportFlash)
          &modeTabs?.cancelTip()
          &contrastTip?.cancel()
-         &contrastTip = nil
          &paletteDialog?.window?.surface?.free()
-         &paletteDialog = nil
-         &modeTabs = nil
-         &copyTimer = nil
-         &flashTimer = nil
-         &exportFlash = nil
-         &relPanel = nil
-         &relSliders = nil
-         &relRows = nil
-         &btnSwap = nil
-         &contrastPanel = nil
-         &ramp = nil
-         &exportPanel = nil
-         &code = nil
-         &copiedCell = nil
-         &wheel = nil
-         &loupe = nil
-         &btnPick = nil
-         &pickedSample = nil
-         &preview = nil
-         &paletteView = nil
-         &paletteModeBox = nil
-         &scratchRow = nil
-         &palettePanel = nil
-         &eyedropPanel = nil
-         &previewPanel = nil
-         &btnAddSwatch = nil
-         &btnLoadPalette = nil
-         &btnImport = nil
-         &btnExport = nil
-         &btnResetPalette = nil
-         &btnDeleteSwatch = nil
-         &channels = nil
-         &readoutCells = nil
-         &readoutRing = nil
-         &readoutVP = nil
-         &window = nil
-         &viewport = nil
-         &footer = nil
-         &modebar = nil
-         &columns = nil
-         &btnApply = nil
-         &btnCancel = nil
-         &btnReset = nil
+
+         fields = array<str> {
+            'manager', 'contrastTip', 'paletteDialog', 'modeTabs', 'copyTimer', 'flashTimer', 'exportFlash',
+            'relPanel', 'relSliders', 'relRows', 'btnSwap', 'contrastPanel', 'ramp', 'exportPanel', 'code',
+            'copiedCell', 'wheel', 'loupe', 'btnPick', 'pickedSample', 'preview', 'paletteView', 'paletteModeBox',
+            'scratchRow', 'palettePanel', 'eyedropPanel', 'previewPanel', 'btnAddSwatch', 'btnLoadPalette',
+            'btnImport', 'btnExport', 'btnResetPalette', 'btnDeleteSwatch', 'channels', 'readoutCells',
+            'readoutRing', 'readoutVP', 'window', 'viewport', 'footer', 'modebar', 'columns', 'btnApply',
+            'btnCancel', 'btnReset', 'scratchGesture', 'paletteItems'
+         }
+         for field in values(fields) do self[field] = nil end
 
          if feedback then feedback(Colour) end
          processing.collect('defer')
