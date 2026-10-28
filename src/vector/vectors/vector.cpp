@@ -2285,7 +2285,8 @@ TabOrder: Defines the priority of this vector within the tab order.
 
 If a vector maintains a keyboard subscription then it can define its priority within the tab order (the order in which
 vectors receive the focus when the user presses the tab key).  The highest priority is 1, the lowest is 255 (the default).
-When two vectors share the same priority, preference is given to the older of the two objects.
+When two vectors share the same priority, preference is given to the older of the two objects.  A vector that is
+disabled or hidden, or that has a disabled or hidden ancestor, is skipped by the tab order.
 
 *********************************************************************************************************************/
 
