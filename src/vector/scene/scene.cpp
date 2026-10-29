@@ -401,6 +401,16 @@ static void drop_participant_free(OBJECTPTR, ACTIONID, ERR, APTR)
    FreeResource(CurrentContext());
 }
 
+static void drop_snapshot_free(OBJECTPTR Object, ACTIONID, ERR, APTR, APTR Meta)
+{
+   std::unique_ptr<std::array<OBJECTID, 2>> participants((std::array<OBJECTID, 2> *)Meta);
+   kt::SwitchContext ctx(Object);
+   for (auto id : *participants) {
+      kt::ScopedObjectLock participant(id);
+      if (participant.granted()) UnsubscribeAction(*participant, AC::Free);
+   }
+}
+
 static ERR prepare_native_drop(OBJECTID SurfaceID, objConfig *Snapshot, double X, double Y, APTR)
 {
    auto scene = (extVectorScene *)CurrentContext();
@@ -419,6 +429,14 @@ static ERR prepare_native_drop(OBJECTID SurfaceID, objConfig *Snapshot, double X
    };
    Snapshot->write("Drop", "X", coordinate(X));
    Snapshot->write("Drop", "Y", coordinate(Y));
+   {
+      // The module outlives scene destruction, which can itself expire this snapshot.
+      auto participants = std::make_unique<std::array<OBJECTID, 2>>(std::array{target->UID, scene->UID});
+      kt::SwitchContext ctx(glVectorModule);
+      auto error = SubscribeAction(Snapshot, AC::Free, C_FUNCTION(drop_snapshot_free, participants.get()));
+      if (error != ERR::Okay) return error;
+      participants.release();
+   }
    {
       kt::SwitchContext ctx(Snapshot);
       if ((SubscribeAction(target, AC::Free, C_FUNCTION(drop_participant_free)) != ERR::Okay) or
