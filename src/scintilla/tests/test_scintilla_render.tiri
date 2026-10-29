@@ -2,10 +2,11 @@
 -- shows through the Canvas rectangle.  Painting is deferred to the next cycle of message processing, so each render
 -- draws the scene, processes messages and then draws the scene again before pixels are probed.
 --
--- The default font is Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of 4
+-- These geometry tests explicitly use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of 4
 -- means that text starts at x = 4.
 
    include 'scintilla', 'vector', 'display'
+   module vector as mVec
    module display as mGfx
 
 PAGE_WIDTH  = 300
@@ -20,6 +21,8 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
    options.lineHighlight ?= '255,255,255,0'
    local sci = vp.new('Scintilla', options)
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
@@ -284,7 +287,7 @@ end
    local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local host = root.new('VectorViewport', { x=10.5, y=20.25, width=200, height=60 })
-   local sci = host.new('Scintilla', { lineHighlight='255,255,255,0' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    sci.string = 'Hello World\nSecond line'
@@ -342,12 +345,12 @@ end
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
 
-   local clean = left.new('Scintilla', { lineHighlight='255,255,255,0' })
+   local clean = left.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
    clean.string = 'H\nH\nH'
    render(scene)
    local reference = darkRowProfile(bmp, 0, 0, 20, 40)
 
-   local small = right.new('Scintilla', { lineHighlight='255,255,255,0' })
+   local small = right.new('Scintilla', { face='Small', fontSize=11, lineHighlight='255,255,255,0' })
    check small.mtSetFont('Small')
    small.string = 'H\nH\nH'
    render(scene)
@@ -380,4 +383,107 @@ end
    assert(colourAt(bmp, 200, 6) is '250,240,200', f'The text line must use BkgdColour, got {colourAt(bmp, 200, 6)}')
    assert(colourAt(bmp, 200, 60) is '250,240,200', 'The area beyond the last line must use BkgdColour')
    assert(darkPixels(bmp, TEXT_LEFT, 0, 6 * 7, LINE_HEIGHT) > 20, 'The text must be drawn')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Scalable font drawing and layout
+
+@Test function TrueTypeFaceRenders()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=20 })
+   sci.string = 'Scalable text'
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 200, 35) > 100, 'A TrueType face must draw visible glyphs')
+   assert(countPixels(bmp, TEXT_LEFT, 0, 200, 35, isGrey) > 20, 'TrueType outlines must be antialiased')
+end
+
+@Test function MonospacedCombiningMarkSelection()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Inconsolata', fontSize=20, selectBkgd='255,0,0,255' })
+   local _, handle = check mVec.GetFontHandle(sci.face, 'Regular', 0, sci.fontSize)
+   local text = 'i\u{0301}i'
+   local width = math.floor(mVec.StringWidth(handle, text, -1) + 0.5)
+   assert(width is mVec.StringWidth(handle, 'ii', -1), 'The combining accent must have zero advance')
+   sci.string = text
+   check sci.mtSelectRange(0, #text)
+   render(scene)
+
+   local selected = (R, G, B) => R is 255 and G is 0 and B is 0
+   assert(countPixels(bmp, TEXT_LEFT, 0, width, 40, selected) > 0, 'The selected text must be highlighted')
+   assert(countPixels(bmp, TEXT_LEFT + width, 0, 20, 40, selected) is 0,
+      'The selection must end at the rendered advance, without an extra cell for the combining accent')
+end
+
+@Test function MonospacedCombiningMarkScrollWidth()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Inconsolata', fontSize=20 })
+   sci.string = ('ii').rep(30)
+   render(scene)
+   local width = sci.page.width
+   assert(width > PAGE_WIDTH, 'The text must be wide enough to scroll')
+
+   sci.string = ('i\u{0301}i').rep(30)
+   render(scene)
+   assert(sci.page.width is width, 'Zero-width combining accents must not enlarge the horizontal scroll range')
+end
+
+@Test function BitmapFaceStillRenders()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Clean', fontSize=11 })
+   sci.string = 'H\nH'
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 7, LINE_HEIGHT) > 10, 'Clean must still draw its first glyph')
+   assert(darkRowProfile(bmp, TEXT_LEFT, 0, 7, LINE_HEIGHT) is
+      darkRowProfile(bmp, TEXT_LEFT, LINE_HEIGHT, 7, LINE_HEIGHT), 'Clean must retain its 13 pixel line spacing')
+end
+
+@Test function FontSizeChangesLineHeight()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=12 })
+   sci.string = ('H\n').rep(50)
+   render(scene)
+   local old_height = sci.page.height
+   sci.fontSize = 24
+   render(scene)
+   assert(sci.page.height > old_height * 1.7, 'A larger size must update the page line spacing')
+   local resized = darkRowProfile(bmp, TEXT_LEFT, 0, 20, 80)
+   local other_scene <close>, other_vp, other, other_bmp = newEditor({ face='Source Code Pro', fontSize=24 })
+   other.string = sci.string
+   render(other_scene)
+   assert(resized is darkRowProfile(other_bmp, TEXT_LEFT, 0, 20, 80),
+      'Resizing after Init must match creating an editor at that size')
+end
+
+@Test function AccentedCapitalsStayInLine()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Noto Sans', fontSize=24 })
+   local _, handle = check mVec.GetFontHandle('Noto Sans', 'Regular', 0, 24)
+   local metrics = struct<FontMetrics>
+   check mVec.GetFontMetrics(handle, metrics)
+   sci.string = '\nÉÅ\n'
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 70, metrics.lineSpacing) is 0,
+      'Accented capitals must not paint into the preceding line')
+   assert(darkPixels(bmp, TEXT_LEFT, metrics.lineSpacing, 70, metrics.lineSpacing) > 50,
+      'The accented capitals must remain visible within their line')
+end
+
+@Test function VariableFontStylesResolve()
+   for face in values(array<str> { 'Source Code Pro', 'Noto Sans' }) do
+      local handles = { }
+      for i, style in ipairs({ 'Regular', 'Bold', 'Italic', 'Bold Italic' }) do
+         local _, handle = check mVec.GetFontHandle(face, style, 0, 24)
+         for _, previous in pairs(handles) do
+            assert(handle != previous, f'{face} {style} must resolve a distinct style handle')
+         end
+         handles[i] = handle
+      end
+   end
+end
+
+@Test function BoldStyleIsHeavier()
+   -- C++ brace matching uses the bold brace-light style.  Move the caret away for the regular reference.
+   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=32, lexer=SCLEX_CPP })
+   sci.string = '{} '
+   check sci.mtSelectRange(3, 3)
+   render(scene)
+   local regular = countPixels(bmp, TEXT_LEFT, 0, 40, 50, (R, G, B) => R < 240 or G < 240 or B < 240)
+   check sci.mtSelectRange(1, 1)
+   render(scene)
+   local bold = countPixels(bmp, TEXT_LEFT, 0, 40, 50, (R, G, B) => R < 240 or G < 240 or B < 240)
+   assert(bold > regular, f'The bold brace style must add ink: regular={regular}, bold={bold}')
 end

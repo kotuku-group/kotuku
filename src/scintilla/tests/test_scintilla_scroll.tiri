@@ -2,7 +2,7 @@
 -- document.  Scrolling moves the Page within the View, while the Canvas rides inside the Page at the scroll position
 -- so that it always covers the View.  Scintilla scrolls by whole lines, so the Page is always snapped to a line.
 --
--- The default font is Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of 4
+-- These geometry tests explicitly use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of 4
 -- means that text starts at x = 4.  The 120 pixel high View shows 9 whole lines.
 
    import 'gui', 'gui/scrollbar'
@@ -42,6 +42,8 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
    options.lineHighlight ?= '255,255,255,0'
    local sci = vp.new('Scintilla', options)
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
@@ -132,7 +134,7 @@ end
    local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local host = root.new('VectorViewport', { x=0, y=0, width=200, height=60 })
-   local sci = host.new('Scintilla', { lineHighlight='255,255,255,0' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    sci.string = newDocument()
@@ -341,7 +343,7 @@ function newSurfaceEditor(Text:str!):<obj, obj, obj, obj>
    local surface = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
    local scene = surface.new('VectorScene', { surface=surface })
    local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   local sci = host.new('Scintilla', { lineHighlight='255,255,255,0' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
    sci.string = Text
    return surface, scene, host, sci
 end

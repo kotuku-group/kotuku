@@ -13,9 +13,7 @@ class extScintilla : public objScintilla {
    FUNCTION EventCallback;
    FUNCTION MarginClick;
    objFile *FileStream;
-   objFont *BoldFont;            // Bold version of the current font
-   objFont *ItalicFont;          // Italic version of the current font
-   objFont *BIFont;              // Bold-Italic version of the current font
+   APTR FontHandles[4] = {};         // Regular, bold, italic and bold italic; shared vector module handles
    objVectorScene *Scene;        // The scene that hosts the Viewport
    objVectorRectangle *Canvas;   // Displays the Bitmap within the Page
    objVectorImage *Image;        // Scene definition that wraps the Bitmap for use as the Canvas fill
@@ -59,13 +57,8 @@ class extScintilla : public objScintilla {
    uint8_t  ScrollLocked;      // Set while the editor is scrolling in response to a Page change
 
    extScintilla(objMetaClass *ClassPtr, OBJECTID ObjectID) : objScintilla(ClassPtr, ObjectID) {
-      if (NewLocalObject(CLASSID::FONT, (OBJECTPTR *)&Font) != ERR::Okay) {
-         kt::Log().fatal(ERR::NewObject);
-      }
-
-      // Clean is a bundled bitmap face with monospaced glyphs, and 8 is the only point size that it offers.
-      Font->setFace("Clean");
-      Font->setPoint(8);
+      Face = "Source Code Pro";
+      FontSize = 14;
       LeftMargin  = 4;
       RightMargin = 30;
       AutoIndent  = TRUE;

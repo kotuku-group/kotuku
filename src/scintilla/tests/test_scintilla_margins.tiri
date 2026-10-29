@@ -1,6 +1,6 @@
 -- Tests for the symbol and fold margins of the Scintilla class: markers, folding and margin clicks.
 --
--- The default font is Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The visible margins are laid
+-- These geometry tests explicitly use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The visible margins are laid
 -- out from the left edge in the order line numbers, symbols, folding.  The symbol and fold margins are 20 pixels wide
 -- each, and the text starts after them and the 4 pixel LeftMargin.
 --
@@ -35,6 +35,8 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
    options.lineHighlight ?= '255,255,255,0'
    local sci = vp.new('Scintilla', options)
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
@@ -44,6 +46,8 @@ end
 
 function newFoldEditor(Options:table):<obj, obj, obj, obj>
    local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
    options.lexer ?= SCLEX_CPP
    options.foldingMarkers ?= true
    local scene, vp, sci, bmp = newEditor(options)
@@ -509,6 +513,8 @@ function newSurfaceEditor(Options:table):<obj, obj>
    local scene = surface.new('VectorScene', { surface=surface })
    local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
    options.flags ?= SCIF_EDIT
    options.lineHighlight ?= '255,255,255,0'
    options.lexer ?= SCLEX_CPP

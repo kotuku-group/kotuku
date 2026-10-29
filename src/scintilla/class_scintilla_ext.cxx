@@ -914,8 +914,8 @@ void ScintillaKTK::panRedraw()
 }
 
 /*********************************************************************************************************************
-** Called on initialisation and from the SetFont() method whenever the user opts to change the font.  The font objects
-** are read from the Scintilla object by SurfacePan::GetFont().
+** Called on initialisation and whenever Face or FontSize changes.  SurfacePan::GetFont() reads the style handles
+** from the owning Scintilla object.
 */
 
 void ScintillaKTK::panFontChanged()

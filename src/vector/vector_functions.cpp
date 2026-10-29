@@ -957,10 +957,10 @@ ERR GetFontMetrics(APTR Handle, struct FontMetrics *Metrics)
    }
    else {
       auto font = ((bmp_font *)Handle)->font;
-      Metrics->Height      = font->Ascent;
+      Metrics->Height      = font->MaxHeight;
       Metrics->LineSpacing = font->LineSpacing;
-      Metrics->Ascent      = font->Height;
-      Metrics->Descent     = font->Gutter;
+      Metrics->Ascent      = font->Ascent;
+      Metrics->Descent     = std::max(0, font->MaxHeight - font->Ascent);
       return ERR::Okay;
    }
 }

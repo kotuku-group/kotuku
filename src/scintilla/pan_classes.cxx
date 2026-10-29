@@ -1,10 +1,3 @@
-
-int GetFontLeading(void *TheFont)
-{
-   //log.trace("GetFontLeading()");
-   return static_cast<objFont *>(TheFont)->Leading;
-}
-
 //********************************************************************************************************************
 // Point class
 
@@ -31,9 +24,9 @@ void Scintilla::Palette::WantFind(Scintilla::ColourPair &cp, bool want)
 // Font class
 //
 // Scintilla will try to create a font for every style allocated, which is overkill.  Instead, each Scintilla object
-// allocates a regular, bold, italic and bold-italic font, and Font::Create() only records the bold and italic state of
-// the style.  SurfacePan::GetFont() resolves that state to the font objects of the Scintilla object that owns the
-// surface.  The face name and size requested by the style are ignored.
+// resolves regular, bold, italic and bold italic font handles.  Font::Create() only records the bold and italic
+// state of the style.  SurfacePan::GetFont() resolves that state to the font handles of the owning Scintilla object.
+// The face name and size requested by the style are ignored.
 
 Scintilla::Font::Font()
 {

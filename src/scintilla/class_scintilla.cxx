@@ -211,7 +211,8 @@ static ERR SET_Wordwrap(extScintilla *, int);
 
 //********************************************************************************************************************
 
-static void create_styled_fonts(extScintilla *);
+static ERR resolve_fonts(extScintilla *, std::string_view, int);
+static ERR SET_Face(extScintilla *, const std::string_view &);
 static ERR create_scintilla(void);
 static ERR create_canvas(extScintilla *);
 static ERR feedback_view(objVectorViewport *, FM);
@@ -1164,9 +1165,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    Self->Scene = Self->Viewport->Scene;
 
-   if (InitObject(Self->Font) != ERR::Okay) return ERR::Init;
-
-   create_styled_fonts(Self);
+   if (auto error = resolve_fonts(Self, Self->Face, Self->FontSize); error != ERR::Okay) return error;
 
    if (auto error = create_canvas(Self); error != ERR::Okay) return error;
 
@@ -1598,17 +1597,21 @@ static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Arg
 SetFont: Changes the font that is used for text display.
 
 Call SetFont() to change the font face that is used for displaying text.  The `Face` is a family name as accepted by
-the Face field of the @Font class, e.g. `Clean`.  The point size of the current font is retained.
+the #Face field, e.g. `Source Code Pro` or `Clean`.  The current #FontSize in pixels is retained.
 
 If the new face is invalid or fails to load, the current font will remain unchanged.
 
 -INPUT-
 strview Face: The name of the new font face.
 
--RESULT-
-Okay:
-NullArgs:
-CreateObject: Failed to create a Font object.
+-ERRORS-
+Okay
+NullArgs
+CreateObject: Failed to resolve the font handle.
+Search: No matching font could be resolved.
+File: The font file could not be loaded.
+ResolvePath
+CreateResource
 -END-
 
 *********************************************************************************************************************/
@@ -1621,20 +1624,7 @@ static ERR SCINTILLA_SetFont(extScintilla *Self, struct sci::SetFont *Args)
 
    log.branch("%.*s", int(Args->Face.size()), Args->Face.data());
 
-   if (auto font = objFont::create::local(fl::Face(Args->Face), fl::Point(Self->Font->Point))) {
-      FreeResource(Self->Font);
-      Self->Font = font;
-      create_styled_fonts(Self);
-
-      if (Self->initialised()) {
-         Self->API->panFontChanged();
-         calc_longest_line(Self);
-         Self->MarginDigits = -1; // Force the line number margin to be resized
-         update_margin_width(Self);
-      }
-      return ERR::Okay;
-   }
-   else return ERR::CreateObject;
+   return SET_Face(Self, Args->Face);
 }
 
 /*********************************************************************************************************************
@@ -2020,13 +2010,46 @@ static ERR SET_FoldingMarkers(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Font: Refers to the font that is used for drawing text in the document.
+Face: The font family used for drawing and measuring document text.
 
-This field refers to the font object that is used for drawing text in the document.  It is recommended that all
-font customisation takes place prior to initialisation of the Scintilla object.  Directly altering the font object
-after initialisation may result in clashes with the Scintilla class that produce unpredictable results.
+Accepts a font family name supported by the vector module's GetFontHandle() function, including bitmap faces such
+as `Clean`.
+The default is `Source Code Pro`.  Regular, bold, italic and bold italic styles share this family and #FontSize.
+Set this field before or after initialisation.  Changing it reloads the styles and updates layout and margins.
+#SetFont() provides the same operation.  A failed resolution preserves the current face and handles.
 
-To change the font post-initialisation, please use the #SetFont() method.
+This field and #FontSize replace the former Font object field; scripts must use these fields to customise fonts.
+
+*********************************************************************************************************************/
+
+static ERR SET_Face(extScintilla *Self, const std::string_view &Value)
+{
+   if (Value.empty()) return ERR::NullArgs;
+   if (Self->initialised()) return resolve_fonts(Self, Value, Self->FontSize);
+   Self->Face = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+FontSize: The font em size in pixels.
+
+Sets a positive integer pixel size for every text style.  The default is 14 pixels.  This is not a point size and
+is independent of display density.  Bitmap faces select their nearest supported point size.
+Set this field before or after initialisation.  Changing it reloads the font handles and updates layout and margins.
+
+*********************************************************************************************************************/
+
+static ERR SET_FontSize(extScintilla *Self, int Value)
+{
+   if (Value <= 0) return ERR::OutOfRange;
+   if (Self->initialised()) return resolve_fonts(Self, Self->Face, Value);
+   Self->FontSize = Value;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -FIELD-
 LeftMargin: The amount of white-space at the left side of the page.
@@ -2542,38 +2565,32 @@ static ERR SET_Wordwrap(extScintilla *Self, int Value)
 
 //********************************************************************************************************************
 
-static void create_styled_fonts(extScintilla *Self)
+static ERR resolve_fonts(extScintilla *Self, std::string_view Face, int Size)
 {
-   kt::Log log;
+   kt::Log log(__FUNCTION__);
+   APTR handles[4] = {};
+   constexpr CSTRING styles[] = { "Regular", "Bold", "Italic", "Bold Italic" };
 
-   if (!Self->Font) return;
-   log.msg("create_styled_fonts(%s,%.2f,$%.8x)", Self->Font->Face.c_str(),
-      Self->Font->Point, int(Self->Font->Flags));
+   if (auto error = vec::GetFontHandle(Face, styles[0], 0, Size, &handles[0]); error != ERR::Okay) return error;
 
-   if (Self->BoldFont)   { FreeResource(Self->BoldFont); Self->BoldFont = nullptr; }
-   if (Self->ItalicFont) { FreeResource(Self->ItalicFont); Self->ItalicFont = nullptr; }
-   if (Self->BIFont)     { FreeResource(Self->BIFont); Self->BIFont = nullptr; }
-
-   if ((Self->BoldFont = objFont::create::local(
-         fl::Face(Self->Font->Face),
-         fl::Point(Self->Font->Point),
-         fl::Flags(Self->Font->Flags),
-         fl::Style("Bold")))) {
+   for (int i = 0; i < 4; i++) {
+      if (i and (vec::GetFontHandle(Face, styles[i], 0, Size, &handles[i]) != ERR::Okay)) {
+         handles[i] = handles[0];
+         log.warning("Unable to resolve %.*s %s; using Regular.", int(Face.size()), Face.data(), styles[i]);
+      }
    }
 
-   if ((Self->ItalicFont = objFont::create::local(
-         fl::Face(Self->Font->Face),
-         fl::Point(Self->Font->Point),
-         fl::Flags(Self->Font->Flags),
-         fl::Style("Italic")))) {
-   }
+   Self->Face = Face;
+   Self->FontSize = Size;
+   std::copy(std::begin(handles), std::end(handles), Self->FontHandles);
 
-   if ((Self->BIFont = objFont::create::local(
-         fl::Face(Self->Font->Face),
-         fl::Point(Self->Font->Point),
-         fl::Flags(Self->Font->Flags),
-         fl::Style("Bold Italic")))) {
+   if (Self->initialised()) {
+      Self->API->panFontChanged();
+      calc_longest_line(Self);
+      Self->MarginDigits = -1;
+      update_margin_width(Self);
    }
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -2862,7 +2879,7 @@ static void calc_longest_line(extScintilla *Self)
    int linewidth;
    static const int LINE_COUNT_LIMIT = 2000;
 
-   if (!Self->Font) return;
+   if (not Self->FontHandles[0]) return;
 
    kt::Log log(__FUNCTION__);
    log.traceBranch("Wrap: %d", Self->Wordwrap);
@@ -2879,12 +2896,10 @@ static void calc_longest_line(extScintilla *Self)
    }
    else { // Find the line with the longest width
       for (int i=0; i < lines; i++) {
+         int start = SCICALL(SCI_POSITIONFROMLINE, i);
          int end = SCICALL(SCI_GETLINEENDPOSITION, i);
-         if (Self->Font->FixedWidth) {
-            int col = SCICALL(SCI_GETCOLUMN, end);
-            linewidth = col * Self->Font->FixedWidth;
-         }
-         else linewidth = SCICALL(SCI_POINTXFROMPOSITION, 0, end);
+         // Subtract the line start so margins and horizontal scrolling do not affect the measured width.
+         linewidth = SCICALL(SCI_POINTXFROMPOSITION, 0, end) - SCICALL(SCI_POINTXFROMPOSITION, 0, start);
 
          if (linewidth > cwidth) {
             cline = i;
@@ -3007,10 +3022,6 @@ extScintilla::~extScintilla() {
    if (Bitmap)      FreeResource(Bitmap);
    if (FillColour)  FreeResource(FillColour);
    if (StrokeColour) FreeResource(StrokeColour);
-   if (Font)        FreeResource(Font);
-   if (BoldFont)    FreeResource(BoldFont);
-   if (ItalicFont)  FreeResource(ItalicFont);
-   if (BIFont)      FreeResource(BIFont);
 }
 
 //********************************************************************************************************************
@@ -3018,7 +3029,7 @@ extScintilla::~extScintilla() {
 #include "class_scintilla_def.cxx"
 
 static const FieldArray clFields[] = {
-   { "Font",           FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::FONT },
+   { "Face",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Face },
    { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "EventFlags",     FDF_INT|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clScintillaEventFlags },
    { "Flags",          FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScintillaFlags },
@@ -3038,6 +3049,7 @@ static const FieldArray clFields[] = {
    { "CursorCol",      FDF_INT|FDF_R, GET_CursorCol },
    { "Lexer",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Lexer, &clScintillaLexer },
    { "Modified",       FDF_INT|FDF_RW, nullptr, SET_Modified },
+   { "FontSize",       FDF_INT|FDF_RW, nullptr, SET_FontSize },
 
    // Virtual fields
    { "AllowTabs",      FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
