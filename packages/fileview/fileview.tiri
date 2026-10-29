@@ -6,7 +6,7 @@ Enhances any view object, such as listview or columnview to create a file system
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui', 'gui/menu', 'gui/dialog', 'gui/toolbar', 'gui/columnview', 'gui/listview'
+   import 'gui', 'gui/menu', 'gui/dialog', 'gui/toolbar', 'gui/columnview', 'gui/listview', 'gui/button', 'gui/input'
    import 'gui/fontdialog', 'io/filemgr', 'json'
    include 'vector'
 
@@ -793,22 +793,19 @@ gui.fileview = function(Options)
       end
    end
 
-   function shortcutBrowse()
-      txtPath = obj.find('txtPath')
-
-      if txtPath?? then
-         &dlgShortcutBrowse = gui.dialog.file({
-            title    = 'Select a Folder',
-            path     = txtPath.string,
-            okLabel  = 'Select Dir',
-            noFiles  = true,
-            selectFolder = true,
-            feedback = function[&&](Dialog, Path, Files)
-               &dlgShortcutBrowse = nil
-               txtPath.string = Path
-            end
-         })
-      end
+   function shortcutBrowse(ShortcutDialog:table!)
+      &dlgShortcutBrowse = gui.dialog.file({
+         title    = 'Select a Folder',
+         path     = ShortcutDialog.pathInput.getText(),
+         popOver  = ShortcutDialog.window.surface,
+         okLabel  = 'Select Dir',
+         noFiles  = true,
+         selectFolder = true,
+         feedback = function[&&](Dialog, Path, Files)
+            &dlgShortcutBrowse = nil
+            if Path and ShortcutDialog.window then ShortcutDialog.pathInput.setText(Path) end
+         end
+      })
    end
 
    -- Execute a command with a given Mode.  All files listed in the Items argument will be passed to the object as
@@ -1068,10 +1065,6 @@ gui.fileview = function(Options)
 
       Shortcut ?= ''
       Path ?= ''
-      inject = [[<table columns="50,0" width="100%" vspacing="4">]]
-         .. [[<row><cell>Name:</cell><cell><input name="txtName" string="]] .. Shortcut .. [[" flags="!enteractivate|ignorefocus" width="180"><action static method="exec" procedure="dlgResponse" object="[dlgCustom]" args="8"/></input></cell></row>]]
-         .. [[<row><cell>Path:</cell><cell><p nowrap><input name="txtPath" string="]] .. Path .. [[" flags="!enteractivate|ignorefocus" width="180"><action static method="exec" procedure="dlgResponse" object="[dlgCustom]" args="8"/></input><a onclick="dlgCustom.shortcutBrowse"><image src="icons:folders/folder(16)" westgap="8"/></a></p></cell></row>]]
-         .. [[</table>]]
 
       &dlgShortcut = gui.dialog.message({
          title   = 'Create Shortcut',
@@ -1084,13 +1077,30 @@ gui.fileview = function(Options)
             { id=-1, label='Cancel', icon='items/cancel' },
             { id=1, label='Okay', icon='items/checkmark' }
          },
-         inject = inject,
+         content = function(Dialog:table!, Target:obj!, Width:num!):num
+            gap = gui.sizing.widget.gap
+            label_width = gui.rpixel('50dp')
+            Dialog.nameInput = gui.input({
+               target = Target, width = Width, label = 'Name:', labelWidth = label_width, text = Shortcut
+            })
+            y = Dialog.nameInput.viewport.height + gap
+            Dialog.pathInput = gui.input({
+               target = Target, y = y, width = Width, label = 'Path:', labelWidth = label_width, text = Path
+            })
+            Dialog.browseButton = gui.button({
+               target = Target, y = y, xOffset = 0, height = Dialog.pathInput.viewport.height,
+               icon = 'folders/folder', tip = 'Browse for a folder',
+               events = { activate = function[self]() shortcutBrowse(Dialog) end }
+            })
+            Dialog.pathInput.viewport.width = Width - Dialog.browseButton.viewport.width - gap
+            return y + Dialog.pathInput.viewport.height
+         end,
          feedback = function[&&](Dialog, Response, State)
             if Response?.id is 1 then
-               txtName = obj.find('txtName')
-               txtPath = obj.find('txtPath')
-               if txtName?? and txtPath?? then
-                  mSys.SetVolume(txtName.string, txtPath.string, nil, nil, nil, VOLUME_REPLACE)
+               name = Dialog.nameInput.getText()
+               path = Dialog.pathInput.getText()
+               if name?? and path?? then
+                  mSys.SetVolume(name, path, nil, nil, nil, VOLUME_REPLACE)
                   -- TODO: New shortcut should be permanently saved
                end
             end

@@ -6,18 +6,27 @@ Display a dialog message to the user.
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui', 'gui/window'
+   import 'gui', 'gui/layout', 'gui/window', 'gui/button', 'gui/input', 'gui/toggle'
 
-   include 'document', 'xml'
+   include 'vector'
+
+   module vector as mVec
 
    namespace gui
 
-LINE_SPACING, FONT_HEIGHT = gui.getFontHeight(gui.fonts.window)
-MIN_WIDTH <const> = 300
-MAX_WIDTH <const> = 600
+SCALE     <const> = gui.interface.dpi / 96 -- Sizes are in pixels at 96 DPI
+MIN_WIDTH <const> = math.round(300 * SCALE)
+MAX_WIDTH <const> = math.round(600 * SCALE)
+ICON_SIZE <const> = math.round(72 * SCALE)
+GAP       <const> = gui.sizing.widget.gap     -- Space between buttons
+ICON_GAP  <const> = gui.sizing.widget.gap * 2 -- Horizontal space between the icon and the message column
 
-rx_sanitise_icon = <{ regex.new([[^(%w+)\/(%w+)]]) }>
-rx_word = <{ regex.new([[\S+]]) }>
+-- Vertical spacing, in ems of the message font, so that it follows the size of the text.
+
+TOP_SPACING     <const> = 1    -- Between the top margin and the icon and message
+MESSAGE_SPACING <const> = 1    -- Between the message and the widgets beneath it
+ROW_SPACING     <const> = 1    -- Between rows of widgets
+BUTTON_SPACING  <const> = 1.25 -- Above the buttons
 
 ICONS <const> = {
    error     = 'items/error',
@@ -31,38 +40,86 @@ ICONS <const> = {
 
    gui.dialog ?= { }
 
--- Find a vector by class and name in the branch starting at Vector, searching depth first.
+-- Return the length of the longest prefix of Word that fits Width pixels, cut at a UTF-8 character boundary.  At least
+-- one character is always returned.
 
-function findVector(Vector:obj, ClassName:str!, Name:str!):obj
-   while Vector do
-      if (Vector.class.className is ClassName) and (Vector.name is Name) then return Vector end
-      if Vector.child then
-         found = findVector(Vector.child, ClassName, Name)
-         if found then return found end
+function fitLength(Font:any!, Word:str!, Width:num!):num
+   cut = #Word
+   while cut > 1 do
+      cut -= 1
+      while (cut > 1) and ((Word.byte(cut) & 0xc0) is 0x80) do cut -= 1 end -- Step back over continuation bytes
+      if mVec.StringWidth(Font, Word.sub(0, cut), -1) <= Width then return cut end
+   end
+
+   cut = 1
+   while (cut < #Word) and ((Word.byte(cut) & 0xc0) is 0x80) do cut++ end
+   return cut
+end
+
+-- Word-wrap Text to fit Width pixels when drawn with Font.  Line breaks in Text are preserved.  A word that is too
+-- wide for a line of its own, such as a long file path, is broken between characters.
+
+function wrapText(Font:any!, Text:str!, Width:num!):array<str>
+   lines = array<str>
+   for para in values(Text.split('\n')) do
+      line = ''
+      for word in values(para.split(' ')) do
+         if #word is 0 then continue end
+         candidate = (#line > 0) ? f'{line} {word}' : word
+         if mVec.StringWidth(Font, candidate, -1) <= Width then
+            line = candidate
+            continue
+         end
+
+         if #line > 0 then lines.push(line) end
+         while mVec.StringWidth(Font, word, -1) > Width do
+            cut = fitLength(Font, word, Width)
+            lines.push(word.sub(0, cut))
+            word = word.sub(cut)
+         end
+         line = word
       end
-      Vector = Vector.next
+      lines.push(line)
    end
-   return nil
+   return lines
 end
 
-function defaultIcon():str
-   if &type and ICONS[&type] then
-      return ICONS[&type]
+-- The response options are accepted as a list table or an array.  Any other value results in a single Close option.
+
+function readOptions(Options:any):array<table>
+   list = array<table>
+   if Options is <array> then
+      for _, option in Options do list.push(option) end
+   elseif Options is <table> then
+      for _, option in ipairs(Options) do list.push(option) end
    end
-   return 'items/question'
+
+   if #list is 0 then
+      list.push({ id=1, label='Close Dialog', icon='items/cancel' })
+   end
+   return list
 end
 
-gui.dialog.message = function(Options)
+gui.dialog.message = function(Options:table!)
+   if not (Options.message is <str>) then
+      raise 'Dialog requires a message string.'
+   end
+
    self = entity { -- Public interface
-      document = nil,
-      options  = Options.options,
-      type     = Options.type,
-      feedback = Options.feedback,
+      options       = readOptions(Options.options),
+      type          = Options.type,
+      feedback      = Options.feedback,
       inputRequired = Options.inputRequired,
-      message     = Options.message,
-      fmtMessage  = Options.fmtMessage,
-      scaleWindow = Options.scale is false ? nil : true -- Scale by default
+      message       = Options.message,
+      scaleWindow   = Options.scale is false ? nil : true, -- Scale by default
+      buttons       = array<table>, -- One button per option, in the same order
+      input         = nil, -- The input box, if userInput is set
+      checkbox      = nil, -- The toggle, if checkboxLabel is set
+      messageText   = nil, -- The VectorText that displays the message
+      viewport      = nil  -- The client viewport that contains the dialog content
    }
+
+   local font, em, text_width, content_height, primary, buttons_width
 
    -- Wait for the user to respond to the dialog.
 
@@ -72,248 +129,257 @@ gui.dialog.message = function(Options)
       &waiting = nil
    end
 
-   -- Configure the window according to initial doc size
+   -- Release the dialog once the user has responded.  The window is closed when the dialog table is collected.
 
-   function matchWindowToDocSize(Document)
-      page_width  = Document.pageWidth
-      page_height = Document.pageHeight
+   function[self] finish()
+      if &waiting then processing.signal() end
+      &keyboard?.unsubscribe()
+      &clear()
+      processing.collect('defer')
+   end
 
-      if page_width < 100 then page_width = 100 end
-      if page_height < 100 then page_height = 100 end
+   -- Report the option at Index to the client.  Bound to the dialog, as button callbacks run in the button's context.
 
-      &window.sizeHints(page_width/4, page_height/4, page_width * 3, page_height * 3, &scaleWindow)
-      &window.surface.width  = page_width
-      &window.surface.height = page_height
+   function[self] respond(Index:num!)
+      if not &window then return end -- The dialog has already responded
 
-      -- If the viewport dimensions are set, the dialog will scale with the window.
+      response = &options[Index]
+      state = { checkbox = (&checkbox?.value is 1) }
+
+      if &input then
+         text = &input.getText()
+         if #text > 0 then state.input = text end
+      end
+
+      if &inputRequired and not state.input then
+         -- If input is mandatory, the response is cancelled when no input is given
+         response = nil
+      end
+
+      &feedback?(&&, response, state)
+      finish()
+   end
+
+   function[self] cancel()
+      if not &window then return end
+      &feedback?(&&, nil, nil)
+      finish()
+   end
+
+   -- Wrap the message to the message column and position everything beneath it.  The window is resized to fit the
+   -- content.  The message is aligned with the top of the icon.
+
+   function arrange()
+      lines = wrapText(font, &message, text_width)
+      &messageText.string = lines.concat('\n')
+
+      _, ascent = gui.layout.textMetrics(&messageText)
+      top = &window.margins.top + (em * TOP_SPACING)
+      &image?.y = 0
+      &messageText.y = math.round(top + ascent)
+
+      -- Each row is placed beneath the bottom of the content above it.
+
+      bottom = top + (&messageText.lineSpacing * #lines)
+      y = bottom + (em * MESSAGE_SPACING)
+
+      if &input then
+         &input.viewport.y = math.round(y)
+         bottom = y + &input.viewport.height
+         y = bottom + (em * ROW_SPACING)
+      end
+
+      if &checkbox then
+         &checkbox.viewport.y = math.round(y)
+         bottom = y + &checkbox.viewport.height
+         y = bottom + (em * ROW_SPACING)
+      end
+
+      if &contentViewport then
+         &contentViewport.y = math.round(y)
+         bottom = y + content_height
+      end
+
+      -- The buttons are right-aligned.  A row of buttons that is wider than the message column widens the window.
+
+      width = math.max(&window.margins.left + ICON_SIZE + ICON_GAP + text_width + &window.margins.right, buttons_width + (&window.margins.left + &window.margins.right))
+      y = math.round(math.max(bottom, top + ICON_SIZE) + (em * BUTTON_SPACING))
+      x = width - &window.margins.right - buttons_width
+      for btn in values(&buttons) do
+         btn.viewport.{ x = math.round(x), y = y }
+         x += btn.viewport.width + GAP
+      end
+
+      height = y + &buttons[0].viewport.height + &window.margins.bottom
+
       if &scaleWindow then
-         &viewport.aspectRatio = 'XMin|YMin'
-         &viewport.viewWidth   = page_width
-         &viewport.viewHeight  = page_height
-         Document.view.width   = page_width
-         Document.view.height  = page_height
-      end
-   end
-
-   function docEvent(Document, EventFlag, Parameters)
-      if EventFlag has DEF_LINK_ACTIVATED then
-         if &feedback then
-            responseIndex = tonumber(Parameters.response)
-            response = &options[responseIndex]
-            state = { }
-
-            state.checkbox = Document.getKey('checkbox') is '1' ? true : false
-
-            local input = Document.getKey('input')
-            if input?? then state.input = input end
-
-            if &inputRequired and not state.input then
-               -- If input is mandatory, the response is cancelled when no input is given
-               response = nil
-            end
-
-            &feedback(self, response, state)
-         end
-
-         if &waiting then processing.signal() end
-         &clear()
-         processing.collect('defer')
-      else
-         msg('Unhandled document event received')
-      end
-   end
-
-   function buildDocument():str
-      option_icons = ''
-
-      -- At minimum, there must be an OK option.
-
-      if not ((&options is <table>) and (#&options > 0)) then
-         &options = { { id=1, label='Close Dialog', icon='items/cancel' } }
+         &viewport.{ viewWidth = width, viewHeight = height }
       end
 
-      for i, option in ipairs(&options) do
-         if option['icon'] then
-            if option_icons?? then option_icons ..= '\n' end
-            option_icons ..= f'    <image id="{option.icon}" xlink:href="icons:{option.icon}" width="48" height="48"/>\n'
+      if (width != &layoutWidth) or (height != &layoutHeight) then
+         &layoutWidth  = width
+         &layoutHeight = height
+         &window.surface.{ width = width, height = height }
+         if &scaleWindow then
+            &window.sizeHints(math.round(width * 0.5), math.round(height * 0.5), width * 3, height * 3, true)
+         else
+            &window.sizeHints(width, height, width, height, false)
          end
       end
-
-      doc = [[
-<?xml version="1.0"?>
-
-<svg xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <image id="icon" xlink:href="icons:]] .. (Options.image ?? defaultIcon()) .. [[" width="256" height="256"/>]]
-    .. option_icons .. [[
-  </defs>
-</svg>
-
-<body margins="10 10 18 10"/>
-]]
-
-      if Options.envTemplate then
-         -- The EnvTemplate can redefine the default body, GUI templates etc
-         doc ..= Options.envTemplate .. '\n'
-      end
-
-      if Options.template then
-         -- A dialog-specific template can override the body style and change any class templates,
-         -- header and footer etc
-         doc ..= '<include src="' .. Options.template .. '"/>\n'
-      end
-
-      icon = Options.image ?? defaultIcon()
-      icon = rx_sanitise_icon.replace(icon, '$1/$2')
-      m:str = &fmtMessage
-      if not m?? then
-         m = string.escXML(&message ?? '')
-         m = m.replace('\n', '<br/>')
-      end
-
-      doc ..= [[
-<page name="Index">
-  <table columns="48,0" width="100%">
-    <row>
-      <cell><image src="url(#icon)" width="5em" height="5em" padding="0 8 18 0"/></cell>
-      <cell>
-        <p>]] .. m .. [[</p>
-]]
-
-      if Options.userInput then
-         inputOptions = ''
-         if Options.secret then inputOptions = 'secret="true"' end
-
-         m = string.escXML(Options.userInput is <str> ? Options.userInput : '')
-
-         doc ..= f'<p><input name="input" {inputOptions} width="16em" value="{m}"/></p>\n'
-      end
-
-      if Options.checkboxLabel then
-         checkbox_value = 'false'
-         if Options.checkboxState then checkbox_value = 'true' end
-         label = string.escXML(Options.checkboxLabel)
-         doc ..= f'<p><checkbox name="checkbox" label="{label}" value="{checkbox_value}"/></p>\n'
-      end
-
-      if Options.inject then
-         doc ..= Options.inject
-      end
-
-      doc ..= '<p no-wrap>'
-      for i, option in ipairs(&options) do
-         if option['icon'] then
-            doc ..= f'<image src="url(#{option.icon})" width="16" height="16" padding="0 0 4 0"/>\n'
-         end
-
-         doc ..= f'<a @response="{i}">{option.label}</a>\n'
-
-         if i < #&options then
-            doc ..= '<advance x="30"/>'
-         end
-      end
-      doc ..= '</p>'
-
-      doc ..= [[
-      </cell>
-    </row>
-  </table>
-  <advance y="20"/>
-</page>
-]]
-
-      return doc
    end
 
    -- Change the message in the dialog
 
-   self.setMessage = function(Message:str!, Formatted:bool)
-      if Formatted then
-         &message = nil
-         &fmtMessage = Message
-      else
-         &message = Message
-         &fmtMessage = nil
-      end
-      &document.acClear()
-      &document.acDataFeed(nil, DATA_XML, buildDocument())
+   self.setMessage = function(Message:str!)
+      if not &window then return end
+      &message = Message
+      arrange()
+      &viewport.acDraw()
    end
 
    using self do
-      -- Work out the dialog width based on the message.
-
-      dlg_width = MIN_WIDTH
-      if &message?? then
-         longest = 10
-         for start, stop in rx_word.findAll(&message) do
-            word_len = stop - start
-            if word_len > longest then longest = word_len end
-         end
-         dlg_width = 120 + (longest * FONT_HEIGHT)
-      elseif &fmtMessage?? then
-         xml = obj.new('xml', { statement=f'<xml>{&fmtMessage}</xml>' })
-         err, content = xml.mtSerialise(0, XMF_OMIT_TAGS|XMF_READABLE)
-         longest = 10
-         for start, stop in rx_word.findAll(content) do
-            word_len = stop - start
-            if word_len > longest then longest = word_len end
-         end
-         dlg_width = 120 + (longest * FONT_HEIGHT)
-      else
-         raise 'Dialog requires a message string.'
-      end
-
-      dlg_width = math.clamp(dlg_width, MIN_WIDTH, MAX_WIDTH)
-
       &window = gui.window({
-         insideWidth  = dlg_width,
-         insideHeight = 300,
+         insideWidth  = MIN_WIDTH,
+         insideHeight = ICON_SIZE,
          quit         = Options.quit ?? false,
          popOver      = Options.popOver,
-         aspectRatio  = true,
+         aspectRatio  = &scaleWindow,
          icon         = Options.icon ?? 'items/question',
          title        = Options.title ?? 'Confirmation Required',
          modal        = Options.modal ?? false,
          events = {
             close = function()
-               self?.feedback(self, nil, nil)
-
-               if self.waiting then processing.signal() end
-               self.clear()
+               cancel()
             end
          }
       })
 
       &viewport = &window.clientViewport()
+      theme = &window.theme
 
-      lDoc = &viewport.new('document', {
-         eventMask     = 'LinkActivated',
-         eventCallback = docEvent,
-         path          = '#Index',
-         flags         = 'NoScrollbars',
-         clientScript  = obj.find('self')
-      })
+      -- The image beside the message.  An image that fails to load is logged and omitted.
 
-      lDoc.acDataFeed(nil, DATA_XML, buildDocument())
+      image = Options.image ?? ICONS[&type] ?? 'items/question'
+      try
+         icon = gui.createIcon(&viewport.scene, image, ICON_SIZE, theme.window.icon)
+         &image = &viewport.new('VectorViewport', {
+            x      = &window.margins.left - icon.margin,
+            y      = 0, -- See arrange()
+            width  = icon.size + (icon.margin * 2),
+            height = icon.size + (icon.margin * 2),
+            fill   = icon.fill
+         })
+         &imageMargin = icon.margin
+      except ex
+         msg(f'Failed to load dialog image "{image}": {ex.message}')
+      end
 
-      matchWindowToDocSize(lDoc)
+      &messageText = &viewport.new('VectorText', table.merge({ x = &window.margins.left + ICON_SIZE + ICON_GAP, y = 0 }, theme.window.text))
+
+      em = tonumber(&messageText.fontSize) -- The font size reads back in pixels
+      _, font = check mVec.GetFontHandle(&messageText.face, &messageText.fontStyle, 0, em)
+
+      -- The message column is as wide as the widest paragraph, within the dialog limits.
+
+      widest = 0
+      for para in values(&message.split('\n')) do
+         if #para > 0 then widest = math.max(widest, mVec.StringWidth(font, para, -1)) end
+      end
+
+      text_width = math.clamp(math.ceil(widest), MIN_WIDTH - &window.margins.left - ICON_SIZE - ICON_GAP - &window.margins.right, MAX_WIDTH - &window.margins.left - ICON_SIZE - ICON_GAP - &window.margins.right)
+
+      -- The last option is the default, unless the client marks another as primary.
+
+      primary = #&options - 1
+      for i, option in &options do
+         if option.primary then primary = i end
+      end
+
+      -- Widgets are created in their visual order, which the scene follows for the tab order.
+
+      if Options.userInput then
+         &input = gui.input({
+            target    = &viewport,
+            x         = &window.margins.left + ICON_SIZE + ICON_GAP,
+            width     = text_width,
+            text      = (Options.userInput is <str>) ? Options.userInput : '',
+            secret    = Options.secret,
+            selectAll = true,
+            events    = {
+               activate = function(Event)
+                  if Event.state is 'activated' then respond(primary) end
+               end
+            }
+         })
+      end
+
+      if Options.checkboxLabel then
+         &checkbox = gui.toggle({
+            target = &viewport,
+            x      = &window.margins.left + ICON_SIZE + ICON_GAP,
+            label  = Options.checkboxLabel,
+            value  = Options.checkboxState ? 1 : 0
+         })
+      end
+
+      -- Client content is hosted in a viewport beneath the input box and checkbox, and returns the height that it uses.
+
+      if Options.content then
+         &contentViewport = &viewport.new('VectorViewport', { x = &window.margins.left + ICON_SIZE + ICON_GAP, y = 0, width = text_width, height = 1 })
+         content_height = Options.content(&&, &contentViewport, text_width) ?? 0
+         &contentViewport.height = math.max(1, content_height)
+      end
+
+      buttons_width = 0
+      for i, option in &options do
+         btn = gui.button({
+            target  = &viewport,
+            label   = option.label,
+            icon    = option.icon,
+            primary = (i is primary),
+            events  = {
+               activate = function()
+                  respond(i)
+               end
+            }
+         })
+         &buttons.push(btn)
+         if i > 0 then buttons_width += GAP end
+         buttons_width += btn.viewport.width
+      end
+
+      arrange()
+
+      -- Escape cancels the dialog while its window has the focus.  The keys are monitored through the surface rather
+      -- than a vector subscription, which would add the client viewport to the tab order.
+
+      &keyboard = input.keyboard(&window.surface, function(Handle, SurfaceID:num, Qualifiers:num!, Code:num!, Unicode)
+         if (Code is KEY_ESCAPE) and (Qualifiers has KQ_PRESSED) and not (Qualifiers has KQ_REPEAT) then
+            cancel()
+         end
+      end)
+
+      -- The input box receives the focus, with its text selected so that typing replaces it.  As the first widget, the
+      -- scene gives it the focus when the window receives the focus.  Otherwise the default button takes the focus, so
+      -- that Enter activates it.  A vector can't take the focus until the window has it, so this is deferred to the
+      -- window's first focus if necessary.
 
       &window.moveToFront()
       &window.show(true)
 
-      -- Give the input box the focus, with its text selected so that typing replaces it.  The document isn't able to
-      -- focus the box itself because inputs aren't tab stops.  The box is a VectorText named after the input, created
-      -- during layout, and it edits while its clip viewport has the focus.
-
-      if Options.userInput then
-         &inputText = findVector(&viewport.child, 'VectorText', 'input')
-         if &inputText then
-            &inputText.parent.acFocus()
-            &inputText.mtSelectArea(0, 0, -1, -1)
+      if not &input then
+         default_button = &buttons[primary].viewport
+         if default_button.acFocus() != ERR_Okay then
+            pending = true
+            &window.surface.subscribe('focus', function[self](Surface, Args)
+               if pending and &window then
+                  pending = false
+                  default_button.acFocus()
+               end
+            end)
          end
       end
 
-      &document = lDoc
       return &&
    end
 end
@@ -329,7 +395,6 @@ end
 @if(imported=false)
    dlg = gui.dialog.message({
       popOver    = arg('popOver'),
-      target     = arg('target'),
       modal      = arg('modal'),
       options    = arg('options'),
       message    = arg('message'),
@@ -341,5 +406,5 @@ end
       secret     = arg('secret')
    })
 
-   return dlg.window.surface.id, dlg.document.id
+   return dlg.window.surface.id, dlg.viewport.id
 @end

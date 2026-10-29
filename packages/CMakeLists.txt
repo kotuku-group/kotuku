@@ -5,7 +5,7 @@
 set (BUNDLED_PACKAGES
    benchmark button checkbox colourpicker combobox config dialog divider filedialog filemgr filesearch
    fileview fontdialog git gui httpserver icon input json menu menubar oauth2 openai openapi options proxyserver scrollbar
-   slider smtp tempus toggle toolbar tooltip url vfx view window)
+   panel slider smtp tempus toggle toolbar tooltip url vfx view window)
 
 set (PACKAGE_MANIFESTS)
 
