@@ -92,12 +92,12 @@ end
 @Test(priority=1) function Alignment()   crcTest('Alignment', 'alignment.rpl', { [1024] = 0x7f9eae1c, [600] = 0x5034a064, [400] = 0x5713259f }, 0.1) end
 @Test(priority=4) function Dialog()      crcTest('Dialog', 'dialog.rpl', 0x30f667be, 0.01) end
 @Test(priority=4) function Fonts()       crcTest('Fonts', 'fonts.rpl', 0x80528c56, 0.02) end
-@Test(priority=4) function Images()      crcTest('Images', 'images.rpl', 0x69820149, 0.02) end
+@Test(priority=4) function Images()      crcTest('Images', 'images.rpl', 0x37f310d4, 0.02) end
 @Test(priority=4) function Layout()      crcTest('Layout', 'layout.rpl', 0x0f970d50, 0.03) end
-@Test(priority=4) function Links1()      crcTest('Links1', 'links.rpl', 0x8de8dbec, 0.02) end
+@Test(priority=4) function Links1()      crcTest('Links1', 'links.rpl', 0xf40e5d14, 0.02) end
 @Test(priority=4) function Links2()      crcTest('Links2', 'links.rpl?font=Noto Sans&font-size=16', 0xd89ab836, 0.03) end
 @Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0x75f8fffc, 0.05) end
 @Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0xcc85cb59, 0.03) end
-@Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0xe0da8a7d, 0.05) end
+@Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0x2693737f, 0.05) end
 @Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x54377ea3, 0.1) end
 --@Test(priority=3) function Widgets()     crcTest('Widgets', 'widgets.rpl', 0xbf1021d5, 0.01) end

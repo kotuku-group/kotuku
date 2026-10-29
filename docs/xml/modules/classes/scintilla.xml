@@ -332,9 +332,18 @@
         <param type="STRVIEW" name="Face">The name of the new font face.</param>
       </input>
       <description>
-<p>Call SetFont() to change the font face that is used for displaying text.  The <code>Face</code> is a family name as accepted by the Face field of the <class name="Font">Font</class> class, e.g. <code>Clean</code>.  The point size of the current font is retained.</p>
+<p>Call SetFont() to change the font face that is used for displaying text.  The <code>Face</code> is a family name as accepted by the <fl>Face</fl> field, e.g. <code>Source Code Pro</code> or <code>Clean</code>.  The current <fl>FontSize</fl> in pixels is retained.</p>
 <p>If the new face is invalid or fails to load, the current font will remain unchanged.</p>
       </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="File">The font file could not be loaded.</error>
+        <error code="Search">No matching font could be resolved.</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
+        <error code="CreateObject">Failed to resolve the font handle.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="CreateResource">Failed to create a new resource</error>
+      </result>
     </method>
 
     <method>
@@ -442,6 +451,17 @@
     </field>
 
     <field>
+      <name>Face</name>
+      <comment>The font family used for drawing and measuring document text.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Accepts a font family name supported by the vector module's GetFontHandle() function, including bitmap faces such as <code>Clean</code>. The default is <code>Source Code Pro</code>.  Regular, bold, italic and bold italic styles share this family and <fl>FontSize</fl>. Set this field before or after initialisation.  Changing it reloads the styles and updates layout and margins. <method>SetFont</method> provides the same operation.  A failed resolution preserves the current face and handles.</p>
+<p>This field and <fl>FontSize</fl> replace the former Font object field; scripts must use these fields to customise fonts.</p>
+      </description>
+    </field>
+
+    <field>
       <name>FileDrop</name>
       <comment>A callback for receiving drag and drop file notifications.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -485,13 +505,12 @@
     </field>
 
     <field>
-      <name>Font</name>
-      <comment>Refers to the font that is used for drawing text in the document.</comment>
-      <access read="R">Read</access>
-      <type class="Font">*Font</type>
+      <name>FontSize</name>
+      <comment>The font em size in pixels.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
       <description>
-<p>This field refers to the font object that is used for drawing text in the document.  It is recommended that all font customisation takes place prior to initialisation of the Scintilla object.  Directly altering the font object after initialisation may result in clashes with the Scintilla class that produce unpredictable results.</p>
-<p>To change the font post-initialisation, please use the <method>SetFont</method> method.</p>
+<p>Sets a positive integer pixel size for every text style.  The default is 14 pixels.  This is not a point size and is independent of display density.  Bitmap faces select their nearest supported point size. Set this field before or after initialisation.  Changing it reloads the font handles and updates layout and margins.</p>
       </description>
     </field>
 

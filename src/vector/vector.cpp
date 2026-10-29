@@ -11,6 +11,7 @@ the FreeType home page at www.freetype.org.
 //#include "vector.h"
 //#include "font.h"
 #include "idl.h"
+#include "text_coverage_cache.h"
 
 JUMPTABLE_DISPLAY
 JUMPTABLE_CORE
@@ -38,6 +39,7 @@ std::vector<extVector *> glVectorFocusList; // The first reference is the most f
 APTR glKeyDispatchHandle = nullptr;
 
 std::recursive_mutex glFontMutex;
+text_coverage_cache glTextCoverageCache;
 ankerl::unordered_dense::map<uint32_t, std::unique_ptr<bmp_font>> glBitmapFonts;
 ankerl::unordered_dense::map<uint32_t, std::unique_ptr<freetype_font>> glFreetypeFonts;
 
@@ -119,8 +121,12 @@ static ERR MODExpunge(void)
 {
    if (glKeyDispatchHandle) { UnsubscribeEvent(glKeyDispatchHandle); glKeyDispatchHandle = nullptr; }
 
-   glBitmapFonts.clear();
-   glFreetypeFonts.clear();
+   {
+      const std::lock_guard lock(glFontMutex);
+      glTextCoverageCache.clear();
+      glBitmapFonts.clear();
+      glFreetypeFonts.clear();
+   }
 
    if (glFTLibrary) { FT_Done_FreeType(glFTLibrary); glFTLibrary = nullptr; }
 
