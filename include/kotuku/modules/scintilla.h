@@ -11,6 +11,7 @@
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/vector.h>
+#include <kotuku/modules/xml.h>
 
 class objScintilla;
 class objScintillaSearch;
@@ -410,7 +411,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getAutoIndent(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[37];
       return field->GetValue(this, &Value);
    }
 
@@ -434,7 +435,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getLineNumbers(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[31];
       return field->GetValue(this, &Value);
    }
 
@@ -475,7 +476,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getWordwrap(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->GetValue(this, &Value);
    }
 
@@ -516,12 +517,12 @@ class objScintilla : public Object {
    }
 
    inline ERR setLeftMargin(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[40];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRightMargin(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[38];
+      auto field = &this->Class->Dictionary[39];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -531,12 +532,12 @@ class objScintilla : public Object {
    }
 
    inline ERR setSelectFore(const struct RGB8 & Value) noexcept {
-      auto field = &this->Class->Dictionary[32];
+      auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setSelectBkgd(const struct RGB8 & Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
@@ -570,13 +571,18 @@ class objScintilla : public Object {
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
+   inline ERR setThemeXML(OBJECTPTR Value) noexcept {
+      auto field = &this->Class->Dictionary[28];
+      return field->WriteValue(this, field, 0x08100201, Value);
+   }
+
    inline ERR setAllowTabs(const int Value) noexcept {
       auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAutoIndent(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[36];
+      auto field = &this->Class->Dictionary[37];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -591,7 +597,7 @@ class objScintilla : public Object {
    }
 
    inline ERR setLineNumbers(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[30];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -631,7 +637,7 @@ class objScintilla : public Object {
    }
 
    inline ERR setWordwrap(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[34];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

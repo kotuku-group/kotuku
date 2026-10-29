@@ -9,6 +9,18 @@ using namespace kt;
 
 class extScintilla : public objScintilla {
    public:
+   // Internal lexer and margin colours are configured through ThemeXML.
+   RGB8 CommentColour;
+   RGB8 KeywordColour;
+   RGB8 StringColour;
+   RGB8 NumberColour;
+   RGB8 OperatorColour;
+   RGB8 PreprocessorColour;
+   RGB8 TypeColour;
+   RGB8 ErrorColour;
+   RGB8 MarginColour;
+   RGB8 MarginBkgd;
+
    FUNCTION FileDrop;
    FUNCTION EventCallback;
    FUNCTION MarginClick;
@@ -66,6 +78,17 @@ class extScintilla : public objScintilla {
       AllowTabs   = FALSE;
 
       BkgdColour    = RGB8 { 255, 255, 255, 255 };
+      TextColour    = RGB8 { 0, 0, 0, 255 };
+      CommentColour = RGB8 { 128, 128, 128, 255 };
+      KeywordColour = RGB8 { 178, 34, 34, 255 };
+      StringColour  = RGB8 { 176, 0, 0, 255 };
+      NumberColour  = RGB8 { 0, 0, 255, 255 };
+      OperatorColour = RGB8 { 0, 0, 0, 255 };
+      PreprocessorColour = RGB8 { 34, 139, 34, 255 };
+      TypeColour    = RGB8 { 148, 0, 211, 255 };
+      ErrorColour   = RGB8 { 255, 0, 0, 255 };
+      MarginColour  = RGB8 { 128, 128, 128, 255 };
+      MarginBkgd    = RGB8 { 224, 224, 224, 255 };
       LineHighlight = RGB8 { 240, 240, 255, 255 };
       CursorColour  = RGB8 { 0, 0, 0, 255 };
       SelectFore    = RGB8 { 255, 255, 255, 255 };
@@ -112,7 +135,6 @@ public:
 
    // Custom interfacing methods
 
-   virtual void SetStyles(const struct styledef *Def, int Total);
    virtual void SetStyleColours();
    virtual void panPaint(Scintilla::PRectangle Area);
    virtual void panRedraw();
@@ -146,7 +168,6 @@ public:
    virtual void selectToMatchingBrace();
 
    // Lexer handling
-   virtual void SetLexerLanguage(const char *languageName);
    virtual void SetLexer(uptr_t wParam);
 
    // Message handling
@@ -171,7 +192,7 @@ public:
    virtual sptr_t WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam);
 
 private:
-   void SetupStyles();
+   void SetKeywords();
    void DefineFoldMarkers();
    void ExpandAllFolds();
    void FoldChanged(int Line, int LevelNow, int LevelPrev);

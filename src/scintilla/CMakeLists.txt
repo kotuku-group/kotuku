@@ -80,9 +80,23 @@ set_module_defaults (scintilla "Sci")
 target_sources (scintilla PRIVATE ${SOURCE} ${LEXERS})
 
 target_include_directories (scintilla PRIVATE
+   "${CMAKE_CURRENT_BINARY_DIR}"
    "${CMAKE_CURRENT_SOURCE_DIR}/scintilla/src"
    "${CMAKE_CURRENT_SOURCE_DIR}/scintilla/lexlib"
    "${CMAKE_CURRENT_SOURCE_DIR}/scintilla/include")
+
+# Keep the editor's Tiri keywords in step with the parser without linking to the Tiri module.
+set (TIRI_TOKEN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../tiri/jit/src/parser/lexer_types.h")
+set_property (DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TIRI_TOKEN_SOURCE}")
+file (READ "${TIRI_TOKEN_SOURCE}" TIRI_TOKEN_SOURCE_TEXT)
+string (REGEX MATCHALL "TOKEN_DEF\\([a-z]+, +\"[a-z]+\", +TKF_RESERVED[^)]*\\)"
+   TIRI_TOKEN_LINES "${TIRI_TOKEN_SOURCE_TEXT}")
+set (TIRI_KEYWORDS "")
+foreach (TIRI_TOKEN_LINE IN LISTS TIRI_TOKEN_LINES)
+   string (REGEX REPLACE ".*TOKEN_DEF\\([^,]+, *\"([a-z]+)\".*" "\\1" TIRI_KEYWORD "${TIRI_TOKEN_LINE}")
+   string (APPEND TIRI_KEYWORDS "   \"${TIRI_KEYWORD} \"\n")
+endforeach ()
+configure_file ("tiri_keywords.h.in" "tiri_keywords.h" @ONLY)
 
 flute_test (scintilla_document "tests/test_scintilla_document.tiri")
 flute_test (scintilla_render "tests/test_scintilla_render.tiri")
@@ -91,3 +105,6 @@ flute_test (scintilla_keyboard "tests/test_scintilla_keyboard.tiri")
 flute_test (scintilla_initial_focus "tests/test_scintilla_initial_focus.tiri")
 flute_test (scintilla_clipboard "tests/test_scintilla_clipboard.tiri")
 flute_test (scintilla_margins "tests/test_scintilla_margins.tiri")
+flute_test (scintilla_highlighting "tests/test_scintilla_highlighting.tiri")
+
+flute_test (scintilla_mouse "tests/test_scintilla_mouse.tiri")

@@ -527,7 +527,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="SCLEX">SCLEX</type>
       <description>
-<p>The lexer for document styling is defined here.  The lexer can be changed at any time, in which case the document is restyled immediately.</p>
+<p>The lexer can be changed at any time.  Its keyword lists and semantic style colours are refreshed immediately. Existing folds are expanded and folding remains enabled if <fl>FoldingMarkers</fl> is set.  Set the lexer to zero to display plain text.  ASP uses the HTML lexer with VBScript server blocks; Tiri keywords follow the parser's reserved words.</p>
 <p>If the <code>DETECT_LEXER</code> flag is set, the lexer is chosen from the file name whenever a file is loaded, and this overrides any existing value.  The <code>Lexer</code> is left unchanged if the file name does not match a known type.</p>
 <types lookup="SCLEX"/>
       </description>
@@ -671,7 +671,28 @@
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
       <description>
-<p>The TextColour applies to plain text and to the default style of the active lexer.  Other lexer styles use their own colours.</p>
+<p>TextColour applies to plain text, identifiers and any unclassified styles.  Configure lexer and margin colours through <fl>ThemeXML</fl>.  Theme colours are stored independently for each editor and are retained across lexer changes.</p>
+<p>The defaults are a white background, black text and operators, grey comments, firebrick keywords, dark red strings, blue numbers, green directives and violet types.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>ThemeXML</name>
+      <comment>Applies colours from a preconfigured XML object.  This field is write-only.</comment>
+      <access write="S">Set</access>
+      <type>OBJECTPTR</type>
+      <description>
+<p>Assign an initialised <class name="XML">XML</class> object containing one <code>theme</code> element with one <code>palette</code> child.  The palette's attributes specify SVG colour strings:</p>
+<pre>&lt;theme&gt;
+   &lt;palette background=&quot;#232a37&quot; text=&quot;white&quot; keyword=&quot;#70b8ff&quot; comment=&quot;#99aabb&quot;
+       string=&quot;#b5d99c&quot; number=&quot;#d4a5ff&quot; operator=&quot;white&quot; preprocessor=&quot;#b5d99c&quot;
+       type=&quot;#ffc080&quot; error=&quot;#ff8899&quot; margin=&quot;#99aabb&quot; marginBackground=&quot;#303745&quot;
+       cursor=&quot;white&quot; lineHighlight=&quot;transparent&quot; selectionForeground=&quot;white&quot;
+       selectionBackground=&quot;#335588&quot;/&gt;
+&lt;/theme&gt;
+</pre>
+<p>The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text. All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG colour names and colour functions such as <code>rgb()</code> and <code>oklch()</code> are accepted.  Gradients, painter lists and unknown attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the corresponding highlight or selection override.  Other alpha values currently produce opaque colours.</p>
+<p>The colours are copied during assignment and the XML object is not retained or modified.  Assigning before initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or contracted folds.  Invalid themes leave all colours unchanged.</p>
       </description>
     </field>
 

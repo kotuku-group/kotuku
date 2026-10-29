@@ -3,101 +3,8 @@
 
 #include <format>
 
-#define COL_BLACK          0x000000
-#define COL_DARKSLATEGREY  0x2F4F4F
-#define COL_LIGHTSLATEGREY 0x576889
-#define COL_GREY           0x808080
-#define COL_LIGHTGREY      0xd3d3d3
-#define COL_MIDNIGHTBLUE   0x191970
-#define COL_NAVYBLUE       0x000080
-#define COL_BLUE           0x0000ff
-#define COL_CYAN           0x00ffff
-#define COL_TURQUOISE      0x00ced1
-#define COL_CADETBLUE      0x5f9ea0
-#define COL_OLIVE          0x6b8e23
-#define COL_KHAKI          0xBDB76B
-#define COL_GOLD           0xFFD700
-#define COL_INDIANRED      0xCD5C5C
-#define COL_SADDLEBROWN    0x8B4513
-#define COL_FIREBRICK      0xB22222
-#define COL_BROWN          0xA52A2A
-#define COL_FORESTGREEN    0x228B22
-#define COL_BRIGHTRED      0xFF0000
-#define COL_BRIGHTGREEN    0xFF0000
-#define COL_DARKVIOLET     0x9400D3
-#define COL_RED            0xb00000
-
-static const struct styledef std_styles[] = {
-   { STYLE_DEFAULT,    COL_BLACK, FTF::NIL },
-   { STYLE_LINENUMBER, COL_BLACK, FTF::NIL },
-   { STYLE_BRACELIGHT, COL_BRIGHTRED, FTF::BOLD },
-   { STYLE_BRACEBAD,   COL_BRIGHTRED, FTF::BOLD|FTF::ITALIC }  // Somebody set us up the bomb
-};
-
-static const struct styledef c_styles[] = {
-   { SCE_C_DEFAULT,                COL_BLACK, FTF::NIL },          // What you say?
-   { SCE_C_COMMENT,                COL_GREY, FTF::NIL },           // Standard C comment
-   { SCE_C_COMMENTLINE,            COL_GREY, FTF::NIL },           // // style comment
-   { SCE_C_COMMENTDOC,             COL_LIGHTSLATEGREY, FTF::NIL }, // Double-star comments
-   { SCE_C_NUMBER,                 COL_BLUE, FTF::NIL },           // Any number or float
-   { SCE_C_WORD,                   COL_FIREBRICK, FTF::NIL },
-   { SCE_C_STRING,                 COL_RED, FTF::NIL },          // Strings "..."
-   { SCE_C_CHARACTER,              COL_RED, FTF::NIL },          // Characters ' '
-   { SCE_C_UUID,                   COL_BRIGHTRED, FTF::NIL },    // \n, \r
-   { SCE_C_PREPROCESSOR,           COL_FORESTGREEN, FTF::NIL },  // #include, #define etc
-   { SCE_C_OPERATOR,               COL_BLACK, FTF::NIL },        // + - *
-   { SCE_C_IDENTIFIER,             COL_BLACK, FTF::NIL },        // The default colour
-   { SCE_C_STRINGEOL,              COL_BRIGHTRED, FTF::NIL },
-   { SCE_C_VERBATIM,               COL_BRIGHTRED, FTF::NIL },
-   { SCE_C_REGEX,                  COL_BLUE, FTF::NIL },
-   { SCE_C_COMMENTLINEDOC,         COL_GREY, FTF::NIL }, // // style comment
-   { SCE_C_WORD2,                  COL_BRIGHTRED, FTF::NIL },
-   { SCE_C_COMMENTDOCKEYWORD,      COL_GREY, FTF::NIL },
-   { SCE_C_COMMENTDOCKEYWORDERROR, COL_GREY, FTF::NIL },
-   { SCE_C_GLOBALCLASS,            COL_RED, FTF::NIL }
-};
-
-void ScintillaKTK::SetStyles(const struct styledef *Def, int Total)
-{
-   kt::Log log("SetStyles");
-   int i, index;
-
-   log.branch("%d", Total);
-
-   for (i=0; i < Total; i++) {
-      index = Def[i].Index;
-      WndProc(SCI_STYLESETFONT, index, (MAXINT)"Clean"); // Font name, must be set to something
-      WndProc(SCI_STYLESETSIZE, index, 10); // Default Size
-      WndProc(SCI_STYLESETFORE, index, SCICOLOUR((uint8_t)(Def[i].Colour>>16), (uint8_t)(Def[i].Colour>>8), Def[i].Colour));
-
-      if ((index IS STYLE_BRACELIGHT) or (index IS STYLE_BRACEBAD)) {
-         WndProc(SCI_STYLESETBACK, index, SCICOLOUR(255, 255, 200));
-      }
-
-      if ((Def[i].FontStyle & FTF::BOLD) != FTF::NIL) WndProc(SCI_STYLESETBOLD, index, 1);
-      if ((Def[i].FontStyle & FTF::ITALIC) != FTF::NIL) WndProc(SCI_STYLESETITALIC, index, 1);
-   }
-
-   SetStyleColours();
-}
-
-/*********************************************************************************************************************
-** Apply the BkgdColour and TextColour of the Scintilla object.  Every lexer style shares the document background,
-** while the special styles that follow STYLE_DEFAULT (line numbers, braces etc) keep their own.  Style 0 is the
-** default style of every lexer and is also used for plain text, so it receives the TextColour.
-*/
-
-void ScintillaKTK::SetStyleColours()
-{
-   auto &bkgd = scintilla->BkgdColour, &text = scintilla->TextColour;
-   const long bkgd_colour = SCICOLOUR(bkgd.Red, bkgd.Green, bkgd.Blue);
-   const long text_colour = SCICOLOUR(text.Red, text.Green, text.Blue);
-
-   for (int style=0; style <= STYLE_DEFAULT; style++) WndProc(SCI_STYLESETBACK, style, bkgd_colour);
-
-   WndProc(SCI_STYLESETFORE, 0, text_colour);
-   WndProc(SCI_STYLESETFORE, STYLE_DEFAULT, text_colour);
-}
+#include "lexer_styles.cxx"
+#include "lexer_keywords.cxx"
 
 /*********************************************************************************************************************
 ** This is the main entry point, we're called from the Init action here.
@@ -114,8 +21,13 @@ ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
 
    wMain = Scintilla;
 
-   SetStyles(c_styles, std::ssize(c_styles));
-   SetStyles(std_styles, std::ssize(std_styles));
+   SendScintilla(SCI_STYLESETFONT, STYLE_DEFAULT, "Clean");
+   SendScintilla(SCI_STYLESETSIZE, STYLE_DEFAULT, 10);
+   SendScintilla(SCI_STYLECLEARALL);
+   SendScintilla(SCI_STYLESETBOLD, STYLE_BRACELIGHT, 1);
+   SendScintilla(SCI_STYLESETBOLD, STYLE_BRACEBAD, 1);
+   SendScintilla(SCI_STYLESETITALIC, STYLE_BRACEBAD, 1);
+   SetStyleColours();
 
    // SC_MOD_CHANGEFOLD is required by FoldChanged()
 
@@ -1203,8 +1115,10 @@ void ScintillaKTK::DefineFoldMarkers()
 
    for (auto &folder : folders) {
       SendScintilla(SCI_MARKERDEFINE, folder.Marker, folder.Symbol);
-      SendScintilla(SCI_MARKERSETFORE, folder.Marker, SCICOLOUR(255, 255, 255));
-      SendScintilla(SCI_MARKERSETBACK, folder.Marker, SCICOLOUR(128, 128, 128));
+      SendScintilla(SCI_MARKERSETFORE, folder.Marker, SCICOLOUR(scintilla->MarginBkgd.Red,
+         scintilla->MarginBkgd.Green, scintilla->MarginBkgd.Blue));
+      SendScintilla(SCI_MARKERSETBACK, folder.Marker, SCICOLOUR(scintilla->MarginColour.Red,
+         scintilla->MarginColour.Green, scintilla->MarginColour.Blue));
    }
 }
 
@@ -1266,16 +1180,16 @@ void ScintillaKTK::SetLexer(uptr_t LexID)
    log.branch("Using lexer %d", (int)LexID);
 
    ExpandAllFolds();
-   SendScintilla(SCI_SETLEXER, LexID);
+   // ASP uses the HTML lexer with VBScript in server blocks.  NIL uses the null lexer rather than container styling.
+   auto lexer = LexID IS int(SCLEX::ASP) ? SCLEX_HTML : (LexID ? LexID : SCLEX_NULL);
+   SendScintilla(SCI_SETLEXER, lexer);
+   SendScintilla(SCI_SETSTYLEBITS, SendScintilla(SCI_GETSTYLEBITSNEEDED));
+   SendScintilla(SCI_SETPROPERTY, "asp.default.language", LexID IS int(SCLEX::ASP) ? "2" : "1");
    SendScintilla(SCI_SETPROPERTY, "fold", scintilla->FoldingMarkers ? "1" : "0");
-
-   SendScintilla(SCI_STARTSTYLING, 0, 0x1f);
+   SetKeywords();
+   SetStyleColours();
+   SendScintilla(SCI_COLOURISE, 0, -1);
    InvalidateStyleRedraw();
-}
-
-void ScintillaKTK::SetLexerLanguage(const char *languageName)
-{
-   SendScintilla(SCI_SETLEXERLANGUAGE, 0UL, languageName);
 }
 
 /*********************************************************************************************************************
