@@ -7,6 +7,7 @@ Gradient Demonstration
    include 'image'
 
 local win, viewport, gradientVP, rect
+local saveDialog:table -- The file dialog is closed if it is collected, so it is retained until it responds
 local focalEllipse, contourShape, distalShape, uiEvent
 -- Keep the controls alive after buildScene() returns; slider callbacks hold only weak widget references.
 local slResolution, slRadius, slGamma
@@ -452,7 +453,7 @@ function buildScene()
       size    = cmbColours.viewport.height,
       events  = {
          activate = function()
-            gui.dialog.file({
+            saveDialog = gui.dialog.file({
                title       = 'Save Gradient as PNG Image',
                okLabel     = 'Save',
                cancelLabel = 'Cancel',
@@ -462,6 +463,7 @@ function buildScene()
                allowNew    = true,
                filterList  = { { name='PNG Images', ext='png' } },
                feedback    = function(Dialog, Path, Files)
+                  saveDialog = nil
                   Files ?! return
 
                   target_file = Path .. Files[0].filename

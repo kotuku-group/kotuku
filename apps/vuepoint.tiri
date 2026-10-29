@@ -79,6 +79,7 @@ glIntroduction = [[
    }
 
    glSaveFilter = array<table> { }
+   local glSaveDialog:table -- The file dialog is closed if it is collected, so it is retained until it responds
 
    glScript = obj.find('self')
    mSys.SetVolume('vuepoint', glScript.workingPath, 'misc/gallery', 'Vuepoint', nil, VOLUME_HIDDEN)
@@ -420,7 +421,7 @@ end
          flush   = true,
          createItems = function(Bar)
             Bar.addItem(2, 'Save As', 'Save Image As', 'items/file_saveas', function()
-               gui.dialog.file({
+               glSaveDialog = gui.dialog.file({
                   title       = 'Save Image As...',
                   okLabel     = 'Save',
                   cancelLabel = 'Cancel',
@@ -429,6 +430,7 @@ end
                   warnExists  = true,
                   allowNew    = true,
                   feedback = function(Dialog, Path:str!, Files)
+                     glSaveDialog = nil
                      Files ?! return
 
                      target_file = Path .. Files[0].filename

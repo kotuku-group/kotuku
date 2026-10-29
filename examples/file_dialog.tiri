@@ -2,7 +2,9 @@
 
    import 'gui/filedialog'
 
-   gui.dialog.file({
+   -- The dialog is closed if it is collected, so it is retained while the script waits for the response.
+
+   dialog = gui.dialog.file({
       filterList  = { { name='All Files', ext='' }, { name='MP3 Audio Files', ext='.mp3' }, { name='Text Files', ext='.txt' } },
       okLabel     = 'Select File',
       cancelLabel = 'Exit',
