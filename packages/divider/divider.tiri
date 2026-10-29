@@ -92,7 +92,7 @@ gui.divider = function(Options:table)
 
       theme = gui.getTheme(&_vp)
 
-      div_name = f'divider-bkgd-{&_vp.id}'
+      local div_name
       if Options.style != 'none' then
          colour = gui.strToRGB(theme.window.stroke.stroke)
          colour = colour.interpolate(gui.strToRGB(theme.window.bkgd.fill), 0.85)
@@ -116,6 +116,7 @@ gui.divider = function(Options:table)
             &_pattern.viewport.new('VectorPolygon', { points = pt, fill = tostring(colour) })
          end
 
+         div_name = f'divider-bkgd-{&_pattern.id}'
          check &_vp.scene.mtAddDef(div_name, &_pattern)
       end
 

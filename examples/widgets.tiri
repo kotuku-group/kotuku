@@ -5,14 +5,14 @@ A demonstration of standard widgets
 
    import 'gui', 'gui/toolbar', 'gui/menubar', 'gui/colourpicker', 'gui/fontdialog'
    import 'gui/dialog', 'gui/filedialog', 'gui/icon', 'gui/input', 'gui/button'
-   import 'gui/toggle', 'gui/combobox', 'gui/slider', 'gui/window', 'vfx', 'json'
+   import 'gui/toggle', 'gui/combobox', 'gui/slider', 'gui/window', 'gui/panel', 'vfx', 'json'
 
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
    local fileDialog:table -- The file dialog is closed if it is collected, so it is retained until it responds
 
-   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('900dp'), insideHeight=gui.rpixel('750dp') })
+   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('960dp'), insideHeight=gui.rpixel('750dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
@@ -246,7 +246,7 @@ end
    text = viewport.new('vectortext', table.merge({
       x=win.margins.left, y=y, string='Kōtuku interfaces are drawn using real-time vector graphics',
       face='Noto Sans', fontSize=20, textFlags='!editable'
-   }, win.theme.window.text))
+   }, win.theme.window.text, false))
    font_size = tonumber(text.fontSize)
    text.y += font_size
    y += font_size + gui.rpixel('12pt')
@@ -384,7 +384,7 @@ end
       y      = y,
       events = {
          activate = function()
-            if &value?? then
+            if &value then
                msgButton.enable()
             else
                msgButton.disable()
@@ -478,6 +478,53 @@ end
          end
       }
    })
+
+   -- A panel in the space between the widget column and the vertical slider, with a scrolling body of wrapped text.
+   -- The text is wrapped to the page, less the scrollbar, and the page is sized to fit it when the body is resized.
+
+   local notes_text:obj
+   local notes_width, notes_height = 0, 0
+
+   function fitNotes(Panel:table!)
+      if not notes_text or (notes_width <= 0) then return end
+      pad = Panel.padding
+      notes_text.inlineSize = math.max(1, notes_width - (gui.sizing.widget.gap + gui.sizing.widget.gap) - Panel.scrollbar.v_thickness)
+      _, _, ty, _, th = notes_text.mtGetBoundary(0)
+      _, _, py = Panel.page.mtGetBoundary(0)
+      Panel.page.height = math.max(notes_height, math.ceil(ty + th - py + gui.sizing.widget.gap))
+   end
+
+   notes = gui.panel({
+      target  = viewport,
+      x       = combobox.viewport.x + combobox.viewport.width + (gui.sizing.widget.gap * 2),
+      xOffset = vslider.viewport.xOffset + vslider.viewport.width + (gui.sizing.widget.gap * 2),
+      y       = toggle.viewport.y,
+      height  = gui.rpixel('260dp'),
+      title   = 'Panel',
+      meta    = 'Scrolling text',
+      scroll  = 'vertical',
+      events  = {
+         resize = function(Width, Height)
+            notes_width, notes_height = Width, Height
+            fitNotes(&&)
+         end
+      }
+   })
+
+   notes_text = notes.page.new('VectorText', table.merge({
+      x = gui.sizing.widget.gap,
+      y = gui.getFontHeight({ face='Inconsolata', fontSize='12pt'}),
+      lineLimit = 0,
+      face = 'Inconsolata',
+      fontSize = '12pt',
+      string = 'A panel is a card with a header row and a body for its content.  The header shows a title on ' ..
+         'the left and meta text on the right, and either can be replaced by a widget.\n\n' ..
+         'This panel was created with the scroll option, so its body holds a page that is moved by the ' ..
+         'scrollbar.  The text is wrapped to the width of the page, and the page is sized to fit the text.\n\n' ..
+         'Use the mouse wheel or drag the scrollbar to read the rest of this text.'
+   }, win.theme.window.text, false, true))
+
+   fitNotes(notes)
 
    y += input.viewport.height + gui.rpixel('120dp')
 

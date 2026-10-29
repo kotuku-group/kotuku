@@ -489,7 +489,7 @@ gui.panel = function(Options:table!)
          if (Width is last_width) and (Height is last_height) then return end
          last_width, last_height = Width, Height
          if &header then fitHeader(Width) end
-         &events.resize?(math.max(0, Width - (&padding.left * 2)), math.max(0, Height - body_y - &padding.top - &padding.bottom))
+         &events.resize?(math.max(0, Width - (&padding.left + &padding.right)), math.max(0, Height - body_y - &padding.top - &padding.bottom))
       end
 
       if Options.header != false then
