@@ -1,7 +1,41 @@
 // Included by display.cpp so that the test exercises the actual driver callbacks with a headless display.
 #include <kotuku/strings.hpp>
+#include <kotuku/modules/vector.h>
 
 namespace {
+
+// Keep only the header alive so that a leaked participant subscription is observable after snapshot destruction.
+class NativeSnapshotProbe {
+   OBJECTPTR snapshot = nullptr;
+
+public:
+   NativeSnapshotProbe() = default;
+
+   explicit NativeSnapshotProbe(const NativeDrop &Drop) {
+      if (Drop.Snapshot) watch(GetObjectPtr(Drop.Snapshot->ID));
+   }
+
+   ~NativeSnapshotProbe() { if (snapshot) snapshot->unpinWeak(); }
+
+   NativeSnapshotProbe(const NativeSnapshotProbe &) = delete;
+   NativeSnapshotProbe & operator=(const NativeSnapshotProbe &) = delete;
+
+   void watch(OBJECTPTR Snapshot) {
+      if (snapshot) snapshot->unpinWeak();
+      snapshot = Snapshot;
+      if (snapshot) snapshot->pinWeak();
+   }
+
+   bool released() const {
+      return snapshot and snapshot->terminating() and (snapshot->RefCount.load() IS Object::WEAK_PINS);
+   }
+};
+
+static ERR native_prepare_reject(OBJECTPTR, objConfig *Snapshot, double, double, APTR Meta)
+{
+   ((NativeSnapshotProbe *)Meta)->watch(Snapshot);
+   return ERR::Cancelled;
+}
 
 struct NativeDropObservation {
    OBJECTPTR Sink = nullptr;
@@ -162,20 +196,99 @@ static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
       "URI decoding and XML escaping preserve the exact file path");
    check(not display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)),
       "A completed snapshot cannot be delivered twice");
+   for (int i = 0; i < 8; i++) {
+      snapshot_drop(drop);
+      NativeSnapshotProbe snapshot_probe(drop);
+      check(display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)), "Deliver a repeated drop");
+      check(snapshot_probe.released(), "Repeated drops release participant subscriptions before window destruction");
+   }
+   {
+      NativeSnapshotProbe rejected_probe;
+      auto prepare = C_FUNCTION(native_prepare_reject, &rejected_probe);
+      gfx::WindowHook(first->UID, WH::DROP_SNAPSHOT, &prepare);
+      auto remove_hook = kt::Defer([&]() { gfx::WindowHook(first->UID, WH::DROP_SNAPSHOT, nullptr); });
+      check(display::DriverDragOver(first->UID, 25, 40, &datatype, 1), "Accept an offer before preparation rejection");
+      drop.SurfaceID = first->UID;
+      drop.X = 25;
+      drop.Y = 40;
+      check(not display::DriverDragStart(drop), "Reject native destination preparation");
+      display::DriverDragLeave();
+      check(rejected_probe.released(), "Rejected preparation releases participant subscription pins");
+   }
+   if (FindClass(CLASSID::VECTORSCENE)) {
+      objSurface::create surface = { fl::X(600), fl::Width(100), fl::Height(100) };
+      check(surface.ok(), "Create a vector destination surface");
+      if (not surface.ok()) return;
+      objVectorScene::create scene = { fl::Surface(surface->UID), fl::Flags(VPF::DROP_TARGETS) };
+      check(scene.ok(), "Create a native drop scene");
+      if (not scene.ok()) return;
+      objVectorViewport::create viewport = {
+         fl::Owner(scene->UID), fl::Width(100), fl::Height(100)
+      };
+      check(viewport.ok(), "Create a native drop viewport");
+      if (not viewport.ok()) return;
+      check(viewport->setDropTarget(1) IS ERR::Okay, "Register the viewport as a drop target");
+      acShow(*surface);
+      acDraw(*surface);
+      auto prepare_drop = [&](NativeDrop &Pending) {
+         Pending.SurfaceID = surface->UID;
+         Pending.X = Pending.Y = 20;
+         check(display::DriverDragOver(surface->UID, 20, 20, &datatype, 1), "Accept a vector offer");
+         check(display::DriverDragStart(Pending), "Prepare a vector destination");
+         display::DriverDragLeave();
+      };
+      NativeDrop pending;
+      for (int i = 0; i < 8; i++) {
+         prepare_drop(pending);
+         NativeSnapshotProbe snapshot_probe(pending);
+         check(display::DriverDragData(pending, "text/plain", "vector", 6), "Deliver a repeated vector drop");
+         check(snapshot_probe.released(), "Repeated vector drops release scene and viewport subscription pins");
+      }
+      prepare_drop(pending);
+      NativeSnapshotProbe failed_probe(pending);
+      pending.Snapshot.reset();
+      check(failed_probe.released(), "Failed vector transfers release every participant subscription pin");
+      prepare_drop(pending);
+      NativeSnapshotProbe cancelled_probe(pending);
+      if (auto pointer = gfx::AccessPointer()) {
+         acDeactivate(pointer);
+         ReleaseObject(pointer);
+      }
+      check(cancelled_probe.released(), "Cancelled vector drops release every participant subscription pin");
+      {
+         NativeSnapshotProbe rejected_probe;
+         viewport->setDropPrepare(C_FUNCTION(native_prepare_reject, &rejected_probe));
+         check(display::DriverDragOver(surface->UID, 20, 20, &datatype, 1),
+            "Accept an offer before viewport rejection");
+         pending.X = pending.Y = 20;
+         check(not display::DriverDragStart(pending), "Reject viewport preparation");
+         display::DriverDragLeave();
+         check(rejected_probe.released(), "Rejected viewport preparation releases every participant subscription pin");
+         viewport->setDropPrepare(FUNCTION{});
+      }
+      prepare_drop(pending);
+      NativeSnapshotProbe destroyed_scene_probe(pending);
+      FreeResource(scene.detach());
+      check(destroyed_scene_probe.released(), "Scene destruction releases every surviving participant subscription");
+   }
    snapshot_drop(drop);
    const auto abandoned_id = drop.Snapshot->ID;
+   NativeSnapshotProbe abandoned_probe(drop);
    auto transfer_copy = drop;
    drop.Snapshot.reset();
    check(CheckResourceExists(abandoned_id) IS ERR::True, "A queued transfer owns the pending snapshot");
    transfer_copy.Snapshot.reset();
    check(CheckResourceExists(abandoned_id) != ERR::True, "Failed transfers release their last snapshot reference");
+   check(abandoned_probe.released(), "Failed transfers release participant subscription pins");
    snapshot_drop(drop);
    const auto cancelled_id = drop.Snapshot->ID;
+   NativeSnapshotProbe cancelled_probe(drop);
    if (auto pointer = gfx::AccessPointer()) {
       acDeactivate(pointer);
       ReleaseObject(pointer);
    }
    check(CheckResourceExists(cancelled_id) != ERR::True, "Explicit cancellation releases pending state");
+   check(cancelled_probe.released(), "Cancellation releases participant subscription pins");
    check(not display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)),
       "Cancelled snapshots refuse late data");
    const auto folder_name = "temp:native_drop_" + std::to_string(getpid()) + '/';
@@ -228,8 +341,10 @@ static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
       "A URI list without local files is refused");
    check(state.Calls IS calls, "Malformed imports cannot reuse the preceding payload");
    snapshot_drop(drop);
+   NativeSnapshotProbe destroyed_target_probe(drop);
    FreeResource(first.detach());
    check(not display::DriverDragData(drop, "text/plain", "late", 4), "Destroyed destinations refuse delayed data");
+   check(destroyed_target_probe.released(), "Destination destruction releases the surviving source subscription");
    check(clipboard_snapshot() IS saved_clipboard, "Native imports preserve the normal clipboard");
 
    {
@@ -244,8 +359,10 @@ static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
          check(display::DriverDragStart(pending), "Prepare the isolated source drop");
          display::DriverDragLeave();
          const auto pending_id = pending.Snapshot ? pending.Snapshot->ID : 0;
+         NativeSnapshotProbe destroyed_source_probe(pending);
          FreeObject(pending.DisplayID);
          check(CheckResourceExists(pending_id) != ERR::True, "Source destruction expires pending state");
+         check(destroyed_source_probe.released(), "Source destruction releases the surviving destination subscription");
          check(not display::DriverDragData(pending, "text/plain", "late", 4),
             "Source destruction refuses delayed payload delivery");
       }

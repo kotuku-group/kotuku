@@ -600,13 +600,27 @@ bool DriverDragOver(OBJECTID SurfaceID, double X, double Y, CSTRING Datatypes, s
    return pointer->NativeDrag and (pointer->DragFeedback != 0);
 }
 
-static void native_snapshot_free(OBJECTPTR Object, ACTIONID, ERR, APTR)
+struct NativeDropParticipants {
+   std::array<OBJECTID, 2> Objects;
+   OBJECTID PointerID;
+};
+
+static void native_snapshot_free(OBJECTPTR Object, ACTIONID, ERR, APTR, APTR Meta)
 {
-   auto pointer = (extPointer *)CurrentContext();
-   std::erase(pointer->PendingDrops, Object->UID);
-   if (pointer->PendingDrops.empty() and not pointer->DragSourceID and pointer->DragKeyHandle) {
-      UnsubscribeEvent(pointer->DragKeyHandle);
-      pointer->DragKeyHandle = nullptr;
+   std::unique_ptr<NativeDropParticipants> participants((NativeDropParticipants *)Meta);
+   {
+      kt::SwitchContext ctx(Object);
+      for (auto id : participants->Objects) {
+         kt::ScopedObjectLock participant(id);
+         if (participant.granted()) UnsubscribeAction(*participant, AC::Free);
+      }
+   }
+   if (kt::ScopedObjectLock<extPointer> pointer(participants->PointerID); pointer.granted()) {
+      std::erase(pointer->PendingDrops, Object->UID);
+      if (pointer->PendingDrops.empty() and not pointer->DragSourceID and pointer->DragKeyHandle) {
+         UnsubscribeEvent(pointer->DragKeyHandle);
+         pointer->DragKeyHandle = nullptr;
+      }
    }
 }
 
@@ -644,11 +658,17 @@ bool DriverDragStart(NativeDrop &Drop)
    snapshot.detach();
    auto failed = kt::Defer([&]() { if (pointer->DragFeedback IS 0) Drop.Snapshot.reset(); });
    {
-      kt::SwitchContext ctx(pointer);
-      if (SubscribeAction(GetObjectPtr(snapshot_id), AC::Free, C_FUNCTION(native_snapshot_free)) != ERR::Okay) {
+      auto participants = std::make_unique<NativeDropParticipants>();
+      participants->Objects = { Drop.TargetID, Drop.DisplayID };
+      participants->PointerID = pointer->UID;
+      // Cleanup must also run when the pointer itself is being destroyed.
+      kt::SwitchContext ctx(glModule);
+      if (SubscribeAction(GetObjectPtr(snapshot_id), AC::Free,
+            C_FUNCTION(native_snapshot_free, participants.get())) != ERR::Okay) {
          pointer->DragFeedback = 0;
          return false;
       }
+      participants.release();
       pointer->PendingDrops.push_back(snapshot_id);
    }
    {
