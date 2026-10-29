@@ -2,6 +2,7 @@
 -- these tests cover initialisation, text manipulation, search and undo, but not drawing or user input.
 
    include 'scintilla', 'vector'
+   module vector as mVec
 
 -- Create a headless scene with a viewport, and a Scintilla object hosted by it.  Returns the scene (which owns
 -- everything else), the viewport and the editor.
@@ -94,7 +95,11 @@ end
 
 @Test function DefaultFontInitialises()
    local scene <close>, vp, sci = newEditor()
-   assert(sci.font.fixedWidth > 0, 'The default font must be monospaced')
+   assert(sci.face is 'Source Code Pro' and sci.fontSize is 14, 'The default font fields must initialise')
+   local _, handle = check mVec.GetFontHandle(sci.face, 'Regular', 0, sci.fontSize)
+   local width = mVec.CharWidth(handle, 105, 0)
+   assert(width is mVec.CharWidth(handle, 77, 0) and width is mVec.CharWidth(handle, 87, 0),
+      'The default scalable face must be monospaced')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -508,8 +513,8 @@ end
    local second = vp.new('Scintilla', { })
 
    check second.mtSetFont('Veranda')
-   assert(first.font.face is 'Clean', f'The first editor must keep its font, got {first.font.face}')
-   assert(second.font.face is 'Veranda', f'The second editor must use its new font, got {second.font.face}')
+   assert(first.face is 'Source Code Pro', f'The first editor must keep its font, got {first.face}')
+   assert(second.face is 'Veranda', f'The second editor must use its new font, got {second.face}')
 
    second.free()
 
@@ -519,14 +524,25 @@ end
    assert(first.cursorRow is 50, f'The surviving editor must remain usable, cursor row is {first.cursorRow}')
 end
 
--- SetFont() replaced the Font object without freeing the previous one.
+-- Font handles are shared resources, while each editor retains its own face and size.
 
-@Test function SetFontReleasesPreviousFont()
+@Test function SetFontChangesFace()
    local scene <close>, vp, sci = newEditor()
-   local old_id = sci.font.id
-
+   local size = sci.fontSize
    check sci.mtSetFont('Opti')
-   assert(sci.font.face is 'Opti', f'SetFont() must change the face, got {sci.font.face}')
-   assert(sci.font.id != old_id, 'SetFont() must create a new Font object')
-   assert(obj.find(old_id) is nil, 'SetFont() must free the previous Font object')
+   assert(sci.face is 'Opti', f'SetFont() must change the face, got {sci.face}')
+   assert(sci.fontSize is size, 'SetFont() must preserve the pixel size')
+   assert(sci.set('face', '') is ERR_NullArgs, 'An empty face must be rejected')
+   assert(sci.face is 'Opti', 'A rejected face must preserve the previous face')
+end
+
+@Test function FontFieldsBeforeAndAfterInit()
+   local scene <close>, vp, sci = newEditor({ face='Noto Sans', fontSize=18 })
+   assert(sci.face is 'Noto Sans' and sci.fontSize is 18, 'Font fields must be accepted before Init')
+   sci.face = 'Source Code Pro'
+   sci.fontSize = 24
+   assert(sci.face is 'Source Code Pro' and sci.fontSize is 24, 'Font fields must be writable after Init')
+   assert(sci.set('fontSize', 0) is ERR_OutOfRange, 'A zero font size must be rejected')
+   assert(sci.set('fontSize', -1) is ERR_OutOfRange, 'A negative font size must be rejected')
+   assert(sci.fontSize is 24, 'Rejected sizes must preserve the previous size')
 end

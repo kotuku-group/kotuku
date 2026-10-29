@@ -25,6 +25,9 @@ inline constexpr int32_t CLASS_OFFSET_NETSOCKET = 384;
 // Processes module start
 // Processes module end
 
+// Scintilla module start
+// Scintilla module end
+
 // Script module start
 // Script module end
 

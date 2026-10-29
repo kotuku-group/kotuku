@@ -60,7 +60,8 @@ public:
    void BlendRectangle(Scintilla::PRectangle rc, Scintilla::ColourAllocated colour, int alpha);
 
 private:
-   OBJECTPTR GetFont(Scintilla::Font& font);
+   APTR GetFont(Scintilla::Font &Font);
+   int font_index(const Scintilla::Font &Font) const;
    void draw_path(APTR Path, const Scintilla::ColourAllocated *Fill, int FillAlpha,
       const Scintilla::ColourAllocated *Stroke, int StrokeAlpha);
 };
@@ -426,34 +427,18 @@ void SurfacePan::Copy(Scintilla::PRectangle rc, Scintilla::Point from, Scintilla
 
 //********************************************************************************************************************
 
-void SurfacePan::DrawTextBase(Scintilla::PRectangle rc, Scintilla::Font &font_, int ybase, const char *String, int len, Scintilla::ColourAllocated fore)
+void SurfacePan::DrawTextBase(Scintilla::PRectangle Rect, Scintilla::Font &Font, int Baseline,
+   const char *String, int Length, Scintilla::ColourAllocated Fore)
 {
-   kt::Log log(__FUNCTION__);
-   uint32_t col32;
+   if ((not bitmap) or (not scintilla) or (Length <= 0)) return;
 
-   std::string nstr(String, len);
-
-   col32 = fore.AsLong();
-
-   DBGDRAW("panDrawTextBase()","Bitmap: %p, #%.8x, String: %.10s TO %dx%d", bitmap, col32, nstr.c_str(), rc.left, rc.top);
-
-   if (!bitmap) return;
-
-   if (auto font = (objFont *)GetFont(font_)) { //static_cast<OBJECTPTR>(font_.GetID());
+   if (auto handle = GetFont(Font)) {
       BitmapClipper clipper(bitmap, cliprect);
-
-      // The font draws its glyph cell from Y minus its Leading, and the cell's baseline is Ascent pixels below its top.
-
-      font->setString(nstr);
-      font->Bitmap = bitmap;
-      font->X = rc.left;
-      font->Y = ybase - font->Ascent + font->Leading;
-      font->Colour.Red   = SCIRED(col32);
-      font->Colour.Green = SCIGREEN(col32);
-      font->Colour.Blue  = SCIBLUE(col32);
-      font->Colour.Alpha = 255;
-
-      acDraw(font);
+      set_vector_colour(scintilla->FillColour, Fore, 255);
+      if (auto error = vec::DrawText(bitmap, handle, Rect.left, Baseline,
+            std::string_view(String, size_t(Length)), scintilla->FillColour, nullptr); error != ERR::Okay) {
+         kt::Log(__FUNCTION__).warning(error);
+      }
    }
 }
 
@@ -470,12 +455,14 @@ void SurfacePan::DrawTextNoClip(Scintilla::PRectangle rc, Scintilla::Font &font_
 //********************************************************************************************************************
 // On GTK+, exactly same as DrawTextNoClip
 
-void SurfacePan::DrawTextClipped(Scintilla::PRectangle rc, Scintilla::Font &font_, int ybase, const char *s, int len,
-                                  Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
+void SurfacePan::DrawTextClipped(Scintilla::PRectangle Rect, Scintilla::Font &Font, int Baseline,
+   const char *String, int Length, Scintilla::ColourAllocated Fore, Scintilla::ColourAllocated Back)
 {
-   DBGDRAW("panDrawTextClipped()","");
-   FillRectangle(rc, back);
-   DrawTextBase(rc, font_, ybase, s, len, fore);
+   DBGDRAW("panDrawTextClipped()", "");
+   if (not bitmap) return;
+   BitmapClipper clipper(bitmap, Rect);
+   FillRectangle(Rect, Back);
+   DrawTextBase(Rect, Font, Baseline, String, Length, Fore);
 }
 
 //********************************************************************************************************************
@@ -496,113 +483,77 @@ void SurfacePan::DrawTextTransparent(Scintilla::PRectangle rc, Scintilla::Font &
 
 //********************************************************************************************************************
 
-void SurfacePan::MeasureWidths(Scintilla::Font &font_, const char *string, int len, int *positions)
+void SurfacePan::MeasureWidths(Scintilla::Font &Font, const char *String, int Length, int *Positions)
 {
-   objFont *font = (objFont *)GetFont(font_);
-   uint32_t unicode;
-   uint8_t *str;
-   int i, charpos, copy;
+   auto handle = GetFont(Font);
+   double position = 0;
+   uint32_t previous = 0;
 
-   str = (uint8_t *)string;
-   if (font) {
-      charpos = 0;
-      for (i=0; i < len; ) {
-         if (font->FixedWidth) {
-            if ((uint8_t)(str[i]) < 128) copy = 1;
-            else if ((str[i] & 0xe0) IS 0xc0) copy = 2;
-            else if ((str[i] & 0xf0) IS 0xe0) copy = 3;
-            else if ((str[i] & 0xf8) IS 0xf0) copy = 4;
-            else if ((str[i] & 0xfc) IS 0xf8) copy = 5;
-            else if ((str[i] & 0xfc) IS 0xfc) copy = 6;
-            else copy = 1;
-
-            charpos += font->FixedWidth;
-         }
-         else {
-            if (str[i] < 128) {
-               unicode = str[i];
-               if ((uint8_t)(str[i]) < 128) copy = 1;
-               else if ((str[i] & 0xe0) IS 0xc0) copy = 2;
-               else if ((str[i] & 0xf0) IS 0xe0) copy = 3;
-               else if ((str[i] & 0xf8) IS 0xf0) copy = 4;
-               else if ((str[i] & 0xfc) IS 0xf8) copy = 5;
-               else if ((str[i] & 0xfc) IS 0xfc) copy = 6;
-               else copy = 1;
-            }
-            else {
-               unicode = UTF8ReadValue(std::string_view((const char *)str + i, size_t(len - i)), &copy);
-            }
-
-            charpos += fnt::CharWidth(font, unicode);
-         }
-         positions[i++] = charpos;
-
-         // Supporting UTF8 characters are assigned the same pixel offset
-
-         while ((copy > 1) and (i < len)) {
-            positions[i++] = charpos;
-            copy--;
-         }
-      }
+   for (int i = 0; i < Length; ) {
+      int bytes = 1;
+      uint32_t unicode = UTF8ReadValue(std::string_view(String + i, size_t(Length - i)), &bytes);
+      bytes = std::clamp(bytes, 1, Length - i);
+      double kerning = 0;
+      const double advance = vec::CharWidth(handle, unicode, previous, &kerning);
+      position += kerning;
+      position += advance;
+      previous = unicode;
+      const int rounded = int(std::round(position));
+      for (int end = i + bytes; i < end; i++) Positions[i] = rounded;
    }
-   else for (int i = 0; i < len; ++i) positions[i] = i + 1;
 }
 
 //********************************************************************************************************************
 
-int SurfacePan::WidthText(Scintilla::Font &font_, const char *s, int len)
+int SurfacePan::WidthText(Scintilla::Font &Font, const char *String, int Length)
 {
-   OBJECTPTR font = GetFont(font_);
-
-   if (font) {
-      // The string view limits measurement to len bytes, so all of its characters are measured.
-      return fnt::StringWidth((objFont *)font, std::string_view(s, size_t(len)), -1);
+   if (Length <= 0) return 0;
+   if (auto handle = GetFont(Font)) {
+      return int(std::round(vec::StringWidth(handle, std::string_view(String, size_t(Length)), -1)));
    }
-
-   return 5; // crashes if you return 0 here !!!
+   return 5;
 }
 
 //********************************************************************************************************************
 
-int SurfacePan::WidthChar(Scintilla::Font &font_, char ch)
+int SurfacePan::WidthChar(Scintilla::Font &Font, char Char)
 {
-   objFont *font = (objFont *)GetFont(font_);
-   return fnt::CharWidth(font, ch);
+   return int(std::round(vec::CharWidth(GetFont(Font), uint8_t(Char), 0, nullptr)));
 }
 
 //********************************************************************************************************************
-// The ascent includes the internal leading, and the descent is the remainder of the glyph cell below the baseline.
-// Scintilla's line height is the sum of the two, which matches the font's glyph cell.
+// LineSpacing includes the room above the cap height needed by accented capitals.
 
-int SurfacePan::Ascent(Scintilla::Font &font_)
+int SurfacePan::Ascent(Scintilla::Font &Font)
 {
-   if (auto font = (objFont *)GetFont(font_)) return font->Ascent;
-   else return 10;
-}
-
-//********************************************************************************************************************
-
-int SurfacePan::Descent(Scintilla::Font &font_)
-{
-   if (auto font = (objFont *)GetFont(font_)) return std::max(0, font->MaxHeight - font->Ascent);
-   else return 3;
+   FontMetrics metrics;
+   if (vec::GetFontMetrics(GetFont(Font), &metrics) IS ERR::Okay) {
+      return std::max(0, metrics.LineSpacing - metrics.Descent);
+   }
+   return 10;
 }
 
 //********************************************************************************************************************
 
-int SurfacePan::InternalLeading(Scintilla::Font &font_)
+int SurfacePan::Descent(Scintilla::Font &Font)
 {
-   OBJECTPTR font = GetFont(font_);//OBJECTPTR(font_.GetID());
-
-   if (font) return GetFontLeading(font);
-   else return 0;
+   FontMetrics metrics;
+   if (vec::GetFontMetrics(GetFont(Font), &metrics) IS ERR::Okay) return std::max(0, metrics.Descent);
+   return 3;
 }
 
 //********************************************************************************************************************
 
-int SurfacePan::ExternalLeading(Scintilla::Font &font_)
+int SurfacePan::InternalLeading(Scintilla::Font &Font)
 {
-   return 0; // Bitmap fonts include their line spacing in the glyph cell
+   return 0;
+}
+
+//********************************************************************************************************************
+
+int SurfacePan::ExternalLeading(Scintilla::Font &Font)
+{
+   return 0;
 }
 
 //********************************************************************************************************************
@@ -669,22 +620,16 @@ void SurfacePan::SetDBCSMode(int codePage)
 }
 
 //********************************************************************************************************************
-// Scintilla::Font only records the bold and italic state of a style (see pan_classes.cxx).  The font objects belong to
-// the Scintilla object that owns this surface, so each instance measures and draws with its own fonts.
+// Styles select the owning editor's shared handles; font handles are never freed by Scintilla.
 
-OBJECTPTR SurfacePan::GetFont(Scintilla::Font& font_)
+int SurfacePan::font_index(const Scintilla::Font &Font) const
 {
-   if (!scintilla) return nullptr;
+   return (Font.bold ? 1 : 0) + (Font.italic ? 2 : 0);
+}
 
-   if (font_.bold) {
-      if ((font_.italic) and (scintilla->BIFont)) return scintilla->BIFont;
-      else if (scintilla->BoldFont) return scintilla->BoldFont;
-   }
-   else if ((font_.italic) and (scintilla->ItalicFont)) {
-      return scintilla->ItalicFont;
-   }
-
-   return scintilla->Font;
+APTR SurfacePan::GetFont(Scintilla::Font &Font)
+{
+   return scintilla ? scintilla->FontHandles[font_index(Font)] : nullptr;
 }
 
 //********************************************************************************************************************
