@@ -519,15 +519,15 @@ function createFileItem(Info)
       if &hideFiles then return end
 
       if not &_filter or &_filter.test(Info.name) then
-         filename = &hideExtensions ? rxStripExtension.extract(Info.name) : Info.name
+         display_name = &hideExtensions ? (rxStripExtension.extract(Info.name) ?? Info.name) : Info.name
 
           new_item = {
             type        = 'file',
             icon        = getFileIcon(&path .. Info.name),
-            name        = { sort = 'F' .. Info.name.lower(), value = Info.name },
-            filename    = filename,
+            name        = { sort = 'F' .. Info.name.lower(), value = display_name },
+            filename    = Info.name,
             path        = (&path ?? '') .. Info.name,
-            hidden      = not filterCheck(filename),
+            hidden      = not filterCheck(Info.name),
             size        = { sort = sortNum(Info.size), value = Info.size },
             date        = { sort = 'F' .. sortNum(Info.timestamp), value = printableTime(Info.modified) },
             owner       = mSys.ResolveUserID(Info.userID),
@@ -589,7 +589,7 @@ gui.fileview = function(Options)
 
    function deleteItem(File)
       for item in values(&view.items) do
-         if File is rxStripFolder.extract(item.name.value ?? '') then
+         if File is rxStripFolder.extract(item.filename ?? '') then
             &view.removeItem(item)
             return true
          end
@@ -816,7 +816,7 @@ gui.fileview = function(Options)
       &path ?! return
 
       for item in values(Items) do
-         err, class_id, command = mSys.IdentifyFile(&path .. item.name.value, Mode, 0)
+         err, class_id, command = mSys.IdentifyFile(item.path, Mode, 0)
          if err is ERR_Okay then
             obj.new('task', { path = command }).acActivate()
          end
@@ -852,11 +852,8 @@ gui.fileview = function(Options)
    end
 
    function[<weak> self] responseRename(Dialog, Response, State)
-      if Response.id > 0 then
-         c = Dialog.var.src.sub(-1)
-         dir = (c is '/' or c is ':' or c is '\\')
-
-         dest = &path .. State.input
+      if Response?.id is 1 then
+         dest = Dialog.var.path .. State.input
 
          if Dialog.var.src is dest then return end
 
@@ -875,8 +872,9 @@ gui.fileview = function(Options)
                popOver  = &_surface,
                modal    = true,
                feedback = function[&&](Dialog, Response, State)
+                  if Response?.id != 1 then return end
                   if mSys.MoveFile(Dialog.var.src, Dialog.var.dest) is ERR_Okay then
-                     --DelayMsg(AC_Refresh, &Head.UniqueID)
+                     if not &watch then &refresh() end
                   else
                      gui.dialog.error('File Rename Failure', 'The rename operation failed.')
                   end
@@ -890,22 +888,7 @@ gui.fileview = function(Options)
             try
                fl = obj.new('file', { path=Dialog.var.src, flags=FL_READ } )
                if fl.acRename(State.input) is ERR_Okay and not &watch then
-                  item = findItem(Dialog.var.name)
-                  if item then
-                     new_name = State.input
-                     if item.type is 'folder' then
-                        item.name.value = new_name .. '/'
-                        item.filename   = new_name .. '/'
-                     elseif item.type is 'volume' then
-                        item.name.value = new_name .. ':'
-                        item.filename   = new_name .. ':'
-                     else
-                        item.name.value = new_name
-                        item.filename   = new_name
-                     end
-
-                     &view.sortView()
-                  end
+                  &refresh()
                end
             except ex
                gui.dialog.error('File Rename Failure', 'Failed to rename the file.  ' .. ex.message)
@@ -990,7 +973,7 @@ gui.fileview = function(Options)
       clipboard = obj.new('clipboard')
       clipboard.mtRemove(CLIPTYPE_FILE)
       for item in values(&view.selectedItems()) do
-         clipboard.mtAddFile(CLIPTYPE_FILE, &path .. item.name.value, CEF_DELETE)
+         clipboard.mtAddFile(CLIPTYPE_FILE, item.path, CEF_DELETE)
       end
    end
 
@@ -1000,7 +983,7 @@ gui.fileview = function(Options)
       clipboard = obj.new('clipboard')
       clipboard.mtRemove(CLIPTYPE_FILE)
       for item in values(&view.selectedItems()) do
-         clipboard.mtAddFile(CLIPTYPE_FILE, &path .. item.name.value, CEF_EXTEND)
+         clipboard.mtAddFile(CLIPTYPE_FILE, item.path, CEF_EXTEND)
       end
    end
 
@@ -1053,7 +1036,7 @@ gui.fileview = function(Options)
             userInput = true,
             inputRequired = true,
             feedback = function[&&](Dialog, Response, State)
-               if Response.id > 0 and State.input?? then
+               if Response?.id is 1 and State.input?? then
                   path = f'{&path}{State.input}/'
                   if mSys.CreateFolder(path, 0) is ERR_Okay then
                      if not &watch then
@@ -1100,7 +1083,7 @@ gui.fileview = function(Options)
          },
          inject = inject,
          feedback = function[&&](Dialog, Response, State)
-            if Response.id > 0 then
+            if Response?.id is 1 then
                txtName = obj.find('txtName')
                txtPath = obj.find('txtPath')
                if txtName?? and txtPath?? then
@@ -1108,8 +1091,6 @@ gui.fileview = function(Options)
                   -- TODO: New shortcut should be permanently saved
                end
             end
-
-            obj.find('self')._response = Response.id
          end
       })
    end
@@ -1118,6 +1099,7 @@ gui.fileview = function(Options)
 
    self.deleteFiles = function[self]()
       items = &view.selectedItems()
+      if #items is 0 then return end
 
       local msg
       if #items > 1 then
@@ -1138,25 +1120,34 @@ gui.fileview = function(Options)
          popOver  = &_surface,
          modal    = true,
          feedback = function[&&](Dialog, Response, State)
-            if Response.id > 0 then
+            if Response?.id is 1 then
                &view.deselectAll()
 
-               statement = ''
-               for fl in values(Dialog.files) do
-                  statement ..= f'mSys.DeleteFile("{fl}")\n'
+               delete_script = obj.new('tiri', { statement = [[
+                  for index in {0 to tonumber(arg('count'))} do
+                     check mSys.DeleteFile(arg(tostring(index)))
+                  end
+               ]] })
+               delete_script.acSetKey('count', tostring(#Dialog.files))
+               for index, path in Dialog.files do
+                  delete_script.acSetKey(tostring(index), path)
                end
 
-               async.script(obj.new('tiri', { statement=statement }),
-                  function()
+               async.script(delete_script, function[&&](Script)
+                  if not &_released then
                      if not &watch then &refresh() end
-                  end)
+                     if Script.error != ERR_Okay then
+                        gui.dialog.error('File Deletion Failure', Script.errorMessage)
+                     end
+                  end
+               end)
             end
          end
       })
 
-      &dlgDelete.files = { }
+      &dlgDelete.files = array<str>
       for item in values(items) do
-         &dlgDelete.files.insert((&path ?? '') .. item.name.value)
+         &dlgDelete.files.push(item.path)
       end
    end
 
@@ -1247,8 +1238,9 @@ gui.fileview = function(Options)
    self.renameFile = function[self]()
       &path ?! return
 
-      sel = &selection()
-      sel ?! return
+      item = &view.sItem
+      if not item or not item.path then return end
+      sel = item.filename
 
       &dlgRename = gui.dialog.message({
          title     = 'Rename',
@@ -1264,7 +1256,7 @@ gui.fileview = function(Options)
          feedback  = responseRename
       })
 
-      &dlgRename.var = { src=&selectedItemPath(), name=sel, path=&path }
+      &dlgRename.var = { src=item.path, name=sel, path=&path }
    end
 
    -- Run the view command for all currently selected files.
@@ -1647,7 +1639,7 @@ gui.fileview = function(Options)
    -- Return the complete, fully-qualified path of the most recently selected item
 
    self.selectionPath = function[self]():str
-      if &view.sItem then return (&path ?? '') .. &view.sItem.filename end
+      return &view?.sItem?.path
    end
 
    assert(Options.target, 'A target viewport must be specified.')
