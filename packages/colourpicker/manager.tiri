@@ -132,7 +132,7 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
    theme = gui.getTheme(Viewport)
 
    t = Tokens
-   self = { viewport = Viewport, cells = array<obj> }
+   self = { viewport = Viewport, cells = array<obj>, colours = array<str> }
 
    -- The cursor is set on a shape rather than the row viewport: a viewport with a cursor takes the input from the
    -- list, but a shape without input subscriptions passes it through.
@@ -163,38 +163,83 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
       style = 'Bold'
    })
 
+   self.tagWidth = self.tag.textWidth
+
+   -- Fitting a text that has to be shortened is slow, and the rows of a large database are fitted again when the
+   -- list's scrollbar appears or disappears.  A row keeps the fitted string for each width of its text, until the
+   -- text changes.
+
+   function fitRowText(Vector:obj!, Fit:table!, Text:str!, Width:num!)
+      if Fit.text != Text then Fit.{ text = Text, widths = { } } end
+      fitted = Fit.widths[Width]
+      if fitted then
+         if Vector.string != fitted then Vector.string = fitted end
+         return
+      end
+      colourpicker_parts.fitText(Vector, '', Text, Width)
+      Fit.widths[Width] = Vector.string
+   end
+
+   name_fit, sub_fit = { }, { }
+
    function fit()
       right = Viewport.width - 8
-      self.tag.x = right
-      space = right - self.name.x - ((self.tag.visibility is VIS_VISIBLE) ? (self.tag.textWidth + 8) : 0)
-      colourpicker_parts.fitText(self.name, '', self.palette?.name ?? '', space)
-      if self.palette then
-         summary = self.filtered ? f'filtered out  ·  {plural(#self.palette.swatches, "colour")}' :
-            paletteSummary(self.palette)
-         colourpicker_parts.fitText(self.sub, '', summary, right - self.sub.x)
-      end
+      if self.tag.x != right then self.tag.x = right end
+      tag_w = self.current ? (self.tagWidth + 8) : 0
+      fitRowText(self.name, name_fit, self.palette.name, right - text_x - tag_w)
+      summary = self.filtered ? f'filtered out  ·  {plural(#self.palette.swatches, "colour")}' :
+         paletteSummary(self.palette)
+      fitRowText(self.sub, sub_fit, summary, right - text_x)
    end
+
+   -- The list refreshes every shown row when the palettes may have changed (see updateList()), so a row changes only
+   -- what differs from its last update: the strip is rebuilt if the number of swatches changes, a cell's fill is set
+   -- if its colour changes, and the text is fitted again if the name, the summary or the tag changes.  A hidden row
+   -- is brought up to date when it is shown.
 
    self.set = function(Item:table!)
       palette = Item.palette
       self.palette = palette
-      for cell in values(self.cells) do cell.free() end
-      self.cells.clear()
-      n = math.max(1, #palette.swatches)
-      w = STRIP_W / n
-      for i, s in palette.swatches do
-         self.cells.push(self.strip.new('VectorRectangle', {
-            x = i * w, y = 0, width = w + 0.5, height = STRIP_H, fill = swatchFill(s)
-         }))
+      if Item.hidden then
+         self.stale = true
+         return
       end
-      self.tag.visibility = Item.current ? VIS_VISIBLE : VIS_HIDDEN
-      self.filtered = Item.filtered is true
-      self.name.fill = self.filtered ? t.fg3 : t.fg0
-      self.strip.opacity = self.filtered ? 0.45 : 1
+
+      swatches = palette.swatches
+      if #swatches != #self.cells then
+         for cell in values(self.cells) do cell.free() end
+         self.cells.clear()
+         self.colours.clear()
+         w = STRIP_W / math.max(1, #swatches)
+         for i in {0 to #swatches} do
+            self.cells.push(self.strip.new('VectorRectangle', { x = i * w, y = 0, width = w + 0.5, height = STRIP_H }))
+            self.colours.push('')
+         end
+      end
+      for i, s in swatches do
+         colour = f'{s.l} {s.c} {s.h} {s.alpha}'
+         if colour != self.colours[i] then
+            self.colours[i] = colour
+            self.cells[i].fill = swatchFill(s)
+         end
+      end
+
+      filtered = Item.filtered is true
+      state = f'{palette.name}|{#swatches}|{palette.mode}|{Item.current is true}|{filtered}'
+      if (state is self.state) and not self.stale then return end
+      self.state = state
+      self.stale = false
+      self.current = Item.current is true
+      self.tag.visibility = self.current ? VIS_VISIBLE : VIS_HIDDEN
+      self.filtered = filtered
+      self.name.fill = filtered ? t.fg3 : t.fg0
+      self.strip.opacity = filtered ? 0.45 : 1
       fit()
    end
 
-   self.layout = function() fit() end
+   self.layout = function(Item:table!)
+      if Item.hidden then self.stale = true else fit() end
+   end
 
    -- State is 'active' for the selected palette, 'hover' for the row under the pointer, or nil.  Focused outlines the
    -- list's keyboard target.
@@ -620,7 +665,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       elseif Reason is 'update' then
          Item.content.set(Item)
       elseif Reason is 'layout' then
-         Item.content.layout()
+         Item.content.layout(Item)
       elseif Reason is 'destroy' then
          Item.content = nil
       end
@@ -638,9 +683,14 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       target = left.body, x = INSET, y = INSET, width = inner_w, height = SEARCH_H, placeholder = 'Search palettes…',
       theme = inputText(SEARCH_H),
       events = {
+         -- Keystrokes that arrive in the same message cycle update the list once.
+
          change = function(Event)
             self.filter = (Event.text ?? '').trim().lower()
+            if self.searchPending then return end
+            self.searchPending = true
             processing.delayedCall(function()
+               self.searchPending = false
                if self.list then self.updateList() end
             end)
          end,
@@ -1129,24 +1179,62 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       return (Palette.description ?? '').lower().find(self.filter, 0, true) != nil
    end
 
-   -- The selected palette is listed even if the search hides it, so that the selection is kept.  Its row is marked as
-   -- filtered out, and is dropped from the list when another palette is selected.
+   -- True if the list has an item for each database palette, in order.
 
-   self.updateList = function()
-      items = array<table>
+   function listedInOrder():bool
+      items = self.list.items
+      palettes = db().palettes
+      if #items != #palettes then return false end
+      for i in {0 to #items} do
+         if not rawequal(items[i].palette, palettes[i]) then return false end
+      end
+      return true
+   end
+
+   -- The list has a row for every palette, and the search hides the rows that don't match.  The selected palette is
+   -- listed even if the search hides it, so that the selection is kept.  Its row is marked as filtered out, and is
+   -- hidden when another palette is selected.
+   --
+   -- Creating the rows of a large database is slow, so the list is rebuilt only if the palettes have been added,
+   -- removed or reordered.  Otherwise the items are updated in place and the list is laid out again.  A row is
+   -- refreshed if it is shown and its item has changed, or if Refresh is true (the palettes may have been edited),
+   -- and it redraws only what has changed (see paletteRow()).
+
+   self.updateList = function(Refresh:bool)
       self.matches = 0
       self.pinned = nil
-      for i, p in db().palettes do
+      shown = 0
+      palettes = db().palettes
+      in_place = listedInOrder()
+      items = in_place ? self.list.items : array<table>
+      changed = array<table>
+      for i, p in palettes do
          match = matches(p)
          if match then self.matches++ end
-         if match or isSelected(i) then
-            items.push({ index = i, name = p.name, palette = p, current = (p.id is Picker.dbID), filtered = not match })
-            if not match then self.pinned = i end
+         listed = match or isSelected(i)
+         if listed then shown++ end
+         if (not match) and listed then self.pinned = i end
+         current = p.id is Picker.dbID
+         if in_place then
+            item = items[i]
+            if listed and (Refresh or item.hidden or (item.filtered != not match) or (item.current != current) or
+               (item.name != p.name)) then
+               changed.push(item)
+            end
+            item.{ name = p.name, current = current, filtered = not match, hidden = not listed }
+         else
+            items.push({ index = i, palette = p, name = p.name, current = current, filtered = not match,
+               hidden = not listed })
          end
       end
-      self.list.loadItems(items)
+      if in_place then
+         self.list.relayout()
+         for item in values(changed) do self.list.refreshItem(item) end
+      else
+         self.list.loadItems(items)
+      end
       self.empty.visibility = (self.matches is 0) ? VIS_VISIBLE : VIS_HIDDEN
-      self.empty.y = empty_y + ((#items > 0) ? (LIST_ROW_H + 2) : 0)
+      self.empty.y = empty_y + ((shown > 0) ? (LIST_ROW_H + 2) : 0)
       self.clearButton.visibility = (self.search.getText()??) ? VIS_VISIBLE : VIS_HIDDEN
       updateButtons()
       if self.flashStarter or not self.flashTimer then left.setMeta(listMeta()) end
@@ -1259,7 +1347,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       if (self.selected != nil) and (self.selected >= count) then self.selected = nil end
       palette = selectedPalette()
       if palette and (self.swatch != nil) and (self.swatch >= #palette.swatches) then self.swatch = nil end
-      self.updateList()
+      self.updateList(true)
       updateCards()
       updateInfo()
       self.viewport.acDraw()
@@ -1475,13 +1563,13 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          try
             text = io.readAll(Path)
          except e
-            msg(f'Palette import failed: {e.message}')
+            print(f'Colour picker: palette import failed: {e.message}')
             report('Import Failed', f'"{file}" could not be read.  {e.message}', 'error')
             return
          end
          imported, err = colourpalette.databaseFromJSON(text)
          if not imported then
-            msg(f'Palette import from {Path} failed: {err}')
+            print(f'Colour picker: palette import from {Path} failed: {err}')
             report('Import Failed', f'"{file}" could not be imported.  {err}.', 'error')
             return
          end
@@ -1515,7 +1603,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       if saved then
          flash('exported')
       else
-         msg(f'Palette export failed: {reason}')
+         print(f'Colour picker: palette export failed: {reason}')
          report('Export Failed', f'The palettes could not be exported to "{File}".  {reason}', 'error')
       end
    end
@@ -1570,14 +1658,17 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       return widgets
    end
 
+   -- The callbacks of the manager's dialogs do nothing once the list is cleared.  Close the file dialog through its
+   -- cancellation handler to release its subscriptions and any overwrite confirmation before dropping the reference.
+
    self.destroy = function()
+      self.list = nil
       colourpicker_parts.cancelTimer(self.flashTimer)
       self.flashTimer = nil
-      self.dialog?.window?.surface?.free()
+      self.dialog?.window?.events?.close()
       self.dialog = nil
       self.messageDialog?.window?.surface?.free()
       self.messageDialog = nil
-      self.list = nil
       self.starterList = nil
       self.cards = nil
    end
