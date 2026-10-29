@@ -144,7 +144,7 @@ gui.dialog.message = function(Options:table!)
       if not &window then return end -- The dialog has already responded
 
       response = &options[Index]
-      state = { checkbox = (&checkbox?.value is 1) }
+      state = { checkbox = (&checkbox?.value is true) }
 
       if &input then
          text = &input.getText()

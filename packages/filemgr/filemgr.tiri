@@ -45,7 +45,7 @@ function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, Feed
          title   = 'File Transfer Progress',
          type    = 'info',
          message = 'Copying...\nPlease wait...',
-         options = { id=-1, label='Cancel', icon='items/cancel' },
+         options = { { id=-1, label='Cancel', icon='items/cancel' } },
          feedback = function(Dialog, Response, State)
             if Response and Response.id is -1 then
                progress_status = 'cancel'
@@ -77,7 +77,7 @@ function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, Feed
       end
 
       if msg then
-         progress_dialog.setMessage(msg, false)
+         progress_dialog.setMessage(msg)
          progress_time = mSys.PreciseTime()
          processing.sleep(0)
       end
@@ -269,7 +269,7 @@ io.ui.delete = function(Paths)
                type    = 'info',
                title   = 'File Deletion Progress',
                message = 'Deleting...',
-               options = { id=-1, label='Cancel', icon='items/cancel' },
+               options = { { id=-1, label='Cancel', icon='items/cancel' } },
                feedback = function(Dialog, Response, State)
                   if Response and Response.id is -1 then
                      progress_status = 'cancel'
@@ -282,7 +282,7 @@ io.ui.delete = function(Paths)
 
          if progress_dialog then
             local folder, file = io.splitPath(Path)
-            progress_dialog.setMessage('Deleting: ' .. file, false)
+            progress_dialog.setMessage('Deleting: ' .. file)
             progress_time = mSys.PreciseTime()
             processing.sleep(0)
          end

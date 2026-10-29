@@ -14,19 +14,17 @@ FONT_MAX_HEIGHT = gui.getFontHeight(gui.fonts.widget)
 DEFAULT_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1 -- Matches the combobox and input
 
 function toggleState()
-   if &value is 1 then
-      &value = 0
-      &iconRender.opacity = 0.25
-   else
-      &value = 1
-      &iconRender.opacity = 1.0
-   end
-
+   if &disabled then return end
+   &setState(not &value)
    &events.activate?()
 end
 
-gui.toggle = function(Options)
+gui.toggle = function(Options:table!):table
+   assert(Options.value is nil or Options.value is <bool> or Options.value is 0 or Options.value is 1,
+      'Toggle value must be a boolean or 0/1.')
+
    self = entity { -- Public interface
+      disabled       = false,
       events         = Options.events ?? { },
       label          = Options.label,
       labelPos       = Options.labelPos ?? 'right',
@@ -34,9 +32,17 @@ gui.toggle = function(Options)
       labelWidth     = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
       parentViewport = Options.target,
       labelText      = nil, -- A VectorText that represents the label
-      value          = Options.value ?? 0,
+      value          = Options.value is true or Options.value is 1,
       viewport       = nil, -- The toggle's primary viewport
    }
+
+   -- Update the displayed state without reporting a user activation.  Disabled toggles can still be updated.
+
+   self.setState = function(State:bool!)
+      &value = State
+      &iconRender.opacity = State ? 1.0 : 0.25
+      &viewport.acDraw()
+   end
 
    -- Change the active state of the toggle to disabled or enabled
 
@@ -126,18 +132,16 @@ gui.toggle = function(Options)
          width  = ICON_SIZE + (icon_margin * 2),
          height = ICON_SIZE + (icon_margin * 2),
          fill   = chk_icon.fill,
-         opacity = (function()
-            return &value is 1 ? 1.0 : 0.25
-         end)()
+         opacity = &value ? 1.0 : 0.25
       })
 
       &viewport.mtSubscribeFeedback(FM_HAS_FOCUS|FM_CHILD_HAS_FOCUS|FM_LOST_FOCUS, function(Viewport, Event)
          if Event is FM_LOST_FOCUS then
-            gui.applyStyle(&bkgd, &theme.input.bkgd)
+            gui.applyStyle(&bkgd, &disabled ? &theme.input.disabled : &theme.input.bkgd)
             &events.lostFocus?()
          else
             if &disabled then
-               gui.applyStyle(&bkgd, &theme.input.bkgd)
+               gui.applyStyle(&bkgd, &theme.input.disabled)
             else
                gui.applyStyle(&bkgd, &theme.input.focus)
                &events.focus?()
@@ -152,7 +156,6 @@ gui.toggle = function(Options)
 
          if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
             toggleState()
-            Viewport.acDraw()
          end
       end)
 
@@ -163,8 +166,6 @@ gui.toggle = function(Options)
             end
             Msg = Msg.next
          until not Msg
-
-         Viewport.acDraw()
       end)
 
       if Options.disabled then &disable() end
