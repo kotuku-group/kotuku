@@ -10,18 +10,18 @@
 
 TOKENS <const> = {
    light = {
-      bg0 = 'oklch(0.982 0.004 91.446)', -- Button hover highlight
-      bg1 = 'oklch(0.905 0.005 78.298)', -- Toolbar background
-      panel = 'oklch(1.000 0.000 89.876)',
-      sunk = 'oklch(0.971 0.003 67.783)',
+      bg0    = 'oklch(0.982 0.004 91.446)', -- Button hover highlight
+      bg1    = 'oklch(0.905 0.005 78.298)', -- Toolbar background
+      panel  = 'oklch(1.000 0.000 89.876)',
+      sunk   = 'oklch(0.971 0.003 67.783)',
       border = 'oklch(0.851 0.006 84.568)',
       borderStrong = 'oklch(0.821 0.009 84.577)',
       divider = 'oklch(0.929 0.005 67.761)',
-      fg0 = 'oklch(0.119 0.011 80.573)', -- Primary text: values, swatch names, input and button text; slider thumbs
-      fg1 = 'oklch(0.230 0.011 84.593)', -- Secondary text: window text, chip labels and prose such as "Closest named"
-      fg2 = 'oklch(0.300 0.008 80.707)', -- Panel titles, channel and relationship keys, swatch hex values and footer key caps
-      fg3 = 'oklch(0.490 0.006 84.573)', -- Muted text: cell labels, panel meta, sub-labels, units and separators; small glyphs
-      accent = 'oklch(0.550 0.180 258.028)', accentFg = 'oklch(1.000 0.000 89.876)', accentSoft = 'oklch(0.949 0.025 249.951)'
+      fg0     = 'oklch(0.119 0.011 80.573)', -- Primary text: values, swatch names, input and button text; slider thumbs
+      fg1     = 'oklch(0.230 0.011 84.593)', -- Secondary text: window text, chip labels and prose such as "Closest named"
+      fg2     = 'oklch(0.300 0.008 80.707)', -- Panel titles, channel and relationship keys, swatch hex values and footer key caps
+      fg3     = 'oklch(0.490 0.006 84.573)', -- Muted text: cell labels, panel meta, sub-labels, units and separators; small glyphs
+      accent  = 'oklch(0.550 0.180 258.028)', accentFg = 'oklch(1.000 0.000 89.876)', accentSoft = 'oklch(0.949 0.025 249.951)'
    },
    dark = { -- The same roles as the light tokens
       bg0 = 'oklch(0.179 0.007 78.130)', bg1 = 'oklch(0.210 0.008 84.585)', panel = 'oklch(0.250 0.009 75.203)', sunk = 'oklch(0.189 0.008 67.334)',
@@ -138,12 +138,14 @@ end
 
 function paletteTint(Palette:table):<num, num>
    if not Palette?.bkgd then return nil end
+
    try
       lch = gui.strToRGB(Palette.bkgd).toOKLCH()
       return lch.okh, math.min(lch.okc / TINT_REFERENCE, TINT_MAX_SCALE)
    except ex
       msg(f'Palette bkgd colour "{Palette.bkgd}" is not a plain colour; the neutral tokens are untinted.')
    end
+
    return nil
 end
 
@@ -203,18 +205,7 @@ function buildTheme(Base:table):table
    t = themeTokens(scheme, Base.palette)
    theme = table.clone(Base) -- Keeps the scheme, palette and init fields and the menubar.menu alias
 
-   -- Scrollbars use the directional styles in preference to the generic style, if the base theme defines them.
-
-   scrollbar = {
-      bkgd          = { fill = t.sunk },
-      fore          = { fill = t.borderStrong, opacity = 1 }
-   }
-
    overlay(theme, {
-      window = {
-         text   = { fill = t.fg1 },
-         stroke = { stroke = t.border, strokeWidth = 1 }
-      },
       page = {
          bkgd              = { fill = t.sunk },
          border            = { stroke = t.border, strokeWidth = 1 },
@@ -226,17 +217,17 @@ function buildTheme(Base:table):table
          textSelectBkgd    = t.accent
       },
       input = { -- Also used by combobox and checkbox
-         bkgd  = { fill = t.sunk, stroke = t.border }
+         bkgd  = { fill = scheme is 'dark' ? 'rgb(0 0 0 / .55)' : 'rgb(255 255 255 / .75)', stroke = t.border }
       },
       dropdown = {
-         bkgd          = { fill = t.panel },
-         border        = { stroke = t.borderStrong, strokeWidth = 1 },
-         text          = { fill = t.fg0 },
+         bkgd   = { fill = t.panel },
+         border = { stroke = t.borderStrong, strokeWidth = 1 },
+         text   = { fill = t.fg0 },
       },
       slider = {
-         bkgd          = { fill = t.border },
-         fore          = { fill = t.fg0, opacity = 1 },
-         foreFocus     = { stroke = t.accent }
+         bkgd      = { fill = t.border },
+         fore      = { fill = t.fg0, opacity = 1 },
+         foreFocus = { stroke = t.accent }
       }
    })
 

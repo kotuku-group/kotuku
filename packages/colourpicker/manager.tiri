@@ -129,6 +129,8 @@ end
 -- says that it is filtered out.  The whole row shows the hand cursor.
 
 function paletteRow(Viewport:obj!, Tokens:table!):table
+   theme = gui.getTheme(Viewport)
+
    t = Tokens
    self = { viewport = Viewport, cells = array<obj> }
 
@@ -199,11 +201,12 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
 
    self.setHighlight = function(State:str, Focused:bool)
       if State is 'active' then
-         self.highlight.{ visibility = VIS_VISIBLE, fill = t.accentSoft, stroke = t.accent }
+         self.highlight.{ visibility = VIS_VISIBLE, fill = t.accentSoft, stroke = theme.palette.prime }
       elseif (State is 'hover') or Focused then
          self.highlight.{
-            visibility = VIS_VISIBLE, fill = (State is 'hover') ? t.sunk : 'none',
-            stroke = Focused ? t.accent : t.border
+            visibility = VIS_VISIBLE,
+            fill = (State is 'hover') ? t.sunk : 'none',
+            stroke = Focused ? theme.palette.contrast : t.border
          }
       else
          self.highlight.visibility = VIS_HIDDEN
@@ -433,20 +436,21 @@ end
 
 function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, State:table!, Tokens:table!):table
    t = Tokens
-   self = { locked = State.locked is true, linked = State.linked is true, hovered = false }
+   card = { locked = State.locked is true, linked = State.linked is true, hovered = false, selected = false }
+
+   theme = gui.getTheme(Target)
 
    vp = Target.new('VectorViewport', { x = X, y = Y, width = Width, height = CARD_H, cursor = 'hand' })
-   self.viewport = vp
+   card.viewport = vp
 
-   self.bkgd = vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = Width - 1, height = CARD_H - 1, roundX = 5, roundY = 5, fill = t.panel,
-      stroke = t.border, strokeWidth = 1
+   card.bkgd = vp.new('VectorRectangle', {
+      x = 1, y = 1, width = Width - 2, height = CARD_H - 2, roundX = 5, roundY = 5, fill = theme.palette.bkgd, stroke = 'none'
    })
 
    -- The colour block has rounded top corners only, as a path.
 
    w, r = Width - 1, 5
-   self.block = vp.new('VectorPath', {
+   card.block = vp.new('VectorPath', {
       sequence = f'M0.5 {CARD_SWATCH + 0.5} V{r + 0.5} A{r} {r} 0 0 1 {r + 0.5} 0.5 H{w - r} ' ..
          f'A{r} {r} 0 0 1 {w} {r + 0.5} V{CARD_SWATCH + 0.5} Z',
       fill = swatchFill(Swatch)
@@ -467,14 +471,15 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Stat
    name_y = CARD_SWATCH + 18
    marker_x = Width - 9
    marker_y = name_y - MARKER + 1
-   if self.linked then
+   if card.linked then
       marker_x -= MARKER
-      self.linkMarker = linkGlyph(vp, marker_x, marker_y, t.fg3)
+      card.linkMarker = linkGlyph(vp, marker_x, marker_y, t.fg3)
       marker_x -= MARKER_GAP
    end
-   if self.locked then
+
+   if card.locked then
       marker_x -= MARKER
-      self.lockMarker = lockGlyph(vp, marker_x, marker_y, t.fg3)
+      card.lockMarker = lockGlyph(vp, marker_x, marker_y, t.fg3)
       marker_x -= MARKER_GAP
    end
 
@@ -487,9 +492,9 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Stat
    })
 
    _, _, _, in_srgb = colourmath.oklchToSrgb(Swatch.l, Swatch.c, Swatch.h)
-   self.inGamut = in_srgb
+   card.inGamut = in_srgb
    if not in_srgb then
-      self.gamutMarker = warnGlyph(vp, 9 + math.ceil(hex.textWidth) + 6, CARD_SWATCH + 24, t.warn)
+      card.gamutMarker = warnGlyph(vp, 9 + math.ceil(hex.textWidth) + 6, CARD_SWATCH + 24, t.warn)
    end
 
    colourpicker_parts.text(vp, {
@@ -497,37 +502,46 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Stat
       string = f'L {math.round(Swatch.l * 100)} · C {string.format("%.2f", Swatch.c)} · H {math.round(Swatch.h)}'
    })
 
-   self.ring = vp.new('VectorRectangle', {
-      x = 1, y = 1, width = Width - 2, height = CARD_H - 2, roundX = 5, roundY = 5, fill = 'none',
-      stroke = t.accent, strokeWidth = 2, visibility = VIS_HIDDEN
+   card.ring = vp.new('VectorRectangle', {
+      x = 0.5, y = 1, width = Width - 2, height = CARD_H - 2, roundX = 5, roundY = 5, fill = 'none',
+      stroke = t.border, strokeWidth = 2
    })
 
-   -- While the card grid has the focus, the selected card has a second, inner ring.
+   -- TODO: Panels should be highlighted in their titlebar when they have the focus.
 
-   self.focusRing = vp.new('VectorRectangle', {
-      x = 4.5, y = 4.5, width = Width - 9, height = CARD_H - 9, roundX = 3, roundY = 3, fill = 'none',
-      stroke = t.accent, strokeWidth = 1, visibility = VIS_HIDDEN
-   })
-
-   self.setSelected = function(Selected:bool, Focused:bool)
-      self.ring.visibility = Selected ? VIS_VISIBLE : VIS_HIDDEN
-      self.focusRing.visibility = (Selected and Focused) ? VIS_VISIBLE : VIS_HIDDEN
+   card.setSelected = function(Selected:bool, PanelHasFocus:bool)
+      if Selected then
+         card.ring.stroke = theme.palette.prime
+      elseif card.hovered then
+         card.ring.stroke = theme.palette.contrast
+      else
+         card.ring.stroke = t.border
+      end
+      card.selected = Selected
    end
 
    vp.mtSubscribeInput(JTYPE_CROSSING, function(Input:obj!, Msg:any!)
       repeat
          if Msg.type is JET_CROSSED_IN then
-            self.hovered = true
+            card.hovered = true
          elseif Msg.type is JET_CROSSED_OUT then
-            self.hovered = false
+            card.hovered = false
          end
          Msg = Msg.next
       until not Msg
-      self.bkgd.stroke = self.hovered ? t.fg3 : t.border
+
+      if card.hovered then
+         card.ring.stroke = theme.palette.contrast
+      elseif card.selected then
+         card.ring.stroke = theme.palette.prime
+      else
+         card.ring.stroke = t.border
+      end
+
       vp.acDraw()
    end)
 
-   return self
+   return card
 end
 
 ----------------------------------------------------------------------------------------------------------------------
