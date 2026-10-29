@@ -11,6 +11,17 @@ OKLCH colour picker dialog.  Open it with:
       feedback = function(Colour) ... end -- gui RGB table (gui.nrgb), or nil on cancel
    })
 
+The mode bar switches the window body between two tabs (selectTab(), Ctrl+Tab, Ctrl+1/2):
+
+   Picker   The colour editor in three columns: the wheel, sliders, readouts and eyedropper; the scratch row and the
+            edited palette; and the Relationship, Contrast, Tonal Ramp and Export panels.
+   Palette  The palette manager (manager.tiri): the palettes of the palette database (colourpalette.DATABASE), with
+            search, New, Duplicate, Delete, Import and Export, swatch cards, details and the read-only starter
+            palettes.  Opening a palette or a card switches to the Picker to edit it.
+
+The palette database is the only palette store, and palette edits save immediately from both tabs.  The settings
+file (colourpalette.FILE) keeps the active palette's ID and the preferences.  See AGENTS.md for the storage model.
+
 Documentation is available in the Kotuku Wiki.
 --]]
 

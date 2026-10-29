@@ -1078,7 +1078,9 @@ from Seed.  Legacy palette data is returned for one-time migration by the picker
 @input Path of the settings file
 @input Seed: { l, c, h, alpha } for the demonstration palette's Primary swatch
 @result Table of { activePalette, palette, legacy, scheme, clamp, inputFormat, rampSteps, paletteFolder, firstRun }.
-Palette is present only for legacy settings or a first run.  Preferences are nil if the file doesn't set them.
+Palette is present only for legacy settings (legacy is true) or a first run.  Preferences are nil if the file doesn't
+set them.  A first run also sets initialActive, the index of the demonstration palette's Primary swatch.  A damaged
+settings file is renamed to `Path.bak` before the first-run result is returned.
 ]])
 colourpalette.load = function(Path:str!, Seed:table!):table
    local text:str
@@ -1173,7 +1175,8 @@ colourpalette.uniquePaletteName = function(Palettes:array<table>!, Name:str!):st
 end
 
 @Doc(text=[[
-@desc Create an empty Custom palette with Black and White swatches, as for reset().
+@desc Create a Custom palette with a new ID and Black and White swatches, as for reset().  The caller keeps Name
+unique, for example with uniquePaletteName().
 ]])
 colourpalette.newPalette = function(Name:str!):table
    palette = { id = colourpalette.newID(), name = Name, mode = 'custom', swatches = array<table> }
@@ -1182,7 +1185,10 @@ colourpalette.newPalette = function(Name:str!):table
 end
 
 @Doc(text=[[
-@desc Copy the palette at Index, inserting the copy after it.  The copy has a new ID and a unique name.
+@desc Copy the palette at Index, inserting the copy after it.  The copy has a new ID and a unique name (`Brand 2`
+for a copy of `Brand`), as for insertCopy().
+@input Database: { palettes, active }
+@input Index of the palette to copy
 @result The index of the copy, or nil if Index is out of range or the database is full
 ]])
 colourpalette.copyPalette = function(Database:table!, Index:num!):num
@@ -1248,8 +1254,11 @@ colourpalette.removePalette = function(Database:table!, Index:num!):bool
 end
 
 @Doc(text=[[
-@desc Return the palette database as JSON text, as saved to DATABASE and written by the manager's export.
-@input Database: { palettes, active }
+@desc Return the palette database as JSON text, as saved to DATABASE and written by the manager's export.  The
+object has `format` (`kotuku-palettes`), `version` (1), `active` (the ID of the palette that the picker edits) and
+`palettes`, an array of encode() tables with the channels stored as numbers (l, c, h, alpha).  Starter flags and
+the load snapshot are not written.
+@input Database: { palettes, active }.  Active is a palette ID, or a legacy index of palettes (0 if nil).
 ]])
 colourpalette.databaseToJSON = function(Database:table!):str
    list = array<table>
@@ -1262,10 +1271,13 @@ colourpalette.databaseToJSON = function(Database:table!):str
 end
 
 @Doc(text=[[
-@desc Parse palette database JSON, as written by databaseToJSON().  Invalid palettes are skipped and reported in the
-log; the database is refused only if it has none that are valid.  Palettes beyond MAX_PALETTES are dropped.
-@result The database { palettes, active, skipped }, or nil and an error message.  Skipped counts the invalid and
-dropped palettes.
+@desc Parse palette database JSON, as written by databaseToJSON().  The text must be an object with `format` set
+to `kotuku-palettes` and a `palettes` array.  Invalid palettes are skipped and reported on stderr; the database is
+refused only if it has none that are valid.  Palettes beyond MAX_PALETTES are dropped.  An ID used by an earlier
+palette in the file is replaced with a new one.  `active` may be a palette ID or a legacy palette index; if it
+matches no valid palette, the first palette is active.
+@result The database { palettes, active, skipped }, or nil and an error message.  Active is a palette ID, and skipped
+counts the invalid and dropped palettes.
 ]])
 colourpalette.databaseFromJSON = function(Text:str):<table, str>
    Text ?! return nil, 'There is no text to import'
@@ -1314,9 +1326,13 @@ function databaseText(Path:str!):str
 end
 
 @Doc(text=[[
-@desc Load the palette database and retain its original text for conflict detection.  Damaged files are moved to
-an unused .bak (or .bak.n) path.  A recovery notice includes that path; a failed backup leaves the original intact.
-@result The database, or nil; an optional recovery or error notice
+@desc Load the palette database and retain its original text for conflict detection (`sourcePath` and `sourceText`,
+which saveDatabase() checks).  Damaged files are moved to an unused .bak (or .bak.n) path.  A recovery notice
+includes that path; a failed read or backup leaves the original intact.
+@input Path of the database, normally DATABASE
+@result The database { palettes, active, skipped, sourcePath, sourceText } and no notice if the file was read.  Nil
+and no notice if the file doesn't exist.  Nil and a notice for the user if the file was damaged (and backed up) or
+couldn't be read or backed up.
 ]])
 colourpalette.loadDatabase = function(Path:str!):<table, str>
    local text:str
@@ -1350,9 +1366,15 @@ colourpalette.loadDatabase = function(Path:str!):<table, str>
 end
 
 @Doc(text=[[
-@desc Save through a temporary file, refusing to overwrite a database changed since it was loaded or last saved.
-Replace is reserved for an explicit export to a user-selected destination and leaves the database snapshot intact.
-@result True if written, otherwise false and a reason
+@desc Save the database as databaseToJSON() text through a temporary file, refusing to overwrite a file changed
+since it was loaded or last saved.  The check compares the file's text with the snapshot that loadDatabase() or the
+last successful save stored in Database.  A database without a snapshot for Path, such as a new one, is saved only
+while the file doesn't exist.  A successful save updates the snapshot.
+@input Path of the database file
+@input Database: { palettes, active }, with the snapshot of a loaded database
+@input Replace: skip the check and leave the snapshot unchanged.  Reserved for an explicit export to a destination
+that the user chose.
+@result True if written, otherwise false and a reason that can be shown to the user
 ]])
 colourpalette.saveDatabase = function(Path:str!, Database:table!, Replace:bool):<bool, str>
    temporary = f'{Path}.{colourpalette.newID()}.tmp'
@@ -1381,7 +1403,10 @@ end
 
 @Doc(text=[[
 @desc Add the palettes of an imported database to Database.  Imported palettes whose names are taken are renamed
-with a number, and clashing IDs are regenerated, so that no existing palette is replaced.
+with a number, and clashing IDs are regenerated, so that no existing palette is replaced.  The copies are added at the
+end, and Database's active palette is unchanged.  The caller saves the result.
+@input Database to add to
+@input Imported: a database from databaseFromJSON()
 @result The number of palettes added, the number of those that were renamed, and the number that were not added
 because the database is full (MAX_PALETTES)
 ]])
