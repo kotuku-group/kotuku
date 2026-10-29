@@ -47,7 +47,7 @@ static std::span<const int> test_layout(int Channels)
 }
 
 struct Fixture {
-   std::shared_ptr<std::recursive_mutex> Mutex = std::make_shared<std::recursive_mutex>();
+   std::shared_ptr<AudioMixerMutex> Mutex = std::make_shared<AudioMixerMutex>();
    std::shared_ptr<AudioEffectChain> Chain = std::make_shared<AudioEffectChain>(Mutex);
    extAudioEffect Effect{nullptr, 0};
    Fixture(int Rate, int Channels, std::unique_ptr<AudioEffectProcessor> Processor,
@@ -90,7 +90,7 @@ static Reading read(extAudioEffect &Effect)
 {
    Reading result;
    auto chain = Effect.Chain.lock();
-   std::unique_lock<std::recursive_mutex> lock;
+   std::unique_lock<AudioMixerMutex> lock;
    if (chain) lock = std::unique_lock(*chain->Mutex);
    Effect.read_meter(chain.get(), result.Meta);
    for (const auto &value : result.Meta.Values) {

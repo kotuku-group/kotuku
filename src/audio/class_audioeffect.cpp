@@ -211,7 +211,7 @@ static ERR effect_commit(extAudioEffect *Self, const AudioParamState &State)
       int rate, stereo;
       uint64_t generation = 0;
       {
-         std::unique_lock<std::recursive_mutex> mixer_lock;
+         std::unique_lock<AudioMixerMutex> mixer_lock;
          if (chain) mixer_lock = std::unique_lock(*chain->Mutex);
          rate = Self->OutputRate;
          stereo = Self->Stereo;
@@ -222,7 +222,7 @@ static ERR effect_commit(extAudioEffect *Self, const AudioParamState &State)
       }
       auto update = Self->Schema->Prepare ? Self->Schema->Prepare(Self, State, rate) : nullptr;
       {
-         std::unique_lock<std::recursive_mutex> mixer_lock;
+         std::unique_lock<AudioMixerMutex> mixer_lock;
          if (chain) mixer_lock = std::unique_lock(*chain->Mutex);
          if (Self->OutputRate != rate or Self->Stereo != stereo or
              (chain and *chain->Generation != generation)) continue;
@@ -797,7 +797,7 @@ static ERR AUDIOEFFECT_GetProcessingFormat(extAudioEffect *Self, struct fx::GetP
    if (Args->Layout) Args->Layout->clear();
 
    auto chain = Self->Chain.lock();
-   std::unique_lock<std::recursive_mutex> lock;
+   std::unique_lock<AudioMixerMutex> lock;
    if (chain) lock = std::unique_lock(*chain->Mutex);
 
    if (not Self->FormatCommitted) return ERR::Okay;
@@ -870,7 +870,7 @@ static ERR AUDIOEFFECT_GetMeterLayout(extAudioEffect *Self, struct fx::GetMeterL
    new (layout) struct MeterLayout;
 
    auto chain = Self->Chain.lock();
-   std::unique_lock<std::recursive_mutex> lock;
+   std::unique_lock<AudioMixerMutex> lock;
    if (chain) lock = std::unique_lock(*chain->Mutex);
 
    layout->Meters.reserve(Self->Meters.size());
@@ -987,7 +987,7 @@ static ERR AUDIOEFFECT_ReadMeters(extAudioEffect *Self, struct fx::ReadMeters *A
    new (reading) struct MeterReading;
 
    auto chain = Self->Chain.lock();
-   std::unique_lock<std::recursive_mutex> lock;
+   std::unique_lock<AudioMixerMutex> lock;
    if (chain) lock = std::unique_lock(*chain->Mutex);
 
    Self->read_meter(chain.get(), *reading);
@@ -1199,7 +1199,7 @@ static ERR AUDIOEFFECT_GET_Schema(extAudioEffect *Self, std::string_view &Value)
    std::vector<int> layout;
    {
       auto chain = Self->Chain.lock();
-      std::unique_lock<std::recursive_mutex> mixer_lock;
+      std::unique_lock<AudioMixerMutex> mixer_lock;
       if (chain) mixer_lock = std::unique_lock(*chain->Mutex);
       meters = Self->Meters;
       layout = Self->Layout;

@@ -638,7 +638,7 @@ static void test_reduction_meter(AudioTestContext &Test)
 // Integration with extAudioEffect: meter layout, interval aggregation, bypass, idle and leaving bypass.
 
 struct ChainFixture {
-   std::shared_ptr<std::recursive_mutex> Mutex = std::make_shared<std::recursive_mutex>();
+   std::shared_ptr<AudioMixerMutex> Mutex = std::make_shared<AudioMixerMutex>();
    std::shared_ptr<AudioEffectChain> Chain = std::make_shared<AudioEffectChain>(Mutex);
    extAudioEffect Effects[2] { { nullptr, 0 }, { nullptr, 0 } };
    int Count = 0;

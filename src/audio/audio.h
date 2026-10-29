@@ -6,6 +6,8 @@ using namespace kt;
 #include <optional>
 #include <atomic>
 #include <deque>
+#include <chrono>
+#include <thread>
 #ifdef _WIN32
 #include "wasapi.h"
 #endif
@@ -297,12 +299,42 @@ public:
    }
 };
 
+// The recursive mixer lock, shared by the Audio object and its effect chains.  The mutex is not fair, and on an unpaced
+// device the worker re-locks it immediately after each period, starving client threads for hundreds of milliseconds.
+// Clients that have to block are therefore counted so that the worker can stand aside with yield_to_waiters().
+
+class AudioMixerMutex {
+   std::recursive_mutex Mutex;
+   std::atomic<int> Waiting = 0;
+
+   public:
+   void lock() {
+      if (Mutex.try_lock()) return;
+      Waiting.fetch_add(1, std::memory_order_relaxed);
+      Mutex.lock();
+      Waiting.fetch_sub(1, std::memory_order_relaxed);
+   }
+
+   bool try_lock() { return Mutex.try_lock(); }
+   void unlock() { Mutex.unlock(); }
+
+   // Call without holding the lock.  Gives blocked threads up to Limit to acquire it before the caller locks again.
+
+   void yield_to_waiters(std::chrono::microseconds Limit) {
+      if (not Waiting.load(std::memory_order_relaxed)) return;
+      const auto deadline = std::chrono::steady_clock::now() + Limit;
+      while (Waiting.load(std::memory_order_relaxed) and (std::chrono::steady_clock::now() < deadline)) {
+         std::this_thread::yield();
+      }
+   }
+};
+
 // A branch chain is hosted by a container effect such as AudioSplitter.  It shares the mixer mutex and generation of
 // the container's chain and is configured together with it.  DrainFrames, State and Truncated are only used by
 // top-level chains, which control draining for everything that they host.
 
 struct AudioEffectChain {
-   std::shared_ptr<std::recursive_mutex> Mutex;
+   std::shared_ptr<AudioMixerMutex> Mutex;
    std::vector<extAudioEffect *> Effects;
    uint64_t NextSequence = 0;
    std::shared_ptr<uint64_t> Generation = std::make_shared<uint64_t>(1);
@@ -322,7 +354,7 @@ struct AudioEffectChain {
    uint64_t tail_bound() const;
    uint64_t decay_estimate() const;
 
-   explicit AudioEffectChain(std::shared_ptr<std::recursive_mutex> Lock) : Mutex(std::move(Lock)) { }
+   explicit AudioEffectChain(std::shared_ptr<AudioMixerMutex> Lock) : Mutex(std::move(Lock)) { }
    ~AudioEffectChain();
 };
 
@@ -492,8 +524,8 @@ class extAudio : public objAudio {
    // state that the mixer or effect chains also touch.  Main-thread-only state (Volumes, Device, init-only fields) is
    // serialised by the object lock, and main-thread reads of fields that only the main thread writes need no lock.
 
-   std::shared_ptr<std::recursive_mutex> MixerLock = std::make_shared<std::recursive_mutex>();
-   std::recursive_mutex &MixerMutex = *MixerLock;
+   std::shared_ptr<AudioMixerMutex> MixerLock = std::make_shared<AudioMixerMutex>();
+   AudioMixerMutex &MixerMutex = *MixerLock;
    std::shared_ptr<AudioEffectChain> GlobalEffects = std::make_shared<AudioEffectChain>(MixerLock);
 
    AudioCompletions BatchCompletions; // Pending batch callbacks; the worker completes and the client thread dispatches.

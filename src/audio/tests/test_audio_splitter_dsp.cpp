@@ -13,7 +13,7 @@ static std::span<const int> layout_for(int Channels)
 // A splitter in a top-level chain, initialised and edited through the same paths as a splitter object.
 
 struct SplitterFixture {
-   std::shared_ptr<std::recursive_mutex> Mutex = std::make_shared<std::recursive_mutex>();
+   std::shared_ptr<AudioMixerMutex> Mutex = std::make_shared<AudioMixerMutex>();
    std::shared_ptr<AudioEffectChain> Chain = std::make_shared<AudioEffectChain>(Mutex);
    extAudioSplitter Splitter{nullptr, 100};
    int Rate, Channels;

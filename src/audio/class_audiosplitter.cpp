@@ -176,7 +176,7 @@ static void splitter_apply(extAudioEffect *Effect, const AudioParamState &State)
 // Creates an unconfigured branch chain.  Configuration is copied from the container's chain under the mixer lock.
 
 static std::shared_ptr<AudioEffectChain> new_branch(extAudioSplitter *Self,
-   const std::shared_ptr<std::recursive_mutex> &Mutex, size_t LayoutSize)
+   const std::shared_ptr<AudioMixerMutex> &Mutex, size_t LayoutSize)
 {
    auto branch = std::make_shared<AudioEffectChain>(Mutex);
    branch->Container = Self->UID;
@@ -217,10 +217,10 @@ public:
       }
 
       auto chain = Self->Chain.lock();
-      auto mutex = chain ? chain->Mutex : std::make_shared<std::recursive_mutex>();
+      auto mutex = chain ? chain->Mutex : std::make_shared<AudioMixerMutex>();
       size_t previous = 0, layout = 2;
       {
-         std::unique_lock<std::recursive_mutex> mixer_lock(*mutex);
+         std::unique_lock<AudioMixerMutex> mixer_lock(*mutex);
          previous = Self->Branches.size();
          Edit.Captures.resize(previous);
          for (size_t i = 0; i < previous; i++) Edit.Captures[i].reserve(Self->Branches[i]->Effects.size());

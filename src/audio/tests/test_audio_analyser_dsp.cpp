@@ -280,7 +280,7 @@ static void test_capture_gaps(AudioTestContext &Test)
 
 static void test_mixer_gaps(AudioTestContext &Test)
 {
-   auto chain = std::make_shared<AudioEffectChain>(std::make_shared<std::recursive_mutex>());
+   auto chain = std::make_shared<AudioEffectChain>(std::make_shared<AudioMixerMutex>());
    extAudioEffect effect(nullptr, 1);
    effect.Chain = chain;
    effect.OutputRate = chain->Rate = 48000;
@@ -440,7 +440,7 @@ static void test_selection(AudioTestContext &Test)
 struct AnalyserChain {
    extAudioAnalyser Effect { nullptr, 1 };
    std::shared_ptr<AudioEffectChain> Chain =
-      std::make_shared<AudioEffectChain>(std::make_shared<std::recursive_mutex>());
+      std::make_shared<AudioEffectChain>(std::make_shared<AudioMixerMutex>());
    ERR Prepared;
 
    AnalyserChain(int Rate, std::span<const int> Layout) {
