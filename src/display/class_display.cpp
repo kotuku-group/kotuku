@@ -142,7 +142,7 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
    if (not Args) return log.warning(ERR::NullArgs);
 
 #ifdef __linux__
-   if (glDriver and (glDriver->displayType() IS DT::WAYLAND) and (Args->Datatype IS DATA::REQUEST)) {
+   if (Args->Datatype IS DATA::REQUEST) {
       if ((not Args->Object) or (Args->Buffer.size() < sizeof(struct dcRequest))) return ERR::NullArgs;
       struct dcRequest request;
       copymem(Args->Buffer.data(), &request, sizeof(request));

@@ -166,6 +166,7 @@ static void detach_viewport_subtree(extVectorViewport *View)
 
 extVectorViewport::~extVectorViewport()
 {
+   release_callback(vpDropPrepare);
    if ((Scene) and (!Scene->collecting()) and (!((extVectorScene *)Scene)->ResizeSubscriptions.empty())) {
       if (((extVectorScene *)Scene)->ResizeSubscriptions.contains(this)) {
          for (auto &sub : ((extVectorScene *)Scene)->ResizeSubscriptions[this]) release_callback(sub.second);
@@ -400,6 +401,35 @@ static ERR VIEW_GET_DragCallback(extVectorViewport *Self, FUNCTION * &Value)
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+DropPrepare: Snapshots widget state at native button release, before asynchronous data acquisition.
+
+The callback receives `(Viewport, Snapshot, X, Y)`.  Snapshot is a temporary @Config whose identity is exposed through
+@Pointer.DropSession during synchronous DragDrop delivery.  X/Y are frozen viewport coordinates.  A widget can save
+the resolved row, page position and destination folder keyed by Snapshot's ID, and release them on its Free action.
+The snapshot expires on every terminal path, including transfer failure and participant destruction.  Do not request
+native data in this callback.  To reject preparation set @Pointer.DragFeedback to zero.  C callbacks receive Meta as
+their final argument and return an ERR code.  Script errors reject preparation.
+-END-
+*********************************************************************************************************************/
+
+static ERR VIEW_GET_DropPrepare(extVectorViewport *Self, FUNCTION * &Value)
+{
+   Value = &Self->vpDropPrepare;
+   return ERR::Okay;
+}
+
+static ERR VIEW_SET_DropPrepare(extVectorViewport *Self, FUNCTION *Value)
+{
+   FUNCTION replacement;
+   if (Value) replacement = *Value;
+   if (replacement.defined()) replacement.pin();
+   release_callback(Self->vpDropPrepare);
+   Self->vpDropPrepare = replacement;
+   return ERR::Okay;
 }
 
 static ERR VIEW_SET_DragCallback(extVectorViewport *Self, FUNCTION *Value)
@@ -857,6 +887,7 @@ static const FieldArray clViewFields[] = {
    { "AbsY",         FDF_VIRTUAL|FDF_INT|FDF_R, VIEW_GET_AbsY },
    { "Buffered",     FDF_VIRTUAL|FDF_INT|FDF_RI|FDF_PURE, VIEW_GET_Buffered, VIEW_SET_Buffered },
    { "DragCallback", FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DragCallback, VIEW_SET_DragCallback },
+   { "DropPrepare", FDF_FUNCTION|FDF_RW|FDF_PURE, VIEW_GET_DropPrepare, VIEW_SET_DropPrepare },
    { "DropTarget",   FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, VIEW_GET_DropTarget, VIEW_SET_DropTarget },
    { "Overflow",     FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, VIEW_GET_Overflow, VIEW_SET_Overflow, &clVectorViewportVOF },
    { "X",            FDF_VIRTUAL|FDF_UNIT|FDF_RW, VIEW_GET_X,       VIEW_SET_X },

@@ -114,6 +114,18 @@ static void finish_key_dispatch(evKey *Event, int Size, APTR Meta)
 
 //********************************************************************************************************************
 
+// Disabling a vector also blocks input to its descendants.  Check at delivery time because callbacks can disable
+// their target or an ancestor while an input event is being dispatched.
+
+static bool input_disabled(extVector *Vector)
+{
+   for (auto node=Vector; node; node=(extVector *)node->Parent) {
+      if (node->Class->BaseClassID != CLASSID::VECTOR) break;
+      if ((node->Flags & VF::DISABLED) != VF::NIL) return true;
+   }
+   return false;
+}
+
 // A subscriber can take the focus from the tab cycle only if neither it nor a vector ancestor is disabled or hidden,
 // as for Vector.Focus().
 
@@ -382,6 +394,54 @@ static extVectorViewport * get_drag_target(extVectorScene *Self, double &X, doub
 }
 
 //********************************************************************************************************************
+// The transfer owns the snapshot; participant destruction expires it without retaining the participant itself.
+
+static void drop_participant_free(OBJECTPTR, ACTIONID, ERR, APTR)
+{
+   FreeResource(CurrentContext());
+}
+
+static ERR prepare_native_drop(OBJECTID SurfaceID, objConfig *Snapshot, double X, double Y, APTR)
+{
+   auto scene = (extVectorScene *)CurrentContext();
+   auto target = get_drop_target_at_xy(scene, X, Y);
+   if (not target) return ERR::NoData;
+   auto invert = ~target->Transform;
+   invert.transform(&X, &Y);
+
+   Snapshot->write("Drop", "Scene", std::to_string(scene->UID));
+   Snapshot->write("Drop", "Target", std::to_string(target->UID));
+   auto coordinate = [](double Value) {
+      std::ostringstream stream;
+      stream.precision(17);
+      stream << Value;
+      return stream.str();
+   };
+   Snapshot->write("Drop", "X", coordinate(X));
+   Snapshot->write("Drop", "Y", coordinate(Y));
+   {
+      kt::SwitchContext ctx(Snapshot);
+      if ((SubscribeAction(target, AC::Free, C_FUNCTION(drop_participant_free)) != ERR::Okay) or
+            (SubscribeAction(scene, AC::Free, C_FUNCTION(drop_participant_free)) != ERR::Okay)) return ERR::Failed;
+   }
+   auto callback = target->vpDropPrepare;
+   if (not callback.defined()) return ERR::Okay;
+   if (callback.stale()) return ERR::Cancelled;
+   callback.pin();
+   auto unpin = kt::Defer([&]() { callback.unpin(); });
+   ERR result = ERR::Okay;
+   if (callback.isC()) {
+      kt::SwitchContext ctx(callback.Context);
+      auto routine = (ERR (*)(extVectorViewport *, objConfig *, double, double, APTR))callback.Routine;
+      result = routine(target, Snapshot, X, Y, callback.Meta);
+   }
+   else sc::Call(callback, std::to_array<ScriptArg>({
+      { "Viewport", target, FD_OBJECTPTR }, { "Snapshot", Snapshot, FD_OBJECTPTR }, { "X", X }, { "Y", Y }
+   }), result);
+   return result;
+}
+
+//********************************************************************************************************************
 // Forward a drop on the scene's surface to exactly one registered viewport.  The destination and its local
 // coordinates are captured before delivery so that pointer movement during the notification cannot alter them.  The
 // delivery is synchronous so that the receiver can retrieve data from the source within the drop's lifetime.
@@ -391,10 +451,36 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
    auto Self = (extVectorScene *)CurrentContext();
    if ((not Args) or (Self->DropTargetID)) return; // Nested drops are ignored while a delivery is in progress
 
-   double x, y;
-   if (not get_pointer_position(Self, false, x, y)) return;
-
-   auto target = get_drop_target_at_xy(Self, x, y);
+   double x = 0, y = 0;
+   OBJECTID session_id = 0;
+   if (auto pointer = gfx::AccessPointer()) {
+      pointer->get(strhash("dropSession"), session_id);
+      ReleaseObject(pointer);
+   }
+   extVectorViewport *target = nullptr;
+   std::optional<kt::ScopedObjectLock<extVectorViewport>> saved_target;
+   OBJECTID target_id = 0, scene_id = 0;
+   if (session_id) {
+      kt::ScopedObjectLock<objConfig> snapshot(session_id);
+      if (snapshot.granted() and
+            (snapshot->read("Drop", "Scene", scene_id) IS ERR::Okay) and (scene_id IS Self->UID) and
+            (snapshot->read("Drop", "Target", target_id) IS ERR::Okay) and
+            (snapshot->read("Drop", "X", x) IS ERR::Okay) and
+            (snapshot->read("Drop", "Y", y) IS ERR::Okay)) {
+         saved_target.emplace(target_id);
+         target = saved_target->granted() ? **saved_target : nullptr;
+         if (target and ((target->classID() != CLASSID::VECTORVIEWPORT) or
+               (target->Scene != Self) or not target->vpDropTarget)) target = nullptr;
+      }
+   }
+   else {
+      if (not get_pointer_position(Self, false, x, y)) return;
+      target = get_drop_target_at_xy(Self, x, y);
+      if (target) {
+         auto invert = ~target->Transform;
+         invert.transform(&x, &y);
+      }
+   }
    if (not target) {
       if (auto pointer = gfx::AccessPointer()) {
          pointer->DragFeedback = 0;
@@ -403,10 +489,7 @@ static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, str
       return;
    }
 
-   auto invert = ~target->Transform;
-   invert.transform(&x, &y);
-
-   const auto scene_id = Self->UID;
+   scene_id = Self->UID;
    Self->DropTargetID = target->UID;
    Self->DropX = x;
    Self->DropY = y;
@@ -788,6 +871,7 @@ extVectorScene::~extVectorScene()
    if (InputHandle) gfx::UnsubscribeInput(InputHandle);
 
    if (DropRouting) {
+      if (SurfaceID) gfx::WindowHook(SurfaceID, WH::DROP_SNAPSHOT, nullptr);
       const std::lock_guard lock(glDropRoutersLock);
       std::erase_if(glDropRouters, [this](const auto &Entry) { return Entry.second IS UID; });
    }
@@ -845,7 +929,11 @@ static ERR VECTORSCENE_Init(extVectorScene *Self)
          SubscribeAction(*surface, AC::Free, C_FUNCTION(notify_free));
          SubscribeAction(*surface, AC::Focus, C_FUNCTION(notify_focus));
          SubscribeAction(*surface, AC::LostFocus, C_FUNCTION(notify_lostfocus));
-         if (Self->DropRouting) SubscribeAction(*surface, AC::DragDrop, C_FUNCTION(notify_dragdrop));
+         if (Self->DropRouting) {
+            SubscribeAction(*surface, AC::DragDrop, C_FUNCTION(notify_dragdrop));
+            auto prepare = C_FUNCTION(prepare_native_drop);
+            gfx::WindowHook(Self->SurfaceID, WH::DROP_SNAPSHOT, &prepare);
+         }
 
          if (surface->hasFocus()) subscribe_key_events(Self);
 
@@ -1035,7 +1123,8 @@ result is computed on demand and reflects registration, visibility and layout ch
 `NULL` if no drag is active, the pointer is not over the surface or no registered viewport is under the pointer.
 
 While a DragDrop action is being delivered to a viewport, DropTarget refers to that viewport and does not change if the
-pointer moves during the delivery.
+pointer moves during the delivery.  Native drops save the viewport at button release, before asynchronous payload
+acquisition.  A destroyed or replaced viewport cannot receive that pending drop through a later hit-test.
 
 *********************************************************************************************************************/
 
@@ -1056,7 +1145,8 @@ DropX: The horizontal drop position, relative to the #DropTarget.
 
 DropX is the horizontal coordinate of the drop, expressed in the coordinate system of the #DropTarget so that
 transforms applied to the target and its ancestors are taken into account.  During the delivery of a DragDrop action
-the value is a snapshot taken at the moment of the drop.  At other times it reflects the pointer's current position,
+the value is a snapshot taken at button release, before native payload acquisition.  Later transforms and layout changes
+do not change this value during delivery.  At other times it reflects the pointer's current position,
 or zero if there is no #DropTarget.
 
 *********************************************************************************************************************/
@@ -1408,6 +1498,7 @@ static bool process_resize_msgs(extVectorScene *Self)
 static ERR vector_keyboard_events(extVector *Vector, const evKey *Event)
 {
    for (auto it=Vector->KeyboardSubscriptions->begin(); it != Vector->KeyboardSubscriptions->end(); ) {
+      if (input_disabled(Vector)) break;
       ERR result = ERR::Terminate;
       auto &sub = *it;
       if (sub.Context->terminating()) {

@@ -219,7 +219,7 @@
       <type>OBJECTPTR</type>
       <description>
 <p>When the <code>DROP_TARGETS</code> flag is set and a drag and drop operation is active over the scene's surface, DropTarget refers to the <class name="VectorViewport">VectorViewport</class> that would receive the drop if it were released at the pointer's current position.  The result is computed on demand and reflects registration, visibility and layout changes immediately.  It is <code>NULL</code> if no drag is active, the pointer is not over the surface or no registered viewport is under the pointer.</p>
-<p>While a DragDrop action is being delivered to a viewport, DropTarget refers to that viewport and does not change if the pointer moves during the delivery.</p>
+<p>While a DragDrop action is being delivered to a viewport, DropTarget refers to that viewport and does not change if the pointer moves during the delivery.  Native drops save the viewport at button release, before asynchronous payload acquisition.  A destroyed or replaced viewport cannot receive that pending drop through a later hit-test.</p>
       </description>
     </field>
 
@@ -229,7 +229,7 @@
       <access read="G">Get</access>
       <type>DOUBLE</type>
       <description>
-<p>DropX is the horizontal coordinate of the drop, expressed in the coordinate system of the <fl>DropTarget</fl> so that transforms applied to the target and its ancestors are taken into account.  During the delivery of a DragDrop action the value is a snapshot taken at the moment of the drop.  At other times it reflects the pointer's current position, or zero if there is no <fl>DropTarget</fl>.</p>
+<p>DropX is the horizontal coordinate of the drop, expressed in the coordinate system of the <fl>DropTarget</fl> so that transforms applied to the target and its ancestors are taken into account.  During the delivery of a DragDrop action the value is a snapshot taken at button release, before native payload acquisition.  Later transforms and layout changes do not change this value during delivery.  At other times it reflects the pointer's current position, or zero if there is no <fl>DropTarget</fl>.</p>
       </description>
     </field>
 

@@ -850,7 +850,7 @@ ERR update_display(extDisplay *Self, extBitmap *Bitmap, int X, int Y, int Width,
 static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
 #if defined(UNIT_TESTS) and defined(__linux__)
-   native_drop_tests(*Passed, *Total);
+   native_drop_tests(Options, *Passed, *Total);
 #endif
 }
 

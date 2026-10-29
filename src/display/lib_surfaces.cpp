@@ -113,17 +113,27 @@ int winDragDropFromHost_Drop(int SurfaceID, int X, int Y, const char *Datatypes)
    const auto modal = gfx::GetModalSurface();
    if ((modal) and (not in_modal_scope(modal, SurfaceID))) return 0;
 
-   // Refresh the position from OLE's snapshot, not GetCursorPos() or the last ordinary mouse message.
-   display::DriverMovement(SurfaceID, X, Y, false);
-   SURFACEINFO *info;
-   if (gfx::GetSurfaceInfo(SurfaceID, &info) != ERR::Okay) return 0;
-   kt::ScopedObjectLock display(info->DisplayID);
-   kt::ScopedObjectLock destination(pointer->OverObjectID);
+   // Prepare at OLE release, and keep data retrieval inside this synchronous native offer lifetime.
+   int abs_x = 0, abs_y = 0;
+   if (gfx::GetSurfaceCoords(SurfaceID, nullptr, nullptr, &abs_x, &abs_y, nullptr, nullptr) != ERR::Okay) return 0;
+   NativeDrop drop;
+   drop.SurfaceID = SurfaceID;
+   drop.X = X - abs_x;
+   drop.Y = Y - abs_y;
+   if (not display::DriverDragStart(drop)) return 0;
+   kt::ScopedObjectLock display(drop.DisplayID);
+   kt::ScopedObjectLock destination(drop.TargetID);
    if ((not display.granted()) or (not destination.granted())) return 0;
+   const auto previous_session = pointer->DropSessionID;
+   auto restore = kt::Defer([&]() {
+      pointer->DropSessionID = previous_session;
+      pointer->DragDelivering = false;
+   });
+   drop.Snapshot->Consumed = true;
+   pointer->DropSessionID = drop.Snapshot->ID;
    pointer->DragFeedback = -1;
    pointer->DragDelivering = true;
    acDragDrop(*destination, *display, -1, Datatypes);
-   pointer->DragDelivering = false;
    return pointer->DragFeedback != 0;
 }
 
@@ -1615,10 +1625,18 @@ WindowHook: Adds a function hook for receiving window messages from a host deskt
 
 Adds a function hook for receiving window events from a host desktop.
 
+`WH::DROP_SNAPSHOT` is called synchronously at native button release with `(SurfaceID, Snapshot, X, Y)`, where Snapshot
+is a temporary @Config and X/Y are relative to the destination surface.  C callbacks also receive their Meta pointer
+and return an ERR code.  Returning an error rejects the drop.  Routers reserve the `Drop` config group for scene,
+viewport and local position identity.  Store additional client state elsewhere.  Never request payload data here:
+the native source answers only during the subsequent synchronous DragDrop notification.
+
+Passing a null Callback removes the hook.  Only one hook exists for each surface/event pair.
+
 -INPUT-
 oid SurfaceID: A hosted surface to be monitored.
 int(WH) Event: A window hook event.
-ptr(func) Callback: A function to callback when the event is triggered.
+ptr(func) Callback: A function to callback when the event is triggered, or null to remove the hook.
 
 -ERRORS-
 Okay
@@ -1639,15 +1657,17 @@ ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback)
       if ((Callback) and (not retained_callback)) Callback->consume();
    });
 
-   if ((!SurfaceID) or (Event IS WH::NIL) or (!Callback)) return ERR::NullArgs;
+   if ((!SurfaceID) or (Event IS WH::NIL)) return ERR::NullArgs;
 
    const WinHook hook(SurfaceID, Event);
    const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
    if (auto existing = glWindowHooks.find(hook); existing != glWindowHooks.end()) {
       release_display_callback(existing->second);
-      existing->second = *Callback;
+      if (Callback) existing->second = *Callback;
+      else { glWindowHooks.erase(existing); return ERR::Okay; }
    }
-   else glWindowHooks[hook] = *Callback;
+   else if (Callback) glWindowHooks[hook] = *Callback;
+   else return ERR::Okay;
 
    Callback->pin();
    retained_callback = true;

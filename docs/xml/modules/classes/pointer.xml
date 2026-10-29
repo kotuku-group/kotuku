@@ -44,7 +44,7 @@
       <prototype>ERR acDeactivate(*Object)</prototype>
       <tiriPrototype>err = Object.acDeactivate()</tiriPrototype>
       <description>
-<p>If a drag and drop operation was started with <function module="Display">StartCursorDrag</function>, it is cancelled without delivering a drop. The drag preview surface, if any, is hidden but not freed.  A <class name="Clipboard">Clipboard</class> source is notified through its <class name="Clipboard" field="DragEndHandler">Clipboard.DragEndHandler</class> with <code>ERR::Cancelled</code>.  This action has no effect if no drag and drop operation is active.</p>
+<p>If a drag and drop operation was started with <function module="Display">StartCursorDrag</function>, it is cancelled without delivering a drop. The drag preview surface, if any, is hidden but not freed.  A <class name="Clipboard">Clipboard</class> source is notified through its <class name="Clipboard" field="DragEndHandler">Clipboard.DragEndHandler</class> with <code>ERR::Cancelled</code>.  Pending native deliveries are also cancelled, including after native hover feedback has ended.  This action has no effect if no drag or pending delivery exists.</p>
 <p>The pointer calls this action when a press of the Escape key is broadcast during a drag and drop operation.</p>
       </description>
     </action>
@@ -274,6 +274,16 @@
       <description>
 <p>When a drag-and-drop operation is active, this field refers to the object managing the source data.  For drops originating from the host platform, it refers to the Display object that receives the host's data offer.  At all other times it is zero.</p>
 <p>Item dragging is managed by <function module="Display">StartCursorDrag</function>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>DropSession</name>
+      <comment>The native destination snapshot currently being delivered.</comment>
+      <access read="G">Get</access>
+      <type>OBJECTID</type>
+      <description>
+<p>During synchronous native DragDrop delivery, this field refers to a temporary <class name="Config">Config</class> object.  It is null outside delivery.  Receivers may use its identity to retrieve widget state saved by <class name="VectorViewport" field="DropPrepare">VectorViewport.DropPrepare</class> at release. The object expires on completion, rejection, cancellation, failed transfer or destruction of a participant.</p>
       </description>
     </field>
 

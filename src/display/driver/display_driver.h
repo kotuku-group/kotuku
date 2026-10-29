@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <memory>
+#include <atomic>
 
 class extBitmap;
 class extDisplay;
@@ -25,7 +27,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 15;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 16;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -83,7 +85,13 @@ struct DisplayIcon {
    std::vector<uint32_t> Pixels;
 };
 
-// An asynchronous native import retains the destination surface and its local position at button release.
+struct NativeDropSnapshot {
+   OBJECTID ID = 0;
+   std::atomic<bool> Consumed = false;
+};
+
+// Copies share ownership of a single-use Config snapshot.  The last transfer reference releases an undelivered
+// snapshot; successful and refused delivery both consume it.  No object pointers or client callbacks cross the pipe.
 struct NativeDrop {
    OBJECTID SurfaceID = 0;
    OBJECTID TargetID = 0;
@@ -91,6 +99,7 @@ struct NativeDrop {
    double X = 0;
    double Y = 0;
    uint64_t Session = 0;
+   std::shared_ptr<NativeDropSnapshot> Snapshot;
 };
 
 // The module owns this immutable table and keeps it alive until the driver has closed.  Driver callbacks may be

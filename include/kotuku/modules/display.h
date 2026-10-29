@@ -27,6 +27,7 @@ enum class DRAG : int {
 enum class WH : int {
    NIL = 0,
    CLOSE = 1,
+   DROP_SNAPSHOT = 2,
 };
 
 // Colour space options.
@@ -1828,6 +1829,11 @@ class objPointer : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getDropSession(OBJECTID &Value) noexcept {
+      auto field = &this->Class->Dictionary[12];
+      return field->GetValue(this, &Value);
+   }
+
    inline ERR getDragDatatypes(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
@@ -1835,7 +1841,7 @@ class objPointer : public Object {
    }
 
    inline ERR getButtonState(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[16];
+      auto field = &this->Class->Dictionary[17];
       return field->GetValue(this, &Value);
    }
 
@@ -1869,17 +1875,17 @@ class objPointer : public Object {
    }
 
    inline ERR setX(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[20];
+      auto field = &this->Class->Dictionary[21];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[12];
+      auto field = &this->Class->Dictionary[13];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
    inline ERR setMaxSpeed(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

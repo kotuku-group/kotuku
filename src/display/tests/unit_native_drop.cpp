@@ -10,6 +10,8 @@ struct NativeDropObservation {
    double Y = 0;
    bool Reject = false;
    OBJECTID MoveSurface = 0;
+   const NativeDrop *Reenter = nullptr;
+   bool NestedRejected = false;
    std::string Receipt;
 };
 
@@ -46,11 +48,14 @@ static void native_drop_notify(OBJECTPTR, ACTIONID, ERR, struct acDragDrop *Args
       if (state->Reject) pointer->DragFeedback = 0;
       ReleaseObject(pointer);
    }
+   if (state->Reenter) {
+      state->NestedRejected = not display::DriverDragData(*state->Reenter, "text/plain", "nested", 6);
+   }
    respond_wayland_drop_request(Args->Source, state->Sink, Args->Item, Args->Datatype[0]);
    if (state->MoveSurface) native_test_movement(state->MoveSurface, 110, 120);
 }
 
-static void native_drop_tests(int &Passed, int &Total)
+static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
 {
    kt::Log log("NativeDropTests");
    auto check = [&](bool Condition, CSTRING Message) {
@@ -59,6 +64,33 @@ static void native_drop_tests(int &Passed, int &Total)
       else log.warning("%s", Message);
    };
    if (not glHeadless) return; // These tests must not move the user's desktop cursor or change its clipboard.
+
+   // Flute supplies the scene/widget and mutates it on Signal between release and payload arrival.
+   OBJECTID fixture_id = 0;
+   double fixture_x = 0, fixture_y = 0;
+   const std::string options(Options);
+   if (std::sscanf(options.c_str(), "native-drop:%d:%lf:%lf", &fixture_id, &fixture_x, &fixture_y) IS 3) {
+      kt::ScopedObjectLock fixture(fixture_id);
+      if (not fixture.granted()) return;
+      const char datatype = char(DATA::FILE);
+      NativeDrop drop;
+      drop.SurfaceID = fixture_id;
+      drop.X = fixture_x;
+      drop.Y = fixture_y;
+      check(display::DriverDragOver(fixture_id, drop.X, drop.Y, &datatype, 1), "Fixture accepts hover");
+      const bool released = display::DriverDragStart(drop);
+      check(released IS (not Options.ends_with(":reject")), "Fixture reports the expected release decision");
+      const auto snapshot_id = drop.Snapshot ? drop.Snapshot->ID : 0;
+      display::DriverDragLeave();
+      acSignal(*fixture);
+      const char payload[] = "file:///tmp/native-drop.txt\r\n";
+      if (Options.ends_with(":fail")) drop.Snapshot.reset();
+      else display::DriverDragData(drop, "text/uri-list", payload, sizeof(payload) - 1);
+      check(CheckResourceExists(snapshot_id) != ERR::True, "Fixture releases its snapshot on delivery or refusal");
+      check(not display::DriverDragData(drop, "text/uri-list", payload, sizeof(payload) - 1),
+         "Fixture refuses duplicate delivery");
+      return;
+   }
 
    ActionArray actions[] = {
       { AC::New, native_sink_new }, { AC::Init, native_sink_init }, { AC::DataFeed, native_sink_feed },
@@ -100,6 +132,15 @@ static void native_drop_tests(int &Passed, int &Total)
       return result;
    };
    const auto saved_clipboard = clipboard_snapshot();
+   auto snapshot_drop = [&](NativeDrop &Drop) {
+      const char type = char(DATA::FILE);
+      Drop.SurfaceID = first->UID;
+      Drop.X = 25.5;
+      Drop.Y = 40.25;
+      check(display::DriverDragOver(first->UID, Drop.X, Drop.Y, &type, 1), "Accept a fresh offer");
+      check(display::DriverDragStart(Drop), "Prepare a fresh single-use destination");
+      display::DriverDragLeave();
+   };
    const char datatype = char(DATA::FILE);
    check(display::DriverDragOver(first->UID, 25.5, 40.25, &datatype, 1), "Native offer feedback is accepted");
    NativeDrop drop;
@@ -111,11 +152,32 @@ static void native_drop_tests(int &Passed, int &Total)
    display::DriverDragLeave();
    native_test_movement(second->UID, 75, 90);
    const auto payload = "file:///tmp/two%20words%20%26%20%E4%B8%89%22.txt\r\n";
+   state.Reenter = &drop;
    check(display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)), "Deliver delayed drop");
+   state.Reenter = nullptr;
+   check(state.NestedRejected, "Nested delivery cannot consume or dispatch the same pending snapshot");
    check((state.Calls IS 1) and (state.X IS 25.5) and (state.Y IS 40.25),
       "Delayed delivery uses the original surface and fractional position");
    check(state.Receipt.find("two words &amp; 三&quot;.txt") != std::string::npos,
       "URI decoding and XML escaping preserve the exact file path");
+   check(not display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)),
+      "A completed snapshot cannot be delivered twice");
+   snapshot_drop(drop);
+   const auto abandoned_id = drop.Snapshot->ID;
+   auto transfer_copy = drop;
+   drop.Snapshot.reset();
+   check(CheckResourceExists(abandoned_id) IS ERR::True, "A queued transfer owns the pending snapshot");
+   transfer_copy.Snapshot.reset();
+   check(CheckResourceExists(abandoned_id) != ERR::True, "Failed transfers release their last snapshot reference");
+   snapshot_drop(drop);
+   const auto cancelled_id = drop.Snapshot->ID;
+   if (auto pointer = gfx::AccessPointer()) {
+      acDeactivate(pointer);
+      ReleaseObject(pointer);
+   }
+   check(CheckResourceExists(cancelled_id) != ERR::True, "Explicit cancellation releases pending state");
+   check(not display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)),
+      "Cancelled snapshots refuse late data");
    const auto folder_name = "temp:native_drop_" + std::to_string(getpid()) + '/';
    objFile::create folder = { fl::Path(folder_name), fl::Flags(FL::NEW|FL::FOLDER) };
    std::string folder_path;
@@ -123,6 +185,8 @@ static void native_drop_tests(int &Passed, int &Total)
       auto cleanup = kt::Defer([&]() { DeleteFile(folder_name, nullptr); });
       while (folder_path.ends_with('/')) folder_path.pop_back();
       const auto folder_uri = "file://" + folder_path + "\r\n";
+      snapshot_drop(drop);
+      native_test_movement(second->UID, 75, 90);
       check(display::DriverDragData(drop, "text/uri-list", folder_uri.data(), folder_uri.size()),
          "Native folder drops are accepted");
       check(state.Receipt.find(folder_path + "/\"") != std::string::npos,
@@ -137,6 +201,7 @@ static void native_drop_tests(int &Passed, int &Total)
          "Delayed delivery restores the live pointer");
       ReleaseObject(pointer);
    }
+   snapshot_drop(drop);
    state.MoveSurface = second->UID;
    check(display::DriverDragData(drop, "text/plain", "motion", 6), "Deliver a drop whose callback moves the pointer");
    state.MoveSurface = 0;
@@ -146,22 +211,45 @@ static void native_drop_tests(int &Passed, int &Total)
       ReleaseObject(pointer);
    }
    const auto delivered = state.Calls;
+   snapshot_drop(drop);
    gfx::SetModalSurface(second->UID);
    check(not display::DriverDragData(drop, "text/uri-list", payload, std::strlen(payload)),
       "A modal outside the original destination refuses delayed data");
    check(not display::DriverDragOver(first->UID, 25, 40, &datatype, 1), "Modal scope also rejects hover");
    check(state.Calls IS delivered, "A refused modal drop never reaches the original destination");
    gfx::SetModalSurface(0);
+   snapshot_drop(drop);
    state.Reject = true;
    check(not display::DriverDragData(drop, "text/plain", "<&>\"", 4), "Destination rejection is reported to the host");
    check(state.Receipt.find("&lt;&amp;&gt;&quot;") != std::string::npos, "Text receipts are XML escaped");
+   snapshot_drop(drop);
    const auto calls = state.Calls;
    check(not display::DriverDragData(drop, "text/uri-list", "file://remote/tmp/a\r\n", 21),
       "A URI list without local files is refused");
    check(state.Calls IS calls, "Malformed imports cannot reuse the preceding payload");
+   snapshot_drop(drop);
    FreeResource(first.detach());
    check(not display::DriverDragData(drop, "text/plain", "late", 4), "Destroyed destinations refuse delayed data");
    check(clipboard_snapshot() IS saved_clipboard, "Native imports preserve the normal clipboard");
+
+   {
+      objSurface::create target = { fl::Width(100), fl::Height(100) };
+      check(target.ok(), "Create a destination for the isolated source");
+      if (target.ok()) {
+         acShow(*target);
+         NativeDrop pending;
+         pending.SurfaceID = target->UID;
+         pending.X = pending.Y = 20;
+         check(display::DriverDragOver(target->UID, 20, 20, &datatype, 1), "Accept the isolated source offer");
+         check(display::DriverDragStart(pending), "Prepare the isolated source drop");
+         display::DriverDragLeave();
+         const auto pending_id = pending.Snapshot ? pending.Snapshot->ID : 0;
+         FreeObject(pending.DisplayID);
+         check(CheckResourceExists(pending_id) != ERR::True, "Source destruction expires pending state");
+         check(not display::DriverDragData(pending, "text/plain", "late", 4),
+            "Source destruction refuses delayed payload delivery");
+      }
+   }
 }
 
 }

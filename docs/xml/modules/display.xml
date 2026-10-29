@@ -953,10 +953,12 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <input>
       <param type="OBJECTID" name="SurfaceID">A hosted surface to be monitored.</param>
       <param type="WH" name="Event" lookup="WH">A window hook event.</param>
-      <param type="FUNCTION *" name="Callback">A function to callback when the event is triggered.</param>
+      <param type="FUNCTION *" name="Callback">A function to callback when the event is triggered, or null to remove the hook.</param>
     </input>
     <description>
 <p>Adds a function hook for receiving window events from a host desktop.</p>
+<p><code>WH::DROP_SNAPSHOT</code> is called synchronously at native button release with <code>(SurfaceID, Snapshot, X, Y)</code>, where Snapshot is a temporary <class name="Config">Config</class> and X/Y are relative to the destination surface.  C callbacks also receive their Meta pointer and return an ERR code.  Returning an error rejects the drop.  Routers reserve the <code>Drop</code> config group for scene, viewport and local position identity.  Store additional client state elsewhere.  Never request payload data here: the native source answers only during the subsequent synchronous DragDrop notification.</p>
+<p>Passing a null Callback removes the hook.  Only one hook exists for each surface/event pair.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -1153,6 +1155,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 
     <constants lookup="WH" comment="Events for WindowHook()">
       <const name="CLOSE"/>
+      <const name="DROP_SNAPSHOT">Prepare a native drop destination at button release.</const>
     </constants>
 
   </types>

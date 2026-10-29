@@ -1003,6 +1003,7 @@ class extVectorViewport : public extVector {
    VOF   vpOverflowX, vpOverflowY;
 
    FUNCTION vpDragCallback;
+   FUNCTION vpDropPrepare;
    Unit vpTargetX, vpTargetY;
    Unit vpTargetWidth, vpTargetHeight;
    Unit vpTargetXO, vpTargetYO; // Target dimensions

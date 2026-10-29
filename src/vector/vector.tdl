@@ -856,6 +856,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
   klass('VectorEllipse', { base='Vector', src='vectors/ellipse.cpp', extended=true, output='vectors/ellipse_def.cpp' })
 
   klass('VectorViewport', { base='Vector', references={ 'VOF' }, src='vectors/viewport.cpp', output='vectors/viewport_def.cpp', extended=true }, [[
+    ~func DropPrepare
     ~int(ARF) AspectRatio
     ~int(VOF) Overflow
     ~int(VOF) OverflowX

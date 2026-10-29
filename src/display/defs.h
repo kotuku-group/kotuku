@@ -287,6 +287,8 @@ class extPointer : public objPointer {
    uint8_t  DragDataSize = 0;     // Number of valid bytes in DragData
    bool     DragDelivering = false; // True while the drop is being dispatched to its destination
    bool     NativeDrag = false; // The host owns the primary-button and offer lifetime
+   OBJECTID DropSessionID = 0; // Config snapshot exposed only during native delivery
+   std::vector<OBJECTID> PendingDrops; // Owned by native transfers; IDs allow cancellation without retaining targets
    APTR     DragKeyHandle = nullptr; // Keyboard subscription that cancels the drag on Escape
    char     Device[32];
    std::string ButtonOrder;       // The order of the first 11 buttons can be changed here
@@ -545,6 +547,7 @@ extern void clear_host_drop();
 extern ERR respond_wayland_drop_request(OBJECTPTR Display, OBJECTPTR Requester, int Item, char Preference);
 namespace display {
    void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);
+   bool DriverDragStart(NativeDrop &Drop);
    void DriverMovement(OBJECTID SurfaceID, double AbsX, double AbsY, bool NonClient);
 }
 extern std::atomic<int> glLastPort;

@@ -93,6 +93,8 @@ extVectorViewport * get_drop_target_at_xy(extVectorScene *Scene, double X, doubl
 
 static void send_input_events(extVector *Vector, InputEvent *Event, bool Propagate = false)
 {
+   if (input_disabled(Vector)) return;
+
    if (not Vector->InputSubscriptions) {
       if ((Propagate) and (Vector->Parent) and (Vector->Parent->Class->BaseClassID IS CLASSID::VECTOR)) {
          send_input_events((extVector *)Vector->Parent, Event, true);
@@ -105,6 +107,7 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
 
    bool consumed = false;
    for (auto it=Vector->InputSubscriptions->begin(); it != Vector->InputSubscriptions->end(); ) {
+      if (input_disabled(Vector)) return;
       auto &sub = *it;
 
       if (sub.Callback.Context->terminating()) {
@@ -296,7 +299,8 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          RNF surface_flags;
          if ((gfx::GetSurfaceFlags(Self->SurfaceID, &surface_flags) != ERR::Okay) or
              ((surface_flags & RNF::NO_FOCUS) IS RNF::NIL)) {
-            apply_focus(Self, (extVector *)get_viewport_at_xy(Self, input->X, input->Y));
+            auto viewport = get_viewport_at_xy(Self, input->X, input->Y);
+            if (not input_disabled(viewport)) apply_focus(Self, viewport);
          }
       }
 
