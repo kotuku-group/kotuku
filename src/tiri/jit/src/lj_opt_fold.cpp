@@ -1398,8 +1398,80 @@ LJFOLDF(simplify_intmul_k32)
 LJFOLD(MUL any KINT64)
 LJFOLDF(simplify_intmul_k64)
 {
-   return FAILFOLD;  // Unsupported without FFI.
+   // 64-bit multiplies only come from the constant division folds below; small constants reduce as for int32.
+   uint64_t k = ir_kint64(fright)->u64;
+   if (k < 0x80000000u) return simplify_intmul_k(J, int32_t(k));
+   return NEXTFOLD;
 }
+
+#if LJ_TARGET_X64
+// Constants that divide an int32 by a constant magnitude with one 64-bit multiply instead of a binary64 division.
+// Multipliers are limited to 2^32 so that the product of any int32 dividend fits a signed 64-bit register.
+
+struct int_reciprocal {
+   int64_t multiplier;
+   int64_t bias;
+   int32_t shift;
+};
+
+// trunc(X / Divisor) IS ((int64(X) * multiplier) >> shift) - (X >> 31) for every int32 X when the multiplier rounds
+// 2^shift / Divisor up with an excess e = multiplier * Divisor - 2^shift in (0, 2^(shift - 31)] (Granlund and
+// Montgomery).  The product overestimates X / Divisor by less than 1 / Divisor for non-negative X, and for negative X
+// it lands strictly below the next integer, so adding one recovers truncation.  Divisor must not be a power of two.
+
+static bool trunc_reciprocal(uint32_t Divisor, int_reciprocal &Result)
+{
+   for (int32_t shift = 31; shift <= 62; shift++) {
+      int64_t power = int64_t(1) << shift;
+      int64_t multiplier = power / Divisor + 1;
+      if (multiplier > (int64_t(1) << 32)) return false;
+      if (multiplier * Divisor - power <= (int64_t(1) << (shift - 31))) {
+         Result = { multiplier, 0, shift };
+         return true;
+      }
+   }
+   return false;
+}
+
+// floor(X / Divisor) IS (int64(X) * multiplier + bias) >> shift for every int32 X, after Robison's multiply-add
+// division extended to signed dividends.  With X = q * Divisor + r and e = multiplier * Divisor - 2^shift, the
+// shifted value is q + (r * 2^shift + X * e + bias * Divisor) / (Divisor * 2^shift).  It is exact when
+// X * e + bias * Divisor >= 0 and X * e + bias * Divisor < 2^shift across the int32 range, taking r as 0 and
+// Divisor - 1 respectively.  Either rounding of 2^shift / Divisor may satisfy this, so both are tried.
+
+static bool floor_reciprocal(uint32_t Divisor, int_reciprocal &Result)
+{
+   const int64_t low_dividend = -(int64_t(1) << 31), high_dividend = (int64_t(1) << 31) - 1;
+   for (int32_t shift = 32; shift <= 62; shift++) {
+      int64_t power = int64_t(1) << shift;
+      for (int64_t round_up = 0; round_up <= 1; round_up++) {
+         int64_t multiplier = power / Divisor + round_up;
+         if (multiplier > (int64_t(1) << 32)) return false;
+         int64_t excess = multiplier * Divisor - power;
+         if (excess IS 0) continue;
+         int64_t lowest = excess > 0 ? low_dividend * excess : high_dividend * excess;
+         int64_t highest = excess > 0 ? high_dividend * excess : low_dividend * excess;
+         int64_t bias = (Divisor - 1 - lowest) / Divisor;
+         if (highest + bias * Divisor < power) {
+            Result = { multiplier, bias, shift };
+            return true;
+         }
+      }
+   }
+   return false;
+}
+
+// Emit the high part of int64(Dividend) * Multiplier + Bias as an int32.
+
+static TRef emit_reciprocal(jit_State* J, IRRef Dividend, const int_reciprocal &Reciprocal)
+{
+   TRef wide = emitir(IRT(IR_CONV, IRT_I64), Dividend, (IRT_I64 << IRCONV_DSH) | IRT_INT | IRCONV_SEXT);
+   TRef product = emitir(IRT(IR_MUL, IRT_I64), wide, lj_ir_kint64(J, uint64_t(Reciprocal.multiplier)));
+   if (Reciprocal.bias) product = emitir(IRT(IR_ADD, IRT_I64), product, lj_ir_kint64(J, uint64_t(Reciprocal.bias)));
+   TRef shifted = emitir(IRT(IR_BSAR, IRT_I64), product, lj_ir_kint(J, Reciprocal.shift));
+   return emitir(IRTI(IR_CONV), shifted, (IRT_INT << IRCONV_DSH) | IRT_I64);
+}
+#endif
 
 LJFOLD(MOD any KINT)
 LJFOLDF(simplify_intmod_k)
@@ -1409,12 +1481,12 @@ LJFOLDF(simplify_intmod_k)
    lj_assertJ(divisor != 0, "integer mod 0");
    uint32_t magnitude = divisor < 0 ? 0u - uint32_t(divisor) : uint32_t(divisor);
    if (magnitude IS 1) return INTFOLD(0);
+   IRRef dividend = fins->op1;
+   IRRef lower_bound = J->scev.dir ? J->scev.start : J->scev.stop;
+   bool non_negative = dividend IS J->scev.idx and irt_isint(J->scev.t) and lower_bound and
+      IR(lower_bound)->o IS IR_KINT and IR(lower_bound)->i >= 0;
    if ((magnitude & (magnitude - 1)) IS 0) {
-      IRRef dividend = fins->op1;
       int32_t mask_value = int32_t(magnitude - 1);
-      IRRef lower_bound = J->scev.dir ? J->scev.start : J->scev.stop;
-      bool non_negative = dividend IS J->scev.idx and irt_isint(J->scev.t) and lower_bound and
-         IR(lower_bound)->o IS IR_KINT and IR(lower_bound)->i >= 0;
       TRef mask = lj_ir_kint(J, mask_value);
       if (non_negative) return emitir(IRTI(IR_BAND), dividend, mask);
 
@@ -1427,16 +1499,60 @@ LJFOLDF(simplify_intmod_k)
       return emitir(IRTI(IR_SUB), masked, bias);
    }
 #if LJ_TARGET_X64
-   // A correctly rounded binary64 division of int32 operands cannot cross a non-integral quotient's integer
-   // boundary: its error is far smaller than 1 / magnitude.  Exact multiples divide exactly.  Magnitudes 1 and
-   // powers of two were handled above, so the truncated quotient fits int32 even for an INT32_MIN dividend.
-   // Keep the final result in integer IR so chained remainders and bit operations retain their cheap lowering.
-   IRRef dividend = fins->op1;
-   TRef number = emitir(IRTN(IR_CONV), dividend, IRCONV_NUM_INT);
-   TRef quotient = emitir(IRTN(IR_DIV), number, lj_ir_knum(J, lua_Number(magnitude)));
-   TRef truncated = emitir(IRTI(IR_CONV), quotient, IRCONV_INT_NUM | IRCONV_ANY);
-   TRef product = emitir(IRTI(IR_MUL), truncated, lj_ir_kint(J, int32_t(magnitude)));
+   // Truncate the quotient with a reciprocal multiply; the remainder is unaffected by the divisor's sign.  Magnitudes
+   // 1 and powers of two were handled above, so the quotient fits int32 even for an INT32_MIN dividend.  Keep the
+   // result in integer IR so chained remainders and bit operations retain their cheap lowering.
+   int_reciprocal reciprocal;
+   if (!trunc_reciprocal(magnitude, reciprocal)) return NEXTFOLD;
+   TRef quotient = emit_reciprocal(J, dividend, reciprocal);
+   if (!non_negative) {
+      quotient = emitir(IRTI(IR_SUB), quotient, emitir(IRTI(IR_BSAR), dividend, lj_ir_kint(J, 31)));
+   }
+   TRef product = emitir(IRTI(IR_MUL), quotient, lj_ir_kint(J, int32_t(magnitude)));
    return emitir(IRTI(IR_SUB), dividend, product);
+#else
+   return NEXTFOLD;
+#endif
+}
+
+// Integer floor division: floor(X / K) for an int32 X and an integral K in [2, 2^31 - 1], including the
+// floor(X * 2^-n) form that the reciprocal fold makes of power-of-two divisors.  A correctly rounded binary64
+// quotient of int32 operands cannot cross an integer, so the integer quotient equals the original result, and a
+// positive divisor cannot produce -0 from an int32 dividend.  Negative divisors are left alone for that reason.
+LJFOLD(FPMATH DIV IRFPM_FLOOR)
+LJFOLD(FPMATH MUL IRFPM_FLOOR)
+LJFOLDF(simplify_floor_intdiv_k)
+{
+#if LJ_TARGET_X64
+   PHIBARRIER(fleft);
+   IRIns* number = IR(fleft->op1);
+   IRIns* scale = IR(fleft->op2);
+   if (number->o != IR_CONV or number->op2 != IRCONV_NUM_INT or scale->o != IR_KNUM) return NEXTFOLD;
+   PHIBARRIER(number);
+   IRRef dividend = number->op1;
+   TRef quotient;
+   if (fleft->o IS IR_MUL) {  // floor(i * 2^-n) ==> i >> n
+      uint64_t u = ir_knum(scale)->u64;
+      uint32_t exponent = uint32_t(u >> 52);  // The sign bit is included, so negative scales are rejected.
+      if ((u & U64x(000fffff, ffffffff)) != 0 or exponent < 1023 - 31 or exponent > 1023 - 1) return NEXTFOLD;
+      quotient = emitir(IRTI(IR_BSAR), dividend, lj_ir_kint(J, int32_t(1023 - exponent)));
+   }
+   else {
+      lua_Number divisor = ir_knum(scale)->n;
+      if (!(divisor >= 2.0 and divisor <= 2147483647.0) or divisor != lua_Number(uint32_t(divisor))) {
+         return NEXTFOLD;
+      }
+      uint32_t magnitude = uint32_t(divisor);
+      if ((magnitude & (magnitude - 1)) IS 0) {
+         quotient = emitir(IRTI(IR_BSAR), dividend, lj_ir_kint(J, lj_fls(magnitude)));
+      }
+      else {
+         int_reciprocal reciprocal;
+         if (!floor_reciprocal(magnitude, reciprocal)) return NEXTFOLD;
+         quotient = emit_reciprocal(J, dividend, reciprocal);
+      }
+   }
+   return emitir(IRTN(IR_CONV), quotient, IRCONV_NUM_INT);
 #else
    return NEXTFOLD;
 #endif
