@@ -5804,6 +5804,12 @@ class objVectorViewport : public objVector {
 
    // Customised field getting
 
+   inline ERR getDropPrepare(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      return get_field(this, Value);
+   }
+
    inline ERR getAspectRatio(ARF &Value) noexcept {
       Value = *((ARF *)(((int8_t *)this) + CLASS_OFFSET_VECTOR + 40));
       return ERR::Okay;
@@ -5850,7 +5856,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getAbsX(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[61];
+      auto field = &this->Class->Dictionary[62];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -5866,12 +5872,12 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getBuffered(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[63];
+      auto field = &this->Class->Dictionary[64];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getDragCallback(FUNCTION * &Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
+      auto field = &this->Class->Dictionary[57];
       auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
       return get_field(this, Value);
    }
@@ -5882,7 +5888,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getX(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
+      auto field = &this->Class->Dictionary[59];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -5914,7 +5920,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getWidth(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
+      auto field = &this->Class->Dictionary[60];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -5922,7 +5928,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR getHeight(Unit &Value) noexcept {
-      auto field = &this->Class->Dictionary[62];
+      auto field = &this->Class->Dictionary[63];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
@@ -5932,8 +5938,13 @@ class objVectorViewport : public objVector {
 
    // Customised field setting
 
+   inline ERR setDropPrepare(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[56];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
+   }
+
    inline ERR setAspectRatio(const ARF Value) noexcept {
-      auto field = &this->Class->Dictionary[57];
+      auto field = &this->Class->Dictionary[58];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -5943,7 +5954,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR setOverflowX(const VOF Value) noexcept {
-      auto field = &this->Class->Dictionary[64];
+      auto field = &this->Class->Dictionary[65];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -5958,7 +5969,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR setViewY(const double Value) noexcept {
-      auto field = &this->Class->Dictionary[60];
+      auto field = &this->Class->Dictionary[61];
       return field->WriteValue(this, field, FD_DOUBLE, &Value);
    }
 
@@ -5973,12 +5984,12 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR setBuffered(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[63];
+      auto field = &this->Class->Dictionary[64];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setDragCallback(const FUNCTION Value) noexcept {
-      auto field = &this->Class->Dictionary[56];
+      auto field = &this->Class->Dictionary[57];
       return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
@@ -5988,7 +5999,7 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR setX(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[58];
+      auto field = &this->Class->Dictionary[59];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
@@ -6008,12 +6019,12 @@ class objVectorViewport : public objVector {
    }
 
    inline ERR setWidth(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[59];
+      auto field = &this->Class->Dictionary[60];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 
    inline ERR setHeight(const Unit Value) noexcept {
-      auto field = &this->Class->Dictionary[62];
+      auto field = &this->Class->Dictionary[63];
       return field->WriteValue(this, field, FD_UNIT, &Value);
    }
 

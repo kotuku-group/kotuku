@@ -442,6 +442,17 @@ function pathKey(Path:str!):str
    return glState.platform is 'Windows' ? key.replace('\\', '/').lower() : key
 end
 
+-- isFolder() recognises path syntax only.  Native destinations must still exist and resolve to the same folder
+-- when a delayed payload arrives, including when a volume mapping has changed.
+
+function resolveDropFolder(Path:str):str
+   if not Path then return end
+   local err, resolved = mSys.ResolvePath(Path, 0)
+   if err != ERR_Okay then return end
+   local status, kind = mSys.AnalysePath(resolved)
+   if status is ERR_Okay and (kind is LOC_FOLDER or kind is LOC_VOLUME) then return resolved end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 
 -- Returns a single item structure identifying a file/folder/volume.  The path field is the fully qualified location of
@@ -793,17 +804,18 @@ gui.fileview = function(Options)
       end
    end
 
-   function shortcutBrowse(ShortcutDialog:table!)
+   -- Browse for the folder of a new shortcut.  PathInput is the dialog's path box, which receives the selection.
+
+   function shortcutBrowse(PathInput:table!)
       &dlgShortcutBrowse = gui.dialog.file({
          title    = 'Select a Folder',
-         path     = ShortcutDialog.pathInput.getText(),
-         popOver  = ShortcutDialog.window.surface,
+         path     = PathInput.getText(),
          okLabel  = 'Select Dir',
          noFiles  = true,
          selectFolder = true,
          feedback = function[&&](Dialog, Path, Files)
             &dlgShortcutBrowse = nil
-            if Path and ShortcutDialog.window then ShortcutDialog.pathInput.setText(Path) end
+            if Path?? then PathInput.setText(Path) end
          end
       })
    end
@@ -1065,6 +1077,7 @@ gui.fileview = function(Options)
 
       Shortcut ?= ''
       Path ?= ''
+      local txt_name, txt_path
 
       &dlgShortcut = gui.dialog.message({
          title   = 'Create Shortcut',
@@ -1077,29 +1090,36 @@ gui.fileview = function(Options)
             { id=-1, label='Cancel', icon='items/cancel' },
             { id=1, label='Okay', icon='items/checkmark' }
          },
-         content = function(Dialog:table!, Target:obj!, Width:num!):num
+         content = function[&&](Dialog:table, Viewport:obj, Width:num):num
             gap = gui.sizing.widget.gap
-            label_width = gui.rpixel('50dp')
-            Dialog.nameInput = gui.input({
-               target = Target, width = Width, label = 'Name:', labelWidth = label_width, text = Shortcut
+            label_width = math.round(gui.sizing.widget.width * 0.4)
+            txt_name = gui.input({
+               target = Viewport, x = 0, y = 0, width = Width, label = 'Name:', labelWidth = label_width,
+               text = Shortcut
             })
-            y = Dialog.nameInput.viewport.height + gap
-            Dialog.pathInput = gui.input({
-               target = Target, y = y, width = Width, label = 'Path:', labelWidth = label_width, text = Path
+
+            y = txt_name.viewport.height + gap
+            browse = gui.button({
+               target = Viewport, y = y, xOffset = 0, height = txt_name.viewport.height, icon = 'folders/folder',
+               tip = 'Browse for a folder',
+               events = {
+                  activate = function[&&]()
+                     shortcutBrowse(txt_path)
+                  end
+               }
             })
-            Dialog.browseButton = gui.button({
-               target = Target, y = y, xOffset = 0, height = Dialog.pathInput.viewport.height,
-               icon = 'folders/folder', tip = 'Browse for a folder',
-               events = { activate = function[self]() shortcutBrowse(Dialog) end }
+
+            txt_path = gui.input({
+               target = Viewport, x = 0, y = y, width = Width - browse.viewport.width - gap, label = 'Path:',
+               labelWidth = label_width, text = Path
             })
-            Dialog.pathInput.viewport.width = Width - Dialog.browseButton.viewport.width - gap
-            return y + Dialog.pathInput.viewport.height
+            return y + txt_path.viewport.height
          end,
          feedback = function[&&](Dialog, Response, State)
-            if Response?.id is 1 then
-               name = Dialog.nameInput.getText()
-               path = Dialog.pathInput.getText()
-               if name?? and path?? then
+            if (Response?.id is 1) and txt_name and txt_path then
+               name = txt_name.getText()
+               path = txt_path.getText()
+               if (#name > 0) and (#path > 0) then
                   mSys.SetVolume(name, path, nil, nil, nil, VOLUME_REPLACE)
                   -- TODO: New shortcut should be permanently saved
                end
@@ -1424,10 +1444,17 @@ gui.fileview = function(Options)
          return true
       end
 
+      &view.events.dragPrepare = function[&&](View, Item, Drop):any
+         local dest = dropDestination(Item)
+         local resolved = resolveDropFolder(dest)
+         if not resolved then return false end
+         return { destination=dest, resolved=resolved }
+      end
+
       &view.events.dragDrop = function[&&](View, Item, Drop)
          if not Drop.datatypes?.find(string.char(DATA_FILE), 0, true) then return false end
-         local dest = dropDestination(Item)
-         dest ?! return false
+         local dest = Drop.state?.destination
+         if not dest or resolveDropFolder(dest) != Drop.state.resolved then return false end
 
          -- The data is retrieved within the drop, while the source can still answer.
          local sources = array<str>

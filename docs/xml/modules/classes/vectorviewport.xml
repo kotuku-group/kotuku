@@ -149,6 +149,16 @@
     </field>
 
     <field>
+      <name>DropPrepare</name>
+      <comment>Snapshots widget state at native button release, before asynchronous data acquisition.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The callback receives <code>(Viewport, Snapshot, X, Y)</code>.  Snapshot is a temporary <class name="Config">Config</class> whose identity is exposed through <class name="Pointer" field="DropSession">Pointer.DropSession</class> during synchronous DragDrop delivery.  X/Y are frozen viewport coordinates.  A widget can save the resolved row, page position and destination folder keyed by Snapshot's ID, and release them on its Free action. The snapshot expires on every terminal path, including transfer failure and participant destruction.  Do not request native data in this callback.  To reject preparation set <class name="Pointer" field="DragFeedback">Pointer.DragFeedback</class> to zero.  C callbacks receive Meta as their final argument and return an ERR code.  Script errors reject preparation.</p>
+      </description>
+    </field>
+
+    <field>
       <name>DropTarget</name>
       <comment>Set to true if the viewport accepts drag and drop operations.</comment>
       <access read="G" write="S">Get/Set</access>

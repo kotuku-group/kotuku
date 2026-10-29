@@ -7,6 +7,8 @@ static DropCase glCase;
 static int glDrops = 0;
 static int glFailures = 0;
 static int glClipboardChanges = 0;
+static int glSnapshotsCreated = 0;
+static int glSnapshotsReleased = 0;
 
 static ERR register_fd(HOSTHANDLE, RFD, void (*)(HOSTHANDLE, APTR), APTR) { return ERR::Okay; }
 static void crossing(OBJECTID, bool, double, double) { }
@@ -26,12 +28,19 @@ static bool start(NativeDrop &Drop)
    if ((Drop.SurfaceID != 42) or (Drop.X != 25.5) or (Drop.Y != 40.25) or (not Drop.Session)) glFailures++;
    Drop.TargetID = 43;
    Drop.DisplayID = 44;
+   Drop.Snapshot = std::shared_ptr<NativeDropSnapshot>(new NativeDropSnapshot, [](NativeDropSnapshot *Snapshot) {
+      glSnapshotsReleased++;
+      delete Snapshot;
+   });
+   Drop.Snapshot->ID = 99;
+   glSnapshotsCreated++;
    return glCase != DropCase::RejectHover;
 }
 
 static bool data(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t Length)
 {
    glDrops++;
+   if (not Drop.Snapshot or (Drop.Snapshot->ID != 99)) glFailures++;
    if ((Drop.SurfaceID != 42) or (Drop.TargetID != 43) or (Drop.DisplayID != 44) or
          (Drop.X != 25.5) or (Drop.Y != 40.25)) glFailures++;
    const auto expected = glCase IS DropCase::Text ? "Wayland <&> 三😀" :
@@ -64,12 +73,14 @@ int main()
          DropCase::CloseOnHover, DropCase::ShiftFocusLost, DropCase::AltFocusLost }) {
       glCase = test_case;
       glDrops = 0;
+      glSnapshotsCreated = glSnapshotsReleased = 0;
       const auto before = glFailures;
       glFailures += wayland_drop_test(&callbacks, test_case);
       const bool expected_drop = (test_case IS DropCase::Copy) or (test_case IS DropCase::Text) or
          (test_case IS DropCase::Legacy) or (test_case IS DropCase::RejectData) or (test_case IS DropCase::Control) or
          (test_case IS DropCase::ShiftFocusLost) or (test_case IS DropCase::AltFocusLost);
       if (glDrops != int(expected_drop)) glFailures++;
+      if (glSnapshotsCreated != glSnapshotsReleased) glFailures++;
       if (glFailures != before) std::fprintf(stderr, "Wayland drop case %d failed\n", int(test_case));
    }
    destroy_display_driver(driver);

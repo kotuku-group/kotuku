@@ -191,6 +191,7 @@ static void key_event(evKey *, int, class extVectorText *);
 static ERR reset_font(class extVectorText *, bool = false);
 static ERR text_input_events(class extVector *Vector, const InputEvent *Events);
 static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta);
+static void activate_text_input(class extVectorText *);
 
 //********************************************************************************************************************
 
@@ -221,6 +222,7 @@ class extVectorText : public extVector {
    extVectorPath *txSelection;
    std::string txSelectFill = "rgba(0,120,215,0.35)";
    bool txSelectionHidden = false;
+   bool txHasFocus = false;
    bool txDragging = false, txDragPending = false, txMouseShift = false;
    APTR txDragTimer = nullptr;
    double txDragX = 0, txDragY = 0, txClickX = 0, txClickY = 0;
@@ -1275,6 +1277,8 @@ static ERR TEXT_GET_Flags(extVectorText *Self, VTXF *Value)
 
 static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
 {
+   const auto previous_flags = Self->txFlags;
+   constexpr auto input_flags = VTXF::EDITABLE|VTXF::SELECTABLE;
    const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
    if (Self->needs_caret_geometry() and not had_caret_geometry) reset_path(Self);
@@ -1282,7 +1286,11 @@ static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
       if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
       if (Self->txCursor.timer) { UpdateTimer(Self->txCursor.timer, 0); Self->txCursor.timer = nullptr; }
    }
-   selection_changed(Self);
+   if (Self->initialised() and Self->txHasFocus and Self->needs_caret_geometry() and
+       ((previous_flags & input_flags) != (Value & input_flags))) {
+      activate_text_input(Self);
+   }
+   else selection_changed(Self);
    return ERR::Okay;
 }
 
@@ -1674,30 +1682,38 @@ static ERR cursor_timer(extVectorText *Self, int64_t Elapsed, int64_t CurrentTim
 
 //********************************************************************************************************************
 
+static void activate_text_input(extVectorText *Self)
+{
+   if (not Self->needs_caret_geometry()) return;
+   Self->txSelectionHidden = false;
+   selection_changed(Self);
+
+   if (not Self->txKeyEvent) {
+      SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, Self), &Self->txKeyEvent);
+   }
+
+   if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and Self->txCursor.vector) {
+      acMoveToFront(Self->txCursor.vector);
+      if (Self->txCursor.timer) UpdateTimer(Self->txCursor.timer, 1.0);
+      else SubscribeTimer(0.8, C_FUNCTION(cursor_timer), &Self->txCursor.timer);
+      Self->txCursor.resetFlash();
+      Self->txCursor.vector->setVisibility(VIS::VISIBLE);
+   }
+   acDraw(Self);
+}
+
+//********************************************************************************************************************
+
 static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta)
 {
    auto Self = (extVectorText *)CurrentContext();
 
    if ((Event & FM::HAS_FOCUS) != FM::NIL) {
-      if (Self->needs_caret_geometry()) {
-         Self->txSelectionHidden = false;
-         selection_changed(Self);
-
-         if (not Self->txKeyEvent) {
-            SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, Self), &Self->txKeyEvent);
-         }
-
-         if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and Self->txCursor.vector) {
-            acMoveToFront(Self->txCursor.vector);
-            if (Self->txCursor.timer) UpdateTimer(Self->txCursor.timer, 1.0);
-            else SubscribeTimer(0.8, C_FUNCTION(cursor_timer), &Self->txCursor.timer);
-            Self->txCursor.resetFlash();
-            Self->txCursor.vector->setVisibility(VIS::VISIBLE);
-         }
-         acDraw(Self);
-      }
+      Self->txHasFocus = true;
+      activate_text_input(Self);
    }
    else if ((Event & (FM::LOST_FOCUS|FM::CHILD_HAS_FOCUS)) != FM::NIL) {
+      Self->txHasFocus = false;
       if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
       if (Self->txCursor.timer)  { UpdateTimer(Self->txCursor.timer, 0); Self->txCursor.timer = 0; }
       if (Self->txKeyEvent)      { UnsubscribeEvent(Self->txKeyEvent); Self->txKeyEvent = nullptr; }
@@ -2026,10 +2042,15 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
             acClipboard(Self, CLIPMODE::PASTE);
             return;
 
-         case KEY::K: // Delete line
+         case KEY::K: { // Delete line
             if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
-            ((objVectorText *)Self)->deleteLine(Self->txCursor.row());
+            const bool changed = (Self->txLines.size() > 1) or
+               ((not Self->txLines.empty()) and (not Self->txLines.front().empty()));
+            if ((((objVectorText *)Self)->deleteLine(Self->txCursor.row()) IS ERR::Okay) and changed) {
+               report_change(Self);
+            }
             return;
+         }
 
          case KEY::Z: // Undo
             if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;

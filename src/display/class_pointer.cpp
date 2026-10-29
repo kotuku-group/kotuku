@@ -357,7 +357,10 @@ void end_cursor_drag(extPointer *Self, bool Unsubscribe)
       }
    }
 
-   if (Self->DragKeyHandle) { UnsubscribeEvent(Self->DragKeyHandle); Self->DragKeyHandle = nullptr; }
+   if (Self->PendingDrops.empty() and Self->DragKeyHandle) {
+      UnsubscribeEvent(Self->DragKeyHandle);
+      Self->DragKeyHandle = nullptr;
+   }
 
    Self->DragSourceID = 0;
    Self->DragItem     = 0;
@@ -386,7 +389,7 @@ void end_cursor_drag(extPointer *Self, bool Unsubscribe)
 static void drag_key_event(evKey *Event, int Size, APTR Meta)
 {
    auto Self = (extPointer *)CurrentContext();
-   if ((Event->Code IS KEY::ESCAPE) and ((Event->Qualifiers & KQ::PRESSED) != KQ::NIL) and (Self->DragSourceID)) {
+   if ((Event->Code IS KEY::ESCAPE) and ((Event->Qualifiers & KQ::PRESSED) != KQ::NIL)) {
       acDeactivate(Self);
    }
 }
@@ -593,6 +596,8 @@ static void process_ptr_movement(extPointer *Self, struct dcDeviceInput *Input)
 
 extPointer::~extPointer()
 {
+   const auto pending = PendingDrops;
+   for (auto id : pending) FreeObject(id);
    acHide(this);
 
    if (DragKeyHandle) UnsubscribeEvent(DragKeyHandle);
@@ -613,7 +618,8 @@ Deactivate: Cancels the active drag and drop operation.
 
 If a drag and drop operation was started with ~Display.StartCursorDrag(), it is cancelled without delivering a drop.
 The drag preview surface, if any, is hidden but not freed.  A @Clipboard source is notified through its
-@Clipboard.DragEndHandler with `ERR::Cancelled`.  This action has no effect if no drag and drop operation is active.
+@Clipboard.DragEndHandler with `ERR::Cancelled`.  Pending native deliveries are also cancelled, including after native
+hover feedback has ended.  This action has no effect if no drag or pending delivery exists.
 
 The pointer calls this action when a press of the Escape key is broadcast during a drag and drop operation.
 -END-
@@ -621,6 +627,8 @@ The pointer calls this action when a press of the Escape key is broadcast during
 
 static ERR POINTER_Deactivate(extPointer *Self)
 {
+   const auto pending = Self->PendingDrops;
+   for (auto id : pending) FreeObject(id);
    if (Self->DragSourceID) {
       const auto source_id = Self->DragSourceID;
       const auto item = Self->DragItem;
@@ -1347,6 +1355,22 @@ static ERR GET_DragDatatypes(extPointer *Self, std::string_view &Value)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+-FIELD-
+DropSession: The native destination snapshot currently being delivered.
+
+During synchronous native DragDrop delivery, this field refers to a temporary @Config object.  It is null outside
+delivery.  Receivers may use its identity to retrieve widget state saved by @VectorViewport.DropPrepare at release.
+The object expires on completion, rejection, cancellation, failed transfer or destruction of a participant.
+-END-
+*********************************************************************************************************************/
+
+static ERR GET_DropSession(extPointer *Self, OBJECTID &Value)
+{
+   Value = Self->DropSessionID;
+   return ERR::Okay;
+}
+
 static const FieldArray clPointerFields[] = {
    { "Speed",        FDF_DOUBLE|FDF_RW },
    { "Acceleration", FDF_DOUBLE|FDF_RW },
@@ -1373,10 +1397,11 @@ static const FieldArray clPointerFields[] = {
    { "OverObject",   FDF_OBJECTID|FDF_R },
    { "ClickSlop",    FDF_INT|FDF_RW },
    { "DragFeedback", FDF_INT|FDF_RW },
-   { "DragDatatypes", FDF_CPPSTRING|FDF_R|FDF_PURE, GET_DragDatatypes },
    // Virtual Fields
-   { "ButtonState",  FDF_INT|FDF_R|FDF_PURE, GET_ButtonState },
-   { "ButtonOrder",  FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_ButtonOrder, SET_ButtonOrder },
+   { "ButtonState",   FDF_INT|FDF_R|FDF_PURE, GET_ButtonState },
+   { "ButtonOrder",   FDF_CPPSTRING|FDF_RW|FDF_PURE, GET_ButtonOrder, SET_ButtonOrder },
+   { "DragDatatypes", FDF_CPPSTRING|FDF_R|FDF_PURE, GET_DragDatatypes },
+   { "DropSession",   FDF_OBJECTID|FDF_R|FDF_PURE, GET_DropSession, nullptr, CLASSID::CONFIG },
    END_FIELD
 };
 

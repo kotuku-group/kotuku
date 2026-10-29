@@ -16,7 +16,8 @@ module({
     "NORMAL: The surface is being dragged.")
 
   enums("WH", { type="int", start=1, comment="Events for WindowHook()" },
-    "CLOSE")
+    "CLOSE",
+    "DROP_SNAPSHOT: Prepare a native drop destination at button release.")
 
   enums("CS", { type="int", start=1, comment="Colour space options." },
     "SRGB: The default colour-space is sRGB.",
@@ -582,6 +583,7 @@ module({
     oid    OverObject      # Object positioned under the pointer
     int    ClickSlop       # Leniency value for determining whether the user intended to make a click or drag.
     int    DragFeedback    # Destination feedback: -1 unspecified, 0 rejected, 1 copy accepted.
+    ~oid DropSession # Native destination snapshot during synchronous delivery
   ]])
 
   methods('surface', 'Drw', {

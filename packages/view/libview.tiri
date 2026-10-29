@@ -350,6 +350,47 @@ function itemAtPoint(View:table!, X:num!, Y:num!):table
    end
 end
 
+-- Resolve acceptance and widget state once, before a native transfer can start.  Rows and page coordinates must
+-- survive row replacement, scrolling and navigation; no view lookup is repeated when the payload arrives.
+
+function prepareDrop(View:table!, Source:obj!, ItemID:num!, Datatypes:str!, X:num!, Y:num!, Freeze:bool):table
+   local handler = View.events?.dragDrop
+
+   if not handler or View.disabled or View.qualifiers has (KQ_SHIFT | KQ_ALT) then return end
+
+   local x, y = X - View.page.x, Y - View.page.y
+   local item = itemAtPoint(View, x, y)
+
+   local drop = {
+      source    = Source,
+      item      = ItemID,
+      datatypes = Datatypes,
+      x = x,
+      y = y,
+      qualifiers = View.qualifiers,
+      operation  = 'copy',
+      prepared   = true,
+      session    = (glDragSession and glDragSession._sourceID is Source.id) ? glDragSession : nil
+   }
+
+   if View.events?.dragOver and not View.events.dragOver(View, item, drop) then return end
+
+   View.viewport ?! return
+   if View.events?.dragPrepare then
+      drop.state = View.events.dragPrepare(View, item, drop)
+      if drop.state is false then return end
+   end
+
+   View.viewport ?! return
+   local saved_item = item
+   if item and Freeze then
+      saved_item = {}
+      for key, value in pairs(item) do saved_item[key] = value end
+   end
+
+   return { item=saved_item, drop=drop, handler=handler }
+end
+
 -- Feedback is independent of ordinary hover/capture.  No data is requested until the actual drop.  Destroying is set
 -- when the view's viewport is being freed, which cannot be redrawn.
 
@@ -358,11 +399,16 @@ function clearDropFeedback(View:table!, Destroying:bool)
       if not View._dropTick then mSys.UpdateTimer(View._dropTimer, 0) end
       View._dropTimer = nil
    end
+
    if not View._dropActive then return end
+
    View._dropActive = nil
    View._dropOutline?.visibility = VIS_HIDDEN
+
    highlightItem(View, nil)
+
    mGfx.RestoreCursor(PTC_DEFAULT, View.frame.id)
+
    View.events?.dragLeave(View, View._dropItem, View._dropInfo)
    View._dropItem = nil
    View._dropInfo = nil
@@ -375,20 +421,27 @@ function updateDropFeedback(View:table!)
       clearDropFeedback(View)
       return
    end
+
    local x = View.scene.dropX
    local y = View.scene.dropY
    local item = itemAtPoint(View, x - View.page.x, y - View.page.y)
    local source = pointer.dragSource
+
    local drop = {
       source=source, item=pointer.dragItem, datatypes=pointer.dragDatatypes,
       x=x - View.page.x, y=y - View.page.y, qualifiers=View.qualifiers, operation='copy',
       session=(glDragSession and glDragSession._sourceID is source.id) ? glDragSession : nil
    }
+
    local accepted = not View.disabled and View.events?.dragDrop and
       not (View.qualifiers has (KQ_SHIFT | KQ_ALT))
+
    if accepted and View.events?.dragOver then accepted = View.events.dragOver(View, item, drop) is true end
+
    View.viewport ?! return
+
    pointer.dragFeedback = accepted ? 1 : 0
+
    View._dropActive = true
    View._dropItem = item
    View._dropInfo = drop
@@ -397,6 +450,7 @@ function updateDropFeedback(View:table!)
    mGfx.SetCursor(0, 0, accepted ? PTC_DEFAULT : PTC_STOP, '', View.frame.id)
 
    -- OLE invokes feedback inside its nested message loop; scroll there as well as from the regular timer.
+
    local now = mSys.PreciseTime()
    if accepted and now - (View._dropScrollTime ?? 0) >= 50000 then
       View._dropScrollTime = now
@@ -406,6 +460,7 @@ function updateDropFeedback(View:table!)
       if View.scrollDirection is 'horizontal' then dy = 0 end
       if dx != 0 or dy != 0 then View.scrollbar.scrollPage(dx, dy) end
    end
+
    if not View._dropTimer then
       local err
       err, View._dropTimer = mSys.SubscribeTimer(0.05, function()
@@ -415,9 +470,9 @@ function updateDropFeedback(View:table!)
          if not View._dropActive then return ERR_Terminate end
       end)
    end
+
    View.viewport.acDraw()
 end
-
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -1290,6 +1345,15 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
    -- only routed if the scene was created with VPF_DROP_TARGETS, e.g. by gui.window({ dragDrop=true }).
 
    if vw.dragDrop then
+      local pending = {}
+      vw.frame.dropPrepare = function(Frame, Snapshot, X, Y)
+         local pointer = obj.find('SystemPointer')
+         local prepared = prepareDrop(vw, pointer.dragSource, pointer.dragItem, pointer.dragDatatypes, X, Y, true)
+         if not prepared then pointer.dragFeedback = 0; return end
+         local id = Snapshot.id
+         pending[id] = prepared
+         Snapshot.subscribe('Free', function() pending[id] = nil end)
+      end
       vw.frame.dropTarget = 1
       vw._dropOutline = vw.frame.new('VectorRectangle', {
          x=1, y=1, xOffset=1, yOffset=1, fill='none', stroke='#4388dd', strokeWidth=2, visibility=VIS_HIDDEN
@@ -1298,29 +1362,21 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
          if Events.type is JET_CROSSED_OUT then clearDropFeedback(vw) else updateDropFeedback(vw) end
       end)
       vw.frame.subscribe('DragDrop', function(Frame, Args)
-         local handler = vw.events?.dragDrop
-         if not handler or vw.disabled or vw.scene.dropTarget?.id != vw.frame.id then return end
          local pointer = obj.find('SystemPointer')
-         if vw.qualifiers has (KQ_SHIFT | KQ_ALT) then
+         if not vw.viewport or vw.disabled or vw.scene.dropTarget?.id != vw.frame.id then
+            pointer.dragFeedback = 0
+            return
+         end
+         local snapshot = pointer.dropSession
+         local prepared = snapshot ? pending[snapshot.id] :
+            prepareDrop(vw, Args.source, Args.item, Args.datatype, vw.scene.dropX, vw.scene.dropY)
+         if not prepared then
             pointer.dragFeedback = 0
             clearDropFeedback(vw)
             return
          end
-         local x = vw.scene.dropX - vw.page.x
-         local y = vw.scene.dropY - vw.page.y
-         local source = Args.source
-         local item = itemAtPoint(vw, x, y)
-         local drop = {
-            source=source, item=Args.item, datatypes=Args.datatype, x=x, y=y,
-            qualifiers=vw.qualifiers, operation='copy',
-            session=(glDragSession and source and glDragSession._sourceID is source.id) ? glDragSession : nil
-         }
-         if vw.events?.dragOver and not vw.events.dragOver(vw, item, drop) then
-            pointer.dragFeedback = 0
-            clearDropFeedback(vw)
-            return
-         end
-         local accepted = handler(vw, item, drop)
+         if snapshot then pending[snapshot.id] = nil end
+         local accepted = prepared.handler(vw, prepared.item, prepared.drop)
          -- Existing handlers have no return value.  An explicit false reports refusal to the source/OLE.
          pointer.dragFeedback = accepted is false ? 0 : 1
          if vw.viewport then clearDropFeedback(vw) end
