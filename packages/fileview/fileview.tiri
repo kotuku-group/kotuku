@@ -719,6 +719,9 @@ gui.fileview = function(Options)
       if sort then &view.sortView() end
    end
 
+   -- Watch modifications rather than closes: inspecting a directory opens a read-only handle, and closing it
+   -- would otherwise trigger another inspection indefinitely.
+
    function[<weak> self] pathWatch(MonitoredFile:obj!, Path:str, Flags:num!)
       if &inRefresh or &_released then return end
 
@@ -774,7 +777,7 @@ gui.fileview = function(Options)
          else
             deleteItem(Path)
          end
-      elseif Flags has (MFF_ATTRIB|MFF_CLOSED) then
+      elseif Flags has (MFF_ATTRIB|MFF_MODIFY) then
          if info_err is ERR_Okay then
             item = findItem(Path)
             if item then
@@ -952,7 +955,7 @@ gui.fileview = function(Options)
          msg(f'Monitor path "{&path}"')
          try
             &watch = obj.new('file', { path = &path })
-            if &watch.mtWatch(pathWatch, MFF_CREATE|MFF_DELETE|MFF_ATTRIB|MFF_CLOSED|MFF_MOVED) != ERR_Okay then
+            if &watch.mtWatch(pathWatch, MFF_CREATE|MFF_DELETE|MFF_ATTRIB|MFF_MODIFY|MFF_MOVED) != ERR_Okay then
                &watch = nil
                err, &timer = mSys.SubscribeTimer(&refreshRate, incrementalRefresh)
                msg('Timer-based file monitoring is enabled.')
@@ -1724,7 +1727,7 @@ gui.fileview = function(Options)
       if not &watch and &path?? and &path != ':' then
          try
             &watch = obj.new('file', { path = &path })
-            if &watch.mtWatch(pathWatch, MFF_CREATE|MFF_DELETE|MFF_ATTRIB|MFF_CLOSED|MFF_MOVED) != ERR_Okay then
+            if &watch.mtWatch(pathWatch, MFF_CREATE|MFF_DELETE|MFF_ATTRIB|MFF_MODIFY|MFF_MOVED) != ERR_Okay then
                &watch = nil
             end
          except ex
