@@ -202,7 +202,7 @@
 
   <function>
     <name>DrawText</name>
-    <comment>Draws a single UTF-8 text run directly into a bitmap.</comment>
+    <comment>Draws a single UTF-8 string directly into a bitmap.</comment>
     <prototype>ERR vec::DrawText(objBitmap * Bitmap, APTR FontHandle, DOUBLE X, DOUBLE Y, STRVIEW String, OBJECTPTR FillStyle, DOUBLE * Advance)</prototype>
     <tiriPrototype>err, Advance:num = DrawText(Bitmap:obj, FontHandle:any, X:num, Y:num, String:str, FillStyle:obj)</tiriPrototype>
     <tags>mutates-input, blocking, thread-safe</tags>
@@ -216,9 +216,10 @@
       <param type="DOUBLE *" name="Advance">Receives the run's advance in pixels, or NULL if not required.  Cleared on error.</param>
     </input>
     <description>
-<p>Draws using a font handle returned by <function>GetFontHandle</function>.  X and Y specify the first glyph's baseline origin in bitmap pixels.  Scalable fonts preserve fractional coordinates and use the same cached outlines and kerning as <class name="VectorText">VectorText</class>. Missing characters use the face's missing-glyph outline; no fallback face is selected.  The run must contain no line breaks.  An empty run draws nothing and returns an advance of zero.</p>
+<p>Draws using a font handle returned by <function>GetFontHandle</function>.  X and Y specify the first glyph's baseline origin in bitmap pixels.  Scalable fonts preserve fractional coordinates and use the same cached outlines and kerning as <class name="VectorText">VectorText</class>. Missing characters use the face's missing-glyph outline; no fallback face is selected.  The string must contain no line breaks.  An empty string draws nothing and returns an advance of zero.</p>
 <p>FillStyle accepts the same <class name="VectorColour">VectorColour</class>, <class name="VectorImage">VectorImage</class>, <class name="Gradient">Gradient</class> and <class name="VectorPattern">VectorPattern</class> objects as <function>DrawPath</function>. Bitmap fonts accept only <class name="VectorColour">VectorColour</class> and round the origin to whole pixels.  Drawing respects <class name="Bitmap" field="Clip">Bitmap.Clip</class>. The optional Advance result includes kerning and equals <function>StringWidth</function> for the same single-line run.</p>
-<p>Concurrent calls must use separate Bitmap objects.  Their pixel memory may be shared provided their Clip regions do not overlap.  Callers must keep the bitmap storage and fill resources alive and unchanged during drawing.  Scalable outlines are copied under the font lock and rasterised after releasing it.  Bitmap-font drawing holds the font lock throughout, because the underlying font object is shared.  Fills that maintain rendering state, such as gradients and patterns, require separate fill objects for concurrent calls.</p>
+<p>Solid scalable text reuses an LRU cache of 8-bit glyph coverage, with a shared 4 MB resident budget.  Colour, opacity, clipping and pixel format are applied when the cached coverage is drawn.</p>
+<p>Concurrent calls must use separate Bitmap objects.  Their pixel memory may be shared provided their Clip regions do not overlap.  Fills that maintain rendering state, such as gradients and patterns, require separate fill objects for concurrent calls.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>

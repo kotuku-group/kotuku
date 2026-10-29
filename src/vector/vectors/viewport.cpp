@@ -44,6 +44,18 @@ static Unit fixed_to_requested_unit(double Value, double ParentSize, bool Scaled
 }
 
 //********************************************************************************************************************
+// Set one of the viewport's target coordinates.  The viewport is marked dirty only if the value or its scaling
+// changes: clients such as scrollbars assign unchanged page dimensions during every layout, and marking the viewport
+// dirty would recompute all of its children.
+
+static void set_target(extVectorViewport *Self, Unit &Target, const Unit &Value)
+{
+   if ((Target.Value IS Value.Value) and (Target.scaled() IS Value.scaled())) return;
+   Target = Value;
+   mark_dirty((extVector *)Self, RC::DIRTY);
+}
+
+//********************************************************************************************************************
 // Input event handler for the dragging of viewports by the user.  Requires the client to set the DragCallback field
 // to be active.
 
@@ -478,8 +490,7 @@ static ERR VIEW_GET_Height(extVectorViewport *Self, Unit &Value)
 
 static ERR VIEW_SET_Height(extVectorViewport *Self, Unit &Value)
 {
-   Self->vpTargetHeight = Value;
-   mark_dirty((extVector *)Self, RC::DIRTY);
+   set_target(Self, Self->vpTargetHeight, Value);
    return ERR::Okay;
 }
 
@@ -656,8 +667,7 @@ static ERR VIEW_GET_Width(extVectorViewport *Self, Unit &Value)
 
 static ERR VIEW_SET_Width(extVectorViewport *Self, Unit &Value)
 {
-   Self->vpTargetWidth = Value;
-   mark_dirty((extVector *)Self, RC::DIRTY);
+   set_target(Self, Self->vpTargetWidth, Value);
    return ERR::Okay;
 }
 
@@ -699,8 +709,7 @@ static ERR VIEW_GET_X(extVectorViewport *Self, Unit &Value)
 
 static ERR VIEW_SET_X(extVectorViewport *Self, Unit &Value)
 {
-   Self->vpTargetX = Value;
-   mark_dirty((extVector *)Self, RC::DIRTY);
+   set_target(Self, Self->vpTargetX, Value);
    return ERR::Okay;
 }
 
@@ -742,8 +751,7 @@ static ERR VIEW_GET_XOffset(extVectorViewport *Self, Unit &Value)
 
 static ERR VIEW_SET_XOffset(extVectorViewport *Self, Unit &Value)
 {
-   Self->vpTargetXO = Value;
-   mark_dirty((extVector *)Self, RC::DIRTY);
+   set_target(Self, Self->vpTargetXO, Value);
    return ERR::Okay;
 }
 
@@ -785,8 +793,7 @@ static ERR VIEW_GET_Y(extVectorViewport *Self, Unit &Value)
 
 static ERR VIEW_SET_Y(extVectorViewport *Self, Unit &Value)
 {
-   Self->vpTargetY = Value;
-   mark_dirty((extVector *)Self, RC::DIRTY);
+   set_target(Self, Self->vpTargetY, Value);
    return ERR::Okay;
 }
 
@@ -828,8 +835,7 @@ static ERR VIEW_GET_YOffset(extVectorViewport *Self, Unit &Value)
 
 static ERR VIEW_SET_YOffset(extVectorViewport *Self, Unit &Value)
 {
-   Self->vpTargetYO = Value;
-   mark_dirty((extVector *)Self, RC::DIRTY);
+   set_target(Self, Self->vpTargetYO, Value);
    return ERR::Okay;
 }
 

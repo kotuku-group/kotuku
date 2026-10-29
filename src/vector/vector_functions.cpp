@@ -21,6 +21,8 @@ functions for creating paths and rendering them to bitmaps.
 
 #include <charconv>
 
+#include "text_coverage.cpp"
+
 // Resource management for the SimpleVector follows.
 
 static ERR simplevector_free(ResourceRecord &Resource, APTR Address) {
@@ -530,22 +532,23 @@ ERR DrawPath(objBitmap *Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeS
 /*********************************************************************************************************************
 
 -FUNCTION-
-DrawText: Draws a single UTF-8 text run directly into a bitmap.
+DrawText: Draws a single UTF-8 string directly into a bitmap.
 
 Draws using a font handle returned by ~GetFontHandle().  X and Y specify the first glyph's baseline origin in bitmap
 pixels.  Scalable fonts preserve fractional coordinates and use the same cached outlines and kerning as @VectorText.
-Missing characters use the face's missing-glyph outline; no fallback face is selected.  The run must contain no line
-breaks.  An empty run draws nothing and returns an advance of zero.
+Missing characters use the face's missing-glyph outline; no fallback face is selected.  The string must contain no
+line breaks.  An empty string draws nothing and returns an advance of zero.
 
 FillStyle accepts the same @VectorColour, @VectorImage, @Gradient and @VectorPattern objects as ~DrawPath().
 Bitmap fonts accept only @VectorColour and round the origin to whole pixels.  Drawing respects @Bitmap.Clip.
 The optional Advance result includes kerning and equals ~StringWidth() for the same single-line run.
 
+Solid scalable text reuses an LRU cache of 8-bit glyph coverage, with a shared 4 MB resident budget.  Colour,
+opacity, clipping and pixel format are applied when the cached coverage is drawn.
+
 Concurrent calls must use separate Bitmap objects.  Their pixel memory may be shared provided their Clip regions do
-not overlap.  Callers must keep the bitmap storage and fill resources alive and unchanged during drawing.  Scalable
-outlines are copied under the font lock and rasterised after releasing it.  Bitmap-font drawing holds the font lock
-throughout, because the underlying font object is shared.  Fills that maintain rendering state, such as gradients
-and patterns, require separate fill objects for concurrent calls.
+not overlap.  Fills that maintain rendering state, such as gradients and patterns, require separate fill objects for
+concurrent calls.
 
 -INPUT-
 obj(Bitmap) Bitmap: Target bitmap.
@@ -601,6 +604,15 @@ ERR DrawText(objBitmap *Bitmap, APTR FontHandle, double X, double Y, const std::
       return error;
    }
    else if (((common_font *)FontHandle)->type != CF_FREETYPE) return ERR::Args;
+
+   if (fill_class IS CLASSID::VECTORCOLOUR) {
+      double advance;
+      if (draw_covered_text(Bitmap, (freetype_font::ft_point *)FontHandle, X, Y, String,
+            (objVectorColour *)FillStyle, advance)) {
+         if (Advance) *Advance = advance;
+         return ERR::Okay;
+      }
+   }
 
    thread_local SimpleVector text;
    text.mPath.remove_all();
