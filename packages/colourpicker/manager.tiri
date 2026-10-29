@@ -592,15 +592,21 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text=[[
-@desc Build the palette manager in a hidden viewport that covers the dialog body.
-@input Picker: the picker entity, which supplies `tokens`, `db` (the palette database) and `dbIndex` (the palette that
-the picker edits)
+@desc Build the palette manager in a hidden viewport that covers the dialog body.  The manager edits the picker's
+database in place and calls `save()` after each change.  Call `show()` to display it, and `destroy()` before the
+picker is freed.
+@input Picker: the picker entity.  The manager reads `tokens`, `db` (the palette database), `dbID` and `dbIndex`
+(the ID and index of the palette that the picker edits), `state.active` (the edited swatch) and `window` (the parent
+of its dialogs).  It reads `paletteFolder` and sets it to the folder last used by Import or Export.
 @input Target viewport
-@input Options: x, y, width, height, and the callbacks open(Index, Swatch), save(), sync() (stores the picker's palette
-in the database), removePalette(Index) (removes a database palette, switching the picker to another if it edits that
-palette), focus(Has, Field) and blur()
-@result Table with `viewport`, `show()`, `hide()`, `refresh()`, `widgets()`, `keyPress(Qualifiers, Value)` and
-`destroy()`
+@input Options: x, y, width and height of the viewport, and the callbacks: `open(Index, Swatch)` edits database palette
+Index in the picker, with swatch Swatch if given; `save()` saves the database and returns false if it couldn't;
+`sync()` stores the picker's palette in the database; `removePalette(Index)` removes a database palette, switching
+the picker to another if it edits that palette, and returns false if it was refused; `focus(Has, Field)` reports
+that a text field gained or lost the focus; and `blur()` asks the picker to take the focus from a text field.
+@result Table with `viewport`, `show()`, `hide()`, `visible()`, `refresh()` (redraws after the database changes),
+`widgets()` (the widgets that handle Enter themselves), `keyPress(Qualifiers, Value)` (returns true if it used a
+manager shortcut) and `destroy()`
 ]])
 colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!):table
    t = Picker.tokens
