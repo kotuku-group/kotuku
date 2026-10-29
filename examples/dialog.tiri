@@ -9,7 +9,7 @@
       gui.dialog.message({
          type          = 'question',
          title         = 'Hamlet has a question',
-         fmtMessage    = 'To <b>be</b> or <i>not to be?</i>',
+         message       = 'To be or not to be?',
          userInput     = 'That is the question',
          checkboxLabel = '\'Tis nobler to suffer',
          quit          = true,
