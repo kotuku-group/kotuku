@@ -126,30 +126,26 @@ static OBJECTPTR clScintilla = nullptr;
 static OBJECTPTR modDisplay = nullptr, modFont = nullptr, modVector = nullptr;
 extern OBJECTPTR clScintillaSearch;
 
-struct styledef {
-   uint8_t Index;
-   uint32_t Colour;
-   FTF FontStyle;
-};
-
 static const struct {
    CSTRING File;
    SCLEX Lexer;
 } glLexers[] = {
    { "*.asm|*.s",     SCLEX::ASSEMBLER },
    { "*.asp",         SCLEX::ASP },
-   { "*.bash",        SCLEX::BASH },
+   { "*.bash|*.sh",   SCLEX::BASH },
    { "*.bat|*.dos",   SCLEX::BATCH },
-   { "*.c|*.cpp|*.cxx|*.h|*.hpp", SCLEX::CPP },
+   { "*.c|*.cc|*.cpp|*.cxx|*.h|*.hh|*.hpp|*.hxx", SCLEX::CPP },
    { "*.css",         SCLEX::CSS },
    { "*.diff",        SCLEX::DIFF },
    { "*.errorlist",   SCLEX::ERRORLIST },
    { "*.lua|*.tiri", SCLEX::TIRI },
    { "*.dmd",         SCLEX::HTML },
-   { "*.html",        SCLEX::HTML },
+   { "*.html|*.htm|*.xhtml", SCLEX::HTML },
    { "makefile|*.make", SCLEX::MAKEFILE },
    { "*.pas",          SCLEX::PASCAL },
    { "*.perl|*.pl",    SCLEX::PERL },
+   { "*.php",          SCLEX::PHPSCRIPT },
+   { "*.reb|*.rebol",   SCLEX::REBOL },
    { "*.prop|*.cfg",   SCLEX::PROPERTIES },
    { "*.py",           SCLEX::PYTHON },
    { "*.ruby|*.rb",    SCLEX::RUBY },
@@ -1208,9 +1204,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    }
    else calc_longest_line(Self);
 
-   if (((Self->Flags & SCIF::DETECT_LEXER) IS SCIF::NIL) and (Self->Lexer != SCLEX::NIL)) {
-      Self->API->SetLexer(int(Self->Lexer));
-   }
+   Self->API->SetLexer(int(Self->Lexer));
 
    if (Self->LongestWidth) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
    else SCICALL(SCI_SETSCROLLWIDTH, 1UL);
@@ -2114,8 +2108,9 @@ static ERR SET_MarginClick(extScintilla *Self, FUNCTION *Value)
 -FIELD-
 Lexer: The lexer for document styling is defined here.
 
-The lexer for document styling is defined here.  The lexer can be changed at any time, in which case the document is
-restyled immediately.
+The lexer can be changed at any time.  Its keyword lists and semantic style colours are refreshed immediately.
+Existing folds are expanded and folding remains enabled if #FoldingMarkers is set.  Set the lexer to zero to display
+plain text.  ASP uses the HTML lexer with VBScript server blocks; Tiri keywords follow the parser's reserved words.
 
 If the `DETECT_LEXER` flag is set, the lexer is chosen from the file name whenever a file is loaded, and this
 overrides any existing value.  The `Lexer` is left unchanged if the file name does not match a known type.
@@ -2512,8 +2507,11 @@ static ERR SET_TabWidth(extScintilla *Self, int Value)
 -FIELD-
 TextColour: Defines the default colour of foreground text.  Alpha blending is not supported.
 
-The TextColour applies to plain text and to the default style of the active lexer.  Other lexer styles use their own
-colours.
+TextColour applies to plain text, identifiers and any unclassified styles.  Configure lexer and margin colours
+through #ThemeXML.  Theme colours are stored independently for each editor and are retained across lexer changes.
+
+The defaults are a white background, black text and operators, grey comments, firebrick keywords, dark red strings,
+blue numbers, green directives and violet types.
 
 *********************************************************************************************************************/
 
@@ -2522,6 +2520,125 @@ static ERR SET_TextColour(extScintilla *Self, RGB8 *Value)
    Self->TextColour = *Value;
    if (Self->initialised()) Self->API->SetStyleColours();
 
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+ThemeXML: Applies colours from a preconfigured XML object.  This field is write-only.
+
+Assign an initialised @XML object containing one `theme` element with one `palette` child.  The palette's attributes
+specify SVG colour strings:
+
+<pre>
+&lt;theme&gt;
+   &lt;palette background="#232a37" text="white" keyword="#70b8ff" comment="#99aabb"
+       string="#b5d99c" number="#d4a5ff" operator="white" preprocessor="#b5d99c"
+       type="#ffc080" error="#ff8899" margin="#99aabb" marginBackground="#303745"
+       cursor="white" lineHighlight="transparent" selectionForeground="white"
+       selectionBackground="#335588"/&gt;
+&lt;/theme&gt;
+</pre>
+
+The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text.
+All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG
+colour names and colour functions such as `rgb()` and `oklch()` are accepted.  Gradients, painter lists and unknown
+attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the
+corresponding highlight or selection override.  Other alpha values currently produce opaque colours.
+
+The colours are copied during assignment and the XML object is not retained or modified.  Assigning before
+initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or
+contracted folds.  Invalid themes leave all colours unchanged.
+
+*********************************************************************************************************************/
+
+static ERR SET_ThemeXML(extScintilla *Self, objXML *Value)
+{
+   if (not Value) return ERR::NullArgs;
+   if ((Value->classID() != CLASSID::XML) and (Value->baseClassID() != CLASSID::XML)) {
+      return ERR::WrongObjectType;
+   }
+   ScopedObjectLock<objXML> xml(Value);
+   if (not xml.granted()) return xml.error;
+   if (not Value->initialised()) return ERR::NotInitialised;
+
+   auto ignorable = [](const XTag &Tag) {
+      if ((Tag.Flags & (XTF::COMMENT|XTF::INSTRUCTION)) != XTF::NIL) return true;
+      return (not Tag.Attribs.empty()) and Tag.isContent() and
+         (Tag.Attribs[0].Value.find_first_not_of(" \t\r\n") IS std::string::npos);
+   };
+
+   const XTag *theme = nullptr;
+   for (const auto &tag : Value->Tags) {
+      if (ignorable(tag)) continue;
+      if (theme or tag.Attribs.empty() or (tag.Attribs[0].Name != "theme")) return ERR::Syntax;
+      theme = &tag;
+   }
+   if (not theme or (theme->Attribs.size() != 1)) return ERR::Syntax;
+   const XTag *palette = nullptr;
+   for (const auto &tag : theme->Children) {
+      if (ignorable(tag)) continue;
+      if (palette or tag.Attribs.empty() or (tag.Attribs[0].Name != "palette")) return ERR::Syntax;
+      palette = &tag;
+   }
+   if (not palette) return ERR::Syntax;
+   for (const auto &tag : palette->Children) {
+      if (not ignorable(tag)) return ERR::Syntax;
+   }
+
+   static constexpr struct {
+      std::string_view Name;
+      RGB8 extScintilla::*Field;
+   } colours[] = {
+      { "comment", &extScintilla::CommentColour },
+      { "keyword", &extScintilla::KeywordColour },
+      { "string", &extScintilla::StringColour },
+      { "number", &extScintilla::NumberColour },
+      { "operator", &extScintilla::OperatorColour },
+      { "preprocessor", &extScintilla::PreprocessorColour },
+      { "type", &extScintilla::TypeColour },
+      { "error", &extScintilla::ErrorColour },
+      { "margin", &extScintilla::MarginColour },
+      { "marginBackground", &extScintilla::MarginBkgd },
+      { "text", &extScintilla::TextColour },
+      { "background", &extScintilla::BkgdColour },
+      { "cursor", &extScintilla::CursorColour },
+      { "lineHighlight", &extScintilla::LineHighlight },
+      { "selectionForeground", &extScintilla::SelectFore },
+      { "selectionBackground", &extScintilla::SelectBkgd }
+   };
+
+   std::vector<std::pair<RGB8 extScintilla::*, RGB8>> updates;
+   for (size_t i=1; i < palette->Attribs.size(); i++) {
+      const auto &attribute = palette->Attribs[i];
+      auto colour = std::find_if(std::begin(colours), std::end(colours), [&attribute](const auto &Colour) {
+         return Colour.Name IS attribute.Name;
+      });
+      if (colour IS std::end(colours)) return ERR::Syntax;
+
+      VectorPainter painter = {};
+      std::string_view remainder;
+      if ((vec::ReadPainter(nullptr, attribute.Value, &painter, &remainder) != ERR::Okay) or
+          painter.Gradient or painter.Pattern or painter.Image or
+          (remainder.find_first_not_of(" \t\r\n") != std::string_view::npos)) return ERR::Syntax;
+      const auto &rgb = painter.Colour;
+      if (not std::isfinite(rgb.Red) or not std::isfinite(rgb.Green) or not std::isfinite(rgb.Blue) or
+          not std::isfinite(rgb.Alpha)) return ERR::Syntax;
+      auto channel = [](float Value) { return uint8_t(std::lround(std::clamp(Value, 0.0f, 1.0f) * 255)); };
+      updates.emplace_back(colour->Field, RGB8 { channel(rgb.Red), channel(rgb.Green), channel(rgb.Blue),
+         channel(rgb.Alpha) });
+   }
+
+   for (const auto &[field, colour] : updates) Self->*field = colour;
+   if (Self->initialised()) {
+      clear_bitmap(Self);
+      Self->API->SetStyleColours();
+      SET_CursorColour(Self, &Self->CursorColour);
+      SET_LineHighlight(Self, &Self->LineHighlight);
+      SET_SelectFore(Self, &Self->SelectFore);
+      SET_SelectBkgd(Self, &Self->SelectBkgd);
+   }
    return ERR::Okay;
 }
 
@@ -3040,8 +3157,8 @@ static const FieldArray clFields[] = {
    { "LeftMargin",     FDF_INT|FDF_RW, nullptr, SET_LeftMargin },
    { "RightMargin",    FDF_INT|FDF_RW, nullptr, SET_RightMargin },
    { "LineHighlight",  FDF_STRUCT|FDF_RW, nullptr, SET_LineHighlight, "RGB8" },
-   { "SelectFore",     FDF_STRUCT|FDF_RI, nullptr, SET_SelectFore, "RGB8" },
-   { "SelectBkgd",     FDF_STRUCT|FDF_RI, nullptr, SET_SelectBkgd, "RGB8" },
+   { "SelectFore",     FDF_STRUCT|FDF_RW, nullptr, SET_SelectFore, "RGB8" },
+   { "SelectBkgd",     FDF_STRUCT|FDF_RW, nullptr, SET_SelectBkgd, "RGB8" },
    { "BkgdColour",     FDF_STRUCT|FDF_RW, nullptr, SET_BkgdColour, "RGB8" },
    { "CursorColour",   FDF_STRUCT|FDF_RW, nullptr, SET_CursorColour, "RGB8" },
    { "TextColour",     FDF_STRUCT|FDF_RW, nullptr, SET_TextColour, "RGB8" },
@@ -3052,6 +3169,7 @@ static const FieldArray clFields[] = {
    { "FontSize",       FDF_INT|FDF_RW, nullptr, SET_FontSize },
 
    // Virtual fields
+   { "ThemeXML",       FDF_OBJECT|FDF_W|FDF_PURE, nullptr, SET_ThemeXML, CLASSID::XML },
    { "AllowTabs",      FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
    { "AutoIndent",     FDF_INT|FDF_RW|FDF_PURE,   GET_AutoIndent, SET_AutoIndent },
    { "FileDrop",       FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FileDrop, SET_FileDrop },

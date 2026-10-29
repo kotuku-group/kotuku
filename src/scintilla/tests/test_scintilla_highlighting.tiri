@@ -1,0 +1,352 @@
+-- Pixel-level lexer regressions use Clean's fixed 7 by 13 geometry.  No display or GUI wrapper is required.
+
+   include 'scintilla', 'vector', 'display', 'xml'
+   module display as mGfx
+   module vector as mVec
+
+   namespace gui { }
+   import '../../../packages/gui/palettes_data'
+
+WIDTH = 360
+HEIGHT = 160
+KEYWORD = '178,34,34'
+COMMENT = '128,128,128'
+STRING = '176,0,0'
+NUMBER = '0,0,255'
+TYPE = '148,0,211'
+ERROR = '255,0,0'
+TEXT = '0,0,0'
+
+function newEditor(Options:table):<obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=WIDTH, pageHeight=HEIGHT })
+   local vp = scene.new('VectorViewport', { width='100%', height='100%' })
+   local options = Options ?? { }
+   options.face = 'Clean'
+   options.fontSize = 11
+   options.lineHighlight = '255,255,255,0'
+   local sci = vp.new('Scintilla', options)
+   local bmp = obj.new('Bitmap', { width=WIDTH, height=HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   return scene, sci, bmp
+end
+
+function render(Scene:obj)
+   check Scene.acDraw()
+   processing.sleep(0)
+   check Scene.acDraw()
+end
+
+function pixelsOf(Bitmap:obj, Colour:str, X:num, Y:num, Width:num, Height:num):num
+   local count = 0
+   for y in {Y to Y + Height} do
+      for x in {X to X + Width} do
+         local pixel = mGfx.ReadRGBPixel(Bitmap, x, y)
+         if f'{pixel.red},{pixel.green},{pixel.blue}' is Colour then count++ end
+      end
+   end
+   return count
+end
+
+function expectToken(Bitmap:obj, Token:str, Colour:str, Column:num, Row:num)
+   assert(pixelsOf(Bitmap, Colour, 4 + (Column ?? 0) * 7, (Row ?? 0) * 13, #Token * 7, 13) > 0,
+      f'Expected "{Token}" to render in {Colour}')
+end
+
+@Test function EveryPublicLexerHasAProfile()
+   local samples = array<table> {
+      { SCLEX_CPP, 'int value;', 'int', KEYWORD },
+      { SCLEX_TIRI, 'defer print(value) end', 'defer', KEYWORD },
+      { SCLEX_PYTHON, 'def example():', 'def', KEYWORD },
+      { SCLEX_PERL, 'my $value;', 'my', KEYWORD },
+      { SCLEX_SQL, 'SELECT value FROM example;', 'SELECT', KEYWORD },
+      { SCLEX_VB, 'Dim value', 'Dim', KEYWORD },
+      { SCLEX_PROPERTIES, '[main]', '[main]', KEYWORD },
+      { SCLEX_ERRORLIST, 'example.c:3: error: missing value', 'example.c', ERROR },
+      { SCLEX_MAKEFILE, '# comment', '# comment', COMMENT },
+      { SCLEX_BATCH, 'echo value', 'echo', KEYWORD },
+      { SCLEX_DIFF, '+added', '+added', STRING },
+      { SCLEX_PASCAL, 'begin', 'begin', KEYWORD },
+      { SCLEX_RUBY, 'class Example', 'class', KEYWORD },
+      { SCLEX_VBSCRIPT, 'Dim value', 'Dim', KEYWORD },
+      { SCLEX_ASP, '<% Dim value %>', 'Dim', KEYWORD, 3 },
+      { SCLEX_ASSEMBLER, 'mov eax, ebx', 'mov', KEYWORD },
+      { SCLEX_CSS, 'a { color: red; }', 'color', TYPE, 4 },
+      { SCLEX_BASH, 'if true; then', 'if', KEYWORD },
+      { SCLEX_HTML, '<div class="example">', 'div', KEYWORD, 1 },
+      { SCLEX_XML, '<custom value="example"/>', 'custom', KEYWORD, 1 },
+      { SCLEX_PHPSCRIPT, 'function example() {}', 'function', KEYWORD },
+      { SCLEX_REBOL, 'REBOL [] func [value] [print value]', 'func', KEYWORD, 9 }
+   }
+   local scene <close>, sci, bmp = newEditor()
+   for sample in values(samples) do
+      sci.lexer = sample[0]
+      sci.string = sample[1]
+      render(scene)
+      expectToken(bmp, sample[2], sample[3], sample[4], 0)
+   end
+end
+
+@Test function TiriReservedWords()
+   -- Includes extensions and words reserved for future syntax.
+   local words = ('and as break choose checkall continue defer do else elseif end enum extern false for from ' ..
+      'function global has if import in is local namespace nil not or repeat return then thunk true try except ' ..
+      'until when success raise check while with class interface record extends export await yield ' ..
+      'using where').split(' ')
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
+   for _, word in words do
+      sci.string = word .. ' '
+      render(scene)
+      expectToken(bmp, word, KEYWORD, 0, 0)
+   end
+   sci.string = 'deferred -- defer\n"choose"\n123\nidentifier'
+   render(scene)
+   expectToken(bmp, 'deferred', TEXT, 0, 0)
+   expectToken(bmp, '-- defer', COMMENT, 9, 0)
+   expectToken(bmp, '"choose"', STRING, 0, 1)
+   expectToken(bmp, '123', NUMBER, 0, 2)
+   expectToken(bmp, 'identifier', TEXT, 0, 3)
+end
+
+@Test function LexerChangesRefreshKeywordsAndColours()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
+   sci.string = 'defer int\n"text"\n// comment'
+   render(scene)
+   expectToken(bmp, 'defer', TEXT, 0, 0)
+   expectToken(bmp, 'int', KEYWORD, 6, 0)
+   expectToken(bmp, '// comment', COMMENT, 0, 2)
+   sci.lexer = SCLEX_TIRI
+   render(scene)
+   expectToken(bmp, 'defer', KEYWORD, 0, 0)
+   expectToken(bmp, 'int', TEXT, 6, 0)
+   sci.lexer = SCLEX_PYTHON
+   sci.string = 'def\n"text"\n# comment\n123'
+   render(scene)
+   expectToken(bmp, 'def', KEYWORD, 0, 0)
+   expectToken(bmp, '"text"', STRING, 0, 1)
+   expectToken(bmp, '# comment', COMMENT, 0, 2)
+   expectToken(bmp, '123', NUMBER, 0, 3)
+   sci.lexer = 0
+   render(scene)
+   expectToken(bmp, 'def', TEXT, 0, 0)
+   expectToken(bmp, '"text"', TEXT, 0, 1)
+end
+
+@Test function ThemeUpdatesAreLocalAndPreserveState()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI, foldingMarkers=true })
+   local other_scene <close>, other, other_bmp = newEditor({ lexer=SCLEX_TIRI })
+   sci.string = 'function example()\n   return 123\nend\n"text"\n-- comment'
+   other.string = 'function example()'
+   render(scene)
+   assert(sci.mtToggleFold(0) is ERR_Okay, 'The lexer must retain working folds')
+   check sci.mtSelectRange(9, 16)
+   render(scene)
+   assert(pixelsOf(bmp, STRING, 24, 13, 70, 13) > 0, 'Contracting the function must move the string to row 1')
+   local folded_height = sci.page.height
+   local text = sci.string
+   local modified = sci.modified
+
+   local theme <close> = obj.new('XML', { statement=[[<theme><palette background="#141e28" text="#f0f0f0"
+      keyword="#14f0a0" string="#f0d278" comment="#78b4c8" number="#b48cff" operator="#f0f0f0"
+      preprocessor="#c8dc78" type="#64c8fa" error="#ff6478" margin="#c8c8c8" marginBackground="#2d3741"
+      selectionForeground="#f0f0f0" selectionBackground="#3c4650" cursor="#f0f0f0"/></theme>]] })
+   sci.themeXML = theme
+   render(scene)
+   render(other_scene)
+   assert(sci.string is text and sci.modified is modified, 'Theme updates must preserve document state')
+   assert(sci.page.height is folded_height, 'Theme updates must preserve the page height')
+   assert(pixelsOf(bmp, '240,210,120', 24, 13, 70, 13) > 0, 'Theme updates must preserve the contracted fold')
+   assert(pixelsOf(bmp, '20,240,160', 24, 0, 150, 13) > 0, 'The folded header must use the new keyword colour')
+   assert(pixelsOf(bmp, '20,30,40', 250, 0, 20, HEIGHT) > 0, 'The document background must update')
+   assert(pixelsOf(bmp, '45,55,65', 0, 0, 20, HEIGHT) > 0, 'The fold margin must update')
+   expectToken(other_bmp, 'function', KEYWORD, 0, 0)
+   assert(sci.selectBkgd.red is 60, 'Selection colours must be writable after Init')
+   assert(pixelsOf(bmp, '60,70,80', 87, 0, 49, 13) > 20, 'Theme updates must preserve the selection')
+
+   sci.lexer = SCLEX_CPP
+   sci.string = 'int value;'
+   render(scene)
+   assert(pixelsOf(bmp, '20,240,160', 24, 0, 21, 13) > 0, 'Custom colours must survive a lexer switch')
+end
+
+@Test function FileDetectionRefreshesProfilesAndFolding()
+   local scene <close>, sci, bmp = newEditor({ flags=SCIF_DETECT_LEXER, foldingMarkers=true })
+   for sample in values(array<table> {
+      { 'temp:scintilla_highlighting.c', 'int example() {\nreturn 1;\n}\n', SCLEX_CPP, 'int' },
+      { 'temp:scintilla_highlighting.tiri', 'function example()\nreturn 1\nend\n', SCLEX_TIRI, 'function' }
+   }) do
+      local path = sample[0]
+      defer mSys.DeleteFile(path) end
+      do
+         local file <close> = obj.new('File', { path=path, flags=FL_NEW|FL_WRITE })
+         check file.acWrite(sample[1])
+      end
+      sci.path = path
+      render(scene)
+      assert(sci.lexer is sample[2], 'Loading a recognised extension must change the lexer')
+      assert(pixelsOf(bmp, KEYWORD, 24, 0, #sample[3] * 7, 13) > 0, 'Detection must refresh keyword highlighting')
+      assert(sci.mtToggleFold(0) is ERR_Okay, 'The lexer must retain working folds')
+      render(scene)
+      assert(sci.mtToggleFold(0) is ERR_Okay, 'The lexer must retain working folds')
+   end
+end
+
+-- Exercise the existing GUI palette data without importing a GUI editor wrapper.
+
+function paletteColour(Value:str):struct
+   local painter = struct<VectorPainter>
+   check mVec.ReadPainter(nil, Value, painter)
+   local colour = painter.colour
+   return struct<RGB8> {
+      red=math.floor(math.clamp(colour.red, 0, 1) * 255 + 0.5),
+      green=math.floor(math.clamp(colour.green, 0, 1) * 255 + 0.5),
+      blue=math.floor(math.clamp(colour.blue, 0, 1) * 255 + 0.5), alpha=255
+   }
+end
+
+@Test function GuiPaletteColoursReachDirectEditors()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
+   sci.string = 'defer value'
+   for palette in values(array<table> { gui.palettes.ocean.light, gui.palettes.ocean.dark }) do
+      local theme <close> = obj.new('XML', { statement=f'<theme><palette background="{palette.bkgd}" ' ..
+         f'text="{palette.text}" keyword="{palette.prime}" comment="{palette.handle}" string="{palette.success}" ' ..
+         f'type="{palette.contrast}" error="{palette.error}" marginBackground="{palette.neutral}"/></theme>' })
+      sci.themeXML = theme
+      render(scene)
+      local keyword = paletteColour(palette.prime)
+      local background = sci.bkgdColour
+      expectToken(bmp, 'defer', f'{keyword.red},{keyword.green},{keyword.blue}', 0, 0)
+      assert(pixelsOf(bmp, f'{background.red},{background.green},{background.blue}', 250, 0, 20, HEIGHT) > 0,
+         'The editor must render the GUI palette background')
+   end
+end
+
+@Test function DifferentLexersRemainIndependent()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
+   sci.string = 'int value;'
+   local other_scene <close>, other, other_bmp = newEditor({ lexer=SCLEX_PYTHON })
+   other.string = 'def example():\n# comment'
+   render(scene)
+   render(other_scene)
+   expectToken(bmp, 'int', KEYWORD, 0, 0)
+   expectToken(other_bmp, 'def', KEYWORD, 0, 0)
+   expectToken(other_bmp, '# comment', COMMENT, 0, 1)
+   other.lexer = SCLEX_TIRI
+   other.string = 'defer print(value) end'
+   render(other_scene)
+   render(scene)
+   expectToken(bmp, 'int', KEYWORD, 0, 0)
+   expectToken(other_bmp, 'defer', KEYWORD, 0, 0)
+end
+
+@Test function EmbeddedHtmlStylesFollowTheTheme()
+   local theme <close> = obj.new('XML', {
+      statement='<theme><palette background="#141e28" keyword="#14f0a0" string="#f0d278"/></theme>' })
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_HTML, themeXML=theme })
+   sci.string = '<script>const value = "text";</script>\n<?php function demo() {} ?>'
+   render(scene)
+   expectToken(bmp, 'const', '20,240,160', 8, 0)
+   expectToken(bmp, '"text"', '240,210,120', 22, 0)
+   expectToken(bmp, 'function', '20,240,160', 6, 1)
+   assert(pixelsOf(bmp, '20,30,40', 60, 0, 200, 26) > 100,
+      'Embedded script styles above STYLE_DEFAULT must use the document background')
+   sci.bkgdColour = '50,60,70,255'
+   render(scene)
+   assert(pixelsOf(bmp, '20,30,40', 0, 0, WIDTH, HEIGHT) is 0,
+      'A theme update must replace backgrounds in every embedded script style')
+end
+
+@Test function ThemeXMLIsCopiedAndCanBeShared()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
+   local other_scene <close>, other, other_bmp = newEditor({ lexer=SCLEX_TIRI })
+   sci.string = 'defer value'
+   other.string = sci.string
+   do
+      local theme <close> = obj.new('XML', { statement='<theme><palette keyword="lime"/></theme>' })
+      sci.themeXML = theme
+      other.themeXML = theme
+      theme.statement = '<theme><palette keyword="red"/></theme>'
+      render(scene)
+      render(other_scene)
+      expectToken(bmp, 'defer', '0,255,0', 0, 0)
+      expectToken(other_bmp, 'defer', '0,255,0', 0, 0)
+      sci.themeXML = theme
+   end
+   render(scene)
+   render(other_scene)
+   expectToken(bmp, 'defer', '255,0,0', 0, 0)
+   expectToken(other_bmp, 'defer', '0,255,0', 0, 0)
+end
+
+function expectRejectedTheme(Sci:obj, Theme:obj)
+   local rejected = false
+   try
+      Sci.themeXML = Theme
+   except ex
+      rejected = true
+   end
+   assert(rejected, 'An invalid theme assignment must fail')
+end
+
+@Test function InvalidThemesLeaveColoursUnchanged()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
+   sci.string = 'defer value'
+   local theme <close> = obj.new('XML', { statement='<theme><palette keyword="lime"/></theme>' })
+   sci.themeXML = theme
+   for statement in values(array<str> {
+      '<other><palette keyword="red"/></other>',
+      '<theme keyword="red"/>',
+      '<theme/>',
+      '<theme><palette/><palette keyword="red"/></theme>',
+      '<theme><palette keyword="red"/><child/></theme>',
+      '<theme background="red"><palette/></theme>',
+      '<theme><Palette keyword="red"/></theme>',
+      '<theme><palette keyword="red"/>unexpected content</theme>',
+      '<theme><palette background="red" unknown="blue"/></theme>',
+      '<theme><palette background="red" keyword="invalid-colour"/></theme>',
+      '<theme><palette background="red" keyword="blue; red"/></theme>',
+      '<theme><palette background="red"><child/></palette></theme>',
+      '<theme><palette background="red">unexpected content</palette></theme>',
+      '<theme><palette background="red"/></theme><theme><palette keyword="blue"/></theme>'
+   }) do
+      local invalid <close> = obj.new('XML', { statement=statement })
+      expectRejectedTheme(sci, invalid)
+      render(scene)
+      expectToken(bmp, 'defer', '0,255,0', 0, 0)
+      assert(sci.bkgdColour.red is 255 and sci.bkgdColour.green is 255 and sci.bkgdColour.blue is 255,
+         'A rejected theme must leave earlier attributes unapplied')
+   end
+   expectRejectedTheme(sci, nil)
+   expectRejectedTheme(sci, scene)
+   local uninitialised <close> = obj.new('XML')
+   expectRejectedTheme(sci, uninitialised)
+
+   -- A partial update retains colours that it does not specify.  Ignore XML declarations, comments and whitespace.
+   theme.statement = '<?xml version="1.0"?>\n<!-- theme -->\n<theme>\n<!-- palette -->\n' ..
+      '<palette background="#123456">\n<!-- colours -->\n</palette>\n</theme>'
+   sci.themeXML = theme
+   render(scene)
+   expectToken(bmp, 'defer', '0,255,0', 0, 0)
+   assert(pixelsOf(bmp, '18,52,86', 250, 0, 20, HEIGHT) > 0, 'A partial theme must update its supplied colour')
+
+   theme.statement = '<theme><palette/></theme>'
+   sci.themeXML = theme
+   render(scene)
+   expectToken(bmp, 'defer', '0,255,0', 0, 0)
+   assert(sci.bkgdColour.red is 18, 'An empty palette must retain the current colours')
+end
+
+@Test function ThemeAPIHidesIndividualColours()
+   local scene <close>, sci, bmp = newEditor()
+   for name in values(array<str> {
+      'themeXML', 'commentColour', 'keywordColour', 'stringColour', 'numberColour', 'operatorColour',
+      'preprocessorColour', 'typeColour', 'errorColour', 'marginColour', 'marginBkgd'
+   }) do
+      local readable = false
+      try
+         local value = sci[name]
+         readable = true
+      except ex
+      end
+      assert(not readable, f'{name} must not be publicly readable')
+   end
+end

@@ -1,0 +1,65 @@
+-- Mouse placement must follow the advances used to draw a long proportional UTF-8 run.
+
+   include 'scintilla', 'vector', 'display'
+   module vector as mVec
+   module display as mGfx
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+
+@BeforeEach function resetPointer()
+   if obj.find('SystemPointer') then feed(JET_ABS_XY, 2000, 2000) end
+end
+
+@Test function ClickMapsToGlyphInProportionalFace()
+   local surface <close> = obj.new('Surface', { width=1500, height=140 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = host.new('Scintilla', { face='Noto Sans', fontSize=18, lineHighlight='255,255,255,0' })
+   local text = ('WiéAV').rep(18)
+   sci.string = text
+   check surface.acShow()
+   check surface.acFocus()
+   check surface.acDraw()
+   processing.sleep(0)
+   check surface.acDraw()
+   local _, handle = check mVec.GetFontHandle('Noto Sans', 'Regular', 0, 18)
+   local metrics = struct<FontMetrics>
+   check mVec.GetFontMetrics(handle, metrics)
+
+   -- Each prefix includes a multibyte character; target the centre of W at several positions along the line.
+   for group in values(array<int> { 1, 8, 17 }) do
+      local prefix = ('WiéAV').rep(group)
+      local x = 4 + mVec.StringWidth(handle, prefix, -1) + mVec.CharWidth(handle, 87, 0) / 2
+      local y = metrics.lineSpacing / 2
+      feed(JET_ABS_XY, surface.absX + x, surface.absY + y)
+      feed(JET_LMB, 1, 0)
+      feed(JET_LMB, 0, 0)
+      local index = group * 5
+      assert(sci.cursorCol is index or sci.cursorCol is index + 1,
+         f'Clicking glyph {index} must place the caret at its edge, got {sci.cursorCol}')
+   end
+end

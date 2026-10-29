@@ -3,7 +3,8 @@
 module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611 }, function()
   c_include("<kotuku/modules/display.h>",
   "<kotuku/modules/font.h>",
-  "<kotuku/modules/vector.h>")
+  "<kotuku/modules/vector.h>",
+  "<kotuku/modules/xml.h>")
 
   restrict(function()
     loadFile(glPath .. 'common-graphics.tdl')
