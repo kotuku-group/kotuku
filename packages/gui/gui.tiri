@@ -1646,7 +1646,8 @@ end
 gui.interface = {
    dpi       = displayDensity(), -- Display pixels per inch, resolved on first read
    fontSize  = 12,               -- Default font-size for everything (pt)
-   iconTheme = 'Default'         -- Named folder to load the icons from
+   iconTheme = 'Default',        -- Named folder to load the icons from
+   flashTime = 1.5               -- Default duration of flashed messages, in seconds
 }
 
 gui.sizing = { -- Universal sizing information
@@ -2035,12 +2036,12 @@ gui.effects = {
             stops.push(stop)
          end
 
-         dark   = textureLayer(-0.25, 0.25 * brush)
-         darker = textureLayer(-0.45, 0.18 * brush)
-         bright = textureLayer(0.35, 0.30 * brush)
-         glint  = textureLayer(0.60, 0.20 * brush)
-         pits   = textureLayer(-0.50, 0.55 * specks)
-         flecks = textureLayer(0.70, 0.60 * specks)
+         dark    = textureLayer(-0.25, 0.25 * brush)
+         darker  = textureLayer(-0.45, 0.18 * brush)
+         bright  = textureLayer(0.35, 0.30 * brush)
+         glint   = textureLayer(0.60, 0.20 * brush)
+         pits    = textureLayer(-0.50, 0.55 * specks)
+         flecks  = textureLayer(0.70, 0.60 * specks)
          streaks = array<table> { dark, darker, bright, glint }
 
          -- Streaks are thin horizontal spindles.  Most cross the surface; the rest start and stop within it.
@@ -2404,6 +2405,15 @@ gui.themes = <table{ linkThemes({
          text      = { fill = gui.palette.dark.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style }, -- VectorText
          icon      = iconTheme('fill(pearl)')
       },
+      panel = {
+         bkgd          = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
+         title         = { fill = gui.palette.dark.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'bold' },
+         meta          = { fill = gui.palette.dark.text, opacity = 0.7, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
+         metaHighlight = { fill = gui.palette.dark.contrast }, -- Hover style of a clickable meta
+         divider       = { fill = gui.palette.dark.edge },
+         headerPad     = gui.sizing.widget.margin * 2, -- Inset of the header content from the panel edges
+         metaGap       = gui.sizing.widget.labelGap    -- Minimum space between the title and the meta
+      },
       slider = {
          bkgd          = { fill = gui.palette.dark.mid, stroke = gui.palette.dark.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
          fore          = { fill = gui.palette.dark.handle, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
@@ -2522,6 +2532,15 @@ gui.themes = <table{ linkThemes({
          highlight = { fill = gui.palette.light.contrast },
          text      = { fill = gui.palette.light.altText, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
          icon      = iconTheme('fill(pearl)')
+      },
+      panel = {
+         bkgd          = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
+         title         = { fill = gui.palette.light.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'bold' },
+         meta          = { fill = gui.palette.light.text, opacity = 0.7, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
+         metaHighlight = { fill = gui.palette.light.contrast },
+         divider       = { fill = gui.palette.light.edge },
+         headerPad     = gui.fonts.small.size,
+         metaGap       = gui.sizing.widget.labelGap
       },
       slider = {
          bkgd          = { fill = gui.palette.light.mid, stroke = gui.palette.light.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },

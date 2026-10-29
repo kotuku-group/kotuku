@@ -24,8 +24,10 @@
   },
   "dependencies": {
     "gui": "1.0",
+    "gui/button": "1.0",
     "gui/dialog": "1.0",
     "gui/fontdialog": "1.0",
+    "gui/input": "1.0",
     "gui/menu": "1.0",
     "gui/toolbar": "1.0",
     "gui/view": "1.0",
@@ -35,8 +37,8 @@
   "files": [
     {
       "path": "fileview.tiri",
-      "size": 61855,
-      "sha256": "01b2be3746e07441f59b40171c678f73d9a00efcf9f8c244b7c8981a1ac74714",
+      "size": 62381,
+      "sha256": "a19f4f86e65c6f10d5a3981ddd0bf06fa8f4254e0e7a254792c8c9363ae0e2d0",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

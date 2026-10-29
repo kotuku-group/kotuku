@@ -1,0 +1,557 @@
+@Package(name="gui/panel", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui', 'gui/layout', 'gui/tooltip', 'gui/scrollbar'
+   include 'vector'
+
+   namespace gui
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.panel = function(Options:table!)
+   self = setmetatable(entity {
+      events       = Options.events ?? { },
+      headerHeight = 0, -- Height of the header row, excluding the divider
+      hidden       = false,
+      disabled     = false,
+      metaTip      = Options.metaTip, -- Tooltip text for a clickable meta
+      viewport     = nil, -- The panel's primary viewport
+      header       = nil, -- The header row, or nil if the panel has no header
+      body         = nil, -- The client area, inset from the panel edges by the padding
+      padding      = Options.padding or { },
+      page         = nil, -- The scrolled page in the body, if the scroll option is set
+      scrollbar    = nil,
+      titleText    = nil,
+      metaText     = nil,
+      _title       = Options.title ?? '',
+      _meta        = Options.meta ?? '',
+      _metaPrefix  = '',
+      _metaSuffix  = '',
+      _truncate    = Options.truncate ?? 'meta',
+      _lead        = nil, -- Header item in place of the title
+      _metaItem    = nil, -- Header item in place of the meta
+      _trail       = array<table>, -- Header items at the right of the header, from right to left
+      _widgets     = array<table>, -- Registration records, in registration order
+      _flash       = nil, -- Message shown in the meta position by flash()
+      _flashTimer  = nil,
+      _metaHit     = nil, -- Click area of the meta, created when metaActivate is first needed
+      _metaTip     = nil,
+      _metaHover   = false
+   }, {
+      -- Freeing the panel's viewport takes the header, body and all client content with it.  Registered widgets get
+      -- their own enable() and disable() methods back, in case the client retains them.
+
+      __gc = function()
+         if &_flashTimer then mSys.UpdateTimer(&_flashTimer, 0) end
+         &_metaTip?.cancel()
+         for rec in values(&_widgets) do
+            rec.widget.{ enable = rec.enable, disable = rec.disable }
+         end
+         &viewport?.free()
+         &&.{ _flashTimer = nil, _metaTip = nil, viewport = nil }
+      end
+   })
+
+   -- Weak bindings retain the panel only for the duration of each callback, so that it can be collected.
+
+   using self do
+      assert(Options.target, 'A target viewport is required.')
+      assert((&_truncate is 'meta') or (&_truncate is 'title'), f"Invalid truncate value '{&_truncate}'")
+      assert((Options.scroll is nil) or (Options.scroll is 'vertical') or (Options.scroll is 'horizontal') or
+         (Options.scroll is 'both'), f"Invalid scroll value '{Options.scroll}'")
+
+      target = Options.target
+      theme = table.merge(gui.getTheme(target).panel, Options.theme, true, true)
+
+      header_pad = theme.headerPad
+      edge       = theme.bkgd.strokeWidth ?? 0
+      meta_base  = { } -- Values of the meta text's fields that the highlight replaces
+
+      if Options.flush or Options.scroll then
+         &padding.left   ?= edge
+         &padding.right  ?= edge
+         &padding.top    ?= 0
+         &padding.bottom ?= edge
+      else
+         &padding.left   ?= gui.sizing.widget.margin
+         &padding.right  ?= gui.sizing.widget.margin
+         &padding.top    ?= gui.sizing.widget.margin
+         &padding.bottom ?= gui.sizing.widget.margin
+      end
+
+      -- Vertical position of a header item, centred in the header.
+
+      function itemY(Viewport:obj!):num
+         return math.floor((&headerHeight - Viewport.height) * 0.5)
+      end
+
+      -- Place a meta item at X and stretch it to Width.
+
+      function stretchItem(Item:table!, X:num!, Width:num!)
+         vp = Item.viewport
+         vp.{ x = X, y = itemY(vp) }
+         if vp.width != Width then
+            if Item.setWidth then
+               Item.setWidth(Width)
+            else
+               vp.width = Width
+            end
+         end
+      end
+
+      -- Apply or remove the highlight style of a clickable meta.  The panel must be enabled for the highlight.
+
+      function setMetaHover(Hover:bool)
+         hover = Hover and not &disabled
+         if hover is &_metaHover then return end
+         &_metaHover = hover
+         if hover then
+            gui.applyStyle(&metaText, theme.metaHighlight)
+         else
+            gui.applyStyle(&metaText, meta_base)
+         end
+         &header.acDraw()
+      end
+
+      -- Create the click area of the meta.  A click activates the meta if the pointer has not moved between the press
+      -- and the release.
+
+      function createMetaHit():obj
+         hit = &header.new('VectorViewport', {
+            name = 'PanelMetaHit', x = 0, y = 0, width = 1, height = &headerHeight, cursor = 'hand'
+         })
+
+         hit.mtSubscribeInput(JTYPE_CROSSING | JTYPE_BUTTON, function[<weak> &&](Viewport:obj!, Msg:any!)
+            repeat
+               if Msg.type is JET_CROSSED_IN then
+                  setMetaHover(true)
+               elseif Msg.type is JET_CROSSED_OUT then
+                  setMetaHover(false)
+               elseif Msg.type is JET_LMB then
+                  if Msg.value > 0 then
+                     &&.{ _metaClicked = true, _metaClickX = Msg.x, _metaClickY = Msg.y }
+                  elseif &_metaClicked then
+                     &_metaClicked = false
+                     if (not &disabled) and not (Msg.flags has JTYPE_DRAG_ITEM) and
+                        (math.abs(Msg.x - &_metaClickX) < 4) and (math.abs(Msg.y - &_metaClickY) < 4) then
+                        &events.metaActivate?()
+                     end
+                  end
+               end
+               Msg = Msg.next
+            until not Msg
+         end)
+
+         &_metaTip = gui.hoverTip({ target = hit, text = function[<weak> &&]() return &metaTip end })
+         &_metaHit = hit
+         return hit
+      end
+
+      -- Lay out the header for the given width.  Trail items are placed from the right edge, in the order that they
+      -- were added.  The lead is the title text or an item; the meta is the meta text, an item stretched over the
+      -- remaining space, or a flash message.  When the texts do not fit, the slot named by truncate is shortened
+      -- first, then the other.  Items, and the meta prefix and suffix, are never shortened.
+
+      function fitHeader(Width:num!)
+         title = &titleText
+         meta  = &metaText
+         left  = header_pad
+         right = Width - header_pad
+
+         for item in values(&_trail) do
+            vp = item.viewport
+            right -= vp.width
+            vp.{ x = right, y = itemY(vp) }
+            right -= gui.sizing.widget.gap
+         end
+
+         local lead_width:num
+         if &_lead then
+            vp = &_lead.viewport
+            vp.{ x = left, y = itemY(vp) }
+            title.visibility = VIS_HIDDEN
+            lead_width = vp.width
+         else
+            title.visibility = VIS_VISIBLE
+            title.string = &_title
+            lead_width = (#&_title > 0) ? title.textWidth : 0
+         end
+         title.x = left
+
+         flashing = &_flash != nil
+         meta_item = &_metaItem
+         if meta_item then meta_item.viewport.visibility = flashing ? VIS_HIDDEN : VIS_VISIBLE end
+
+         clickable = false
+         if meta_item and not flashing then
+            meta.visibility = VIS_HIDDEN
+            gap = (lead_width > 0) ? theme.metaGap : 0
+            if (not &_lead) and (lead_width > right - left - gap) then
+               gui.layout.fitText(title, &_title, right - left - gap)
+               lead_width = title.textWidth
+            end
+            x = left + lead_width + gap
+            stretchItem(meta_item, x, math.max(0, right - x))
+         else
+            meta_str, prefix, suffix = &_meta, &_metaPrefix, &_metaSuffix
+            if flashing then meta_str, prefix, suffix = &_flash, '', '' end
+
+            full = prefix .. meta_str .. suffix
+            meta.visibility = VIS_VISIBLE
+            meta.string = full
+            meta_width = (#full > 0) ? meta.textWidth : 0
+
+            gap = ((meta_width > 0) and (lead_width > 0)) ? theme.metaGap : 0
+            space = right - left - gap
+
+            if lead_width + meta_width > space then
+               if &_lead then
+                  gui.layout.fitText(meta, meta_str, space - lead_width, prefix, suffix)
+               elseif &_truncate is 'title' then
+                  gui.layout.fitText(title, &_title, space - meta_width)
+                  gui.layout.fitText(meta, meta_str, space - title.textWidth, prefix, suffix)
+               else
+                  gui.layout.fitText(meta, meta_str, space - lead_width, prefix, suffix)
+                  gui.layout.fitText(title, &_title, space - meta.textWidth)
+               end
+            end
+
+            meta.x = right
+            clickable = (&events.metaActivate != nil) and (meta_width > 0) and not flashing
+         end
+
+         -- The meta's click area covers the meta text with a margin, while metaActivate is defined.
+
+         if clickable then
+            hit = &_metaHit
+            if not hit then hit = createMetaHit() end
+            margin = gui.sizing.widget.margin
+            hit_width = math.ceil(meta.textWidth) + (margin * 2)
+            hit.{ x = right + margin - hit_width, width = hit_width, visibility = VIS_VISIBLE }
+         elseif &_metaHit then
+            &_metaHit.visibility = VIS_HIDDEN
+            &_metaTip.cancel()
+            setMetaHover(false)
+         end
+      end
+
+      -- Enable or disable a registered widget.  It is enabled only if the client wants it enabled and the panel is
+      -- visible and enabled.  This is called from the widget's wrapped methods, which the client retains, so the
+      -- panel is bound weakly.
+
+      function[<weak> &&] applyWidget(Rec:table!)
+         if Rec.enabled and not &hidden and not &disabled then
+            if Rec.widget.disabled then Rec.apply(true) end
+         elseif not Rec.widget.disabled then
+            Rec.apply(false)
+         end
+      end
+
+      function applyWidgets()
+         for rec in values(&_widgets) do applyWidget(rec) end
+      end
+
+      function stopFlashTimer()
+         if &_flashTimer then
+            mSys.UpdateTimer(&_flashTimer, 0)
+            &_flashTimer = nil
+         end
+      end
+
+      -- Recompute the header layout.  Call this when a header item changes its own width.
+
+      &relayout = function()
+         if not &header then return end
+         fitHeader(&header.width)
+         &viewport.acDraw()
+      end
+
+      -- Change the title text.
+
+      &setTitle = function(Text:str)
+         &_title = Text ?? ''
+         &relayout()
+      end
+
+      -- Change the meta text.  Options.prefix and Options.suffix are kept whole when the text is shortened.
+
+      &setMeta = function(Text:str, MetaOptions:table)
+         &_meta       = Text ?? ''
+         &_metaPrefix = MetaOptions?.prefix ?? ''
+         &_metaSuffix = MetaOptions?.suffix ?? ''
+         &relayout()
+      end
+
+      -- Show a message in the meta position for a number of seconds, then restore the meta text or meta item.  A new
+      -- flash replaces a running one.
+
+      &flash = function(Text:str, Seconds:num)
+         if not &header then return end
+         stopFlashTimer()
+         &_flash = Text ?? ''
+         viewport_id = &viewport.id
+         err, &_flashTimer = mSys.SubscribeTimer(Seconds ?? gui.interface.flashTime, function[<weak> &&]()
+            &_flashTimer = nil
+            &_flash = nil
+            if obj.find(viewport_id) then &relayout() end
+            raise ERR_Terminate
+         end)
+         &relayout()
+      end
+
+      -- Place a widget in the 'lead', 'meta' or 'trail' slot of the header.  The widget's viewport must be in the
+      -- header.  A lead or meta item replaces the previous one, and hides the title or meta text.  A widget with
+      -- enable() and disable() methods is registered with the panel.
+
+      &headerItem = function(Slot:str!, Widget:table!):table
+         assert(&header, 'The panel has no header.')
+         assert((Slot is 'lead') or (Slot is 'meta') or (Slot is 'trail'), f"Invalid header slot '{Slot}'")
+         assert(Widget.viewport, 'A header item requires a viewport.')
+
+         &removeHeaderItem(Widget)
+
+         if Slot is 'lead' then
+            if &_lead then &removeHeaderItem(&_lead) end
+            &_lead = Widget
+         elseif Slot is 'meta' then
+            if &_metaItem then &removeHeaderItem(&_metaItem) end
+            &_metaItem = Widget
+         else
+            &_trail.push(Widget)
+         end
+
+         if (Widget.enable is <func>) and (Widget.disable is <func>) then &addWidget(Widget) end
+         &relayout()
+         return Widget
+      end
+
+      -- Remove a widget from the header layout and unregister it.  The text that it replaced is restored.  The widget
+      -- is not freed.
+
+      &removeHeaderItem = function(Widget:table!)
+         found = false
+         if &_lead is Widget then
+            &_lead = nil
+            found = true
+         elseif &_metaItem is Widget then
+            &_metaItem = nil
+            Widget.viewport.visibility = VIS_VISIBLE -- In case a flash has hidden it
+            found = true
+         else
+            for i, item in &_trail do
+               if item is Widget then
+                  &_trail.remove(i)
+                  found = true
+                  break
+               end
+            end
+         end
+
+         if not found then return end
+         &removeWidget(Widget)
+         &relayout()
+      end
+
+      -- Register a widget, so that it is disabled while the panel is hidden or disabled.  The panel wraps the widget's
+      -- enable() and disable() methods, so that the client's calls set the state that the widget returns to.
+
+      &addWidget = function(Widget:table!):table
+         assert((Widget.enable is <func>) and (Widget.disable is <func>),
+            'A registered widget requires enable() and disable() methods.')
+
+         for rec in values(&_widgets) do
+            if rec.widget is Widget then return Widget end
+         end
+
+         rec = { widget = Widget, enabled = not Widget.disabled, enable = Widget.enable, disable = Widget.disable }
+
+         rec.apply = function[Widget](Enable:bool)
+            if Enable then rec.enable() else rec.disable() end
+         end
+
+         Widget.enable = function[Widget]()
+            rec.enabled = true
+            applyWidget(rec)
+         end
+
+         Widget.disable = function[Widget]()
+            rec.enabled = false
+            applyWidget(rec)
+         end
+
+         &_widgets.push(rec)
+         applyWidget(rec)
+         return Widget
+      end
+
+      -- Unregister a widget and restore its own enable() and disable() methods.  The widget returns to the state that
+      -- the client last set.
+
+      &removeWidget = function(Widget:table!)
+         for i, rec in &_widgets do
+            if rec.widget is Widget then
+               &_widgets.remove(i)
+               Widget.enable  = rec.enable
+               Widget.disable = rec.disable
+               if rec.enabled and Widget.disabled then rec.apply(true) end
+               return
+            end
+         end
+      end
+
+      -- Return the registered widgets in registration order.
+
+      &widgets = function():array<table>
+         list = array<table>
+         for rec in values(&_widgets) do list.push(rec.widget) end
+         return list
+      end
+
+      &show = function()
+         if not &hidden then return end
+         &hidden = false
+         &viewport.visibility = VIS_VISIBLE
+         applyWidgets()
+         &events.show?()
+         target.acDraw()
+      end
+
+      &hide = function()
+         if &hidden then return end
+         &hidden = true
+         &_metaTip?.cancel()
+         if &header then setMetaHover(false) end
+         &viewport.visibility = VIS_HIDDEN
+         applyWidgets()
+         &events.hide?()
+         target.acDraw()
+      end
+
+      &enable = function()
+         if not &disabled then return end
+         &disabled = false
+         applyWidgets()
+         &events.enable?()
+         &viewport.acDraw()
+      end
+
+      &disable = function()
+         if &disabled then return end
+         &disabled = true
+         &_metaTip?.cancel()
+         if &header then setMetaHover(false) end
+         applyWidgets()
+         &events.disable?()
+         &viewport.acDraw()
+      end
+
+      -- Return the width and height of the body.
+
+      &bodySize = function():<num, num>
+         return &body.width, &body.height
+      end
+
+      -- Main entry point --
+
+      vps = { -- Viewport settings
+         x       = Options.x,
+         y       = Options.y,
+         width   = Options.width,
+         height  = Options.height,
+         xOffset = Options.xOffset,
+         yOffset = Options.yOffset
+      }
+
+      if not vps.x and not vps.xOffset then vps.x = 0 end
+      if not vps.y and not vps.yOffset then vps.y = 0 end
+      if not vps.width and not (vps.x and vps.xOffset) then vps.width = gui.sizing.widget.width * 2 end
+      if not vps.height and not (vps.y and vps.yOffset) then vps.height = gui.sizing.widget.width end
+
+      &viewport = target.new('VectorViewport', vps)
+
+      -- Offsets keep the background inside the viewport at any size, without the need to resize it.
+
+      body_y = 0
+      last_width, last_height = 0, 0
+
+      &bkgd = &viewport.new('VectorRectangle', table.merge({
+         x = edge * 0.5, y = edge * 0.5, xOffset = edge * 0.5, yOffset = edge * 0.5
+      }, theme.bkgd))
+
+      -- The background reports resizing of the panel viewport.  It subscribes before the header is measured, because
+      -- measuring lays out the viewport and the first resize message would otherwise be lost.  The body size is
+      -- computed because the body may not be laid out when the message arrives.
+
+      &bkgd.resizeEvent = function[<weak> &&](Viewport, Vector, X, Y, Width, Height)
+         if (Width is last_width) and (Height is last_height) then return end
+         last_width, last_height = Width, Height
+         if &header then fitHeader(Width) end
+         &events.resize?(math.max(0, Width - (&padding.left * 2)), math.max(0, Height - body_y - &padding.top - &padding.bottom))
+      end
+
+      if Options.header != false then
+         &header = &viewport.new('VectorViewport', { name = 'PanelHeader', x = 0, y = 0, xOffset = 0, height = 1 })
+
+         &titleText = &header.new('VectorText', table.merge({
+            name = 'PanelTitle', x = header_pad, y = 0, string = &_title, align = 'left', lineLimit = 1
+         }, theme.title))
+
+         &metaText = &header.new('VectorText', table.merge({
+            name = 'PanelMeta', x = 0, y = 0, string = &_meta, align = 'right', lineLimit = 1
+         }, theme.meta))
+
+         for k in theme.metaHighlight do meta_base[k] = &metaText[k] end
+
+         -- The header holds the larger of the two text lines, or a default-height button.
+
+         title_line, title_ascent = gui.layout.textMetrics(&titleText)
+         meta_line = gui.layout.textMetrics(&metaText)
+         &headerHeight = theme.headerHeight ??
+            (math.max(math.ceil(title_line), math.ceil(meta_line)) + gui.sizing.widget.margin)
+         &header.height = &headerHeight
+
+         -- The title's capitals are centred in the header and the meta shares its baseline.
+
+         baseline = math.round((&headerHeight + title_ascent) * 0.5)
+         &titleText.y = baseline
+         &metaText.y  = baseline
+
+         &divider = &viewport.new('VectorRectangle', table.merge({
+            name = 'PanelDivider', x = edge, y = &headerHeight, xOffset = edge, height = math.max(1, math.floor(edge))
+         }, theme.divider))
+
+         body_y = &headerHeight + &divider.height
+
+         fitHeader(&header.width)
+      end
+
+      &body = &viewport.new('VectorViewport', {
+         name = 'PanelBody', x = &padding.left, y = body_y + &padding.top, xOffset = &padding.right, yOffset = &padding.bottom, overflow = VOF_HIDDEN
+      })
+
+      -- A scrolling body holds a page in a clipping frame.  The client sets the page size in the scrolled directions,
+      -- and insets the page content by the padding.
+
+      if Options.scroll then
+         frame = &body.new('VectorViewport', {
+            name = 'PanelFrame', x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN
+         })
+         &page = frame.new('VectorViewport', { name = 'PanelPage', x = 0, y = 0, width = '100%', height = '100%' })
+         &scrollbar = gui.scrollbar({
+            target = &body, view = frame, page = &page, direction = (Options.scroll is 'both') ? 'all' : Options.scroll
+         })
+      end
+
+      if Options.hidden then
+         &hidden = true
+         &viewport.visibility = VIS_HIDDEN
+      end
+
+      if Options.disabled then &disabled = true end
+
+      return &&
+   end
+end

@@ -24,13 +24,16 @@
   },
   "dependencies": {
     "gui": "1.0",
+    "gui/button": "1.0",
+    "gui/input": "1.0",
+    "gui/toggle": "1.0",
     "gui/window": "1.0"
   },
   "files": [
     {
       "path": "dialog.tiri",
-      "size": 10140,
-      "sha256": "562783882703d2ed04cf156dba049931ac08c61f1d21f7b7d698ee789707176d",
+      "size": 14263,
+      "sha256": "c6eb17514e5cd7d9f119ee9117b6cf89ecb59b3d7ad29d57447767a1a38de470",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

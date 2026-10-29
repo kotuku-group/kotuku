@@ -133,7 +133,7 @@ gui.input = function(Options)
       if new_text is &_currentText then return end
 
       accept = true
-      if &readOnly then -- VectorText does not check VTXF_EDITABLE for deletion keys
+      if &readOnly then
          accept = false
       elseif &maxLength and (charLength(new_text) > &maxLength) then
          accept = false

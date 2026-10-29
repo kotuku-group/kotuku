@@ -42,7 +42,7 @@ gui.dialog.file = function(Options)
       end
    })
 
-   local function[<weak> self] closeDialog()
+   function[<weak> self] closeDialog()
       if closed then return end
       closed = true
       accepting = false
@@ -59,7 +59,7 @@ gui.dialog.file = function(Options)
 
    -- Report a cancellation, then close the dialog.
 
-   local function[<weak> self] cancelDialog()
+   function[<weak> self] cancelDialog()
       if closed then return end
       accepting = true
       &feedback?(&&, nil)
@@ -67,7 +67,7 @@ gui.dialog.file = function(Options)
       processing.collect('defer')
    end
 
-   local function[<weak> self] processFeedback()
+   function[<weak> self] processFeedback()
       if accepting or closed then return true end
       list = &fileview.view.selectedItems()
 
