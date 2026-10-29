@@ -32,6 +32,25 @@ gui.layout.textMetrics = function(Text:obj!):<num, num>
    return cached.lineSpacing, cached.ascent
 end
 
+-- Set a VectorText to Prefix, String and Suffix, shortening String with an ellipsis until the text is no wider than
+-- MaxWidth.  String is cut at UTF-8 character boundaries; the prefix and suffix are never shortened.  Returns false if
+-- the text is still too wide when String has been reduced to the ellipsis.
+
+gui.layout.fitText = function(Text:obj!, String:str!, MaxWidth:num!, Prefix:str, Suffix:str):bool
+   Prefix ?= ''
+   Suffix ?= ''
+   Text.string = Prefix .. String .. Suffix
+   if Text.textWidth <= MaxWidth then return true end
+   cut = #String
+   while cut > 0 do
+      cut -= 1
+      while (cut > 0) and ((String.byte(cut) & 0xc0) is 0x80) do cut -= 1 end -- Step back over continuation bytes
+      Text.string = f'{Prefix}{String.sub(0, cut).rtrim()}…{Suffix}'
+      if Text.textWidth <= MaxWidth then return true end
+   end
+   return false
+end
+
 -- Validate the label options of a widget.  The checks apply whether or not the widget has a label.
 
 gui.layout.checkLabel = function(Pos:any, Width:any, Align:any)

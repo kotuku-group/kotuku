@@ -1,7 +1,7 @@
 -- Vector building blocks for the colour picker: panels, chips and key hints.  Every builder takes a target viewport
 -- and an Options table that includes the picker `tokens` (see colourpicker_theme.tokens()).
 
-   import 'gui', 'gui/button', 'gui/colourpicker/colour'
+   import 'gui', 'gui/layout', 'gui/button', 'gui/colourpicker/colour'
 
    namespace colourpicker_parts { }
 
@@ -85,15 +85,7 @@ colourpicker_parts.text = text
 MaxWidth.  Text is cut at UTF-8 character boundaries.
 ]])
 colourpicker_parts.fitText = function(Vector:obj!, Prefix:str!, Text:str!, MaxWidth:num!)
-   Vector.string = Prefix .. Text
-   if Vector.textWidth <= MaxWidth then return end
-   cut = #Text
-   while cut > 0 do
-      cut -= 1
-      while (cut > 0) and ((Text.byte(cut) & 0xc0) is 0x80) do cut -= 1 end -- Step back over continuation bytes
-      Vector.string = f'{Prefix}{Text.sub(0, cut).rtrim()}…'
-      if Vector.textWidth <= MaxWidth then return end
-   end
+   gui.layout.fitText(Vector, Text, MaxWidth, Prefix)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
