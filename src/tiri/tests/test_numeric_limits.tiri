@@ -42,6 +42,93 @@ function integer_constant_remainders(Dividend:num):<num, num, num>
    return remainder, remainder % 2, integer % -3
 end
 
+-- Divisors covering both multiplier roundings, the largest int32 magnitude and a negative divisor.
+function integer_reciprocal_remainders(Dividend:num):table
+   local integer = Dividend | 0
+   return { integer % 3, integer % 7, integer % -101, integer % 86400, integer % 1000000007, integer % 2147483647 }
+end
+
+function integer_floor_divisions(Dividend:num):table
+   local integer = Dividend | 0
+   return {
+      math.floor(integer / 3), math.floor(integer / 7), math.floor(integer / 101), math.floor(integer / 86400),
+      math.floor(integer / 1000000007), math.floor(integer / 2147483647), math.floor(integer / 8),
+      math.floor(integer * 0.25), math.floor(integer / 2147483648)
+   }
+end
+
+function negative_floor_divisions(Dividend:num):<num, num>
+   local integer = Dividend | 0
+   return math.floor(integer / -7), math.floor(integer * -0.5)
+end
+
+function index_remainder_sum(Count:num):num
+   local total = 0
+   for i in {0 to Count} do total += i % 7 + i % 1000 end
+   return total
+end
+
+function loop_carried_floor_sum(Count:num):num
+   local value = 0.5
+   local total = 0
+   for i in {0 to Count} do
+      total += math.floor(value / 7)
+      value = (i & 0x7fff) / 1
+   end
+   return total
+end
+
+function loop_carried_power_two_floor_sum(Count:num):num
+   local value = 0.5
+   local total = 0
+   for i in {0 to Count} do
+      total += math.floor(value / 8)
+      value = (i & 0x7fff) / 1
+   end
+   return total
+end
+
+-- Dividends at quotient boundaries for the divisors above, and at both int32 limits.
+local reciprocal_dividends = array<double> {
+   0, 1, -1, 2, -2, 6, -6, 7, -7, 8, -8, 100, -100, 101, -101, 202, -202, 86399, -86399, 86400, -86400, 86401, -86401,
+   123456789, -987654321, 1000000006, -1000000006, 1000000007, -1000000007, 2000000014, -2000000014,
+   2147483646, -2147483646, 2147483647, -2147483647, -2147483648
+}
+
+-- Report whether any compiled trace contains one of the IR opcodes in Ops, and how many traces were inspected.
+-- Opcode numbers follow IRDEF in lj_ir.h: 44 is IR_DIV and 52 is IR_FPMATH.
+function traces_contain(Ops:table):<bool, num>
+   local traces = 0
+   for trace_no in {1 into 64} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+      traces++
+      for instruction in {1 into info.nins} do
+         local _, ir_ot = jit.util.traceIR(trace_no, instruction)
+         if ir_ot != nil and (ir_ot >> 8) in Ops then return true, traces end
+      end
+   end
+   return false, traces
+end
+
+-- Run Func over every dividend with the JIT disabled and then hot, returning the interpreted and compiled results.
+function interpreted_and_compiled(Func:func):<table, table>
+   local expected = {}
+   local actual = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #reciprocal_dividends} do expected[i] = Func(reciprocal_dividends[i]) end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #reciprocal_dividends} do actual[i] = Func(reciprocal_dividends[i]) end
+   end
+   jit.off()
+   return expected, actual
+end
+
 function assert_same_remainder(Actual:num, Expected:num)
    if Expected != Expected then
       assert(Actual != Actual, 'Remainder should preserve NaN')
@@ -430,6 +517,118 @@ end
          local a, b, c = integer_constant_remainders(values[i])
          assert(a is expected[i][0] and b is expected[i][1] and c is expected[i][2],
             'Constant integer remainder chains must handle both signs, zero and int32 boundaries')
+      end
+   end
+end
+
+@Test function IntegerReciprocalRemainders()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+   local expected, actual = interpreted_and_compiled(integer_reciprocal_remainders)
+   local has_division, traces = traces_contain({ [44] = true })
+   assert(traces > 0, 'The remainder workload should compile')
+   assert(not has_division, 'Constant integer remainders should compile to a reciprocal multiply, not a division')
+   for i in {0 to #reciprocal_dividends} do
+      for j in {0 to #expected[i]} do
+         assert(actual[i][j] is expected[i][j],
+            f'Compiled {reciprocal_dividends[i]} remainder {j} gave {actual[i][j]}, expected {expected[i][j]}')
+      end
+   end
+end
+
+@Test function IndexRemainderReciprocal()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+   -- A non-negative loop index omits the reciprocal's sign correction.
+   jit.off()
+   jit.flush()
+   local expected = index_remainder_sum(5000)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local actual = index_remainder_sum(5000)
+   jit.off()
+   assert(actual is expected, f'Compiled loop-index remainders gave {actual}, expected {expected}')
+   assert(not traces_contain({ [44] = true }), 'Loop-index remainders should not divide')
+end
+
+@Test function IntegerFloorDivisionReciprocal()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+   local expected, actual = interpreted_and_compiled(integer_floor_divisions)
+   local has_division, traces = traces_contain({ [44] = true, [52] = true })
+   assert(traces > 0, 'The floor division workload should compile')
+   -- Only the x64 backend exposes the SSE3 status key, even when that CPU feature is unavailable.
+   local _, flags = jit.status()
+   if 'SSE3' in flags then
+      assert(not has_division, 'math.floor() of an integer constant division should not divide or round')
+   end
+   for i in {0 to #reciprocal_dividends} do
+      for j in {0 to #expected[i]} do
+         assert(actual[i][j] is expected[i][j],
+            f'Compiled floor({reciprocal_dividends[i]} / divisor {j}) gave {actual[i][j]}, expected {expected[i][j]}')
+      end
+   end
+end
+
+@Test function FloorDivisionKeepsLoopCarriedConversions()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+   -- The division by one leaves an integer-to-number conversion on the backedge.  Its integer operand belongs
+   -- to the previous iteration, so folding floor() must respect the conversion's PHI barrier during unrolling.
+   jit.off()
+   jit.flush()
+   local expected = loop_carried_floor_sum(5000)
+   local expected_power_two = loop_carried_power_two_floor_sum(5000)
+   assert(expected is 1782501 and expected_power_two is 1559376, 'Floor division workloads should sum all iterations')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local actual = loop_carried_floor_sum(5000)
+   local actual_power_two = loop_carried_power_two_floor_sum(5000)
+   jit.off()
+   assert(actual is expected, f'Compiled floor division sum gave {actual}, expected {expected}')
+   assert(actual_power_two is expected_power_two,
+      f'Compiled power-of-two floor division sum gave {actual_power_two}, expected {expected_power_two}')
+end
+
+@Test function NegativeFloorDivisionKeepsSignedZero()
+   defer
+      jit.on()
+      jit.flush()
+      jit.opt.start()
+   end
+   -- floor(0 / -7) is -0, which an integer quotient cannot represent, so negative divisors keep the FP path.
+   local values = array<double> { 0, 7, -7, 13, -13, 2147483647, -2147483648 }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b = negative_floor_divisions(values[i])
+      expected[i] = { a, b }
+   end
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #values} do
+         local a, b = negative_floor_divisions(values[i])
+         assert(a is expected[i][0] and b is expected[i][1], 'Negative divisor floor divisions should match')
+         assert(1 / a is 1 / expected[i][0] and 1 / b is 1 / expected[i][1],
+            'Negative divisor floor divisions should preserve the sign of zero')
       end
    end
 end
