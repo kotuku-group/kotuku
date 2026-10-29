@@ -91,7 +91,7 @@ static void run(AudioTestContext &Test)
 {
    test_schema_serialisation(Test);
    test_batch_parsing(Test);
-   auto mutex = std::make_shared<std::recursive_mutex>();
+   auto mutex = std::make_shared<AudioMixerMutex>();
    auto chain = std::make_shared<AudioEffectChain>(mutex);
    extAudioEffect first(nullptr, 1), second(nullptr, 2);
    first.Chain = second.Chain = chain;

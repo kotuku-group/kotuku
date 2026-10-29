@@ -42,7 +42,12 @@ struct AlsaPlayback {
       notify_audio(Self);
    }
 
+   // The null device never blocks the worker, so stand aside for clients that are waiting on the mixer lock.
+
+   void yield_mixer() { Self->MixerMutex.yield_to_waiters(std::chrono::milliseconds(2)); }
+
    bool active(bool ApplyCommands) {
+      yield_mixer();
       std::lock_guard lock(Self->MixerMutex);
       if (ApplyCommands) {
          for (size_t i = 0; i < Self->PendingCount; ++i) execute_audio_command(Self, Self->PendingCommands[i]);
@@ -52,6 +57,7 @@ struct AlsaPlayback {
    }
 
    bool produce(bool Running) {
+      yield_mixer();
       std::lock_guard lock(Self->MixerMutex);
       for (size_t i = 0; i < Self->PendingCount; ++i) execute_audio_command(Self, Self->PendingCommands[i]);
       Self->PendingCount = 0;
