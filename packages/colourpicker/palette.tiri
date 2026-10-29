@@ -1103,9 +1103,9 @@ colourpalette.load = function(Path:str!, Seed:table!):table
                firstRun = false
             }
          end
-         msg(f'Ignoring {Path}: {err}')
+         print(f'Colour picker: ignoring {Path}: {err}')
       except e
-         msg(f'Ignoring {Path}: {e.message}')
+         print(f'Colour picker: ignoring {Path}: {e.message}')
       end
 
       -- Preserve damaged settings before the demonstration palette can be saved over them.
@@ -1114,7 +1114,7 @@ colourpalette.load = function(Path:str!, Seed:table!):table
          file <close> = obj.new('File', { path = Path })
          check file.acRename(Path .. '.bak')
       except e
-         msg(f'Failed to back up {Path}: {e.message}')
+         print(f'Colour picker: failed to back up {Path}: {e.message}')
       end
    end
 
@@ -1147,7 +1147,7 @@ colourpalette.save = function(Path:str!, Settings:table!):bool
       check file.acRename(Path)
       return true
    except e
-      msg(f'Failed to save {Path}: {e.message}')
+      print(f'Colour picker: failed to save {Path}: {e.message}')
       try
          file <close> = obj.new('File', { path = temporary })
          file.mtDelete()
@@ -1223,12 +1223,12 @@ colourpalette.loadStarters = function(Path:str):array<table>
    try
       text = io.readAll(Path)
    except e
-      msg(f'Starter palettes are unavailable: {e.message}')
+      print(f'Colour picker: starter palettes are unavailable: {e.message}')
       return array<table>
    end
    data, err = colourpalette.databaseFromJSON(text)
    if not data then
-      msg(f'Starter palettes in {Path} are unavailable: {err}')
+      print(f'Colour picker: starter palettes in {Path} are unavailable: {err}')
       return array<table>
    end
    for p in values(data.palettes) do p.starter = true end
@@ -1295,7 +1295,7 @@ colourpalette.databaseFromJSON = function(Text:str):<table, str>
          if (data.active is i) or (data.active is palette.id) then active = palette.id end
          palettes.push(palette)
       else
-         msg(f'Skipping palette {i}: {err}')
+         print(f'Colour picker: skipping palette {i}: {err}')
          skipped++
       end
    end

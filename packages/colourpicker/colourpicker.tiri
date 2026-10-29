@@ -2770,7 +2770,7 @@ gui.dialog.colour = function(Options:table)
             check clipboard.mtAddText(Text)
             return true
          except e
-            msg(f'Failed to copy to the clipboard: {e.message}')
+            print(f'Colour picker: failed to copy to the clipboard: {e.message}')
             return false
          end
       end
@@ -3124,7 +3124,7 @@ gui.dialog.colour = function(Options:table)
       end
 
       &exportPalette = function()
-         if &copyText(colourpalette.toJSON(&state.palette)) then &flashPaletteMeta('copied') end
+         &flashPaletteMeta(&copyText(colourpalette.toJSON(&state.palette)) ? 'copied' : 'copy failed')
       end
 
       -- Replace the palette with palette JSON from the clipboard.  The scratch colour becomes the editing target.
@@ -3132,7 +3132,7 @@ gui.dialog.colour = function(Options:table)
       &importPalette = function()
          palette, err = colourpalette.fromJSON(clipboardText())
          if not palette then
-            msg(f'Palette import failed: {err}')
+            print(f'Colour picker: palette import failed: {err}')
             &flashPaletteMeta('no palette on clipboard')
             return
          end
@@ -3258,7 +3258,10 @@ gui.dialog.colour = function(Options:table)
          return true
       end
 
+      -- Storage errors are printed, and shown in a dialog unless one is already open.
+
       &reportStorageError = function(Text:str!)
+         print(f'Colour picker: {Text}')
          if &paletteDialog or not &window then return end
          &paletteDialog = gui.dialog.message({
             title = 'Palette Storage', message = Text, type = 'message', modal = true, popOver = &window.surface,
@@ -3279,7 +3282,10 @@ gui.dialog.colour = function(Options:table)
          end
          text = colourpalette.databaseToJSON(&db)
          if text is &databaseText then return &databaseError is nil end
-         if &databaseError then return false end -- Keep a conflict latched until the picker is reopened.
+         if &databaseError then -- Keep a conflict latched until the picker is reopened.
+            &flashNotSaved()
+            return false
+         end
          saved, reason = colourpalette.saveDatabase(colourpalette.DATABASE, &db)
          if not saved then
             &reportDatabaseError(reason)
@@ -3287,6 +3293,17 @@ gui.dialog.colour = function(Options:table)
          end
          &databaseText = text
          return true
+      end
+
+      -- An edit that can't be saved, because a database error was reported, is shown in the meta of the shown tab's
+      -- palette panel, so that the failure isn't silent once the error's dialog is closed.
+
+      &flashNotSaved = function()
+         if &tab is TAB_PALETTE then
+            &manager?.flash('not saved')
+         elseif &palettePanel then
+            &flashPaletteMeta('not saved')
+         end
       end
 
       -- Show the Picker (TAB_PICKER) or the palette manager (TAB_PALETTE) in the dialog body.  A swatch rename in
@@ -3365,11 +3382,11 @@ gui.dialog.colour = function(Options:table)
       -- Copy a readout cell's value and show "Copied" in place of its label for a moment.
 
       &copyCell = function(Cell:table!)
-         &copyText(&readoutCopies[Cell.def.id])
+         copied = &copyText(&readoutCopies[Cell.def.id])
          if &copiedCell then &copiedCell.label.string = &copiedCell.def.label.upper() end
          colourpicker_parts.cancelTimer(&copyTimer)
          &copiedCell = Cell
-         Cell.label.string = 'COPIED'
+         Cell.label.string = copied ? 'COPIED' : 'COPY FAILED'
          &copyTimer = colourpicker_parts.after(COPIED_TIME, function()
             &copyTimer = nil
             if &copiedCell then
