@@ -1,0 +1,335 @@
+#!/usr/bin/env origo
+--[[
+Custom listview rows.  The left list draws palette-style rows (swatch, name, relationship glyph and hex value) with
+constructItem() and keeps the built-in highlight.  The right list draws the same rows and also replaces the highlight
+with constructHighlight().
+
+Scroll either list and press "Shift colours" to update rows in place; the scroll position, selection and keyboard
+target are retained.  "Add", "Remove" and "Sort" change the structure of both lists.  Row cleanup is logged.
+"Remove" deletes all selected rows in each list, or its last row when nothing is selected.
+
+Drag one or more selected rows onto the other list to move them below the targeted colour, or append them when
+dropped on empty space.  Ctrl-click or Shift-click to select several rows.  Escape cancels without moving any rows.
+A floating strip previews the selected colours while dragging.
+--]]
+
+   import 'gui', 'gui/window', 'gui/listview', 'gui/button'
+
+   ROW_HEIGHT <const> = 28
+
+   win = gui.window({ title='Custom Listview Rows', insideWidth=720, insideHeight=420, minWidth=520,
+      minHeight=300, dragDrop=true })
+   viewport = win.clientViewport({})
+   theme = gui.getTheme(viewport)
+   _, _, glAscent = gui.getFontHeight(theme.page.text, false)
+
+   glNextID = 0
+   glBaseLine = math.round((ROW_HEIGHT + glAscent) * 0.5)
+   glHueShift = 0
+
+----------------------------------------------------------------------------------------------------------------------
+
+function hexColour(Hue:num!):str
+   h = (Hue % 360) / 60
+   x = 1 - math.abs((h % 2) - 1)
+   r, g, b = 0, 0, 0
+   if h < 1 then r, g = 1, x
+   elseif h < 2 then r, g = x, 1
+   elseif h < 3 then g, b = 1, x
+   elseif h < 4 then g, b = x, 1
+   elseif h < 5 then r, b = x, 1
+   else r, b = 1, x end
+   return string.format('#%02x%02x%02x', math.round(r * 210 + 30), math.round(g * 210 + 30), math.round(b * 210 + 30))
+end
+
+function newEntry(Prefix:str!):table
+   hue = (glNextID * 37) % 360
+   glNextID++
+   return { name=f'{Prefix} Colour {glNextID}', hue=hue, hex=hexColour(hue), relation=(glNextID % 3 is 0) ? '~' : '=' }
+end
+
+function rowText(Viewport:obj!, X:num!, String:str!, Align:str):obj
+   return Viewport.new('VectorText', table.merge({ x=X, y=glBaseLine, string=String, align=Align ?? 'left' },
+      theme.page.text))
+end
+
+-- Content is created once per row, updated in place and repositioned when the row width changes.  Client vectors are
+-- children of the row viewport, so the list releases them with the row.  The built-in highlight never recolours client
+-- content, so rows on the built-in selection background switch to the theme's selected text colour themselves.
+
+function updateRowData(Item:table!)
+   Item.content.swatch.fill = Item.hex
+   Item.content.name.string = Item.name
+   Item.content.glyph.string = Item.relation
+   Item.content.hex.string = Item.hex
+end
+
+function updateRowLayout(Item:table!, Viewport:obj!)
+   Item.content.glyph.x = Viewport.width - 96
+   Item.content.hex.x = Viewport.width - 8
+end
+
+function updateRowState(Item:table!, SelectedText:bool!)
+   st = Item.viewState
+   fill = (SelectedText and st.selected) ? theme.page.textSelect : theme.page.text.fill
+   for text in values(array<obj> { Item.content.name, Item.content.glyph, Item.content.hex }) do
+      text.fill = fill
+      text.opacity = st.disabled ? 0.5 : 1
+   end
+end
+
+function paletteRow(SelectedText:bool!):func
+   return function(Item:table, Viewport:obj, Reason:str)
+      if Reason is 'create' then
+         Item.content = {
+            swatch = Viewport.new('VectorRectangle', {
+               x=6, y=4, width=ROW_HEIGHT - 8, height=ROW_HEIGHT - 8, roundX=3, roundY=3, stroke='rgb(0,0,0,.3)',
+               strokeWidth=1
+            }),
+            name  = rowText(Viewport, ROW_HEIGHT + 4, Item.name),
+            glyph = rowText(Viewport, 0, Item.relation, 'center'),
+            hex   = rowText(Viewport, 0, Item.hex, 'right')
+         }
+         updateRowData(Item)
+         updateRowLayout(Item, Viewport)
+         updateRowState(Item, SelectedText)
+      elseif Reason is 'update' then
+         updateRowData(Item)
+      elseif Reason is 'layout' then
+         updateRowLayout(Item, Viewport)
+      elseif Reason is 'state' then
+         updateRowState(Item, SelectedText)
+      end
+   end
+end
+
+-- A custom highlight: an accent bar and outline drawn behind the content.  Vectors are created on first use and then
+-- updated or hidden, so repeated notifications never duplicate them.
+
+function constructAccentHighlight(Item:table, Viewport:obj, Reason:str)
+   hl = Item.highlightContent
+   if not hl then
+      if Reason is 'deselected' then return end
+      hl = {
+         outline = Viewport.new('VectorRectangle', { x=0.5, y=0.5, xOffset=0.5, yOffset=0.5, roundX=4, roundY=4,
+            strokeWidth=1 }),
+         bar = Viewport.new('VectorRectangle', { x=0, y=3, width=3, yOffset=3 })
+      }
+      hl.bar.acMoveToBack()
+      hl.outline.acMoveToBack()
+      Item.highlightContent = hl
+   end
+
+   visible = Reason != 'deselected'
+   hl.outline.visibility = visible ? VIS_VISIBLE : VIS_HIDDEN
+   hl.bar.visibility = (Reason is 'selected') ? VIS_VISIBLE : VIS_HIDDEN
+   hl.outline.fill = (Reason is 'selected') ? 'rgb(64,128,255,.18)' : 'rgb(64,128,255,.08)'
+   hl.outline.stroke = (Reason is 'selected') ? 'rgb(64,128,255)' : 'rgb(64,128,255,.4)'
+   hl.bar.fill = 'rgb(64,128,255)'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Like the colourpicker, draw the dragged colours in a transparent composite surface.  The shared view owns the
+-- returned preview once the drag starts and releases it when the drag ends.
+
+function colourDragPreview(View:table!, Items:array<table>!):obj
+   width = math.min(240, math.max(40, #Items * 24 + 4))
+   height = ROW_HEIGHT + 4
+   host = View.scene.surface
+   preview = host.new('Surface', {
+      parent = (host.display.displayType is DT_WAYLAND) ? host.id : 0,
+      presence = SPT_NONE,
+      width = width, height = height,
+      flags = RNF_COMPOSITE | RNF_NO_FOCUS | RNF_STICK_TO_FRONT
+   })
+
+   try
+      check preview.buffer.mtDrawRectangle(0, 0, width, height, 0, BAF_FILL)
+
+      local scene = preview.new('VectorScene', { surface=preview, bitmap=preview.buffer })
+
+      local vp = scene.new('VectorViewport', { width=width, height=height })
+
+      vp.new('VectorRectangle', { width=width, height=height, roundX=4, roundY=4, fill='white' })
+
+      local swatch_width = (width - 4) / #Items
+
+      for i, item in Items do
+         vp.new('VectorRectangle', {
+            x=2 + i * swatch_width, y=2, width=swatch_width + 0.5, height=height - 4, fill=item.hex
+         })
+      end
+
+      check scene.acDraw()
+      return preview
+   except e
+      preview.free()
+      raise
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Snapshot only row data, never the source row's vectors or highlight.  The destination constructs its own content.
+
+function startColourDrag(View:table!, Session:table!):table
+   Session.paletteSource = View
+   local receipt = f'<receipt totalItems="{#Session.items}" id="{Session.id}">'
+   for item in values(Session.items) do
+      receipt ..= f'<colour name="{item.name.escXML()}" hue="{item.hue}" hex="{item.hex.escXML()}"' ..
+         f' relation="{item.relation.escXML()}"/>'
+   end
+   receipt ..= '</receipt>'
+
+   return {
+      datatypes = string.char(DATA_XML),
+      receipt = function(Session, Datatype, Requester)
+         if Datatype is DATA_XML then return receipt end
+      end,
+      preview = colourDragPreview(View, Session.items)
+   }
+end
+
+function acceptColourDrop(View:table!, Item:table, Drop:table!):bool
+   return Drop.session?.paletteSource != nil and Drop.session.paletteSource != View
+end
+
+function receiveColourDrop(View:table!, Item:table, Drop:table!):bool
+   if not acceptColourDrop(View, Item, Drop) then return false end
+   local moved = false
+
+   input.requestItem(Drop.source, Drop.item, 'xml', function(Items)
+      local entries = array<table>
+      for entry in values(Items) do
+         if entry.item is 'colour' then
+            entries.push({ name=entry.name, hue=tonumber(entry.hue), hex=entry.hex, relation=entry.relation })
+         end
+      end
+
+      if #entries is 0 then return end
+
+      local first_new = #View.items
+      local insert_at = first_new
+
+      if Item then
+         for i, row in View.items do
+            if row._id is Item._id then insert_at = i + 1; break end
+         end
+      end
+
+      View.addItems(entries)
+
+      if insert_at < first_new then
+         -- Move the new rows below the target, keeping their source order and existing row graphics.
+         for i in {0 to #entries} do
+            local row = View.items.remove(first_new + i)
+            View.items.insert(insert_at + i, row)
+         end
+         View.relayout()
+      end
+
+      -- Remove only the rows captured at drag start, after the destination has accepted and laid out their data.
+      for row in values(Drop.session.items) do Drop.session.paletteSource.removeItem(row) end
+      moved = true
+   end)
+
+   return moved
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   local entries = array<table,2> { {}, {} }
+   for i in {0 to 24} do entries[0].insert(newEntry('Left')) end
+   for i in {0 to 24} do entries[1].insert(newEntry('Right')) end
+
+   local lists = array<table>
+   for i in {0 to 2} do
+      lists.push(gui.listView({
+         target     = viewport,
+         x          = i is 0 ? 10 : '50%',
+         xOffset    = i is 0 ? '50%' : 10,
+         y          = 10,
+         yOffset    = 56,
+         rowHeight  = ROW_HEIGHT,
+         rowSpacing = 2,
+         scrollDirection = 'vertical',
+         multiSelect = true,
+         dragDrop    = true,
+         events      = {
+            dragStart = startColourDrag,
+            dragOver  = acceptColourDrop,
+            dragDrop  = receiveColourDrop
+         },
+         constructItem = paletteRow(i is 0),
+         constructHighlight = i is 1 ? constructAccentHighlight : nil,
+         destroyItem = function(Item, Viewport)
+            msg(f'Released row {Item.name}')
+         end,
+         items = entries[i]
+      }))
+   end
+
+   -- Recolour every row in place.  Offscreen rows are refreshed too; the scroll position is retained.
+
+   btnShift = gui.button({
+      target  = viewport,
+      label   = 'Shift colours',
+      xOffset = win.margins.right,
+      yOffset = 12,
+      events  = {
+         activate = function()
+            glHueShift += 40
+            for list in values(lists) do
+               for item in values(list.items) do
+                  list.setItem(item, { hex=hexColour(item.hue + glHueShift) })
+               end
+            end
+         end
+      }
+   })
+
+   btnSort = gui.button({
+      target  = viewport,
+      label   = 'Sort',
+      xOffset = viewport.width - btnShift.viewport.x + gui.sizing.widget.gap,
+      yOffset = 12,
+      events  = {
+         activate = function()
+            for list in values(lists) do list.sortView('name', true) end
+         end
+      }
+   })
+
+   btnAdd = gui.button({
+      target  = viewport,
+      label   = 'Add',
+      xOffset = viewport.width - btnSort.viewport.x + gui.sizing.widget.gap,
+      yOffset = 12,
+      events  = {
+         activate = function()
+            local entry = newEntry('Any')
+            for list in values(lists) do list.addItem(entry) end
+         end
+      }
+   })
+
+   btnRemove = gui.button({
+      target  = viewport,
+      label   = 'Remove',
+      xOffset = viewport.width - btnAdd.viewport.x + gui.sizing.widget.gap,
+      yOffset = 12,
+      events  = {
+         activate = function()
+            for list in values(lists) do
+               local targets = list.selectedItems()
+               if #targets is 0 then
+                  local last = list.items[#list.items - 1]
+                  if last then targets.push(last) end
+               end
+               for target in values(targets) do list.removeItem(target) end
+            end
+         end
+      }
+   })
+
+   win.show()
+   processing.sleep()
