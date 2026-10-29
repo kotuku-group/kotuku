@@ -520,6 +520,14 @@ gui.listView = function(Options:table!):table
       vw._refreshLayout()
    end
 
+   -- Lays out the existing rows again after the client has changed the hidden field of items directly, e.g. to filter
+   -- a long list with one layout rather than one per item.  Row content is not refreshed; see refreshItem().
+
+   vw.relayout = function()
+      assert(not vw._dispatching, 'Render callbacks must not modify the view structure; defer the change')
+      vw._refreshLayout()
+   end
+
    -- Rows are notified of size changes once the frame geometry has settled, e.g. after a resize causes the vertical
    -- scrollbar to appear.
 

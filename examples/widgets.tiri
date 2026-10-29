@@ -10,6 +10,8 @@ A demonstration of standard widgets
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
+   local fileDialog:table -- The file dialog is closed if it is collected, so it is retained until it responds
+
    win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('900dp'), insideHeight=gui.rpixel('750dp') })
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
@@ -346,7 +348,7 @@ end
       icon   = 'folders/folder',
       events = {
          activate = function()
-            gui.dialog.file({
+            fileDialog = gui.dialog.file({
                filterList  = array<table> { { name='MP3 Audio Files', ext='mp3' }, { name='Text Files', ext='txt' } },
                okLabel     = 'Select File',
                cancelLabel = 'Exit',
@@ -355,6 +357,7 @@ end
                warnExists  = false,
                multiSelect = true,
                feedback = function(Dialog, Path, Files)
+                  fileDialog = nil
                   if not Files then
                      print('Dialog was cancelled or no files selected.')
                      return

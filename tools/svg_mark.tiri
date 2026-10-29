@@ -173,7 +173,9 @@ end
 
       processing.flush()
 
-      gui.dialog.file({
+      -- The dialog is closed if it is collected, so it is retained until it responds.
+
+      file_dialog = gui.dialog.file({
          title       = 'Select SVG File for Benchmark',
          okLabel     = 'Select',
          cancelLabel = 'Cancel',
@@ -191,6 +193,7 @@ end
       })
 
       processing.sleep(-1)
+      file_dialog = nil
 
       selectedFile ?! return
       svgFile = selectedFile

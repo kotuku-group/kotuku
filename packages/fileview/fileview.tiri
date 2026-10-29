@@ -830,6 +830,7 @@ gui.fileview = function(Options)
             noFiles  = true,
             selectFolder = true,
             feedback = function(Dialog, Path, Files)
+               self.dlgShortcutBrowse = nil
                txtPath.string = Path
             end
          })
