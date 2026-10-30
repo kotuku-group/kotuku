@@ -39,7 +39,7 @@ inline ERR object_set_string(lua_State *Lua, OBJECTPTR Object, const Field *Fiel
 static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *Field, int Values, int total)
 {
    if (Field->Flags & FD_INT) {
-      kt::vector<int> values((size_t)total);
+      std::vector<int> values((size_t)total);
       for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
          if (lua_type(Lua, -2) IS LUA_TNUMBER) {
             int index = lua_tointeger(Lua, -2);
@@ -50,8 +50,49 @@ static ERR set_array_from_table(lua_State *Lua, OBJECTPTR Object, const Field *F
       }
       return Object->set(Field, values);
    }
+   else if (Field->Flags & (FD_DOUBLE|FD_UNIT)) {
+      // Unit arrays also accept strings such as '10%', in which case every value is passed as a string.
+
+      bool strings = false;
+      if (Field->Flags & FD_UNIT) {
+         for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
+            if (lua_type(Lua, -2) IS LUA_TNUMBER) {
+               int index = lua_tointeger(Lua, -2);
+               if ((index >= 0) and (index < total)) {
+                  int type = lua_type(Lua, -1);
+                  if (type IS LUA_TSTRING) strings = true;
+                  else if (type != LUA_TNUMBER) {
+                     lua_pop(Lua, 2);
+                     return ERR::InvalidValue;
+                  }
+               }
+            }
+         }
+      }
+
+      if (strings) {
+         std::vector<std::string> values((size_t)total);
+         for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
+            if (lua_type(Lua, -2) IS LUA_TNUMBER) {
+               int index = lua_tointeger(Lua, -2);
+               if ((index >= 0) and (index < total)) values[index] = lua_tostring(Lua, -1);
+            }
+         }
+         return Object->set(Field, values);
+      }
+      else {
+         std::vector<double> values((size_t)total);
+         for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
+            if (lua_type(Lua, -2) IS LUA_TNUMBER) {
+               int index = lua_tointeger(Lua, -2);
+               if ((index >= 0) and (index < total)) values[index] = lua_tonumber(Lua, -1);
+            }
+         }
+         return Object->set(Field, values);
+      }
+   }
    else if (Field->Flags & FD_STRING) {
-      kt::vector<std::string> values((size_t)total);
+      std::vector<std::string> values((size_t)total);
       for (lua_pushnil(Lua); lua_next(Lua, Values); lua_pop(Lua, 1)) {
          int index = lua_tointeger(Lua, -2);
          if ((index >= 0) and (index < total)) {
@@ -773,6 +814,14 @@ static int object_get_array(lua_State *Lua, const obj_read &Handle, GCobject *De
          }
          else if (Field->Flags & (FD_INT|FD_INT64|FD_FLOAT|FD_DOUBLE|FD_POINTER|FD_BYTE|FD_WORD|FD_STRUCT)) {
             error = make_object_field_array(Lua, Field, span.size(), span.data(), view);
+         }
+         else if (Field->Flags & FD_UNIT) { // Units are copied as their values; a scaled value is a fraction.
+            if (view) return ERR::FieldTypeMismatch;
+            auto units = (const Unit *)span.data();
+            std::vector<double> values;
+            values.reserve(span.size());
+            for (size_t i=0; i < span.size(); i++) values.push_back(units[i].Value);
+            make_array(Lua, AET::DOUBLE, int(values.size()), values.data());
          }
          else {
             kt::Log("object_get_array").warning("Invalid array type for '%s', flags: $%.8x", Field->Name,

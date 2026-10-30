@@ -40,6 +40,7 @@ static ERR setval_struct(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR set_or_write_vector(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR set_or_write_array(OBJECTPTR, const Field *, int Flags, CPTR);
 static ERR setval_unit(OBJECTPTR, const Field *, int Flags, CPTR);
+static ERR setval_unit_array(OBJECTPTR, const Field *, int Flags, CPTR);
 
 //********************************************************************************************************************
 
@@ -140,7 +141,10 @@ ERR writeval_default(OBJECTPTR Object, const Field *Field, int flags, CPTR Data)
       return error;
    }
    else {
-      if (Field->Flags & FD_UNIT)          return setval_unit(Object, Field, flags, Data);
+      if ((Field->Flags & (FD_UNIT|FD_ARRAY)) IS (FD_UNIT|FD_ARRAY)) {
+         return setval_unit_array(Object, Field, flags, Data);
+      }
+      else if (Field->Flags & FD_UNIT)     return setval_unit(Object, Field, flags, Data);
       else if (Field->Flags & FD_VECTOR) return set_or_write_vector(Object, Field, flags, Data);
       else if (Field->Flags & FD_ARRAY) return set_or_write_array(Object, Field, flags, Data);
       else if (Field->Flags & FD_FUNCTION) return setval_function(Object, Field, flags, Data);
@@ -451,6 +455,55 @@ static ERR setval_unit(OBJECTPTR Object, const Field *Field, int Flags, CPTR Dat
    else return ERR::FieldTypeMismatch;
 }
 
+//********************************************************************************************************************
+// Unit array fields must have a setter, which receives a `std::span<const Unit> *`.  A Unit span is passed through,
+// while numeric and std::string arrays are converted.  Strings are parsed by Unit, so '10%' is a scaled value.
+
+template <class T> static void append_units(std::vector<Unit> &Units, CPTR Data)
+{
+   for (auto value : *(const std::span<const T> *)Data) Units.emplace_back(double(value));
+}
+
+template <class T> static void append_integer_units(std::vector<Unit> &Units, CPTR Data, int Flags)
+{
+   if (Flags & FD_UNSIGNED) append_units<std::make_unsigned_t<T>>(Units, Data);
+   else append_units<T>(Units, Data);
+}
+
+static ERR setval_unit_array(OBJECTPTR Object, const Field *Field, int Flags, CPTR Data)
+{
+   FieldContext ctx(Object, Field);
+
+   if (not Data) return ERR::NullArgs;
+
+   auto setter = (ERR (*)(APTR, const std::span<const Unit> *))(Field->SetValue);
+
+   // The generated C++ setters pass FD_UNIT for a Unit span
+
+   if (Flags & FD_UNIT) return setter(Object, (const std::span<const Unit> *)Data);
+
+   if (not (Flags & FD_ARRAY)) return ERR::SetValueNotArray;
+
+   std::vector<Unit> units;
+   if (Flags & FD_DOUBLE) append_units<double>(units, Data);
+   else if (Flags & FD_FLOAT) append_units<float>(units, Data);
+   else if (Flags & FD_INT64) append_integer_units<int64_t>(units, Data, Flags);
+   else if (Flags & FD_INT) append_integer_units<int>(units, Data, Flags);
+   else if (Flags & FD_WORD) append_integer_units<int16_t>(units, Data, Flags);
+   else if (Flags & FD_BYTE) append_integer_units<int8_t>(units, Data, Flags);
+   else if ((Flags & (FD_STRING|FD_CPP)) IS (FD_STRING|FD_CPP)) {
+      for (auto &str : *(const std::span<const std::string> *)Data) {
+         Unit unit { std::string_view(str) };
+         if (not unit.defined()) return ERR::InvalidValue;
+         units.push_back(unit);
+      }
+   }
+   else return ERR::SetValueNotArray;
+
+   const std::span<const Unit> span(units);
+   return setter(Object, &span);
+}
+
 // Embedded kt::vector<>
 
 template <class T>
@@ -716,7 +769,8 @@ void optimise_write_field(Field &Field)
       else log.warning("Invalid field flags for %s.%s: $%.8x.", ((objMetaClass *)(tlContext.back().obj))->ClassName.c_str(), Field.Name, Field.Flags);
    }
    else {
-      if (Field.Flags & FD_UNIT)          Field.WriteValue = setval_unit;
+      if ((Field.Flags & (FD_UNIT|FD_ARRAY)) IS (FD_UNIT|FD_ARRAY)) Field.WriteValue = setval_unit_array;
+      else if (Field.Flags & FD_UNIT)     Field.WriteValue = setval_unit;
       else if (Field.Flags & FD_VECTOR) Field.WriteValue = set_or_write_vector;
       else if (Field.Flags & FD_ARRAY) Field.WriteValue = set_or_write_array;
       else if (Field.Flags & FD_FUNCTION) Field.WriteValue = setval_function;
