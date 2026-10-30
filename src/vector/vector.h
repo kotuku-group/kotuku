@@ -1421,7 +1421,8 @@ inline static bool has_input_subscriptions(const extVector *Vector)
 
 inline static bool has_input_boundary(const extVector *Vector)
 {
-   return has_input_subscriptions(Vector) or ((Vector->Cursor != PTC::NIL) and (Vector->Cursor != PTC::DEFAULT));
+   // PTC::DEFAULT is an explicit choice that overrides the cursor of a vector behind this one.
+   return has_input_subscriptions(Vector) or (Vector->Cursor != PTC::NIL);
 }
 
 inline static void update_input_subscription_state(extVector *Vector)

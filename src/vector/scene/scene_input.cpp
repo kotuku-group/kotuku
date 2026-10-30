@@ -350,6 +350,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                if (cursor IS PTC::NIL) cursor = PTC::DEFAULT;
                bool processed = false;
+               bool cursor_set = false; // True once a vector selects a cursor, which can be PTC::DEFAULT
                // Iterate over a copy because callbacks can redraw the scene, which replaces InputBoundaries.
                auto boundaries = Self->InputBoundaries;
                for (auto it = boundaries.rbegin(); it != boundaries.rend(); it++) {
@@ -365,7 +366,12 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                   if (vector->pointInPath(input->X, input->Y) != ERR::Okay) continue;
 
-                  if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+                  const bool select_cursor = not cursor_set;
+
+                  if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+                     cursor = vector->Cursor;
+                     cursor_set = true;
+                  }
 
                   if (bounds.pass_through) {
                      // For pass-through subscriptions input events are ignored, but cursor changes still apply.
@@ -375,7 +381,10 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                   if (Self->ActiveVector != bounds.vector_id) {
                      send_enter_event(vector, input, bounds.x, bounds.y);
                      // The enter callback can change the cursor, so re-read it to apply the change immediately.
-                     if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+                     if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+                        cursor = vector->Cursor;
+                        cursor_set = true;
+                     }
                   }
 
                   if (not processed) {
@@ -395,7 +404,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                      processed = true;
                   }
 
-                  if (cursor IS PTC::DEFAULT) continue; // Keep scanning in case an input boundary defines a cursor.
+                  if (not cursor_set) continue; // Keep scanning in case an input boundary defines a cursor.
                   else break; // Input consumed and cursor image identified.
                }
 
@@ -413,6 +422,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
       else if ((input->Flags & (JTYPE::ANCHORED|JTYPE::MOVEMENT)) != JTYPE::NIL) {
          if (cursor IS PTC::NIL) cursor = PTC::DEFAULT;
          bool processed = false;
+         bool cursor_set = false; // True once a vector selects a cursor, which can be PTC::DEFAULT
          // Iterate over a copy because callbacks can redraw the scene (e.g. by resizing the surface), which replaces
          // InputBoundaries and would invalidate the iterator.
          auto boundaries = Self->InputBoundaries;
@@ -447,11 +457,17 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                if (vector->pointInPath(input->X, input->Y) != ERR::Okay) continue;
             }
 
+            // Preserve a cursor selected by a pass-through vector in front of this one.
+            const bool select_cursor = not cursor_set;
+
             if (Self->ActiveVector != bounds.vector_id) {
                send_enter_event(vector, input, bounds.x, bounds.y);
             }
 
-            if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+            if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+               cursor = vector->Cursor;
+               cursor_set = true;
+            }
 
             if (bounds.pass_through) {
                // For pass-through subscriptions, input events are ignored, but cursor changes still apply.
@@ -479,7 +495,10 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                   // Subscribers can change their cursor in response to movement, so re-read it to apply the change
                   // with this event rather than the next.
 
-                  if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+                  if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+                     cursor = vector->Cursor;
+                     cursor_set = true;
+                  }
 
                   if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
                      kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
@@ -494,7 +513,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                processed = true;
             }
 
-            if (cursor IS PTC::DEFAULT) continue; // Keep scanning in case an input boundary defines a cursor.
+            if (not cursor_set) continue; // Keep scanning in case an input boundary defines a cursor.
             else break; // Input consumed and cursor image identified.
          }
 

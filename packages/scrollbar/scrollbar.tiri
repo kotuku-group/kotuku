@@ -127,7 +127,10 @@ gui.scrollbar = function(Options)
       local bar:table
 
       if Direction is 'V' then
-         vp = &target.new('VectorViewport', { name='VBarVP', y = 0, xOffset = 0, yOffset = 0, width = &v_thickness, overflow = VOF_HIDDEN })
+         vp = &target.new('VectorViewport', {
+            name='VBarVP', y = 0, xOffset = 0, yOffset = 0, width = &v_thickness, overflow = VOF_HIDDEN,
+            cursor = PTC_DEFAULT
+         })
 
          bar = vp.state()
          bar_theme = &theme.scrollbar_v ?? &theme.scrollbar
@@ -157,7 +160,9 @@ gui.scrollbar = function(Options)
             end
          end
       else
-         vp = &target.new('VectorViewport', { name='HBarVP', x = 0, xOffset = 0, yOffset = 0, height = &h_thickness })
+         vp = &target.new('VectorViewport', {
+            name='HBarVP', x = 0, xOffset = 0, yOffset = 0, height = &h_thickness, cursor = PTC_DEFAULT
+         })
          if &vbar?.viewport?.visibility is VIS_VISIBLE then vp.xOffset = &v_thickness end
 
          bar = vp.state()
