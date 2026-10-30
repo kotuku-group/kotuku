@@ -7,6 +7,13 @@ end
 @BeforeEach(hotpath=40)
 function enforce_hotpath() end
 
+-- JIT control is restored here rather than in a defer: a defer that runs while an exception unwinds is restricted as
+-- for __gc, so jit.on() would raise 'Bad action while in __gc metamethod' and replace the original failure.
+@AfterEach
+function restore_jit()
+   jit.on()
+end
+
 function builtin_array_membership_workload(Values:array<int>, Count:num):num
    local matches = 0
    for index in {0 to Count} do
@@ -209,7 +216,6 @@ end
 
 @Test function InterpretedVariantMembershipSynchronisesVMTop()
    jit.off()
-   defer jit.on() end
 
    local equality_mt = {
       __eq = function(Other:table!):bool return &id is Other.id end
@@ -499,7 +505,6 @@ end
 
 @Test function RejectedCandidatesRaiseTypeMismatch()
    jit.off()
-   defer jit.on() end
 
    local message, intact = interpreted_rejected_membership(array<int> { 1, 2 }, 'abc')
    assert(intact, 'A rejected membership candidate should preserve live frame slots')
