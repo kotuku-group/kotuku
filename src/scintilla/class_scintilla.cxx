@@ -18,6 +18,15 @@ Select All.  Items are disabled when they cannot be used: edits require `SCIF::E
 selection, and Paste requires text on the clipboard.  The menu is displayed with `gui/menu` at the pointer position,
 including over a transformed or scrolled host.  Closing the menu with Escape or by choosing an item returns the focus
 to the editor, while moving the focus elsewhere closes it without doing so.
+
+Code assistance is provided through a completion list and a call tip, which the client opens with
+#ShowCompletions() and #ShowCallTip().  The #CompletionCallback reports the events that typically prompt them, such
+as typed characters and Ctrl+Space, as well as accepted and cancelled completions.  Only one of the two pop-ups is
+open at a time.  They are drawn above the content of the scene with the editor's font and colours, are positioned
+at the text that they refer to, and are kept within the bounds of the scene.  They follow that text when the editor
+scrolls, and close if it scrolls out of view.  Pop-ups are not transformed with a rotated or scaled host, although
+their position follows it.  Refer to #ShowCompletions() for the
+keyboard and pointer interaction.
 -END-
 
 *********************************************************************************************************************/
@@ -69,6 +78,7 @@ to the editor, while moving the focus elsewhere closes it without doing so.
 #include "Style.h"
 #include "ViewStyle.h"
 #include "AutoComplete.h"
+#include "CharacterSet.h"
 #include "CharClassify.h"
 #include "Decoration.h"
 #include "Document.h"
@@ -171,8 +181,10 @@ static const struct {
 //********************************************************************************************************************
 // Scintilla class definition.
 
+static ERR GET_ActivePopup(extScintilla *, SCPOP *);
 static ERR GET_AllowTabs(extScintilla *, int *);
 static ERR GET_AutoIndent(extScintilla *, int *);
+static ERR GET_CompletionCallback(extScintilla *, FUNCTION * &);
 static ERR GET_CursorCol(extScintilla *, int *);
 static ERR GET_CursorRow(extScintilla *, int *);
 static ERR GET_FileDrop(extScintilla *, FUNCTION * &);
@@ -190,6 +202,7 @@ static ERR GET_Wordwrap(extScintilla *, int *);
 static ERR SET_AllowTabs(extScintilla *, int);
 static ERR SET_AutoIndent(extScintilla *, int);
 static ERR SET_BkgdColour(extScintilla *, RGB8 *);
+static ERR SET_CompletionCallback(extScintilla *, FUNCTION *);
 static ERR SET_CursorColour(extScintilla *, RGB8 *);
 static ERR SET_FileDrop(extScintilla *, FUNCTION *);
 static ERR SET_FoldingMarkers(extScintilla *, int);
@@ -218,6 +231,9 @@ static ERR resolve_fonts(extScintilla *, std::string_view, int);
 static ERR SET_Face(extScintilla *, const std::string_view &);
 static ERR create_scintilla(void);
 static ERR create_canvas(extScintilla *);
+static void queue_repaint(extScintilla *);
+static void update_popups(extScintilla *);
+static bool popup_has_focus(extScintilla *);
 static ERR feedback_view(objVectorViewport *, FM);
 static ERR feedback_page(objVectorViewport *, FM);
 static ERR feedback_focus(objVectorViewport *, FM);
@@ -332,6 +348,12 @@ static void update_focus(extScintilla *Self)
    if (not Self->API) return;
 
    bool focus = (Self->HasFocus) and ((Self->Flags & SCIF::DISABLED) IS SCIF::NIL);
+
+   // Clicking a code assistance pop-up gives it the focus, which input_popup() returns to the editor.  Scintilla
+   // closes its pop-ups when it loses the focus, so the loss is not reported in the meantime.
+
+   if ((not focus) and ((Self->Flags & SCIF::DISABLED) IS SCIF::NIL) and (popup_has_focus(Self))) return;
+
    if (not focus) {
       Self->KeyShift = false;
       Self->KeyCtrl  = false;
@@ -348,6 +370,7 @@ static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result
 {
    auto Self = (extScintilla *)CurrentContext();
    hide_context_menu(Self);
+   if (Self->API) Self->API->panCancelPopups();
    Self->Viewport = nullptr;
    Self->Focus    = nullptr;
    Self->View     = nullptr;
@@ -377,11 +400,13 @@ static void notify_free_image(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 
 
 //********************************************************************************************************************
-// Receiver for path changes on the View, which reflect a change to the size of Scintilla's client area.
+// Receiver for path changes on the View, including changes to the host's position, size and transforms.
 
 static ERR feedback_view(objVectorViewport *View, FM Event)
 {
    auto Self = (extScintilla *)CurrentContext();
+
+   if ((Self->API) and (Self->API->panActivePopup() != SCPOP::NONE)) queue_repaint(Self);
 
    Unit w, h;
    View->getWidth(w);
@@ -632,6 +657,14 @@ static void invalidate_area(extScintilla *Self, int Left, int Top, int Right, in
       dirty.Bottom = std::max(dirty.Bottom, Bottom);
    }
 
+   queue_repaint(Self);
+}
+
+//********************************************************************************************************************
+// Schedule a call to the Repaint method, which paints the Dirty region and updates the code assistance pop-ups.
+
+static void queue_repaint(extScintilla *Self)
+{
    if (not Self->RepaintQueued) {
       Self->RepaintQueued = true;
       QueueAction(sci::Repaint::id, Self->UID);
@@ -975,7 +1008,10 @@ static ERR SCINTILLA_Disable(extScintilla *Self)
    if ((Self->Flags & SCIF::DISABLED) IS SCIF::NIL) {
       Self->Flags |= SCIF::DISABLED;
       hide_context_menu(Self);
-      if (Self->API) Self->API->panReleaseMouse(); // Button releases are ignored while disabled
+      if (Self->API) {
+         Self->API->panReleaseMouse(); // Button releases are ignored while disabled
+         Self->API->panCancelPopups();
+      }
       update_focus(Self);
       acDraw(Self);
    }
@@ -1150,11 +1186,31 @@ static ERR SCINTILLA_GotoLine(extScintilla *Self, struct sci::GotoLine *Args)
    return ERR::Okay;
 }
 
+/*********************************************************************************************************************
+
+-METHOD-
+HidePopups: Closes the completion list and the call tip.
+
+HidePopups() closes any completion list or call tip that is open.  Closing a completion list is reported to the
+#CompletionCallback as `SCAC::CANCELLED`.
+
+-RESULT-
+Okay:
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_HidePopups(extScintilla *Self)
+{
+   if (Self->API) Self->API->panCancelPopups();
+   return ERR::Okay;
+}
+
 //*****************************************************************************
 
 static ERR SCINTILLA_Hide(extScintilla *Self)
 {
    hide_context_menu(Self);
+   if (Self->API) Self->API->panCancelPopups();
    if (Self->View) return acHide(Self->View);
    else return ERR::Okay;
 }
@@ -1560,6 +1616,8 @@ Private
 
 static ERR SCINTILLA_ReportEvent(extScintilla *Self)
 {
+   if (Self->API) Self->API->panFlushCompletionReports();
+
    if (Self->ReportEventFlags IS SEF::NIL) return ERR::Okay;
 
    auto flags = Self->ReportEventFlags;
@@ -1580,6 +1638,7 @@ static ERR SCINTILLA_Repaint(extScintilla *Self)
 {
    Self->RepaintQueued = false;
    paint_dirty(Self);
+   update_popups(Self);
    return ERR::Okay;
 }
 
@@ -1722,6 +1781,96 @@ static ERR SCINTILLA_Show(extScintilla *Self)
 /*********************************************************************************************************************
 
 -METHOD-
+ShowCallTip: Displays a call tip, such as a function signature, below a position in the document.
+
+ShowCallTip() opens a call tip that is attached to `Pos`.  It is typically used to show the parameters of a function
+while the user types its arguments.  Calling ShowCallTip() while a call tip is open replaces it, which is also how the
+highlighted parameter is updated.  Showing a call tip closes the completion list.
+
+The call tip is displayed on the line below `Pos`, or above it if it would otherwise extend beyond the bottom of the
+scene.  The `Text` may contain multiple lines that are separated by `\n`.  The characters `\001` and `\002` are
+drawn as up and down arrows, which a client can use to let the user cycle through overloads by clicking them.  Clicks
+are reported to the #CompletionCallback as `SCAC::CALL_TIP_CLICK`.
+
+Typing text, moving the cursor left and right, and deleting with Backspace keep the call tip open.  It is closed by
+other cursor movement, Escape, a click in the editor, the loss of the focus, Backspace beyond the cursor position at
+which it opened, or #HidePopups().
+
+-INPUT-
+int Pos: The document position that the call tip refers to, or -1 for the cursor position.
+cstr Text: The text to display.
+int HighlightStart: The byte offset within `Text` at which highlighting starts.
+int HighlightEnd: The byte offset within `Text` at which highlighting ends.  Highlighting is disabled if this does not exceed `HighlightStart`.
+
+-RESULT-
+Okay:
+NullArgs: The `Text` is empty.
+OutOfRange: The `Pos` is outside of the document.
+NotPossible: The editor is disabled, or its host viewport has been freed.
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_ShowCallTip(extScintilla *Self, struct sci::ShowCallTip *Args)
+{
+   kt::Log log;
+
+   if ((not Args) or (not Args->Text) or (not Args->Text[0])) return log.warning(ERR::NullArgs);
+
+   log.branch("Pos: %d, Highlight: %d-%d", Args->Pos, Args->HighlightStart, Args->HighlightEnd);
+   return Self->API->panShowCallTip(Args->Pos, Args->Text, Args->HighlightStart, Args->HighlightEnd);
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+ShowCompletions: Displays a list of completion candidates for the word at the cursor.
+
+ShowCompletions() opens the completion list below the word that is being typed, or above it if there is more room
+there.  The `Candidates` are separated by line feeds and may be given in any order.  They are sorted for display and
+duplicates are removed.  The client normally calls ShowCompletions() from the #CompletionCallback in response to
+`SCAC::REQUEST` or `SCAC::CHAR_ADDED`.
+
+`Length` is the number of bytes of the word that precede the cursor and have already been typed.  The candidate that
+begins with this prefix is selected, and the selection follows further typing.  If no candidate matches the typed
+prefix, the list closes.  Accepting a candidate replaces the prefix with it.  Showing the list closes any call tip.
+
+While the list is open, the Up and Down arrow keys, Page Up, Page Down, Home and End move the selection.  Enter and
+Tab accept the selected candidate, and Escape closes the list.  Tab reaches the editor only if the scene does not use it
+to cycle the focus, i.e. the scene has the `VPF::IGNORE_TAB` flag.  Other cursor movement, a click in the editor and the
+loss of the focus also close it.  Clicking a candidate selects it, double-clicking accepts it, and the mouse wheel
+scrolls the list.  Acceptance is reported to the #CompletionCallback as `SCAC::SELECTED` and any other closure as
+`SCAC::CANCELLED`.
+
+Completions edit the document on the user's behalf, so they require the `SCIF::EDIT` flag.
+
+-INPUT-
+int Length: The number of bytes of the typed prefix that precede the cursor.
+cstr Candidates: Completion candidates, separated by line feeds.
+int(SCACF) Flags: Optional flags.
+
+-RESULT-
+Okay:
+NullArgs:
+NoData: `Candidates` does not contain any candidates.
+OutOfRange: `Length` is negative or exceeds the start of the cursor's line.
+ReadOnly: The editor does not have the `SCIF::EDIT` flag.
+NotPossible: The editor is disabled, or its host viewport has been freed.
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_ShowCompletions(extScintilla *Self, struct sci::ShowCompletions *Args)
+{
+   kt::Log log;
+
+   if ((not Args) or (not Args->Candidates)) return log.warning(ERR::NullArgs);
+
+   log.branch("Length: %d, Flags: $%.8x", Args->Length, int(Args->Flags));
+   return Self->API->panShowCompletions(Args->Length, Args->Candidates, Args->Flags);
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
 ToggleFold: Contracts or expands a fold.
 
 This method toggles the fold that starts at a line, which hides or shows the lines within the fold.  If the line does
@@ -1818,6 +1967,22 @@ static ERR SCINTILLA_Undo(extScintilla *Self, struct acUndo *Args)
 /*********************************************************************************************************************
 
 -FIELD-
+ActivePopup: Indicates the code assistance pop-up that is open.
+
+This read-only field reports `SCPOP::COMPLETIONS` while the completion list of #ShowCompletions() is open,
+`SCPOP::CALL_TIP` while the call tip of #ShowCallTip() is open, and `SCPOP::NONE` otherwise.
+
+*********************************************************************************************************************/
+
+static ERR GET_ActivePopup(extScintilla *Self, SCPOP *Value)
+{
+   *Value = Self->API ? Self->API->panActivePopup() : SCPOP::NONE;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 AllowTabs: If enabled, use of the tab key produces real tabs and not spaces.
 
 The Tab key is only received by the editor if the `IGNORE_TAB` flag is set on its @VectorScene.  Refer to #Focus for
@@ -1882,6 +2047,51 @@ static ERR SET_BkgdColour(extScintilla *Self, RGB8 *Value)
       Self->API->SetStyleColours();
    }
 
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+CompletionCallback: Reports the events that relate to code completion and call tips.
+
+Set this field with a function reference to provide completion candidates and call tips.  The prototype for the
+callback function is `Function(*Scintilla, SCAC Event, INT Position, INT Value, CSTRING Text)`.
+
+The `Event` is one of the following:
+
+<types lookup="SCAC"/>
+
+`SCAC::REQUEST` and `SCAC::CHAR_ADDED` are reported as they occur, so the client can respond with
+#ShowCompletions() or #ShowCallTip().  `Position` is the cursor position, and for `SCAC::CHAR_ADDED` the `Value` is
+the Unicode code point of the character that was typed.  The client usually examines the text that precedes the
+cursor to choose its candidates.  Ctrl+Space is reported only while the editor has the `SCIF::EDIT` flag.
+
+`SCAC::SELECTED`, `SCAC::CANCELLED` and `SCAC::CALL_TIP_CLICK` are reported on the next cycle of message processing,
+after the editor has completed the operation.  For `SCAC::SELECTED`, the `Text` is the accepted candidate and
+`Position` is the start of the replaced text, and the candidate has already been inserted.  For
+`SCAC::CALL_TIP_CLICK`, `Position` is the position that the call tip refers to.  The `Text` is empty for every event
+other than `SCAC::SELECTED`.
+
+*********************************************************************************************************************/
+
+static ERR GET_CompletionCallback(extScintilla *Self, FUNCTION * &Value)
+{
+   if (Self->CompletionCallback.defined()) {
+      Value = &Self->CompletionCallback;
+      return ERR::Okay;
+   }
+   else return ERR::FieldNotSet;
+}
+
+static ERR SET_CompletionCallback(extScintilla *Self, FUNCTION *Value)
+{
+   if (Self->CompletionCallback.defined()) Self->CompletionCallback.unpin();
+   if (Value) {
+      Self->CompletionCallback = *Value;
+      if (Self->CompletionCallback.defined()) Self->CompletionCallback.pin();
+   }
+   else Self->CompletionCallback.clear();
    return ERR::Okay;
 }
 
@@ -3086,6 +3296,7 @@ static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
 #include "pan_window.cxx"
 #include "pan_menu.cxx"
 #include "pan_surface.cxx"
+#include "pan_popup.cxx"
 #include "pan_listbox.cxx"
 
 //********************************************************************************************************************
@@ -3126,7 +3337,12 @@ static void paint_dirty(extScintilla *Self)
 
 extScintilla::~extScintilla() {
    free_context_menu(this); // Before the API is deleted, because the script reports the menu closing
-   delete API;
+
+   // The API is cleared first, because Scintilla closes its pop-ups while it is being destroyed.
+
+   auto api = API;
+   API = nullptr;
+   delete api;
 
    if (EventCallback.defined()) {
       EventCallback.unpin();
@@ -3136,6 +3352,11 @@ extScintilla::~extScintilla() {
    if (MarginClick.defined()) {
       MarginClick.unpin();
       MarginClick.clear();
+   }
+
+   if (CompletionCallback.defined()) {
+      CompletionCallback.unpin();
+      CompletionCallback.clear();
    }
 
    if (TickTimer) UpdateTimer(TickTimer, 0);
@@ -3165,6 +3386,11 @@ extScintilla::~extScintilla() {
 
 #include "class_scintilla_def.cxx"
 
+static const struct FieldDef clActivePopup[] = {
+   { "None", int(SCPOP::NONE) }, { "Completions", int(SCPOP::COMPLETIONS) }, { "CallTip", int(SCPOP::CALL_TIP) },
+   { nullptr, 0 }
+};
+
 static const FieldArray clFields[] = {
    { "Face",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Face },
    { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
@@ -3190,8 +3416,10 @@ static const FieldArray clFields[] = {
 
    // Virtual fields
    { "ThemeXML",       FDF_OBJECT|FDF_W|FDF_PURE, nullptr, SET_ThemeXML, CLASSID::XML },
+   { "ActivePopup",    FDF_INT|FDF_LOOKUP|FDF_R,  GET_ActivePopup, nullptr, &clActivePopup },
    { "AllowTabs",      FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
    { "AutoIndent",     FDF_INT|FDF_RW|FDF_PURE,   GET_AutoIndent, SET_AutoIndent },
+   { "CompletionCallback", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_CompletionCallback, SET_CompletionCallback },
    { "FileDrop",       FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FileDrop, SET_FileDrop },
    { "FoldingMarkers", FDF_INT|FDF_RW|FDF_PURE,   GET_FoldingMarkers, SET_FoldingMarkers },
    { "LineCount",      FDF_INT|FDF_R,             GET_LineCount },

@@ -272,5 +272,21 @@ void ScintillaKTK::SetStyleColours()
       auto &foreground = scintilla->MarginColour;
       SendScintilla(SCI_MARKERSETBACK, marker, SCICOLOUR(foreground.Red, foreground.Green, foreground.Blue));
    }
+
+   // Code assistance pop-ups use the document colours, with the margin colour for borders.  Call tips are drawn with
+   // STYLE_CALLTIP (see the constructor) and highlight in the keyword colour.  Open pop-ups are repainted.
+
+   auto pair = [](const RGB8 &Value) {
+      return Scintilla::ColourPair(Scintilla::ColourDesired(Value.Red, Value.Green, Value.Blue));
+   };
+
+   auto &keyword = scintilla->KeywordColour;
+   SendScintilla(SCI_CALLTIPSETFOREHLT, SCICOLOUR(keyword.Red, keyword.Green, keyword.Blue));
+   ct.SetForeBack(pair(text), pair(background));
+   ct.colourShade = pair(scintilla->MarginColour);
+   ct.colourLight = ct.colourShade;
+   if (ct.wCallTip.Created()) ct.wCallTip.InvalidateAll();
+   if ((ac.Active()) and (ac.lb->Created())) ac.lb->InvalidateAll();
+
    InvalidateStyleRedraw();
 }

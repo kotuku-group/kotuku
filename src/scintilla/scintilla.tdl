@@ -71,6 +71,23 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     "SYMBOLS: The symbol margin, which shows the markers that are added with AddMarker().",
     "FOLDING: The fold margin, which shows the fold markers.")
 
+  enums("SCAC", { type="int", start=1, comment="Events reported to the CompletionCallback." },
+    "REQUEST: The user pressed Ctrl+Space to request completion candidates.",
+    "CHAR_ADDED: A character has been typed into the document.  The Value is its Unicode code point.",
+    "SELECTED: A completion candidate has been accepted.  The Text is the candidate, and the Position is the start of the word that it replaces.",
+    "CANCELLED: The completion list has closed without a candidate being accepted.",
+    "CALL_TIP_CLICK: The call tip has been clicked.  The Value is 1 for the up arrow, 2 for the down arrow and 0 elsewhere.")
+
+  flags("SCACF", { comment="Options for ShowCompletions()." },
+    "IGNORE_CASE: Candidates are matched to the typed prefix without regard to case.",
+    "CHOOSE_SINGLE: If there is only one candidate, it is inserted immediately and no list is shown.",
+    "DROP_REST_OF_WORD: Accepting a candidate also replaces the word characters that follow the cursor.")
+
+  enums("SCPOP", { type="int", start=0, comment="Identifies the code assistance pop-up that is active." },
+    "NONE: No pop-up is active.",
+    "COMPLETIONS: The completion list is active.",
+    "CALL_TIP: The call tip is active.")
+
   flags("SCIF", { comment="Optional flags." },
      "DISABLED:     Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.",
      "DETECT_LEXER: Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.",
@@ -113,7 +130,10 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=15, name="AddMarker" },
     { id=16, name="RemoveMarker" },
     { id=17, name="GetMarkers" },
-    { id=18, name="ToggleFold" }
+    { id=18, name="ToggleFold" },
+    { id=19, name="ShowCompletions" },
+    { id=20, name="ShowCallTip" },
+    { id=21, name="HidePopups" }
   })
 
   klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx", extended=true }, [[

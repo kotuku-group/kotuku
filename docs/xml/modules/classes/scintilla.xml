@@ -15,7 +15,8 @@
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
 <p>The Scintilla class provides advanced text editing capabilities that are suitable for modifying text files of any kind, as well as simple user input features for text input boxes.  The code is based on the Scintilla project at http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its capabilities.</p>
-<p>Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and Select All.  Items are disabled when they cannot be used: edits require <code>SCIF::EDIT</code>, Cut, Copy and Delete require a selection, and Paste requires text on the clipboard.  The menu is displayed with <code>gui/menu</code> at the pointer position, including over a transformed or scrolled host.  Closing the menu with Escape or by choosing an item returns the focus to the editor, while moving the focus elsewhere closes it without doing so.</p></description>
+<p>Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and Select All.  Items are disabled when they cannot be used: edits require <code>SCIF::EDIT</code>, Cut, Copy and Delete require a selection, and Paste requires text on the clipboard.  The menu is displayed with <code>gui/menu</code> at the pointer position, including over a transformed or scrolled host.  Closing the menu with Escape or by choosing an item returns the focus to the editor, while moving the focus elsewhere closes it without doing so.</p>
+<p>Code assistance is provided through a completion list and a call tip, which the client opens with <method>ShowCompletions</method> and <method>ShowCallTip</method>.  The <fl>CompletionCallback</fl> reports the events that typically prompt them, such as typed characters and Ctrl+Space, as well as accepted and cancelled completions.  Only one of the two pop-ups is open at a time.  They are drawn above the content of the scene with the editor's font and colours, are positioned at the text that they refer to, and are kept within the bounds of the scene.  They follow that text when the editor scrolls, and close if it scrolls out of view.  Pop-ups are not transformed with a rotated or scaled host, although their position follows it.  Refer to <method>ShowCompletions</method> for the keyboard and pointer interaction.</p></description>
     <source>
       <file>class_scintilla.cxx</file>
     </source>
@@ -235,6 +236,16 @@
     </method>
 
     <method>
+      <name>HidePopups</name>
+      <comment>Closes the completion list and the call tip.</comment>
+      <prototype>ERR sci::HidePopups(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = HidePopups()</tiriPrototype>
+      <description>
+<p>HidePopups() closes any completion list or call tip that is open.  Closing a completion list is reported to the <fl>CompletionCallback</fl> as <code>SCAC::CANCELLED</code>.</p>
+      </description>
+    </method>
+
+    <method>
       <name>InsertText</name>
       <comment>Inserts text into a document.</comment>
       <prototype>ERR sci::InsertText(OBJECTPTR Object, STRVIEW String, INT Pos)</prototype>
@@ -348,6 +359,42 @@
     </method>
 
     <method>
+      <name>ShowCallTip</name>
+      <comment>Displays a call tip, such as a function signature, below a position in the document.</comment>
+      <prototype>ERR sci::ShowCallTip(OBJECTPTR Object, INT Pos, CSTRING Text, INT HighlightStart, INT HighlightEnd)</prototype>
+      <tiriPrototype>err = ShowCallTip(Pos:num, Text:str, HighlightStart:num, HighlightEnd:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Pos">The document position that the call tip refers to, or -1 for the cursor position.</param>
+        <param type="CSTRING" name="Text">The text to display.</param>
+        <param type="INT" name="HighlightStart">The byte offset within <code>Text</code> at which highlighting starts.</param>
+        <param type="INT" name="HighlightEnd">The byte offset within <code>Text</code> at which highlighting ends.  Highlighting is disabled if this does not exceed <code>HighlightStart</code>.</param>
+      </input>
+      <description>
+<p>ShowCallTip() opens a call tip that is attached to <code>Pos</code>.  It is typically used to show the parameters of a function while the user types its arguments.  Calling ShowCallTip() while a call tip is open replaces it, which is also how the highlighted parameter is updated.  Showing a call tip closes the completion list.</p>
+<p>The call tip is displayed on the line below <code>Pos</code>, or above it if it would otherwise extend beyond the bottom of the scene.  The <code>Text</code> may contain multiple lines that are separated by <code>\n</code>.  The characters <code>\001</code> and <code>\002</code> are drawn as up and down arrows, which a client can use to let the user cycle through overloads by clicking them.  Clicks are reported to the <fl>CompletionCallback</fl> as <code>SCAC::CALL_TIP_CLICK</code>.</p>
+<p>Typing text, moving the cursor left and right, and deleting with Backspace keep the call tip open.  It is closed by other cursor movement, Escape, a click in the editor, the loss of the focus, Backspace beyond the cursor position at which it opened, or <method>HidePopups</method>.</p>
+      </description>
+    </method>
+
+    <method>
+      <name>ShowCompletions</name>
+      <comment>Displays a list of completion candidates for the word at the cursor.</comment>
+      <prototype>ERR sci::ShowCompletions(OBJECTPTR Object, INT Length, CSTRING Candidates, SCACF Flags)</prototype>
+      <tiriPrototype>err = ShowCompletions(Length:num, Candidates:str, Flags:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Length">The number of bytes of the typed prefix that precede the cursor.</param>
+        <param type="CSTRING" name="Candidates">Completion candidates, separated by line feeds.</param>
+        <param type="SCACF" name="Flags" lookup="SCACF">Optional flags.</param>
+      </input>
+      <description>
+<p>ShowCompletions() opens the completion list below the word that is being typed, or above it if there is more room there.  The <code>Candidates</code> are separated by line feeds and may be given in any order.  They are sorted for display and duplicates are removed.  The client normally calls ShowCompletions() from the <fl>CompletionCallback</fl> in response to <code>SCAC::REQUEST</code> or <code>SCAC::CHAR_ADDED</code>.</p>
+<p><code>Length</code> is the number of bytes of the word that precede the cursor and have already been typed.  The candidate that begins with this prefix is selected, and the selection follows further typing.  If no candidate matches the typed prefix, the list closes.  Accepting a candidate replaces the prefix with it.  Showing the list closes any call tip.</p>
+<p>While the list is open, the Up and Down arrow keys, Page Up, Page Down, Home and End move the selection.  Enter and Tab accept the selected candidate, and Escape closes the list.  Tab reaches the editor only if the scene does not use it to cycle the focus, i.e. the scene has the <code>VPF::IGNORE_TAB</code> flag.  Other cursor movement, a click in the editor and the loss of the focus also close it.  Clicking a candidate selects it, double-clicking accepts it, and the mouse wheel scrolls the list.  Acceptance is reported to the <fl>CompletionCallback</fl> as <code>SCAC::SELECTED</code> and any other closure as <code>SCAC::CANCELLED</code>.</p>
+<p>Completions edit the document on the user's behalf, so they require the <code>SCIF::EDIT</code> flag.</p>
+      </description>
+    </method>
+
+    <method>
       <name>ToggleFold</name>
       <comment>Contracts or expands a fold.</comment>
       <prototype>ERR sci::ToggleFold(OBJECTPTR Object, INT Line)</prototype>
@@ -375,6 +422,16 @@
 
   <fields>
     <field>
+      <name>ActivePopup</name>
+      <comment>Indicates the code assistance pop-up that is open.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>This read-only field reports <code>SCPOP::COMPLETIONS</code> while the completion list of <method>ShowCompletions</method> is open, <code>SCPOP::CALL_TIP</code> while the call tip of <method>ShowCallTip</method> is open, and <code>SCPOP::NONE</code> otherwise.</p>
+      </description>
+    </field>
+
+    <field>
       <name>AllowTabs</name>
       <comment>If enabled, use of the tab key produces real tabs and not spaces.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -398,6 +455,20 @@
       <type>RGB8</type>
       <description>
 <p>The BkgdColour applies to the text area and to all lexer styles.  The margins use their own colours.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CompletionCallback</name>
+      <comment>Reports the events that relate to code completion and call tips.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>Set this field with a function reference to provide completion candidates and call tips.  The prototype for the callback function is <code>Function(*Scintilla, SCAC Event, INT Position, INT Value, CSTRING Text)</code>.</p>
+<p>The <code>Event</code> is one of the following:</p>
+<types lookup="SCAC"/>
+<p><code>SCAC::REQUEST</code> and <code>SCAC::CHAR_ADDED</code> are reported as they occur, so the client can respond with <method>ShowCompletions</method> or <method>ShowCallTip</method>.  <code>Position</code> is the cursor position, and for <code>SCAC::CHAR_ADDED</code> the <code>Value</code> is the Unicode code point of the character that was typed.  The client usually examines the text that precedes the cursor to choose its candidates.  Ctrl+Space is reported only while the editor has the <code>SCIF::EDIT</code> flag.</p>
+<p><code>SCAC::SELECTED</code>, <code>SCAC::CANCELLED</code> and <code>SCAC::CALL_TIP_CLICK</code> are reported on the next cycle of message processing, after the editor has completed the operation.  For <code>SCAC::SELECTED</code>, the <code>Text</code> is the accepted candidate and <code>Position</code> is the start of the replaced text, and the candidate has already been inserted.  For <code>SCAC::CALL_TIP_CLICK</code>, <code>Position</code> is the position that the call tip refers to.  The <code>Text</code> is empty for every event other than <code>SCAC::SELECTED</code>.</p>
       </description>
     </field>
 
@@ -726,6 +797,12 @@
 
   </fields>
   <types>
+    <constants lookup="SCACF" comment="Options for ShowCompletions().">
+      <const name="CHOOSE_SINGLE">If there is only one candidate, it is inserted immediately and no list is shown.</const>
+      <const name="DROP_REST_OF_WORD">Accepting a candidate also replaces the word characters that follow the cursor.</const>
+      <const name="IGNORE_CASE">Candidates are matched to the typed prefix without regard to case.</const>
+    </constants>
+
     <constants lookup="SCIF" comment="Optional flags.">
       <const name="DETECT_LEXER">Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.</const>
       <const name="DISABLED">Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.</const>
