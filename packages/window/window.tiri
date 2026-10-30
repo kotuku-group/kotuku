@@ -299,7 +299,7 @@ gui.window = function(Options:table!)
          &margins = { left = 0, top = 0, right = 0, bottom = 0 }
          &client = { left = 0, top = 0, right = 0, bottom = 0 }
       else
-         &margins = { left = gui.sizing.widget.gap, top = gui.sizing.widget.gap, right = gui.sizing.widget.gap, bottom = gui.sizing.widget.gap }
+         &margins = { left = gui.sizing.window.gap, top = gui.sizing.window.gap, right = gui.sizing.window.gap, bottom = gui.sizing.window.gap }
 
          -- Retrieve the available client area from the host
          local display = &surface.display
