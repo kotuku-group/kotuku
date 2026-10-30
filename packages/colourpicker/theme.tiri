@@ -41,10 +41,10 @@ EXTRAS <const> = {
       pass   = { bkgd = 'oklch(0.92 0.08 155)', text = 'oklch(0.3 0.12 155)' },
       fail   = { bkgd = 'oklch(0.92 0.05 30)', text = 'oklch(0.4 0.1 30)' },
       code   = {
-         bkgd = TOKENS.light.sunk, stroke = TOKENS.light.border, text = TOKENS.light.fg0,
+         bkgd = TOKENS.light.sunk, text = TOKENS.light.fg0,
          key = 'oklch(0.43 0.12 230)', value = 'oklch(0.44 0.10 65)', comment = 'oklch(0.52 0.008 80)',
-         punct = 'oklch(0.48 0.15 300)', tab = TOKENS.light.bg1, tabText = TOKENS.light.fg2,
-         tabActive = TOKENS.light.panel, tabActiveText = TOKENS.light.fg0
+         punct = 'oklch(0.48 0.15 300)', tab = TOKENS.light.sunk, tabText = TOKENS.light.fg2,
+         tabActive = TOKENS.light.bg1, tabActiveText = TOKENS.light.fg0
       }
    },
    dark = {
@@ -54,7 +54,7 @@ EXTRAS <const> = {
       pass   = { bkgd = 'oklch(0.32 0.08 155)', text = 'oklch(0.85 0.1 155)' },
       fail   = { bkgd = 'oklch(0.32 0.06 30)', text = 'oklch(0.75 0.08 30)' },
       code   = {
-         bkgd = 'oklch(0.13 0.01 80)', stroke = 'oklch(0.28 0.01 80)', text = 'oklch(0.92 0.005 80)',
+         bkgd = 'oklch(0.13 0.01 80)', text = 'oklch(0.92 0.005 80)',
          key = 'oklch(0.72 0.12 200)', value = 'oklch(0.82 0.12 85)', comment = 'oklch(0.62 0.008 80)',
          punct = 'oklch(0.75 0.15 300)', tab = 'oklch(0.22 0.008 80)', tabText = 'oklch(0.65 0.005 80)',
          tabActive = 'oklch(0.3 0.008 80)', tabActiveText = 'oklch(0.95 0.005 80)'
@@ -89,7 +89,7 @@ NEUTRAL_KEYS <const> = array<str> {
 }
 
 CODE_NEUTRAL_KEYS <const> = array<str> {
-   'bkgd', 'stroke', 'text', 'comment', 'tab', 'tabText', 'tabActive', 'tabActiveText'
+   'bkgd', 'text', 'comment', 'tab', 'tabText', 'tabActive', 'tabActiveText'
 }
 
 ----------------------------------------------------------------------------------------------------------------------

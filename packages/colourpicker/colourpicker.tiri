@@ -1627,21 +1627,7 @@ function updatePalette(self:table)
       view.removeItem(view.items[#view.items - 1])
    end
 
-   order = array<table>
-   visited = { }
-   function appendBranch(Index:num, Depth:num):nil
-      if visited[Index] then return end
-      visited[Index] = true
-      order.push({ index = Index, depth = Depth })
-      for i, s in palette.swatches do
-         if s.base is Index then appendBranch(i, Depth + 1) end
-      end
-   end
-   for i, s in palette.swatches do
-      if s.base is nil then appendBranch(i, 0) end
-   end
-   -- Keep every swatch visible even if an externally supplied palette has an invalid link.
-   for i in {0 to n} do appendBranch(i, 0) end
+   order = colourpicker_parts.paletteOrder(palette)
 
    -- A reused row is only updated if a field of its Info has changed.
 
@@ -2206,12 +2192,6 @@ function buildExport(Target:obj)
    top = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP + CONTRAST_H + RIGHT_GAP + colourpicker_ramp.HEIGHT + RIGHT_GAP
    height = &bodyHeight - top - RIGHT_PAD
 
-   panel = gui.panel({
-      target = Target, x = RIGHT_PAD_X, y = top, width = RIGHT_INNER, height = height,
-      title = 'Export', meta = EXPORT_TABS[0].meta, padding = colourpicker_parts.PANEL_PADDING
-   })
-
-   &exportPanel = panel
    &exportTab = 0
 
    labels = array<str>
@@ -2219,11 +2199,9 @@ function buildExport(Target:obj)
       labels.push(tab.label)
    end
 
-   _, body_h = panel.bodySize()
-   &code = colourpicker_code.new(panel.body, {
-      x = PANEL_PAD, y = 8,
-      width = RIGHT_INNER - (PANEL_PAD * 2),
-      height = body_h - 8 - PANEL_PAD,
+   &code = colourpicker_code.new(Target, {
+      x = RIGHT_PAD_X, y = top, width = RIGHT_INNER, height = height,
+      title = 'Export', meta = EXPORT_TABS[0].meta,
       tokens = t, tabs = labels,
       onTab = function[&&](Index)
          &exportTab = Index
@@ -2235,6 +2213,7 @@ function buildExport(Target:obj)
          &copyExport()
       end
    })
+   &exportPanel = &code.panel
 end
 
 function buildRight()
@@ -2277,8 +2256,6 @@ function layoutRight(self:table, ShowRel:bool)
    top += colourpicker_ramp.HEIGHT + RIGHT_GAP
    height = self.bodyHeight - top - RIGHT_PAD
    self.exportPanel.viewport.{ y = top, height = height }
-   _, body_h = self.exportPanel.bodySize()
-   self.code.setHeight(body_h - 8 - PANEL_PAD)
 end
 
 function updateRelationship(self:table, Source:str)

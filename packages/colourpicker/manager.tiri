@@ -272,6 +272,7 @@ end
 function textArea(Target:obj!, Options:table!):table
    t = Options.tokens
    self = { focused = false }
+   theme = gui.getTheme(Target)
 
    box = Target.new('VectorViewport', {
       x = Options.x, y = Options.y, width = Options.width, height = Options.height, overflow = VOF_HIDDEN,
@@ -460,7 +461,7 @@ function textArea(Target:obj!, Options:table!):table
       gained = Event != FM_LOST_FOCUS
       if gained is self.focused then return end
       self.focused = gained
-      self.bkgd.stroke = gained ? t.accent : t.border
+      self.bkgd.stroke = gained ? theme.input.focus.stroke : theme.input.bkgd.stroke
       showPlaceholder()
 
       if not gained then
@@ -512,7 +513,7 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Stat
 
    if Swatch.alpha < 1 then
       alpha = colourpicker_parts.text(vp, {
-         x = Width - 8, y = 16, size = 10, face = colourpicker_parts.FACE_MONO, fill = t.fg0, align = 'right',
+         x = Width - 8, y = 16, size = 10, face = colourpicker_parts.FACE_MONO, style = 'bold', fill = t.fg0, align = 'right',
          string = f'{math.round(Swatch.alpha * 100)}%'
       })
       colourpicker_parts.alphaGlyph(vp, { x = Width - 8 - alpha.textWidth - 10, y = 16, size = 10, fill = t.fg0 })
@@ -563,9 +564,9 @@ function swatchCard(Target:obj!, X:num!, Y:num!, Width:num!, Swatch:table!, Stat
 
    card.setSelected = function(Selected:bool, PanelHasFocus:bool)
       if Selected then
-         card.ring.stroke = theme.palette.prime
-      elseif card.hovered then
          card.ring.stroke = theme.palette.contrast
+      elseif card.hovered then
+         card.ring.stroke = theme.palette.prime
       else
          card.ring.stroke = t.border
       end
@@ -973,9 +974,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       count = #palette.swatches
       if count is 0 then return end
 
-      i = self.swatch
+      i = self.cards.findIndex(Card => Card.index is self.swatch)
       if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
-         if i != nil then openSwatch(i) end
+         if i != nil then openSwatch(self.cards[i].index) end
          return
       elseif i is nil then
          if (Value is KEY_LEFT) or (Value is KEY_RIGHT) or (Value is KEY_UP) or (Value is KEY_DOWN) or
@@ -1003,7 +1004,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          return
       end
 
-      if i != self.swatch then self.selectSwatch(i) end
+      index = self.cards[i].index
+      if index != self.swatch then self.selectSwatch(index) end
       revealCard(i)
    end)
 
@@ -1011,10 +1013,13 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       focused = Event != FM_LOST_FOCUS
       if focused is self.cardsFocused then return end
       self.cardsFocused = focused
+
       if focused and (self.swatch is nil) and (#self.cards > 0) then
-         self.selectSwatch(0)
+         self.selectSwatch(self.cards[0].index)
       else
-         for i, card in self.cards do card.setSelected(i is self.swatch, focused) end
+         for card in values(self.cards) do
+            card.setSelected(card.index is self.swatch, focused)
+         end
          self.viewport.acDraw()
       end
    end)
@@ -1267,12 +1272,15 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       centre.setMeta(palette ? paletteSummary(palette) : '')
       if not palette then return end
 
-      for i, s in palette.swatches do
-         x = (i % CARD_COLS) * (card_w + CARD_GAP)
-         y = math.floor(i / CARD_COLS) * (CARD_H + CARD_GAP)
+      for position, entry in colourpicker_parts.paletteOrder(palette) do
+         i = entry.index
+         s = palette.swatches[i]
+         x = (position % CARD_COLS) * (card_w + CARD_GAP)
+         y = math.floor(position / CARD_COLS) * (CARD_H + CARD_GAP)
          card = swatchCard(self.page, x, y, card_w, s, {
             locked = colourpalette.isReserved(palette, i), linked = s.base != nil
          }, t)
+         card.index = i
          card.setSelected(i is self.swatch, self.cardsFocused)
          index = i
          card.viewport.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
@@ -1379,7 +1387,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.selectSwatch = function(Index:num)
       self.swatch = Index
-      for i, card in self.cards do card.setSelected(i is Index, self.cardsFocused) end
+      for card in values(self.cards) do
+         card.setSelected(card.index is Index, self.cardsFocused)
+      end
       updateInfo()
       self.viewport.acDraw()
    end
@@ -1422,6 +1432,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          processing.delayedCall(function() if self.list then focusInput(self.nameInput) end end)
          return true
       end
+
       return false
    end
 
