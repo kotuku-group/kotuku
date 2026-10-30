@@ -1166,6 +1166,10 @@ The Cursor field declares the pointer's cursor image to display within the vecto
 automatically switch to the specified image when it enters the boundary defined by the vector's path.  This effect
 lasts until the cursor vacates the area.
 
+A vector in front of another takes precedence over it.  Setting `DEFAULT` restores the default image over the vector,
+e.g. for a scrollbar that overlaps a text area with a `TEXT` cursor.  The `NIL` value leaves the choice to the vectors
+behind.
+
 It is a pre-requisite that the associated @VectorScene has been linked to a @Surface.
 
 *********************************************************************************************************************/

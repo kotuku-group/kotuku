@@ -1834,12 +1834,6 @@ class objPointer : public Object {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getDragDatatypes(std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[0];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
-   }
-
    inline ERR getButtonState(int &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
       return field->GetValue(this, &Value);
@@ -1847,6 +1841,12 @@ class objPointer : public Object {
 
    inline ERR getButtonOrder(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
+      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
+      return get_field(this, Value);
+   }
+
+   inline ERR getDragDatatypes(std::string_view &Value) noexcept {
+      auto field = &this->Class->Dictionary[0];
       auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
       return get_field(this, Value);
    }
