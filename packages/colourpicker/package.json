@@ -30,6 +30,7 @@
     "gui/dialog": "1.0",
     "gui/filedialog": "1.0",
     "gui/input": "1.0",
+    "gui/panel": "1.0",
     "gui/scrollbar": "1.0",
     "gui/slider": "1.0",
     "gui/tooltip": "1.0",
@@ -40,8 +41,8 @@
   "files": [
     {
       "path": "AGENTS.md",
-      "size": 9076,
-      "sha256": "7df3466d5258213e9307b80732ca243548978878230a96caec307bb81e16c52a",
+      "size": 10839,
+      "sha256": "1e7884338c9cb4c91203e9df8ca412bf6f19924a9c8ee1a876085454cd84c125",
       "mediaType": "text/markdown"
     },
     {
@@ -58,8 +59,8 @@
     },
     {
       "path": "colourpicker.tiri",
-      "size": 154363,
-      "sha256": "120dd30ee466a8bd4698646a63bb1713a7a42f57df4fbeab15b77544b2c9a24a",
+      "size": 151546,
+      "sha256": "cde2d7b4dc67eff7467718e1273a92f4e0b57ae2ec1345e356bfbc34c09e6ec3",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -82,8 +83,8 @@
     },
     {
       "path": "manager.tiri",
-      "size": 68049,
-      "sha256": "55e0b0bf5ba6b546aec0ef26171d778a1b5ad0286f66ebc2aa8c3681de870af2",
+      "size": 67269,
+      "sha256": "63c4afed8ee16ca5c2001206e0b2d8672fd888a5387c5ba18bafdcf639f110c0",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -100,8 +101,8 @@
     },
     {
       "path": "parts.tiri",
-      "size": 45461,
-      "sha256": "d5e0134b49eee63bd03dc0dc9c9748f3a970540e4e15518041e7ddaf20aa0107",
+      "size": 44018,
+      "sha256": "189be23a69dde2840d7ff6e06e93a75778ae4edf47ede7b96848c0f607a7e258",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
@@ -112,14 +113,14 @@
     },
     {
       "path": "ramp.tiri",
-      "size": 15203,
-      "sha256": "6effbed2b2d3b51ede488e1ead17651ce7c5b1bd4525ee6a171171eb8cfe2d9c",
+      "size": 15215,
+      "sha256": "ab07b2649e40793f6faa8355899b31f36652421a58416624de3a223afbcae845",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "theme.tiri",
-      "size": 13091,
-      "sha256": "1de4831928e67d2606b28cf9d4bc74af555ec78fb0cd194d724f9b762e6d381a",
+      "size": 14107,
+      "sha256": "644507b6079194ff405683da1e5b8db9675f4a5e0c60cfa49b5f6063f70cf89c",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

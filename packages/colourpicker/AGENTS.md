@@ -14,8 +14,8 @@ used through `import 'gui/colourpicker'` and `gui.dialog.colour(...)`.
 | `palette.tiri` | Display-independent palette model: swatches, linked colour relationships, palette modes and their reserved role swatches, reordering, serialisation and persistence, including the palette database (`user:config/palettes.json`) used by the palette manager, and the starter palettes (`loadStarters()`, copied into the database with `insertCopy()`).  Exported as `gui/colourpicker/palette`. |
 | `palettes.json` | The read-only starter palettes (`colourpalette.STARTERS`), in the palette database format: Winter, Spring, Summer and Autumn.  Each holds five themes (Christmas, Northern Lights and so on), and a theme is a base colour followed by its companion colours, which are linked to the base by L, C and H deltas so that they follow edits of it. |
 | `export.tiri` | Display-independent generation of CSS, design token JSON, Tiri and Android palette output.  Produces text segments for `codeview.tiri` and clipboard text.  Exported as `gui/colourpicker/export`. |
-| `theme.tiri` | Derives the picker theme from the window's gui theme (its scheme selects the light or dark design and its palette supplies the accent colours) and supplies colour tokens and widget overrides. |
-| `parts.tiri` | Shared vector UI builders, text/layout helpers, the small combobox caret and timer helpers used by the picker components, including the palette row content drawn in the list's row viewports. |
+| `theme.tiri` | Derives the picker theme from the window's gui theme (its scheme selects the light or dark design and its palette supplies the accent colours) and supplies colour tokens and widget overrides.  Its `panel` overlay pins the design's panel sizes (12 px title, 14 px mono meta, 31 px header) and removes the base theme's header fill; `PANEL_HEADER_H` is the header height including the divider, for layout constants computed before a panel exists. |
+| `parts.tiri` | Shared vector UI builders, text/layout helpers, the small combobox caret and timer helpers used by the picker components, including the palette row content drawn in the list's row viewports.  `PANEL_PADDING` is the zero body padding that every picker panel uses. |
 | `wheel.tiri` | Hue/chroma wheel bitmap, interaction markers, palette relationship markers, gamut edge outlines and magnified loupe. |
 | `eyedropper.tiri` | Samples the loupe area at `GetCursorPos()`: Kōtuku surface bitmaps first (resolving shared bitmap origins and converting linear RGB), then the screen through `CaptureDisplay()` where the driver supports it.  Also manages the global sampling button subscription. |
 | `preview.tiri` | Per-mode palette previews: the Interface application mockup, a Web Site page, a Code Theme snippet, a Data Vis. chart and a Terminal session.  Each preview has a builder and a colour function that maps the palette mode's roles to its paint roles, and optionally a meta function for the panel meta (the Data Vis. distinctness readout). |
@@ -27,6 +27,25 @@ used through `import 'gui/colourpicker'` and `gui.dialog.colour(...)`.
 The dialog imports `colour.tiri`, `palette.tiri` and `export.tiri` through their package paths.  It imports the UI helpers
 through relative paths.  Keep native Core timer calls in `parts.tiri`: this package's compile-time interface rejects
 references to the same native module from more than one source file.
+
+## Panels
+
+Every panel is a `gui.panel()` (the `gui/panel` package), with `padding = colourpicker_parts.PANEL_PADDING` so that
+the body meets the panel edges and its content applies its own insets.  Retain each panel table for the life of the
+dialog: collecting it frees the panel's viewport.  Body heights come from `bodySize()`, which is valid as soon as the
+panel's height is set.
+
+- **Palette**: the mode combobox is the `lead` header item and the palette name field is the stretched `meta` item.
+  The panel's `headerPad` is `LIST_PAD_X`, so that the mode box lines up with the list rows, and its `metaGap` allows
+  for the field's `FIELD_PAD` overhang.  `flashPaletteMeta()` calls `flash()`, which hides the name field for the
+  message.
+- **Eyedropper** and **Relationship**: the pick and Swap buttons are `trail` items.  The Relationship controls are
+  registered with the panel (`addWidget()`), so `hide()` disables them and takes them out of the tab order.  A value
+  field has a `disabled` field so that it can be registered.
+- **Contrast**: `updateContrast()` sets `events.metaActivate` only while a dropped colour is the target, which makes
+  the meta clickable, and passes the `vs ` prefix and ` on panel` suffix to `setMeta()`.
+- **Export** and the manager's list panels flash messages with `flash()`.  The manager's centre panel uses
+  `truncate = 'title'` and `scroll = 'vertical'`; its body is the card grid's tab stop.
 
 ## Related files
 

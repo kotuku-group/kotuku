@@ -26,7 +26,7 @@ Documentation is available in the Kotuku Wiki.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/combobox', 'gui/input', 'gui/slider', 'gui/listview'
-   import 'gui/dialog'
+   import 'gui/dialog', 'gui/panel'
    import 'gui/tooltip', 'gui/colourpicker/colour', 'gui/colourpicker/palette', 'gui/colourpicker/export'
    import './theme', './parts', './wheel', './preview', './codeview', './eyedropper', './ramp', './manager'
 
@@ -60,7 +60,6 @@ DRAG_ESCAPE_TIME <const> = 250000 -- Microseconds in which an Escape press is ta
 LEFT_PAD       <const> = 14
 LEFT_INNER     <const> = 272 -- Left column width less its padding
 LEFT_GAP       <const> = 12  -- Between panels
-PANEL_HEADER_H <const> = 32  -- Panel header including its divider
 LIST_PAD_X     <const> = 8
 LIST_PAD_TOP   <const> = 8
 LIST_PAD_BTM   <const> = 10
@@ -71,8 +70,7 @@ VIEW_EDGE      <const> = 4  -- Inset of the rows within a listview
 SCRATCH_GAP    <const> = 8  -- Between the scratch row and the palette list
 LIST_TOP       <const> = LIST_PAD_TOP + ROW_HEIGHT + SCRATCH_GAP -- Top of the first palette row
 SMALL_BUTTON   <const> = 22
-PANEL_META_PAD <const> = 12 -- Horizontal padding of a panel header, as drawn by colourpicker_parts.panel()
-PANEL_META_GAP <const> = 16 -- Least space between a panel title and its meta text
+PALETTE_META_GAP <const> = 12 -- Between the mode box and the name field, which insets its text by FIELD_PAD
 EYEDROP_H      <const> = 144
 PREVIEW_H      <const> = 210
 PREVIEW_META   <const> = 'palette in context'
@@ -138,7 +136,7 @@ EXPORT_MIN_H   <const> = 200 -- Includes the panel header, code tabs and scrolla
 
 function minimumBodyHeight():num
    rows_h = (MIN_PALETTE_ROWS * ROW_HEIGHT) + ((MIN_PALETTE_ROWS - 1) * ROW_GAP) + (VIEW_EDGE * 2)
-   palette_h = PANEL_HEADER_H + LIST_TOP + rows_h + LIST_PAD_BTM + SMALL_BUTTON + LIST_PAD_BTM
+   palette_h = colourpicker_theme.PANEL_HEADER_H + LIST_TOP + rows_h + LIST_PAD_BTM + SMALL_BUTTON + LIST_PAD_BTM
    left_h = (LEFT_PAD * 2) + palette_h + (LEFT_GAP * 2) + EYEDROP_H + PREVIEW_H
    centre_h = CHANNEL_PANEL_Y + CHANNEL_PANEL_H + CENTRE_PAD_Y
    right_h = (RIGHT_PAD * 2) + REL_PANEL_H + CONTRAST_H + colourpicker_ramp.HEIGHT + (RIGHT_GAP * 3) + EXPORT_MIN_H
@@ -902,9 +900,9 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
    t = self.tokens
    scene = Target.scene
 
-   self.channelPanel = colourpicker_parts.panel(Target, {
-      x = X, y = Y, width = Width, height = CHANNEL_PANEL_H, title = 'OKLCH', meta = 'primary channel set',
-      tokens = t
+   self.channelPanel = gui.panel({
+      target = Target, x = X, y = Y, width = Width, height = CHANNEL_PANEL_H, title = 'OKLCH',
+      meta = 'primary channel set', padding = colourpicker_parts.PANEL_PADDING
    })
 
    body = self.channelPanel.body
@@ -1228,8 +1226,7 @@ function buildModeBox(self:table, Panel:table)
    t = self.tokens
    label = colourpalette.mode(self.state.palette).label
    box = gui.combobox({
-      target = Panel.viewport, x = LIST_PAD_X, y = math.floor((PANEL_HEADER_H - 1 - SMALL_BUTTON) * 0.5),
-      height = SMALL_BUTTON, items = PALETTE_MODE_ITEMS, text = label, allowCustom = false,
+      target = Panel.header, height = SMALL_BUTTON, items = PALETTE_MODE_ITEMS, text = label, allowCustom = false,
       theme = { input = smallText() },
       events = {
          activate = function[&&](Item:table!)
@@ -1247,7 +1244,7 @@ function buildModeBox(self:table, Panel:table)
    end
    box.text.string = label
    box.viewport.width = box._textClip.x + (box.text.x * 2) + label_w + 2 + box._textClip.xOffset
-   self.paletteModeBox = box
+   self.paletteModeBox = Panel.headerItem('lead', box)
 end
 
 -- True if Y (in the coordinates of the palette list's page) is below the last row of the list.  Drops between rows
@@ -1263,21 +1260,24 @@ function buildPalette(Target:obj)
    t = &tokens
    list_w = LEFT_INNER - (LIST_PAD_X * 2) + VIEW_EDGE - 1
 
-   panel = colourpicker_parts.panel(Target, {
-      x = LEFT_PAD, y = LEFT_PAD, width = LEFT_INNER, height = 100, title = '', tokens = t
+   -- The header is inset by LIST_PAD_X, so that the mode box lines up with the list rows.  The name field's viewport
+   -- extends FIELD_PAD beyond its text at each side, so its text ends at the usual header inset.
+
+   panel = gui.panel({
+      target = Target, x = LEFT_PAD, y = LEFT_PAD, width = LEFT_INNER, height = 100,
+      padding = colourpicker_parts.PANEL_PADDING, theme = { headerPad = LIST_PAD_X, metaGap = PALETTE_META_GAP }
    })
    &palettePanel = panel
 
    buildModeBox(&&, panel)
 
-   -- The palette name is edited in place.  It replaces the panel meta, which is only used for flashed messages.  Its
-   -- width is set by updatePaletteMeta().  Blank names and the names of other palettes in the database are refused,
-   -- which restores the current name.
+   -- The palette name is edited in place.  It is the panel's meta item, which the panel stretches over the space
+   -- beside the mode box, and the meta text is only used for flashed messages.  Blank names and the names of other
+   -- palettes in the database are refused, which restores the current name.
 
-   field_h = SMALL_BUTTON
-   &paletteName = valueField(&&, panel.viewport, {
-      x = LEFT_INNER - PANEL_META_PAD, y = panel.meta.y - colourpicker_parts.baseline(0, field_h, 14), width = 100,
-      height = field_h, size = 14, fill = t.fg2, charLimit = PALETTE_NAME_LIMIT, tokens = t,
+   &paletteName = valueField(&&, panel.header, {
+      x = LEFT_INNER - LIST_PAD_X - colourpicker_parts.FIELD_PAD, y = 0, width = 100,
+      height = SMALL_BUTTON, size = 14, fill = t.fg2, charLimit = PALETTE_NAME_LIMIT, tokens = t,
       commit = function[&&](Text)
          if &finished then return true end
          renamed, reason = colourpalette.renamePalette(&state.palette, Text, &db.palettes)
@@ -1290,6 +1290,7 @@ function buildPalette(Target:obj)
          return true
       end
    })
+   panel.headerItem('meta', &paletteName)
 
    buildScratchRow(&&, panel.body, list_w)
 
@@ -1493,8 +1494,9 @@ function buildEyedropper(Target:obj)
    box_w = LEFT_INNER - 24
    box_h = loupe_size + 16
 
-   panel = colourpicker_parts.panel(Target, {
-      x = LEFT_PAD, y = 0, width = LEFT_INNER, height = EYEDROP_H, title = 'Eyedropper', tokens = t
+   panel = gui.panel({
+      target = Target, x = LEFT_PAD, y = 0, width = LEFT_INNER, height = EYEDROP_H, title = 'Eyedropper',
+      padding = colourpicker_parts.PANEL_PADDING
    })
 
    -- Clicks outside Kōtuku windows reach the other application, so the screen tip directs the user to the keyboard.
@@ -1505,12 +1507,12 @@ function buildEyedropper(Target:obj)
       'Pick a Kōtuku surface colour (I). Click or Enter to accept; right-click or Escape to cancel.'
 
    &eyedropPanel = panel
-   &btnPick = gui.button({
-      target = panel.viewport, x = LEFT_INNER - 12 - SMALL_BUTTON, y = 5, height = SMALL_BUTTON,
+   &btnPick = panel.headerItem('trail', gui.button({
+      target = panel.header, height = SMALL_BUTTON,
       icon = 'tools/colourpicker',
       tip  = pick_tip,
       events = { activate = function[&&]() &startEyedropper() end }
-   })
+   }))
    body = panel.body
 
    body.new('VectorRectangle', {
@@ -1533,9 +1535,9 @@ function buildEyedropper(Target:obj)
 end
 
 function buildPreview(self:table, Target:obj)
-   self.previewPanel = colourpicker_parts.panel(Target, {
-      x = LEFT_PAD, y = 0, width = LEFT_INNER, height = PREVIEW_H, title = 'Preview', meta = PREVIEW_META,
-      tokens = self.tokens
+   self.previewPanel = gui.panel({
+      target = Target, x = LEFT_PAD, y = 0, width = LEFT_INNER, height = PREVIEW_H, title = 'Preview',
+      meta = PREVIEW_META, padding = colourpicker_parts.PANEL_PADDING
    })
 end
 
@@ -1549,7 +1551,7 @@ function syncPreview(self:table)
    self.preview = colourpicker_preview.new(self.previewPanel.body, {
       x = 10, y = 10, width = LEFT_INNER - 20, mode = mode, tokens = self.tokens
    })
-   self.previewPanel.viewport.visibility = self.preview ? VIS_VISIBLE : VIS_HIDDEN
+   if self.preview then self.previewPanel.show() else self.previewPanel.hide() end
 end
 
 -- Fill the space above the fixed Eyedropper and Preview panels.  The list scrolls when its rows exceed that space.
@@ -1559,7 +1561,9 @@ function layoutLeft(self:table)
    syncPreview(self)
    preview_h = self.preview ? (PREVIEW_H + LEFT_GAP) : 0
    palette_h = self.bodyHeight - (LEFT_PAD * 2) - LEFT_GAP - EYEDROP_H - preview_h
-   list_h = palette_h - PANEL_HEADER_H - LIST_TOP - (LIST_PAD_BTM * 2) - SMALL_BUTTON
+   self.palettePanel.viewport.height = palette_h
+   _, body_h = self.palettePanel.bodySize()
+   list_h = body_h - LIST_TOP - (LIST_PAD_BTM * 2) - SMALL_BUTTON
    self.paletteView.viewport.height = list_h
    self.paletteEnd.y = LIST_TOP - VIEW_EDGE + list_h - 1
 
@@ -1573,7 +1577,6 @@ function layoutLeft(self:table)
    end
    self.paletteCount.y = colourpicker_parts.baseline(btn_y, SMALL_BUTTON, 14)
 
-   self.palettePanel.setHeight(palette_h)
    self.eyedropPanel.viewport.y = LEFT_PAD + palette_h + LEFT_GAP
    self.previewPanel.viewport.y = self.eyedropPanel.viewport.y + EYEDROP_H + LEFT_GAP
 end
@@ -1608,17 +1611,6 @@ end
 function canDeleteSwatch(State:table):bool
    return (State.active != nil) and (#State.palette.swatches > 1) and
       (not colourpalette.isReserved(State.palette, State.active))
-end
-
-function updatePaletteMeta(self:table)
-   palette = self.state.palette
-   panel = self.palettePanel
-   box = self.paletteModeBox.viewport
-   space = LEFT_INNER - PANEL_META_PAD - (box.x + box.width) - PANEL_META_GAP
-   panel.setMeta('')
-   self.paletteName.setWidth(space + (colourpicker_parts.FIELD_PAD * 2))
-   self.paletteName.set(palette.name)
-   self.paletteName.viewport.visibility = VIS_VISIBLE
 end
 
 -- Refresh rows in parent-first order, keeping siblings in palette order.  Each item retains its model index;
@@ -1697,7 +1689,7 @@ function updatePalette(self:table)
    mode_label = colourpalette.mode(palette).label
    if self.paletteModeBox.text.string != mode_label then self.paletteModeBox.setText(mode_label) end
 
-   if not self.flashTimer then updatePaletteMeta(self) end
+   self.paletteName.set(palette.name)
    self.paletteCount.string = f'{#palette.swatches} / {colourpalette.MAX_SWATCHES}'
 
    setButtonEnabled(self.btnAddSwatch, #palette.swatches < colourpalette.MAX_SWATCHES)
@@ -1734,7 +1726,7 @@ function updateLeft(self:table)
    if self.preview then
       self.preview.update(self.state.palette)
       -- A preview's own meta is set in the UI face, which has the Δ glyph that the monospaced face lacks
-      meta = self.previewPanel.meta
+      meta = self.previewPanel.metaText
       face = self.preview.meta ? colourpicker_parts.FACE_UI : colourpicker_parts.FACE_MONO
       if meta.face != face then meta.face = face end
       self.previewPanel.setMeta(self.preview.meta ?? PREVIEW_META)
@@ -1991,21 +1983,22 @@ function buildRelationship(self:table, Target:obj)
    scene = Target.scene
    inner_w = RIGHT_INNER - (PANEL_PAD * 2)
 
-   panel = colourpicker_parts.panel(Target, {
-      x = RIGHT_PAD_X, y = RIGHT_PAD, width = RIGHT_INNER, height = REL_PANEL_H, title = 'Relationship', tokens = t
+   -- The panel is only shown for a linked colour.  Its controls are registered with it, so that they are disabled and
+   -- leave the tab order while it is hidden.
+
+   panel = gui.panel({
+      target = Target, x = RIGHT_PAD_X, y = RIGHT_PAD, width = RIGHT_INNER, height = REL_PANEL_H,
+      title = 'Relationship', padding = colourpicker_parts.PANEL_PADDING
    })
    self.relPanel = panel
    body = panel.body
 
    -- The swap button sits in the header.  The meta names the base and ends before the button.
 
-   self.btnSwap = gui.button({
-      target = panel.viewport, x = RIGHT_INNER - 12 - SMALL_BUTTON, y = 5, height = SMALL_BUTTON,
-      icon = 'layout/swap', tip = 'Swap colour with base',
+   self.btnSwap = panel.headerItem('trail', gui.button({
+      target = panel.header, height = SMALL_BUTTON, icon = 'layout/swap', tip = 'Swap colour with base',
       events = { activate = function() self.swapColours() end }
-   })
-   panel.meta.x = self.btnSwap.viewport.x - 8
-   self.relMetaWidth = panel.meta.x - (panel.title.x + math.ceil(panel.title.textWidth) + PANEL_META_GAP)
+   }))
 
    -- The channel rows are held in a viewport of their own
 
@@ -2089,11 +2082,13 @@ function buildRelationship(self:table, Target:obj)
          commit = function(Text) return commitRelationText(self, row, Text) end
       })
 
+      panel.addWidget(row.key.button)
+      panel.addWidget(row.slider)
+      panel.addWidget(row.value)
+
       self.relSliders[ch.id] = row
       y += REL_ROW + REL_ROW_GAP
    end
-
-   self.relEnabled = true
 end
 
 function buildContrast(self:table, Target:obj)
@@ -2102,43 +2097,21 @@ function buildContrast(self:table, Target:obj)
    mono    = colourpicker_parts.FACE_MONO
    text    = colourpicker_parts.text
 
-   panel = colourpicker_parts.panel(Target, {
-      x = RIGHT_PAD_X, y = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP, width = RIGHT_INNER, height = CONTRAST_H,
-      title = 'Contrast', tokens = t
+   -- While a dropped colour is the target, clicking the "vs" meta restores the automatic target.  updateContrast()
+   -- makes the meta clickable only while there is a dropped colour, by setting the metaActivate event.
+
+   panel = gui.panel({
+      target = Target, x = RIGHT_PAD_X, y = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP, width = RIGHT_INNER,
+      height = CONTRAST_H, title = 'Contrast', padding = colourpicker_parts.PANEL_PADDING,
+      metaTip = 'Click to restore the automatic contrast colour'
    })
 
    self.contrastPanel = panel
-   self.contrastMetaWidth = RIGHT_INNER - PANEL_META_PAD - math.ceil(panel.title.x + panel.title.textWidth) -
-      PANEL_META_GAP
    body = panel.body
 
    -- A colour dropped on the panel replaces the automatic contrast target until that target changes.  As with the
    -- scratch row, only drags started by this picker are accepted.  A user swatch keeps its name; other colours are
    -- named after the closest CSS colour.
-
-   -- While a dropped colour is the target, clicking the "vs" label restores the automatic target.  The click area
-   -- covers the label and is shown only while there is a dropped colour.
-
-   self.contrastRevert = panel.viewport.new('VectorViewport', {
-      y = 0, width = 1, height = PANEL_HEADER_H - 1, visibility = VIS_HIDDEN
-   })
-
-   revert = self.contrastRevert
-   revert.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)', cursor = 'hand' })
-   revert.mtSubscribeInput(JTYPE_CROSSING | JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
-      repeat
-         if Msg.type is JET_CROSSED_IN then
-            self.contrastTip?.cancel()
-            self.contrastTip = gui.tooltip({ target = revert, text = 'Click to restore the automatic contrast colour' })
-         elseif Msg.type is JET_CROSSED_OUT then
-            self.contrastTip?.cancel()
-            self.contrastTip = nil
-         elseif (Msg.type is JET_LMB) and (Msg.value is 0) and not (Msg.flags has JTYPE_DRAG_ITEM) then
-            self.clearContrastColour()
-         end
-         Msg = Msg.next
-      until not Msg
-   end)
 
    panel.viewport.dropTarget = 1
 
@@ -2225,7 +2198,7 @@ function updateExport(self:table)
       self.exportKey = key
    end
    self.code.setTab(self.exportTab)
-   if not self.exportFlash then self.exportPanel.setMeta(exportMeta(self)) end
+   self.exportPanel.setMeta(exportMeta(self))
 end
 
 function buildExport(Target:obj)
@@ -2233,10 +2206,9 @@ function buildExport(Target:obj)
    top = RIGHT_PAD + REL_PANEL_H + RIGHT_GAP + CONTRAST_H + RIGHT_GAP + colourpicker_ramp.HEIGHT + RIGHT_GAP
    height = &bodyHeight - top - RIGHT_PAD
 
-   panel = colourpicker_parts.panel(Target, {
-      x = RIGHT_PAD_X, y = top, width = RIGHT_INNER, height = height,
-      title = 'Export', meta = EXPORT_TABS[0].meta,
-      tokens = t
+   panel = gui.panel({
+      target = Target, x = RIGHT_PAD_X, y = top, width = RIGHT_INNER, height = height,
+      title = 'Export', meta = EXPORT_TABS[0].meta, padding = colourpicker_parts.PANEL_PADDING
    })
 
    &exportPanel = panel
@@ -2247,10 +2219,11 @@ function buildExport(Target:obj)
       labels.push(tab.label)
    end
 
+   _, body_h = panel.bodySize()
    &code = colourpicker_code.new(panel.body, {
       x = PANEL_PAD, y = 8,
       width = RIGHT_INNER - (PANEL_PAD * 2),
-      height = height - PANEL_HEADER_H - 8 - PANEL_PAD,
+      height = body_h - 8 - PANEL_PAD,
       tokens = t, tabs = labels,
       onTab = function[&&](Index)
          &exportTab = Index
@@ -2292,33 +2265,20 @@ function layoutRight(self:table, ShowRel:bool)
    if ShowRel is self.relShown then return end
    self.relShown = ShowRel
    top = RIGHT_PAD
-   self.relPanel.viewport.visibility = ShowRel ? VIS_VISIBLE : VIS_HIDDEN
-   if ShowRel then top += REL_PANEL_H + RIGHT_GAP end
+   if ShowRel then
+      self.relPanel.show()
+      top += REL_PANEL_H + RIGHT_GAP
+   else
+      self.relPanel.hide()
+   end
    self.contrastPanel.viewport.y = top
    top += CONTRAST_H + RIGHT_GAP
    self.ramp.panel.viewport.y = top
    top += colourpicker_ramp.HEIGHT + RIGHT_GAP
    height = self.bodyHeight - top - RIGHT_PAD
-   self.exportPanel.viewport.y = top
-   self.exportPanel.setHeight(height)
-   self.code.setHeight(height - PANEL_HEADER_H - 8 - PANEL_PAD)
-end
-
-function setRelEnabled(self:table, Enabled:bool)
-   if Enabled is self.relEnabled then return end
-
-   self.relEnabled = Enabled
-
-   widgets = array<table> { self.btnSwap }
-   for row in values(self.relSliders) do
-      widgets.push(row.slider)
-      widgets.push(row.key.button)
-      widgets.push(row.value)
-   end
-
-   for w in values(widgets) do
-      if Enabled then w.enable() else w.disable() end
-   end
+   self.exportPanel.viewport.{ y = top, height = height }
+   _, body_h = self.exportPanel.bodySize()
+   self.code.setHeight(body_h - 8 - PANEL_PAD)
 end
 
 function updateRelationship(self:table, Source:str)
@@ -2326,19 +2286,14 @@ function updateRelationship(self:table, Source:str)
    palette = state.palette
    swatch = (state.active != nil) ? palette.swatches[state.active] : nil
    base = (swatch and (swatch.base != nil)) ? palette.swatches[swatch.base] : nil
-   meta = self.relPanel.meta
-
-   -- The hidden panel's controls are disabled, so that they leave the tab order
 
    if not base then
-      setRelEnabled(self, false)
       layoutRight(self, false)
       return
    end
 
-   setRelEnabled(self, true)
    layoutRight(self, true)
-   colourpicker_parts.fitText(meta, 'base ', base.name, self.relMetaWidth)
+   self.relPanel.setMeta(base.name, { prefix = 'base ' })
 
    for id, row in self.relSliders do
       entry = swatch.link[id]
@@ -2394,25 +2349,12 @@ function updateContrast(self:table)
    state = self.state
    target, target_name = contrastTarget(self)
    backing = gui.strToRGB(self.tokens.sunk)
-   -- The name is shortened to fit the header, keeping the ' on panel' suffix of a translucent target.
+   -- The panel shortens the name to fit the header, keeping the ' on panel' suffix of a translucent target.
 
-   meta = self.contrastPanel.meta
+   panel = self.contrastPanel
+   panel.events.metaActivate = self.contrastDrop ? function() self.clearContrastColour() end : nil
    suffix = ((target.alpha != nil) and (target.alpha < 1)) ? ' on panel' : ''
-   meta.string = suffix
-   suffix_w = (#suffix > 0) ? meta.textWidth : 0
-   colourpicker_parts.fitText(meta, 'vs ', target_name, self.contrastMetaWidth - suffix_w)
-   meta.string ..= suffix
-
-   revert = self.contrastRevert
-   if self.contrastDrop then
-      revert.width = math.ceil(meta.textWidth) + (PANEL_META_PAD * 2)
-      revert.x = RIGHT_INNER - revert.width
-      revert.visibility = VIS_VISIBLE
-   else
-      revert.visibility = VIS_HIDDEN
-      self.contrastTip?.cancel()
-      self.contrastTip = nil
-   end
+   panel.setMeta(target_name, { prefix = 'vs ', suffix = suffix })
 
    fr, fg, fb = state.rgb.r, state.rgb.g, state.rgb.b
    br, bg, bb = clampedSrgb(target.l, target.c, target.h, state.clamp)
@@ -3115,23 +3057,11 @@ gui.dialog.colour = function(Options:table)
          })
       end
 
-      -- Show a short message in place of the palette meta.
+      -- Show a short message in place of the palette name.
 
       &flashPaletteMeta = function(Text:str!)
          if &paletteName.hasFocus() then return end -- The name is being edited
-
-         colourpicker_parts.cancelTimer(&flashTimer)
-         &paletteName.viewport.visibility = VIS_HIDDEN
-         &palettePanel.setMeta(Text)
-
-         &flashTimer = colourpicker_parts.after(FLASH_TIME, function()
-            &flashTimer = nil
-            if &finished then return end
-            updatePaletteMeta(&&)
-            &viewport.acDraw()
-         end)
-
-         &viewport.acDraw()
+         &palettePanel.flash(Text, FLASH_TIME)
       end
 
       &exportPalette = function()
@@ -3225,15 +3155,7 @@ gui.dialog.colour = function(Options:table)
 
       &copyExport = function()
          if not &copyText(&exportText) then return end
-         colourpicker_parts.cancelTimer(&exportFlash)
-         &exportPanel.setMeta('copied')
-         &exportFlash = colourpicker_parts.after(FLASH_TIME, function()
-            &exportFlash = nil
-            if &finished then return end
-            &exportPanel.setMeta(exportMeta(&&))
-            &viewport.acDraw()
-         end)
-         &viewport.acDraw()
+         &exportPanel.flash('copied', FLASH_TIME)
       end
 
       -- The settings that Apply and closing the window save.  The clamp is the saved one unless the user chose a target
@@ -3422,14 +3344,11 @@ gui.dialog.colour = function(Options:table)
          &wheel?.free()
          &manager?.destroy()
          colourpicker_parts.cancelTimer(&copyTimer)
-         colourpicker_parts.cancelTimer(&flashTimer)
-         colourpicker_parts.cancelTimer(&exportFlash)
          &modeTabs?.cancelTip()
-         &contrastTip?.cancel()
          &paletteDialog?.window?.surface?.free()
 
          fields = array<str> {
-            'manager', 'contrastTip', 'paletteDialog', 'modeTabs', 'copyTimer', 'flashTimer', 'exportFlash',
+            'manager', 'paletteDialog', 'modeTabs', 'copyTimer',
             'relPanel', 'relSliders', 'relRows', 'btnSwap', 'contrastPanel', 'ramp', 'exportPanel', 'code',
             'copiedCell', 'wheel', 'loupe', 'btnPick', 'pickedSample', 'preview', 'paletteView', 'paletteModeBox',
             'scratchRow', 'palettePanel', 'eyedropPanel', 'previewPanel', 'btnAddSwatch', 'btnLoadPalette',
