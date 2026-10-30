@@ -346,11 +346,11 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             }
 
             if (Vector->needs_caret_geometry()) {
-               calc_caret_position(line, transform, pt.ascent);
+               calc_caret_position(line, transform, pt.ascent, pt.descent);
                if (not *str) {
                   transform.tx = start_x;
                   transform.ty = start_y;
-                  calc_caret_position(line, transform, pt.ascent);
+                  calc_caret_position(line, transform, pt.ascent, pt.descent);
                }
             }
 
@@ -371,7 +371,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
          if ((line.empty()) and (Vector->needs_caret_geometry())) {
             agg::trans_affine transform;
             transform.translate(dx, dy);
-            calc_caret_position(line, transform, pt.ascent);
+            calc_caret_position(line, transform, pt.ascent, pt.descent);
          }
          else for (auto str=line.c_str(); *str; ) {
             int char_len;
@@ -420,11 +420,11 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             Path.concat_path(trans_char);
 
             if (Vector->needs_caret_geometry()) {
-               calc_caret_position(line, transform, pt.ascent);
+               calc_caret_position(line, transform, pt.ascent, pt.descent);
 
                if (!*str) { // Last character reached, add a final cursor entry past the character position.
                   transform.translate(char_width, 0);
-                  calc_caret_position(line, transform, pt.ascent);
+                  calc_caret_position(line, transform, pt.ascent, pt.descent);
                }
             }
 

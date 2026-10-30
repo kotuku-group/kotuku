@@ -325,7 +325,9 @@ gui.dialog.message = function(Options:table!)
       -- Client content is hosted in a viewport beneath the input box and checkbox, and returns the height that it uses.
 
       if Options.content then
-         &contentViewport = &viewport.new('VectorViewport', { x = &window.margins.left + ICON_SIZE + ICON_GAP, y = 0, width = text_width, height = 1 })
+         &contentViewport = &viewport.new('VectorViewport', {
+            x = &window.margins.left + ICON_SIZE + ICON_GAP, y = 0, width = text_width, height = 1
+         })
          content_height = Options.content(&&, &contentViewport, text_width) ?? 0
          &contentViewport.height = math.max(1, content_height)
       end

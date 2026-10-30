@@ -132,7 +132,9 @@ public:
 class CharPos {
 public:
    double x1, y1, x2, y2;
-   CharPos(double X1, double Y1, double X2, double Y2) : x1(X1), y1(Y1), x2(X2), y2(Y2) { }
+   double lineTop, lineHeight; // Full ascent-to-descent box, independent of the visible caret stroke.
+   CharPos(double X1, double Y1, double X2, double Y2) :
+      x1(X1), y1(Y1), x2(X2), y2(Y2), lineTop(Y1), lineHeight(Y2 - Y1) { }
 };
 
 //********************************************************************************************************************
@@ -182,6 +184,7 @@ static ERR cursor_timer(class extVectorText *, int64_t, int64_t);
 static std::string selected_text(class extVectorText *);
 static void clear_selection(class extVectorText *);
 static void selection_changed(class extVectorText *);
+static void report_cursor_move(class extVectorText *);
 static void rebuild_selection(class extVectorText *);
 static bool replace_selection(class extVectorText *, std::string_view);
 static void insert_char(class extVectorText *, int);
@@ -203,6 +206,10 @@ class extVectorText : public extVector {
 
    std::vector<TextLine> txLines;
    FUNCTION txOnChange;
+   FUNCTION txOnCursorMove;
+   int txCursorUpdateDepth = 0;
+   int txReportedRow = 0, txReportedColumn = 0, txReportedSelectRow = 0, txReportedSelectColumn = 0;
+   bool txReportedSelection = false, txCursorChanged = false, txReportingCursor = false;
    double txInlineSize; // Enables word-wrapping
    Unit txX = Unit(0), txY = Unit(0);
    double txTextLength;
@@ -277,12 +284,26 @@ class extVectorText : public extVector {
       if (txAlphaBitmap)  FreeResource(txAlphaBitmap);
       if (txKeyEvent)     UnsubscribeEvent(txKeyEvent);
       release_callback(txOnChange);
+      release_callback(txOnCursorMove);
 
       if (txFocusID) {
          if (kt::ScopedObjectLock<extVector> focus(txFocusID, 5000); focus.granted()) {
             focus->subscribeFeedback(FM::NIL, C_FUNCTION(text_focus_event));
          }
       }
+   }
+};
+
+//********************************************************************************************************************
+// Nested editing helpers may move both endpoints several times.  Report only their final state, after OnChange.
+
+class CursorUpdate {
+   extVectorText *mText;
+
+public:
+   explicit CursorUpdate(extVectorText *Text) : mText(Text) { mText->txCursorUpdateDepth++; }
+   ~CursorUpdate() {
+      if (--mText->txCursorUpdateDepth IS 0) report_cursor_move(mText);
    }
 };
 
@@ -305,6 +326,7 @@ inline double get_kerning(FT_Face Face, int Glyph, int PrevGlyph)
 
 inline void report_change(extVectorText *Self)
 {
+   Self->txCursorChanged = true;
    if (Self->txOnChange.stale()) release_callback(Self->txOnChange);
    else if (Self->txOnChange.isC()) {
       auto routine = (void (*)(extVectorText *))Self->txOnChange.Routine;
@@ -403,6 +425,7 @@ OutOfRange: The clipboard file is too large to read.
 
 static ERR VECTORTEXT_Clipboard(extVectorText *Self, struct acClipboard *Args)
 {
+   CursorUpdate update(Self);
    if ((not Args) or (Args->Mode IS CLIPMODE::NIL)) return ERR::NullArgs;
    if ((Args->Mode != CLIPMODE::COPY) and (Args->Mode != CLIPMODE::CUT) and
        (Args->Mode != CLIPMODE::PASTE)) return ERR::Args;
@@ -481,12 +504,15 @@ mutates-object
 
 static ERR VECTORTEXT_DeleteLine(extVectorText *Self, struct vt::DeleteLine *Args)
 {
+   CursorUpdate update(Self);
    if (Self->txLines.empty()) return ERR::Okay;
+   const bool changed = (Self->txLines.size() > 1) or not Self->txLines.front().empty();
 
    if ((not Args) or (Args->Line < 0)) Self->txLines.pop_back();
    else if ((size_t)Args->Line < Self->txLines.size()) Self->txLines.erase(Self->txLines.begin() + Args->Line);
    else return ERR::Args;
 
+   Self->txCursorChanged |= changed;
    mark_dirty(Self, RC::BASE_PATH);
 
    if ((Args) and (Self->txCursor.row() IS Args->Line)) {
@@ -540,6 +566,7 @@ mutates-object
 
 static ERR VECTORTEXT_SelectArea(extVectorText *Self, struct vt::SelectArea *Args)
 {
+   CursorUpdate update(Self);
    if (not Args) return ERR::NullArgs;
    if (Self->txLines.empty()) return ERR::NoData;
 
@@ -555,6 +582,67 @@ static ERR VECTORTEXT_SelectArea(extVectorText *Self, struct vt::SelectArea *Arg
    Self->txCursor.move(Self, row, column);
    Self->txCursor.extend(Self, end_row, end_column);
 
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetCaretBounds: Returns the line box at a character position.
+
+Use GetCaretBounds to find where the caret sits at a given character position, for example to position a popup or
+scroll a container so that the cursor stays in view.  The result describes a vertical line: X is the caret position,
+and Y and Height cover the line from the font's ascent to its descent.
+
+Coordinates are in the parent viewport's coordinate space and include the scroll offset that keeps the cursor visible.
+Transforms applied to the VectorText are not included.
+
+Out-of-range Row and Column values are clamped to the nearest valid position.  A Column equal to the length of the line
+returns the position after the last character.
+
+Caret geometry is only maintained when `VTXF::EDITABLE` or `VTXF::SELECTABLE` is set in #TextFlags.  The text layout
+is regenerated if necessary before the bounds are read.
+
+-INPUT-
+int Row: Logical row, or a negative value for the current cursor row.
+int Column: Character column, or a negative value for the current cursor column.
+&double X: Receives the horizontal caret position.
+&double Y: Receives the top of the line box.
+&double Height: Receives the full ascent-to-descent height.
+
+-ERRORS-
+Okay
+NullArgs
+NoData: Neither `EDITABLE` nor `SELECTABLE` is set in #TextFlags, or no caret positions have been calculated.
+NoSupport: The text follows a guide path.
+-END-
+
+*********************************************************************************************************************/
+
+static ERR VECTORTEXT_GetCaretBounds(extVectorText *Self, struct vt::GetCaretBounds *Args)
+{
+   if (not Args) return ERR::NullArgs;
+
+   validate_object_link(Self->GuidePath);
+   if (Self->GuidePath) return ERR::NoSupport;
+   if (not Self->needs_caret_geometry()) return ERR::NoData;
+
+   gen_vector_tree(Self);
+
+   if (Self->txLines.empty()) return ERR::NoData;
+
+   const auto row = std::clamp(Args->Row < 0 ? Self->txCursor.row() : Args->Row, 0, int(Self->txLines.size()) - 1);
+   const auto &line = Self->txLines[row];
+
+   if (line.chars.empty()) return ERR::NoData;
+
+   const auto column = std::clamp(Args->Column < 0 ? Self->txCursor.column() : Args->Column,
+      0, int(line.chars.size()) - 1);
+   const auto &caret = line.chars[column];
+   
+   Args->X = Self->FinalX - Self->txXOffset + caret.x1;
+   Args->Y = Self->FinalY - Self->txYOffset + caret.lineTop;
+   Args->Height = caret.lineHeight;
    return ERR::Okay;
 }
 
@@ -628,14 +716,18 @@ static ERR TEXT_SET_Align(extVectorText *Self, ALIGN Value)
 
 /*********************************************************************************************************************
 -FIELD-
-CharLimit: Limits the total characters allowed in the string.
+CharLimit: Limits the characters allowed on each logical line during editing.
 
-Set the CharLimit field to limit the number of characters that can appear in the string.  The minimum possible value
-is 0 for no characters.  If the object is in edit mode then the user will be unable to extend the string beyond the
-limit.
+CharLimit sets the maximum number of characters on each logical line, counted in UTF-8 characters rather than bytes.
+The limit applies to each line separately, not to the text as a whole.  Use #LineLimit to restrict the number of lines.
 
-Note that it is valid for the #String length to exceed the limit if set manually.  Only the display of the string
-characters will be affected by the CharLimit value.
+The limit applies to keyboard input and to pastes made through the #Clipboard() action.  If an edit would exceed the
+limit, the line is cut off at the limit and any characters past that point are discarded.  Deletions are always
+permitted.
+
+Writing to the #String field bypasses the limit, and reducing CharLimit does not shorten existing text.  The default
+value is the maximum positive 32-bit integer, so there is effectively no limit.  A value of 0 prevents any characters
+from being entered.  Negative values are rejected with `ERR::OutOfRange`.
 
 *********************************************************************************************************************/
 
@@ -850,6 +942,44 @@ static ERR TEXT_SET_OnChange(extVectorText *Self, FUNCTION *Value)
    if (Value) {
       Self->txOnChange = *Value;
       if (Self->txOnChange.defined()) Self->txOnChange.pin();
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+OnCursorMove: Receives notifications after cursor or selection changes.
+
+Set this field with a function reference to be notified when the cursor position, selected area or text content
+changes.  This is commonly used to update status displays or to keep the cursor in view with #GetCaretBounds().
+
+An operation that moves the cursor or selection more than once triggers a single notification, which reports the
+final state.  When the text changes, #OnChange is called first.  Text layout is regenerated before the callback runs,
+so caret geometry and cursor fields are up to date.  Cursor or selection changes made from inside the callback do not
+trigger another notification.
+
+Notifications are only sent after initialisation, and only when `VTXF::EDITABLE` or `VTXF::SELECTABLE` is set in
+#TextFlags.
+
+The callback function prototype is `void Function(*VectorText)`.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_OnCursorMove(extVectorText *Self, FUNCTION * &Value)
+{
+   if (Self->txOnCursorMove.defined()) {
+      Value = &Self->txOnCursorMove;
+      return ERR::Okay;
+   }
+   return ERR::FieldNotSet;
+}
+
+static ERR TEXT_SET_OnCursorMove(extVectorText *Self, FUNCTION *Value)
+{
+   release_callback(Self->txOnCursorMove);
+   if (Value) {
+      Self->txOnCursorMove = *Value;
+      if (Self->txOnCursorMove.defined()) Self->txOnCursorMove.pin();
    }
    return ERR::Okay;
 }
@@ -1277,10 +1407,16 @@ static ERR TEXT_GET_Flags(extVectorText *Self, VTXF *Value)
 
 static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
 {
+   CursorUpdate update(Self);
    const auto previous_flags = Self->txFlags;
    constexpr auto input_flags = VTXF::EDITABLE|VTXF::SELECTABLE;
    const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
+   if ((Value & VTXF::NO_AUTO_OFFSET) != VTXF::NIL) {
+      Self->txXOffset = 0;
+      Self->txYOffset = 0;
+      reset_path(Self);
+   }
    if (Self->needs_caret_geometry() and not had_caret_geometry) reset_path(Self);
    if ((Value & VTXF::EDITABLE) IS VTXF::NIL) {
       if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
@@ -1490,6 +1626,10 @@ static ERR TEXT_GET_String(extVectorText *Self, std::string &Value)
 
 static ERR TEXT_SET_String(extVectorText *Self, const std::string_view &Value)
 {
+   CursorUpdate update(Self);
+   std::string previous;
+   TEXT_GET_String(Self, previous);
+   Self->txCursorChanged |= previous != Value;
    Self->txLines.clear();
 
    if (not Value.empty()) {
@@ -1501,6 +1641,7 @@ static ERR TEXT_SET_String(extVectorText *Self, const std::string_view &Value)
          scan.remove_prefix(total);
          if ((not scan.empty()) and (scan[0] IS '\n')) scan.remove_prefix(1);
       }
+      if (Value.back() IS '\n') Self->txLines.emplace_back();
    }
 
    reset_path(Self);
@@ -1608,18 +1749,23 @@ static ERR TEXT_SET_Weight(extVectorText *Self, int Value)
 // Calculate the cursor that would be displayed at this character position and save it to the
 // line's chars array.
 
-static void calc_caret_position(TextLine &Line, agg::trans_affine &transform, double FontSize, double PathScale = 1.0)
+static void calc_caret_position(TextLine &Line, agg::trans_affine &Transform, double Ascent, double Descent)
 {
    agg::path_storage cursor_path;
    double cx1, cy1, cx2, cy2;
 
-   cursor_path.move_to(0, -(FontSize * PathScale) - (FontSize * 0.2));
-   cursor_path.line_to(0, FontSize * 0.1);
-   agg::conv_transform<agg::path_storage, agg::trans_affine> trans_cursor(cursor_path, transform);
+   cursor_path.move_to(0, -Ascent * 1.2);
+   cursor_path.line_to(0, Ascent * 0.1);
+   agg::conv_transform<agg::path_storage, agg::trans_affine> trans_cursor(cursor_path, Transform);
 
    trans_cursor.vertex(&cx1, &cy1);
    trans_cursor.vertex(&cx2, &cy2);
    Line.chars.emplace_back(cx1, cy1, cx2, cy2);
+   double top_x = 0, top_y = -Ascent, bottom_x = 0, bottom_y = Descent;
+   Transform.transform(&top_x, &top_y);
+   Transform.transform(&bottom_x, &bottom_y);
+   Line.chars.back().lineTop = std::min(top_y, bottom_y);
+   Line.chars.back().lineHeight = std::abs(bottom_y - top_y);
 }
 
 //********************************************************************************************************************
@@ -1799,6 +1945,7 @@ static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
    auto Self = (extVectorText *)CurrentContext();
    if (not Self->needs_caret_geometry()) return ERR::Okay;
    for (; Events; Events = Events->Next) {
+      CursorUpdate update(Self);
       if ((Events->Type IS JET::LMB) and ((Events->Flags & JTYPE::REPEATED) IS JTYPE::NIL)) {
          if (Events->Value <= 0) {
             if (Self->txDragging and Self->txDragPending) extend_mouse_selection(Self);
@@ -2013,6 +2160,7 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
 
 static void key_event(evKey *Event, int Size, extVectorText *Self)
 {
+   CursorUpdate update(Self);
    if (not Self->needs_caret_geometry()) return;
    Self->txMouseShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
    if ((Event->Qualifiers & KQ::PRESSED) IS KQ::NIL) return;
@@ -2266,6 +2414,43 @@ static void selection_changed(extVectorText *Self)
    rebuild_selection(Self);
    // Selection changes do not report text edits.  An unattached scene has no surface to redraw.
    if (Self->Scene and Self->Scene->SurfaceID) acDraw(Self);
+   report_cursor_move(Self);
+}
+
+static void report_cursor_move(extVectorText *Self)
+{
+   if (Self->txCursorUpdateDepth or Self->txReportingCursor) return;
+   const bool selected = (Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL;
+   const bool changed = Self->txCursorChanged or (Self->txReportedRow != Self->txCursor.row()) or
+      (Self->txReportedColumn != Self->txCursor.column()) or (Self->txReportedSelection != selected) or
+      (selected and ((Self->txReportedSelectRow != Self->txCursor.selectRow) or
+       (Self->txReportedSelectColumn != Self->txCursor.selectColumn)));
+   auto remember_position = [&]() {
+      Self->txReportedRow = Self->txCursor.row();
+      Self->txReportedColumn = Self->txCursor.column();
+      Self->txReportedSelectRow = Self->txCursor.selectRow;
+      Self->txReportedSelectColumn = Self->txCursor.selectColumn;
+      Self->txReportedSelection = (Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL;
+      Self->txCursorChanged = false;
+   };
+   remember_position();
+   if (not changed or not Self->initialised() or not Self->needs_caret_geometry()) return;
+
+   gen_vector_tree(Self);
+   Self->txReportingCursor = true;
+   if (Self->txOnCursorMove.stale()) release_callback(Self->txOnCursorMove);
+   else if (Self->txOnCursorMove.isC()) {
+      auto routine = (void (*)(extVectorText *))Self->txOnCursorMove.Routine;
+      kt::SwitchContext context(Self->txOnCursorMove.Context);
+      routine(Self);
+   }
+   else if (Self->txOnCursorMove.isScript()) {
+      sc::Call(Self->txOnCursorMove, std::to_array<ScriptArg>({
+         { "VectorText", Self, FD_OBJECTPTR }
+      }));
+   }
+   Self->txReportingCursor = false;
+   remember_position();
 }
 
 static void clear_selection(extVectorText *Self)
@@ -2438,7 +2623,8 @@ void TextCursor::reset_vector(extVectorText *Vector) const
          // If the cursor X,Y lies outside of the parent viewport, offset the text so that it remains visible to
          // the user.
 
-         if ((not Vector->GuidePath) and (Vector->ParentView)) {
+         if ((not Vector->GuidePath) and Vector->ParentView and
+             ((Vector->txFlags & VTXF::NO_AUTO_OFFSET) IS VTXF::NIL)) {
             auto p_width = Vector->ParentView->vpFixedWidth;
             double xo = 0;
             const double CURSOR_MARGIN = Vector->txFontSize * 0.5;
@@ -2449,9 +2635,11 @@ void TextCursor::reset_vector(extVectorText *Vector) const
 
             auto p_height = Vector->ParentView->vpFixedHeight;
             double yo = 0;
-            if ((mRow > 0) and (p_height > Vector->txFontSize)) {
-               if (Vector->txY + line.chars[col].y1 <= 0) yo = Vector->txY + line.chars[col].y1;
-               else if (Vector->txY + line.chars[col].y2 > p_height) yo = -(Vector->txY + line.chars[col].y2 - p_height + CURSOR_MARGIN);
+            if ((line.chars[col].y1 > 0) and (p_height > Vector->txFontSize)) {
+               if (y + line.chars[col].y1 <= 0) yo = -(y + line.chars[col].y1);
+               else if (y + line.chars[col].y2 > p_height) {
+                  yo = -(y + line.chars[col].y2 - p_height + CURSOR_MARGIN);
+               }
             }
 
             if ((xo != Vector->txXOffset) or (yo != Vector->txYOffset)) {
@@ -2553,6 +2741,7 @@ static const FieldArray clTextFields[] = {
    { "Font",          FDF_VIRTUAL|FDF_OBJECT|FDF_I, nullptr, TEXT_SET_Font },
    // Non-SVG fields related to real-time text editing
    { "OnChange",      FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, TEXT_GET_OnChange, TEXT_SET_OnChange },
+   { "OnCursorMove",  FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, TEXT_GET_OnCursorMove, TEXT_SET_OnCursorMove },
    { "Focus",         FDF_VIRTUAL|FDF_OBJECTID|FDF_RI|FDF_PURE, TEXT_GET_Focus, TEXT_SET_Focus },
    { "CursorColumn",  FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_CursorColumn, TEXT_SET_CursorColumn },
    { "CursorRow",     FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_CursorRow, TEXT_SET_CursorRow },

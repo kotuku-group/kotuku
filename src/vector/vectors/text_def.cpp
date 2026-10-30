@@ -13,15 +13,18 @@ static const struct FieldDef clVectorTextVTXF[] = {
    { "Secret", 0x00000100 },
    { "Raster", 0x00000200 },
    { "Selectable", 0x00000400 },
+   { "NoAutoOffset", 0x00000800 },
    { nullptr, 0 }
 };
 
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
 FDEF maSelectArea[] = { { "Row", FD_INT }, { "Column", FD_INT }, { "EndRow", FD_INT }, { "EndColumn", FD_INT }, { 0, 0 } };
+FDEF maGetCaretBounds[] = { { "Row", FD_INT }, { "Column", FD_INT }, { "X", FD_RESULT|FD_DOUBLE }, { "Y", FD_RESULT|FD_DOUBLE }, { "Height", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
 
 static const struct MethodEntry clVectorTextMethods[] = {
    { AC(-30), (APTR)VECTORTEXT_DeleteLine, "DeleteLine", maDeleteLine, sizeof(struct vt::DeleteLine) },
    { AC(-31), (APTR)VECTORTEXT_SelectArea, "SelectArea", maSelectArea, sizeof(struct vt::SelectArea) },
+   { AC(-32), (APTR)VECTORTEXT_GetCaretBounds, "GetCaretBounds", maGetCaretBounds, sizeof(struct vt::GetCaretBounds) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 
