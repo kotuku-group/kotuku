@@ -5,6 +5,23 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
+local default_string_metatable = debug.getMetatable('')
+
+-- Restore the default JIT state and string metatable.  Do not call this from a defer: a defer that runs while an
+-- exception unwinds is restricted as for __gc, so JIT control and base metatable changes raise 'Bad action while in
+-- __gc metamethod' and replace the original failure.  Tests call this on entry and the runner calls it after each test.
+function reset_runtime()
+   debug.setMetatable('', default_string_metatable)
+   jit.on()
+   jit.flush()
+   jit.opt.start()
+end
+
+@AfterEach
+function restore_runtime()
+   reset_runtime()
+end
+
 function dynamic_remainder(Dividend:num, Divisor:num):num
    return Dividend % Divisor
 end
@@ -95,17 +112,35 @@ local reciprocal_dividends = array<double> {
    2147483646, -2147483646, 2147483647, -2147483647, -2147483648
 }
 
--- Report whether any compiled trace contains one of the IR opcodes in Ops, and how many traces were inspected.
--- Opcode numbers follow IRDEF in lj_ir.h: 44 is IR_DIV and 52 is IR_FPMATH.
+-- Report whether any compiled trace contains a live instance of one of the IR opcodes in Ops, and how many traces were
+-- inspected.  Opcode numbers follow IRDEF in lj_ir.h: 44 is IR_DIV and 52 is IR_FPMATH.
+--
+-- Only looping traces pass through IR dead-code elimination, so a function trace can retain instructions that a fold
+-- has superseded, such as the DIV beneath a reciprocal floor().  The backend never emits these, so an instruction
+-- only counts when it is a guard, has a side effect, or is referenced by a snapshot or another live instruction.
 function traces_contain(Ops:table):<bool, num>
    local traces = 0
    for trace_no in {1 into 64} do
       local info = jit.util.traceInfo(trace_no)
       if info is nil then continue end
       traces++
-      for instruction in {1 into info.nins} do
-         local _, ir_ot = jit.util.traceIR(trace_no, instruction)
-         if ir_ot != nil and (ir_ot >> 8) in Ops then return true, traces end
+      local live = {}
+      for snap_no in {0 to info.nexit} do
+         local snap = jit.util.traceSnap(trace_no, snap_no)
+         -- Slots 0 and 1 hold the snapshot's position and slot count; entries keep a biased reference in 16 bits.
+         for index, entry in pairs(snap) do
+            if index >= 2 then live[(entry & 0xffff) - 0x8000] = true end
+         end
+      end
+      for instruction in {info.nins into 1 by -1} do
+         local mode, ir_ot, op1, op2 = jit.util.traceIR(trace_no, instruction)
+         if ir_ot is nil then continue end
+         -- Mirrors ir_sideeff() in lj_ir.h, where the type's guard bit enables the mode's weak side effect.
+         if live[instruction] or ((((ir_ot & 0xff) | 0x7f) & mode) >= 0x60) then
+            if (ir_ot >> 8) in Ops then return true, traces end
+            if (mode & 3) is 0 then live[op1] = true end
+            if ((mode >> 2) & 3) is 0 then live[op2] = true end
+         end
       end
    end
    return false, traces
@@ -406,11 +441,7 @@ end
 end
 
 @Test function RemainderSpecialisationKeepsFallbacks()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
 
    jit.off()
    jit.flush()
@@ -434,11 +465,7 @@ end
 end
 
 @Test function ConstantRemainderAcrossDomains()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
 
    -- Fractions and integers share a trace, followed by quotient boundaries and values requiring the helper.
    local values = array<double> {
@@ -471,11 +498,7 @@ end
 end
 
 @Test function IntegerPowerOfTwoRemainderAcrossSigns()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
 
    local values = array<double> { 19, -19, 24, -24, 0, -2147483648, -2147483647, 2147483647 }
    jit.on()
@@ -496,11 +519,7 @@ end
 end
 
 @Test function IntegerConstantRemainderChains()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
    local values = array<double> { 0, 1, -1, 99, -99, 100, -100, 101, -101, 2147483647, -2147483648 }
    local expected = {}
    jit.off()
@@ -522,11 +541,7 @@ end
 end
 
 @Test function IntegerReciprocalRemainders()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
    local expected, actual = interpreted_and_compiled(integer_reciprocal_remainders)
    local has_division, traces = traces_contain({ [44] = true })
    assert(traces > 0, 'The remainder workload should compile')
@@ -540,11 +555,7 @@ end
 end
 
 @Test function IndexRemainderReciprocal()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
    -- A non-negative loop index omits the reciprocal's sign correction.
    jit.off()
    jit.flush()
@@ -559,11 +570,7 @@ end
 end
 
 @Test function IntegerFloorDivisionReciprocal()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
    local expected, actual = interpreted_and_compiled(integer_floor_divisions)
    local has_division, traces = traces_contain({ [44] = true, [52] = true })
    assert(traces > 0, 'The floor division workload should compile')
@@ -581,11 +588,7 @@ end
 end
 
 @Test function FloorDivisionKeepsLoopCarriedConversions()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
    -- The division by one leaves an integer-to-number conversion on the backedge.  Its integer operand belongs
    -- to the previous iteration, so folding floor() must respect the conversion's PHI barrier during unrolling.
    jit.off()
@@ -606,11 +609,7 @@ end
 end
 
 @Test function NegativeFloorDivisionKeepsSignedZero()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
    -- floor(0 / -7) is -0, which an integer quotient cannot represent, so negative divisors keep the FP path.
    local values = array<double> { 0, 7, -7, 13, -13, 2147483647, -2147483648 }
    local expected = {}
@@ -821,6 +820,7 @@ function string_arithmetic_metamethod_workload(Iterations:num):num
 end
 
 @Test function StringToNumberCoercionInArithmetic()
+   reset_runtime()
    local text = '4'
    local other_text = '5'
 
@@ -835,14 +835,7 @@ end
    assert(3 + tonumber('4') is 7, '3 + tonumber("4") should be 7')
 
    -- A string arithmetic metamethod must run instead of implicit conversion in both the interpreter and JIT.
-   local original_metatable = debug.getMetatable('')
-   defer
-      debug.setMetatable('', original_metatable)
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
-
+   -- The runner's reset_runtime() restores the string metatable afterwards.
    debug.setMetatable('', {
       __unm = function(Value):num return 400 - tonumber(Value) end,
       __add = function(Receiver, Other, LhsDispatch:bool):num
@@ -929,11 +922,7 @@ end
 @Test function StringToNumberBitwiseUnderJIT()
    -- A hot loop compiles a trace; a string operand must abort back to the interpreter and raise the
    -- type error rather than silently coercing on the compiled path.
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
 
    jit.on()
    jit.flush()
@@ -949,11 +938,7 @@ end
 end
 
 @Test function ConstantRemainderNegativeTraceZeros()
-   defer
-      jit.on()
-      jit.flush()
-      jit.opt.start()
-   end
+   reset_runtime()
 
    -- Record the negative trace first, then exercise both zero signs and sign-changing side traces.
    local values = array<double> { -100.25, -200.0, -0.0, 0.0, 100.25, 200.0, -5e-324, 5e-324 }
