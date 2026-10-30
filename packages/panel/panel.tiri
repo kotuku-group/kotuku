@@ -570,8 +570,36 @@ gui.panel = function(Options:table!)
             name = 'PanelFrame', x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN
          })
          &page = frame.new('VectorViewport', { name = 'PanelPage', x = 0, y = 0, width = '100%', height = '100%' })
+
+         -- Where the body meets the inside of a rounded border, the scrollbar tracks are rounded to the inner edge of
+         -- the border, and margins keep the sliders out of the rounded ends.  A bar that meets the divider, or the
+         -- other bar, is square at that end.
+
+         round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
+         round_y = theme.bkgd.roundY or round_x
+         round_x = math.max(0, round_x - (edge * 0.5))
+         round_y = math.max(0, round_y - (edge * 0.5))
+         flush_bottom = &padding.bottom is edge
+         round_tr = (not &header and (&padding.top is edge) and (&padding.right is edge)) ? 1 : 0
+         round_br = (flush_bottom and (&padding.right is edge)) ? 1 : 0
+         round_bl = (flush_bottom and (&padding.left is edge)) ? 1 : 0
+         round_br_h = (Options.scroll is 'both') ? 0 : round_br -- The vertical bar takes the corner
+
+         bar_theme = gui.getTheme(target)
          &scrollbar = gui.scrollbar({
-            target = &body, view = frame, page = &page, direction = (Options.scroll is 'both') ? 'all' : Options.scroll
+            target = &body, view = frame, page = &page, direction = (Options.scroll is 'both') ? 'all' : Options.scroll,
+            theme = {
+               scrollbar_v = table.merge(bar_theme.scrollbar_v ?? bar_theme.scrollbar, {
+                  bkgd = { rounding = { 0, 0, round_x * round_tr, round_y * round_tr,
+                     round_x * round_br, round_y * round_br, 0, 0 } },
+                  margin = { round_y * round_tr, round_y * round_br }
+               }, true, true),
+               scrollbar_h = table.merge(bar_theme.scrollbar_h ?? bar_theme.scrollbar, {
+                  bkgd = { rounding = { 0, 0, 0, 0, round_x * round_br_h, round_y * round_br_h,
+                     round_x * round_bl, round_y * round_bl } },
+                  margin = { round_x * round_bl, round_x * round_br_h }
+               }, true, true)
+            }
          })
       end
 

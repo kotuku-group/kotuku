@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "gui/input",
   "version": "1.0",
-  "description": "Single-line text input widget for Tiri graphical interfaces.",
+  "description": "Single and multi-line text input widget for Tiri graphical interfaces.",
   "entry": "input.tiri",
   "authors": [
     {
@@ -23,13 +23,14 @@
     "tiri": "1.0"
   },
   "dependencies": {
-    "gui": "1.0"
+    "gui": "1.0",
+    "gui/scrollbar": "1.0"
   },
   "files": [
     {
       "path": "input.tiri",
-      "size": 10784,
-      "sha256": "45a24aff037fe7d310bd74996e9de29babb7c4cb3b7483159cca03fd0ef11554",
+      "size": 16962,
+      "sha256": "da109f95953b831b40d568bc2974c869a6c8e17dedf3f8be0de581d6df5d408b",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

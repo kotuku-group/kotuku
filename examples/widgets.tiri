@@ -12,7 +12,7 @@ A demonstration of standard widgets
 
    local fileDialog:table -- The file dialog is closed if it is collected, so it is retained until it responds
 
-   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('960dp'), insideHeight=gui.rpixel('750dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
+   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('960dp'), insideHeight=gui.rpixel('850dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
@@ -479,6 +479,32 @@ end
       }
    })
 
+   y += hslider.viewport.height + gui.sizing.widget.gap
+
+   -- A multi-line input.  Enter adds a line and Ctrl+Enter activates the input.
+
+   memo = gui.input({
+      target     = viewport,
+      x          = win.margins.left,
+      y          = y,
+      width      = input.viewport.width,
+      labelWidth = gui.rpixel('150dp'),
+      label      = 'Multi-line:',
+      multiline  = true,
+      text       = 'Enter adds a new line.\nCtrl+Enter activates the input.',
+      events     = {
+         activate = function(Event)
+            print('Multi-line input state set to "' .. (Event.state ?? 'NIL') .. '", text "' ..
+               (Event.text ?? 'NIL') .. '"')
+         end,
+         focus = function()
+            widgetFocus(&&)
+         end
+      }
+   })
+
+   y += memo.viewport.height + gui.sizing.widget.gap
+
    -- A panel in the space between the widget column and the vertical slider, with a scrolling body of wrapped text.
    -- The text is wrapped to the page, less the scrollbar, and the page is sized to fit it when the body is resized.
 
@@ -516,6 +542,7 @@ end
       lineLimit = 0,
       face = 'Inconsolata',
       fontSize = '12pt',
+      textFlags = VTXF_SELECTABLE,
       string = 'A panel is a card with a header row and a body for its content.  The header shows a title on ' ..
          'the left and meta text on the right, and either can be replaced by a widget.\n\n' ..
          'This panel was created with the scroll option, so its body holds a page that is moved by the ' ..
@@ -525,7 +552,7 @@ end
 
    fitNotes(notes)
 
-   y += input.viewport.height + gui.rpixel('120dp')
+   y = math.max(y, notes.viewport.y + notes.viewport.height) + gui.rpixel('20dp')
 
    try
       global sndAlarm = obj.new('sound', { path=glPath .. 'data/alarm.mp3', volume=0.2 })
@@ -591,6 +618,52 @@ end
          end
       }
    })
+
+   -- Zoom controls are kept in their own viewport above the client viewport so that they are unaffected by the zoom.
+   -- Zooming sets the client viewport's view box to a fraction of the window size, so content anchored to the right or
+   -- bottom edges is laid out again within the zoomed area.
+
+   zoom = 1.0
+   ZOOM_STEP <const> = 1.25
+
+   function applyZoom()
+      viewport.{ viewX = 0, viewY = 0, viewWidth = win.surface.width / zoom, viewHeight = win.surface.height / zoom }
+      win.surface.mtScheduleRedraw()
+   end
+
+   function setZoom(Value:num)
+      zoom = math.min(4, math.max(0.25, Value))
+      applyZoom()
+   end
+
+   win.bkgd.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+      if zoom != 1 then applyZoom() end
+   end
+
+   zoomViewport = win.viewport.new('VectorViewport', {
+      xOffset = gui.sizing.widget.gap, y = gui.sizing.widget.gap, width = 1, height = 1
+   })
+
+   zoomOutButton = gui.button({
+      target = zoomViewport,
+      label  = '-',
+      tip    = 'Zoom Out',
+      x = 0, y = 0, width = 24, height = 24,
+      events = { activate = function() setZoom(zoom / ZOOM_STEP) end }
+   })
+
+   zoomInButton = gui.button({
+      target = zoomViewport,
+      label  = '+',
+      tip    = 'Zoom In',
+      x = zoomOutButton.viewport.width + gui.sizing.widget.gap, y = 0, width = 24, height = 24,
+      events = { activate = function() setZoom(zoom * ZOOM_STEP) end }
+   })
+
+   zoomViewport.{
+      width  = zoomInButton.viewport.x + zoomInButton.viewport.width,
+      height = math.max(zoomOutButton.viewport.height, zoomInButton.viewport.height)
+   }
 
    win.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

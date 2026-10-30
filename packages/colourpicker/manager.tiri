@@ -84,7 +84,7 @@ end
 function linkGlyph(Target:obj!, X:num!, Y:num!, Stroke:str!):obj
    vp = Target.new('VectorViewport', { x = X, y = Y, width = MARKER, height = MARKER })
    vp.new('VectorPath', {
-      sequence = 'M2.5 1.5 V6.5 H8.5 M6.5 4.5 L8.5 6.5 L6.5 8.5', stroke = Stroke, strokeWidth = 1,
+      sequence = 'M 6 7 V 2 H 0 M 2 4 L 0 2 L 2 0', stroke = Stroke, strokeWidth = 1,
       lineCap = 'round', lineJoin = 'round'
    })
    return vp
@@ -343,16 +343,20 @@ function textArea(Target:obj!, Options:table!):table
    fitPage = function()
       vt = self.text
       text = vt.string ?? ''
+
       -- A final glyph preserves an empty last line in the non-editable probe.
+
       if (#text is 0) or text.endsWith('\n') then text ..= '|' end
       probe.string = text
       height = math.max(frame_h, math.ceil(textBottom(probe) + vt.descent + AREA_PAD))
+
       if height != page.height then
          page.height = height
          -- The VectorText offsets itself to keep the caret inside its viewport; a move to the same position
          -- recomputes that offset for the new height.
          if self.focused then vt.cursorRow = vt.cursorRow end
       end
+
       min_y = math.min(0, frame_h - height)
       if page.y < min_y then page.y = min_y end
    end
@@ -365,17 +369,19 @@ function textArea(Target:obj!, Options:table!):table
       text = self.text.string ?? ''
       n = #text
       i = 0
-      for _ in {0 to self.text.cursorRow} do
+      for {0 to self.text.cursorRow} do
          nl = text.find('\n', i)
          if nl is nil then break end
          i = nl + 1
       end
+
       column = self.text.cursorColumn
       while (column > 0) and (i < n) do
          i++
          while (i < n) and ((text.byte(i) & 0xc0) is 0x80) do i++ end
          column -= 1
       end
+
       while (i < n) and (text.byte(i) > 0x20) do i++ end
       prefix = text.sub(0, i)
       if (#prefix is 0) or prefix.endsWith('\n') then prefix ..= '|' end
@@ -456,6 +462,7 @@ function textArea(Target:obj!, Options:table!):table
       self.focused = gained
       self.bkgd.stroke = gained ? t.accent : t.border
       showPlaceholder()
+
       if not gained then
          text = self.get()
          text = colourpalette.limitDescription(text)
@@ -463,6 +470,7 @@ function textArea(Target:obj!, Options:table!):table
          fitPage()
          Options.commit(text)
       end
+
       if Options.focus then Options.focus(gained, self) end
       box.acDraw()
    end)
@@ -792,7 +800,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
          focus = function(View:table)
             processing.delayedCall(function()
-               if self.list and View.hasFocus and not View.kItem and View.sItem then View.targetItem(View.sItem) end
+               if self.list and View.hasFocus and not View.kItem and View.sItem then
+                  View.targetItem(View.sItem)
+               end
             end)
          end,
 
@@ -877,7 +887,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
             focus = function(View:table)
                processing.delayedCall(function()
-                  if self.list and View.hasFocus and not View.kItem and View.sItem then View.targetItem(View.sItem) end
+                  if self.list and View.hasFocus and not View.kItem and View.sItem then
+                     View.targetItem(View.sItem)
+                  end
                end)
             end,
 
@@ -1399,7 +1411,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          focusInput(self.search)
          return true
       end
+
       if ctrl or not self.list.hasFocus then return false end
+
       if Value is KEY_DELETE then
          processing.delayedCall(function() if self.list then self.deletePalette() end end)
          return true

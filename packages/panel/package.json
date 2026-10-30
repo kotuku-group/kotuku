@@ -30,8 +30,8 @@
   "files": [
     {
       "path": "panel.tiri",
-      "size": 20959,
-      "sha256": "d7aabef6af3933f50c0098096b19a62942ede681fd1c5dee40353652b6e52de2",
+      "size": 24085,
+      "sha256": "d006a13d4e88d320f5bf4fd8cf348c89102c577c3276542d16af24e4940ecce4",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]
