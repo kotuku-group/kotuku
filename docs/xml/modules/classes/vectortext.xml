@@ -76,6 +76,32 @@
     </method>
 
     <method>
+      <name>GetCaretBounds</name>
+      <comment>Returns the line box at a character position.</comment>
+      <prototype>ERR vt::GetCaretBounds(OBJECTPTR Object, INT Row, INT Column, DOUBLE * X, DOUBLE * Y, DOUBLE * Height)</prototype>
+      <tiriPrototype>err, X:num, Y:num, Height:num = GetCaretBounds(Row:num, Column:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Row">Logical row, or a negative value for the current cursor row.</param>
+        <param type="INT" name="Column">Character column, or a negative value for the current cursor column.</param>
+        <param type="DOUBLE *" name="X">Receives the horizontal caret position.</param>
+        <param type="DOUBLE *" name="Y">Receives the top of the line box.</param>
+        <param type="DOUBLE *" name="Height">Receives the full ascent-to-descent height.</param>
+      </input>
+      <description>
+<p>Use GetCaretBounds to find where the caret sits at a given character position, for example to position a popup or scroll a container so that the cursor stays in view.  The result describes a vertical line: X is the caret position, and Y and Height cover the line from the font's ascent to its descent.</p>
+<p>Coordinates are in the parent viewport's coordinate space and include the scroll offset that keeps the cursor visible. Transforms applied to the VectorText are not included.</p>
+<p>Out-of-range Row and Column values are clamped to the nearest valid position.  A Column equal to the length of the line returns the position after the last character.</p>
+<p>Caret geometry is only maintained when <code>VTXF::EDITABLE</code> or <code>VTXF::SELECTABLE</code> is set in <fl>TextFlags</fl>.  The text layout is regenerated if necessary before the bounds are read.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoData">Neither <code>EDITABLE</code> nor <code>SELECTABLE</code> is set in <fl>TextFlags</fl>, or no caret positions have been calculated.</error>
+        <error code="NoSupport">The text follows a guide path.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
       <name>SelectArea</name>
       <comment>Selects an area of text.</comment>
       <prototype>ERR vt::SelectArea(OBJECTPTR Object, INT Row, INT Column, INT EndRow, INT EndColumn)</prototype>
@@ -117,12 +143,13 @@
 
     <field>
       <name>CharLimit</name>
-      <comment>Limits the total characters allowed in the string.</comment>
+      <comment>Limits the characters allowed on each logical line during editing.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>Set the CharLimit field to limit the number of characters that can appear in the string.  The minimum possible value is 0 for no characters.  If the object is in edit mode then the user will be unable to extend the string beyond the limit.</p>
-<p>Note that it is valid for the <fl>String</fl> length to exceed the limit if set manually.  Only the display of the string characters will be affected by the CharLimit value.</p>
+<p>CharLimit sets the maximum number of characters on each logical line, counted in UTF-8 characters rather than bytes. The limit applies to each line separately, not to the text as a whole.  Use <fl>LineLimit</fl> to restrict the number of lines.</p>
+<p>The limit applies to keyboard input and to pastes made through the <action>Clipboard</action> action.  If an edit would exceed the limit, the line is cut off at the limit and any characters past that point are discarded.  Deletions are always permitted.</p>
+<p>Writing to the <fl>String</fl> field bypasses the limit, and reducing CharLimit does not shorten existing text.  The default value is the maximum positive 32-bit integer, so there is effectively no limit.  A value of 0 prevents any characters from being entered.  Negative values are rejected with <code>ERR::OutOfRange</code>.</p>
       </description>
     </field>
 
@@ -298,6 +325,19 @@
       <type>FUNCTION</type>
       <description>
 <p>Set this field with a function reference to receive notifications whenever the text string changes.</p>
+<p>The callback function prototype is <code>void Function(*VectorText)</code>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OnCursorMove</name>
+      <comment>Receives notifications after cursor or selection changes.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>Set this field with a function reference to be notified when the cursor position, selected area or text content changes.  This is commonly used to update status displays or to keep the cursor in view with <method>GetCaretBounds</method>.</p>
+<p>An operation that moves the cursor or selection more than once triggers a single notification, which reports the final state.  When the text changes, <fl>OnChange</fl> is called first.  Text layout is regenerated before the callback runs, so caret geometry and cursor fields are up to date.  Cursor or selection changes made from inside the callback do not trigger another notification.</p>
+<p>Notifications are only sent after initialisation, and only when <code>VTXF::EDITABLE</code> or <code>VTXF::SELECTABLE</code> is set in <fl>TextFlags</fl>.</p>
 <p>The callback function prototype is <code>void Function(*VectorText)</code>.</p>
       </description>
     </field>
@@ -491,12 +531,13 @@
       <const name="EDIT">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
       <const name="EDITABLE">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
       <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
+      <const name="NO_AUTO_OFFSET">Leave text scrolling to its container; disables automatic cursor offsets.</const>
       <const name="NO_SYS_KEYS">Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</const>
       <const name="OVERLINE">Enable overlining of the text.</const>
       <const name="OVERWRITE">Turns on overwrite mode (if off, insert mode is enabled).</const>
       <const name="RASTER">Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.</const>
       <const name="SECRET">Hide all characters from the UI by using generic symbols in place of glyphs.</const>
-      <const name="SELECTABLE">Allow mouse and keyboard selection and copying without user editing or a visible caret.  Set before initialisation.</const>
+      <const name="SELECTABLE">Allow mouse and keyboard selection and copying without user editing or a visible caret.</const>
       <const name="UNDERLINE">Enable underlining of the text.</const>
     </constants>
 

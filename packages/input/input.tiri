@@ -8,10 +8,16 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
+-- Empty text hashes to zero, matching the nil that VectorText reports for an empty string.
+
+function textHash(Text:str):num
+   return Text?? ? string.hash(Text) : 0
+end
+
 function reportActivate(State:str!, Force:bool!)
    &events.activate ?! return
    text = &text.string
-   hash = text ? string.hash(text) : 0
+   hash = textHash(text)
    if Force or hash != &hash then
       &hash = hash
       &events.activate({ text=text, state=State })
@@ -102,12 +108,14 @@ gui.input = function(Options)
       end
    end
 
-   -- Programmatic changes bypass inputMask, maxLength and events.change.
+   -- Programmatic changes bypass inputMask, maxLength and events.change.  The activation hash is updated so that a
+   -- later lost-focus activation compares against the text that the user saw.
 
    self.setText = function(Text:str!)
       &text?.string = Text
       &_currentText = Text
       &_lastGoodInput = Text
+      &hash = textHash(Text)
       checkPlaceholder()
       &viewport.acDraw()
    end
@@ -125,8 +133,15 @@ gui.input = function(Options)
       end
    end
 
+   -- VectorText reports cursor moves after OnChange, so the recorded position is the caret before the latest edit.
+
+   function cursorMoved()
+      &_cursorRow = &text.cursorRow
+      &_cursorColumn = &text.cursorColumn
+   end
+
    -- Called by VectorText after every user edit.  Rejected edits are reverted immediately, with the cursor returned
-   -- to the edit position.
+   -- to its position before the edit.
 
    function textChanged()
       new_text = &text.string ?? ''
@@ -147,11 +162,9 @@ gui.input = function(Options)
          &_currentText = new_text
          if &maskMode is 'keystroke' then &_lastGoodInput = new_text end
       else
-         column = &text.cursorColumn
-         added = charLength(new_text) - charLength(&_currentText)
          &text.string = &_currentText
-         if added > 0 then column -= added end
-         &text.cursorColumn = math.max(0, column)
+         &text.cursorRow = &_cursorRow
+         &text.cursorColumn = &_cursorColumn
          &viewport.acDraw()
       end
 
@@ -254,8 +267,11 @@ gui.input = function(Options)
             if Options.secret then flags = flags | VTXF_SECRET end
             return flags
          end)(),
-         onChange  = textChanged
+         onChange  = textChanged,
+         onCursorMove = cursorMoved
       }, input_theme.text))
+
+      cursorMoved()
 
       if &readOnly then self.setReadOnly(true) end
 

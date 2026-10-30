@@ -96,7 +96,8 @@
       <access read="G" write="S">Get/Set</access>
       <type>Unit []</type>
       <description>
-<p>Set the Rounding field if all four corners of the rectangle need to be precisely controlled.  Four X,Y sizing pairs must be provided in sequence, with the first describing the top-left corner and proceeding in clockwise fashion. Each pair of values is equivalent to a <fl>RoundX</fl>,<fl>RoundY</fl> definition for that corner only.</p>
+<p>Set the Rounding field if all four corners of the rectangle need to be precisely controlled.  Four X,Y sizing pairs must be provided in sequence, with the first describing the top-left corner and proceeding in clockwise fashion. Each pair of values is equivalent to a <fl>RoundX</fl>,<fl>RoundY</fl> definition for that corner only.  A corner with a zero radius is square.</p>
+<p>Values can be fixed or scaled.  A scaled value is relative to the diagonal of the rectangle, as for <fl>RoundX</fl>.  In Tiri, numbers are fixed values and strings such as <code>'10%'</code> are scaled, for example <code>rect.rounding = { 0, 0, 0, 0, 6, 6, 0, 0 }</code> rounds the bottom-right corner only.</p>
       </description>
     </field>
 
