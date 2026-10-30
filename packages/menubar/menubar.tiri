@@ -57,7 +57,14 @@ function showItemMenu(Item:table!, Hover:bool) -- Open an item's menu, switching
    if not Hover then Item?.callback(Item.id, Item.name) end
 
    menu = itemMenu(Item)
-   menu.x = Item.x
+
+   -- The boundary is in display coordinates and includes any scaling applied by parent viewports, so the menu is
+   -- scaled and positioned to match the bar.
+
+   scale = 1
+   err, bx, by, bw, bh = &viewport.mtGetBoundary(0)
+   if (err is ERR_Okay) and (&viewport.width > 0) then scale = bw / &viewport.width end
+   menu.{ scale = scale, x = Item.x * scale, y = (&viewport.height - 2) * scale }
 
    if &_lastMenu and &_lastMenu != menu then
       &_lastMenu.hide()

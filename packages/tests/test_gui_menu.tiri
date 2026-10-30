@@ -1374,3 +1374,52 @@ function capHeight(Text:obj!):num
    check mVec.GetFontMetrics(handle, metrics)
    return metrics.ascent
 end
+
+@Test function MenubarMenusMatchScaledViewport()
+   local surface <close>, target = newTarget()
+   target.{ viewX = 0, viewY = 0, viewWidth = 250, viewHeight = 100 } -- Scales the content by 2
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { id='open', label='Open' },
+         { menu={ id='recent', label='Recent', items=array<table> { { id='one', label='One' } } } }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_ENTER)
+
+   local item = bar._first
+   local menu = item.menu
+   assert(menu?.visible, 'Enter must open the menubar item menu')
+   defer menu.surface?.free() end
+   assert(math.abs(menu.scale - 2) < 0.01, f'Menu scale must match the bar, got {menu.scale}')
+   assert(menu.surface.width is math.ceil(menu.width * menu.scale) and
+      menu.surface.height is math.ceil(menu.height * menu.scale), 'The menu surface must be scaled')
+   assert(math.abs(menu.viewport.viewWidth * menu.scale - menu.surface.width) < 0.01,
+      'The view box must map the unscaled content to the surface')
+   assert(math.abs(menu.x - item.x * menu.scale) < 0.01, 'The menu must open under its scaled bar item')
+
+   assert(menu.selectItem('recent'), 'The submenu row must be selectable')
+   local submenu = menu.currentMenu
+   assert(submenu?.visible and submenu.scale is menu.scale, 'Submenus must inherit the scale of their parent')
+   assert(submenu.surface.width is math.ceil(submenu.width * submenu.scale), 'The submenu surface must be scaled')
+end
+
+@Test function ScaledMenusOpenAboveAnchorWithoutOverlap()
+   for scale in values(array<double> { 0.5, 1, 2 }) do
+      local surface <close>, target = newTarget()
+      target.y = 190
+      local menu = gui.menu({ target=surface, relative=target, scale=scale, y=20,
+         items=array<table> { { label='First' }, { label='Second' } } })
+      defer menu.surface?.free() end
+      menu.y = 20 * scale -- Menubars update the offset to match their display scale before showing the menu.
+      surface.acShow()
+      menu.show()
+      processing.sleep(0)
+
+      assert(menu.surface.absY + menu.surface.height is surface.absY + target.absY,
+         f'At scale {scale}, an upward-opening menu must end at its anchor')
+   end
+end

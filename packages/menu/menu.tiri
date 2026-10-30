@@ -152,6 +152,9 @@ gui.menu = function(Options:table!)
       items       = Options.items,
       x           = Options.x ?? 0,
       y           = Options.y ?? 0,
+      width       = 0, -- Unscaled width of the menu content
+      height      = 0, -- Unscaled height of the menu content
+      scale       = Options.scale ?? 1, -- Display scale, e.g. to match a scaled client viewport.  Submenus inherit it
       popup       = Options.popup ?? false,
       popupX      = Options.popupX,
       popupY      = Options.popupY,
@@ -195,6 +198,16 @@ gui.menu = function(Options:table!)
 
    local highlightItem:func, openSubmenu:func
 
+   -- The content is laid out at 1:1 and the view box scales it to fit the surface.
+
+   function applyScale()
+      using self do
+         scale = &scale > 0 ? &scale : 1
+         &surface.{ width = math.ceil(&width * scale), height = math.ceil(&height * scale) }
+         &viewport.{ viewWidth = &surface.width / scale, viewHeight = &surface.height / scale }
+      end
+   end
+
    function initVectorScene()
       using self do
          &content = &viewport.new('VectorGroup')
@@ -212,12 +225,11 @@ gui.menu = function(Options:table!)
 
          -- Clients can use the hostScene option to gain access to external fills via url()
 
+         -- Offsets fit the background and border to the view box, whereas a resizeEvent would report the scaled
+         -- surface dimensions.
+
          &content.new('VectorRectangle', table.merge({ -- Background fill
-            x = 0, y = 0, xOffset = 0, yOffset = 0,
-            resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-               Vector.width  = Width - (Vector.x * 2)
-               Vector.height = Height - (Vector.y * 2)
-            end
+            x = 0, y = 0, xOffset = 0, yOffset = 0
          }, theme.bkgd))
 
          &highlight = &content.new('VectorRectangle', table.merge({ -- Item highlighting
@@ -227,11 +239,7 @@ gui.menu = function(Options:table!)
 
          &content.new('VectorRectangle', table.merge({ -- Foreground border
             stroke = 'none', strokeWidth = 1.5,
-            x = 1, y = 1, xOffset = 1, yOffset = 1,
-            resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-               Vector.width  = Width - (Vector.x * 2)
-               Vector.height = Height - (Vector.y * 2)
-            end
+            x = 1, y = 1, xOffset = 1, yOffset = 1
          }, theme.border))
 
          &_rows = array<table>
@@ -353,8 +361,9 @@ gui.menu = function(Options:table!)
          check_x = TEXT_X + widestItem + HMARGIN * 4
          width = TEXT_X + widestItem + (HMARGIN * 6) + check_column + widestKey + HMARGIN
 
-         &surface.width  = width
-         &surface.height = y + vmargin
+         &width  = width
+         &height = y + vmargin
+         applyScale()
 
          for item in values(&_rows) do
             if not item.lineBreak and item.config.checkable and not item.submenuConfig then
@@ -381,7 +390,7 @@ gui.menu = function(Options:table!)
                      HMARGIN * 2, line_y, line_end, width - line_end, line_y, width - HMARGIN * 2)
                })
             elseif item['keyText'] then
-               item.keyText.x = &surface.width - HMARGIN - HMARGIN
+               item.keyText.x = width - HMARGIN - HMARGIN
             end
          end
       end
@@ -465,6 +474,10 @@ gui.menu = function(Options:table!)
       end
 
       &reverseX = Options.reverseX ?? false
+
+      if &parentMenu then &scale = &parentMenu.scale end
+      applyScale()
+      scale = &scale > 0 ? &scale : 1
 
       if &popup then
          -- Popups open at the pointer unless the client has set display coordinates in popupX and popupY.
@@ -550,11 +563,11 @@ gui.menu = function(Options:table!)
                end
             end
 
-            x = parent.absX - target.absX + parent.width - MARGIN
+            x = parent.absX - target.absX + parent.width - MARGIN * scale
             parent_item = &parentItem
-            y = parent.absY - target.absY + (parent_item?.y ?? 0) - vmargin
+            y = parent.absY - target.absY + ((parent_item?.y ?? 0) - vmargin) * scale
             if x + surface.width > target.width then
-               x = parent.absX - target.absX - surface.width + MARGIN
+               x = parent.absX - target.absX - surface.width + MARGIN * scale
                &reverseX = true
             end
 
@@ -598,7 +611,7 @@ gui.menu = function(Options:table!)
                if &parentMenu then -- Child menu
                   y -= surface.height
                else
-                  y -= surface.height + (Options.y ?? 0)
+                  y -= surface.height + &y
                end
             end
 
@@ -862,11 +875,13 @@ gui.menu = function(Options:table!)
 
       &viewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport:obj!, Events)
          ev = Events
+         scale = &scale > 0 ? &scale : 1
          while ev do
+            ev_y = ev.y / scale -- Input is reported in surface units rather than those of the view box
             if ev.type is JET_BUTTON_1 then
                if ev.value is 1 then
                   for item in values(&_rows) do
-                     if ev.y >= item.y and ev.y < item.y + item.height then
+                     if ev_y >= item.y and ev_y < item.y + item.height then
                         if selectable(item) then
                            -- Focus loss can hide the chain before this click is delivered.  Leaf actions may
                            -- still complete, but a dismissed parent must not reopen its submenu.
@@ -885,7 +900,7 @@ gui.menu = function(Options:table!)
                highlightFound = false
                for item in values(&_rows) do
                   if selectable(item) then
-                     if (ev.y >= item.y) and (ev.y < item.y + item.height) then
+                     if (ev_y >= item.y) and (ev_y < item.y + item.height) then
                         highlightItem(item)
                         highlightFound = true
                         break
