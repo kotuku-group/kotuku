@@ -32,11 +32,14 @@ class extScintilla : public objScintilla {
    objBitmap *Bitmap;            // Scintilla paints into this bitmap; it covers the visible area of the View
    objVectorColour *FillColour;  // Solid fill for shapes drawn with vec::DrawPath()
    objVectorColour *StrokeColour; // Solid stroke for shapes drawn with vec::DrawPath()
+   objScript *MenuScript;        // Hosts the context menu with gui/menu (see pan_menu.cxx)
    ClipRectangle Dirty;          // Area of the client that is waiting to be repainted
    double CanvasX;               // Sub-pixel offset of the Canvas that aligns the Bitmap with whole device pixels
    double CanvasY;
    double PointerX;              // Client position of the pointer, as of the most recent movement event
    double PointerY;
+   double MenuX;                 // Scene position at which the context menu was requested
+   double MenuY;
    int    ScrollX;             // Scroll position reflected by the Page, i.e. Scintilla's xOffset in pixels
    int    ScrollY;             // Scroll position reflected by the Page, i.e. Scintilla's topLine in pixels
    int    PageWidth;           // Extent of the Page, as computed by ModifyScrollBars()
@@ -66,6 +69,7 @@ class extScintilla : public objScintilla {
    uint16_t RepaintQueued:1;   // A Repaint message is queued for the Dirty area
    uint16_t HasFocus:1;        // The Focus viewport, or one of its children, has the user focus
    uint16_t PointerStale:1;    // The pointer entered the Canvas without a movement event, so PointerX/Y are outdated
+   uint16_t MenuOpen:1;        // The context menu is visible
    uint8_t  ScrollLocked;      // Set while the editor is scrolling in response to a Page change
 
    extScintilla(objMetaClass *ClassPtr, OBJECTID ObjectID) : objScintilla(ClassPtr, ObjectID) {
@@ -111,7 +115,7 @@ public:
 //    virtual void CancelModes();
 //    virtual int KeyCommand(unsigned int iMessage);
    virtual void CreateCallTipWindow(Scintilla::PRectangle rc);
-   virtual void AddToPopUp(const char *label, int cmd=0, bool enabled=true);
+   virtual void AddToPopUp(const char *Label, int Command=0, bool Enabled=true);
 //    virtual void NotifyStyleToNeeded(int endStyleNeeded);
    virtual void SetVerticalScrollPos();
    virtual void SetHorizontalScrollPos();
@@ -158,6 +162,9 @@ public:
    virtual void panSetFolding(bool Enable);
    virtual bool panToggleFold(int Line);
    ERR panClipboard(CLIPMODE Mode);
+   void panContextMenu(double X, double Y, double SceneX, double SceneY);
+   void panShowPopup();
+   void panPopupCommand(int Command);
 
    // Brace match handling
    virtual void braceMatch();
@@ -204,6 +211,17 @@ private:
    ERR read_clipboard(std::string &Content);
    ERR cut_clipboard();
    ERR paste_clipboard();
+   bool PopupCommandAllowed(int Command);
+
+   struct popup_item {
+      std::string label;
+      int command;
+      bool enabled;
+      std::string qualifier;
+      std::string key;
+   };
+
+   std::vector<popup_item> popup_items; // Context menu items, as added by ScintillaBase::ContextMenu()
 
    int braceMode;
    int oldpos = -1;

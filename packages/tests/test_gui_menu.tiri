@@ -1012,6 +1012,23 @@ end
    assert(#states is 2 and not config.checked, 'Disabled shortcut items must preserve checked state')
 end
 
+@Test function PopupOpensAtExplicitDisplayCoordinates()
+   local surface <close>, target = newTarget()
+   surface.acShow()
+   local menu = gui.menu({ popup=true, popupX=120, popupY=70, items=array<table> { { label='Open' } } })
+   defer menu.surface?.free() end
+   menu.show()
+   assert(menu.surface.absX is 119 and menu.surface.absY is 69,
+      f'popupX and popupY must replace the pointer position, got {menu.surface.absX},{menu.surface.absY}')
+   menu.hide()
+   menu.popupX = 0
+   menu.popupY = 0
+   menu.show()
+   -- Popups open one pixel above and to the left of the pointer, which is not clamped at the display origin.
+   assert(menu.surface.absX is -1 and menu.surface.absY is -1,
+      f'Zero must be accepted as a popup coordinate, got {menu.surface.absX},{menu.surface.absY}')
+end
+
 @Test function FreeingPopupReleasesItsKeyboardScene()
    local surface <close>, target = newTarget()
    surface.acShow()

@@ -12,6 +12,12 @@ The Scintilla class provides advanced text editing capabilities that are suitabl
 as well as simple user input features for text input boxes.  The code is based on the Scintilla project at
 http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its
 capabilities.
+
+Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and
+Select All.  Items are disabled when they cannot be used: edits require `SCIF::EDIT`, Cut, Copy and Delete require a
+selection, and Paste requires text on the clipboard.  The menu is displayed with `gui/menu` at the pointer position,
+including over a transformed or scrolled host.  Closing the menu with Escape or by choosing an item returns the focus
+to the editor, while moving the focus elsewhere closes it without doing so.
 -END-
 
 *********************************************************************************************************************/
@@ -35,6 +41,7 @@ capabilities.
 #include <algorithm>
 #include <map>
 #include <format>
+#include <charconv>
 #include <cmath>
 #include <memory>
 
@@ -230,6 +237,8 @@ static int command_key(KEY, bool);
 static int shortcut_key(KEY);
 static void report_event(extScintilla *, SEF Event);
 static void report_margin_click(extScintilla *, SCMG, int, KQ);
+static void hide_context_menu(extScintilla *);
+static void free_context_menu(extScintilla *);
 static ERR tick_timer(extScintilla *, int64_t, int64_t);
 static ERR idle_timer(extScintilla *, int64_t, int64_t);
 extern ERR init_search(void);
@@ -338,6 +347,7 @@ static void update_focus(extScintilla *Self)
 static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extScintilla *)CurrentContext();
+   hide_context_menu(Self);
    Self->Viewport = nullptr;
    Self->Focus    = nullptr;
    Self->View     = nullptr;
@@ -436,6 +446,10 @@ static ERR feedback_page(objVectorViewport *Page, FM Event)
 // position belongs to an earlier visit.  The next button or wheel event carries the position that the scene computed
 // on entry, so it is used to resolve the client position before the editor can scroll.
 //
+// A release of the RMB opens the context menu at the scene position of the event, which is free of the transforms
+// that apply to the editor (see pan_menu.cxx).  Opening on release ensures that the button is no longer held when the
+// menu appears under the pointer.
+//
 // Each wheel event scrolls by a fixed step because wheel values are not consistent between platforms.  Holding Ctrl
 // scrolls by a page.  Input events do not carry the modifier state, so the state that key_event() tracks is used.
 
@@ -477,6 +491,9 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
 
             if ((event->Type IS JET::LMB) and (not Self->HasFocus) and (Self->Focus)) acFocus(Self->Focus);
             Self->API->panMousePress(event->Type, Self->PointerX, Self->PointerY, time);
+         }
+         else if (event->Type IS JET::RMB) {
+            Self->API->panContextMenu(Self->PointerX, Self->PointerY, event->AbsX, event->AbsY);
          }
          else Self->API->panMouseRelease(event->Type, Self->PointerX, Self->PointerY, time);
       }
@@ -957,6 +974,7 @@ static ERR SCINTILLA_Disable(extScintilla *Self)
 {
    if ((Self->Flags & SCIF::DISABLED) IS SCIF::NIL) {
       Self->Flags |= SCIF::DISABLED;
+      hide_context_menu(Self);
       if (Self->API) Self->API->panReleaseMouse(); // Button releases are ignored while disabled
       update_focus(Self);
       acDraw(Self);
@@ -1136,6 +1154,7 @@ static ERR SCINTILLA_GotoLine(extScintilla *Self, struct sci::GotoLine *Args)
 
 static ERR SCINTILLA_Hide(extScintilla *Self)
 {
+   hide_context_menu(Self);
    if (Self->View) return acHide(Self->View);
    else return ERR::Okay;
 }
@@ -3106,6 +3125,7 @@ static void paint_dirty(extScintilla *Self)
 //********************************************************************************************************************
 
 extScintilla::~extScintilla() {
+   free_context_menu(this); // Before the API is deleted, because the script reports the menu closing
    delete API;
 
    if (EventCallback.defined()) {
