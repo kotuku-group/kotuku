@@ -1651,6 +1651,9 @@ gui.interface = {
 }
 
 gui.sizing = { -- Universal sizing information
+   window = scaledPixels({
+      gap = 12
+   }),
    widget = scaledPixels({
       width     = 160, -- Default width for common widgets (px at 96 DPI)
       gap       = 6,   -- Recommended gap between widgets (px at 96 DPI)
@@ -2535,8 +2538,9 @@ gui.themes = <table{ linkThemes({
       },
       panel = {
          bkgd          = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
+         header        = { fill = gui.palette.light.neutral },
          title         = { fill = gui.palette.light.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'bold' },
-         meta          = { fill = gui.palette.light.text, opacity = 0.7, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
+         meta          = { fill = gui.palette.light.text, opacity = 0.9, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
          metaHighlight = { fill = gui.palette.light.contrast },
          divider       = { fill = gui.palette.light.edge },
          headerPad     = gui.fonts.small.size,

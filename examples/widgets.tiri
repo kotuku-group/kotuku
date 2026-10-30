@@ -487,7 +487,6 @@ end
 
    function fitNotes(Panel:table!)
       if not notes_text or (notes_width <= 0) then return end
-      pad = Panel.padding
       notes_text.inlineSize = math.max(1, notes_width - (gui.sizing.widget.gap + gui.sizing.widget.gap) - Panel.scrollbar.v_thickness)
       _, _, ty, _, th = notes_text.mtGetBoundary(0)
       _, _, py = Panel.page.mtGetBoundary(0)

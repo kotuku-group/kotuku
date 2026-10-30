@@ -20,8 +20,9 @@ gui.panel = function(Options:table!)
       metaTip      = Options.metaTip, -- Tooltip text for a clickable meta
       viewport     = nil, -- The panel's primary viewport
       header       = nil, -- The header row, or nil if the panel has no header
+      headerFill   = nil, -- The header background, if the theme defines one
       body         = nil, -- The client area, inset from the panel edges by the padding
-      padding      = Options.padding or { },
+      padding      = table.merge(Options.padding, nil), -- A copy, as the defaults are filled in below
       page         = nil, -- The scrolled page in the body, if the scroll option is set
       scrollbar    = nil,
       titleText    = nil,
@@ -493,6 +494,26 @@ gui.panel = function(Options:table!)
       end
 
       if Options.header != false then
+         -- The optional header fill covers the header inside the border.  Its top corners follow the inner edge of a
+         -- rounded border, so the fill is rounded and extended downwards by the corner radius, and a clipping
+         -- viewport cuts away its bottom corners at the divider.
+
+         local fill_frame:obj, fill_round_y:num
+         if theme.header then
+            fill_round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
+            fill_round_y = theme.bkgd.roundY or fill_round_x
+            fill_round_x = math.max(0, fill_round_x - (edge * 0.5))
+            fill_round_y = math.max(0, fill_round_y - (edge * 0.5))
+
+            fill_frame = &viewport.new('VectorViewport', {
+               name = 'PanelHeaderFill', x = edge, y = edge, xOffset = edge, height = 1, overflow = VOF_HIDDEN
+            })
+
+            &headerFill = fill_frame.new('VectorRectangle', table.merge({
+               x = 0, y = 0, xOffset = 0, height = 1, roundX = fill_round_x, roundY = fill_round_y
+            }, theme.header))
+         end
+
          &header = &viewport.new('VectorViewport', { name = 'PanelHeader', x = 0, y = 0, xOffset = 0, height = 1 })
 
          &titleText = &header.new('VectorText', table.merge({
@@ -505,13 +526,19 @@ gui.panel = function(Options:table!)
 
          for k in theme.metaHighlight do meta_base[k] = &metaText[k] end
 
-         -- The header holds the larger of the two text lines, or a default-height button.
+         -- The header holds the larger of the two text lines.  Taller header items are centred and may overflow it.
 
          title_line, title_ascent = gui.layout.textMetrics(&titleText)
          meta_line = gui.layout.textMetrics(&metaText)
          &headerHeight = theme.headerHeight ??
             (math.max(math.ceil(title_line), math.ceil(meta_line)) + gui.sizing.widget.margin)
          &header.height = &headerHeight
+
+         if fill_frame then
+            fill_height = math.max(1, &headerHeight - edge)
+            fill_frame.height = fill_height
+            &headerFill.height = fill_height + fill_round_y
+         end
 
          -- The title's capitals are centred in the header and the meta shares its baseline.
 
@@ -529,7 +556,10 @@ gui.panel = function(Options:table!)
       end
 
       &body = &viewport.new('VectorViewport', {
-         name = 'PanelBody', x = &padding.left, y = body_y + &padding.top, xOffset = &padding.right, yOffset = &padding.bottom, overflow = VOF_HIDDEN
+         name = 'PanelBody',
+         x = &padding.left, y = body_y + &padding.top,
+         xOffset = &padding.right, yOffset = &padding.bottom,
+         overflow = VOF_HIDDEN
       })
 
       -- A scrolling body holds a page in a clipping frame.  The client sets the page size in the scrolled directions,
