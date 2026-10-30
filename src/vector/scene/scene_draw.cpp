@@ -627,7 +627,8 @@ void SceneRenderer::draw(objBitmap *Bitmap, objVectorViewport *Viewport)
    mObjectCount = 0;
    while (not mClipStack.empty()) mClipStack.pop();
 
-   log.traceBranch("Bitmap: %dx%d,%dx%d, Viewport: %d", Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom, Scene->Viewport->UID);
+   log.traceBranch("Bitmap: %dx%d,%dx%d, Viewport: %d", Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right,
+      Bitmap->Clip.Bottom, Viewport ? Viewport->UID : 0);
 
    if ((Bitmap->Clip.Bottom > Bitmap->Height) or (Bitmap->Clip.Right > Bitmap->Width)) {
       // NB: Any code that triggers this warning needs to be fixed.

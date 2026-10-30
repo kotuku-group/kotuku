@@ -705,10 +705,12 @@ static ERR VECTORSCENE_Debug(extVectorScene *Self)
       }
    }
 
-   log.msg("Scene #%d scene graph follows:", Self->UID);
+   if (Self->Viewport) {
+      log.msg("Scene #%d scene graph follows:", Self->UID);
+      int level = 0;
+      debug_tree((extVector *)Self->Viewport, level);
+   }
 
-   int level = 0;
-   debug_tree((extVector *)Self->Viewport, level);
    return ERR::Okay;
 }
 

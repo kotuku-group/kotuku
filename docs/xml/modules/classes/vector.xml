@@ -392,6 +392,7 @@ describe the target's encoding and cannot be overridden.</li>
       <type lookup="PTC">PTC</type>
       <description>
 <p>The Cursor field declares the pointer's cursor image to display within the vector's boundary.  The cursor will automatically switch to the specified image when it enters the boundary defined by the vector's path.  This effect lasts until the cursor vacates the area.</p>
+<p>A vector in front of another takes precedence over it.  Setting <code>DEFAULT</code> restores the default image over the vector, e.g. for a scrollbar that overlaps a text area with a <code>TEXT</code> cursor.  The <code>NIL</code> value leaves the choice to the vectors behind.</p>
 <p>It is a pre-requisite that the associated <class name="VectorScene">VectorScene</class> has been linked to a <class name="Surface">Surface</class>.</p>
 <types lookup="PTC"/>
       </description>
