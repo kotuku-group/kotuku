@@ -62,6 +62,13 @@ EXTRAS <const> = {
    }
 }
 
+-- The panels keep the design's pixel sizes rather than the density-scaled gui defaults.  The header height is pinned
+-- in the panel theme, so the picker's layout constants can include it before any panel exists.
+
+PANEL_HEADER <const> = 31 -- Panel header, excluding the divider
+
+colourpicker_theme.PANEL_HEADER_H = PANEL_HEADER + 1 -- Panel header including its divider
+
 THUMB_WIDTH  <const> = 3  -- Channel slider thumb bar
 THUMB_HEIGHT <const> = 18
 
@@ -228,8 +235,21 @@ function buildTheme(Base:table):table
          bkgd      = { fill = t.border },
          fore      = { fill = t.fg0, opacity = 1 },
          foreFocus = { stroke = t.accent }
+      },
+      panel = {
+         bkgd    = { fill = t.panel, stroke = t.borderStrong, strokeWidth = 1, roundX = 6, roundY = 6 },
+         title   = { fill = t.fg2, face = gui.fonts.default.face, fontSize = '12px', fontStyle = 'Medium' },
+         meta    = {
+            fill = t.fg2, opacity = 1, face = gui.fonts.filesys.face, fontSize = '14px', fontStyle = 'Medium'
+         },
+         metaHighlight = { fill = t.fg0 },
+         divider = { fill = t.divider },
+         headerPad    = 12,
+         headerHeight = PANEL_HEADER,
+         metaGap      = 16
       }
    })
+   theme.panel.header = nil -- The design's panel headers have no fill of their own
 
    extras = table.clone(EXTRAS[scheme])
    hue, scale = paletteTint(Base.palette)

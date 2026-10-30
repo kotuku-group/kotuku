@@ -8,12 +8,12 @@
 -- The base is the edited colour, except while the edited colour is the step that was picked.  A light or dark step
 -- has less chroma than the base, so rebasing on it would wash out the rest of the ramp.
 
-   import 'gui', 'gui/button', 'gui/combobox', 'gui/colourpicker/colour', './parts', './curve'
+   import 'gui', 'gui/button', 'gui/combobox', 'gui/panel', 'gui/colourpicker/colour'
+   import './parts', './theme', './curve'
    include 'display'
 
    namespace colourpicker_ramp { }
 
-PANEL_HEADER_H <const> = 32 -- Panel header including its divider
 PAD            <const> = 12 -- Horizontal padding inside the panel
 TOP            <const> = 10 -- Top of the step row
 COUNT_BUTTON   <const> = 18 -- Size of the plus and minus buttons, which are stacked
@@ -38,7 +38,7 @@ CURVE_H        <const> = 60
 COLUMN_GAP     <const> = 8  -- Between the L and C columns
 CUSTOM         <const> = 'Custom'
 
-colourpicker_ramp.HEIGHT    = PANEL_HEADER_H + CURVE_TOP + BOX_H + CURVE_GAP + CURVE_H + 12
+colourpicker_ramp.HEIGHT    = colourpicker_theme.PANEL_HEADER_H + CURVE_TOP + BOX_H + CURVE_GAP + CURVE_H + 12
 colourpicker_ramp.MIN_STEPS = MIN_STEPS
 colourpicker_ramp.MAX_STEPS = MAX_STEPS
 colourpicker_ramp.C_RANGE   = C_RANGE
@@ -95,9 +95,9 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
    inner_w = width - (PAD * 2)
 
    self = {
-      panel = colourpicker_parts.panel(Target, {
-         x = Options.x, y = Options.y, width = width, height = colourpicker_ramp.HEIGHT, title = 'Tonal Ramp',
-         tokens = t
+      panel = gui.panel({
+         target = Target, x = Options.x, y = Options.y, width = width, height = colourpicker_ramp.HEIGHT,
+         title = 'Tonal Ramp', padding = colourpicker_parts.PANEL_PADDING
       }),
       count  = STEPS,
       steps  = array<table>,

@@ -1,5 +1,5 @@
--- Vector building blocks for the colour picker: panels, chips and key hints.  Every builder takes a target viewport
--- and an Options table that includes the picker `tokens` (see colourpicker_theme.tokens()).
+-- Vector building blocks for the colour picker: chips, key hints and panel padding.  Every builder takes a target
+-- viewport and an Options table that includes the picker `tokens` (see colourpicker_theme.tokens()).
 
    import 'gui', 'gui/layout', 'gui/button', 'gui/colourpicker/colour'
 
@@ -8,9 +8,6 @@
 colourpicker_parts.FACE_UI   = gui.fonts.default.face
 colourpicker_parts.FACE_MONO = gui.fonts.filesys.face
 
-PANEL_RADIUS  <const> = 6
-PANEL_HEADER  <const> = 31 -- Header height, excluding the divider
-PANEL_PAD_X   <const> = 12
 CHIP_HEIGHT   <const> = 20
 CHIP_PAD      <const> = 7
 CHIP_DOT      <const> = 8
@@ -90,58 +87,10 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Doc(text=[[
-@desc Create a panel: a rounded card with an uppercase title, optional right-aligned meta text and a divider under
-the header.
-@input Target viewport
-@input Options: x, y, width, height, title, meta, tokens
-@result Table with `viewport`, `body` (a viewport below the header), `title`, `meta`, `setMeta(Text)` and
-`setHeight(Height)`
-]])
-colourpicker_parts.panel = function(Viewport:obj!, Options:table!):table
-   t = Options.tokens
-   width = Options.width
-   height = Options.height
+-- The picker's panels are gui.panel() widgets whose bodies meet the panel edges; their content applies its own
+-- insets.  The panel copies the padding table, so it can be shared.
 
-   self = {
-      viewport = Viewport.new('VectorViewport', { x = Options.x, y = Options.y, width = width, height = height })
-   }
-
-   self.bkgd = self.viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = PANEL_RADIUS, roundY = PANEL_RADIUS,
-      fill = t.panel, stroke = t.borderStrong, strokeWidth = 1
-   })
-
-   title_y = colourpicker_parts.baseline(10, 13, 11)
-
-   self.title = text(self.viewport, {
-      x = PANEL_PAD_X, y = title_y, size = 12, style = 'Medium', fill = t.fg2, string = (Options.title ?? '')
-   })
-
-   self.meta = text(self.viewport, {
-      x = width - PANEL_PAD_X, y = title_y, size = 14, face = colourpicker_parts.FACE_MONO, fill = t.fg2,
-      string = Options.meta ?? '', align = 'right'
-   })
-
-   self.viewport.new('VectorRectangle', {
-      x = 1, y = PANEL_HEADER, width = width - 2, height = 1, fill = t.divider
-   })
-
-   self.body = self.viewport.new('VectorViewport', {
-      x = 0, y = PANEL_HEADER + 1, xOffset = 0, yOffset = 0
-   })
-
-   self.setMeta = function(Text:str)
-      self.meta.string = Text ?? ''
-   end
-
-   self.setHeight = function(Height:num!)
-      self.viewport.height = Height
-      self.bkgd.height = Height - 1
-   end
-
-   return self
-end
+colourpicker_parts.PANEL_PADDING = { left = 0, right = 0, top = 0, bottom = 0 }
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -609,8 +558,8 @@ ellipsis while it isn't being edited.
 @input Target viewport
 @input Options: x (right edge of the text), y (top), width, height, size, fill, charLimit (default 16), tokens,
 commit(Text), blur(), focus(Has, Field)
-@result Table with `viewport`, `text`, `set(Text)`, `setWidth(Width)`, `hasFocus()`, `enable()` and `disable()`.
-set() leaves the text alone while the field has the focus.
+@result Table with `viewport`, `text`, `disabled`, `set(Text)`, `setWidth(Width)`, `hasFocus()`, `enable()` and
+`disable()`.  set() leaves the text alone while the field has the focus.  The table can be registered with a gui.panel.
 ]])
 colourpicker_parts.valueField = function(Viewport:obj!, Options:table!):table
    t = Options.tokens
@@ -618,7 +567,7 @@ colourpicker_parts.valueField = function(Viewport:obj!, Options:table!):table
    height = Options.height
    size = Options.size ?? 11
 
-   self = { shown = '', focused = false }
+   self = { shown = '', focused = false, disabled = false }
 
    self.viewport = Viewport.new('VectorViewport', {
       x = Options.x - width + FIELD_PAD, y = Options.y, width = width, height = height, overflow = VOF_HIDDEN,
@@ -682,8 +631,15 @@ colourpicker_parts.valueField = function(Viewport:obj!, Options:table!):table
       return self.focused
    end
 
-   self.enable = function() vp.acEnable() end
-   self.disable = function() vp.acDisable() end
+   self.enable = function()
+      self.disabled = false
+      vp.acEnable()
+   end
+
+   self.disable = function()
+      self.disabled = true
+      vp.acDisable()
+   end
 
    vp.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
       repeat
