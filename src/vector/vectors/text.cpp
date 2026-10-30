@@ -2261,6 +2261,8 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
 
    case KEY::ENTER:
    case KEY::NP_ENTER:
+      // Ctrl+Enter is left to the client, e.g. to submit a form from a multi-line field.
+      if ((Event->Qualifiers & KQ::CTRL) != KQ::NIL) break;
       if (replace_selection(Self, "\n")) report_change(Self);
       break;
 

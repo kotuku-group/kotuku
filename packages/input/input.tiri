@@ -4,7 +4,7 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui', 'gui/layout'
+   import 'gui', 'gui/layout', 'gui/scrollbar'
 
    namespace gui
 
@@ -13,6 +13,8 @@ Documentation is available in the Kotuku Wiki.
 function textHash(Text:str):num
    return Text?? ? string.hash(Text) : 0
 end
+
+TEXT_PAD <const> = 4 -- Horizontal padding of the text in the box
 
 function reportActivate(State:str!, Force:bool!)
    &events.activate ?! return
@@ -72,13 +74,17 @@ gui.input = function(Options)
       maskMode       = Options.maskMode ?? 'commit', -- 'commit' or 'keystroke'
       maxLength      = Options.maxLength, -- Maximum number of characters (not bytes)
       readOnly       = Options.readOnly ?? false,
+      multiline      = Options.multiline ?? false, -- Init-only
       text           = nil, -- A VectorText that represents the string
       viewport       = nil, -- The input box's primary viewport
+      page           = nil, -- Multi-line mode: the scrolled viewport that holds the text
+      scrollbar      = nil, -- Multi-line mode: the vertical gui.scrollbar of the page
       _lastGoodInput = Options.text ?? '',
       _currentText   = Options.text ?? ''
    }
 
    assert(self.maskMode is 'commit' or self.maskMode is 'keystroke', 'maskMode must be "commit" or "keystroke".')
+   assert(not (self.multiline and Options.secret), 'multiline cannot be combined with secret.')
 
    -- Change the active state of the input box to disabled or enabled
 
@@ -108,6 +114,50 @@ gui.input = function(Options)
       end
    end
 
+   -- Multi-line mode: the page is as tall as the larger of the view and the text, with the text's top padding
+   -- repeated below the last line.  The scroll position is kept unless the page has become too short for it.
+
+   function fitPage()
+      view_h = &_textView.height
+      _, _, top = &text.mtGetCaretBounds(0, 0)
+      _, _, y, h = &text.mtGetCaretBounds(&text.totalLines - 1, 0x7fffffff)
+      height = math.max(view_h, math.ceil(y + h + top))
+      min_y = math.min(0, view_h - height)
+      if (height != &page.height) or (&page.y < min_y) then
+         &page.height = height
+         if &page.y < min_y then &page.y = min_y end
+         &_textClip.acDraw()
+      end
+   end
+
+   -- Multi-line mode: scroll the page so that the caret's line and the text padding around it are in the view.  The
+   -- page stays on whole pixels so that the text remains sharp.
+
+   function revealCaret()
+      view_h = &_textView.height
+      _, _, pad = &text.mtGetCaretBounds(0, 0)
+      _, _, y, h = &text.mtGetCaretBounds(-1, -1)
+      top = y - pad
+      bottom = y + h + pad
+      view_top = -&page.y
+      if top < view_top then
+         &page.y = -math.max(0, math.floor(top))
+      elseif bottom > view_top + view_h then
+         &page.y = -math.min(&page.height - view_h, math.ceil(bottom - view_h))
+      else
+         return
+      end
+      &_textClip.acDraw()
+   end
+
+   -- Multi-line mode: wrap the text to the width of the page, which narrows when the scrollbar is shown.
+
+   function wrapText()
+      inline_size = math.max(1, &_textView.width - (TEXT_PAD * 2))
+      if &text.inlineSize != inline_size then &text.inlineSize = inline_size end
+      fitPage()
+   end
+
    -- Programmatic changes bypass inputMask, maxLength and events.change.  The activation hash is updated so that a
    -- later lost-focus activation compares against the text that the user saw.
 
@@ -116,6 +166,10 @@ gui.input = function(Options)
       &_currentText = Text
       &_lastGoodInput = Text
       &hash = textHash(Text)
+      if &page then
+         &page.y = 0
+         fitPage()
+      end
       checkPlaceholder()
       &viewport.acDraw()
    end
@@ -138,6 +192,7 @@ gui.input = function(Options)
    function cursorMoved()
       &_cursorRow = &text.cursorRow
       &_cursorColumn = &text.cursorColumn
+      if &page then revealCaret() end
    end
 
    -- Called by VectorText after every user edit.  Rejected edits are reverted immediately, with the cursor returned
@@ -168,6 +223,7 @@ gui.input = function(Options)
          &viewport.acDraw()
       end
 
+      if &page then fitPage() end
       checkPlaceholder()
    end
 
@@ -181,7 +237,9 @@ gui.input = function(Options)
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       font_max_height, font_height = gui.getFontHeight(gui.fonts.input)
-      default_height = math.floor(font_max_height * 1.35) + 1
+      line_height = math.floor(font_max_height * 1.35) + 1 -- The height of a single-line box
+      default_height = line_height
+      if &multiline then default_height += math.ceil(font_max_height * 3) end -- Estimated; corrected for the text
 
       vps = { -- Viewport settings
          name    = 'vp_input',
@@ -220,10 +278,13 @@ gui.input = function(Options)
 
       &inputViewport = &viewport.new('VectorViewport', box)
 
+      -- A side label is centred on the first line of a multi-line box.
+
       if &_label then
-         &_label.place(&viewport.width, &viewport.height, box.y, box_height)
+         label_height = &multiline ? line_height : box_height
+         &_label.place(&viewport.width, &viewport.height, box.y, label_height)
          &_label.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
-            &_label.place(Width, Height, box.y, box_height)
+            &_label.place(Width, Height, box.y, label_height)
          end
       end
 
@@ -238,11 +299,48 @@ gui.input = function(Options)
          overflow = VOF_HIDDEN
       })
 
+      -- The text is centred vertically in a single-line box.  A multi-line box places its first line where a
+      -- default single-line box would.
+
+      text_y = math.round(font_height + math.floor(((&multiline ? line_height : box_height) - font_height -
+         (input_theme.bkgd.strokeWidth * 2)) * 0.5))
+
+      -- In multi-line mode, the text is drawn on a page that scrolls within a view.  The scrollbar narrows the view
+      -- while the text overflows it.
+
+      text_host = &_textClip
+      if &multiline then
+         &_textView = &_textClip.new('VectorViewport', {
+            name = 'vp_input_view', x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN
+         })
+
+         &page = &_textView.new('VectorViewport', {
+            name = 'vp_input_page', x = 0, y = 0, width = '100%', height = box_height - (clip_inset * 2)
+         })
+         text_host = &page
+
+         -- The scrollbar is flush with the inner edge of the border.  Its track follows the rounding of the right
+         -- corners, and margins keep the slider out of the rounded ends.
+
+         edge = input_theme.bkgd.strokeWidth * 0.5
+         round_x = math.max(0, (tonumber(input_theme.bkgd.roundX) ?? 0) - edge)
+         round_y = math.max(0, (tonumber(input_theme.bkgd.roundY ?? input_theme.bkgd.roundX) ?? 0) - edge)
+         bar_style = theme.scrollbar_v ? 'scrollbar_v' : 'scrollbar'
+         &scrollbar = gui.scrollbar({
+            target = &inputViewport, view = &_textView, page = &page, direction = 'vertical',
+            theme = { [bar_style] = table.merge({
+               bkgd   = { rounding = { 0, 0, round_x, round_y, round_x, round_y, 0, 0 } },
+               margin = round_y
+            }, input_theme.scrollbar ?? {}, true, true) }
+         })
+         &scrollbar.vbar.viewport.{ y = edge, yOffset = edge, xOffset = edge }
+      end
+
       if Options.placeholder then
-         &placeholder = &_textClip.new('VectorText', table.merge({
+         &placeholder = text_host.new('VectorText', table.merge({
             name      = 'vt_placeholder',
-            x         = 4,
-            y         = math.round(font_height + math.floor((box_height - font_height - (input_theme.bkgd.strokeWidth * 2)) * 0.5)),
+            x         = TEXT_PAD,
+            y         = text_y,
             opacity   = 0.5,
             string    = Options.placeholder,
             lineLimit = 1
@@ -253,23 +351,54 @@ gui.input = function(Options)
          end
       end
 
-      &text = &_textClip.new('VectorText', table.merge({
+      &text = text_host.new('VectorText', table.merge({
          name      = 'vt_input',
-         x         = 4,
-         y         = math.round(font_height + math.floor((box_height - font_height - (input_theme.bkgd.strokeWidth * 2)) * 0.5)),
+         x         = TEXT_PAD,
+         y         = text_y,
          face      = gui.fonts.input.face, -- Fallbacks; theme.text normally defines the font
          fontSize  = string.format('%.2fpt', gui.fonts.input.size),
          fontStyle = gui.fonts.input.style,
          string    = Options.text,
-         lineLimit = 1,
+         lineLimit = &multiline ? 0 : 1,
          textFlags = (function()
             flags = VTXF_EDITABLE -- Required at init for VectorText to support editing; readOnly is applied after
             if Options.secret then flags = flags | VTXF_SECRET end
+            if &multiline then
+               -- Keep caret geometry available when readOnly clears EDITABLE; the page does the scrolling.
+               flags = flags | VTXF_NO_AUTO_OFFSET | VTXF_SELECTABLE
+            end
             return flags
          end)(),
          onChange  = textChanged,
          onCursorMove = cursorMoved
       }, input_theme.text))
+
+      if &multiline then
+         -- The default height fits four lines of the text's own font, with the first line's top padding repeated
+         -- below the last.
+
+         if not Options.height then
+            _, _, top, line_h = &text.mtGetCaretBounds(0, 0)
+            needed = math.ceil((top * 2) + (line_h * 4)) + (clip_inset * 2)
+            &viewport.height += needed - box_height
+            &page.height = needed - (clip_inset * 2)
+         end
+
+         wrapText()
+         &page.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height) -- Reports the view
+            wrapText()
+         end
+
+         -- The page is the editing viewport.  Focus given to the clip, e.g. by a caller, is passed to the page once
+         -- the focus change is complete.
+
+         &_textClip.mtSubscribeFeedback(FM_HAS_FOCUS, function(Viewport:obj!, Event)
+            processing.delayedCall(function()
+               if not &disabled then &page?.acFocus() end
+            end)
+         end)
+      end
+      &_editView = &page ?? &_textClip
 
       cursorMoved()
 
@@ -303,10 +432,12 @@ gui.input = function(Options)
          Viewport.acDraw()
       end)
 
-      &_textClip.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers, Value, Unicode)
+      -- Enter activates a single-line box.  A multi-line box takes Enter as a new line and activates on Ctrl+Enter.
+
+      &_editView.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers, Value, Unicode)
          if not (Qualifiers has KQ_PRESSED) then return end
 
-         if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+         if ((Value is KEY_ENTER) or (Value is KEY_NP_ENTER)) and (not &multiline or (Qualifiers has KQ_CTRL)) then
             validateInput()
             reportActivate('activated', true)
          end

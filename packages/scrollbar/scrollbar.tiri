@@ -114,6 +114,15 @@ gui.scrollbar = function(Options)
       &target.acDraw()
    end
 
+   -- The theme's margin keeps the slider away from the ends of the track, e.g. from rounded corners.  It is a number
+   -- for both ends, or a pair for the start (top or left) and end (bottom or right).
+
+   function barMargins(BarTheme:table!):<num, num>
+      margin = BarTheme.margin ?? 0
+      if type(margin) is 'number' then return margin, margin end
+      return margin[0] ?? 0, margin[1] ?? 0
+   end
+
    function createScrollbar(Direction:str!)
       local bar:table
 
@@ -122,12 +131,13 @@ gui.scrollbar = function(Options)
 
          bar = vp.state()
          bar_theme = &theme.scrollbar_v ?? &theme.scrollbar
+         m_start, m_end = barMargins(bar_theme)
          bar.{
             viewport     = vp,
             direction    = 'V',
             theme        = bar_theme,
             barBkgd      = bar.viewport.new('VectorRectangle', table.merge({ width = '100%', height = '100%' }, bar_theme.bkgd)),
-            sliderHostVP = vp.new('VectorViewport', { name='VSliderHostVP', y = 0, width = '100%', yOffset = 0, overflow = VOF_HIDDEN }),
+            sliderHostVP = vp.new('VectorViewport', { name='VSliderHostVP', y = m_start, width = '100%', yOffset = m_end, overflow = VOF_HIDDEN }),
             sliderVP     = bar.sliderHostVP.new('VectorViewport', { name='VSliderVP', width = &v_thickness, height = bar.sliderHostVP.height, overflow = VOF_HIDDEN })
          }
 
@@ -152,12 +162,13 @@ gui.scrollbar = function(Options)
 
          bar = vp.state()
          bar_theme = &theme.scrollbar_h ?? &theme.scrollbar
+         m_start, m_end = barMargins(bar_theme)
          bar.{
             viewport     = vp,
             direction    = 'H',
             theme        = bar_theme,
             barBkgd      = bar.viewport.new('VectorRectangle', table.merge({ width = '100%', height = '100%' }, bar_theme.bkgd)),
-            sliderHostVP = vp.new('VectorViewport', { name='HSliderHostVP', x = 0, height = '100%', xOffset = 0, overflow = VOF_HIDDEN }),
+            sliderHostVP = vp.new('VectorViewport', { name='HSliderHostVP', x = m_start, height = '100%', xOffset = m_end, overflow = VOF_HIDDEN }),
             sliderVP     = bar.sliderHostVP.new('VectorViewport', { name='HSliderVP', width = bar.sliderHostVP.height, height = &h_thickness, overflow = VOF_HIDDEN })
          }
 
