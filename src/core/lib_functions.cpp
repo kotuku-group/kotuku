@@ -1135,7 +1135,7 @@ double Interval: The new interval for the timer (measured in seconds), or zero t
 Okay:
 NullArgs:
 Search: The subscription does not refer to an active timer.
-AlreadyLocked:
+AlreadyLocked: The timer is executing.  A removal request is deferred to the dispatcher's next cycle.
 SystemLocked:
 
 -TAGS-
@@ -1180,12 +1180,18 @@ ERR UpdateTimer(APTR Subscription, double Interval)
          if (timer->Locked) {
             // A timer can't be removed during its execution, but we can nullify the function entry
             // and ProcessMessages() will automatically terminate it on the next cycle.
+            //
+            // This is an expected path rather than a fault.  It is reached when a callback removes its own timer,
+            // when another thread removes the timer mid-callback, and when a free that was deferred while the
+            // dispatcher held the subscriber's lock completes from ReleaseObject() inside the dispatch loop, i.e.
+            // before the dispatcher has reacquired glmTimer to clear Locked.  For that reason no warning is logged.
             if (timer->Routine.isScript() and (not timer->Routine.stale())) {
                ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
             }
             if (timer->Routine.defined()) timer->Routine.unpin();
             timer->Routine.clear();
-            return log.warning(ERR::AlreadyLocked);
+            log.detail("Timer is executing; removal deferred to the dispatcher.");
+            return ERR::AlreadyLocked;
          }
 
          FUNCTION script_routine;
