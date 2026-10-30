@@ -6,6 +6,7 @@ To be used in conjunction with the gui.menubar or as an independent pop-up only.
 
 Menubars automatically dispatch the `key` and `qualifier` fields of enabled leaf items within their focused window.
 
+Popups open at the pointer, or at the display coordinates in the popupX and popupY options when both are set.
 Popups handle navigation and shortcuts while focused.  Other standalone hosts can use gui.findMenuShortcut() and
 menu.activateShortcut() with their own keyboard listener.
 
@@ -152,6 +153,8 @@ gui.menu = function(Options:table!)
       x           = Options.x ?? 0,
       y           = Options.y ?? 0,
       popup       = Options.popup ?? false,
+      popupX      = Options.popupX,
+      popupY      = Options.popupY,
       relative    = Options.relative,
       parentMenu  = Options.parentMenu,
       parentItem  = Options.parentItem,
@@ -464,7 +467,15 @@ gui.menu = function(Options:table!)
       &reverseX = Options.reverseX ?? false
 
       if &popup then
-         err, cursor_x, cursor_y = mGfx.GetCursorPos()
+         -- Popups open at the pointer unless the client has set display coordinates in popupX and popupY.
+
+         local err:num, cursor_x:num, cursor_y:num
+         if (&popupX != nil) and (&popupY != nil) then
+            err, cursor_x, cursor_y = ERR_Okay, &popupX, &popupY
+         else
+            err, cursor_x, cursor_y = mGfx.GetCursorPos()
+         end
+
          if err is ERR_Okay then
             parent = { }
 

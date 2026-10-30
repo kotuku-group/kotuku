@@ -74,21 +74,6 @@ void ScintillaKTK::CreateCallTipWindow(Scintilla::PRectangle rc)
    kt::Log(__FUNCTION__).trace("");
 }
 
-//********************************************************************************************************************
-
-void ScintillaKTK::AddToPopUp(const char *label, int cmD, bool enabled)
-{
-   kt::Log(__FUNCTION__).trace("%s", label);
-
-   // The one and only Menu object is a member of ScintillaBase: Menu popup;
-
-   if (auto menu = OBJECTPTR(popup.GetID()); menu) {
-      auto buffer = std::format("<item text=\"{}\"></item>", label);
-      acDataFeed(menu, nullptr, DATA::XML,
-         std::span<const int8_t>((const int8_t *)buffer.data(), buffer.size()));
-   }
-}
-
 /*********************************************************************************************************************
 ** Scintilla calls these when topLine or xOffset change.  Scrollbars are external to the editor (see gui.scrollbar), so
 ** the scroll position is expressed by moving the Page within the View.
@@ -928,7 +913,6 @@ void ScintillaKTK::panMousePress(JET Button, double X, double Y, unsigned int Ti
 
       ButtonDown(point, Time, scintilla->KeyShift, scintilla->KeyCtrl, scintilla->KeyAlt);
    }
-   // TODO Phase 7: The RMB will open a context menu.
 }
 
 //********************************************************************************************************************

@@ -14,7 +14,8 @@
     <category>Tool</category>
     <copyright>Paul Manias © 2005-2026</copyright>
     <description>
-<p>The Scintilla class provides advanced text editing capabilities that are suitable for modifying text files of any kind, as well as simple user input features for text input boxes.  The code is based on the Scintilla project at http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its capabilities.</p></description>
+<p>The Scintilla class provides advanced text editing capabilities that are suitable for modifying text files of any kind, as well as simple user input features for text input boxes.  The code is based on the Scintilla project at http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its capabilities.</p>
+<p>Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and Select All.  Items are disabled when they cannot be used: edits require <code>SCIF::EDIT</code>, Cut, Copy and Delete require a selection, and Paste requires text on the clipboard.  The menu is displayed with <code>gui/menu</code> at the pointer position, including over a transformed or scrolled host.  Closing the menu with Escape or by choosing an item returns the focus to the editor, while moving the focus elsewhere closes it without doing so.</p></description>
     <source>
       <file>class_scintilla.cxx</file>
     </source>
