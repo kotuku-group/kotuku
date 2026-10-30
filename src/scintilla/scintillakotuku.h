@@ -1,6 +1,7 @@
 
 class objScintilla;
 class ScintillaKTK;
+class SurfacePan;
 
 #include <kotuku/modules/scintilla.h>
 #include "../link/unicode.h"
@@ -24,6 +25,7 @@ class extScintilla : public objScintilla {
    FUNCTION FileDrop;
    FUNCTION EventCallback;
    FUNCTION MarginClick;
+   FUNCTION CompletionCallback;
    objFile *FileStream;
    APTR FontHandles[4] = {};         // Regular, bold, italic and bold italic; shared vector module handles
    objVectorScene *Scene;        // The scene that hosts the Viewport
@@ -102,6 +104,46 @@ class extScintilla : public objScintilla {
    ~extScintilla();
 };
 
+/*********************************************************************************************************************
+** Code assistance pop-ups, i.e. the call tip and the completion list, are Scintilla platform Windows that are displayed
+** as separate viewports in the editor's scene.  The WindowID of a pop-up refers to its PanPopup, while the
+** WindowID of the editor refers to the extScintilla object.  See pan_popup.cxx.
+*/
+
+class PanPopup {
+public:
+   extScintilla *scintilla = nullptr;
+   objVectorViewport *viewport = nullptr; // Positions the pop-up in scene coordinates
+   objVectorRectangle *canvas = nullptr;  // Displays the bitmap and receives pointer input
+   objVectorImage *image = nullptr;       // Scene definition that wraps the bitmap for use as the canvas fill
+   objBitmap *bitmap = nullptr;           // The content of the pop-up is painted into this bitmap
+   Scintilla::PRectangle rect;            // Requested position, in the client coordinates of the editor
+   Scintilla::Point anchor;               // Client position of the anchor when the rect was set
+   double scene_x = 0, scene_y = 0;       // Position of the pop-up in the scene
+   bool shown = false;
+   bool dirty = false;                    // The bitmap needs to be repainted
+
+   PanPopup();
+   PanPopup(const PanPopup &) = delete;
+   PanPopup & operator=(const PanPopup &) = delete;
+   virtual ~PanPopup();
+
+   virtual void paint(SurfacePan &Surface) = 0;
+   virtual void input(const InputEvent *Event) = 0;
+   virtual int anchor_position() = 0;     // Document position that the pop-up is attached to
+   virtual void closed() { }              // Called when Scintilla closes the pop-up
+
+   ERR attach(extScintilla *Scintilla, CSTRING Name);
+   void set_position(Scintilla::PRectangle Rect);
+   void show(bool Show);
+   void invalidate();
+   bool place();
+   void redraw();
+   void release();
+
+   static PanPopup * find(Scintilla::WindowID ID);
+};
+
 // This class inherits from ScintillaBase which inherits from Editor.  Responsible for a lot of the editing code.
 
 class ScintillaKTK : public Scintilla::ScintillaBase {
@@ -165,6 +207,18 @@ public:
    void panContextMenu(double X, double Y, double SceneX, double SceneY);
    void panShowPopup();
    void panPopupCommand(int Command);
+   ERR panShowCompletions(int Length, std::string_view Candidates, SCACF Flags);
+   ERR panShowCallTip(int Pos, std::string_view Text, int HighlightStart, int HighlightEnd);
+   void panCancelPopups();
+   SCPOP panActivePopup();
+   int panCompletionStart();
+   int panCallTipStart() { return calltip_pos; }
+   int panLineHeight() { return vs.lineHeight; }
+   Scintilla::Point panLocation(int Pos) { return LocationFromPosition(Pos); }
+   void panPaintCallTip(Scintilla::Surface *Surface) { ct.PaintCT(Surface); }
+   void panCallTipClick(Scintilla::Point Point);
+   void panFlushCompletionReports();
+   void panCompletionClosed();
 
    // Brace match handling
    virtual void braceMatch();
@@ -204,6 +258,7 @@ private:
    void ExpandAllFolds();
    void FoldChanged(int Line, int LevelNow, int LevelPrev);
    void NotifyKey(int key, int modifiers);
+   void ReportCompletion(SCAC Event, int Position, int Value, CSTRING Text, bool Deferred);
    void UpdateTimers();
    bool TickRequired();
    ERR clipboard_failed(ERR Error, CSTRING Message);
@@ -222,6 +277,18 @@ private:
    };
 
    std::vector<popup_item> popup_items; // Context menu items, as added by ScintillaBase::ContextMenu()
+   std::unique_ptr<PanPopup> calltip_popup; // Created by CreateCallTipWindow() on first use
+   int calltip_pos = 0;                 // Document position that the call tip is attached to
+   bool completion_selected = false;    // A completion has been accepted and the list is about to close
+
+   struct completion_report {
+      SCAC event;
+      int position;
+      int value;
+      std::string text;
+   };
+
+   std::vector<completion_report> completion_reports; // Deferred CompletionCallback reports
 
    int braceMode;
    int oldpos = -1;

@@ -58,6 +58,8 @@ FDEF maAddMarker[] = { { "Line", FD_INT }, { "Marker", FD_INT }, { 0, 0 } };
 FDEF maRemoveMarker[] = { { "Line", FD_INT }, { "Marker", FD_INT }, { 0, 0 } };
 FDEF maGetMarkers[] = { { "Line", FD_INT }, { "Markers", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF maToggleFold[] = { { "Line", FD_INT }, { 0, 0 } };
+FDEF maShowCompletions[] = { { "Length", FD_INT }, { "Candidates", FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
+FDEF maShowCallTip[] = { { "Pos", FD_INT }, { "Text", FD_STR }, { "HighlightStart", FD_INT }, { "HighlightEnd", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clScintillaMethods[] = {
    { AC(-1), (APTR)SCINTILLA_SetFont, "SetFont", maSetFont, sizeof(struct sci::SetFont) },
@@ -78,6 +80,9 @@ static const struct MethodEntry clScintillaMethods[] = {
    { AC(-16), (APTR)SCINTILLA_RemoveMarker, "RemoveMarker", maRemoveMarker, sizeof(struct sci::RemoveMarker) },
    { AC(-17), (APTR)SCINTILLA_GetMarkers, "GetMarkers", maGetMarkers, sizeof(struct sci::GetMarkers) },
    { AC(-18), (APTR)SCINTILLA_ToggleFold, "ToggleFold", maToggleFold, sizeof(struct sci::ToggleFold) },
+   { AC(-19), (APTR)SCINTILLA_ShowCompletions, "ShowCompletions", maShowCompletions, sizeof(struct sci::ShowCompletions) },
+   { AC(-20), (APTR)SCINTILLA_ShowCallTip, "ShowCallTip", maShowCallTip, sizeof(struct sci::ShowCallTip) },
+   { AC(-21), (APTR)SCINTILLA_HidePopups, "HidePopups", 0, 0 },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

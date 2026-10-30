@@ -87,6 +87,37 @@ enum class SCMG : int {
    FOLDING = 2,
 };
 
+// Events reported to the CompletionCallback.
+
+enum class SCAC : int {
+   NIL = 0,
+   REQUEST = 1,
+   CHAR_ADDED = 2,
+   SELECTED = 3,
+   CANCELLED = 4,
+   CALL_TIP_CLICK = 5,
+};
+
+// Options for ShowCompletions().
+
+enum class SCACF : uint32_t {
+   NIL = 0,
+   IGNORE_CASE = 0x00000001,
+   CHOOSE_SINGLE = 0x00000002,
+   DROP_REST_OF_WORD = 0x00000004,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(SCACF)
+
+// Identifies the code assistance pop-up that is active.
+
+enum class SCPOP : int {
+   NIL = 0,
+   NONE = 0,
+   COMPLETIONS = 1,
+   CALL_TIP = 2,
+};
+
 // Optional flags.
 
 enum class SCIF : uint32_t {
@@ -151,6 +182,9 @@ struct AddMarker { int Line; int Marker; static const AC id = AC(-15); ERR call(
 struct RemoveMarker { int Line; int Marker; static const AC id = AC(-16); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct GetMarkers { int Line; int Markers; static const AC id = AC(-17); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 struct ToggleFold { int Line; static const AC id = AC(-18); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ShowCompletions { int Length; CSTRING Candidates; SCACF Flags; static const AC id = AC(-19); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct ShowCallTip { int Pos; CSTRING Text; int HighlightStart; int HighlightEnd; static const AC id = AC(-20); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
+struct HidePopups { static const AC id = AC(-21); ERR call(OBJECTPTR Object) { return Action(id, Object, this); } };
 
 } // namespace
 
@@ -291,6 +325,17 @@ class objScintilla : public Object {
       struct sci::ToggleFold args = { Line };
       return Action(AC(-18), this, &args);
    }
+   inline ERR showCompletions(int Length, CSTRING Candidates, SCACF Flags) noexcept {
+      struct sci::ShowCompletions args = { Length, Candidates, Flags };
+      return Action(AC(-19), this, &args);
+   }
+   inline ERR showCallTip(int Pos, CSTRING Text, int HighlightStart, int HighlightEnd) noexcept {
+      struct sci::ShowCallTip args = { Pos, Text, HighlightStart, HighlightEnd };
+      return Action(AC(-20), this, &args);
+   }
+   inline ERR hidePopups() noexcept {
+      return Action(AC(-21), this, nullptr);
+   }
 
    // Customised field getting
 
@@ -405,14 +450,28 @@ class objScintilla : public Object {
       return ERR::Okay;
    }
 
+   inline ERR getActivePopup(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[23];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getAllowTabs(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[29];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getAutoIndent(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[37];
+      auto field = &this->Class->Dictionary[39];
       return field->GetValue(this, &Value);
+   }
+
+   inline ERR getCompletionCallback(FUNCTION * &Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
+      return get_field(this, Value);
    }
 
    inline ERR getFileDrop(FUNCTION * &Value) noexcept {
@@ -435,7 +494,7 @@ class objScintilla : public Object {
    }
 
    inline ERR getLineNumbers(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[33];
       return field->GetValue(this, &Value);
    }
 
@@ -466,17 +525,17 @@ class objScintilla : public Object {
    }
 
    inline ERR getSymbols(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[27];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getTabWidth(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[24];
       return field->GetValue(this, &Value);
    }
 
    inline ERR getWordwrap(int &Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[37];
       return field->GetValue(this, &Value);
    }
 
@@ -484,7 +543,7 @@ class objScintilla : public Object {
    // Customised field setting
 
    inline ERR setFace(const std::string_view &Value) noexcept {
-      auto field = &this->Class->Dictionary[21];
+      auto field = &this->Class->Dictionary[22];
       return field->WriteValue(this, field, 0x00804300, &Value);
    }
 
@@ -517,27 +576,27 @@ class objScintilla : public Object {
    }
 
    inline ERR setLeftMargin(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[40];
+      auto field = &this->Class->Dictionary[42];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setRightMargin(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[39];
+      auto field = &this->Class->Dictionary[41];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setLineHighlight(const struct RGB8 & Value) noexcept {
-      auto field = &this->Class->Dictionary[23];
+      auto field = &this->Class->Dictionary[25];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setSelectFore(const struct RGB8 & Value) noexcept {
-      auto field = &this->Class->Dictionary[33];
+      auto field = &this->Class->Dictionary[35];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
    inline ERR setSelectBkgd(const struct RGB8 & Value) noexcept {
-      auto field = &this->Class->Dictionary[29];
+      auto field = &this->Class->Dictionary[31];
       return field->WriteValue(this, field, FD_STRUCT, &Value);
    }
 
@@ -557,7 +616,7 @@ class objScintilla : public Object {
    }
 
    inline ERR setLexer(const SCLEX Value) noexcept {
-      auto field = &this->Class->Dictionary[26];
+      auto field = &this->Class->Dictionary[28];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -572,18 +631,23 @@ class objScintilla : public Object {
    }
 
    inline ERR setThemeXML(OBJECTPTR Value) noexcept {
-      auto field = &this->Class->Dictionary[28];
+      auto field = &this->Class->Dictionary[30];
       return field->WriteValue(this, field, 0x08100201, Value);
    }
 
    inline ERR setAllowTabs(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[27];
+      auto field = &this->Class->Dictionary[29];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setAutoIndent(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[37];
+      auto field = &this->Class->Dictionary[39];
       return field->WriteValue(this, field, FD_INT, &Value);
+   }
+
+   inline ERR setCompletionCallback(const FUNCTION Value) noexcept {
+      auto field = &this->Class->Dictionary[21];
+      return field->WriteValue(this, field, FD_FUNCTION, &Value);
    }
 
    inline ERR setFileDrop(const FUNCTION Value) noexcept {
@@ -597,7 +661,7 @@ class objScintilla : public Object {
    }
 
    inline ERR setLineNumbers(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[31];
+      auto field = &this->Class->Dictionary[33];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
@@ -627,17 +691,17 @@ class objScintilla : public Object {
    }
 
    inline ERR setSymbols(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[25];
+      auto field = &this->Class->Dictionary[27];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setTabWidth(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[22];
+      auto field = &this->Class->Dictionary[24];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 
    inline ERR setWordwrap(const int Value) noexcept {
-      auto field = &this->Class->Dictionary[35];
+      auto field = &this->Class->Dictionary[37];
       return field->WriteValue(this, field, FD_INT, &Value);
    }
 

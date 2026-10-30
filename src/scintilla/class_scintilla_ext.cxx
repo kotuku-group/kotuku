@@ -50,6 +50,10 @@ ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
    // We're always UTF-8
 
    SendScintilla(SCI_SETCODEPAGE, SC_CP_UTF8);
+
+   // Call tips are drawn with STYLE_CALLTIP rather than fixed colours.  Tabs are not expanded.
+
+   SendScintilla(SCI_CALLTIPUSESTYLE, 0UL);
 }
 
 ScintillaKTK::~ScintillaKTK()
@@ -67,11 +71,195 @@ void ScintillaKTK::Finalise()
    ScintillaBase::Finalise();
 }
 
+/*********************************************************************************************************************
+** Code assistance.  The completion list and call tip are displayed by pan_listbox.cxx and pan_popup.cxx, while the
+** editing behaviour is ScintillaBase's.
+*/
+
+ERR ScintillaKTK::panShowCompletions(int Length, std::string_view Candidates, SCACF Flags)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or (not scintilla->Viewport)) {
+      return log.warning(ERR::NotPossible);
+   }
+   if ((scintilla->Flags & SCIF::EDIT) IS SCIF::NIL) return log.warning(ERR::ReadOnly);
+
+   const int caret = sel.MainCaret();
+   if ((Length < 0) or (caret - Length < pdoc->LineStart(pdoc->LineFromPosition(caret)))) {
+      return log.warning(ERR::OutOfRange);
+   }
+
+   // AutoComplete finds the typed prefix with a binary search, which requires the order of its own comparison.
+
+   const bool ignore_case = (Flags & SCACF::IGNORE_CASE) != SCACF::NIL;
+
+   std::vector<std::string_view> list;
+   while (not Candidates.empty()) {
+      auto end = Candidates.find('\n');
+      auto item = Candidates.substr(0, end);
+      if (item.ends_with('\r')) item.remove_suffix(1);
+      if (not item.empty()) list.push_back(item);
+      if (end IS std::string_view::npos) break;
+      Candidates.remove_prefix(end + 1);
+   }
+
+   if (list.empty()) return ERR::NoData;
+
+   if (ignore_case) {
+      std::stable_sort(list.begin(), list.end(), [](std::string_view A, std::string_view B) {
+         return std::lexicographical_compare(A.begin(), A.end(), B.begin(), B.end(), [](char X, char Y) {
+            return Scintilla::MakeUpperCase(X) < Scintilla::MakeUpperCase(Y);
+         });
+      });
+   }
+   else std::sort(list.begin(), list.end());
+
+   list.erase(std::unique(list.begin(), list.end()), list.end());
+
+   std::string joined;
+   for (auto &item : list) {
+      if (not joined.empty()) joined.push_back('\n');
+      joined.append(item);
+   }
+
+   log.traceBranch("%d candidates, prefix length %d", int(list.size()), Length);
+
+   SendScintilla(SCI_AUTOCSETSEPARATOR, (unsigned long)'\n');
+   SendScintilla(SCI_AUTOCSETTYPESEPARATOR, 0UL);
+   SendScintilla(SCI_AUTOCSETIGNORECASE, (unsigned long)ignore_case);
+
+   // The engine's chooseSingle shortcut bypasses acceptance notifications and dropRestOfWord, and leaves an
+   // existing list open.  Start the normal list and accept its matching candidate before it can be painted.
+
+   SendScintilla(SCI_AUTOCSETCHOOSESINGLE, 0UL);
+   SendScintilla(SCI_AUTOCSETDROPRESTOFWORD, (unsigned long)((Flags & SCACF::DROP_REST_OF_WORD) != SCACF::NIL));
+   SendScintilla(SCI_AUTOCSHOW, (unsigned long)Length, joined.c_str());
+   if ((list.size() IS 1) and ((Flags & SCACF::CHOOSE_SINGLE) != SCACF::NIL) and (ac.Active())) {
+      AutoCompleteCompleted();
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// CallTipShow() closes any completion list, which is reported by panCompletionClosed().
+
+ERR ScintillaKTK::panShowCallTip(int Pos, std::string_view Text, int HighlightStart, int HighlightEnd)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or (not scintilla->Viewport)) {
+      return log.warning(ERR::NotPossible);
+   }
+
+   if (Pos IS -1) Pos = sel.MainCaret();
+   else if ((Pos < 0) or (Pos > pdoc->Length())) return log.warning(ERR::OutOfRange);
+
+   std::string text(Text);
+   calltip_pos = Pos;
+   SendScintilla(SCI_CALLTIPSHOW, (unsigned long)Pos, text.c_str());
+   if ((HighlightStart >= 0) and (HighlightEnd > HighlightStart)) {
+      SendScintilla(SCI_CALLTIPSETHLT, (unsigned long)HighlightStart, long(HighlightEnd));
+   }
+   return ERR::Okay;
+}
+
 //********************************************************************************************************************
 
-void ScintillaKTK::CreateCallTipWindow(Scintilla::PRectangle rc)
+void ScintillaKTK::panCancelPopups()
 {
-   kt::Log(__FUNCTION__).trace("");
+   AutoCompleteCancel();
+   ct.CallTipCancel();
+}
+
+//********************************************************************************************************************
+
+SCPOP ScintillaKTK::panActivePopup()
+{
+   if (ac.Active()) return SCPOP::COMPLETIONS;
+   if (ct.inCallTipMode) return SCPOP::CALL_TIP;
+   return SCPOP::NONE;
+}
+
+//********************************************************************************************************************
+// The position of the start of the word that is being completed.
+
+int ScintillaKTK::panCompletionStart()
+{
+   return ac.posStart - ac.startLen;
+}
+
+//********************************************************************************************************************
+// Point is in the coordinate system of the call tip.  CallTipClick() reports SCN_CALLTIPCLICK.
+
+void ScintillaKTK::panCallTipClick(Scintilla::Point Point)
+{
+   ct.MouseClick(Point);
+   CallTipClick();
+}
+
+/*********************************************************************************************************************
+** Report an event to the CompletionCallback.  Events that occur part way through an operation of ScintillaBase are
+** deferred, because the client may respond by opening or closing a pop-up, which would interfere with the operation.
+** Deferred events are reported by the ReportEvent method in the order that they occurred.
+*/
+
+void ScintillaKTK::ReportCompletion(SCAC Event, int Position, int Value, CSTRING Text, bool Deferred)
+{
+   auto &callback = scintilla->CompletionCallback;
+   if (not callback.defined()) return;
+
+   if (Deferred) {
+      completion_reports.push_back({ Event, Position, Value, Text ? Text : "" });
+      QueueAction(sci::ReportEvent::id, scintilla->UID);
+      return;
+   }
+
+   if (callback.stale()) {
+      callback.unpin();
+      callback.clear();
+      return;
+   }
+
+   if (not Text) Text = "";
+
+   if (callback.isC()) {
+      kt::SwitchContext ctx(callback.Context);
+      auto routine = (void (*)(extScintilla *, SCAC, int, int, CSTRING, APTR))callback.Routine;
+      routine(scintilla, Event, Position, Value, Text, callback.Meta);
+   }
+   else if (callback.isScript()) {
+      sc::Call(callback, std::to_array<ScriptArg>({
+         { "Scintilla", scintilla, FD_OBJECTPTR },
+         { "Event", int(Event) },
+         { "Position", Position },
+         { "Value", Value },
+         { "Text", Text }
+      }));
+   }
+}
+
+//********************************************************************************************************************
+// Called when the completion list closes.  A closure that does not follow an accepted completion is a cancellation.
+
+void ScintillaKTK::panCompletionClosed()
+{
+   if (completion_selected) completion_selected = false;
+   else ReportCompletion(SCAC::CANCELLED, sel.MainCaret(), 0, nullptr, true);
+}
+
+//********************************************************************************************************************
+// Called by the ReportEvent method.  The reports are moved out first because the callback can add more.
+
+void ScintillaKTK::panFlushCompletionReports()
+{
+   if (completion_reports.empty()) return;
+
+   auto reports = std::move(completion_reports);
+   completion_reports.clear();
+   for (auto &report : reports) {
+      ReportCompletion(report.event, report.position, report.value, report.text.c_str(), false);
+   }
 }
 
 /*********************************************************************************************************************
@@ -447,6 +635,8 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       scintilla->ReportEventFlags |= SEF::NEW_CHAR;
       QueueAction(sci::ReportEvent::id, scintilla->UID);
+
+      ReportCompletion(SCAC::CHAR_ADDED, SendScintilla(SCI_GETCURRENTPOS), scn.ch, nullptr, false);
    }
    else if (code IS SCN_SAVEPOINTREACHED) {
       // The document is unmodified (recently saved)
@@ -580,6 +770,8 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       // elsewhere.
 
       log.trace("[CALLTIPCLICK]");
+
+      ReportCompletion(SCAC::CALL_TIP_CLICK, calltip_pos, scn.position, nullptr, true);
    }
    else if (code IS SCN_AUTOCSELECTION) {
       // The user has selected an item in an autocompletion list. The notification is sent before the selection is inserted. Automatic
@@ -590,6 +782,15 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       // text: The text of the selection.
 
       log.trace("[AUTOCSELECTION]");
+
+      completion_selected = true;
+      ReportCompletion(SCAC::SELECTED, int(scn.lParam), 0, scn.text, true);
+   }
+   else if (code IS SCN_AUTOCCANCELLED) {
+      // Not every cancellation is notified, so they are reported by panCompletionClosed() instead.
+   }
+   else if (code IS SCN_AUTOCCHARDELETED) {
+      // A character was deleted while the completion list is open, which updates the selected item.
    }
    else if (code IS 2012) {
       // Deprecated
@@ -876,6 +1077,14 @@ void ScintillaKTK::panKeyDown(KEY Code, KQ Qualifiers, int Unicode)
    const bool printable = ((Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) and (Unicode >= 0x20) and (Unicode != 0x7f);
 
    const bool read_only = (scintilla->Flags & SCIF::EDIT) IS SCIF::NIL;
+
+   // Ctrl+Space requests completion candidates from the client.  It has no binding in Scintilla's key map.
+
+   if ((ctrl) and (not alt) and (not shift) and (Code IS KEY::SPACE)) {
+      if (not read_only) ReportCompletion(SCAC::REQUEST, SendScintilla(SCI_GETCURRENTPOS), 0, nullptr, false);
+      return;
+   }
+
    if (read_only) SendScintilla(SCI_SETREADONLY, 1UL);
 
    if (int key = command_key(Code, printable)) KeyDown(key, shift, ctrl, alt);

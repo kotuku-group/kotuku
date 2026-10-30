@@ -1,0 +1,682 @@
+-- Tests for the completion list and call tip of the Scintilla class.  Both are pop-ups that the editor draws as
+-- scene-level viewports named 'scicompletions' and 'scicalltip'.  Key presses are injected as
+-- evKey records and pointer input through the SystemPointer, as for the keyboard and mouse tests.
+--
+-- The geometry tests use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of
+-- 4 means that text starts at x = 4.
+
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+   module vector as mVec
+
+PAGE_WIDTH  = 300
+PAGE_HEIGHT = 120
+LINE_HEIGHT = 13
+CHAR_WIDTH  = 7
+TEXT_LEFT   = 4
+
+WHEEL_DOWN <const> = 9
+
+-- Broadcast a key event in the form of an evKey record: { int64 EventID; KQ Qualifiers; KEY Code; int Unicode }.
+
+function sendKey(Code:num!, Qualifiers:num, Unicode:num)
+   local qualifiers = Qualifiers ?? 0
+   if not (qualifiers has KQ_RELEASED) then qualifiers = qualifiers | KQ_PRESSED end
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = qualifiers
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function pressKey(Code:num!, Qualifiers:num)
+   sendKey(Code, (Qualifiers ?? 0) | KQ_NOT_PRINTABLE, 0)
+end
+
+-- Type the characters of a string of lower case letters, digits, dots, brackets and spaces.
+
+function typeText(Text:str!)
+   for i in {0 to #Text} do
+      local ch = Text.sub(i, i + 1)
+      local code:num = 0
+      if ch >= 'a' and ch <= 'z' then
+         code = KEY_A + ch.byte() - ('a').byte()
+      elseif ch is ' ' then
+         code = KEY_SPACE
+      elseif ch is '.' then
+         code = KEY_DOT
+      end
+      sendKey(code, 0, ch.byte())
+   end
+end
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+-- Redraw the scene, which also updates the areas that receive pointer input.
+
+function draw(Surface:obj!)
+   processing.sleep(0)
+   Surface.acDraw()
+   processing.sleep(0.02)
+   Surface.acDraw()
+   processing.sleep(0)
+end
+
+-- Click at a position in the scene of Surface.
+
+function click(Surface:obj!, X:num!, Y:num!)
+   draw(Surface)
+   feed(JET_ABS_XY, Surface.absX + X, Surface.absY + Y)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+end
+
+-- Create a surface with a focused scene that hosts an editable Scintilla object.  The events reported to the
+-- CompletionCallback are recorded in the returned array as 'event:position:value:text' strings.  The scene uses Tab to
+-- cycle the focus unless IGNORE_TAB is set.
+
+function newEditor(Options:table):<obj, obj, obj, obj, array<str>>
+   local surface = obj.new('Surface', { width=Options?.surfaceWidth ?? PAGE_WIDTH,
+      height=Options?.surfaceHeight ?? PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface, flags=VPF_IGNORE_TAB })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', Options?.host ?? { x=0, y=0, width='100%', height='100%' })
+   if Options?.scale then
+      local _, matrix = host.mtNewMatrix()
+      check mVec.Scale(matrix, Options.scale, Options.scale)
+   end
+   local events = array<str>
+   local flags = SCIF_EDIT
+   if Options?.flags != nil then flags = Options.flags end
+   local options = {
+      face          = 'Clean',
+      fontSize      = 11,
+      flags         = flags,
+      lineHighlight = '255,255,255,0',
+      completionCallback = function(Scintilla, Event, Position, Value, Text)
+         events.push(f'{Event}:{Position}:{Value}:{Text}')
+      end
+   }
+   local sci = host.new('Scintilla', options)
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, scene, host, sci, events
+end
+
+-- Process the pending repaint, which positions and reveals the pop-ups.
+
+function settle()
+   processing.sleep(0)
+   processing.sleep(0)
+end
+
+-- Find a pop-up viewport among the scene's top-level viewports.
+
+function findPopup(Scene:obj!, Name:str!):obj
+   local vector:obj = Scene.viewport
+   while vector do
+      if vector.name is Name then return vector end
+      vector = vector.next
+   end
+end
+
+-- Returns the scene bounds of a visible pop-up, or nil if it is hidden or does not exist.
+
+function popupBounds(Scene:obj!, Name:str!):table
+   local popup = findPopup(Scene, Name)
+   if not popup or popup.visibility != VIS_VISIBLE then return nil end
+   local _, x, y, w, h = check popup.mtGetBoundary(0)
+   return { x=x, y=y, width=w, height=h }
+end
+
+function colourAt(Bitmap:obj, X:num, Y:num):str
+   local p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return f'{p.red},{p.green},{p.blue}'
+end
+
+function hasEvent(Events:array<str>!, Prefix:str!):bool
+   return Events.any(Value => Value.startsWith(Prefix))
+end
+
+function describe(Events:array<str>!):str
+   local text = ''
+   for _, event in Events do text ..= event .. ' ' end
+   return text
+end
+
+-- Type a prefix at the end of the document and show the candidates for it.
+
+function complete(Sci:obj!, Prefix:str!, Candidates:str!, Flags:num)
+   typeText(Prefix)
+   check Sci.mtShowCompletions(#Prefix, Candidates, Flags ?? 0)
+   settle()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Completion list
+
+@Test function CandidatesAreSortedAndDisplayedAtTheWord()
+   local surface <close>, scene, host, sci, events = newEditor()
+   typeText('x ')
+   complete(sci, 'pr', 'printf\nprint\npairs\nprint')
+
+   assert(sci.activePopup is SCPOP_COMPLETIONS, f'The completion list must be active, got {sci.activePopup}')
+   local bounds = popupBounds(scene, 'scicompletions')
+   assert(bounds, 'The completion list must be visible')
+
+   -- The text of the items aligns with the start of the word, inside a 1 pixel border and 3 pixel inset.
+
+   local word_x = TEXT_LEFT + (2 * CHAR_WIDTH)
+   assert(bounds.x is word_x - 4, f'The list must align with the word, got x={bounds.x}')
+   assert(bounds.y is LINE_HEIGHT, f'The list must open below the line, got y={bounds.y}')
+   assert(bounds.height is (3 * LINE_HEIGHT) + 2, f'Duplicates must be removed, got height {bounds.height}')
+
+   -- The candidate that matches the typed prefix is selected; Down moves past it and Enter accepts.
+
+   pressKey(KEY_DOWN)
+   pressKey(KEY_ENTER)
+   settle()
+   assert(sci.string is 'x printf', f'Enter must accept the sorted candidate after "print", got "{sci.string}"')
+   assert(sci.activePopup is SCPOP_NONE, 'Accepting must close the list')
+   assert(not popupBounds(scene, 'scicompletions'), 'Accepting must hide the list')
+   assert(hasEvent(events, f'{SCAC_SELECTED}:2:0:printf'), f'SELECTED must report the candidate and word start')
+end
+
+@Test function TypingFollowsTheList()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'p', 'pairs\nprint\nprintf')
+   typeText('ri')
+   pressKey(KEY_TAB)
+   assert(sci.string is 'print', f'Typing must select the first match and Tab must accept it, got "{sci.string}"')
+end
+
+@Test function UnmatchedTypingCancels()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'p', 'pairs\nprint')
+   typeText('x')
+   settle()
+   assert(sci.activePopup is SCPOP_NONE, 'Typing a prefix that matches nothing must close the list')
+   assert(hasEvent(events, f'{SCAC_CANCELLED}:'), 'Closing without a selection must be reported as CANCELLED')
+   assert(sci.string is 'px', f'The typed text must be retained, got "{sci.string}"')
+end
+
+@Test function EscapeCancelsWithoutEditing()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'pr', 'print\nprintf')
+   pressKey(KEY_ESCAPE)
+   settle()
+   assert(sci.activePopup is SCPOP_NONE, 'Escape must close the list')
+   assert(sci.string is 'pr', f'Escape must not edit the document, got "{sci.string}"')
+   assert(hasEvent(events, f'{SCAC_CANCELLED}:'), 'Escape must be reported as CANCELLED')
+   assert(not hasEvent(events, f'{SCAC_SELECTED}:'), 'Escape must not report a selection')
+end
+
+@Test function IgnoreCaseMatchesAnyCase()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'getl', 'GetLine\ngetPos\nGotoLine', SCACF_IGNORE_CASE)
+   pressKey(KEY_ENTER)
+   assert(sci.string is 'GetLine', f'IGNORE_CASE must match and replace the prefix, got "{sci.string}"')
+
+   -- A candidate that also matches the case of the prefix is preferred.
+
+   typeText(' get')
+   check sci.mtShowCompletions(3, 'GetLine\ngetPos\nGotoLine', SCACF_IGNORE_CASE)
+   pressKey(KEY_ENTER)
+   assert(sci.string is 'GetLine getPos', f'An exact-case match must be preferred, got "{sci.string}"')
+end
+
+@Test function ChooseSingleInsertsImmediately()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'pri', 'print', SCACF_CHOOSE_SINGLE)
+   assert(sci.string is 'print', f'A single candidate must be inserted, got "{sci.string}"')
+   assert(sci.activePopup is SCPOP_NONE, 'No list must be shown for a single candidate')
+   assert(not popupBounds(scene, 'scicompletions'), 'The accepted list must remain hidden')
+   assert(hasEvent(events, f'{SCAC_SELECTED}:0:0:print'), 'Immediate acceptance must report SELECTED')
+   assert(not hasEvent(events, f'{SCAC_CANCELLED}:'), 'Immediate acceptance must not report cancellation')
+end
+
+@Test function ChooseSingleReplacesAnOpenList()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'pri', 'print\nprintf')
+   check sci.mtShowCompletions(3, 'print', SCACF_CHOOSE_SINGLE)
+   settle()
+   assert(sci.string is 'print', f'The single candidate must replace the prefix, got "{sci.string}"')
+   assert(sci.activePopup is SCPOP_NONE, 'Immediate acceptance must close the previous list')
+   assert(not popupBounds(scene, 'scicompletions'), 'The previous list must be hidden')
+   assert(hasEvent(events, f'{SCAC_SELECTED}:0:0:print'), 'Replacement must report SELECTED')
+end
+
+@Test function ChooseSingleDropsTheRestOfTheWord()
+   local surface <close>, scene, host, sci, events = newEditor()
+   sci.string = 'prizzz'
+   check sci.mtSelectRange(3, 3)
+   check sci.mtShowCompletions(3, 'print', SCACF_CHOOSE_SINGLE | SCACF_DROP_REST_OF_WORD)
+   settle()
+   assert(sci.string is 'print', f'Immediate acceptance must replace the rest of the word, got "{sci.string}"')
+   pressKey(KEY_Z, KQ_L_CTRL)
+   assert(sci.string is 'prizzz', 'A single undo must restore the entire word')
+end
+
+@Test function ChooseSingleMatchesThePrefix()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'longprefix', 'x', SCACF_CHOOSE_SINGLE)
+   assert(sci.string is 'longprefix', 'An unmatched candidate must not edit the document')
+   assert(sci.activePopup is SCPOP_NONE, 'An unmatched candidate must close the list')
+   assert(not hasEvent(events, f'{SCAC_SELECTED}:'), 'An unmatched candidate must not report SELECTED')
+
+   check sci.mtSelectRange(0, #sci.string)
+   check sci.mtShowCompletions(#sci.string, 'LongPrefixValue', SCACF_CHOOSE_SINGLE | SCACF_IGNORE_CASE)
+   settle()
+   assert(sci.string is 'LongPrefixValue', 'Immediate acceptance must honour IGNORE_CASE')
+end
+
+@Test function ShowCompletionsValidatesInput()
+   local surface <close>, scene, host, sci, events = newEditor()
+   typeText('ab')
+   assert(sci.mtShowCompletions(2, '\n\n', 0) is ERR_NoData, 'Candidates without content must fail')
+   assert(sci.mtShowCompletions(3, 'abc', 0) is ERR_OutOfRange, 'A prefix longer than the line must fail')
+   assert(sci.mtShowCompletions(-1, 'abc', 0) is ERR_OutOfRange, 'A negative prefix length must fail')
+   assert(sci.activePopup is SCPOP_NONE, 'Rejected requests must not open a list')
+
+   local ro_surface <close>, ro_scene, ro_host, ro_sci = newEditor({ flags=0 })
+   ro_sci.string = 'ab'
+   assert(ro_sci.mtShowCompletions(0, 'abc', 0) is ERR_ReadOnly, 'A read-only editor must refuse completions')
+end
+
+@Test function ClickSelectsAndDoubleClickAccepts()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'p', 'pairs\nprint\nprintf')
+   local bounds = popupBounds(scene, 'scicompletions')
+   local x = bounds.x + 20
+
+   click(surface, x, bounds.y + 1 + LINE_HEIGHT * 2.5)
+   assert(sci.activePopup is SCPOP_COMPLETIONS, 'A single click must not close the list')
+   click(surface, x, bounds.y + 1 + LINE_HEIGHT * 2.5)
+   settle()
+   assert(sci.string is 'printf', f'Double-clicking must accept the clicked candidate, got "{sci.string}"')
+
+   -- The editor retains the keyboard focus after a click in the list.
+
+   typeText('x')
+   assert(sci.string is 'printfx', f'The editor must keep the focus after a click in the list, got "{sci.string}"')
+   feed(JET_ABS_XY, 2000, 2000)
+end
+
+@Test function WheelScrollsTheList()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'a', 'a0\na1\na2\na3\na4\na5\na6\na7\na8\na9')
+   local bounds = popupBounds(scene, 'scicompletions')
+   assert(bounds.height is (5 * LINE_HEIGHT) + 2, f'The list must show five rows, got height {bounds.height}')
+
+   draw(surface)
+   feed(JET_ABS_XY, surface.absX + bounds.x + 10, surface.absY + bounds.y + 5)
+   feed(JET_WHEEL, WHEEL_DOWN, 0)
+   click(surface, bounds.x + 10, bounds.y + 1 + LINE_HEIGHT * 0.5)
+   pressKey(KEY_ENTER)
+   assert(sci.string is 'a3', f'The wheel must scroll the list by three rows, got "{sci.string}"')
+   feed(JET_ABS_XY, 2000, 2000)
+end
+
+@Test function ClickInEditorCancels()
+   local surface <close>, scene, host, sci, events = newEditor()
+   sci.string = 'line one\n'
+   check sci.mtSelectRange(9, 9)
+   complete(sci, 'p', 'pairs\nprint')
+   click(surface, TEXT_LEFT + 2, 5)
+   settle()
+   assert(sci.activePopup is SCPOP_NONE, 'A click in the editor must close the list')
+   assert(not popupBounds(scene, 'scicompletions'), 'The list must be hidden')
+   feed(JET_ABS_XY, 2000, 2000)
+end
+
+@Test function FocusLossCancels()
+   local surface <close>, scene, host, sci, events = newEditor()
+   local other = scene.new('VectorViewport', { x=0, y=0, width=1, height=1 })
+   complete(sci, 'p', 'pairs\nprint')
+   check other.acFocus()
+   settle()
+   assert(sci.activePopup is SCPOP_NONE, 'Losing the focus must close the list')
+   assert(hasEvent(events, f'{SCAC_CANCELLED}:'), 'Losing the focus must be reported as CANCELLED')
+end
+
+@Test function DisableAndHidePopups()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'p', 'pairs\nprint')
+   check sci.mtHidePopups()
+   assert(sci.activePopup is SCPOP_NONE, 'HidePopups() must close the list')
+
+   complete(sci, 'r', 'pairs\nprint\nreturn')
+   check sci.acDisable()
+   assert(sci.activePopup is SCPOP_NONE, 'Disabling must close the list')
+   assert(sci.mtShowCompletions(1, 'return', 0) is ERR_NotPossible, 'A disabled editor must refuse completions')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Callback events
+
+@Test function RequestAndCharAddedAreReported()
+   local surface <close>, scene, host, sci, events = newEditor()
+   typeText('a.')
+   assert(hasEvent(events, f'{SCAC_CHAR_ADDED}:1:97:'), f'Typing "a" must be reported, got {describe(events)}')
+   assert(hasEvent(events, f'{SCAC_CHAR_ADDED}:2:46:'), 'Typing "." must be reported with its position')
+
+   pressKey(KEY_SPACE, KQ_L_CTRL)
+   assert(hasEvent(events, f'{SCAC_REQUEST}:2:'), 'Ctrl+Space must be reported as REQUEST')
+   assert(sci.string is 'a.', f'Ctrl+Space must not insert text, got "{sci.string}"')
+
+   local ro_surface <close>, ro_scene, ro_host, ro_sci, ro_events = newEditor({ flags=0 })
+   pressKey(KEY_SPACE, KQ_L_CTRL)
+   assert(#ro_events is 0, 'Ctrl+Space must not be reported for a read-only editor')
+end
+
+@Test function CallbackCanCompleteInResponse()
+   local surface = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   defer surface.free() end
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT,
+      completionCallback = function(Scintilla, Event, Position, Value, Text)
+         if Event is SCAC_CHAR_ADDED and Value is ('.').byte() then
+            Scintilla.mtShowCompletions(0, 'len\nfind\nsub', 0)
+         elseif Event is SCAC_SELECTED then
+            Scintilla.mtShowCallTip(-1, f'{Text}(Value)', 0, 0)
+         end
+      end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   typeText('s.')
+   assert(sci.activePopup is SCPOP_COMPLETIONS, 'The callback must be able to open the list for a typed character')
+   typeText('su')
+   pressKey(KEY_ENTER)
+   settle()
+   assert(sci.string is 's.sub', f'The typed prefix must be completed, got "{sci.string}"')
+   assert(sci.activePopup is SCPOP_CALL_TIP, 'The callback must be able to open a call tip after a selection')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Call tips
+
+@Test function CallTipIsShownBelowThePosition()
+   local surface <close>, scene, host, sci, events = newEditor()
+   typeText('print')
+   check sci.mtShowCallTip(-1, 'print(Value, ...)', 6, 11)
+   settle()
+   assert(sci.activePopup is SCPOP_CALL_TIP, 'The call tip must be active')
+   local bounds = popupBounds(scene, 'scicalltip')
+   assert(bounds, 'The call tip must be visible')
+   assert(bounds.y is LINE_HEIGHT + 1, f'The call tip must open below the line, got y={bounds.y}')
+   assert(bounds.x < TEXT_LEFT + (5 * CHAR_WIDTH), f'The call tip must start at the position, got x={bounds.x}')
+
+   -- Typing keeps the call tip, while Escape closes it.
+
+   typeText('a')
+   assert(sci.activePopup is SCPOP_CALL_TIP, 'Typing must keep the call tip open')
+   pressKey(KEY_ESCAPE)
+   settle()
+   assert(sci.activePopup is SCPOP_NONE, 'Escape must close the call tip')
+   assert(not popupBounds(scene, 'scicalltip'), 'The call tip must be hidden')
+end
+
+@Test function CallTipReplacesTheList()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'p', 'pairs\nprint')
+   check sci.mtShowCallTip(0, 'p(Value)', 0, 0)
+   settle()
+   assert(sci.activePopup is SCPOP_CALL_TIP, 'Showing a call tip must replace the list')
+   assert(hasEvent(events, f'{SCAC_CANCELLED}:'), 'The replaced list must be reported as CANCELLED')
+   assert(not popupBounds(scene, 'scicompletions'), 'The replaced list must be hidden')
+
+   assert(sci.mtShowCallTip(99, 'x', 0, 0) is ERR_OutOfRange, 'A position beyond the document must fail')
+   assert(sci.mtShowCallTip(0, '', 0, 0) is ERR_NullArgs, 'Empty text must fail')
+end
+
+@Test function CallTipClicksAreReported()
+   local surface <close>, scene, host, sci, events = newEditor()
+   typeText('f')
+   check sci.mtShowCallTip(0, '\001 1 of 2 \002 f(Value)', 0, 0)
+   settle()
+   local bounds = popupBounds(scene, 'scicalltip')
+   click(surface, bounds.x + bounds.width - 4, bounds.y + bounds.height / 2)
+   settle()
+   assert(hasEvent(events, f'{SCAC_CALL_TIP_CLICK}:0:0:'), f'A click must be reported, got {describe(events)}')
+
+   click(surface, bounds.x + 8, bounds.y + bounds.height / 2)
+   settle()
+   assert(hasEvent(events, f'{SCAC_CALL_TIP_CLICK}:0:1:'), f'The up arrow must be identified, got {describe(events)}')
+   assert(sci.activePopup is SCPOP_CALL_TIP, 'Clicking the call tip must not close it')
+
+   typeText('x')
+   assert(sci.string is 'fx', f'The editor must keep the focus after a click on the call tip, got "{sci.string}"')
+   feed(JET_ABS_XY, 2000, 2000)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Placement
+
+@Test function PopupsFollowHostMovementAndTransformChanges()
+   local surface <close>, scene, host, sci, events = newEditor({
+      surfaceWidth=500, surfaceHeight=400, host={ x=0, y=0, width=200, height=100 } })
+   complete(sci, 'p', 'pairs\nprint')
+   local before = popupBounds(scene, 'scicompletions')
+   host.x = 40
+   host.y = 40
+   draw(surface)
+   settle()
+   local after = popupBounds(scene, 'scicompletions')
+   assert(after.x is before.x + 40 and after.y is before.y + 40, 'The list must follow host movement')
+
+   check sci.mtShowCallTip(-1, 'p(Value)', 0, 0)
+   settle()
+   before = popupBounds(scene, 'scicalltip')
+   host.x = 60
+   host.y = 60
+   draw(surface)
+   settle()
+   after = popupBounds(scene, 'scicalltip')
+   assert(after.x is before.x + 20 and after.y is before.y + 20, 'The call tip must follow host movement')
+
+   local _, matrix = check host.mtNewMatrix()
+   check mVec.Scale(matrix, 2, 2)
+   draw(surface)
+   settle()
+   after = popupBounds(scene, 'scicalltip')
+   assert(after.y is 60 + (2 * LINE_HEIGHT) + 1, 'The call tip must follow a changed host transform')
+   assert(after.height is before.height, 'The call tip itself must retain its size')
+end
+
+@Test function PopupsUseSceneCoordinatesWithATransformedRoot()
+   local surface <close>, scene, host, sci, events = newEditor({surfaceWidth=500, surfaceHeight=400})
+   scene.viewport.x = 40
+   scene.viewport.y = 30
+   local _, matrix = check scene.viewport.mtNewMatrix()
+   check mVec.Scale(matrix, 2, 2)
+   draw(surface)
+   complete(sci, 'p', 'pairs\nprint')
+   local bounds = popupBounds(scene, 'scicompletions')
+   local _, hx, hy = check host.mtGetBoundary(0)
+   assert(bounds.x is hx + (2 * TEXT_LEFT) - 4, 'The root translation and scale must apply to the anchor once')
+   assert(bounds.y is hy + (2 * LINE_HEIGHT), 'The list must open below the scaled line')
+   assert(bounds.height is (2 * LINE_HEIGHT) + 2, 'The list itself must retain its size')
+
+   check sci.mtShowCallTip(-1, 'p(Value)', 0, 0)
+   settle()
+   bounds = popupBounds(scene, 'scicalltip')
+   assert(bounds.y is hy + (2 * LINE_HEIGHT) + 1, 'The call tip must use scene coordinates')
+   assert(bounds.height < 2 * LINE_HEIGHT, 'The call tip itself must retain its size')
+
+   scene.viewport.x = 60
+   scene.viewport.y = 50
+   draw(surface)
+   settle()
+   local moved = popupBounds(scene, 'scicalltip')
+   assert(moved.x is bounds.x + 20 and moved.y is bounds.y + 20, 'The call tip must follow root movement')
+end
+
+@Test function PopupsFlipAboveAtTheBottomOfTheScene()
+   local surface <close>, scene, host, sci, events = newEditor()
+   sci.string = '\n\n\n\n\n\n\n'
+   check sci.mtSelectRange(7, 7)
+   complete(sci, 'p', 'pairs\nprint\nprintf')
+   local line_top = 7 * LINE_HEIGHT
+   local bounds = popupBounds(scene, 'scicompletions')
+   assert(bounds.y + bounds.height is line_top, f'The list must open above the line, got y={bounds.y}')
+
+   check sci.mtShowCallTip(-1, 'p(Value)\nReturns a value', 0, 0)
+   settle()
+   bounds = popupBounds(scene, 'scicalltip')
+   assert(bounds.y + bounds.height <= line_top + 1, f'The call tip must open above the line, got y={bounds.y}')
+   assert(bounds.y >= 0, 'The call tip must remain within the scene')
+end
+
+@Test function PopupsStayWithinTheRightEdge()
+   local surface <close>, scene, host, sci, events = newEditor()
+   typeText(('a').rep(30) .. ' ')
+   complete(sci, 'w', ('w').rep(40))
+   local bounds = popupBounds(scene, 'scicompletions')
+   assert(bounds.x + bounds.width <= PAGE_WIDTH, f'The list must not pass the right edge, got {bounds.x}+{bounds.width}')
+   assert(bounds.x >= 0, 'The list must not pass the left edge')
+end
+
+@Test function PopupsFollowTransformedHosts()
+   local surface <close>, scene, host, sci, events = newEditor({
+      surfaceWidth=400, surfaceHeight=300,
+      host={ x=50, y=40, width=150, height=100 }, scale=2 })
+   typeText('ab ')
+   complete(sci, 'p', 'pairs\nprint')
+
+   -- The line is 26 scene pixels high and the word starts at 2 * (4 + 3 * 7) = 50 scene pixels from the host.
+
+   local bounds = popupBounds(scene, 'scicompletions')
+   local _, hx, hy = check host.mtGetBoundary(0)
+   assert(bounds.y is hy + 2 * LINE_HEIGHT, f'The list must open below the scaled line, got y={bounds.y}, host {hy}')
+   assert(bounds.x is hx + 2 * (TEXT_LEFT + 3 * CHAR_WIDTH) - 4, f'The list must align with the scaled word, got x={bounds.x}')
+   assert(bounds.height is 2 * LINE_HEIGHT + 2, 'The list itself must not be scaled')
+end
+
+@Test function PopupsFollowScrollingAndCloseOutOfView()
+   local surface <close>, scene, host, sci, events = newEditor()
+   local text = ''
+   for i in {0 to 30} do text ..= 'line\n' end
+   sci.string = text
+   check sci.mtSelectRange(#text - 5, #text - 5)
+   check sci.mtGotoLine(30)
+   settle()
+   check sci.mtShowCallTip(-1, 'tip', 0, 0)
+   settle()
+   local before = popupBounds(scene, 'scicalltip')
+
+   check sci.mtScrollToPoint(0, sci.page.y * -1 - LINE_HEIGHT)
+   settle()
+   local after = popupBounds(scene, 'scicalltip')
+   assert(after and after.y is before.y + LINE_HEIGHT, f'The call tip must follow scrolling, {before?.y} -> {after?.y}')
+
+   check sci.mtScrollToPoint(0, 0)
+   settle()
+   assert(sci.activePopup is SCPOP_NONE, 'Scrolling the position out of view must close the call tip')
+   assert(not popupBounds(scene, 'scicalltip'), 'The call tip must be hidden')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rendering and lifetime
+
+@Test function ListUsesTheEditorColours()
+   local surface <close>, scene, host, sci, events = newEditor()
+   sci.selectBkgd = '0,128,0,255'
+   complete(sci, 'p', 'pairs\nprint')
+   draw(surface)
+   local bounds = popupBounds(scene, 'scicompletions')
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   check mGfx.CopySurface(surface.id, bmp, 0, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, 0, 0)
+   local selected = colourAt(bmp, bounds.x + bounds.width - 4, bounds.y + 2)
+   local unselected = colourAt(bmp, bounds.x + bounds.width - 4, bounds.y + 2 + LINE_HEIGHT)
+   assert(selected is '0,128,0', f'The selected row must use SelectBkgd, got {selected}')
+   assert(unselected is '255,255,255', f'Other rows must use BkgdColour, got {unselected}')
+end
+
+@Test function FreeingTheEditorRemovesPopups()
+   local surface <close>, scene, host, sci, events = newEditor()
+   complete(sci, 'p', 'pairs\nprint')
+   assert(findPopup(scene, 'scicompletions'), 'The list must exist')
+   sci.free()
+   processing.sleep(0)
+   assert(not findPopup(scene, 'scicompletions'), 'Freeing the editor must free its pop-ups')
+end
+
+@Test function FreeingTheHostWhileOpen()
+   local surface <close> = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci <close> = obj.new('Scintilla', { viewport=host, face='Clean', fontSize=11, flags=SCIF_EDIT })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   complete(sci, 'p', 'pairs\nprint')
+   assert(sci.activePopup is SCPOP_COMPLETIONS, 'The list must be open')
+   host.free()
+   processing.sleep(0)
+   assert(sci.activePopup is SCPOP_NONE, 'Freeing the host must close the list')
+   assert(not popupBounds(scene, 'scicompletions'), 'Freeing the host must hide the list')
+end
+
+@Test function FreeingTheSceneWhileOpen()
+   local surface <close> = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci <close> = obj.new('Scintilla', { viewport=host, face='Clean', fontSize=11, flags=SCIF_EDIT })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   check sci.mtShowCallTip(-1, 'tip', 0, 0)
+   settle()
+   scene.free()
+   processing.sleep(0)
+   assert(sci.activePopup is SCPOP_NONE, 'Freeing the scene must close the call tip of an editor that outlives it')
+   assert(sci.mtShowCallTip(-1, 'tip', 0, 0) is ERR_NotPossible, 'An editor without a host must refuse call tips')
+end
+
+@Test function IndependentEditors()
+   local surface <close>, scene, host, sci, events = newEditor()
+   local host2 = scene.viewport.new('VectorViewport', { x=0, y=60, width='100%', height=60 })
+   local sci2 = host2.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT })
+   complete(sci, 'p', 'pairs\nprint')
+   check sci2.mtShowCallTip(0, 'other', 0, 0)
+   settle()
+   assert(sci.activePopup is SCPOP_COMPLETIONS, 'The first editor must keep its list')
+   assert(sci2.activePopup is SCPOP_CALL_TIP, 'The second editor must show its own call tip')
+   check sci2.mtHidePopups()
+   assert(sci.activePopup is SCPOP_COMPLETIONS, 'Hiding the second editor\'s pop-ups must not affect the first')
+end
