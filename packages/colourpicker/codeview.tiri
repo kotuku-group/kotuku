@@ -1,9 +1,10 @@
--- Code panel for the colour picker's Export panel: a rounded panel with a row of tabs above syntax-coloured
--- monospaced lines.  Lines that are too long for the panel are wrapped, preferably at a space, and lines that don't
--- fit vertically are scrolled with a gui.scrollbar.  The text vectors are pooled, so replacing the lines doesn't
--- create new vectors unless the line count grows.
+-- Code view for the colour picker's Export panel: a row of tabs under the panel header, a divider and then
+-- syntax-coloured monospaced lines on a sunken background that meets the panel border.  Lines that are too long for
+-- the panel are wrapped, preferably at a space, and lines that don't fit vertically are scrolled in the panel's
+-- scrolling body.  The text vectors are pooled, so replacing the lines doesn't create new vectors unless the line
+-- count grows.
 
-   import 'gui/scrollbar', './parts'
+   import 'gui/panel', './parts'
    include 'display'
 
    namespace colourpicker_code { }
@@ -16,10 +17,11 @@ TAB_HEIGHT  <const> = 18
 TAB_SIZE    <const> = 10
 TAB_PAD_X   <const> = 7
 TAB_GAP     <const> = 2
-TABS_BELOW  <const> = 6    -- Gap between the tabs and the first line
+TABS_Y      <const> = 7    -- Gap above the tabs
+TABS_BELOW  <const> = 7    -- Gap between the tabs and the divider
 WRAP_INDENT <const> = 4    -- Extra indent of a wrapped continuation, in characters
-BAR_INSET   <const> = 4    -- Gap between the scrollbar and the panel border
 BAR_GAP     <const> = 4    -- Minimum gap between wrapped text and the scrollbar
+TABS_AREA   <const> = TABS_Y + TAB_HEIGHT + TABS_BELOW + 1 -- The tab row and its divider, above the panel body
 
 -- Byte offset of each UTF-8 character, followed by the end of the string for half-open slices.
 
@@ -90,41 +92,64 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text=[[
-@desc Create a code panel.
+@desc Create the Export panel: a scrolling gui.panel whose body is a code view, with a row of tabs above it.
 @input Target viewport
-@input Options: x, y, width, height, tokens, tabs (array<str> of tab labels), onTab(Index) and onClick()
-@result Table with `viewport`, `setTab(Index)`, `setLines(Lines, Text)`, `scrollTo(Line)` and `setHeight(Height)`.
-Lines are as returned by colourexport.generate(), and Text is their joined form, which lets an unchanged update be
-skipped.
+@input Options: x, y, width, height, title, meta, tokens, tabs (array<str> of tab labels), onTab(Index) and onClick()
+@result Table with `panel`, `viewport`, `setTab(Index)`, `setLines(Lines, Text)` and `scrollTo(Line)`.  Lines are as
+returned by colourexport.generate(), and Text is their joined form, which lets an unchanged update be skipped.
 ]])
 colourpicker_code.new = function(Target:obj!, Options:table!):table
    t = Options.tokens
    code = t.code
-   width = Options.width
-   height = Options.height
    text = colourpicker_parts.text
    mono = colourpicker_parts.FACE_MONO
 
    role_fill = { c = code.comment, p = code.punct, k = code.key, v = code.value, t = code.text }
 
-   self = {
-      viewport = Target.new('VectorViewport', { x = Options.x, y = Options.y, width = width, height = height }),
-      tab      = 0,
-      display  = array<table>, -- Wrapped lines
-      pool     = array<obj>
-   }
+   local self:table
+   local frame_h:num
 
-   self.bkgd = self.viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
-      fill = code.bkgd, stroke = code.stroke, strokeWidth = 1
+   -- The panel scrolls its body vertically, and the top padding leaves room for the tabs.  The panel background is
+   -- the code background, so that the body fills to the inside of the rounded border and the scrollbar tracks
+   -- follow it.  The header and the tab row keep the panel colour.  The panel reports the size of its body when it
+   -- is resized, and the page is then refitted.
+
+   panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      title = Options.title, meta = Options.meta, scroll = 'vertical', padding = { top = TABS_AREA },
+      theme  = { bkgd = { fill = code.bkgd }, header = { fill = t.panel } },
+      events = {
+         resize = function(Width, Height)
+            if Height is frame_h then return end
+            frame_h = Height
+            self?.fitPage() -- The panel may report its size before it returns
+         end
+      }
    })
 
-   -- Tabs
+   body_w, frame_h = panel.bodySize()
+   edge = panel.bkgd.strokeWidth ?? 0
+
+   self = {
+      panel     = panel,
+      viewport  = panel.viewport,
+      page      = panel.page,
+      scrollbar = panel.scrollbar,
+      tab       = 0,
+      display   = array<table>, -- Wrapped lines
+      pool      = array<obj>
+   }
+
+   -- The tab row sits between the panel's divider and the top of the body, and ends with a divider of its own.
+
+   bar = panel.viewport.new('VectorViewport', { x = 0, y = panel.body.y - TABS_AREA, xOffset = 0, height = TABS_AREA })
+   bar.new('VectorRectangle', { x = edge, y = 0, xOffset = edge, height = TABS_AREA - 1, fill = t.panel })
+   bar.new('VectorRectangle', { x = edge, y = TABS_AREA - 1, xOffset = edge, height = 1, fill = t.divider })
 
    self.tabs = array<table>
    x = PAD_X
    for i, label in Options.tabs do
-      vp = self.viewport.new('VectorViewport', { x = x, y = PAD_Y, width = 1, height = TAB_HEIGHT, cursor = 'hand' })
+      vp = bar.new('VectorViewport', { x = x, y = TABS_Y, width = 1, height = TAB_HEIGHT, cursor = 'hand' })
       bkgd = vp.new('VectorRectangle', { x = 0, y = 0, width = 1, height = TAB_HEIGHT, roundX = 3, roundY = 3 })
       label_vt = text(vp, {
          x = TAB_PAD_X, y = colourpicker_parts.baseline(0, TAB_HEIGHT, TAB_SIZE), size = TAB_SIZE, face = mono,
@@ -148,24 +173,16 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
       x += tab_w + TAB_GAP
    end
 
-   -- Lines are drawn on a page that is moved within a clipping frame.  The scrollbar is placed at the right of the
-   -- scroll area and narrows the frame while it is shown.  Lines are wrapped to the narrowed width, so showing or
-   -- hiding the bar never changes the wrapping.
+   -- Lines are drawn on the panel's page, inset by the padding.  The page is at least as tall as the body, so that
+   -- it takes clicks anywhere in the body.  Lines are wrapped to the width that remains when the scrollbar is shown,
+   -- so showing or hiding the bar never changes the wrapping.
 
-   frame_y = PAD_Y + TAB_HEIGHT + TABS_BELOW
-   frame_h = height - frame_y - PAD_Y
-   area_w = width - PAD_X - BAR_INSET
-   self.area = self.viewport.new('VectorViewport', { x = PAD_X, y = frame_y, width = area_w, height = frame_h })
-   self.frame = self.area.new('VectorViewport', {
-      x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN, cursor = 'hand'
-   })
-   self.page = self.frame.new('VectorViewport', { x = 0, y = 0, width = '100%', height = frame_h, cursor = 'hand' })
-   self.scrollbar = gui.scrollbar({ target = self.area, view = self.frame, page = self.page, direction = 'vertical' })
+   self.page.cursor = 'hand'
 
    probe = text(self.page, { y = -100, size = FONT_SIZE, face = mono, string = '0000000000' })
    self.charWidth = probe.textWidth / 10
    probe.free()
-   text_w = area_w - self.scrollbar.v_thickness - BAR_GAP
+   text_w = body_w - PAD_X - self.scrollbar.v_thickness - BAR_GAP
    self.columns = math.max(8, math.floor(text_w / self.charWidth))
 
    self.setTab = function(Index:num!)
@@ -177,7 +194,15 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
       end
    end
 
-   -- Scroll so that Line is at the top of the frame, as far as the page allows.  The scrollbar follows the page.
+   -- Size the page to its lines, and keep the scroll position unless the page has become too short for it.
+
+   self.fitPage = function()
+      self.page.height = math.max(frame_h, (#self.display * LINE_HEIGHT) + (PAD_Y * 2))
+      min_y = math.min(0, frame_h - self.page.height)
+      if self.page.y < min_y then self.page.y = min_y end
+   end
+
+   -- Scroll so that Line is at the top of the body, as far as the page allows.  The scrollbar follows the page.
 
    self.scrollTo = function(Line:num!)
       max_y = math.max(0, self.page.height - frame_h)
@@ -197,8 +222,8 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
 
       n = 0
       for i, line in display do
-         baseline = colourpicker_parts.baseline(i * LINE_HEIGHT, LINE_HEIGHT, FONT_SIZE)
-         x = line.indent * self.charWidth
+         baseline = colourpicker_parts.baseline(PAD_Y + (i * LINE_HEIGHT), LINE_HEIGHT, FONT_SIZE)
+         x = PAD_X + (line.indent * self.charWidth)
          for s in values(line.segs) do
             local vt:obj
             if n < #self.pool then
@@ -219,29 +244,10 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
 
       for i in {n to #self.pool} do self.pool[i].visibility = VIS_HIDDEN end
 
-      -- Keep the scroll position unless the page has become too short for it.
-
-      self.page.height = math.max(frame_h, #display * LINE_HEIGHT)
-      min_y = math.min(0, frame_h - self.page.height)
-      if self.page.y < min_y then self.page.y = min_y end
+      self.fitPage()
    end
 
-   -- Resize the panel.  The scroll area follows, and the scroll position is kept unless the page has become too short
-   -- for it.
-
-   self.setHeight = function(Height:num!)
-      if Height is self.viewport.height then return end
-      self.viewport.height = Height
-      self.bkgd.height = Height - 1
-      frame_h = Height - frame_y - PAD_Y
-      self.area.height = frame_h
-      self.page.height = math.max(frame_h, #self.display * LINE_HEIGHT)
-      min_y = math.min(0, frame_h - self.page.height)
-      if self.page.y < min_y then self.page.y = min_y end
-   end
-
-   -- The scrollbar handles wheel input on the page.  Clicks are taken from the page too: the scrollbar subscribes the
-   -- page to input, so the frame behind it no longer receives the buttons.  The page always covers the frame.
+   -- The scrollbar subscribes the page to input for the wheel, and clicks are taken from the page too.
 
    self.page.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
       repeat

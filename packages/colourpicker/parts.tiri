@@ -18,6 +18,30 @@ colourpicker_parts.BADGE_HEIGHT = 16
 
 ----------------------------------------------------------------------------------------------------------------------
 
+-- Parent-first swatch display order, with siblings in palette order.  Model indices remain unchanged.
+
+colourpicker_parts.paletteOrder = function(Palette:table!):array<table>
+   order = array<table>
+   visited = { }
+   function appendBranch(Index:num, Depth:num):nil
+      if visited[Index] then return end
+      visited[Index] = true
+      order.push({ index = Index, depth = Depth })
+      for i, s in Palette.swatches do
+         if s.base is Index then appendBranch(i, Depth + 1) end
+      end
+   end
+   for i, s in Palette.swatches do
+      if s.base is nil then appendBranch(i, 0) end
+   end
+   -- Keep every swatch visible even if an externally supplied palette has an invalid link.
+   for i in {0 to #Palette.swatches} do appendBranch(i, 0) end
+
+   return order
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Doc(text=[[
 @desc Watch a viewport for a left press followed by pointer travel of at least threshold pixels (default 6).
 Drag-item presses are ignored.  onPress(Viewport), if given, runs on press; onDrag() runs once at the threshold.
