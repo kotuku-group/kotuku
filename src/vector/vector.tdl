@@ -169,7 +169,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "OVERWRITE: Turns on overwrite mode (if off, insert mode is enabled).",
     "SECRET: Hide all characters from the UI by using generic symbols in place of glyphs.",
     "RASTER: Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.",
-    "SELECTABLE: Allow mouse and keyboard selection and copying without user editing or a visible caret.  Set before initialisation.")
+    "SELECTABLE: Allow mouse and keyboard selection and copying without user editing or a visible caret.",
+    "NO_AUTO_OFFSET: Leave text scrolling to its container; disables automatic cursor offsets.")
 
   flags("VMF", { comment="Guide path flags" },
     "STRETCH: Applicable when used on @VectorText, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.",
@@ -822,7 +823,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
 
   methods('VectorText', 'VT', {
     { id=30, name='DeleteLine' },
-    { id=31, name='SelectArea' }
+    { id=31, name='SelectArea' },
+    { id=32, name='GetCaretBounds' }
   })
 
   klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF' }, extended=true }, [[

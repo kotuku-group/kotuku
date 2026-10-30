@@ -97,7 +97,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
 
    if (!Vector->txBitmapImage) {
       if (!(Vector->txAlphaBitmap = objBitmap::create::local(
-            fl::Width(longest_line_width),
+            fl::Width(std::max(1, longest_line_width)),
             fl::Height(dy),
             fl::BitsPerPixel(32),
             fl::Flags(BMF::ALPHA_CHANNEL)))) return;
@@ -108,7 +108,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
             fl::Units(VUNIT::BOUNDING_BOX),
             fl::AspectRatio(ARF::X_MIN|ARF::Y_MIN)))) return;
    }
-   else acResize(Vector->txAlphaBitmap, longest_line_width, dy, 0);
+   else acResize(Vector->txAlphaBitmap, std::max(1, longest_line_width), dy, 0);
 
    Vector->Fill.Image = Vector->txBitmapImage;
    Vector->DisableFillColour = true;
