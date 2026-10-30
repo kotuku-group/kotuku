@@ -66,9 +66,16 @@ static void generate_rectangle(extVectorRectangle *Vector, agg::path_storage &Pa
    double width  = geometry.width;
    double height = geometry.height;
 
+   // Clamp radius magnitudes, then orient offsets and arcs to preserve flipped dimensions.
+
+   const double half_width = std::abs(width) * 0.5;
+   const double half_height = std::abs(height) * 0.5;
+   const bool sweep = (width < 0) IS (height < 0);
+
    if (Vector->rFullControl) {
-      // Full control of rounded corners has been requested by the client (four X,Y coordinate pairs).
-      // Coordinates are either ALL scaled or ALL fixed, not a mix of both.
+      // Full control of rounded corners has been requested by the client (four X,Y coordinate pairs, clockwise from
+      // the top-left).  Each corner follows the SVG rules for a single corner: an undefined radius takes the other
+      // axis' value, and radii are clamped to half the width or height.  A corner with a zero radius is square.
       // This feature is not SVG compliant.
 
       const double diagonal = sqrt((width * width) + (height * height)) * INV_SQRT2;
@@ -78,28 +85,33 @@ static void generate_rectangle(extVectorRectangle *Vector, agg::path_storage &Pa
          const auto &round_x = Vector->rRound[i].x;
          const auto &round_y = Vector->rRound[i].y;
 
-         rx[i] = round_x.scaled() ? double(round_x) * diagonal : double(round_x);
-         ry[i] = round_y.scaled() ? double(round_y) * diagonal : double(round_y);
-         if (rx[i] > width * 0.5) rx[i] = width * 0.5;
-         if (ry[i] > height * 0.5) ry[i] = height * 0.5;
+         double cx = round_x.defined() ? (round_x.scaled() ? double(round_x) * diagonal : double(round_x)) : NAN;
+         double cy = round_y.defined() ? (round_y.scaled() ? double(round_y) * diagonal : double(round_y)) : NAN;
+         if (std::isnan(cx)) cx = std::isnan(cy) ? 0 : cy;
+         if (std::isnan(cy)) cy = cx;
+
+         rx[i] = std::copysign(std::clamp<double>(cx, 0.0, half_width), width);
+         ry[i] = std::copysign(std::clamp<double>(cy, 0.0, half_height), height);
       }
+
+      // Each edge runs from the end of one corner's arc to the start of the next.
 
       // Top left -> Top right
       Path.move_to(x+rx[0], y);
       Path.line_to(x+width-rx[1], y);
-      Path.arc_to(rx[1], ry[1], 0 /* angle */, 0 /* large */, 1 /* sweep */, x+width, y+ry[1]);
+      Path.arc_to(rx[1], ry[1], 0 /* angle */, 0 /* large */, sweep, x+width, y+ry[1]);
 
       // Top right -> Bottom right
-      Path.line_to(x+width, y+height-ry[1]);
-      Path.arc_to(rx[2], ry[2], 0, 0, 1, x+width-rx[2], y+height);
+      Path.line_to(x+width, y+height-ry[2]);
+      Path.arc_to(rx[2], ry[2], 0, 0, sweep, x+width-rx[2], y+height);
 
       // Bottom right -> Bottom left
-      Path.line_to(x+rx[2], y+height);
-      Path.arc_to(rx[3], ry[3], 0, 0, 1, x, y+height-ry[3]);
+      Path.line_to(x+rx[3], y+height);
+      Path.arc_to(rx[3], ry[3], 0, 0, sweep, x, y+height-ry[3]);
 
       // Bottom left -> Top left
-      Path.line_to(x, y+ry[3]);
-      Path.arc_to(rx[0], ry[0], 0, 0, 1, x+rx[0], y);
+      Path.line_to(x, y+ry[0]);
+      Path.arc_to(rx[0], ry[0], 0, 0, sweep, x+rx[0], y);
 
       Path.close_polygon();
    }
@@ -119,8 +131,8 @@ static void generate_rectangle(extVectorRectangle *Vector, agg::path_storage &Pa
       if (not x_defined) { rx = ry; x_defined = true; }
       if (not y_defined) { ry = rx; y_defined = true; }
 
-      rx = std::clamp<double>(rx, 0.0, width * 0.5);
-      ry = std::clamp<double>(ry, 0.0, height * 0.5);
+      rx = std::copysign(std::clamp<double>(rx, 0.0, half_width), width);
+      ry = std::copysign(std::clamp<double>(ry, 0.0, half_height), height);
 
       if ((rx IS 0) or (ry IS 0)) {
          Path.move_to(x, y);
@@ -133,19 +145,19 @@ static void generate_rectangle(extVectorRectangle *Vector, agg::path_storage &Pa
          // Top left -> Top right
          Path.move_to(x+rx, y);
          Path.line_to(x+width-rx, y);
-         Path.arc_to(rx, ry, 0 /* angle */, 0 /* large */, 1 /* sweep */, x+width, y+ry);
+         Path.arc_to(rx, ry, 0 /* angle */, 0 /* large */, sweep, x+width, y+ry);
 
          // Top right -> Bottom right
          Path.line_to(x+width, y+height-ry);
-         Path.arc_to(rx, ry, 0, 0, 1, x+width-rx, y+height);
+         Path.arc_to(rx, ry, 0, 0, sweep, x+width-rx, y+height);
 
          // Bottom right -> Bottom left
          Path.line_to(x+rx, y+height);
-         Path.arc_to(rx, ry, 0, 0, 1, x, y+height-ry);
+         Path.arc_to(rx, ry, 0, 0, sweep, x, y+height-ry);
 
          // Bottom left -> Top left
          Path.line_to(x, y+ry);
-         Path.arc_to(rx, ry, 0, 0, 1, x+rx, y);
+         Path.arc_to(rx, ry, 0, 0, sweep, x+rx, y);
       }
       Path.close_polygon();
    }
@@ -258,7 +270,12 @@ Rounding: Precisely controls rounded corner positioning.
 
 Set the Rounding field if all four corners of the rectangle need to be precisely controlled.  Four X,Y sizing
 pairs must be provided in sequence, with the first describing the top-left corner and proceeding in clockwise fashion.
-Each pair of values is equivalent to a #RoundX,#RoundY definition for that corner only.
+Each pair of values is equivalent to a #RoundX,#RoundY definition for that corner only.  A corner with a zero radius
+is square.
+
+Values can be fixed or scaled.  A scaled value is relative to the diagonal of the rectangle, as for #RoundX.  In Tiri,
+numbers are fixed values and strings such as `'10%'` are scaled, for example
+`rect.rounding = { 0, 0, 0, 0, 6, 6, 0, 0 }` rounds the bottom-right corner only.
 
 *********************************************************************************************************************/
 
