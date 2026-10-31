@@ -3375,7 +3375,7 @@ gui.dialog.colour = function(Options:table)
          title        = Options.title ?? "Colour Picker",
          modal        = Options.modal ?? false,
          dragDrop     = true,
-         theme        = Options.theme,
+         themeName    = Options.theme,
          events = {
             close = function[<weak> &&](Window)
                if &finished then return end

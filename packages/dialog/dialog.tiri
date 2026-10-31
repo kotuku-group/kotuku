@@ -120,6 +120,7 @@ gui.dialog.message = function(Options:table!)
    }
 
    local font, em, text_width, content_height, primary, buttons_width
+   local completing = false
 
    -- Wait for the user to respond to the dialog.
 
@@ -141,7 +142,9 @@ gui.dialog.message = function(Options:table!)
    -- Report the option at Index to the client.  Bound to the dialog, as button callbacks run in the button's context.
 
    function[self] respond(Index:num!)
-      if not &window then return end -- The dialog has already responded
+      if completing or not &window then return end -- Completion is in progress or has already finished
+      completing = true
+      defer finish() end
 
       response = &options[Index]
       state = { checkbox = (&checkbox?.value is true) }
@@ -157,13 +160,13 @@ gui.dialog.message = function(Options:table!)
       end
 
       &feedback?(&&, response, state)
-      finish()
    end
 
    function[self] cancel()
-      if not &window then return end
+      if completing or not &window then return end
+      completing = true
+      defer finish() end
       &feedback?(&&, nil, nil)
-      finish()
    end
 
    -- Wrap the message to the message column and position everything beneath it.  The window is resized to fit the
@@ -247,6 +250,7 @@ gui.dialog.message = function(Options:table!)
          icon         = Options.icon ?? 'items/question',
          title        = Options.title ?? 'Confirmation Required',
          modal        = Options.modal ?? false,
+         theme        = { window = { bkgd = gui.themes[gui.theme].page.bkgd } },
          events = {
             close = function()
                cancel()

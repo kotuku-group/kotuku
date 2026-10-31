@@ -40,13 +40,11 @@ function setDisplayIcon(Display:obj, Icon:str)
 end
 
 gui.window = function(Options:table!)
-   self = setmetatable(entity {
-      -- Public variables
+   self = setmetatable(entity { -- Public interface
       events       = Options.events ?? { },
       aspectRatio  = Options.aspectRatio??,
       maximiseEnabled = Options.maximise??,
       presence     = Options.presence ?? SPT_HOST,
-      theme        = nil,
       focus        = Options.focus??,
       title        = Options.title ?? 'Window',
       icon         = Options.icon,
@@ -318,7 +316,10 @@ gui.window = function(Options:table!)
          flags = Options.dragDrop ? VPF_RESIZE|VPF_DROP_TARGETS : VPF_RESIZE, surface = &surface
       })
 
-      &theme = gui.setTheme(&scene, Options.theme ?? gui.theme)
+      &theme = gui.setTheme(&scene, Options.themeName ?? gui.theme)
+      if Options.theme then
+         &theme = table.merge(&theme, Options.theme, true, true)
+      end
 
       gui.configureScene(&&, &scene) -- Support GUI customisation
 
