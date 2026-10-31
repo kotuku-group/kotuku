@@ -39,8 +39,6 @@ CARD_H       <const> = CARD_SWATCH + 56
 AREA_H       <const> = 84 -- Description areas
 AREA_PAD     <const> = 7
 AREA_FONT    <const> = 12
-AREA_INSET   <const> = 1  -- The border of a description area
-AREA_BAR     <const> = 8  -- Thickness of a description area's scrollbar
 NAME_LIMIT   <const> = 60
 TEXT_LIMIT   <const> = colourpalette.DESCRIPTION_LIMIT
 FLASH_TIME   <const> = 1.6
@@ -257,226 +255,6 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
       end
    end
 
-   return self
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- A multi-line text area.  Clicking gives it the focus, which makes the text editable.  A focus loss commits the
--- text through commit(Text).  The placeholder is shown while the area is empty and unfocused.  Text that is taller
--- than the area scrolls: a narrow scrollbar appears, the mouse wheel scrolls, and the caret is kept in view while
--- editing.
---
--- The text is drawn on a page that is moved within a clipping frame inside the border.  The page is the editing
--- viewport (`viewport`): the VectorText edits while its nearest viewport has the focus.  `box` is the bordered area.
-
-function textArea(Target:obj!, Options:table!):table
-   t = Options.tokens
-   self = { focused = false }
-   theme = gui.getTheme(Target)
-
-   box = Target.new('VectorViewport', {
-      x = Options.x, y = Options.y, width = Options.width, height = Options.height, overflow = VOF_HIDDEN,
-      cursor = 'text'
-   })
-   self.box = box
-
-   self.bkgd = box.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4, fill = t.sunk, stroke = t.border,
-      strokeWidth = 1
-   })
-
-   baseline = AREA_PAD + math.round(AREA_FONT * 0.9)
-   self.placeholder = colourpicker_parts.text(box, {
-      x = AREA_PAD, y = baseline, size = AREA_FONT, fill = t.fg3, string = Options.placeholder ?? '',
-      style = 'Regular'
-   })
-
-   -- The scroll area is inset by the border, so that the scrollbar doesn't cover it.
-
-   frame_h = Options.height - (AREA_INSET * 2)
-   area = box.new('VectorViewport', { x = AREA_INSET, y = AREA_INSET, xOffset = AREA_INSET, yOffset = AREA_INSET })
-   frame = area.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN })
-   page = frame.new('VectorViewport', { x = 0, y = 0, width = '100%', height = frame_h, cursor = 'text' })
-   self.viewport = page
-   self.frame = frame
-
-   -- The scrollbar uses the theme's vertical style if it has one, narrowed for the small area.
-
-   bar_style = gui.getTheme(area).scrollbar_v ? 'scrollbar_v' : 'scrollbar'
-   self.scrollbar = gui.scrollbar({
-      target = area, view = frame, page = page, direction = 'vertical',
-      theme = { [bar_style] = { thickness = AREA_BAR } }
-   })
-
-   local fitPage, reveal
-
-   text_style = {
-      x = AREA_PAD - AREA_INSET, y = baseline - AREA_INSET, face = colourpicker_parts.FACE_UI,
-      fontSize = f'{AREA_FONT}px', fontStyle = 'Regular', lineLimit = 0,
-      inlineSize = Options.width - (AREA_PAD * 2) - AREA_BAR
-   }
-
-   self.text = page.new('VectorText', table.merge({
-      fill = t.fg0, textFlags = VTXF_EDITABLE, charLimit = TEXT_LIMIT,
-      onChange = function()
-         fitPage()
-         reveal()
-      end
-   }, text_style))
-
-   -- A hidden copy measures the full text extent and the caret's wrapped line without the editor's scroll offset.
-
-   probe = page.new('VectorText', table.merge({ visibility = VIS_HIDDEN }, text_style))
-
-   -- The bottom of a text vector's last line (its baseline), from the top of the page.  Boundaries are in scene
-   -- coordinates, which the page's own boundary converts.
-
-   function textBottom(Vector:obj!):num
-      err, _, ty, _, th = Vector.mtGetBoundary(0)
-      if err != ERR_Okay then return Vector.y end
-      _, _, py = page.mtGetBoundary(0)
-      return ty + th - py
-   end
-
-   -- The page covers the frame and is as tall as the text.  The scroll position is kept unless the page has become
-   -- too short for it.
-
-   fitPage = function()
-      vt = self.text
-      text = vt.string ?? ''
-
-      -- A final glyph preserves an empty last line in the non-editable probe.
-
-      if (#text is 0) or text.endsWith('\n') then text ..= '|' end
-      probe.string = text
-      height = math.max(frame_h, math.ceil(textBottom(probe) + vt.descent + AREA_PAD))
-
-      if height != page.height then
-         page.height = height
-         -- The VectorText offsets itself to keep the caret inside its viewport; a move to the same position
-         -- recomputes that offset for the new height.
-         if self.focused then vt.cursorRow = vt.cursorRow end
-      end
-
-      min_y = math.min(0, frame_h - height)
-      if page.y < min_y then page.y = min_y end
-   end
-
-   -- The text up to the caret (its row and its column in characters), followed by the rest of the caret's word, so
-   -- that the probe wraps the caret's line as the text does.  A caret at the start of a line is given a character
-   -- to measure, as a trailing empty line has no extent.
-
-   function caretText():str
-      text = self.text.string ?? ''
-      n = #text
-      i = 0
-      for {0 to self.text.cursorRow} do
-         nl = text.find('\n', i)
-         if nl is nil then break end
-         i = nl + 1
-      end
-
-      column = self.text.cursorColumn
-      while (column > 0) and (i < n) do
-         i++
-         while (i < n) and ((text.byte(i) & 0xc0) is 0x80) do i++ end
-         column -= 1
-      end
-
-      while (i < n) and (text.byte(i) > 0x20) do i++ end
-      prefix = text.sub(0, i)
-      if (#prefix is 0) or prefix.endsWith('\n') then prefix ..= '|' end
-      return prefix
-   end
-
-   -- Scroll the caret's line into view, with the area's padding around it.  The padding matches the page's, so the
-   -- first and last lines scroll to the ends of the page.
-
-   reveal = function()
-      vt = self.text
-      probe.string = caretText()
-      line = textBottom(probe)
-      top = line - AREA_FONT - AREA_PAD
-      bottom = line + vt.descent + AREA_PAD
-      view_top = -page.y
-      if top < view_top then
-         page.y = -math.max(0, top)
-      elseif bottom > view_top + frame_h then
-         page.y = -math.min(page.height - frame_h, bottom - frame_h)
-      end
-   end
-
-   function showPlaceholder()
-      empty = not ((self.text.string ?? '')??)
-      self.placeholder.visibility = (empty and not self.focused) ? VIS_VISIBLE : VIS_HIDDEN
-   end
-
-   -- Setting the text scrolls back to the top.
-
-   self.set = function(Text:str)
-      if self.focused then return end
-      self.text.string = Text ?? ''
-      page.y = 0
-      fitPage()
-      showPlaceholder()
-   end
-
-   self.get = function():str
-      return (self.text.string ?? '').trim()
-   end
-
-   -- True if the text is taller than the area, so that it can be scrolled.
-
-   self.scrolls = function():bool
-      return page.height > frame_h
-   end
-
-   self.enable = function() box.acEnable() end
-   self.disable = function() box.acDisable() end
-
-   -- Clicks are taken from the page: the scrollbar subscribes it to input for the wheel, and it covers the frame.
-
-   page.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
-      repeat
-         if (Msg.type is JET_LMB) and (Msg.value is 1) and not self.focused then page.acFocus() end
-         Msg = Msg.next
-      until not Msg
-   end)
-
-   -- Escape leaves the area.  Enter starts a new line, which the VectorText handles.  Other keys can move the caret,
-   -- which is revealed once the VectorText has handled the key.
-
-   page.mtSubscribeKeyboard(function(Input:obj!, Qualifiers:num!, Value:num!, Unicode)
-      if not (Qualifiers has KQ_PRESSED) then return end
-      if Value is KEY_ESCAPE then
-         if Options.blur then Options.blur() end
-      else
-         processing.delayedCall(function()
-            if self.focused then reveal() end
-         end)
-      end
-   end)
-
-   page.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Input:obj!, Event:num!)
-      gained = Event != FM_LOST_FOCUS
-      if gained is self.focused then return end
-      self.focused = gained
-      self.bkgd.stroke = gained ? theme.input.focus.stroke : theme.input.bkgd.stroke
-      showPlaceholder()
-
-      if not gained then
-         text = self.get()
-         text = colourpalette.limitDescription(text)
-         self.text.string = text
-         fitPage()
-         Options.commit(text)
-      end
-
-      if Options.focus then Options.focus(gained, self) end
-      box.acDraw()
-   end)
-
-   showPlaceholder()
    return self
 end
 
@@ -1073,15 +851,31 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    y += SEARCH_H + 14 + 10
    label(info.body, INSET, y, 'Description', t)
    y += 6
-   self.paletteNotes = textArea(info.body, {
-      x = INSET, y = y, width = right_inner, height = AREA_H, tokens = t, placeholder = 'Notes about this palette…',
-      commit = function(Text:str)
-         palette = selectedPalette()
-         if not palette or palette.starter or ((palette.description ?? '') is Text) then return end
-         palette.description = (#Text > 0) ? Text : nil
-         Options.save()
-      end,
-      focus = Options.focus, blur = Options.blur
+   notes_theme = {
+      bkgd = { fill = t.sunk, stroke = t.border, strokeWidth = 1, roundX = 4, roundY = 4 },
+      text = { x = AREA_PAD - 1, y = AREA_PAD + math.round(AREA_FONT * 0.9) - 1,
+         face = colourpicker_parts.FACE_UI, fontSize = f'{AREA_FONT}px', fontStyle = 'Regular', fill = t.fg0 },
+      scrollbar = { thickness = 8 }
+   }
+   function notesKeypress(Event:table!)
+      if Event.value is KEY_ESCAPE then Options.blur() end
+   end
+
+   self.paletteNotes = gui.input({
+      target = info.body, x = INSET, y = y, width = right_inner, height = AREA_H, multiline = true,
+      maxLength = TEXT_LIMIT, theme = notes_theme, placeholder = 'Notes about this palette…',
+      events = {
+         keypress = notesKeypress,
+         activate = function(Event:table!)
+            if Event.state != 'lost-focus' then return end
+            text = colourpalette.limitDescription((Event.text ?? '').trim())
+            self.paletteNotes.setText(text)
+            palette = selectedPalette()
+            if not palette or palette.starter or ((palette.description ?? '') is text) then return end
+            palette.description = (#text > 0) ? text : nil
+            Options.save()
+         end
+      }
    })
 
    sw_y = PAD + pal_h + GAP
@@ -1107,17 +901,31 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    y = INSET + 48 + 22
    label(g, INSET, y, 'Description', t)
    y += 6
-   self.swatchNotes = textArea(g, {
-      x = INSET, y = y, width = right_inner, height = AREA_H, tokens = t, placeholder = 'Notes about this colour…',
-      commit = function(Text:str)
-         palette = selectedPalette()
-         s = (palette and not palette.starter and (self.swatch != nil)) ? palette.swatches[self.swatch] : nil
-         if not s or ((s.description ?? '') is Text) then return end
-         s.description = (#Text > 0) ? Text : nil
-         Options.save()
-      end,
-      focus = Options.focus, blur = Options.blur
+   self.swatchNotes = gui.input({
+      target = g, x = INSET, y = y, width = right_inner, height = AREA_H, multiline = true,
+      maxLength = TEXT_LIMIT, theme = notes_theme, placeholder = 'Notes about this colour…',
+      events = {
+         keypress = notesKeypress,
+         activate = function(Event:table!)
+            if Event.state != 'lost-focus' then return end
+            text = colourpalette.limitDescription((Event.text ?? '').trim())
+            self.swatchNotes.setText(text)
+            palette = selectedPalette()
+            s = (palette and not palette.starter and (self.swatch != nil)) ? palette.swatches[self.swatch] : nil
+            if not s or ((s.description ?? '') is text) then return end
+            s.description = (#text > 0) ? text : nil
+            Options.save()
+         end
+      }
    })
+
+   for notes in values(array<table> { self.paletteNotes, self.swatchNotes }) do
+      notes.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS,
+         function(Input:obj!, Event:num!)
+            notes.focused = Event != FM_LOST_FOCUS
+            Options.focus(notes.focused, notes)
+         end)
+   end
 
    -- Properties: two columns of label and value
 
@@ -1317,7 +1125,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       palette = selectedPalette()
       editable = palette and not palette.starter
       self.nameInput.setText(palette?.name ?? '')
-      self.paletteNotes.set(palette?.description ?? '')
+      if not self.paletteNotes.focused then self.paletteNotes.setText(palette?.description ?? '') end
       if editable then
          self.nameInput.enable()
          self.paletteNotes.enable()
@@ -1339,7 +1147,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       self.swatchBlock.fill = swatchFill(s)
       colourpicker_parts.fitText(self.swatchName, '', s.name, RIGHT_W - INSET - 60 - INSET)
       self.swatchCss.string = colourmath.toOklchString(s.l, s.c, s.h, s.alpha)
-      self.swatchNotes.set(s.description ?? '')
+      if not self.swatchNotes.focused then self.swatchNotes.setText(s.description ?? '') end
 
       _, _, _, in_srgb = colourmath.oklchToSrgb(s.l, s.c, s.h)
       gr, gg, gb = colourmath.oklchToSrgb(colourmath.gamutMap(s.l, s.c, s.h, 'srgb'))

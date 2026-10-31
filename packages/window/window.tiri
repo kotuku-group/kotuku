@@ -72,7 +72,7 @@ gui.window = function(Options:table!)
    self.clientViewport = function[](Options:table):obj
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
-      Options.aspectRatio ?= 'XMid|YMid|Meet'
+      Options.aspectRatio ?= ARF_X_MID | ARF_Y_MID | ARF_MEET
       Options.{ x = 0, y = 0, xOffset = 0, yOffset = 0 }
 
       self._clientViewport = self.viewport.new('VectorViewport', Options)
@@ -323,7 +323,7 @@ gui.window = function(Options:table!)
       gui.configureScene(&&, &scene) -- Support GUI customisation
 
       &viewport = &scene.new('VectorViewport', {
-         x = 0, y = 0, width = '100%', height = '100%', aspectRatio = 'XMid|YMid|Meet'
+         x = 0, y = 0, width = '100%', height = '100%', aspectRatio = ARF_X_MID|ARF_Y_MID|ARF_MEET
       })
 
       &bkgd = &viewport.new('VectorRectangle', table.merge({
