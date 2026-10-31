@@ -1999,7 +1999,8 @@ ResizeEvent: A callback to trigger when the host viewport is resized.
 Use ResizeEvent to receive feedback when the viewport that hosts the vector is resized.  The function prototype is
 `void callback(*VectorViewport, *Vector, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height, APTR Meta)`
 
-The dimension values refer to the current location and size of the viewport.
+The dimension values refer to the current location and size of the viewport.  If the viewport defines a view box, the
+Width and Height are those of the view box, which is the coordinate space of the vector.
 
 Note that this callback feature is provided for convenience.  Only one subscription to the viewport is possible at
 any time.  The conventional means for monitoring the size and position of any vector is to subscribe to the

@@ -621,7 +621,8 @@ end
 
    -- Zoom controls are kept in their own viewport above the client viewport so that they are unaffected by the zoom.
    -- Zooming sets the client viewport's view box to a fraction of the window size, so content anchored to the right or
-   -- bottom edges is laid out again within the zoomed area.
+   -- bottom edges is laid out again within the zoomed area.  A view box can't be removed once set, so it follows every
+   -- resize, including at a zoom of 1.
 
    zoom = 1.0
    ZOOM_STEP <const> = 1.25
@@ -637,7 +638,7 @@ end
    end
 
    win.bkgd.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-      if zoom != 1 then applyZoom() end
+      if viewport.viewWidth > 0 then applyZoom() end
    end
 
    zoomViewport = win.viewport.new('VectorViewport', {

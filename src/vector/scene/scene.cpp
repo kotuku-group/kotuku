@@ -1460,6 +1460,14 @@ static bool process_resize_msgs(extVectorScene *Self)
          if (subscriptions IS Self->ResizeSubscriptions.end()) continue;
 
          auto list = subscriptions->second; // Take a copy because callbacks can change subscriptions.
+
+         // Subscribers are children of the viewport, so a view box defines the size in their coordinate space.  This
+         // matches the resolution of their relative units.
+
+         auto source = viewport_source(view);
+         auto width  = (source.Width > 0) ? source.Width : view->vpFixedWidth;
+         auto height = (source.Height > 0) ? source.Height : view->vpFixedHeight;
+
          for (auto &record : list) {
             ERR result;
             auto vector = record.first;
@@ -1492,8 +1500,7 @@ static bool process_resize_msgs(extVectorScene *Self)
             if (sub.isC()) {
                kt::SwitchContext ctx(sub.Context);
                auto callback = (ERR (*)(extVectorViewport *, objVector *, double, double, double, double, APTR))sub.Routine;
-               result = callback(view, vector, view->FinalX, view->FinalY, view->vpFixedWidth, view->vpFixedHeight,
-                  sub.Meta);
+               result = callback(view, vector, view->FinalX, view->FinalY, width, height, sub.Meta);
             }
             else if (sub.isScript()) {
                sc::Call(sub, std::to_array<ScriptArg>({
@@ -1501,8 +1508,8 @@ static bool process_resize_msgs(extVectorScene *Self)
                   { "Vector",         vector, FDF_OBJECT },
                   { "ViewportX",      view->FinalX },
                   { "ViewportY",      view->FinalY },
-                  { "ViewportWidth",  view->vpFixedWidth },
-                  { "ViewportHeight", view->vpFixedHeight }
+                  { "ViewportWidth",  width },
+                  { "ViewportHeight", height }
                }));
             }
          }

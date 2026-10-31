@@ -48,13 +48,12 @@ gui.window = function(Options:table!)
       presence     = Options.presence ?? SPT_HOST,
       theme        = nil,
       focus        = Options.focus??,
-      quit         = Options.quit is false ? nil : true, -- Construction-only; defaults to true.
       title        = Options.title ?? 'Window',
       icon         = Options.icon,
       client       = { }, -- Client margins
       margins      = Options.margins,
       surface      = nil, -- Client access to the surface is permitted
-      viewport     = nil -- The window's top-level viewport
+      viewport     = nil  -- The window's top-level viewport
    }, {
       __gc = function()
          local surface = &surface
@@ -66,7 +65,7 @@ gui.window = function(Options:table!)
    -- Native callbacks acquire the window weakly.  Keep its construction-time quit policy available after collection.
 
    weak_self <weak> = self
-   quit_on_free <const> = self.quit
+   quit_on_free <const> = Options.quit is false ? nil : true -- Defaults to true
 
    -- Use function[] so that function callbacks pass through with the original client context
 
@@ -74,10 +73,7 @@ gui.window = function(Options:table!)
       if self._clientViewport then return self._clientViewport end
       Options ?= { }
       Options.aspectRatio ?= 'XMid|YMid|Meet'
-      Options.x = 0
-      Options.y = 0
-      Options.xOffset = 0
-      Options.yOffset = 0
+      Options.{ x = 0, y = 0, xOffset = 0, yOffset = 0 }
 
       self._clientViewport = self.viewport.new('VectorViewport', Options)
       return self._clientViewport
@@ -124,10 +120,7 @@ gui.window = function(Options:table!)
 
    self.sizeHints = function(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
       if &surface.display.mtSizeHints(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect) != ERR_Okay then
-         &surface.maxWidth  = MaxWidth
-         &surface.minWidth  = MinWidth
-         &surface.maxHeight = MaxHeight
-         &surface.minHeight = MinHeight
+         &surface.{ maxWidth = MaxWidth, minWidth = MinWidth, maxHeight = MaxHeight, minHeight = MinHeight }
       end
    end
 
