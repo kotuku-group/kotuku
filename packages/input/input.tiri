@@ -21,7 +21,9 @@ function reportActivate(State:str!, Force:bool!)
    text = &text.string
    hash = textHash(text)
    if Force or hash != &hash then
-      &hash = hash
+      -- Ctrl+Enter submits a multi-line draft without marking it committed for the later focus loss.
+
+      if not &multiline or (State is 'lost-focus') then &hash = hash end
       &events.activate({ text=text, state=State })
    end
 end

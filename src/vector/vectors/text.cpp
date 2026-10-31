@@ -639,7 +639,7 @@ static ERR VECTORTEXT_GetCaretBounds(extVectorText *Self, struct vt::GetCaretBou
    const auto column = std::clamp(Args->Column < 0 ? Self->txCursor.column() : Args->Column,
       0, int(line.chars.size()) - 1);
    const auto &caret = line.chars[column];
-   
+
    Args->X = Self->FinalX - Self->txXOffset + caret.x1;
    Args->Y = Self->FinalY - Self->txYOffset + caret.lineTop;
    Args->Height = caret.lineHeight;
@@ -1212,7 +1212,7 @@ static ERR TEXT_SET_FontStyle(extVectorText *Self, const std::string_view &Value
 -FIELD-
 InlineSize: Enables word-wrapping at a fixed area size.
 
-The inline-size property allows one to set the wrapping area to a rectangular shape. The computed value of the
+The inline-size property allows the client to set the wrapping area to a rectangular shape. The computed value of the
 property sets the width of the rectangle for horizontal text and the height of the rectangle for vertical text.
 The other dimension (height for horizontal text, width for vertical text) is of infinite length. A value of zero
 (the default) disables the creation of a wrapping area.
