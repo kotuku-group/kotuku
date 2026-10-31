@@ -321,12 +321,15 @@ gui._dropdown = function(Options)
          end
       end
 
-      -- Offsets are used for the background and border because they are relative to the view box, whereas a
-      -- resizeEvent reports the scaled dimensions.
+      bksetting = table.merge({ x = 0, y = 0, xOffset = 0, yOffset = 0 }, dropdown.bkgd)
+      offset = 0
 
-      &viewport.new('VectorRectangle', table.merge({ -- Background
-         x = 1.5, y = 1.5, xOffset = 1.5, yOffset = 1.5, roundX = 3, roundY = 3
-      }, dropdown.bkgd))
+      if dropdown.bkgd?.strokeWidth then
+         offset = dropdown.bkgd.strokeWidth * 0.5
+         bksetting.{ x = offset, y = offset, xOffset = offset, yOffset = offset }
+      end
+
+      &viewport.new('VectorRectangle', bksetting)
 
       -- Items are placed in a page that scrolls within a clipped frame if there are more than lineLimit of them.
 
@@ -334,12 +337,8 @@ gui._dropdown = function(Options)
       &page = &frame.new('VectorViewport', { x=0, y=0, width='100%', height=1 })
 
       &highlight = &page.new('VectorRectangle', table.merge({
-         x = 2, y = 0, xOffset = 2, height = ITEM_HEIGHT, visibility = 'hidden'
+         x = offset, y = offset, xOffset = offset, height = ITEM_HEIGHT, visibility = 'hidden'
       }, dropdown.highlight))
-
-      &viewport.new('VectorRectangle', table.merge({ -- Menu border
-         strokeWidth = 1.5, x = 1.5, y = 1.5, xOffset = 1.5, yOffset = 1.5, roundX = 3, roundY = 3
-      }, dropdown.border))
 
       -- Input coordinates are relative to the page, so they already account for scaling and scrolling.
 
@@ -388,11 +387,11 @@ gui._dropdown = function(Options)
 
       for item in values(Options.items) do
          if item.label then
-            mi = { y=y, config=item }
+            mi = { y = y, config = item }
             vText = &page.new('VectorText', table.merge({
-               x        = TEXT_X,
-               align    = 'left',
-               string   = item.label
+               x      = TEXT_X,
+               align  = 'left',
+               string = item.label
             }, dropdown.text))
 
             bw = [___*_]vText.mtGetBoundary(0)
@@ -421,8 +420,10 @@ gui._dropdown = function(Options)
                   end
 
                   mi.iconView = &page.new('VectorRectangle', {
-                     x = HMARGIN - info.margin, y = y + math.floor((mi.height - ICON_SIZE) * 0.5) - info.margin,
-                     width = ICON_SIZE + (info.margin * 2), height = ICON_SIZE + (info.margin * 2), fill = info.fill
+                     x = HMARGIN - info.margin,
+                     y = y + math.floor((mi.height - ICON_SIZE) * 0.5) - info.margin,
+                     width = ICON_SIZE + (info.margin * 2), height = ICON_SIZE + (info.margin * 2),
+                     fill = info.fill
                   })
                end
             end

@@ -2383,11 +2383,9 @@ gui.themes = <table{ linkThemes({
          }
       },
       dropdown = { -- Exclusive to combobox
-         bkgd          = { fill = gui.palette.dark.bkgd },
-         border        = { stroke = gui.palette.dark.inverse },
+         bkgd          = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth=gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
          highlight     = { fill = gui.palette.dark.contrast },
-         text          = { fill = gui.palette.dark.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
-         textHighlight = { fill = gui.palette.dark.altText, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         textHighlight = { fill = gui.palette.dark.altText, fontStyle = gui.fonts.input.style },
          icon          = iconTheme('fill(pearl)'),
          iconHighlight = iconTheme('fill(pearl)')
       },
@@ -2417,7 +2415,7 @@ gui.themes = <table{ linkThemes({
       },
       panel = {
          bkgd          = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
-         title         = { fill = gui.palette.dark.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'bold' },
+         title         = { fill = gui.palette.dark.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'semi bold' },
          meta          = { fill = gui.palette.dark.text, opacity = 0.7, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
          metaHighlight = { fill = gui.palette.dark.contrast }, -- Hover style of a clickable meta
          divider       = { fill = gui.palette.dark.edge },
@@ -2511,11 +2509,10 @@ gui.themes = <table{ linkThemes({
          }
       },
       dropdown = {
-         bkgd          = { fill = gui.palette.light.bkgd },
+         bkgd          = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth=gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
          border        = { stroke = gui.palette.light.inverse },
          highlight     = { fill = gui.palette.light.contrast },
-         text          = { fill = gui.palette.light.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
-         textHighlight = { fill = gui.palette.light.altText, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         textHighlight = { fill = gui.palette.light.altText, fontStyle = gui.fonts.input.style },
          icon          = iconTheme('fill(carbon)'),
          iconHighlight = iconTheme('fill(pearl)')
       },

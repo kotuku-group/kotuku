@@ -376,13 +376,13 @@ end
    y += msgButton.viewport.height + gui.sizing.widget.gap
 
    toggle = gui.toggle({
-      target = viewport,
-      label  = 'Toggle:',
+      target     =  viewport,
+      label      = 'Toggle:',
       labelWidth = gui.pixel('150dp'),
-      labelPos = 'left',
-      x      = win.margins.left,
-      y      = y,
-      events = {
+      labelPos   = 'left',
+      x          = win.margins.left,
+      y          = y,
+      events     = {
          activate = function()
             if &value then
                msgButton.enable()
@@ -537,11 +537,11 @@ end
    })
 
    notes_text = notes.page.new('VectorText', table.merge({
-      x = gui.sizing.widget.gap,
-      y = gui.getFontHeight({ face='Inconsolata', fontSize='12pt'}),
+      x         = gui.sizing.widget.gap,
+      y         = gui.getFontHeight({ face='Inconsolata', fontSize='12pt'}),
       lineLimit = 0,
-      face = 'Inconsolata',
-      fontSize = '12pt',
+      face      = 'Inconsolata',
+      fontSize  = '12pt',
       textFlags = VTXF_SELECTABLE,
       string = 'A panel is a card with a header row and a body for its content.  The header shows a title on ' ..
          'the left and meta text on the right, and either can be replaced by a widget.\n\n' ..

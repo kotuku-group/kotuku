@@ -28,7 +28,7 @@ end
 
 function reportFeedback(Item:any)
    &events.activate ?! return
-   text = &text.string
+   text     = &text.string
    new_hash = text ? string.hash(text) : 0
    if new_hash != &hash then
       &hash = new_hash
@@ -368,9 +368,7 @@ gui.combobox = function(Options:table)
       -- Apply the combobox text theme to the dropdown for consistency
 
       &dropdownTheme = table.clone(&theme.dropdown)
-      if &input_theme.text then
-         &dropdownTheme.text = table.merge(&dropdownTheme.text, &input_theme.text, true)
-      end
+      &dropdownTheme.text = table.merge(&dropdownTheme.text, &input_theme.text, true)
 
       if Options.theme?.dropdown then
          &dropdownTheme = table.merge(&dropdownTheme, Options.theme.dropdown, true, true)

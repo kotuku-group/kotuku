@@ -33,7 +33,7 @@ gui.fonts = scaledFonts({
    menu     = { face='Noto Sans,Source Sans Pro', size=10 }, -- Menu & dropdown item text
    page     = { face='Noto Sans,Source Sans Pro', size=12 }, -- Multiple lines of text
    titlebar = { face='Noto Sans', size='100%' }, -- Window titlebar text
-   small    = { face='Noto Sans,Source Sans Pro', size=9 }, -- Recommended text for small sizes
+   small    = { face='Source Sans Pro', size=9 }, -- Recommended text for small sizes
    xsmall   = { face='Micro', size=6 }, -- The smallest available, still legible size
    large    = { face='Noto Sans,Source Sans Pro', size='130%' }, -- Recommended text for headers
    input    = { face='Noto Sans,Source Sans Pro', size=12 }, -- Text inside input widgets (e.g. combobox)
