@@ -77,6 +77,7 @@ public:
    extVectorPolygon *vector;
    int  flash;
    int  preferredColumn; // Retained across consecutive vertical moves, including selection extension
+   std::optional<double> preferredX; // Horizontal position retained across wrapped visual lines
    int  selectColumn, selectRow;
 
    TextCursor() :
@@ -1887,18 +1888,37 @@ struct TextPosition {
 static void select_mouse_word(extVectorText *, TextPosition);
 
 // Carets use text coordinates; the pointer uses scene coordinates.  The complete transform includes alignment,
-// scrolling, the text position and parent viewboxes.  Distance to a segment also handles rotated caret edges.
+// scrolling, the text position and parent viewboxes.  Choose the visual line first for ordinary text, so clicks
+// beyond a short line cannot jump to a longer neighbour.  Distance to a segment handles rotated caret edges.
+
 static TextPosition hit_test(extVectorText *Self, double X, double Y, bool Character = false, int Row = -1)
 {
    gen_vector_tree(Self);
+
+   const bool line_priority = not Self->GuidePath and not Self->Transition and
+      (std::abs(Self->Transform.determinant()) > 1e-14);
+
+   double text_x = X, text_y = Y;
+
+   if (line_priority) Self->Transform.inverse_transform(&text_x, &text_y);
+
+   double shortest_line_dist = std::numeric_limits<double>::max();
    double shortest_dist = std::numeric_limits<double>::max();
    TextPosition nearest { std::max(0, Row), 0 };
+
    for (int row=0; row < std::ssize(Self->txLines); row++) {
       if ((Row >= 0) and (row != Row)) continue;
+
       const auto &chars = Self->txLines[row].chars;
       for (int col=0; col + (Character ? 1 : 0) < std::ssize(chars); col++) {
+         const auto line_distance = line_priority ?
+            std::abs(text_y - chars[col].lineTop - chars[col].lineHeight * 0.5) : 0.0;
+
+         if (line_distance > shortest_line_dist) continue;
+
          double x1 = chars[col].x1, y1 = chars[col].y1;
          double x2 = chars[col].x2, y2 = chars[col].y2;
+
          if (Character) {
             // Measure along the glyph's centre line: its right half still belongs to this character even
             // when the nearest insertion caret is at the beginning of the next word or whitespace run.
@@ -1907,13 +1927,16 @@ static TextPosition hit_test(extVectorText *Self, double X, double Y, bool Chara
             x2 = (chars[col + 1].x1 + chars[col + 1].x2) * 0.5;
             y2 = (chars[col + 1].y1 + chars[col + 1].y2) * 0.5;
          }
+
          Self->Transform.transform(&x1, &y1);
          Self->Transform.transform(&x2, &y2);
          const auto dx = x2 - x1, dy = y2 - y1;
          const auto length = dx * dx + dy * dy;
          const auto t = length > 0 ? std::clamp(((X - x1) * dx + (Y - y1) * dy) / length, 0.0, 1.0) : 0.0;
          const auto distance = std::hypot(X - x1 - t * dx, Y - y1 - t * dy);
-         if (distance < shortest_dist) {
+
+         if ((line_distance < shortest_line_dist) or (distance < shortest_dist)) {
+            shortest_line_dist = line_distance;
             shortest_dist = distance;
             nearest = { row, col };
          }
@@ -1933,6 +1956,7 @@ static void extend_mouse_selection(extVectorText *Self)
 }
 
 // Coalesce pointer movement into one selection update per frame.  Release flushes a pending endpoint immediately.
+
 static ERR text_drag_timer(extVectorText *Self, int64_t Elapsed, int64_t CurrentTime)
 {
    Self->txDragTimer = nullptr;
@@ -1964,11 +1988,13 @@ static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
                slop = pointer->ClickSlop;
             }
          }
+
          Self->txClickSlop = slop;
          const auto elapsed = Events->Timestamp - Self->txClickTime;
          const bool consecutive = (Self->txClickCount > 0) and (elapsed >= 0) and
             (elapsed <= interval * 1000000.0) and
             (std::hypot(Events->AbsX - Self->txClickX, Events->AbsY - Self->txClickY) <= slop);
+
          Self->txClickCount = consecutive ? Self->txClickCount % 3 + 1 : 1;
          Self->txClickTime = Events->Timestamp;
          Self->txClickX = Events->AbsX;
@@ -1987,6 +2013,7 @@ static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
             select_mouse_word(Self, hit_test(Self, Events->AbsX, Events->AbsY, true, position.row));
          }
          else Self->txCursor.move(Self, position.row, position.column);
+
          Self->txCursor.resetFlash();
          Self->txDragging = true;
          Self->txDragPending = false;
@@ -1995,10 +2022,13 @@ static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
          Self->txDragX = Events->AbsX;
          Self->txDragY = Events->AbsY;
          Self->txDragPending = true;
+
          // Moving beyond click slop breaks the multi-click sequence.
+
          if (std::hypot(Events->AbsX - Self->txClickX, Events->AbsY - Self->txClickY) > Self->txClickSlop) {
             Self->txClickCount = 0;
          }
+
          if (not Self->txDragTimer) SubscribeTimer(1.0 / 60.0, C_FUNCTION(text_drag_timer), &Self->txDragTimer);
       }
    }
@@ -2032,6 +2062,7 @@ static const std::vector<TextCharClass> & text_character_classes(TextLine &Line)
       classes.push_back(text_character_class(unicode));
       remaining.remove_prefix(std::max(1, length));
    }
+
    Line.classesValid = true;
    return classes;
 }
@@ -2040,10 +2071,12 @@ static void select_mouse_word(extVectorText *Self, TextPosition Position)
 {
    if (Self->txLines.empty()) return;
    const auto &classes = text_character_classes(Self->txLines[Position.row]);
+
    if (classes.empty()) {
       Self->txCursor.move(Self, Position.row, 0);
       return;
    }
+
    int first = std::min(Position.column, int(classes.size()) - 1), last = first + 1;
    const auto type = classes[first];
    while ((first > 0) and (classes[first - 1] IS type)) first--;
@@ -2054,6 +2087,7 @@ static void select_mouse_word(extVectorText *Self, TextPosition Position)
 
 // Classification survives navigation and is invalidated only when a line's text changes.
 // A logical line break is whitespace, so word movement can cross empty lines.
+
 static TextPosition word_boundary(extVectorText *Self, TextPosition Position, bool Forward)
 {
    auto character = [&](TextPosition At) -> std::optional<TextCharClass> {
@@ -2062,11 +2096,13 @@ static TextPosition word_boundary(extVectorText *Self, TextPosition Position, bo
       if (At.row + 1 < std::ssize(Self->txLines)) return TextCharClass::SPACE;
       return std::nullopt;
    };
+
    auto advance = [&]() {
       const auto &classes = text_character_classes(Self->txLines[Position.row]);
       if (Position.column < std::ssize(classes)) Position.column++;
       else { Position.row++; Position.column = 0; }
    };
+
    auto previous = [&]() -> std::optional<TextPosition> {
       if (Position.column > 0) return TextPosition { Position.row, Position.column - 1 };
       if (Position.row IS 0) return std::nullopt;
@@ -2087,8 +2123,10 @@ static TextPosition word_boundary(extVectorText *Self, TextPosition Position, bo
          Position = *before;
          before = previous();
       }
+
       if (before) {
          const auto type = character(*before);
+
          do {
             Position = *before;
             before = previous();
@@ -2098,11 +2136,56 @@ static TextPosition word_boundary(extVectorText *Self, TextPosition Position, bo
    return Position;
 }
 
+// Locate the adjacent visual line using the generated caret positions, then choose its nearest horizontal position.
+// Logical rows and columns remain unchanged by wrapping, including at UTF-8 and explicit newline boundaries.
+
+static TextPosition visual_vertical_position(extVectorText *Self, TextPosition Position, bool Forward, double X)
+{
+   const auto &chars = Self->txLines[Position.row].chars;
+   if (chars.empty()) return Position;
+
+   const auto column = std::min(Position.column, int(chars.size()) - 1);
+   const auto top = chars[column].lineTop;
+   auto target_row = Position.row;
+   auto target_column = column;
+   const auto step = Forward ? 1 : -1;
+
+   while ((target_column >= 0) and (target_column < std::ssize(chars)) and
+          (std::abs(chars[target_column].lineTop - top) < 0.01)) target_column += step;
+
+   if ((target_column < 0) or (target_column >= std::ssize(chars))) {
+      target_row += step;
+      if ((target_row < 0) or (target_row >= std::ssize(Self->txLines))) return Position;
+      const auto &next_chars = Self->txLines[target_row].chars;
+      if (next_chars.empty()) return Position;
+      target_column = Forward ? 0 : int(next_chars.size()) - 1;
+   }
+
+   const auto &target = Self->txLines[target_row].chars;
+   const auto target_top = target[target_column].lineTop;
+   while ((target_column > 0) and
+          (std::abs(target[target_column - 1].lineTop - target_top) < 0.01)) target_column--;
+
+   auto best_column = target_column;
+   auto distance = std::abs(target[target_column].x1 - X);
+   for (auto i = target_column + 1; i < std::ssize(target); i++) {
+      if (std::abs(target[i].lineTop - target_top) >= 0.01) break;
+      const auto next_distance = std::abs(target[i].x1 - X);
+      if (next_distance < distance) {
+         distance = next_distance;
+         best_column = i;
+      }
+   }
+
+   return TextPosition { target_row, best_column };
+}
+
 static bool navigate_text(extVectorText *Self, const evKey *Event)
 {
    const bool shift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
    const bool ctrl = (Event->Qualifiers & KQ::CTRL) != KQ::NIL;
    const bool system_keys = (Self->txFlags & VTXF::NO_SYS_KEYS) IS VTXF::NIL;
+
    if (ctrl and (Event->Code IS KEY::A)) {
       if (system_keys and not Self->txLines.empty()) {
          Self->txCursor.move(Self, 0, 0);
@@ -2110,6 +2193,7 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
       }
       return true;
    }
+
    switch (Event->Code) {
       case KEY::LEFT: case KEY::RIGHT: case KEY::UP: case KEY::DOWN: case KEY::HOME: case KEY::END: break;
       default: return false;
@@ -2128,6 +2212,7 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
    }
 
    int preferred_column = -1;
+   std::optional<double> preferred_x;
    switch (Event->Code) {
       case KEY::HOME: position.column = 0; break;
       case KEY::END: position.column = Self->txLines[position.row].utf8Length(); break;
@@ -2145,6 +2230,15 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
          else if (position.row + 1 < std::ssize(Self->txLines)) { position.row++; position.column = 0; }
          break;
       case KEY::UP: case KEY::DOWN:
+         if (Self->txInlineSize and not Self->GuidePath and not Self->Transition) {
+            gen_vector_tree(Self); // Edits and width changes can leave the caret layout dirty before this key.
+            const auto &chars = Self->txLines[position.row].chars;
+            if (not chars.empty()) {
+               preferred_x = cursor.preferredX.value_or(chars[std::min(position.column, int(chars.size()) - 1)].x1);
+               position = visual_vertical_position(Self, position, Event->Code IS KEY::DOWN, *preferred_x);
+               break;
+            }
+         }
          preferred_column = cursor.preferredColumn >= 0 ? cursor.preferredColumn : position.column;
          position.row = std::clamp(position.row + (Event->Code IS KEY::UP ? -1 : 1),
             0, int(Self->txLines.size()) - 1);
@@ -2152,9 +2246,11 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
          break;
       default: break;
    }
+
    if (shift) cursor.extend(Self, position.row, position.column);
    else cursor.move(Self, position.row, position.column, true);
    cursor.preferredColumn = preferred_column;
+   cursor.preferredX = preferred_x;
    return true;
 }
 
@@ -2574,6 +2670,7 @@ void TextCursor::position(extVectorText *Vector, int Row, int Column, bool Valid
    mRow = Row;
    mColumn = Column;
    preferredColumn = -1;
+   preferredX.reset();
    reset_vector(Vector);
 }
 
