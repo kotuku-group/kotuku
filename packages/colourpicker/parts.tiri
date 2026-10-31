@@ -342,15 +342,10 @@ colourpicker_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj
    bar = Slider.button
    outer = Slider.thumbVP.new('VectorRectangle', {
       x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, roundX = 3, roundY = 3,
-      fill = Tokens.fg0
+      stroke = &theme.scheme is 'light' ? 'black' : 'white', fill=&theme.panel.bkgd.fill
    })
-   inner = Slider.thumbVP.new('VectorRectangle', {
-      x = bar.x - 2, y = bar.y - 2, width = bar.width + 4, height = bar.height + 4, roundX = 2, roundY = 2,
-      fill = Tokens.panel
-   })
-   inner.acMoveToBack()
    outer.acMoveToBack()
-   return outer, inner
+   return outer
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -765,8 +760,8 @@ colourpicker_parts.dragPreview = function(Parent:obj!, Fill:str!, Tokens:table!,
             stroke = 'white', strokeWidth = 1.5
          })
          shafts, heads = moveArrow(c, c)
-         Viewport.new('VectorPath', { sequence = shafts, stroke = Tokens.accentFg, strokeWidth = 1.5 })
-         Viewport.new('VectorPath', { sequence = heads, fill = Tokens.accentFg })
+         Viewport.new('VectorPath', { sequence = shafts, stroke = &theme.palette.altText, strokeWidth = 1.5 })
+         Viewport.new('VectorPath', { sequence = heads, fill = &theme.palette.altText })
       end
    end)
 end

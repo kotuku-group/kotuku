@@ -10,24 +10,26 @@
 
 TOKENS <const> = {
    light = {
-      bg0    = 'oklch(0.982 0.004 91.446)', -- Button hover highlight
-      bg1    = 'oklch(0.905 0.005 78.298)', -- Toolbar background
       panel  = 'oklch(1.000 0.000 89.876)',
       sunk   = 'oklch(0.971 0.003 67.783)',
       border = 'oklch(0.851 0.006 84.568)',
-      borderStrong = 'oklch(0.821 0.009 84.577)',
       divider = 'oklch(0.929 0.005 67.761)',
       fg0     = 'oklch(0.119 0.011 80.573)', -- Primary text: values, swatch names, input and button text; slider thumbs
       fg1     = 'oklch(0.230 0.011 84.593)', -- Secondary text: window text, chip labels and prose such as "Closest named"
       fg2     = 'oklch(0.300 0.008 80.707)', -- Panel titles, channel and relationship keys, swatch hex values and footer key caps
       fg3     = 'oklch(0.490 0.006 84.573)', -- Muted text: cell labels, panel meta, sub-labels, units and separators; small glyphs
-      accent  = 'oklch(0.550 0.180 258.028)', accentFg = 'oklch(1.000 0.000 89.876)', accentSoft = 'oklch(0.949 0.025 249.951)'
+      accentSoft = 'oklch(0.949 0.025 249.951)'
    },
    dark = { -- The same roles as the light tokens
-      bg0 = 'oklch(0.179 0.007 78.130)', bg1 = 'oklch(0.210 0.008 84.585)', panel = 'oklch(0.250 0.009 75.203)', sunk = 'oklch(0.189 0.008 67.334)',
-      border = 'oklch(0.320 0.010 73.540)', borderStrong = 'oklch(0.400 0.011 78.195)', divider = 'oklch(0.278 0.010 80.640)',
-      fg0 = 'oklch(0.959 0.005 78.298)', fg1 = 'oklch(0.821 0.006 84.569)', fg2 = 'oklch(0.771 0.011 81.792)', fg3 = 'oklch(0.717 0.009 73.717)',
-      accent = 'oklch(0.713 0.152 255.234)', accentFg = 'oklch(0.149 0.009 263.967)', accentSoft = 'oklch(0.301 0.061 258.288)'
+      panel = 'oklch(0.250 0.009 75.203)',
+      sunk = 'oklch(0.189 0.008 67.334)',
+      border = 'oklch(0.320 0.010 73.540)',
+      divider = 'oklch(0.278 0.010 80.640)',
+      fg0 = 'oklch(0.959 0.005 78.298)',
+      fg1 = 'oklch(0.821 0.006 84.569)',
+      fg2 = 'oklch(0.771 0.011 81.792)',
+      fg3 = 'oklch(0.717 0.009 73.717)',
+      accentSoft = 'oklch(0.301 0.061 258.288)'
    }
 }
 
@@ -44,7 +46,7 @@ EXTRAS <const> = {
          bkgd = TOKENS.light.sunk, text = TOKENS.light.fg0,
          key = 'oklch(0.43 0.12 230)', value = 'oklch(0.44 0.10 65)', comment = 'oklch(0.52 0.008 80)',
          punct = 'oklch(0.48 0.15 300)', tab = TOKENS.light.sunk, tabText = TOKENS.light.fg2,
-         tabActive = TOKENS.light.bg1, tabActiveText = TOKENS.light.fg0
+         tabActive = 'oklch(0.905 0.005 78.298)', tabActiveText = TOKENS.light.fg0
       }
    },
    dark = {
@@ -85,7 +87,7 @@ TINT_REFERENCE <const> = 0.005
 TINT_MAX_SCALE <const> = 3
 
 NEUTRAL_KEYS <const> = array<str> {
-   'bg0', 'bg1', 'panel', 'sunk', 'border', 'borderStrong', 'divider', 'fg0', 'fg1', 'fg2', 'fg3'
+   'panel', 'sunk', 'border', 'divider', 'fg0', 'fg1', 'fg2', 'fg3'
 }
 
 CODE_NEUTRAL_KEYS <const> = array<str> {
@@ -161,6 +163,7 @@ end
 
 function tint(Tokens:table, Keys:array<str>, Hue:num, Scale:num):nil
    for key in values(Keys) do
+      if not Tokens[key] then raise f'Missing key "{key}"' end
       lch = gui.strToRGB(Tokens[key]).toOKLCH()
       lch.okh = Hue
       lch.okc *= Scale
@@ -193,14 +196,10 @@ function themeTokens(Scheme:str, Palette:table):table
    if hue != nil then tint(t, NEUTRAL_KEYS, hue, scale) end
    if not Palette?.prime then return t end
 
-   try
-      soft = gui.strToRGB(t.panel).interpolate(gui.strToRGB(Palette.prime), ACCENT_SOFT_MIX[Scheme])
-      t.accentSoft = tostring(soft.toOKLCH())
-      t.accent     = Palette.prime
-      t.accentFg   = Palette.altText ?? t.accentFg
-   except ex
-      msg(f'Palette prime colour "{Palette.prime}" is not a plain colour; the default accent is used.')
-   end
+   soft = gui.strToRGB(t.panel).interpolate(gui.strToRGB(Palette.prime), ACCENT_SOFT_MIX[Scheme])
+   t.accentSoft = tostring(soft.toOKLCH())
+   t.accent     = Palette.prime
+   t.accentFg   = Palette.altText
    return t
 end
 
@@ -213,40 +212,16 @@ function buildTheme(Base:table):table
    theme = table.clone(Base) -- Keeps the scheme, palette and init fields and the menubar.menu alias
 
    overlay(theme, {
-      page = {
-         bkgd              = { fill = t.sunk },
-         border            = { stroke = t.border, strokeWidth = 1 },
-         borderFocus       = { stroke = t.accent, strokeWidth = 1 },
-         text              = { fill = t.fg0 },
-         textHighlight     = t.accentFg,
-         textHighlightBkgd = t.accent,
-         textSelect        = t.accentFg,
-         textSelectBkgd    = t.accent
-      },
       input = { -- Also used by combobox and checkbox
          bkgd  = { fill = scheme is 'dark' ? 'rgb(0 0 0 / .55)' : 'rgb(255 255 255 / .75)', stroke = t.border }
       },
-      dropdown = {
-         bkgd   = { fill = t.panel },
-         border = { stroke = t.borderStrong, strokeWidth = 1 },
-         text   = { fill = t.fg0 },
-      },
       slider = {
-         bkgd      = { fill = t.border },
-         fore      = { fill = t.fg0, opacity = 1 },
-         foreFocus = { stroke = t.accent }
+         bkgd      = { },
+         fore      = { opacity = 1 },
+         foreFocus = { }
       },
       panel = {
-         bkgd    = { fill = t.panel, stroke = t.borderStrong, strokeWidth = 1, roundX = 6, roundY = 6 },
-         title   = { fill = t.fg2, face = gui.fonts.default.face, fontSize = '12px', fontStyle = 'Medium' },
-         meta    = {
-            fill = t.fg2, opacity = 1, face = gui.fonts.filesys.face, fontSize = '14px', fontStyle = 'Medium'
-         },
-         metaHighlight = { fill = t.fg0 },
-         divider = { fill = t.divider },
-         headerPad    = 12,
-         headerHeight = PANEL_HEADER,
-         metaGap      = 16
+         headerHeight = PANEL_HEADER
       }
    })
    theme.panel.header = nil -- The design's panel headers have no fill of their own
@@ -295,15 +270,23 @@ they line up with the thumb's travel.
 colourpicker_theme.channelSlider = function(Name:str!, ThumbSize:num!, Fill:str):table
    t = gui.themes[Name].colourpicker
    return {
-      bkgd = {
+      bkgd = { -- Slider track
          roundX = 2, roundY = 2,
-         fill = Fill ?? t.border, stroke = t.border, strokeWidth = 1, opacity = 1
+         fill = Fill ?? t.border,
+         stroke = t.border,
+         strokeWidth = 1,
+         opacity = 1
       },
-      fore = {
-         x = (ThumbSize - THUMB_WIDTH) * 0.5, y = (ThumbSize - THUMB_HEIGHT) * 0.5, width = THUMB_WIDTH,
-         height = THUMB_HEIGHT, roundX = 1, roundY = 1, fill = t.fg0, stroke = 'none', strokeWidth = 0, opacity = 1
+      fore = { -- Inner thumb
+         x = (ThumbSize - THUMB_WIDTH) * 0.5, y = (ThumbSize - THUMB_HEIGHT) * 0.5,
+         width = THUMB_WIDTH, height = THUMB_HEIGHT,
+         roundX = 1, roundY = 1,
+         fill = &theme.scheme is 'light' ? 'black' : 'white',
+         stroke = 'none', strokeWidth = 0,
+         opacity = 1
       },
-      foreHighlight = { fill = t.fg0 },
-      foreFocus     = { fill = t.fg0 }
+      -- Disable stroking on the inner thumb because we use a custom outer rectangle elsewhere
+      foreHighlight = { stroke = 'none' },
+      foreFocus     = { stroke = 'none' }
    }
 end

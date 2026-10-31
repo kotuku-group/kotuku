@@ -8,6 +8,7 @@
 
    gui.dialog.colour({
       colour  = 'rgb(255,0,0)',
+      theme   = arg('theme'),
       feedback = function(Colour)
          if not Colour then
             print('Dialog was cancelled.')

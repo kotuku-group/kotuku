@@ -26,8 +26,10 @@ Documentation is available in the Kotuku Wiki.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/combobox', 'gui/input', 'gui/slider', 'gui/listview'
-   import 'gui/dialog', 'gui/panel'
-   import 'gui/tooltip', 'gui/colourpicker/colour', 'gui/colourpicker/palette', 'gui/colourpicker/export'
+   import 'gui/dialog', 'gui/panel', 'gui/tooltip'
+
+   import 'gui/colourpicker/colour', 'gui/colourpicker/palette', 'gui/colourpicker/export'
+
    import './theme', './parts', './wheel', './preview', './codeview', './eyedropper', './ramp', './manager'
 
    include 'display'
@@ -61,14 +63,14 @@ LEFT_PAD       <const> = 14
 LEFT_INNER     <const> = 272 -- Left column width less its padding
 LEFT_GAP       <const> = 12  -- Between panels
 LIST_PAD_X     <const> = 8
-LIST_PAD_TOP   <const> = 8
+LIST_PAD_TOP   <const> = 4  -- Above and below the scratch row
 LIST_PAD_BTM   <const> = 10
-ROW_HEIGHT     <const> = 22
-ROW_GAP        <const> = 2
+ROW_HEIGHT     <const> = 22 -- Height of all swatch list items
+ROW_GAP        <const> = 2  -- Gap between swatch list items
 MIN_PALETTE_ROWS <const> = 4 -- Minimum visible capacity; the palette fills the remaining column height
 VIEW_EDGE      <const> = 4  -- Inset of the rows within a listview
-SCRATCH_GAP    <const> = 8  -- Between the scratch row and the palette list
-LIST_TOP       <const> = LIST_PAD_TOP + ROW_HEIGHT + SCRATCH_GAP -- Top of the first palette row
+SCRATCH_DIVIDER <const> = LIST_PAD_TOP + ROW_HEIGHT + LIST_PAD_TOP -- Divider between the scratch row and the list
+LIST_TOP       <const> = SCRATCH_DIVIDER + 1 + VIEW_EDGE -- Top of the first palette row
 SMALL_BUTTON   <const> = 22
 PALETTE_META_GAP <const> = 12 -- Between the mode box and the name field, which insets its text by FIELD_PAD
 EYEDROP_H      <const> = 144
@@ -914,12 +916,17 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
    -- The checkerboard behind the alpha track
 
    checker = scene.new('VectorPattern', {
-      x = 0, y = 0, pageWidth = 8, pageHeight = 8, width = 8, height = 8, units = VUNIT_USERSPACE,
+      x = 0, y = 0,
+      pageWidth = 8, pageHeight = 8,
+      width = 8, height = 8,
+      units = VUNIT_USERSPACE,
       spreadMethod = VSPREAD_REPEAT
+
    })
-   checker.viewport.new('VectorRectangle', { x = 0, y = 0, width = 8, height = 8, fill = t.panel })
-   checker.viewport.new('VectorRectangle', { x = 0, y = 0, width = 4, height = 4, fill = t.border })
-   checker.viewport.new('VectorRectangle', { x = 4, y = 4, width = 4, height = 4, fill = t.border })
+
+   checker.viewport.new('VectorRectangle', { x = 0, y = 0, width = 8, height = 8, fill = 'rgb(200,200,200)' })
+   checker.viewport.new('VectorRectangle', { x = 0, y = 0, width = 4, height = 4, fill = 'rgb(100,100,100)' })
+   checker.viewport.new('VectorRectangle', { x = 4, y = 4, width = 4, height = 4, fill = 'rgb(100,100,100)' })
    check scene.mtAddDef('cpChecker', checker)
 
    self.channels = { }
@@ -937,10 +944,19 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
       key_baseline = colourpicker_parts.baseline(y, CHANNEL_ROW, 10.5)
 
       if ch.id is 'alpha' then -- The mono face has no Greek glyphs, so α is drawn as a path
-         colourpicker_parts.alphaGlyph(body, { x = PANEL_PAD, y = key_baseline, size = 10.5, fill = t.fg2 })
+         colourpicker_parts.alphaGlyph(body, {
+            x    = PANEL_PAD,
+            y    = key_baseline,
+            size = 10.5,
+            fill = t.fg2
+         })
       else
          colourpicker_parts.text(body, {
-            x = PANEL_PAD, y = key_baseline, size = 10.5, face = colourpicker_parts.FACE_MONO, fill = t.fg2,
+            x      = PANEL_PAD,
+            y      = key_baseline,
+            size   = 10.5,
+            face   = colourpicker_parts.FACE_MONO,
+            fill   = t.fg2,
             string = ch.key
          })
       end
@@ -953,11 +969,17 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
       end
 
       channel.slider = gui.slider({
-         target    = body, x = track_x, y = y + ((CHANNEL_ROW - SLIDER_THUMB) * 0.5), width = track_w,
-         thickness = SLIDER_TRACK, thumbSize = SLIDER_THUMB, min = ch.min, max = ch.max,
+         target    = body,
+         x         = track_x,
+         y         = y + ((CHANNEL_ROW - SLIDER_THUMB) * 0.5),
+         width     = track_w,
+         thickness = SLIDER_TRACK,
+         thumbSize = SLIDER_THUMB,
+         min       = ch.min,
+         max       = ch.max,
          value     = channelValue(ch.id, self.state),
          theme     = colourpicker_theme.channelSlider(self.themeName, SLIDER_THUMB, ch_theme),
-         events = {
+         events    = {
             activate = function(Value)
                if self.refreshing then return end
                self.setChannel(ch.id, Value)
@@ -973,24 +995,30 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
       outer.tabOrder = 2
       outer.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event:num!)
          if self.finished then return end -- Focus is dropped while the window is torn down
+
          if Event is FM_LOST_FOCUS then
-            channel.ring?.fill = t.fg0
-            if self.focusedChannel is ch.id then self.focusedChannel = nil end
+            channel.ring?.stroke = &theme.scheme is 'light' ? 'black' : 'white'
+            if self.focusedChannel is ch.id then
+               self.focusedChannel = nil
+            end
          else
-            channel.ring?.fill = t.accent
+            channel.ring?.stroke = &theme.slider.foreFocus.stroke
             self.focusedChannel = ch.id
          end
+
          Viewport.acDraw()
       end)
 
       outer.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
          if not (Qualifiers has KQ_PRESSED) then return end
+
          direction = 0
          if (Value is KEY_RIGHT) or (Value is KEY_UP) then
             direction = 1
          elseif (Value is KEY_LEFT) or (Value is KEY_DOWN) then
             direction = -1
          end
+
          if direction != 0 then self.nudgeChannel(ch.id, direction, Qualifiers has KQ_SHIFT) end
       end)
 
@@ -998,9 +1026,13 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
       if ch.id is 'c' then channel.edges = trackEdges(channel.slider, t) end
 
       channel.value = valueField(self, body, {
-         x = value_x, y = y + ((CHANNEL_ROW - VALUE_FIELD_H) * 0.5), width = CHANNEL_VALUE_W + 4,
+         x      = value_x,
+         y      = y + ((CHANNEL_ROW - VALUE_FIELD_H) * 0.5),
+         width  = CHANNEL_VALUE_W + 4,
          height = VALUE_FIELD_H, size = 11, tokens = t,
-         commit = function(Text) return commitChannelText(self, ch, Text) end
+         commit = function(Text)
+            return commitChannelText(self, ch, Text)
+         end
       })
 
       self.channels[ch.id] = channel
@@ -1034,6 +1066,7 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
          end
       }
    })
+
    self.btnCopy.viewport.x = value_x - self.btnCopy.viewport.width
 
    input_x = PANEL_PAD + self.formatChip.width + 6
@@ -1175,7 +1208,7 @@ function buildScratchRow(self:table, Target:obj, Width:num)
 
    -- The background gives the row the hand cursor and makes all of it respond to the pointer
 
-   vp.new('VectorRectangle', { width = '100%', height = '100%', fill = self.tokens.panel, cursor = 'hand' })
+   vp.new('VectorRectangle', { width = '100%', height = '100%', fill = &theme.panel.bkgd.fill, cursor = 'hand' })
 
    self.scratchRow = colourpicker_parts.paletteRow(vp, { tokens = self.tokens })
 
@@ -1264,8 +1297,13 @@ function buildPalette(Target:obj)
    -- extends FIELD_PAD beyond its text at each side, so its text ends at the usual header inset.
 
    panel = gui.panel({
-      target = Target, x = LEFT_PAD, y = LEFT_PAD, width = LEFT_INNER, height = 100,
-      padding = colourpicker_parts.PANEL_PADDING, theme = { headerPad = LIST_PAD_X, metaGap = PALETTE_META_GAP }
+      target = Target,
+      x = LEFT_PAD, y = LEFT_PAD, width = LEFT_INNER, height = 100,
+      padding = colourpicker_parts.PANEL_PADDING,
+      theme = {
+         headerPad = LIST_PAD_X,
+         metaGap = PALETTE_META_GAP
+      }
    })
    &palettePanel = panel
 
@@ -1283,7 +1321,11 @@ function buildPalette(Target:obj)
          renamed, reason = colourpalette.renamePalette(&state.palette, Text, &db.palettes)
          if not renamed then
             msg(reason)
-            processing.delayedCall(function[&&]() if not &finished then &flashPaletteMeta('name in use') end end)
+            processing.delayedCall(function[&&]()
+               if not &finished then
+                  &flashPaletteMeta('name in use')
+               end
+            end)
             return false
          end
          &refresh('rename-palette')
@@ -1372,10 +1414,15 @@ function buildPalette(Target:obj)
                   &flashPaletteMeta('palette full')
                   return false
                end
-               requestDroppedColour(&&, Drop.source, Drop.item, function[&&](Colour:table)
-                  &addColour(Colour.l, Colour.c, Colour.h, Colour.alpha)
-                  View.viewport.acFocus()
-               end, function[&&]() return &state.palette is palette end)
+
+               requestDroppedColour(&&, Drop.source, Drop.item,
+                  function[&&](Colour:table)
+                     &addColour(Colour.l, Colour.c, Colour.h, Colour.alpha)
+                     View.viewport.acFocus()
+                  end,
+                  function[&&]()
+                     return &state.palette is palette
+                  end)
                return
             end
 
@@ -1383,17 +1430,24 @@ function buildPalette(Target:obj)
             target = palette.swatches[index]
             if (session.index != nil) and (palette.swatches[session.index] is session.swatch) then
                base = target.base
+
                if (base is nil) and (target.user or colourpalette.hasDependants(palette, index)) then base = index end
+
                if base != nil then
                   &moveSwatch(session.index, base)
                   View.viewport.acFocus()
                   return
                end
             end
-            requestDroppedColour(&&, Drop.source, Drop.item, function[&&](Colour:table)
-               &dropColour(index, Colour.l, Colour.c, Colour.h, Colour.alpha)
-               View.viewport.acFocus()
-            end, function[&&]() return (&state.palette is palette) and (palette.swatches[index] is target) end)
+
+            requestDroppedColour(&&, Drop.source, Drop.item,
+               function[&&](Colour:table)
+                  &dropColour(index, Colour.l, Colour.c, Colour.h, Colour.alpha)
+                  View.viewport.acFocus()
+               end,
+               function[&&]()
+                  return (&state.palette is palette) and (palette.swatches[index] is target)
+               end)
          end,
 
          itemSelected = function[&&](View:table, Reason:str, Item:table)
@@ -1421,15 +1475,21 @@ function buildPalette(Target:obj)
       }
    })
 
-   -- A divider in the middle of the gap separates the scratch row from the list, and another marks the end of the
-   -- list.  They are created after the list, whose viewport extends VIEW_EDGE beyond the rows and would otherwise
-   -- cover them.  The lower divider is positioned by layoutLeft().
+   -- A divider under the scratch row separates it from the list, and another marks the end of the list.  They are
+   -- created after the list, whose viewport extends VIEW_EDGE beyond the rows and would otherwise cover them.  The
+   -- lower divider is positioned by layoutLeft().
 
+   edge = panel.bkgd.strokeWidth ?? 0
    panel.body.new('VectorRectangle', {
-      x = 0, y = LIST_PAD_TOP + ROW_HEIGHT + (SCRATCH_GAP * 0.5), xOffset = 0, height = 1, fill = t.divider
+      name = 'divider_top',
+      x = edge, y = SCRATCH_DIVIDER, xOffset = edge, height = 1,
+      fill = panel.bkgd.stroke
    })
 
-   &paletteEnd = panel.body.new('VectorRectangle', { x = 0, y = 0, xOffset = 0, height = 1, fill = t.divider })
+   &paletteEnd = panel.body.new('VectorRectangle', {
+      name = 'divider_bottom',
+      x = edge, y = 0, xOffset = edge, height = 1, fill = panel.bkgd.stroke
+   })
 
    -- A background on the list's page gives the rows the hand cursor.  The cursor is set at creation, because setting
    -- it on an initialised vector sends a synthetic pointer event.
@@ -1463,8 +1523,12 @@ function buildPalette(Target:obj)
 
    function[&&] iconButton(Index:num, Icon:str, Tip:str, Activate:func):table
       return gui.button({
-         target = panel.body, x = btn_x + (Index * (SMALL_BUTTON + 6)), height = SMALL_BUTTON,
-         icon = Icon, tip = Tip, events = { activate = Activate }
+         target = panel.body,
+         x      = btn_x + (Index * (SMALL_BUTTON + 6)),
+         height = SMALL_BUTTON,
+         icon   = Icon,
+         tip    = Tip,
+         events = { activate = Activate }
       })
    end
 
@@ -1559,22 +1623,27 @@ end
 
 function layoutLeft(self:table)
    syncPreview(self)
+
    preview_h = self.preview ? (PREVIEW_H + LEFT_GAP) : 0
    palette_h = self.bodyHeight - (LEFT_PAD * 2) - LEFT_GAP - EYEDROP_H - preview_h
    self.palettePanel.viewport.height = palette_h
-   _, body_h = self.palettePanel.bodySize()
-   list_h = body_h - LIST_TOP - (LIST_PAD_BTM * 2) - SMALL_BUTTON
-   self.paletteView.viewport.height = list_h
-   self.paletteEnd.y = LIST_TOP - VIEW_EDGE + list_h - 1
 
-   btn_y = LIST_TOP + list_h + LIST_PAD_BTM
+   _, body_h = self.palettePanel.bodySize()
+
+   list_h = body_h - LIST_TOP - LIST_PAD_BTM - SMALL_BUTTON
+   self.paletteView.viewport.height = list_h
+   self.paletteEnd.y = LIST_TOP - VIEW_EDGE + list_h
+
+   btn_y = LIST_TOP + (LIST_PAD_BTM * .25) + list_h
    buttons = array<table> {
       self.btnAddSwatch, self.btnLoadPalette, self.btnImport, self.btnExport,
       self.btnResetPalette, self.btnDeleteSwatch
    }
+
    for btn in values(buttons) do
       btn.viewport.y = btn_y
    end
+
    self.paletteCount.y = colourpicker_parts.baseline(btn_y, SMALL_BUTTON, 14)
 
    self.eyedropPanel.viewport.y = LEFT_PAD + palette_h + LEFT_GAP
@@ -2018,28 +2087,36 @@ function buildRelationship(self:table, Target:obj)
 
       row.key = colourpicker_parts.toggleButton({
          target = self.relRows, x = PANEL_PAD, y = y + ((REL_ROW - SMALL_BUTTON) * 0.5), width = REL_KEY_W,
-         height = SMALL_BUTTON, label = 'Δ' .. ch.key, theme = smallText(), tokens = t,
-         tip = f'Click to switch {ch.name} between relative to the base (Δ{ch.key}) and absolute ({ch.key})',
+         height = SMALL_BUTTON,
+         label  = 'Δ' .. ch.key,
+         theme  = smallText(),
+         tokens = t,
+         tip    = f'Click to switch {ch.name} between relative to the base (Δ{ch.key}) and absolute ({ch.key})',
          onToggle = function[&&](Pressed)
             self.setChannelMode(ch.id, Pressed ? 'abs' : 'delta')
          end
       })
 
       row.slider = gui.slider({
-         target = self.relRows, x = track_x, y = y + ((REL_ROW - SLIDER_THUMB) * 0.5), width = track_w,
-         thickness = SLIDER_TRACK, thumbSize = SLIDER_THUMB, min = -ch.delta, max = ch.delta, value = 0,
-         theme = colourpicker_theme.channelSlider(self.themeName, SLIDER_THUMB, f'url(#{ch.def})'),
-         events = {
+         target    = self.relRows,
+         x         = track_x,
+         y         = y + ((REL_ROW - SLIDER_THUMB) * 0.5),
+         width     = track_w,
+         thickness = SLIDER_TRACK,
+         thumbSize = SLIDER_THUMB,
+         min       = -ch.delta,
+         max       = ch.delta,
+         value     = 0,
+         theme     = colourpicker_theme.channelSlider(self.themeName, SLIDER_THUMB, f'url(#{ch.def})'),
+         events    = {
             activate = function[&&](Value)
                if self.refreshing then return end
                self.setLinkValue(ch.id, Value)
-            end,
-            focus = function[&&]() row.ring?.fill = t.accent end,
-            lostFocus = function[&&]() row.ring?.fill = t.fg0 end
+            end
          }
       })
 
-      row.ring, row.innerRing = colourpicker_parts.thumbRings(row.slider, t)
+      row.ring = colourpicker_parts.thumbRings(row.slider, t)
 
       -- The slider dims its track when disabled, and the shim dims the thumb as well
       -- Hook directly into the existing disable/enable methods
@@ -2047,7 +2124,7 @@ function buildRelationship(self:table, Target:obj)
       base_disable = row.slider.disable
       row.slider.disable = function[row.slider]()
          base_disable()
-         for v in values(array<obj> { &button, row.ring, row.innerRing }) do
+         for v in values(array<obj> { &button, row.ring }) do
             v.opacity = 0.3
          end
       end
@@ -2055,7 +2132,7 @@ function buildRelationship(self:table, Target:obj)
       base_enable = row.slider.enable
       row.slider.enable = function[row.slider]()
          base_enable()
-         for v in values(array<obj> { &button, row.ring, row.innerRing }) do
+         for v in values(array<obj> { &button, row.ring }) do
             v.opacity = 1
          end
       end
@@ -2466,7 +2543,6 @@ gui.dialog.colour = function(Options:table)
    end
 
    self = entity { -- Public variables and resources that need to be retained
-      windowID  = nil,
       colour    = nil, -- Always the current output colour (gui.mtRGB)
       feedback  = option_feedback,
       themeName = nil, -- The picker theme, derived from the window's theme
@@ -3385,10 +3461,11 @@ gui.dialog.colour = function(Options:table)
          }
       })
 
+      &theme = &window.theme
+
       &window.surface.subscribe('free', function[<weak> &&]()
          &finish(nil)
       end)
-      &windowID = &window.surface.id
 
       -- The window is created with the requested or default gui theme, as for any other window.  The picker theme is
       -- derived from it before any content is created.
@@ -3581,5 +3658,5 @@ end
       end
    })
 
-   return dlg.windowID
+   return dlg.window.surface.id
 @end
