@@ -55,9 +55,9 @@ gui.fontList = thunk():table
       font.styles = entry.Styles ? entry.Styles.split(',') : array<str> { 'Regular' }
 
       if entry.Points then
-         local sizes = array<int>
+         sizes = array<int>
          for point in values(entry.Points.split(',')) do
-            local size = tonumber(point.trim())
+            size = tonumber(point.trim())
             if size then sizes.push(size) end
          end
          if #sizes > 0 then font.sizes = sizes end
@@ -1543,7 +1543,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Doc(text=[[
-Sets the theme for a given Viewport or vector Scene, or the default theme if no object is provided.
+Sets the theme for a given Viewport or Scene, or the default theme if no object is provided.
 
 The base themes are 'light' and 'dark'.  Choosing an alternative theme will use one of the aforementioned as the
 base and then override values with its own settings.  Themes work in conjunction with palettes, which allow the
