@@ -783,10 +783,9 @@ function buildReadout(self:table, Target:obj, X:num, Y:num, Width:num)
    vp = Target.new('VectorViewport', { x = X, y = Y, width = Width, height = height, cursor = 'hand' })
    self.readoutVP = vp
 
-   vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = Width - 1, height = height - 1, roundX = 5, roundY = 5,
-      fill = t.panel, stroke = t.border, strokeWidth = 1
-   })
+   vp.new('VectorRectangle', table.merge({
+      x = 0, y = 0, width = Width, height = height
+   }, table.merge(&theme.panel.bkgd, &theme.page.bkgd)))
 
    cells = array<table>
    for i, def in READOUT_CELLS do
@@ -809,11 +808,11 @@ function buildReadout(self:table, Target:obj, X:num, Y:num, Width:num)
 
    for row in {1 to READOUT_ROWS} do
       vp.new('VectorRectangle', {
-         x = 1, y = row * (READOUT_ROW + 1), width = Width - 2, height = 1, fill = t.border
+         x = 1, y = row * (READOUT_ROW + 1), width = Width - 2, height = 1, fill = &theme.palette.edge
       })
    end
 
-   vp.new('VectorRectangle', { x = split_x, y = 1, width = 1, height = height - 2, fill = t.border })
+   vp.new('VectorRectangle', { x = split_x, y = 1, width = 1, height = height - 2, fill = &theme.palette.edge })
 
    self.readoutCells = cells
    self.readoutIndex = 0
@@ -821,7 +820,7 @@ function buildReadout(self:table, Target:obj, X:num, Y:num, Width:num)
    -- The keyboard target is outlined while the grid has the focus
 
    self.readoutRing = vp.new('VectorRectangle', {
-      roundX = 3, roundY = 3, fill = 'none', stroke = t.accent, strokeWidth = 1, visibility = VIS_HIDDEN
+      roundX = 3, roundY = 3, fill = 'none', stroke = &theme.palette.prime, strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
    vp.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
@@ -903,8 +902,11 @@ function buildChannels(self:table, Target:obj, X:num, Y:num, Width:num)
    scene = Target.scene
 
    self.channelPanel = gui.panel({
-      target = Target, x = X, y = Y, width = Width, height = CHANNEL_PANEL_H, title = 'OKLCH',
-      meta = 'primary channel set', padding = colourpicker_parts.PANEL_PADDING
+      target = Target,
+      x = X, y = Y, width = Width, height = CHANNEL_PANEL_H,
+      title = 'OKLCH',
+      meta = 'primary channel set',
+      padding = colourpicker_parts.PANEL_PADDING
    })
 
    body = self.channelPanel.body
@@ -1352,7 +1354,6 @@ function buildPalette(Target:obj)
       rowHeight  = ROW_HEIGHT,
       rowSpacing = ROW_GAP,
       scrollDirection = 'vertical',
-      theme      = { page = { bkgd = { fill = t.panel } } },
 
       constructItem = function[&&](Item:table, Viewport:obj, Reason:str)
          if Reason is 'create' then
@@ -1491,12 +1492,7 @@ function buildPalette(Target:obj)
       x = edge, y = 0, xOffset = edge, height = 1, fill = panel.bkgd.stroke
    })
 
-   -- A background on the list's page gives the rows the hand cursor.  The cursor is set at creation, because setting
-   -- it on an initialised vector sends a synthetic pointer event.
-
-   &paletteView.page.new('VectorRectangle', {
-      width = '100%', height = '100%', fill = t.panel, cursor = 'hand'
-   }).acMoveToBack()
+   &paletteView.page.cursor = 'hand' -- Give all swatches the hand cursor.
 
    -- Double-clicking a row renames its swatch.  The first click has selected it, so the row under the pointer is the
    -- active one.  The edit starts after the list has handled the click, which would otherwise take the focus back.
@@ -2257,7 +2253,7 @@ function updateExport(self:table)
    if key != self.exportKey then
       lines = colourexport.generate(palette, tab.id, { gamut = self.state.clamp })
       self.exportText = colourexport.toText(lines)
-      self.code.setLines(lines, self.exportText)
+      self.code.setText(self.exportText)
       self.exportKey = key
    end
    self.code.setTab(self.exportTab)

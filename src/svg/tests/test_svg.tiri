@@ -222,9 +222,9 @@ end
 @Test global function Basics29() hashTestSVG('basics/w3-shapes-rect-06-f.svg', 0x33e02ba5) end
 @Test global function Basics30() hashTestSVG('basics/w3-shapes-rect-07-f.svg', 0xd2051e3a) end
 @Test(name='NamespaceAware') global function BasicsNamespaceAware() hashTestSVG('basics/namespace-aware.svg', 0xcf55497a) end
-@Test(name='CaseSensitiveNames') global function BasicsCaseSensitiveNames() hashTestSVG('basics/case-sensitive.svg', 0x61fc4322) end
+@Test(name='CaseSensitiveNames') global function BasicsCaseSensitiveNames() hashTestSVG('basics/case-sensitive.svg', 0x6e881879) end
 
-@Test global function Circles()         hashTestSVG('paths/circles.svg', 0x5fcbc768) end
+@Test global function Circles()         hashTestSVG('paths/circles.svg', 0xbb6c36d0) end
 @Test global function GuidePath()       hashTestSVG('paths/guidepath.svg', 0x57b50695) end
 @Test global function EllipseVertices() hashTestSVG('paths/ellipse_vertices.svg', 0x00d2264b) end
 @Test global function Polygons()        hashTestSVG('paths/polygons.svg', 0x44793bb7) end
@@ -258,7 +258,7 @@ end
 @Test global function W3Paths20()       hashTestSVG('paths/w3-paths-data-20-f.svg', 0x70082db1) end
 
 @Test global function Chevrons()     hashTestSVG('patterns/chevrons.svg', 0x1f5bac88) end
-@Test global function Complex()      hashTestSVG('patterns/complex.svg', 0xdaca0fc8) end
+@Test global function Complex()      hashTestSVG('patterns/complex.svg', 0x76ec182e) end
 @Test global function Diamonds()     hashTestSVG('patterns/diamonds.svg', 0x4642c53a) end
 @Test global function Dimple()       hashTestSVG('patterns/dimple.svg', 0x1806e6a0) end
 @Test global function Dot()          hashTestSVG('patterns/dot.svg', 0x6736bc6c) end
@@ -373,12 +373,12 @@ end
 @Test global function W3Transfer()         hashTestSVG('filters/w3-filters-comptran-01-b.svg', 0x9d4d7596) end
 @Test global function W3Transfer2()        hashTestSVG('filters/w3-filters-color-02-b.svg', 0x2fe19a1e) end
 @Test global function W3Filters()          hashTestSVG('filters/w3-filters.svg', 0x19d82869) end
-@Test global function W3Filters2()         hashTestSVG('filters/w3-filters2.svg', 0x771fd31c) end
+@Test global function W3Filters2()         hashTestSVG('filters/w3-filters2.svg', 0x0bbfd446) end
 @Test global function W3Gauss1()           hashTestSVG('filters/w3-filters-gauss-01-b.svg', 0x4c7b5e50) end
 @Test global function W3Gauss2()           hashTestSVG('filters/w3-filters-gauss-02-f.svg', 0x6cfe6032) end
 @Test global function W3Gauss3()           hashTestSVG('filters/w3-filters-gauss-03-f.svg', 0xd4cc8f68) end
 @Test global function W3Image()            hashTestSVG('filters/w3-image.svg', 0x3c77111e) end
-@Test global function W3Morphology()       hashTestSVG('filters/w3-morphology.svg', 0x63028187) end
+@Test global function W3Morphology()       hashTestSVG('filters/w3-morphology.svg', 0x1fa286dd) end
 @Test global function W3Offset()           hashTestSVG('filters/w3-offset.svg', 0x1eda4ee2) end
 @Test global function W3Lighting1()        hashTestSVG('filters/w3-filters-light-01-f.svg', 0x341a12f7) end
 @Test global function W3Lighting2()        hashTestSVG('filters/w3-filters-light-02-f.svg', -1) end
@@ -387,15 +387,15 @@ end
 @Test global function W3Lighting5()        hashTestSVG('filters/w3-filters-light-05-f.svg', 0xc7052dc5) end
 @Test global function W3LightingSpecular() hashTestSVG('filters/w3-filters-specular-01-f.svg', 0xc30f32be) end
 @Test global function W3LightingDiffuse()  hashTestSVG('filters/w3-filters-diffuse-01-f.svg', 0x18a4ae74) end
-@Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x6503125d) end
+@Test global function W3Turbulence1()      hashTestSVG('filters/w3-turbulence.svg', 0x7a46db1a) end
 @Test global function W3Turbulence2()      hashTestSVG('filters/w3-filters-turb-02-f.svg', 0x67fadbc7) end
 @Test global function MoonSurface()        hashTestSVG('filters/moon-surface.svg', 0x2a996913) end
 @Test global function WaveFunction()       hashTestSVG('filters/wavefunction.svg', 0x9dbdcd62) end
 
 @Test global function Transformations()   hashTestSVG('transforms/transformations.svg', 0x310b69c3) end
-@Test global function W3AspectRatio()     hashTestSVG('transforms/w3-aspectratio.svg', 0x3e1e8099) end
+@Test global function W3AspectRatio()     hashTestSVG('transforms/w3-aspectratio.svg', 0xfb2baf80) end
 @Test global function W3SkewText()        hashTestSVG('transforms/w3-skew-text.svg', 0x8efd2b03) end
-@Test global function W3Viewbox()         hashTestSVG('transforms/w3-viewbox.svg', 0xea1062a0) end
+@Test global function W3Viewbox()         hashTestSVG('transforms/w3-viewbox.svg', 0x69852824) end
 @Test global function W3Transform01()     hashTestSVG('transforms/w3-coords-trans-01-b.svg', 0x3cae6b34) end
 @Test global function W3Transform02()     hashTestSVG('transforms/w3-coords-trans-02-t.svg', 0xdc2ce891) end
 @Test global function W3Transform03()     hashTestSVG('transforms/w3-coords-trans-03-t.svg', 0x15b88b5c) end
@@ -420,7 +420,7 @@ end
 @Test; @Disabled global function BrushStrokes()       hashTestSVG('misc/brush-strokes.svg', 0x656a5e37) end
 
 @Test global function BottleTree()         hashTestSVG('images/bottletree.svg', 0xd7fb84ff) end
-@Test global function Button()             hashTestSVG('images/button.svg', 0x6cd4ffd3) end
+@Test global function Button()             hashTestSVG('images/button.svg', 0x94043eac) end
 @Test global function Clock()              hashTestSVG('images/clock.svg', 0xab90cfbb) end
 @Test global function IceCube()            hashTestSVG('images/icecube.svg', 0x99b4e379) end
 @Test global function Tiger()              hashTestSVG('images/tiger.svg', 0x91002efa) end

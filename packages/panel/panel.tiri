@@ -494,23 +494,16 @@ gui.panel = function(Options:table!)
       end
 
       if Options.header != false then
-         -- The optional header fill covers the header inside the border.  Its top corners follow the inner edge of a
-         -- rounded border, so the fill is rounded and extended downwards by the corner radius, and a clipping
-         -- viewport cuts away its bottom corners at the divider.
-
-         local fill_frame:obj, fill_round_y:num
+         -- The optional header fill covers the header inside the border.
          if theme.header then
             fill_round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
             fill_round_y = theme.bkgd.roundY or fill_round_x
             fill_round_x = math.max(0, fill_round_x - (edge * 0.5))
             fill_round_y = math.max(0, fill_round_y - (edge * 0.5))
 
-            fill_frame = &viewport.new('VectorViewport', {
-               name = 'PanelHeaderFill', x = edge, y = edge, xOffset = edge, height = 1, overflow = VOF_HIDDEN
-            })
-
-            &headerFill = fill_frame.new('VectorRectangle', table.merge({
-               x = 0, y = 0, xOffset = 0, height = 1, roundX = fill_round_x, roundY = fill_round_y
+            &headerFill = &viewport.new('VectorRectangle', table.merge({
+               name = 'PanelHeaderFill', x = edge, y = edge, xOffset = edge, height = 1,
+               rounding = array<double> { fill_round_x, fill_round_y, fill_round_x, fill_round_y, 0, 0, 0, 0 }
             }, theme.header))
          end
 
@@ -534,10 +527,9 @@ gui.panel = function(Options:table!)
             (math.max(math.ceil(title_line), math.ceil(meta_line)) + gui.sizing.widget.margin)
          &header.height = &headerHeight
 
-         if fill_frame then
+         if &headerFill then
             fill_height = math.max(1, &headerHeight - edge)
-            fill_frame.height = fill_height
-            &headerFill.height = fill_height + fill_round_y
+            &headerFill.height = fill_height
          end
 
          -- The title's capitals are centred in the header and the meta shares its baseline.

@@ -137,7 +137,7 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
    Viewport.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)', cursor = 'hand' })
 
    self.highlight = Viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4, fill = t.accentSoft, stroke = t.accent,
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4, fill = t.accentSoft, stroke = &theme.palette.prime,
       strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
@@ -156,7 +156,7 @@ function paletteRow(Viewport:obj!, Tokens:table!):table
       x = text_x, y = 32, size = LABEL_FONT, face = colourpicker_parts.FACE_MONO, fill = t.fg3
    })
    self.tag = colourpicker_parts.text(Viewport, {
-      y = 17, size = 9.5, face = colourpicker_parts.FACE_MONO, fill = t.accent, align = 'right', string = 'IN PICKER',
+      y = 17, size = 9.5, face = colourpicker_parts.FACE_MONO, fill = &theme.palette.prime, align = 'right', string = 'IN PICKER',
       style = 'Bold'
    })
 

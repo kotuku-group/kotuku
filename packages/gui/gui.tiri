@@ -110,18 +110,36 @@ gui.hsv = function(H:num, S:num, V:num, A:num):table
    return setmetatable({ h = H, s = S, v = V, a = A }, gui.mtHSV)
 end
 
+@Doc(text=[[
+@desc Linearly blends this colour toward another colour in HSV space, including the alpha channel.  Hue follows the
+shortest path around the colour wheel, so blending from 350 to 10 degrees passes through 0 rather than 180.  When the
+two hues are exactly 180 degrees apart, the blend increases the hue.
+@input Target colour table with h, s, v and a fields.
+@input Blend ratio, where 0 returns this colour and 1 returns the target.  Defaults to 0.5.  Values outside [0,1]
+extrapolate and are not clamped.
+@result New HSV colour table (gui.mtHSV) holding the blended channels, with the hue normalised to [0,360).
+]])
 function gui.mtHSV.interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
+   -- Wrap the hue delta into [-180,180) so that the blend takes the shortest path around the colour wheel
+   delta = (((New.h - &h) % 360) + 540) % 360 - 180
+   if delta is -180 then delta = 180 end
+   h = (((&h + (delta * Ratio)) % 360) + 360) % 360
    return setmetatable({
       a = &a + ((New.a - &a) * Ratio),
-      h = &h + ((New.h - &h) * Ratio),
+      h = h,
       s = &s + ((New.s - &s) * Ratio),
       v = &v + ((New.v - &v) * Ratio)
    }, gui.mtHSV)
 end
 
+@Doc(text=[[
+@desc Converts the colour to an RGB colour table (gui.mtRGB).  Hues outside [0,360) are wrapped around the colour
+wheel, so -10 is treated as 350 and 370 as 10.  The alpha channel is copied unchanged.
+@result RGB colour table with r, g, b and a fields normalised to [0,1].
+]])
 function gui.mtHSV.toRGB():table
-   h = &h / 60
+   h = (((&h % 360) + 360) % 360) / 60 -- Tiri's % truncates, so negative hues need the extra wrap
    s = &s
    v = &v
    i = math.floor(h)
@@ -215,6 +233,13 @@ gui.nrgb = function(R:num!, G:num!, B:num!, A:num, KV:table):table
    return setmetatable(result, gui.mtRGB)
 end
 
+@Doc(text=[[
+@desc Linearly blends this colour toward another colour in sRGB space, including the alpha channel.
+@input Target colour table with normalised r, g, b and a fields.
+@input Blend ratio, where 0 returns this colour and 1 returns the target.  Defaults to 0.5.  Values outside [0,1]
+extrapolate and are not clamped.
+@result New RGB colour table (gui.mtRGB) holding the blended channels.
+]])
 function gui.mtRGB.interpolate(New:table!, Ratio:num):table
    Ratio ?= 0.5
    return setmetatable({
@@ -2376,7 +2401,7 @@ gui.themes = <table{ linkThemes({
          text      = { fill = gui.palette.dark.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = gui.palette.dark.prime, stroke = gui.palette.dark.prime },
+            bkgd      = { fill = gui.palette.dark.prime, stroke = gui.palette.dark.prime, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
             highlight = { fill = gui.palette.dark.contrast, stroke = gui.palette.dark.edge },
             focus     = { stroke = gui.palette.dark.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
             text      = { fill = gui.palette.dark.altText }
@@ -2414,7 +2439,8 @@ gui.themes = <table{ linkThemes({
          icon      = iconTheme('fill(pearl)')
       },
       panel = {
-         bkgd          = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
+         bkgd          = { fill = gui.palette.dark.surround, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
+         header        = { fill = gui.palette.dark.surround },
          title         = { fill = gui.palette.dark.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'semi bold' },
          meta          = { fill = gui.palette.dark.text, opacity = 0.7, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
          metaHighlight = { fill = gui.palette.dark.contrast }, -- Hover style of a clickable meta
@@ -2502,7 +2528,7 @@ gui.themes = <table{ linkThemes({
          text      = { fill = gui.palette.light.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = gui.palette.light.prime, stroke = gui.palette.light.edge },
+            bkgd      = { fill = gui.palette.light.prime, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
             highlight = { fill = gui.palette.light.contrast, stroke = gui.palette.light.edge },
             focus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
             text      = { fill = gui.palette.light.altText }
@@ -2541,8 +2567,8 @@ gui.themes = <table{ linkThemes({
          icon      = iconTheme('fill(pearl)')
       },
       panel = {
-         bkgd          = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
-         header        = { fill = gui.palette.light.neutral },
+         bkgd          = { fill = gui.palette.light.surround, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
+         header        = { fill = gui.palette.light.surround },
          title         = { fill = gui.palette.light.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'bold' },
          meta          = { fill = gui.palette.light.text, opacity = 0.9, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
          metaHighlight = { fill = gui.palette.light.contrast },
@@ -2566,7 +2592,7 @@ gui.themes = <table{ linkThemes({
          thickness     = gui.rpixel('18dp')
       },
       toolbar = {
-         bkgd          = { fill = gui.palette.light.bkgd },
+         bkgd          = { fill = gui.palette.light.surround },
          groupBorder   = { stroke = gui.palette.light.inverse, strokeWidth = gui.pixel('1.5pt') },
          highlight     = { fill = gui.palette.light.contrast },
          iconSize      = gui.rpixel('16pt'),
