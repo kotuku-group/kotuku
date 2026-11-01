@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <poll.h>
 
 namespace display {
@@ -148,6 +149,8 @@ static void update_server_timestamp(const XEvent &Event)
 
 //********************************************************************************************************************
 
+static void finish_primary_read();
+
 static void expire_clipboard_transfer()
 {
    const std::lock_guard lock(glEventState->NativeLock);
@@ -161,6 +164,8 @@ static void expire_clipboard_transfer()
    }
 
    auto now = std::chrono::steady_clock::now();
+   if (glEventState->PrimaryRead.window and (now - glEventState->PrimaryRead.started >= CLIPBOARD_TIMEOUT))
+      finish_primary_read();
    for (auto it = glEventState->ClipboardWrites.begin(); it != glEventState->ClipboardWrites.end();) {
       if (now - it->Updated < OUTGOING_CLIPBOARD_TIMEOUT) { it++; continue; }
       auto requestor = it->Requestor;
@@ -175,34 +180,35 @@ static void expire_clipboard_transfer()
 
 //********************************************************************************************************************
 
-static bool selection_payload(Atom Target, std::string &Data, Atom &Type)
+static bool selection_payload(Atom Target, std::string &Data, Atom &Type, bool Primary)
 {
    Type = Target;
-   if (glEventState->ClipboardIsFiles) {
+   if ((not Primary) and glEventState->ClipboardIsFiles) {
       if (Target IS glEventState->URIListAtom) Data = glEventState->ClipboardUris;
       else if (Target IS glEventState->GnomeFilesAtom) Data = glEventState->ClipboardGnomeFiles;
       else return false;
    }
    else if ((Target IS glEventState->UTF8StringAtom) or (Target IS glEventState->TextUTF8Atom) or
             (Target IS glEventState->TextPlainAtom) or (Target IS glEventState->TextAtom)) {
-      Data = glEventState->ClipboardText;
+      Data = Primary ? glEventState->PrimaryText : glEventState->ClipboardText;
       if (Target IS glEventState->TextAtom) Type = glEventState->UTF8StringAtom;
    }
-   else if (Target IS XA_STRING) Data = utf8_to_latin1(glEventState->ClipboardText);
+   else if (Target IS XA_STRING) Data = utf8_to_latin1(Primary ?
+      glEventState->PrimaryText : glEventState->ClipboardText);
    else return false;
    return true;
 }
 
 //********************************************************************************************************************
 
-static bool write_selection_property(Atom Target, Window Requestor, Atom Property)
+static bool write_selection_property(Atom Target, Window Requestor, Atom Property, bool Primary = false)
 {
    if ((not Property) or (Target IS glEventState->MultipleAtom)) return false;
 
    if (Target IS glEventState->TargetsAtom) {
       std::vector<Atom> targets = { glEventState->TargetsAtom, glEventState->MultipleAtom,
          glEventState->TimestampAtom, glEventState->SaveTargetsAtom };
-      if (glEventState->ClipboardIsFiles) {
+      if ((not Primary) and glEventState->ClipboardIsFiles) {
          targets.push_back(glEventState->URIListAtom);
          targets.push_back(glEventState->GnomeFilesAtom);
       }
@@ -216,7 +222,7 @@ static bool write_selection_property(Atom Target, Window Requestor, Atom Propert
    }
 
    if (Target IS glEventState->TimestampAtom) {
-      unsigned long timestamp = glEventState->ClipboardTimestamp;
+      unsigned long timestamp = Primary ? glEventState->PrimaryTimestamp : glEventState->ClipboardTimestamp;
       XChangeProperty(XDisplay, Requestor, Property, XA_INTEGER, 32, PropModeReplace,
          (const unsigned char *)&timestamp, 1);
       return true;
@@ -229,7 +235,7 @@ static bool write_selection_property(Atom Target, Window Requestor, Atom Propert
 
    std::string data;
    Atom type = None;
-   if (not selection_payload(Target, data, type)) return false;
+   if (not selection_payload(Target, data, type, Primary)) return false;
 
    if (data.size() > maximum_property_bytes()) {
       unsigned long size = data.size();
@@ -276,7 +282,8 @@ static bool write_multiple_selection(const XSelectionRequestEvent &Request)
 
    auto pairs = (Atom *)property;
    for (unsigned long i = 0; i < count; i += 2) {
-      if (not write_selection_property(pairs[i], Request.requestor, pairs[i + 1])) pairs[i] = None;
+      if (not write_selection_property(pairs[i], Request.requestor, pairs[i + 1], Request.selection IS XA_PRIMARY))
+         pairs[i] = None;
    }
    XChangeProperty(XDisplay, Request.requestor, Request.property, glEventState->AtomPairAtom, 32, PropModeReplace,
       property, int(count));
@@ -299,14 +306,15 @@ static void handle_selection_request(const XSelectionRequestEvent &Request)
 
    const std::lock_guard lock(glEventState->NativeLock);
    if ((Request.owner IS glEventState->ClipboardWindow) and
-       (Request.selection IS glEventState->ClipboardAtom) and
-       (XGetSelectionOwner(XDisplay, glEventState->ClipboardAtom) IS glEventState->ClipboardWindow)) {
+       ((Request.selection IS glEventState->ClipboardAtom) or (Request.selection IS XA_PRIMARY)) and
+       (XGetSelectionOwner(XDisplay, Request.selection) IS glEventState->ClipboardWindow)) {
       if (Request.target IS glEventState->MultipleAtom) {
          if (write_multiple_selection(Request)) reply.property = Request.property;
       }
       else {
          auto property = Request.property IS None ? Request.target : Request.property;
-         if (write_selection_property(Request.target, Request.requestor, property)) reply.property = property;
+         if (write_selection_property(Request.target, Request.requestor, property, Request.selection IS XA_PRIMARY))
+            reply.property = property;
       }
    }
 
@@ -317,6 +325,12 @@ static void handle_selection_request(const XSelectionRequestEvent &Request)
 
 static void handle_selection_clear(const XSelectionClearEvent &Event)
 {
+   if (Event.selection IS XA_PRIMARY) {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if (XGetSelectionOwner(XDisplay, XA_PRIMARY) != glEventState->ClipboardWindow)
+         glEventState->PrimaryText.clear();
+      return;
+   }
    bool notify = false;
    {
       const std::lock_guard lock(glEventState->NativeLock);
@@ -358,8 +372,87 @@ static void request_clipboard_target(Atom Target)
 
 //********************************************************************************************************************
 
+static void finish_primary_read()
+{
+   if (glEventState->PrimaryRead.window) XDestroyWindow(XDisplay, glEventState->PrimaryRead.window);
+   glEventState->PrimaryRead = {};
+}
+
+struct primary_result {
+   OBJECTID recipient;
+   int item;
+   std::string text;
+};
+
+// The native lock is held by the caller.  Return owned bytes so framework delivery can run after releasing it.
+
+static std::optional<primary_result> read_primary_property(bool Initial)
+{
+   auto &read = glEventState->PrimaryRead;
+   if (XGetSelectionOwner(XDisplay, XA_PRIMARY) != read.owner) { finish_primary_read(); return std::nullopt; }
+
+   Atom type = None;
+   int format = 0;
+   unsigned long count = 0, remaining = 0;
+   unsigned char *property = nullptr;
+   auto status = XGetWindowProperty(XDisplay, read.window, read.property, 0,
+      long(MAX_CLIPBOARD_TRANSFER / 4), True, AnyPropertyType, &type, &format, &count, &remaining, &property);
+
+   const auto release = kt::Defer([&]() { if (property) XFree(property); });
+   if ((status != Success) or remaining) { finish_primary_read(); return std::nullopt; }
+
+   if (Initial and (type IS glEventState->IncrAtom)) {
+      if ((format != 32) or (count != 1) or (*(unsigned long *)property > MAX_CLIPBOARD_TRANSFER)) {
+         finish_primary_read();
+         return std::nullopt;
+      }
+      read.incremental = true;
+      return std::nullopt;
+   }
+
+   if ((format != 8) or ((type != glEventState->UTF8StringAtom) and (type != XA_STRING)) or
+       (count > MAX_CLIPBOARD_TRANSFER - read.text.size()) or (read.type and read.type != type)) {
+      finish_primary_read();
+      return std::nullopt;
+   }
+
+   read.type = type;
+   read.started = std::chrono::steady_clock::now();
+   if (count) read.text.append((const char *)property, count);
+   if (read.incremental and count) return std::nullopt;
+   auto text = type IS XA_STRING ? latin1_to_utf8((const unsigned char *)read.text.data(), read.text.size()) :
+      std::move(read.text);
+
+   const auto recipient = read.recipient;
+   const auto item = read.item;
+   finish_primary_read();
+
+   return primary_result { recipient, item, std::move(text) };
+}
+
 static void handle_selection_notify(const XSelectionEvent &Event)
 {
+   if (Event.selection IS XA_PRIMARY) {
+      std::optional<primary_result> result;
+
+      {
+         const std::lock_guard lock(glEventState->NativeLock);
+         auto &read = glEventState->PrimaryRead;
+         if ((Event.requestor != read.window) or (Event.target != read.target)) return;
+
+         if (Event.property IS None) {
+            if (read.target IS XA_STRING) { finish_primary_read(); return; }
+            read.target = XA_STRING;
+            XConvertSelection(XDisplay, XA_PRIMARY, XA_STRING, read.property, read.window, CurrentTime);
+         }
+         else if (Event.property IS read.property) result = read_primary_property(true);
+      }
+
+      if (result and glDriverCallbacks.PrimarySelection)
+         glDriverCallbacks.PrimarySelection(result->recipient, result->item, result->text.data(), result->text.size());
+      return;
+   }
+
    if ((Event.requestor IS glEventState->ClipboardWindow) and
        (Event.selection IS glEventState->ClipboardManagerAtom) and
        (Event.target IS glEventState->SaveTargetsAtom)) {
@@ -368,6 +461,7 @@ static void handle_selection_notify(const XSelectionEvent &Event)
          glEventState->SaveTargetsSucceeded = Event.property != None;
          glEventState->SaveTargetsComplete = true;
       }
+
       return;
    }
 
@@ -403,6 +497,7 @@ static void handle_selection_notify(const XSelectionEvent &Event)
          size_t(std::numeric_limits<long>::max()));
       auto status = XGetWindowProperty(XDisplay, glEventState->ClipboardWindow, Event.property, 0,
          long(maximum_longs), True, AnyPropertyType, &actual_type, &actual_format, &count, &remaining, &property);
+
       if ((status != Success) or remaining) {
          if (property) XFree(property);
          glEventState->ClipboardTransfer = false;
@@ -411,10 +506,13 @@ static void handle_selection_notify(const XSelectionEvent &Event)
 
       if (actual_type IS glEventState->IncrAtom) {
          unsigned long expected = 0;
+
          if ((actual_format IS 32) and (count IS 1)) expected = *(unsigned long *)property;
          if (property) XFree(property);
+
          glEventState->TransferData.clear();
          if (expected <= MAX_CLIPBOARD_TRANSFER) glEventState->TransferData.reserve(size_t(expected));
+
          glEventState->TransferDataType = None;
          glEventState->TransferDataFormat = 0;
          glEventState->TransferIncremental = true;
@@ -428,11 +526,13 @@ static void handle_selection_notify(const XSelectionEvent &Event)
          if ((actual_type IS XA_ATOM) and (actual_format IS 32)) {
             selected = select_clipboard_target((Atom *)property, count);
          }
+
          if (property) XFree(property);
          if (selected IS None) {
             glEventState->ClipboardTransfer = false;
             return;
          }
+
          request_clipboard_target(selected);
          return;
       }
@@ -446,7 +546,9 @@ static void handle_selection_notify(const XSelectionEvent &Event)
       if ((glEventState->TransferTarget IS XA_STRING) or (actual_type IS XA_STRING))
          data = latin1_to_utf8(property, count);
       else if (count) data.assign((const char *)property, count);
+
       if (property) XFree(property);
+
       mime = glEventState->TransferTarget IS glEventState->URIListAtom ? "text/uri-list" :
          "text/plain;charset=utf-8";
       glEventState->ClipboardTransfer = false;
@@ -468,14 +570,17 @@ static void send_incremental_chunk(const XPropertyEvent &Event)
       [&Event](const X11ClipboardWrite &Write) {
          return (Write.Requestor IS Event.window) and (Write.Property IS Event.atom);
       });
+
    if (match IS glEventState->ClipboardWrites.end()) return;
 
    auto remaining = match->Data.size() - match->Offset;
    auto length = std::min(remaining, maximum_property_bytes());
    XChangeProperty(XDisplay, match->Requestor, match->Property, match->Type, 8, PropModeAppend,
       (const unsigned char *)match->Data.data() + match->Offset, int(length));
+
    match->Offset += length;
    match->Updated = std::chrono::steady_clock::now();
+
    if (not length) {
       auto requestor = match->Requestor;
       auto previous_mask = match->PreviousEventMask;
@@ -491,6 +596,26 @@ static void send_incremental_chunk(const XPropertyEvent &Event)
 
 static void receive_incremental_chunk(const XPropertyEvent &Event)
 {
+   std::optional<primary_result> primary;
+   bool primary_event = false;
+
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      auto &read = glEventState->PrimaryRead;
+      if ((Event.window IS read.window) and (Event.atom IS read.property) and (Event.state IS PropertyNewValue)) {
+         primary_event = true;
+         if (read.incremental) primary = read_primary_property(false);
+      }
+   }
+
+   if (primary_event) {
+      if (primary and glDriverCallbacks.PrimarySelection) {
+         glDriverCallbacks.PrimarySelection(primary->recipient, primary->item, primary->text.data(),
+            primary->text.size());
+      }
+      return;
+   }
+
    std::string data;
    std::string mime;
    bool deliver = false;
@@ -505,11 +630,15 @@ static void receive_incremental_chunk(const XPropertyEvent &Event)
       int actual_format = 0;
       unsigned long count = 0, remaining = 0;
       unsigned char *property = nullptr;
+
       auto maximum_longs = std::min<size_t>(maximum_property_bytes() / 4,
          size_t(std::numeric_limits<long>::max()));
+
       auto status = XGetWindowProperty(XDisplay, glEventState->ClipboardWindow, Event.atom, 0,
          long(maximum_longs), True, AnyPropertyType, &actual_type, &actual_format, &count, &remaining, &property);
+
       auto expected_format = glEventState->TransferTarget IS glEventState->TargetsAtom ? 32 : 8;
+
       if ((status != Success) or remaining or (actual_format != expected_format)) {
          if (property) XFree(property);
          glEventState->ClipboardTransfer = false;
@@ -526,15 +655,19 @@ static void receive_incremental_chunk(const XPropertyEvent &Event)
          }
          else if ((actual_type != glEventState->TransferDataType) or
                   (actual_format != glEventState->TransferDataFormat)) glEventState->TransferDiscard = true;
+
          auto bytes = actual_format IS 32 ? size_t(count) * sizeof(Atom) : size_t(count);
+
          if ((not glEventState->TransferDiscard) and
              (bytes <= MAX_CLIPBOARD_TRANSFER - glEventState->TransferData.size())) {
             glEventState->TransferData.append((const char *)property, bytes);
          }
          else glEventState->TransferDiscard = true;
+
          if (property) XFree(property);
          return;
       }
+
       if (property) XFree(property);
 
       if (not glEventState->TransferDiscard) {
@@ -548,6 +681,7 @@ static void receive_incremental_chunk(const XPropertyEvent &Event)
                std::memcpy(targets.data(), glEventState->TransferData.data(), glEventState->TransferData.size());
                selected = select_clipboard_target(targets.data(), targets.size());
             }
+
             glEventState->TransferIncremental = false;
             glEventState->TransferData.clear();
             glEventState->TransferDataType = None;
@@ -563,10 +697,12 @@ static void receive_incremental_chunk(const XPropertyEvent &Event)
                glEventState->TransferData.size());
          }
          else data = std::move(glEventState->TransferData);
+
          mime = glEventState->TransferTarget IS glEventState->URIListAtom ? "text/uri-list" :
             "text/plain;charset=utf-8";
          deliver = true;
       }
+
       glEventState->ClipboardTransfer = false;
       glEventState->TransferIncremental = false;
       glEventState->TransferData.clear();
@@ -583,6 +719,7 @@ static void handle_xfixes_selection(const XFixesSelectionNotifyEvent &Event)
 {
    if ((Event.selection != glEventState->ClipboardAtom) or
        (Event.window != glEventState->ClipboardWindow)) return;
+
    {
       const std::lock_guard lock(glEventState->NativeLock);
       glEventState->LastServerTimestamp = Event.timestamp;
@@ -623,6 +760,7 @@ static void handle_resource_change()
    if (not glDriverCallbacks.DPIChanged) return;
 
    std::vector<Window> windows;
+
    {
       const std::lock_guard lock(glEventState->NativeLock);
       for (auto &[native, record] : glEventState->Windows) windows.push_back(native);
@@ -804,15 +942,18 @@ void x11_process_events(X11Driver::State *State)
 static Bool clipboard_save_event(Display *, XEvent *Event, XPointer Data)
 {
    auto state = (X11Driver::State *)Data;
+
    if (Event->type IS SelectionRequest) {
       return (Event->xselectionrequest.owner IS state->ClipboardWindow) and
          (Event->xselectionrequest.selection IS state->ClipboardAtom);
    }
+
    if (Event->type IS SelectionNotify) {
       return (Event->xselection.requestor IS state->ClipboardWindow) and
          (Event->xselection.selection IS state->ClipboardManagerAtom) and
          (Event->xselection.target IS state->SaveTargetsAtom);
    }
+
    if (Event->type != PropertyNotify) return False;
    return std::any_of(state->ClipboardWrites.begin(), state->ClipboardWrites.end(),
       [Event](const X11ClipboardWrite &Write) {
@@ -826,6 +967,7 @@ static void process_clipboard_save_events(X11Driver::State *State)
 {
    glEventState = State;
    XEvent event = {};
+
    bool processed = false;
    while (XCheckIfEvent(State->Connection, &event, clipboard_save_event, (XPointer)State)) {
       processed = true;
@@ -834,6 +976,7 @@ static void process_clipboard_save_events(X11Driver::State *State)
       else if (event.type IS SelectionNotify) handle_selection_notify(event.xselection);
       else if (event.type IS PropertyNotify) send_incremental_chunk(event.xproperty);
    }
+
    if (processed) XFlush(State->Connection);
    glEventState = nullptr;
 }

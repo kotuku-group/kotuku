@@ -547,6 +547,28 @@ void DriverClipboardLost()
    lose_host_clipboard();
 }
 
+// Primary reads are delivered only to the original object identity and request item; no clipboard cache is touched.
+
+void DriverPrimarySelection(OBJECTID Recipient, int Item, CSTRING Text, size_t Length)
+{
+   kt::ScopedObjectLock recipient(Recipient);
+
+   if (not recipient.granted()) return;
+
+   std::string receipt = "<receipt id=\"" + std::to_string(Item) + "\"><text>";
+   for (auto ch : std::string_view(Text, Length)) {
+      if (ch IS '&') receipt += "&amp;";
+      else if (ch IS '<') receipt += "&lt;";
+      else if (ch IS '>') receipt += "&gt;";
+      else if (ch IS '\r') receipt += "&#13;";
+      else receipt += ch;
+   }
+
+   receipt += "</text></receipt>";
+   acDataFeed(*recipient, nullptr, DATA::RECEIPT,
+      std::span<const int8_t>((const int8_t *)receipt.data(), receipt.size()));
+}
+
 // Native offers use the same feedback path as internal drags.  The host retains ownership of button release.
 
 void DriverDragLeave()
@@ -650,13 +672,16 @@ bool DriverDragStart(NativeDrop &Drop)
    objConfig::create snapshot = {};
    if (not snapshot.ok()) return false;
    const auto snapshot_id = snapshot->UID;
+
    Drop.Snapshot = std::shared_ptr<NativeDropSnapshot>(new NativeDropSnapshot, [](NativeDropSnapshot *State) {
       if (CheckResourceExists(State->ID) IS ERR::True) FreeObject(State->ID);
       delete State;
    });
+
    Drop.Snapshot->ID = snapshot_id;
    snapshot.detach();
    auto failed = kt::Defer([&]() { if (pointer->DragFeedback IS 0) Drop.Snapshot.reset(); });
+
    {
       auto participants = std::make_unique<NativeDropParticipants>();
       participants->Objects = { Drop.TargetID, Drop.DisplayID };
@@ -671,6 +696,7 @@ bool DriverDragStart(NativeDrop &Drop)
       participants.release();
       pointer->PendingDrops.push_back(snapshot_id);
    }
+
    {
       kt::SwitchContext ctx(GetObjectPtr(snapshot_id));
       kt::ScopedObjectLock target(Drop.TargetID);
@@ -690,6 +716,7 @@ bool DriverDragStart(NativeDrop &Drop)
          if (not it->second.stale()) { callback = it->second; callback.pin(); }
       }
    }
+
    if (callback.defined()) {
       auto unpin = kt::Defer([&]() { callback.unpin(); });
       ERR result = ERR::NoSupport;
@@ -704,11 +731,15 @@ bool DriverDragStart(NativeDrop &Drop)
       }), result);
       if (result != ERR::Okay) pointer->DragFeedback = 0;
    }
+
    if (CheckResourceExists(snapshot_id) != ERR::True) pointer->DragFeedback = 0;
+
    const auto final_modal = gfx::GetModalSurface();
    if ((final_modal and not in_modal_scope(final_modal, Drop.TargetID)) or
          not in_modal_scope(Drop.SurfaceID, Drop.TargetID)) pointer->DragFeedback = 0;
+
    if (pointer->DragFeedback IS 0) return false;
+
    return true;
 }
 
@@ -722,6 +753,7 @@ bool DriverDragData(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t L
    auto consume = kt::Defer([&]() {
       if (CheckResourceExists(snapshot_id) IS ERR::True) FreeObject(snapshot_id);
    });
+
    kt::ScopedObjectLock snapshot(snapshot_id);
    if (not snapshot.granted()) return false;
    const auto modal = gfx::GetModalSurface();
@@ -744,6 +776,7 @@ bool DriverDragData(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t L
    const auto live_surface = pointer->SurfaceID;
    const auto live_x = pointer->X;
    const auto live_y = pointer->Y;
+
    auto restore = kt::Defer([&]() {
       if ((pointer->SurfaceID IS live_surface) and (pointer->X IS live_x) and (pointer->Y IS live_y)) {
          pointer->OverObjectID = over_id;
@@ -755,12 +788,14 @@ bool DriverDragData(const NativeDrop &Drop, CSTRING Mime, CSTRING Data, size_t L
       pointer->DropSessionID = session_id;
       clear_host_drop();
    });
+
    pointer->OverObjectID = Drop.TargetID;
    pointer->OverX = Drop.X;
    pointer->OverY = Drop.Y;
    pointer->DragFeedback = -1;
    pointer->DragDelivering = true;
    pointer->DropSessionID = snapshot_id;
+
    if (not receive_host_clipboard(Mime, std::string_view(Data, Length), true, 0)) return false;
    const char datatype = std::string_view(Mime) IS "text/uri-list" ? char(DATA::FILE) : char(DATA::TEXT);
    acDragDrop(*destination, *source, -1, std::string_view(&datatype, 1));

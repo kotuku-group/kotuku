@@ -681,7 +681,9 @@ module({
     'Sync',
     'UnlockCursor',
     'UnsubscribeInput',
-    'WindowHook')
+    'WindowHook',
+    'SetPrimarySelection',
+    'ReadPrimarySelection')
 
   c_insert([==[
 // Direct ColourFormat versions

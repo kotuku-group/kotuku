@@ -1,0 +1,404 @@
+-- Routed drops and editor selection dragging use the same deterministic pointer path as Vector's transport tests.
+-- X11 runs also warp the native cursor and require a private X server, e.g. xvfb-run.  CTest uses headless graphics.
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+   module vector as mVec
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   local mantissa, exponent = math.frexp(math.abs(Value))
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset+i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset+4+i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+input_time = mSys.PreciseTime()
+
+function feed(Type:num!, X:num!, Y:num!)
+   local buffer = array<byte, 40>
+   if Type is JET_LMB and X > 0 then input_time += 1000000 end
+   for i in {0 to 8} do buffer[16+i] = math.floor(input_time / (256 ** i)) % 256 end
+   putDouble(buffer, 0, X)
+   putDouble(buffer, 8, Y)
+   buffer[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, buffer)
+   processing.sleep(0)
+end
+
+function move(Surface:obj!, X:num!, Y:num!)
+   if mGfx.GetDisplayType() is DT_X11 then
+      check mGfx.SetCursorPos(Surface.absX+X, Surface.absY+Y)
+      check mGfx.GetCursorPos() -- Round-trip to X11 before processing the warp's native events.
+      processing.sleep(0)
+      feed(JET_ABS_XY, Surface.absX+X+1, Surface.absY+Y)
+   end
+   feed(JET_ABS_XY, Surface.absX+X, Surface.absY+Y)
+end
+
+function key(Code:num!, Qualifiers:num!)
+   local event = array<int, 6>
+   event[0] = ('keypress').hash()
+   event[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   event[2] = Qualifiers | KQ_NOT_PRINTABLE
+   if not (Qualifiers has KQ_RELEASED) then event[2] = event[2] | KQ_PRESSED end
+   event[3] = Code
+   check mSys.BroadcastEvent(event, 24)
+   processing.sleep(0)
+end
+
+function fixture(TargetFlags:num, SourceFlags:num):<obj, obj, obj, obj>
+   local surface = obj.new('Surface', { width=620, height=160 })
+   local scene = surface.new('VectorScene', { surface=surface, flags=VPF_DROP_TARGETS|VPF_IGNORE_TAB })
+   local left = scene.new('VectorViewport', { width=300, height=160 })
+   local right = scene.new('VectorViewport', { x=310, width=300, height=160 })
+   local source = left.new('Scintilla', {
+      face='Clean', fontSize=11, flags=(SourceFlags is nil ? SCIF_EDIT : SourceFlags)
+   })
+   local target = right.new('Scintilla', {
+      face='Clean', fontSize=11, flags=(TargetFlags is nil ? SCIF_EDIT : TargetFlags)
+   })
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, scene, source, target
+end
+
+function externalDrop(Surface:obj!, Source:obj!, Types:str!, X:num!, Y:num!)
+   move(Surface, 305, 150)
+   feed(JET_LMB, 1, 0)
+   check mGfx.StartCursorDrag(Source.id, 42, Types, 0)
+   move(Surface, X, Y)
+   feed(JET_LMB, 0, 0)
+end
+
+function textSource(Text:str!, Duplicate:bool):obj
+   return obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item)
+         local receipt = f'<receipt id="{Item}"><text>{Text}</text></receipt>'
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT, receipt)
+         if Duplicate then Requester.acDataFeed(Clipboard, DATA_RECEIPT, receipt) end
+      end
+   })
+end
+
+@AfterEach function releasePointer()
+   local pointer = obj.find('SystemPointer')
+   if not pointer then return end
+   pointer.acDeactivate()
+   feed(JET_LMB, 0, 0)
+   feed(JET_MMB, 0, 0)
+   feed(JET_ABS_XY, 2000, 2000)
+end
+
+@Test function TextDropUsesLocalPositionAndCommitsOnce()
+   local surface <close>, scene, source, target = fixture()
+   target.string = 'abcdef'
+   target.mtSelectRange(0, 4)
+   local clipboard <close> = textSource('X&#13;\nY &amp; 三', true)
+   externalDrop(surface, clipboard, string.char(DATA_TEXT), 310+4+7*2, 6)
+   assert(target.string is 'abX\nY & 三cdef', f'Text must land at the drop position: {target.string}')
+   key(KEY_Z, KQ_L_CONTROL)
+   assert(target.string is 'abcdef', 'A single undo must remove the whole accepted drop')
+end
+
+@Test function ReadOnlyAndDisabledDropsDoNotEdit()
+   local surface <close>, scene, source, target = fixture(0)
+   target.string = 'unchanged'
+   local requested = 0
+   local clipboard <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP, requestHandler=function() requested++ end
+   })
+   externalDrop(surface, clipboard, string.char(DATA_TEXT), 330, 6)
+   assert(target.string is 'unchanged' and requested is 0, 'Read-only drops must reject before requesting data')
+   target.acDisable()
+   externalDrop(surface, clipboard, string.char(DATA_TEXT), 330, 6)
+   assert(target.string is 'unchanged' and requested is 0, 'Disabled editors must reject text')
+end
+
+@Test function MultipleFilePathsAndCallbackDestruction()
+   local surface <close>, scene, source, target = fixture()
+   local paths = array<str>
+   target.fileDrop = function(Editor, Path) paths.push(Path) end
+   local clipboard <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Types)
+         assert(Types[0] is DATA_FILE, 'File callbacks must request file data first')
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT,
+            f'<receipt id="{Item}"><file path="/one &amp; two"/><file path="/三"/></receipt>')
+      end
+   })
+   externalDrop(surface, clipboard, string.char(DATA_FILE), 330, 6)
+   assert(#paths is 2 and paths[0] is '/one & two' and paths[1] is '/三', 'All decoded paths must be reported')
+   paths.clear()
+   target.fileDrop = function(Editor, Path)
+      paths.push(Path)
+      Editor.free()
+   end
+   externalDrop(surface, clipboard, string.char(DATA_FILE), 330, 6)
+   assert(#paths is 1, 'Destroying the editor must stop callback iteration safely')
+end
+
+function dragSelection(Surface:obj!, Source:obj!, X:num!, Y:num!)
+   Source.mtSelectRange(0, 3)
+   move(Surface, 12, 6)
+   feed(JET_LMB, 1, 0)
+   move(Surface, 22, 6)
+   assert(obj.find('SystemPointer').dragSource != nil, 'Moving selected text must start a shared drag')
+   move(Surface, X, Y)
+end
+
+@Test function SameEditorMoveIsOneUndoAction()
+   local surface <close>, scene, source, target = fixture()
+   source.string = 'abc def'
+   dragSelection(surface, source, 4+7*7, 6)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is ' defabc', f'Moving must adjust the insertion position: {source.string}')
+   key(KEY_Z, KQ_L_CONTROL)
+   assert(source.string is 'abc def', 'One undo must restore both sides of a same-editor move')
+end
+
+@Test function CrossEditorMoveAndIndependentUndo()
+   local surface <close>, scene, source, target = fixture()
+   source.string = 'abc def'
+   target.string = 'XY'
+   dragSelection(surface, source, 310+4+7, 6)
+   assert(obj.find('SystemPointer').dragFeedback is 1, 'Editable destinations must advertise acceptance')
+   feed(JET_LMB, 0, 0)
+   assert(source.string is ' def' and target.string is 'XabcY', 'Accepted moves must edit each document once')
+   key(KEY_Z, KQ_L_CONTROL)
+   assert(target.string is 'XY', 'The destination insertion must be one undo action')
+   source.acFocus()
+   key(KEY_Z, KQ_L_CONTROL)
+   assert(source.string is 'abc def', 'The source removal must be one independent undo action')
+end
+
+@Test function ControlCopiesAndEscapeCancels()
+   local surface <close>, scene, source, target = fixture()
+   source.string = 'abc def'
+   target.string = 'XY'
+   dragSelection(surface, source, 310+4+7, 6)
+   key(KEY_L_CONTROL, KQ_L_CONTROL)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc def' and target.string is 'XabcY', 'Ctrl must copy without removing the source')
+   target.string = 'XY'
+   dragSelection(surface, source, 330, 6)
+   key(KEY_ESCAPE, 0)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc def' and target.string is 'XY', 'Escape must leave both documents unchanged')
+end
+
+@Test function RejectionAndSourceChangesPreserveText()
+   local surface <close>, scene, source, target = fixture()
+   source.string = 'abc def'
+   target.string = 'XY'
+   target.acDisable()
+   dragSelection(surface, source, 330, 6)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc def' and target.string is 'XY', 'Rejected moves must keep the source')
+   target.acEnable()
+   dragSelection(surface, source, 330, 6)
+   source.string = 'new source'
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'new source' and target.string is 'XY', 'Changed source documents must cancel the move')
+end
+
+@Test function ScrolledAndScaledDestination()
+   local surface <close>, scene, source, target = fixture()
+   target.string = ('01234567890123456789012345678901234567890123456789\n').rep(30)
+   target.page.x = -28
+   target.page.y = -13*4
+   local _, matrix = check target.viewport.mtNewMatrix()
+   check mVec.ParseTransform(matrix, 'scale(1.5)')
+   surface.acDraw()
+   processing.sleep(0)
+   local clipboard <close> = textSource('DROP', false)
+   externalDrop(surface, clipboard, string.char(DATA_TEXT), 310+1.5*(4+7*2), 1.5*6)
+   local expected = 4*51+6
+   assert(target.string.sub(expected, expected+4) is 'DROP',
+      f'Scrolling and transforms must map to the document position, got {target.string.find("DROP")}')
+end
+
+@Test function PendingNativeDropKeepsReleaseDocumentPosition()
+   if mGfx.GetDisplayType() != DT_NATIVE then return end
+   local surface <close>, scene, source, target = fixture()
+   target.string = ('abcdefghij\n').rep(30)
+   surface.subscribe('Signal', function()
+      target.page.y = -13*5
+      target.viewport.x = 200
+   end)
+   surface.acDraw()
+   local passed, total = mod.test('display', f'native-drop:{surface.id}:328:6:text')
+   assert(passed is total, 'The delayed native fixture must clean up')
+   assert(target.string is 'abnative text\nsecond linecdefghij\n' .. ('abcdefghij\n').rep(29),
+      'Delayed native text must use the release position before scrolling or layout changes')
+end
+
+@Test function PrimarySelectionPasteConvertsEndingsAndPreservesClipboard()
+   if mGfx.GetDisplayType() != DT_X11 then return end
+   local surface <close>, scene, source, target = fixture()
+   local clipboard <close> = obj.new('Clipboard')
+   check clipboard.mtAddText('ordinary clipboard')
+   check mGfx.SetPrimarySelection('one\r\ntwo\rthree')
+   target.string = 'XY'
+   move(surface, 310+4+7, 6)
+   feed(JET_MMB, 1, 0)
+   feed(JET_MMB, 0, 0)
+   for i in {0 to 100} do
+      if target.string != 'XY' then break end
+      processing.sleep(0.01)
+   end
+   assert(target.string is 'Xone\ntwo\nthreeY', f'Middle paste must convert line endings: {target.string}')
+   local _, _, files = check clipboard.mtGetFiles(CLIPTYPE_TEXT, 0)
+   assert(io.readAll(files[0]) is 'ordinary clipboard', 'Primary paste must leave the ordinary clipboard intact')
+   target.acDisable()
+   local before = target.string
+   feed(JET_MMB, 1, 0)
+   feed(JET_MMB, 0, 0)
+   processing.sleep(0.03)
+   assert(target.string is before, 'Read-only editors must reject primary paste')
+end
+
+@Test function ReadOnlySourceCopiesAndDropInsideSelectionDoesNothing()
+   local surface <close>, scene, source, target = fixture(nil, 0)
+   source.string = 'abc def'
+   target.string = 'XY'
+   dragSelection(surface, source, 321, 6)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc def' and target.string is 'XabcY', 'A read-only source must copy its selection')
+   dragSelection(surface, source, 12, 6)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc def', 'Dropping inside the source selection must not edit it')
+end
+
+@Test function RectangularSelectionMovesAcrossEditors()
+   local surface <close>, scene, source, target = fixture()
+   source.string = 'abcd\nefgh\nijkl'
+   target.string = 'XY\nXY'
+   source.acFocus()
+   source.mtSelectRange(1, 1)
+   key(KEY_RIGHT, KQ_L_ALT|KQ_L_SHIFT)
+   key(KEY_RIGHT, KQ_L_ALT|KQ_L_SHIFT)
+   key(KEY_DOWN, KQ_L_ALT|KQ_L_SHIFT)
+   key(KEY_L_ALT, KQ_RELEASED)
+   move(surface, 19, 6)
+   feed(JET_LMB, 1, 0)
+   move(surface, 26, 6)
+   assert(obj.find('SystemPointer').dragSource != nil, 'Rectangular text must start a drag')
+   move(surface, 321, 6)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'ad\neh\nijkl' and target.string is 'XbcY\nXfgY',
+      f'Rectangular moves must preserve rows: source={source.string}, target={target.string}')
+   target.acUndo()
+   source.acUndo()
+   assert(source.string is 'abcd\nefgh\nijkl' and target.string is 'XY\nXY',
+      'Each side of a rectangular move must undo as one action')
+end
+
+@Test function NativeDocumentChangesCancellationAndDestructionReject()
+   if mGfx.GetDisplayType() != DT_NATIVE then return end
+   for operation in values(array<str> { 'edit', 'disable', 'cancel', 'destroy' }) do
+      local surface <close>, scene, source, target = fixture()
+      target.string = 'XY'
+      local replacement:obj
+      surface.subscribe('Signal', function()
+         if operation is 'edit' then target.string = 'changed'
+         elseif operation is 'disable' then target.acDisable()
+         elseif operation is 'cancel' then obj.find('SystemPointer').acDeactivate()
+         else
+            local host = target.viewport
+            target.free()
+            replacement = host.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT })
+            replacement.string = 'replacement'
+         end
+      end)
+      surface.acDraw()
+      local passed, total = mod.test('display', f'native-drop:{surface.id}:321:6:text')
+      assert(passed is total, f'{operation} must release its native snapshot')
+      if operation is 'destroy' then
+         assert(replacement.string is 'replacement', 'An editor replacement must not receive earlier data')
+      else
+         assert(target.string is (operation is 'edit' ? 'changed' : 'XY'),
+            f'{operation} must reject the pending text edit')
+      end
+   end
+end
+
+@Test function WrongItemsAndUnsolicitedReceiptsCannotEdit()
+   local surface <close>, scene, source, target = fixture()
+   target.string = 'XY'
+   local clipboard <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item)
+         Requester.acDataFeed(Clipboard, DATA_RECEIPT, '<receipt id="99"><text>wrong</text></receipt>')
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT,
+            f'<receipt id="{Item}"><text>A</text><text>B</text></receipt>')
+      end
+   })
+   externalDrop(surface, clipboard, string.char(DATA_TEXT), 321, 6)
+   assert(target.string is 'XABY', 'Only the matching receipt may commit, with all text in one edit')
+   target.acDataFeed(clipboard, DATA_RECEIPT, '<receipt id="42"><text>late</text></receipt>')
+   assert(target.string is 'XABY', 'Late receipts must not edit the document')
+   target.acUndo()
+   assert(target.string is 'XY', 'All text elements must undo as one edit')
+end
+
+@Test function SameEditorCopyAndInteriorRejection()
+   local surface <close>, scene, source, target = fixture()
+   source.string = 'abc def'
+   dragSelection(surface, source, 4+7*7, 6)
+   key(KEY_L_CONTROL, KQ_L_CONTROL)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc defabc', 'Ctrl must copy within the same editor')
+   source.acUndo()
+   assert(source.string is 'abc def', 'A same-editor copy must be one undo action')
+   dragSelection(surface, source, 12, 6)
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc def', 'A drop inside the source selection must not change text')
+   dragSelection(surface, source, 321, 6)
+   target.free()
+   feed(JET_LMB, 0, 0)
+   assert(source.string is 'abc def', 'Destroying the destination before release must preserve the source')
+end
+
+@Test function PrimarySelectionTracksSelectionAndRejectsReadOnly()
+   if mGfx.GetDisplayType() != DT_X11 then return end
+   local surface <close>, scene, source, target = fixture(0)
+   source.string = 'selected text'
+   target.string = 'XY'
+   source.mtSelectRange(0, 8)
+   move(surface, 321, 6)
+   feed(JET_MMB, 1, 0)
+   feed(JET_MMB, 0, 0)
+   processing.sleep(0.03)
+   assert(target.string is 'XY', 'Read-only editors must reject primary paste')
+   move(surface, 4+7*13, 6)
+   feed(JET_MMB, 1, 0)
+   feed(JET_MMB, 0, 0)
+   for i in {0 to 100} do
+      if source.string != 'selected text' then break end
+      processing.sleep(0.01)
+   end
+   assert(source.string is 'selected textselected', 'Selecting editor text must publish the primary selection')
+   source.acUndo()
+   assert(source.string is 'selected text', 'Primary insertion must be one undo action')
+end
+
+@Test function HeldDragSurvivesButtonRepeat()
+   input_time = mSys.PreciseTime() - 1000000
+   local surface <close>, scene, source, target = fixture()
+   source.string = 'abc def'
+   target.string = 'XY'
+   dragSelection(surface, source, 321, 6)
+   processing.sleep(0.35)
+   assert(obj.find('SystemPointer').dragSource != nil, 'Holding a selection drag must keep the session active')
+   feed(JET_LMB, 0, 0)
+   assert(source.string is ' def' and target.string is 'XabcY',
+      'Pointer button-repeat events must not reset the drag or commit extra edits')
+end

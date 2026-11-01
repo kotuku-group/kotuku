@@ -109,3 +109,5 @@ flute_test (scintilla_highlighting "tests/test_scintilla_highlighting.tiri")
 flute_test (scintilla_completion "tests/test_scintilla_completion.tiri")
 
 flute_test (scintilla_mouse "tests/test_scintilla_mouse.tiri")
+
+flute_test (scintilla_drag_drop "tests/test_scintilla_drag_drop.tiri")

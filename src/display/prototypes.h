@@ -43,5 +43,7 @@ extern void Sync(objBitmap * Bitmap);
 extern ERR UnlockCursor(OBJECTID Surface);
 extern ERR UnsubscribeInput(int Handle);
 extern ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION * Callback);
+extern ERR SetPrimarySelection(const std::string_view & Text);
+extern ERR ReadPrimarySelection(OBJECTID Recipient, int Item);
 
 } // namespace

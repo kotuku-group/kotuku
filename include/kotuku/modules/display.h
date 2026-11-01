@@ -2394,6 +2394,8 @@ struct DisplayBase {
    ERR (*_UnlockCursor)(OBJECTID Surface);
    ERR (*_UnsubscribeInput)(int Handle);
    ERR (*_WindowHook)(OBJECTID SurfaceID, WH Event, FUNCTION *Callback);
+   ERR (*_SetPrimarySelection)(const std::string_view &Text);
+   ERR (*_ReadPrimarySelection)(OBJECTID Recipient, int Item);
 #endif // KOTUKU_STATIC
 };
 
@@ -2442,6 +2444,8 @@ inline void Sync(objBitmap *Bitmap) { return DisplayBase->_Sync(Bitmap); }
 inline ERR UnlockCursor(OBJECTID Surface) { return DisplayBase->_UnlockCursor(Surface); }
 inline ERR UnsubscribeInput(int Handle) { return DisplayBase->_UnsubscribeInput(Handle); }
 inline ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback) { return DisplayBase->_WindowHook(SurfaceID,Event,Callback); }
+inline ERR SetPrimarySelection(const std::string_view &Text) { return DisplayBase->_SetPrimarySelection(Text); }
+inline ERR ReadPrimarySelection(OBJECTID Recipient, int Item) { return DisplayBase->_ReadPrimarySelection(Recipient,Item); }
 } // namespace
 #else
 namespace gfx {
@@ -2487,6 +2491,8 @@ extern void Sync(objBitmap *Bitmap);
 extern ERR UnlockCursor(OBJECTID Surface);
 extern ERR UnsubscribeInput(int Handle);
 extern ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback);
+extern ERR SetPrimarySelection(const std::string_view &Text);
+extern ERR ReadPrimarySelection(OBJECTID Recipient, int Item);
 } // namespace
 #endif // KOTUKU_STATIC
 

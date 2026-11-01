@@ -75,6 +75,8 @@ public:
    ERR clipboardAddText(CSTRING Text) override;
    ERR clipboardAddFiles(CLIPTYPE Type, const std::vector<std::string> &Paths, bool Cut) override;
    ERR clipboardClear() override;
+   ERR setPrimarySelection(std::string_view Text) override;
+   ERR readPrimarySelection(OBJECTID Recipient, int Item) override;
 
 #ifdef X11_DRIVER_TESTS
    void processEvents();

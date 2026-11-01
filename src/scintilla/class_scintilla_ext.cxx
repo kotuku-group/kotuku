@@ -530,8 +530,12 @@ void ScintillaKTK::ClaimSelection()
 {
    kt::Log log(__FUNCTION__);
    log.traceBranch();
-   if (!SelectionEmpty()) primarySelection = true;
-   else primarySelection = false;
+   primarySelection = not SelectionEmpty();
+   if (primarySelection) {
+      Scintilla::SelectionText text;
+      CopySelectionRange(&text);
+      if (text.s and (text.len > 1)) gfx::SetPrimarySelection(std::string_view(text.s, text.len - 1));
+   }
 }
 
 //********************************************************************************************************************
@@ -672,6 +676,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       log.trace("[MODIFIED] Type: %d, Length: %d, LinesAdded: %d, Line: %d", scn.modificationType, scn.length, scn.linesAdded, scn.line);
 
+      if (scn.modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) scintilla->DocumentRevision++;
       if (scn.modificationType & SC_MOD_CHANGEFOLD) FoldChanged(scn.line, scn.foldLevelNow, scn.foldLevelPrev);
    }
    else if (code IS SCEN_SETFOCUS) {
@@ -901,12 +906,10 @@ void ScintillaKTK::SetMouseCapture(bool On)
 }
 
 //********************************************************************************************************************
-// Scintilla shows the arrow over the selection to indicate that the text can be dragged.  Text drag and drop is not
-// supported yet (see panMousePress()), so the text cursor is kept.  Margins use the reverse arrow and are unaffected.
+// Scintilla shows the arrow over selected text and the reverse arrow over margins.
 
 void ScintillaKTK::DisplayCursor(Scintilla::Window::Cursor Cursor)
 {
-   if (Cursor IS Scintilla::Window::cursorArrow) Cursor = Scintilla::Window::cursorText; // TODO Phase 7
    ScintillaBase::DisplayCursor(Cursor);
 }
 
@@ -1102,10 +1105,6 @@ void ScintillaKTK::panKeyDown(KEY Code, KQ Qualifiers, int Unicode)
 ** Process a mouse button press at a client position.  The Time is in milliseconds and allows Scintilla to detect
 ** double and triple clicks.  Modifier keys are taken from the state that key_event() tracks: Shift extends the
 ** selection, and Alt starts a rectangular selection.
-**
-** Scintilla's internal text drag is not supported yet, so a click inside the selection clears it first.  This turns
-** the click into an ordinary click, and a drag from that point into a new selection.  Shift clicks are excluded so
-** that they extend the selection from its anchor.
 */
 
 void ScintillaKTK::panMousePress(JET Button, double X, double Y, unsigned int Time)
@@ -1116,12 +1115,9 @@ void ScintillaKTK::panMousePress(JET Button, double X, double Y, unsigned int Ti
    if (Button IS JET::LMB) {
       Scintilla::Point point(int(std::floor(X)), int(std::floor(Y)));
 
-      if ((not scintilla->KeyShift) and (not SelectionEmpty()) and (PointInSelection(point))) {
-         SetEmptySelection(CurrentPosition()); // TODO Phase 7: Text drag and drop
-      }
-
       ButtonDown(point, Time, scintilla->KeyShift, scintilla->KeyCtrl, scintilla->KeyAlt);
    }
+   else if (Button IS JET::MMB) panPrimaryPaste(X, Y);
 }
 
 //********************************************************************************************************************
@@ -1138,7 +1134,7 @@ void ScintillaKTK::panMouseRelease(JET Button, double X, double Y, unsigned int 
    kt::Log log(__FUNCTION__);
    log.trace("%.0fx%.0f", X, Y);
 
-   if (Button IS JET::LMB) {
+   if ((Button IS JET::LMB) and (not drag_active)) {
       ButtonUp(Scintilla::Point(int(std::floor(X)), int(std::floor(Y))), Time, scintilla->KeyCtrl);
    }
 }
@@ -1148,6 +1144,10 @@ void ScintillaKTK::panMouseRelease(JET Button, double X, double Y, unsigned int 
 
 void ScintillaKTK::panReleaseMouse()
 {
+   if (drag_active) {
+      if (auto pointer = gfx::AccessPointer()) { acDeactivate(pointer); ReleaseObject(pointer); }
+      panEndDrag();
+   }
    if (HaveMouseCapture()) SetMouseCapture(false);
 }
 

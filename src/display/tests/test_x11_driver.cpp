@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
+#include <cstdio>
 #include <chrono>
 #include <cerrno>
 #include <csignal>
@@ -16,6 +17,7 @@
 #include <fcntl.h>
 #include <limits>
 #include <optional>
+#include <source_location>
 #include <string>
 #include <thread>
 #include <sys/shm.h>
@@ -27,10 +29,21 @@
 static std::string glClipboardData;
 static std::string glClipboardMime;
 static int glClipboardLost = 0;
+static std::string glPrimaryData;
+static OBJECTID glPrimaryRecipient = 0;
+static int glPrimaryItem = 0;
+
+static void primary_data(OBJECTID Recipient, int Item, CSTRING Text, size_t Length)
+{
+   glPrimaryRecipient = Recipient;
+   glPrimaryItem = Item;
+   glPrimaryData.assign(Text, Length);
+}
 static bool glSharedImageAttachFailed = false;
 
-static int check(bool Condition)
+static int check(bool Condition, const std::source_location &Location = std::source_location::current())
 {
+   if (not Condition) std::fprintf(stderr, "X11 driver expectation failed at line %u\n", Location.line());
    return Condition ? 0 : 1;
 }
 
@@ -168,16 +181,22 @@ static bool request_selection(DisplayDriver *Driver, Display *Connection, Window
 }
 
 static bool receive_external_selection(DisplayDriver *Driver, Display *Connection, Atom Target,
-   const std::string &Mime, const std::string &Data, bool Incremental, bool IncrementalTargets = false)
+   const std::string &Mime, const std::string &Data, bool Incremental, bool IncrementalTargets = false,
+   bool Primary = false, const std::string &Expected = {})
 {
-   auto selection = XInternAtom(Connection, "CLIPBOARD", False);
+   auto selection = Primary ? XA_PRIMARY : XInternAtom(Connection, "CLIPBOARD", False);
    auto targets_atom = XInternAtom(Connection, "TARGETS", False);
    auto incr_atom = XInternAtom(Connection, "INCR", False);
    auto owner = XCreateSimpleWindow(Connection, DefaultRootWindow(Connection), 0, 0, 1, 1, 0, 0, 0);
    XSetSelectionOwner(Connection, selection, owner, CurrentTime);
-   XFlush(Connection);
-   glClipboardData.clear();
-   glClipboardMime.clear();
+   XSync(Connection, False); // Publish ownership before the driver queries it through its own connection.
+   const auto &expected = Expected.empty() ? Data : Expected;
+   if (Primary) {
+      glPrimaryData.clear();
+      if (Driver->readPrimarySelection(1234, -17) != ERR::Okay) return false;
+   }
+   else { glClipboardData.clear(); glClipboardMime.clear(); }
+   auto received_data = [&]() -> const std::string & { return Primary ? glPrimaryData : glClipboardData; };
 
    Window requestor = 0;
    Atom property = None;
@@ -185,14 +204,14 @@ static bool receive_external_selection(DisplayDriver *Driver, Display *Connectio
    bool sending = false;
    bool sending_targets = false;
    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-   while ((std::chrono::steady_clock::now() < deadline) and (glClipboardData != Data)) {
+   while ((std::chrono::steady_clock::now() < deadline) and (received_data() != expected)) {
       display::x11_process_driver_events(Driver);
       while (XPending(Connection)) {
          XEvent event = {};
          XNextEvent(Connection, &event);
          if ((event.type IS SelectionRequest) and (event.xselectionrequest.selection IS selection)) {
             auto &request = event.xselectionrequest;
-            if (not from_driver(Driver, Connection, request)) continue;
+            if ((not Primary) and (not from_driver(Driver, Connection, request))) continue;
             auto reply_property = request.property IS None ? request.target : request.property;
             XSelectionEvent reply = {};
             reply.type = SelectionNotify;
@@ -263,10 +282,12 @@ static bool receive_external_selection(DisplayDriver *Driver, Display *Connectio
       usleep(1000);
    }
 
-   auto received = (glClipboardData IS Data) and (glClipboardMime IS Mime);
+   auto received = (received_data() IS expected) and (Primary or (glClipboardMime IS Mime));
+   if (Primary) received = received and (glPrimaryRecipient IS 1234) and (glPrimaryItem IS -17);
    auto lost_before = glClipboardLost;
    XDestroyWindow(Connection, owner);
    XFlush(Connection);
+   if (Primary) { display::x11_process_driver_events(Driver); return received; }
    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
    while ((std::chrono::steady_clock::now() < deadline) and (glClipboardLost IS lost_before)) {
       display::x11_process_driver_events(Driver);
@@ -476,7 +497,8 @@ static void test_clipboard(DisplayDriver *Driver, const std::optional<std::strin
    DriverCallbacks callbacks = {
       .Version = DISPLAY_DRIVER_INTERFACE_VERSION,
       .ClipboardData = clipboard_data,
-      .ClipboardLost = clipboard_lost
+      .ClipboardLost = clipboard_lost,
+      .PrimarySelection = primary_data
    };
    Failures += check(Driver->open(callbacks) IS ERR::Okay);
    if ((Driver->capabilities() & DCAP::CLIPBOARD) IS DCAP::NIL) Failures++;
@@ -542,6 +564,24 @@ static void test_clipboard(DisplayDriver *Driver, const std::optional<std::strin
       "External text with incremental targets", false, true));
    Failures += check(replace_unresponsive_owner(Driver, peer, utf8));
    Failures += check(reject_stale_reply(Driver, peer, utf8));
+
+   const auto saved_clipboard = glClipboardData;
+   const auto saved_mime = glClipboardMime;
+   Failures += check(Driver->setPrimarySelection("Primary ✓") IS ERR::Okay);
+   Failures += check(request_selection(Driver, peer, window, XA_PRIMARY, utf8, received, incremental));
+   Failures += check(received IS "Primary ✓");
+   Failures += check(Driver->setPrimarySelection(std::string(300000, 'p')) IS ERR::Okay);
+   Failures += check(request_selection(Driver, peer, window, XA_PRIMARY, utf8, received, incremental));
+   Failures += check(received IS std::string(300000, 'p'));
+   Failures += check(receive_external_selection(Driver, peer, utf8, "", "External primary ✓", false,
+      false, true));
+   Failures += check(receive_external_selection(Driver, peer, utf8, "", std::string(100000, 'q'), true,
+      false, true));
+   Failures += check(receive_external_selection(Driver, peer, XA_STRING, "", "caf\xe9", false,
+      false, true, "café"));
+   Failures += check(glClipboardData IS saved_clipboard and glClipboardMime IS saved_mime);
+   Failures += check(Driver->setPrimarySelection("") IS ERR::Okay);
+   Failures += check(Driver->readPrimarySelection(1234, 5) IS ERR::NoData);
 
    Failures += check(Driver->clipboardAddText("Persisted X11 clipboard ✓") IS ERR::Okay);
    Failures += check(save_with_clipboard_manager(Driver, peer, selection, utf8));
