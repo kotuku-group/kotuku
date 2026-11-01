@@ -11,14 +11,26 @@ Documentation is available in the Kotuku Wiki.
 gui.scrollbar = function(Options)
    self = entity { } -- Public interface
 
+   -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
+   -- the base theme or the override changes.
+
+   base_theme = gui.getTheme(Options.target)
+   override = nil -- Per-instance override from setTheme()
+
+   function buildTheme():table
+      result = base_theme
+      if Options.theme then result = table.merge(result, Options.theme, true, true) end
+      if override then result = table.merge(result, override, true, true) end
+      return result
+   end
+
    using self do
       &target   = Options.target
       &page     = Options.page
       &view     = Options.view
       &pageMode = 'fixed'
       &minWidth = 0
-      &theme    = gui.getTheme(Options.target)
-      if Options.theme then &theme = table.merge(&theme, Options.theme, true, true) end
+      &theme    = buildTheme()
       &v_thickness = &theme.scrollbar_v?.thickness ?? &theme.scrollbar?.thickness ?? 16
       &h_thickness = &theme.scrollbar_h?.thickness ?? &theme.scrollbar?.thickness ?? 16
    end
@@ -123,6 +135,57 @@ gui.scrollbar = function(Options)
       return margin[0] ?? 0, margin[1] ?? 0
    end
 
+   function barTheme(Direction:str!):table
+      if Direction is 'V' then
+         return &theme.scrollbar_v ?? &theme.scrollbar
+      else
+         return &theme.scrollbar_h ?? &theme.scrollbar
+      end
+   end
+
+   -- Restore the native values before applying a replacement style.  Keep nil values in records so that fields such
+   -- as fill and filter can be cleared.  The rounding fields share storage, so save and restore all corners together.
+
+   function styleRectangle(Vector:obj!, Style:table, Defaults:table!)
+      Defaults.rounding ?= { value=Vector.rounding }
+      for key, saved in Defaults do Vector[key] = saved.value end
+
+      if Style then
+         for key in Style do
+            if key != 'roundX' and key != 'roundY' and not (key in Defaults) then
+               Defaults[key] = { value=Vector[key] }
+            end
+         end
+         gui.applyStyle(Vector, Style)
+      end
+   end
+
+   function restyleSlider(Bar:table!)
+      style = table.merge(Bar.theme.fore, Bar.slider.hover ? Bar.theme.foreHighlight : nil)
+      styleRectangle(Bar.slider.bkRect, style, Bar.slider.defaults)
+   end
+
+   -- Apply the current theme to the vectors of a bar.  The thickness of the bar is not changed.
+
+   function restyleBar(Bar:table)
+      Bar ?! return
+      Bar.theme = barTheme(Bar.direction)
+      m_start, m_end = barMargins(Bar.theme)
+      if Bar.direction is 'V' then
+         Bar.sliderHostVP.{ y = m_start, yOffset = m_end }
+      else
+         Bar.sliderHostVP.{ x = m_start, xOffset = m_end }
+      end
+      styleRectangle(Bar.barBkgd, Bar.theme.bkgd, Bar.bkgdDefaults)
+      restyleSlider(Bar)
+   end
+
+   function restyle()
+      restyleBar(&vbar)
+      restyleBar(&hbar)
+      recalcSlidersFromView()
+   end
+
    function createScrollbar(Direction:str!)
       local bar:table
 
@@ -133,13 +196,14 @@ gui.scrollbar = function(Options)
          })
 
          bar = vp.state()
-         bar_theme = &theme.scrollbar_v ?? &theme.scrollbar
+         bar_theme = barTheme(Direction)
          m_start, m_end = barMargins(bar_theme)
          bar.{
             viewport     = vp,
             direction    = 'V',
             theme        = bar_theme,
-            barBkgd      = bar.viewport.new('VectorRectangle', table.merge({ width = '100%', height = '100%' }, bar_theme.bkgd)),
+            bkgdDefaults = { },
+            barBkgd      = bar.viewport.new('VectorRectangle', { width = '100%', height = '100%' }),
             sliderHostVP = vp.new('VectorViewport', { name='VSliderHostVP', y = m_start, width = '100%', yOffset = m_end, overflow = VOF_HIDDEN }),
             sliderVP     = bar.sliderHostVP.new('VectorViewport', { name='VSliderVP', width = &v_thickness, height = bar.sliderHostVP.height, overflow = VOF_HIDDEN })
          }
@@ -166,13 +230,14 @@ gui.scrollbar = function(Options)
          if &vbar?.viewport?.visibility is VIS_VISIBLE then vp.xOffset = &v_thickness end
 
          bar = vp.state()
-         bar_theme = &theme.scrollbar_h ?? &theme.scrollbar
+         bar_theme = barTheme(Direction)
          m_start, m_end = barMargins(bar_theme)
          bar.{
             viewport     = vp,
             direction    = 'H',
             theme        = bar_theme,
-            barBkgd      = bar.viewport.new('VectorRectangle', table.merge({ width = '100%', height = '100%' }, bar_theme.bkgd)),
+            bkgdDefaults = { },
+            barBkgd      = bar.viewport.new('VectorRectangle', { width = '100%', height = '100%' }),
             sliderHostVP = vp.new('VectorViewport', { name='HSliderHostVP', x = m_start, height = '100%', xOffset = m_end, overflow = VOF_HIDDEN }),
             sliderVP     = bar.sliderHostVP.new('VectorViewport', { name='HSliderVP', width = bar.sliderHostVP.height, height = &h_thickness, overflow = VOF_HIDDEN })
          }
@@ -191,19 +256,22 @@ gui.scrollbar = function(Options)
          end
       end
 
-      bar.slider = { viewport = bar.sliderVP }
-      bar.slider.bkRect = bar.sliderVP.new('VectorRectangle', table.merge({
+      bar.slider = { viewport = bar.sliderVP, defaults = { } }
+      bar.slider.bkRect = bar.sliderVP.new('VectorRectangle', {
          width = '100%', height = '100%'
-      }, bar.theme.fore))
+      })
+      restyleBar(bar)
 
       bar.sliderVP.mtSubscribeInput(JTYPE_CROSSING, function(Viewport:obj!, Msg)
          redraw = false
          repeat
             if Msg.type is JET_CROSSED_IN then
-               gui.applyStyle(bar.slider.bkRect, bar.theme.foreHighlight)
+               bar.slider.hover = true
+               restyleSlider(bar)
                redraw = true
             elseif Msg.type is JET_CROSSED_OUT then
-               gui.applyStyle(bar.slider.bkRect, bar.theme.fore)
+               bar.slider.hover = false
+               restyleSlider(bar)
                redraw = true
             end
             Msg = Msg.next
@@ -409,6 +477,23 @@ gui.scrollbar = function(Options)
       end
    end
 
+   -- Style this scrollbar instance.  Override is merged over the complete theme, as for Options.theme, and is kept when
+   -- the window theme changes.  Each call replaces the previous override; nil removes it.
+
+   self.setTheme = function(Override:table)
+      override = Override
+      &theme = buildTheme()
+      restyle()
+   end
+
+   -- Called by gui.broadcastTheme() with the window's new theme.
+
+   self.applyTheme = function(Theme:table!)
+      base_theme = Theme
+      &theme = buildTheme()
+      restyle()
+   end
+
    self.changeViewport = function(View, Page)
       try -- The previous view and page may have been freed already
         &view.mtSubscribeFeedback(0, viewFeedback)
@@ -442,6 +527,9 @@ gui.scrollbar = function(Options)
       if Options.direction is 'horizontal' or Options.direction is nil then
          &hbar = createScrollbar('H')
       end
+
+      &viewport = (&vbar or &hbar).viewport
+      gui.registerWidget(&target, &&)
 
       doSubscriptions()
 

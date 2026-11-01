@@ -90,10 +90,32 @@ gui.input = function(Options)
 
    -- Change the active state of the input box to disabled or enabled
 
+   -- The applied theme is layered as base.input <- Options.theme <- the override from setTheme().  It is rebuilt
+   -- whenever the base theme or the override changes.
+
+   override = nil -- Per-instance override from setTheme()
+
+   function buildTheme()
+      input_theme = table.merge(theme.input, Options.theme, true, true)
+      if override then input_theme = table.merge(input_theme, override, true, true) end
+   end
+
+   -- Compose the box style from the current focus and disabled states.  Focus styling is suppressed while the input
+   -- is disabled.
+
+   function refreshStyle()
+      gui.applyStyle(&bkgd, input_theme.bkgd)
+      if &disabled then
+         gui.applyStyle(&bkgd, input_theme.disabled)
+      elseif &_focus then
+         gui.applyStyle(&bkgd, input_theme.focus)
+      end
+   end
+
    self.disable = function()
       &disabled = true
       &viewport.acDisable()
-      gui.applyStyle(&bkgd, input_theme.disabled)
+      refreshStyle()
       &events?.disable()
       &viewport.acDraw()
    end
@@ -101,9 +123,66 @@ gui.input = function(Options)
    self.enable = function()
       &disabled = false
       &viewport.acEnable()
-      gui.applyStyle(&bkgd, input_theme.bkgd)
+      refreshStyle()
       &events?.enable()
       &viewport.acDraw()
+   end
+
+   -- Multi-line mode: the scrollbar is flush with the inner edge of the border.  Its track follows the rounding of
+   -- the right corners, and margins keep the slider out of the rounded ends.
+
+   function scrollbarTheme():table
+      edge = input_theme.bkgd.strokeWidth ?? 0
+      round_x = math.max(0, (tonumber(input_theme.bkgd.roundX) ?? 0) - edge)
+      round_y = math.max(0, (tonumber(input_theme.bkgd.roundY ?? input_theme.bkgd.roundX) ?? 0) - edge)
+      bar_style = theme.scrollbar_v ? 'scrollbar_v' : 'scrollbar'
+      return { [bar_style] = table.merge({
+         bkgd   = { rounding = { 0, 0, round_x, round_y, round_x, round_y, 0, 0 } },
+         margin = round_y
+      }, input_theme.scrollbar ?? {}, true, true) }
+   end
+
+   -- Apply the current theme to the existing vectors.  The font and the position of the text are not changed.
+
+   function restyle()
+      sw = input_theme.bkgd.strokeWidth ?? 0
+      edge = sw * 0.5
+      &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
+      refreshStyle()
+
+      inset = math.ceil(sw)
+      &_textClip.{ x = inset, y = inset, xOffset = inset, yOffset = inset }
+
+      if input_theme.text.fill then
+         &text.fill = input_theme.text.fill
+         &placeholder?.fill = input_theme.text.fill
+      end
+
+      if &labelText and theme.window.text.fill then &labelText.fill = theme.window.text.fill end
+
+      if &scrollbar then
+         &scrollbar.setTheme(scrollbarTheme())
+         &scrollbar.vbar.viewport.{ y = sw, yOffset = sw, xOffset = sw }
+      end
+
+      &viewport.acDraw()
+   end
+
+   -- Style this input instance.  Override is merged over the input section of the theme, as for Options.theme, and is
+   -- kept when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+   self.setTheme = function(Override:table)
+      override = Override
+      buildTheme()
+      restyle()
+   end
+
+   -- Called by gui.broadcastTheme() with the window's new theme.
+
+   self.applyTheme = function(Theme:table!)
+      theme = Theme
+      buildTheme()
+      restyle()
    end
 
    function checkPlaceholder()
@@ -235,7 +314,7 @@ gui.input = function(Options)
       assert(Options.target, 'A target viewport is required.')
 
       theme = gui.getTheme(Options.target)
-      input_theme = table.merge(theme.input, Options.theme, true, true)
+      buildTheme()
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       font_max_height, font_height = gui.getFontHeight(gui.fonts.input)
@@ -295,7 +374,7 @@ gui.input = function(Options)
          x = edge, y = edge, xOffset = edge, yOffset = edge
       }, input_theme.bkgd))
 
-      clip_inset = math.ceil(input_theme.bkgd.strokeWidth) -- Whole pixels keep the text sharp
+      clip_inset = math.ceil(input_theme.bkgd.strokeWidth ?? 0) -- Whole pixels keep the text sharp
       &_textClip = &inputViewport.new('VectorViewport', {
          name = 'vp_input_clip',
          x = clip_inset, y = clip_inset, xOffset = clip_inset, yOffset = clip_inset,
@@ -322,20 +401,14 @@ gui.input = function(Options)
          })
          text_host = &page
 
-         -- The scrollbar is flush with the inner edge of the border.  Its track follows the rounding of the right
-         -- corners, and margins keep the slider out of the rounded ends.
+         -- The scrollbar styling is an override rather than the theme option, because the section that it applies to
+         -- depends on the base theme, which can change.
 
-         edge = input_theme.bkgd.strokeWidth ?? 0
-         round_x = math.max(0, (tonumber(input_theme.bkgd.roundX) ?? 0) - edge)
-         round_y = math.max(0, (tonumber(input_theme.bkgd.roundY ?? input_theme.bkgd.roundX) ?? 0) - edge)
-         bar_style = theme.scrollbar_v ? 'scrollbar_v' : 'scrollbar'
          &scrollbar = gui.scrollbar({
-            target = &inputViewport, view = &_textView, page = &page, direction = 'vertical',
-            theme = { [bar_style] = table.merge({
-               bkgd   = { rounding = { 0, 0, round_x, round_y, round_x, round_y, 0, 0 } },
-               margin = round_y
-            }, input_theme.scrollbar ?? {}, true, true) }
+            target = &inputViewport, view = &_textView, page = &page, direction = 'vertical'
          })
+         &scrollbar.setTheme(scrollbarTheme())
+         edge = input_theme.bkgd.strokeWidth ?? 0
          &scrollbar.vbar.viewport.{ y = edge, yOffset = edge, xOffset = edge }
       end
 
@@ -417,19 +490,17 @@ gui.input = function(Options)
 
             if not &disabled then &text.mtSelectArea(0, 0, -1, -1) end
          elseif Event is FM_LOST_FOCUS then
-            gui.applyStyle(&bkgd, input_theme.bkgd)
+            &_focus = false
+            refreshStyle()
             &events?.lostFocus()
             if validateInput() then
                reportActivate('lost-focus', false)
             end
          else
             &_lastGoodInput = &text.string
-            if &disabled then
-               gui.applyStyle(&bkgd, input_theme.bkgd)
-            else
-               gui.applyStyle(&bkgd, input_theme.focus)
-               &events?.focus()
-            end
+            &_focus = true
+            refreshStyle()
+            if not &disabled then &events?.focus() end
          end
 
          Viewport.acDraw()
@@ -461,6 +532,8 @@ gui.input = function(Options)
             until not Msg
          end)
       end
+
+      gui.registerWidget(&viewport, &&)
 
       if Options.disabled then &disable() end
       &events?.show()

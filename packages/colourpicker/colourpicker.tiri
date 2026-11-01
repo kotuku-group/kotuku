@@ -1837,19 +1837,21 @@ function buildCentre()
    end
 
    -- Apply All floats under the last box, at the size of the chip and with its text.  updateCentre() places it,
-   -- matches its width to the chip and shows it for a base swatch.  The button positions its label for the theme's
-   -- font, so the label is moved to the chip's baseline.
+   -- matches its width to the chip and shows it for a base swatch.  The label sits on the chip's baseline; button
+   -- text positions are relative to the button's border inset.
 
    &btnApplyScheme = gui.button({
       target = col, width = &schemeChip.width, height = chip_h, label = 'Apply All',
       tip = 'Apply the scheme colours to linked swatches, darkening inner companions and adding links as needed',
       theme = {
          bkgd = { roundX = 3, roundY = 3, stroke = 'none' },
-         text = { face = colourpicker_parts.FACE_MONO, fontSize = '10px', fontStyle = 'Medium' }
+         text = {
+            face = colourpicker_parts.FACE_MONO, fontSize = '10px', fontStyle = 'Medium',
+            y = colourpicker_parts.baseline(0, chip_h, 10) - math.ceil(gui.sizing.widget.edgeWidth)
+         }
       },
       events = { activate = function[&&]() &applyScheme() end }
    })
-   &btnApplyScheme._label.y = colourpicker_parts.baseline(0, chip_h, 10) - &btnApplyScheme._labelClip.y
    &btnApplyScheme.viewport.visibility = VIS_HIDDEN
 
    &wheel = colourpicker_wheel.new(col, {

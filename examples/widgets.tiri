@@ -528,6 +528,7 @@ end
       title   = 'Panel',
       meta    = 'Scrolling text',
       scroll  = 'vertical',
+      theme   = { bkgd=win.theme.page.bkgd },
       events  = {
          resize = function(Width, Height)
             notes_width, notes_height = Width, Height
@@ -645,11 +646,34 @@ end
       xOffset = gui.sizing.widget.gap, y = gui.sizing.widget.gap, width = 1, height = 1
    })
 
+   -- The theme button switches the window between the light and dark themes with win.setTheme().  Widgets that
+   -- support theme updates restyle in place; the plain text vectors are updated here.
+
+   function themeIcon():str
+      return (win.theme.scheme is 'dark') ? 'weather/sun' : 'weather/moon'
+   end
+
+   themeButton:table
+   themeButton = gui.button({
+      target = zoomViewport,
+      icon   = themeIcon(),
+      tip    = 'Toggle Light and Dark Theme',
+      x = 0, y = 0, width = 24, height = 24,
+      events = {
+         activate = function()
+            win.setTheme((win.theme.scheme is 'dark') ? gui.themes.light : gui.themes.dark)
+            text.fill = win.theme.window.text.fill
+            notes_text.fill = win.theme.window.text.fill
+            themeButton.setIcon(themeIcon())
+         end
+      }
+   })
+
    zoomOutButton = gui.button({
       target = zoomViewport,
       label  = '-',
       tip    = 'Zoom Out',
-      x = 0, y = 0, width = 24, height = 24,
+      x = themeButton.viewport.width + gui.sizing.widget.gap, y = 0, width = 24, height = 24,
       events = { activate = function() setZoom(zoom / ZOOM_STEP) end }
    })
 
@@ -657,13 +681,14 @@ end
       target = zoomViewport,
       label  = '+',
       tip    = 'Zoom In',
-      x = zoomOutButton.viewport.width + gui.sizing.widget.gap, y = 0, width = 24, height = 24,
+      x = zoomOutButton.viewport.x + zoomOutButton.viewport.width + gui.sizing.widget.gap,
+      y = 0, width = 24, height = 24,
       events = { activate = function() setZoom(zoom * ZOOM_STEP) end }
    })
 
    zoomViewport.{
       width  = zoomInButton.viewport.x + zoomInButton.viewport.width,
-      height = math.max(zoomOutButton.viewport.height, zoomInButton.viewport.height)
+      height = math.max(themeButton.viewport.height, zoomOutButton.viewport.height, zoomInButton.viewport.height)
    }
 
    win.show()

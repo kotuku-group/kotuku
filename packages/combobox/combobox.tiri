@@ -154,7 +154,10 @@ gui.combobox = function(Options:table)
          for item in values(Items) do
             if item.label is current then found = true break end
          end
-         if not found then &setText(firstItem(Items).label) end
+
+         if not found then
+            &setText(firstItem(Items).label)
+         end
       end
 
       &viewport.acDraw()
