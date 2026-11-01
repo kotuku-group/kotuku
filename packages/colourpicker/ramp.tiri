@@ -74,11 +74,6 @@ function sameColour(A:table!, B:table!):bool
    return (math.abs(A.l - B.l) < 1e-6) and (math.abs(A.c - B.c) < 1e-6) and (math.abs(A.h - B.h) < 1e-6)
 end
 
-function enableButton(Button:table!, Enabled:bool)
-   if Enabled is (not Button.disabled) then return end
-   if Enabled then Button.enable() else Button.disable() end
-end
-
 @Doc(text=[[
 @desc Create the Tonal Ramp panel.
 @input Target viewport
@@ -232,12 +227,12 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
             step.shown = shown
             step.swatch.visibility = shown ? VIS_VISIBLE : VIS_HIDDEN
             step.button.viewport.visibility = shown ? VIS_VISIBLE : VIS_HIDDEN
-            enableButton(step.button, shown)
+            colourpicker_parts.enableButton(step.button, shown)
          end
       end
 
-      enableButton(self.btnLess, count > MIN_STEPS)
-      enableButton(self.btnMore, count < MAX_STEPS)
+      colourpicker_parts.enableButton(self.btnLess, count > MIN_STEPS)
+      colourpicker_parts.enableButton(self.btnMore, count < MAX_STEPS)
    end
 
    -- Recolour the steps for the edited colour and target gamut of State.

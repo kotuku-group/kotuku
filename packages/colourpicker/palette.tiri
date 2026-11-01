@@ -32,8 +32,11 @@ Usage:
 
    import 'json'
    import 'gui/colourpicker/colour'
+   import './format', './storage'
 
    namespace colourpalette { }
+
+format_number <const> = colourpicker_format.number
 
 MAX_SWATCHES <const> = 32
 FILE_VERSION <const> = 1
@@ -109,18 +112,6 @@ function rounded(Value:num):num
    scaled = Value * PRECISION
    if not finite(scaled) then return Value end
    return math.round(scaled) / PRECISION
-end
-
--- Format a number with up to Places decimals, dropping trailing zeros.
-
-function trim(Value:num, Places:num):str
-   s = string.format(f'%.{Places}f', Value)
-   if s.find('.', 0, true) then
-      while s.endsWith('0') do s = s.sub(0, -1) end
-      if s.endsWith('.') then s = s.sub(0, -1) end
-   end
-   if s is '-0' then s = '0' end
-   return s
 end
 
 function clampChannel(Channel:str, Value:num):num
@@ -820,15 +811,15 @@ colourpalette.describe = function(Palette:table!, Index:num!):str
    l, c, h = s.link.l, s.link.c, s.link.h
 
    if l.mode is 'abs' then
-      parts.push(f'L={trim(l.v, 2)}')
+      parts.push(f'L={format_number(l.v, 2)}')
    elseif math.round(math.abs(l.v) * 100) != 0 then
       parts.push(f'ΔL {sign(l.v)}{math.round(math.abs(l.v) * 100)}')
    end
 
    if c.mode is 'abs' then
-      parts.push(f'C={trim(c.v, 3)}')
+      parts.push(f'C={format_number(c.v, 3)}')
    elseif math.round(math.abs(c.v) * 1000) != 0 then
-      parts.push(f'ΔC {sign(c.v)}{trim(math.abs(c.v), 3)}')
+      parts.push(f'ΔC {sign(c.v)}{format_number(math.abs(c.v), 3)}')
    end
 
    if h.mode is 'abs' then
@@ -1132,7 +1123,6 @@ DATABASE.  The palette folder is the folder last used by the manager's Import an
 @result True if the file was written
 ]])
 colourpalette.save = function(Path:str!, Settings:table!):bool
-   temporary = Path .. '.tmp'
    try
       data = {
          version = FILE_VERSION,
@@ -1144,16 +1134,10 @@ colourpalette.save = function(Path:str!, Settings:table!):bool
          activePalette = Settings.activePalette ?? Settings.palette?.id
       }
       text = json.encode(data)
-      io.writeAll(temporary, text)
-      file <close> = obj.new('File', { path = temporary })
-      check file.acRename(Path)
+      colourpicker_storage.replaceFile(Path, text, Path .. '.tmp')
       return true
    except e
       print(f'Colour picker: failed to save {Path}: {e.message}')
-      try
-         file <close> = obj.new('File', { path = temporary })
-         file.mtDelete()
-      end
       return false
    end
 end
@@ -1316,15 +1300,6 @@ colourpalette.databaseFromJSON = function(Text:str):<table, str>
    return { palettes = palettes, active = active ?? palettes[0].id, skipped = skipped }
 end
 
--- A missing file is distinct from an unreadable file: the latter must never be overwritten as an empty database.
-
-function databaseText(Path:str!):str
-   err = mSys.AnalysePath(Path)
-   if err is ERR_FileNotFound then return nil end
-   if err != ERR_Okay then raise err, f'Cannot inspect {Path}' end
-   return io.readAll(Path)
-end
-
 @Doc(text=[[
 @desc Load the palette database and retain its original text for conflict detection (`sourcePath` and `sourceText`,
 which saveDatabase() checks).  Damaged files are moved to an unused .bak (or .bak.n) path.  A recovery notice
@@ -1337,7 +1312,7 @@ couldn't be read or backed up.
 colourpalette.loadDatabase = function(Path:str!):<table, str>
    local text:str
    try
-      text = databaseText(Path)
+      text = colourpicker_storage.readDatabase(Path)
    except e
       return nil, f'Cannot load {Path}: {e.message}. The file has been left unchanged.'
    end
@@ -1377,28 +1352,8 @@ that the user chose.
 @result True if written, otherwise false and a reason that can be shown to the user
 ]])
 colourpalette.saveDatabase = function(Path:str!, Database:table!, Replace:bool):<bool, str>
-   temporary = f'{Path}.{colourpalette.newID()}.tmp'
-   try
-      if not Replace then
-         current = databaseText(Path)
-         expected = (Database.sourcePath is Path) ? Database.sourceText : nil
-         if current != expected then
-            return false, 'Palettes changed in another window or application. Reopen the picker before saving.'
-         end
-      end
-      text = colourpalette.databaseToJSON(Database)
-      io.writeAll(temporary, text)
-      file <close> = obj.new('File', { path = temporary })
-      check file.acRename(Path)
-      if not Replace then Database.sourcePath, Database.sourceText = Path, text end
-      return true
-   except e
-      try
-         file <close> = obj.new('File', { path = temporary })
-         file.mtDelete()
-      end
-      return false, f'Cannot save {Path}: {e.message}'
-   end
+   return colourpicker_storage.saveDatabase(Path, Database,
+      function():str return colourpalette.databaseToJSON(Database) end, Replace)
 end
 
 @Doc(text=[[

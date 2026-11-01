@@ -10,11 +10,15 @@ Usage:
    r, g, b, in_gamut = colourmath.oklchToSrgb(0.62, 0.18, 258)
 --]]
 
+   import './format'
+
    include 'vector'
 
    module vector as mVec
 
    namespace colourmath { }
+
+format_number <const> = colourpicker_format.number
 
 GAMUT_EPSILON <const> = 0.0001 -- Tolerance applied to linear channels when testing gamut membership
 ACHROMATIC    <const> = 0.0002 -- OKLCH chroma below this value is treated as grey, so the hue is undefined
@@ -578,25 +582,13 @@ colourmath.toHex = function(R:num!, G:num!, B:num!, Alpha:num):str
    return string.format('#%02X%02X%02X', r, g, b)
 end
 
--- Format a number with a fixed number of decimal places, then remove trailing zeros.
-
-function trimmed(Value:num, Places:num):str
-   s = string.format(f'%.{Places}f', Value)
-   if s.find('.', 0, true) then
-      while s.endsWith('0') do s = s.sub(0, -1) end
-      if s.endsWith('.') then s = s.sub(0, -1) end
-   end
-   if s is '-0' then s = '0' end
-   return s
-end
-
 @Doc(text=[[
 @desc Format an OKLCH colour as a CSS oklch() string, for example 'oklch(0.62 0.18 258)'.  The alpha component is
 included only if it is less than 1.
 ]])
 colourmath.toOklchString = function(L:num!, C:num!, H:num!, Alpha:num):str
-   s = f'oklch({trimmed(L, 3)} {trimmed(C, 3)} {trimmed(H, 1)}'
-   if Alpha and (Alpha < 1) then s ..= f' / {trimmed(Alpha, 2)}' end
+   s = f'oklch({format_number(L, 3)} {format_number(C, 3)} {format_number(H, 1)}'
+   if Alpha and (Alpha < 1) then s ..= f' / {format_number(Alpha, 2)}' end
    return s .. ')'
 end
 
@@ -614,8 +606,8 @@ colourmath.formatColor = function(R:num!, G:num!, B:num!, Alpha:num, Space:str!,
    space = SPACES[Space]
    if (not space) or (not space.css) then return nil end
    places = (Places != nil) ? Places : 4
-   s = f'color({space.css} {trimmed(R, places)} {trimmed(G, places)} {trimmed(B, places)}'
-   if Alpha and (Alpha < 1) then s ..= f' / {trimmed(Alpha, 2)}' end
+   s = f'color({space.css} {format_number(R, places)} {format_number(G, places)} {format_number(B, places)}'
+   if Alpha and (Alpha < 1) then s ..= f' / {format_number(Alpha, 2)}' end
    return s .. ')'
 end
 

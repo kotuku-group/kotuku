@@ -31,6 +31,7 @@ Documentation is available in the Kotuku Wiki.
    import 'gui/colourpicker/colour', 'gui/colourpicker/palette', 'gui/colourpicker/export'
 
    import './theme', './parts', './wheel', './preview', './codeview', './eyedropper', './ramp', './manager'
+   import './storage'
 
    include 'display'
 
@@ -46,7 +47,6 @@ FOOTER_GAP     <const> = 8
 BUTTON_HEIGHT  <const> = 26
 SCREEN_FILL    <const> = 0.9 -- Maximum share of the monitor that the initial window may occupy
 FOOTER_FONT    <const> = 11.5
-FOOTER_BTN_PAD <const> = 12
 
 -- The columns abut.  Panels in adjacent columns are 12 px apart, matching the vertical gap between panels: each column
 -- leaves 6 px beside its neighbour.
@@ -694,13 +694,6 @@ function requestDroppedColour(self:table, Source:obj, Item:num, Function:func, V
    end)
 end
 
--- Enable or disable a button, only touching it if its state changes.
-
-function setButtonEnabled(Button:table, Enabled:bool)
-   if Enabled is (not Button.disabled) then return end
-   if Enabled then Button.enable() else Button.disable() end
-end
-
 -- Commit text typed into a channel's value field.  Hue wraps; the other channels are held to the slider range.
 
 function commitChannelText(self:table, Ch:table, Text:str):bool
@@ -1331,6 +1324,7 @@ function buildPalette(Target:obj)
             return false
          end
          &refresh('rename-palette')
+         &saveDatabase()
          return true
       end
    })
@@ -1737,8 +1731,8 @@ function updatePalette(self:table)
    self.paletteName.set(palette.name)
    self.paletteCount.string = f'{#palette.swatches} / {colourpalette.MAX_SWATCHES}'
 
-   setButtonEnabled(self.btnAddSwatch, #palette.swatches < colourpalette.MAX_SWATCHES)
-   setButtonEnabled(self.btnDeleteSwatch, canDeleteSwatch(state))
+   colourpicker_parts.enableButton(self.btnAddSwatch, #palette.swatches < colourpalette.MAX_SWATCHES)
+   colourpicker_parts.enableButton(self.btnDeleteSwatch, canDeleteSwatch(state))
 end
 
 -- Show the closest named colour to L, C, H in the eyedropper readout.  Long names (for example Light Goldenrod
@@ -1947,7 +1941,7 @@ function updateCentre(self:table, Source:str)
       button.viewport.width = self.schemeChip.width
       button.viewport.visibility = VIS_VISIBLE
       room = #state.palette.swatches < colourpalette.MAX_SWATCHES
-      setButtonEnabled(button, room or colourpalette.hasDependants(state.palette, state.active))
+      colourpicker_parts.enableButton(button, room or colourpalette.hasDependants(state.palette, state.active))
    else
       button.viewport.visibility = VIS_HIDDEN
    end
@@ -2594,6 +2588,7 @@ gui.dialog.colour = function(Options:table)
          deriveState(state)
          &colour = outputColour(state)
          &refresh(Source)
+         if state.active != nil then &saveDatabase() end
       end
 
       -- Update every view from the state.  Source names the view that made the change, so that its value isn't written
@@ -2611,7 +2606,6 @@ gui.dialog.colour = function(Options:table)
          updateLeft(self)
          updateRight(self, Source)
          &viewport.acDraw()
-         &saveDatabase() -- All committed palette edits persist, including edits followed by Cancel.
       end
 
       -- Change one OKLCH or alpha channel.  Source defaults to the channel, whose slider made the change.
@@ -2735,10 +2729,6 @@ gui.dialog.colour = function(Options:table)
          if nudged != value then &setChannel(Channel, nudged, 'key') end
       end
 
-      function titleText():str
-         return "Colour Picker"
-      end
-
       -- Apply a CSS colour typed into the colour input.  Text that is unchanged from the displayed value is ignored,
       -- so that leaving the field doesn't round the colour.  Text in one of INPUT_FORMATS selects that format, and
       -- the input is rewritten in the selected format.  Invalid text reverts to the current value.
@@ -2805,6 +2795,7 @@ gui.dialog.colour = function(Options:table)
          deriveState(s)
          &colour = outputColour(s)
          &refresh('drop')
+         if Index != nil then &saveDatabase() end
       end
 
       -- Add a colour as a new swatch, owned by the user and named after its colour, without changing the editing
@@ -2819,6 +2810,7 @@ gui.dialog.colour = function(Options:table)
          colourpalette.nameAfterColour(s.palette, index)
          layoutLeft(self)
          &refresh('drop')
+         &saveDatabase()
          item = &paletteItems[index]
          if item then &paletteView.revealItem(item) end
          return index
@@ -3046,6 +3038,7 @@ gui.dialog.colour = function(Options:table)
                end
                if Reason is 'key' then view.viewport.acFocus() end
                &refresh('rename')
+               if Text and (&state.palette is palette) then &saveDatabase() end
             end
          })
       end
@@ -3076,6 +3069,7 @@ gui.dialog.colour = function(Options:table)
             &selectSwatch(index)
          else
             &selectScratch()
+            &saveDatabase()
          end
       end
 
@@ -3105,6 +3099,7 @@ gui.dialog.colour = function(Options:table)
                colourpalette.reset(palette)
                layoutLeft(&&)
                &selectScratch()
+               &saveDatabase()
                &flashPaletteMeta('reset')
             end
          })
@@ -3134,6 +3129,7 @@ gui.dialog.colour = function(Options:table)
          &state.palette = palette
          layoutLeft(&&)
          &selectScratch()
+         &saveDatabase()
          &flashPaletteMeta('imported')
       end
 
@@ -3272,7 +3268,8 @@ gui.dialog.colour = function(Options:table)
             &flashNotSaved()
             return false
          end
-         saved, reason = colourpalette.saveDatabase(colourpalette.DATABASE, &db)
+         saved, reason = colourpicker_storage.saveDatabase(colourpalette.DATABASE, &db,
+            function():str return text end)
          if not saved then
             &reportDatabaseError(reason)
             return false
@@ -3438,6 +3435,7 @@ gui.dialog.colour = function(Options:table)
          &contrastDrop = nil
          layoutLeft(&&)
          &setColour(initial.l, initial.c, initial.h, initial.alpha, 'reset')
+         if &state.active is nil then &saveDatabase() end
       end
 
       &window = gui.window({
