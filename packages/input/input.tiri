@@ -290,8 +290,9 @@ gui.input = function(Options)
          end
       end
 
+      edge = (input_theme.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
       &bkgd = &inputViewport.new('VectorRectangle', table.merge({
-         x = 0, y = 0, width = '100%', height = '100%'
+         x = edge, y = edge, xOffset = edge, yOffset = edge
       }, input_theme.bkgd))
 
       clip_inset = math.ceil(input_theme.bkgd.strokeWidth) -- Whole pixels keep the text sharp
@@ -324,7 +325,7 @@ gui.input = function(Options)
          -- The scrollbar is flush with the inner edge of the border.  Its track follows the rounding of the right
          -- corners, and margins keep the slider out of the rounded ends.
 
-         edge = input_theme.bkgd.strokeWidth * 0.5
+         edge = input_theme.bkgd.strokeWidth ?? 0
          round_x = math.max(0, (tonumber(input_theme.bkgd.roundX) ?? 0) - edge)
          round_y = math.max(0, (tonumber(input_theme.bkgd.roundY ?? input_theme.bkgd.roundX) ?? 0) - edge)
          bar_style = theme.scrollbar_v ? 'scrollbar_v' : 'scrollbar'

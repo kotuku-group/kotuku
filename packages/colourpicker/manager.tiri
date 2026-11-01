@@ -42,8 +42,8 @@ AREA_FONT    <const> = 12
 NAME_LIMIT   <const> = 60
 TEXT_LIMIT   <const> = colourpalette.DESCRIPTION_LIMIT
 FLASH_TIME   <const> = 1.6
-LABEL_FONT   <const> = 10.5
-PROP_ROW     <const> = 34
+LABEL_FONT   <const> = 14
+PROP_ROW     <const> = 42
 MARKER       <const> = 10 -- The box of a swatch card's state markers
 MARKER_GAP   <const> = 4
 EXPORT_NAME  <const> = 'palettes.json'
@@ -116,7 +116,9 @@ end
 
 function label(Target:obj, X:num, Y:num, Text:str, Tokens:table):obj
    return colourpicker_parts.text(Target, {
-      x = X, y = Y, size = LABEL_FONT, face = colourpicker_parts.FACE_MONO, fill = Tokens.fg3, string = Text.upper()
+      x = X, y = Y, size = LABEL_FONT,
+      face = colourpicker_parts.FACE_MONO, fill = Tokens.fg3, style = 'Semi Bold',
+      string = Text.upper()
    })
 end
 
@@ -472,7 +474,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    end
 
    self.search = gui.input({
-      target = left.body, x = INSET, y = INSET, width = inner_w, height = SEARCH_H, placeholder = 'Search palettes…',
+      target = left.body, x = INSET, y = 4, width = inner_w, height = SEARCH_H+4, placeholder = 'Search palettes…',
       theme = inputText(SEARCH_H),
       events = {
          -- Keystrokes that arrive in the same message cycle update the list once.
@@ -532,15 +534,15 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       until not Msg
    end)
 
-   list_y = INSET + SEARCH_H + 8
-   buttons_y = left_body_h - INSET - ICON_BUTTON
+   list_y = SEARCH_H + INSET + 6
+   buttons_y = left_body_h - 4 - ICON_BUTTON
    list_h = buttons_y - 8 - list_y
 
    self.list = gui.listView({
       target     = left.body,
-      x          = INSET - LIST_EDGE,
+      x          = &theme.panel.bkgd.strokeWidth,
       y          = list_y - LIST_EDGE,
-      width      = inner_w + (LIST_EDGE * 2),
+      xOffset    = &theme.panel.bkgd.strokeWidth,
       height     = list_h + (LIST_EDGE * 2),
       borderless = true,
       showIcons  = false,
@@ -633,7 +635,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    if starter_h > 0 then
       starter_panel = gui.panel({
          target = self.viewport, x = PAD, y = PAD + left_h + GAP, width = LEFT_W, height = starter_h,
-         title = 'Starter Palettes', meta = tostring(#self.starters), padding = colourpicker_parts.PANEL_PADDING
+         title = 'Starter Palettes', meta = tostring(#self.starters),
+         padding = { left = 0, top=0, right = &theme.panel.bkgd.strokeWidth } --, padding = colourpicker_parts.PANEL_PADDING
       })
       self.starterPanel = starter_panel
 
@@ -644,10 +647,10 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
       self.starterList = gui.listView({
          target     = starter_panel.body,
-         x          = INSET - LIST_EDGE,
-         y          = INSET - LIST_EDGE,
-         width      = inner_w + (LIST_EDGE * 2),
-         height     = starter_list_h + (LIST_EDGE * 2),
+         x          = &theme.panel.bkgd.strokeWidth, --INSET - LIST_EDGE,
+         y          = 0,
+         xOffset    = 0, --inner_w + (LIST_EDGE * 2),
+         yOffset    = 0, --     = starter_list_h + (LIST_EDGE * 2),
          borderless = true,
          showIcons  = false,
          dragDrop   = true,
@@ -706,7 +709,8 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    centre = gui.panel({
       target = self.viewport, x = PAD + LEFT_W + GAP, y = PAD, width = centre_w, height = panel_h,
-      truncate = 'title', scroll = 'vertical', padding = { left = INSET, right = 4, top = INSET, bottom = INSET }
+      truncate = 'title', scroll = 'vertical',
+      padding = { left = INSET, right = &theme.panel.bkgd.strokeWidth }
    })
    self.centrePanel = centre
 
@@ -714,7 +718,6 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    self.area = centre.body
    self.page = centre.page
    self.page.height = area_h
-   self.page.new('VectorRectangle', { width = '100%', height = '100%', fill = t.panel })
    self.scrollbar = centre.scrollbar
    card_w = math.floor((area_w - self.scrollbar.v_thickness - 4 - (CARD_GAP * (CARD_COLS - 1))) / CARD_COLS)
 
@@ -722,10 +725,12 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    function openSwatch(Index:num)
       if self.selected is nil then return end
+
       if self.starter then
          self.flash('read-only', true)
          return
       end
+
       sel = self.selected
       processing.delayedCall(function() Options.open(sel, Index) end)
    end
@@ -733,8 +738,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    -- Scroll the card at Index into view
 
    function revealCard(Index:num!)
-      top = math.floor(Index / CARD_COLS) * (CARD_H + CARD_GAP)
+      top = INSET + (math.floor(Index / CARD_COLS) * (CARD_H + CARD_GAP))
       view_top = -self.page.y
+
       if top < view_top then
          self.scrollbar.scrollPage(0, view_top - top)
       elseif top + CARD_H > view_top + area_h then
@@ -852,7 +858,6 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    label(info.body, INSET, y, 'Description', t)
    y += 6
    notes_theme = {
-      bkgd = { fill = t.sunk, stroke = t.border, strokeWidth = 1, roundX = 4, roundY = 4 },
       text = { x = AREA_PAD - 1, y = AREA_PAD + math.round(AREA_FONT * 0.9) - 1,
          face = colourpicker_parts.FACE_UI, fontSize = f'{AREA_FONT}px', fontStyle = 'Regular', fill = t.fg0 },
       scrollbar = { thickness = 8 }
@@ -1084,13 +1089,16 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          i = entry.index
          s = palette.swatches[i]
          x = (position % CARD_COLS) * (card_w + CARD_GAP)
-         y = math.floor(position / CARD_COLS) * (CARD_H + CARD_GAP)
+         y = INSET + (math.floor(position / CARD_COLS) * (CARD_H + CARD_GAP))
+
          card = swatchCard(self.page, x, y, card_w, s, {
             locked = colourpalette.isReserved(palette, i), linked = s.base != nil
          }, t)
+
          card.index = i
          card.setSelected(i is self.swatch, self.cardsFocused)
          index = i
+
          card.viewport.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
             repeat
                if (Msg.type is JET_LMB) and (Msg.value is 1) then
@@ -1105,11 +1113,12 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
                Msg = Msg.next
             until not Msg
          end)
+
          self.cards.push(card)
       end
 
       rows = math.ceil(#palette.swatches / CARD_COLS)
-      self.page.height = math.max(area_h, (rows * (CARD_H + CARD_GAP)) - CARD_GAP)
+      self.page.height = math.max(area_h, (rows * (CARD_H + CARD_GAP)) - CARD_GAP + (INSET * 2))
       min_y = math.min(0, area_h - self.page.height)
       if self.page.y < min_y then self.page.y = min_y end
    end
@@ -1126,6 +1135,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       editable = palette and not palette.starter
       self.nameInput.setText(palette?.name ?? '')
       if not self.paletteNotes.focused then self.paletteNotes.setText(palette?.description ?? '') end
+
       if editable then
          self.nameInput.enable()
          self.paletteNotes.enable()
@@ -1137,6 +1147,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          self.swatchNotes.disable()
          self.btnEdit.disable()
       end
+
       info.setMeta(palette?.starter ? 'read-only' : '')
 
       s = (palette and (self.swatch != nil)) ? palette.swatches[self.swatch] : nil

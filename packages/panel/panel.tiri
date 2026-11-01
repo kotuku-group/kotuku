@@ -495,7 +495,7 @@ gui.panel = function(Options:table!)
 
       if Options.header != false then
          -- The optional header fill covers the header inside the border.
-         if theme.header then
+         if theme.header and theme.header.fill != theme.bkgd.fill then
             fill_round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
             fill_round_y = theme.bkgd.roundY or fill_round_x
             fill_round_x = math.max(0, fill_round_x - (edge * 0.5))

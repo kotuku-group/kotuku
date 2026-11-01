@@ -207,14 +207,6 @@ function buildTheme(Base:table):table
    theme = table.clone(Base) -- Keeps the scheme, palette and init fields and the menubar.menu alias
 
    overlay(theme, {
-      input = { -- Also used by combobox and checkbox
-         bkgd  = { fill = scheme is 'dark' ? 'rgb(0 0 0 / .55)' : 'rgb(255 255 255 / .75)', stroke = t.border }
-      },
-      slider = {
-         bkgd      = { },
-         fore      = { opacity = 1 },
-         foreFocus = { }
-      },
       panel = {
          headerHeight = PANEL_HEADER
       }

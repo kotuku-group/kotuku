@@ -283,10 +283,9 @@ colourpicker_parts.notice = function(Viewport:obj!, Options:table!):table
       })
    }
 
-   self.bkgd = self.viewport.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = Options.width - 1, height = NOTICE_HEIGHT - 1, roundX = 4, roundY = 4,
-      fill = t.sunk, stroke = t.border, strokeWidth = 1
-   })
+   self.bkgd = self.viewport.new('VectorRectangle', table.merge({
+      x = 0.5, y = 0.5, width = Options.width - 1, height = NOTICE_HEIGHT - 1, strokeWidth = 1
+   }, &theme.input.bkgd, false, true))
 
    self.glyph = self.viewport.new('VectorViewport', {
       x = Options.width - 20, y = (NOTICE_HEIGHT - 12) * 0.5, width = 12, height = 12, visibility = VIS_HIDDEN
@@ -320,8 +319,6 @@ colourpicker_parts.notice = function(Viewport:obj!, Options:table!):table
       self.clipped.visibility = (Colour and Clipped) ? VIS_VISIBLE : VIS_HIDDEN
       self.label.x          = Colour ? 26 : 8
       self.label.string     = Text ?? ''
-      self.bkgd.fill        = t.sunk
-      self.bkgd.stroke      = t.border
       self.glyph.visibility = OutOfGamut ? VIS_VISIBLE : VIS_HIDDEN
       self.label.fill       = OutOfGamut ? colours.text : t.fg1
    end
@@ -999,62 +996,52 @@ colourpicker_parts.badge = function(Target:obj, Label:str, Tokens:table):table
    return self
 end
 
--- A button that toggles between two states.  The pressed state is drawn in the accent colours, and is restored
--- after the button's own hover, focus and enable styling.
+-- A button that toggles between two states.
 
 colourpicker_parts.toggleButton = function(Options:table):table
    t = Options.tokens
    base = gui.getTheme(Options.target).button
-   self = { pressed = false, hover = false }
+   state = { pressed = false, hover = false }
 
-   -- The button restores its own background on hover and focus changes, so the pressed style is reapplied after each.
-   -- Focus events precede the button's restyle, so they reapply on the next cycle.  The label follows the background:
-   -- the base theme's button text can be light on its dark background.
-
-   function restyle()
-      if not self.pressed then return end
-      gui.applyStyle(self.button.bkgd, { fill = t.accentSoft, stroke = &theme.palette.prime })
-      self.button._label?.fill = t.fg0
+   function[&&] restyle()
+      state.button.setTheme(table.merge(&theme.button, {
+         bkgd = {
+            fill = state.pressed ? &theme.button.primary.bkgd.fill : &theme.button.bkgd.fill
+         }
+      }, true, true))
    end
 
-   function restyleLater() -- The picker may have been closed in the meantime
-      if obj.find(self.bkgdID) then restyle() end
-   end
-
-   function release()
-      style = { fill = self.hover ? (base.highlight?.fill ?? base.bkgd.fill) : base.bkgd.fill }
-      style.stroke = self.button.hasFocus ? (base.focus?.stroke ?? base.bkgd.stroke) : base.bkgd.stroke
-      gui.applyStyle(self.button.bkgd, style)
-      self.button._label?.fill = base.text.fill
-   end
-
-   self.button = gui.button({
-      target = Options.target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
-      label = Options.label, theme = Options.theme, tip = Options.tip,
+   state.button = gui.button({
+      target = Options.target,
+      x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      label  = Options.label,
+      theme  = Options.theme,
+      tip    = Options.tip,
       events = {
-         activate    = function() Options.onToggle(not self.pressed) end,
+         activate = function()
+            Options.onToggle(not state.pressed)
+         end,
          cursorEntry = function()
-            self.hover = true
+            state.hover = true
             restyle()
          end,
-         cursorExit  = function()
-            self.hover = false
+         cursorExit = function()
+            state.hover = false
             restyle()
          end,
-         focus       = function() processing.delayedCall(restyleLater) end,
-         lostFocus   = function() processing.delayedCall(restyleLater) end,
-         enable      = restyle
+         enable = restyle
       }
    })
-   self.bkgdID = self.button.bkgd.id
 
-   self.set = function(Pressed:bool)
-      if Pressed is self.pressed then return end
-      self.pressed = Pressed
-      if Pressed then restyle() else release() end
+   state.bkgdID = state.button.bkgd.id
+
+   state.set = function(Pressed:bool)
+      if Pressed is state.pressed then return end
+      state.pressed = Pressed
+      restyle()
    end
 
-   return self
+   return state
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1085,6 +1072,7 @@ colourpicker_parts.after = function(Seconds:num!, Function:func!):any
          end
       end)
    end)
+
    if err != ERR_Okay then return nil end
    timer.handle = handle
    return timer
