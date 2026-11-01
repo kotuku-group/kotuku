@@ -3463,6 +3463,7 @@ gui.dialog.colour = function(Options:table)
 
       &window.surface.subscribe('free', function[<weak> &&]()
          &finish(nil)
+         if &themeName then gui.themes[&themeName] = nil end -- The derived theme is specific to this window
       end)
 
       -- The window is created with the requested or default gui theme, as for any other window.  The picker theme is

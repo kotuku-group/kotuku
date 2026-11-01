@@ -1640,6 +1640,65 @@ gui.applyStyle = function(Vector:any!, Set:table)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Returns the theme widget registry of the outermost scene that hosts Object.
+
+function widgetRegistry(Object:obj!):table
+   local scene:obj
+   if obj.class(Object).name is 'VectorScene' then
+      scene = Object
+   else
+      scene = Object.scene
+   end
+
+   while scene.hostScene do scene = scene.hostScene end
+
+   local state = scene.state()
+   state.widgets ?= setmetatable({ }, { __mode='k' })
+   return state.widgets
+end
+
+@Doc(text=[[
+Registers a widget to receive theme updates from gui.broadcastTheme().  Internal function for widget libraries.
+
+The registry belongs to the outermost scene that hosts Viewport.  Widgets are weakly referenced, so an entry lasts
+until the first garbage collection after the widget is unreferenced.  A widget whose viewport is freed is skipped
+until then.  Widgets are updated in no particular order.
+
+The widget table must provide `viewport` and an `applyTheme(Theme)` function.  The function receives the complete
+theme table and is expected to rebuild its own sub-theme from it, then update the presentation values that can change
+in place.
+
+-INPUT-
+Viewport: The widget's viewport, or any vector in the scene that the widget belongs to.
+Widget: The widget's interface table.
+]])
+gui.registerWidget = function(Viewport:obj!, Widget:table!)
+   widgetRegistry(Viewport)[Widget] = true
+end
+
+@Doc(text=[[
+Sends a theme to every widget that is registered with a scene.  Internal function for gui.window.setTheme().
+
+Each widget's `applyTheme()` function is called with Theme.  Widgets whose viewport no longer exists are skipped.  An
+error raised by a widget is logged and does not stop the broadcast.
+
+-INPUT-
+Scene: The window's VectorScene, or any vector within it.
+Theme: The complete theme table.
+]])
+gui.broadcastTheme = function(Scene:obj!, Theme:table!)
+   for widget in widgetRegistry(Scene) do
+      if not widget.viewport?.exists() then continue end
+
+      try
+         widget.applyTheme(Theme)
+      except ex
+         msg(f'Widget failed to apply theme: {ex.message}')
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 function modifyAlpha(Colour:str!, Alpha:num!):str
    mVec.ReadPainter(nil, Colour, glPainter)

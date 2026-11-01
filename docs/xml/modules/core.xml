@@ -2049,7 +2049,7 @@ identifier has no effect.</li>
       <error code="Search">The subscription does not refer to an active timer.</error>
       <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-      <error code="AlreadyLocked">Object or resource has already been locked</error>
+      <error code="AlreadyLocked">The timer is executing.  A removal request is deferred to the dispatcher's next cycle.</error>
     </result>
   </function>
 

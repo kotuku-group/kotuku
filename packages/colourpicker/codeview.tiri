@@ -128,12 +128,11 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
 
    self.setTab = function[&&](Index:num!)
       self.tab = Index
+      -- The tab buttons are created with tab_theme, so the inactive tabs need no override.  The active tab takes the
+      -- primary style, with tab_theme kept on top of it.
+
       for i, tab in self.tabs do
-         if i is Index then
-            tab.button.setTheme(table.merge(&theme.button.primary, tab_theme, true, true))
-         else
-            tab.button.setTheme(table.merge(&theme.button, tab_theme, true, true))
-         end
+         tab.button.setTheme((i is Index) ? table.merge(&theme.button.primary, tab_theme, true, true) : nil)
       end
    end
 

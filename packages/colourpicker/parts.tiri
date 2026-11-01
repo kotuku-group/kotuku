@@ -1013,11 +1013,7 @@ colourpicker_parts.toggleButton = function(Options:table):table
    state = { pressed = false, hover = false }
 
    function[&&] restyle()
-      state.button.setTheme(table.merge(&theme.button, {
-         bkgd = {
-            fill = state.pressed ? &theme.button.primary.bkgd.fill : &theme.button.bkgd.fill
-         }
-      }, true, true))
+      state.button.setTheme(state.pressed ? { bkgd = { fill = &theme.button.primary.bkgd.fill } } : nil)
    end
 
    state.button = gui.button({
