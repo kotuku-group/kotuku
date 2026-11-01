@@ -29,6 +29,7 @@ FDEF argsGetUserFocus[] = { { "Result", FD_OBJECTID }, { 0, 0 } };
 FDEF argsGetVisibleArea[] = { { "Error", FD_INT|FD_ERROR }, { "Surface", FD_OBJECTID }, { "X", FD_RESULT|FD_INT }, { "Y", FD_RESULT|FD_INT }, { "AbsX", FD_RESULT|FD_INT }, { "AbsY", FD_RESULT|FD_INT }, { "Width", FD_RESULT|FD_INT }, { "Height", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsLockCursor[] = { { "Error", FD_INT|FD_ERROR }, { "Surface", FD_OBJECTID }, { 0, 0 } };
 FDEF argsReadPixel[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { 0, 0 } };
+FDEF argsReadPrimarySelection[] = { { "Error", FD_INT|FD_ERROR }, { "Recipient", FD_OBJECTID }, { "Item", FD_INT }, { 0, 0 } };
 FDEF argsReadRGBPixel[] = { { "Void", FD_VOID }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "RGB8:RGB", FD_RESULT|FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsResample[] = { { "Error", FD_INT|FD_ERROR }, { "Bitmap", FD_OBJECTPTR }, { "ColourFormat:ColourFormat", FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsRestoreCursor[] = { { "Error", FD_INT|FD_ERROR }, { "Cursor", FD_INT }, { "Owner", FD_OBJECTID }, { 0, 0 } };
@@ -40,6 +41,7 @@ FDEF argsSetCursorPos[] = { { "Error", FD_INT|FD_ERROR }, { "X", FD_DOUBLE }, { 
 FDEF argsSetCustomCursor[] = { { "Error", FD_INT|FD_ERROR }, { "Surface", FD_OBJECTID }, { "Flags", FD_INT }, { "Bitmap", FD_OBJECTPTR }, { "HotX", FD_INT }, { "HotY", FD_INT }, { "Owner", FD_OBJECTID }, { 0, 0 } };
 FDEF argsSetHostOption[] = { { "Error", FD_INT|FD_ERROR }, { "Option", FD_INT }, { "Value", FD_INT64 }, { 0, 0 } };
 FDEF argsSetModalSurface[] = { { "Result", FD_OBJECTID }, { "Surface", FD_OBJECTID }, { 0, 0 } };
+FDEF argsSetPrimarySelection[] = { { "Error", FD_INT|FD_ERROR }, { "Text", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsStartCursorDrag[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FD_OBJECTID }, { "Item", FD_INT }, { "Datatypes", FDF_CPPSTRING }, { "Surface", FD_OBJECTID }, { 0, 0 } };
 FDEF argsSubscribeInput[] = { { "Error", FD_INT|FD_ERROR }, { "Callback", FD_FUNCTIONPTR }, { "SurfaceFilter", FD_OBJECTID }, { "Mask", FD_INT }, { "DeviceFilter", FD_OBJECTID }, { "Handle", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsSync[] = { { "Void", FD_VOID }, { "Bitmap", FD_OBJECTPTR }, { 0, 0 } };
@@ -90,6 +92,8 @@ const struct Function glFunctions[] = {
    { (APTR)gfx::UnlockCursor, "UnlockCursor", argsUnlockCursor },
    { (APTR)gfx::UnsubscribeInput, "UnsubscribeInput", argsUnsubscribeInput },
    { (APTR)gfx::WindowHook, "WindowHook", argsWindowHook },
+   { (APTR)gfx::SetPrimarySelection, "SetPrimarySelection", argsSetPrimarySelection },
+   { (APTR)gfx::ReadPrimarySelection, "ReadPrimarySelection", argsReadPrimarySelection },
    { nullptr, nullptr, nullptr }
 };
 

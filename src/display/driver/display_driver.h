@@ -27,7 +27,7 @@ struct DisplayInfo;
 struct resolution;
 class DisplayDriver;
 
-constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 16;
+constexpr int DISPLAY_DRIVER_INTERFACE_VERSION = 17;
 
 using CreateDisplayDriver = DisplayDriver *(*)(uint32_t InterfaceVersion, struct CoreBase *Core);
 using DestroyDisplayDriver = void (*)(DisplayDriver *Driver);
@@ -129,6 +129,7 @@ struct DriverCallbacks {
    void (*ClipboardUpdated)();
    void (*ClipboardData)(CSTRING Mime, CSTRING Data, size_t Length, bool Dropped, OBJECTID SurfaceID);
    void (*ClipboardLost)();
+   void (*PrimarySelection)(OBJECTID Recipient, int Item, CSTRING Text, size_t Length);
    ERR (*EnableDragDrop)(APTR HostHandle);
    void (*DisableDragDrop)(APTR HostHandle);
    void (*DragDropped)(OBJECTID SurfaceID, CSTRING Datatypes);
@@ -259,6 +260,8 @@ public:
    }
    virtual ERR clipboardClear() { return ERR::NoSupport; }
    virtual ERR clipboardRead() { return ERR::NoSupport; }
+   virtual ERR setPrimarySelection(std::string_view Text) { return ERR::NoSupport; }
+   virtual ERR readPrimarySelection(OBJECTID Recipient, int Item) { return ERR::NoSupport; }
 };
 
 class HeadlessDriver : public DisplayDriver {

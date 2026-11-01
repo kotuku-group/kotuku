@@ -27,6 +27,17 @@ at the text that they refer to, and are kept within the bounds of the scene.  Th
 scrolls, and close if it scrolls out of view.  Pop-ups are not transformed with a rotated or scaled host, although
 their position follows it.  Refer to #ShowCompletions() for the
 keyboard and pointer interaction.
+
+Drag and drop requires the hosting @VectorScene to have `VPF::DROP_TARGETS` set.  The editor registers its visible
+#View as a drop destination.  File paths are reported through #FileDrop.  Text drops insert at the pointer's document
+position, preserve existing text, convert line endings to the document mode and require `SCIF::EDIT`.
+
+Dragging selected text within or between editors moves it by default, while Ctrl copies it.  Source text is removed
+only after an editor commits the insertion; dropping onto another kind of widget exports a copy.  Native outbound
+dragging and X11 XDND inbound transport depend on Display support and are separate from these internal operations.
+
+On X11, selecting text publishes it as the primary selection.  The middle mouse button inserts the primary selection
+at that position as one undo action, with document line-ending conversion and read-only enforcement.
 -END-
 
 *********************************************************************************************************************/
@@ -118,6 +129,7 @@ keyboard and pointer interaction.
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
+#include <kotuku/modules/config.h>
 #include <kotuku/modules/font.h>
 #include <kotuku/modules/display.h>
 #include <kotuku/modules/font.h>
@@ -288,30 +300,76 @@ static ERR MODExpunge(void)
 }
 
 //********************************************************************************************************************
-// TODO Phase 7: Drag and drop support.  This was previously subscribed to the AC::DragDrop action of the host surface.
+static bool accepts_editor_drop(extScintilla *Self, std::string_view Types)
+{
+   if ((not Self->API) or ((Self->Flags & SCIF::DISABLED) != SCIF::NIL)) return false;
+   for (auto type : Types) {
+      if ((type IS char(DATA::FILE)) and Self->FileDrop.defined() and not Self->FileDrop.stale()) return true;
+      if ((type IS char(DATA::TEXT)) and ((Self->Flags & SCIF::EDIT) != SCIF::NIL)) return true;
+   }
+   return false;
+}
 
-[[maybe_unused]] static void notify_dragdrop(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct acDragDrop *Args)
+static ERR prepare_editor_drop(objVectorViewport *, objConfig *Snapshot, double X, double Y, APTR)
 {
    auto Self = (extScintilla *)CurrentContext();
+   auto pointer = gfx::AccessPointer();
+   if (not pointer) return ERR::Cancelled;
+   std::string_view types;
+   pointer->getDragDatatypes(types);
+   const bool accepted = accepts_editor_drop(Self, types);
+   pointer->setDragFeedback(accepted ? 1 : 0);
+   ReleaseObject(pointer);
+   if (not accepted) return ERR::Cancelled;
+   Snapshot->write("Scintilla", "Editor", std::to_string(Self->UID));
+   Snapshot->write("Scintilla", "Position", std::to_string(Self->API->panDropPosition(X, Y)));
+   Snapshot->write("Scintilla", "Revision", std::to_string(Self->DocumentRevision));
+   return ERR::Okay;
+}
 
-   // There are two drag-drop cases - DATA::TEXT and DATA::FILE.  DATA::TEXT is something that we can handle ourselves,
-   // while DATA::FILE is handled via an external function provided by the user.  Refer to the DataFeed action for
-   // further code.
+static void notify_dragdrop(OBJECTPTR, ACTIONID, ERR Result, struct acDragDrop *Args)
+{
+   auto Self = (extScintilla *)CurrentContext();
+   if ((not Args) or (not Args->Source) or (Result != ERR::Okay) or (not Self->API) or Self->Drop.active) return;
+   auto pointer = gfx::AccessPointer();
+   if (not pointer) return;
+   pointer->setDragFeedback(0);
+   const auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if ((Self->Flags & SCIF::DISABLED) != SCIF::NIL) return;
 
-   if (!Args) return;
-
-   // Send the source an item request
-
-   struct dcRequest request;
-   request.Item          = Args->Item;
-   request.Preference[0] = int8_t(DATA::FILE);
-   request.Preference[1] = int8_t(DATA::TEXT);
-   request.Preference[2] = 0;
-
-   if (!acDataFeed(Args->Source, Self, DATA::REQUEST,
-         std::span<const int8_t>((const int8_t *)&request, sizeof(request)))) {
-      // The source will return a DATA::RECEIPT for the items that we've asked for (see the DataFeed action).
+   double x = 0, y = 0;
+   Self->Scene->getDropX(x);
+   Self->Scene->getDropY(y);
+   int position = Self->API->panDropPosition(x, y);
+   OBJECTID snapshot_id = 0;
+   pointer->getDropSession(snapshot_id);
+   if (snapshot_id) {
+      kt::ScopedObjectLock<objConfig> snapshot(snapshot_id);
+      int editor = 0;
+      std::string revision;
+      if ((not snapshot.granted()) or
+          (snapshot->read("Scintilla", "Editor", editor) != ERR::Okay) or (editor != Self->UID) or
+          (snapshot->read("Scintilla", "Position", position) != ERR::Okay) or
+          (snapshot->read("Scintilla", "Revision", revision) != ERR::Okay) or
+          (revision != std::to_string(Self->DocumentRevision))) return;
    }
+
+   bool files = false, text = false;
+   for (auto type : Args->Datatype) {
+      if (type IS char(DATA::FILE)) files = Self->FileDrop.defined() and not Self->FileDrop.stale();
+      if (type IS char(DATA::TEXT)) text = (Self->Flags & SCIF::EDIT) != SCIF::NIL;
+   }
+   if (not (files or text)) return;
+   Self->Drop = { Args->Source->UID, Args->Item, position, Self->DocumentRevision, true };
+   const auto editor_id = Self->UID;
+   dcRequest request = {};
+   request.Item = Args->Item;
+   request.Preference[0] = char(files ? DATA::FILE : DATA::TEXT);
+   request.Preference[1] = char(files and text ? DATA::TEXT : DATA::NIL);
+   acDataFeed(Args->Source, Self, DATA::REQUEST,
+      std::span<const int8_t>((const int8_t *)&request, sizeof(request)));
+   // Sources answer synchronously.  An unanswered request cannot redirect a later receipt into this editor.
+   if (CheckResourceExists(editor_id) IS ERR::True) Self->Drop.active = false;
 }
 
 //********************************************************************************************************************
@@ -487,6 +545,14 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
    if (not Self->API) return ERR::Okay;
 
    for (auto event=Events; event; event=event->Next) {
+      if ((event->Flags & JTYPE::DRAG_ITEM) != JTYPE::NIL) {
+         if (auto pointer = gfx::AccessPointer()) {
+            std::string_view types;
+            pointer->getDragDatatypes(types);
+            if (not types.empty()) pointer->setDragFeedback(accepts_editor_drop(Self, types) ? 1 : 0);
+            ReleaseObject(pointer);
+         }
+      }
       // The pointer position is recorded while disabled, because the scene does not repeat a movement event if the
       // pointer has not moved.
 
@@ -509,6 +575,8 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
       if ((Self->Flags & SCIF::DISABLED) != SCIF::NIL) continue;
 
       if ((event->Flags & JTYPE::BUTTON) != JTYPE::NIL) {
+         // Scintilla handles held buttons through Tick(); a repeat is not a new selection or drag gesture.
+         if ((event->Flags & JTYPE::REPEATED) != JTYPE::NIL) continue;
          const auto time = (unsigned int)(event->Timestamp / 1000LL); // Scintilla measures time in milliseconds
          if (event->Value > 0) {
             // The scene focuses the viewport under the pointer, which is not the Focus viewport if the client has
@@ -836,6 +904,8 @@ static ERR SCINTILLA_Clipboard(extScintilla *Self, struct acClipboard *Args)
 
 //*****************************************************************************
 
+static ERR receive_drop(extScintilla *, struct acDataFeed *);
+
 static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
 {
    kt::Log log;
@@ -847,45 +917,7 @@ static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
       SCICALL(SCI_APPENDTEXT, Args->Buffer.size(), (const char *)Args->Buffer.data());
    }
    else if (Args->Datatype IS DATA::RECEIPT) {
-      log.msg("Received item receipt from object %d.", Args->Object ? Args->Object->UID : 0);
-
-      objXML::create xml = { fl::Statement(
-         std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size())) };
-      if (xml.ok()) {
-         for (auto &tag : xml->Tags) {
-            if (iequals("file", tag.name())) {
-               // If the file is being dragged within the same device, it will be moved instead of copied.
-
-               for (auto &a : tag.Attribs) {
-                  if (iequals("path", a.Name)) {
-                     if (Self->FileDrop.isC()) {
-                        kt::SwitchContext ctx(Self->FileDrop.Context);
-                        auto routine = (void (*)(extScintilla *, CSTRING, APTR))Self->FileDrop.Routine;
-                        routine(Self, a.Value.c_str(), Self->FileDrop.Meta);
-                     }
-                     else if (Self->FileDrop.isScript()) {
-                        ScriptArg args[] = {
-                           ScriptArg("Scintilla", Self, FD_OBJECTPTR),
-                           ScriptArg("Path",      a.Value.c_str(), FD_STR)
-                        };
-
-                        auto script = (objScript *)Self->FileDrop.Context;
-                        script->callback(Self->FileDrop.procedureID(), args, std::ssize(args), nullptr);
-                     }
-                     break;
-                  }
-               }
-            }
-            else if (iequals("text", tag.name())) {
-               if ((!tag.Children.empty()) and (tag.Children[0].isContent())) {
-                  Self->insertText(tag.Children[0].Attribs[0].Value.c_str(), -1);
-               }
-            }
-         }
-
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::CreateObject);
+      return receive_drop(Self, Args);
    }
 
    return ERR::Okay;
@@ -1005,6 +1037,8 @@ Disable: Disables user interaction with the editor.
 
 static ERR SCINTILLA_Disable(extScintilla *Self)
 {
+   Self->Drop.active = false;
+   Self->PrimaryDrop.active = false;
    if ((Self->Flags & SCIF::DISABLED) IS SCIF::NIL) {
       Self->Flags |= SCIF::DISABLED;
       hide_context_menu(Self);
@@ -1252,7 +1286,10 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
       Self->Canvas->subscribeInput(JTYPE::BUTTON|JTYPE::MOVEMENT|JTYPE::EXT_MOVEMENT|JTYPE::CROSSING,
          C_FUNCTION(input_canvas));
 
-      // TODO Phase 7: Drag and drop support via notify_dragdrop()
+      // Register the visible client, rather than the scrolling Page or the application's host viewport.
+      Self->View->setDropTarget(true);
+      Self->View->setDropPrepare(C_FUNCTION(prepare_editor_drop));
+      SubscribeAction(Self->View, AC::DragDrop, C_FUNCTION(notify_dragdrop));
    }
 
    SubscribeAction(Self->Viewport, AC::Free, C_FUNCTION(notify_free_viewport));
@@ -2153,10 +2190,19 @@ static ERR SET_CursorColour(extScintilla *Self, RGB8 *Value)
 -FIELD-
 FileDrop: A callback for receiving drag and drop file notifications.
 
-Set this field with a reference to a callback function to receive notifications when the user drops a file onto the
-Scintilla object's surface.  The prototype for the callback function is `ERR Function(*Scintilla, CSTRING Path)`
+Set this field with a function reference to receive the paths of files that the user drops onto the editor.  The
+prototype for the callback function is `Function(*Scintilla, CSTRING Path)`.  The callback is called once for each
+dropped file, in the order provided by the drag source.
 
-If multiple files are dropped, the callback will be repeatedly called until all of the file paths have been reported.
+The editor accepts file drops only while this field is set, so leave it undefined if files are not to be dropped
+onto the editor.  The editor does not act on the dropped files; it is the responsibility of the client to open, load
+or insert them as required.  File drops do not require the `SCIF::EDIT` flag, but are refused while the editor is
+disabled.  When a drag source offers both files and text, the files are preferred and the text is not inserted.
+
+Delivery is cancelled if the document is modified between the drop and the arrival of the data.  If the callback
+destroys the editor, the remaining paths are not reported.
+
+Drag and drop requires the hosting @VectorScene to have `VPF::DROP_TARGETS` set.
 
 *********************************************************************************************************************/
 
@@ -2171,8 +2217,10 @@ static ERR GET_FileDrop(extScintilla *Self, FUNCTION * &Value)
 
 static ERR SET_FileDrop(extScintilla *Self, FUNCTION *Value)
 {
-   if (Value) Self->FileDrop = *Value;
-   else Self->FileDrop.clear();
+   auto callback = Value ? *Value : FUNCTION();
+   if (callback.defined()) callback.pin();
+   if (Self->FileDrop.defined()) Self->FileDrop.unpin();
+   Self->FileDrop = callback;
    return ERR::Okay;
 }
 
@@ -3291,6 +3339,7 @@ static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
 
 //********************************************************************************************************************
 
+#include "pan_drag.cxx"
 #include "class_scintilla_ext.cxx"
 #include "pan_classes.cxx"
 #include "pan_window.cxx"
@@ -3336,6 +3385,8 @@ static void paint_dirty(extScintilla *Self)
 //********************************************************************************************************************
 
 extScintilla::~extScintilla() {
+   if (DragClipboard) { FreeResource(DragClipboard); DragClipboard = nullptr; }
+   if (FileDrop.defined()) { FileDrop.unpin(); FileDrop.clear(); }
    free_context_menu(this); // Before the API is deleted, because the script reports the menu closing
 
    // The API is cleared first, because Scintilla closes its pop-ups while it is being destroyed.

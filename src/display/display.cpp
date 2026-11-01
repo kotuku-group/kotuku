@@ -21,7 +21,6 @@ ERR GET_VDensity(extDisplay *Self, int *Value);
 
 std::array<uint8_t, 256 * 256> glAlphaLookup;
 
-
 #include "module_def.c"
 
 //********************************************************************************************************************
@@ -149,6 +148,7 @@ void DriverSetFocus(OBJECTID SurfaceID);
 void DriverClipboardUpdated();
 void DriverClipboardData(CSTRING Mime, CSTRING Data, size_t Length, bool Dropped, OBJECTID SurfaceID);
 void DriverClipboardLost();
+void DriverPrimarySelection(OBJECTID Recipient, int Item, CSTRING Text, size_t Length);
 ERR DriverEnableDragDrop(APTR HostHandle);
 void DriverDisableDragDrop(APTR HostHandle);
 void DriverDragDropped(OBJECTID SurfaceID, CSTRING Datatypes);
@@ -186,6 +186,7 @@ const DriverCallbacks glDriverCallbacks = {
    .ClipboardUpdated = display::DriverClipboardUpdated,
    .ClipboardData = display::DriverClipboardData,
    .ClipboardLost = display::DriverClipboardLost,
+   .PrimarySelection = display::DriverPrimarySelection,
    .EnableDragDrop = display::DriverEnableDragDrop,
    .DisableDragDrop = display::DriverDisableDragDrop,
    .DragDropped = display::DriverDragDropped,

@@ -117,6 +117,20 @@ struct X11Driver::State {
    Atom TransferProperty = None;
    Atom TransferDataType = None;
    int TransferDataFormat = 0;
+   std::string PrimaryText;
+   Time PrimaryTimestamp = CurrentTime;
+   struct primary_read {
+      Window window = 0;
+      Window owner = 0;
+      Atom property = None;
+      Atom target = None;
+      Atom type = None;
+      OBJECTID recipient = 0;
+      int item = 0;
+      bool incremental = false;
+      std::string text;
+      std::chrono::steady_clock::time_point started;
+   } PrimaryRead;
    std::string ClipboardText;
    std::string ClipboardUris;
    std::string ClipboardGnomeFiles;

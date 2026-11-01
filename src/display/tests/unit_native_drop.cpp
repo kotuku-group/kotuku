@@ -106,7 +106,8 @@ static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
    if (std::sscanf(options.c_str(), "native-drop:%d:%lf:%lf", &fixture_id, &fixture_x, &fixture_y) IS 3) {
       kt::ScopedObjectLock fixture(fixture_id);
       if (not fixture.granted()) return;
-      const char datatype = char(DATA::FILE);
+      const bool text = Options.find(":text") != std::string_view::npos;
+      const char datatype = char(text ? DATA::TEXT : DATA::FILE);
       NativeDrop drop;
       drop.SurfaceID = fixture_id;
       drop.X = fixture_x;
@@ -117,11 +118,12 @@ static void native_drop_tests(std::string_view Options, int &Passed, int &Total)
       const auto snapshot_id = drop.Snapshot ? drop.Snapshot->ID : 0;
       display::DriverDragLeave();
       acSignal(*fixture);
-      const char payload[] = "file:///tmp/native-drop.txt\r\n";
+      const std::string payload = text ? "native text\r\nsecond line" : "file:///tmp/native-drop.txt\r\n";
+      const auto mime = text ? "text/plain;charset=utf-8" : "text/uri-list";
       if (Options.ends_with(":fail")) drop.Snapshot.reset();
-      else display::DriverDragData(drop, "text/uri-list", payload, sizeof(payload) - 1);
+      else display::DriverDragData(drop, mime, payload.data(), payload.size());
       check(CheckResourceExists(snapshot_id) != ERR::True, "Fixture releases its snapshot on delivery or refusal");
-      check(not display::DriverDragData(drop, "text/uri-list", payload, sizeof(payload) - 1),
+      check(not display::DriverDragData(drop, mime, payload.data(), payload.size()),
          "Fixture refuses duplicate delivery");
       return;
    }

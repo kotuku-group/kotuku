@@ -579,6 +579,8 @@ ERR X11Driver::close()
       Data->Windows.clear();
       for (auto cursor : Data->Cursors) if (cursor) XFreeCursor(Data->Connection, cursor);
       Data->Cursors.fill(0);
+      if (Data->PrimaryRead.window) XDestroyWindow(Data->Connection, Data->PrimaryRead.window);
+      Data->PrimaryRead = {};
       if (Data->ClipboardWindow) XDestroyWindow(Data->Connection, Data->ClipboardWindow);
       if (Data->GraphicsContext) XFreeGC(Data->Connection, Data->GraphicsContext);
       if (Data->ClipGraphicsContext) XFreeGC(Data->Connection, Data->ClipGraphicsContext);
@@ -684,6 +686,51 @@ ERR X11Driver::clipboardClear()
    Data->ClipboardTimestamp = CurrentTime;
    Data->ClipboardTransfer = false;
    Data->TransferGeneration++;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR X11Driver::setPrimarySelection(std::string_view Text)
+{
+   const std::lock_guard lock(Data->NativeLock);
+   if ((not Data->Open) or (not Data->Connection) or (not Data->ClipboardWindow)) return ERR::NoSupport;
+   Data->PrimaryText.assign(Text);
+   Data->PrimaryTimestamp = server_timestamp(Data);
+   if (Text.empty()) {
+      if (XGetSelectionOwner(Data->Connection, XA_PRIMARY) IS Data->ClipboardWindow)
+         XSetSelectionOwner(Data->Connection, XA_PRIMARY, None, Data->PrimaryTimestamp);
+   }
+   else {
+      XSetSelectionOwner(Data->Connection, XA_PRIMARY, Data->ClipboardWindow, Data->PrimaryTimestamp);
+      if (XGetSelectionOwner(Data->Connection, XA_PRIMARY) != Data->ClipboardWindow) return ERR::Failed;
+   }
+   XFlush(Data->Connection);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+ERR X11Driver::readPrimarySelection(OBJECTID Recipient, int Item)
+{
+   const std::lock_guard lock(Data->NativeLock);
+   if ((not Data->Open) or (not Data->Connection) or (not Data->ClipboardWindow)) return ERR::NoSupport;
+   // A new requestor window isolates late replies and incremental chunks from superseded reads.
+   if (Data->PrimaryRead.window) XDestroyWindow(Data->Connection, Data->PrimaryRead.window);
+   Data->PrimaryRead = {};
+   auto owner = XGetSelectionOwner(Data->Connection, XA_PRIMARY);
+   if (not owner) return ERR::NoData;
+   auto &read = Data->PrimaryRead;
+   read.owner = owner;
+   read.recipient = Recipient;
+   read.item = Item;
+   read.property = XInternAtom(Data->Connection, "KOTUKU_PRIMARY", False);
+   read.target = Data->UTF8StringAtom;
+   read.started = std::chrono::steady_clock::now();
+   read.window = XCreateSimpleWindow(Data->Connection, DefaultRootWindow(Data->Connection), 0, 0, 1, 1, 0, 0, 0);
+   XSelectInput(Data->Connection, read.window, PropertyChangeMask);
+   XConvertSelection(Data->Connection, XA_PRIMARY, read.target, read.property, read.window, CurrentTime);
+   XFlush(Data->Connection);
    return ERR::Okay;
 }
 

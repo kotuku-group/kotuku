@@ -22,6 +22,17 @@ class extScintilla : public objScintilla {
    RGB8 MarginColour;
    RGB8 MarginBkgd;
 
+   struct pending_drop {
+      OBJECTID source = 0;
+      int item = 0;
+      int position = 0;
+      int64_t revision = 0;
+      bool active = false;
+   } Drop, PrimaryDrop;
+   int64_t DocumentRevision = 0;
+   int PrimaryItem = 0;
+   objClipboard *DragClipboard = nullptr;
+   std::string DragText;
    FUNCTION FileDrop;
    FUNCTION EventCallback;
    FUNCTION MarginClick;
@@ -166,6 +177,12 @@ public:
    virtual void Copy();
    virtual void Paste();
    virtual void ClaimSelection();
+   void StartDrag() override;
+   void panEndDrag();
+   bool panDragging() const { return drag_active; }
+   int panDropPosition(double X, double Y);
+   ERR panDropText(int Position, std::string_view Text, extScintilla *Source = nullptr);
+   void panPrimaryPaste(double X, double Y);
    virtual void NotifyChange();
    // Called when Scintilla wants us to send a message to the parent of this widget
    virtual void NotifyParent(Scintilla::SCNotification scn);
@@ -290,6 +307,9 @@ private:
 
    std::vector<completion_report> completion_reports; // Deferred CompletionCallback reports
 
+   Scintilla::Selection drag_selection;
+   int64_t drag_revision = 0;
+   bool drag_active = false;
    int braceMode;
    int oldpos = -1;
    ERR clip_error = ERR::Okay; // Result of the most recent cut, copy or paste
