@@ -50,22 +50,24 @@ EXPORT_NAME  <const> = 'palettes.json'
 FILE_FILTER  <const> = { { name = 'Palette Databases', ext = '.json' }, { name = 'All Files', ext = '' } }
 
 ----------------------------------------------------------------------------------------------------------------------
--- The sRGB hex value of a swatch, gamut-mapped for display.
+-- Encoded sRGB channels of a swatch, gamut-mapped and clipped for display.
 
-function swatchHex(S:table):str
+function mappedSrgb(S:table):<num, num, num>
    l, c, h = colourmath.gamutMap(S.l, S.c, S.h, 'srgb')
    r, g, b = colourmath.oklchToSrgb(l, c, h)
-   return colourmath.toHex(math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1))
+   return math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1)
+end
+
+function swatchHex(S:table):str
+   return colourmath.toHex(mappedSrgb(S))
 end
 
 -- The fill that shows a swatch: its sRGB colour, over the picker's checkerboard (cpChecker) if it is translucent.
 
 function swatchFill(S:table):str
    if S.alpha >= 1 then return swatchHex(S) end
-   l, c, h = colourmath.gamutMap(S.l, S.c, S.h, 'srgb')
-   r, g, b = colourmath.oklchToSrgb(l, c, h)
-   return 'url(#cpChecker);' .. colourmath.toHex(math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1),
-      S.alpha)
+   r, g, b = mappedSrgb(S)
+   return 'url(#cpChecker);' .. colourmath.toHex(r, g, b, S.alpha)
 end
 
 -- Swatch state markers in a 10 px box, with the shapes of the picker's palette rows and gamut notice.
@@ -866,19 +868,26 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       if Event.value is KEY_ESCAPE then Options.blur() end
    end
 
+   function commitNotes(Input:table!, Event:table!, ForSwatch:bool)
+      if Event.state != 'lost-focus' then return end
+      text = colourpalette.limitDescription((Event.text ?? '').trim())
+      Input.setText(text)
+      palette = selectedPalette()
+      if not palette or palette.starter then return end
+      if ForSwatch and (self.swatch is nil) then return end
+      target = ForSwatch ? palette.swatches[self.swatch] : palette
+      if not target or ((target.description ?? '') is text) then return end
+      target.description = (#text > 0) ? text : nil
+      Options.save()
+   end
+
    self.paletteNotes = gui.input({
       target = info.body, x = INSET, y = y, width = right_inner, height = AREA_H, multiline = true,
       maxLength = TEXT_LIMIT, theme = notes_theme, placeholder = 'Notes about this palette…',
       events = {
          keypress = notesKeypress,
          activate = function(Event:table!)
-            if Event.state != 'lost-focus' then return end
-            text = colourpalette.limitDescription((Event.text ?? '').trim())
-            self.paletteNotes.setText(text)
-            palette = selectedPalette()
-            if not palette or palette.starter or ((palette.description ?? '') is text) then return end
-            palette.description = (#text > 0) ? text : nil
-            Options.save()
+            commitNotes(self.paletteNotes, Event, false)
          end
       }
    })
@@ -912,14 +921,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       events = {
          keypress = notesKeypress,
          activate = function(Event:table!)
-            if Event.state != 'lost-focus' then return end
-            text = colourpalette.limitDescription((Event.text ?? '').trim())
-            self.swatchNotes.setText(text)
-            palette = selectedPalette()
-            s = (palette and not palette.starter and (self.swatch != nil)) ? palette.swatches[self.swatch] : nil
-            if not s or ((s.description ?? '') is text) then return end
-            s.description = (#text > 0) ? text : nil
-            Options.save()
+            commitNotes(self.swatchNotes, Event, true)
          end
       }
    })
@@ -1161,13 +1163,12 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       if not self.swatchNotes.focused then self.swatchNotes.setText(s.description ?? '') end
 
       _, _, _, in_srgb = colourmath.oklchToSrgb(s.l, s.c, s.h)
-      gr, gg, gb = colourmath.oklchToSrgb(colourmath.gamutMap(s.l, s.c, s.h, 'srgb'))
+      gr, gg, gb = mappedSrgb(s)
       self.props.l.string = string.format('%.3f', s.l)
       self.props.c.string = string.format('%.3f', s.c)
       self.props.h.string = f'{math.round(s.h)}°'
       self.props.alpha.string = f'{math.round(s.alpha * 100)}%'
-      self.props.srgb.string = f'{math.round(math.clamp(gr, 0, 1) * 255)} · {math.round(math.clamp(gg, 0, 1) * 255)} · ' ..
-         f'{math.round(math.clamp(gb, 0, 1) * 255)}'
+      self.props.srgb.string = f'{math.round(gr * 255)} · {math.round(gg * 255)} · {math.round(gb * 255)}'
       self.props.gamut.string = in_srgb ? '✓ sRGB' : '✗ sRGB'
       self.props.gamut.fill = in_srgb ? t.ok : t.warn
    end

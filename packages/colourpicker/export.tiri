@@ -30,8 +30,11 @@ Usage:
 --]]
 
    import 'gui/colourpicker/colour', 'gui/colourpicker/palette'
+   import './format'
 
    namespace colourexport { }
+
+format_number <const> = colourpicker_format.number
 
 FORMATS <const> = array<str> { 'css', 'tokens', 'tiri', 'android' }
 
@@ -110,18 +113,6 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Values
 
--- Format a number with up to Places decimals, dropping trailing zeros.
-
-function num(Value:num, Places:num):str
-   s = string.format(f'%.{Places}f', Value)
-   if s.find('.', 0, true) then
-      while s.endsWith('0') do s = s.sub(0, -1) end
-      if s.endsWith('.') then s = s.sub(0, -1) end
-   end
-   if s is '-0' then s = '0' end
-   return s
-end
-
 -- The swatch mapped into the target gamut.  Mapped chroma is rounded down to 3 decimals.  For OKLCH output, test
 -- the lightness, chroma and hue at their exported precision and reduce chroma if rounding leaves the gamut.
 
@@ -129,9 +120,9 @@ function target(S:table, Gamut:str, Oklch:bool):<num, num, num>
    l, c, h = colourmath.gamutMap(S.l, S.c, S.h, Gamut)
    if c != S.c then c = math.floor(c * 1000) / 1000 end
    if Oklch and (Gamut != 'none') then
-      rounded_l = tonumber(num(l, 3))
-      rounded_c = tonumber(num(c, 3))
-      rounded_h = tonumber(num(h, 1))
+      rounded_l = tonumber(format_number(l, 3))
+      rounded_c = tonumber(format_number(c, 3))
+      rounded_h = tonumber(format_number(h, 1))
       if not colourmath.inGamut(rounded_l, rounded_c, rounded_h, Gamut) then
          c = math.floor(colourmath.maxChroma(rounded_l, rounded_h, Gamut) * 1000) / 1000
       end
@@ -220,13 +211,14 @@ function tokens(Palette:table, Gamut:str):array<array>
    for i, s in Palette.swatches do
       r, g, b = srgb(s)
       l, c, h = target(s, Gamut, not wide)
-      value = f'"colorSpace": "oklch", "components": [{num(l, 3)}, {num(c, 3)}, {num(h, 1)}]'
+      value = f'"colorSpace": "oklch", "components": [{format_number(l, 3)}, ' ..
+         f'{format_number(c, 3)}, {format_number(h, 1)}]'
       if wide then
          pr, pg, pb = colourmath.oklchToSpace(l, c, h, wide.id)
-         value = f'"colorSpace": "{wide.css}", "components": [{num(math.clamp(pr, 0, 1), 4)}, ' ..
-            f'{num(math.clamp(pg, 0, 1), 4)}, {num(math.clamp(pb, 0, 1), 4)}]'
+         value = f'"colorSpace": "{wide.css}", "components": [{format_number(math.clamp(pr, 0, 1), 4)}, ' ..
+            f'{format_number(math.clamp(pg, 0, 1), 4)}, {format_number(math.clamp(pb, 0, 1), 4)}]'
       end
-      if s.alpha < 1 then value ..= f', "alpha": {num(s.alpha, 2)}' end
+      if s.alpha < 1 then value ..= f', "alpha": {format_number(s.alpha, 2)}' end
       value ..= f', "hex": "{colourmath.toHex(r, g, b).lower()}"'
 
       lines.push(array<table> {

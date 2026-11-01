@@ -118,6 +118,15 @@ colourpicker_parts.PANEL_PADDING = { left = 0, right = 0, top = 0, bottom = 0 }
 
 ----------------------------------------------------------------------------------------------------------------------
 
+-- Enable or disable a button, only touching it if its state changes.
+
+colourpicker_parts.enableButton = function(Button:table!, Enabled:bool)
+   if Enabled is (not Button.disabled) then return end
+   if Enabled then Button.enable() else Button.disable() end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Doc(text=[[
 @desc Replace a combobox's drop-down icon with the design's small caret.
 ]])
