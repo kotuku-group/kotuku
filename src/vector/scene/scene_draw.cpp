@@ -1092,11 +1092,17 @@ void SceneRenderer::draw_vectors(extVector *CurrentVector, VectorState &ParentSt
                   mClipStack.top().draw(*this);
                }
 
+               // The clip region's right and bottom edges are exclusive, while the render base's clip box is
+               // inclusive.  The last pixel touched by an edge is ceil(edge) - 1.  Keep unbounded edges (DBL_MAX)
+               // as doubles until the comparison with the render clip makes conversion to int safe.
+
                auto save_rb_clip = mRenderBase.clip_box();
-               if (state.mClip.left   > save_rb_clip.x1) mRenderBase.m_clip_box.x1 = state.mClip.left;
-               if (state.mClip.top    > save_rb_clip.y1) mRenderBase.m_clip_box.y1 = state.mClip.top;
-               if (state.mClip.right  < save_rb_clip.x2) mRenderBase.m_clip_box.x2 = state.mClip.right;
-               if (state.mClip.bottom < save_rb_clip.y2) mRenderBase.m_clip_box.y2 = state.mClip.bottom;
+               const double clip_right  = std::ceil(state.mClip.right) - 1.0;
+               const double clip_bottom = std::ceil(state.mClip.bottom) - 1.0;
+               if (state.mClip.left > save_rb_clip.x1) mRenderBase.m_clip_box.x1 = state.mClip.left;
+               if (state.mClip.top  > save_rb_clip.y1) mRenderBase.m_clip_box.y1 = state.mClip.top;
+               if (clip_right  < save_rb_clip.x2) mRenderBase.m_clip_box.x2 = int(clip_right);
+               if (clip_bottom < save_rb_clip.y2) mRenderBase.m_clip_box.y2 = int(clip_bottom);
 
                log.trace("ViewBox (%g %g %g %g) Scale (%g %g) Fix (%g %g %g %g)",
                   source.X, source.Y, source.Width, source.Height,
