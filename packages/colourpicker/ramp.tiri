@@ -190,7 +190,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
 
    self.ring = body.new('VectorRectangle', {
       y = TOP - 1.5, width = 1, height = ROW + 3, roundX = ROUND + 1.5, roundY = ROUND + 1.5,
-      fill = 'none', stroke = t.accent, strokeWidth = 1.5, visibility = VIS_HIDDEN
+      fill = 'none', stroke = &theme.palette.prime, strokeWidth = 1.5, visibility = VIS_HIDDEN
    })
 
    -- Return the lightness of the step at Index from the L curve, and its chroma before gamut mapping from the C curve.

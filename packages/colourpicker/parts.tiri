@@ -387,7 +387,7 @@ colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
 
    self.highlight = Viewport.new('VectorRectangle', {
       x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 4, roundY = 4,
-      fill = t.accentSoft, stroke = t.accent, strokeWidth = 1, visibility = VIS_HIDDEN
+      fill = t.accentSoft, stroke = &theme.palette.prime, strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
    self.swatch = Viewport.new('VectorRectangle', {
@@ -473,7 +473,7 @@ colourpicker_parts.paletteRow = function(Viewport:obj!, Options:table!):table
       ed.clip = Viewport.new('VectorViewport', { overflow = VOF_HIDDEN, cursor = 'text' })
       ed.clip.new('VectorRectangle', {
          x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
-         fill = t.sunk, stroke = t.accent, strokeWidth = 1
+         fill = t.sunk, stroke = &theme.palette.prime, strokeWidth = 1
       })
       ed.text = ed.clip.new('VectorText', {
          x = EDIT_PAD, face = colourpicker_parts.FACE_UI, fontSize = f'{ROW_FONT}px', fontStyle = 'Regular',
@@ -595,7 +595,8 @@ colourpicker_parts.valueField = function(Viewport:obj!, Options:table!):table
    vp = self.viewport
 
    self.bkgd = vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3, fill = t.sunk, stroke = t.accent,
+      x = 0.5, y = 0.5, xOffset = 0.5, yOffset = 0.5, roundX = 3, roundY = 3,
+      fill = t.sunk, stroke = &theme.palette.prime,
       strokeWidth = 1, visibility = VIS_HIDDEN
    })
 
@@ -756,7 +757,7 @@ colourpicker_parts.dragPreview = function(Parent:obj!, Fill:str!, Tokens:table!,
       if Move then
          c = DRAG_TILE - 1
          Viewport.new('VectorEllipse', {
-            cx = c, cy = c, radiusX = DRAG_BADGE - 1, radiusY = DRAG_BADGE - 1, fill = Tokens.accent,
+            cx = c, cy = c, radiusX = DRAG_BADGE - 1, radiusY = DRAG_BADGE - 1, fill = &theme.palette.prime,
             stroke = 'white', strokeWidth = 1.5
          })
          shafts, heads = moveArrow(c, c)
@@ -792,7 +793,7 @@ TAB_HEIGHT   <const> = 28
 TAB_PAD      <const> = 11
 TAB_GLYPH    <const> = 12
 TAB_GAP      <const> = 2  -- Between tabs
-TAB_FONT     <const> = 11.5
+TAB_FONT     <const> = 12
 TAB_DIMMED   <const> = 0.45 -- Opacity of a disabled tab
 STRIP_PAD    <const> = 8
 
@@ -860,7 +861,7 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
 
       label = text(vp, {
          x = TAB_PAD + TAB_GLYPH + 6, y = colourpicker_parts.baseline(0, TAB_HEIGHT, TAB_FONT), size = TAB_FONT,
-         fill = fill, string = item.label
+         fill = fill, string = item.label, style = 'Semi Bold'
       })
 
       width = math.ceil(TAB_PAD + TAB_GLYPH + 6 + label.textWidth + TAB_PAD)
@@ -902,14 +903,10 @@ colourpicker_parts.tabStrip = function(Viewport:obj!, Options:table!):table
       x += width + TAB_GAP
    end
 
-   -- Separator after the last tab, and the meta text on the right
-
-   x += 6 - TAB_GAP
-   Viewport.new('VectorRectangle', { x = x, y = math.round((height - 16) * 0.5), width = 1, height = 16, fill = t.divider })
-
    self.meta = text(Viewport, {
-      x = Options.width - STRIP_PAD - 6, y = colourpicker_parts.baseline(0, height, 10.5), size = 10.5,
-      face = colourpicker_parts.FACE_MONO, fill = t.fg3, align = 'right', string = Options.meta ?? ''
+      x = Options.width - STRIP_PAD - 6, y = colourpicker_parts.baseline(0, height, 12), size = 12,
+      face = colourpicker_parts.FACE_MONO, fill = &theme.window.text.fill, align = 'right',
+      string = Options.meta ?? ''
    })
 
    self.setMeta = function(Text:str)
@@ -1016,7 +1013,7 @@ colourpicker_parts.toggleButton = function(Options:table):table
 
    function restyle()
       if not self.pressed then return end
-      gui.applyStyle(self.button.bkgd, { fill = t.accentSoft, stroke = t.accent })
+      gui.applyStyle(self.button.bkgd, { fill = t.accentSoft, stroke = &theme.palette.prime })
       self.button._label?.fill = t.fg0
    end
 

@@ -10,25 +10,23 @@
 
 TOKENS <const> = {
    light = {
-      panel  = 'oklch(1.000 0.000 89.876)',
+      panel  = 'oklch(1.000 0.000 89.876)', -- &theme.panel.bkgd.fill
       sunk   = 'oklch(0.971 0.003 67.783)',
       border = 'oklch(0.851 0.006 84.568)',
-      divider = 'oklch(0.929 0.005 67.761)',
-      fg0     = 'oklch(0.119 0.011 80.573)', -- Primary text: values, swatch names, input and button text; slider thumbs
-      fg1     = 'oklch(0.230 0.011 84.593)', -- Secondary text: window text, chip labels and prose such as "Closest named"
-      fg2     = 'oklch(0.300 0.008 80.707)', -- Panel titles, channel and relationship keys, swatch hex values and footer key caps
-      fg3     = 'oklch(0.490 0.006 84.573)', -- Muted text: cell labels, panel meta, sub-labels, units and separators; small glyphs
+      fg0    = 'oklch(0.119 0.011 80.573)', -- Primary text: values, swatch names, input and button text; slider thumbs
+      fg1    = 'oklch(0.230 0.011 84.593)', -- Secondary text: window text, chip labels and prose such as "Closest named"
+      fg2    = 'oklch(0.300 0.008 80.707)', -- Panel titles, channel and relationship keys, swatch hex values and footer key caps
+      fg3    = 'oklch(0.490 0.006 84.573)', -- Muted text: cell labels, panel meta, sub-labels, units and separators; small glyphs
       accentSoft = 'oklch(0.949 0.025 249.951)'
    },
-   dark = { -- The same roles as the light tokens
-      panel = 'oklch(0.250 0.009 75.203)',
-      sunk = 'oklch(0.189 0.008 67.334)',
+   dark = {
+      panel  = 'oklch(0.250 0.009 75.203)',
+      sunk   = 'oklch(0.189 0.008 67.334)',
       border = 'oklch(0.320 0.010 73.540)',
-      divider = 'oklch(0.278 0.010 80.640)',
-      fg0 = 'oklch(0.959 0.005 78.298)',
-      fg1 = 'oklch(0.821 0.006 84.569)',
-      fg2 = 'oklch(0.771 0.011 81.792)',
-      fg3 = 'oklch(0.717 0.009 73.717)',
+      fg0    = 'oklch(0.959 0.005 78.298)',
+      fg1    = 'oklch(0.821 0.006 84.569)',
+      fg2    = 'oklch(0.771 0.011 81.792)',
+      fg3    = 'oklch(0.717 0.009 73.717)',
       accentSoft = 'oklch(0.301 0.061 258.288)'
    }
 }
@@ -87,7 +85,7 @@ TINT_REFERENCE <const> = 0.005
 TINT_MAX_SCALE <const> = 3
 
 NEUTRAL_KEYS <const> = array<str> {
-   'panel', 'sunk', 'border', 'divider', 'fg0', 'fg1', 'fg2', 'fg3'
+   'panel', 'sunk', 'border', 'fg0', 'fg1', 'fg2', 'fg3'
 }
 
 CODE_NEUTRAL_KEYS <const> = array<str> {
@@ -110,9 +108,9 @@ function ensureContrast(Colour:str, Bkgd:table):str
    rgb = gui.strToRGB(Colour)
    if contrast(rgb, Bkgd) >= TEXT_CONTRAST then return Colour end
 
-   lch = rgb.toOKLCH()
-   step = (Bkgd.luminance() > MID_LUMINANCE) ? -0.005 : 0.005
-   l = lch.okl
+   lch    = rgb.toOKLCH()
+   step   = (Bkgd.luminance() > MID_LUMINANCE) ? -0.005 : 0.005
+   l      = lch.okl
    result = Colour
    while (contrast(rgb, Bkgd) < TEXT_CONTRAST) and (l > 0) and (l < 1) do
       l = math.clamp(l + step, 0, 1)
@@ -128,7 +126,7 @@ end
 
 function windowTokens(Tokens:table, Theme:table):table
    result = table.clone(Tokens)
-   fill = Theme.window?.bkgd?.fill
+   fill   = Theme.window?.bkgd?.fill
    if fill is nil then return result end
 
    try
@@ -187,8 +185,7 @@ end
 
 -- The design tokens for a base theme's scheme, with the neutral tokens tinted to the hue of the palette's bkgd and the
 -- accent colours taken from the base theme's palette: prime for the accent and altText for text drawn on it.  The
--- palette's values are used as given.  accentSoft is prime blended into the panel colour.  The design's accent tokens
--- remain if the palette has no prime colour.
+-- palette's values are used as given.  accentSoft is prime blended into the panel colour.
 
 function themeTokens(Scheme:str, Palette:table):table
    t = table.clone(TOKENS[Scheme])
@@ -198,8 +195,6 @@ function themeTokens(Scheme:str, Palette:table):table
 
    soft = gui.strToRGB(t.panel).interpolate(gui.strToRGB(Palette.prime), ACCENT_SOFT_MIX[Scheme])
    t.accentSoft = tostring(soft.toOKLCH())
-   t.accent     = Palette.prime
-   t.accentFg   = Palette.altText
    return t
 end
 
@@ -224,7 +219,6 @@ function buildTheme(Base:table):table
          headerHeight = PANEL_HEADER
       }
    })
-   theme.panel.header = nil -- The design's panel headers have no fill of their own
 
    extras = table.clone(EXTRAS[scheme])
    hue, scale = paletteTint(Base.palette)

@@ -23,7 +23,8 @@
     "tiri": "1.0"
   },
   "dependencies": {
-    "config": "1.0"
+    "config": "1.0",
+    "json": "1.0"
   },
   "files": [
     {
@@ -40,8 +41,8 @@
     },
     {
       "path": "gui.tiri",
-      "size": 106159,
-      "sha256": "9b33d54712dc2faa98ab872528b18c54e134ef006b1dd871f959e91e45dfca1b",
+      "size": 106681,
+      "sha256": "e55ae0f7f4e75972edb07b52d08abc7060dee7e5a19cd5cc42116a4aaf9c1f62",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

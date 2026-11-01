@@ -134,7 +134,7 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
 
    if Options.guide then
       _, gy = self.toGraph(0, Options.guide)
-      vp.new('VectorRectangle', { x = PAD, y = math.round(gy), width = graph_w, height = 1, fill = t.divider })
+      vp.new('VectorRectangle', { x = PAD, y = math.round(gy), width = graph_w, height = 1, fill = &theme.palette.edge })
    end
 
    if Options.caption then
@@ -151,7 +151,7 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
 
    for _ in {0 to 4} do
       self.handles.push(vp.new('VectorEllipse', {
-         radiusX = HANDLE_R, radiusY = HANDLE_R, fill = t.panel, stroke = t.accent, strokeWidth = 1.5,
+         radiusX = HANDLE_R, radiusY = HANDLE_R, fill = t.panel, stroke = &theme.palette.prime, strokeWidth = 1.5,
          visibility = VIS_HIDDEN
       }))
    end
@@ -179,14 +179,14 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
          if (i <= last) and (i in self.movable) then
             p = self.points[i]
             handle.cx, handle.cy = self.toGraph(p.x, p.y)
-            handle.fill = (self.focused and (i is self.selected)) ? t.accent : t.panel
+            handle.fill = (self.focused and (i is self.selected)) ? &theme.palette.prime : t.panel
             handle.visibility = VIS_VISIBLE
          else
             handle.visibility = VIS_HIDDEN
          end
       end
 
-      self.bkgd.stroke = self.focused ? t.accent : t.border
+      self.bkgd.stroke = self.focused ? &theme.palette.prime : t.border
       vp.acDraw()
    end
 

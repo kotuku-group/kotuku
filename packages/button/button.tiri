@@ -139,6 +139,13 @@ gui.button = function(Options)
          &viewport.acDraw()
       end
 
+      &setTheme = function(Theme:table!)
+         theme = Theme
+         refreshStyle()
+         if &_label and theme.text?.fill then &_label.fill = theme.text.fill end
+         &viewport.acDraw()
+      end
+
       -- Change the button icon.  A nil Path removes the icon.  If the icon cannot be loaded, an exception is raised and
       -- the current icon is retained.
 

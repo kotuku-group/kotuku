@@ -1,10 +1,8 @@
--- Code view for the colour picker's Export panel: a row of tabs under the panel header, a divider and then
--- syntax-coloured monospaced lines on a sunken background that meets the panel border.  Lines that are too long for
--- the panel are wrapped, preferably at a space, and lines that don't fit vertically are scrolled in the panel's
--- scrolling body.  The text vectors are pooled, so replacing the lines doesn't create new vectors unless the line
--- count grows.
+-- Code view for the colour picker's Export panel: a row of tabs under the panel header, a divider and then the
+-- export text in a monospaced VectorText on a sunken background that meets the panel border.  The text is wrapped to
+-- the page, less the scrollbar, and the page is sized to fit it when the body is resized.
 
-   import 'gui/panel', './parts'
+   import 'gui/button', 'gui/panel', './parts'
    include 'display'
 
    namespace colourpicker_code { }
@@ -15,79 +13,11 @@ FONT_SIZE   <const> = 10.5
 LINE_HEIGHT <const> = 16   -- 1.55 em, as in the design
 TAB_HEIGHT  <const> = 18
 TAB_SIZE    <const> = 10
-TAB_PAD_X   <const> = 7
 TAB_GAP     <const> = 2
 TABS_Y      <const> = 7    -- Gap above the tabs
 TABS_BELOW  <const> = 7    -- Gap between the tabs and the divider
-WRAP_INDENT <const> = 4    -- Extra indent of a wrapped continuation, in characters
 BAR_GAP     <const> = 4    -- Minimum gap between wrapped text and the scrollbar
 TABS_AREA   <const> = TABS_Y + TAB_HEIGHT + TABS_BELOW + 1 -- The tab row and its divider, above the panel body
-
--- Byte offset of each UTF-8 character, followed by the end of the string for half-open slices.
-
-function characterOffsets(Text:str):array<int>
-   offsets = array<int>
-   for i in {0 to #Text} do
-      if (Text.byte(i) & 0xc0) != 0x80 then offsets.push(i) end
-   end
-   offsets.push(#Text)
-   return offsets
-end
-
--- Wrap one line of segments at Columns characters.  Returns an array of display lines, each { indent, segs }, where
--- indent is in characters and segs is an array<table> of { role, text }.
-
-function wrapLine(Segs:array<table>, Columns:num):array<table>
-   parts = array<str>
-   for s in values(Segs) do parts.push(s.text) end
-   text = parts.concat('')
-   offsets = characterOffsets(text)
-   length = #offsets - 1
-
-   if length <= Columns then
-      return array<table> { { indent = 0, segs = Segs } }
-   end
-
-   lead = 0
-   while (lead < length) and (text.byte(offsets[lead]) is 32) do lead++ end
-   cont = math.min(lead + WRAP_INDENT, math.floor(Columns * 0.5))
-
-   -- Find the byte ranges of the display lines
-
-   ranges = array<table>
-   pos = 0
-   limit = Columns
-   while (length - pos) > limit do
-      cut = pos + limit
-      brk = cut
-      while (brk > pos) and (text.byte(offsets[brk - 1]) != 32) do brk -= 1 end
-      if brk <= pos + ((pos is 0) ? lead : 0) then -- No space to break at, so break inside a word
-         brk = cut
-      end
-      ranges.push({ first = offsets[pos], stop = offsets[brk] })
-      pos = brk
-      while (pos < length) and (text.byte(offsets[pos]) is 32) do pos++ end
-      limit = Columns - cont
-   end
-   if pos < length then ranges.push({ first = offsets[pos], stop = #text }) end
-
-   -- Cut the segments to each range
-
-   result = array<table>
-   for i, range in ranges do
-      segs = array<table>
-      offset = 0
-      for s in values(Segs) do
-         s_end = offset + #s.text
-         lo = math.max(range.first, offset)
-         hi = math.min(range.stop, s_end)
-         if hi > lo then segs.push({ role = s.role, text = s.text.sub(lo - offset, hi - offset) }) end
-         offset = s_end
-      end
-      result.push({ indent = (i is 0) ? 0 : cont, segs = segs })
-   end
-   return result
-end
 
 ----------------------------------------------------------------------------------------------------------------------
 
@@ -95,34 +25,35 @@ end
 @desc Create the Export panel: a scrolling gui.panel whose body is a code view, with a row of tabs above it.
 @input Target viewport
 @input Options: x, y, width, height, title, meta, tokens, tabs (array<str> of tab labels), onTab(Index) and onClick()
-@result Table with `panel`, `viewport`, `setTab(Index)`, `setLines(Lines, Text)` and `scrollTo(Line)`.  Lines are as
-returned by colourexport.generate(), and Text is their joined form, which lets an unchanged update be skipped.
+@result Table with `panel`, `viewport`, `setTab(Index)`, `setText(Text)` and `scrollTo(Line)`.  Text is the export
+as returned by colourexport.toText().
 ]])
 colourpicker_code.new = function(Target:obj!, Options:table!):table
    t = Options.tokens
    code = t.code
-   text = colourpicker_parts.text
    mono = colourpicker_parts.FACE_MONO
 
-   role_fill = { c = code.comment, p = code.punct, k = code.key, v = code.value, t = code.text }
-
    local self:table
-   local frame_h:num
+   local body_w:num, frame_h:num
 
    -- The panel scrolls its body vertically, and the top padding leaves room for the tabs.  The panel background is
    -- the code background, so that the body fills to the inside of the rounded border and the scrollbar tracks
    -- follow it.  The header and the tab row keep the panel colour.  The panel reports the size of its body when it
-   -- is resized, and the page is then refitted.
+   -- is resized, and the text is then refitted.
 
    panel = gui.panel({
-      target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
-      title = Options.title, meta = Options.meta, scroll = 'vertical', padding = { top = TABS_AREA },
-      theme  = { bkgd = { fill = code.bkgd }, header = { fill = t.panel } },
-      events = {
+      target  = Target,
+      title   = Options.title,
+      meta    = Options.meta,
+      scroll  = 'vertical',
+      padding = { top = TABS_AREA },
+      x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      theme   = { bkgd = &theme.page.bkgd },
+      events  = {
          resize = function(Width, Height)
-            if Height is frame_h then return end
-            frame_h = Height
-            self?.fitPage() -- The panel may report its size before it returns
+            if (Width is body_w) and (Height is frame_h) then return end
+            body_w, frame_h = Width, Height
+            self?.fitText() -- The panel may report its size before it returns
          end
       }
    })
@@ -135,69 +66,85 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
       viewport  = panel.viewport,
       page      = panel.page,
       scrollbar = panel.scrollbar,
-      tab       = 0,
-      display   = array<table>, -- Wrapped lines
-      pool      = array<obj>
+      tab       = 0
    }
 
    -- The tab row sits between the panel's divider and the top of the body, and ends with a divider of its own.
 
-   bar = panel.viewport.new('VectorViewport', { x = 0, y = panel.body.y - TABS_AREA, xOffset = 0, height = TABS_AREA })
-   bar.new('VectorRectangle', { x = edge, y = 0, xOffset = edge, height = TABS_AREA - 1, fill = t.panel })
-   bar.new('VectorRectangle', { x = edge, y = TABS_AREA - 1, xOffset = edge, height = 1, fill = t.divider })
+   bar = panel.viewport.new('VectorViewport', {
+      x = 0, y = panel.body.y - TABS_AREA, xOffset = 0, height = TABS_AREA
+   })
+   bar.new('VectorRectangle', {
+      x = edge, y = 0, xOffset = edge, height = TABS_AREA - 1, fill = &theme.panel.bkgd.fill
+   })
+   bar.new('VectorRectangle', {
+      x = edge, y = TABS_AREA - 1, xOffset = edge, height = 1, fill = &theme.panel.bkgd.stroke
+   })
+
+   -- Each tab is a button sized to its label.  The button has a transparent background over a rectangle that shows
+   -- the tab state, so that its hover and focus styling still apply.  The label is inset by the button's stroke.
+
+   tab_theme = {
+      bkgd      = { stroke = 'none', strokeWidth = 0 },
+      focus     = { strokeWidth = 1 },
+      text      = {
+         face = mono, fontSize = f'{TAB_SIZE}px', fontStyle = 'Medium',
+         y = colourpicker_parts.baseline(0, TAB_HEIGHT - 2, TAB_SIZE)
+      }
+   }
 
    self.tabs = array<table>
    x = PAD_X
    for i, label in Options.tabs do
-      vp = bar.new('VectorViewport', { x = x, y = TABS_Y, width = 1, height = TAB_HEIGHT, cursor = 'hand' })
-      bkgd = vp.new('VectorRectangle', { x = 0, y = 0, width = 1, height = TAB_HEIGHT, roundX = 3, roundY = 3 })
-      label_vt = text(vp, {
-         x = TAB_PAD_X, y = colourpicker_parts.baseline(0, TAB_HEIGHT, TAB_SIZE), size = TAB_SIZE, face = mono,
-         string = label
-      })
-      tab_w = math.ceil(label_vt.textWidth) + (TAB_PAD_X * 2)
-      vp.width = tab_w
-      bkgd.width = tab_w
-
-      vp.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
-         repeat
-            if (Msg.type is JET_LMB) and (Msg.value > 0) and (self.tab != i) then
+      button = gui.button({
+         target = bar, x = x, y = TABS_Y, height = TAB_HEIGHT, label = label, theme = tab_theme,
+         events = {
+            activate = function()
+               if self.tab is i then return end
                self.setTab(i)
-               if Options.onTab then Options.onTab(i) end
+               Options.onTab?(i)
             end
-            Msg = Msg.next
-         until not Msg
-      end)
+         }
+      })
 
-      self.tabs.push({ viewport = vp, bkgd = bkgd, label = label_vt })
-      x += tab_w + TAB_GAP
+      self.tabs.push({ button = button })
+      x += button.viewport.width + TAB_GAP
    end
 
-   -- Lines are drawn on the panel's page, inset by the padding.  The page is at least as tall as the body, so that
-   -- it takes clicks anywhere in the body.  Lines are wrapped to the width that remains when the scrollbar is shown,
-   -- so showing or hiding the bar never changes the wrapping.
+   -- The text is drawn on the panel's page, inset by the padding.  The page is at least as tall as the body, so that
+   -- it takes clicks anywhere in the body.  The text is wrapped to the width that remains when the scrollbar is
+   -- shown, so showing or hiding the bar never changes the wrapping.
 
    self.page.cursor = 'hand'
 
-   probe = text(self.page, { y = -100, size = FONT_SIZE, face = mono, string = '0000000000' })
-   self.charWidth = probe.textWidth / 10
-   probe.free()
-   text_w = body_w - PAD_X - self.scrollbar.v_thickness - BAR_GAP
-   self.columns = math.max(8, math.floor(text_w / self.charWidth))
+   self.text = self.page.new('VectorText', {
+      x         = PAD_X,
+      y         = colourpicker_parts.baseline(PAD_Y, LINE_HEIGHT, FONT_SIZE),
+      face      = mono,
+      fontSize  = f'{FONT_SIZE}px',
+      fontStyle = 'Medium',
+      fill      = code.text,
+      lineLimit = 0
+   })
 
-   self.setTab = function(Index:num!)
+   self.setTab = function[&&](Index:num!)
       self.tab = Index
       for i, tab in self.tabs do
-         active = (i is Index)
-         tab.bkgd.fill = active ? code.tabActive : code.tab
-         tab.label.fill = active ? code.tabActiveText : code.tabText
+         if i is Index then
+            tab.button.setTheme(table.merge(&theme.button.primary, tab_theme, true, true))
+         else
+            tab.button.setTheme(table.merge(&theme.button, tab_theme, true, true))
+         end
       end
    end
 
-   -- Size the page to its lines, and keep the scroll position unless the page has become too short for it.
+   -- Wrap the text, size the page to it, and keep the scroll position unless the page has become too short for it.
 
-   self.fitPage = function()
-      self.page.height = math.max(frame_h, (#self.display * LINE_HEIGHT) + (PAD_Y * 2))
+   self.fitText = function()
+      self.text.inlineSize = math.max(1, body_w - PAD_X - self.scrollbar.v_thickness - BAR_GAP)
+      _, _, ty, _, th = self.text.mtGetBoundary(0)
+      _, _, py = self.page.mtGetBoundary(0)
+      self.page.height = math.max(frame_h, math.ceil(ty + th - py + PAD_Y))
       min_y = math.min(0, frame_h - self.page.height)
       if self.page.y < min_y then self.page.y = min_y end
    end
@@ -206,45 +153,14 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
 
    self.scrollTo = function(Line:num!)
       max_y = math.max(0, self.page.height - frame_h)
-      y = -math.clamp(math.floor(Line) * LINE_HEIGHT, 0, max_y)
+      y = -math.clamp(math.floor(Line) * self.text.lineSpacing, 0, max_y)
       if self.page.y != y then self.page.y = y end
    end
 
-   self.setLines = function(Lines:array<any>!, Text:str)
-      if Text and (Text is self.text) then return end
-      self.text = Text
-
-      display = array<table>
-      for line in values(Lines) do
-         for wrapped in values(wrapLine(line, self.columns)) do display.push(wrapped) end
-      end
-      self.display = display
-
-      n = 0
-      for i, line in display do
-         baseline = colourpicker_parts.baseline(PAD_Y + (i * LINE_HEIGHT), LINE_HEIGHT, FONT_SIZE)
-         x = PAD_X + (line.indent * self.charWidth)
-         for s in values(line.segs) do
-            local vt:obj
-            if n < #self.pool then
-               vt = self.pool[n]
-            else
-               vt = text(self.page, { size = FONT_SIZE, face = mono })
-               self.pool.push(vt)
-            end
-            vt.string = s.text
-            vt.x = x
-            vt.y = baseline
-            vt.fill = role_fill[s.role] ?? code.text
-            vt.visibility = VIS_VISIBLE
-            x += (#characterOffsets(s.text) - 1) * self.charWidth
-            n++
-         end
-      end
-
-      for i in {n to #self.pool} do self.pool[i].visibility = VIS_HIDDEN end
-
-      self.fitPage()
+   self.setText = function(Text:str)
+      if self.text.string is Text then return end
+      self.text.string = Text ?? ''
+      self.fitText()
    end
 
    -- The scrollbar subscribes the page to input for the wheel, and clicks are taken from the page too.
@@ -259,5 +175,6 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
    end)
 
    self.setTab(0)
+   self.fitText()
    return self
 end
