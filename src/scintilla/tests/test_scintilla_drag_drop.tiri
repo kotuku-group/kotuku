@@ -225,6 +225,18 @@ end
       f'Scrolling and transforms must map to the document position, got {target.string.find("DROP")}')
 end
 
+-- Display's delayed native fixture is compiled only on Linux with UNIT_TESTS enabled.
+
+function nativeDrop(Surface:obj!, X:num!):bool
+   local passed, total = mod.test('display', f'native-drop:{Surface.id}:{X}:6:text')
+   if total is 0 then
+      print('SKIPPED: Native drop fixture requires Linux and UNIT_TESTS=ON')
+      return false
+   end
+   assert(total >= 4 and passed is total, 'The delayed native fixture must run and clean up')
+   return true
+end
+
 @Test function PendingNativeDropKeepsReleaseDocumentPosition()
    if mGfx.GetDisplayType() != DT_NATIVE then return end
    local surface <close>, scene, source, target = fixture()
@@ -234,8 +246,7 @@ end
       target.viewport.x = 200
    end)
    surface.acDraw()
-   local passed, total = mod.test('display', f'native-drop:{surface.id}:328:6:text')
-   assert(passed is total, 'The delayed native fixture must clean up')
+   if not nativeDrop(surface, 328) then return end
    assert(target.string is 'abnative text\nsecond linecdefghij\n' .. ('abcdefghij\n').rep(29),
       'Delayed native text must use the release position before scrolling or layout changes')
 end
@@ -319,8 +330,7 @@ end
          end
       end)
       surface.acDraw()
-      local passed, total = mod.test('display', f'native-drop:{surface.id}:321:6:text')
-      assert(passed is total, f'{operation} must release its native snapshot')
+      if not nativeDrop(surface, 321) then return end
       if operation is 'destroy' then
          assert(replacement.string is 'replacement', 'An editor replacement must not receive earlier data')
       else
