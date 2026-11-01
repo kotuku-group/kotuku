@@ -33,8 +33,7 @@ colourpicker_code.new = function(Target:obj!, Options:table!):table
    code = t.code
    mono = colourpicker_parts.FACE_MONO
 
-   local self:table
-   local body_w:num, frame_h:num
+   local self:table, body_w:num, frame_h:num
 
    -- The panel scrolls its body vertically, and the top padding leaves room for the tabs.  The panel background is
    -- the code background, so that the body fills to the inside of the rounded border and the scrollbar tracks

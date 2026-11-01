@@ -2371,7 +2371,7 @@ gui.themes = <table{ linkThemes({
             fill = gui.palette.dark.bkgd
          },
          border = { -- Standard stroke for page borders
-            stroke      = 'none', --gui.palette.dark.mid,
+            stroke      = 'none', --gui.palette.dark.edge,
             strokeWidth = 2
          }
          borderFocus = {  -- Stroke to use when 'bkgd' has the user's focus

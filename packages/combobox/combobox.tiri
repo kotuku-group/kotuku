@@ -227,8 +227,9 @@ gui.combobox = function(Options:table)
          end
       end
 
+      edge = (&input_theme.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
       &bkgd = &inputViewport.new('VectorRectangle', table.merge({
-         x = 0, y = 0, width = '100%', height = '100%'
+         x = edge, y = edge, xOffset = edge, yOffset = edge
       }, &input_theme.bkgd))
 
       clip_inset = math.ceil(&input_theme.bkgd.strokeWidth) -- Whole pixels keep the text and icon sharp

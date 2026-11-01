@@ -106,8 +106,8 @@ ellipses, one for each point), `selected` (the index of the selected point), `se
 ]])
 colourpicker_curve.new = function(Target:obj!, Options:table!):table
    t = Options.tokens
-   width = Options.width
-   height = Options.height
+   width   = Options.width
+   height  = Options.height
    graph_w = width - (PAD * 2)
    graph_h = height - (PAD * 2)
 
@@ -123,10 +123,10 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
    }
    vp = self.viewport
 
-   self.bkgd = vp.new('VectorRectangle', {
-      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
-      fill = t.sunk, stroke = t.border, strokeWidth = 1
-   })
+   edge = (&theme.input.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
+   self.bkgd = vp.new('VectorRectangle', table.merge({
+      x = edge, y = edge, width = width - (edge*2), height = height - (edge*2)
+   }, &theme.input.bkgd, true, true))
 
    self.toGraph = function(X:num!, Y:num!):<num, num>
       return PAD + (X * graph_w), PAD + ((1 - Y) * graph_h)
@@ -134,12 +134,16 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
 
    if Options.guide then
       _, gy = self.toGraph(0, Options.guide)
-      vp.new('VectorRectangle', { x = PAD, y = math.round(gy), width = graph_w, height = 1, fill = &theme.palette.edge })
+      vp.new('VectorRectangle', {
+         x = PAD, y = math.round(gy), width = graph_w, height = 1,
+         fill = &theme.palette.edge
+      })
    end
 
    if Options.caption then
       vp.new('VectorText', {
-         x = PAD - 1, y = PAD + 6, face = Options.face, fontSize = '10px', fill = t.fg0, string = Options.caption
+         x = PAD - 1, y = PAD + 6, face = Options.face, fontSize = '10px',
+         fill = t.fg0, string = Options.caption
       })
    end
 
@@ -186,7 +190,7 @@ colourpicker_curve.new = function(Target:obj!, Options:table!):table
          end
       end
 
-      self.bkgd.stroke = self.focused ? &theme.palette.prime : t.border
+      self.bkgd.stroke = self.focused ? &theme.input.focus.stroke : &theme.input.bkgd.stroke
       vp.acDraw()
    end
 

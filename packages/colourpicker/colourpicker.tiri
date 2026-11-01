@@ -201,8 +201,8 @@ TAB_PICKER  <const> = 0
 TAB_PALETTE <const> = 1
 
 MODE_TABS <const> = array<table> {
-   { label = 'Picker',     glyph = 'picker',     enabled = true },
-   { label = 'Palette',    glyph = 'palette',    enabled = true }
+   { label = 'Picker', glyph = 'picker', enabled = true },
+   { label = 'Palette Manager', glyph = 'palette', enabled = true }
 }
 
 -- Keyboard nudge for each channel; Shift multiplies it by NUDGE_COARSE
@@ -1513,9 +1513,9 @@ function buildPalette(Target:obj)
    end)
 
    -- The buttons are positioned vertically by layoutLeft().  The icon buttons are aligned to the right of the list:
-   -- Add, the palette actions (load, paste, copy and reset), then Delete for the active swatch.
+   -- Add, the palette actions (paste, copy and reset), then Delete for the active swatch.
 
-   btn_x = LIST_PAD_X + list_w - 2 - (SMALL_BUTTON * 6) - (5 * 6)
+   btn_x = LIST_PAD_X + list_w - 2 - (SMALL_BUTTON * 5) - (4 * 6)
 
    function[&&] iconButton(Index:num, Icon:str, Tip:str, Activate:func):table
       return gui.button({
@@ -1529,15 +1529,10 @@ function buildPalette(Target:obj)
    end
 
    &btnAddSwatch = iconButton(0, 'items/add', 'Add swatch', function[&&]() &addSwatch() end)
-   -- Load opens the palette manager, where a palette is chosen from the user's palette database.
-
-   &btnLoadPalette = iconButton(1, 'folders/folder_open', 'Load palette', function[&&]()
-      processing.delayedCall(function[&&]() &selectTab(TAB_PALETTE) end)
-   end)
-   &btnImport = iconButton(2, 'tools/paste', 'Paste palette from clipboard', function[&&]() &importPalette() end)
-   &btnExport = iconButton(3, 'tools/copy', 'Copy palette to clipboard', function[&&]() &exportPalette() end)
-   &btnResetPalette = iconButton(4, 'items/reload', 'Reset palette to defaults', function[&&]() &resetPalette() end)
-   &btnDeleteSwatch = iconButton(5, 'items/trash', 'Delete swatch (Delete)', function[&&]() &deleteSwatch() end)
+   &btnImport = iconButton(1, 'tools/paste', 'Paste palette from clipboard', function[&&]() &importPalette() end)
+   &btnExport = iconButton(2, 'tools/copy', 'Copy palette to clipboard', function[&&]() &exportPalette() end)
+   &btnResetPalette = iconButton(3, 'items/reload', 'Reset palette to defaults', function[&&]() &resetPalette() end)
+   &btnDeleteSwatch = iconButton(4, 'items/trash', 'Delete swatch (Delete)', function[&&]() &deleteSwatch() end)
 
    -- The swatch count sits opposite the buttons, on the same row
 
@@ -1575,10 +1570,10 @@ function buildEyedropper(Target:obj)
    }))
    body = panel.body
 
-   body.new('VectorRectangle', {
+   body.new('VectorRectangle', table.merge({
       x = 12.5, y = 12.5, width = box_w - 1, height = box_h - 1, roundX = 5, roundY = 5,
-      fill = t.sunk, stroke = t.border, strokeWidth = 1
-   })
+      stroke = &theme.palette.edge, strokeWidth = 1
+   }, &theme.page.bkgd))
 
    &loupe = colourpicker_wheel.loupe(body, { x = 20, y = 20, tokens = t })
 
@@ -1632,8 +1627,7 @@ function layoutLeft(self:table)
 
    btn_y = LIST_TOP + (LIST_PAD_BTM * .25) + list_h
    buttons = array<table> {
-      self.btnAddSwatch, self.btnLoadPalette, self.btnImport, self.btnExport,
-      self.btnResetPalette, self.btnDeleteSwatch
+      self.btnAddSwatch, self.btnImport, self.btnExport, self.btnResetPalette, self.btnDeleteSwatch
    }
 
    for btn in values(buttons) do
@@ -2029,8 +2023,8 @@ function relHueStops(Swatch:table, Base:table, Mode:str):table
       function(F:num):<num, num, num, num> return l, c, start + (F * 360), 1 end)
 end
 
-function buildRelationship(self:table, Target:obj)
-   t = self.tokens
+function buildRelationship(Target:obj)
+   t = &tokens
    scene = Target.scene
    inner_w = RIGHT_INNER - (PANEL_PAD * 2)
 
@@ -2041,19 +2035,23 @@ function buildRelationship(self:table, Target:obj)
       target = Target, x = RIGHT_PAD_X, y = RIGHT_PAD, width = RIGHT_INNER, height = REL_PANEL_H,
       title = 'Relationship', padding = colourpicker_parts.PANEL_PADDING
    })
-   self.relPanel = panel
+   &relPanel = panel
    body = panel.body
 
    -- The swap button sits in the header.  The meta names the base and ends before the button.
 
-   self.btnSwap = panel.headerItem('trail', gui.button({
+   &btnSwap = panel.headerItem('trail', gui.button({
       target = panel.header, height = SMALL_BUTTON, icon = 'layout/swap', tip = 'Swap colour with base',
-      events = { activate = function() self.swapColours() end }
+      events = {
+         activate = function[&&]()
+            &swapColours()
+         end
+      }
    }))
 
    -- The channel rows are held in a viewport of their own
 
-   self.relRows = body.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0 })
+   &relRows = body.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0 })
 
    -- One row per channel.  The key is a toggle: released, the channel is relative to the base (ΔL); pressed, it is
    -- absolute (L) and keeps its value when the base changes.
@@ -2070,7 +2068,7 @@ function buildRelationship(self:table, Target:obj)
    track_x = PANEL_PAD + REL_KEY_W + CHANNEL_GAP
    track_w = inner_w - REL_KEY_W - REL_VALUE_W - (CHANNEL_GAP * 2)
 
-   self.relSliders = { }
+   &relSliders = { }
    y = 10
    for ch in values(REL_CHANNELS) do
       gradient = scene.new('GradientLinear', {
@@ -2082,19 +2080,19 @@ function buildRelationship(self:table, Target:obj)
       row = { def = ch, gradient = gradient, mode = 'delta' }
 
       row.key = colourpicker_parts.toggleButton({
-         target = self.relRows, x = PANEL_PAD, y = y + ((REL_ROW - SMALL_BUTTON) * 0.5), width = REL_KEY_W,
+         target = &relRows, x = PANEL_PAD, y = y + ((REL_ROW - SMALL_BUTTON) * 0.5), width = REL_KEY_W,
          height = SMALL_BUTTON,
          label  = 'Δ' .. ch.key,
          theme  = smallText(),
          tokens = t,
          tip    = f'Click to switch {ch.name} between relative to the base (Δ{ch.key}) and absolute ({ch.key})',
          onToggle = function[&&](Pressed)
-            self.setChannelMode(ch.id, Pressed ? 'abs' : 'delta')
+            &setChannelMode(ch.id, Pressed ? 'abs' : 'delta')
          end
       })
 
       row.slider = gui.slider({
-         target    = self.relRows,
+         target    = &relRows,
          x         = track_x,
          y         = y + ((REL_ROW - SLIDER_THUMB) * 0.5),
          width     = track_w,
@@ -2103,11 +2101,11 @@ function buildRelationship(self:table, Target:obj)
          min       = -ch.delta,
          max       = ch.delta,
          value     = 0,
-         theme     = colourpicker_theme.channelSlider(self.themeName, SLIDER_THUMB, f'url(#{ch.def})'),
+         theme     = colourpicker_theme.channelSlider(&themeName, SLIDER_THUMB, f'url(#{ch.def})'),
          events    = {
             activate = function[&&](Value)
-               if self.refreshing then return end
-               self.setLinkValue(ch.id, Value)
+               if &refreshing then return end
+               &setLinkValue(ch.id, Value)
             end
          }
       })
@@ -2133,19 +2131,19 @@ function buildRelationship(self:table, Target:obj)
          end
       end
 
-      row.value = valueField(self, self.relRows, {
+      row.value = valueField(&&, &relRows, {
          x      = PANEL_PAD + inner_w,
          y      = y + ((REL_ROW - VALUE_FIELD_H) * 0.5),
          width  = REL_VALUE_W + 4,
          height = VALUE_FIELD_H, size = 11, tokens = t,
-         commit = function(Text) return commitRelationText(self, row, Text) end
+         commit = function(Text) return commitRelationText(&&, row, Text) end
       })
 
       panel.addWidget(row.key.button)
       panel.addWidget(row.slider)
       panel.addWidget(row.value)
 
-      self.relSliders[ch.id] = row
+      &relSliders[ch.id] = row
       y += REL_ROW + REL_ROW_GAP
    end
 end
@@ -2243,12 +2241,14 @@ end
 -- colourexport.generate() reads from the palette.
 
 function updateExport(self:table)
-   tab = EXPORT_TABS[self.exportTab]
+   tab     = EXPORT_TABS[self.exportTab]
    palette = self.state.palette
-   parts = array<str> { tab.id, self.state.clamp, palette.mode ?? '', palette.name ?? '' }
+   parts   = array<str> { tab.id, self.state.clamp, palette.mode ?? '', palette.name ?? '' }
+
    for s in values(palette.swatches) do
       parts.push(f'{s.name}\t{s.l}\t{s.c}\t{s.h}\t{s.alpha}')
    end
+
    key = parts.concat('\n')
    if key != self.exportKey then
       lines = colourexport.generate(palette, tab.id, { gamut = self.state.clamp })
@@ -2256,6 +2256,7 @@ function updateExport(self:table)
       self.code.setText(self.exportText)
       self.exportKey = key
    end
+
    self.code.setTab(self.exportTab)
    self.exportPanel.setMeta(exportMeta(self))
 end
@@ -2291,7 +2292,7 @@ end
 
 function buildRight()
    col = &columns[2]
-   buildRelationship(&&, col)
+   buildRelationship(col)
    buildContrast(&&, col)
 
    &ramp = colourpicker_ramp.new(col, {
@@ -2315,14 +2316,17 @@ end
 
 function layoutRight(self:table, ShowRel:bool)
    if ShowRel is self.relShown then return end
+
    self.relShown = ShowRel
    top = RIGHT_PAD
+
    if ShowRel then
       self.relPanel.show()
       top += REL_PANEL_H + RIGHT_GAP
    else
       self.relPanel.hide()
    end
+
    self.contrastPanel.viewport.y = top
    top += CONTRAST_H + RIGHT_GAP
    self.ramp.panel.viewport.y = top
@@ -2444,8 +2448,8 @@ end
 
 function trackKeyOwners(self:table)
    widgets = array<table> {
-      self.btnSelect, self.btnCancel, self.btnReset, self.btnAddSwatch, self.btnLoadPalette,
-      self.btnImport, self.btnExport, self.btnResetPalette, self.btnDeleteSwatch, self.btnCopy, self.btnSwap,
+      self.btnSelect, self.btnCancel, self.btnReset, self.btnAddSwatch, self.btnImport,
+      self.btnExport, self.btnResetPalette, self.btnDeleteSwatch, self.btnCopy, self.btnSwap,
       self.btnApplyScheme, self.btnPick, self.colourInput, self.schemeBox, self.clampBox, self.paletteModeBox,
       self.paletteView, self.scratchRow
    }
@@ -3400,8 +3404,8 @@ gui.dialog.colour = function(Options:table)
             'manager', 'paletteDialog', 'modeTabs', 'copyTimer',
             'relPanel', 'relSliders', 'relRows', 'btnSwap', 'contrastPanel', 'ramp', 'exportPanel', 'code',
             'copiedCell', 'wheel', 'loupe', 'btnPick', 'pickedSample', 'preview', 'paletteView', 'paletteModeBox',
-            'scratchRow', 'palettePanel', 'eyedropPanel', 'previewPanel', 'btnAddSwatch', 'btnLoadPalette',
-            'btnImport', 'btnExport', 'btnResetPalette', 'btnDeleteSwatch', 'channels', 'readoutCells',
+            'scratchRow', 'palettePanel', 'eyedropPanel', 'previewPanel', 'btnAddSwatch', 'btnImport',
+            'btnExport', 'btnResetPalette', 'btnDeleteSwatch', 'channels', 'readoutCells',
             'readoutRing', 'readoutVP', 'window', 'viewport', 'footer', 'modebar', 'columns', 'btnSelect',
             'btnCancel', 'btnReset', 'scratchGesture', 'paletteItems'
          }
@@ -3565,6 +3569,7 @@ gui.dialog.colour = function(Options:table)
             for box in values(array<table> { &schemeBox, &clampBox, &paletteModeBox, &ramp.lBox, &ramp.cBox }) do
                if box.menu?.visible then return end
             end
+
             if &paletteView.hasFocus and (&state.active != nil) then
                processing.delayedCall(function()
                   if &finished then return end

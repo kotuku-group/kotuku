@@ -328,6 +328,7 @@ colourpicker_ramp.new = function(Target:obj!, Options:table!):table
             refresh()
          end
       })
+
       editor.presets = Presets
       editor.box = box
       return box, editor
