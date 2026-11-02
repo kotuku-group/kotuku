@@ -976,7 +976,8 @@ set (TIRI_TESTS
    presence blank ternary table stress unit_tests bytecode_files bytecode_jit_eligibility
    weak_bindings jitoptions fstring const const_optimisation import_scope unicode ellipsis safe_nav close
    type_annotations type_fixing
-   type_inference jit jit_uclo jit_fnew jit_arrays jit_objects jit_try_regex pipe for_each arrow_functions
+   type_inference jit jit_uclo jit_fnew jit_stack_stores jit_arrays jit_objects jit_try_regex pipe for_each
+   arrow_functions
    result_filter thunks deferred_expr shadow_assert ranges contains bare_iteration compiler_intrinsics
    annotations ordinary_annotation package_annotation dependencies_annotation locality anonymous_for key_values
    debug_filesources compound choose_from enum flow
