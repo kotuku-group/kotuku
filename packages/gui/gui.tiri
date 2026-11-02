@@ -1639,6 +1639,24 @@ gui.applyStyle = function(Vector:any!, Set:table)
    end
 end
 
+-- Replace a rectangle's style, restoring fields omitted by the replacement to their native values.  Defaults is
+-- private to the vector and must be supplied from the first style application.  Records retain nil values, and the
+-- rounding fields share storage, so all corners are saved and restored together.
+
+gui.styleRectangle = function(Vector:obj!, Style:table, Defaults:table!)
+   Defaults.rounding ?= { value=Vector.rounding }
+   for key, saved in Defaults do Vector[key] = saved.value end
+
+   if Style then
+      for key in Style do
+         if key != 'roundX' and key != 'roundY' and not (key in Defaults) then
+            Defaults[key] = { value=Vector[key] }
+         end
+      end
+      gui.applyStyle(Vector, Style)
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- Returns the theme widget registry of the outermost scene that hosts Object.
 
