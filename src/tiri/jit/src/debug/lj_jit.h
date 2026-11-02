@@ -463,6 +463,7 @@ struct jit_State {
   uint32_t flags;    //  JIT engine flags.
   BCREG maxslot;     //  Relative to baseslot.
   BCREG baseslot;    //  Current frame base, offset into J->slots.
+  BCREG checkslot;   //  Absolute slot limit proven to fit the Lua stack for direct trace stores.
 
   uint8_t mergesnap;   //  Allowed to merge with next snapshot.
   uint8_t needsnap;   //  Need snapshot before recording next bytecode.

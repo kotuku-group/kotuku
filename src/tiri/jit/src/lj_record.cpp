@@ -74,6 +74,27 @@ static TRef rec_stack_slot_addr(jit_State *J, IRBuilder& Ir, int32_t AbsoluteSlo
    return Ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE, Ir.kint(byte_offset));
 }
 
+//********************************************************************************************************************
+// Root traces prove only the starting frame fits the Lua stack, and check inlined frames at the tail.  Direct stores
+// to an inlined frame's slots need that capacity first.  Guard the whole current frame, as the interpreter would on
+// entry; a failed guard exits so that snapshot restore grows the stack and the interpreter repeats the instruction.
+
+static void rec_guard_stack_slots(jit_State *J, IRBuilder& Ir, BCREG SlotLimit)
+{
+   BCREG limit = SlotLimit;
+   if (J->pt and J->baseslot + J->pt->framesize > limit) limit = J->baseslot + J->pt->framesize;
+   if (limit <= J->checkslot) return;
+
+   // The stack cannot shrink under a live trace, so a forwarded or hoisted maxstack load is conservative.
+   TRef state_ref = Ir.emit(IRT(IR_LREF, IRT_PTR), 0, 0);
+   TRef maxstack_addr = Ir.emit(IRT(IR_ADD, IRT_PTR), state_ref, lj_ir_kintp(J, offsetof(lua_State, maxstack)));
+   TRef maxstack = Ir.emit(IRT(IR_XLOAD, IRT_PGC), maxstack_addr, 0);
+   TRef limit_addr = Ir.emit(IRT(IR_ADD, IRT_PGC), REF_BASE,
+      Ir.kint(int32_t(8 * (limit - FRC::MIN_BASESLOT))));
+   emitir(IRTG(IR_ULE, IRT_PGC), limit_addr, maxstack);
+   J->checkslot = limit;
+}
+
 static void rec_emit_tvalue_store(jit_State *J, TRef SlotAddr, TRef ValueRef)
 {
    if (tref_isnum(ValueRef)) {
@@ -137,6 +158,7 @@ static void rec_materialise_slot_range(
          continue;
       }
 
+      if (not stored) rec_guard_stack_slots(J, ir, J->baseslot + slot_limit);
       TRef slot_addr = rec_stack_slot_addr(J, ir, absolute_slot);
       rec_emit_tvalue_store(J, slot_addr, value_ref);
       if (TrackTryStores) {
@@ -2742,6 +2764,7 @@ handlemm:
          irb.guard_ne(marker, irb.knull(IRT_TAB), IRT_TAB);
          if (not tref_isk(ix->key)) lj_trace_err(J, LJ_TRERR_NYIENVKEY);
          if (ix->val_slot < 0) lj_trace_err(J, LJ_TRERR_NYIBC);
+         rec_guard_stack_slots(J, irb, J->baseslot + BCREG(ix->val_slot) + 1);
          TRef value_slot = rec_stack_slot_addr(J, irb, int32_t(J->baseslot) + ix->val_slot);
          rec_emit_tvalue_store(J, value_slot, ix->val);
          emitir_raw(IRT(IR_XBAR, IRT_NIL), 0, 0);
@@ -5654,6 +5677,7 @@ void lj_record_ins(jit_State *J)
       lj_snap_add(J);
       if (local_captures) {
          // Publish all captured values after type guards, before exposing their addresses to the open-cell list.
+         rec_guard_stack_slots(J, ir, J->baseslot + J->maxslot);
          for (MSize index = 0; index < prototype->sizeuv; ++index) {
             uint32_t capture = proto_uv(prototype)[index];
             if (capture & PROTO_UV_LOCAL) {
@@ -5846,6 +5870,9 @@ void lj_record_setup(jit_State *J)
    }
    J->cur.nk = REF_TRUE;
 
+   // Side traces inherit the parent's checked top slot; root traces start with their entry frame checked.
+   J->checkslot = J->parent ? FRC::MIN_BASESLOT + traceref(J, J->parent)->topslot : FRC::MIN_BASESLOT;
+
    J->startpc = J->pc;
    setmref(J->cur.startpc, J->pc);
    if (J->parent) {  // Side trace.
@@ -5882,6 +5909,7 @@ void lj_record_setup(jit_State *J)
       J->cur.root = 0;
       J->cur.startins = *J->pc;
       J->pc = rec_setup_root(J);
+      J->checkslot = FRC::MIN_BASESLOT + J->pt->framesize;
 
       // Note: the loop instruction itself is recorded at the end and not
       // at the start! So snapshot #0 needs to point to the *next* instruction.
