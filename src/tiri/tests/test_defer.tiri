@@ -852,3 +852,48 @@ end
    assert(join(log) is 'acquire-alpha,body-beta-updated,cleanup-beta-start-token',
       "Resource cleanup should receive original token value: '" .. join(log) .. "'")
 end
+
+-- A previously compiled iterator can take a new side exit while deferred cleanup runs under exception protection.
+-- Recording is disabled there, so returning straight to the iterator's JLOOP must not repeatedly enter the same trace.
+
+@Test function CompiledIteratorsProgressDuringUnwind()
+   function sumTable(Items:table!):num
+      local total = 0
+      for _, value in Items do
+         total += value is <num> ? value : 10
+      end
+      return total
+   end
+
+   function sumArray(Items:array<any>!):num
+      local total = 0
+      for _, value in Items do
+         total += value is <num> ? value : 10
+      end
+      return total
+   end
+
+   for repeat_index in {0 to 40} do
+      assert(sumTable({ 1, 2, 3 }) is 6)
+      assert(sumArray(array<any> { 1, 2, 3 }) is 6)
+   end
+
+   local table_total, array_total = 0, 0
+   function subject()
+      defer
+         table_total = sumTable({ 'a', 'b', 'c' })
+         array_total = sumArray(array<any> { 'a', 'b', 'c' })
+      end
+      raise ERR_Args, 'Iterator cleanup test'
+   end
+
+   local caught = false
+   try
+      subject()
+   except e when ERR_Args
+      caught = true
+      assert(e.message is 'Iterator cleanup test', 'Cleanup must preserve the original error')
+   end
+   assert(caught and table_total is 30 and array_total is 30,
+      'Compiled table and array iterators must finish cleanup after taking a new side exit')
+end
