@@ -278,6 +278,32 @@ gui.menubar = function(Options:table)
       _arranged = false
    }
 
+   -- The applied themes are layered as base.menubar <- Options.theme.menubar <- the override's menubar, and the same
+   -- for the menu section.  They are rebuilt whenever the base theme or the override changes.
+
+   base_theme = nil
+   override = nil -- Per-instance override from setTheme()
+   bkgd_defaults, highlight_defaults, focus_defaults = { }, { }, { }
+
+   function buildTheme()
+      &theme = table.merge(base_theme.menubar, Options.theme?.menubar, true, true)
+      if override?.menubar then &theme = table.merge(&theme, override.menubar, true, true) end
+      &menuTheme = table.merge(base_theme.menu, Options.theme?.menu, true, true)
+      if override?.menu then &menuTheme = table.merge(&menuTheme, override.menu, true, true) end
+      &_customFont = &theme.text.face != base_theme.menubar.text.face or
+         &theme.text.fontSize != base_theme.menubar.text.fontSize or
+         &theme.text.fontStyle != base_theme.menubar.text.fontStyle
+   end
+
+   -- Returns the size and fill of an item's icon viewport, with the icon pattern in the current text colour.  The
+   -- viewport is padded to suit the pattern tile, see gui.createIcon().
+
+   function iconStyle(Item:table!):table
+      icon = gui.createIcon(&viewport.scene, Item.iconPath, ICON_SIZE, gui.rgbToIconTheme(&theme.text.fill))
+      Item.iconMargin = icon.margin
+      return { width = ICON_SIZE + (icon.margin * 2), height = ICON_SIZE + (icon.margin * 2), fill = icon.fill }
+   end
+
    -- Add a clickable item to the menubar.  The Label acts as the item text that is displayed in the menubar if no
    -- icon can be displayed.  The icon string must be in the standard format of 'category/icon'.
 
@@ -289,12 +315,8 @@ gui.menubar = function(Options:table)
       item.prepare = Prepare
 
       if Icon then
-         icon = gui.createIcon(&viewport.scene, Icon, ICON_SIZE, gui.rgbToIconTheme(&theme.text.fill))
-
-         item.iconMargin = icon.margin
-         item.icon = &viewport.new('VectorRectangle', {
-            x=0, y=0, width=ICON_SIZE + (icon.margin * 2), height=ICON_SIZE + (icon.margin * 2), fill = icon.fill
-         })
+         item.iconPath = Icon
+         item.icon = &viewport.new('VectorRectangle', iconStyle(item))
       end
 
       &_arranged = false
@@ -397,6 +419,76 @@ gui.menubar = function(Options:table)
       &viewport.acDraw()
    end
 
+   -- Apply the current theme to the existing vectors.  The height of the bar is not changed.  The item text is
+   -- recreated by arrangeItems(), so item widths follow the new text style.  Item menus are freed and recreated when
+   -- they are next opened; an open menu is reopened with the same highlight.
+
+   function restyle()
+      gui.styleRectangle(&_bkgdRect, &theme.bkgd, bkgd_defaults)
+      gui.styleRectangle(&_highlight, &theme.highlight, highlight_defaults)
+      gui.styleRectangle(&_focusEdge, &theme.focus ?? &theme.highlight, focus_defaults)
+
+      open_item = nil
+      open_highlight = nil
+      item = &_first
+      while item do
+         if item.icon then
+            try
+               gui.applyStyle(item.icon, iconStyle(item))
+            except e
+               msg(f'Failed to restyle menubar icon "{item.iconPath}": {e.message}')
+            end
+         end
+
+         if item.menu then
+            item.menuItems = item.menu.items -- Retain configuration replaced by prepare(), including shortcuts
+            if item.menu.visible then
+               open_item = item
+               open_highlight = item.menu.hItem?.config
+            end
+            item.menu.hide()
+            item.menu.surface?.free()
+            item.menu = nil
+         end
+         item = item.next
+      end
+      &_lastMenu = nil
+
+      arrangeItems()
+
+      if &_highlight.visibility is VIS_VISIBLE and selectable(&_currentItem) then
+         highlightItem(&_currentItem) -- Follow the new position and width of the item
+      end
+
+      if open_item then
+         showItemMenu(open_item, true)
+         if open_highlight then
+            -- prepare() may return fresh tables; prefer a stable identifier, retaining zero-valued IDs.
+            reference = open_highlight.id != nil ? open_highlight.id : (open_highlight.label ?? open_highlight)
+            open_item.menu.selectItem(reference)
+         end
+      end
+
+      &viewport.acDraw()
+   end
+
+   -- Style this menubar instance.  Override is a partial theme in the same form as Options.theme, and is kept when the
+   -- window theme changes.  Each call replaces the previous override; nil removes it.
+
+   self.setTheme = function(Override:table)
+      override = Override
+      buildTheme()
+      restyle()
+   end
+
+   -- Called by gui.broadcastTheme() with the window's new theme.
+
+   self.applyTheme = function(Theme:table!)
+      base_theme = Theme
+      buildTheme()
+      restyle()
+   end
+
    -- Main entry point
 
    using self do
@@ -404,11 +496,7 @@ gui.menubar = function(Options:table)
          assert(Options.target, 'A target viewport is required.')
 
          base_theme = gui.getTheme(Options.target)
-         &theme = table.merge(base_theme.menubar, Options.theme?.menubar, true, true)
-         &menuTheme = table.merge(base_theme.menu, Options.theme?.menu, true, true)
-         &_customFont = &theme.text.face != base_theme.menubar.text.face or
-            &theme.text.fontSize != base_theme.menubar.text.fontSize or
-            &theme.text.fontStyle != base_theme.menubar.text.fontStyle
+         buildTheme()
          &viewport = Options.target.new('vectorviewport')
          &viewport.x      = Options.x ?? 0
          &viewport.y      = Options.y ?? 0
@@ -570,23 +658,27 @@ gui.menubar = function(Options:table)
             &viewport.height = math.max(&viewport.height, math.ceil(spacing + (VMARGIN * 2)))
          end
 
-         &_bkgd.new('VectorRectangle', table.merge({ -- Main background
+         &_bkgdRect = &_bkgd.new('VectorRectangle', { -- Main background
             fill = 'none', x = 0, y = 0, width  = '100%', height = &viewport.height
-         }, &theme.bkgd))
+         })
+         gui.styleRectangle(&_bkgdRect, &theme.bkgd, bkgd_defaults)
 
-         &_highlight = &_bkgd.new('VectorRectangle', table.merge({ -- Highlight for items
+         &_highlight = &_bkgd.new('VectorRectangle', { -- Highlight for items
             fill = 'none', x = 0, y = 0, width = 1, height = &viewport.height - 1,
             visibility = 'hidden'
-         }, &theme.highlight))
+         })
+         gui.styleRectangle(&_highlight, &theme.highlight, highlight_defaults)
 
-         &_focusEdge = &_bkgd.new('VectorRectangle', table.merge({ -- Focus indicator
+         &_focusEdge = &_bkgd.new('VectorRectangle', { -- Focus indicator
             fill = 'none', x = 0, y = &viewport.height - 2, width = '100%', height = 2,
             visibility = 'hidden'
-         }, &theme.focus ? &theme.focus : &theme.highlight))
+         })
+         gui.styleRectangle(&_focusEdge, &theme.focus ?? &theme.highlight, focus_defaults)
 
          arrangeItems()
          &_ready = true
          updateFocusEdge()
+         gui.registerWidget(&viewport, &&)
 
          &_shortcutKeyboard = input.keyboard(&viewport.scene.surface,
             function(Handle, SurfaceID, Qualifiers, Code, Unicode)

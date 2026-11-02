@@ -1680,14 +1680,21 @@ end
 Sends a theme to every widget that is registered with a scene.  Internal function for gui.window.setTheme().
 
 Each widget's `applyTheme()` function is called with Theme.  Widgets whose viewport no longer exists are skipped.  An
-error raised by a widget is logged and does not stop the broadcast.
+error raised by a widget is logged and does not stop the broadcast.  Widgets that are registered during the broadcast
+are not called.
 
 -INPUT-
 Scene: The window's VectorScene, or any vector within it.
 Theme: The complete theme table.
 ]])
 gui.broadcastTheme = function(Scene:obj!, Theme:table!)
-   for widget in widgetRegistry(Scene) do
+   -- A widget can create other widgets while it applies the theme, e.g. a combobox rebuilds its drop-down list, so
+   -- the registry is copied before the broadcast.  Widgets created during the broadcast already use the new theme.
+
+   list = array<table>
+   for widget in widgetRegistry(Scene) do list.push(widget) end
+
+   for widget in values(list) do
       if not widget.viewport?.exists() then continue end
 
       try

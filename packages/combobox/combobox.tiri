@@ -97,6 +97,26 @@ function createMenu(Items:any)
    end
 end
 
+-- Recreates the dropdown menu with its current items, e.g. after a theme change.  An open menu is reopened with the
+-- same highlight.
+
+function rebuildMenu()
+   items = { }
+   for item in values(&menu.items) do items.insert(item.config) end
+
+   was_visible = &menu.visible
+   highlight   = &menu.hItem?.config?.label
+   navigated   = &_menuNavigated
+
+   createMenu(items)
+
+   if was_visible then
+      toggleMenu()
+      if highlight then &menu.highlightText(highlight) end
+      &_menuNavigated = navigated
+   end
+end
+
 gui.combobox = function(Options:table)
    self = entity { -- Public interface
       events         = Options.events ?? { },
@@ -112,6 +132,45 @@ gui.combobox = function(Options:table)
       viewport       = nil  -- The primary viewport
    }
 
+   -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
+   -- the base theme or the override changes.
+
+   base_theme = nil
+   override = nil -- Per-instance override from setTheme()
+
+   function buildTheme()
+      &theme = base_theme
+      if Options.theme then &theme = table.merge(&theme, Options.theme, true, true) end
+      if override then &theme = table.merge(&theme, override, true, true) end
+      &input_theme = &theme.input
+
+      -- Apply the combobox text theme to the dropdown for consistency.  A dropdown section in the theme option or the
+      -- override takes precedence.
+
+      &dropdownTheme = table.clone(&theme.dropdown)
+      &dropdownTheme.text = table.merge(&dropdownTheme.text, &input_theme.text, true)
+
+      if Options.theme?.dropdown then
+         &dropdownTheme = table.merge(&dropdownTheme, Options.theme.dropdown, true, true)
+      end
+
+      if override?.dropdown then
+         &dropdownTheme = table.merge(&dropdownTheme, override.dropdown, true, true)
+      end
+   end
+
+   -- Compose the box style from the current focus and disabled states.  Focus styling is suppressed while the
+   -- combobox is disabled.
+
+   function refreshStyle()
+      gui.applyStyle(&bkgd, &input_theme.bkgd)
+      if &disabled then
+         gui.applyStyle(&bkgd, &input_theme.disabled)
+      elseif &_focus then
+         gui.applyStyle(&bkgd, &input_theme.focus)
+      end
+   end
+
    -- Change the active state of the combobox box to disabled or enabled
 
    self.disable = function()
@@ -119,7 +178,7 @@ gui.combobox = function(Options:table)
       &menu?.hide()
       &viewport.acDisable()
       &viewport.opacity = 0.5
-      gui.applyStyle(&bkgd, &input_theme.disabled)
+      refreshStyle()
       &events.disable?()
       &viewport.acDraw()
    end
@@ -128,7 +187,7 @@ gui.combobox = function(Options:table)
       &disabled = false
       &viewport.acEnable()
       &viewport.opacity = 1
-      gui.applyStyle(&bkgd, &input_theme.bkgd)
+      refreshStyle()
       &events.enable?()
       &viewport.acDraw()
    end
@@ -169,11 +228,8 @@ gui.combobox = function(Options:table)
       assert(Options.target, 'A target viewport is required.')
       assert(Options.allowCustom or firstItem(Options.items), 'A list of items is required.')
 
-      &theme = gui.getTheme(&parentViewport)
-      if Options.theme then
-         &theme = table.merge(&theme, Options.theme, true, true)
-      end
-      &input_theme = &theme.input
+      base_theme = gui.getTheme(&parentViewport)
+      buildTheme()
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
       vps = { -- Viewport settings
@@ -237,15 +293,22 @@ gui.combobox = function(Options:table)
 
       clip_inset = math.ceil(&input_theme.bkgd.strokeWidth) -- Whole pixels keep the text and icon sharp
       ICON_SIZE = math.min(FONT_HEIGHT, BOX_HEIGHT - (clip_inset * 2))
-      down_icon = gui.createIcon(&viewport.scene, self.menuIcon, ICON_SIZE, iconTheme(self))
 
-      &iconRender = &inputViewport.new('VectorViewport', { -- Padded to suit the pattern tile, see gui.createIcon()
-         xOffset = MARGIN - down_icon.margin,
-         y       = math.floor((BOX_HEIGHT - ICON_SIZE) * 0.5) - down_icon.margin,
-         width   = ICON_SIZE + (down_icon.margin * 2),
-         height  = ICON_SIZE + (down_icon.margin * 2),
-         fill    = down_icon.fill
-      })
+      -- Returns the drop-down icon pattern in the current text colour, and the placement of the viewport that paints
+      -- it.  The viewport is padded to suit the pattern tile, see gui.createIcon().
+
+      function iconSettings():table
+         icon = gui.createIcon(&viewport.scene, &menuIcon, ICON_SIZE, iconTheme(&&))
+         return {
+            xOffset = MARGIN - icon.margin,
+            y       = math.floor((BOX_HEIGHT - ICON_SIZE) * 0.5) - icon.margin,
+            width   = ICON_SIZE + (icon.margin * 2),
+            height  = ICON_SIZE + (icon.margin * 2),
+            fill    = icon.fill
+         }
+      end
+
+      &iconRender = &inputViewport.new('VectorViewport', iconSettings())
 
       &_textClip = &inputViewport.new('VectorViewport', {
          cursor = (function()
@@ -288,7 +351,8 @@ gui.combobox = function(Options:table)
 
             if &allowCustom and not &disabled then &text.mtSelectArea(0, 0, -1, -1) end
          elseif Event is FM_LOST_FOCUS then
-            gui.applyStyle(&bkgd, &input_theme.bkgd)
+            &_focus = false
+            refreshStyle()
             &events.lostFocus?()
             if &allowCustom then
                reportFeedback()
@@ -297,12 +361,9 @@ gui.combobox = function(Options:table)
             &menu.hide()
          else
             &_lastGoodInput = &text.string
-            if &disabled then
-               gui.applyStyle(&bkgd, &input_theme.bkgd)
-            else
-               gui.applyStyle(&bkgd, &input_theme.focus)
-               &events.focus?()
-            end
+            &_focus = true
+            refreshStyle()
+            if not &disabled then &events.focus?() end
          end
 
          Viewport.acDraw()
@@ -369,16 +430,50 @@ gui.combobox = function(Options:table)
          until Msg is nil
       end)
 
-      -- Apply the combobox text theme to the dropdown for consistency
+      -- Apply the current theme to the existing vectors.  The font, the position of the text and the size of the icon
+      -- are not changed.  The drop-down list is rebuilt for the new theme.
 
-      &dropdownTheme = table.clone(&theme.dropdown)
-      &dropdownTheme.text = table.merge(&dropdownTheme.text, &input_theme.text, true)
+      function restyle()
+         sw = &input_theme.bkgd.strokeWidth ?? 0
+         edge = sw * 0.5
+         &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
+         refreshStyle()
 
-      if Options.theme?.dropdown then
-         &dropdownTheme = table.merge(&dropdownTheme, Options.theme.dropdown, true, true)
+         inset = math.ceil(sw)
+         &_textClip.{ x = inset, y = inset, yOffset = inset }
+
+         if &input_theme.text.fill then &text.fill = &input_theme.text.fill end
+         if &labelText and &theme.window.text.fill then &labelText.fill = &theme.window.text.fill end
+
+         try
+            gui.applyStyle(&iconRender, iconSettings())
+         except e
+            msg(f'Failed to restyle combobox icon "{&menuIcon}": {e.message}')
+         end
+
+         rebuildMenu()
+         &viewport.acDraw()
+      end
+
+      -- Style this combobox instance.  Override is merged over the complete theme, as for Options.theme, and is kept
+      -- when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+      &setTheme = function(Override:table)
+         override = Override
+         buildTheme()
+         restyle()
+      end
+
+      -- Called by gui.broadcastTheme() with the window's new theme.
+
+      &applyTheme = function(Theme:table!)
+         base_theme = Theme
+         buildTheme()
+         restyle()
       end
 
       createMenu(Options.items)
+      gui.registerWidget(&viewport, &&)
 
       if Options.disabled then &disable() end
       &events.show?()

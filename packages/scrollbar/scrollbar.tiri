@@ -143,26 +143,9 @@ gui.scrollbar = function(Options)
       end
    end
 
-   -- Restore the native values before applying a replacement style.  Keep nil values in records so that fields such
-   -- as fill and filter can be cleared.  The rounding fields share storage, so save and restore all corners together.
-
-   function styleRectangle(Vector:obj!, Style:table, Defaults:table!)
-      Defaults.rounding ?= { value=Vector.rounding }
-      for key, saved in Defaults do Vector[key] = saved.value end
-
-      if Style then
-         for key in Style do
-            if key != 'roundX' and key != 'roundY' and not (key in Defaults) then
-               Defaults[key] = { value=Vector[key] }
-            end
-         end
-         gui.applyStyle(Vector, Style)
-      end
-   end
-
    function restyleSlider(Bar:table!)
       style = table.merge(Bar.theme.fore, Bar.slider.hover ? Bar.theme.foreHighlight : nil)
-      styleRectangle(Bar.slider.bkRect, style, Bar.slider.defaults)
+      gui.styleRectangle(Bar.slider.bkRect, style, Bar.slider.defaults)
    end
 
    -- Apply the current theme to the vectors of a bar.  The thickness of the bar is not changed.
@@ -176,7 +159,7 @@ gui.scrollbar = function(Options)
       else
          Bar.sliderHostVP.{ x = m_start, xOffset = m_end }
       end
-      styleRectangle(Bar.barBkgd, Bar.theme.bkgd, Bar.bkgdDefaults)
+      gui.styleRectangle(Bar.barBkgd, Bar.theme.bkgd, Bar.bkgdDefaults)
       restyleSlider(Bar)
    end
 

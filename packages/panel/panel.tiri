@@ -65,7 +65,20 @@ gui.panel = function(Options:table!)
          (Options.scroll is 'both'), f"Invalid scroll value '{Options.scroll}'")
 
       target = Options.target
-      theme = table.merge(gui.getTheme(target).panel, Options.theme, true, true)
+
+      -- The applied theme is layered as base.panel <- Options.theme <- the override from setTheme().  It is rebuilt
+      -- whenever the base theme or the override changes.
+
+      base_theme = gui.getTheme(target)
+      override = nil -- Per-instance override from setTheme()
+      local theme:table
+
+      function buildTheme()
+         theme = table.merge(base_theme.panel, Options.theme, true, true)
+         if override then theme = table.merge(theme, override, true, true) end
+      end
+
+      buildTheme()
 
       header_pad = theme.headerPad
       edge       = theme.bkgd.strokeWidth ?? 0
@@ -493,19 +506,32 @@ gui.panel = function(Options:table!)
          &events.resize?(math.max(0, Width - (&padding.left + &padding.right)), math.max(0, Height - body_y - &padding.top - &padding.bottom))
       end
 
-      if Options.header != false then
-         -- The optional header fill covers the header inside the border.
-         if theme.header and theme.header.fill != theme.bkgd.fill then
-            fill_round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
-            fill_round_y = theme.bkgd.roundY or fill_round_x
-            fill_round_x = math.max(0, fill_round_x - (edge * 0.5))
-            fill_round_y = math.max(0, fill_round_y - (edge * 0.5))
+      -- The optional header fill covers the header inside the border.  It is needed only if its fill differs from the
+      -- background.
 
-            &headerFill = &viewport.new('VectorRectangle', table.merge({
-               name = 'PanelHeaderFill', x = edge, y = edge, xOffset = edge, height = 1,
-               rounding = array<double> { fill_round_x, fill_round_y, fill_round_x, fill_round_y, 0, 0, 0, 0 }
-            }, theme.header))
-         end
+      function headerFillNeeded():bool
+         return (theme.header != nil) and (theme.header.fill != theme.bkgd.fill)
+      end
+
+      function headerFillStyle():table
+         fill_round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
+         fill_round_y = theme.bkgd.roundY or fill_round_x
+         fill_round_x = math.max(0, fill_round_x - (edge * 0.5))
+         fill_round_y = math.max(0, fill_round_y - (edge * 0.5))
+
+         return table.merge({
+            x = edge, y = edge, xOffset = edge,
+            rounding = array<double> { fill_round_x, fill_round_y, fill_round_x, fill_round_y, 0, 0, 0, 0 }
+         }, theme.header)
+      end
+
+      function createHeaderFill()
+         &headerFill = &viewport.new('VectorRectangle', table.merge({ name = 'PanelHeaderFill', height = 1 },
+            headerFillStyle()))
+      end
+
+      if Options.header != false then
+         if headerFillNeeded() then createHeaderFill() end
 
          &header = &viewport.new('VectorViewport', { name = 'PanelHeader', x = 0, y = 0, xOffset = 0, height = 1 })
 
@@ -557,6 +583,8 @@ gui.panel = function(Options:table!)
       -- A scrolling body holds a page in a clipping frame.  The client sets the page size in the scrolled directions,
       -- and insets the page content by the padding.
 
+      local scrollbarTheme:func -- Returns the scrollbar override, if the body scrolls
+
       if Options.scroll then
          frame = &body.new('VectorViewport', {
             name = 'PanelFrame', x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN
@@ -567,33 +595,106 @@ gui.panel = function(Options:table!)
          -- the border, and margins keep the sliders out of the rounded ends.  A bar that meets the divider, or the
          -- other bar, is square at that end.
 
-         round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
-         round_y = theme.bkgd.roundY or round_x
-         round_x = math.max(0, round_x - (edge * 0.5))
-         round_y = math.max(0, round_y - (edge * 0.5))
          flush_bottom = &padding.bottom is edge
          round_tr = (not &header and (&padding.top is edge) and (&padding.right is edge)) ? 1 : 0
          round_br = (flush_bottom and (&padding.right is edge)) ? 1 : 0
          round_bl = (flush_bottom and (&padding.left is edge)) ? 1 : 0
          round_br_h = (Options.scroll is 'both') ? 0 : round_br -- The vertical bar takes the corner
 
-         bar_theme = gui.getTheme(target)
-         &scrollbar = gui.scrollbar({
-            target = &body, view = frame, page = &page, direction = (Options.scroll is 'both') ? 'all' : Options.scroll,
-            theme = {
-               scrollbar_v = table.merge(bar_theme.scrollbar_v ?? bar_theme.scrollbar, {
+         -- The styling is a scrollbar override rather than its theme option, so that it is recomputed from the
+         -- scrollbar sections of the new theme when the window theme changes.
+
+         scrollbarTheme = function():table
+            round_x = theme.bkgd.roundX or theme.bkgd.roundY or 0
+            round_y = theme.bkgd.roundY or round_x
+            round_x = math.max(0, round_x - (edge * 0.5))
+            round_y = math.max(0, round_y - (edge * 0.5))
+
+            return {
+               scrollbar_v = table.merge(base_theme.scrollbar_v ?? base_theme.scrollbar, {
                   bkgd = { rounding = { 0, 0, round_x * round_tr, round_y * round_tr,
                      round_x * round_br, round_y * round_br, 0, 0 } },
                   margin = { round_y * round_tr, round_y * round_br }
                }, true, true),
-               scrollbar_h = table.merge(bar_theme.scrollbar_h ?? bar_theme.scrollbar, {
+               scrollbar_h = table.merge(base_theme.scrollbar_h ?? base_theme.scrollbar, {
                   bkgd = { rounding = { 0, 0, 0, 0, round_x * round_br_h, round_y * round_br_h,
                      round_x * round_bl, round_y * round_bl } },
                   margin = { round_x * round_bl, round_x * round_br_h }
                }, true, true)
             }
+         end
+
+         &scrollbar = gui.scrollbar({
+            target = &body, view = frame, page = &page, direction = (Options.scroll is 'both') ? 'all' : Options.scroll
          })
+         &scrollbar.setTheme(scrollbarTheme())
       end
+
+      -- The fill and opacity of a text style, which can change without affecting the header layout.
+
+      function textColours(Style:table):table
+         return { fill = Style?.fill, opacity = Style?.opacity ?? 1 }
+      end
+
+      -- Apply the current theme to the existing vectors.  Fonts, the header height, the divider height and the
+      -- padding are not changed.  The header is laid out again, as headerPad can change.
+
+      function restyle()
+         edge = theme.bkgd.strokeWidth ?? 0
+         header_pad = theme.headerPad
+         &bkgd.{ x = edge * 0.5, y = edge * 0.5, xOffset = edge * 0.5, yOffset = edge * 0.5 }
+         gui.applyStyle(&bkgd, theme.bkgd)
+
+         if &header then
+            if headerFillNeeded() then
+               if &headerFill then
+                  gui.applyStyle(&headerFill, headerFillStyle())
+               else -- The new fill goes between the background and the header
+                  createHeaderFill()
+                  &headerFill.height = math.max(1, &headerHeight - edge)
+                  &headerFill.acMoveToBack()
+                  &bkgd.acMoveToBack()
+               end
+            elseif &headerFill then
+               &headerFill.free()
+               &headerFill = nil
+            end
+
+            gui.applyStyle(&titleText, textColours(theme.title))
+            gui.applyStyle(&metaText, textColours(theme.meta))
+
+            meta_base = { }
+            for k in theme.metaHighlight ?? { } do meta_base[k] = &metaText[k] end
+            if &_metaHover then gui.applyStyle(&metaText, theme.metaHighlight) end
+
+            &divider.{ x = edge, xOffset = edge }
+            gui.applyStyle(&divider, theme.divider)
+
+            fitHeader(&header.width)
+         end
+
+         if &scrollbar then &scrollbar.setTheme(scrollbarTheme()) end
+         &viewport.acDraw()
+      end
+
+      -- Style this panel instance.  Override is merged over the panel section of the theme, as for Options.theme, and
+      -- is kept when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+      &setTheme = function(Override:table)
+         override = Override
+         buildTheme()
+         restyle()
+      end
+
+      -- Called by gui.broadcastTheme() with the window's new theme.
+
+      &applyTheme = function(Theme:table!)
+         base_theme = Theme
+         buildTheme()
+         restyle()
+      end
+
+      gui.registerWidget(&viewport, &&)
 
       if Options.hidden then
          &hidden = true
