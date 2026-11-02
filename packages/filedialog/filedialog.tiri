@@ -12,9 +12,17 @@ Documentation is available in the Kotuku Wiki.
 
 GAP <const> = 8
 
+-- Window dimensions may be given in pixels or as a unit string, e.g. '750dp'.
+
+function dialogSize(Value:any, Default:str!):num
+   if Value is <num> then return Value end
+   return gui.rpixel(Value ?? Default)
+end
+
 gui.dialog.file = function(Options)
    local target_path, target_file
    if Options.path then target_path, target_file = io.splitPath(Options.path) end
+   local select_folder = Options.selectFolder is true
 
    accepting = false
    closed = false
@@ -25,11 +33,12 @@ gui.dialog.file = function(Options)
    self = setmetatable(entity { -- Public variables
       windowID    = nil,
       currentPath = target_path,
-      multiSelect = Options.multiSelect ?? false,
-      warnExists  = Options.warnExists ?? false,
+      multiSelect = not select_folder and (Options.multiSelect ?? false),
+      warnExists  = not select_folder and (Options.warnExists ?? false),
       feedback    = Options.feedback,
       target      = Options.target,
-      allowNew    = Options.allowNew
+      allowNew    = not select_folder and Options.allowNew,
+      selectFolder = select_folder
    }, {
       -- Freeing the surface frees the file view's vectors and releases its file system subscriptions.  The window
       -- may have been collected first, in which case its surface has already been freed.
@@ -79,6 +88,20 @@ gui.dialog.file = function(Options)
    function[<weak> self] processFeedback()
       if accepting or closed then return true end
       list = &fileview.view.selectedItems()
+
+      if &selectFolder then
+         -- A selected folder takes priority over the folder being viewed.  The volume list has no path of its own,
+         -- so a volume must be selected there.
+
+         local path = &fileview.path
+         if #list > 0 and (list[0].type is 'folder' or list[0].type is 'volume') then path = list[0].path end
+         path ?! return true
+         accepting = true
+         completing = true
+         defer closeDialog() end
+         &feedback?(&&, path, nil)
+         return true
+      end
 
       if (#list <= 1) and &filebox then
          -- The filebox has priority over single list selections
@@ -142,15 +165,17 @@ gui.dialog.file = function(Options)
    end
 
    using self do
+      local min_width  = gui.rpixel('375dp')
+      local min_height = gui.rpixel('225dp')
       &window = gui.window({
-         insideWidth  = gui.rpixel('750dp'),
-         insideHeight = gui.rpixel('825dp'),
-         minWidth     = gui.rpixel('375dp'),
-         minHeight    = gui.rpixel('225dp'),
+         insideWidth  = math.max(dialogSize(Options.width, '750dp'), min_width),
+         insideHeight = math.max(dialogSize(Options.height, '825dp'), min_height),
+         minWidth     = min_width,
+         minHeight    = min_height,
          quit         = false,
          popOver      = Options.popOver,
-         icon         = Options.icon ?? 'icons:folders/folder',
-         title        = Options.title ?? 'Select a file',
+         icon         = Options.icon ?? 'folders/folder',
+         title        = Options.title ?? (&selectFolder ? 'Select a folder' : 'Select a file'),
          modal        = Options.modal ?? false,
          events = {
             close = cancelDialog
@@ -217,7 +242,7 @@ gui.dialog.file = function(Options)
 
       footer += lOkayButton.viewport.height + GAP
 
-      if Options.allowNew then
+      if &allowNew then
          &filebox = gui.input({
             target      = &viewport,
             x           = 0,
@@ -243,26 +268,19 @@ gui.dialog.file = function(Options)
          footer += &filebox.viewport.height + advance
       end
 
-      -- Populate filter selection
+      -- Populate filter selection.  The file view records its state in the filter tables, so it receives copies
+      -- that leave the client's tables untouched.  Filters do not apply when only folders are shown.
 
       fv_filters = array<table>
-      if Options.filterList and (#Options.filterList > 0) then
-         if Options.strictFilter then
-            -- Pick the first item as being selected if none other is chosen.
-
-            selection = false
-            for item in values(Options.filterList) do
-               if item.selected then
-                  selection = true
-                  break
-               end
-            end
-
-            if not selection then Options.filterList[0].selected = true end
+      if not &selectFolder and Options.filterList then
+         for filter in values(Options.filterList) do
+            fv_filters.push(table.clone(filter))
          end
 
-         for filter in values(Options.filterList) do
-            fv_filters.push(filter)
+         if Options.strictFilter and (#fv_filters > 0) then
+            -- Pick the first item as being selected if none other is chosen.
+
+            if not fv_filters.any(Filter => Filter.selected) then fv_filters[0].selected = true end
          end
       end
 
@@ -281,6 +299,7 @@ gui.dialog.file = function(Options)
          path          = &currentPath,
          filterList    = fv_filters,
          strictFilter  = Options.strictFilter,
+         hideFiles     = &selectFolder,
          sysKeys       = true,
          fileSelected  = processFeedback,
          multiSelect   = &multiSelect,
@@ -313,20 +332,27 @@ end
 -- This sub-routine is provided for languages other than Tiri to utilise the module.
 
 @if(imported=false)
+   -- Script arguments arrive as strings, so flags are only enabled by 'true' or '1'.
+
+   function flag(Name:str!):bool
+      local value = arg(Name)
+      return value is 'true' or value is '1'
+   end
+
    dialog = gui.dialog.file({
       popOver      = arg('popOver'),
       target       = arg('target'),
-      modal        = arg('modal'),
+      modal        = flag('modal'),
+      title        = arg('title'),
       okLabel      = arg('okLabel'),
       cancelLabel  = arg('cancelLabel'),
-      filterList   = arg('filterList'),
       icon         = arg('icon'),
       path         = arg('path'),
-      selectFolder = arg('selectFolder'),
-      multiSelect  = arg('multiSelect'),
-      userInput    = arg('userInput'),
-      allowNew     = arg('allowNew'),
-      strictFilter = arg('strictFilter')
+      selectFolder = flag('selectFolder'),
+      multiSelect  = flag('multiSelect'),
+      allowNew     = flag('allowNew'),
+      warnExists   = flag('warnExists'),
+      strictFilter = flag('strictFilter')
    })
 
    return dialog.windowID

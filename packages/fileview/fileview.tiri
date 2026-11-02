@@ -817,7 +817,6 @@ gui.fileview = function(Options)
          title    = 'Select a Folder',
          path     = PathInput.getText(),
          okLabel  = 'Select Dir',
-         noFiles  = true,
          selectFolder = true,
          feedback = function[&&](Dialog, Path, Files)
             &dlgShortcutBrowse = nil
@@ -1321,7 +1320,7 @@ gui.fileview = function(Options)
       msg_time  = mSys.PreciseTime()
       orig_path = &path
       flags     = RDF_READ_ALL|RDF_TAGS
-      if &hideFiles then flags = flags & bit.bxor(RDF_FILE) end
+      if &hideFiles then flags = flags & ~RDF_FILE end
       err, dir_info = mSys.OpenDir(&path ?? ':', flags)
       if err != ERR_Okay then return false end
 
