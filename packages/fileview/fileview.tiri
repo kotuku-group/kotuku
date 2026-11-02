@@ -807,6 +807,7 @@ gui.fileview = function(Options)
    -- Browse for the folder of a new shortcut.  PathInput is the dialog's path box, which receives the selection.
 
    function shortcutBrowse(PathInput:table!)
+      &dlgShortcutBrowse?.window?.surface?.free()
       &dlgShortcutBrowse = gui.dialog.file({
          title    = 'Select a Folder',
          path     = PathInput.getText(),
@@ -875,6 +876,7 @@ gui.fileview = function(Options)
          end
 
          if err is ERR_Okay then -- The destination exists
+            &dlgRenameReplace?.window?.surface?.free()
             &dlgRenameReplace = gui.dialog.message({
                title    = 'Confirmation Required',
                message  = 'A file already exists that uses this name.  Are you sure that you want to overwrite it?',
@@ -1036,6 +1038,7 @@ gui.fileview = function(Options)
       if not &path?? then -- Create a new shortcut/volume at the root level
          &createShortcut()
       else
+         &dlgFolder?.window?.surface?.free()
          &dlgFolder = gui.dialog.message({
             title     = 'Create New Folder',
             message   = 'Please enter the name of the new folder to create.',
@@ -1079,6 +1082,8 @@ gui.fileview = function(Options)
       Path ?= ''
       local txt_name, txt_path
 
+      &dlgShortcutBrowse?.window?.surface?.free()
+      &dlgShortcut?.window?.surface?.free()
       &dlgShortcut = gui.dialog.message({
          title   = 'Create Shortcut',
          image   = 'folders/folder',
@@ -1143,6 +1148,7 @@ gui.fileview = function(Options)
          msg = f"Are you sure that you want to delete the '{fl}' {item_type}?"
       end
 
+      &dlgDelete?.window?.surface?.free()
       &dlgDelete = gui.dialog.message({
          title    = 'Confirm Deletion',
          image    = 'tools/eraser',
@@ -1275,6 +1281,7 @@ gui.fileview = function(Options)
       if not item or not item.path then return end
       sel = item.filename
 
+      &dlgRename?.window?.surface?.free()
       &dlgRename = gui.dialog.message({
          title     = 'Rename',
          message   = 'Please enter the new name for the selected file or folder.',
@@ -1788,6 +1795,12 @@ gui.fileview = function(Options)
       function releaseSubscriptions()
          if released then return end
          released = true
+         for field in values(array<str> {
+            'dlgShortcutBrowse', 'dlgRenameReplace', 'dlgFolder', 'dlgShortcut', 'dlgDelete', 'dlgRename'
+         }) do
+            self[field]?.window?.surface?.free()
+            self[field] = nil
+         end
          if &timer then mSys.UpdateTimer(&timer, 0); &timer = nil end
          if &evVolumeCreated then unsubscribeEvent(&evVolumeCreated); &evVolumeCreated = nil end
          if &evVolumeDeleted then unsubscribeEvent(&evVolumeDeleted); &evVolumeDeleted = nil end

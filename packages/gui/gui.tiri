@@ -11,6 +11,9 @@
 
    namespace gui {
       theme = nil,
+      -- Strong dialog keys keep open dialogs alive until their completion or surface destruction.
+      -- Constructors manage this set; callers can open a dialog without retaining its return value.
+      dialog = { active = { } },
       configureScene = function(Window, Scene)
          -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
          -- and patterns for fills.

@@ -121,6 +121,8 @@ gui.dialog.message = function(Options:table!)
 
    local font, em, text_width, content_height, primary, buttons_width
    local completing = false
+   local closed = false
+   local ready = false
 
    -- Wait for the user to respond to the dialog.
 
@@ -130,14 +132,24 @@ gui.dialog.message = function(Options:table!)
       &waiting = nil
    end
 
-   -- Release the dialog once the user has responded.  The window is closed when the dialog table is collected.
+   -- Release the dialog after feedback, including when client feedback raises an exception.
 
    function[self] finish()
+      if closed then return end
+      closed = true
+      completing = true
+      defer
+         gui.dialog.active[&&] = nil
+         &clear()
+         processing.collect('defer')
+      end
+      local surface = &window?.surface
+      defer surface?.free() end
       if &waiting then processing.signal() end
       &keyboard?.unsubscribe()
-      &clear()
-      processing.collect('defer')
    end
+
+   defer if not ready then finish() end end
 
    -- Report the option at Index to the client.  Bound to the dialog, as button callbacks run in the button's context.
 
@@ -168,6 +180,8 @@ gui.dialog.message = function(Options:table!)
       defer finish() end
       &feedback?(&&, nil, nil)
    end
+
+   self.close = cancel
 
    -- Wrap the message to the message column and position everything beneath it.  The window is resized to fit the
    -- content.  The message is aligned with the top of the icon.
@@ -259,6 +273,9 @@ gui.dialog.message = function(Options:table!)
       })
 
       &viewport = &window.clientViewport()
+      &window.surface.subscribe('free', function[<weak> &&]()
+         if not completing then finish() end
+      end)
       theme = &window.theme
 
       -- The image beside the message.  An image that fails to load is logged and omitted.
@@ -386,6 +403,8 @@ gui.dialog.message = function(Options:table!)
          end
       end
 
+      gui.dialog.active[&&] = true
+      ready = true
       return &&
    end
 end

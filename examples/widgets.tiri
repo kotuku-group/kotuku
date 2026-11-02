@@ -10,8 +10,6 @@ A demonstration of standard widgets
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
-   local fileDialog:table -- The file dialog is closed if it is collected, so it is retained until it responds
-
    win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('960dp'), insideHeight=gui.rpixel('850dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
@@ -348,7 +346,7 @@ end
       icon   = 'folders/folder',
       events = {
          activate = function()
-            fileDialog = gui.dialog.file({
+            gui.dialog.file({
                filterList  = array<table> { { name='MP3 Audio Files', ext='mp3' }, { name='Text Files', ext='txt' } },
                okLabel     = 'Select File',
                cancelLabel = 'Exit',
@@ -357,7 +355,6 @@ end
                warnExists  = false,
                multiSelect = true,
                feedback = function(Dialog, Path, Files)
-                  fileDialog = nil
                   if not Files then
                      print('Dialog was cancelled or no files selected.')
                      return
@@ -620,6 +617,19 @@ end
       }
    })
 
+   -- Registering a fake widget allows us to plugin to the theme system for making manual updates.
+
+   global glThemeHook = {
+      viewport = win.viewport,
+      applyTheme = function(Theme:table!)
+         notes.setTheme({ bkgd=Theme.page.bkgd })
+         text.fill = Theme.window.text.fill
+         notes_text.fill = Theme.window.text.fill
+      end
+   }
+
+   gui.registerWidget(win.viewport, glThemeHook)
+
    -- Zoom controls are kept in their own viewport above the client viewport so that they are unaffected by the zoom.
    -- Zooming sets the client viewport's view box to a fraction of the window size, so content anchored to the right or
    -- bottom edges is laid out again within the zoomed area.  A view box can't be removed once set, so it follows every
@@ -653,7 +663,7 @@ end
       return (win.theme.scheme is 'dark') ? 'weather/sun' : 'weather/moon'
    end
 
-   themeButton:table = gui.button({
+   themeButton = gui.button({
       target = zoomViewport,
       icon   = themeIcon(),
       tip    = 'Toggle Light and Dark Theme',
@@ -661,23 +671,10 @@ end
       events = {
          activate = function()
             win.setTheme((win.theme.scheme is 'dark') ? gui.themes.light : gui.themes.dark)
+            &setIcon(themeIcon())
          end
       }
    })
-
-   -- Registering a fake widget allows us to plugin to the theme system for making manual updates.
-
-   global glThemeHook = {
-      viewport = win.viewport,
-      applyTheme = function(Theme:table!)
-         notes.setTheme({ bkgd=Theme.page.bkgd })
-         text.fill = Theme.window.text.fill
-         notes_text.fill = Theme.window.text.fill
-         themeButton.setIcon(themeIcon())
-      end
-   }
-
-   gui.registerWidget(win.viewport, glThemeHook)
 
    zoomOutButton = gui.button({
       target = zoomViewport,
