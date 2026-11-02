@@ -653,8 +653,7 @@ end
       return (win.theme.scheme is 'dark') ? 'weather/sun' : 'weather/moon'
    end
 
-   themeButton:table
-   themeButton = gui.button({
+   themeButton:table = gui.button({
       target = zoomViewport,
       icon   = themeIcon(),
       tip    = 'Toggle Light and Dark Theme',
@@ -662,12 +661,23 @@ end
       events = {
          activate = function()
             win.setTheme((win.theme.scheme is 'dark') ? gui.themes.light : gui.themes.dark)
-            text.fill = win.theme.window.text.fill
-            notes_text.fill = win.theme.window.text.fill
-            themeButton.setIcon(themeIcon())
          end
       }
    })
+
+   -- Registering a fake widget allows us to plugin to the theme system for making manual updates.
+
+   global glThemeHook = {
+      viewport = win.viewport,
+      applyTheme = function(Theme:table!)
+         notes.setTheme({ bkgd=Theme.page.bkgd })
+         text.fill = Theme.window.text.fill
+         notes_text.fill = Theme.window.text.fill
+         themeButton.setIcon(themeIcon())
+      end
+   }
+
+   gui.registerWidget(win.viewport, glThemeHook)
 
    zoomOutButton = gui.button({
       target = zoomViewport,

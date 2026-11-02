@@ -83,6 +83,7 @@ gui.panel = function(Options:table!)
       header_pad = theme.headerPad
       edge       = theme.bkgd.strokeWidth ?? 0
       meta_base  = { } -- Values of the meta text's fields that the highlight replaces
+      bkgd_defaults, header_defaults, divider_defaults = { }, { }, { }
 
       if Options.flush or Options.scroll then
          &padding.left   ?= edge
@@ -491,9 +492,10 @@ gui.panel = function(Options:table!)
       body_y = 0
       last_width, last_height = 0, 0
 
-      &bkgd = &viewport.new('VectorRectangle', table.merge({
+      &bkgd = &viewport.new('VectorRectangle', {
          x = edge * 0.5, y = edge * 0.5, xOffset = edge * 0.5, yOffset = edge * 0.5
-      }, theme.bkgd))
+      })
+      gui.styleRectangle(&bkgd, theme.bkgd, bkgd_defaults)
 
       -- The background reports resizing of the panel viewport.  It subscribes before the header is measured, because
       -- measuring lays out the viewport and the first resize message would otherwise be lost.  The body size is
@@ -526,8 +528,9 @@ gui.panel = function(Options:table!)
       end
 
       function createHeaderFill()
-         &headerFill = &viewport.new('VectorRectangle', table.merge({ name = 'PanelHeaderFill', height = 1 },
-            headerFillStyle()))
+         header_defaults = { }
+         &headerFill = &viewport.new('VectorRectangle', { name = 'PanelHeaderFill', height = 1 })
+         gui.styleRectangle(&headerFill, headerFillStyle(), header_defaults)
       end
 
       if Options.header != false then
@@ -564,9 +567,10 @@ gui.panel = function(Options:table!)
          &titleText.y = baseline
          &metaText.y  = baseline
 
-         &divider = &viewport.new('VectorRectangle', table.merge({
+         &divider = &viewport.new('VectorRectangle', {
             name = 'PanelDivider', x = edge, y = &headerHeight, xOffset = edge, height = math.max(1, math.floor(edge))
-         }, theme.divider))
+         })
+         gui.styleRectangle(&divider, theme.divider, divider_defaults)
 
          body_y = &headerHeight + &divider.height
 
@@ -643,12 +647,12 @@ gui.panel = function(Options:table!)
          edge = theme.bkgd.strokeWidth ?? 0
          header_pad = theme.headerPad
          &bkgd.{ x = edge * 0.5, y = edge * 0.5, xOffset = edge * 0.5, yOffset = edge * 0.5 }
-         gui.applyStyle(&bkgd, theme.bkgd)
+         gui.styleRectangle(&bkgd, theme.bkgd, bkgd_defaults)
 
          if &header then
             if headerFillNeeded() then
                if &headerFill then
-                  gui.applyStyle(&headerFill, headerFillStyle())
+                  gui.styleRectangle(&headerFill, headerFillStyle(), header_defaults)
                else -- The new fill goes between the background and the header
                   createHeaderFill()
                   &headerFill.height = math.max(1, &headerHeight - edge)
@@ -668,7 +672,7 @@ gui.panel = function(Options:table!)
             if &_metaHover then gui.applyStyle(&metaText, theme.metaHighlight) end
 
             &divider.{ x = edge, xOffset = edge }
-            gui.applyStyle(&divider, theme.divider)
+            gui.styleRectangle(&divider, theme.divider, divider_defaults)
 
             fitHeader(&header.width)
          end

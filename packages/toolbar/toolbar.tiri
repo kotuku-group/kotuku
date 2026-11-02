@@ -16,6 +16,7 @@ TI_GROUP <const> = 3
 
 gui.toolbar = function(Options:table)
    local theme:table, tb_theme:table
+   local icon_size:num -- Fixed at construction; theme updates do not resize the toolbar
 
    self = entity { -- Public interface
       host           = nil,
@@ -28,6 +29,40 @@ gui.toolbar = function(Options:table)
       _hasFocus      = false,
       _cellMargin    = Options.cellMargin ?? 6
    }
+
+   -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
+   -- the base theme or the override changes.
+
+   base_theme = nil
+   override = nil -- Per-instance override from setTheme()
+
+   function buildTheme()
+      theme = base_theme
+      if Options.theme then theme = table.merge(theme, Options.theme, true, true) end
+      if override then theme = table.merge(theme, override, true, true) end
+      tb_theme = theme.toolbar
+
+      &_iconTheme     = tb_theme.icon
+      &_iconHighlight = tb_theme.iconHighlight
+      &_hoverFill     = theme.button.highlight.fill
+      &_selectFill    = theme.palette.prime
+   end
+
+   -- Build an item's icon patterns for the current icon themes.  Returns the size and fill of the item's icon
+   -- rectangle, which is padded to suit the pattern tile, see gui.createIcon().
+
+   function iconStyle(Item:table!):table
+      info = gui.createIcon(&viewport.scene, Item.iconPath, icon_size, &_iconTheme)
+      Item.iconFill   = info.fill
+      Item.iconMargin = info.margin
+
+      Item.iconAltFill = nil
+      if &_iconHighlight and (&_iconTheme != &_iconHighlight) then
+         Item.iconAltFill = gui.createIcon(&viewport.scene, Item.iconPath, icon_size, &_iconHighlight).fill
+      end
+
+      return { fill = info.fill, width = icon_size + (info.margin * 2), height = icon_size + (info.margin * 2) }
+   end
 
    function sendFeedback()
       item = &_current
@@ -157,7 +192,7 @@ gui.toolbar = function(Options:table)
          groupOffset = &_groupMargin
       end
 
-      cell_size = tb_theme.iconSize + (&_cellMargin * 2)
+      cell_size = icon_size + (&_cellMargin * 2)
 
       -- Transient highlight state refers to the graphics being rebuilt, so it is reset.
 
@@ -246,9 +281,9 @@ gui.toolbar = function(Options:table)
          elseif item.type is TI_GROUP then
             if not Options.flush then
                if &_horizontal then
-                  x += not item.prev ? groupOffset : (tb_theme.iconSize * 0.25)
+                  x += not item.prev ? groupOffset : (icon_size * 0.25)
                else
-                  y += not item.prev ? groupOffset : (tb_theme.iconSize * 0.25)
+                  y += not item.prev ? groupOffset : (icon_size * 0.25)
                end
 
                currentGroup = item
@@ -293,11 +328,12 @@ gui.toolbar = function(Options:table)
                item.vectorText = text_group.new('VectorText', {
                   x        = x + &_cellMargin,
                   face     = gui.fonts.widget.face,
-                  fontSize = tb_theme.iconSize * 0.75,
+                  fontSize = icon_size * 0.75,
                   weight   = 500,
                   string   = item.displayName
                })
 
+               item.textAltFill = nil
                if &_iconHighlight and (&_iconTheme != &_iconHighlight) then
                   gui.applyFillEffect(&_iconHighlight, text_group)
                   item.textAltFill = item.vectorText.fill
@@ -387,7 +423,7 @@ gui.toolbar = function(Options:table)
    -- Size the toolbar's breadth to suit its content, then arrange the items.
 
    function updateLayout()
-      &_colBreadth = tb_theme.iconSize + (&_cellMargin * 2)
+      &_colBreadth = icon_size + (&_cellMargin * 2)
       if &_groupCount > 0 then
          &_colBreadth += (&_groupMargin*2)
       end
@@ -432,20 +468,9 @@ gui.toolbar = function(Options:table)
       end
 
       if Icon then
+         item.iconPath = Icon
          try
-            info = gui.createIcon(&viewport.scene, Icon, tb_theme.iconSize, &_iconTheme)
-            item.iconFill = info.fill
-            item.iconMargin = info.margin
-
-            if &_iconHighlight and (&_iconTheme != &_iconHighlight) then
-               local info = gui.createIcon(&viewport.scene, Icon, tb_theme.iconSize, &_iconHighlight)
-               item.iconAltFill = info.fill
-            end
-
-            item.icon = &viewport.new('VectorRectangle', {
-               fill = info.fill, x=0, y=0,
-               width = tb_theme.iconSize + (info.margin * 2), height = tb_theme.iconSize + (info.margin * 2)
-            })
+            item.icon = &viewport.new('VectorRectangle', table.merge({ x=0, y=0 }, iconStyle(item)))
          end
       end
 
@@ -509,7 +534,7 @@ gui.toolbar = function(Options:table)
       item = &_lookup[ID]
       item ?! return
 
-      sticker_size = math.floor(tb_theme.iconSize * 0.5)
+      sticker_size = math.floor(icon_size * 0.5)
 
       item.sticker ?= { }
 
@@ -519,7 +544,7 @@ gui.toolbar = function(Options:table)
          })
 
          item.sticker.bkgd = item.sticker.viewport.new('VectorEllipse', {
-            cx='50%', cy='50%', radius=tb_theme.iconSize * 0.25, fill=theme.palette.prime
+            cx='50%', cy='50%', radius=icon_size * 0.25, fill=theme.palette.prime
          })
       end
 
@@ -529,7 +554,7 @@ gui.toolbar = function(Options:table)
       if Content then
          if Content is <num> then
             if Content > 9 then
-               size = math.floor(tb_theme.iconSize * 0.33)
+               size = math.floor(icon_size * 0.33)
                plus = gui.createIcon(&viewport.scene, 'items/add', size, 'fill(pearl)', 'sticker_plus')
                pos = math.floor((sticker_size - size) * 0.5) - plus.margin
                item.sticker.content = item.sticker.viewport.new('VectorRectangle', {
@@ -683,21 +708,66 @@ gui.toolbar = function(Options:table)
       end
    end
 
+   -- Apply the current theme.  The icon patterns are rebuilt and the items are arranged again, which recreates the
+   -- group frames, breaks, item text and highlights.  The icon size, and therefore the breadth of the toolbar, is not
+   -- changed.  Hover, keyboard and pressed states are restored on the rebuilt highlights.
+
+   function restyle()
+      item = &_first
+      while item do
+         if item.icon then
+            try
+               gui.applyStyle(item.icon, iconStyle(item))
+            except e
+               msg(f'Failed to restyle toolbar icon "{item.iconPath}": {e.message}')
+            end
+         end
+
+         if item.sticker then item.sticker.bkgd.fill = theme.palette.prime end
+         item = item.next
+      end
+
+      current = &_current
+      kb_item = &_kbItem
+      clicked = &_clicked
+
+      arrangeItems()
+
+      if kb_item then
+         highlightItem(kb_item)
+      elseif current then
+         &_clicked = clicked
+         hoverUpdate(current, true)
+      end
+
+      &viewport.acDraw()
+   end
+
+   -- Style this toolbar instance.  Override is merged over the complete theme, as for Options.theme, and is kept when
+   -- the window theme changes.  Each call replaces the previous override; nil removes it.
+
+   self.setTheme = function(Override:table)
+      override = Override
+      buildTheme()
+      restyle()
+   end
+
+   -- Called by gui.broadcastTheme() with the window's new theme.
+
+   self.applyTheme = function(Theme:table!)
+      base_theme = Theme
+      buildTheme()
+      restyle()
+   end
+
    -- Main entry point
 
    using self do
       assert(Options.target, 'A target viewport is required.')
 
-      theme = gui.getTheme(Options.target)
-      if Options.theme then
-         theme = table.merge(theme, Options.theme, true, true)
-      end
-      tb_theme = theme.toolbar
-
-      &_iconTheme     = tb_theme.icon
-      &_iconHighlight = tb_theme.iconHighlight
-      &_hoverFill     = theme.button.highlight.fill
-      &_selectFill    = theme.palette.prime
+      base_theme = gui.getTheme(Options.target)
+      buildTheme()
+      icon_size = tb_theme.iconSize
 
       if Options.groupMargin then
          &_groupMargin = Options.groupMargin
@@ -797,6 +867,7 @@ gui.toolbar = function(Options:table)
       Options.createItems(self)
 
       updateLayout()
+      gui.registerWidget(&viewport, &&)
       return &&
    end
 end

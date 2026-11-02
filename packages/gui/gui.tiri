@@ -1691,6 +1691,8 @@ Viewport: The widget's viewport, or any vector in the scene that the widget belo
 Widget: The widget's interface table.
 ]])
 gui.registerWidget = function(Viewport:obj!, Widget:table!)
+   assert(Widget.viewport is <obj>, 'The widget must reference a viewport')
+   assert(Widget.applyTheme is <func>, 'The widget must have an applyTheme() function')
    widgetRegistry(Viewport)[Widget] = true
 end
 
