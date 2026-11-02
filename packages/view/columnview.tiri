@@ -280,6 +280,38 @@ function arrangeColumns(View:table!)
    end
 end
 
+-- Apply the sort direction icon to the banner's sort indicator.  Pattern names are derived from the icon theme, so a
+-- theme change creates new patterns.
+
+function styleSortIcon(View:table!)
+   path = View._sort.ascending ? 'layout/sort_alpha_asc' : 'layout/sort_alpha_desc'
+   sort_icon = gui.createIcon(View.scene, path, glIconSize, View.theme.window.icon)
+   View._sort.margin = sort_icon.margin
+   View._sort.icon.{
+      fill   = sort_icon.fill,
+      y      = math.round((LINE_HEIGHT - glIconSize) * 0.5) - sort_icon.margin,
+      width  = glIconSize + (sort_icon.margin * 2),
+      height = glIconSize + (sort_icon.margin * 2)
+   }
+end
+
+-- Build the normal and highlight icon fills of an item for the current theme.
+
+function itemIconStyle(View:table!, Item:table!)
+   local theme = Item.iconTheme ?? View.theme.page.icon
+   local uid   = f'{gui.parseFill(theme).key}+{Item.icon}'
+   local info  = gui.createIcon(View.scene, Item.icon, glIconSize, theme, uid)
+   Item._iconFill      = info.fill
+   Item._iconMargin    = info.margin
+   Item._iconHighlight = nil
+
+   if View.theme.page.iconHighlight and View.theme.page.iconHighlight != theme then
+      theme = View.theme.page.iconHighlight
+      uid   = f'{gui.parseFill(theme).key}+{Item.icon}'
+      Item._iconHighlight = gui.createIcon(View.scene, Item.icon, glIconSize, theme, uid).fill
+   end
+end
+
 function bannerZoneClick(View, Col, X, Y, Value)
    if Value is 1 then return end
 
@@ -291,38 +323,20 @@ function bannerZoneClick(View, Col, X, Y, Value)
    if View._sort and (View._sort.col is Col) and (View._sort.ascending is true) then
       View._sort = { col=Col, ascending=false }
       if not View.iconDescending then
-         View._sort_desc ??= gui.createIcon(View.scene, 'layout/sort_alpha_desc', glIconSize,
-            View.theme.window.icon, 'sort_desc')
-
-         sort_icon = View._sort_desc
-         View._sort.margin = sort_icon.margin
-         View._sort.icon = Col.bannerVP.new('VectorRectangle', {
-            name   = 'banner_sort',
-            fill   = sort_icon.fill,
-            y      = math.round((LINE_HEIGHT - glIconSize) * 0.5) - sort_icon.margin,
-            width  = glIconSize + (sort_icon.margin * 2),
-            height = glIconSize + (sort_icon.margin * 2)
-         })
+         View._sort.icon = Col.bannerVP.new('VectorRectangle', { name = 'banner_sort' })
+         styleSortIcon(View)
       end
    else
       View._sort = { col=Col, ascending=true }
       if not View.iconAscending then
-         View._sort_asc ??= gui.createIcon(View.scene, 'layout/sort_alpha_asc', glIconSize,
-            View.theme.window.icon, 'sort_asc')
-
-         sort_icon = View._sort_asc
-         View._sort.margin = sort_icon.margin
-         View._sort.icon = Col.bannerVP.new('VectorRectangle', {
-            name   = 'banner_sort',
-            fill   = sort_icon.fill,
-            y      = math.round((LINE_HEIGHT - glIconSize) * 0.5) - sort_icon.margin,
-            width  = glIconSize + (sort_icon.margin * 2),
-            height = glIconSize + (sort_icon.margin * 2)
-         })
+         View._sort.icon = Col.bannerVP.new('VectorRectangle', { name = 'banner_sort' })
+         styleSortIcon(View)
       end
    end
 
-   View._sort.icon.x = (Col.align is 'right' ? MARGIN : Col.px_width - MARGIN - glIconSize) - View._sort.margin
+   if View._sort.icon then
+      View._sort.icon.x = (Col.align is 'right' ? MARGIN : Col.px_width - MARGIN - glIconSize) - View._sort.margin
+   end
 
    View.sortColumn(View, Col, View._sort.ascending)
    View.viewport.acDraw()
@@ -614,18 +628,7 @@ gui.columnView = function(Options):table
 
             if not col.checkBoxes and col.showIcons and item.icon then
                try
-                  local theme = item.iconTheme ?? View.theme.page.icon
-                  local uid   = f'{gui.parseFill(theme).key}+{item.icon}'
-                  local info  = gui.createIcon(View.scene, item.icon, glIconSize, theme, uid)
-                  item._iconFill   = info.fill
-                  item._iconMargin = info.margin
-
-                  if View.theme.page.iconHighlight and View.theme.page.iconHighlight != theme then
-                     theme = View.theme.page.iconHighlight
-                     uid   = f'{gui.parseFill(theme).key}+{item.icon}'
-                     info  = gui.createIcon(View.scene, item.icon, glIconSize, theme, uid)
-                     item._iconHighlight = info.fill
-                  end
+                  itemIconStyle(View, item)
 
                   if not item._vectors.iconImage then
                      item._vectors.iconImage = col.vecViewport.new('VectorRectangle', {
@@ -758,6 +761,48 @@ gui.columnView = function(Options):table
          end
       end
       vw.scene.surface.mtScheduleRedraw()
+   end
+
+   -- Recolours the banner, the column titles, the item text, highlights and checkboxes, and rebuilds the icons for the
+   -- current theme.  Fonts, the line height and the column widths are not changed.
+
+   vw._restyle = function()
+      vw.columns ?! return
+
+      gui.applyStyle(vw.banner.lines, vw.theme.window.stroke)
+
+      for col in values(vw.columns) do
+         col.vecTitle.fill  = vw.theme.page.text.fill
+         col.fillItem       = vw.theme.page.text.fill
+         col.fillItemSelect = vw.theme.page.textHighlight
+         if col.checkBoxes then col._checkboxFills = checkboxPatterns(vw, col._checkboxSize) end
+      end
+
+      if vw._sort?.icon then
+         styleSortIcon(vw)
+         col = vw._sort.col
+         vw._sort.icon.x = (col.align is 'right' ? MARGIN : col.px_width - MARGIN - glIconSize) - vw._sort.margin
+      end
+
+      for item in values(vw.items) do
+         image = item._vectors?.iconImage
+         if image then
+            try
+               itemIconStyle(vw, item)
+               image.{
+                  fill   = item._iconFill,
+                  x      = (MARGIN * 2) - item._iconMargin,
+                  y      = item._y + ICON_OFFSET - item._iconMargin,
+                  width  = glIconSize + (item._iconMargin * 2),
+                  height = glIconSize + (item._iconMargin * 2)
+               }
+            except e
+               msg(f'Failed to restyle view icon "{item.icon}": {e.message}')
+            end
+         end
+
+         if item._highlightEvent then item._highlightEvent(vw, item, item is vw.hItem) end
+      end
    end
 
    -- Use row hit testing for all checkbox columns, without per-cell input subscriptions.

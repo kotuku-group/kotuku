@@ -19,7 +19,6 @@ TBID <const> = {
    BOOKMARK=12, CREATE_FOLDER=13, RENAME=14, DELETE=15, COL_VIEW=17, LIST_VIEW=18, FONT=19
 }
 
-local glFolderFill
 local glEnableThreading = false
 
 rxParentFolder   <const> = <{ regex.new([[^(.*[:\/\\]+).+]]) }>
@@ -28,6 +27,12 @@ rxExtractIcon    <const> = <{ regex.new([[^(.+)\.([^:\/\\]+)$]]) }>
 rxStripExtension <const> = <{ regex.new([[^(.*?)\.[^:\/\\]+$]]) }>
 
 ----------------------------------------------------------------------------------------------------------------------
+
+-- The text fill of folder items for a theme.
+
+function folderFill(Theme:table!):str
+   return Theme.palette.type is 'light' ? 'rgb(20,20,110)' : 'rgb(205,225,255)'
+end
 
 glExtensions = {
   txt  = { icon = 'filetypes/text' },
@@ -302,7 +307,7 @@ function displayFilters()
          visibility = VIS_HIDDEN, x = 0, y = &toolbar.viewport.height, xOffset = 0, height = 1
       })
       &filterViewport.detach()
-      &filterViewport.new('VectorRectangle', table.merge({
+      &_filterBkgd = &filterViewport.new('VectorRectangle', table.merge({
          width='100%', height='100%'
       }, &theme.page.bkgd))
 
@@ -377,7 +382,7 @@ function displayFilters()
 
       &filterViewport.height = height + descent
 
-      gui.separator(&filterViewport, 'h', &filterViewport.height)
+      _, &_filterRule = gui.separator(&filterViewport, 'h', &filterViewport.height)
    end
 
    -- Toggle the filter list
@@ -514,7 +519,7 @@ function createFileItem(Info)
          sort        = '\x03' .. Info.name.lower(),
          filename    = Info.name,
          path        = (&path ?? '') .. rxStripFolder.extract(Info.name) .. '/',
-         fill        = glFolderFill,
+         fill        = &_folderFill,
          name        = { sort = 'D' .. display_name.lower(), value = display_name },
          insensitive = true,
          owner       = mSys.ResolveUserID(Info.userID),
@@ -1479,6 +1484,35 @@ gui.fileview = function(Options)
          return #sources > 0 and &transferFiles(sources, dest, 'copy') > 0
       end
 
+      -- The view restyles itself when the window theme changes.  This hook runs first, so that folder items take the
+      -- new folder fill when their rows are redrawn.  The separators follow the window theme, as gui.separator() does.
+
+      &view._themeChanged = function[&&](View)
+         &theme = View.theme
+         old_fill = &_folderFill
+         &_folderFill = folderFill(&theme)
+
+         for item in values(View.items) do
+            if item.type is 'folder' and item.fill is old_fill then item.fill = &_folderFill end
+         end
+
+         for item in values(&_file_table ?? { }) do
+            if item.type is 'folder' and item.fill is old_fill then item.fill = &_folderFill end
+         end
+
+         rule_fill = gui.getTheme(View.viewport).window.stroke.stroke
+         &_toolbarRule?.fill = rule_fill
+
+         if &filterViewport then
+            gui.applyStyle(&_filterBkgd, &theme.page.bkgd)
+            &_filterRule?.fill = rule_fill
+            for item in values(&filterList) do
+               item.highlight?.fill = &theme.page.textSelectBkgd
+               item.txt?.fill = item.selected ? &theme.page.textSelect : &theme.page.text.fill
+            end
+         end
+      end
+
       if Options.toolbar then
          local tbo
          if (Options.toolbar is true) or (Options.toolbar is 'all') then
@@ -1616,7 +1650,7 @@ gui.fileview = function(Options)
             end
          })
 
-         advance = gui.separator(&view.viewport, 'h', &toolbar.viewport.height)
+         advance, &_toolbarRule = gui.separator(&view.viewport, 'h', &toolbar.viewport.height)
 
          &view.reserveTop('FileView', &toolbar.viewport.height + advance)
       end
@@ -1725,8 +1759,8 @@ gui.fileview = function(Options)
          &style = 'list'
       end
 
-      &theme = &view.theme --gui.getTheme(Options.target)
-      glFolderFill = &theme.palette.type is 'light' ? 'rgb(20,20,110)' : 'rgb(205,225,255)'
+      &theme = &view.theme
+      &_folderFill = folderFill(&theme)
 
       configureView(vo)
 
@@ -1739,6 +1773,7 @@ gui.fileview = function(Options)
          &view.free()
          &filterViewport = nil
          &view = Style is 'column' ? gui.columnView(vo) : gui.listView(vo)
+         &theme = &view.theme
          configureView(vo)
          &refresh()
       end

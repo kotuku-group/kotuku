@@ -79,10 +79,10 @@ gui.listView = function(Options:table!):table
    function setIconFill(View:table!, Item:table!, Highlighted:bool!)
       image = Item._vectors.iconImage
       image ?! return
-      if Highlighted and View.theme.page.iconHighlight and View.hIcons[Item.icon] then
-         image.fill = f'url(#{View.hIcons[Item.icon]})'
+      if Highlighted and View.hIcons[Item.icon] then
+         image.fill = View.hIcons[Item.icon]
       elseif View.icons[Item.icon] then
-         image.fill = f'url(#{Item.icon})'
+         image.fill = View.icons[Item.icon].fill
       end
    end
 
@@ -97,17 +97,19 @@ gui.listView = function(Options:table!):table
 
       if View.showIcons and Item.icon then
          try
-            if not View.icons[Item.icon] then -- Records the icon's margin, see gui.createIcon()
-               View.icons[Item.icon] = gui.createIcon(View.scene, Item.icon, m.iconSize, View.theme.page.icon,
-                  Item.icon).margin
+            -- Pattern names are derived from the icon theme, so a theme change creates new patterns.  The info
+            -- records the icon's margin, see gui.createIcon().
+
+            if not View.icons[Item.icon] then
+               View.icons[Item.icon] = gui.createIcon(View.scene, Item.icon, m.iconSize, View.theme.page.icon)
             end
 
             if View.theme.page.iconHighlight and not View.hIcons[Item.icon] then
                if View.theme.page.iconHighlight is View.theme.page.icon then
-                  View.hIcons[Item.icon] = Item.icon
+                  View.hIcons[Item.icon] = View.icons[Item.icon].fill
                else
-                  gui.createIcon(View.scene, Item.icon, m.iconSize, View.theme.page.iconHighlight, f'_h_{Item.icon}')
-                  View.hIcons[Item.icon] = f'_h_{Item.icon}'
+                  View.hIcons[Item.icon] = gui.createIcon(View.scene, Item.icon, m.iconSize,
+                     View.theme.page.iconHighlight).fill
                end
             end
 
@@ -115,9 +117,9 @@ gui.listView = function(Options:table!):table
                Item._vectors.iconImage = vp.new('VectorRectangle', { width = m.iconSize, height = m.iconSize })
             end
 
-            margin = View.icons[Item.icon]
+            margin = View.icons[Item.icon].margin
             image = Item._vectors.iconImage
-            image.fill       = f'url(#{Item.icon})'
+            image.fill       = View.icons[Item.icon].fill
             image.x          = math.round(m.lineHeight * 0.2) - margin
             image.y          = math.round((m.rowHeight - m.iconSize) * 0.5) - margin
             image.width      = m.iconSize + (margin * 2)
@@ -481,6 +483,27 @@ gui.listView = function(Options:table!):table
    end
 
    vw._preserveScroll = true
+
+   -- Redraws every row for the current theme.  Built-in content is recoloured and its icons rebuilt; custom content
+   -- receives 'update'.  Fonts and row metrics are not changed.  The rows are laid out once at the end, because the
+   -- width of built-in content can change with the icons.
+
+   vw._restyle = function()
+      vw.icons = { }
+      vw.hIcons = { }
+
+      for item in values(vw.items) do
+         if not item._rowReady then continue end
+         if lContentHook then
+            dispatch(vw, lContentHook, item, item._vectors.viewport, 'update')
+         else
+            renderDefaultContent(vw, item)
+         end
+         applyHighlight(vw, item)
+      end
+
+      layoutRows(vw)
+   end
 
    vw._stateChanged = function()
       for item in values(vw.items) do syncState(vw, item) end

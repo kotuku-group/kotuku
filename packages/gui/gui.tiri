@@ -1489,8 +1489,10 @@ MarginB: Margin at the end of the line, defaults to 0.
 
 -RESULTS-
 num: The thickness of the line, as defined by the window stroke of the theme.
+obj: The VectorRectangle that draws the line, e.g. to restyle it when the theme changes.
 ]])
-gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any, MarginB:any):num
+gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any, MarginB:any):<num, obj>
+   local line:obj
    o = Orientation.sub(0, 1)
    stroke = gui.getTheme(Viewport).window.stroke
    options = { fill = stroke.stroke }
@@ -1501,23 +1503,23 @@ gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any,
       if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
          options.yOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
-         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+         line = subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
       else
          options.y = Pos
-         Viewport.new('VectorRectangle', options)
+         line = Viewport.new('VectorRectangle', options)
       end
    else
       options.{ y = MarginA ?? 0, yOffset = MarginB ?? 0, width = stroke.strokeWidth }
       if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
          options.xOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
-         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+         line = subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
       else
          options.x = Pos
-         Viewport.new('VectorRectangle', options)
+         line = Viewport.new('VectorRectangle', options)
       end
    end
-   return stroke.strokeWidth
+   return stroke.strokeWidth, line
 end
 
 ----------------------------------------------------------------------------------------------------------------------
