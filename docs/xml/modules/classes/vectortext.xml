@@ -294,7 +294,7 @@
       <access read="G" write="S">Get/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>The inline-size property allows one to set the wrapping area to a rectangular shape. The computed value of the property sets the width of the rectangle for horizontal text and the height of the rectangle for vertical text. The other dimension (height for horizontal text, width for vertical text) is of infinite length. A value of zero (the default) disables the creation of a wrapping area.</p>
+<p>The inline-size property allows the client to set the wrapping area to a rectangular shape. The computed value of the property sets the width of the rectangle for horizontal text and the height of the rectangle for vertical text. The other dimension (height for horizontal text, width for vertical text) is of infinite length. A value of zero (the default) disables the creation of a wrapping area.</p>
       </description>
     </field>
 

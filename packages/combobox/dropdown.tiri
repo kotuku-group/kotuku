@@ -292,6 +292,7 @@ gui._dropdown = function(Options)
       &surface.init()
 
       &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=&relative.scene })
+      gui.setTheme(&scene, theme_name)
       &viewport = &scene.new('VectorViewport', { })
 
       &surface.subscribe('free', function(Surface, Args)

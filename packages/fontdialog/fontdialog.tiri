@@ -36,6 +36,32 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 ]]
 
    local vwSize, vwStyle, vwFace
+   local completing = false
+   local closed = false
+   local ready = false
+
+   function[self] closeDialog()
+      if closed then return end
+      closed = true
+      completing = true
+      defer
+         gui.dialog.active[&&] = nil
+         &clear()
+         processing.collect('defer')
+      end
+      &window?.surface?.free()
+   end
+
+   defer if not ready then closeDialog() end end
+
+   function[self] respond(Accepted:bool!)
+      if completing then return end
+      completing = true
+      defer closeDialog() end
+      &feedback?(Accepted)
+   end
+
+   self.close = function[self]() respond(false) end
 
    function exampleMargin()
       return math.round(&examplePage.width * 0.05)
@@ -172,13 +198,14 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          modal        = Options.modal ?? false,
          events = {
             close = function()
-               using self do
-                  if &feedback then &feedback(false) end
-                  &window = nil
-               end
+               respond(false)
             end
          }
       })
+
+      &window.surface.subscribe('free', function[<weak> &&]()
+         if not completing then closeDialog() end
+      end)
 
       &viewport = &window.clientViewport({
          resizeEvent = function()
@@ -199,11 +226,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          primary = true,
          events  = {
             activate = function()
-               using self do
-                  &feedback?(true)
-                  &window = nil
-                  processing.collect('defer')
-               end
+               respond(true)
             end
          }
       })
@@ -216,11 +239,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
          icon    = 'items/cancel',
          events  = {
             activate = function()
-               using self do
-                  &feedback?(false)
-                  &window = nil
-                  processing.collect('defer')
-               end
+               respond(false)
             end
          }
       })
@@ -401,6 +420,8 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       &window.show(true)
       --vwFace.acFocus()
 
+      gui.dialog.active[&&] = true
+      ready = true
       return &&
    end
 end

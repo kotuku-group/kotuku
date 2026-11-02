@@ -18,6 +18,8 @@ gui.dialog.file = function(Options)
 
    accepting = false
    closed = false
+   completing = false
+   ready = false
    local confirm:table -- An open overwrite confirmation
 
    self = setmetatable(entity { -- Public variables
@@ -42,30 +44,37 @@ gui.dialog.file = function(Options)
       end
    })
 
-   function[<weak> self] closeDialog()
+   function[<weak> self] closeDialog(SurfaceFreed:bool)
       if closed then return end
       closed = true
       accepting = false
+      defer
+         gui.dialog.active[&&] = nil
+         &clear()
+         processing.collect('defer')
+      end
+      local surface = &window?.surface
+      defer surface?.free() end
       local message = confirm
       confirm = nil
       message?.window?.surface?.free()
-      &fileview?.free()
-      local window = &window
+      if not SurfaceFreed then &fileview?.free() end
       &window = nil
-      window?.surface?.free()
-      local dialog = &&
-      dialog.clear()
    end
+
+   defer if not ready then closeDialog() end end
 
    -- Report a cancellation, then close the dialog.
 
    function[<weak> self] cancelDialog()
-      if closed then return end
+      if closed or completing then return end
+      completing = true
       accepting = true
+      defer closeDialog() end
       &feedback?(&&, nil)
-      closeDialog()
-      processing.collect('defer')
    end
+
+   self.close = cancelDialog
 
    function[<weak> self] processFeedback()
       if accepting or closed then return true end
@@ -107,11 +116,12 @@ gui.dialog.file = function(Options)
                message = msg,
                popOver = &windowID,
                feedback = function[<weak> &&](Dialog, Response, State)
+                  if closed or completing then return end
                   confirm = nil
-                  if closed then return end
                   if Response?.id is 1 and accepting then
+                     completing = true
+                     defer closeDialog() end
                      &feedback?(&&, accepted_path, list)
-                     closeDialog()
                   else
                      accepting = false
                   end
@@ -124,10 +134,10 @@ gui.dialog.file = function(Options)
       end
 
       accepting = true
+      completing = true
+      defer closeDialog() end
       &feedback?(&&, &fileview.path, #list > 0 ? list : nil)
 
-      closeDialog()
-      processing.collect('defer')
       return true
    end
 
@@ -148,6 +158,9 @@ gui.dialog.file = function(Options)
       })
 
       &windowID = &window.surface.id
+      &window.surface.subscribe('free', function[<weak> &&]()
+         if not completing then closeDialog(true) end
+      end)
 
       theme = &window.theme
 
@@ -291,6 +304,8 @@ gui.dialog.file = function(Options)
       &window.moveToFront()
       &window.show(true)
 
+      gui.dialog.active[&&] = true
+      ready = true
       return &&
    end
 end
@@ -298,9 +313,7 @@ end
 -- This sub-routine is provided for languages other than Tiri to utilise the module.
 
 @if(imported=false)
-   -- The dialog is retained by a global until the script is freed, as it is closed when it is collected.
-
-   global glDialog = gui.dialog.file({
+   dialog = gui.dialog.file({
       popOver      = arg('popOver'),
       target       = arg('target'),
       modal        = arg('modal'),
@@ -316,5 +329,5 @@ end
       strictFilter = arg('strictFilter')
    })
 
-   return glDialog.windowID
+   return dialog.windowID
 @end

@@ -44,7 +44,8 @@ gui.icon = function(Options:table!)
 
    -- Weak bindings retain the widget only for the duration of each callback.
 
-   text_words:array<str>, text_group:obj, icon_effect:any, theme:table
+   text_words:array<str>, text_group:obj, icon_effect:any, theme:table, base_theme:table
+   override = nil -- Per-instance override from setTheme()
 
    click_state  = { held=false, x=0, y=0 }
    words        = array<table>
@@ -88,6 +89,16 @@ gui.icon = function(Options:table!)
 
          Msg = Msg.next
       until not Msg
+   end
+
+   -- The applied theme is layered as base.icon <- Options.theme <- the override from setTheme().  It is rebuilt
+   -- whenever the base theme or the override changes.
+
+   function buildTheme()
+      theme = base_theme.icon
+      if Options.theme then theme = table.merge(theme, Options.theme, true, true) end
+      if override then theme = table.merge(theme, override, true, true) end
+      icon_effect = theme.effect ?? 'fill(carbon)'
    end
 
    function calcWords()
@@ -162,7 +173,7 @@ gui.icon = function(Options:table!)
       text_group = &viewport.new('VectorGroup', { })
 
       text_group.new('VectorRectangle', {
-         fill   = gui.getTheme(Options.target).palette.shade,
+         fill   = base_theme.palette.shade,
          x      = 0,
          y      = math.floor(y),
          roundX = gui.pixel('7.5dp'),
@@ -242,6 +253,31 @@ gui.icon = function(Options:table!)
       &viewport.acDraw()
    end
 
+   -- Apply the current theme to the image effect and the label.  The label is rebuilt, so a change of font in the
+   -- theme also changes the size of the icon.
+
+   function restyle()
+      gui.applyFillEffect(icon_effect, &iconVP)
+      arrangeText()
+   end
+
+   -- Style this icon instance.  Override is merged over the icon section of the theme, as for Options.theme, and is
+   -- kept when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+   self.setTheme = function(Override:table)
+      override = Override
+      buildTheme()
+      restyle()
+   end
+
+   -- Called by gui.broadcastTheme() with the window's new theme.
+
+   self.applyTheme = function(Theme:table!)
+      base_theme = Theme
+      buildTheme()
+      restyle()
+   end
+
    self.disable = function()
       if &disabled then return end
       &disabled = true
@@ -273,9 +309,8 @@ gui.icon = function(Options:table!)
       assert(Options.target, 'A target viewport is required.')
       assert(Options.image??, 'The image option is required.')
 
-      theme = gui.getTheme(Options.target).icon
-      if Options.theme then theme = table.merge(theme, Options.theme, true, true) end
-      icon_effect = theme.effect ?? 'fill(carbon)'
+      base_theme = gui.getTheme(Options.target)
+      buildTheme()
 
       &viewport = Options.target.new('VectorViewport', {
          x           = Options.x ?? 0,
@@ -308,6 +343,7 @@ gui.icon = function(Options:table!)
       check vp.mtSubscribeInput(JTYPE_BUTTON, inputFeedback)
 
       arrangeText()
+      gui.registerWidget(&viewport, &&)
       if Options.disabled then &disable() end
 
       &events.show?()

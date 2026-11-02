@@ -586,6 +586,34 @@ Alpha  = CFUnpackAlpha(Format,Colour)
   </function>
 
   <function>
+    <name>ReadPrimarySelection</name>
+    <category>Input</category>
+    <comment>Requests the X11 primary selection asynchronously.</comment>
+    <prototype>ERR gfx::ReadPrimarySelection(OBJECTID Recipient, INT Item)</prototype>
+    <tiriPrototype>err = ReadPrimarySelection(Recipient:obj, Item:num)</tiriPrototype>
+    <tags>non-blocking</tags>
+    <input>
+      <param type="OBJECTID" name="Recipient">The object that will receive the <code>DATA::RECEIPT</code> DataFeed.</param>
+      <param type="INT" name="Item">A client-defined identifier that is returned in the <code>id</code> attribute of the receipt.</param>
+    </input>
+    <description>
+<p>ReadPrimarySelection() requests the current content of the X11 primary selection, which is the text most recently highlighted in any application.  It is typically called in response to a middle mouse click in order to paste that text.  The function returns immediately and the text is delivered later through the event loop.</p>
+<p>When the text arrives it is sent to the <code>Recipient</code> object as a DataFeed of type <code>DATA::RECEIPT</code>, in the following XML format:</p>
+<pre>&lt;receipt id=&quot;Item&quot;&gt;&lt;text&gt;Selected text&lt;/text&gt;&lt;/receipt&gt;
+</pre>
+<p>The <code>id</code> attribute repeats the <code>Item</code> value so that the recipient can match the receipt to its request.  The text is UTF-8, with ampersands, angle brackets and carriage returns escaped as XML entities.  Text that is provided in Latin-1 by the selection owner is converted to UTF-8.</p>
+<p>Only one request can be pending at a time.  Starting a new request cancels any request still in progress, and late replies to a superseded request are discarded.  No receipt is sent if the owner cannot supply text, the transfer exceeds the size limit, or the owner fails to respond within two seconds.  Clients must not wait on a receipt; an <code>ERR::Okay</code> result only confirms that the request was started.</p>
+<p>Only the X11 display driver implements the primary selection.  Other platforms return <code>ERR::NoSupport</code>.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The request was started.  This does not imply that text will be delivered.</error>
+      <error code="NoData">No application currently owns the primary selection.</error>
+      <error code="NoSupport">The display driver does not support the primary selection, or no display connection is open.</error>
+      <error code="NullArgs">The <code>Recipient</code> is not defined.</error>
+    </result>
+  </function>
+
+  <function>
     <name>ReadRGBPixel</name>
     <category>Bitmap</category>
     <comment>Reads a pixel's colour from the target bitmap.</comment>
@@ -812,6 +840,28 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 <p>If a surface is modal at the time that this function is called, it is not possible to switch to a new modal surface until the current modal state is dropped.</p>
     </description>
     <result type="OBJECTID">The object ID of the previous modal surface is returned (zero if there was no currently modal surface).</result>
+  </function>
+
+  <function>
+    <name>SetPrimarySelection</name>
+    <category>Input</category>
+    <comment>Publishes UTF-8 text to the X11 primary selection.</comment>
+    <prototype>ERR gfx::SetPrimarySelection(STRVIEW Text)</prototype>
+    <tiriPrototype>err = SetPrimarySelection(Text:str)</tiriPrototype>
+    <tags>copies-input, blocking</tags>
+    <input>
+      <param type="STRVIEW" name="Text">The UTF-8 text to publish.  An empty string releases ownership of the primary selection.</param>
+    </input>
+    <description>
+<p>The primary selection is the X11 mechanism that allows the most recently highlighted text to be pasted into another application with a middle mouse click.  It operates independently of the <class name="Clipboard">Clipboard</class>, which remains the appropriate mechanism for explicit cut, copy and paste operations.  Typically an application calls SetPrimarySelection() whenever the user changes the highlighted text in an editable or selectable area.</p>
+<p>On success the display claims ownership of the primary selection and retains a copy of <code>Text</code>, which is served to other applications on request until ownership is lost.  Ownership is lost when another client claims the primary selection, at which point the retained copy is discarded.  Calling this function with an empty <code>Text</code> value releases ownership if the display currently holds it.</p>
+<p>Only the X11 display driver implements the primary selection.  Other platforms return <code>ERR::NoSupport</code>, which clients should treat as a benign result.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">The text was published, or ownership was released.</error>
+      <error code="Failed">The X server refused the ownership claim.</error>
+      <error code="NoSupport">The display driver does not support the primary selection, or no display connection is open.</error>
+    </result>
   </function>
 
   <function>

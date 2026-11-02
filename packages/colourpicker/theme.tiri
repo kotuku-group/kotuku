@@ -226,7 +226,7 @@ end
 @desc Derive the picker theme from the theme of a window's scene and assign it to the scene.  The base theme is the
 one that the window was created with, so the picker follows the same theme and palette rules as other windows.  The
 derived theme is registered in gui.themes as `colourpicker-<Base>` and rebuilt on each call, so that a dialog opened
-later reflects the current base theme.
+later reflects the current base theme.  The picker removes the entry when its window is freed.
 @input The window's VectorScene
 @result The name of the picker theme
 ]])

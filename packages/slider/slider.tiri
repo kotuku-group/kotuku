@@ -636,8 +636,19 @@ gui.slider = function(Options:table!)
       assert((&tickPos is 'start') or (&tickPos is 'end') or (&tickPos is 'both'), f"Invalid tickPos '{&tickPos}'")
       &prvCheckTicks(&ticks)
 
-      base_theme = gui.getTheme(target).slider
-      &prvTheme = Options.theme ? table.merge(base_theme, Options.theme, true, true) : base_theme
+      -- The applied theme is layered as base.slider <- Options.theme <- the override from setTheme().  It is rebuilt
+      -- whenever the base theme or the override changes.
+
+      base_theme = gui.getTheme(target)
+      override = nil -- Per-instance override from setTheme()
+
+      function buildTheme()
+         &prvTheme = base_theme.slider
+         if Options.theme then &prvTheme = table.merge(&prvTheme, Options.theme, true, true) end
+         if override then &prvTheme = table.merge(&prvTheme, override, true, true) end
+      end
+
+      buildTheme()
       &orientation = (Options.orientation is 'vertical') ? 'V' : 'H'
 
       -- Ticks occupy the host's start and/or end side across the track: below a horizontal track or to the right of a
@@ -899,6 +910,38 @@ gui.slider = function(Options:table!)
       end
 
       &trackVP.mtSubscribeInput(JTYPE_BUTTON, trackInput)
+
+      -- Apply the current theme to the existing vectors.  The size of the track and thumb, the font and the layout are
+      -- not changed.
+
+      function restyle()
+         &prvApplyStyle()
+         fill = &prvTheme.text?.fill
+         if fill then
+            if &labelText then &labelText.fill = fill end
+            if &valueText then &valueText.fill = fill end
+         end
+         &viewport.acDraw()
+      end
+
+      -- Style this slider instance.  Override is merged over the slider section of the theme, as for Options.theme, and
+      -- is kept when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+      &setTheme = function(Override:table)
+         override = Override
+         buildTheme()
+         restyle()
+      end
+
+      -- Called by gui.broadcastTheme() with the window's new theme.
+
+      &applyTheme = function(Theme:table!)
+         base_theme = Theme
+         buildTheme()
+         restyle()
+      end
+
+      gui.registerWidget(&viewport, &&)
 
       if Options.disabled then &disable() end
       &events.show?()

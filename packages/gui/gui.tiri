@@ -11,6 +11,9 @@
 
    namespace gui {
       theme = nil,
+      -- Strong dialog keys keep open dialogs alive until their completion or surface destruction.
+      -- Constructors manage this set; callers can open a dialog without retaining its return value.
+      dialog = { active = { } },
       configureScene = function(Window, Scene)
          -- Themes can set a custom configuration function that adds definitions to all window scenes, e.g. images
          -- and patterns for fills.
@@ -1486,8 +1489,10 @@ MarginB: Margin at the end of the line, defaults to 0.
 
 -RESULTS-
 num: The thickness of the line, as defined by the window stroke of the theme.
+obj: The VectorRectangle that draws the line, e.g. to restyle it when the theme changes.
 ]])
-gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any, MarginB:any):num
+gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any, MarginB:any):<num, obj>
+   local line:obj
    o = Orientation.sub(0, 1)
    stroke = gui.getTheme(Viewport).window.stroke
    options = { fill = stroke.stroke }
@@ -1498,23 +1503,23 @@ gui.separator = function(Viewport:obj!, Orientation:str!, Pos:any!, MarginA:any,
       if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then -- Include negative zero
          options.yOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
-         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+         line = subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
       else
          options.y = Pos
-         Viewport.new('VectorRectangle', options)
+         line = Viewport.new('VectorRectangle', options)
       end
    else
       options.{ y = MarginA ?? 0, yOffset = MarginB ?? 0, width = stroke.strokeWidth }
       if Pos is <num> and (Pos < 0 or (Pos is 0 and (1/Pos) < 0)) then
          options.xOffset = -Pos
          subvp = Viewport.new('VectorViewport', options)
-         subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
+         line = subvp.new('VectorRectangle', { fill=options.fill, width='100%', height='100%' })
       else
          options.x = Pos
-         Viewport.new('VectorRectangle', options)
+         line = Viewport.new('VectorRectangle', options)
       end
    end
-   return stroke.strokeWidth
+   return stroke.strokeWidth, line
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -1636,6 +1641,92 @@ gui.applyStyle = function(Vector:any!, Set:table)
 
    for k, v in Set do
       Vector[k] = v
+   end
+end
+
+-- Replace a rectangle's style, restoring fields omitted by the replacement to their native values.  Defaults is
+-- private to the vector and must be supplied from the first style application.  Records retain nil values, and the
+-- rounding fields share storage, so all corners are saved and restored together.
+
+gui.styleRectangle = function(Vector:obj!, Style:table, Defaults:table!)
+   Defaults.rounding ?= { value=Vector.rounding }
+   for key, saved in Defaults do Vector[key] = saved.value end
+
+   if Style then
+      for key in Style do
+         if key != 'roundX' and key != 'roundY' and not (key in Defaults) then
+            Defaults[key] = { value=Vector[key] }
+         end
+      end
+      gui.applyStyle(Vector, Style)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns the theme widget registry of the outermost scene that hosts Object.
+
+function widgetRegistry(Object:obj!):table
+   local scene:obj
+   if obj.class(Object).name is 'VectorScene' then
+      scene = Object
+   else
+      scene = Object.scene
+   end
+
+   while scene.hostScene do scene = scene.hostScene end
+
+   local state = scene.state()
+   state.widgets ?= setmetatable({ }, { __mode='k' })
+   return state.widgets
+end
+
+@Doc(text=[[
+Registers a widget to receive theme updates from gui.broadcastTheme().  Internal function for widget libraries.
+
+The registry belongs to the outermost scene that hosts Viewport.  Widgets are weakly referenced, so an entry lasts
+until the first garbage collection after the widget is unreferenced.  A widget whose viewport is freed is skipped
+until then.  Widgets are updated in no particular order.
+
+The widget table must provide `viewport` and an `applyTheme(Theme)` function.  The function receives the complete
+theme table and is expected to rebuild its own sub-theme from it, then update the presentation values that can change
+in place.
+
+-INPUT-
+Viewport: The widget's viewport, or any vector in the scene that the widget belongs to.
+Widget: The widget's interface table.
+]])
+gui.registerWidget = function(Viewport:obj!, Widget:table!)
+   assert(Widget.viewport is <obj>, 'The widget must reference a viewport')
+   assert(Widget.applyTheme is <func>, 'The widget must have an applyTheme() function')
+   widgetRegistry(Viewport)[Widget] = true
+end
+
+@Doc(text=[[
+Sends a theme to every widget that is registered with a scene.  Internal function for gui.window.setTheme().
+
+Each widget's `applyTheme()` function is called with Theme.  Widgets whose viewport no longer exists are skipped.  An
+error raised by a widget is logged and does not stop the broadcast.  Widgets that are registered during the broadcast
+are not called.
+
+-INPUT-
+Scene: The window's VectorScene, or any vector within it.
+Theme: The complete theme table.
+]])
+gui.broadcastTheme = function(Scene:obj!, Theme:table!)
+   -- A widget can create other widgets while it applies the theme, e.g. a combobox rebuilds its drop-down list, so
+   -- the registry is copied before the broadcast.  Widgets created during the broadcast already use the new theme.
+
+   list = array<table>
+   for widget in widgetRegistry(Scene) do list.push(widget) end
+
+   for widget in values(list) do
+      if not widget.viewport?.exists() then continue end
+
+      try
+         widget.applyTheme(Theme)
+      except ex
+         msg(f'Widget failed to apply theme: {ex.message}')
+      end
    end
 end
 

@@ -1837,19 +1837,21 @@ function buildCentre()
    end
 
    -- Apply All floats under the last box, at the size of the chip and with its text.  updateCentre() places it,
-   -- matches its width to the chip and shows it for a base swatch.  The button positions its label for the theme's
-   -- font, so the label is moved to the chip's baseline.
+   -- matches its width to the chip and shows it for a base swatch.  The label sits on the chip's baseline; button
+   -- text positions are relative to the button's border inset.
 
    &btnApplyScheme = gui.button({
       target = col, width = &schemeChip.width, height = chip_h, label = 'Apply All',
       tip = 'Apply the scheme colours to linked swatches, darkening inner companions and adding links as needed',
       theme = {
          bkgd = { roundX = 3, roundY = 3, stroke = 'none' },
-         text = { face = colourpicker_parts.FACE_MONO, fontSize = '10px', fontStyle = 'Medium' }
+         text = {
+            face = colourpicker_parts.FACE_MONO, fontSize = '10px', fontStyle = 'Medium',
+            y = colourpicker_parts.baseline(0, chip_h, 10) - math.ceil(gui.sizing.widget.edgeWidth)
+         }
       },
       events = { activate = function[&&]() &applyScheme() end }
    })
-   &btnApplyScheme._label.y = colourpicker_parts.baseline(0, chip_h, 10) - &btnApplyScheme._labelClip.y
    &btnApplyScheme.viewport.visibility = VIS_HIDDEN
 
    &wheel = colourpicker_wheel.new(col, {
@@ -2562,6 +2564,14 @@ gui.dialog.colour = function(Options:table)
          scratch = { l = initial.l, c = initial.c, h = initial.h, alpha = initial.alpha }
       }
    }
+
+   local ready = false
+   defer
+      if not ready then
+         self.feedback = nil
+         self.window?.surface?.free()
+      end
+   end
 
    using self do
 
@@ -3386,6 +3396,12 @@ gui.dialog.colour = function(Options:table)
       &finish = function(Colour:table)
          if &finished then return end
          &finished = true
+         defer
+            gui.dialog.active[&&] = nil
+            processing.collect('defer')
+         end
+         local surface = &window?.surface
+         defer surface?.free() end
          &stopScratchDrag()
          &stopEyedropper()
 
@@ -3409,7 +3425,6 @@ gui.dialog.colour = function(Options:table)
          for field in values(fields) do self[field] = nil end
 
          if feedback then feedback(Colour) end
-         processing.collect('defer')
       end
 
       -- Palette edits save immediately in both tabs.  Cancel cancels the colour result and preference changes;
@@ -3463,6 +3478,7 @@ gui.dialog.colour = function(Options:table)
 
       &window.surface.subscribe('free', function[<weak> &&]()
          &finish(nil)
+         if &themeName then gui.themes[&themeName] = nil end -- The derived theme is specific to this window
       end)
 
       -- The window is created with the requested or default gui theme, as for any other window.  The picker theme is
@@ -3624,6 +3640,8 @@ gui.dialog.colour = function(Options:table)
       &window.show(true)
       if database_notice then &reportStorageError(database_notice) end
 
+      gui.dialog.active[&&] = true
+      ready = true
       return &&
    end
 end

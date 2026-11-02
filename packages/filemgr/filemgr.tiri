@@ -21,7 +21,7 @@ function startProgress()
 end
 
 function endProgress()
-   progress_dialog?.window?.hide()
+   progress_dialog?.window?.surface?.free()
    progress_dialog = nil
    progress_status = nil
 end

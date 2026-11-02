@@ -3,9 +3,8 @@
 Particle Graphics Benchmark
 --]]
 
-   import 'gui'
-   import 'gui/window'
-   import 'options'
+   import 'gui', 'gui/window', 'options'
+
    include 'display', 'vector'
 
    module vector as mVec
@@ -367,4 +366,7 @@ end
    err, glTimerHandle = mSys.SubscribeTimer(0.001, timer)
 
    glWindow.show()
+
+   processing.collect()
+   processing.stopCollector()
    processing.sleep()

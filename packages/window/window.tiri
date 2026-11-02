@@ -20,6 +20,19 @@ function surfaceReference(Value)
    return Value
 end
 
+-- Returns a copy of Theme that includes the fields other code depends on.  Missing fields are taken from Base.
+
+function completeTheme(Theme:table!, Base:table!):table
+   local result = table.clone(Theme)
+   result.scheme ?= Base.scheme
+   result.palette ?= Base.palette
+   result.init ?= Base.init
+   if result.menu and not result.menubar?.menu then
+      result.menubar = table.merge(result.menubar, { menu = result.menu })
+   end
+   return result
+end
+
 -- The host window icon is represented in the desktop taskbar and task switcher.  Icon names in the format
 -- 'category/name' are resolved to the icons: volume, while paths that include a volume are used as-is.
 --
@@ -64,6 +77,7 @@ gui.window = function(Options:table!)
 
    weak_self <weak> = self
    quit_on_free <const> = Options.quit is false ? nil : true -- Defaults to true
+   local theme_name:str -- The window's entry in gui.themes, removed when the surface is freed
 
    -- Use function[] so that function callbacks pass through with the original client context
 
@@ -214,6 +228,29 @@ gui.window = function(Options:table!)
       &title = Title
    end
 
+   -- Replace the window's theme with a complete theme table.  Registered widgets restyle in place, on a best-case
+   -- basis.  If Rebuild is true and the client provided events.rebuild, the client is called to rebuild its widgets
+   -- instead.
+
+   self.setTheme = function(Theme:table!, Rebuild:bool)
+      local installed = completeTheme(Theme, &theme)
+      gui.themes[&_themeName] = installed
+      &theme = installed
+      installed.init?(&scene)
+
+      if installed.window?.bkgd is <table> then gui.applyStyle(&bkgd, installed.window.bkgd) end
+      if &_tabPingRing then gui.applyStyle(&_tabPingRing, installed.window?.tabPing) end
+
+      if Rebuild and &events.rebuild then
+         &events.rebuild(&&, installed)
+      else
+         if Rebuild then msg('Rebuild requested without an events.rebuild callback; restyling in place.') end
+         gui.broadcastTheme(&scene, installed)
+      end
+
+      &viewport.acDraw()
+   end
+
    -- Main entry point --
 
    using self do
@@ -316,10 +353,21 @@ gui.window = function(Options:table!)
          flags = Options.dragDrop ? VPF_RESIZE|VPF_DROP_TARGETS : VPF_RESIZE, surface = &surface
       })
 
+      -- The scene is given a theme name of its own, so that setTheme() and Options.theme affect only this window and
+      -- the popups that it opens.  Assigning the base theme first loads a custom theme or falls back to light.
+
       &theme = gui.setTheme(&scene, Options.themeName ?? gui.theme)
       if Options.theme then
-         &theme = table.merge(&theme, Options.theme, true, true)
+         &theme = completeTheme(table.merge(&theme, Options.theme, true, true), &theme)
+         if Options.theme.menu and &theme.menubar and not Options.theme.menubar?.menu then
+            &theme.menubar.menu = &theme.menu -- Restore the alias that the deep merge separated
+         end
       end
+
+      &_themeName = f'window-{&scene.id}'
+      theme_name = &_themeName
+      gui.themes[&_themeName] = &theme -- Without Options.theme this is an alias of the base theme; no copy is made
+      &scene.state().theme = &_themeName -- The scene was already initialised with the base theme
 
       gui.configureScene(&&, &scene) -- Support GUI customisation
 
@@ -394,6 +442,7 @@ gui.window = function(Options:table!)
          mSys.SendMessage(MSGID_QUIT)
       end
 
+      if theme_name then gui.themes[theme_name] = nil end
       weak_self?.clear()
    end
 
