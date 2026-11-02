@@ -515,14 +515,17 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    self.clearButton = self.search.inputViewport.new('VectorViewport', {
       xOffset = 0, y = 0, width = CLEAR_W, height = '100%', cursor = 'hand', visibility = VIS_HIDDEN
    })
+
    self.clearButton.new('VectorRectangle', { width = '100%', height = '100%', fill = 'rgba(0,0,0,0)' })
    clear_glyph = self.clearButton.new('VectorViewport', {
       x = math.floor((CLEAR_W - 12) * 0.5), y = math.floor((SEARCH_H - 12) * 0.5), width = 12, height = 12
    })
+
    clear_glyph.new('VectorEllipse', { cx = 6, cy = 6, radius = 6, fill = t.fg3 })
    clear_glyph.new('VectorPath', {
       sequence = 'M4 4 L8 8 M8 4 L4 8', stroke = t.sunk, strokeWidth = 1.4, lineCap = 'round'
    })
+
    self.clearButton.mtSubscribeInput(JTYPE_BUTTON, function(Input:obj!, Msg:any!)
       repeat
          if (Msg.type is JET_LMB) and (Msg.value is 0) then
@@ -621,14 +624,17 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    step = ICON_BUTTON + ICON_GAP
    right_btn = INSET + inner_w - ICON_BUTTON
+
    self.btnNew = button(INSET, 'items/add', 'New palette', function() self.newPalette() end)
    self.btnDuplicate = button(INSET + step, 'page/duplicate', 'Duplicate palette', function()
       self.duplicatePalette()
    end)
+
    self.btnDelete = button(INSET + (step * 2), 'items/trash', 'Delete palette', function() self.deletePalette() end)
    self.btnImport = button(right_btn - step, 'items/download', 'Import palettes…', function()
       self.importDatabase()
    end)
+
    self.btnExport = button(right_btn, 'items/upload', 'Export palettes…', function() self.exportDatabase() end)
 
    -- The starter palettes.  Activating one (double-click or Enter) explains how to edit it; dragging one to the
@@ -689,6 +695,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
                for s in values(palette.swatches) do
                   if s.base is nil then fills.push(swatchHex(s)) end
                end
+
                return {
                   datatypes = string.char(DATA_XML),
                   receipt   = function() return nil end,
@@ -840,6 +847,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
             palette = selectedPalette()
             if not palette or palette.starter or self.refreshing then return end
             renamed, reason = colourpalette.renamePalette(palette, Event.text ?? '', db().palettes)
+
             if renamed then
                Options.save()
                self.refresh()
@@ -851,6 +859,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          end
       }
    })
+
    self.nameInput.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS,
       function(Input:obj!, Event:num!)
          Options.focus(Event != FM_LOST_FOCUS, self.nameInput)
@@ -864,6 +873,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          face = colourpicker_parts.FACE_UI, fontSize = f'{AREA_FONT}px', fontStyle = 'Regular', fill = t.fg0 },
       scrollbar = { thickness = 8 }
    }
+
    function notesKeypress(Event:table!)
       if Event.value is KEY_ESCAPE then Options.blur() end
    end
@@ -991,7 +1001,12 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    -- Duplicate and Delete act on the selected palette.  The last palette and starter palettes can not be deleted.
 
    function updateButtons()
-      if self.selected != nil then self.btnDuplicate.enable() else self.btnDuplicate.disable() end
+      if self.selected != nil then
+         self.btnDuplicate.enable()
+      else
+         self.btnDuplicate.disable()
+      end
+
       if (self.selected != nil) and not self.starter and (#db().palettes > 1) then
          self.btnDelete.enable()
       else
@@ -1034,6 +1049,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
       in_place = listedInOrder()
       items = in_place ? self.list.items : array<table>
       changed = array<table>
+
       for i, p in palettes do
          match = matches(p)
          if match then self.matches++ end
@@ -1041,6 +1057,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          if listed then shown++ end
          if (not match) and listed then self.pinned = i end
          current = p.id is Picker.dbID
+
          if in_place then
             item = items[i]
             if listed and (Refresh or item.hidden or (item.filtered != not match) or (item.current != current) or
@@ -1053,16 +1070,20 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
                hidden = not listed })
          end
       end
+
       if in_place then
          self.list.relayout()
          for item in values(changed) do self.list.refreshItem(item) end
       else
          self.list.loadItems(items)
       end
+
       self.empty.visibility = (self.matches is 0) ? VIS_VISIBLE : VIS_HIDDEN
       self.empty.y = empty_y + ((shown > 0) ? (LIST_ROW_H + 2) : 0)
       self.clearButton.visibility = (self.search.getText()??) ? VIS_VISIBLE : VIS_HIDDEN
+
       updateButtons()
+
       left.setMeta(listMeta())
 
       for item in values(self.list.items) do
@@ -1176,8 +1197,13 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    self.refresh = function()
       count = self.starter ? #self.starters : #db().palettes
       if (self.selected != nil) and (self.selected >= count) then self.selected = nil end
+
       palette = selectedPalette()
-      if palette and (self.swatch != nil) and (self.swatch >= #palette.swatches) then self.swatch = nil end
+
+      if palette and (self.swatch != nil) and (self.swatch >= #palette.swatches) then
+         self.swatch = nil
+      end
+
       self.updateList(true)
       updateCards()
       updateInfo()
@@ -1189,14 +1215,23 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.selectPalette = function(Index:num, Starter:bool)
       Starter = Starter is true
+
       if (Index is self.selected) and (Starter is self.starter) then return end
+
       if (self.pinned != nil) and (Starter or (self.pinned != Index)) then
          self.pinned = nil
          processing.delayedCall(function() if self.list then self.updateList() end end)
       end
+
       self.selected = Index
       self.starter = Starter
-      if Starter then self.list.deselectAll() else self.starterList?.deselectAll() end
+
+      if Starter then
+         self.list.deselectAll()
+      else
+         self.starterList?.deselectAll()
+      end
+
       palette = selectedPalette()
       self.swatch = (palette and (#palette.swatches > 0)) ? 0 : nil
       updateCards()
@@ -1265,6 +1300,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          flash('database full')
          return
       end
+
       palettes.push(colourpalette.newPalette(colourpalette.uniquePaletteName(palettes, 'New Palette')))
       saved = Options.save()
       self.filter = ''
@@ -1280,16 +1316,19 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.duplicatePalette = function()
       if self.selected is nil then return end
+
       if self.starter then
          self.copyStarter(selectedPalette(), nil)
          return
       end
+
       Options.sync()
       index = colourpalette.copyPalette(db(), self.selected)
       if index is nil then
          flash('database full')
          return
       end
+
       saved = Options.save()
       self.selected = nil
       self.selectPalette(index)
@@ -1305,6 +1344,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          flash('database full')
          return
       end
+
       saved = Options.save()
       self.selected = nil
       self.selectPalette(index, false)
@@ -1347,17 +1387,23 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    self.deletePalette = function()
       palette = selectedPalette()
+
       if not palette or (#db().palettes <= 1) then return end
+
       text = f'Are you sure?  The palette "{palette.name}" and its {plural(#palette.swatches, "colour")} will be ' ..
          'deleted.  This can not be undone.'
+
       if palette.id is Picker.dbID then
          text ..= '  The picker will edit the next palette in the list.'
       end
+
       confirm('Delete Palette', text, 'items/trash', 'Delete', function()
          index = colourpalette.paletteIndex(db(), palette.id)
          if index is nil then return end
          saved = Options.removePalette(index)
+
          if colourpalette.paletteIndex(db(), palette.id) != nil then return end -- Refused
+
          self.selected = nil
          self.selectPalette(math.min(index, #db().palettes - 1))
          self.updateList()
@@ -1370,6 +1416,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
 
    function fileDialog(Title:str, OkLabel:str, Save:bool, Done:func)
       if self.dialog then return end
+
       folder = Picker.paletteFolder ?? 'user:'
       self.dialog = gui.dialog.file({
          title       = Title,
@@ -1395,7 +1442,9 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    self.importDatabase = function()
       fileDialog('Import Palettes', 'Import', false, function(Path:str)
          _, file = io.splitPath(Path)
+
          local text:str
+
          try
             text = io.readAll(Path)
          except e
@@ -1403,29 +1452,35 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
             report('Import Failed', f'"{file}" could not be read.  {e.message}', 'error')
             return
          end
+
          imported, err = colourpalette.databaseFromJSON(text)
          if not imported then
             print(f'Colour picker: palette import from {Path} failed: {err}')
             report('Import Failed', f'"{file}" could not be imported.  {err}.', 'error')
             return
          end
+
          Options.sync()
          added, renamed, full = colourpalette.mergeDatabase(db(), imported)
          saved = Options.save()
          self.refresh()
+
          if not saved then return end -- The picker reports the failure
 
          lines = array<str> { f'{plural(added, "palette")} imported from "{file}".' }
          if renamed > 0 then
             lines.push(f'{plural(renamed, "palette")} renamed because the name was already in use.')
          end
+
          if imported.skipped > 0 then
             lines.push(f'{plural(imported.skipped, "palette")} skipped because the data was not valid.')
          end
+
          if full > 0 then
             lines.push(f'{plural(full, "palette")} not imported because the database is full ' ..
                f'({colourpalette.MAX_PALETTES} palettes).')
          end
+
          report('Import Palettes', lines.concat('\n'), (added > 0) ? 'info' : 'warning')
       end)
    end
@@ -1436,6 +1491,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
    function writeExport(Path:str, File:str)
       Options.sync()
       saved, reason = colourpalette.saveDatabase(Path, db(), true)
+
       if saved then
          flash('exported')
       else
@@ -1457,6 +1513,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
                return
             end
          end
+
          writeExport(Path, file)
       end)
    end
@@ -1471,6 +1528,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          active = Picker.state.active
          self.swatch = (active != nil) ? active : ((#selectedPalette().swatches > 0) ? 0 : nil)
       end
+
       self.viewport.visibility = VIS_VISIBLE
       self.refresh()
    end
@@ -1490,6 +1548,7 @@ colourpicker_manager.build = function(Picker:table!, Target:obj!, Options:table!
          self.list, self.btnNew, self.btnDuplicate, self.btnDelete, self.btnImport, self.btnExport, self.btnEdit,
          { viewport = self.area }
       }
+
       if self.starterList then widgets.push(self.starterList) end
       return widgets
    end

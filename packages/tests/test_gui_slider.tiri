@@ -1525,3 +1525,43 @@ end
       assert(math.abs(slider.value - 0.5) < 0.02, f'A {orientation} drag must follow the scaled pointer, got {slider.value}')
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Window theme updates
+
+@Test function SlidersFollowTheWindowTheme()
+   local surface <close> = obj.new('Surface', { width=500, height=300 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { width='100%', height='100%' })
+   local light = gui.setTheme(scene, 'light')
+   local dark = gui.themes.dark
+   local slider = gui.slider({ target=root, x=10, y=10, width=200, label='Level', valuePos='in-centre', step=0.1,
+      ticks=true })
+   local disabled = gui.slider({ target=root, x=10, y=60, width=200, disabled=true, ticks=true, step=0.25 })
+   local styled = gui.slider({ target=root, x=10, y=110, width=200, theme={ fore={ fill='#0000ff' } } })
+   local track = { x=slider.prvBarBkgd.x, width=slider.prvBarBkgd.width }
+   assert(slider.prvBarBkgd.fill is light.slider.bkgd.fill, 'The slider must start with the light theme')
+   assert(styled.button.fill is '#0000ff', 'Options.theme must be applied')
+
+   gui.broadcastTheme(scene, gui.setTheme(scene, 'dark'))
+   assert(slider.prvBarBkgd.fill is dark.slider.bkgd.fill, 'The track must take the dark theme')
+   assert(slider.button.fill is dark.slider.fore.fill, 'The thumb must take the dark theme')
+   assert(slider.labelText.fill is dark.slider.text.fill and slider.valueText.fill is dark.slider.text.fill,
+      'The label and value must take the dark text fill')
+   assert(table.size(slider.prvTickPaths) > 0, 'The slider must have ticks')
+   for _, path in slider.prvTickPaths do
+      assert(path.stroke is dark.slider.tick.stroke, 'The ticks must take the dark theme')
+   end
+   assert(slider.prvBarBkgd.x is track.x and slider.prvBarBkgd.width is track.width,
+      'A theme change must not move the track')
+   assert(disabled.prvBarBkgd.opacity is 0.5, 'A disabled slider must keep its disabled style')
+   assert(styled.button.fill is '#0000ff', 'Options.theme must survive the broadcast')
+
+   slider.setTheme({ bkgd={ fill='#040506' } })
+   assert(slider.prvBarBkgd.fill is '#040506', 'setTheme() must apply the per-instance override')
+   gui.broadcastTheme(scene, gui.setTheme(scene, 'light'))
+   assert(slider.prvBarBkgd.fill is '#040506', 'The override must survive the broadcast')
+   assert(slider.button.fill is light.slider.fore.fill, 'Values outside the override must follow the theme')
+   slider.setTheme(nil)
+   assert(slider.prvBarBkgd.fill is light.slider.bkgd.fill, 'setTheme(nil) must clear the override')
+end

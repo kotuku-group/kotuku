@@ -1129,6 +1129,12 @@ int lj_trace_exit(jit_State *J, void *exptr)
             pc = retpc;
             setcframe_pc(cf, pc);
          }
+         else if (J2G(J)->hookmask & (HOOK_GC | HOOK_VMEVENT)) {
+            // Protected cleanup cannot record the side trace needed to leave this iterator root. Retire the
+            // root so the interpreter executes ITERN/ITERA at its original PC, with the following ITERL intact,
+            // instead of repeatedly entering the same failing trace.
+            lj_trace_flush(J, bc_d(*pc));
+         }
       }
    }
    // Return MULTRES or 0.
