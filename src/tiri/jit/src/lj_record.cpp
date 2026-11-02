@@ -60,6 +60,8 @@ static TRef rec_tmpref(jit_State *J, TRef tr, int mode)
 }
 
 static TRef sload(jit_State *J, int32_t Slot);
+static void rec_context_materialise(
+   jit_State *J, ContextMaterialisationReason Reason, const GCfunc *Callable = nullptr);
 
 #define getslot(J, s)   (J->base[(s)] ? J->base[(s)] : sload(J, (int32_t)(s)))
 
@@ -824,6 +826,11 @@ void lj_record_stop(jit_State *J, TraceLink linktype, TraceNo lnk)
 #ifdef LUAJIT_ENABLE_TABLE_BUMP
    if (J->retryrec) lj_trace_err(J, LJ_TRERR_RETRY);
 #endif
+   // Linked root traces read the physical context stack, including when entering an already compiled loop.
+   // Snapshots alone cannot transfer virtual activations because a direct link does not exit to the interpreter.
+   if (linktype IS TraceLink::ROOT) {
+      rec_context_materialise(J, ContextMaterialisationReason::UnsupportedBoundary);
+   }
    lj_trace_end(J);
    J->cur.linktype = linktype;
    J->cur.link = (uint16_t)lnk;
@@ -1536,7 +1543,7 @@ static uint32_t rec_context_virtual_count(const jit_State *J)
 }
 
 static void rec_context_materialise(
-   jit_State *J, ContextMaterialisationReason Reason, const GCfunc *Callable = nullptr)
+   jit_State *J, ContextMaterialisationReason Reason, const GCfunc *Callable)
 {
    if (J->context_virtual_slot < 0) return;
 
