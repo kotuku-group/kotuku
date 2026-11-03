@@ -1207,21 +1207,45 @@ gui.fileview = function(Options)
       &refresh()
    end
 
-   -- Moving files is not supported until transferFiles() defines the move operation.
+   -- Moves selected files and folders to a destination folder with transferFiles().  The move is performed on the next
+   -- message cycle.  A source is only removed once it has been transferred in full, and failures are reported to the
+   -- user with an error dialog.
 
    self.moveFilesTo = function[self](Dest:str)
-      raise ERR_NoSupport, 'Moving files is not supported.'
+      if &path and Dest?? then
+         local paths = array<str>
+         for item in values(&view.selectedItems()) do
+            if (item.type is 'file' or item.type is 'folder') and item.path then paths.push(item.path) end
+         end
+         if #paths > 0 then &transferFiles(paths, Dest, 'move') end
+         &view.deselectAll()
+      end
    end
 
-   -- Copies files and folders to a destination folder.  Sources is a list of fully qualified paths, with folders
-   -- terminated by a slash.  Sources that already reside in Dest, and folders that would be copied into themselves or
-   -- their own sub-folders, are skipped.  The copy is performed on the next message cycle with the progress and
-   -- collision handling of io.ui.copy(), and Options.transferComplete(FileView, Sources, Dest, Error) is called on
-   -- completion.  Only the 'copy' operation is supported.  Returns the number of sources accepted for transfer.
+   -- Refreshes the view if it is showing one of the folders identified by Keys (see pathKey()).  Monitored folders are
+   -- refreshed by their watch instead.
 
-   self.transferFiles = function[self](Sources:any!, Dest:str!, Operation:str):num
+   function refreshAffected(Keys:table!)
+      if &_released or &watch or not &path then return end
+      if Keys[pathKey(&path)] then &refresh() end
+   end
+
+   -- Copies or moves files and folders to a destination folder.  Sources is a list of fully qualified paths, with
+   -- folders terminated by a slash.  Operation is 'copy' (the default) or 'move'.  Sources that already reside in
+   -- Dest, and folders that would be transferred into themselves or their own sub-folders, are skipped.  The transfer
+   -- is performed on the next message cycle with the progress, collision and error handling of io.ui.transfer().
+   -- Moved sources are removed only after their destination is complete.
+   --
+   -- On completion, Callback(Results) and Options.transferComplete(FileView, Sources, Dest, Error, Results) are
+   -- called, where Sources lists the accepted paths.  Results has the format of io.ui.transfer() and lists every
+   -- path in Sources order, including those skipped here (reason 'in-destination' or 'descendant').  Returns the
+   -- number of sources accepted for transfer.  If none are accepted, nothing is scheduled and no callback is made.
+
+   self.transferFiles = function[self](Sources:any!, Dest:str!, Operation:str, Callback:func):num
       Operation ?= 'copy'
-      if Operation != 'copy' then raise ERR_NoSupport, f'Unsupported file transfer operation "{Operation}"' end
+      if Operation != 'copy' and Operation != 'move' then
+         raise ERR_NoSupport, f'Unsupported file transfer operation "{Operation}"'
+      end
 
       last = Dest.sub(-1)
       if last != '/' and last != ':' and last != '\\' then Dest ..= '/' end
@@ -1230,27 +1254,65 @@ gui.fileview = function(Options)
          return 0
       end
 
-      dest_key = pathKey(Dest)
-      accepted = array<str>
+      local dest_key = pathKey(Dest)
+      local accepted = array<str>
+      local results = { operation=Operation, dest=Dest, error=ERR_Okay, items=array<table> { } }
+      local affected = { [dest_key]=true }
       for src in values(Sources) do
+         local entry = { source=src, status='accepted' }
          local folder = src.endsWith('/') or src.endsWith('\\') or io.isFolder(src)
-         if pathKey(parentFolder(src) ?? '') is dest_key then
+         local parent_key = pathKey(parentFolder(src) ?? '')
+         if parent_key is dest_key then
             msg(f'Skipping "{src}", it is already in "{Dest}".')
+            entry.status = 'skipped'
+            entry.reason = 'in-destination'
          elseif folder and (dest_key .. '/').startsWith(pathKey(src) .. '/') then
-            msg(f'Skipping "{src}", a folder cannot be copied into itself.')
+            msg(f'Skipping "{src}", a folder cannot be transferred into itself.')
+            entry.status = 'skipped'
+            entry.reason = 'descendant'
          else
             accepted.push(src)
+            if Operation is 'move' then affected[parent_key] = true end
          end
+         results.items.push(entry)
       end
 
       if #accepted is 0 then return 0 end
 
       processing.delayedCall(function[&&]()
-         err = io.ui.copy(accepted, Dest, false) ?? ERR_Okay
-         if not &_released and not &watch and &path and pathKey(&path) is dest_key then
-            &refresh()
+         local transfer:table
+         try
+            transfer = io.ui.transfer(accepted, Dest, { operation=Operation })
+         except ex
+            msg(f'File transfer failed: {ex.message}')
+            transfer = { error=ERR_Failed, items=array<table> { } }
+            for src in values(accepted) do
+               transfer.items.push({ source=src, status='failed', reason='transfer', error=ex.code ?? ERR_Failed })
+            end
          end
-         lOptions.transferComplete?(self, accepted, Dest, err)
+
+         -- Merge the transfer's results into source order.
+
+         local index = 0
+         for entry in values(results.items) do
+            if entry.status is 'accepted' then
+               local item = transfer.items[index]
+               index++
+               if item then
+                  for key, value in pairs(item) do entry[key] = value end
+               end
+            end
+         end
+
+         results.error = transfer.error
+         for status in values({ 'completed', 'skipped', 'cancelled', 'failed' }) do results[status] = 0 end
+         for entry in values(results.items) do
+            if results[entry.status] then results[entry.status] += 1 end
+         end
+
+         refreshAffected(affected)
+         lOptions.transferComplete?(self, accepted, Dest, results.error, results)
+         if Callback then Callback(results) end
       end)
 
       return #accepted
@@ -1436,7 +1498,22 @@ gui.fileview = function(Options)
             if (item.type is 'file' or item.type is 'folder') and item.path then files.push(item.path) end
          end
 
-         if #files > 0 then return { files = files } end
+         -- Files can be moved to another file view in this process.  Destinations perform the move and report their
+         -- results through dragResult, so this view never removes anything itself.
+         if #files > 0 then return { files = files, operations = { 'copy', 'move' } } end
+      end
+
+      -- A drop that moved files out of the current folder changes its contents.
+
+      &view.events.dragResult = function[&&](View, Session, Results)
+         if Results?.operation != 'move' then return end
+         local keys = { }
+         for item in values(Results.items) do
+            if item.status is 'completed' or item.reason is 'delete' then
+               keys[pathKey(parentFolder(item.source) ?? '')] = true
+            end
+         end
+         refreshAffected(keys)
       end
 
       &view.events.dragOver = function[&&](View, Item, Drop)
@@ -1480,7 +1557,11 @@ gui.fileview = function(Options)
             return false
          end
 
-         return #sources > 0 and &transferFiles(sources, dest, 'copy') > 0
+         -- Acceptance only queues the transfer.  The source learns of completed work from the reported results.
+         if #sources is 0 then return false end
+         return &transferFiles(sources, dest, Drop.operation ?? 'copy', function(Results)
+            Drop.reportResults(Results)
+         end) > 0
       end
 
       -- The view restyles itself when the window theme changes.  This hook runs first, so that folder items take the
@@ -1738,6 +1819,7 @@ gui.fileview = function(Options)
          }
       },
       dragDrop    = true,
+      dropOperations = { 'copy', 'move' }, -- Shift+drop moves files from another file view
       multiSelect = Options.multiSelect,
       borderless  = true
    }
