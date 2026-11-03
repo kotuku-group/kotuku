@@ -399,16 +399,12 @@ function updateModebar()
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- A footer button in the design's 11.5 px text, sized to its label.
 
 function footerButton(Text:str, Primary:bool, Activate:func):table
-   theme = {
-      text = { fontSize = f'{FOOTER_FONT}px', y = colourpicker_parts.baseline(0, BUTTON_HEIGHT - 2, FOOTER_FONT) }
-   }
 
    return gui.button({
       target = &footer, y = (FOOTER_HEIGHT - BUTTON_HEIGHT) * 0.5, width = 100, height = BUTTON_HEIGHT,
-      label = Text, primary = Primary, theme = theme, events = { activate = Activate }
+      label = Text, primary = Primary, events = { activate = Activate }
    })
 end
 
@@ -1556,12 +1552,18 @@ function buildEyedropper(Target:obj)
       'Pick a Kōtuku surface colour (I). Click or Enter to accept; right-click or Escape to cancel.'
 
    &eyedropPanel = panel
+
    &btnPick = panel.headerItem('trail', gui.button({
       target = panel.header, height = SMALL_BUTTON,
       icon = 'tools/colourpicker',
       tip  = pick_tip,
-      events = { activate = function[&&]() &startEyedropper() end }
+      events = {
+         activate = function[&&]()
+            &startEyedropper()
+         end
+      }
    }))
+
    body = panel.body
 
    body.new('VectorRectangle', table.merge({
@@ -1846,12 +1848,12 @@ function buildCentre()
       theme = {
          bkgd = { roundX = 3, roundY = 3, stroke = 'none' },
          text = {
-            face = colourpicker_parts.FACE_MONO, fontSize = '10px', fontStyle = 'Medium',
-            y = colourpicker_parts.baseline(0, chip_h, 10) - math.ceil(gui.sizing.widget.edgeWidth)
+            face = colourpicker_parts.FACE_MONO, fontSize = '10px', fontStyle = 'Medium'
          }
       },
       events = { activate = function[&&]() &applyScheme() end }
    })
+
    &btnApplyScheme.viewport.visibility = VIS_HIDDEN
 
    &wheel = colourpicker_wheel.new(col, {

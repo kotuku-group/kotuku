@@ -224,31 +224,36 @@ function arrangeItems()
    x = 0
    y = 0
    while item do
-      item.x        = x
-      item.y        = y
-      item.width    = ICON_SIZE + (VMARGIN * 2)
-      item.height   = &viewport.height
-      item.gfxWidth = item.width
+      item.{
+         x        = x,
+         y        = y,
+         width    = ICON_SIZE + (VMARGIN * 2),
+         height   = &viewport.height,
+         gfxWidth = item.width
+      }
 
-      iconWidth = 0
+      icon_width = 0
       if item.icon then
-         iconWidth = ICON_SIZE + VMARGIN
-         item.icon.x = x + VMARGIN - item.iconMargin
-         item.icon.y = y + VMARGIN - item.iconMargin
-         item.icon.opacity = (&_disabled or item.disabled) ? 0.5 : 1
+         icon_width = ICON_SIZE + VMARGIN
+         item.icon.{
+            x = x + VMARGIN - item.iconMargin,
+            y = y + VMARGIN - item.iconMargin,
+            opacity = (&_disabled or item.disabled) ? 0.5 : 1
+         }
       end
 
       if item.displayName?? then
          item.vectorText = &_vg.new('VectorText', table.merge({
-            x        = x + iconWidth + VMARGIN,
+            x        = x + icon_width + VMARGIN,
             face     = gui.fonts.menu.face,
             fontSize = string.format('%.2fpt', gui.fonts.menu.size),
             string   = item.displayName
          }, &theme.text))
 
          err, bx, by, bw, bh = item.vectorText.mtGetBoundary(0)
-         item.gfxWidth = iconWidth + bw + (VMARGIN * 2)
+         item.gfxWidth = icon_width + bw + (VMARGIN * 2)
          item.width = item.gfxWidth + GAP
+
          if &_customFont then
             item.vectorText.y = math.floor((&viewport.height - bh) * 0.5 - by)
          else
@@ -288,8 +293,10 @@ gui.menubar = function(Options:table)
    function buildTheme()
       &theme = table.merge(base_theme.menubar, Options.theme?.menubar, true, true)
       if override?.menubar then &theme = table.merge(&theme, override.menubar, true, true) end
+
       &menuTheme = table.merge(base_theme.menu, Options.theme?.menu, true, true)
       if override?.menu then &menuTheme = table.merge(&menuTheme, override.menu, true, true) end
+
       &_customFont = &theme.text.face != base_theme.menubar.text.face or
          &theme.text.fontSize != base_theme.menubar.text.fontSize or
          &theme.text.fontStyle != base_theme.menubar.text.fontStyle

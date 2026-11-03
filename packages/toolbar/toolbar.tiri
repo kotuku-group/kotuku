@@ -4,15 +4,13 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui'
-   import 'gui/tooltip'
+   import 'gui', 'gui/tooltip'
+
    include 'vector'
 
    namespace gui
 
-TI_ICON  <const> = 1
-TI_BREAK <const> = 2
-TI_GROUP <const> = 3
+enum TI { ICON = 1, BREAK, GROUP }
 
 gui.toolbar = function(Options:table)
    local theme:table, tb_theme:table
@@ -21,13 +19,13 @@ gui.toolbar = function(Options:table)
    self = entity { -- Public interface
       host           = nil,
       viewport       = nil,  -- The main viewport for the toolbar
-      _groupMargin   = 6,
+      _groupMargin   = gui.getFontHeight(gui.fonts.default, true) * 0.25, -- Gap between groups
       _groupCount    = 0,
-      _round         = 4,
+      _round         = gui.rpixel('6dp'),
       _disabled      = false,
       _lookup        = { },
       _hasFocus      = false,
-      _cellMargin    = Options.cellMargin ?? 6
+      _cellMargin    = Options.cellMargin ?? math.round(gui.getFontHeight(gui.fonts.default, true) * 0.4)
    }
 
    -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
@@ -354,8 +352,8 @@ gui.toolbar = function(Options:table)
             end
 
             item.vSelected = &_vSelection.new('VectorRectangle', {
-               fill=&_selectFill, x=0, y=0, width=1, height=1, visibility='hidden',
-               roundX=highlight_round, roundY=highlight_round
+               fill = &_selectFill, x = 0, y = 0, width = 1, height = 1, visibility = 'hidden',
+               roundX = highlight_round, roundY = highlight_round
             })
             coverItem(item.vSelected, item)
             updateItemState(item)
@@ -417,6 +415,7 @@ gui.toolbar = function(Options:table)
             &viewport.height = y
          end
       end
+
       &_arranged = true
    end
 
@@ -767,7 +766,7 @@ gui.toolbar = function(Options:table)
 
       base_theme = gui.getTheme(Options.target)
       buildTheme()
-      icon_size = tb_theme.iconSize
+      icon_size = tb_theme.iconSize ?? math.floor(gui.getFontHeight(gui.fonts.default, true))
 
       if Options.groupMargin then
          &_groupMargin = Options.groupMargin
@@ -783,10 +782,12 @@ gui.toolbar = function(Options:table)
       end
 
       &host = Options.target
-      vps = { }
-      vps.x = Options.x ?? 0
-      vps.y = Options.y ?? 0
-      vps.overflow = 'hidden'
+
+      vps = {
+         x = Options.x ?? 0,
+         y = Options.y ?? 0,
+         overflow = 'hidden'
+      }
 
       -- The toolbar's length fits its content unless an offset or explicit length is given.  Its breadth is set by
       -- updateLayout().
@@ -839,7 +840,12 @@ gui.toolbar = function(Options:table)
       -- The tip of the item under the pointer is shown when the pointer rests on it.  Moving to another item restarts
       -- the delay (see inputFeedback()).
 
-      &_hoverTip = gui.hoverTip({ target = &viewport, text = function[&&]() return &_current?.tip end })
+      &_hoverTip = gui.hoverTip({
+         target = &viewport,
+         text = function[&&]()
+            return &_current?.tip
+         end
+      })
 
       &viewport.subscribe('free', function(Viewport, Args)
          self = { }
