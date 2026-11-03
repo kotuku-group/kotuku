@@ -119,12 +119,14 @@ gui.listView = function(Options:table!):table
 
             margin = View.icons[Item.icon].margin
             image = Item._vectors.iconImage
-            image.fill       = View.icons[Item.icon].fill
-            image.x          = math.round(m.lineHeight * 0.2) - margin
-            image.y          = math.round((m.rowHeight - m.iconSize) * 0.5) - margin
-            image.width      = m.iconSize + (margin * 2)
-            image.height     = m.iconSize + (margin * 2)
-            image.visibility = VIS_VISIBLE
+            image.{
+               fill       = View.icons[Item.icon].fill,
+               x          = math.round(m.lineHeight * 0.2) - margin,
+               y          = math.round((m.rowHeight - m.iconSize) * 0.5) - margin,
+               width      = m.iconSize + (margin * 2),
+               height     = m.iconSize + (margin * 2),
+               visibility = VIS_VISIBLE
+            }
          end
       elseif Item._vectors.iconImage then
          Item._vectors.iconImage.visibility = VIS_HIDDEN
@@ -140,11 +142,13 @@ gui.listView = function(Options:table!):table
          end
 
          text = Item._vectors.text
-         text.x          = m.margin + icon_margin
-         text.y          = m.textOffset
-         text.string     = tostring(label)
-         text.fill       = Item.fill ?? View.theme.page.text.fill
-         text.visibility = VIS_VISIBLE
+         text.{
+            x          = m.margin + icon_margin,
+            y          = m.textOffset,
+            string     = tostring(label),
+            fill       = Item.fill ?? View.theme.page.text.fill,
+            visibility = VIS_VISIBLE
+         }
 
          err, bx, by, bw, bh = text.mtGetBoundary(0)
          width += bw
@@ -224,10 +228,13 @@ gui.listView = function(Options:table!):table
       if (st.selected is selected) and (st.highlighted is highlighted) and (st.focused is focused) and
          (st.disabled is disabled) then return false end
 
-      st.selected    = selected
-      st.highlighted = highlighted
-      st.focused     = focused
-      st.disabled    = disabled
+      st.{
+         selected    = selected,
+         highlighted = highlighted,
+         focused     = focused,
+         disabled    = disabled
+      }
+
       return true
    end
 
@@ -254,9 +261,10 @@ gui.listView = function(Options:table!):table
          width  = vp.width
          height = vp.height
          if (width != item._rowWidth) or (height != item._rowHeight) then
-            item._rowWidth  = width
-            item._rowHeight = height
-            if lContentHook then dispatch(View, lContentHook, item, vp, 'layout') end
+            item.{ _rowWidth  = width, _rowHeight = height }
+            if lContentHook then
+               dispatch(View, lContentHook, item, vp, 'layout')
+            end
             applyHighlight(View, item)
          end
       end
@@ -273,9 +281,7 @@ gui.listView = function(Options:table!):table
          vp = item._vectors?.viewport
          if not vp then continue end
 
-         item._x      = EDGE
-         item._y      = y
-         item._height = m.rowHeight
+         item.{ _x = EDGE, _y = y, _height = m.rowHeight }
 
          if vp.y != y then vp.y = y end
          if vp.height != m.rowHeight then vp.height = m.rowHeight end

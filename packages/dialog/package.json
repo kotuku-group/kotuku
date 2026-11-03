@@ -26,6 +26,7 @@
     "gui": "1.0",
     "gui/button": "1.0",
     "gui/input": "1.0",
+    "gui/slider": "1.0",
     "gui/toggle": "1.0",
     "gui/window": "1.0"
   },

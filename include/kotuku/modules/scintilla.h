@@ -207,7 +207,7 @@ class objScintilla : public Object {
    int   LeftMargin;                // The amount of white-space at the left side of the page.
    int   RightMargin;               // Defines the amount of white-space at the right side of the page.
    struct RGB8 LineHighlight;       // The colour to use when highlighting the line that contains the user's cursor.
-   struct RGB8 SelectFore;          // Defines the colour of selected text.  Supports alpha blending.
+   struct RGB8 SelectFore;          // Defines the colour of selected text.
    struct RGB8 SelectBkgd;          // Defines the background colour of selected text.  Supports alpha blending.
    struct RGB8 BkgdColour;          // Defines the background colour.  Alpha blending is not supported.
    struct RGB8 CursorColour;        // Defines the colour of the text cursor.  Alpha blending is not supported.

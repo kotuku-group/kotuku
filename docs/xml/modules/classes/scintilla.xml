@@ -44,6 +44,7 @@
       <description>
 <p>The Clipboard action provides the same cut, copy and paste operations as the editor's key bindings (Ctrl+X, Ctrl+C, Ctrl+V, Shift+Del, Ctrl+Ins and Shift+Ins).  Text is exchanged as UTF-8 through the <class name="Clipboard">Clipboard</class> class.  The editor also binds Ctrl+L to cut the lines that the selection touches, and Ctrl+Shift+T to copy the current line.</p>
 <p><code>CLIPMODE::COPY</code> copies the selection.  <code>CLIPMODE::CUT</code> copies the selection and deletes it, but only once the clipboard has accepted the text.  Nothing is copied if the selection is empty.  A rectangular selection is copied with a line ending after each row, and is pasted as a rectangle when it is pasted into a Scintilla editor in the same process.</p>
+<p>The clipboard carries plain text without a rectangular marker, so the editor recognises a rectangular clip by comparing the pasted text with the most recent rectangular copy in the process.  Consequently, identical text that is later copied from another source is also pasted as a rectangle, and a rectangular copy from another process or application is pasted as ordinary text.</p>
 <p><code>CLIPMODE::PASTE</code> replaces the selection with the most recent text on the clipboard, as a single undo action.  Line endings are converted to the document's line ending mode.</p>
 <p>If <fl>Flags</fl> does not include <code>SCIF::EDIT</code>, cut and paste are refused with <code>ERR::ReadOnly</code> and reported as <code>SEF::FAIL_RO</code>.  If the clipboard cannot be read or written, the error is logged and reported as <code>SEF::FAIL_CLIPBOARD</code>.</p>
       </description>
@@ -622,6 +623,9 @@
       <comment>The colour to use when highlighting the line that contains the user's cursor.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>The highlight is shown while the editor has the focus.  An alpha value of zero disables it.  An opaque colour is drawn beneath the text, while a translucent colour is blended over the line, which also tints its text.  Translucent colours blend in the same way as a translucent vector fill, i.e. with the gamma-correct blending of the Vector module, so a 50% colour appears lighter than an average of the sRGB values.</p>
+      </description>
     </field>
 
     <field>
@@ -698,13 +702,20 @@
       <comment>Defines the background colour of selected text.  Supports alpha blending.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>An alpha value of zero disables the selection background.  An opaque colour is drawn beneath the selected text.  A translucent colour is blended over the selection after the text is drawn, in the same way as <fl>LineHighlight</fl>, so that the text remains visible through it.  Consider disabling <fl>SelectFore</fl> with a translucent background so that the selected text retains its styled colours.</p>
+<p>The background of the main selection is affected.  The additional rows of a rectangular selection use Scintilla's default colour for additional selections.</p>
+      </description>
     </field>
 
     <field>
       <name>SelectFore</name>
-      <comment>Defines the colour of selected text.  Supports alpha blending.</comment>
+      <comment>Defines the colour of selected text.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>Selected text is drawn in this colour, overriding the colours of its style.  An alpha value of zero disables the override.  Other alpha values are ignored and the colour is drawn opaquely.</p>
+      </description>
     </field>
 
     <field>
@@ -768,7 +779,7 @@
        selectionBackground=&quot;#335588&quot;/&gt;
 &lt;/theme&gt;
 </pre>
-<p>The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text. All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG colour names and colour functions such as <code>rgb()</code> and <code>oklch()</code> are accepted.  Gradients, painter lists and unknown attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the corresponding highlight or selection override.  Other alpha values currently produce opaque colours.</p>
+<p>The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text. All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG colour names and colour functions such as <code>rgb()</code> and <code>oklch()</code> are accepted.  Gradients, painter lists and unknown attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the corresponding highlight or selection override.  Translucent lineHighlight and selectionBackground colours blend over the text, as described for <fl>LineHighlight</fl> and <fl>SelectBkgd</fl>.  Other alpha values produce opaque colours.</p>
 <p>The colours are copied during assignment and the XML object is not retained or modified.  Assigning before initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or contracted folds.  Invalid themes leave all colours unchanged.</p>
       </description>
     </field>

@@ -87,6 +87,7 @@ gui.slider = function(Options:table!)
       thumbSize  = Options.thumbSize ? Options.thumbSize : '100%', -- Pixels or % of thickness
       thumbLength = Options.thumbLength, -- Thumb size along the track in pixels or % of thickness; defaults to thumbSize
       increment  = Options.increment, -- Change per arrow key or wheel event; nil for the default
+      anchored   = Options.anchored is true, -- The thumb extends from the minimum end to the value
       ticks      = Options.ticks, -- true, an interval, { major, minor } or an array of values
       tickPos    = Options.tickPos ?? 'end',
       events     = Options.events ?? { },
@@ -595,6 +596,7 @@ gui.slider = function(Options:table!)
          if &orientation is 'V' then
             track = math.max(0, height - &prvThumbLength)
             &thumbVP.y = track - (fraction * track)
+            if &anchored then &thumbVP.height = &prvThumbLength + (fraction * track) end
             &thumbVP.x = math.floor((width - &prvThumbSize) * 0.5)
             &prvBarBkgd.x = math.floor((width - &thickness) * 0.5)
             if &prvTheme.overhang then
@@ -602,7 +604,8 @@ gui.slider = function(Options:table!)
                &prvBarBkgd.height = math.max(0, height - (inset * 2))
             end
          else
-            &thumbVP.x = fraction * math.max(0, width - &prvThumbLength)
+            travel = fraction * math.max(0, width - &prvThumbLength)
+            if &anchored then &thumbVP.width = &prvThumbLength + travel else &thumbVP.x = travel end
             &thumbVP.y = math.floor((height - &prvThumbSize) * 0.5)
             &prvBarBkgd.y = math.floor((height - &thickness) * 0.5)
             if &prvTheme.overhang then
@@ -611,8 +614,21 @@ gui.slider = function(Options:table!)
             end
          end
 
+         if &anchored and &button then
+            &button.width = &thumbVP.width - (&prvGapX * 2)
+            &button.height = &thumbVP.height - (&prvGapY * 2)
+         end
+
          if &valueText then &prvPlaceValue(width, height) end
          &prvPlaceTicks(width, height)
+      end,
+
+      -- The position along the track that corresponds to the value, as used by prvTrackValue().  An anchored thumb
+      -- is resized rather than moved, so its position is that of its maximum end less the configured thumb length.
+
+      prvThumbPosition = function():num
+         if &orientation is 'V' then return &thumbVP.y end
+         return &anchored ? (&thumbVP.width - &prvThumbLength) : &thumbVP.x
       end
    }, {
       __gc = function()
@@ -784,7 +800,10 @@ gui.slider = function(Options:table!)
 
       -- Drag coordinates are relative to the drag origin, so snapping the slider does not impede its movement.  The
       -- pointer movement is measured in display pixels, so it is converted to track units when an ancestor scales the
-      -- slider, e.g. with a view box.
+      -- slider, e.g. with a view box.  The drag origin is the thumb's coordinate when the drag started, which does not
+      -- follow the value of an anchored thumb, so the position at the time of the press is used instead.
+
+      &prvDragPosition = 0
 
       self.thumbVP.dragCallback = function[<weak> self](Viewport:obj!, X:num!, Y:num!, OriginX:num!, OriginY:num!)
          if &disabled then return end
@@ -792,11 +811,24 @@ gui.slider = function(Options:table!)
          _, _, _, display_w, display_h = track_vp.mtGetBoundary(0)
          if &orientation is 'V' then
             scale = ((display_h ?? 0) > 0) ? display_h / track_vp.height : 1
-            &setValue(&prvTrackValue(OriginY + ((Y - OriginY) / scale)))
+            origin = &anchored ? &prvDragPosition : OriginY
+            &setValue(&prvTrackValue(origin + ((Y - OriginY) / scale)))
          else
             scale = ((display_w ?? 0) > 0) ? display_w / track_vp.width : 1
-            &setValue(&prvTrackValue(OriginX + ((X - OriginX) / scale)))
+            origin = &anchored ? &prvDragPosition : OriginX
+            &setValue(&prvTrackValue(origin + ((X - OriginX) / scale)))
          end
+      end
+
+      if &anchored then
+         function[<weak> &&] anchoredPress(Viewport:obj!, Msg)
+            repeat
+               if (Msg.type is JET_LMB) and (Msg.value > 0) then &prvDragPosition = &prvThumbPosition() end
+               Msg = Msg.next
+            until Msg is nil
+         end
+
+         &thumbVP.mtSubscribeInput(JTYPE_BUTTON, anchoredPress)
       end
 
       &prvPlaceSlider()
@@ -806,12 +838,15 @@ gui.slider = function(Options:table!)
       end
 
       GAP <const> = math.ceil(&prvTheme.bkgd.strokeWidth) -- Whole pixels keep the thumb edges sharp
-      -- Reduce each inset independently to leave at least one pixel, or the full dimension for subpixel thumbs.
-      x_gap = math.min(GAP, math.max(0, (&thumbVP.width - 1) * 0.5))
-      y_gap = math.min(GAP, math.max(0, (&thumbVP.height - 1) * 0.5))
+      -- Reduce each inset independently to leave at least one pixel, or the full dimension for subpixel thumbs.  The
+      -- insets follow the configured thumb dimensions, which an anchored thumb exceeds as it grows.
+      thumb_width = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength
+      thumb_height = (&orientation is 'V') ? &prvThumbLength : &prvThumbSize
+      &prvGapX = math.min(GAP, math.max(0, (thumb_width - 1) * 0.5))
+      &prvGapY = math.min(GAP, math.max(0, (thumb_height - 1) * 0.5))
 
       &button = &thumbVP.new('VectorRectangle', table.merge({
-         x = x_gap, y = y_gap, width = &thumbVP.width-(x_gap*2), height = &thumbVP.height-(y_gap*2)
+         x = &prvGapX, y = &prvGapY, width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2)
       }, &prvTheme.fore))
 
       if &valueText then
