@@ -150,12 +150,14 @@ public:
    TextLine(std::string Value) : std::string{ Value } { }
 
    std::vector<CharPos> chars;
+   std::vector<int> wrapOffsets; // Byte offsets at which word-wrapping starts a new visual line
    std::vector<TextCharClass> characterClasses;
    bool classesValid = false;
 
    void invalidate_text() {
       classesValid = false;
       chars.clear(); // Retain layout storage for the next generation.
+      wrapOffsets.clear();
    }
 
    inline int charLength(uint32_t Offset = 0) const { // Total number of bytes used by the char at Offset
@@ -212,6 +214,7 @@ class extVectorText : public extVector {
    int txReportedRow = 0, txReportedColumn = 0, txReportedSelectRow = 0, txReportedSelectColumn = 0;
    bool txReportedSelection = false, txCursorChanged = false, txReportingCursor = false;
    double txInlineSize; // Enables word-wrapping
+   VTW txWrapMode = VTW::WORD; // Permitted break points when word-wrapping
    Unit txX = Unit(0), txY = Unit(0);
    double txTextLength;
    double txFontSize;  // Em size in pixels (CSS px; FreeType runs at 72 DPI so 1pt = 1px).  Always a whole number.
@@ -253,6 +256,13 @@ class extVectorText : public extVector {
 
    bool needs_caret_geometry() const {
       return (txFlags & (VTXF::EDITABLE|VTXF::SELECTABLE)) != VTXF::NIL;
+   }
+
+   // The wrap mode used by layout.  SECRET text always wraps at whitespace, so that the line breaks do not reveal
+   // where symbols occur in the hidden string.
+
+   VTW effective_wrap_mode() const {
+      return ((txFlags & VTXF::SECRET) != VTXF::NIL) ? VTW::WORD : txWrapMode;
    }
 
    extVectorText(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
@@ -358,6 +368,58 @@ static WordExtent word_extent(const char *String)
       word.chars++;
    }
    return word;
+}
+
+//********************************************************************************************************************
+// Symbols after which a line may break in VTW::SYMBOL and VTW::ANYWHERE modes.  Changes to this list must be
+// reflected in the WrapMode documentation.
+
+static constexpr bool is_break_symbol(char Char)
+{
+   switch (Char) {
+      case '/': case '\\': case '-': case '_': case '?': case '&': case '=': return true;
+      default: return false;
+   }
+}
+
+//********************************************************************************************************************
+// Measure the wrapping segment at the start of String.  A segment is the unit that word-wrapping measures and moves
+// to a new line.  In VTW::WORD mode a segment is a whole word, as for word_extent().  In the other modes a word is
+// also split after each break symbol, unless:
+//
+//   1. The symbol is the last character of the word.
+//   2. The next character is also a break symbol, so that runs such as // and -- stay together.
+//   3. The symbol is a '-' in the run of hyphens that starts a word, as in -5 and --log-warning.
+//   4. The symbol is a '-' that is followed by a digit, as in x-1.
+//
+// WordStart is true if String is the start of a word rather than the continuation of one.  Returns the length of the
+// segment in bytes and in characters.
+
+static WordExtent segment_extent(const char *String, VTW Mode, bool WordStart)
+{
+   if (Mode IS VTW::WORD) return word_extent(String);
+
+   WordExtent segment = { 0, 0 };
+   bool leading_hyphens = WordStart;
+   while ((String[segment.bytes]) and (uint8_t(String[segment.bytes]) > 0x20)) {
+      const char current = String[segment.bytes];
+      for (++segment.bytes; (String[segment.bytes] & 0xc0) IS 0x80; segment.bytes++);
+      segment.chars++;
+
+      if ((leading_hyphens) and (current != '-')) leading_hyphens = false;
+
+      if (!is_break_symbol(current)) continue;
+
+      const char next = String[segment.bytes];
+      if (uint8_t(next) <= 0x20) break; // Rule 1: the end of the word also ends the segment
+      if (is_break_symbol(next)) continue; // Rule 2
+      if (current IS '-') {
+         if (leading_hyphens) continue; // Rule 3
+         if ((next >= '0') and (next <= '9')) continue; // Rule 4
+      }
+      break;
+   }
+   return segment;
 }
 
 //********************************************************************************************************************
@@ -1218,6 +1280,11 @@ property sets the width of the rectangle for horizontal text and the height of t
 The other dimension (height for horizontal text, width for vertical text) is of infinite length. A value of zero
 (the default) disables the creation of a wrapping area.
 
+By default, lines only break at whitespace and a word that is wider than the wrapping area will overflow it.  Set
+#WrapMode to allow lines to break within long words such as file paths and URLs.
+
+The #WrappedLines field reports the number of lines that are displayed after wrapping.
+
 *********************************************************************************************************************/
 
 static ERR TEXT_GET_InlineSize(extVectorText *Self, double *Value)
@@ -1230,6 +1297,60 @@ static ERR TEXT_SET_InlineSize(extVectorText *Self, double Value)
 {
    Self->txInlineSize = Value;
    reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+WrapMode: Controls where word-wrapping may break a line.
+Lookup: VTW
+
+WrapMode determines where a line may be broken when #InlineSize enables word-wrapping.  It has no effect if
+#InlineSize is zero.
+
+The default, `WORD`, only breaks lines at whitespace.  A word that is wider than the wrapping area stays on a line of
+its own and overflows it.
+
+In `SYMBOL` mode, a word is also divided into segments after each of the following symbols, and a line may break
+between any two segments:
+
+<types type="Symbol">
+<type name="/ \">File and URL paths, e.g. `/usr/` `share/` `kotuku`</type>
+<type name="-">Hyphenated words, e.g. `well-` `known`</type>
+<type name="_">Identifiers, e.g. `field_` `name`</type>
+<type name="? &amp; =">URL queries, e.g. `page?` `id=` `4&amp;` `x=` `2`</type>
+</types>
+
+A break after a symbol is suppressed if the symbol is the last character of the word, or the next character is also
+a break symbol (so `//` and `--` are never split).  A `-` does not permit a break if it is part of the hyphens that
+start a word, as in `--log-warning`, or if it is followed by a digit, as in `x-1`.  Periods, commas, colons and
+semi-colons are not break symbols, so numbers such as `3.14`, times and file extensions are kept whole.  The symbol
+always remains at the end of the earlier line and no hyphen is inserted at the break.
+
+`ANYWHERE` mode extends `SYMBOL` by breaking between characters when a segment is too wide to fit on a line of its
+own, so that no line overflows the wrapping area.  A segment is only divided in this way when it cannot fit on an
+empty line.  At least one character is always placed on each line, so a glyph that is wider than the wrapping area
+will overflow it.  Breaks are made between UTF-8 characters, but combining marks are not treated specially and can
+be separated from the character that they modify.
+
+Text with the `SECRET` flag in #TextFlags is always wrapped in `WORD` mode, so that the line breaks do not reveal the
+positions of symbols in the hidden string.  Text that follows a guide path is not wrapped.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_WrapMode(extVectorText *Self, VTW *Value)
+{
+   *Value = Self->txWrapMode;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_WrapMode(extVectorText *Self, VTW Value)
+{
+   if ((int(Value) < int(VTW::WORD)) or (int(Value) > int(VTW::ANYWHERE))) return ERR::OutOfRange;
+   if (Self->txWrapMode != Value) {
+      Self->txWrapMode = Value;
+      reset_path(Self);
+   }
    return ERR::Okay;
 }
 
@@ -2844,6 +2965,7 @@ static const FieldArray clTextFields[] = {
    { "DX",            FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_DX, TEXT_SET_DX },
    { "DY",            FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_DY, TEXT_SET_DY },
    { "InlineSize",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_InlineSize, TEXT_SET_InlineSize },
+   { "WrapMode",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, TEXT_GET_WrapMode, TEXT_SET_WrapMode, &clVectorTextVTW },
    { "LetterSpacing", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_LetterSpacing, TEXT_SET_LetterSpacing },
    { "Point",         FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_Point },
    { "LineSpacing",   FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_LineSpacing },

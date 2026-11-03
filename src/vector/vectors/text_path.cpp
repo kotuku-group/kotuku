@@ -271,16 +271,12 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       double angle = 0;
       for (auto &line : Vector->txLines) {
          line.chars.clear();
-         auto wrap_state = WS_NO_WORD;
+         line.wrapOffsets.clear(); // Guide paths do not wrap
 
          int char_len;
          for (auto str=line.c_str(); *str; ) {
             uint32_t unicode = UTF8ReadValue(std::string_view(line).substr(size_t(str - line.data())), &char_len);
             str += char_len;
-
-            if (unicode <= 0x20) wrap_state = WS_NO_WORD;
-            else if (wrap_state IS WS_NEW_WORD) wrap_state = WS_IN_WORD;
-            else wrap_state = WS_NEW_WORD;
 
             if (unicode > 0x20) char_index++; // Index for transitions only increases if a glyph is being drawn
 
@@ -366,10 +362,24 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       double longest_line_width = 0;
       int prev_glyph_index = 0;
       int char_index = 0;
+      const auto wrap_mode = Vector->effective_wrap_mode();
 
       for (auto &line : Vector->txLines) {
          line.chars.clear();
-         auto wrap_state = WS_NO_WORD;
+         line.wrapOffsets.clear();
+         bool in_word = false;
+         bool char_break = false; // ANYWHERE mode: break between characters until segment_end is reached
+         const char *segment_end = nullptr; // End of the current wrapping segment
+
+         auto wrap_line = [&](const char *Position) {
+            if (dx > longest_line_width) longest_line_width = dx;
+            dx = 0;
+            dy += pt.line_spacing;
+            wrapped_lines++;
+            prev_glyph_index = 0; // Kerning does not apply across a line break
+            line.wrapOffsets.push_back(int(Position - line.c_str()));
+         };
+
          if ((line.empty()) and (Vector->needs_caret_geometry())) {
             agg::trans_affine transform;
             transform.translate(dx, dy);
@@ -379,11 +389,15 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             int char_len;
             int unicode = UTF8ReadValue(std::string_view(line).substr(size_t(str - line.data())), &char_len);
 
-            if (unicode <= 0x20) { wrap_state = WS_NO_WORD; prev_glyph_index = 0; }
-            else if (wrap_state IS WS_NEW_WORD) wrap_state = WS_IN_WORD;
-            else if (wrap_state IS WS_NO_WORD)  wrap_state = WS_NEW_WORD;
-
             if (!unicode) break;
+
+            // A segment starts at the first character of a word, and at each break point within a word that
+            // segment_extent() reports.  In VTW::WORD mode the segments are whole words.
+
+            bool segment_start = false, word_start = false;
+            if (unicode <= 0x20) { in_word = false; char_break = false; prev_glyph_index = 0; }
+            else if (not in_word) { in_word = true; segment_start = true; word_start = true; }
+            else if ((segment_end) and (str >= segment_end)) segment_start = true;
 
             if (unicode > 0x20) char_index++; // Character index only increases if a glyph is being drawn
 
@@ -393,28 +407,39 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                apply_transition(Vector->Transition, double(char_index) / double(total_chars), transform);
             }
 
-            // Determine if this is a new word that would wrap if drawn.
+            // Determine if this is a new segment that would wrap if drawn.
             // TODO: Wrapping information should be cached for speeding up subsequent redraws.
 
-            if ((wrap_state IS WS_NEW_WORD) and (Vector->txInlineSize)) {
-               auto word_width = string_width(Vector, std::string_view(str, word_extent(str).bytes));
+            if (Vector->txInlineSize) {
+               const double scale = std::abs(transform.sx);
+               if (segment_start) {
+                  auto extent = segment_extent(str, wrap_mode, word_start);
+                  segment_end = str + extent.bytes;
+                  auto segment_width = string_width(Vector, std::string_view(str, extent.bytes));
 
-               // A word that is too wide for an empty line stays on that line instead of leaving it blank.
-               if ((dx > 0) and ((dx + word_width) * std::abs(transform.sx) >= Vector->txInlineSize)) {
-                  if (dx > longest_line_width) longest_line_width = dx;
-                  dx = 0;
-                  dy += pt.line_spacing;
-                  wrapped_lines++;
+                  // A segment that is too wide for an empty line stays on that line instead of leaving it blank.
+                  if ((dx > 0) and ((dx + segment_width) * scale >= Vector->txInlineSize)) wrap_line(str);
+
+                  // In ANYWHERE mode, a segment that still doesn't fit is broken between characters.
+                  char_break = (wrap_mode IS VTW::ANYWHERE) and
+                     ((dx + segment_width) * scale > Vector->txInlineSize);
                }
             }
 
-            str += char_len;
+            // The glyph reference is retrieved after string_width(), which can modify the glyph cache.
 
             auto &glyph = pt.get_glyph(unicode);
 
             double kx, ky;
             get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
+            if (Vector->txInlineSize and not segment_start and char_break and (dx > 0) and
+                ((dx + kx + glyph.adv_x) * std::abs(transform.sx) > Vector->txInlineSize)) {
+               wrap_line(str);
+               get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
+            }
             dx += kx;
+
+            str += char_len;
 
             double char_width = glyph.adv_x * std::abs(transform.sx); // transform.scale();
 

@@ -1,0 +1,451 @@
+-- VectorText word-wrapping with InlineSize, and the break points permitted by each WrapMode.  Layout tests exercise
+-- the scalable Noto Sans face and the Clean bitmap face, because the two font types have separate layout loops.
+-- Kerning regressions use the DejaVu Sans font distributed with the Tiri manual.
+--
+-- Visual rows are detected from the caret geometry: a column that has a different caret Y from the column before it
+-- is the first character of a new visual row.  Segment widths are measured with TextWidth on unwrapped text, which
+-- uses the same measurement as the layout loops.
+
+   include 'display', 'vector'
+   module display as mGfx
+   module font as mFont
+
+FACES <const> = array<str> { 'Noto Sans', 'Clean' }
+TEXT_X <const> = 5
+FONT_SIZE <const> = 16
+
+-- Create a scene that hosts a selectable VectorText.  The scene must be retained by the caller.
+
+function newText(Face:str!, Props:table):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=800, pageHeight=800 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width=800, height=800 })
+   local props = Props ?? { }
+   props.x ?= TEXT_X
+   props.y ?= 30
+   props.face = Face
+   props.fontSize ?= FONT_SIZE
+   props.textFlags ?= VTXF_SELECTABLE
+   return viewport.new('VectorText', props), scene
+end
+
+-- The width of String when it is not wrapped.
+
+function measure(Face:str!, String:str!):num
+   local text, scene <close> = newText(Face, { string=String })
+   return text.textWidth
+end
+
+function caret(Text:obj!, Column:num!, Row:num):<num, num, num>
+   local err, x, y, height = Text.mtGetCaretBounds(Row ?? 0, Column)
+   assert(err is ERR_Okay, f'GetCaretBounds() failed for column {Column}: {mSys.GetErrorMsg(err)}')
+   return x, y, height
+end
+
+function utf8Length(String:str!):num
+   local total = 0
+   for i in {0 to #String} do
+      local b = String.byte(i)
+      if (b & 0xc0) != 0x80 then total++ end
+   end
+   return total
+end
+
+-- Return the columns of the first row of Text at which a new visual row starts.
+
+function breaks(Text:obj!):array<int>
+   local result = array<int> { }
+   local chars = utf8Length(Text.string)
+   local _, prev_y = caret(Text, 0)
+   for col in {1 to chars} do
+      local x, y = caret(Text, col)
+      if y != prev_y then
+         assert(y > prev_y, f'Visual rows must advance downwards at column {col}')
+         assert(math.abs(x - TEXT_X) < 0.01, f'A wrapped row must start at x = {TEXT_X}, column {col} is at {x}')
+         result.push(col)
+      end
+      prev_y = y
+   end
+   return result
+end
+
+function describe(List:array<int>):str
+   local parts = { }
+   for _, v in List do parts[#parts] = tostring(v) end
+   return '[' .. (#parts > 0 ? table.concat(parts, ',') : '') .. ']'
+end
+
+-- The right edge of each visual row, relative to the text origin.  ASCII strings only.
+
+function rowWidths(Face:str!, Text:obj!):array<double>
+   local result = array<double> { }
+   local str = Text.string
+   local starts = breaks(Text)
+   starts.push(#str)
+   for _, row_end in starts do
+      local x = caret(Text, row_end - 1)
+      result.push(x - TEXT_X + measure(Face, str.sub(row_end - 1, row_end)))
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function WrapModeDefaultsToWord()
+   for _, face in FACES do
+      local path = '/usr/share/kotuku/fonts'
+      local text, scene <close> = newText(face, { string='see ' .. path, inlineSize=measure(face, '/usr/share/') + 2 })
+      assert(text.wrapMode is VTW_WORD, f'{face}: The default WrapMode must be WORD, got {text.wrapMode}')
+      local list = breaks(text)
+      assert(#list is 1 and list[0] is 4, f'{face}: WORD mode must only break before the path, got {describe(list)}')
+      assert(text.wrappedLines is 2, f'{face}: Expected 2 wrapped lines, got {text.wrappedLines}')
+   end
+end
+
+@Test function WrapModeIsIgnoredWithoutInlineSize()
+   for _, face in FACES do
+      for _, mode in array<int> { VTW_WORD, VTW_SYMBOL, VTW_ANYWHERE } do
+         local text, scene <close> = newText(face, { string='/usr/share/kotuku/fonts and-more', wrapMode=mode })
+         assert(text.wrappedLines is 1, f'{face}: Mode {mode} must not wrap without InlineSize')
+         assert(#breaks(text) is 0, f'{face}: Mode {mode} must keep all carets on one row')
+      end
+   end
+end
+
+@Test function WrapModeRejectsInvalidValues()
+   local text, scene <close> = newText('Noto Sans', { string='abc' })
+   try
+      text.wrapMode = 99
+   except e when ERR_OutOfRange
+   success
+      raise 'An out-of-range WrapMode must be rejected'
+   end
+   assert(text.wrapMode is VTW_WORD, 'A rejected WrapMode must not change the existing value')
+end
+
+@Test function SymbolModeBreaksAfterSlash()
+   for _, face in FACES do
+      local path = '/usr/share/kotuku/fonts'
+      local text, scene <close> = newText(face, {
+         string=path, wrapMode=VTW_SYMBOL, inlineSize=measure(face, '/usr/share/') + 2
+      })
+      local list = breaks(text)
+      assert(#list >= 1, f'{face}: SYMBOL mode must break the path')
+      assert(list[0] is 11, f'{face}: The first break must follow "/usr/share/", got {describe(list)}')
+      for _, col in list do
+         assert(path.sub(col - 1, col) is '/', f'{face}: Each row must end with a "/", break at {col}')
+      end
+      assert(text.wrappedLines is #list + 1, f'{face}: WrappedLines {text.wrappedLines} must match the rows')
+   end
+end
+
+@Test function SymbolModeKeepsSymbolRunsTogether()
+   for _, face in FACES do
+      for _, case in array<table> {
+         { str='http://example', fit='http:/', expect=7 },
+         { str='abc--def', fit='abc-', expect=5 },
+         { str='a\\\\b', fit='a\\', expect=3 }
+      } do
+         local text, scene <close> = newText(face, {
+            string=case.str, wrapMode=VTW_SYMBOL, inlineSize=measure(face, case.fit) + 1
+         })
+         local list = breaks(text)
+         assert(#list is 1 and list[0] is case.expect,
+            f'{face}: "{case.str}" must only break after the symbol run, got {describe(list)}')
+      end
+   end
+end
+
+@Test function SymbolModeRespectsLeadingHyphenAndDigits()
+   for _, face in FACES do
+      local text, scene <close> = newText(face, {
+         string='--log-warning', wrapMode=VTW_SYMBOL, inlineSize=measure(face, '--') + 1
+      })
+      local list = breaks(text)
+      assert(#list is 1 and list[0] is 6,
+         f'{face}: "--log-warning" must only break after "--log-", got {describe(list)}')
+
+      text.string = 'alpha-1234'
+      text.inlineSize = measure(face, 'alpha-') + 2
+      assert(#breaks(text) is 0, f'{face}: A hyphen followed by a digit must not break, got {describe(breaks(text))}')
+
+      text.string = 'alpha-beta'
+      list = breaks(text)
+      assert(#list is 1 and list[0] is 6, f'{face}: "alpha-beta" must break after the hyphen, got {describe(list)}')
+   end
+end
+
+@Test function SymbolModeBreaksURLQueries()
+   for _, face in FACES do
+      local text, scene <close> = newText(face, {
+         string='page?id=4&x=2', wrapMode=VTW_SYMBOL, inlineSize=1
+      })
+      local list = breaks(text)
+      assert(describe(list) is '[5,8,10,12]', f'{face}: Unexpected URL query breaks {describe(list)}')
+
+      text.string = 'field_name_here'
+      list = breaks(text)
+      assert(describe(list) is '[6,11]', f'{face}: Unexpected underscore breaks {describe(list)}')
+   end
+end
+
+@Test function SymbolModeLeavesPeriodsAlone()
+   for _, face in FACES do
+      for _, str in array<str> { 'example.com', '3.14159', '12:30;a,b' } do
+         local text, scene <close> = newText(face, { string=str, wrapMode=VTW_SYMBOL, inlineSize=1 })
+         assert(text.wrappedLines is 1, f'{face}: "{str}" must not break, got {text.wrappedLines} lines')
+      end
+   end
+end
+
+@Test function SymbolModeStillOverflowsOversizedSegments()
+   for _, face in FACES do
+      local text, scene <close> = newText(face, {
+         string='x abcdefghijklmnop', wrapMode=VTW_SYMBOL, inlineSize=measure(face, 'abcdef')
+      })
+      local list = breaks(text)
+      assert(#list is 1 and list[0] is 2, f'{face}: An unbreakable segment must overflow, got {describe(list)}')
+      assert(text.wrappedLines is 2, f'{face}: Expected 2 wrapped lines, got {text.wrappedLines}')
+   end
+end
+
+@Test function SecretTextWrapsAtWhitespaceOnly()
+   for _, face in FACES do
+      local text, scene <close> = newText(face, {
+         string='/usr/share/kotuku', wrapMode=VTW_ANYWHERE, inlineSize=measure(face, '/usr/') + 1,
+         textFlags=VTXF_SELECTABLE|VTXF_SECRET
+      })
+      assert(text.wrappedLines is 1, f'{face}: SECRET text must not break within a word, got {text.wrappedLines}')
+      assert(text.wrapMode is VTW_ANYWHERE, f'{face}: The stored WrapMode must be retained')
+   end
+end
+
+@Test function AnywhereModeBreaksBetweenCharacters()
+   for _, face in FACES do
+      local inline = measure(face, 'abcdef') + 1
+      local text, scene <close> = newText(face, {
+         string='x abcdefghijklmnopqrstuvwxyz', wrapMode=VTW_ANYWHERE, inlineSize=inline
+      })
+      local list = breaks(text)
+      assert(#list >= 4, f'{face}: The long segment must be broken between characters, got {describe(list)}')
+      assert(list[0] is 2, f'{face}: The segment must first move to a new row, got {describe(list)}')
+      assert(text.wrappedLines is #list + 1, f'{face}: WrappedLines {text.wrappedLines} must match the rows')
+      for i, width in rowWidths(face, text) do
+         assert(width <= inline + 0.5, f'{face}: Row {i} is {width} wide, exceeding the inline size of {inline}')
+      end
+
+      local err, bx, by, bw, bh = text.mtGetBoundary(VBF_NO_TRANSFORM)
+      assert(bw <= inline + 0.5, f'{face}: The boundary width {bw} must not exceed the inline size {inline}')
+   end
+end
+
+@Test function AnywhereModeHandlesNarrowAreas()
+   for _, face in FACES do
+      local text, scene <close> = newText(face, { string='abcdef', wrapMode=VTW_ANYWHERE, inlineSize=1 })
+      assert(text.wrappedLines is 6, f'{face}: Each glyph must have its own line, got {text.wrappedLines}')
+      assert(describe(breaks(text)) is '[1,2,3,4,5]', f'{face}: Unexpected breaks {describe(breaks(text))}')
+   end
+end
+
+@Test function AnywhereModeIncludesKerning()
+   local _, face = check mFont.RegisterFont('sdk:docs/tiri/fonts/DejaVuSans.ttf')
+   local text, scene <close> = newText(face, { string='A', fontSize=32 })
+   local glyph_width = text.textWidth
+   text.string = 'AA'
+   local pair_width = text.textWidth
+   assert(pair_width > glyph_width * 2, 'The AA fixture must have positive kerning')
+
+   text.string = 'AAAA'
+   text.wrapMode = VTW_ANYWHERE
+   text.inlineSize = glyph_width * 2
+   assert(text.wrappedLines is 4, 'Positive kerning must prevent two As from overflowing a row')
+   assert(describe(breaks(text)) is '[1,2,3]', 'Each A must start a new row with kerning reset')
+   local last_x = caret(text, 4)
+   assert(math.abs(last_x - TEXT_X - glyph_width) < 0.01, 'The final row must have no cross-row kerning')
+
+   text.inlineSize = pair_width
+   assert(text.wrappedLines is 2, 'Two As must fit when the inline size includes their kerning')
+   assert(describe(breaks(text)) is '[2]', 'An exactly fitting kerned pair must stay on one row')
+
+   text.inlineSize = 0
+   text.string = 'V'
+   local v_width = text.textWidth
+   text.string = 'AV'
+   local av_width = text.textWidth
+   assert(av_width < glyph_width + v_width, 'The AV fixture must have negative kerning')
+   text.string = 'AVAV'
+   text.inlineSize = av_width
+   assert(text.wrappedLines is 2, 'Negative kerning must allow each AV pair to fit')
+   assert(describe(breaks(text)) is '[2]', 'Negative kerning must not cause premature character breaks')
+end
+
+@Test function AnywhereModeKeepsUTF8Whole()
+   for _, face in FACES do
+      local str = 'éééééééééééé' -- 12 characters, 24 bytes
+      local text, scene <close> = newText(face, {
+         string=str, wrapMode=VTW_ANYWHERE, inlineSize=measure(face, 'ééé') + 1
+      })
+      local list = breaks(text)
+      assert(#list >= 2, f'{face}: The run must be broken, got {describe(list)}')
+      for i, col in list do
+         assert(col is (i + 1) * list[0],
+            f'{face}: Breaks must be evenly spaced by whole characters, got {describe(list)}')
+      end
+      local err = text.mtGetCaretBounds(0, 12)
+      assert(err is ERR_Okay, f'{face}: The final caret must exist')
+      local last_x = caret(text, 12)
+      local prev_x = caret(text, 11)
+      assert(last_x > prev_x, f'{face}: The final caret must follow the last character')
+   end
+end
+
+@Test function WrapModeChangeRefreshesLayout()
+   for _, face in FACES do
+      local text, scene <close> = newText(face, { string='abcdefghijklmnop', inlineSize=measure(face, 'abcd') + 1 })
+      local _, _, _, _, word_height = text.mtGetBoundary(VBF_NO_TRANSFORM)
+      assert(text.wrappedLines is 1, f'{face}: WORD mode must not break the word')
+
+      text.wrapMode = VTW_ANYWHERE
+      assert(text.wrappedLines > 1, f'{face}: Changing WrapMode must refresh the layout')
+      local _, _, _, _, anywhere_height = text.mtGetBoundary(VBF_NO_TRANSFORM)
+      assert(anywhere_height > word_height, f'{face}: The boundary must grow from {word_height}, got {anywhere_height}')
+
+      text.wrapMode = VTW_WORD
+      assert(text.wrappedLines is 1, f'{face}: Restoring WORD mode must restore the layout')
+   end
+end
+
+-- The bitmap face is drawn to a texture line by line.  Each visual row must have pixels where the caret layout puts
+-- it, and nothing may be drawn past the inline size.
+
+@Test function BitmapDrawingMatchesCaretLayout()
+   local face = 'Clean'
+   local inline = measure(face, 'abcdef') + 1
+   local text, scene <close> = newText(face, {
+      string='abcdefghijklmnopqrstuvwx', wrapMode=VTW_ANYWHERE, inlineSize=inline, fill='rgb(255,255,255)'
+   })
+   local list = breaks(text)
+   assert(#list >= 3, f'Expected at least 4 rows, got {describe(list)}')
+
+   local width, height = 200, 200
+   local bmp <close> = obj.new('bitmap', { width=width, height=height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   scene.pageWidth  = width
+   scene.pageHeight = height
+   scene.bitmap = bmp
+   check scene.acDraw()
+
+   local function lit(X1:num, Y1:num, X2:num, Y2:num):bool
+      for y in {math.max(0, math.floor(Y1)) to math.min(height, math.ceil(Y2))} do
+         for x in {math.max(0, math.floor(X1)) to math.min(width, math.ceil(X2))} do
+            local p = mGfx.ReadRGBPixel(bmp, x, y)
+            if p.red + p.green + p.blue > 200 then return true end
+         end
+      end
+      return false
+   end
+
+   local starts = array<int> { 0 }
+   for _, col in list do starts.push(col) end
+   for i, col in starts do
+      local x, y, h = caret(text, col)
+      local end_x = (i + 1 < #starts) ? caret(text, starts[i + 1] - 1) + 7 : TEXT_X + inline
+      assert(lit(x, y, end_x, y + h), f'Visual row {i} must be drawn at y = {y}')
+   end
+
+   local _, top = caret(text, 0)
+   local _, last_y, last_h = caret(text, starts[#starts - 1])
+   assert(not lit(TEXT_X + inline + 1, top, width, last_y + last_h), 'No pixels may be drawn past the inline size')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Caret movement and hit testing across symbol breaks.  These need a focused surface for keyboard and pointer input.
+
+function sendKey(Code:num!)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = KQ_PRESSED | KQ_NOT_PRINTABLE
+   ev[3] = Code
+   ev[4] = 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576 -- The top 20 bits of the mantissa occupy the high word
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+function feed(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function newEditableText(Face:str!):<obj, obj, obj>
+   local surface = obj.new('Surface', { width=300, height=200 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local text = viewport.new('VectorText', {
+      x=TEXT_X, y=30, face=Face, fontSize=FONT_SIZE, textFlags=VTXF_EDITABLE, wrapMode=VTW_SYMBOL,
+      string='/usr/share/kotuku/fonts', inlineSize=measure(Face, '/usr/share/') + 2
+   })
+   surface.acShow()
+   surface.acFocus()
+   viewport.acFocus() -- Keyboard input is only received while the text's viewport has the focus
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, scene, text
+end
+
+@AfterEach function releasePointer()
+   local pointer = obj.find('SystemPointer')
+   if pointer then feed(JET_LMB, 0, 0) end
+end
+
+@Test; @Requires(display=true)
+function VerticalCaretMovementCrossesSymbolBreaks()
+   for _, face in FACES do
+      local surface <close>, scene, text = newEditableText(face)
+      local list = breaks(text)
+      assert(list[0] is 11, f'{face}: Expected a break after "/usr/share/", got {describe(list)}')
+
+      text.cursorRow = 0
+      text.cursorColumn = 2
+      sendKey(KEY_DOWN)
+      local _, row_y = caret(text, list[0])
+      local _, cursor_y = caret(text, text.cursorColumn)
+      assert(text.cursorRow is 0, f'{face}: Down must stay within the logical line')
+      assert(cursor_y is row_y, f'{face}: Down must move to the second visual row, column {text.cursorColumn}')
+      assert(text.cursorColumn >= 11, f'{face}: Down must move past the break, got column {text.cursorColumn}')
+
+      sendKey(KEY_UP)
+      assert(text.cursorColumn < 11, f'{face}: Up must return to the first visual row, got {text.cursorColumn}')
+   end
+end
+
+@Test; @Requires(display=true)
+function ClickOnContinuationRowPlacesCaret()
+   for _, face in FACES do
+      local surface <close>, scene, text = newEditableText(face)
+      local list = breaks(text)
+      local target = list[0] + 2
+      local x, y, h = caret(text, target)
+      feed(JET_ABS_XY, surface.absX + x + 0.5, surface.absY + y + (h / 2))
+      feed(JET_LMB, 1, 0)
+      feed(JET_LMB, 0, 0)
+      assert(text.cursorRow is 0, f'{face}: The click must stay on the logical line, got row {text.cursorRow}')
+      assert(text.cursorColumn is target,
+         f'{face}: The click must place the caret at column {target}, got {text.cursorColumn}')
+   end
+end
