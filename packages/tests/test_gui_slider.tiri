@@ -1415,6 +1415,63 @@ end
    assert(plain.thumbVP.x is 0, 'Without overhang the thumb must start within the track')
 end
 
+-- An anchored thumb keeps its minimum end at the start of the track and grows with the value.  Dragging resizes the
+-- thumb rather than moving it, and the value follows the pointer as it does for a moving thumb.
+
+@Test function AnchoredThumbGrowsFromMinimum()
+   for orientation in values(array<str> { 'horizontal', 'vertical' }) do
+      local vertical = orientation is 'vertical'
+      local surface <close>, slider = newSlider({ orientation=orientation, anchored=true, min=0, max=10, value=0,
+         thickness=10, thumbSize=10, thumbLength=10, width=vertical ? nil : 210, height=vertical ? 210 : nil
+      })
+      local thumb, button, host = slider.thumbVP, slider.button, slider.trackVP
+      local length:num = vertical ? host.height : host.width
+      local travel = length - 10
+
+      function check_extent(Value:num!)
+         local extent = 10 + (travel * Value / 10)
+         assert((vertical ? thumb.height : thumb.width) is extent,
+            f'A {orientation} anchored thumb at {Value} must be {extent} long, got '
+            .. f'{vertical ? thumb.height : thumb.width}')
+         if vertical then
+            assert(thumb.y + thumb.height is length, 'A vertical anchored thumb must keep its bottom edge at the minimum')
+         else
+            assert(thumb.x is 0, 'A horizontal anchored thumb must keep its left edge at the minimum')
+         end
+         assert(button.x * 2 + button.width is thumb.width and button.y * 2 + button.height is thumb.height,
+            'The foreground must fill the anchored thumb within its insets')
+      end
+
+      check_extent(0)
+      slider.setValue(4)
+      check_extent(4)
+      slider.setValue(10)
+      check_extent(10)
+
+      -- Dragging from the end of the thumb by a quarter of the travel lowers the value by a quarter of the range.
+
+      slider.setValue(5)
+      slider.viewport.scene.bitmap = surface.buffer -- Refresh the thumb's input boundary
+      check slider.viewport.scene.acDraw()
+      processing.sleep(0)
+      local base_x = surface.absX + slider.viewport.x + host.x
+      local base_y = surface.absY + slider.viewport.y + host.y
+      local px = vertical ? (thumb.x + 5) : (thumb.width - 5)
+      local py = thumb.y + 5
+      feed(JET_ABS_XY, base_x + px, base_y + py)
+      feed(JET_LMB, 1, 0)
+      if vertical then
+         feed(JET_ABS_XY, base_x + px, base_y + py + (travel * 0.25))
+      else
+         feed(JET_ABS_XY, base_x + px - (travel * 0.25), base_y + py)
+      end
+      feed(JET_LMB, 0, 0)
+      assert(math.abs(slider.value - 2.5) < 0.01, f'A {orientation} anchored drag must follow the pointer, got '
+         .. f'{slider.value}')
+      check_extent(slider.value)
+   end
+end
+
 @Test function SilentSetValueSkipsActivation()
    local hits = 0
    local surface <close>, slider = newSlider({ value=0, events={ activate=function(Value) hits++ end } })

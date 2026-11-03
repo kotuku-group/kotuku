@@ -6,7 +6,7 @@ Display a dialog message to the user.
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui', 'gui/layout', 'gui/window', 'gui/button', 'gui/input', 'gui/toggle'
+   import 'gui', 'gui/layout', 'gui/window', 'gui/button', 'gui/input', 'gui/toggle', 'gui/slider'
 
    include 'vector'
 
@@ -67,6 +67,7 @@ gui.dialog.message = function(Options:table!)
       buttons       = array<table>, -- One button per option, in the same order
       input         = nil, -- The input box, if userInput is set
       checkbox      = nil, -- The toggle, if checkboxLabel is set
+      progress      = nil, -- The progress bar slider, if progress is set
       messageText   = nil, -- The VectorText that displays the message
       viewport      = nil  -- The client viewport that contains the dialog content
    }
@@ -165,6 +166,12 @@ gui.dialog.message = function(Options:table!)
          y = bottom + (em * ROW_SPACING)
       end
 
+      if &progress then
+         &progress.viewport.y = math.round(y)
+         bottom = y + &progress.viewport.height
+         y = bottom + (em * ROW_SPACING)
+      end
+
       if &contentViewport then
          &contentViewport.y = math.round(y)
          bottom = y + content_height
@@ -205,6 +212,13 @@ gui.dialog.message = function(Options:table!)
       &message = Message
       arrange()
       &viewport.acDraw()
+   end
+
+   -- Set the progress bar to a value normalised from 0 to 1.0.  Values outside that range are clamped.
+
+   self.updateProgress = function(Value:num!)
+      if not (&window and &progress) then return end
+      &progress.setValue(math.clamp(Value, 0, 1), true)
    end
 
    using self do
@@ -253,7 +267,8 @@ gui.dialog.message = function(Options:table!)
             string   = &message,
             wrapMode = VTW_ANYWHERE, -- Long words such as file paths are broken to fit the column
             x        = &window.margins.left + ICON_SIZE + ICON_GAP,
-            y        = 0
+            y        = 0,
+            textFlags = VTXF_SELECTABLE
          }, theme.window.text)
       )
 
@@ -303,6 +318,24 @@ gui.dialog.message = function(Options:table!)
             x      = &window.margins.left + ICON_SIZE + ICON_GAP,
             label  = Options.checkboxLabel,
             value  = Options.checkboxState ? 1 : 0
+         })
+      end
+
+      -- The progress bar is an anchored slider that is disabled to prevent user interaction.  Its theme cancels the
+      -- dimming of disabled sliders.  The initial value is that of the progress option if it is a number.
+
+      if Options.progress then
+         &progress = gui.slider({
+            target   = &viewport,
+            x        = &window.margins.left + ICON_SIZE + ICON_GAP,
+            width    = text_width,
+            min      = 0,
+            max      = 1,
+            value    = (Options.progress is <num>) ? math.clamp(Options.progress, 0, 1) : 0,
+            anchored = true,
+            disabled = true,
+            keyboard = false,
+            theme    = { disabled = { opacity = 1 } }
          })
       end
 
