@@ -16,10 +16,13 @@ static void raster_text_to_bitmap(extVectorText *Vector)
 
    int dx = 0, dy = Vector->txBitmapFont->Leading;
    int longest_line_width = 0;
+   std::vector<std::string_view> visual_lines;
+   visual_lines.reserve(lines.size());
 
    if ((not Vector->txInlineSize) and (not Vector->needs_caret_geometry())) { // No wrapping or selection
       for (auto &line : Vector->txLines) {
          line.chars.clear();
+         visual_lines.emplace_back(line);
          int line_width = fnt::StringWidth(Vector->txBitmapFont, line, -1);
          if (line_width > longest_line_width) longest_line_width = line_width;
          dy += Vector->txBitmapFont->LineSpacing;
@@ -28,6 +31,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
    else {
       for (auto &line : Vector->txLines) {
          line.chars.clear();
+         const char *line_start = line.data();
          auto wrap_state = WS_NO_WORD;
          if (line.empty() and Vector->needs_caret_geometry()) {
             const auto top = dy - Vector->txBitmapFont->Leading;
@@ -51,10 +55,14 @@ static void raster_text_to_bitmap(extVectorText *Vector)
             if ((wrap_state IS WS_NEW_WORD) and (Vector->txInlineSize)) {
                int word_width = fnt::StringWidth(Vector->txBitmapFont, str, word_extent(str).chars);
 
-               if (dx + word_width >= Vector->txInlineSize) {
+               // A word that is too wide for an empty line stays on that line instead of leaving it blank.
+               if ((dx > 0) and (dx + word_width >= Vector->txInlineSize)) {
+                  visual_lines.emplace_back(line_start, size_t(str - line_start));
+                  line_start = str;
                   if (dx > longest_line_width) longest_line_width = dx;
                   dx = 0;
                   dy += Vector->txBitmapFont->LineSpacing;
+                  Vector->txWrappedLines++;
                }
             }
 
@@ -72,6 +80,7 @@ static void raster_text_to_bitmap(extVectorText *Vector)
             dx += char_width;
          }
 
+         visual_lines.emplace_back(line_start, size_t(line.data() + line.size() - line_start));
          if (dx > longest_line_width) longest_line_width = dx;
          dx = 0;
          dy += Vector->txBitmapFont->LineSpacing;
@@ -117,14 +126,13 @@ static void raster_text_to_bitmap(extVectorText *Vector)
 
    gfx::DrawRectangle(Vector->txAlphaBitmap, 0, 0, Vector->txAlphaBitmap->Width, Vector->txAlphaBitmap->Height, 0x00000000, BAF::FILL);
 
-   if (Vector->txInlineSize) Vector->txBitmapFont->WrapEdge = Vector->txInlineSize;
+   // Draw the visual lines measured above without letting Font apply a different wrapping policy.
+   Vector->txBitmapFont->WrapEdge = 0;
 
    int y = Vector->txBitmapFont->Leading;
-   for (auto &line : Vector->txLines) {
-      auto str = line.c_str();
-      if (!str[0]) y += Vector->txBitmapFont->LineSpacing;
-      else {
-         Vector->txBitmapFont->setString(str);
+   for (const auto &line : visual_lines) {
+      if (not line.empty()) {
+         Vector->txBitmapFont->setString(line);
          Vector->txBitmapFont->X = 0;
          Vector->txBitmapFont->Y = y;
          Vector->txBitmapFont->Colour.Red   = int(Vector->Fill.Colour.Red * 255.0);
@@ -132,10 +140,8 @@ static void raster_text_to_bitmap(extVectorText *Vector)
          Vector->txBitmapFont->Colour.Blue  = int(Vector->Fill.Colour.Blue * 255.0);
          Vector->txBitmapFont->Colour.Alpha = int(Vector->Fill.Colour.Alpha * 255.0);
          acDraw(Vector->txBitmapFont);
-
-         if (Vector->txInlineSize) y = Vector->txBitmapFont->EndY + Vector->txBitmapFont->LineSpacing;
-         else y += Vector->txBitmapFont->LineSpacing;
       }
+      y += Vector->txBitmapFont->LineSpacing;
    }
 
    // Text paths are always oriented around (0,0) and are transformed later

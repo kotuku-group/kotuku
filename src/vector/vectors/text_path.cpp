@@ -197,6 +197,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       if (reset_font(Vector) != ERR::Okay) return;
    }
 
+   Vector->txWrappedLines = 0;
+
    auto &lines = Vector->txLines;
    if (lines.empty()) return;
 
@@ -397,7 +399,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             if ((wrap_state IS WS_NEW_WORD) and (Vector->txInlineSize)) {
                auto word_width = string_width(Vector, std::string_view(str, word_extent(str).bytes));
 
-               if ((dx + word_width) * std::abs(transform.sx) >= Vector->txInlineSize) {
+               // A word that is too wide for an empty line stays on that line instead of leaving it blank.
+               if ((dx > 0) and ((dx + word_width) * std::abs(transform.sx) >= Vector->txInlineSize)) {
                   if (dx > longest_line_width) longest_line_width = dx;
                   dx = 0;
                   dy += pt.line_spacing;
@@ -447,6 +450,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
    // Text paths are always oriented around (0,0) and are transformed later
 
+   Vector->txWrappedLines = wrapped_lines;
    Vector->Bounds = { 0.0, double(-pt.ascent), Vector->txWidth, 1.0 };
    auto total_lines = std::ssize(Vector->txLines) + wrapped_lines;
    if (total_lines > 1) Vector->Bounds.bottom += (total_lines - 1) * pt.line_spacing;

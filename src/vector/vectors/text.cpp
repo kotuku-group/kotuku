@@ -243,7 +243,7 @@ class extVectorText : public extVector {
    OBJECTID txFocusID;
    OBJECTID txShapeInsideID;   // Enable word-wrapping within this shape
    OBJECTID txShapeSubtractID; // Subtract this shape from the path defined by shape-inside
-   int  txTotalLines;
+   int  txWrappedLines = 0; // Extra lines created by InlineSize word-wrapping, computed by path generation
    int  txLineLimit, txCharLimit;
    int  txWeight; // 100 - 300 (Light), 400 (Normal), 700 (Bold), 900 (Boldest)
    ALIGN txAlignFlags;
@@ -1720,6 +1720,24 @@ static ERR TEXT_GET_TotalLines(extVectorText *Self, int *Value)
 
 /*********************************************************************************************************************
 -FIELD-
+WrappedLines: The total number of lines after word-wrapping is applied.
+
+WrappedLines reports the number of lines that are displayed by the text, including the additional lines created when
+#InlineSize wraps a line of the #String.  If word-wrapping is disabled, the value is the same as #TotalLines.
+
+Reading this field will update the text layout if it is out of date, which can be expensive for large blocks of text.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_WrappedLines(extVectorText *Self, int *Value)
+{
+   if (Self->initialised()) gen_vector_tree(Self);
+   *Value = int(Self->txLines.size()) + Self->txWrappedLines;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
 Weight: Defines the level of boldness in the text.
 
 The weight value determines the level of boldness in the text.  A default value of 400 will render the text in its
@@ -2845,6 +2863,7 @@ static const FieldArray clTextFields[] = {
    { "CursorColumn",  FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_CursorColumn, TEXT_SET_CursorColumn },
    { "CursorRow",     FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_CursorRow, TEXT_SET_CursorRow },
    { "TotalLines",    FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_TotalLines },
+   { "WrappedLines",  FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_WrappedLines },
    { "SelectRow",     FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_SelectRow },
    { "SelectColumn",  FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_SelectColumn },
    { "LineLimit",     FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_LineLimit, TEXT_SET_LineLimit },

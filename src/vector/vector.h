@@ -1078,17 +1078,13 @@ inline static ViewSource viewport_source(const extVectorViewport *View)
 inline static double viewport_coordinate_width(const extVectorViewport *View)
 {
    if (auto width = viewport_source(View).Width; width > 0) return width;
-   else if (viewport_has_target_width(View)) return View->vpFixedWidth;
-   else if (View->Scene) return View->Scene->PageWidth;
-   else return 0;
+   else return View->vpFixedWidth;
 }
 
 inline static double viewport_coordinate_height(const extVectorViewport *View)
 {
    if (auto height = viewport_source(View).Height; height > 0) return height;
-   else if (viewport_has_target_height(View)) return View->vpFixedHeight;
-   else if (View->Scene) return View->Scene->PageHeight;
-   else return 0;
+   else return View->vpFixedHeight;
 }
 
 //********************************************************************************************************************

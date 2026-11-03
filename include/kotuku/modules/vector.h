@@ -4656,6 +4656,14 @@ class objVectorText : public objVector {
       return field->GetValue(this, &Value);
    }
 
+   inline ERR getWrappedLines(int &Value) noexcept {
+      auto field = &this->Class->Dictionary[83];
+      SetObjectContext(this, field, AC::NIL);
+      auto error = field->GetValue(this, &Value);
+      RestoreObjectContext();
+      return error;
+   }
+
    inline ERR getSelectRow(int &Value) noexcept {
       auto field = &this->Class->Dictionary[60];
       return field->GetValue(this, &Value);

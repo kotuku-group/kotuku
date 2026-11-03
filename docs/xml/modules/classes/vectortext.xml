@@ -492,6 +492,17 @@
     </field>
 
     <field>
+      <name>WrappedLines</name>
+      <comment>The total number of lines after word-wrapping is applied.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>WrappedLines reports the number of lines that are displayed by the text, including the additional lines created when <fl>InlineSize</fl> wraps a line of the <fl>String</fl>.  If word-wrapping is disabled, the value is the same as <fl>TotalLines</fl>.</p>
+<p>Reading this field will update the text layout if it is out of date, which can be expensive for large blocks of text.</p>
+      </description>
+    </field>
+
+    <field>
       <name>X</name>
       <comment>The x coordinate of the text.</comment>
       <access read="G" write="S">Get/Set</access>
