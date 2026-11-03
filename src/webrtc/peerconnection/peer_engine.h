@@ -101,6 +101,14 @@ public:
 
    [[nodiscard]] const std::string & local_description() const { return local_text; }
    [[nodiscard]] const std::string & remote_description() const { return remote_text; }
+
+   // Advances whenever the text of the local or remote description changes.
+
+   [[nodiscard]] uint64_t description_revision() const { return text_revision; }
+
+   // The number of times that the local description has been serialised, for performance diagnostics.
+
+   [[nodiscard]] uint64_t local_serialisations() const { return serialisations; }
    [[nodiscard]] const std::string & certificate_fingerprint() const { return local.data.fingerprint; }
    [[nodiscard]] PeerState state() const { return current_state; }
    [[nodiscard]] SignalingState signaling_state() const { return signal_state; }
@@ -165,6 +173,14 @@ private:
    void refresh_buffered();
    void wake() { if (callbacks.wake) callbacks.wake(); }
 
+   // Description text.  Call local_changed() after any change to the local description.
+
+   void local_changed() { ++local_revision; }
+   [[nodiscard]] bool serialise_local();
+   void refresh_local();
+   void clear_local_text();
+   void set_remote_text(std::string_view Text);
+
    std::unique_ptr<InterfaceMonitor> interfaces;
    bool needs_restart = false;
    uint64_t restart_request_generation = 0, recovery_started = 0;
@@ -202,6 +218,10 @@ private:
    sdp::Description remote;
    std::string local_text;
    std::string remote_text;
+   uint64_t local_revision = 0;      // Advanced by every change to the local description
+   uint64_t serialised_revision = 0; // The local_revision that local_text was serialised from
+   uint64_t text_revision = 0;       // Advanced by every change to local_text or remote_text
+   uint64_t serialisations = 0;
    std::string local_ufrag;
    std::string local_password;
    ice::Endpoint stun_server;            // Legacy StunServer

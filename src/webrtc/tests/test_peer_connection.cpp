@@ -173,6 +173,22 @@ static int run_test() {
          int(a.state()), int(b.state()), int(a.ice_state()), int(b.ice_state()));
       return 4;
    }
+
+   // Ticks after gathering has completed must not re-serialise an unchanged local description.
+
+   auto idle_offer = a.local_description();
+   auto idle_serialisations = a.local_serialisations();
+   auto idle_revision = a.description_revision();
+   for (int tick = 0; tick < 500; ++tick) {
+      ProcessMessages(PMF::NIL, 0);
+      if (a.tick(now_us()) != ERR::Okay) return 3;
+   }
+   auto idle_work = a.local_serialisations() - idle_serialisations;
+   std::fprintf(stderr, "Local SDP serialisations over 500 idle ticks: %llu\n", (unsigned long long)idle_work);
+   if (idle_work != 0 or a.description_revision() != idle_revision or a.local_description() != idle_offer or
+       idle_offer.find("a=" + a_candidate + "\r\n") IS std::string::npos or
+       idle_offer.find("a=end-of-candidates\r\n") IS std::string::npos) return 51;
+
    // Reliable SCTP uses real ICE/DTLS sockets and survives a restart with DATA outstanding.
    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
    while (std::chrono::steady_clock::now() < deadline and

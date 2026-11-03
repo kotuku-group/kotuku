@@ -474,6 +474,7 @@ ERR PeerConnection::gather_routes()
    local.data.ice_pwd = local_password;
    local.data.fingerprint = certificate->fingerprint();
    local.data.end_of_candidates = gather_state IS GatheringState::COMPLETE;
+   local_changed();
 
    ice::CandidateLine line;
    line.foundation = "1";
@@ -535,6 +536,7 @@ void PeerConnection::queue_host(ice::CandidateLine Value, uint64_t NowUs)
       auto text = ice::format_candidate(Value);
       if (text.empty()) return;
       local.data.candidates.push_back(text);
+      local_changed();
       if (callbacks.candidate) callbacks.candidate(text);
       return;
    }
@@ -630,7 +632,8 @@ void PeerConnection::pump_mdns(uint64_t NowUs)
             if (name.reported) {
                socket->retire_host(name.line.candidate.endpoint);
                std::erase(local.data.candidates, ice::format_candidate(name.line));
-               if (local_committed) local_text = sdp::serialize(local);
+               local_changed();
+               refresh_local();
             }
          }
          continue;
@@ -646,7 +649,8 @@ void PeerConnection::pump_mdns(uint64_t NowUs)
       name.reported = true;
       auto text = ice::format_candidate(name.line);
       local.data.candidates.push_back(text);
-      if (local_committed) local_text = sdp::serialize(local);
+      local_changed();
+      refresh_local();
       if (callbacks.candidate) callbacks.candidate(text);
       if (current_state IS PeerState::CLOSED or not socket or generation != mdns_generation) return;
    }
@@ -673,11 +677,58 @@ void PeerConnection::pump_mdns(uint64_t NowUs)
 }
 
 //********************************************************************************************************************
+// Serialises the local description and records the revision that the text represents.  The description revision
+// only advances if the text has changed, so that owners can skip redundant copies.  Returns false if serialisation
+// failed.
+
+bool PeerConnection::serialise_local()
+{
+   auto text = sdp::serialize(local);
+   ++serialisations;
+   serialised_revision = local_revision;
+
+   if (text != local_text) {
+      local_text = std::move(text);
+      ++text_revision;
+   }
+
+   return not local_text.empty();
+}
+
+//********************************************************************************************************************
+// Re-serialises a committed local description if it has changed since it was last serialised.  An uncommitted
+// description is left as created, because SetLocalDescription() must receive the exact text that was returned.
+
+void PeerConnection::refresh_local()
+{
+   if (local_committed and serialised_revision != local_revision) (void)serialise_local();
+}
+
+//********************************************************************************************************************
+
+void PeerConnection::clear_local_text()
+{
+   if (local_text.empty()) return;
+   local_text.clear();
+   ++text_revision;
+}
+
+//********************************************************************************************************************
+
+void PeerConnection::set_remote_text(std::string_view Text)
+{
+   if (Text IS remote_text) return;
+   remote_text.assign(Text);
+   ++text_revision;
+}
+
+//********************************************************************************************************************
 // Creates an offer.  The offerer is the controlling ICE agent and offers actpass for the DTLS role.
 
 ERR PeerConnection::create_offer()
 {
    local.data.max_message_size = receive_limit;
+   local_changed();
 
    if (current_state IS PeerState::CLOSED or signal_state != SignalingState::STABLE or
        not local_text.empty()) return ERR::InvalidState;
@@ -686,8 +737,8 @@ ERR PeerConnection::create_offer()
    if (error != ERR::Okay) return error;
 
    local.data.setup = sdp::Setup::ACTPASS;
-   local_text = sdp::serialize(local);
-   return local_text.empty() ? ERR::InvalidData : ERR::Okay;
+   local_changed();
+   return serialise_local() ? ERR::Okay : ERR::InvalidData;
 }
 
 //********************************************************************************************************************
@@ -709,6 +760,7 @@ void PeerConnection::network_changed(uint64_t NowUs)
    remote_names.clear();
    early_candidates.clear();
    local.data.candidates.clear();
+   local_changed();
    local_sockets_ready = false;
 
    if (socket->state() != DtlsState::CONNECTED) {
@@ -753,6 +805,7 @@ ERR PeerConnection::restart_routes(std::string Ufrag, std::string Password)
    local_ufrag = std::move(Ufrag);
    local_password = std::move(Password);
    local.data.candidates.clear();
+   local_changed();
    sctp_path_reset = true;
 
    auto error = gather_routes();
@@ -789,12 +842,13 @@ ERR PeerConnection::restart_ice()
    local.data.ice_pwd = local_password;
    local.data.setup = sdp::Setup::ACTPASS;
    ++local.session_version;
-   local_text = sdp::serialize(local);
+   local_changed();
+   auto serialised = serialise_local();
    local_committed = false;
    remote_committed = false;
    ice_started = false;
    update_state();
-   return local_text.empty() ? ERR::InvalidData : ERR::Okay;
+   return serialised ? ERR::Okay : ERR::InvalidData;
 }
 
 //********************************************************************************************************************
@@ -804,6 +858,7 @@ ERR PeerConnection::restart_ice()
 ERR PeerConnection::create_answer(bool Active)
 {
    local.data.max_message_size = receive_limit;
+   local_changed();
 
    if (current_state IS PeerState::CLOSED or signal_state != SignalingState::HAVE_REMOTE_OFFER or
        not local_text.empty()) return ERR::InvalidState;
@@ -814,8 +869,8 @@ ERR PeerConnection::create_answer(bool Active)
    if (socket->state() IS DtlsState::CONNECTED) Active = socket->dtls_role() IS DtlsRole::CLIENT;
    local.data.mid = remote.data.mid;
    local.data.setup = Active ? sdp::Setup::ACTIVE : sdp::Setup::PASSIVE;
-   local_text = sdp::serialize(local);
-   return local_text.empty() ? ERR::InvalidData : ERR::Okay;
+   local_changed();
+   return serialise_local() ? ERR::Okay : ERR::InvalidData;
 }
 
 //********************************************************************************************************************
@@ -831,7 +886,7 @@ ERR PeerConnection::set_local_description(std::string_view Text)
 
    // Keep the created description usable until committed, then expose all candidates gathered so far.
 
-   local_text = sdp::serialize(local);
+   refresh_local();
    if (local.data.setup IS sdp::Setup::ACTPASS) signal_state = SignalingState::HAVE_LOCAL_OFFER;
    else signal_state = SignalingState::STABLE;
 
@@ -887,12 +942,13 @@ ERR PeerConnection::set_remote_description(std::string_view Text)
       local.data.ice_pwd = local_password;
       local.data.mid = parsed.data.mid;
       ++local.session_version;
-      local_text.clear();
+      local_changed();
+      clear_local_text();
       local_committed = false;
       ice_started = false;
       signal_state = SignalingState::HAVE_REMOTE_OFFER;
       remote = std::move(parsed);
-      remote_text.assign(Text);
+      set_remote_text(Text);
       update_state();
       return ERR::Okay;
    }
@@ -921,7 +977,7 @@ ERR PeerConnection::set_remote_description(std::string_view Text)
 
    remote_end = parsed.data.end_of_candidates;
    remote = std::move(parsed);
-   remote_text.assign(Text);
+   set_remote_text(Text);
    remote_committed = true;
    if (local_committed) return configure_remote();
    return ERR::Okay;
@@ -1113,6 +1169,7 @@ ERR PeerConnection::tick(uint64_t NowUs)
          auto text = ice::format_candidate(line);
          if (text.empty()) return ERR::Failed;
          local.data.candidates.push_back(text);
+         local_changed();
          if (callbacks.candidate) callbacks.candidate(text);
          if (not socket or current_state IS PeerState::CLOSED) return ERR::InvalidState;
       }
@@ -1125,10 +1182,11 @@ ERR PeerConnection::tick(uint64_t NowUs)
           NowUs - gathering_started >= 30000000)) {
          gather_state = GatheringState::COMPLETE;
          local.data.end_of_candidates = true;
+         local_changed();
          cancel_servers();
          socket->finish_gathering();
          if (socket->gathering_error() != ERR::Okay) stun_lookup_error = socket->gathering_error();
-         if (local_committed) local_text = sdp::serialize(local);
+         refresh_local();
 
          if (local.data.candidates.empty() and not (policy & (POLICY_NO_HOST | POLICY_RELAY_ONLY | POLICY_NO_MDNS))) {
             mdns_error = ERR::Timeout;
@@ -1146,7 +1204,7 @@ ERR PeerConnection::tick(uint64_t NowUs)
             return stun_lookup_error;
          }
       }
-      else if (local_committed) local_text = sdp::serialize(local);
+      else refresh_local();
 
       if (gather_state IS GatheringState::COMPLETE and local_committed and remote_committed and not ice_started) {
          auto configured = configure_remote();

@@ -43,6 +43,7 @@ public:
    FUNCTION OnWebChannel;
    FUNCTION OnRestartRequired;
    uint64_t ReportedRestartGeneration = 0;
+   uint64_t DescriptionRevision = 0;                // Engine description revision copied to the public fields
    std::map<uint64_t, extWebChannel *> Channels;    // Child channels, keyed by engine handle
    std::string ServerConfiguration;                 // IceServers JSON, held until Init
    bool Dispatching = false;                        // True while channel events are being delivered

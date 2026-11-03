@@ -73,14 +73,19 @@ static uint64_t peer_now_us()
 }
 
 //********************************************************************************************************************
-// Copies the engine's state to the object's fields.
+// Copies the engine's state to the object's fields.  Description text is only copied when its revision changes.
 
 static void peer_refresh(extPeerConnection *Self)
 {
    if (not Self->Connection) return;
 
-   Self->LocalDescription = Self->Connection->local_description();
-   Self->RemoteDescription = Self->Connection->remote_description();
+   auto revision = Self->Connection->description_revision();
+   if (revision != Self->DescriptionRevision) {
+      Self->LocalDescription = Self->Connection->local_description();
+      Self->RemoteDescription = Self->Connection->remote_description();
+      Self->DescriptionRevision = revision;
+   }
+
    Self->CertificateFingerprint = Self->Connection->certificate_fingerprint();
    Self->State = RTCS(int(Self->Connection->state()));
    Self->SignalingState = RTCSIG(int(Self->Connection->signaling_state()));
