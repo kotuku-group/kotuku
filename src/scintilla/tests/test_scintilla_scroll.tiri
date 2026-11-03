@@ -233,6 +233,9 @@ end
       f'Line 200 must be rendered at the top, found a line of {glyphsOnRow(bmp, 0)} glyphs')
 end
 
+-- Snapping to the nearest line is required for stable thumb dragging.  A consequence is that repeated steps of less
+-- than half a line do not accumulate, so clients that step the Page must use at least half the line height.
+
 @Test function ExternalPageMoveSnapsToLines()
    local scene <close>, vp, sci, bmp = newEditor()
    sci.string = newDocument()
@@ -250,6 +253,28 @@ end
    sci.page.y = -1000000
    render(scene)
    assert(topLine(sci) is MAX_TOP_LINE, f'A page moved too far must be clamped, top line is {topLine(sci)}')
+end
+
+-- An external Page move is detected while the scene is drawn, when the editor cannot paint.  A move of a few lines
+-- shifts the existing content, so the frame drawn before the repaint shows the scrolled lines and a blank exposed band.
+
+@Test function ExternalPageMoveFirstFrame()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   sci.page.y = -(3 * LINE_HEIGHT)
+   check scene.acDraw()
+   for row in {0 to VISIBLE_LINES - 3} do
+      assert(glyphsOnRow(bmp, row) is lineLengthOf(row + 3), f'Row {row} must show line {row + 3} before the repaint')
+   end
+   assert(glyphsOnRow(bmp, VISIBLE_LINES - 2) is 0, 'The exposed band must be blank before the repaint')
+
+   processing.sleep(0)
+   check scene.acDraw()
+   for row in {0 to VISIBLE_LINES} do
+      assert(glyphsOnRow(bmp, row) is lineLengthOf(row + 3), f'Row {row} must show line {row + 3} after the repaint')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -270,6 +295,84 @@ end
    local expected = (100 * GLYPH_WIDTH) + 30 + TEXT_LEFT
    assert(sci.page.width is expected, f'The page width must be {expected}, got {sci.page.width}')
    assert(darkPixels(bmp, 0, 0, PAGE_WIDTH, LINE_HEIGHT) is 0, 'The glyphs must start beyond the View')
+end
+
+-- The scroll width is measured over the whole document, so a widest line beyond line 2000 sizes the Page exactly.
+
+function pageWidthFor(Glyphs:num):num
+   return (Glyphs * GLYPH_WIDTH) + 30 + TEXT_LEFT
+end
+
+function linesWithWideLine(Total:num, WideLine:num, Glyphs:num):str
+   local parts = array<str> { }
+   for i in {0 to Total} do parts.push((i is WideLine) ? ('H').rep(Glyphs) : 'short line') end
+   return parts.concat('\n')
+end
+
+@Test function WidestLineBeyondLine2000()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = linesWithWideLine(5000, 4321, 120)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(120), f'The page width must be {pageWidthFor(120)}, got {sci.page.width}')
+
+   -- A long document without wide lines is not padded beyond its widest line.
+   sci.string = linesWithWideLine(5000, -1, 0)
+   render(scene)
+   assert(sci.page.width is PAGE_WIDTH, f'Short lines must not widen the page, width is {sci.page.width}')
+end
+
+@Test function TypingWidensPage()
+   local scene <close>, vp, sci, bmp = newEditor({ flags=SCIF_EDIT })
+   sci.string = linesWithWideLine(3000, 10, 60)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(60), f'The page width must start at {pageWidthFor(60)}, got {sci.page.width}')
+
+   -- Widen line 2500, which is not visible, through the API.  The line becomes 90 glyphs wide.
+   local _, pos = check sci.mtGetPos(2500, 0)
+   check sci.mtInsertText(('H').rep(80), pos)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(90),
+      f'Inserting must widen the page to {pageWidthFor(90)}, got {sci.page.width}')
+
+   -- Typing extends the caret's line one character at a time.
+   check sci.mtGotoLine(2500)
+   check sci.mtSelectRange(pos + 80, pos + 80)
+   for i in {0 to 5} do
+      check sci.mtInsertText('H', -1)
+      render(scene)
+   end
+   assert(sci.page.width is pageWidthFor(95), f'Typing must widen the page to {pageWidthFor(95)}, got {sci.page.width}')
+
+   -- Edits do not narrow the page, which would move the view while typing.
+   check sci.mtDeleteLine(2500)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(95), f'Deleting must not narrow the page, got {sci.page.width}')
+
+   -- Edits that add lines above a pending line still measure the shifted line.
+   local _, pos10 = check sci.mtGetPos(10, 0)
+   check sci.mtInsertText(('H').rep(90), pos10)
+   check sci.mtInsertText('\n\n\n', 0)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(150),
+      f'Shifted edits must widen the page to {pageWidthFor(150)}, got {sci.page.width}')
+end
+
+-- A proportional face can rank a narrow line of many glyphs above a wider line of fewer glyphs.  The wider line widens
+-- the Page once it is painted.
+
+@Test function ProportionalWideLineWidensWhenPainted()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Noto Sans', fontSize=12 })
+   sci.string = ('i').rep(90) .. '\n' .. linesWithWideLine(2600, 2500, 0).replace('short line', 'x') .. '\n' ..
+      ('W').rep(40)
+   render(scene)
+   local initial = sci.page.width
+   check sci.mtGotoLine(sci.lineCount - 1)
+   render(scene)
+   assert(sci.page.width > initial, f'Painting the wider line must widen the page beyond {initial}')
+   check sci.mtScrollToPoint(100000, sci.lineCount * 100)
+   render(scene)
+   local limit = sci.page.width - PAGE_WIDTH
+   assert(sci.page.x is -limit, f'The view must scroll to the widened limit {limit}, page.x is {sci.page.x}')
 end
 
 @Test function HorizontalScroll()

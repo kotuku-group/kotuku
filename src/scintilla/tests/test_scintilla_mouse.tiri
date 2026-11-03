@@ -63,3 +63,97 @@ end
          f'Clicking glyph {index} must place the caret at its edge, got {sci.cursorCol}')
    end
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Modifier keys.  Pointer input does not carry the modifier state, so the editor tracks it from keyboard events.
+
+function sendKey(Code:num!, Qualifiers:num!, Unicode:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = (Unicode != nil) ? Qualifiers : (Qualifiers | KQ_NOT_PRINTABLE)
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+-- Clean has 7 pixel wide glyphs and the text starts at x = 4.
+
+function newClickEditor():<obj, obj, obj>
+   local surface = obj.new('Surface', { width=300, height=60 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT, lineHighlight='255,255,255,0' })
+   sci.string = 'hello world'
+   local other = scene.new('VectorViewport', { x=290, y=50, width=1, height=1 })
+   other.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) end)
+   check surface.acShow()
+   check surface.acFocus()
+   check surface.acDraw()
+   processing.sleep(0)
+   check surface.acDraw()
+   return surface, sci, other
+end
+
+function clickGlyph(Surface:obj!, Index:num!)
+   feed(JET_ABS_XY, Surface.absX + 4 + (Index * 7), Surface.absY + 6)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+end
+
+-- Shift is pressed while another vector has the focus, then the editor is clicked.  Typing replaces the selection,
+-- which shows that the click extended it from the caret at column 0.
+
+@Test function ShiftHeldBeforeFocusExtendsSelection()
+   local surface <close>, sci, other = newClickEditor()
+   check other.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_L_SHIFT, KQ_L_SHIFT | KQ_PRESSED)
+   clickGlyph(surface, 5)
+   sendKey(KEY_L_SHIFT, KQ_RELEASED)
+   assert(sci.cursorCol is 5, f'The click must move the caret to column 5, got {sci.cursorCol}')
+   sendKey(KEY_X, KQ_PRESSED, 0x58)
+   assert(sci.string is 'X world', f'Shift+click must extend the selection, got "{sci.string}"')
+end
+
+-- A modifier released while another vector has the focus must not affect the next click.
+
+@Test function ShiftReleasedBeforeFocusDoesNotExtend()
+   local surface <close>, sci, other = newClickEditor()
+   clickGlyph(surface, 2)
+   sendKey(KEY_L_SHIFT, KQ_L_SHIFT | KQ_PRESSED)
+   check other.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_L_SHIFT, KQ_RELEASED)
+   clickGlyph(surface, 5)
+   sendKey(KEY_X, KQ_PRESSED, 0x58)
+   assert(sci.string is 'helloX world', f'A plain click must not extend the selection, got "{sci.string}"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Input between a scroll and the next redraw.  The scene maps pointer positions with the current Page position, so
+-- clicks act on the content at the new scroll position, which the next frame shows.  The pointer is first moved to a
+-- neighbouring point so that the click is preceded by a movement event.
+
+@Test function ClickAfterScrollBeforeRedraw()
+   local surface <close>, sci, other = newClickEditor()
+   local lines = array<str> { }
+   for i in {0 to 100} do lines.push(f'line {i}') end
+   sci.string = lines.concat('\n')
+   check surface.acDraw()
+   processing.sleep(0)
+
+   -- Each click targets a different glyph, so that consecutive clicks are not detected as double or triple clicks.
+
+   for i, scroll in array<int> { 3, 20, 7 } do
+      feed(JET_ABS_XY, surface.absX + 100, surface.absY + 40)
+      check sci.mtScrollToPoint(0, scroll * 13)
+      clickGlyph(surface, 1 + (i * 4))
+      assert(sci.cursorRow is scroll, f'A click on row 0 after scrolling to {scroll} must select line {scroll}, ' ..
+         f'got {sci.cursorRow}')
+      check sci.mtScrollToPoint(0, 0)
+      check surface.acDraw()
+      processing.sleep(0)
+   end
+end
