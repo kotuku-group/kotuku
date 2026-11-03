@@ -137,6 +137,56 @@ static void rtc_release_pin(Object *Target)
 }
 
 //********************************************************************************************************************
+// Callback field bookkeeping.  A callback field holds a weak pin on its target while it is set, so that stale
+// callbacks can be detected and discarded before use.
+
+static void rtc_clear_callback(FUNCTION &Field)
+{
+   if (not Field.defined()) return;
+   Field.unpin();
+   Field.clear();
+}
+
+// Replaces a callback field, releasing the pin held on the previous value.  A null Value clears the field.
+
+static ERR rtc_set_callback(FUNCTION &Field, const FUNCTION *Value)
+{
+   rtc_clear_callback(Field);
+
+   if (Value) {
+      Field = *Value;
+      Field.pin();
+   }
+
+   return ERR::Okay;
+}
+
+// Discards a callback whose target has been destroyed.  Returns true if the field holds a usable callback.
+
+static bool rtc_live_callback(FUNCTION &Field)
+{
+   if (Field.stale()) {
+      Field.unpin();
+      Field.clear();
+   }
+
+   return Field.defined();
+}
+
+// Pins a copy of a callback for the duration of a call, so that the client can replace or clear the field from within
+// the callback.  The owning object's pin is managed separately with rtc_release_pin().
+
+class RetainedCallback {
+public:
+   FUNCTION function;
+
+   explicit RetainedCallback(const FUNCTION &Field) : function(Field) { function.pin(); }
+   ~RetainedCallback() { function.unpin(); }
+   RetainedCallback(const RetainedCallback &) = delete;
+   RetainedCallback & operator=(const RetainedCallback &) = delete;
+};
+
+//********************************************************************************************************************
 
 static ERR MODInit(OBJECTPTR, struct CoreBase *Core)
 {

@@ -56,12 +56,7 @@ extPeerConnection::~extPeerConnection()
    for (auto &[handle, child] : Channels) child->Parent = nullptr;
    Connection.reset();
 
-   for (auto field : {&Feedback, &OnIceCandidate, &OnWebChannel, &OnRestartRequired}) {
-      if (field->defined()) {
-         field->unpin();
-         field->clear();
-      }
-   }
+   for (auto field : {&Feedback, &OnIceCandidate, &OnWebChannel, &OnRestartRequired}) rtc_clear_callback(*field);
 }
 
 //********************************************************************************************************************
@@ -105,20 +100,12 @@ static void peer_report(extPeerConnection *Self)
    Self->ReportedState = Self->State;
    Self->ReportedIceState = Self->IceState;
 
-   if (Self->Feedback.stale()) {
-      Self->Feedback.unpin();
-      Self->Feedback.clear();
-   }
+   if (not rtc_live_callback(Self->Feedback)) return;
 
-   if (not Self->Feedback.defined()) return;
-
-   auto callback = Self->Feedback;
-   callback.pin();
    Self->pin();
-   auto lifetime = kt::Defer([&]() {
-      callback.unpin();
-      rtc_release_pin(Self);
-   });
+   auto lifetime = kt::Defer([&]() { rtc_release_pin(Self); });
+   RetainedCallback retained(Self->Feedback);
+   auto &callback = retained.function;
 
    if (callback.isC()) {
       auto routine = (void (*)(extPeerConnection *, RTCS, RTCICE, APTR))callback.Routine;
@@ -147,23 +134,15 @@ static void peer_report_candidate(extPeerConnection *Self)
 
    if (Self->PendingCandidates.empty()) return;
 
-   if (Self->OnIceCandidate.stale()) {
-      Self->OnIceCandidate.unpin();
-      Self->OnIceCandidate.clear();
-   }
-
-   if (not Self->OnIceCandidate.defined()) {
+   if (not rtc_live_callback(Self->OnIceCandidate)) {
       Self->PendingCandidates.clear();
       return;
    }
 
-   auto callback = Self->OnIceCandidate;
-   callback.pin();
    Self->pin();
-   auto lifetime = kt::Defer([&]() {
-      callback.unpin();
-      rtc_release_pin(Self);
-   });
+   auto lifetime = kt::Defer([&]() { rtc_release_pin(Self); });
+   RetainedCallback retained(Self->OnIceCandidate);
+   auto &callback = retained.function;
 
    while (not Self->PendingCandidates.empty() and not Self->collecting()) {
       if (not Self->Connection or Self->Connection->state() IS rtc::PeerState::CLOSED) {
@@ -200,21 +179,13 @@ static void peer_report_restart(extPeerConnection *Self)
    auto generation = Self->Connection->restart_generation();
    if (Self->ReportedRestartGeneration IS generation) return;
 
-   if (Self->OnRestartRequired.stale()) {
-      Self->OnRestartRequired.unpin();
-      Self->OnRestartRequired.clear();
-   }
-
-   if (not Self->OnRestartRequired.defined()) return;
+   if (not rtc_live_callback(Self->OnRestartRequired)) return;
 
    Self->ReportedRestartGeneration = generation;
-   auto callback = Self->OnRestartRequired;
-   callback.pin();
    Self->pin();
-   auto lifetime = kt::Defer([&]() {
-      callback.unpin();
-      rtc_release_pin(Self);
-   });
+   auto lifetime = kt::Defer([&]() { rtc_release_pin(Self); });
+   RetainedCallback retained(Self->OnRestartRequired);
+   auto &callback = retained.function;
 
    if (callback.isC()) {
       auto routine = (void (*)(extPeerConnection *, int64_t, APTR))callback.Routine;
@@ -271,15 +242,9 @@ static void peer_report_channels(extPeerConnection *Self)
       auto lifetime = kt::Defer([&]() { rtc_release_pin(child); });
 
       if (event.type IS rtc::SctpChannelEventType::REMOTE_OPEN) {
-         if (Self->OnWebChannel.stale()) {
-            Self->OnWebChannel.unpin();
-            Self->OnWebChannel.clear();
-         }
-
-         auto callback = Self->OnWebChannel;
-         if (callback.defined()) {
-            callback.pin();
-            auto release = kt::Defer([&]() { callback.unpin(); });
+         if (rtc_live_callback(Self->OnWebChannel)) {
+            RetainedCallback retained(Self->OnWebChannel);
+            auto &callback = retained.function;
             if (callback.isC()) {
                kt::SwitchContext context(callback.Context);
                auto routine = (void (*)(objPeerConnection *, objWebChannel *, APTR))callback.Routine;
@@ -850,17 +815,7 @@ static ERR GET_Feedback(extPeerConnection *Self, FUNCTION * &Value)
 
 static ERR SET_Feedback(extPeerConnection *Self, FUNCTION *Value)
 {
-   if (Self->Feedback.defined()) {
-      Self->Feedback.unpin();
-      Self->Feedback.clear();
-   }
-
-   if (Value) {
-      Self->Feedback = *Value;
-      Self->Feedback.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->Feedback, Value);
 }
 
 /*********************************************************************************************************************
@@ -943,17 +898,7 @@ static ERR GET_OnIceCandidate(extPeerConnection *Self, FUNCTION * &Value)
 
 static ERR SET_OnIceCandidate(extPeerConnection *Self, FUNCTION *Value)
 {
-   if (Self->OnIceCandidate.defined()) {
-      Self->OnIceCandidate.unpin();
-      Self->OnIceCandidate.clear();
-   }
-
-   if (Value) {
-      Self->OnIceCandidate = *Value;
-      Self->OnIceCandidate.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnIceCandidate, Value);
 }
 
 /*********************************************************************************************************************
@@ -989,17 +934,7 @@ static ERR GET_OnRestartRequired(extPeerConnection *Self, FUNCTION * &Value)
 
 static ERR SET_OnRestartRequired(extPeerConnection *Self, FUNCTION *Value)
 {
-   if (Self->OnRestartRequired.defined()) {
-      Self->OnRestartRequired.unpin();
-      Self->OnRestartRequired.clear();
-   }
-
-   if (Value) {
-      Self->OnRestartRequired = *Value;
-      Self->OnRestartRequired.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnRestartRequired, Value);
 }
 
 /*********************************************************************************************************************
@@ -1030,17 +965,7 @@ static ERR GET_OnWebChannel(extPeerConnection *Self, FUNCTION * &Value)
 
 static ERR SET_OnWebChannel(extPeerConnection *Self, FUNCTION *Value)
 {
-   if (Self->OnWebChannel.defined()) {
-      Self->OnWebChannel.unpin();
-      Self->OnWebChannel.clear();
-   }
-
-   if (Value) {
-      Self->OnWebChannel = *Value;
-      Self->OnWebChannel.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnWebChannel, Value);
 }
 
 /*********************************************************************************************************************

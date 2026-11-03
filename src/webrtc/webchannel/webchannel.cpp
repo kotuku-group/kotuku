@@ -39,12 +39,7 @@ extWebChannel::~extWebChannel()
       if (Parent->Connection) Parent->Connection->detach_channel(Handle);
    }
 
-   for (auto field : {&OnOpen, &OnMessage, &OnClose, &OnError, &OnBufferedAmountLow}) {
-      if (field->defined()) {
-         field->unpin();
-         field->clear();
-      }
-   }
+   for (auto field : {&OnOpen, &OnMessage, &OnClose, &OnError, &OnBufferedAmountLow}) rtc_clear_callback(*field);
 }
 
 //********************************************************************************************************************
@@ -100,16 +95,10 @@ static void channel_notify(extWebChannel *Self, FUNCTION &Field, const rtc::Publ
 {
    if (Self->collecting() or not Self->Parent or Self->Parent->collecting()) return;
 
-   if (Field.stale()) {
-      Field.unpin();
-      Field.clear();
-   }
+   if (not rtc_live_callback(Field)) return;
 
-   if (not Field.defined()) return;
-
-   auto callback = Field;
-   callback.pin();
-   auto lifetime = kt::Defer([&]() { callback.unpin(); });
+   RetainedCallback retained(Field);
+   auto &callback = retained.function;
 
    ERR error = ERR::Okay;
    if (callback.isC()) {
@@ -356,17 +345,7 @@ static ERR GET_OnClose(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnClose(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnClose.defined()) {
-      Self->OnClose.unpin();
-      Self->OnClose.clear();
-   }
-
-   if (Value) {
-      Self->OnClose = *Value;
-      Self->OnClose.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnClose, Value);
 }
 
 /*********************************************************************************************************************
@@ -394,17 +373,7 @@ static ERR GET_OnOpen(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnOpen(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnOpen.defined()) {
-      Self->OnOpen.unpin();
-      Self->OnOpen.clear();
-   }
-
-   if (Value) {
-      Self->OnOpen = *Value;
-      Self->OnOpen.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnOpen, Value);
 }
 
 /*********************************************************************************************************************
@@ -432,17 +401,7 @@ static ERR GET_OnError(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnError(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnError.defined()) {
-      Self->OnError.unpin();
-      Self->OnError.clear();
-   }
-
-   if (Value) {
-      Self->OnError = *Value;
-      Self->OnError.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnError, Value);
 }
 
 /*********************************************************************************************************************
@@ -474,17 +433,7 @@ static ERR GET_OnMessage(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnMessage(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnMessage.defined()) {
-      Self->OnMessage.unpin();
-      Self->OnMessage.clear();
-   }
-
-   if (Value) {
-      Self->OnMessage = *Value;
-      Self->OnMessage.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnMessage, Value);
 }
 
 /*********************************************************************************************************************
@@ -516,17 +465,7 @@ static ERR GET_OnBufferedAmountLow(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnBufferedAmountLow(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnBufferedAmountLow.defined()) {
-      Self->OnBufferedAmountLow.unpin();
-      Self->OnBufferedAmountLow.clear();
-   }
-
-   if (Value) {
-      Self->OnBufferedAmountLow = *Value;
-      Self->OnBufferedAmountLow.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnBufferedAmountLow, Value);
 }
 
 /*********************************************************************************************************************

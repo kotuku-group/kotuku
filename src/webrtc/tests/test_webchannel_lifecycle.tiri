@@ -280,3 +280,34 @@ end
    end
    assert(closes is 8, 'Retired channels received duplicate close notifications')
 end
+
+-- Replacing or clearing a callback field from within that callback must leave the running call intact and route
+-- later events to the replacement only.
+
+@Test function ReplaceCallbacksFromWithin()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local feedback = 0
+   first.feedback = function(Peer, State, IceState)
+      feedback += 1
+      Peer.feedback = nil
+   end
+   local channel = channelTest.create(first, 'replace')
+   local receiver
+   second.onWebChannel = function(Peer, Child) receiver = Child end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN and receiver != nil end)
+   assert(feedback is 1, 'Feedback cleared within its call was invoked again')
+
+   local original, replacement = array<str>, array<str>
+   receiver.onMessage = function(Child, Buffer, Type)
+      original.push(Buffer.getString())
+      Child.onMessage = function(Child, Buffer, Type) replacement.push(Buffer.getString()) end
+   end
+   check channel.mtSend('first', WCM_TEXT)
+   channelTest.waitFor(function() return #original is 1 end)
+   check channel.mtSend('second', WCM_TEXT)
+   channelTest.waitFor(function() return #replacement is 1 end)
+   assert(#original is 1 and original[0] is 'first', 'Replaced message callback received later messages')
+   assert(replacement[0] is 'second', 'Replacement message callback missed the next message')
+end
