@@ -295,6 +295,8 @@
       <type>DOUBLE</type>
       <description>
 <p>The inline-size property allows the client to set the wrapping area to a rectangular shape. The computed value of the property sets the width of the rectangle for horizontal text and the height of the rectangle for vertical text. The other dimension (height for horizontal text, width for vertical text) is of infinite length. A value of zero (the default) disables the creation of a wrapping area.</p>
+<p>By default, lines only break at whitespace and a word that is wider than the wrapping area will overflow it.  Set <fl>WrapMode</fl> to allow lines to break within long words such as file paths and URLs.</p>
+<p>The <fl>WrappedLines</fl> field reports the number of lines that are displayed after wrapping.</p>
       </description>
     </field>
 
@@ -492,6 +494,28 @@
     </field>
 
     <field>
+      <name>WrapMode</name>
+      <comment>Controls where word-wrapping may break a line.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="VTW">INT</type>
+      <description>
+<p>WrapMode determines where a line may be broken when <fl>InlineSize</fl> enables word-wrapping.  It has no effect if <fl>InlineSize</fl> is zero.</p>
+<p>The default, <code>WORD</code>, only breaks lines at whitespace.  A word that is wider than the wrapping area stays on a line of its own and overflows it.</p>
+<p>In <code>SYMBOL</code> mode, a word is also divided into segments after each of the following symbols, and a line may break between any two segments:</p>
+<types type="Symbol">
+<type name="/ \">File and URL paths, e.g. <code>/usr/</code> <code>share/</code> <code>kotuku</code></type>
+<type name="-">Hyphenated words, e.g. <code>well-</code> <code>known</code></type>
+<type name="_">Identifiers, e.g. <code>field_</code> <code>name</code></type>
+<type name="? &amp; =">URL queries, e.g. <code>page?</code> <code>id=</code> <code>4&amp;</code> <code>x=</code> <code>2</code></type>
+</types>
+<p>A break after a symbol is suppressed if the symbol is the last character of the word, or the next character is also a break symbol (so <code>//</code> and <code>--</code> are never split).  A <code>-</code> does not permit a break if it is part of the hyphens that start a word, as in <code>--log-warning</code>, or if it is followed by a digit, as in <code>x-1</code>.  Periods, commas, colons and semi-colons are not break symbols, so numbers such as <code>3.14</code>, times and file extensions are kept whole.  The symbol always remains at the end of the earlier line and no hyphen is inserted at the break.</p>
+<p><code>ANYWHERE</code> mode extends <code>SYMBOL</code> by breaking between characters when a segment is too wide to fit on a line of its own, so that no line overflows the wrapping area.  A segment is only divided in this way when it cannot fit on an empty line.  At least one character is always placed on each line, so a glyph that is wider than the wrapping area will overflow it.  Breaks are made between UTF-8 characters, but combining marks are not treated specially and can be separated from the character that they modify.</p>
+<p>Text with the <code>SECRET</code> flag in <fl>TextFlags</fl> is always wrapped in <code>WORD</code> mode, so that the line breaks do not reveal the positions of symbols in the hidden string.  Text that follows a guide path is not wrapped.</p>
+<types lookup="VTW"/>
+      </description>
+    </field>
+
+    <field>
       <name>WrappedLines</name>
       <comment>The total number of lines after word-wrapping is applied.</comment>
       <access read="G">Get</access>
@@ -534,6 +558,12 @@
       <const name="RIGHT">Align to right</const>
       <const name="TOP">Align to top</const>
       <const name="VERTICAL">Align to vertical center</const>
+    </constants>
+
+    <constants lookup="VTW" comment="VectorText wrapping modes, used when InlineSize is set.">
+      <const name="ANYWHERE">As for <code>SYMBOL</code>, and a segment that is too wide for a line of its own is broken between characters.</const>
+      <const name="SYMBOL">As for <code>WORD</code>, and lines may also break after the symbols listed in the WrapMode documentation, such as the / in a file path.</const>
+      <const name="WORD">Lines break at whitespace only.  A word that is wider than the wrapping area overflows it.  This is the default.</const>
     </constants>
 
     <constants lookup="VTXF" comment="VectorText flags.">

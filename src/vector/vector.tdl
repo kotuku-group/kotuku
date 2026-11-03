@@ -130,6 +130,11 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     'ULTRA_EXPANDED',
     'EXTRA_EXPANDED')
 
+  enums("VTW", { type="int", start=0, comment="VectorText wrapping modes, used when InlineSize is set." },
+    "WORD: Lines break at whitespace only.  A word that is wider than the wrapping area overflows it.  This is the default.",
+    "SYMBOL: As for `WORD`, and lines may also break after the symbols listed in the WrapMode documentation, such as the / in a file path.",
+    "ANYWHERE: As for `SYMBOL`, and a segment that is too wide for a line of its own is broken between characters.")
+
   enums('MOP', { type='int', start=0, comment='MorphologyFX options.' },
     'ERODE: Erode (thin) the input source.',
     'DILATE: Dilate (fatten) the input source.')
@@ -827,7 +832,7 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     { id=32, name='GetCaretBounds' }
   })
 
-  klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF' }, extended=true }, [[
+  klass('VectorText', { base='Vector', src='vectors/text.cpp', output='vectors/text_def.cpp', references={ 'VTXF', 'VTW' }, extended=true }, [[
     ~int(ALIGN) Align
     ~int(VTXF) TextFlags
   ]])

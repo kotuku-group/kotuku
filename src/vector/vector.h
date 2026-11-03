@@ -1746,10 +1746,6 @@ inline static double svg_diag(double Width, double Height)
 
 //********************************************************************************************************************
 
-enum { WS_NO_WORD=0, WS_NEW_WORD, WS_IN_WORD };
-
-//********************************************************************************************************************
-
 static constexpr double int26p6_to_dbl(int p) { return double(p) * (1.0 / 64.0); }
 static constexpr int dbl_to_int26p6(double p) { return int(p * 64.0); }
 

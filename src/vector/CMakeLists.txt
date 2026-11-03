@@ -101,6 +101,7 @@ flute_test(vector_path_command_spans "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_pat
 flute_test(vector_dash_array "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dash_array.tiri")
 flute_test(vector_text_path_length "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_path_length.tiri")
 flute_test(vector_text_font_size "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_font_size.tiri")
+flute_test(vector_text_wrap "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_text_wrap.tiri")
 flute_test(vector_spiral "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_spiral.tiri")
 flute_test(vector_supershape "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_supershape.tiri")
 

@@ -17,6 +17,13 @@ static const struct FieldDef clVectorTextVTXF[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clVectorTextVTW[] = {
+   { "Word", 0x00000000 },
+   { "Symbol", 0x00000001 },
+   { "Anywhere", 0x00000002 },
+   { nullptr, 0 }
+};
+
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
 FDEF maSelectArea[] = { { "Row", FD_INT }, { "Column", FD_INT }, { "EndRow", FD_INT }, { "EndColumn", FD_INT }, { 0, 0 } };
 FDEF maGetCaretBounds[] = { { "Row", FD_INT }, { "Column", FD_INT }, { "X", FD_RESULT|FD_DOUBLE }, { "Y", FD_RESULT|FD_DOUBLE }, { "Height", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
