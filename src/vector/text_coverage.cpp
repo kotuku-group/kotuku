@@ -120,11 +120,13 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
          const int phase = int((origin_x - whole_x) * 4);
          auto mask = get_text_coverage(Font, glyph, phase);
          if (not mask) return false;
-         if (mask->width and mask->height) {
+         const int x = whole_x + mask->left;
+         const int right = x + mask->width;
+         // A glyph that ends left of the clip region draws nothing on either path, so it cannot affect the result.
+         // Skipping it keeps horizontally scrolled text, which starts at negative positions, on the cached path.
+         if (mask->width and mask->height and (right > Bitmap->Clip.Left)) {
             if ((whole_x + mask->source_left < 0) or (int(origin_y) + mask->source_top < 0)) return false;
-            const int x = whole_x + mask->left;
             const int y = int(origin_y) + mask->top;
-            const int right = x + mask->width;
             const int bottom = y + mask->height;
             if (x < right_edge) {
                // Separate alpha blends are not equivalent to a single outline union where glyphs overlap.

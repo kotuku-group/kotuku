@@ -2859,11 +2859,12 @@ void TextCursor::reset_vector(extVectorText *Vector) const
          if (y.scaled()) y = Unit(y * get_parent_height(Vector));
 
          // If the cursor X,Y lies outside of the parent viewport, offset the text so that it remains visible to
-         // the user.
+         // the user.  The text is positioned in the parent's coordinate space, which is its view box if it has one,
+         // so a scaled viewport is measured in view box units rather than its displayed size.
 
          if ((not Vector->GuidePath) and Vector->ParentView and
              ((Vector->txFlags & VTXF::NO_AUTO_OFFSET) IS VTXF::NIL)) {
-            auto p_width = Vector->ParentView->vpFixedWidth;
+            auto p_width = viewport_coordinate_width(Vector->ParentView);
             double xo = 0;
             const double CURSOR_MARGIN = Vector->txFontSize * 0.5;
             if (p_width > 8) {
@@ -2871,7 +2872,7 @@ void TextCursor::reset_vector(extVectorText *Vector) const
                else if (x + line.chars[col].x1 + CURSOR_MARGIN > p_width) xo = -(x + line.chars[col].x1 + CURSOR_MARGIN - p_width);
             }
 
-            auto p_height = Vector->ParentView->vpFixedHeight;
+            auto p_height = viewport_coordinate_height(Vector->ParentView);
             double yo = 0;
             if ((line.chars[col].y1 > 0) and (p_height > Vector->txFontSize)) {
                if (y + line.chars[col].y1 <= 0) yo = -(y + line.chars[col].y1);
