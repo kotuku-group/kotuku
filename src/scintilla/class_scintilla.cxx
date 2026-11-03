@@ -260,7 +260,18 @@ static void paint_dirty(extScintilla *);
 static void update_margin_width(extScintilla *);
 static ERR load_file(extScintilla *, std::string_view);
 static void calc_longest_line(extScintilla *);
+
+// Scintilla draws opaque highlights beneath the text, and translucent highlights over it.
+
+static unsigned long int scintilla_alpha(uint8_t Alpha)
+{
+   return (Alpha < 255) ? Alpha : (unsigned long int)SC_ALPHA_NOALPHA;
+}
+static void check_modified_widths(extScintilla *);
+static void track_modified_lines(extScintilla *, int, int);
+static void grow_scroll_width(extScintilla *, int, int);
 static ERR key_event(objVectorViewport *, KQ, KEY, int);
+static void modifier_event(evKey *, int, APTR);
 static int command_key(KEY, bool);
 static int shortcut_key(KEY);
 static void report_event(extScintilla *, SEF Event);
@@ -869,6 +880,11 @@ clipboard has accepted the text.  Nothing is copied if the selection is empty.  
 a line ending after each row, and is pasted as a rectangle when it is pasted into a Scintilla editor in the same
 process.
 
+The clipboard carries plain text without a rectangular marker, so the editor recognises a rectangular clip by
+comparing the pasted text with the most recent rectangular copy in the process.  Consequently, identical text that is
+later copied from another source is also pasted as a rectangle, and a rectangular copy from another process or
+application is pasted as ordinary text.
+
 `CLIPMODE::PASTE` replaces the selection with the most recent text on the clipboard, as a single undo action.  Line
 endings are converted to the document's line ending mode.
 
@@ -1307,6 +1323,11 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    Self->API->panFontChanged();
 
+   // Modifier keys are tracked from all keyboard events, because they can be pressed while another vector has the
+   // focus and still apply to a subsequent click.
+
+   SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(modifier_event), &Self->KeyHandle);
+
    // Load a text file if required
 
    if (not Self->Path.empty()) {
@@ -1318,7 +1339,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    Self->API->SetLexer(int(Self->Lexer));
 
-   if (Self->LongestWidth) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
+   if (Self->LongestWidth >= 60) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
    else SCICALL(SCI_SETSCROLLWIDTH, 1UL);
 
    if ((Self->Flags & SCIF::EXT_PAGE) != SCIF::NIL) {
@@ -1337,16 +1358,13 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    auto &sf = Self->SelectFore, &sb = Self->SelectBkgd;
    SCICALL(SCI_SETSELFORE, (unsigned long int)(sf.Alpha > 0), (long int)SCICOLOUR(sf.Red, sf.Green, sf.Blue));
    SCICALL(SCI_SETSELBACK, (unsigned long int)(sb.Alpha > 0), (long int)SCICOLOUR(sb.Red, sb.Green, sb.Blue));
-   //SCICALL(SCI_SETSELALPHA, Self->SelectBkgd.Alpha); // Currently doesn't work as expected
+   SCICALL(SCI_SETSELALPHA, scintilla_alpha(sb.Alpha));
 
    // Enable line colour for the line that contains the text cursor
 
    SCICALL(SCI_SETCARETLINEBACK, SCICOLOUR(Self->LineHighlight.Red, Self->LineHighlight.Green, Self->LineHighlight.Blue));
-   if (Self->LineHighlight.Alpha > 0) {
-      SCICALL(SCI_SETCARETLINEVISIBLE, 1UL);
-      //SCICALL(SCI_SETCARETLINEBACKALPHA, Self->LineHighlight.Alpha); // Not working currently - maybe a drawing issue?
-   }
-   else SCICALL(SCI_SETCARETLINEVISIBLE, 0UL);
+   SCICALL(SCI_SETCARETLINEBACKALPHA, scintilla_alpha(Self->LineHighlight.Alpha));
+   SCICALL(SCI_SETCARETLINEVISIBLE, (unsigned long int)(Self->LineHighlight.Alpha > 0));
 
    SCICALL(SCI_SETCARETFORE, SCICOLOUR(Self->CursorColour.Red, Self->CursorColour.Green, Self->CursorColour.Blue));
    SCICALL(SCI_SETCARETWIDTH, 2);
@@ -2426,6 +2444,11 @@ static ERR GET_LineCount(extScintilla *Self, int *Value)
 -FIELD-
 LineHighlight: The colour to use when highlighting the line that contains the user's cursor.
 
+The highlight is shown while the editor has the focus.  An alpha value of zero disables it.  An opaque colour is drawn
+beneath the text, while a translucent colour is blended over the line, which also tints its text.  Translucent colours
+blend in the same way as a translucent vector fill, i.e. with the gamma-correct blending of the Vector module, so a
+50% colour appears lighter than an average of the sRGB values.
+
 *********************************************************************************************************************/
 
 static ERR SET_LineHighlight(extScintilla *Self, RGB8 *Value)
@@ -2434,11 +2457,8 @@ static ERR SET_LineHighlight(extScintilla *Self, RGB8 *Value)
 
    if (Self->initialised()) {
       SCICALL(SCI_SETCARETLINEBACK, SCICOLOUR(Self->LineHighlight.Red, Self->LineHighlight.Green, Self->LineHighlight.Blue));
-      if (Self->LineHighlight.Alpha > 0) {
-         SCICALL(SCI_SETCARETLINEVISIBLE, 1UL);
-         //SCICALL(SCI_SETCARETLINEBACKALPHA, Self->LineHighlight.Alpha);
-      }
-      else SCICALL(SCI_SETCARETLINEVISIBLE, 0UL);
+      SCICALL(SCI_SETCARETLINEBACKALPHA, scintilla_alpha(Self->LineHighlight.Alpha));
+      SCICALL(SCI_SETCARETLINEVISIBLE, (unsigned long int)(Self->LineHighlight.Alpha > 0));
    }
 
    return ERR::Okay;
@@ -2641,6 +2661,14 @@ indicates the events that need to be received.
 -FIELD-
 SelectBkgd: Defines the background colour of selected text.  Supports alpha blending.
 
+An alpha value of zero disables the selection background.  An opaque colour is drawn beneath the selected text.  A
+translucent colour is blended over the selection after the text is drawn, in the same way as #LineHighlight, so that
+the text remains visible through it.  Consider disabling #SelectFore with a translucent background so that the
+selected text retains its styled colours.
+
+The background of the main selection is affected.  The additional rows of a rectangular selection use Scintilla's
+default colour for additional selections.
+
 *********************************************************************************************************************/
 
 static ERR SET_SelectBkgd(extScintilla *Self, RGB8 *Value)
@@ -2650,14 +2678,14 @@ static ERR SET_SelectBkgd(extScintilla *Self, RGB8 *Value)
       if (Self->initialised()) {
          auto &c = Self->SelectBkgd;
          SCICALL(SCI_SETSELBACK, (unsigned long int)true, (long int)SCICOLOUR(c.Red, c.Green, c.Blue));
-         //SCICALL(SCI_SETSELALPHA, Self->SelectBkgd.Alpha);
+         SCICALL(SCI_SETSELALPHA, scintilla_alpha(c.Alpha));
       }
    }
    else {
       Self->SelectBkgd.Alpha = 0;
       if (Self->initialised()) {
          SCICALL(SCI_SETSELBACK, (unsigned long int)false, 0L);
-         //SCICALL(SCI_SETSELALPHA, 0UL);
+         SCICALL(SCI_SETSELALPHA, (unsigned long int)SC_ALPHA_NOALPHA);
       }
    }
    return ERR::Okay;
@@ -2666,7 +2694,10 @@ static ERR SET_SelectBkgd(extScintilla *Self, RGB8 *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-SelectFore: Defines the colour of selected text.  Supports alpha blending.
+SelectFore: Defines the colour of selected text.
+
+Selected text is drawn in this colour, overriding the colours of its style.  An alpha value of zero disables the
+override.  Other alpha values are ignored and the colour is drawn opaquely.
 
 *********************************************************************************************************************/
 
@@ -2822,7 +2853,8 @@ The theme element accepts no attributes, and the palette accepts no child elemen
 All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG
 colour names and colour functions such as `rgb()` and `oklch()` are accepted.  Gradients, painter lists and unknown
 attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the
-corresponding highlight or selection override.  Other alpha values currently produce opaque colours.
+corresponding highlight or selection override.  Translucent lineHighlight and selectionBackground colours blend over
+the text, as described for #LineHighlight and #SelectBkgd.  Other alpha values produce opaque colours.
 
 The colours are copied during assignment and the XML object is not retained or modified.  Assigning before
 initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or
@@ -3128,8 +3160,21 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
 }
 
 //********************************************************************************************************************
-// Receiver for keyboard input from the Focus viewport.  The modifier state is recorded for mouse input, which does not
-// report it.
+// Receiver for all keyboard events in the process.  The modifier state is recorded for pointer input, which does not
+// report it.  Keys pressed while the application window lacks the keyboard focus are not reported, so update_focus()
+// resets the state when the editor loses the focus.
+
+static void modifier_event(evKey *Event, int Size, APTR Meta)
+{
+   auto Self = (extScintilla *)CurrentContext();
+   Self->KeyShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
+   Self->KeyCtrl  = (Event->Qualifiers & KQ::CTRL) != KQ::NIL;
+   Self->KeyAlt   = (Event->Qualifiers & KQ::ALT) != KQ::NIL;
+}
+
+//********************************************************************************************************************
+// Receiver for keyboard input from the Focus viewport.  The modifier state is also recorded here (see modifier_event())
+// in case the key was delivered to the viewport directly rather than broadcast.
 
 static ERR key_event(objVectorViewport *Viewport, KQ Qualifiers, KEY Code, int Unicode)
 {
@@ -3268,56 +3313,147 @@ static void report_margin_click(extScintilla *Self, SCMG Margin, int Line, KQ Qu
 
 //********************************************************************************************************************
 
+/*********************************************************************************************************************
+** The scroll width determines the width of the Page, and is the pixel width of the widest line plus padding.  Exact
+** widths require a line layout, which is too expensive to compute for every line of a large document.  Lines are
+** ranked by their column count instead (tabs are expanded and UTF-8 continuation bytes are not counted) and only the
+** highest ranked candidates are measured.  This is exact for monospaced text.  A proportional face can rank a line
+** below a narrower one; such a line widens the Page when it is painted (see grow_scroll_width()).
+*/
+
+static const int SCROLL_WIDTH_PADDING = 30;
+
+static int measure_widest_line(extScintilla *Self, int First, int Last, int &Line)
+{
+   static const int MAX_MEASURED = 64;
+
+   Line = First;
+   if (Last < First) return 0;
+
+   const int tab_width = std::max(1, int(SCICALL(SCI_GETTABWIDTH)));
+
+   std::vector<char> text;
+   std::vector<std::pair<int, int>> candidates; // Columns, line
+   candidates.reserve(Last - First + 1);
+   int max_columns = 0;
+   for (int line=First; line <= Last; line++) {
+      const int start = SCICALL(SCI_POSITIONFROMLINE, line);
+      const int end = SCICALL(SCI_GETLINEENDPOSITION, line);
+      // Copy each line without moving the document's gap buffer away from the edit position.
+      text.resize(size_t(SCICALL(SCI_LINELENGTH, line)) + 1);
+      SCICALL(SCI_GETLINE, line, text.data());
+      int columns = 0;
+      for (int i=0; i < end - start; i++) {
+         const auto c = uint8_t(text[i]);
+         if (c IS '\t') columns += tab_width - (columns % tab_width);
+         else if ((c & 0xc0) != 0x80) columns++;
+      }
+      max_columns = std::max(max_columns, columns);
+      candidates.emplace_back(columns, line);
+   }
+
+   // Lines with fewer than two thirds of the maximum column count are not considered.
+
+   const int threshold = (max_columns * 2) / 3;
+   std::erase_if(candidates, [threshold](const auto &C) { return C.first < threshold; });
+   const auto count = std::min(candidates.size(), size_t(MAX_MEASURED));
+   std::partial_sort(candidates.begin(), candidates.begin() + count, candidates.end(),
+      [](const auto &A, const auto &B) { return A.first > B.first; });
+
+   int widest = 0;
+   for (size_t i=0; i < count; i++) {
+      const int line = candidates[i].second;
+      const int start = SCICALL(SCI_POSITIONFROMLINE, line);
+      const int end = SCICALL(SCI_GETLINEENDPOSITION, line);
+      // Subtract the line start so margins and horizontal scrolling do not affect the measured width.
+      const int width = SCICALL(SCI_POINTXFROMPOSITION, 0, end) - SCICALL(SCI_POINTXFROMPOSITION, 0, start);
+      if (width > widest) {
+         widest = width;
+         Line = line;
+      }
+   }
+   return widest;
+}
+
+//********************************************************************************************************************
+// Apply LongestWidth to Scintilla's scroll width.
+
+static void set_scroll_width(extScintilla *Self)
+{
+   if (not Self->initialised()) return;
+   if (Self->LongestWidth >= 60) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
+   else SCICALL(SCI_SETSCROLLWIDTH, 1UL);
+}
+
+//********************************************************************************************************************
+// Compute the scroll width from the entire document.  Unlike edits, which only widen the Page, this can narrow it.
+
 static void calc_longest_line(extScintilla *Self)
 {
-   int linewidth;
-   static const int LINE_COUNT_LIMIT = 2000;
-
    if (not Self->FontHandles[0]) return;
 
    kt::Log log(__FUNCTION__);
    log.traceBranch("Wrap: %d", Self->Wordwrap);
 
-   int lines = SCICALL(SCI_GETLINECOUNT);
-   if (lines > LINE_COUNT_LIMIT) lines = LINE_COUNT_LIMIT;
-
-   int cwidth = 0;
-   int cline  = 0;
+   Self->WidthCheckFirst = INT_MAX; // A full measurement supersedes the lines pending from edits
+   Self->WidthCheckLast  = -1;
 
    if (Self->Wordwrap) {
       Self->LongestLine = 0;
       Self->LongestWidth = 0;
    }
-   else { // Find the line with the longest width
-      for (int i=0; i < lines; i++) {
-         int start = SCICALL(SCI_POSITIONFROMLINE, i);
-         int end = SCICALL(SCI_GETLINEENDPOSITION, i);
-         // Subtract the line start so margins and horizontal scrolling do not affect the measured width.
-         linewidth = SCICALL(SCI_POINTXFROMPOSITION, 0, end) - SCICALL(SCI_POINTXFROMPOSITION, 0, start);
-
-         if (linewidth > cwidth) {
-            cline = i;
-            cwidth = linewidth;
-         }
-      }
-
-      Self->LongestLine  = cline;
-      Self->LongestWidth = cwidth;
-
-      if (lines IS LINE_COUNT_LIMIT) {
-         Self->LongestWidth += 1024; // Add lots of extra space in case there are much longer lines further on in the document
-      }
-      else Self->LongestWidth += 30;
+   else {
+      int line;
+      Self->LongestWidth = measure_widest_line(Self, 0, SCICALL(SCI_GETLINECOUNT) - 1, line) + SCROLL_WIDTH_PADDING;
+      Self->LongestLine  = line;
    }
 
-   log.trace("Longest line: %d", Self->LongestWidth);
+   log.trace("Longest line: %d, width: %d", Self->LongestLine, Self->LongestWidth);
+   set_scroll_width(Self);
+}
 
-   if (Self->initialised()) {
-      if (Self->LongestWidth >= 60) {
-         SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
-      }
-      else SCICALL(SCI_SETSCROLLWIDTH, 1UL);
+/*********************************************************************************************************************
+** Widen the scroll width for the lines that have been modified since the last paint, and for any painted line that is
+** wider than the scroll width (Scintilla records the widest line that it lays out for painting).  Edits never narrow
+** the Page, which would otherwise shift the view while typing.
+*/
+
+static void grow_scroll_width(extScintilla *Self, int Width, int Line)
+{
+   if ((Self->Wordwrap) or (Width + SCROLL_WIDTH_PADDING <= Self->LongestWidth)) return;
+   Self->LongestWidth = Width + SCROLL_WIDTH_PADDING;
+   Self->LongestLine  = Line;
+   set_scroll_width(Self);
+}
+
+// Record the lines of an insertion or deletion for check_modified_widths(), which runs in the queued Repaint.  The
+// recorded range follows the lines that are added or removed by subsequent edits.
+
+static void track_modified_lines(extScintilla *Self, int Line, int LinesAdded)
+{
+   if (Self->WidthCheckLast >= Self->WidthCheckFirst) {
+      if (Line < Self->WidthCheckFirst) Self->WidthCheckFirst = std::max(Line, Self->WidthCheckFirst + LinesAdded);
+      if (Line <= Self->WidthCheckLast) Self->WidthCheckLast = std::max(Line, Self->WidthCheckLast + LinesAdded);
    }
+   Self->WidthCheckFirst = std::min(Self->WidthCheckFirst, Line);
+   Self->WidthCheckLast  = std::max(Self->WidthCheckLast, Line + std::max(0, LinesAdded));
+   queue_repaint(Self); // Edits outside of the View do not invalidate it
+}
+
+static void check_modified_widths(extScintilla *Self)
+{
+   if (Self->WidthCheckLast < Self->WidthCheckFirst) return;
+
+   const int last_line = SCICALL(SCI_GETLINECOUNT) - 1;
+   const int first = std::clamp(Self->WidthCheckFirst, 0, last_line);
+   const int last  = std::clamp(Self->WidthCheckLast, 0, last_line);
+   Self->WidthCheckFirst = INT_MAX;
+   Self->WidthCheckLast  = -1;
+   if ((Self->Wordwrap) or (not Self->FontHandles[0])) return;
+
+   int line;
+   int width = measure_widest_line(Self, first, last, line);
+   grow_scroll_width(Self, width, line);
 }
 
 //********************************************************************************************************************
@@ -3356,6 +3492,7 @@ static void paint_dirty(extScintilla *Self)
 {
    if ((not Self->API) or (not Self->Bitmap)) return;
 
+   check_modified_widths(Self); // Can widen the Page before it is synchronised
    update_margin_width(Self); // A change to the margin width extends the Dirty region
    Self->API->panSyncPage();  // The Canvas must be positioned for the topLine that is about to be painted
 
@@ -3385,6 +3522,7 @@ static void paint_dirty(extScintilla *Self)
 //********************************************************************************************************************
 
 extScintilla::~extScintilla() {
+   if (KeyHandle) { UnsubscribeEvent(KeyHandle); KeyHandle = nullptr; }
    if (DragClipboard) { FreeResource(DragClipboard); DragClipboard = nullptr; }
    if (FileDrop.defined()) { FileDrop.unpin(); FileDrop.clear(); }
    free_context_menu(this); // Before the API is deleted, because the script reports the menu closing

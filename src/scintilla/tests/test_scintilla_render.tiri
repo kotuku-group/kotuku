@@ -177,6 +177,49 @@ end
       'Unselected text must not use SelectBkgd')
 end
 
+-- Translucent highlights blend like a translucent vector fill, i.e. with the framework's gamma-correct blending.  The
+-- reference colour is rendered by a scene so that the expectation does not depend on the blending formula.
+
+function blendedOverWhite(Fill:str):<num, num, num>
+   local scene <close> = obj.new('VectorScene', { pageWidth=4, pageHeight=4 })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   vp.new('VectorRectangle', { x=0, y=0, width=4, height=4, fill='#ffffff' })
+   vp.new('VectorRectangle', { x=0, y=0, width=4, height=4, fill=Fill })
+   local bmp <close> = obj.new('bitmap', { width=4, height=4, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   check scene.acDraw()
+   local p = mGfx.ReadRGBPixel(bmp, 2, 2)
+   return p.red, p.green, p.blue
+end
+
+function near(A:num, B:num):bool
+   return math.abs(A - B) <= 1
+end
+
+@Test function TranslucentSelectionBlendsOverText()
+   local r, g, b = blendedOverWhite('#0000ff80')
+   assert(r > 0 and r < 255 and b is 255, f'The reference blend must be translucent blue, got {r},{g},{b}')
+
+   local scene <close>, vp, sci, bmp = newEditor({ selectBkgd='0,0,255,128', selectFore='0,0,0,0' })
+   sci.string = 'HHHH        end'
+   check sci.mtSelectRange(0, 12)
+   render(scene)
+
+   local isBlend = (R, G, B) => near(R, r) and near(G, g) and near(B, b)
+   local spaces = 8 * 7
+   local blended = countPixels(bmp, TEXT_LEFT + 28, 0, spaces, LINE_HEIGHT, isBlend)
+   assert(blended is spaces * LINE_HEIGHT,
+      f'Selected spaces must be uniformly blended to {r},{g},{b}, matched {blended} of {spaces * LINE_HEIGHT}')
+   assert(countPixels(bmp, TEXT_LEFT, 0, 28, LINE_HEIGHT, isBlend) > 100, 'The selection must cover the text')
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 28, LINE_HEIGHT) > 20, 'Text must remain visible beneath the selection')
+   assert(colourAt(bmp, TEXT_LEFT + 2, LINE_HEIGHT + 4) is '255,255,255', 'Unselected rows must not be blended')
+
+   -- An opaque colour returns to drawing the selection beneath the text.
+   sci.selectBkgd = '0,128,0,255'
+   render(scene)
+   assert(colourAt(bmp, TEXT_LEFT + 40, 6) is '0,128,0', 'An opaque selection must use SelectBkgd exactly')
+end
+
 @Test function WhitespaceArrows()
    -- Visible tabs are drawn as arrows, which use horizontal and diagonal lines.
    local scene <close>, vp, sci, bmp = newEditor({ showWhitespace=true, tabWidth=8 })

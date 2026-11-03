@@ -60,13 +60,16 @@ class extScintilla : public objScintilla {
    ScintillaKTK *API;
    std::string StringBuffer;
    int    LongestLine;         // Longest line in the document
-   int    LongestWidth;        // Pixel width of the longest line
+   int    LongestWidth;        // Scroll width: the pixel width of the longest line, plus padding
+   int    WidthCheckFirst = INT_MAX; // Range of modified lines to measure before the next paint
+   int    WidthCheckLast = -1;
    int    TabWidth;
    int    ViewWidth;           // Pixel width of the View, i.e. Scintilla's client area
    int    ViewHeight;          // Pixel height of the View
    int    MarginDigits;        // Number of digits that the line number margin is sized for
    TIMER  TickTimer;           // Calls Tick() while the caret is blinking
    TIMER  IdleTimer;           // Calls Idle() while Scintilla has background work, e.g. word wrapping
+   APTR   KeyHandle = nullptr; // Subscription to all keyboard events, which track the modifier keys
    SEF    ReportEventFlags;    // For delayed event reporting.
    uint16_t KeyAlt:1;
    uint16_t KeyCtrl:1;
@@ -310,6 +313,7 @@ private:
    Scintilla::Selection drag_selection;
    int64_t drag_revision = 0;
    bool drag_active = false;
+   int painted_top = -1;       // The topLine that the content of the Bitmap reflects, see ScrollText()
    int braceMode;
    int oldpos = -1;
    ERR clip_error = ERR::Okay; // Result of the most recent cut, copy or paste

@@ -285,7 +285,12 @@ void ScintillaKTK::SetHorizontalScrollPos()
 ** Scintilla calls this with nMax = MaxScrollPos() + nPage - 1, where nPage is the number of lines that fit in the
 ** client area.  The Page is sized so that the furthest that it can be moved within the View corresponds to the
 ** maximum scroll positions of Scintilla, i.e. MaxScrollPos() lines vertically and the scroll width minus the width of
-** the text area horizontally.  The result is true if the extent of the Page has changed.
+** the text area horizontally.
+**
+** The result is always false.  Scintilla repaints the entire client when the result is true, because a native
+** scrollbar can change the client area.  The Page is external to the client area, so a change to its extent does not
+** require a repaint: the edits that change the extent invalidate the affected areas themselves.  This avoids a full
+** repaint for every character typed at the end of the widest line, and for every line added.
 */
 
 bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
@@ -299,6 +304,7 @@ bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
    if ((width IS scintilla->PageWidth) and (height IS scintilla->PageHeight)) return false;
 
    log.traceBranch("Lines: %d/%d, Page: %dx%d", nMax, nPage, width, height);
+   DwellEnd(true);
 
    scintilla->PageWidth  = width;
    scintilla->PageHeight = height;
@@ -308,7 +314,7 @@ bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
       scintilla->Page->setHeight(height);
    }
 
-   return true;
+   return false;
 }
 
 //********************************************************************************************************************
@@ -676,7 +682,10 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       log.trace("[MODIFIED] Type: %d, Length: %d, LinesAdded: %d, Line: %d", scn.modificationType, scn.length, scn.linesAdded, scn.line);
 
-      if (scn.modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) scintilla->DocumentRevision++;
+      if (scn.modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) {
+         scintilla->DocumentRevision++;
+         track_modified_lines(scintilla, SendScintilla(SCI_LINEFROMPOSITION, scn.position), scn.linesAdded);
+      }
       if (scn.modificationType & SC_MOD_CHANGEFOLD) FoldChanged(scn.line, scn.foldLevelNow, scn.foldLevelPrev);
    }
    else if (code IS SCEN_SETFOCUS) {
@@ -805,10 +814,60 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
 //********************************************************************************************************************
 
+/*********************************************************************************************************************
+** Scintilla calls ScrollText() for vertical scrolls of up to ten lines, after topLine has changed.  The Bitmap content
+** is shifted by the scrolled distance and only the exposed band is invalidated.  The caret, margins and selection
+** scroll with the text because they are document-relative.
+**
+** The shift is only safe if the Bitmap reflects the previous topLine, which is tracked by painted_top.  A pending
+** Dirty area may have been recorded in either the old or the new client coordinates (Scintilla can invalidate between
+** changing topLine and calling ScrollText()), so both the original and the shifted areas remain dirty.  A full repaint
+** is used if the Bitmap is out of step, the editor is disabled (it is always painted in full) or most of the View
+** would be exposed anyway.
+*/
+
 void ScintillaKTK::ScrollText(int linesToMove)
 {
-   // TODO Phase 3: Optimise by shifting the bitmap content and invalidating only the exposed band.
-   Redraw();
+   auto bmp = scintilla->Bitmap;
+   const int dy = linesToMove * vs.lineHeight;
+   const int height = scintilla->ViewHeight;
+   auto &dirty = scintilla->Dirty;
+   const bool dirty_empty = (dirty.Right <= dirty.Left) or (dirty.Bottom <= dirty.Top);
+
+   if ((not bmp) or (not bmp->Data) or (dy IS 0) or (std::abs(dy) * 2 >= height) or
+       (painted_top != topLine + linesToMove) or ((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or
+       ((not dirty_empty) and (dirty.Top <= 0) and (dirty.Bottom >= height))) {
+      painted_top = -1;
+      Redraw();
+      return;
+   }
+
+   kt::Log(__FUNCTION__).trace("Lines: %d, Pixels: %d", linesToMove, dy);
+
+   // The Bitmap is one row taller than the View, and every row is shifted.
+
+   const size_t stride = size_t(bmp->LineWidth);
+   const int keep = bmp->Height - std::abs(dy);
+   if (dy > 0) memmove(bmp->Data + (size_t(dy) * stride), bmp->Data, size_t(keep) * stride);
+   else memmove(bmp->Data, bmp->Data + (size_t(-dy) * stride), size_t(keep) * stride);
+   painted_top = topLine;
+
+   // The exposed band is cleared so that a frame drawn before the repaint, e.g. after an external Page move that is
+   // detected during scene rendering, shows the background rather than duplicated rows.
+
+   auto &bkgd = scintilla->BkgdColour;
+   gfx::DrawRectangle(bmp, 0, (dy > 0) ? 0 : keep, bmp->Width, std::abs(dy),
+      bmp->packPixel(bkgd.Red, bkgd.Green, bkgd.Blue, 255), BAF::FILL);
+
+   if (not dirty_empty) {
+      auto pending = dirty;
+      invalidate_area(scintilla, pending.Left, pending.Top + dy, pending.Right, pending.Bottom + dy);
+   }
+
+   // The exposed band includes the row below the View, which is only painted as part of a partially visible line.
+
+   if (dy > 0) invalidate_area(scintilla, 0, 0, scintilla->ViewWidth, dy);
+   else invalidate_area(scintilla, 0, height + dy - 1, scintilla->ViewWidth, height);
 }
 
 /*********************************************************************************************************************
@@ -1004,6 +1063,14 @@ void ScintillaKTK::panPaint(Scintilla::PRectangle Area)
    }
 
    this->paintState = notPainting;
+   painted_top = topLine;
+
+   // Painted lines that are wider than the scroll width widen the Page, e.g. a proportional face can rank a line
+   // below a narrower one in calc_longest_line().
+
+   if ((wrapState IS eWrapNone) and (lineWidthMaxSeen > 0)) {
+      grow_scroll_width(scintilla, lineWidthMaxSeen, scintilla->LongestLine);
+   }
 }
 
 //********************************************************************************************************************

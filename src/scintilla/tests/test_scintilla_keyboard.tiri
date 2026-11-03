@@ -424,6 +424,23 @@ end
    assert(colour is '255,255,255', f'The highlight must be removed on losing the focus, got {colour}')
 end
 
+-- A translucent highlight blends over the row like a translucent vector fill, so it must differ from both the opaque
+-- colour and the background, and must be uniform along the row.
+
+@Test function TranslucentCaretLineHighlight()
+   local surface <close>, scene, host, sci = newEditor({ lineHighlight='0,0,255,96' })
+   sci.string = 'one\ntwo'
+   local bmp = snapshot(surface)
+   local first = colourAt(bmp, 150, LINE_HEIGHT / 2)
+   assert(first != '0,0,255' and first != '255,255,255', f'The cursor row must be blended, got {first}')
+   assert(colourAt(bmp, 250, LINE_HEIGHT / 2) is first, 'The blended highlight must be uniform along the row')
+   assert(colourAt(bmp, 150, LINE_HEIGHT + (LINE_HEIGHT / 2)) is '255,255,255', 'Other rows must not be highlighted')
+
+   sci.lineHighlight = '0,0,255,255'
+   local colour = colourAt(snapshot(surface), 150, LINE_HEIGHT / 2)
+   assert(colour is '0,0,255', f'An opaque highlight must use the colour exactly, got {colour}')
+end
+
 @Test function CaretBlinksWhileFocused()
    local surface <close>, scene, host, sci = newEditor()
    sci.string = 'text'
