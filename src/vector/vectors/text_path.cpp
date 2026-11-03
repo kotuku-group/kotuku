@@ -424,13 +424,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
                   char_break = (wrap_mode IS VTW::ANYWHERE) and
                      ((dx + segment_width) * scale > Vector->txInlineSize);
                }
-               else if ((char_break) and (dx > 0) and
-                        ((dx + pt.get_glyph(unicode).adv_x) * scale > Vector->txInlineSize)) {
-                  wrap_line(str);
-               }
             }
-
-            str += char_len;
 
             // The glyph reference is retrieved after string_width(), which can modify the glyph cache.
 
@@ -438,7 +432,14 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             double kx, ky;
             get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
+            if (Vector->txInlineSize and not segment_start and char_break and (dx > 0) and
+                ((dx + kx + glyph.adv_x) * std::abs(transform.sx) > Vector->txInlineSize)) {
+               wrap_line(str);
+               get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
+            }
             dx += kx;
+
+            str += char_len;
 
             double char_width = glyph.adv_x * std::abs(transform.sx); // transform.scale();
 

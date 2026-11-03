@@ -1,5 +1,6 @@
--- VectorText word-wrapping with InlineSize, and the break points permitted by each WrapMode.  Every layout test runs
--- with the scalable Noto Sans face and the Clean bitmap face, because the two font types have separate layout loops.
+-- VectorText word-wrapping with InlineSize, and the break points permitted by each WrapMode.  Layout tests exercise
+-- the scalable Noto Sans face and the Clean bitmap face, because the two font types have separate layout loops.
+-- Kerning regressions use the DejaVu Sans font distributed with the Tiri manual.
 --
 -- Visual rows are detected from the caret geometry: a column that has a different caret Y from the column before it
 -- is the first character of a new visual row.  Segment widths are measured with TextWidth on unwrapped text, which
@@ -7,6 +8,7 @@
 
    include 'display', 'vector'
    module display as mGfx
+   module font as mFont
 
 FACES <const> = array<str> { 'Noto Sans', 'Clean' }
 TEXT_X <const> = 5
@@ -242,6 +244,38 @@ end
       assert(text.wrappedLines is 6, f'{face}: Each glyph must have its own line, got {text.wrappedLines}')
       assert(describe(breaks(text)) is '[1,2,3,4,5]', f'{face}: Unexpected breaks {describe(breaks(text))}')
    end
+end
+
+@Test function AnywhereModeIncludesKerning()
+   local _, face = check mFont.RegisterFont('sdk:docs/tiri/fonts/DejaVuSans.ttf')
+   local text, scene <close> = newText(face, { string='A', fontSize=32 })
+   local glyph_width = text.textWidth
+   text.string = 'AA'
+   local pair_width = text.textWidth
+   assert(pair_width > glyph_width * 2, 'The AA fixture must have positive kerning')
+
+   text.string = 'AAAA'
+   text.wrapMode = VTW_ANYWHERE
+   text.inlineSize = glyph_width * 2
+   assert(text.wrappedLines is 4, 'Positive kerning must prevent two As from overflowing a row')
+   assert(describe(breaks(text)) is '[1,2,3]', 'Each A must start a new row with kerning reset')
+   local last_x = caret(text, 4)
+   assert(math.abs(last_x - TEXT_X - glyph_width) < 0.01, 'The final row must have no cross-row kerning')
+
+   text.inlineSize = pair_width
+   assert(text.wrappedLines is 2, 'Two As must fit when the inline size includes their kerning')
+   assert(describe(breaks(text)) is '[2]', 'An exactly fitting kerned pair must stay on one row')
+
+   text.inlineSize = 0
+   text.string = 'V'
+   local v_width = text.textWidth
+   text.string = 'AV'
+   local av_width = text.textWidth
+   assert(av_width < glyph_width + v_width, 'The AV fixture must have negative kerning')
+   text.string = 'AVAV'
+   text.inlineSize = av_width
+   assert(text.wrappedLines is 2, 'Negative kerning must allow each AV pair to fit')
+   assert(describe(breaks(text)) is '[2]', 'Negative kerning must not cause premature character breaks')
 end
 
 @Test function AnywhereModeKeepsUTF8Whole()
