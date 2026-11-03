@@ -120,9 +120,9 @@ gui.dialog.message = function(Options:table!)
    }
 
    local font, em, text_width, content_height, primary, buttons_width
-   local completing = false
-   local closed = false
-   local ready = false
+   completing = false
+   closed = false
+   ready = false
 
    -- Wait for the user to respond to the dialog.
 
@@ -136,14 +136,17 @@ gui.dialog.message = function(Options:table!)
 
    function[self] finish()
       if closed then return end
+
       closed = true
       completing = true
+
       defer
          gui.dialog.active[&&] = nil
          &clear()
          processing.collect('defer')
       end
-      local surface = &window?.surface
+
+      surface = &window?.surface
       defer surface?.free() end
       if &waiting then processing.signal() end
       &keyboard?.unsubscribe()
@@ -415,7 +418,7 @@ gui.dialog.error = function(Title:str!, Message:str!, Options:table):table
    return gui.dialog.message(Options)
 end
 
-   -- This sub-routine is provided for languages other than Tiri to utilise the module.
+-- This sub-routine is provided for languages other than Tiri to utilise the module.
 
 @if(imported=false)
    dlg = gui.dialog.message({
