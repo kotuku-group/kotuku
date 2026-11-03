@@ -10,15 +10,11 @@ Documentation is available in the Kotuku Wiki.
 
    include 'vector'
 
-   module vector as mVec
-
    namespace gui
 
-SCALE     <const> = gui.interface.dpi / 96 -- Sizes are in pixels at 96 DPI
-MIN_WIDTH <const> = math.round(300 * SCALE)
-MAX_WIDTH <const> = math.round(600 * SCALE)
-ICON_SIZE <const> = math.round(72 * SCALE)
-GAP       <const> = gui.sizing.widget.gap     -- Space between buttons
+MIN_WIDTH <const> = gui.rpixel('640dp')
+MAX_WIDTH <const> = gui.rpixel('900dp')
+ICON_SIZE <const> = gui.rpixel('108dp')
 ICON_GAP  <const> = gui.sizing.widget.gap * 2 -- Horizontal space between the icon and the message column
 
 -- Vertical spacing, in ems of the message font, so that it follows the size of the text.
@@ -39,50 +35,6 @@ ICONS <const> = {
 }
 
    gui.dialog ?= { }
-
--- Return the length of the longest prefix of Word that fits Width pixels, cut at a UTF-8 character boundary.  At least
--- one character is always returned.
-
-function fitLength(Font:any!, Word:str!, Width:num!):num
-   cut = #Word
-   while cut > 1 do
-      cut -= 1
-      while (cut > 1) and ((Word.byte(cut) & 0xc0) is 0x80) do cut -= 1 end -- Step back over continuation bytes
-      if mVec.StringWidth(Font, Word.sub(0, cut), -1) <= Width then return cut end
-   end
-
-   cut = 1
-   while (cut < #Word) and ((Word.byte(cut) & 0xc0) is 0x80) do cut++ end
-   return cut
-end
-
--- Word-wrap Text to fit Width pixels when drawn with Font.  Line breaks in Text are preserved.  A word that is too
--- wide for a line of its own, such as a long file path, is broken between characters.
-
-function wrapText(Font:any!, Text:str!, Width:num!):array<str>
-   lines = array<str>
-   for para in values(Text.split('\n')) do
-      line = ''
-      for word in values(para.split(' ')) do
-         if #word is 0 then continue end
-         candidate = (#line > 0) ? f'{line} {word}' : word
-         if mVec.StringWidth(Font, candidate, -1) <= Width then
-            line = candidate
-            continue
-         end
-
-         if #line > 0 then lines.push(line) end
-         while mVec.StringWidth(Font, word, -1) > Width do
-            cut = fitLength(Font, word, Width)
-            lines.push(word.sub(0, cut))
-            word = word.sub(cut)
-         end
-         line = word
-      end
-      lines.push(line)
-   end
-   return lines
-end
 
 -- The response options are accepted as a list table or an array.  Any other value results in a single Close option.
 
@@ -119,7 +71,7 @@ gui.dialog.message = function(Options:table!)
       viewport      = nil  -- The client viewport that contains the dialog content
    }
 
-   local font, em, text_width, content_height, primary, buttons_width
+   local em, text_width, content_height, primary, buttons_width
    completing = false
    closed = false
    ready = false
@@ -186,13 +138,11 @@ gui.dialog.message = function(Options:table!)
 
    self.close = cancel
 
-   -- Wrap the message to the message column and position everything beneath it.  The window is resized to fit the
-   -- content.  The message is aligned with the top of the icon.
+   -- Position everything beneath the message, which the VectorText wraps to the message column.  The window is resized
+   -- to fit the content.  The message is aligned with the top of the icon.
 
    function arrange()
-      lines = wrapText(font, &message, text_width)
-      &messageText.string = lines.concat('\n')
-
+      &messageText.string = &message
       _, ascent = gui.layout.textMetrics(&messageText)
       top = &window.margins.top + (em * TOP_SPACING)
       &image?.y = 0
@@ -200,7 +150,7 @@ gui.dialog.message = function(Options:table!)
 
       -- Each row is placed beneath the bottom of the content above it.
 
-      bottom = top + (&messageText.lineSpacing * #lines)
+      bottom = top + (&messageText.lineSpacing * &messageText.wrappedLines)
       y = bottom + (em * MESSAGE_SPACING)
 
       if &input then
@@ -227,7 +177,7 @@ gui.dialog.message = function(Options:table!)
       x = width - &window.margins.right - buttons_width
       for btn in values(&buttons) do
          btn.viewport.{ x = math.round(x), y = y }
-         x += btn.viewport.width + GAP
+         x += btn.viewport.width + gui.sizing.widget.gap
       end
 
       height = y + &buttons[0].viewport.height + &window.margins.bottom
@@ -298,19 +248,29 @@ gui.dialog.message = function(Options:table!)
          msg(f'Failed to load dialog image "{image}": {ex.message}')
       end
 
-      &messageText = &viewport.new('VectorText', table.merge({ x = &window.margins.left + ICON_SIZE + ICON_GAP, y = 0 }, theme.window.text))
+      &messageText = &viewport.new('VectorText',
+         table.merge({
+            string   = &message,
+            wrapMode = VTW_ANYWHERE, -- Long words such as file paths are broken to fit the column
+            x        = &window.margins.left + ICON_SIZE + ICON_GAP,
+            y        = 0
+         }, theme.window.text)
+      )
 
       em = tonumber(&messageText.fontSize) -- The font size reads back in pixels
-      _, font = check mVec.GetFontHandle(&messageText.face, &messageText.fontStyle, 0, em)
 
-      -- The message column is as wide as the widest paragraph, within the dialog limits.
+      extra_width <const> = &window.margins.left + ICON_SIZE + ICON_GAP + &window.margins.right
+      text_width = MIN_WIDTH - extra_width
+      max_width <const> = MAX_WIDTH - extra_width
 
-      widest = 0
-      for para in values(&message.split('\n')) do
-         if #para > 0 then widest = math.max(widest, mVec.StringWidth(font, para, -1)) end
+      &messageText.inlineSize = text_width
+      inc = gui.rpixel('50dp')
+      sanity = 0
+      while (&messageText.wrappedLines > 3) and (text_width < max_width) and (sanity < 20) do
+         text_width += inc
+         &messageText.inlineSize = text_width
+         sanity++
       end
-
-      text_width = math.clamp(math.ceil(widest), MIN_WIDTH - &window.margins.left - ICON_SIZE - ICON_GAP - &window.margins.right, MAX_WIDTH - &window.margins.left - ICON_SIZE - ICON_GAP - &window.margins.right)
 
       -- The last option is the default, unless the client marks another as primary.
 
@@ -370,7 +330,7 @@ gui.dialog.message = function(Options:table!)
             }
          })
          &buttons.push(btn)
-         if i > 0 then buttons_width += GAP end
+         if i > 0 then buttons_width += gui.sizing.widget.gap end
          buttons_width += btn.viewport.width
       end
 
