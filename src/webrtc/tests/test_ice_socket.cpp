@@ -6,12 +6,15 @@
 #include <kotuku/modules/module.h>
 
 #include "../ice/ice_socket.h"
+#include "../ice/network_endpoint.h"
 #include "../stun/stun.h"
 
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -114,6 +117,52 @@ static int run_test() {
    return received_application ? 0 : 12;
 }
 
+//********************************************************************************************************************
+// Network addresses hold IPv4 in host byte order; endpoints hold network byte order.  IPv4-mapped IPv6 addresses
+// are reported as IPv4, while other IPv6 addresses are preserved.
+
+static int conversion_test() {
+   IPAddress ipv4{};
+   ipv4.Type = IPADDR::V4;
+   ipv4.Port = 3478;
+   ipv4.Data[0] = 0xc0000201; // 192.0.2.1
+   auto endpoint = from_network(ipv4);
+   if (endpoint.ipv6 or endpoint.port != 3478 or endpoint.address[0] != 192 or endpoint.address[1] != 0 or
+       endpoint.address[2] != 2 or endpoint.address[3] != 1) return 20;
+   auto round = to_network(endpoint);
+   if (round.Type != IPADDR::V4 or round.Port != 3478 or round.Data[0] != 0xc0000201) return 21;
+
+   IPAddress mapped{};
+   mapped.Type = IPADDR::V6;
+   mapped.Port = 5000;
+   std::array<uint8_t, 16> mapped_bytes{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 198, 51, 100, 7 };
+   std::memcpy(mapped.Data, mapped_bytes.data(), 16);
+   endpoint = from_network(mapped);
+   if (endpoint.ipv6 or endpoint.port != 5000 or endpoint.address[0] != 198 or endpoint.address[3] != 7 or
+       std::any_of(endpoint.address.begin() + 4, endpoint.address.end(), [](uint8_t B) { return B != 0; })) {
+      return 22;
+   }
+
+   IPAddress ipv6{};
+   ipv6.Type = IPADDR::V6;
+   ipv6.Port = 443;
+   std::array<uint8_t, 16> ipv6_bytes{ 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 1, 2, 3, 4 };
+   std::memcpy(ipv6.Data, ipv6_bytes.data(), 16);
+   endpoint = from_network(ipv6);
+   if (not endpoint.ipv6 or endpoint.address != ipv6_bytes) return 23;
+   round = to_network(endpoint);
+   if (round.Type != IPADDR::V6 or round.Port != 443 or std::memcmp(round.Data, ipv6_bytes.data(), 16)) return 24;
+
+   ice::Endpoint mapped_endpoint;
+   mapped_endpoint.ipv6 = true;
+   mapped_endpoint.port = 5000;
+   mapped_endpoint.address = mapped_bytes;
+   if (unmap_ipv4(mapped_endpoint) != from_network(mapped)) return 25;
+   return 0;
+}
+
+//********************************************************************************************************************
+
 int main(int argc, CSTRING *argv) {
    if (auto message = init_kotuku(argc, argv)) {
       std::fprintf(stderr, "%s\n", message);
@@ -123,7 +172,8 @@ int main(int argc, CSTRING *argv) {
       close_kotuku();
       return 1;
    }
-   auto result = run_test();
+   auto result = conversion_test();
+   if (not result) result = run_test();
    if (result) std::fprintf(stderr, "ICE/DTLS NetSocket loopback failed at step %d\n", result);
    close_kotuku();
    return result ? 1 : 0;
