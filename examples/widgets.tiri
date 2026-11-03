@@ -10,7 +10,7 @@ A demonstration of standard widgets
    glSelf = <obj{ obj.find('self') }>
    glPath = <str{ glSelf.workingPath }>
 
-   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('960dp'), insideHeight=gui.rpixel('850dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
+   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('1200dp'), insideHeight=gui.rpixel('1080dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
    viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
@@ -521,7 +521,7 @@ end
       x       = combobox.viewport.x + combobox.viewport.width + (gui.sizing.widget.gap * 2),
       xOffset = vslider.viewport.xOffset + vslider.viewport.width + (gui.sizing.widget.gap * 2),
       y       = toggle.viewport.y,
-      height  = gui.rpixel('260dp'),
+      height  = gui.rpixel('320dp'),
       title   = 'Panel',
       meta    = 'Scrolling text',
       scroll  = 'vertical',
@@ -551,6 +551,51 @@ end
    fitNotes(notes)
 
    y = math.max(y, notes.viewport.y + notes.viewport.height) + gui.rpixel('20dp')
+
+   glView = gui.columnView({
+      target      = viewport,
+      textAttrib  = 'name',
+      multiSelect = true,
+      x           = notes.viewport.x,
+      y           = y,
+      xOffset     = win.margins.right,
+      height      = gui.rpixel('200pt'),
+      events = {
+         itemSelected = function(View, Reason, Item)
+            names = array<str>
+            for item in values(View.selectedItems()) do names.push(item.name) end
+            print('Selected rows: ' .. names.concat(', '))
+         end,
+         activeChange = function(View, Reason, Item)
+            print('Active item changed: ' .. (Item?.name ?? 'none'))
+         end,
+         itemDeselected = function(View, Reason, Item)
+            print('Item deselected: ' .. Item.name)
+         end,
+         itemActivated = function(View, Reason, Item)
+         end,
+         itemChecked = function(View, Reason, Item, Column, Checked)
+            print(f'{Item.name}: {Column.title} = {Checked} ({Reason})')
+         end
+      },
+      items = {
+         { id=1, path='kotuku:system/', name='vegetables', included=true, icon='folders/folder' },
+         { id=2, path='kotuku:system/', name='cereals', included=false, icon='folders/folder' },
+         { id=3, path='kotuku:system/', name='apple.txt', included=true, icon='filetypes/text' },
+         { id=4, path='kotuku:system/', name='banana.jpg', included=false, icon='filetypes/text' },
+         { id=5, path='kotuku:system/', name='avocado.mp3', included=true, icon='filetypes/text' },
+         { id=6, path='kotuku:system/', name='cherry.txt', included=false, icon='filetypes/text' },
+         { id=7, path='kotuku:system/', name='fruit salad.dessert', included=false, icon='filetypes/text' },
+         { id=8, path='kotuku:system/', name='Lemon Mint.doc', included=false, icon='filetypes/text' },
+         { id=9, path='kotuku:system/', name='miso-soup.txt', included=false, icon='filetypes/text' }
+      },
+      columns = {
+         { attrib='included', title='Check', width=4, checkBoxes=true, align='center' },
+         { attrib='name',     title='Name', width=10, showIcons=true }
+      }
+   })
+
+
 
    try
       global sndAlarm = obj.new('sound', { path=glPath .. 'data/alarm.mp3', volume=0.2 })
@@ -613,6 +658,60 @@ end
             end)
 
             sndWilhelm?.acActivate()
+         end
+      }
+   })
+
+   glMessage = gui.icon({
+      target = viewport,
+      x      = gui.rpixel('330dp'),
+      y      = y,
+      image  = 'programs/message',
+      label  = 'Instant Messenger',
+      draggable = true,
+      theme = { effect = 'metal() shadow()' },
+      events = {
+         show = function()
+            vfx.wipe(&viewport, { seconds=1.2, delay=1.2, style='radial', cx=0.5, cy=0.5 })
+         end,
+         activate = function()
+            if &effect then return end
+
+            &effect = vfx.chain({
+               vfx.wipe(&viewport, { seconds=0.8, style='spiral', cx=0.5, cy=0.5, invert=true })
+            }, function()
+               &viewport.free()
+               &viewport = nil
+               viewport.acDraw()
+            end)
+         end
+      }
+   })
+
+   y += gui.rpixel('220dp')
+
+   glTree = gui.icon({
+      target = viewport,
+      x      = glAlarmIcon.viewport.x,
+      y      = y,
+      image  = 'nature/pine',
+      label  = 'Hug a Tree',
+      draggable = true,
+      theme = { effect = 'wood() glow(#404040)' },
+      events = {
+         show = function()
+            vfx.wipe(&viewport, { seconds=2.2, delay=2.2, style='spiral', cx=0.5, cy=0.5 })
+         end,
+         activate = function()
+            if &effect then return end
+
+            &effect = vfx.chain({
+               vfx.wipe(&viewport, { seconds=0.8, style='shutter', cx=0.5, cy=0.5, invert=true })
+            }, function()
+               &viewport.free()
+               &viewport = nil
+               viewport.acDraw()
+            end)
          end
       }
    })

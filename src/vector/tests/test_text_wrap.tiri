@@ -9,6 +9,7 @@
    include 'display', 'vector'
    module display as mGfx
    module font as mFont
+   module vector as mVec
 
 FACES <const> = array<str> { 'Noto Sans', 'Clean' }
 TEXT_X <const> = 5
@@ -448,4 +449,253 @@ function ClickOnContinuationRowPlacesCaret()
       assert(text.cursorColumn is target,
          f'{face}: The click must place the caret at column {target}, got {text.cursorColumn}')
    end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The boundary of VectorText that is word-wrapped by InlineSize covers every wrapped line, and its width is that of
+-- the widest line rather than the last.
+
+INLINE <const> = 200
+WORDS  <const> = 'A long description that goes on and on. '
+
+function newBoundsText(Scene:obj!, Options:table):obj
+   return Scene.new('VectorViewport', { width = '100%', height = '100%' }).new('VectorText', table.merge({
+      x = 5, y = 20, fontSize = 12, face = 'Noto Sans', lineLimit = 0
+   }, Options ?? { }))
+end
+
+function boundary(Text:obj!):<num, num>
+   _, _, _, w, h = check Text.mtGetBoundary(0)
+   return w, h
+end
+
+@Test function WrappedBoundsCoverEveryLine()
+   local scene <close> = obj.new('VectorScene', { pageWidth = 400, pageHeight = 400 })
+   single = newBoundsText(scene, { string = 'Line' })
+   _, single_h = boundary(single)
+
+   text = newBoundsText(scene, { string = string.rep(WORDS, 8), inlineSize = INLINE })
+   minimum = math.ceil(text.textWidth / INLINE) -- Unwrapped width; wrapping can only add lines
+   w, h = boundary(text)
+   lines = ((h - single_h) / text.lineSpacing) + 1
+   assert(math.abs(lines - math.round(lines)) < 0.01, f'The height must be whole lines, got {lines}')
+   assert(math.round(lines) >= minimum, f'Every wrapped line is covered: {math.round(lines)} of at least {minimum}')
+   assert(w > INLINE * 0.5 and w <= INLINE + 12, f'The width is that of the widest line, got {w}')
+end
+
+@Test function WrappedAndExplicitLinesAreCounted()
+   local scene <close> = obj.new('VectorScene', { pageWidth = 400, pageHeight = 400 })
+   wrapped = newBoundsText(scene, { string = string.rep(WORDS, 4), inlineSize = INLINE })
+   _, wrapped_h = boundary(wrapped)
+
+   both = newBoundsText(scene, { string = string.rep(WORDS, 4) .. '\nEnd', inlineSize = INLINE })
+   _, both_h = boundary(both)
+   assert(math.abs(both_h - wrapped_h - both.lineSpacing) < 0.01,
+      f'An explicit line follows the wrapped lines ({wrapped_h} then {both_h})')
+end
+
+@Test function UnwrappedBoundsAreUnchanged()
+   local scene <close> = obj.new('VectorScene', { pageWidth = 400, pageHeight = 400 })
+   one = newBoundsText(scene, { string = 'One' })
+   _, one_h = boundary(one)
+   three = newBoundsText(scene, { string = 'One\nTwo\nThree' })
+   w, three_h = boundary(three)
+   assert(math.abs(three_h - one_h - (2 * three.lineSpacing)) < 0.01, 'Explicit lines add the line spacing')
+   assert(math.abs(w - three.textWidth) < 1, 'Without wrapping, the width is the longest line')
+end
+
+-- A word that contains multi-byte UTF-8 characters is measured whole when deciding to wrap it.  The area is wide
+-- enough for the first word and half of the second, so the second word must move to a new line.
+
+function wrapsSecondWord(Word:str!, Face:str):bool
+   local scene <close> = obj.new('VectorScene', { pageWidth = 400, pageHeight = 400 })
+   face = Face ?? 'Noto Sans'
+   single = newBoundsText(scene, { string = 'x', face = face })
+   _, single_h = boundary(single)
+   lead = newBoundsText(scene, { string = 'x ', face = face })
+   word = newBoundsText(scene, { string = Word, face = face })
+   text = newBoundsText(scene, {
+      string = 'x ' .. Word, face = face, inlineSize = lead.textWidth + (word.textWidth * 0.5)
+   })
+   _, h = boundary(text)
+   return math.abs(h - single_h - text.lineSpacing) < 0.01
+end
+
+@Test function MultiByteWordsWrapWhole()
+   assert(wrapsSecondWord('éééééééééé'), 'A word of multi-byte characters must wrap')
+   assert(wrapsSecondWord('zéééééééééé'), 'A word with multi-byte characters after the first must wrap')
+   assert(wrapsSecondWord('zzzzzzzzzz'), 'An ASCII word must wrap')
+end
+
+@Test function MultiByteWordsWrapWholeInBitmapFonts()
+   assert(wrapsSecondWord('éééééééééé', 'Clean'), 'A word of multi-byte characters must wrap')
+   assert(wrapsSecondWord('zéééééééééé', 'Clean'), 'A word with multi-byte characters after the first must wrap')
+   assert(wrapsSecondWord('zzzzzzzzzz', 'Clean'), 'An ASCII word must wrap')
+end
+
+-- A word that is wider than the wrapping area overflows the line it starts, rather than leaving that line empty.
+
+@Test function OversizedWordsDoNotLeaveBlankLines()
+   for face in values(array<str> { 'Noto Sans', 'Clean' }) do
+      local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+      flags = VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET
+      plain = newBoundsText(scene, { string='WWWWWWWWWW end', face=face, textFlags=flags })
+      _, _, plain_y = check plain.mtGetCaretBounds(0, 0)
+      text = newBoundsText(scene, { string='WWWWWWWWWW end', face=face, textFlags=flags, inlineSize=40 })
+      _, first_x, first_y = check text.mtGetCaretBounds(0, 0)
+      assert(first_x is 5 and first_y is plain_y, f'{face}: An oversized first word must stay on the first line')
+      _, end_x, end_y = check text.mtGetCaretBounds(0, 11)
+      assert(math.abs(end_x - 5) < 0.01, f'{face}: The following word must start a new line')
+      assert(math.abs(end_y - first_y - text.lineSpacing) < 0.01, f'{face}: Only one line must be added')
+      _, _, middle_y = check text.mtGetCaretBounds(0, 7)
+      assert(middle_y is first_y, f'{face}: An oversized word must not be split')
+   end
+
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+   single = newBoundsText(scene, { string='x' })
+   _, single_h = boundary(single)
+   text = newBoundsText(scene, { string='WWWWWWWWWW end', inlineSize=40 })
+   _, h = boundary(text)
+   assert(math.abs(h - single_h - text.lineSpacing) < 0.01, f'The boundary must cover two lines, got {h}')
+end
+
+-- Bitmap rendering must follow the same visual lines as the measured layout, including oversized words.
+
+@Test function BitmapPixelsFollowWholeWordLayout()
+   for sample in values(array<table> {
+      { text='WWWWWWWWWW', expected='WWWWWWWWWW' },
+      { text='WWWWWWWWWW end', expected='WWWWWWWWWW \nend' },
+      { text='one two three', expected='one two \nthree', measure='one two ' }
+   }) do
+      local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=100 })
+      local width = 40
+      if sample.measure then
+         local probe = newBoundsText(scene, { string=sample.measure, face='Clean', visibility=VIS_HIDDEN })
+         width = probe.textWidth + 1
+      end
+      local text = newBoundsText(scene, { string=sample.text, face='Clean', fill='black', inlineSize=width })
+      local actual <close> = obj.new('Bitmap', {
+         width=200, height=100, bitsPerPixel=32, bkgd='255,255,255,255'
+      })
+      local expected <close> = obj.new('Bitmap', {
+         width=200, height=100, bitsPerPixel=32, bkgd='255,255,255,255'
+      })
+      check actual.acClear()
+      scene.bitmap = actual
+      check scene.acDraw()
+
+      text.inlineSize = 0
+      text.string = sample.expected
+      check expected.acClear()
+      scene.bitmap = expected
+      check scene.acDraw()
+
+      local ink = 0
+      for y in {0 to 100} do
+         for x in {0 to 200} do
+            local pixel = mGfx.ReadRGBPixel(actual, x, y)
+            local red, green, blue = pixel.red, pixel.green, pixel.blue
+            local other = mGfx.ReadRGBPixel(expected, x, y)
+            assert(red is other.red and green is other.green and blue is other.blue,
+               f'Bitmap wrapping for "{sample.text}" differs at {x},{y}')
+            if red < 250 then ink++ end
+         end
+      end
+      assert(ink > 0, 'The bitmap comparison must contain visible glyphs')
+   end
+end
+
+-- WrappedLines counts the lines that InlineSize creates as well as the explicit lines in the string.
+
+@Test function WrappedLinesCountsWordWrapping()
+   for face in values(array<str> { 'Noto Sans', 'Clean' }) do
+      local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+      text = newBoundsText(scene, { string='One\nTwo\nThree', face=face })
+      assert(text.wrappedLines is 3, f'{face}: Without wrapping, the count must match totalLines')
+
+      lead = newBoundsText(scene, { string='one two ', face=face })
+      text = newBoundsText(scene, { string='one two one two one two\nEnd', face=face, inlineSize=lead.textWidth + 2 })
+      assert(text.totalLines is 2, f'{face}: totalLines must exclude wrapping')
+      assert(text.wrappedLines is 4, f'{face}: Expected 4 wrapped lines, got {text.wrappedLines}')
+
+      text.inlineSize = 0
+      assert(text.wrappedLines is 2, f'{face}: Disabling wrapping must refresh the count')
+      text.inlineSize = 40
+      text.string = 'WWWWWWWWWW end'
+      assert(text.wrappedLines is 2, f'{face}: An oversized word must not add a blank line')
+   end
+end
+
+@Test function EmptyAndTrailingLinesHaveFullCaretBoxes()
+   for face in values(array<str> { 'Noto Sans', 'Clean' }) do
+      local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+      text = newBoundsText(scene, { string='', face=face, textFlags=VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET })
+      _, x, y, h = check text.mtGetCaretBounds(0, 0)
+      assert(h > 0 and x is 5, 'Empty text must have a full line box at the field origin')
+      if face is 'Noto Sans' then
+         assert(math.abs(h - text.displayHeight) < 1, 'Scalable line height must cover ascent and descent')
+         assert(math.abs(y + h - 20 - text.descent) < 1, 'The bottom must be the baseline plus descent')
+      end
+      text.string = 'é\n\n'
+      assert(text.totalLines is 3, 'String assignment must retain every trailing empty line')
+      _, last_x, last_y, last_h = check text.mtGetCaretBounds(2, 0)
+      assert(last_x is x and last_h is h, 'Trailing empty lines must retain the same line box')
+      assert(math.abs(last_y - y - 2 * text.lineSpacing) < 0.01, 'Trailing lines must advance by line spacing')
+      text.string = '\n'
+      assert(text.totalLines is 2, 'A lone newline must represent two empty lines')
+      _, _, newline_y = check text.mtGetCaretBounds(1, 0)
+      assert(math.abs(newline_y - y - text.lineSpacing) < 0.01, 'A lone newline must have a second caret box')
+   end
+end
+
+@Test function WrappedCaretBoundsRefreshAfterResizing()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+   text = newBoundsText(scene, { string='one two three four', textFlags=VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET })
+   _, before_x, before_y = check text.mtGetCaretBounds(0, 4)
+   lead = newBoundsText(scene, { string='one ' })
+   text.inlineSize = lead.textWidth + 2
+   _, wrap_x, wrap_y = check text.mtGetCaretBounds(0, 4)
+   assert(math.abs(wrap_x - 5) < 0.01, 'The continuation line must start at the text origin')
+   assert(math.abs(wrap_y - before_y - text.lineSpacing) < 0.01,
+      'The continuation caret must advance one visual line within logical row zero')
+   text.inlineSize = 0
+   _, after_x, after_y = check text.mtGetCaretBounds(0, 4)
+   assert(after_x is before_x and after_y is before_y, 'Reading bounds must refresh dirty wrapping layout')
+end
+
+@Test function ContainerScrollingDisablesAndResetsAutomaticOffsets()
+   local scene <close> = obj.new('VectorScene', { pageWidth=120, pageHeight=55 })
+   text = newBoundsText(scene, { string=string.rep(WORDS, 6), textFlags=VTXF_EDITABLE, inlineSize=100 })
+   text.cursorColumn = 20000
+   _, caret_x, caret_y = check text.mtGetCaretBounds(-1, -1)
+   _, _, screen_y = check text.mtGetBoundary(0)
+   assert(caret_y > 55 and screen_y < 0, 'Wrapped continuations of row zero must scroll into view')
+   text.textFlags = text.textFlags | VTXF_NO_AUTO_OFFSET
+   _, _, unscrolled_y = check text.mtGetBoundary(0)
+   assert(unscrolled_y > screen_y + 20, 'Enabling NO_AUTO_OFFSET must reset the vertical offset immediately')
+   _, after_x, after_y = check text.mtGetCaretBounds(-1, -1)
+   assert(after_x is caret_x and after_y is caret_y, 'Caret page bounds must exclude automatic offsets')
+   text.cursorColumn = 0
+   text.cursorColumn = 20000
+   _, _, still_y = check text.mtGetBoundary(0)
+   assert(still_y is unscrolled_y, 'Moving outside the viewport must not introduce an offset with the flag set')
+   text.string = string.rep('W', 80)
+   text.inlineSize = 0
+   text.textFlags = text.textFlags & ~VTXF_NO_AUTO_OFFSET
+   text.cursorColumn = 80
+   _, scrolled_x = check text.mtGetBoundary(0)
+   text.textFlags = text.textFlags | VTXF_NO_AUTO_OFFSET
+   _, unscrolled_x = check text.mtGetBoundary(0)
+   assert(scrolled_x < 0 and unscrolled_x > 0, 'Enabling the flag must reset horizontal offsets too')
+end
+
+@Test function CaretBoundsExcludeVectorTransforms()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+   text = newBoundsText(scene, { string='abc', textFlags=VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET })
+   _, x, y, h = check text.mtGetCaretBounds(0, 2)
+   _, matrix = check text.mtNewMatrix(false)
+   check mVec.ParseTransform(matrix, 'translate(70 90) scale(2)')
+   _, transformed_x, transformed_y, transformed_h = check text.mtGetCaretBounds(0, 2)
+   assert(transformed_x is x and transformed_y is y and transformed_h is h,
+      'Page coordinates must exclude the vector transform')
 end
