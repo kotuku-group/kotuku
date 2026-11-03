@@ -8,8 +8,7 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
-LINE_SPACING, FONT_HEIGHT = gui.getFontHeight(gui.fonts.button)
-DEFAULT_HEIGHT <const> = math.floor(LINE_SPACING * 1.75) + 1
+MIN_FONT_SIZE <const> = 6 -- Labels are not scaled below this pixel size, and may overflow the button if so
 
 gui.button = function(Options)
    self = entity { -- Public interface
@@ -20,12 +19,14 @@ gui.button = function(Options)
       viewport       = nil, -- The button's primary viewport
    }
 
+   local LINE_SPACING, FONT_HEIGHT, ASCENT, HEIGHT, ICON_SIZE, L_GAP, R_GAP, ICON_GAP
+
    using self do
       -- The applied theme is layered as base.button <- base.button.primary (if primary) <- Options.theme <- the
       -- override from setTheme().  It is rebuilt whenever the base theme or the override changes.
 
       base_theme = gui.getTheme(&parentViewport)
-      override = nil -- Per-instance override from setTheme()
+      override   = nil -- Per-instance override from setTheme()
 
       function buildTheme():table
          result = base_theme.button
@@ -35,52 +36,53 @@ gui.button = function(Options)
 
          result = table.merge(result, Options.theme, true, true)
          if override then result = table.merge(result, override, true, true) end
+
+         LINE_SPACING, FONT_HEIGHT, ASCENT = gui.getFontHeight({
+            face = result.text.face, size = result.text.fontSize, style = result.text.fontStyle
+         })
+
+         HEIGHT    = Options.height ?? FONT_HEIGHT * 2.2
+         ICON_SIZE = FONT_HEIGHT
+         L_GAP     = (HEIGHT * .5)
+         R_GAP     = (HEIGHT * .5)
+         ICON_GAP  = (HEIGHT * .5) * 0.75 -- Space between the icon and the label, if both are present
+
          return result
       end
 
       theme = buildTheme()
 
-      -- Icon size and label padding scale with the button height
-
-      HEIGHT    <const> = Options.height ?? DEFAULT_HEIGHT
-      ICON_SIZE <const> = HEIGHT * 0.56
-      GAP       <const> = HEIGHT * 0.35
-
-      calc_width = false -- True if the button width is computed from its content at initialisation
-      icon_margin = 0 -- Padding around the icon's pattern tile, see gui.createIcon()
-      inset = math.ceil(theme.bkgd.strokeWidth) -- Inset of the label area; whole pixels keep the label sharp
-      label_size = 0 -- The label's font size in pixels before any scaling to fit the button
+      calc_width  = false -- True if the button width is computed from its content at initialisation
+      icon_margin = 0     -- Padding around the icon, see gui.createIcon()
+      label_size  = 0     -- The label's font size in pixels before any scaling to fit the button
+      inset       = math.ceil(theme.bkgd.strokeWidth) -- Inset of the label area; whole pixels keep the label sharp
 
       function disabledOpacity():num
          return base_theme.scheme is 'light' ? 0.75 : 0.5
       end
 
-      MIN_FONT_SIZE <const> = 6 -- Labels are not scaled below this pixel size, and may overflow the button if so
-
-      -- The label baseline is centred within the stroke unless the theme gives a y position.  Both are relative to the
-      -- label area, which is inset from the viewport by inset.
-
-      function labelY():num
-         return theme.text.y ?? (FONT_HEIGHT + math.floor((HEIGHT - FONT_HEIGHT - (theme.bkgd.strokeWidth * 2)) * 0.5))
+      function labelY(Size:num):num
+         ascent = ASCENT
+         if Size and (label_size > 0) then ascent *= Size / label_size end
+         return math.floor((HEIGHT + ascent) * 0.5)
       end
 
-      -- Scale the label down in whole pixel font sizes until it fits within Available.  The label must be at its full
-      -- size on entry.  The baseline is raised by half the reduction in font height so that the label stays centred.
+      -- Scale the label down in whole pixel font sizes until it fits.
 
-      function fitLabel(Available:num!)
+      function fitLabel(MaxWidth:num!)
          size = label_size
          width = &_label.textWidth
-         if (width > Available) and (width > 0) then
-            size = math.max(MIN_FONT_SIZE, math.floor(label_size * Available / width))
+         if (width > MaxWidth) and (width > 0) then
+            msg(f'Scaling button label down to fit: "{&_label.string}"')
+            size = math.max(MIN_FONT_SIZE, math.floor(label_size * MaxWidth / width))
             &_label.fontSize = size
-            while (size > MIN_FONT_SIZE) and (&_label.textWidth > Available) do
+            while (size > MIN_FONT_SIZE) and (&_label.textWidth > MaxWidth) do
                size -= 1
                &_label.fontSize = size
             end
          end
 
-         shift = math.floor(FONT_HEIGHT * (1 - (size / label_size)) * 0.5)
-         &_label.y = inset + labelY() - shift
+         &_label.y = labelY(size)
       end
 
       -- Compose the background style from the current hover, focus and disabled states.  Hover and focus styling is
@@ -101,36 +103,39 @@ gui.button = function(Options)
 
       -- Position the icon and text.  If Resize is true and the width was not fixed by the client, the width is computed
       -- from the content.  Resizing is limited to initialisation; later, a label that is too wide for the button is scaled
-      -- down to fit within the border, less half the GAP on each side.
+      -- down to fit within the border, less half the L/R_GAP on each side.
 
-      function arrange(Resize:bool)
+      function arrange(Resize:bool, FitLabel:bool)
          label_offset = 0
 
          if &iconRender then
-            &iconRender.x = GAP - icon_margin
-            label_offset = (GAP) + ICON_SIZE
+            &iconRender.x = L_GAP - icon_margin
+            label_offset = L_GAP - icon_margin + ICON_SIZE + ICON_GAP
          end
 
          if &_label and (tonumber(&_label.fontSize) != label_size) then -- Restore the full size before measuring
-            &_label.fontSize = label_size
+            &_label.{ fontSize = label_size, y = labelY() }
          end
 
          if calc_width and Resize then
-            &viewport.width = &_label ? (GAP + label_offset + &_label.textWidth + GAP) : HEIGHT
+            &viewport.width = &_label ? (label_offset + &_label.textWidth + R_GAP) : HEIGHT
          end
 
          if &iconRender and not &_label then -- Center icon, no text
             &iconRender.x = ((&viewport.width - ICON_SIZE) * 0.5) - icon_margin
          end
 
-         if &_label then
-            margin = inset + (GAP * 0.5)
+         if &_label?? then
             if &iconRender then
-               &_label.{ x = GAP + label_offset, align = ALIGN_LEFT }
-               fitLabel(&viewport.width - margin - (GAP + label_offset))
+               &_label.{ x = label_offset, align = ALIGN_LEFT }
+               if FitLabel then
+                  fitLabel(&viewport.width - label_offset)
+               end
             else -- No icon, centre text
                &_label.{ x = &viewport.width * 0.5, align = ALIGN_HORIZONTAL }
-               fitLabel(&viewport.width - (margin * 2))
+               if FitLabel then
+                  fitLabel(&viewport.width - inset - inset)
+               end
             end
          end
       end
@@ -141,7 +146,7 @@ gui.button = function(Options)
          icon = gui.createIcon(&viewport.scene, Path, ICON_SIZE, gui.rgbToIconTheme(theme.text.fill))
          icon_margin = icon.margin
          return icon, {
-            x      = GAP - icon.margin,
+            x      = L_GAP - icon.margin,
             y      = ((HEIGHT - icon.size) * 0.5) - icon.margin,
             width  = icon.size + (icon.margin * 2),
             height = icon.size + (icon.margin * 2),
@@ -210,12 +215,15 @@ gui.button = function(Options)
 
       &setLabel = function(Label:str)
          if Label?? then
+            Label = Label.trim()
+            if Label is '' then Label = nil end
+
             if &_label then
                &_label.string = Label
             else
                &_label = &viewport.new('VectorText', table.merge({
                   x         = 0,
-                  y         = inset + labelY(),
+                  y         = labelY(),
                   string    = Label,
                   lineLimit = 1
                }, theme.text))
@@ -226,7 +234,7 @@ gui.button = function(Options)
             &_label = nil
          end
 
-         arrange()
+         arrange(false, true)
          &viewport.acDraw()
       end
 
@@ -255,7 +263,7 @@ gui.button = function(Options)
          &iconRender?.free()
          &iconRender = replacement
          &icon = Path?? ? Path : nil
-         arrange()
+         arrange(false, true)
          &viewport.acDraw()
       end
 
@@ -300,7 +308,7 @@ gui.button = function(Options)
                Vector.height = Height - theme.bkgd.strokeWidth
             end
 
-            arrange()
+            arrange(false, false)
          end
       }, theme.bkgd))
 
@@ -314,7 +322,8 @@ gui.button = function(Options)
       end
 
       if Options.label then &setLabel(Options.label) end
-      arrange(true)
+
+      arrange(true, false)
 
       gui.registerWidget(&viewport, &&)
 

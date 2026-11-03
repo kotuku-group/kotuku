@@ -317,8 +317,8 @@ gui.input = function(Options)
       buildTheme()
       gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
 
-      font_max_height, font_height = gui.getFontHeight(gui.fonts.input)
-      line_height = math.floor(font_max_height * 1.35) + 1 -- The height of a single-line box
+      font_max_height, font_height = gui.getFontHeight(gui.fonts.default)
+      line_height = math.floor(font_max_height * 1.4) -- The height of a single-line box
       default_height = line_height
       if &multiline then default_height += math.ceil(font_max_height * 3) end -- Estimated; corrected for the text
 

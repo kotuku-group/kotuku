@@ -11,8 +11,8 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
-FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
-DEFAULT_THICKNESS <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
+FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.default)
+DEFAULT_THICKNESS <const> = math.floor(FONT_MAX_HEIGHT * 1.4)
 MARGIN <const>            = math.floor(FONT_HEIGHT * 0.5) + 1
 VALUE_INSET <const>       = 2 -- Minimum space between vertical value text and the track's sides
 DIGITS <const>            = r'[0-9]'

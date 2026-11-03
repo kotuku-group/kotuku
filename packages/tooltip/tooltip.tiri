@@ -91,10 +91,13 @@ gui.tooltip = function(Options:table)
       ptr ?! return nil
 
       &surface = obj.new('surface', {
-         name = 'rgnTip',
-         x = ptr.x + 6, y = ptr.y, width = 300,
-         parent = 0, presence = SPT_NONE,
-         flags = RNF_STICK_TO_FRONT | RNF_COMPOSITE
+         name     = 'rgnTip',
+         x        = ptr.x + 6,
+         y        = ptr.y,
+         width    = 300,
+         parent   = 0,
+         presence = SPT_NONE,
+         flags    = RNF_STICK_TO_FRONT | RNF_COMPOSITE
       })
 
       &surface.detach()
@@ -129,19 +132,23 @@ gui.tooltip = function(Options:table)
 
       err, font = mVec.GetFontHandle(&text.face, &text.fontStyle ?? 'Regular', 0,
          math.round(tonumber(&text.fontSize)))
+
       lines = wrapText((err is ERR_Okay) ? font : nil, Options.text ?? '',
          (Options.maxWidth ?? DEFAULT_MAX_WIDTH) - (pad * 2))
+
       &text.string = lines.concat('\n')
 
       -- The first line is centred within a single-line tooltip's height, and each further line adds the line
       -- spacing.
 
       line_height = (pad * 1.5) + tonumber(&text.fontSize)
+
       &surface.{
          height = line_height + ((#lines - 1) * &text.lineSpacing),
          width  = (pad * 2) + &text.textWidth,
          y      = ptr.y - &surface.height
       }
+
       &text.y = math.floor((line_height * 0.5) + (&text.displaySize * 0.5))
 
       -- The tooltip is terminated when a button is pressed, or when the pointer has moved at least MOVE_LIMIT

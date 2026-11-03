@@ -73,6 +73,8 @@ gui.dialog.message = function(Options:table!)
    }
 
    local em, text_width, content_height, primary, buttons_width
+   local column_x   -- Left edge of the message column, which follows the image if there is one
+   local image_size -- Height of the image column, or zero for an icon-free layout
    completing = false
    closed = false
    ready = false
@@ -140,7 +142,7 @@ gui.dialog.message = function(Options:table!)
    self.close = cancel
 
    -- Position everything beneath the message, which the VectorText wraps to the message column.  The window is resized
-   -- to fit the content.  The message is aligned with the top of the icon.
+   -- to fit the content.  The message is aligned with the top of the image, if there is one.
 
    function arrange()
       &messageText.string = &message
@@ -179,8 +181,8 @@ gui.dialog.message = function(Options:table!)
 
       -- The buttons are right-aligned.  A row of buttons that is wider than the message column widens the window.
 
-      width = math.max(&window.margins.left + ICON_SIZE + ICON_GAP + text_width + &window.margins.right, buttons_width + (&window.margins.left + &window.margins.right))
-      y = math.round(math.max(bottom, top + ICON_SIZE) + (em * BUTTON_SPACING))
+      width = math.max(column_x + text_width + &window.margins.right, buttons_width + (&window.margins.left + &window.margins.right))
+      y = math.round(math.max(bottom, top + image_size) + (em * BUTTON_SPACING))
       x = width - &window.margins.right - buttons_width
       for btn in values(&buttons) do
          btn.viewport.{ x = math.round(x), y = y }
@@ -222,6 +224,10 @@ gui.dialog.message = function(Options:table!)
    end
 
    using self do
+      -- The window background defaults to the page background of the base theme.  Options.theme is merged over it, so
+      -- a client override takes precedence.  A custom theme that is not yet loaded falls back to the default theme.
+
+      base_theme = gui.themes[Options.themeName ?? gui.theme] ?? gui.themes[gui.theme]
       &window = gui.window({
          insideWidth  = MIN_WIDTH,
          insideHeight = ICON_SIZE,
@@ -231,7 +237,8 @@ gui.dialog.message = function(Options:table!)
          icon         = Options.icon ?? 'items/question',
          title        = Options.title ?? 'Confirmation Required',
          modal        = Options.modal ?? false,
-         theme        = { window = { bkgd = gui.themes[gui.theme].page.bkgd } },
+         themeName    = Options.themeName,
+         theme        = table.merge({ window = { bkgd = base_theme.page.bkgd } }, Options.theme, true, true),
          events = {
             close = function()
                cancel()
@@ -245,28 +252,34 @@ gui.dialog.message = function(Options:table!)
       end)
       theme = &window.theme
 
-      -- The image beside the message.  An image that fails to load is logged and omitted.
+      -- The image beside the message.  An image that fails to load is logged and omitted, and image=false omits it
+      -- deliberately.  Without an image, the message column starts at the left margin.
 
-      image = Options.image ?? ICONS[&type] ?? 'items/question'
-      try
-         icon = gui.createIcon(&viewport.scene, image, ICON_SIZE, theme.window.icon)
-         &image = &viewport.new('VectorViewport', {
-            x      = &window.margins.left - icon.margin,
-            y      = 0, -- See arrange()
-            width  = icon.size + (icon.margin * 2),
-            height = icon.size + (icon.margin * 2),
-            fill   = icon.fill
-         })
-         &imageMargin = icon.margin
-      except ex
-         msg(f'Failed to load dialog image "{image}": {ex.message}')
+      image = (Options.image is false) ? nil : (Options.image ?? ICONS[&type] ?? 'items/question')
+      if image then
+         try
+            icon = gui.createIcon(&viewport.scene, image, ICON_SIZE, theme.window.icon)
+            &image = &viewport.new('VectorViewport', {
+               x      = &window.margins.left - icon.margin,
+               y      = 0, -- See arrange()
+               width  = icon.size + (icon.margin * 2),
+               height = icon.size + (icon.margin * 2),
+               fill   = icon.fill
+            })
+            &imageMargin = icon.margin
+         except ex
+            msg(f'Failed to load dialog image "{image}": {ex.message}')
+         end
       end
+
+      image_size = &image ? ICON_SIZE : 0
+      column_x = &window.margins.left + (&image ? ICON_SIZE + ICON_GAP : 0)
 
       &messageText = &viewport.new('VectorText',
          table.merge({
             string   = &message,
             wrapMode = VTW_ANYWHERE, -- Long words such as file paths are broken to fit the column
-            x        = &window.margins.left + ICON_SIZE + ICON_GAP,
+            x        = column_x,
             y        = 0,
             textFlags = VTXF_SELECTABLE
          }, theme.window.text)
@@ -274,7 +287,7 @@ gui.dialog.message = function(Options:table!)
 
       em = tonumber(&messageText.fontSize) -- The font size reads back in pixels
 
-      extra_width <const> = &window.margins.left + ICON_SIZE + ICON_GAP + &window.margins.right
+      extra_width <const> = column_x + &window.margins.right
       text_width = MIN_WIDTH - extra_width
       max_width <const> = MAX_WIDTH - extra_width
 
@@ -299,7 +312,7 @@ gui.dialog.message = function(Options:table!)
       if Options.userInput then
          &input = gui.input({
             target    = &viewport,
-            x         = &window.margins.left + ICON_SIZE + ICON_GAP,
+            x         = column_x,
             width     = text_width,
             text      = (Options.userInput is <str>) ? Options.userInput : '',
             secret    = Options.secret,
@@ -315,7 +328,7 @@ gui.dialog.message = function(Options:table!)
       if Options.checkboxLabel then
          &checkbox = gui.toggle({
             target = &viewport,
-            x      = &window.margins.left + ICON_SIZE + ICON_GAP,
+            x      = column_x,
             label  = Options.checkboxLabel,
             value  = Options.checkboxState ? 1 : 0
          })
@@ -327,7 +340,7 @@ gui.dialog.message = function(Options:table!)
       if Options.progress then
          &progress = gui.slider({
             target   = &viewport,
-            x        = &window.margins.left + ICON_SIZE + ICON_GAP,
+            x        = column_x,
             width    = text_width,
             min      = 0,
             max      = 1,
@@ -343,7 +356,7 @@ gui.dialog.message = function(Options:table!)
 
       if Options.content then
          &contentViewport = &viewport.new('VectorViewport', {
-            x = &window.margins.left + ICON_SIZE + ICON_GAP, y = 0, width = text_width, height = 1
+            x = column_x, y = 0, width = text_width, height = 1
          })
          content_height = Options.content(&&, &contentViewport, text_width) ?? 0
          &contentViewport.height = math.max(1, content_height)

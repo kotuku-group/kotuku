@@ -22,7 +22,8 @@
 
 rxPixel <const> = <{ r[[^(\d+(?:\.\d+)?)([a-zA-Z]*)$]] }>
 
-glStyleConfig = 'user:config/style.json'
+glStyleOverride = arg('guiStyle') -- Alternative style configuration file, for tests and previews; read only
+glStyleConfig = glStyleOverride ?? 'user:config/style.json'
 glPainter = struct<VectorPainter>
 
 gui.fontList = thunk():table
@@ -55,7 +56,7 @@ gui.fontList = thunk():table
 
       if entry.Alias then font.alias = entry.Alias end
 
-      font.styles = entry.Styles ? entry.Styles.split(',') : array<str> { 'Regular' }
+      font.styles = entry.Styles ? entry.Styles.split(',') : array<str> { 'Medium' }
 
       if entry.Points then
          sizes = array<int>
@@ -449,7 +450,7 @@ gui.getFontHeight = function(Font:table, Cache:bool):<num,num,num>
          -- Match VectorText's fixed 96 DPI conversion for font-size units.
          if not (size is <num>) then size = gui.pixel(tostring(size), 96) end
 
-         err, handle = check mVec.GetFontHandle(Font.face, Font.fontStyle ?? Font.style ?? 'Regular', 0, size)
+         err, handle = check mVec.GetFontHandle(Font.face, Font.fontStyle ?? Font.style ?? 'Medium', 0, size)
          metrics = struct<FontMetrics>
          check mVec.GetFontMetrics(handle, metrics)
 
@@ -1740,6 +1741,151 @@ function modifyAlpha(Colour:str!, Alpha:num!):str
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Unscaled style defaults.  The configuration file's interface and sizing sections override these, and
+-- gui.styleDefaults() returns copies of them.  Sizing values are pixels at 96 DPI.
+
+glStyleDefaults <const> = {
+   interface = {
+      fontSize  = 10.5,      -- Default font-size for everything (pt)
+      iconTheme = 'Default', -- Named folder to load the icons from
+      flashTime = 1.5,     -- Default duration of flashed messages, in seconds
+      tabPing   = 0.3,     -- Seconds that the tab ping stays visible in a window; 0 disables it
+      pingSize  = 30,
+      tabPingDistance = 40 -- Tabs within this distance of the last ping don't ping (px at 96 DPI); 0 always pings
+   },
+   sizing = {
+      window = {
+         gap = 12
+      },
+      widget = {
+         width     = 160, -- Default width for common widgets (px at 96 DPI)
+         gap       = 6,   -- Recommended gap between widgets (px at 96 DPI)
+         margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
+         labelGap  = 12,  -- Spacing between labels and the widget parts
+         edgeWidth = 1.5, -- Default stroke-width for widget edges (px at 96 DPI)
+         edgeRound = 5    -- Default corner radius for widget edges (px at 96 DPI)
+      }
+   }
+}
+
+-- The value types accepted in each section of the style configuration.  'str' is a non-empty string, 'num' a number
+-- of at least zero, 'size' a number greater than zero and 'fontSize' a size or a percentage string such as '120%'.
+
+glStyleSchema <const> = {
+   style     = { theme = 'str', palette = 'str', paletteTheme = 'str', fill = 'str', effects = 'str' },
+   interface = {
+      fontSize = 'size', dpi = 'size', iconTheme = 'str', flashTime = 'num', tabPing = 'num', pingSize = 'size',
+      tabPingDistance = 'num'
+   },
+   window = { gap = 'num' },
+   widget = { width = 'size', gap = 'num', margin = 'num', labelGap = 'num', edgeWidth = 'num', edgeRound = 'num' },
+   font   = { face = 'str', size = 'fontSize', style = 'str' }
+}
+
+function validStyleValue(Kind:str!, Value:any):bool
+   if Kind is 'str' then
+      return Value is <str> and #Value > 0
+   elseif Kind is 'num' then
+      return Value is <num> and Value >= 0
+   elseif Kind is 'size' then
+      return Value is <num> and Value > 0
+   elseif Kind is 'fontSize' then
+      if Value is <str> then return r[[^\d+(?:\.\d+)?%$]].test(Value) end
+      return Value is <num> and Value > 0
+   end
+   return false
+end
+
+-- Returns the valid entries of a configuration section.  Invalid values are reported and dropped, so that their
+-- defaults apply.  Unknown keys are ignored silently, as they may belong to other tools.
+
+function styleSection(Section:any, Schema:table!, Path:str!):table
+   result = { }
+   if Section is nil then return result end
+   if not (Section is <table>) then
+      print(f'Style configuration: "{Path}" is not an object and has been ignored.')
+      return result
+   end
+
+   for key, value in Section do
+      kind = Schema[key]
+      if not kind then
+         msg(f'Style configuration: ignoring unknown key "{Path}.{key}"')
+      elseif validStyleValue(kind, value) then
+         result[key] = value
+      else
+         print(f'Style configuration: invalid value for "{Path}.{key}" has been ignored.')
+      end
+   end
+   return result
+end
+
+-- Reads and validates the style configuration.  This runs before any of the interface, sizing or font thunks can
+-- resolve, because widget packages capture those values when they are imported.  A missing user file is created
+-- with default content; a file named by the guiStyle script key is only ever read.
+
+function loadStyle():table
+   style = { style = { }, interface = { }, sizing = { window = { }, widget = { } }, fonts = { } }
+
+   if mSys.AnalysePath(glStyleConfig) != ERR_Okay then
+      if glStyleOverride then
+         print(f'Style configuration {glStyleConfig} is unavailable; using defaults.')
+      else
+         fl <close> = obj.new('file', { path=glStyleConfig, flags=FL_WRITE|FL_NEW })
+         fl.acWrite(json.encode({
+               style = {
+                  theme = 'light',
+                  palette = 'ocean',
+                  paletteTheme = 'light'
+               },
+               interface = {
+               },
+               sizing = {
+               }
+            })
+         )
+      end
+      return style
+   end
+
+   cfg:any
+   try
+      cfg = json.decode(io.readAll(glStyleConfig))
+   except ex
+      print(f'Error in style configuration file {glStyleConfig}; delete to reset it')
+      print(f'  Detail: {ex.message}')
+      return style
+   end
+
+   if not (cfg is <table>) then
+      print(f'Style configuration file {glStyleConfig} does not hold an object; delete to reset it')
+      return style
+   end
+
+   style.style     = styleSection(cfg.style, glStyleSchema.style, 'style')
+   style.interface = styleSection(cfg.interface, glStyleSchema.interface, 'interface')
+
+   if cfg.sizing is <table> then
+      style.sizing.window = styleSection(cfg.sizing.window, glStyleSchema.window, 'sizing.window')
+      style.sizing.widget = styleSection(cfg.sizing.widget, glStyleSchema.widget, 'sizing.widget')
+   elseif cfg.sizing != nil then
+      print('Style configuration: "sizing" is not an object and has been ignored.')
+   end
+
+   if cfg.fonts is <table> then
+      for role, font in cfg.fonts do
+         style.fonts[role] = styleSection(font, glStyleSchema.font, f'fonts.{role}')
+      end
+   elseif cfg.fonts != nil then
+      print('Style configuration: "fonts" is not an object and has been ignored.')
+   end
+
+   return style
+end
+
+glStyle = loadStyle()
+
+----------------------------------------------------------------------------------------------------------------------
 -- Returns the average pixel density of the main display, or 96 if it is unavailable.
 
 thunk displayDensity():num
@@ -1760,51 +1906,44 @@ thunk scaledPixels(Values:table!, Exact:table):table
    return Values
 end
 
-gui.interface = {
-   dpi       = displayDensity(), -- Display pixels per inch, resolved on first read
-   fontSize  = 12,               -- Default font-size for everything (pt)
-   iconTheme = 'Default',        -- Named folder to load the icons from
-   flashTime = 1.5               -- Default duration of flashed messages, in seconds
+-- The configured dpi replaces the detected display density, acting as a scale override for the interface.
+
+gui.interface = table.merge(glStyleDefaults.interface, glStyle.interface)
+if not glStyle.interface.dpi then gui.interface.dpi = displayDensity() end -- Resolved on first read
+
+gui.sizing = { -- Universal sizing information, scaled to the interface density on first read
+   window = scaledPixels(table.merge(glStyleDefaults.sizing.window, glStyle.sizing.window)),
+   widget = scaledPixels(table.merge(glStyleDefaults.sizing.widget, glStyle.sizing.widget),
+      { edgeWidth = true, edgeRound = true })
 }
 
-gui.sizing = { -- Universal sizing information
-   window = scaledPixels({
-      gap = 12
-   }),
-   widget = scaledPixels({
-      width     = 160, -- Default width for common widgets (px at 96 DPI)
-      gap       = 6,   -- Recommended gap between widgets (px at 96 DPI)
-      margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
-      labelGap  = 12,  -- Spacing between labels and the widget parts
-      edgeWidth = 1.5, -- Default stroke-width for widget edges (px at 96 DPI)
-      edgeRound = 5    -- Default corner radius for widget edges (px at 96 DPI)
-   }, { edgeWidth = true, edgeRound = true })
-}
-
--- Converts percentage font sizes to points, scales all point sizes to the interface density and sets the default
--- style.  A point is always 1/72 inch, but VectorText converts points to pixels at a fixed 96 DPI.  Multiplying by
--- dpi/96 compensates, so that the rendered pixel size is pt * dpi / 72.  The stored sizes are therefore 96 DPI
--- equivalents and only match the true point size when the interface density is 96.
-
-thunk scaledFonts(Fonts:table!):table
-   rxFontSize <const> = r[[^(-?\d+)%$]]
-   scale = gui.interface.dpi / 96
-   for font in values(Fonts) do
-      if font.size is <str> and rxFontSize.test(font.size) then
-         pct = tonumber(rxFontSize.extract(font.size))
-         font.size = gui.interface.fontSize * (pct / 100)
-      end
-
-      if font.size is <num> then font.size = math.round(font.size * scale) end
-
-      font.style ?= 'medium'
-   end
-   return Fonts
-end
+local glFontDefaults:table -- The unscaled font roles, assigned by fonts_data
 
    import './palettes_data'
    import './fills_data'
    import './fonts_data'
+
+@Doc(text=[[
+-FUNCTION-
+styleDefaults: Returns the library's default style settings, before scaling and configuration.
+
+Returns a fresh copy of the defaults for the `interface`, `sizing` and `fonts` sections of the style configuration.
+Sizing values are pixels at 96 DPI and font sizes are points or percentages of `interface.fontSize`, as they are
+written in the configuration file.  `interface.dpi` is absent because the display density is detected by default.
+
+Use the result to reset settings, or to write only the values that differ from the defaults.  Changing the copy has
+no effect on the library.
+
+-RESULTS-
+table: A table with `interface`, `sizing` (`window`, `widget`) and `fonts` sections.
+]])
+gui.styleDefaults = function():table
+   return {
+      interface = table.clone(glStyleDefaults.interface),
+      sizing    = table.clone(glStyleDefaults.sizing),
+      fonts     = table.clone(glFontDefaults)
+   }
+end
 
 -- Returns a deterministic random number generator for textures, so that a paint effect always draws the same texture
 -- for the same seed.  Each call yields a value in the range [0, 1).  This is the Park-Miller generator, whose products
@@ -2349,72 +2488,57 @@ gui.effects = {
    }
 }
 
+-- Returns Spec if it is a valid fill or effects specification, otherwise reports it and returns nil.
+
+function validIconSpec(Spec:str, Path:str!):str
+   if not Spec then return nil end
+   try
+      gui.parseFill(Spec)
+      return Spec
+   except ex
+      print(f'Style configuration: invalid spec for "{Path}" has been ignored: {ex.message}')
+   end
+   return nil
+end
+
    if not gui.theme then
       msg('No theme set, loading default from configuration file.')
-      gui.theme        = 'light' -- Default
+      gui.theme        = glStyle.style.theme ?? 'light'
       gui.paletteTheme = 'light' -- 'light' or 'dark' only
       gui.palette      = gui.palettes.ocean
-      gui.defaultFill  = nil -- User can override the theme's fill effect
-      gui.defaultFX    = nil -- Post-effect
+      gui.defaultFill  = validIconSpec(glStyle.style.fill, 'style.fill') -- User can override the theme's fill effect
+      gui.defaultFX    = validIconSpec(glStyle.style.effects, 'style.effects') -- Post-effect
 
-      if mSys.AnalysePath(glStyleConfig) is ERR_Okay then
-         try
-            local cfg = json.decode(io.readAll(glStyleConfig))
-
-            if cfg.style.fill?? then gui.defaultFill = cfg.style.fill end
-            if cfg.style.effects?? then gui.defaultFX = cfg.style.effects end
-
-            gui.theme = cfg.style.theme
-            if gui.palettes[cfg.style.palette] then
-               gui.paletteTheme = gui.palettes?[cfg.style.palette]?[cfg.style.paletteTheme] ? cfg.style.paletteTheme : 'light'
-               gui.palette      = gui.palettes[cfg.style.palette]
-            end
-         except ex
-            print(f'Error in style configuration file {glStyleConfig}; delete to reset it')
-            print(f'  Detail: {ex.message}')
-         end
-      else
-         fl <close> = obj.new('file', { path=glStyleConfig, flags=FL_WRITE|FL_NEW })
-         fl.acWrite(json.encode({
-               style = {
-                  theme = 'light',
-                  palette = 'ocean',
-                  paletteTheme = 'light'
-               },
-               interface = {
-               },
-               sizing = {
-               }
-            })
-         )
+      local palette_name = glStyle.style.palette
+      local palette_theme = glStyle.style.paletteTheme
+      if gui.palettes[palette_name] then
+         gui.paletteTheme = gui.palettes[palette_name][palette_theme] ? palette_theme : 'light'
+         gui.palette      = gui.palettes[palette_name]
+      elseif palette_name then
+         print(f'Style configuration: unknown palette "{palette_name}" has been ignored.')
       end
    end
 
--- Links theme sections that are shared between widgets.
+-- Returns the icon theme for a theme section: the configured fill, or the section's Default fill, followed by any
+-- effects.
 
-function linkThemes(Themes:table!):table
-   Themes.dark.menubar.menu = Themes.dark.menu
-   Themes.light.menubar.menu = Themes.light.menu
-   return Themes
+function iconTheme(Default:str!, Fill:any, Effects:any):str
+   spec = Fill ?? Default
+   if Effects?? then return f'{spec} {Effects}' end
+   return spec
 end
 
-function iconTheme(Fill:str!):str
-   if gui.defaultFX then
-      return (gui.defaultFill or Fill) .. gui.defaultFX
-   else
-      return (gui.defaultFill or Fill)
-   end
-end
+-- Themes work by utilising table.merge() to combine presentation values like fill, stroke and strokeWidth
+-- with vector object definitions.  The majority of the time, the target will be a VectorRectangle or VectorText
+-- object.  Gradient and pattern fills are also permitted via the use of 'url()'.
+--
+-- Palette is the scheme's palette variant, Edge holds the scaled edge width and corner radius, and Icon(Default)
+-- returns the icon theme for a section.
 
--- The theme tables are deferred until first access because they read gui.fonts, which depends on the display density.
-
-gui.themes = <table{ linkThemes({
-   -- Themes work by utilising table.merge() to combine presentation values like fill, stroke and strokeWidth
-   -- with vector object definitions.  The majority of the time, the target will be a VectorRectangle or VectorText
-   -- object.  Gradient and pattern fills are also permitted via the use of 'url()'.
-   dark = {
+function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
+   return {
       scheme  = 'dark', -- Colour scheme ('light' or 'dark') for code that adapts to the theme's brightness
-      palette = gui.palette.dark,
+      palette = Palette,
       init = function(Scene:obj!)
          if Scene.hostScene then return end
 
@@ -2459,249 +2583,310 @@ gui.themes = <table{ linkThemes({
       end,
       page = {
          bkgd = { -- Background for hosting text & paper-based layouts
-            fill = gui.palette.dark.bkgd
+            fill = Palette.bkgd
          },
          border = { -- Standard stroke for page borders
-            stroke      = 'none', --gui.palette.dark.edge,
+            stroke      = 'none', --Palette.edge,
             strokeWidth = 2
          }
          borderFocus = {  -- Stroke to use when 'bkgd' has the user's focus
-            stroke      = gui.palette.dark.contrast,
+            stroke      = Palette.contrast,
             strokeWidth = 2
          },
-         text = { fill = gui.palette.dark.text, face = gui.fonts.page.face, fontSize = string.format('%.2fpt', gui.fonts.page.size), fontStyle = gui.fonts.page.style }, -- Default colour for text drawn over 'bkgd'
+         text = { fill = Palette.text, face = gui.fonts.page.face, fontSize = string.format('%.2fpt', gui.fonts.page.size), fontStyle = gui.fonts.page.style }, -- Default colour for text drawn over 'bkgd'
          -- The following are for text colour changes only; face is already defined by text {}
-         textHighlight     = gui.palette.dark.altText,  -- Colour for 'text' during user hover
-         textHighlightBkgd = gui.palette.dark.contrast, -- Background fill for 'text' during user hover
-         textSelect        = gui.palette.dark.altText,  -- Colour for 'text' when selected
-         textSelectBkgd    = gui.palette.dark.prime,    -- Background fill for 'text' when selected
-         icon              = iconTheme('fill(pearl)'), -- Default icon theme for icons drawn over 'bkgd'
-         iconHighlight     = iconTheme('fill(pearl)')  -- Recommended icon theme when highlighted or selected
+         textHighlight     = Palette.altText,  -- Colour for 'text' during user hover
+         textHighlightBkgd = Palette.contrast, -- Background fill for 'text' during user hover
+         textSelect        = Palette.altText,  -- Colour for 'text' when selected
+         textSelectBkgd    = Palette.prime,    -- Background fill for 'text' when selected
+         icon              = Icon('fill(pearl)'), -- Default icon theme for icons drawn over 'bkgd'
+         iconHighlight     = Icon('fill(pearl)')  -- Recommended icon theme when highlighted or selected
       },
       widget = { -- Non-input widgets only (exc. checkbox, combobox, etc.)
-         text        = { fill = gui.palette.dark.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
-         bkgd        = { fill = gui.palette.dark.prime, opacity = 1 },
-         stroke      = { stroke = gui.palette.dark.edge },
-         strokeFocus = { stroke = gui.palette.dark.contrast },
+         text        = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
+         bkgd        = { fill = Palette.prime, opacity = 1 },
+         stroke      = { stroke = Palette.edge },
+         strokeFocus = { stroke = Palette.contrast },
          disabled    = { opacity = 0.5 }
       },
       button = {
-         bkgd      = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
-         highlight = { fill = gui.palette.dark.contrast },
-         focus     = { stroke = gui.palette.dark.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
-         text      = { fill = gui.palette.dark.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
+         bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         highlight = { fill = Palette.contrast },
+         focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+         text      = { fill = Palette.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = gui.palette.dark.prime, stroke = gui.palette.dark.prime, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
-            highlight = { fill = gui.palette.dark.contrast, stroke = gui.palette.dark.edge },
-            focus     = { stroke = gui.palette.dark.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
-            text      = { fill = gui.palette.dark.altText }
+            bkgd      = { fill = Palette.prime, stroke = Palette.prime, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+            highlight = { fill = Palette.contrast, stroke = Palette.edge },
+            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+            text      = { fill = Palette.altText }
          }
       },
       dropdown = { -- Exclusive to combobox
-         bkgd          = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth=gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
-         highlight     = { fill = gui.palette.dark.contrast },
-         textHighlight = { fill = gui.palette.dark.altText, fontStyle = gui.fonts.input.style },
-         icon          = iconTheme('fill(pearl)'),
-         iconHighlight = iconTheme('fill(pearl)')
+         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, roundX = Edge.round, roundY = Edge.round },
+         highlight     = { fill = Palette.contrast },
+         textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
+         icon          = Icon('fill(pearl)'),
+         iconHighlight = Icon('fill(pearl)')
       },
       icon = {
-         text = { fill = gui.palette.dark.text, face = gui.fonts.icon.face, fontSize = string.format('%.2fpt', gui.fonts.icon.size), fontStyle = gui.fonts.icon.style },
-         effect = iconTheme('fill(pearl)')
+         text = { fill = Palette.text, face = gui.fonts.icon.face, fontSize = string.format('%.2fpt', gui.fonts.icon.size), fontStyle = gui.fonts.icon.style },
+         effect = Icon('fill(pearl)')
       },
       input = { -- Used by checkbox, input, combobox
-         bkgd  = { fill = gui.palette.dark.bkgd, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
-         focus = { stroke = gui.palette.dark.contrast },
-         text  = { fill = gui.palette.dark.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         focus = { stroke = Palette.contrast },
+         text  = { fill = Palette.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
          disabled = { opacity = 0.5 }
       },
       menubar = {
-         bkgd      = { fill = gui.palette.dark.shade },
-         text      = { fill = gui.palette.dark.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
-         highlight = { fill = gui.palette.dark.contrast }
-         focus     = { fill = gui.palette.dark.contrast }
+         bkgd      = { fill = Palette.shade },
+         text      = { fill = Palette.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
+         highlight = { fill = Palette.contrast }
+         focus     = { fill = Palette.contrast }
          -- 'menu' item reference is inserted post-construction
       },
       menu = {
-         bkgd      = { fill = gui.palette.dark.bkgd }, -- VectorRectangle
-         border    = { stroke = gui.palette.dark.inverse, opacity = 0.5 }, -- VectorRectangle
-         highlight = { fill = gui.palette.dark.contrast }, -- VectorRectangle
-         text      = { fill = gui.palette.dark.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style }, -- VectorText
-         icon      = iconTheme('fill(pearl)')
+         bkgd      = { fill = Palette.bkgd }, -- VectorRectangle
+         border    = { stroke = Palette.inverse, opacity = 0.5 }, -- VectorRectangle
+         highlight = { fill = Palette.contrast }, -- VectorRectangle
+         text      = { fill = Palette.text, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style }, -- VectorText
+         icon      = Icon('fill(pearl)')
       },
       panel = {
-         bkgd          = { fill = gui.palette.dark.surround, stroke = gui.palette.dark.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
-         header        = { fill = gui.palette.dark.surround },
-         title         = { fill = gui.palette.dark.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'semi bold' },
-         meta          = { fill = gui.palette.dark.text, opacity = 0.7, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
-         metaHighlight = { fill = gui.palette.dark.contrast }, -- Hover style of a clickable meta
-         divider       = { fill = gui.palette.dark.edge },
+         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round },
+         header        = { fill = Palette.surround },
+         title         = { fill = Palette.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'semi bold' },
+         meta          = { fill = Palette.text, opacity = 0.7, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
+         metaHighlight = { fill = Palette.contrast }, -- Hover style of a clickable meta
+         divider       = { fill = Palette.edge },
          headerPad     = gui.sizing.widget.margin * 2, -- Inset of the header content from the panel edges
          metaGap       = gui.sizing.widget.labelGap    -- Minimum space between the title and the meta
       },
       slider = {
-         bkgd          = { fill = gui.palette.dark.mid, stroke = gui.palette.dark.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
-         fore          = { fill = gui.palette.dark.handle, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
-         foreHighlight = { fill = gui.palette.dark.contrast, opacity = 1 },
-         foreFocus     = { stroke = gui.palette.dark.contrast, strokeWidth = gui.sizing.widget.edgeWidth },
-         text          = { fill = gui.palette.dark.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
-         tick          = { stroke = gui.palette.dark.text, strokeWidth = 1, opacity = 0.6 },
+         bkgd          = { fill = Palette.mid, stroke = Palette.edge, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
+         fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         foreHighlight = { fill = Palette.contrast, opacity = 1 },
+         foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
+         text          = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
+         tick          = { stroke = Palette.text, strokeWidth = 1, opacity = 0.6 },
          disabled      = { opacity = 0.5 }
       },
       scrollbar_v = {
-         bkgd          = { fill = gui.palette.dark.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = f'{gui.palette.dark.handle};url(#dark_vslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
-         foreHighlight = { fill = f'{gui.palette.dark.contrast};url(#dark_vslider)', opacity = 1 },
+         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = 2 },
+         fore          = { fill = f'{Palette.handle};url(#dark_vslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         foreHighlight = { fill = f'{Palette.contrast};url(#dark_vslider)', opacity = 1 },
          thickness     = gui.rpixel('18dp')
       },
       scrollbar_h = {
-         bkgd          = { fill = gui.palette.dark.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = f'{gui.palette.dark.handle};url(#dark_hslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
-         foreHighlight = { fill = f'{gui.palette.dark.contrast};url(#dark_hslider)', opacity = 1 },
+         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = 2 },
+         fore          = { fill = f'{Palette.handle};url(#dark_hslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         foreHighlight = { fill = f'{Palette.contrast};url(#dark_hslider)', opacity = 1 },
          thickness     = gui.rpixel('18dp')
       },
       toolbar = {
-         bkgd          = { fill = gui.palette.dark.bkgd },
-         groupBorder   = { stroke = gui.palette.dark.edge, strokeWidth = gui.pixel('1.5pt') },
-         highlight     = { fill = gui.palette.dark.contrast },
-         iconSize      = gui.rpixel('16pt'),
-         icon          = iconTheme('fill(pearl)'),
-         iconHighlight = iconTheme('fill(pearl)')
+         bkgd          = { fill = Palette.bkgd },
+         groupBorder   = { stroke = Palette.edge, strokeWidth = gui.pixel('1.5pt') },
+         highlight     = { fill = Palette.contrast },
+         icon          = Icon('fill(pearl)'),
+         iconHighlight = Icon('fill(pearl)')
       },
       tooltip = {
-         bkgd = { fill = gui.palette.dark.bkgd, roundX = gui.pixel('4pt'), roundY = gui.pixel('4pt'), strokeWidth = 2, stroke = gui.palette.dark.edge },
-         text = { fill = gui.palette.dark.text }
+         bkgd = { fill = Palette.bkgd, roundX = gui.pixel('4pt'), roundY = gui.pixel('4pt'), strokeWidth = 2, stroke = Palette.edge },
+         text = { fill = Palette.text }
       },
       window = {
-         bkgd   = { fill = gui.palette.dark.neutral },
-         text   = { fill = gui.palette.dark.text, face = gui.fonts.window.face, fontSize =  string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
-         stroke = { stroke = modifyAlpha(gui.palette.dark.text, 0.25), strokeWidth = 2 }, -- Stroking of direct lines/paths (not widget edges)
-         icon   = iconTheme('fill(pearl)')
-      },
-      desktop = {
-         bkgd = 'rgb(160 160 160)'
-      }
-   },
-   light = {
-      scheme  = 'light',
-      palette = gui.palette.light,
-      page = {
-         bkgd = {
-            fill = gui.palette.light.bkgd
-         },
-         border = {
-            stroke      = gui.palette.light.mid,
-            strokeWidth = gui.pixel('1.5dp')
-         },
-         borderFocus = {
-            stroke = gui.palette.light.contrast,
-            strokeWidth = 2
-         },
-         text = { fill = gui.palette.light.text, face = gui.fonts.page.face, fontSize = string.format('%.2fpt', gui.fonts.page.size), fontStyle = gui.fonts.page.style },
-         textHighlight     = gui.palette.light.altText,
-         textHighlightBkgd = gui.palette.light.contrast,
-         textSelect        = gui.palette.light.altText,
-         textSelectBkgd    = gui.palette.light.prime,
-         icon              = iconTheme('fill(carbon)'),
-         iconHighlight     = iconTheme('fill(pearl)')
-      },
-      widget = {
-         text        = { fill = gui.palette.light.altText, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
-         bkgd        = { fill = gui.palette.light.prime, opacity = 1 },
-         stroke      = { stroke = gui.palette.light.edge },
-         strokeFocus = { stroke = gui.palette.light.contrast },
-         disabled    = { opacity = 0.5 }
-      },
-      button = {
-         bkgd      = { fill = gui.palette.light.inverse, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
-         highlight = { fill = gui.palette.light.contrast },
-         focus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
-         text      = { fill = gui.palette.light.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
-         disabled  = { },
-         primary   = { -- Overrides for buttons created with the primary option
-            bkgd      = { fill = gui.palette.light.prime, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
-            highlight = { fill = gui.palette.light.contrast, stroke = gui.palette.light.edge },
-            focus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth * 1.5 },
-            text      = { fill = gui.palette.light.altText }
-         }
-      },
-      dropdown = {
-         bkgd          = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth=gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
-         border        = { stroke = gui.palette.light.inverse },
-         highlight     = { fill = gui.palette.light.contrast },
-         textHighlight = { fill = gui.palette.light.altText, fontStyle = gui.fonts.input.style },
-         icon          = iconTheme('fill(carbon)'),
-         iconHighlight = iconTheme('fill(pearl)')
-      },
-      icon = {
-         text = { fill = gui.palette.light.altText, face = gui.fonts.icon.face, fontSize = string.format('%.2fpt', gui.fonts.icon.size), fontStyle = gui.fonts.icon.style },
-         effect = iconTheme('fill(carbon)')
-      },
-      input = {
-         bkgd  = { fill = gui.palette.light.bkgd, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, opacity = 1 },
-         focus = { stroke = gui.palette.light.contrast },
-         text  = { fill = gui.palette.light.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
-         disabled = { opacity = 0.5 }
-      },
-      menubar = {
-         bkgd      = { fill = gui.palette.light.inverse, },
-         text      = { fill = gui.palette.light.altText, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
-         highlight = { fill = gui.palette.light.contrast }
-         focus     = { fill = gui.palette.light.contrast }
-         -- 'menu' item reference is inserted post-construction
-      },
-      menu = {
-         bkgd      = { fill = gui.palette.light.inverse },
-         border    = { stroke  = gui.palette.light.neutral, opacity = 0.5 },
-         highlight = { fill = gui.palette.light.contrast },
-         text      = { fill = gui.palette.light.altText, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
-         icon      = iconTheme('fill(pearl)')
-      },
-      panel = {
-         bkgd          = { fill = gui.palette.light.surround, stroke = gui.palette.light.edge, strokeWidth = gui.sizing.widget.edgeWidth, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound },
-         header        = { fill = gui.palette.light.surround },
-         title         = { fill = gui.palette.light.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'bold' },
-         meta          = { fill = gui.palette.light.text, opacity = 0.9, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
-         metaHighlight = { fill = gui.palette.light.contrast },
-         divider       = { fill = gui.palette.light.edge },
-         headerPad     = gui.fonts.small.size,
-         metaGap       = gui.sizing.widget.labelGap
-      },
-      slider = {
-         bkgd          = { fill = gui.palette.light.mid, stroke = gui.palette.light.edge, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth, opacity = 1 },
-         fore          = { fill = gui.palette.light.handle, stroke = 'none', opacity = 0.75, roundX = gui.sizing.widget.edgeRound, roundY = gui.sizing.widget.edgeRound, strokeWidth = gui.sizing.widget.edgeWidth },
-         foreHighlight = { fill = gui.palette.light.contrast, opacity = 1 },
-         foreFocus     = { stroke = gui.palette.light.contrast, strokeWidth = gui.sizing.widget.edgeWidth },
-         tick          = { stroke = gui.palette.light.text, strokeWidth = 1, opacity = 0.6 },
-         text          = { fill = gui.palette.light.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
-         disabled      = { opacity = 0.5 }
-      },
-      scrollbar = {
-         bkgd          = { fill = gui.palette.light.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = gui.palette.light.handle, stroke = 'none', opacity = 0.75, strokeWidth = 2 },
-         foreHighlight = { fill = gui.palette.light.contrast, opacity = 1 },
-         thickness     = gui.rpixel('18dp')
-      },
-      toolbar = {
-         bkgd          = { fill = gui.palette.light.surround },
-         groupBorder   = { stroke = gui.palette.light.inverse, strokeWidth = gui.pixel('1.5pt') },
-         highlight     = { fill = gui.palette.light.contrast },
-         iconSize      = gui.rpixel('16pt'),
-         icon          = iconTheme('fill(carbon)'),
-         iconHighlight = iconTheme('fill(pearl)')
-      },
-      tooltip = {
-         bkgd = { fill = gui.palette.light.bkgd, roundX = 4, roundY = 4, strokeWidth = 2, stroke = gui.palette.light.edge },
-         text = { fill = gui.palette.light.text }
-      },
-      window = {
-         bkgd   = { fill = gui.palette.light.neutral },
-         text   = { fill = gui.palette.light.text, face = gui.fonts.window.face, fontSize = string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
-         stroke = { stroke = modifyAlpha(gui.palette.light.inverse, 0.5), strokeWidth = 2 },
-         icon   = iconTheme('fill(carbon)')
+         bkgd   = { fill = Palette.neutral },
+         text   = { fill = Palette.text, face = gui.fonts.window.face, fontSize =  string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
+         stroke = { stroke = modifyAlpha(Palette.text, 0.25), strokeWidth = 2 }, -- Stroking of direct lines/paths (not widget edges)
+         icon   = Icon('fill(pearl)'),
+         tabPing  = { stroke = 'rgb(220 30 30 / 0.85)', strokeWidth = gui.rpixel('2dp') } -- Tab ping ring
       },
       desktop = {
          bkgd = 'rgb(160 160 160)'
       }
    }
-}) }>
+end
+
+function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
+   return {
+      scheme  = 'light',
+      palette = Palette,
+      page = {
+         bkgd = {
+            fill = Palette.bkgd
+         },
+         border = {
+            stroke      = Palette.mid,
+            strokeWidth = gui.pixel('1.5dp')
+         },
+         borderFocus = {
+            stroke = Palette.contrast,
+            strokeWidth = 2
+         },
+         text = { fill = Palette.text, face = gui.fonts.page.face, fontSize = string.format('%.2fpt', gui.fonts.page.size), fontStyle = gui.fonts.page.style },
+         textHighlight     = Palette.altText,
+         textHighlightBkgd = Palette.contrast,
+         textSelect        = Palette.altText,
+         textSelectBkgd    = Palette.prime,
+         icon              = Icon('fill(carbon)'),
+         iconHighlight     = Icon('fill(pearl)')
+      },
+      widget = {
+         text        = { fill = Palette.altText, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
+         bkgd        = { fill = Palette.prime, opacity = 1 },
+         stroke      = { stroke = Palette.edge },
+         strokeFocus = { stroke = Palette.contrast },
+         disabled    = { opacity = 0.5 }
+      },
+      button = {
+         bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         highlight = { fill = Palette.contrast },
+         focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+         text      = { fill = Palette.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
+         disabled  = { },
+         primary   = { -- Overrides for buttons created with the primary option
+            bkgd      = { fill = Palette.prime, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+            highlight = { fill = Palette.contrast, stroke = Palette.edge },
+            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+            text      = { fill = Palette.altText }
+         }
+      },
+      dropdown = {
+         bkgd          = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth=Edge.width, roundX = Edge.round, roundY = Edge.round },
+         border        = { stroke = Palette.inverse },
+         highlight     = { fill = Palette.contrast },
+         textHighlight = { fill = Palette.altText, fontStyle = gui.fonts.input.style },
+         icon          = Icon('fill(carbon)'),
+         iconHighlight = Icon('fill(pearl)')
+      },
+      icon = {
+         text = { fill = Palette.altText, face = gui.fonts.icon.face, fontSize = string.format('%.2fpt', gui.fonts.icon.size), fontStyle = gui.fonts.icon.style },
+         effect = Icon('fill(carbon)')
+      },
+      input = {
+         bkgd  = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
+         focus = { stroke = Palette.contrast },
+         text  = { fill = Palette.text, face = gui.fonts.input.face, fontSize = string.format('%.2fpt', gui.fonts.input.size), fontStyle = gui.fonts.input.style },
+         disabled = { opacity = 0.5 }
+      },
+      menubar = {
+         bkgd      = { fill = Palette.inverse, },
+         text      = { fill = Palette.altText, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
+         highlight = { fill = Palette.contrast }
+         focus     = { fill = Palette.contrast }
+         -- 'menu' item reference is inserted post-construction
+      },
+      menu = {
+         bkgd      = { fill = Palette.inverse },
+         border    = { stroke  = Palette.neutral, opacity = 0.5 },
+         highlight = { fill = Palette.contrast },
+         text      = { fill = Palette.altText, face = gui.fonts.menu.face, fontSize = string.format('%.2fpt', gui.fonts.menu.size), fontStyle = gui.fonts.menu.style },
+         icon      = Icon('fill(pearl)')
+      },
+      panel = {
+         bkgd          = { fill = Palette.surround, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round },
+         header        = { fill = Palette.surround },
+         title         = { fill = Palette.text, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = 'bold' },
+         meta          = { fill = Palette.text, opacity = 0.9, face = gui.fonts.small.face, fontSize = string.format('%.2fpt', gui.fonts.small.size), fontStyle = gui.fonts.small.style },
+         metaHighlight = { fill = Palette.contrast },
+         divider       = { fill = Palette.edge },
+         headerPad     = gui.fonts.small.size,
+         metaGap       = gui.sizing.widget.labelGap
+      },
+      slider = {
+         bkgd          = { fill = Palette.mid, stroke = Palette.edge, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width, opacity = 1 },
+         fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
+         foreHighlight = { fill = Palette.contrast, opacity = 1 },
+         foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
+         tick          = { stroke = Palette.text, strokeWidth = 1, opacity = 0.6 },
+         text          = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
+         disabled      = { opacity = 0.5 }
+      },
+      scrollbar = {
+         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = 2 },
+         fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         foreHighlight = { fill = Palette.contrast, opacity = 1 },
+         thickness     = gui.rpixel('18dp')
+      },
+      toolbar = {
+         bkgd          = { fill = Palette.surround },
+         groupBorder   = { stroke = Palette.inverse, strokeWidth = gui.pixel('1.5pt') },
+         highlight     = { fill = Palette.contrast },
+         icon          = Icon('fill(carbon)'),
+         iconHighlight = Icon('fill(pearl)')
+      },
+      tooltip = {
+         bkgd = { fill = Palette.bkgd, roundX = 4, roundY = 4, strokeWidth = 2, stroke = Palette.edge },
+         text = { fill = Palette.text }
+      },
+      window = {
+         bkgd   = { fill = Palette.neutral },
+         text   = { fill = Palette.text, face = gui.fonts.window.face, fontSize = string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
+         stroke = { stroke = modifyAlpha(Palette.inverse, 0.5), strokeWidth = 2 },
+         icon   = Icon('fill(carbon)'),
+         tabPing  = { stroke = Palette.prime, strokeWidth = gui.rpixel('3dp') } -- Tab ping ring
+      },
+      desktop = {
+         bkgd = 'rgb(160 160 160)'
+      }
+   }
+end
+
+@Doc(text=[[
+-FUNCTION-
+buildTheme: Builds a complete light or dark theme table from a palette, icon style and edge sizing.
+
+Creates a new theme table for the `light` or `dark` Scheme.  The result has the same structure as the entries of
+`gui.themes`, including the `scheme`, `palette` and `init` fields, and is suitable for `gui.window.setTheme()`.  Each
+call creates new tables, so the result can be modified without affecting other themes.
+
+Options that are not provided take the values that the gui library loaded from the user's style configuration:
+
+* `palette`: A palette table from `gui.palettes`, holding `light` and `dark` variants.  The variant that matches
+  Scheme is used.  Defaults to `gui.palette`.
+* `fill`: An icon fill spec, such as `'fill(cmap:flare)'`, that replaces the theme's default icon fills.  Defaults to
+  the configured fill.  Pass `false` to use the theme's own fills.
+* `effects`: An effects spec, such as `'emboss()'`, that is appended to every icon fill.  Defaults to the configured
+  effects.  Pass `false` for no effects.
+* `edgeWidth`, `edgeRound`: The stroke width and corner radius of widget edges, in pixels at 96 DPI.  They are scaled
+  to the interface density.  Default to `gui.sizing.widget.edgeWidth` and `edgeRound`.
+
+Fonts and all other sizing values come from the resolved `gui.fonts` and `gui.sizing` tables, because widget
+layout depends on them.
+
+-INPUT-
+Scheme: The colour scheme to build, either `light` or `dark`.
+Options: Optional table of overrides, as described above.
+
+-RESULTS-
+table: A new theme table.
+]])
+gui.buildTheme = function(Scheme:str!, Options:table):table
+   if Scheme != 'light' and Scheme != 'dark' then raise ERR_Args, f'Unsupported theme scheme "{Scheme}".' end
+
+   Options ?= { }
+   palette = (Options.palette ?? gui.palette)[Scheme]
+   if not (palette is <table>) then raise ERR_Args, f'The palette has no "{Scheme}" variant.' end
+
+   fill, effects = gui.defaultFill, gui.defaultFX
+   if Options.fill != nil then fill = Options.fill end
+   if Options.effects != nil then effects = Options.effects end
+
+   scale = gui.interface.dpi / 96
+   edge = { width = gui.sizing.widget.edgeWidth, round = gui.sizing.widget.edgeRound }
+   if Options.edgeWidth != nil then edge.width = Options.edgeWidth * scale end
+   if Options.edgeRound != nil then edge.round = Options.edgeRound * scale end
+
+   function icon(Default:str!):str
+      return iconTheme(Default, fill, effects)
+   end
+
+   theme = (Scheme is 'dark') ? darkTheme(palette, edge, icon) : lightTheme(palette, edge, icon)
+   theme.menubar.menu = theme.menu -- Shared section
+   return theme
+end
+
+-- The theme tables are deferred until first access because they read gui.fonts, which depends on the display density.
+
+gui.themes = <table{ { dark = gui.buildTheme('dark'), light = gui.buildTheme('light') } }>

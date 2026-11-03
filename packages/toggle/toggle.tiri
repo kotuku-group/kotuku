@@ -10,9 +10,6 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
-FONT_MAX_HEIGHT = gui.getFontHeight(gui.fonts.widget)
-DEFAULT_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1 -- Matches the combobox and input
-
 function toggleState()
    if &disabled then return end
    &setState(not &value)
@@ -51,11 +48,13 @@ gui.toggle = function(Options:table!):table
 
    base_theme = gui.getTheme(Options.target)
    override = nil -- Per-instance override from setTheme()
+   local default_height
 
    function buildTheme():table
       result = base_theme
       if Options.theme then result = table.merge(result, Options.theme, true, true) end
       if override then result = table.merge(result, override, true, true) end
+      default_height = math.floor(gui.getFontHeight(gui.fonts.default) * 1.1) -- Matches the combobox and input
       return result
    end
 
@@ -98,7 +97,7 @@ gui.toggle = function(Options:table!):table
          x        = Options.x,
          y        = Options.y,
          width    = Options.width,
-         height   = Options.height ?? DEFAULT_HEIGHT,
+         height   = Options.height ?? default_height,
          xOffset  = Options.xOffset,
          yOffset  = Options.yOffset
       }
