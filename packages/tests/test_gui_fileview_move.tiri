@@ -1,0 +1,323 @@
+-- File view drag operations: plain and Ctrl drops copy, Shift drops between file views move, and Alt or Ctrl+Shift
+-- requests are rejected.  Pointer input is fed to the headless driver; qualifiers are applied to the destination view,
+-- which tracks them independently of the pointer.
+
+   import 'gui', 'gui/window', 'gui/fileview', 'gui/listview'
+   include 'display', 'vector'
+   module display as mGfx
+
+glBase = nil
+
+FOLDER_PERMISSIONS <const> = PERMIT_USER_READ | PERMIT_USER_WRITE | PERMIT_USER_EXEC
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+function feed(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function writeFile(Path:str!, Content:str!)
+   local file <close> = obj.new('File', { path=Path, flags=FL_NEW | FL_WRITE })
+   check file.acWrite(Content)
+end
+
+function exists(Path:str!):bool
+   local err, resolved = mSys.ResolvePath(Path, RSF_NO_FILE_CHECK)
+   if err != ERR_Okay then return false end
+   local status, kind = mSys.AnalysePath(resolved)
+   return status is ERR_Okay and (kind is LOC_FILE or kind is LOC_DIRECTORY)
+end
+
+function waitFor(Condition:func!, Message:str!)
+   local deadline = mSys.PreciseTime() + 3000000
+   while not Condition() and mSys.PreciseTime() < deadline do processing.sleep(0.01) end
+   assert(Condition(), Message)
+end
+
+-- Two file views side by side in one drop-enabled window.  Transfers completed by either view are recorded.
+
+function newBrowsers():table
+   local env = { transfers = array<table> { } }
+   env.win = gui.window({ quit=false, dragDrop=true, x=200, y=200, insideWidth=800, insideHeight=360 })
+   local client = env.win.clientViewport()
+   local options = function(Path)
+      return {
+         path = Path, style = 'list', multiSelect = true,
+         transferComplete = function(View, Sources, Dest, Error, Results) env.transfers.push(Results) end
+      }
+   end
+   local left = options(glBase .. 'src/')
+   left.target = client.new('VectorViewport', { x=0, y=0, width=390, height='100%' })
+   env.left = gui.fileview(left)
+   local right = options(glBase .. 'dst/')
+   right.target = client.new('VectorViewport', { x=410, y=0, width=390, height='100%' })
+   env.rightTarget = right.target
+   env.right = gui.fileview(right)
+   env.win.show()
+   env.win.surface.acDraw()
+   processing.sleep(0.05)
+   return env
+end
+
+function closeBrowsers(Env:table!)
+   Env.win.surface?.free()
+   processing.sleep(0)
+end
+
+-- Returns the absolute position of a row, identified by its file name, or of empty space when Name is nil.
+
+function rowPoint(Env:table!, Browser:table!, Name:str):<num, num>
+   local view = Browser.view
+   local frame = view.frame
+   local surface = Env.win.surface
+   if not Name then
+      return surface.absX + frame.absX + frame.width - 30, surface.absY + frame.absY + frame.height - 20
+   end
+   for zone in values(view.zones) do
+      if zone.item?.filename is Name or zone.item?.filename is Name .. '/' then
+         return surface.absX + frame.absX + view.page.x + zone.x + 20,
+            surface.absY + frame.absY + view.page.y + zone.y + (zone.height / 2)
+      end
+   end
+   assert(false, f'No row for "{Name}" in {Browser.path}')
+end
+
+-- Drags a source row onto a destination row (or empty space).  Qualifiers are applied to the destination view while
+-- the pointer hovers, so they reach both hover feedback and the release.
+
+function dragRow(Env:table!, Source:table!, Name:str!, Dest:table!, DestName:str, Qualifiers:num)
+   local sx, sy = rowPoint(Env, Source, Name)
+   local dx, dy = rowPoint(Env, Dest, DestName)
+   feed(JET_ABS_XY, sx, sy)
+   feed(JET_LMB, 1, 0)
+   feed(JET_ABS_XY, sx + 12, sy + 2)
+   feed(JET_ABS_XY, dx - 2, dy)
+   Dest.view.qualifiers = Qualifiers ?? 0
+   feed(JET_ABS_XY, dx, dy)
+   feed(JET_LMB, 0, 0)
+   Dest.view.qualifiers = 0
+end
+
+-- Records the source session's terminal notification and reported results.
+
+function observeSource(Browser:table!):table
+   local seen = { }
+   local events = Browser.view.events
+   local forward = events.dragResult
+   events.dragEnd = function(View, Session, Outcome)
+      seen.outcome   = Outcome
+      seen.operation = Session.operation
+      seen.endCount  = (seen.endCount ?? 0) + 1
+   end
+   events.dragResult = function(View, Session, Results)
+      seen.results = Results
+      seen.resultCount = (seen.resultCount ?? 0) + 1
+      if forward then forward(View, Session, Results) end
+   end
+   return seen
+end
+
+@BeforeEach function prepare()
+   glBase = f'temp:fileview_move_{mSys.PreciseTime()}/'
+   for folder in values(array<str> { 'src/', 'src/sub/', 'dst/', 'dst/inbox/' }) do
+      check mSys.CreateFolder(glBase .. folder, FOLDER_PERMISSIONS)
+   end
+   writeFile(glBase .. 'src/a.txt', 'alpha')
+   writeFile(glBase .. 'src/b.txt', 'bravo')
+   writeFile(glBase .. 'src/sub/c.txt', 'charlie')
+end
+
+@AfterEach function cleanup()
+   local pointer = obj.find('SystemPointer')
+   if pointer then
+      pointer.acDeactivate()
+      feed(JET_LMB, 0, 0)
+   end
+   if glBase then mSys.DeleteFile(glBase); glBase = nil end
+end
+
+@Test function PlainAndCtrlDropsCopy()
+   local env = newBrowsers()
+   defer closeBrowsers(env) end
+   local seen = observeSource(env.left)
+
+   dragRow(env, env.left, 'a.txt', env.right, nil, 0)
+   waitFor(() => #env.transfers is 1, 'A plain drop must start one transfer')
+   assert(env.transfers[0].operation is 'copy', 'A plain drop must copy')
+   assert(seen.outcome is 'dropped' and seen.operation is 'copy', 'The source must learn the agreed operation')
+   waitFor(() => seen.resultCount is 1, 'The source must receive the copy results once')
+   assert(exists(glBase .. 'src/a.txt') and exists(glBase .. 'dst/a.txt'), 'A copy must keep its source')
+
+   dragRow(env, env.left, 'b.txt', env.right, 'inbox', KQ_L_CTRL)
+   waitFor(() => #env.transfers is 2, 'A Ctrl drop must start one transfer')
+   assert(env.transfers[1].operation is 'copy', 'Ctrl must request a copy')
+   assert(exists(glBase .. 'src/b.txt') and exists(glBase .. 'dst/inbox/b.txt'),
+      'A Ctrl drop onto a folder row must copy into that folder')
+end
+
+@Test function ShiftDropMovesAndReportsResults()
+   local clipboard = obj.new('Clipboard')
+   clipboard.mtRemove(CLIPTYPE_FILE)
+   check clipboard.mtAddFile(CLIPTYPE_FILE, glBase .. 'src/b.txt', 0)
+
+   local env = newBrowsers()
+   defer closeBrowsers(env) end
+   local seen = observeSource(env.left)
+
+   dragRow(env, env.left, 'sub', env.right, 'inbox', KQ_L_SHIFT)
+   waitFor(() => #env.transfers is 1, 'A Shift drop must start one transfer')
+   local results = env.transfers[0]
+   assert(results.operation is 'move' and results.error is ERR_Okay and results.completed is 1,
+      'A Shift drop between file views must move')
+   assert(seen.endCount is 1 and seen.outcome is 'dropped' and seen.operation is 'move',
+      'dragEnd must report the accepted move once')
+   waitFor(() => seen.resultCount is 1, 'The source must receive the move results')
+   assert(seen.results.items[0].status is 'completed' and seen.results.items[0].source is glBase .. 'src/sub/',
+      'The results must identify the moved folder')
+   assert(io.readAll(glBase .. 'dst/inbox/sub/c.txt') is 'charlie' and not exists(glBase .. 'src/sub/'),
+      'The folder must be moved into the destination row')
+   waitFor(function():bool
+      for item in values(env.left.view.items) do
+         if item.filename is 'sub' or item.filename is 'sub/' then return false end
+      end
+      return true
+   end, 'The source view must stop listing the moved folder')
+
+   local _, _, files = clipboard.mtGetFiles(CLIPTYPE_FILE, 0)
+   assert(files and #files is 1 and files[0].find('b.txt', 0, true), 'A drag must not change the clipboard')
+   clipboard.mtRemove(CLIPTYPE_FILE)
+end
+
+@Test function LinkRequestsAreRejected()
+   local env = newBrowsers()
+   defer closeBrowsers(env) end
+   local seen = observeSource(env.left)
+
+   for qualifiers in values(array<int> { KQ_L_ALT, KQ_L_SHIFT | KQ_L_CTRL }) do
+      dragRow(env, env.left, 'a.txt', env.right, nil, qualifiers)
+      processing.sleep(0.05)
+      assert(seen.outcome is 'cancelled' and not seen.operation, 'A link request must be rejected')
+      seen.outcome = nil
+   end
+   assert(#env.transfers is 0 and not seen.results, 'Rejected drops must not transfer anything')
+   assert(exists(glBase .. 'src/a.txt') and not exists(glBase .. 'dst/a.txt'), 'Rejected drops must not move files')
+end
+
+@Test function SelfAndDescendantMovesAreRejected()
+   local env = newBrowsers()
+   defer closeBrowsers(env) end
+   local seen = observeSource(env.left)
+
+   dragRow(env, env.left, 'sub', env.left, 'sub', KQ_L_SHIFT)
+   processing.sleep(0.05)
+   assert(seen.outcome is 'cancelled', 'A folder must not be moved into itself')
+   dragRow(env, env.left, 'a.txt', env.left, nil, KQ_L_SHIFT)
+   processing.sleep(0.05)
+   assert(seen.outcome is 'cancelled', 'A file must not be moved to its own folder')
+   assert(#env.transfers is 0 and exists(glBase .. 'src/sub/c.txt') and exists(glBase .. 'src/a.txt'),
+      'Rejected moves must leave the sources unchanged')
+
+   -- The API reports the same rejections per item when they are mixed with a valid source.
+
+   local reported:table
+   local count = env.left.transferFiles(array<str> { glBase .. 'src/sub/', glBase .. 'src/a.txt',
+      glBase .. 'src/b.txt' }, glBase .. 'src/sub/', 'move', function(Results) reported = Results end)
+   assert(count is 2, 'Only the files outside the destination may be accepted')
+   waitFor(() => reported??, 'The transfer must complete')
+   assert(reported.items[0].status is 'skipped' and reported.items[0].reason is 'descendant',
+      'A folder moved into itself must be skipped')
+   assert(reported.items[1].status is 'completed' and reported.items[2].status is 'completed',
+      'The other items must be moved')
+   assert(exists(glBase .. 'src/sub/a.txt') and not exists(glBase .. 'src/a.txt'), 'Accepted items must be moved')
+end
+
+@Test function MoveFilesToMovesTheSelection()
+   local env = newBrowsers()
+   defer closeBrowsers(env) end
+   env.left.view.selectItems(function(Item):bool
+      return Item.filename is 'a.txt' or Item.filename is 'b.txt'
+   end)
+   assert(#env.left.view.selectedItems() is 2, 'Both files must be selected')
+   env.left.moveFilesTo(glBase .. 'dst/inbox')
+   waitFor(() => #env.transfers is 1, 'moveFilesTo() must start a transfer')
+   assert(env.transfers[0].operation is 'move' and env.transfers[0].completed is 2, 'Both files must be moved')
+   assert(not exists(glBase .. 'src/a.txt') and io.readAll(glBase .. 'dst/inbox/b.txt') is 'bravo',
+      'The selection must arrive in the destination')
+end
+
+-- A plain list view accepts copies only, so Shift is rejected there even for a move-capable source.
+
+@Test function DestinationsMustOptIntoMoves()
+   local env = newBrowsers()
+   defer closeBrowsers(env) end
+   env.rightTarget.free()
+   local received = array<str>
+   local target = env.win.clientViewport().new('VectorViewport', { x=410, y=0, width=390, height='100%' })
+   local list = gui.listView({ target=target, dragDrop=true, events = {
+      dragDrop = function(View, Item, Drop) received.push(Drop.operation) end
+   } })
+   env.right = { view = list, path = 'list' }
+   env.win.surface.acDraw()
+   processing.sleep(0.02)
+   local seen = observeSource(env.left)
+
+   dragRow(env, env.left, 'a.txt', env.right, nil, KQ_L_SHIFT)
+   processing.sleep(0.05)
+   assert(#received is 0 and seen.outcome is 'cancelled', 'A copy-only destination must reject Shift')
+   dragRow(env, env.left, 'a.txt', env.right, nil, 0)
+   assert(#received is 1 and received[0] is 'copy', 'A copy-only destination must accept a copy')
+   assert(exists(glBase .. 'src/a.txt'), 'The source must be unchanged')
+end
+
+-- A source that is not a view in this script (including native drops) cannot offer a move.
+
+@Test function ForeignSourcesAreCopyOnly()
+   local env = newBrowsers()
+   defer closeBrowsers(env) end
+   local result:num
+   local source = obj.new('Clipboard', {
+      flags = CPF_DRAG_DROP,
+      requestHandler = function(Clipboard, Requester, Item, Datatypes):num
+         local path = glBase .. 'src/a.txt'
+         return Requester.acDataFeed(Clipboard, DATA_RECEIPT,
+            f'<receipt totalItems="1" id="{Item}"><file path="{path.escXML()}"/></receipt>')
+      end,
+      dragEndHandler = function(Clipboard, Item, Result) result = Result end
+   })
+   defer source.free() end
+
+   function foreignDrag(Qualifiers:num)
+      local dx, dy = rowPoint(env, env.right, nil)
+      feed(JET_ABS_XY, dx - 4, dy)
+      feed(JET_LMB, 1, 0)
+      check mGfx.StartCursorDrag(source.id, 9, string.char(DATA_FILE), 0)
+      feed(JET_ABS_XY, dx - 2, dy)
+      env.right.view.qualifiers = Qualifiers
+      feed(JET_ABS_XY, dx, dy)
+      feed(JET_LMB, 0, 0)
+      env.right.view.qualifiers = 0
+   end
+
+   foreignDrag(KQ_L_SHIFT)
+   processing.sleep(0.05)
+   assert(result != ERR_Okay and #env.transfers is 0, 'A foreign source must not be offered a move')
+   foreignDrag(0)
+   waitFor(() => #env.transfers is 1, 'A foreign source must still be able to copy')
+   assert(env.transfers[0].operation is 'copy' and exists(glBase .. 'src/a.txt') and exists(glBase .. 'dst/a.txt'),
+      'A foreign drop must copy and leave the source in place')
+end

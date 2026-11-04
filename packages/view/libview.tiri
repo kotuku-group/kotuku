@@ -223,6 +223,57 @@ end
 -- Drag and drop.  A session snapshots its payload when the drag starts, so that later changes to the view's contents,
 -- selection or path cannot alter the data that a destination receives.
 
+-- Drop operations.  A plain or Ctrl drop requests a copy.  Shift requests a move, which is only offered when the
+-- source session and the destination view both permit it; native sources never do.  Alt and Ctrl+Shift request a
+-- link, which is not supported.  Returns nil when the requested operation is unavailable, so that the drop is
+-- rejected rather than silently downgraded.
+
+function operationSet(List:any):table
+   local set = { }
+   for name in values(List ?? { 'copy' }) do set[name] = true end
+   return set
+end
+
+function dropOperation(View:table!, Session:table):str
+   local qualifiers = View.qualifiers
+   if qualifiers has KQ_ALT then return end
+   if qualifiers has KQ_SHIFT then
+      if qualifiers has KQ_CTRL then return end
+      if Session and Session.operations.move and View.dropOperations.move then return 'move' end
+      return
+   end
+   if View.dropOperations.copy and (not Session or Session.operations.copy) then return 'copy' end
+end
+
+-- Sources learn the outcome of a drop through their dragEnd and dragResult events.  dragEnd reports whether the
+-- payload was accepted; it does not mean that any resulting work is complete.  A destination that performs work, such
+-- as a file move, reports per-item results with Drop.reportResults(Results) once that work has finished.  The source
+-- receives them once, through dragResult(View, Session, Results).  Native sessions have no source to report to.
+
+function reportDragResult(Session:table!, Results:any)
+   if Session._resultReported then return end
+   Session._resultReported = true
+   Session.results = Results
+   local view = Session._view
+   if view?.viewport then view.events?.dragResult(view, Session, Results) end
+end
+
+function newDrop(Source:obj!, ItemID:num!, Datatypes:str!, X:num!, Y:num!, Qualifiers:num!):table
+   local session = (glDragSession and glDragSession._sourceID is Source.id) ? glDragSession : nil
+   return {
+      source     = Source,
+      item       = ItemID,
+      datatypes  = Datatypes,
+      x          = X,
+      y          = Y,
+      qualifiers = Qualifiers,
+      session    = session,
+      reportResults = function(Results)
+         if session then reportDragResult(session, Results) end
+      end
+   }
+end
+
 function fileReceipt(Session:table!, Item:num!):str
    local receipt = f'<receipt totalItems="{#Session.files}" id="{Item}">'
    for path in values(Session.files) do
@@ -298,7 +349,7 @@ function beginDrag(View:table!, Press:table!)
       items.push(Press.item)
    end
 
-   local session = { id = glDragCounter, items = items, x = Press.x, y = Press.y, requested = false }
+   local session = { id = glDragCounter, items = items, x = Press.x, y = Press.y, requested = false, _view = View }
    glDragCounter++
 
    local payload = handler(View, session)
@@ -312,6 +363,8 @@ function beginDrag(View:table!, Press:table!)
       session.files = array<str> { }
       for path in values(payload.files) do session.files.push(path) end
    end
+
+   session.operations = operationSet(payload.operations)
 
    local datatypes = payload.datatypes ?? (session.files ? string.char(DATA_FILE) : '')
    session._payload = payload
@@ -356,22 +409,15 @@ end
 function prepareDrop(View:table!, Source:obj!, ItemID:num!, Datatypes:str!, X:num!, Y:num!, Freeze:bool):table
    local handler = View.events?.dragDrop
 
-   if not handler or View.disabled or View.qualifiers has (KQ_SHIFT | KQ_ALT) then return end
+   if not handler or View.disabled then return end
 
    local x, y = X - View.page.x, Y - View.page.y
    local item = itemAtPoint(View, x, y)
 
-   local drop = {
-      source    = Source,
-      item      = ItemID,
-      datatypes = Datatypes,
-      x = x,
-      y = y,
-      qualifiers = View.qualifiers,
-      operation  = 'copy',
-      prepared   = true,
-      session    = (glDragSession and glDragSession._sourceID is Source.id) ? glDragSession : nil
-   }
+   local drop = newDrop(Source, ItemID, Datatypes, x, y, View.qualifiers)
+   drop.prepared  = true
+   drop.operation = dropOperation(View, drop.session)
+   drop.operation ?! return
 
    if View.events?.dragOver and not View.events.dragOver(View, item, drop) then return end
 
@@ -427,14 +473,11 @@ function updateDropFeedback(View:table!)
    local item = itemAtPoint(View, x - View.page.x, y - View.page.y)
    local source = pointer.dragSource
 
-   local drop = {
-      source=source, item=pointer.dragItem, datatypes=pointer.dragDatatypes,
-      x=x - View.page.x, y=y - View.page.y, qualifiers=View.qualifiers, operation='copy',
-      session=(glDragSession and glDragSession._sourceID is source.id) ? glDragSession : nil
-   }
+   local drop = newDrop(source, pointer.dragItem, pointer.dragDatatypes, x - View.page.x, y - View.page.y,
+      View.qualifiers)
+   drop.operation = dropOperation(View, drop.session)
 
-   local accepted = not View.disabled and View.events?.dragDrop and
-      not (View.qualifiers has (KQ_SHIFT | KQ_ALT))
+   local accepted = not View.disabled and View.events?.dragDrop and drop.operation
 
    if accepted and View.events?.dragOver then accepted = View.events.dragOver(View, item, drop) is true end
 
@@ -490,6 +533,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
       sensitive  = Options.sensitive ?? false,
       multiSelect = Options.multiSelect is true,
       dragDrop   = Options.dragDrop is true,
+      dropOperations = operationSet(Options.dropOperations), -- Operations that drops onto this view may request
       _selectionVersion = 0,
       _contentsVersion = 0,
       hItem      = nil, -- Highlighted item (pointer hover or keyboard navigation)
@@ -1420,9 +1464,14 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
             return
          end
          if snapshot then pending[snapshot.id] = nil end
+         -- The agreed operation is recorded for the source's dragEnd.  It describes the accepted request, not
+         -- completed work; see reportDragResult().
+         local session = prepared.drop.session
+         if session then session.operation = prepared.drop.operation end
          local accepted = prepared.handler(vw, prepared.item, prepared.drop)
          -- Existing handlers have no return value.  An explicit false reports refusal to the source/OLE.
          pointer.dragFeedback = accepted is false ? 0 : 1
+         if session and accepted is false then session.operation = nil end
          if vw.viewport then clearDropFeedback(vw) end
       end)
    end

@@ -1,0 +1,354 @@
+-- io.ui.transfer() copy and move results.  Interactive prompts are replaced with the collision, error and isCancelled
+-- options, so that every case runs unattended.
+
+   import 'io/filemgr'
+
+glBase = nil
+
+FOLDER_PERMISSIONS <const> = PERMIT_USER_READ | PERMIT_USER_WRITE | PERMIT_USER_EXEC
+
+function writeFile(Path:str!, Content:str!)
+   local file <close> = obj.new('File', { path=Path, flags=FL_NEW | FL_WRITE })
+   check file.acWrite(Content)
+end
+
+function exists(Path:str!):bool
+   local err, resolved = mSys.ResolvePath(Path, RSF_NO_FILE_CHECK)
+   if err != ERR_Okay then return false end
+   local status, kind = mSys.AnalysePath(resolved)
+   return status is ERR_Okay and (kind is LOC_FILE or kind is LOC_DIRECTORY)
+end
+
+-- Reads a file in full.  FL_DEVICE permits locations such as /dev/shm, which File otherwise refuses to open.
+
+function readFile(Path:str!):str
+   local file <close> = obj.new('File', { path=Path, flags=FL_READ | FL_DEVICE })
+   if file.size is 0 then return '' end
+   local buffer = array<byte, file.size>
+   local _, length = check file.acRead(buffer)
+   return buffer.getString(0, length)
+end
+
+function nativePath(Path:str!):str
+   local _, resolved = check mSys.ResolvePath(Path, RSF_NO_FILE_CHECK)
+   return resolved
+end
+
+-- Runs a system command and returns its exit code, or nil if it could not be started.
+
+function run(Program:str!, Args:array<str>!):num
+   local task <close> = obj.new('Task', { location=Program, flags=TSF_WAIT | TSF_QUIET, timeout=10 })
+   for value in values(Args) do check task.mtAddArgument(value) end
+   if task.acActivate() != ERR_Okay then return end
+   return task.returnCode
+end
+
+-- A second file system is needed for moves that cannot rename.  Linux normally provides tmpfs at /dev/shm.
+
+function crossVolumeFolder():str
+   if not exists('/dev/shm/') then return end
+   local folder = f'/dev/shm/kotuku_transfer_{mSys.PreciseTime()}/'
+   if mSys.CreateFolder(folder, FOLDER_PERMISSIONS) != ERR_Okay then return end
+   return folder
+end
+
+function itemFor(Results:table!, Source:str!):table
+   for item in values(Results.items) do
+      if item.source is Source then return item end
+   end
+end
+
+function countStatus(Results:table!):str
+   return f'{Results.completed}/{Results.skipped}/{Results.cancelled}/{Results.failed}'
+end
+
+@BeforeEach function prepare()
+   glBase = f'temp:file_transfer_{mSys.PreciseTime()}/'
+   for folder in values(array<str> { 'src/', 'src/sub/', 'src/sub/deep/', 'dst/' }) do
+      check mSys.CreateFolder(glBase .. folder, FOLDER_PERMISSIONS)
+   end
+   writeFile(glBase .. 'src/a.txt', 'alpha')
+   writeFile(glBase .. 'src/b.txt', 'bravo')
+   writeFile(glBase .. 'src/sub/c.txt', 'charlie')
+   writeFile(glBase .. 'src/sub/deep/d.txt', 'delta')
+end
+
+@AfterEach function cleanup()
+   if glBase then mSys.DeleteFile(glBase); glBase = nil end
+end
+
+@Test function CopyReportsEveryItemAndRetainsSources()
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/sub/' }, glBase .. 'dst',
+      { operation='copy' })
+   assert(results.operation is 'copy' and results.error is ERR_Okay, 'The copy must succeed')
+   assert(countStatus(results) is '2/0/0/0', 'Both items must be completed, got ' .. countStatus(results))
+   assert(results.items[0].dest is glBase .. 'dst/a.txt', 'The item must report its destination')
+   assert(io.readAll(glBase .. 'dst/sub/deep/d.txt') is 'delta', 'Folders must be copied recursively')
+   assert(exists(glBase .. 'src/a.txt') and exists(glBase .. 'src/sub/deep/d.txt'), 'A copy must retain its sources')
+end
+
+@Test function MoveWithinVolumeRemovesSources()
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/sub/' }, glBase .. 'dst/',
+      { operation='move' })
+   assert(results.error is ERR_Okay and countStatus(results) is '2/0/0/0', 'Both items must be moved')
+   assert(io.readAll(glBase .. 'dst/a.txt') is 'alpha' and io.readAll(glBase .. 'dst/sub/deep/d.txt') is 'delta',
+      'Moved content must arrive intact')
+   assert(not exists(glBase .. 'src/a.txt') and not exists(glBase .. 'src/sub/'), 'Moved sources must be removed')
+   assert(exists(glBase .. 'src/b.txt'), 'Items outside the group must not be touched')
+end
+
+@Test; @Requires(linux_platform=true)
+function MoveAcrossVolumesCopiesThenRemovesSources()
+   local other = crossVolumeFolder()
+   if not other then
+      msg('No second file system is available; cross-volume move not exercised.')
+      return
+   end
+   defer mSys.DeleteFile(other) end
+
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/sub/' }, other,
+      { operation='move' })
+   assert(results.error is ERR_Okay and countStatus(results) is '2/0/0/0',
+      'A cross-volume move must complete, got ' .. countStatus(results))
+   assert(readFile(other .. 'a.txt') is 'alpha' and readFile(other .. 'sub/deep/d.txt') is 'delta',
+      'Cross-volume content must be copied in full')
+   assert(not exists(glBase .. 'src/a.txt') and not exists(glBase .. 'src/sub/'),
+      'Sources must be removed after a complete cross-volume copy')
+end
+
+@Test function CollisionChoicesAreRecordedPerItem()
+   writeFile(glBase .. 'dst/a.txt', 'old a')
+   writeFile(glBase .. 'dst/b.txt', 'old b')
+   local answers = array<str> { 'no', 'yes' }
+   local asked = 0
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/b.txt' }, glBase .. 'dst/', {
+      operation = 'move',
+      collision = function(Info)
+         assert(Info.folder is false and Info.name?? and Info.dest?? and Info.source??,
+            'The collision callback must describe the item')
+         local answer = answers[asked]
+         asked++
+         return answer
+      end
+   })
+   assert(asked is 2, 'Each collision must be confirmed')
+   local a = itemFor(results, glBase .. 'src/a.txt')
+   local b = itemFor(results, glBase .. 'src/b.txt')
+   assert(a.status is 'skipped' and a.reason is 'exists', 'A declined overwrite must be skipped')
+   assert(exists(glBase .. 'src/a.txt') and io.readAll(glBase .. 'dst/a.txt') is 'old a',
+      'A skipped move must keep both its source and the existing destination')
+   assert(b.status is 'completed' and io.readAll(glBase .. 'dst/b.txt') is 'bravo' and
+      not exists(glBase .. 'src/b.txt'), 'An accepted overwrite must replace the destination and remove the source')
+
+   -- 'no-all' and 'yes-all' apply to the remaining items without further prompts.
+
+   writeFile(glBase .. 'dst/sub/c.txt', 'old c')
+   writeFile(glBase .. 'src/e.txt', 'echo')
+   writeFile(glBase .. 'dst/e.txt', 'old e')
+   asked = 0
+   results = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/e.txt' }, glBase .. 'dst/', {
+      collision = function(Info) asked++; return 'no-all' end
+   })
+   assert(asked is 1 and countStatus(results) is '0/2/0/0', 'No to All must skip every later collision')
+   asked = 0
+   results = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/e.txt' }, glBase .. 'dst/', {
+      collision = function(Info) asked++; return 'yes-all' end
+   })
+   assert(asked is 1 and countStatus(results) is '2/0/0/0', 'Yes to All must replace every later collision')
+end
+
+@Test function CancellingACollisionStopsTheRemainingItems()
+   writeFile(glBase .. 'dst/a.txt', 'old a')
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/b.txt' }, glBase .. 'dst/', {
+      operation = 'move',
+      collision = function(Info) return 'cancel' end
+   })
+   assert(results.error is ERR_Cancelled, 'A cancelled prompt must cancel the operation')
+   assert(countStatus(results) is '0/0/2/0', 'Every unfinished item must be cancelled, got ' .. countStatus(results))
+   assert(results.items[1].reason is 'user', 'Later items must record why they were not transferred')
+   assert(exists(glBase .. 'src/a.txt') and exists(glBase .. 'src/b.txt') and not exists(glBase .. 'dst/b.txt'),
+      'Cancelled moves must leave their sources in place')
+end
+
+@Test function CancellationBeforeAndDuringWork()
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/a.txt', glBase .. 'src/sub/' }, glBase .. 'dst/', {
+      operation = 'move',
+      isCancelled = function() return true end
+   })
+   assert(results.error is ERR_Cancelled and countStatus(results) is '0/0/2/0',
+      'Cancellation before work must cancel every item')
+   assert(exists(glBase .. 'src/a.txt') and exists(glBase .. 'src/sub/deep/d.txt') and
+      not exists(glBase .. 'dst/a.txt'), 'Nothing may be moved when cancelled before work')
+
+   -- Cancel part way through a large file.  Progress is polled for each 64 KiB chunk.
+
+   local large = string.rep('0123456789abcdef', 65536) -- 1 MiB
+   writeFile(glBase .. 'src/large.bin', large)
+   local polls = 0
+   results = io.ui.transfer(array<str> { glBase .. 'src/large.bin', glBase .. 'src/b.txt' }, glBase .. 'dst/', {
+      isCancelled = function()
+         polls++
+         return polls > 3
+      end
+   })
+   assert(results.error is ERR_Cancelled, 'Cancellation during a copy must be reported')
+   assert(results.items[0].status is 'cancelled' and results.items[1].status is 'cancelled',
+      'The interrupted item and the remaining item must be cancelled')
+   assert(io.readAll(glBase .. 'src/large.bin') is large, 'An interrupted transfer must not alter its source')
+   assert(not exists(glBase .. 'dst/b.txt'), 'Items after a cancellation must not be transferred')
+end
+
+@Test; @Requires(linux_platform=true)
+function CancellingACrossVolumeMoveRetainsTheSource()
+   local other = crossVolumeFolder()
+   if not other then
+      msg('No second file system is available; cross-volume cancellation not exercised.')
+      return
+   end
+   defer mSys.DeleteFile(other) end
+
+   local large = string.rep('0123456789abcdef', 65536)
+   writeFile(glBase .. 'src/large.bin', large)
+   local polls = 0
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/large.bin' }, other, {
+      operation = 'move',
+      isCancelled = function()
+         polls++
+         return polls > 4
+      end
+   })
+   assert(results.error is ERR_Cancelled and results.items[0].status is 'cancelled',
+      'An interrupted cross-volume move must be cancelled')
+   assert(io.readAll(glBase .. 'src/large.bin') is large, 'The source must survive an interrupted move')
+end
+
+@Test function FailureEndsTheOperationWithPartialResults()
+   local reported = 0
+   local results:table = io.ui.transfer(array<str> {
+      glBase .. 'src/a.txt', glBase .. 'src/missing.txt', glBase .. 'src/b.txt'
+   }, glBase .. 'dst/', {
+      operation = 'move',
+      error = function(Item, Message)
+         reported++
+         assert(Item.source is glBase .. 'src/missing.txt' and Message?? , 'The failed item must be reported')
+      end
+   })
+   assert(reported is 1, 'Exactly one failure must be reported')
+   assert(results.error is ERR_File and countStatus(results) is '1/0/1/1',
+      'Partial completion must be reported per item, got ' .. countStatus(results))
+   assert(results.items[0].status is 'completed' and not exists(glBase .. 'src/a.txt'),
+      'Items completed before a failure must remain moved')
+   assert(results.items[1].status is 'failed' and results.items[1].reason is 'transfer' and
+      results.items[1].error != ERR_Okay, 'The failed item must record its stage and error')
+   assert(results.items[2].status is 'cancelled' and results.items[2].reason is 'aborted' and
+      exists(glBase .. 'src/b.txt'), 'Items after a failure must not be moved')
+end
+
+@Test function MovingAnItemOntoItselfIsSkipped()
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/a.txt' }, glBase .. 'src/', { operation='move' })
+   assert(results.items[0].status is 'skipped' and results.items[0].reason is 'identical',
+      'A move to the current location must be skipped')
+   assert(io.readAll(glBase .. 'src/a.txt') is 'alpha', 'The source must be unchanged')
+end
+
+@Test; @Requires(linux_platform=true)
+function UnreadableSourceDoesNotReportACompletedCopy()
+   local other = crossVolumeFolder()
+   if not other then
+      msg('No second file system is available; unreadable source move not exercised.')
+      return
+   end
+   defer mSys.DeleteFile(other) end
+
+   local source = glBase .. 'src/a.txt'
+   local path = nativePath(source)
+   check mSys.CopyFile(glBase .. 'src/b.txt', other .. 'a.txt')
+   assert(run('/bin/chmod', array<str> { '0000', path }) is 0, 'The source must be made unreadable')
+   defer run('/bin/chmod', array<str> { '0600', path }) end
+
+   local readable = false
+   try
+      readFile(source)
+      readable = true
+   except
+   end
+   if readable then
+      msg('The source remains readable; unreadable source move not exercised.')
+      return
+   end
+
+   local message:str
+   local results:table = io.ui.transfer(array<str> { source, glBase .. 'src/sub/' }, other, {
+      operation = 'move',
+      collision = function(Info) return 'yes' end,
+      error = function(Item, Message) message = Message end
+   })
+   assert(results.error is ERR_File and countStatus(results) is '0/0/1/1',
+      'An unreadable source must fail and abort later items')
+   assert(results.items[0].reason is 'transfer', 'A failure before copying must be a transfer failure')
+   assert(message and not message.find('could not be removed', 0, true),
+      'The error must not claim that the source was copied')
+   assert(exists(source) and readFile(other .. 'a.txt') is 'bravo',
+      'The source and the original destination must remain unchanged')
+   assert(exists(glBase .. 'src/sub/c.txt') and not exists(other .. 'sub/'),
+      'Items after the failure must not be moved')
+end
+
+-- Source removal is forced to fail by making the source folder immutable.  This requires chattr as root, or
+-- folder permissions for other users.
+
+@Test; @Requires(linux_platform=true)
+function SourceDeletionFailureIsReported()
+   local folder = nativePath(glBase .. 'src/sub/')
+   if run('/usr/bin/chattr', array<str> { '+i', folder }) != 0 then run('/bin/chmod', array<str> { '0555', folder }) end
+   defer
+      run('/usr/bin/chattr', array<str> { '-i', folder })
+      run('/bin/chmod', array<str> { '0755', folder })
+   end
+
+   -- Root ignores folder permissions, so confirm that the folder now refuses changes.
+
+   local probe = glBase .. 'src/sub/probe.txt'
+   local created = false
+   try
+      writeFile(probe, 'probe')
+      created = true
+   except
+   end
+   if created then
+      mSys.DeleteFile(probe)
+      msg('The source folder could not be locked; source deletion failure not exercised.')
+      return
+   end
+
+   local message:str
+   local results:table = io.ui.transfer(array<str> { glBase .. 'src/sub/c.txt', glBase .. 'src/a.txt' }, glBase .. 'dst/', {
+      operation = 'move',
+      error = function(Item, Message) message = Message end
+   })
+   local item = results.items[0]
+   assert(item.status is 'failed' and item.reason is 'delete', 'A source that cannot be removed must be reported')
+   assert(message and message.find('could not be removed', 0, true), 'The error must explain that removal failed')
+   assert(io.readAll(glBase .. 'dst/c.txt') is 'charlie' and io.readAll(glBase .. 'src/sub/c.txt') is 'charlie',
+      'Both the completed destination and the unremoved source must remain')
+   assert(results.items[1].status is 'cancelled' and exists(glBase .. 'src/a.txt'),
+      'The operation must stop after a removal failure')
+end
+
+@Test function LegacyCopyReturnsAnErrorCode()
+   assert(io.ui.copy(glBase .. 'src/a.txt', glBase .. 'dst', false) is ERR_Okay, 'io.ui.copy() must still copy')
+   assert(exists(glBase .. 'src/a.txt') and exists(glBase .. 'dst/a.txt'), 'The legacy copy must keep its source')
+   assert(io.ui.copy(array<str> { glBase .. 'src/b.txt' }, glBase .. 'dst', true) is ERR_Okay,
+      'io.ui.copy() must still move')
+   assert(not exists(glBase .. 'src/b.txt') and exists(glBase .. 'dst/b.txt'), 'The legacy move must remove its source')
+end
+
+@Test function InvalidOperationsAreRejected()
+   try
+      io.ui.transfer(array<str> { glBase .. 'src/a.txt' }, glBase .. 'dst/', { operation='link' })
+      assert(false, 'A link operation must be rejected')
+   except ex
+      assert(ex.message.find('link', 0, true), 'The rejection must name the operation')
+   end
+   assert(not exists(glBase .. 'dst/a.txt'), 'A rejected operation must not transfer anything')
+end
