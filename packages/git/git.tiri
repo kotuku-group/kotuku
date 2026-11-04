@@ -1,0 +1,95 @@
+-- Common interface for querying git repositories
+
+@Package(name="git", version="1.0")
+@Dependencies(tiri="1.0")
+
+   namespace git { }
+
+local rx_head = <{ regex.new('ref: refs/heads/(.+)') }>
+
+git.findRepository = function(Path:str):any
+   local path = Path.replace('\\', '/')
+
+   while #path > 1 and path.endsWith('/') do
+      path = path.sub(0, #path - 1)
+   end
+
+   while path?? do
+      local git_path = path .. '/.git/'
+      local _, file_type = mSys.AnalysePath(git_path)
+      if file_type is LOC_FOLDER then return git_path end
+
+      local path_len = #path
+      local last_slash = -1
+      for i in {0 to path_len} do
+         if path.sub(i, i + 1) is '/' then last_slash = i end
+      end
+
+      if last_slash < 0 then break end
+      if last_slash is 0 then return nil end
+
+      path = path.sub(0, last_slash)
+   end
+
+   return nil
+end
+
+-- Return basic git repository information (current branch and commit values)
+
+git.query = function(Path:str!):table
+   local git_info = { branch = 'unknown', commit = 'unknown' }
+
+   -- Find the nearest .git directory from the supplied path or any parent folder.
+
+   local git_path = git.findRepository(Path)
+   if git_path is nil then
+      msg(f'No .git folder identified at or above {Path}')
+      return git_info
+   end
+
+   -- Try to read current branch from .git/HEAD
+
+   local head_file = io.open(git_path .. 'HEAD', 'r')
+   if head_file then
+      local head_content:str = head_file.read('*all')
+      head_file.close()
+
+      if head_content then
+         head_content = head_content.replace('\n', '')
+         head_content = head_content.replace('\r', '')
+
+         -- Check if HEAD points to a branch (ref: refs/heads/branch-name)
+         local branch_ref = rx_head.extract(head_content)
+         if branch_ref then
+            git_info.branch = branch_ref
+
+            -- Try to read the commit hash from the branch file
+            try
+               local branch_file = io.open(git_path .. 'refs/heads/' .. branch_ref, 'r')
+               if branch_file then
+                  local commit_hash = branch_file.read('*all')
+                  branch_file.close()
+
+                  if commit_hash then
+                     commit_hash = commit_hash.replace('\n', '')
+                     commit_hash = commit_hash.replace('\r', '')
+                     git_info.commit = commit_hash
+                  end
+               end
+            end
+         else
+            -- HEAD might contain a commit hash directly (detached HEAD)
+            if #head_content is 40 then
+               git_info.commit = head_content
+               git_info.branch = 'detached HEAD'
+            end
+         end
+      else
+         msg('.git HEAD file is empty.')
+      end
+   else
+      msg('Failed to open .git HEAD file.')
+   end
+
+   return git_info
+end

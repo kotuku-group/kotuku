@@ -1,0 +1,303 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+   import './effect_fields'
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end
+
+-- Published parameters in schema order, with their defaults, units and scales.
+
+PARAMS = {
+   { key='rate', default=0.8, unit='Hz', scale='log', min=0.05, max=10 },
+   { key='delay', default=15, unit='ms', scale='linear', min=10, max=30 },
+   { key='depth', default=3, unit='ms', scale='linear', min=0, max=9 },
+   { key='spread', default=50, unit='%', scale='linear', min=0, max=100 },
+   { key='mix', default=35, unit='%', scale='linear', min=0, max=100 }
+}
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function new_chorus(Audio:obj):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new('AudioChorus', { audio=Audio, channel=channel }), channel
+end
+
+function play_square(Audio:obj, Channel:num)
+   data = array<byte, 8192>
+   for i in {0 to 8192} do data[i] = (i % 64 < 32) ? 160 : 96 end
+   err, sample = Audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(Audio, Channel, sample)
+   check mAudio.MixFrequency(Audio, Channel, 44100)
+   check mAudio.MixPlay(Audio, Channel, 0)
+end
+
+function wait_for_stop(Count:table, Seconds:num)
+   deadline = mSys.PreciseTime() + (Seconds * 1000000)
+   while (Count.stops is 0) and (mSys.PreciseTime() < deadline) do processing.sleep(0.01) end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function SchemaDiscovery()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   chorus <close> = new_chorus(audio)
+   schema = chorus.schema
+   assert(schema.find('<effect class="AudioChorus" version="1"') != nil, 'The schema must identify the class')
+   assert(schema.find('<group') is nil, 'The chorus has no parameter groups')
+   assert(schema.find('type="enum"') is nil, 'The chorus has no enumerated parameters')
+   assert(schema.find('type="curve"') is nil, 'The chorus does not publish a response curve')
+   assert(schema.find('gain_reduction') is nil, 'The chorus does not publish gain reduction')
+   for p in values(PARAMS) do
+      assert(schema.find(f'<param key="{p.key}"') != nil, f'{p.key} must be published')
+      assert(schema.find(f'unit="{p.unit}" scale="{p.scale}" min="{p.min}" max="{p.max}" default="{p.default}"') != nil,
+         f'{p.key} must publish its unit, scale, range and default')
+      err, value_text = chorus.acGetKey(p.key)
+      value = tonumber(value_text)
+      assert(err is ERR_Okay and value is p.default, f'{p.key} should default to {p.default}, got {value}')
+   end
+
+   -- Parameters appear in the documented order.
+
+   last = 0
+   for p in values(PARAMS) do
+      position = schema.find(f'<param key="{p.key}"')
+      assert(position > last, f'{p.key} is out of order')
+      last = position
+   end
+
+   assert(schema.find('key="input_peak_left" type="scalar"') != nil)
+   assert(schema.find('key="output_peak_right" type="scalar"') != nil)
+   assert(schema.find('unit="dBFS" scope="channel"') != nil)
+   assert(chorus.mtGetOutput('response') is ERR_Search)
+   assert(chorus.mtGetGroupCount('voices') is ERR_Search)
+end
+
+@Test function ChangesAndValidation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   chorus <close> = new_chorus(audio)
+   assert(chorus.mutable is 1)
+
+   -- Every bound is inclusive; values outside it and non-finite values are rejected immediately.
+
+   for p in values(PARAMS) do
+      check chorus.mtBatch(array<str> { f'set {p.key} {p.min}', f'set {p.key} {p.max}' })
+      assert(chorus.mtBatch(array<str> { f'set {p.key} {p.min - 0.001}' }) is ERR_InvalidValue,
+         f'{p.key} below {p.min} must fail')
+      assert(chorus.mtBatch(array<str> { f'set {p.key} {p.max + 0.001}' }) is ERR_InvalidValue,
+         f'{p.key} above {p.max} must fail')
+      assert(chorus.mtBatch(array<str> { f'set {p.key} {math.huge}' }) is ERR_InvalidValue,
+         f'{p.key} must reject infinity')
+      assert(chorus.mtBatch(array<str> { f'set {p.key} {-math.huge}' }) is ERR_InvalidValue,
+         f'{p.key} must reject -infinity')
+      assert(chorus.mtBatch(array<str> { f'set {p.key} {math.sqrt(-1)}' }) is ERR_InvalidValue,
+         f'{p.key} must reject NaN')
+   end
+   assert(chorus.mtBatch(array<str> { 'set unknown 1' }) is ERR_Search)
+
+   -- A rejected value fails the whole batch and names its command; a valid batch commits every value together.
+   -- Fractional values are kept.
+
+   err, failed = chorus.mtBatch(array<str> { 'set rate 1.25', 'set delay 22.5', 'set depth 4.75', 'set spread 101' })
+   assert(err is ERR_InvalidValue and failed is 3, f'The last command must fail, got {err} at {failed}')
+   err, value_text = chorus.acGetKey('rate')
+   assert(err is ERR_Okay and tonumber(value_text) != 1.25, 'A rejected batch must change nothing')
+   check chorus.mtBatch(array<str> { 'set rate 1.25', 'set delay 22.5', 'set depth 4.75', 'set spread 80' })
+   for key, expected in pairs({ rate=1.25, delay=22.5, depth=4.75, spread=80, mix=100 }) do
+      err, value_text = chorus.acGetKey(key)
+      value = tonumber(value_text)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected} after Batch(), got {value}')
+   end
+end
+
+@Test function ConfigureBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   chorus <close> = obj.new('AudioChorus')
+   chorus.audio = audio
+   chorus.channel = channel
+   check chorus.mtBatch(array<str> { 'set delay 25', 'set spread 100' })
+   assert(chorus.mtBatch(array<str> { 'set depth 9.5' }) is ERR_InvalidValue)
+   chorus.init()
+   for key, expected in pairs({ delay=25, spread=100, depth=3 }) do
+      err, value_text = chorus.acGetKey(key)
+      value = tonumber(value_text)
+      assert(err is ERR_Okay and value is expected, f'{key} should be {expected}, got {value}')
+   end
+end
+
+@Test function LivePlayback()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   chorus, channel = new_chorus(audio)
+   check chorus.mtBatch(array<str> { 'set mix 100' })
+   check audio.acActivate()
+   assert(chorus.latency is 0, 'The chorus publishes no algorithmic latency, even when fully wet')
+   err, rate, format, layout, generation, state = chorus.mtGetProcessingFormat()
+   assert(err is ERR_Okay and rate is 48000 and #layout is 2)
+
+   play_square(audio, channel)
+
+   -- Simultaneous rate, depth and spread edits with a centre-delay crossfade, then a queued centre-delay edit.
+
+   check chorus.mtBatch(array<str> { 'set delay 28', 'set rate 9', 'set depth 9', 'set spread 100' })
+   check chorus.mtBatch(array<str> { 'set delay 12', 'set mix 0' })
+   assert(chorus.latency is 0, 'Parameter changes must not alter the latency')
+
+   err, layout = chorus.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 4)
+   assert(layout.meters[0].key is 'input_peak_left' and layout.meters[3].key is 'output_peak_right')
+
+   chorus.flags = AEF_BYPASS
+   err, reading = chorus.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_BYPASSED)
+   chorus.flags = 0
+
+   check audio.mtCloseChannels(channel)
+   err, reading = chorus.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags is AMF_DISCONNECTED)
+   assert(chorus.mtBatch(array<str> { 'set mix 50' }) is ERR_NotInitialised)
+   chorus.free()
+end
+
+@Test function MonoAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100, outputLayout=array<int> { SPK_CENTRE } })
+   chorus = audio.new('AudioChorus')
+   check chorus.mtBatch(array<str> { 'set spread 100', 'set delay 20' })
+   chorus.init()
+   assert(chorus.mutable is 0)
+   assert(chorus.mtBatch(array<str> { 'set delay 12' }) is ERR_Immutable)
+   err, value_text = chorus.acGetKey('spread')
+   value = tonumber(value_text)
+   assert(err is ERR_Okay and value is 100, 'Mono retains the requested spread')
+   check audio.acActivate()
+   err, layout = chorus.mtGetMeterLayout()
+   assert(err is ERR_Okay and #layout.meters is 2)
+   assert(layout.meters[0].key is 'input_peak_centre' and layout.meters[1].key is 'output_peak_centre')
+   assert(chorus.schema.find('input_peak_right') is nil, 'Mono must not publish a right channel')
+   check audio.acDeactivate()
+end
+
+-- OnStop is held until the delayed audio has drained from the Sound's channel set.
+
+@Test function SoundStopWaitsForTail()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   state_at_stop = -1
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound)
+         count.stops++
+         err, status = audio.mtGetEffectStatus(Sound.channelIndex & 0xffff0000)
+         state = status.state
+         state_at_stop = state
+      end })
+   chorus <close> = obj.new('AudioChorus', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   check chorus.mtBatch(array<str> { 'set delay 30', 'set depth 9' })
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once')
+   assert(state_at_stop is ADS_IDLE, f'The delayed audio must have drained before OnStop, state {state_at_stop}')
+   check audio.acDeactivate()
+end
+
+-- A Sound on the shared global path stops after its estimated decay, behind a serial global chain.
+
+@Test function GlobalChainStop()
+   audio <close> = obj.new('Audio', { device='null' })
+   first = audio.new('AudioChorus')
+   check first.mtBatch(array<str> { 'set delay 30' })
+   first.init()
+   second = audio.new('AudioChorus')
+   check second.mtBatch(array<str> { 'set depth 9' })
+   second.init()
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) count.stops++ end })
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once on the global path')
+
+   state = -1
+   deadline = mSys.PreciseTime() + 5000000
+   while mSys.PreciseTime() < deadline do
+      err, status = audio.mtGetEffectStatus(0)
+      state = status.state
+      assert(err is ERR_Okay)
+      if state is ADS_IDLE then break end
+      processing.sleep(0.01)
+   end
+   assert(state is ADS_IDLE, f'The global chain must reach idle, state {state}')
+   check audio.acDeactivate()
+end
+
+-- Destroying the chorus while its channel set is playing leaves the Sound to finish normally.
+
+@Test function DestroyDuringPlayback()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) count.stops++ end })
+   chorus = obj.new('AudioChorus', { audio=audio, channel=sound.channelIndex & 0xffff0000 })
+   check sound.acActivate()
+   processing.sleep(0.05)
+   chorus.free()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once after the chorus is destroyed')
+   check audio.acDeactivate()
+end
+
+-- A MaxDrain shorter than the 39 ms history cuts the tail short and reports it, and the chain still reaches idle.
+
+@Test function MaxDrainTruncation()
+   audio <close> = obj.new('Audio', { device='null', maxDrain=0.01 })
+   check audio.acActivate()
+   count = { stops=0 }
+   sound <close> = obj.new('Sound', { audio=audio, path=glFolder .. 'low-tone.wav',
+      onStop=function(Sound) count.stops++ end })
+   set = sound.channelIndex & 0xffff0000
+   chorus <close> = obj.new('AudioChorus', { audio=audio, channel=set })
+   check sound.acActivate()
+   wait_for_stop(count, 20)
+   assert(count.stops is 1, 'OnStop must be delivered once the drain limit is reached')
+
+   state, truncated = -1, 0
+   deadline = mSys.PreciseTime() + 5000000
+   while mSys.PreciseTime() < deadline do
+      err, status = audio.mtGetEffectStatus(set)
+      state, truncated = status.state, status.truncated
+      assert(err is ERR_Okay)
+      if state is ADS_IDLE then break end
+      processing.sleep(0.01)
+   end
+   assert(state is ADS_IDLE, f'The chain must reach idle after truncation, state {state}')
+   assert(truncated is 1, 'A drain cut short by MaxDrain must be reported')
+   check audio.acDeactivate()
+end
+
+@Test function UnsupportedRate()
+   audio <close> = obj.new('Audio', { device='null', outputRate=4000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   try
+      chorus = obj.new('AudioChorus', { audio=audio, channel=channel })
+   except e when ERR_NoSupport
+   success
+      raise 'An output rate below 8000 Hz must be rejected'
+   end
+end
+
+-- Every schema parameter has a typed field that follows the shared field semantics.
+
+@Test function TypedFields()
+   effect_fields.checkFields('AudioChorus')
+end
+
+@end

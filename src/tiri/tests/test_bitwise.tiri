@@ -26,6 +26,24 @@ end
    assert((-1 & 0xff) is 0xff, 'AND should mask bits with negative left operand')
 end
 
+@Test function AmpersandAdjacency()
+   local context = entity { right = 3 }
+
+   function context.verify()
+      local left = 7
+      local operand = 3
+      local retained = left &right
+
+      assert(retained is left, 'an adjacent identifier after & should begin a contextual reference')
+      assert(&right is 3, 'the contextual reference should resolve against the active context')
+      assert(left& operand is 3, 'whitespace after & should select bitwise AND for an identifier')
+      assert(left&3 is 3, 'a numeric operand after & should select bitwise AND without whitespace')
+      assert(left&(3) is 3, 'a parenthesised operand after & should select bitwise AND without whitespace')
+   end
+
+   context.verify()
+end
+
 -- This test confirms that a series of operators returns only one value.
 
 @Test function ChainedOperators()
@@ -45,6 +63,16 @@ end
    assert(2 ** 3 is 8, '** is power operator')
    -- Not-equals unaffected
    assert(3 != 4, '!= remains not-equal')
+end
+
+@Test function BitwiseBindsBeforeComparisons()
+   local lhs, first, second = 3, 1, 2
+   assert(lhs is first | second, 'OR on the right of equality should evaluate before the comparison')
+   assert(first | second is lhs, 'OR on the left of equality should evaluate before the comparison')
+   assert(lhs != first | first, 'OR on the right of inequality should evaluate before the comparison')
+   assert(lhs < first | 4, 'OR on the right of ordering should evaluate before the comparison')
+   assert(first | second in array<int> { 3 }, 'OR on the left of membership should evaluate before the membership test')
+   assert(lhs has first | second, 'has should continue to consume an unparenthesised OR mask')
 end
 
 @Test function CStylePrecedence()

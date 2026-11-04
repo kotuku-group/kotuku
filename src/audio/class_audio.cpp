@@ -7,10 +7,26 @@ The Audio class provides a comprehensive audio service that works across multipl
 design model. It serves as the foundation for all audio operations in Kōtuku framework, managing hardware resources,
 sample mixing, and output buffering.
 
-The Audio class supports 8/16/32 bit output in stereo or mono configurations, with advanced features including oversampling
-for enhanced quality, intelligent streaming for large samples, multiple simultaneous audio channels, and command sequencing
-for precise timing control. The internal floating-point mixer ensures high-quality audio processing regardless of the
-target hardware bit depth.
+The Audio class supports 8/16/32 bit output, nearest-neighbour, linear, cubic or band-limited sinc source
+resampling, fixed output smoothing, streaming for large samples, simultaneous audio channels, and command sequencing
+for precise timing control.  The internal mixer uses 32-bit floating-point arithmetic regardless of Quality or the
+hardware bit depth.
+
+<header>Formats and Layouts</header>
+
+PCM data is described by the !AudioFormat structure, which separates the sample representation from the channel
+layout.  A layout is an ordered list of channel identities, one for each sample in an interleaved frame:
+
+!SPK
+
+Named layouts can be expanded with the ExpandLayout() function.  The output layout is requested with #OutputLayout
+and the committed processing format is reported by #GetOutputFormat().  The format model can describe layouts, such as
+5.1, that the mixer cannot currently render.  Such layouts are rejected with `ERR::NoSupport` rather than being
+reinterpreted; the mixer currently renders mono (`CENTRE`) and stereo (`FRONT_LEFT`, `FRONT_RIGHT`) output.
+
+The term 'channel' has two meanings in the Audio API.  Voice channels, as allocated by #OpenChannels() and referenced
+by mixer handles, play one sample each.  Speaker channels are the members of a layout.  A voice channel playing a
+stereo sample contributes to two speaker channels.
 
 For straightforward audio playback requirements, we recommend using the @Sound class interface, which provides a
 simplified API whilst utilising the Audio class internally. Direct use of the Audio class is appropriate for
@@ -20,15 +36,69 @@ Note: Support for audio recording is not currently available in this implementat
 
 -END-
 
+TODO: Add support for recording audio and live microphone streaming
+
 *********************************************************************************************************************/
 
 #include "mixer_dispatch.h"
 
-#ifndef ALSA_ENABLED
+//********************************************************************************************************************
+// Number of selectable channels in a software volume control.  Unused entries hold -1.
+
+static int soft_volume_channels(const VolumeCtl &Control)
+{
+   if ((Control.Flags & VCF::MONO) != VCF::NIL) return 1;
+   int total = 0;
+   for (auto volume : Control.Channels) {
+      if (volume < 0) break;
+      total++;
+   }
+   return std::max(1, total);
+}
+
+#ifdef ALSA_ENABLED
+//********************************************************************************************************************
+// ALSA channel selectors index glAlsaConvert.  Mono elements expose one selector with an unknown speaker.
+
+static const int glAlsaSpeakers[6] = {
+   int(SPK::FRONT_LEFT), int(SPK::FRONT_RIGHT), int(SPK::CENTRE), int(SPK::REAR_LEFT), int(SPK::REAR_RIGHT),
+   int(SPK::LFE)
+};
+
+static void alsa_volume_channels(const VolumeCtl &Control, snd_mixer_elem_t *Element, std::vector<int> &Selectors,
+   std::vector<int> &Speakers)
+{
+   const bool capture = (Control.Flags & VCF::CAPTURE) != VCF::NIL;
+   if ((Control.Flags & VCF::MONO) != VCF::NIL) {
+      Selectors.push_back(0);
+      Speakers.push_back(0);
+      return;
+   }
+
+   for (int c = 0; c < std::ssize(glAlsaConvert); c++) {
+      auto id = (snd_mixer_selem_channel_id_t)glAlsaConvert[c];
+      if (capture ? snd_mixer_selem_has_capture_channel(Element, id) :
+            snd_mixer_selem_has_playback_channel(Element, id)) {
+         Selectors.push_back(c);
+         Speakers.push_back(glAlsaSpeakers[c]);
+      }
+   }
+}
+#endif
+
+//********************************************************************************************************************
+
+static void deref_audio_sample(AudioSample &Sample)
+{
+   release_audio_callback(Sample.Callback);
+   release_audio_callback(Sample.OnStop);
+}
+
+#if !defined(ALSA_ENABLED) and !defined(_WIN32)
 static ERR init_audio(extAudio *Self)
 {
    Self->BitDepth     = 16;
-   Self->Stereo       = true;
+   Self->Stereo       = Self->OutputLayout.size() IS 2;
    Self->MasterVolume = Self->Volumes[0].Channels[0];
    Self->Volumes[0].Flags |= VCF::MONO;
    for (int i=1; i < std::ssize(Self->Volumes[0].Channels); i++) Self->Volumes[0].Channels[i] = -1;
@@ -40,29 +110,54 @@ static ERR init_audio(extAudio *Self)
 #endif
 
 inline double extAudio::MixerLag() {
-   if (!mixerLag) {
-      kt::Log log(__FUNCTION__);
-      #ifdef _WIN32
-         // Windows uses a split buffer technique, so the write cursor is always 1/2 a buffer ahead.
-         mixerLag = MIX_INTERVAL + (double(MixElements>>1) / double(OutputRate));
-      #elif ALSA_ENABLED
-         mixerLag = MIX_INTERVAL + (AudioBufferSize / DriverBitSize) / double(OutputRate);
-      #endif
-      log.trace("Mixer lag: %.2f", mixerLag);
-   }
-   return mixerLag;
+   #ifdef _WIN32
+   const double elapsed = QueuedAt ? double(PreciseTime() - QueuedAt) / 1000000.0 : 0;
+   return std::max(0.0, audio_latency(QueuedFrames, OutputRate) - elapsed);
+   #elif defined(ALSA_ENABLED)
+   return audio_latency(BufferFrames, OutputRate);
+   #else
+   return 0;
+   #endif
+}
+
+// The device queue in seconds immediately after the most recent submission.  Unlike MixerLag(), time elapsed since the
+// submission is not deducted.
+
+inline double extAudio::SubmitLag() {
+   #ifdef _WIN32
+   return audio_latency(QueuedFrames, OutputRate);
+   #elif defined(ALSA_ENABLED)
+   return audio_latency(BufferFrames, OutputRate);
+   #else
+   return 0;
+   #endif
 }
 
 inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
+   Channel.Paused = false;
    if (!Channel.isStopped()) {
       Channel.State = CHS::FINISHED;
       if ((Channel.SampleHandle) and (Notify)) {
-         #ifdef ALSA_ENABLED
-            if ((Channel.EndTime) and (PreciseTime() < Channel.EndTime)) {
-               this->MixTimers.emplace_back(Channel.EndTime, Channel.SampleHandle);
-               Channel.EndTime = 0;
+         #ifdef AUDIO_WORKER
+            // With effects on the voice's path, the due time is set once their tail has drained.
+            const auto now = PreciseTime();
+            const auto audible = now + int64_t(MixerLag() * 1000000);
+            const auto deadline = now + int64_t((MaxDrain * 2 + 1) * 1000000);
+            const auto &set = Sets[unsigned(Channel.Handle) >> 16];
+            const bool await = (set.Effects and !set.Effects->Effects.empty()) or
+               !GlobalEffects->Effects.empty();
+            if (NotificationCount < Notifications.size()) {
+               Notifications[NotificationCount++] = { Channel.SampleHandle, Channel.Handle,
+                  Samples[Channel.SampleHandle].Generation, Channel.PlaybackGeneration,
+                  await ? INT64_MAX : audible, audible, deadline, await };
             }
-            else audio_stopped_event(*this, Channel.SampleHandle);
+            else {
+               // Preserve completions during an extended client stall without allocating on the worker.
+               auto &sample = Samples[Channel.SampleHandle];
+               ++sample.DeferredStops;
+               sample.DeferredStopDue = std::max(sample.DeferredStopDue, await ? deadline : audible);
+            }
+            notify_audio(this);
          #else
             audio_stopped_event(*this, Channel.SampleHandle);
          #endif
@@ -70,10 +165,6 @@ inline void extAudio::finish(AudioChannel &Channel, bool Notify) {
    }
    else Channel.State = CHS::FINISHED;
 }
-
-//********************************************************************************************************************
-// The individual mixing functions and function pointer arrays have been replaced by the
-// consolidated AudioMixer::dispatch_mix() function in mixer_dispatch.cpp
 
 /*********************************************************************************************************************
 -ACTION-
@@ -84,18 +175,24 @@ hardware resource acquisition, mixer buffer allocation, and platform-specific dr
 
 Activation attempts to gain exclusive or shared access to the audio hardware device. On some platforms, this may fail if
 another process has obtained an exclusive lock on the audio device. The specific behaviour depends on the underlying
-audio system (ALSA on Linux, DirectSound on Windows).
+audio system (ALSA on Linux, WASAPI on Windows).
 
 If activation fails, the audio object remains in an inactive state but retains its configuration. Common failure
 causes include hardware device unavailability, insufficient system resources, or driver compatibility issues.
+
+The #OutputLayout is negotiated with the device during activation.  An explicitly requested layout is exact: if the
+mixer or device cannot provide it, activation fails with `ERR::NoSupport` and the previously committed format is
+unchanged.  The default stereo request can settle on mono output if the device only supports mono.  A successful
+activation commits a new processing configuration, which is reported by #GetOutputFormat().
 
 All resources and device locks obtained during activation can be released through #Deactivate(). An inactive audio
 object can perform configuration operations but cannot process audio samples.
 
 -ERRORS-
 Okay: Hardware activation completed successfully.
-AllocMemory: Failed to allocate internal mixing buffers.
-Failed: Hardware device unavailable or driver initialisation failed.
+NoSupport: The requested output layout or format cannot be provided.
+CreateResource: The hardware audio buffer could not be created.
+Activate: The hardware device could not begin playback.
 
 *********************************************************************************************************************/
 
@@ -103,16 +200,56 @@ static ERR AUDIO_Activate(extAudio *Self)
 {
    kt::Log log;
 
+#ifdef AUDIO_WORKER
+   if (Self->WorkerStarted and !Self->StopWorker) return ERR::Okay;
+
+   if (Self->WorkerStarted) {
+      #ifdef ALSA_ENABLED
+      free_alsa(Self);
+      #else
+      stop_audio_worker(Self);
+      #endif
+   }
+#endif
+
    if (Self->Initialising) return ERR::Okay;
 
    log.branch();
+
+   // Reject an unsupported layout before the device or committed state is touched.
+
+   if (!output_layout_supported(Self->OutputLayout)) {
+      log.warning("The requested output layout of %d channels is not supported.", int(Self->OutputLayout.size()));
+      return ERR::NoSupport;
+   }
 
    Self->Initialising = true;
 
    ERR error;
    if ((error = init_audio(Self)) != ERR::Okay) {
       Self->Initialising = false;
+#ifdef AUDIO_WORKER
+      stop_audio_worker(Self);
+#endif
+#ifdef ALSA_ENABLED
+      free_alsa(Self);
+#endif
       return error;
+   }
+
+   // An explicit layout request is exact.  Only the default request may settle on the device's mono layout.
+
+   const auto committed = Self->Stereo ? std::span<const int>(glLayoutStereo) : std::span<const int>(glLayoutMono);
+   if (Self->LayoutExplicit and !layout_is(Self->OutputLayout, committed)) {
+      log.warning("The device cannot provide the requested %d-channel layout.", int(Self->OutputLayout.size()));
+      Self->Initialising = false;
+      #ifdef AUDIO_WORKER
+      stop_audio_worker(Self);
+      #endif
+      #ifdef ALSA_ENABLED
+      free_alsa(Self);
+      #endif
+      return ERR::NoSupport;
    }
 
    // Calculate one mixing element size for the hardware driver (not our floating point mixer).
@@ -128,48 +265,29 @@ static ERR AUDIO_Activate(extAudio *Self)
 
    const int mixbitsize = Self->Stereo ? sizeof(float) * 2 : sizeof(float);
 
-   Self->MixBufferSize = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
-   Self->MixElements   = SAMPLE(Self->MixBufferSize / mixbitsize);
+#ifdef _WIN32
+   const auto mix_buffer_size = BYTELEN(Self->BufferFrames * mixbitsize);
+#else
+   const auto mix_buffer_size = BYTELEN((int((mixbitsize * Self->OutputRate) * (MIX_INTERVAL * 1.5)) + 15) & (~15));
+#endif
 
-   if (AllocMemory(Self->MixBufferSize, MEM::DATA, &Self->MixBuffer) IS ERR::Okay) {
-      // Configure the mixing system
+   Self->MixBuffer.resize(mix_buffer_size / sizeof(float));
+   Self->MixElements = SAMPLE(mix_buffer_size / mixbitsize);
 
-      bool use_interpolation = (Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL;
-      Self->MixConfig = AudioConfig(Self->Stereo, use_interpolation);
-
-      #ifdef _WIN32
-         WAVEFORMATEX wave = {
-            .Format            = int16_t((Self->BitDepth IS 32) ? WAVE_FLOAT : WAVE_RAW),
-            .Channels          = int16_t(Self->Stereo ? 2 : 1),
-            .Frequency         = 44100,
-            .AvgBytesPerSecond = 44100 * Self->DriverBitSize,
-            .BlockAlign        = Self->DriverBitSize,
-            .BitsPerSample     = int16_t(Self->BitDepth),
-            .ExtraLength       = 0
-         };
-
-         if (auto strerr = sndCreateBuffer(Self, &wave, Self->MixBufferSize, 0x7fffffff, (PlatformData *)Self->PlatformData, TRUE)) {
-            log.warning(strerr);
-            Self->Initialising = false;
-            return ERR::Failed;
-         }
-
-         if (sndPlay((PlatformData *)Self->PlatformData, TRUE, 0)) {
-            Self->Initialising = false;
-            return log.warning(ERR::Failed);
-         }
-      #endif
-
-      // Note: The audio feed is managed by audio_timer() and is not started until an audio playback command
-      // is executed by the client.
-
-      Self->Initialising = false;
-      return ERR::Okay;
+   {
+      std::lock_guard mixer_lock(Self->MixerMutex);
+      Self->MixConfig = AudioConfig(Self->Stereo, Self->RequestedQuality.Resampler);
+      Self->snapshot_quality();
    }
-   else {
-      Self->Initialising = false;
-      return log.warning(ERR::AllocMemory);
-   }
+
+#ifdef AUDIO_WORKER
+   error = commit_audio_output(Self, committed, start_audio_worker);
+#else
+   error = commit_audio_output(Self, committed, nullptr);
+#endif
+   Self->Initialising = false;
+   if (error != ERR::Okay) acDeactivate(Self);
+   return error;
 }
 
 /*********************************************************************************************************************
@@ -180,15 +298,25 @@ AddSample: Adds a new sample to an audio object for channel-based playback.
 Audio samples can be loaded into an Audio object for playback via the AddSample() or #AddStream() methods.  For small
 samples under 512k we recommend AddSample(), while anything larger should be supported through #AddStream().
 
-When adding a sample, it is essential to select the correct bit format for the sample data.  While it is important to
-differentiate between simple attributes such as 8 or 16 bit data, mono or stereo format, you should also be aware of
-whether or not the data is little or big endian, and if the sample data consists of signed or unsigned values.  Because
-of the possible variations there are a number of sample formats, as illustrated in the following table:
+The `Format` describes the sample data with an !AudioFormat structure:
 
-!SFM
+!AudioFormat
 
-By default, all samples are assumed to be in little endian format, as supported by Intel CPU's.  If the data is in big
-endian format, logical-or the SampleFormat value with `SFM::F_BIG_ENDIAN`.
+The `SampleFormat` selects the representation of each sample, independently of the channel count:
+
+!ASF
+
+The `Layout` lists the identity of each channel in the order that its samples appear within a frame.  Use
+ExpandLayout() to obtain the layout of a named preset.  Multi-byte samples are little endian unless
+`AFF::BIG_ENDIAN_ORDER` is set in `Flags`.  The `SampleRate` records the nominal rate of the source.  It does not
+change the playback frequency, which is always set explicitly with ~MixFrequency().
+
+The format is copied, including its layout, so the client's descriptor does not need to outlive the call.  A malformed
+format is rejected with `ERR::Args`.  The mixer currently plays `ASF::U8` and `ASF::S16` samples in mono (`CENTRE`)
+or stereo (`FRONT_LEFT`, `FRONT_RIGHT`) layouts, and other valid formats are rejected with `ERR::NoSupport`.
+
+The byte length of `Data` and all loop boundaries must be multiples of the frame size, which is the number of channels
+multiplied by the container size of one sample.  ~GetFrameBytes() returns this value for a format.
 
 It is also possible to supply loop information with the sample data.  This is achieved by configuring the !AudioLoop
 structure:
@@ -205,18 +333,20 @@ The `Loop1Type` and `Loop2Type` fields alter the style of the loop.  These can b
 
 -INPUT-
 func OnStop: This optional callback function will be called when the stream stops playing.
-int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
-buf(ptr) Data: Points to the address of the sample data.
-bufsize DataSize: Size of the sample data, in bytes.
+struct(*AudioFormat) Format: Describes the format of the sample data.
+array(char) Data: Points to the address of the sample data.
 struct(*AudioLoop) Loop: Optional sample loop information.
-structsize LoopSize: Must be set to `sizeof(AudioLoop)` if `Loop` is defined.
 &int Result: The resulting sample handle will be returned in this parameter.
 
 -ERRORS-
 Okay: Sample successfully added to the audio system.
-Args: Invalid argument values provided.
+Args: The format is malformed, or the data length or a loop boundary is not aligned to a complete frame.
+NoSupport: The format is valid, but its representation or layout cannot be played.
 NullArgs: Required parameters are null or missing.
 AllocMemory: Failed to allocate enough memory to hold the sample data.
+
+-TAGS-
+mutates-object, copies-input, callback-held, creates-resource
 -END-
 
 *********************************************************************************************************************/
@@ -225,33 +355,76 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if ((!Args) or (!Args->Format)) return log.warning(ERR::NullArgs);
 
-   log.branch("Data: %p, Length: %d", Args->Data, Args->DataSize);
+   log.branch("Data: %p, Length: %zu", Args->Data.data(), Args->Data.size_bytes());
+
+   if (Args->Data.size_bytes() > size_t(INT_MAX)) return log.warning(ERR::Args);
+
+   int frame_size;
+   if (auto error = format_frame_bytes(*Args->Format, frame_size); error != ERR::Okay) return log.warning(error);
+   const auto sample_type = playback_format(Args->Format->SampleFormat, format_layout(*Args->Format));
+   if (sample_type IS PCM::NIL) return log.warning(ERR::NoSupport);
+
+   const int64_t frame_bytes = frame_size;
+   if ((Args->Data.size_bytes() % frame_bytes) != 0) return log.warning(ERR::Args);
+   if (Args->Loop) {
+      if (Args->Loop->Loop1Type != LTYPE::NIL and
+          (Args->Loop->Loop1Start < 0 or Args->Loop->Loop1End < Args->Loop->Loop1Start or
+          Args->Loop->Loop1End > int64_t(Args->Data.size_bytes()) or
+          (Args->Loop->Loop1Start % frame_bytes) or (Args->Loop->Loop1End % frame_bytes))) {
+         return log.warning(ERR::Args);
+      }
+      if (Args->Loop->Loop2Type != LTYPE::NIL and
+          (Args->Loop->Loop2Start < 0 or Args->Loop->Loop2End < Args->Loop->Loop2Start or
+          Args->Loop->Loop2End > int64_t(Args->Data.size_bytes()) or
+          (Args->Loop->Loop2Start % frame_bytes) or (Args->Loop->Loop2End % frame_bytes))) {
+         return log.warning(ERR::Args);
+      }
+   }
+
+   std::vector<uint8_t> data(Args->Data.begin(), Args->Data.end());
+   if (format_needs_swap(Args->Format->SampleFormat, Args->Format->Flags)) {
+      swap_samples_16(data.data(), data.size());
+   }
+   auto format = copy_format(*Args->Format);
+   std::vector<AudioSample> sample_slots;
+   if (Self->Samples.size() + 10 > Self->Samples.capacity()) sample_slots.reserve(Self->Samples.size() + 10);
+   std::lock_guard mixer_lock(Self->MixerMutex);
 
    // Find an unused sample block.  If there is none, increase the size of the sample management area.
 
    int idx;
    for (idx=1; idx < std::ssize(Self->Samples); idx++) {
-      if (!Self->Samples[idx].Data) break;
+      if (Self->Samples[idx].Data.empty()) break;
    }
 
-   if (idx >= std::ssize(Self->Samples)) Self->Samples.resize(std::ssize(Self->Samples)+10);
-
-   auto shift = sample_shift(Args->SampleFormat);
+   if (idx >= std::ssize(Self->Samples)) {
+      if (sample_slots.capacity()) {
+         for (auto &entry : Self->Samples) sample_slots.emplace_back(std::move(entry));
+         Self->Samples.swap(sample_slots);
+      }
+      Self->Samples.resize(Self->Samples.size() + 10);
+   }
 
    auto &sample = Self->Samples[idx];
-   sample.SampleType   = Args->SampleFormat;
-   sample.SampleLength = SAMPLE(Args->DataSize >> shift);
+   deref_audio_sample(sample);
+   sample.clear();
+   sample.Format       = std::move(format);
+   sample.SampleType   = sample_type;
+   sample.FrameBytes   = frame_size;
+   sample.SampleLength = SAMPLE(int64_t(Args->Data.size_bytes()) / frame_bytes);
+   sample.BufferedLength = BYTELEN(0);
    sample.OnStop       = Args->OnStop;
+   if (sample.OnStop.defined()) sample.OnStop.pin();
 
    if (auto loop = Args->Loop) {
       sample.LoopMode     = loop->LoopMode;
-      sample.Loop1Start   = SAMPLE(loop->Loop1Start >> shift);
-      sample.Loop1End     = SAMPLE(loop->Loop1End >> shift);
+      sample.Loop1Start   = SAMPLE(loop->Loop1Start / frame_bytes);
+      sample.Loop1End     = SAMPLE(loop->Loop1End / frame_bytes);
       sample.Loop1Type    = loop->Loop1Type;
-      sample.Loop2Start   = SAMPLE(loop->Loop2Start >> shift);
-      sample.Loop2End     = SAMPLE(loop->Loop2End >> shift);
+      sample.Loop2Start   = SAMPLE(loop->Loop2Start / frame_bytes);
+      sample.Loop2End     = SAMPLE(loop->Loop2End / frame_bytes);
       sample.Loop2Type    = loop->Loop2Type;
       // Eliminate zero-byte loops
 
@@ -263,13 +436,7 @@ ERR AUDIO_AddSample(extAudio *Self, struct snd::AddSample *Args)
       sample.Loop2Type = LTYPE::NIL;
    }
 
-   if ((sample.SampleType IS SFM::NIL) or (Args->DataSize <= 0) or (!Args->Data)) {
-      sample.Data = nullptr;
-   }
-   else if (AllocMemory(Args->DataSize, MEM::DATA|MEM::NO_CLEAR, &sample.Data) IS ERR::Okay) {
-      copymem(Args->Data, sample.Data, Args->DataSize);
-   }
-   else return log.warning(ERR::AllocMemory);
+   sample.Data.swap(data);
 
    Args->Result = idx;
    return ERR::Okay;
@@ -284,22 +451,27 @@ Use AddStream to load large sound samples to an Audio object, allowing it to pla
 machine without over-provisioning available resources.  For small samples under 256k consider using #AddSample()
 instead.
 
-The data source used for a stream will need to be provided by a client provided `Callback` function.  The prototype
-is `INT callback(INT SampleHandle, INT Offset, UINT8 *Buffer, INT BufferSize)`.
+The data source used for a stream must be provided by a client callback.  The native prototype is
+`INT callback(INT SampleHandle, INT64 Offset, UINT8 *Buffer, INT BufferSize)`.
 
-The `Offset` reflects the retrieval point of the decoded data and is measured in bytes.  The `Buffer` and
-`BufferSize` reflect the target for the decoded data.  The function must return the total number of bytes that were
-written to the `Buffer`. If an error occurs, return zero.
+The `Offset` is the 64-bit byte position of the decoded data, or `-1` to continue from the end of the previous
+request.  The `Buffer` and `BufferSize` identify the destination.  `BufferSize` is always a whole number of frames.  The
+callback must return the number of bytes written, which should also be a whole number of frames, or zero when no data
+is currently available.  A result that ends with an incomplete frame is invalid: the incomplete frame is discarded and
+the next request specifies the `Offset` of the first missing frame explicitly.  Offset, stream length, play offset and
+loop boundaries must be aligned to a complete source frame.
 
-When creating a new stream, pay attention to the audio format that is being used for the sample data.
-It is important to differentiate between 8-bit, 16-bit, mono and stereo, but also be aware of whether or not the data
-is little or big endian, and if the sample data consists of signed or unsigned values.  Because of the possible
-variations there are a number of sample formats, as illustrated in the following table:
+On ALSA and Windows, callbacks run on the client thread and fill a frame-aligned source ring.  The saved
+`StreamBufferMs` setting
+requests 100–10000 ms of source data at #OutputRate (default 1000 ms), capped at 8 MiB per stream and 64 MiB per Audio
+object.  Refills are requested at half capacity.  Initial playback uses the first fill; a short fill permits playback
+with the available data.  A zero-byte result is retried without blocking other sounds.  If the ring empties, that source
+contributes silence and resumes from its preserved position when data arrives.  Source prefetch adds no output queue
+latency.  Sources played faster than #OutputRate exhaust the ring proportionally sooner.
 
-!SFM
-
-By default, all samples are assumed to be in little endian format, as supported by Intel CPU's.  If the data is in big
-endian format, logical-or the `SampleFormat` value with the flag `SFM::F_BIG_ENDIAN`.
+The `Format` describes the stream data as an !AudioFormat.  The rules are the same as for #AddSample(): the format is
+copied, malformed formats are rejected with `ERR::Args`, and valid formats that cannot be played are rejected with
+`ERR::NoSupport`.  A stream's format is fixed for its lifetime; create a new stream to change it.
 
 It is also possible to supply loop information with the stream.  The Audio class supports a number of different looping
 formats via the !AudioLoop structure:
@@ -315,20 +487,24 @@ currently supported for streams.  For that reason, set the type variables to eit
 `LTYPE::UNIDIRECTIONAL`.
 
 -INPUT-
-func Callback: This callback function must be able to return raw audio data for streaming.
-func OnStop: This optional callback function will be called when the stream stops playing.
-int(SFM) SampleFormat: Indicates the format of the sample data that you are adding.
-int SampleLength: Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.
-int PlayOffset: Offset the playing position by this byte index.
+func Callback: This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.
+func OnStop: This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.
+struct(*AudioFormat) Format: Describes the format of the stream data.
+large SampleLength: Total byte length of the stream, or `-1` when the length is unknown.  Zero is also accepted as the legacy unknown-length value.
+large PlayOffset: Initial byte position.  It must be aligned to a complete source frame.
 struct(*AudioLoop) Loop: Refers to sample loop information, or `NULL` if no loop is required.
-structsize LoopSize: Must be set to `sizeof(AudioLoop)`.
 &int Result: The resulting sample handle will be returned in this parameter.
 
 -ERRORS-
 Okay: Stream successfully configured and added to the audio system.
-Args: Invalid argument values provided.
+Args: The format is malformed, or an offset, length or loop boundary is not aligned to a complete frame.
+NoSupport: The format is valid, but its representation or layout cannot be played.
+OutOfRange: A length, play offset or loop boundary is outside the stream.
 NullArgs: Required parameters are null or missing.
 AllocMemory: Failed to allocate the stream buffer.
+
+-TAGS-
+mutates-object, retains-input, callback-held, creates-resource
 -END-
 
 *********************************************************************************************************************/
@@ -339,62 +515,109 @@ static ERR AUDIO_AddStream(extAudio *Self, struct snd::AddStream *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (Args->SampleFormat IS SFM::NIL)) return log.warning(ERR::NullArgs);
+   if ((!Args) or (!Args->Format)) return log.warning(ERR::NullArgs);
    if (Args->Callback.Type IS CALL::NIL) return log.warning(ERR::NullArgs);
 
-   log.branch("Length: %d", Args->SampleLength);
+   int frame_size;
+   if (auto error = format_frame_bytes(*Args->Format, frame_size); error != ERR::Okay) return log.warning(error);
+   const auto sample_type = playback_format(Args->Format->SampleFormat, format_layout(*Args->Format));
+   if (sample_type IS PCM::NIL) return log.warning(ERR::NoSupport);
+
+   if (Args->SampleLength < -1 or Args->PlayOffset < 0) return ERR::OutOfRange;
+   if (Args->SampleLength > 0 and Args->PlayOffset > Args->SampleLength) return ERR::OutOfRange;
+   const int64_t frame_bytes = frame_size;
+   if ((Args->PlayOffset % frame_bytes) or
+       (Args->SampleLength > 0 and Args->SampleLength % frame_bytes)) return ERR::Args;
+   if (Args->Loop and (Args->Loop->Loop1Start < 0 or Args->Loop->Loop1End < Args->Loop->Loop1Start or
+       (Args->SampleLength > 0 and Args->Loop->Loop1End > Args->SampleLength))) return ERR::OutOfRange;
+   if (Args->Loop and ((Args->Loop->Loop1Start % frame_bytes) or
+       (Args->Loop->Loop1End % frame_bytes))) return ERR::Args;
+
+   log.branch("Length: %" PF64, (long long)Args->SampleLength);
+
+   int buffer_len;
+   #ifdef AUDIO_WORKER
+   // Cap each source at 8 MiB and all source rings together at 64 MiB.
+   buffer_len = int(std::min<int64_t>((int64_t(Self->OutputRate) * Self->StreamBufferMs / 1000) * frame_bytes,
+      8 * 1024 * 1024));
+   buffer_len -= buffer_len % frame_size;
+   buffer_len = std::max((glSincTaps / 2 + 1) * frame_size, buffer_len);
+   #else
+   buffer_len = Args->SampleLength > 0 ? int(std::min<int64_t>(Args->SampleLength / 2, MAX_STREAM_BUFFER)) :
+      MAX_STREAM_BUFFER;
+   buffer_len = std::max(frame_size, buffer_len - (buffer_len % frame_size));
+   #endif
+
+   auto format = copy_format(*Args->Format);
+
+   std::vector<uint8_t> data(buffer_len);
+   std::vector<AudioSample> sample_slots;
+   if (Self->Samples.size() + 10 > Self->Samples.capacity()) sample_slots.reserve(Self->Samples.size() + 10);
+
+   std::lock_guard mixer_lock(Self->MixerMutex);
+
+#ifdef AUDIO_WORKER
+   size_t allocated = 0;
+   for (const auto &entry : Self->Samples) if (entry.Stream) allocated += entry.Data.size();
+   if (allocated + buffer_len > 64 * 1024 * 1024) return ERR::AllocMemory;
+#endif
 
    // Find an unused sample block.  If there is none, increase the size of the sample management area.
 
    int idx;
    for (idx=1; idx < std::ssize(Self->Samples); idx++) {
-      if (!Self->Samples[idx].Data) break;
+      if (Self->Samples[idx].Data.empty()) break;
    }
 
-   if (idx >= std::ssize(Self->Samples)) Self->Samples.resize(std::ssize(Self->Samples)+10);
-
-   auto shift = sample_shift(Args->SampleFormat);
-
-   int buffer_len;
-   if (Args->SampleLength > 0) {
-      buffer_len = Args->SampleLength / 2;
-      if (buffer_len > MAX_STREAM_BUFFER) buffer_len = MAX_STREAM_BUFFER;
+   if (idx >= std::ssize(Self->Samples)) {
+      if (sample_slots.capacity()) {
+         for (auto &entry : Self->Samples) sample_slots.emplace_back(std::move(entry));
+         Self->Samples.swap(sample_slots);
+      }
+      Self->Samples.resize(Self->Samples.size() + 10);
    }
-   else buffer_len = MAX_STREAM_BUFFER; // Use the recommended amount of buffer space
-
-   #ifdef ALSA_ENABLED
-      if (buffer_len < Self->AudioBufferSize) log.warning("Warning: Buffer length of %d is less than audio buffer size of %d.", buffer_len, Self->AudioBufferSize);
-   #endif
 
    // Setup the audio sample
 
    auto &sample = Self->Samples[idx];
-   sample.SampleType   = Args->SampleFormat;
-   sample.SampleLength = SAMPLE(buffer_len>>shift);
-   sample.StreamLength = BYTELEN((Args->SampleLength > 0) ? Args->SampleLength : 0x7fffffff); // 'Infinite' stream length
+   deref_audio_sample(sample);
+   sample.clear();
+   sample.Format       = std::move(format);
+   sample.SampleType   = sample_type;
+   sample.FrameBytes   = frame_size;
+   sample.Swap         = format_needs_swap(Args->Format->SampleFormat, Args->Format->Flags);
+   sample.SampleLength = SAMPLE(buffer_len / frame_bytes);
+   sample.StreamLength = BYTELEN(std::max<int64_t>(0, Args->SampleLength));
+   sample.StreamLengthKnown = Args->SampleLength > 0;
    sample.Callback     = Args->Callback;
    sample.OnStop       = Args->OnStop;
+   sample.BufferedLength = BYTELEN(0);
+   if (sample.Callback.defined()) sample.Callback.pin();
+   if (sample.OnStop.defined()) sample.OnStop.pin();
    sample.Stream       = true;
    sample.PlayPos      = BYTELEN(Args->PlayOffset);
 
    sample.LoopMode     = LOOP::SINGLE;
    sample.Loop1Type    = LTYPE::UNIDIRECTIONAL;
    sample.Loop1Start   = SAMPLE(0);
-   sample.Loop1End     = SAMPLE(buffer_len>>shift);
+   sample.Loop1End     = SAMPLE(buffer_len / frame_bytes);
 
    if (Args->Loop) {
       sample.Loop2Type    = LTYPE::UNIDIRECTIONAL;
-      sample.Loop2Start   = SAMPLE(Args->Loop->Loop1Start);
-      sample.Loop2End     = SAMPLE(Args->Loop->Loop1End);
-      sample.StreamLength = BYTELEN(sample.Loop2End<<shift);
+      sample.Loop2Start   = SAMPLE(Args->Loop->Loop1Start / frame_bytes);
+      sample.Loop2End     = SAMPLE(Args->Loop->Loop1End / frame_bytes);
+      sample.StreamLength = BYTELEN(int64_t(sample.Loop2End) * frame_bytes);
+      sample.StreamLengthKnown = true;
 
       if (sample.Loop2Start IS sample.Loop2End) sample.Loop2Type = LTYPE::NIL;
    }
 
-   if (AllocMemory(buffer_len, MEM::DATA|MEM::NO_CLEAR, &sample.Data) != ERR::Okay) {
-      return ERR::AllocMemory;
-   }
-
+   sample.Data.swap(data);
+   #ifdef AUDIO_WORKER
+   ++sample.Generation;
+   sample.Ring.Read = sample.Ring.Used = 0;
+   sample.HistoryFrames = 0;
+   #endif
    Args->Result = idx;
    return ERR::Okay;
 }
@@ -418,6 +641,9 @@ Okay
 NullArgs
 NoSupport: PC speaker support is not available.
 
+-TAGS-
+blocking
+
 *********************************************************************************************************************/
 
 static ERR AUDIO_Beep(extAudio *Self, struct snd::Beep *Args)
@@ -430,7 +656,7 @@ static ERR AUDIO_Beep(extAudio *Self, struct snd::Beep *Args)
       return ERR::Okay;
    }
 #elif _WIN32
-   if (sndBeep(Args->Pitch, Args->Duration)) {
+   if (wasapi_beep(Args->Pitch, Args->Duration)) {
       return ERR::Okay;
    }
 #else
@@ -457,10 +683,14 @@ Okay
 NullArgs
 Args
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR AUDIO_CloseChannels(extAudio *Self, struct snd::CloseChannels *Args)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
@@ -468,8 +698,10 @@ static ERR AUDIO_CloseChannels(extAudio *Self, struct snd::CloseChannels *Args)
    log.branch("Handle: $%.8x", Args->Handle);
 
    int index = Args->Handle>>16;
-   if ((index < 0) or (index >= std::ssize(Self->Sets))) log.warning(ERR::Args);
+   if ((index < 1) or (index >= std::ssize(Self->Sets))) return log.warning(ERR::Args);
 
+   cancel_audio_batches(Self, unsigned(index));
+   ++*Self->GlobalEffects->Generation;
    Self->Sets[index].clear(); // We can't erase because that would mess up other channel handles.
    return ERR::Okay;
 }
@@ -496,40 +728,29 @@ static ERR AUDIO_Deactivate(extAudio *Self)
 
    acClear(Self);
 
-#ifdef ALSA_ENABLED
-   free_alsa(Self);
-   //if (Self->MixHandle) { snd_mixer_close(Self->MixHandle); Self->MixHandle = NULL; }
-   //if (Self->Handle) { snd_pcm_close(Self->Handle); Self->Handle = 0; }
+#ifdef AUDIO_WORKER
+   stop_audio_worker(Self);
+#else
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   cancel_audio_batches(Self);
 #endif
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR AUDIO_Free(extAudio *Self)
-{
-   if ((Self->Flags & ADF::AUTO_SAVE) != ADF::NIL) Self->saveSettings();
-
-   if (Self->Timer) { UpdateTimer(Self->Timer, 0); Self->Timer = nullptr; }
-
-   glSoundChannels.erase(Self->UID);
-
-   acDeactivate(Self);
-
-   if (Self->MixBuffer) { FreeResource(Self->MixBuffer); Self->MixBuffer = nullptr; }
+   {
+      std::lock_guard lock(Self->MixerMutex);
+      Self->DitherState.reset();
+      Self->OutputActive = false;
+      Self->EffectConfigured = false;
+      Self->GlobalEffects->reset();
+      Self->GlobalEffects->Rate = 0;
+      for (auto &set : Self->Sets) if (set.Effects) {
+         set.Effects->reset();
+         set.Effects->Rate = 0;
+      }
+   }
 
 #ifdef ALSA_ENABLED
-
    free_alsa(Self);
-
-#elif _WIN32
-
-   dsCloseDevice();
-
 #endif
-
-   Self->~extAudio();
 
    return ERR::Okay;
 }
@@ -540,58 +761,7 @@ static ERR AUDIO_Init(extAudio *Self)
 {
    kt::Log log;
 
-#ifdef _WIN32
-   Self->OutputRate = 44100; // Mix rate is forced for direct sound
-#endif
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR AUDIO_NewObject(extAudio *Self)
-{
-   kt::Log log;
-
-   Self->OutputRate  = 44100;        // Rate for output to speakers
-   Self->InputRate   = 44100;        // Input rate for recording
-   Self->Quality     = 80;
-   Self->BitDepth    = 16;
-   Self->Flags       = ADF::OVER_SAMPLING|ADF::FILTER_HIGH|ADF::VOL_RAMPING|ADF::STEREO;
-   Self->Periods     = 4;
-   Self->PeriodSize  = 2048;
-   Self->Device      = "default";
-   Self->MaxChannels = 8;
-
-   const SystemState *state = GetSystemState();
-   if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
-      Self->Flags |= ADF::SYSTEM_WIDE;
-   }
-
-   Self->Samples.reserve(32);
-
-#ifdef __linux__
-   Self->Volumes.resize(2);
-   Self->Volumes[0].Name = "Master";
-   for (int i=0; i < std::ssize(Self->Volumes[0].Channels); i++) Self->Volumes[0].Channels[i] = 1.0;
-
-   Self->Volumes[1].Name = "PCM";
-   for (int i=0; i < std::ssize(Self->Volumes[1].Channels); i++) Self->Volumes[1].Channels[i] = 1.0;
-#else
-   Self->Volumes.resize(1);
-   Self->Volumes[0].Name = "Master";
-   Self->Volumes[0].Channels[0] = 1.0;
-   for (int i=1; i < std::ssize(Self->Volumes[0].Channels); i++) Self->Volumes[0].Channels[i] = -1;
-#endif
-
-   load_config(Self);
-
-   return ERR::Okay;
-}
-
-static ERR AUDIO_NewPlacement(extAudio *Self)
-{
-   new (Self) extAudio;
    return ERR::Okay;
 }
 
@@ -602,6 +772,10 @@ OpenChannels: Allocates audio channels that can be used for sample playback.
 
 Use the OpenChannels method to open audio channels for sample playback.  Channels are allocated in sets with a size
 range between 1 and 64.  Channel sets make it easier to segregate playback between users of the same audio object.
+
+These are voice channels: each plays one sample at a time, whatever the number of channels in that sample's format.
+They are unrelated to the speaker channels of an output layout; a voice channel playing a stereo sample contributes to
+both front speakers.
 
 The resulting handle returned from this method is an integer consisting of two parts.  The upper word uniquely
 identifies the channel set that has been provided to you, while the lower word is used to refer to specific channel
@@ -618,6 +792,9 @@ Okay
 NullArgs
 OutOfRange: The amount of requested channels or commands is outside of acceptable range.
 AllocMemory: Memory for the audio channels could not be allocated.
+
+-TAGS-
+mutates-object, creates-resource
 -END-
 
 *********************************************************************************************************************/
@@ -635,19 +812,29 @@ static ERR AUDIO_OpenChannels(extAudio *Self, struct snd::OpenChannels *Args)
       return log.warning(ERR::OutOfRange);
    }
 
-   // Bear in mind that the +1 is for channel set 0 being a dummy entry.
+   ChannelSet channels;
+   channels.Channel.resize(Args->Total);
+   channels.Shadow.resize(Args->Total); // De-clicking is independent of source resampling quality.
+   channels.Tempo = 125;
+   channels.MixLeft = channels.TickFrames(Self->OutputRate);
+   channels.Commands.reserve(1024);
 
-   int index = std::ssize(Self->Sets) + 1;
-   Self->Sets.resize(index+1);
+   std::vector<ChannelSet> set_slots;
+   if (Self->Sets.size() + 2 > Self->Sets.capacity()) set_slots.reserve(Self->Sets.size() + 2);
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   const int index = Self->Sets.size() + 1; // Set zero remains a dummy entry.
+   if (set_slots.capacity()) {
+      for (auto &entry : Self->Sets) set_slots.emplace_back(std::move(entry));
+      Self->Sets.swap(set_slots);
+   }
+   Self->Sets.resize(index + 1);
+   Self->Sets[index] = std::move(channels);
 
-   Self->Sets[index].Channel.resize(Args->Total);
-
-   if ((Self->Flags & ADF::OVER_SAMPLING) != ADF::NIL) Self->Sets[index].Shadow.resize(Args->Total);
-   else Self->Sets[index].Shadow.clear();
-
-   Self->Sets[index].UpdateRate = 125;  // Default mixer update rate of 125ms
-   Self->Sets[index].MixLeft    = Self->MixLeft(Self->Sets[index].UpdateRate);
-   Self->Sets[index].Commands.reserve(32);
+   for (int channel = 0; channel < Args->Total; ++channel) {
+      const int handle = (index << 16) | channel;
+      Self->Sets[index].Channel[channel].Handle = handle;
+      if (channel < std::ssize(Self->Sets[index].Shadow)) Self->Sets[index].Shadow[channel].Handle = handle;
+   }
 
    Args->Result = index<<16;
    return ERR::Okay;
@@ -671,12 +858,17 @@ int Handle: The handle of the sample that requires removal.
 Okay
 NullArgs
 OutOfRange: The provided sample handle is not within the valid range.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
 {
+   std::vector<uint8_t> retired_data;
+   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
@@ -685,6 +877,31 @@ static ERR AUDIO_RemoveSample(extAudio *Self, struct snd::RemoveSample *Args)
 
    if ((Args->Handle < 1) or (Args->Handle >= std::ssize(Self->Samples))) return log.warning(ERR::OutOfRange);
 
+   #ifdef AUDIO_WORKER
+   flush_audio_commands(Self);
+   #endif
+   for (auto &set : Self->Sets) {
+      for (auto &command : set.Commands) {
+         if (command.CommandID IS CMD::SAMPLE and std::get<int>(command.Data) IS Args->Handle) {
+            command.DeferredError = ERR::NoData;
+         }
+      }
+      for (auto &channel : set.Channel) {
+         if (channel.SampleHandle IS Args->Handle) {
+            channel.State = CHS::STOPPED;
+            channel.Paused = false;
+            channel.SampleHandle = 0;
+         }
+      }
+      for (auto &channel : set.Shadow) {
+         if (channel.SampleHandle IS Args->Handle) {
+            channel.State = CHS::STOPPED;
+            channel.SampleHandle = 0;
+         }
+      }
+   }
+   deref_audio_sample(Self->Samples[Args->Handle]);
+   Self->Samples[Args->Handle].Data.swap(retired_data);
    Self->Samples[Args->Handle].clear();
 
    return ERR::Okay;
@@ -721,76 +938,90 @@ static ERR AUDIO_SaveToObject(extAudio *Self, struct acSaveToObject *Args)
       config->write("AUDIO", "OutputRate", std::to_string(Self->OutputRate));
       config->write("AUDIO", "InputRate", std::to_string(Self->InputRate));
       config->write("AUDIO", "Quality", std::to_string(Self->Quality));
+      config->write("AUDIO", "Dither", std::to_string(int(Self->Dither)));
       config->write("AUDIO", "BitDepth", std::to_string(Self->BitDepth));
       config->write("AUDIO", "Periods", std::to_string(Self->Periods));
-      config->write("AUDIO", "PeriodSize", std::to_string(Self->PeriodSize));
+      config->write("AUDIO", "StreamBufferMs", std::to_string(Self->StreamBufferMs));
+      config->write("AUDIO", "PeriodFrames", std::to_string(Self->PeriodSize));
 
-      if ((Self->Flags & ADF::STEREO) != ADF::NIL) config->write("AUDIO", "Stereo", "TRUE");
-      else config->write("AUDIO", "Stereo", "FALSE");
+      if (Self->LayoutExplicit) {
+         std::string layout;
+         for (auto identity : Self->OutputLayout) {
+            if (not layout.empty()) layout += ',';
+            layout += std::to_string(identity);
+         }
+         config->write("AUDIO", "OutputLayout", layout);
+      }
 
 #ifdef __linux__
       if (!Self->Device.empty()) config->write("AUDIO", "Device", Self->Device);
       else config->write("AUDIO", "Device", "default");
 
       if ((!Self->Volumes.empty()) and ((Self->Flags & ADF::SYSTEM_WIDE) != ADF::NIL)) {
+#ifdef ALSA_ENABLED
+         snd_mixer_selem_id_t *sid;
+         snd_mixer_selem_id_alloca(&sid);
+         snd_mixer_selem_id_set_index(sid, 0);
+#endif
+
          for (int i=0; i < std::ssize(Self->Volumes); i++) {
+            auto channels = Self->Volumes[i].Channels;
+            auto flags = Self->Volumes[i].Flags;
+
+#ifdef ALSA_ENABLED
+            if (Self->MixHandle) {
+               snd_mixer_selem_id_set_name(sid, Self->Volumes[i].Name.c_str());
+               if (auto elem = snd_mixer_find_selem(Self->MixHandle, sid)) {
+                  long left = 0;
+                  long right = 0;
+                  long pmin = 0;
+                  long pmax = 0;
+                  int unmuted = 1;
+
+                  if (snd_mixer_selem_has_playback_volume(elem)) {
+                     snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
+                     snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &left);
+                     snd_mixer_selem_get_playback_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &unmuted);
+                     if ((flags & VCF::MONO) != VCF::NIL) right = left;
+                     else snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_RIGHT, &right);
+                  }
+                  else if (snd_mixer_selem_has_capture_volume(elem)) {
+                     snd_mixer_selem_get_capture_volume_range(elem, &pmin, &pmax);
+                     snd_mixer_selem_get_capture_volume(elem, SND_MIXER_SCHN_FRONT_LEFT, &left);
+                     snd_mixer_selem_get_capture_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &unmuted);
+                     if ((flags & VCF::MONO) != VCF::NIL) right = left;
+                     else snd_mixer_selem_get_capture_volume(elem, SND_MIXER_SCHN_FRONT_RIGHT, &right);
+                  }
+
+                  if (pmin < pmax) {
+                     channels.resize(((flags & VCF::MONO) != VCF::NIL) ? 1 : 2);
+                     channels[0] = (float)((double)(left - pmin) / (double)(pmax - pmin));
+                     if ((flags & VCF::MONO) IS VCF::NIL) {
+                        channels[1] = (float)((double)(right - pmin) / (double)(pmax - pmin));
+                     }
+                     if (unmuted) flags &= ~VCF::MUTE;
+                     else flags |= VCF::MUTE;
+                  }
+               }
+            }
+#endif
+
             std::ostringstream out;
-            if ((Self->Volumes[i].Flags & VCF::MUTE) != VCF::NIL) out << "1,[";
+            if ((flags & VCF::MUTE) != VCF::NIL) out << "1,[";
             else out << "0,[";
 
-            if ((Self->Volumes[i].Flags & VCF::MONO) != VCF::NIL) {
-               out << Self->Volumes[i].Channels[0];
+            if ((flags & VCF::MONO) != VCF::NIL) {
+               out << channels[0];
             }
-            else for (int c=0; c < std::ssize(Self->Volumes[i].Channels); c++) {
+            else for (int c=0; c < std::ssize(channels); c++) {
                if (c > 0) out << ',';
-               out << Self->Volumes[i].Channels[c];
+               out << channels[c];
             }
             out << ']';
 
             config->write("MIXER", Self->Volumes[i].Name.c_str(), out.str());
          }
       }
-#if 0
-   // Commented out because it prevents savetoobject being used by other tasks.
-
-   snd_mixer_selem_id_t *sid;
-   snd_mixer_elem_t *elem;
-   int left, right;
-   int pmin, pmax;
-   int mute;
-   int i;
-
-   snd_mixer_selem_id_alloca(&sid);
-   snd_mixer_selem_id_set_index(sid, 0);
-   snd_mixer_selem_id_set_name(sid, Self->Volumes[i].Name);
-
-   if ((elem = snd_mixer_find_selem(Self->MixHandle, sid))) {
-      if (snd_mixer_selem_has_playback_volume(elem)) {
-         snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
-         snd_mixer_selem_get_playback_volume(elem, 0, &left);
-         snd_mixer_selem_get_playback_switch(elem, 0, &mute);
-         if ((Self->Volumes[i].Flags & VCF::MONO) != VCF::NIL) right = left;
-         else snd_mixer_selem_get_playback_volume(elem, 1, &right);
-      }
-      else if (snd_mixer_selem_has_capture_volume(elem)) {
-         snd_mixer_selem_get_capture_volume_range(elem, &pmin, &pmax);
-         snd_mixer_selem_get_capture_volume(elem, 0, &left);
-         snd_mixer_selem_get_capture_switch(elem, 0, &mute);
-         if ((Self->Volumes[i].Flags & VCF::MONO) != VCF::NIL) right = left;
-         else snd_mixer_selem_get_capture_volume(elem, 1, &right);
-      }
-      else continue;
-
-      if (pmin >= pmax) continue;
-
-      std::ostringstream out;
-      auto fleft = (double)left / (double)(pmax - pmin);
-      auto fright = (double)right / (double)(pmax - pmin);
-      out << fleft << ',' << fright << ',' << mute ? 0 : 1;
-
-      config->write("MIXER", Self->Volumes[i].Name, out.str());
-   }
-#endif
 
 #else
       if (!Self->Volumes.empty()) {
@@ -826,13 +1057,18 @@ large Length: Byte length of the sample stream.
 Okay
 NullArgs
 Args
-Failed: Sample is not a stream.
+OutOfRange
+NoSupport: Sample is not a stream.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Args)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    kt::Log log;
 
    if (!Args) return log.warning(ERR::NullArgs);
@@ -844,10 +1080,24 @@ static ERR AUDIO_SetSampleLength(extAudio *Self, struct snd::SetSampleLength *Ar
    auto &sample = Self->Samples[Args->Sample];
 
    if (sample.Stream) {
-      sample.StreamLength = BYTELEN(Args->Length);
+      if (Args->Length < -1) return ERR::OutOfRange;
+      const int64_t frame_bytes = sample.FrameBytes;
+      if (Args->Length >= 0 and Args->Length % frame_bytes) return ERR::Args;
+      if (Args->Length >= 0 and sample.Loop2Type != LTYPE::NIL and
+          Args->Length <= (int64_t(sample.Loop2Start) * frame_bytes)) return ERR::OutOfRange;
+      sample.StreamLength = BYTELEN(std::max<int64_t>(0, Args->Length));
+      sample.StreamLengthKnown = Args->Length >= 0;
+      #ifdef AUDIO_WORKER
+      sample.EndOfSource = sample.StreamLengthKnown and sample.SourceOffset >= sample.StreamLength;
+      if (sample.StreamLengthKnown) {
+         const int64_t remaining = std::max<int64_t>(0, sample.StreamLength - sample.PlayPos);
+         sample.Ring.Used = std::min(sample.Ring.Used, size_t(remaining));
+      }
+      sample.Ring.Used -= sample.Ring.Used % size_t(sample.FrameBytes);
+      #endif
       return ERR::Okay;
    }
-   else return log.warning(ERR::Failed);
+   else return log.warning(ERR::NoSupport);
 }
 
 /*********************************************************************************************************************
@@ -861,8 +1111,11 @@ speakers.  Support is also provided for special options such as muting.
 
 To set the volume for a mixer, use its index or set its name (to change the master volume, use a name of `Master`).
 
-A target `Channel` such as the left `0` or right `1` speaker can be specified.  Set the `Channel` to `-1` if all
-channels should be the same value.
+A target `Channel` can be specified to change one channel of the mixer control.  Channel selectors belong to the
+control, not to the Audio object's output buffer; use #GetVolumeChannels() to list the valid selectors of a control and
+the speaker that each one addresses, where known.  Set the `Channel` to `-1` if all channels should be the same value.
+A control that reports `VCF::JOINED` cannot adjust its channels independently, so any selector applies to every
+channel.  The absence of `VCF::MONO` does not imply that a control has exactly two channels.
 
 The new mixer value is set in the `Volume` field.
 
@@ -872,22 +1125,29 @@ Optional flags may be set as follows:
 
 -INPUT-
 int Index: The index of the mixer that you want to set.
-cstr Name: If the correct index number is unknown, the name of the mixer may be set here.
+strview Name: If the correct index number is unknown, the name of the mixer may be set here.
 int(SVF) Flags: Optional flags.
-int Channel: A specific channel to modify (e.g. `0` for left, `1` for right).  If `-1`, all channels are affected.
+int Channel: A channel selector reported by #GetVolumeChannels().  If `-1`, all channels are affected.
 double Volume: The volume to set for the mixer, from 0 to 1.0.  If `-1`, the current volume values are retained.
 
 -ERRORS-
 Okay: The new volume was applied successfully.
 Args
 NullArgs
-OutOfRange: The `Volume` or `Index` is out of the acceptable range.
+OutOfRange: The `Volume`, `Index` or `Channel` is out of the acceptable range.
+NoSupport
+NotInitialised
+Search
+
+-TAGS-
+blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 {
+   std::unique_lock mixer_lock(Self->MixerMutex);
    kt::Log log;
 
 #ifdef ALSA_ENABLED
@@ -902,11 +1162,32 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
       return log.warning(ERR::OutOfRange);
    }
    if (Self->Volumes.empty()) return log.warning(ERR::NoSupport);
-   if (!Self->MixHandle) return ERR::NotInitialised;
+   if (!Self->MixHandle) {
+      for (auto &volume : Self->Volumes) {
+         if (!iequals("Master", volume.Name)) continue;
+         if ((Args->Channel != -1) and ((Args->Channel < 0) or (Args->Channel >= soft_volume_channels(volume)))) {
+            return log.warning(ERR::OutOfRange);
+         }
+         if (Args->Volume >= 0) {
+            Self->MasterVolume = Args->Volume;
+            volume.Channels[0] = Args->Volume;
+         }
+         if ((Args->Flags & SVF::MUTE) != SVF::NIL) {
+            Self->Mute = true;
+            volume.Flags |= VCF::MUTE;
+         }
+         if ((Args->Flags & SVF::UNMUTE) != SVF::NIL) {
+            Self->Mute = false;
+            volume.Flags &= ~VCF::MUTE;
+         }
+         break;
+      }
+      return ERR::Okay;
+   }
 
    // Determine what mixer we are going to adjust
 
-   if (Args->Name) {
+   if (not Args->Name.empty()) {
       for (index=0; index < std::ssize(Self->Volumes); index++) {
          if (iequals(Args->Name, Self->Volumes[index].Name)) break;
       }
@@ -933,6 +1214,8 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
       }
    }
 
+   mixer_lock.unlock();
+
    // Apply the volume
 
    log.branch("%s: %.2f, Flags: $%.8x", Self->Volumes[index].Name.c_str(), Args->Volume, (int)Args->Flags);
@@ -943,6 +1226,14 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
    if (!(elem = snd_mixer_find_selem(Self->MixHandle, sid))) {
       log.msg("Mixer \"%s\" not found.", Self->Volumes[index].Name.c_str());
       return ERR::Search;
+   }
+
+   if (Args->Channel != -1) {
+      std::vector<int> selectors, speakers;
+      alsa_volume_channels(Self->Volumes[index], elem, selectors, speakers);
+      if (std::find(selectors.begin(), selectors.end(), Args->Channel) IS selectors.end()) {
+         return log.warning(ERR::OutOfRange);
+      }
    }
 
    if (Args->Volume >= 0) {
@@ -957,9 +1248,15 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
       if (vol > 1.0) vol = 1.0;
       int lvol = int(double(pmin) + (double(pmax - pmin) * vol));
 
-      if ((Self->Volumes[index].Flags & VCF::CAPTURE) != VCF::NIL) {
-         snd_mixer_selem_set_capture_volume_all(elem, lvol);
+      // Independent channels are set individually.  Joined and mono controls always change every channel.
+
+      const bool capture = (Self->Volumes[index].Flags & VCF::CAPTURE) != VCF::NIL;
+      if ((Args->Channel >= 0) and ((Self->Volumes[index].Flags & (VCF::JOINED|VCF::MONO)) IS VCF::NIL)) {
+         auto id = (snd_mixer_selem_channel_id_t)glAlsaConvert[Args->Channel];
+         if (capture) snd_mixer_selem_set_capture_volume(elem, id, lvol);
+         else snd_mixer_selem_set_playback_volume(elem, id, lvol);
       }
+      else if (capture) snd_mixer_selem_set_capture_volume_all(elem, lvol);
       else snd_mixer_selem_set_playback_volume_all(elem, lvol);
 
       if ((Self->Volumes[index].Flags & VCF::MONO) != VCF::NIL) {
@@ -1023,7 +1320,7 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 
    // Determine what mixer we are going to adjust
 
-   if (Args->Name) {
+   if (not Args->Name.empty()) {
       for (index=0; index < (int)Self->Volumes.size(); index++) {
          if (iequals(Args->Name, Self->Volumes[index].Name)) break;
       }
@@ -1048,6 +1345,11 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
          Self->Volumes[index].Flags |= VCF::MUTE;
          Self->Mute = true;
       }
+   }
+
+   if ((Args->Channel != -1) and
+       ((Args->Channel < 0) or (Args->Channel >= soft_volume_channels(Self->Volumes[index])))) {
+      return log.warning(ERR::OutOfRange);
    }
 
    // Apply the volume
@@ -1089,8 +1391,8 @@ static ERR AUDIO_SetVolume(extAudio *Self, struct snd::SetVolume *Args)
 -FIELD-
 BitDepth: The bit depth affects the overall quality of audio input and output.
 
-This field manages the bit depth for audio mixing and output.  Valid bit depths are `8`, `16` and `24`, with `16`
-being the recommended value for CD quality playback.
+Windows uses a 32-bit float mixer and converts to the endpoint format at the output boundary.
+ALSA supports `8`, `16` and `32` (floating point) output.  The recommended value for CD quality playback is `16`.
 
 *********************************************************************************************************************/
 
@@ -1099,7 +1401,8 @@ static ERR SET_BitDepth(extAudio *Self, int Value)
    if (Value IS 16) Self->BitDepth = 16;
    else if (Value IS 8) Self->BitDepth = 8;
    else if (Value IS 24) Self->BitDepth = 24;
-   else return ERR::Failed;
+   else if (Value IS 32) Self->BitDepth = 32;
+   else return ERR::InvalidValue;
    return ERR::Okay;
 }
 
@@ -1112,21 +1415,24 @@ A host platform may have multiple audio devices installed, but a given audio obj
 at a time.  A new audio object will always represent the default device initially.  Choose a different device by
 setting the `Device` field to a valid alternative.
 
-The default device can always be referenced with a name of `default`.
+The default device can always be referenced with a name of `default`.  Windows also accepts a WASAPI endpoint ID.
+ALSA PCM names such as `hw:0,0` and `plughw:0,0` are also accepted.  Direct hardware access can avoid sound-server
+buffering, but may require exclusive access and stricter sample-format support.
 
 *********************************************************************************************************************/
 
-static ERR GET_Device(extAudio *Self, CSTRING *Value)
+static ERR GET_Device(extAudio *Self, std::string_view &Value)
 {
-   *Value = Self->Device.c_str();
-   return ERR::Okay;
+   Value = Self->Device;
+   if (not Self->Device.empty()) return ERR::Okay;
+   else return ERR::FieldNotSet;
 }
 
-static ERR SET_Device(extAudio *Self, CSTRING Value)
+static ERR SET_Device(extAudio *Self, const std::string_view &Value)
 {
-   if ((!Value) or (!*Value)) Self->Device = "default";
+   if (Value.empty()) Self->Device = "default";
    else {
-      Self->Device = Value;
+      Self->Device.assign(Value);
       std::transform(Self->Device.begin(), Self->Device.end(), Self->Device.begin(), ::tolower);
    }
 
@@ -1136,13 +1442,16 @@ static ERR SET_Device(extAudio *Self, CSTRING Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Dither: Selects triangular dither for integer output.
+Lookup: ADITHER
+
+The default is `ADITHER::AUTO`.  Real-time changes take effect at the next mixer-window boundary.
+
+-FIELD-
 Flags: Special audio flags can be set here.
 Lookup: ADF
 
-The audio class supports a number of special flags that affect internal behaviour.  The following table illustrates the
-publicly available flags:
-
-!ADF
+Flags can be selected before initialisation.  Source resampling is controlled by #Quality.
 
 -FIELD-
 InputRate: Determines the frequency to use when recording audio data.
@@ -1181,13 +1490,18 @@ static ERR SET_MasterVolume(extAudio *Self, double Value)
 -FIELD-
 MixerLag: Returns the lag time of the internal mixer, measured in seconds.
 
-This field will return the worst-case value for latency imposed by the internal audio mixer.  The value is measured
-in seconds and will differ between platforms and user configurations.
+On Windows this field estimates the outstanding submitted frames from the most recent endpoint padding and render
+time.  It can be zero while idle, so an idle reading is not a buffer-capacity or future callback-latency estimate.
+On ALSA it is the negotiated buffer size in frames divided by the output rate, and is zero while inactive.
+It excludes client scheduling, source starvation, and downstream sound-server or wireless-device buffering; it is not
+an acoustic latency guarantee.  Source prefetch uses the saved `StreamBufferMs` setting (100–10000ms, default
+1000ms) independently of this value.
 
 *********************************************************************************************************************/
 
 static ERR GET_MixerLag(extAudio *Self, double *Value)
 {
+   std::lock_guard mixer_lock(Self->MixerMutex);
    *Value = Self->MixerLag();
    return ERR::Okay;
 }
@@ -1234,7 +1548,7 @@ The OutputRate can only be set prior to initialisation, further attempts to set 
 static ERR SET_OutputRate(extAudio *Self, int Value)
 {
    if (Value < 0) return ERR::OutOfRange;
-   else if (Value > 44100) Self->OutputRate = 44100;
+   else if (Value > 192000) Self->OutputRate = 192000;
    else Self->OutputRate = Value;
    return ERR::Okay;
 }
@@ -1254,7 +1568,7 @@ system processes data period by period, allowing for predictable latency charact
 <list type="bullet">
 <li><b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
 <li><b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
-<li><b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
+<li><b>Recommended</b>: 3 periods (balances latency and reliability for most use cases)</li>
 </list>
 
 Fewer periods reduce overall system latency but increase the risk of audio dropouts if processing cannot keep pace with
@@ -1264,49 +1578,25 @@ audio consumption. More periods provide greater buffering security at the cost o
 
 static ERR SET_Periods(extAudio *Self, int Value)
 {
-   Self->Periods = Value;
-   if (Self->Periods < 2) Self->Periods = 2;
-   else if (Self->Periods > 16) Self->Periods = 16;
+   Self->Periods = audio_period_count(Value);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-PeriodSize: Defines the byte size of each period allocated to the internal audio buffer.
+PeriodSize: Defines the number of frames in each ALSA period.
 
-The PeriodSize field determines the granularity of audio buffer management, affecting system responsiveness, processing
-efficiency, and overall audio quality. This setting works in conjunction with the #Periods field to define the complete
-buffering architecture.
-
-<list type="bullet">
-<li><b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
-<li><b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
-<li><b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
-</list>
-
-Period latency (in seconds) = `PeriodSize ÷ (SampleRate × Channels × BytesPerSample)`
-
-For example, with a 2048-byte period at 44100Hz stereo 16-bit `Latency = 2048 ÷ (44100 × 2 × 2) = 11.6ms per period`
-
-The combination of PeriodSize and #Periods creates a multi-stage buffering system where audio data flows through
-sequential periods, providing time for processing whilst maintaining continuous playback.
-
-<header>Application Guidelines</header>
-
-<list type="bullet">
-<li><b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
-<li><b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
-<li><b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
-</list>
+A frame contains one sample for every output channel.  Period duration is `PeriodSize / OutputRate` seconds,
+independent of bit depth and channel count.  The default ALSA request is 256 frames in three periods.
+Values are clamped to 32–16384 frames before activation; ALSA may negotiate a different value.
+After activation this field reports the negotiated period size.
 
 *********************************************************************************************************************/
 
 static ERR SET_PeriodSize(extAudio *Self, int Value)
 {
-   Self->PeriodSize = Value;
-   if (Self->PeriodSize < 1024) Self->PeriodSize = 1024;
-   else if (Self->PeriodSize > 16384) Self->PeriodSize = 16384;
+   Self->PeriodSize = audio_period_frames(Value);
    return ERR::Okay;
 }
 
@@ -1315,105 +1605,212 @@ static ERR SET_PeriodSize(extAudio *Self, int Value)
 -FIELD-
 Quality: Determines the quality of the audio mixing.
 
-The Quality field controls the precision and filtering applied during audio mixing operations. This setting automatically
-configures multiple internal processing parameters to balance audio fidelity against computational overhead.
-
-The value range spans from 0 (minimal processing) to 100 (maximum fidelity), with recommended settings between 70-80
-for most applications. This range provides an optimal balance between audio clarity and system performance.
-
-Setting the Quality value automatically adjusts the following processing flags:
+Quality selects source resampling and integer output dither.  No profile enables post-mix smoothing.
+All profiles mix in 32-bit floating-point; this field does not change arithmetic precision or perform true oversampling.
+The default is 80.
+Values outside
+0..100 return `ERR::OutOfRange` without changing the current profile.  Invalid saved values retain the default.
 
 <list type="bullet">
-<li><b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
-<li><b>Quality 10-32</b>: Enables `ADF::FILTER_LOW` for basic output filtering.</li>
-<li><b>Quality 33-65</b>: Activates `ADF::FILTER_HIGH` for enhanced frequency response.</li>
-<li><b>Quality 66-100</b>: Implements `ADF::OVER_SAMPLING` and `ADF::FILTER_HIGH` for maximum fidelity.</li>
+<li><b>Quality 0-9</b>: Nearest-neighbour resampling.</li>
+<li><b>Quality 10-32</b>: Linear interpolation.</li>
+<li><b>Quality 33-65</b>: Bounded four-point cubic Hermite interpolation.</li>
+<li><b>Quality 66-100</b>: Ratio-aware band-limited sinc resampling.
+Quality 90-100 currently aliases High; it does not select a longer kernel.</li>
 </list>
+
+With #Dither set to `ADITHER::AUTO`, Quality 33 and above enables TPDF dither for 8-bit and 16-bit output.
+`ADITHER::OFF` always disables it; `ADITHER::TPDF` enables it at every Quality.  Float conversion is unchanged.
+Dither is added immediately before rounding to nearest integer, with triangular noise bounded by one destination
+LSB in either direction.  Both representable endpoints saturate, including samples at or beyond -1 and +1.
+Exact-zero samples suppress noise immediately, without a silent-interval timer.  Independent channel streams
+advance through silence and reset to fixed seeds on deactivation and every committed output configuration.
+Live policy changes do not reset the streams.  No noise shaping is applied.
+
+A live Quality change takes effect as a complete profile at the next mixer-window boundary; processing already in
+progress retains its selected profile.
+Source interpolation blends to the new mode over 32 rendered output frames per channel, independently of volume ramping.
+Ordinary source endpoints repeat the endpoint value, while looping sources extend their loop.  Neither linear nor
+cubic interpolation is a ratio-dependent anti-alias filter.  High uses a centred 128-tap Blackman-windowed sinc with 256 fractional phases.
+Its per-source cutoff follows the playback-to-output rate ratio; unity-rate and upsampled sources use the full
+source bandwidth.  Coefficients are prepared during module loading.  Streaming retains 63 past frames and requires
+64 future frames; starvation waits without advancing the source clock, and end-of-source repeats the last frame.
+The centred interpolation preserves source timing and adds no effect latency or delayed command completion.
+The fixed kernel is characterised through 2.7 times downsampling; at extreme ratios its finite support limits
+anti-alias rejection.  Sinc overshoot is preserved until final output conversion.
 
 *********************************************************************************************************************/
 
 static ERR SET_Quality(extAudio *Self, int Value)
 {
+   const auto profile = audio_quality_profile(Value);
+   if (!profile) return ERR::OutOfRange;
+   std::lock_guard mixer_lock(Self->MixerMutex);
    Self->Quality = Value;
-
-   Self->Flags &= ~(ADF::FILTER_LOW|ADF::FILTER_HIGH|ADF::OVER_SAMPLING);
-
-   if (Self->Quality < 10) return ERR::Okay;
-   else if (Self->Quality < 33) Self->Flags |= ADF::FILTER_LOW;
-   else if (Self->Quality < 66) Self->Flags |= ADF::FILTER_HIGH;
-   else Self->Flags |= ADF::OVER_SAMPLING|ADF::FILTER_HIGH;
-
+   Self->RequestedQuality = *profile;
+   Self->MixConfig = AudioConfig(Self->Stereo, profile->Resampler);
    return ERR::Okay;
+}
+
+static ERR SET_Flags(extAudio *Self, int Value)
+{
+   if (Self->initialised()) return ERR::ImmutableField;
+   const auto flags = ADF(Value);
+   if ((flags & ~(ADF::VOL_RAMPING | ADF::AUTO_SAVE | ADF::SYSTEM_WIDE)) != ADF::NIL) return ERR::Args;
+   Self->Flags = flags;
+   return ERR::Okay;
+}
+
+// Configuration reads use the same setter as public writes; malformed or invalid saved values leave it unchanged.
+static void load_audio_quality(extAudio *Self, objConfig *Config)
+{
+   std::string saved;
+   if (Config->read("AUDIO", "Quality", saved) != ERR::Okay) return;
+   char *end;
+   const auto quality = std::strtol(saved.c_str(), &end, 0);
+   if (end != saved.c_str() and end IS saved.c_str() + saved.size() and quality >= 0 and quality <= 100) {
+      SET_Quality(Self, int(quality));
+   }
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
-Stereo: Set to `true` for stereo output and `false` for mono output.
+OutputLayout: The requested output channel layout.
 
--END-
+OutputLayout lists the channel identities of the requested output, in interleaved frame order.  The default is stereo:
+`FRONT_LEFT`, `FRONT_RIGHT`.  Wider layouts are never enabled automatically.  Use ExpandLayout() to obtain the layout of
+a named preset:
+
+<pre>
+err, layout = mAudio.ExpandLayout(ACL_MONO)
+audio = obj.new('Audio', { outputLayout=layout })
+</pre>
+
+The request is applied when the Audio object is activated.  An explicitly set layout is exact: if it cannot be provided,
+activation fails with `ERR::NoSupport` rather than being downmixed or reinterpreted.  The mixer currently renders mono
+(`CENTRE`) and stereo (`FRONT_LEFT`, `FRONT_RIGHT`) output.  Only the default stereo request can settle on mono output
+for a device that only supports mono.
+
+The layout can be changed before activation and after deactivation.  Writes are rejected with `ERR::InvalidState`
+while the object is active.  A malformed layout, i.e. one that is empty, exceeds 64 channels or contains an invalid or
+duplicated identity, is rejected with `ERR::Args`.  Reading this field returns the request, not the negotiated result;
+use #GetOutputFormat() to read the committed processing format.
 
 *********************************************************************************************************************/
 
-static ERR GET_Stereo(extAudio *Self, int *Value)
+static ERR GET_OutputLayout(extAudio *Self, std::span<const int> &Value)
 {
-   if ((Self->Flags & ADF::STEREO) != ADF::NIL) *Value = TRUE;
-   else *Value = FALSE;
+   Value = std::span<const int>(Self->OutputLayout.data(), Self->OutputLayout.size());
    return ERR::Okay;
 }
 
-static ERR SET_Stereo(extAudio *Self, int Value)
+static ERR SET_OutputLayout(extAudio *Self, const std::span<const int> &Value)
 {
-   if (Value IS TRUE) Self->Flags |= ADF::STEREO;
-   else Self->Flags &= ~ADF::STEREO;
+   if (auto error = validate_layout(Value); error != ERR::Okay) return error;
+   std::lock_guard mixer_lock(Self->MixerMutex);
+   if (Self->OutputActive or Self->Initialising) return ERR::InvalidState;
+   Self->OutputLayout.assign(Value.begin(), Value.end());
+   Self->LayoutExplicit = true;
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static void load_config(extAudio *Self)
+extAudio::extAudio(objMetaClass *ClassPtr, OBJECTID ObjectID) : objAudio(ClassPtr, ObjectID)
 {
-   kt::Log log(__FUNCTION__);
+   OutputRate  = 44100;        // Rate for output to speakers
+   InputRate   = 44100;        // Input rate for recording
+   Quality     = 80;
+   BitDepth    = 16;
+   Flags       = ADF::VOL_RAMPING;
+   SET_Quality(this, Quality);
+   #ifdef ALSA_ENABLED
+   Periods     = 3;
+   PeriodSize  = 256;
+   #else
+   Periods     = 4;
+   PeriodSize  = 2048;
+   #endif
+   MaxChannels = 8;
+   Device      = glAudioDevice.empty() ? "default" : glAudioDevice;
+   MasterVolume = 1.0;
 
-   // Attempt to get the user's preferred pointer settings from the user:config/pointer file.
+   const SystemState *state = GetSystemState();
+   if ((iequals(state->Platform, "Native")) or (iequals(state->Platform, "Linux"))) {
+      Flags |= ADF::SYSTEM_WIDE;
+   }
+
+   Samples.reserve(32);
+
+#ifdef __linux__
+   Volumes.resize(2);
+   Volumes[0].Name = "Master";
+
+   Volumes[1].Name = "PCM";
+#else
+   Volumes.resize(1);
+   Volumes[0].Name = "Master";
+   Volumes[0].Channels[0] = 1.0;
+   for (int i=1; i < std::ssize(Volumes[0].Channels); i++) Volumes[0].Channels[i] = -1;
+#endif
+
+   kt::Log log("New");
+
+   // Attempt to get the user's preferred audio settings from user:config/audio.cfg.
 
    objConfig::create config = { fl::Path("user:config/audio.cfg") };
 
    if (config.ok()) {
-      config->read("AUDIO", "OutputRate", Self->OutputRate);
-      config->read("AUDIO", "InputRate", Self->InputRate);
-      config->read("AUDIO", "Quality", Self->Quality);
-      config->read("AUDIO", "BitDepth", Self->BitDepth);
+      config->read("AUDIO", "OutputRate", OutputRate);
+      config->read("AUDIO", "InputRate", InputRate);
+      load_audio_quality(this, *config);
+      std::string dither;
+      if (config->read("AUDIO", "Dither", dither) IS ERR::Okay) {
+         char *end;
+         const auto value = std::strtol(dither.c_str(), &end, 0);
+         if (end != dither.c_str() and end IS dither.c_str() + dither.size() and
+             value >= int(ADITHER::AUTO) and value <= int(ADITHER::TPDF)) Dither = ADITHER(value);
+      }
+      config->read("AUDIO", "BitDepth", BitDepth);
 
       int value;
-      if (config->read("AUDIO", "Periods", value) IS ERR::Okay) SET_Periods(Self, value);
-      if (config->read("AUDIO", "PeriodSize", value) IS ERR::Okay) SET_PeriodSize(Self, value);
-      if (config->read("AUDIO", "Device", Self->Device) != ERR::Okay) Self->Device = "default";
+      if (!config->read("AUDIO", "StreamBufferMs", value)) StreamBufferMs = std::clamp(value, 100, 10000);
+      if (!config->read("AUDIO", "Periods", value)) SET_Periods(this, value);
+      if (glAudioDevice.empty()) config->read("AUDIO", "Device", Device);
+
+      // A saved layout is a comma-separated list of channel identities.  Malformed values are ignored.
 
       std::string str;
-      Self->Flags |= ADF::STEREO;
-      if (config->read("AUDIO", "Stereo", str) IS ERR::Okay) {
-         if (iequals("FALSE", str)) Self->Flags &= ~ADF::STEREO;
+      if (!config->read("AUDIO", "OutputLayout", str)) {
+         std::vector<std::string> tokens;
+         kt::split(str, std::back_inserter(tokens));
+         std::vector<int> layout;
+         for (auto &token : tokens) layout.push_back(strtol(token.c_str(), nullptr, 0));
+         if (validate_layout(layout) IS ERR::Okay) {
+            OutputLayout = std::move(layout);
+            LayoutExplicit = true;
+         }
       }
 
-      if ((Self->BitDepth != 8) and (Self->BitDepth != 16) and (Self->BitDepth != 24)) Self->BitDepth = 16;
-      SET_Quality(Self, Self->Quality);
+      if ((BitDepth != 8) and (BitDepth != 16) and (BitDepth != 24) and (BitDepth != 32)) BitDepth = 16;
+      if (!config->read("AUDIO", "PeriodFrames", value)) SET_PeriodSize(this, value);
 
       // Find the mixer section, then load the mixer information
 
       ConfigGroups *groups;
-      if (config->get(FID_Data, groups) IS ERR::Okay) {
-         for (auto& [group, keys] : groups[0]) {
+      if (!config->getGroups(groups)) {
+         for (auto & [group, keys] : groups[0]) {
             if (iequals("MIXER", group)) {
-               Self->Volumes.clear();
-               Self->Volumes.resize(keys.size());
+               Volumes.clear();
+               Volumes.resize(keys.size());
 
                int j = 0;
-               for (auto& [k, v] : keys) {
-                  Self->Volumes[j].Name = k;
+               for (auto & [k, v] : keys) {
+                  Volumes[j].Name = k;
 
                   CSTRING str = v.c_str();
-                  if (std::stoi(v) IS 1) Self->Volumes[j].Flags |= VCF::MUTE;
+                  if (std::stoi(v) IS 1) Volumes[j].Flags |= VCF::MUTE;
                   while ((*str) and (*str != ',')) str++;
                   if (*str IS ',') str++;
 
@@ -1421,15 +1818,15 @@ static void load_config(extAudio *Self)
                   if (*str IS '[') { // Read channel volumes
                      str++;
                      while ((*str) and (*str != ']')) {
-                        Self->Volumes[j].Channels[channel] = strtol(str, nullptr, 0);
+                        Volumes[j].Channels[channel] = strtol(str, nullptr, 0);
                         while ((*str) and (*str != ',') and (*str != ']')) str++;
                         if (*str IS ',') str++;
                         channel++;
                      }
                   }
 
-                  while (channel < (int)Self->Volumes[j].Channels.size()) {
-                     Self->Volumes[j].Channels[channel] = 0.75;
+                  while (channel < (int)Volumes[j].Channels.size()) {
+                     Volumes[j].Channels[channel] = 0.75;
                      channel++;
                   }
                   j++;
@@ -1439,26 +1836,378 @@ static void load_config(extAudio *Self)
          }
       }
    }
+   snapshot_quality();
 }
 
 //********************************************************************************************************************
 
-#include "audio_def.c"
+extAudio::~extAudio() {
+   if ((Flags & ADF::AUTO_SAVE) != ADF::NIL) saveSettings();
+
+   if (Timer) { UpdateTimer(Timer, 0); Timer = nullptr; }
+
+   #ifdef AUDIO_WORKER
+   stop_audio_worker(this);
+   #endif
+   if (BatchTimer) { UpdateTimer(BatchTimer, 0); BatchTimer = nullptr; }
+   BatchCompletions.clear([](FUNCTION &Callback) { release_audio_callback(Callback); });
+   for (auto &sample : Samples) deref_audio_sample(sample);
+
+   glSoundChannels.erase(UID);
+
+   acDeactivate(this);
+
+#ifdef ALSA_ENABLED
+
+   free_alsa(this);
+
+
+#endif
+}
+
+/*********************************************************************************************************************
+-METHOD-
+GetEffectStatus: Reads DSP drain state and serial-path latency together.
+
+GetEffectStatus() returns a consistent snapshot of one signal path's effect latency and drain state, taken under the
+mixer lock so that all fields of the returned !EffectStatus describe the same moment.
+
+The path is selected with `Channel`.  A channel-set handle selects that application's chain followed by the global
+chain.  Zero selects the global path, in which case `Application` is always zero and the drain state accounts for
+every application's sources and chains.  Latencies are expressed in frames at the returned `Rate`.  `Total` is the
+sum of `Application` and `Global`, and only includes effects that are not bypassed.
+
+`State` takes one of the following values:
+
+!ADS
+
+`Truncated` is set to 1 if the selected chain's automatic drain was cut short at the #MaxDrain deadline while effects
+still had pending output.  It is cleared when new source audio reaches the chain or the chain is reset.
+
+`Generation` is incremented whenever the effect configuration or DSP history of any path changes, and is written
+even when validation fails.  Compare it between calls to detect intervening resets or reconfiguration.  The remaining
+fields are not meaningful if an error is returned.  If allocation fails, no snapshot is returned.
+
+The snapshot is allocated by the Audio object and remains valid after later calls or configuration changes.  C++
+clients must release it with ~Core.FreeResource(), including when the method returns a validation error.
+
+-INPUT-
+int Channel: Channel-set handle, or zero for the global path.
+!struct(*EffectStatus) Status: Receives an owned snapshot of the path's latency and drain state.
+
+-ERRORS-
+Okay
+NullArgs
+AllocMemory
+Args: The channel-set handle is invalid or closed.
+NotInitialised: No output configuration is available; Status.Rate is zero.
+OutOfRange: Serial latency cannot be represented in a signed 64-bit frame count.
+
+-END-
+*********************************************************************************************************************/
+
+static AudioEffectChain *effect_chain(extAudio *Self, int Channel)
+{
+   if (!Channel) return Self->GlobalEffects.get();
+   const auto index = unsigned(Channel) >> 16;
+   if (Channel < 0 or (Channel & 0xffff) or index >= Self->Sets.size() or
+       Self->Sets[index].Channel.empty()) return nullptr;
+   return Self->Sets[index].Effects.get();
+}
+
+static bool effect_channel_valid(extAudio *Self, int Channel)
+{
+   if (!Channel) return true;
+   const auto index = unsigned(Channel) >> 16;
+   return Channel > 0 and !(Channel & 0xffff) and index < Self->Sets.size() and
+      !Self->Sets[index].Channel.empty();
+}
+
+static ERR AUDIO_GetEffectStatus(extAudio *Self, struct snd::GetEffectStatus *Args)
+{
+   if (!Args) return ERR::NullArgs;
+
+   Args->Status = nullptr;
+   struct EffectStatus *status;
+   if (AllocResource(sizeof(struct EffectStatus), MEM::NIL, (APTR *)&status, nullptr) != ERR::Okay) {
+      return ERR::AllocMemory;
+   }
+   Args->Status = status;
+
+   std::lock_guard lock(Self->MixerMutex);
+   status->Generation = *Self->GlobalEffects->Generation;
+   status->State = ADS::IDLE;
+
+   if (!effect_channel_valid(Self, Args->Channel)) return ERR::Args;
+   if (!Self->EffectConfigured) return ERR::NotInitialised;
+
+   status->Rate = Self->OutputRate;
+   bool source_active = false, upstream_pending = false;
+   for (size_t index = 1; index < Self->Sets.size(); ++index) {
+      if (Args->Channel and index != (unsigned(Args->Channel) >> 16)) continue;
+      auto &set = Self->Sets[index];
+      for (auto &channel : set.Channel) source_active |= channel.active() and !channel.isStopped();
+      for (auto &channel : set.Shadow) source_active |= channel.active() and !channel.isStopped();
+      if (!Args->Channel and set.Effects) upstream_pending |= set.Effects->pending();
+   }
+
+   auto chain = effect_chain(Self, Args->Channel);
+   bool path_pending = upstream_pending or (chain and chain->pending());
+   if (Args->Channel) path_pending |= Self->GlobalEffects->pending();
+
+   status->State = source_active ? ADS::ACTIVE : (path_pending ? ADS::DRAINING : ADS::IDLE);
+
+   status->Truncated = (chain and chain->Truncated) or (Args->Channel and Self->GlobalEffects->Truncated);
+   if (chain) {
+      if (Args->Channel) {
+         auto error = chain->latency(status->Application);
+         if (error != ERR::Okay) return error;
+      }
+   }
+
+   if (auto error = Self->GlobalEffects->latency(status->Global); error != ERR::Okay) return error;
+   if (status->Application > INT64_MAX - status->Global) return ERR::OutOfRange;
+   status->Total = status->Application + status->Global;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-METHOD-
+ResetEffects: Discards one chain's DSP history at its next render boundary.
+
+ResetEffects() clears the internal state of every effect in one chain, such as filter history and buffered samples, so
+that subsequent audio is processed as if the chain had just been created.  Use it when switching to unrelated content,
+e.g. after seeking, so that residual output from the previous material does not bleed through.
+
+The chain is selected with `Channel`.  A channel-set handle selects that application's chain, while zero selects the
+global chain.  Only the selected chain is affected; resetting an application's chain does not reset the global chain.
+If the channel set has no effects attached, the call succeeds without doing anything.
+
+The reset is deferred to the mixer and each effect's history is cleared before it processes its next block of audio.
+Any pending effect tail is discarded rather than drained.  Effect parameters and bypass states are unchanged.  The
+chain's drain state returns to `ADS::IDLE`, its `Truncated` status is cleared, effect meters are restarted, and the
+`Generation` counter reported by #GetEffectStatus() is incremented.
+
+-INPUT-
+int Channel: Channel-set handle, or zero for the global chain.
+
+-ERRORS-
+Okay
+NullArgs
+Args: The channel-set handle is invalid or closed.
+-END-
+*********************************************************************************************************************/
+
+static ERR AUDIO_ResetEffects(extAudio *Self, struct snd::ResetEffects *Args)
+{
+   if (!Args) return ERR::NullArgs;
+
+   std::lock_guard lock(Self->MixerMutex);
+   if (!effect_channel_valid(Self, Args->Channel)) return ERR::Args;
+   if (auto chain = effect_chain(Self, Args->Channel)) {
+      chain->reset(); // Mark processors for reset; process() performs the bounded reset before the next sample.
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-METHOD-
+GetOutputFormat: Reads the committed PCM format processed by the mixer and effects.
+
+GetOutputFormat() reports the processing format committed by the most recent successful activation.  This is the
+format of the mix that is processed by the effect chains, not the format of the physical endpoint.  The mixer works in
+floating point, so `SampleFormat` is always `ASF::F32` in native byte order.  An endpoint may have more channels or a
+different sample encoding than the processing format; for instance, a Windows endpoint with six channels receives a
+stereo mix on its front pair, and this method reports stereo.
+
+The requested #OutputLayout is independent of the committed format.  No format is available before the first
+successful activation, in which case `State` is `AFS::UNAVAILABLE` and the remaining results are empty.  After
+deactivation the last committed format remains available and `State` is `AFS::INACTIVE`.  A failed activation does not
+change the committed format.
+
+!AFS
+
+`Generation` is incremented whenever a processing configuration is committed, including reactivation with an unchanged
+layout and the automatic reopening of a Windows endpoint.  Effects report the same value through
+@AudioEffect.GetProcessingFormat() once they have adopted the configuration, which occurs before processing resumes.
+
+-INPUT-
+&int SampleRate: Frames per second, or zero if no format is available.
+&int(ASF) SampleFormat: Sample representation of the processed audio.
+^&vector(int) Layout: Receives the ordered channel identities from the `SPK` constants.
+&large Generation: Configuration generation of the reported format.
+&int(AFS) State: Availability of the reported format.
+
+-ERRORS-
+Okay
+NullArgs
+
+-END-
+*********************************************************************************************************************/
+
+static ERR AUDIO_GetOutputFormat(extAudio *Self, struct snd::GetOutputFormat *Args)
+{
+   if (!Args) return ERR::NullArgs;
+
+   std::lock_guard lock(Self->MixerMutex);
+   Args->SampleRate   = 0;
+   Args->SampleFormat = ASF::NIL;
+   Args->Generation   = Self->OutputGeneration;
+   Args->State        = AFS::UNAVAILABLE;
+   if (Args->Layout) Args->Layout->clear();
+
+   if (Self->CommittedLayout.empty()) return ERR::Okay;
+
+   Args->SampleRate   = Self->CommittedRate;
+   Args->SampleFormat = ASF::F32;
+   Args->State        = Self->OutputActive ? AFS::ACTIVE : AFS::INACTIVE;
+   if (Args->Layout) Args->Layout->assign(Self->CommittedLayout.begin(), Self->CommittedLayout.end());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-METHOD-
+GetVolumeChannels: Lists the channel selectors of a volume control.
+
+GetVolumeChannels() describes the channels of the mixer volume control that is selected by `Index` or `Name`, using
+the same rules as #SetVolume().  Each entry of `Channels` is a valid `Channel` selector for #SetVolume(), and the
+matching entry of `Speakers` is the identity of the speaker that it addresses, from the `SPK` constants.  If the backend
+cannot identify a speaker, its identity is reported as zero rather than guessed.
+
+Channel selectors belong to the volume control.  They are not indices into the Audio object's output buffer or its
+#OutputLayout.  A `Channel` of `-1` always selects every channel of the control.
+
+The control's flags are returned in `Flags`.  If `VCF::JOINED` is set, the channels cannot be adjusted independently
+and changing any selector changes all of them.  The absence of `VCF::MONO` does not imply that the control has exactly
+two channels.
+
+-INPUT-
+int Index: The index of the volume control, used if `Name` is empty.
+strview Name: The name of the volume control, e.g. `Master`.
+^&vector(int) Channels: Receives the valid channel selectors.
+^&vector(int) Speakers: Receives the speaker identity of each selector, or zero if it is unknown.
+&int(VCF) Flags: Receives the control's flags.
+
+-ERRORS-
+Okay
+NullArgs
+NoSupport: The Audio object has no volume controls.
+OutOfRange: The `Index` is out of range.
+Search: No control matches the `Name`.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR AUDIO_GetVolumeChannels(extAudio *Self, struct snd::GetVolumeChannels *Args)
+{
+   if ((!Args) or (!Args->Channels) or (!Args->Speakers)) return ERR::NullArgs;
+
+   std::lock_guard lock(Self->MixerMutex);
+   Args->Channels->clear();
+   Args->Speakers->clear();
+   Args->Flags = VCF::NIL;
+
+   if (Self->Volumes.empty()) return ERR::NoSupport;
+
+   int index;
+   if (not Args->Name.empty()) {
+      for (index=0; index < std::ssize(Self->Volumes); index++) {
+         if (iequals(Args->Name, Self->Volumes[index].Name)) break;
+      }
+      if (index IS std::ssize(Self->Volumes)) return ERR::Search;
+   }
+   else {
+      index = Args->Index;
+      if ((index < 0) or (index >= std::ssize(Self->Volumes))) return ERR::OutOfRange;
+   }
+
+   auto &control = Self->Volumes[index];
+   Args->Flags = control.Flags;
+
+   std::vector<int> selectors, speakers;
+
+#ifdef ALSA_ENABLED
+   if (Self->MixHandle) {
+      snd_mixer_selem_id_t *sid;
+      snd_mixer_selem_id_alloca(&sid);
+      snd_mixer_selem_id_set_index(sid, 0);
+      snd_mixer_selem_id_set_name(sid, control.Name.c_str());
+      if (auto elem = snd_mixer_find_selem(Self->MixHandle, sid)) {
+         alsa_volume_channels(control, elem, selectors, speakers);
+      }
+   }
+   else {
+#else
+   {
+#endif
+      // Software controls have one channel that applies to every speaker.
+
+      for (int c = 0; c < soft_volume_channels(control); c++) {
+         selectors.push_back(c);
+         speakers.push_back(0);
+      }
+   }
+
+   Args->Channels->assign(selectors.begin(), selectors.end());
+   Args->Speakers->assign(speakers.begin(), speakers.end());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+MaxDrain: Limits the time that DSP effect chains can continue to produce output after their source audio ends.
+
+When the sources feeding an effect chain stop, effects such as reverbs, delays and recursive filters can continue to
+produce output as their internal history decays.  This drain phase continues until the chain has no pending output,
+or until MaxDrain seconds of drain time have elapsed.  The limit applies independently to each application chain and
+to the global chain, and it resets when new source audio reaches a chain.
+
+If a chain reaches the deadline while effects still have pending output, the remaining output is faded out over
+approximately 10 ms and discarded, and the `Truncated` result of #GetEffectStatus() is set.  The limit acts as a
+safety net for effects that have no finite tail, such as an @AudioEqualiser with long decays or feedback that never
+fully settles.
+
+The default is 30 seconds.  Valid values range from 0.01 to 300 seconds; `ERR::OutOfRange` is returned otherwise.
+The value can only be changed while effects are not configured, i.e. before the Audio object is activated or
+after it has been deactivated.  Otherwise, `ERR::InvalidState` is returned.
+
+-END-
+*********************************************************************************************************************/
+
+static ERR GET_MaxDrain(extAudio *Self, double *Value)
+{
+   std::lock_guard lock(Self->MixerMutex);
+   *Value = Self->MaxDrain;
+   return ERR::Okay;
+}
+
+static ERR SET_MaxDrain(extAudio *Self, double Value)
+{
+   std::lock_guard lock(Self->MixerMutex);
+   if (Self->EffectConfigured) return ERR::InvalidState;
+   if (!std::isfinite(Value) or Value < 0.01 or Value > 300) return ERR::OutOfRange;
+   Self->MaxDrain = Value;
+   return ERR::Okay;
+}
+
+#include "class_audio_def.c"
 
 static const FieldArray clAudioFields[] = {
    { "OutputRate",    FDF_INT|FDF_RI, nullptr, SET_OutputRate },
    { "InputRate",     FDF_INT|FDF_RI },
-   { "Quality",       FDF_INT|FDF_RW,    nullptr, SET_Quality },
-   { "Flags",         FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clAudioFlags },
-   { "BitDepth",      FDF_INT|FDF_RI,    nullptr, SET_BitDepth },
-   { "Periods",       FDF_INT|FDF_RI,    nullptr, SET_Periods },
-   { "PeriodSize",    FDF_INT|FDF_RI,    nullptr, SET_PeriodSize },
+   { "Quality",       FDF_INT|FDF_RW,      nullptr, SET_Quality },
+   { "Flags",         FDF_INTFLAGS|FDF_RI, nullptr, SET_Flags, &clAudioFlags },
+   { "Dither",        FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clAudioDither },
+   { "BitDepth",      FDF_INT|FDF_RI,      nullptr, SET_BitDepth },
+   { "Periods",       FDF_INT|FDF_RI,      nullptr, SET_Periods },
+   { "PeriodSize",    FDF_INT|FDF_RI,      nullptr, SET_PeriodSize },
    // VIRTUAL FIELDS
-   { "Device",        FDF_STRING|FDF_RW,  GET_Device, SET_Device },
-   { "MixerLag",      FDF_DOUBLE|FDF_R,   GET_MixerLag },
-   { "MasterVolume",  FDF_DOUBLE|FDF_RW,  GET_MasterVolume, SET_MasterVolume },
-   { "Mute",          FDF_INT|FDF_RW,    GET_Mute, SET_Mute },
-   { "Stereo",        FDF_INT|FDF_RW,    GET_Stereo, SET_Stereo },
+   { "MaxDrain",      FDF_DOUBLE|FDF_RW, GET_MaxDrain, SET_MaxDrain },
+   { "Device",        FDF_CPPSTRING|FDF_RW|FDF_PURE,  GET_Device, SET_Device },
+   { "MixerLag",      FDF_DOUBLE|FDF_R,               GET_MixerLag },
+   { "MasterVolume",  FDF_DOUBLE|FDF_RW|FDF_PURE,     GET_MasterVolume, SET_MasterVolume },
+   { "Mute",          FDF_INT|FDF_RW,                 GET_Mute, SET_Mute },
+   { "OutputLayout",  FDF_INT|FDF_ARRAY|FDF_RW|FDF_PURE, GET_OutputLayout, SET_OutputLayout },
    END_FIELD
 };
 
@@ -1468,7 +2217,7 @@ ERR add_audio_class(void)
 {
    clAudio = objMetaClass::create::global(
       fl::BaseClassID(CLASSID::AUDIO),
-      fl::ClassVersion(1.0),
+      fl::ClassVersion(VER_AUDIO),
       fl::Name("Audio"),
       fl::Category(CCF::AUDIO),
       fl::Actions(clAudioActions),

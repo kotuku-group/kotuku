@@ -1,0 +1,66 @@
+--$TIRI:Include
+
+module({ name="WebRTC", copyright="Paul Manias © 2026", version=1.0, timestamp=20240611,
+    src="webrtc.cpp"
+  }, function()
+   enums("RTCS", { type="int", start=0, comment="PeerConnection transport states." },
+      "NEW", "CONNECTING", "CONNECTED", "DISCONNECTED", "FAILED", "CLOSED")
+   enums("RTCSIG", { type="int", start=0, comment="PeerConnection signalling states." },
+      "STABLE", "HAVE_LOCAL_OFFER", "HAVE_REMOTE_OFFER", "CLOSED")
+   enums("RTCICE", { type="int", start=0, comment="ICE agent states." },
+      "NEW", "CHECKING", "CONNECTED", "COMPLETED", "DISCONNECTED", "FAILED")
+   enums("RTCGATHER", { type="int", start=0, comment="ICE gathering states." },
+      "NEW", "GATHERING", "COMPLETE")
+
+   flags("RTCF", { type="int", comment="PeerConnection ICE policy." },
+      "RELAY_ONLY: Use relay allocations exclusively for candidate signalling and all peer traffic.",
+      "NO_HOST: Suppress host candidates and host pairs while retaining internal gathering sockets.",
+      "NO_MDNS: Permit numeric host signalling instead of registering random mDNS names.",
+      "DISABLE_IPV6: Exclude IPv6 server jobs, local candidates and remote candidate pairs.")
+
+   enums("WCS", { type="int", start=0, comment="WebChannel lifecycle states." },
+      "CONNECTING", "OPEN", "CLOSING", "CLOSED")
+   enums("WCM", { type="int", start=1, comment="WebChannel complete-message types." }, "TEXT", "BINARY")
+   methods("WebChannel", "wch", { { id=1, name="Send" }, { id=2, name="Close" } })
+   klass("WebChannel", { src="webchannel/webchannel.cpp", output="webchannel/webchannel_def.c", extended=true }, [[
+    string Label                    # Immutable UTF-8 label.
+    string Protocol                 # Immutable UTF-8 protocol.
+    large BufferedAmountLowThreshold # Mutable low-water threshold, default zero.
+    int Negotiated                  # Explicitly negotiated without DCEP.
+    int Ordered                     # Preserve message order.
+    int MaxRetransmits              # -1 for omitted, otherwise 0 to 65535 retries.
+    int MaxPacketLifeTime           # -1 for omitted, otherwise lifetime in milliseconds from enqueue.
+    int(WCS) State                  # Channel lifecycle state.
+    error Error                     # Most recent channel error.
+   ]])
+
+   methods("PeerConnection", "rtc", {
+      { id=1, name="CreateOffer" },
+      { id=2, name="CreateAnswer" },
+      { id=3, name="SetLocalDescription" },
+      { id=4, name="SetRemoteDescription" },
+      { id=5, name="AddIceCandidate" },
+      { id=6, name="Close" },
+      { id=7, name="RestartIce" },
+      { id=8, name="CreateWebChannel" },
+      { id=9, name="GetStats" }
+   })
+
+   klass("PeerConnection", { src="peerconnection/peerconnection.cpp",
+      output="peerconnection/peerconnection_def.c", extended=true }, [[
+    string LocalDescription        # Current local SDP.
+    string RemoteDescription       # Current remote SDP.
+    string CertificateFingerprint  # SHA-256 fingerprint of the local DTLS certificate.
+    string StunServer              # Optional stun: URI or address:port; DNS resolution runs during gathering.
+    ptr ClientData                  # User data.
+    int(RTCS) State                 # Aggregate ICE and DTLS state.
+    int(RTCSIG) SignalingState      # Offer/answer negotiation state.
+    int(RTCICE) IceState            # ICE agent state.
+    int(RTCGATHER) GatheringState   # Local ICE gathering state.
+    ~int RestartRequired            # Pending application-signalled network-change recovery.
+    ~func OnRestartRequired         # Deferred callback receiving PeerConnection and local generation.
+    error Error                     # Most recent asynchronous transport error.
+    int ReceiveLimit                # Constructor-only receive capacity, 1 to 16777216 bytes.
+    int(RTCF) Flags                 # Constructor-only ICE policy flags.
+   ]])
+end)

@@ -1,0 +1,266 @@
+   include 'vector', 'display'
+   module display as mGfx
+
+-- Tests for pattern fills applied to a VectorViewport.  The source tile is 20x20 and green, with a red 10x10 marker in
+-- its top-left corner.  The filled viewport is 40x40 and placed at (20,20) on a black page, so the 2x2 tile grid is
+-- offset from the page origin and any drawing outside the viewport is detectable.  Samples are taken from the centre
+-- of each 10x10 quadrant to avoid antialiased edges.
+
+TILE = 20
+VP_X = 20
+VP_Y = 20
+VP_SIZE = 40
+PAGE = 80
+
+function newBitmap(Width, Height):obj
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function readPixel(Bitmap, X, Y)
+   return mGfx.ReadRGBPixel(Bitmap, X, Y)
+end
+
+function isRed(Bitmap, X, Y)
+   p = readPixel(Bitmap, X, Y)
+   return (p.red > 200) and (p.green < 50) and (p.blue < 50)
+end
+
+function isGreen(Bitmap, X, Y)
+   p = readPixel(Bitmap, X, Y)
+   return (p.red < 50) and (p.green > 100) and (p.blue < 50)
+end
+
+function isBlue(Bitmap, X, Y)
+   p = readPixel(Bitmap, X, Y)
+   return (p.red < 50) and (p.green < 50) and (p.blue > 200)
+end
+
+function isBlack(Bitmap, X, Y)
+   p = readPixel(Bitmap, X, Y)
+   return (p.red < 30) and (p.green < 30) and (p.blue < 30)
+end
+
+function newScene(Size):<obj, obj>
+   scene = obj.new('VectorScene', { pageWidth=Size, pageHeight=Size })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   return scene, viewport
+end
+
+function newMarkerPattern(Scene, Options):obj
+   pattern = Scene.new('VectorPattern', Options)
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=TILE, height=TILE, fill='rgb(0,160,0)' })
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=TILE/2, height=TILE/2, fill='rgb(255,0,0)' })
+   check Scene.mtAddDef('pat', pattern)
+   return pattern
+end
+
+function newFilledViewport(Parent):obj
+   return Parent.new('VectorViewport', { x=VP_X, y=VP_Y, width=VP_SIZE, height=VP_SIZE, fill='url(#pat)' })
+end
+
+-- Returns the red quadrant (0..3, in reading order) of the tile cell at (CellX, CellY) inside the filled viewport, or
+-- nil if the cell does not contain exactly one red quadrant on a green background.  Scale is the device size of one
+-- source pixel.
+
+function markerQuadrant(Bitmap, CellX, CellY, Scale)
+   cell = TILE * Scale
+   quarter = cell / 4
+   found = nil
+   for q in {0 into 3} do
+      x = (VP_X * Scale) + (CellX * cell) + ((q % 2) * (cell / 2)) + quarter
+      y = (VP_Y * Scale) + (CellY * cell) + (math.floor(q / 2) * (cell / 2)) + quarter
+      if isRed(Bitmap, x, y) then
+         if found != nil then return nil end
+         found = q
+      elseif not isGreen(Bitmap, x, y) then
+         return nil
+      end
+   end
+   return found
+end
+
+-- Expected marker quadrants for cells (0,0), (1,0), (0,1), (1,1)
+
+EXPECT_REPEAT  = { 0, 0, 0, 0 }
+EXPECT_REFLECT = { 0, 1, 2, 3 }
+
+function checkGrid(Bitmap, Expected, Label, Scale)
+   for i in {0 into 3} do
+      cx = i % 2
+      cy = math.floor(i / 2)
+      q = markerQuadrant(Bitmap, cx, cy, Scale ?? 1)
+      assert(q is Expected[i], f'{Label}: cell {cx},{cy} should have its marker in quadrant {Expected[i]}, got {q}')
+   end
+end
+
+-- The fill must be confined to the viewport.
+
+function checkOutside(Bitmap, Label, Scale)
+   s = Scale ?? 1
+   for _, pt in { { 10, 10 }, { 70, 10 }, { 10, 70 }, { 70, 70 }, { 40, 10 }, { 10, 40 } } do
+      assert(isBlack(Bitmap, pt[0] * s, pt[1] * s), f'{Label}: nothing should be drawn at {pt[0]},{pt[1]}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BoundingBoxTileRepeats()
+   scene, viewport = newScene(PAGE)
+   newMarkerPattern(scene, { width='50%', height='50%', units=VUNIT_BOUNDING_BOX, spreadMethod=VSPREAD_REPEAT })
+   newFilledViewport(viewport)
+   bmp = newBitmap(PAGE, PAGE)
+
+   drawScene(scene, bmp)
+   checkGrid(bmp, EXPECT_REPEAT, 'BOUNDING_BOX')
+   checkOutside(bmp, 'BOUNDING_BOX')
+end
+
+@Test function UserSpaceTileRepeats()
+   -- User space coordinates are relative to the filled viewport, so the tile grid starts at the viewport's origin.
+
+   scene, viewport = newScene(PAGE)
+   newMarkerPattern(scene, { x=0, y=0, width=TILE, height=TILE, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REPEAT })
+   newFilledViewport(viewport)
+   bmp = newBitmap(PAGE, PAGE)
+
+   drawScene(scene, bmp)
+   checkGrid(bmp, EXPECT_REPEAT, 'USERSPACE')
+   checkOutside(bmp, 'USERSPACE')
+end
+
+function checkForegroundPattern(Live:bool)
+   local scene, viewport = newScene(PAGE)
+   local options = Live ? { width='100%', height='100%', units=VUNIT_BOUNDING_BOX } :
+      { x=0, y=0, width=TILE, height=TILE, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REPEAT }
+   newMarkerPattern(scene, options)
+   local filled = newFilledViewport(viewport)
+   local bmp = newBitmap(PAGE, PAGE)
+
+   -- Keep the filled viewport childless so its foreground pattern alone must trigger rendering.
+
+   for _, fill in array<str> { 'url(#pat)', 'url(#pat), blue', 'blue;url(#pat)' } do
+      filled.fill = fill
+      drawScene(scene, bmp)
+      assert(isRed(bmp, VP_X + 5, VP_Y + 5), f'{fill}: the foreground pattern marker must remain visible')
+      assert(isGreen(bmp, VP_X + 15, VP_Y + 5), f'{fill}: the foreground pattern background must remain visible')
+      checkOutside(bmp, fill)
+   end
+end
+
+@Test function ForegroundTiledPatternRenders()
+   checkForegroundPattern(false)
+end
+
+@Test function ForegroundLivePatternRenders()
+   checkForegroundPattern(true)
+end
+
+@Test function ReflectMirrorsBothAxes()
+   scene, viewport = newScene(PAGE)
+   newMarkerPattern(scene, { x=0, y=0, width=TILE, height=TILE, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REFLECT })
+   newFilledViewport(viewport)
+   bmp = newBitmap(PAGE, PAGE)
+
+   drawScene(scene, bmp)
+   checkGrid(bmp, EXPECT_REFLECT, 'REFLECT')
+end
+
+@Test function TilesFollowViewportScale()
+   -- A 80x80 viewbox scaled up to 160x160 scales the filled viewport and its tiles by 2.
+
+   scene, viewport = newScene(PAGE * 2)
+   viewport.viewWidth = PAGE
+   viewport.viewHeight = PAGE
+   newMarkerPattern(scene, { width='50%', height='50%', units=VUNIT_BOUNDING_BOX, spreadMethod=VSPREAD_REFLECT })
+   newFilledViewport(viewport)
+   bmp = newBitmap(PAGE * 2, PAGE * 2)
+
+   drawScene(scene, bmp)
+   checkGrid(bmp, EXPECT_REFLECT, 'REFLECT scale(2)', 2)
+   checkOutside(bmp, 'REFLECT scale(2)', 2)
+end
+
+@Test function PatternTransformApplies()
+   -- translate(10,10) moves the tile origin to the centre of the first cell, so the red markers are centred on
+   -- local (15,15) and (35,35), and the cell corners are green.
+
+   scene, viewport = newScene(PAGE)
+   newMarkerPattern(scene, {
+      x=0, y=0, width=TILE, height=TILE, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REPEAT,
+      transform='translate(10,10)'
+   })
+   newFilledViewport(viewport)
+   bmp = newBitmap(PAGE, PAGE)
+
+   drawScene(scene, bmp)
+   for _, pt in { { 15, 15 }, { 35, 35 }, { 15, 35 }, { 35, 15 } } do
+      assert(isRed(bmp, VP_X + pt[0], VP_Y + pt[1]), f'Local {pt[0]},{pt[1]} should be red')
+   end
+   for _, pt in { { 5, 5 }, { 25, 15 }, { 15, 25 }, { 25, 25 } } do
+      assert(isGreen(bmp, VP_X + pt[0], VP_Y + pt[1]), f'Local {pt[0]},{pt[1]} should be green')
+   end
+end
+
+@Test function FullTileRendersOnceUnderChildren()
+   -- The default pattern configuration is one tile that covers the viewport (as used for icons).  The 20x20 content
+   -- is drawn once at its user-space size, and the viewport's children are drawn over it.
+
+   scene, viewport = newScene(PAGE)
+   newMarkerPattern(scene, { spreadMethod=VSPREAD_REPEAT })
+   vp = newFilledViewport(viewport)
+   vp.new('VectorRectangle', { x=TILE/2, y=TILE/2, width=TILE/2, height=TILE/2, fill='rgb(0,0,255)' })
+   bmp = newBitmap(PAGE, PAGE)
+
+   drawScene(scene, bmp)
+   assert(isRed(bmp, VP_X + 5, VP_Y + 5), 'The marker should be drawn at the viewport origin')
+   assert(isGreen(bmp, VP_X + 15, VP_Y + 5), 'The tile background should be drawn')
+   assert(isBlue(bmp, VP_X + 15, VP_Y + 15), 'Viewport children should be drawn over the fill')
+   assert(isBlack(bmp, VP_X + 25, VP_Y + 25), 'A full-size tile should not repeat its content')
+   checkOutside(bmp, 'Full tile')
+end
+
+-- Registers a filter that floods the alpha coverage of its target with blue.
+
+function newBlueFilter(Scene):str
+   filter = Scene.new('VectorFilter')
+   filter.new('FloodFX', { colour=struct<FRGB> { red=0, green=0, blue=1, alpha=1 } })
+   filter.new('CompositeFX', { operator=OP_IN, mixType='Alpha' })
+   check Scene.mtAddDef('blue', filter)
+   return 'url(#blue)'
+end
+
+@Test function FilterOnPatternViewportRenders()
+   -- A pattern's viewport is the root of the pattern's scene and has no parent view.  Filtering it previously
+   -- crashed the renderer.
+
+   scene, viewport = newScene(PAGE)
+   pattern = newMarkerPattern(scene, { spreadMethod=VSPREAD_REPEAT })
+   pattern.viewport.filter = newBlueFilter(pattern.scene)
+   newFilledViewport(viewport)
+   bmp = newBitmap(PAGE, PAGE)
+
+   drawScene(scene, bmp)
+   assert(isBlue(bmp, VP_X + 5, VP_Y + 5), 'The filter should recolour the marker')
+   assert(isBlue(bmp, VP_X + 15, VP_Y + 15), 'The filter should recolour the tile background')
+   assert(isBlack(bmp, VP_X + 25, VP_Y + 25), 'The filter should not extend the tile content')
+   checkOutside(bmp, 'Filtered pattern viewport')
+end
+
+@Test function FilterOnSceneRootViewportRenders()
+   scene, viewport = newScene(PAGE)
+   viewport.new('VectorRectangle', { x=VP_X, y=VP_Y, width=VP_SIZE, height=VP_SIZE, fill='rgb(255,0,0)' })
+   viewport.filter = newBlueFilter(scene)
+   bmp = newBitmap(PAGE, PAGE)
+
+   drawScene(scene, bmp)
+   assert(isBlue(bmp, VP_X + 20, VP_Y + 20), 'The filter should recolour the root viewport content')
+   checkOutside(bmp, 'Filtered root viewport')
+end

@@ -1,5 +1,77 @@
 
-extern agg::gamma_lut<uint8_t, uint16_t, 8, 12> glGamma;
+// NB: The SSE2 span kernels use unaligned loads/stores because span destinations land on arbitrary
+// 4-byte pixel boundaries.  The AVX2 kernels (selected at run time when the CPU supports them)
+// instead peel pixels with scalar code until the destination is 32-byte aligned, so the wide body
+// runs with aligned accesses regardless of bitmap allocation or stride alignment.
+
+#include <cstring>
+#include "../link/simd.h"
+
+//#define SKIP_ALPHA_ZERO 1 // Enables skipping translucent pixels when compositing.
+
+// The per-pixel blenders are small but are instantiated in many span loops; GCC declines to inline the gamma blender
+// without a hint, which leaves a call per pixel in the hottest loops.
+
+#if defined(_MSC_VER)
+   #define PIX_INLINE __forceinline
+#else
+   #define PIX_INLINE inline __attribute__((always_inline))
+#endif
+
+// Transfer tables for BLM::GAMMA, using the piecewise sRGB curve (IEC 61966-2-1), which is also used by glLinearRGB,
+// the filter pipelines and linearRGB gradients.  The curve's linear segment near black keeps every 8-bit value
+// distinct at 12 bits, so inv(dir(v)) IS v for all v and blending a colour over itself is lossless.  A pure power
+// curve maps sRGB values 1-4 to the same 12-bit code, which altered near-black pixels under faint blends.
+//
+// The tables are fixed arrays rather than heap pointers, so their addresses stay constant across the byte stores of a
+// span loop (the module is compiled with -fno-strict-aliasing, so a heap pointer would be reloaded after every store).
+// Recip[a] is the reciprocal of 255 * a used by the translucent destination path.  The AVX2 kernels gather 32 bits
+// per index, so Dir and Inv must be followed by other members of this struct.
+
+struct gamma_table {
+   uint16_t Dir[256];   // 8-bit sRGB to 12-bit linear
+   uint8_t  Inv[4096];  // 12-bit linear to 8-bit sRGB
+   uint32_t Recip[256]; // ceil(2^31 / (255 * a)) for a >= 1
+
+   static double decode(double Value) noexcept {
+      return (Value <= 0.04045) ? Value / 12.92 : pow((Value + 0.055) / 1.055, 2.4);
+   }
+
+   static double encode(double Value) noexcept {
+      return (Value <= 0.0031308) ? Value * 12.92 : (1.055 * pow(Value, 1.0 / 2.4)) - 0.055;
+   }
+
+   gamma_table() noexcept {
+      for (int i=0; i < 256; i++) Dir[i] = uint16_t(agg::uround(decode(i / 255.0) * 4095.0));
+      for (int i=0; i < 4096; i++) Inv[i] = uint8_t(agg::uround(encode(i / 4095.0) * 255.0));
+      Recip[0] = 0;
+      for (uint32_t a=1; a < 256; a++) Recip[a] = uint32_t(((uint64_t(1)<<31) + (0xff * a) - 1) / (0xff * a));
+   }
+
+   PIX_INLINE uint16_t dir(uint8_t Value) const noexcept { return Dir[Value]; }
+   PIX_INLINE uint8_t inv(uint32_t Value) const noexcept { return Inv[Value]; }
+};
+
+extern gamma_table glGamma;
+
+// Exact reciprocals for the divisor 255 * a of blend_translucent_dest32(), for a >= 1.  For any numerator n < 2^24,
+// (n * Recip[a]) >> 40 IS n / (255 * a), because Recip[a] = ceil(2^40 / d) and d < 2^16 (the round-up reciprocal
+// theorem with N = 24 and l = 16).
+
+struct translucent_table {
+   uint64_t Recip[256];
+
+   translucent_table() noexcept {
+      Recip[0] = 0;
+      for (uint64_t a=1; a < 256; a++) Recip[a] = ((uint64_t(1)<<40) + (0xff * a) - 1) / (0xff * a);
+   }
+
+   PIX_INLINE uint32_t divide(uint32_t Numerator, uint32_t Alpha) const noexcept {
+      return uint32_t((uint64_t(Numerator) * Recip[Alpha])>>40);
+   }
+};
+
+extern const translucent_table glTranslucent;
 
 static PIXEL_ORDER pxBGRA(2, 1, 0, 3);
 static PIXEL_ORDER pxRGBA(0, 1, 2, 3);
@@ -10,33 +82,73 @@ static PIXEL_ORDER pxRGB(0, 1, 2, 0);
 
 //********************************************************************************************************************
 
-// For use when the bitmap data is already in linear RGB space.
+// Source colours are always sRGB encoded.  Each blender provides encode() to convert a source channel to the
+// target's storage encoding, which is applied wherever a source value is written directly to the target.
+
+// Straight-alpha source-over of a colour onto a translucent destination pixel (alpha < 255).  Colours are weighted by
+// both alphas and blended arithmetically in the destination's encoding.  The W3C's SVG sanctioned alpha formula is
+// always >= 1 and satisfies src_weight + dest_weight <= divisor, so channels can only exceed 255 by rounding.
+
+// The divisions are exact reciprocal multiplies (see translucent_table), as the numerator is below 2^24.
+
+PIX_INLINE void blend_translucent_dest32(uint8_t *p, uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA,
+   uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) noexcept
+{
+   const uint32_t alpha_inv   = 0xff - ca;
+   const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - p[oA]))>>8);
+   const uint32_t src_weight  = 0xff * ca;
+   const uint32_t dest_weight = alpha_inv * p[oA];
+   const uint32_t round       = (0xff * final_alpha)>>1;
+   auto channel = [&](uint8_t Src, uint8_t Dest) {
+      return uint8_t(std::min<uint32_t>(0xff, glTranslucent.divide(Src * src_weight + Dest * dest_weight + round,
+         final_alpha)));
+   };
+   p[oR] = channel(cr, p[oR]);
+   p[oG] = channel(cg, p[oG]);
+   p[oB] = channel(cb, p[oB]);
+   p[oA] = uint8_t(final_alpha);
+}
+
+// For use when the bitmap data is already in linear RGB space.  Only the source is decoded from sRGB; the destination
+// is blended arithmetically and is not re-encoded.
 
 struct linear_blend32 {
    const uint8_t oR, oG, oB, oA;
 
    linear_blend32(uint8_t R, uint8_t G, uint8_t B, uint8_t A) : oR(R), oG(G), oB(B), oA(A) { }
 
-   inline void operator()(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) const noexcept {
-      p[oR] = glLinearRGB.invert(((glLinearRGB.convert(p[oR]) * (0xff-ca)) + (glLinearRGB.convert(cr) * ca) + 0xff)>>8);
-      p[oG] = glLinearRGB.invert(((glLinearRGB.convert(p[oG]) * (0xff-ca)) + (glLinearRGB.convert(cg) * ca) + 0xff)>>8);
-      p[oB] = glLinearRGB.invert(((glLinearRGB.convert(p[oB]) * (0xff-ca)) + (glLinearRGB.convert(cb) * ca) + 0xff)>>8);
-      p[oA] = 0xff - (((0xff - ca) * (0xff - p[oA]))>>8);
+   inline static uint8_t encode(uint8_t Value) noexcept { return glLinearRGB.convert(Value); }
+
+   PIX_INLINE void operator()(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) const noexcept {
+      if (p[oA] IS 0xff) {
+         p[oR] = ((p[oR] * (0xff-ca)) + (glLinearRGB.convert(cr) * ca) + 0xff)>>8;
+         p[oG] = ((p[oG] * (0xff-ca)) + (glLinearRGB.convert(cg) * ca) + 0xff)>>8;
+         p[oB] = ((p[oB] * (0xff-ca)) + (glLinearRGB.convert(cb) * ca) + 0xff)>>8;
+      }
+      else blend_translucent_dest32(p, oR, oG, oB, oA, glLinearRGB.convert(cr), glLinearRGB.convert(cg),
+         glLinearRGB.convert(cb), ca);
    }
 };
 
-// The commonly used, if technically incorrect, sRGB blending algorithm.
+// The commonly used, if technically incorrect, sRGB blending algorithm.  Values are blended without conversion to
+// linear light.  A translucent destination uses blend_translucent_dest32(), so that content composited from a
+// transparent buffer matches content drawn directly.  The SIMD kernels implement the opaque formula only and defer
+// translucent destinations to this blender.  gfx::CopyArea() uses the same formulae for pixel-identical results.
 
 struct srgb_blend32 {
    const uint8_t oR, oG, oB, oA;
 
    srgb_blend32(uint8_t R, uint8_t G, uint8_t B, uint8_t A) : oR(R), oG(G), oB(B), oA(A) { }
 
-   inline void operator()(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) const noexcept {
-      p[oR] = ((p[oR] * (0xff-ca)) + (cr * ca) + 0xff)>>8;
-      p[oG] = ((p[oG] * (0xff-ca)) + (cg * ca) + 0xff)>>8;
-      p[oB] = ((p[oB] * (0xff-ca)) + (cb * ca) + 0xff)>>8;
-      p[oA] = 0xff - (((0xff - ca) * (0xff - p[oA]))>>8); // The W3C's SVG sanctioned method for the alpha channel :)
+   inline static uint8_t encode(uint8_t Value) noexcept { return Value; }
+
+   PIX_INLINE void operator()(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) const noexcept {
+      if (p[oA] IS 0xff) {
+         p[oR] = ((p[oR] * (0xff-ca)) + (cr * ca) + 0xff)>>8;
+         p[oG] = ((p[oG] * (0xff-ca)) + (cg * ca) + 0xff)>>8;
+         p[oB] = ((p[oB] * (0xff-ca)) + (cb * ca) + 0xff)>>8;
+      }
+      else blend_translucent_dest32(p, oR, oG, oB, oA, cr, cg, cb, ca);
    }
 };
 
@@ -47,26 +159,40 @@ struct srgb_blend32_gamma {
 
    srgb_blend32_gamma(uint8_t R, uint8_t G, uint8_t B, uint8_t A) : oR(R), oG(G), oB(B), oA(A) { }
 
-   inline void operator()(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) const noexcept {
+   inline static uint8_t encode(uint8_t Value) noexcept { return Value; }
+
+   // Channel results never exceed hi_res_mask: the numerator is bounded by dir() <= hi_res_mask and
+   // a4 + a5 <= a6, so no clamping is required before the inv() lookup.  The source channels are passed already
+   // decoded with glGamma.dir() (Lr, Lg, Lb) so that span loops with a constant colour can decode it once.
+
+   PIX_INLINE void blend_decoded(uint8_t *p, uint32_t Lr, uint32_t Lg, uint32_t Lb, uint8_t ca) const noexcept {
       const uint8_t dest_alpha = p[oA];
-      const uint8_t alpha_inv = 0xff - ca;
-      const uint32_t a5 = alpha_inv * dest_alpha;
-      const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8);
+      const uint32_t alpha_inv = 0xff - ca;
+      const uint32_t a4 = 0xff * ca;
 
-      if (final_alpha > 0) {
-          const uint32_t a4 = 0xff * ca;
-          const uint32_t a6 = 0xff * final_alpha;
-
-          const uint32_t r3 = (glGamma.dir(cr) * a4 + glGamma.dir(p[oR]) * a5) / a6;
-          const uint32_t g3 = (glGamma.dir(cg) * a4 + glGamma.dir(p[oG]) * a5) / a6;
-          const uint32_t b3 = (glGamma.dir(cb) * a4 + glGamma.dir(p[oB]) * a5) / a6;
-
-          p[oR] = glGamma.inv(r3 < glGamma.hi_res_mask ? r3 : glGamma.hi_res_mask);
-          p[oG] = glGamma.inv(g3 < glGamma.hi_res_mask ? g3 : glGamma.hi_res_mask);
-          p[oB] = glGamma.inv(b3 < glGamma.hi_res_mask ? b3 : glGamma.hi_res_mask);
-          p[oA] = final_alpha;
+      if (dest_alpha IS 0xff) {
+         // Opaque destination: final alpha is 255 and the divisor is the constant 65025, which the
+         // compiler lowers to a multiply-shift.
+         const uint32_t a5 = alpha_inv * 0xff;
+         p[oR] = glGamma.inv((Lr * a4 + glGamma.dir(p[oR]) * a5) / 65025u);
+         p[oG] = glGamma.inv((Lg * a4 + glGamma.dir(p[oG]) * a5) / 65025u);
+         p[oB] = glGamma.inv((Lb * a4 + glGamma.dir(p[oB]) * a5) / 65025u);
       }
-      else ((uint32_t *)p)[0] = 0;
+      else {
+         const uint32_t a5 = alpha_inv * dest_alpha;
+         const uint32_t final_alpha = 0xff - ((alpha_inv * (0xff - dest_alpha))>>8); // Always >= 1
+         // One fixed-point reciprocal of 255 * final_alpha replaces three divisions; numerators stay below
+         // 2^30 so the 31-bit reciprocal cannot push a result past hi_res_mask.
+         const uint64_t recip = glGamma.Recip[final_alpha];
+         p[oR] = glGamma.inv(uint32_t(((Lr * a4 + glGamma.dir(p[oR]) * a5) * recip)>>31));
+         p[oG] = glGamma.inv(uint32_t(((Lg * a4 + glGamma.dir(p[oG]) * a5) * recip)>>31));
+         p[oB] = glGamma.inv(uint32_t(((Lb * a4 + glGamma.dir(p[oB]) * a5) * recip)>>31));
+         p[oA] = uint8_t(final_alpha);
+      }
+   }
+
+   PIX_INLINE void operator()(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) const noexcept {
+      blend_decoded(p, glGamma.dir(cr), glGamma.dir(cg), glGamma.dir(cb), ca);
    }
 };
 
@@ -74,25 +200,25 @@ struct srgb_blend32_gamma {
 // Blend the pixel at (p) with the provided colour values and store the result back in (p)
 
 template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, typename DrawPixel>
-void blend32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha) noexcept
+PIX_INLINE void blend32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha) noexcept
 {
    if (p[oA]) DrawPixel{oR,oG,oB,oA}(p,Red,Green,Blue,Alpha);
    else {
-      p[oR] = Red;
-      p[oG] = Green;
-      p[oB] = Blue;
+      p[oR] = DrawPixel::encode(Red);
+      p[oG] = DrawPixel::encode(Green);
+      p[oB] = DrawPixel::encode(Blue);
       p[oA] = Alpha;
    }
 }
 
 template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, typename DrawPixel>
-void copy32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha) noexcept
+PIX_INLINE void copy32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha) noexcept
 {
    if (Alpha) {
       if ((Alpha == 0xff) or (!p[oA])) {
-         p[oR] = Red;
-         p[oG] = Green;
-         p[oB] = Blue;
+         p[oR] = DrawPixel::encode(Red);
+         p[oG] = DrawPixel::encode(Green);
+         p[oB] = DrawPixel::encode(Blue);
          p[oA] = Alpha;
       }
       else DrawPixel{oR,oG,oB,oA}(p,Red,Green,Blue,Alpha);
@@ -100,15 +226,15 @@ void copy32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha)
 }
 
 template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, typename DrawPixel>
-void cover32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha, uint32_t cover) noexcept
+PIX_INLINE void cover32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha, uint32_t cover) noexcept
 {
    if (cover == 255) copy32<oR,oG,oB,oA,DrawPixel>(p, Red, Green, Blue, Alpha);
    else if (Alpha) {
       Alpha = (Alpha * (cover + 1)) >> 8;
       if ((Alpha == 0xff) or (!p[oA])) {
-         p[oR] = Red;
-         p[oG] = Green;
-         p[oB] = Blue;
+         p[oR] = DrawPixel::encode(Red);
+         p[oG] = DrawPixel::encode(Green);
+         p[oB] = DrawPixel::encode(Blue);
          p[oA] = Alpha;
       }
       else DrawPixel{oR,oG,oB,oA}(p,Red,Green,Blue,Alpha);
@@ -118,159 +244,232 @@ void cover32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha
 //********************************************************************************************************************
 // sRGB blend operations
 
-static void srgb32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void srgb32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<2,1,0,3,srgb_blend32>(p, cr, cg, cb, alpha);
 }
 
-static void srgb32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void srgb32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<0,1,2,3,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void srgb32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void srgb32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<3,1,2,0,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void srgb32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void srgb32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<1,2,3,0,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
 // Gamma correct blend operations
 
-static void gamma32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void gamma32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<2,1,0,3,srgb_blend32_gamma>(p, cr, cg, cb, alpha);
 }
 
-static void gamma32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void gamma32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<0,1,2,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
-static void gamma32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void gamma32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<3,1,2,0,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
-static void gamma32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void gamma32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<1,2,3,0,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
 // Linear version of the blend operations
 
-static void linear32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linear32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<2,1,0,3,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void linear32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linear32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<0,1,2,3,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void linear32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linear32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<3,1,2,0,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void linear32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linear32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    blend32<1,2,3,0,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
 //********************************************************************************************************************
 // sRGB copy and cover operations
 
-static void srgbCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
-   blend32<2,1,0,3,srgb_blend32>(p,cr,cg,cb,alpha);
+static PIX_INLINE void srgbCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+   copy32<2,1,0,3,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void srgbCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void srgbCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<2,1,0,3,srgb_blend32>(p,cr,cg,cb,alpha,cover);
 }
 
-static void srgbCopy32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void srgbCopy32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<0,1,2,3,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void srgbCover32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void srgbCover32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<0,1,2,3,srgb_blend32>(p,cr,cg,cb,alpha,cover);
 }
 
-static void srgbCopy32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void srgbCopy32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<3,1,2,0,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void srgbCover32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void srgbCover32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<3,1,2,0,srgb_blend32>(p,cr,cg,cb,alpha,cover);
 }
 
-static void srgbCopy32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void srgbCopy32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<1,2,3,0,srgb_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void srgbCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void srgbCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<1,2,3,0,srgb_blend32>(p,cr,cg,cb,alpha,cover);
 }
 
 // Gamma correct copy and cover operations
 
-static void gammaCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
-   blend32<2,1,0,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
+static PIX_INLINE void gammaCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+   copy32<2,1,0,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
-static void gammaCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void gammaCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<2,1,0,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha,cover);
 }
 
-static void gammaCopy32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void gammaCopy32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<0,1,2,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
-static void gammaCover32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void gammaCover32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<0,1,2,3,srgb_blend32_gamma>(p,cr,cg,cb,alpha,cover);
 }
 
-static void gammaCopy32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void gammaCopy32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<3,1,2,0,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
-static void gammaCover32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void gammaCover32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<3,1,2,0,srgb_blend32_gamma>(p,cr,cg,cb,alpha,cover);
 }
 
-static void gammaCopy32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void gammaCopy32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<1,2,3,0,srgb_blend32_gamma>(p,cr,cg,cb,alpha);
 }
 
-static void gammaCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void gammaCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<1,2,3,0,srgb_blend32_gamma>(p,cr,cg,cb,alpha,cover);
 }
 
 // Linear copy and cover operations
 
-static void linearCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linearCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<2,1,0,3,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void linearCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void linearCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<2,1,0,3,linear_blend32>(p,cr,cg,cb,alpha,cover);
 }
 
-static void linearCopy32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linearCopy32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<0,1,2,3,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void linearCover32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void linearCover32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<0,1,2,3,linear_blend32>(p,cr,cg,cb,alpha,cover);
 }
 
-static void linearCopy32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linearCopy32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<3,1,2,0,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void linearCover32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void linearCover32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<3,1,2,0,linear_blend32>(p,cr,cg,cb,alpha,cover);
 }
 
-static void linearCopy32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+static PIX_INLINE void linearCopy32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
    copy32<1,2,3,0,linear_blend32>(p,cr,cg,cb,alpha);
 }
 
-static void linearCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha, uint32_t cover) noexcept {
+static PIX_INLINE void linearCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
    cover32<1,2,3,0,linear_blend32>(p,cr,cg,cb,alpha,cover);
+}
+
+// Copy operations for BLM::NONE.  The source is never blended with its own alpha: all four channels, including
+// alpha, are interpolated towards the source by coverage and written directly at full coverage.
+
+template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+inline void none_copy32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha) noexcept
+{
+   p[oR] = Red;
+   p[oG] = Green;
+   p[oB] = Blue;
+   p[oA] = Alpha;
+}
+
+template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+inline void none_cover32(uint8_t *p, uint8_t Red, uint8_t Green, uint8_t Blue, uint8_t Alpha, uint32_t Cover) noexcept
+{
+   if (Cover IS 0xff) none_copy32<oR,oG,oB,oA>(p, Red, Green, Blue, Alpha);
+   else if (Cover) {
+      const uint32_t cover_inv = 0xff - Cover;
+      p[oR] = ((p[oR] * cover_inv) + (Red * Cover) + 0xff)>>8;
+      p[oG] = ((p[oG] * cover_inv) + (Green * Cover) + 0xff)>>8;
+      p[oB] = ((p[oB] * cover_inv) + (Blue * Cover) + 0xff)>>8;
+      p[oA] = ((p[oA] * cover_inv) + (Alpha * Cover) + 0xff)>>8;
+   }
+}
+
+static PIX_INLINE void noneCopy32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+   none_copy32<2,1,0,3>(p,cr,cg,cb,alpha);
+}
+
+static PIX_INLINE void noneCover32BGRA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
+   none_cover32<2,1,0,3>(p,cr,cg,cb,alpha,cover);
+}
+
+static PIX_INLINE void noneCopy32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+   none_copy32<0,1,2,3>(p,cr,cg,cb,alpha);
+}
+
+static PIX_INLINE void noneCover32RGBA(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
+   none_cover32<0,1,2,3>(p,cr,cg,cb,alpha,cover);
+}
+
+static PIX_INLINE void noneCopy32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+   none_copy32<3,1,2,0>(p,cr,cg,cb,alpha);
+}
+
+static PIX_INLINE void noneCover32AGBR(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
+   none_cover32<3,1,2,0>(p,cr,cg,cb,alpha,cover);
+}
+
+static PIX_INLINE void noneCopy32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha) noexcept {
+   none_copy32<1,2,3,0>(p,cr,cg,cb,alpha);
+}
+
+static PIX_INLINE void noneCover32ARGB(uint8_t *p, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t alpha,
+   uint32_t cover) noexcept {
+   none_cover32<1,2,3,0>(p,cr,cg,cb,alpha,cover);
 }
 
 //********************************************************************************************************************
@@ -295,6 +494,8 @@ public:
 
    void setBitmap(objBitmap &, BLM BlendMode = BLM::AUTO) noexcept;
    void rawBitmap(uint8_t *Data, int Width, int Height, int Stride, int BitsPerPixel, ColourFormat &, BLM BlendMode = BLM::AUTO) noexcept;
+   void setBlendMode(BLM BlendMode) noexcept;
+   inline BLM blendMode() const noexcept { return mBlendMode; }
 
    // The setBitmap() code in scene_draw.cpp defines the following functions.
    void (*fBlendPix)(uint8_t *, uint8_t, uint8_t, uint8_t, uint8_t) noexcept;
@@ -316,98 +517,1107 @@ public:
    uint8_t mBytesPerPixel;
    PIXEL_ORDER mPixelOrder;
 
+   friend struct pixfmt_test; // src/vector/tests/test_pixfmt.cpp compares the SIMD kernels with the scalar ones
+
 private:
+   // Results of gamma-blending one colour and alpha over each value of an opaque destination channel, filled on
+   // first use.  Solid hlines (shape interiors) repeat the same colour and alpha for every row, so after the first
+   // row a channel blend is one table read.  An alpha of 255 is never blended, so the initial key cannot match.
+
+   struct gamma_hline_lut {
+      uint32_t Key = 0xffffffff; // Packed r, g, b and blend alpha
+      uint32_t Src[3];           // glGamma.dir(channel) * 255 * alpha
+      uint32_t DestWeight;       // 255 * (255 - alpha)
+      uint16_t Value[3][256];    // 0x100 | result, or 0 if not yet computed
+
+      PIX_INLINE uint8_t lookup(int Channel, uint8_t Dest) noexcept {
+         uint16_t &v = Value[Channel][Dest];
+         if (!(v & 0x100)) v = 0x100 | glGamma.inv((Src[Channel] + glGamma.dir(Dest) * DestWeight) / 65025u);
+         return uint8_t(v);
+      }
+   };
+
+   ColourFormat mColourFormat; // Retained so that setBlendMode() can rebind the operations
+   uint8_t mBitsPerPixel = 0;
+   BLM mBlendMode = BLM::AUTO; // The bound mode; AUTO is resolved to GAMMA when bound
+   gamma_hline_lut mGammaLUT;
+   uint32_t mGammaPendingKey = 0xffffffff; // A colour that has not yet been given the table
+   uint32_t mGammaPendingPixels = 0;
+
+   void bind_ops() noexcept;
+
+   // Returns the hline table for a colour and blend alpha, or nullptr if the colour has not yet covered enough
+   // pixels to repay clearing the table.  Short spans in many colours (text, small shapes) therefore keep the
+   // per-pixel blend.
+
+   inline gamma_hline_lut * gamma_lut(const agg::rgba8 &Colour, uint32_t Alpha, uint32_t Length) noexcept
+   {
+      const uint32_t key = uint32_t(Colour.r) | (uint32_t(Colour.g)<<8) | (uint32_t(Colour.b)<<16) | (Alpha<<24);
+      if (key != mGammaLUT.Key) {
+         if (key IS mGammaPendingKey) mGammaPendingPixels += Length;
+         else {
+            mGammaPendingKey    = key;
+            mGammaPendingPixels = Length;
+         }
+         if (mGammaPendingPixels < 256) return nullptr;
+
+         mGammaLUT.Key        = key;
+         mGammaLUT.Src[0]     = glGamma.dir(Colour.r) * 0xff * Alpha;
+         mGammaLUT.Src[1]     = glGamma.dir(Colour.g) * 0xff * Alpha;
+         mGammaLUT.Src[2]     = glGamma.dir(Colour.b) * 0xff * Alpha;
+         mGammaLUT.DestWeight = 0xff * (0xff - Alpha);
+         std::memset(mGammaLUT.Value, 0, sizeof(mGammaLUT.Value));
+      }
+      return &mGammaLUT;
+   }
+
    void pixel_order(PIXEL_ORDER PixelOrder)
    {
       mPixelOrder = PixelOrder;
    }
 
-   // Generic 32-bit routines.
+   inline static void fill32(uint8_t *Buffer, unsigned Length, uint32_t Value) noexcept
+   {
+#ifdef KOTUKU_SSE2
+      const __m128i vv = _mm_set1_epi32(int(Value));
+      while (Length >= 4) {
+         _mm_storeu_si128((__m128i *)Buffer, vv);
+         Buffer += 16;
+         Length -= 4;
+      }
+#endif
+      while (Length) {
+         *(uint32_t *)Buffer = Value;
+         Buffer += sizeof(uint32_t);
+         --Length;
+      }
+   }
 
-   static void blendHLine32(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
+   // 32-bit span routines.  The pixel order and per-pixel operations are template parameters so
+   // that the per-pixel work inlines into the span loop; function pointer indirection is paid once
+   // per span instead of once per pixel.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix, auto Encode>
+   static void blendHLine32T(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
    {
       if (c.a) {
          uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
          uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
-         if (alpha == 0xff) {
+         if (alpha IS 0xff) {
             uint32_t v;
-            ((uint8_t *)&v)[Self->mPixelOrder.Red] = c.r;
-            ((uint8_t *)&v)[Self->mPixelOrder.Green] = c.g;
-            ((uint8_t *)&v)[Self->mPixelOrder.Blue] = c.b;
-            ((uint8_t *)&v)[Self->mPixelOrder.Alpha] = c.a;
-            do {
-               *(uint32_t *)p = v;
-               p += sizeof(uint32_t);
-            } while(--len);
+            ((uint8_t *)&v)[oR] = Encode(c.r);
+            ((uint8_t *)&v)[oG] = Encode(c.g);
+            ((uint8_t *)&v)[oB] = Encode(c.b);
+            ((uint8_t *)&v)[oA] = c.a;
+            fill32(p, len, v);
          }
          else {
             do {
-               Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+               BlendPix(p, c.r, c.g, c.b, alpha);
                p += sizeof(uint32_t);
             } while(--len);
          }
       }
    }
 
-   static void blendSolidHSpan32(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix, auto Encode>
+   static void blendSolidHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
    {
       if (c.a) {
          uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+         const uint8_t er = Encode(c.r), eg = Encode(c.g), eb = Encode(c.b);
          do {
             uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
-            if (alpha == 0xff) {
-               p[Self->mPixelOrder.Red] = c.r;
-               p[Self->mPixelOrder.Green] = c.g;
-               p[Self->mPixelOrder.Blue] = c.b;
-               p[Self->mPixelOrder.Alpha] = 0xff;
+            if (alpha IS 0xff) {
+               p[oR] = er;
+               p[oG] = eg;
+               p[oB] = eb;
+               p[oA] = 0xff;
             }
-            else Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+            else BlendPix(p, c.r, c.g, c.b, alpha);
             p += sizeof(uint32_t);
             ++covers;
          } while(--len);
       }
    }
 
-   static void blendColorHSpan32(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
+   template <auto CopyPix, auto CoverPix>
+   static void blendColorHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
    {
       uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
       if (covers) {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, *covers++);
+            CoverPix(p, colors->r, colors->g, colors->b, colors->a, *covers++);
             p += 4;
             ++colors;
          } while(--len);
       }
-      else if (cover == 255) {
+      else if (cover IS 255) {
          do {
-            Self->fCopyPix(p, colors->r, colors->g, colors->b, colors->a);
+            CopyPix(p, colors->r, colors->g, colors->b, colors->a);
             p += 4;
             ++colors;
          } while(--len);
       }
       else {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, cover);
+            CoverPix(p, colors->r, colors->g, colors->b, colors->a, cover);
             p += 4;
             ++colors;
          } while(--len);
       }
    }
 
-   static void copyColorHSpan32(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors) noexcept
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto Encode>
+   static void copyColorHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors) noexcept
    {
       uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
       do {
-          p[Self->mPixelOrder.Red] = colors->r;
-          p[Self->mPixelOrder.Green] = colors->g;
-          p[Self->mPixelOrder.Blue] = colors->b;
-          p[Self->mPixelOrder.Alpha] = colors->a;
+          p[oR] = Encode(colors->r);
+          p[oG] = Encode(colors->g);
+          p[oB] = Encode(colors->b);
+          p[oA] = colors->a;
           ++colors;
           p += sizeof(uint32_t);
       } while(--len);
    }
 
-   // Generic 8-bit grey-scale routines
+   // BLM::NONE span routines.  Coverage interpolates the target towards the source; the source alpha is copied
+   // rather than used for blending, so fully transparent sources are also written.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void noneHLine32T(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
+   {
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      if (cover IS 0xff) {
+         uint32_t v;
+         ((uint8_t *)&v)[oR] = c.r;
+         ((uint8_t *)&v)[oG] = c.g;
+         ((uint8_t *)&v)[oB] = c.b;
+         ((uint8_t *)&v)[oA] = c.a;
+         fill32(p, len, v);
+      }
+      else if (cover) {
+         do {
+            none_cover32<oR,oG,oB,oA>(p, c.r, c.g, c.b, c.a, cover);
+            p += sizeof(uint32_t);
+         } while(--len);
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void noneSolidHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
+   {
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      do {
+         none_cover32<oR,oG,oB,oA>(p, c.r, c.g, c.b, c.a, *covers++);
+         p += sizeof(uint32_t);
+      } while(--len);
+   }
+
+   // BLM::GAMMA span routines for a solid colour.  Results are identical to blendHLine32T/blendSolidHSpan32T with
+   // gamma32 pixels: the source colour is decoded once per span, and opaque destinations in an hline are blended
+   // through the cached gamma_hline_lut.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void gammaHLine32T(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c,
+      int8u cover) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      const uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
+      if (alpha IS 0xff) {
+         uint32_t v;
+         ((uint8_t *)&v)[oR] = c.r;
+         ((uint8_t *)&v)[oG] = c.g;
+         ((uint8_t *)&v)[oB] = c.b;
+         ((uint8_t *)&v)[oA] = c.a;
+         fill32(p, len, v);
+         return;
+      }
+
+      const srgb_blend32_gamma blend{oR,oG,oB,oA};
+      const uint32_t lr = glGamma.dir(c.r), lg = glGamma.dir(c.g), lb = glGamma.dir(c.b);
+      auto lut = Self->gamma_lut(c, alpha, len);
+
+      // An empty destination takes the colour and blend alpha directly.
+      uint32_t empty_value;
+      ((uint8_t *)&empty_value)[oR] = c.r;
+      ((uint8_t *)&empty_value)[oG] = c.g;
+      ((uint8_t *)&empty_value)[oB] = c.b;
+      ((uint8_t *)&empty_value)[oA] = alpha;
+
+#ifdef KOTUKU_SSE2
+      // Groups of four opaque destinations are blended through the table without per-pixel tests, and groups of
+      // four empty destinations (fresh filter and buffer bitmaps) are written with one store.
+      const __m128i alpha_mask = _mm_set1_epi32(int(uint32_t(0xff) << (oA<<3)));
+      const __m128i empty_v    = _mm_set1_epi32(int(empty_value));
+      while (len >= 4) {
+         const __m128i da = _mm_and_si128(_mm_loadu_si128((const __m128i *)p), alpha_mask);
+         if (lut and (_mm_movemask_epi8(_mm_cmpeq_epi32(da, alpha_mask)) IS 0xffff)) {
+            for (int i=0; i < 4; i++, p += 4) {
+               p[oR] = lut->lookup(0, p[oR]);
+               p[oG] = lut->lookup(1, p[oG]);
+               p[oB] = lut->lookup(2, p[oB]);
+            }
+         }
+         else if (_mm_movemask_epi8(_mm_cmpeq_epi32(da, _mm_setzero_si128())) IS 0xffff) {
+            _mm_storeu_si128((__m128i *)p, empty_v);
+            p += 16;
+         }
+         else {
+            for (int i=0; i < 4; i++, p += 4) {
+               gamma_hline_pixel<oR,oG,oB,oA>(p, blend, lut, lr, lg, lb, alpha, empty_value);
+            }
+         }
+         len -= 4;
+      }
+#endif
+      while (len) {
+         gamma_hline_pixel<oR,oG,oB,oA>(p, blend, lut, lr, lg, lb, alpha, empty_value);
+         p += 4;
+         --len;
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   PIX_INLINE static void gamma_hline_pixel(uint8_t *p, const srgb_blend32_gamma &Blend, gamma_hline_lut *Lut,
+      uint32_t Lr, uint32_t Lg, uint32_t Lb, uint32_t Alpha, uint32_t EmptyValue) noexcept
+   {
+      const uint8_t dest_alpha = p[oA];
+      if (!dest_alpha) std::memcpy(p, &EmptyValue, 4);
+      else if ((dest_alpha IS 0xff) and Lut) {
+         p[oR] = Lut->lookup(0, p[oR]);
+         p[oG] = Lut->lookup(1, p[oG]);
+         p[oB] = Lut->lookup(2, p[oB]);
+      }
+      else Blend.blend_decoded(p, Lr, Lg, Lb, Alpha);
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void gammaSolidHSpan32T(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c,
+      const uint8_t *covers) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      const srgb_blend32_gamma blend{oR,oG,oB,oA};
+      const uint32_t lr = glGamma.dir(c.r), lg = glGamma.dir(c.g), lb = glGamma.dir(c.b);
+      do {
+         const uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
+         if (alpha IS 0xff) {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = 0xff;
+         }
+         else if (p[oA]) blend.blend_decoded(p, lr, lg, lb, alpha);
+         else {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = alpha;
+         }
+         p += sizeof(uint32_t);
+         ++covers;
+      } while(--len);
+   }
+
+#ifdef KOTUKU_SSE2
+
+   // SSE2 paths for the sRGB blend mode, processing four pixels per iteration with 16-bit lane
+   // arithmetic that reproduces the scalar srgb_blend32/blend32 formulae exactly.  Trailing pixels
+   // are handled by the original scalar logic.  The linear and gamma blend modes depend on LUT
+   // conversions per channel and remain scalar.
+
+   // Builds the 16-bit lane pattern of the source colour for two pixels.  Alpha lanes are left at
+   // zero; they are populated per-pixel by the kernel.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   inline static __m128i srcLanes16(const agg::rgba8 &c) noexcept
+   {
+      alignas(16) uint16_t lanes[8] = {};
+      lanes[oR] = c.r; lanes[oG] = c.g; lanes[oB] = c.b;
+      lanes[4+oR] = c.r; lanes[4+oG] = c.g; lanes[4+oB] = c.b;
+      return _mm_load_si128((const __m128i *)lanes);
+   }
+
+   template <uint8_t oA>
+   inline static __m128i alphaLaneMask16() noexcept
+   {
+      alignas(16) uint16_t lanes[8] = {};
+      lanes[oA] = 0xffff;
+      lanes[4+oA] = 0xffff;
+      return _mm_load_si128((const __m128i *)lanes);
+   }
+
+   // True if any of four destination pixels is translucent (0 < alpha < 255).  The SIMD kernels implement the
+   // opaque and empty destination cases only, so such groups are processed by the scalar srgb_blend32.
+
+   template <uint8_t oA>
+   inline static bool translucentDest4(__m128i D8) noexcept
+   {
+      const __m128i am   = _mm_set1_epi32(int(uint32_t(0xff) << (oA<<3)));
+      const __m128i a    = _mm_and_si128(D8, am);
+      const __m128i edge = _mm_or_si128(_mm_cmpeq_epi32(a, _mm_setzero_si128()), _mm_cmpeq_epi32(a, am));
+      return _mm_movemask_epi8(edge) != 0xffff;
+   }
+
+   // Blends two pixels held in 16-bit lanes (d) against the solid source colour (src16) with the
+   // per-pixel alpha replicated across each pixel's four lanes (a).  Reproduces blend32's
+   // semantics: pixels with zero destination alpha (or a saturated source alpha) take the source
+   // colour directly, all others use the sRGB blend formulae.
+
+   template <uint8_t oA>
+   inline static __m128i srgbBlendPair16(__m128i d, __m128i a, __m128i src16, __m128i amask) noexcept
+   {
+      const __m128i v255 = _mm_set1_epi16(255);
+      const __m128i zero = _mm_setzero_si128();
+      const __m128i inv  = _mm_sub_epi16(v255, a);
+
+      // Colour lanes: (d*(255-a) + c*a + 255) >> 8.  The product sum cannot exceed 16 bits
+      // because inv + a IS 255.
+      __m128i blended = _mm_add_epi16(_mm_mullo_epi16(d, inv), _mm_mullo_epi16(src16, a));
+      blended = _mm_srli_epi16(_mm_add_epi16(blended, v255), 8);
+
+      // Alpha lanes: 255 - (((255-a) * (255-d)) >> 8)
+      const __m128i q    = _mm_sub_epi16(v255, d);
+      const __m128i ares = _mm_sub_epi16(v255, _mm_srli_epi16(_mm_mullo_epi16(inv, q), 8));
+      __m128i res = _mm_or_si128(_mm_and_si128(amask, ares), _mm_andnot_si128(amask, blended));
+
+      // Direct write applies when the source alpha is saturated or the destination alpha is zero.
+      const __m128i direct = _mm_or_si128(src16, _mm_and_si128(a, amask));
+      constexpr int sh = _MM_SHUFFLE(oA, oA, oA, oA);
+      const __m128i pa   = _mm_shufflehi_epi16(_mm_shufflelo_epi16(d, sh), sh);
+      const __m128i cond = _mm_or_si128(_mm_cmpeq_epi16(a, v255), _mm_cmpeq_epi16(pa, zero));
+      return _mm_or_si128(_mm_and_si128(cond, direct), _mm_andnot_si128(cond, res));
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void srgbBlendSolidHSpan32S(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      const __m128i zero  = _mm_setzero_si128();
+      const __m128i src16 = srcLanes16<oR,oG,oB,oA>(c);
+      const __m128i amask = alphaLaneMask16<oA>();
+      const __m128i ca16  = _mm_set1_epi16(short(c.a));
+      const __m128i one16 = _mm_set1_epi16(1);
+
+      while (len >= 4) {
+         const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+
+         if (translucentDest4<oA>(d8)) {
+            for (int i=0; i < 4; i++, p += 4, covers++) {
+               blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8);
+            }
+            len -= 4;
+            continue;
+         }
+
+         // Per-pixel alpha: (c.a * (cover+1)) >> 8, then replicated across each pixel's lanes.
+         uint32_t cv;
+         std::memcpy(&cv, covers, 4);
+         const __m128i cvv = _mm_unpacklo_epi8(_mm_cvtsi32_si128(int(cv)), zero);
+         const __m128i aV  = _mm_srli_epi16(_mm_mullo_epi16(_mm_add_epi16(cvv, one16), ca16), 8);
+         const __m128i tt  = _mm_unpacklo_epi16(aV, aV);
+
+         const __m128i r_lo = srgbBlendPair16<oA>(_mm_unpacklo_epi8(d8, zero), _mm_unpacklo_epi32(tt, tt), src16, amask);
+         const __m128i r_hi = srgbBlendPair16<oA>(_mm_unpackhi_epi8(d8, zero), _mm_unpackhi_epi32(tt, tt), src16, amask);
+         _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+
+         p += 16;
+         covers += 4;
+         len -= 4;
+      }
+
+      while (len) {
+         uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
+         if (alpha IS 0xff) {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = 0xff;
+         }
+         else blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+         p += 4;
+         ++covers;
+         --len;
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void srgbBlendHLine32S(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      const uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
+
+      if (alpha IS 0xff) {
+         uint32_t v;
+         ((uint8_t *)&v)[oR] = c.r;
+         ((uint8_t *)&v)[oG] = c.g;
+         ((uint8_t *)&v)[oB] = c.b;
+         ((uint8_t *)&v)[oA] = c.a;
+         fill32(p, len, v);
+      }
+      else {
+         const __m128i zero  = _mm_setzero_si128();
+         const __m128i src16 = srcLanes16<oR,oG,oB,oA>(c);
+         const __m128i amask = alphaLaneMask16<oA>();
+         const __m128i a16   = _mm_set1_epi16(short(alpha));
+
+         while (len >= 4) {
+            const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+            if (translucentDest4<oA>(d8)) {
+               for (int i=0; i < 4; i++, p += 4) blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+               len -= 4;
+               continue;
+            }
+            const __m128i r_lo = srgbBlendPair16<oA>(_mm_unpacklo_epi8(d8, zero), a16, src16, amask);
+            const __m128i r_hi = srgbBlendPair16<oA>(_mm_unpackhi_epi8(d8, zero), a16, src16, amask);
+            _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+            p += 16;
+            len -= 4;
+         }
+
+         while (len) {
+            blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+            p += 4;
+            --len;
+         }
+      }
+   }
+
+   // Blends two pixels with per-pixel source colours, reproducing cover32's semantics: zero source
+   // alpha leaves the destination untouched; otherwise srgbBlendPair16 applies the direct-write and
+   // blend rules.  src16 must have its alpha lanes cleared.
+
+   template <uint8_t oA>
+   inline static __m128i srgbCoverPair16(__m128i d, __m128i a, __m128i src16, __m128i amask) noexcept
+   {
+      const __m128i blended = srgbBlendPair16<oA>(d, a, src16, amask);
+      const __m128i skip = _mm_cmpeq_epi16(a, _mm_setzero_si128());
+      return _mm_or_si128(_mm_and_si128(skip, d), _mm_andnot_si128(skip, blended));
+   }
+
+   // SIMD sink for per-pixel colour spans (gradients, images, patterns) in sRGB mode.  Source
+   // colours arrive as rgba8 in memory order and are permuted to the destination pixel order with
+   // 16-bit lane shuffles whose immediates are compile-time constants.  Scaled alpha is
+   // (a * (cover+1)) >> 8, which reduces to the unscaled alpha when cover is 255, so a single
+   // kernel serves the covers-array, solid-cover and full-cover dispatch cases.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   static void srgbBlendColorHSpan32S(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
+   {
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      // Inverse channel permutation: destination lane j receives source channel lane_src(j).
+      constexpr auto lane_src = [](int j) constexpr {
+         return (j IS oR) ? 0 : (j IS oG) ? 1 : (j IS oB) ? 2 : 3;
+      };
+      constexpr int perm = _MM_SHUFFLE(lane_src(3), lane_src(2), lane_src(1), lane_src(0));
+      constexpr int shA  = _MM_SHUFFLE(oA, oA, oA, oA);
+
+      const __m128i zero  = _mm_setzero_si128();
+      const __m128i amask = alphaLaneMask16<oA>();
+      const __m128i one16 = _mm_set1_epi16(1);
+      const __m128i cv16  = _mm_set1_epi16(short(cover));
+#ifdef SKIP_ALPHA_ZERO
+      const __m128i v255  = _mm_set1_epi16(255);
+#endif
+
+      while (len >= 4) {
+         if (translucentDest4<oA>(_mm_loadu_si128((const __m128i *)p))) {
+            for (int i=0; i < 4; i++, p += 4, colors++) {
+               cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a,
+                  covers ? *covers++ : cover);
+            }
+            len -= 4;
+            continue;
+         }
+
+#ifndef SKIP_ALPHA_ZERO
+         const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+#endif
+         const __m128i s8 = _mm_loadu_si128((const __m128i *)colors);
+
+         // Unpack four source pixels to 16-bit lanes and permute rgba into the destination order.
+         __m128i s_lo = _mm_unpacklo_epi8(s8, zero);
+         __m128i s_hi = _mm_unpackhi_epi8(s8, zero);
+         s_lo = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_lo, perm), perm);
+         s_hi = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_hi, perm), perm);
+
+         // Source alpha replicated across each pixel's four lanes.
+         const __m128i sa_lo = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_lo, shA), shA);
+         const __m128i sa_hi = _mm_shufflehi_epi16(_mm_shufflelo_epi16(s_hi, shA), shA);
+
+         // Per-pixel cover, replicated across each pixel's four lanes.
+         __m128i cv_lo, cv_hi;
+         if (covers) {
+            uint32_t cv;
+            std::memcpy(&cv, covers, 4);
+            covers += 4;
+            const __m128i cvv = _mm_unpacklo_epi8(_mm_cvtsi32_si128(int(cv)), zero);
+            const __m128i tt  = _mm_unpacklo_epi16(cvv, cvv);
+            cv_lo = _mm_unpacklo_epi32(tt, tt);
+            cv_hi = _mm_unpackhi_epi32(tt, tt);
+         }
+         else {
+            cv_lo = cv16;
+            cv_hi = cv16;
+         }
+
+         // Scaled alpha: (a * (cover+1)) >> 8.  Maximum product is 255*256, within 16 bits.
+         const __m128i a_lo = _mm_srli_epi16(_mm_mullo_epi16(sa_lo, _mm_add_epi16(cv_lo, one16)), 8);
+         const __m128i a_hi = _mm_srli_epi16(_mm_mullo_epi16(sa_hi, _mm_add_epi16(cv_hi, one16)), 8);
+
+#ifdef SKIP_ALPHA_ZERO
+         // Group early-outs.  All four scaled alphas zero: the destination is untouched, so skip
+         // the load and store entirely (avoids dirtying unchanged cache lines).  All four
+         // saturated: a direct write of the permuted source; a saturated scaled alpha implies a
+         // saturated source alpha, so the alpha lanes of s_lo/s_hi are already correct.
+
+         if (_mm_movemask_epi8(_mm_cmpeq_epi16(_mm_or_si128(a_lo, a_hi), zero)) IS 0xffff) {
+            p += 16;
+            colors += 4;
+            len -= 4;
+            continue;
+         }
+
+         if (_mm_movemask_epi8(_mm_cmpeq_epi16(_mm_and_si128(a_lo, a_hi), v255)) IS 0xffff) {
+            _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(s_lo, s_hi));
+         }
+         else {
+            const __m128i d8 = _mm_loadu_si128((const __m128i *)p);
+            const __m128i r_lo = srgbCoverPair16<oA>(_mm_unpacklo_epi8(d8, zero), a_lo, _mm_andnot_si128(amask, s_lo), amask);
+            const __m128i r_hi = srgbCoverPair16<oA>(_mm_unpackhi_epi8(d8, zero), a_hi, _mm_andnot_si128(amask, s_hi), amask);
+            _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+         }
+#else
+         const __m128i r_lo = srgbCoverPair16<oA>(_mm_unpacklo_epi8(d8, zero), a_lo, _mm_andnot_si128(amask, s_lo), amask);
+         const __m128i r_hi = srgbCoverPair16<oA>(_mm_unpackhi_epi8(d8, zero), a_hi, _mm_andnot_si128(amask, s_hi), amask);
+         _mm_storeu_si128((__m128i *)p, _mm_packus_epi16(r_lo, r_hi));
+#endif
+         p += 16;
+         colors += 4;
+         len -= 4;
+      }
+
+      while (len) {
+         cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a, covers ? *covers++ : cover);
+         p += 4;
+         ++colors;
+         --len;
+      }
+   }
+
+#endif // KOTUKU_SSE2
+
+#ifdef KOTUKU_AVX2
+
+   // AVX2 paths for the sRGB blend mode, processing eight pixels per iteration.  Each 128-bit lane
+   // performs exactly the per-lane steps of the SSE2 kernels, so results are bit-identical.  A
+   // scalar peel loop aligns the destination to 32 bytes before the SIMD body so every wide load
+   // and store is aligned (span destinations land on arbitrary 4-byte pixel boundaries, where
+   // unaligned 32-byte accesses would split cache lines twice as often as the 16-byte SSE2 ones).
+   // Selection happens at run time in set_ops32() via simd_has_avx2().
+
+   // Blends four pixels held in 16-bit lanes; the 256-bit analogue of srgbBlendPair16, with both
+   // 128-bit lanes processed independently.
+
+   template <uint8_t oA>
+   KOTUKU_TARGET_AVX2 inline static __m256i srgbBlendQuad16(__m256i d, __m256i a, __m256i src16, __m256i amask) noexcept
+   {
+      const __m256i v255 = _mm256_set1_epi16(255);
+      const __m256i zero = _mm256_setzero_si256();
+      const __m256i inv  = _mm256_sub_epi16(v255, a);
+
+      // Colour lanes: (d*(255-a) + c*a + 255) >> 8.
+      __m256i blended = _mm256_add_epi16(_mm256_mullo_epi16(d, inv), _mm256_mullo_epi16(src16, a));
+      blended = _mm256_srli_epi16(_mm256_add_epi16(blended, v255), 8);
+
+      // Alpha lanes: 255 - (((255-a) * (255-d)) >> 8)
+      const __m256i q    = _mm256_sub_epi16(v255, d);
+      const __m256i ares = _mm256_sub_epi16(v255, _mm256_srli_epi16(_mm256_mullo_epi16(inv, q), 8));
+      __m256i res = _mm256_or_si256(_mm256_and_si256(amask, ares), _mm256_andnot_si256(amask, blended));
+
+      // Direct write applies when the source alpha is saturated or the destination alpha is zero.
+      const __m256i direct = _mm256_or_si256(src16, _mm256_and_si256(a, amask));
+      constexpr int sh = _MM_SHUFFLE(oA, oA, oA, oA);
+      const __m256i pa   = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(d, sh), sh);
+      const __m256i cond = _mm256_or_si256(_mm256_cmpeq_epi16(a, v255), _mm256_cmpeq_epi16(pa, zero));
+      return _mm256_or_si256(_mm256_and_si256(cond, direct), _mm256_andnot_si256(cond, res));
+   }
+
+   // The 256-bit analogue of translucentDest4, for eight destination pixels.
+
+   template <uint8_t oA>
+   KOTUKU_TARGET_AVX2 inline static bool translucentDest8(__m256i D8) noexcept
+   {
+      const __m256i am   = _mm256_set1_epi32(int(uint32_t(0xff) << (oA<<3)));
+      const __m256i a    = _mm256_and_si256(D8, am);
+      const __m256i edge = _mm256_or_si256(_mm256_cmpeq_epi32(a, _mm256_setzero_si256()), _mm256_cmpeq_epi32(a, am));
+      return uint32_t(_mm256_movemask_epi8(edge)) != 0xffffffffu;
+   }
+
+   // The 256-bit analogue of srgbCoverPair16: zero source alpha leaves the destination untouched.
+
+   template <uint8_t oA>
+   KOTUKU_TARGET_AVX2 inline static __m256i srgbCoverQuad16(__m256i d, __m256i a, __m256i src16, __m256i amask) noexcept
+   {
+      const __m256i blended = srgbBlendQuad16<oA>(d, a, src16, amask);
+      const __m256i skip = _mm256_cmpeq_epi16(a, _mm256_setzero_si256());
+      return _mm256_or_si256(_mm256_and_si256(skip, d), _mm256_andnot_si256(skip, blended));
+   }
+
+   // Expands eight 8-bit covers into 16-bit lanes replicated across each pixel.  The pair (Lo, Hi)
+   // matches the pixel order produced by _mm256_unpacklo/hi_epi8 on the destination vector: Lo
+   // carries pixels 0,1 (lane 0) and 4,5 (lane 1); Hi carries pixels 2,3 and 6,7.
+
+   KOTUKU_TARGET_AVX2 inline static void coverLanes16x8(const uint8_t *covers, __m256i &Lo, __m256i &Hi) noexcept
+   {
+      uint64_t cv;
+      std::memcpy(&cv, covers, 8);
+      const __m128i zero = _mm_setzero_si128();
+      const __m128i cvv  = _mm_unpacklo_epi8(_mm_cvtsi64_si128(int64_t(cv)), zero); // [c0..c7]
+      const __m128i t_lo = _mm_unpacklo_epi16(cvv, cvv); // [c0,c0,c1,c1,c2,c2,c3,c3]
+      const __m128i t_hi = _mm_unpackhi_epi16(cvv, cvv); // [c4,c4,c5,c5,c6,c6,c7,c7]
+      Lo = _mm256_set_m128i(_mm_unpacklo_epi32(t_hi, t_hi), _mm_unpacklo_epi32(t_lo, t_lo));
+      Hi = _mm256_set_m128i(_mm_unpackhi_epi32(t_hi, t_hi), _mm_unpackhi_epi32(t_lo, t_lo));
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   KOTUKU_TARGET_AVX2 static void srgbBlendSolidHSpan32A(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 &c, const uint8_t *covers) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      // Scalar peel until the destination reaches 32-byte alignment.
+      while (len and (uintptr_t(p) & 31)) {
+         uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
+         if (alpha IS 0xff) {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = 0xff;
+         }
+         else blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+         p += 4;
+         ++covers;
+         --len;
+      }
+
+      const __m256i zero  = _mm256_setzero_si256();
+      const __m256i src16 = _mm256_broadcastsi128_si256(srcLanes16<oR,oG,oB,oA>(c));
+      const __m256i amask = _mm256_broadcastsi128_si256(alphaLaneMask16<oA>());
+      const __m256i ca16  = _mm256_set1_epi16(short(c.a));
+      const __m256i one16 = _mm256_set1_epi16(1);
+
+      while (len >= 8) {
+         const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+
+         if (translucentDest8<oA>(d8)) {
+            for (int i=0; i < 8; i++, p += 4, covers++) {
+               blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8);
+            }
+            len -= 8;
+            continue;
+         }
+
+         // Per-pixel alpha: (c.a * (cover+1)) >> 8, replicated across each pixel's lanes.
+         __m256i cv_lo, cv_hi;
+         coverLanes16x8(covers, cv_lo, cv_hi);
+         const __m256i a_lo = _mm256_srli_epi16(_mm256_mullo_epi16(_mm256_add_epi16(cv_lo, one16), ca16), 8);
+         const __m256i a_hi = _mm256_srli_epi16(_mm256_mullo_epi16(_mm256_add_epi16(cv_hi, one16), ca16), 8);
+
+         const __m256i r_lo = srgbBlendQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a_lo, src16, amask);
+         const __m256i r_hi = srgbBlendQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a_hi, src16, amask);
+         _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+
+         p += 32;
+         covers += 8;
+         len -= 8;
+      }
+
+      while (len) {
+         uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
+         if (alpha IS 0xff) {
+            p[oR] = c.r;
+            p[oG] = c.g;
+            p[oB] = c.b;
+            p[oA] = 0xff;
+         }
+         else blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+         p += 4;
+         ++covers;
+         --len;
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   KOTUKU_TARGET_AVX2 static void srgbBlendHLine32A(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
+   {
+      if (!c.a) return;
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+      const uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
+
+      if (alpha IS 0xff) {
+         uint32_t v;
+         ((uint8_t *)&v)[oR] = c.r;
+         ((uint8_t *)&v)[oG] = c.g;
+         ((uint8_t *)&v)[oB] = c.b;
+         ((uint8_t *)&v)[oA] = c.a;
+         fill32(p, len, v);
+      }
+      else {
+         while (len and (uintptr_t(p) & 31)) {
+            blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+            p += 4;
+            --len;
+         }
+
+         const __m256i zero  = _mm256_setzero_si256();
+         const __m256i src16 = _mm256_broadcastsi128_si256(srcLanes16<oR,oG,oB,oA>(c));
+         const __m256i amask = _mm256_broadcastsi128_si256(alphaLaneMask16<oA>());
+         const __m256i a16   = _mm256_set1_epi16(short(alpha));
+
+         while (len >= 8) {
+            const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+            if (translucentDest8<oA>(d8)) {
+               for (int i=0; i < 8; i++, p += 4) blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+               len -= 8;
+               continue;
+            }
+            const __m256i r_lo = srgbBlendQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a16, src16, amask);
+            const __m256i r_hi = srgbBlendQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a16, src16, amask);
+            _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+            p += 32;
+            len -= 8;
+         }
+
+         while (len) {
+            blend32<oR,oG,oB,oA,srgb_blend32>(p, c.r, c.g, c.b, alpha);
+            p += 4;
+            --len;
+         }
+      }
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   KOTUKU_TARGET_AVX2 static void srgbBlendColorHSpan32A(agg::pixfmt_psl *Self, int x, int y, uint32_t len, const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
+   {
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      while (len and (uintptr_t(p) & 31)) {
+         cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a, covers ? *covers++ : cover);
+         p += 4;
+         ++colors;
+         --len;
+      }
+
+      // Inverse channel permutation: destination lane j receives source channel lane_src(j).
+      constexpr auto lane_src = [](int j) constexpr {
+         return (j IS oR) ? 0 : (j IS oG) ? 1 : (j IS oB) ? 2 : 3;
+      };
+      constexpr int perm = _MM_SHUFFLE(lane_src(3), lane_src(2), lane_src(1), lane_src(0));
+      constexpr int shA  = _MM_SHUFFLE(oA, oA, oA, oA);
+
+      const __m256i zero  = _mm256_setzero_si256();
+      const __m256i amask = _mm256_broadcastsi128_si256(alphaLaneMask16<oA>());
+      const __m256i one16 = _mm256_set1_epi16(1);
+      const __m256i cv16  = _mm256_set1_epi16(short(cover));
+#ifdef SKIP_ALPHA_ZERO
+      const __m256i v255  = _mm256_set1_epi16(255);
+#endif
+
+      while (len >= 8) {
+         if (translucentDest8<oA>(_mm256_load_si256((const __m256i *)p))) {
+            for (int i=0; i < 8; i++, p += 4, colors++) {
+               cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a,
+                  covers ? *covers++ : cover);
+            }
+            len -= 8;
+            continue;
+         }
+
+         const __m256i s8 = _mm256_loadu_si256((const __m256i *)colors);
+
+         // Unpack eight source pixels to 16-bit lanes and permute rgba into the destination order.
+         __m256i s_lo = _mm256_unpacklo_epi8(s8, zero);
+         __m256i s_hi = _mm256_unpackhi_epi8(s8, zero);
+         s_lo = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_lo, perm), perm);
+         s_hi = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_hi, perm), perm);
+
+         // Source alpha replicated across each pixel's four lanes.
+         const __m256i sa_lo = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_lo, shA), shA);
+         const __m256i sa_hi = _mm256_shufflehi_epi16(_mm256_shufflelo_epi16(s_hi, shA), shA);
+
+         // Per-pixel cover, replicated across each pixel's four lanes.
+         __m256i cv_lo, cv_hi;
+         if (covers) {
+            coverLanes16x8(covers, cv_lo, cv_hi);
+            covers += 8;
+         }
+         else {
+            cv_lo = cv16;
+            cv_hi = cv16;
+         }
+
+         // Scaled alpha: (a * (cover+1)) >> 8.  Maximum product is 255*256, within 16 bits.
+         const __m256i a_lo = _mm256_srli_epi16(_mm256_mullo_epi16(sa_lo, _mm256_add_epi16(cv_lo, one16)), 8);
+         const __m256i a_hi = _mm256_srli_epi16(_mm256_mullo_epi16(sa_hi, _mm256_add_epi16(cv_hi, one16)), 8);
+
+#ifdef SKIP_ALPHA_ZERO
+         // Group early-outs, mirroring the SSE2 kernel: all eight scaled alphas zero skips the
+         // store entirely; all eight saturated allows a direct write of the permuted source.
+
+         if (uint32_t(_mm256_movemask_epi8(_mm256_cmpeq_epi16(_mm256_or_si256(a_lo, a_hi), zero))) IS 0xffffffffu) {
+            p += 32;
+            colors += 8;
+            len -= 8;
+            continue;
+         }
+
+         if (uint32_t(_mm256_movemask_epi8(_mm256_cmpeq_epi16(_mm256_and_si256(a_lo, a_hi), v255))) IS 0xffffffffu) {
+            _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(s_lo, s_hi));
+         }
+         else {
+            const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+            const __m256i r_lo = srgbCoverQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a_lo, _mm256_andnot_si256(amask, s_lo), amask);
+            const __m256i r_hi = srgbCoverQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a_hi, _mm256_andnot_si256(amask, s_hi), amask);
+            _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+         }
+#else
+         const __m256i d8 = _mm256_load_si256((const __m256i *)p);
+         const __m256i r_lo = srgbCoverQuad16<oA>(_mm256_unpacklo_epi8(d8, zero), a_lo, _mm256_andnot_si256(amask, s_lo), amask);
+         const __m256i r_hi = srgbCoverQuad16<oA>(_mm256_unpackhi_epi8(d8, zero), a_hi, _mm256_andnot_si256(amask, s_hi), amask);
+         _mm256_store_si256((__m256i *)p, _mm256_packus_epi16(r_lo, r_hi));
+#endif
+         p += 32;
+         colors += 8;
+         len -= 8;
+      }
+
+      while (len) {
+         cover32<oR,oG,oB,oA,srgb_blend32>(p, colors->r, colors->g, colors->b, colors->a, covers ? *covers++ : cover);
+         p += 4;
+         ++colors;
+         --len;
+      }
+   }
+
+   // AVX2 colour span for BLM::GAMMA, processing eight pixels per iteration with gathers from the glGamma tables.
+   // Results are identical to blendColorHSpan32T with the gamma cover32 pixels:
+   //
+   //   * The blend numerator (Ls * a4 + Ld * a5) / 65025 with a4 = 255a and a5 = 255(255-a) is computed as
+   //     (Ls * a + Ld * (255-a)) / 255, which is equal as a rational and so has the same floor.  The sum is formed
+   //     with one madd_epi16 per channel.
+   //   * trunc(X * (1/255.0f)) IS X / 255 for every X <= 4095 * 255 (verified exhaustively), so the division is a
+   //     single-precision multiply.
+   //   * Gathers read 32 bits per index and mask the result.  Reads past the end of Dir and Inv land in the
+   //     following members of gamma_table.
+   //
+   // A group containing a translucent destination (0 < alpha < 255) is processed by the scalar cover32, as in the
+   // sRGB kernels.  A group whose source alphas are all zero is skipped without a store.
+
+   KOTUKU_TARGET_AVX2 inline static __m256i gammaDir8(__m256i Index) noexcept
+   {
+      const __m256i v = _mm256_i32gather_epi32((const int *)glGamma.Dir, Index, 2);
+      return _mm256_and_si256(v, _mm256_set1_epi32(0xffff));
+   }
+
+   KOTUKU_TARGET_AVX2 inline static __m256i gammaInv8(__m256i Index) noexcept
+   {
+      const __m256i v = _mm256_i32gather_epi32((const int *)glGamma.Inv, Index, 1);
+      return _mm256_and_si256(v, _mm256_set1_epi32(0xff));
+   }
+
+   // Blends one channel: Ls and Ld are the decoded source and destination, Weights holds (a, 255-a) as 16-bit
+   // pairs.  Returns the sRGB result in the low byte of each lane.
+
+   KOTUKU_TARGET_AVX2 inline static __m256i gammaChannel8(__m256i Ls, __m256i Ld, __m256i Weights) noexcept
+   {
+      const __m256i x = _mm256_madd_epi16(_mm256_or_si256(Ls, _mm256_slli_epi32(Ld, 16)), Weights);
+      const __m256i q = _mm256_cvttps_epi32(_mm256_mul_ps(_mm256_cvtepi32_ps(x), _mm256_set1_ps(1.0f / 255.0f)));
+      return gammaInv8(q);
+   }
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA>
+   KOTUKU_TARGET_AVX2 static void gammaBlendColorHSpan32A(agg::pixfmt_psl *Self, int x, int y, uint32_t len,
+      const agg::rgba8 *colors, const uint8_t *covers, uint8_t cover) noexcept
+   {
+      uint8_t *p = Self->mData + (y * Self->mStride) + (x<<2);
+
+      const __m256i zero = _mm256_setzero_si256();
+      const __m256i m8   = _mm256_set1_epi32(0xff);
+      const __m256i v255 = _mm256_set1_epi32(0xff);
+      const __m256i one  = _mm256_set1_epi32(1);
+      const __m256i cv_const = _mm256_set1_epi32(cover);
+      const __m256i opaque_alpha = _mm256_set1_epi32(int(uint32_t(0xff) << (oA<<3)));
+
+      while (len >= 8) {
+         const __m256i d  = _mm256_loadu_si256((const __m256i *)p);
+         const __m256i da = _mm256_and_si256(_mm256_srli_epi32(d, oA<<3), m8);
+         const __m256i d_empty = _mm256_cmpeq_epi32(da, zero);
+         const __m256i d_edge  = _mm256_or_si256(d_empty, _mm256_cmpeq_epi32(da, v255));
+
+         if (uint32_t(_mm256_movemask_epi8(d_edge)) != 0xffffffffu) {
+            for (int i=0; i < 8; i++, p += 4, colors++) {
+               cover32<oR,oG,oB,oA,srgb_blend32_gamma>(p, colors->r, colors->g, colors->b, colors->a,
+                  covers ? *covers++ : cover);
+            }
+            len -= 8;
+            continue;
+         }
+
+         const __m256i s  = _mm256_loadu_si256((const __m256i *)colors);
+         const __m256i sa = _mm256_srli_epi32(s, 24);
+         const __m256i skip = _mm256_cmpeq_epi32(sa, zero);
+
+         if (uint32_t(_mm256_movemask_epi8(skip)) IS 0xffffffffu) {
+            p += 32;
+            colors += 8;
+            if (covers) covers += 8;
+            len -= 8;
+            continue;
+         }
+
+         __m256i cv;
+         if (covers) {
+            cv = _mm256_cvtepu8_epi32(_mm_loadl_epi64((const __m128i *)covers));
+            covers += 8;
+         }
+         else cv = cv_const;
+
+         // Scaled alpha (a * (cover+1)) >> 8; the product fits 16 bits, so a 16-bit multiply suffices.
+         const __m256i a = _mm256_srli_epi32(_mm256_mullo_epi16(sa, _mm256_add_epi32(cv, one)), 8);
+         const __m256i direct = _mm256_or_si256(_mm256_cmpeq_epi32(a, v255), d_empty);
+
+         const __m256i sr = _mm256_and_si256(s, m8);
+         const __m256i sg = _mm256_and_si256(_mm256_srli_epi32(s, 8), m8);
+         const __m256i sb = _mm256_and_si256(_mm256_srli_epi32(s, 16), m8);
+
+         const __m256i copied = _mm256_or_si256(
+            _mm256_or_si256(_mm256_slli_epi32(sr, oR<<3), _mm256_slli_epi32(sg, oG<<3)),
+            _mm256_or_si256(_mm256_slli_epi32(sb, oB<<3), _mm256_slli_epi32(a, oA<<3)));
+
+         // Opaque sources (images, solid regions of filter output) need no blending.
+
+         if (uint32_t(_mm256_movemask_epi8(_mm256_andnot_si256(skip, direct))) IS 0xffffffffu) {
+            _mm256_storeu_si256((__m256i *)p, copied);
+            p += 32;
+            colors += 8;
+            len -= 8;
+            continue;
+         }
+
+         const __m256i weights = _mm256_or_si256(a, _mm256_slli_epi32(_mm256_sub_epi32(v255, a), 16));
+         const __m256i dr = _mm256_and_si256(_mm256_srli_epi32(d, oR<<3), m8);
+         const __m256i dg = _mm256_and_si256(_mm256_srli_epi32(d, oG<<3), m8);
+         const __m256i db = _mm256_and_si256(_mm256_srli_epi32(d, oB<<3), m8);
+         const __m256i rr = gammaChannel8(gammaDir8(sr), gammaDir8(dr), weights);
+         const __m256i rg = gammaChannel8(gammaDir8(sg), gammaDir8(dg), weights);
+         const __m256i rb = gammaChannel8(gammaDir8(sb), gammaDir8(db), weights);
+
+         const __m256i blended = _mm256_or_si256(
+            _mm256_or_si256(_mm256_slli_epi32(rr, oR<<3), _mm256_slli_epi32(rg, oG<<3)),
+            _mm256_or_si256(_mm256_slli_epi32(rb, oB<<3), opaque_alpha));
+
+         __m256i res = _mm256_blendv_epi8(blended, copied, direct);
+         res = _mm256_blendv_epi8(res, d, skip);
+         _mm256_storeu_si256((__m256i *)p, res);
+
+         p += 32;
+         colors += 8;
+         len -= 8;
+      }
+
+      while (len) {
+         cover32<oR,oG,oB,oA,srgb_blend32_gamma>(p, colors->r, colors->g, colors->b, colors->a,
+            covers ? *covers++ : cover);
+         p += 4;
+         ++colors;
+         --len;
+      }
+   }
+
+#endif // KOTUKU_AVX2
+
+   // Binds the full set of 32-bit operations for a pixel order and blend mode in one step.
+   // BlendPix/CopyPix/CoverPix must match the order given by oR/oG/oB/oA.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix, auto CopyPix, auto CoverPix, bool SRGB = false,
+      auto Encode = &srgb_blend32::encode>
+   void set_ops32(const PIXEL_ORDER &Order) noexcept
+   {
+      pixel_order(Order);
+      fBlendPix        = BlendPix;
+      fCopyPix         = CopyPix;
+      fCoverPix        = CoverPix;
+#ifdef KOTUKU_SSE2
+      if constexpr (SRGB) {
+#ifdef KOTUKU_AVX2
+         if (simd_has_avx2()) {
+            fBlendHLine      = &srgbBlendHLine32A<oR,oG,oB,oA>;
+            fBlendSolidHSpan = &srgbBlendSolidHSpan32A<oR,oG,oB,oA>;
+            fBlendColorHSpan = &srgbBlendColorHSpan32A<oR,oG,oB,oA>;
+         }
+         else {
+            fBlendHLine      = &srgbBlendHLine32S<oR,oG,oB,oA>;
+            fBlendSolidHSpan = &srgbBlendSolidHSpan32S<oR,oG,oB,oA>;
+            fBlendColorHSpan = &srgbBlendColorHSpan32S<oR,oG,oB,oA>;
+         }
+#else
+         fBlendHLine      = &srgbBlendHLine32S<oR,oG,oB,oA>;
+         fBlendSolidHSpan = &srgbBlendSolidHSpan32S<oR,oG,oB,oA>;
+         fBlendColorHSpan = &srgbBlendColorHSpan32S<oR,oG,oB,oA>;
+#endif
+      }
+      else {
+         fBlendHLine      = &blendHLine32T<oR,oG,oB,oA,BlendPix,Encode>;
+         fBlendSolidHSpan = &blendSolidHSpan32T<oR,oG,oB,oA,BlendPix,Encode>;
+         fBlendColorHSpan = &blendColorHSpan32T<CopyPix,CoverPix>;
+      }
+#else
+      fBlendHLine      = &blendHLine32T<oR,oG,oB,oA,BlendPix,Encode>;
+      fBlendSolidHSpan = &blendSolidHSpan32T<oR,oG,oB,oA,BlendPix,Encode>;
+      fBlendColorHSpan = &blendColorHSpan32T<CopyPix,CoverPix>;
+#endif
+      fCopyColorHSpan  = &copyColorHSpan32T<oR,oG,oB,oA,Encode>;
+   }
+
+   // BLM::NONE binds the copy operations for every entry point; fBlendPix receives coverage-scaled alpha from
+   // external callers, so it writes directly like fCopyPix.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto CopyPix, auto CoverPix>
+   void set_none_ops32(const PIXEL_ORDER &Order) noexcept
+   {
+      pixel_order(Order);
+      fBlendPix        = CopyPix;
+      fCopyPix         = CopyPix;
+      fCoverPix        = CoverPix;
+      fBlendHLine      = &noneHLine32T<oR,oG,oB,oA>;
+      fBlendSolidHSpan = &noneSolidHSpan32T<oR,oG,oB,oA>;
+      fBlendColorHSpan = &blendColorHSpan32T<CopyPix,CoverPix>;
+      fCopyColorHSpan  = &copyColorHSpan32T<oR,oG,oB,oA,&srgb_blend32::encode>;
+   }
+
+   // BLM::GAMMA uses the generic operations with dedicated solid-colour spans.
+
+   template <uint8_t oR, uint8_t oG, uint8_t oB, uint8_t oA, auto BlendPix, auto CopyPix, auto CoverPix>
+   void set_gamma_ops32(const PIXEL_ORDER &Order) noexcept
+   {
+      set_ops32<oR,oG,oB,oA,BlendPix,CopyPix,CoverPix>(Order);
+      fBlendHLine      = &gammaHLine32T<oR,oG,oB,oA>;
+      fBlendSolidHSpan = &gammaSolidHSpan32T<oR,oG,oB,oA>;
+#ifdef KOTUKU_AVX2
+      if (simd_has_avx2()) fBlendColorHSpan = &gammaBlendColorHSpan32A<oR,oG,oB,oA>;
+#endif
+   }
+
+   // Generic 8-bit grey-scale routines.  8-bit targets always use blend8/copy8/cover8, so these
+   // call them directly rather than through the per-pixel function pointers.
 
    static void blendHLine8(agg::pixfmt_psl *Self, int x, int y, unsigned len, const agg::rgba8 &c, int8u cover) noexcept
    {
@@ -415,7 +1625,7 @@ private:
          uint8_t grey = int((c.r * 0.2126) + (c.g * 0.7152) + (c.b * 0.0722));
          uint8_t *p = Self->mData + (y * Self->mStride) + x;
          uint32_t alpha = (uint32_t(c.a) * (cover + 1)) >> 8;
-         if (alpha == 0xff) {
+         if (alpha IS 0xff) {
             do {
                *p = grey;
                p++;
@@ -423,7 +1633,7 @@ private:
          }
          else {
             do {
-               Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+               blend8(p, c.r, c.g, c.b, alpha);
                p++;
             } while(--len);
          }
@@ -437,8 +1647,8 @@ private:
          uint8_t *p = Self->mData + (y * Self->mStride) + x;
          do {
             uint32_t alpha = (uint32_t(c.a) * (uint32_t(*covers) + 1)) >> 8;
-            if (alpha == 0xff) p[0] = grey;
-            else Self->fBlendPix(p, c.r, c.g, c.b, alpha);
+            if (alpha IS 0xff) p[0] = grey;
+            else blend8(p, c.r, c.g, c.b, alpha);
             p++;
             ++covers;
          } while(--len);
@@ -450,21 +1660,21 @@ private:
       uint8_t *p = Self->mData + (y * Self->mStride) + x;
       if (covers) {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, *covers++);
+            cover8(p, colors->r, colors->g, colors->b, colors->a, *covers++);
             p++;
             ++colors;
          } while(--len);
       }
-      else if (cover == 255) {
+      else if (cover IS 255) {
          do {
-            Self->fCopyPix(p, colors->r, colors->g, colors->b, colors->a);
+            copy8(p, colors->r, colors->g, colors->b, colors->a);
             p++;
             ++colors;
          } while(--len);
       }
       else {
          do {
-            Self->fCoverPix(p, colors->r, colors->g, colors->b, colors->a, cover);
+            cover8(p, colors->r, colors->g, colors->b, colors->a, cover);
             p++;
             ++colors;
          } while(--len);
@@ -563,5 +1773,107 @@ public:
       }
    }
 };
+
+//********************************************************************************************************************
+// The pixel format bindings are defined here (rather than in scene_draw.cpp) so that the header can be compiled
+// on its own by the pixel format unit test.
+
+inline void pixfmt_psl::rawBitmap(uint8_t *Data, int Width, int Height, int Stride, int BitsPerPixel, ColourFormat &ColourFormat, BLM BlendMode) noexcept
+{
+   mData   = Data;
+   mWidth  = Width;
+   mHeight = Height;
+   mStride = Stride;
+   mBytesPerPixel = BitsPerPixel/8;
+   mBitsPerPixel  = BitsPerPixel;
+   mColourFormat  = ColourFormat;
+   mBlendMode     = (BlendMode IS BLM::AUTO) ? BLM::GAMMA : BlendMode;
+   bind_ops();
+}
+
+//********************************************************************************************************************
+// Rebinds the per-pixel and span operations for a new blend mode.  The bitmap data, dimensions and stride are
+// unchanged.  AUTO resolves to GAMMA; callers that need the target's colour space to be considered should resolve
+// the mode beforehand.
+
+inline void pixfmt_psl::setBlendMode(BLM BlendMode) noexcept
+{
+   if (BlendMode IS BLM::AUTO) BlendMode = BLM::GAMMA;
+   if (BlendMode IS mBlendMode) return;
+   mBlendMode = BlendMode;
+   bind_ops();
+}
+
+inline void pixfmt_psl::bind_ops() noexcept
+{
+   if (mBitsPerPixel IS 32) {
+      // Each branch binds the per-pixel and span operations for a <pixel order, blend mode> pair.
+      // The span operations are template instantiations with the per-pixel work inlined, so the
+      // function pointer indirection is paid once per span rather than once per pixel.
+
+      if (mBlendMode IS BLM::LINEAR) {
+         // Source colours are decoded to linear on every write path, including opaque fills and copies.
+         constexpr auto encode = &linear_blend32::encode;
+         if (mColourFormat.AlphaPos IS 24) {
+            if (mColourFormat.BluePos IS 0) {
+               set_ops32<2,1,0,3, &linear32BGRA, &linearCopy32BGRA, &linearCover32BGRA, false, encode>(pxBGRA);
+            }
+            else set_ops32<0,1,2,3, &linear32RGBA, &linearCopy32RGBA, &linearCover32RGBA, false, encode>(pxRGBA);
+         }
+         else if (mColourFormat.RedPos IS 24) {
+            set_ops32<3,1,2,0, &linear32AGBR, &linearCopy32AGBR, &linearCover32AGBR, false, encode>(pxAGBR);
+         }
+         else set_ops32<1,2,3,0, &linear32ARGB, &linearCopy32ARGB, &linearCover32ARGB, false, encode>(pxARGB);
+      }
+      else if (mBlendMode IS BLM::NONE) {
+         if (mColourFormat.AlphaPos IS 24) {
+            if (mColourFormat.BluePos IS 0) set_none_ops32<2,1,0,3, &noneCopy32BGRA, &noneCover32BGRA>(pxBGRA);
+            else set_none_ops32<0,1,2,3, &noneCopy32RGBA, &noneCover32RGBA>(pxRGBA);
+         }
+         else if (mColourFormat.RedPos IS 24) set_none_ops32<3,1,2,0, &noneCopy32AGBR, &noneCover32AGBR>(pxAGBR);
+         else set_none_ops32<1,2,3,0, &noneCopy32ARGB, &noneCover32ARGB>(pxARGB);
+      }
+      else if (mBlendMode IS BLM::SRGB) {
+         // The trailing 'true' selects the SSE2 solid-span kernels where available.
+         if (mColourFormat.AlphaPos IS 24) {
+            if (mColourFormat.BluePos IS 0) set_ops32<2,1,0,3, &srgb32BGRA, &srgbCopy32BGRA, &srgbCover32BGRA, true>(pxBGRA);
+            else set_ops32<0,1,2,3, &srgb32RGBA, &srgbCopy32RGBA, &srgbCover32RGBA, true>(pxRGBA);
+         }
+         else if (mColourFormat.RedPos IS 24) set_ops32<3,1,2,0, &srgb32AGBR, &srgbCopy32AGBR, &srgbCover32AGBR, true>(pxAGBR);
+         else set_ops32<1,2,3,0, &srgb32ARGB, &srgbCopy32ARGB, &srgbCover32ARGB, true>(pxARGB);
+      }
+      else { // BLM::GAMMA
+         if (mColourFormat.AlphaPos IS 24) {
+            if (mColourFormat.BluePos IS 0) {
+               set_gamma_ops32<2,1,0,3, &gamma32BGRA, &gammaCopy32BGRA, &gammaCover32BGRA>(pxBGRA);
+            }
+            else set_gamma_ops32<0,1,2,3, &gamma32RGBA, &gammaCopy32RGBA, &gammaCover32RGBA>(pxRGBA);
+         }
+         else if (mColourFormat.RedPos IS 24) {
+            set_gamma_ops32<3,1,2,0, &gamma32AGBR, &gammaCopy32AGBR, &gammaCover32AGBR>(pxAGBR);
+         }
+         else set_gamma_ops32<1,2,3,0, &gamma32ARGB, &gammaCopy32ARGB, &gammaCover32ARGB>(pxARGB);
+      }
+   }
+   else if (mBitsPerPixel IS 24) {
+      kt::Log log;
+      log.warning("Support for 24-bit bitmaps is deprecated.");
+   }
+   else if (mBitsPerPixel IS 16) {
+      // Deprecated.  16-bit client code should use 32-bit and downscale instead.
+      kt::Log log;
+      log.warning("Support for 16-bit bitmaps is deprecated.");
+   }
+   else if (mBitsPerPixel IS 8) {
+      // For generating grey-scale alpha masks
+      fBlendHLine      = &blendHLine8;
+      fBlendSolidHSpan = &blendSolidHSpan8;
+      fBlendColorHSpan = &blendColorHSpan8;
+      fCopyColorHSpan  = &copyColorHSpan8;
+      fBlendPix        = &blend8;
+      fCopyPix         = &copy8;
+      fCoverPix        = &cover8;
+   }
+}
 
 } // namespace

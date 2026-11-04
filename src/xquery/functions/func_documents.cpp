@@ -3,6 +3,7 @@
 
 #include "accessor_support.h"
 #include <filesystem>
+#include <kotuku/modules/filesystem.h>
 
 namespace fs = std::filesystem;
 
@@ -10,7 +11,7 @@ namespace fs = std::filesystem;
 // Load (or retrieve from cache) a text resource.  Returns true if successful.
 // TODO: Support Encoding parameters other than UTF-8 (converts the source to UTF-8).
 
-[[maybe_unused]] static bool read_text_resource(XPathEvaluator &Eval, const std::string &URI, const std::optional<std::string> &Encoding,
+bool read_text_resource(XPathEvaluator &Eval, const std::string &URI, const std::optional<std::string> &Encoding,
    std::string * &Result)
 {
    kt::Log log(__FUNCTION__);
@@ -27,8 +28,14 @@ namespace fs = std::filesystem;
    objFile::create file { fl::Path(URI), fl::Flags(FL::READ) };
    if (file.ok()) {
       std::string buffer;
-      buffer.resize(file->get<size_t>(FID_Size));
-      file->read(buffer.data(), buffer.size());
+      int64_t file_size;
+      file->getSize(file_size);
+      buffer.resize(file_size);
+      if (not buffer.empty()) {
+         size_t bytes_read = 0;
+         if ((file->read(std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &bytes_read) != ERR::Okay) or
+             (bytes_read != buffer.size())) return false;
+      }
       Eval.text_cache[URI] = std::move(normalise_newlines(buffer));
       Result = &Eval.text_cache[URI];
       return true;
@@ -41,15 +48,15 @@ namespace fs = std::filesystem;
 
 static std::optional<std::string> get_context_directory(const XPathContext &Context)
 {
-   if ((Context.xml) and (Context.xml->Path) and (*Context.xml->Path)) {
+   if ((Context.xml) and (not Context.xml->Path.empty())) {
       std::string resolved;
-      if (ResolvePath(Context.xml->Path, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) {
+      if (!ResolvePath(Context.xml->Path, RSF::NO_FILE_CHECK, &resolved)) {
          fs::path base_path(resolved);
          base_path = base_path.parent_path();
          return base_path.string();
       }
 
-      std::string raw = Context.xml->Path;
+      const std::string &raw = Context.xml->Path;
       size_t slash = raw.find_last_of("/\\");
       if (slash != std::string::npos) return raw.substr(0, slash + 1u);
    }
@@ -67,7 +74,7 @@ static bool resolve_resource_location(const XPathContext &Context, const std::st
    if (URI.empty()) return false;
    if (is_string_uri(URI)) { Resolved = URI; return true; }
 
-   if (ResolvePath(URI, RSF::NO_FILE_CHECK, &Resolved) IS ERR::Okay) {
+   if (!ResolvePath(URI, RSF::NO_FILE_CHECK, &Resolved)) {
       return true;
    }
    else Resolved = URI;
@@ -90,7 +97,10 @@ static extXML * load_document(CompiledXQuery *State, const std::string &URI)
    auto document = kt::Create<extXML>::global({ fl::Path(URI), fl::Flags(XMF::WELL_FORMED | XMF::NAMESPACE_AWARE) });
 
    if (!document) return nullptr;
-   if (document->Tags.empty()) return nullptr;
+   if (document->Tags.empty()) {
+      FreeResource(document);
+      return nullptr;
+   }
 
    (void)document->getMap(); // Build ID map now
    State->XMLCache[URI] = document;
@@ -272,7 +282,7 @@ XPathVal XPathFunctionLibrary::function_doc_available(const std::vector<XPathVal
    // TODO: Testing validity of URI's needs to be supported by the File class.
 
    LOC file_type;
-   if (AnalysePath(resolved.c_str(), &file_type) IS ERR::Okay) {
+   if (!AnalysePath(resolved, &file_type)) {
       return XPathVal(true);
    }
 

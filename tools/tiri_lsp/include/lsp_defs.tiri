@@ -1,7 +1,8 @@
 -- Tiri LSP Static Definitions
 --
 -- Contains hover documentation for Tiri built-in functions and keywords.
--- These are static definitions that don't need to be rebuilt from XML docs.
+-- These are static definitions that don't need to be rebuilt from XML docs.  The file is imported by lsp_lib.tiri,
+-- which declares glDefs.
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Built-in Functions
@@ -16,10 +17,6 @@ glBuiltins = {
       comment = 'Prints a message to the system log.',
       prototype = 'msg(...)'
    },
-   ['error'] = {
-      comment = 'Raises an error with the given message.',
-      prototype = 'error(message, [level])'
-   },
    ['assert'] = {
       comment = 'Raises an error if condition is false.',
       prototype = 'assert(condition, [message])'
@@ -27,7 +24,7 @@ glBuiltins = {
 
    -- Type conversion/introspection
    ['type'] = {
-      comment = 'Returns the type of a value as a string.',
+      comment = 'Returns the canonical type name of a value as a string, including bool for true and false.',
       prototype = 'type(value)'
    },
    ['tonumber'] = {
@@ -105,8 +102,8 @@ glBuiltins = {
       prototype = 'require(modname)'
    },
    ['include'] = {
-      comment = 'Includes a Tiri module into the current environment.',
-      prototype = 'include(modname)'
+      comment = 'Loads API definitions into the current parse context.',
+      prototype = "include 'module', 'module2'"
    },
    ['loadFile'] = {
       comment = 'Loads and executes a Tiri script file.',
@@ -124,7 +121,7 @@ glBuiltins = {
    -- Memory management
    ['processing.collect'] = {
       comment = 'Runs the garbage collection process manually.',
-      prototype = 'collectgarbage([opt], [arg])'
+      prototype = 'processing.collect([mode], [options])'
    },
 
    -- Script parameters
@@ -141,8 +138,9 @@ glBuiltins = {
 
    -- Range constructor
    ['range'] = {
-      comment = 'Creates an iterator over a numeric range.',
-      prototype = 'range(start, stop, [step])'
+      comment = 'Creates a numeric range.  Brace literals use {start to stop} for exclusive ranges and ' ..
+         '{start into stop} for inclusive ranges.  Add `by step` for stepped ranges.',
+      prototype = 'range(start, stop, [inclusive], [step])'
    },
 
    -- Events
@@ -169,12 +167,6 @@ glBuiltins = {
    ['obj.find'] = {
       comment = 'Finds an existing Kotuku object by name.',
       prototype = 'obj.find(name)'
-   },
-
-   -- Module loading
-   ['mod.load'] = {
-      comment = 'Loads a Kotuku module.',
-      prototype = 'mod.load(modname)'
    }
 }
 
@@ -200,13 +192,29 @@ glKeywords = {
    ['continue'] = { comment = 'Skips to the next loop iteration.' },
 
    -- Functions
-   ['function'] = { comment = 'Defines a function.' },
+   ['function'] = {
+      comment = 'Defines a function. A context binding after the keyword fixes the context of every call: ' ..
+         'function[X] runs in table X, function[<weak> X] holds X weakly, and function[] inherits the ' ..
+         "caller's context during entity dispatch."
+   },
    ['return'] = { comment = 'Returns values from a function.' },
 
    -- Variables
    ['local'] = { comment = 'Declares a local variable (block-scoped).' },
    ['global'] = { comment = 'Declares a global variable.' },
-   ['import'] = { comment = 'Loads a Tiri module into the current scope.' },
+   ['extern'] = {
+      comment = 'Declares one or more named symbols supplied externally and resolves them as globals.'
+   },
+   ['import'] = {
+      comment = 'Inlines one or more Tiri script libraries at parse time. List entries must be string literals; ' ..
+         'use ./ or ../ for local libraries. A single non-local import may add an exact or comparative version ' ..
+         'constraint before its optional as alias.'
+   },
+   ['version'] = {
+      comment = 'Introduces a package-version constraint in a single non-local import. It is contextual and remains ' ..
+         'available as an ordinary identifier elsewhere.'
+   },
+   ['as'] = { comment = 'Introduces a local alias for an imported library namespace.' },
 
    -- Pattern matching
    ['choose'] = { comment = 'Pattern matching expression (switch-like).' },
@@ -215,13 +223,19 @@ glKeywords = {
       'clause.' },
 
    -- Special
+   ['using'] = {
+      comment = 'Activates a table reference as the current context inside using reference do ... end. ' ..
+         'Context fields use &name and && yields the current table. The previous context is restored on every ' ..
+         'exit path; ordinary tables are not promoted to entities.'
+   },
    ['defer'] = { comment = 'Deferred execution - code runs when scope exits.' },
    ['try'] = { comment = 'Opens an exception-handling block. Pair with `except`.' },
    ['except'] = { comment = 'Catches an exception raised by the preceding `try` block. Use `when` ' ..
       'to filter by condition.' },
    ['throw'] = { comment = 'Raises an exception. Can be caught by an enclosing `try/except`.' },
    ['catch'] = { comment = 'Error handling block.' },
-   ['raise'] = { comment = 'Raises an error or exception.' },
+   ['raise'] = { comment = 'Raises a message or coded exception. Parenthesised forms are non-returning expressions; ' ..
+      'bare raise rethrows the current exception from an except handler.' },
    ['check'] = { comment = 'Error checking statement - raises on failure.' },
    ['thunk'] = { comment = 'Declares a deferred/lazy expression.' },
 
@@ -230,6 +244,7 @@ glKeywords = {
    ['or'] = { comment = 'Logical OR operator.' },
    ['not'] = { comment = 'Logical NOT operator.' },
    ['is'] = { comment = 'Equality comparison.' },
+   ['≈'] = { comment = 'Approximate numeric equality with an inclusive absolute tolerance of 1e-5.' },
 
    -- Constants
    ['true'] = { comment = 'Boolean true value.' },
@@ -241,6 +256,18 @@ glKeywords = {
 -- Parser Intrinsic Annotations
 
 glParserAnnotations = {
+   ['Package'] = {
+      kind = 'Compilation-unit annotation',
+      comment = 'Declares the canonical package name and version for an importable package entry point. It must be ' ..
+         'the first non-comment construct in the compilation unit.',
+      prototype = '@Package(name="package-name", version="1.0")'
+   },
+   ['Dependencies'] = {
+      kind = 'Compilation-unit annotation',
+      comment = 'Declares optional Tiri-language and Kotuku-runtime version requirements for the compilation unit. ' ..
+         'When @Package is present, @Dependencies must follow it.',
+      prototype = '@Dependencies(tiri="1.0", kotuku=">=2026.9.19")'
+   },
    ['FunctionName'] = {
       comment = 'Expands at parse time to the current function name as a string.  Top-level code resolves to ' ..
          '"Main"; anonymous functions resolve to "Anonymous".',
@@ -273,7 +300,7 @@ glModulePrefixes = {
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   return {
+   glDefs = {
       builtins = glBuiltins,
       keywords = glKeywords,
       parserAnnotations = glParserAnnotations,

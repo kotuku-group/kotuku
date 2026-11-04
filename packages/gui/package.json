@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "name": "gui",
+  "version": "1.0",
+  "description": "Core graphical user-interface functions for Tiri applications.",
+  "entry": "gui.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "user-interface",
+    "vector"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "config": "1.0",
+    "json": "1.0"
+  },
+  "files": [
+    {
+      "path": "fills_data.tiri",
+      "size": 1547,
+      "sha256": "3f43696c6df2928bbc0dea1546de8f77ddfb2d40e7ad3d4c5aa5e5f92da640ef",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "fonts_data.tiri",
+      "size": 3174,
+      "sha256": "0bc3d71b5ef3ec1b9ebe28bdef98d7adfd5de9ccfc19c2316842f963d6799c67",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "gui.tiri",
+      "size": 117884,
+      "sha256": "c7a776922e3e30f5f4cafdea5588cff8fde4b9f463934dbc47e698904dec226a",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "layout.tiri",
+      "size": 6873,
+      "sha256": "91c2bdf6e82dfb94fcff6142b4eb7c4257a9543b89e4ed55b98b144acd165a11",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "palettes_data.tiri",
+      "size": 7376,
+      "sha256": "ef5714f1aeb9cbd5257fad29163ce2f69b8fbbfe33a911a5dc0d5d8f9f570b61",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ],
+  "exports": [
+    {
+      "gui": "gui.tiri"
+    },
+    {
+      "gui/layout": "layout.tiri"
+    }
+  ]
+}

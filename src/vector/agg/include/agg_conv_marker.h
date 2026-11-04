@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,20 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Collects marker locations from a path and emits marker geometry. Hooks into marker adaptors, arrowhead generators,
+// and marker renderers. In the vector renderer it supports decorations such as arrowheads along stroked paths.
 
-//
-// conv_marker
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_CONV_MARKER_INCLUDED
-#define AGG_CONV_MARKER_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_trans_affine.h"
 
 namespace agg
 {
-    //-------------------------------------------------------------conv_marker
     template<class MarkerLocator, class MarkerShapes>
     class conv_marker
     {
@@ -137,7 +133,3 @@ namespace agg
     }
 
 }
-
-
-#endif
-

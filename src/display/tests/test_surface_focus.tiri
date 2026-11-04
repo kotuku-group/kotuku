@@ -1,0 +1,236 @@
+-- Verifies the surface focus chain when focused surfaces are hidden or freed.  Hiding a surface that holds the focus,
+-- directly or through a descendant, must hand the focus to its nearest focusable ancestor, and the surface records
+-- returned by GetSurfaceFlags() must stay consistent with the object flags.
+
+   module display as mGfx
+
+-- Create a shown and focused top-level surface.
+
+function rootSurface():obj
+   local root = obj.new('Surface', { width=200, height=200 })
+   root.acShow()
+   root.acFocus()
+   processing.sleep(0)
+   return root
+end
+
+-- Create a shown child surface of Parent.
+
+function childSurface(Parent:obj!, Options:table):obj
+   local options = Options ?? { }
+   options.x      ?= 0
+   options.y      ?= 0
+   options.width  ?= 50
+   options.height ?= 50
+   local child = Parent.new('Surface', options)
+   child.acShow()
+   return child
+end
+
+-- Return the flags held in the surface record for Surface.
+
+function recordFlags(Surface:obj!):num
+   local err, flags = mGfx.GetSurfaceFlags(Surface.id)
+   assert(err is ERR_Okay, f'GetSurfaceFlags() failed for #{Surface.id}: {mSys.GetErrorMsg(err)}')
+   return flags
+end
+
+-- Count the focus and lostfocus notifications received by Surface.
+
+function countFocusEvents(Surface:obj!):table
+   local counts = { focus=0, lost=0 }
+   Surface.subscribe('focus', function(Surface:obj!, Args:table!) counts.focus++ end)
+   Surface.subscribe('lostfocus', function(Surface:obj!, Args:table!) counts.lost++ end)
+   return counts
+end
+
+-- The records of surfaces leaving the focus chain are updated before any focus notification is sent.  A focus
+-- subscriber on a surface joining the chain therefore runs before the LostFocus action has resynchronised the records
+-- of the surfaces losing the focus, and must see them already correct.
+
+@Test function RecordFlagsAfterFocusChange()
+   local root <close> = rootSurface()
+   local first_branch = childSurface(root, { width=100, height=100 })
+   local first = childSurface(first_branch, { width=20, height=20 })
+   local second_branch = childSurface(root, { x=100, width=100, height=100 })
+   local second = childSurface(second_branch, { width=20, height=20 })
+
+   first.acFocus()
+   assert(recordFlags(first) has RNF_HAS_FOCUS, 'The focused child record must report HAS_FOCUS')
+
+   local sampled = { }
+   second_branch.subscribe('focus', function(Surface:obj!, Args:table!)
+      sampled.first = recordFlags(first)
+      sampled.first_branch = recordFlags(first_branch)
+   end)
+
+   second.acFocus()
+   assert(sampled.first??, 'The focus subscriber of the second branch was not called')
+   for name, flags in sampled do
+      assert(flags has RNF_VISIBLE, f'Losing the focus cleared the VISIBLE flag in the {name} record')
+      assert(not (flags has RNF_HAS_FOCUS), f'Losing the focus left HAS_FOCUS set in the {name} record')
+   end
+
+   local flags = recordFlags(first)
+   assert(flags has RNF_VISIBLE, 'The first child record lost its VISIBLE flag')
+   assert(not (flags has RNF_HAS_FOCUS), 'The first child record still reports HAS_FOCUS')
+   assert(recordFlags(second) has RNF_HAS_FOCUS, 'The newly focused child record must report HAS_FOCUS')
+end
+
+-- A surface can be hidden by an ancestor's focus subscriber before its LostFocus action clears the object flags.
+-- Hiding it must preserve the record's already-cleared focus state and leave the requested focus target in place.
+
+@Test function HideOldSurfaceDuringInheritedFocus()
+   local root <close> = rootSurface()
+   local first_branch = childSurface(root, { width=100, height=100 })
+   local first = childSurface(first_branch, { width=20, height=20 })
+   local second_branch = childSurface(root, { x=100, width=100, height=100 })
+   local second = childSurface(second_branch, { width=20, height=20 })
+   first.acFocus()
+   local first_counts = countFocusEvents(first)
+   local second_counts = countFocusEvents(second)
+   local sampled = { }
+
+   second_branch.subscribe('focus', function(Surface:obj!, Args:table!)
+      first.acHide()
+      sampled.flags = recordFlags(first)
+   end)
+
+   second.acFocus()
+   assert(sampled.flags != nil, 'The ancestor focus subscriber was not called')
+   assert(not (sampled.flags has RNF_HAS_FOCUS), 'Hiding the old surface restored its record focus flag')
+   assert(not (sampled.flags has RNF_VISIBLE), 'The old surface record still reports VISIBLE')
+   assert(root.userFocus is second.id, 'Hiding the old surface stole focus from the requested target')
+   assert(first_counts.lost is 1, 'The old surface must receive exactly one lostfocus notification')
+   assert(second_counts.focus is 1, 'The requested target must receive exactly one focus notification')
+   assert(not (first.flags has RNF_HAS_FOCUS), 'The hidden surface object still reports HAS_FOCUS')
+   assert(recordFlags(second) has RNF_HAS_FOCUS, 'The requested target record does not report HAS_FOCUS')
+end
+
+@Test function RepeatedFocusChangesSendLostFocusOnce()
+   local root <close> = rootSurface()
+   local first = childSurface(root)
+   local second = childSurface(root, { x=60 })
+   local third = childSurface(root, { x=120 })
+   first.acFocus()
+   local counts = countFocusEvents(first)
+
+   second.acFocus()
+   third.acFocus()
+   assert(counts.lost is 1, f'A surface leaving the focus chain received {counts.lost} lostfocus notifications')
+end
+
+@Test function HideFocusedChild()
+   local root <close> = rootSurface()
+   local child = childSurface(root)
+   child.acFocus()
+   assert(root.userFocus is child.id, 'The child did not receive the primary focus')
+   local counts = countFocusEvents(child)
+
+   child.acHide()
+   assert(root.userFocus is root.id, f'The focus did not move to the parent; user focus is #{root.userFocus}')
+   assert(counts.lost is 1, f'The hidden child received {counts.lost} lostfocus notifications')
+   assert(not (child.flags has RNF_HAS_FOCUS), 'The hidden child still reports HAS_FOCUS')
+   assert(not (recordFlags(child) has RNF_HAS_FOCUS), 'The hidden child record still reports HAS_FOCUS')
+   assert(recordFlags(root) has RNF_HAS_FOCUS, 'The parent record does not report HAS_FOCUS')
+end
+
+@Test function HideAncestorOfFocusedSurface()
+   local root <close> = rootSurface()
+   local container = childSurface(root, { width=100, height=100 })
+   local leaf = childSurface(container, { width=20, height=20 })
+   leaf.acFocus()
+   assert(root.userFocus is leaf.id, 'The leaf did not receive the primary focus')
+   local container_counts = countFocusEvents(container)
+   local leaf_counts = countFocusEvents(leaf)
+
+   container.acHide()
+   assert(root.userFocus is root.id, f'The focus did not move to the container parent; user focus is #{root.userFocus}')
+   assert(container_counts.lost is 1, 'The hidden container did not lose the focus')
+   assert(leaf_counts.lost is 1, 'The leaf of the hidden container did not lose the focus')
+   assert(not (container.flags has RNF_HAS_FOCUS), 'The hidden container still reports HAS_FOCUS')
+end
+
+@Test function HideSkipsNoFocusAncestor()
+   local root <close> = rootSurface()
+   local container = childSurface(root, { width=100, height=100, flags=RNF_NO_FOCUS })
+   local child = childSurface(container, { width=20, height=20 })
+   child.acFocus()
+   assert(root.userFocus is child.id, 'The child did not receive the primary focus')
+
+   child.acHide()
+   assert(root.userFocus is root.id, f'The focus did not skip the NO_FOCUS parent; user focus is #{root.userFocus}')
+end
+
+@Test function HideUnfocusedSurface()
+   local root <close> = rootSurface()
+   local focused = childSurface(root)
+   local other = childSurface(root, { x=60 })
+   focused.acFocus()
+   local focused_counts = countFocusEvents(focused)
+   local root_counts = countFocusEvents(root)
+   local other_counts = countFocusEvents(other)
+
+   other.acHide()
+   assert(root.userFocus is focused.id, 'Hiding an unfocused surface changed the primary focus')
+   assert(focused_counts.focus is 0 and focused_counts.lost is 0, 'The focused surface received focus events')
+   assert(root_counts.focus is 0 and root_counts.lost is 0, 'The parent received focus events')
+   assert(other_counts.focus is 0 and other_counts.lost is 0, 'The hidden surface received focus events')
+end
+
+@Test function HideModalFocusedChild()
+   local root <close> = rootSurface()
+   local sibling = childSurface(root, { x=60 })
+   local modal = root.new('Surface', { x=0, y=0, width=50, height=50, modal=1 })
+   modal.acShow()
+   modal.acFocus()
+   assert(root.userFocus is modal.id, 'The modal child did not receive the primary focus')
+
+   sibling.acFocus()
+   assert(root.userFocus is modal.id, 'A surface outside the modal scope received the focus')
+
+   modal.acHide()
+   assert(root.userFocus is root.id, f'The focus did not move to the modal parent; user focus is #{root.userFocus}')
+   sibling.acFocus()
+   assert(root.userFocus is sibling.id, 'Hiding the modal surface did not clear the modal state')
+end
+
+@Test function DesktopPopupPreservesNestedModalScope()
+   local root <close> = rootSurface()
+   local modal = childSurface(root, { width=100, height=100, modal=1 })
+   local anchor = childSurface(modal, { width=20, height=20 })
+   modal.acFocus()
+
+   local popup <close> = obj.new('Surface', { width=50, height=50, popOver=anchor, presence=SPT_NONE })
+   popup.acShow()
+   assert(popup.acFocus() is ERR_Okay,
+      'A desktop popup anchored inside a nested modal must receive focus')
+   assert(root.userFocus is popup.id, 'The popup must hold the primary focus')
+
+   -- Updating the surface record must retain the logical anchor as well as its resolved stacking sibling.
+
+   popup.acMoveToPoint(10, 10, 0, MTF_X | MTF_Y)
+   local child = childSurface(popup, { width=20, height=20 })
+   assert(child.acFocus() is ERR_Okay, 'Children of the modal popup must receive focus')
+   root.acFocus()
+   assert(root.userFocus is child.id, 'The popup anchor must not admit the modal parent into the modal scope')
+
+   local submenu <close> = obj.new('Surface', { width=30, height=30, popOver=child, presence=SPT_NONE })
+   submenu.acShow()
+   assert(submenu.acFocus() is ERR_Okay, 'A nested popup must inherit the original modal scope')
+   assert(root.userFocus is submenu.id, 'The nested popup must hold the primary focus')
+end
+
+@Test function FreeFocusedChild()
+   local root <close> = rootSurface()
+   local child = childSurface(root)
+   child.acFocus()
+   assert(root.userFocus is child.id, 'The child did not receive the primary focus')
+   local root_counts = countFocusEvents(root)
+
+   child.free()
+   processing.sleep(0)
+   assert(root.userFocus is root.id, f'The focus did not move to the parent; user focus is #{root.userFocus}')
+   assert(root_counts.focus is 1, f'The parent received {root_counts.focus} focus notifications')
+   assert(recordFlags(root) has RNF_HAS_FOCUS, 'The parent record does not report HAS_FOCUS')
+end

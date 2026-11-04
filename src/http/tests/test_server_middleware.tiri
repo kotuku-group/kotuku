@@ -16,20 +16,20 @@ SERVER_PORT <const> = 18947
 
    -- Create middleware functions
    function loggingMiddleware(req, res, next)
-      if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
-      req.middlewareOrder:push('logging')
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
+      req.middlewareOrder.push('logging')
       next()
    end
 
    function authMiddleware(req, res, next)
-      if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
-      req.middlewareOrder:push('auth')
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
+      req.middlewareOrder.push('auth')
       next()
    end
 
    function timingMiddleware(req, res, next)
-      if not req.middlewareOrder then req.middlewareOrder = array<string> {} end
-      req.middlewareOrder:push('timing')
+      if not req.middlewareOrder then req.middlewareOrder = array<str> {} end
+      req.middlewareOrder.push('timing')
       next()
    end
 
@@ -91,7 +91,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -100,7 +100,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Middleware chain test failed to activate")
 
    err = proc.sleep()
@@ -125,7 +125,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -134,12 +134,12 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "404 test failed to activate")
 
    err = proc.sleep()
    assert(err is ERR_Okay, '404 processing failed: ' .. mSys.GetErrorMsg(err))
-   assert(http.error is ERR_Okay, '404 HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.error is ERR_HTTPStatus, '404 response should report HTTPStatus, got: ' .. mSys.GetErrorMsg(http.error))
    assert(http.status is 404, 'Expected 404 Not Found, got: ' .. http.status)
 
    print('Route not found test passed - 404 received')
@@ -157,7 +157,7 @@ end
       inputFile = 'string:test',
       size = 4,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -166,12 +166,12 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "405 test failed to activate")
 
    err = proc.sleep()
    assert(err is ERR_Okay, '405 processing failed: ' .. mSys.GetErrorMsg(err))
-   assert(http.error is ERR_Okay, '405 HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.error is ERR_HTTPStatus, '405 response should report HTTPStatus, got: ' .. mSys.GetErrorMsg(http.error))
    assert(http.status is 405, 'Expected 405 Method Not Allowed, got: ' .. http.status)
 
    print('Method not allowed test passed - 405 received')
@@ -187,7 +187,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -196,7 +196,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Wildcard test failed to activate")
 
    err = proc.sleep()
@@ -221,7 +221,7 @@ end
       method = 'OPTIONS', -- CORS preflight
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -233,7 +233,7 @@ end
    check http.acSetKey('Origin', 'https://example.com')
    check http.acSetKey('Access-Control-Request-Method', 'POST')
    check http.acSetKey('Access-Control-Request-Headers', 'Content-Type')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "CORS test failed to activate")
 
    err = proc.sleep()

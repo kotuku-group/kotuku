@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <bit>
 #include <cctype>
+#include <algorithm>
 
 #define lib_base_c
 #define LUA_LIB
@@ -25,9 +26,12 @@
 #include "lj_meta.h"
 #include "lj_state.h"
 #include "lj_frame.h"
+#include "lj_func.h"
+#include "lj_vm.h"
 #include "lj_bc.h"
 #include "lj_ff.h"
 #include "lj_dispatch.h"
+#include "lj_proto_registry.h"
 #include "lj_char.h"
 #include "lj_strscan.h"
 #include "lj_strfmt.h"
@@ -39,9 +43,115 @@
 #include "runtime/lj_thunk.h"
 #include "runtime/lj_object.h"
 #include "runtime/lj_proto_registry.h"
+#include "runtime/import_module_state.h"
+#include "../../packaging/cache_manifest.h"
+#include "tiri_build_identity.h"
+#include "runtime_versions.h"
 #include "debug/error_guard.h"
+#include "lib_range.h"
 
 #define LJLIB_MODULE_base
+
+//********************************************************************************************************************
+// Execute one imported-module initialiser at most once in this interpreter.  Failed initialisers are deliberately
+// retried by a later activation: Script.Activate() reruns the root, and retaining a terminal failure here would make
+// that ordinary retry skip the import which caused it.  The initialising state remains terminal only for the active
+// call chain, where it provides a defensive runtime cycle check in addition to parser-time cycle diagnostics.
+
+static int import_module_activate(lua_State *L)
+{
+   GCstr *identity_value = lj_lib_checkstr(L, 1);
+   const bool has_reference = lua_isnumber(L, 2);
+   if (not has_reference) luaL_typerror(L, 2, "imported-module reference");
+   std::string identity(strdata(identity_value), identity_value->len);
+   lua_State *owner = mainthread(G(L));
+
+   auto found = owner->import_module_activations.find(identity);
+   ImportModuleActivationState state = found IS owner->import_module_activations.end() ?
+      ImportModuleActivationState::Unseen : found->second;
+   if (state IS ImportModuleActivationState::Initialised) return 0;
+   if (state IS ImportModuleActivationState::Initialising) {
+      luaL_error(L, ERR::InvalidState, "Circular runtime import activation for '%s'.", identity.c_str());
+   }
+
+   const int32_t signed_index = lj_lib_checkint(L, 2);
+   if (signed_index < 0) luaL_error(L, ERR::InvalidData, "Invalid imported-module table index.");
+
+   TValue *c_frame = L->base - 1;
+   if (not frame_islua(c_frame)) {
+      luaL_error(L, ERR::InvalidState, "Imported-module activation has no Lua caller.");
+   }
+   TValue *caller_frame = frame_prev(c_frame);
+   GCfunc *caller = frame_func(caller_frame);
+   if (not isluafunc(caller)) {
+      luaL_error(L, ERR::InvalidState, "Imported-module activation has no Lua caller.");
+   }
+   const ImportModuleTable *table = proto_import_module_table(funcproto(caller));
+   const uint32_t module_index = uint32_t(signed_index);
+   if (not table or table->version != IMPORT_MODULE_TABLE_VERSION or module_index >= table->entry_count) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module table reference.");
+   }
+
+   const ImportModuleTableEntry &entry = import_module_table_entries(table)[module_index];
+   GCstr *stored_identity = gco_to_string(gcref(entry.compiled_identity));
+   if (stored_identity->len != identity_value->len or
+       memcmp(strdata(stored_identity), strdata(identity_value), identity_value->len) != 0) {
+      luaL_error(L, ERR::InvalidData, "Imported-module identity does not match its table entry.");
+   }
+   if (not gcref(entry.initialiser) or gcref(entry.initialiser)->gch.gct != ~LJ_TPROTO) {
+      luaL_error(L, ERR::InvalidData, "Imported-module table entry has no executable initialiser.");
+   }
+   GCproto *referenced_initialiser = gco_to_proto(gcref(entry.initialiser));
+   if (referenced_initialiser->sizeuv != 0) {
+      luaL_error(L, ERR::InvalidData, "Imported-module initialiser has unsupported captures.");
+   }
+   GCtab *referenced_environment = tabref(caller->l.env);
+
+   owner->import_module_activations[identity] = ImportModuleActivationState::Initialising;
+   setfuncV(L, L->top++, lj_func_newL_zero(L, referenced_initialiser, referenced_environment));
+   if (lua_pcall(L, 0, 0, 0) != 0) {
+      owner->import_module_activations[identity] = ImportModuleActivationState::Failed;
+      lua_error(L);
+      return 0;
+   }
+
+   owner->import_module_activations[identity] = ImportModuleActivationState::Initialised;
+
+   // The runtime directory indexes the already-validated root bundle, so activation decodes only this record's
+   // portable interface rather than reconstructing the complete module graph.
+   uint32_t bundle_size = 0;
+   const uint8_t *bundle = proto_import_module_bundle(funcproto(caller), &bundle_size);
+   if (bundle and entry.interface_offset <= bundle_size and
+       entry.interface_size <= bundle_size - entry.interface_offset) {
+      std::string_view interface_bytes(
+         (const char *)bundle + entry.interface_offset, entry.interface_size);
+      tiri::import_cache::Interface portable;
+      tiri::import_cache::FinalisedInterfacePtr artifact;
+      if (tiri::import_cache::decode_interface(interface_bytes, portable) IS tiri::cache::FormatError::OKAY and
+          tiri::import_cache::FinalisedInterface::finalise(std::move(portable), artifact) IS
+            tiri::cache::FormatError::OKAY and artifact->bytes() IS interface_bytes) {
+         const auto &interface = artifact->descriptors();
+         const tiri::import_cache::SourceDescriptor *primary = nullptr;
+         for (const auto &source : interface.Sources) {
+            const bool nested = std::ranges::any_of(interface.NestedModules, [&](const auto &Dependency) {
+               return Dependency.LogicalRequest IS source.LogicalRequest and
+                  Dependency.ResolvedPath IS source.ResolvedPath;
+            });
+            if (not nested and not source.LogicalRequest.empty()) {
+               primary = &source;
+               break;
+            }
+         }
+         if (primary) {
+            const auto options = tiri::cache::effective_compilation_options();
+            std::string contract = import_module_resolution_contract(TIRI_BUILD_COMMIT, options,
+               primary->LogicalRequest, primary->ResolvedPath, true);
+            publish_active_import_module(owner, contract, identity, std::move(artifact));
+         }
+      }
+   }
+   return 0;
+}
 
 static uint64_t low_bit_mask(int32_t Count)
 {
@@ -63,7 +173,7 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
    lj_lib_checkany(L, 1);
    if (L->top IS L->base + 1) {
       // No message provided - use default
-      lj_err_caller(L, ErrMsg::ASSERT);
+      luaL_error(L, ErrMsg::ASSERT);
    }
    else {
       // Check for line/column arguments (args 3 and 4) added by optimise_assert()
@@ -117,7 +227,7 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
          else setstrV(L, L->top++, msg);
       }
       else { // No location info and message is nil or non-string - use default error
-         lj_err_caller(L, ErrMsg::ASSERT);
+         luaL_error(L, ErrMsg::ASSERT);
       }
       lj_err_run(L);
    }
@@ -127,13 +237,36 @@ LJLIB_ASM(assert)      LJLIB_REC(.)
 //********************************************************************************************************************
 // ORDER LJ_T
 
+constexpr uint32_t TYPE_NAME_USERDATA = 3;
+constexpr uint32_t TYPE_NAME_RANGE = 15;
+
+static uint32_t tiri_type_name_index(TiriType Type)
+{
+   switch (Type) {
+      case TiriType::Nil:      return 0;
+      case TiriType::Bool:     return 2;
+      case TiriType::Str:      return 4;
+      case TiriType::Struct:   return 6;
+      case TiriType::Func:     return 8;
+      case TiriType::Object:   return 10;
+      case TiriType::Table:    return 11;
+      case TiriType::Array:    return 13;
+      case TiriType::Num:      return 14;
+      case TiriType::Range:    return TYPE_NAME_RANGE;
+      case TiriType::Userdata: return TYPE_NAME_USERDATA;
+      case TiriType::Any:
+      case TiriType::Unknown:  return TYPE_NAME_USERDATA;
+   }
+   return TYPE_NAME_USERDATA;
+}
+
 LJLIB_PUSH("nil")
-LJLIB_PUSH("boolean")
-LJLIB_PUSH(top-1)  //  boolean
+LJLIB_PUSH("bool")
+LJLIB_PUSH(top-1)  //  bool
 LJLIB_PUSH("userdata")
 LJLIB_PUSH("string")
 LJLIB_PUSH("upval")
-LJLIB_PUSH("thread") // DEPRECATED
+LJLIB_PUSH("struct")
 LJLIB_PUSH("proto")
 LJLIB_PUSH("function")
 LJLIB_PUSH("trace")
@@ -142,26 +275,69 @@ LJLIB_PUSH("table")
 LJLIB_PUSH(top-9)  //  userdata
 LJLIB_PUSH("array")
 LJLIB_PUSH("number")
+LJLIB_PUSH("range")
 LJLIB_ASM(type)      LJLIB_REC(.)
 {
-   // C fallback for type() - handles thunks with declared types
-   TValue *o = L->base;
+   TValue *o = lj_lib_checkany(L, 1);
+   GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
    if (tvisudata(o)) {
       GCudata *ud = udataV(o);
-      if (ud->udtype IS UDTYPE_THUNK) {
+      if (is_range_userdata(L, ud)) {
+         setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[TYPE_NAME_RANGE]));
+         return FFH_RES(1);
+      }
+      else if (ud->udtype IS UDTYPE_THUNK) {
          ThunkPayload *payload = thunk_payload(ud);
          if (payload->expected_type != 0xFF) {
-            // Use the declared type string from the upvalue array
-            GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
-            GCstr *type_str = strV(&fn->c.upvalue[payload->expected_type]);
+            // Use the declared logical type rather than the thunk container's userdata tag.
+            uint32_t type_index = tiri_type_name_index(TiriType(payload->expected_type));
+            GCstr *type_str = strV(&fn->c.upvalue[type_index]);
             setstrV(L, L->base - 1 - LJ_FR2, type_str);
             return FFH_RES(1);
          }
       }
    }
-   // For non-thunk userdata, return "userdata" string (upvalue index 3)
-   GCfunc *fn = funcV(L->base - 1 - LJ_FR2);
-   setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[3]));
+
+   if (GCstr *name = lj_meta_type_name(L, o)) {
+      setstrV(L, L->base - 1 - LJ_FR2, name);
+      return FFH_RES(1);
+   }
+
+   uint32_t type_index;
+   if (tvisnumber(o)) type_index = ~LJ_TNUMX;
+   else type_index = ~itype(o);
+   setstrV(L, L->base - 1 - LJ_FR2, strV(&fn->c.upvalue[type_index]));
+   return FFH_RES(1);
+}
+
+LJLIB_PUSH("nil")
+LJLIB_PUSH("bool")
+LJLIB_PUSH(top-1)
+LJLIB_PUSH("userdata")
+LJLIB_PUSH("str")
+LJLIB_PUSH("upval")
+LJLIB_PUSH("struct")
+LJLIB_PUSH("proto")
+LJLIB_PUSH("func")
+LJLIB_PUSH("trace")
+LJLIB_PUSH("obj")
+LJLIB_PUSH("table")
+LJLIB_PUSH(top-9)
+LJLIB_PUSH("array")
+LJLIB_PUSH("num")
+LJLIB_PUSH("range")
+LJLIB_PUSH("thunk")
+LJLIB_ASM(rawtype)      LJLIB_REC(.)
+{
+   TValue *value = lj_lib_checkany(L, 1);
+   GCfunc *function = funcV(L->base - 1 - LJ_FR2);
+   if (not (tvisarray(value) or tvisobject(value) or tvisstruct(value) or tvisudata(value))) {
+      uint32_t type_index = tvisnumber(value) ? ~LJ_TNUMX : ~itype(value);
+      setstrV(L, L->base - 1 - LJ_FR2, strV(&function->c.upvalue[type_index]));
+      return FFH_RES(1);
+   }
+
+   setstrV(L, L->base - 1 - LJ_FR2, lj_meta_raw_type_name(L, value));
    return FFH_RES(1);
 }
 
@@ -185,9 +361,19 @@ LJLIB_ASM(next) LJLIB_REC(.) // Use of '.' indicates the function name in the re
 static int ffh_pairs(lua_State* L, MMS mm)
 {
    TValue *o = lj_lib_checkany(L, 1);
+   if (lj_is_thunk(o)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(o));
+      o = L->base;
+      copyTV(L, o, resolved);
+   }
+
    cTValue *mo = lj_meta_lookup(L, o, mm);
    if (not tvisnil(mo)) {
-      L->top = o + 1;  //  Only keep one argument.
+      if (tvistab(o)) {
+         lj_context_prepare_metamethod_call(L, o, L->base, 0, 1, true);
+         L->top = L->base;
+      }
+      else L->top = o + 1;
       copyTV(L, L->base - 2, mo);  //  Replace callable.
       return FFH_TAILCALL;
    }
@@ -232,6 +418,172 @@ LJLIB_PUSH(lastcl)
 LJLIB_ASM(ipairs)      LJLIB_REC(xpairs 1)
 {
    return ffh_pairs(L, MM_ipairs);
+}
+
+//********************************************************************************************************************
+
+static int bare_array_iterator_next(lua_State *L)
+{
+   GCarray *array = lua_toarray(L, 1);
+   if (not array) lj_err_argt(L, 1, LUA_TARRAY);
+
+   int32_t index = lua_isnil(L, 2) ? 0 : int32_t(lua_tointeger(L, 2)) + 1;
+   if (index < 0 or MSize(index) >= array->len) return 0;
+
+   lua_pushinteger(L, index);
+   lj_arr_getidx(L, array, index, L->top);
+   L->top++;
+   return 2;
+}
+
+// Normalise a single dynamic generic-for target once at loop entry.  This is a protected compiler intrinsic; source
+// code should continue to use the ordinary collection and iterator forms.
+
+static bool prepare_iter_metamethod(lua_State *L, TValue *Target, int TargetIndex)
+{
+   cTValue *metamethod = lj_meta_lookup(L, Target, MM_iter);
+   if (tvisnil(metamethod)) return false;
+
+   if (tvistab(Target)) {
+      [[maybe_unused]] size_t context_depth = lj_context_depth(L);
+      [[maybe_unused]] size_t context_size = L->context_stack.size();
+      copyTV(L, L->top++, metamethod);
+      TValue *top = L->top;
+      setnilV(top++);
+      L->top = top;
+      [[maybe_unused]] uint32_t argument_count = lj_context_prepare_metamethod_call(L, Target, top, 0, 1);
+      lj_assertL(argument_count IS 0, "table __iter retained its receiver argument");
+      int call_error = lj_vm_pcall(L, top, 2, -1);
+      lj_context_restore_depth(L, context_size);
+      if (call_error) lua_error(L);
+      lj_assertL(lj_context_depth(L) IS context_depth, "table __iter returned with an unbalanced context");
+   }
+   else {
+      copyTV(L, L->top++, metamethod);
+      lua_pushvalue(L, TargetIndex);
+      lua_call(L, 1, 1);
+   }
+
+   if (not lua_isfunction(L, -1)) {
+      luaL_error(L, ERR::TypeMismatch, "__iter must return a function, got %s", luaL_typename(L, -1));
+   }
+
+   lua_pushnil(L);
+   lua_pushnil(L);
+   return true;
+}
+
+// Normalise a bare generic-for target into its (iterator, state, control) triple.  TargetIndex must remain a rooted
+// stack slot for the complete call because preparation may invoke a metamethod or resolve a thunk.
+
+static int prepare_bare_iterator(lua_State *L, int TargetIndex)
+{
+   TValue *value = L->base + TargetIndex - 1;
+   if (lj_is_thunk(value)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(value));
+      value = L->base + TargetIndex - 1;
+      copyTV(L, value, resolved);
+   }
+
+   if (prepare_iter_metamethod(L, value, TargetIndex)) return 3;
+
+   if (tvisarray(value)) {
+      lua_pushcfunction(L, bare_array_iterator_next);
+      lua_pushvalue(L, TargetIndex);
+      lua_pushnil(L);
+      return 3;
+   }
+
+   if (tvistab(value) or tvisobject(value) or tvisstruct(value)) {
+      int initial_top = lua_gettop(L);
+      lua_getglobal(L, "pairs");
+      lua_pushvalue(L, TargetIndex);
+      lua_call(L, 1, LUA_MULTRET);
+      return lua_gettop(L) - initial_top;
+   }
+
+   if (check_range(L, TargetIndex)) return lj_range_prepare_iterator(L, TargetIndex);
+
+   if (tvisfunc(value) or not tvisnil(lj_meta_lookup(L, value, MM_call))) {
+      lua_pushvalue(L, TargetIndex);
+      lua_pushnil(L);
+      lua_pushnil(L);
+      return 3;
+   }
+
+   const char *type_name = luaL_typename(L, TargetIndex);
+   luaL_error(L, ERR::TypeMismatch, "cannot iterate over a %s value", type_name);
+   return 0;
+}
+
+LJLIB_INTRINSIC LJLIB_CF(__tiri_iter_prepare) LJLIB_REC(.)
+{
+   int32_t value_count = lua_gettop(L);
+   if (value_count >= 2) return value_count;
+   if (value_count IS 1) return prepare_bare_iterator(L, 1);
+
+   luaL_error(L, ERR::TypeMismatch, "cannot iterate over a nil value");
+   return 0;
+}
+
+//********************************************************************************************************************
+// forEach(Target, Callback) traverses Target with the same iterator preparation used by bare generic-for loops.
+// Callback receives every iterator result in its declared order.  Only an explicit false first callback result stops
+// traversal; all other callback results are discarded.
+
+LJLIB_CF(forEach)
+{
+   if (lua_gettop(L) != 2) {
+      luaL_error(L, ERR::Args, "forEach expects exactly 2 arguments");
+      return 0;
+   }
+
+   lj_lib_checkany(L, 1);
+   lj_lib_checkfunc(L, 2);
+
+   constexpr int target_index = 1;
+   constexpr int callback_index = 2;
+   constexpr int original_index = 3;
+   constexpr int iterator_index = 4;
+   constexpr int state_index = 5;
+   constexpr int control_index = 6;
+   constexpr int iterator_result_index = 7;
+   constexpr int stable_top = 6;
+
+   // Preparation resolves a thunk target in place, so root an untouched copy of the caller's value first.  forEach()
+   // returns the original target rather than whatever the iterator protocol resolved it to.
+
+   lua_pushvalue(L, target_index);
+
+   int prepared = prepare_bare_iterator(L, target_index);
+   if (prepared != 3) {
+      luaL_error(L, ERR::TypeMismatch, "iterator preparation must return an iterator, state and control value");
+      return 0;
+   }
+
+   while (true) {
+      lua_pushvalue(L, iterator_index);
+      lua_pushvalue(L, state_index);
+      lua_pushvalue(L, control_index);
+      lua_call(L, 2, LUA_MULTRET);
+
+      int iterator_result_count = lua_gettop(L) - stable_top;
+      if (iterator_result_count IS 0 or lua_isnil(L, iterator_result_index)) break;
+
+      lua_pushvalue(L, iterator_result_index);
+      lua_replace(L, control_index);
+      lua_pushvalue(L, callback_index);
+      lua_insert(L, iterator_result_index);
+      lua_call(L, iterator_result_count, LUA_MULTRET);
+
+      int callback_result_count = lua_gettop(L) - stable_top;
+      bool terminate = callback_result_count > 0 and tvisfalse(L->base + iterator_result_index - 1);
+      lua_settop(L, stable_top);
+      if (terminate) break;
+   }
+
+   lua_settop(L, original_index);
+   return 1;
 }
 
 //********************************************************************************************************************
@@ -283,6 +635,11 @@ static int values_array_iterator_next(lua_State* L)
 LJLIB_CF(values)
 {
    TValue* o = lj_lib_checkany(L, 1);
+   if (lj_is_thunk(o)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(o));
+      o = L->base;
+      copyTV(L, o, resolved);
+   }
 
    if (tvistab(o)) {
       GCtab *t = tabV(o);
@@ -336,7 +693,14 @@ static int keys_iterator_next(lua_State* L)
 
 LJLIB_CF(keys)
 {
-   GCtab *t = lj_lib_checktab(L, 1);
+   TValue *o = lj_lib_checkany(L, 1);
+   if (lj_is_thunk(o)) {
+      TValue *resolved = lj_thunk_resolve(L, udataV(o));
+      o = L->base;
+      copyTV(L, o, resolved);
+   }
+   if (not tvistab(o)) lj_err_argt(L, 1, LUA_TTABLE);
+   GCtab *t = tabV(o);
 
    // Push the table as upvalue 1
    settabV(L, L->top, t);
@@ -364,15 +728,46 @@ LJLIB_ASM_(getmetatable)   LJLIB_REC(.)
 //********************************************************************************************************************
 // Recycle the lj_lib_checkany(L, 1) from assert.
 
-LJLIB_ASM(setmetatable)      LJLIB_REC(.)
+// Shared implementation of setmetatable().  `Authorised` is true only for the compiler-emitted variant whose target
+// carried a valid ownership proof.
+//
+// The `__context` marker is a one-way designation input sampled here, never a live reflection of the target's state.
+// It is read raw and shallow: `__index` is not consulted and neither is a metatable of the supplied metatable.
+// Promotion of an ordinary table requires compiler authorisation, so an extracted, shadowed or native call cannot
+// designate a table the author does not own.  A target that is already contextual accepts any metatable, because
+// contextuality is permanent and no promotion is taking place.
+//
+// The rejection is atomic: it is raised before the metatable is installed, so a refused call leaves the target's
+// metatable and finaliser state untouched.
+
+static int setmetatable_impl(lua_State *L, bool Authorised)
 {
-   GCtab* t = lj_lib_checktab(L, 1);
-   GCtab* mt = lj_lib_checktabornil(L, 2);
-   if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) lj_err_caller(L, ErrMsg::PROTMT);
-   setgcref(t->metatable, obj2gco(mt));
-   if (mt) { lj_gc_objbarriert(L, t, mt); }
-   settabV(L, L->base - 2, t);
-   return FFH_RES(1);
+   GCtab *target = lj_lib_checktab(L, 1);
+   lj_lib_checktabornil(L, 2);
+   if (!tvisnil(lj_meta_lookup(L, L->base, MM_metatable))) luaL_error(L, ErrMsg::PROTMT);
+   L->top = L->base + 2;
+
+   bool designate = false;
+   if (tvistab(L->base + 1)) {
+      cTValue *marker = lj_tab_getstr(tabV(L->base + 1), lj_str_newlit(L, "__context"));
+      if (marker and tvistrue(marker)) {
+         if (not Authorised and not lj_tab_is_contextual(target)) {
+            lj_err_callermsg(L, ERR::NoPermission,
+               "setmetatable() cannot designate a contextual table here; the target must be an allocation owned by "
+               "this function and the call must be a direct call to the built-in setmetatable()");
+         }
+         designate = true;
+      }
+   }
+
+   lua_setmetatable(L, 1);
+   if (designate) lj_tab_mark_contextual(target);
+   return 1;
+}
+
+LJLIB_CF(setmetatable)
+{
+   return setmetatable_impl(L, false);
 }
 
 //********************************************************************************************************************
@@ -427,7 +822,7 @@ LJLIB_CF(rawlen)      LJLIB_REC(.)
 // RAII Pattern: Uses StackFrame to ensure L->top is restored on error paths.
 // The frame automatically cleans up if an error is thrown, preventing stack leaks.
 
-LJLIB_CF(__filter)      LJLIB_REC(.)
+LJLIB_INTRINSIC LJLIB_CF(__filter)      LJLIB_REC(.)
 {
    StackFrame frame(L);
 
@@ -458,7 +853,7 @@ LJLIB_CF(__filter)      LJLIB_REC(.)
    // Ensure we have enough stack space
 
    if (out_count > 0 and !lua_checkstack(L, out_count)) {
-      lj_err_caller(L, ErrMsg::STKOV);
+      luaL_error(L, ErrMsg::STKOV);
       return 0;  // StackFrame destructor will restore L->top
    }
 
@@ -540,156 +935,32 @@ LJLIB_ASM(tonumber)      LJLIB_REC(.)
 
 LJLIB_ASM(tostring)      LJLIB_REC(.)
 {
-   StackFrame frame(L);
+   // Preserve the error stack during unwinding; successful paths set their own result extent.
+   // A missing argument has the same representation as an explicit nil.
+   if (L->top IS L->base) {
+      setnilV(L->top);
+      L->top++;
+   }
 
-   TValue *o = lj_lib_checkany(L, 1);
+   TValue *o = L->base;
    cTValue *mo;
-   L->top = o + 1;  //  Only keep one argument.
-
    if (!tvisnil(mo = lj_meta_lookup(L, o, MM_tostring))) {
+      if (tvistab(o)) {
+         lj_context_prepare_metamethod_call(L, o, L->base, 0, 1, true);
+         L->top = L->base;
+      }
+      else L->top = o + 1;
       copyTV(L, L->base - 2, mo);  //  Replace callable.
-      frame.disarm();  // Disarm before tail call
       return FFH_TAILCALL;
    }
 
+   L->top = o + 1;
+
    lj_gc_check(L);
    setstrV(L, L->base - 2, lj_strfmt_obj(L, L->base));
-   frame.disarm();  // Disarm - result already in place
    return FFH_RES(1);
 }
 
-//********************************************************************************************************************
-// Base library: throw and catch errors
-//
-// error(Message:str, [Level:int])
-// error(Exception:table, [Level:int]) For rethrowing exceptions
-//
-// Level can be set to zero to suppress the inclusion of source and line number injection.
-
-LJLIB_CF(error)
-{
-   int32_t level = lj_lib_optint(L, 2, 1);
-   lua_settop(L, 1);
-
-   L->pending_exception_message = nullptr;
-   L->pending_exception_source  = nullptr;
-   L->pending_exception_line    = 0;
-   L->pending_exception_valid   = false;
-
-   // Handle exception tables (as received by 'except' keyword) by extracting the message field
-   // The error code will remain in the lua_State, so does not require management.
-   // TODO: There is room for improvement (e.g. retaining stack traces if a stack trace is present) but this will do for
-   // now - a rewrite of exception management is probably in order later.
-
-   bool rethrow_metadata = false;
-   if (lua_istable(L, 1)) {
-      GCstr *message = nullptr;
-      GCstr *source = nullptr;
-      int line = 0;
-      ERR error_code = ERR::Okay;
-      bool has_error_code = false;
-
-      lua_getfield(L, 1, "message");
-      if (tvisstr(L->top - 1)) message = strV(L->top - 1);
-
-      lua_getfield(L, 1, "source");
-      if (tvisstr(L->top - 1)) source = strV(L->top - 1);
-      lua_pop(L, 1);
-
-      lua_getfield(L, 1, "line");
-      if (tvisnum(L->top - 1)) line = int(numV(L->top - 1));
-      lua_pop(L, 1);
-
-      lua_getfield(L, 1, "code");
-      if (tvisnum(L->top - 1)) {
-         error_code = ERR(numberVint(L->top - 1));
-         has_error_code = true;
-      }
-      lua_pop(L, 1);
-
-      if (message) {
-         L->pending_exception_message = message;
-         L->pending_exception_source  = source;
-         L->pending_exception_line    = line;
-         L->pending_exception_valid   = true;
-         if (has_error_code) L->CaughtError = error_code;
-         rethrow_metadata = true;
-         lua_replace(L, 1);  // Replace the table with the message string
-      }
-      else lua_pop(L, 1);  // Pop the nil/non-string message value, keep original table
-   }
-
-   // Handle regular string errors.
-   if (lua_isstring(L, 1)) {
-      if (not rethrow_metadata and tvisstr(L->base)) {
-         L->pending_exception_message = strV(L->base);
-         L->pending_exception_source  = nullptr;
-         L->pending_exception_line    = 0;
-         L->pending_exception_valid   = true;
-      }
-
-      if (level > 0) {
-         if (not L->pending_exception_source and L->pending_exception_line IS 0) {
-            int size;
-            cTValue *frame = lj_debug_frame(L, level, &size);
-            cTValue *nextframe = (frame and size) ? frame + size : nullptr;
-            DebugLocation location;
-
-            if (lj_debug_getloc(L, frame, nextframe, &location)) {
-               L->pending_exception_source = location.source;
-               L->pending_exception_line   = location.line;
-            }
-         }
-
-         luaL_where(L, level);  // Keep unhandled error output compatible.
-         lua_pushvalue(L, 1);
-         lua_concat(L, 2);
-      }
-   }
-   lj_err_run(L); // Does not return
-   return 0;
-}
-
-//********************************************************************************************************************
-
-LJLIB_CF(collectgarbage)
-{
-   kt::Log("collectgarbage").warning("DEPRECATED - Use processing.collect()");
-   return 0;
-}
-
-//********************************************************************************************************************
-// Base library: miscellaneous functions
-
-LJLIB_PUSH(top-2)  //  Upvalue holds weak table.
-LJLIB_CF(newproxy)
-{
-   lua_settop(L, 1);
-   lua_newuserdata(L, 0);
-   if (lua_toboolean(L, 1) IS 0) {  // newproxy(): without metatable.
-      return 1;
-   }
-   else if (lua_isboolean(L, 1)) {  // newproxy(true): with metatable.
-      lua_newtable(L);
-      lua_pushvalue(L, -1);
-      lua_pushboolean(L, 1);
-      lua_rawset(L, lua_upvalueindex(1));  //  Remember mt in weak table.
-   }
-   else {  // newproxy(proxy): inherit metatable.
-      int validproxy = 0;
-      if (lua_getmetatable(L, 1)) {
-         lua_rawget(L, lua_upvalueindex(1));
-         validproxy = lua_toboolean(L, -1);
-         lua_pop(L, 1);
-      }
-      if (!validproxy) lj_err_arg(L, 1, ErrMsg::NOPROXY);
-      lua_getmetatable(L, 1);
-   }
-   lua_setmetatable(L, 2);
-   return 1;
-}
-
-//********************************************************************************************************************
 // RAII Pattern: Uses StackFrame to ensure L->top is restored if tostring conversion
 // fails or triggers an error during the print loop, preventing stack corruption.
 
@@ -727,7 +998,7 @@ LJLIB_CF(print)
          L->top += 2;
          lua_call(L, 1, 1);
          str = lua_tolstring(L, -1, &size);
-         if (!str) lj_err_caller(L, ErrMsg::PRTOSTR);  // StackFrame will restore L->top
+         if (!str) luaL_error(L, ErrMsg::PRTOSTR);  // StackFrame will restore L->top
          L->top--;
       }
 
@@ -739,7 +1010,7 @@ LJLIB_CF(print)
    return 0;
 }
 
-LJLIB_PUSH(top-3)
+LJLIB_PUSH(top-2)
 LJLIB_SET(_VERSION)
 
 //********************************************************************************************************************
@@ -776,11 +1047,15 @@ LJLIB_CF(resolve)
 // Args: (closure:function, expected_type:number)
 // Returns: thunk userdata
 
-LJLIB_CF(__create_thunk)
+LJLIB_INTRINSIC LJLIB_CF(__create_thunk)
 {
    GCfunc *fn = lj_lib_checkfunc(L, 1);
-   int expected_type = (int)lj_lib_checkint(L, 2);
-   lj_thunk_new(L, fn, expected_type);
+   int expected_type = int(lj_lib_checkint(L, 2));
+   if (expected_type != 0xff and
+       (expected_type < int(TiriType::Nil) or expected_type > int(TiriType::Userdata))) {
+      lj_err_argv(L, 2, ErrMsg::BADTYPE, "valid logical type code", "number");
+   }
+   lj_thunk_new(L, fn, uint8_t(expected_type));
    return 1;
 }
 
@@ -836,7 +1111,7 @@ LJLIB_CF(ltr)
 
       if (c IS '%') { // Escape sequence
          if (p >= end) {
-            lj_err_caller(L, ErrMsg::STRPATE);  // Pattern ends with '%'
+            luaL_error(L, ErrMsg::STRPATE);  // Pattern ends with '%'
             return 0;
          }
          int cl = (uint8_t)*p++;
@@ -844,12 +1119,14 @@ LJLIB_CF(ltr)
          // Check for unsupported patterns
 
          if (cl IS 'b') {
-            lj_err_callermsg(L, "Unsupported Lua pattern: %b (balanced matching) has no regex equivalent");
+            lj_err_callermsg(L, ERR::NoSupport,
+               "Unsupported Lua pattern: %b (balanced matching) has no regex equivalent");
             return 0;
          }
 
          if (cl IS 'f') {
-            lj_err_callermsg(L, "Unsupported Lua pattern: %f (frontier pattern) has no regex equivalent");
+            lj_err_callermsg(L, ERR::NoSupport,
+               "Unsupported Lua pattern: %f (frontier pattern) has no regex equivalent");
             return 0;
          }
 
@@ -936,7 +1213,7 @@ LJLIB_CF(ltr)
             }
             first = false;
          }
-         if (not found_close) lj_err_caller(L, ErrMsg::STRPATM);
+         if (not found_close) luaL_error(L, ErrMsg::STRPATM);
       }
       else if (ltr_is_regex_special(c)) { // Escape regex-special chars that aren't Lua-special
          lj_buf_putchar(sb, '\\');
@@ -952,19 +1229,20 @@ LJLIB_CF(ltr)
    return 1;
 }
 
-#include "lj_libdef.h"
-
 //********************************************************************************************************************
+// Compiler-authorised setmetatable().  The parser emits this variant in place of setmetatable() only when the
+// designation target is proven to be an allocation owned by the designating function, so it alone may promote an
+// ordinary table to contextual through a raw `__context = true` marker.
+//
+// Appended at the end of the base library because fast-function ordering is part of the private bytecode ABI for
+// BC_BFUNC; inserting it beside setmetatable() would renumber every later fast function.
 
-static void newproxy_weaktable(lua_State* L)
+LJLIB_INTRINSIC LJLIB_CF(__setmetatable_ctx)
 {
-   // NOBARRIER: The table is new (marked white).
-   GCtab *t = lj_tab_new(L, 0, 1);
-   settabV(L, L->top++, t);
-   setgcref(t->metatable, obj2gco(t));
-   setstrV(L, lj_tab_setstr(L, t, lj_str_newlit(L, "__mode")), lj_str_newlit(L, "kv"));
-   t->nomm = (uint8_t)(~(1u << MM_mode));
+   return setmetatable_impl(L, true);
 }
+
+#include "lj_libdef.h"
 
 //********************************************************************************************************************
 
@@ -973,29 +1251,40 @@ extern int luaopen_base(lua_State* L)
    // NOBARRIER: Table and value are the same.
    GCtab *env = tabref(L->env);
    settabV(L, lj_tab_setstr(L, env, lj_str_newlit(L, "_G")), env);
-   lua_pushliteral(L, "5.4");  //  top-3. // Lua version number, set as _VERSION
-   newproxy_weaktable(L);  //  top-2.
+   lua_pushliteral(L, TIRI_LANGUAGE_VERSION);  //  top-2. // Tiri version number, set as _VERSION
    LJ_LIB_REG(L, "_G", base);
 
+   // Unlike generated fast functions, this compiler-only callable has no source-visible table entry.  Its reserved
+   // BC_BFUNC identity is stable across generated library order changes and the GG slot keeps the closure alive.
+   lua_pushcfunction(L, import_module_activate);
+   lj_builtin_register(L, BuiltinCallableID::ImportModuleActivate, funcV(L->top - 1));
+   L->top--;
+
    // Register function prototypes for compile-time type inference
-   reg_func_prototype("print", { }, {}, FProtoFlags::Variadic);
-   reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str });
+   reg_func_prototype("print", { }, {}, FProtoFlags::Variadic, FProtoArity::required(0));
+   reg_func_prototype("assert", { TiriType::Any }, { TiriType::Any, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("type", { TiriType::Str }, { TiriType::Any });
-   reg_func_prototype("tonumber", { TiriType::Num }, { TiriType::Any, TiriType::Num });
+   reg_func_prototype("rawtype", { TiriType::Str }, { TiriType::Any });
+   reg_func_prototype("tonumber", { TiriType::Num }, { TiriType::Any, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("tostring", { TiriType::Str }, { TiriType::Any });
    reg_func_prototype("pairs", { TiriType::Func, TiriType::Table, TiriType::Nil }, { TiriType::Any });
    reg_func_prototype("ipairs", { TiriType::Func, TiriType::Table, TiriType::Num }, { TiriType::Any });
-   reg_func_prototype("values", { TiriType::Func, TiriType::Table, TiriType::Num }, { TiriType::Any });
+   reg_func_prototype("values", { TiriType::Func, TiriType::Nil, TiriType::Nil }, { TiriType::Any });
+   reg_func_prototype("keys", { TiriType::Func, TiriType::Nil, TiriType::Nil }, { TiriType::Table });
+   reg_func_prototype("forEach", { TiriType::Any }, { TiriType::Any, TiriType::Func });
    reg_func_prototype("rawget", { TiriType::Any }, { TiriType::Table, TiriType::Any });
+   reg_func_prototype("rawequal", { TiriType::Bool }, { TiriType::Any, TiriType::Any });
+   reg_func_prototype("rawlen", { TiriType::Num }, { TiriType::Any });
    reg_func_prototype("rawset", { TiriType::Table }, { TiriType::Table, TiriType::Any, TiriType::Any });
-   reg_func_prototype("error", { }, { TiriType::Any }, FProtoFlags::NoNil);
    reg_func_prototype("getmetatable", { TiriType::Any }, { TiriType::Any });
    reg_func_prototype("setmetatable", { TiriType::Table }, { TiriType::Table, TiriType::Table });
-   reg_func_prototype("select", { TiriType::Any }, { TiriType::Any }, FProtoFlags::Variadic);
-   reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any });
-   reg_func_prototype("newproxy", { TiriType::Any }, { TiriType::Any });
-   reg_func_prototype("__create_thunk", { TiriType::Any }, { TiriType::Func, TiriType::Num });
+   reg_func_prototype("next", { TiriType::Any, TiriType::Any }, { TiriType::Table, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(1));
    reg_func_prototype("ltr", { TiriType::Str }, { TiriType::Str });
+   reg_func_prototype("isthunk", { TiriType::Bool }, { TiriType::Any });
+   reg_func_prototype("resolve", { TiriType::Any }, { TiriType::Any });
 
    return 2;
 }

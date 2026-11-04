@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,26 +5,20 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
 //
-// Adaptation for high precision colors has been sponsored by
-// Liberty Technology Systems, Inc., visit http://lib-sys.com
+// Adaptation for high precision colors has been sponsored by Liberty Technology Systems, Inc., visit http://lib-sys.com
 //
-// Liberty Technology Systems, Inc. is the provider of
-// PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
+// Liberty Technology Systems, Inc. is the provider of PostScript and PDF technology for software developers.
+// ---
+// Generates RGB pattern spans from a repeated source buffer. Hooks into pattern filters, image accessors, and RGB
+// renderer_scanline paths. In the vector renderer it fills geometry with tiled RGB image patterns.
 
-
-#ifndef AGG_SPAN_PATTERN_RGB_INCLUDED
-#define AGG_SPAN_PATTERN_RGB_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //========================================================span_pattern_rgb
     template<class Source> class span_pattern_rgb
     {
     public:
@@ -35,7 +28,6 @@ namespace agg
         typedef typename color_type::value_type value_type;
         typedef typename color_type::calc_type calc_type;
 
-        //--------------------------------------------------------------------
         span_pattern_rgb() {}
         span_pattern_rgb(source_type& src,
                          unsigned offset_x, unsigned offset_y) :
@@ -45,7 +37,6 @@ namespace agg
             m_alpha(color_type::base_mask)
         {}
 
-        //--------------------------------------------------------------------
         void   attach(source_type& v)      { m_src = &v; }
                source_type& source()       { return *m_src; }
         const  source_type& source() const { return *m_src; }
@@ -86,6 +77,3 @@ namespace agg
     };
 
 }
-
-#endif
-

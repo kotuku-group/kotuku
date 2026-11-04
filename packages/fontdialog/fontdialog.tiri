@@ -1,0 +1,440 @@
+@Package(name="gui/fontdialog", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui', 'gui/listview', 'gui/window', 'gui/button', 'config'
+   include 'display', 'font'
+
+   namespace gui
+   module font as mFont
+
+   gui.dialog ?= { }
+
+SIZES <const> = array<int> { 6, 8, 10, 12, 14, 18, 24, 30, 36, 42, 50, 70, 90, 100, 120 }
+
+gui.dialog.font = function(Options)
+   self = entity { -- Public interface
+      face      = 'Noto Sans',
+      pointSize = 12,
+      style     = 'Regular',
+      feedback  = Options.feedback,
+      colour    = gui.srgb(0, 0, 0)
+   }
+
+   lLongText = [[
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas varius dignissim sapien eu pellentesque. Ètiam libero velit, vehicula nec ante non, sodales ultricies metus. Phasellus commodo dolor turpis. Âliquam sed pellentesque magna, non luctus sapien. Ètiam molestie dui nibh, nec finibus velit molestie non. Ut feugiat maximus elit nec mattis. Suspendisse porta vestibulum faucibus. Sed iaculis placerat justo id lobortis. Interdum et malesuada fames ac ante ipsum primis in faucibus.
+
+Morbi tincidunt varius ante sit amet pulvinar. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Nulla ante orci, faucibus non odio viverra, tempus rutrum ex. Mauris sit amet hendrerit quam. Vestibulum tincidunt magna suscipit ultrices congue. Aliquam et blandit tellus, ut porta libero. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Cras vulputate congue eros sed placerat. Nunc eleifend nec felis sit amet fermentum. Cras suscipit ullamcorper eros, id consectetur quam blandit ac.
+
+Suspendisse sed diam ut sem euismod accumsan commodo vehicula sapien. Nullam nisl augue, suscipit vitae posuere sit amet, porttitor et ex. Duis at elit pellentesque, placerat risus in, placerat mauris. Nam in metus sed dui iaculis aliquam sed ut sem. In varius euismod quam, sed lobortis sem. Aliquam nec dui magna. Suspendisse lobortis enim vitae vestibulum accumsan. Pellentesque ac tincidunt est. Ut porta, arcu eu ornare placerat, urna urna venenatis est, at imperdiet lectus justo vel neque. Sed congue dolor eget erat dignissim sollicitudin. Aliquam mollis massa in est gravida faucibus.
+
+Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas non nisi vehicula, aliquam turpis in, mattis lectus. Dõnec magna metus, tempor fringilla metus ac, ultricies efficitur ante. Quisque at semper elit. Ut in purus in est venenatis interdum. Curabitur a dui mauris. Suspendisse potenti. Suspendisse tempus dictum ipsum, id condimentum nulla fermentum sed. Etiam mattis ligula lacus, a tempor felis sodales fermentum. Donec in risus vulputate, tempor neque vel, volutpat mauris. Integer placerat a nunc a aliquet. Phasellus quis porta leo. Etiam et arcu ex. Nunc dictum at ipsum eu dapibus.
+
+Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.
+]]
+
+   local vwSize, vwStyle, vwFace
+   local completing = false
+   local closed = false
+   local ready = false
+
+   function[self] closeDialog()
+      if closed then return end
+      closed = true
+      completing = true
+      defer
+         gui.dialog.active[&&] = nil
+         &clear()
+         processing.collect('defer')
+      end
+      &window?.surface?.free()
+   end
+
+   defer if not ready then closeDialog() end end
+
+   function[self] respond(Accepted:bool!)
+      if completing then return end
+      completing = true
+      defer closeDialog() end
+      &feedback?(Accepted)
+   end
+
+   self.close = function[self]() respond(false) end
+
+   function exampleMargin()
+      return math.round(&examplePage.width * 0.05)
+   end
+
+   self.refreshGuidelines = function()
+      if &exampleText then
+         seq       = ''
+         gap       = exampleMargin()
+         spacing   = &exampleText.lineSpacing
+         pageWidth = &examplePage.width
+         baseline  = &exampleText.y
+
+         x1 = gap
+         x2 = pageWidth - gap
+         for y in {baseline into &examplePage.height by spacing} do
+            seq ..= string.format('M%f,%f L%f,%f ', x1, y, x2, y)
+         end
+         &guidelines.sequence = seq
+
+         &exampleText.{ inlineSize = x2 - x1, x = gap }
+      else
+         &guidelines.sequence = 'M-1,-1 Z'
+      end
+   end
+
+   function refreshExample()
+      if not &guidelines then
+         local page_colour = gui.strToRGB(&window.theme.page.bkgd.fill)
+         line_col = (page_colour.luminance(page_colour) > 0.5) ? 'rgb(0 0 0 / .25)' :
+            'rgb(255 255 255 / .15)'
+         &guidelines = &examplePage.new('VectorPath', { strokeWidth = 0.5, stroke = line_col })
+      end
+
+      pageWidth = &examplePage.width
+      gap = exampleMargin()
+
+      &exampleText?.free()
+      &exampleText = nil
+
+      try
+         &exampleText = &examplePage.new('VectorText', {
+            x          = gap,
+            fill       = Options.colour ? tostring(&colour) : &window.theme.page.text.fill,
+            inlineSize = pageWidth - (gap * 2),
+            face       = &face,
+            fontSize   = &pointSize .. 'pt',
+            fontStyle  = &style,
+            string     = Options.example ?? lLongText,
+            textFlags  = VTXF_RASTER
+         })
+      except ex
+         msg(f'Failed to create example text for {&face} {&style}')
+      end
+
+      &exampleText?.y = math.floor(gap + &exampleText.displaySize)
+
+      &refreshGuidelines()
+
+      processing.collect()
+      &viewport.acDraw()
+   end
+
+   -- Load the system font catalogue and convert its Config strings to values used by the dialog.
+
+   function getFonts()
+      &prvFonts = resolve(gui.fontList)
+   end
+
+   function showFontSizes(List)
+      sizes = array<table> { }
+      for i in {0 to #List} do
+         sizes.push({ id=List[i], name=List[i] })
+      end
+      vwSize.loadItems(sizes)
+   end
+
+   -- Refresh the style list for the selected face
+
+   function showStyles(Face)
+      styles = array<table> { }
+      if &prvFonts[Face].alias then Face = &prvFonts[Face].alias end
+      for v in values(&prvFonts[Face].styles) do
+         styles.push({ id=v, name=v })
+      end
+      vwStyle.loadItems(styles)
+   end
+
+   function highlightSize(Size)
+      Size ?! return
+      vwSize.deselectAll()
+      vwSize.selectItems(function(Item)
+         if Item.id is Size then return true end
+      end)
+   end
+
+   using self do
+      getFonts()
+
+      -- Disassemble any compact font face definition.  Trailing and empty parts are optional, e.g. 'Noto Sans' or
+      -- 'Noto Sans::Bold'.
+
+      if Options.face then
+         s = string.split(Options.face, ':') -- FaceName, Size, Style, Colour
+         s.resize(4) -- Missing parts are padded with nil
+         if s[0]?? then Options.face      = s[0] end
+         if s[1]?? then Options.pointSize = tonumber(s[1]) ?? Options.pointSize end
+         if s[2]?? then Options.style     = s[2] end
+         if s[3]?? then Options.colour    = s[3] end
+      end
+
+      if Options.pointSize then
+         &pointSize = math.clamp(tonumber(Options.pointSize) ?? &pointSize, 4, 400)
+      end
+
+      &style = Options.style ?? &style
+      if Options.colour is <str> then
+         &colour = gui.strToRGB(Options.colour)
+      elseif Options.colour is <table> then
+         &colour = gui.nrgb(Options.colour.r, Options.colour.g, Options.colour.b, Options.colour.a)
+      end
+
+      &window = gui.window({
+         insideWidth  = gui.rpixel('1000dp'),
+         insideHeight = gui.rpixel('900dp'),
+         minWidth     = gui.rpixel('700dp'),
+         minHeight    = gui.rpixel('600dp'),
+         maxWidth     = gui.rpixel('1500dp'),
+         maxHeight    = gui.rpixel('1200dp'),
+         quit         = false,
+         popOver      = Options.popOver,
+         icon         = 'items/font',
+         title        = Options.title ?? 'Select a font',
+         modal        = Options.modal ?? false,
+         events = {
+            close = function()
+               respond(false)
+            end
+         }
+      })
+
+      &window.surface.subscribe('free', function[<weak> &&]()
+         if not completing then closeDialog() end
+      end)
+
+      &viewport = &window.clientViewport({
+         resizeEvent = function()
+            self.refreshGuidelines()
+         end
+      })
+
+      -- Okay and cancel buttons
+
+      footer = &window.margins.bottom
+
+      okay = gui.button({
+         target  = &viewport,
+         label   = 'OK',
+         xOffset = gui.sizing.widget.gap,
+         yOffset = footer,
+         icon    = 'items/checkmark',
+         primary = true,
+         events  = {
+            activate = function()
+               respond(true)
+            end
+         }
+      })
+
+      cancel = gui.button({
+         target  = &viewport,
+         label   = 'Cancel',
+         xOffset = okay.viewport.width + (gui.sizing.widget.gap * 2),
+         yOffset = footer,
+         icon    = 'items/cancel',
+         events  = {
+            activate = function()
+               respond(false)
+            end
+         }
+      })
+
+      footer += okay.viewport.height + gui.sizing.widget.gap
+
+      -- Font example area
+
+      &exampleVP = &viewport.new('VectorViewport', {
+         x       = gui.rpixel('310dp'),
+         y       = &window.margins.top,
+         xOffset = &window.margins.right,
+         yOffset = footer
+      })
+
+      &exampleBkgd = &exampleVP.new('VectorRectangle', table.merge({
+         x = 0, y = 0, width = '100%', height = '100%'
+      }, table.merge(&window.theme.page.bkgd, &window.theme.page.border)))
+
+      &exampleView = &exampleVP.new('VectorViewport', {
+         x = gui.sizing.widget.gap, y = gui.sizing.widget.gap, xOffset = gui.sizing.widget.gap, yOffset = gui.sizing.widget.gap, overflow = VOF_HIDDEN
+      })
+
+      &examplePage = &exampleView.new('VectorViewport', {
+         name='view_page', width='100%', height='100%'
+      })
+
+      refreshExample()
+
+      -- Font size selection
+
+      vwSize = gui.listView({
+         x          = &exampleVP.x - gui.sizing.widget.gap - gui.rpixel('90dp'),
+         yOffset    = footer,
+         height     = gui.rpixel('210dp'),
+         width      = gui.rpixel('90dp'),
+         target     = &viewport,
+         style      = 'LongList',
+         sensitive  = true,
+         showIcons  = false,
+         textAttrib = 'name',
+         events = {
+            itemSelected = function(View:table!, Reason:str!, Item:table!)
+               using self do
+                  selection = Item.name
+                  &pointSize = math.clamp(selection, 4, 400)
+                  processing.collect()
+                  refreshExample()
+               end
+            end
+         }
+      })
+
+      showFontSizes(SIZES)
+
+      -- Font style selection
+
+      vwStyle = gui.listView({
+         x            = &window.margins.left,
+         yOffset      = footer,
+         height       = gui.rpixel('210dp'),
+         width        = vwSize.viewport.x - gui.sizing.widget.gap - &window.margins.left,
+         target       = &viewport,
+         sensitive    = true,
+         showIcons    = false,
+         textAttrib   = 'name',
+         events = {
+            itemSelected = function(View:table!, Reason:str!, Item:table!)
+               using self do
+                  &style = Item.name
+                  processing.collect()
+                  refreshExample()
+               end
+            end
+         }
+      })
+
+      footer += vwStyle.viewport.height + gui.sizing.widget.gap
+
+      -- Available font faces
+
+      vwFace = gui.listView({
+         x          = &window.margins.left,
+         y          = &window.margins.top,
+         width      = &exampleVP.x - gui.sizing.widget.gap - &window.margins.left,
+         yOffset    = footer,
+         target     = &viewport,
+         sensitive  = true,
+         textAttrib = 'name',
+         events = {
+            itemSelected = function(View, Reason, Item)
+               using self do
+                  assert(&prvFonts[Item.name], f'Font "{Item.name}" not recognised.')
+
+                  &face = Item.name
+
+                  showStyles(Item.name)
+
+                  -- Highlight the correct style, trying to keep the current setting if possible.
+
+                  if &style and &prvFonts[&face] then
+                     supported = false
+                     face = &face
+                     if &prvFonts[face].alias then face = &prvFonts[face].alias end
+
+                     for v in values(&prvFonts[face].styles) do
+                        if v is &style then
+                           supported = true
+                           break
+                        end
+                     end
+
+                     if not supported then &style = 'Regular' end
+                  else
+                     &style = 'Regular'
+                  end
+
+                  -- The callback runs in the view's context, so &style must be read beforehand.
+
+                  vwStyle.selectItems(function(Item)
+                     if Item.id is &style then return true end
+                  end)
+
+                  font = &prvFonts[Item.name]
+                  if font.alias then font = &prvFonts[font.alias] end
+
+                  sizes = font.sizes
+                  if font.scalable or (not sizes??) then
+                     sizes = SIZES
+                  else
+                     -- Bitmap fonts must use an available size, preferring the largest not above the request.
+                     selected_size = sizes[0]
+                     for size in values(sizes) do
+                        if size <= &pointSize and (selected_size > &pointSize or size > selected_size) then
+                           selected_size = size
+                        elseif selected_size > &pointSize and size < selected_size then
+                           selected_size = size
+                        end
+                     end
+                     &pointSize = selected_size
+                  end
+
+                  showFontSizes(sizes)
+
+                  highlightSize(&pointSize)
+                  refreshExample()
+               end
+            end
+         }
+      })
+
+      faces = { }
+      for _, font in &prvFonts.sortByKeys() do
+         if font.hidden?? then continue end
+
+         new_font = { id=font.name, name=font.name }
+         if font.alias then font = &prvFonts[font.alias] end
+         new_font.icon = font.scalable ? 'items/font' : 'layout/text_sans'
+         faces.insert(new_font)
+      end
+      vwFace.loadItems(faces)
+
+      -- Preselect list items based on the preferences supplied by the client.
+
+      vwFace.selectItems(function(Item)
+         if Item.id is (Options.face ?? 'Noto Sans') then return true end
+      end)
+
+      vwStyle.deselectAll()
+
+      vwStyle.selectItems(function(Item)
+         if Item.id is &style then return true end
+      end)
+
+      highlightSize(&pointSize)
+
+      &window.moveToFront()
+      &window.show(true)
+      --vwFace.acFocus()
+
+      gui.dialog.active[&&] = true
+      ready = true
+      return &&
+   end
+end
+
+   -- This sub-routine is provided for languages other than Tiri to utilise the module.
+
+@if(imported=false)
+   dlg = gui.dialog.font({
+      popOver    = arg('popOver'),
+      target     = arg('target'),
+      modal      = arg('modal'),
+      icon       = arg('icon')
+   })
+
+   return dlg.window.surface.id
+@end

@@ -1,0 +1,118 @@
+-- Regression coverage for new local slots overlapping saved assignment operands and RHS values.
+
+function pair()
+   return 1, 2
+end
+
+@Test(hotpath=true) function NewLocalBeforeMember()
+   self = {}
+   err, self.a = pair()
+   assert(err is 1 and self.a is 2, 'A new local must preserve the saved member target')
+end
+
+@Test(hotpath=true) function LiteralValues()
+   target = {}
+   first, target.value, second = 10, 20, 30
+   assert(first is 10 and target.value is 20 and second is 30,
+      'Multiple new locals must preserve member operands and all RHS values')
+end
+
+@Test(hotpath=true) function ComputedTarget()
+   target = {}
+   key = 'value'
+   first, second, target[key], third = 10, 20, 30, 40
+   assert(first is 10 and second is 20 and target.value is 30 and third is 40,
+      'New locals must preserve both the table and computed key')
+end
+
+@Test(hotpath=true) function MemberBeforeNewLocal()
+   target = {}
+   target.value, result = pair()
+   assert(target.value is 1 and result is 2, 'A member before a new local must retain its call result')
+end
+
+@Test(hotpath=true) function PrefixedCallResults()
+   target = {}
+   first, target.value, last = 10, pair()
+   assert(first is 10 and target.value is 1 and last is 2,
+      'A final call must supply only the results remaining after the prefix')
+end
+
+@Test(hotpath=true) function VarargResults()
+   function assign(...)
+      target = {}
+      first, target.value, last = ...
+      assert(first is 10 and target.value is 20 and last is 30,
+         'Varargs must fill mixed targets without overwriting operands')
+   end
+   assign(10, 20, 30)
+end
+
+@Test(hotpath=true) function PrefixedVarargResults()
+   function assign(...)
+      target = {}
+      first, target.value, last = 10, ...
+      assert(first is 10 and target.value is 20 and last is 30,
+         'Prefixed varargs must preserve result positions')
+   end
+   assign(20, 30)
+end
+
+@Test(hotpath=true) function MissingAndExtraResults()
+   target = { value = 99 }
+   first, target.value, last = pair()
+   assert(first is 1 and target.value is 2 and last is nil, 'Missing call results must be padded with nil')
+
+   second, target.value = 10, pair()
+   assert(second is 10 and target.value is 1, 'Excess call results must not shift earlier values')
+end
+
+@Test(hotpath=true) function ExistingLocalAndBlanks()
+   existing = 0
+   first, _, second, existing = 10, 20, 30, 40
+   assert(first is 10 and second is 30 and existing is 40,
+      'New local slots must not overwrite later results when no member operands are present')
+end
+
+@Test(hotpath=true) function TypedNewLocals()
+   first:num, second:num = pair()
+   assert(first is 1 and second is 2, 'Typed new locals must retain their respective call results')
+end
+
+@Test(hotpath=true) function TemporaryArrayTarget()
+   target = array<int> { 0 }
+   function destination()
+      return target
+   end
+   first, destination()[0] = pair()
+   assert(first is 1 and target[0] is 2, 'A temporary typed array target must survive local creation')
+end
+
+@Test(hotpath=true) function SavedTargetBeforeRHSMutation()
+   target = {}
+   original = target
+   function values()
+      target = {}
+      return 10, 20
+   end
+   first, target.value = values()
+   assert(first is 10 and original.value is 20 and target.value is nil,
+      'The store must use the table captured before RHS evaluation')
+end
+
+@Test(hotpath=true) function TargetEvaluatedOnceBeforeRHS()
+   target = {}
+   order = ''
+   function destination()
+      order ..= 'L'
+      return target
+   end
+   function values()
+      order ..= 'R'
+      return 10, 20
+   end
+
+   first, destination().value = values()
+   assert(first is 10 and target.value is 20, 'An evaluated member target must survive local creation')
+   assert(order is 'LR', 'The target must be evaluated once, before the RHS')
+end

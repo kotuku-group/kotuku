@@ -9,9 +9,22 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
 --]]
 
    include 'network'
+   module network as mNet
 
    glBasePort = 19840  -- Base port for coexistence tests
    glTestTimeout = 4.0
+
+function freeNetworkObject(Object)
+   if Object then Object.free() end
+end
+
+function freeNetworkObjectTable(Objects)
+   if Objects then
+      for _, object in pairs(Objects) do
+         freeNetworkObject(object)
+      end
+   end
+end
 
 ------------------------------------------------------------------------------------------------------------------------
 -- Test UDP and TCP servers running simultaneously
@@ -24,18 +37,18 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
    tcpReceived = false
 
    -- Create UDP server
-   udpServer = obj.new('netsocket', {
+   udpServer = obj.new('netserver', {
       port = udpPort,
       address = '127.0.0.1',
-      flags = 'SERVER|UDP',
+      flags = 'UDP',
       incoming = function(Socket)
          buffer = array<byte, 1024>
          source = struct.new('IPAddress')
          err, bytesRead = Socket.mtRecvFrom(source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
-            msg = buffer:getString(0, bytesRead)
+            local msg = buffer.getString(0, bytesRead)
             logOutput('[UDP Server] Received: "' .. msg .. '"')
-            if (msg:startsWith('UDP Test')) then
+            if (msg.startsWith('UDP Test')) then
                udpReceived = true
                -- Send UDP response
                Socket.mtSendTo(source, 'UDP Response')
@@ -45,10 +58,9 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
    })
 
    -- Create TCP server
-   tcpServer = obj.new('netsocket', {
+   tcpServer = obj.new('netserver', {
       port = tcpPort,
       address = '127.0.0.1',
-      flags = 'SERVER',  -- TCP only
       feedback = function(Socket, Client, State)
          if (State is NTC_CONNECTED) then
             logOutput('[TCP Server] Client connected')
@@ -61,9 +73,9 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
          buffer = array<byte, 1024>
          err, readLen = Client.acRead(buffer)
          if (err is ERR_Okay and readLen > 0) then
-            msg = buffer:getString(0, readLen)
+            local msg = buffer.getString(0, readLen)
             logOutput('[TCP Server] Received: "' .. msg .. '"')
-            if (msg:startsWith('TCP Test')) then
+            if (msg.startsWith('TCP Test')) then
                tcpReceived = true
                if (udpReceived and tcpReceived) then
                   Socket.acSignal()
@@ -73,7 +85,7 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { tcpServer } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { tcpServer } })
    processing.halt(0.2)  -- Let servers initialize
 
    -- Create UDP client
@@ -84,7 +96,7 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
          source = struct.new('IPAddress')
          err, bytesRead = Socket.mtRecvFrom(source, buffer)
          if (err is ERR_Okay) and (bytesRead > 0) then
-            msg = buffer:getString(0, bytesRead)
+            local msg = buffer.getString(0, bytesRead)
             logOutput('[UDP Client] Received response: "' .. msg .. '"')
          end
       end
@@ -106,11 +118,18 @@ This test verifies that UDP and TCP sockets can coexist and operate independentl
          buffer = array<byte, 1024>
          err, readLen = Socket.acRead(buffer)
          if (err is ERR_Okay and readLen > 0) then
-            msg = buffer:getString(0, readLen)
+            local msg = buffer.getString(0, readLen)
             logOutput('[TCP Client] Received: "' .. msg .. '"')
          end
       end
    })
+
+   defer
+      freeNetworkObject(tcpClient)
+      freeNetworkObject(udpClient)
+      freeNetworkObject(tcpServer)
+      freeNetworkObject(udpServer)
+   end
 
    -- Send UDP message
 
@@ -139,10 +158,10 @@ end
 
    -- Create multiple servers of different types
    servers = {
-      udp1 = obj.new('netsocket', {
+      udp1 = obj.new('netserver', {
          port = basePort + 1,
          address = '127.0.0.1',
-         flags = 'SERVER|UDP',
+         flags = 'UDP',
          incoming = function(Socket)
             buffer = array<byte, 256>
             source = struct.new('IPAddress')
@@ -155,10 +174,9 @@ end
          end
       }),
 
-      tcp1 = obj.new('netsocket', {
+      tcp1 = obj.new('netserver', {
          port = basePort + 2,
          address = '127.0.0.1',
-         flags = 'SERVER',
          feedback = function(Socket, Client, State)
             if (State is NTC_CONNECTED) then
                results.tcp1 = true
@@ -168,10 +186,10 @@ end
          end
       }),
 
-      udp2 = obj.new('netsocket', {
+      udp2 = obj.new('netserver', {
          port = basePort + 3,
          address = '127.0.0.1',
-         flags = 'SERVER|UDP|BROADCAST',
+         flags = 'UDP|BROADCAST',
          multicastTTL = 2,
          incoming = function(Socket)
             buffer = array<byte, 256>
@@ -186,7 +204,7 @@ end
       })
    }
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { servers.udp1, servers.tcp1, servers.udp2 } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { servers.udp1, servers.tcp1, servers.udp2 } })
    processing.halt(0.2)  -- Let servers initialize
 
    -- Create clients and send messages
@@ -195,6 +213,11 @@ end
       tcp1 = obj.new('netsocket', { address = '127.0.0.1', port = basePort + 2 }),
       udp2 = obj.new('netsocket', { flags = 'UDP' })
    }
+
+   defer
+      freeNetworkObjectTable(clients)
+      freeNetworkObjectTable(servers)
+   end
 
    dest = struct.new('IPAddress')
    check(mNet.StrToAddress('127.0.0.1', dest))
@@ -223,11 +246,11 @@ end
 
    -- Create and destroy UDP socket
    do
-      udpSocket = obj.new('netsocket', { port = testPort, address = '127.0.0.1', flags = 'SERVER|UDP' })
+      udpSocket = obj.new('netserver', { port = testPort, address = '127.0.0.1', flags = 'UDP' })
       logOutput('UDP socket created and bound to port ' .. testPort)
    end  -- Socket goes out of scope and should be cleaned up
 
    -- Create TCP socket on same port (should work after UDP cleanup)
-   tcpSocket = obj.new('netsocket', { port = testPort, address = '127.0.0.1', flags = 'SERVER' })
+   tcpSocket = obj.new('netserver', { port = testPort, address = '127.0.0.1' })
    logOutput('TCP socket successfully bound to same port after UDP cleanup')
 end

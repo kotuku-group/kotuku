@@ -1,0 +1,77 @@
+#!/usr/bin/env origo
+
+-- Independent RFC 8656 wire fixtures; does not call the production STUN/TURN codec.
+-- From the repository root, verify with:
+--   origo tools/flute.tiri file=src/webrtc/tests/verify_turn_fixtures.tiri --log-warning
+-- Regenerate with:
+--   origo src/webrtc/tests/verify_turn_fixtures.tiri write=true --log-warning
+-- Override the fixture directory with fixtures=/path/to/fixtures.
+
+include 'crypto'
+module crypto as mCrypto
+
+function network16(Value:num!):str
+   return string.char((Value >> 8) & 0xff, Value & 0xff)
+end
+
+function network32(Value:num!):str
+   return network16((Value >> 16) & 0xffff) .. network16(Value & 0xffff)
+end
+
+function attribute(Kind:num!, Value:str!):str
+   return network16(Kind) .. network16(#Value) .. Value .. string.rep('\0', (4 - #Value % 4) % 4)
+end
+
+function message(Kind:num!, Serial:num!, Attributes:array<table>!, Authenticated:bool):str
+   transaction = string.char(Serial & 0xff, (Serial >> 8) & 0xff,
+      (Serial >> 16) & 0xff, (Serial >> 24) & 0xff) .. string.rep('\0', 8)
+   function header(Length:num!):str
+      return network16(Kind) .. network16(Length) .. network32(0x2112a442) .. transaction
+   end
+   payload = ''
+   for item in values(Attributes) do payload ..= attribute(item.kind, item.value) end
+   if Authenticated then
+      key = array<byte, 16>
+      digest = array<byte, 20>
+      check mCrypto.Hash(HASH_MD5, 'user:example.org:pass', key)
+      check mCrypto.HMAC(HASH_SHA1, key, header(#payload + 24) .. payload, digest)
+      payload ..= attribute(0x0008, digest.getString(0, #digest))
+   end
+   return header(#payload) .. payload
+end
+
+function fixtures():array<table>
+   return array<table> {
+      { name='turn_allocate_401.turn', wire=message(0x0113, 1, array<table> {
+         { kind=0x0009, value=string.char(0, 0, 4, 1) },
+         { kind=0x0014, value='example.org' },
+         { kind=0x0015, value='first-nonce' }
+      }, false) },
+      { name='turn_allocate_success.turn', wire=message(0x0103, 2, array<table> {
+         -- 192.0.2.2:50000 and 192.0.2.3:40000, XORed with the RFC magic cookie.
+         { kind=0x0016, value=string.char(0, 1, 0xe2, 0x42, 0xe1, 0x12, 0xa6, 0x40) },
+         { kind=0x0020, value=string.char(0, 1, 0xbd, 0x52, 0xe1, 0x12, 0xa6, 0x41) },
+         { kind=0x000d, value=network32(600) }
+      }, true) }
+   }
+end
+
+folder = arg('fixtures', 'src/webrtc/tests/fixtures')
+write_mode = arg('write', 'false')
+if write_mode != 'true' and write_mode != 'false' then raise 'write must be true or false' end
+
+@Test function VerifyTurnFixtures()
+   assert(write_mode is 'false', 'Regenerate fixtures separately before running verification')
+   for fixture in values(fixtures()) do
+      assert(io.readAll(folder .. '/' .. fixture.name) is fixture.wire, 'Fixture mismatch: ' .. fixture.name)
+   end
+   print('2 independent TURN fixtures verified')
+end
+
+if write_mode is 'true' then
+   for fixture in values(fixtures()) do io.writeAll(folder .. '/' .. fixture.name, fixture.wire) end
+   print('2 independent TURN fixtures written')
+elseif not arg('file') then
+   -- Flute supplies file= and invokes the annotated test after loading this script.
+   VerifyTurnFixtures()
+end

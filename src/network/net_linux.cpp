@@ -13,13 +13,13 @@ static ERR convert_lookup_error(int Result)
    switch (Result) {
       case 0: return ERR::Okay;
       case EAI_AGAIN: return ERR::Retry;
-      case EAI_FAIL: return ERR::Failed;
+      case EAI_FAIL: return ERR::HostNotFound;
       case EAI_MEMORY: return ERR::Memory;
       #ifdef EAI_OVERFLOW
          case EAI_OVERFLOW: return ERR::BufferOverflow;
       #endif
       case EAI_SYSTEM: return ERR::SystemCall;
-      default: return ERR::Failed;
+      default: return ERR::HostNotFound;
    }
 }
 
@@ -294,10 +294,28 @@ public:
       return false;
    }
 
+   ERR enable_keep_alive(SocketHandle Handle) override
+   {
+      int keep_alive = 1;
+      return setsockopt(Handle, SOL_SOCKET, SO_KEEPALIVE, &keep_alive, sizeof(keep_alive)) ?
+         ERR::SystemCall : ERR::Okay;
+   }
+
    ERR enable_broadcast(SocketHandle Handle) override
    {
       int broadcast = 1;
       return setsockopt(Handle, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) ? ERR::SystemCall : ERR::Okay;
+   }
+
+   ERR set_socket_buffer_sizes(SocketHandle Handle, int ReceiveBytes, int SendBytes) override
+   {
+      if (ReceiveBytes > 0) {
+         if (setsockopt(Handle, SOL_SOCKET, SO_RCVBUF, &ReceiveBytes, sizeof(ReceiveBytes))) return ERR::SystemCall;
+      }
+      if (SendBytes > 0) {
+         if (setsockopt(Handle, SOL_SOCKET, SO_SNDBUF, &SendBytes, sizeof(SendBytes))) return ERR::SystemCall;
+      }
+      return ERR::Okay;
    }
 
    ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) override
@@ -310,59 +328,53 @@ public:
       }
    }
 
-   ERR parse_multicast_group(CSTRING Group, bool &IPv6) override
+   ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      if (!Group) return ERR::Args;
+      if (Group.empty()) return ERR::Args;
 
-      struct in6_addr addr6;
-      struct in_addr addr4;
-      kt::clearmem(&addr6, sizeof(addr6));
-      kt::clearmem(&addr4, sizeof(addr4));
+      std::string group(Group);
 
-      if (::inet_pton(AF_INET6, Group, &addr6) IS 1) {
+      struct ipv6_mreq mreq6;
+      kt::clearmem(&mreq6, sizeof(mreq6));
+      if (::inet_pton(AF_INET6, group.c_str(), &mreq6.ipv6mr_multiaddr) IS 1) {
          IPv6 = true;
-         return ERR::Okay;
+         mreq6.ipv6mr_interface = 0;
+         return setsockopt(Handle, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *)&mreq6, sizeof(mreq6)) ?
+            ERR::SystemCall : ERR::Okay;
       }
-      else if (::inet_pton(AF_INET, Group, &addr4) IS 1) {
+      else {
+         struct ip_mreq mreq4;
+         kt::clearmem(&mreq4, sizeof(mreq4));
+         if (::inet_pton(AF_INET, group.c_str(), &mreq4.imr_multiaddr) != 1) return ERR::Args;
          IPv6 = false;
-         return ERR::Okay;
-      }
-      else return ERR::Args;
-   }
-
-   ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
-   {
-      if (IPv6) {
-         struct ipv6_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET6, Group, &mreq.ipv6mr_multiaddr) != 1) return ERR::Args;
-         mreq.ipv6mr_interface = 0;
-         return setsockopt(Handle, IPPROTO_IPV6, IPV6_JOIN_GROUP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
-      }
-      else {
-         struct ip_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET, Group, &mreq.imr_multiaddr) != 1) return ERR::Args;
-         mreq.imr_interface.s_addr = INADDR_ANY;
-         return setsockopt(Handle, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
+         mreq4.imr_interface.s_addr = INADDR_ANY;
+         return setsockopt(Handle, IPPROTO_IP, IP_ADD_MEMBERSHIP, (char *)&mreq4, sizeof(mreq4)) ?
+            ERR::SystemCall : ERR::Okay;
       }
    }
 
-   ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
+   ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      if (IPv6) {
-         struct ipv6_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET6, Group, &mreq.ipv6mr_multiaddr) != 1) return ERR::Args;
-         mreq.ipv6mr_interface = 0;
-         return setsockopt(Handle, IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
+      if (Group.empty()) return ERR::Args;
+
+      std::string group(Group);
+
+      struct ipv6_mreq mreq6;
+      kt::clearmem(&mreq6, sizeof(mreq6));
+      if (::inet_pton(AF_INET6, group.c_str(), &mreq6.ipv6mr_multiaddr) IS 1) {
+         IPv6 = true;
+         mreq6.ipv6mr_interface = 0;
+         return setsockopt(Handle, IPPROTO_IPV6, IPV6_LEAVE_GROUP, (char *)&mreq6, sizeof(mreq6)) ?
+            ERR::SystemCall : ERR::Okay;
       }
       else {
-         struct ip_mreq mreq;
-         kt::clearmem(&mreq, sizeof(mreq));
-         if (::inet_pton(AF_INET, Group, &mreq.imr_multiaddr) != 1) return ERR::Args;
-         mreq.imr_interface.s_addr = INADDR_ANY;
-         return setsockopt(Handle, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char *)&mreq, sizeof(mreq)) ? ERR::Failed : ERR::Okay;
+         struct ip_mreq mreq4;
+         kt::clearmem(&mreq4, sizeof(mreq4));
+         if (::inet_pton(AF_INET, group.c_str(), &mreq4.imr_multiaddr) != 1) return ERR::Args;
+         IPv6 = false;
+         mreq4.imr_interface.s_addr = INADDR_ANY;
+         return setsockopt(Handle, IPPROTO_IP, IP_DROP_MEMBERSHIP, (char *)&mreq4, sizeof(mreq4)) ?
+            ERR::SystemCall : ERR::Okay;
       }
    }
 
@@ -383,7 +395,7 @@ public:
    {
       std::vector<uint8_t> temp(Length);
       auto error = receive(Handle, temp.data(), temp.size(), Received);
-      if ((error IS ERR::Okay) and (Received > 0)) {
+      if ((!error) and (Received > 0)) {
          Buffer.insert(Buffer.end(), temp.begin(), temp.begin() + Received);
       }
       return error;
@@ -400,7 +412,7 @@ public:
       Length = 0;
       if ((errno IS EAGAIN) or (errno IS EWOULDBLOCK)) return ERR::BufferOverflow;
       else if (errno IS EMSGSIZE) return ERR::DataSize;
-      else return convert_socket_error(errno, ERR::Failed);
+      else return convert_socket_error(errno, ERR::SystemCall);
    }
 
    ERR send_to(SocketHandle Handle, CPTR Buffer, size_t &Length, const NetworkEndpoint &Endpoint) override
@@ -432,9 +444,11 @@ public:
       BytesRead = 0;
       struct sockaddr_storage source_address;
       socklen_t addr_len = sizeof(source_address);
-      auto result = recvfrom(Handle, Buffer, BufferSize, MSG_DONTWAIT, (struct sockaddr *)&source_address, &addr_len);
+      auto result = recvfrom(Handle, Buffer, BufferSize, MSG_DONTWAIT | MSG_TRUNC,
+         (struct sockaddr *)&source_address, &addr_len);
 
       if (result > 0) {
+         if (size_t(result) > BufferSize) return ERR::BufferOverflow;
          BytesRead = size_t(result);
          return endpoint_to_ip(source_address, SourceAddress);
       }

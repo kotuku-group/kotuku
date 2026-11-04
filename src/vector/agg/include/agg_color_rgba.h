@@ -5,6 +5,10 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines RGB and RGBA colour types, byte orders, linear conversion helpers, and premultiplied-alpha utilities. Hooks
+// into RGB/RGBA pixel formats, span generators, image filters, gradients, and Kotuku linear RGB helpers. In the vector
+// renderer it is the primary colour representation used when scanlines are blended into image buffers.
 
 #pragma once
 

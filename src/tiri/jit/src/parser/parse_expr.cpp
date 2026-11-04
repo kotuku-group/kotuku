@@ -1,6 +1,7 @@
 // Copyright © 2025-2026 Paul Manias
 // Shared helper functions used by AST parser
 
+#include <cctype>
 #include <format>
 #include <string>
 
@@ -22,7 +23,7 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
       if (tvisint(e->num_tv())) {
          int32_t k = intV(e->num_tv());
          if (checku8(k)) {
-            t->u.s.aux = BCMAX_C + 1 + uint32_t(k);  // 256..511: const byte key
+            t->u.s.aux = IndexOperand::byte_constant(BCREG(k)).raw();
             return;
          }
       }
@@ -30,7 +31,7 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
       lua_Number n = e->number_value();
       int32_t k = lj_num2int(n);
       if (checku8(k) and n IS lua_Number(k)) {
-         t->u.s.aux = BCMAX_C + 1 + uint32_t(k);  // 256..511: const byte key
+         t->u.s.aux = IndexOperand::byte_constant(BCREG(k)).raw();
          return;
       }
 #endif
@@ -38,14 +39,14 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
    else if (e->is_str_constant()) {
       BCREG idx = const_str(State, e);
       if (idx <= BCMAX_C) {
-         t->u.s.aux = ~idx;  // -256..-1: const string key
+         t->u.s.aux = IndexOperand::string_constant(idx).raw();
          return;
       }
    }
 
    RegisterAllocator allocator(State);
    ExpressionValue value(State, *e);
-   t->u.s.aux = value.discharge_to_any_reg(allocator);  // 0..255: register
+   t->u.s.aux = IndexOperand::register_index(value.discharge_to_any_reg(allocator)).raw();
 }
 
 //********************************************************************************************************************
@@ -54,7 +55,7 @@ static void expr_index(FuncState *State, ExpDesc *t, ExpDesc *e)
 
 static void expr_kvalue(FuncState *fs, TValue *v, ExpDesc *e)
 {
-   if (e->k <= ExpKind::True) setpriV(v, ~uint64_t(e->k));
+   if (expkind_is_primitive(e->k)) setpriV(v, ~uint64_t(e->k));
    else if (e->k IS ExpKind::Str) setgcVraw(v, obj2gco(e->u.sval), LJ_TSTR);
    else {
       fs_check_assert(fs,tvisnumber(e->num_tv()), "bad number constant");
@@ -64,46 +65,11 @@ static void expr_kvalue(FuncState *fs, TValue *v, ExpDesc *e)
 
 //********************************************************************************************************************
 
-static int token_starts_expression(LexToken tok)
-{
-   switch (tok) {
-      case TK_number:
-      case TK_string:
-      case TK_nil:
-      case TK_true:
-      case TK_false:
-      case TK_dots:
-      case TK_function:
-      case TK_name:
-      case '{':
-      case '(':
-      case TK_not:
-      case TK_plusplus:
-      case '-':
-      case '~':
-      case '#':
-         return 1;
-      default:
-         return 0;
-   }
-}
-
-//********************************************************************************************************************
-// Determine if ?? operator should be treated as postfix presence check or binary if-empty.
+// Determine if ?? is adjacent to its left operand and should be treated as a postfix presence check.
 // Used by AST pipeline (ast_builder.cpp).
 
-bool LexState::should_emit_presence()
+bool LexState::should_emit_presence() const
 {
-   // Use raw line numbers for comparison (lastline and lookahead_line are raw,
-   // effective_line() is encoded with file index in upper bits)
-   BCLine token_line = this->lastline;
-   BCLine operator_line = this->effective_line().lineNumber();
-   LexToken lookahead = (this->lookahead != TK_eof) ? this->lookahead : this->lookahead_token();
-   BCLine lookahead_line = this->lookahead_line;
-   // If the operator is on a different line than the token, it's definitely postfix
-   if (operator_line > token_line) return true;
-   // If the lookahead is on a different line than the operator, it's postfix
-   if (lookahead_line > operator_line) return true;
-   // Otherwise, check if the lookahead starts an expression
-   return !token_starts_expression(lookahead);
+   if (this->current_token_offset IS 0 or this->current_token_offset > this->source.size()) return false;
+   return not std::isspace(uint8_t(this->source[this->current_token_offset - 1]));
 }

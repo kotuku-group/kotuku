@@ -7,6 +7,7 @@ idl_gen ("${MOD}.tdl"
    NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    ARGS  "output-defs=regex_def.c" "output-proto=regex_def.c"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp"
    APPEND_IDL "${MOD}_def.c")
 
 add_library (${MOD})
@@ -14,7 +15,7 @@ set_module_defaults (${MOD} "Rx")
 
 target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${MOD}.cpp")
 
-# ctest --build-config Release --test-dir build/[release-folder] -R test_regex_match -V
+# ctest --preset agents -R test_regex_match -V
 
 add_executable (test_regex_match "tests/test_match.cpp")
 target_link_libraries (test_regex_match PRIVATE ${INIT_LINK})

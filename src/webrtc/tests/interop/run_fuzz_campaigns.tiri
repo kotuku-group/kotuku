@@ -1,0 +1,55 @@
+-- Replay copied regression seeds and run bounded fail-fast protocol campaigns.
+
+   import './prepare_fuzz_corpus'
+   import 'json'
+
+   local build = arg('build')
+   local runs = tonumber(arg('runs', '20000'))
+   local seed = tonumber(arg('seed', '8656'))
+   assert(build, 'Usage: run_fuzz_campaigns.tiri build=<build-tree> [runs=20000] [seed=8656]')
+   assert(runs and runs > 0 and runs is math.floor(runs), 'runs must be a positive integer')
+   assert(seed and seed is math.floor(seed), 'seed must be an integer')
+   local _, build_path = check mSys.ResolvePath(build, 0)
+   local root = obj.find('self').workingPath .. '../../../../'
+   local evidence = build_path .. '/evidence'
+   fuzzCorpus.makeFolder(evidence)
+   local results = array<table>
+   for name in values(array<str> { 'stun', 'sdp', 'sctp_codec', 'sctp_state', 'turn_codec', 'turn_state', 'mdns' }) do
+      local length = name.endsWith('_state') ? 512 : 8192
+      local executable = name is 'mdns' ? '/src/network/fuzz_network_mdns' : '/src/webrtc/fuzz_webrtc_' .. name
+      local binary = build_path .. executable
+      local fixtures = root .. 'src/webrtc/tests/fixtures'
+      local source = name is 'mdns' ? root .. 'src/network/mdns/fixtures' :
+         name is 'sdp' ? fixtures : fixtures .. '/fuzz_' .. name
+      local corpus = evidence .. '/corpus_' .. name
+      if name is 'sctp_codec' or name is 'turn_codec' then
+         fuzzCorpus.prepare(name, corpus, fixtures)
+      else
+         fuzzCorpus.copySeeds(source, corpus, name is 'sdp' ? '.sdp' : nil)
+      end
+      local command = array<str> { binary, f'-runs={runs}', f'-seed={seed}', f'-max_len={length}', corpus }
+      local log <close> = obj<File> { path=evidence .. '/fuzz_' .. name .. '.log', flags=FL_NEW|FL_WRITE }
+      local task <close> = obj<Task> {
+         location=binary, flags=TSF_WAIT|TSF_ATTACHED, timeout=600,
+         outputCallback=function(Task, Buffer) check log.acWrite(Buffer.getString()) end,
+         errorCallback=function(Task, Buffer) check log.acWrite(Buffer.getString()) end
+      }
+      for i in {1 to #command} do check task.mtAddArgument(command[i]) end
+      check task.mtSetEnv('ASAN_OPTIONS', 'detect_leaks=1:abort_on_error=1')
+      check task.mtSetEnv('UBSAN_OPTIONS', 'halt_on_error=1:print_stacktrace=1')
+      local started = mSys.PreciseTime()
+      local err = task.acActivate()
+      if err != ERR_Okay then
+         task.mtQuit()
+         task.mtQuit()
+         raise err, 'Campaign could not complete: ' .. name
+      end
+      local code = task.returnCode
+      results.push({ target=name, command=command, exit_code=code,
+         wall_seconds=(mSys.PreciseTime() - started) / 1000000 })
+      io.writeAll(evidence .. '/campaigns.json', json.encode(results) .. '\n')
+      print(f'{name} {code}')
+      if code != 0 then
+         raise ERR_Failed, f'{name} exited with code {code}; see {evidence}/fuzz_{name}.log'
+      end
+   end

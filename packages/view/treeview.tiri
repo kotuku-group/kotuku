@@ -1,0 +1,142 @@
+--[[
+WORK IN PROGRESS
+
+To build tree structures, arrange the items as seen in this example:
+
+  { { id='1', group='folder',
+      { id='1.1', group='folder',
+        { id=1.1.1', group='file' },
+        { ... }
+      }
+    },
+    { ... }
+  }
+
+Callbacks:
+
+   branchExpanded:   TODO - A callback for receiving notifications when tree branches are expanded.
+   cellClick:        TODO - A callback for receiving notifications of clicks in column cells.
+
+View styles:
+
+   ColumnTree: Not implemented
+   Document:   Not implemented
+   GroupTree:  Not implemented
+   Icon:       Not implemented
+   Tree:       Not implemented
+--]]
+
+@Package(name="gui/view", version="1.0")
+
+   import 'gui'
+   import 'gui/libview'
+
+   namespace gui
+
+   -- In group-tree mode, all the items at the root of the tree get their own title-bar and their children are displayed as trees.
+
+   local function initVectorGroupTree()
+      local iconbmp:any
+      local ny:num = 0
+      local ix:num = 0
+      local ey:num = 0
+      local alt = false
+
+      if lColBackground.a > 0 then
+         gfxDrawRectangle(ax, ay, awidth, aheight, PackPixelRGBA(Bitmap, &lColBackground), BAF_BLEND|BAF_FILL)
+      end
+
+      if #self.items < 1 then return end
+
+      --if (!(expand = get_expand_bitmap())) return
+      --if (!(collapse = get_collapse_bitmap())) return
+
+      ny = ay
+      ey = ay
+      for _, tag in pairs(self.items) do
+         ny = ay + tag.Y
+         ey = tag.Y + tag.Height
+
+         if tag._open then
+            drawTree(Surface, Bitmap, tag.child, &ey)
+            if tag._open and lGroupShadow then
+               drawShadow(Bitmap, ny+tag.Height)
+            end
+         end
+
+         local groupbmp:any
+         if lAltGroup then -- Group graphic - button style background
+            alt = not alt
+            groupbmp = alt ? lGroupBitmap : lSelectBitmap
+            if tag._open then
+                groupbmp = lSelectBitmap ? lSelectBitmap : lGroupBitmap
+            else
+               groupbmp = lGroupBitmap ? lGroupBitmap : lSelectBitmap
+            end
+         end
+
+         if groupbmp then -- Tiled background
+            for ix in {ax to ax + awidth by groupbmp.Width} do
+               gfxCopyArea(groupbmp, Bitmap, 0, 0, 0, groupbmp.Width, tag.Height, ix, ny)
+            end
+         elseif tag._open then
+            gfxDrawRectangle(ax, ny, awidth, tag.Height, PackPixel(Bitmap,180,180,200), BAF_FILL)
+            gfxDrawRectangle(ax, ny, awidth, 1, PackPixel(Bitmap,200,200,220), BAF_FILL)
+            gfxDrawRectangle(ax, ny+tag.Height-1, awidth, 1, PackPixel(Bitmap,120,120,140), BAF_FILL)
+         else
+            gfxDrawRectangle(ax, ny, awidth, tag.Height, PackPixel(Bitmap,160,160,180), BAF_FILL)
+            gfxDrawRectangle(ax, ny, awidth, 1, PackPixel(Bitmap,180,180,200), BAF_FILL)
+            gfxDrawRectangle(ax, ny+tag.Height-1, awidth, 1, PackPixel(Bitmap,140,140,150), BAF_FILL)
+         end
+
+         -- Draw group icon and title
+
+         ix = ax + 3
+         if tag.icon then
+            if (tag._open or tag._selected) and tag._iconOpen then
+               iconbmp = tag._iconOpen
+            else
+               iconbmp = tag._icon
+            end
+
+            if lDisabled then
+               iconbmp.opacity = 128
+            end
+
+            gfxCopyArea(iconbmp, Bitmap, BAF_BLEND, 0, 0, iconbmp.Width, iconbmp.Height,
+               ix + ((tag.height - iconbmp.Width)/2),
+               ny + ((tag.height - iconbmp.Height)/2))
+
+            ix += tag.height + 4
+         else
+            ix += 4
+         end
+
+         if tag.title then
+            lPage.new('VectorText', {
+               x      = ix,
+               y      = ny,
+               face   = lGroupFace,
+               fill   = lColTitleFont,
+               string = tag.title
+            })
+         end
+      end
+
+      -- Darken any unused area at the bottom of the group view
+
+      if lColGroupShade.a then
+         ey += ay
+         gfxDrawRectangle(Bitmap, ax, ey, awidth, ay + aheight - ey, PackPixelRGBA(Bitmap, &lColGroupShade), BAF_BLEND|BAF_FILL)
+      end
+   end
+
+   -- Closes open tree branches.
+
+   self.closeBranch = function(ID)
+      local item = lLookup[ID]
+      if item._openBranch then
+         item._openBranch = false
+         arrangeItems()
+      end
+   end

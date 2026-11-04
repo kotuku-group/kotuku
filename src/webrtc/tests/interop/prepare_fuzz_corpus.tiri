@@ -1,0 +1,55 @@
+-- Materialise codec seeds from canonical fixtures without storing duplicate packet files.
+
+   import 'json'
+
+   namespace fuzzCorpus {}
+
+fuzzCorpus.makeFolder = function(Path:str!)
+   local err = mSys.CreateFolder(Path, 0)
+   if err != ERR_FileExists then check err end
+end
+
+fuzzCorpus.copySeeds = function(Source:str!, Destination:str!, Suffix:str)
+   fuzzCorpus.makeFolder(Destination)
+   local folder <close> = obj<File> { path=Source .. '/', flags=FL_READ|FL_EXCLUDE_FOLDERS }
+   while true do
+      local err, file = folder.mtNext()
+      if err is ERR_EndOfSequence then break end
+      check err
+      defer file.free() end
+      if not Suffix or file.path.endsWith(Suffix) then
+         local _, name = io.splitPath(file.path)
+         check mSys.CopyFile(Source .. '/' .. name, Destination .. '/' .. name)
+      end
+   end
+end
+
+fuzzCorpus.prepare = function(Name:str!, Destination:str!, Fixtures:str!)
+   assert(Name is 'sctp_codec' or Name is 'turn_codec', 'Unsupported codec corpus: ' .. Name)
+   fuzzCorpus.makeFolder(Destination)
+   if Name is 'sctp_codec' then
+      for protocol, entries in { sctp='packets', dcep='messages' } do
+         local vectors = json.decode(io.readAll(Fixtures .. '/' .. protocol .. '_wire.json'))
+         for _, vector in vectors[entries] do
+            local hex = vector.hex
+            assert(#hex % 2 is 0 and not r'[^0-9a-fA-F]'.test(hex), 'Invalid fixture hex: ' .. vector.name)
+            local bytes = array<str>
+            for i in {0 to #hex by 2} do
+               bytes.push(string.char(tonumber(hex.sub(i, i + 2), 16)))
+            end
+            io.writeAll(Destination .. '/' .. protocol .. '_' .. vector.name, bytes.concat())
+         end
+      end
+   else
+      fuzzCorpus.copySeeds(Fixtures .. '/fuzz_turn_codec', Destination)
+      for name in values(array<str> { 'turn_allocate_401.turn', 'turn_allocate_success.turn' }) do
+         check mSys.CopyFile(Fixtures .. '/' .. name, Destination .. '/' .. name)
+      end
+   end
+end
+
+@if(imported=false)
+   local name, destination = arg('name'), arg('destination')
+   assert(name and destination, 'Usage: prepare_fuzz_corpus.tiri name=<sctp_codec|turn_codec> destination=<folder>')
+   fuzzCorpus.prepare(name, destination, obj.find('self').workingPath .. '../fixtures')
+@end

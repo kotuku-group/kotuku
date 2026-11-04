@@ -269,4 +269,69 @@ asm_call_and_capture PROC
     ret
 asm_call_and_capture ENDP
 
+;------------------------------------------------------------------------------
+; void asm_call_cpuid_and_capture(RegisterSnapshot* before, RegisterSnapshot* after,
+;    int (*fn)(uint32_t, uint32_t*), uint32_t* results)
+;
+; Captures registers immediately around two CPUID helper calls. Keeping this
+; sequence in assembly prevents compiler register allocation from changing the
+; snapshots between calls in optimised builds.
+;------------------------------------------------------------------------------
+asm_call_cpuid_and_capture PROC
+    ; RCX=before, RDX=after, R8=fn, R9=results
+    sub     rsp, 72                  ; shadow space, saved arguments, and alignment
+    mov     QWORD PTR [rsp + 32], rcx
+    mov     QWORD PTR [rsp + 40], rdx
+    mov     QWORD PTR [rsp + 48], r8
+    mov     QWORD PTR [rsp + 56], r9
+
+    mov     rcx, QWORD PTR [rsp + 32]
+    call    asm_capture_registers
+
+    xor     ecx, ecx
+    mov     rdx, QWORD PTR [rsp + 56]
+    call    QWORD PTR [rsp + 48]
+
+    mov     ecx, 1
+    mov     rdx, QWORD PTR [rsp + 56]
+    call    QWORD PTR [rsp + 48]
+
+    mov     rcx, QWORD PTR [rsp + 40]
+    call    asm_capture_registers
+
+    add     rsp, 72
+    ret
+asm_call_cpuid_and_capture ENDP
+
+;------------------------------------------------------------------------------
+; double asm_call_round_and_capture(RegisterSnapshot* before, RegisterSnapshot* after,
+;    double (*fn)(double), double input)
+;
+; Keep the snapshots and helper call in assembly so the C++ caller cannot use
+; nonvolatile registers for intermediate arithmetic between the snapshots.
+;------------------------------------------------------------------------------
+asm_call_round_and_capture PROC FRAME
+    ; RCX=before, RDX=after, R8=fn, XMM3=input
+    sub     rsp, 88
+    .allocstack 88
+    .endprolog
+    mov     QWORD PTR [rsp + 32], rcx
+    mov     QWORD PTR [rsp + 40], rdx
+    mov     QWORD PTR [rsp + 48], r8
+    movsd   QWORD PTR [rsp + 56], xmm3
+
+    call    asm_capture_registers
+
+    movsd   xmm0, QWORD PTR [rsp + 56]
+    call    QWORD PTR [rsp + 48]
+    movsd   QWORD PTR [rsp + 64], xmm0
+
+    mov     rcx, QWORD PTR [rsp + 40]
+    call    asm_capture_registers
+
+    movsd   xmm0, QWORD PTR [rsp + 64]
+    add     rsp, 88
+    ret
+asm_call_round_and_capture ENDP
+
 END

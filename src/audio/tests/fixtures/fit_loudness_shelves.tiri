@@ -1,0 +1,328 @@
+--[[
+Fit the AudioEqualiser loudness compensation shelves to the ISO 226:2023 equal-loudness contours.
+
+The target at listening level L (dB, 0 to -60) is the contour at 80 + L phon minus the contour at 80 phon, less L: the
+boost that restores the spectral balance heard at the 80 phon reference.  It is zero at 1 kHz by definition.
+
+The model is an RBJ low shelf followed by an RBJ high shelf, matching EqualiserProcessor::compute().  Corners and
+slopes are shared by every level so that interpolating the tabulated gains between 5 dB steps stays smooth; the high
+corner is limited to 10 kHz because the ISO data ends at 12.5 kHz.  The script searches the shared parameters, rounds
+them, refits the gains by least squares and prints the table for glLoudnessGains in audio_equaliser_dsp.h together
+with the fit error at 44.1, 48 and 96 kHz.
+
+The ISO table values are the 2023 edition's: alpha_f matches Suzuki & Takeshima (JASA 2004), and T_f is ISO 389-7
+with the 20 Hz threshold lowered by 0.4 dB.  ISO 226:2023 Equation 1 (Sottek et al., Forum Acusticum 2023):
+
+   L_f = 10 / alpha_f * lg{(4e-10)^(0.3 - alpha_f) * [10^(0.03 L_N) - 10^0.072] + 10^(alpha_f (T_f + L_U) / 10)} - L_U
+
+Usage:
+   origo src/audio/tests/fixtures/fit_loudness_shelves.tiri
+--]]
+
+local iso_frequency <const> = array<double> { 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
+   630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500 }
+local iso_alpha <const> = array<double> { 0.635, 0.602, 0.569, 0.537, 0.509, 0.482, 0.456, 0.433, 0.412, 0.391,
+   0.373, 0.357, 0.343, 0.330, 0.320, 0.311, 0.303, 0.300, 0.295, 0.292, 0.290, 0.290, 0.289, 0.289, 0.289, 0.293,
+   0.303, 0.323, 0.354 }
+local iso_transfer <const> = array<double> { -31.5, -27.2, -23.1, -19.3, -16.1, -13.1, -10.4, -8.2, -6.3, -4.6, -3.2,
+   -2.1, -1.2, -0.5, 0.0, 0.4, 0.5, 0.0, -2.7, -4.2, -1.2, 1.4, 2.3, 1.0, -2.3, -7.2, -11.2, -10.9, -3.5 }
+local iso_threshold <const> = array<double> { 78.1, 68.7, 59.5, 51.1, 44.0, 37.5, 31.5, 26.5, 22.1, 17.9, 14.4, 11.4,
+   8.6, 6.2, 4.4, 3.0, 2.2, 2.4, 3.5, 1.7, -1.3, -4.2, -6.0, -5.4, -1.5, 6.0, 12.6, 13.9, 12.3 }
+
+local POINTS <const> = 29
+local INDEX_1K <const> = 17
+local FIT_RATE <const> = 48000
+local LEVEL_STEPS <const> = 12 -- Levels -5 to -60 in 5 dB steps
+
+local shared_min <const> = array<double> { 40, 0.1, 3000, 0.1 }
+local shared_max <const> = array<double> { 1000, 1.0, 10000, 1.0 }
+
+-----------------------------------------------------------------------------------------------------------------------
+-- The ISO 226:2023 sound pressure level at every tabulated frequency for a loudness level in phon.
+
+function contour(Phon:num):array<double>
+   local result = array<double, 29>
+   for i in {0 to 29} do
+      local alpha = iso_alpha[i]
+      local transfer = iso_transfer[i]
+      result[i] = 10 / alpha * math.log10((4e-10) ** (0.3 - alpha) * (10 ** (0.03 * Phon) - 10 ** 0.072) +
+         10 ** (alpha * (iso_threshold[i] + transfer) / 10)) - transfer
+   end
+   return result
+end
+
+local reference <const> = contour(80)
+
+function target(Level:num):array<double>
+   local result = contour(80 + Level)
+   for i in {0 to 29} do result[i] = result[i] - reference[i] - Level end
+   return result
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- RBJ shelf coefficients, as computed by EqualiserProcessor::compute().
+
+function shelf(Rate:num, Gain:num, Corner:num, Slope:num, High:bool):<num, num, num, num, num, num>
+   local a = 10 ** (Gain / 40)
+   local omega = 2 * math.pi * math.min(Corner, Rate * 0.499) / Rate
+   local cosine = math.cos(omega)
+   local alpha = math.sin(omega) * 0.5 * math.sqrt((a + 1 / a) * (1 / Slope - 1) + 2)
+   local root = 2 * math.sqrt(a) * alpha
+   if High then
+      return a * ((a + 1) + (a - 1) * cosine + root), -2 * a * ((a - 1) + (a + 1) * cosine),
+         a * ((a + 1) + (a - 1) * cosine - root), (a + 1) - (a - 1) * cosine + root,
+         2 * ((a - 1) - (a + 1) * cosine), (a + 1) - (a - 1) * cosine - root
+   else
+      return a * ((a + 1) - (a - 1) * cosine + root), 2 * a * ((a - 1) - (a + 1) * cosine),
+         a * ((a + 1) - (a - 1) * cosine - root), (a + 1) + (a - 1) * cosine + root,
+         -2 * ((a - 1) + (a + 1) * cosine), (a + 1) + (a - 1) * cosine - root
+   end
+end
+
+-- |H(e^jw)| in dB, evaluating the numerator and denominator as complex sums.  Expanding |H|^2 into a cosine polynomial
+-- instead loses about nine digits to cancellation at low frequencies, which makes finite-difference fitting noisy.
+
+function biquad_db(B0:num, B1:num, B2:num, A0:num, A1:num, A2:num, Omega:num):num
+   local cos1 = math.cos(Omega)
+   local sin1 = math.sin(Omega)
+   local cos2 = math.cos(2 * Omega)
+   local sin2 = math.sin(2 * Omega)
+   local num_real = B0 + B1 * cos1 + B2 * cos2
+   local num_imag = B1 * sin1 + B2 * sin2
+   local den_real = A0 + A1 * cos1 + A2 * cos2
+   local den_imag = A1 * sin1 + A2 * sin2
+   return 10 * math.log10((num_real * num_real + num_imag * num_imag) / (den_real * den_real + den_imag * den_imag))
+end
+
+-- Combined response of both shelves in dB at every tabulated frequency.
+
+function response(LowGain:num, HighGain:num, Shared:array<double>, Rate:num):array<double>
+   local lb0, lb1, lb2, la0, la1, la2 = shelf(Rate, LowGain, Shared[0], Shared[1], false)
+   local hb0, hb1, hb2, ha0, ha1, ha2 = shelf(Rate, HighGain, Shared[2], Shared[3], true)
+   local result = array<double, 29>
+   for i in {0 to 29} do
+      local omega = 2 * math.pi * iso_frequency[i] / Rate
+      result[i] = biquad_db(lb0, lb1, lb2, la0, la1, la2, omega) + biquad_db(hb0, hb1, hb2, ha0, ha1, ha2, omega)
+   end
+   return result
+end
+
+-- Error statistics of a response against a target: RMS, maximum magnitude, and the index of the maximum.
+
+function error_stats(Response:array<double>, Target:array<double>):<num, num, num>
+   local sum = 0
+   local worst = 0
+   local worst_index = 0
+   for i in {0 to 29} do
+      local e = Response[i] - Target[i]
+      sum += e * e
+      if math.abs(e) > worst then
+         worst = math.abs(e)
+         worst_index = i
+      end
+   end
+   return math.sqrt(sum / POINTS), worst, worst_index
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Gauss-Newton least squares for the two shelf gains at one level.  Returns both gains and the fit cost, which is the
+-- RMS error plus a quarter of the maximum error.
+
+function fit_gains(Shared:array<double>, Level:num):<num, num, num>
+   local goal = target(Level)
+   local low = math.abs(Level) * 0.4
+   local high = math.abs(Level) * 0.05
+   local delta = 1e-3
+
+   for _ in {0 to 12} do
+      local base = response(low, high, Shared, FIT_RATE)
+      local nudge_low = response(low + delta, high, Shared, FIT_RATE)
+      local nudge_high = response(low, high + delta, Shared, FIT_RATE)
+
+      -- Normal equations (J'J) step = -J'r for the two-column Jacobian.
+
+      local jll, jlh, jhh, gl, gh = 0, 0, 0, 0, 0
+      for i in {0 to 29} do
+         local residual = base[i] - goal[i]
+         local dl = (nudge_low[i] - base[i]) / delta
+         local dh = (nudge_high[i] - base[i]) / delta
+         jll += dl * dl
+         jlh += dl * dh
+         jhh += dh * dh
+         gl += dl * residual
+         gh += dh * residual
+      end
+      local determinant = jll * jhh - jlh * jlh
+      if determinant is 0 then break end
+      local step_low = -(jhh * gl - jlh * gh) / determinant
+      local step_high = -(jll * gh - jlh * gl) / determinant
+      low = math.min(math.max(low + step_low, 0), 40)
+      high = math.min(math.max(high + step_high, -12), 24)
+      if math.max(math.abs(step_low), math.abs(step_high)) < 1e-6 then break end
+   end
+
+   local rms, worst = error_stats(response(low, high, Shared, FIT_RATE), goal)
+   return low, high, rms + 0.25 * worst
+end
+
+function shared_cost(Shared:array<double>):num
+   for i in {0 to 4} do
+      if (Shared[i] < shared_min[i]) or (Shared[i] > shared_max[i]) then return 1e9 end
+   end
+   local total = 0
+   for step in {1 into 12} do
+      local _, _, cost = fit_gains(Shared, -5 * step)
+      total += cost
+   end
+   return total
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Nelder-Mead simplex minimisation of a function of four parameters.
+
+function nelder_mead(Function:func, Start:array<double>, Step:array<double>, Iterations:num):<array<double>, num>
+   local points = { Start.clone() }
+   for i in {0 to 4} do
+      local point = Start.clone()
+      point[i] = point[i] + Step[i]
+      points.insert(point)
+   end
+   local values = {}
+   for i in {0 to 5} do values[i] = Function(points[i]) end
+
+   local function blend(From:array<double>, To:array<double>, Factor:num):array<double>
+      local result = array<double, 4>
+      for i in {0 to 4} do result[i] = From[i] + (To[i] - From[i]) * Factor end
+      return result
+   end
+
+   for _ in {0 to Iterations} do
+      -- Insertion sort, best first.
+      for i in {1 to 5} do
+         local point = points[i]
+         local value = values[i]
+         local j = i - 1
+         while (j >= 0) and (values[j] > value) do
+            points[j + 1] = points[j]
+            values[j + 1] = values[j]
+            j -= 1
+         end
+         points[j + 1] = point
+         values[j + 1] = value
+      end
+
+      local centre = array<double, 4>
+      for i in {0 to 4} do
+         for k in {0 to 4} do centre[k] = centre[k] + points[i][k] / 4 end
+      end
+
+      local worst = points[4]
+      local reflected = blend(worst, centre, 2)
+      local reflected_value = Function(reflected)
+      if reflected_value < values[0] then
+         local expanded = blend(worst, centre, 3)
+         local expanded_value = Function(expanded)
+         if expanded_value < reflected_value then
+            points[4] = expanded
+            values[4] = expanded_value
+         else
+            points[4] = reflected
+            values[4] = reflected_value
+         end
+      elseif reflected_value < values[3] then
+         points[4] = reflected
+         values[4] = reflected_value
+      else
+         local contracted = blend(centre, worst, 0.5)
+         local contracted_value = Function(contracted)
+         if contracted_value < values[4] then
+            points[4] = contracted
+            values[4] = contracted_value
+         else
+            for i in {1 to 5} do
+               points[i] = blend(points[0], points[i], 0.5)
+               values[i] = Function(points[i])
+            end
+         end
+      end
+   end
+
+   local best = 0
+   for i in {1 to 5} do
+      if values[i] < values[best] then best = i end
+   end
+   return points[best], values[best]
+end
+
+function round_to(Value:num, Digits:num):num
+   local scale = 10 ** Digits
+   return math.floor(Value * scale + 0.5) / scale
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+local starts = {
+   array<double> { 150, 0.3, 8000, 0.7 }, array<double> { 300, 0.5, 6000, 0.5 },
+   array<double> { 100, 0.2, 9000, 1.0 }, array<double> { 500, 0.6, 9500, 0.9 }
+}
+local search_step = array<double> { 50, 0.1, 800, 0.1 }
+
+local best_point = nil
+local best_cost = 0
+for _, start in ipairs(starts) do
+   local point, cost = nelder_mead(shared_cost, start, search_step, 200)
+   if (best_point is nil) or (cost < best_cost) then
+      best_point = point
+      best_cost = cost
+   end
+end
+print(string.format('Searched corners and slopes: %.3f Hz, %.3f, %.3f Hz, %.3f', best_point[0], best_point[1],
+   best_point[2], best_point[3]))
+
+local shared = array<double> { round_to(best_point[0], -1), round_to(best_point[1], 1), round_to(best_point[2], -3),
+   round_to(best_point[3], 1) }
+print(string.format('Rounded: low %g Hz slope %g, high %g Hz slope %g', shared[0], shared[1], shared[2], shared[3]))
+
+local low_gains = array<double, 13>
+local high_gains = array<double, 13>
+for step in {1 into 12} do
+   local low, high = fit_gains(shared, -5 * step)
+   low_gains[step] = round_to(low, 3)
+   high_gains[step] = round_to(high, 3)
+end
+
+local table_text = ''
+for step in {0 into 12} do
+   if step > 0 then table_text ..= ',  ' end
+   table_text ..= string.format('{ %g, %g }', low_gains[step], high_gains[step])
+end
+print('')
+print('glLoudnessGains:')
+print(table_text)
+
+function interpolate(Level:num):<num, num>
+   local position = math.min(-Level, 60) / 5
+   local index = math.min(math.floor(position), LEVEL_STEPS - 1)
+   local blend = position - index
+   return low_gains[index] + (low_gains[index + 1] - low_gains[index]) * blend,
+      high_gains[index] + (high_gains[index + 1] - high_gains[index]) * blend
+end
+
+for _, rate in ipairs({ 44100, 48000, 96000 }) do
+   print('')
+   print(f'Fit error at {rate} Hz, 20 Hz to 12.5 kHz:')
+   local worst = 0
+   for attenuation in {0 into 60} do
+      local level = -attenuation
+      local goal = target(level)
+      local low, high = interpolate(level)
+      local result = response(low, high, shared, rate)
+      local rms, max_error, max_index = error_stats(result, goal)
+      worst = math.max(worst, max_error)
+      if (level is -10) or (level is -20) or (level is -40) or (level is -60) then
+         print(string.format('   %4d dB: rms %.2f, max %.2f at %g Hz, 1 kHz %+.2f', level, rms, max_error,
+            iso_frequency[max_index], result[INDEX_1K] - goal[INDEX_1K]))
+      end
+   end
+   print(string.format('   Worst over every 1 dB step: %.2f', worst))
+end

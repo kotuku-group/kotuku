@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,10 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Iterates compact bitsets as ordered set-bit positions. Hooks into low-level scanline and mask helpers that need
+// sparse binary coverage traversal. In the vector renderer it supports efficient handling of binary span state without
+// expanding every pixel.
 
-
-#ifndef AGG_BITSET_ITERATOR_INCLUDED
-#define AGG_BITSET_ITERATOR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
@@ -45,5 +46,3 @@ namespace agg
     };
 
 }
-
-#endif

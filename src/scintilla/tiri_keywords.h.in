@@ -1,0 +1,3 @@
+// Generated from the Tiri parser's reserved token definitions.
+static constexpr char glTiriKeywords[] =
+@TIRI_KEYWORDS@;

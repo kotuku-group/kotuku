@@ -1,0 +1,138 @@
+   include 'vector', 'display'
+   module display as mGfx
+
+-- Tests that pattern tiles are rendered at their display scale.  The tile is 4 units wide with a white left half, and
+-- is magnified 8x by either a viewBox or patternTransform.  A sharp result is a row of 16 px runs that alternate
+-- between white and black, with no intermediate values from bitmap magnification.
+
+PAGE_WIDTH  = 64
+PAGE_HEIGHT = 16
+
+function newScene(Units, Width, Height, ViewBox, Transform):<obj, obj, obj>
+   scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   vw = ViewBox ? 8 : PAGE_WIDTH
+   vh = ViewBox ? 2 : PAGE_HEIGHT
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%', viewWidth=vw, viewHeight=vh })
+   pattern = scene.new('VectorPattern', { x=0, y=0, width=Width, height=Height, units=Units })
+   if Transform then pattern.transform = Transform end
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=2, height=4, fill='rgb(255,255,255)' })
+   check scene.mtAddDef('pat', pattern)
+   vp.new('VectorRectangle', { x=0, y=0, width=vw, height='100%', fill='url(#pat)' })
+   bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32, bkgd='0,0,0,255' })
+   return scene, vp, bmp
+end
+
+function drawRow(Scene, Bitmap):array<int>
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+   row = array<int> { }
+   for x in {0 to PAGE_WIDTH} do row.push(mGfx.ReadRGBPixel(Bitmap, x, PAGE_HEIGHT / 2).red) end
+   return row
+end
+
+-- Assert that the row consists of sharp 16 px runs, white first, with the tile pitch at 32 px.
+
+function checkSharp(Row, Label)
+   for x in {0 to PAGE_WIDTH} do
+      expected = ((math.floor(x / 16) % 2) is 0) ? 255 : 0
+      assert(Row[x] is expected, Label .. ': pixel ' .. x .. ' is ' .. Row[x] .. ', expected ' .. expected ..
+         ' in row ' .. Row.concat(','))
+   end
+end
+
+function testSharp(Units, Width, Height, ViewBox, Transform, Label)
+   scene, vp, bmp = newScene(Units, Width, Height, ViewBox, Transform)
+   checkSharp(drawRow(scene, bmp), Label)
+   scene.free()
+   bmp.free()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UserSpaceViewBoxScale()
+   testSharp(VUNIT_USERSPACE, 4, 4, true, nil, 'USERSPACE, 8x viewBox')
+end
+
+@Test function BoundingBoxViewBoxScale()
+   testSharp(VUNIT_BOUNDING_BOX, '50%', '200%', true, nil, 'BOUNDING_BOX, 8x viewBox')
+end
+
+@Test function UserSpacePatternTransformScale()
+   testSharp(VUNIT_USERSPACE, 4, 4, false, 'scale(8)', 'USERSPACE, patternTransform scale(8)')
+end
+
+@Test function BoundingBoxPatternTransformScale()
+   testSharp(VUNIT_BOUNDING_BOX, '6.25%', '25%', false, 'scale(8)', 'BOUNDING_BOX, patternTransform scale(8)')
+end
+
+-- Shrinking only Y must retain the full resolution of the unchanged X axis.
+
+function testNonuniformScale(Units, Width, Height, PatternTransform)
+   scene, vp, bmp = newScene(Units, Width, Height, false, PatternTransform)
+   if not PatternTransform then
+      vp.aspectRatio = ARF_NONE
+      vp.viewHeight = PAGE_HEIGHT * 10
+   end
+   row = drawRow(scene, bmp)
+   scene.free()
+   bmp.free()
+
+   for x in {0 to PAGE_WIDTH} do
+      expected = ((x % 4) < 2) ? 255 : 0
+      assert(math.abs(row[x] - expected) <= 1, 'Pixel ' .. x .. ' is ' .. row[x] .. ', expected ' .. expected ..
+         ' after shrinking only Y')
+   end
+end
+
+@Test function NonuniformPatternTransformPreservesHorizontalDetail()
+   testNonuniformScale(VUNIT_USERSPACE, 4, 4, 'scale(1,0.1)')
+   testNonuniformScale(VUNIT_BOUNDING_BOX, '6.25%', '25%', 'scale(1,0.1)')
+end
+
+@Test function NonuniformViewBoxPreservesHorizontalDetail()
+   testNonuniformScale(VUNIT_USERSPACE, 4, 4, nil)
+   testNonuniformScale(VUNIT_BOUNDING_BOX, '6.25%', '2.5%', nil)
+end
+
+-- Changing the display scale must redraw the tile, including a change that truncates to the same page size (4 units
+-- at 8x and 8.1x are both 32 px).  The redrawn result must match a scene that was drawn once at the new scale.
+
+@Test function ScaleChangeRedraws()
+   for view_width in values({ 4, 64 / 8.1, 8 }) do
+      scene, vp, bmp = newScene(VUNIT_USERSPACE, 4, 4, true, nil)
+      drawRow(scene, bmp)
+      vp.viewWidth = view_width
+      redrawn = drawRow(scene, bmp)
+      scene.free()
+
+      scene, vp, bmp2 = newScene(VUNIT_USERSPACE, 4, 4, true, nil)
+      vp.viewWidth = view_width
+      fresh = drawRow(scene, bmp2)
+      scene.free()
+      bmp.free()
+      bmp2.free()
+
+      assert(redrawn.concat(',') is fresh.concat(','), 'viewWidth ' .. view_width .. ': redrawn row ' ..
+         redrawn.concat(',') .. ' differs from fresh row ' .. fresh.concat(','))
+   end
+end
+
+-- A tile that would exceed the maximum bitmap size at display scale must still be drawn, at a reduced resolution.
+-- Here a 2000 unit tile at 8x would need a 16000 px bitmap.
+
+@Test function OversizedTileIsDrawn()
+   scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%', viewWidth=8, viewHeight=2 })
+   pattern = scene.new('VectorPattern', { x=0, y=0, width=2000, height=4, units=VUNIT_USERSPACE })
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=4, height=4, fill='rgb(255,255,255)' })
+   check scene.mtAddDef('pat', pattern)
+   vp.new('VectorRectangle', { x=0, y=0, width=8, height=2, fill='url(#pat)' })
+   bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32, bkgd='0,0,0,255' })
+   row = drawRow(scene, bmp)
+   scene.free()
+   bmp.free()
+
+   assert(row[8] > 250, 'Pixel 8 should be white, got ' .. row[8])
+   assert(row[48] < 5, 'Pixel 48 should be black, got ' .. row[48])
+end

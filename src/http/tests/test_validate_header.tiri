@@ -55,7 +55,7 @@ SERVER_PORT <const> = 18940
                end
 
                local token = regex.new('Bearer\\s+(.+)').extract(auth)
-               if not token or not token:find('admin') then
+               if not token or not token.find('admin') then
                   return { status = 403, statusText = 'Forbidden',
                            message = 'Admin access required',
                            details = 'This endpoint requires admin privileges' }
@@ -73,7 +73,7 @@ SERVER_PORT <const> = 18940
             method = 'POST',
             validateHeader = function(headers):any
                local contentType = headers['content-type']
-               if not contentType or not contentType:find('application/json') then
+               if not contentType or not contentType.find('application/json') then
                   return { status = 415, statusText = 'Unsupported Media Type',
                            message = 'JSON content type required',
                            details = 'This endpoint only accepts application/json' }
@@ -89,7 +89,7 @@ SERVER_PORT <const> = 18940
          { pattern = '/error/validation-crash',
             method = 'GET',
             validateHeader = function(headers):any
-               error('Intentional validation error')
+               raise 'Intentional validation error'
             end,
             handler = function(req, res)
                res.json({ message = 'This should never be reached' })
@@ -123,7 +123,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD | HTF_NO_DIALOG,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -133,7 +133,7 @@ end
    })
 
    check http.acSetKey('Authorization', 'Bearer valid-token-123')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Valid header test failed to activate")
 
    err = proc.sleep()
@@ -162,7 +162,7 @@ end
    })
 
    check http.acSetKey('Authorization', 'Bearer invalid-token')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Invalid header test failed to activate")
 
    err = proc.sleep()
@@ -190,7 +190,7 @@ end
    })
 
    check http.acSetKey('Authorization', 'Bearer user-token')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Custom error test failed to activate")
 
    err = proc.sleep()
@@ -216,7 +216,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
 
    err = proc.sleep()
@@ -238,7 +238,7 @@ end
       flags       = HTF_NO_HEAD | HTF_NO_DIALOG,
       contentType = 'application/xml',
       inputFile   = 'string:' .. xml_data,
-      size        = xml_data:len(),
+      size        = #xml_data,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
             HTTP.acSignal()
@@ -246,7 +246,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Content type validation test failed to activate")
 
    err = proc.sleep()
@@ -271,7 +271,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Validation exception test failed to activate")
 
    err = proc.sleep()
@@ -292,7 +292,7 @@ end
       method   = 'GET',
       flags    = HTF_NO_HEAD | HTF_NO_DIALOG,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -301,7 +301,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "No validation test failed to activate")
 
    err = proc.sleep()

@@ -2,7 +2,7 @@
 rx_split_header_lines = <{ regex.new([[([^\r\n]+)]]) }>
 rx_header_value = <{ regex.new([[([^:]+):\s*(.+)]]) }>
 
-function makeErrorResponse(Id:num, Code:num, Message:str):table
+function makeErrorResponse(Id:any, Code:num, Message:str):table
    return {
       jsonrpc = '2.0',
       id = Id,
@@ -22,34 +22,34 @@ end
 -- If error: nil, nil, error_string
 -- If success: content_length, body_start_offset, nil
 
-function parseHeader(Buffer:str):<str,num,str>
-   header_end = Buffer:find('\r\n\r\n')
+function parseHeader(Buffer:str):<num,num,str>
+   header_end = Buffer.find('\r\n\r\n')
    separator_len = 4
    if not header_end then
-      header_end = Buffer:find('\n\n')
+      header_end = Buffer.find('\n\n')
       separator_len = 2
    end
-   header_end ?? return nil, nil, nil  -- Need more data
-   header_section = Buffer:sub(0, header_end)
+   header_end ?! return nil, nil, nil  -- Need more data
+   header_section = Buffer.sub(0, header_end)
    content_length = nil
 
    for start, stop, cap in rx_split_header_lines.findAll(header_section) do
       local line = cap[0]
       name, value = rx_header_value.extract(line)
-      if name and name:lower() is 'content-length' then
+      if name and name.lower() is 'content-length' then
          content_length = tonumber(value)
          break
       end
    end
 
-   content_length ?? return nil, nil, 'Missing Content-Length header'
+   content_length ?! return nil, nil, 'Missing Content-Length header'
    return content_length, header_end + separator_len, nil
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Parse a JSON-RPC 2.0 message
 
-function parseMessage(JsonBody)
+function parseMessage(JsonBody):<any, str>
    local msg
    try
       msg = json.decode(JsonBody)
@@ -70,19 +70,31 @@ end
 -- base protocol, https://github.com/Microsoft/language-server-protocol/blob/gh-pages/_specifications/lsp/3.17/specification.md
 
 function formatResponse(ResponseTable:table, TextOutput:bool):str
-   body = json.encode(ResponseTable)
+   local body
+   -- The bundled JSON encoder represents nested json.null values as {}.  Build responses with null members explicitly.
+   if ResponseTable.id is json.null or ResponseTable.result is json.null then
+      local id = ResponseTable.id is json.null ? 'null' : json.encode(ResponseTable.id)
+      if ResponseTable.error then
+         body = '{"jsonrpc":"2.0","id":' .. id .. ',"error":' .. json.encode(ResponseTable.error) .. '}'
+      else
+         local result = ResponseTable.result is json.null ? 'null' : json.encode(ResponseTable.result)
+         body = '{"jsonrpc":"2.0","id":' .. id .. ',"result":' .. result .. '}'
+      end
+   else
+      body = json.encode(ResponseTable)
+   end
    return 'Content-Length: ' .. #body .. '\r\n\r\n' .. body
 end
 
 global function sendResponse(Self:table, ClientSocket, ResponseTable, RequestLog)
-   ResponseTable ?? return -- Notifications don't get responses
+   ResponseTable ?! return -- Notifications don't get responses
 
    formatted = formatResponse(ResponseTable, Self.stdioTextOutput)
    err = ClientSocket.acWrite(formatted)
    if err != ERR_Okay then
       logMessage(Self, 'Failed to send response: ' .. mSys.GetErrorMsg(err))
    else
-      logVerbose(Self, 'Sent response: ' .. formatted:sub(0, 200))
+      logVerbose(Self, 'Sent response: ' .. formatted.sub(0, 200))
 
       -- Log outgoing response if logging enabled
       if RequestLog then
@@ -94,7 +106,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Send an LSP notification (no response expected)
 
-global function sendNotification(Self:table, ClientSocket:obj, Method, Params)
+global function sendNotification(Self:table, ClientSocket:any, Method, Params)
    notification = {
       jsonrpc = '2.0',
       method = Method,
@@ -113,34 +125,34 @@ end
 -- Method Dispatch
 
 function dispatchMethod(Self:table, Message:table, State:table)
-   method = Message.method
+   request_method = Message.method
 
-   if not method then
+   if not request_method then
       -- This is a response, not a request - ignore for now
       logVerbose(Self, 'Received response message (ignored)')
       return nil
    end
 
-   handler = Self._handlers[method]
+   handler = Self._handlers[request_method]
 
    if handler then
-      logVerbose(Self, 'Dispatching method: ' .. method)
+      logVerbose(Self, 'Dispatching method: ' .. request_method)
 
       local result
       try
          return handler(Message, State)
       except ex
-         logMessage(Self, f'Handler error for {method}: {ex.message}')
+         logMessage(Self, f'Handler error for {request_method}: {ex.message}')
          if Message.id then
             return makeErrorResponse(Message.id, LSP_ERROR.INTERNAL_ERROR, ex.message)
          end
          return nil
       end
    else
-      logWarning(Self, 'Unknown method: ' .. method)
+      logWarning(Self, 'Unknown method: ' .. request_method)
       -- Unknown method: return error for requests, ignore notifications
       if Message.id then
-         return makeErrorResponse(Message.id, LSP_ERROR.METHOD_NOT_FOUND, f'Method not found: {method}')
+         return makeErrorResponse(Message.id, LSP_ERROR.METHOD_NOT_FOUND, f'Method not found: {request_method}')
       end
       return nil
    end
@@ -151,8 +163,8 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Incoming Data Handling
 
-function initClientState(Self:table, ClientSocket:obj)
-   state = ClientSocket._state()
+function initClientState(Self:table, ClientSocket:any):table
+   state = ClientSocket.state()
 
    if not state.initialised then
       state.buffer             = ''
@@ -162,6 +174,8 @@ function initClientState(Self:table, ClientSocket:obj)
       state.shutdown_requested = false
       state.should_disconnect  = false
       state.clientSocket       = ClientSocket  -- Store for sending notifications
+      state.documents          = {}
+      state.tokenCache         = {}
       state.initialised        = true
       logVerbose(Self, 'New client connection initialized')
    end
@@ -169,7 +183,7 @@ function initClientState(Self:table, ClientSocket:obj)
    return state
 end
 
-global function processIncomingData(Self:table, ClientSocket:obj, Data:str)
+global function processIncomingData(Self:table, ClientSocket:any, Data:str)
    state = initClientState(Self, ClientSocket)
 
    if not Data or #Data is 0 then return end
@@ -192,7 +206,7 @@ global function processIncomingData(Self:table, ClientSocket:obj, Data:str)
          end
 
          state.content_length = content_length
-         state.buffer = state.buffer:sub(body_start)
+         state.buffer = state.buffer.sub(body_start)
          state.phase = 'READING_BODY'
          logVerbose(Self, 'Header parsed, expecting ' .. content_length .. ' bytes')
       end
@@ -203,11 +217,11 @@ global function processIncomingData(Self:table, ClientSocket:obj, Data:str)
          end
 
          -- Extract the JSON body
-         json_body = state.buffer:sub(0, state.content_length)
-         state.buffer = state.buffer:sub(state.content_length)
+         json_body = state.buffer.sub(0, state.content_length)
+         state.buffer = state.buffer.sub(state.content_length)
          state.phase = 'READING_HEADER'
 
-         logVerbose(Self, 'Received message: ' .. json_body:sub(0, 200))
+         logVerbose(Self, 'Received message: ' .. json_body.sub(0, 200))
 
          -- Log incoming request if logging enabled
          if Self.requestLog then
@@ -235,12 +249,12 @@ global function processIncomingData(Self:table, ClientSocket:obj, Data:str)
    end
 end
 
-global function processIncoming(Self:table, ClientSocket:obj)
+global function processIncoming(Self:table, ClientSocket:any)
    state = initClientState(Self, ClientSocket)
 
    -- Read available data
    buffer = string.alloc(8192)
-   err, bytes_read = ClientSocket.acRead(buffer, 8192)
+   err, bytes_read = ClientSocket.acRead(buffer)
 
    if err != ERR_Okay then
       if err != ERR_Disconnected then
@@ -251,5 +265,5 @@ global function processIncoming(Self:table, ClientSocket:obj)
 
    if bytes_read is 0 then return end
 
-   processIncomingData(Self, ClientSocket, buffer:sub(0, bytes_read))
+   processIncomingData(Self, ClientSocket, buffer.sub(0, bytes_read))
 end

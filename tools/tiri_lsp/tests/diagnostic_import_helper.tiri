@@ -1,0 +1,1 @@
+local invalid_import_value:num = 'text'

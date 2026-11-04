@@ -12,36 +12,44 @@ static const struct FieldDef clVectorTextVTXF[] = {
    { "Overwrite", 0x00000080 },
    { "Secret", 0x00000100 },
    { "Raster", 0x00000200 },
+   { "Selectable", 0x00000400 },
+   { "NoAutoOffset", 0x00000800 },
    { nullptr, 0 }
 };
 
-static const struct FieldDef clVectorTextVTS[] = {
-   { "Inherit", 0x00000000 },
-   { "Normal", 0x00000001 },
-   { "Wider", 0x00000002 },
-   { "Narrower", 0x00000003 },
-   { "UltraCondensed", 0x00000004 },
-   { "ExtraCondensed", 0x00000005 },
-   { "Condensed", 0x00000006 },
-   { "SemiCondensed", 0x00000007 },
-   { "Expanded", 0x00000008 },
-   { "SemiExpanded", 0x00000009 },
-   { "UltraExpanded", 0x0000000a },
-   { "ExtraExpanded", 0x0000000b },
+static const struct FieldDef clVectorTextVTW[] = {
+   { "Word", 0x00000000 },
+   { "Symbol", 0x00000001 },
+   { "Anywhere", 0x00000002 },
    { nullptr, 0 }
 };
 
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
+FDEF maSelectArea[] = { { "Row", FD_INT }, { "Column", FD_INT }, { "EndRow", FD_INT }, { "EndColumn", FD_INT }, { 0, 0 } };
+FDEF maGetCaretBounds[] = { { "Row", FD_INT }, { "Column", FD_INT }, { "X", FD_RESULT|FD_DOUBLE }, { "Y", FD_RESULT|FD_DOUBLE }, { "Height", FD_RESULT|FD_DOUBLE }, { 0, 0 } };
 
 static const struct MethodEntry clVectorTextMethods[] = {
    { AC(-30), (APTR)VECTORTEXT_DeleteLine, "DeleteLine", maDeleteLine, sizeof(struct vt::DeleteLine) },
+   { AC(-31), (APTR)VECTORTEXT_SelectArea, "SelectArea", maSelectArea, sizeof(struct vt::SelectArea) },
+   { AC(-32), (APTR)VECTORTEXT_GetCaretBounds, "GetCaretBounds", maGetCaretBounds, sizeof(struct vt::GetCaretBounds) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 
+static ERR VECTORTEXT_New(extVectorText *Self) {
+   new (Self) extVectorText(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR VECTORTEXT_Free(extVectorText *Self) {
+   Self->~extVectorText();
+   return ERR::Okay;
+}
+
 static const struct ActionArray clVectorTextActions[] = {
+   { AC::Clipboard, VECTORTEXT_Clipboard },
    { AC::Free, VECTORTEXT_Free },
    { AC::Init, VECTORTEXT_Init },
-   { AC::NewObject, VECTORTEXT_NewObject },
+   { AC::New, VECTORTEXT_New },
    { AC::NIL, nullptr }
 };
 

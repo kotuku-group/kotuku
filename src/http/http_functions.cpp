@@ -9,6 +9,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
 
    auto Self = (extHTTP *)CurrentContext();
    if (Self->classID() != CLASSID::HTTP) { log.warning(ERR::SystemCorrupt); return; }
+   if ((Self->Socket != Socket) or Self->inHandover()) return;
    if (!Self->locked()) { log.warning(ERR::ResourceNotLocked); return; }
 
    if (State IS NTC::CONNECTING) {
@@ -26,6 +27,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
       log.msg("Connection confirmed.");
       if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
       Self->Connecting = false;
+      SubscribeTimer(Self->DataTimeout, C_FUNCTION(http_timeout), &Self->TimeoutManager);
    }
    else if (State IS NTC::DISCONNECTED) {
       // Socket disconnected.  The HTTP state must change to either COMPLETED (completed naturally) or TERMINATED
@@ -45,13 +47,13 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
       }
       else Self->Connecting = false;
 
-      if (Self->CurrentState >= HGS::COMPLETED) {
+      if (not http_active(Self->CurrentState)) {
          return;
       }
       else if (Self->CurrentState IS HGS::READING_HEADER) {
          auto incoming_error = socket_incoming(Socket);
          if ((incoming_error IS ERR::Okay) or (incoming_error IS ERR::Terminate)) {
-            if (Self->CurrentState >= HGS::COMPLETED) return;
+            if (not http_active(Self->CurrentState)) return;
          }
 
          Self->Error = Socket->Error > ERR::ExceptionThreshold ? Socket->Error : ERR::Disconnected;
@@ -88,7 +90,8 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
                }
 
                int bytes_read;
-               if ((Self->Error = acRead(Socket, buffer.data(), len, &bytes_read)) != ERR::Okay) {
+               if ((Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), size_t(len)),
+                   &bytes_read)) != ERR::Okay) {
                   log.warning("Read() returned error: %s", GetErrorMsg(Self->Error));
                }
 
@@ -115,6 +118,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
          if (Self->ContentLength IS -1) {
             if (Socket->Error <= ERR::ExceptionThreshold) {
                log.msg("Orderly shutdown while streaming data.");
+               set_http_status_error(Self);
                Self->setCurrentState(HGS::COMPLETED);
             }
             else {
@@ -129,6 +133,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
          }
          else {
             log.trace("Orderly shutdown, received %" PRId64 " of the expected %" PRId64 " bytes.", Self->Index, Self->ContentLength);
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
          }
       }
@@ -137,7 +142,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
             // The HTTP socket was closed because the user is taking too long to authenticate with the dialog
             // window.  We will close the socket and create a new one once the user responds to the dialog.
 
-            Self->Socket->set(FID_Feedback, (APTR)nullptr);
+            Self->Socket->setFeedback(FUNCTION{});
             FreeResource(Socket);
             Self->Socket = nullptr;
             Self->SecurePath = true;
@@ -147,7 +152,7 @@ static void socket_feedback(objNetSocket *Socket, NTC State, APTR Meta)
          Self->setCurrentState(HGS::TERMINATED);
       }
    }
-   else if (Self->CurrentState >= HGS::COMPLETED) {
+   else if (not http_active(Self->CurrentState)) {
       // If the state is set to HGS::COMPLETED or HGS::TERMINATED, our code should have returned ERR::Terminate to switch
       // off the socket.  This section is entered if we forgot to do that.
 
@@ -180,6 +185,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
 
    int client_bytes_written = 0;
 
+   if (Self->Outgoing.stale()) clear_callback_function(Self->Outgoing);
+
    if (Self->Outgoing.defined()) {
       if (Self->Outgoing.isC()) {
          auto routine = (ERR (*)(extHTTP *, std::vector<uint8_t> &, APTR))Self->Outgoing.Routine;
@@ -191,9 +198,9 @@ static ERR socket_outgoing(objNetSocket *Socket)
          // will append to WriteBuffer.
          if (sc::Call(Self->Outgoing, std::to_array<ScriptArg>({
                { "HTTP", Self, FD_OBJECTPTR },
-            }), error) != ERR::Okay) error = ERR::Failed;
+            }), error) != ERR::Okay) error = ERR::Function;
          if (error > ERR::ExceptionThreshold) {
-            log.warning("Procedure %" PRId64 " failed, aborting HTTP call.", Self->Outgoing.ProcedureID);
+            log.warning("Procedure %u failed, aborting HTTP call.", Self->Outgoing.procedureID());
          }
       }
       else error = ERR::InvalidValue;
@@ -207,9 +214,10 @@ static ERR socket_outgoing(objNetSocket *Socket)
 
       int offset = (Self->Chunked ? CHUNK_LENGTH_OFFSET : 0);
       Self->WriteBuffer.resize(Self->BufferSize + offset);
-      error = acRead(Self->flInput, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
+      error = acRead(Self->flInput, std::span<int8_t>((int8_t *)Self->WriteBuffer.data() + offset,
+         Self->WriteBuffer.size() - offset), &client_bytes_written);
 
-      if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
+      if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
          Self->WriteBuffer.resize(client_bytes_written + offset);
       }
       else {
@@ -219,13 +227,14 @@ static ERR socket_outgoing(objNetSocket *Socket)
          log.warning("Input file read error: %s", GetErrorMsg(error));
       }
 
-      int64_t size = Self->flInput->get<int64_t>(FID_Size);
+      int64_t size = 0;
+      Self->flInput->getSize(size);
 
       if ((Self->flInput->Position IS size) or (client_bytes_written IS 0)) {
          log.trace("All file content read (%d bytes) - freeing file.", (int)size);
          FreeResource(Self->flInput);
          Self->flInput = nullptr;
-         if (error IS ERR::Okay) error = ERR::Terminate;
+         if (!error) error = ERR::Terminate;
       }
    }
    else if (Self->InputObjectID) {
@@ -235,8 +244,9 @@ static ERR socket_outgoing(objNetSocket *Socket)
       if (object.granted()) {
          int offset = (Self->Chunked ? CHUNK_LENGTH_OFFSET : 0);
          Self->WriteBuffer.resize(Self->BufferSize + offset);
-         error = acRead(*object, Self->WriteBuffer.data() + offset, std::ssize(Self->WriteBuffer) - offset, &client_bytes_written);
-         if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
+         error = acRead(*object, std::span<int8_t>((int8_t *)Self->WriteBuffer.data() + offset,
+            Self->WriteBuffer.size() - offset), &client_bytes_written);
+         if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written >= 0)) {
             Self->WriteBuffer.resize(client_bytes_written + offset);
          }
          else {
@@ -256,7 +266,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
       log.warning("Method %d: No input fields are defined for me to send data to the server.", int(Self->Method));
    }
 
-   if (((error IS ERR::Okay) or (error IS ERR::Terminate)) and (client_bytes_written > 0)) {
+   if (((!error) or (error IS ERR::Terminate)) and (client_bytes_written > 0)) {
       int bytes_sent;
       ERR write_error;
       auto write_length = std::ssize(Self->WriteBuffer);
@@ -283,7 +293,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
       log.trace("Writing %" PRId64 " bytes (of expected %" PRId64 ") to socket.  Chunked: %d",
          write_length, Self->ContentLength, Self->Chunked);
 
-      write_error = acWrite(Self->Socket, Self->WriteBuffer.data(), write_length, &bytes_sent);
+      write_error = acWrite(Self->Socket,
+         std::span<const int8_t>((int8_t *)Self->WriteBuffer.data(), write_length), &bytes_sent);
 
       if ((write_error IS ERR::Okay) and (bytes_sent IS write_length)) {
          if (Self->Chunked) bytes_sent -= CHUNK_LENGTH_OFFSET + 2; // Discount chunk information
@@ -317,7 +328,7 @@ static ERR socket_outgoing(objNetSocket *Socket)
          log.detail("Sequential input stream has uploaded %" PRId64 "/%" PRId64 " bytes.", Self->Index, Self->ContentLength);
 
          std::string filepath;
-         if (parse_file(Self, filepath) IS ERR::Okay) {
+         if (!parse_file(Self, filepath)) {
             if ((Self->flInput = objFile::create::local(fl::Path(filepath), fl::Flags(FL::READ)))) {
                goto continue_upload;
             }
@@ -335,7 +346,8 @@ static ERR socket_outgoing(objNetSocket *Socket)
          int result;
 
          if (Self->Chunked) {
-            auto write_error = acWrite(Self->Socket, (uint8_t *)"0\r\n\r\n", 5, &result);
+            auto write_error = acWrite(Self->Socket, std::span<const int8_t>((const int8_t *)"0\r\n\r\n", 5),
+               &result);
             if ((write_error != ERR::Okay) or (result != 5)) {
                Self->Error = (write_error != ERR::Okay) ? write_error : ERR::Write;
                Self->setCurrentState(HGS::TERMINATED);
@@ -486,10 +498,11 @@ static ERR http_timeout(extHTTP *Self, int64_t Elapsed, int64_t CurrentTime)
 {
    kt::Log log(__FUNCTION__);
 
+   if (http_handed_over(Self->CurrentState) or Self->inHandover()) return ERR::Terminate;
    if (!Self->Socket) {
       log.warning("HTTP timeout fired without an active socket.");
       Self->Error = ERR::TimeOut;
-      if (Self->CurrentState < HGS::COMPLETED) Self->setCurrentState(HGS::TERMINATED);
+      if (http_active(Self->CurrentState)) Self->setCurrentState(HGS::TERMINATED);
       return ERR::Terminate;
    }
 
@@ -505,6 +518,21 @@ static ERR http_timeout(extHTTP *Self, int64_t Elapsed, int64_t CurrentTime)
 }
 
 //********************************************************************************************************************
+// Records an unsuccessful HTTP status after the response body has been received.
+
+static void set_http_status_error(extHTTP *Self)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((int(Self->Status) < 200) or (int(Self->Status) >= 300)) {
+      if (Self->Status IS HTS::UNAUTHORISED) log.warning("Exhausted maximum number of retries.");
+      else log.warning("Status code %d != 2xx", int(Self->Status));
+
+      Self->Error = ERR::HTTPStatus;
+   }
+}
+
+//********************************************************************************************************************
 // Returns ERR::True if the transmission is complete and also sets status to HGS::COMPLETED, otherwise ERR::False.
 
 static ERR check_incoming_end(extHTTP *Self)
@@ -512,11 +540,12 @@ static ERR check_incoming_end(extHTTP *Self)
    kt::Log log(__FUNCTION__);
 
    if (Self->CurrentState IS HGS::AUTHENTICATING) return ERR::False;
-   if (Self->CurrentState >= HGS::COMPLETED) return ERR::True;
+   if (not http_active(Self->CurrentState)) return ERR::True;
 
    if ((Self->ContentLength != -1) and (Self->Index >= Self->ContentLength)) {
       log.trace("Transmission over.");
       if (Self->Index > Self->ContentLength) log.warning("Warning: received too much content.");
+      set_http_status_error(Self);
       Self->setCurrentState(HGS::COMPLETED);
       return ERR::True;
    }
@@ -530,22 +559,22 @@ static ERR check_incoming_end(extHTTP *Self)
 
 static void set_http_method(extHTTP *Self, CSTRING Method, std::ostringstream &Cmd)
 {
-   if ((Self->ProxyServer) and ((Self->Flags & HTF::SSL) IS HTF::NIL)) {
+   if ((not Self->ProxyServer.empty()) and ((Self->Flags & HTF::SSL) IS HTF::NIL)) {
       // Normal proxy request without SSL tunneling
-      Cmd << Method << " " << ((Self->Port IS 443) ? "https" : "http") << "://" << Self->Host << ":" <<
-         Self->Port << "/" << (Self->Path ? Self->Path : "") << " HTTP/1.1" << CRLF;
+      Cmd << Method << " " << ((Self->Port IS 443) ? "https" : "http") << "://" <<
+         http_authority(Self, true) << "/" << Self->Path << " HTTP/1.1" << CRLF;
    }
-   else Cmd << Method << " /" << (Self->Path ? Self->Path : (STRING)"") << " HTTP/1.1" << CRLF;
+   else Cmd << Method << " /" << Self->Path << " HTTP/1.1" << CRLF;
 
-   Cmd << "Host: " << Self->Host << CRLF;
-   Cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
+   Cmd << "Host: " << http_authority(Self) << CRLF;
+   Cmd << "User-Agent: " << (Self->UserAgent.empty() ? "Kotuku Client" : Self->UserAgent.c_str()) << CRLF;
 }
 
 //********************************************************************************************************************
 
   static ERR parse_file(extHTTP *Self, std::string &Buffer)
   {
-     const char *file = Self->InputFile;
+     auto file = Self->InputFile.c_str();
      auto pos = Self->InputPos;
      while (char ch = file[pos]) {
         if (ch IS '"') {

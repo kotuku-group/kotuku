@@ -5,7 +5,7 @@
    global glDocFolder = State.folder
 end
 
-function loadXMLMarkup(Markup:str, PageWidth:num)
+function loadXMLMarkup(Markup:str, PageWidth:num):<num, str>
    scene = obj.new('VectorScene', { pageWidth=PageWidth ?? 1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    doc = vp.new('document', { viewport=vp })
@@ -14,7 +14,7 @@ function loadXMLMarkup(Markup:str, PageWidth:num)
    return err, xml_str
 end
 
-function loadXML(Path:str)
+function loadXML(Path:str):<num, str>
    scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
@@ -22,7 +22,7 @@ function loadXML(Path:str)
    return err, xml_str
 end
 
-function loadXMLWidth(Path:str, PageWidth:num)
+function loadXMLWidth(Path:str, PageWidth:num):<num, str>
    scene = obj.new('VectorScene', { pageWidth=PageWidth, pageHeight=768 })
    vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    doc = vp.new('document', { viewport=vp, path=glDocFolder .. Path })
@@ -36,7 +36,7 @@ function parseXML(XmlStr:str)
    return xml
 end
 
-function xpath(Xml, Expr:str)
+function xpath(Xml, Expr:str):str
    err_xp, result = Xml.mtEvaluate(Expr)
    assert(err_xp is ERR_Okay, 'XPath failed: ' .. Expr .. ', err=' .. tostring(err_xp))
    return result
@@ -81,7 +81,7 @@ end
 @Test function WellFormed()
    -- For several .rpl files the output must parse cleanly as an XML document, proving it is well formed
    -- and the escape helper is correct.
-   files = array<string> { 'paragraphs.rpl', 'tables.rpl', 'lists.rpl', 'fonts.rpl', 'links.rpl' }
+   files = array<str> { 'paragraphs.rpl', 'tables.rpl', 'lists.rpl', 'fonts.rpl', 'links.rpl' }
    for path in values(files) do
       err, xml_str = loadXML(path)
       assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for ' .. path .. ', err=' .. err)
@@ -100,10 +100,10 @@ end
       '<body/><page><p>5 &lt; 10 &amp; 3 &gt; 2 <a href="test.rpl" hint="A &lt; B &amp; &quot;quoted&quot;">link</a></p></page>')
    err, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
    assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed: ' .. mSys.GetErrorMsg(err))
-   assert(xml_str:find('&lt;'),  'XML output must contain &lt;, got: ' .. xml_str)
-   assert(xml_str:find('&gt;'),  'XML output must contain &gt;, got: ' .. xml_str)
-   assert(xml_str:find('&amp;'), 'XML output must contain &amp;, got: ' .. xml_str)
-   assert(xml_str:find('&quot;'), 'XML output must contain &quot; for escaped attribute values, got: ' .. xml_str)
+   assert(xml_str.find('&lt;'),  'XML output must contain &lt;, got: ' .. xml_str)
+   assert(xml_str.find('&gt;'),  'XML output must contain &gt;, got: ' .. xml_str)
+   assert(xml_str.find('&amp;'), 'XML output must contain &amp;, got: ' .. xml_str)
+   assert(xml_str.find('&quot;'), 'XML output must contain &quot; for escaped attribute values, got: ' .. xml_str)
 
    xml = parseXML(xml_str)
    assert(xpath(xml, 'string((/extract/stream//text)[1])') is '5 < 10 & 3 > 2 ', 'Escaped text content must round-trip after XML parse')
@@ -112,7 +112,7 @@ end
 
 @Test function Tables()
    err, xml_str = loadXML('tables.rpl')
-   //print(xml_str)
+   --print(xml_str)
    assert(err is ERR_Okay, 'ReadContent(DATA_XML) failed for tables.rpl, err=' .. err)
 
    xml = parseXML(xml_str)
@@ -472,4 +472,66 @@ end
 
    root_name = xpath(xml, 'name(/extract/*[1])')
    assert(root_name is 'stream', 'Clamped XML output must start with <stream>, got ' .. tostring(root_name))
+end
+
+@Test function StringViewMethodInputs()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML,
+      '<body/><page><index name="string_view_index">Indexed text</index><p><a href="links.rpl">Link text</a></p></page>')
+
+   err, start_index, end_index = doc.mtFindIndex('string_view_index')
+   assert(err is ERR_Okay, 'FindIndex() should accept a normal Tiri string, got ' .. err)
+   assert(start_index >= 0 and end_index > start_index, 'FindIndex() returned an invalid range')
+
+   err = doc.mtHideIndex('string_view_index')
+   assert(err is ERR_Okay, 'HideIndex() should accept a normal Tiri string, got ' .. err)
+
+   err = doc.mtShowIndex('string_view_index')
+   assert(err is ERR_Okay, 'ShowIndex() should accept a normal Tiri string, got ' .. err)
+
+   err = doc.mtSelectLink(-1, '')
+   assert(err is ERR_OutOfRange, 'SelectLink() should treat an empty name as index selection, got ' .. err)
+
+   err = doc.mtEdit('', 0)
+   assert(err is ERR_Okay, 'Edit() should treat an empty name as a deactivate request, got ' .. err)
+
+   err_xml, xml_str = doc.mtReadContent(DATA_XML, 0, 0x7fffffff)
+   assert(err_xml is ERR_Okay, 'ReadContent(DATA_XML) failed while locating text stream index, got ' .. err_xml)
+   xml = parseXML(xml_str)
+   text_index = tonumber(xpath(xml, 'string((/extract/stream//text/@stream-index)[1])'))
+   assert(text_index != nil, 'Expected to locate a text stream index')
+
+   err = doc.mtInsertText('Inserted ', text_index, -1, false)
+   assert(err is ERR_Okay, 'InsertText() should accept a normal Tiri string, got ' .. err)
+
+   err_text, text = doc.mtReadContent(DATA_TEXT, 0, 0x7fffffff)
+   assert(err_text is ERR_Okay, 'ReadContent(DATA_TEXT) failed after InsertText(), got ' .. err_text)
+   assert(text.find('Inserted'), 'Inserted text was not present in the document text output')
+end
+
+@Test function StringViewRequiredInputErrors()
+   scene = obj.new('VectorScene', { pageWidth=1024, pageHeight=768 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   doc = vp.new('document', { viewport=vp })
+   check doc.acDataFeed(nil, DATA_XML, '<body/><page><p>Content</p></page>')
+
+   err_find, _, _ = doc.mtFindIndex('')
+   assert(err_find is ERR_NullArgs, 'FindIndex() should reject an empty name, got ' .. err_find)
+
+   err_insert_xml = doc.mtInsertXML('', -1)
+   assert(err_insert_xml is ERR_NullArgs, 'InsertXML() should reject empty XML, got ' .. err_insert_xml)
+
+   err_insert_text = doc.mtInsertText('', -1, -1, false)
+   assert(err_insert_text is ERR_NullArgs, 'InsertText() should reject empty text, got ' .. err_insert_text)
+
+   err_call = doc.mtCallFunction('', nil, 0)
+   assert(err_call is ERR_NullArgs, 'CallFunction() should reject an empty function name, got ' .. err_call)
+
+   err_show = doc.mtShowIndex('')
+   assert(err_show is ERR_NullArgs, 'ShowIndex() should reject an empty name, got ' .. err_show)
+
+   err_hide = doc.mtHideIndex('')
+   assert(err_hide is ERR_NullArgs, 'HideIndex() should reject an empty name, got ' .. err_hide)
 end

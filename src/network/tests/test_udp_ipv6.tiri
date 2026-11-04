@@ -3,7 +3,7 @@ UDP IPv6 Communication Test
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+module network as mNet
 
 glBasePort = 19810  -- Base port for IPv6 UDP tests
 glTestTimeout = 3.0
@@ -17,27 +17,28 @@ glTestTimeout = 3.0
    msg_recv    = false
    sv_source   = struct.new('IPAddress')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name    = 'UDPServer',
       port    = server_port,
       address = '::1',  -- IPv6 loopback
-      flags   = 'SERVER|UDP',
+      flags   = 'UDP',
       incoming = function(Socket)
          buffer = array<byte, 1024>
          err, bytesRead = Socket.mtRecvFrom(sv_source, buffer)
          assert(err is ERR_Okay, 'Server failed to receive IPv6 UDP data: ' .. mSys.GetErrorMsg(err))
 
          if bytesRead > 0 then
-            msg = buffer:getString(0, bytesRead)
-            logOutput('[IPv6 UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(sv_source) .. ':' .. sv_source.port)
-            assert(msg:startsWith('Hello IPv6'), 'Unexpected message received')
+            local msg = buffer.getString(0, bytesRead)
+            local err, ip = mNet.AddressToStr(sv_source)
+            logOutput('[IPv6 UDP Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. sv_source.port)
+            assert(msg.startsWith('Hello IPv6'), 'Unexpected message received')
             msg_recv = true
             Socket.acSignal()
          end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
 
    client = obj.new('netsocket', { flags = 'UDP' })
 
@@ -51,7 +52,7 @@ glTestTimeout = 3.0
    logOutput('[IPv6 UDP Client] Sending: "' .. message .. '" to ::1:' .. dest.port)
    err, bytesSent = client.mtSendTo(dest, message)
    assert(err is ERR_Okay, 'Client failed to send IPv6 UDP data: ' .. mSys.GetErrorMsg(err))
-   assert(bytesSent is string.len(message), 'Not all bytes were sent')
+   assert(bytesSent is #message, 'Not all bytes were sent')
 
    check proc.sleep()
 
@@ -67,10 +68,10 @@ end
    ipv4Received = false
    ipv6Received = false
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = server_port,
       address = '::',  -- Bind to all interfaces (dual-stack)
-      flags   = NSF_SERVER|NSF_UDP,
+      flags   = NSF_UDP,
       incoming = function(Socket)
          buffer = array<byte, 1024>
          source = struct.new('IPAddress')
@@ -78,12 +79,13 @@ end
          assert(err is ERR_Okay, 'Server failed to receive dual-stack UDP data: ' .. mSys.GetErrorMsg(err))
 
          if bytesRead > 0 then
-            msg = buffer:getString(0, bytesRead)
-            logOutput('[Dual-Stack UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
+            local msg = buffer.getString(0, bytesRead)
+            local err, ip = mNet.AddressToStr(source)
+            logOutput('[Dual-Stack UDP Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. source.port)
 
-            if msg:endsWith('IPv4') then
+            if msg.endsWith('IPv4') then
                ipv4Received = true
-            elseif msg:endsWith('IPv6') then
+            elseif msg.endsWith('IPv6') then
                ipv6Received = true
             end
 
@@ -94,7 +96,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
 
    client = obj.new('netsocket', { flags = 'UDP' })
 

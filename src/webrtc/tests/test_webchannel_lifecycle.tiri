@@ -1,0 +1,313 @@
+   import './webchannel_support'
+
+-- Channel behaviour uses numeric candidates; test_mdns_privacy covers name registration.
+
+@Test function PendingValidationAndClosure()
+   local peer <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   assert(peer.mtCreateWebChannel('', '', 1, 0, -1, 0, 0) is ERR_InvalidValue,
+      'Simultaneous zero reliability options were accepted')
+   assert(peer.mtCreateWebChannel('', '', 1, 1, -1, -1, -1) is ERR_InvalidValue,
+      'Negotiated channel without ID was accepted')
+   assert(peer.mtCreateWebChannel('', '', 1, 0, 65535, -1, -1) is ERR_OutOfRange, 'Invalid ID accepted')
+   assert(peer.mtCreateWebChannel('\255', '', 1, 0, -1, -1, -1) is ERR_InvalidData, 'Invalid label UTF-8 accepted')
+   local channel = channelTest.create(peer, 'pending', '', true, true, 10)
+   assert(channel.streamID is 10, 'Explicit ID was not reserved immediately')
+   assert(peer.mtCreateWebChannel('', '', 1, 1, 10, -1, -1) is ERR_InvalidValue, 'Pending ID collision accepted')
+   assert(channel.mtSend('', WCM_TEXT) is ERR_InvalidState, 'Send before OPEN accepted')
+   local closed = 0
+   channel.onClose = function() closed += 1 end
+   check channel.mtClose()
+   check channel.mtClose()
+   channelTest.waitFor(function() return closed is 1 end)
+   assert(channel.state is WCS_CLOSED, 'Pending close did not become CLOSED')
+   check peer.mtClose()
+   processing.sleep(0.12)
+   assert(peer.error is ERR_Okay, 'Closed peer timer introduced an InvalidState error')
+   peer.free()
+   assert(not channel.exists(), 'Parent free retained a channel child')
+end
+
+@Test function PendingParityErrorOrder()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local bad = channelTest.create(first, 'bad-parity', '', true, false, 1)
+   local events = array<str>
+   bad.onError = function(Child, Error)
+      assert(Error is ERR_InvalidValue and Child.error is Error and Child.state is WCS_CLOSED,
+         'Asynchronous parity error was not visible before notification')
+      events.push('error')
+   end
+   bad.onClose = function() events.push('close') end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return #events is 2 end)
+   assert(events[0] is 'error' and events[1] is 'close', 'Terminal failure event order changed')
+end
+
+@Test function FreeFromRemoteCallback()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local local_channel = channelTest.create(first, 'free-remote')
+   local remote_child
+   local callbacks = 0
+   second.onWebChannel = function(Peer, Channel)
+      remote_child = Channel
+      Channel.onOpen = function() callbacks += 1 end
+      Channel.onClose = function() callbacks += 1 end
+      Channel.free()
+   end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return remote_child != nil and not remote_child.exists() end)
+   assert(callbacks is 0, 'Explicit free failed to suppress queued callbacks')
+end
+
+@Test function FreeParentFromOpen()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second = obj.new('peerconnection', { flags='NO_MDNS' })
+   local remote_child
+   second.onWebChannel = function(Peer, Channel)
+      remote_child = Channel
+      Channel.onOpen = function(Child) Peer.free() end
+   end
+   local channel = channelTest.create(first, 'free-parent')
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return remote_child != nil and not second.exists() end)
+   assert(not remote_child.exists(), 'Parent callback destruction retained child')
+end
+
+@Test function MessageFreeAndReentrantLow()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local channel = channelTest.create(first, 'callback')
+   local receiver
+   second.onWebChannel = function(Peer, Child) receiver = Child end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN and receiver != nil end)
+   assert(channel.mtSend('\255', WCM_TEXT) is ERR_InvalidData, 'Invalid text accepted')
+   assert(channel.mtSend('', 99) is ERR_InvalidValue, 'Invalid type accepted')
+   assert(channel.mtSend(array<byte, 262145>, WCM_BINARY) is ERR_OutOfRange, 'Remote message limit exceeded')
+   local lows = 0
+   channel.onBufferedAmountLow = function(Child)
+      lows += 1
+      if lows is 1 then check Child.mtSend('second', WCM_TEXT) end
+   end
+   local messages = array<str>
+   receiver.onMessage = function(Child, Buffer, Type)
+      messages.push(Buffer.getString())
+      if #messages is 2 then Child.free() end
+   end
+   check channel.mtSend('first', WCM_TEXT)
+   assert(lows is 0, 'Send called low callback inline')
+   channelTest.waitFor(function() return #messages is 2 and lows is 2 and not receiver.exists() end)
+   assert(messages[0] is 'first' and messages[1] is 'second', 'Reentrant low send changed message order')
+end
+
+@Test function ConstructorFieldsAndPendingQuota()
+   local peer <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   assert(peer.set('receiveLimit', 1000) is ERR_NoFieldAccess, 'ReceiveLimit changed after initialisation')
+   local channel = channelTest.create(peer, 'immutable')
+   for _, name in array<str> { 'label', 'protocol', 'ordered', 'negotiated', 'maxRetransmits',
+      'maxPacketLifeTime', 'id', 'state', 'maxMessageSize', 'bufferedAmount' } do
+      assert(channel.set(name, 0) is ERR_NoFieldAccess, 'Read-only channel field accepted a write: ' .. name)
+   end
+   assert(channel.set('bufferedAmountLowThreshold', -1) is ERR_OutOfRange, 'Negative threshold accepted')
+   assert(channel.set('bufferedAmountLowThreshold', 16777217) is ERR_OutOfRange, 'Oversized threshold accepted')
+   for _ in {1 to 256} do channelTest.create(peer, 'reserved') end
+   assert(peer.mtCreateWebChannel('', '', 1, 0, -1, -1, -1) is ERR_BufferOverflow,
+      'Pending channel quota was exceeded')
+   check channel.mtClose()
+   channelTest.create(peer, 'replacement')
+end
+
+@Test function AutomaticAllocationPreservesExplicitReservation()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local automatic = channelTest.create(first, 'automatic')
+   local explicit = channelTest.create(first, 'explicit', '', true, false, 0)
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return automatic.state is WCS_OPEN and explicit.state is WCS_OPEN end)
+   assert(explicit.streamID is 0 and automatic.streamID is 2, 'Automatic allocation stole an explicit ID reservation')
+end
+
+@Test function ZeroLifetimeAndTerminalFree()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local expiring = channelTest.create(first, 'zero-life', '', true, false, -1, -1, 0)
+   local reliable = channelTest.create(first, 'reliable')
+   local received = 0
+   local later = false
+   second.onWebChannel = function(Peer, Channel)
+      Channel.onMessage = function(Child, Buffer, Type)
+         if Child.label is 'zero-life' then received += 1 else later = true end
+      end
+   end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return expiring.state is WCS_OPEN and reliable.state is WCS_OPEN end)
+   assert(expiring.maxPacketLifeTime is 0 and expiring.maxRetransmits is -1, 'Zero lifetime became omitted')
+   check expiring.mtSend('expired', WCM_TEXT)
+   assert(expiring.bufferedAmount is 0, 'Zero lifetime left unsent bytes charged')
+   check reliable.mtSend('later', WCM_TEXT)
+   channelTest.waitFor(function() return later end)
+   assert(received is 0, 'Zero lifetime transmitted expired application data')
+   reliable.onClose = function(Child) Child.free() end
+   check reliable.mtClose()
+   channelTest.waitFor(function() return not reliable.exists() end)
+end
+
+@Test function DirectionalMessageLimits()
+   local source <close> = obj.new('peerconnection', { flags='NO_MDNS', receiveLimit=123456 })
+   check source.mtCreateOffer()
+   local offer = source.localDescription
+   for _, value in array<int> { -1, 0, 123456, 99999999 } do
+      local peer <close> = obj.new('peerconnection', { flags='NO_MDNS', receiveLimit=7 })
+      local channel = channelTest.create(peer, 'limit')
+      assert(channel.maxMessageSize is 0, 'Send limit was available before remote negotiation')
+      local line = 'a=max-message-size:123456\r\n'
+      local replacement = value is -1 and '' or ('a=max-message-size:' .. value .. '\r\n')
+      check peer.mtSetRemoteDescription(offer.replace(line, replacement))
+      local expected = value is -1 and 65536 or (value is 123456 and 123456 or 16777216)
+      assert(channel.maxMessageSize is expected, 'Absent, zero, finite or capped remote limit was misread')
+      assert(peer.receiveLimit is 7, 'Remote negotiation changed local receive capacity')
+   end
+end
+
+@Test function FreeFromErrorAndLow()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local bad = channelTest.create(first, 'bad', '', true, false, 1)
+   local terminal = 0
+   bad.onError = function(Child, Error) Child.free() end
+   bad.onClose = function() terminal += 1 end
+   local channel = channelTest.create(first, 'low-free')
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return not bad.exists() and channel.state is WCS_OPEN end)
+   assert(terminal is 0, 'Explicit error-callback free emitted a terminal callback')
+   channel.onBufferedAmountLow = function(Child) Child.free() end
+   check channel.mtSend('accepted', WCM_TEXT)
+   channelTest.waitFor(function() return not channel.exists() end)
+end
+
+@Test function FingerprintFailureTerminatesPendingChannels()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local channels = array<obj> {
+      channelTest.create(first, 'first'), channelTest.create(first, 'second'),
+      channelTest.create(first, 'negotiated', '', true, true, 42)
+   }
+   local errors = 0
+   local closes = 0
+   local failed = {}
+   for _, channel in channels do
+      channel.onError = function(Child, Error)
+         assert(Child.state is WCS_CLOSED and Error != ERR_Okay and Child.error is Error,
+            'Transport failure was not visible before channel error notification')
+         assert(not failed[Child.label], 'Channel error was repeated')
+         failed[Child.label] = true
+         errors += 1
+      end
+      channel.onClose = function(Child)
+         assert(failed[Child.label], 'Failure close arrived before its error')
+         closes += 1
+      end
+   end
+   check first.mtCreateOffer()
+   channelTest.waitFor(function() return first.gatheringState is RTCGATHER_COMPLETE end)
+   check first.mtSetLocalDescription(first.localDescription)
+   check second.mtSetRemoteDescription(first.localDescription)
+   check second.mtCreateAnswer()
+   channelTest.waitFor(function() return second.gatheringState is RTCGATHER_COMPLETE end)
+   check second.mtSetLocalDescription(second.localDescription)
+   -- A valid but incorrect fingerprint must fail authentication before SCTP or DCEP can open.
+   local bad_answer = second.localDescription.replace(second.certificateFingerprint, first.certificateFingerprint)
+   check first.mtSetRemoteDescription(bad_answer)
+   channelTest.waitFor(function() return errors is 3 and closes is 3 end)
+   processing.sleep(0.1)
+   assert(errors is 3 and closes is 3, 'Transport failure terminal notifications were repeated')
+end
+
+@Test function RetainedChannelsAcrossStreamReuse()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local remote = {}
+   local retired = array<obj>
+   local received = 0
+   local expected = 0
+   local closes = 0
+   second.onWebChannel = function(Peer, Channel)
+      remote[Channel.label] = Channel
+      Channel.onMessage = function(Child, Buffer, Type)
+         assert(Buffer.getString() is 'new data', 'Reused stream payload changed')
+         received += 1
+      end
+      Channel.onClose = function() closes += 1 end
+   end
+   local current:obj = channelTest.create(first, 'initial')
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return current.state is WCS_OPEN and remote.initial != nil end)
+   local stream_id = current.streamID
+   for cycle in {0 to 4} do
+      local receiver = remote[current.label]
+      current.onClose = function() closes += 1 end
+      expected += 1
+      check current.mtSend('new data', WCM_TEXT)
+      for _, old in retired do
+         assert(old.state is WCS_CLOSED and old.bufferedAmount is 0,
+            'Retired channel inherited reused stream state or buffering')
+      end
+      channelTest.waitFor(function() return received is expected end)
+      -- Free the oldest generation while a newer channel owns its stream.
+      if cycle is 2 then
+         retired[0].free()
+         retired[1].free()
+         retired.remove(0)
+         retired.remove(0)
+         expected += 1
+         check current.mtSend('new data', WCM_TEXT)
+         channelTest.waitFor(function() return received is expected end)
+      end
+      check current.mtClose()
+      channelTest.waitFor(function() return current.state is WCS_CLOSED and receiver.state is WCS_CLOSED end)
+      for _, old in retired do
+         assert(old.state is WCS_CLOSED and old.bufferedAmount is 0,
+            'Stream reset revived a retired public channel')
+      end
+      retired.push(current)
+      retired.push(receiver)
+      if cycle < 3 then
+         current = channelTest.create(first, 'reuse-' .. cycle, '', true, false, stream_id)
+         channelTest.waitFor(function() return current.state is WCS_OPEN and remote[current.label] != nil end)
+         assert(current.streamID is stream_id, 'Explicit stream reuse changed ID')
+      end
+   end
+   assert(closes is 8, 'Retired channels received duplicate close notifications')
+end
+
+-- Replacing or clearing a callback field from within that callback must leave the running call intact and route
+-- later events to the replacement only.
+
+@Test function ReplaceCallbacksFromWithin()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local feedback = 0
+   first.feedback = function(Peer, State, IceState)
+      feedback += 1
+      Peer.feedback = nil
+   end
+   local channel = channelTest.create(first, 'replace')
+   local receiver
+   second.onWebChannel = function(Peer, Child) receiver = Child end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN and receiver != nil end)
+   assert(feedback is 1, 'Feedback cleared within its call was invoked again')
+
+   local original, replacement = array<str>, array<str>
+   receiver.onMessage = function(Child, Buffer, Type)
+      original.push(Buffer.getString())
+      Child.onMessage = function(Child, Buffer, Type) replacement.push(Buffer.getString()) end
+   end
+   check channel.mtSend('first', WCM_TEXT)
+   channelTest.waitFor(function() return #original is 1 end)
+   check channel.mtSend('second', WCM_TEXT)
+   channelTest.waitFor(function() return #replacement is 1 end)
+   assert(#original is 1 and original[0] is 'first', 'Replaced message callback received later messages')
+   assert(replacement[0] is 'second', 'Replacement message callback missed the next message')
+end

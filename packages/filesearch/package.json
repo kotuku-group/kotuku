@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "io/filesearch",
+  "version": "1.0",
+  "description": "Configurable recursive file and folder search for Tiri applications.",
+  "entry": "filesearch.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-IO-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "file",
+    "filesystem",
+    "search"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "filesearch.tiri",
+      "size": 10791,
+      "sha256": "b63b70e48eee7db6d3235b6d6ca2fd6b31775ba06be10eeeaaa1ad8df942cce3",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

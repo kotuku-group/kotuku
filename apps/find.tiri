@@ -6,30 +6,30 @@
 
 -- Helper: Parse a size string like +10K, -1M, 500 into min_size, max_size
 
-function parseSize(SizeStr:str):<any, any>
+function parseSize(SizeStr:str!):<any, any>
    min_size = nil
    max_size = nil
 
    prefix = nil
-   if SizeStr:sub(0, 1) is '+' then
+   if SizeStr.sub(0, 1) is '+' then
       prefix = '+'
-      SizeStr = SizeStr:sub(1)
-   elseif SizeStr:sub(0, 1) is '-' then
+      SizeStr = SizeStr.sub(1)
+   elseif SizeStr.sub(0, 1) is '-' then
       prefix = '-'
-      SizeStr = SizeStr:sub(1)
+      SizeStr = SizeStr.sub(1)
    end
 
    multiplier = 1
-   last_char = SizeStr:sub(-1):upper()
+   last_char = SizeStr.sub(-1).upper()
    if last_char is 'K' then
       multiplier = 1024
-      SizeStr = SizeStr:sub(0, -2)
+      SizeStr = SizeStr.sub(0, -1)
    elseif last_char is 'M' then
       multiplier = 1048576
-      SizeStr = SizeStr:sub(0, -2)
+      SizeStr = SizeStr.sub(0, -1)
    elseif last_char is 'G' then
       multiplier = 1073741824
-      SizeStr = SizeStr:sub(0, -2)
+      SizeStr = SizeStr.sub(0, -1)
    end
 
    bytes = tonumber(SizeStr) * multiplier
@@ -47,7 +47,7 @@ function parseSize(SizeStr:str):<any, any>
    return min_size, max_size
 end
 
-function parseSizeOption(Value:any, Param:table):table
+function parseSizeOption(Value:any!, Param:table):table
    min_size, max_size = parseSize(tostring(Value))
    return {
       source = tostring(Value),
@@ -59,15 +59,15 @@ end
 -- Helper: Parse a modification time string like +7d, -24h into DateTime structs for minDate/maxDate.
 -- Uses the time object to get the current time, then subtracts the offset to produce a target DateTime.
 
-function parseModified(ModStr:str):<any, any>
+function parseModified(ModStr:str!):<any, any>
    min_date = nil
    max_date = nil
 
-   prefix = ModStr:sub(0, 1)
+   prefix = ModStr.sub(0, 1)
    assert(prefix is '+' or prefix is '-', f'Modified value must start with + or -: {ModStr}')
 
-   unit = ModStr:sub(-1)
-   num = tonumber(ModStr:sub(1, -2))
+   unit = ModStr.sub(-1)
+   num = tonumber(ModStr.sub(1, -1))
    assert(num, f'Invalid modified value: {ModStr}')
 
    offset_seconds = 0
@@ -112,7 +112,7 @@ function parseModified(ModStr:str):<any, any>
    return min_date, max_date
 end
 
-function parseModifiedOption(Value:any, Param:table):table
+function parseModifiedOption(Value:any!, Param:table):table
    min_date, max_date = parseModified(tostring(Value))
    return {
       source = tostring(Value),
@@ -123,26 +123,27 @@ end
 
 -- Helper: Count depth of Path relative to BasePath
 
-function countDepth(Path:str, BasePath:str):num
+function countDepth(Path:str!, BasePath:str!):num
    relative = Path
-   if Path:sub(0, BasePath:len()) is BasePath then
-      relative = Path:sub(BasePath:len())
+   if Path.sub(0, #BasePath) is BasePath then
+      relative = Path.sub(#BasePath)
    end
    depth = 0
-   for i in {0..relative:len()-1} do
-      if relative:sub(i, i+1) is '/' then depth++ end
+   for i in {0 to #relative-1} do
+      if relative.sub(i, i+1) is '/' then depth++ end
    end
    return depth
 end
 
-function normaliseSearchPath(Path:str):str
-   if Path:endsWith('/') or Path:endsWith('\\') then return Path end
+function normaliseSearchPath(Path:str!):str
+   if Path.endsWith('/') or Path.endsWith('\\') then return Path end
    return Path .. '/'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   glPath       = obj.find('self').workingPath
+   glPath = processing.task().path
+
    glParser = options({
       name        = 'Find',
       description = 'Search for files and folders matching specified criteria.',
@@ -151,6 +152,7 @@ Examples:
   origo apps/find path=src/core/                            Search all files in src/core/
   origo apps/find path=src/ filter="\.cpp$"                 Find all C++ source files
   origo apps/find path=src/core/ name=defs.h                Find a specific file by name
+  origo apps/find path=src/ content="io.search"             Find files containing literal text
   origo apps/find path=src/ type=dir maxdepth=0             List top-level directories
   origo apps/find path=src/ size=+10K                       Files larger than 10 KB
   origo apps/find path=src/ modified=-7d                    Files modified in the last 7 days
@@ -159,17 +161,17 @@ Examples:
   origo apps/find name=CMakeLists.txt exec="wc -l {}"       Run wc -l on each match
 ]],
       args = array<table> {
-         { name = 'path', type = 'folder', exists = true, default = f'{glPath}../', group = 'Search',
+         { name = 'path', type = 'folder', exists = true, default = f'{glPath}', group = 'Search',
            comment = 'The folder to search.' },
          { name = 'filter', type = 'regex', excludes = 'name', group = 'Search',
            comment = "A regex pattern to filter filenames; mutually exclusive with 'name'." },
          { name = 'name', type = 'str', excludes = 'filter', group = 'Search',
            comment = "An exact filename to match; mutually exclusive with 'filter'." },
-         { name = 'type', type = 'enum', default = 'file', choices = array<string> { 'file', 'dir', 'all' },
+         { name = 'type', type = 'enum', default = 'file', choices = array<str> { 'file', 'dir', 'all' },
            group = 'Search', comment = "Match type: 'file', 'dir', or 'all'." },
-         { names = array<string> { 'maxdepth', 'max-depth' }, type = 'int', default = 100, group = 'Search',
+         { names = array<str> { 'maxdepth', 'max-depth' }, type = 'int', default = 100, group = 'Search',
            comment = 'Maximum directory depth to recurse into.' },
-         { names = array<string> { 'mindepth', 'min-depth' }, type = 'int', default = 0, group = 'Search',
+         { names = array<str> { 'mindepth', 'min-depth' }, type = 'int', default = 0, group = 'Search',
            comment = 'Minimum depth before results are reported.' },
 
          { name = 'size', type = parseSizeOption, group = 'Filters',
@@ -178,10 +180,12 @@ Examples:
            comment = 'Modification time filter, e.g. -7d (newer), +24h (older). Units: m, h, d.' },
          { name = 'exclude', type = 'regex', group = 'Filters',
            comment = 'A regex pattern to exclude matching filenames.' },
+         { name = 'content', type = 'str', group = 'Filters',
+           comment = 'Match files containing the specified literal text.' },
 
          { name = 'count', kind = 'flag', default = false, group = 'Output',
            comment = 'Print only the total match count.' },
-         { name = 'output', type = 'enum', default = 'path', choices = array<string> { 'path', 'name', 'detail' },
+         { name = 'output', type = 'enum', default = 'path', choices = array<str> { 'path', 'name', 'detail' },
            group = 'Output', comment = "Output format: 'path', 'name', or 'detail'." },
          { name = 'verbose', kind = 'flag', default = false, group = 'Output',
            comment = 'Print search parameters before searching.' },
@@ -202,6 +206,7 @@ Examples:
    glSize       = glArgs.size
    glModified   = glArgs.modified
    glExclude    = glArgs.exclude
+   glContent    = glArgs.content
    glCount      = glArgs.count
    glExec       = glArgs.exec
    glOutput     = glArgs.output
@@ -209,7 +214,7 @@ Examples:
 
    -- Build search options
 
-   options = {
+   local options = {
       maxDepth = glMaxDepth,
    }
 
@@ -236,6 +241,8 @@ Examples:
       if glModified.maxDate then options.maxDate = glModified.maxDate end
    end
 
+   if glContent then options.contentFilter = glContent end
+
    if glVerbose then
       print(f'Search path: {glSearchPath}')
       if glFilter then print(f'Filter: {glFilter.pattern}') end
@@ -246,6 +253,7 @@ Examples:
       if glSize then print(f'Size: {glSize.source}') end
       if glModified then print(f'Modified: {glModified.source}') end
       if glExclude then print(f'Exclude: {glExclude.pattern}') end
+      if glContent then print(f'Content: {glContent}') end
       if glCount then print('Mode: count only') end
       if glExec then print(f'Exec: {glExec}') end
       print(f'Output: {glOutput}')
@@ -261,7 +269,7 @@ Examples:
       -- For directories, FileName from io.splitPath() is empty; extract from the full path
       if display_name is '' or not display_name then
          trimmed = full_path
-         if trimmed:sub(-1) is '/' then trimmed = trimmed:sub(0, -2) end
+         if trimmed.sub(-1) is '/' then trimmed = trimmed.sub(0, -1) end
          _, display_name = io.splitPath(trimmed)
       end
 
@@ -280,7 +288,7 @@ Examples:
          print(display_name)
       elseif glOutput is 'detail' then
          size_str = tostring(File.size)
-         mod = File.date
+         local mod = File.date
          date_str = string.format('%04d-%02d-%02d %02d:%02d', mod.year, mod.month, mod.day, mod.hour, mod.minute)
          print(f'{full_path}\t{size_str}\t{date_str}')
       else
@@ -288,18 +296,18 @@ Examples:
       end
 
       if glExec then
-         cmd = glExec:replace('{}', full_path)
-         space = cmd:find(' ')
+         cmd = glExec.replace('{}', full_path)
+         space = cmd.find(' ')
          exec_opts = {
             flags = TSF_WAIT,
-            timeOut = 10,
+            timeout = 10,
             outputCallback = function(Task, Buffer)
-               print(Buffer:getString())
+               print(Buffer.getString())
             end
          }
          if space then
-            exec_opts.src  = cmd:sub(0, space)
-            exec_opts.args = cmd:sub(space + 1)
+            exec_opts.src  = cmd.sub(0, space)
+            exec_opts.args = cmd.sub(space + 1)
          else
             exec_opts.src = cmd
          end

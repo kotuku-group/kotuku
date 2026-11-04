@@ -31,7 +31,7 @@
    },
    "wordPattern": "[a-zA-Z_][a-zA-Z0-9_]*",
    "indentationRules": {
-      "increaseIndentPattern": "^\\s*(choose|else|elseif|for|function|if|repeat|while|then|do)\\b.*$|\\{\\s*$",
+      "increaseIndentPattern": "^\\s*(choose|else|elseif|for|function|if|repeat|while|then|do)\\b.*$|^\\s*using(?=[ \\t]*(?:$|--|[ \\t]+[A-Za-z_][A-Za-z0-9_]*\\b)).*$|\\{\\s*$",
       "decreaseIndentPattern": "^\\s*(end|else|elseif|until)\\b|^\\s*\\}"
    }
 }

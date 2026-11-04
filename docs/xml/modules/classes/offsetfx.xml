@@ -13,7 +13,8 @@
     <category>Graphics</category>
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
-<p>This filter offsets the input image relative to its current position in the image space by the specified vector of <code>(XOffset,YOffset)</code>.</p></description>
+<p>This filter offsets the input image relative to its current position in the image space by the specified vector of <code>(XOffset,YOffset)</code>.</p>
+<p>If the <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class> of the filter is <code>BOUNDING_BOX</code>, the offsets are fractions of the bounding box. By default the X offset is scaled by the bounding box width and the Y offset by its height, as per the SVG standard. If the <class name="VectorFilter" field="AspectRatio">VectorFilter.AspectRatio</class> is <code>NONE</code>, both offsets are scaled by the normalised diagonal of the bounding box, which is the same formula used by a scaled stroke width.  The direction of the offset is then the same for any shape, which suits drop shadows.</p></description>
     <source>
       <file path="filters/">filter_offset.cpp</file>
     </source>
@@ -41,25 +42,26 @@
       <comment>Returns an SVG compliant XML string that describes the effect.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
     <field>
       <name>XOffset</name>
       <comment>The delta X coordinate for the input graphic.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>DOUBLE</type>
       <description>
-<p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.</p>
+<p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.  The value is measured in the units of the filter's <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.</p>
       </description>
     </field>
 
     <field>
       <name>YOffset</name>
       <comment>The delta Y coordinate for the input graphic.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
+      <access read="R" write="W">Read/Write</access>
+      <type>DOUBLE</type>
       <description>
-<p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.</p>
+<p>The <code>(XOffset, YOffset)</code> field values define the offset of the input source within the target clipping area.  The value is measured in the units of the filter's <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.</p>
       </description>
     </field>
 

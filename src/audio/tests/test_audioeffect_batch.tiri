@@ -1,0 +1,304 @@
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+-- AudioEffect.Batch(): command grammar, atomicity, ordering, rules, group bounds, lifecycle and the removed staging
+-- interface.  The compressor covers scalar parameters, the equaliser covers groups and rules, and the splitter covers
+-- branch renumbering.
+
+function new_effect(Audio:obj, Class:str):<obj, num>
+   err, channel = Audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   return obj.new(Class, { audio=Audio, channel=channel }), channel
+end
+
+function get_number(Effect:obj, Key:str):num
+   err, text = Effect.acGetKey(Key)
+   assert(err is ERR_Okay, f'GetKey({Key}) must succeed')
+   return tonumber(text)
+end
+
+-- Run a batch and check both the error code and the index of the failed command.
+
+function expect(Effect:obj, Commands:array<str>, Code:num, Failed:num)
+   err, failed = Effect.mtBatch(Commands)
+   assert(err is Code and failed is Failed,
+      f'Expected {mSys.GetErrorMsg(Code)} at {Failed}, got {mSys.GetErrorMsg(err)} at {failed}')
+end
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function Whitespace()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp <close> = new_effect(audio, 'AudioCompressor')
+
+   check comp.mtBatch(array<str> { '  set threshold -30  ', 'set\tratio\t6', '\t set   makeup \t 9\t' })
+   assert(comp.threshold is -30 and comp.ratio is 6 and comp.makeup is 9)
+end
+
+@Test function SyntaxErrors()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp <close> = new_effect(audio, 'AudioCompressor')
+
+   for command in values({ '', '   ', '\t', 'set', 'set threshold', 'set threshold -30 extra', 'SET threshold -30',
+      'Set threshold -30', 'adjust threshold -30', 'set threshold=-30', 'insert bands', 'remove bands 0 1' }) do
+      expect(comp, array<str> { 'set ratio 6', command }, ERR_Syntax, 1)
+   end
+
+   -- Indexes are plain decimal numbers.
+
+   eq <close> = new_effect(audio, 'AudioEqualiser')
+   for index in values({ '-1', '+1', '1.0', 'x', '0x1' }) do
+      expect(eq, array<str> { f'insert bands {index}' }, ERR_Syntax, 0)
+      expect(eq, array<str> { f'remove bands {index}' }, ERR_Syntax, 0)
+   end
+   expect(eq, array<str> { 'insert bands 2147483648' }, ERR_OutOfRange, 0)
+   assert(comp.ratio is 4 and #eq.bands is 0, 'Syntax errors must change nothing')
+end
+
+@Test function ValueErrors()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp <close> = new_effect(audio, 'AudioCompressor')
+
+   for text in values({ 'abc', '1dB', '-', '+', '+-1', '--1', '1e999', 'nan', 'NaN', 'inf', '-inf', '0x10', '1,5' }) do
+      expect(comp, array<str> { 'set makeup 1', f'set threshold {text}' }, ERR_InvalidValue, 1)
+   end
+   expect(comp, array<str> { 'set threshold 1' }, ERR_InvalidValue, 0)
+   expect(comp, array<str> { 'set unknown 1' }, ERR_Search, 0)
+   assert(comp.threshold is -18 and comp.makeup is 0, 'Invalid values must change nothing')
+
+   -- A leading plus sign and exponents are accepted.
+
+   check comp.mtBatch(array<str> { 'set makeup +3', 'set threshold -2.5e1' })
+   assert(comp.makeup is 3 and comp.threshold is -25)
+end
+
+@Test function EnumerationKeys()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_effect(audio, 'AudioEqualiser')
+
+   check eq.mtBatch(array<str> { 'insert bands 0', 'set bands[0].type low_shelf', 'set bands[0].q 0.7' })
+   assert(eq.bands[0].type is EQB_LOW_SHELF)
+   check eq.mtBatch(array<str> { f'set bands[0].type {EQB_PEAK}' })
+   assert(eq.bands[0].type is EQB_PEAK, 'Numeric enumeration values remain accepted')
+
+   -- Option keys are case-sensitive and only apply to enumerations.
+
+   expect(eq, array<str> { 'set bands[0].type Low_Shelf' }, ERR_InvalidValue, 0)
+   expect(eq, array<str> { 'set bands[0].type unknown' }, ERR_InvalidValue, 0)
+   expect(eq, array<str> { 'set bands[0].gain peak' }, ERR_InvalidValue, 0)
+   err, type_text = eq.acGetKey('bands[0].type')
+   assert(tonumber(type_text) is EQB_PEAK, 'GetKey() reports enumerations as numbers')
+end
+
+@Test function AtomicBeforeAndAfterInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+
+   comp <close> = obj.new('AudioCompressor')
+   comp.audio = audio
+   comp.channel = channel
+   expect(comp, array<str> { 'set threshold -30', 'set ratio 6', 'set makeup 99' }, ERR_InvalidValue, 2)
+   assert(comp.threshold is -18 and comp.ratio is 4, 'A failed batch before Init() must change nothing')
+   check comp.mtBatch(array<str> { 'set threshold -30', 'set ratio 6' })
+   assert(comp.threshold is -30 and comp.ratio is 6, 'A batch before Init() is stored directly')
+   comp.init()
+   assert(comp.threshold is -30 and comp.ratio is 6)
+
+   expect(comp, array<str> { 'set threshold -40', 'set ratio 8', 'set makeup 99' }, ERR_InvalidValue, 2)
+   assert(comp.threshold is -30 and comp.ratio is 6, 'A failed batch after Init() must change nothing')
+   check comp.mtBatch(array<str> { 'set threshold -40', 'set ratio 8' })
+   assert(comp.threshold is -40 and comp.ratio is 8)
+end
+
+@Test function Ordering()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_effect(audio, 'AudioEqualiser')
+
+   -- An index after an insertion refers to the new entry, and the last of two sets wins.
+
+   check eq.mtBatch(array<str> { 'insert bands 0', 'set bands[0].frequency 100', 'set bands[0].frequency 200' })
+   assert(#eq.bands is 1 and eq.bands[0].frequency is 200)
+   check eq.mtBatch(array<str> { 'insert bands 0', 'set bands[0].frequency 50', 'insert bands 2',
+      'set bands[2].frequency 5000' })
+   assert(#eq.bands is 3)
+   assert(eq.bands[0].frequency is 50 and eq.bands[1].frequency is 200 and eq.bands[2].frequency is 5000)
+
+   -- A removal shifts later indexes down.
+
+   check eq.mtBatch(array<str> { 'remove bands 0', 'set bands[0].gain 3' })
+   assert(#eq.bands is 2 and eq.bands[0].frequency is 200 and eq.bands[0].gain is 3)
+
+   -- An index that existed before a removal no longer resolves after it.
+
+   expect(eq, array<str> { 'remove bands 0', 'set bands[1].gain 1' }, ERR_OutOfRange, 1)
+   assert(#eq.bands is 2)
+end
+
+@Test function Rules()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_effect(audio, 'AudioEqualiser')
+   check eq.mtBatch(array<str> { 'insert bands 0', 'insert bands 1', 'set bands[0].q 5', 'set bands[1].q 5' })
+
+   -- Rules are checked against the final state, so related changes succeed in either order.
+
+   check eq.mtBatch(array<str> { 'set bands[0].type low_shelf', 'set bands[0].q 0.7' })
+   check eq.mtBatch(array<str> { 'set bands[1].q 0.7', 'set bands[1].type high_shelf' })
+   assert(eq.bands[0].type is EQB_LOW_SHELF and eq.bands[1].type is EQB_HIGH_SHELF)
+
+   -- A batch that ends in a rule violation names no command and changes nothing.
+
+   expect(eq, array<str> { 'set gain 2', 'set bands[0].q 5' }, ERR_InvalidValue, -1)
+   assert(eq.gain is 0 and eq.bands[0].q is 0.7)
+
+   -- Inserted defaults are only validated as part of the final state.
+
+   check eq.mtBatch(array<str> { 'insert bands 2', 'set bands[2].type low_shelf', 'set bands[2].q 0.5' })
+   assert(#eq.bands is 3 and eq.bands[2].q is 0.5)
+end
+
+@Test function GroupBounds()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close> = new_effect(audio, 'AudioEqualiser')
+
+   inserts = array<str>
+   for i in {0 to 64} do inserts.push(f'insert bands {i}') end
+   check eq.mtBatch(inserts)
+   expect(eq, array<str> { 'remove bands 0', 'insert bands 0', 'insert bands 0' }, ERR_OutOfRange, 2)
+   assert(#eq.bands is 64)
+
+   expect(eq, array<str> { 'remove bands 64' }, ERR_OutOfRange, 0)
+   expect(eq, array<str> { 'insert bands 66' }, ERR_OutOfRange, 0)
+   expect(eq, array<str> { 'insert missing 0' }, ERR_Search, 0)
+
+   -- A splitter always keeps at least one branch.
+
+   splitter <close> = new_effect(audio, 'AudioSplitter')
+   expect(splitter, array<str> { 'remove branches 0' }, ERR_OutOfRange, 0)
+   check splitter.mtBatch(array<str> { 'insert branches 1', 'remove branches 0' })
+   _, count = check splitter.mtGetGroupCount('branches')
+   assert(count is 1)
+end
+
+@Test function FilterHistory()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq <close>, channel = new_effect(audio, 'AudioEqualiser')
+   check eq.mtBatch(array<str> { 'insert bands 0', 'set bands[0].gain 6', 'set bands[0].frequency 1000' })
+
+   frequencies = array<double> { 100, 1000, 8000 }
+   before = array<double, 3>
+   check eq.mtGetResponse(frequencies, before)
+
+   check audio.acActivate()
+   data = array<byte, 8192>
+   for i in {0 to 8192} do data[i] = (i % 64 < 32) ? 200 : 56 end
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+
+   -- Flat bands inserted around a live band leave its values and the overall response unchanged.
+
+   check eq.mtBatch(array<str> { 'insert bands 0', 'set bands[0].gain 0', 'insert bands 2', 'set bands[2].gain 0' })
+   assert(#eq.bands is 3 and eq.bands[1].gain is 6 and eq.bands[1].frequency is 1000)
+   after = array<double, 3>
+   check eq.mtGetResponse(frequencies, after)
+   for i in {0 to 3} do
+      assert(math.abs(after[i] - before[i]) < 1e-9, f'Flat bands must not alter the response at {frequencies[i]} Hz')
+   end
+
+   check eq.mtBatch(array<str> { 'remove bands 0', 'remove bands 1' })
+   assert(#eq.bands is 1 and eq.bands[0].gain is 6 and eq.bands[0].frequency is 1000)
+   processing.sleep(0.05)
+   err, reading = eq.mtReadMeters()
+   assert(err is ERR_Okay and reading.flags != AMF_DISCONNECTED)
+   check audio.mtCloseChannels(channel)
+end
+
+@Test function SplitterRenumbering()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   splitter <close> = new_effect(audio, 'AudioSplitter')
+   check splitter.mtBatch(array<str> { 'insert branches 1' })
+   comp <close> = obj.new('AudioCompressor', { parent=splitter, branch=1 })
+   eq <close> = obj.new('AudioEqualiser', { parent=splitter, branch=0 })
+
+   -- Branch effects follow their entries through a mixed batch.
+
+   check splitter.mtBatch(array<str> { 'insert branches 0', 'insert branches 2' })
+   assert(eq.branch is 1 and comp.branch is 3)
+   check splitter.mtBatch(array<str> { 'remove branches 0', 'remove branches 1' })
+   assert(eq.branch is 0 and comp.branch is 1)
+
+   -- A rejected batch renumbers nothing.
+
+   expect(splitter, array<str> { 'remove branches 0', 'set branches[0].gain 99' }, ERR_InvalidValue, 1)
+   assert(eq.branch is 0 and comp.branch is 1 and eq.mutable is 1)
+end
+
+@Test function Lifecycle()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp <close>, channel = new_effect(audio, 'AudioCompressor')
+
+   expect(comp, array<str> { }, ERR_Okay, -1)
+
+   commands = array<str>
+   for i in {0 to 1024} do commands.push('set ratio 2') end
+   check comp.mtBatch(commands)
+   commands.push('set ratio 3')
+   expect(comp, commands, ERR_Args, -1)
+   assert(comp.ratio is 2)
+
+   -- Field writes are immediate commits, before and after a batch.
+
+   comp.ratio = 5
+   check comp.mtBatch(array<str> { 'set makeup 2' })
+   comp.ratio = 6
+   assert(comp.ratio is 6 and comp.makeup is 2)
+
+   check audio.mtCloseChannels(channel)
+   expect(comp, array<str> { 'set ratio 3' }, ERR_NotInitialised, -1)
+   expect(comp, array<str> { }, ERR_Okay, -1)
+
+   master = audio.new('AudioCompressor')
+   check master.mtBatch(array<str> { 'set threshold -24' })
+   master.init()
+   expect(master, array<str> { 'set threshold -12' }, ERR_Immutable, -1)
+   expect(master, array<str> { 'frob' }, ERR_Immutable, -1)
+   assert(master.threshold is -24)
+
+   plain <close> = obj.new('AudioEffect')
+   expect(plain, array<str> { 'set gain 1' }, ERR_NoSupport, -1)
+end
+
+@Test function RemovedInterface()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   comp <close> = new_effect(audio, 'AudioCompressor')
+
+   assert(comp.acFlush() != ERR_Okay, 'Flush() is no longer supported by effects')
+   try
+      comp.setKey('ratio', '8')
+   except e
+   end
+   assert(comp.ratio is 4, 'SetKey() must not change a parameter')
+
+   try
+      comp.mtInsertEntry('bands', 0)
+   except e
+   success
+      raise 'InsertEntry() must no longer be callable'
+   end
+
+   -- obj.get() still falls back to GetKey() for schema keys without a field.
+
+   eq <close> = new_effect(audio, 'AudioEqualiser')
+   check eq.mtBatch(array<str> { 'set listening_level -30' })
+   assert(tonumber(eq.get('listening_level')) is -30)
+end
+
+@end

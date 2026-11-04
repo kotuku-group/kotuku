@@ -8,8 +8,8 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 ClientSocket: Represents a single socket connection to a client IP address.
 
-If a @Netsocket is running in server mode then it will create a new ClientSocket object every time that a new connection
-is opened by a client.  This is a very simple class that assists in the management of I/O between the client and server.
+When a @NetServer accepts a TCP connection, it creates a new ClientSocket object for that connection.  This is a very
+simple class that assists in the management of I/O between the accepted client and the server.
 -END-
 
 *********************************************************************************************************************/
@@ -20,6 +20,19 @@ template<typename T>
 static ERR send_data(T *Self, CPTR Buffer, size_t *Length);
 
 static CSTRING clientsocket_state(NTC Value);
+
+//********************************************************************************************************************
+// Return encrypted TLS output that has not yet been handed to the operating system.
+
+static size_t clientsocket_pending_tls_output(extClientSocket *Self)
+{
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   return Self->TLS.Handle ? ssl_pending_output_size(Self->TLS.Handle) : 0;
+#else
+   (void)Self;
+   return 0;
+#endif
+}
 
 //********************************************************************************************************************
 // Disconnect a client socket and report the state change.
@@ -36,7 +49,14 @@ static void disconnect(extClientSocket *Self)
       Self->Handle = NOHANDLE;
    }
 
-   if (Self->State != NTC::DISCONNECTED) Self->setState(NTC::DISCONNECTED);
+   if (Self->State != NTC::DISCONNECTED) {
+      if (Self->Client) {
+         auto server = (extNetSocket *)Self->Client->Owner;
+         if ((server) and (not server->collecting())) Self->setState(NTC::DISCONNECTED);
+         else Self->State = NTC::DISCONNECTED;
+      }
+      else Self->State = NTC::DISCONNECTED;
+   }
 }
 
 //********************************************************************************************************************
@@ -55,7 +75,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
        if (Self->State IS NTC::HANDSHAKING) {
           log.trace("Windows SSL handshake in progress, reading raw data.");
           ERR error = network_platform().receive(Self->Handle, Buffer, BufferSize, *Result);
-          if ((error IS ERR::Okay) and (*Result > 0)) {
+          if ((!error) and (*Result > 0)) {
              tls_handshake_received(Self, Buffer, *Result);
           }
           return error;
@@ -76,7 +96,7 @@ static ERR receive_from_client(extClientSocket *Self, APTR Buffer, size_t Buffer
             log.traceWarning("No more data to read from the SSL socket.");
             return ERR::Okay;
          }
-         else log.warning(ERR::Failed);
+         else log.warning(ERR::Read);
       }
    #else // OpenSSL
       bool read_blocked;
@@ -185,7 +205,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
          std::array<char, 4096> buffer;
          size_t bytes_received;
          ERR error = network_platform().receive(client->Handle, buffer.data(), buffer.size(), bytes_received);
-         if ((error IS ERR::Okay) and (bytes_received > 0)) {
+         if ((!error) and (bytes_received > 0)) {
             SSL_ERROR_CODE accept_result = ssl_accept(client->TLS.Handle, buffer.data(), bytes_received);
             auto flush_error = tls_flush_output(client);
             if ((flush_error != ERR::Okay) and (flush_error != ERR::BufferOverflow)) {
@@ -271,6 +291,7 @@ static void server_incoming_from_client_impl(HOSTHANDLE SocketFD, extClientSocke
    log.traceBranch("Handle: %" PRId64 ", Socket: %d, Client: %d", int64_t(SocketFD), Server->UID, client->UID);
 
    auto error = ERR::Okay;
+   if (Server->Incoming.stale()) clear_callback_function(Server->Incoming);
    if (Server->Incoming.defined()) {
       if (Server->Incoming.isC()) {
          kt::SwitchContext context(Server->Incoming.Context);
@@ -343,10 +364,23 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
    ClientSocket->OutgoingRecursion++;
 
    auto error = ERR::Okay;
+   bool tls_output_blocked = false;
+
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   // Schannel can consume all queued plaintext while retaining the encrypted record until IOCP has capacity.  Flush
+   // that record even when WriteQueue is empty, and do not encrypt later plaintext ahead of it.
+   if (clientsocket_pending_tls_output(ClientSocket)) {
+      error = tls_flush_output(ClientSocket);
+      if (error IS ERR::BufferOverflow) {
+         error = ERR::Okay;
+         tls_output_blocked = true;
+      }
+   }
+#endif
 
    // Send out remaining queued data before getting new data to send
 
-   while (not ClientSocket->WriteQueue.Buffer.empty()) {
+   while ((!error) and (!tls_output_blocked) and (not ClientSocket->WriteQueue.Buffer.empty())) {
       size_t len = ClientSocket->WriteQueue.Buffer.size() - ClientSocket->WriteQueue.Index;
       #ifndef DISABLE_SSL
          if ((not ClientSocket->TLS.Handle) and (len > glMaxWriteLen)) len = glMaxWriteLen;
@@ -357,7 +391,12 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
       if (len > 0) {
          error = send_data(ClientSocket, ClientSocket->WriteQueue.Buffer.data() + ClientSocket->WriteQueue.Index, &len);
          if (len > 0) ClientSocket->WriteQueue.Index += len;
-         if ((error != ERR::Okay) or (not len)) break;
+         if ((error != ERR::Okay) or (not len)) {
+            // BufferOverflow is backpressure, not a failure.  Writing resumes on the next notification, and counting
+            // it against ErrorCountdown would disconnect a slow reader with data still queued.
+            if (error IS ERR::BufferOverflow) error = ERR::Okay;
+            break;
+         }
       }
 
       if (ClientSocket->WriteQueue.Index >= ClientSocket->WriteQueue.Buffer.size()) {
@@ -367,7 +406,8 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
       }
    }
 
-   if ((error IS ERR::Okay) and (ClientSocket->CloseAfterWrite) and (ClientSocket->WriteQueue.Buffer.empty()) and
+   if ((!error) and (ClientSocket->CloseAfterWrite) and (ClientSocket->WriteQueue.Buffer.empty()) and
+       (not clientsocket_pending_tls_output(ClientSocket)) and
        (not network_platform().has_pending_write(ClientSocket->Handle))) {
       ClientSocket->CloseAfterWrite = false;
       disconnect(ClientSocket);
@@ -378,10 +418,11 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
 
    // Before feeding new data into the queue, the current buffer must be empty.
 
-   if ((error IS ERR::Okay) and ((ClientSocket->WriteQueue.Buffer.empty()) or
+   if ((!error) and ((ClientSocket->WriteQueue.Buffer.empty()) or
        (ClientSocket->WriteQueue.Index >= ClientSocket->WriteQueue.Buffer.size()))) {
       // Fetch more data
 
+      if (Server->Outgoing.stale()) clear_callback_function(Server->Outgoing);
       if (Server->Outgoing.defined()) {
          if (Server->Outgoing.isC()) {
             auto routine = (ERR (*)(extNetSocket *, extClientSocket *, APTR))(Server->Outgoing.Routine);
@@ -395,14 +436,16 @@ static void clientsocket_outgoing_impl(HOSTHANDLE SocketFD, extClientSocket *Cli
                }), error) != ERR::Okay) error = ERR::Terminate;
          }
 
-         if (error != ERR::Okay) Server->Outgoing.clear();
+         if (error != ERR::Okay) clear_callback_function(Server->Outgoing);
       }
 
       // If the write queue is empty then we remove the FD-Write registration so that
       // we don't tax system resources.
 
-      if (ClientSocket->WriteQueue.Buffer.empty() and (not network_platform().has_pending_write(ClientSocket->Handle))) {
-         log.trace("[NetSocket:%d] Write-queue listening on FD %d will now stop.", Server->UID, ClientSocket->Handle.int_value());
+      if (ClientSocket->WriteQueue.Buffer.empty() and (not clientsocket_pending_tls_output(ClientSocket)) and
+          (not network_platform().has_pending_write(ClientSocket->Handle))) {
+         log.trace("[NetSocket:%d] Write-queue listening on FD %d will now stop.", Server->UID,
+            ClientSocket->Handle.int_value());
          network_platform().remove_write(ClientSocket->Handle);
       }
    }
@@ -429,7 +472,8 @@ static ERR CLIENTSOCKET_Deactivate(extClientSocket *Self)
    log.branch();
 
    if ((Self->State IS NTC::CONNECTED) and
-       ((not Self->WriteQueue.Buffer.empty()) or network_platform().has_pending_write(Self->Handle))) {
+       ((not Self->WriteQueue.Buffer.empty()) or clientsocket_pending_tls_output(Self) or
+        network_platform().has_pending_write(Self->Handle))) {
       log.msg("Delaying disconnect until queued data is flushed.");
       Self->CloseAfterWrite = true;
       network_platform().register_write(Self->Handle, &clientsocket_outgoing, Self);
@@ -442,49 +486,28 @@ static ERR CLIENTSOCKET_Deactivate(extClientSocket *Self)
 
 //********************************************************************************************************************
 
-static ERR CLIENTSOCKET_Free(extClientSocket *Self)
+extClientSocket::~extClientSocket()
 {
    kt::Log log;
 
 #ifndef DISABLE_SSL
-   tls_disconnect(Self);
+   tls_disconnect(this);
 #endif
 
-   disconnect(Self);
+   disconnect(this);
 
-   if (Self->Client) { // If undefined, ClientSocket was never initialised
-      kt::ScopedObjectLock lock(Self->Client);
+   if (Client) { // If undefined, ClientSocket was never initialised
+      auto client = Client;
+      kt::ScopedObjectLock lock(client);
       if (lock.granted()) {
-         bool linked = false;
-         for (auto scan=Self->Client->Connections; scan; scan=scan->Next) {
-            if (scan IS Self) {
-               linked = true;
-               break;
-            }
-         }
+         unlink_client_socket(client, this);
 
-         if (linked) {
-            if (Self->Prev) {
-               Self->Prev->Next = Self->Next;
-               if (Self->Next) Self->Next->Prev = Self->Prev;
-            }
-            else {
-               Self->Client->Connections = Self->Next;
-               if (Self->Next) Self->Next->Prev = nullptr;
-            }
-
-            if (Self->Client->TotalConnections > 0) Self->Client->TotalConnections--;
-         }
-
-         if (not Self->Client->Connections) {
+         if (not client->Connections) {
             log.msg("No more connections for this IP, removing client.");
-            free_client((extNetSocket *)Self->Client->Owner, Self->Client);
+            free_client((extNetServer *)client->Owner, client);
          }
       }
    }
-
-   Self->~extClientSocket();
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -513,7 +536,7 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
    Self->State = NTC::CONNECTING;
 
 #ifndef DISABLE_SSL
-   auto server = (extNetSocket *)(Self->Client->Owner);
+   auto server = (extNetServer *)(Self->Client->Owner);
    if ((server->Flags & NSF::SSL) != NSF::NIL) {
       if (auto error = tls_accept_client(Self, server); error != ERR::Okay) return error;
    }
@@ -525,14 +548,6 @@ static ERR CLIENTSOCKET_Init(extClientSocket *Self)
    network_platform().register_read(Self->Handle, &server_incoming_from_client, Self);
    network_platform().set_socket_reference(Self->Handle, Self);
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR CLIENTSOCKET_NewPlacement(extClientSocket *Self)
-{
-   new (Self) extClientSocket;
    return ERR::Okay;
 }
 
@@ -550,26 +565,28 @@ Okay: Read successful (if no data was on the socket, success is still indicated)
 NullArgs
 Disconnected: The socket connection is closed.
 Failed: A permanent failure has occurred and socket has been closed.
+Args
+
 
 *********************************************************************************************************************/
 
 static ERR CLIENTSOCKET_Read(extClientSocket *Self, struct acRead *Args)
 {
    kt::Log log;
-   if ((not Args) or (not Args->Buffer)) return log.error(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer.data())) return log.error(ERR::NullArgs);
    Args->Result = 0;
-   if (Args->Length < 0) return log.warning(ERR::Args);
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
    if (Self->Handle.is_invalid()) {
       // Lack of a handle means that disconnection has already been processed, so the client code
       // shouldn't be calling us (client probably needs to be plugged into the feedback mechanisms)
       return log.warning(ERR::Disconnected);
    }
    Self->ReadCalled = true;
-   if (not Args->Length) { Args->Result = 0; return ERR::Okay; }
+   if (Args->Buffer.empty()) { Args->Result = 0; return ERR::Okay; }
 
    size_t result = 0;
-   auto error = receive_from_client(Self, Args->Buffer, Args->Length, &result);
-   Args->Result = result;
+   auto error = receive_from_client(Self, Args->Buffer.data(), Args->Buffer.size(), &result);
+   Args->Result = int(result);
 
    if (error IS ERR::Disconnected) {
       // Detecting a disconnection on read is normal, now handle disconnection gracefully.
@@ -600,9 +617,9 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
 
    if (not Args) return ERR::NullArgs;
    Args->Result = 0;
-   if (Args->Length < 0) return log.warning(ERR::Args);
-   if (!Args->Length) return ERR::Okay;
-   if (not Args->Buffer) return ERR::NullArgs;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (not Args->Buffer.data()) return ERR::NullArgs;
 
    auto server = (extNetSocket *)(Self->Client->Owner);
 
@@ -615,9 +632,9 @@ static ERR CLIENTSOCKET_Write(extClientSocket *Self, struct acWrite *Args)
    bool fatal_error = false;
    if (auto error = write_connected_socket_data(Self, Args, server->MsgLimit, &clientsocket_outgoing, fatal_error);
        error != ERR::Okay) return error;
-   else log.trace("Wrote all %d bytes to the server.", Args->Length);
+   else log.trace("Wrote all %d bytes to the server.", int(Args->Buffer.size()));
 
-   Args->Result = Args->Length;
+   Args->Result = int(Args->Buffer.size());
    return ERR::Okay;
 }
 
@@ -636,17 +653,38 @@ ConnectTime: System time for the creation of this socket.
 Next: Next socket in the chain.
 
 -FIELD-
+OutQueueSize: The number of bytes waiting in the socket's outgoing queue.
+
+Data passed to #Write() that cannot be sent immediately is held in a software queue and written as the connection
+permits.  OutQueueSize reports the number of queued bytes that have not yet been passed to the operating system, so a
+value of zero indicates that the queue is empty.  This can be used to pace writes against a slow client, or to wait
+for queued data to be sent before disconnecting.
+
+Writes that have been passed to the operating system but not yet completed are not included.
+
+*********************************************************************************************************************/
+
+static ERR CS_GET_OutQueueSize(extClientSocket *Self, int *Value)
+{
+   auto &queue = Self->WriteQueue;
+   auto queued = (queue.Index < queue.Buffer.size()) ? queue.Buffer.size() - queue.Index : 0;
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   queued += Self->TLS.PendingPlaintext;
+#endif
+   *Value = int(std::min(queued, size_t(INT_MAX)));
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Prev: Previous socket in the chain.
 
 -FIELD-
 State: The current connection state of the ClientSocket object.
 
-The State reflects the connection state of the NetSocket.  If the #Feedback field is defined with a function, it will
-be called automatically whenever the state is changed.  Note that the ClientSocket parameter will be NULL when the
-Feedback function is called.
-
-Note that in server mode this State value should not be used as it cannot reflect the state of all connected
-client sockets.  Each @ClientSocket carries its own independent State value for use instead.
+The State reflects the connection state of this accepted client socket.  If the parent @NetServer has a #Feedback
+function, it will be called automatically whenever the state is changed.
 
 *********************************************************************************************************************/
 
@@ -655,12 +693,18 @@ static ERR CS_SET_State(extClientSocket *Self, NTC Value)
    kt::Log log;
 
    if (Value != Self->State) {
+      if (not Self->Client) {
+         Self->State = Value;
+         return ERR::Okay;
+      }
+
       auto server = (extNetSocket *)(Self->Client->Owner);
 
       log.branch("State changed from %s to %s", clientsocket_state(Self->State), clientsocket_state(Value));
 
       Self->State = Value;
 
+      if (server->Feedback.stale()) clear_callback_function(server->Feedback);
       if (server->Feedback.defined()) {
          if (server->Feedback.isC()) {
             kt::SwitchContext context(server->Feedback.Context);
@@ -696,6 +740,8 @@ static const FieldArray clClientSocketFields[] = {
    { "Client",      FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::NETCLIENT },
    { "ClientData",  FDF_POINTER|FDF_R },
    { "State",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, CS_SET_State, &clNetSocketState },
+   // Virtual fields
+   { "OutQueueSize", FDF_VIRTUAL|FDF_INT|FDF_R, CS_GET_OutQueueSize },
    END_FIELD
 };
 

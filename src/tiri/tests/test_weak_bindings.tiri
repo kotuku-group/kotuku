@@ -1,0 +1,383 @@
+struct WeakBindingTarget
+   Value:int
+end
+
+   import './import_weak_bindings_helper' as helper
+
+-- Weak bindings retain ordinary target values and share private cells across closures.
+
+local test_file:str
+
+@BeforeAll function setup(State)
+   test_file = State.folder .. 'test_weak_bindings.tiri'
+end
+
+function weakReader(Target:any):func
+   local value <weak>:any = Target
+   return function():any return value end
+end
+
+function weakPair(Target:any):<func, func>
+   local value <weak>:any = Target
+   return function():any return value end, function(Target:any) value = Target end
+end
+
+@Test function OwnedAndCollectedTargets()
+   local owner = { value=7 }
+   weak <weak> = owner
+   processing.collect('full')
+   assert(weak is owner, 'A strong owner must preserve the target identity')
+   owner = nil
+   processing.collect('full')
+   assert(weak is nil, 'The last strong owner must be releasable')
+   assert(weak?.value is nil, 'Safe navigation must observe a collected target')
+end
+
+@Test function CapturesAndStrongAcquisition()
+   local owner = { value=12 }
+   local read, write = weakPair(owner)
+   local acquired = read()
+   owner = nil
+   processing.collect('full')
+   assert(read() is acquired, 'An acquired local must preserve the target after its original owner is released')
+   acquired = nil
+   processing.collect('full')
+   assert(read() is nil, 'An escaped closure must retain its cell without retaining its target')
+   local replacement = { value=24 }
+   write(replacement)
+   assert(read() is replacement, 'Sibling captures must share reassignment')
+   replacement = nil
+   processing.collect('full')
+   assert(read() is nil, 'Captured reassignment must also remain weak')
+   write(42)
+   assert(read() is 42, 'A variant weak binding must accept scalar reassignment')
+   write(nil)
+   assert(read() is nil, 'Captured nil assignment must clear the cell')
+end
+
+@Test function IndependentCellsAndShadowing()
+   local first = { value=1 }
+   local second = { value=2 }
+   local a <weak> = first
+   local b <weak> = a
+   a = second
+   assert(a is second and b is first, 'A second declaration must create an independent cell')
+   do
+      local a <weak> = first
+      assert(a is first, 'Explicit local must shadow a weak binding')
+   end
+   assert(a is second, 'Leaving the shadow scope must restore the outer binding')
+   first = nil
+   processing.collect('full')
+   assert(b is nil and a is second, 'Independent cells must clear independently')
+end
+
+@Test function MultipleResultsAndAssignments()
+   local left, right = { id=1 }, { id=2 }
+   function pair():<table, table> return left, right end
+   local a <weak>, b <weak> = pair()
+   assert(a is left and b is right, 'Multiple results must initialise the appropriate cells')
+   a, b = b, a
+   assert(a is right and b is left, 'Simultaneous assignment must read both targets before writing')
+   a.id = 3
+   assert(right.id is 3, 'Member writes must operate on the target rather than the backing cell')
+   a, b = nil, nil
+   b ?= left
+   a ??= right
+   assert(a is right and b is left, 'Conditional assignment must update cell contents')
+   left, right = nil, nil
+   processing.collect('full')
+   assert(a is nil and b is nil, 'Adjusted multiple results must leave no hidden strong roots')
+end
+
+@Test function ScalarsAndDeferredTyping()
+   local count <weak>
+   assert(count is nil, 'A declaration without an initialiser must start as nil')
+   count = 5
+   count += 3
+   count++
+   assert(count is 9, 'Compound assignments and increment must update the target')
+   count = nil
+   count ?= 4
+   processing.collect('full')
+   assert(count is 4, 'Scalar weak targets must survive collection')
+   local text <weak>:str = 'retained'
+   local flag <weak>:bool = false
+   processing.collect('full')
+   assert(text is 'retained' and flag is false, 'Strings and booleans follow weak-table semantics')
+   for source in values(array<str> {
+      "local n <weak>; n = 1; n = nil; n = 'bad'",
+      "local n <weak>:num = 1; n = 'bad'",
+      "local n <weak>:table = {}; n = nil; processing.collect('full'); n = 2"
+   }) do
+      local failed = false
+      try
+         exec(source)
+      except e
+         failed = true
+      end
+      assert(failed, 'Sticky target types must survive nil assignment and collection')
+   end
+end
+
+@Test function EntityReceiverAndFinalisation()
+   local finalised = 0
+   local weak <weak>:table
+   local cleared_during_finaliser = false
+   local owner = setmetatable(entity {
+      value=17,
+      method=function():num return &value end
+   }, { __gc=function()
+      cleared_during_finaliser = weak is nil
+      finalised++
+   end })
+   weak = owner
+   assert(weak.method() is 17, 'Weak entity member calls must retain the receiver context')
+   owner = nil
+   processing.collect('full')
+   assert(weak is nil and finalised is 1 and cleared_during_finaliser,
+      'Weak targets must clear before finalisation runs')
+end
+
+@Test function BytecodeReload()
+   function factory():<func, func>
+      local weak <weak>:any
+      return function():any return weak end, function(Target:any) weak = Target end
+   end
+   local read, write = exec(string.dump(factory, true))
+   local owner = { value=31 }
+   write(owner)
+   assert(read() is owner, 'Bytecode loading must reconstruct private weak cells')
+   owner = nil
+   processing.collect('full')
+   assert(read() is nil, 'Reloaded bytecode must retain weakness')
+end
+
+@Test function RepeatedScopesAndUnwinding()
+   local owners = array<table> { { id=1 }, { id=2 }, { id=3 } }
+   local readers = array<any>
+   for index in {0 to 3} do
+      local weak <weak> = owners[index]
+      readers.push(function():any return weak end)
+   end
+   for index in {0 to 3} do
+      assert(readers[index]().id is index + 1, 'Each loop execution must allocate a distinct cell')
+   end
+   owners.clear()
+   processing.collect('full')
+   for read in values(readers) do assert(read() is nil, 'Loop closures must not retain targets') end
+   local escaped:func = nil
+   try
+      local weak <weak> = {}
+      escaped = function():any return weak end
+      raise 'Unwind weak scope'
+   except e
+   end
+   processing.collect('full')
+   assert(escaped() is nil, 'Unwinding must close the cell capture without retaining its target')
+end
+
+@Test function UnsupportedDeclarations()
+   for source in values(array<str> {
+      'global value <weak> = {}', 'extern value <weak>',
+      'function f(Value <weak>) end',
+      'local value <weak> <const> = {}', 'local value <const> <weak> = {}',
+      'local value <weak> <close> = {}', 'local value <view> <weak> = {}'
+   }) do
+      local failed = false
+      try
+         exec(source)
+      except e
+         failed = true
+      end
+      assert(failed, f'Unsupported weak attribute placement must fail: {source}')
+   end
+end
+
+@Test function HotCapturedReadsAndTraceExits()
+   local owner = { value=2 }
+   local read, write = weakPair(owner)
+   function sum(Count:num!):num
+      local total = 0
+      for index in {0 to Count} do
+         local target = read()
+         if target then total += target.value end
+      end
+      return total
+   end
+   local enabled = jit.status()
+   local completed = 0
+   local recordings = {}
+   function trace_event(Event, Trace, Func)
+      if Event is 'start' and Func is sum then recordings[Trace] = true
+      elseif Event is 'stop' and recordings[Trace] then completed++
+      end
+   end
+   if enabled then
+      jit.flush()
+      jit.opt.start('hotloop=3', 'hotexit=2')
+      jit.attach(trace_event, 'trace')
+   end
+   defer if enabled then jit.attach(trace_event) end end
+   assert(sum(10000) is 20000, 'Hot reads must preserve owned targets')
+   if enabled then assert(completed > 0, 'The weak-read loop itself must complete a compiled trace') end
+   owner = nil
+   processing.collect('full')
+   assert(sum(10000) is 0, 'Hot reads must observe collection and exit their previous type guards')
+   owner = { value=3 }
+   write(owner)
+   assert(sum(10000) is 30000, 'Hot reads must observe captured reassignment after collection')
+end
+
+@Test function WeakOnlyConstructionAndCollectibleKinds()
+   local alone <weak> = {}
+   processing.collect('full')
+   assert(alone is nil, 'A weak-only constructed target must have no hidden owner')
+   local owners = array<any> { {}, array<int> { 1, 2 }, function() return 7 end }
+   local readers = array<any>
+   for target in values(owners) do readers.push(weakReader(target)) end
+   processing.collect('full')
+   for index in {0 to #owners} do assert(readers[index]() is owners[index], 'Owned kinds must survive') end
+   owners.clear()
+   processing.collect('full')
+   for read in values(readers) do assert(read() is nil, 'Collectible targets must follow weak-table semantics') end
+end
+
+@Test function DebuggerReadsProtectPrivateCells()
+   local owner = { value=43 }
+   local weak <weak> = owner
+   local index = 0
+   local found = false
+   while true do
+      local name, value = debug.getLocal(1, index)
+      if not name then break end
+      if name is 'weak' then
+         assert(value is owner, 'Debugger reads must expose the target rather than the cell')
+         assert(debug.setLocal(1, index, nil) is nil, 'Debugger writes must reject replacement of the private cell')
+         found = true
+         break
+      end
+      index++
+   end
+   assert(found, 'Weak bindings must retain source names for debugger reads')
+   for index in {-1 into -20 by -1} do
+      local constant = jit.util.funcK(weakReader, index)
+      assert(rawtype(constant) != 'table', 'JIT inspection must hide private metatable templates')
+   end
+   local read = weakReader(owner)
+   local name, value:any = debug.getUpvalue(read, 0)
+   assert(name is 'value' and value is owner, 'Captured debugger reads must expose target values')
+   assert(debug.setUpvalue(read, 0, nil) is nil, 'Captured debugger writes must reject cell replacement')
+   local joined = false
+   try
+      debug.upvalueJoin(read, 0, read, 0)
+      joined = true
+   except e
+   end
+   assert(not joined, 'Debugger joins must reject weak cells')
+   assert(read() is owner and weak is owner, 'Rejected debugger writes must preserve cells')
+   function factory():<func, func>
+      local weak <weak>:any
+      return function():any return weak end, function(Target:any) weak = Target end
+   end
+   local stripped_read, write = exec(string.dump(factory, true))
+   write(owner)
+   _, value = debug.getUpvalue(stripped_read, 0)
+   assert(value is owner, 'Stripped bytecode must also hide its private cell')
+   assert(debug.setUpvalue(stripped_read, 0, nil) is nil, 'Stripped captures must reject debugger writes')
+end
+
+@Test function JitUpvalueNamesPreserveSourceNames()
+   function factory():func
+      local strong = { value=7 }
+      local weak <weak> = strong
+      return function():<table, table> return weak, strong end
+   end
+   local read = factory()
+   assert(jit.util.funcUName(read, 0) is 'weak', 'JIT reflection must hide the internal weak marker')
+   assert(jit.util.funcUName(read, 1) is 'strong', 'Ordinary upvalue names must remain unchanged')
+   assert(jit.util.funcUName(read, 2) is nil, 'An invalid upvalue index must still return nil')
+   local reloaded = exec(string.dump(factory, false))
+   assert(jit.util.funcUName(reloaded, 0) is 'weak', 'Bytecode reload must preserve weak source names')
+   assert(jit.util.funcUName(reloaded, 1) is 'strong', 'Bytecode reload must preserve ordinary source names')
+   local stripped = exec(string.dump(factory, true))
+   assert(jit.util.funcUName(stripped, 0) is '', 'Stripped weak captures must have no source name')
+   assert(jit.util.funcUName(stripped, 1) is '', 'Stripped ordinary captures must have no source name')
+end
+
+@Test function CompilerConstructionIgnoresShadowedSetmetatable()
+   local setmetatable = function() raise 'Shadowed function must not be called' end
+   local target = {}
+   local weak <weak> = target
+   assert(weak is target, 'Private construction must use a compiler-controlled callable')
+end
+
+@Test function ImportedWeakCaptures()
+   local owner = { value=55 }
+   local read, write = helper.weakPair(owner)
+   assert(read() is owner, 'Imported functions must construct weak bindings in their own scope')
+   owner = nil
+   processing.collect('full')
+   assert(read() is nil, 'Imported weak captures must release their target')
+   write(12)
+   assert(read() is 12, 'Imported sibling captures must share their cell')
+end
+
+@Test function StructUserdataAndNativeWrapperTargets()
+   local owner = struct<WeakBindingTarget> { Value=7 }
+   local weak <weak>:struct<WeakBindingTarget> = owner
+   assert(weak.Value is 7, 'Weak struct reads must preserve their layout')
+   weak.Value = 9
+   assert(owner.Value is 9, 'Weak struct writes must use the retrieved target')
+   owner = nil
+   processing.collect('full')
+   assert(weak is nil, 'Struct targets must be collectible')
+
+   local file = io.open(test_file, 'r')
+   local weak_file <weak> = file
+   assert(rawtype(weak_file) is 'userdata', 'Weak userdata reads must preserve the value category')
+   file.close()
+   file = nil
+   processing.collect('full')
+   assert(weak_file is nil, 'Closed userdata wrappers must be collectible')
+
+   local parent <close> = obj.new('time')
+   local child = parent.new('time')
+   local id = child.id
+   local weak_child <weak> = child
+   assert(weak_child.id is id, 'Weak object reads must preserve the native wrapper interface')
+   child = nil
+   processing.collect('full')
+   assert(weak_child is nil, 'A weak binding must allow collection of a native wrapper')
+   assert(obj.find(id), 'Collection of a child wrapper must preserve native parent ownership')
+end
+
+@Test function RuntimeContractsAndNestedCaptureWrites()
+   local owner = { value=8 }
+   local weak <weak>:table = owner
+   function outer():func
+      return function(Target:any) weak = Target end
+   end
+   local write = outer()
+   local failed = false
+   try write(7) except e
+      failed = true
+   end
+   assert(failed and weak is owner, 'Captured dynamic writes must enforce the target contract atomically')
+   write(nil)
+   write(owner)
+   assert(weak is owner, 'Nested closures must share captured writes')
+end
+
+@Test function HotCellConstruction()
+   local owner = { value=61 }
+   local read:func
+   for index in {0 to 10000} do read = weakReader(owner) end
+   assert(read() is owner, 'Hot declarations must construct a fresh live weak cell')
+   local _, target = debug.getUpvalue(read, 0)
+   assert(target is owner, 'Cells constructed during recording must preserve private debugger metadata')
+   target = nil
+   owner = nil
+   processing.collect('full')
+   assert(read() is nil, 'Hot cell construction must not retain a hidden strong initialiser')
+end

@@ -5,9 +5,9 @@
 
 @Test function MetaClassArrays()
    field_names = { }
-   metaFile = mSys.FindClass('File':hash(), 0)
+   metaFile = mSys.FindClass('File'.hash(), 0)
    fields = metaFile.fields
-   for i=0,#fields-1 do
+   for i in {0 to #fields} do
       print(i .. ' ' .. fields[i].name)
       field_names[fields[i].name] = true
    end
@@ -16,15 +16,15 @@
 end
 
 @Test function MetaClassSubClasses()
-   mSys.FindClass('JPEG':hash())
-   picmeta = mSys.FindClass('Picture':hash())
+   mSys.FindClass('JPEG'.hash())
+   picmeta = mSys.FindClass('Image'.hash())
    pic_classes = picmeta.subClasses
-   assert(pic_classes, 'Picture has no sub-classes')
+   assert(pic_classes, 'Image has no derived classes')
    jpeg_found = false
    for pic in values(pic_classes) do
       if pic.name is 'JPEG' then jpeg_found = true end
    end
-   assert(jpeg_found, 'Picture has no JPEG sub-class')
+   assert(jpeg_found, 'Image has no JPEG derived class')
 end
 
 @Test function ClassDatabase()

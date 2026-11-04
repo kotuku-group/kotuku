@@ -14,6 +14,7 @@
 #include "lj_jit.h"
 #include "lj_iropt.h"
 #include "lj_target.h"
+#include "lj_ircall.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)      (&J->cur.ir[(ref)])
@@ -45,6 +46,25 @@ static int sink_phidep(jit_State* J, IRRef ref, int* workp)
    if (ir->op1 >= REF_FIRST and sink_phidep(J, ir->op1, workp)) return 1;
    if (ir->op2 >= REF_FIRST and sink_phidep(J, ir->op2, workp)) return 1;
    return 0;
+}
+
+// Only this allocating call has a reconstruction contract. Captures and arbitrary CALLA helpers are excluded.
+static bool sink_zero_closure(jit_State *J, IRIns *Allocation)
+{
+   if (J->chain[IR_XBAR]) return false;
+   if (Allocation->o != IR_CALLA or Allocation->op2 != IRCALL_lj_func_newL_zero) return false;
+   IRIns *args = IR(Allocation->op1);
+   if (args->o != IR_CARG or not irref_isk(args->op1) or IR(args->op1)->o != IR_KGC) return false;
+   auto *prototype = gco_to_proto(ir_kgc(IR(args->op1)));
+   if (prototype->sizeuv != 0) return false;
+   // Reconstruction may depend on an inherited environment, but not an allocation varying with the loop.
+   if (not irref_isk(args->op2) and (irt_isphi(IR(args->op2)->t) or
+       (J->loopref and args->op2 >= J->loopref))) return false;
+   if (not irref_isk(args->op2)) {
+      int work = 64;
+      if (sink_phidep(J, args->op2, &work)) return false;
+   }
+   return true;
 }
 
 // Check whether a value is a sinkable PHI or loop-invariant.
@@ -104,6 +124,14 @@ static void sink_mark_ins(jit_State* J)
       case IR_USTORE:
          irt_setmark(IR(ir->op2)->t);  //  Mark stored value.
          break;
+      case IR_CALLA:
+         if (sink_zero_closure(J, ir)) {
+            // Keep reconstruction inputs materialised even when only a snapshot observes the closure.
+            irt_setmark(IR(IR(ir->op1)->op2)->t);
+         }
+         else irt_setmark(IR(ir->op1)->t);
+         break;
+      case IR_CALLN: case IR_CALLL: case IR_CALLXS:
       case IR_CALLS:
          irt_setmark(IR(ir->op1)->t);  //  Mark (potentially) stored values.
          break;
@@ -181,6 +209,13 @@ static void sink_sweep_ins(jit_State* J)
             ir->prev = REGSP_INIT;
          }
          break;
+      case IR_CALLA:
+         if (not sink_zero_closure(J, ir)) {
+            irt_clearmark(ir->t);
+            ir->prev = REGSP_INIT;
+            break;
+         }
+         [[fallthrough]];
       case IR_TNEW: case IR_TDUP:
          if (!irt_ismarked(ir->t)) {
             ir->t.irt &= ~IRT_GUARD;
@@ -225,7 +260,7 @@ void lj_opt_sink(jit_State* J)
 {
    const uint32_t need = (JIT_F_OPT_SINK | JIT_F_OPT_FWD |
       JIT_F_OPT_DCE | JIT_F_OPT_CSE | JIT_F_OPT_FOLD);
-   if ((J->flags & need) == need and (J->chain[IR_TNEW] or J->chain[IR_TDUP])) {
+   if ((J->flags & need) IS need and (J->chain[IR_TNEW] or J->chain[IR_TDUP] or J->chain[IR_CALLA])) {
       if (!J->loopref) sink_mark_snap(J, &J->cur.snap[J->cur.nsnap - 1]);
       sink_mark_ins(J);
       if (J->loopref) sink_remark_phi(J);

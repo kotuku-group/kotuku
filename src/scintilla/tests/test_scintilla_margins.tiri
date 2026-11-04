@@ -1,0 +1,638 @@
+-- Tests for the symbol and fold margins of the Scintilla class: markers, folding and margin clicks.
+--
+-- These geometry tests explicitly use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The visible margins are laid
+-- out from the left edge in the order line numbers, symbols, folding.  The symbol and fold margins are 20 pixels wide
+-- each, and the text starts after them and the 4 pixel LeftMargin.
+--
+-- Folding is computed by the lexer, so the fold tests use the C lexer, which folds on braces.  The fold markers are
+-- drawn in grey (128,128,128).
+
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+
+PAGE_WIDTH   = 300
+PAGE_HEIGHT  = 120
+LINE_HEIGHT  = 13
+GLYPH_WIDTH  = 7
+MARGIN_WIDTH = 20
+
+-- Line 0 opens a fold that contains line 1 and ends on line 2.  Each line has a different length, so that the length
+-- of a rendered row identifies the line that it shows.
+
+FOLD_DOC = 'a {\nbbbbbb;\n}\ncccccccccc;'
+LINE_GLYPHS = array<int> { 3, 7, 1, 11 }
+
+RED    = struct<RGB8> { red=220, green=0, blue=0, alpha=255 }
+BLACK  = struct<RGB8> { red=0, green=0, blue=0, alpha=255 }
+YELLOW = struct<RGB8> { red=255, green=240, blue=120, alpha=255 }
+
+TEMP_FILE = 'temp:scintilla_margins.c'
+
+----------------------------------------------------------------------------------------------------------------------
+-- Headless rendering
+
+function newEditor(Options:table):<obj, obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
+   options.lineHighlight ?= '255,255,255,0'
+   local sci = vp.new('Scintilla', options)
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   return scene, vp, sci, bmp
+end
+
+function newFoldEditor(Options:table):<obj, obj, obj, obj>
+   local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
+   options.lexer ?= SCLEX_CPP
+   options.foldingMarkers ?= true
+   local scene, vp, sci, bmp = newEditor(options)
+   sci.string = FOLD_DOC
+   return scene, vp, sci, bmp
+end
+
+function render(Scene:obj)
+   check Scene.acDraw()
+   processing.sleep(0)
+   check Scene.acDraw()
+end
+
+function colourAt(Bitmap:obj, X:num, Y:num):str
+   local p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return f'{p.red},{p.green},{p.blue}'
+end
+
+-- Counts the pixels of a row of the View, between X and X + Width, that satisfy a test of their channels.
+-- ReadRGBPixel() results share one buffer, so the channels are read immediately.
+
+function countOnRow(Bitmap:obj, Row:num, X:num, Width:num, Test:func):num
+   local total = 0
+   for py in {Row * LINE_HEIGHT to (Row + 1) * LINE_HEIGHT} do
+      for px in {X to X + Width} do
+         local p = mGfx.ReadRGBPixel(Bitmap, px, py)
+         if Test(p.red, p.green, p.blue) then total++ end
+      end
+   end
+   return total
+end
+
+function isRed(R:num, G:num, B:num):bool
+   return R is 220 and G is 0 and B is 0
+end
+
+function isFoldGrey(R:num, G:num, B:num):bool
+   return R is 128 and G is 128 and B is 128
+end
+
+-- Returns the number of glyphs drawn on a row of the View, measured from the right-most dark pixel.  The bottom pixel
+-- row is excluded, because a contracted fold header is underlined across the View.
+
+function glyphsOnRow(Bitmap:obj, Row:num, TextLeft:num):num
+   local right = -1
+   for py in {Row * LINE_HEIGHT to ((Row + 1) * LINE_HEIGHT) - 1} do
+      for px in {TextLeft to PAGE_WIDTH} do
+         local p = mGfx.ReadRGBPixel(Bitmap, px, py)
+         if (p.red + p.green + p.blue < 300) and (px > right) then right = px end
+      end
+   end
+   if right < 0 then return 0 end
+   return math.floor((right - TextLeft) / GLYPH_WIDTH) + 1
+end
+
+-- The fold margin of a fold editor is the only visible margin, and the text starts after it.
+
+FOLD_TEXT_LEFT = MARGIN_WIDTH + 4
+
+-- Returns the document lines shown by the first rows of a fold editor, e.g. '0,3' when lines 1 and 2 are folded.
+
+function shownLines(Bitmap:obj, Rows:num):str
+   local result = ''
+   for row in {0 to Rows} do
+      local glyphs = glyphsOnRow(Bitmap, row, FOLD_TEXT_LEFT)
+      local line = LINE_GLYPHS.indexOf(glyphs) -- Note that ?? would treat line 0 as empty
+      result ..= ((row > 0) ? ',' : '') .. ((line is nil) ? '?' : tostring(line))
+   end
+   return result
+end
+
+function markersOf(Sci:obj, Line:num):num
+   local err, mask = Sci.mtGetMarkers(Line)
+   assert(err is ERR_Okay, f'GetMarkers({Line}) returned {mSys.GetErrorMsg(err)}')
+   return mask
+end
+
+function writeTempFile(Path:str!, Content:str!)
+   local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   local err, written = file.acWrite(Content)
+   assert(err is ERR_Okay, 'Write() returned ' .. mSys.GetErrorMsg(err))
+end
+
+@AfterAll function cleanup()
+   mSys.DeleteFile(TEMP_FILE)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Markers
+
+@Test function SymbolMarginShowsMarkers()
+   local scene <close>, vp, sci, bmp = newEditor({ symbols=true })
+   sci.string = 'zero\none\ntwo'
+   check sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED)
+   check sci.mtAddMarker(1, 0)
+   render(scene)
+
+   assert(countOnRow(bmp, 1, 0, MARGIN_WIDTH, isRed) > 10, 'The marker must be drawn in the symbol margin of line 1')
+   assert(countOnRow(bmp, 0, 0, PAGE_WIDTH, isRed) is 0, 'Line 0 has no marker')
+   assert(countOnRow(bmp, 1, MARGIN_WIDTH, PAGE_WIDTH - MARGIN_WIDTH, isRed) is 0,
+      'A circle marker must not be drawn outside the margin')
+   assert(glyphsOnRow(bmp, 0, MARGIN_WIDTH + 4) is 4, 'The text must start after the symbol margin')
+end
+
+@Test function HiddenSymbolMarginHighlightsLine()
+   -- A marker that no visible margin can show is drawn as a highlight of the line's background instead.
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none\ntwo'
+   check sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED)
+   check sci.mtAddMarker(1, 0)
+   render(scene)
+   assert(colourAt(bmp, 200, LINE_HEIGHT + 6) is '220,0,0', 'Without the symbol margin, the line must be highlighted')
+   assert(colourAt(bmp, 200, 6) is '255,255,255', 'A line without markers must not be highlighted')
+
+   sci.symbols = true
+   render(scene)
+   assert(countOnRow(bmp, 1, 0, MARGIN_WIDTH, isRed) > 10, 'Enabling Symbols must show the marker in the margin')
+   assert(colourAt(bmp, 200, LINE_HEIGHT + 6) is '255,255,255', 'The line must no longer be highlighted')
+end
+
+@Test function BackgroundMarkerHighlightsLine()
+   -- Background markers are drawn in the text area, so they are visible without the symbol margin.
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none\ntwo'
+   check sci.mtDefineMarker(3, SCMK_BACKGROUND, BLACK, YELLOW)
+   check sci.mtAddMarker(2, 3)
+   render(scene)
+
+   assert(colourAt(bmp, 200, (2 * LINE_HEIGHT) + 6) is '255,240,120',
+      f'The line background must use the marker colour, got {colourAt(bmp, 200, (2 * LINE_HEIGHT) + 6)}')
+   assert(colourAt(bmp, 200, LINE_HEIGHT + 6) is '255,255,255', 'Other lines must keep the document background')
+end
+
+@Test function RedefiningMarkerRepaints()
+   local scene <close>, vp, sci, bmp = newEditor({ symbols=true })
+   sci.string = 'zero\none'
+   check sci.mtAddMarker(0, 4)
+   render(scene)
+   assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isRed) is 0, 'An undefined marker is not red')
+
+   check sci.mtDefineMarker(4, SCMK_FULL_RECT, BLACK, RED)
+   render(scene)
+   assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isRed) > 100, 'The line must be repainted with the new definition')
+
+   check sci.mtDefineMarker(4, SCMK_EMPTY, nil, nil)
+   render(scene)
+   assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isRed) is 0, 'An EMPTY marker must not be drawn')
+end
+
+@Test function GetMarkersReportsMask()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none\ntwo'
+   check sci.mtAddMarker(1, 0)
+   check sci.mtAddMarker(1, 2)
+   check sci.mtAddMarker(1, 24)
+   assert(markersOf(sci, 1) is (1 | 4 | (1 << 24)), f'Line 1 must carry markers 0, 2 and 24, got {markersOf(sci, 1)}')
+   assert(markersOf(sci, 0) is 0 and markersOf(sci, 2) is 0, 'Other lines carry no markers')
+end
+
+@Test function AddingMarkerTwiceHasNoEffect()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none'
+   check sci.mtAddMarker(1, 3)
+   check sci.mtAddMarker(1, 3)
+   check sci.mtRemoveMarker(1, 3)
+   assert(markersOf(sci, 1) is 0, 'One removal must undo repeated additions')
+end
+
+@Test function RemoveMarker()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none\ntwo'
+   for line in {0 to 3} do
+      check sci.mtAddMarker(line, 0)
+      check sci.mtAddMarker(line, 1)
+   end
+
+   check sci.mtRemoveMarker(0, 1)
+   assert(markersOf(sci, 0) is 1, 'Removing marker 1 from line 0 must keep marker 0')
+
+   check sci.mtRemoveMarker(1, -1)
+   assert(markersOf(sci, 1) is 0, 'A Marker of -1 must remove every marker from the line')
+
+   check sci.mtRemoveMarker(-1, 0)
+   assert(markersOf(sci, 0) is 0 and markersOf(sci, 2) is 2, 'A Line of -1 must remove the marker from every line')
+
+   check sci.mtRemoveMarker(2, 5)
+   assert(markersOf(sci, 2) is 2, 'Removing an absent marker is not an error')
+
+   check sci.mtRemoveMarker(-1, -1)
+   assert(markersOf(sci, 2) is 0, 'Both -1 must remove every marker')
+end
+
+@Test function MarkersFollowTheirLine()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none\ntwo'
+   check sci.mtAddMarker(1, 0)
+   check sci.mtInsertText('new\n', 0)
+   assert(markersOf(sci, 1) is 0 and markersOf(sci, 2) is 1, 'The marker must move down with its line')
+
+   check sci.mtDeleteLine(0)
+   assert(markersOf(sci, 1) is 1, 'The marker must move up with its line')
+end
+
+@Test function JoinedLinesCombineMarkers()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none\ntwo'
+   check sci.mtAddMarker(1, 0)
+   check sci.mtAddMarker(2, 0)
+   check sci.mtAddMarker(2, 1)
+
+   -- Remove the line end of line 1, which joins line 2 to it.
+   check sci.mtReplaceText('one\n', 'one', 0, 0, -1)
+   assert(sci.string is 'zero\nonetwo', f'The lines must be joined, got "{sci.string}"')
+   assert(markersOf(sci, 1) is 3, f'The joined line must carry the markers of both lines, got {markersOf(sci, 1)}')
+
+   check sci.mtRemoveMarker(1, 0)
+   assert(markersOf(sci, 1) is 2, 'Removing a marker must remove both of the joined instances')
+end
+
+@Test function MarkerArgumentsAreValidated()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none'
+
+   -- Each failure is logged as a warning, which is expected here.
+   mSys.AdjustLogLevel(2)
+   defer mSys.AdjustLogLevel(-2) end
+
+   assert(sci.mtAddMarker(0, 25) is ERR_OutOfRange, 'Markers 25 to 31 are reserved for folding')
+   assert(sci.mtAddMarker(0, -1) is ERR_OutOfRange, 'A negative marker is invalid')
+   assert(sci.mtAddMarker(2, 0) is ERR_OutOfRange, 'A line past the end is invalid')
+   assert(sci.mtDefineMarker(25, SCMK_CIRCLE, nil, nil) is ERR_OutOfRange, 'Marker 25 is reserved')
+   assert(sci.mtDefineMarker(0, 25, nil, nil) is ERR_InvalidValue, 'Pixmap markers are unsupported')
+   assert(sci.mtDefineMarker(0, 30, nil, nil) is ERR_InvalidValue, 'Image markers are unsupported')
+   assert(sci.mtDefineMarker(0, -1, nil, nil) is ERR_InvalidValue, 'A negative symbol is invalid')
+   assert(sci.mtRemoveMarker(-2, 0) is ERR_OutOfRange, 'A line below -1 is invalid')
+   assert(sci.mtRemoveMarker(0, 25) is ERR_OutOfRange, 'A reserved marker cannot be removed')
+   assert(sci.mtGetMarkers(2) is ERR_OutOfRange, 'GetMarkers() must check the line')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Folding
+
+@Test function FoldMarginShowsFoldMarkers()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   render(scene)
+
+   assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isFoldGrey) > 20, 'The fold header must show a box')
+   assert(countOnRow(bmp, 1, 0, MARGIN_WIDTH, isFoldGrey) > 5, 'A fold body line must show a line')
+   assert(countOnRow(bmp, 2, 0, MARGIN_WIDTH, isFoldGrey) > 5, 'The fold end must show a corner')
+   assert(countOnRow(bmp, 3, 0, MARGIN_WIDTH, isFoldGrey) is 0, 'A line outside a fold has no marker')
+   assert(shownLines(bmp, 4) is '0,1,2,3', f'All lines must be shown, got {shownLines(bmp, 4)}')
+end
+
+@Test function FoldMarginIsOptional()
+   local scene <close>, vp, sci, bmp = newEditor({ lexer=SCLEX_CPP })
+   sci.string = FOLD_DOC
+   render(scene)
+   assert(glyphsOnRow(bmp, 3, 4) is 11, 'Without FoldingMarkers, the text must start at the left margin')
+
+   sci.foldingMarkers = true
+   render(scene)
+   assert(shownLines(bmp, 4) is '0,1,2,3', 'Enabling FoldingMarkers must make room for the fold margin')
+   assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isFoldGrey) > 20, 'Enabling folding must show the markers')
+end
+
+@Test function ToggleFoldHidesAndShowsLines()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   render(scene)
+
+   check sci.mtToggleFold(0)
+   render(scene)
+   assert(shownLines(bmp, 2) is '0,3', f'Contracting the fold must hide lines 1 and 2, got {shownLines(bmp, 2)}')
+   assert(countOnRow(bmp, 1, 0, MARGIN_WIDTH, isFoldGrey) is 0, 'Line 3 has no fold marker')
+
+   check sci.mtToggleFold(0)
+   render(scene)
+   assert(shownLines(bmp, 4) is '0,1,2,3', f'Expanding the fold must show every line, got {shownLines(bmp, 4)}')
+end
+
+@Test function ToggleFoldBeforeFirstPaint()
+   -- Fold levels are computed during styling, which normally happens when a line is painted.
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtToggleFold(0)
+   render(scene)
+   assert(shownLines(bmp, 2) is '0,3', f'The fold must be contracted, got {shownLines(bmp, 2)}')
+end
+
+@Test function ToggleFoldInsideFoldTogglesParent()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtToggleFold(1)
+   render(scene)
+   assert(shownLines(bmp, 2) is '0,3', f'Toggling line 1 must contract the fold of line 0, got {shownLines(bmp, 2)}')
+end
+
+@Test function ToggleFoldAtCursor()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtGotoLine(2)
+   check sci.mtToggleFold(-1)
+   render(scene)
+   assert(shownLines(bmp, 2) is '0,3', f'A Line of -1 must use the cursor line, got {shownLines(bmp, 2)}')
+end
+
+@Test function ToggleFoldOutsideFold()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   assert(sci.mtToggleFold(3) is ERR_NothingDone, 'Line 3 is not within a fold')
+
+   mSys.AdjustLogLevel(2) -- The failures below are logged as warnings, which is expected here
+   defer mSys.AdjustLogLevel(-2) end
+   assert(sci.mtToggleFold(4) is ERR_OutOfRange, 'A line past the end is invalid')
+   assert(sci.mtToggleFold(-2) is ERR_OutOfRange, 'A line below -1 is invalid')
+end
+
+@Test function ToggleFoldRequiresFolding()
+   local scene <close>, vp, sci, bmp = newFoldEditor({ foldingMarkers=false })
+   assert(sci.mtToggleFold(0) is ERR_NothingDone, 'Without FoldingMarkers, the lexer computes no folds')
+end
+
+@Test function FoldingReducesPageExtent()
+   local text = 'a {'
+   for i in {0 to 100} do text ..= '\nx;' end
+   text ..= '\n}'
+   for i in {0 to 20} do text ..= '\ny;' end
+   local scene <close>, vp, sci, bmp = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
+   sci.string = text
+   render(scene)
+   local height = sci.page.height
+
+   check sci.mtToggleFold(0)
+   render(scene)
+   assert(height - sci.page.height is 101 * LINE_HEIGHT,
+      f'Hiding 101 lines must shorten the Page by {101 * LINE_HEIGHT}, got {height - sci.page.height}')
+end
+
+@Test function DisablingFoldingExpandsFolds()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtToggleFold(0)
+   render(scene)
+
+   sci.foldingMarkers = false
+   render(scene)
+   assert(glyphsOnRow(bmp, 1, 4) is 7, 'Disabling folding must show the hidden lines')
+   assert(sci.mtToggleFold(0) is ERR_NothingDone, 'Folding must be disabled')
+end
+
+@Test function GotoLineExpandsFold()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtToggleFold(0)
+   check sci.mtGotoLine(1)
+   render(scene)
+   assert(shownLines(bmp, 4) is '0,1,2,3', f'Moving the cursor into a fold must expand it, got {shownLines(bmp, 4)}')
+   assert(sci.cursorRow is 1, 'The cursor must be on line 1')
+end
+
+@Test function SelectRangeExpandsFold()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtToggleFold(0)
+   check sci.mtSelectRange(4, 8)
+   render(scene)
+   assert(shownLines(bmp, 4) is '0,1,2,3', f'Selecting text in a fold must expand it, got {shownLines(bmp, 4)}')
+end
+
+@Test function EditingHiddenLineShowsIt()
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtToggleFold(0)
+   render(scene)
+
+   check sci.mtInsertText('b', 5) -- Within line 1
+   render(scene)
+   assert(sci.string is 'a {\nbbbbbbb;\n}\ncccccccccc;', 'The text must be inserted')
+   assert(glyphsOnRow(bmp, 1, FOLD_TEXT_LEFT) is 8, 'An edited line must be shown')
+end
+
+@Test function RemovingContractedHeaderShowsLines()
+   -- Removing the brace that opens a contracted fold must not leave its lines hidden with no fold to expand.
+   local scene <close>, vp, sci, bmp = newFoldEditor()
+   check sci.mtToggleFold(0)
+   render(scene)
+
+   check sci.mtReplaceText('a {', 'aaa', 0, 0, -1)
+   render(scene)
+   assert(sci.string is 'aaa\nbbbbbb;\n}\ncccccccccc;', 'The brace must be replaced')
+   assert(shownLines(bmp, 4) is '0,1,2,3', f'The lines of the removed fold must be shown, got {shownLines(bmp, 4)}')
+end
+
+@Test function FoldingSurvivesLexerChange()
+   -- Scintilla does not pass its stored properties to a new lexer, so the fold property must be applied again.
+   writeTempFile(TEMP_FILE, FOLD_DOC)
+   local scene <close>, vp, sci, bmp = newEditor({ foldingMarkers=true, flags=SCIF_DETECT_LEXER })
+   sci.string = 'x'
+   sci.path = TEMP_FILE
+   assert(sci.lexer is SCLEX_CPP, 'The C lexer must be detected')
+
+   check sci.mtToggleFold(0)
+   render(scene)
+   assert(shownLines(bmp, 2) is '0,3', f'Folding must work after the lexer changes, got {shownLines(bmp, 2)}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Margin clicks.  Pointer events are fed to the SystemPointer as dcDeviceInput records, as in
+-- test_scintilla_mouse.tiri.
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function sendKey(Code:num!, Qualifiers:num!)
+   local qualifiers = Qualifiers
+   if not (qualifiers has KQ_RELEASED) then qualifiers = qualifiers | KQ_PRESSED end
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = qualifiers | KQ_NOT_PRINTABLE
+   ev[3] = Code
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function show(Surface:obj!)
+   Surface.acShow()
+   Surface.acDraw()
+   processing.sleep(0)
+   Surface.acDraw()
+   processing.sleep(0)
+end
+
+-- Clicks are spaced apart, because Scintilla ignores a click in the same millisecond as the previous one.
+
+function clickAt(Surface:obj!, X:num!, Row:num!)
+   processing.sleep(0.02)
+   feed(JET_ABS_XY, Surface.absX + X, Surface.absY + (Row * LINE_HEIGHT) + 6)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   processing.sleep(0)
+end
+
+-- Create an editable surface editor with the symbol and fold margins.  The text starts at 2 * MARGIN_WIDTH + 4.
+
+SYMBOL_X = MARGIN_WIDTH / 2
+FOLD_X   = MARGIN_WIDTH + (MARGIN_WIDTH / 2)
+TEXT_X   = (2 * MARGIN_WIDTH) + 4 + 1
+
+function newSurfaceEditor(Options:table):<obj, obj>
+   local surface = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
+   options.flags ?= SCIF_EDIT
+   options.lineHighlight ?= '255,255,255,0'
+   options.lexer ?= SCLEX_CPP
+   options.symbols ?= true
+   options.foldingMarkers ?= true
+   local sci = host.new('Scintilla', options)
+   sci.string = FOLD_DOC
+   show(surface)
+   surface.acFocus()
+   processing.sleep(0)
+   return surface, sci
+end
+
+-- The document line shown on a row of the View, found by clicking the text of the row.
+
+function lineAtRow(Surface:obj!, Sci:obj!, Row:num!):num
+   clickAt(Surface, TEXT_X, Row)
+   return Sci.cursorRow
+end
+
+@BeforeEach function resetPointer()
+   if obj.find('SystemPointer') then feed(JET_ABS_XY, 1000, 1000) end
+end
+
+@Test function FoldMarginClickTogglesFold()
+   local surface <close>, sci = newSurfaceEditor()
+
+   clickAt(surface, FOLD_X, 0)
+   show(surface)
+   assert(lineAtRow(surface, sci, 1) is 3, 'A fold margin click on the header must contract the fold')
+
+   clickAt(surface, FOLD_X, 0)
+   show(surface)
+   assert(lineAtRow(surface, sci, 1) is 1, 'A second click must expand the fold')
+end
+
+@Test function FoldMarginClickIsReported()
+   local clicks = { }
+   local surface <close>, sci = newSurfaceEditor({
+      marginClick = function(Sci, Margin, Line, Qualifiers)
+         table.insert(clicks, f'{Margin}:{Line}:{Qualifiers}')
+      end
+   })
+
+   clickAt(surface, FOLD_X, 0)
+   assert(clicks[0] is f'{SCMG_FOLDING}:0:0', f'The fold margin click must be reported, got {clicks[0]}')
+   show(surface)
+   assert(lineAtRow(surface, sci, 1) is 3, 'The reported click must also contract the fold')
+   clickAt(surface, FOLD_X, 0)
+
+   -- A click on a line that is not a fold header is reported without toggling a fold.
+   clicks = { }
+   clickAt(surface, FOLD_X, 1)
+   show(surface)
+   assert(clicks[0] is f'{SCMG_FOLDING}:1:0', f'The click on line 1 must be reported, got {clicks[0]}')
+   assert(lineAtRow(surface, sci, 1) is 1, 'A click beside a non-header line must not toggle a fold')
+end
+
+@Test function SymbolMarginClickIsReported()
+   local clicks = { }
+   local surface <close>, sci = newSurfaceEditor({
+      marginClick = function(Sci, Margin, Line, Qualifiers)
+         table.insert(clicks, f'{Margin}:{Line}')
+         check Sci.mtAddMarker(Line, 0)
+      end
+   })
+
+   clickAt(surface, SYMBOL_X, 2)
+   assert(clicks[0] is f'{SCMG_SYMBOLS}:2', f'The symbol margin click must be reported, got {clicks[0]}')
+   assert(markersOf(sci, 2) is 1, 'The callback must be able to add a marker')
+   assert(sci.cursorRow is 0 and sci.cursorCol is 0, 'A reported symbol margin click must not move the cursor')
+end
+
+@Test function SymbolMarginSelectsLineWithoutCallback()
+   local surface <close>, sci = newSurfaceEditor({ foldingMarkers=false })
+
+   clickAt(surface, SYMBOL_X, 1)
+   sendKey(KEY_DELETE, 0)
+   assert(sci.string is 'a {\n}\ncccccccccc;', f'A symbol margin click must select the line, got "{sci.string}"')
+end
+
+@Test function ClearingMarginClickRestoresLineSelection()
+   local clicks = 0
+   local surface <close>, sci = newSurfaceEditor({ marginClick = function() clicks++ end })
+
+   clickAt(surface, SYMBOL_X, 1)
+   assert(clicks is 1, 'The click must be reported')
+
+   sci.marginClick = nil
+   clickAt(surface, SYMBOL_X, 1)
+   sendKey(KEY_DELETE, 0)
+   assert(clicks is 1, 'The cleared callback must not be called')
+   assert(sci.string is 'a {\n}\ncccccccccc;', f'The symbol margin must select the line again, got "{sci.string}"')
+end
+
+@Test function MarginClickReportsQualifiers()
+   local qualifiers = 0
+   local surface <close>, sci = newSurfaceEditor({
+      marginClick = function(Sci, Margin, Line, Qualifiers) qualifiers = Qualifiers end
+   })
+
+   sendKey(KEY_L_SHIFT, KQ_L_SHIFT)
+   clickAt(surface, SYMBOL_X, 1)
+   sendKey(KEY_L_SHIFT, KQ_RELEASED)
+   assert(qualifiers is KQ_SHIFT, f'Shift must be reported as KQ_SHIFT, got {qualifiers}')
+
+   sendKey(KEY_L_CONTROL, KQ_L_CONTROL)
+   clickAt(surface, SYMBOL_X, 1)
+   sendKey(KEY_L_CONTROL, KQ_RELEASED)
+   assert(qualifiers is KQ_CTRL, f'Ctrl must be reported as KQ_CTRL, got {qualifiers}')
+end
+
+@Test function FreeingEditorInMarginClick()
+   -- The callback is made while Scintilla is processing the button press.  The free must be deferred until the
+   -- editor has finished with the event.
+   local surface <close>, sci = newSurfaceEditor({ marginClick = function(Sci) Sci.free() end })
+   local uid = sci.id
+   clickAt(surface, FOLD_X, 0)
+   processing.sleep(0.05)
+   assert(obj.find(uid) is nil, 'The editor must be freed after the click')
+end

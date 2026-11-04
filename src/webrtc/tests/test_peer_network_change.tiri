@@ -1,0 +1,69 @@
+   import './webchannel_support'
+
+function networkChangeLifecycle(Scenario:str)
+   local scenario = Scenario
+   local notifications = 0
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local channel = channelTest.create(first, 'network-change')
+   local expiring = channelTest.create(first, 'expiring', '', false, false, nil, nil, 100)
+   local closing = channelTest.create(first, 'closing')
+   local expired_messages = 0
+   local echoed = ''
+   second.onWebChannel = function(Peer, Child)
+      Child.onMessage = function(Child, Buffer, Type)
+         if Child.label is 'expiring' then expired_messages += 1 end
+         check Child.mtSend(Buffer, Type)
+      end
+   end
+   channel.onMessage = function(Child, Buffer, Type) echoed = Buffer.getString() end
+   first.onRestartRequired = function(Peer, Generation)
+      assert(Peer.restartRequired != 0 and Generation > 0, 'Request field was not set before callback')
+      notifications += 1
+      if scenario is 'free' then Peer.free() end
+   end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN end)
+   if arg('windowsTopology') is 'true' then print('WINDOWS_TOPOLOGY_READY') end
+   local fingerprint = first.certificateFingerprint
+   channelTest.waitFor(function() return notifications is 1 end)
+   if scenario is 'free' then
+      processing.sleep(0.3)
+      assert(not first.exists() and not channel.exists(), 'Callback destruction retained public handles')
+      assert(notifications is 1, 'Destroyed peer received a stale notification')
+      return
+   end
+   assert(first.restartRequired != 0, 'Request disappeared without negotiated recovery')
+   processing.sleep(0.3)
+   assert(notifications is 1, 'Burst emitted duplicate restart requests')
+   if scenario is 'fail' then
+      channelTest.waitFor(function() return first.state is RTCS_FAILED end, 32)
+      assert(channel.state is WCS_CLOSED and first.error is ERR_Timeout, 'Permanent loss did not fail boundedly')
+      check first.mtClose()
+      assert(first.restartRequired is 0, 'Close retained a pending request')
+      return
+   end
+   channelTest.waitFor(function() return expiring.state is WCS_OPEN and closing.state is WCS_OPEN end)
+   check expiring.mtSend('expired-during-loss', WCM_TEXT)
+   check closing.mtClose()
+   processing.sleep(0.2)
+   check channel.mtSend('accepted-during-loss', WCM_TEXT)
+   check first.mtRestartIce()
+   assert(first.restartRequired != 0, 'Creating an offer prematurely cleared the request')
+   channelTest.waitFor(function() return first.gatheringState is RTCGATHER_COMPLETE end)
+   check first.mtSetLocalDescription(first.localDescription)
+   check second.mtSetRemoteDescription(first.localDescription)
+   check second.mtCreateAnswer()
+   channelTest.waitFor(function() return second.gatheringState is RTCGATHER_COMPLETE end)
+   check second.mtSetLocalDescription(second.localDescription)
+   check first.mtSetRemoteDescription(second.localDescription)
+   channelTest.waitFor(function() return first.restartRequired is 0 and echoed is 'accepted-during-loss' end)
+   channelTest.waitFor(function() return closing.state is WCS_CLOSED end)
+   assert(expired_messages is 0, 'Partial-reliability expiry stopped during path loss')
+   assert(channel.state is WCS_OPEN and first.certificateFingerprint is fingerprint,
+      'Recovery changed the public channel or certificate')
+end
+
+@Test function DeferredRecover() networkChangeLifecycle('recover') end
+@Test function DeferredFree() networkChangeLifecycle('free') end
+@Test function DeferredFail() networkChangeLifecycle('fail') end

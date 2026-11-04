@@ -28,8 +28,8 @@ skill for Tiri syntax, naming, indentation, object API usage, and runtime conven
 - Use top-to-bottom Tiri execution. Do not add an entry point function.
 - Use `@Test` for test functions and `@BeforeAll`, `@AfterAll`, `@BeforeEach`, and `@AfterEach` for fixtures.
 - Use `@Requires` for optional runtime dependencies such as `display`, `network`, `audio`, `font`, or `ssl`.
-- Use `assert(Condition, Message)` for expected test conditions. Prefer assertions over `error()` for conditional test
-  failures so the failing expectation is explicit.
+- Use `assert(Condition, Message)` for expected test conditions.  Prefer assertions over conditional `raise` statements
+  so the failing expectation is explicit.
 - Use `try ... except ... success ... end` when testing expected failures.
 - Clean up temporary files, objects, subscriptions, sockets, and servers in `@AfterAll` or `@AfterEach`.
 
@@ -77,21 +77,17 @@ build/agents-install/origo tools/flute.tiri file=src/network/tests/test_bind_add
 Use `--log-api` when runner or API detail is needed, and `--log-threads` for thread-related failures. Use
 `--gfx-driver=headless` for CI, automated display tests, and other non-interactive graphics checks.
 
-If running outside the repository root, use an absolute path for the `file=` parameter. If testing changes under
-`scripts/`, add the source override so the installed runtime loads the edited scripts:
-
-```powershell
-build/agents-install/origo tools/flute.tiri file=src/example/tests/test_example.tiri `
-   --set-volume scripts=E:/parasol/scripts --log-warning
-```
+If running outside the repository root, use an absolute path for the `file=` parameter.
 
 After C++ or build-system changes, build and install before running `ctest`:
 
 ```powershell
-cmake --build build/agents --config Debug --parallel
-cmake --install build/agents --config Debug
-ctest --build-config Debug --test-dir build/agents --output-on-failure -L TEST_LABEL
+cmake --build --preset agents-install
+ctest --preset agents -L TEST_LABEL
 ```
+
+Always run `ctest` through a test preset.  Audio tests (any label beginning with `audio`) are excluded from the
+standard presets; run them with `ctest --preset agents-audio`.
 
 ## CMake Registration
 
@@ -109,4 +105,7 @@ foreach(TEST_NAME item_one item_two)
 endforeach()
 ```
 
-Keep labels and names consistent with neighbouring tests so focused `ctest -L ...` runs remain predictable.
+Keep labels and names consistent with neighbouring tests so focused `ctest --preset agents -L ...` runs remain
+predictable.  Note that `flute_test()` labels each test with its name, and the standard presets exclude labels matching
+`^audio`, so only use that prefix for tests that belong to the opt-in audio suite.  Tests that override `LABELS` with
+`set_tests_properties()` replace the name label, so audio tests must keep an `audio` label.

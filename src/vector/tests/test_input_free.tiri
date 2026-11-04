@@ -1,0 +1,97 @@
+-- Verifies that VectorScene input processing remains intact when vectors that are referenced by the scene's input
+-- state are freed between draws.  Pointer input is injected through the SystemPointer as dcDeviceInput records.
+
+   include 'display', 'vector'
+
+-- Write the little-endian IEEE-754 encoding of a non-negative double into Buffer at Offset.
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576 -- The top 20 bits of the mantissa occupy the high word
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+-- Create a drawn scene with a buffered root viewport that counts movement events and a child viewport at
+-- (10, 10, 20, 20).  A group separates the child from the viewport so cache cleanup has to follow ParentView rather
+-- than the direct parent chain.  Input boundaries are recorded when the scene is drawn, so the child's input
+-- subscription is made by Subscribe beforehand.
+
+function newScene(Subscribe:func!):<obj, obj, obj, table>
+   local surface = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100, buffered=true })
+   root.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='#808080' })
+   local group = root.new('VectorGroup')
+   local child = group.new('VectorViewport', { x=10, y=10, width=20, height=20 })
+   child.new('VectorRectangle', { x=0, y=0, width=20, height=20, fill='#ff0000' })
+
+   local counts = { root=0 }
+   root.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg) counts.root++ end)
+   Subscribe(child)
+
+   surface.acShow()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, root, child, counts
+end
+
+-- A vector that is freed while it holds the button lock must not leave the lock in place, otherwise the scene stops
+-- delivering pointer input to every other vector.
+
+@Test function FreeButtonLockHolder()
+   local pressed = false
+   local surface <close>, root, child, counts = newScene(function(Child)
+      Child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+         if (Msg.type is JET_LMB) and (Msg.value > 0) then pressed = true end
+      end)
+   end)
+
+   feed(JET_ABS_XY, 20, 20)
+   feed(JET_LMB, 1, 0)
+   assert(pressed, 'The child did not receive the button press')
+   child.free()
+   feed(JET_LMB, 0, 0)
+
+   local before = counts.root
+   feed(JET_ABS_XY, 60, 60)
+   feed(JET_ABS_XY, 70, 70)
+   assert(counts.root - before is 2, f'The root received {counts.root - before} of 2 movement events after the ' ..
+      'button lock holder was freed')
+end
+
+-- Freeing the vector under the pointer without redrawing must pass subsequent movement to the vector beneath it.
+
+@Test function FreeActiveVectorBeforeRedraw()
+   local child_moves = 0
+   local surface <close>, root, child, counts = newScene(function(Child)
+      Child.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg) child_moves++ end)
+   end)
+
+   feed(JET_ABS_XY, 20, 20)
+   assert(child_moves is 1, 'The child did not receive the initial movement event')
+   child.free()
+   surface.acDraw() -- A clean buffered viewport replays its cached input boundaries.
+
+   local before = counts.root
+   feed(JET_ABS_XY, 22, 22)
+   feed(JET_ABS_XY, 24, 24)
+   assert(counts.root - before is 2, f'The root received {counts.root - before} of 2 movement events over the ' ..
+      'area of the freed child')
+end

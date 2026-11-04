@@ -1,24 +1,22 @@
-
+// TODO: The client does not have a mechanism to find out which object woke the process from processing.sleep()
 #define PRV_SCRIPT
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/tiri.h>
-#include <inttypes.h>
+#include <format>
 #include <mutex>
+#include <utility>
 
 #include "lib.h"
 #include "lua.h"
-#include "lualib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "lj_object.h"
-#include "hashes.h"
+#include "lj_state.h"
 #include "defs.h"
 #include "lj_proto_registry.h"
 
 //********************************************************************************************************************
-// Usage: proc = processing.new({ timeout=5.0, signals={ obj1, obj2, ... } })
+// Usage: proc = processing.new({ timeout=5.0, signals={ obj1, obj2, ... }, mode="any" })
 //
 // Creates a new processing object.
 
@@ -32,29 +30,42 @@ static int processing_new(lua_State *Lua)
       fp->Timeout = -1;
       fp->Signals = 0;
       fp->SignalRefs = 0;
+      fp->AnySignal = false;
+
+      auto fail = [&](ERR Error, std::string Message) -> int {
+         if (fp->SignalRefs) {
+            for (auto ref : *fp->SignalRefs) luaL_unref(Lua, LUA_REGISTRYINDEX, ref);
+            delete fp->SignalRefs;
+            fp->SignalRefs = nullptr;
+         }
+         if (fp->Signals) {
+            delete fp->Signals;
+            fp->Signals = nullptr;
+         }
+
+         luaL_error(Lua, Error, std::move(Message));
+      };
 
       if (not (fp->Signals = new (std::nothrow) std::list<ObjectSignal>)) {
-         luaL_error(Lua, ERR::Memory);
+         return fail(ERR::Memory, std::format("Failed to initialise processing signal list."));
       }
 
       if (not (fp->SignalRefs = new (std::nothrow) std::list<int>)) {
-         delete fp->Signals;
-         fp->Signals = nullptr;
-         luaL_error(Lua, ERR::Memory);
+         return fail(ERR::Memory, std::format("Failed to initialise processing signal references."));
       }
 
       if (lua_istable(Lua, 1)) {
          lua_pushnil(Lua);  // Access first key for lua_next()
          while (lua_next(Lua, 1) != 0) {
-            if (auto field_name = luaL_checkstring(Lua, -2)) {
+            if (auto field_name = lua_tostring(Lua, -2)) {
                auto field_hash = strihash(field_name);
 
                switch (field_hash) {
-                  case HASH_TIMEOUT:
+                  case strhash("timeout"):
                      fp->Timeout = lua_tonumber(Lua, -1);
                      break;
 
-                  case HASH_SIGNALS: {
+                  case strhash("signals"): {
                      if (lua_type(Lua, -1) IS LUA_TARRAY) { // { obj1, obj2, ... }
                         GCarray *arr = lua_toarray(Lua, -1);
                         if (arr->elemtype IS AET::OBJECT) {
@@ -63,25 +74,54 @@ static int processing_new(lua_State *Lua)
                               if (gcref(refs[i])) {
                                  auto obj = gco_to_object(gcref(refs[i]));
                                  ObjectSignal sig = { .Object = obj->ptr ? obj->ptr : GetObjectPtr(obj->uid) };
-                                 if (not sig.Object) luaL_error(Lua, ERR::AccessObject, "Signal object at index %d is not available.", i);
+                                 if (not sig.Object) {
+                                    return fail(ERR::AccessObject,
+                                       std::format("Signal object at index {} is not available.", i));
+                                 }
                                  fp->Signals->push_back(sig);
                                  setobjectV(Lua, Lua->top++, obj);
                                  fp->SignalRefs->push_back(luaL_ref(Lua, LUA_REGISTRYINDEX));
                               }
-                              else luaL_error(Lua, ERR::InvalidType, "Nil entry at index %d in signal array.", i);
+                              else {
+                                 return fail(ERR::InvalidType,
+                                    std::format("Nil entry at index {} in signal array.", i));
+                              }
                            }
                         }
-                        else luaL_error(Lua, ERR::InvalidType, "The signals option requires an array of objects.");
+                        else {
+                           return fail(ERR::InvalidType,
+                              std::format("The signals option requires an array of objects."));
+                        }
                      }
-                     else luaL_error(Lua, "The signals option requires an array<object> reference.");
+                     else {
+                        return fail(ERR::InvalidType,
+                           std::format("The signals option requires an array<obj> reference."));
+                     }
                      break;
                   }
 
+                  case strhash("mode"):
+                     if (lua_type(Lua, -1) != LUA_TSTRING) {
+                        return fail(ERR::InvalidType, std::format("The mode option requires a string."));
+                     }
+                     switch (strihash(lua_tostring(Lua, -1))) {
+                        case strhash("all"):
+                           fp->AnySignal = false;
+                           break;
+                        case strhash("any"):
+                           fp->AnySignal = true;
+                           break;
+                        default:
+                           return fail(ERR::InvalidValue,
+                              std::format("The mode option must be either 'all' or 'any'."));
+                     }
+                     break;
+
                   default:
-                     luaL_error(Lua, ERR::UnknownProperty, "Unrecognised option '%s'", field_name);
+                     return fail(ERR::UnknownProperty, std::format("Unrecognised option '{}'", field_name));
                }
             }
-            else luaL_error(Lua, ERR::UnknownProperty, "Unrecognised option.");
+            else return fail(ERR::UnknownProperty, std::format("Unrecognised option."));
 
             lua_pop(Lua, 1);  // removes 'value'; keeps 'key' for the proceeding lua_next() iteration
          }
@@ -94,7 +134,7 @@ static int processing_new(lua_State *Lua)
 
       return 1;  // new userdatum is already on the stack
    }
-   else luaL_error(Lua, "Failed to create new processing object.");
+   else luaL_error(Lua, ERR::CreateObject, "Failed to create new processing object.");
 
    return 0;
 }
@@ -110,7 +150,7 @@ static int processing_halt(lua_State *Lua)
 {
    double seconds;
    if (lua_type(Lua, 1) IS LUA_TNUMBER) seconds = lua_tonumber(Lua, 1);
-   else return luaL_argerror(Lua, 1, "Seconds must be a number.");
+   else luaL_argerror(Lua, 1, "Seconds must be a number.");
 
    if (seconds < 0) luaL_error(Lua, ERR::Args, "Seconds must be a positive number.");
 
@@ -157,6 +197,7 @@ static int processing_sleep(lua_State *Lua)
 
    log.branch("Timeout: %g", seconds);
 
+   ERR error;
    if (seconds != 0) {
       // Always collect your garbage before going to sleep.  Can be prevented with processing.stopCollector() if
       // absolutely necessary.
@@ -165,36 +206,36 @@ static int processing_sleep(lua_State *Lua)
          log.traceBranch("Collecting garbage.");
          lua_gc(Lua, LUA_GCCOLLECT, 0);
       }
-   }
 
-   ERR error;
-   if ((fp) and (fp->Signals) and (not fp->Signals->empty())) {
-      // Use custom signals provided by the client
-      auto signal_list_c = std::make_unique<ObjectSignal[]>(fp->Signals->size() + 1);
-      int i = 0;
-      for (auto &entry : *fp->Signals) signal_list_c[i++] = entry;
-      signal_list_c[i].Object = nullptr;
+      if ((fp) and (fp->Signals) and (not fp->Signals->empty())) {
+         // Use custom signals provided by the client
+         auto signal_list_c = std::make_unique<ObjectSignal[]>(fp->Signals->size() + 1);
+         int i = 0;
+         for (auto &entry : *fp->Signals) signal_list_c[i++] = entry;
+         signal_list_c[i].Object = nullptr;
 
-      std::scoped_lock lock(recursion);
-      auto timeout = int(seconds * 1000.0);
-      error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c.get());
-   }
-   else { // Default behaviour: Sleeping can be broken with a signal to the Tiri object.
-      if (Lua->script->defined(NF::SIGNALLED)) {
-         log.detail("Tiri script already in signalled state.");
-         Lua->script->clearFlag(NF::SIGNALLED);
-         error = ERR::Okay;
-      }
-      else {
-         ObjectSignal signal_list_c[2] = { { .Object = Lua->script }, { .Object = nullptr } };
          std::scoped_lock lock(recursion);
-         auto timeout = int(seconds * 1000.0);
-         error = WaitForObjects(timeout IS -1 ? PMF::EVENT_LOOP : PMF::NIL, timeout, signal_list_c);
+         auto flags = seconds IS -1 ? PMF::EVENT_LOOP : PMF::NIL;
+         if (fp->AnySignal) flags |= PMF::ANY_SIGNAL;
+         error = WaitForObjects(flags, int(seconds * 1000.0), signal_list_c.get());
+      }
+      else { // Default behaviour: Sleeping can be broken with a signal to the Tiri object.
+         if (Lua->script->defined(NF::SIGNALLED)) {
+            log.detail("Tiri script already in signalled state.");
+            Lua->script->clearFlag(NF::SIGNALLED);
+            error = ERR::Okay;
+         }
+         else {
+            ObjectSignal signal_list_c[2] = { { .Object = Lua->script }, { .Object = nullptr } };
+            std::scoped_lock lock(recursion);
+            error = WaitForObjects(seconds IS -1 ? PMF::EVENT_LOOP : PMF::NIL, int(seconds * 1000.0), signal_list_c);
+         }
       }
    }
+   else error = ProcessMessages(PMF::NIL, 0);
 
    // Promote errors to exceptions
-   if ((error != ERR::Okay) and (in_try_immediate_scope(Lua))) luaL_error(Lua, error);
+   if ((error >= ERR::ExceptionThreshold) and (in_checkall_immediate_scope(Lua))) luaL_error(Lua, error);
 
    lua_pushinteger(Lua, int(error));
    return 1;
@@ -207,7 +248,9 @@ static int processing_sleep(lua_State *Lua)
 
 static int processing_signal(lua_State *Lua)
 {
-   Action(AC::Signal, Lua->script, nullptr);
+   kt::Log log("processing.signal");
+   log.msg("Signaling Tiri object #%d.", Lua->script->UID);
+   if (auto error = Action(AC::Signal, Lua->script, nullptr); error != ERR::Okay) luaL_error(Lua, error);
    return 0;
 }
 
@@ -219,9 +262,21 @@ static int processing_signal(lua_State *Lua)
 static int processing_flush(lua_State *Lua)
 {
    Lua->script->clearFlag(NF::SIGNALLED);
+
    if (auto fp = (fprocessing *)get_meta(Lua, lua_upvalueindex(1), "Tiri.processing")) {
-      for (auto &entry : *fp->Signals) {
-         entry.Object->clearFlag(NF::SIGNALLED);
+      if ((fp->SignalRefs) and (not fp->SignalRefs->empty())) {
+         for (auto ref : *fp->SignalRefs) {
+            lua_rawgeti(Lua, LUA_REGISTRYINDEX, ref);
+            if (lua_type(Lua, -1) IS LUA_TOBJECT) {
+               auto object = lua_toobject(Lua, -1);
+               OBJECTPTR obj;
+               if (access_object(object, obj) IS ERR::Okay) {
+                  obj->clearFlag(NF::SIGNALLED);
+                  release_object(object);
+               }
+            }
+            lua_pop(Lua, 1);
+         }
       }
    }
    return 0;
@@ -249,8 +304,9 @@ static int processing_start_collector(lua_State *Lua)
 // Controls the garbage collector.
 //
 // Modes:
-//   "full"    - Full collection cycle (default)
-//   "step"    - Incremental collection step
+//   "full"  - Full collection cycle (default)
+//   "step"  - Incremental collection step
+//   "defer" - Collection occurs when the script hands control back to the Tiri engine.  Good for callbacks.
 //
 // Use "step" when a script needs to spread collection work across regular update or idle points instead of pausing for
 // a full collection.  It is most useful in interactive loops or long-running tasks where temporary allocations are
@@ -273,10 +329,18 @@ static int processing_collect(lua_State *Lua)
    // Arg 1: Optional mode string
 
    if (lua_type(Lua, 1) IS LUA_TSTRING) {
-      auto mode_str = lua_tostring(Lua, 1);
-      if (std::string_view("full") IS mode_str) gc_mode = LUA_GCCOLLECT;
-      else if (std::string_view("step") IS mode_str) gc_mode = LUA_GCSTEP;
-      else luaL_error(Lua, "Invalid mode '%s'. Use 'full', 'step'.", mode_str);
+      auto mode_str = lua_tostringview(Lua, 1);
+      if ("full" IS mode_str) gc_mode = LUA_GCCOLLECT;
+      else if ("step" IS mode_str) gc_mode = LUA_GCSTEP;
+      else if ("defer" IS mode_str) {
+         Lua->pending_collection = true;
+         lua_pushinteger(Lua, 0);
+         return 1;
+      }
+      else {
+         luaL_error(Lua, ERR::Args, "Invalid mode '%.*s'. Use 'full', 'step', 'defer'.",
+            (int)mode_str.size(), mode_str.data());
+      }
    }
 
    // Arg 2: Optional options table
@@ -348,8 +412,7 @@ static int processing_gcStats(lua_State *Lua)
 
 static int processing_task(lua_State *Lua)
 {
-   auto prv = (prvTiri *)Lua->script->ChildPrivate;
-   GCobject *obj = push_object(prv->Lua, CurrentTask());
+   GCobject *obj = push_object(Lua, CurrentTask());
    obj->set_detached(true);  // External reference
    return 1;
 }
@@ -375,7 +438,7 @@ static int processing_get(lua_State *Lua)
          lua_pushcclosure(Lua, &processing_flush, 1);
          return 1;
       }
-      else luaL_error(Lua, "Unrecognised index '%s'", fieldname);
+      else luaL_error(Lua, ERR::UnknownProperty, "Unrecognised index '%s'", fieldname);
    }
 
    return 0;
@@ -388,35 +451,41 @@ static int processing_get(lua_State *Lua)
 
 struct delay_msg {
    lua_State *lua;
-   int ref;
+   FUNCTION function;
 };
 
-ERR delayed_msg_handler(APTR Meta, int MsgID, int MsgType, APTR Message, int MsgSize)
+ERR delayed_msg_handler(APTR Meta, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   if (MsgSize != sizeof(delay_msg)) return kt::Log(__FUNCTION__).warning(ERR::Args);
+   if (Message.size() != sizeof(delay_msg)) return kt::Log(__FUNCTION__).warning(ERR::Args);
 
-   auto msg = (delay_msg *)Message;
+   auto msg = (delay_msg *)Message.data();
    auto lua = msg->lua;
-   lua_rawgeti(lua, LUA_REGISTRYINDEX, msg->ref); // Get the function from the registry
-   luaL_unref(lua, LUA_REGISTRYINDEX, msg->ref); // Remove it
 
    kt::SwitchContext ctx(lua->script);
-   if (lua_pcall(lua, 0, 0, 0)) {
-      process_error(lua->script, "delayedCall()");
+   LuaCallbackContextGuard callback_context(lua);
+   auto callback_error = push_tiri_function(lua, msg->function, callback_context);
+   if (callback_error IS ERR::Okay) {
+      if (lua_pcall(lua, 0, 0, 0)) process_callback_error(lua->script, "delayedCall()");
    }
+   else kt::Log(__FUNCTION__).warning("Delayed callback is no longer valid: %s", GetErrorMsg(callback_error));
+   release_tiri_function(lua, &msg->function);
+   collect_garbage(lua);
    return ERR::Okay;
 }
 
 static int processing_delayed_call(lua_State *Lua)
 {
    if (lua_type(Lua, 1) IS LUA_TFUNCTION) {
-      delay_msg msg = { Lua, luaL_ref(Lua, LUA_REGISTRYINDEX) };
-      if (SendMessage(glDelayedCallMsgID, MSF::NIL, &msg, sizeof(msg)) != ERR::Okay) {
-         luaL_unref(Lua, LUA_REGISTRYINDEX, msg.ref);
+      delay_msg msg = { Lua, FUNCTION() };
+      if (capture_tiri_function(Lua, 1, msg.function) != ERR::Okay) {
+         luaL_error(Lua, ERR::Args, "Expected a function to register as a message hook.");
+      }
+      if (SendMessage(glDelayedCallMsgID, MSF::NIL, std::span((const int8_t *)&msg, sizeof(msg))) != ERR::Okay) {
+         release_tiri_function(Lua, &msg.function);
          luaL_error(Lua, ERR::MessageOperation);
       }
    }
-   else luaL_error(Lua, "Expected a function to register as a message hook.");
+   else luaL_error(Lua, ERR::Args, "Expected a function to register as a message hook.");
    return 0;
 }
 
@@ -477,13 +546,16 @@ void register_processing_class(lua_State *Lua)
    lua_pop(Lua, 2); // Drop the Tiri.processing metatable and the processing library table
 
    // Register processing interface prototypes for compile-time type inference
-   reg_iface_prototype("processing", "new", { TiriType::Any }, { TiriType::Table });
-   reg_iface_prototype("processing", "collect", { TiriType::Num }, { TiriType::Str, TiriType::Table });
+   reg_iface_prototype("processing", "new", { TiriType::Userdata }, { TiriType::Any });
+   reg_iface_prototype("processing", "collect", { TiriType::Num }, { TiriType::Str, TiriType::Table },
+      FProtoFlags::None, FProtoArity::required(0));
    reg_iface_prototype("processing", "stopCollector", {}, {});
    reg_iface_prototype("processing", "startCollector", {}, {});
    reg_iface_prototype("processing", "gcStats", { TiriType::Table }, {});
-   reg_iface_prototype("processing", "halt", { TiriType::Num }, { TiriType::Num });
-   reg_iface_prototype("processing", "sleep", { TiriType::Num }, { TiriType::Num });
+   reg_iface_prototype("processing", "halt", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("processing", "sleep", { TiriType::Num }, { TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("processing", "signal", {}, {});
    reg_iface_prototype("processing", "task", { TiriType::Any }, {});
    reg_iface_prototype("processing", "flush", {}, {});

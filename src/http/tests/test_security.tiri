@@ -32,16 +32,16 @@ function rawHttpRequest(Method:str, Path:str):<num, str>
          buffer = string.alloc(4096)
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            response ..= buffer:substr(0, read_len)
+            response ..= buffer.sub(0, read_len)
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Raw HTTP read failed: ' .. mSys.GetErrorMsg(err))
+            raise 'Raw HTTP read failed: ' .. mSys.GetErrorMsg(err)
          end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { socket } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { socket } })
    check socket.mtConnect('127.0.0.1', SERVER_PORT, 3.0)
    check proc.sleep()
 
@@ -123,7 +123,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -132,11 +132,12 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
-   assert(http.error is ERR_Okay, 'Path traversal HTTP error: ' .. mSys.GetErrorMsg(http.error))
+   assert(http.error is ERR_HTTPStatus, 'Path traversal should report HTTPStatus, got: ' ..
+      mSys.GetErrorMsg(http.error))
 
    -- Server should reject with 400 Bad Request
    assert(http.status is 400, 'Expected 400 Bad Request for path traversal, got: ' .. http.status)
@@ -158,7 +159,7 @@ end
          flags = HTF_NO_HEAD,
          incoming = function(HTTP, Buffer)
             if not results[i] then results[i] = {content = ''} end
-            if Buffer then results[i].content = results[i].content .. Buffer:getString() end
+            if Buffer then results[i].content = results[i].content .. Buffer.getString() end
          end,
          stateChanged = function(HTTP, State)
             if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -175,7 +176,7 @@ end
       if not wait_http then wait_http = http end
    end
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { wait_http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { wait_http } })
 
    for i, http in ipairs(requests) do
       assert(http.acActivate() is ERR_Okay, "Forbidden file test " .. i .. " failed to activate")
@@ -198,7 +199,7 @@ end
    rateLimited = 0
    successful = 0
 
-   for i = 1, totalRequests do
+   for i in {1 into totalRequests} do
       status, response = rawHttpRequest('GET', '/api/rate-test/' .. i)
       if status is 429 then
          rateLimited++
@@ -224,7 +225,7 @@ end
       method   = 'GET',
       flags    = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -236,7 +237,7 @@ end
    assert(http.acSetKey('X-Test-Header', 'value\r\nX-Injected-Header: injected\r\nHost: evil.com') != ERR_Okay,
       'Header injection should not succeed')
    check http.acSetKey('X-Test-Header', 'safe-value')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -255,14 +256,14 @@ end
    content = ''
 
    -- Create oversized header to test limits
-   largeHeaderValue = string.rep('A', 8192) -- 8KB header
+   largeHeaderValue = 'A'.rep(8192) -- 8KB header
 
    http = obj.new('http', {
       src = 'http://127.0.0.1:' .. SERVER_PORT .. '/api/large-header-test',
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -272,7 +273,7 @@ end
    })
 
    check http.acSetKey('X-Large-Header', largeHeaderValue)
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
    check proc.sleep()
 
@@ -292,7 +293,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -303,7 +304,7 @@ end
    })
 
    check http.acSetKey('User-Agent', '<script>alert("xss")</script>Malicious/1.0')
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    check http.acActivate()
 
    if not completed then

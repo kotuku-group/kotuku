@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,17 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines image accessors for clamp, wrap, repeat, and out-of-bounds sampling policies. Hooks into span_image_filter_*
+// generators and source rendering buffers. In the vector renderer it controls how image paints and patterns sample
+// pixels beyond their nominal bounds.
 
-
-#ifndef AGG_IMAGE_ACCESSORS_INCLUDED
-#define AGG_IMAGE_ACCESSORS_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //-----------------------------------------------------image_accessor_clip
     template<class PixFmt> class image_accessor_clip
     {
     public:
@@ -96,10 +95,6 @@ namespace agg
         const int8u*       m_pix_ptr;
     };
 
-
-
-
-    //--------------------------------------------------image_accessor_no_clip
     template<class PixFmt> class image_accessor_no_clip
     {
     public:
@@ -179,14 +174,14 @@ namespace agg
         }
 
     public:
-        AGG_INLINE const int8u* span(int x, int y, unsigned len)
+        AGG_INLINE const int8u* span(int X, int Y, unsigned Len)
         {
-            m_x = m_x0 = x;
-            m_y = y;
-            if(y >= 0 && y < (int)m_pixf->height() &&
-               x >= 0 && x+len <= (int)m_pixf->width())
+            m_x = m_x0 = X;
+            m_y = Y;
+            if ((Y >= 0) and (Y < int(m_pixf->height())) and (X >= 0) and
+               (unsigned(X) <= m_pixf->width()) and (Len <= m_pixf->width() - unsigned(X)))
             {
-                return m_pix_ptr = m_pixf->pix_ptr(x, y);
+                return m_pix_ptr = m_pixf->pix_ptr(X, Y);
             }
             m_pix_ptr = 0;
             return pixel();
@@ -471,6 +466,3 @@ namespace agg
 
 
 }
-
-
-#endif

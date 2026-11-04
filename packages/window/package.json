@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/window",
+  "version": "1.0",
+  "description": "Top-level application window widget for Tiri graphical interfaces.",
+  "entry": "window.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "window",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "window.tiri",
+      "size": 14248,
+      "sha256": "d553d80f2c220099c1a19db54bf631c9990b5ba699503ca7be970a7eb684b5fe",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+-- Manual X11 clipboard check. Run under an X11 desktop with --gfx-driver=x11.
+-- Press C, then paste into another application. Copy text there, return here and press V.
+
+   import 'gui/window'
+   module display as mGfx
+
+   local clipboard = obj.new('Clipboard', { })
+   local window = gui.window({ title='X11 clipboard check', insideWidth=620, insideHeight=180 })
+   local viewport = window.clientViewport({ aspectRatio=ARF_MEET })
+   local status = viewport.new('VectorText', {
+      string='C: copy UTF-8 text  V: read current selection',
+      face='Noto Sans', fontSize=18, x=20, y=30, fill='rgb(0,0,0)'
+   })
+
+function show_status(Message)
+   print(Message)
+   status.string = Message
+   viewport.acDraw()
+end
+
+function show_selection()
+   local err, datatype, files, flags = clipboard.mtGetFiles(0, 0)
+   if err is ERR_Okay and datatype is CLIPTYPE_TEXT then
+      local file = obj.new('File', { path=files[0] })
+      local buffer = array<byte, file.size>
+      check mSys.ReadFileToBuffer(files[0], buffer)
+      show_status(f'Received text: {buffer.getString()}')
+   elseif err is ERR_Okay then
+      show_status(f'Received {#files} file reference(s); first path: {files[0]}')
+   else
+      show_status(f'No completed selection yet: {err}. Press V again.')
+   end
+end
+
+   viewport.mtSubscribeKeyboard(function(Viewport, Flags, Code, Unicode)
+      if not (Flags has KQ_PRESSED) or (Flags has KQ_REPEAT) then return end
+      if Code is KEY_C then
+         local err = clipboard.mtAddText('Kōtuku X11 clipboard ✓')
+         show_status(f'Copied UTF-8 text: {err}. Paste into another application.')
+      elseif Code is KEY_V then show_selection() end
+   end)
+
+   window.show()
+   if arg('copy', 'true') != 'false' then
+      local copy_text = arg('text', 'Kōtuku X11 clipboard ✓')
+      check clipboard.mtAddText(copy_text)
+      show_status(f'Copied UTF-8 text: {copy_text}')
+   end
+   local read_after = tonumber(arg('readAfter', '0'))
+   if read_after > 0 then
+      processing.sleep(read_after)
+      show_selection()
+   end
+   local duration = tonumber(arg('duration', '0'))
+   if duration > 0 then processing.sleep(duration)
+   else processing.sleep()
+   end

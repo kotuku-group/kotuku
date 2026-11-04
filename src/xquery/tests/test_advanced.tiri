@@ -120,14 +120,14 @@ end
    local err, index = xml.mtSearch('for $g in /root/group return $g/item', function(XML, TagID, Attrib)
       local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
       assert(errAttr is ERR_Okay, 'For expression callback should resolve item id: ' .. mSys.GetErrorMsg(errAttr))
-      table.insert(collected, idValue)
+      collected.insert(idValue)
    end)
 
    assert(err is ERR_Okay, 'For expression evaluation should succeed: ' .. mSys.GetErrorMsg(err))
    assert(#collected is 3, 'For expression should yield three items, got ' .. #collected)
 
-   table.sort(collected)
-   assert(collected[0] is 'a' and collected[1] is 'b' and collected[2] is 'c', 'For expression should gather all item identifiers, got ' .. table.concat(collected, ','))
+   collected.sort()
+   assert(collected[0] is 'a' and collected[1] is 'b' and collected[2] is 'c', 'For expression should gather all item identifiers, got ' .. collected.concat(','))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -160,12 +160,12 @@ end
    local err = xml.mtSearch('for $group in /root/group, $item in $group/item[@class=$group/@name] return $item', function(XML, TagID)
       local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
       assert(errAttr is ERR_Okay, 'Multi-binding for expression callback should resolve item id: ' .. mSys.GetErrorMsg(errAttr))
-      table.insert(matched, idValue)
+      matched.insert(idValue)
    end)
 
    assert(err is ERR_Okay, 'Multi-binding for expression evaluation should succeed: ' .. mSys.GetErrorMsg(err))
-   table.sort(matched)
-   assert(#matched is 2 and matched[0] is 'a' and matched[1] is 'c', 'Multi-binding for expression should filter matching ids, got ' .. table.concat(matched, ','))
+   matched.sort()
+   assert(#matched is 2 and matched[0] is 'a' and matched[1] is 'c', 'Multi-binding for expression should filter matching ids, got ' .. matched.concat(','))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -184,12 +184,12 @@ end
    local err = xml.mtSearch('for $book in /library/book let $genre := $book/@genre return $book[$genre = "fiction"]', function(XML, TagID)
       local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
       assert(errAttr is ERR_Okay, 'FLWOR for-let callback should resolve book id: ' .. mSys.GetErrorMsg(errAttr))
-      table.insert(collected, idValue)
+      collected.insert(idValue)
    end)
 
    assert(err is ERR_Okay, 'FLWOR for-let evaluation should succeed: ' .. mSys.GetErrorMsg(err))
-   table.sort(collected)
-   assert(#collected is 2 and collected[0] is 'a' and collected[1] is 'c', 'FLWOR for-let should filter fiction books, got ' .. table.concat(collected, ','))
+   collected.sort()
+   assert(#collected is 2 and collected[0] is 'a' and collected[1] is 'c', 'FLWOR for-let should filter fiction books, got ' .. collected.concat(','))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -208,12 +208,12 @@ end
    local err = xml.mtSearch('let $collection := /library/book for $book in $collection return $book[@price > 40]', function(XML, TagID)
       local errAttr, idValue = xml.mtGetAttrib(TagID, 'id')
       assert(errAttr is ERR_Okay, 'FLWOR let-for callback should resolve book id: ' .. mSys.GetErrorMsg(errAttr))
-      table.insert(expensive, idValue)
+      expensive.insert(idValue)
    end)
 
    assert(err is ERR_Okay, 'FLWOR let-for evaluation should succeed: ' .. mSys.GetErrorMsg(err))
-   table.sort(expensive)
-   assert(#expensive is 2 and expensive[0] is 'b' and expensive[1] is 'c', 'FLWOR let-for should filter books above price 40, got ' .. table.concat(expensive, ','))
+   expensive.sort()
+   assert(#expensive is 2 and expensive[0] is 'b' and expensive[1] is 'c', 'FLWOR let-for should filter books above price 40, got ' .. expensive.concat(','))
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -233,13 +233,13 @@ end
    local errUnion = xml.mtSearch('(/root/item[@group="alpha"] union /root/item[@group="beta"])', function(XML, TagID)
       local errAttr, value = xml.mtGetAttrib(TagID, 'id')
       assert(errAttr is ERR_Okay, 'Union keyword should expose item identifiers: ' .. mSys.GetErrorMsg(errAttr))
-      table.insert(unionOrder, value)
+      unionOrder.insert(value)
    end)
 
    assert(errUnion is ERR_Okay, 'Union keyword expression should evaluate successfully: ' .. mSys.GetErrorMsg(errUnion))
    assert(#unionOrder is 3, 'Union keyword should return three matching nodes, got ' .. #unionOrder)
    assert(unionOrder[0] is 'a' and unionOrder[1] is 'b' and unionOrder[2] is 'd',
-      'Union keyword should preserve document order of a, b, d, got ' .. table.concat(unionOrder, ','))
+      'Union keyword should preserve document order of a, b, d, got ' .. unionOrder.concat(','))
 
    local xmlIntersect = obj.new("xml", {
       statement = '<root>' ..
@@ -254,23 +254,23 @@ end
    local errIntersect = xmlIntersect.mtSearch('(/root/item[@group="team"] intersect /root/item[@priority="high"])', function(XML, TagID)
       local errAttr, value = xmlIntersect.mtGetAttrib(TagID, 'id')
       assert(errAttr is ERR_Okay, 'Intersect operator should expose item identifiers: ' .. mSys.GetErrorMsg(errAttr))
-      table.insert(intersectIds, value)
+      intersectIds.insert(value)
    end)
 
    assert(errIntersect is ERR_Okay, 'Intersect operator should evaluate successfully: ' .. mSys.GetErrorMsg(errIntersect))
    assert(#intersectIds is 2 and intersectIds[0] is 'one' and intersectIds[1] is 'four',
-      'Intersect operator should return ids one and four in document order, got ' .. table.concat(intersectIds, ','))
+      'Intersect operator should return ids one and four in document order, got ' .. intersectIds.concat(','))
 
    local exceptIds = {}
    local errExcept = xmlIntersect.mtSearch('(/root/item[@priority="high"]) except /root/item[@exclude="yes"]', function(XML, TagID)
       local errAttr, value = xmlIntersect.mtGetAttrib(TagID, 'id')
       assert(errAttr is ERR_Okay, 'Except operator should expose item identifiers: ' .. mSys.GetErrorMsg(errAttr))
-      table.insert(exceptIds, value)
+      exceptIds.insert(value)
    end)
 
    assert(errExcept is ERR_Okay, 'Except operator should evaluate successfully: ' .. mSys.GetErrorMsg(errExcept))
    assert(#exceptIds is 1 and exceptIds[0] is 'one',
-      'Except operator should filter excluded nodes leaving only id one, got ' .. table.concat(exceptIds, ','))
+      'Except operator should filter excluded nodes leaving only id one, got ' .. exceptIds.concat(','))
 end
 
 ----------------------------------------------------------------------------------------------------------------------

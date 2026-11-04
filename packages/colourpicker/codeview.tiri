@@ -1,0 +1,178 @@
+-- Code view for the colour picker's Export panel: a row of tabs under the panel header, a divider and then the
+-- export text in a monospaced VectorText on a sunken background that meets the panel border.  The text is wrapped to
+-- the page, less the scrollbar, and the page is sized to fit it when the body is resized.
+
+   import 'gui/button', 'gui/panel', './parts'
+   include 'display'
+
+   namespace colourpicker_code { }
+
+PAD_X       <const> = 12
+PAD_Y       <const> = 10
+FONT_SIZE   <const> = 10.5
+LINE_HEIGHT <const> = 16   -- 1.55 em, as in the design
+TAB_HEIGHT  <const> = 18
+TAB_SIZE    <const> = 10
+TAB_GAP     <const> = 2
+TABS_Y      <const> = 7    -- Gap above the tabs
+TABS_BELOW  <const> = 7    -- Gap between the tabs and the divider
+BAR_GAP     <const> = 4    -- Minimum gap between wrapped text and the scrollbar
+TABS_AREA   <const> = TABS_Y + TAB_HEIGHT + TABS_BELOW + 1 -- The tab row and its divider, above the panel body
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create the Export panel: a scrolling gui.panel whose body is a code view, with a row of tabs above it.
+@input Target viewport
+@input Options: x, y, width, height, title, meta, tokens, tabs (array<str> of tab labels), onTab(Index) and onClick()
+@result Table with `panel`, `viewport`, `setTab(Index)`, `setText(Text)` and `scrollTo(Line)`.  Text is the export
+as returned by colourexport.toText().
+]])
+colourpicker_code.new = function(Target:obj!, Options:table!):table
+   t = Options.tokens
+   code = t.code
+   mono = colourpicker_parts.FACE_MONO
+
+   local self:table, body_w:num, frame_h:num
+
+   -- The panel scrolls its body vertically, and the top padding leaves room for the tabs.  The panel background is
+   -- the code background, so that the body fills to the inside of the rounded border and the scrollbar tracks
+   -- follow it.  The header and the tab row keep the panel colour.  The panel reports the size of its body when it
+   -- is resized, and the text is then refitted.
+
+   panel = gui.panel({
+      target  = Target,
+      title   = Options.title,
+      meta    = Options.meta,
+      scroll  = 'vertical',
+      padding = { top = TABS_AREA },
+      x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      theme   = { bkgd = &theme.page.bkgd },
+      events  = {
+         resize = function(Width, Height)
+            if (Width is body_w) and (Height is frame_h) then return end
+            body_w, frame_h = Width, Height
+            self?.fitText() -- The panel may report its size before it returns
+         end
+      }
+   })
+
+   body_w, frame_h = panel.bodySize()
+   edge = panel.bkgd.strokeWidth ?? 0
+
+   self = {
+      panel     = panel,
+      viewport  = panel.viewport,
+      page      = panel.page,
+      scrollbar = panel.scrollbar,
+      tab       = 0
+   }
+
+   -- The tab row sits between the panel's divider and the top of the body, and ends with a divider of its own.
+
+   bar = panel.viewport.new('VectorViewport', {
+      x = 0, y = panel.body.y - TABS_AREA, xOffset = 0, height = TABS_AREA
+   })
+   bar.new('VectorRectangle', {
+      x = edge, y = 0, xOffset = edge, height = TABS_AREA - 1, fill = &theme.panel.bkgd.fill
+   })
+   bar.new('VectorRectangle', {
+      x = edge, y = TABS_AREA - 1, xOffset = edge, height = 1, fill = &theme.panel.bkgd.stroke
+   })
+
+   -- Each tab is a button sized to its label.  The button has a transparent background over a rectangle that shows
+   -- the tab state, so that its hover and focus styling still apply.  The label is inset by the button's stroke.
+
+   tab_theme = {
+      bkgd      = { stroke = 'none', strokeWidth = 0 },
+      focus     = { strokeWidth = 1 },
+      text      = {
+         face = mono, fontSize = f'{TAB_SIZE}px', fontStyle = 'Medium',
+         y = colourpicker_parts.baseline(0, TAB_HEIGHT - 2, TAB_SIZE)
+      }
+   }
+
+   self.tabs = array<table>
+   x = PAD_X
+   for i, label in Options.tabs do
+      button = gui.button({
+         target = bar, x = x, y = TABS_Y, height = TAB_HEIGHT, label = label, theme = tab_theme,
+         events = {
+            activate = function()
+               if self.tab is i then return end
+               self.setTab(i)
+               Options.onTab?(i)
+            end
+         }
+      })
+
+      self.tabs.push({ button = button })
+      x += button.viewport.width + TAB_GAP
+   end
+
+   -- The text is drawn on the panel's page, inset by the padding.  The page is at least as tall as the body, so that
+   -- it takes clicks anywhere in the body.  The text is wrapped to the width that remains when the scrollbar is
+   -- shown, so showing or hiding the bar never changes the wrapping.
+
+   self.page.cursor = 'hand'
+
+   self.text = self.page.new('VectorText', {
+      x         = PAD_X,
+      y         = colourpicker_parts.baseline(PAD_Y, LINE_HEIGHT, FONT_SIZE),
+      face      = mono,
+      fontSize  = f'{FONT_SIZE}px',
+      fontStyle = 'Medium',
+      fill      = code.text,
+      lineLimit = 0
+   })
+
+   self.setTab = function[&&](Index:num!)
+      self.tab = Index
+      -- The tab buttons are created with tab_theme, so the inactive tabs need no override.  The active tab takes the
+      -- primary style, with tab_theme kept on top of it.
+
+      for i, tab in self.tabs do
+         tab.button.setTheme((i is Index) ? table.merge(&theme.button.primary, tab_theme, true, true) : nil)
+      end
+   end
+
+   -- Wrap the text, size the page to it, and keep the scroll position unless the page has become too short for it.
+
+   self.fitText = function()
+      self.text.inlineSize = math.max(1, body_w - PAD_X - self.scrollbar.v_thickness - BAR_GAP)
+      _, _, ty, _, th = self.text.mtGetBoundary(0)
+      _, _, py = self.page.mtGetBoundary(0)
+      self.page.height = math.max(frame_h, math.ceil(ty + th - py + PAD_Y))
+      min_y = math.min(0, frame_h - self.page.height)
+      if self.page.y < min_y then self.page.y = min_y end
+   end
+
+   -- Scroll so that Line is at the top of the body, as far as the page allows.  The scrollbar follows the page.
+
+   self.scrollTo = function(Line:num!)
+      max_y = math.max(0, self.page.height - frame_h)
+      y = -math.clamp(math.floor(Line) * self.text.lineSpacing, 0, max_y)
+      if self.page.y != y then self.page.y = y end
+   end
+
+   self.setText = function(Text:str)
+      if self.text.string is Text then return end
+      self.text.string = Text ?? ''
+      self.fitText()
+   end
+
+   -- The scrollbar subscribes the page to input for the wheel, and clicks are taken from the page too.
+
+   self.page.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
+      repeat
+         if (Msg.type is JET_LMB) and (Msg.value is 0) then
+            if Options.onClick then Options.onClick() end
+         end
+         Msg = Msg.next
+      until not Msg
+   end)
+
+   self.setTab(0)
+   self.fitText()
+   return self
+end

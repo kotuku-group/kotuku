@@ -1,0 +1,86 @@
+-- $TIRI
+-- SVG lengths must follow the CSS absolute unit ratios (1in = 2.54cm = 25.4mm = 72pt = 6pc = 96px) at a fixed reference
+-- density, independent of the display.  NB: The headless driver always reports 96 DPI, so a high density display is
+-- not reproduced here; the parser no longer reads the display density at all.
+
+   include 'display', 'svg', 'vector'
+   module display as mGfx
+
+glInchUnits = array<str> { '1in', '2.54cm', '25.4mm', '72pt', '6pc', '96px', '96' }
+
+function loadScene(Body:str!):obj
+   scene = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+   obj.new('svg', { target=scene, statement=f'<svg xmlns="http://www.w3.org/2000/svg">{Body}</svg>' })
+   return scene
+end
+
+@Test function AbsoluteLengthUnitsAreCoherent()
+   body = ''
+   for i, unit in glInchUnits do
+      body ..= f'<rect id="unit{i}" x="0" y="0" width="{unit}" height="10"/>'
+   end
+   scene = loadScene(body)
+
+   for i, unit in glInchUnits do
+      rect = obj.find(f'unit{i}')
+      assert(rect, f'Rectangle for {unit} must exist')
+      assert(math.abs(rect.width - 96) < 0.0001, f'{unit} must equal 96px, got {rect.width}')
+   end
+end
+
+@Test function FontSizeUnitsMatchLengthUnits()
+   body = ''
+   for i, unit in glInchUnits do
+      body ..= f'<text id="text{i}" x="0" y="100" font-family="Noto Sans" font-size="{unit}">H</text>'
+   end
+   scene = loadScene(body)
+
+   for i, unit in glInchUnits do
+      text = obj.find(f'text{i}')
+      assert(text, f'Text for {unit} must exist')
+      assert(tonumber(text.fontSize) is 96, f'font-size {unit} must equal 96px, got {text.fontSize}')
+   end
+end
+
+-- An SVG object that creates its own scene renders to the SVG 2 standard.  A target's scene belongs to the client, so
+-- its compliance is not modified.
+
+@Test function OwnSceneCompliesWithSVG2()
+   local svg <close> = obj.new('svg', { statement='<svg xmlns="http://www.w3.org/2000/svg"/>' })
+   assert(svg.scene.compliance is VSC_SVG2, f'Own scene compliance must be SVG2, got {svg.scene.compliance}')
+end
+
+@Test function TargetSceneComplianceIsKept()
+   scene = loadScene('<rect width="10" height="10"/>')
+   assert(scene.compliance is VSC_NONE, f'Target scene compliance must be unchanged, got {scene.compliance}')
+end
+
+@Test function BoundingBoxOffsetFollowsSVG()
+   -- The offset is a fraction of the bounding box width and height, so (0.1, 0.1) moves the 120x40 rectangle by
+   -- (12, 4).  Diagonal scaling would move it by 8.94 on both axes.
+
+   local svg <close> = obj.new('svg', { statement=[[<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+      <filter id="offset" primitiveUnits="objectBoundingBox" x="-50%" y="-50%" width="200%" height="200%">
+         <feOffset dx="0.1" dy="0.1"/>
+      </filter>
+      <rect x="20" y="80" width="120" height="40" fill="white" filter="url(#offset)"/>
+   </svg>]] })
+
+   local bmp <close> = obj.new('bitmap', { width=200, height=200, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   svg.scene.pageWidth  = 200
+   svg.scene.pageHeight = 200
+   svg.scene.bitmap = bmp
+   check svg.scene.acDraw()
+
+   left, top = 200, 200
+   for y in {0 into 199} do
+      for x in {0 into 199} do
+         if mGfx.ReadRGBPixel(bmp, x, y).red > 200 then
+            if x < left then left = x end
+            if y < top then top = y end
+         end
+      end
+   end
+   assert((left is 32) and (top is 84), f'Expected the offset rectangle at 32,84, got {left},{top}')
+end

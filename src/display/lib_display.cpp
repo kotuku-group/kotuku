@@ -9,48 +9,123 @@ Name: Display
 #include "defs.h"
 
 ankerl::unordered_dense::map<WinHook, FUNCTION> glWindowHooks;
+std::recursive_mutex glWindowHookLock;
 
 namespace gfx {
 
 /*********************************************************************************************************************
 
 -FUNCTION-
+CaptureDisplay: Copies a rectangle of the host desktop to a bitmap.
+
+CaptureDisplay() reads the pixels currently presented by the host desktop and copies them to `Bitmap`.  It allows
+tools such as colour pickers and magnifiers to sample content that is not owned by a Kōtuku surface.
+
+`X` and `Y` are desktop coordinates, i.e. the same coordinate space as ~GetCursorPos() and the @Pointer `X` and
+`Y` fields.  On multi-monitor systems they can be negative.  The source rectangle is clipped to the desktop, and the
+destination is clipped to the bitmap's `Clip` region.  Pixels outside the clipped area are left untouched.
+
+Captured pixels are written as the display presents them, i.e. as sRGB-encoded values with an alpha of 255.  No
+conversion is applied if the bitmap uses the `CS::LINEAR_RGB` colour space.  The mouse cursor is not included.
+Kōtuku's own windows are included as they appear on screen.
+
+On Windows, layered windows are included.  Protected content such as DRM video and windows excluded from screen
+capture may appear black or be omitted by the host.
+
+Desktop capture is not available on all platforms.  Wayland sessions (including X11 clients running under XWayland),
+headless sessions and Android return `ERR::NoSupport`, and callers should fall back to an alternative where possible.
+
+-INPUT-
+int X: Horizontal desktop coordinate of the area to capture.
+int Y: Vertical desktop coordinate of the area to capture.
+int Width: Width of the area to capture.
+int Height: Height of the area to capture.
+obj(Bitmap) Bitmap: The bitmap that will receive the captured pixels.
+int XDest: Horizontal position in the bitmap to copy the area to.
+int YDest: Vertical position in the bitmap to copy the area to.
+
+-ERRORS-
+Okay: At least part of the area was copied.
+NullArgs: `Bitmap` was not specified, or `Width` or `Height` is less than 1.
+InvalidObject: `Bitmap` does not refer to a Bitmap object.
+OutOfRange: The area lies entirely outside of the desktop or the bitmap's clip region.
+NoSupport: The display driver cannot read the host desktop.
+SystemCall: The host capture request failed.
+AllocMemory: A temporary host image could not be allocated.
+
+-TAGS-
+mutates-object, blocking
+
+*********************************************************************************************************************/
+
+ERR CaptureDisplay(int X, int Y, int Width, int Height, objBitmap *Bitmap, int XDest, int YDest)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((not Bitmap) or (Width < 1) or (Height < 1)) return log.warning(ERR::NullArgs);
+   if (Bitmap->classID() != CLASSID::BITMAP) return log.warning(ERR::InvalidObject);
+   if (not glDriver) return ERR::NoSupport;
+
+   auto bitmap = (extBitmap *)Bitmap;
+   const int left = std::max(bitmap->Clip.Left, 0);
+   const int top = std::max(bitmap->Clip.Top, 0);
+   const int right = std::min(bitmap->Clip.Right, bitmap->Width);
+   const int bottom = std::min(bitmap->Clip.Bottom, bitmap->Height);
+
+   if (XDest < left) { X += left - XDest; Width -= left - XDest; XDest = left; }
+   if (YDest < top) { Y += top - YDest; Height -= top - YDest; YDest = top; }
+   if (XDest + Width > right) Width = right - XDest;
+   if (YDest + Height > bottom) Height = bottom - YDest;
+   if ((Width < 1) or (Height < 1)) return ERR::OutOfRange;
+
+   if (auto error = lock_surface(bitmap, SURFACE_WRITE); error != ERR::Okay) return log.warning(error);
+   auto error = glDriver->captureDisplay(X, Y, Width, Height, bitmap, XDest, YDest);
+   unlock_surface(bitmap);
+   return error;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 GetDisplayInfo: Retrieves display information.
 
-The GetDisplayInfo() function returns information about a display, which includes information such as its size and bit
-depth.  If the system is running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to
-retrieve information about the default monitor by using a Display of zero.
+The GetDisplayInfo() function returns information about a display, such as its size and bit depth.  If the system is
+running on a hosted display (e.g. Windows or X11) then GetDisplayInfo() can also be used to retrieve information
+about the default monitor by using a Display of zero.
 
-The resulting `DISPLAYINFO` structure values remain good until the next call to this function, at which point they will
+The resulting !DisplayInfo structure values remain good until the next call to this function, at which point they will
 be overwritten.
 
 -INPUT-
 oid Display: Object ID of the display to be analysed.
-&struct(*DisplayInfo) Info: This reference will receive a pointer to a DISPLAYINFO structure.
+&struct(*DisplayInfo) Info: This reference will receive a pointer to a !DisplayInfo structure.
 
 -ERRORS-
 Okay:
 NullArgs:
+AccessObject:
 AllocMemory:
+SystemCall:
+TimeOut:
+
+-TAGS-
+api-owns-result, volatile-result, blocking
 
 *********************************************************************************************************************/
 
-ERR GetDisplayInfo(OBJECTID DisplayID, DISPLAYINFO **Result)
+ERR GetDisplayInfo(OBJECTID DisplayID, DisplayInfo **Result)
 {
-   static thread_local DISPLAYINFO *t_info = nullptr;
+   static thread_local std::unique_ptr<DisplayInfo, decltype(&std::free)> t_info(nullptr, &std::free);
 
    if (!Result) return ERR::NullArgs;
 
-   if (!t_info) {
-      // Each thread gets an allocation that can't be resource tracked, so MEM::HIDDEN is used in this case.
-      // Note that this could conceivably cause memory leaks if temporary threads were to use this function.
-      if (AllocMemory(sizeof(DISPLAYINFO), MEM::NO_CLEAR|MEM::HIDDEN, &t_info) != ERR::Okay) {
-         return ERR::AllocMemory;
-      }
+   if (!t_info) { // Each thread owns its result until thread exit.
+      t_info.reset((DisplayInfo *)malloc(sizeof(DisplayInfo)));
+      if (!t_info) return ERR::AllocMemory;
    }
 
-   if (auto error = get_display_info(DisplayID, t_info, sizeof(DISPLAYINFO)); error IS ERR::Okay) {
-      *Result = t_info;
+   if (auto error = get_display_info(DisplayID, t_info.get()); !error) {
+      *Result = t_info.get();
       return ERR::Okay;
    }
    else return error;
@@ -59,25 +134,29 @@ ERR GetDisplayInfo(OBJECTID DisplayID, DISPLAYINFO **Result)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetDisplayType: Returns the type of display supported.
+GetDisplayType: Returns the selected display driver's backend type.
 
-This function returns the type of display supported by the loaded Display module.  Current return values are:
+This function reports the backend identity of the driver selected during Display module initialisation.  Explicit and
+automatic driver selection therefore return the same type when they resolve to the same backend.  Current values are:
+
+On desktop Linux, automatic selection tries Wayland when `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR` are set, then X11
+when available, and finally the headless driver.  The headless driver reports `DT::NATIVE`.
 
 <types lookup="DT"/>
 
 -RESULT-
 int(DT): Returns an integer indicating the display type.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 DT GetDisplayType(void)
 {
+   if (glDriver) return glDriver->displayType();
 #ifdef _WIN32
    return DT::WINGDI;
-#elif __xwindows__
-   return DT::X11;
-#elif _GLES_
-   return DT::GLES;
 #else
    return DT::NATIVE;
 #endif
@@ -91,142 +170,28 @@ ScanDisplayModes: Private. Returns formatted resolution information from the dis
 For internal use only.
 
 <pre>
-DISPLAYINFO info;
+DisplayInfo info;
 clearmem(&info, sizeof(info));
-while (!scrScanDisplayModes("depth=32", &info, sizeof(info))) {
+while (!scrScanDisplayModes("depth=32", &info)) {
    ...
 }
 </pre>
 
 -INPUT-
-cstr Filter: The filter to apply to the resolution database.  May be NULL for no filter.
-struct(*DisplayInfo) Info: A pointer to a screenINFO structure must be referenced here.  The structure will be filled with information when the function returns.
-structsize Size: Size of the screenINFO structure.
+strview Filter: The filter to apply to the resolution database.  May be NULL for no filter.
+struct(*DisplayInfo) Info: A pointer to a !DisplayInfo structure must be referenced here.  The structure will be filled with information when the function returns.
 
 -ERRORS-
-Okay: The resolution information was retrieved.
-Args:
 NoSupport: Native graphics system not available (e.g. hosted on Windows or X11).
-Search: There are no more display modes to return that are a match for the Filter.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
-ERR ScanDisplayModes(CSTRING Filter, DISPLAYINFO *Info, int Size)
+ERR ScanDisplayModes(const std::string_view &Filter, DisplayInfo *Info)
 {
-#ifdef __snap__
-
-   GA_modeInfo modeinfo;
-   uint16_t *modes;
-   int colours, bytes, i, j, minrefresh, maxrefresh, refresh, display;
-   int16_t f_depth, c_depth; // f = filter, c = condition (0 = equal; -1 <, -2 <=; +1 >, +2 >=)
-   int16_t f_bytes, c_bytes;
-   int16_t f_width, c_width, f_height, c_height;
-   int16_t f_refresh, c_refresh;
-   int16_t f_minrefresh, c_minrefresh;
-   int16_t f_maxrefresh, c_maxrefresh;
-   int8_t interlace, matched;
-
-   if ((!Info) or (Size < sizeof(DisplayInfoV3))) return ERR::Args;
-
-   // Reset all filters
-
-   f_depth   = c_depth   = 0;
-   f_bytes   = c_bytes   = 0;
-   f_width   = c_width   = 0;
-   f_height  = c_height  = 0;
-   f_refresh = c_refresh = 0;
-   f_minrefresh = c_minrefresh = 0;
-   f_maxrefresh = c_maxrefresh = 0;
-
-   if (Filter) {
-      while (*Filter) {
-         while ((*Filter) and (*Filter <= 0x20)) Filter++;
-         while (*Filter IS ',') Filter++;
-         while ((*Filter) and (*Filter <= 0x20)) Filter++;
-
-         if (startswith("depth", Filter))   extract_value(Filter, &f_depth, &c_depth);
-         if (startswith("bytes", Filter))   extract_value(Filter, &f_bytes, &c_bytes);
-         if (startswith("width", Filter))   extract_value(Filter, &f_width, &c_width);
-         if (startswith("height", Filter))  extract_value(Filter, &f_height, &c_height);
-         if (startswith("refresh", Filter)) extract_value(Filter, &f_refresh, &c_refresh);
-         if (startswith("minrefresh", Filter)) extract_value(Filter, &f_minrefresh, &c_minrefresh);
-         if (startswith("maxrefresh", Filter)) extract_value(Filter, &f_maxrefresh, &c_maxrefresh);
-
-         while ((*Filter) and (*Filter != ',')) Filter++;
-      }
-   }
-
-   modes = glSNAPDevice->AvailableModes;
-   display = glSNAP->Init.GetDisplayOutput() & gaOUTPUT_SELECTMASK;
-   for (i=Info->Index; modes[i] != 0xffff; i++) {
-      modeinfo.dwSize = sizeof(modeinfo);
-      if (glSNAP->Init.GetVideoModeInfoExt(modes[i], &modeinfo, display, glSNAP->Init.GetActiveHead())) continue;
-
-      if (modeinfo.AttributesExt & gaIsPanningMode) continue;
-      if (modeinfo.Attributes & gaIsTextMode) continue;
-      if (modeinfo.BitsPerPixel < 8) continue;
-
-      if (modeinfo.BitsPerPixel <= 8) bytes = 1;
-      else if (modeinfo.BitsPerPixel <= 16) bytes = 2;
-      else if (modeinfo.BitsPerPixel <= 24) bytes = 3;
-      else bytes = 4;
-
-      if (modeinfo.BitsPerPixel <= 24) colours = 1<<modeinfo.BitsPerPixel;
-      else colours = 1<<24;
-
-      minrefresh = 0x7fffffff;
-      maxrefresh = 0;
-      for (j=0; modeinfo.RefreshRateList[j] != -1; j++) {
-         if ((refresh = modeinfo.RefreshRateList[j]) < 0) refresh = -refresh;
-         if (refresh > maxrefresh) maxrefresh = refresh;
-         if (refresh < minrefresh) minrefresh = refresh;
-      }
-
-      if (minrefresh IS 0x7fffffff) minrefresh = 0;
-
-      refresh = modeinfo.DefaultRefreshRate;
-      if (refresh < 0) {
-         refresh = -refresh;
-         interlace = TRUE;
-      }
-      else interlace = TRUE;
-
-      // Check if this mode meets the filters, if so then reduce the index
-
-      if (Filter) {
-         matched = TRUE;
-         if ((f_depth)   and (!compare_values(f_depth,   c_depth,   modeinfo.BitsPerPixel))) matched = FALSE;
-         if ((f_bytes)   and (!compare_values(f_bytes,   c_bytes,   bytes))) matched = FALSE;
-         if ((f_width)   and (!compare_values(f_width,   c_width,   modeinfo.XResolution)))  matched = FALSE;
-         if ((f_height)  and (!compare_values(f_height,  c_height,  modeinfo.YResolution)))  matched = FALSE;
-         if ((f_refresh) and (!compare_values(f_refresh, c_refresh, modeinfo.BitsPerPixel))) matched = FALSE;
-         if ((f_minrefresh) and (!compare_values(f_minrefresh, c_minrefresh, minrefresh)))   matched = FALSE;
-         if ((f_maxrefresh) and (!compare_values(f_maxrefresh, c_maxrefresh, maxrefresh)))   matched = FALSE;
-
-         if (matched IS FALSE) continue;
-      }
-
-      // Return information for this mode
-
-      Info->Width         = modeinfo.XResolution;
-      Info->Height        = modeinfo.YResolution;
-      Info->Depth         = modeinfo.BitsPerPixel;
-      Info->BytesPerPixel = bytes;
-      Info->AmtColours    = colours;
-      Info->MinRefresh    = minrefresh;
-      Info->MaxRefresh    = maxrefresh;
-      Info->RefreshRate   = refresh;
-      Info->Index         = i + 1;
-      return ERR::Okay;
-   }
-
-   return ERR::Search;
-
-#else
-
    return ERR::NoSupport;
-
-#endif
 }
 
 /*********************************************************************************************************************
@@ -247,28 +212,7 @@ Okay
 
 ERR SetHostOption(HOST Option, int64_t Value)
 {
-#if defined(_WIN32) || defined(__xwindows__)
-   kt::Log log(__FUNCTION__);
-
-   switch (Option) {
-      case HOST::TRAY_ICON:
-         glTrayIcon = Value;
-         if (glTrayIcon) glTaskBar = 0;
-         break;
-
-      case HOST::TASKBAR:
-         glTaskBar = Value;
-         if (glTaskBar) glTrayIcon = 0;
-         break;
-
-      case HOST::STICK_TO_FRONT:
-         glStickToFront = Value;
-         break;
-
-      default:
-         log.warning("Invalid option %d, Data %" PF64, int(Option), (long long)Value);
-   }
-#endif
+   if (glDriver) return glDriver->setHostOption(Option, Value);
 
    return ERR::Okay;
 }
@@ -289,6 +233,9 @@ double Value: The number to be scaled.
 
 -RESULT-
 double: The scaled value is returned.
+
+-TAGS-
+pure-query
 -END-
 
 *********************************************************************************************************************/

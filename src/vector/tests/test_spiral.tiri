@@ -1,0 +1,310 @@
+   include 'display', 'vector'
+
+module display as mGfx
+
+function traceSpiral(Fields)
+   local scene <close> = obj.new('VectorScene', { pageWidth=500, pageHeight=500 })
+   local viewport = scene.new('VectorViewport', { width=500, height=500 })
+   local spiral = viewport.new('VectorSpiral', Fields)
+   local points = {}
+   function trace(Vector, Index, Command, X, Y)
+      points.insert({ x=X, y=Y, command=Command })
+      return ERR_Okay
+   end
+   local err = spiral.mtTrace(trace, 1.0, false)
+   assert(err is ERR_Okay or err is ERR_NoData, 'Spiral trace should succeed or be empty')
+   return points
+end
+
+function near(Actual, Expected)
+   assert(math.abs(Actual - Expected) < 0.000001, f'Expected {Expected}, got {Actual}')
+end
+
+@Test function ExpandingSpacingAndPartialTurns()
+   local points = traceSpiral({ spacing=10, decay=2, startTurn=1, endTurn=2, step=180 })
+   near(points[0].x, 10)
+   near(points[0].y, 0)
+   near(points[#points-1].x, 30)
+   near(points[#points-1].y, 0)
+end
+
+@Test function FractionalEndpointAndLoopLimit()
+   local points = traceSpiral({ spacing=40, startTurn=0.25, endTurn=2, loopLimit=0.5, step=37 })
+   near(points[0].x, 0)
+   near(points[0].y, 10)
+   near(points[#points-1].x, -20)
+   near(points[#points-1].y, 0)
+end
+
+@Test function RadiusClipsExpandingSpiral()
+   local points = traceSpiral({ spacing=10, decay=2, radius=30, endTurn=4, step=37 })
+   near(points[#points-1].x, 30)
+   near(points[#points-1].y, 0)
+   assert(#traceSpiral({ spacing=10, decay=2, radius=5, startTurn=1 }) is 0,
+      'A radius limit before the start should produce an empty path')
+end
+
+@Test function EmptyAndSinglePointIntervals()
+   assert(#traceSpiral({ startTurn=2, endTurn=1 }) is 0, 'Reversed interval should be empty')
+   local points = traceSpiral({ spacing=10, startTurn=1, endTurn=1 })
+   assert(#points is 1, 'Equal endpoints should produce one point')
+   near(points[0].x, 10)
+end
+
+@Test function AdaptiveSamplingRespectsError()
+   for decay in values({ 0.5, 1, 2 }) do
+      local tolerance = 0.01
+      local points = traceSpiral({ spacing=10, decay=decay, endTurn=2, tolerance=tolerance })
+      local coarse = traceSpiral({ spacing=10, decay=decay, endTurn=2, tolerance=1 })
+      assert(#points > #coarse, 'Smaller tolerance should produce more vertices')
+      for i in {0 to #points-1} do
+         local a, b = points[i], points[i+1]
+         local ra = math.sqrt(a.x*a.x + a.y*a.y)
+         local rb = math.sqrt(b.x*b.x + b.y*b.y)
+         local ta = decay is 1 ? ra/10 : math.log(1 + ra/10*(decay-1))/math.log(decay)
+         local tb = decay is 1 ? rb/10 : math.log(1 + rb/10*(decay-1))/math.log(decay)
+         for fraction in values({ 0.25, 0.5, 0.75 }) do
+            local t = ta + (tb-ta)*fraction
+            local r = decay is 1 ? 10*t : 10*(math.exp(t*math.log(decay))-1)/(decay-1)
+            local dx = r*math.cos(t*2*math.pi) - (a.x + (b.x-a.x)*fraction)
+            local dy = r*math.sin(t*2*math.pi) - (a.y + (b.y-a.y)*fraction)
+            assert(math.sqrt(dx*dx + dy*dy) <= tolerance + 0.000001,
+               f'Chord error {math.sqrt(dx*dx + dy*dy)}, decay {decay}, t {t}, radius {r}, ta {ta}, tb {tb}')
+         end
+      end
+   end
+end
+
+@Test function AdaptiveSamplingRetainsSmallSegments()
+   local points = traceSpiral({ spacing=0.1, endTurn=0.25, tolerance=0.00001 })
+   assert(#points > 2, 'Adaptive sampling should retain sub-unit segments')
+   near(points[#points-1].y, 0.025)
+end
+
+@Test function DecayingUnreachableRadiusTerminates()
+   local points = traceSpiral({ spacing=10, decay=0.5, radius=100, tolerance=0.1 })
+   assert(#points > 1 and #points < 65535, 'Unreachable radius should terminate before the vertex cap')
+   local last = points[#points-1]
+   assert(math.sqrt(last.x*last.x + last.y*last.y) < 20, 'Decay should approach its asymptote')
+end
+
+@Test function InvalidSamplingFieldsAreRejected()
+   local scene <close> = obj.new('VectorScene')
+   local viewport = scene.new('VectorViewport')
+   for field in values({ 'startTurn', 'endTurn', 'tolerance', 'decay', 'thickness' }) do
+      for value in values({ -1, math.huge, 0/0 }) do
+         local fields = {}
+         fields[field] = value
+         try
+            viewport.new('VectorSpiral', fields)
+         except e
+            assert(e.code is ERR_InvalidValue, 'Invalid sampling field should return InvalidValue')
+         success
+            assert(false, f'{field} should reject {value}')
+         end
+      end
+   end
+end
+
+@Test function NearUnityGrowthAndAdaptiveStepOverride()
+   local points = traceSpiral({ spacing=10, decay=1.000000001, endTurn=1, tolerance=0.01, step=180 })
+   local fine_step = traceSpiral({ spacing=10, decay=1.000000001, endTurn=1, tolerance=0.01, step=0.1 })
+   assert(#points is #fine_step, 'Adaptive sampling should be independent of Step')
+   near(points[#points-1].x, 10)
+   near(points[#points-1].y, 0)
+end
+
+@Test function WindingAndTraversalAreIndependent()
+   for tolerance in values({ 0, 0.01 }) do
+      for decay in values({ 0.5, 1, 2 }) do
+         local fields = { cx=17, cy=23, offset=4, spacing=10, decay=decay, startTurn=0.125,
+            endTurn=2.25, radius=30, tolerance=tolerance, step=37 }
+         local original = traceSpiral(fields)
+         assert(#original > 2, 'Direction test requires a non-empty spiral')
+         for clockwise in values({ 0, 1 }) do
+            for reverse in values({ 0, 1 }) do
+               fields.clockwise = clockwise
+               fields.reverse = reverse
+               local points = traceSpiral(fields)
+               assert(#points is #original, 'Direction must preserve the number of sampled vertices')
+               for i in {0 to #points} do
+                  local source = reverse is 1 ? original[#original-1-i] : original[i]
+                  near(points[i].x, source.x)
+                  near(points[i].y, clockwise is 1 ? source.y : 46-source.y)
+                  assert(points[i].command is original[i].command,
+                     'Traversal must retain the initial move-to and subsequent line-to commands')
+               end
+            end
+         end
+      end
+   end
+end
+
+@Test function ReversingEmptyAndSinglePointIntervals()
+   assert(#traceSpiral({ startTurn=2, endTurn=1, reverse=1 }) is 0,
+      'Reversing an empty interval should remain empty')
+   local points = traceSpiral({ spacing=10, startTurn=0.25, endTurn=0.25, clockwise=0, reverse=1 })
+   assert(#points is 1, 'Reversing a single-point interval should retain one point')
+   near(points[0].x, 0)
+   near(points[0].y, -2.5)
+end
+
+@Test function DirectionChangesInvalidateCachedPath()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { width=100, height=100 })
+   local spiral = viewport.new('VectorSpiral', { spacing=40, endTurn=0.25 })
+   local first_x, first_y, last_x, last_y = 0, 0, 0, 0
+   function trace(Vector, Index, Command, X, Y)
+      if Index is 0 then first_x, first_y = X, Y end
+      last_x, last_y = X, Y
+      return ERR_Okay
+   end
+   check spiral.mtTrace(trace, 1.0, false)
+   assert(spiral.clockwise is 1 and spiral.reverse is 0, 'Default directions should preserve existing behaviour')
+   near(last_y, 10)
+   spiral.clockwise = 0
+   check spiral.mtTrace(trace, 1.0, false)
+   near(last_y, -10)
+   spiral.reverse = 1
+   check spiral.mtTrace(trace, 1.0, false)
+   near(first_x, 0)
+   near(first_y, -10)
+   near(last_x, 0)
+   near(last_y, 0)
+end
+
+
+@Test function RibbonWidthAndBounds()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { width=100, height=100 })
+   local spiral = viewport.new('VectorSpiral', { spacing=40, endTurn=0.5, step=180, thickness=4 })
+   local err:num, x:num, y:num, width:num, height:num = spiral.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   near(x, -20)
+   near(y, -2)
+   near(width, 20)
+   near(height, 4)
+   local points = traceSpiral({ spacing=40, endTurn=0.5, step=180, thickness=4 })
+   assert(#points is 4, 'A two-point centreline should produce a four-corner butt-ended ribbon')
+   spiral.thickness = 8
+   err, x, y, width, height = spiral.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   near(y, -4)
+   near(height, 8)
+   spiral.thickness = 0
+   err, x, y, width, height = spiral.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   near(height, 0)
+end
+
+@Test function RibbonTraversalPreservesOutline()
+   for clockwise in values({ 0, 1 }) do
+      for tolerance in values({ 0, 0.01 }) do
+         local fields = { spacing=20, offset=10, startTurn=0.25, endTurn=1.5,
+            clockwise=clockwise, thickness=4, tolerance=tolerance }
+         local forward = traceSpiral(fields)
+         fields.reverse = 1
+         local backward = traceSpiral(fields)
+         assert(#forward > 4 and #forward is #backward, 'Traversal should retain all ribbon outline vertices')
+         for i in {0 to #forward} do
+            near(forward[i].x, backward[#backward-1-i].x)
+            near(forward[i].y, backward[#backward-1-i].y)
+            assert(forward[i].command is backward[i].command, 'Reversed outline should retain path commands')
+         end
+      end
+   end
+end
+
+@Test function EmptyRibbonAndTightTurns()
+   assert(#traceSpiral({ startTurn=2, endTurn=1, thickness=4 }) is 0, 'Empty interval should produce no ribbon')
+   assert(#traceSpiral({ startTurn=1, endTurn=1, thickness=4 }) is 0, 'Single point should produce no ribbon')
+   local points = traceSpiral({ spacing=4, decay=0.5, endTurn=4, thickness=10, tolerance=0.1 })
+   assert(#points > 3, 'Wide ribbon over tight turns should produce an outline')
+   for point in values(points) do
+      assert(point.x is point.x and point.y is point.y, 'Tight-turn outline should not contain NaN coordinates')
+      assert(math.abs(point.x) < 20 and math.abs(point.y) < 20, 'Tight-turn joins should avoid runaway spikes')
+   end
+end
+
+@Test function RibbonFillIsIndependentOfTraversal()
+   local scene <close> = obj.new('VectorScene', { pageWidth=128, pageHeight=128 })
+   local viewport = scene.new('VectorViewport', { width=128, height=128 })
+   local bitmap <close> = obj.new('bitmap', { width=128, height=128, bitsPerPixel=32, bkgd='0,0,0,255' })
+   scene.bitmap = bitmap
+   local spiral = viewport.new('VectorSpiral', { cx=64, cy=64, spacing=20, endTurn=1.5,
+      thickness=6, tolerance=0.05, fill='red', stroke='none' })
+   check bitmap.acClear()
+   local empty_hash = mSys.GenCRC32(0, bitmap.data, bitmap.size)
+   check scene.acDraw()
+   local forward_hash = mSys.GenCRC32(0, bitmap.data, bitmap.size)
+   assert(forward_hash != empty_hash, 'Ribbon fill should paint pixels without a stroke')
+   local pixels = array<int>
+   for y in {0 to 128} do
+      for x in {0 to 128} do
+         local colour = mGfx.ReadRGBPixel(bitmap, x, y)
+         pixels.push(colour.red)
+      end
+   end
+   spiral.reverse = 1
+   check bitmap.acClear()
+   check scene.acDraw()
+   function linearChannel(Value)
+      local value = Value / 255
+      if value <= 0.04045 then return value / 12.92 end
+      return math.exp(2.4 * math.log((value + 0.055) / 1.055))
+   end
+   local max_difference = 0
+   for y in {0 to 128} do
+      for x in {0 to 128} do
+         local colour = mGfx.ReadRGBPixel(bitmap, x, y)
+         local difference = math.abs(linearChannel(colour.red) - linearChannel(pixels[y*128+x]))
+         max_difference = math.max(max_difference, difference)
+      end
+   end
+   -- Compare linear intensities: gamma correction amplifies small coverage rounding differences near black.
+   assert(max_difference < 0.01, f'Reversed ribbon coverage differs by {max_difference} in linear intensity')
+end
+
+@Test function PercentageThicknessMatchesFixedUnits()
+   local scene <close> = obj.new('VectorScene', { pageWidth=500, pageHeight=500 })
+   local viewport = scene.new('VectorViewport', { width=500, height=500 })
+   local wave = viewport.new('VectorWave', { length=100, amplitude=0, thickness='1%', lineCap=VLC_BUTT })
+   local err:num, x:num, y:num, width:num, height:num = wave.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   assert(math.abs(height - 5) < 0.06, 'Percentage width should approximate the normalised diagonal')
+   local fields = { spacing=20, endTurn=1, thickness=height }
+   local fixed = traceSpiral(fields)
+   fields.thickness = '1%'
+   local scaled = traceSpiral(fields)
+   assert(#fixed is #scaled, 'Percentage thickness should use the normalised viewport diagonal')
+   for i in {0 to #fixed} do
+      near(fixed[i].x, scaled[i].x)
+      near(fixed[i].y, scaled[i].y)
+   end
+end
+
+@Test function ThicknessFollowsCapChanges()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { width=100, height=100 })
+   local spiral = viewport.new('VectorSpiral', { spacing=40, endTurn=0.5, step=180,
+      thickness=4, lineCap=VLC_BUTT })
+   local err:num, x:num, y:num, width:num, height:num = spiral.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   near(width, 20)
+   near(height, 4)
+   spiral.lineCap = VLC_SQUARE
+   err, x, y, width, height = spiral.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   near(x, -22)
+   near(width, 24)
+   near(height, 4)
+
+   local wave = viewport.new('VectorWave', { length=40, amplitude=0, thickness=4, lineCap=VLC_BUTT })
+   err, x, y, width, height = wave.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   local original_width:num = width
+   wave.lineCap = VLC_SQUARE
+   err, x, y, width, height = wave.mtGetBoundary(VBF_NO_TRANSFORM)
+   check err
+   near(width, original_width + 4)
+end

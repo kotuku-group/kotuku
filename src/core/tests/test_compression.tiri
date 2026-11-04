@@ -1,19 +1,82 @@
 -- $TIRI
 -- Flute tests for the Compression module
 
+global glScanItems = { }
+global glScanCount = 0
+
 @AfterAll function cleanup()
+   mSys.DeleteFile('temp:cmp_fixture/')
    mSys.DeleteFile('temp:cmp_test/')
    mSys.DeleteFile('temp:cmp_icons/')
    mSys.DeleteFile('temp:cmp_test_json.zip')
    mSys.DeleteFile('temp:cmp_test_scripts.zip')
+   mSys.DeleteFile('temp:cmp_large.zip')
+   mSys.DeleteFile('temp:cmp_large.txt')
+   mSys.DeleteFile('temp:cmp_empty_args.zip')
+   mSys.DeleteFile('temp:cmp_decompress_object.tiri')
    mSys.DeleteFile('temp:scripts.gz')
+   mSys.DeleteFile('temp:compressed_stream.gz')
+   mSys.DeleteFile('temp:compressed_stream_boundaries.gz')
+   mSys.DeleteFile('temp:compressed_stream_corrupt.gz')
+   mSys.DeleteFile('temp:compressed_stream_truncated.gz')
+   mSys.DeleteFile('temp:compressed_stream_empty.gz')
+   mSys.DeleteFile('temp:compressed_stream_write_error.gz')
    mSys.DeleteFile('temp:gui.tiri')
    mSys.DeleteFile('temp:window.tiri')
+   glStoredArchive = nil
+end
+
+function deterministicBytes(Size:num):str
+   local bytes = array<byte, Size>
+   local state = 0x6d2b79f5
+   for i in {0 to Size} do
+      state = state ^ (state << 13)
+      state = state ^ (state >> 17)
+      state = state ^ (state << 5)
+      bytes[i] = state & 0xff
+   end
+   return bytes.getString()
+end
+
+function readTestFile(Path:str):array<byte>
+   local file = obj.new('file', { path=Path })
+   local bytes = array<byte, file.size>
+   local err = mSys.ReadFileToBuffer(Path, bytes)
+   assert(err is ERR_Okay, f'Failed to read {Path}: {mSys.GetErrorMsg(err)}')
+   return bytes
+end
+
+function writeTestFile(Path:str, Content:any)
+   local file = obj.new('file', { path=Path, flags=FL_WRITE|FL_NEW })
+   local err, written = file.acWrite(Content)
+   assert(err is ERR_Okay, f'Failed to write {Path}: {mSys.GetErrorMsg(err)}')
+   assert(written is #Content, f'Write to {Path} stored {written} of {#Content} bytes.')
+   file.free()
+end
+
+@BeforeAll function setupFixtures(State)
+   -- data/archive_stored.zip holds stored (uncompressed) entries, which the Compression class cannot produce for
+   -- non-empty files.  Entries are empty.txt, alpha.txt and beta.txt (stored) followed by gamma.txt (deflated).
+   global glStoredArchive = obj.new('compression', { path=State.folder .. 'data/archive_stored.zip',
+      archiveName='stored' })
+
+   local root <close> = obj.new('file', { path='temp:cmp_fixture/', flags=FL_NEW|FL_FOLDER })
+   local scripts <close> = obj.new('file', { path='temp:cmp_fixture/scripts/', flags=FL_NEW|FL_FOLDER })
+   writeTestFile('temp:cmp_fixture/gui.tiri', 'fixture GUI source\n')
+   writeTestFile('temp:cmp_fixture/window.tiri', 'fixture window source\n')
+   writeTestFile('temp:cmp_fixture/scripts/button.tiri', 'fixture button source\n')
+   writeTestFile('temp:cmp_fixture/scripts/menu.tiri', 'fixture menu source\n')
 end
 
 global function streamedOutput(CompressedID, Data)
    err, len = glOutFile.acWrite(Data)
    if err != ERR_Okay then return ERR_Write end
+   return ERR_Okay
+end
+
+global function compressionScanCallback(Compression, Item)
+   glScanCount++
+   glScanItems[Item.path] = true
    return ERR_Okay
 end
 
@@ -27,15 +90,21 @@ end
       return
    end
 
+   local cmp
    file_count = 0
-   cmp = obj.new('compression', {
-      path     = 'styles:icons/Default.zip',
-      feedback = function(Compression, Info)
-         if Info.progress is 0 then
-            file_count++
+   try
+      cmp = obj.new('compression', {
+         path     = 'styles:icons/Default.zip',
+         feedback = function(Compression, Info)
+            if Info.progress is 0 then
+               file_count++
+            end
          end
-      end
-   })
+      })
+   except e
+      print('Icon archive could not be opened; skipping test: ' .. e.message)
+      return
+   end
 
    if not cmp then return end -- Non-existance of the icon archive means this test is skipped
 
@@ -52,15 +121,15 @@ end
 -- Compress a few files and then decompress them.
 
 @Test(priority=1) function CreateCompress()
-   cmp = obj.new('compression', { path='temp:cmp_test_json.zip', flags='!NEW' } )
+   local cmp = obj.new('compression', { path='temp:cmp_test_json.zip', flags=FL_NEW } )
 
-   err = cmp.mtCompressFile('scripts:gui.tiri', '')
+   err = cmp.mtCompressFile('temp:cmp_fixture/gui.tiri', '')
    assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
 
-   err = cmp.mtCompressFile('config:styles/default/window.tiri', '')
+   err = cmp.mtCompressFile('temp:cmp_fixture/window.tiri', '')
    assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
 
-   cmp = null
+   cmp = nil
    processing.collect()  -- Flush the compressed file to disk
 end
 
@@ -72,9 +141,86 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=3) function StringViewMethodInputs()
+   cmp = obj.new('compression', { path='temp:cmp_test_json.zip' } )
+
+   glScanItems = { }
+   glScanCount = 0
+
+   err = cmp.mtScan('', '', compressionScanCallback)
+   assert(err is ERR_Okay, 'Scan() failed: ' .. mSys.GetErrorMsg(err))
+   assert(glScanCount is 2, 'Root Scan() returned ' .. glScanCount .. ' entries.')
+   assert(glScanItems['gui.tiri'], 'Root Scan() did not return gui.tiri.')
+   assert(glScanItems['window.tiri'], 'Root Scan() did not return window.tiri.')
+
+   glScanItems = { }
+   glScanCount = 0
+
+   err = cmp.mtScan('', 'gui.tiri', compressionScanCallback)
+   assert(err is ERR_Okay, 'Filtered Scan() failed: ' .. mSys.GetErrorMsg(err))
+   assert(glScanCount is 1, 'Filtered Scan() returned ' .. glScanCount .. ' entries.')
+   assert(glScanItems['gui.tiri'], 'Filtered Scan() did not return gui.tiri.')
+
+   err, item = cmp.mtFind('gui.tiri', false, false)
+   assert(err is ERR_Okay, 'Find() failed: ' .. mSys.GetErrorMsg(err))
+   assert(item.path is 'gui.tiri', 'Find() returned ' .. tostring(item.path))
+
+   source_file = obj.new('file', { path='temp:cmp_fixture/gui.tiri' })
+   source_size = source_file.size
+   source_data = array<byte, source_size>
+   err = mSys.ReadFileToBuffer('temp:cmp_fixture/gui.tiri', source_data)
+   assert(err is ERR_Okay, 'Failed to read source data: ' .. mSys.GetErrorMsg(err))
+
+   output = obj.new('file', { path='temp:cmp_decompress_object.tiri', flags=FL_WRITE|FL_NEW })
+   err = cmp.mtDecompressObject('gui.tiri', output)
+   assert(err is ERR_Okay, 'DecompressObject() failed: ' .. mSys.GetErrorMsg(err))
+   output = nil
+   processing.collect()
+
+   output_file = obj.new('file', { path='temp:cmp_decompress_object.tiri' })
+   assert(output_file.size is source_size, f"DecompressObject() wrote {output_file.size} bytes, expected {source_size}.")
+   output_data = array<byte, source_size>
+   err = mSys.ReadFileToBuffer('temp:cmp_decompress_object.tiri', output_data)
+   assert(err is ERR_Okay, 'Failed to read decompressed output: ' .. mSys.GetErrorMsg(err))
+   assert(output_data.getString() is source_data.getString(), 'DecompressObject() output does not match the source.')
+
+   err = cmp.mtRemoveFile('window.tiri')
+   assert(err is ERR_Okay, 'RemoveFile() failed: ' .. mSys.GetErrorMsg(err))
+
+   err, item = cmp.mtFind('window.tiri', false, false)
+   assert(err is ERR_Search, 'Find() should not locate removed file, got ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test(priority=4) function EmptyRequiredStringArguments()
+   cmp = obj.new('compression', { path='temp:cmp_empty_args.zip', flags=FL_NEW } )
+   output = obj.new('file', { path='temp:cmp_decompress_object.tiri', flags=FL_WRITE|FL_NEW })
+
+   err = cmp.mtCompressFile('', '')
+   assert(err is ERR_NullArgs, 'Expected CompressFile() to reject empty Location, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressFile('', 'temp:')
+   assert(err is ERR_NullArgs, 'Expected DecompressFile() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressFile('gui.tiri', '')
+   assert(err is ERR_NullArgs, 'Expected DecompressFile() to reject empty Dest, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtRemoveFile('')
+   assert(err is ERR_NullArgs, 'Expected RemoveFile() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err = cmp.mtDecompressObject('', output)
+   assert(err is ERR_NullArgs, 'Expected DecompressObject() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+
+   err, item = cmp.mtFind('', false, false)
+   assert(err is ERR_NullArgs, 'Expected Find() to reject empty Path, got ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
 -- Compress an entire folder and then decompress it to a new location.
 
-@Test(priority=3) function CompressFolder()
+@Test(priority=5) function CompressFolder()
    file_count = 0
    global glCompressedFiles = { }
 
@@ -90,17 +236,17 @@ end
       end
    } )
 
-   err = cmp.mtCompressFile('scripts:gui/', 'scripts')
+   err = cmp.mtCompressFile('temp:cmp_fixture/scripts/', 'scripts')
    assert(err is ERR_Okay, 'CompressFile() failed: ' .. mSys.GetErrorMsg(err))
 
    print('Compressed ' .. file_count .. ' files.')
    glCompressedFiles['COUNT'] = file_count
 
-   cmp = null
+   cmp = nil
    processing.collect() -- Flush the compressed file to disk
 end
 
-@Test(priority=4) function DecompressFolder()
+@Test(priority=6) function DecompressFolder()
    file_count = 0
    cmp = obj.new('compression', {
       path     = 'temp:cmp_test_scripts.zip',
@@ -124,22 +270,22 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Test streamed compression
 
-@Test(priority=5) function StreamedCompression()
+@Test(priority=7) function StreamedCompression()
    cmp = obj.new('compression' , { } )
-   file = obj.new('file', { src='scripts:gui.tiri', flags='!READ' } )
+   file = obj.new('file', { src='temp:cmp_fixture/gui.tiri', flags=FL_READ } )
 
-   global glOutFile = obj.new('file', { src='temp:scripts.gz', flags='!WRITE|NEW' } )
+   global glOutFile = obj.new('file', { src='temp:scripts.gz', flags=FL_WRITE|FL_NEW } )
    if cmp.mtCompressStreamStart() is ERR_Okay then
-      input = string.alloc(16384)
+      local input = string.alloc(16384)
       err = ERR_Okay
       while err is ERR_Okay do
          err, len = file.acRead(input)
          if (err != ERR_Okay) or (len <= 0) then break end
-         err = cmp.mtCompressStream(input, len, 'streamedOutput')
+         err = cmp.mtCompressStream(input.sub(0, len), streamedOutput)
       end
 
       assert(err is ERR_Okay, 'Inner compression loop failed: ' .. mSys.GetErrorMsg(err))
-      err = cmp.mtCompressStreamEnd('streamedOutput')
+      err = cmp.mtCompressStreamEnd(streamedOutput)
    end
 
    assert(glOutFile.size > 0, "The size of the compressed output file is zero.")
@@ -147,25 +293,25 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test(priority=6) function ArchiveVolume()
+@Test(priority=8) function ArchiveVolume()
    cmp = obj.new('compression', { path='temp:cmp_test_scripts.zip', archiveName='test' } )
-   file = obj.new('file', { path='scripts:gui/button.tiri' } )
+   file = obj.new('file', { path='temp:cmp_fixture/scripts/button.tiri' } )
    file_size = file.size
 
    cmpbuffer = array<byte, file_size>
    cmpsrc = array<byte, file_size>
 
-   err = mSys.ReadFileToBuffer('scripts:gui/button.tiri', cmpsrc)
+   err = mSys.ReadFileToBuffer('temp:cmp_fixture/scripts/button.tiri', cmpsrc)
    assert(err is ERR_Okay, 'Failed to read original source file for comparison: ' .. mSys.GetErrorMsg(err))
-   cmpstr = cmpsrc:getString()
+   cmpstr = cmpsrc.getString()
    assert(#cmpstr is file_size, f"Array length of {#cmpstr} does not match expected file length of {file_size}.")
 
    -- Big buffer test
 
-   cmpfile = obj.new('file', { src='archive:test/scripts/button.tiri', flags='!READ' })
+   cmpfile = obj.new('file', { src='archive:test/scripts/button.tiri', flags=FL_READ })
    err, len = cmpfile.acRead(cmpbuffer)
    assert(err is ERR_Okay, 'Failed to read decompressed data from file archive: ' .. mSys.GetErrorMsg(err))
-   assert(cmpbuffer:getString() is cmpstr, "The decompressed data does not match the original file.")
+   assert(cmpbuffer.getString() is cmpstr, "The decompressed data does not match the original file.")
 
    -- Small buffer test
 
@@ -177,37 +323,385 @@ end
       err, len = cmpfile.acRead(smallbuffer)
       assert(err is ERR_Okay, 'Failed to read decompressed data from file archive: ' .. mSys.GetErrorMsg(err))
       if len < #smallbuffer then
-         cmpbuffer:copy(smallbuffer:getString(0, len), di)
+         cmpbuffer.copy(smallbuffer.getString(0, len), di)
       else
-         cmpbuffer:copy(smallbuffer:getString(), di)
+         cmpbuffer.copy(smallbuffer.getString(), di)
       end
       di += len
    until (len is 0)
 
    assert(di is file_size, f"Decompressed data length of {di} does not match original file length of {#cmpstr}.")
-   assert(cmpbuffer:getString() is cmpstr, "The decompressed data does not match the original file.")
+   assert(cmpbuffer.getString() is cmpstr, "The decompressed data does not match the original file.")
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- Test streamed decompression
 
-@Test(priority=7) function StreamedDecompression()
+@Test(priority=9) function StreamedDecompression()
    cmp = obj.new('compression' , { } )
-   file = obj.new('file', { src='temp:scripts.gz', flags='!READ' } )
+   file = obj.new('file', { src='temp:scripts.gz', flags=FL_READ } )
 
-   global glOutFile = obj.new('file', { src='temp:gui.tiri', flags='!WRITE|NEW' } )
+   global glOutFile = obj.new('file', { src='temp:gui.tiri', flags=FL_WRITE|FL_NEW } )
    assert(cmp.mtDecompressStreamStart() is ERR_Okay, 'Failed to initialise decompression.')
-   input = string.alloc(16384)
+   local input = string.alloc(16384)
    err = ERR_Okay
    while err is ERR_Okay do
       err, len = file.acRead(input)
       if err is ERR_Okay then
          if len <= 0 then break end
-         err = cmp.mtDecompressStream(input, len, 'streamedOutput')
+         err = cmp.mtDecompressStream(input.sub(0, len), streamedOutput)
       end
    end
 
    assert(err is ERR_Okay, 'Inner decompression loop failed: ' .. mSys.GetErrorMsg(err))
-   err = cmp.mtDecompressStreamEnd('streamedOutput')
+   err = cmp.mtDecompressStreamEnd(streamedOutput)
+   assert(err is ERR_Okay, 'DecompressStreamEnd() failed: ' .. mSys.GetErrorMsg(err))
    glOutFile = nil
+   processing.collect() -- Flush the decompressed output to disk
+
+   -- Verify that the streamed round-trip reproduced the original source exactly.
+
+   source_file = obj.new('file', { path='temp:cmp_fixture/gui.tiri' })
+   source_size = source_file.size
+
+   output_file = obj.new('file', { path='temp:gui.tiri' })
+   assert(output_file.size is source_size, f"Decompressed size {output_file.size} does not match source size {source_size}.")
+
+   source_data = array<byte, source_size>
+   output_data = array<byte, source_size>
+   assert(mSys.ReadFileToBuffer('temp:cmp_fixture/gui.tiri', source_data) is ERR_Okay, 'Failed to read source data.')
+   assert(mSys.ReadFileToBuffer('temp:gui.tiri', output_data) is ERR_Okay, 'Failed to read decompressed output.')
+   assert(output_data.getString() is source_data.getString(), 'Round-tripped stream output does not match the source.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Exercise span-only buffer methods, including output capacity and encoded input validation.
+
+@Test(priority=10) function BufferCompression()
+   cmp = obj.new('compression')
+   source_data = array<byte> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
+   compressed = array<byte, 128>
+
+   err, compressed_size = cmp.mtCompressBuffer(source_data, compressed)
+   assert(err is ERR_Okay, 'CompressBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(compressed_size > 8, 'CompressBuffer() did not return a complete encoded buffer.')
+
+   restored = array<byte, 64>
+   err, restored_size = cmp.mtDecompressBuffer(compressed, restored)
+   assert(err is ERR_Okay, 'DecompressBuffer() failed: ' .. mSys.GetErrorMsg(err))
+   assert(restored_size is #source_data,
+      f'DecompressBuffer() returned {restored_size} bytes, expected {#source_data}.')
+   assert(restored.getString(0, restored_size) is source_data.getString(),
+      'Buffer compression round-trip changed the input.')
+
+   short_output = array<byte, 9>
+   err = cmp.mtCompressBuffer(source_data, short_output)
+   assert(err is ERR_BufferOverflow, 'A short compression output span should return BufferOverflow.')
+
+   truncated_size = compressed_size - 1
+   truncated = compressed.slice({0 to truncated_size})
+   err = cmp.mtDecompressBuffer(truncated, restored)
+   assert(err is ERR_InvalidCompression, 'A truncated encoded input span should return InvalidCompression.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A null empty write must finish the compressed stream so its trailer is available to a decoder.
+
+@Test(priority=11) function CompressedStreamFinalisation()
+   local source = 'Finalised compressed streams include a complete trailer.'
+   local output = obj.new('file', { path='temp:compressed_stream.gz', flags=FL_WRITE|FL_NEW })
+   local encoder = obj.new('compressedstream', { output=output })
+
+   local err, written = encoder.acWrite(source)
+   assert(err is ERR_Okay, 'CompressedStream write failed: ' .. mSys.GetErrorMsg(err))
+   assert(written is #source, f'CompressedStream consumed {written} bytes, expected {#source}.')
+
+   err = encoder.acWrite(nil)
+   assert(err is ERR_Okay, 'CompressedStream finalisation failed: ' .. mSys.GetErrorMsg(err))
+   assert(encoder.finished is 1, 'A finalised CompressedStream should report Finished.')
+   assert(encoder.totalInput is #source, 'The encoder TotalInput count is incorrect.')
+
+   err = encoder.acWrite('x')
+   assert(err is ERR_Finished, 'Writes after finalisation should return Finished until Reset.')
+
+   encoder = nil
+   output = nil
+   processing.collect()
+
+   local input = obj.new('file', { path='temp:compressed_stream.gz', flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   local restored = string.alloc(65536)
+   local restored_size
+   err, restored_size = decoder.acRead(restored)
+   assert(err is ERR_Okay, 'Finalised stream could not be decompressed: ' .. mSys.GetErrorMsg(err))
+   assert(restored.sub(0, restored_size) is source, 'Finalised compressed stream did not round-trip correctly.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Exercise persistent encoded input, exact output capacities, trailing-byte accounting, stable EOF and Reset.
+
+@Test(priority=12) function CompressedStreamSequentialReads()
+   local source = deterministicBytes(70000)
+   local path = 'temp:compressed_stream_boundaries.gz'
+   local output = obj.new('file', { path=path, flags=FL_READ|FL_WRITE|FL_NEW })
+   local encoder = obj.new('compressedstream', { output=output })
+
+   local err, consumed = encoder.acWrite(source)
+   assert(err is ERR_Okay and consumed is #source, 'The encoder did not consume the complete boundary fixture.')
+   err = encoder.acWrite(nil)
+   assert(err is ERR_Okay, 'Failed to finalise the boundary fixture: ' .. mSys.GetErrorMsg(err))
+
+   local member_size = encoder.totalOutput
+   assert(member_size > 4096, 'The deterministic fixture did not span multiple encoded input buffers.')
+   err, consumed = output.acWrite('trailing-data')
+   assert(err is ERR_Okay and consumed is 13, 'Failed to append the trailing-data fixture.')
+   encoder = nil
+   output.free()
+
+   local input = obj.new('file', { path=path, flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   assert(decoder.size is -1, 'Decoded Size should be unknown before verified completion.')
+
+   local restored = array<byte, #source>
+   local offset = 0
+   local capacities = array<int> { 1, 2047, 2048, 2049, 34815, 34816, 34817 }
+   local capacity_index = 0
+   while decoder.finished is 0 do
+      local capacity = capacities[capacity_index % #capacities]
+      local buffer = array<byte, capacity>
+      local length
+      err, length = decoder.acRead(buffer)
+      assert(err is ERR_Okay, 'Sequential decompression failed: ' .. mSys.GetErrorMsg(err))
+      assert(length <= capacity, f'Read returned {length} bytes for a {capacity}-byte destination.')
+      if length > 0 then restored.copy(buffer.getString(0, length), offset) end
+      offset += length
+      capacity_index++
+   end
+
+   assert(offset is #source, f'Sequential decompression returned {offset} of {#source} bytes.')
+   assert(restored.getString() is source, 'Sequential reads changed the decoded data.')
+   assert(decoder.totalInput is member_size, 'TotalInput should exclude prefetched trailing bytes.')
+   assert(decoder.totalOutput is #source, 'TotalOutput should equal the full decoded size.')
+   assert(decoder.size is #source, 'Size should equal the full decoded size after completion.')
+
+   local eof_buffer = array<byte, 3>
+   err, consumed = decoder.acRead(eof_buffer)
+   assert(err is ERR_Okay and consumed is 0, 'The first read after completion should remain at EOF.')
+   err, consumed = decoder.acRead(eof_buffer)
+   assert(err is ERR_Okay and consumed is 0, 'Repeated reads after completion should remain at EOF.')
+
+   check input.acSeek(0, SEEK_START)
+   check decoder.acReset()
+   assert(decoder.finished is 0, 'Reset should clear Finished.')
+   assert(decoder.totalInput is 0 and decoder.totalOutput is 0, 'Reset should clear stream counters.')
+   assert(decoder.size is -1, 'Reset should make decoded Size unknown again.')
+
+   local first_byte = array<byte, 1>
+   err, consumed = decoder.acRead(first_byte)
+   assert(err is ERR_Okay and consumed is 1, 'A one-byte read after Reset should make progress.')
+   assert(first_byte.getString() is source.sub(0, 1), 'Reset decompression restarted with the wrong byte.')
+
+   check decoder.acSeek(4096, SEEK_START)
+   err, consumed = decoder.acRead(first_byte)
+   assert(err is ERR_Okay and consumed is 1, 'An absolute seek should permit a following read.')
+   assert(first_byte.getString() is source.sub(4096, 4097), 'Absolute seek selected the wrong decoded byte.')
+
+   check decoder.acSeek(3, SEEK_CURRENT)
+   err, consumed = decoder.acRead(first_byte)
+   assert(err is ERR_Okay and consumed is 1, 'A relative seek should permit a following read.')
+   assert(first_byte.getString() is source.sub(4100, 4101), 'Relative seek selected the wrong decoded byte.')
+
+   err = decoder.acSeek(9.223372036854776e18, SEEK_START)
+   assert(err is ERR_OutOfRange, 'A seek to 2^63 should return OutOfRange.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Empty members are complete only after zlib has verified their trailer.
+
+@Test(priority=13) function CompressedStreamEmptyMember()
+   local path = 'temp:compressed_stream_empty.gz'
+   local output = obj.new('file', { path=path, flags=FL_WRITE|FL_NEW })
+   local encoder = obj.new('compressedstream', { output=output })
+   local err = encoder.acWrite(nil)
+   assert(err is ERR_Okay and encoder.finished is 1, 'Failed to create a complete empty gzip member.')
+   local member_size = encoder.totalOutput
+   encoder = nil
+   output.free()
+
+   local input = obj.new('file', { path=path, flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   local buffer = array<byte, 1>
+   local length
+   err, length = decoder.acRead(buffer)
+   assert(err is ERR_Okay and length is 0, 'An empty member should decode as verified EOF.')
+   assert(decoder.finished is 1, 'An empty member should report Finished after trailer verification.')
+   assert(decoder.totalInput is member_size and decoder.totalOutput is 0,
+      'Empty-member counters should retain the encoded size and zero decoded bytes.')
+   assert(decoder.size is 0, 'A verified empty member should have decoded Size zero.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Truncation and checksum corruption must become sticky terminal errors rather than successful EOF.
+
+@Test(priority=14) function CompressedStreamRejectsInvalidMembers()
+   local source_path = 'temp:compressed_stream_empty.gz'
+   local encoded = readTestFile(source_path)
+   local truncated = encoded.slice({0 to #encoded - 1})
+   writeTestFile('temp:compressed_stream_truncated.gz', truncated)
+
+   local input = obj.new('file', { path='temp:compressed_stream_truncated.gz', flags=FL_READ })
+   local decoder = obj.new('compressedstream', { input=input })
+   local buffer = array<byte, 16>
+   local err = decoder.acRead(buffer)
+   assert(err is ERR_Decompression, 'A truncated member should return Decompression, got ' .. mSys.GetErrorMsg(err))
+   assert(decoder.finished is 0, 'A truncated member must not report Finished.')
+   local repeated = decoder.acRead(buffer)
+   assert(repeated is err, 'A decompression failure should remain sticky until Reset.')
+
+   encoded[#encoded - 8] = encoded[#encoded - 8] ^ 1
+   writeTestFile('temp:compressed_stream_corrupt.gz', encoded)
+   input = obj.new('file', { path='temp:compressed_stream_corrupt.gz', flags=FL_READ })
+   decoder = obj.new('compressedstream', { input=input })
+   err = decoder.acRead(buffer)
+   assert(err is ERR_InvalidData, 'A corrupt checksum should return InvalidData, got ' .. mSys.GetErrorMsg(err))
+   assert(decoder.finished is 0, 'A corrupt member must not report Finished.')
+   repeated = decoder.acRead(buffer)
+   assert(repeated is err, 'A checksum failure should remain sticky until Reset.')
+
+   local unreadable = obj.new('file', { path=source_path, flags=FL_WRITE })
+   decoder = obj.new('compressedstream', { input=unreadable })
+   err = decoder.acRead(buffer)
+   assert(err is ERR_FileReadFlag, 'An upstream read error should be preserved, got ' .. mSys.GetErrorMsg(err))
+   repeated = decoder.acRead(buffer)
+   assert(repeated is err, 'An upstream read error should remain sticky until Reset.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Preserve destination errors and reject all subsequent output until Reset.
+
+@Test(priority=15) function CompressedStreamWriteFailureIsSticky()
+   local path = 'temp:compressed_stream_write_error.gz'
+   writeTestFile(path, 'read-only destination')
+   local output = obj.new('file', { path=path, flags=FL_READ })
+   local encoder = obj.new('compressedstream', { output=output })
+
+   local err = encoder.acWrite('content that cannot be written')
+   assert(err is ERR_FileWriteFlag, 'The destination write error should be preserved, got ' .. mSys.GetErrorMsg(err))
+   local repeated = encoder.acWrite('more content')
+   assert(repeated is err, 'A destination failure should remain sticky until Reset.')
+   assert(encoder.finished is 0, 'A failed encoder must not report Finished.')
+
+   check encoder.acReset()
+   assert(encoder.totalInput is 0 and encoder.totalOutput is 0, 'Reset should clear failed encoder counters.')
+   repeated = encoder.acWrite('retry')
+   assert(repeated is ERR_FileWriteFlag, 'Reset should permit a retry and preserve its new destination error.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Archive reads of a deflated file that spans several internal decompression buffers.  Odd-sized client buffers
+-- ensure that decompressed output is split across read calls.
+
+@Test(priority=16) function ArchiveVolumeLargeFile()
+   local source = ''
+   for i in {0 to 6000} do source ..= f'Line {i}: {(i * 7919) % 104729} archive read boundary test\n' end
+   writeTestFile('temp:cmp_large.txt', source)
+
+   local writer = obj.new('compression', { path='temp:cmp_large.zip', flags=FL_NEW })
+   check writer.mtCompressFile('temp:cmp_large.txt', '')
+   writer = nil
+   processing.collect() -- Flush the compressed file to disk
+
+   local cmp = obj.new('compression', { path='temp:cmp_large.zip', archiveName='large' })
+   local file = obj.new('file', { src='archive:large/cmp_large.txt', flags=FL_READ })
+   assert(file.size is #source, f'Archived file size is {file.size}, expected {#source}.')
+
+   for buffer_size in values(array<int> { #source + 100, 65536, 7919, 1000 }) do
+      check file.acSeek(0, SEEK_START)
+      local buffer = array<byte, buffer_size>
+      local restored = array<byte, #source>
+      local total = 0
+      local len = 0
+      repeat
+         local err
+         err, len = file.acRead(buffer)
+         assert(err is ERR_Okay, f'Read with a {buffer_size} byte buffer failed: {mSys.GetErrorMsg(err)}')
+         assert(len <= buffer_size, f'Read returned {len} bytes for a {buffer_size} byte buffer.')
+         assert(total + len <= #source, f'Reads with a {buffer_size} byte buffer exceeded the file size.')
+         if len > 0 then restored.copy(buffer.getString(0, len), total) end
+         total += len
+      until len is 0
+
+      assert(total is #source, f'Reads with a {buffer_size} byte buffer returned {total} of {#source} bytes.')
+      assert(restored.getString() is source, f'Reads with a {buffer_size} byte buffer did not match the source.')
+   end
+end
+
+-- Read the remainder of an archived file, asserting that no read exceeds the file's size.
+
+function readArchiveItem(File:obj, BufferSize:num):str
+   local buffer = array<byte, BufferSize>
+   local result = ''
+   local len = 0
+   repeat
+      local err
+      err, len = File.acRead(buffer)
+      assert(err is ERR_Okay, f'Read from {File.path} failed: {mSys.GetErrorMsg(err)}')
+      if len > 0 then result ..= buffer.getString(0, len) end
+      assert(File.position <= File.size, f'Read from {File.path} moved to {File.position} of {File.size} bytes.')
+   until len is 0
+   return result
+end
+
+@Test(priority=17) function ArchiveStoredEntryBounds()
+   local expected = {
+      { name='empty.txt', content='' },
+      { name='alpha.txt', content='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' },
+      { name='beta.txt', content='beta entry follows alpha' }
+   }
+
+   for item in values(expected) do
+      local file = obj.new('file', { src='archive:stored/' .. item.name, flags=FL_READ })
+      assert(file.size is #item.content, f'{item.name} size is {file.size}, expected {#item.content}.')
+      local content = readArchiveItem(file, 200)
+      assert(content is item.content, f'{item.name} read {#content} bytes, expected {#item.content}.')
+   end
+end
+
+@Test(priority=18) function ArchiveStoredEntrySeek()
+   local file = obj.new('file', { src='archive:stored/alpha.txt', flags=FL_READ })
+   local buffer = array<byte, 5>
+
+   check file.acSeek(10, SEEK_START)
+   local err, len = file.acRead(buffer)
+   assert(buffer.getString(0, len) is 'KLMNO', f'Read after seeking to 10 returned "{buffer.getString(0, len)}".')
+
+   check file.acSeek(-10, SEEK_CURRENT)
+   assert(file.position is 5, f'Position after seeking back is {file.position}, expected 5.')
+   err, len = file.acRead(buffer)
+   assert(buffer.getString(0, len) is 'FGHIJ', f'Read after seeking back returned "{buffer.getString(0, len)}".')
+
+   check file.acSeek(6, SEEK_END)
+   assert(file.position is 30, f'Position after seeking from the end is {file.position}, expected 30.')
+   local tail = readArchiveItem(file, 200)
+   assert(tail is '456789', f'Read after seeking from the end returned "{tail}".')
+end
+
+@Test(priority=19) function ArchiveSeekClampsToBounds()
+   for name in values(array<str> { 'empty.txt', 'alpha.txt', 'gamma.txt' }) do
+      local file = obj.new('file', { src='archive:stored/' .. name, flags=FL_READ })
+      local size = file.size
+
+      check file.acSeek(size + 10, SEEK_START)
+      assert(file.position is size, f'{name} position after seeking past the end is {file.position}, expected {size}.')
+      assert(readArchiveItem(file, 64) is '', f'{name} returned data after seeking past the end.')
+
+      check file.acSeek(-10, SEEK_END)
+      assert(file.position is size, f'{name} position after seeking beyond SEEK_END is {file.position}.')
+
+      check file.acSeek(-(size + 10), SEEK_CURRENT)
+      assert(file.position is 0, f'{name} position after seeking before the start is {file.position}, expected 0.')
+
+      local content = readArchiveItem(file, 64)
+      assert(#content is size, f'{name} returned {#content} of {size} bytes after seeking to the start.')
+   end
 end

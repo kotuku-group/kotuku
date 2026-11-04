@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "vfx",
+  "version": "1.0",
+  "description": "Animation easing, wipes and cosmetic viewport effects for Tiri graphical interfaces.",
+  "entry": "vfx.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2020-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-VFX-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "animation",
+    "effects",
+    "vector"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "vfx.tiri",
+      "size": 23683,
+      "sha256": "2426ef5557a07f794878d0cd26918a00d83145198a915d15574569a3ba0f62f3",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 ---
-description: "Scan a Kōtuku module or sub-project for bugs using parallel agents and compile a prioritised report"
+description: "Scan a C++ Kōtuku module or C++ sub-project for bugs using parallel agents and compile a prioritised report"
 argument-hint: "<sub-project-name>"
 allowed-tools: ["Agent", "Bash", "Glob", "Grep", "Read", "TaskCreate", "TaskUpdate"]
 ---

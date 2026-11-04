@@ -37,10 +37,10 @@ static ERR convert_lookup_error(int Result)
    switch (Result) {
       case 0: return ERR::Okay;
       case EAI_AGAIN: return ERR::Retry;
-      case EAI_FAIL: return ERR::Failed;
+      case EAI_FAIL: return ERR::HostNotFound;
       case EAI_MEMORY: return ERR::Memory;
       case EAI_SYSTEM: return ERR::SystemCall;
-      default: return ERR::Failed;
+      default: return ERR::HostNotFound;
    }
 }
 
@@ -135,13 +135,15 @@ static std::vector<WindowsProxyEntry> parse_proxy_string(std::string_view Server
 
 //********************************************************************************************************************
 
-static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Message, int MsgSize)
+static ERR iocp_completion_receiver(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message)
 {
-   if ((!Message) or (MsgSize != int(sizeof(iocp_completion_message)))) return ERR::Okay;
+   if (Message.size() != sizeof(iocp_completion_message)) return ERR::Okay;
 
-   auto completion = (iocp_completion_message *)Message;
+   auto completion = (iocp_completion_message *)Message.data();
+   // Acknowledge the wake-up before any path can abandon dispatch, including an object lock timeout.
+   if (!iocp_validate_completion(completion->Socket, completion->Generation,
+       completion->Type IS IocpOperationType::UDP_RECEIVE)) return ERR::Okay;
    if ((!completion->Callback) or (completion->ObjectID <= 0)) return ERR::Okay;
-   if (!iocp_validate_completion(completion->Socket, completion->Generation)) return ERR::Okay;
 
    kt::ScopedObjectLock lock(completion->ObjectID);
    if (!lock.granted()) return ERR::Okay;
@@ -166,7 +168,9 @@ static ERR iocp_completion_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR 
 
 static ERR post_iocp_completion(int MsgID, const void *Message, int Size)
 {
-   return SendMessage(MSGID(MsgID), MSF::NIL, (APTR)Message, Size);
+   if ((Size < 0) or ((not Message) and Size)) return ERR::Args;
+   if (!Size) return SendMessage(MSGID(MsgID), MSF::NIL, {});
+   return SendMessage(MSGID(MsgID), MSF::NIL, std::span((const int8_t *)Message, size_t(Size)));
 }
 
 //********************************************************************************************************************
@@ -179,8 +183,9 @@ public:
 
       auto completion_function = C_FUNCTION(iocp_completion_receiver);
       completion_function.Context = CurrentTask();
-      if (AddMsgHandler(glIocpCompletionMsgID, &completion_function, &glIocpCompletionHandler) != ERR::Okay) {
-         return ERR::Failed;
+      if (auto error = AddMsgHandler(glIocpCompletionMsgID, &completion_function, &glIocpCompletionHandler);
+            error != ERR::Okay) {
+         return error;
       }
 
       return iocp_initialise(int(glIocpCompletionMsgID), post_iocp_completion);
@@ -394,9 +399,19 @@ public:
       return iocp_has_pending_write(Handle.socket());
    }
 
+   ERR enable_keep_alive(SocketHandle Handle) override
+   {
+      return iocp_enable_keep_alive(Handle.socket());
+   }
+
    ERR enable_broadcast(SocketHandle Handle) override
    {
       return iocp_enable_broadcast(Handle.socket());
+   }
+
+   ERR set_socket_buffer_sizes(SocketHandle Handle, int ReceiveBytes, int SendBytes) override
+   {
+      return iocp_set_socket_buffer_sizes(Handle.socket(), ReceiveBytes, SendBytes);
    }
 
    ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) override
@@ -404,19 +419,22 @@ public:
       return iocp_set_multicast_ttl(Handle.socket(), TTL, IPv6);
    }
 
-   ERR parse_multicast_group(CSTRING Group, bool &IPv6) override
+   ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      return iocp_parse_multicast_group(Group, IPv6);
+      if (Group.empty()) return ERR::Args;
+
+      std::string group(Group);
+      if (auto error = iocp_parse_multicast_group(group.c_str(), IPv6); error != ERR::Okay) return error;
+      return iocp_join_multicast_group(Handle.socket(), group.c_str(), IPv6);
    }
 
-   ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
+   ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) override
    {
-      return iocp_join_multicast_group(Handle.socket(), Group, IPv6);
-   }
+      if (Group.empty()) return ERR::Args;
 
-   ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) override
-   {
-      return iocp_leave_multicast_group(Handle.socket(), Group, IPv6);
+      std::string group(Group);
+      if (auto error = iocp_parse_multicast_group(group.c_str(), IPv6); error != ERR::Okay) return error;
+      return iocp_leave_multicast_group(Handle.socket(), group.c_str(), IPv6);
    }
 
    ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) override
@@ -447,7 +465,7 @@ public:
       int length = sizeof(endpoint.Storage);
 
       auto error = iocp_receive_from(Handle.socket(), Buffer, BufferSize, BytesRead, endpoint.Storage, &length);
-      if ((error IS ERR::Okay) and (BytesRead > 0)) {
+      if ((!error) and (BytesRead > 0)) {
          endpoint.Size = length;
          return endpoint_to_ip(endpoint_storage(endpoint), SourceAddress);
       }
@@ -498,7 +516,7 @@ public:
 
       auto lookup_result = getaddrinfo(HostName, nullptr, &hints, &servinfo);
       if (lookup_result) return convert_lookup_error(lookup_result);
-      if (!servinfo) return ERR::Failed;
+      if (!servinfo) return ERR::HostNotFound;
 
       if (servinfo->ai_canonname) Result.HostName = servinfo->ai_canonname;
       else Result.HostName = HostName;
@@ -535,7 +553,7 @@ public:
       if (!Config) return ERR::NullArgs;
 
       ConfigGroups *groups;
-      if (Config->get(FID_Data, groups) IS ERR::Okay) {
+      if (!Config->getGroups(groups)) {
          std::vector<std::string> host_groups;
          for (const auto &[group, keys] : groups[0]) {
             if (keys.contains("Host")) host_groups.push_back(group);
@@ -547,17 +565,17 @@ public:
       }
 
       auto task = CurrentTask();
-      CSTRING value;
-      if (task->getEnv(HKEY_PROXY "ProxyEnable", &value) != ERR::Okay) {
+      std::string value;
+      if (task->getEnv(HKEY_PROXY "ProxyEnable", value) != ERR::Okay) {
          log.msg("Host does not have proxies enabled (registry setting: %s)", HKEY_PROXY);
          return ERR::Okay;
       }
 
-      bool enabled = (strtol(value, nullptr, 0) > 0);
+      bool enabled = (strtol(value.c_str(), nullptr, 0) > 0);
 
-      CSTRING servers;
-      if ((task->getEnv(HKEY_PROXY "ProxyServer", &servers) IS ERR::Okay) and servers[0]) {
-         log.msg("Host has defined default proxies: %s", servers);
+      std::string servers;
+      if ((!task->getEnv(HKEY_PROXY "ProxyServer", servers)) and (not servers.empty())) {
+         log.msg("Host has defined default proxies: %s", servers.c_str());
 
          auto proxy_entries = parse_proxy_string(servers, enabled);
 
@@ -613,9 +631,8 @@ public:
          }
 
          if (!port_name.empty()) {
-            CSTRING servers;
-            task->getEnv(HKEY_PROXY "ProxyServer", &servers);
-            std::string server_list = servers ? servers : "";
+            std::string server_list;
+            task->getEnv(HKEY_PROXY "ProxyServer", server_list);
 
             const std::string search_pattern = std::format("{}=", port_name);
             if (auto pos = server_list.find(search_pattern); pos != std::string::npos) {

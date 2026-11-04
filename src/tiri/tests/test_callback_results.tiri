@@ -1,0 +1,149 @@
+-- Native callbacks interpret numeric returns as ERR unless an explicit payload sink is supplied.
+   module core as mCore
+
+function probe_timer(Callback:func, Terminates:bool)
+   hits = 0
+   err, timer = mCore.SubscribeTimer(0.005, function():any
+      hits++
+      return Callback()
+   end)
+   check err
+   defer
+      -- A terminating callback releases its subscription, so its handle must not be reused.
+      if not Terminates or hits != 1 then mCore.UpdateTimer(timer, 0) end
+   end
+   processing.sleep(0.06)
+   if Terminates then
+      assert(hits is 1, 'A terminating timer callback must unsubscribe after its first invocation')
+   else
+      assert(hits > 1, 'A successful timer callback must remain subscribed')
+   end
+end
+
+@Test function ReturnedTerminateUnsubscribesTimer()
+   probe_timer(function() return ERR_Terminate end, true)
+end
+
+@Test function RaisedTerminateUnsubscribesTimer()
+   probe_timer(function() raise ERR_Terminate end, true)
+end
+
+@Test function ReturnedOkayRetainsTimer()
+   probe_timer(function() return ERR_Okay end, false)
+end
+
+@Test function NoReturnRetainsTimer()
+   probe_timer(function() end, false)
+end
+
+@Test function OrdinaryScriptNumericResultsRemainPayloads()
+   script <close> = obj.new('tiri', { statement='return ERR_Terminate' })
+   check script.acActivate()
+   assert(script.error is ERR_Okay, 'An ordinary script return must not set Script.Error')
+   assert(script.results[0] is tostring(ERR_Terminate), 'An ordinary script must retain its return value')
+end
+
+@Test function CallbackReturnsExposeErrorCodes()
+   for code in values(array<int> { ERR_Okay, ERR_Terminate, ERR_Cancelled, ERR_InvalidValue }) do
+      script <close> = obj.new('tiri', { statement=f'global function callback() return {code} end' })
+      check script.acActivate()
+      check script.mtExec('callback', nil, 0)
+      assert(script.error is ERR_Okay, 'A named script procedure must retain numeric results as payloads')
+      err, procedure = script.mtGetProcedureID('callback')
+      check err
+      err, returned = script.mtCallback(procedure, nil, 0)
+      assert(err is ERR_Okay, 'A returned callback code must not become an activation failure')
+      assert(returned is code, 'Script.Callback() must report the returned ERR code')
+      assert(script.error is ERR_Okay, 'Script.Callback() must restore the surrounding script error')
+   end
+end
+
+@Test function InvalidNumericCallbackCodesAreRejected()
+   for value in values(array<str> { '-1', '1.5', '2147483648', 'math.huge', '0/0' }) do
+      script <close> = obj.new('tiri', { statement=f'global function callback() return {value} end' })
+      check script.acActivate()
+      err, procedure = script.mtGetProcedureID('callback')
+      check err
+      err, returned = script.mtCallback(procedure, nil, 0)
+      assert(err is ERR_Okay, 'An invalid callback code must not become an activation failure')
+      assert(returned is ERR_InvalidValue, 'Callback error codes must be finite non-negative integers in range')
+      assert(script.error is ERR_Okay, 'An invalid callback result must not leak into the surrounding script')
+   end
+end
+
+-- UpdateTimer() must reject a handle that has outlived its timer.  The handle must not reach a timer created later,
+-- even when the new subscription occupies the memory of the old one.
+
+@Test function UpdateTimerRejectsReleasedHandles()
+   err, released = mCore.SubscribeTimer(0.005, function() raise ERR_Terminate end)
+   check err
+   processing.sleep(0.05)
+
+   hits = 0
+   err, active = mCore.SubscribeTimer(0.005, function() hits++ end)
+   check err
+   defer mCore.UpdateTimer(active, 0) end
+
+   assert(mCore.UpdateTimer(released, 1) is ERR_Search, 'Updating a released timer must fail with ERR_Search')
+   assert(mCore.UpdateTimer(released, 0) is ERR_Search, 'Removing a released timer must fail with ERR_Search')
+   processing.sleep(0.05)
+   assert(hits > 1, 'A released handle must not modify a timer that was created after its release')
+end
+
+-- A timer whose callback processes messages must not be dispatched again until the callback returns, and the
+-- enclosing message loop must still honour its own timeout.
+
+@Test function TimerCallbacksAreNotReentered()
+   depth = 0
+   max_depth = 0
+   calls = 0
+   err, timer = mCore.SubscribeTimer(0.005, function()
+      calls++
+      depth++
+      if depth > max_depth then max_depth = depth end
+      processing.sleep(0.03)
+      depth -= 1
+   end)
+   check err
+   defer mCore.UpdateTimer(timer, 0) end
+
+   start = mCore.PreciseTime()
+   processing.sleep(0.15)
+   elapsed = (mCore.PreciseTime() - start) / 1000000
+   assert(calls > 1, 'The timer must continue to run while its callback sleeps')
+   assert(max_depth is 1, f'A timer callback must not be re-entered; nesting reached a depth of {max_depth}')
+   assert(elapsed < 1, f'A 0.15 second sleep must not be prolonged by a sleeping timer; it took {elapsed}s')
+end
+
+-- An error raised by an action subscription belongs to that callback.  It must not become the result of an enclosing
+-- timer callback, which would remove the timer.
+
+@Test function SubscriptionErrorsDoNotTerminateTimers()
+   hits = 0
+   err, timer = mCore.SubscribeTimer(0.005, function()
+      hits++
+      file = obj.new('file', { path='temp:' })
+      file.subscribe('free', function() raise ERR_Terminate end)
+      file.free()
+   end)
+   check err
+   defer mCore.UpdateTimer(timer, 0) end
+   processing.sleep(0.06)
+   assert(hits > 1, 'An error raised by a nested subscription callback must not terminate the enclosing timer')
+end
+
+-- Outside of a script call, an exception raised by a subscription is recorded in Script.Error.  ERR_Terminate is not
+-- recorded, as it would change the exit code of origo.
+
+@Test function SubscriptionErrorsOutsideCallsSetScriptError()
+   for raised, expected in pairs({ ERR_Terminate=ERR_Okay, ["'Subscription failure'"]=ERR_Exception }) do
+      script <close> = obj.new('tiri', { statement=[[
+         file = obj.new('file', { path='temp:' })
+         file.subscribe('free', function() raise ]] .. raised .. [[ end)
+         file.free()
+      ]] })
+      check script.acActivate()
+      assert(script.error is expected,
+         f'raise {raised} in a subscription callback must leave Script.Error as {mSys.GetErrorMsg(expected)}')
+   end
+end

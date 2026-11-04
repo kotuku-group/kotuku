@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/panel",
+  "version": "1.0",
+  "description": "Card panel widget with a titled header for Tiri graphical interfaces.",
+  "entry": "panel.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-Widgets",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "layout",
+    "panel"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/scrollbar": "1.0",
+    "gui/tooltip": "1.0"
+  },
+  "files": [
+    {
+      "path": "panel.tiri",
+      "size": 27509,
+      "sha256": "6b60802511b45760326b5542d296bd618f079df5e1c7fa7099ba86052953c975",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

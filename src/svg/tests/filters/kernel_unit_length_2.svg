@@ -1,0 +1,20 @@
+<svg width="180px" height="120px" viewBox="0 0 180 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="bars" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#3070c8"/>
+      <rect width="4" height="8" fill="#f0d84a"/>
+      <rect x="4" y="0" width="4" height="4" fill="#d84040"/>
+    </pattern>
+
+    <filter id="sharpen-kul2" x="-10%" y="-10%" width="120%" height="120%" primitiveUnits="userSpaceOnUse">
+      <feConvolveMatrix order="3" divisor="1" preserveAlpha="true" kernelUnitLength="2"
+         kernelMatrix="0 -1 0 -1 5 -1 0 -1 0"/>
+    </filter>
+  </defs>
+
+  <rect width="180" height="120" fill="#ffffff"/>
+  <rect x="18" y="18" width="68" height="68" fill="url(#bars)" stroke="#202020" stroke-width="2"/>
+  <rect x="98" y="18" width="68" height="68" fill="url(#bars)" stroke="#202020" stroke-width="2"
+     filter="url(#sharpen-kul2)"/>
+  <circle cx="132" cy="52" r="24" fill="#40b878" fill-opacity="0.72" filter="url(#sharpen-kul2)"/>
+</svg>

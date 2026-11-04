@@ -181,13 +181,28 @@ struct MCLink {
 };
 
 // Stack snapshot header.
+
+constexpr size_t LJ_MAX_VIRTUAL_CONTEXTS = 8;
+
+enum ContextCallState : uint8_t {
+  CONTEXT_CALL_NONE,
+  CONTEXT_CALL_VIRTUAL,
+  CONTEXT_CALL_MATERIALISED,
+  CONTEXT_CALL_EXEMPT,
+  CONTEXT_CALL_METAMETHOD_VIRTUAL,
+  CONTEXT_CALL_METAMETHOD_MATERIALISED
+};
 struct SnapShot {
   uint32_t mapofs;   //  Offset into snapshot map.
   IRRef1 ref;      //  First IR ref for this snapshot.
+  IRRef1 context_refs[LJ_MAX_VIRTUAL_CONTEXTS]; // Virtual contextual receivers restored outermost first.
+  uint16_t context_owner_slots[LJ_MAX_VIRTUAL_CONTEXTS]; // Root-frame slots owning virtual activations.
   uint16_t mcofs;   //  Offset into machine code in MCode units.
+  uint16_t multres; //  Unscaled MULTRES value at the snapshot.
   uint8_t nslots;   //  Number of valid slots.
   uint8_t topslot;   //  Maximum frame extent.
   uint8_t nent;      //  Number of compressed entries.
+  uint8_t context_count; // Number of virtual contextual activations reconstructed on exit.
   uint8_t count;   //  Count of taken exits for this snapshot.
 };
 
@@ -448,6 +463,7 @@ struct jit_State {
   uint32_t flags;    //  JIT engine flags.
   BCREG maxslot;     //  Relative to baseslot.
   BCREG baseslot;    //  Current frame base, offset into J->slots.
+  BCREG checkslot;   //  Absolute slot limit proven to fit the Lua stack for direct trace stores.
 
   uint8_t mergesnap;   //  Allowed to merge with next snapshot.
   uint8_t needsnap;   //  Need snapshot before recording next bytecode.
@@ -467,6 +483,8 @@ struct jit_State {
   int32_t framedepth;   //  Current frame depth.
   int32_t retdepth;     //  Return frame depth (count of RETF).
   uint8_t trydepth;     //  Current try block depth while recording.
+  uint8_t checkalldepth; //  Current checkall block depth while recording.
+  uint16_t multres;     //  Unscaled implicit multi-result VM state.
 
   uint32_t k32[unsigned(K32::_MAX)];  //  Common 4 byte constants used by backends.
   TValue ksimd[unsigned(KSimd::_MAX)*2+1];  //  16 byte aligned SIMD constants.
@@ -491,6 +509,14 @@ struct jit_State {
 
   IRRef1 chain[IR__MAX];  //  IR instruction skip-list chain anchors.
   TRef slot[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];  //  Stack slot map.
+  // Callable, receiver and result refs retained across contextual calls and result shifts.
+  TRef context_call_func[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  TRef context_call_receiver[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  TRef context_call_result[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+  uint8_t context_call_state[LJ_MAX_JSLOTS+LJ_STACK_EXTRA];
+   bool context_tail_call[LJ_MAX_JSLOTS + LJ_STACK_EXTRA];  // Physical tail transfers emitted in this trace.
+  uint16_t context_call_activation_count;
+  int32_t context_virtual_slot;
 
   int32_t param[JIT_P__MAX];  //  JIT engine parameters.
 

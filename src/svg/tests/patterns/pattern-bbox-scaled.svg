@@ -1,0 +1,47 @@
+<svg viewBox="0 0 200 190" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Tiles in objectBoundingBox units are positioned relative to the bounding box of the element being filled, in
+    that element's user space.  Scaling the element, either directly or through an ancestor, must not move the tiles
+    relative to the element.
+
+    The pattern places four tiles across the bounding box, each with a red left half and a lime right half.  Every
+    row fills a target that covers x = 10..90 in the root user space; the right panel is a reference drawn with plain
+    rectangles.  The two panels are identical if the pattern is rendered correctly.
+  -->
+
+  <pattern id="bands" width="0.25" height="1" patternContentUnits="objectBoundingBox">
+    <rect x="0" y="0" width="0.125" height="1" fill="red"/>
+    <rect x="0.125" y="0" width="0.125" height="1" fill="lime"/>
+  </pattern>
+
+  <!-- Reference bands for x = 110..190, repeated for each row -->
+  <defs>
+    <g id="reference">
+      <rect x="110" y="0" width="80" height="40" fill="lime"/>
+      <rect x="110" y="0" width="10" height="40" fill="red"/>
+      <rect x="130" y="0" width="10" height="40" fill="red"/>
+      <rect x="150" y="0" width="10" height="40" fill="red"/>
+      <rect x="170" y="0" width="10" height="40" fill="red"/>
+    </g>
+  </defs>
+
+  <!-- Row 1: no transform (the root viewBox still scales the drawing to the page) -->
+  <rect x="10" y="0" width="80" height="40" fill="url(#bands)"/>
+  <use href="#reference" y="0"/>
+
+  <!-- Row 2: an ancestor scale(2) -->
+  <g transform="scale(2)">
+    <rect x="5" y="25" width="40" height="20" fill="url(#bands)"/>
+  </g>
+  <use href="#reference" y="50"/>
+
+  <!-- Row 3: an ancestor scale(0.5) -->
+  <g transform="scale(0.5)">
+    <rect x="20" y="200" width="160" height="80" fill="url(#bands)"/>
+  </g>
+  <use href="#reference" y="100"/>
+
+  <!-- Row 4: a scale(4) transform on the element itself -->
+  <rect x="2.5" y="37.5" width="20" height="10" transform="scale(4)" fill="url(#bands)"/>
+  <use href="#reference" y="150"/>
+</svg>

@@ -11,14 +11,15 @@ typedef struct ssl_context * SSL_HANDLE;
 
 // Error codes
 typedef enum {
-    SSL_OK = 0,
-    SSL_ERROR_ARGS = -1,
-    SSL_ERROR_FAILED = -2,
-    SSL_ERROR_MEMORY = -3,
-    SSL_ERROR_WOULD_BLOCK = -4,
-    SSL_ERROR_DISCONNECTED = -5,
-    SSL_NEED_DATA = -6, // Indicates more data needed to complete operation
-    SSL_ERROR_CONNECTING = -7
+   SSL_OK = 0,
+   SSL_ERROR_ARGS = -1,
+   SSL_ERROR_FAILED = -2,
+   SSL_ERROR_MEMORY = -3,
+   SSL_ERROR_WOULD_BLOCK = -4,
+   SSL_ERROR_DISCONNECTED = -5,
+   SSL_NEED_DATA = -6, // Indicates more data needed to complete operation
+   SSL_ERROR_CONNECTING = -7,
+   SSL_ERROR_BUFFER_OVERFLOW = -8
 } SSL_ERROR_CODE;
 
 void ssl_cleanup();
@@ -32,6 +33,7 @@ SSL_ERROR_CODE ssl_accept(SSL_HANDLE, const void *, int);
 void ssl_set_socket(SSL_HANDLE, void* socket_handle);
 bool ssl_has_decrypted_data(SSL_HANDLE);
 bool ssl_has_encrypted_data(SSL_HANDLE);
+uint64_t ssl_decrypted_records(SSL_HANDLE);
 bool ssl_has_pending_output(SSL_HANDLE);
 const void * ssl_pending_output_data(SSL_HANDLE);
 size_t ssl_pending_output_size(SSL_HANDLE);
@@ -43,11 +45,14 @@ SSL_ERROR_CODE ssl_write(SSL_HANDLE, const void* buffer, size_t buffer_size, siz
 uint32_t ssl_last_win32_error(SSL_HANDLE);
 int ssl_last_security_status(SSL_HANDLE);
 size_t ssl_encrypted_input_size(SSL_HANDLE);
+size_t ssl_encrypted_input_limit(SSL_HANDLE);
 bool ssl_get_verify_result(SSL_HANDLE);
-SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE, const std::string &, std::optional<const std::string> &, std::optional<const std::string> &);
+SSL_ERROR_CODE ssl_load_server_certificate(SSL_HANDLE, const std::string &, std::optional<const std::string> &,
+   std::optional<const std::string> &);
 SSL_ERROR_CODE ssl_set_server_certificate(SSL_HANDLE Server, SSL_HANDLE Client);
-bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path);
-bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path);
+bool load_pem_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &KeyPath,
+   std::optional<const std::string> &Password);
+bool load_pkcs12_certificate(SSL_HANDLE SSL, const std::string &Path, std::optional<const std::string> &Password);
 
 // Connection information structure
 struct SSL_CONNECTION_INFO {

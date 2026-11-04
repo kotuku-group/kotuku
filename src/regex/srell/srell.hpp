@@ -1029,7 +1029,7 @@ public:
       if (this != &right)
       {
          resize(right.size_);
-         std::memcpy((void *)(buffer_), right.buffer_, right.size_ * sizeof (ElemT));
+         if (right.size_) std::memcpy((void *)(buffer_), right.buffer_, right.size_ * sizeof (ElemT));
       }
       return *this;
    }
@@ -1039,7 +1039,7 @@ public:
       if (buffer_ != v.data_)
       {
          resize(v.size_);
-         std::memcpy(buffer_, v.data_, v.size_ * sizeof (ElemT));
+         if (v.size_) std::memcpy(buffer_, v.data_, v.size_ * sizeof (ElemT));
       }
       return *this;
    }
@@ -1181,7 +1181,7 @@ public:
       if (p != buffer_)
       {
          resize(len);
-         std::memcpy(buffer_, p, len * sizeof (ElemT));
+         if (len) std::memcpy(buffer_, p, len * sizeof (ElemT));
       }
    }
 
@@ -1194,7 +1194,7 @@ public:
    simple_array &append(const const_pointer p, const size_type size)
    {
       resize(size_ + size);
-      std::memcpy(buffer_ + size_ - size, p, size * sizeof (value_type));
+      if (size) std::memcpy(buffer_ + size_ - size, p, size * sizeof (value_type));
       return *this;
    }
 
@@ -1204,7 +1204,7 @@ public:
       const size_type rightsize = right.size_;
 
       resize(size_ + right.size_);
-      std::memcpy(buffer_ + oldsize, right.buffer_, rightsize * sizeof (ElemT));
+      if (rightsize) std::memcpy(buffer_ + oldsize, right.buffer_, rightsize * sizeof (ElemT));
       return *this;
    }
 
@@ -1219,7 +1219,7 @@ public:
       const size_type oldsize = size_;
 
       resize(size_ + len);
-      std::memcpy(buffer_ + oldsize, right.buffer_ + pos, len * sizeof (ElemT));
+      if (len) std::memcpy(buffer_ + oldsize, right.buffer_ + pos, len * sizeof (ElemT));
       return *this;
    }
 
@@ -1258,7 +1258,7 @@ public:
    void insert(const size_type pos, const simple_array &right)
    {
       move_forwards_(pos, right.size_);
-      std::memcpy(buffer_ + pos, right.buffer_, right.size_ * sizeof (ElemT));
+      if (right.size_) std::memcpy(buffer_ + pos, right.buffer_, right.size_ * sizeof (ElemT));
    }
 
    void insert(const size_type destpos, const simple_array &right, size_type srcpos, size_type srclen = npos)
@@ -1270,7 +1270,7 @@ public:
       }
 
       move_forwards_(destpos, srclen);
-      std::memcpy(buffer_ + destpos, right.buffer_ + srcpos, srclen * sizeof (ElemT));
+      if (srclen) std::memcpy(buffer_ + destpos, right.buffer_ + srcpos, srclen * sizeof (ElemT));
    }
 
    simple_array &replace(const size_type pos, size_type count, const simple_array &right)
@@ -1285,7 +1285,7 @@ public:
          size_ -= count - right.size_;
       }
 
-      std::memcpy(buffer_ + pos, right.buffer_, right.size_ * sizeof (ElemT));
+      if (right.size_) std::memcpy(buffer_ + pos, right.buffer_, right.size_ * sizeof (ElemT));
       return *this;
    }
 
@@ -1957,6 +1957,10 @@ public:
 
    void join(const range_pair &right)
    {
+      if (this->size() IS 0) {
+         this->push_back(right);
+         return;
+      }
       range_pair *base = &(*this)[0];
       size_type count = this->size();
 
@@ -4730,6 +4734,7 @@ private:
       cvars_type cvars;
       state_type flstate;
 
+      piecesize.reset();
       this->reset(flags);
       cvars.reset(flags, begin);
 

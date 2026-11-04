@@ -6,10 +6,10 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -MODULE-
-Network: Provides miscellaneous network functions and hosts the NetSocket and ClientSocket classes.
+Network: Provides miscellaneous network functions and hosts the NetSocket, NetServer and ClientSocket classes.
 
 The Network module exports a few miscellaneous networking functions.  For core network functionality surrounding
-sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
+sockets and HTTP, please refer to the @NetSocket, @NetServer and @HTTP classes.
 -END-
 
 *********************************************************************************************************************/
@@ -19,19 +19,19 @@ sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
 #define PRV_NETWORK
 #define PRV_NETWORK_MODULE
 #define PRV_NETSOCKET
+#define PRV_NETSERVER
 #define PRV_CLIENTSOCKET
 #define PRV_NETCLIENT
 
-#include <stdio.h>
-#include <sys/types.h>
 #include <unordered_set>
-#include <ctime>
 #include <type_traits>
-
-#include <string.h>
+#include <cassert>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 
 #include "net_platform.h"
@@ -48,16 +48,15 @@ sockets and HTTP, please refer to the @NetSocket and @HTTP classes.
     #include <openssl/rsa.h>
     #include <openssl/evp.h>
     #include <openssl/x509.h>
+    #include <openssl/x509v3.h>
     #include <openssl/pem.h>
     #include <openssl/pkcs12.h>
   #endif
 #endif
 
-#include <stack>
+#include <atomic>
 #include <mutex>
 #include <shared_mutex>
-#include <span>
-#include <cstring>
 #include <thread>
 #include <optional>
 #include <string_view>
@@ -98,6 +97,7 @@ DEFINE_ENUM_FLAG_OPERATORS(SHS)
 struct TLSSession {
    #ifdef _WIN32
       SSL_HANDLE Handle = nullptr;
+      size_t PendingPlaintext = 0; // Application bytes represented by retained encrypted output
    #else
       SSL *Handle = nullptr;
       BIO *BIOHandle = nullptr;
@@ -115,16 +115,20 @@ struct TLSSession {
 class extClientSocket : public objClientSocket {
    public:
    SocketHandle Handle;
-   struct NetQueue WriteQueue; // Writes to the network socket are queued here in a buffer
-   uint8_t OutgoingRecursion;  // Recursion manager
-   uint8_t InUse;       // Recursion manager
-   bool ReadCalled;     // True if the Read action has been called
+   struct NetQueue WriteQueue;   // Writes to the network socket are queued here in a buffer
+   uint8_t OutgoingRecursion;    // Recursion manager
+   uint8_t InUse;                // Recursion manager
+   bool ReadCalled;              // True if the Read action has been called
    bool CloseAfterWrite = false; // True if Deactivate() is waiting for queued data to flush
-   uint8_t ErrorCountdown = 8;  // Counts down on each error, disconnect occurs at zero.
+   uint8_t ErrorCountdown = 8;   // Counts down on each error, disconnect occurs at zero.
 
    #ifndef DISABLE_SSL
       TLSSession TLS;
    #endif
+
+   extClientSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objClientSocket(ClassPtr, ObjectID) { }
+
+   ~extClientSocket();
 };
 
 //********************************************************************************************************************
@@ -136,7 +140,6 @@ class extNetSocket : public objNetSocket {
    FUNCTION Incoming;
    FUNCTION Feedback;
    objNetLookup *NetLookup;
-   objNetClient *LastClient;      // For linked-list management for server sockets.  Points to the last client IP on the chain
    struct NetQueue WriteQueue;
    uint8_t ReadCalled:1;          // The Read() action sets this to TRUE whenever called.
    uint8_t IPV6:1;
@@ -152,22 +155,60 @@ class extNetSocket : public objNetSocket {
       TLSSession TLS;
    #endif
 
-   extNetSocket() {
+   extNetSocket(objMetaClass *ClassPtr, OBJECTID ObjectID) : objNetSocket(ClassPtr, ObjectID) {
       // objNetSocket defaults
-      Error        = ERR::Okay;
-      Backlog      = 10;
-      State        = NTC::DISCONNECTED;
-      MsgLimit     = 1024768;
-      ClientLimit  = 1024;
-      SocketLimit  = 256;
+      Error    = ERR::Okay;
+      State    = NTC::DISCONNECTED;
+      MsgLimit = 1024768;
    }
+
+   ~extNetSocket();
+};
+
+class extNetServer : public extNetSocket {
+   public:
+   static constexpr CLASSID CLASS_ID = CLASSID::NETSERVER;
+   static constexpr CSTRING CLASS_NAME = "NetServer";
+   using create = kt::Create<extNetServer>;
+
+   objNetClient *Clients;      // Lists all clients connected to the NetServer.
+   std::string SSLCertificate; // SSL certificate file to use for SSL listeners.
+   std::string SSLPrivateKey;  // Private key file to use for SSL listeners.
+   std::string SSLKeyPassword; // SSL private key password.
+   int    Backlog = 10;        // The maximum number of connections that can be queued against the socket.
+   int    ClientLimit = 1024;  // The maximum number of client IP addresses that can be connected to the NetServer.
+   int    SocketLimit = 256;   // Limits the number of connected sockets per client IP address.
+   int    TotalClients;        // Indicates the total number of clients currently connected to the NetServer.
+   int    ConnectionRateLimit = 100; // Maximum accepted connections per one-second window; zero disables the limit.
+   int    ConnectionRateCount = 0;
+   int64_t ConnectionRateWindow = 0;
+
+   objNetClient *LastClient;   // For linked-list management.
+
+   #ifndef DISABLE_SSL
+      #ifndef _WIN32
+         SSL_CTX *ServerSSLContext = nullptr;
+      #endif
+   #endif
+
+   extNetServer(objMetaClass *ClassPtr, OBJECTID ObjectID) : extNetSocket(ClassPtr, ObjectID) { }
+
+   ~extNetServer();
 };
 
 class extNetLookup : public objNetLookup {
    public:
    FUNCTION Callback;
    struct DNSEntry Info;
-   std::vector<std::unique_ptr<std::jthread>> Threads; // Simple mechanism for auto-joining all the threads on object destruction
+   struct LookupThread {
+      std::shared_ptr<std::atomic<bool>> Finished;
+      std::jthread Thread;
+   };
+   std::vector<LookupThread> Threads;
+
+   extNetLookup(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : objNetLookup(ClassPtr, ObjectID) { }
+
+   ~extNetLookup();
 };
 
 //********************************************************************************************************************
@@ -178,7 +219,7 @@ bool validate_iocp_completion_object(OBJECTPTR Object, SocketHandle Handle)
 {
    if ((!Object) or Object->terminating()) return false;
 
-   if (Object->classID() IS CLASSID::NETSOCKET) {
+   if (Object->baseClassID() IS CLASSID::NETSOCKET) {
       auto socket = (extNetSocket *)Object;
       if (socket->Terminating) return false;
       return socket->Handle.socket() IS Handle.socket();
@@ -206,15 +247,16 @@ JUMPTABLE_CORE
     template <class T> void tls_disconnect(T *);
     template <class T> ERR tls_flush_output(T *);
     template <class T> ERR tls_receive_encrypted(T *);
-    static ERR tls_setup(extNetSocket *);
-    static ERR tls_accept_client(extClientSocket *, extNetSocket *);
+    static ERR tls_setup_client(extNetSocket *);
+    static ERR tls_setup_server(extNetServer *);
+    static ERR tls_accept_client(extClientSocket *, extNetServer *);
   #else
     // OpenSSL forward declarations
-    static bool ssl_init = false;
     static ERR tls_connect(extNetSocket *);
     static ERR sslLinkSocket(extNetSocket *);
-    static ERR tls_setup(extNetSocket *);
-    static ERR tls_accept_client(extClientSocket *, extNetSocket *);
+    static ERR tls_setup_client(extNetSocket *);
+    static ERR tls_setup_server(extNetServer *);
+    static ERR tls_accept_client(extClientSocket *, extNetServer *);
   #endif
 #endif
 
@@ -263,6 +305,40 @@ static void CLOSESOCKET_THREADED(SocketHandle Handle)
    auto thread_ptr = std::make_shared<std::jthread>();
    *thread_ptr = std::jthread([] (SocketHandle Handle) { network_platform().close_socket(Handle); }, Handle);
    glThreads.insert(thread_ptr);
+}
+
+//********************************************************************************************************************
+
+static bool unlink_client_socket(objNetClient *Client, objClientSocket *Socket)
+{
+   if ((not Client) or (not Socket)) return false;
+
+   bool linked = false;
+   for (auto scan=Client->Connections; scan; scan=scan->Next) {
+      if (scan IS Socket) {
+         linked = true;
+         break;
+      }
+   }
+
+   if (not linked) return false;
+
+   if (Socket->Prev) {
+      Socket->Prev->Next = Socket->Next;
+      if (Socket->Next) Socket->Next->Prev = Socket->Prev;
+   }
+   else {
+      Client->Connections = Socket->Next;
+      if (Socket->Next) Socket->Next->Prev = nullptr;
+   }
+
+   Socket->Prev = nullptr;
+   Socket->Next = nullptr;
+   Socket->Client = nullptr;
+
+   if (Client->TotalConnections > 0) Client->TotalConnections--;
+
+   return true;
 }
 
 //********************************************************************************************************************
@@ -409,6 +485,7 @@ static bool parse_ipv6_literal(std::string_view Text, IPAddress &Address)
 static OBJECTPTR clNetLookup = nullptr;
 static OBJECTPTR clProxy = nullptr;
 static OBJECTPTR clNetSocket = nullptr;
+static OBJECTPTR clNetServer = nullptr;
 static OBJECTPTR clClientSocket = nullptr;
 static OBJECTPTR clNetClient = nullptr;
 static OBJECTPTR glNetworkModule = nullptr;
@@ -431,9 +508,9 @@ static std::string glCertPath;
       SSLCERTFORMAT Format = SSLCERTFORMAT::NIL;
    };
 
-   static ERR resolve_ssl_certificate_paths(extNetSocket *Self, ssl_certificate_paths &Paths)
+   static ERR resolve_ssl_certificate_paths(extNetServer *Self, ssl_certificate_paths &Paths)
    {
-      if ((!Self) or (!Self->SSLCertificate) or (!*Self->SSLCertificate)) return ERR::FieldNotSet;
+      if ((not Self) or Self->SSLCertificate.empty()) return ERR::FieldNotSet;
 
       Paths.Format = ssl_certificate_format(Self->SSLCertificate);
       if (Paths.Format IS SSLCERTFORMAT::NIL) return ERR::InvalidData;
@@ -442,7 +519,7 @@ static std::string glCertPath;
          return error;
       }
 
-      if (Self->SSLPrivateKey) {
+      if (not Self->SSLPrivateKey.empty()) {
          if (ssl_private_key_format(Self->SSLPrivateKey) IS SSLCERTFORMAT::NIL) return ERR::InvalidData;
 
          if (auto error = ResolvePath(Self->SSLPrivateKey, RSF::NIL, &Paths.PrivateKeyPath); error != ERR::Okay) {
@@ -451,7 +528,7 @@ static std::string glCertPath;
          Paths.PrivateKey.emplace(Paths.PrivateKeyPath);
       }
 
-      if (Self->SSLKeyPassword) Paths.Password.emplace(Self->SSLKeyPassword);
+      if (not Self->SSLKeyPassword.empty()) Paths.Password.emplace(Self->SSLKeyPassword);
 
       return ERR::Okay;
    }
@@ -470,13 +547,14 @@ static std::string glCertPath;
 
 //********************************************************************************************************************
 
-static ERR resolve_name_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Message, int MsgSize);
-static ERR resolve_addr_receiver(APTR Custom, MSGID MsgID, int MsgType, APTR Message, int MsgSize);
+static ERR resolve_name_receiver(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message);
+static ERR resolve_addr_receiver(APTR Custom, int MsgID, MSGID MsgType, std::span<std::byte> Message);
 
 static void cleanup_proxy_config(void);
 
 static ERR init_netclient(void);
 static ERR init_netsocket(void);
+static ERR init_netserver(void);
 static ERR init_clientsocket(void);
 static ERR init_proxy(void);
 static ERR init_netlookup(void);
@@ -492,7 +570,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, glNetworkModule);
+   glNetworkModule = (OBJECTPTR)((objModule *)argModule)->Root;
 
    glPlatform = create_platform();
    if (!glPlatform) return ERR::NoSupport;
@@ -504,19 +582,20 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    if (init_clientsocket() != ERR::Okay) return ERR::AddClass;
    if (init_proxy() != ERR::Okay) return ERR::AddClass;
    if (init_netlookup() != ERR::Okay) return ERR::AddClass;
+   if (init_netserver() != ERR::Okay) return ERR::AddClass;
 
    glResolveNameMsgID = (MSGID)AllocateID(IDTYPE::MESSAGE);
    glResolveAddrMsgID = (MSGID)AllocateID(IDTYPE::MESSAGE);
 
    auto recv_function = C_FUNCTION(resolve_name_receiver);
    recv_function.Context = CurrentTask();
-   if (AddMsgHandler(glResolveNameMsgID, &recv_function, &glResolveNameHandler) != ERR::Okay) {
-      return ERR::Failed;
+   if (auto error = AddMsgHandler(glResolveNameMsgID, &recv_function, &glResolveNameHandler); error != ERR::Okay) {
+      return error;
    }
 
    recv_function.Routine = (APTR)resolve_addr_receiver;
-   if (AddMsgHandler(glResolveAddrMsgID, &recv_function, &glResolveAddrHandler) != ERR::Okay) {
-      return ERR::Failed;
+   if (auto error = AddMsgHandler(glResolveAddrMsgID, &recv_function, &glResolveAddrHandler); error != ERR::Okay) {
+      return error;
    }
 
    ResolvePath("system:config/ssl/", RSF::NO_FILE_CHECK, &glCertPath);
@@ -528,7 +607,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -547,6 +626,7 @@ static ERR MODExpunge(void)
 
    if (glPlatform) glPlatform->expunge();
 
+   if (clNetServer)    { FreeResource(clNetServer); clNetServer = nullptr; }
    if (clNetClient)    { FreeResource(clNetClient); clNetClient = nullptr; }
    if (clNetSocket)    { FreeResource(clNetSocket); clNetSocket = nullptr; }
    if (clClientSocket) { FreeResource(clClientSocket); clClientSocket = nullptr; }
@@ -557,13 +637,13 @@ static ERR MODExpunge(void)
   #ifdef _WIN32
     ssl_cleanup();
   #else
-    if (ssl_init) {
+    if (glSSLInitialised) {
        if (glClientSSL)   { SSL_CTX_free(glClientSSL);   glClientSSL = nullptr; }
        if (glClientSSLNV) { SSL_CTX_free(glClientSSLNV); glClientSSLNV = nullptr; }
-       if (glServerSSL)   { SSL_CTX_free(glServerSSL);   glServerSSL = nullptr; }
        ERR_free_strings();
        EVP_cleanup();
        CRYPTO_cleanup_all_ex_data();
+       glSSLInitialised = false;
     }
   #endif
 #endif
@@ -597,31 +677,35 @@ namespace net {
 -FUNCTION-
 AddressToStr: Converts an IPAddress structure to an IPAddress in dotted string form.
 
-Converts an IPAddress structure to a string containing the IPAddress in dotted format.  Please free the resulting
-string with <function>FreeResource</> once it is no longer required.
+Converts an IPAddress structure to a string containing the IPAddress in dotted format.
 
 -INPUT-
 struct(IPAddress) IPAddress: A pointer to the IPAddress structure.
+^&string Result: Must point to a `std::string` variable so that the resolved address can be stored.
 
--RESULT-
-!cstr: The IP address is returned as an allocated string.
+-ERRORS-
+Okay: The IPAddress was converted successfully.
 
 *********************************************************************************************************************/
 
-CSTRING AddressToStr(IPAddress *Address)
+ERR AddressToStr(IPAddress *Address, std::string *Result)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!Address) return nullptr;
+   if ((not Address) or (not Result)) return log.warning(ERR::NullArgs);
 
    if ((Address->Type IS IPADDR::V4) or (Address->Type IS IPADDR::V6)) {
       char buffer[46]; // 46 bytes is sufficient for both IPv4 and IPv6 addresses.
       auto result = network_platform().address_to_string(*Address, buffer, sizeof(buffer));
-      return result ? kt::strclone(result) : nullptr;
+      if (result) {
+         Result->assign(result);
+         return ERR::Okay;
+      }
+      else return ERR::InvalidData;
    }
    else {
       log.warning("Unsupported address type: %d", int(Address->Type));
-      return nullptr;
+      return ERR::InvalidType;
    }
 }
 
@@ -641,19 +725,22 @@ if (!StrToAddress("127.0.0.1", &addr)) {
 </pre>
 
 -INPUT-
-cstr String:  A null-terminated string containing the IP Address in dotted format.
+strview String:  A null-terminated string containing the IP Address in dotted format.
 struct(IPAddress) Address: Must point to an !IPAddress structure that will be filled in.
 
 -ERRORS-
 Okay:    The `Address` was converted successfully.
 NullArgs
-Failed:  The `String` was not a valid IP Address.
+Syntax:  The `String` was not a valid IP Address.
+
+-TAGS-
+mutates-input
 
 *********************************************************************************************************************/
 
-ERR StrToAddress(CSTRING Str, IPAddress *Address)
+ERR StrToAddress(const std::string_view &Str, IPAddress *Address)
 {
-   if ((!Str) or (!Address)) return ERR::NullArgs;
+   if ((Str.empty()) or (not Address)) return ERR::NullArgs;
 
    auto port = Address->Port;
    kt::clearmem(Address, sizeof(*Address));
@@ -662,28 +749,26 @@ ERR StrToAddress(CSTRING Str, IPAddress *Address)
       setIPV4(*Address, 0x7f000001, port); // 127.0.0.1
       return ERR::Okay;
    }
-   else if ((!Str[0]) or kt::iequals(Str, "*")) {
+   else if (Str IS "*") {
       setIPV4(*Address, 0, port);
       return ERR::Okay;
    }
 
-   std::string_view text(Str);
-
-   if (text.find(':') != std::string_view::npos) {
-      if (parse_ipv6_literal(text, *Address)) {
+   if (Str.find(':') != std::string_view::npos) {
+      if (parse_ipv6_literal(Str, *Address)) {
          Address->Port = port;
          return ERR::Okay;
       }
    }
    else {
       uint32_t ipv4 = 0;
-      if (parse_ipv4_literal(text, ipv4)) {
+      if (parse_ipv4_literal(Str, ipv4)) {
          setIPV4(*Address, ipv4, port);
          return ERR::Okay;
       }
    }
 
-   return ERR::Failed;
+   return ERR::Syntax;
 }
 
 /*********************************************************************************************************************
@@ -698,6 +783,9 @@ uint Value: Data in host byte order to be converted to network byte order
 
 -RESULT-
 uint: The word in network byte order
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -719,6 +807,9 @@ uint Value: Data in host byte order to be converted to network byte order
 -RESULT-
 uint: The long in network byte order
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 uint32_t HostToLong(uint32_t Value)
@@ -738,6 +829,9 @@ uint Value: Data in network byte order to be converted to host byte order
 
 -RESULT-
 uint: The Value in host byte order
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -759,6 +853,9 @@ uint Value: Data in network byte order to be converted to host byte order
 -RESULT-
 uint: The Value in host byte order.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 uint32_t LongToHost(uint32_t Value)
@@ -769,13 +866,15 @@ uint32_t LongToHost(uint32_t Value)
 /*********************************************************************************************************************
 
 -FUNCTION-
-SetSSL: Alters SSL settings on an initialised NetSocket object.
+SetSSL: Alters SSL settings on an initialised NetSocket client object.
 
-Use the SetSSL() function to adjust the SSL capabilities of a NetSocket object.  The following commands are currently
+Use the SetSSL() function to adjust the SSL capabilities of a NetSocket client object.  Server-side SSL is configured
+on @NetServer before initialisation with the `SSL` flag and certificate fields.  The following commands are currently
 available:
 
 <list type="bullet">
-<li><b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already in SSL mode.</li>
+<li><b>EnableSSL</b>: Starts an SSL handshaking process with the remote server.  Does nothing if the socket is already
+in SSL mode.</li>
 <li><b>DisableSSL</b>: Disconnects the SSL connection and reverts to unencrypted mode.</li>
 </list>
 
@@ -787,32 +886,44 @@ be the return value if all other arguments are `NULL`.
 
 -INPUT-
 obj(NetSocket) NetSocket: The target NetSocket object.
-cstr Command: Name of a command or option to set (case-sensitive, camel-case).
-cstr Value: Value to set for the command or option.
+strview Command: Name of a command or option to set (case-sensitive, camel-case).
+strview Value: Value to set for the command or option.
 
 -ERRORS-
 Okay:
+Disconnected: SSL reported that the peer disconnected during handshaking.
+Failed: SSL setup or connection setup failed.
+FieldNotSet: SSL state was not initialised for the socket.
+InputOutput: SSL handshaking failed due to an I/O error.
 NullArgs: The NetSocket argument was not specified.
 NoSecureSockets: SSL support is disabled in this build.
+Retry: SSL handshaking needs to be retried.
+SystemCall: The SSL library or platform SSL backend reported a system-level failure.
+WouldBlock: SSL handshaking would block.
+WrongClass: The object is not a NetSocket.
+
+-TAGS-
+mutates-object, blocking, case-sensitive
 -END-
 
 *********************************************************************************************************************/
 
-ERR SetSSL(objNetSocket *Socket, CSTRING Command, CSTRING Value)
+ERR SetSSL(objNetSocket *Socket, const std::string_view &Command, const std::string_view &Value)
 {
 #ifndef DISABLE_SSL
    kt::Log log(__FUNCTION__);
-   log.traceBranch("Command: %s = %s", Command, Value ? Value : "NULL");
+   log.traceBranch("Command: %.*s = %.*s", int(Command.size()), Command.data(), int(Value.size()), Value.data());
 
-   if ((!Socket) or (!Command)) return ERR::NullArgs;
+   if ((!Socket) or (Command.empty())) return ERR::NullArgs;
    if (Socket->classID() != CLASSID::NETSOCKET) return ERR::WrongClass;
 
    auto hash = kt::strhash(Command);
    switch(hash) {
       case kt::strhash("EnableSSL"):
          if ((Socket->Flags & NSF::SSL) IS NSF::NIL) {
-            if (auto error = tls_setup((extNetSocket *)Socket); error IS ERR::Okay) {
-               if (error = tls_connect((extNetSocket *)Socket); error IS ERR::Okay) {
+            auto error = (Socket->classID() IS CLASSID::NETSERVER) ? tls_setup_server((extNetServer *)Socket) : tls_setup_client((extNetSocket *)Socket);
+            if (!error) {
+               if (error = tls_connect((extNetSocket *)Socket); !error) {
                   Socket->Flags |= NSF::SSL;
                }
                else tls_disconnect((extNetSocket*)Socket);
@@ -830,7 +941,7 @@ ERR SetSSL(objNetSocket *Socket, CSTRING Command, CSTRING Value)
          break;
 
       default:
-         log.warning("Unknown SSL command: %s", Command);
+         log.warning("Unknown SSL command: %.*s", int(Command.size()), Command.data());
          break;
    }
 
@@ -844,7 +955,7 @@ ERR SetSSL(objNetSocket *Socket, CSTRING Command, CSTRING Value)
 
 //********************************************************************************************************************
 
-ERR NetworkPlatform::prepare_bind_address(CSTRING Address, int Port, bool IPv6, NetworkEndpoint &Endpoint)
+ERR NetworkPlatform::prepare_bind_address(std::string_view Address, int Port, bool IPv6, NetworkEndpoint &Endpoint)
 {
    kt::clearmem(&Endpoint, sizeof(Endpoint));
 
@@ -853,12 +964,10 @@ ERR NetworkPlatform::prepare_bind_address(CSTRING Address, int Port, bool IPv6, 
    IPAddress ip;
    kt::clearmem(&ip, sizeof(ip));
 
-   if (Address) {
+   if (not Address.empty()) {
       if (auto error = net::StrToAddress(Address, &ip); error != ERR::Okay) return ERR::InvalidValue;
    }
-   else {
-      ip.Type = IPv6 ? IPADDR::V6 : IPADDR::V4;
-   }
+   else ip.Type = IPv6 ? IPADDR::V6 : IPADDR::V4;
 
    return build_address(ip, Port, IPv6, Endpoint);
 }
@@ -886,6 +995,7 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 
          size_t bytes_sent;
          if (auto error = ssl_write(Self->TLS.Handle, Buffer, *Length, &bytes_sent); error IS SSL_OK) {
+            Self->TLS.PendingPlaintext = bytes_sent;
             if (*Length != bytes_sent) log.traceWarning("Sent %d of %d bytes.", int(bytes_sent), int(*Length));
             *Length = bytes_sent;
             if (auto flush_error = tls_flush_output(Self); flush_error != ERR::Okay) return flush_error;
@@ -974,13 +1084,14 @@ static ERR send_data(T *Self, CPTR Buffer, size_t *Length)
 #include "class_proxy.cpp"
 #include "class_netlookup.cpp"
 #include "netclient/netclient.cpp"
+#include "class_netserver.cpp"
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
-   { "DNSEntry",  sizeof(DNSEntry) },
-   { "IPAddress", sizeof(IPAddress) },
-   { "NetQueue",  sizeof(NetQueue) }
+static ModHeader::STRUCTS glStructures = {
+   { "DNSEntry",  { sizeof(DNSEntry),  alignof(DNSEntry)  } },
+   { "IPAddress", { sizeof(IPAddress), alignof(IPAddress) } },
+   { "NetQueue",  { sizeof(NetQueue),  alignof(NetQueue)  } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

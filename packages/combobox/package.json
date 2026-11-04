@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/combobox",
+  "version": "1.0",
+  "description": "Editable and selection-only combobox widget for Tiri graphical interfaces.",
+  "entry": "combobox.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "combobox",
+    "gui",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/scrollbar": "1.0"
+  },
+  "files": [
+    {
+      "path": "combobox.tiri",
+      "size": 16430,
+      "sha256": "ec31950bf45669268bc09b8a6435c320dfda058724d6d092c9fbe2ea3798a966",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "dropdown.tiri",
+      "size": 16801,
+      "sha256": "12c2f358ee0fc418474f96fe85f98fc9ddcdbf4b5762ce2ea18471635009b81d",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ],
+  "exports": [
+    {
+      "gui/combobox": "combobox.tiri"
+    }
+  ]
+}

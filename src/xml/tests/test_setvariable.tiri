@@ -11,7 +11,8 @@
    })
 
    xq = obj.new('xquery', { statement= '//item[@name=$myvar]' })
-   assert(xq.acSetKey('myvar', 'first') is ERR_Okay, "Failed to set variable: " .. mSys.GetErrorMsg(err))
+   local err = xq.acSetKey('myvar', 'first')
+   assert(err is ERR_Okay, "Failed to set variable: " .. mSys.GetErrorMsg(err))
    assert(xq.mtEvaluate(xml) is ERR_Okay, "Failed to find item using variable reference")
    assert(xq.resultString is 'Hello', "Expected 'Hello', got '" .. xq.resultString .. "'")
 end
@@ -25,8 +26,10 @@ end
    })
 
    xq = obj.new('xquery', { statement= '//item[@name=$myvar]' })
-   assert(xq.acSetKey('myvar', 'first') is ERR_Okay, "Failed to set variable: " .. mSys.GetErrorMsg(err))
-   assert(xq.acSetKey('myvar', 'second') is ERR_Okay, "Failed to update variable: " .. mSys.GetErrorMsg(err))
+   local err = xq.acSetKey('myvar', 'first')
+   assert(err is ERR_Okay, "Failed to set variable: " .. mSys.GetErrorMsg(err))
+   err = xq.acSetKey('myvar', 'second')
+   assert(err is ERR_Okay, "Failed to update variable: " .. mSys.GetErrorMsg(err))
    assert(xq.mtEvaluate(xml) is ERR_Okay, "Failed to find item using updated variable")
    assert(xq.resultString is 'World', "Expected 'World', got '" .. xq.resultString .. "'")
 end
@@ -77,8 +80,10 @@ end
    xq = obj.new('xquery', { statement= '//item[@name=$namevar and @type=$typevar]' })
 
    -- Set multiple variables
-   assert(xq.acSetKey('namevar', 'first') is ERR_Okay, "Failed to set namevar: " .. mSys.GetErrorMsg(err))
-   assert(xq.acSetKey('typevar', 'book') is ERR_Okay, "Failed to set typevar: " .. mSys.GetErrorMsg(err))
+   local err = xq.acSetKey('namevar', 'first')
+   assert(err is ERR_Okay, "Failed to set namevar: " .. mSys.GetErrorMsg(err))
+   err = xq.acSetKey('typevar', 'book')
+   assert(err is ERR_Okay, "Failed to set typevar: " .. mSys.GetErrorMsg(err))
 
    assert(xq.mtEvaluate(xml) is ERR_Okay, "Failed to find item using multiple variables")
    assert(xq.resultString is 'Hello', "Expected 'Hello', got '" .. tostring(xq.resultString) .. "'")

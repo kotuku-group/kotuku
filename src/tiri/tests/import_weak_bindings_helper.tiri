@@ -1,0 +1,6 @@
+namespace weak_bindings_helper {
+   weakPair = function(Target:any):<func, func>
+      local weak <weak>:any = Target
+      return function():any return weak end, function(Target:any) weak = Target end
+   end
+}

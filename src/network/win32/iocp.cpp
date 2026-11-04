@@ -75,6 +75,7 @@ struct IocpStoreResult {
    bool Notify = true;       // True when a main-thread completion should be posted.
    bool RearmAccept = false; // True when the accept pool should be replenished.
    bool PostRead = false;    // True when additional TCP reads should be posted.
+   bool PostUDPRead = false; // True when the bounded UDP receive queue can accept another datagram.
    bool PostSend = false;    // True when queued TCP sends should be posted.
 };
 
@@ -87,7 +88,8 @@ struct IocpSocketRecord {
    IocpCompletionTarget Accept;  // Target to notify when accepted sockets are ready.
    std::deque<IocpAcceptedSocket> AcceptedSockets; // FIFO queue of completed AcceptEx sockets.
    std::deque<IocpSendRequest> SendQueue; // Backend-owned TCP send buffers waiting to be posted.
-   std::vector<IocpDatagram> Datagrams;   // Completed UDP datagrams waiting for acRead or mtRecvFrom.
+   std::deque<IocpDatagram> Datagrams;    // Completed UDP datagrams waiting for acRead or mtRecvFrom.
+   size_t BufferedDatagramBytes = 0;     // Payload bytes held in the bounded UDP queue.
    std::vector<uint8_t> ReadBuffer;       // Ordered TCP bytes buffered for acRead.
    std::map<uint64_t, IocpReadCompletion> ReadCompletions; // Out-of-order TCP read completions by sequence.
    size_t BufferedReadBytes = 0;   // Number of unread bytes currently held in ReadBuffer.
@@ -108,6 +110,7 @@ struct IocpSocketRecord {
    bool UDP = false;               // True when this record represents a UDP socket.
    bool Cancelled = false;         // Set once shutdown or deregistration has invalidated the record.
    bool UdpReadPending = false;    // True while a UDP receive operation is posted.
+   bool UdpNotificationPending = false; // Coalesces owner-thread wake-ups until a callback is dispatched.
 };
 
 using IocpSocketRecordPtr = std::shared_ptr<IocpSocketRecord>;
@@ -126,21 +129,30 @@ static bool glWinsockInitialised = false;
 static constexpr ULONG_PTR IOCP_SHUTDOWN_KEY = ULONG_PTR(~uintptr_t(0));
 static constexpr size_t IOCP_READ_BUFFER_SIZE = 65536;
 static constexpr size_t IOCP_TCP_READ_HIGH_WATER = 1024 * 1024;
-static constexpr size_t IOCP_TCP_READ_DEPTH = 4;
 static constexpr size_t IOCP_TCP_SEND_HIGH_WATER = 1024 * 1024;
 static constexpr size_t IOCP_TCP_SEND_DEPTH = 8;
 static constexpr size_t IOCP_UDP_BUFFER_SIZE = 65536;
+static constexpr size_t IOCP_UDP_HIGH_WATER = 1024 * 1024;
+static constexpr size_t IOCP_UDP_QUEUE_LIMIT = 1024; // Also bounds a queue of zero-length datagrams.
 static constexpr size_t IOCP_ACCEPT_ADDRESS_SIZE = sizeof(sockaddr_storage) + 16;
 static constexpr size_t IOCP_ACCEPT_BUFFER_SIZE = IOCP_ACCEPT_ADDRESS_SIZE * 2;
 static constexpr int IOCP_DEFAULT_ACCEPT_DEPTH = 16;
 static constexpr int IOCP_MIN_ACCEPT_DEPTH = 4;
 static constexpr int IOCP_MAX_ACCEPT_DEPTH = 128;
 
+// Keep TCP receives sequential (1) so later completions cannot block behind an earlier pending WSARecv().  Raising
+// this value causes a rare race condition and has a slight performance deficit, so investigation has been shelved
+// for now.  The IOCP read path could otherwise be redesigned to guarantee callbacks when out-of-order completions
+// are buffered.
+
+static constexpr size_t IOCP_TCP_READ_DEPTH = 1;
+
 //********************************************************************************************************************
 
 static ERR post_accept(WSW_SOCKET Socket);
 static ERR post_accept_pool(WSW_SOCKET Socket);
 static ERR post_read_pool(WSW_SOCKET Socket);
+static ERR post_udp_receive(WSW_SOCKET Socket, uint64_t ExpectedGeneration = 0);
 static ERR post_send_pool(WSW_SOCKET Socket);
 
 //********************************************************************************************************************
@@ -170,6 +182,15 @@ static IocpSocketRecordPtr find_socket_record(WSW_SOCKET Socket)
    return record->second;
 }
 
+static void clear_failed_udp_notification(const iocp_completion_message &Message)
+{
+   if (Message.Type != IocpOperationType::UDP_RECEIVE) return;
+   auto record = find_socket_record(Message.Socket);
+   if (not record) return;
+   std::lock_guard<std::mutex> lock(record->Mutex);
+   if (record->Generation IS Message.Generation) record->UdpNotificationPending = false;
+}
+
 //********************************************************************************************************************
 
 static IocpSocketRecordPtr create_socket_record()
@@ -197,6 +218,10 @@ static ERR convert_error(int Error = 0)
    if (Error IS ERROR_OPERATION_ABORTED) return ERR::Cancelled;
    if (Error IS ERROR_CONNECTION_ABORTED) return ERR::ConnectionAborted;
    if (Error IS ERROR_SEM_TIMEOUT) return ERR::TimeOut;
+   // Failed ConnectEx() completions report Win32 codes rather than their WSAE equivalents
+   if (Error IS ERROR_CONNECTION_REFUSED) return ERR::ConnectionRefused;
+   if (Error IS ERROR_NETWORK_UNREACHABLE) return ERR::NetworkUnreachable;
+   if (Error IS ERROR_HOST_UNREACHABLE) return ERR::HostUnreachable;
 
    return convert_socket_error(Error);
 }
@@ -482,12 +507,12 @@ static IocpStoreResult store_operation_result(IocpSocketRecord &Record, const Io
          IocpReadCompletion completion;
          completion.Result = Error;
 
-         if ((Error IS ERR::Okay) and (Operation.BytesTransferred > 0)) {
+         if ((!Error) and (Operation.BytesTransferred > 0)) {
             if (Operation.Buffer) {
                completion.Buffer.resize(Operation.BytesTransferred);
                std::memcpy(completion.Buffer.data(), Operation.Buffer.get(), Operation.BytesTransferred);
             }
-            else completion.Result = ERR::Failed;
+            else completion.Result = ERR::NoData;
          }
 
          if (Record.ReadCompletions.emplace(Operation.Sequence, std::move(completion)).second) {
@@ -515,8 +540,10 @@ static IocpStoreResult store_operation_result(IocpSocketRecord &Record, const Io
    else if (Operation.Type IS IocpOperationType::UDP_RECEIVE) {
       Record.UdpReadPending = false;
       Record.ReadResult = Error;
+      result.Notify = not Record.UdpNotificationPending and Record.Read.Callback and Record.Read.ObjectID > 0;
+      if (result.Notify) Record.UdpNotificationPending = true;
 
-      if ((Error IS ERR::Okay) and (Operation.Buffer) and
+      if ((!Error) and (Operation.Buffer) and
           (Operation.AddressSize > 0) and (Operation.AddressSize <= int(IOCP_ENDPOINT_STORAGE_SIZE))) {
          IocpDatagram datagram;
          datagram.Buffer.resize(Operation.BytesTransferred);
@@ -526,8 +553,11 @@ static IocpStoreResult store_operation_result(IocpSocketRecord &Record, const Io
          datagram.AddressSize = Operation.AddressSize;
          datagram.Result = ERR::Okay;
          std::memcpy(datagram.Address.data(), Operation.Address.data(), size_t(Operation.AddressSize));
+         Record.BufferedDatagramBytes += datagram.Buffer.size();
          Record.Datagrams.push_back(std::move(datagram));
       }
+      result.PostUDPRead = Error IS ERR::Okay and Record.BufferedDatagramBytes < IOCP_UDP_HIGH_WATER and
+         Record.Datagrams.size() < IOCP_UDP_QUEUE_LIMIT;
    }
    else if (Operation.Type IS IocpOperationType::ACCEPT) {
       if (Record.AcceptPendingCount > 0) Record.AcceptPendingCount--;
@@ -640,6 +670,7 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
    iocp_completion_message message;
    bool rearm_accept = false;
    bool post_reads = false;
+   bool post_udp_read = false;
    bool post_sends = false;
    bool notify_completion = true;
 
@@ -658,7 +689,7 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
 
       auto target = completion_target(*record, Operation.Type);
 
-      if ((Operation.Type IS IocpOperationType::WRITE) and (Error IS ERR::Okay) and
+      if ((Operation.Type IS IocpOperationType::WRITE) and (!Error) and
           (BytesTransferred > 0) and (BytesTransferred < Operation.BufferSize)) {
          if (auto tail_error = post_write_tail(Operation, BytesTransferred); tail_error IS ERR::Okay) return;
          else Error = tail_error;
@@ -667,6 +698,7 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
       auto store_result = store_operation_result(*record, Operation, Error);
       rearm_accept      = store_result.RearmAccept and (target.Callback) and (target.ObjectID > 0);
       post_reads        = store_result.PostRead;
+      post_udp_read     = store_result.PostUDPRead;
       post_sends        = store_result.PostSend;
       notify_completion = store_result.Notify;
 
@@ -680,11 +712,14 @@ static void queue_operation_completion(const IocpOperation &Operation, size_t By
    }
 
    if (post_reads) post_read_pool(Operation.Socket);
+   if (post_udp_read) post_udp_receive(Operation.Socket, Operation.Generation);
    if (post_sends) post_send_pool(Operation.Socket);
    if (rearm_accept) post_accept(Operation.Socket);
 
-   if ((notify_completion) and (message.ObjectID > 0) and (message.Callback) and (glPostMessage)) {
-      glPostMessage(glCompletionMsgID, &message, sizeof(message));
+   if (notify_completion and message.ObjectID > 0 and message.Callback) {
+      if (not glPostMessage or glPostMessage(glCompletionMsgID, &message, sizeof(message)) != ERR::Okay) {
+         clear_failed_udp_notification(message);
+      }
    }
 }
 
@@ -703,6 +738,10 @@ static ERR queue_record_completion(WSW_SOCKET Socket, IocpOperationType Type)
 
       auto target = completion_target(*record, Type);
       if ((!target.Callback) or (target.ObjectID <= 0)) return ERR::Okay;
+      if (Type IS IocpOperationType::UDP_RECEIVE) {
+         if (record->UdpNotificationPending) return ERR::Okay;
+         record->UdpNotificationPending = true;
+      }
 
       message.Type = Type;
       message.Socket = Socket;
@@ -712,75 +751,56 @@ static ERR queue_record_completion(WSW_SOCKET Socket, IocpOperationType Type)
       message.Error = ERR::Okay;
    }
 
-   if (glPostMessage) return glPostMessage(glCompletionMsgID, &message, sizeof(message));
-   else return ERR::NotInitialised;
+   auto error = glPostMessage ? glPostMessage(glCompletionMsgID, &message, sizeof(message)) : ERR::NotInitialised;
+   if (error != ERR::Okay) clear_failed_udp_notification(message);
+   return error;
 }
 
 //********************************************************************************************************************
 
-static ERR post_udp_receive(WSW_SOCKET Socket)
+static ERR post_udp_receive(WSW_SOCKET Socket, uint64_t ExpectedGeneration)
 {
-   IocpCompletionTarget target;
-   uint64_t generation = 0;
-   bool ipv6 = false;
-
+   IocpOperation *failed_operation = nullptr;
    {
       auto record = find_socket_record(Socket);
-      if (!record) return ERR::Search;
-
+      if (not record) return ERR::Search;
       std::lock_guard<std::mutex> lock(record->Mutex);
-      if (record->Cancelled) return ERR::Cancelled;
-      if (record->UdpReadPending) return ERR::Okay;
-      if (!record->Datagrams.empty()) return ERR::Okay;
-      if (record->ReadResult != ERR::Okay) return ERR::Okay;
+      if (record->Cancelled or (ExpectedGeneration and record->Generation != ExpectedGeneration)) {
+         return ERR::Cancelled;
+      }
+      if (record->UdpReadPending or record->BufferedDatagramBytes >= IOCP_UDP_HIGH_WATER or
+          record->Datagrams.size() >= IOCP_UDP_QUEUE_LIMIT or record->ReadResult != ERR::Okay) return ERR::Okay;
+      auto target = record->Read;
+      if (not target.Callback or target.ObjectID <= 0) return ERR::Okay;
 
-      target = record->Read;
-      if ((!target.Callback) or (target.ObjectID <= 0)) return ERR::Okay;
-
+      // Keep the native submission under the record lock so closing cannot recycle the socket underneath it.
+      auto error = bind_udp_ephemeral(socket_from_handle(Socket), record->IPv6);
+      auto operation = create_operation();
+      operation->Type = IocpOperationType::UDP_RECEIVE;
+      operation->Socket = Socket;
+      operation->Generation = record->Generation;
+      operation->ObjectID = target.ObjectID;
+      operation->Callback = target.Callback;
       record->UdpReadPending = true;
-      generation = record->Generation;
-      ipv6 = record->IPv6;
+      if (error IS ERR::Okay) {
+         operation->BufferSize = IOCP_UDP_BUFFER_SIZE;
+         operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
+         operation->AddressSize = int(operation->Address.size());
+         WSABUF buffer = { ULONG(operation->BufferSize), (CHAR *)operation->Buffer.get() };
+         DWORD bytes = 0, flags = 0;
+         auto result = WSARecvFrom(socket_from_handle(Socket), &buffer, 1, &bytes, &flags,
+            (sockaddr *)operation->Address.data(), &operation->AddressSize, &operation->Overlapped, nullptr);
+         if (result IS SOCKET_ERROR and WSAGetLastError() != WSA_IO_PENDING) error = convert_error();
+      }
+      if (error != ERR::Okay) {
+         operation->Result = error;
+         failed_operation = operation;
+      }
    }
-
-   if (auto error = bind_udp_ephemeral(socket_from_handle(Socket), ipv6); error != ERR::Okay) {
-      IocpOperation failed_operation;
-      failed_operation.Type = IocpOperationType::UDP_RECEIVE;
-      failed_operation.Socket = Socket;
-      failed_operation.Generation = generation;
-      failed_operation.ObjectID = target.ObjectID;
-      failed_operation.Callback = target.Callback;
-      failed_operation.Result = error;
-      queue_operation_completion(failed_operation, 0, failed_operation.Result);
-      return ERR::Okay;
+   if (failed_operation) {
+      queue_operation_completion(*failed_operation, 0, failed_operation->Result);
+      release_operation(failed_operation);
    }
-
-   auto operation = create_operation();
-   operation->Type = IocpOperationType::UDP_RECEIVE;
-   operation->Socket = Socket;
-   operation->Generation = generation;
-   operation->ObjectID = target.ObjectID;
-   operation->Callback = target.Callback;
-   operation->BufferSize = IOCP_UDP_BUFFER_SIZE;
-   operation->Buffer = std::make_unique<uint8_t[]>(operation->BufferSize);
-   operation->AddressSize = int(operation->Address.size());
-
-   WSABUF buffer;
-   buffer.buf = (CHAR *)operation->Buffer.get();
-   buffer.len = ULONG(operation->BufferSize);
-
-   DWORD bytes = 0;
-   DWORD flags = 0;
-   auto result = WSARecvFrom(socket_from_handle(Socket), &buffer, 1, &bytes, &flags,
-      (sockaddr *)operation->Address.data(), &operation->AddressSize, &operation->Overlapped, nullptr);
-   if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
-      auto error = convert_error();
-      operation->Result = error;
-      operation->BytesTransferred = 0;
-      queue_operation_completion(*operation, 0, operation->Result);
-      release_operation(operation);
-      return ERR::Okay;
-   }
-
    return ERR::Okay;
 }
 
@@ -880,50 +900,52 @@ static ERR post_read_pool(WSW_SOCKET Socket)
 
 static ERR post_send(WSW_SOCKET Socket)
 {
-   IocpCompletionTarget target;
-   IocpSendRequest request;
-   uint64_t generation = 0;
+   IocpOperation *failed_operation = nullptr;
 
    {
       auto record = find_socket_record(Socket);
       if (!record) return ERR::Search;
 
+      // WSASend() is called with the record locked.  Completion threads and the owning thread can both post sends,
+      // and TCP sends are transmitted in the order of the WSASend() calls, so dequeuing and posting must not be
+      // separable.  WSASend() never runs completion code inline here because no completion routine is used.
+
       std::lock_guard<std::mutex> lock(record->Mutex);
       if (record->Cancelled) return ERR::Cancelled;
       if (!tcp_send_post_needed(*record)) return ERR::Okay;
 
-      target = record->Write;
-      generation = record->Generation;
-      request = std::move(record->SendQueue.front());
+      auto request = std::move(record->SendQueue.front());
       record->SendQueue.pop_front();
+      if ((!request.Buffer) or (!request.BufferSize)) return ERR::Okay;
+
       record->SendPendingCount++;
+
+      auto operation = create_operation();
+      operation->Type = IocpOperationType::WRITE;
+      operation->Socket = Socket;
+      operation->Generation = record->Generation;
+      operation->ObjectID = record->Write.ObjectID;
+      operation->Callback = record->Write.Callback;
+      operation->BufferSize = request.BufferSize;
+      operation->SendAccountedSize = request.BufferSize;
+      operation->Buffer = std::move(request.Buffer);
+
+      WSABUF wsabuf;
+      wsabuf.buf = (CHAR *)operation->Buffer.get();
+      wsabuf.len = ULONG(operation->BufferSize);
+
+      DWORD bytes = 0;
+      auto result = WSASend(socket_from_handle(Socket), &wsabuf, 1, &bytes, 0, &operation->Overlapped, nullptr);
+      if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
+         operation->Result = convert_error();
+         operation->BytesTransferred = 0;
+         failed_operation = operation;
+      }
    }
 
-   if ((!request.Buffer) or (!request.BufferSize)) return ERR::Okay;
-
-   auto operation = create_operation();
-   operation->Type = IocpOperationType::WRITE;
-   operation->Socket = Socket;
-   operation->Generation = generation;
-   operation->ObjectID = target.ObjectID;
-   operation->Callback = target.Callback;
-   operation->BufferSize = request.BufferSize;
-   operation->SendAccountedSize = request.BufferSize;
-   operation->Buffer = std::move(request.Buffer);
-
-   WSABUF wsabuf;
-   wsabuf.buf = (CHAR *)operation->Buffer.get();
-   wsabuf.len = ULONG(operation->BufferSize);
-
-   DWORD bytes = 0;
-   auto result = WSASend(socket_from_handle(Socket), &wsabuf, 1, &bytes, 0, &operation->Overlapped, nullptr);
-   if ((result IS SOCKET_ERROR) and (WSAGetLastError() != WSA_IO_PENDING)) {
-      auto error = convert_error();
-      operation->Result = error;
-      operation->BytesTransferred = 0;
-      queue_operation_completion(*operation, 0, operation->Result);
-      release_operation(operation);
-      return ERR::Okay;
+   if (failed_operation) { // No completion packet will be queued, so report the failure directly
+      queue_operation_completion(*failed_operation, 0, failed_operation->Result);
+      release_operation(failed_operation);
    }
 
    return ERR::Okay;
@@ -1416,7 +1438,7 @@ ERR iocp_complete_connect(WSW_SOCKET Socket)
       result = record->ConnectResult;
    }
 
-   if (result IS ERR::Okay) {
+   if (!result) {
       auto socket = socket_from_handle(Socket);
       if (setsockopt(socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, nullptr, 0) IS SOCKET_ERROR) {
          return convert_error();
@@ -1428,14 +1450,16 @@ ERR iocp_complete_connect(WSW_SOCKET Socket)
 
 //********************************************************************************************************************
 
-bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation)
+bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation, bool BeginUDPDispatch)
 {
    auto record = find_socket_record(Socket);
    if (!record) return false;
 
    std::lock_guard<std::mutex> lock(record->Mutex);
    if (record->Cancelled) return false;
-   return record->Generation IS Generation;
+   if (record->Generation != Generation) return false;
+   if (BeginUDPDispatch) record->UdpNotificationPending = false;
+   return true;
 }
 
 //********************************************************************************************************************
@@ -1629,7 +1653,7 @@ ERR iocp_receive(WSW_SOCKET Socket, void *Buffer, size_t Length, size_t &Receive
       }
       else {
          result = record->ReadResult;
-         if (result IS ERR::Okay) rearm_read = true;
+         if (!result) rearm_read = true;
       }
    }
 
@@ -1652,7 +1676,7 @@ ERR iocp_append_receive(WSW_SOCKET Socket, std::vector<uint8_t> &Buffer, size_t 
 
    std::vector<uint8_t> temp(Length);
    auto error = iocp_receive(Socket, temp.data(), temp.size(), Received);
-   if ((error IS ERR::Okay) and (Received > 0)) {
+   if ((!error) and (Received > 0)) {
       auto offset = Buffer.size();
       Buffer.resize(offset + Received);
       std::memcpy(Buffer.data() + offset, temp.data(), Received);
@@ -1780,37 +1804,37 @@ ERR iocp_receive_from(WSW_SOCKET Socket, void *Buffer, size_t BufferSize, size_t
 
       if (!record->Datagrams.empty()) {
          datagram = std::move(record->Datagrams.front());
-         record->Datagrams.erase(record->Datagrams.begin());
+         record->Datagrams.pop_front();
+         record->BufferedDatagramBytes -= datagram.Buffer.size();
          has_datagram = true;
          recall_read = !record->Datagrams.empty();
-         if ((!recall_read) and (record->ReadResult IS ERR::Okay)) rearm_read = true;
+         if (record->ReadResult IS ERR::Okay) rearm_read = true;
       }
       else {
          result = record->ReadResult;
-         if ((result IS ERR::Okay) and (!record->UdpReadPending)) rearm_read = true;
+         if ((!result) and (!record->UdpReadPending)) rearm_read = true;
       }
    }
 
    if (has_datagram) {
-      auto copy_size = std::min(BufferSize, datagram.Buffer.size());
-      if (copy_size > 0) std::memcpy(Buffer, datagram.Buffer.data(), copy_size);
-      BytesRead = copy_size;
-
-      auto address_size = std::min(*AddressSize, datagram.AddressSize);
-      if (address_size > 0) std::memcpy(Address, datagram.Address.data(), size_t(address_size));
-      *AddressSize = address_size;
-
       if (BufferSize < datagram.Buffer.size()) result = ERR::BufferOverflow;
       else result = datagram.Result;
+      if (result IS ERR::Okay) {
+         if (not datagram.Buffer.empty()) std::memcpy(Buffer, datagram.Buffer.data(), datagram.Buffer.size());
+         BytesRead = datagram.Buffer.size();
+         auto address_size = std::min(*AddressSize, datagram.AddressSize);
+         if (address_size > 0) std::memcpy(Address, datagram.Address.data(), size_t(address_size));
+         *AddressSize = address_size;
+      }
    }
 
+   if (rearm_read) {
+      if (auto error = post_udp_receive(Socket); error != ERR::Okay) return error;
+   }
    if (recall_read) {
       if (auto error = queue_record_completion(Socket, IocpOperationType::UDP_RECEIVE); error != ERR::Okay) {
          return error;
       }
-   }
-   else if (rearm_read) {
-      if (auto error = post_udp_receive(Socket); error != ERR::Okay) return error;
    }
 
    return result;
@@ -1826,12 +1850,40 @@ ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize)
 
 //********************************************************************************************************************
 
+ERR iocp_enable_keep_alive(WSW_SOCKET Socket)
+{
+   BOOL keep_alive = TRUE;
+   if (setsockopt(socket_from_handle(Socket), SOL_SOCKET, SO_KEEPALIVE, (char *)&keep_alive,
+       sizeof(keep_alive)) IS SOCKET_ERROR) {
+      return convert_error();
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
 ERR iocp_enable_broadcast(WSW_SOCKET Socket)
 {
    BOOL broadcast = TRUE;
    if (setsockopt(socket_from_handle(Socket), SOL_SOCKET, SO_BROADCAST, (char *)&broadcast,
        sizeof(broadcast)) IS SOCKET_ERROR) {
       return convert_error();
+   }
+   return ERR::Okay;
+}
+
+ERR iocp_set_socket_buffer_sizes(WSW_SOCKET Socket, int ReceiveBytes, int SendBytes)
+{
+   auto socket = socket_from_handle(Socket);
+   if (ReceiveBytes > 0) {
+      if (setsockopt(socket, SOL_SOCKET, SO_RCVBUF, (char *)&ReceiveBytes, sizeof(ReceiveBytes)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
+   }
+   if (SendBytes > 0) {
+      if (setsockopt(socket, SOL_SOCKET, SO_SNDBUF, (char *)&SendBytes, sizeof(SendBytes)) IS SOCKET_ERROR) {
+         return convert_error();
+      }
    }
    return ERR::Okay;
 }

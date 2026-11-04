@@ -1,25 +1,5 @@
-
-int GetFontHeight(void *TheFont)
-{
-   //log.trace("GetFontHeight()");
-   return static_cast<objFont *>(TheFont)->MaxHeight;
-}
-
-int GetFontLeading(void *TheFont)
-{
-   //log.trace("GetFontLeading()");
-   return static_cast<objFont *>(TheFont)->Leading;
-}
-
-int GetFontGutter(void *TheFont)
-{
-   //log.trace("GetFontGutter()");
-   return static_cast<objFont *>(TheFont)->Gutter;
-}
-
-/*********************************************************************************************************************
-** Point class
-*/
+//********************************************************************************************************************
+// Point class
 
 Scintilla::Point Scintilla::Point::FromLong(long lpoint)
 {
@@ -27,9 +7,8 @@ Scintilla::Point Scintilla::Point::FromLong(long lpoint)
       Scintilla::Platform::HighShortFromLong(lpoint));
 }
 
-/*********************************************************************************************************************
-** Palette class.  Functionality not required as we only use 32 bit colours.
-*/
+//********************************************************************************************************************
+// Palette class.  Functionality not required as we only use 32 bit colours.
 
 Scintilla::Palette::Palette() { }
 Scintilla::Palette::~Palette() { }
@@ -41,14 +20,13 @@ void Scintilla::Palette::WantFind(Scintilla::ColourPair &cp, bool want)
    cp.allocated.Set(cp.desired.AsLong());
 }
 
-/*********************************************************************************************************************
-** Font class
-**
-** Not really supported as we only need to allocate 3 main fonts in the
-** Scintilla class to serve all of our font needs in an edited document.
-** Scintilla will try to create a font for every style allocated, which is
-** overkill.
-*/
+//********************************************************************************************************************
+// Font class
+//
+// Scintilla will try to create a font for every style allocated, which is overkill.  Instead, each Scintilla object
+// resolves regular, bold, italic and bold italic font handles.  Font::Create() only records the bold and italic
+// state of the style.  SurfacePan::GetFont() resolves that state to the font handles of the owning Scintilla object.
+// The face name and size requested by the style are ignored.
 
 Scintilla::Font::Font()
 {
@@ -75,11 +53,10 @@ void Scintilla::Font::Release()
 {
 }
 
-/*********************************************************************************************************************
-** BitmapClipper class
-**
-** Utility class used by SurfacePan
-*/
+//********************************************************************************************************************
+// BitmapClipper class
+//
+// Utility class used by SurfacePan
 
 class BitmapClipper
 {
@@ -116,9 +93,8 @@ private:
    Scintilla::PRectangle saved_cliprect;
 };
 
-/*********************************************************************************************************************
-** DynamicLibraryImpl class
-*/
+//********************************************************************************************************************
+// DynamicLibraryImpl class
 
 class DynamicLibraryImpl : public Scintilla::DynamicLibrary
 {
@@ -151,9 +127,8 @@ Scintilla::DynamicLibrary * Scintilla::DynamicLibrary::Load(const char *modulePa
    return static_cast<DynamicLibrary *>(new DynamicLibraryImpl(modulePath));
 }
 
-/*********************************************************************************************************************
-** ElapsedTime class
-*/
+//********************************************************************************************************************
+// ElapsedTime class
 
 Scintilla::ElapsedTime::ElapsedTime()
 {
@@ -190,7 +165,7 @@ Scintilla::ColourDesired Scintilla::Platform::ChromeHighlight()
 
 const char * Scintilla::Platform::DefaultFont()
 {
-   return "Courier";
+   return "Clean";
 }
 
 int Scintilla::Platform::DefaultFontSize()
@@ -198,9 +173,16 @@ int Scintilla::Platform::DefaultFontSize()
    return 20;
 }
 
+// The interval for double and triple clicks follows the system pointer, in milliseconds.
+
 unsigned int Scintilla::Platform::DoubleClickTime()
 {
-   return 500; // Half a second
+   unsigned int interval = 300;
+   if (auto pointer = gfx::AccessPointer()) {
+      if (pointer->DoubleClick > 0) interval = (unsigned int)std::lround(pointer->DoubleClick * 1000.0);
+      ReleaseObject(pointer);
+   }
+   return interval;
 }
 
 bool Scintilla::Platform::MouseButtonBounce()

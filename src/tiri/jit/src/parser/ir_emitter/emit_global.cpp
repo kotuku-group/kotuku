@@ -6,6 +6,38 @@
 // Emit bytecode for a global variable declaration statement, explicitly storing values in the global table.
 // Handles multi-value returns from function calls (e.g., global a, b, c = f())
 
+[[nodiscard]] static std::optional<RuntimeContract> global_declaration_contract(const Identifier &Identifier)
+{
+   if (Identifier.global_contract_policy IS GlobalContractPolicy::Advisory) return std::nullopt;
+
+   return RuntimeContract{
+      .type = Identifier.global_contract_type,
+      .object_class_id = Identifier.global_contract_object_class_id,
+      .struct_def = Identifier.global_contract_struct_def,
+      .array_element = Identifier.global_contract_array_element,
+      .label = Identifier.symbol,
+      .boundary = ContractBoundary::Global,
+      .position = 1,
+      .is_const = Identifier.has_const,
+      .initialising = true
+   };
+}
+
+static void bcemit_skipped_global_declaration(FuncState *State, BCReg Value,
+   const std::optional<RuntimeContract> &Contract)
+{
+   if (not Contract) return;
+
+   RuntimeContract retained = *Contract;
+   retained.retained_value = true;
+   bcemit_contract(State, Value, std::span(&retained, 1), 1);
+   RuntimeContract finaliser = *Contract;
+   finaliser.initialising = false;
+   bcemit_contract(State, Value, std::span(&finaliser, 1), 1);
+}
+
+//********************************************************************************************************************
+
 ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPayload &Payload)
 {
    auto nvars = BCReg(BCREG(Payload.names.size()));
@@ -17,6 +49,18 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       const Identifier& identifier = Payload.names[i];
       if (is_blank_symbol(identifier)) continue;
       if (GCstr *name = identifier.symbol) {
+         if ((name->flags & STRFLAG_PROTECTED_GLOBAL) != 0) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::OverrideProtectedGlobal,
+               std::format("cannot override built-in '{}'", std::string_view(strdata(name), name->len)),
+               identifier.span));
+         }
+
+         if (lookup_constant(name)) {
+            return ParserResult<IrEmitUnit>::failure(this->make_error(ParserErrorCode::AssignToConstant,
+               std::format("cannot assign to constant '{}'", std::string_view(strdata(name), name->len)),
+               identifier.span));
+         }
+
          this->func_state.declared_globals.insert(name);
 
          if (identifier.has_const) {
@@ -60,27 +104,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpressionValue lhs_value(&this->func_state, global_var);
       auto lhs_reg = lhs_value.discharge_to_any_reg(allocator);
 
-      // Emit checks for empty values: nil, false, 0, ""
+      // Emit checks for empty values: nil, false, 0, "", and empty collections.
 
-      ExpDesc nilv(ExpKind::Nil);
-      ExpDesc falsev(ExpKind::False);
-      ExpDesc zerov(0.0);
-      ExpDesc emptyv(this->lex_state.intern_empty_string());
+      FalseyJumpOptions options;
+      options.include_empty_array = true;
+      ControlFlowEdge falsey_edge = emit_falsey_jumps(
+         this->func_state, this->control_flow, lhs_reg, options);
 
-      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&nilv)));
-      ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+      // A retained value still completes the declaration.  Validate it and publish policy without storing it.
 
-      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&falsev)));
-      ControlFlowEdge check_false = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQN, lhs_reg, const_num(&this->func_state, &zerov)));
-      ControlFlowEdge check_zero = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQS, lhs_reg, const_str(&this->func_state, &emptyv)));
-      ControlFlowEdge check_empty = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
-
-      // Skip assignment if not empty
-
+      auto contract = global_declaration_contract(identifier);
+      bcemit_skipped_global_declaration(&this->func_state, lhs_reg, contract);
       ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
       BCPos assign_pos = BCPos(this->func_state.pc);
 
@@ -102,13 +136,10 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc target;
       target.init(ExpKind::Global, 0);
       target.u.sval = name;
-      bcemit_store(&this->func_state, &target, &rhs);
+      bcemit_store(&this->func_state, &target, &rhs, contract ? &*contract : nullptr, true);
 
       // Patch jumps
-      check_nil.patch_to(assign_pos);
-      check_false.patch_to(assign_pos);
-      check_zero.patch_to(assign_pos);
-      check_empty.patch_to(assign_pos);
+      falsey_edge.patch_to(assign_pos);
       skip_assign.patch_to(BCPos(this->func_state.pc));
 
       register_guard.release_to(register_guard.saved());
@@ -146,13 +177,17 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
 
       // Only check for nil (simpler and faster than ??=)
 
-      ExpDesc nilv(ExpKind::Nil);
+      FalseyJumpOptions nil_only;
+      nil_only.include_false = false;
+      nil_only.include_zero = false;
+      nil_only.include_empty_string = false;
+      ControlFlowEdge check_nil = emit_falsey_jumps(
+         this->func_state, this->control_flow, lhs_reg, nil_only);
 
-      bcemit_INS(&this->func_state, BCINS_AD(BC_ISEQP, lhs_reg, const_pri(&nilv)));
-      ControlFlowEdge check_nil = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
+      // A retained value still completes the declaration.  Validate it and publish policy without storing it.
 
-      // Skip assignment if not nil
-
+      auto contract = global_declaration_contract(identifier);
+      bcemit_skipped_global_declaration(&this->func_state, lhs_reg, contract);
       ControlFlowEdge skip_assign = this->control_flow.make_unconditional(BCPos(bcemit_jmp(&this->func_state)));
       BCPos assign_pos = BCPos(this->func_state.pc);
 
@@ -174,7 +209,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc target;
       target.init(ExpKind::Global, 0);
       target.u.sval = name;
-      bcemit_store(&this->func_state, &target, &rhs);
+      bcemit_store(&this->func_state, &target, &rhs, contract ? &*contract : nullptr, true);
 
       // Patch jumps
       check_nil.patch_to(assign_pos);
@@ -226,7 +261,8 @@ ParserResult<IrEmitUnit> IrEmitter::emit_global_decl_stmt(const GlobalDeclStmtPa
       ExpDesc value_expr;
       value_expr.init(ExpKind::NonReloc, value_base + i);
 
-      bcemit_store(&this->func_state, &var, &value_expr); // Store to global
+      auto contract = global_declaration_contract(identifier);
+      bcemit_store(&this->func_state, &var, &value_expr, contract ? &*contract : nullptr, true);
    }
 
    this->func_state.reset_freereg();

@@ -3,10 +3,7 @@
 WaveFunction Demonstration
 --]]
 
-   import 'gui'
-   import 'gui/window'
-   import 'gui/combobox'
-   import 'gui/slider'
+   import 'gui', 'gui/window', 'gui/combobox', 'gui/slider'
    include 'vector'
 
    local win, viewport, waveFunction, waveVP, rect, filter, text
@@ -20,7 +17,7 @@ end
 
    win = gui.window({ title='Wave Function Demo', insideWidth=1024, insideHeight=800 })
 
-   viewport = win:clientViewport({
+   viewport = win.clientViewport({
       aspectRatio = ARF_MEET
    })
 
@@ -47,11 +44,11 @@ end
       x      = win.margins.left,
       y      = 10,
       items  = {
-         { item='Magma' }, { item='Rocket' }, { item='Mako' }, { item='IceFire' },
-         { item='Flare' }, { item='Crest' }, { item='Viridis' }, { item='Plasma' }, { item='Inferno' } },
+         { label='Magma' }, { label='Rocket' }, { label='Mako' }, { label='IceFire' },
+         { label='Flare' }, { label='Crest' }, { label='Viridis' }, { label='Plasma' }, { label='Inferno' } },
       events = {
-         activate = function(Widget, Text)
-            waveFunction.colourMap = 'cmap:' .. Text:lower()
+         activate = function(Item:table!)
+            waveFunction.colourMap = 'cmap:' .. Item.label.lower()
             waveVP.scene.surface.mtScheduleRedraw()
          end
       }
@@ -66,7 +63,7 @@ end
       x      = cmbColours.viewport.x + cmbColours.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget, Value)
+         activate = function(Value)
             config.l = math.floor(Value + 0.5)
             waveFunction.l = config.l
             waveFunction.n = config.n
@@ -86,7 +83,7 @@ end
       x      = slL.viewport.x + slL.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget, Value)
+         activate = function(Value)
             config.m = math.floor(Value + 0.5)
             waveFunction.l = config.l
             waveFunction.n = config.n
@@ -106,7 +103,7 @@ end
       x      = slM.viewport.x + slM.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget, Value)
+         activate = function(Value)
             config.n = math.floor(Value + 0.5)
             waveFunction.l = config.l
             waveFunction.n = config.n
@@ -126,7 +123,7 @@ end
       x      = slN.viewport.x + slN.viewport.width + 10,
       y      = 10,
       events = {
-         activate = function(Widget, Value)
+         activate = function(Value)
             config.scale = Value
             waveFunction.l = config.l
             waveFunction.n = config.n
@@ -141,5 +138,5 @@ end
    waveVP.y = cmbColours.viewport.y + cmbColours.viewport.height + 12
    updateText()
 
-   win:show(true)
+   win.show()
    processing.sleep()

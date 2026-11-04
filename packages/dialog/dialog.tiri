@@ -1,0 +1,444 @@
+@Package(name="gui/dialog", version="1.0")
+
+--[[
+Display a dialog message to the user.
+
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui', 'gui/layout', 'gui/window', 'gui/button', 'gui/input', 'gui/toggle', 'gui/slider'
+
+   include 'vector'
+
+   namespace gui
+
+MIN_WIDTH <const> = gui.rpixel('640dp')
+MAX_WIDTH <const> = gui.rpixel('900dp')
+ICON_SIZE <const> = gui.rpixel('108dp')
+ICON_GAP  <const> = gui.sizing.widget.gap * 2 -- Horizontal space between the icon and the message column
+
+-- Vertical spacing, in ems of the message font, so that it follows the size of the text.
+
+TOP_SPACING     <const> = 1    -- Between the top margin and the icon and message
+MESSAGE_SPACING <const> = 1    -- Between the message and the widgets beneath it
+ROW_SPACING     <const> = 1    -- Between rows of widgets
+BUTTON_SPACING  <const> = 1.25 -- Above the buttons
+
+ICONS <const> = {
+   error     = 'items/error',
+   critical  = 'items/error',
+   warning   = 'items/alert_circle',
+   help      = 'items/question',
+   question  = 'items/question',
+   request   = 'items/request',
+   info      = 'items/info'
+}
+
+   gui.dialog ?= { }
+
+-- The response options are accepted as a list table or an array.  Any other value results in a single Close option.
+
+function readOptions(Options:any):array<table>
+   list = array<table>
+   if Options is <array> then
+      for _, option in Options do list.push(option) end
+   elseif Options is <table> then
+      for _, option in ipairs(Options) do list.push(option) end
+   end
+
+   if #list is 0 then
+      list.push({ id=1, label='Close Dialog', icon='items/cancel' })
+   end
+   return list
+end
+
+gui.dialog.message = function(Options:table!)
+   if not (Options.message is <str>) then
+      raise 'Dialog requires a message string.'
+   end
+
+   self = entity { -- Public interface
+      options       = readOptions(Options.options),
+      type          = Options.type,
+      feedback      = Options.feedback,
+      inputRequired = Options.inputRequired,
+      message       = Options.message,
+      scaleWindow   = Options.scale is false ? nil : true, -- Scale by default
+      buttons       = array<table>, -- One button per option, in the same order
+      input         = nil, -- The input box, if userInput is set
+      checkbox      = nil, -- The toggle, if checkboxLabel is set
+      progress      = nil, -- The progress bar slider, if progress is set
+      messageText   = nil, -- The VectorText that displays the message
+      viewport      = nil  -- The client viewport that contains the dialog content
+   }
+
+   local em, text_width, content_height, primary, buttons_width
+   local column_x   -- Left edge of the message column, which follows the image if there is one
+   local image_size -- Height of the image column, or zero for an icon-free layout
+   completing = false
+   closed = false
+   ready = false
+
+   -- Wait for the user to respond to the dialog.
+
+   self.wait = function()
+      &waiting = true
+      processing.sleep(-1)
+      &waiting = nil
+   end
+
+   -- Release the dialog after feedback, including when client feedback raises an exception.
+
+   function[self] finish()
+      if closed then return end
+
+      closed = true
+      completing = true
+
+      defer
+         gui.dialog.active[&&] = nil
+         &clear()
+         processing.collect('defer')
+      end
+
+      surface = &window?.surface
+      defer surface?.free() end
+      if &waiting then processing.signal() end
+      &keyboard?.unsubscribe()
+   end
+
+   defer if not ready then finish() end end
+
+   -- Report the option at Index to the client.  Bound to the dialog, as button callbacks run in the button's context.
+
+   function[self] respond(Index:num!)
+      if completing or not &window then return end -- Completion is in progress or has already finished
+      completing = true
+      defer finish() end
+
+      response = &options[Index]
+      state = { checkbox = (&checkbox?.value is true) }
+
+      if &input then
+         text = &input.getText()
+         if #text > 0 then state.input = text end
+      end
+
+      if &inputRequired and not state.input then
+         -- If input is mandatory, the response is cancelled when no input is given
+         response = nil
+      end
+
+      &feedback?(&&, response, state)
+   end
+
+   function[self] cancel()
+      if completing or not &window then return end
+      completing = true
+      defer finish() end
+      &feedback?(&&, nil, nil)
+   end
+
+   self.close = cancel
+
+   -- Position everything beneath the message, which the VectorText wraps to the message column.  The window is resized
+   -- to fit the content.  The message is aligned with the top of the image, if there is one.
+
+   function arrange()
+      &messageText.string = &message
+      _, ascent = gui.layout.textMetrics(&messageText)
+      top = &window.margins.top + (em * TOP_SPACING)
+      &image?.y = 0
+      &messageText.y = math.round(top + ascent)
+
+      -- Each row is placed beneath the bottom of the content above it.
+
+      bottom = top + (&messageText.lineSpacing * &messageText.wrappedLines)
+      y = bottom + (em * MESSAGE_SPACING)
+
+      if &input then
+         &input.viewport.y = math.round(y)
+         bottom = y + &input.viewport.height
+         y = bottom + (em * ROW_SPACING)
+      end
+
+      if &checkbox then
+         &checkbox.viewport.y = math.round(y)
+         bottom = y + &checkbox.viewport.height
+         y = bottom + (em * ROW_SPACING)
+      end
+
+      if &progress then
+         &progress.viewport.y = math.round(y)
+         bottom = y + &progress.viewport.height
+         y = bottom + (em * ROW_SPACING)
+      end
+
+      if &contentViewport then
+         &contentViewport.y = math.round(y)
+         bottom = y + content_height
+      end
+
+      -- The buttons are right-aligned.  A row of buttons that is wider than the message column widens the window.
+
+      width = math.max(column_x + text_width + &window.margins.right, buttons_width + (&window.margins.left + &window.margins.right))
+      y = math.round(math.max(bottom, top + image_size) + (em * BUTTON_SPACING))
+      x = width - &window.margins.right - buttons_width
+      for btn in values(&buttons) do
+         btn.viewport.{ x = math.round(x), y = y }
+         x += btn.viewport.width + gui.sizing.widget.gap
+      end
+
+      height = y + &buttons[0].viewport.height + &window.margins.bottom
+
+      if &scaleWindow then
+         &viewport.{ viewWidth = width, viewHeight = height }
+      end
+
+      if (width != &layoutWidth) or (height != &layoutHeight) then
+         &layoutWidth  = width
+         &layoutHeight = height
+         &window.surface.{ width = width, height = height }
+         if &scaleWindow then
+            &window.sizeHints(math.round(width * 0.5), math.round(height * 0.5), width * 3, height * 3, true)
+         else
+            &window.sizeHints(width, height, width, height, false)
+         end
+      end
+   end
+
+   -- Change the message in the dialog
+
+   self.setMessage = function(Message:str!)
+      if not &window then return end
+      &message = Message
+      arrange()
+      &viewport.acDraw()
+   end
+
+   -- Set the progress bar to a value normalised from 0 to 1.0.  Values outside that range are clamped.
+
+   self.updateProgress = function(Value:num!)
+      if not (&window and &progress) then return end
+      &progress.setValue(math.clamp(Value, 0, 1), true)
+   end
+
+   using self do
+      -- The window background defaults to the page background of the base theme.  Options.theme is merged over it, so
+      -- a client override takes precedence.  A custom theme that is not yet loaded falls back to the default theme.
+
+      base_theme = gui.themes[Options.themeName ?? gui.theme] ?? gui.themes[gui.theme]
+      &window = gui.window({
+         insideWidth  = MIN_WIDTH,
+         insideHeight = ICON_SIZE,
+         quit         = Options.quit ?? false,
+         popOver      = Options.popOver,
+         aspectRatio  = &scaleWindow,
+         icon         = Options.icon ?? 'items/question',
+         title        = Options.title ?? 'Confirmation Required',
+         modal        = Options.modal ?? false,
+         themeName    = Options.themeName,
+         theme        = table.merge({ window = { bkgd = base_theme.page.bkgd } }, Options.theme, true, true),
+         events = {
+            close = function()
+               cancel()
+            end
+         }
+      })
+
+      &viewport = &window.clientViewport()
+      &window.surface.subscribe('free', function[<weak> &&]()
+         if not completing then finish() end
+      end)
+      theme = &window.theme
+
+      -- The image beside the message.  An image that fails to load is logged and omitted, and image=false omits it
+      -- deliberately.  Without an image, the message column starts at the left margin.
+
+      image = (Options.image is false) ? nil : (Options.image ?? ICONS[&type] ?? 'items/question')
+      if image then
+         try
+            icon = gui.createIcon(&viewport.scene, image, ICON_SIZE, theme.window.icon)
+            &image = &viewport.new('VectorViewport', {
+               x      = &window.margins.left - icon.margin,
+               y      = 0, -- See arrange()
+               width  = icon.size + (icon.margin * 2),
+               height = icon.size + (icon.margin * 2),
+               fill   = icon.fill
+            })
+            &imageMargin = icon.margin
+         except ex
+            msg(f'Failed to load dialog image "{image}": {ex.message}')
+         end
+      end
+
+      image_size = &image ? ICON_SIZE : 0
+      column_x = &window.margins.left + (&image ? ICON_SIZE + ICON_GAP : 0)
+
+      &messageText = &viewport.new('VectorText',
+         table.merge({
+            string   = &message,
+            wrapMode = VTW_ANYWHERE, -- Long words such as file paths are broken to fit the column
+            x        = column_x,
+            y        = 0,
+            textFlags = VTXF_SELECTABLE
+         }, theme.window.text)
+      )
+
+      em = tonumber(&messageText.fontSize) -- The font size reads back in pixels
+
+      extra_width <const> = column_x + &window.margins.right
+      text_width = MIN_WIDTH - extra_width
+      max_width <const> = MAX_WIDTH - extra_width
+
+      &messageText.inlineSize = text_width
+      inc = gui.rpixel('50dp')
+      sanity = 0
+      while (&messageText.wrappedLines > 3) and (text_width < max_width) and (sanity < 20) do
+         text_width += inc
+         &messageText.inlineSize = text_width
+         sanity++
+      end
+
+      -- The last option is the default, unless the client marks another as primary.
+
+      primary = #&options - 1
+      for i, option in &options do
+         if option.primary then primary = i end
+      end
+
+      -- Widgets are created in their visual order, which the scene follows for the tab order.
+
+      if Options.userInput then
+         &input = gui.input({
+            target    = &viewport,
+            x         = column_x,
+            width     = text_width,
+            text      = (Options.userInput is <str>) ? Options.userInput : '',
+            secret    = Options.secret,
+            selectAll = true,
+            events    = {
+               activate = function(Event)
+                  if Event.state is 'activated' then respond(primary) end
+               end
+            }
+         })
+      end
+
+      if Options.checkboxLabel then
+         &checkbox = gui.toggle({
+            target = &viewport,
+            x      = column_x,
+            label  = Options.checkboxLabel,
+            value  = Options.checkboxState ? 1 : 0
+         })
+      end
+
+      -- The progress bar is an anchored slider that is disabled to prevent user interaction.  Its theme cancels the
+      -- dimming of disabled sliders.  The initial value is that of the progress option if it is a number.
+
+      if Options.progress then
+         &progress = gui.slider({
+            target   = &viewport,
+            x        = column_x,
+            width    = text_width,
+            min      = 0,
+            max      = 1,
+            value    = (Options.progress is <num>) ? math.clamp(Options.progress, 0, 1) : 0,
+            anchored = true,
+            disabled = true,
+            keyboard = false,
+            theme    = { disabled = { opacity = 1 } }
+         })
+      end
+
+      -- Client content is hosted in a viewport beneath the input box and checkbox, and returns the height that it uses.
+
+      if Options.content then
+         &contentViewport = &viewport.new('VectorViewport', {
+            x = column_x, y = 0, width = text_width, height = 1
+         })
+         content_height = Options.content(&&, &contentViewport, text_width) ?? 0
+         &contentViewport.height = math.max(1, content_height)
+      end
+
+      buttons_width = 0
+      for i, option in &options do
+         btn = gui.button({
+            target  = &viewport,
+            label   = option.label,
+            icon    = option.icon,
+            primary = (i is primary),
+            events  = {
+               activate = function()
+                  respond(i)
+               end
+            }
+         })
+         &buttons.push(btn)
+         if i > 0 then buttons_width += gui.sizing.widget.gap end
+         buttons_width += btn.viewport.width
+      end
+
+      arrange()
+
+      -- Escape cancels the dialog while its window has the focus.  The keys are monitored through the surface rather
+      -- than a vector subscription, which would add the client viewport to the tab order.
+
+      &keyboard = input.keyboard(&window.surface, function(Handle, SurfaceID:num, Qualifiers:num!, Code:num!, Unicode)
+         if (Code is KEY_ESCAPE) and (Qualifiers has KQ_PRESSED) and not (Qualifiers has KQ_REPEAT) then
+            cancel()
+         end
+      end)
+
+      -- The input box receives the focus, with its text selected so that typing replaces it.  As the first widget, the
+      -- scene gives it the focus when the window receives the focus.  Otherwise the default button takes the focus, so
+      -- that Enter activates it.  A vector can't take the focus until the window has it, so this is deferred to the
+      -- window's first focus if necessary.
+
+      &window.moveToFront()
+      &window.show(true)
+
+      if not &input then
+         default_button = &buttons[primary].viewport
+         if default_button.acFocus() != ERR_Okay then
+            pending = true
+            &window.surface.subscribe('focus', function[self](Surface, Args)
+               if pending and &window then
+                  pending = false
+                  default_button.acFocus()
+               end
+            end)
+         end
+      end
+
+      gui.dialog.active[&&] = true
+      ready = true
+      return &&
+   end
+end
+
+gui.dialog.error = function(Title:str!, Message:str!, Options:table):table
+   Options ?= { }
+   Options.{ type = 'error', title = Title, message = Message, scale = true }
+   return gui.dialog.message(Options)
+end
+
+-- This sub-routine is provided for languages other than Tiri to utilise the module.
+
+@if(imported=false)
+   dlg = gui.dialog.message({
+      popOver    = arg('popOver'),
+      modal      = arg('modal'),
+      options    = arg('options'),
+      message    = arg('message'),
+      checkboxLabel = arg('checkboxLabel'),
+      checkboxState = arg('checkboxState'),
+      icon       = arg('icon'),
+      image      = arg('image'),
+      userInput  = arg('userInput', nil),
+      secret     = arg('secret')
+   })
+
+   return dlg.window.surface.id, dlg.viewport.id
+@end

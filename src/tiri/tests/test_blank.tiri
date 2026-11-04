@@ -75,9 +75,9 @@ end
 
 @Test(hotpath=true) function ForLoopPairsBlankValue()
    t = {a=1, b=2, c=3}
-   keys = {}
+   local keys = {}
    for key, _ in pairs(t) do
-      table.insert(keys, key)
+      keys.insert(key)
    end
    assert(#keys is 3, "Failed for loop pairs blank value: expected 3 keys, got " .. #keys)
 end
@@ -112,6 +112,52 @@ end
 end
 
 -- Edge cases
+
+@Test(hotpath=true) function ExistingTypedParameters()
+   function boundary():<num, num, num, num, num>
+      return 0, 11, 22, 33, 44
+   end
+   function update(RefTop:num, RefHeight:num)
+      _, _, RefTop, _, RefHeight = boundary()
+      assert(RefTop is 22, 'Typed parameters must retain the third result after discarded values')
+      assert(RefHeight is 44, 'Typed parameters must retain the fifth result')
+   end
+   update(1, 2)
+end
+
+@Test(hotpath=true) function ExistingLocalsAndTrailingBlanks()
+   function values():<num, num, num, num, num>
+      return 0, 11, 22, 33, 44
+   end
+   local first = 1
+   local second = 2
+   _, _, first, _, second = values()
+   assert(first is 22 and second is 44, 'Existing locals must consume every discarded call result')
+   first, _, second, _, _ = values()
+   assert(first is 0 and second is 22, 'Trailing blanks must consume call results before earlier stores')
+   first, _, second, _, _ = 5, 6, 7, 8, 9
+   assert(first is 5 and second is 7, 'Trailing blank expressions must preserve earlier positions')
+   first, _, second, _ = 5, 6, 7, values()
+   assert(first is 5 and second is 7, 'A discarded tail call must release its result register')
+   first, _, second, _ = 10, 20
+   assert(first is 10 and second is nil, 'Discarded padded nil values must preserve earlier positions')
+end
+
+@Test(hotpath=true) function ExistingParametersWithVarargs()
+   function update(First, Second, ...)
+      _, _, First, _, Second = ...
+      assert(First is 22 and Second is 44, 'Untyped parameters must consume discarded vararg results')
+      First, _, Second, _, _ = ...
+      assert(First is 0 and Second is 22, 'Trailing blank varargs must preserve earlier positions')
+   end
+   update(1, 2, 0, 11, 22, 33, 44)
+end
+
+@Test(hotpath=true) function ExistingIndexedTargets()
+   local target = { first=1, second=2 }
+   target.first, _, target.second, _ = 10, 20, 30, 40
+   assert(target.first is 10 and target.second is 30, 'Indexed stores must consume discarded expression values')
+end
 
 @Test(hotpath=true) function NestedFunctions()
    function outer()
@@ -215,9 +261,9 @@ end
    try
       exec("return _")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
    end
 end
 
@@ -225,9 +271,9 @@ end
    try
       exec("print(_)")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
    end
 end
 
@@ -235,9 +281,9 @@ end
    try
       exec("x = 'test' .. _")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
    end
 end
 
@@ -246,8 +292,56 @@ end
    try
       exec("x = 1 + _")
    except ex
-      assert(ex.message:find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
+      assert(ex.message.find("blank identifier") != nil, "Error message should mention 'blank identifier', got: " .. ex.message)
    success
-      error("Expected parsing to fail when reading blank identifier")
+      assert(false, "Expected parsing to fail when reading blank identifier")
+   end
+end
+
+@Test function DiscardedFieldReadsStillRaise()
+   for _, source in {
+      "_ = obj.find('compiler_missing_discard_test').name",
+      "local _ = obj.find('compiler_missing_discard_test').name",
+      "local value = 0; value, _ = 1, obj.find('compiler_missing_discard_test').name"
+   } do
+      try
+         exec(source)
+      except e
+         assert(e.message.find('index') != nil, e.message)
+      success
+         assert(false, 'Discarding a field read must preserve its exception')
+      end
+   end
+end
+
+@Test function DiscardedReadsInvokeMetamethod()
+   local reads = 0
+   local target = setmetatable({}, { __index = function(_, Key):any
+      reads++
+      return Key
+   end })
+   _ = target.name
+   assert(reads is 1, 'A discarded field read should invoke __index once')
+end
+
+@Test function MissingArrayMemberDiagnostic()
+   try
+      local items = array<int> { 1 }
+      items.compiler_missing_method()
+   except e
+      assert(e.message.find("Unknown array member 'compiler_missing_method'") != nil, e.message)
+   success
+      assert(false, 'An unknown array member should raise')
+   end
+end
+
+@Test function NilCallResultDiagnostic()
+   try
+      local value = obj.find('compiler_missing_diagnostic_test').name
+   except e
+      assert(e.message.find('nil value') != nil, e.message)
+      assert(e.message.find("global 'obj'") is nil, 'A call result must not be attributed to global obj')
+   success
+      assert(false, 'Indexing a nil call result should raise')
    end
 end

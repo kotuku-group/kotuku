@@ -8,7 +8,7 @@ size_t  (*iconv)(iconv_t cd, const char** inbuf, size_t* inbytesleft,   char** o
 int     (*iconv_close)(iconv_t cd);
 void    (*iconvlist)(int (*do_one)(unsigned int namescount, const char* const* names, void* data), void* data);
 
-STRING glIconvBuffer = nullptr;
+std::vector<char> glIconvBuffer;
 OBJECTPTR modIconv = nullptr;
 static iconv_t glIconv = nullptr;
 
@@ -16,8 +16,6 @@ void free_iconv(void)
 {
    if (modIconv) {
       if (glIconv) { iconv_close(glIconv); glIconv = nullptr; }
-      if (glIconvBuffer) { FreeResource(glIconvBuffer); glIconvBuffer = nullptr; }
-
       FreeResource(modIconv);
       modIconv = nullptr;
    }
@@ -44,6 +42,9 @@ int Size:  Byte size of the destination buffer.
 
 -RESULT-
 int: Returns the total amount of <i>bytes</i> that were copied, not including the null byte at the end.
+
+-TAGS-
+mutates-input, null-terminated-result
 
 *********************************************************************************************************************/
 
@@ -92,95 +93,66 @@ int UTF8Copy(CSTRING String, STRING Dest, int Chars, int Size)
 /*********************************************************************************************************************
 
 -FUNCTION-
-UTF8ReadValue: Converts UTF-8 characters into 32-bit unicode values.
+UTF8ReadValue: Decodes one UTF-8 character into a Unicode scalar value.
 
-This function converts UTF-8 character strings into 32-bit unicode values.  To determine how many bytes were used in
-making up the UTF-8 character, set the Length argument so that the function can return the total number of bytes.
+Decodes the first character of a bounded byte string; no null terminator is required.  Only shortest-form UTF-8
+sequences of one to four bytes are accepted.  Overlong encodings, surrogates, values above U+10FFFF and truncated sequences
+are rejected.  Unicode noncharacters are accepted because they are valid scalar values.
 
 -INPUT-
-cstr String: Pointer to a character in a UTF-8 string that you want to convert.
-&int Length: Optional argument that will store the resulting number of bytes that make up the UTF-8 character.
+stringview String: UTF-8 bytes to decode.  An embedded null byte is decoded as U+0000.
+&int Length: Optional output receiving the character length in bytes, one for invalid non-empty input, or zero for
+empty input.
 
 -RESULT-
-uint: Returns the extracted unicode value.  If a failure occurs (the encoding is invalid) then a value of zero is returned. Zero can also be returned if the String parameter is NULL or begins with a null character.
+uint: Returns the decoded scalar value, or zero for invalid or empty input.  U+0000 also returns zero, with Length
+set to one.  Invalid non-empty input consumes one byte so callers advancing by Length always make progress.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
-uint32_t UTF8ReadValue(CSTRING String, int *Length)
+uint32_t UTF8ReadValue(std::string_view String, int *Length)
 {
+   if (Length) *Length = 0;
+   if (String.empty()) return 0;
+
+   // Consume one byte on failure so callers can continue through malformed text.
+
+   if (Length) *Length = 1;
+   auto first = uint8_t(String[0]);
+   if (first < 0x80) return first;
+
+   int count;
    uint32_t code;
-   const char *str;
+   uint32_t minimum;
+   if ((first >= 0xc2) and (first <= 0xdf)) {
+      count = 2;
+      code = first & 0x1f;
+      minimum = 0x80;
+   }
+   else if ((first >= 0xe0) and (first <= 0xef)) {
+      count = 3;
+      code = first & 0x0f;
+      minimum = 0x800;
+   }
+   else if ((first >= 0xf0) and (first <= 0xf4)) {
+      count = 4;
+      code = first & 0x07;
+      minimum = 0x10000;
+   }
+   else return 0;
 
-   if (!(str = String)) {
-      if (Length) *Length = 0;
-      return 0;
-   }
-
-   if (*str IS 0) {
-      if (Length) *Length = 0;
-      return 0;
-   }
-   else if ((uint8_t)(*str) < 128) {
-      if (Length) *Length = 1;
-      return *str;
-   }
-   else if ((*str & 0xe0) IS 0xc0) {
-      if ((str[1] & 0xc0) != 0x80) {
-         if (Length) *Length = 0;
-         return 0;
-      }
-      if (Length) *Length = 2;
-      return ((str[0] & 0x1f)<<6) | (str[1] & 0x3f);
-   }
-   else if ((*str & 0xf0) IS 0xe0) {
-      code = *str & 0x0f;
-      for (int16_t i=1; i < 3; i++) {
-         if ((str[i] & 0xc0) != 0x80) {
-            if (Length) *Length = 0;
-            return 0;
-         }
-         code = (code<<6) | (str[i] & 0x3f);
-      }
-      if (Length) *Length = 3;
-   }
-   else if ((*str & 0xf8) IS 0xf0) {
-      code = *str & 0x07;
-      for (int16_t i=1; i < 4; i++) {
-         if ((str[i] & 0xc0) != 0x80) {
-            if (Length) *Length = 0;
-            return 0;
-         }
-         code = (code<<6) | (str[i] & 0x3f);
-      }
-      if (Length) *Length = 4;
-   }
-   else if ((*str & 0xfc) IS 0xf8) {
-      code = *str & 0x03;
-      for (int16_t i=1; i < 5; i++) {
-         if ((str[i] & 0xc0) != 0x80) {
-            if (Length) *Length = 0;
-            return 0;
-         }
-         code = (code<<6) | (str[i] & 0x3f);
-      }
-      if (Length) *Length = 5;
-   }
-   else if ((*str & 0xfc) IS 0xfc) {
-      code = *str & 0x01;
-      for (int16_t i=1; i < 6; i++) {
-         if ((str[i] & 0xc0) != 0x80) {
-            if (Length) *Length = 0;
-            return 0;
-         }
-         code = (code<<6) | (str[i] & 0x3f);
-      }
-      if (Length) *Length = 6;
-   }
-   else {
-      if (Length) *Length = 1;
-      return 0;
+   if (String.size() < size_t(count)) return 0;
+   for (int i = 1; i < count; ++i) {
+      auto byte = uint8_t(String[i]);
+      if ((byte & 0xc0) != 0x80) return 0;
+      code = (code << 6) | (byte & 0x3f);
    }
 
+   if ((code < minimum) or (code > 0x10ffff) or ((code >= 0xd800) and (code <= 0xdfff))) return 0;
+   if (Length) *Length = count;
    return code;
 }
 
@@ -224,25 +196,23 @@ cstr Encoding: The encoding that should be tried for invalid UTF-8 characters.  
 -RESULT-
 cstr: Returns the original string pointer if it is already valid, otherwise a converted string is returned.  The converted string remains valid up until the next call to UTF8ValidEncoding().  A return of NULL is possible if an internal error occurs during the conversion process (e.g. invalid encoding type).
 
+-TAGS-
+api-owns-result, null-terminated-result, nullable-result, blocking
+
 *********************************************************************************************************************/
 #if 0
-CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
+CSTRING UTF8ValidEncoding(std::string_view String, std::string_view Encoding)
 {
-   static int buffersize = 0;
    static uint32_t icvhash = 0;
    static bool init_failed = false;
-   CSTRING str, output, input;
+   CSTRING output, input;
    uint32_t uchar, enchash;
    int len, in, out;
    size_t inleft, outleft;
 
-   if ((!String) or (init_failed)) {
-      if (glIconvBuffer) {
-         // Calling this function with a NULL String is an easy/valid way to free the internal buffer
-         FreeResource(glIconvBuffer);
-         glIconvBuffer = nullptr;
-         buffersize = 0;
-      }
+   if ((String.empty()) or (init_failed)) {
+      // Calling this function with a NULL String is an easy/valid way to free the internal buffer
+      glIconvBuffer.clear();
       return nullptr;
    }
 
@@ -283,7 +253,7 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
 
    // Check if the string is valid UTF-8 and if so, return
 
-   str    = String;
+   auto str = String;
    in     = 0; // Current input index
    out    = 0; // No of bytes written
    while (str[in]) {
@@ -292,9 +262,7 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
       if (!uchar) {
          // An invalid character has been found
 
-         if (!Encoding) {
-            Encoding = "char"; // Convert from the system default
-         }
+         if (Encoding.empty()) Encoding = "char"; // Convert from the system default
 
          // Initialise iconv
 
@@ -312,31 +280,21 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
             icvhash = enchash;
          }
 
-         // Allocate a conversion buffer if we don't already have one
-
-         if (!glIconvBuffer) {
-            buffersize = 4096;
+         if (glIconvBuffer.empty()) {
+            size_t buffersize = 4096;
             if (buffersize < in) buffersize = in + 1024;
-
-            if (AllocMemory(buffersize, MEM::STRING|MEM::NO_CLEAR, (APTR *)&glIconvBuffer, nullptr) != ERR::Okay) {
-               tlContext = context;
-               return nullptr;
-            }
+            glIconvBuffer.resize(buffersize);
          }
 
          // Copy all characters up to the point at which the last invalid character was encountered.
 
-         if (in > 0) copymem(str, glIconvBuffer, in);
+         if (in > 0) copymem(str, glIconvBuffer.data(), in);
 
          while (str[in]) {
             // Check/Expand the buffer size
 
-            if (out+12 > buffersize) {
-               if (ReallocMemory(glIconvBuffer, buffersize + 4096, (APTR *)&glIconvBuffer, nullptr) != ERR::Okay) {
-                  tlContext = context;
-                  return nullptr;
-               }
-               buffersize += 4096;
+            if (out+12 > glIconvBuffer.size()) {
+               glIconvBuffer.resize(glIconvBuffer.size() + 2096);
             }
 
             uchar = UTF8ReadValue(str+in, &len);
@@ -355,7 +313,8 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
                   // Failed to convert character.  Unknown characters are converted to 0xFFFD (the UTF-8 'replacement
                   // character'
 
-                  out += UTF8WriteValue(0xfffd, glIconvBuffer + out, buffersize - out);
+                  out += UTF8WriteValue(0xfffd,
+                     std::span<int8_t>((int8_t *)(glIconvBuffer + out), size_t(buffersize - out)));
                }
 
                in++;
@@ -380,10 +339,10 @@ CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding)
 /*********************************************************************************************************************
 
 -FUNCTION-
-UTF8WriteValue: Writes a 32-bit unicode value into a UTF-8 character buffer.
+UTF8WriteValue: Encodes a Unicode scalar value into a UTF-8 character buffer.
 
-This function is used to write out unicode values in UTF-8 string format.  You need to provide a string buffer, keeping
-in mind that anything from 1 to 6 bytes may be written to the buffer, depending on the size of the unicode value.
+Encodes a Unicode scalar value using one to four UTF-8 bytes.  Negative values, surrogates (U+D800 to U+DFFF),
+and values above U+10FFFF are rejected without modifying the buffer.  U+0000 and Unicode noncharacters are accepted.
 
 If the buffer is not large enough to hold the UTF-8 string then the function will do nothing and return a value of
 zero.  Otherwise, the character will be written and the total number of bytes used will be returned.
@@ -391,79 +350,34 @@ zero.  Otherwise, the character will be written and the total number of bytes us
 This function will not add a null terminator to the end of the UTF-8 string.
 
 -INPUT-
-int Value:  A 32-bit unicode value.
-buf(str) Buffer: Pointer to a string buffer that will hold the UTF-8 characters.
-bufsize Size:   The size of the destination string buffer (does not need to be any larger than 6 bytes).
+int Value: A Unicode scalar value.
+^array(char) Buffer: Character buffer that will receive the UTF-8 value.  Four bytes suffice for any scalar value.
 
 -RESULT-
-int: Returns the total amount of characters written to the string buffer.
+int: Returns the number of bytes written, or zero if Value is invalid or the buffer is too small.
+
+-TAGS-
+mutates-input
 
 -END-
 
 *********************************************************************************************************************/
 
-int UTF8WriteValue(int Value, STRING String, int StringSize)
+int UTF8WriteValue(int Value, std::span<int8_t> Buffer)
 {
-   if ((!String) or (StringSize < 1)) return 0;
+   if ((Value < 0) or (Value > 0x10ffff) or ((Value >= 0xd800) and (Value <= 0xdfff))) return 0;
 
-   if (Value < 128) {
-      if (Value < 0) return 0;
-      *String = (uint8_t)Value;
-      return 1;
-   }
-   else if (Value < 0x800) {
-      if (StringSize < 2) return 0;
-      String[1] = (Value & 0x3f) | 0x80;
-      Value  = Value>>6;
-      String[0] = Value | 0xc0;
-      return 2;
-   }
-   else if (Value < 0x10000) {
-      if (StringSize < 3) return 0;
-      String[2] = (Value & 0x3f)|0x80;
-      Value  = Value>>6;
-      String[1] = (Value & 0x3f)|0x80;
-      Value  = Value>>6;
-      String[0] = Value | 0xe0;
-      return 3;
-   }
-   else if (Value < 0x200000) {
-      if (StringSize < 4) return 0;
-      String[3] = (Value & 0x3f)|0x80;
-      Value  = Value>>6;
-      String[2] = (Value & 0x3f)|0x80;
-      Value  = Value>>6;
-      String[1] = (Value & 0x3f)|0x80;
-      Value  = Value>>6;
-      String[0] = Value | 0xf0;
-      return 4;
-   }
-   else if (Value < 0x4000000) {
-      if (StringSize < 5) return 0;
-      String[4]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[3]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[2]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[1]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[0]  = Value | 0xf8;
-      return 5;
-   }
+   int count = Value < 0x80 ? 1 : Value < 0x800 ? 2 : Value < 0x10000 ? 3 : 4;
+   if (Buffer.size() < size_t(count)) return 0;
+
+   if (count IS 1) Buffer[0] = int8_t(Value);
    else {
-      if (StringSize < 6) return 0;
-      String[5]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[4]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[3]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[2]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[1]  = (Value & 0x3f)|0x80;
-      Value = Value>>6;
-      String[0]  = Value | 0xfc;
-      return 6;
+      for (int i = count - 1; i > 0; --i) {
+         Buffer[i] = int8_t((Value & 0x3f) | 0x80);
+         Value >>= 6;
+      }
+      auto prefix = count IS 2 ? 0xc0 : count IS 3 ? 0xe0 : 0xf0;
+      Buffer[0] = int8_t(Value | prefix);
    }
+   return count;
 }

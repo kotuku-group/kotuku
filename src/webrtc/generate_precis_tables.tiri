@@ -1,0 +1,73 @@
+#!/usr/bin/env origo
+
+-- Generate RFC 5892 context property ranges from matching Unicode 16.0.0 UCD files.
+-- Usage: origo src/webrtc/tools/generate_precis_tables.tiri scripts=Scripts.txt
+--        joining=DerivedJoiningType.txt output=src/webrtc/precis/precis_tables.h --log-warning
+
+function ranges(Path:str!, Values:table!):array<table>
+   entries = array<table>
+   for line in values(io.readAll(Path).split('\n')) do
+      line = line.trim()
+      if line is '' or line.startsWith('#') then continue end
+      line = line.split('#')[0].trim()
+      fields = line.split(';')
+      if #fields != 2 then raise f'Invalid Unicode property line in {Path}: {line}' end
+      value = Values[fields[1].trim()]
+      if not value then continue end
+      points = fields[0].trim().split('..')
+      first = tonumber(points[0], 16)
+      last = tonumber(points[#points - 1], 16)
+      if not first or not last then raise f'Invalid Unicode range in {Path}: {line}' end
+      entries.push({ first=first, last=last, value=value })
+   end
+   entries.sort(function(A:table!, B:table!):bool
+      if A.first != B.first then return A.first < B.first end
+      if A.last != B.last then return A.last < B.last end
+      return A.value < B.value
+   end)
+   merged = array<table>
+   for entry in values(entries) do
+      if #merged > 0 then
+         previous = merged[#merged - 1]
+         if previous.value is entry.value and previous.last + 1 is entry.first then
+            previous.last = entry.last
+            continue
+         end
+      end
+      merged.push(entry)
+   end
+   return merged
+end
+
+function emit(Name:str!, Entries:array<table>!):str
+   result = array<str> { 'constexpr Range ' .. Name .. '[] = {' }
+   for entry in values(Entries) do
+      result.push(string.format('   {0x%06x, 0x%06x, %d},', entry.first, entry.last, entry.value))
+   end
+   result.push('};')
+   return result.concat('\n')
+end
+
+scripts_path = arg('scripts')
+joining_path = arg('joining')
+output_path = arg('output')
+if not scripts_path or not joining_path or not output_path then
+   raise 'Required arguments: scripts=Scripts.txt joining=DerivedJoiningType.txt output=precis_tables.h'
+end
+
+scripts = ranges(scripts_path, { Greek=1, Hebrew=2, Hiragana=3, Katakana=4, Han=5 })
+joining = ranges(joining_path, { L=1, D=2, R=3, T=4 })
+header = [[// Generated from Unicode 16.0.0 Scripts.txt and DerivedJoiningType.txt.
+// Sources: https://www.unicode.org/Public/16.0.0/ucd/Scripts.txt
+// https://www.unicode.org/Public/16.0.0/ucd/extracted/DerivedJoiningType.txt
+// Unicode data terms: https://www.unicode.org/terms_of_use.html
+#pragma once
+
+#include <cstdint>
+
+namespace rtc::precis::ucd {
+struct Range { uint32_t first; uint32_t last; uint8_t value; };
+
+]]
+header ..= emit('scripts', scripts) .. '\n\n' .. emit('joining_types', joining) .. '\n\n}\n'
+io.writeAll(output_path, header)

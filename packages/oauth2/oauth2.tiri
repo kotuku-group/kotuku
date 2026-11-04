@@ -1,0 +1,982 @@
+@Package(name="net/oauth2", version="1.0")
+
+-- OAuth 2.0 and OpenID Connect client for Kōtuku
+--
+-- Usage:
+--   import 'net/oauth2'
+--   client = oauth2.client({ clientID='...', provider='google', presentAuthorization=showSignInLink })
+--   token, message, details = client.authorizeWeb()
+--
+-- This file defines the public oauth2 namespace.  Supporting code is kept in private imports:
+--   transport.tiri   - HTTP requests, response decoding, value checks and safe failure records (oauth_wire)
+--   oidc.tiri        - ID token signature and claim validation, with discovery and JWKS caching (oauth_oidc)
+--   callback.tiri    - Validation of redirect requests received by the loopback listener (oauth_callback)
+--   strict_json.tiri - Bounded, strict JSON decoder for protocol messages (oauth_json)
+--
+-- Refer to README.md for the full configuration reference, support boundaries and security notes.
+
+   include 'network'
+
+   module crypto as mCrypto
+
+   import 'net/url'
+
+   import './transport', './oidc', './callback'
+
+   namespace oauth2 { }
+
+----------------------------------------------------------------------------------------------------------------------
+-- Native bindings.  These are declared in the package entry unit and passed to the private helpers, which do not
+-- load the Crypto module themselves.
+
+-- Wall-clock time in seconds, used for token expiry.
+
+function wallTime():num
+   clock <close> = obj.new('time')
+   check clock.acQuery()
+   return clock.systemTime / 1000000
+end
+
+-- Monotonic time in seconds, used for deadlines and polling intervals.
+
+function monotonicTime():num
+   return mSys.PreciseTime() / 1000000
+end
+
+crypto_api <const> = {
+   RandomBytes = function(Buffer:any):num
+      return mCrypto.RandomBytes(Buffer)
+   end,
+   SHA256 = function(Input:any, Output:any):num
+      return mCrypto.SHA256(Input, Output)
+   end,
+   Base64Encode = function(Input:any, Mode:num, Output:any):<num, num>
+      return mCrypto.Base64Encode(Input, Mode, Output)
+   end,
+   Base64Decode = function(Input:any, Mode:num, Output:any):<num, num>
+      return mCrypto.Base64Decode(Input, Mode, Output)
+   end,
+   ConstantTimeEqual = function(A:any, B:any):<num, num>
+      return mCrypto.ConstantTimeEqual(A, B)
+   end,
+   VerifyJWK = function(Alg:num, N:str, E:str, Input:any, Signature:any):num
+      return mCrypto.VerifyJWK(Alg, N, E, Input, Signature)
+   end
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Provider presets.  These supply endpoints and a default scope for the authorisation code flow only; neither preset
+-- enables the device flow.
+
+providers <const> = {
+   google = {
+      auth_endpoint   = 'https://accounts.google.com/o/oauth2/v2/auth',
+      token_endpoint  = 'https://oauth2.googleapis.com/token',
+      revoke_endpoint = 'https://oauth2.googleapis.com/revoke',
+      default_scope   = 'https://mail.google.com/',
+      auth_params     = { access_type='offline' }
+   },
+   microsoft = {
+      auth_endpoint  = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+      token_endpoint = 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      default_scope  = 'https://outlook.office.com/SMTP.Send'
+   }
+}
+
+-- Authorisation parameters that bind an attempt to this client.  Callers cannot override them through auth_params or
+-- ExtraParams.
+
+reserved <const> = {
+   response_type=true, client_id=true, redirect_uri=true, scope=true, state=true, nonce=true,
+   code_challenge=true, code_challenge_method=true
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns Count random bytes as unpadded base64url text, suitable for state, nonce and PKCE verifier values.
+
+function secureString(Count:num):str
+   bytes = array<byte, Count>
+   check crypto_api.RandomBytes(bytes)
+
+   capacity = math.ceil(Count / 3) * 4
+   encoded = array<byte, capacity>
+   _, size = check crypto_api.Base64Encode(bytes, CC_URL, encoded)
+   return encoded.getString(0, size)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Returns the S256 PKCE challenge for a verifier: the base64url-encoded SHA-256 digest (RFC 7636 section 4.2).
+
+function pkceChallenge(Verifier:str):str
+   digest = array<byte, 32>
+   check crypto_api.SHA256(Verifier, digest)
+
+   encoded = array<byte, 43>
+   _, count = check crypto_api.Base64Encode(digest, CC_URL, encoded)
+   if count != 43 then raise 'PKCE encoding failed' end
+
+   return encoded.getString()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Parses a space-separated scope string into a set.  The character grammar follows RFC 6749 section 3.3; empty
+-- entries, leading and trailing spaces are rejected.
+
+function scopeSet(Scope:str):table
+   result = {}
+   if Scope then
+      if #Scope > 4096 or not r'^[\x21\x23-\x5b\x5d-\x7e]+(?: [\x21\x23-\x5b\x5d-\x7e]+)*$'.test(Scope) then
+         raise 'Invalid OAuth scope'
+      end
+
+      for item in values(Scope.split(' ')) do result[item] = true end
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Converts a failure record into the standard failure results: nil, a safe message and the record itself.
+
+function returnedFailure(Failure:table):<table, str, table>
+   return nil, Failure.message, Failure
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+Creates an OAuth 2.0 client for a registered application.
+
+The Config table is validated and copied when the client is created; invalid configuration raises an exception.
+Endpoints are taken from `custom_endpoints` when it is supplied, otherwise from the `google` or `microsoft` preset
+named by `provider`.  Setting `clientSecret` enables `client_secret_post` authentication, and it should be omitted for
+public and native clients.  Requesting the `openid` scope requires an `oidc` table that names a trusted issuer.
+
+The redirect URI defaults to `http://127.0.0.1:0/callback`, for which authorizeWeb() binds an ephemeral port.  The
+`open_browser`, `presentAuthorization` and `presentDevice` callbacks are copied to the returned client and may be
+replaced there.  Changing any other field of the client has no effect on its behaviour.
+
+A client permits one pending attempt or operation at a time.  Operations are synchronous: they process messages on
+the calling thread until complete, and callbacks are invoked on that thread.  Unless stated otherwise, an operation
+returns a token record on success, or `nil`, a safe message and a diagnostic table on failure.  The client never
+prints or stores credentials or URLs.
+
+Refer to the package's README.md for the complete list of configuration options and their permitted ranges.
+
+-INPUT-
+Config: Client configuration.  `clientID` is required, along with either `provider` or `custom_endpoints`.
+
+-RESULTS-
+table: The new client.
+]])
+oauth2.client = function(Config:table!):table
+   if Config.client_id != nil or Config.client_secret != nil or Config.redirect_uri != nil then
+      raise 'Use clientID, clientSecret and redirectURI; snake-case options are unsupported'
+   end
+
+   if not oauth_wire.text(Config.clientID, 256) then raise 'OAuth clientID is required' end
+   if Config.clientSecret != nil and not oauth_wire.text(Config.clientSecret) then raise 'Invalid clientSecret' end
+
+   -- Snapshot policy options; only presentation hooks on the returned client remain mutable.
+
+   local policy = {}
+   for key, value in pairs(Config) do policy[key] = value end
+
+   if Config.requiredScopes then
+      if not (Config.requiredScopes is <array>) then raise 'requiredScopes must be a string array' end
+      policy.requiredScopes = array<str>
+      for item in values(Config.requiredScopes) do policy.requiredScopes.push(item) end
+   end
+
+   Config = policy
+
+   -- Resolve endpoints from a custom configuration or a provider preset.  Both are copied so that later changes to
+   -- the source tables cannot redirect requests.
+
+   source = Config.custom_endpoints or providers[Config.provider]
+   if not source then raise 'Unsupported OAuth provider' end
+
+   endpoints = {}
+   for key, value in pairs(source) do endpoints[key] = value end
+
+   auth_params = {}
+   for key, value in pairs(source.auth_params or {}) do auth_params[key] = value end
+
+   token_params = {}
+   for key, value in pairs(Config.tokenParams or {}) do
+      if not (key is <str>) or not r'^[A-Za-z][A-Za-z0-9._~\-]{0,127}$'.test(key) or
+         not oauth_wire.text(value, 4096) or r'[\x00-\x1f\x7f]'.test(value) or
+         key is 'grant_type' or key is 'client_id' or
+         key is 'client_secret' or key is 'code' or key is 'code_verifier' or key is 'redirect_uri' or
+         key is 'refresh_token' then
+         raise 'Invalid or reserved token parameter'
+      end
+      token_params[key] = value
+   end
+
+   -- Transport options shared by every request that this client makes.
+
+   options = {
+      timeout          = Config.timeout or 30,
+      testLoopback     = Config.testLoopback is true,
+      maxResponseBytes = Config.maxResponseBytes or 262144,
+      transport        = Config.transport,
+      elapsed          = monotonicTime,
+      now              = wallTime,
+      crypto           = crypto_api
+   }
+
+   timeout = Config.authorizationTimeout or 300
+
+   if not oauth_wire.number(options.timeout, 0.05, 120) or
+      not oauth_wire.number(timeout, 0.05, 1800) or
+      not oauth_wire.number(options.maxResponseBytes, 1024, 1048576) then
+      raise 'Invalid OAuth limits'
+   end
+
+   -- The authorisation and token endpoints are mandatory; the remainder are validated only if configured.
+
+   for name in values(array<str> { 'auth_endpoint', 'token_endpoint', 'device_endpoint', 'revoke_endpoint' }) do
+      endpoint = endpoints[name]
+      if (name is 'auth_endpoint' or name is 'token_endpoint' or endpoint != nil) and
+         not oauth_wire.endpoint(endpoint, options.testLoopback) then
+         raise 'Invalid OAuth endpoint'
+      end
+   end
+
+   if endpoints.auth_endpoint.find('?') != nil then raise 'Put authorisation parameters in auth_params' end
+
+   -- Scopes.  Every required scope must also be requested, because granted scopes are later checked against both.
+
+   client_id = Config.clientID
+   client_secret = Config.clientSecret
+   scope = Config.scope or endpoints.default_scope
+   requested_scopes = scopeSet(scope)
+
+   for item in values(Config.requiredScopes or array<str>) do
+      if not requested_scopes[item] then raise 'Required scope must be requested' end
+   end
+
+   -- Loopback redirect (RFC 8252 section 7.3).  Port zero is replaced with a bound ephemeral port by authorizeWeb().
+
+   redirect_template = Config.redirectURI or 'http://127.0.0.1:0/callback'
+   if not r'^http://127\.0\.0\.1:[0-9]+/[A-Za-z0-9\/_\-]*$'.test(redirect_template) then
+      raise 'Redirect must be an explicit IPv4 loopback HTTP URI without query or fragment'
+   end
+
+   redirect = url.parse(redirect_template)
+   if not oauth_wire.number(redirect.port, 0, 65535) then raise 'Invalid callback port' end
+
+   -- An OIDC validator is created only for explicitly configured, trusted issuers.
+
+   validator:table = nil
+   oidc_config:table = nil
+   if Config.oidc then
+      oidc_config = {}
+      for key, value in pairs(Config.oidc) do oidc_config[key] = value end
+      validator = oauth_oidc.validator(oidc_config, options)
+   end
+
+   if requested_scopes.openid and not validator then raise 'openid requires trusted OIDC configuration' end
+
+   -- Per-client state.  `attempt` holds the secrets of the pending authorisation code attempt, and `control` is
+   -- non-nil while an operation is active.  Setting control.cancelled requests cancellation; control.deadline, when
+   -- set, bounds every request made by the operation.
+
+   attempt:table = nil
+   control:table = nil
+
+   self = entity {
+      clientID             = client_id,
+      scope                = scope,
+      redirectURI          = redirect_template,
+      open_browser         = Config.open_browser,
+      presentAuthorization = Config.presentAuthorization,
+      presentDevice        = Config.presentDevice
+   }
+
+   -- Private helpers
+
+   function failure(Code:str):<table, str, table>
+      return returnedFailure(oauth_wire.failure(Code))
+   end
+
+   function clearAttempt()
+      attempt = nil
+      self.state = nil
+      self.pkce = nil
+   end
+
+   -- Sends a form request and decodes a JSON response.  Returns the data, or nil and a failure record.
+
+   function request(Method:str, Endpoint:str, Form:table):<table, table>
+      response, err = oauth_wire.request(Method, Endpoint, Form, options, control)
+      if not response then return nil, err end
+      return oauth_wire.decode(response)
+   end
+
+   -- Adds client authentication to a token endpoint form.
+
+   function credentials(Form:table, ClientID:str):table
+      Form.client_id = ClientID or client_id
+      if client_secret then Form.client_secret = client_secret end
+      return Form
+   end
+
+   -- Validates a token response and converts it to a token record.  Expected holds the values that an ID token must
+   -- be bound to, and Previous is the record being refreshed, if any.  Raises if the response is unacceptable.
+
+   function normalise(Data:table, Expected:table, Previous:table):table
+      if not oauth_wire.text(Data.access_token, 65536) or r'[^\x21-\x7e]'.test(Data.access_token) or
+         not (Data.token_type is <str>) or Data.token_type.lower() != 'bearer' then
+         raise 'Invalid token response'
+      end
+
+      if Data.refresh_token != nil and not oauth_wire.text(Data.refresh_token, 65536) then
+         raise 'Invalid refresh token'
+      end
+
+      -- Expiry is left unknown if the provider does not state a lifetime.
+
+      local expires_at:num
+      local earliest_refresh_at:num
+      local now = wallTime()
+
+      if Data.expires_in != nil then
+         if not oauth_wire.number(Data.expires_in, 0, 315360000) then raise 'Invalid token lifetime' end
+         expires_at = now + Data.expires_in
+      end
+
+      if Data.earliest_refresh_at != nil then
+         if not oauth_wire.number(Data.earliest_refresh_at, 0, 9007199254740991) then
+            raise 'Invalid earliest refresh time'
+         end
+         earliest_refresh_at = Data.earliest_refresh_at
+      end
+
+      -- Granted scopes must be a subset of those requested and include every required scope.  An omitted scope means
+      -- that the previous (or requested) scope was granted unchanged.
+
+      if Data.scope != nil and not oauth_wire.text(Data.scope, 4096) then raise 'Invalid granted scope' end
+      granted = Data.scope or (Previous and Previous.scope) or scope
+      granted_set = scopeSet(granted)
+
+      for item in pairs(granted_set) do
+         if not requested_scopes[item] then raise 'Unexpected granted scope' end
+      end
+
+      for item in values(Config.requiredScopes or array<str>) do
+         if not granted_set[item] then raise 'Required scope was not granted' end
+      end
+
+      -- Identity.  A returned ID token is always verified; a refresh without one keeps the previous identity.
+
+      local identity:table
+      if Data.id_token != nil then
+         if not validator or not oauth_wire.text(Data.id_token, 65536) then raise 'Unverifiable ID token' end
+         Expected.accessToken = Data.access_token
+         identity = validator.verify(Data.id_token, Expected, control)
+      elseif requested_scopes.openid and not Previous then
+         raise 'Missing ID token'
+      elseif Previous and validator then
+         identity = Previous.identity
+      end
+
+      if requested_scopes.openid and not granted_set.openid then raise 'Missing openid grant' end
+      if control and control.cancelled then raise 'Cancelled' end
+
+      -- Whitelist output fields: provider-controlled identity/expiry fields cannot masquerade as validated data.
+
+      refresh_at = expires_at and math.max(now, expires_at - math.min(60, Data.expires_in / 10))
+      if earliest_refresh_at != nil then refresh_at = math.max(refresh_at or now, earliest_refresh_at) end
+
+      return {
+         access_token   = Data.access_token,
+         token_type     = 'Bearer',
+         refresh_token  = Data.refresh_token or (Previous and Previous.refresh_token),
+         expires_in     = Data.expires_in,
+         expires_at     = expires_at,
+         refresh_at     = refresh_at,
+         earliest_refresh_at = earliest_refresh_at,
+         scope          = granted,
+         id_token       = Data.id_token or (Previous and Previous.id_token),
+         identity       = identity,
+         clientID       = Expected.clientID,
+         validated_oidc = identity != nil,
+         nonce          = Expected.nonce or (Previous and Previous.nonce)
+      }
+   end
+
+   -- Posts a grant to the token endpoint and returns a token record, or the standard failure results.
+
+   function tokenRequest(Form:table, Expected:table, Previous:table):<table, str, table>
+      for key, value in pairs(token_params) do Form[key] = value end
+      data, err = request('POST', endpoints.token_endpoint, Form)
+      if not data then return returnedFailure(err) end
+
+      try
+         return normalise(data, Expected, Previous)
+      except e
+         return failure(control and control.cancelled and 'cancelled' or 'invalid_token')
+      end
+   end
+
+   @Doc(text=[[
+Cancels the pending authorisation attempt or the active operation.
+
+Pending attempt data, including the client's `state` and `pkce` fields, is cleared immediately.  An active operation
+detects the cancellation during message processing and fails with the `cancelled` code.  Cancellation cannot
+interrupt a callback or custom transport that blocks without returning.
+
+This method may be called at any time, including from a callback, and has no effect if nothing is pending.
+]])
+   self.cancel = function()
+      if control then
+         control.cancelled = true
+         control?.wake()
+      end
+      clearAttempt()
+   end
+
+   @Doc(text=[[
+Creates a pending authorisation code attempt and returns its authorisation URL.
+
+Use this method when the application receives the redirect callback itself, then pass the returned code to
+exchangeCodeForTokens().  Each attempt generates a new `state` value, S256 PKCE verifier and, for OIDC clients, a
+nonce.  The client's `state` and `pkce` fields expose these values until the attempt is consumed or cancelled.  The
+attempt expires after `authorizationTimeout` seconds.
+
+The redirect URI must specify a non-zero port; use authorizeWeb() if an ephemeral port is required.  An exception is
+raised if an attempt or operation is already pending, so call cancel() before replacing an attempt.
+
+-INPUT-
+ExtraParams: Optional table of extra string parameters.  These cannot replace `state`, `scope` or other protocol fields.
+
+-RESULTS-
+str: The authorisation URL.  It contains the attempt's state and must not be logged.
+]])
+   self.buildAuthUrl = function(ExtraParams:table):str
+      if attempt or control then raise 'OAuth operation already pending' end
+
+      parts = url.parse(redirect_template)
+      if parts.port is 0 then raise 'Use authorizeWeb() to bind an ephemeral callback port' end
+
+      -- Merge the provider's parameters with the caller's, then add the protocol fields.
+
+      params = {}
+      for key, value in pairs(auth_params) do params[key] = value end
+      for key, value in pairs(ExtraParams or {}) do params[key] = value end
+
+      for key, value in pairs(params) do
+         if reserved[key] or not (value is <str>) then raise 'Invalid or reserved authorisation parameter' end
+      end
+
+      verifier = secureString(96)
+      attempt = {
+         clientID      = client_id,
+         redirectURI   = redirect_template,
+         state         = secureString(24),
+         verifier      = verifier,
+         nonce         = validator and secureString(24) or nil,
+         issuer        = oidc_config and oidc_config.issuer,
+         requireIssuer = oidc_config and oidc_config.requireCallbackIssuer,
+         deadline      = monotonicTime() + timeout
+      }
+
+      params.response_type         = 'code'
+      params.client_id             = attempt.clientID
+      params.redirect_uri          = attempt.redirectURI
+      params.scope                 = scope
+      params.state                 = attempt.state
+      params.nonce                 = attempt.nonce
+      params.code_challenge        = pkceChallenge(verifier)
+      params.code_challenge_method = 'S256'
+
+      self.state = attempt.state
+      self.pkce = { code_verifier=verifier, code_challenge=params.code_challenge, code_challenge_method='S256' }
+
+      return endpoints.auth_endpoint .. (endpoints.auth_endpoint.find('?') != nil ? '&' : '?') .. url.buildQuery(params)
+   end
+
+   @Doc(text=[[
+Exchanges an authorisation code for tokens, completing an attempt created by buildAuthUrl().
+
+The pending attempt is consumed before the token request is made, so a failed exchange cannot be retried.  If no
+attempt is pending or the attempt has expired, the exchange fails with the `no_attempt` code.
+
+This method does not see the redirect request.  Before calling it, the application must confirm that the request
+used the expected path and Host, that its `state` matches the client's `state` field, and that no parameter was
+duplicated.
+
+-INPUT-
+Code: The `code` parameter from the redirect request.
+IssuedClientID: Optional client ID issued during consent.  Requires the `allowIssuedClientID` option.
+
+-RESULTS-
+table: The token record, or `nil` on failure.
+str: Failure message that is safe to display.
+table: Failure details, including the failure code in the `code` field.
+]])
+   self.exchangeCodeForTokens = function(Code:str, IssuedClientID:str):<table, str, table>
+      if control then return failure('busy') end
+
+      if not attempt or monotonicTime() >= attempt.deadline then
+         clearAttempt()
+         return failure('no_attempt')
+      end
+
+      current = attempt
+      clearAttempt()
+
+      if not oauth_wire.text(Code, 4096) then return failure('invalid_code') end
+
+      if IssuedClientID != nil then
+         if Config.allowIssuedClientID != true or not oauth_wire.text(IssuedClientID, 256) then
+            return failure('invalid_client')
+         end
+         current.clientID = IssuedClientID
+      end
+
+      control = { deadline=current.deadline }
+
+      exchange_token, exchange_message, exchange_details = tokenRequest(credentials({
+            grant_type    = 'authorization_code',
+            code          = Code,
+            redirect_uri  = current.redirectURI,
+            code_verifier = current.verifier
+         }, current.clientID),
+         { clientID=current.clientID, nonce=current.nonce })
+
+      control = nil
+      return exchange_token, exchange_message, exchange_details
+   end
+
+   -- Body of authorizeWeb().  Any listener that remains open when this function returns or raises is freed by the
+   -- caller through web_server.
+
+   local web_server:obj
+
+   function runWeb(ExtraParams:table):<table, str, table>
+      if control or attempt then return failure('busy') end
+
+      present = self.open_browser or self.presentAuthorization
+      if not present then return failure('presentation_required') end
+
+      control = { deadline=monotonicTime() + timeout }
+      saved_template = redirect_template
+      result:table = nil
+
+      local server:obj
+      sockets = {}
+
+      control.wake = function()
+         server.acSignal()
+      end
+
+      try
+         -- The listener accepts one client at a time.  Each connection has five seconds to send a complete request
+         -- of no more than 8KB, and is closed once a response has been written.
+
+         server = obj.new('netserver', {
+            address     = '127.0.0.1',
+            port        = url.parse(saved_template).port,
+            flags       = NSF_MULTI_CONNECT,
+            clientLimit = 1,
+            socketLimit = 4,
+
+            feedback = function(Server, Client, State)
+               if State is NTC_CONNECTED then
+                  sockets[Client.id] = { socket=Client, deadline=monotonicTime() + 5, buffer='' }
+               elseif State is NTC_DISCONNECTED then
+                  sockets[Client.id] = nil
+               end
+
+               if not result then server.acSignal() end
+            end,
+
+            incoming = function(Server, Client)
+               state = sockets[Client.id]
+               if not state or result or not attempt then return ERR_Terminate end
+
+               buffer = string.alloc(2048)
+               err, count = Client.acRead(buffer)
+               if err != ERR_Okay then return ERR_Terminate end
+               if #state.buffer + count > 8192 then return ERR_Terminate end
+
+               -- Wait for the end of the request headers before parsing.
+
+               state.buffer ..= buffer.sub(0, count)
+               if state.buffer.find('\r\n\r\n') is nil then return end
+
+               -- Invalid requests are answered with a 400 status and do not consume the attempt.
+
+               parsed:table = nil
+               try
+                  parsed = oauth_callback.parse(state.buffer, attempt, crypto_api)
+               end
+
+               accepted = parsed != nil
+               body = accepted ? '<html><body>You may close this window.</body></html>' : 'Invalid callback'
+               response = (accepted ? 'HTTP/1.1 200 OK' : 'HTTP/1.1 400 Bad Request') ..
+                  '\r\nContent-Type: text/html\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\n' ..
+                  "Content-Security-Policy: default-src 'none'\r\nConnection: close\r\nContent-Length: " ..
+                  #body .. '\r\n\r\n' .. body
+               Client.acWrite(response)
+
+               if accepted then
+                  result = parsed
+                  --processing.delayedCall(function() server.acSignal() end)
+                  server.acSignal()
+               end
+
+               return ERR_Terminate
+            end
+         })
+
+         web_server = server
+         proc = processing.new({ signals=array<obj> { server } })
+
+         -- Build the URL against the bound port.  buildAuthUrl() refuses to run while an operation is active, so
+         -- control is suspended for the call.
+
+         redirect_template = 'http://127.0.0.1:' .. server.port .. url.parse(saved_template).path
+         saved_control = control
+         control = nil
+         auth_url = self.buildAuthUrl(ExtraParams)
+         control = saved_control
+
+         if present(auth_url) is false then return failure('browser_failed') end
+
+         -- Socket changes and cancellation use a private signal.  Accepted callbacks wake on the next processing
+         -- cycle so the loopback response can be dispatched before the listener is released.
+
+         while true do
+            if result or control.cancelled or monotonicTime() >= control.deadline then break end
+
+            wake_at = control.deadline
+            for id, entry in pairs(sockets) do
+               if monotonicTime() >= entry.deadline then server.mtDisconnectSocket(entry.socket)
+               else wake_at = math.min(wake_at, entry.deadline) end
+            end
+
+            if proc.sleep(math.max(0, wake_at - monotonicTime())) is ERR_Terminate then
+               control.cancelled = true
+            end
+         end
+
+         if control.cancelled then return failure('cancelled') end
+         if not result then return failure('timeout') end
+         if result.denied then return failure('access_denied') end
+
+         -- Release the listener before the code is exchanged.
+
+         server.free()
+         server = nil
+         web_server = nil
+         control = nil
+
+         issued_id:str = nil
+         if Config.resolveClientID then
+            if Config.allowIssuedClientID != true then return failure('invalid_client') end
+            issued_id = Config.resolveClientID(result)
+            if not oauth_wire.text(issued_id, 256) then return failure('invalid_client') end
+         end
+
+         web_token, web_message, web_details = self.exchangeCodeForTokens(result.code, issued_id)
+         return web_token, web_message, web_details
+      except e
+         return failure('web_flow_failed')
+      end
+   end
+
+   @Doc(text=[[
+Performs the authorisation code flow using a temporary loopback listener.
+
+A listener is bound to `127.0.0.1` on the redirect URI's port, or an ephemeral port if that is zero.  The
+authorisation URL is then passed to the `open_browser` callback, or `presentAuthorization` if that is not set.  The
+callback may return `false` to report that it could not present the URL.
+
+The first redirect request with a valid path, Host and `state` completes the attempt, and its code is exchanged for
+tokens.  Invalid requests are rejected without affecting the attempt.  The listener is closed before this method
+returns.  The entire flow is limited to `authorizationTimeout` seconds.
+
+Failure codes include `presentation_required`, `browser_failed`, `access_denied`, `cancelled` and `timeout`.
+
+-INPUT-
+ExtraParams: Optional table of extra string parameters, as for buildAuthUrl().
+
+-RESULTS-
+table: The token record, or `nil` on failure.
+str: Failure message that is safe to display.
+table: Failure details, including the failure code in the `code` field.
+]])
+   self.authorizeWeb = function(ExtraParams:table):<table, str, table>
+      if control or attempt then return failure('busy') end
+
+      original_redirect = redirect_template
+      web_token:table
+      web_message:str
+      web_details:table
+
+      try
+         web_token, web_message, web_details = runWeb(ExtraParams)
+      except e
+         web_token, web_message, web_details = failure('web_flow_failed')
+      end
+
+      -- Restore the client to an idle state regardless of how runWeb() exited.
+
+      if web_server then
+         web_server.free()
+         web_server = nil
+      end
+
+      redirect_template = original_redirect
+      control = nil
+      clearAttempt()
+      return web_token, web_message, web_details
+   end
+
+   @Doc(text=[[
+Obtains new tokens using a refresh token.
+
+Pass the token record previously returned by this client.  Clients without OIDC may pass the refresh token string
+instead.  OIDC clients require the previous validated record, because a new ID token must match its issuer, subject,
+client ID and nonce.  If the provider does not issue a replacement refresh token, the previous one is carried over
+to the new record.
+
+The client does not store tokens.  The caller must save the new record, which may hold a new refresh token that
+replaces the previous one.
+
+-INPUT-
+Previous: A token record from this client, or a refresh token string.
+
+-RESULTS-
+table: The new token record, or `nil` on failure.
+str: Failure message that is safe to display.
+table: Failure details, including the failure code in the `code` field.
+]])
+   self.refreshToken = function(Previous:any):<table, str, table>
+      if control or attempt then return failure('busy') end
+
+      prior:table = nil
+      token:str = nil
+      if Previous is <str> then
+         token = Previous
+      elseif Previous is <table> then
+         prior = Previous
+         token = Previous.refresh_token
+      end
+
+      if not oauth_wire.text(token, 65536) then return failure('invalid_refresh_token') end
+
+      -- OIDC refreshes must be bound to a previously validated identity from this issuer.
+
+      if validator and (not prior or prior.validated_oidc != true or not (prior.identity is <table>) or
+         prior.identity.issuer != oidc_config.issuer or
+         prior.identity.clientID != prior.clientID or not oauth_wire.text(prior.identity.subject, 255)) then
+         return failure('identity_required')
+      end
+
+      refresh_client = prior and prior.clientID or client_id
+      if not oauth_wire.text(refresh_client, 256) or
+         (refresh_client != client_id and Config.allowIssuedClientID != true) then
+         return failure('invalid_client')
+      end
+
+      control = {}
+
+      result, message, details = tokenRequest(
+         credentials({ grant_type='refresh_token', refresh_token=token }, refresh_client), {
+            clientID = refresh_client,
+            subject  = prior and prior.identity and prior.identity.subject,
+            nonce    = prior and prior.nonce,
+            authTime = prior and prior.identity and prior.identity.claims and prior.identity.claims.auth_time,
+            refresh  = true
+         },
+         prior)
+
+      control = nil
+      if result then result.refresh_token ?= token end
+      return result, message, details
+   end
+
+   @Doc(text=[[
+Revokes a token at the configured `revoke_endpoint`, as defined by RFC 7009.
+
+The token record held by the caller is not modified.  The request fails with the `unsupported` code if no
+revocation endpoint is configured.
+
+-INPUT-
+Token: The access token or refresh token to revoke.
+Hint: Optional token type hint, either `access_token` or `refresh_token`.
+
+-RESULTS-
+bool: `true` if the token was revoked, or `nil` on failure.
+str: Failure message that is safe to display.
+table: Failure details, including the failure code in the `code` field.
+]])
+   self.revokeToken = function(Token:str, Hint:str):<bool, str, table>
+      if control or attempt then return nil, 'OAuth operation pending', oauth_wire.failure('busy') end
+
+      if not endpoints.revoke_endpoint then
+         return nil, 'Revocation unsupported', oauth_wire.failure('unsupported')
+      end
+
+      if not oauth_wire.text(Token, 65536) or (Hint != nil and Hint != 'access_token' and Hint != 'refresh_token') then
+         return nil, 'Invalid revocation parameters', oauth_wire.failure('invalid_request')
+      end
+
+      control = {}
+      response, err = oauth_wire.request('POST', endpoints.revoke_endpoint,
+         credentials({ token=Token, token_type_hint=Hint }), options, control)
+      control = nil
+
+      if not response then return nil, err.message, err end
+
+      -- Any 200 response is success; RFC 7009 permits an empty body.
+
+      if response.status != 200 then
+         _, err = oauth_wire.decode(response)
+         return nil, err.message, err
+      end
+
+      return true
+   end
+
+   @Doc(text=[[
+Checks whether a token record holds an access token that has not expired.
+
+This check is local only.  It does not contact the provider or verify the token's signature or identity, so a token
+that passes may still be rejected by the provider.  A record without an expiry time is treated as unexpired.
+
+-INPUT-
+Token: A token record from this client.
+
+-RESULTS-
+bool: `true` if the access token is present and has not expired.
+str: A short description of the result.
+]])
+   self.validateToken = function(Token:table):<bool, str>
+      if not Token or not oauth_wire.text(Token.access_token, 65536) then return false, 'Missing access token' end
+
+      if Token.expires_at != nil and (not oauth_wire.number(Token.expires_at, 0, 9007199254740991) or
+         Token.expires_at <= wallTime()) then
+         return false, 'Expired or invalid expiry'
+      end
+
+      return true, 'Locally usable token'
+   end
+
+   -- Body of authorizeDevice(), implementing RFC 8628.
+
+   function runDevice():<table, str, table>
+      if control or attempt then return failure('busy') end
+
+      if not endpoints.supports_device_flow or not endpoints.device_endpoint or validator then
+         return failure('unsupported_device_flow')
+      end
+
+      if not self.presentDevice then return failure('presentation_required') end
+
+      -- Request a device code (RFC 8628 section 3.1).
+
+      control = { deadline=monotonicTime() + timeout }
+      data, err = request('POST', endpoints.device_endpoint, credentials({ scope=scope }))
+      if not data then return returnedFailure(err) end
+
+      interval = data.interval
+      interval ?= 5
+
+      if not oauth_wire.text(data.device_code, 8192) or not oauth_wire.text(data.user_code, 256) or
+         not oauth_wire.endpoint(data.verification_uri, options.testLoopback) or
+         not oauth_wire.number(data.expires_in, 1, 1800) or not oauth_wire.number(interval, 1, 300) then
+         return failure('invalid_device_response')
+      end
+
+      control.deadline = math.min(control.deadline, monotonicTime() + data.expires_in)
+
+      -- Present the user-facing fields only.  The device code is a credential and is never passed to the callback.
+
+      try
+         if self.presentDevice({ user_code=data.user_code, verification_uri=data.verification_uri,
+            expires_in=data.expires_in }) is false then
+            return failure('cancelled')
+         end
+      except e
+         return failure('presentation_failed')
+      end
+
+      -- Poll the token endpoint (RFC 8628 section 3.4) until the user responds, the code expires or the operation is
+      -- cancelled.
+
+      while not control.cancelled do
+         next_poll = monotonicTime() + interval
+         while monotonicTime() < math.min(next_poll, control.deadline) and not control.cancelled do
+            processing.sleep(0.01)
+         end
+
+         if control.cancelled then return failure('cancelled') end
+         if monotonicTime() >= control.deadline then return failure('timeout') end
+
+         tokens, poll_error = request('POST', endpoints.token_endpoint,
+            credentials({ grant_type='urn:ietf:params:oauth:grant-type:device_code', device_code=data.device_code }))
+
+         if tokens then
+            try
+               return normalise(tokens, { clientID=client_id }, nil)
+            except e
+               return failure('invalid_token')
+            end
+         end
+
+         -- Slow down on request (RFC 8628 section 3.5) and back off on transport failures.  Any other error ends
+         -- the flow.
+
+         if poll_error.code is 'slow_down' then
+            interval = math.min(1800, interval + 5)
+         elseif poll_error.code is 'timeout' or poll_error.code is 'transport' then
+            interval = math.min(1800, interval * 2)
+         elseif poll_error.code != 'authorization_pending' then
+            return returnedFailure(poll_error)
+         end
+      end
+
+      return failure('cancelled')
+   end
+
+   @Doc(text=[[
+Performs the device authorisation flow defined by RFC 8628.
+
+The device flow is intended for devices that cannot display a browser.  It is available only if the client's
+`custom_endpoints` include a `device_endpoint` and set `supports_device_flow=true`.  It also requires a
+`presentDevice` callback.  The provider presets do not enable it, and it is not supported for OIDC clients.
+
+The `presentDevice` callback receives a table containing the `user_code`, `verification_uri` and `expires_in` values
+to show to the user.  It may return `false` to cancel the flow.  The token endpoint is then polled at the interval
+requested by the provider until the user completes authorisation, the device code expires or the operation is
+cancelled.
+
+-RESULTS-
+table: The token record, or `nil` on failure.
+str: Failure message that is safe to display.
+table: Failure details, including the failure code in the `code` field.
+]])
+   self.authorizeDevice = function():<table, str, table>
+      if control or attempt then return failure('busy') end
+
+      device_token:table = nil
+      device_message:str = nil
+      device_details:table = nil
+
+      try
+         device_token, device_message, device_details = runDevice()
+      except e
+         device_token, device_message, device_details = failure('device_flow_failed')
+      end
+
+      control = nil
+      return device_token, device_message, device_details
+   end
+
+   return self
+end

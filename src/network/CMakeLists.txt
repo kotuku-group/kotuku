@@ -13,11 +13,25 @@ set (INC_MOD_NETWORK TRUE PARENT_SCOPE)
 
 idl_gen ("${MOD}.tdl" NAME "${MOD}_defs" OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
    APPEND_IDL "module_def.c"
-   ARGS "output-defs=module_def.c" "output-proto=module_def.c")
+   ARGS "output-defs=module_def.c" "output-proto=module_def.c"
+   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/network.cpp")
+
+# Internal reusable mDNS support; no public Network ABI is added in Phase 3.
+add_library (network_mdns STATIC mdns/mdns.cpp mdns/mdns_socket.cpp)
+set_target_properties (network_mdns PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
+   POSITION_INDEPENDENT_CODE ON)
+if (WIN32)
+   target_link_libraries (network_mdns PUBLIC ws2_32 iphlpapi)
+   target_compile_definitions (network_mdns PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0601)
+endif ()
 
 add_library (${MOD})
 
 set_module_defaults (${MOD} "Net")
+
+if (MSVC)
+   target_compile_options (${MOD} PRIVATE /MP)
+endif ()
 
 target_sources (${MOD} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/network.cpp")
 
@@ -36,11 +50,52 @@ if (DISABLE_SSL)
 elseif (WIN32)
    message (STATUS "Using Windows native SSL support.")
    target_sources (${MOD} PRIVATE "win32/ssl_wrapper.cpp")
-   list (APPEND NETWORK_LIBS secur32 crypt32)
+   list (APPEND NETWORK_LIBS secur32 crypt32 bcrypt ncrypt)
 elseif (OPENSSL_FOUND)
    message (STATUS "Network module will be compiled with OpenSSL support.")
-   # Linking against the .a files is necessary to ensure a static link.
-   list (APPEND NETWORK_LIBS ssl.a crypto.a)
+   if (OPENSSL_CRYPTO_LIBRARY MATCHES "\\${CMAKE_STATIC_LIBRARY_SUFFIX}$")
+      find_library (OPENSSL_ZSTD_LIBRARY NAMES zstd)
+      if (NOT OPENSSL_ZSTD_LIBRARY)
+         get_filename_component (OPENSSL_CRYPTO_LIBRARY_DIR "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
+
+         find_file (OPENSSL_ZSTD_RUNTIME_LIBRARY
+            NAMES libzstd.so.1 libzstd.dylib
+            PATHS
+               "${OPENSSL_CRYPTO_LIBRARY_DIR}"
+               "/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+               "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+               "/lib"
+               "/usr/lib"
+            PATH_SUFFIXES lib lib64)
+         if (OPENSSL_ZSTD_RUNTIME_LIBRARY)
+            set (OPENSSL_ZSTD_LIBRARY "${OPENSSL_ZSTD_RUNTIME_LIBRARY}")
+         endif ()
+      endif ()
+
+      # Preserve FindOpenSSL's static dependencies while replacing -lzstd with the versioned runtime library
+      # when the development symlink is unavailable. Use the project's zlib target as before.
+      list (APPEND NETWORK_LIBS "${OPENSSL_SSL_LIBRARY}" "${OPENSSL_CRYPTO_LIBRARY}" zlib)
+      foreach (OPENSSL_TARGET OpenSSL::SSL OpenSSL::Crypto)
+         get_target_property (OPENSSL_DEPENDENCIES ${OPENSSL_TARGET} INTERFACE_LINK_LIBRARIES)
+         if (OPENSSL_DEPENDENCIES)
+            foreach (OPENSSL_DEPENDENCY IN LISTS OPENSSL_DEPENDENCIES)
+               if (OPENSSL_DEPENDENCY STREQUAL "OpenSSL::Crypto" OR OPENSSL_DEPENDENCY STREQUAL "ZLIB::ZLIB")
+                  continue ()
+               elseif (OPENSSL_DEPENDENCY STREQUAL "zstd" AND OPENSSL_ZSTD_LIBRARY)
+                  list (APPEND NETWORK_LIBS "${OPENSSL_ZSTD_LIBRARY}")
+               else ()
+                  list (APPEND NETWORK_LIBS "${OPENSSL_DEPENDENCY}")
+               endif ()
+            endforeach ()
+         endif ()
+      endforeach ()
+   else ()
+      list (APPEND NETWORK_LIBS OpenSSL::SSL OpenSSL::Crypto)
+   endif ()
+
+   # Shared with the WebRTC DTLS transport so that both link OpenSSL identically.
+   set (KOTUKU_OPENSSL_LIBS "${NETWORK_LIBS}" PARENT_SCOPE)
+
    target_include_directories (${MOD} PRIVATE "${OPENSSL_INCLUDE_DIR}")
 else ()
    message (STATUS "Network module will not be compiled with SSL support (OpenSSL not found).")
@@ -56,58 +111,119 @@ target_link_libraries (${MOD} PRIVATE ${NETWORK_LIBS})
 
 target_compile_definitions (${MOD} PRIVATE "MAX_ALIASES=64" "MAX_ADDRESSES=32" "HAVE_CONFIG_H=1")
 
-# SSL Certificate Generation
-find_program(MKCERT_EXECUTABLE mkcert PATHS ${CMAKE_SOURCE_DIR}/tools ENV PATH)
+# SSL test certificate generation
 find_program(OPENSSL_EXECUTABLE openssl)
 
-set(SSL_DATA_DIR "${CMAKE_SOURCE_DIR}/data/ssl")
-set(LOCALHOST_PEM "${SSL_DATA_DIR}/localhost.pem")
-set(LOCALHOST_KEY_PEM "${SSL_DATA_DIR}/localhost-key.pem")
-set(LOCALHOST_P12 "${SSL_DATA_DIR}/localhost.p12")
-set(MKCERT_PEM "${SSL_DATA_DIR}/localhost+2.pem")
-set(MKCERT_KEY_PEM "${SSL_DATA_DIR}/localhost+2-key.pem")
+if (OPENSSL_EXECUTABLE)
+   execute_process (
+      COMMAND "${OPENSSL_EXECUTABLE}" version
+      RESULT_VARIABLE OPENSSL_EXECUTABLE_VERSION_RESULT
+      OUTPUT_VARIABLE OPENSSL_EXECUTABLE_VERSION_OUTPUT
+      ERROR_VARIABLE OPENSSL_EXECUTABLE_VERSION_ERROR
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-if(MKCERT_EXECUTABLE AND OPENSSL_EXECUTABLE)
-   # Custom command to generate SSL certificates only when they don't exist
-   add_custom_command(
-      OUTPUT "${LOCALHOST_PEM}" "${LOCALHOST_P12}"
-      COMMAND ${CMAKE_COMMAND} -E make_directory "${SSL_DATA_DIR}"
-      COMMAND ${CMAKE_COMMAND} -E remove -f "${LOCALHOST_PEM}" "${LOCALHOST_KEY_PEM}" "${LOCALHOST_P12}" "${MKCERT_PEM}" "${MKCERT_KEY_PEM}"
-      COMMAND ${CMAKE_COMMAND} -E chdir "${SSL_DATA_DIR}" "${MKCERT_EXECUTABLE}" localhost 127.0.0.1 ::1
-      COMMAND ${CMAKE_COMMAND} -E rename "${MKCERT_PEM}" "${LOCALHOST_PEM}"
-      COMMAND ${CMAKE_COMMAND} -E rename "${MKCERT_KEY_PEM}" "${LOCALHOST_KEY_PEM}"
-      COMMAND "${OPENSSL_EXECUTABLE}" pkcs12 -export -out "${LOCALHOST_P12}"
-              -inkey "${LOCALHOST_KEY_PEM}" -in "${LOCALHOST_PEM}" -passout pass:
-      COMMAND ${CMAKE_COMMAND} -E remove -f "${LOCALHOST_KEY_PEM}"
-      COMMENT "Generating SSL certificates for localhost testing"
-      VERBATIM
-   )
+   if ((NOT OPENSSL_EXECUTABLE_VERSION_RESULT EQUAL 0) OR
+      (NOT OPENSSL_EXECUTABLE_VERSION_OUTPUT MATCHES "^OpenSSL[ \t]+([0-9]+\\.[0-9]+\\.[0-9]+)"))
+      message (STATUS "The openssl executable is unavailable or did not report a supported version")
+      set (OPENSSL_EXECUTABLE "")
+   elseif (CMAKE_MATCH_1 VERSION_LESS KOTUKU_OPENSSL_MINIMUM_VERSION)
+      message (STATUS
+         "The openssl executable is version ${CMAKE_MATCH_1}; "
+         "version ${KOTUKU_OPENSSL_MINIMUM_VERSION} or later is required")
+      set (OPENSSL_EXECUTABLE "")
+   endif ()
+endif ()
 
-   # Custom target that depends on the certificate files
-   add_custom_target(generate_ssl_certificates DEPENDS "${LOCALHOST_PEM}" "${LOCALHOST_P12}")
+set (SSL_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ssl")
+set (SSL_FIXTURE_GENERATOR "${CMAKE_CURRENT_SOURCE_DIR}/generate_ssl_certificates.cmake")
+set (LOCALHOST_PEM "${SSL_FIXTURE_DIR}/localhost.pem")
+set (LOCALHOST_KEY_PEM "${SSL_FIXTURE_DIR}/localhost-key.pem")
+set (LOCALHOST_RSA_KEY_PEM "${SSL_FIXTURE_DIR}/localhost-rsa-key.pem")
+set (LOCALHOST_EC_PEM "${SSL_FIXTURE_DIR}/localhost-ec.pem")
+set (LOCALHOST_EC_KEY_PEM "${SSL_FIXTURE_DIR}/localhost-ec-key.pem")
+set (LOCALHOST_P12 "${SSL_FIXTURE_DIR}/localhost.p12")
+set (LOCALHOST_PASSWORD_P12 "${SSL_FIXTURE_DIR}/localhost-password.p12")
+set (SSL_FIXTURES
+   "${LOCALHOST_PEM}"
+   "${LOCALHOST_KEY_PEM}"
+   "${LOCALHOST_RSA_KEY_PEM}"
+   "${LOCALHOST_EC_PEM}"
+   "${LOCALHOST_EC_KEY_PEM}"
+   "${LOCALHOST_P12}"
+   "${LOCALHOST_PASSWORD_P12}")
 
-   # Make the network module depend on certificate generation
-   add_dependencies(${MOD} generate_ssl_certificates)
+set (NETWORK_SSL_TESTS_ENABLED FALSE)
+if (NOT DISABLE_SSL AND (WIN32 OR OPENSSL_FOUND) AND OPENSSL_EXECUTABLE)
+   set (NETWORK_SSL_TESTS_ENABLED TRUE)
+   add_custom_target (generate_ssl_certificates ALL
+      COMMAND ${CMAKE_COMMAND}
+         "-DOPENSSL_EXECUTABLE=${OPENSSL_EXECUTABLE}"
+         "-DOUTPUT_DIR=${SSL_FIXTURE_DIR}"
+         -P "${SSL_FIXTURE_GENERATOR}"
+      BYPRODUCTS ${SSL_FIXTURES} "${SSL_FIXTURE_DIR}/fixture-version.txt"
+      DEPENDS "${SSL_FIXTURE_GENERATOR}"
+      COMMENT "Checking Network SSL test certificates"
+      VERBATIM)
 
-   message(STATUS "SSL certificate generation enabled (mkcert and openssl found)")
-else()
-   if(NOT MKCERT_EXECUTABLE)
-      message(STATUS "mkcert not found - SSL certificates will not be auto-generated")
-      message(STATUS "Install mkcert from: https://github.com/FiloSottile/mkcert")
-   endif()
+   add_dependencies (${MOD} generate_ssl_certificates)
 
-   if(NOT OPENSSL_EXECUTABLE)
-      message(STATUS "openssl not found - SSL certificates will not be auto-generated")
-   endif()
-endif()
+   if (KOTUKU_INSTALL)
+      if (WIN32)
+         install (FILES "${LOCALHOST_PEM}" "${LOCALHOST_P12}" "${LOCALHOST_PASSWORD_P12}"
+            DESTINATION "${CONFIG_TARGET}/ssl")
+      else ()
+         install (FILES ${SSL_FIXTURES} DESTINATION "${CONFIG_TARGET}/ssl")
+      endif ()
+   endif ()
+
+   message (STATUS "Network SSL test certificate generation enabled")
+elseif (NOT DISABLE_SSL AND (WIN32 OR OPENSSL_FOUND) AND BUILD_TESTS)
+   message (STATUS
+      "A supported openssl executable was not found - Network SSL tests will be disabled and certificate fixtures "
+      "will not be generated")
+elseif (NOT DISABLE_SSL AND (WIN32 OR OPENSSL_FOUND))
+   message (STATUS "openssl not found - Network SSL test certificates will not be generated")
+endif ()
 
 set (NETWORK_TESTS
-   bind_address dns_parallel server_io client_server error_handling ipv6 concurrency ssl iocp_pipeline
-   performance
+   bind_address callback_results dns_parallel dns_capacity server_io client_server error_handling ipv6 concurrency
+   performance keep_alive package_regressions
    # UDP Tests
    udp_basic udp_ipv6 udp_broadcast_multicast udp_tcp_coexistence udp_performance
 )
 
+if (WIN32)
+   list (APPEND NETWORK_TESTS iocp_pipeline)
+endif ()
+
+if (NETWORK_SSL_TESTS_ENABLED)
+   list (APPEND NETWORK_TESTS ssl)
+endif ()
+
 foreach (TEST_NAME ${NETWORK_TESTS})
    flute_test(network_${TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_${TEST_NAME}.tiri")
 endforeach ()
+
+if (UNIT_TESTS)
+   add_executable (test_network_mdns mdns/test_mdns.cpp)
+   set_target_properties (test_network_mdns PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+   target_link_libraries (test_network_mdns PRIVATE network_mdns)
+   add_test (NAME network_mdns COMMAND test_network_mdns)
+   set_tests_properties (network_mdns PROPERTIES LABELS network TIMEOUT 30)
+endif ()
+
+option (NETWORK_MDNS_FUZZ "Build the internal mDNS codec/state libFuzzer target" OFF)
+if (NETWORK_MDNS_FUZZ)
+   if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      message (FATAL_ERROR "NETWORK_MDNS_FUZZ requires Clang with libFuzzer support.")
+   endif ()
+   add_executable (fuzz_network_mdns mdns/fuzz_mdns.cpp mdns/mdns.cpp)
+   set_target_properties (fuzz_network_mdns PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+   target_compile_options (fuzz_network_mdns PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
+   target_link_options (fuzz_network_mdns PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
+   if (BUILD_TESTS)
+      add_test (NAME network_mdns_fuzz_regression COMMAND fuzz_network_mdns -runs=1
+         "${CMAKE_CURRENT_SOURCE_DIR}/mdns/fixtures")
+      set_tests_properties (network_mdns_fuzz_regression PROPERTIES LABELS network TIMEOUT 60)
+   endif ()
+endif ()

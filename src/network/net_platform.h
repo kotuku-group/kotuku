@@ -6,10 +6,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <kotuku/main.h>
 #include <kotuku/modules/network.h>
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/processes.h>
 
 #if defined(_WIN32)
    #define INADDR_NONE 0xffffffff
@@ -196,7 +199,7 @@ public:
    virtual int shutdown_socket(SocketHandle Handle, int How) = 0;
 
    virtual ERR build_address(const IPAddress &IP, int Port, bool IPv6, NetworkEndpoint &Endpoint) = 0;
-   ERR prepare_bind_address(CSTRING Address, int Port, bool IPv6, NetworkEndpoint &Endpoint);
+   ERR prepare_bind_address(std::string_view Address, int Port, bool IPv6, NetworkEndpoint &Endpoint);
    virtual ERR connect(SocketHandle Handle, const NetworkEndpoint &Endpoint) = 0;
    virtual ERR begin_connect_wait(SocketHandle Handle, void (*Callback)(HOSTHANDLE, APTR), APTR Data) = 0;
    virtual ERR complete_connect(SocketHandle Handle) = 0;
@@ -216,11 +219,12 @@ public:
    virtual ERR deregister_fd(SocketHandle Handle) = 0;
    virtual bool has_pending_write(SocketHandle Handle) = 0;
 
+   virtual ERR enable_keep_alive(SocketHandle Handle) = 0;
    virtual ERR enable_broadcast(SocketHandle Handle) = 0;
+   virtual ERR set_socket_buffer_sizes(SocketHandle Handle, int ReceiveBytes, int SendBytes) = 0;
    virtual ERR set_multicast_ttl(SocketHandle Handle, int TTL, bool IPv6) = 0;
-   virtual ERR parse_multicast_group(CSTRING Group, bool &IPv6) = 0;
-   virtual ERR join_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) = 0;
-   virtual ERR leave_multicast_group(SocketHandle Handle, CSTRING Group, bool IPv6) = 0;
+   virtual ERR join_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) = 0;
+   virtual ERR leave_multicast_group(SocketHandle Handle, std::string_view Group, bool &IPv6) = 0;
 
    virtual ERR receive(SocketHandle Handle, APTR Buffer, size_t Length, size_t &Received) = 0;
    virtual ERR append_receive(SocketHandle Handle, std::vector<uint8_t> &Buffer, size_t Length, size_t &Received) = 0;

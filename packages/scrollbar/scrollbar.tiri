@@ -1,0 +1,521 @@
+@Package(name="gui/scrollbar", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   namespace gui
+
+gui.scrollbar = function(Options)
+   self = entity { } -- Public interface
+
+   -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
+   -- the base theme or the override changes.
+
+   base_theme = gui.getTheme(Options.target)
+   override = nil -- Per-instance override from setTheme()
+
+   function buildTheme():table
+      result = base_theme
+      if Options.theme then result = table.merge(result, Options.theme, true, true) end
+      if override then result = table.merge(result, override, true, true) end
+      return result
+   end
+
+   using self do
+      &target   = Options.target
+      &page     = Options.page
+      &view     = Options.view
+      &pageMode = 'fixed'
+      &minWidth = 0
+      &theme    = buildTheme()
+      &v_thickness = &theme.scrollbar_v?.thickness ?? &theme.scrollbar?.thickness ?? 16
+      &h_thickness = &theme.scrollbar_h?.thickness ?? &theme.scrollbar?.thickness ?? 16
+   end
+
+   function calcSlider(ViewLength:num!, PageLength:num!, HostLength:num!, Position:num!, Thickness:num!)
+      slider_size = HostLength * (ViewLength / PageLength)
+
+      if PageLength <= ViewLength then -- Hide the scrollbar if the page is smaller than the view
+         return 0, 0
+      end
+
+      local offset:num
+      min_size = Thickness * 1.25 -- Minimum slider length
+      if slider_size < min_size then -- Fixed slider calculation
+         slider_size = min_size
+         scale       = (PageLength - ViewLength) / (HostLength - min_size)
+         offset      = Position / scale
+         if slider_size + offset > HostLength then
+            offset = HostLength - slider_size
+            if offset < 0 then offset = 0 end
+            if (slider_size + offset) > HostLength then
+               slider_size = HostLength
+            end
+         end
+      else -- Proportional slider calculation
+         if (Position + ViewLength) is PageLength then
+            offset = HostLength - slider_size
+         else
+            offset = (Position * HostLength) / PageLength
+         end
+         if offset < 0 then offset = 0 end
+      end
+
+      if (slider_size + offset) > HostLength then
+         slider_size = HostLength - offset
+      end
+
+      return offset, slider_size
+   end
+
+   -- Reading the position of the page & view, recompute the position of the slider.
+
+   function recalcSlidersFromView()
+      if &vbar then
+         &vbar.viewport.acMoveToFront()
+
+         host_height = &vbar.sliderHostVP.height
+         if &hbar?.viewport?.visibility is VIS_VISIBLE then
+            host_height -= &h_thickness
+         end
+
+         offset, slider_size = calcSlider(&view.height, &page.height, host_height, -&page.y, &v_thickness)
+         if (offset != &vbar.slider.offset) or (slider_size != &vbar.slider.size) then
+            &vbar.slider.offset   = offset
+            &vbar.slider.size     = slider_size
+            &vbar.sliderVP.y      = offset
+            &vbar.sliderVP.height = slider_size
+
+            hideSlider = &v_thickness * 0.75
+            if slider_size <= hideSlider then
+               &vbar.viewport.visibility = VIS_HIDDEN
+               &view.xOffset = 0
+               &hbar?.viewport.xOffset = 0
+            else
+               &vbar.viewport.visibility = VIS_VISIBLE
+               &view.xOffset = &vbar.sliderVP.width
+               &hbar?.viewport.xOffset = &v_thickness
+            end
+         end
+      end
+
+      if &hbar then
+         &hbar.viewport.acMoveToFront()
+
+         offset, slider_size = calcSlider(&view.width, &page.width, &hbar.sliderHostVP.width, -&page.x, &h_thickness)
+         if (offset != &hbar.slider.offset) or (slider_size != &hbar.slider.size) then
+            &hbar.slider.offset  = offset
+            &hbar.slider.size    = slider_size
+            &hbar.sliderVP.x     = offset
+            &hbar.sliderVP.width = slider_size
+
+            hideSlider = &h_thickness * 0.75
+            if slider_size <= hideSlider then
+               &hbar.viewport.visibility = VIS_HIDDEN
+               &view.yOffset = 0
+            else
+               &hbar.viewport.visibility = VIS_VISIBLE
+               &view.yOffset = &hbar.sliderVP.height
+            end
+         end
+      end
+
+      &target.acDraw()
+   end
+
+   -- The theme's margin keeps the slider away from the ends of the track, e.g. from rounded corners.  It is a number
+   -- for both ends, or a pair for the start (top or left) and end (bottom or right).
+
+   function barMargins(BarTheme:table!):<num, num>
+      margin = BarTheme.margin ?? 0
+      if type(margin) is 'number' then return margin, margin end
+      return margin[0] ?? 0, margin[1] ?? 0
+   end
+
+   function barTheme(Direction:str!):table
+      if Direction is 'V' then
+         return &theme.scrollbar_v ?? &theme.scrollbar
+      else
+         return &theme.scrollbar_h ?? &theme.scrollbar
+      end
+   end
+
+   function restyleSlider(Bar:table!)
+      style = table.merge(Bar.theme.fore, Bar.slider.hover ? Bar.theme.foreHighlight : nil)
+      gui.styleRectangle(Bar.slider.bkRect, style, Bar.slider.defaults)
+   end
+
+   -- Apply the current theme to the vectors of a bar.  The thickness of the bar is not changed.
+
+   function restyleBar(Bar:table)
+      Bar ?! return
+      Bar.theme = barTheme(Bar.direction)
+      m_start, m_end = barMargins(Bar.theme)
+      if Bar.direction is 'V' then
+         Bar.sliderHostVP.{ y = m_start, yOffset = m_end }
+      else
+         Bar.sliderHostVP.{ x = m_start, xOffset = m_end }
+      end
+      gui.styleRectangle(Bar.barBkgd, Bar.theme.bkgd, Bar.bkgdDefaults)
+      restyleSlider(Bar)
+   end
+
+   function restyle()
+      restyleBar(&vbar)
+      restyleBar(&hbar)
+      recalcSlidersFromView()
+   end
+
+   function createScrollbar(Direction:str!)
+      local bar:table
+
+      if Direction is 'V' then
+         vp = &target.new('VectorViewport', {
+            name='VBarVP', y = 0, xOffset = 0, yOffset = 0, width = &v_thickness, overflow = VOF_HIDDEN,
+            cursor = PTC_DEFAULT
+         })
+
+         bar = vp.state()
+         bar_theme = barTheme(Direction)
+         m_start, m_end = barMargins(bar_theme)
+         bar.{
+            viewport     = vp,
+            direction    = 'V',
+            theme        = bar_theme,
+            bkgdDefaults = { },
+            barBkgd      = bar.viewport.new('VectorRectangle', { width = '100%', height = '100%' }),
+            sliderHostVP = vp.new('VectorViewport', { name='VSliderHostVP', y = m_start, width = '100%', yOffset = m_end, overflow = VOF_HIDDEN }),
+            sliderVP     = bar.sliderHostVP.new('VectorViewport', { name='VSliderVP', width = &v_thickness, height = bar.sliderHostVP.height, overflow = VOF_HIDDEN })
+         }
+
+         -- Respond to the user dragging the slider.  Moving the page is all that is necessary; this
+         -- will result in downstream callbacks making the necessary updates.
+
+         bar.sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
+            slider_height = Viewport.height
+            host_height   = &vbar.sliderHostVP.height
+            Y = math.clamp(Y, 0, host_height - slider_height)
+            if Viewport.y is Y then return end
+
+            if (Y != &vbar.slider.offset) or (slider_height != &vbar.slider.size) then
+               pct_pos = Y / (host_height - slider_height)
+               &page.y = -math.floor((&page.height - &view.height) * pct_pos)
+               &target.acDraw()
+            end
+         end
+      else
+         vp = &target.new('VectorViewport', {
+            name='HBarVP', x = 0, xOffset = 0, yOffset = 0, height = &h_thickness, cursor = PTC_DEFAULT
+         })
+         if &vbar?.viewport?.visibility is VIS_VISIBLE then vp.xOffset = &v_thickness end
+
+         bar = vp.state()
+         bar_theme = barTheme(Direction)
+         m_start, m_end = barMargins(bar_theme)
+         bar.{
+            viewport     = vp,
+            direction    = 'H',
+            theme        = bar_theme,
+            bkgdDefaults = { },
+            barBkgd      = bar.viewport.new('VectorRectangle', { width = '100%', height = '100%' }),
+            sliderHostVP = vp.new('VectorViewport', { name='HSliderHostVP', x = m_start, height = '100%', xOffset = m_end, overflow = VOF_HIDDEN }),
+            sliderVP     = bar.sliderHostVP.new('VectorViewport', { name='HSliderVP', width = bar.sliderHostVP.height, height = &h_thickness, overflow = VOF_HIDDEN })
+         }
+
+         bar.sliderVP.dragCallback = function(Viewport:obj!, X:num!, Y:num!)
+            slider_width = Viewport.width
+            host_width   = &hbar.sliderHostVP.width
+            X = math.clamp(X, 0, host_width - slider_width)
+            if Viewport.x is X then return end
+
+            if (X != &hbar.slider.offset) or (slider_width != &hbar.slider.size) then
+               pct_pos = X / (host_width - slider_width)
+               &page.x = -math.floor((&page.width - &view.width) * pct_pos)
+               &target.acDraw()
+            end
+         end
+      end
+
+      bar.slider = { viewport = bar.sliderVP, defaults = { } }
+      bar.slider.bkRect = bar.sliderVP.new('VectorRectangle', {
+         width = '100%', height = '100%'
+      })
+      restyleBar(bar)
+
+      bar.sliderVP.mtSubscribeInput(JTYPE_CROSSING, function(Viewport:obj!, Msg)
+         redraw = false
+         repeat
+            if Msg.type is JET_CROSSED_IN then
+               bar.slider.hover = true
+               restyleSlider(bar)
+               redraw = true
+            elseif Msg.type is JET_CROSSED_OUT then
+               bar.slider.hover = false
+               restyleSlider(bar)
+               redraw = true
+            end
+            Msg = Msg.next
+         until not Msg
+
+         if redraw then Viewport.acDraw() end
+      end)
+
+      -- Capture user interactivity within the bar area.
+
+      bar.sliderHostVP.mtSubscribeInput(JTYPE_BUTTON|JTYPE_REPEATED,
+         function(Viewport:obj!, Msg)
+            repeat
+               if (Msg.type is JET_LMB) and (Msg.value > 0) then
+                  if bar.direction is 'V' then
+                     if Msg.y < bar.sliderVP.y then
+                        &scrollPage(0, (&view.height * 0.9))
+                     elseif (Msg.y > bar.sliderVP.y + bar.sliderVP.height) then
+                        &scrollPage(0, -(&view.height * 0.9))
+                     end
+                  else
+                     if Msg.x < bar.sliderVP.x then
+                        &scrollPage((&view.width * 0.9), 0)
+                     elseif Msg.x > bar.sliderVP.x + bar.sliderVP.width then
+                        &scrollPage(-(&view.width * 0.9), 0)
+                     end
+                  end
+               end
+               Msg = Msg.next
+            until not Msg
+         end)
+      return bar
+   end
+
+   -- Compute the distance to scroll for a wheel event along one axis.
+
+   function wheelDelta(PageLength:num!, ViewLength:num!, Value:num!):num
+      length = PageLength - ViewLength
+      if length <= 0 then return 0 end
+      if length > ViewLength then length = ViewLength end
+      return -Value * length * 0.06
+   end
+
+   -- The slider and possibly the page need to be repositioned whenever the view is resized.
+
+   function viewFeedback(Viewport:obj!, Event)
+      px = &page.x
+      py = &page.y
+      pw = &page.width
+
+      if &pageMode is 'dynamic' then
+         nw = &minWidth
+         if nw < &view.width then -- Maximise page width in dynamic mode
+            if px != 0 then
+               px = 0
+               &page.x = 0
+            end
+            nw = &view.width
+         end
+
+         if pw != nw then
+            &page.width = nw
+            pw = nw
+         end
+      end
+
+      if px + pw < &view.width then
+         x = &view.width - pw
+         if x > 0 then x = 0 end
+         if px != x then &page.x = math.floor(x) end
+      end
+
+      if py + &page.height < &view.height then
+         y = &view.height - &page.height
+         if y > 0 then y = 0 end
+         if py != y then &page.y = math.floor(y) end
+      end
+
+      recalcSlidersFromView()
+   end
+
+   function pageFeedback(Viewport:obj!, Event)
+      recalcSlidersFromView()
+   end
+
+   function pageInput(Viewport:obj!, Events)
+      ev = Events
+      while ev do
+         if ev.type is JET_WHEEL_X then
+            delta = wheelDelta(&page.width, &view.width, ev.value)
+            if delta != 0 then &scrollPage(delta, 0) end
+         elseif ev.type is JET_WHEEL then
+            delta = wheelDelta(&page.height, &view.height, ev.value)
+            if delta != 0 then &scrollPage(0, delta) end
+         end
+         ev = ev.next
+      end
+   end
+
+   function doSubscriptions()
+      &view.mtSubscribeFeedback(FM_PATH_CHANGED, viewFeedback)
+      &page.mtSubscribeFeedback(FM_PATH_CHANGED, pageFeedback)
+      &page.mtSubscribeInput(JTYPE_EXT_MOVEMENT, pageInput)
+   end
+
+   self.scrollPage = function(DeltaX:num!, DeltaY:num!)
+      current_x = &page.x
+      current_y = &page.y
+      x = current_x + DeltaX
+      y = current_y + DeltaY
+
+      if (x > 0) or (&page.width < &view.width) then
+         x = 0
+      elseif (x + &page.width < &view.width) then
+         x = -&page.width + &view.width
+      end
+
+      if (y > 0) or (&page.height < &view.height) then
+         y = 0
+      elseif (y + &page.height < &view.height) then
+         y = -&page.height + &view.height
+      end
+
+      if (x != current_x) or (y != current_y) then
+         &page.x = math.floor(x)
+         &page.y = math.floor(y)
+         &target.acDraw()
+      end
+   end
+
+   -- Clients forward key presses from their keyboard subscription.  Returns true if the key was consumed for scrolling.
+   -- Arrow keys move by a line, Page Up/Down move by most of a view, Home/End move to the start or end of the page.
+
+   self.keyPress = function(Qualifiers:num!, Code:num!):bool
+      if not (Qualifiers has KQ_PRESSED) then return false end
+      if Qualifiers has (KQ_CTRL | KQ_ALT | KQ_COMMAND) then return false end
+
+      can_v = (&vbar != nil) and (&page.height > &view.height)
+      can_h = (&hbar != nil) and (&page.width > &view.width)
+
+      if Code is KEY_UP then
+         can_v ?! return false
+         &scrollPage(0, math.max(&v_thickness, &view.height * 0.1))
+      elseif Code is KEY_DOWN then
+         can_v ?! return false
+         &scrollPage(0, -math.max(&v_thickness, &view.height * 0.1))
+      elseif Code is KEY_LEFT then
+         can_h ?! return false
+         &scrollPage(math.max(&h_thickness, &view.width * 0.1), 0)
+      elseif Code is KEY_RIGHT then
+         can_h ?! return false
+         &scrollPage(-math.max(&h_thickness, &view.width * 0.1), 0)
+      elseif Code is KEY_PAGE_UP then
+         can_v ?! return false
+         &scrollPage(0, &view.height * 0.9)
+      elseif Code is KEY_PAGE_DOWN then
+         can_v ?! return false
+         &scrollPage(0, -(&view.height * 0.9))
+      elseif Code is KEY_HOME then
+         if can_v then
+            &scrollPage(0, -&page.y)
+         elseif can_h then
+            &scrollPage(-&page.x, 0)
+         else
+            return false
+         end
+      elseif Code is KEY_END then
+         if can_v then
+            &scrollPage(0, -&page.height)
+         elseif can_h then
+            &scrollPage(-&page.width, 0)
+         else
+            return false
+         end
+      else
+         return false
+      end
+      return true
+   end
+
+   -- NB: As a client you can set the page height and width directly if no mode change is required.
+
+   self.setFixedPageSize = function(Width:num!, Height:num!)
+      &pageMode = 'fixed'
+      if Width != &page.width then &page.width = Width end
+      if Height != &page.height then &page.height = Height end
+   end
+
+   self.setDynamicPageSize = function(NominalWidth:num!, MinWidth:num, Height:num!)
+      &pageMode = 'dynamic'
+      &minWidth = MinWidth ?? 0
+
+      if NominalWidth < MinWidth then
+         NominalWidth = MinWidth
+      end
+
+      if NominalWidth >= &view.width then
+         &page.width  = NominalWidth
+         &page.height = Height
+      else
+         &page.width  = '100%'
+         &page.height = Height
+      end
+   end
+
+   -- Style this scrollbar instance.  Override is merged over the complete theme, as for Options.theme, and is kept when
+   -- the window theme changes.  Each call replaces the previous override; nil removes it.
+
+   self.setTheme = function(Override:table)
+      override = Override
+      &theme = buildTheme()
+      restyle()
+   end
+
+   -- Called by gui.broadcastTheme() with the window's new theme.
+
+   self.applyTheme = function(Theme:table!)
+      base_theme = Theme
+      &theme = buildTheme()
+      restyle()
+   end
+
+   self.changeViewport = function(View, Page)
+      try -- The previous view and page may have been freed already
+        &view.mtSubscribeFeedback(0, viewFeedback)
+        &page.mtSubscribeFeedback(0, pageFeedback)
+        &page.mtSubscribeInput(0, pageInput)
+      end
+      &view = View
+      &page = Page
+      recalcSlidersFromView()
+      doSubscriptions()
+   end
+
+   -- Main entry point
+
+   using self do
+      assert(&target, 'A target viewport is required.')
+      assert(&page, 'A page setting is required.')
+      assert(&view, 'A view setting is required.')
+      assert(&view.id != &target.id, 'The view and target cannot be the same.')
+      assert(&page.parent.id is &view.id, 'The page is not a child of the view.')
+      assert(&view.overflow is VOF_HIDDEN, 'The overflow setting for the view must be HIDDEN.')
+      assert(&view.xOffset is 0, 'The XOffset of the view must be set to zero.')
+      assert(&view.yOffset is 0, 'The YOffset of the view must be set to zero.')
+
+      if Options.direction is 'all' then Options.direction = nil end
+
+      if Options.direction is 'vertical' or Options.direction is nil then
+         &vbar = createScrollbar('V')
+      end
+
+      if Options.direction is 'horizontal' or Options.direction is nil then
+         &hbar = createScrollbar('H')
+      end
+
+      &viewport = (&vbar or &hbar).viewport
+      gui.registerWidget(&target, &&)
+
+      doSubscriptions()
+
+      return &&
+   end
+end

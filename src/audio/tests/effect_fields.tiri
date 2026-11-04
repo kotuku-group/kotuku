@@ -1,0 +1,189 @@
+-- Shared checks for the typed fields of AudioEffect subclasses.  Import with `import './effect_fields'`.
+
+namespace effect_fields { }
+
+-- Convert a schema key to its field name, e.g. 'max_boost' to 'maxBoost'.
+
+function effect_fields.fieldName(Key:str):str
+   parts = Key.split('_')
+   name = parts[0]
+   for i in {1 to #parts} do name ..= parts[i].cap() end
+   return name
+end
+
+-- Return the keys of the top-level param elements in an effect's schema.  Group members are excluded.
+
+function effect_fields.paramKeys(Effect:obj):array<str>
+   schema = Effect.schema
+   limit = schema.find('<group') ?? #schema
+   result = array<str>
+   position = schema.find('<param key="')
+   while position != nil and position < limit do
+      start = position + 12
+      stop = schema.find('"', start)
+      result.push(schema.sub(start, stop))
+      position = schema.find('<param key="', stop)
+   end
+   return result
+end
+
+-- Assert that every top-level schema parameter has a field of the camel-case name that reads the same value as
+-- GetKey().
+
+function effect_fields.checkParity(Effect:obj)
+   param_keys = effect_fields.paramKeys(Effect)
+   assert(#param_keys > 0, 'The schema must publish at least one parameter')
+   for key in values(param_keys) do
+      name = effect_fields.fieldName(key)
+      -- get() falls back to GetKey() for unknown names and returns a string, so a number confirms the field.
+      field_value = Effect.get(name)
+      assert(field_value is <num>, f'Schema key {key} must have a numeric field named {name}')
+      err, key_text = Effect.acGetKey(key)
+      assert(err is ERR_Okay, f'GetKey({key}) must succeed')
+      assert(field_value is tonumber(key_text),
+         f'Field {name} reads {field_value}, but GetKey({key}) reports {key_text}')
+   end
+end
+
+-- Return the top-level param elements of an effect's schema as tables of `key`, `type`, `min`, `max` and `default`.
+-- Enumerations also have an `options` array of their values.  Group members are excluded.
+
+function effect_fields.params(Effect:obj):array<table>
+   schema = Effect.schema
+   limit = schema.find('<group') ?? #schema
+   rx_attrib = regex.new([[(\w+)="([^"]*)"]])
+   rx_option = regex.new([[<option value="([^"]*)"]])
+   result = array<table>
+   for start, stop, cap in regex.new([[<param ([^>]*)>]]).findAll(schema) do
+      if start >= limit then break end
+      attribs = { }
+      for _, _, attrib in rx_attrib.findAll(cap[0]) do attribs[attrib[0]] = attrib[1] end
+      param = { key=attribs.key, type=attribs.type, min=tonumber(attribs.min), max=tonumber(attribs.max),
+         default=tonumber(attribs.default) }
+      if param.type is 'enum' then
+         param.options = array<double>
+         body = schema.sub(stop, schema.find('</param>', stop))
+         for _, _, option in rx_option.findAll(body) do param.options.push(tonumber(option[0])) end
+      end
+      result.push(param)
+   end
+   return result
+end
+
+-- Return a valid value for a parameter that differs from its default.
+
+function effect_fields.altValue(Param:table):num
+   if Param.type is 'enum' then
+      return Param.options.find(Value => Value != Param.default)
+   end
+   return (Param.default != Param.max) ? Param.max : Param.min
+end
+
+-- Assert that every field accepts its bounds and rejects values outside them, leaving the value unchanged.  Each field
+-- is restored to its default afterwards.
+
+function effect_fields.checkRanges(Effect:obj, Params:array<table>)
+   for p in values(Params) do
+      name = effect_fields.fieldName(p.key)
+      if p.type is 'enum' then
+         for v in values(p.options) do
+            check Effect.set(name, v)
+            assert(Effect.get(name) is v, f'{name} must accept option {v}')
+         end
+         last = p.options.last()
+         assert(Effect.set(name, -1) is ERR_InvalidValue, f'{name} must reject an unknown option')
+         assert(Effect.set(name, last + 1) is ERR_InvalidValue, f'{name} must reject an unknown option')
+         assert(Effect.get(name) is last, f'{name} must be unchanged by rejected writes')
+      else
+         -- Integer fields round their input, so their out-of-range probes are whole numbers.
+         step = (p.type is 'double') ? 0.001 : 1
+         check Effect.set(name, p.min)
+         assert(Effect.get(name) is p.min, f'{name} must accept its minimum')
+         check Effect.set(name, p.max)
+         assert(Effect.get(name) is p.max, f'{name} must accept its maximum')
+         assert(Effect.set(name, p.min - step) is ERR_InvalidValue, f'{name} below {p.min} must fail')
+         assert(Effect.set(name, p.max + step) is ERR_InvalidValue, f'{name} above {p.max} must fail')
+         if p.type is 'double' then
+            assert(Effect.set(name, math.huge) is ERR_InvalidValue, f'{name} must reject infinity')
+            assert(Effect.set(name, math.sqrt(-1)) is ERR_InvalidValue, f'{name} must reject NaN')
+         end
+         assert(Effect.get(name) is p.max, f'{name} must be unchanged by rejected writes')
+      end
+      check Effect.set(name, p.default)
+   end
+end
+
+-- Exercise the typed fields of an effect class against its schema: defaults, parity with GetKey(), ranges before and
+-- after Init(), live commits on an active device, values passed to obj.new(), global immutability and disconnection.
+
+function effect_fields.checkFields(ClassName:str)
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay, 'OpenChannels() must succeed')
+
+   effect <close> = obj.new(ClassName)
+   effect.audio = audio
+   effect.channel = channel
+   params = effect_fields.params(effect)
+   assert(#params > 0, f'{ClassName} must publish at least one parameter')
+   for p in values(params) do
+      name = effect_fields.fieldName(p.key)
+      assert(effect.get(name) is p.default, f'{name} should default to {p.default}')
+   end
+   effect_fields.checkParity(effect)
+   effect_fields.checkRanges(effect, params)
+   effect.init()
+   effect_fields.checkParity(effect)
+   effect_fields.checkRanges(effect, params)
+
+   -- Live writes on an active device are committed immediately.
+
+   check audio.acActivate()
+   for p in values(params) do
+      name = effect_fields.fieldName(p.key)
+      value = effect_fields.altValue(p)
+      check effect.set(name, value)
+      assert(effect.get(name) is value, f'A live write to {name} must be committed immediately')
+      err, text = effect.acGetKey(p.key)
+      assert(err is ERR_Okay and tonumber(text) is value, f'GetKey({p.key}) must report a live write to {name}')
+   end
+   effect_fields.checkParity(effect)
+   check audio.acDeactivate()
+
+   -- Values passed to obj.new() are applied, and an out-of-range value is rejected.
+
+   fields = { audio=audio, channel=channel }
+   for p in values(params) do fields[effect_fields.fieldName(p.key)] = effect_fields.altValue(p) end
+   created <close> = obj.new(ClassName, fields)
+   for p in values(params) do
+      name = effect_fields.fieldName(p.key)
+      assert(created.get(name) is effect_fields.altValue(p), f'obj.new() must apply {name}')
+   end
+   effect_fields.checkParity(created)
+
+   first = params[0]
+   first_name = effect_fields.fieldName(first.key)
+   fields[first_name] = (first.type is 'enum') ? first.options.last() + 1 : first.max + 1
+   try
+      rejected = obj.new(ClassName, fields)
+   except e when ERR_InvalidValue
+   success
+      raise f'obj.new() must reject an out-of-range {first_name}'
+   end
+
+   -- Global effects accept writes before Init() and are readable but immutable afterwards.
+
+   global_effect = audio.new(ClassName)
+   check global_effect.set(first_name, effect_fields.altValue(first))
+   global_effect.init()
+   assert(global_effect.mutable is 0)
+   assert(global_effect.set(first_name, first.default) is ERR_Immutable,
+      f'Writes to {first_name} on a global effect must fail after Init()')
+   assert(global_effect.get(first_name) is effect_fields.altValue(first), 'Global effect fields remain readable')
+   global_effect.free()
+
+   -- Closing the channel set disconnects the effect.
+
+   check audio.mtCloseChannels(channel)
+   assert(effect.set(first_name, first.default) is ERR_NotInitialised, 'Field writes must fail after disconnection')
+end

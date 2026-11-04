@@ -1,0 +1,159 @@
+-- Mouse placement must follow the advances used to draw a long proportional UTF-8 run.
+
+   include 'scintilla', 'vector', 'display'
+   module vector as mVec
+   module display as mGfx
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+
+@BeforeEach function resetPointer()
+   if obj.find('SystemPointer') then feed(JET_ABS_XY, 2000, 2000) end
+end
+
+@Test function ClickMapsToGlyphInProportionalFace()
+   local surface <close> = obj.new('Surface', { width=1500, height=140 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = host.new('Scintilla', { face='Noto Sans', fontSize=18, lineHighlight='255,255,255,0' })
+   local text = ('WiéAV').rep(18)
+   sci.string = text
+   check surface.acShow()
+   check surface.acFocus()
+   check surface.acDraw()
+   processing.sleep(0)
+   check surface.acDraw()
+   local _, handle = check mVec.GetFontHandle('Noto Sans', 'Regular', 0, 18)
+   local metrics = struct<FontMetrics>
+   check mVec.GetFontMetrics(handle, metrics)
+
+   -- Each prefix includes a multibyte character; target the centre of W at several positions along the line.
+   for group in values(array<int> { 1, 8, 17 }) do
+      local prefix = ('WiéAV').rep(group)
+      local x = 4 + mVec.StringWidth(handle, prefix, -1) + mVec.CharWidth(handle, 87, 0) / 2
+      local y = metrics.lineSpacing / 2
+      feed(JET_ABS_XY, surface.absX + x, surface.absY + y)
+      feed(JET_LMB, 1, 0)
+      feed(JET_LMB, 0, 0)
+      local index = group * 5
+      assert(sci.cursorCol is index or sci.cursorCol is index + 1,
+         f'Clicking glyph {index} must place the caret at its edge, got {sci.cursorCol}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Modifier keys.  Pointer input does not carry the modifier state, so the editor tracks it from keyboard events.
+
+function sendKey(Code:num!, Qualifiers:num!, Unicode:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = (Unicode != nil) ? Qualifiers : (Qualifiers | KQ_NOT_PRINTABLE)
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+-- Clean has 7 pixel wide glyphs and the text starts at x = 4.
+
+function newClickEditor():<obj, obj, obj>
+   local surface = obj.new('Surface', { width=300, height=60 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT, lineHighlight='255,255,255,0' })
+   sci.string = 'hello world'
+   local other = scene.new('VectorViewport', { x=290, y=50, width=1, height=1 })
+   other.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) end)
+   check surface.acShow()
+   check surface.acFocus()
+   check surface.acDraw()
+   processing.sleep(0)
+   check surface.acDraw()
+   return surface, sci, other
+end
+
+function clickGlyph(Surface:obj!, Index:num!)
+   feed(JET_ABS_XY, Surface.absX + 4 + (Index * 7), Surface.absY + 6)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+end
+
+-- Shift is pressed while another vector has the focus, then the editor is clicked.  Typing replaces the selection,
+-- which shows that the click extended it from the caret at column 0.
+
+@Test function ShiftHeldBeforeFocusExtendsSelection()
+   local surface <close>, sci, other = newClickEditor()
+   check other.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_L_SHIFT, KQ_L_SHIFT | KQ_PRESSED)
+   clickGlyph(surface, 5)
+   sendKey(KEY_L_SHIFT, KQ_RELEASED)
+   assert(sci.cursorCol is 5, f'The click must move the caret to column 5, got {sci.cursorCol}')
+   sendKey(KEY_X, KQ_PRESSED, 0x58)
+   assert(sci.string is 'X world', f'Shift+click must extend the selection, got "{sci.string}"')
+end
+
+-- A modifier released while another vector has the focus must not affect the next click.
+
+@Test function ShiftReleasedBeforeFocusDoesNotExtend()
+   local surface <close>, sci, other = newClickEditor()
+   clickGlyph(surface, 2)
+   sendKey(KEY_L_SHIFT, KQ_L_SHIFT | KQ_PRESSED)
+   check other.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_L_SHIFT, KQ_RELEASED)
+   clickGlyph(surface, 5)
+   sendKey(KEY_X, KQ_PRESSED, 0x58)
+   assert(sci.string is 'helloX world', f'A plain click must not extend the selection, got "{sci.string}"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Input between a scroll and the next redraw.  The scene maps pointer positions with the current Page position, so
+-- clicks act on the content at the new scroll position, which the next frame shows.  The pointer is first moved to a
+-- neighbouring point so that the click is preceded by a movement event.
+
+@Test function ClickAfterScrollBeforeRedraw()
+   local surface <close>, sci, other = newClickEditor()
+   local lines = array<str> { }
+   for i in {0 to 100} do lines.push(f'line {i}') end
+   sci.string = lines.concat('\n')
+   check surface.acDraw()
+   processing.sleep(0)
+
+   -- Each click targets a different glyph, so that consecutive clicks are not detected as double or triple clicks.
+
+   for i, scroll in array<int> { 3, 20, 7 } do
+      feed(JET_ABS_XY, surface.absX + 100, surface.absY + 40)
+      check sci.mtScrollToPoint(0, scroll * 13)
+      clickGlyph(surface, 1 + (i * 4))
+      assert(sci.cursorRow is scroll, f'A click on row 0 after scrolling to {scroll} must select line {scroll}, ' ..
+         f'got {sci.cursorRow}')
+      check sci.mtScrollToPoint(0, 0)
+      check surface.acDraw()
+      processing.sleep(0)
+   end
+end

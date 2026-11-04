@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/tooltip",
+  "version": "1.0",
+  "description": "Hover tooltip widget for Tiri graphical interfaces.",
+  "entry": "tooltip.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "gui",
+    "tooltip",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "tooltip.tiri",
+      "size": 9885,
+      "sha256": "84bf09f2484da83e8b1c7cb47d45847a62a7e99c8976d444cb5180957b381fed",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

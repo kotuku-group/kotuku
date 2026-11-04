@@ -1,0 +1,78 @@
+-- Regression coverage for activation failures and Connection header token handling.
+
+   include 'http', 'network'
+
+@Test function FailedActivationAllowsUpgradeConfiguration()
+   local owner <close> = obj.new('config')
+   for _, options in {
+      { method=HTM_COPY, expected=ERR_FieldNotSet },
+      { method=HTM_MOVE, expected=ERR_FieldNotSet },
+      { method=HTM_POST, expected=ERR_FieldNotSet },
+      { method=HTM_PUT, inputFile='temp:http-missing-input-' .. owner.id, expected=ERR_File },
+      { method=HTM_PATCH, inputFile='string:', expected=ERR_File }
+   } do
+      local http <close> = obj.new('http', {
+         location='http://127.0.0.1:1/', method=options.method,
+         flags=HTF_NO_HEAD | HTF_NO_DIALOG, inputFile=options.inputFile ?? ''
+      })
+      assert(http.acActivate() is options.expected, 'Activation did not report the expected preparation failure')
+      http.upgrade = struct<HTTPUpgrade> { owner=owner.id }
+   end
+end
+
+function checkConnectionReuse(Version:str, Headers:str, Reuse:bool)
+   local buffers = {}
+   local clients = array<int>
+   local completed = 0
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         local buffer = string.alloc(4096)
+         local err, size = Client.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+         local request = buffers[Client.id] ?? ''
+         request ..= buffer.sub(0, size)
+         buffers[Client.id] = request
+         if request.find('\r\n\r\n') then
+            clients.push(Client.id)
+            buffers[Client.id] = ''
+            -- Leave the peer open so the test measures the HTTP client's connection decision.
+            check Client.acWrite(f'HTTP/{Version} 200 OK\r\nContent-Length: 0\r\n{Headers}\r\n')
+         end
+      end
+   })
+   local http <close> = obj.new('http', {
+      location=f'http://127.0.0.1:{server.port}/', flags=HTF_NO_DIALOG,
+      stateChanged=function(HTTP, State)
+         if State is HGS_COMPLETED then
+            completed++
+            if completed is 1 then
+               -- Reactivate before completion dispatch closes the socket, exercising the keep-alive decision.
+               check HTTP.acActivate()
+            else HTTP.acSignal() end
+         elseif State is HGS_TERMINATED then HTTP.acSignal() end
+      end
+   })
+   local proc = processing.new({ timeout=3, signals=array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+   assert(completed is 2 and http.currentState is HGS_COMPLETED and http.error is ERR_Okay,
+      'Both requests did not complete')
+   assert(#clients is 2, 'Peer did not receive both requests')
+   assert((clients[0] is clients[1]) is Reuse,
+      f'HTTP/{Version} reused or closed a connection against the header tokens: {Headers}')
+end
+
+@Test function ConnectionCloseTakesPrecedence()
+   checkConnectionReuse('1.1', 'Connection: keep-alive\r\nConnection: close\r\n', false)
+   checkConnectionReuse('1.1', 'Connection: ClOsE\r\nConnection: keep-alive\r\n', false)
+   checkConnectionReuse('1.1', 'Connection: keep-alive, CLOSE\r\n', false)
+end
+
+@Test function ConnectionKeepAliveTokensAndDefaults()
+   checkConnectionReuse('1.0', 'Connection: extension\r\nConnection: Keep-Alive\r\n', true)
+   checkConnectionReuse('1.0', 'Connection: extension, keep-alive\r\n', true)
+   checkConnectionReuse('1.0', '', false)
+   checkConnectionReuse('1.1', '', true)
+   checkConnectionReuse('1.1', 'Connection: xclose\r\n', true)
+end

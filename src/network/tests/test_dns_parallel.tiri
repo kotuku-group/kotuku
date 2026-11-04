@@ -3,14 +3,11 @@ Tests for resolving server names in parallel.
 --]]
 
    include 'network'
+   module network as mNet
 
-glDomains = array<string> { 'google.com', 'kotuku.dev', 'amazon.co.uk', 'stackoverflow.com', 'theguardian.com', 'www.bbc.co.uk' }
+glDomains = array<str> { 'google.com', 'kotuku.dev', 'amazon.co.uk', 'stackoverflow.com', 'theguardian.com', 'www.bbc.co.uk' }
 glTotalResolved = 0
 local proc, signal
-
-@BeforeAll function init()
-   global mNet ?= mod.load('network')
-end
 
 @AfterAll function cleanup()
    glDomains = nil
@@ -52,7 +49,7 @@ function name_resolved(NetLookup, Error)
       end
    end
 
-   msg = 'Resolved ' .. host .. ' with ' .. total_ips .. ' IP addresses.'
+   local msg = 'Resolved ' .. host .. ' with ' .. total_ips .. ' IP addresses.'
    if ip_list then msg ..= '  IPs: ' .. ip_list end
    logOutput(msg)
 
@@ -71,7 +68,7 @@ end
 @Test; @Requires(network=true) function Duplication()
    resolved = 0
 
-   domains = array<string> { 'google.com', 'reddit.com' }
+   domains = array<str> { 'google.com', 'reddit.com' }
    function duplicate_resolved(NetLookup, Error)
       assert(Error is ERR_Okay, 'Failed to resolve ' .. NetLookup.hostName .. ', error ' ..mSys.GetErrorMsg(Error))
       logOutput('Resolved: ' .. NetLookup.hostName)
@@ -84,11 +81,11 @@ end
       nlA = obj.new('NetLookup', { callback = duplicate_resolved, flags=NLF_NO_CACHE })
       nlB = obj.new('NetLookup', { callback = duplicate_resolved })
 
-      proc = processing.new({ timeout = 5.0, signals = array<object> { nlA } })
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { nlA } })
       check nlA.mtResolveName(domain)
       check proc.sleep()
 
-      proc = processing.new({ timeout = 5.0, signals = array<object> { nlB } })
+      proc = processing.new({ timeout = 5.0, signals = array<obj> { nlB } })
       save = resolved
       check nlB.mtResolveName(domain)
       if save is resolved then
@@ -103,7 +100,7 @@ end
 @Test; @Requires(network=true) function NameResolutionAsync()
    nl = obj.new('NetLookup', { callback=name_resolved, flags=NLF_NO_CACHE })
 
-   proc = processing.new({ timeout = 2.0, signals = array<object> { nl } })
+   proc = processing.new({ timeout = 2.0, signals = array<obj> { nl } })
 
    glTotalResolved = 0
    for domain in values(glDomains) do

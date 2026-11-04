@@ -93,6 +93,7 @@ For information about the HTTP protocol, please refer to the official protocol w
 #include <stdio.h>
 #include <unordered_map>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <charconv>
 #include <limits>
@@ -105,6 +106,9 @@ For information about the HTTP protocol, please refer to the official protocol w
 #include <kotuku/modules/http.h>
 //#include <kotuku/modules/display.h>
 #include <kotuku/modules/network.h>
+#include <kotuku/modules/script.h>
+#include <kotuku/modules/filesystem.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "../link/base64.h"
 
@@ -195,29 +199,36 @@ static bool is_valid_url_char(char Char, bool AllowReserved = false) {
 //********************************************************************************************************************
 // Enhanced URL encoding with validation
 
-static std::string encode_url_path(const char* Input)
+static std::string encode_url_path(std::string_view Input)
 {
-   if (!Input) return std::string();
-
    std::string result;
-   result.reserve(strlen(Input) * 3); // Worst case: every char becomes %XX
+   result.reserve(Input.size() * 3); // Worst case: every char becomes %XX
 
-   for (const char* p = Input; *p; p++) {
-      if (is_valid_url_char(*p, true)) {
-         result += *p;
+   auto is_hex = [](char Char) {
+      return ((Char >= '0') and (Char <= '9')) or ((Char >= 'a') and (Char <= 'f')) or
+         ((Char >= 'A') and (Char <= 'F'));
+   };
+
+   for (size_t i = 0; i < Input.size(); i++) {
+      const char ch = Input[i];
+      if ((ch IS '%') and (i + 2 < Input.size()) and is_hex(Input[i + 1]) and is_hex(Input[i + 2])) {
+         result += ch; // Preserve an existing percent-encoded octet
       }
-      else if (*p IS ' ') {
+      else if (is_valid_url_char(ch, true)) {
+         result += ch;
+      }
+      else if (ch IS ' ') {
          result += "%20";
       }
-      else if ((unsigned char)(*p) < 32 or (unsigned char)(*p) > 126) {
+      else if ((unsigned char)(ch) < 32 or (unsigned char)(ch) > 126) {
          // Encode control characters and non-ASCII
          char encoded[4];
-         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(*p));
+         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(ch));
          result += encoded;
       }
       else { // Other characters that need encoding
          char encoded[4];
-         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(*p));
+         snprintf(encoded, sizeof(encoded), "%%%02X", (unsigned char)(ch));
          result += encoded;
       }
    }
@@ -242,8 +253,10 @@ static std::mutex glDebugFileMutex;
 
 static void clear_callback_function(FUNCTION &Callback)
 {
-   if (Callback.isScript()) UnsubscribeAction(Callback.Context, AC::Free);
-   Callback.clear();
+   if (Callback.defined()) {
+      Callback.unpin();
+      Callback.clear();
+   }
 }
 
 #ifdef DEBUG_SOCKET
@@ -271,25 +284,24 @@ static void close_debug_socket_file()
 }
 #endif
 
-static bool valid_http_header_name(CSTRING Key)
+static bool valid_http_header_name(std::string_view Key)
 {
-   if ((!Key) or (!*Key)) return false;
+   if (Key.empty()) return false;
 
    constexpr CSTRING separators = "()<>@,;:\\\"/[]?={}";
-   for (auto key = (const uint8_t *)Key; *key; key++) {
-      if ((*key <= 0x20) or (*key >= 0x7f)) return false;
-      if (std::strchr(separators, *key)) return false;
+   for (auto ch : Key) {
+      auto key = uint8_t(ch);
+      if ((key <= 0x20) or (key >= 0x7f)) return false;
+      if (std::strchr(separators, key)) return false;
    }
 
    return true;
 }
 
-static bool valid_http_header_value(CSTRING Value)
+static bool valid_http_header_value(std::string_view Value)
 {
-   if (!Value) return false;
-
-   for (auto value = (const uint8_t *)Value; *value; value++) {
-      if ((*value IS '\r') or (*value IS '\n')) return false;
+   for (auto ch : Value) {
+      if ((ch IS '\r') or (ch IS '\n')) return false;
    }
 
    return true;
@@ -298,14 +310,49 @@ static bool valid_http_header_value(CSTRING Value)
 extern "C" uint8_t glAuthScript[];
 static int glAuthScriptLength;
 
+struct http_header_hash {
+   using is_transparent = void;
+
+   std::size_t operator()(std::string_view Value) const noexcept {
+      return std::hash<std::string_view>{}(Value);
+   }
+};
+
+struct http_header_equal {
+   using is_transparent = void;
+
+   bool operator()(std::string_view Lhs, std::string_view Rhs) const noexcept {
+      return Lhs IS Rhs;
+   }
+};
+
+// Protocol upgrade state, allocated only when the client configures Upgrade or activates with REQUEST_WEBSOCKET.
+
+struct HTTPUpgradeState {
+   OBJECTID Owner = 0;            // Recipient configured through the Upgrade field
+   OBJECTID RequestOwner = 0;     // Owner snapshot taken at activation
+   bool RequestWebSocket = false; // REQUEST_WEBSOCKET snapshot taken at activation
+   bool Handover = false;
+   bool ReadyDispatch = false;
+   bool Readable = false;
+   HTTPUpgrade Result{};
+   HTTPUpgrade Snapshot{};
+};
+
 class extHTTP : public objHTTP {
    public:
    FUNCTION Incoming;
    FUNCTION Outgoing;
    FUNCTION AuthCallback;
    FUNCTION StateChanged;
-   ankerl::unordered_dense::map<std::string, std::string> ResponseKeys;
-   ankerl::unordered_dense::map<std::string, std::string> Headers;
+   ankerl::unordered_dense::map<std::string, std::string, http_header_hash, http_header_equal> ResponseHeaders;
+   kt::vector<std::string> ResponseKeys;
+   ankerl::unordered_dense::map<std::string, std::string, http_header_hash, http_header_equal> Headers;
+   std::vector<std::pair<std::string, std::string>> HeaderFields;
+   std::unique_ptr<HTTPUpgradeState> UpgradeState;
+   uint64_t RequestGeneration = 0;
+   bool RequestActive = false;
+   bool ContinueRequest = false;
    std::string Response;   // Response header buffer
    std::string URI;        // Temporary string, used only when the user reads the URI
    std::string Username;
@@ -332,6 +379,7 @@ class extHTTP : public objHTTP {
    int64_t  TotalSent;        // Total number of bytes sent - exists for assisting debugging only
    OBJECTID DialogWindow;
    int      ResponseIndex;    // Next element to write to in 'Buffer'
+   int      InterimHeaderBytes = 0;
    int      SearchIndex;      // Current position of the CRLFCRLF search.
    int16_t  InputPos;         // File name parsing position in InputFile
    uint8_t  RedirectCount;
@@ -347,14 +395,58 @@ class extHTTP : public objHTTP {
    uint16_t MultipleInput:1;
    uint16_t KeepAlive:1;
    uint16_t ProxyDefined:1;   // TRUE if the ProxyServer has been manually set by the user
+
+   extHTTP(objMetaClass *ClassPtr, OBJECTID ObjectID) : objHTTP(ClassPtr, ObjectID) {
+      Error          = ERR::Okay;
+      DataTimeout    = 5.0;
+      ConnectTimeout = 10.0;
+      Datatype       = DATA::RAW;
+      BufferSize     = 16 * 1024;
+      AuthQOP        = "auth";
+      AuthAlgorithm  = "md5";
+      KeepAlive      = true;
+   }
+
+   ~extHTTP();
+
+   inline bool webSocketRequest() const { return UpgradeState and UpgradeState->RequestWebSocket; }
+   inline bool inHandover() const { return UpgradeState and UpgradeState->Handover; }
+
+   inline HTTPUpgradeState & upgradeState() {
+      if (not UpgradeState) UpgradeState = std::make_unique<HTTPUpgradeState>();
+      return *UpgradeState;
+   }
 };
 
+static bool http_complete(HGS State) { return State IS HGS::COMPLETED; }
+
+static bool http_failed(HGS State) { return State IS HGS::TERMINATED; }
+
+static bool http_handed_over(HGS State) { return State IS HGS::UPGRADED; }
+
+static bool http_active(HGS State) {
+   return not (http_complete(State) or http_failed(State) or http_handed_over(State));
+}
+
+static bool valid_upgrade_owner(extHTTP *Self, Object *Owner)
+{
+   if ((not Owner) or Owner->collecting()) return false;
+
+   for (auto parent = Owner; parent; parent = parent->Owner) {
+      if (parent IS Self) return false;
+   }
+
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool header_contains_token(std::string_view, std::string_view);
+static ERR HTTP_GetResponseHeaders(extHTTP *, struct http::GetResponseHeaders *);
 static ERR HTTP_Activate(extHTTP *);
 static ERR HTTP_Deactivate(extHTTP *);
-static ERR HTTP_Free(extHTTP *);
 static ERR HTTP_GetKey(extHTTP *, struct acGetKey *);
 static ERR HTTP_Init(extHTTP *);
-static ERR HTTP_NewPlacement(extHTTP *);
 static ERR HTTP_SetKey(extHTTP *, struct acSetKey *);
 static ERR HTTP_Write(extHTTP *, struct acWrite *);
 
@@ -409,6 +501,7 @@ static const FieldDef clStatus[] = {
 //********************************************************************************************************************
 
 static ERR  check_incoming_end(extHTTP *);
+static void set_http_status_error(extHTTP *);
 static ERR  parse_file(extHTTP *, std::string &);
 static void parse_file(extHTTP *, std::ostringstream &);
 static ERR  parse_response(extHTTP *, std::string_view);
@@ -417,8 +510,8 @@ static void writehex(HASH, HASHHEX);
 static void digest_calc_ha1(extHTTP *, HASHHEX);
 static void digest_calc_response(extHTTP *, std::string, CSTRING, HASHHEX, HASHHEX, HASHHEX);
 static void set_http_method(extHTTP *, CSTRING, std::ostringstream &);
-static ERR  SET_Path(extHTTP *, CSTRING);
-static ERR  SET_Location(extHTTP *, CSTRING);
+static ERR  SET_Path(extHTTP *, const std::string_view &);
+static ERR  SET_Location(extHTTP *, const std::string_view &);
 static ERR  http_timeout(extHTTP *, int64_t, int64_t);
 static void socket_feedback(objNetSocket *, NTC, APTR);
 static ERR  socket_incoming(objNetSocket *);
@@ -466,26 +559,6 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
-static void notify_free_outgoing(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->Outgoing.clear();
-}
-
-static void notify_free_state_changed(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->StateChanged.clear();
-}
-
-static void notify_free_incoming(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->Incoming.clear();
-}
-
-static void notify_free_auth_callback(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extHTTP *)CurrentContext())->AuthCallback.clear();
-}
-
 /*********************************************************************************************************************
 
 -ACTION-
@@ -505,7 +578,13 @@ Incoming HTTP content can be managed in the following ways: It may be streamed t
 referenced by the #OutputObject field through data feeds.  It can be written to the target object if the #ObjectMode
 is set to `READ_WRITE`.  Or it can be received through the #Incoming callback.
 
-On completion of an HTTP request, the #Deactivate() action is called, regardless of the level of success.
+On ordinary completion, #Deactivate() is called after the state notification.  An opt-in WebSocket handover instead
+enters `UPGRADED` and transfers the original socket to #Upgrade.Owner.  HTTP destruction or subsequent activation cannot
+close that transferred socket.
+
+Upgrade activation requires `HTF::REQUEST_WEBSOCKET`, a live #StateChanged handler, an independent configured owner,
+GET and no upload body.  Conflicting upgrade headers are rejected before connecting.  Upgrade requests use a fresh
+connection, preserve headers through authentication retries and expose redirects without following them.
 
 -ERRORS-
 Okay:   The HTTP get operation was successfully started.
@@ -519,9 +598,20 @@ NotInitialised: The HTTP object has not been initialised.
 FieldNotSet: Required fields are not set (e.g. destination for COPY/MOVE methods, or data source for POST/PUT methods).
 NoData: Input file is empty or has no data for POST/PUT operations.
 ConnectionRefused: The connection to the server was refused.
+Lock
+NoSecureSockets
+
 -END-
 
 *********************************************************************************************************************/
+
+static std::string http_authority(extHTTP *Self, bool IncludePort = false)
+{
+   auto host = Self->Host.find(':') != std::string::npos ? "[" + Self->Host + "]" : Self->Host;
+   bool secure = (Self->Flags & HTF::SSL) != HTF::NIL;
+   if (IncludePort or (Self->Port != (secure ? 443 : 80))) host += ":" + std::to_string(Self->Port);
+   return host;
+}
 
 static ERR HTTP_Activate(extHTTP *Self)
 {
@@ -535,14 +625,66 @@ static ERR HTTP_Activate(extHTTP *Self)
    auto __cleanup = kt::Defer([&]() { recursion--; });
 
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+   if (Self->inHandover()) return ERR::InUse;
 
-   log.branch("Host: %s, Port: %d, Path: %s, Proxy: %s, SSL: %d", Self->Host, Self->Port, Self->Path, Self->ProxyServer, ((Self->Flags & HTF::SSL) != HTF::NIL) ? 1 : 0);
+   bool continuation = Self->ContinueRequest;
+   Self->ContinueRequest = false;
+
+   if (not continuation) {
+      if ((Self->Flags & HTF::REQUEST_WEBSOCKET) != HTF::NIL) {
+         auto &upgrade = Self->upgradeState();
+         upgrade.RequestWebSocket = true;
+         upgrade.RequestOwner = upgrade.Owner;
+      }
+      else if (Self->UpgradeState) Self->UpgradeState->RequestWebSocket = false;
+
+      ++Self->RequestGeneration;
+      Self->AuthRetries = 0;
+   }
+
+   if (Self->webSocketRequest()) {
+      if ((Self->Method != HTM::GET) or (not Self->InputFile.empty()) or Self->InputObjectID or
+          Self->Outgoing.defined() or Self->Size or (not Self->WriteBuffer.empty())) return ERR::InvalidValue;
+
+      if ((not Self->StateChanged.defined()) or Self->StateChanged.stale()) return ERR::FieldNotSet;
+
+      kt::ScopedObjectLock owner(Self->UpgradeState->RequestOwner);
+      if ((not owner.granted()) or (not valid_upgrade_owner(Self, *owner))) return ERR::InvalidObject;
+
+      for (const auto &[key, value] : Self->Headers) {
+         if (kt::iequals(key, "connection")) {
+            if ((not header_contains_token(value, "Upgrade")) or header_contains_token(value, "close")) {
+               return ERR::InvalidValue;
+            }
+         }
+         else if (kt::iequals(key, "upgrade")) {
+            std::string selected(value);
+            kt::trim(selected);
+            if (not kt::iequals(selected, "websocket")) return ERR::InvalidValue;
+         }
+         else if (kt::iequals(key, "content-length") or kt::iequals(key, "transfer-encoding")) {
+            return ERR::InvalidValue;
+         }
+      }
+
+      if ((not continuation) and Self->Socket) {
+         Self->Socket->setFeedback(FUNCTION{});
+         FreeResource(Self->Socket);
+         Self->Socket = nullptr;
+      }
+   }
+
+   Self->RequestActive = true;
+
+   log.branch("Host: %s, Port: %d, Path: %s, Proxy: %s, SSL: %d", Self->Host.c_str(), Self->Port,
+      Self->Path.c_str(), Self->ProxyServer.c_str(), ((Self->Flags & HTF::SSL) != HTF::NIL) ? 1 : 0);
 
    if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
 
    Self->Error         = ERR::Okay;
    Self->ResponseIndex = 0;
    Self->SearchIndex   = 0;
+   Self->InterimHeaderBytes = 0;
    Self->Index         = 0;
    Self->CurrentState  = HGS::NIL;
    Self->Status        = HTS::NIL;
@@ -551,42 +693,53 @@ static ERR HTTP_Activate(extHTTP *Self)
    Self->Flags        &= ~(HTF::MOVED|HTF::REDIRECTED);
 
    if ((Self->Socket) and (Self->Socket->State IS NTC::DISCONNECTED)) {
-      Self->Socket->set(FID_Feedback, (APTR)nullptr);
+      Self->Socket->setFeedback(FUNCTION{});
       FreeResource(Self->Socket);
       Self->Socket = nullptr;
       Self->SecurePath = true;
    }
 
    Self->Response.clear();
+   Self->ResponseHeaders.clear();
+   Self->HeaderFields.clear();
    if (Self->flInput)  { FreeResource(Self->flInput); Self->flInput = nullptr; }
    if (Self->flOutput) { FreeResource(Self->flOutput); Self->flOutput = nullptr; }
 
    Self->RecvBuffer.resize(0);
 
    auto cleanup_activation_failure = [&]() {
+      Self->RequestActive = false;
       if (Self->flInput) { FreeResource(Self->flInput); Self->flInput = nullptr; }
       if (Self->Socket) {
-         Self->Socket->set(FID_Feedback, (APTR)nullptr);
+         Self->Socket->setFeedback(FUNCTION{});
          FreeResource(Self->Socket);
          Self->Socket = nullptr;
          Self->SecurePath = true;
       }
    };
 
+   bool activation_succeeded = false;
+   auto activation_cleanup = kt::Defer([&]() {
+      if (not activation_succeeded) cleanup_activation_failure();
+   });
+
    std::ostringstream cmd;
 
-   if ((Self->ProxyServer) and ((Self->Flags & HTF::SSL) != HTF::NIL) and (!Self->Socket)) {
+   if ((not Self->ProxyServer.empty()) and ((Self->Flags & HTF::SSL) != HTF::NIL) and (!Self->Socket)) {
       // SSL tunnelling is required.  Send a CONNECT request to the proxy and
       // then we will follow this up with the actual HTTP requests.
 
       log.trace("SSL tunneling is required.");
 
-      cmd << "CONNECT " << Self->Host << ":" << Self->Port << " HTTP/1.1" << CRLF;
-      cmd << "Host: " << Self->Host << CRLF;
-      cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
+      cmd << "CONNECT " << http_authority(Self, true) << " HTTP/1.1" << CRLF;
+      cmd << "Host: " << http_authority(Self) << CRLF;
+      cmd << "User-Agent: " << (Self->UserAgent.empty() ? "Kotuku Client" : Self->UserAgent.c_str()) << CRLF;
       cmd << "Proxy-Connection: keep-alive" << CRLF;
       cmd << "Connection: keep-alive" << CRLF;
 
+      for (const auto &[key, value] : Self->Headers) {
+         if (kt::iequals(key, "proxy-authorization")) cmd << key << ": " << value << CRLF;
+      }
       Self->Tunneling = true;
 
       //set auth "Proxy-Authorization: Basic [base64::encode $opts(proxyUser):$opts(proxyPass)]"
@@ -641,10 +794,10 @@ static ERR HTTP_Activate(extHTTP *Self)
          }
       }
       else if (Self->Method IS HTM::OPTIONS) {
-         if ((!Self->Path) or ((Self->Path[0] IS '*') and (!Self->Path[1]))) {
+         if (Self->Path.empty() or (Self->Path IS "*")) {
             cmd << "OPTIONS * HTTP/1.1" << CRLF;
-            cmd << "Host: " << Self->Host << CRLF;
-            cmd << "User-Agent: " << (Self->UserAgent ? Self->UserAgent : "Kotuku Client") << CRLF;
+            cmd << "Host: " << http_authority(Self) << CRLF;
+            cmd << "User-Agent: " << (Self->UserAgent.empty() ? "Kotuku Client" : Self->UserAgent.c_str()) << CRLF;
          }
          else set_http_method(Self, "OPTIONS", cmd);
       }
@@ -672,23 +825,22 @@ static ERR HTTP_Activate(extHTTP *Self)
                // the developer should set ContentLength to -1.
 
             }
-            else if (Self->InputFile) {
+            else if (not Self->InputFile.empty()) {
                if (Self->MultipleInput) {
                   log.trace("Multiple input files detected.");
                   Self->InputPos = 0;
                   parse_file(Self, cmd);
-                  Self->flInput = objFile::create::local(fl::Path(cmd.str().c_str()), fl::Flags(FL::READ));
+                  Self->flInput = objFile::create::local(fl::Path(cmd.str()), fl::Flags(FL::READ));
                }
                else Self->flInput = objFile::create::local(fl::Path(Self->InputFile), fl::Flags(FL::READ));
 
                if (Self->flInput) {
                   Self->Index = 0;
                   if (!Self->Size) {
-                     Self->flInput->get(FID_Size, Self->ContentLength); // Use the file's size as ContentLength
+                     Self->flInput->getSize(Self->ContentLength); // Use the file's size as ContentLength
                       // If the file is empty or size is indeterminate then assume nothing is being posted
                       if (!Self->ContentLength) {
                          Self->Error = ERR::NoData;
-                         cleanup_activation_failure();
                          return Self->Error;
                       }
                   }
@@ -703,7 +855,7 @@ static ERR HTTP_Activate(extHTTP *Self)
                if (!Self->Size) {
                   kt::ScopedObjectLock<Object> input(Self->InputObjectID, 3000);
                   if (input.granted()) {
-                     input->get(FID_Size, Self->ContentLength);
+                     Self->ContentLength = input->get<int64_t>(kt::strhash("size"));
                   }
                   else {
                      Self->Error = ERR::Lock;
@@ -754,7 +906,7 @@ static ERR HTTP_Activate(extHTTP *Self)
       }
       else {
          log.warning("HTTP method no. %d not understood.", int(Self->Method));
-         Self->Error = ERR::Failed;
+         Self->Error = ERR::NoSupport;
          return Self->Error;
       }
 
@@ -790,8 +942,8 @@ static ERR HTTP_Activate(extHTTP *Self)
             kt::BASE64ENCODE state;
 
             cmd << "Authorization: Basic ";
-            auto len = kt::Base64Encode(&state, buffer.c_str(), buffer.size(), output.data(), buffer.length() * 2);
-            cmd.write(output.data(), len);
+            auto len = kt::Base64Encode(&state, std::span((const char *)buffer.data(), buffer.size()), output);
+            cmd.write((const char *)output.data(), len);
             cmd << CRLF;
          }
 
@@ -805,8 +957,14 @@ static ERR HTTP_Activate(extHTTP *Self)
 
       // Add any custom headers
 
-      if (Self->CurrentState != HGS::AUTHENTICATING) {
+      if (Self->webSocketRequest()) {
+         cmd << "Connection: Upgrade" << CRLF << "Upgrade: websocket" << CRLF;
+      }
+      if (Self->webSocketRequest() or (Self->CurrentState != HGS::AUTHENTICATING)) {
          for (const auto& [k, v] : Self->Headers) {
+            if (Self->webSocketRequest() and (kt::iequals(k, "connection") or kt::iequals(k, "upgrade"))) continue;
+            if (kt::iequals(k, "proxy-authorization") and
+                (Self->ProxyServer.empty() or ((Self->Flags & HTF::SSL) != HTF::NIL))) continue;
             log.trace("Custom header: %s: %s", k.c_str(), v.c_str());
             cmd << k << ": " << v << CRLF;
          }
@@ -841,7 +999,6 @@ static ERR HTTP_Activate(extHTTP *Self)
             fl::Feedback(C_FUNCTION(socket_feedback)),
             fl::Flags(flags)))) {
          Self->Error = ERR::CreateObject;
-         cleanup_activation_failure();
          return log.warning(Self->Error);
       }
    }
@@ -858,44 +1015,52 @@ static ERR HTTP_Activate(extHTTP *Self)
             (Self->Method IS HTM::PATCH)) {
             Self->Socket->setOutgoing(C_FUNCTION(socket_outgoing));
          }
-         else Self->Socket->set(FID_Outgoing, (APTR)nullptr);
+         else Self->Socket->setOutgoing(FUNCTION{});
       }
-      else Self->Socket->set(FID_Outgoing, (APTR)nullptr);
+      else Self->Socket->setOutgoing(FUNCTION{});
    }
+
+   Self->Socket->PeerName = Self->Host;
 
    // Buffer the HTTP command string to the socket (will write on connect if we're not connected already).
 
-   if (acWrite(Self->Socket, cstr.c_str(), cstr.length()) IS ERR::Okay) {
+   if (!acWrite(Self->Socket, std::span<const int8_t>((const int8_t *)cstr.data(), cstr.size()))) {
       if (Self->Socket->State IS NTC::DISCONNECTED) {
-         if (auto result = Self->Socket->connect(Self->ProxyServer ? Self->ProxyServer : Self->Host, Self->ProxyServer ? Self->ProxyPort : Self->Port, 5.0); result IS ERR::Okay) {
-            Self->Connecting = true;
+         const auto server_host = Self->ProxyServer.empty() ? std::string_view(Self->Host) :
+            std::string_view(Self->ProxyServer);
+         const int server_port = Self->ProxyServer.empty() ? Self->Port : Self->ProxyPort;
+         if (auto result = Self->Socket->connect(server_host, server_port, Self->ConnectTimeout); result IS ERR::Okay) {
+            Self->Connecting = Self->Socket->State != NTC::CONNECTED;
 
-            if (Self->TimeoutManager) UpdateTimer(Self->TimeoutManager, Self->ConnectTimeout);
-            else SubscribeTimer(Self->ConnectTimeout, C_FUNCTION(http_timeout), &Self->TimeoutManager);
+            double timeout = Self->Connecting ? Self->ConnectTimeout : Self->DataTimeout;
+            if (Self->TimeoutManager) UpdateTimer(Self->TimeoutManager, timeout);
+            else SubscribeTimer(timeout, C_FUNCTION(http_timeout), &Self->TimeoutManager);
 
+            activation_succeeded = true;
             return ERR::Okay;
          }
          else if (result IS ERR::HostNotFound) {
             Self->Error = ERR::HostNotFound;
-            cleanup_activation_failure();
             return log.warning(Self->Error);
          }
          else if (result IS ERR::NoSecureSockets) {
             Self->Error = ERR::NoSecureSockets;
-            cleanup_activation_failure();
             return log.warning(Self->Error);
          }
          else {
             Self->Error = ERR::ConnectionRefused;
-            cleanup_activation_failure();
             return log.warning(Self->Error);
          }
       }
-      else return ERR::Okay;
+      else {
+         if (Self->TimeoutManager) UpdateTimer(Self->TimeoutManager, Self->DataTimeout);
+         else SubscribeTimer(Self->DataTimeout, C_FUNCTION(http_timeout), &Self->TimeoutManager);
+         activation_succeeded = true;
+         return ERR::Okay;
+      }
    }
    else {
       Self->Error = ERR::Write;
-      cleanup_activation_failure();
       return log.warning(Self->Error);
    }
 }
@@ -918,7 +1083,8 @@ static ERR HTTP_Deactivate(extHTTP *Self)
 
    log.branch("Halting HTTP request.");
 
-   if (Self->CurrentState < HGS::COMPLETED) Self->setCurrentState(HGS::TERMINATED);
+   Self->RequestActive = false;
+   if (http_active(Self->CurrentState)) Self->setCurrentState(HGS::TERMINATED);
 
    // Closing files is important for dropping the file locks
 
@@ -935,7 +1101,7 @@ static ERR HTTP_Deactivate(extHTTP *Self)
 
       if ((Self->Socket->State IS NTC::DISCONNECTED) or (Self->CurrentState IS HGS::TERMINATED)) {
          log.msg("Terminating socket (disconnected).");
-         Self->Socket->set(FID_Feedback, (APTR)nullptr);
+         Self->Socket->setFeedback(FUNCTION{});
          FreeResource(Self->Socket);
          Self->Socket = nullptr;
          Self->SecurePath = true;
@@ -947,36 +1113,22 @@ static ERR HTTP_Deactivate(extHTTP *Self)
 
 //********************************************************************************************************************
 
-static ERR HTTP_Free(extHTTP *Self)
+extHTTP::~extHTTP()
 {
-   if (Self->Socket) {
-      Self->Socket->set(FID_Feedback, (APTR)nullptr);
-      FreeResource(Self->Socket);
-      Self->Socket = nullptr;
+   if (Socket) {
+      Socket->setFeedback(FUNCTION{});
+      FreeResource(Socket);
    }
 
-   if (Self->AuthCallback.isScript()) UnsubscribeAction(Self->AuthCallback.Context, AC::Free);
-   if (Self->Incoming.isScript())     UnsubscribeAction(Self->Incoming.Context, AC::Free);
-   if (Self->StateChanged.isScript()) UnsubscribeAction(Self->StateChanged.Context, AC::Free);
-   if (Self->Outgoing.isScript())     UnsubscribeAction(Self->Outgoing.Context, AC::Free);
+   clear_callback_function(AuthCallback);
+   clear_callback_function(Incoming);
+   clear_callback_function(StateChanged);
+   clear_callback_function(Outgoing);
 
-   if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
-
-   if (Self->flInput)     { FreeResource(Self->flInput);     Self->flInput = nullptr; }
-   if (Self->flOutput)    { FreeResource(Self->flOutput);    Self->flOutput = nullptr; }
-   if (Self->Path)        { FreeResource(Self->Path);        Self->Path = nullptr; }
-   if (Self->InputFile)   { FreeResource(Self->InputFile);   Self->InputFile = nullptr; }
-   if (Self->OutputFile)  { FreeResource(Self->OutputFile);  Self->OutputFile = nullptr; }
-   if (Self->Host)        { FreeResource(Self->Host);        Self->Host = nullptr; }
-   if (Self->UserAgent)   { FreeResource(Self->UserAgent);   Self->UserAgent = nullptr; }
-   if (Self->ProxyServer) { FreeResource(Self->ProxyServer); Self->ProxyServer = nullptr; }
-
-   if (!Self->Password.empty()) {
-      secure_clear_memory(const_cast<char*>(Self->Password.data()), Self->Password.size());
-   }
-
-   Self->~extHTTP();
-   return ERR::Okay;
+   if (TimeoutManager) UpdateTimer(TimeoutManager, 0);
+   if (flInput)  FreeResource(flInput);
+   if (flOutput) FreeResource(flOutput);
+   if (!Password.empty()) secure_clear_memory(const_cast<char*>(Password.data()), Password.size());
 }
 
 /*********************************************************************************************************************
@@ -987,19 +1139,47 @@ GetKey: Entries in the HTTP response header can be read as key-values.
 
 static ERR HTTP_GetKey(extHTTP *Self, struct acGetKey *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if ((not Args) or (not Args->Value)) return ERR::NullArgs;
 
-   if (Self->ResponseKeys.contains(Args->Key)) {
-      kt::strcopy(Self->ResponseKeys[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->ResponseHeaders.find(Args->Key); key_it != Self->ResponseHeaders.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
-   if (Self->Headers.contains(Args->Key)) {
-      kt::strcopy(Self->Headers[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->Headers.find(Args->Key); key_it != Self->Headers.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
    return ERR::UnsupportedField;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetResponseHeaders: Returns received response fields in their original order.
+
+Replaces Result with one Name: value pair per line, each followed by LF.  Repeated fields and empty values are retained.
+There is no status line, blank terminator or request-header fallback.  Tiri returns one string alongside the ERR status.
+
+-INPUT-
+^&string Result: Caller-supplied string to replace with received headers.
+
+-ERRORS-
+Okay
+NullArgs
+-END-
+
+*********************************************************************************************************************/
+
+static ERR HTTP_GetResponseHeaders(extHTTP *Self, struct http::GetResponseHeaders *Args)
+{
+   if ((not Args) or (not Args->Result)) return ERR::NullArgs;
+   Args->Result->clear();
+   for (const auto &[name, value] : Self->HeaderFields) {
+      Args->Result->append(name).append(": ").append(value).append("\n");
+   }
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -1010,33 +1190,15 @@ static ERR HTTP_Init(extHTTP *Self)
 
    if (!Self->ProxyDefined) {
       std::lock_guard<std::mutex> proxy_lock(glProxyMutex);
-      if ((glProxy) and (glProxy->find(Self->Port, true) IS ERR::Okay)) {
-         if (Self->ProxyServer) FreeResource(Self->ProxyServer);
-         Self->ProxyServer = kt::strclone(glProxy->Server);
+      if ((glProxy) and (!glProxy->find(Self->Port, true))) {
+         Self->ProxyServer = glProxy->Server;
          Self->ProxyPort   = glProxy->ServerPort; // NB: Default is usually 8080
 
-         log.msg("Using preset proxy server '%s:%d'", Self->ProxyServer, Self->ProxyPort);
+         log.msg("Using preset proxy server '%s:%d'", Self->ProxyServer.c_str(), Self->ProxyPort);
       }
    }
    else log.msg("Proxy pre-defined by user.");
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR HTTP_NewPlacement(extHTTP *Self)
-{
-   // Note: No local object allocations are permitted due to lack of context.  Use a NewObject hook if necessary
-   new (Self) extHTTP;
-   Self->Error          = ERR::Okay;
-   Self->DataTimeout    = 5.0;
-   Self->ConnectTimeout = 10.0;
-   Self->Datatype       = DATA::RAW;
-   Self->BufferSize     = 16 * 1024;
-   Self->AuthQOP        = "auth";
-   Self->AuthAlgorithm  = "md5";
-   Self->KeepAlive      = true;
    return ERR::Okay;
 }
 
@@ -1062,13 +1224,14 @@ static ERR HTTP_SetKey(extHTTP *Self, struct acSetKey *Args)
 
 static ERR HTTP_Write(extHTTP *Self, struct acWrite *Args)
 {
-   if ((!Args) or (!Args->Buffer)) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
-   if (auto len = Args->Length; len > 0) {
+   if (auto len = Args->Buffer.size(); len > 0) {
+      if (len > size_t(INT_MAX)) return ERR::OutOfRange;
       auto offset = Self->WriteBuffer.size();
       Self->WriteBuffer.resize(Self->WriteBuffer.size() + len);
-      kt::copymem(Args->Buffer, Self->WriteBuffer.data() + offset, len);
-      Args->Result = len;
+      kt::copymem(Args->Buffer.data(), Self->WriteBuffer.data() + offset, len);
+      Args->Result = int(len);
       return ERR::Okay;
    }
    else {
@@ -1089,11 +1252,11 @@ static const FieldArray clFields[] = {
    { "Index",          FDF_INT64|FDF_RW }, // Writeable only because we update it using SetField()
    { "ContentLength",  FDF_INT64|FDF_RW },
    { "Size",           FDF_INT64|FDF_RW },
-   { "Host",           FDF_STRING|FDF_RI, nullptr, SET_Host },
-   { "Path",           FDF_STRING|FDF_RW, nullptr, SET_Path },
-   { "OutputFile",     FDF_STRING|FDF_RW, nullptr, SET_OutputFile },
-   { "InputFile",      FDF_STRING|FDF_RW, nullptr, SET_InputFile },
-   { "UserAgent",      FDF_STRING|FDF_RW, GET_UserAgent, SET_UserAgent },
+   { "Host",           FDF_CPPSTRING|FDF_RI, nullptr, SET_Host },
+   { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "OutputFile",     FDF_CPPSTRING|FDF_RW, nullptr, SET_OutputFile },
+   { "InputFile",      FDF_CPPSTRING|FDF_RW, nullptr, SET_InputFile },
+   { "UserAgent",      FDF_CPPSTRING|FDF_RW, GET_UserAgent, SET_UserAgent },
    { "InputObject",    FDF_OBJECTID|FDF_RW },
    { "OutputObject",   FDF_OBJECTID|FDF_RW },
    { "Method",         FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Method, &clHTTPMethod },
@@ -1104,23 +1267,24 @@ static const FieldArray clFields[] = {
    { "Error",          FDF_ERROR|FDF_RW },
    { "Datatype",       FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clHTTPDatatype },
    { "CurrentState",   FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_CurrentState, &clHTTPCurrentState },
-   { "ProxyServer",    FDF_STRING|FDF_RW, nullptr, SET_ProxyServer },
+   { "ProxyServer",    FDF_CPPSTRING|FDF_RW, nullptr, SET_ProxyServer },
    { "ProxyPort",      FDF_INT|FDF_RW },
    { "BufferSize",     FDF_INT|FDF_RW, nullptr, SET_BufferSize },
    // Virtual fields
-   { "AuthCallback",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_AuthCallback, SET_AuthCallback },
-   { "ContentType",    FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_ContentType, SET_ContentType },
-   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Incoming, SET_Incoming },
-   { "Location",       FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Location, SET_Location },
-   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_Outgoing, SET_Outgoing },
-   { "Realm",          FDF_VIRTUAL|FDF_STRING|FDF_RW,        GET_Realm, SET_Realm },
+   { "Upgrade",        FDF_VIRTUAL|FDF_STRUCT|FDF_RW|FDF_PURE, GET_Upgrade, SET_Upgrade, "HTTPUpgrade" },
+   { "AuthCallback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_AuthCallback, SET_AuthCallback },
+   { "ContentType",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_ContentType, SET_ContentType },
+   { "Incoming",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_Incoming, SET_Incoming },
+   { "Location",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Location, SET_Location },
+   { "Outgoing",       FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_Outgoing, SET_Outgoing },
+   { "Realm",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW,     GET_Realm, SET_Realm },
    { "RecvBuffer",     FDF_VIRTUAL|FDF_ARRAY|FDF_BYTE|FDF_R, GET_RecvBuffer },
-   { "ResponseKeys",   FDF_VIRTUAL|FDF_ARRAY|FDF_STRING|FDF_ALLOC|FDF_R, GET_ResponseKeys },
-   { "Src",            FDF_VIRTUAL|FDF_STRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
-   { "URL",            FDF_VIRTUAL|FDF_STRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
-   { "StateChanged",   FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW,   GET_StateChanged, SET_StateChanged },
-   { "Username",       FDF_VIRTUAL|FDF_STRING|FDF_W,         nullptr, SET_Username },
-   { "Password",       FDF_VIRTUAL|FDF_STRING|FDF_W,         nullptr, SET_Password },
+   { "ResponseKeys",   FDF_VIRTUAL|FDF_VECTOR|FDF_CPPSTRING|FDF_R, GET_ResponseKeys },
+   { "Src",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FD_PRIVATE|FDF_RW, GET_Location, SET_Location }, // Deprecated by URL
+   { "URL",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_SYNONYM|FDF_RW, GET_Location, SET_Location },
+   { "StateChanged",   FDF_VIRTUAL|FDF_FUNCTION|FDF_RW,      GET_StateChanged, SET_StateChanged },
+   { "Username",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,      nullptr, SET_Username },
+   { "Password",       FDF_VIRTUAL|FDF_CPPSTRING|FDF_W,      nullptr, SET_Password },
    END_FIELD
 };
 
@@ -1134,6 +1298,7 @@ static ERR create_http_class(void)
       fl::Name("HTTP"),
       fl::Category(CCF::NETWORK),
       fl::Actions(clHTTPActions),
+      fl::Methods(clHTTPMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(extHTTP)),
       fl::Path(MOD_PATH));
@@ -1143,5 +1308,9 @@ static ERR create_http_class(void)
 
 //********************************************************************************************************************
 
-KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, nullptr)
+static ModHeader::STRUCTS glStructures = {
+   { "HTTPUpgrade", { sizeof(HTTPUpgrade), alignof(HTTPUpgrade) } }
+};
+
+KOTUKU_MOD(MODInit, nullptr, nullptr, MODExpunge, nullptr, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_http_module() { return &ModHeader; }

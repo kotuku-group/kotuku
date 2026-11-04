@@ -3,18 +3,22 @@
 module({
   name="Tiri",
   copyright="Paul Manias © 2006-2026",
-  version=1.0,
-  prefix="fl",
-  status="beta",
+  version=1.0, -- This is the module version number, NOT the Tiri language version number.
+  prefix="ti",
+  status="stable",
   src="tiri.cpp",
   comment="Tiri is a JIT optimised language that extends the Script class.",
   timestamp=20240611
 },
 function()
+  c_include('<kotuku/modules/script.h>')
+
   restrict(function()
     loadFile(glPath .. 'common.tdl')
   end)
 
+  -- NOTE: JIT options are intended to affect runtime behaviour only, they must not impact on produced bytecode
+  -- as they are not accounted for when saving bytecode to files.
   flags("JOF", { comment="JIT behaviour options" },
      "DIAGNOSE:        Cancels aborting on error so that the full script is parsed.  Enables deeper log tracing.",
      "DUMP_BYTECODE:   Print a disassembly of bytecode instructions after parsing.",
@@ -35,12 +39,18 @@ function()
      { TRACE = "TRACE_TOKENS|TRACE_EXPECT|TRACE_BOUNDARY|TRACE_OPERATORS|TRACE_REGISTERS|TRACE_CFG|TRACE_ASSIGNMENTS|TRACE_VALUE_CATEGORY|TRACE_TYPES" }
   )
 
---[[
-  class('Tiri', {
-    src={ 'tiri_class.cpp' }
-  })
---]]
+  klass('Tiri', {
+    base = 'Script',
+    extended = true,
+    src = { 'tiri_class.cpp' },
+    output = 'tiri_class_def.cpp',
+    references = { 'JOF' }
+  },
+  [[
+    ~int(JOF) JitOptions
+  ]])
 
-  functionNames("fl",
-    "SetVariable")
+  functionNames("ti",
+    "SetVariable",
+    "ResolvePackage")
 end)

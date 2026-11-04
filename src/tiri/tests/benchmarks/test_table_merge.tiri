@@ -1,0 +1,146 @@
+-- Feasibility fixture for table.merge bytecode lowering. Run through Flute, with and without --jit-options off.
+-- Results escape through a ring of tables; correctness validation is outside the timed region.
+
+function live_shape(Table:table):<bool, num>
+   local count = 0
+   local maximum = -1
+   local dense = true
+   local key:any = next(Table)
+   while key != nil do
+      count++
+      if type(key) != 'number' then dense = false
+      elseif key < 0 or key >= 134217729 or math.floor(key) != key then dense = false
+      elseif key > maximum then maximum = key
+      end
+      key = next(Table, key)
+   end
+   return dense and maximum is count - 1, count
+end
+
+function reference_merge(First:table, Second:table, Overwrite:bool):table
+   if Overwrite is nil then Overwrite = true end
+   local first_dense, first_count = live_shape(First)
+   local second_dense, second_count = live_shape(Second)
+   local result = table.new(first_dense and second_dense and first_count + second_count or 0, 0)
+   if first_dense and second_dense then
+      for i in {0 to first_count} do rawset(result, i, rawget(First, i)) end
+      for i in {0 to second_count} do rawset(result, first_count + i, rawget(Second, i)) end
+   else
+      local key:any, value:any = next(First)
+      while key != nil do
+         rawset(result, key, value)
+         key, value = next(First, key)
+      end
+      key, value = next(Second)
+      while key != nil do
+         if Overwrite or rawget(result, key) is nil then rawset(result, key, value) end
+         key, value = next(Second, key)
+      end
+   end
+   return result
+end
+
+function native_direct(First:table, Second:table, Overwrite:bool):table
+   return table.merge(First, Second, Overwrite)
+end
+
+function reference_direct(First:table, Second:table, Overwrite:bool):table
+   return reference_merge(First, Second, Overwrite)
+end
+
+function verify(Result:table, Expected:table)
+   assert(Result.size() is Expected.size())
+   local key:any, value:any = next(Expected)
+   while key != nil do
+      assert(rawget(Result, key) is value, 'Benchmark result differs from the native reference')
+      key, value = next(Expected, key)
+   end
+end
+
+@Test function BenchmarkMerge()
+   local compiled = 0
+   local aborted = 0
+   local reference_records = 0
+   local reference_traces = 0
+   local reference_trace_ids = {}
+   local shape_records = 0
+   local abort_reasons = {}
+   local function trace_event(Event, TraceNo, Function, Pc, Error, Detail)
+      if Event is 'start' then reference_trace_ids[TraceNo] = nil
+      elseif Event is 'stop' then
+         compiled++
+         if reference_trace_ids[TraceNo] then reference_traces++ end
+      elseif Event is 'abort' then
+         aborted++
+         local reason = tostring(Error) .. ':' .. tostring(Detail)
+         abort_reasons[reason] = (abort_reasons[reason] or 0) + 1
+      end
+   end
+   local function record_event(TraceNo, Function, Pc)
+      if Function is reference_merge then
+         reference_records++
+         reference_trace_ids[TraceNo] = true
+      end
+      if Function is live_shape then
+         shape_records++
+         reference_trace_ids[TraceNo] = true
+      end
+   end
+   local info = jit.util.funcInfo(reference_merge)
+   print(f'REFERENCE bytecodes={info.byteCodes} stackslots={info.stackSlots}')
+   print(f'SHAPE bytecodes={jit.util.funcInfo(live_shape).byteCodes}')
+   local native_size = jit.util.funcInfo(native_direct).byteCodes
+   local reference_size = jit.util.funcInfo(reference_direct).byteCodes
+   print(f'CALLER native={native_size} reference={reference_size}')
+   jit.attach(trace_event, 'trace')
+   jit.attach(record_event, 'record')
+   for shape in values({ 'dense', 'map_low', 'map_high', 'mixed', 'sparse' }) do
+      for size in values({ 0, 2, 32, 256, 4096 }) do
+         local first = {}
+         local second = {}
+         for i in {0 to size} do
+            if shape is 'dense' then first[i] = i; second[i] = i + 1
+            elseif shape is 'sparse' then first[i * 3] = i; second[i * 3] = i + 1
+            else
+               first['k' .. i] = i
+               second[(shape is 'map_low' and 'v' or 'k') .. i] = i + 1
+            end
+         end
+         if shape is 'mixed' then first[0] = false; second[0] = '' end
+         for overwrite in values({ true, false }) do
+            local expected = table.merge(first, second, overwrite)
+            local calls = size >= 4096 and 40 or (size >= 256 and 200 or 1000)
+            for method in values({ 'native_direct', 'native_indirect', 'reference_direct', 'reference_indirect' }) do
+               local fn = method is 'native_direct' and native_direct or
+                  (method is 'native_indirect' and table.merge or
+                  (method is 'reference_direct' and reference_direct or reference_merge))
+               processing.collect('full')
+               local cold_start = mSys.PreciseTime()
+               local cold_result = fn(first, second, overwrite)
+               local cold_us = mSys.PreciseTime() - cold_start
+               verify(cold_result, expected)
+               local sink = {}
+               -- Warm the same worker and input before recording three independently timed batches.
+               for i in {0 to 100} do sink[i % 16] = fn(first, second, overwrite) end
+               local samples = {}
+               for repeat_no in {0 to 3} do
+                  local start = mSys.PreciseTime()
+                  for i in {0 to calls} do sink[i % 16] = fn(first, second, overwrite) end
+                  samples[repeat_no] = (mSys.PreciseTime() - start) / calls
+                  verify(sink[(calls - 1) % 16], expected)
+               end
+               local gc_start = mSys.PreciseTime()
+               processing.collect('full')
+               local gc_us = mSys.PreciseTime() - gc_start
+               print(f'COST {shape} {size} {overwrite} {method} first_us={cold_us} full_gc_us={gc_us}')
+               print(f'MERGE {shape} {size} {overwrite} {method} us={samples[0]},{samples[1]},{samples[2]}')
+            end
+         end
+      end
+   end
+   jit.attach(trace_event)
+   jit.attach(record_event)
+   print(f'TRACES compiled={compiled} aborted={aborted} reference_traces={reference_traces}')
+   print(f'RECORDS reference={reference_records} shape={shape_records}')
+   for reason, count in abort_reasons do print(f'ABORT {reason} count={count}') end
+end

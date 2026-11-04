@@ -3,7 +3,7 @@ UDP Broadcast and Multicast Test
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+module network as mNet
 
    glBasePort = 19820  -- Base port for broadcast/multicast tests
    glTestTimeout = 3.0
@@ -61,8 +61,8 @@ end
    end
 
    -- Test TCP socket (should not support multicast)
-   tcpSocket = obj.new('netsocket', {
-      flags = 'SERVER', port = 38134  -- TCP socket
+   tcpSocket = obj.new('netserver', {
+      port = 38134  -- TCP socket
    })
 
    err = tcpSocket.mtJoinMulticastGroup('224.1.1.1')
@@ -96,18 +96,19 @@ end
    bcast_recv = false
 
    -- Create server to listen for broadcast messages
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port     = server_port,
       address  = '0.0.0.0',  -- Listen on all interfaces
-      flags    = NSF_SERVER|NSF_UDP,
+      flags    = NSF_UDP,
       incoming = function(Socket:obj)
          buffer = string.alloc(1024)
          source = struct.new('IPAddress')
          err, read_len = Socket.mtRecvFrom(source, buffer)
          if err is ERR_Okay and read_len > 0 then
-            msg = buffer:sub(0, read_len)
-            logOutput('[Broadcast Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(source) .. ':' .. source.port)
-            if (msg:startsWith('Broadcast Test')) then
+            local msg = buffer.sub(0, read_len)
+            local err, ip = mNet.AddressToStr(source)
+            logOutput('[Broadcast Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. source.port)
+            if (msg.startsWith('Broadcast Test')) then
                bcast_recv = true
                Socket.acSignal()
             end
@@ -115,7 +116,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = NSF_UDP|NSF_BROADCAST })
 
    -- Send to loopback (not true broadcast, but tests the broadcast socket option)

@@ -1,0 +1,593 @@
+   include 'display', 'vector'
+
+module display as mGfx
+
+----------------------------------------------------------------------------------------------------------------------
+-- Validation of the Gouraud gradient render path (VGT::GOURAUD).  A single triangle is filled with three distinct
+-- corner colours (red, green, blue) and the rendered output is sampled to confirm barycentric colour interpolation.
+
+function newBitmap(Width, Height)
+   local bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function vertex(X, Y, R, G, B)
+   local v = struct.new('GouraudVertex')
+   v.x = X
+   v.y = Y
+   v.colour.red   = R
+   v.colour.green = G
+   v.colour.blue  = B
+   v.colour.alpha = 1.0
+   return v
+end
+
+function stop(Offset, R, G, B)
+   local s = struct.new('GradientStop')
+   s.offset    = Offset
+   s.rgb.red   = R
+   s.rgb.green = G
+   s.rgb.blue  = B
+   s.rgb.alpha = 1.0
+   return s
+end
+
+function rampStops()
+   local stops = { }
+   stops.insert(stop(0.0, 0.0, 0.0, 0.0))
+   stops.insert(stop(1.0, 1.0, 1.0, 1.0))
+   return stops
+end
+
+function expectUnsupported(FieldName, Body)
+   local rejected = false
+   try
+      Body()
+   except ex
+      rejected = true
+   end
+   assert(rejected, 'GradientGouraud should reject inherited ramp field ' .. FieldName)
+end
+
+-- A right-angled triangle filling most of a 100x100 viewport.
+--   A (10,10) = red, B (90,10) = green, C (10,90) = blue
+
+function newTriangleScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(vertex(10, 10, 1.0, 0.0, 0.0))
+   vertices.insert(vertex(90, 10, 0.0, 1.0, 0.0))
+   vertices.insert(vertex(10, 90, 0.0, 0.0, 1.0))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#gouraud)' })
+   return scene, gradient
+end
+
+-- A four-corner quad split into two triangles sharing the top-right / bottom-left diagonal.  Used to verify that
+-- no translucent seam appears along the shared edge (adjacent triangles must overlap enough to seal the AA gap).
+
+function newQuadScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(vertex(0,   0,   1.0, 0.0, 0.0)) -- 0: top-left  = red
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0)) -- 1: top-right = green
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0)) -- 2: bot-left  = blue
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 0.0)) -- 3: bot-right = yellow
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   gradient.indices = array<int> { 0, 1, 2,   -- triangle A: TL, TR, BL
+                                   1, 3, 2 }   -- triangle B: TR, BR, BL
+   check scene.mtAddDef('gouraud_quad', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#gouraud_quad)' })
+   return scene, gradient
+end
+
+-- A Gouraud mesh covering the whole viewport, clipped by an ellipse.  Used to verify that Gouraud rendering respects
+-- the target vector's own path instead of drawing raw triangle geometry over the full mesh bounds.
+
+function newEllipseScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(vertex(0,   0,   1.0, 0.0, 0.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud_ellipse', gradient)
+
+   viewport.new('VectorEllipse', { cx=50, cy=50, radius=30, fill='url(#gouraud_ellipse)' })
+   return scene, gradient
+end
+
+-- A scene-graph stroke using a Gouraud paint server.  Strokes do not use the SimpleVector DrawPath helper, so this
+-- exercises SceneRenderer::render_stroke() directly.
+
+function newStrokeScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(vertex(0,   0,   1.0, 0.0, 0.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
+   vertices.insert(vertex(100, 0,   0.0, 1.0, 0.0))
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 0.0))
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 1.0))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud_stroke', gradient)
+
+   viewport.new('VectorRectangle', {
+      x=20, y=20, width=60, height=60, fill='none', stroke='url(#gouraud_stroke)', strokeWidth=10
+   })
+   return scene, gradient
+end
+
+-- A clip mask whose mask content uses a Gouraud fill.  The target is clipped to the left half of the bitmap by a
+-- white Gouraud-filled rectangle in the clip viewport.
+
+function newClipMaskScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=VUNIT_USERSPACE })
+
+   local vertices = { }
+   vertices.insert(vertex(0,  0,   1.0, 1.0, 1.0))
+   vertices.insert(vertex(50, 0,   1.0, 1.0, 1.0))
+   vertices.insert(vertex(0,  100, 1.0, 1.0, 1.0))
+   vertices.insert(vertex(50, 0,   1.0, 1.0, 1.0))
+   vertices.insert(vertex(50, 100, 1.0, 1.0, 1.0))
+   vertices.insert(vertex(0,  100, 1.0, 1.0, 1.0))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud_clip', gradient)
+
+   clip.viewport.new('VectorRectangle', { x=0, y=0, width=50, height=100, fill='url(#gouraud_clip)' })
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,0,0)', mask=clip })
+   return scene, gradient
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function drawHash(Scene, Bitmap)
+   drawScene(Scene, Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+-- A black -> white horizontal ramp under the requested colour space.  The left edge is black, the right edge white,
+-- so the midpoint grey level reveals whether interpolation happened in sRGB or linear space.
+
+function newRampScene(ColourSpace)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(vertex(0,   0,   0.0, 0.0, 0.0)) -- top-left  = black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- top-right = white
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 1.0)) -- bot-right = white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- bot-left  = black
+
+   local gradient = scene.new('GradientGouraud', {
+      units       = VUNIT_USERSPACE,
+      colourSpace = ColourSpace,
+      vertices    = vertices
+   })
+   check scene.mtAddDef('gouraud_ramp', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#gouraud_ramp)' })
+   return scene, gradient
+end
+
+-- A black -> white horizontal ramp with a given Resolution (in sRGB).  Used to verify that Resolution posterises the
+-- gradient into 1/(1-Resolution) distinct colour levels, matching the field gradients.
+
+function newResolutionRampScene(Resolution)
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(vertex(0,   0,   0.0, 0.0, 0.0)) -- black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- black
+   vertices.insert(vertex(100, 0,   1.0, 1.0, 1.0)) -- white
+   vertices.insert(vertex(100, 100, 1.0, 1.0, 1.0)) -- white
+   vertices.insert(vertex(0,   100, 0.0, 0.0, 0.0)) -- black
+
+   local gradient = scene.new('GradientGouraud', {
+      units      = VUNIT_USERSPACE,
+      resolution = Resolution,
+      vertices   = vertices
+   })
+   check scene.mtAddDef('gouraud_res', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#gouraud_res)' })
+   return scene, gradient
+end
+
+-- Count the distinct grey levels along the horizontal centre line, away from the anti-aliased edges.
+
+function distinctGreys(Bitmap)
+   local seen = { }
+   local count = 0
+   for x in {2 to 98} do
+      local r = mGfx.ReadRGBPixel(Bitmap, x, 50).red
+      if seen[r] is nil then
+         seen[r] = true
+         count = count + 1
+      end
+   end
+   return count
+end
+
+@Test function VerticesRoundTrip()
+   local scene, gradient = newTriangleScene()
+   assert(gradient != nil, 'GradientGouraud should be created')
+   local verts = gradient.vertices
+   assert(#verts is 3, 'Expected three vertices, got ' .. #verts)
+end
+
+@Test function RampFieldsAreRejected()
+   local scene, gradient = newTriangleScene()
+   expectUnsupported('Colour', function() gradient.colour = array<float> { 1.0, 0.0, 0.0, 1.0 } end)
+   expectUnsupported('ColourMap', function() gradient.colourMap = 'cmap:magma' end)
+   expectUnsupported('SpreadMethod', function() gradient.spreadMethod = VSPREAD_REPEAT end)
+   expectUnsupported('Stops', function() gradient.stops = rampStops() end)
+end
+
+@Test function CornerColoursDominate()
+   local scene = newTriangleScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   -- Sample just inside each corner; the nearest vertex colour should clearly dominate.
+
+   local a = mGfx.ReadRGBPixel(bmp, 14, 14)  -- near red vertex (10,10)
+   assert((a.red > a.green) and (a.red > a.blue),
+      'Red corner should be red-dominant (got ' .. a.red .. ',' .. a.green .. ',' .. a.blue .. ')')
+
+   local b = mGfx.ReadRGBPixel(bmp, 84, 13)  -- near green vertex (90,10)
+   assert((b.green > b.red) and (b.green > b.blue),
+      'Green corner should be green-dominant (got ' .. b.red .. ',' .. b.green .. ',' .. b.blue .. ')')
+
+   local c = mGfx.ReadRGBPixel(bmp, 13, 84)  -- near blue vertex (10,90)
+   assert((c.blue > c.red) and (c.blue > c.green),
+      'Blue corner should be blue-dominant (got ' .. c.red .. ',' .. c.green .. ',' .. c.blue .. ')')
+end
+
+@Test function CentroidBlendsAllChannels()
+   local scene = newTriangleScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   -- The centroid of A(10,10) B(90,10) C(10,90) is (~36.7, ~36.7).  With equal barycentric weights the colour
+   -- is the average of red, green and blue, so every channel should carry a meaningful, similar value.
+
+   local p = mGfx.ReadRGBPixel(bmp, 37, 37)
+   assert((p.red > 40) and (p.green > 40) and (p.blue > 40),
+      'Centroid should blend all three channels (got ' .. p.red .. ',' .. p.green .. ',' .. p.blue .. ')')
+
+   local max_channel = math.max(p.red, p.green, p.blue)
+   local min_channel = math.min(p.red, p.green, p.blue)
+   assert((max_channel - min_channel) < 60,
+      'Centroid channels should be roughly balanced (spread ' .. (max_channel - min_channel) .. ')')
+end
+
+@Test function SharedEdgeHasNoSeam()
+   -- Two triangles share the diagonal x+y=100.  Rendered as independent anti-aliased passes they would leave a
+   -- translucent seam where the dark background bleeds through.  Scanning across the diagonal, total brightness
+   -- must stay high and vary smoothly: no pixel may drop sharply below its neighbours.
+
+   local scene = newQuadScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   -- Walk the row at y=50 across the diagonal (near x=50) and track the largest single-pixel brightness drop.
+   local previous = -1
+   local worst_drop = 0
+   for x in {40 to 61} do
+      local c = mGfx.ReadRGBPixel(bmp, x, 50)
+      local brightness = c.red + c.green + c.blue
+      if previous >= 0 then
+         local drop = previous - brightness
+         if drop > worst_drop then worst_drop = drop end
+      end
+      previous = brightness
+   end
+
+   -- A genuine seam shows up as a deep, abrupt dip (tens of levels) toward the background.  Smooth interpolation
+   -- keeps adjacent-pixel changes small, so a generous threshold still catches a regression.
+   assert(worst_drop < 30,
+      'No translucent seam should appear along the shared edge (worst adjacent brightness drop ' .. worst_drop .. ')')
+end
+
+@Test function GouraudFillRespectsVectorPath()
+   local scene = newEllipseScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local outside = mGfx.ReadRGBPixel(bmp, 10, 10)
+   assert((outside.red is 0) and (outside.green is 0) and (outside.blue is 0),
+      'Gouraud fill should not draw outside the target ellipse path')
+
+   local centre = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert((centre.red + centre.green + centre.blue) > 0, 'Gouraud fill should draw inside the target ellipse path')
+end
+
+@Test function GouraudStrokeRendersInSceneGraph()
+   local scene = newStrokeScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local stroke_pixel = mGfx.ReadRGBPixel(bmp, 50, 20)
+   assert((stroke_pixel.red + stroke_pixel.green + stroke_pixel.blue) > 0,
+      'Gouraud stroke should render through the scene graph stroke path')
+
+   local centre = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert((centre.red is 0) and (centre.green is 0) and (centre.blue is 0),
+      'Stroke-only Gouraud rectangle should not fill its interior')
+end
+
+@Test function GouraudFillCanBuildClipMask()
+   local scene = newClipMaskScene()
+   local bmp = newBitmap(100, 100)
+   drawScene(scene, bmp)
+
+   local inside = mGfx.ReadRGBPixel(bmp, 25, 50)
+   assert(inside.red > 0, 'Gouraud-filled clip mask should reveal the masked target')
+
+   local outside = mGfx.ReadRGBPixel(bmp, 75, 50)
+   assert((outside.red is 0) and (outside.green is 0) and (outside.blue is 0),
+      'Gouraud-filled clip mask should keep pixels outside the mask transparent')
+end
+
+@Test function UnchangedMeshRendersStably()
+   -- The transformed-triangle cache is reused when the mesh, transform and opacity are unchanged.  A correct cache
+   -- must produce byte-identical output across repeated draws.
+
+   local scene = newTriangleScene()
+   local bmp = newBitmap(100, 100)
+
+   local first  = drawHash(scene, bmp)
+   local second = drawHash(scene, bmp)
+   local third  = drawHash(scene, bmp)
+
+   assert(first is second, 'Re-rendering an unchanged Gouraud mesh should be byte-identical (cache reuse)')
+   assert(second is third, 'Repeated Gouraud renders should remain stable')
+end
+
+@Test function ChangedMeshInvalidatesCache()
+   -- Mutating the mesh must invalidate the cache so the new colours are reflected.  A stale cache would render the
+   -- original colours and produce an unchanged hash.
+
+   local scene, gradient = newTriangleScene()
+   local bmp = newBitmap(100, 100)
+   local before = drawHash(scene, bmp)
+
+   -- Recolour the mesh entirely (red/green/blue -> white/grey/black) by assigning a fresh vertices array.
+   local recoloured = { }
+   recoloured.insert(vertex(10, 10, 1.0, 1.0, 1.0))
+   recoloured.insert(vertex(90, 10, 0.5, 0.5, 0.5))
+   recoloured.insert(vertex(10, 90, 0.0, 0.0, 0.0))
+   gradient.vertices = recoloured
+
+   local after = drawHash(scene, bmp)
+   assert(before != after, 'Changing the Gouraud mesh should invalidate the cache and alter the render')
+end
+
+@Test function ColourSpaceAltersMidpoint()
+   -- A black -> white ramp interpolated in linear space, then re-encoded to sRGB, produces a markedly brighter
+   -- midpoint than naive sRGB interpolation.  sRGB blends to ~128 (linear average of the bytes); linear blends to
+   -- ~188 (sRGB encoding of linear 0.5).  The endpoints must remain black/white in both spaces.
+
+   local srgb_scene = newRampScene(VCS_SRGB)
+   local lin_scene  = newRampScene(VCS_LINEAR_RGB)
+   local srgb_bmp = newBitmap(100, 100)
+   local lin_bmp  = newBitmap(100, 100)
+   drawScene(srgb_scene, srgb_bmp)
+   drawScene(lin_scene, lin_bmp)
+
+   local srgb_mid = mGfx.ReadRGBPixel(srgb_bmp, 50, 50).red
+   local lin_mid  = mGfx.ReadRGBPixel(lin_bmp, 50, 50).red
+
+   assert(lin_mid > srgb_mid + 30,
+      'linearRGB midpoint should be clearly brighter than sRGB (linear ' .. lin_mid .. ' vs sRGB ' .. srgb_mid .. ')')
+
+   -- The white endpoint is a shared anchor: both colour spaces map 1.0 -> 1.0, so the right edge converges to white
+   -- regardless of interpolation space.  (The black endpoint is not a useful cross-space check because sRGB encoding
+   -- of small linear values rises steeply, so the two ramps diverge immediately away from x=0.)
+   local srgb_right = mGfx.ReadRGBPixel(srgb_bmp, 97, 50).red
+   local lin_right  = mGfx.ReadRGBPixel(lin_bmp, 97, 50).red
+   assert((srgb_right > 230) and (lin_right > 230),
+      'White endpoint should converge in both colour spaces (sRGB ' .. srgb_right .. ', linear ' .. lin_right .. ')')
+end
+
+@Test function ResolutionPosterisesGradient()
+   -- Resolution reduces the gradient to 1/(1-Resolution) distinct colour levels, matching the field gradients.
+   -- A full-resolution ramp is smooth (many greys), Resolution 0.75 yields 4 levels and Resolution 0.5 yields 2.
+
+   local full = newResolutionRampScene(1.0)
+   local res4 = newResolutionRampScene(0.75)
+   local res2 = newResolutionRampScene(0.5)
+   local full_bmp = newBitmap(100, 100)
+   local res4_bmp = newBitmap(100, 100)
+   local res2_bmp = newBitmap(100, 100)
+   drawScene(full, full_bmp)
+   drawScene(res4, res4_bmp)
+   drawScene(res2, res2_bmp)
+
+   local full_greys = distinctGreys(full_bmp)
+   local res4_greys = distinctGreys(res4_bmp)
+   local res2_greys = distinctGreys(res2_bmp)
+
+   assert(full_greys > 16, 'A full-resolution ramp should be smooth (got ' .. full_greys .. ' greys)')
+   assert(res4_greys is 4, 'Resolution 0.75 should yield 4 distinct levels (got ' .. res4_greys .. ')')
+   assert(res2_greys is 2, 'Resolution 0.5 should yield 2 distinct levels (got ' .. res2_greys .. ')')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Translucent Gouraud rendering.  Vertices with alpha < 1 select the compound (single-pass) render path, where
+-- coverage along shared triangle edges is partitioned exactly instead of being sealed by overlap.  The dilated
+-- fast path would source-over blend the ~1px overlap band twice, exposing the shared edge as a seam.
+
+function translucentVertex(X, Y, R, G, B, A)
+   local v = struct.new('GouraudVertex')
+   v.x = X
+   v.y = Y
+   v.colour.red   = R
+   v.colour.green = G
+   v.colour.blue  = B
+   v.colour.alpha = A
+   return v
+end
+
+-- A uniform red quad at 50% alpha, split into two triangles sharing the top-right / bottom-left diagonal.
+
+function newTranslucentQuadScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(translucentVertex(0,   0,   1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(100, 0,   1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(0,   100, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(100, 100, 1.0, 0.0, 0.0, 0.5))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   gradient.indices = array<int> { 0, 1, 2,   -- triangle A: TL, TR, BL
+                                   1, 3, 2 }  -- triangle B: TR, BR, BL
+   check scene.mtAddDef('gouraud_translucent', gradient)
+
+   viewport.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='url(#gouraud_translucent)' })
+   return scene, gradient
+end
+
+-- Two translucent triangles with positive-area overlap.  They must retain ordered source-over compositing rather
+-- than being flattened as neighbouring cells of one compound mesh.
+
+function newOverlappingTranslucentScene()
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+
+   local vertices = { }
+   vertices.insert(translucentVertex(10, 10, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(90, 10, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(50, 90, 1.0, 0.0, 0.0, 0.5))
+   vertices.insert(translucentVertex(10, 90, 0.0, 0.0, 1.0, 0.5))
+   vertices.insert(translucentVertex(50, 10, 0.0, 0.0, 1.0, 0.5))
+   vertices.insert(translucentVertex(90, 90, 0.0, 0.0, 1.0, 0.5))
+
+   local gradient = scene.new('GradientGouraud', {
+      units    = VUNIT_USERSPACE,
+      vertices = vertices
+   })
+   check scene.mtAddDef('gouraud_translucent_overlap', gradient)
+
+   viewport.new('VectorRectangle', {
+      x=0, y=0, width='100%', height='100%', fill='url(#gouraud_translucent_overlap)'
+   })
+   return scene
+end
+
+@Test function TranslucentQuadHasNoSeam()
+   -- Composite the translucent quad over white.  The framework blends in linear-light space, so red at 50% alpha
+   -- yields green/blue ~186 (sRGB encoding of linear 0.5) everywhere - the same value a plain 'rgba(255,0,0,.5)'
+   -- fill produces.  A seam along the shared diagonal would source-over blend twice (linear 0.25 -> ~137), so
+   -- every sample across the diagonal must stay near the single-blend value.
+
+   local scene = newTranslucentQuadScene()
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   for x in {40 to 61} do
+      local c = mGfx.ReadRGBPixel(bmp, x, 100 - x)  -- track the diagonal x+y=100
+      assert((c.green > 165) and (c.green < 205),
+         'Translucent shared edge must blend exactly once (green ' .. c.green .. ' at ' .. x .. ',' .. (100 - x) .. ')')
+      assert(c.red > 250, 'Red channel should remain saturated over a white background (got ' .. c.red .. ')')
+   end
+end
+
+@Test function TranslucentFillCompositesCorrectly()
+   -- Away from any edge, 50% red over white must match the plain-fill source-over result on all channels
+   -- (green/blue ~186 under linear-light blending).
+
+   local scene = newTranslucentQuadScene()
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   local p = mGfx.ReadRGBPixel(bmp, 25, 25)
+   assert(p.red > 250, '50% red over white should keep red saturated (got ' .. p.red .. ')')
+   assert((p.green > 175) and (p.green < 200),
+      '50% red over white should blend green to ~186 (got ' .. p.green .. ')')
+   assert((p.blue > 175) and (p.blue < 200),
+      '50% red over white should blend blue to ~186 (got ' .. p.blue .. ')')
+end
+
+@Test function ReflectedTranslucentMeshRenders()
+   -- Reflection reverses the transformed triangle winding.  The compound rasteriser must assign each triangle's
+   -- style to its new interior side rather than silently treating the reflected interior as unstyled.
+
+   local scene, gradient = newTranslucentQuadScene()
+   gradient.transform = 'matrix(-1 0 0 1 100 0)'
+
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   local p = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert(p.red > 250, 'Reflected translucent mesh should retain its red fill (got ' .. p.red .. ')')
+   assert((p.green > 175) and (p.green < 200),
+      'Reflected translucent mesh should composite at 50% alpha (green ' .. p.green .. ')')
+end
+
+@Test function OverlappingTranslucentTrianglesCompositeInOrder()
+   -- At the centre, 50% blue is composited over 50% red over white.  In linear light that produces approximately
+   -- (186, 137, 224); flattening the triangles as compound styles would discard the red layer and produce
+   -- approximately (186, 186, 255).
+
+   local scene = newOverlappingTranslucentScene()
+   local bmp = obj.new('bitmap', { width=100, height=100, bitsPerPixel=32, bkgd='255,255,255,255' })
+   drawScene(scene, bmp)
+
+   local p = mGfx.ReadRGBPixel(bmp, 50, 50)
+   assert((p.red > 170) and (p.red < 205), 'Overlapping red contribution should remain visible (got ' .. p.red .. ')')
+   assert((p.green > 120) and (p.green < 155),
+      'Two translucent layers should source-over composite in order (green ' .. p.green .. ')')
+   assert(p.blue > 215, 'Top blue layer should remain dominant (got ' .. p.blue .. ')')
+end

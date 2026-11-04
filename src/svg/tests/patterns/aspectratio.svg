@@ -1,0 +1,23 @@
+<svg width="100%" height="300" viewBox="0 0 500 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!--
+      1. width/height="100%" makes the pattern box span the entire target element.
+      2. viewBox defines the internal grid space for the artwork.
+      3. preserveAspectRatio centers the artwork inside that bounding box.
+    -->
+    <pattern id="autoCenter"
+             width="100%" height="100%"
+             patternUnits="objectBoundingBox"
+             viewBox="0 0 100 100"
+             preserveAspectRatio="xMidYMid meet">
+
+      <!-- The artwork is built relative to the 100x100 viewBox -->
+      <circle cx="50" cy="50" r="20" fill="#4a90e2" />
+      <circle cx="50" cy="50" r="10" fill="#f5a623" />
+    </pattern>
+  </defs>
+
+  <!-- This rectangle can be any width or height; the pattern auto-centers perfectly -->
+  <rect fill="white"/>
+  <rect x="20" y="20" width="460" height="260" fill="url(#autoCenter)" stroke="#333" stroke-width="2" />
+</svg>

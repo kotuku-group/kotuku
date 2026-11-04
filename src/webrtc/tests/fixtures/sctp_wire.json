@@ -1,0 +1,108 @@
+{
+  "profile": {
+    "source_port": 5000,
+    "destination_port": 5001,
+    "verification_tag": 287454020
+  },
+  "crc32c": [
+    {
+      "hex": "",
+      "checksum": "00000000"
+    },
+    {
+      "hex": "313233343536373839",
+      "checksum": "e3069283"
+    },
+    {
+      "hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "checksum": "8a9136aa"
+    },
+    {
+      "hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "checksum": "62a8ab43"
+    },
+    {
+      "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "checksum": "46dd794e"
+    }
+  ],
+  "packets": [
+    {
+      "name": "init",
+      "hex": "138813890000000048488ed201000014112233440200000002000200fffffffe",
+      "valid": true,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 0
+    },
+    {
+      "name": "text_hi",
+      "hex": "1388138911223344799d8b0500030012fffffffe000200000000003368690000",
+      "valid": true,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 287454020
+    },
+    {
+      "name": "empty_binary",
+      "hex": "1388138911223344add2156100030011fffffffe000200000000003900000000",
+      "valid": true,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 287454020
+    },
+    {
+      "name": "cookie_ack",
+      "hex": "138813891122334412f57b750b000004",
+      "valid": true,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 287454020
+    },
+    {
+      "name": "short_chunk_length",
+      "hex": "1388138911223344267bd73500000003",
+      "valid": false,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 287454020,
+      "reason": "chunk length below header"
+    },
+    {
+      "name": "chunk_length_past_end",
+      "hex": "13881389112233441dd05eac00000008",
+      "valid": false,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 287454020,
+      "reason": "chunk extends beyond packet"
+    },
+    {
+      "name": "checksum_corruption",
+      "hex": "1388138911223344799d8b0500030012fffffffe000200000000003369000000",
+      "valid": false,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 287454020,
+      "reason": "payload changed without CRC update"
+    },
+    {
+      "name": "wrong_source_port",
+      "hex": "138a138911223344100f66ba0b000004",
+      "valid": false,
+      "source_port": 5002,
+      "destination_port": 5001,
+      "verification_tag": 287454020,
+      "reason": "association source port mismatch"
+    },
+    {
+      "name": "wrong_tag",
+      "hex": "13881389112233455a2345810b000004",
+      "valid": false,
+      "source_port": 5000,
+      "destination_port": 5001,
+      "verification_tag": 287454021,
+      "reason": "association verification tag mismatch"
+    }
+  ]
+}

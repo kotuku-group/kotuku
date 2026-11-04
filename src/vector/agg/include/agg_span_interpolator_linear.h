@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Interpolates source coordinates linearly across a scanline. Hooks into span_gradient and span_image_filter generators
+// through the interpolator interface. In the vector renderer it maps destination pixels back to gradient or image
+// source space.
 
-#ifndef AGG_SPAN_INTERPOLATOR_LINEAR_INCLUDED
-#define AGG_SPAN_INTERPOLATOR_LINEAR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_dda_line.h"
@@ -172,7 +174,3 @@ namespace agg
       unsigned m_len;
    };
 }
-
-#endif
-
-

@@ -1,0 +1,147 @@
+-- Private, bounded JSON decoder for security protocol messages.  Never includes input in errors.
+
+   import 'json'
+
+   namespace oauth_json { }
+
+function jsonFailure():nil
+   raise 'Invalid or excessive JSON input'
+end
+
+function utf8Scalar(Value:num):str
+   if Value < 128 then return string.char(Value) end
+   if Value < 2048 then return string.char(192 + (Value >> 6), 128 + (Value & 63)) end
+
+   if Value < 65536 then
+      return string.char(224 + (Value >> 12), 128 + ((Value >> 6) & 63), 128 + (Value & 63))
+   end
+
+   return string.char(240 + (Value >> 18), 128 + ((Value >> 12) & 63),
+      128 + ((Value >> 6) & 63), 128 + (Value & 63))
+end
+
+oauth_json.decode = function(Text:str!, Limit:num):any
+   if #Text > (Limit or 262144) then jsonFailure() end
+   pos = 0
+   function space()
+      while pos < #Text do
+         byte = string.byte(Text, pos)
+         if byte != 32 and byte != 9 and byte != 10 and byte != 13 then return end
+         pos++
+      end
+   end
+
+   function hex4():num
+      hex = Text.sub(pos, pos + 4)
+      if #hex != 4 or not r'^[0-9a-fA-F]{4}$'.test(hex) then jsonFailure() end
+      pos += 4
+      return tonumber(hex, 16)
+   end
+
+   function quoted():str
+      if Text.sub(pos, pos + 1) != '"' then jsonFailure() end
+      pos++
+      pieces = array<str>
+      while pos < #Text do
+         b = string.byte(Text, pos)
+         pos++
+         if b is 34 then return pieces.concat() end
+         if b < 32 then jsonFailure() end
+         if b is 92 then
+            esc = Text.sub(pos, pos + 1)
+            pos++
+            if esc is 'u' then
+               scalar = hex4()
+               if scalar >= 55296 and scalar <= 56319 then
+                  if Text.sub(pos, pos + 2) != '\\u' then jsonFailure() end
+                  pos += 2
+                  low = hex4()
+                  if low < 56320 or low > 57343 then jsonFailure() end
+                  scalar = 65536 + (scalar - 55296) * 1024 + low - 56320
+               elseif scalar >= 56320 and scalar <= 57343 then jsonFailure() end
+               pieces.push(utf8Scalar(scalar))
+            else
+               escapes = { ['"']='"', ['\\']='\\', ['/']='/', b='\b', f='\f', n='\n', r='\r', t='\t' }
+               if not escapes[esc] then jsonFailure() end
+               pieces.push(escapes[esc])
+            end
+         elseif b < 128 then
+            pieces.push(string.char(b))
+         else
+            count = b >= 194 and b <= 223 ? 1 : (b >= 224 and b <= 239 ? 2 : (b >= 240 and b <= 244 ? 3 : 0))
+            if count is 0 or pos + count > #Text then jsonFailure() end
+            scalar = b & (count is 1 ? 31 : (count is 2 ? 15 : 7))
+
+            for i in {0 to count} do
+               next_byte = string.byte(Text, pos + i)
+               if next_byte < 128 or next_byte > 191 then jsonFailure() end
+               scalar = scalar * 64 + next_byte - 128
+            end
+
+            if scalar < (count is 1 ? 128 : (count is 2 ? 2048 : 65536)) or scalar > 1114111 or
+               (scalar >= 55296 and scalar <= 57343) then
+               jsonFailure()
+            end
+
+            pieces.push(Text.sub(pos - 1, pos + count))
+            pos += count
+         end
+      end
+
+      jsonFailure()
+   end
+
+   function value(Depth:num):any
+      if Depth > 24 then jsonFailure() end
+      space()
+      c = Text.sub(pos, pos + 1)
+
+      if c is '"' then return quoted() end
+
+      if c is '{' or c is '[' then
+         object = c is '{'
+         result:any = object ? {} : array<any>
+         seen = {}
+         stop_char = object ? '}' : ']'
+         pos++
+         space()
+         if Text.sub(pos, pos + 1) is stop_char then pos++; return result end
+         while true do
+            space()
+            key = ''
+            if object then
+               key = quoted()
+               if seen[key] then jsonFailure() end
+               seen[key] = true
+               space()
+               if Text.sub(pos, pos + 1) != ':' then jsonFailure() end
+               pos++
+            end
+
+            item:any = value(Depth + 1)
+            if object then result[key] = item else result.push(item) end
+            space()
+            delim = Text.sub(pos, pos + 1)
+            pos++
+            if delim is stop_char then return result end
+            if delim != ',' then jsonFailure() end
+         end
+      end
+
+      for literal, decoded in pairs({ ['true']=true, ['false']=false, ['null']=json.null }) do
+         if Text.sub(pos, pos + #literal) is literal then pos += #literal; return decoded end
+      end
+
+      start, stop = r'-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+\-]?[0-9]+)?'.findFirst(Text, pos)
+      if start != pos then jsonFailure() end
+      num = tonumber(Text.sub(start, stop))
+      if not num or num != num or math.abs(num) is math.huge then jsonFailure() end
+      pos = stop
+      return num
+   end
+
+   result:any = value(0)
+   space()
+   if pos != #Text then jsonFailure() end
+   return result
+end

@@ -4,8 +4,10 @@
 // Return the front-most viewport at (X,Y) by recursively scanning the scene graph from front to back.
 // Clipping paths are taken into account for non-rectangular viewports.
 
-extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y)
+static extVectorViewport * find_viewport_at_xy(extVectorScene *Scene, double X, double Y)
 {
+   if (not Scene->Viewport) return nullptr;
+
    //kt::Log log(__FUNCTION__);
    //log.branch("Scene: %d", Scene->UID);
 
@@ -16,7 +18,6 @@ extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y
       // Always scan backwards since the last vector in the branch is top-most in its stack.
       extVector *last = Vector;
       while (last->Next) last = (extVector *)last->Next;
-      extVectorViewport *hit_vp = nullptr;
 
       for (auto node=last; node; node=(extVector *)node->Prev) {
          if (node->Visibility IS VIS::HIDDEN) continue; // Checking for HIDDEN ensures that INHERIT is handled correctly
@@ -35,11 +36,11 @@ extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y
             }
 
             if (hit) {
-               hit_vp = vp;
                if (node->Child) {
                   auto child_hit = Self(Self, (extVector *)node->Child, X, Y);
-                  return child_hit ? child_hit : hit_vp;
+                  if (child_hit) return child_hit;
                }
+               return vp;
             }
          }
          else if (node->Child) { // For VectorGroup and similar class types
@@ -48,14 +49,43 @@ extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y
          }
       }
 
-      return hit_vp;
+      return nullptr;
    };
 
    // Recursively inspect the scene graph
 
-   auto hit_vp = inspect_xy(inspect_xy, (extVector *)Scene->Viewport, X, Y);
+   return inspect_xy(inspect_xy, (extVector *)Scene->Viewport, X, Y);
+}
+
+//********************************************************************************************************************
+// Ordinary input falls back to the first viewport when the point is outside the scene's viewport paths.
+
+extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y)
+{
+   auto hit_vp = find_viewport_at_xy(Scene, X, Y);
 
    return hit_vp ? hit_vp : (extVectorViewport *)Scene->Viewport;
+}
+
+//********************************************************************************************************************
+// Return the registered drop target at (X,Y), or nullptr if there is none.  The front-most viewport at the point is
+// resolved to its nearest registered ancestor, so decorative content and unregistered viewports route the drop to their
+// container.  This is independent of input subscriptions and the button lock.
+
+extVectorViewport * get_drop_target_at_xy(extVectorScene *Scene, double X, double Y)
+{
+   auto vp = find_viewport_at_xy(Scene, X, Y);
+
+   for (extVector *node = vp; node; ) {
+      if ((node->classID() IS CLASSID::VECTORVIEWPORT) and (((extVectorViewport *)node)->vpDropTarget)) {
+         return (extVectorViewport *)node;
+      }
+
+      if ((node->Parent) and (node->Parent->Class->BaseClassID IS CLASSID::VECTOR)) node = (extVector *)node->Parent;
+      else break;
+   }
+
+   return nullptr;
 }
 
 //********************************************************************************************************************
@@ -63,6 +93,8 @@ extVectorViewport * get_viewport_at_xy(extVectorScene *Scene, double X, double Y
 
 static void send_input_events(extVector *Vector, InputEvent *Event, bool Propagate = false)
 {
+   if (input_disabled(Vector)) return;
+
    if (not Vector->InputSubscriptions) {
       if ((Propagate) and (Vector->Parent) and (Vector->Parent->Class->BaseClassID IS CLASSID::VECTOR)) {
          send_input_events((extVector *)Vector->Parent, Event, true);
@@ -75,9 +107,16 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
 
    bool consumed = false;
    for (auto it=Vector->InputSubscriptions->begin(); it != Vector->InputSubscriptions->end(); ) {
+      if (input_disabled(Vector)) return;
       auto &sub = *it;
 
-      if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((sub.Mask & JTYPE::REPEATED) IS JTYPE::NIL)) it++;
+      if (sub.Callback.Context->terminating()) {
+         release_callback(sub.Callback);
+         it = Vector->InputSubscriptions->erase(it);
+         update_input_subscription_state(Vector);
+         mark_input_boundary_dirty(Vector);
+      }
+      else if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((sub.Mask & JTYPE::REPEATED) IS JTYPE::NIL)) it++;
       else if ((sub.Mask & Event->Mask) != JTYPE::NIL) {
          ERR result = ERR::Terminate;
          consumed = true;
@@ -95,6 +134,7 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
          }
 
          if (result IS ERR::Terminate) {
+            release_callback(sub.Callback);
             it = Vector->InputSubscriptions->erase(it);
             update_input_subscription_state(Vector);
             mark_input_boundary_dirty(Vector);
@@ -104,9 +144,9 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
       else it++;
    }
 
-   // Some events can bubble-up if they are not intercepted by the target vector.
+   // Wheel events bubble-up if they are not intercepted by the target vector.
 
-   if ((not consumed) and (Event->Type IS JET::WHEEL)) {
+   if ((not consumed) and ((Event->Type IS JET::WHEEL) or (Event->Type IS JET::WHEEL_X))) {
       if ((Vector->Parent) and (Vector->Parent->Class->BaseClassID IS CLASSID::VECTOR)) {
          send_input_events((extVector *)Vector->Parent, Event, true);
       }
@@ -137,14 +177,14 @@ static void send_enter_event(extVector *Vector, const InputEvent *Event, double 
 
 //********************************************************************************************************************
 
-static void send_left_event(extVector *Vector, const InputEvent *Event, double X = 0, double Y = 0)
+static void send_left_event(extVector *Vector, extVector *NewVector, const InputEvent *Event, double X = 0, double Y = 0)
 {
    InputEvent event = {
       .Next        = nullptr,
       .Value       = double(Vector->UID),
       .Timestamp   = Event->Timestamp,
       .RecipientID = Vector->UID,
-      .OverID      = Vector->UID,
+      .OverID      = NewVector ? NewVector->UID : 0,
       .AbsX        = Event->X,
       .AbsY        = Event->Y,
       .X           = Event->X - X,
@@ -172,8 +212,8 @@ static void send_wheel_event(extVectorScene *Scene, extVector *Vector, const Inp
       .X           = Scene->ActiveVectorX,
       .Y           = Scene->ActiveVectorY,
       .DeviceID    = Event->DeviceID,
-      .Type        = JET::WHEEL,
-      .Flags       = JTYPE::ANALOG|JTYPE::EXT_MOVEMENT,
+      .Type        = Event->Type,
+      .Flags       = JTYPE::ANALOG|JTYPE::EXT_MOVEMENT|(Event->Flags & JTYPE::ALT),
       .Mask        = JTYPE::EXT_MOVEMENT
    };
    send_input_events(Vector, &event);
@@ -205,28 +245,81 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          }
       }
 
+      if ((Self->DropRouting) and (((input->Flags & JTYPE::DRAG_ITEM) != JTYPE::NIL) or Self->DragHoverID)) {
+         // Drag hit testing must not use ActiveVector or ButtonLock.  Route feedback even to targets that have no
+         // ordinary pointer subscription, and explicitly notify the previous target when it is left.
+         double x = 0, y = 0;
+         auto target = get_drag_target(Self, x, y);
+         auto target_id = target ? target->UID : 0;
+         if (not target_id) {
+            if (auto pointer = gfx::AccessPointer()) {
+               if ((pointer->DragSourceID) and (pointer->OverObjectID IS Self->SurfaceID)) {
+                  pointer->DragFeedback = 0;
+                  gfx::SetCursor(0, CRF::NIL, PTC::STOP, "", 0);
+               }
+               ReleaseObject(pointer);
+            }
+         }
+         const auto scene_id = Self->UID;
+         InputEvent event = *input;
+         event.Next = nullptr;
+         event.Flags = event.Mask = JTYPE::DRAG_ITEM;
+         if ((Self->DragHoverID) and (Self->DragHoverID != target_id)) {
+            kt::ScopedObjectLock<extVector> previous(Self->DragHoverID);
+            Self->DragHoverID = 0;
+            event.Type = JET::CROSSED_OUT;
+            if (previous.granted()) send_input_events(previous.obj, &event);
+            if (CheckResourceExists(scene_id) != ERR::True) return ERR::Okay;
+         }
+         if (target_id) {
+            Self->DragHoverID = target_id;
+            event.Type = JET::ABS_XY;
+            event.X = x;
+            event.Y = y;
+            event.OverID = target_id;
+            kt::ScopedObjectLock<extVector> destination(target_id);
+            if (destination.granted()) send_input_events(destination.obj, &event);
+            if (CheckResourceExists(scene_id) != ERR::True) return ERR::Okay;
+         }
+         // Synthetic feedback-only events must not change ordinary focus or capture.
+         if (input->Flags IS JTYPE::DRAG_ITEM) continue;
+      }
+
       if ((input->OverID != Self->SurfaceID) and ((input->Flags & JTYPE::CROSSING) IS JTYPE::NIL)) {
          // Activity occurring on another surface may be reported to us in circumstances where our surface is modal.
          continue;
       }
 
-      // Focus management - clicking with the LMB can result in a change of focus.
+      // Focus management - clicking with the LMB can result in a change of focus.  Surfaces that cannot receive the
+      // focus, such as pop-up menus, leave the vector focus with their owner so that keyboard input continues to
+      // reach it.
 
       if (((input->Flags & JTYPE::BUTTON) != JTYPE::NIL) and (not ((input->Flags & JTYPE::REPEATED) != JTYPE::NIL)) and
           (input->Type IS JET::LMB) and (input->Value)) {
-         apply_focus(Self, (extVector *)get_viewport_at_xy(Self, input->X, input->Y));
+         RNF surface_flags;
+         if ((gfx::GetSurfaceFlags(Self->SurfaceID, &surface_flags) != ERR::Okay) or
+             ((surface_flags & RNF::NO_FOCUS) IS RNF::NIL)) {
+            auto viewport = get_viewport_at_xy(Self, input->X, input->Y);
+            if (not input_disabled(viewport)) apply_focus(Self, viewport);
+         }
       }
 
-      if (input->Type IS JET::WHEEL) {
+      if ((input->Type IS JET::WHEEL) or (input->Type IS JET::WHEEL_X)) {
          if (Self->ActiveVector) {
             kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             if (lock.granted()) send_wheel_event(Self, lock.obj, input);
          }
       }
       else if (input->Type IS JET::CROSSED_OUT) {
+         cursor = PTC::DEFAULT;
+
+         // The active vector is cleared so that the cursor's return to the surface is treated as a new entry, even
+         // if it returns to the same position.
+
          if (Self->ActiveVector) {
             kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
-            if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+            Self->ActiveVector = 0;
+            if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
          }
       }
       else if (input->Type IS JET::CROSSED_IN);
@@ -257,7 +350,10 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                if (cursor IS PTC::NIL) cursor = PTC::DEFAULT;
                bool processed = false;
-               for (auto it = Self->InputBoundaries.rbegin(); it != Self->InputBoundaries.rend(); it++) {
+               bool cursor_set = false; // True once a vector selects a cursor, which can be PTC::DEFAULT
+               // Iterate over a copy because callbacks can redraw the scene, which replaces InputBoundaries.
+               auto boundaries = Self->InputBoundaries;
+               for (auto it = boundaries.rbegin(); it != boundaries.rend(); it++) {
                   auto &bounds = *it;
 
                   if ((processed) and (bounds.cursor IS PTC::NIL)) continue;
@@ -270,7 +366,12 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                   if (vector->pointInPath(input->X, input->Y) != ERR::Okay) continue;
 
-                  if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+                  const bool select_cursor = not cursor_set;
+
+                  if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+                     cursor = vector->Cursor;
+                     cursor_set = true;
+                  }
 
                   if (bounds.pass_through) {
                      // For pass-through subscriptions input events are ignored, but cursor changes still apply.
@@ -279,6 +380,11 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                   if (Self->ActiveVector != bounds.vector_id) {
                      send_enter_event(vector, input, bounds.x, bounds.y);
+                     // The enter callback can change the cursor, so re-read it to apply the change immediately.
+                     if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+                        cursor = vector->Cursor;
+                        cursor_set = true;
+                     }
                   }
 
                   if (not processed) {
@@ -288,7 +394,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                      if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
                         kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
-                        if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+                        if (lock.granted()) send_left_event(lock.obj, vector, input, Self->ActiveVectorX, Self->ActiveVectorY);
                      }
 
                      Self->ActiveVector  = vector->UID;
@@ -298,7 +404,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                      processed = true;
                   }
 
-                  if (cursor IS PTC::DEFAULT) continue; // Keep scanning in case an input boundary defines a cursor.
+                  if (not cursor_set) continue; // Keep scanning in case an input boundary defines a cursor.
                   else break; // Input consumed and cursor image identified.
                }
 
@@ -308,7 +414,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                if ((Self->ActiveVector) and (not processed)) {
                   kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
                   Self->ActiveVector = 0;
-                  if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+                  if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
                }
             }
          }
@@ -316,7 +422,11 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
       else if ((input->Flags & (JTYPE::ANCHORED|JTYPE::MOVEMENT)) != JTYPE::NIL) {
          if (cursor IS PTC::NIL) cursor = PTC::DEFAULT;
          bool processed = false;
-         for (auto it = Self->InputBoundaries.rbegin(); it != Self->InputBoundaries.rend(); it++) {
+         bool cursor_set = false; // True once a vector selects a cursor, which can be PTC::DEFAULT
+         // Iterate over a copy because callbacks can redraw the scene (e.g. by resizing the surface), which replaces
+         // InputBoundaries and would invalidate the iterator.
+         auto boundaries = Self->InputBoundaries;
+         for (auto it = boundaries.rbegin(); it != boundaries.rend(); it++) {
             auto &bounds = *it;
 
             if ((processed) and (bounds.cursor IS PTC::NIL)) continue;
@@ -333,8 +443,10 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
             }
 
             kt::ScopedObjectLock<extVector> lock(bounds.vector_id);
-            if (not lock.granted()) {
-               log.warning("Unable to lock vector #%d", bounds.vector_id);
+            if (not lock.granted()) { // Most likely the vector was destroyed
+               if (CheckResourceExists(bounds.vector_id) IS ERR::True) {
+                  log.warning("Unable to lock vector #%d", bounds.vector_id);
+               }
                continue;
             }
             auto vector = lock.obj;
@@ -345,11 +457,17 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                if (vector->pointInPath(input->X, input->Y) != ERR::Okay) continue;
             }
 
+            // Preserve a cursor selected by a pass-through vector in front of this one.
+            const bool select_cursor = not cursor_set;
+
             if (Self->ActiveVector != bounds.vector_id) {
                send_enter_event(vector, input, bounds.x, bounds.y);
             }
 
-            if ((not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) cursor = vector->Cursor;
+            if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+               cursor = vector->Cursor;
+               cursor_set = true;
+            }
 
             if (bounds.pass_through) {
                // For pass-through subscriptions, input events are ignored, but cursor changes still apply.
@@ -374,9 +492,17 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                   event.Y      = ty;
                   send_input_events(vector, &event);
 
+                  // Subscribers can change their cursor in response to movement, so re-read it to apply the change
+                  // with this event rather than the next.
+
+                  if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
+                     cursor = vector->Cursor;
+                     cursor_set = true;
+                  }
+
                   if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
                      kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
-                     if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+                     if (lock.granted()) send_left_event(lock.obj, vector, input, Self->ActiveVectorX, Self->ActiveVectorY);
                   }
 
                   Self->ActiveVector  = vector->UID;
@@ -387,7 +513,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                processed = true;
             }
 
-            if (cursor IS PTC::DEFAULT) continue; // Keep scanning in case an input boundary defines a cursor.
+            if (not cursor_set) continue; // Keep scanning in case an input boundary defines a cursor.
             else break; // Input consumed and cursor image identified.
          }
 
@@ -397,15 +523,14 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          if ((Self->ActiveVector) and (not processed)) {
             kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             Self->ActiveVector = 0;
-            if (lock.granted()) send_left_event(lock.obj, input, Self->ActiveVectorX, Self->ActiveVectorY);
+            if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
          }
       }
       else log.warning("Unrecognised movement type %d", int(input->Type));
    }
 
-   if (not Self->ButtonLock) {
-      if (cursor IS PTC::NIL) cursor = PTC::DEFAULT; // Revert the cursor to the default if nothing is defined
-
+   // Events that do not select a cursor, such as wheel input, preserve the current cursor.
+   if ((not Self->ButtonLock) and (cursor != PTC::NIL)) {
       if (Self->Cursor != cursor) {
          Self->Cursor = cursor;
          kt::ScopedObjectLock<objSurface> surface(Self->SurfaceID);

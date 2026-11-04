@@ -19,6 +19,8 @@
 //   - Count clauses: assign position counters to tuples
 //   - Return expressions: evaluate results for each tuple and combine into final node-set
 
+#include "eval_detail.h"
+
 static size_t hash_xpath_group_value(const XPathVal &Value);
 
 // Combines two hash values into a single hash using a common mixing technique.

@@ -1,0 +1,216 @@
+-- Source and loaded bytecode must retain deterministic interpreter-only policy without persisting runtime history.
+
+local glTraceTarget
+local glTargetStarts = 0
+local glTargetStops = 0
+
+function trace_event(Event, Trace, Func)
+   if not (Func is glTraceTarget) then return end
+   if Event is 'start' then glTargetStarts++
+   elseif Event is 'stop' then glTargetStops++
+   end
+end
+
+function reload_factory(Factory:func, Stripped:bool):func
+   return exec(string.dump(Factory, Stripped))
+end
+
+function run_with_trace(Target:func, Count:num):<num, num, num>
+   glTraceTarget = Target
+   glTargetStarts = 0
+   glTargetStops = 0
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   jit.attach(trace_event, 'trace')
+   local result = Target(Count)
+   jit.attach(trace_event)
+   return result, glTargetStarts, glTargetStops
+end
+
+function supported_factory():func
+   return function(Count:num):num
+      local total = 0
+      for value in {0 to Count} do total += value end
+      return total
+   end
+end
+
+function const_factory():func
+   return function(Count:num):num
+      if Count < 0 then global glBytecodeEligibilityConst <const> = 1 end
+      local total = 0
+      for value in {0 to Count} do total += value end
+      return total
+   end
+end
+
+function dynamic_factory():func
+   return function(Count:num, ...):<num, ...>
+      local total = 0
+      for value in {0 to Count} do total += value end
+      return total, ...
+   end
+end
+
+function family_factory():<func, func>
+   local restricted = function(Count:num):num
+      if Count < 0 then global glRecursiveEligibilityConst <const> = 1 end
+      local total = 0
+      for value in {0 to Count} do total += value end
+      return total
+   end
+   local supported = function(Count:num):num
+      local total = 0
+      for value in {0 to Count} do total += value end
+      return total
+   end
+   return restricted, supported
+end
+
+function check_supported(Target:func, Label:str)
+   local result, starts, stops = run_with_trace(Target, 80)
+   assert(result is 3160, Label .. ' produced the wrong result')
+   assert(starts > 0 and stops > 0, Label .. ' did not produce an associated positive-control trace')
+
+   jit.off(Target)
+   jit.on(Target)
+   result, starts, stops = run_with_trace(Target, 80)
+   assert(result is 3160 and starts > 0 and stops > 0,
+      Label .. ' did not re-enable after explicit runtime disabling')
+end
+
+function check_const_restricted(Target:func, Label:str)
+   local result, starts, stops = run_with_trace(Target, 80)
+   assert(result is 3160, Label .. ' produced the wrong result')
+   assert(starts is 0 and stops is 0, Label .. ' unexpectedly started a trace')
+
+   jit.off(Target)
+   jit.on(Target)
+   result, starts, stops = run_with_trace(Target, 80)
+   assert(result is 3160 and starts is 0 and stops is 0,
+      Label .. ' lost required interpreter policy after explicit re-enable')
+end
+
+function check_dynamic_restricted(Target:func, Label:str)
+   glTraceTarget = Target
+   glTargetStarts = 0
+   glTargetStops = 0
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   jit.attach(trace_event, 'trace')
+   local total, first, second = Target(80, 13, 17)
+   jit.attach(trace_event)
+   assert(total is 3160 and first is 13 and second is 17,
+      Label .. ' did not preserve dynamic result values or arity')
+   assert(glTargetStarts is 0 and glTargetStops is 0, Label .. ' unexpectedly started a trace')
+end
+
+function bytecode_snapshot(Target:func):array<double>
+   local result = array<double> {}
+   local info = jit.util.funcInfo(Target)
+   for pc in {0 to info.byteCodes} do result.push(jit.util.funcBC(Target, pc)) end
+   return result
+end
+
+function assert_bytecode_unchanged(Target:func, Before:array<double>, Label:str)
+   local after = bytecode_snapshot(Target)
+   assert(#after is #Before, Label .. ' changed the producer bytecode length')
+   for index in {0 to #Before} do
+      assert(after[index] is Before[index], Label .. ' mutated producer bytecode')
+   end
+end
+
+@AfterEach function reset_jit()
+   jit.attach(trace_event)
+   jit.on()
+   jit.on(supported_factory, true)
+   jit.on(const_factory, true)
+   jit.on(dynamic_factory, true)
+   jit.on(family_factory, true)
+   jit.flush()
+   jit.opt.start()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Verify that source functions and stripped or unstripped reloads apply the same eligibility policy to supported,
+-- const-restricted and dynamic-result prototypes.
+
+@Test function SourceAndLoadedEligibilityAgree()
+   check_supported(supported_factory(), 'source supported contract')
+   check_const_restricted(const_factory(), 'source const contract')
+   check_dynamic_restricted(dynamic_factory(), 'source dynamic result contract')
+
+   for stripped in values({ false, true }) do
+      local suffix = stripped ? ' stripped' : ' unstripped'
+      check_supported(reload_factory(supported_factory, stripped), 'loaded supported contract' .. suffix)
+      check_const_restricted(reload_factory(const_factory, stripped), 'loaded const contract' .. suffix)
+      check_dynamic_restricted(reload_factory(dynamic_factory, stripped), 'loaded dynamic contract' .. suffix)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A runtime jit.off() decision is transient and must not make an otherwise supported function ineligible when dumped.
+
+@Test function RuntimeDisableDoesNotPersistThroughDump()
+   jit.off(supported_factory)
+   for stripped in values({ false, true }) do
+      local restored = exec(string.dump(supported_factory, stripped))
+      check_supported(restored,
+         stripped ? 'stripped transient-disable load' : 'unstripped transient-disable load')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- A caller becoming hot must not pull a const-restricted callee into compiled execution or alter its result.
+
+@Test function HotCallerPreservesRestrictedCalleeBehaviour()
+   local restricted = const_factory()
+   function caller(Count:num):num
+      local total = 0
+      for _ in {0 to 20} do total += restricted(Count) end
+      return total
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=2', 'hotexit=1', 'minstitch=0')
+   assert(caller(20) is 3800, 'A hot caller changed the restricted callee result')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Recursive JIT mode changes must retain each child prototype's policy, keeping restricted and supported siblings
+-- independent.
+
+@Test function RecursiveModeChangesPreservePerPrototypePolicy()
+   local restricted, supported = family_factory()
+   jit.off(family_factory, true)
+   jit.on(family_factory, true)
+   jit.flush(restricted)
+   jit.flush(supported)
+   check_const_restricted(restricted, 'recursively re-enabled const child')
+   check_supported(supported, 'recursively re-enabled supported sibling')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Dumping warmed, runtime-patched functions must emit canonical bytecode without mutating the live producer, while
+-- preserving the loaded function's supported or interpreter-only behaviour.
+
+@Test function WarmedDumpIsCanonicalAndDoesNotMutateProducer()
+   local supported = supported_factory()
+   local result, starts, stops = run_with_trace(supported, 80)
+   assert(result is 3160 and starts > 0 and stops > 0, 'The warmed dump control did not record a trace')
+   local supported_before = bytecode_snapshot(supported)
+   local restored_supported = exec(string.dump(supported_factory, true))
+   assert_bytecode_unchanged(supported, supported_before, 'Dumping a trace-patched prototype')
+   assert(restored_supported(80) is 3160, 'The canonical trace-patched dump changed supported execution')
+
+   local restricted = const_factory()
+   result, starts, stops = run_with_trace(restricted, 80)
+   assert(result is 3160 and starts is 0 and stops is 0, 'The restricted control unexpectedly traced')
+   local restricted_before = bytecode_snapshot(restricted)
+   local restored_restricted = exec(string.dump(const_factory, false))
+   assert_bytecode_unchanged(restricted, restricted_before, 'Dumping an interpreter-patched prototype')
+   check_const_restricted(restored_restricted, 'canonical interpreter-patched load')
+end

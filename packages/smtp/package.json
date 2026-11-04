@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "net/smtp",
+  "version": "1.0",
+  "description": "SMTP client with TLS, structured results, MIME inline resources and renewable OAuth credentials.",
+  "entry": "smtp.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2025-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "email",
+    "network",
+    "smtp"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "files": [
+    {
+      "path": "smtp.tiri",
+      "size": 52578,
+      "sha256": "34e8c3cb3403fdbcbb8590528c087833f140195ab8b908e623bb43fa1d9cf4ce",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

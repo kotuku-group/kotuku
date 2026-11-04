@@ -1,0 +1,4 @@
+global function imported_local_store_contract_failure(Value:any)
+   local result = 'text'
+   result = Value
+end

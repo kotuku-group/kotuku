@@ -1,4 +1,5 @@
 global glHoverTestUri = nil
+extern lspMountDocs, lspInitDocs, lspPathToUri, getTokenAtPosition, resolveHoverContent, registerCoreHandlers
 
 @BeforeAll function SetupHoverTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -6,7 +7,8 @@ global glHoverTestUri = nil
    mSys.SetVolume('sdk', sdk_path)
 
    loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
-   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   assert(lspMountDocs('sdk:docs/xml/'), 'Failed to mount the SDK documentation.')
+   assert(lspInitDocs('sdk-docs:'), 'Failed to initialise LSP documentation cache.')
    glHoverTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_hover.tiri')
    assert(glHoverTestUri, 'Failed to create test document URI.')
 end
@@ -22,13 +24,13 @@ function makeDoc(Content:str):table
 end
 
 function makeDocAtMarker(Content:str):<table,table>
-   marker_pos = Content:find('|', 0, true)
+   marker_pos = Content.find('|', 0, true)
    assert(marker_pos, 'Test source must include a cursor marker.')
 
    line = 0
    character = 0
-   for i = 0, marker_pos - 1 do
-      c = Content:sub(i, i + 1)
+   for i in {0 to marker_pos} do
+      c = Content.sub(i, i + 1)
       if c is '\n' then
          line++
          character = 0
@@ -37,18 +39,65 @@ function makeDocAtMarker(Content:str):<table,table>
       end
    end
 
-   doc = makeDoc(Content:sub(0, marker_pos) .. Content:sub(marker_pos + 1))
+   doc = makeDoc(Content.sub(0, marker_pos) .. Content.sub(marker_pos + 1))
    return doc, { line = line, character = character }
 end
 
 function hoverAt(Content:str):<str,table>
    doc, position = makeDocAtMarker(Content)
    token = getTokenAtPosition(doc, position.line, position.character)
-   return resolveHoverContent(token, doc), token
+   return resolveHoverContent(token, doc, position), token
 end
 
 function assertContains(Text:str, Needle:str, Message:str)
-   assert(Text and Text:find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
+   assert(Text and Text.find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
+end
+
+@Test function WeakAttributeHoverIsContextual()
+   hover, token = hoverAt('local target <we|ak>:table = {}\n')
+   assertContains(hover, '**<weak>**', 'Weak attributes must have hover documentation')
+   assertContains(hover, 'strong reference', 'Hover must explain strong acquisition')
+   assertContains(hover, 'Sticky target types', 'Hover must describe the target type contract')
+   for source in values(array<str> {
+      'local target <we|ak> -- starts empty\n', 'target < we|ak >-- starts empty\n',
+      'target <we|ak> --[[ starts empty ]]\n'
+   }) do
+      hover, token = hoverAt(source)
+      assertContains(hover, '**<weak>**', 'Trailing comments must preserve weak attribute hover')
+   end
+   hover, token = hoverAt('local we|ak = 1\n')
+   assert(not hover or not hover.find('Declaration attribute'), 'Ordinary weak identifiers must retain their hover')
+   hover, token = hoverAt('local text = "<we|ak>"\n')
+   assert(not hover or not hover.find('Declaration attribute'), 'Strings must not receive weak attribute hover')
+end
+
+@Test function FunctionBindingHover()
+   hover, token = hoverAt('local owner = {}\nlocal f = function[<we|ak> owner]() end\n')
+   assertContains(hover, 'Function context binding attribute', 'Binding attributes must have their own hover')
+   assertContains(hover, 'Resource collected', 'Binding attribute hover must describe the collected-target call')
+   hover, token = hoverAt('local owner = {}\nlocal function[ < we|ak > owner] refresh() end\n')
+   assertContains(hover, 'Function context binding attribute', 'Spaced binding attributes must retain hover')
+   hover, token = hoverAt('local target <we|ak>:table = {}\n')
+   assert(not hover.find('Function context binding'), 'Declaration attributes must keep their own hover')
+
+   hover, token = hoverAt([=[
+local owner = {}
+local function[<weak> owner] refresh(Value:num):num
+   return Value
+end
+
+result = refre|sh(1)
+]=])
+   assert(token and token.text is 'refresh', 'Hover should identify the bound function call.')
+   assertContains(hover, 'refresh(Value: num):num', 'Bound function hover should include the parser signature.')
+   assertContains(hover, 'Context binding: `function[<weak> owner]`', 'Bound function hover should show the binding.')
+
+   hover, token = hoverAt('local function plain():num\n   return 1\nend\n\nresult = pla|in()\n')
+   assertContains(hover, 'plain():num', 'Unbound function hover should include the parser signature.')
+   assert(not hover.find('Context binding'), 'Unbound functions must not report a binding.')
+
+   hover, token = hoverAt('local f = func|tion[]() end\n')
+   assertContains(hover, 'function[<weak> X]', 'Function keyword hover should describe context bindings.')
 end
 
 @Test function HandlerAdvertisesHover()
@@ -69,6 +118,78 @@ end
    assert(token and token.text is 'SourceFile', 'Hover token extraction should identify @SourceFile.')
    assertContains(hover, '@SourceFile', 'Parser annotation hover should include the annotation name.')
    assertContains(hover, 'Parser annotation', 'Parser annotation hover should identify the symbol kind.')
+end
+
+@Test function CompilationUnitAnnotationHover()
+   hover, token = hoverAt('@Pack|age(name="sample-package", version="1.0")\n')
+
+   assert(token and token.text is 'Package', 'Hover token extraction should identify @Package.')
+   assertContains(hover, 'Compilation-unit annotation', '@Package hover should identify semantic metadata.')
+   assertContains(hover, 'canonical package name and version', '@Package hover should explain its purpose.')
+
+   hover, token = hoverAt('@Depend|encies(tiri="1.0")\n')
+   assert(token and token.text is 'Dependencies', 'Hover token extraction should identify @Dependencies.')
+   assertContains(hover, 'Tiri-language and Kotuku-runtime', '@Dependencies hover should explain its domains.')
+end
+
+@Test function CompilationUnitAnnotationHoverRequiresAtPrefix()
+   source = 'function Package():str\n   return "ordinary"\nend\n\nresult = Pack|age()\n'
+   hover, token = hoverAt(source)
+
+   assert(token and token.text is 'Package', 'Hover token extraction should identify the Package function call.')
+   assertContains(hover, 'Package():str', 'An ordinary Package function should retain its function hover.')
+   assert(not hover.find('Compilation-unit annotation', 0, true),
+      'An ordinary Package identifier should not receive compilation-unit annotation hover.')
+end
+
+@Test function ImportVersionHoverIsContextual()
+   hover, token = hoverAt("import 'sample-package' ver|sion >= \"1\"\n")
+   assert(token and token.text is 'version', 'Hover token extraction should identify import version.')
+   assertContains(hover, '**version** _(Keyword)_', 'A versioned import should provide contextual keyword hover.')
+
+   hover, token = hoverAt('local ver|sion = "1"\n')
+   assert(not hover, 'An ordinary variable named version should not receive keyword hover.')
+
+   hover, token = hoverAt("import 'json'; ver|sion = 'ordinary'\n")
+   assert(not hover, 'A variable after a semicolon-delimited import should not receive keyword hover.')
+end
+
+@Test function DeclaredModuleFunctionHover()
+   hover, token = hoverAt("module core as runtimeCore\nruntimeCore.Res|olvePath('test:')\n")
+
+   assert(token and token.text is 'ResolvePath', 'Hover should identify a declared module function.')
+   assertContains(hover, 'ResolvePath', 'Declared module hover should use generated module documentation.')
+end
+
+@Test function UsingMemberHoverIsContextual()
+   for source in values(array<str> {
+      "local value = { us|ing = 'member' }\n",
+      "local value = { using = 'member' }\nprint(value.us|ing)\n",
+      "local value = { using = function() end }\nvalue.us|ing()\n",
+      'local us|ing = {}\n', 'local text = "us|ing context do"\n'
+   }) do
+      hover = hoverAt(source)
+      assert(not hover or not hover.find('**using** _(Keyword)_'),
+         'Ordinary using names and strings must not receive context keyword hover.')
+   end
+   hover = hoverAt('local context = {}\nus|ing context\n-- opener\ndo\nend\n')
+   assertContains(hover, '**using** _(Keyword)_', 'Split using headers must retain keyword hover.')
+end
+
+@Test function UsingKeywordHover()
+   hover, token = hoverAt('us|ing context do\nend\n')
+   assert(token and token.text is 'using', 'Hover token extraction should identify using.')
+   assertContains(hover, '**using** _(Keyword)_', 'Using hover should identify the keyword.')
+   assertContains(hover, 'current context', 'Using hover should explain context activation.')
+   assertContains(hover, 'restored on every exit path', 'Using hover should explain context restoration.')
+end
+
+@Test function ExternKeywordHover()
+   hover, token = hoverAt('ex|tern runTest\n')
+
+   assert(token and token.text is 'extern', 'Hover token extraction should identify extern.')
+   assertContains(hover, '**extern** _(Keyword)_', 'Extern hover should identify the keyword.')
+   assertContains(hover, 'supplied externally', 'Extern hover should explain external symbol resolution.')
 end
 
 @Test function DocAnnotatedFunctionDeclarationHover()
@@ -124,6 +245,44 @@ result = greet|('Ada')
    assertContains(hover, '`Name: str` - Person to greet', 'Call hover should include parameter documentation.')
 end
 
+@Test function RecursiveArrayFunctionHover()
+   hover, token = hoverAt([=[
+function matrixFirst(Matrix:array<array<int>>!):array<array<double>>
+   return array<array<double>> {}
+end
+
+value = matrixF|irst(array<array<int>> {})
+]=])
+
+   assert(token and token.text is 'matrixFirst', 'Hover should identify the recursively typed function call.')
+   assertContains(hover, 'matrixFirst(Matrix: array<array<int>>!):array<array<double>>',
+      'Hover should preserve complete recursive array annotations.')
+end
+
+@Test function DocAnnotatedFunctionCallHoverAfterRelativeImport()
+   hover, token = hoverAt([=[
+import './relative_symbol_helper'
+
+@Doc(text=[[
+   Returns a local greeting.
+
+   -INPUT-
+   Name: Person to greet
+]])
+function localGreeting(Name: str):str
+   return Name
+end
+
+result = local|Greeting('Ada')
+]=])
+
+   assert(token and token.text is 'localGreeting', 'Hover should identify the function call after a relative import.')
+   assertContains(hover, 'localGreeting(Name: str):str',
+      'Relative imports should not stop parser symbols from feeding hover.')
+   assertContains(hover, 'Returns a local greeting.',
+      'Hover should include @Doc text after a relative import.')
+end
+
 @Test function AssignedFunctionExpressionHover()
    hover, token = hoverAt([=[
 global greetGlobal = function(Name: str):str
@@ -143,4 +302,222 @@ end
 
    assert(token and token.text is 'missingSymbol', 'Hover should identify the unknown symbol token.')
    assert(not hover, 'Unknown symbols should not return hover content.')
+end
+
+@Test function ObjectConstructorClassHover()
+   hover, token = hoverAt('clock = obj<Ti|me> {}\n')
+
+   assert(token and token.text is 'Time', 'Hover should identify an obj<Class> constructor class name.')
+   assertContains(hover, 'class Time', 'Object constructor class hover should resolve generated class documentation.')
+end
+
+@Test function ObjectConstructorFieldHover()
+   hover, token = hoverAt('clock = obj<Time> {}\nclock.Ye|ar\n')
+
+   assert(token and token.text is 'Year' and token.object is 'clock',
+      'Token extraction should identify a field access on an obj<Class> instance.')
+   assertContains(hover, 'Time.Year', 'Field hover should resolve the class name from obj<Class> construction.')
+end
+
+@Test function LatestObjectConstructorAssignmentControlsFieldHover()
+   hover, token = hoverAt("value = obj<Time> {}\nvalue = obj.new('File', {})\nvalue.Pa|th\n")
+
+   assert(token and token.text is 'Path' and token.object is 'value',
+      'Token extraction should identify a field access after reassignment.')
+   assertContains(hover, 'File.Path', 'The later obj.new() assignment should replace the earlier obj<Class> type.')
+end
+
+@Test function FutureObjectConstructorAssignmentDoesNotControlFieldHover()
+   hover, token = hoverAt("value = obj<Time> {}\nvalue.Ye|ar\nvalue = obj<File> {}\n")
+
+   assert(token and token.text is 'Year' and token.object is 'value',
+      'Token extraction should identify a field access before reassignment.')
+   assertContains(hover, 'Time.Year', 'An assignment after the cursor must not change the inferred object type.')
+end
+
+@Test function TrailingCommentConstructorDoesNotOverrideFieldHover()
+   hover, token = hoverAt("value = obj.new('File', {}) -- value = obj.new('Time')\nvalue.Pa|th\n")
+
+   assert(token and token.text is 'Path' and token.object is 'value',
+      'Token extraction should identify a field access on the real assignment.')
+   assertContains(hover, 'File.Path', 'A constructor inside a trailing comment must not override the real assignment.')
+end
+
+@Test function QuotedConstructorDoesNotOverrideFieldHover()
+   hover, _ = hoverAt("value = obj.new('File', {})\nnote = \"value = obj.new('Time')\"\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path', 'A constructor inside a string literal must not override the real assignment.')
+end
+
+@Test function BlockCommentConstructorDoesNotOverrideFieldHover()
+   hover, _ = hoverAt("value = obj.new('File', {})\n--[[\nvalue = obj.new('Time')\n]]\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path', 'A constructor inside a block comment must not override the real assignment.')
+end
+
+@Test function MultiLineObjectConstructorFieldHover()
+   hover, _ = hoverAt("value = obj.new(\n   'File', {})\nvalue.Pa|th\n")
+
+   assertContains(hover, 'File.Path',
+      'A constructor whose class name is on the following line should still infer a type.')
+end
+
+@Test function CommentedMultiLineObjectConstructorDoesNotAffectFieldHover()
+   hover, _ = hoverAt("value = obj<Time> {}\n-- value = obj.new(\n--    'File', {})\nvalue.Ye|ar\n")
+
+   assertContains(hover, 'Time.Year', 'A commented-out multi-line constructor must not override the real assignment.')
+end
+
+@Test function StructDeclarationHoverShowsFields()
+   hover, token = hoverAt([[
+struct Us|er
+   Name: str -- The user name
+   Age: int
+end
+]])
+
+   assert(token and token.text is 'User', 'Hover token extraction should identify the struct name.')
+   assertContains(hover, 'struct User', 'Struct hover should lead with the declaration signature.')
+   assertContains(hover, '**Fields**', 'Struct hover should include a Fields section.')
+   assertContains(hover, '`Name: str`', 'Struct hover should list field names and types.')
+   assertContains(hover, 'The user name', 'Struct hover should include field doc comments.')
+end
+
+@Test function StructFieldHoverViaStructNew()
+   hover, token = hoverAt([[
+struct User
+   Name: str -- The user name
+   Age: int
+end
+u = struct.new('User')
+print(u.Na|me)
+]])
+
+   assert(token and token.text is 'Name' and token.object is 'u', 'Token extraction should identify field access.')
+   assertContains(hover, 'User.Name', 'Field hover should be attributed to the struct.')
+   assertContains(hover, '`str`', 'Field hover should state the declared type.')
+   assertContains(hover, 'The user name', 'Field hover should include the doc comment.')
+end
+
+@Test function StructFieldHoverViaAnnotatedParameter()
+   hover, token = hoverAt([[
+struct User
+   Name: str
+   Age: int -- Age in years
+end
+function describe(Person: struct<User>)
+   return Person.Ag|e
+end
+]])
+
+   assert(token and token.text is 'Age' and token.object is 'Person', 'Token extraction should identify the parameter access.')
+   assertContains(hover, 'User.Age', 'Annotated parameter access should resolve to the struct field.')
+   assertContains(hover, 'Age in years', 'Annotated parameter hover should include the doc comment.')
+end
+
+@Test function StructFieldHoverViaConstruction()
+   hover, token = hoverAt([[
+struct User
+   Name: str -- The user name
+end
+user = struct<User> { Name = 'Paul' }
+print(user.Na|me)
+]])
+
+   assertContains(hover, 'User.Name', 'Explicit struct construction should map the variable to its struct.')
+   assertContains(hover, 'The user name', 'Constructed instance hover should include the doc comment.')
+end
+
+@Test function StructUnknownFieldHasNoHover()
+   hover, token = hoverAt([[
+struct User
+   Name: str
+end
+u = struct.new('User')
+print(u.Mis|sing)
+]])
+
+   assert(token and token.text is 'Missing', 'Token extraction should identify the unknown field.')
+   assert(not hover, 'Unknown struct fields should not produce hover content.')
+end
+
+@Test function StructFieldHoverRequiresExactCase()
+   hover, token = hoverAt([[
+struct User
+   Name: str -- Exact-case field
+end
+u = struct.new('User')
+print(u.na|me)
+]])
+
+   assert(token and token.text is 'name', 'Token extraction should preserve the requested field case.')
+   assert(not hover, 'A wrong-case declared struct field should not produce hover content.')
+end
+
+@Test function LaterStructAssignmentDoesNotAffectEarlierHover()
+   hover, token = hoverAt([[
+struct A
+   Value: int -- Value from A
+end
+struct B
+   Value: float -- Value from B
+end
+u = struct.new('A')
+print(u.Val|ue)
+u = struct.new('B')
+]])
+
+   assert(token and token.text is 'Value' and token.object is 'u', 'Token extraction should identify field access.')
+   assertContains(hover, 'A.Value', 'A later assignment must not change the earlier field hover type.')
+   assertContains(hover, '`int`', 'The earlier field hover should use the first struct field type.')
+   assertContains(hover, 'Value from A', 'The earlier field hover should use the first struct documentation.')
+end
+
+@Test function RemovedErrorHasNoBuiltinHover()
+   local hover = hoverAt("err|or('message')")
+   assert(not hover, 'The removed error built-in must not have hover documentation.')
+
+   hover = hoverAt("local error = function(Message) end\nerr|or('local')")
+   assert(not hover or not hover.find('Deprecated'), 'A local error function must not have built-in hover.')
+   hover = hoverAt("local api = { error=function() end }\napi.err|or()")
+   assert(not hover or not hover.find('Deprecated'), 'A member named error must not have built-in hover.')
+end
+
+@Test function LowerCaseObjectFieldHover()
+   hover, token = hoverAt('clock = obj<Time> {}\nclock.ye|ar\n')
+
+   assert(token and token.context is 'field_access', 'Token extraction should identify a lower-case field access.')
+   assertContains(hover, 'Time.Year', 'Lower-case field names should resolve to their documented field.')
+end
+
+@Test function FieldBlockKeyHover()
+   hover, token = hoverAt('clock = obj<Time> {}\nclock.{ ye|ar = 2001, month = 3 }\n')
+
+   assert(token and token.text is 'year' and token.object is 'clock' and token.context is 'field_access',
+      'A field assignment block key should be a field access on the block base.')
+   assertContains(hover, 'Time.Year', 'Field block key hover should resolve through the base object class.')
+
+   hover, token = hoverAt('clock = obj<Time> {}\nclock?.{\n   year = 2001;\n   mon|th = 3\n}\n')
+   assert(token and token.object is 'clock', 'Keys on later lines of a safe block should resolve to the base.')
+   assertContains(hover, 'Time.Month', 'Safe multi-line field block keys should have field hover.')
+end
+
+@Test function FieldBlockValuesKeepCallerScope()
+   _, token = hoverAt('local year = 1\nclock = obj<Time> {}\nclock.{ year = ye|ar, month = year == 1 ? 2 : 3 }\n')
+   assert(token and token.context is 'identifier' and not token.object,
+      'An identifier in a field block value belongs to the caller scope.')
+
+   _, token = hoverAt('t = {}\nt.{ f = function()\n   local a = 1; lo|cal_b = 2\nend }\n')
+   assert(token and token.context is 'identifier', 'Statements in a function value must not be block keys.')
+
+   _, token = hoverAt('t = {}\nt.{ cfg = { de|pth = 1 } }\n')
+   assert(token and token.context is 'identifier', 'Keys of a nested table constructor must not be block keys.')
+
+   _, token = hoverAt('t = {}\nt.{ x = 1 }\nx = 2\nt..{ y| = 1 }\n')
+   assert(token and token.context is 'identifier', 'Concatenation followed by a brace must not open a block.')
+end
+
+@Test function FieldBlockFunctionHover()
+   hover = hoverAt("local t = {}\nt.{\n   f = function(A:num):num return A + 1 end\n}\nt.|f(1)\n")
+   assertContains(hover, 't.f(A: num):num', 'A function assigned in a field block should have a t.f signature.')
 end

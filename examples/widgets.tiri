@@ -3,27 +3,15 @@
 A demonstration of standard widgets
 --]]
 
-   import 'gui'
-   import 'gui/toolbar'
-   import 'gui/menubar'
-   import 'gui/colourdialog'
-   import 'gui/fontdialog'
-   import 'gui/dialog'
-   import 'gui/filedialog'
-   import 'gui/icon'
-   import 'gui/input'
-   import 'gui/button'
-   import 'gui/checkbox'
-   import 'gui/combobox'
-   import 'gui/slider'
-   import 'gui/window'
-   import 'vfx'
+   import 'gui', 'gui/toolbar', 'gui/menubar', 'gui/colourpicker', 'gui/fontdialog'
+   import 'gui/dialog', 'gui/filedialog', 'gui/icon', 'gui/input', 'gui/button'
+   import 'gui/toggle', 'gui/combobox', 'gui/slider', 'gui/window', 'gui/panel', 'vfx', 'json'
 
-   glSelf = <{ obj.find('self') }>
-   glPath = <{ glSelf.workingPath }>
+   glSelf = <obj{ obj.find('self') }>
+   glPath = <str{ glSelf.workingPath }>
 
-   win = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
-   viewport = win:clientViewport({ aspectRatio = ARF_MEET })
+   win = gui.window({ title='Widget Examples', insideWidth=gui.rpixel('1200dp'), insideHeight=gui.rpixel('1080dp'), minWidth=gui.rpixel('650dp'), minHeight=gui.rpixel('400dp') })
+   viewport = win.clientViewport({ aspectRatio = ARF_MEET })
 
 function itemCallback(Bar, Item)
    print(f'Callback: {Item.id}, {Item.name}')
@@ -37,42 +25,149 @@ end
 
 -- This is a universal callback for any menu item that is activated by the user.
 
-function itemClicked(Menu, Item)
-   print(f'Selected {Item.item}')
+function itemClicked(Item)
+   print(f'Selected menu item "{Item.label}" (id: {Item.id ?? "none"})')
+end
+
+   menubar:table
+   dynamic_item_added = false
+   dynamic_name_long = false
+
+function dynamicMenuCallback(ID, Name)
+   print(f'Dynamic menubar item selected: {ID}, {Name}')
+end
+
+function addDynamicMenuItem(Item)
+   if dynamic_item_added then
+      print('The dynamic menubar item already exists.')
+      return
+   end
+
+   menubar.addItem('dynamic', 'Dynamic', 'items/star', dynamicMenuCallback, array<table>)
+   dynamic_item_added = true
+   dynamic_name_long = false
+   print('Added a callback-only menubar item after initial layout.')
+end
+
+function renameDynamicMenuItem(Menu, Item)
+   if not dynamic_item_added then
+      print('Add the dynamic menubar item before renaming it.')
+      return
+   end
+
+   dynamic_name_long = not dynamic_name_long
+   name = dynamic_name_long ? 'Dynamic Example' : 'Dynamic'
+   menubar.setItemLabel('dynamic', name)
+   print(f'Renamed the dynamic menubar item to "{name}".')
+end
+
+function removeDynamicMenuItem(Menu, Item)
+   if menubar.removeItem('dynamic') then
+      dynamic_item_added = false
+      dynamic_name_long = false
+      print('Removed the dynamic menubar item.')
+   else
+      print('There is no dynamic menubar item to remove.')
+   end
+end
+
+function disableViewMenu(Menu, Item)
+   menubar.disableItem('view')
+   print('Disabled the View menubar item.')
+end
+
+function enableViewMenu(Menu, Item)
+   menubar.enableItem('view')
+   print('Enabled the View menubar item.')
 end
 
 function widgetFocus(Widget)
    --if Widget.effect then return end
-   --Widget.effect = vfx.shake((Widget.inputViewport ? Widget.viewport), 0.2, 0, 0.2, function(Effect)
-   --   Widget.effect = nil
-   --end)
+   --Widget.effect = vfx.shake((Widget.inputViewport ? Widget.viewport), {
+   --   seconds = 0.2,
+   --   intensity = 0.2,
+   --   callback = function(Effect)
+   --      Widget.effect = nil
+   --   end
+   --})
 end
 
    menubar = gui.menubar({
       target = viewport,
       createItems = function(Bar)
-         Bar.addItem(1, 'File', 'devices/harddisk', menuCallback, array<table> {
-            { item='New File', icon='items/file_new', qualifier='CTRL', key='N', feedback=itemClicked },
-            { item='Open File', icon='office/documents', qualifier='CTRL', key='O', feedback=itemClicked },
-            { item='Reload Document', icon='items/reload', key='F5', feedback=itemClicked },
-            { item='Save File', icon='items/file_save', qualifier='CTRL', key='S', feedback=itemClicked }
-         })
-         Bar.addItem(2, 'Edit', 'tools/edit', menuCallback, {
-            { item='Undo', icon='items/undo', qualifier='CTRL', key='Z', feedback=itemClicked },
-            { item='Redo', icon='items/redo', qualifier='CTRL', key='Y', feedback=itemClicked },
-            { menu={ text='Clipboard', icon='items/clipboard',
-                items={
-                  { item='Cut', icon='tools/cut', qualifier='CTRL', key='X', feedback=itemClicked },
-                  { item='Copy', icon='tools/copy', qualifier='CTRL', key='C', feedback=itemClicked },
-                  { item='Paste', icon='tools/paste', qualifier='CTRL', key='V', feedback=itemClicked }
-                }
-              }
+         Bar.addItem('file', 'File', 'devices/harddisk', menuCallback, array<table> {
+            { group='Documents' },
+            {
+               id='new', label='New File', icon='items/file_new', qualifier='CTRL', key='N',
+               onActivate=itemClicked
+            },
+            {
+               menu={
+                  id='open_recent', label='Open Recent', icon='office/documents', items=array<table> {
+                     { id='recent_one', label='Project Notes.tiri', onActivate=itemClicked },
+                     { id='recent_two', label='Widget Ideas.txt', onActivate=itemClicked },
+                     { id='recent_missing', label='Missing Document', disabled=true, onActivate=itemClicked }
+                  }
+               }
+            },
+            { id='reload', label='Reload Document', icon='items/reload', key='F5', onActivate=itemClicked },
+            { group='Save' },
+            {
+               id='save', label='Save File', icon='items/file_save', qualifier='CTRL', key='S',
+               onActivate=itemClicked
+            },
+            {
+               id='save_as', label='Save As...', icon='items/file_saveas', qualifier='CTRL+SHIFT', key='S',
+               disabled=true, onActivate=itemClicked
             }
          })
-         Bar.addItem(3, 'Search', 'tools/magnifier', menuCallback, {})
-         Bar.addItem(4, 'View', 'page/page', menuCallback, {})
-         Bar.addItem(5, 'Tools', 'tools/wizard', menuCallback, {})
-         Bar.addItem(6, 'Help', 'items/help', menuCallback, {})
+         Bar.addItem('edit', 'Edit', 'tools/edit', menuCallback, array<table> {
+            { id='undo', label='Undo', icon='items/undo', qualifier='CTRL', key='Z', onActivate=itemClicked },
+            { id='redo', label='Redo', icon='items/redo', qualifier='CTRL', key='Y', disabled=true,
+              onActivate=itemClicked },
+            {
+               menu={
+                  id='clipboard', label='Clipboard', icon='items/clipboard', items=array<table> {
+                     { id='cut', label='Cut', icon='tools/cut', qualifier='CTRL', key='X', onActivate=itemClicked },
+                     { id='copy', label='Copy', icon='tools/copy', qualifier='CTRL', key='C', onActivate=itemClicked },
+                     { id='paste', label='Paste', icon='tools/paste', qualifier='CTRL', key='V', onActivate=itemClicked }
+                  }
+               }
+            }
+         })
+         Bar.addItem('view', 'View', 'page/page', menuCallback, array<table> {
+            { group='Layout' },
+            { id='show_grid', label='Show Grid', checkable=true, checked=false, qualifier='CTRL', key='G',
+              onActivate=function(Item) print(f'Grid display enabled: {Item.checked}') end },
+            { id='columns', label='Column View', icon='layout/column_three', onActivate=itemClicked },
+            { id='list', label='List View', icon='layout/list', onActivate=itemClicked },
+            {
+               menu={
+                  id='zoom', label='Zoom', icon='tools/magnifier', items=array<table> {
+                     { id='zoom_in', label='Zoom In', qualifier='CTRL', key='+', onActivate=itemClicked },
+                     { id='zoom_out', label='Zoom Out', qualifier='CTRL', key='-', onActivate=itemClicked },
+                     { id='zoom_reset', label='Actual Size', qualifier='CTRL', key='0', onActivate=itemClicked }
+                  }
+               }
+            }
+         })
+         Bar.addItem('tools', 'Tools', 'tools/wizard', menuCallback, array<table> {
+            { group='Menubar API' },
+            { id='add_dynamic', label='Add Dynamic Item', onActivate=addDynamicMenuItem },
+            { id='rename_dynamic', label='Rename Dynamic Item', onActivate=renameDynamicMenuItem },
+            { id='remove_dynamic', label='Remove Dynamic Item', onActivate=removeDynamicMenuItem },
+            { group='Item State' },
+            { id='disable_view', label='Disable View Menu', onActivate=disableViewMenu },
+            { id='enable_view', label='Enable View Menu', onActivate=enableViewMenu }
+         })
+         Bar.addItem('help', 'Help', 'items/help', menuCallback, array<table> {
+            { group='Keyboard' },
+            { label='Alt or F10 activates the menubar', disabled=true },
+            { label='Arrow keys move between menus', disabled=true },
+            { label='Tab continues normal focus traversal', disabled=true },
+            { group='About' },
+            { id='about', label='About Widget Examples', icon='items/info', onActivate=itemClicked }
+         })
       end
    })
 
@@ -82,7 +177,6 @@ end
       target      = viewport,
       xOffset     = 0,
       y           = y,
-      iconSize    = 22,
       createItems = function(Bar)
          Bar.addGroup(1, 'Navigation', 2)
          Bar.addItem(2, 'Root', 'Root Directory', 'devices/harddisk', itemCallback)
@@ -105,19 +199,37 @@ end
    y += lToolbar.viewport.height + 10
 
    popupMenu = gui.menu({
-      x     = 30,
-      y     = 50,
-      popup = true,
-      config = array<table> {
+      --target = win.surface,
+      theme  = win.theme,
+      x      = 30,
+      y      = 50,
+      popup  = true,
+      events = {
+         activate = itemClicked,
+         highlight = function(Item)
+            print(f'Highlighted menu item: {Item.label}')
+         end
+      },
+      items = array<table> {
          { group='Files' },
-         { item='New File', icon='items/file_new', qualifier='CTRL', key='N', feedback=itemClicked },
-         { item='Open File', icon='office/documents', qualifier='CTRL', key='O', feedback=itemClicked },
-         { item='Reload Document', icon='items/reload', key='F5', feedback=itemClicked },
-         { item='Save File', icon='items/file_save', qualifier='CTRL', key='S', feedback=itemClicked },
+         {
+            id='new', label='New File', icon='items/file_new', qualifier='CTRL', key='N'
+         },
+         {
+            menu={
+               id='open_recent', label='Open Recent', icon='office/documents', items=array<table> {
+                  { id='recent_one', label='Project Notes.tiri' },
+                  { id='recent_two', label='Widget Ideas.txt' }
+               }
+            }
+         },
+         { id='reload', label='Reload Document', icon='items/reload', key='F5' },
+         { id='save', label='Save File', icon='items/file_save', qualifier='CTRL', key='S' },
+         { id='save_as', label='Save As...', icon='items/file_saveas', disabled=true },
          { group='Print' },
-         { item='Print', icon='devices/printer', qualifier='CTRL', key='P', feedback=itemClicked },
+         { id='print', label='Print', icon='devices/printer', qualifier='CTRL', key='P' },
          { group='Quit' },
-         { item='Quit', icon='items/quit', qualifier='CTRL', key='Q', feedback=itemClicked }
+         { id='quit', label='Quit', icon='items/quit', qualifier='CTRL', key='Q' }
       }
    })
 
@@ -129,21 +241,23 @@ end
       end
    end)
 
-   text = viewport.new('vectortext', {
+   text = viewport.new('vectortext', table.merge({
       x=win.margins.left, y=y, string='Kōtuku interfaces are drawn using real-time vector graphics',
-      face='Noto Sans', fontSize=20, fill=win.theme.window.text, textFlags='!editable'
-   })
-   text.y += text.fontSize
-   y += text.fontSize + 14
+      face='Noto Sans', fontSize=20, textFlags='!editable'
+   }, win.theme.window.text, false))
+   font_size = tonumber(text.fontSize)
+   text.y += font_size
+   y += font_size + gui.rpixel('12pt')
 
    msgButton = gui.button({
       target = viewport,
-      text   = 'Message Box',
+      label  = 'Message Box',
       x      = win.margins.left,
       y      = y,
+      disabled = true,
       icon   = 'items/question',
       events = {
-         activate = function(Widget)
+         activate = function()
             gui.dialog.message({
                modal         = true,
                image         = 'items/warning',
@@ -152,8 +266,8 @@ end
                userInput     = 'That is the question',
                checkboxLabel = '\'Tis nobler to suffer',
                options = array<table> {
-                  { id=1, text='To be', icon='items/checkmark' },
-                  { id=2, text='Not to be', icon='items/cancel' }
+                  { id=1, label='To be', icon='items/checkmark' },
+                  { id=2, label='Not to be', icon='items/cancel' }
                },
                feedback = function(Dialog, Response, State)
                   if Response then
@@ -176,12 +290,12 @@ end
 
    colourButton = gui.button({
       target = viewport,
-      text   = 'Select Colour',
-      x      = msgButton.viewport.x + msgButton.viewport.width + 4,
+      label  = 'Select Colour',
+      x      = msgButton.viewport.x + msgButton.viewport.width + gui.sizing.widget.gap,
       y      = y,
       icon   = 'tools/palette',
       events = {
-         activate = function(Widget)
+         activate = function()
             gui.dialog.colour({
                modal   = true,
                popOver = win.surface,
@@ -192,7 +306,7 @@ end
                      return
                   end
 
-                  print(f'The user selected colour is {Colour}')
+                  print(f'Result: {json.encode(Colour)}')
                end
             })
          end,
@@ -202,23 +316,20 @@ end
 
    fontButton = gui.button({
       target = viewport,
-      text   = 'Select Font',
-      x      = colourButton.viewport.x + colourButton.viewport.width + 4,
+      label  = 'Select Font',
+      x      = colourButton.viewport.x + colourButton.viewport.width + gui.sizing.widget.gap,
       y      = y,
       icon   = 'items/font',
       events = {
-         activate = function(Widget)
+         activate = function()
             gui.dialog.font({
-               okText     = 'Select Font',
-               cancelText = 'Exit',
-               modal      = true,
-               popOver    = win.surface,
-               feedback = function(Dialog, Accepted)
+               modal    = true,
+               popOver  = win.surface,
+               feedback = function(Accepted)
                   if not Accepted then
                      print('Dialog was cancelled.')
                   else
-                     print("The user selected '" .. Dialog.face .. "', size " .. Dialog.pointSize .. ", style '" .. Dialog.style .. "'")
-                     print("This can be compacted to '" .. Dialog.compactFace .. "'")
+                     print("The user selected '" .. &face .. "', size " .. &pointSize .. ", style '" .. &style .. "'")
                   end
                end
             })
@@ -229,16 +340,16 @@ end
 
    fileButton = gui.button({
       target = viewport,
-      text   = 'Select File',
-      x      = fontButton.viewport.x + fontButton.viewport.width + 4,
+      label  = 'Select File',
+      x      = fontButton.viewport.x + fontButton.viewport.width + gui.sizing.widget.gap,
       y      = y,
       icon   = 'folders/folder',
       events = {
-         activate = function(Widget)
+         activate = function()
             gui.dialog.file({
                filterList  = array<table> { { name='MP3 Audio Files', ext='mp3' }, { name='Text Files', ext='txt' } },
-               okText      = 'Select File',
-               cancelText  = 'Exit',
+               okLabel     = 'Select File',
+               cancelLabel = 'Exit',
                modal       = true,
                popOver     = win.surface,
                warnExists  = false,
@@ -250,7 +361,7 @@ end
                   end
 
                   for k, v in ipairs(Files) do
-                      print(k, f'{Path} = {v.filename}')
+                      print(k, f' {Path} = {v.filename}')
                   end
                end
             })
@@ -259,98 +370,259 @@ end
       }
    })
 
-   y += msgButton.viewport.height + 12
+   y += msgButton.viewport.height + gui.sizing.widget.gap
 
-   checkbox = gui.checkbox({
-      target = viewport,
-      label  = 'Checkbox',
-      align  = 'left',
-      x      = win.margins.left,
-      y      = y,
-      events = {
-         activate = function(Widget)
+   toggle = gui.toggle({
+      target     =  viewport,
+      label      = 'Toggle:',
+      labelWidth = gui.pixel('150dp'),
+      labelPos   = 'left',
+      x          = win.margins.left,
+      y          = y,
+      events     = {
+         activate = function()
+            if &value then
+               msgButton.enable()
+            else
+               msgButton.disable()
+            end
          end,
          focus = widgetFocus
       }
    })
 
-   slider = gui.slider({
-      target = viewport,
-      label  = 'Slider:',
+   vslider = gui.slider({
+      target      = viewport,
+      label       = 'Slider:',
+      labelPos    = 'bottom',
       orientation = 'vertical',
-      value  = 1,
-      min    = 0.5,
-      max    = 1,
-      x      = win.viewport.width / 2,
-      y      = y,
-      events = {
-         activate = function(Widget, Value)
+      value    = 1,
+      valuePos = 'in-centre',
+      min      = 0.5,
+      max      = 1,
+      xOffset  = gui.rpixel('10dp'),
+      y        = y,
+      events   = {
+         activate = function(Value)
          end
       }
    })
 
-   y += checkbox.viewport.height + 12
+   y += toggle.viewport.height + gui.sizing.widget.gap
 
    combobox = gui.combobox({
-      target = viewport,
-      label  = 'Combobox:',
-      string = 'Your text here',
-      x      = win.margins.left, y = y,
+      target      = viewport,
+      label       = 'Combobox:',
+      labelWidth  = gui.rpixel('150dp'),
+      text        = 'Your text here',
+      x           = win.margins.left,
+      y           = y,
       allowCustom = true,
-      items = {
-         { group='Office' },
-         { item='Address Book', icon='office/addressbook' },
-         { item='Inbox', icon='office/cabinet_in' },
-         { item='Tasks', icon='office/tasks' },
-         { item='Finances', icon='office/money' },
-         { group='Weather' },
-         { item='Snow', icon='weather/snow' },
-         { item='Thunder', icon='weather/thunder' }
+      items       = {
+         { group = 'Office' },
+         { label = 'Address Book', icon='office/addressbook' },
+         { label = 'Inbox', icon='office/cabinet_in' },
+         { label = 'Tasks', icon='office/tasks' },
+         { label = 'Finances', icon='office/money' },
+         { group = 'Weather' },
+         { label = 'Snow', icon='weather/snow' },
+         { label = 'Thunder', icon='weather/thunder' }
       },
       events = {
-         activate = function(Widget)
+         activate = function()
          end,
          focus = widgetFocus
       }
    })
-   y += combobox.viewport.height + 12
 
-   input = gui.input({
-      target = viewport,
-      x      = win.margins.left,
-      y      = y,
-      width  = 260,
-      label  = 'Inputbox: ',
-      text   = 'Your text here',
-      events = {
-         activate = function(Widget, Event)
+   y += combobox.viewport.height + gui.sizing.widget.gap
+
+   local input = gui.input({
+      target     = viewport,
+      x          = win.margins.left,
+      y          = y,
+      width      = combobox.viewport.width,
+      labelWidth = gui.rpixel('150dp'),
+      label      = 'Inputbox:',
+      text       = 'Your text here',
+      events     = {
+         activate = function(Event)
             print('Input state set to "' .. (Event.state ?? 'NIL') .. '", text "' .. (Event.text ?? 'NIL') .. '"')
          end,
-         focus = widgetFocus
+         focus = function()
+            widgetFocus(&&)
+         end
       }
    })
-   y += input.viewport.height + 16
+
+   y += input.viewport.height + gui.sizing.widget.gap
+
+   hslider = gui.slider({
+      target      = viewport,
+      label       = 'Slider:',
+      labelPos    = 'left',
+      labelWidth  = gui.rpixel('150dp'),
+      orientation = 'horizontal',
+      valuePos    = 'in-centre',
+      value       = 1,
+      min         = 0.5,
+      max         = 1,
+      x           = win.margins.left,
+      y           = y,
+      width       = input.viewport.width,
+      events      = {
+         activate = function(Value)
+         end
+      }
+   })
+
+   y += hslider.viewport.height + gui.sizing.widget.gap
+
+   -- A multi-line input.  Enter adds a line and Ctrl+Enter activates the input.
+
+   memo = gui.input({
+      target     = viewport,
+      x          = win.margins.left,
+      y          = y,
+      width      = input.viewport.width,
+      labelWidth = gui.rpixel('150dp'),
+      label      = 'Multi-line:',
+      multiline  = true,
+      text       = 'Enter adds a new line.\nCtrl+Enter activates the input.',
+      events     = {
+         activate = function(Event)
+            print('Multi-line input state set to "' .. (Event.state ?? 'NIL') .. '", text "' ..
+               (Event.text ?? 'NIL') .. '"')
+         end,
+         focus = function()
+            widgetFocus(&&)
+         end
+      }
+   })
+
+   y += memo.viewport.height + gui.sizing.widget.gap
+
+   -- A panel in the space between the widget column and the vertical slider, with a scrolling body of wrapped text.
+   -- The text is wrapped to the page, less the scrollbar, and the page is sized to fit it when the body is resized.
+
+   local notes_text:obj
+   local notes_width, notes_height = 0, 0
+
+   function fitNotes(Panel:table!)
+      if not notes_text or (notes_width <= 0) then return end
+      notes_text.inlineSize = math.max(1, notes_width - (gui.sizing.widget.gap + gui.sizing.widget.gap) - Panel.scrollbar.v_thickness)
+      _, _, ty, _, th = notes_text.mtGetBoundary(0)
+      _, _, py = Panel.page.mtGetBoundary(0)
+      Panel.page.height = math.max(notes_height, math.ceil(ty + th - py + gui.sizing.widget.gap))
+   end
+
+   notes = gui.panel({
+      target  = viewport,
+      x       = combobox.viewport.x + combobox.viewport.width + (gui.sizing.widget.gap * 2),
+      xOffset = vslider.viewport.xOffset + vslider.viewport.width + (gui.sizing.widget.gap * 2),
+      y       = toggle.viewport.y,
+      height  = gui.rpixel('320dp'),
+      title   = 'Panel',
+      meta    = 'Scrolling text',
+      scroll  = 'vertical',
+      theme   = { bkgd=win.theme.page.bkgd },
+      events  = {
+         resize = function(Width, Height)
+            notes_width, notes_height = Width, Height
+            fitNotes(&&)
+         end
+      }
+   })
+
+   notes_text = notes.page.new('VectorText', table.merge({
+      x         = gui.sizing.widget.gap,
+      y         = gui.getFontHeight({ face='Inconsolata', fontSize='12pt'}),
+      lineLimit = 0,
+      face      = 'Inconsolata',
+      fontSize  = '12pt',
+      textFlags = VTXF_SELECTABLE,
+      string = 'A panel is a card with a header row and a body for its content.  The header shows a title on ' ..
+         'the left and meta text on the right, and either can be replaced by a widget.\n\n' ..
+         'This panel was created with the scroll option, so its body holds a page that is moved by the ' ..
+         'scrollbar.  The text is wrapped to the width of the page, and the page is sized to fit the text.\n\n' ..
+         'Use the mouse wheel or drag the scrollbar to read the rest of this text.'
+   }, win.theme.window.text, false, true))
+
+   fitNotes(notes)
+
+   y = math.max(y, notes.viewport.y + notes.viewport.height) + gui.rpixel('20dp')
+
+   glView = gui.columnView({
+      target      = viewport,
+      textAttrib  = 'name',
+      multiSelect = true,
+      x           = notes.viewport.x,
+      y           = y,
+      xOffset     = win.margins.right,
+      height      = gui.rpixel('200pt'),
+      events = {
+         itemSelected = function(View, Reason, Item)
+            names = array<str>
+            for item in values(View.selectedItems()) do names.push(item.name) end
+            print('Selected rows: ' .. names.concat(', '))
+         end,
+         activeChange = function(View, Reason, Item)
+            print('Active item changed: ' .. (Item?.name ?? 'none'))
+         end,
+         itemDeselected = function(View, Reason, Item)
+            print('Item deselected: ' .. Item.name)
+         end,
+         itemActivated = function(View, Reason, Item)
+         end,
+         itemChecked = function(View, Reason, Item, Column, Checked)
+            print(f'{Item.name}: {Column.title} = {Checked} ({Reason})')
+         end
+      },
+      items = {
+         { id=1, path='kotuku:system/', name='vegetables', included=true, icon='folders/folder' },
+         { id=2, path='kotuku:system/', name='cereals', included=false, icon='folders/folder' },
+         { id=3, path='kotuku:system/', name='apple.txt', included=true, icon='filetypes/text' },
+         { id=4, path='kotuku:system/', name='banana.jpg', included=false, icon='filetypes/text' },
+         { id=5, path='kotuku:system/', name='avocado.mp3', included=true, icon='filetypes/text' },
+         { id=6, path='kotuku:system/', name='cherry.txt', included=false, icon='filetypes/text' },
+         { id=7, path='kotuku:system/', name='fruit salad.dessert', included=false, icon='filetypes/text' },
+         { id=8, path='kotuku:system/', name='Lemon Mint.doc', included=false, icon='filetypes/text' },
+         { id=9, path='kotuku:system/', name='miso-soup.txt', included=false, icon='filetypes/text' }
+      },
+      columns = {
+         { attrib='included', title='Check', width=4, checkBoxes=true, align='center' },
+         { attrib='name',     title='Name', width=10, showIcons=true }
+      }
+   })
+
+
 
    try
       global sndAlarm = obj.new('sound', { path=glPath .. 'data/alarm.mp3', volume=0.2 })
    end
 
-   gui.icon({
+   glAlarmIcon = gui.icon({
       target = viewport,
-      x      = 20,
+      x      = gui.rpixel('30dp'),
       y      = y,
       image  = 'time/alarm',
-      text   = 'Alarm',
-      size   = 80,
+      label  = 'Alarm',
+      size   = gui.rpixel('120dp'),
+      draggable = true,
+      theme = { effect = 'fill(cmap:flare) sheen() emboss() glow(black)' },
       events = {
-         show = function(Icon)
-            vfx.fadeIn(Icon.viewport, 1.0, 0.1)
+         show = function()
+            vfx.fadeIn(&viewport, { seconds=1.0, delay=0.1 })
          end,
-         activate = function(Icon)
-            if Icon.effect then return end
-            Icon.effect = vfx.shake(Icon.viewport, 1.0, 0, 1.0, function(Effect)
-               Icon.effect = nil
-            end)
+         activate = function()
+            if &effect then return end
+            &effect = vfx.shake(&viewport, {
+               seconds = 1.0,
+               intensity = 1.0,
+               callback = function(Effect)
+                  &effect = nil
+               end
+            })
 
             sndAlarm?.acActivate()
          end
@@ -361,26 +633,28 @@ end
       global sndWilhelm = obj.new('sound', { path=glPath .. 'data/wilhelm.mp3', volume=0.2 })
    end
 
-   gui.icon({
+   glHouseIcon = gui.icon({
       target = viewport,
-      x      = 120,
+      x      = gui.rpixel('170dp'),
       y      = y,
       image  = 'programs/filemanager',
-      text   = 'Wilhelm\'s House',
+      label  = 'Wilhelm\'s House',
+      draggable = true,
+      theme = { effect = 'fill(pearl) glow(colour=#000000)' },
       events = {
-         show = function(Icon)
-            vfx.rotate(Icon.viewport, 0.8, 0)
-            vfx.zoomIn(Icon.viewport, 0.4, 0.3)
+         show = function()
+            vfx.rotate(&viewport, { seconds=0.8 })
+            vfx.zoomIn(&viewport, { seconds=0.4, delay=0.3 })
          end,
-         activate = function(Icon)
-            if Icon.effect then return end
+         activate = function()
+            if &effect then return end
 
-            Icon.effect = vfx.chain({
-               vfx.rotate(Icon.viewport, 0.8),
-               vfx.zoomOut(Icon.viewport, 0.8)
+            &effect = vfx.chain({
+               vfx.rotate(&viewport, { seconds=0.8 }),
+               vfx.zoomOut(&viewport, { seconds=0.8 })
             }, function()
-               Icon.viewport.free()
-               Icon.viewport = nil
+               &viewport.free()
+               &viewport = nil
             end)
 
             sndWilhelm?.acActivate()
@@ -388,5 +662,140 @@ end
       }
    })
 
-   win:show(true)
+   glMessage = gui.icon({
+      target = viewport,
+      x      = gui.rpixel('310dp'),
+      y      = y,
+      image  = 'programs/message',
+      label  = 'Instant Messenger',
+      draggable = true,
+      theme = { effect = 'metal() shadow()' },
+      events = {
+         show = function()
+            vfx.wipe(&viewport, { seconds=1.2, delay=1.2, style='radial', cx=0.5, cy=0.5 })
+         end,
+         activate = function()
+            if &effect then return end
+
+            &effect = vfx.chain({
+               vfx.wipe(&viewport, { seconds=0.8, style='spiral', cx=0.5, cy=0.5, invert=true })
+            }, function()
+               &viewport.free()
+               &viewport = nil
+               viewport.acDraw()
+            end)
+         end
+      }
+   })
+
+   y += gui.rpixel('220dp')
+
+   glTree = gui.icon({
+      target = viewport,
+      x      = glAlarmIcon.viewport.x,
+      y      = y,
+      image  = 'nature/pine',
+      label  = 'Hug a Tree',
+      draggable = true,
+      theme = { effect = 'wood() glow(#404040)' },
+      events = {
+         show = function()
+            vfx.wipe(&viewport, { seconds=2.2, delay=2.2, style='spiral', cx=0.5, cy=0.5 })
+         end,
+         activate = function()
+            if &effect then return end
+
+            &effect = vfx.chain({
+               vfx.wipe(&viewport, { seconds=0.8, style='shutter', cx=0.5, cy=0.5, invert=true })
+            }, function()
+               &viewport.free()
+               &viewport = nil
+               viewport.acDraw()
+            end)
+         end
+      }
+   })
+
+   -- Registering a fake widget allows us to plugin to the theme system for making manual updates.
+
+   global glThemeHook = {
+      viewport = win.viewport,
+      applyTheme = function(Theme:table!)
+         notes.setTheme({ bkgd=Theme.page.bkgd })
+         text.fill = Theme.window.text.fill
+         notes_text.fill = Theme.window.text.fill
+      end
+   }
+
+   gui.registerWidget(win.viewport, glThemeHook)
+
+   -- Zoom controls are kept in their own viewport above the client viewport so that they are unaffected by the zoom.
+   -- Zooming sets the client viewport's view box to a fraction of the window size, so content anchored to the right or
+   -- bottom edges is laid out again within the zoomed area.  A view box can't be removed once set, so it follows every
+   -- resize, including at a zoom of 1.
+
+   zoom = 1.0
+   ZOOM_STEP <const> = 1.25
+
+   function applyZoom()
+      viewport.{ viewX = 0, viewY = 0, viewWidth = win.surface.width / zoom, viewHeight = win.surface.height / zoom }
+      win.surface.mtScheduleRedraw()
+   end
+
+   function setZoom(Value:num)
+      zoom = math.min(4, math.max(0.25, Value))
+      applyZoom()
+   end
+
+   win.bkgd.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
+      if viewport.viewWidth > 0 then applyZoom() end
+   end
+
+   zoomViewport = win.viewport.new('VectorViewport', {
+      xOffset = gui.sizing.widget.gap, y = gui.sizing.widget.gap, width = 1, height = 1
+   })
+
+   -- The theme button switches the window between the light and dark themes with win.setTheme().  Widgets that
+   -- support theme updates restyle in place; the plain text vectors are updated here.
+
+   function themeIcon():str
+      return (win.theme.scheme is 'dark') ? 'weather/sun' : 'weather/moon'
+   end
+
+   themeButton = gui.button({
+      target = zoomViewport,
+      icon   = themeIcon(),
+      tip    = 'Toggle Light and Dark Theme',
+      x = 0, y = 0, width = 24, height = 24,
+      events = {
+         activate = function()
+            win.setTheme((win.theme.scheme is 'dark') ? gui.themes.light : gui.themes.dark)
+            &setIcon(themeIcon())
+         end
+      }
+   })
+
+   zoomOutButton = gui.button({
+      target = zoomViewport,
+      label  = '-',
+      tip    = 'Zoom Out',
+      x = themeButton.viewport.width + gui.sizing.widget.gap, y = 0, width = 24, height = 24,
+      events = { activate = function() setZoom(zoom / ZOOM_STEP) end }
+   })
+
+   zoomInButton = gui.button({
+      target = zoomViewport,
+      label  = '+',
+      tip    = 'Zoom In',
+      x = zoomOutButton.viewport.x + zoomOutButton.viewport.width + gui.sizing.widget.gap,
+      y = 0, width = 24, height = 24,
+      events = { activate = function() setZoom(zoom * ZOOM_STEP) end }
+   })
+
+   zoomViewport.{
+      width  = zoomInButton.viewport.x + zoomInButton.viewport.width,
+      height = math.max(themeButton.viewport.height, zoomOutButton.viewport.height, zoomInButton.viewport.height)
+   }
+
+   win.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

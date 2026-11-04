@@ -60,7 +60,8 @@ class freetype_font {
             freetype_font *font = nullptr;
             FT_Size ft_size = nullptr;
 
-            // These values are measured as pixels in 72 DPI.
+            // These values are measured in the same pixel units as the font size (VectorText FontSize).  Like the
+            // glyph outlines, they are independent of the display density.
             //
             // It is widely acknowledged that the metrics declared by font creators or their tools may not be
             // the precise glyph metrics in reality...
@@ -98,15 +99,31 @@ class freetype_font {
             void set_size(int Size) {
                if (!FT_New_Size(font->face, &ft_size)) {
                   FT_Activate_Size(ft_size);
+
+                  // FreeType runs at 72 DPI so that 1pt = 1px and the em is exactly Size pixels.  The glyph outlines
+                  // in get_glyph() and generate_text() are produced at this same scale.
+
                   FT_Set_Char_Size(font->face, 0, Size<<6, 72, 72);
 
-                  if FT_HAS_VERTICAL(ft_size->face) {
-                     line_spacing = std::trunc(int26p6_to_dbl(ft_size->face->max_advance_height) * (72.0 / glDisplayVDPI));
-                  }
-                  else line_spacing = std::trunc(int26p6_to_dbl(ft_size->metrics.height + std::abs(ft_size->metrics.descender)) * 72.0 / glDisplayVDPI * 1.15);
+                  // The FreeType metrics are scaled by a fixed 72/96 (DISPLAY_DPI), which acts as a calibration
+                  // constant.  The display density must not be used here: the glyph outlines ignore it, so a
+                  // density-dependent factor would shrink the metrics relative to the glyphs on high DPI displays,
+                  // causing overlapping lines and misplaced bounds, carets and vertical alignment.  The Ascent,
+                  // Descent and LineSpacing modifiers in the font options.cfg were tuned with this factor in place,
+                  // so changing it requires those values to be re-tuned.
 
-                  ascent  = int26p6_to_dbl(ft_size->metrics.ascender) * (72.0 / glDisplayVDPI);
-                  descent = std::abs(int26p6_to_dbl(ft_size->metrics.descender)) * (72.0 / glDisplayVDPI);
+                  const double metric_scale = 72.0 / DISPLAY_DPI;
+
+                  if FT_HAS_VERTICAL(ft_size->face) {
+                     line_spacing = std::trunc(int26p6_to_dbl(ft_size->face->max_advance_height) * metric_scale);
+                  }
+                  else {
+                     auto advance = ft_size->metrics.height + std::abs(ft_size->metrics.descender);
+                     line_spacing = std::trunc(int26p6_to_dbl(advance) * metric_scale * 1.15);
+                  }
+
+                  ascent  = int26p6_to_dbl(ft_size->metrics.ascender) * metric_scale;
+                  descent = std::abs(int26p6_to_dbl(ft_size->metrics.descender)) * metric_scale;
 
                   // Check if the client has applied metrics modifiers for this font.  The font module
                   // comes with a tool, font_metrics.tiri, for helping with these modifiers.
@@ -114,8 +131,9 @@ class freetype_font {
                   if (glFontConfig) {
                      kt::ScopedObjectLock<objConfig> config(glFontConfig, 500);
                      if (config.granted()) {
-                        ConfigGroups *groups;
-                        if (glFontConfig->get(FID_Data, groups) IS ERR::Okay) {
+                        APTR group_ptr;
+                        if (!glFontConfig->getData(group_ptr)) {
+                           auto groups = (ConfigGroups *)group_ptr;
                            for (auto & [group, keys] : groups[0]) {
                               if (kt::iequals(group, font->face->family_name)) {
                                  if (auto it = keys.find("LineSpacing"); it != keys.end()) {
@@ -148,7 +166,7 @@ class freetype_font {
                      }
                   }
 
-                  height  = ascent + descent; // int26p6_to_dbl(ft_size->metrics.height) * (72.0 / glDisplayVDPI);
+                  height  = ascent + descent;
                }
             }
 
@@ -181,7 +199,7 @@ class freetype_font {
       ~freetype_font();
 };
 
-extern ERR get_font(kt::Log &Log, CSTRING, CSTRING, int, int, common_font **);
+extern ERR get_font(kt::Log &Log, std::string_view, std::string_view, int, int, common_font **);
 
 // Caching note: Although it is policy for cached fonts to be permanently retained, it is not necessary for the
 // glyphs themselves to be permanently cached.  Future resource management should therefore actively remove
@@ -192,3 +210,18 @@ extern ankerl::unordered_dense::map<uint32_t, std::unique_ptr<bmp_font>> glBitma
 extern ankerl::unordered_dense::map<uint32_t, std::unique_ptr<freetype_font>> glFreetypeFonts;
 
 extern FT_Library glFTLibrary;
+
+// Shared by VectorText layout and direct text drawing; callers must hold glFontMutex.
+
+inline void get_kerning_xy(FT_Face Face, int Glyph, int PrevGlyph, double &X, double &Y)
+{
+   FT_Vector delta;
+   if (!FT_Get_Kerning(Face, PrevGlyph, Glyph, FT_KERNING_DEFAULT, &delta)) {
+      X = int26p6_to_dbl(delta.x);
+      Y = int26p6_to_dbl(delta.y);
+   }
+   else {
+      X = 0;
+      Y = 0;
+   }
+}

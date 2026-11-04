@@ -1,0 +1,154 @@
+   include 'vector', 'display'
+   module display as mGfx
+
+-- Tests for VSPREAD_REFLECT on bitmap fills.  The source tile is 20x20 and green, with a red 10x10 marker in its
+-- top-left corner.  The location of the marker in each cell of a 2x2 tile grid shows which axes have been mirrored.
+-- Samples are taken from the centre of each 10x10 quadrant to avoid antialiased edges.
+
+TILE = 20
+
+function newBitmap(Width, Height):obj
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+end
+
+function isRed(Bitmap, X, Y)
+   p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return (p.red > 200) and (p.green < 50) and (p.blue < 50)
+end
+
+function isGreen(Bitmap, X, Y)
+   p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return (p.red < 50) and (p.green > 100) and (p.blue < 50)
+end
+
+function newScene(Width, Height):<obj, obj>
+   scene = obj.new('VectorScene', { pageWidth=Width, pageHeight=Height })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   return scene, viewport
+end
+
+function addMarkerTile(Viewport)
+   Viewport.new('VectorRectangle', { x=0, y=0, width=TILE, height=TILE, fill='rgb(0,160,0)' })
+   Viewport.new('VectorRectangle', { x=0, y=0, width=TILE/2, height=TILE/2, fill='rgb(255,0,0)' })
+end
+
+function newMarkerPattern(Scene, Spread):obj
+   pattern = Scene.new('VectorPattern', {
+      x=0, y=0, width=TILE, height=TILE, units=VUNIT_USERSPACE, spreadMethod=Spread
+   })
+   addMarkerTile(pattern.viewport)
+   check Scene.mtAddDef('pat', pattern)
+   return pattern
+end
+
+-- Returns the red quadrant (0..3, in reading order) of the tile cell at (CellX, CellY), or nil if the cell does not
+-- contain exactly one red quadrant on a green background.  Scale is the device size of one source pixel.
+
+function markerQuadrant(Bitmap, CellX, CellY, Scale)
+   cell = TILE * Scale
+   quarter = cell / 4
+   found = nil
+   for q in {0 into 3} do
+      x = (CellX * cell) + ((q % 2) * (cell / 2)) + quarter
+      y = (CellY * cell) + (math.floor(q / 2) * (cell / 2)) + quarter
+      if isRed(Bitmap, x, y) then
+         if found != nil then return nil end
+         found = q
+      elseif not isGreen(Bitmap, x, y) then
+         return nil
+      end
+   end
+   return found
+end
+
+-- Expected marker quadrants for cells (0,0), (1,0), (0,1), (1,1)
+
+EXPECT_REFLECT   = { 0, 1, 2, 3 }
+EXPECT_REFLECT_X = { 0, 1, 0, 1 }
+EXPECT_REFLECT_Y = { 0, 0, 2, 2 }
+EXPECT_REPEAT    = { 0, 0, 0, 0 }
+
+function checkGrid(Bitmap, Expected, Label, Scale)
+   for i in {0 into 3} do
+      cx = i % 2
+      cy = math.floor(i / 2)
+      q = markerQuadrant(Bitmap, cx, cy, Scale ?? 1)
+      assert(q is Expected[i], f'{Label}: cell {cx},{cy} should have its marker in quadrant {Expected[i]}, got {q}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function PatternReflectMirrorsBothAxes()
+   scene, viewport = newScene(40, 40)
+   newMarkerPattern(scene, VSPREAD_REFLECT)
+   viewport.new('VectorRectangle', { x=0, y=0, width=40, height=40, fill='url(#pat)' })
+   bmp = newBitmap(40, 40)
+
+   drawScene(scene, bmp)
+   checkGrid(bmp, EXPECT_REFLECT, 'REFLECT')
+end
+
+@Test function PatternReflectWithTransform()
+   -- A 40x40 viewbox scaled up to 80x80 forces the interpolated drawing path.
+
+   scene, viewport = newScene(80, 80)
+   viewport.viewWidth = 40
+   viewport.viewHeight = 40
+   newMarkerPattern(scene, VSPREAD_REFLECT)
+   viewport.new('VectorRectangle', { x=0, y=0, width=40, height=40, fill='url(#pat)' })
+   bmp = newBitmap(80, 80)
+
+   drawScene(scene, bmp)
+   checkGrid(bmp, EXPECT_REFLECT, 'REFLECT scale(2)', 2)
+end
+
+@Test function PatternSingleAxisModesUnchanged()
+   bmp = newBitmap(40, 40)
+   for _, case in {
+      { VSPREAD_REFLECT_X, EXPECT_REFLECT_X, 'REFLECT_X' },
+      { VSPREAD_REFLECT_Y, EXPECT_REFLECT_Y, 'REFLECT_Y' },
+      { VSPREAD_REPEAT, EXPECT_REPEAT, 'REPEAT' }
+   } do
+      scene, viewport = newScene(40, 40)
+      newMarkerPattern(scene, case[0])
+      viewport.new('VectorRectangle', { x=0, y=0, width=40, height=40, fill='url(#pat)' })
+      drawScene(scene, bmp)
+      checkGrid(bmp, case[1], case[2])
+   end
+end
+
+@Test function ImageReflectMirrorsBothAxes()
+   -- Render the marker tile into a bitmap for use as an image source.
+
+   src = newBitmap(TILE, TILE)
+   src_scene, src_view = newScene(TILE, TILE)
+   addMarkerTile(src_view)
+   drawScene(src_scene, src)
+
+   -- With MEET and top-left alignment the 20x20 image is drawn at 1:1 in a 40x20 or 20x40 target, so the second
+   -- tile on the long axis comes from the spread method.
+
+   scene, viewport = newScene(80, 40)
+   image = scene.new('VectorImage', {
+      bitmap=src, units=VUNIT_BOUNDING_BOX, spreadMethod=VSPREAD_REFLECT, aspectRatio=ARF_MEET|ARF_X_MIN|ARF_Y_MIN
+   })
+   check scene.mtAddDef('img', image)
+   viewport.new('VectorRectangle', { x=0, y=0, width=40, height=20, fill='url(#img)' })
+   viewport.new('VectorRectangle', { x=60, y=0, width=20, height=40, fill='url(#img)' })
+   bmp = newBitmap(80, 40)
+
+   drawScene(scene, bmp)
+   assert(isRed(bmp, 5, 5) and isGreen(bmp, 15, 5), 'Image tile 0,0 should be unmirrored')
+   assert(isGreen(bmp, 25, 5) and isRed(bmp, 35, 5), 'Image tile 1,0 should be mirrored horizontally')
+   assert(isRed(bmp, 65, 5) and isGreen(bmp, 65, 15), 'Image tile 0,0 of the tall target should be unmirrored')
+   assert(isGreen(bmp, 65, 25) and isRed(bmp, 65, 35), 'Image tile 0,1 should be mirrored vertically')
+end

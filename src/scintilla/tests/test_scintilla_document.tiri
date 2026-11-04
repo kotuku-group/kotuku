@@ -1,0 +1,548 @@
+-- Tests for the non-visual document API of the Scintilla class.  The editor is hosted in a headless vector scene, so
+-- these tests cover initialisation, text manipulation, search and undo, but not drawing or user input.
+
+   include 'scintilla', 'vector'
+   module vector as mVec
+
+-- Create a headless scene with a viewport, and a Scintilla object hosted by it.  Returns the scene (which owns
+-- everything else), the viewport and the editor.
+
+function newEditor(Options:table):<obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=300 })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = vp.new('Scintilla', Options ?? { })
+   return scene, vp, sci
+end
+
+function writeTempFile(Path:str!, Content:str!)
+   local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   local err, written = file.acWrite(Content)
+   assert(err is ERR_Okay, 'Write() returned ' .. mSys.GetErrorMsg(err))
+   assert(written is #Content, f'Wrote {written} bytes, expected {#Content}')
+end
+
+function getLine(Sci:obj!, Line:num!):str
+   local buffer = array<byte, 256>
+   local err = Sci.mtGetLine(Line, buffer)
+   assert(err is ERR_Okay, f'GetLine({Line}) returned {mSys.GetErrorMsg(err)}')
+   local text = buffer.getString(0, 256)
+   local term = text.find('\0')
+   if term then return text.sub(0, term) end
+   return text
+end
+
+@AfterAll function cleanup()
+   mSys.DeleteFile('temp:scintilla_test.cpp')
+   mSys.DeleteFile('temp:scintilla_test.txt')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Initialisation
+
+@Test function InitWithOwnerViewport()
+   local scene <close>, vp, sci = newEditor()
+
+   assert(sci.viewport.id is vp.id, 'The owning viewport must be adopted when Viewport is not set')
+   assert(sci.focus.id is vp.id, 'Focus must default to the Viewport')
+   assert(sci.view, 'A View viewport must be created on initialisation')
+   assert(sci.page, 'A Page viewport must be created on initialisation')
+   assert(sci.view.owner.id is vp.id, 'The View must be a child of the Viewport')
+   assert(sci.page.owner.id is sci.view.id, 'The Page must be a child of the View')
+
+   local err, def = scene.mtFindDef('sci' .. sci.id)
+   assert(err is ERR_Okay, 'The canvas image must be registered as a scene definition')
+   assert(def.class.className is 'VectorImage', 'The scene definition must be a VectorImage')
+end
+
+@Test function InitWithExplicitViewport()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=300 })
+   local outer = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = outer.new('VectorViewport', { x=10, y=10, width=200, height=100 })
+   local sci = scene.new('Scintilla', { viewport=host })
+
+   assert(sci.viewport.id is host.id, 'An explicit Viewport must be retained')
+   assert(sci.view.owner.id is host.id, 'The View must be created within the explicit Viewport')
+   assert(sci.view.width is 200, f'The View must cover the host viewport, width is {sci.view.width}')
+   assert(sci.view.height is 100, f'The View must cover the host viewport, height is {sci.view.height}')
+end
+
+@Test function FreeReleasesSceneResources()
+   local scene <close>, vp, sci = newEditor()
+   local view_id = sci.view.id
+   local def_name = 'sci' .. sci.id
+
+   sci.free()
+
+   assert(obj.find(view_id) is nil, 'Freeing the editor must free its View')
+   local err = scene.mtFindDef(def_name)
+   assert(err is ERR_Search, 'Freeing the editor must remove its image definition from the scene')
+end
+
+@Test function FreeViewportBeforeEditor()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=300 })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci <close> = scene.new('Scintilla', { viewport=vp })
+   sci.string = 'Content survives the loss of the viewport'
+
+   vp.free()
+
+   assert(sci.view is nil, 'The View reference must be cleared when the Viewport is freed')
+   assert(sci.string is 'Content survives the loss of the viewport', 'The document must remain accessible')
+end
+
+-- Regression: the default font was 'courier:10', which is not installed, so a default Scintilla object failed to
+-- initialise.
+
+@Test function DefaultFontInitialises()
+   local scene <close>, vp, sci = newEditor()
+   assert(sci.face is 'Source Code Pro' and sci.fontSize is 14, 'The default font fields must initialise')
+   local _, handle = check mVec.GetFontHandle(sci.face, 'Regular', 0, sci.fontSize)
+   local width = mVec.CharWidth(handle, 105, 0)
+   assert(width is mVec.CharWidth(handle, 77, 0) and width is mVec.CharWidth(handle, 87, 0),
+      'The default scalable face must be monospaced')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Text content
+
+@Test function StringRoundTrip()
+   local scene <close>, vp, sci = newEditor()
+   local text = 'Grüße, 世界\nSecond line\n\tTabbed ✓'
+
+   sci.string = text
+   assert(sci.string is text, 'The String field must return the text that was set, including UTF-8 sequences')
+   assert(sci.lineCount is 3, f'Expected 3 lines, got {sci.lineCount}')
+
+   sci.string = ''
+   assert(sci.string is nil, 'Setting an empty string must clear the document (empty strings read as nil)')
+   assert(sci.lineCount is 1, 'An empty document has one line')
+end
+
+@Test function GetLine()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'alpha\nbeta\ngamma'
+
+   assert(getLine(sci, 0) is 'alpha\n', 'GetLine() must include the line ending')
+   assert(getLine(sci, 2) is 'gamma', 'The last line has no line ending')
+
+   local small = array<byte, 3>
+   assert(sci.mtGetLine(1, small) is ERR_BufferOverflow, 'A buffer that cannot hold the line must be rejected')
+end
+
+@Test function InsertText()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'abc'
+
+   check sci.mtInsertText('[', 0)
+   assert(sci.string is '[abc', f'Insert at position 0 failed: {sci.string}')
+
+   check sci.mtSelectRange(2, 2)
+   check sci.mtInsertText('-', -1)
+   assert(sci.string is '[a-bc', f'Insert at the cursor (-1) failed: {sci.string}')
+
+   check sci.mtSelectRange(3, 5)
+   check sci.mtInsertText('BC', -2)
+   assert(sci.string is '[a-BC', f'Replacing the selection (-2) failed: {sci.string}')
+end
+
+-- Regression: SelectRange() with a negative End selected up to the start of a line beyond the end of the document.
+
+@Test function SelectRangeToEnd()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'first\nsecond\nthird'
+
+   check sci.mtSelectRange(6, -1)
+   check sci.mtInsertText('end', -2)
+   assert(sci.string is 'first\nend', f'A negative End must select to the end of the document: {sci.string}')
+end
+
+@Test function ReplaceLine()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'one\ntwo\nthree'
+
+   check sci.mtReplaceLine(1, 'TWO', -1)
+   assert(sci.string is 'one\nTWO\nthree', f'ReplaceLine() failed: {sci.string}')
+
+   check sci.mtReplaceLine(2, 'THREE and more', 5)
+   assert(sci.string is 'one\nTWO\nTHREE', f'ReplaceLine() with a limited Length failed: {sci.string}')
+end
+
+@Test function DeleteLine()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'one\ntwo\nthree'
+
+   check sci.mtDeleteLine(1)
+   assert(sci.string is 'one\nthree', f'Deleting a middle line failed: {sci.string}')
+
+   check sci.mtDeleteLine(1)
+   assert(sci.string is 'one', f'Deleting the last line failed: {sci.string}')
+   assert(sci.lineCount is 1, 'Deleting the last line must reduce the line count')
+end
+
+@Test function ReplaceTextPlain()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'Cat cat CAT'
+
+   check sci.mtReplaceText('cat', 'dog', 0, 0, -1)
+   assert(sci.string is 'dog dog dog', f'A case-insensitive replace must match every instance: {sci.string}')
+
+   assert(sci.mtReplaceText('cat', 'dog', 0, 0, -1) is ERR_Search, 'ERR_Search is expected when nothing matches')
+end
+
+@Test function ReplaceTextCaseSensitive()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'Cat cat CAT'
+
+   check sci.mtReplaceText('cat', 'dog', STF_CASE, 0, -1)
+   assert(sci.string is 'Cat dog CAT', f'A case-sensitive replace must match exactly: {sci.string}')
+end
+
+@Test function ReplaceTextExpression()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'cat cot cut cart'
+
+   check sci.mtReplaceText('c[a-z]t', 'X', STF_EXPRESSION, 0, -1)
+   assert(sci.string is 'X X X cart', f'A regular expression replace failed: {sci.string}')
+end
+
+-- Regression: ReplaceText() restarted every search from the original start position, so a replacement that contained
+-- the search term was matched again and the method never returned.
+
+@Test function ReplaceTextContainingFind()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'a-a-a'
+
+   check sci.mtReplaceText('a', 'aa', 0, 0, -1)
+   assert(sci.string is 'aa-aa-aa', f'A replacement containing the search term failed: {sci.string}')
+end
+
+@Test function TrimWhitespace()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'one  \ntwo\t\n\n   three \t '
+
+   check sci.mtTrimWhitespace()
+   assert(sci.string is 'one\ntwo\n\n   three', f'Trailing whitespace was not removed: {sci.string}')
+end
+
+@Test function GotoLineMovesCursor()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'one\ntwo\nthree\nfour'
+
+   check sci.mtGotoLine(2)
+   assert(sci.cursorRow is 2, f'CursorRow must follow GotoLine(), got {sci.cursorRow}')
+   assert(sci.cursorCol is 0, f'GotoLine() moves to the start of the line, got column {sci.cursorCol}')
+
+   check sci.mtGotoLine(100)
+   assert(sci.cursorRow is 3, f'GotoLine() beyond the document must move to the last line, got {sci.cursorRow}')
+
+   assert(sci.mtGotoLine(-1) is ERR_OutOfRange, 'A negative line is out of range')
+end
+
+@Test function UndoRedo()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'abc'
+
+   check sci.mtInsertText('X', 3)
+   assert(sci.string is 'abcX', 'Insert failed')
+
+   check sci.acUndo(1)
+   assert(sci.string is 'abc', f'Undo() must reverse the insertion: {sci.string}')
+
+   check sci.acRedo(1)
+   assert(sci.string is 'abcX', f'Redo() must reapply the insertion: {sci.string}')
+end
+
+@Test function ModifiedEvent()
+   local events = array<int>
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'saved content'
+   sci.modified = false
+   assert(sci.modified is 0, 'Clearing Modified must mark the document as unmodified')
+
+   sci.eventFlags = SEF_MODIFIED
+   sci.eventCallback = function(Scintilla, EventFlags)
+      events.push(EventFlags)
+   end
+
+   check sci.mtInsertText('new ', 0)
+   assert(sci.modified is 1, 'An edit must mark the document as modified')
+   assert(#events is 1, f'Expected one event, received {#events}')
+   assert(events[0] is SEF_MODIFIED, f'Expected SEF_MODIFIED, received {events[0]}')
+
+   check sci.mtInsertText('more ', 0)
+   assert(#events is 1, 'Further edits to a modified document must not repeat the event')
+end
+
+@Test function PathDetectsLexer()
+   local source = 'int main() {\n   return 0;\n}\n'
+   writeTempFile('temp:scintilla_test.cpp', source)
+
+   local scene <close>, vp, sci = newEditor({ path='temp:scintilla_test.cpp', flags=SCIF_DETECT_LEXER })
+   assert(sci.string is source, 'The file content must be loaded on initialisation')
+   assert(sci.lineCount is 4, f'Expected 4 lines, got {sci.lineCount}')
+   assert(sci.lexer is SCLEX_CPP, f'The C++ lexer must be detected, got {sci.lexer}')
+   assert(sci.modified is 0, 'Loading a file must not mark the document as modified')
+end
+
+-- Regression: lexer detection read past the last pattern in the lexer table, so a file name that matched no pattern
+-- crashed the process.
+
+@Test function PathWithUnknownLexer()
+   writeTempFile('temp:scintilla_test.txt', 'Plain text\n')
+
+   local scene <close>, vp, sci = newEditor({ path='temp:scintilla_test.txt', flags=SCIF_DETECT_LEXER })
+   assert(sci.string is 'Plain text\n', 'The file content must be loaded on initialisation')
+   assert(sci.lexer is 0, f'No lexer can be chosen for an unknown file type, got {sci.lexer}')
+end
+
+-- Regression: Lexer was registered as init-only, so it could not be changed after initialisation.
+
+@Test function ChangeLexerAfterInit()
+   local scene <close>, vp, sci = newEditor({ lexer=SCLEX_CPP })
+   sci.string = 'def main():\n   return 0\n'
+
+   sci.lexer = SCLEX_PYTHON
+   assert(sci.lexer is SCLEX_PYTHON, f'The lexer must be changeable after initialisation, got {sci.lexer}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- ScintillaSearch
+
+function newSearch(Text:str!, Flags:num):<obj, obj, obj>
+   local scene, vp, sci = newEditor()
+   sci.string = 'one two one two one'
+   local search = sci.new('ScintillaSearch', { text=Text, flags=Flags ?? 0 })
+   return scene, sci, search
+end
+
+@Test function SearchForwards()
+   local scene <close>, sci, search = newSearch('one')
+
+   local err:num = search.mtFind(0)
+   assert(err is ERR_Okay and search.start is 0, f'Find() must locate the first match, got {search.start}')
+   local match_end = search['end']
+   assert(search.start is 0 and match_end is 3, f'Start and End must record the match, got {search.start}-{match_end}')
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 8, f'Next() must locate the second match, got {search.start}')
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 16, f'Next() must locate the third match, got {search.start}')
+   assert(search.acNext() is ERR_Search, 'Next() must stop at the end of the document without STF_WRAP')
+
+   search.flags = STF_WRAP
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 0,
+      f'Next() must wrap to the first match with STF_WRAP, got {search.start}')
+end
+
+@Test function SearchFromPosition()
+   local scene <close>, sci, search = newSearch('one')
+
+   local err:num = search.mtFind(5)
+   assert(err is ERR_Okay and search.start is 8, f'Find() must start from the From position, got {search.start}')
+
+   check sci.mtSelectRange(12, 12)
+   err = search.mtFind(-1)
+   assert(err is ERR_Okay and search.start is 16, f'Find(-1) must start from the cursor, got {search.start}')
+
+   assert(search.mtFind(17) is ERR_Search, 'Find() must fail when no match follows From')
+   assert(search.start is -1, 'A failed Find() must reset Start')
+end
+
+@Test function SearchBackwards()
+   local scene <close>, sci, search = newSearch('one', STF_BACKWARDS)
+
+   local err:num = search.mtFind(19)
+   assert(err is ERR_Okay and search.start is 16, f'A backwards Find() must locate the last match, got {search.start}')
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 8,
+      f'A backwards Next() must locate the previous match, got {search.start}')
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 0, f'A backwards Next() must locate the first match, got {search.start}')
+   assert(search.acNext() is ERR_Search, 'A backwards Next() must stop at the start without STF_WRAP')
+
+   search.flags = STF_BACKWARDS | STF_WRAP
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 16, f'A backwards Next() must wrap to the last match, got {search.start}')
+end
+
+-- Regression: Prev() searched backwards from the cursor, which follows the end of the current match, and therefore
+-- found the current match again.  It also returned ERR_Okay when nothing was found.
+
+@Test function SearchPrevAfterNext()
+   local scene <close>, sci, search = newSearch('one')
+
+   check search.mtFind(0)
+   check search.acNext()
+   local err:num = search.acPrev()
+   assert(err is ERR_Okay and search.start is 0,
+      f'Prev() after Next() must return the preceding match, got {search.start}')
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 8,
+      f'Next() after Prev() must return the following match, got {search.start}')
+
+   check search.mtFind(0)
+   assert(search.acPrev() is ERR_Search, 'Prev() must report ERR_Search when there is no preceding match')
+end
+
+@Test function SearchAfterCursorMoved()
+   local scene <close>, sci, search = newSearch('one')
+
+   check search.mtFind(0)
+   check sci.mtSelectRange(12, 12)
+   local err:num = search.acNext()
+   assert(err is ERR_Okay and search.start is 16,
+      f'Next() must resume from a cursor that the user has moved, got {search.start}')
+end
+
+@Test function SearchCaseAndExpression()
+   local scene <close>, sci, search = newSearch('ONE', STF_CASE)
+   sci.string = 'one One ONE ole'
+
+   local err:num = search.mtFind(0)
+   assert(err is ERR_Okay and search.start is 8, f'A case-sensitive Find() must match exactly, got {search.start}')
+
+   search.flags = 0
+   err = search.mtFind(0)
+   assert(err is ERR_Okay and search.start is 0, f'Find() must be case-insensitive by default, got {search.start}')
+
+   search.text  = 'o[a-z]e'
+   search.flags = STF_EXPRESSION | STF_CASE
+   check search.mtFind(1)
+   local match_end = search['end']
+   assert(search.start is 12 and match_end is 15,
+      f'An expression match must record its extent, got {search.start}-{match_end}')
+end
+
+@Test function SearchEmptyMatchAtDocumentEnd()
+   local scene <close>, sci, search = newSearch('$', STF_EXPRESSION)
+   sci.string = 'abc\ndef'
+
+   check search.mtFind(0)
+   assert(search.start is 3, 'Find() must locate the first line ending')
+   check search.acNext()
+   assert(search.start is 7, 'Next() must advance past an empty match within the document')
+   assert(search.acNext() is ERR_Search, 'Next() must stop after an empty match at the document end')
+   assert(search.acNext() is ERR_Search, 'Repeated Next() calls must remain at the end of the search')
+
+   search.flags = STF_EXPRESSION | STF_WRAP
+   check search.acNext()
+   assert(search.start is 3, 'An empty match at the document end must wrap to the first match')
+end
+
+@Test function SearchEmptyMatchAtDocumentStart()
+   local scene <close>, sci, search = newSearch('^', STF_EXPRESSION | STF_BACKWARDS)
+   sci.string = 'abc\ndef'
+
+   check search.mtFind(7)
+   assert(search.start is 4, 'Find() must locate the last line start')
+   check search.acNext()
+   assert(search.start is 0, 'Next() must step backwards past an empty match within the document')
+   assert(search.acNext() is ERR_Search, 'Next() must stop after an empty match at the document start')
+   assert(search.acNext() is ERR_Search, 'Repeated backwards Next() calls must remain at the start')
+
+   search.flags = STF_EXPRESSION | STF_BACKWARDS | STF_WRAP
+   check search.acNext()
+   assert(search.start is 4, 'An empty match at the document start must wrap to the last match')
+end
+
+@Test function SearchEmptyMatchAtSelectionBoundaries()
+   local scene <close>, sci, search = newSearch('$', STF_EXPRESSION | STF_SCAN_SELECTION)
+   sci.string = 'abc\ndef\nghi'
+
+   check sci.mtSelectRange(4, 7)
+   check search.mtFind(-1)
+   assert(search.start is 7, 'Find() must locate the empty match at the selection end')
+   assert(search.acNext() is ERR_Search, 'Next() must stop at an empty match at the selection end')
+   search.flags = STF_EXPRESSION | STF_SCAN_SELECTION | STF_WRAP
+   check search.acNext()
+   assert(search.start is 7, 'Wrapping must stay within the recorded selection')
+
+   search.text = '^'
+   search.flags = STF_EXPRESSION | STF_SCAN_SELECTION | STF_BACKWARDS
+   check sci.mtSelectRange(4, 7)
+   check search.mtFind(-1)
+   assert(search.start is 4, 'Find() must locate the empty match at the selection start')
+   assert(search.acNext() is ERR_Search, 'Next() must stop at an empty match at the selection start')
+   search.flags = STF_EXPRESSION | STF_SCAN_SELECTION | STF_BACKWARDS | STF_WRAP
+   check search.acNext()
+   assert(search.start is 4, 'Backwards wrapping must stay within the recorded selection')
+end
+
+@Test function SearchMoveCursor()
+   local scene <close>, sci, search = newSearch('two', STF_MOVE_CURSOR)
+
+   local err:num = search.mtFind(0)
+   assert(err is ERR_Okay and search.start is 4, f'Find() failed, got {search.start}')
+   assert(sci.cursorCol is 4, f'STF_MOVE_CURSOR must move the cursor to the match, got column {sci.cursorCol}')
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 12, f'Next() must not repeat the match at the cursor, got {search.start}')
+end
+
+@Test function SearchScanSelection()
+   local scene <close>, sci, search = newSearch('one', STF_SCAN_SELECTION)
+
+   check sci.mtSelectRange(4, 15)
+   local err:num = search.mtFind(-1)
+   assert(err is ERR_Okay and search.start is 8, f'Find() must search within the selection, got {search.start}')
+   assert(search.acNext() is ERR_Search, 'Next() must not leave the recorded selection')
+
+   search.flags = STF_SCAN_SELECTION | STF_WRAP
+   err = search.acNext()
+   assert(err is ERR_Okay and search.start is 8,
+      f'Wrapping must remain within the recorded selection, got {search.start}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Regression tests for defects that did not need user interaction to reproduce.
+
+-- Setting the selection colours before initialisation dereferenced the uninitialised Scintilla API.
+
+@Test function SelectionColoursBeforeInit()
+   local scene <close>, vp, sci = newEditor({ selectFore='255,255,0,255', selectBkgd='0,128,0,255' })
+   assert(sci.selectFore.red is 255 and sci.selectFore.green is 255, 'SelectFore must retain its value')
+   assert(sci.selectBkgd.green is 128, 'SelectBkgd must retain its value')
+end
+
+-- The fonts used for measurement were global, so each editor was measured and drawn with the fonts of whichever
+-- editor last changed them.  Freeing that editor left the survivors with dangling font references.
+
+@Test function IndependentFonts()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=300 })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local first = vp.new('Scintilla', { })
+   local second = vp.new('Scintilla', { })
+
+   check second.mtSetFont('Veranda')
+   assert(first.face is 'Source Code Pro', f'The first editor must keep its font, got {first.face}')
+   assert(second.face is 'Veranda', f'The second editor must use its new font, got {second.face}')
+
+   second.free()
+
+   first.string = ('A line of text that will be measured.\n').rep(50)
+   check first.mtGotoLine(40)
+   check first.mtSelectRange(10, -1)
+   assert(first.cursorRow is 50, f'The surviving editor must remain usable, cursor row is {first.cursorRow}')
+end
+
+-- Font handles are shared resources, while each editor retains its own face and size.
+
+@Test function SetFontChangesFace()
+   local scene <close>, vp, sci = newEditor()
+   local size = sci.fontSize
+   check sci.mtSetFont('Opti')
+   assert(sci.face is 'Opti', f'SetFont() must change the face, got {sci.face}')
+   assert(sci.fontSize is size, 'SetFont() must preserve the pixel size')
+   assert(sci.set('face', '') is ERR_NullArgs, 'An empty face must be rejected')
+   assert(sci.face is 'Opti', 'A rejected face must preserve the previous face')
+end
+
+@Test function FontFieldsBeforeAndAfterInit()
+   local scene <close>, vp, sci = newEditor({ face='Noto Sans', fontSize=18 })
+   assert(sci.face is 'Noto Sans' and sci.fontSize is 18, 'Font fields must be accepted before Init')
+   sci.face = 'Source Code Pro'
+   sci.fontSize = 24
+   assert(sci.face is 'Source Code Pro' and sci.fontSize is 24, 'Font fields must be writable after Init')
+   assert(sci.set('fontSize', 0) is ERR_OutOfRange, 'A zero font size must be rejected')
+   assert(sci.set('fontSize', -1) is ERR_OutOfRange, 'A negative font size must be rejected')
+   assert(sci.fontSize is 24, 'Rejected sizes must preserve the previous size')
+end

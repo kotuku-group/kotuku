@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Converts centreline paths into stroked outline geometry. Hooks into conv_adaptor_vcgen with vcgen_stroke and upstream
+// curve, dash, or transform converters. In the vector renderer it implements stroke width, joins, caps, and miter
+// handling before fill-style rasterisation.
 
-//
-// conv_stroke
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_CONV_STROKE_INCLUDED
-#define AGG_CONV_STROKE_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vcgen_stroke.h"
@@ -20,8 +18,6 @@
 
 namespace agg
 {
-
-    //-------------------------------------------------------------conv_stroke
     template<class VertexSource, class Markers=null_markers>
     struct conv_stroke :
     public conv_adaptor_vcgen<VertexSource, vcgen_stroke, Markers>
@@ -34,13 +30,13 @@ namespace agg
         {
         }
 
-        void line_cap(line_cap_e lc)     { base_type::generator().line_cap(lc);  }
-        void line_join(line_join_e lj)   { base_type::generator().line_join(lj); }
-        void inner_join(inner_join_e ij) { base_type::generator().inner_join(ij); }
+        void line_cap(VLC LineCap)     { base_type::generator().line_cap(LineCap);  }
+        void line_join(VLJ LineJoin)   { base_type::generator().line_join(LineJoin); }
+        void inner_join(VIJ InnerJoin) { base_type::generator().inner_join(InnerJoin); }
 
-        line_cap_e   line_cap()   const { return base_type::generator().line_cap();  }
-        line_join_e  line_join()  const { return base_type::generator().line_join(); }
-        inner_join_e inner_join() const { return base_type::generator().inner_join(); }
+        VLC line_cap()   const { return base_type::generator().line_cap();  }
+        VLJ line_join()  const { return base_type::generator().line_join(); }
+        VIJ inner_join() const { return base_type::generator().inner_join(); }
 
         void width(double w) { base_type::generator().width(w); }
         void miter_limit(double ml) { base_type::generator().miter_limit(ml); }
@@ -64,5 +60,3 @@ namespace agg
     };
 
 }
-
-#endif

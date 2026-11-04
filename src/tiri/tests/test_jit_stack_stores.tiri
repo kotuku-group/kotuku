@@ -1,0 +1,84 @@
+-- Root traces check only their starting frame against the Lua stack on entry.  Some recorded bytecodes store trace
+-- values directly into stack slots, and an inlined callee with a large frame places those slots well above the
+-- checked region.  Each case compiles a small driver loop that inlines a large-frame worker, then enters the trace
+-- through interpreted recursion so that the trace base sweeps across successive stack growth boundaries.
+
+function run_case(Body:str)
+   local names = 'v0'
+   local values = 'Value'
+   for index in {1 to 121} do
+      names = names .. f', v{index}'
+      values = values .. ', Value'
+   end
+   local script = obj.new('tiri', { statement=[[
+global glCompiled = false
+global glSink = 0
+global function worker(Value:num):num
+   local ]] .. names .. ' = ' .. values .. '\n' .. Body .. [[
+
+end
+global function driver(Count:num):num
+   local total = 0
+   local index = 0
+   while index < Count do
+      total += worker(index)
+      index++
+   end
+   return total
+end
+global function descend(Depth:num):num
+   if Depth > 0 then
+      local result = descend(Depth - 1)
+      return result
+   end
+   return driver(10)
+end
+global function events(Event, Trace, Func)
+   if Event is 'stop' and Func is driver then glCompiled = true end
+end
+jit.off(descend)
+jit.opt.start('hotloop=1', 'hotexit=1000')
+jit.attach(events, 'trace')
+assert(driver(10) is 90, 'Compile the driver loop with its worker inlined')
+jit.attach(events)
+assert(glCompiled, 'The driver loop must compile')
+for depth in {0 to 1500} do
+   assert(descend(depth) is 90, f'Inlined stack stores must fit the stack at depth {depth}')
+end
+processing.collect()
+]] })
+   check script.acActivate()
+   assert(script.error is 0, script.errorMessage)
+end
+
+-- FNEW publishes local captures to their stack slots before creating the open upvalue cells.
+
+@Test function ClosureCaptures()
+   run_case([[
+   local function read():num return v0 + v120 end
+   return read()
+]])
+end
+
+-- BC_TRYENTER materialises every live slot so that the handler observes interpreter state.
+
+@Test function TryEntry()
+   run_case([[
+   local result = 0
+   try
+      result = v0 + v120
+   except
+      result = -1
+   end
+   return result
+]])
+end
+
+-- Stores to the protected global environment place the value in its stack slot for lj_env_check().
+
+@Test function EnvironmentStore()
+   run_case([[
+   glSink = v120
+   return v0 + v120
+]])
+end

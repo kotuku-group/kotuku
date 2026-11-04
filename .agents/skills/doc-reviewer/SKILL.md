@@ -51,6 +51,7 @@ Check completeness and self-sufficiency:
 - Error conditions, failure modes, return codes, and recovery expectations are described where applicable.
 - Common workflows, edge cases, limitations, and performance considerations are covered.
 - Developers would not need to inspect unrelated examples or source code to implement the documented task.
+- For embedded documentation, tags are accurately defined in each `-TAGS-` section.
 
 Check developer usefulness:
 
@@ -66,7 +67,10 @@ Check Kōtuku documentation standards:
 - Use the simplified `Kotuku` spelling in code identifiers and examples.
 - Use the branded spelling only in prose when matching existing project documentation.
 - For embedded documentation, preserve marker conventions such as `-FUNCTION-`, `-CLASS-`, `-ACTION-`, `-METHOD-`,
-  `-FIELD-`, and `-END-`.
+  `-FIELD-`, `-TAGS-` and `-END-`.
+- In embedded documentation, literal `<` and `>` characters must be XML-escaped as `&lt;` and `&gt;` (the generator
+  parses these comments as XML). Flag any unescaped `<` or `>` in prose, ranges, or comparisons, e.g. a valid range
+  written as `.01 < Multiplier < 10` must appear as `.01 &lt; Multiplier &lt; 10`.
 - Keep line length and formatting consistent with surrounding files.
 
 ## Review Output

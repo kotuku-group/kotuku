@@ -295,7 +295,7 @@ end
    assert(special.query is 'query=value with spaces', 'Query with spaces should be preserved')
 
    -- Very long URLs
-   longPath = string.rep('a', 1000)
+   longPath = 'a'.rep(1000)
    longURL = 'https://example.com/' .. longPath
    longParsed = url.parse(longURL)
    assert(longParsed.host is 'example.com', 'Long URL host parsing failed')

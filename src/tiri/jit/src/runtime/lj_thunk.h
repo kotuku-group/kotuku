@@ -6,16 +6,20 @@
 #include "lj_obj.h"
 
 // Create a new thunk userdata on the stack
-// func: The deferred closure
-// expected_type: LJ type tag (LUA_TNUMBER, LUA_TSTRING, etc., or LUA_TNIL for unknown)
+// Func: The deferred closure
+// ExpectedType: Logical TiriType value, or 0xff when the result is not declared
 
-LJ_FUNC void lj_thunk_new(lua_State *L, GCfunc *func, int expected_type);
+LJ_FUNC void lj_thunk_new(lua_State *L, GCfunc *Func, uint8_t ExpectedType);
 
 // Resolve a thunk if not already resolved
 // thunk_udata: The thunk userdata (must be UDTYPE_THUNK)
 // Returns: Pointer to resolved value (either cached or newly evaluated)
+// The throwing variant propagates the deferred function's error as a Lua error if it fails.  The protected
+// variant returns nullptr instead, guaranteeing that no long jump occurs; the error value is left in the
+// unreferenced slot at *L->top for the caller to copy or re-push immediately.
 
 LJ_FUNC TValue * lj_thunk_resolve(lua_State *L, GCudata *thunk_udata);
+LJ_FUNC TValue * lj_thunk_resolve_protected(lua_State *L, GCudata *thunk_udata);
 
 // Get the current value of a thunk (resolved value if resolved, thunk itself if not)
 // o: TValue that might be a thunk

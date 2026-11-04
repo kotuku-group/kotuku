@@ -1,0 +1,143 @@
+-- Local Linux WebChannel chat/echo demonstration.  Each WebSocket owns one native peer.
+   include 'websocket'
+   include 'webrtc'
+   import 'json'
+
+   local port = tonumber(arg('port', '9320'))
+   assert(port and port >= 1024 and port <= 65535, 'Invalid signalling port')
+   local configuration = '[]'
+   local config_path = arg('config', '')
+   if config_path != '' then
+      local config_file <close> = obj.new('file', { path=config_path, flags=FL_READ })
+      assert(config_file.size <= 16384, 'ICE configuration exceeds the public limit')
+      local config_buffer = array<byte, config_file.size>
+      check config_file.acRead(config_buffer)
+      configuration = config_buffer.getString()
+   end
+   local sessions = {}
+   local count = 0
+
+function sendJSON(Socket:obj, Message:table)
+   check Socket.mtSend(json.encode(Message), WSM_TEXT)
+end
+
+function attach(Session:table, Channel:obj)
+   Session.channels[Channel.label] = Channel
+   Session.metrics[Channel.label] = { received=0, echoed=0, lastType=0, lastBytes=0 }
+   Channel.onOpen = function(Child)
+      sendJSON(Session.socket, { type='channel-open', label=Child.label, id=Child.id })
+      if Child.label is 'chat' then check Child.mtSend('Hello from native Kōtuku', WCM_TEXT) end
+   end
+   Channel.onBufferedAmountLow = function(Child) Session.lowEvents += 1 end
+   Channel.onMessage = function(Child, Buffer, Type)
+      local metrics = Session.metrics[Child.label]
+      metrics.received += 1
+      metrics.lastType = Type
+      metrics.lastBytes = #Buffer
+      -- Send copies the borrowed complete-message buffer before this callback returns.
+      check Child.mtSend(Buffer, Type)
+      metrics.echoed += 1
+      local session_high = Child.bufferedAmount
+      Session.highWater = math.max(Session.highWater, session_high)
+   end
+   Channel.onClose = function(Child)
+      sendJSON(Session.socket, { type='channel-closed', label=Child.label })
+   end
+   Channel.onError = function(Child, Error)
+      sendJSON(Session.socket, { type='error', message=f'Channel {Child.label}: {Error}' })
+   end
+end
+
+function start(Session:table, NativeOffer:bool)
+   assert(not Session.peer, 'A session already owns a peer')
+   Session.peer = obj.new('peerconnection', {
+      flags = arg('policy', ''),
+      iceServers = configuration,
+      onRestartRequired = function(Peer)
+         sendJSON(Session.socket, { type='restart-required' })
+      end,
+      onIceCandidate = function(Peer, Candidate)
+         sendJSON(Session.socket, { type='candidate', candidate=Candidate })
+      end,
+      onWebChannel = function(Peer, Channel) attach(Session, Channel) end
+   })
+   local peer = Session.peer
+   for mode in {0 to 6} do
+      local _, channel = check peer.mtCreateWebChannel(f'native-{mode}', 'echo', mode < 3,
+         false, -1, mode % 3 is 1 ? 0 : -1, mode % 3 is 2 ? 5000 : -1)
+      attach(Session, channel)
+   end
+   local _, negotiated = check peer.mtCreateWebChannel('negotiated', '', true, true, 100, -1, -1)
+   attach(Session, negotiated)
+   local _, chat = check peer.mtCreateWebChannel('chat', 'chat', true, false, -1, -1, -1)
+   attach(Session, chat)
+   if NativeOffer then
+      check peer.mtCreateOffer()
+      check peer.mtSetLocalDescription(peer.localDescription)
+      sendJSON(Session.socket, { type='offer', sdp=peer.localDescription })
+   else
+      sendJSON(Session.socket, { type='ready' })
+   end
+end
+
+   local server <close> = obj.new('websocketserver', {
+      address='127.0.0.1', port=port,
+      connected=function(Server:obj, Socket:obj)
+         -- Local resource limits: at most eight peers, one 128 KiB signalling message per socket.
+         if count >= 8 then check Socket.mtClose(WSC_NORMAL, 'Session limit'); return end
+         local session = { socket=Socket, peer=nil, partial='', channels={}, metrics={}, highWater=0, lowEvents=0 }
+         sessions[Socket.id] = session
+         count += 1
+         Socket.incoming = function(WS:obj, Buffer:array<byte>, Type:num, Final:num)
+            try
+               assert(Type is WSM_TEXT, 'Signalling requires text')
+               assert(#session.partial + #Buffer <= 131072, 'Signalling message too large')
+               session.partial ..= Buffer.getString()
+               if Final is 0 then return end
+               local message = json.decode(session.partial)
+               session.partial = ''
+               assert(type(message) is 'table', 'Expected a JSON object')
+               if message.type is 'join' then
+                  start(session, message.nativeOffer is true)
+               elseif message.type is 'offer' then
+                  assert(session.peer and type(message.sdp) is 'string', 'Join before sending SDP')
+                  check session.peer.mtSetRemoteDescription(message.sdp)
+                  check session.peer.mtCreateAnswer()
+                  check session.peer.mtSetLocalDescription(session.peer.localDescription)
+                  sendJSON(WS, { type='answer', sdp=session.peer.localDescription })
+               elseif message.type is 'answer' then
+                  assert(session.peer and type(message.sdp) is 'string', 'Join before sending SDP')
+                  check session.peer.mtSetRemoteDescription(message.sdp)
+               elseif message.type is 'stats' then
+                  assert(session.peer, 'Join before requesting statistics')
+                  local _, snapshot = check session.peer.mtGetStats()
+                  sendJSON(WS, { type='stats', snapshot=json.decode(snapshot), channels=session.metrics,
+                     gatheringComplete=session.peer.gatheringState is RTCGATHER_COMPLETE })
+               elseif message.type is 'buffer-report' then
+                  sendJSON(WS, { type='buffer-report', highWater=session.highWater, lowEvents=session.lowEvents })
+               elseif message.type is 'close-channel' then
+                  assert(type(message.label) is 'string' and session.channels[message.label], 'Unknown channel')
+                  check session.channels[message.label].mtClose()
+               elseif message.type is 'candidate' then
+                  assert(session.peer and type(message.candidate) is 'string', 'Invalid ICE candidate')
+                  check session.peer.mtAddIceCandidate(message.candidate)
+               else
+                  raise 'Unknown signalling message'
+               end
+            except e
+               session.partial = ''
+               sendJSON(WS, { type='error', message=tostring(e.message) })
+            end
+         end
+      end,
+      disconnected=function(Server:obj, Socket:obj)
+         local session = sessions[Socket.id]
+         if not session then return end
+         -- Stop callbacks before freeing the parent and all of its channels.
+         if session.peer then obj.free(session.peer) end
+         sessions[Socket.id] = nil
+         count -= 1
+      end
+   })
+   print(f'Native WebRTC signalling on ws://127.0.0.1:{server.port}/')
+   processing.sleep()

@@ -1,0 +1,30 @@
+-- Call integrated unit tests in the Audio module; no playback device is required.
+
+@if(exists='modules:audio')
+   include 'audio'
+@Test function UnitTests()
+   passed, total = mod.test('audio')
+   assert(total > 0, 'Audio unit tests are disabled in this build; enable UNIT_TESTS.')
+   assert(passed is total, f"Passed {passed} of {total} Audio unit tests.  Use --log-api for details.")
+   print(f'Passed all {total} embedded unit tests.')
+end
+
+@Test function QualityPreservesFlags()
+   audio <close> = obj.new('Audio', { flags=ADF_VOL_RAMPING })
+   for _, quality in { 0, 10, 33, 66, 100 } do
+      audio.quality = quality
+      assert(audio.flags is ADF_VOL_RAMPING, 'Quality must not change the caller-selected flags')
+   end
+end
+
+@Test function DitherPolicyField()
+   audio <close> = obj.new('Audio', { flags=0, dither='Off' })
+   assert(audio.dither is ADITHER_OFF, 'The Off override must be available through the public field lookup')
+   audio.quality = 100
+   assert(audio.dither is ADITHER_OFF, 'Quality must preserve an explicit dither override')
+   audio.dither = 'TPDF'
+   assert(audio.dither is ADITHER_TPDF)
+   audio.dither = 'Auto'
+   assert(audio.dither is ADITHER_AUTO)
+end
+@end

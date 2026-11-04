@@ -18,7 +18,6 @@ end
       maxHeight = 150,
       icon      = 'programs/netconnect',
       quit      = 0,
-      center    = true,
       stickToFront=true
    })
 

@@ -89,14 +89,18 @@ int Scintilla_LinkLexers() {
 	LINK_LEXER(lmCss);
 	LINK_LEXER(lmD);
 	LINK_LEXER(lmDiff);
+   LINK_LEXER(lmErrorList);
 	LINK_LEXER(lmHaskell);
 	LINK_LEXER(lmHTML);
 	LINK_LEXER(lmLua);
 	LINK_LEXER(lmMake);
 	LINK_LEXER(lmMSSQL);
 	LINK_LEXER(lmMySQL);
+   LINK_LEXER(lmNull);
 	LINK_LEXER(lmPascal);
+   LINK_LEXER(lmPHPSCRIPT);
 	LINK_LEXER(lmPerl);
+   LINK_LEXER(lmProps);
 	LINK_LEXER(lmPython);
 	LINK_LEXER(lmREBOL);
 	LINK_LEXER(lmRuby);

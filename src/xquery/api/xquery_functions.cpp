@@ -138,7 +138,7 @@ static void append_codepoint_utf8(std::string &Output, uint32_t Codepoint)
    }
 
    char buffer[8] = { 0 };
-   int written = UTF8WriteValue((int)Codepoint, buffer, (int)sizeof(buffer));
+   int written = UTF8WriteValue(int(Codepoint), std::span<int8_t>((int8_t *)buffer, sizeof(buffer)));
    if (written <= 0) return;
 
    Output.append(buffer, (size_t)written);
@@ -156,8 +156,8 @@ static std::vector<uint32_t> decode_codepoints(const std::string &Input)
    size_t offset = 0u;
    while (offset < Input.length()) {
       int length = 0;
-      uint32_t value = UTF8ReadValue(Input.c_str() + offset, &length);
-      if (length <= 0) {
+      uint32_t value = UTF8ReadValue(std::string_view(Input).substr(offset), &length);
+      if ((length <= 0) or (value IS 0)) {
          // Invalid UTF-8 sequence; treat byte as individual codepoint
          value = (unsigned char)Input[offset];
          length = 1;

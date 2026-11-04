@@ -1,0 +1,155 @@
+   import 'gui/window'
+   module display as mGfx
+
+function visual_pause(Stage, Delay)
+   if Delay > 0.2 then print(Stage) end
+   processing.sleep(Delay)
+end
+
+@Test; @Requires(display=true, linux_platform=true)
+function WaylandWindowState()
+   if mGfx.GetDisplayType() != DT_WAYLAND then return end
+   local visual_delay = tonumber(arg('visualDelay', '0.2'))
+
+   local window = gui.window({ title='Wayland state test', insideWidth=400, insideHeight=260 })
+   local display = window.surface.display
+   window.show()
+   defer window.surface.acHide() end
+   visual_pause('Initial 400x260 window', visual_delay)
+   assert(mGfx.SetCursorPos(100, 100) is ERR_NoSupport,
+      'Wayland must reject attempts to warp the system pointer')
+
+   local original_x = display.x
+   assert(display.acMoveToPoint(80, 90, 0, MTF_X|MTF_Y) is ERR_NoSupport,
+      'Wayland must reject absolute top-level positioning')
+   assert(display.x is original_x, 'A rejected move changed the display position')
+
+   check display.acResize(520, 340, 0)
+   visual_pause('Display resized to 520x340', visual_delay)
+   assert(display.width is 520 and display.height is 340, 'Display resize did not update the client area')
+   assert(window.surface.width is 520 and window.surface.height is 340,
+      'Display resize did not update the owning surface')
+
+   check display.mtSizeHints(200, 150, 600, 400, 0)
+   assert(display.mtSizeHints(600, 400, 200, 150, 0) is ERR_InvalidDimension,
+      'Contradictory size hints must be rejected before reaching the compositor')
+   assert(display.mtSizeHints(200, 150, 2147483647, 2147483647, 0) is ERR_InvalidDimension,
+      'Oversized hints must not overflow when decoration margins are added')
+
+   check window.surface.acResize(460, 300, 0)
+   visual_pause('Surface resized to 460x300', visual_delay)
+   assert(display.width is 460 and display.height is 300, 'Surface resize did not update its display')
+
+   local popup = gui.window({ title='Wayland popup', popOver=window.surface,
+      insideWidth=160, insideHeight=100, x=20, y=30 })
+   popup.show()
+   visual_pause('Popup 160x100, anchored near the parent top left', visual_delay)
+   assert(popup.surface.width is 160 and popup.surface.height is 100,
+      'The parented popup did not retain its configured dimensions')
+   local err:num, left:num, top:num, right:num, bottom:num = popup.surface.display.mtGetFrame(0)
+   assert(err is ERR_Okay and left is 0 and top is 0 and right is 0 and bottom is 0,
+      'Popups must not acquire toplevel decorations')
+   local nested = gui.window({ title='Nested popup', popOver=popup.surface, insideWidth=80, insideHeight=50 })
+   nested.show()
+   visual_pause('Nested popup', visual_delay)
+   check nested.surface.acHide()
+   check popup.surface.acHide()
+
+   display.flags = display.flags | SCR_BORDERLESS
+   visual_pause('Fullscreen', visual_delay)
+   assert(display.flags has SCR_BORDERLESS, 'The compositor did not configure full-screen state')
+   err, left, top, right, bottom = display.mtGetFrame(0)
+   assert(err is ERR_Okay and left is 0 and top is 0 and right is 0 and bottom is 0,
+      'Fullscreen must remove client-side decorations')
+   display.flags = display.flags & ~SCR_BORDERLESS
+   visual_pause('Restored to 460x300 after fullscreen', visual_delay)
+   assert(display.width is 460 and display.height is 300, 'Full-screen restoration lost the normal size')
+
+   display.flags = display.flags | SCR_MAXIMISE
+   visual_pause('Maximised', visual_delay)
+   assert(display.flags has SCR_MAXIMISE, 'The compositor did not configure maximised state')
+   display.flags = display.flags & ~SCR_MAXIMISE
+   visual_pause('Restored to 460x300 after maximise', visual_delay)
+   assert(display.width is 460 and display.height is 300, 'Unmaximising lost the normal size')
+
+   check window.surface.acHide()
+   check window.surface.acShow()
+   visual_pause('Remapped with decorations', visual_delay)
+   assert(display.width is 460 and display.height is 300, 'Remapping changed the content dimensions')
+   display.title = 'Updated decoration title'
+   visual_pause('Title changed without resizing', visual_delay)
+
+   check display.mtMinimise()
+   visual_pause('Minimised; the compositor may hide the window', visual_delay)
+end
+
+@Test; @Requires(display=true, linux_platform=true)
+function WaylandDecorationGeometry()
+   if mGfx.GetDisplayType() != DT_WAYLAND then return end
+   local surface <close> = obj.new('Surface', { width=320, height=200, colour='#e0e0e0' })
+   local display = surface.display
+   display.title = 'Decoration geometry'
+   check surface.acShow()
+   processing.sleep(0.2)
+   local err:num, left:num, top:num, right:num, bottom:num = display.mtGetFrame(0)
+   assert(err is ERR_Okay, 'Cannot query frame margins')
+   local mode = arg('decorationMode', '')
+   if mode is 'client' then
+      assert(left is 4 and right is 4 and top is 28 and bottom is 4, 'Client decorations were not supplied')
+   elseif mode is 'server' then
+      assert(left is 0 and right is 0 and top is 0 and bottom is 0, 'Server decorations were duplicated')
+   end
+   assert(display.width is 320 and display.height is 200, 'Decorations consumed the client area')
+   check surface.acHide()
+   check surface.acShow()
+   processing.sleep(0.2)
+   assert(display.width is 320 and display.height is 200, 'Decoration remapping changed the client area')
+end
+
+@Test; @Requires(display=true, linux_platform=true)
+function WaylandSpecialisedWindows()
+   if mGfx.GetDisplayType() != DT_WAYLAND then return end
+   assert(mGfx.SetHostOption(HOST_TRAY_ICON, 1) is ERR_NoSupport, 'Tray icons need separate desktop integration')
+   assert(mGfx.SetHostOption(HOST_STICK_TO_FRONT, 1) is ERR_NoSupport, 'Persistent stacking is unsupported')
+   for fields in values({ { presence=SPT_ICON_TRAY }, { presence=SPT_NONE },
+      { flags=RNF_STICK_TO_FRONT }, { flags=RNF_STICK_TO_BACK } }) do
+      fields.width = 160
+      fields.height = 100
+      try
+         local surface <close> = obj.new('Surface', fields)
+      except e
+         assert(e.code is ERR_NoSupport, 'Unsupported hosted window must report NoSupport')
+      success
+         assert(false, 'Unsupported hosted window was silently created')
+      end
+   end
+
+   local surface = obj.new('Surface', { width=240, height=160, flags=RNF_COMPOSITE,
+      colour='#40208080' })
+   check surface.acShow()
+   processing.sleep(0.2)
+   local display = surface.display
+   assert(display.flags has SCR_COMPOSITE, 'Transparent surfaces must request alpha-capable buffers')
+   assert(display.acFocus() is ERR_NoSupport, 'Arbitrary focus requests must be rejected')
+   assert(display.acMoveToFront() is ERR_NoSupport, 'Arbitrary raising must be rejected')
+   assert(display.acMoveToBack() is ERR_NoSupport, 'Arbitrary lowering must be rejected')
+   assert(surface.set('flags', surface.flags | RNF_STICK_TO_FRONT) is ERR_NoSupport,
+      'Changing persistent stacking must report NoSupport')
+   assert(not (surface.flags has RNF_STICK_TO_FRONT), 'Rejected stacking changed the flags')
+   assert(surface.set('presence', SPT_ICON_TRAY) is ERR_NoSupport,
+      'Changing a hosted window to a tray icon must be rejected')
+   assert(surface.presence is SPT_HOST, 'Rejected window type changed the existing role')
+
+   local popup = obj.new('Surface', { width=80, height=50, popOver=surface, presence=SPT_NONE })
+   check popup.acShow()
+   processing.sleep(0.2)
+   assert(popup.width is 80 and popup.height is 50, 'Presence-less popup lost its requested content size')
+   check surface.acHide()
+   assert(popup.acShow() is ERR_NoSupport, 'A popup cannot be mapped without its mapped parent')
+   check surface.acShow()
+   processing.sleep(0.2)
+   check popup.acShow()
+   processing.sleep(0.2)
+   popup.free()
+   surface.free()
+end

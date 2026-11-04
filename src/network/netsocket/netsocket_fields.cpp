@@ -3,43 +3,18 @@
 -FIELD-
 Address: An IP address or domain name to connect to.
 
-If this field is set with an IP address or domain name prior to initialisation, an attempt to connect to that location
-will be made when the NetSocket is initialised.  Post-initialisation this field cannot be set by the client, however
-calls to #Connect() will result in it being updated so that it always reflects the named address of the current
-connection.
+For NetSocket clients, if this field is set with an IP address or domain name prior to initialisation, an attempt to
+connect to that location will be made when the object is initialised.  Post-initialisation this field cannot be set by
+the client, however calls to #Connect() will result in it being updated so that it always reflects the named address of
+the current connection.
 
-*********************************************************************************************************************/
-
-static ERR SET_Address(extNetSocket *Self, CSTRING Value)
-{
-   if (Self->Address) { FreeResource(Self->Address); Self->Address = nullptr; }
-   if (Value) Self->Address = kt::strclone(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-Backlog: The maximum number of connections that can be queued against the socket.
-
-Incoming connections to NetSocket objects are queued until they are answered by the object.  Setting the Backlog
-adjusts the maximum number of connections on the queue, which otherwise defaults to 10.
-
-If the backlog is exceeded, subsequent connections to the socket should expect a connection refused error.
+For @NetServer listeners, this inherited field identifies the local address to bind before initialisation.  Use
+`localhost`, `*`, an IPv4 address or an IPv6 address.
 
 -FIELD-
 ClientData: A client-defined value that can be useful in action notify events.
 
 This is a free-entry field value that can store client data for future reference.
-
--FIELD-
-ClientLimit: The maximum number of clients (unique IP addresses) that can be connected to a server socket.
-
-The ClientLimit value limits the maximum number of IP addresses that can be connected to the socket at any one time.
-For socket limits per client, see the #SocketLimit field.
-
--FIELD-
-Clients: For server sockets, lists all clients connected to the server.
 
 -FIELD-
 Error: Information about the last error that occurred during a NetSocket operation
@@ -65,18 +40,18 @@ Feedback: A callback trigger for when the state of the NetSocket is changed.
 The client can define a function in this field to receive notifications whenever the state of the socket changes -
 typically connection messages.
 
-In server mode, the function must follow the prototype `Function(*NetSocket, *ClientSocket, NTC State)`.  Otherwise
-`Function(*NetSocket, NTC State)`.
+For NetSocket clients, the function must follow the prototype `Function(*NetSocket, NTC State)`.  For @NetServer
+listeners, the inherited field uses `Function(*NetServer, *ClientSocket, NTC State)`.
 
-The `NetSocket` parameter refers to the NetSocket object to which the function is subscribed.  In server mode,
-`ClientSocket` refers to the @ClientSocket on which the state has changed.
+The first parameter refers to the object to which the function is subscribed.  For NetServer listeners, `ClientSocket`
+refers to the @ClientSocket on which the state has changed.
 
 *********************************************************************************************************************/
 
-static ERR GET_Feedback(extNetSocket *Self, FUNCTION **Value)
+static ERR GET_Feedback(extNetSocket *Self, FUNCTION * &Value)
 {
    if (Self->Feedback.defined()) {
-      *Value = &Self->Feedback;
+      Value = &Self->Feedback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -84,14 +59,11 @@ static ERR GET_Feedback(extNetSocket *Self, FUNCTION **Value)
 
 static ERR SET_Feedback(extNetSocket *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Feedback);
    if (Value) {
-      if (Self->Feedback.isScript()) UnsubscribeAction(Self->Feedback.Context, AC::Free);
       Self->Feedback = *Value;
-      if (Self->Feedback.isScript()) {
-         SubscribeAction(Self->Feedback.Context, AC::Free, C_FUNCTION(notify_free_feedback));
-      }
+      if (Self->Feedback.defined()) Self->Feedback.pin();
    }
-   else Self->Feedback.clear();
 
    return ERR::Okay;
 }
@@ -102,12 +74,37 @@ static ERR SET_Feedback(extNetSocket *Self, FUNCTION *Value)
 Flags: Optional flags.
 
 -FIELD-
+Handle: Platform specific reference to the network socket handle.
+
+*********************************************************************************************************************/
+
+static ERR GET_Handle(extNetSocket *Self, APTR *Value)
+{
+   *Value = (APTR)(MAXINT)Self->Handle.socket();
+   return ERR::Okay;
+}
+
+static ERR SET_Handle(extNetSocket *Self, APTR Value)
+{
+   // The user can set Handle prior to initialisation in order to create a NetSocket object that is linked to a
+   // socket created from outside the core platform code base.
+
+   Self->Handle = SocketHandle(SOCKET_HANDLE((MAXINT)Value));
+   Self->ExternalSocket = true;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Incoming: Callback that is triggered when the socket receives data.
 
 The Incoming field can be set with a custom function that will be called whenever the socket receives data.  The
 function prototype for C++ is `ERR Incoming(*NetSocket, APTR Meta)`.  For Tiri use `function Incoming(NetSocket)`.
 
-The `NetSocket` parameter refers to the NetSocket object.  `Meta` is optional userdata from the `FUNCTION`.
+The `NetSocket` parameter refers to the NetSocket object.  `Meta` is optional userdata from the `FUNCTION`.  For
+@NetServer listeners, this inherited field receives `Incoming(*NetServer, *ClientSocket, APTR Meta)` in C++ or
+`function Incoming(NetServer, ClientSocket)` in Tiri, and data must be read from the supplied @ClientSocket.
 
 Retrieve data from the socket with the #Read() action. Reading at least some of the data from the socket is
 compulsory - if the function does not do this then the data will be cleared from the socket when the function returns.
@@ -116,10 +113,10 @@ will no longer be called.  All other error codes are ignored.
 
 *********************************************************************************************************************/
 
-static ERR GET_Incoming(extNetSocket *Self, FUNCTION **Value)
+static ERR GET_Incoming(extNetSocket *Self, FUNCTION * &Value)
 {
    if (Self->Incoming.defined()) {
-      *Value = &Self->Incoming;
+      Value = &Self->Incoming;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -127,14 +124,11 @@ static ERR GET_Incoming(extNetSocket *Self, FUNCTION **Value)
 
 static ERR SET_Incoming(extNetSocket *Self, FUNCTION *Value)
 {
+   clear_callback_function(Self->Incoming);
    if (Value) {
-      if (Self->Incoming.isScript()) UnsubscribeAction(Self->Incoming.Context, AC::Free);
       Self->Incoming = *Value;
-      if (Self->Incoming.isScript()) {
-         SubscribeAction(Self->Incoming.Context, AC::Free, C_FUNCTION(notify_free_incoming));
-      }
+      if (Self->Incoming.defined()) Self->Incoming.pin();
    }
-   else Self->Incoming.clear();
    return ERR::Okay;
 }
 
@@ -181,18 +175,19 @@ to traverse more network boundaries:
 Outgoing: Callback that is triggered when a socket is ready to send data.
 
 The Outgoing field can be set with a custom function that will be called whenever the socket is ready to send data.
-In client mode the function must be in the format `ERR Outgoing(*NetSocket, APTR Meta)`.  In server mode the function
-format is `ERR Outgoing(*NetSocket, *ClientSocket, APTR Meta)`.
+For NetSocket clients the function must be in the format `ERR Outgoing(*NetSocket, APTR Meta)`.  For @NetServer
+listeners, the inherited field uses `ERR Outgoing(*NetServer, *ClientSocket, APTR Meta)`.
 
-To send data to the NetSocket object, call the #Write() action.  If the callback function returns an error other
-than `ERR::Okay` then the Outgoing field will be cleared and the function will no longer be called.
+To send data from a NetSocket object, call the #Write() action.  To send data from a NetServer to a connected client,
+call @ClientSocket.Write() on the target client socket.  If the callback function returns an error other than
+`ERR::Okay` then the Outgoing field will be cleared and the function will no longer be called.
 
 *********************************************************************************************************************/
 
-static ERR GET_Outgoing(extNetSocket *Self, FUNCTION **Value)
+static ERR GET_Outgoing(extNetSocket *Self, FUNCTION * &Value)
 {
    if (Self->Outgoing.defined()) {
-      *Value = &Self->Outgoing;
+      Value = &Self->Outgoing;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -202,17 +197,21 @@ static ERR SET_Outgoing(extNetSocket *Self, FUNCTION *Value)
 {
    kt::Log log;
 
-   if (Self->Outgoing.isScript()) UnsubscribeAction(Self->Outgoing.Context, AC::Free);
+   clear_callback_function(Self->Outgoing);
+   if (!Value) return ERR::Okay;
+
    Self->Outgoing = *Value;
-   if (Self->Outgoing.isScript()) SubscribeAction(Self->Outgoing.Context, AC::Free, C_FUNCTION(notify_free_outgoing));
+   if (Self->Outgoing.defined()) {
+      Self->Outgoing.pin();
 
-   if (Self->initialised()) {
-      if ((Self->Handle.is_valid()) and (Self->State IS NTC::CONNECTED)) {
-         // Setting the Outgoing field after connectivity is established will put the socket into streamed write mode.
+      if (Self->initialised()) {
+         if ((Self->Handle.is_valid()) and (Self->State IS NTC::CONNECTED)) {
+            // Setting the Outgoing field after connectivity is established will put the socket into streamed write mode.
 
-         network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+            network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+         }
+         else log.trace("Will not listen for socket-writes (no socket handle, or state %d != NTC::CONNECTED).", Self->State);
       }
-      else log.trace("Will not listen for socket-writes (no socket handle, or state %d != NTC::CONNECTED).", Self->State);
    }
 
    return ERR::Okay;
@@ -236,106 +235,9 @@ static ERR GET_OutQueueSize(extNetSocket *Self, int *Value)
 -FIELD-
 Port: The port number to use for connections.
 
--FIELD-
-Handle: Platform specific reference to the network socket handle.
-
-*********************************************************************************************************************/
-
-static ERR GET_Handle(extNetSocket *Self, APTR *Value)
-{
-   *Value = (APTR)(MAXINT)Self->Handle.socket();
-   return ERR::Okay;
-}
-
-static ERR SET_Handle(extNetSocket *Self, APTR Value)
-{
-   // The user can set Handle prior to initialisation in order to create a NetSocket object that is linked to a
-   // socket created from outside the core platform code base.
-
-   Self->Handle = SocketHandle(SOCKET_HANDLE((MAXINT)Value));
-   Self->ExternalSocket = true;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-SSLCertificate: SSL certificate file to use if in server mode.
-
-Set SSLCertificate to the path of an SSL certificate file to use when the NetSocket is in server mode.  The
-certificate file must be in a supported format such as PEM, CRT, or P12.  If no certificate is defined, the
-NetSocket will either self-sign or use a localhost certificate, if available.
-
-*********************************************************************************************************************/
-
-static ERR SET_SSLCertificate(extNetSocket *Self, CSTRING Value)
-{
-   if (Self->SSLCertificate) { FreeResource(Self->SSLCertificate); Self->SSLCertificate = nullptr; }
-
-   if ((Value) and (*Value)) {
-      kt::Log log(__FUNCTION__);
-
-      LOC type;
-      if ((AnalysePath(Value, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
-         if (ssl_certificate_format(Value) != SSLCERTFORMAT::NIL) {
-            Self->SSLCertificate = kt::strclone(Value);
-         }
-         else return log.warning(ERR::InvalidData);
-      }
-      else return log.warning(ERR::FileNotFound);
-   }
-
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-SSLPrivateKey: Private key file to use if in server mode.
-
-Set SSLPrivateKey to the path of an SSL private key file to use when the NetSocket is in server mode.  The
-private key file must be in a supported format such as PEM or KEY.  If no private key is defined, the NetSocket
-will either self-sign or use a localhost private key, if available.
-
-*********************************************************************************************************************/
-
-static ERR SET_SSLPrivateKey(extNetSocket *Self, CSTRING Value)
-{
-   if (Self->SSLPrivateKey) { FreeResource(Self->SSLPrivateKey); Self->SSLPrivateKey = nullptr; }
-
-   if ((Value) and (*Value)) {
-      kt::Log log(__FUNCTION__);
-
-      LOC type;
-      if ((AnalysePath(Value, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
-         if (ssl_private_key_format(Value) != SSLCERTFORMAT::NIL) {
-            Self->SSLPrivateKey = kt::strclone(Value);
-         }
-         else return log.warning(ERR::InvalidData);
-      }
-      else return log.warning(ERR::FileNotFound);
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-SSLKeyPassword: SSL private key password.
-
-If the SSL private key is encrypted, set this field to the password required to decrypt it.  If the private key is
-not encrypted, this field can be left empty.
-
-*********************************************************************************************************************/
-
-static ERR SET_SSLKeyPassword(extNetSocket *Self, CSTRING Value)
-{
-   if (Self->SSLKeyPassword) { FreeResource(Self->SSLKeyPassword); Self->SSLKeyPassword = nullptr; }
-   if ((Value) and (*Value)) Self->SSLKeyPassword = kt::strclone(Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
+For NetSocket clients, this is the remote port used by #Connect().  For @NetServer listeners, this inherited field is
+the local port to bind during initialisation.  A value of zero requests an ephemeral port from the operating
+system; after initialisation this field contains the selected port.
 
 -FIELD-
 State: The current connection state of the NetSocket object.
@@ -344,15 +246,16 @@ The State reflects the connection state of the NetSocket.  If the #Feedback fiel
 be called automatically whenever the state is changed.  Note that the ClientSocket parameter will be NULL when the
 Feedback function is called.
 
-Note that in server mode this State value should not be used as it cannot reflect the state of all connected
-client sockets.  Each @ClientSocket carries its own independent State value for use instead.
+For @NetServer listeners this State value should not be used as it cannot reflect the state of all connected client
+sockets.  When read from a NetServer, this inherited field reports `NTC::MULTISTATE`; each @ClientSocket carries its
+own independent State value for accepted TCP connections.
 
 *********************************************************************************************************************/
 
 static ERR GET_State(extNetSocket *Self, NTC &Value)
 {
-   if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
-      kt::Log().warning("Reading the State of a server socket is a probable defect.");
+   if (Self->classID() IS CLASSID::NETSERVER) {
+      kt::Log().warning("Reading the State of a NetServer socket is a probable defect.");
       Value = NTC::MULTISTATE;
    }
    else Value = Self->State;
@@ -363,7 +266,7 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
 {
    kt::Log log;
 
-   if ((Self->Flags & NSF::SERVER) != NSF::NIL) {
+   if (Self->classID() IS CLASSID::NETSERVER) {
       return log.warning(ERR::Immutable);
    }
 
@@ -377,7 +280,7 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
          bool ssl_valid = true;
 
          #ifdef _WIN32
-         if ((Self->TLS.Handle) and ((Self->Flags & NSF::SERVER) IS NSF::NIL)) {
+         if ((Self->TLS.Handle) and (Self->classID() != CLASSID::NETSERVER)) {
             // Only perform certificate validation if DISABLE_SERVER_VERIFY flag is not set
             if ((Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL) {
                log.trace("SSL certificate validation skipped.");
@@ -401,6 +304,7 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
             log.warning("SSL certificate validation failed.");
             Self->Error = ERR::Security;
             Self->State = NTC::DISCONNECTED;
+            if (Self->Feedback.stale()) clear_callback_function(Self->Feedback);
             if (Self->Feedback.defined()) {
                if (Self->Feedback.isC()) {
                   kt::SwitchContext context(Self->Feedback.Context);
@@ -420,6 +324,8 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
       #endif
 
       Self->State = Value;
+
+      if (Self->Feedback.stale()) clear_callback_function(Self->Feedback);
 
       if (Self->Feedback.defined()) {
          log.traceBranch("Reporting state change to subscriber, operation %d, context %p.", int(Self->State), Self->Feedback.Context);
@@ -447,13 +353,50 @@ static ERR SET_State(extNetSocket *Self, NTC Value)
 }
 
 /*********************************************************************************************************************
-
 -FIELD-
-TotalClients: Indicates the total number of clients currently connected to the socket (if in server mode).
+PeerName: Expected TLS server identity, independent of the transport Address.
 
-In server mode, the NetSocket will maintain a count of the total number of clients currently connected to the socket.
-You can read the total number of connections from this field.
-
-In client mode, this field is always set to zero.
-
+Set before connection or before enabling TLS on a proxy tunnel.  An empty value defaults to Address.  DNS names are used
+for SNI and certificate name checking; IP literals omit SNI and use certificate IP identity checking.
+-END-
 *********************************************************************************************************************/
+
+static ERR SET_PeerName(extNetSocket *Self, const std::string_view &Value)
+{
+   if (Self->State IS NTC::HANDSHAKING) return ERR::InUse;
+   #ifndef DISABLE_SSL
+      if ((Self->State IS NTC::CONNECTED) and Self->TLS.Handle) return ERR::InUse;
+   #endif
+   if (Value.find_first_of("\r\n") != std::string_view::npos or Value.find('\0') != std::string_view::npos) {
+      return ERR::InvalidValue;
+   }
+   Self->PeerName.assign(Value);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+DispatchSuspended: Temporarily suppresses socket input and output dispatch during protocol handover.
+
+Set to one while replacing callbacks and consuming an already-read protocol prefix, then restore zero before returning
+from the incoming handler.  Bytes remain queued while suspended.  This gate does not authorise reading further bytes
+or pumping messages inside a handover notification.
+-END-
+*********************************************************************************************************************/
+
+static ERR SET_DispatchSuspended(extNetSocket *Self, int Value)
+{
+   if ((Value < 0) or (Value > 1)) return ERR::InvalidValue;
+   bool resume = Self->DispatchSuspended and not Value;
+   Self->DispatchSuspended = Value;
+   if (resume and Self->Handle.is_valid() and not Self->Terminating) {
+      // IOCP notifications consumed by nested dispatch must be requeued, even without another peer write.
+      if (Self->IncomingRecursion) Self->IncomingRecursion = 2;
+      auto error = network_platform().register_read(Self->Handle, &netsocket_incoming, Self);
+      if (error != ERR::Okay) return error;
+      if (not Self->WriteQueue.Buffer.empty() or Self->Outgoing.defined()) {
+         return network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
+      }
+   }
+   return ERR::Okay;
+}

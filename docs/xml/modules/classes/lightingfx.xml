@@ -42,7 +42,8 @@ Lr,Lg,Lb = RGB components of light
 <p>The definition of <code>H</code> reflects our assumption of the constant eye vector <code>E = (0,0,1)</code>:</p>
 <pre>H = (L + E) / Norm(L + E)
 </pre>
-<p>where <code>L</code> is the light unit vector.</p></description>
+<p>where <code>L</code> is the light unit vector.</p>
+<p>The light is computed in the colour space of the parent <class name="VectorFilter">VectorFilter</class>.  In <code>SRGB</code> the light <fl>Colour</fl> and the result are sRGB values.  In <code>LINEAR_RGB</code> the light <fl>Colour</fl> is converted to linear RGB and the result is encoded to sRGB for storage, so a result of 0.5 is stored as approximately 0.735.</p></description>
     <source>
       <file path="filters/">filter_lighting.cpp</file>
     </source>
@@ -78,6 +79,7 @@ Lr,Lg,Lb = RGB components of light
 <p>This method applies a distant light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
 <p>A distant light can be thought of as like the light from the sun.  An infinite amount of parallel light rays travel in the direction that the distant light points to.  Distant lights are handy when you want equal illumination on objects in a scene.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -94,6 +96,7 @@ Lr,Lg,Lb = RGB components of light
 <p>This method applies a pointed light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
 <p>A point light sends light out from the specified (X, Y, Z) location equally in all directions.  A light bulb or open flame is a good example of a point light.  The intensity of the light can be controlled by altering the alpha component of the light <fl>Colour</fl>.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -115,6 +118,7 @@ Lr,Lg,Lb = RGB components of light
 <p>This method applies a spot light configuration to the lighting effect.  It will override any previously defined light source setting.</p>
 <p>A spot light beams light rays from the defined (X, Y, Z) position to the (PX, PY, PZ) position.  The Exponent and ConeAngle work together to constrain the edge of the light projection.</p>
       </description>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>
@@ -123,19 +127,19 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>Colour</name>
       <comment>Defines the colour of the light source.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>FLOAT []</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>struct FRGB</type>
       <description>
-<p>Set the Colour field to define the colour of the light source.  The colour is defined as an array of four 32-bit floating point values between 0 and 1.0.  The array elements consist of Red, Green, Blue and Alpha values in that order.</p>
+<p>Set the Colour field to define the colour of the light source.</p>
 <p>If the algorithm supports it, the Alpha component defines the intensity of the light source.</p>
-<p>The default colour is pure white, <code>1.0,1.0,1.0,1.0</code>.</p>
+<p>The default colour is pure white.</p>
       </description>
     </field>
 
     <field>
       <name>Constant</name>
       <comment>Specifies the ks/kd value in Phong lighting model.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>In the Phong lighting model, this field specifies the kd value in diffuse mode, or ks value in specular mode.</p>
@@ -144,8 +148,8 @@ Lr,Lg,Lb = RGB components of light
 
     <field>
       <name>Exponent</name>
-      <comment>Exponent for specular lighting, larger is more "shiny".  Ranges from 1.0 to 128.0.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <comment>Exponent for specular lighting, larger is more &quot;shiny&quot;.  Ranges from 1.0 to 128.0.</comment>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
 <p>This field defines the exponent value for specular lighting, within a range of 1.0 to 128.0.  The larger the value, shinier the end result.</p>
@@ -155,15 +159,18 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>Scale</name>
       <comment>The maximum height of the input surface (bump map) when the alpha input is 1.0.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>DOUBLE</type>
+      <description>
+<p>The height is measured in kernel units when computing the surface normal, so the steepness of the lit surface is determined by Scale in combination with <fl>UnitX</fl> and <fl>UnitY</fl>.  Refer to <fl>UnitX</fl> for details.</p>
+      </description>
     </field>
 
     <field>
       <name>Type</name>
       <comment>Defines the type of surface light scattering, which can be specular or diffuse.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type lookup="LT">INT</type>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="LT">LT</type>
       <description>
 <types lookup="LT"/>
       </description>
@@ -172,22 +179,23 @@ Lr,Lg,Lb = RGB components of light
     <field>
       <name>UnitX</name>
       <comment>The intended distance in current filter units for dx in the surface normal calculation formulas.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits) for dx in the surface normal calculation formulas.</p>
-<p>By specifying value(s) for <fl>UnitX</fl>, the kernel becomes defined in a scalable, abstract coordinate system.  If <fl>UnitX</fl> is not specified, the default value is one pixel in the offscreen bitmap, which is a pixel-based coordinate system, and thus potentially not scalable.  For some level of consistency across display media and user agents, it is necessary that a value be provided for at least one of ResX and <fl>UnitX</fl>.</p>
+<p>Indicates the intended distance in current filter units (i.e. as determined by the value of <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>) for dx in the surface normal calculation formulas.  This is equivalent to the first value of the SVG <code>kernelUnitLength</code> attribute.</p>
+<p>If <fl>UnitX</fl> is not specified, the kernel unit is one unit of the client vector's coordinate system, regardless of <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>.  The appearance of the lighting then depends on the size of the bump map in those units: the same graphic will look flatter when it is drawn larger in its own coordinate system, but not when it is magnified by a parent transform.</p>
+<p>By specifying <fl>UnitX</fl> in bounding box units, the kernel becomes relative to the filter's bounds, which are measured on the same terms as <class name="BlurFX">BlurFX</class>.  A bump map that is blurred and lit in bounding box units will then have the same appearance at any size and display resolution.</p>
+<p>The value must be greater than zero.  Rather than resampling the bump map to the kernel grid, the surface gradient is measured per pixel and scaled to the kernel unit.</p>
       </description>
     </field>
 
     <field>
       <name>UnitY</name>
       <comment>The intended distance in current filter units for dy in the surface normal calculation formulas.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type>DOUBLE</type>
       <description>
-<p>Indicates the intended distance in current filter units (i.e. as determined by the value of PrimitiveUnits) for dy in the surface normal calculation formulas.</p>
-<p>By specifying value(s) for <fl>UnitY</fl>, the kernel becomes defined in a scalable, abstract coordinate system.  If <fl>UnitY</fl> is not specified, the default value is one pixel in the offscreen bitmap, which is a pixel-based coordinate system, and thus potentially not scalable.  For some level of consistency across display media and user agents, it is necessary that a value be provided for at least one of ResY and <fl>UnitY</fl>.</p>
+<p>Indicates the intended distance in current filter units (i.e. as determined by the value of <class name="VectorFilter" field="PrimitiveUnits">VectorFilter.PrimitiveUnits</class>) for dy in the surface normal calculation formulas.  This is equivalent to the second value of the SVG <code>kernelUnitLength</code> attribute.  The value must be greater than zero.  Refer to <fl>UnitX</fl> for further details.</p>
       </description>
     </field>
 
@@ -196,6 +204,7 @@ Lr,Lg,Lb = RGB components of light
       <comment>Returns an SVG compliant XML string that describes the filter.</comment>
       <access read="G">Get</access>
       <type>STRING</type>
+      <tags>caller-owns-result</tags>
     </field>
 
   </fields>

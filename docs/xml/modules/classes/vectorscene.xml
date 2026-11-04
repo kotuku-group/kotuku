@@ -36,19 +36,59 @@
       </input>
       <description>
 <p>The Draw action will render the scene to the target <fl>Bitmap</fl> immediately.  If <fl>Bitmap</fl> is NULL, an error will be returned.</p>
-<p>In addition, the <fl>RenderTime</fl> field will be updated if the <code>RENDER_TIME</code> flag is defined.</p>
+<p>The <fl>RenderTime</fl> field will be updated if the <code>RENDER_TIME</code> flag is defined.</p>
+<p>With <code>MANUAL_RENDER</code>, Draw locks and clears the entire target bitmap before rasterising, and does not dispatch resize or pointer callbacks.  The client must keep the scene graph unchanged until Draw completes.  For direct window rendering, use the surface's independently owned buffer as <fl>Bitmap</fl> and enable <code>Surface</code> <code>MANUAL_RENDER</code> to preserve it across automatic redraws.  Call Flush and expose the completed buffer from the main thread.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="FieldNotSet">The Bitmap field is NULL.</error>
+        <error code="Recursion">The scene is already drawing or dispatching callbacks.</error>
       </result>
     </action>
 
     <action>
       <name>Flush</name>
-      <comment>Flush buffered data from an object.</comment>
+      <comment>Dispatches pending scene resize and pointer events on the main thread.</comment>
       <prototype>ERR acFlush(*Object)</prototype>
       <tiriPrototype>err = Object.acFlush()</tiriPrototype>
+      <description>
+<p>Use Flush after a manual Draw has completed and before exposing the surface.  This dispatches pending resize notifications and refreshes pointer hit testing without rasterising the scene.  If a callback changes geometry, the client must render another frame before those changes become visible.  Never call Flush concurrently with Draw.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Recursion">Detected an illegal attempt at recursion</error>
+        <error code="OutsideMainThread">Operation permitted from the main thread only</error>
+      </result>
+    </action>
+
+    <action>
+      <name>Next</name>
+      <comment>Cycles the focus to the next control.</comment>
+      <prototype>ERR acNext(*Object)</prototype>
+      <tiriPrototype>err = Object.acNext()</tiriPrototype>
+      <description>
+<p>Moves the focus forward to the next vector in the scene's tab order.  Only vectors that have called <class name="Vector" method="SubscribeKeyboard">Vector.SubscribeKeyboard()</class> take part in the cycle, and they are ordered by their <class name="Vector" field="TabOrder">Vector.TabOrder</class> value.  Subscribers that are disabled or hidden, or that have a disabled or hidden ancestor, are skipped because they cannot receive the focus.  The cycle starts from the subscriber that currently holds the focus, or the nearest ancestor of the focused vector that has a subscription.  When the last subscriber in the tab order is reached, the focus wraps around to the first.</p>
+<p>If no subscriber currently has the focus, the first focusable subscriber in the tab order receives it.  If the scene has no focusable keyboard subscribers, the call has no effect.</p>
+<p>This action produces the same result as pressing the Tab key, but works regardless of the <code>IGNORE_TAB</code> flag.  The focused vector and each of its ancestors receive a <code>TAB_FOCUS</code> feedback event, even if the focus did not move.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+      </result>
+    </action>
+
+    <action>
+      <name>Prev</name>
+      <comment>Cycles the focus to the previous control.</comment>
+      <prototype>ERR acPrev(*Object)</prototype>
+      <tiriPrototype>err = Object.acPrev()</tiriPrototype>
+      <description>
+<p>Moves the focus back to the previous vector in the scene's tab order.  This is the reverse of <action>Next</action>, and it selects subscribers and determines the starting point in the same way.  When the first subscriber in the tab order is reached, the focus wraps around to the last.</p>
+<p>If no subscriber currently has the focus, the first focusable subscriber in the tab order receives it.  If the scene has no focusable keyboard subscribers, the call has no effect.</p>
+<p>This action produces the same result as pressing Shift+Tab, but works regardless of the <code>IGNORE_TAB</code> flag.  The focused vector and each of its ancestors receive a <code>TAB_FOCUS</code> feedback event, even if the focus did not move.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+      </result>
     </action>
 
     <action>
@@ -91,16 +131,16 @@
     <method>
       <name>AddDef</name>
       <comment>Registers a named definition object within a scene graph.</comment>
-      <prototype>ERR sc::AddDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR Def)</prototype>
+      <prototype>ERR sc::AddDef(OBJECTPTR Object, STRVIEW Name, OBJECTPTR Def)</prototype>
       <tiriPrototype>err = AddDef(Name:str, Def:obj)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The unique name to associate with the definition.</param>
+        <param type="STRVIEW" name="Name">The unique name to associate with the definition.</param>
         <param type="OBJECTPTR" name="Def">Reference to the definition object.</param>
       </input>
       <description>
 <p>This method will add a new definition object to the root of a vector tree and gives it a name.  This feature is provided to support SVG style referencing for features such as gradients, images and patterns.  By providing a name with the definition object, the object can then be referenced in URL strings.</p>
 <p>For example, if creating a gradient with a name of <code>redGradient</code> it would be possible to reference it with <code>url(#redGradient)</code> in common graphics attributes such as <code>fill</code> and <code>stroke</code>.</p>
-<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="VectorGradient">VectorGradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
+<p>At the time of writing, the provided object must belong to one of the following classes to be valid: <class name="Vector">Vector</class>, <class name="VectorScene">VectorScene</class>, <class name="Gradient">Gradient</class>, <class name="VectorImage">VectorImage</class>, <class name="VectorPath">VectorPath</class>, <class name="VectorPattern">VectorPattern</class>, <class name="VectorFilter">VectorFilter</class>, <class name="VectorTransition">VectorTransition</class>, <class name="VectorClip">VectorClip</class>.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
@@ -109,6 +149,7 @@
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="InvalidObject">The definition is not an accepted object class.</error>
       </result>
+      <tags>mutates-object, retains-input</tags>
     </method>
 
     <method>
@@ -122,15 +163,16 @@
       <result>
         <error code="Okay">Operation successful.</error>
       </result>
+      <tags>private</tags>
     </method>
 
     <method>
       <name>FindDef</name>
       <comment>Search for a vector definition by name.</comment>
-      <prototype>ERR sc::FindDef(OBJECTPTR Object, CSTRING Name, OBJECTPTR * Def)</prototype>
+      <prototype>ERR sc::FindDef(OBJECTPTR Object, STRVIEW Name, OBJECTPTR * Def)</prototype>
       <tiriPrototype>err, Def:obj = FindDef(Name:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Name">The name of the definition.</param>
+        <param type="STRVIEW" name="Name">The name of the definition.</param>
         <param type="OBJECTPTR *" name="Def">A pointer to the definition object is returned here if discovered.</param>
       </input>
       <description>
@@ -142,26 +184,7 @@
         <error code="Search">A definition with the given Name was not found.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
-    </method>
-
-    <method>
-      <name>SearchByID</name>
-      <comment>Search for a vector by numeric ID.</comment>
-      <prototype>ERR sc::SearchByID(OBJECTPTR Object, INT ID, OBJECTPTR * Result)</prototype>
-      <tiriPrototype>err, Result:obj = SearchByID(ID:num)</tiriPrototype>
-      <input>
-        <param type="INT" name="ID">The ID to search for.</param>
-        <param type="OBJECTPTR *" name="Result">This parameter will be updated with the discovered vector, or <code>NULL</code> if not found.</param>
-      </input>
-      <description>
-<p>This method will search a scene for an object that matches a given <code>ID</code> (vector ID's can be set with the <class name="Vector" field="NumericID">Vector.NumericID</class> or <class name="Vector" field="ID">Vector.ID</class> fields).  If multiple vectors are using the same ID, repeated calls can be made to this method to find them all.  This is achieved by calling this method on the vector that was last returned as a <code>Result</code>.</p>
-<p>Note that searching for string-based ID's is achieved by converting the string to a case-sensitive hash with <code>strhash()</code> and using that as the ID.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="Search">A vector with a matching ID was not found.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-      </result>
+      <tags>pure-query, object-owns-result</tags>
     </method>
 
   </methods>
@@ -174,6 +197,49 @@
       <type class="Bitmap">*Bitmap</type>
       <description>
 <p>The target bitmap to use when drawing the vectors must be specified here.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Compliance</name>
+      <comment>Selects the standard that the scene complies with, where it differs from the default behaviour.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="VSC">VSC</type>
+      <description>
+<p>Compliance declares the standard that the content of the scene was written for.  The default is <code>NONE</code>, which permits Kōtuku's extensions where they differ from the standards.  The <class name="SVG">SVG</class> class sets <code>SVG2</code> on the scenes that it creates.</p>
+<p>No features currently change their behaviour in response to this setting.  Features that extend a standard by default will consult it so that the standard behaviour can be restored for the scene.</p>
+<types lookup="VSC"/>
+      </description>
+    </field>
+
+    <field>
+      <name>DropTarget</name>
+      <comment>The registered viewport that will receive a drop at the pointer's position.</comment>
+      <access read="G">Get</access>
+      <type>OBJECTPTR</type>
+      <description>
+<p>When the <code>DROP_TARGETS</code> flag is set and a drag and drop operation is active over the scene's surface, DropTarget refers to the <class name="VectorViewport">VectorViewport</class> that would receive the drop if it were released at the pointer's current position.  The result is computed on demand and reflects registration, visibility and layout changes immediately.  It is <code>NULL</code> if no drag is active, the pointer is not over the surface or no registered viewport is under the pointer.</p>
+<p>While a DragDrop action is being delivered to a viewport, DropTarget refers to that viewport and does not change if the pointer moves during the delivery.  Native drops save the viewport at button release, before asynchronous payload acquisition.  A destroyed or replaced viewport cannot receive that pending drop through a later hit-test.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>DropX</name>
+      <comment>The horizontal drop position, relative to the <fl>DropTarget</fl>.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>DropX is the horizontal coordinate of the drop, expressed in the coordinate system of the <fl>DropTarget</fl> so that transforms applied to the target and its ancestors are taken into account.  During the delivery of a DragDrop action the value is a snapshot taken at button release, before native payload acquisition.  Later transforms and layout changes do not change this value during delivery.  At other times it reflects the pointer's current position, or zero if there is no <fl>DropTarget</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>DropY</name>
+      <comment>The vertical drop position, relative to the <fl>DropTarget</fl>.</comment>
+      <access read="G">Get</access>
+      <type>DOUBLE</type>
+      <description>
+<p>DropY is the vertical coordinate of the drop, expressed in the coordinate system of the <fl>DropTarget</fl>.  Refer to <fl>DropX</fl> for further information.</p>
       </description>
     </field>
 
@@ -230,6 +296,17 @@
     </field>
 
     <field>
+      <name>RootScene</name>
+      <comment>Returns the top-most VectorScene object.</comment>
+      <access read="G">Get</access>
+      <type>OBJECTPTR</type>
+      <description>
+<p>Returns the top-most VectorScene object according to the object graph.  If the targeted scene has no parent vectors, it is considered the root and is returned as the value.</p>
+<p>If a HostScene is defined, it will be used as the starting point and its parents will be traversed using the same process.</p>
+      </description>
+    </field>
+
+    <field>
       <name>SampleMethod</name>
       <comment>The sampling method to use when interpolating images and patterns.</comment>
       <access read="R" write="S">Read/Set</access>
@@ -243,7 +320,7 @@
     <field>
       <name>Surface</name>
       <comment>May refer to a <class name="Surface">Surface</class> object for enabling automatic rendering.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="I">Read/Init</access>
       <type>OBJECTID</type>
       <description>
 <p>Setting the Surface field will enable automatic rendering to a display <class name="Surface">Surface</class>.  The use of features such as input event handling and user focus management will also require an associated surface as a pre-requisite.</p>
@@ -265,25 +342,35 @@
   <types>
     <constants lookup="VPF" comment="Optional flags for the VectorScene object.">
       <const name="BITMAP_SIZED">Automatically adjust the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> to match the target <class name="Bitmap" field="Width">Bitmap.Width</class> and <class name="Bitmap" field="Height">Bitmap.Height</class>.</const>
+      <const name="DROP_TARGETS">Route drag and drop operations from the <class name="VectorScene" field="Surface">VectorScene.Surface</class> to the registered <class name="VectorViewport">VectorViewport</class> under the pointer.</const>
+      <const name="IGNORE_TAB">Ignore the Tab key for cycling through keyboard subscribers.</const>
+      <const name="MANUAL_RENDER">Clear and draw a locked bitmap without callbacks. Call Flush and expose manually.</const>
       <const name="OUTLINE_VIEWPORTS">Draw a green outline around all viewport paths.  Extremely useful for debugging layout issues.</const>
       <const name="RENDER_TIME">Compute the drawing frame-rate for the <code>RenderTime</code> field.</const>
       <const name="RESIZE">The vector will be stretched to fit the <class name="VectorScene" field="PageWidth">VectorScene.PageWidth</class> and <class name="VectorScene" field="PageHeight">VectorScene.PageHeight</class> values, if defined by the client.</const>
+      <const name="STABLE_RENDER">Use rendering algorithms that are stable across all platforms.</const>
+    </constants>
+
+    <constants lookup="VSC">
+      <const name="NONE">Kotuku's default behaviour, which extends standards where they produce poor results.</const>
+      <const name="SVG1">Follow the SVG 1.1 standard where it differs from the default behaviour.</const>
+      <const name="SVG2">Follow the SVG 2 standard where it differs from the default behaviour.</const>
     </constants>
 
     <constants lookup="VSM">
       <const name="AUTO">The default option is chosen by the system.  This will typically be <code>BILINEAR</code>, but slow machines may switch to nearest neighbour and high speed machines could use more advanced methods.</const>
-      <const name="BESSEL"/>
+      <const name="BESSEL">Uses a broad Bessel filter that can preserve detail during resampling, but is slower than the smaller-kernel methods.</const>
       <const name="BICUBIC">Produces a similar result to <code>BILINEAR</code> at a slightly higher CPU cost and a marginally sharper after-effect.</const>
       <const name="BILINEAR">Bilinear is a common algorithm that produces a reasonable quality image quickly.</const>
       <const name="BLACKMAN">Five times slower than <code>BILINEAR</code>, the final result will be less sharp than SINC.</const>
-      <const name="GAUSSIAN"/>
-      <const name="KAISER"/>
+      <const name="GAUSSIAN">Uses a Gaussian filter that softens the result, reducing aliasing at the cost of sharp edge detail.</const>
+      <const name="KAISER">Uses a Kaiser-windowed filter, giving smooth interpolation with low ringing and a cost close to <code>BILINEAR</code>.</const>
       <const name="LANCZOS">This well known algorithm may serve as a point of comparison for evaluating the results of other methods.  It shares characteristics with <code>SINC</code> and <code>BLACKMAN</code>.</const>
-      <const name="MITCHELL"/>
+      <const name="MITCHELL">Uses a Mitchell-Netravali filter, balancing sharpness and smoothness at a cost similar to <code>BICUBIC</code>.</const>
       <const name="NEIGHBOUR">Nearest neighbour is the fastest sampler at the cost of poor quality.</const>
-      <const name="QUADRIC"/>
+      <const name="QUADRIC">Uses a quadratic filter with a modest kernel, giving smoother results than <code>BILINEAR</code> with limited extra cost.</const>
       <const name="SINC">Five times slower than <code>BILINEAR</code>, the final result is of very good quality.</const>
-      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
+      <const name="SPLINE16">About twice as slow as <code>BILINEAR</code>, this method samples a 4x4 area and produces a considerably better result, and is a good choice for enlarging images without producing artifacts when contrasting colours are present.</const>
     </constants>
 
   </types>

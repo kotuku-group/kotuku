@@ -1,4 +1,5 @@
 global glSignatureHelpTestUri = nil
+extern lspMountDocs, lspInitDocs, lspPathToUri, resolveSignatureHelp, registerCoreHandlers
 
 @BeforeAll function SetupSignatureHelpTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -6,7 +7,8 @@ global glSignatureHelpTestUri = nil
    mSys.SetVolume('sdk', sdk_path)
 
    loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
-   assert(lspInitDocs('sdk:docs/xml/'), 'Failed to initialise LSP documentation cache.')
+   assert(lspMountDocs('sdk:docs/xml/'), 'Failed to mount the SDK documentation.')
+   assert(lspInitDocs('sdk-docs:'), 'Failed to initialise LSP documentation cache.')
    glSignatureHelpTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_signature_help.tiri')
    assert(glSignatureHelpTestUri, 'Failed to create test document URI.')
 
@@ -35,13 +37,13 @@ function makeDoc(Content:str):table
 end
 
 function makeDocAtMarker(Content:str):<table,table>
-   marker_pos = Content:find('|', 0, true)
+   marker_pos = Content.find('|', 0, true)
    assert(marker_pos, 'Test source must include a cursor marker.')
 
    line = 0
    character = 0
-   for i = 0, marker_pos - 1 do
-      c = Content:sub(i, i + 1)
+   for i in {0 to marker_pos} do
+      c = Content.sub(i, i + 1)
       if c is '\n' then
          line++
          character = 0
@@ -50,7 +52,7 @@ function makeDocAtMarker(Content:str):<table,table>
       end
    end
 
-   doc = makeDoc(Content:sub(0, marker_pos) .. Content:sub(marker_pos + 1))
+   doc = makeDoc(Content.sub(0, marker_pos) .. Content.sub(marker_pos + 1))
    return doc, { line = line, character = character }
 end
 
@@ -65,7 +67,7 @@ function firstSignature(SignatureHelp:table):table
 end
 
 function assertContains(Text:str, Needle:str, Message:str)
-   assert(Text and Text:find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
+   assert(Text and Text.find(Needle, 0, true), Message .. f' Expected "{Needle}" in "{Text}".')
 end
 
 @Test function HandlerAdvertisesSignatureHelp()
@@ -111,6 +113,33 @@ result = greet('Ada', |)
       'Second parameter should include @Doc text.')
 end
 
+@Test function DocAnnotatedFunctionSignatureAfterRelativeImport()
+   help = signatureAt([=[
+import './relative_symbol_helper'
+
+@Doc(text=[[
+   Returns a local greeting.
+
+   -INPUT-
+   Name: Person to greet
+   Count: Number of greetings
+]])
+function localGreeting(Name: str, Count: num):str
+   return Name
+end
+
+result = localGreeting('Ada', |)
+]=])
+
+   signature = firstSignature(help)
+   assertContains(signature.label, 'localGreeting(Name: str, Count: num):str',
+      'Relative imports should not stop parser symbols from feeding signature help.')
+   assert(signature.documentation.value is 'Returns a local greeting.',
+      'Signature docs should survive relative import parsing.')
+   assert(signature.parameters[1].label is 'Count: num',
+      'Second parameter should remain available after a relative import.')
+end
+
 @Test function MixedTypedAndUntypedParameters()
    help = signatureAt([=[
 function mix(Untyped, Flag: bool)
@@ -124,6 +153,23 @@ mix(123, |)
    assert(signature.parameters[0].label is 'Untyped', 'Untyped parameter should use the name only.')
    assert(signature.parameters[1].label is 'Flag: bool', 'Typed parameter should include type.')
    assert(help.activeParameter is 1, 'Second argument should be active.')
+end
+
+@Test function RecursiveArraySignature()
+   help = signatureAt([=[
+function matrixFirst(Matrix:array<array<int>>!):array<array<double>>
+   return array<array<double>> {}
+end
+
+matrixFirst(|)
+]=])
+
+   signature = firstSignature(help)
+   assert(signature.label is
+      'matrixFirst(Matrix: array<array<int>>!):array<array<double>>',
+      'Signature help should preserve balanced recursive array annotations.')
+   assert(signature.parameters[0].label is 'Matrix: array<array<int>>!',
+      'Signature parameter metadata should preserve the complete recursive type.')
 end
 
 @Test function NestedCallsStringsAndTablesDoNotAdvanceOuterParameter()
@@ -160,6 +206,15 @@ end
    assertContains(signature.parameters[0].documentation.value, 'path',
       'Module API parameter should include XML docs.')
    assert(help.activeParameter is 1, 'Second module parameter should be active.')
+end
+
+@Test function DeclaredModuleApiSignature()
+   help = signatureAt("module core as runtimeCore\nruntimeCore.ResolvePath('test:', |)\n")
+   signature = firstSignature(help)
+
+   assertContains(signature.label, 'runtimeCore.ResolvePath',
+      'Declared module signature help should retain the source namespace.')
+   assert(help.activeParameter is 1, 'Declared module signature help should track the active parameter.')
 end
 
 @Test function ObjectMethodSignatureHidesReceiver()
@@ -200,6 +255,7 @@ end
 
 @Test function UnknownAndOutsideCallReturnNil()
    assert(not signatureAt('unknown(|)\n'), 'Unknown calls should not return signature help.')
+   assert(not signatureAt('value:upper(|)\n'), 'Removed colon calls should not receive signature help.')
    assert(not signatureAt('value = 42\n|'), 'Positions outside calls should not return signature help.')
 end
 
@@ -212,7 +268,7 @@ end
    registerCoreHandlers(server)
 
    doc, position = makeDocAtMarker('assert(true, |)\n')
-   glDocuments[doc.uri] = doc
+   state = { documents = { [doc.uri] = doc } }
 
    response = server._handlers['textDocument/signatureHelp']({
       jsonrpc = '2.0',
@@ -221,10 +277,34 @@ end
          textDocument = { uri = doc.uri },
          position = position
       }
-   }, {})
-
-   glDocuments[doc.uri] = nil
+   }, state)
 
    assert(response.result and response.result.signatures[0].label is 'assert(condition, [message])',
       'Handler should return resolver signature help.')
+end
+
+@Test function OptionalTableCallSignature()
+   help = signatureAt([=[
+handlers = {}
+function handlers.save(Item: str, Count: num)
+end
+
+handlers.save?('a', |)
+]=])
+
+   signature = firstSignature(help)
+   assertContains(signature.label, 'save(Item: str, Count: num)',
+      'An optional table call should resolve the signature of its member.')
+   assert(help.activeParameter is 1, 'The second argument of an optional call should be active.')
+
+   help = signatureAt("mSys.ResolvePath?('test:', |)\n")
+   signature = firstSignature(help)
+   assertContains(signature.label, 'ResolvePath', 'An optional call should resolve a namespace member signature.')
+   assert(help.activeParameter is 1, 'Optional calls should count arguments like ordinary calls.')
+end
+
+@Test function IncompleteOptionalTableCallsAreTolerated()
+   assert(not signatureAt('thing.call?|\n'), 'A pending optional-call marker is not yet inside a call.')
+   help = signatureAt('assert?(|')
+   assert(not help or help.signatures, 'An unterminated optional call should not fail signature help.')
 end

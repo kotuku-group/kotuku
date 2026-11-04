@@ -50,6 +50,14 @@ code --install-extension tiri-language-0.1.0.vsix
 
 ## Troubleshooting
 
+### API Documentation
+
+The extension includes the Kōtuku API documentation as `api-docs.zip` and passes it to any server that it starts.
+Set `tiri.lsp.sdkDocs` to use a different archive or a folder of XML documentation, such as `docs/xml/` in a source
+checkout.  A server that is started manually uses the `sdk-docs` option instead.
+
+Go to Definition on a Kōtuku API symbol opens its page on kotuku.dev, or the class source on GitHub, in the browser.
+
 ### LSP Server Auto-Start
 
 If `port=0` or `tiri.lsp.autoStart` is enabled, the server script is started automatically.  Configure `tiri.lsp.origoPath` if `origo` is not in PATH, or `tiri.lsp.serverScript` if the server script is in another location.

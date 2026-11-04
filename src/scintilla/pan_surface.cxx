@@ -1,11 +1,11 @@
-/*********************************************************************************************************************
-** SurfacePan class
-*/
+//********************************************************************************************************************
+// SurfacePan class
 
 class SurfacePan : public Scintilla::Surface
 {
    int penx;
    int peny;
+   extScintilla *scintilla; // The Scintilla object that owns this surface; provides the font set
    objBitmap *bitmap;
    int8_t own_bitmap:1; /* True if this object owns the bitmap, and will free it */
    int pencol;
@@ -57,13 +57,19 @@ public:
    void SetUnicodeMode(bool unicodeMode_);
    void SetDBCSMode(int codePage);
 
+   void BlendRectangle(Scintilla::PRectangle rc, Scintilla::ColourAllocated colour, int alpha);
+
 private:
-   OBJECTPTR GetFont(Scintilla::Font& font);
+   APTR GetFont(Scintilla::Font &Font);
+   int font_index(const Scintilla::Font &Font) const;
+   void draw_path(APTR Path, const Scintilla::ColourAllocated *Fill, int FillAlpha,
+      const Scintilla::ColourAllocated *Stroke, int StrokeAlpha);
 };
 
 SurfacePan::SurfacePan()
 :  cliprect(0,0,0,0)
 {
+   scintilla = nullptr;
    bitmap = nullptr;
    own_bitmap = FALSE;
    penx   = 0;
@@ -88,12 +94,14 @@ bool SurfacePan::Initialised()
 
 void SurfacePan::Init(Scintilla::WindowID WinID)
 {
-
+   scintilla = (extScintilla *)WinID;
 }
 
-void SurfacePan::Init(Scintilla::SurfaceID sid, Scintilla::WindowID WID_NAME)
+void SurfacePan::Init(Scintilla::SurfaceID sid, Scintilla::WindowID WinID)
 {
    if (bitmap) return;
+
+   scintilla = (extScintilla *)WinID;
 
    // Surface id will be a bitmap object
    bitmap = static_cast<objBitmap *>(sid);
@@ -105,14 +113,17 @@ void SurfacePan::Init(Scintilla::SurfaceID sid, Scintilla::WindowID WID_NAME)
    cliprect.bottom = bitmap->Height;
 }
 
-void SurfacePan::InitPixMap(int width, int height, Scintilla::Surface *surface_, Scintilla::WindowID WID_NAME)
+void SurfacePan::InitPixMap(int width, int height, Scintilla::Surface *surface_, Scintilla::WindowID WinID)
 {
    if (bitmap) return;
 
    kt::Log log(__FUNCTION__);
    log.traceBranch("Size: %dx%d", width, height);
 
-   if (!(bitmap = objBitmap::create::global(fl::Name("sciPixmap"), fl::Width(width), fl::Height(height)))) {
+   scintilla = (extScintilla *)WinID;
+
+   if (!(bitmap = objBitmap::create::local(fl::Width(width), fl::Height(height), fl::BitsPerPixel(32),
+         fl::Flags(BMF::ALPHA_CHANNEL)))) {
       log.warning("Failed to create offscreen surface object.");
       return;
    }
@@ -127,7 +138,7 @@ void SurfacePan::InitPixMap(int width, int height, Scintilla::Surface *surface_,
    cliprect.bottom = bitmap->Height;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 inline uint32_t to_pan_col(objBitmap *bitmap, const Scintilla::ColourAllocated& colour)
 {
@@ -135,7 +146,52 @@ inline uint32_t to_pan_col(objBitmap *bitmap, const Scintilla::ColourAllocated& 
    return bitmap->packPixel(SCIRED(col32), SCIGREEN(col32), SCIBLUE(col32), 255);
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+
+inline void set_vector_colour(objVectorColour *Colour, const Scintilla::ColourAllocated &Value, int Alpha)
+{
+   uint32_t col32 = Value.AsLong();
+   Colour->Red   = SCIRED(col32) / 255.0;
+   Colour->Green = SCIGREEN(col32) / 255.0;
+   Colour->Blue  = SCIBLUE(col32) / 255.0;
+   Colour->Alpha = std::clamp(Alpha, 0, 255) / 255.0;
+}
+
+//********************************************************************************************************************
+// Shapes are drawn with vec::DrawPath(), which provides anti-aliasing and alpha blending.  The Path is a generated
+// vector path that is always freed by this function.  Strokes are one pixel wide.
+
+void SurfacePan::draw_path(APTR Path, const Scintilla::ColourAllocated *Fill, int FillAlpha,
+   const Scintilla::ColourAllocated *Stroke, int StrokeAlpha)
+{
+   if ((bitmap) and (scintilla) and (scintilla->FillColour) and (scintilla->StrokeColour)) {
+      BitmapClipper clipper(bitmap, cliprect);
+
+      if ((bitmap->Clip.Right > bitmap->Clip.Left) and (bitmap->Clip.Bottom > bitmap->Clip.Top)) {
+         if (Fill) set_vector_colour(scintilla->FillColour, *Fill, FillAlpha);
+         if (Stroke) set_vector_colour(scintilla->StrokeColour, *Stroke, StrokeAlpha);
+
+         vec::DrawPath(bitmap, Path, Stroke ? 1.0 : 0.0, Stroke ? scintilla->StrokeColour : nullptr,
+            Fill ? scintilla->FillColour : nullptr);
+      }
+   }
+
+   FreeResource(Path);
+}
+
+//********************************************************************************************************************
+
+void SurfacePan::BlendRectangle(Scintilla::PRectangle rc, Scintilla::ColourAllocated colour, int alpha)
+{
+   if ((not bitmap) or (rc.Width() <= 0) or (rc.Height() <= 0)) return;
+
+   APTR path;
+   if (vec::GenerateRectangle(rc.left, rc.top, rc.Width(), rc.Height(), &path) IS ERR::Okay) {
+      draw_path(path, &colour, alpha, nullptr, 0);
+   }
+}
+
+//********************************************************************************************************************
 
 void SurfacePan::PenColour(Scintilla::ColourAllocated fore)
 {
@@ -144,14 +200,14 @@ void SurfacePan::PenColour(Scintilla::ColourAllocated fore)
    }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 int SurfacePan::LogPixelsY()
 {
-   return 100;
+   return 96; // Kotuku's vector units are fixed at 96 DPI
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 int SurfacePan::DeviceHeightFont(int pointsize)
 {
@@ -162,7 +218,7 @@ int SurfacePan::DeviceHeightFont(int pointsize)
    return (pointsize * dpi + (dpi / 2)) / 72;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::MoveTo(int x, int y)
 {
@@ -170,50 +226,87 @@ void SurfacePan::MoveTo(int x, int y)
    peny = y;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+// Draws a one pixel line from the pen position.  The end point is excluded, as Scintilla expects.
 
 void SurfacePan::LineTo(int x, int y)
 {
    if (bitmap) {
       BitmapClipper clipper(bitmap, cliprect);
 
-      //DBGDRAW("panLineTo:","%dx%d - %dx%d", penx, peny, x, y);
+      DBGDRAW("panLineTo:","%dx%d - %dx%d", penx, peny, x, y);
 
-      gfx::DrawRectangle(bitmap, penx, peny, x-penx, y-peny, pencol, BAF::FILL);
-      penx = x;
-      peny = y;
+      if (y IS peny) {
+         if (x > penx) gfx::DrawRectangle(bitmap, penx, y, x - penx, 1, pencol, BAF::FILL);
+         else if (x < penx) gfx::DrawRectangle(bitmap, x + 1, y, penx - x, 1, pencol, BAF::FILL);
+      }
+      else if (x IS penx) {
+         if (y > peny) gfx::DrawRectangle(bitmap, x, peny, 1, y - peny, pencol, BAF::FILL);
+         else gfx::DrawRectangle(bitmap, x, y + 1, 1, peny - y, pencol, BAF::FILL);
+      }
+      else { // Bresenham
+         const int dx = std::abs(x - penx), sx = (penx < x) ? 1 : -1;
+         const int dy = -std::abs(y - peny), sy = (peny < y) ? 1 : -1;
+         int err = dx + dy;
+         int cx = penx, cy = peny;
+         while ((cx != x) or (cy != y)) {
+            gfx::DrawRectangle(bitmap, cx, cy, 1, 1, pencol, BAF::FILL);
+            const int e2 = err * 2;
+            if (e2 >= dy) { err += dy; cx += sx; }
+            if (e2 <= dx) { err += dx; cy += sy; }
+         }
+      }
    }
+
+   penx = x;
+   peny = y;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+// Draws an image of RGBA bytes, centred within rc and alpha blended with the background.
 
 void SurfacePan::DrawRGBAImage(Scintilla::PRectangle rc, int width, int height, const unsigned char *pixelsImage)
 {
-   kt::Log log(__FUNCTION__);
-   log.warning("Unsupported.");
-}
+   if ((not bitmap) or (not pixelsImage) or (width < 1) or (height < 1)) return;
 
-/****************************************************************************/
+   if (rc.Width() > width) rc.left += (rc.Width() - width) / 2;
+   if (rc.Height() > height) rc.top += (rc.Height() - height) / 2;
 
-void SurfacePan::Polygon(Scintilla::Point *pts, int npts, Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
-{
-   // TEMP: For now, just draw the outline as lines (don't fill)
-
-   if (bitmap) {
-      BitmapClipper clipper(bitmap, cliprect);
-
-      DBGDRAW("panPolygon","");
-
-      //ULONG col = to_pan_col(bitmap, fore);
-
-      int i;
-      for (i=0; i<npts-1; ++i) {
-         //gfx::DrawLine(bitmap, pts[i].x, pts[i].y, pts[i+1].x, pts[i+1].y, col);
+   if (auto image = objBitmap::create::local(fl::Width(width), fl::Height(height), fl::BitsPerPixel(32),
+         fl::Flags(BMF::ALPHA_CHANNEL))) {
+      for (int y=0; y < height; y++) {
+         auto dest = (uint32_t *)(image->Data + (image->LineWidth * y));
+         auto src  = pixelsImage + (width * y * 4);
+         for (int x=0; x < width; x++, src += 4) dest[x] = image->packPixel(src[0], src[1], src[2], src[3]);
       }
+
+      BitmapClipper clipper(bitmap, cliprect);
+      gfx::CopyArea(image, bitmap, BAF::BLEND, 0, 0, width, height, rc.left, rc.top);
+      FreeResource(image);
    }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+// Fills a polygon with the back colour and outlines it with the fore colour.  Points are offset to pixel centres so
+// that the outline is sharp, as the GTK platform does.
+
+void SurfacePan::Polygon(Scintilla::Point *pts, int npts, Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
+{
+   if ((not bitmap) or (npts < 2)) return;
+
+   DBGDRAW("panPolygon","%d points", npts);
+
+   std::string sequence;
+   for (int i=0; i < npts; i++) {
+      sequence += std::format("{}{} {} ", i ? 'L' : 'M', pts[i].x + 0.5, pts[i].y + 0.5);
+   }
+   sequence += 'Z';
+
+   APTR path;
+   if (vec::GeneratePath(sequence, &path) IS ERR::Okay) draw_path(path, &back, 255, &fore, 255);
+}
+
+//********************************************************************************************************************
 
 void SurfacePan::RectangleDraw(Scintilla::PRectangle rc, Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
 {
@@ -230,7 +323,7 @@ void SurfacePan::RectangleDraw(Scintilla::PRectangle rc, Scintilla::ColourAlloca
    }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::FillRectangle(Scintilla::PRectangle rc, Scintilla::ColourAllocated back)
 {
@@ -246,14 +339,32 @@ void SurfacePan::FillRectangle(Scintilla::PRectangle rc, Scintilla::ColourAlloca
    }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+// Tiles the bitmap of the pattern surface over rc, starting from the top-left corner of rc.
 
 void SurfacePan::FillRectangle(Scintilla::PRectangle rc, Scintilla::Surface &surfacePattern)
 {
-   DBGDRAW("panFillRectangle(2):","UNIMPLEMENTED");
+   if (not bitmap) return;
+
+   auto &pattern = static_cast<SurfacePan &>(surfacePattern);
+   if ((not pattern.bitmap) or (pattern.bitmap->Width < 1) or (pattern.bitmap->Height < 1)) {
+      FillRectangle(rc, Scintilla::ColourAllocated(0)); // Show the area as black, as the GTK platform does
+      return;
+   }
+
+   DBGDRAW("panFillRectangle(2):","%dx%d,%dx%d", rc.left, rc.top, rc.Width(), rc.Height());
+
+   BitmapClipper clipper(bitmap, cliprect);
+   const int pw = pattern.bitmap->Width, ph = pattern.bitmap->Height;
+   for (int y=rc.top; y < rc.bottom; y += ph) {
+      for (int x=rc.left; x < rc.right; x += pw) {
+         gfx::CopyArea(pattern.bitmap, bitmap, BAF::NIL, 0, 0, std::min(pw, rc.right - x),
+            std::min(ph, rc.bottom - y), x, y);
+      }
+   }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::RoundedRectangle(Scintilla::PRectangle rc, Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
 {
@@ -276,14 +387,24 @@ void SurfacePan::RoundedRectangle(Scintilla::PRectangle rc, Scintilla::ColourAll
    else RectangleDraw(rc, fore, back);
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+// Draws a circle that fits the smaller dimension of rc, filled with the back colour and outlined with the fore colour.
 
 void SurfacePan::Ellipse(Scintilla::PRectangle rc, Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
 {
-   DBGDRAW("panEllipse:","UNIMPLEMENTED");
+   if ((not bitmap) or (rc.Width() <= 0) or (rc.Height() <= 0)) return;
+
+   DBGDRAW("panEllipse:","%dx%d,%dx%d", rc.left, rc.top, rc.Width(), rc.Height());
+
+   const double radius = std::min(rc.Width(), rc.Height()) / 2;
+   APTR path;
+   if (vec::GenerateEllipse(((rc.left + rc.right) / 2) + 0.5, ((rc.top + rc.bottom) / 2) + 0.5, radius, radius, 0,
+         &path) IS ERR::Okay) {
+      draw_path(path, &back, 255, &fore, 255);
+   }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::Copy(Scintilla::PRectangle rc, Scintilla::Point from, Scintilla::Surface &surfaceSource)
 {
@@ -304,38 +425,24 @@ void SurfacePan::Copy(Scintilla::PRectangle rc, Scintilla::Point from, Scintilla
    else log.warning(ERR::Args);
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
-void SurfacePan::DrawTextBase(Scintilla::PRectangle rc, Scintilla::Font &font_, int ybase, const char *String, int len, Scintilla::ColourAllocated fore)
+void SurfacePan::DrawTextBase(Scintilla::PRectangle Rect, Scintilla::Font &Font, int Baseline,
+   const char *String, int Length, Scintilla::ColourAllocated Fore)
 {
-   kt::Log log(__FUNCTION__);
-   uint32_t col32;
+   if ((not bitmap) or (not scintilla) or (Length <= 0)) return;
 
-   std::string nstr(String, len);
-
-   col32 = fore.AsLong();
-
-   DBGDRAW("panDrawTextBase()","Bitmap: %p, #%.8x, String: %.10s TO %dx%d", bitmap, col32, nstr.c_str(), rc.left, rc.top);
-
-   if (!bitmap) return;
-
-   if (auto font = (objFont *)GetFont(font_)) { //static_cast<OBJECTPTR>(font_.GetID());
+   if (auto handle = GetFont(Font)) {
       BitmapClipper clipper(bitmap, cliprect);
-
-      font->setFields(fl::String(nstr));
-      font->Bitmap = bitmap;
-      font->X = rc.left;
-      font->Y = rc.top + font->Leading;
-      font->Colour.Red   = SCIRED(col32);
-      font->Colour.Green = SCIGREEN(col32);
-      font->Colour.Blue  = SCIBLUE(col32);
-      font->Colour.Alpha = 255;
-
-      acDraw(font);
+      set_vector_colour(scintilla->FillColour, Fore, 255);
+      if (auto error = vec::DrawText(bitmap, handle, Rect.left, Baseline,
+            std::string_view(String, size_t(Length)), scintilla->FillColour, nullptr); error != ERR::Okay) {
+         kt::Log(__FUNCTION__).warning(error);
+      }
    }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::DrawTextNoClip(Scintilla::PRectangle rc, Scintilla::Font &font_, int ybase, const char *s, int len,
                                  Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
@@ -345,20 +452,21 @@ void SurfacePan::DrawTextNoClip(Scintilla::PRectangle rc, Scintilla::Font &font_
    DrawTextBase(rc, font_, ybase, s, len, fore);
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 // On GTK+, exactly same as DrawTextNoClip
 
-void SurfacePan::DrawTextClipped(Scintilla::PRectangle rc, Scintilla::Font &font_, int ybase, const char *s, int len,
-                                  Scintilla::ColourAllocated fore, Scintilla::ColourAllocated back)
+void SurfacePan::DrawTextClipped(Scintilla::PRectangle Rect, Scintilla::Font &Font, int Baseline,
+   const char *String, int Length, Scintilla::ColourAllocated Fore, Scintilla::ColourAllocated Back)
 {
-   DBGDRAW("panDrawTextClipped()","");
-   FillRectangle(rc, back);
-   DrawTextBase(rc, font_, ybase, s, len, fore);
+   DBGDRAW("panDrawTextClipped()", "");
+   if (not bitmap) return;
+   BitmapClipper clipper(bitmap, Rect);
+   FillRectangle(Rect, Back);
+   DrawTextBase(Rect, Font, Baseline, String, Length, Fore);
 }
 
-/*********************************************************************************************************************
-** Avoid drawing spaces in transparent mode; i.e. only draw if there is at least one non-space char.
-*/
+//********************************************************************************************************************
+// Avoid drawing spaces in transparent mode; i.e. only draw if there is at least one non-space char.
 
 void SurfacePan::DrawTextTransparent(Scintilla::PRectangle rc, Scintilla::Font &font_, int ybase,
    const char *s, int len, Scintilla::ColourAllocated fore)
@@ -373,147 +481,104 @@ void SurfacePan::DrawTextTransparent(Scintilla::PRectangle rc, Scintilla::Font &
    }
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
-void SurfacePan::MeasureWidths(Scintilla::Font &font_, const char *string, int len, int *positions)
+void SurfacePan::MeasureWidths(Scintilla::Font &Font, const char *String, int Length, int *Positions)
 {
-   objFont *font = (objFont *)GetFont(font_);
-   uint32_t unicode;
-   uint8_t *str;
-   int i, charpos, copy;
+   auto handle = GetFont(Font);
+   double position = 0;
+   uint32_t previous = 0;
 
-   str = (uint8_t *)string;
-   if (font) {
-      charpos = 0;
-      for (i=0; i < len; ) {
-         if (font->FixedWidth) {
-            if ((uint8_t)(str[i]) < 128) copy = 1;
-            else if ((str[i] & 0xe0) IS 0xc0) copy = 2;
-            else if ((str[i] & 0xf0) IS 0xe0) copy = 3;
-            else if ((str[i] & 0xf8) IS 0xf0) copy = 4;
-            else if ((str[i] & 0xfc) IS 0xf8) copy = 5;
-            else if ((str[i] & 0xfc) IS 0xfc) copy = 6;
-            else copy = 1;
-
-            charpos += font->FixedWidth;
-         }
-         else {
-            if (str[i] < 128) {
-               unicode = str[i];
-               if ((uint8_t)(str[i]) < 128) copy = 1;
-               else if ((str[i] & 0xe0) IS 0xc0) copy = 2;
-               else if ((str[i] & 0xf0) IS 0xe0) copy = 3;
-               else if ((str[i] & 0xf8) IS 0xf0) copy = 4;
-               else if ((str[i] & 0xfc) IS 0xf8) copy = 5;
-               else if ((str[i] & 0xfc) IS 0xfc) copy = 6;
-               else copy = 1;
-            }
-            else {
-               unicode = UTF8ReadValue((STRING)(str+i), &copy);
-            }
-
-            charpos += fnt::CharWidth(font, unicode);
-         }
-         positions[i++] = charpos;
-
-         // Supporting UTF8 characters are assigned the same pixel offset
-
-         while ((copy > 1) and (i < len)) {
-            positions[i++] = charpos;
-            copy--;
-         }
-      }
+   for (int i = 0; i < Length; ) {
+      int bytes = 1;
+      uint32_t unicode = UTF8ReadValue(std::string_view(String + i, size_t(Length - i)), &bytes);
+      bytes = std::clamp(bytes, 1, Length - i);
+      double kerning = 0;
+      const double advance = vec::CharWidth(handle, unicode, previous, &kerning);
+      position += kerning;
+      position += advance;
+      previous = unicode;
+      const int rounded = int(std::round(position));
+      for (int end = i + bytes; i < end; i++) Positions[i] = rounded;
    }
-   else for (int i = 0; i < len; ++i) positions[i] = i + 1;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
-int SurfacePan::WidthText(Scintilla::Font &font_, const char *s, int len)
+int SurfacePan::WidthText(Scintilla::Font &Font, const char *String, int Length)
 {
-   OBJECTPTR font = GetFont(font_);
-
-   if (font) {
-      // Note: The length must be passed as the number of characters, not bytes
-      return fnt::StringWidth((objFont *)font, (STRING)s, len);
+   if (Length <= 0) return 0;
+   if (auto handle = GetFont(Font)) {
+      return int(std::round(vec::StringWidth(handle, std::string_view(String, size_t(Length)), -1)));
    }
-
-   return 5; // crashes if you return 0 here !!!
+   return 5;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
-int SurfacePan::WidthChar(Scintilla::Font &font_, char ch)
+int SurfacePan::WidthChar(Scintilla::Font &Font, char Char)
 {
-   objFont *font = (objFont *)GetFont(font_);
-   return fnt::CharWidth(font, ch);
+   return int(std::round(vec::CharWidth(GetFont(Font), uint8_t(Char), 0, nullptr)));
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+// LineSpacing includes the room above the cap height needed by accented capitals.
 
-int SurfacePan::Ascent(Scintilla::Font &font_)
+int SurfacePan::Ascent(Scintilla::Font &Font)
 {
-   OBJECTPTR font = GetFont(font_);
-
-   if (font) return GetFontHeight(font) + GetFontLeading(font) - GetFontGutter(font);
-   else return 10;
+   FontMetrics metrics;
+   if (vec::GetFontMetrics(GetFont(Font), &metrics) IS ERR::Okay) {
+      return std::max(0, metrics.LineSpacing - metrics.Descent);
+   }
+   return 10;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
-int SurfacePan::Descent(Scintilla::Font &font_)
+int SurfacePan::Descent(Scintilla::Font &Font)
 {
-   OBJECTPTR font = GetFont(font_);
-
-   if (font) return GetFontGutter(font);
-   else return 3;
+   FontMetrics metrics;
+   if (vec::GetFontMetrics(GetFont(Font), &metrics) IS ERR::Okay) return std::max(0, metrics.Descent);
+   return 3;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
-int SurfacePan::InternalLeading(Scintilla::Font &font_)
+int SurfacePan::InternalLeading(Scintilla::Font &Font)
 {
-   OBJECTPTR font = GetFont(font_);//reinterpret_cast<OBJECTPTR>(font_.GetID());
-
-   if (font) return GetFontLeading(font);
-   else return 0;
+   return 0;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
-int SurfacePan::ExternalLeading(Scintilla::Font &font_)
+int SurfacePan::ExternalLeading(Scintilla::Font &Font)
 {
-   /* NOTE: this right? */
-   OBJECTPTR font = GetFont(font_);//reinterpret_cast<OBJECTPTR>(font_.GetID());
-
-   if (font) return GetFontGutter(font);
-   else return 0;
+   return 0;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 int SurfacePan::Height(Scintilla::Font &font_)
 {
    return Ascent(font_) + Descent(font_);
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 int SurfacePan::AverageCharWidth(Scintilla::Font &font_)
 {
    return WidthChar(font_, 'x');
 }
 
-/*********************************************************************************************************************
-** Functionality not required.
-*/
+//********************************************************************************************************************
+// Functionality not required.
 
 int SurfacePan::SetPalette(Scintilla::Palette *, bool)
 {
    return 0;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::SetClip(Scintilla::PRectangle rc)
 {
@@ -530,7 +595,7 @@ void SurfacePan::SetClip(Scintilla::PRectangle rc)
    }*/
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::FlushCachedState()
 {
@@ -538,7 +603,7 @@ void SurfacePan::FlushCachedState()
    log.trace("UNSUPPORTED");
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::SetUnicodeMode(bool unicodeMode_)
 {
@@ -546,7 +611,7 @@ void SurfacePan::SetUnicodeMode(bool unicodeMode_)
 //   log.trace("%d [UNSUPPORTED]", unicodeMode_);
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
 
 void SurfacePan::SetDBCSMode(int codePage)
 {
@@ -554,86 +619,49 @@ void SurfacePan::SetDBCSMode(int codePage)
 //   log.trace("CodePage: %d [UNSUPPORTED]", codePage);
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+// Styles select the owning editor's shared handles; font handles are never freed by Scintilla.
 
-OBJECTPTR SurfacePan::GetFont(Scintilla::Font& font_)
+int SurfacePan::font_index(const Scintilla::Font &Font) const
 {
-   if (font_.bold) {
-      if ((font_.italic) and (glBIFont)) return glBIFont;
-      else if (glBoldFont) return glBoldFont;
-   }
-   else if ((font_.italic) and (glItalicFont)) {
-      return glItalicFont;
-   }
-
-   return glFont;
+   return (Font.bold ? 1 : 0) + (Font.italic ? 2 : 0);
 }
 
-/****************************************************************************/
-
-void SurfacePan::AlphaRectangle(Scintilla::PRectangle rc, int cornerSize, Scintilla::ColourAllocated fill, int alphaFill,
-		Scintilla::ColourAllocated outline, int alphaOutline, int flags)
+APTR SurfacePan::GetFont(Scintilla::Font &Font)
 {
-   kt::Log log(__FUNCTION__);
-
-   log.trace("UNSUPPORTED");
-
-   if (bitmap) {
-      BitmapClipper clipper(bitmap, cliprect);
-
-      gfx::DrawRectangle(bitmap, rc.left, rc.top, rc.Width(), rc.Height(), to_pan_col(bitmap, fill), BAF::FILL);
-
-      gfx::DrawRectangle(bitmap, rc.left, rc.top, rc.Width(), rc.Height(), to_pan_col(bitmap, outline), BAF::NIL);
-   }
-   else log.warning("Bitmap was NULL.");
-
-#if 0
-		int width = rc.Width();
-		int height = rc.Height();
-
-		guint8 pixVal[4] = {0};
-		guint32 valEmpty = *(reinterpret_cast<guint32 *>(pixVal));
-		pixVal[0] = GetRValue(fill.AsLong());
-		pixVal[1] = GetGValue(fill.AsLong());
-		pixVal[2] = GetBValue(fill.AsLong());
-		pixVal[3] = alphaFill;
-
-		guint32 valFill = *(reinterpret_cast<guint32 *>(pixVal));
-		pixVal[0] = GetRValue(outline.AsLong());
-		pixVal[1] = GetGValue(outline.AsLong());
-		pixVal[2] = GetBValue(outline.AsLong());
-		pixVal[3] = alphaOutline;
-
-		guint32 valOutline = *(reinterpret_cast<guint32 *>(pixVal));
-		guint32 *pixels = reinterpret_cast<guint32 *>(gdk_pixbuf_get_pixels(pixalpha));
-
-		int stride = gdk_pixbuf_get_rowstride(pixalpha) / 4;
-		for (int y=0; y<height; y++) {
-			for (int x=0; x<width; x++) {
-				if ((x==0) || (x==width-1) || (y == 0) || (y == height-1)) {
-					pixels[y*stride+x] = valOutline;
-				}
-            else pixels[y*stride+x] = valFill;
-			}
-		}
-		for (int c=0;c<cornerSize; c++) {
-			for (int x=0;x<c+1; x++) {
-				AllFour(pixels, stride, width, height, x, c-x, valEmpty);
-			}
-		}
-		for (int x=1;x<cornerSize; x++) {
-			AllFour(pixels, stride, width, height, x, cornerSize-x, valOutline);
-		}
-
-		// Draw with alpha
-		gdk_draw_pixbuf(drawable, gc, pixalpha,
-			0,0, rc.left,rc.top, width,height, GDK_RGB_DITHER_NORMAL, 0, 0);
-
-		g_object_unref(pixalpha);
-#endif
+   return scintilla ? scintilla->FontHandles[font_index(Font)] : nullptr;
 }
 
-/****************************************************************************/
+//********************************************************************************************************************
+
+void SurfacePan::AlphaRectangle(Scintilla::PRectangle rc, int cornerSize, Scintilla::ColourAllocated fill,
+   int alphaFill, Scintilla::ColourAllocated outline, int alphaOutline, int flags)
+{
+   if ((not bitmap) or (rc.Width() <= 0) or (rc.Height() <= 0)) return;
+
+   // Following the GTK platform, the fill is inset by one pixel and the outline is drawn on the outer pixels.
+
+   auto rounded = [](double X, double Y, double Width, double Height, double Radius) {
+      Radius = std::min({ Radius, Width * 0.5, Height * 0.5 });
+      if (Radius <= 0) {
+         return std::format("M{} {} L{} {} L{} {} L{} {} Z", X, Y, X+Width, Y, X+Width, Y+Height, X, Y+Height);
+      }
+      return std::format("M{0} {1} L{2} {1} A{4} {4} 0 0 1 {3} {5} L{3} {6} A{4} {4} 0 0 1 {2} {7} L{0} {7} "
+         "A{4} {4} 0 0 1 {8} {6} L{8} {5} A{4} {4} 0 0 1 {0} {1} Z",
+         X + Radius, Y, X + Width - Radius, X + Width, Radius, Y + Radius, Y + Height - Radius, Y + Height, X);
+   };
+
+   APTR path;
+   if ((rc.Width() > 2) and (rc.Height() > 2)) {
+      auto inner = rounded(rc.left + 1, rc.top + 1, rc.Width() - 2, rc.Height() - 2, cornerSize);
+      if (vec::GeneratePath(inner, &path) IS ERR::Okay) draw_path(path, &fill, alphaFill, nullptr, 0);
+   }
+
+   auto outer = rounded(rc.left + 0.5, rc.top + 0.5, rc.Width() - 1, rc.Height() - 1, cornerSize);
+   if (vec::GeneratePath(outer, &path) IS ERR::Okay) draw_path(path, nullptr, 0, &outline, alphaOutline);
+}
+
+//********************************************************************************************************************
 
 Scintilla::Surface * Scintilla::Surface::Allocate()
 {

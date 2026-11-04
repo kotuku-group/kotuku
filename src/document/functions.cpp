@@ -235,7 +235,7 @@ static ERR insert_xml(extDocument *Self, RSTREAM *Stream, objXML *XML, const obj
 
    if (Self->FocusIndex >= std::ssize(Self->Tabs)) Self->FocusIndex = -1;
 
-   if (Self->Error IS ERR::Okay) return ERR::Okay;
+   if (!Self->Error) return ERR::Okay;
    else return Self->Error;
 }
 
@@ -309,11 +309,11 @@ static ERR insert_text(extDocument *Self, RSTREAM *Stream, stream_char &Index, c
 
 //********************************************************************************************************************
 
-static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD UnloadFlags)
+static ERR load_doc(extDocument *Self, std::string_view Path, bool Unload, ULD UnloadFlags)
 {
    kt::Log log(__FUNCTION__);
 
-   log.branch("Loading file '%s', page '%s'", Path.c_str(), Self->PageName.c_str());
+   log.branch("Loading file '%.*s', page '%s'", int(Path.size()), Path.data(), Self->PageName.c_str());
 
    if (Unload) unload_doc(Self, UnloadFlags);
 
@@ -322,16 +322,15 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
    // Generate a path without parameter values.
 
    auto i = Path.find_first_of("&#?");
-   if (i != std::string::npos) Path.erase(i);
+   if (i != std::string::npos) Path = Path.substr(0, i);
 
-   if (AnalysePath(Path.c_str(), nullptr) IS ERR::Okay) {
+   if (!AnalysePath(Path, nullptr)) {
       auto task = CurrentTask();
       task->setPath(Path);
 
       auto xml = objXML::create {
-         fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED),
-         fl::Path(Path),
-         fl::ReadOnly(true)
+         fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED|XMF::READ_ONLY),
+         fl::Path(Path)
       };
 
       if (xml.ok()) {
@@ -348,7 +347,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
 
          auto process_error = Self->Error;
 
-         if ((Self->initialised()) and (process_error IS ERR::Okay)) {
+         if ((Self->initialised()) and (!process_error)) {
             Self->UpdatingLayout = true;
             redraw(Self, true);
          }
@@ -360,7 +359,7 @@ static ERR load_doc(extDocument *Self, std::string Path, bool Unload, ULD Unload
          else return Self->Error;
       }
       else {
-         error_dialog("Document Load Error", std::string("Failed to load document file '") + Path + "'");
+         error_dialog("Document Load Error", std::format("Failed to load document file '{}'", Path));
          return log.warning(ERR::OpenFile);
       }
    }
@@ -445,16 +444,19 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       }
    }
 
-   for (auto &t : Self->Triggers) t.clear();
+   for (auto &t : Self->Triggers) {
+      deref_document_callbacks(t);
+      t.clear();
+   }
 
    if (Self->terminating()) Self->Vars.clear();
 
-   if (Self->SVG)         { FreeResource(Self->SVG);         Self->SVG = nullptr; }
-   if (Self->Keywords)    { FreeResource(Self->Keywords);    Self->Keywords = nullptr; }
-   if (Self->Author)      { FreeResource(Self->Author);      Self->Author = nullptr; }
-   if (Self->Copyright)   { FreeResource(Self->Copyright);   Self->Copyright = nullptr; }
-   if (Self->Description) { FreeResource(Self->Description); Self->Description = nullptr; }
-   if (Self->Title)       { FreeResource(Self->Title);       Self->Title = nullptr; }
+   if (Self->SVG) { FreeResource(Self->SVG); Self->SVG = nullptr; }
+   Self->Keywords.clear();
+   Self->Author.clear();
+   Self->Copyright.clear();
+   Self->Description.clear();
+   Self->Title.clear();
 
    // Free templates only if they have been modified (no longer at the default settings)
    // or if the document is being destroyed.
@@ -501,17 +503,17 @@ static ERR unload_doc(extDocument *Self, ULD Flags)
       Self->Page->setMask(nullptr); // Reset the clipping mask if it was defined by <body>
 
       kt::vector<ChildEntry> list;
-      if (ListChildren(Self->Page->UID, &list) IS ERR::Okay) {
-         for (auto it=list.rbegin(); it != list.rend(); it++) FreeResource(it->ObjectID);
+      if (!ListChildren(Self->Page->UID, &list)) {
+         for (auto it=list.rbegin(); it != list.rend(); it++) FreeObject(it->ObjectID);
       }
    }
 
    if ((Self->View) and (Self->Page)) {
       // Client generated objects can appear in the View if <svg placement="background"/> was used.
       kt::vector<ChildEntry> list;
-      if (ListChildren(Self->View->UID, &list) IS ERR::Okay) {
+      if (!ListChildren(Self->View->UID, &list)) {
          for (auto child=list.rbegin(); child != list.rend(); child++) {
-            if (child->ObjectID != Self->Page->UID) FreeResource(child->ObjectID);
+            if (child->ObjectID != Self->Page->UID) FreeObject(child->ObjectID);
          }
       }
    }
@@ -614,6 +616,32 @@ static int getutf8(CSTRING Value, int *Unicode)
 }
 
 //********************************************************************************************************************
+// Scan forward from Str[Pos] to the first byte that is <= 0x20 (whitespace, control or newline), returning its
+// index or Str.size() if none is found.  This marks the end of a WORD run during tokenisation.  The SSE4.2 path
+// uses PCMPESTRI range matching to test 16 bytes per iteration; the scalar loop is retained as the tail handler
+// and as the fallback for non-x86 targets.  Bytes >= 0x80 (UTF-8 lead/continuation) are all > 0x20 and therefore
+// remain part of the word, matching the scalar semantics exactly.
+
+inline size_t scan_word_end(std::string_view Str, size_t Pos)
+{
+#ifdef KOTUKU_SSE42
+   // Range set {0x00..0x20}: PCMPESTRI reports the index of the first byte falling inside the range.  The
+   // explicit-length form is used so embedded null bytes are treated as ordinary word terminators.
+   const __m128i range = _mm_setr_epi8(0x00, 0x20, 0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+   constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_RANGES | _SIDD_POSITIVE_POLARITY | _SIDD_LEAST_SIGNIFICANT;
+
+   while (Pos + 16 <= Str.size()) {
+      __m128i block = _mm_loadu_si128((const __m128i *)(Str.data() + Pos));
+      int idx = _mm_cmpestri(range, 2, block, 16, mode);
+      if (idx < 16) return Pos + idx; // Found a byte <= 0x20 within this block
+      Pos += 16;
+   }
+#endif
+   while ((Pos < Str.size()) and (uint8_t(Str[Pos]) > 0x20)) Pos++;
+   return Pos;
+}
+
+//********************************************************************************************************************
 // Build the token list for a bc_text from its text string.  Tokens represent word, whitespace, and newline boundaries.
 // This avoids repeated byte-by-byte scanning during layout restarts.
 
@@ -641,7 +669,7 @@ void bc_text::tokenise()
       }
       else {
          auto start = i;
-         while ((i < str.size()) and (unsigned(str[i]) > 0x20) and (str[i] != '\n')) i++;
+         i = scan_word_end(str, i);
          tokens.push_back({ uint16_t(start), uint16_t(i), -1, 0, text_token_kind::WORD });
       }
    }
@@ -846,7 +874,7 @@ static ERR extract_script(extDocument *Self, std::string_view Link, objScript **
          auto script_name = Link.substr(0, dot);
          auto script_name_text = std::string(script_name);
          OBJECTID id;
-         if (FindObject(script_name_text.c_str(), CLASSID::SCRIPT, FOF::NIL, &id) IS ERR::Okay) {
+         if (!FindObject(script_name_text.c_str(), CLASSID::SCRIPT, &id)) {
             // Security checks
             *Script = (objScript *)GetObjectPtr(id);
             if ((Script[0]->Owner != Self) and ((Self->Flags & DCF::UNRESTRICTED) IS DCF::NIL)) {
@@ -884,7 +912,7 @@ static ERR extract_script(extDocument *Self, std::string_view Link, objScript **
 void ui_link::exec(extDocument *Self)
 {
    objScript *script;
-   CLASSID class_id, subclass_id;
+   CLASSID class_id, derived_id;
 
    kt::Log log(__FUNCTION__);
 
@@ -897,7 +925,7 @@ void ui_link::exec(extDocument *Self)
 
       if (origin.type IS LINK::FUNCTION) {
          std::string function_name, args;
-         if (extract_script(Self, origin.ref, nullptr, function_name, args) IS ERR::Okay) {
+         if (!extract_script(Self, origin.ref, nullptr, function_name, args)) {
             params.emplace("on-click", function_name);
          }
       }
@@ -917,7 +945,7 @@ void ui_link::exec(extDocument *Self)
 
    if (origin.type IS LINK::FUNCTION) { // function is in the format 'function()' or 'script.function()'
       std::string function_name, fargs;
-      if (extract_script(Self, origin.ref, &script, function_name, fargs) IS ERR::Okay) {
+      if (!extract_script(Self, origin.ref, &script, function_name, fargs)) {
          std::vector<ScriptArg> sa;
 
          if (!origin.args.empty()) {
@@ -947,9 +975,9 @@ void ui_link::exec(extDocument *Self)
                   if ((Self->Path[end] IS '&') or (Self->Path[end] IS '#') or (Self->Path[end] IS '?')) break;
                }
                auto path = std::string(Self->Path, end) + origin.ref;
-               Self->set(FID_Path, path);
+               Self->setPath(path);
             }
-            else Self->set(FID_Path, origin.ref);
+            else Self->setPath(origin.ref);
 
             if (!Self->Bookmark.empty()) show_bookmark(Self, Self->Bookmark);
          }
@@ -975,9 +1003,9 @@ void ui_link::exec(extDocument *Self)
             if (end != std::string::npos) identify_path = identify_path.substr(0, end);
 
             auto identify_text = std::string(identify_path);
-            if (IdentifyFile(identify_text.c_str(), CLASSID::NIL, &class_id, &subclass_id) IS ERR::Okay) {
+            if (!IdentifyFile(identify_text, CLASSID::NIL, &class_id, &derived_id)) {
                if (class_id IS CLASSID::DOCUMENT) {
-                  Self->set(FID_Path, lk);
+                  Self->setPath(lk);
 
                   if (!Self->Bookmark.empty()) show_bookmark(Self, Self->Bookmark);
                   else log.msg("No bookmark was preset.");
@@ -1007,7 +1035,7 @@ static void show_bookmark(extDocument *Self, std::string_view Bookmark)
 
    auto bookmark_text = std::string(Bookmark);
    int start, end;
-   if (Self->findIndex(bookmark_text.c_str(), &start, &end) IS ERR::Okay) {
+   if (!Self->findIndex(bookmark_text.c_str(), &start, &end)) {
       // Get the vertical position of the index and scroll to it
 
       auto &esc_index = Self->Stream.lookup<bc_index>(start);
@@ -1038,7 +1066,8 @@ static ERR report_event(extDocument *Self, DEF Event, entity *Entity, KEYVALUE *
       auto entity_id = Entity ? Entity->uid : 0;
       log.traceBranch("Event $%x -> Entity %d", int(Event), entity_id);
 
-      if (Self->EventCallback.isC()) {
+      if (Self->EventCallback.stale()) deref_document_callback(Self->EventCallback);
+      else if (Self->EventCallback.isC()) {
          auto routine = (ERR (*)(extDocument *, DEF, KEYVALUE *, entity *, APTR))Self->EventCallback.Routine;
          kt::SwitchContext context(Self->EventCallback.Context);
          result = routine(Self, Event, EventData, Entity, Self->EventCallback.Meta);

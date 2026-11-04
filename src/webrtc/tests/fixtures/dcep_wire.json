@@ -1,0 +1,87 @@
+{
+  "messages": [
+    {
+      "name": "open_00",
+      "hex": "03000100000000000004000063686174",
+      "valid": true,
+      "channel_type": 0,
+      "reliability": 0,
+      "label": "chat",
+      "protocol": ""
+    },
+    {
+      "name": "open_80",
+      "hex": "03800100000000000004000063686174",
+      "valid": true,
+      "channel_type": 128,
+      "reliability": 0,
+      "label": "chat",
+      "protocol": ""
+    },
+    {
+      "name": "open_01",
+      "hex": "03010100000000000004000063686174",
+      "valid": true,
+      "channel_type": 1,
+      "reliability": 0,
+      "label": "chat",
+      "protocol": ""
+    },
+    {
+      "name": "open_81",
+      "hex": "03810100000000000004000063686174",
+      "valid": true,
+      "channel_type": 129,
+      "reliability": 0,
+      "label": "chat",
+      "protocol": ""
+    },
+    {
+      "name": "open_02",
+      "hex": "03020100000003e80004000063686174",
+      "valid": true,
+      "channel_type": 2,
+      "reliability": 1000,
+      "label": "chat",
+      "protocol": ""
+    },
+    {
+      "name": "open_82",
+      "hex": "03820100000003e80004000063686174",
+      "valid": true,
+      "channel_type": 130,
+      "reliability": 1000,
+      "label": "chat",
+      "protocol": ""
+    },
+    {
+      "name": "ack",
+      "hex": "02",
+      "valid": true
+    },
+    {
+      "name": "truncated_open",
+      "hex": "0300",
+      "valid": false,
+      "reason": "short fixed header"
+    },
+    {
+      "name": "label_past_end",
+      "hex": "03000100000000000005000063686174",
+      "valid": false,
+      "reason": "label length exceeds message"
+    },
+    {
+      "name": "reserved_channel_type",
+      "hex": "037f01000000000000000000",
+      "valid": false,
+      "reason": "unsupported channel type"
+    },
+    {
+      "name": "invalid_label_utf8",
+      "hex": "030001000000000000010000ff",
+      "valid": false,
+      "reason": "invalid UTF-8"
+    }
+  ]
+}

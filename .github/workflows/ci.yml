@@ -29,26 +29,15 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Cache apt packages
-      if: runner.os == 'Linux'
-      uses: actions/cache@v4
-      with:
-        path: |
-          /var/cache/apt/archives/*.deb
-        key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/ci.yml') }}
-        restore-keys: |
-          ${{ runner.os }}-apt-
-
     - name: Install Linux dependencies
       if: runner.os == 'Linux'
+      timeout-minutes: 10
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          cmake \
+        bash .github/scripts/apt_install.sh \
           ccache \
           libx11-dev \
           libxext-dev \
+          libxfixes-dev \
           libxrandr-dev \
           libxcursor-dev \
           libxi-dev \
@@ -117,10 +106,12 @@ jobs:
         retention-days: 30
 
     - name: Run CTests (excluding audio/http)
-      run: ctest --build-config ${{ matrix.build_type }} --test-dir build/ci --output-on-failure -E "(audio|http|network_udp_broadcast_multicast)"
+      timeout-minutes: 10
+      run: ctest --build-config ${{ matrix.build_type }} --timeout 20 --test-dir build/ci --output-on-failure -E "(audio|http|network_udp_broadcast_multicast)"
 
     - name: Run http tests (allowed to fail)
-      run: ctest --build-config ${{ matrix.build_type }} --test-dir build/ci --output-on-failure -R "(http)" || true
+      timeout-minutes: 10
+      run: ctest --build-config ${{ matrix.build_type }} --timeout 30 --test-dir build/ci --output-on-failure -R "(http)" || true
 
     - name: Upload build artifacts on failure
       if: failure()

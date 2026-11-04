@@ -1,0 +1,194 @@
+
+   import 'json', 'net/url'
+
+   import './strict_json', './transport'
+
+   namespace oauth_oidc { }
+
+function oidcReject():nil
+   raise 'OIDC validation failed'
+end
+
+function decodeSegment(Segment:str, Crypto:table):str
+   if not oauth_wire.text(Segment, 32768) then oidcReject() end
+   bytes = array<byte, #Segment>
+   err, count = Crypto.Base64Decode(Segment, CC_URL, bytes)
+   if err != ERR_Okay then oidcReject() end
+   return bytes.getString(0, count)
+end
+
+function cacheLifetime(Headers:table, Maximum:num):num
+   lifetime = math.min(300, Maximum)
+   control = Headers['cache-control']
+
+   if control is <str> then
+      if control.lower().find('no-store') != nil or control.lower().find('no-cache') != nil then return 0 end
+      seconds = r'(?:^|[, ])max-age=([0-9]+)(?:[, ]|$)'.extract(control.lower())
+      if seconds then lifetime = math.min(lifetime, tonumber(seconds)) end
+   end
+
+   age = tonumber(Headers.age or '0')
+   if not age or age < 0 then return 0 end
+   return math.max(0, lifetime - age)
+end
+
+-- Each validator owns one configured issuer/cache; unverified JWT fields never select network addresses.
+
+oauth_oidc.validator = function(Config:table, WireOptions:table):table
+   issuer = Config.issuer
+   discovery_url = Config.discoveryURL or ((issuer or '').rtrim('/') .. '/.well-known/openid-configuration')
+
+   if not oauth_wire.endpoint(issuer, WireOptions.testLoopback) or issuer.find('?') != nil or
+      not oauth_wire.endpoint(discovery_url, WireOptions.testLoopback) or
+      not url.sameOrigin(issuer, discovery_url) then oidcReject() end
+
+   max_age = Config.cacheSeconds or 300
+   skew = Config.clockSkew or 60
+
+   if not oauth_wire.number(max_age, 0, 3600) or not oauth_wire.number(skew, 0, 300) then oidcReject() end
+
+      metadata:table = nil
+   jwk_keys:array<any> = nil
+   metadata_until = 0
+   keys_until = 0
+   refresh_after = 0
+   jwks_url = ''
+   self = {}
+
+   function fetch(URL:str, Control:table):<table, num>
+      response, err = oauth_wire.request('GET', URL, nil, WireOptions, Control)
+      if not response then oidcReject() end
+      data, failure = oauth_wire.decode(response)
+      if not data then oidcReject() end
+      return data, WireOptions.elapsed() + cacheLifetime(response.headers, max_age)
+   end
+
+   function loadKeys(Force:bool, Control:table)
+      now = WireOptions.elapsed()
+      if not metadata or now >= metadata_until then
+         data, until_time = fetch(discovery_url, Control)
+         if data.issuer != issuer or not oauth_wire.endpoint(data.jwks_uri, WireOptions.testLoopback) then
+            oidcReject()
+         end
+
+         -- Discovery may nominate another host, but only an explicitly configured trusted URL is allowed there.
+
+         if not url.sameOrigin(issuer, data.jwks_uri) and data.jwks_uri != Config.jwksURL then oidcReject() end
+         if Config.jwksURL and data.jwks_uri != Config.jwksURL then oidcReject() end
+         if not (data.id_token_signing_alg_values_supported is <array>) or
+            not ('RS256' in data.id_token_signing_alg_values_supported) then oidcReject() end
+         if jwks_url != data.jwks_uri then jwk_keys = nil end
+
+         jwks_url = data.jwks_uri
+         metadata = data
+         metadata_until = until_time
+      end
+
+      if Force or not jwk_keys or now >= keys_until then
+         data, until_time = fetch(jwks_url, Control)
+         if not (data.keys is <array>) or #data.keys is 0 or #data.keys > 32 then oidcReject() end
+         seen = {}
+
+         for key in values(data.keys) do
+            if not (key is <table>) or not oauth_wire.text(key.kid, 256) or seen[key.kid] then oidcReject() end
+            seen[key.kid] = true
+         end
+
+         jwk_keys = data.keys
+         keys_until = until_time
+      end
+   end
+
+   self.verify = function(Token:str, Expected:table, Control:table):table
+      if #Token > 65536 then oidcReject() end
+
+      parts = Token.split('.')
+
+      if #parts != 3 then oidcReject() end
+
+      header = oauth_json.decode(decodeSegment(parts[0], WireOptions.crypto), 32768)
+      claims = oauth_json.decode(decodeSegment(parts[1], WireOptions.crypto), 32768)
+
+      if not (header is <table>) or not (claims is <table>) or header.alg != 'RS256' or
+         not oauth_wire.text(header.kid, 256) or
+         (header.typ != nil and header.typ != 'JWT') or header.crit != nil or header.jku != nil or
+         header.jwk != nil or header.x5u != nil or header.b64 != nil then oidcReject() end
+
+      loadKeys(false, Control)
+
+      function selectKey():table
+         for key in values(jwk_keys) do if key.kid is header.kid then return key end end
+         return nil
+      end
+
+      key = selectKey()
+      if not key then
+         now = WireOptions.elapsed()
+         if now < refresh_after then oidcReject() end
+         refresh_after = now + 60
+         loadKeys(true, Control)
+         key = selectKey()
+      end
+
+      if not key or key.kty != 'RSA' or (key.alg != nil and key.alg != 'RS256') or
+         (key.use != nil and key.use != 'sig') or not oauth_wire.text(key.n, 1024) or
+         not oauth_wire.text(key.e, 16) then oidcReject() end
+
+      if key.key_ops != nil then
+         if not (key.key_ops is <array>) or #key.key_ops != 1 or key.key_ops[0] != 'verify' then oidcReject() end
+      end
+
+      signature = decodeSegment(parts[2], WireOptions.crypto)
+      if WireOptions.crypto.VerifyJWK(CSIG_RS256, key.n, key.e, parts[0] .. '.' .. parts[1], signature) != ERR_Okay then
+         oidcReject()
+      end
+
+      now = WireOptions.now()
+      if claims.iss != issuer or not oauth_wire.text(claims.sub, 255) or
+         not oauth_wire.number(claims.exp, 0, 9007199254740991) or claims.exp <= now - skew or
+         not oauth_wire.number(claims.iat, 0, now + skew) or claims.iat > claims.exp then oidcReject() end
+
+      if claims.nbf != nil and not oauth_wire.number(claims.nbf, 0, now + skew) then oidcReject() end
+
+      audience_ok = claims.aud is Expected.clientID
+
+      if claims.aud is <array> then
+         audience_ok = #claims.aud > 0 and (Expected.clientID in claims.aud)
+         seen = {}
+         for audience in values(claims.aud) do
+            if not oauth_wire.text(audience) or seen[audience] then oidcReject() end
+            seen[audience] = true
+         end
+
+         if #claims.aud > 1 and claims.azp != Expected.clientID then oidcReject() end
+      end
+
+      if not audience_ok or (claims.azp != nil and claims.azp != Expected.clientID) then oidcReject() end
+
+      if Expected.subject and claims.sub != Expected.subject then oidcReject() end
+
+      if Expected.nonce and (not Expected.refresh or claims.nonce != nil) then
+         if not oauth_wire.text(claims.nonce) then oidcReject() end
+         err, equal = WireOptions.crypto.ConstantTimeEqual(claims.nonce, Expected.nonce)
+         if err != ERR_Okay or equal != 1 then oidcReject() end
+      elseif claims.nonce != nil then oidcReject() end
+
+      if Expected.refresh and claims.auth_time != nil and claims.auth_time != Expected.authTime then oidcReject() end
+
+      if claims.auth_time != nil and not oauth_wire.number(claims.auth_time, 0, now + skew) then oidcReject() end
+
+      -- OIDC code-flow at_hash is optional, but validate it whenever present.
+      if claims.at_hash != nil then
+         if not oauth_wire.text(Expected.accessToken) or not oauth_wire.text(claims.at_hash) then oidcReject() end
+         digest = array<byte, 32>
+         check WireOptions.crypto.SHA256(Expected.accessToken, digest)
+         encoded = array<byte, 22>
+         err, count = WireOptions.crypto.Base64Encode(digest.slice({0 to 16}), CC_URL, encoded)
+         if err != ERR_Okay or claims.at_hash != encoded.getString(0, count) then oidcReject() end
+      end
+
+      return { issuer=issuer, subject=claims.sub, clientID=Expected.clientID, claims=claims }
+   end
+
+   return self
+end

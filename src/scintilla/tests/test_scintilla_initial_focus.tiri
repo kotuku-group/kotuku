@@ -1,0 +1,85 @@
+-- Editors created after focus has been assigned must synchronise their initial caret state without moving focus.
+
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+
+function caretVisible(Surface:obj!):bool
+   processing.sleep(0)
+   check Surface.acDraw()
+   processing.sleep(0.02)
+   check Surface.acDraw()
+   local bmp <close> = obj.new('bitmap', { width=300, height=120, bitsPerPixel=32 })
+   check mGfx.CopySurface(Surface.id, bmp, 0, 0, 0, 300, 120, 0, 0)
+   local pixel = mGfx.ReadRGBPixel(bmp, 4, 6)
+   return pixel.red + pixel.green + pixel.blue < 100
+end
+
+function checkInitialFocus(ChildFocus:bool!, CustomFocus:bool!, Disabled:bool!)
+   local surface <close> = obj.new('Surface', { width=300, height=120 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local focus = host
+   if CustomFocus then focus = scene.new('VectorViewport', { x=0, y=0, width=1, height=1 }) end
+   local target = focus
+   if ChildFocus then target = focus.new('VectorViewport', { x=0, y=0, width=1, height=1 }) end
+
+   check surface.acShow()
+   check surface.acFocus()
+   check target.acFocus()
+   processing.sleep(0)
+   if Disabled then check host.acDisable() end
+
+   local sci = host.new('Scintilla', { flags=SCIF_EDIT, focus=focus, lineHighlight='255,255,255,0' })
+   assert(caretVisible(surface) != Disabled, 'The initial caret must reflect the focus and enabled state')
+
+   if Disabled then
+      check host.acEnable()
+      assert(caretVisible(surface), 'Enabling the editor must restore its caret without moving focus')
+   end
+
+   -- A later focus change must still hide and restore the caret.
+
+   local other = scene.new('VectorViewport', { x=0, y=0, width=1, height=1 })
+   check other.acFocus()
+   assert(not (focus.flags has VF_HAS_FOCUS), 'The previous focus chain must lose its focus flag')
+   assert(not caretVisible(surface), 'The caret must disappear when focus moves away')
+   check target.acFocus()
+   assert(focus.flags has VF_HAS_FOCUS, 'The focus flag must include focused descendants')
+   assert(caretVisible(surface), 'The caret must reappear when focus returns')
+end
+
+@Test function AlreadyFocusedViewport()
+   checkInitialFocus(false, false, false)
+end
+
+@Test function AlreadyFocusedChild()
+   checkInitialFocus(true, false, false)
+end
+
+@Test function AlreadyFocusedCustomViewport()
+   checkInitialFocus(false, true, false)
+end
+
+@Test function AlreadyFocusedCustomChild()
+   checkInitialFocus(true, true, false)
+end
+
+@Test function InitiallyDisabledEditor()
+   checkInitialFocus(false, false, true)
+end
+
+@Test function InitiallyUnfocusedEditor()
+   local surface <close> = obj.new('Surface', { width=300, height=120 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local other = scene.new('VectorViewport', { x=0, y=0, width=1, height=1 })
+   check surface.acShow()
+   check surface.acFocus()
+   check other.acFocus()
+
+   local sci = host.new('Scintilla', { flags=SCIF_EDIT, lineHighlight='255,255,255,0' })
+   assert(not caretVisible(surface), 'Creating an unfocused editor must leave its caret hidden')
+   assert(other.flags has VF_HAS_FOCUS, 'Creating an editor must preserve the existing focus')
+   check host.acFocus()
+   assert(caretVisible(surface), 'The caret must appear when the editor first receives focus')
+end

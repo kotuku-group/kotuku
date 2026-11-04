@@ -28,6 +28,7 @@
       <description>
 <p>This routine may block temporarily if there are unresolved requests awaiting completion in separate threads.</p>
       </description>
+      <tags>blocking, mutates-object</tags>
     </action>
 
   </actions>
@@ -36,10 +37,10 @@
     <method>
       <name>BlockingResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
-      <prototype>ERR nl::BlockingResolveAddress(OBJECTPTR Object, CSTRING Address)</prototype>
+      <prototype>ERR nl::BlockingResolveAddress(OBJECTPTR Object, STRVIEW Address)</prototype>
       <tiriPrototype>err = BlockingResolveAddress(Address:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Address">IP address to be resolved, e.g. 123.111.94.82.</param>
+        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. 123.111.94.82.</param>
       </input>
       <description>
 <p>BlockingResolveAddress() performs an IP address resolution, converting an address to an official host name and list of IP addresses.  The resolution process requires contact with a DNS server and this will cause the routine to block until a response is received.</p>
@@ -47,19 +48,24 @@
       </description>
       <result>
         <error code="Okay">The IP address was resolved successfully.</error>
-        <error code="Failed">The address could not be resolved</error>
+        <error code="Retry">Retry the operation (could not succeed at this time)</error>
         <error code="Args">Invalid arguments passed to function</error>
+        <error code="Memory">General memory error</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="HostNotFound">The address could not be resolved.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>BlockingResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
-      <prototype>ERR nl::BlockingResolveName(OBJECTPTR Object, CSTRING HostName)</prototype>
+      <prototype>ERR nl::BlockingResolveName(OBJECTPTR Object, STRVIEW HostName)</prototype>
       <tiriPrototype>err = BlockingResolveName(HostName:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="HostName">The host name to be resolved.</param>
+        <param type="STRVIEW" name="HostName">The host name to be resolved.</param>
       </input>
       <description>
 <p>BlockingResolveName() performs a domain name resolution, converting a domain name to its official host name and IP addresses.  The resolution process requires contact with a DNS server and the function will block until a response is received or a timeout occurs.</p>
@@ -67,50 +73,58 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="Retry">Retry the operation (could not succeed at this time)</error>
+        <error code="Memory">General memory error</error>
+        <error code="BufferOverflow">A buffer overflow has occurred</error>
+        <error code="SystemCall">A call to the host system has failed</error>
+        <error code="HostNotFound">The host name could not be resolved.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object, callback-inlines</tags>
     </method>
 
     <method>
       <name>ResolveAddress</name>
       <comment>Resolves an IP address to a host name.</comment>
-      <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, CSTRING Address)</prototype>
+      <prototype>ERR nl::ResolveAddress(OBJECTPTR Object, STRVIEW Address)</prototype>
       <tiriPrototype>err = ResolveAddress(Address:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Address">IP address to be resolved, e.g. "123.111.94.82".</param>
+        <param type="STRVIEW" name="Address">IP address to be resolved, e.g. &quot;123.111.94.82&quot;.</param>
       </input>
       <description>
 <p>ResolveAddress() performs a IP address resolution, converting an address to an official host name and list of IP addresses.  The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication is used so that the function can return immediately.  The <fl>Callback</fl> function will be called on completion of the process.</p>
 <p>If synchronous (blocking) operation is desired then use the <method>BlockingResolveAddress</method> method.</p>
+<p>One object may have up to 32 outstanding asynchronous resolutions.  Completed threads are reclaimed when another resolution starts.</p>
       </description>
       <result>
         <error code="Okay">The IP address was resolved successfully.</error>
-        <error code="Failed">The address could not be resolved</error>
-        <error code="Args">Invalid arguments passed to function</error>
+        <error code="FieldNotSet">A required field value is undefined</error>
+        <error code="BufferOverflow">The object already has 32 outstanding resolution requests.</error>
+        <error code="Syntax">The address is not a valid IP address literal.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object, copies-input, callback-inlines</tags>
     </method>
 
     <method>
       <name>ResolveName</name>
       <comment>Resolves a domain name to an official host name and a list of IP addresses.</comment>
-      <prototype>ERR nl::ResolveName(OBJECTPTR Object, CSTRING HostName)</prototype>
+      <prototype>ERR nl::ResolveName(OBJECTPTR Object, STRVIEW HostName)</prototype>
       <tiriPrototype>err = ResolveName(HostName:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="HostName">The host name to be resolved.</param>
+        <param type="STRVIEW" name="HostName">The host name to be resolved.</param>
       </input>
       <description>
 <p>ResolveName() performs a domain name resolution, converting a domain name to an official host name and IP addresses. The resolution process involves contacting a DNS server.  To prevent delays, asynchronous communication is used so that the function can return immediately.  The <fl>Callback</fl> function will be called on completion of the process.</p>
 <p>If synchronous (blocking) operation is desired then use the <method>BlockingResolveName</method> method.</p>
+<p>One object may have up to 32 outstanding asynchronous resolutions.  Completed threads are reclaimed when another resolution starts.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">General failure</error>
-        <error code="AllocMemory">AllocMemory() failed to create a new memory block</error>
+        <error code="BufferOverflow">The object already has 32 outstanding resolution requests.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>non-blocking, mutates-object, copies-input, callback-inlines</tags>
     </method>
 
   </methods>
@@ -120,10 +134,11 @@
       <name>Addresses</name>
       <comment>List of resolved IP addresses.</comment>
       <access read="G">Get</access>
-      <type>STRUCT []</type>
+      <type>IPAddress[]</type>
       <description>
 <p>A list of the most recently resolved IP addresses can be read from this field.</p>
       </description>
+      <tags>object-owns-result, volatile-result</tags>
     </field>
 
     <field>
@@ -132,9 +147,10 @@
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype is <code>Function(*NetLookup, ERR Error, const std::string &amp;HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)</code>.</p>
+<p>The function referenced here will receive the results of the most recently resolved name or address.  The C++ prototype is <code>Function(*NetLookup, ERR Error, std::string_view HostName, const std::vector&lt;IPAddress&gt; &amp;Addresses)</code>.</p>
 <p>The Tiri prototype is as follows, with results readable from the <fl>HostName</fl> and <fl>Addresses</fl> fields: <code>function(NetLookup, Error)</code>.</p>
       </description>
+      <tags>object-owns-result, callback-held</tags>
     </field>
 
     <field>
@@ -162,15 +178,27 @@
       <description>
 <p>The name of the most recently resolved host is readable from this field.</p>
       </description>
+      <tags>object-owns-result, volatile-result, null-terminated-result</tags>
     </field>
 
   </fields>
   <types>
+    <constants lookup="IPADDR" comment="Address types for the IPAddress structure.">
+      <const name="V4"/>
+      <const name="V6"/>
+    </constants>
+
     <constants lookup="NLF" comment="Options for NetLookup">
       <const name="NO_CACHE">Contact the name service and do not use the local DNS cache.</const>
     </constants>
 
   </types>
   <structs>
+    <struct name="IPAddress">
+      <field name="Data" type="INT" size="4">128-bit array for supporting both V4 (32-bit host order) and V6 (8-bit byte order) IP addresses.</field>
+      <field name="Type" type="IPADDR" lookup="IPADDR">Identifies the address Data value as a V4 or V6 address type.</field>
+      <field name="Port" type="INT">For UDP packets, identifies the client port number in host byte order.</field>
+    </struct>
+
   </structs>
 </book>

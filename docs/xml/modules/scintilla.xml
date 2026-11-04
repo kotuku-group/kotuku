@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="module.xsl"?>
+
+<book>
+  <info>
+    <name>Scintilla</name>
+    <type>module</type>
+    <version>1</version>
+    <copyright>Paul Manias © 2005-2026</copyright>
+    <classes>
+      <class>Scintilla</class>
+      <class>ScintillaSearch</class>
+    </classes>
+  </info>
+
+  <types>
+    <constants lookup="SCIF" comment="Optional flags.">
+      <const name="DETECT_LEXER">Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.</const>
+      <const name="DISABLED">Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.</const>
+      <const name="EDIT">Must be defined if the document is to be editable via user input.</const>
+      <const name="EXT_PAGE">Extends the length of the document by one blank page.  This is a visual effect that only has an impact when the user scrolls to the end of the document.</const>
+    </constants>
+
+    <constants lookup="SCLEX" comment="Scintilla Lexers.  These codes originate from the Scintilla library.">
+      <const name="ASP">Active Server Pages</const>
+      <const name="ASSEMBLER">Assembler</const>
+      <const name="BASH">Bash</const>
+      <const name="BATCH">Batch</const>
+      <const name="CPP">C or C++</const>
+      <const name="CSS">CSS</const>
+      <const name="DIFF">Diff</const>
+      <const name="ERRORLIST">ErrorList</const>
+      <const name="HTML">HTML</const>
+      <const name="MAKEFILE">Makefile</const>
+      <const name="PASCAL">Pascal</const>
+      <const name="PERL">Perl</const>
+      <const name="PHPSCRIPT">PHP Script</const>
+      <const name="PROPERTIES">Properties</const>
+      <const name="PYTHON">Python</const>
+      <const name="REBOL">Rebol</const>
+      <const name="RUBY">Ruby</const>
+      <const name="SQL">SQL</const>
+      <const name="TIRI">Tiri</const>
+      <const name="VB">Visual Basic</const>
+      <const name="VBSCRIPT">VBScript</const>
+      <const name="XML">XML</const>
+    </constants>
+
+    <constants lookup="SEF" comment="Flags for EventCallback and EventFlags">
+      <const name="CURSOR_POS">The cursor position has changed.</const>
+      <const name="FAIL_RO">User attempt to edit read-only content.</const>
+      <const name="MODIFIED">The content has changed to a modified state, i.e. the user has made an edit.  The modified state will remain until the content is saved.</const>
+      <const name="NEW_CHAR">At least one new character has been inserted.</const>
+    </constants>
+
+    <constants lookup="STF" comment="Scintilla search flags.">
+      <const name="BACKWARDS">Search backwards.</const>
+      <const name="CASE">Case sensitive search.</const>
+      <const name="EXPRESSION">Search text is a regular expression.</const>
+      <const name="MOVE_CURSOR">The cursor is moved to the discovered string.  If not set, the string is auto-selected.</const>
+      <const name="SCAN_SELECTION">Limit search to within the user's current selection.</const>
+      <const name="WRAP">Wrap search at the end of the document.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

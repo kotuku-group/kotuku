@@ -1,0 +1,49 @@
+-- Garbage-collector lifecycle behaviour observable only when a worker Tiri state shuts down.
+
+@BeforeEach
+function reset_pool()
+   async.pool.clear()
+end
+
+@AfterEach
+function clear_pool()
+   async.pool.clear()
+end
+
+@Test function ShutdownDrainsRegisteredFinalisersAfterError()
+   local script = obj.new('tiri', { statement=[[
+      function record_finaliser(Identifier)
+         async.pool.shutdown_order = (async.pool.shutdown_order ?? '') .. Identifier
+      end
+
+      first = setmetatable({}, { __gc=function() record_finaliser('1') end })
+      second = setmetatable({}, { __gc=function()
+         record_finaliser('2')
+         raise 'expected shutdown finaliser failure'
+      end })
+      third = setmetatable({}, { __gc=function() record_finaliser('3') end })
+   ]] })
+
+   async.script(script)
+   check async.wait(script, 2.0)
+
+   assert(async.pool.shutdown_order is '321',
+      f'Shutdown should drain finalisers in reverse registration order after an error, got {async.pool.shutdown_order}')
+end
+
+@Test function ShutdownDoesNotRunNewFinalisers()
+   local script = obj.new('tiri', { statement=[[
+      original = setmetatable({}, { __gc=function()
+         async.pool.creator_ran = true
+         local created = setmetatable({}, { __gc=function()
+            async.pool.created_ran = true
+         end })
+      end })
+   ]] })
+
+   async.script(script)
+   check async.wait(script, 2.0)
+
+   assert(async.pool.creator_ran is true, 'The finaliser registered before shutdown should run')
+   assert(async.pool.created_ran is nil, 'A finaliser registered during shutdown must not run in the same shutdown')
+end

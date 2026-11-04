@@ -7,6 +7,7 @@
 
 #include "accessor_support.h"
 #include <filesystem>
+#include <kotuku/modules/processes.h>
 
 namespace xpath::accessor {
 
@@ -47,15 +48,15 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
    if (not BasePath.empty()) {
       std::string candidate;
       std::string resolved;
-      if (ResolvePath(BasePath, RSF::NO_FILE_CHECK, &resolved) IS ERR::Okay) candidate = std::move(resolved);
+      if (!ResolvePath(BasePath, RSF::NO_FILE_CHECK, &resolved)) candidate = std::move(resolved);
       else candidate = BasePath;
       if (auto folder = trim_to_base_directory(candidate)) return folder;
       if (auto fallback = trim_to_base_directory(std::string(BasePath))) return fallback;
    }
 
    if (objTask *task = CurrentTask()) {
-      CSTRING task_path = nullptr;
-      if ((task->get(FID_Path, task_path) IS ERR::Okay) and task_path) {
+      std::string_view task_path;
+      if ((!task->getPath(task_path)) and not task_path.empty()) {
          std::string working(task_path);
          if (not working.empty()) {
             char last = working.back();
@@ -144,10 +145,10 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
 
    auto &context = *Document->SchemaContext;
 
-   auto lookup = context.elements.find(std::string(Name));
+   auto lookup = context.elements.find(Name);
    if (lookup != context.elements.end()) return lookup->second;
 
-   auto local = std::string(xml::schema::extract_local_name(Name));
+   auto local = xml::schema::extract_local_name(Name);
    lookup = context.elements.find(local);
    if (lookup != context.elements.end()) return lookup->second;
 
@@ -172,7 +173,7 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
       auto iter = types.find(TypeName);
       if (iter != types.end()) return iter->second;
 
-      auto local = std::string(xml::schema::extract_local_name(TypeName));
+      auto local = xml::schema::extract_local_name(TypeName);
       iter = types.find(local);
       if (iter != types.end()) return iter->second;
    }
@@ -181,7 +182,7 @@ std::optional<std::string> resolve_document_base_directory(std::string_view Base
 
    if (auto descriptor = Context.schema_registry->find_descriptor(TypeName)) return descriptor;
 
-   auto local = std::string(xml::schema::extract_local_name(TypeName));
+   auto local = xml::schema::extract_local_name(TypeName);
    return Context.schema_registry->find_descriptor(local);
 }
 
@@ -255,8 +256,8 @@ std::optional<std::string> build_base_uri_chain(const XPathContext &Context, XTa
 
    if (not Node) {
       std::string_view path;
-      if ((document) and (document->Path)) path = document->Path;
-      else if ((Context.xml) and (Context.xml->Path)) path = Context.xml->Path;
+      if ((document) and (not document->Path.empty())) path = std::string_view(document->Path);
+      else if ((Context.xml) and (not Context.xml->Path.empty())) path = Context.xml->Path;
       auto base = resolve_document_base_directory(path);
       if (base.has_value()) return xml::uri::normalise_uri_separators(*base);
       return std::nullopt;
@@ -270,8 +271,8 @@ std::optional<std::string> build_base_uri_chain(const XPathContext &Context, XTa
 
    if ((Node->ParentID IS 0) and (!AttributeNode)) { // Root-level node with no attribute
       std::string_view path;
-      if ((document) and (document->Path)) path = document->Path;
-      else if ((Context.xml) and (Context.xml->Path)) path = Context.xml->Path;
+      if ((document) and (not document->Path.empty())) path = std::string_view(document->Path);
+      else if ((Context.xml) and (not Context.xml->Path.empty())) path = Context.xml->Path;
       auto base = resolve_document_base_directory(path);
       if (base.has_value()) return xml::uri::normalise_uri_separators(*base);
    }
@@ -298,7 +299,7 @@ std::optional<std::string> build_base_uri_chain(const XPathContext &Context, XTa
       current = parent;
    }
 
-   std::optional<std::string> base = resolve_document_base_directory((document and document->Path) ? document->Path : std::string_view{});
+   std::optional<std::string> base = resolve_document_base_directory((document and (not document->Path.empty())) ? document->Path : std::string_view{});
 
    for (auto iterator = chain.rbegin(); iterator != chain.rend(); ++iterator) {
       if (base.has_value()) base = xml::uri::resolve_relative_uri(*iterator, *base);
@@ -318,16 +319,15 @@ std::optional<std::string> resolve_document_uri(const XPathContext &Context, XTa
 
    extXML *document = locate_node_document(Context, Node);
    if (not document) return std::nullopt;
-   if (document->Path and document->Path[0]) {
-      return xml::uri::normalise_uri_separators(std::string(document->Path));
-   }
+   if (not document->Path.empty()) return xml::uri::normalise_uri_separators(document->Path);
 
    // Perform a reverse lookup in the XML cache to find the document URI.
 
    if (Context.xml) {
       for (auto &entry : Context.eval->parse_context->XMLCache) {
          if (entry.second IS document) {
-            return xml::uri::normalise_uri_separators(entry.first); // TODO: Is normalisation needed here?
+            // Keep cached and path-backed document URIs in the same canonical form.
+            return xml::uri::normalise_uri_separators(entry.first);
          }
       }
    }

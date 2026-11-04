@@ -1,0 +1,97 @@
+-- Gain and pan input contracts: finite values are clamped, non-finite values are rejected without side effects.
+
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+@BeforeAll function init(State)
+   global glAudioTestFolder = State.folder
+end
+
+function new_audio()
+   audio = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   return audio
+end
+
+function non_finite()
+   return { 0/0, math.huge, -math.huge }
+end
+
+@Test function MixCallsRejectNonFiniteValues()
+   audio <close> = new_audio()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   for _, value in ipairs(non_finite()) do
+      assert(mAudio.MixVolume(audio, channel, value) is ERR_OutOfRange, f'MixVolume must reject {value}')
+      assert(mAudio.MixPan(audio, channel, value) is ERR_OutOfRange, f'MixPan must reject {value}')
+   end
+end
+
+@Test function MixCallsClampFiniteBoundaries()
+   audio <close> = new_audio()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   for _, value in ipairs({ -1e308, -2, -1, -0.0, 0, 0.5, 1, 2, 1e308 }) do
+      check mAudio.MixVolume(audio, channel, value)
+      check mAudio.MixPan(audio, channel, value)
+   end
+end
+
+@Test function BatchRejectsNonFiniteValues()
+   audio <close> = new_audio()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   for _, value in ipairs(non_finite()) do
+      err = mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> {
+         struct.new('AudioMixCommand', { operation=MIX_VOLUME, handle=channel, value=0.5 }),
+         struct.new('AudioMixCommand', { operation=MIX_PAN, handle=channel, value=value })
+      }, nil)
+      assert(err is ERR_OutOfRange, f'A batch containing pan {value} must be rejected')
+   end
+end
+
+@Test function SoundFieldsClampAndReject()
+   audio <close> = new_audio()
+   sound <close> = obj.new('Sound', { audio=audio, path=glAudioTestFolder .. 'low-tone.wav' })
+   sound.volume = 2
+   assert(sound.volume is 1, 'Volume above 1.0 must clamp to 1.0')
+   sound.volume = -1
+   assert(sound.volume is 0, 'Negative volume must clamp to 0')
+   sound.pan = -3
+   assert(sound.pan is -1, 'Pan below -1.0 must clamp to -1.0')
+   sound.pan = 3
+   assert(sound.pan is 1, 'Pan above 1.0 must clamp to 1.0')
+
+   sound.volume = 0.25
+   sound.pan = 0.5
+   for _, value in ipairs(non_finite()) do
+      try
+         sound.volume = value
+      except e when ERR_OutOfRange
+      success
+         raise f'Sound.Volume must reject {value}'
+      end
+      try
+         sound.pan = value
+      except e when ERR_OutOfRange
+      success
+         raise f'Sound.Pan must reject {value}'
+      end
+   end
+   assert(sound.volume is 0.25 and sound.pan is 0.5, 'Rejected values must not modify the Sound')
+
+   -- Rejection must also hold while the sound owns an active channel.
+   check sound.acActivate()
+   try
+      sound.volume = 0/0
+   except e when ERR_OutOfRange
+   success
+      raise 'Sound.Volume must reject NaN during playback'
+   end
+   sound.volume = 0.75
+   assert(sound.volume is 0.75, 'Finite volume changes must apply during playback')
+   check sound.acDeactivate()
+end
+
+@end

@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,24 +5,23 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Defines perspective/projective coordinate transforms. Hooks into span_interpolator_persp, transformed image spans,
+// and geometry mapping helpers. In the vector renderer it supports perspective-correct sampling and quadrilateral image
+// projection.
 //
 // Perspective 2D transformations
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_TRANS_PERSPECTIVE_INCLUDED
-#define AGG_TRANS_PERSPECTIVE_INCLUDED
+
+#pragma once
 
 #include "agg_trans_affine.h"
 
 namespace agg
 {
-    //=======================================================trans_perspective
     struct trans_perspective
     {
         double sx, shy, w0, shx, sy, w1, tx, ty, w2;
 
-        //------------------------------------------------------- Construction
         // Identity matrix
         trans_perspective() :
             sx (1), shy(0), w0(0),
@@ -721,6 +719,3 @@ namespace agg
 
 
 }
-
-#endif
-

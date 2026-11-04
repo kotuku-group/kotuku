@@ -54,7 +54,7 @@ objSurface * doc_menu::create(double Width)
          fl::Name("menu"),
          fl::Parent(0),
          fl::Flags(RNF::STICK_TO_FRONT|RNF::COMPOSITE),
-         fl::WindowType(SWIN::NONE),
+         fl::Presence(SPT::NONE),
          fl::X(0), fl::Y(0), fl::Width(Width), fl::Height(height)
       }));
 
@@ -149,19 +149,23 @@ void doc_menu::refresh()
    #endif
 
    acClear(m_doc);
-   acDataXML(m_doc, buf.str().c_str());
+   auto bufstr = buf.str();
+   m_doc->dataFeed(m_doc, DATA::XML,
+      std::span<const int8_t>((const int8_t *)bufstr.data(), bufstr.size()));
 
    // Resize the menu to match the new content.  If the height of the menu is excessive (relative to the height
    // of the display), we reduce it and utilise a scrollbar to see all menu items.
 
-   auto doc_width  = m_doc->get<double>(FID_PageWidth);
-   auto doc_height = m_doc->get<double>(FID_PageHeight);
+   Unit doc_width;
+   int doc_height;
+   m_doc->getPageWidth(doc_width);
+   m_doc->getPageHeight(doc_height);
 
    double view_width  = doc_width;
    double view_height = doc_height;
 
-   DISPLAYINFO *display;
-   if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+   DisplayInfo *display;
+   if (!gfx::GetDisplayInfo(0, &display)) {
       if (view_height > display->Height * 0.25) view_height = display->Height * 0.25;
    }
 
@@ -171,17 +175,17 @@ void doc_menu::refresh()
    else m_surface->setHeight(view_height);
 
    if (doc_height > view_height) {
-      m_view->setFields(fl::Height(view_height));
+      m_view->setHeight(view_height);
 
       objVectorViewport *doc_page, *doc_view;
-      if (m_doc->get(FID_Page, doc_page) IS ERR::Okay) {
-         if (m_doc->get(FID_View, doc_view) IS ERR::Okay) {
+      if (!m_doc->getPage(doc_page)) {
+         if (!m_doc->getView(doc_view)) {
             m_scroll.init((extDocument *)CurrentContext(), doc_page, doc_view);
             m_scroll.m_auto_adjust_view_size = false;
 
             OBJECTPTR clip;
-            if (m_scene->findDef("PageClip", &clip) IS ERR::Okay) {
-               doc_page->set(FID_Mask, clip);
+            if (!m_scene->findDef("PageClip", &clip)) {
+               doc_page->setMask(clip);
             }
          }
       }
@@ -192,17 +196,21 @@ void doc_menu::refresh()
 
 void doc_menu::reposition(objVectorViewport *RelativeViewport)
 {
-   DISPLAYINFO *display;
+   DisplayInfo *display;
    gfx::GetDisplayInfo(0, &display);
 
    kt::ScopedObjectLock<objSurface> lk_surface(RelativeViewport->Scene->SurfaceID); // Window surface
    if (lk_surface.granted()) {
-      auto w_absx = lk_surface->get<double>(FID_AbsX);
-      auto w_absy = lk_surface->get<double>(FID_AbsY);
+      int w_absx, w_absy;
+      lk_surface->getAbsX(w_absx);
+      lk_surface->getAbsY(w_absy);
 
-      auto vp_absx = RelativeViewport->get<double>(FID_AbsX);
-      auto vp_absy = RelativeViewport->get<double>(FID_AbsY);
-      auto vp_height = RelativeViewport->get<double>(FID_Height);
+      int vp_absx, vp_absy;
+      RelativeViewport->getAbsX(vp_absx);
+      RelativeViewport->getAbsY(vp_absy);
+
+      Unit vp_height;
+      RelativeViewport->getHeight(vp_height);
 
       // Invert the menu position if it will drop off the display
 

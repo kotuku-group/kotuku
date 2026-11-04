@@ -7,14 +7,51 @@ Name: Files
 // included by lib_filesystem.cpp
 
 //********************************************************************************************************************
-// Cleans up path strings such as "../../myfile.txt".  Note that for Linux, the targeted file/folder has to exist or
-// NULL will be returned.
+// Canonicalises native host paths.  Existing targets resolve symbolic links and Windows reparse points unless
+// RSF::NO_FOLLOW is set.  Windows falls back to lexical canonicalisation for missing targets; on Linux, a missing
+// target returns no result unless RSF::NO_FOLLOW is set.  A trailing separator on Path is preserved in the result on
+// all platforms.
 //
 // The Path must be resolved to the native OS format.
 
-static std::optional<std::string> true_path(CSTRING Path)
+static std::optional<std::string> true_path(CSTRING Path, RSF Flags)
 {
+   if ((Flags & RSF::NO_FOLLOW) != RSF::NIL) {
+      const std::string_view source(Path);
+      const bool trailing_separator = source.ends_with('/') or source.ends_with('\\');
+
+      std::error_code error;
+      std::filesystem::path path(Path);
+      while (path.filename().empty() and (path != path.root_path())) path = path.parent_path();
+
+      auto filename = path.filename();
+      std::filesystem::path resolved;
+      if (filename.empty() or (filename IS ".") or (filename IS "..")) {
+         resolved = std::filesystem::weakly_canonical(path, error);
+      }
+      else {
+         auto parent = path.parent_path();
+         if (parent.empty()) parent = ".";
+         parent = std::filesystem::weakly_canonical(parent, error);
+         if (not error) resolved = parent / filename;
+      }
+
+      if (error or resolved.empty()) return std::nullopt;
+      resolved.make_preferred();
+      auto result = resolved.string();
+      if (trailing_separator and (not result.ends_with('/')) and (not result.ends_with('\\'))) {
+         result += std::filesystem::path::preferred_separator;
+      }
+      return std::make_optional<std::string>(std::move(result));
+   }
+
 #ifdef _WIN32
+   std::string final_path;
+   if (winGetFinalPathName(Path, final_path)) return std::make_optional<std::string>(std::move(final_path));
+
+   // Missing paths cannot be opened for final-name resolution.  Preserve lexical canonicalisation for callers using
+   // RSF::NO_FILE_CHECK so that they can resolve destinations before creating them.
+
    std::string buffer;
    buffer.resize(256);
    while (true) {
@@ -33,6 +70,11 @@ static std::optional<std::string> true_path(CSTRING Path)
    if (char *rp = realpath(Path, nullptr)) {
       std::string p(rp);
       free(rp);
+
+      // realpath() strips the trailing separator that identifies a folder, so restore it to match the other branches
+
+      const std::string_view source(Path);
+      if ((source.ends_with('/') or source.ends_with('\\')) and (not p.ends_with('/'))) p += '/';
       return std::make_optional<std::string>(p);
    }
    else return std::nullopt;
@@ -63,7 +105,7 @@ name can be approximated (i.e. the file extension can be ignored) then use the `
 To resolve the location of executable programs on Unix systems, use the `RSF::PATH` flag.  This uses the `PATH`
 environment variable to resolve the file name specified in the `Path` parameter.
 
-The resolved path will be copied to the `std::string` provided in the `Result` parameter.  This will overwrite any
+The resolved path will be copied to the string provided in the `Result` parameter.  This will overwrite any
 existing content in the string.
 
 <types lookup="RSF"/>
@@ -72,25 +114,30 @@ If the path resolves to a virtual drive, it may not be possible to confirm wheth
 virtual driver does not support this check.  This is common when working with network drives.
 
 -INPUT-
-cpp(strview) Path: The path to be resolved.
+strview Path: The path to be resolved.
 int(RSF) Flags: Optional flags.
-&cpp(str) Result: Must point to a `std::string` variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
+^&string Result: Refer to a string variable so that the resolved path can be stored.  If `NULL`, ResolvePath() will work as normal and return a valid error code without the result string.  The value is unchanged if the error code is not `ERR::Okay`.
 
 -ERRORS-
 Okay:        The `Path` was resolved.
-NullArgs:    Invalid parameters were specified.
 Search:       The given volume does not exist.
 FileNotFound: The path was resolved, but the referenced file or folder does not exist (use `NO_FILE_CHECK` to avoid this error code).
 Loop:         The volume refers back to itself.
 VirtualVolume: The path refers to a virtual volume (use `CHECK_VIRTUAL` to return `Okay` instead).
 InvalidPath:  The path is malformed.
+InvalidData:  Volume resolution returned invalid path data.
+LoadModule:   A volume extension could not be loaded.
+SystemLocked: The volume registry could not be accessed.
+
+-TAGS-
+blocking, path-resolved
 
 -END-
 
 *********************************************************************************************************************/
 
 static ERR resolve(const std::string &, std::string &, RSF);
-static ERR resolve_path_env(std::string_view, std::string *);
+static ERR resolve_path_env(std::string_view, RSF, std::string *);
 static thread_local bool tlClassLoaded;
 
 ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
@@ -133,7 +180,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
    else if (Path.starts_with("\\\\")) resolved = true; // UNC path discovered
 
 #elif __unix__
-   if ((Path[0] IS '/') or (Path[0] IS '\\')) resolved = true;
+   if (Path.starts_with('/') or Path.starts_with('\\')) resolved = true;
 #endif
 
    if (!resolved) {
@@ -143,33 +190,34 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       // (ideally with no leading folder references).
 
       if (((sep IS std::string::npos) or (Path[sep] != ':')) and ((Flags & RSF::PATH) != RSF::NIL)) {
-         if (resolve_path_env(Path, Result) IS ERR::Okay) return ERR::Okay;
+         if (!resolve_path_env(Path, Flags, Result)) return ERR::Okay;
       }
 
       if ((sep IS std::string::npos) or (Path[sep] != ':')) resolved = true;
    }
 
+   std::string_view final_path(Path);
    if (resolved) {
-      dest.assign(Path);
+      dest.assign(final_path);
 
       if ((Flags & RSF::APPROXIMATE) != RSF::NIL) {
-         if (test_path(dest, RSF::APPROXIMATE) IS ERR::Okay) Path = dest.c_str();
+         if (!test_path(dest, RSF::APPROXIMATE)) final_path = dest;
          else return ERR::FileNotFound;
       }
       else if ((Flags & RSF::NO_FILE_CHECK) IS RSF::NIL) {
-         if (test_path(dest, RSF::NIL) IS ERR::Okay) Path = dest.c_str();
+         if (!test_path(dest, RSF::NIL)) final_path = dest;
          else return ERR::FileNotFound;
       }
 
       if (!Result) return ERR::Okay;
 
-      auto tp = true_path(dest.c_str());
+      auto tp = true_path(dest.c_str(), Flags);
       if (tp.has_value()) Result->assign(tp.value());
       else Result->assign(dest);
       return ERR::Okay;
    }
 
-   src.assign(Path);
+   src.assign(final_path);
 
    // Keep looping until the volume is resolved
 
@@ -199,7 +247,11 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       else {
          #ifdef _WIN32 // UNC network path check
             if (((dest[0] IS '\\') and (dest[1] IS '\\')) or ((dest[0] IS '/') and (dest[1] IS '/'))) {
-               if (Result) Result->assign(dest);
+               if (Result) {
+                  auto tp = true_path(dest.c_str(), Flags);
+                  if (tp.has_value()) Result->assign(tp.value());
+                  else Result->assign(dest);
+               }
                return ERR::Okay;
             }
          #endif
@@ -222,7 +274,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
       }
 
       if (Result) {
-         auto tp = true_path(dest.c_str());
+         auto tp = true_path(dest.c_str(), Flags);
          if (tp.has_value()) Result->assign(tp.value());
          else Result->assign(dest);
       }
@@ -231,7 +283,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
    } // for()
 
    if (loop > 0) { // Note that loop starts at 10 and decrements to zero
-      if ((error IS ERR::Okay) and dest.empty()) return ERR::InvalidPath;
+      if ((!error) and dest.empty()) return ERR::InvalidPath;
       return error;
    }
    else return ERR::Loop;
@@ -242,7 +294,7 @@ ERR ResolvePath(const std::string_view &pPath, RSF Flags, std::string *Result)
 
 #ifdef __unix__
 
-static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
+static ERR resolve_path_env(std::string_view RelativePath, RSF Flags, std::string *Result)
 {
    // If a path to the file isn't available, scan the PATH environment variable. In Unix the separator is :
 
@@ -262,7 +314,7 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
          if (!stat64(src.c_str(), &info)) {
             if (!S_ISDIR(info.st_mode)) { // Successfully identified file location
                if (Result) {
-                  auto tp = true_path(src.c_str());
+                  auto tp = true_path(src.c_str(), Flags);
                   if (tp.has_value()) Result->assign(tp.value());
                   else Result->assign(src);
                }
@@ -280,7 +332,7 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
 
 #elif _WIN32
 
-static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
+static ERR resolve_path_env(std::string_view RelativePath, RSF Flags, std::string *Result)
 {
    // If a path to the file isn't available, scan the PATH environment variable. In Windows the separator is ;
 
@@ -300,7 +352,7 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
          if (!stat64(src.c_str(), &info)) {
             if (!S_ISDIR(info.st_mode)) { // Successfully identified file location
                if (Result) {
-                  auto tp = true_path(src.c_str());
+                  auto tp = true_path(src.c_str(), Flags);
                   if (tp.has_value()) Result->assign(tp.value());
                   else Result->assign(src);
                }
@@ -327,8 +379,6 @@ static ERR resolve_path_env(std::string_view RelativePath, std::string *Result)
 ** Flags   - Optional RSF flags.
 */
 
-static ERR resolve_object_path(const std::string &, const std::string &, std::string &);
-
 static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
 {
    kt::Log log("ResolvePath");
@@ -344,22 +394,17 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
    if (vol_pos IS std::string::npos) return log.warning(ERR::InvalidData);
 
    std::string fullpath;
-   if (auto lock = std::unique_lock{glmVolumes, 2s}) {
-      auto vol = glVolumes.find(Source.substr(0, vol_pos));
-      if (vol != glVolumes.end()) fullpath.assign(vol->second["Path"]);
+   if (auto lock = std::shared_lock{glmVolumes, 2s}) {
+      auto vol = glVolumes.find(std::string_view(Source.data(), vol_pos));
+      if (vol != glVolumes.end()) {
+         if (auto path = vol->second.find("Path"); path != vol->second.end()) fullpath.assign(path->second);
+      }
       else {
          log.msg("No matching volume for \"%s\".", Source.c_str());
          return ERR::Search;
       }
    }
    else return log.warning(ERR::SystemLocked);
-
-   // Handle the ":ObjectName" case
-
-   if (fullpath.starts_with(':')) {
-      fullpath.replace(0, 1, "");
-      return resolve_object_path(fullpath, Source, Dest);
-   }
 
    log.traceBranch("%s, Resolved Path: %s, Flags: $%.8x", Source.c_str(), fullpath.c_str(), int(Flags));
 
@@ -402,7 +447,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       while ((Source[j] IS '/') or (Source[j] IS '\\')) j++;
       Dest.append(Source, j);
 
-      // Fully resolve the path to a system folder before testing it (e.g. "scripts:" to "kotuku:scripts/" to "c:\kotuku\scripts\" will be resolved through this recursion).
+      // Fully resolve the path to a system folder before testing it (e.g. "assets:" to "kotuku:assets/" to "c:\kotuku\assets\" will be resolved through this recursion).
 
       #ifdef _WIN32
          if ((Dest[1] IS ':') and ((Dest[2] IS '/') or (Dest[2] IS '\\'))) j = std::string::npos;
@@ -417,7 +462,7 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
       auto error = ERR(-1);
       for (loop=10; loop > 0; loop--) {
          if ((j != std::string::npos) and (j > 1) and (Dest[j] IS ':')) { // Remaining ':' indicates more path resolution is required.
-            if ((error = resolve(Dest, buffer, Flags)) IS ERR::Okay) {
+            if (!(error = resolve(Dest, buffer, Flags))) {
                Dest.assign(buffer);
                j = Dest.find_first_of(":/"); // Reexamine the result for the presence of a colon.
             }
@@ -431,9 +476,9 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
          return ERR::Loop;
       }
 
-      if (error IS ERR::Okay) return ERR::Okay;
+      if (!error) return ERR::Okay;
       else if ((Flags & RSF::NO_FILE_CHECK) != RSF::NIL) return ERR::Okay;
-      else if (test_path(Dest, Flags) IS ERR::Okay) return ERR::Okay;
+      else if (!test_path(Dest, Flags)) return ERR::Okay;
 
       log.trace("File does not exist at %s", Dest.c_str());
 
@@ -448,38 +493,4 @@ static ERR resolve(const std::string &Source, std::string &Dest, RSF Flags)
 
    log.trace("Resolved path but no matching file for %s\"%s\".", ((Flags & RSF::APPROXIMATE) != RSF::NIL) ? "~" : "", Source.c_str());
    return ERR::FileNotFound;
-}
-
-//********************************************************************************************************************
-// For cases such as ":SystemIcons", we find the referenced object and ask it to resolve the path for us.  (In effect,
-// the object will be used as a plugin for volume resolution).
-//
-// If the path is merely ":" or resolve_virtual() returns ERR::VirtualVolume, return the VirtualVolume error code to
-// indicate that no further resolution is required.
-
-static ERR resolve_object_path(const std::string &Path, const std::string &Source, std::string &Dest)
-{
-   kt::Log log("ResolvePath");
-   ERR (*resolve_virtual)(OBJECTPTR, const std::string &, std::string &);
-   ERR error = ERR::VirtualVolume;
-
-   if (!Path.empty()) {
-      OBJECTID volume_id;
-      if (FindObject(Path.c_str(), CLASSID::NIL, FOF::NIL, &volume_id) IS ERR::Okay) {
-         OBJECTPTR object;
-         if (AccessObject(volume_id, 5000, &object) IS ERR::Okay) {
-            if ((object->get(FID_ResolvePath, resolve_virtual) IS ERR::Okay) and (resolve_virtual)) {
-               error = resolve_virtual(object, Source, Dest);
-            }
-            ReleaseObject(object);
-         }
-      }
-   }
-
-   if (error IS ERR::VirtualVolume) { // Return an exact duplicate of the original source string
-      Dest = Source;
-      return ERR::VirtualVolume;
-   }
-   else if (error != ERR::Okay) return log.warning(error);
-   else return ERR::Okay;
 }

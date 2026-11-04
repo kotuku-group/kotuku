@@ -1,0 +1,140 @@
+-- LightingFX kernel units (UnitX/UnitY, equivalent to SVG kernelUnitLength)
+
+   include 'display', 'vector'
+   module display as mGfx
+   module vector as mVec
+
+----------------------------------------------------------------------------------------------------------------------
+-- Renders a lit circle to a 72x72 bitmap.  The circle is drawn in a viewport of Size units, which is magnified by
+-- Scale so that it always covers the same pixels.  The bump map is blurred and lit in bounding box units, and Unit
+-- defines the kernel unit if it is not nil.  Options can override unitY, rotation, elevation and lighting type.
+
+function renderLit(Size:num!, Scale:num!, Unit:num, Options:table):obj
+   local page = 72
+   local scene <close> = obj.new('VectorScene', { pageWidth=page, pageHeight=page })
+   local root = scene.new('VectorViewport', {
+      width=page, height=page, viewX=0, viewY=0, viewWidth=page / Scale, viewHeight=page / Scale
+   })
+
+   local filter = scene.new('VectorFilter', { primitiveUnits=VUNIT_BOUNDING_BOX })
+   filter.new('BlurFX', { sx=0.03, sy=0.03, sourceType='Alpha' })
+   local light = filter.new('LightingFX', { type=Options?.type ?? LT_SPECULAR, constant=1, scale=2, exponent=4 })
+   if Unit then light.{ unitX = Unit, unitY = Options?.unitY ?? Unit } end
+   check light.mtSetDistantLight(225, Options?.elevation ?? 30)
+   check scene.mtAddDef('lit', filter)
+
+   local vp = root.new('VectorViewport', {
+      width=Size, height=Size, viewX=0, viewY=0, viewWidth=24, viewHeight=24, filter='url(#lit)'
+   })
+   if Options?.rotation then
+      local _, matrix = check vp.mtNewMatrix(0)
+      check mVec.ParseTransform(matrix, f'translate({Size/2},{Size/2}) rotate({Options.rotation}) ' ..
+         f'translate({-Size/2},{-Size/2})')
+   end
+   vp.new('VectorEllipse', { cx=12, cy=12, radius=8, fill='white' })
+
+   local bmp = obj.new('bitmap', { width=page, height=page, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   scene.bitmap = bmp
+   check scene.acDraw()
+   return bmp
+end
+
+-- Returns the largest difference between the colour channels of two bitmaps of equal size.  Channels are copied
+-- before the next read because ReadRGBPixel() reuses its result.
+
+function maxDifference(A:obj!, B:obj!):num
+   local result = 0
+   for y in {0 to A.height} do
+      for x in {0 to A.width} do
+         local p = mGfx.ReadRGBPixel(A, x, y)
+         local r, g, b = p.red, p.green, p.blue
+         local q = mGfx.ReadRGBPixel(B, x, y)
+         result = math.max(result, math.abs(r - q.red), math.abs(g - q.green), math.abs(b - q.blue))
+      end
+   end
+   return result
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function UnitsMustBePositive()
+   local filter <close> = obj.new('VectorFilter')
+   local fx = filter.new('LightingFX')
+
+   for value in values(array<double> { 0, -0.5 }) do
+      try
+         fx.unitX = value
+      success
+         assert(false, f'UnitX must reject {value}')
+      end
+
+      try
+         fx.unitY = value
+      success
+         assert(false, f'UnitY must reject {value}')
+      end
+   end
+
+   fx.{ unitX = 0.25, unitY = 2 }
+   assert(fx.unitX is 0.25 and fx.unitY is 2, 'Positive kernel units must be retained')
+end
+
+-- With bounding box units, the blur and the kernel scale together, so a magnified graphic matches a graphic that is
+-- drawn at the same pixel size in its own coordinate system.
+
+@Test function BoundingBoxUnitsAreIndependentOfScale()
+   local magnified <close> = renderLit(24, 3, 1/24)
+   local native <close> = renderLit(72, 1, 1/24)
+   local diff = maxDifference(magnified, native)
+   assert(diff <= 2, f'Kernel units in bounding box space must not depend on scale (max difference {diff})')
+end
+
+-- Without a kernel unit, the unit is one client unit.  A graphic that is larger in its own coordinate system is lit
+-- more gently than an equivalent that is magnified by its parent.  This also confirms that the test above is able to
+-- detect a difference.
+
+@Test function DefaultUnitIsTheClientUnit()
+   local magnified <close> = renderLit(24, 3, nil)
+   local native <close> = renderLit(72, 1, nil)
+   local diff = maxDifference(magnified, native)
+   assert(diff > 40, f'The default kernel unit must follow the client coordinate system (max difference {diff})')
+
+   -- The bounding box is the circle, which is 48 client units wide at a Size of 72, so a kernel unit of 1/48 of the
+   -- box is equivalent to the default.
+
+   local explicit <close> = renderLit(72, 1, 1/48)
+   diff = maxDifference(native, explicit)
+   assert(diff <= 2, f'A kernel unit of one client unit must match the default (max difference {diff})')
+end
+
+-- A quarter turn swaps the screen directions of unequal kernel units.  A light directly above the circle isolates
+-- the kernel orientation from the light direction, and the circular bump map covers the same pixels after rotation.
+
+@Test function UnequalUnitsFollowQuarterTurns()
+   for light_type in values(array<int> { LT_DIFFUSE, LT_SPECULAR }) do
+      local original <close> = renderLit(72, 1, 0.02, { unitY=0.12, elevation=90, type=light_type })
+      local swapped <close> = renderLit(72, 1, 0.12, { unitY=0.02, elevation=90, type=light_type })
+      assert(maxDifference(original, swapped) > 40, 'Unequal units must produce visibly different lighting')
+
+      for angle in values(array<int> { 90, 270 }) do
+         local rotated <close> = renderLit(72, 1, 0.02, {
+            unitY=0.12, rotation=angle, elevation=90, type=light_type
+         })
+         local diff = maxDifference(rotated, swapped)
+         assert(diff <= 2, f'A {angle} degree rotation must swap the kernel axes (max difference {diff})')
+      end
+   end
+end
+
+-- Opposite diagonal orientations need cross-axis gradient terms.  Swapping the units and adding a quarter turn
+-- describes the same kernel, while keeping the units produces a different diagonal orientation.
+
+@Test function UnequalUnitsFollowDiagonalRotations()
+   local clockwise <close> = renderLit(72, 1, 0.02, { unitY=0.12, rotation=45, elevation=90 })
+   local anticlockwise <close> = renderLit(72, 1, 0.02, { unitY=0.12, rotation=-45, elevation=90 })
+   local swapped <close> = renderLit(72, 1, 0.12, { unitY=0.02, rotation=-45, elevation=90 })
+   assert(maxDifference(clockwise, anticlockwise) > 40, 'Opposite diagonal kernel orientations must differ')
+   local diff = maxDifference(clockwise, swapped)
+   assert(diff <= 2, f'Swapping the diagonal kernel axes must preserve the lighting (max difference {diff})')
+end

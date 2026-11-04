@@ -1,0 +1,24 @@
+<svg width="180px" height="120px" viewBox="0 0 180 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ramp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f05040"/>
+      <stop offset="0.5" stop-color="#f2dc4e"/>
+      <stop offset="1" stop-color="#3368c8"/>
+    </linearGradient>
+
+    <filter id="emboss-kul05" x="-12%" y="-12%" width="124%" height="124%" primitiveUnits="userSpaceOnUse">
+      <feConvolveMatrix order="3" divisor="1" bias="0.5" preserveAlpha="false" kernelUnitLength="0.5"
+         kernelMatrix="-1 -1 0 -1 0 1 0 1 1"/>
+    </filter>
+  </defs>
+
+  <rect width="180" height="120" fill="#ffffff"/>
+  <g transform="translate(12 12)">
+    <rect x="0" y="0" width="70" height="70" rx="8" ry="8" fill="url(#ramp)"/>
+    <path d="M8 54 C22 22 42 82 64 18" fill="none" stroke="#17233c" stroke-width="5"/>
+  </g>
+  <g transform="translate(94 12)">
+    <rect x="0" y="0" width="70" height="70" rx="8" ry="8" fill="url(#ramp)" filter="url(#emboss-kul05)"/>
+    <path d="M8 54 C22 22 42 82 64 18" fill="none" stroke="#17233c" stroke-width="5" filter="url(#emboss-kul05)"/>
+  </g>
+</svg>

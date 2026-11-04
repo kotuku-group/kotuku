@@ -1,0 +1,255 @@
+{
+  "version": 8,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "agents",
+      "displayName": "Agent Debug build",
+      "description": "AGENTS.md defaults. For a static build, configure with -DKOTUKU_STATIC=ON.",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/agents",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/agents-install"
+      }
+    },
+    {
+      "name": "agents-platform",
+      "displayName": "Agent Debug build in a platform-specific directory",
+      "description": "Use when build/agents is already configured for a different platform.",
+      "inherits": "agents",
+      "binaryDir": "${sourceDir}/build/agents-${hostSystemName}"
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug modular build",
+      "binaryDir": "${sourceDir}/build/presets/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/presets-install/${presetName}",
+        "RUN_ANYWHERE": true,
+        "KOTUKU_STATIC": false,
+        "BUILD_TESTING": true,
+        "BUILD_TESTS": true,
+        "UNIT_TESTS": true,
+        "ORIGO_CONSOLE": true,
+        "LINKED_PACKAGES": true
+      }
+    },
+    {
+      "name": "debug-static",
+      "displayName": "Debug static build",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/presets/${presetName}",
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/presets-install/${presetName}",
+        "KOTUKU_STATIC": true
+      }
+    },
+    {
+      "name": "release-package",
+      "displayName": "Release package build",
+      "description": "Windows-only packaging; the project enables CPack only on Windows.",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "binaryDir": "${sourceDir}/build/presets/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/presets-install/${presetName}",
+        "RUN_ANYWHERE": true,
+        "KOTUKU_STATIC": false,
+        "BUILD_TESTING": false,
+        "INSTALL_EXAMPLES": true,
+        "ENABLE_CPACK": true
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "agents",
+      "configurePreset": "agents",
+      "configuration": "Debug",
+      "jobs": 0
+    },
+    {
+      "name": "agents-install",
+      "inherits": "agents",
+      "targets": ["install"]
+    },
+    {
+      "name": "agents-headers",
+      "description": "Regenerate headers and XML documentation; requires an installed origo executable.",
+      "inherits": "agents",
+      "targets": ["build_headers"]
+    },
+    {
+      "name": "agents-platform",
+      "inherits": "agents",
+      "configurePreset": "agents-platform"
+    },
+    {
+      "name": "agents-platform-install",
+      "inherits": "agents-platform",
+      "targets": ["install"]
+    },
+    {
+      "name": "agents-platform-headers",
+      "inherits": "agents-platform",
+      "description": "Regenerate headers and XML documentation; requires an installed origo executable.",
+      "targets": ["build_headers"]
+    },
+    {
+      "name": "debug-install",
+      "configurePreset": "debug",
+      "configuration": "Debug",
+      "targets": ["install"]
+    },
+    {
+      "name": "debug-static-install",
+      "configurePreset": "debug-static",
+      "configuration": "Debug",
+      "targets": ["install"]
+    },
+    {
+      "name": "release-build",
+      "configurePreset": "release-package",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "agents",
+      "description": "Install the latest build first. Use -L TEST_LABEL to select a test label.",
+      "inherits": "debug",
+      "configurePreset": "agents"
+    },
+    {
+      "name": "agents-platform",
+      "inherits": "agents",
+      "configurePreset": "agents-platform"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "^audio"
+        }
+      }
+    },
+    {
+      "name": "debug-static",
+      "inherits": "debug",
+      "configurePreset": "debug-static"
+    },
+    {
+      "name": "audio-base",
+      "hidden": true,
+      "description": "Run the audio module tests, including the integration suite excluded from the standard presets.",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "^audio"
+        }
+      }
+    },
+    {
+      "name": "agents-audio",
+      "inherits": "audio-base",
+      "configurePreset": "agents"
+    },
+    {
+      "name": "agents-platform-audio",
+      "inherits": "agents-audio",
+      "configurePreset": "agents-platform"
+    },
+    {
+      "name": "debug-audio",
+      "inherits": "audio-base",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "debug-static-audio",
+      "inherits": "audio-base",
+      "configurePreset": "debug-static"
+    }
+  ],
+  "packagePresets": [
+    {
+      "name": "release-package",
+      "configurePreset": "release-package",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "configurations": ["Release"],
+      "generators": ["ZIP"]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "agents",
+      "displayName": "Configure, install, and test agent Debug build",
+      "steps": [
+        {"type": "configure", "name": "agents"},
+        {"type": "build", "name": "agents-install"},
+        {"type": "test", "name": "agents"}
+      ]
+    },
+    {
+      "name": "agents-platform",
+      "displayName": "Configure, install, and test platform-specific agent Debug build",
+      "steps": [
+        {"type": "configure", "name": "agents-platform"},
+        {"type": "build", "name": "agents-platform-install"},
+        {"type": "test", "name": "agents-platform"}
+      ]
+    },
+    {
+      "name": "debug",
+      "displayName": "Configure, install, and test modular Debug",
+      "steps": [
+        {"type": "configure", "name": "debug"},
+        {"type": "build", "name": "debug-install"},
+        {"type": "test", "name": "debug"}
+      ]
+    },
+    {
+      "name": "debug-static",
+      "displayName": "Configure, install, and test static Debug",
+      "steps": [
+        {"type": "configure", "name": "debug-static"},
+        {"type": "build", "name": "debug-static-install"},
+        {"type": "test", "name": "debug-static"}
+      ]
+    },
+    {
+      "name": "release-package",
+      "displayName": "Configure, build, and package Release (Windows only)",
+      "steps": [
+        {"type": "configure", "name": "release-package"},
+        {"type": "build", "name": "release-build"},
+        {"type": "package", "name": "release-package"}
+      ]
+    }
+  ]
+}

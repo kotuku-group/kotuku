@@ -1,0 +1,289 @@
+-- Incremental repaint tests for the Scintilla class.  Every scenario renders the editor through its normal dirty-region
+-- path, captures the result, then forces a full repaint and requires identical pixels.  Reassigning BkgdColour clears
+-- the whole Bitmap before repainting, so any area that the incremental path failed to repaint is exposed.
+--
+-- Vertical scrolls of up to ten lines shift the Bitmap and repaint only the exposed band (see ScrollText()).
+
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+
+PAGE_WIDTH  = 300
+PAGE_HEIGHT = 120
+LINE_HEIGHT = 13
+TOTAL_LINES = 200
+
+-- A C document with nested braces for folding, and lines of different lengths and token types for styling.
+
+function newDocument(Lines:num):str
+   local parts = array<str> { }
+   for i in {0 to Lines} do
+      choose i % 6 from
+         0 -> parts.push(f'int function_{i}(int value) {{')
+         1 -> parts.push(f'   // Comment for line {i}')
+         2 -> parts.push(f'   if (value > {i}) return "string {i}";')
+         3 -> parts.push('   value += 0x' .. ('f').rep(i % 17))
+         4 -> parts.push('   return value;')
+         _ -> parts.push('}')
+      end
+   end
+   return parts.concat('\n')
+end
+
+-- Path changes such as resizing are detected while the scene is drawn, which queues the editor's repaint.
+
+function render(Scene:obj)
+   check Scene.acDraw()
+   processing.sleep(0)
+   check Scene.acDraw()
+end
+
+function newEditor(Options:table):<obj, obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
+   options.lexer ?= SCLEX_CPP
+   options.lineNumbers ?= true
+   options.foldingMarkers ?= true
+   options.lineHighlight ?= '255,255,255,0'
+   local sci = vp.new('Scintilla', options)
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   sci.string = newDocument(TOTAL_LINES)
+   render(scene)
+   return scene, vp, sci, bmp
+end
+
+-- Pixels are packed so that captures can be compared without retaining ReadRGBPixel() results, which share a buffer.
+
+function capture(Bitmap:obj):array<int>
+   local pixels = array<int> { }
+   for y in {0 to PAGE_HEIGHT} do
+      for x in {0 to PAGE_WIDTH} do
+         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
+         pixels.push((p.red << 16) | (p.green << 8) | p.blue)
+      end
+   end
+   return pixels
+end
+
+function assertSameAsFullRepaint(Sci:obj, Scene:obj, Bitmap:obj, Label:str)
+   render(Scene)
+   local incremental = capture(Bitmap)
+   Sci.bkgdColour = Sci.bkgdColour
+   render(Scene)
+   local full = capture(Bitmap)
+   local differences = 0
+   local first = nil
+   for i in {0 to #full} do
+      if incremental[i] != full[i] then
+         differences++
+         first ?= i
+      end
+   end
+   if first != nil then
+      local x = first % PAGE_WIDTH
+      local y = math.floor(first / PAGE_WIDTH)
+      assert(false, f'{Label}: {differences} pixels differ from a full repaint, first at {x},{y}')
+   end
+end
+
+function scrollToLine(Sci:obj, Line:num)
+   check Sci.mtScrollToPoint(0, Line * LINE_HEIGHT)
+end
+
+function topLine(Sci:obj):num
+   return -Sci.page.y / LINE_HEIGHT
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Scrolling
+
+@Test function ScrollShiftMatchesFullRepaint()
+   local scene <close>, vp, sci, bmp = newEditor()
+   check sci.mtSelectRange(40, 300)
+   local line = 0
+   for _, delta in array<int> { 1, 2, 3, 4, 1, -1, -3, 5, -2, 1, 1, 1 } do
+      line += delta
+      scrollToLine(sci, line)
+      assert(topLine(sci) is line, f'Expected top line {line}, got {topLine(sci)}')
+      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll by {delta} to line {line}')
+   end
+end
+
+-- Several scrolls between renders accumulate in the Bitmap before it is painted.
+
+@Test function ConsecutiveScrollsBeforePaint()
+   local scene <close>, vp, sci, bmp = newEditor()
+   scrollToLine(sci, 10)
+   render(scene)
+   for _, sequence in array<array> { array<int> { 11, 12, 13 }, array<int> { 12, 10, 9 }, array<int> { 14, 12, 18 } } do
+      for _, line in sequence do scrollToLine(sci, line) end
+      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll sequence ending at line {sequence.last()}')
+   end
+end
+
+-- Large scrolls exceed the shift limit and take the full repaint path.
+
+@Test function LargeScrollsRepaintFully()
+   local scene <close>, vp, sci, bmp = newEditor()
+   for _, line in array<int> { 50, 44, 120, 115, 0 } do
+      scrollToLine(sci, line)
+      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll to line {line}')
+   end
+end
+
+-- Edits that are pending when the editor scrolls must be painted at their scrolled positions.
+
+@Test function PendingEditsSurviveScroll()
+   local scene <close>, vp, sci, bmp = newEditor()
+   scrollToLine(sci, 20)
+   render(scene)
+   local cases = array<table> {
+      { line=22, delta=2 }, { line=27, delta=-3 }, { line=21, delta=4 }, { line=29, delta=1 }
+   }
+   for _, case in cases do
+      local _, start = check sci.mtGetPos(case.line, 0)
+      check sci.mtInsertText('/*edit*/', start)
+      scrollToLine(sci, topLine(sci) + case.delta)
+      assertSameAsFullRepaint(sci, scene, bmp, f'Edit on line {case.line} then scroll by {case.delta}')
+   end
+end
+
+@Test function HorizontalScroll()
+   local scene <close>, vp, sci, bmp = newEditor()
+   check sci.mtInsertText(('x').rep(200) .. '\n', 0)
+   render(scene)
+   for _, x in array<int> { 8, 64, 30, 0 } do
+      check sci.mtScrollToPoint(x, 0)
+      assertSameAsFullRepaint(sci, scene, bmp, f'Horizontal scroll to {x}')
+   end
+end
+
+@Test function WrappedScroll()
+   local scene <close>, vp, sci, bmp = newEditor({ wordwrap=true })
+   check sci.mtInsertText(('word ').rep(80) .. '\n', 0)
+   render(scene)
+   for _, line in array<int> { 1, 3, 2, 8, 5 } do
+      scrollToLine(sci, line)
+      assertSameAsFullRepaint(sci, scene, bmp, f'Wrapped scroll to line {line}')
+   end
+end
+
+@Test function DisabledScroll()
+   local scene <close>, vp, sci, bmp = newEditor()
+   check sci.acDisable()
+   for _, line in array<int> { 1, 3, 2 } do
+      scrollToLine(sci, line)
+      assertSameAsFullRepaint(sci, scene, bmp, f'Disabled scroll to line {line}')
+   end
+   check sci.acEnable()
+   scrollToLine(sci, 4)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Scroll after enabling')
+end
+
+@Test function TrueTypeScroll()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=12 })
+   check sci.mtSelectRange(10, 120)
+   -- GotoLine scrolls by the smallest distance that shows the line, i.e. in single lines here.
+   for _, line in array<int> { 12, 13, 15, 14, 2, 1 } do
+      check sci.mtGotoLine(line)
+      assertSameAsFullRepaint(sci, scene, bmp, f'TrueType scroll to line {line}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Dirty regions of edits, selection, margins, folding and resizing
+
+@Test function TextEdits()
+   local scene <close>, vp, sci, bmp = newEditor()
+   check sci.mtInsertText('x', 5)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Insert a character')
+   check sci.mtInsertText('\n', 30)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Insert a line break')
+   check sci.mtDeleteLine(2)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Delete a line')
+   check sci.mtReplaceLine(1, 'replaced line', -1)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Replace a line')
+   check sci.mtInsertText('"unterminated', 0)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Restyle following lines')
+end
+
+@Test function SelectionChanges()
+   local scene <close>, vp, sci, bmp = newEditor()
+   for _, range in array<array> { array<int> { 5, 20 }, array<int> { 10, 140 }, array<int> { 140, 10 },
+         array<int> { 60, 61 }, array<int> { 0, 0 } } do
+      check sci.mtSelectRange(range[0], range[1])
+      assertSameAsFullRepaint(sci, scene, bmp, f'Select {range[0]} to {range[1]}')
+   end
+end
+
+@Test function MarginWidthChange()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument(98)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Two digit line numbers')
+   check sci.mtInsertText('\nline\nline', -1)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Margin widens for three digits')
+   for _ in {0 to 3} do check sci.mtDeleteLine(0) end
+   assertSameAsFullRepaint(sci, scene, bmp, 'Margin narrows for two digits')
+end
+
+@Test function FoldToggle()
+   local scene <close>, vp, sci, bmp = newEditor()
+   check sci.mtToggleFold(0)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Contract a fold')
+   scrollToLine(sci, 2)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Scroll below a contracted fold')
+   check sci.mtToggleFold(0)
+   assertSameAsFullRepaint(sci, scene, bmp, 'Expand a fold')
+end
+
+@Test function HostResize()
+   local scene <close>, vp, sci, bmp = newEditor()
+   scrollToLine(sci, 5)
+   render(scene)
+   for _, size in array<array> { array<int> { 200, 90 }, array<int> { 300, 120 }, array<int> { 250, 107 } } do
+      vp.width = size[0]
+      vp.height = size[1]
+      assertSameAsFullRepaint(sci, scene, bmp, f'Resize to {size[0]}x{size[1]}')
+      scrollToLine(sci, topLine(sci) + 1)
+      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll after resizing to {size[0]}x{size[1]}')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The caret is only drawn while the editor has the focus, which requires a focused surface.  Moving the caret
+-- restarts its blink period of 500ms, so each comparison completes while the caret is visible.
+
+@Test function CaretMovement()
+   local surface <close> = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT, lineNumbers=true,
+      lineHighlight='240,240,255,255' })
+   sci.string = newDocument(TOTAL_LINES)
+   check surface.acShow()
+   check surface.acFocus()
+
+   -- The editor's repaint schedules a redraw of the surface for its next frame, and Surface.acDraw() does nothing while
+   -- that redraw is pending.  Waiting for longer than a frame at the 25 FPS minimum lets the scheduled redraw run.
+
+   function snapshot():array<int>
+      processing.sleep(0)
+      processing.sleep(0.05)
+      check surface.acDraw()
+      local bmp <close> = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+      check mGfx.CopySurface(surface.id, bmp, 0, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, 0, 0)
+      return capture(bmp)
+   end
+
+   snapshot()
+   for _, line in array<int> { 1, 4, 3, 9, 10, 0 } do
+      check sci.mtGotoLine(line)
+      local incremental = snapshot()
+      sci.bkgdColour = sci.bkgdColour
+      local full = snapshot()
+      assert(incremental is full, f'The caret at line {line} must match a full repaint')
+   end
+end

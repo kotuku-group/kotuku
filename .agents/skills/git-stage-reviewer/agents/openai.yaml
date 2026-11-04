@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Stage Reviewer"
+  short_description: "Review file changes in the Git staging area"
+  default_prompt: "Use $git-stage-reviewer when you need to locally review your changes before pushing them to the repository."

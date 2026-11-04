@@ -1,0 +1,452 @@
+@Package(name="gui/window", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   include 'display', 'vector'
+
+   namespace gui
+
+   module display as mGfx
+
+DEFAULT_WIDTH  <const> = gui.rpixel('900dp')
+DEFAULT_HEIGHT <const> = gui.rpixel('600dp')
+
+function surfaceReference(Value)
+   if Value is <table> then return Value.surface end
+   return Value
+end
+
+-- Returns a copy of Theme that includes the fields other code depends on.  Missing fields are taken from Base.
+
+function completeTheme(Theme:table!, Base:table!):table
+   local result = table.clone(Theme)
+   result.scheme ?= Base.scheme
+   result.palette ?= Base.palette
+   result.init ?= Base.init
+   if result.menu and not result.menubar?.menu then
+      result.menubar = table.merge(result.menubar, { menu = result.menu })
+   end
+   return result
+end
+
+-- The host window icon is represented in the desktop taskbar and task switcher.  Icon names in the format
+-- 'category/name' are resolved to the icons: volume, while paths that include a volume are used as-is.
+--
+-- The assignment is isolated in this function because a failing field setter currently overwrites the first local of
+-- the frame that catches the error (see src/tiri/tests/test_setter_error_registers.tiri).
+
+function setDisplayIcon(Display:obj, Icon:str)
+   local path = Icon
+   if not (path.find(':', 0, true) or path.startsWith('/')) then
+      path = f'icons:{path}.svg'
+   end
+
+   try
+      Display.icon = path
+   except ex
+      msg(f'Failed to set window icon "{path}": {ex.message}')
+   end
+end
+
+gui.window = function(Options:table!)
+   self = setmetatable(entity { -- Public interface
+      events       = Options.events ?? { },
+      aspectRatio  = Options.aspectRatio??,
+      maximiseEnabled = Options.maximise??,
+      presence     = Options.presence ?? SPT_HOST,
+      focus        = Options.focus??,
+      title        = Options.title ?? 'Window',
+      icon         = Options.icon,
+      client       = { }, -- Client margins
+      margins      = Options.margins,
+      surface      = nil, -- Client access to the surface is permitted
+      viewport     = nil  -- The window's top-level viewport
+   }, {
+      __gc = function()
+         local surface = &surface
+         &surface = nil
+         surface?.free()
+      end
+   })
+
+   -- Native callbacks acquire the window weakly.  Keep its construction-time quit policy available after collection.
+
+   weak_self <weak> = self
+   quit_on_free <const> = Options.quit is false ? nil : true -- Defaults to true
+   local theme_name:str -- The window's entry in gui.themes, removed when the surface is freed
+
+   -- Use function[] so that function callbacks pass through with the original client context
+
+   self.clientViewport = function[](Options:table):obj
+      if self._clientViewport then return self._clientViewport end
+      Options ?= { }
+      Options.aspectRatio ?= ARF_X_MID | ARF_Y_MID | ARF_MEET
+      Options.{ x = 0, y = 0, xOffset = 0, yOffset = 0 }
+
+      self._clientViewport = self.viewport.new('VectorViewport', Options)
+      return self._clientViewport
+   end
+
+   self.getSize = function()
+      return {
+         x      = &surface.x - &client.left,
+         y      = &surface.y - &client.top,
+         width  = &surface.width + &client.left + &client.right,
+         height = &surface.height + &client.top + &client.bottom
+      }
+   end
+
+   self.getClientSize = function()
+      return {
+         x = &surface.x, y = &surface.y, width = &surface.width, height = &surface.height
+      }
+   end
+
+   -- Resize the window via the client area
+
+   self.resizeClientArea = function(ClientWidth:num, ClientHeight:num)
+      ClientWidth ?= &surface.width
+      ClientHeight ?= &surface.height
+      &surface.acResize(ClientWidth, ClientHeight, 0)
+   end
+
+   -- Changes the size of the position of the window in relation to its parent.  All dimensions refer to the
+   -- border of the window.
+
+   self.resize = function(X:num, Y:num, Width:num, Height:num)
+      Width ?= &surface.width
+      Height ?= &surface.height
+
+      X ?= &surface.x
+      Y ?= &surface.y
+      &surface.acRedimension(X + &client.left, Y + &client.top, 0,
+         Width - &client.left - &client.right,
+         Height - &client.top - &client.bottom, 0)
+   end
+
+   -- Define window sizing limits.
+
+   self.sizeHints = function(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect)
+      if &surface.display.mtSizeHints(MinWidth, MinHeight, MaxWidth, MaxHeight, EnforceAspect) != ERR_Okay then
+         &surface.{ maxWidth = MaxWidth, minWidth = MinWidth, maxHeight = MaxHeight, minHeight = MinHeight }
+      end
+   end
+
+   -- Run the maximise procedure for the window.  The process will take into account the hints provided by the margin
+   -- settings of the parent surface (so if the margins are all set to 10, the window will be maximised to the size of
+   -- the container minus 10 pixels from its edge).
+   --
+   -- If Toggle is true, the window is restored to its original position if the window is already maximised.
+
+   self.maximise = function(Toggle)
+      &maximiseEnabled ?! return
+
+      &events?.maximise()
+
+      -- Send the maximisation request to the display
+      display = obj.find(&surface.display)
+      display.flags = display.flags | SCR_MAXIMISE
+   end
+
+   self.moveToBack = function()
+      &surface.acMoveToBack()
+   end
+
+   self.moveToFront = function()
+      &surface.acMoveToFront()
+   end
+
+   self.parentSize = function():<num, num>
+      err, info = mGfx.GetDisplayInfo(&surface.display)
+      return info.monitorWidth, info.monitorHeight
+   end
+
+   self.show = function(Centre:bool)
+      if Centre then
+         x, y = (function()
+            if &surface.popOver then
+               err, x, y, powidth, poheight = [*__*]mGfx.GetSurfaceCoords(&surface.popOver)
+               if err is ERR_Okay then
+                  x += ((powidth - &surface.width) / 2)
+                  y += ((poheight - &surface.height) / 2)
+                  err, px, py = [*__**__]mGfx.GetSurfaceCoords(&surface.parent)
+                  if err is ERR_Okay then
+                     return x - px, y - py
+                  end
+               end
+            elseif &surface.parent then
+               err, vx, vy, vwidth, vheight = [***__**]mGfx.GetVisibleArea(&surface.parent)
+               if err is ERR_Okay then
+                  x = vx + ((vwidth - &surface.width) / 2)
+                  y = vy + ((vheight - &surface.height) / 2)
+                  --check_overlap(&&, x, y, 0, 0)
+                  return x, y
+               end
+            else
+               err, info = mGfx.GetDisplayInfo(&surface.display)
+               if err is ERR_Okay then
+                  return (info.monitorWidth - &surface.width) / 2, (info.monitorHeight - &surface.height) / 2
+               end
+            end
+         end)()
+
+         if x and y then
+            err, info = mGfx.GetDisplayInfo(&surface.display)
+            if err is ERR_Okay then
+               err, l_frame, t_frame, r_frame, b_frame = &surface.display.mtGetFrame(0)
+
+               if y - t_frame < info.virtualY then y = info.virtualY + t_frame end
+               if x - l_frame < info.virtualX then x = info.virtualX + l_frame end
+               if x + l_frame + r_frame + &surface.width > info.virtualX + info.virtualWidth then x = info.virtualX + info.virtualWidth - &surface.width - l_frame - r_frame end
+               if y + t_frame + b_frame + &surface.height > info.virtualY + info.virtualHeight then y = info.virtualY + info.virtualHeight - &surface.height - t_frame - b_frame end
+            end
+            &surface.acMoveToPoint(x, y, 0, MTF_X|MTF_Y)
+         end
+      end
+
+      &visible = true
+      &surface.acShow()
+      if &surface.flags has RNF_HAS_FOCUS then
+         &surface.acFocus()
+      end
+
+      &events?.show()
+   end
+
+   self.hide = function()
+      &visible = false
+      &surface.acHide()
+      &events?.hide()
+   end
+
+   self.setTitle = function(Title:str!)
+      &surface.display.title = Title
+      &title = Title
+   end
+
+   -- Replace the window's theme with a complete theme table.  Registered widgets restyle in place, on a best-case
+   -- basis.  If Rebuild is true and the client provided events.rebuild, the client is called to rebuild its widgets
+   -- instead.
+
+   self.setTheme = function(Theme:table!, Rebuild:bool)
+      local installed = completeTheme(Theme, &theme)
+      gui.themes[&_themeName] = installed
+      &theme = installed
+      installed.init?(&scene)
+
+      if installed.window?.bkgd is <table> then gui.applyStyle(&bkgd, installed.window.bkgd) end
+      if &_tabPingRing then gui.applyStyle(&_tabPingRing, installed.window?.tabPing) end
+
+      if Rebuild and &events.rebuild then
+         &events.rebuild(&&, installed)
+      else
+         if Rebuild then msg('Rebuild requested without an events.rebuild callback; restyling in place.') end
+         gui.broadcastTheme(&scene, installed)
+      end
+
+      &viewport.acDraw()
+   end
+
+   -- Main entry point --
+
+   using self do
+      &_desktop = obj.find('desktop')
+
+      surface_opts = {
+         name      = 'winsurface',
+         parent    = surfaceReference(Options.parent) ?? &_desktop,
+         width     = Options.insideWidth ?? Options.width ?? DEFAULT_WIDTH,
+         height    = Options.insideHeight ?? Options.height ?? DEFAULT_HEIGHT,
+         type      = RT_ROOT,
+         modal     = Options.modal ?? false,
+         popOver   = surfaceReference(Options.popOver),
+         presence  = Options.presence, -- SPT HOST/NONE/TASKBAR/ICON_TRAY
+         flags = (function()
+            local flags = 0
+            if Options.composite then
+               flags = flags | RNF_COMPOSITE
+            end
+            if Options.aspectRatio then
+               flags = flags | RNF_ASPECT_RATIO
+            end
+            if Options.stickToFront then
+               flags = flags | RNF_STICK_TO_FRONT
+            end
+            return flags
+         end)()
+      }
+
+      if Options.aspectRatio then
+         -- The host derives the aspect ratio from the minimum size, so a minimum that is not fully specified takes the
+         -- window's proportions.  It defaults to a quarter of the window's size.
+
+         ratio = surface_opts.width / surface_opts.height
+         if Options.minWidth and Options.minHeight then
+            surface_opts.minWidth  = Options.minWidth
+            surface_opts.minHeight = Options.minHeight
+         elseif Options.minWidth then
+            surface_opts.minWidth  = Options.minWidth
+            surface_opts.minHeight = math.round(Options.minWidth / ratio)
+         elseif Options.minHeight then
+            surface_opts.minWidth  = math.round(Options.minHeight * ratio)
+            surface_opts.minHeight = Options.minHeight
+         else
+            surface_opts.minWidth  = math.round(surface_opts.width / 4)
+            surface_opts.minHeight = math.round(surface_opts.height / 4)
+         end
+      else
+         surface_opts.minWidth  = Options.minWidth or 20
+         surface_opts.minHeight = Options.minHeight or 10
+      end
+
+      if Options.maxWidth  then surface_opts.maxWidth  = Options.maxWidth end
+      if Options.maxHeight then surface_opts.maxHeight = Options.maxHeight end
+
+      &surface = obj.new('surface', surface_opts)
+
+      if Options.enableControllers then
+         &surface.display.flags = &surface.display.flags | SCR_GRAB_CONTROLLERS
+      end
+
+      parent_width, parent_height = &parentSize()
+      &surface.x = Options.x ?? ((parent_width - &surface.width) * 0.1)
+      &surface.y = Options.y ?? ((parent_height - &surface.height) * 0.1)
+
+      if (&surface.minWidth is &surface.maxWidth) and (&surface.minHeight is &surface.maxHeight) then
+         &maximiseEnabled = false
+      end
+
+      -- The margins are the recommended gap in addition to the client area.  The client
+      -- area denotes the space afforded by the window frame.
+
+      if Options.noMargins or Options.borderless then
+         &margins = { left = 0, top = 0, right = 0, bottom = 0 }
+         &client = { left = 0, top = 0, right = 0, bottom = 0 }
+      else
+         &margins = { left = gui.sizing.window.gap, top = gui.sizing.window.gap, right = gui.sizing.window.gap, bottom = gui.sizing.window.gap }
+
+         -- Retrieve the available client area from the host
+         local display = &surface.display
+         &client = {
+            left   = display.leftMargin,
+            top    = display.topMargin,
+            right  = display.rightMargin,
+            bottom = display.bottomMargin
+         }
+
+         if Options.width and not Options.insideWidth then
+            &surface.width = Options.width - &client.left - &client.right
+         end
+
+         if Options.height and not Options.insideHeight then
+            &surface.height = Options.height - &client.top - &client.bottom
+         end
+      end
+
+      -- Drops are routed only to viewports that register with dropTarget, such as views created with dragDrop=true.
+
+      &scene = &surface.new('VectorScene', {
+         flags = Options.dragDrop ? VPF_RESIZE|VPF_DROP_TARGETS : VPF_RESIZE, surface = &surface
+      })
+
+      -- The scene is given a theme name of its own, so that setTheme() and Options.theme affect only this window and
+      -- the popups that it opens.  Assigning the base theme first loads a custom theme or falls back to light.
+
+      &theme = gui.setTheme(&scene, Options.themeName ?? gui.theme)
+      if Options.theme then
+         &theme = completeTheme(table.merge(&theme, Options.theme, true, true), &theme)
+         if Options.theme.menu and &theme.menubar and not Options.theme.menubar?.menu then
+            &theme.menubar.menu = &theme.menu -- Restore the alias that the deep merge separated
+         end
+      end
+
+      &_themeName = f'window-{&scene.id}'
+      theme_name = &_themeName
+      gui.themes[&_themeName] = &theme -- Without Options.theme this is an alias of the base theme; no copy is made
+      &scene.state().theme = &_themeName -- The scene was already initialised with the base theme
+
+      gui.configureScene(&&, &scene) -- Support GUI customisation
+
+      &viewport = &scene.new('VectorViewport', {
+         x = 0, y = 0, width = '100%', height = '100%', aspectRatio = ARF_X_MID|ARF_Y_MID|ARF_MEET
+      })
+
+      &bkgd = &viewport.new('VectorRectangle', table.merge({
+         x = 0, y = 0, width = '100%', height = '100%'
+      }, &theme.window.bkgd))
+
+      &surface.display.title = &title
+
+      if &icon then setDisplayIcon(&surface.display, &icon) end
+
+      if &surface.popOver != 0 then
+         -- If a pop-over surface is stick-to-front, we also need that status to avoid being behind it.
+
+         info = struct.new('SurfaceInfo')
+         if mGfx.GetSurfaceInfo(&surface.popOver, info) is ERR_Okay then
+            if info.flags has RNF_STICK_TO_FRONT then
+               &surface.flags = &surface.flags | RNF_STICK_TO_FRONT
+            end
+         end
+      end
+   end -- using self
+
+   -- Weak bindings activate the window while dispatching events without retaining it.
+
+   if self.events.lostFocus or self.events.focus then
+      function[<weak> self] focusFeedback(Viewport, Event)
+         if Event is FM_LOST_FOCUS then
+            &events?.lostFocus()
+         elseif not &disabled then
+            &events?.focus()
+         end
+      end
+      self.viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, focusFeedback)
+   end
+
+   if self.events.close then
+      function[<weak> self] closeFeedback()
+         if &events?.close() then
+            msg('Client requested that the window stay open.')
+            raise ERR_Cancelled
+         end
+         processing.collect('defer')
+      end
+      mGfx.WindowHook(self.surface.id, WH_CLOSE, closeFeedback)
+   end
+
+   function[<weak> self] surfaceFocus(Surface, Args)
+      Surface.acMoveToFront()
+      if &visible and not (Surface.flags has RNF_VISIBLE) then
+         Surface.acShow()
+      end
+
+      &events?.focus()
+   end
+
+   self.surface.subscribe('focus', surfaceFocus)
+
+   if self.events.lostFocus then
+      function[<weak> self] surfaceLostFocus(Surface, Args)
+         &events?.lostFocus()
+      end
+      self.surface.subscribe('lostfocus', surfaceLostFocus)
+   end
+
+   function[] surfaceFree(Surface, Args)
+      if quit_on_free then
+         mSys.SendMessage(MSGID_QUIT)
+      end
+
+      if theme_name then gui.themes[theme_name] = nil end
+      weak_self?.clear()
+   end
+
+   self.surface.subscribe('free', surfaceFree)
+
+   return self
+end

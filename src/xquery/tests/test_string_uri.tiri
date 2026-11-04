@@ -45,7 +45,7 @@ end
    assert(nfcValue is 'café', "normalize-unicode NFC form should preserve composed characters")
 
    err, nfdValue = xml.mtEvaluate("normalize-unicode('café','NFD')")
-   assert(nfdValue:sub(0, 3) is 'caf', "normalize-unicode NFD form should begin with the original prefix")
+   assert(nfdValue.sub(0, 3) is 'caf', "normalize-unicode NFD form should begin with the original prefix")
 
    err, iriValue = xml.mtEvaluate("iri-to-uri('https://example.com/é')")
    assert(iriValue is 'https://example.com/%C3%A9', "iri-to-uri should percent encode non ASCII characters")

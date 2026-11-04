@@ -1,0 +1,421 @@
+-- Empty function bindings and entity member dispatch.
+
+module core as mCore
+
+@Test function ArgumentAndBodyContext()
+   local caller = entity { name='caller' }
+   local target = entity { name='target' }
+   function[] target.read(Argument):<table, table>
+      return Argument, &&
+   end
+   function target.contextual(Argument):<table, table>
+      return Argument, &&
+   end
+
+   using caller do
+      local argument:any, body:any = target.read(&&)
+      assert(argument is caller and body is caller, 'Ordinary arguments and body must inherit the caller')
+      local argument:any, body:any = target.contextual(&&)
+      assert(argument is caller and body is target,
+         'Unannotated calls must read arguments in the caller and run the body in the entity')
+      local key = 'read'
+      local argument:any, body:any = target[key](&&)
+      assert(argument is caller and body is caller, 'Computed calls must inherit the caller')
+      local argument:any, body:any = (target.read)(&&)
+      assert(argument is caller and body is caller, 'Parenthesised member calls must inherit the caller')
+      local argument:any, body:any = target?.read(&&)
+      assert(argument is caller and body is caller, 'Safe calls must inherit the caller')
+      local alias = target.read
+      local argument:any, body:any = alias(&&)
+      assert(argument is caller and body is caller, 'Direct calls must keep the caller context')
+   end
+   local root = &&
+   local argument:any, body:any = target.read(&&)
+   assert(argument is root and body is root, 'Root callers must also be inherited')
+   assert(&& is root, 'Calls must restore root context')
+end
+
+@Test function AliasesReplacementAndInheritance()
+   local caller = entity { name='caller' }
+   local first = entity { name='first' }
+   local second = entity { name='second' }
+   first.read = function[]():table return && end
+   second.alias = first.read
+   local inherited = setmetatable(entity { }, { __index=first })
+   using caller do
+      assert(second.alias() is caller, 'The policy must follow aliases to other entities')
+      assert(inherited.read() is caller, 'Inherited functions must keep the policy')
+      first.read = function():table return && end
+      assert(first.read() is first, 'Replacing the function must restore entity dispatch')
+      assert(second.alias() is caller, 'Replacing another member must leave the alias policy intact')
+      local plain = { read=first.read }
+      assert(plain.read() is caller, 'An ordinary table must inherit context even for unannotated functions')
+   end
+end
+
+@Test function NestedFunctionsAndExplicitContexts()
+   local caller = entity { }
+   local owner = entity { }
+   local explicit = entity { }
+   local function[] make_function():func
+      return function():table return && end
+   end
+   owner.read = function[]():<table, table>
+      local inner
+      using explicit do inner = && end
+      return inner, &&
+   end
+   owner.nested = make_function()
+   using caller do
+      local inner:any, restored:any = owner.read()
+      assert(inner is explicit and restored is caller, 'Explicit using must override and restore ordinary context')
+      assert(owner.nested() is owner, 'Nested functions must not inherit the binding policy')
+   end
+   -- An entity caller supplies dynamic context; the ordinary callee does not capture its creation context.
+   function[] owner.identity():table return && end
+   function caller.call():table return owner.identity() end
+   assert(caller.call() is caller, 'Tail calls must retain the active entity caller')
+end
+
+@Test function SafeCallsAndLookupOrder()
+   local caller = entity { }
+   local owner = entity { }
+   local order = ''
+   local function[] read(Value):num return Value end
+   setmetatable(owner, { __index=function(Key)
+      order ..= 'k'
+      return read
+   end })
+   function receiver():table order ..= 'r'; return owner end
+   function key():str order ..= 'i'; return 'read' end
+   function argument():num
+      assert(&& is caller, 'Arguments must observe context after ordinary callable lookup')
+      order ..= 'a'
+      return 9
+   end
+   using caller do
+      assert(receiver()[key()](argument()) is 9)
+      assert(order is 'rika', 'Receiver, key and callable lookup must each execute once before arguments')
+      local missing:any = nil
+      assert(missing?.read(argument()) is nil)
+      assert(order is 'rika', 'Safe nil receivers must skip arguments')
+      local empty = entity { }
+      assert(empty?.read(argument()) is nil)
+      assert(order is 'rika', 'Safe missing callables must skip arguments')
+   end
+end
+
+@Test function ResultsVarargsPipesAndCleanup()
+   local caller = entity { }
+   local owner = entity { }
+   local cleaned = 0
+   function[] owner.read(...):<any, ...>
+      assert(&& is caller, 'Ordinary varargs must inherit caller context')
+      defer
+         assert(&& is caller, 'Deferred cleanup must inherit caller context')
+         cleaned++
+      end
+      return ...
+   end
+   using caller do
+      local first:any, second:any, third:any = owner.read(1, 2, 3)
+      assert(first is 1 and second is 2 and third is 3, 'Multiple results must compact correctly')
+      owner.read()
+      local first:any, second:any = owner.read(owner.read(4, 5))
+      assert(first is 4 and second is 5, 'Forwarded multiple arguments must remain intact')
+      assert(&& |> owner.read() is caller, 'Piped operands must inherit caller context')
+      assert(&& |> owner['read']() is caller, 'Computed pipes must inherit caller context')
+      assert(&& |> owner?.read() is caller, 'Safe pipes must inherit caller context')
+   end
+   assert(cleaned is 7, 'Every ordinary activation must execute its cleanup')
+end
+
+@Test function ErrorsRestoreCallerContext()
+   local root = &&
+   local caller = entity { }
+   local target = entity { }
+   function[] target.fail(Value)
+      assert(&& is caller, 'An ordinary body must see the caller before raising')
+      raise 'ordinary failure'
+   end
+   function bad_argument()
+      assert(&& is caller, 'An ordinary argument must see the caller before raising')
+      raise 'argument failure'
+   end
+   using caller do
+      local failures = 0
+      try
+         target.fail(1)
+      except e
+         failures++
+      end
+      assert(&& is caller, 'Body errors must restore the caller')
+      try
+         target.fail(bad_argument())
+      except e
+         failures++
+      end
+      assert(&& is caller, 'Argument errors must restore the caller')
+      assert(failures is 2)
+   end
+   assert(&& is root, 'Exception unwinding must restore root context')
+end
+
+@Test function CompilerMetadataAndDiagnostics()
+   function[] ordinary_only():table return && end
+   assert(debug.anno.get(ordinary_only) is nil, 'Ordinary-only functions must not enter the annotation registry')
+   @Example
+   function[] mixed():table return && end
+   local entry = debug.anno.get(mixed)
+   assert(#entry.annotations is 1 and entry.annotations[0].name is 'Example',
+      'Mixed annotations must register only runtime metadata')
+   local assigned = entity { }
+   @Example
+   assigned.read = function[]():table return && end
+   local assignment_entry = debug.anno.get(assigned.read)
+   assert(#assignment_entry.annotations is 1 and assignment_entry.annotations[0].name is 'Example',
+      'Annotated function assignments must register only the other annotations')
+   local owner = entity { read=ordinary_only }
+   local caller = entity { }
+   using caller do
+      debug.anno.set(ordinary_only, '@Example', '<runtime>', 'ordinary_only')
+      assert(owner.read() is caller, 'Runtime metadata changes must not disable the policy')
+      owner.read = function():table return && end
+      debug.anno.set(owner.read, '@Example', '<runtime>', 'read')
+      assert(owner.read() is owner, 'Runtime annotation metadata must not enable the policy')
+   end
+   local result = debug.validate('function[] sample() end', { symbols=true })
+   assert(result.success and #result.symbols[0].annotations is 0,
+      'Empty bindings must not appear as runtime annotations')
+   for source in values({
+      'function[] sample() end',
+      'local function[] sample() end',
+      'global function[] glOrdinarySample() end',
+      'global glOrdinarySample = function[]() end',
+      'local sample = function[]() end',
+      "local t = {}; t['sample'] = function[]() end"
+   }) do
+      assert(debug.validate(source).success, 'Supported empty-binding declarations must parse')
+   end
+   for source in values({
+      'function[][] sample() end',
+      'thunk[] sample() return 1 end',
+      'local f = thunk[]() return 1 end',
+      'function sample[]() end'
+   }) do
+      local invalid = debug.validate(source)
+      assert(not invalid.success and #invalid.diagnostics > 0, 'Invalid binding syntax must be diagnosed')
+      assert(invalid.diagnostics[0].line > 0, 'Diagnostics must carry source locations')
+   end
+end
+
+@Test function BytecodeRoundTrips()
+   function factory():table
+      local owner = entity { name='restored' }
+      owner.read = function[](Value):<table, any> return &&, Value end
+      function owner.contextual():table return && end
+      return owner
+   end
+   local caller = entity { }
+   for stripped in values({ false, true }) do
+      local restored:table = exec(string.dump(factory, stripped))
+      using caller do
+         local context:any, value:any = restored.read(42)
+         assert(context is caller and value is 42, 'Reloaded ordinary functions must preserve policy and results')
+         assert(restored.contextual() is restored, 'Reloaded unannotated functions must preserve entity dispatch')
+      end
+   end
+end
+
+@Test function EmptyBindingDoesNotRetainOwner()
+   function make_weak():table
+      local owner = entity { name='restored' }
+      owner.read = function[]():table return owner end
+      return setmetatable({ owner=owner, callback=owner.read }, { __mode='v' })
+   end
+   local weak = make_weak()
+   processing.collect()
+   processing.collect()
+   assert(weak.owner is nil and weak.callback is nil, 'Empty binding metadata must not root a captured owner')
+end
+
+@Test function JITCalleeReplacementChangesBodyContext()
+   local caller = entity { name='caller' }
+   local owner = entity { name='owner' }
+   local function[] ordinary(Argument):<table, table> return Argument, && end
+   local function contextual(Argument):<table, table> return Argument, && end
+   owner.read = ordinary
+   function workload(Count:num):num
+      local sum = 0
+      using caller do
+         for i in {0 to Count} do
+            if i is 64 then owner.read = contextual end
+            if i is 128 then owner.read = ordinary end
+            local argument:any, body:any = owner.read(&&)
+            local expected = (i >= 64 and i < 128) and owner or caller
+            assert(argument is caller and body is expected,
+               f'Hot replacements must change the body context while arguments read the caller (iteration {i})')
+            assert(&& is caller, 'Hot ordinary/contextual calls must restore their caller')
+            sum += i
+         end
+      end
+      return sum
+   end
+   jit.off()
+   local interpreted = workload(192)
+   owner.read = ordinary
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local exits = 0
+   local function trace_exit() exits++ end
+   jit.attach(trace_exit, 'texit')
+   local recorded = workload(192)
+   jit.attach(trace_exit)
+   jit.off()
+   local traces = 0
+   for number in {1 into 100} do
+      if jit.util.traceInfo(number) != nil then traces++ end
+   end
+   jit.opt.start()
+   assert(recorded is interpreted and traces > 0 and exits > 0,
+      'Ordinary dispatch must execute compiled traces with matching results')
+end
+
+@Test function ComputedDeclarationsAndBuiltins()
+   local owner = entity { }
+   local key = 'read'
+   owner[key] = function[]():table return && end
+   @ordinary
+   owner.lowercase = function():table return && end
+   owner['insert'] = function[]():table return && end
+   local caller = entity { }
+   using caller do
+      assert(owner[key]() is caller, 'Computed empty-binding assignments must carry policy')
+      assert(owner.lowercase() is owner, 'Runtime annotations must not change dispatch policy')
+      assert((owner.insert)() is caller, 'Parentheses must allow ordinary calls to fields named like builtins')
+      owner.insert('element')
+      assert(owner[0] is 'element', 'Builtin method precedence must remain unchanged')
+      local missing:any = nil
+      assert(missing?[key](raise('must short circuit')) is nil, 'Safe computed calls must skip missing receivers')
+      assert(owner?[key]() is caller, 'Safe computed calls must inherit caller context')
+   end
+end
+
+@Test function MetamethodAndFinaliserDispatch()
+   local caller = entity { name='caller' }
+   local observed = { }
+   local function[] record_context():table
+      observed[#observed] = &name
+      return &&
+   end
+   local owner = setmetatable(entity { name='owner', __gc=record_context }, {
+      __call=record_context, __close=record_context, __gc=record_context
+   })
+   using caller do
+      assert(owner.__gc() is caller, 'Direct __gc member calls must follow ordinary policy')
+      assert(owner() is owner, 'Runtime __call dispatch must install its receiver context')
+      do
+         local resource <close> = owner
+      end
+      assert(observed[2] is 'owner', 'Runtime close dispatch must install its receiver context')
+   end
+   owner = nil
+   processing.collect()
+   processing.collect()
+   assert(observed[3] is 'owner', 'Finaliser dispatch must install the finalised object context')
+end
+
+@Test function NativeCallbacksCaptureCaller()
+   local caller = entity { name='client' }
+   local owner = entity { name='owner' }
+   local timer
+   local observed
+   owner.register = function[]()
+      local err
+      err, timer = mCore.SubscribeTimer(0.01, function()
+         observed = &&
+         processing.signal()
+      end)
+      check err
+   end
+   defer
+      if timer then check mCore.UpdateTimer(timer, 0) end
+   end
+   using caller do owner.register() end
+   check processing.sleep(1.0)
+   assert(observed is caller, 'Native callback registration must capture the ordinary helper caller')
+   assert(&name is nil, 'Native dispatch must restore root context')
+end
+
+@Test function RecursionTailCallsAndStackGrowth()
+   local caller = entity { name='caller' }
+   local owner = entity { name='owner' }
+   function[] owner.recurse(Depth:num):table
+      assert(&& is caller, 'Recursive ordinary activations must inherit caller context')
+      if Depth <= 0 then return && end
+      local result = owner.recurse(Depth - 1)
+      assert(&& is caller, 'Stack growth and normal returns must preserve caller context')
+      return result
+   end
+   function[] owner.tail(Depth:num):table
+      if Depth <= 0 then return && end
+      return owner.tail(Depth - 1)
+   end
+   function caller.forward(Depth:num):table return owner.tail(Depth) end
+   using caller do
+      assert(owner.recurse(160) is caller, 'Stack growth must keep the inherited caller')
+      assert(owner.tail(300) is caller, 'Ordinary tail recursion must preserve dynamic caller context')
+   end
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   for _ in {0 to 96} do
+      assert(caller.forward(8) is caller, 'Hot contextual-to-ordinary tail calls must preserve caller context')
+   end
+   jit.off()
+   jit.opt.start()
+   assert(&name is nil, 'Tail completion must restore root context')
+end
+
+@Test function JITOrdinaryNativeCallbackRunsAtRoot()
+   local caller = entity { name='client' }
+   local helper = entity { name='helper' }
+   local timer
+   local observed
+   local function[] callback()
+      observed = &&
+      processing.signal()
+   end
+   helper.register = function[]()
+      local err
+      err, timer = mCore.SubscribeTimer(0.01, callback)
+      check err
+   end
+   function caller.run(Count:num):num
+      local sum = 0
+      for i in {0 to Count} do
+         assert(&& is caller, 'The hot caller must retain its entity context')
+         sum += i
+      end
+      helper.register()
+      return sum
+   end
+   defer
+      if timer then check mCore.UpdateTimer(timer, 0) end
+      jit.off()
+      jit.opt.start()
+   end
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   assert(caller.run(96) is 4560)
+   check processing.sleep(1.0)
+   assert(observed is _G, 'An ordinary native callback must run at the root after hot helper dispatch')
+   local traces = 0
+   for number in {1 into 100} do
+      if jit.util.traceInfo(number) != nil then traces++ end
+   end
+   assert(traces > 0, 'The native-boundary workload must compile traces')
+   assert(&name is nil, 'Native callbacks after hot ordinary dispatch must restore root context')
+end

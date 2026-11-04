@@ -1,0 +1,17 @@
+-- Linux fixture denies scoped multicast socket metadata without changing ordinary UDP sockets.
+   import './webchannel_support'
+
+@Test function RegistrationFailureNeverExposesNumericFallback()
+   local callbacks = 0
+   local peer <close> = obj.new('peerconnection', {
+      onIceCandidate=function(Peer, Candidate) callbacks += 1 end
+   })
+   check peer.mtCreateOffer()
+   channelTest.waitFor(function() return peer.gatheringState is RTCGATHER_COMPLETE end, 2)
+   assert(peer.state is RTCS_FAILED and peer.error is ERR_Timeout, 'Unavailable multicast did not finish explicitly')
+   assert(callbacks is 0 and not peer.localDescription.find('candidate:'), 'Numeric fallback escaped privacy policy')
+   local numeric <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   check numeric.mtCreateOffer()
+   assert(numeric.localDescription.find('typ host') and not numeric.localDescription.find('.local'),
+      'Explicit numeric policy failed when multicast was unavailable')
+end

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "name": "ai/openai",
+  "version": "1.0",
+  "description": "Bounded OpenAI Responses client with HTTP and WebSocket streaming, structured output, custom tools and Sign in with ChatGPT.",
+  "entry": "openai.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-OpenAI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "ai",
+    "chatgpt",
+    "oauth2",
+    "openai",
+    "responses"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "json": "1.0",
+    "net/oauth2": "1.0",
+    "net/url": "1.0"
+  },
+  "files": [
+    {
+      "path": "bounded_json.tiri",
+      "size": 5270,
+      "sha256": "3830dfd2d9aaf92a668432d9749bbd405dba62136033d0bfb916d9e22448b0b7",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "chatgpt/chatgpt.tiri",
+      "size": 27733,
+      "sha256": "b574461fab99f9c975a266013504cd085239913ea80c56fed36836dbe81e713a",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "chatgpt/policy.tiri",
+      "size": 7611,
+      "sha256": "caa609c8eed86c636306c4aed8d1cf53af8c75e8bda7d2cdd35f1fbe35211d5c",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "chatgpt/storage.tiri",
+      "size": 5463,
+      "sha256": "dc996e9b9bb1afbc8c31b6fac8e5eccebbc8b23933c197c58bcd061e1204d90d",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "openai.tiri",
+      "size": 28210,
+      "sha256": "891932ea17ab8091334f0baa496c7cb18c1b60ec71be29e97edb6b0e01e88d56",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "responses.tiri",
+      "size": 32069,
+      "sha256": "dd5f35ccebee2db4fa31062515db25adf407eb7a83bebb054d3c926ca75556de",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "sse.tiri",
+      "size": 5584,
+      "sha256": "4d9cd55be68eeefe8e0aa0cfa780b202f69dfca20f9fd148dbffb8cf5ac796c4",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "stream.tiri",
+      "size": 24996,
+      "sha256": "bb07c5db879027ffdbe042cd285c272d792ada903ad522d2bf28b36c3cf09785",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ],
+  "exports": [
+    {
+      "ai/openai": "openai.tiri"
+    },
+    {
+      "ai/chatgpt": "chatgpt/chatgpt.tiri"
+    }
+  ]
+}

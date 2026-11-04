@@ -7,14 +7,19 @@
     <type>class</type>
     <module>Scintilla</module>
     <comment>Provides advanced text display and editing facilities.</comment>
-    <fileExtension>*.txt|*.text</fileExtension>
+    <fileExtension>txt|text</fileExtension>
     <version>1</version>
-    <id>3f218968</id>
+    <id>9780a38c</id>
     <idstring>SCINTILLA</idstring>
     <category>Tool</category>
-    <copyright>Paul Manias © 2005-2025</copyright>
+    <copyright>Paul Manias © 2005-2026</copyright>
     <description>
-<p>The Scintilla class provides advanced text editing capabilities that are suitable for modifying text files of any kind, as well as simple user input features for text input boxes.  The code is based on the Scintilla project at http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its capabilities.</p></description>
+<p>The Scintilla class provides advanced text editing capabilities that are suitable for modifying text files of any kind, as well as simple user input features for text input boxes.  The code is based on the Scintilla project at http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its capabilities.</p>
+<p>Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and Select All.  Items are disabled when they cannot be used: edits require <code>SCIF::EDIT</code>, Cut, Copy and Delete require a selection, and Paste requires text on the clipboard.  The menu is displayed with <code>gui/menu</code> at the pointer position, including over a transformed or scrolled host.  Closing the menu with Escape or by choosing an item returns the focus to the editor, while moving the focus elsewhere closes it without doing so.</p>
+<p>Code assistance is provided through a completion list and a call tip, which the client opens with <method>ShowCompletions</method> and <method>ShowCallTip</method>.  The <fl>CompletionCallback</fl> reports the events that typically prompt them, such as typed characters and Ctrl+Space, as well as accepted and cancelled completions.  Only one of the two pop-ups is open at a time.  They are drawn above the content of the scene with the editor's font and colours, are positioned at the text that they refer to, and are kept within the bounds of the scene.  They follow that text when the editor scrolls, and close if it scrolls out of view.  Pop-ups are not transformed with a rotated or scaled host, although their position follows it.  Refer to <method>ShowCompletions</method> for the keyboard and pointer interaction.</p>
+<p>Drag and drop requires the hosting <class name="VectorScene">VectorScene</class> to have <code>VPF::DROP_TARGETS</code> set.  The editor registers its visible <fl>View</fl> as a drop destination.  File paths are reported through <fl>FileDrop</fl>.  Text drops insert at the pointer's document position, preserve existing text, convert line endings to the document mode and require <code>SCIF::EDIT</code>.</p>
+<p>Dragging selected text within or between editors moves it by default, while Ctrl copies it.  Source text is removed only after an editor commits the insertion; dropping onto another kind of widget exports a copy.  Native outbound dragging and X11 XDND inbound transport depend on Display support and are separate from these internal operations.</p>
+<p>On X11, selecting text publishes it as the primary selection.  The middle mouse button inserts the primary selection at that position as one undo action, with document line-ending conversion and read-only enforcement.</p></description>
     <source>
       <file>class_scintilla.cxx</file>
     </source>
@@ -25,66 +30,93 @@
       <name>Clear</name>
       <comment>Clears all content from the editor.</comment>
       <prototype>ERR acClear(*Object)</prototype>
+      <tiriPrototype>err = Object.acClear()</tiriPrototype>
     </action>
 
     <action>
       <name>Clipboard</name>
-      <comment>Full support for clipboard activity is provided through this action.</comment>
-      <prototype>ERR acClipboard(*Object, OBJECTID Clipboard, CLIPMODE Mode)</prototype>
+      <comment>Cut, copy and paste text through the system clipboard.</comment>
+      <prototype>ERR acClipboard(*Object, CLIPMODE Mode)</prototype>
+      <tiriPrototype>err = Object.acClipboard(Mode:CLIPMODE)</tiriPrototype>
       <input>
         <param type="CLIPMODE" name="Mode" lookup="CLIPMODE">The mode that will be used to shift data between the target object and clipboard system.</param>
       </input>
+      <description>
+<p>The Clipboard action provides the same cut, copy and paste operations as the editor's key bindings (Ctrl+X, Ctrl+C, Ctrl+V, Shift+Del, Ctrl+Ins and Shift+Ins).  Text is exchanged as UTF-8 through the <class name="Clipboard">Clipboard</class> class.  The editor also binds Ctrl+L to cut the lines that the selection touches, and Ctrl+Shift+T to copy the current line.</p>
+<p><code>CLIPMODE::COPY</code> copies the selection.  <code>CLIPMODE::CUT</code> copies the selection and deletes it, but only once the clipboard has accepted the text.  Nothing is copied if the selection is empty.  A rectangular selection is copied with a line ending after each row, and is pasted as a rectangle when it is pasted into a Scintilla editor in the same process.</p>
+<p>The clipboard carries plain text without a rectangular marker, so the editor recognises a rectangular clip by comparing the pasted text with the most recent rectangular copy in the process.  Consequently, identical text that is later copied from another source is also pasted as a rectangle, and a rectangular copy from another process or application is pasted as ordinary text.</p>
+<p><code>CLIPMODE::PASTE</code> replaces the selection with the most recent text on the clipboard, as a single undo action.  Line endings are converted to the document's line ending mode.</p>
+<p>If <fl>Flags</fl> does not include <code>SCIF::EDIT</code>, cut and paste are refused with <code>ERR::ReadOnly</code> and reported as <code>SEF::FAIL_RO</code>.  If the clipboard cannot be read or written, the error is logged and reported as <code>SEF::FAIL_CLIPBOARD</code>.</p>
+      </description>
+      <result>
+        <error code="Okay">The operation completed, or there was nothing to copy.</error>
+        <error code="Args">The Mode is not supported.</error>
+        <error code="NoData">The clipboard holds no text to paste.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="ReadOnly">The document is not editable.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </action>
 
     <action>
       <name>Disable</name>
-      <comment>Disables the target <fl>Surface</fl>.</comment>
+      <comment>Disables user interaction with the editor.</comment>
       <prototype>ERR acDisable(*Object)</prototype>
+      <tiriPrototype>err = Object.acDisable()</tiriPrototype>
     </action>
 
     <action>
       <name>Draw</name>
-      <comment>Draws the Scintilla object's graphics.</comment>
+      <comment>Redraws the editor content.</comment>
       <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
       <input>
         <param type="INT" name="X">The X position of the region to be drawn.</param>
         <param type="INT" name="Y">The Y position of the region to be drawn.</param>
         <param type="INT" name="Width">The width of the region to be drawn.</param>
         <param type="INT" name="Height">The height of the region to be drawn.</param>
       </input>
+      <description>
+<p>The entire content of the editor is marked for redrawing.  Painting is deferred until the next cycle of message processing, after which the scene is redrawn.</p>
+      </description>
     </action>
 
     <action>
       <name>Enable</name>
-      <comment>Enables the target <fl>Surface</fl>.</comment>
+      <comment>Enables user interaction with the editor.</comment>
       <prototype>ERR acEnable(*Object)</prototype>
+      <tiriPrototype>err = Object.acEnable()</tiriPrototype>
     </action>
 
     <action>
       <name>Focus</name>
-      <comment>Focus on the Scintilla surface.</comment>
+      <comment>Moves the user focus to the <fl>Focus</fl> viewport.</comment>
       <prototype>ERR acFocus(*Object)</prototype>
+      <tiriPrototype>err = Object.acFocus()</tiriPrototype>
     </action>
 
     <action>
       <name>Hide</name>
       <comment>Hides a visible object from the view of the user.</comment>
       <prototype>ERR acHide(*Object)</prototype>
+      <tiriPrototype>err = Object.acHide()</tiriPrototype>
     </action>
 
     <action>
       <name>Redo</name>
       <comment>Redo the most recently undone activity.</comment>
       <prototype>ERR acRedo(*Object)</prototype>
+      <tiriPrototype>err = Object.acRedo()</tiriPrototype>
     </action>
 
     <action>
       <name>SaveToObject</name>
       <comment>Save content as a text stream to another object.</comment>
       <prototype>ERR acSaveToObject(*Object, OBJECTID Dest, CLASSID ClassID)</prototype>
+      <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -92,21 +124,56 @@
       <name>Show</name>
       <comment>Makes an object visible to the user.</comment>
       <prototype>ERR acShow(*Object)</prototype>
+      <tiriPrototype>err = Object.acShow()</tiriPrototype>
     </action>
 
     <action>
       <name>Undo</name>
       <comment>Undo the last user action.</comment>
       <prototype>ERR acUndo(*Object)</prototype>
+      <tiriPrototype>err = Object.acUndo()</tiriPrototype>
     </action>
 
   </actions>
 
   <methods>
     <method>
+      <name>AddMarker</name>
+      <comment>Adds a marker to a line.</comment>
+      <prototype>ERR sci::AddMarker(OBJECTPTR Object, INT Line, INT Marker)</prototype>
+      <tiriPrototype>err = AddMarker(Line:num, Marker:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Line">The index of the line.</param>
+        <param type="INT" name="Marker">The marker number, from 0 to 24.</param>
+      </input>
+      <description>
+<p>A marker is a symbol that is drawn in the symbol margin beside a line, or a highlight of the line's text, as configured by <method>DefineMarker</method>.  Markers are typically used to indicate bookmarks, breakpoints and errors.  The symbol margin is enabled with <fl>Symbols</fl>.  While it is hidden, a line that carries markers is highlighted with their background colour instead.</p>
+<p>There are 25 markers, numbered from 0 to 24.  A line can carry any combination of them, and adding a marker that the line already carries has no effect.  A marker stays with its line as text is inserted and deleted.  If the line is joined to the previous line, the markers of both lines are combined.</p>
+      </description>
+    </method>
+
+    <method>
+      <name>DefineMarker</name>
+      <comment>Defines the appearance of a marker.</comment>
+      <prototype>ERR sci::DefineMarker(OBJECTPTR Object, INT Marker, SCMK Symbol, struct RGB8 * Fore, struct RGB8 * Bkgd)</prototype>
+      <tiriPrototype>err = DefineMarker(Marker:num, Symbol:num, Fore:any, Bkgd:any)</tiriPrototype>
+      <input>
+        <param type="INT" name="Marker">The marker number, from 0 to 24.</param>
+        <param type="SCMK" name="Symbol" lookup="SCMK">The symbol to draw.</param>
+        <param type="struct RGB8 *" name="Fore">The foreground colour.  If <code>NULL</code>, the current colour is retained.</param>
+        <param type="struct RGB8 *" name="Bkgd">The background colour.  If <code>NULL</code>, the current colour is retained.</param>
+      </input>
+      <description>
+<p>This method sets the symbol and colours of a marker, which can then be added to lines with <method>AddMarker</method>.  Lines that already carry the marker are redrawn with the new definition.  Until it is defined, a marker is drawn as a circle with a black outline and a white fill.</p>
+<p>Symbols are drawn in the symbol margin in the <code>Bkgd</code> colour, with the outline and any inner sign in the <code>Fore</code> colour. The <code>SCMK::BACKGROUND</code> and <code>SCMK::UNDERLINE</code> symbols are drawn in the text area instead, in the <code>Bkgd</code> colour.  If the alpha component of <code>Bkgd</code> is less than 255, these two symbols are blended over the line, which also tints its text. Otherwise they are drawn opaquely beneath the text.  The alpha components are ignored for all other symbols.</p>
+      </description>
+    </method>
+
+    <method>
       <name>DeleteLine</name>
       <comment>Deletes a line.</comment>
       <prototype>ERR sci::DeleteLine(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = DeleteLine(Line:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The number of the line to delete.  Indexing starts from 0.</param>
       </input>
@@ -118,14 +185,29 @@
     <method>
       <name>GetLine</name>
       <comment>Copies the text content of any line to a user-supplied buffer.</comment>
-      <prototype>ERR sci::GetLine(OBJECTPTR Object, INT Line, STRING Buffer, INT Length)</prototype>
+      <prototype>ERR sci::GetLine(OBJECTPTR Object, INT Line, std::span&lt;int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = GetLine(Line:num, Buffer:array)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The index of the line to retrieve.</param>
-        <param type="STRING" name="Buffer">The destination buffer.</param>
-        <param type="INT" name="Length">The byte size of the <code>Buffer</code>.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">The destination buffer.</param>
       </input>
       <description>
-<p>This method will retrieve the string for a <code>Line</code> at a given index.  The string is copied to a user supplied <code>Buffer</code> of the indicated <code>Length</code> (in bytes).</p>
+<p>This method retrieves the string for a <code>Line</code> at a given index.  The string is copied to the supplied <code>Buffer</code>, which must have enough space for the line content and a terminating null byte.</p>
+      </description>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>GetMarkers</name>
+      <comment>Returns the markers of a line.</comment>
+      <prototype>ERR sci::GetMarkers(OBJECTPTR Object, INT Line, INT * Markers)</prototype>
+      <tiriPrototype>err, Markers:num = GetMarkers(Line:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Line">The index of the line.</param>
+        <param type="INT *" name="Markers">The bit mask of the line's markers is returned here.</param>
+      </input>
+      <description>
+<p>This method returns the markers that a line carries, as a bit mask in which bit <code>N</code> is set for marker <code>N</code>.  For example, a result of <code>0x5</code> indicates that the line carries markers 0 and 2.</p>
       </description>
     </method>
 
@@ -133,6 +215,7 @@
       <name>GetPos</name>
       <comment>Returns the byte position of a given line and column number.</comment>
       <prototype>ERR sci::GetPos(OBJECTPTR Object, INT Line, INT Column, INT * Pos)</prototype>
+      <tiriPrototype>err, Pos:num = GetPos(Line:num, Column:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">Line index</param>
         <param type="INT" name="Column">Column index</param>
@@ -147,6 +230,7 @@
       <name>GotoLine</name>
       <comment>Moves the cursor to any line in the document.</comment>
       <prototype>ERR sci::GotoLine(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = GotoLine(Line:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">The line index to move to.</param>
       </input>
@@ -156,11 +240,22 @@
     </method>
 
     <method>
+      <name>HidePopups</name>
+      <comment>Closes the completion list and the call tip.</comment>
+      <prototype>ERR sci::HidePopups(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = HidePopups()</tiriPrototype>
+      <description>
+<p>HidePopups() closes any completion list or call tip that is open.  Closing a completion list is reported to the <fl>CompletionCallback</fl> as <code>SCAC::CANCELLED</code>.</p>
+      </description>
+    </method>
+
+    <method>
       <name>InsertText</name>
       <comment>Inserts text into a document.</comment>
-      <prototype>ERR sci::InsertText(OBJECTPTR Object, CSTRING String, INT Pos)</prototype>
+      <prototype>ERR sci::InsertText(OBJECTPTR Object, STRVIEW String, INT Pos)</prototype>
+      <tiriPrototype>err = InsertText(String:str, Pos:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="String">A text string to add.</param>
+        <param type="STRVIEW" name="String">A text string to add.</param>
         <param type="INT" name="Pos">-1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.</param>
       </input>
       <description>
@@ -170,12 +265,27 @@
     </method>
 
     <method>
+      <name>RemoveMarker</name>
+      <comment>Removes markers from one line or from the whole document.</comment>
+      <prototype>ERR sci::RemoveMarker(OBJECTPTR Object, INT Line, INT Marker)</prototype>
+      <tiriPrototype>err = RemoveMarker(Line:num, Marker:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Line">The index of the line, or -1 for every line.</param>
+        <param type="INT" name="Marker">The marker number from 0 to 24, or -1 for every marker.</param>
+      </input>
+      <description>
+<p>This method removes a marker that was added with <method>AddMarker</method>.  A <code>Line</code> of -1 removes the marker from every line, and a <code>Marker</code> of -1 removes every marker.  Removing a marker that is not present is not an error.</p>
+      </description>
+    </method>
+
+    <method>
       <name>ReplaceLine</name>
       <comment>Replaces a line with new text content.</comment>
-      <prototype>ERR sci::ReplaceLine(OBJECTPTR Object, INT Line, CSTRING String, INT Length)</prototype>
+      <prototype>ERR sci::ReplaceLine(OBJECTPTR Object, INT Line, STRVIEW String, INT Length)</prototype>
+      <tiriPrototype>err = ReplaceLine(Line:num, String:str, Length:num)</tiriPrototype>
       <input>
         <param type="INT" name="Line">Index of the line being targeted.</param>
-        <param type="CSTRING" name="String">The new string that will replace the line.</param>
+        <param type="STRVIEW" name="String">The new string that will replace the line.</param>
         <param type="INT" name="Length">The number of characters to replace the target with, or -1 for the entire source string.</param>
       </input>
       <description>
@@ -186,10 +296,11 @@
     <method>
       <name>ReplaceText</name>
       <comment>Replaces all text within an entire document or limited range.</comment>
-      <prototype>ERR sci::ReplaceText(OBJECTPTR Object, CSTRING Find, CSTRING Replace, STF Flags, INT Start, INT End)</prototype>
+      <prototype>ERR sci::ReplaceText(OBJECTPTR Object, STRVIEW Find, STRVIEW Replace, STF Flags, INT Start, INT End)</prototype>
+      <tiriPrototype>err = ReplaceText(Find:str, Replace:str, Flags:num, Start:num, End:num)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Find">The keyword string to find.</param>
-        <param type="CSTRING" name="Replace">The string that will replace the keyword.</param>
+        <param type="STRVIEW" name="Find">The keyword string to find.</param>
+        <param type="STRVIEW" name="Replace">The string that will replace the keyword.</param>
         <param type="STF" name="Flags" lookup="STF">Optional flags.</param>
         <param type="INT" name="Start">The start of the search - set to zero if covering the entire document.  If -1, starts from the current cursor position.</param>
         <param type="INT" name="End">The end of the search - set to -1 if covering the entire document.</param>
@@ -201,14 +312,16 @@
 
     <method>
       <name>ScrollToPoint</name>
-      <comment>Scrolls text by moving the Page.</comment>
+      <comment>Scrolls the document to a pixel position.</comment>
       <prototype>ERR sci::ScrollToPoint(OBJECTPTR Object, INT X, INT Y)</prototype>
+      <tiriPrototype>err = ScrollToPoint(X:num, Y:num)</tiriPrototype>
       <input>
-        <param type="INT" name="X">New horizontal position.</param>
-        <param type="INT" name="Y">New vertical position.</param>
+        <param type="INT" name="X">Horizontal scroll position in pixels.</param>
+        <param type="INT" name="Y">Vertical scroll position in pixels.</param>
       </input>
       <description>
-<p>This method will scroll text in the Scintilla document by moving the page position.</p>
+<p>This method scrolls the document so that the point (<code>X</code>, <code>Y</code>), measured in pixels from the top-left corner of the document, appears at the top-left corner of the <fl>View</fl>.  The <fl>Page</fl> is moved to <code>(-X, -Y)</code> to reflect the change.</p>
+<p>The editor scrolls vertically by whole lines, so <code>Y</code> is rounded to the nearest line.  Both coordinates are clamped to the scrollable range of the document.</p>
       </description>
     </method>
 
@@ -216,6 +329,7 @@
       <name>SelectRange</name>
       <comment>Selects a range of text, can also deselect all text.</comment>
       <prototype>ERR sci::SelectRange(OBJECTPTR Object, INT Start, INT End)</prototype>
+      <tiriPrototype>err = SelectRange(Start:num, End:num)</tiriPrototype>
       <input>
         <param type="INT" name="Start">The character at which the selection will start.</param>
         <param type="INT" name="End">The character at which the selection will end.  If negative, the last character in the document will be targeted.</param>
@@ -228,13 +342,72 @@
     <method>
       <name>SetFont</name>
       <comment>Changes the font that is used for text display.</comment>
-      <prototype>ERR sci::SetFont(OBJECTPTR Object, CSTRING Face)</prototype>
+      <prototype>ERR sci::SetFont(OBJECTPTR Object, STRVIEW Face)</prototype>
+      <tiriPrototype>err = SetFont(Face:str)</tiriPrototype>
       <input>
-        <param type="CSTRING" name="Face">The name of the new font face.</param>
+        <param type="STRVIEW" name="Face">The name of the new font face.</param>
       </input>
       <description>
-<p>Call SetFont() to change the font face that is used for displaying text.  The string format follows the standard for font requests, e.g. <code>Helvete:12:Bold Italic:#ff0000</code>.  Refer to the Face field in the <class name="Font">Font</class> class for more details.</p>
+<p>Call SetFont() to change the font face that is used for displaying text.  The <code>Face</code> is a family name as accepted by the <fl>Face</fl> field, e.g. <code>Source Code Pro</code> or <code>Clean</code>.  The current <fl>FontSize</fl> in pixels is retained.</p>
 <p>If the new face is invalid or fails to load, the current font will remain unchanged.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="File">The font file could not be loaded.</error>
+        <error code="Search">No matching font could be resolved.</error>
+        <error code="ResolvePath">A call to ResolvePath() failed</error>
+        <error code="CreateObject">Failed to resolve the font handle.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="CreateResource">Failed to create a new resource</error>
+      </result>
+    </method>
+
+    <method>
+      <name>ShowCallTip</name>
+      <comment>Displays a call tip, such as a function signature, below a position in the document.</comment>
+      <prototype>ERR sci::ShowCallTip(OBJECTPTR Object, INT Pos, CSTRING Text, INT HighlightStart, INT HighlightEnd)</prototype>
+      <tiriPrototype>err = ShowCallTip(Pos:num, Text:str, HighlightStart:num, HighlightEnd:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Pos">The document position that the call tip refers to, or -1 for the cursor position.</param>
+        <param type="CSTRING" name="Text">The text to display.</param>
+        <param type="INT" name="HighlightStart">The byte offset within <code>Text</code> at which highlighting starts.</param>
+        <param type="INT" name="HighlightEnd">The byte offset within <code>Text</code> at which highlighting ends.  Highlighting is disabled if this does not exceed <code>HighlightStart</code>.</param>
+      </input>
+      <description>
+<p>ShowCallTip() opens a call tip that is attached to <code>Pos</code>.  It is typically used to show the parameters of a function while the user types its arguments.  Calling ShowCallTip() while a call tip is open replaces it, which is also how the highlighted parameter is updated.  Showing a call tip closes the completion list.</p>
+<p>The call tip is displayed on the line below <code>Pos</code>, or above it if it would otherwise extend beyond the bottom of the scene.  The <code>Text</code> may contain multiple lines that are separated by <code>\n</code>.  The characters <code>\001</code> and <code>\002</code> are drawn as up and down arrows, which a client can use to let the user cycle through overloads by clicking them.  Clicks are reported to the <fl>CompletionCallback</fl> as <code>SCAC::CALL_TIP_CLICK</code>.</p>
+<p>Typing text, moving the cursor left and right, and deleting with Backspace keep the call tip open.  It is closed by other cursor movement, Escape, a click in the editor, the loss of the focus, Backspace beyond the cursor position at which it opened, or <method>HidePopups</method>.</p>
+      </description>
+    </method>
+
+    <method>
+      <name>ShowCompletions</name>
+      <comment>Displays a list of completion candidates for the word at the cursor.</comment>
+      <prototype>ERR sci::ShowCompletions(OBJECTPTR Object, INT Length, CSTRING Candidates, SCACF Flags)</prototype>
+      <tiriPrototype>err = ShowCompletions(Length:num, Candidates:str, Flags:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Length">The number of bytes of the typed prefix that precede the cursor.</param>
+        <param type="CSTRING" name="Candidates">Completion candidates, separated by line feeds.</param>
+        <param type="SCACF" name="Flags" lookup="SCACF">Optional flags.</param>
+      </input>
+      <description>
+<p>ShowCompletions() opens the completion list below the word that is being typed, or above it if there is more room there.  The <code>Candidates</code> are separated by line feeds and may be given in any order.  They are sorted for display and duplicates are removed.  The client normally calls ShowCompletions() from the <fl>CompletionCallback</fl> in response to <code>SCAC::REQUEST</code> or <code>SCAC::CHAR_ADDED</code>.</p>
+<p><code>Length</code> is the number of bytes of the word that precede the cursor and have already been typed.  The candidate that begins with this prefix is selected, and the selection follows further typing.  If no candidate matches the typed prefix, the list closes.  Accepting a candidate replaces the prefix with it.  Showing the list closes any call tip.</p>
+<p>While the list is open, the Up and Down arrow keys, Page Up, Page Down, Home and End move the selection.  Enter and Tab accept the selected candidate, and Escape closes the list.  Tab reaches the editor only if the scene does not use it to cycle the focus, i.e. the scene has the <code>VPF::IGNORE_TAB</code> flag.  Other cursor movement, a click in the editor and the loss of the focus also close it.  Clicking a candidate selects it, double-clicking accepts it, and the mouse wheel scrolls the list.  Acceptance is reported to the <fl>CompletionCallback</fl> as <code>SCAC::SELECTED</code> and any other closure as <code>SCAC::CANCELLED</code>.</p>
+<p>Completions edit the document on the user's behalf, so they require the <code>SCIF::EDIT</code> flag.</p>
+      </description>
+    </method>
+
+    <method>
+      <name>ToggleFold</name>
+      <comment>Contracts or expands a fold.</comment>
+      <prototype>ERR sci::ToggleFold(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = ToggleFold(Line:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Line">The index of the line, or -1 for the line of the cursor.</param>
+      </input>
+      <description>
+<p>This method toggles the fold that starts at a line, which hides or shows the lines within the fold.  If the line does not start a fold, the innermost fold that contains it is toggled.  Folding must be enabled with <fl>FoldingMarkers</fl>, and the document needs a <fl>Lexer</fl> that supports folding.</p>
       </description>
     </method>
 
@@ -242,6 +415,7 @@
       <name>TrimWhitespace</name>
       <comment>Strips trailing white-space from the document.</comment>
       <prototype>ERR sci::TrimWhitespace(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = TrimWhitespace()</tiriPrototype>
       <description>
 <p>The TrimWhitespace method will remove trailing white-space from every line in the document.  Both tabs and spaces are considered white-space - all other characters shall be treated as content.</p>
 <p>The position of the cursor is reset to the left margin as a result of calling this method.</p>
@@ -252,10 +426,23 @@
 
   <fields>
     <field>
+      <name>ActivePopup</name>
+      <comment>Indicates the code assistance pop-up that is open.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>This read-only field reports <code>SCPOP::COMPLETIONS</code> while the completion list of <method>ShowCompletions</method> is open, <code>SCPOP::CALL_TIP</code> while the call tip of <method>ShowCallTip</method> is open, and <code>SCPOP::NONE</code> otherwise.</p>
+      </description>
+    </field>
+
+    <field>
       <name>AllowTabs</name>
       <comment>If enabled, use of the tab key produces real tabs and not spaces.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
+      <description>
+<p>The Tab key is only received by the editor if the <code>IGNORE_TAB</code> flag is set on its <class name="VectorScene">VectorScene</class>.  Refer to <fl>Focus</fl> for details.</p>
+      </description>
     </field>
 
     <field>
@@ -270,15 +457,32 @@
       <comment>Defines the background colour.  Alpha blending is not supported.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>The BkgdColour applies to the text area and to all lexer styles.  The margins use their own colours.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>CompletionCallback</name>
+      <comment>Reports the events that relate to code completion and call tips.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>Set this field with a function reference to provide completion candidates and call tips.  The prototype for the callback function is <code>Function(*Scintilla, SCAC Event, INT Position, INT Value, CSTRING Text)</code>.</p>
+<p>The <code>Event</code> is one of the following:</p>
+<types lookup="SCAC"/>
+<p><code>SCAC::REQUEST</code> and <code>SCAC::CHAR_ADDED</code> are reported as they occur, so the client can respond with <method>ShowCompletions</method> or <method>ShowCallTip</method>.  <code>Position</code> is the cursor position, and for <code>SCAC::CHAR_ADDED</code> the <code>Value</code> is the Unicode code point of the character that was typed.  The client usually examines the text that precedes the cursor to choose its candidates.  Ctrl+Space is reported only while the editor has the <code>SCIF::EDIT</code> flag.</p>
+<p><code>SCAC::SELECTED</code>, <code>SCAC::CANCELLED</code> and <code>SCAC::CALL_TIP_CLICK</code> are reported on the next cycle of message processing, after the editor has completed the operation.  For <code>SCAC::SELECTED</code>, the <code>Text</code> is the accepted candidate and <code>Position</code> is the start of the replaced text, and the candidate has already been inserted.  For <code>SCAC::CALL_TIP_CLICK</code>, <code>Position</code> is the position that the call tip refers to.  The <code>Text</code> is empty for every event other than <code>SCAC::SELECTED</code>.</p>
+      </description>
     </field>
 
     <field>
       <name>CursorCol</name>
       <comment>The current column of the text cursor.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>The CursorCol and <fl>CursorRow</fl> fields reflect the current row and column of the user's text cursor.  The values are updated every time that the cursor is moved.  Use <fl>EventCallback</fl> and listen for the event SEF_CURSOR_POS to receive updates on changes to CursorCol and <fl>CursorRow</fl>.</p>
+<p>The CursorCol and <fl>CursorRow</fl> fields reflect the current row and column of the user's text cursor.  Use <fl>EventCallback</fl> and listen for the event <code>SEF::CURSOR_POS</code> to receive updates on changes to CursorCol and <fl>CursorRow</fl>.</p>
       </description>
     </field>
 
@@ -292,10 +496,10 @@
     <field>
       <name>CursorRow</name>
       <comment>The current row of the text cursor.</comment>
-      <access read="R" write="W">Read/Write</access>
+      <access read="G">Get</access>
       <type>INT</type>
       <description>
-<p>The <fl>CursorCol</fl> and CursorRow fields reflect the current row and column of the user's text cursor.  The values are updated every time that the cursor is moved.  Use <fl>EventCallback</fl> and listen for the event SEF_CURSOR_POS to receive updates on changes to <fl>CursorCol</fl> and CursorRow.</p>
+<p>The <fl>CursorCol</fl> and CursorRow fields reflect the current row and column of the user's text cursor.  Use <fl>EventCallback</fl> and listen for the event <code>SEF::CURSOR_POS</code> to receive updates on changes to <fl>CursorCol</fl> and CursorRow.</p>
       </description>
     </field>
 
@@ -323,13 +527,26 @@
     </field>
 
     <field>
+      <name>Face</name>
+      <comment>The font family used for drawing and measuring document text.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>Accepts a font family name supported by the vector module's GetFontHandle() function, including bitmap faces such as <code>Clean</code>. The default is <code>Source Code Pro</code>.  Regular, bold, italic and bold italic styles share this family and <fl>FontSize</fl>. Set this field before or after initialisation.  Changing it reloads the styles and updates layout and margins. <method>SetFont</method> provides the same operation.  A failed resolution preserves the current face and handles.</p>
+<p>This field and <fl>FontSize</fl> replace the former Font object field; scripts must use these fields to customise fonts.</p>
+      </description>
+    </field>
+
+    <field>
       <name>FileDrop</name>
       <comment>A callback for receiving drag and drop file notifications.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>FUNCTION</type>
       <description>
-<p>Set this field with a reference to a callback function to receive notifications when the user drops a file onto the Scintilla object's surface.  The prototype for the callback function is <code>ERR Function(*Scintilla, CSTRING Path)</code></p>
-<p>If multiple files are dropped, the callback will be repeatedly called until all of the file paths have been reported.</p>
+<p>Set this field with a function reference to receive the paths of files that the user drops onto the editor.  The prototype for the callback function is <code>Function(*Scintilla, CSTRING Path)</code>.  The callback is called once for each dropped file, in the order provided by the drag source.</p>
+<p>The editor accepts file drops only while this field is set, so leave it undefined if files are not to be dropped onto the editor.  The editor does not act on the dropped files; it is the responsibility of the client to open, load or insert them as required.  File drops do not require the <code>SCIF::EDIT</code> flag, but are refused while the editor is disabled.  When a drag source offers both files and text, the files are preferred and the text is not inserted.</p>
+<p>Delivery is cancelled if the document is modified between the drop and the arrival of the data.  If the callback destroys the editor, the remaining paths are not reported.</p>
+<p>Drag and drop requires the hosting <class name="VectorScene">VectorScene</class> to have <code>VPF::DROP_TARGETS</code> set.</p>
       </description>
     </field>
 
@@ -345,29 +562,33 @@
 
     <field>
       <name>Focus</name>
-      <comment>Defines the object that is monitored for user focus changes.</comment>
+      <comment>Defines the viewport that is monitored for user focus changes.</comment>
       <access read="R" write="I">Read/Init</access>
-      <type>OBJECTID</type>
+      <type class="VectorViewport">*VectorViewport</type>
       <description>
-<p>By default, the user focus is managed by monitoring the target <fl>Surface</fl> for changes (for instance, clicking on or away from the surface will result in a focus state change).  If another object should be monitored for focus state changes, it can be defined here prior to initialisation.</p>
+<p>The editor has the user focus while the Focus viewport or any of its children has the focus.  Keyboard input is received from the Focus viewport during that time, and the caret is shown and blinks.  If not set prior to initialisation, the <fl>Viewport</fl> is used.  Clicking within the editor gives the focus to one of its internal viewports, which are children of the <fl>Viewport</fl>.</p>
+<p>Keyboard input requires a <class name="VectorScene">VectorScene</class> that is linked to a <class name="Surface">Surface</class>.  The scene uses the Tab key to move the focus between keyboard subscribers unless its <code>IGNORE_TAB</code> flag is set, in which case the Tab key reaches the editor.</p>
       </description>
     </field>
 
     <field>
       <name>FoldingMarkers</name>
-      <comment>Folding markers in the left margin will be visible when this value is TRUE.</comment>
+      <comment>Enables code folding and shows the fold margin.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
+      <description>
+<p>Set this field to <code>true</code> to enable code folding.  Folding is computed by the active <fl>Lexer</fl>, so a document without a lexer, or with a lexer that does not support folding, has no folds.  The fold margin is shown to the left of the text and marks each fold with a box that contains a plus (contracted) or minus (expanded) sign.  Clicking the box of a fold toggles it.  Folds can also be toggled with <method>ToggleFold</method>.</p>
+<p>The lines of a contracted fold are hidden.  They are shown again if the fold is expanded, if the cursor is moved into them with <method>GotoLine</method> or <method>SelectRange</method>, or if they are edited.  Setting FoldingMarkers to <code>false</code> expands every fold.</p>
+      </description>
     </field>
 
     <field>
-      <name>Font</name>
-      <comment>Refers to the font that is used for drawing text in the document.</comment>
-      <access read="R">Read</access>
-      <type class="Font">*Font</type>
+      <name>FontSize</name>
+      <comment>The font em size in pixels.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
       <description>
-<p>This field refers to the font object that is used for drawing text in the document.  It is recommended that all font customisation takes place prior to initialisation of the Scintilla object.  Directly altering the font object after initialisation may result in clashes with the Scintilla class that produce unpredictable results.</p>
-<p>To change the font post-initialisation, please use the <method>SetFont</method> method.</p>
+<p>Sets a positive integer pixel size for every text style.  The default is 14 pixels.  This is not a point size and is independent of display density.  Bitmap faces select their nearest supported point size. Set this field before or after initialisation.  Changing it reloads the font handles and updates layout and margins.</p>
       </description>
     </field>
 
@@ -384,7 +605,8 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="SCLEX">SCLEX</type>
       <description>
-<p>The lexer for document styling is defined here.</p>
+<p>The lexer can be changed at any time.  Its keyword lists and semantic style colours are refreshed immediately. Existing folds are expanded and folding remains enabled if <fl>FoldingMarkers</fl> is set.  Set the lexer to zero to display plain text.  ASP uses the HTML lexer with VBScript server blocks; Tiri keywords follow the parser's reserved words.</p>
+<p>If the <code>DETECT_LEXER</code> flag is set, the lexer is chosen from the file name whenever a file is loaded, and this overrides any existing value.  The <code>Lexer</code> is left unchanged if the file name does not match a known type.</p>
 <types lookup="SCLEX"/>
       </description>
     </field>
@@ -401,6 +623,9 @@
       <comment>The colour to use when highlighting the line that contains the user's cursor.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>The highlight is shown while the editor has the focus.  An alpha value of zero disables it.  An opaque colour is drawn beneath the text, while a translucent colour is blended over the line, which also tints its text.  Translucent colours blend in the same way as a translucent vector fill, i.e. with the gamma-correct blending of the Vector module, so a 50% colour appears lighter than an average of the sRGB values.</p>
+      </description>
     </field>
 
     <field>
@@ -408,6 +633,18 @@
       <comment>Line numbers will appear on the left when this value is TRUE.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
+    </field>
+
+    <field>
+      <name>MarginClick</name>
+      <comment>A callback for receiving clicks in the symbol and fold margins.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>Set this field with a function reference to receive notifications when the user clicks in the symbol margin or the fold margin.  This is typically used to toggle breakpoints or bookmarks with <method>AddMarker</method> and <method>RemoveMarker</method>.  The prototype for the callback function is <code>Function(*Scintilla, SCMG Margin, INT Line, KQ Qualifiers)</code>.</p>
+<p>The <code>Margin</code> is <code>SCMG::SYMBOLS</code> or <code>SCMG::FOLDING</code>, and the <code>Line</code> is the index of the line that was clicked.  The <code>Qualifiers</code> indicate the modifier keys that were held, as a combination of <code>KQ::SHIFT</code>, <code>KQ::CTRL</code> and <code>KQ::ALT</code>. Modifier keys are only known while the editor has the user focus.</p>
+<p>A click in the fold margin has already toggled the fold of the line (if it is a fold header) when the callback is made.  While MarginClick is defined, a click in the symbol margin is reported instead of selecting the line.  Clicks in the line number margin always select the line and are not reported.</p>
+      </description>
     </field>
 
     <field>
@@ -423,11 +660,22 @@
 
     <field>
       <name>Origin</name>
-      <comment>Similar to the Path field, but does not automatically load content if set.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <comment>Sets the <fl>Path</fl> field without loading the document.</comment>
+      <access write="S">Set</access>
       <type>STRING</type>
       <description>
-<p>This field is identical to the <fl>Path</fl> field, with the exception that it does not update the content of a scintilla object if it is set after initialisation.  This may be useful if the origin of the currently loaded content needs to be changed without causing a load operation.</p>
+<p>Setting the Origin will update <fl>Path</fl> without updating the content of the Scintilla object.  Use for situations such as changing the document location or name.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Page</name>
+      <comment>An internally created viewport that represents the extent of the document.</comment>
+      <access read="R">Read</access>
+      <type class="VectorViewport">*VectorViewport</type>
+      <description>
+<p>The Page is created on initialisation as a child of the <fl>View</fl>.  It represents the virtual extent of the document, and scrolling is achieved by moving the Page within the View.  The Page can be referenced as the <code>page</code> of a scrollbar.</p>
+<p>The editor manages the size of the Page.  Its height allows the last line of the document to be scrolled to the bottom of the View, and its width allows the longest line to be scrolled into view.  If the Page is moved by a third party, the editor scrolls to match and then snaps the Page to the nearest whole line.</p>
       </description>
     </field>
 
@@ -435,7 +683,7 @@
       <name>Path</name>
       <comment>Identifies the location of a text file to load.</comment>
       <access read="R" write="S">Read/Set</access>
-      <type>CSTRING</type>
+      <type>STRING</type>
       <description>
 <p>To load data from a text file into a scintilla object, set the Path field.</p>
 <p>If the Path is set after initialisation, the existing content will be cleared and data loaded from the location that you specify.  To change the path without automatically loading from the source file, set the <fl>Origin</fl> field instead.</p>
@@ -454,13 +702,20 @@
       <comment>Defines the background colour of selected text.  Supports alpha blending.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>An alpha value of zero disables the selection background.  An opaque colour is drawn beneath the selected text.  A translucent colour is blended over the selection after the text is drawn, in the same way as <fl>LineHighlight</fl>, so that the text remains visible through it.  Consider disabling <fl>SelectFore</fl> with a translucent background so that the selected text retains its styled colours.</p>
+<p>The background of the main selection is affected.  The additional rows of a rectangular selection use Scintilla's default colour for additional selections.</p>
+      </description>
     </field>
 
     <field>
       <name>SelectFore</name>
-      <comment>Defines the colour of selected text.  Supports alpha blending.</comment>
+      <comment>Defines the colour of selected text.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>Selected text is drawn in this colour, overriding the colours of its style.  An alpha value of zero disables the override.  Other alpha values are ignored and the colour is drawn opaquely.</p>
+      </description>
     </field>
 
     <field>
@@ -481,20 +736,14 @@
     </field>
 
     <field>
-      <name>Surface</name>
-      <comment>Refers to the <class name="Surface">Surface</class> targeted by the Scintilla object.</comment>
-      <access read="R" write="I">Read/Init</access>
-      <type>OBJECTID</type>
-      <description>
-<p>This compulsory field refers to the <class name="Surface">Surface</class> that the Scintilla object is targeting for graphics operations.  If not set prior to initialisation, the Scintilla object will search for the nearest <class name="Surface">Surface</class> object based on its ownership hierarchy.</p>
-      </description>
-    </field>
-
-    <field>
       <name>Symbols</name>
-      <comment>Symbols can be displayed in the left margin when this value is TRUE.</comment>
+      <comment>Shows the symbol margin, in which markers are displayed.</comment>
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
+      <description>
+<p>Set this field to <code>true</code> to show the symbol margin to the left of the text.  The margin displays the markers that are added to lines with <method>AddMarker</method>.  While the margin is hidden, a line that carries markers is highlighted with their background colour instead.  Markers that highlight the text itself, such as <code>SCMK::BACKGROUND</code>, are displayed regardless of this setting.</p>
+<p>If <fl>MarginClick</fl> is defined, clicks in the symbol margin are reported to it.  Otherwise a click in the margin selects the line, as it does in the line number margin.</p>
+      </description>
     </field>
 
     <field>
@@ -506,18 +755,52 @@
 
     <field>
       <name>TextColour</name>
-      <comment>Defines the default colour of foreground text.  Supports alpha blending.</comment>
+      <comment>Defines the default colour of foreground text.  Alpha blending is not supported.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>RGB8</type>
+      <description>
+<p>TextColour applies to plain text, identifiers and any unclassified styles.  Configure lexer and margin colours through <fl>ThemeXML</fl>.  Theme colours are stored independently for each editor and are retained across lexer changes.</p>
+<p>The defaults are a white background, black text and operators, grey comments, firebrick keywords, dark red strings, blue numbers, green directives and violet types.</p>
+      </description>
     </field>
 
     <field>
-      <name>Visible</name>
-      <comment>If TRUE, indicates the Scintilla object is visible in the target <fl>Surface</fl>.</comment>
-      <access read="R" write="I">Read/Init</access>
-      <type>INT</type>
+      <name>ThemeXML</name>
+      <comment>Applies colours from a preconfigured XML object.  This field is write-only.</comment>
+      <access write="S">Set</access>
+      <type>OBJECTPTR</type>
       <description>
-<p>This field is set to TRUE if the Scintilla object is visible in the target <fl>Surface</fl>.  To control visibility, please use the <action>Show</action> and <action>Hide</action> actions appropriately.  This field can be set to FALSE prior to initialisation if the Scintilla object should start in a hidden state.</p>
+<p>Assign an initialised <class name="XML">XML</class> object containing one <code>theme</code> element with one <code>palette</code> child.  The palette's attributes specify SVG colour strings:</p>
+<pre>&lt;theme&gt;
+   &lt;palette background=&quot;#232a37&quot; text=&quot;white&quot; keyword=&quot;#70b8ff&quot; comment=&quot;#99aabb&quot;
+       string=&quot;#b5d99c&quot; number=&quot;#d4a5ff&quot; operator=&quot;white&quot; preprocessor=&quot;#b5d99c&quot;
+       type=&quot;#ffc080&quot; error=&quot;#ff8899&quot; margin=&quot;#99aabb&quot; marginBackground=&quot;#303745&quot;
+       cursor=&quot;white&quot; lineHighlight=&quot;transparent&quot; selectionForeground=&quot;white&quot;
+       selectionBackground=&quot;#335588&quot;/&gt;
+&lt;/theme&gt;
+</pre>
+<p>The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text. All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG colour names and colour functions such as <code>rgb()</code> and <code>oklch()</code> are accepted.  Gradients, painter lists and unknown attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the corresponding highlight or selection override.  Translucent lineHighlight and selectionBackground colours blend over the text, as described for <fl>LineHighlight</fl> and <fl>SelectBkgd</fl>.  Other alpha values produce opaque colours.</p>
+<p>The colours are copied during assignment and the XML object is not retained or modified.  Assigning before initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or contracted folds.  Invalid themes leave all colours unchanged.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>View</name>
+      <comment>An internally created viewport that clips the visible content of the editor.</comment>
+      <access read="R">Read</access>
+      <type class="VectorViewport">*VectorViewport</type>
+      <description>
+<p>The View is created on initialisation as a child of the <fl>Viewport</fl>, and covers its entire area.  It represents the visible window into the document and clips the <fl>Page</fl>.  The View can be referenced as the <code>view</code> of a scrollbar, which may reduce the size of the View by changing its <code>XOffset</code> and <code>YOffset</code> values.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Viewport</name>
+      <comment>The viewport that will host the editor.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type class="VectorViewport">*VectorViewport</type>
+      <description>
+<p>This compulsory field refers to the <class name="VectorViewport">VectorViewport</class> that will host the editor's graphics.  If not set prior to initialisation, the Scintilla object's owner will be used if it is a <class name="VectorViewport">VectorViewport</class>.</p>
       </description>
     </field>
 
@@ -530,10 +813,16 @@
 
   </fields>
   <types>
+    <constants lookup="SCACF" comment="Options for ShowCompletions().">
+      <const name="CHOOSE_SINGLE">If there is only one candidate, it is inserted immediately and no list is shown.</const>
+      <const name="DROP_REST_OF_WORD">Accepting a candidate also replaces the word characters that follow the cursor.</const>
+      <const name="IGNORE_CASE">Candidates are matched to the typed prefix without regard to case.</const>
+    </constants>
+
     <constants lookup="SCIF" comment="Optional flags.">
       <const name="DETECT_LEXER">Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.</const>
       <const name="DISABLED">Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.</const>
-      <const name="EDIT">Must be defined if the document is to be editable via user input.</const>
+      <const name="EDIT">Must be defined if the document is to be editable via user input.  Without it, the user can navigate and select, but edits are refused and reported as SEF::FAIL_RO.  The API can modify the document regardless.</const>
       <const name="EXT_PAGE">Extends the length of the document by one blank page.  This is a visual effect that only has an impact when the user scrolls to the end of the document.</const>
     </constants>
 
@@ -546,7 +835,6 @@
       <const name="CSS">CSS</const>
       <const name="DIFF">Diff</const>
       <const name="ERRORLIST">ErrorList</const>
-      <const name="FLUID">Tiri</const>
       <const name="HTML">HTML</const>
       <const name="MAKEFILE">Makefile</const>
       <const name="PASCAL">Pascal</const>
@@ -557,13 +845,46 @@
       <const name="REBOL">Rebol</const>
       <const name="RUBY">Ruby</const>
       <const name="SQL">SQL</const>
+      <const name="TIRI">Tiri</const>
       <const name="VB">Visual Basic</const>
       <const name="VBSCRIPT">VBScript</const>
       <const name="XML">XML</const>
     </constants>
 
+    <constants lookup="SCMK" comment="Marker symbols for DefineMarker(), as defined by the Scintilla library.">
+      <const name="ARROW">An arrow that points right.</const>
+      <const name="ARROWS">Three arrows that point right.</const>
+      <const name="ARROW_DOWN">An arrow that points down.</const>
+      <const name="BACKGROUND">Fills the background of the line's text with the marker's background colour.</const>
+      <const name="BOX_MINUS">A minus sign in a box.</const>
+      <const name="BOX_MINUS_CONNECTED">A minus sign in a box, with a connecting vertical line.</const>
+      <const name="BOX_PLUS">A plus sign in a box.</const>
+      <const name="BOX_PLUS_CONNECTED">A plus sign in a box, with a connecting vertical line.</const>
+      <const name="CIRCLE">A filled circle.</const>
+      <const name="CIRCLE_MINUS">A minus sign in a circle.</const>
+      <const name="CIRCLE_MINUS_CONNECTED">A minus sign in a circle, with a connecting vertical line.</const>
+      <const name="CIRCLE_PLUS">A plus sign in a circle.</const>
+      <const name="CIRCLE_PLUS_CONNECTED">A plus sign in a circle, with a connecting vertical line.</const>
+      <const name="DOTS">Three dots.</const>
+      <const name="EMPTY">Invisible.  Use this to reserve a marker number without drawing anything.</const>
+      <const name="FULL_RECT">Fills the margin of the line with the marker's background colour.</const>
+      <const name="LCORNER">A corner that joins a vertical line from above to the right.</const>
+      <const name="LCORNER_CURVE">A curved corner that joins a vertical line from above to the right.</const>
+      <const name="LEFT_RECT">Fills a narrow band at the left of the margin with the marker's background colour.</const>
+      <const name="MINUS">A minus sign.</const>
+      <const name="PLUS">A plus sign.</const>
+      <const name="ROUND_RECT">A rectangle with rounded corners.</const>
+      <const name="SHORT_ARROW">A short arrow that points right.</const>
+      <const name="SMALL_RECT">A small rectangle.</const>
+      <const name="TCORNER">A vertical line with a branch to the right.</const>
+      <const name="TCORNER_CURVE">A vertical line with a curved branch to the right.</const>
+      <const name="UNDERLINE">Underlines the line's text with the marker's background colour.</const>
+      <const name="VLINE">A vertical line through the line height.</const>
+    </constants>
+
     <constants lookup="SEF" comment="Flags for EventCallback and EventFlags">
       <const name="CURSOR_POS">The cursor position has changed.</const>
+      <const name="FAIL_CLIPBOARD">A cut, copy or paste failed because the clipboard could not be read or written.</const>
       <const name="FAIL_RO">User attempt to edit read-only content.</const>
       <const name="MODIFIED">The content has changed to a modified state, i.e. the user has made an edit.  The modified state will remain until the content is saved.</const>
       <const name="NEW_CHAR">At least one new character has been inserted.</const>

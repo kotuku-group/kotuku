@@ -1,0 +1,46 @@
+   import './webchannel_support'
+
+function restartPair(First:obj, Second:obj)
+   check First.mtRestartIce()
+   channelTest.waitFor(function() return First.gatheringState is RTCGATHER_COMPLETE end)
+   check First.mtSetLocalDescription(First.localDescription)
+   check Second.mtSetRemoteDescription(First.localDescription)
+   check Second.mtCreateAnswer()
+   channelTest.waitFor(function() return Second.gatheringState is RTCGATHER_COMPLETE end)
+   check Second.mtSetLocalDescription(Second.localDescription)
+   check First.mtSetRemoteDescription(Second.localDescription)
+   channelTest.waitFor(function() return First.state is RTCS_CONNECTED and Second.state is RTCS_CONNECTED end)
+end
+
+@Test function ReliableQueuesAndHandlesSurviveBothRestartInitiators()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local channel = channelTest.create(first, 'restart')
+   local messages = array<str>
+   second.onWebChannel = function(Peer, Child)
+      Child.onMessage = function(Child, Buffer, Type) check Child.mtSend(Buffer, Type) end
+   end
+   channel.onMessage = function(Child, Buffer, Type) messages.push(Buffer.getString()) end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN end)
+   local id = channel.streamID
+   local fingerprint = first.certificateFingerprint
+   local payload = string.rep('queued-data-', 16000)
+   for _, initiator in array<obj> { first, second } do
+      local other = initiator is first ? second : first
+      local before = #messages
+      check channel.mtSend(payload, WCM_TEXT)
+      restartPair(initiator, other)
+      channelTest.waitFor(function() return #messages is before + 1 end)
+      assert(messages[before] is payload, 'Reliable data changed across route replacement')
+      processing.sleep(0.05)
+      assert(#messages is before + 1, 'Reliable message delivered twice')
+      assert(channel.streamID is id and channel.state is WCS_OPEN, 'Restart replaced or closed a public channel')
+      assert(first.certificateFingerprint is fingerprint, 'Restart replaced the DTLS certificate')
+      assert(first.restartRequired is 0 and second.restartRequired is 0, 'Spurious network-change request')
+   end
+   check channel.mtClose()
+   channelTest.waitFor(function() return channel.state is WCS_CLOSED end)
+   check first.mtClose()
+   assert(first.restartRequired is 0, 'Closed connection retained a restart request')
+end

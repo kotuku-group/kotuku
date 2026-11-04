@@ -1,0 +1,69 @@
+-- Test-only mDNS signalling and echo; all host candidates must retain their obfuscated identity.
+   include 'websocket'
+   include 'webrtc'
+   import 'json'
+   local sessions = {}
+   local port = tonumber(arg('port', '9324'))
+function send(Socket:obj, Message:table)
+   check Socket.mtSend(json.encode(Message), WSM_TEXT)
+end
+function attach(Session:table, Channel:obj)
+   Session.channels[Channel.label] = Channel
+   Channel.onMessage = function(Child, Buffer, Type) check Child.mtSend(Buffer, Type) end
+end
+   local server <close> = obj.new('websocketserver', {
+      address='127.0.0.1', port=port,
+      connected=function(Server, Socket)
+         local session = { peer=nil, partial='', channels={} }
+         sessions[Socket.id] = session
+         Socket.incoming = function(WS, Buffer, Type, Final)
+            try
+               session.partial ..= Buffer.getString()
+               if Final is 0 then return end
+               local message = json.decode(session.partial)
+               session.partial = ''
+               if message.type is 'join' then
+                  session.peer = obj.new('peerconnection', {
+                     flags=arg('policy', ''),
+                     feedback=function(Peer, State, IceState)
+                        send(WS, { type='state', state=State, ice=IceState, error=Peer.error })
+                     end,
+                     onWebChannel=function(Peer, Channel) attach(session, Channel) end,
+                     onIceCandidate=function(Peer, Candidate)
+                        assert(Candidate.find('.local') and Candidate.find('typ host'), 'Numeric native host leaked')
+                        send(WS, { type='candidate', candidate=Candidate })
+                     end
+                  })
+                  if message.nativeOffer then
+                     local _, channel = check session.peer.mtCreateWebChannel('echo', '', true, false, -1, -1, -1)
+                     attach(session, channel)
+                     check session.peer.mtCreateOffer()
+                     check session.peer.mtSetLocalDescription(session.peer.localDescription)
+                     send(WS, { type='offer', sdp=session.peer.localDescription })
+                  else send(WS, { type='ready' }) end
+               elseif message.type is 'offer' then
+                  check session.peer.mtSetRemoteDescription(message.sdp)
+                  check session.peer.mtCreateAnswer()
+                  check session.peer.mtSetLocalDescription(session.peer.localDescription)
+                  send(WS, { type='answer', sdp=session.peer.localDescription })
+               elseif message.type is 'restart' then
+                  check session.peer.mtRestartIce()
+                  check session.peer.mtSetLocalDescription(session.peer.localDescription)
+                  send(WS, { type='offer', sdp=session.peer.localDescription })
+               elseif message.type is 'answer' then
+                  check session.peer.mtSetRemoteDescription(message.sdp)
+               elseif message.type is 'candidate' then
+                  check session.peer.mtAddIceCandidate(message.candidate)
+               end
+            except e
+               send(WS, { type='error', message=f'{e.code}' })
+            end
+         end
+      end,
+      disconnected=function(Server, Socket)
+         local session = sessions[Socket.id]
+         if session?.peer then session.peer.free() end
+         sessions[Socket.id] = nil
+      end
+   })
+   processing.sleep()

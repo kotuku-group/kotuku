@@ -9,8 +9,6 @@ Name: System
 
 *********************************************************************************************************************/
 
-#include <stdlib.h>
-
 #ifdef __unix__
  #include <stdio.h>
  #include <unistd.h>
@@ -63,8 +61,8 @@ thread_local std::shared_ptr<ThreadRecord> tlThreadRecord;
 
 void deregister_thread(void)
 {
+   auto tid = GetThreadID();
    tlThreadRecord.reset();
-   auto tid = get_thread_id();
    std::lock_guard lock(glmThreadRegistry);
    glThreadRegistry.erase(int(tid));
 }
@@ -74,11 +72,7 @@ void deregister_thread(void)
 
 std::shared_ptr<ThreadRecord> get_thread_record(void)
 {
-   if (not tlThreadRecord) {
-      auto tid = get_thread_id();
-      std::lock_guard lock(glmThreadRegistry);
-      if (auto it = glThreadRegistry.find(int(tid)); it != glThreadRegistry.end()) tlThreadRecord = it->second;
-   }
+   if (not tlThreadRecord) GetThreadID();
    return tlThreadRecord;
 }
 
@@ -115,6 +109,9 @@ int AllocateID(IDTYPE Type)
    else if (Type IS IDTYPE::FUNCTION) {
       return ++glFunctionID;
    }
+   else if (Type IS IDTYPE::RESOURCE) {
+      return glResourceID++;
+   }
 
    return 0;
 }
@@ -132,11 +129,107 @@ Core initialisation) then the "system task" may be returned, which has ownership
 -RESULT-
 obj(Task): Returns a pointer to the current Task object or NULL if failure.
 
+-TAGS-
+api-owns-result, nullable-result, pure-query
+
 *********************************************************************************************************************/
 
 objTask * CurrentTask(void)
 {
    return glCurrentTask;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+OpenURI: Opens a URI with the application registered by the host desktop.
+
+This function passes an absolute URI to the host operating system for opening with the user's preferred application.
+For example, an `http` or `https` URI will normally open in the default web browser.
+
+The operation is asynchronous.  A successful result confirms that the URI was handed to the host desktop, but does
+not guarantee that the receiving application opened or processed it successfully.
+
+On Linux, this function requires `xdg-open` and an active desktop session.  Other platforms may return `NoSupport` if
+they do not provide a desktop URI handler.
+
+-INPUT-
+strview URI: The absolute URI to open.
+
+-ERRORS-
+Okay:      The URI was handed to the host desktop.
+InvalidURI: The URI is empty, malformed or contains unescaped whitespace.
+NoSupport: The platform does not support opening URIs, or no desktop URI handler is available.
+NoMemory
+NoPermission
+FileNotFound: The registered desktop handler could not be found.
+ProcessCreation
+SystemCall
+
+-TAGS-
+blocking
+-END-
+
+*********************************************************************************************************************/
+
+ERR OpenURI(const std::string_view &URI)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (URI.empty()) return log.warning(ERR::InvalidURI);
+
+   auto colon = URI.find(':');
+   if ((colon IS std::string_view::npos) or (colon IS 0) or
+       (not (((URI[0] >= 'A') and (URI[0] <= 'Z')) or ((URI[0] >= 'a') and (URI[0] <= 'z'))))) {
+      return log.warning(ERR::InvalidURI);
+   }
+
+   for (size_t i = 1; i < colon; i++) {
+      const auto ch = URI[i];
+      if (((ch >= 'A') and (ch <= 'Z')) or ((ch >= 'a') and (ch <= 'z')) or ((ch >= '0') and (ch <= '9')) or
+          (ch IS '+') or (ch IS '-') or (ch IS '.')) continue;
+      return log.warning(ERR::InvalidURI);
+   }
+
+   constexpr std::string_view uri_punctuation = "-._~:/?#[]@!$&'()*+,;=";
+   auto is_hex = [](uint8_t Value) {
+      return ((Value >= '0') and (Value <= '9')) or ((Value >= 'A') and (Value <= 'F')) or
+         ((Value >= 'a') and (Value <= 'f'));
+   };
+
+   for (size_t i = colon + 1; i < URI.size(); i++) {
+      const auto ch = uint8_t(URI[i]);
+      if (ch IS '%') {
+         if ((i + 2 >= URI.size()) or (not is_hex(uint8_t(URI[i + 1]))) or (not is_hex(uint8_t(URI[i + 2])))) {
+            return log.warning(ERR::InvalidURI);
+         }
+         i += 2;
+         continue;
+      }
+      if (((ch >= 'A') and (ch <= 'Z')) or ((ch >= 'a') and (ch <= 'z')) or
+          ((ch >= '0') and (ch <= '9')) or (uri_punctuation.find(char(ch)) != std::string_view::npos)) continue;
+      return log.warning(ERR::InvalidURI);
+   }
+
+   #ifdef _WIN32
+      return winOpenURI(URI);
+   #elif defined(__linux__) and !defined(__ANDROID__)
+      std::string launcher;
+      if (ResolvePath("xdg-open", RSF::PATH, &launcher) != ERR::Okay) return log.warning(ERR::NoSupport);
+
+      objTask::create task;
+      if (not task.ok()) return log.warning(task.error);
+
+      task->Location = launcher;
+      task->Parameters.emplace_back(URI);
+      task->Flags = TSF::QUIET;
+
+      if (auto error = task->init(); error != ERR::Okay) return log.warning(error);
+      if (auto error = task->activate(); error != ERR::Okay) return log.warning(error);
+      return ERR::Okay;
+   #else
+      return log.warning(ERR::NoSupport);
+   #endif
 }
 
 /*********************************************************************************************************************
@@ -154,6 +247,9 @@ error Error: The error code to lookup.
 -RESULT-
 cstr: A human readable string for the error code is returned.  By default error codes are returned in English, however if a translation table exists for the user's own language, the string will be translated.
 
+-TAGS-
+api-owns-result, null-terminated-result, non-null-result, pure-query
+
 *********************************************************************************************************************/
 
 CSTRING GetErrorMsg(ERR Code)
@@ -161,7 +257,7 @@ CSTRING GetErrorMsg(ERR Code)
    if ((int(Code) < glTotalMessages) and (int(Code) > 0)) {
       return glMessages[int(Code)];
    }
-   else if (Code IS ERR::Okay) return "Operation successful.";
+   else if (!Code) return "Operation successful.";
    else return "Unknown error code.";
 }
 
@@ -183,6 +279,9 @@ uint Length: The length of the `Data` buffer.
 
 -RESULT-
 uint: Returns the computed 32 bit CRC value for the given data.
+
+-TAGS-
+does-not-take-ownership, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -362,6 +461,9 @@ int(RES) Resource: The ID of the resource that you want to obtain.
 
 -RESULT-
 large: Returns the value of the resource that you have requested.  If the resource ID is not known by the Core, `NULL` is returned.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/
@@ -377,12 +479,14 @@ int64_t GetResource(RES Resource)
    switch(Resource) {
       case RES::PRIVILEGED:      return glPrivileged;
       case RES::LOG_LEVEL:       return glLogLevel;
-      case RES::PROCESS_STATE:   return MAXINT(glTaskState);
+      case RES::PROCESS_STATE:   return int64_t(glTaskState);
       case RES::LOG_DEPTH:       return tlDepth;
-      case RES::JNI_ENV:         return (MAXINT)glJNIEnv;
-      case RES::THREAD_ID:       return int(get_thread_id());
-      case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (MAXINT)glDisplayDriver.c_str(); else return 0;
+      case RES::JNI_ENV:         return (int64_t)glJNIEnv;
+      case RES::DISPLAY_DRIVER:  if (not glDisplayDriver.empty()) return (int64_t)glDisplayDriver.c_str(); else return 0;
       case RES::MAIN_THREAD:     return tlMainThread ? true : false;
+      case RES::MAIN_THREAD_ID:  return int(glMainThreadID);
+      case RES::WINDOWS_ICON:    return glWindowsIcon;
+      case RES::STRUCT_DB:       return (int64_t)&glStructSizes;
 
       case RES::MEMORY_USAGE: {
          #ifdef __linux__
@@ -416,7 +520,7 @@ int64_t GetResource(RES Resource)
          char str[2048];
          int result;
          int64_t freemem = 0;
-         if (ReadFileToBuffer("/proc/meminfo", str, sizeof(str)-1, &result) IS ERR::Okay) {
+         if (!ReadFileToBuffer("/proc/meminfo", std::span((int8_t *)str, sizeof(str) - 1), &result)) {
             int i = 0;
             while (i < result) {
                if (startswith("Cached", str+i)) freemem += strtoll(str+i, nullptr, 0) * 1024LL;
@@ -445,7 +549,6 @@ int64_t GetResource(RES Resource)
          else return -1;
 
       case RES::CPU_SPEED: {
-         CSTRING line;
          static int cpu_mhz = 0;
 
          if (cpu_mhz) return cpu_mhz;
@@ -453,9 +556,10 @@ int64_t GetResource(RES Resource)
          auto file = objFile::create { fl::Path("drive1:proc/cpuinfo"), fl::Flags(FL::READ|FL::BUFFER) };
 
          if (file.ok()) {
-            while ((line = file->readLine())) {
+            std::string line;
+            while (!file->readLine(line)) {
                if (startswith("cpu MHz", line)) {
-                  if (auto value = strchr(line, ':')) cpu_mhz = int(strtod(value + 1, nullptr));
+                  if (auto value = strchr(line.c_str(), ':')) cpu_mhz = int(strtod(value + 1, nullptr));
                }
             }
          }
@@ -485,6 +589,9 @@ The state values in the structure are static and will not change during runtime.
 -RESULT-
 cstruct(*SystemState): A read-only !SystemState structure is returned.
 
+-TAGS-
+static-result, non-null-result
+
 *********************************************************************************************************************/
 
 const SystemState * GetSystemState(void)
@@ -497,8 +604,12 @@ const SystemState * GetSystemState(void)
       initialised = true;
 
       state.ConsoleFD = glConsoleFD;
-      state.HasConsole = glConsoleEnabled;
-      #ifdef __unix__
+
+      state.ConsoleType = glConsoleType;
+
+      #ifdef __ANDROID__
+         state.Platform = "Android";
+      #elif __unix__
          state.Platform = "Linux";
       #elif _WIN32
          state.Platform = "Windows";
@@ -533,6 +644,42 @@ const SystemState * GetSystemState(void)
 /*********************************************************************************************************************
 
 -FUNCTION-
+GetThreadID: Returns the UID of the current thread.
+
+Returns a unique ID for the active thread.  The ID has no relationship with the host operating system and is not
+re-used.
+
+-RESULT-
+int: A unique ID for the active thread is returned.
+
+-TAGS-
+pure-query
+
+*********************************************************************************************************************/
+
+static thread_local THREADID tlUniqueThreadID(0);
+static std::atomic_int glThreadIDCount = 1;
+
+int GetThreadID(void)
+{
+   if ((tlUniqueThreadID.defined()) and (tlThreadRecord)) return int(tlUniqueThreadID);
+   if (not tlUniqueThreadID.defined()) tlUniqueThreadID = THREADID(glThreadIDCount++);
+
+   // Register or repair the global record once, then use the thread-local record as the fast-path proof.
+
+   std::lock_guard lock(glmThreadRegistry);
+   if (auto it = glThreadRegistry.find(int(tlUniqueThreadID)); it IS glThreadRegistry.end()) {
+      tlThreadRecord = std::make_shared<ThreadRecord>();
+      glThreadRegistry[int(tlUniqueThreadID)] = tlThreadRecord;
+   }
+   else tlThreadRecord = it->second;
+
+   return int(tlUniqueThreadID);
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 PreciseTime: Returns the current system time, in microseconds.
 
 This function returns the current 'system time' in microseconds (1 millionth of a second).  The value is monotonic
@@ -542,6 +689,9 @@ savings adjustments or manual changes by the user.
 
 -RESULT-
 large: Returns the system time in microseconds.  Could return zero in the extremely unlikely event of an error.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -586,6 +736,9 @@ ptr Data: User specific data pointer that will be passed to the `Routine`.  Sepa
 Okay: The `FD` was successfully registered.
 Args: The `FD` was set to a value of `-1`.
 NoSupport: The host platform does not support the provided `FD`.
+
+-TAGS-
+callback-held, does-not-take-ownership, non-blocking
 -END-
 
 *********************************************************************************************************************/
@@ -608,7 +761,20 @@ ERR RegisterFD(int FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR), APTR Data)
    if (FD IS -1) return log.warning(ERR::Args);
 #endif
 
-   if (glFDProtected) { // Cache the request while glFDTable is in use.
+   auto events = RFD::READ|RFD::WRITE|RFD::EXCEPT|RFD::ALWAYS_CALL;
+   if ((Flags & RFD::REMOVE) != RFD::NIL) {
+      if ((Flags & events) IS RFD::NIL) Flags |= events;
+   }
+   else if ((Flags & events) IS RFD::NIL) Flags |= RFD::READ;
+
+   if (glFDProtected) { // Defer structural edits, but retire callback identities immediately.
+      for (auto &record : glFDTable) {
+         if (record.FD != FD or (record.Flags & Flags & events) IS RFD::NIL) continue;
+         if ((Flags & RFD::REMOVE) != RFD::NIL) {
+            if (not Routine or record.Routine IS Routine) record.Flags |= RFD::REMOVE;
+         }
+         else if (record.Routine != Routine or record.Data != Data) record.Flags |= RFD::REMOVE;
+      }
       glRegisterFD.emplace_back(FD, Routine, Data, Flags);
       return ERR::Okay;
    }
@@ -628,13 +794,22 @@ ERR RegisterFD(int FD, RFD Flags, void (*Routine)(HOSTHANDLE, APTR), APTR Data)
 
    if ((Flags & (RFD::READ|RFD::WRITE|RFD::EXCEPT|RFD::REMOVE|RFD::ALWAYS_CALL)) IS RFD::NIL) Flags |= RFD::READ;
 
-   for (auto &fd : glFDTable) {
-      if ((fd.FD IS FD) and ((Flags & (fd.Flags & (RFD::READ|RFD::WRITE|RFD::EXCEPT|RFD::ALWAYS_CALL))) != RFD::NIL)) {
-         fd.Routine = Routine;
-         fd.Flags   = Flags;
-         fd.Data    = Data;
-         return ERR::Okay;
+   auto replacement = glFDTable.end();
+   for (auto it = glFDTable.begin(); it != glFDTable.end();) {
+      if ((it->FD IS FD) and ((Flags & (it->Flags & events)) != RFD::NIL)) {
+         if (replacement IS glFDTable.end()) {
+            replacement = it;
+            ++it;
+         }
+         else it = glFDTable.erase(it); // A replacement may cover several existing subscriptions.
       }
+      else ++it;
+   }
+   if (replacement != glFDTable.end()) {
+      replacement->Routine = Routine;
+      replacement->Flags   = Flags;
+      replacement->Data    = Data;
+      return ERR::Okay;
    }
 
    log.function("FD: %" PRId64 ", Routine: %p, Flags: $%.2x (New)", (MAXINT)FD, Routine, int(Flags));
@@ -660,57 +835,57 @@ To read a resource path, use the ~GetSystemState() function.
 
 -INPUT-
 int(RP) PathType: The ID of the resource path to set.
-cstr Path: The new location to set for the resource path.
+strview Path: The new location to set for the resource path.
 
 -ERRORS-
 Okay:
 NullArgs:
+Args:
+
+-TAGS-
+copies-input, path-preserved
 
 *********************************************************************************************************************/
 
-ERR SetResourcePath(RP PathType, CSTRING Path)
+ERR SetResourcePath(RP PathType, const std::string_view &Path)
 {
    kt::Log log(__FUNCTION__);
 
-   log.function("Type: %d, Path: %s", int(PathType), Path);
+   if (Path.empty()) return ERR::NullArgs;
+
+   log.function("Type: %d, Path: %.*s", int(PathType), int(Path.size()), Path.data());
 
    switch(PathType) {
       case RP::ROOT_PATH:
-         if (Path) {
-            glRootPath = Path;
-            if ((!glRootPath.empty()) and (glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
-               #ifdef _WIN32
-                  glRootPath.push_back('\\');
-               #else
-                  glRootPath.push_back('/');
-               #endif
-            }
+         glRootPath = Path;
+         if ((!glRootPath.empty()) and (glRootPath.back() != '/') and (glRootPath.back() != '\\')) {
+            #ifdef _WIN32
+               glRootPath.push_back('\\');
+            #else
+               glRootPath.push_back('/');
+            #endif
          }
          return ERR::Okay;
 
       case RP::SYSTEM_PATH:
-         if (Path) {
-            glSystemPath = Path;
-            if ((!glSystemPath.empty()) and (glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
-               #ifdef _WIN32
-                  glSystemPath.push_back('\\');
-               #else
-                  glSystemPath.push_back('/');
-               #endif
-            }
+         glSystemPath = Path;
+         if ((!glSystemPath.empty()) and (glSystemPath.back() != '/') and (glSystemPath.back() != '\\')) {
+            #ifdef _WIN32
+               glSystemPath.push_back('\\');
+            #else
+               glSystemPath.push_back('/');
+            #endif
          }
          return ERR::Okay;
 
       case RP::MODULE_PATH: // An alternative path to the system modules.  This was introduced for Android, which holds the module binaries in the assets folders.
-         if (Path) {
-            glModulePath = Path;
-            if ((!glModulePath.empty()) and (glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
-               #ifdef _WIN32
-                  glModulePath += '\\';
-               #else
-                  glModulePath += '/';
-               #endif
-            }
+         glModulePath = Path;
+         if ((!glModulePath.empty()) and (glModulePath.back() != '/') and (glModulePath.back() != '\\')) {
+            #ifdef _WIN32
+               glModulePath += '\\';
+            #else
+               glModulePath += '/';
+            #endif
          }
          return ERR::Okay;
 
@@ -722,23 +897,34 @@ ERR SetResourcePath(RP PathType, CSTRING Path)
 /*********************************************************************************************************************
 
 -FUNCTION-
-SetResource: Sets miscellaneous resource identifiers.
+SetResource: Updates a writable Core resource value.
 
-The SetResource() function is used to manipulate miscellaneous system resources.  Currently the following resources
-are supported:
+SetResource() updates Core state selected by a !RES identifier.  The following identifiers are writable:
 
-<types lookup="RES" type="Resource">
-<type name="ALLOC_MEM_LIMIT">Adjusts the memory limit imposed on ~AllocMemory().  The `Value` specifies the memory limit in bytes.</>
-<type name="LOG_LEVEL">Adjusts the current debug level.  The `Value` must be between 0 and 9, where 1 is the lowest level of debug output (errors only) and 0 is off.</>
-<type name="PRIVILEGED_USER">If the `Value` is set to 1, this resource option puts the process in privileged mode (typically this enables full administrator rights).  This feature will only work for Unix processes that are granted admin rights when launched.  Setting the Value to 0 reverts to the user's permission settings.  SetResource() will return an error code indicating the level of success.</>
-</>
+<list type="bullet">
+<li>`LOG_LEVEL` sets the logging detail from 0 (disabled) to 9 (maximum detail).  Values outside this range are
+ignored.</li>
+<li>`LOG_DEPTH` sets the logging branch depth for the current thread.  This controls indentation of subsequent log
+output.</li>
+<li>`PRIVILEGED_USER` enables elevated Unix privileges when `Value` is non-zero and releases one level of privilege
+when it is zero.  Elevation is available only when the process was launched with suitable privileges.  Calls may be
+nested; privileges are released after the corresponding number of disable requests.  On non-Unix platforms this
+identifier has no effect.</li>
+<li>`WINDOWS_ICON` sets the Microsoft Windows resource icon ID for the process.</li>
+<li>`CONSOLE_FD` and `JNI_ENV` update internal host integration values.</li>
+</list>
+
+Other !RES identifiers are read-only or unsupported by this function.
+
+For `PRIVILEGED_USER`, the result is an `ERR` value indicating whether the request succeeded.  All other supported
+resources return 0.  Unsupported identifiers also return 0 after writing a warning to the log.
 
 -INPUT-
-int(RES) Resource: The ID of the resource to be set.
-large Value:    The new value to set for the resource.
+int(RES) Resource: The writable resource identifier.
+large Value: The value to assign to the resource.
 
 -RESULT-
-large: Returns the previous value of the `Resource`.  If the `Resource` value is invalid, `NULL` is returned.
+large: Result code is dependent on the targeted resource.
 -END-
 
 *********************************************************************************************************************/
@@ -763,6 +949,8 @@ int64_t SetResource(RES Resource, int64_t Value)
       case RES::LOG_DEPTH: tlDepth = Value; break;
 
       case RES::JNI_ENV: glJNIEnv = L64PTR(Value); break;
+
+      case RES::WINDOWS_ICON: glWindowsIcon = Value; break;
 
       case RES::PRIVILEGED_USER:
 #ifdef __unix__
@@ -820,7 +1008,7 @@ A callback function must be provided that follows this prototype: `ERR Function(
 The `Elapsed` parameter is the total number of microseconds that have elapsed since the last call.  The `CurrentTime`
 parameter is set to the ~PreciseTime() value just prior to the `Callback` being called.  The callback function
 can return `ERR::Terminate` at any time to cancel the subscription.  All other error codes are ignored.  Tiri callbacks
-should call `check(ERR::Terminate)` to perform the equivalent of this behaviour.
+should use `raise ERR_Terminate` to perform the equivalent of this behaviour.
 
 To change the interval, call ~UpdateTimer() with the new value.  To release a timer subscription, call
 ~UpdateTimer() with the resulting `Subscription` handle and an `Interval` of zero.
@@ -829,6 +1017,9 @@ Timer management is provisioned by the ~ProcessMessages() function.  Failure to 
 messages will lead to unreliable timer cycles.  It should be noted that the smaller the `Interval` that has been used,
 the more imperative regular message checking becomes.  Prolonged processing inside a timer routine can also impact on
 other timer subscriptions that are waiting to be processed.
+
+A timer callback is never re-entered.  If the callback processes messages, e.g. by calling ~WaitTime(), its own timer
+is skipped until the callback returns.
 
 -INPUT-
 double Interval:   The total number of seconds to wait between timer calls.
@@ -839,50 +1030,87 @@ ptr(func) Callback: A callback function is required that will be called on each 
 Okay:
 NullArgs:
 Args:
-ArrayFull: The task's timer array is at capacity - no more subscriptions can be granted.
 InvalidState: The subscriber is marked for termination.
 SystemLocked:
+
+-TAGS-
+creates-resource, callback-held, blocking
 
 *********************************************************************************************************************/
 
 ERR SubscribeTimer(double Interval, FUNCTION *Callback, APTR *Subscription)
 {
    kt::Log log(__FUNCTION__);
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
 
    if ((not Interval) or (not Callback)) return log.warning(ERR::NullArgs);
+   if (not Callback->defined()) return log.warning(ERR::Args);
    if (Interval < 0) return log.warning(ERR::Args);
 
    auto subscriber = tlContext.back().obj;
    if (subscriber->collecting()) return log.warning(ERR::InvalidState);
 
-   if (Callback->Type IS CALL::SCRIPT) log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Interval: %.3fs", Interval);
+   if (Callback->isScript()) log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Interval: %.3fs", Interval);
    else log.msg(VLF::BRANCH|VLF::FUNCTION|VLF::DETAIL, "Callback: %p, Interval: %.3fs", Callback->Routine, Interval);
 
    if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
       auto usInterval = int64_t(Interval * 1000000.0); // Scale the interval to microseconds
+      auto subscribed = PreciseTime();
+      auto next_call = subscribed + usInterval;
+
       if (usInterval <= 40000) {
-         // TODO: Rapid timers should be synchronised with other existing timers to limit the number of
-         // interruptions that occur per second.
+         // Synchronise rapid timers that share an interval so the message loop can wake once for the group.
+         bool found_phase = false;
+         auto phase_call = next_call;
+
+         for (const auto &timer : glTimers) {
+            if ((timer.Interval != usInterval) or (timer.PendingInterval) or (timer.Routine.stale())) continue;
+
+            auto candidate = timer.NextCall;
+            if (candidate < next_call) {
+               auto cycles = ((next_call - candidate) + usInterval - 1) / usInterval;
+               candidate += cycles * usInterval;
+            }
+
+            if ((not found_phase) or (candidate < phase_call)) {
+               phase_call = candidate;
+               found_phase = true;
+            }
+         }
+
+         if (found_phase) next_call = phase_call;
       }
 
       auto it = glTimers.emplace(glTimers.end());
-      auto subscribed = PreciseTime();
-      it->SubscriberID = subscriber->UID;
-      it->Interval     = usInterval;
-      it->LastCall     = subscribed;
-      it->NextCall     = subscribed + usInterval;
-      it->Routine      = *Callback;
-      it->Locked       = false;
-      it->Cycle        = glTimerCycle - 1;
+      it->Interval        = usInterval;
+      it->PendingInterval = 0;
+      it->LastCall        = subscribed;
+      it->NextCall        = next_call;
+      it->Routine         = *Callback;
+      it->Locked          = false;
+      it->Cycle           = glTimerCycle - 1;
+      it->ID              = ++glTimerID;
 
-      if (subscriber->UID > 0) it->Subscriber = subscriber;
-      else it->Subscriber = nullptr;
+      it->Routine.pin();
 
-      // For resource tracking purposes it is important for us to keep a record of the subscription so that
-      // we don't treat the object address as valid when it's been removed from the system.
+      if (subscriber->UID) {
+         // The weak pin keeps the subscriber's header readable so that the dispatcher can detect and remove
+         // orphaned subscriptions if the object_free() cleanup misses them due to a glmTimer lock timeout.
+         it->Subscriber = subscriber;
+         subscriber->pinWeak();
+      }
+      else it->Subscriber = nullptr; // Subscribed from the dummy context; internal subscriptions have no subscriber
 
+      // This flag lets object_free() cheaply detect and remove abandoned timer subscriptions.
       subscriber->setFlag(NF::TIMER_SUB);
-      if (Subscription) *Subscription = &*it;
+      // The handle is an identifier rather than a pointer, so that UpdateTimer() can detect a handle that has outlived
+      // its timer.
+      if (Subscription) *Subscription = (APTR)uintptr_t(it->ID);
+      retained_callback = true;
       return ERR::Okay;
    }
    else return log.warning(ERR::SystemLocked);
@@ -896,6 +1124,9 @@ UpdateTimer: Modify or remove a subscription created by SubscribeTimer().
 This function complements ~SubscribeTimer().  It can change the interval for an existing timer subscription,
 or remove it if the Interval is set to zero.
 
+A subscription that no longer exists, e.g. because its callback returned `ERR::Terminate`, is detected and results in
+`ERR::Search`.
+
 -INPUT-
 ptr Subscription: The timer subscription to modify.
 double Interval: The new interval for the timer (measured in seconds), or zero to remove.
@@ -903,8 +1134,12 @@ double Interval: The new interval for the timer (measured in seconds), or zero t
 -ERRORS-
 Okay:
 NullArgs:
+Search: The subscription does not refer to an active timer.
+AlreadyLocked: The timer is executing.  A removal request is deferred to the dispatcher's next cycle.
 SystemLocked:
-Search:
+
+-TAGS-
+blocking
 
 *********************************************************************************************************************/
 
@@ -914,14 +1149,25 @@ ERR UpdateTimer(APTR Subscription, double Interval)
 
    if (not Subscription) return log.warning(ERR::NullArgs);
 
-   log.msg(VLF::DETAIL|VLF::BRANCH|VLF::FUNCTION, "Subscription: %p, Interval: %.4f", Subscription, Interval);
-
    if (auto lock = std::unique_lock{glmTimer, 1000ms}) {
-      auto timer = (CoreTimer *)Subscription;
+      auto id = uint64_t(uintptr_t(Subscription));
+      auto it = std::find_if(glTimers.begin(), glTimers.end(), [id](const CoreTimer &Timer) { return Timer.ID IS id; });
+      if (it IS glTimers.end()) return log.warning(ERR::Search);
+
+      auto timer = &*it;
+      log.msg(VLF::DETAIL|VLF::BRANCH|VLF::FUNCTION, "Subscription: %p, New Interval: %.4f, Current Interval: %.4f", Subscription, Interval, timer->Interval / 1000000.0);
       if (Interval < 0) {
-         // Special mode: Preserve existing timer settings for the subscriber (ticker values are not reset etc)
+         // Special mode:
+         //   Doesn't upgrade the timer immediately unless the new interval < existing interval.
+         //   Extending the interval will apply it on the following cycle.
          auto usInterval = -(int64_t(Interval * 1000000.0));
-         if (usInterval < timer->Interval) timer->Interval = usInterval;
+         if (usInterval <= timer->Interval) {
+            timer->Interval = usInterval;
+            timer->PendingInterval = 0;
+            auto next_call = PreciseTime() + usInterval;
+            if (next_call < timer->NextCall) timer->NextCall = next_call;
+         }
+         else timer->PendingInterval = usInterval;
          return ERR::Okay;
       }
       else if (Interval > 0) {
@@ -934,19 +1180,26 @@ ERR UpdateTimer(APTR Subscription, double Interval)
          if (timer->Locked) {
             // A timer can't be removed during its execution, but we can nullify the function entry
             // and ProcessMessages() will automatically terminate it on the next cycle.
-            timer->Routine.Type = CALL::NIL;
-            return log.warning(ERR::AlreadyLocked);
+            //
+            // This is an expected path rather than a fault.  It is reached when a callback removes its own timer,
+            // when another thread removes the timer mid-callback, and when a free that was deferred while the
+            // dispatcher held the subscriber's lock completes from ReleaseObject() inside the dispatch loop, i.e.
+            // before the dispatcher has reacquired glmTimer to clear Locked.  For that reason no warning is logged.
+            if (timer->Routine.isScript() and (not timer->Routine.stale())) {
+               ((objScript *)timer->Routine.Context)->derefProcedure(timer->Routine);
+            }
+            if (timer->Routine.defined()) timer->Routine.unpin();
+            timer->Routine.clear();
+            log.detail("Timer is executing; removal deferred to the dispatcher.");
+            return ERR::AlreadyLocked;
          }
 
          FUNCTION script_routine;
-         if (timer->Routine.isScript()) script_routine = timer->Routine;
+         if (timer->Routine.isScript() and (not timer->Routine.stale())) script_routine = timer->Routine;
+         if (timer->Routine.defined()) timer->Routine.unpin();
 
-         for (auto it=glTimers.begin(); it != glTimers.end(); it++) {
-            if (timer IS &(*it)) {
-               glTimers.erase(it);
-               break;
-            }
-         }
+         if (it->Subscriber) it->Subscriber->unpinWeak();
+         glTimers.erase(it);
 
          lock.unlock();
 
@@ -983,6 +1236,10 @@ double Seconds: The number of seconds to wait for.  Fractional values are suppor
 -ERRORS-
 Okay:
 Cancelled: The thread has been requested to stop and cannot pause.
+Terminate
+
+-TAGS-
+blocking
 
 -END-
 
@@ -1049,12 +1306,15 @@ If `Stop` is set to true then the target thread will be put into a stopping stat
 sleep attempts in the target thread to be cancelled.
 
 -INPUT-
-int Thread: The target thread's unique ID, as returned by `GetResource(RES::THREAD_ID)`.
+int Thread: The target thread's unique ID, as returned by `GetThreadID()`.
 int Stop: If `true`, the target thread will be put into a stopping state.
 
 -ERRORS-
 Okay: The thread was successfully interrupted.
 Search: No thread with the given ID was found in the registry.
+
+-TAGS-
+blocking
 
 -END-
 
@@ -1084,7 +1344,53 @@ ERR WakeThread(int Thread, int Stop)
    if (paused) {
       record->cv.notify_one();
       cvObjects.notify_all();   // Wake threads blocked in LockObject()
-      cvResources.notify_all(); // Wake threads blocked in AccessMemory()
    }
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+UnitTests: Private.  Run the unit tests that are compiled into the Core.
+
+If the Core has been built with the `UNIT_TESTS` option enabled, calling this function runs the embedded unit tests
+and returns the resulting totals.  If unit tests are not present in the build then no tests are run and both
+counters are returned as zero.
+
+A test run is considered successful when `Passed` matches `Total`.  Details of individual test failures are printed
+to the application log.
+
+-INPUT-
+cstr Options: Reserved for future use; `NULL` is acceptable.
+&int Passed: Returns the number of tests that passed.
+&int Total: Returns the total number of tests that were executed.
+
+-END-
+
+*********************************************************************************************************************/
+
+#ifdef UNIT_TESTS
+extern void object_layout_unit_tests(int &, int &);
+extern void wait_for_objects_unit_tests(int &, int &);
+extern void async_shutdown_unit_tests(int &, int &);
+#endif
+
+void UnitTests(CSTRING Options, int *Passed, int *Total)
+{
+   int passed = 0, total = 0;
+
+#ifdef UNIT_TESTS
+   {
+      kt::Log log("CoreTests");
+      log.branch("Running Object layout unit tests...");
+      object_layout_unit_tests(passed, total);
+      log.branch("Running WaitForObjects unit tests...");
+      wait_for_objects_unit_tests(passed, total);
+      log.branch("Running async shutdown unit tests...");
+      async_shutdown_unit_tests(passed, total);
+   }
+#endif
+
+   if (Passed) *Passed = passed;
+   if (Total) *Total = total;
 }

@@ -1,0 +1,211 @@
+@Package(name="gui/divider", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+   include 'vector'
+
+   namespace gui
+
+   module display as mGfx
+
+GAP <const> = gui.sizing.widget.gap
+HALF_GAP <const> = gui.sizing.widget.gap / 2
+
+----------------------------------------------------------------------------------------------------------------------
+
+function arrangeAll(self:table!, Middle:num)
+   local a_len
+
+   if Middle then
+      a_limit = math.floor(&_vp[&_length] - &_minB - GAP)
+      a_len   = math.floor(Middle - HALF_GAP)
+      minA    = math.floor(&_primary[&_anchor] + &_minA)
+      maxA    = math.floor(&_primary[&_anchor] + &_maxA)
+      a_len   = math.clamp(a_len, minA, maxA)
+      if a_len > a_limit then a_len = a_limit end
+      &_primary[&_length] = a_len - &_primary[&_anchor]
+   else -- (A) side will stay the same, (B) side will be resized
+      a_len = &_primary[&_anchor] + &_primary[&_length]
+   end
+
+   if &_orientation is 'h' then -- Vertical divider
+      &_div = { x = a_len, y = &_primary.y + &_offsetA, width = GAP, height = &_primary.height - (&_offsetA + &_offsetB) }
+   else
+      &_div = { x = &_primary.x + &_offsetA, y = a_len, width = &_primary.width - (&_offsetA + &_offsetB), height = GAP }
+   end
+
+   &_secondary[&_anchor] = a_len + GAP -- Set x/y position of the other side
+   -- NB: It is presumed that _secondary [x|y]Offset is preset to a fixed value by the client.
+
+   &_dividerVP.acRedimension(&_div.x, &_div.y, 0, &_div.width, &_div.height, 0)
+
+   if &_anchored then -- If pointer is anchored, it must be moved manually.
+      if &_orientation is 'h' then
+         mGfx.SetCursorPos(&_vp.absX + &_div.x + HALF_GAP, &_vp.absY + &_anchorY)
+      else
+         mGfx.SetCursorPos(&_vp.absX + &_anchorX, &_vp.absY + &_div.y + HALF_GAP)
+      end
+   end
+
+   &_vp.acDraw()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+gui.divider = function(Options:table)
+   self = entity {
+      _pct          = 0.5,
+      _proportional = Options.proportional != false,
+      _buttonHeld   = false,
+      _minA = Options.minA ?? 5,
+      _minB = Options.minB ?? 5,
+      _maxA = Options.maxA ?? 8000,
+      _offsetA = Options.offsetA ?? 0,
+      _offsetB = Options.offsetB ?? 0,
+      _div  = { }, -- Area of the 'strip' between the opposing regions.
+      viewport = nil -- The viewport of the strip
+   }
+
+   -- The strip colour is the window's line stroke, blended towards the window background.
+
+   function stripColour(Theme:table!):str
+      colour = gui.strToRGB(Theme.window.stroke.stroke)
+      colour = colour.interpolate(gui.strToRGB(Theme.window.bkgd.fill), 0.85)
+      colour.a = 255
+      return tostring(colour)
+   end
+
+   using self do
+      if Options.left and Options.right then
+         &_orientation = 'h'
+         &_primary     = Options.left
+         &_secondary   = Options.right
+         &_anchor      = 'x'
+         &_length      = 'width'
+         -- NB: The opposing viewport must use fixed x and xOffset coordinates.
+      elseif Options.top and Options.bottom then
+         &_orientation = 'v'
+         &_primary     = Options.top
+         &_secondary   = Options.bottom
+         &_anchor      = 'y'
+         &_length      = 'height'
+         -- NB: The opposing viewport must use fixed y and yOffset coordinates.
+      else
+         raise 'A left/right or top/bottom pair must be specified.'
+      end
+
+      &_vp = &_primary.parent
+      assert(&_vp.id is &_secondary.parent.id, 'The provided viewports do not share the same parent.')
+
+      local div_name
+      if Options.style != 'none' then
+         colour = stripColour(gui.getTheme(&_vp))
+
+         if &_orientation is 'h' then -- Top to bottom tiling
+            &_pattern = &_vp.scene.new('VectorPattern', {
+               name = 'div_pattern', x = 0, y = 0, pageWidth = GAP, pageHeight = GAP*4, width = GAP, height = GAP*4,
+               units = VUNIT_USERSPACE, spreadMethod = VSPREAD_REPEAT
+            })
+
+            pt = string.format('%d,%d, %d,%d, %d,%d %d,%d', 0, 0, GAP, GAP*2, GAP, GAP*4, 0, GAP*2)
+            &_stripe = &_pattern.viewport.new('VectorPolygon', { points = pt, fill = colour })
+         else -- Left to right tiling
+            &_pattern = &_vp.scene.new('VectorPattern', {
+               name = 'div_pattern', x = 0, y = 0, pageWidth = GAP*4, pageHeight=GAP, width=GAP*4, height=GAP,
+               units = VUNIT_USERSPACE, spreadMethod = VSPREAD_REPEAT
+            })
+
+            pt = string.format('%d,%d, %d,%d, %d,%d %d,%d', GAP*2, 0, GAP*4, 0, GAP*2, GAP, 0, GAP)
+            &_stripe = &_pattern.viewport.new('VectorPolygon', { points = pt, fill = colour })
+         end
+
+         div_name = f'divider-bkgd-{&_pattern.id}'
+         check &_vp.scene.mtAddDef(div_name, &_pattern)
+      end
+
+      &_vp.subscribe('free', function()
+         if &_anchored then mGfx.UnlockCursor(&_vp) end
+      end)
+
+      if &_orientation is 'h' then
+         &_dividerVP = &_vp.new('VectorViewport', {
+            name='div_vp', x=0, y=0, width=GAP, height='100%', cursor=PTC_SPLIT_HORIZONTAL
+         })
+      else
+         &_dividerVP = &_vp.new('VectorViewport', {
+            name='div_vp', x=0, y=0, width='100%', height=GAP, cursor=PTC_SPLIT_VERTICAL
+         })
+      end
+
+      &_dividerVP.acMoveToBack()
+      &viewport = &_dividerVP
+
+      if Options.style != 'none' then
+         &_dividerVP.new('VectorRectangle', {
+            name='div_fill', x=0, y=0, width='100%', height='100%', fill=f'url(#{div_name})'
+         })
+      end
+
+      -- Called by gui.broadcastTheme() with the window's new theme.
+
+      &applyTheme = function(Theme:table!)
+         &_stripe ?! return
+         &_stripe.fill = stripColour(Theme)
+         &_dividerVP.acDraw()
+      end
+
+      gui.registerWidget(&_vp, &&)
+
+      arrangeAll(self)
+
+      &_pct = (&_div[&_anchor] + HALF_GAP) / &_vp[&_length]
+
+      &_vp.mtSubscribeFeedback(FM_PATH_CHANGED, function(Viewport:obj!, Event)
+         if &_proportional then
+            if &_orientation is 'h' then
+               arrangeAll(self, &_pct * Viewport.width)
+            else
+               arrangeAll(self, &_pct * Viewport.height)
+            end
+         else
+            arrangeAll(self)
+         end
+
+         Viewport.acDraw()
+      end)
+
+      check &_dividerVP.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, function(Viewport:obj!, Events)
+         ev = Events
+         while ev do
+            if ev.type is JET_ABS_XY then
+               if &_buttonHeld then
+                  arrangeAll(self, (&_orientation is 'h') ? ev.absX - &_vp.absX : ev.absY - &_vp.absY)
+                  &_pct = (&_div[&_anchor] + HALF_GAP) / &_vp[&_length]
+               end
+            elseif ev.type is JET_BUTTON_1 then -- LMB
+               if ev.value > 0 then
+                  if mGfx.LockCursor(&_vp) is ERR_Okay then
+                     &_anchored = true
+                     &_anchorX  = input.x
+                     &_anchorY  = input.y
+                  end
+                  &_buttonHeld = true
+               elseif &_buttonHeld then
+                  if &_anchored then
+                     &_anchored = false
+                     mGfx.UnlockCursor(&_vp)
+                  end
+
+                  &_buttonHeld = false
+               end
+            end
+            ev = ev.next
+         end
+      end)
+
+      return &&
+   end
+end

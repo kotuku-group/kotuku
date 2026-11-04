@@ -28,34 +28,33 @@ For more information on the Tiri syntax, please refer to the official Tiri Refer
 #define PRV_TIRI
 #define PRV_TIRI_MODULE
 #include <kotuku/main.h>
-#include <kotuku/modules/xml.h>
-#include <kotuku/modules/display.h>
 #include <kotuku/modules/tiri.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
+#include <kotuku/modules/config.h>
 #include <kotuku/strings.hpp>
 
-#include <inttypes.h>
+#include <format>
 #include <vector>
 #include <iterator>
-#include <mutex>
 
 #include "lua.h"
-#include "lualib.h"
 #include "lauxlib.h"
 #include "lj_obj.h"
-#include "parser/parser.h"
 #include "lj_bc.h"
 #include "lj_array.h"
 #include "lj_gc.h"
-#include "lj_object.h"
-
-#include "hashes.h"
+#include "lj_state.h"
+#include "lj_vm.h"
 
 JUMPTABLE_CORE
 JUMPTABLE_REGEX
 
 #include "defs.h"
+#include "protected_call.h"
+#include "packaging/package_resolver.h"
 
+namespace tiri {
 OBJECTPTR modDisplay = nullptr; // Required by tiri_input.c
 OBJECTPTR modTiri = nullptr;
 OBJECTPTR modRegex = nullptr;
@@ -65,14 +64,17 @@ struct ActionTable *glActions = nullptr;
 bool glPrintMsg = false;
 JOF glJitOptions = JOF::NIL;
 ankerl::unordered_dense::map<std::string_view, ACTIONID, CaseInsensitiveHashView, CaseInsensitiveEqualView> glActionLookup;
-ankerl::unordered_dense::map<std::string_view, uint32_t> glStructSizes;
+ankerl::unordered_dense::map<uint32_t, StructInfo> *glStructSizes = nullptr;
 ankerl::unordered_dense::map<uint32_t, TiriConstant> glConstantRegistry;
-ankerl::unordered_dense::map<struct_name, struct_record, struct_hash> glStructs;
+std::recursive_mutex glStructMutex;
+std::unordered_map<uint32_t, struct_record> glStructs;
 std::shared_mutex glConstantMutex;
+uint64_t glActionsWithResults = 0;
 
 static struct MsgHandler *glMsgThread = nullptr; // Message handler for thread callbacks
 static MsgHandler *glDelayedCallHandle = nullptr;
 MSGID glDelayedCallMsgID = MSGID::NIL;
+}
 
 constexpr auto HASH_TRACE_TOKENS         = kt::strhash("trace-tokens");
 constexpr auto HASH_TRACE_EXPECT         = kt::strhash("trace-expect");
@@ -113,46 +115,70 @@ APTR get_meta(lua_State *Lua, int Arg, CSTRING MetaTable)
 }
 
 //********************************************************************************************************************
-// Returns a pointer to an object (if the object exists).  To guarantee safety, object access always utilises the ID
-// so that we don't run into issues if the object has been collected.
+// Returns a locked pointer to an object if it still exists.  Weak-pinned wrappers retain a safe header pointer between
+// accesses, avoiding repeated global resource-table lookups without delaying object termination.
+//
+// The optional Error parameter reports why access failed so that callers can distinguish a genuine locking problem
+// (ERR::AccessObject) from an object that has been terminated (ERR::DoesNotExist) or is scheduled for collection
+// (ERR::MarkedForDeletion).
 
-OBJECTPTR access_object(GCobject *Object)
+ERR access_object(GCobject *Object, OBJECTPTR &ObjectPtr)
 {
+   ObjectPtr = nullptr;
+   ERR error = ERR::AccessObject; // Default reason if access fails
+
    if (Object->accesscount) {
       Object->accesscount++;
-      return Object->ptr;
+      ObjectPtr = Object->ptr;
+      return ERR::Okay;
    }
-   else if (not Object->uid) return nullptr; // Object reference is dead
-   else if ((not Object->ptr) or Object->is_detached()) {
-      // Detached objects are always accessed via UID, even if we have a pointer reference.
+
+   if (not Object->uid) {
+      // The wrapper has already observed object termination in a previous access attempt.
+      return ERR::DoesNotExist;
+   }
+
+   if (Object->is_pinned()) {
+      if (Object->ptr->collecting()) {
+         // NF::FREE means destruction is in progress; FREE_ON_UNLOCK alone means collection is scheduled.
+         error = Object->ptr->terminating() ? ERR::DoesNotExist : ERR::MarkedForDeletion;
+         Object->ptr->unpinWeak();
+         Object->set_pinned(false);
+         Object->ptr = nullptr;
+         Object->uid = 0;
+         return error;
+      }
+      if ((error = Object->ptr->lock()) != ERR::Okay) {
+         kt::Log(__FUNCTION__).warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error),
+            Object->ptr->Queue.load());
+         return error;
+      }
+   }
+   else {
       OBJECTPTR obj_ptr;
-      if (auto error = AccessObject(Object->uid, 5000, &obj_ptr); error IS ERR::Okay) {
+      if (!(error = AccessObject(Object->uid, 5000, &obj_ptr))) {
          Object->ptr = obj_ptr;
          Object->set_locked(true);
+         Object->ptr->pinWeak();
+         Object->set_pinned(true);
       }
       else if (error IS ERR::DoesNotExist) {
-         kt::Log log(__FUNCTION__);
-         log.trace("Object #%d has been terminated.", Object->uid);
+         kt::Log(__FUNCTION__).trace("Object #%d has been terminated.", Object->uid);
          Object->ptr = nullptr;
          Object->uid = 0;
       }
    }
-   else if (auto error = Object->ptr->lock(); error != ERR::Okay) {
-      kt::Log("access_object").warning("#%d lock() failed: %s, Queue: %d", Object->uid, GetErrorMsg(error), Object->ptr->Queue.load());
-      return nullptr;
-   }
 
    if (Object->ptr) {
-      #if LUA_USE_ASSERT
-         // This error indicates that the object was forcibly terminated (e.g. because the parent was terminated).
-         // The client should have marked the object as detached in order to prevent this issue.
-         lj_assertX(Object->ptr->Class, "Object terminated while still attached.");
-      #endif
       Object->accesscount++;
+      ObjectPtr = Object->ptr;
+      return ERR::Okay;
    }
 
-   return Object->ptr;
+   return error;
 }
+
+//********************************************************************************************************************
 
 void release_object(GCobject *Object)
 {
@@ -161,13 +187,13 @@ void release_object(GCobject *Object)
          if (Object->is_locked()) {
             ReleaseObject(Object->ptr);
             Object->set_locked(false);
-            Object->ptr = nullptr;
+            if (not Object->is_pinned()) Object->ptr = nullptr;
          }
          else {
             #ifndef NDEBUG
             if (Object->ptr->Queue.load() <= 0) {
-               kt::Log("release_object").warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
-                  Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), kt::_get_thread_id());
+               kt::Log(__FUNCTION__).warning("#%d Queue underflow before unlock: Queue: %d, ThreadID: %d, OurThread: %d",
+                  Object->uid, Object->ptr->Queue.load(), Object->ptr->ThreadID.load(), GetThreadID());
                DEBUG_BREAK
             }
             #endif
@@ -189,13 +215,51 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
-   CSTRING module_name;
-   if (auto error = MetaClass->get(FID_Module, module_name); error IS ERR::Okay) {
-      if (auto error = load_include(Lua->script, module_name); error != ERR::Okay) {
-         luaL_error(Lua, error, "Failed to process module '%s' for class '%s'", module_name, MetaClass->ClassName);
+   // NOTE: Stick to the indirect get() method here because it otherwise crashes if the MetaClass table requires
+   // regeneration
+
+   std::string_view module_name;
+   if (auto error = MetaClass->get(strhash("module"), module_name); !error) {
+      if (auto error = load_module_defs(module_name); error != ERR::Okay) {
+         luaL_error(Lua, error,
+            std::format("Failed to process module '{}' for class '{}'", module_name, MetaClass->ClassName));
       }
    }
-   else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName, GetErrorMsg(error));
+   else kt::Log(__FUNCTION__).traceWarning("Failed to get module name from class '%s', \"%s\"", MetaClass->ClassName.c_str(), GetErrorMsg(error));
+}
+
+//********************************************************************************************************************
+
+static ERR init_pkg_index(kt::Log &Log)
+{
+   if (AnalysePath("packages:index.cfg", NULL) != ERR::Okay) {
+      Log.error("The packages:index.cfg file is missing");
+      return ERR::FileNotFound;
+   }
+
+   objConfig *config = objConfig::create::global({ fl::Path("packages:index.cfg") });
+   if (not config) return ERR::CreateObject;
+
+   std::shared_ptr<const tiri::PackageResolverSnapshot> snapshot;
+   std::string diagnostic;
+   if (tiri::build_package_resolver_snapshot(config->Groups, snapshot, diagnostic) !=
+       tiri::ImportResolutionError::Okay) {
+      Log.error("Invalid package index 'packages:index.cfg': %s", diagnostic.c_str());
+      FreeResource(config);
+      return ERR::InvalidData;
+   }
+
+   tiri::glPackageIndex = config;
+   tiri::glPackageResolver = std::move(snapshot);
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static void expunge_package_index()
+{
+   tiri::glPackageResolver.reset();
+   if (tiri::glPackageIndex) { FreeResource(tiri::glPackageIndex); tiri::glPackageIndex = nullptr; }
 }
 
 //********************************************************************************************************************
@@ -209,9 +273,14 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
    glTiriContext = CurrentContext();
    glPrintMsg = GetResource(RES::LOG_LEVEL) >= 4;
 
-   argModule->get(FID_Root, modTiri);
+   modTiri = (OBJECTPTR)((objModule *)argModule)->Root;
 
-   ActionList(&glActions, nullptr); // Get the global action table from the Core
+   kt::vector<ActionTable *> actions;
+   ActionList(&actions);
+   if (actions.empty()) return log.warning(ERR::NoData);
+   glActions = actions[0]; // The action records have process lifetime.
+
+   glStructSizes = (ankerl::unordered_dense::map<uint32_t, StructInfo> *)GetResourcePtr(RES::STRUCT_DB);
 
    glDelayedCallMsgID = MSGID(AllocateID(IDTYPE::MESSAGE));
    auto func = C_FUNCTION(delayed_msg_handler);
@@ -225,10 +294,23 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       glActionLookup[glActions[action_id].Name] = AC(action_id);
    }
 
-   kt::vector<std::string> *pargs;
+   // Record actions that have result parameters.
+   uint64_t result_mask = 0;
+   for (int action_id=1; glActions[action_id].Name; action_id++) {
+      if (glActions[action_id].Args) {
+         for (int arg=0; glActions[action_id].Args[arg].Name; arg++) {
+            if (glActions[action_id].Args[arg].Type & FD_RESULT) {
+               result_mask |= uint64_t(1) << action_id;
+               break;
+            }
+         }
+      }
+   }
+   glActionsWithResults = result_mask;
+
+   std::span<std::string> args;
    auto task = CurrentTask();
-   if ((task->get(FID_Parameters, pargs) IS ERR::Okay) and (pargs)) {
-      kt::vector<std::string> &args = *pargs;
+   if (!task->getParameters(args)) {
       for (int i=0; i < std::ssize(args); i++) {
          if (kt::startswith(args[i], "--jit-options")) {
             // Parse --jit-options [csv] parameter
@@ -287,16 +369,25 @@ void load_include_for_class(lua_State *Lua, objMetaClass *MetaClass)
       }
    }
 
-   return create_tiri();
+   if (auto error = init_pkg_index(log); error != ERR::Okay) return error;
+
+   if (auto error = create_tiri(); error != ERR::Okay) {
+      expunge_package_index();
+      return error;
+   }
+   return ERR::Okay;
 }
 
 static ERR MODExpunge(void)
 {
    if (glDelayedCallHandle) { FreeResource(glDelayedCallHandle); glDelayedCallHandle = nullptr; }
    if (glMsgThread) { FreeResource(glMsgThread); glMsgThread = nullptr; }
+   // Registered modules can own Tiri objects; destroy those children while their class and dependencies are live.
+   expunge_modules();
    if (clTiri)      { FreeResource(clTiri); clTiri = nullptr; }
    if (modDisplay)  { FreeResource(modDisplay); modDisplay = nullptr; }
    if (modRegex)    { FreeResource(modRegex); modRegex = nullptr; }
+   expunge_package_index();
    return ERR::Okay;
 }
 
@@ -304,25 +395,104 @@ static ERR MODExpunge(void)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
 extern void indexing_unit_tests(int &, int &);
 extern void vm_asm_unit_tests(int &, int &);
 extern void jit_frame_unit_tests(int &, int &);
 extern void parser_unit_tests(int &, int &);
 extern void array_unit_tests(int &, int &);
 extern void allocator_unit_tests(int &, int &);
-extern void bulk_unit_tests(int &, int &);
+extern void gc_unit_tests(int &, int &);
+extern void module_marshalling_unit_tests(int &, int &);
+extern void set_variable_unit_tests(int &, int &);
+extern void bytecode_file_unit_tests(int &, int &);
+extern void cache_manifest_unit_tests(int &, int &);
+extern void import_module_format_unit_tests(int &, int &);
+extern void import_module_cache_unit_tests(int &, int &);
+extern void version_constraint_unit_tests(int &, int &);
+extern void package_resolver_unit_tests(int &, int &);
 #endif
 
-static void MODTest(CSTRING Options, int *Passed, int *Total)
+static void MODTest(std::string_view Options, int *Passed, int *Total)
 {
-#ifdef ENABLE_UNIT_TESTS
+#ifdef UNIT_TESTS
+   // Read parser fixtures alongside installed packages and restore the volume and snapshot afterwards.
+   std::string installed_packages;
+   if (ResolvePath("packages:", RSF::NO_FILE_CHECK, &installed_packages) != ERR::Okay) {
+      kt::Log("TiriTests").error("Failed to resolve the installed packages volume");
+      (*Total)++;
+      return;
+   }
+
+   struct FixturePackages {
+      std::string InstalledPath;
+      std::shared_ptr<const tiri::PackageResolverSnapshot> InstalledSnapshot;
+      bool VolumeChanged = false;
+      ~FixturePackages() {
+         tiri::glPackageResolver = std::move(InstalledSnapshot);
+         if (VolumeChanged) {
+            SetVolume("packages", InstalledPath, "filetypes/source", "", "",
+               VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE);
+         }
+      }
+   } fixture { installed_packages, tiri::glPackageResolver };
+
+   const std::string test_packages = std::string(TIRI_PACKAGE_TEST_PATH) + "|" + installed_packages;
+   if (auto error = SetVolume("packages", test_packages, "filetypes/source", "", "",
+       VOLUME::HIDDEN|VOLUME::SYSTEM|VOLUME::REPLACE); error != ERR::Okay) {
+      kt::Log("TiriTests").error("Failed to configure the package fixture volume: %s", GetErrorMsg(error));
+      (*Total)++;
+      return;
+   }
+   fixture.VolumeChanged = true;
+
+   objConfig *fixture_index = objConfig::create::global({ fl::Path("packages:index.cfg") });
+   std::shared_ptr<const tiri::PackageResolverSnapshot> snapshot;
+   std::string diagnostic;
+   ConfigGroups groups = tiri::glPackageIndex ? tiri::glPackageIndex->Groups : ConfigGroups();
+   if (fixture_index) {
+      for (const auto &[name, keys] : fixture_index->Groups) groups.emplace_back(name, keys);
+   }
+   if (not fixture_index or tiri::build_package_resolver_snapshot(groups, snapshot, diagnostic) !=
+       tiri::ImportResolutionError::Okay) {
+      kt::Log("TiriTests").error("Invalid package fixture index: %s", diagnostic.c_str());
+      if (fixture_index) FreeResource(fixture_index);
+      (*Total)++;
+      return;
+   }
+   FreeResource(fixture_index);
+   tiri::glPackageResolver = std::move(snapshot);
+
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running bytecode unit tests...");
+      bytecode_file_unit_tests(*Passed, *Total);
+   }
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running module import unit tests...");
+      cache_manifest_unit_tests(*Passed, *Total);
+      import_module_format_unit_tests(*Passed, *Total);
+      import_module_cache_unit_tests(*Passed, *Total);
+      version_constraint_unit_tests(*Passed, *Total);
+      package_resolver_unit_tests(*Passed, *Total);
+   }
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running SetVariable unit tests...");
+      set_variable_unit_tests(*Passed, *Total);
+   }
+   {
+      kt::Log log("TiriTests");
+      log.branch("Running module marshalling unit tests...");
+      module_marshalling_unit_tests(*Passed, *Total);
+   }
    {
       kt::Log log("TiriTests");
       log.branch("Running indexing unit tests...");
@@ -355,8 +525,8 @@ static void MODTest(CSTRING Options, int *Passed, int *Total)
    }
    {
       kt::Log log("TiriTests");
-      log.branch("Running bulk TValue unit tests...");
-      bulk_unit_tests(*Passed, *Total);
+      log.branch("Running garbage collector unit tests...");
+      gc_unit_tests(*Passed, *Total);
    }
 #else
    kt::Log("TiriTests").warning("Unit tests are disabled in this build.");
@@ -366,11 +536,68 @@ static void MODTest(CSTRING Options, int *Passed, int *Total)
 //********************************************************************************************************************
 // Bytecode names for debugging purposes
 
+namespace tiri {
 CSTRING const glBytecodeNames[] = {
 #define BCNAME(name, ma, mb, mc, mt) #name,
    BCDEF(BCNAME)
 #undef BCNAME
 };
+}
+
+namespace ti {
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+ResolvePackage: Resolve an importable library package to its filesystem path.
+
+Use ResolvePackage() to discover the filesystem location of an importable library package such as `gui` or
+`io/filesearch`.  The returned path identifies the same versioned source file that would be selected for a Tiri
+`import` declaration.  If Constraint is empty, the highest available version is returned.  Otherwise, Constraint
+should match a valid version expression accepted by an import clause.
+
+-INPUT-
+strview Name: Public import name, including any export alias.
+strview Constraint: Optional version constraint; empty selects the highest version.
+^&string Path: Receives the resolved executable file path on success.
+
+-ERRORS-
+Okay: The selected package source exists.
+InvalidData: The name or constraint is invalid, or the package is unavailable.
+NotFound: No package version satisfies the request.
+FileNotFound: The selected source file is unavailable.
+NullArgs: The output path pointer was not supplied.
+
+-TAGS-
+pure-query
+-END-
+
+*********************************************************************************************************************/
+
+ERR ResolvePackage(const std::string_view &Name, const std::string_view &Constraint, std::string *Path)
+{
+   if (not Path) return ERR::NullArgs;
+   Path->clear();
+   std::optional<tiri::PackageImportRequirement> requirement;
+
+   if (not Constraint.empty()) {
+      tiri::VersionConstraint parsed;
+      if (tiri::parse_version_constraint(Constraint, parsed)) return ERR::InvalidData;
+      requirement = tiri::PackageImportRequirement { std::string(Name), std::move(parsed) };
+   }
+
+   auto result = tiri::resolve_package_import({ Name, requirement ? &*requirement : nullptr });
+   if (result) {
+      *Path = std::move(result.Import.ResolvedPath);
+      return ERR::Okay;
+   }
+
+   if (result.Error IS tiri::ImportResolutionError::MissingTarget) return ERR::FileNotFound;
+
+   if ((result.Error IS tiri::ImportResolutionError::MissingGroup) or
+       (result.Error IS tiri::ImportResolutionError::UnsatisfiedConstraint)) return ERR::NotFound;
+   return ERR::InvalidData;
+}
 
 /*********************************************************************************************************************
 
@@ -380,49 +607,138 @@ SetVariable: Sets any variable in a loaded Tiri script.
 The SetVariable() function provides a method for setting global variables in a Tiri script prior to execution of that
 script.  If the script is cached, the variable settings will be available on the next activation.
 
+Before the first activation, no script policy is attached to the global environment, so host-provided variables are
+unconstrained and may be overwritten by declarations in the script source.  After the first activation, variable
+stores are subject to the script's sticky global type contracts, const bindings and protected built-ins.
+
 -INPUT-
-obj(Script) Script: Pointer to a Tiri script.
-cstr Name: The name of the variable to set.
+obj(Tiri) Script: Pointer to a Tiri script.
+strview Name: The name of the variable to set.
 int Type: A valid field type must be indicated, e.g. `FD_STRING`, `FD_POINTER`, `FD_INT`, `FD_DOUBLE`, `FD_INT64`.
 tags Variable: A variable that matches the indicated `Type`.
 
 -ERRORS-
 Okay: The variable was defined successfully.
 Args:
-FieldTypeMismatch: A valid field type was not specified in the `Type` parameter.
+SetField: A Lua allocation or other runtime error prevented the store.
+FieldTypeMismatch: A valid field type was not specified, or the value conflicts with a sticky global type contract.
+InvalidState: The script does not have an active Tiri state, or is currently executing.
 ObjectCorrupt: Privately maintained memory has become inaccessible.
+ReadOnly: The requested name is a protected built-in or an initialised const global.
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
-namespace fl {
-ERR SetVariable(objScript *Script, CSTRING Name, int Type, ...)
+
+namespace {
+
+enum class SetVariableValueType : uint8_t { String, Pointer, Int, Int64, Double };
+
+struct SetVariableContext {
+   const char *name;
+   size_t name_size;
+   SetVariableValueType value_type;
+   union {
+      STRING string_value;
+      APTR pointer_value;
+      int int_value;
+      int64_t int64_value;
+      double double_value;
+   } value;
+};
+
+static TValue * set_variable_protected(lua_State *Lua, lua_CFunction, void *Data)
+{
+   auto context = (SetVariableContext *)Data;
+
+   lua_pushlstring(Lua, context->name, context->name_size);
+
+   switch (context->value_type) {
+      case SetVariableValueType::String:  lua_pushstring(Lua, context->value.string_value); break;
+      case SetVariableValueType::Pointer: lua_pushlightuserdata(Lua, context->value.pointer_value); break;
+      case SetVariableValueType::Int:     lua_pushinteger(Lua, context->value.int_value); break;
+      case SetVariableValueType::Int64:   lua_pushnumber(Lua, context->value.int64_value); break;
+      case SetVariableValueType::Double:  lua_pushnumber(Lua, context->value.double_value); break;
+   }
+
+   // Always use the checked non-raw boundary.  An unmarked environment has no policy attached yet, while a marked
+   // environment enforces its policy before preserving ordinary __newindex dispatch.
+   lua_settable(Lua, LUA_GLOBALSINDEX);
+   return nullptr;
+}
+
+static ERR set_variable_error(std::string_view Message)
+{
+   if ((Message.find("cannot override built-in") != std::string_view::npos) or
+       (Message.find("cannot assign to const global") != std::string_view::npos)) {
+      return ERR::ReadOnly;
+   }
+   if (Message.find("type contract failed") != std::string_view::npos) return ERR::FieldTypeMismatch;
+   return ERR::SetField;
+}
+
+} // namespace
+
+ERR SetVariable(objTiri *Script, const std::string_view &Name, int Type, ...)
 {
    kt::Log log(__FUNCTION__);
-   prvTiri *prv;
+
+   if ((not Script) or (Script->classID() != CLASSID::TIRI) or Name.empty()) return log.warning(ERR::Args);
+
+   log.branch("Script: %d, Name: %.*s, Type: $%.8x", Script->UID, int(Name.size()), Name.data(), Type);
+
+   auto tiri = (extTiri *)Script;
+   auto lua = tiri->Lua;
+   if (not lua) return log.warning(ERR::InvalidState);
+   if (tiri->Recurse) return log.warning(ERR::InvalidState);
+
+   SetVariableContext context = { Name.data(), Name.size(), SetVariableValueType::String, {} };
    va_list list;
-
-   if ((not Script) or (Script->classID() != CLASSID::TIRI) or (not Name) or (not *Name)) return log.warning(ERR::Args);
-
-   log.branch("Script: %d, Name: %s, Type: $%.8x", Script->UID, Name, Type);
-
-   if (not (prv = (prvTiri *)Script->ChildPrivate)) return log.warning(ERR::ObjectCorrupt);
-   if (not prv->Lua) return log.warning(ERR::InvalidState);
-
    va_start(list, Type);
 
-   if (Type & FD_STRING)       lua_pushstring(prv->Lua, va_arg(list, STRING));
-   else if (Type & FD_POINTER) lua_pushlightuserdata(prv->Lua, va_arg(list, APTR));
-   else if (Type & FD_INT)     lua_pushinteger(prv->Lua, va_arg(list, int));
-   else if (Type & FD_INT64)   lua_pushnumber(prv->Lua, va_arg(list, int64_t));
-   else if (Type & FD_DOUBLE)  lua_pushnumber(prv->Lua, va_arg(list, double));
+   if (Type & FD_STRING) {
+      context.value_type = SetVariableValueType::String;
+      context.value.string_value = va_arg(list, STRING);
+   }
+   else if (Type & FD_POINTER) {
+      context.value_type = SetVariableValueType::Pointer;
+      context.value.pointer_value = va_arg(list, APTR);
+   }
+   else if (Type & FD_INT) {
+      context.value_type = SetVariableValueType::Int;
+      context.value.int_value = va_arg(list, int);
+   }
+   else if (Type & FD_INT64) {
+      context.value_type = SetVariableValueType::Int64;
+      context.value.int64_value = va_arg(list, int64_t);
+   }
+   else if (Type & FD_DOUBLE) {
+      context.value_type = SetVariableValueType::Double;
+      context.value.double_value = va_arg(list, double);
+   }
    else {
       va_end(list);
       return log.warning(ERR::FieldTypeMismatch);
    }
 
-   lua_setglobal(prv->Lua, Name);
-
    va_end(list);
+
+   int stack_top = lua_gettop(lua);
+   int status = lj_vm_cpcall(lua, nullptr, &context, set_variable_protected);
+   if (status) {
+      std::string_view message;
+      if ((lua_gettop(lua) > stack_top) and (lua_type(lua, -1) IS LUA_TSTRING)) {
+         message = lua_tostringview(lua, -1);
+      }
+      ERR error = set_variable_error(message);
+      if (not message.empty()) log.warning("%.*s", int(message.size()), message.data());
+      else log.warning("The protected Tiri variable store failed with Lua status %d.", status);
+      lua_settop(lua, stack_top);
+      return error;
+   }
+
    return ERR::Okay;
 }
 }
@@ -484,8 +800,11 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
             case AET::INT16:
                for (i=0; ((int16_t *)Data)[i]; i++);
                break;
-            case AET::BYTE:
+            case AET::INT8:
                for (i=0; ((int8_t *)Data)[i]; i++);
+               break;
+            case AET::BYTE:
+               for (i=0; ((uint8_t *)Data)[i]; i++);
                break;
             case AET::STRUCT: // Use make_struct_*() interfaces instead
             case AET::STR_GC:
@@ -504,15 +823,17 @@ void make_array(lua_State *Lua, AET Type, int Elements, CPTR Data, std::string_v
 
    GCarray *array = lj_array_new(Lua, Elements, Type, (void *)Data, ARRAY_CACHED, StructName);
 
-   // Push to the stack
-   lj_gc_check(Lua);
+   // Anchor the array on the stack before running a GC check; the new object is otherwise unreferenced and a GC
+   // step that flips the current white can sweep it immediately.
    setarrayV(Lua, Lua->top++, array);
+   lj_gc_check(Lua);
 }
 
 //********************************************************************************************************************
 // Create a Lua array from a list of structure pointers.
 
-void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values)
+ERR make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR *Values,
+   struct_record *StructDef)
 {
    kt::Log log(__FUNCTION__);
 
@@ -524,115 +845,162 @@ void make_struct_ptr_array(lua_State *Lua, std::string_view StructName, int Elem
       Elements = i;
    }
 
-   auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   auto sdef = StructDef ? StructDef : find_struct(Lua, StructName);
+   if (not sdef) return ERR::Search;
 
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
    int arr_idx = lua_gettop(Lua);
 
+   int status = 0;
    if (Values) {
       std::vector<lua_ref> ref;
-      auto &sdef = glStructs[s_name];
-
-      for (int i=0; i < Elements; i++) {
-         if (struct_to_table(Lua, ref, sdef, Values[i]) IS ERR::Okay) {
-            // Table is now on top of stack; retrieve arr from stack in case GC moved it
-            arr = arrayV(Lua->base + arr_idx - 1);
-            TValue *tv = Lua->top - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-            lj_gc_objbarrier(Lua, arr, tab);
+      auto convert = [&]() {
+         for (int i=0; i < Elements; i++) {
+            if (!struct_to_table(Lua, ref, *sdef, Values[i])) {
+               // Table is now on top of stack; retrieve arr from stack in case GC moved it
+               arr = arrayV(Lua->base + arr_idx - 1);
+               TValue *tv = Lua->top - 1;
+               GCtab *tab = tabV(tv);
+               setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+               lj_gc_objbarrier(Lua, arr, tab);
+            }
             Lua->top--;  // Pop the table
          }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
-      }
+      };
+      status = protected_tiri_call(Lua, convert);
+      unref_struct_references(Lua, ref);
    }
+   if (status) lj_err_throw(Lua, status);
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
-// Create an array from a serialised list of structures aligned to a 64-bit boundary.
+// Create an array from a contiguous list of structures using the provided in-memory stride.
 
-void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input)
+void make_struct_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input, int Stride,
+   struct_record *StructDef)
 {
    kt::Log log(__FUNCTION__);
 
    if (Elements < 0) Elements = 0; // The total number of structs is a hard requirement.
 
-   auto s_name = struct_name(StructName);
-   if (not glStructs.contains(s_name)) luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   auto sdef = StructDef ? StructDef : find_struct(Lua, StructName);
+   if (not sdef) {
+      luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   }
+
+   int struct_stride = (Stride > 0) ? Stride : sdef->Size;
+   if (lj_array_struct_is_trivial(*sdef)) {
+      GCarray *arr;
+      if (Input and (struct_stride IS sdef->Size)) {
+         arr = lj_array_new(Lua, Elements, AET::STRUCT, (void *)Input, ARRAY_CACHED, sdef->Name, sdef);
+      }
+      else {
+         arr = lj_array_new(Lua, Elements, AET::STRUCT, nullptr, 0, sdef->Name, sdef);
+         for (int i=0; Input and (i < Elements); i++) {
+            std::memcpy(lj_array_index(arr, i), Input, sdef->Size);
+            Input = (int8_t *)Input + struct_stride;
+         }
+      }
+      setarrayV(Lua, Lua->top++, arr);
+      lj_gc_check(Lua);
+      return;
+   }
 
    GCarray *arr = lj_array_new(Lua, Elements, AET::TABLE);
    setarrayV(Lua, Lua->top++, arr); // Push to stack immediately to protect from GC during loop
    int arr_idx = lua_gettop(Lua);
 
+   int status = 0;
    if (Input) {
       std::vector<lua_ref> ref;
-      auto &sdef = glStructs[s_name];
-
-      // 64-bit compilers don't always align structures to 64-bit, and it's difficult to compute alignment with
-      // certainty.  It is essential that structures that are intended to be serialised into arrays are manually
-      // padded to 64-bit so that the potential for mishap is eliminated.
-
-      int def_size = ALIGN64(sdef.Size);
-      char aligned = ((sdef.Size & 0x7) != 0) ? 'N': 'Y';
-      if (aligned IS 'N') {
-         log.msg("%.*s, Elements: %d, Values: %p, StructSize: %d, Aligned: %c", int(StructName.size()), StructName.data(), Elements, Input, def_size, aligned);
-      }
-
-      for (int i=0; i < Elements; i++) {
-         if (struct_to_table(Lua, ref, sdef, Input) IS ERR::Okay) {
-            // Table is now on top of stack; retrieve arr from stack in case GC moved it
-            arr = arrayV(Lua->base + arr_idx - 1);
-            TValue *tv = Lua->top - 1;
-            GCtab *tab = tabV(tv);
-            setgcref(arr->get<GCRef>()[i], obj2gco(tab));
-            lj_gc_objbarrier(Lua, arr, tab);
+      auto convert = [&]() {
+         for (int i=0; i < Elements; i++) {
+            if (!struct_to_table(Lua, ref, *sdef, Input)) {
+               // Table is now on top of stack; retrieve arr from stack in case GC moved it
+               arr = arrayV(Lua->base + arr_idx - 1);
+               TValue *tv = Lua->top - 1;
+               GCtab *tab = tabV(tv);
+               setgcref(arr->get<GCRef>()[i], obj2gco(tab));
+               lj_gc_objbarrier(Lua, arr, tab);
+            }
             Lua->top--;  // Pop the table
-         }
-         else {
-            arr = arrayV(Lua->base + arr_idx - 1);
-            setgcrefnull(arr->get<GCRef>()[i]);
-         }
 
-         Input = (int8_t *)Input + def_size;
-      }
+            Input = (int8_t *)Input + struct_stride;
+         }
+      };
+      status = protected_tiri_call(Lua, convert);
+      unref_struct_references(Lua, ref);
    }
+   if (status) lj_err_throw(Lua, status);
+}
+
+//********************************************************************************************************************
+// Create an array from a serialised list of structures aligned to a 64-bit boundary.
+
+void make_struct_serial_array(lua_State *Lua, std::string_view StructName, int Elements, CPTR Input,
+   struct_record *StructDef)
+{
+   auto sdef = StructDef ? StructDef : find_struct(Lua, StructName);
+   if (not sdef) {
+      luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(StructName.size()), StructName.data());
+   }
+
+   // 64-bit compilers don't always align structures to 64-bit, and it's difficult to compute alignment with
+   // certainty.  It is essential that structures that are intended to be serialised into arrays are manually
+   // padded to 64-bit so that the potential for mishap is eliminated.
+
+   int def_size = ALIGN64(sdef->Size);
+   char aligned = ((sdef->Size & 0x7) != 0) ? 'N': 'Y';
+   if (aligned IS 'N') {
+      kt::Log(__FUNCTION__).msg("%.*s, Elements: %d, Values: %p, StructSize: %d, Aligned: %c",
+         int(StructName.size()), StructName.data(), Elements, Input, def_size, aligned);
+   }
+
+   make_struct_array(Lua, StructName, Elements, Input, def_size, sdef);
 }
 
 //********************************************************************************************************************
 // The TypeName can be in the format 'Struct:Arg' without causing any issues.
 
-void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int Elements, CPTR Values)
+void make_any_array(lua_State *Lua, int Flags, std::string_view TypeName, int Elements, CPTR Values,
+   struct_record *StructDef)
 {
    if (Flags & FD_STRUCT) {
-      if (Flags & FD_POINTER) make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values);
-      else make_struct_serial_array(Lua, TypeName, Elements, Values);
+      if (Flags & FD_POINTER) {
+         if (make_struct_ptr_array(Lua, TypeName, Elements, (CPTR *)Values, StructDef) != ERR::Okay) {
+            luaL_error(Lua, ERR::Search, "Failed to find struct '%.*s'", int(TypeName.size()), TypeName.data());
+         }
+      }
+      else make_struct_serial_array(Lua, TypeName, Elements, Values, StructDef);
    }
-   else make_array(Lua, ff_to_aet(Flags), Elements, Values, TypeName);
+   // A descriptor's argument name is not a structure type for scalar containers.
+   else make_array(Lua, ff_to_aet(Flags), Elements, Values);
 }
 
 //********************************************************************************************************************
 
-void get_line(objScript *Self, int Line, STRING Buffer, int Size)
+void get_line(extTiri *Self, int Line, STRING Buffer, int Size)
 {
-   if (CSTRING str = Self->String) {
+   if (not Self->Statement.empty()) {
+      auto str = std::string_view(Self->Statement);
       int i;
       for (i=0; i < Line; i++) {
-         if (not (str = next_line(str))) {
+         str = next_line(str);
+         if (str.empty()) {
             Buffer[0] = 0;
             return;
          }
       }
 
-      while ((*str IS ' ') or (*str IS '\t')) str++;
+      while ((not str.empty()) and ((str.front() IS ' ') or (str.front() IS '\t'))) str.remove_prefix(1);
 
       for (i=0; i < Size-1; i++) {
-         if ((*str IS '\n') or (*str IS '\r') or (not *str)) break;
-         Buffer[i] = *str++;
+         if ((str.empty()) or (str.front() IS '\n') or (str.front() IS '\r')) break;
+         Buffer[i] = str.front();
+         str.remove_prefix(1);
       }
       Buffer[i] = 0;
    }
@@ -644,15 +1012,14 @@ void get_line(objScript *Self, int Line, STRING Buffer, int Size)
 
 int code_writer_id(lua_State *Lua, CPTR Data, size_t Size, void *FileID)
 {
-   kt::Log log("code_writer");
-
    if (Size <= 0) return 0; // Ignore bad size requests
 
    kt::ScopedObjectLock file((MAXINT)FileID);
    if (file.granted()) {
-      if (acWrite(*file, (APTR)Data, Size) IS ERR::Okay) return 0;
+      if (!acWrite(*file, std::span<const int8_t>((const int8_t *)Data, Size))) return 0;
    }
-   log.warning("Failed writing %d bytes.", (int)Size);
+
+   kt::Log("code_writer").warning("Failed writing %d bytes.", (int)Size);
    return 1;
 }
 
@@ -663,7 +1030,7 @@ int code_writer(lua_State *Lua, CPTR Data, size_t Size, OBJECTPTR File)
    if (Size <= 0) return 0; // Ignore bad size requests
 
    int result;
-   if (acWrite(File, (APTR)Data, Size, &result) IS ERR::Okay) {
+   if (!acWrite(File, std::span<const int8_t>((const int8_t *)Data, Size), &result)) {
       if ((size_t)result != Size) {
          log.warning("Wrote %d bytes instead of %d.", result, (int)Size);
          return 1;
@@ -683,20 +1050,21 @@ CSTRING code_reader(lua_State *Lua, void *Handle, size_t *Size)
 {
    auto handle = (code_reader_handle *)Handle;
    int result;
-   if (acRead(handle->File, handle->Buffer, SIZE_READ, &result) IS ERR::Okay) {
+   if (auto error = acRead(handle->File, std::span<int8_t>((int8_t *)handle->Buffer, SIZE_READ), &result);
+       error IS ERR::Okay) {
       *Size = result;
       return (CSTRING)handle->Buffer;
    }
-   else return nullptr;
+   else {
+      kt::Log(__FUNCTION__).warning("Failed to read source chunk: %s", GetErrorMsg(error));
+      return nullptr;
+   }
 }
 
 //********************************************************************************************************************
 
 #ifndef NDEBUG
-
-static void stack_dump(lua_State *L) __attribute__ ((unused));
-
-static void stack_dump(lua_State *L)
+[[maybe_unused]] static void stack_dump(lua_State *L)
 {
    int i;
    int top = lua_gettop(L);
@@ -712,7 +1080,6 @@ static void stack_dump(lua_State *L)
    }
    printf("\n");  // end the listing
 }
-
 #endif
 
 //********************************************************************************************************************

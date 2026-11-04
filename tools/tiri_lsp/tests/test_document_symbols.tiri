@@ -1,4 +1,5 @@
 global glDocumentSymbolsTestUri = nil
+extern lspPathToUri, registerCoreHandlers, SYMBOL_KIND, extractDocumentSymbols
 
 @BeforeAll function SetupDocumentSymbolTests(State)
    local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
@@ -20,7 +21,7 @@ function makeDoc(Content:str):table
    }
 end
 
-function findSymbol(Symbols:array, Name:str):table
+function findSymbol(Symbols:array<table>, Name:str):table
    for symbol in values(Symbols) do
       if symbol.name is Name then return symbol end
    end
@@ -39,6 +40,46 @@ function hasTag(Symbol:table, Tag:num):bool
    return false
 end
 
+@Test function WeakBindingsAppearInDocumentSymbols()
+   doc = makeDoc('local first <weak>:table = {}\nsecond:table <weak> = first\nthird <weak> = first\n' ..
+      'empty <weak>:table\nadjacent:table<weak> = first\n' ..
+      'terminated <weak>;\ntyped <weak>:table ; -- starts empty\n' ..
+      'followed:table <weak>; print(followed)\n')
+   symbols = extractDocumentSymbols(doc)
+   for name in values(array<str> { 'first', 'second', 'third', 'empty', 'adjacent',
+      'terminated', 'typed', 'followed' }) do
+      symbol = findSymbol(symbols, name)
+      assert(symbol and symbol.kind is SYMBOL_KIND.VARIABLE,
+         f'Weak binding {name} must remain a variable symbol, got {symbol?.kind}')
+      assert(symbol.detail and symbol.detail.find('weak'), 'Weak symbols must identify their binding attribute')
+      assert(symbol.selectionRange['end'].character - symbol.selectionRange.start.character is #name,
+         'Weak symbol selections must contain only the source binding name')
+   end
+end
+
+@Test function NestedWeakBindingsAppearInDocumentSymbols()
+   for declaration in values(array<str> {
+      'target:array<array<int>> <weak> = nil',
+      'target <weak>:array<array<int>> = nil',
+      'target:array<array<array<int>>> <weak> ?= nil',
+      'target <weak>:array<array<array<int>>> ??= nil',
+      'target:array<array<int>> <weak> -- starts empty',
+      'target <weak>:array<array<int>>; -- starts empty',
+      'local target:array<array<int>> <weak> = nil',
+      'local target <weak>:array<array<int>> = nil'
+   }) do
+      symbols = extractDocumentSymbols(makeDoc(declaration .. '\n'))
+      symbol = findSymbol(symbols, 'target')
+      assert(symbol and symbol.kind is SYMBOL_KIND.VARIABLE,
+         f'Nested weak declaration must produce a variable symbol: {declaration}')
+      assert(symbol.detail and symbol.detail.find('weak'),
+         'Nested annotations must preserve the weak binding attribute')
+      assert(symbol.selectionRange.start.character is declaration.find('target') and
+         symbol.selectionRange['end'].character - symbol.selectionRange.start.character is 6,
+         'Nested annotations must preserve the binding selection range')
+   end
+end
+
 @Test function HandlerAdvertisesDocumentSymbols()
    server = {
       _handlers = {},
@@ -51,7 +92,7 @@ end
    assert(init.result.capabilities.documentSymbolProvider is true, 'Server must advertise documentSymbolProvider.')
 
    doc = makeDoc('function alpha()\nend\n')
-   glDocuments[doc.uri] = doc
+   state = { documents = { [doc.uri] = doc } }
 
    response = server._handlers['textDocument/documentSymbol']({
       jsonrpc = '2.0',
@@ -59,9 +100,7 @@ end
       params = {
          textDocument = { uri = doc.uri }
       }
-   }, {})
-
-   glDocuments[doc.uri] = nil
+   }, state)
 
    assert(response.result and #response.result is 1, 'Document symbol handler should return symbols.')
    assert(response.result[0].name is 'alpha', 'Handler should return the parsed function symbol.')
@@ -79,6 +118,32 @@ end
    assert(alpha.range['end'].line is 2, 'Function range should end at matching end.')
    assert(alpha.selectionRange.start.character is 15, 'Selection range should start at the function name.')
    assert(alpha.selectionRange['end'].character is 20, 'Selection range should end after the function name.')
+end
+
+@Test function ModuleNamespaceDeclarationSymbol()
+   doc = makeDoc('module core as runtimeCore\n')
+   symbols = extractDocumentSymbols(doc)
+   namespace_symbol = findSymbol(symbols, 'runtimeCore')
+
+   assert(namespace_symbol and namespace_symbol.kind is SYMBOL_KIND.NAMESPACE,
+      'A module declaration should create a namespace document symbol.')
+   assert(namespace_symbol.detail is 'module core', 'Namespace symbol detail should retain the module name.')
+end
+
+@Test function LibraryNamespaceDeclarationSymbols()
+   doc = makeDoc('namespace toolkit { version = "1.0" }\n')
+   symbols = extractDocumentSymbols(doc)
+   namespace_symbol = findSymbol(symbols, 'toolkit')
+
+   assert(namespace_symbol and namespace_symbol.kind is SYMBOL_KIND.NAMESPACE,
+      'A library namespace declaration should create a namespace document symbol.')
+   assert(namespace_symbol.detail is 'readonly namespace',
+      'A created library namespace should be identified as readonly.')
+
+   doc = makeDoc('namespace toolkit\n')
+   namespace_symbol = findSymbol(extractDocumentSymbols(doc), 'toolkit')
+   assert(namespace_symbol and namespace_symbol.detail is 'readonly namespace join',
+      'A joined library namespace should retain readonly namespace detail.')
 end
 
 @Test function ModuleScopeVariablesAndTables()
@@ -141,13 +206,13 @@ end
    old_api = findSymbol(symbols, 'oldApi')
 
    assert(annotated, 'Annotated function should be listed.')
-   assert(annotated.detail:find('@Test', 0, true), 'Detail should include @Test.')
-   assert(annotated.detail:find('@Disabled', 0, true), 'Detail should include @Disabled.')
-   assert(annotated.detail:find('@Private', 0, true), 'Detail should include @Private.')
+   assert(annotated.detail.find('@Test', 0, true), 'Detail should include @Test.')
+   assert(annotated.detail.find('@Disabled', 0, true), 'Detail should include @Disabled.')
+   assert(annotated.detail.find('@Private', 0, true), 'Detail should include @Private.')
 
    assert(old_api, 'Deprecated function should be listed.')
-   assert(old_api.detail:find('global', 0, true), 'Deprecated global function should retain scope detail.')
-   assert(old_api.detail:find('@Deprecated', 0, true), 'Deprecated function detail should include annotation.')
+   assert(old_api.detail.find('global', 0, true), 'Deprecated global function should retain scope detail.')
+   assert(old_api.detail.find('@Deprecated', 0, true), 'Deprecated function detail should include annotation.')
    assert(hasTag(old_api, 1), 'Deprecated function should use the LSP deprecated tag.')
 end
 
@@ -164,9 +229,22 @@ end
    value_args = findSymbol(symbols, 'valueArgs')
 
    assert(empty_args, 'Inline annotation with empty parentheses should not hide the function symbol.')
-   assert(empty_args.detail:find('@Tag', 0, true), 'Inline empty annotation detail should include @Tag.')
+   assert(empty_args.detail.find('@Tag', 0, true), 'Inline empty annotation detail should include @Tag.')
    assert(value_args, 'Inline annotation with arguments should not hide the function symbol.')
-   assert(value_args.detail:find('@Tag', 0, true), 'Inline value annotation detail should include @Tag.')
+   assert(value_args.detail.find('@Tag', 0, true), 'Inline value annotation detail should include @Tag.')
+end
+
+@Test function CompilationUnitAnnotationsDoNotDecorateFunctions()
+   doc = makeDoc('@Package(name="sample-package", version="1.0")\n' ..
+      '@Dependencies(tiri="1.0")\n' ..
+      'function initialise()\nend\n')
+   initialise = findSymbol(extractDocumentSymbols(doc), 'initialise')
+
+   assert(initialise, 'A function after compilation-unit metadata should remain visible.')
+   assert(not initialise.detail or not initialise.detail.find('@Package', 0, true),
+      '@Package must not be attached to the following function symbol.')
+   assert(not initialise.detail or not initialise.detail.find('@Dependencies', 0, true),
+      '@Dependencies must not be attached to the following function symbol.')
 end
 
 @Test function IgnoresCommentsStringsAndTableKeys()
@@ -200,13 +278,114 @@ end
    assert(unfinished.range['end'].line is 1, 'Incomplete function should end at the last known line.')
 end
 
+@Test function StructDeclarationWithFieldChildren()
+   doc = makeDoc([[
+struct User
+   Name: str -- The user name
+   Age: int
+   Sock: obj<NetSocket>
+   Buf: char[32]
+   Tags: array<float>
+end
+
+function greet()
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+   user = findSymbol(symbols, 'User')
+   greet = findSymbol(symbols, 'greet')
+
+   assert(user, 'Struct declaration should be listed.')
+   assert(user.kind is SYMBOL_KIND.STRUCT, 'Struct declaration should use the struct kind.')
+   assert(user.detail is 'struct', 'Struct detail should identify structs.')
+   assert(user.range.start.line is 0, 'Struct range should start on the declaration line.')
+   assert(user.range['end'].line is 6, 'Struct range should end at the end keyword.')
+   assert(#user.children is 5, 'Struct should list one child per field.')
+
+   name_field = findChild(user, 'Name')
+   assert(name_field and name_field.kind is SYMBOL_KIND.FIELD, 'Struct fields should use the field kind.')
+   assert(name_field.detail is 'str', 'Field detail should carry the declared type.')
+
+   sock_field = findChild(user, 'Sock')
+   assert(sock_field and sock_field.detail is 'obj<NetSocket>', 'Generic field types should be preserved.')
+
+   buf_field = findChild(user, 'Buf')
+   assert(buf_field and buf_field.detail is 'char[32]', 'Fixed array field types should be preserved.')
+
+   tags_field = findChild(user, 'Tags')
+   assert(tags_field and tags_field.detail is 'array<float>', 'Dynamic array field types should be preserved.')
+
+   assert(greet and greet.kind is SYMBOL_KIND.FUNCTION, 'Symbols after a struct should be top-level.')
+   assert(not findChild(user, 'greet'), 'The struct frame must close before later declarations.')
+end
+
+@Test function StructSingleLineAndCommaFields()
+   doc = makeDoc([[
+struct Point X: double, Y: double end
+
+struct Pair
+   First: int, Second: int
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+   point = findSymbol(symbols, 'Point')
+   pair = findSymbol(symbols, 'Pair')
+
+   assert(point and point.kind is SYMBOL_KIND.STRUCT, 'Single-line struct should be listed.')
+   assert(#point.children is 2, 'Single-line struct should list comma-separated fields.')
+   assert(findChild(point, 'X') and findChild(point, 'Y'), 'Both fields should be children.')
+
+   assert(pair and #pair.children is 2, 'Comma-separated fields on one body line should be listed.')
+   assert(findChild(pair, 'First').detail is 'int', 'First comma-separated field should carry its type.')
+   assert(findChild(pair, 'Second').detail is 'int', 'Second comma-separated field should carry its type.')
+end
+
+@Test function StructSingleLineTabBeforeEnd()
+   doc = makeDoc('struct Point X: double, Y: double\tend\n')
+   symbols = extractDocumentSymbols(doc)
+   point = findSymbol(symbols, 'Point')
+   y_field = findChild(point, 'Y')
+
+   assert(y_field and y_field.detail is 'double',
+      'Whitespace before end should not be included in the final field type.')
+end
+
+@Test function StructLibraryUsageIsNotADeclaration()
+   doc = makeDoc([[
+user = struct.new('User')
+size = struct.size('User')
+]])
+   symbols = extractDocumentSymbols(doc)
+
+   assert(not findSymbol(symbols, 'new'), 'struct.new() must not be detected as a struct declaration.')
+   user = findSymbol(symbols, 'user')
+   assert(user and user.kind is SYMBOL_KIND.VARIABLE, 'struct.new() assignment should remain a variable symbol.')
+end
+
+@Test function StructBlockAndNestedFieldType()
+   doc = makeDoc([[
+struct Child Value: int end
+struct Parent
+   Children: array<struct<Child>>
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+   parent = findSymbol(symbols, 'Parent')
+
+   assert(parent and parent.kind is SYMBOL_KIND.STRUCT, 'An end-terminated block should retain the struct symbol.')
+   assert(parent.range['end'].line is 3, 'The struct frame should close at its end keyword.')
+   children = findChild(parent, 'Children')
+   assert(children, 'The nested generic field should be listed.')
+   assert(children.detail is 'array<struct<Child>>', 'Nested generic field types should remain complete.')
+end
+
 @Test function ControlFlowDoesNotCreateModuleVariables()
    doc = makeDoc([[
-if x == 1 then
+if x is 1 then
    print(x)
 end
 
-for i = 0, 10 do
+for i in {0 into 10} do
    total += i
 end
 ]])
@@ -214,4 +393,151 @@ end
 
    assert(not findSymbol(symbols, 'x'), 'Comparison identifiers must not become module variable symbols.')
    assert(not findSymbol(symbols, 'i'), 'Loop variables must not become module variable symbols.')
+end
+
+@Test function AnonymousBlocksDoNotTruncateFunctionRanges()
+   doc = makeDoc([==[
+function alpha()
+   do
+      local scratch = 1
+   end
+   try
+      risky()
+   except e
+   end
+   checkall
+      guarded()
+   end
+   local result = choose scratch from
+      1 -> 'one'
+      else -> 'other'
+   end
+   return result
+end
+
+function beta()
+end
+]==])
+   symbols = extractDocumentSymbols(doc)
+   alpha = findSymbol(symbols, 'alpha')
+   beta = findSymbol(symbols, 'beta')
+
+   assert(alpha, 'Function containing anonymous blocks should be listed.')
+   assert(alpha.range['end'].line is 16,
+      'A do, try, checkall or choose block must not close the enclosing function frame.')
+   assert(beta and beta.range.start.line is 18 and beta.range['end'].line is 19,
+      'Later declarations should keep their own ranges once block frames balance.')
+   assert(not findSymbol(symbols, 'scratch') and not findSymbol(symbols, 'result'),
+      'Locals inside a function body must not be promoted to module scope.')
+end
+
+@Test function FieldBlockEntriesAreQualified()
+   doc = makeDoc([[
+local t = {}
+t.{ f = function() return 1 end, y = 2 }
+t.{
+   g = function(A)
+      return A
+   end,
+   cfg = {
+      cb = function()
+      end
+   },
+   [key] = 1
+}
+make().{ h = function() end }
+function after()
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+
+   for name in values(array<str> { 'f', 'g', 'y', 'h', 'cfg', 'cb', 'A' }) do
+      assert(not findSymbol(symbols, name), f'Field block key {name} must not be a module symbol.')
+   end
+
+   f = findSymbol(symbols, 't.f')
+   assert(f and f.kind is SYMBOL_KIND.METHOD and f.detail is 'method', 'Function entries should be t.key methods.')
+   assert(f.selectionRange.start.character is 4 and f.selectionRange['end'].character is 5,
+      'The selection range should cover the key.')
+
+   y = findSymbol(symbols, 't.y')
+   assert(y and y.kind is SYMBOL_KIND.VARIABLE, 'Module-level value entries should be t.key variables.')
+
+   g = findSymbol(symbols, 't.g')
+   assert(g and g.kind is SYMBOL_KIND.METHOD, 'Multi-line function entries should be listed.')
+   assert(g.range.start.line is 3 and g.range['end'].line is 5, 'Function entries should close on their end.')
+
+   cfg = findSymbol(symbols, 't.cfg')
+   assert(cfg and cfg.kind is SYMBOL_KIND.OBJECT, 'Table entries should be t.key objects.')
+   assert(cfg.range['end'].line is 9, 'Table entries should close on their closing brace.')
+   assert(findChild(cfg, 'cb'), 'Callbacks in a table entry should be nested below it.')
+
+   after = findSymbol(symbols, 'after')
+   assert(after and after.range.start.line is 13 and after.range['end'].line is 14,
+      'Declarations after a field block should keep their own ranges.')
+end
+
+@Test function FieldBlockFunctionsInsideFunctionsAreChildren()
+   doc = makeDoc([[
+function setup(Self)
+   Self.{ refresh = function() end, count = 0 }
+end
+]])
+   symbols = extractDocumentSymbols(doc)
+   setup = findSymbol(symbols, 'setup')
+
+   assert(setup and setup.range['end'].line is 2, 'The enclosing function range should be preserved.')
+   assert(findChild(setup, 'Self.refresh'), 'Function entries in a function body should be child methods.')
+   assert(not findChild(setup, 'Self.count'), 'Value entries in a function body should not be listed.')
+end
+
+@Test function FieldBlockSiblingsAfterClosingValues()
+   for value in values(array<str> { '{\n   cb = function() end\n}',
+      'function()\n   if true then print(1) end\nend', 'A => do\n   return A\nend' }) do
+      doc = makeDoc('t.{ first = ' .. value .. ', next = function() end, count = 1 }\n' ..
+         'function after()\nend\n')
+      symbols = extractDocumentSymbols(doc)
+      first = findSymbol(symbols, 't.first')
+      next_symbol = findSymbol(symbols, 't.next')
+      assert(first and first.range['end'].line is 2, 'The preceding value must close on its last line.')
+      assert(next_symbol and next_symbol.kind is SYMBOL_KIND.METHOD,
+         'A method after a closing value must be a module-level sibling.')
+      assert(next_symbol.range['end'].line is 2, 'The sibling method must close on its own end.')
+      assert(findSymbol(symbols, 't.count'), 'A value after a closing method must remain at module scope.')
+      after = findSymbol(symbols, 'after')
+      assert(after and after.range['end'].line is 4, 'Following function ranges must remain balanced.')
+   end
+
+   doc = makeDoc('function setup()\n   t.{ first = function()\n   end, next = function() end }\nend\n')
+   setup = findSymbol(extractDocumentSymbols(doc), 'setup')
+   assert(setup and setup.range['end'].line is 3, 'The enclosing function must retain its range.')
+   assert(findChild(setup, 't.first') and findChild(setup, 't.next'),
+      'Methods separated by an end on the same line must share their enclosing parent.')
+end
+
+@Test function FieldBlockArrowValuesAreMethods()
+   for value in values(array<str> { '(A) => A + 1', 'A => A + 1', '() => 1', '(A, B) => A + B',
+      '(A => num: A + 1)', 'A => double(A)', '() => do\n      return 1\n   end' }) do
+      for nested in values(array<any> { false, true }) do
+         prefix = nested and 'function setup()\n' or ''
+         suffix = nested and 'end\n' or ''
+         doc = makeDoc(prefix .. 't.{ f = ' .. value .. ', count = 1, g = function() end }\n' .. suffix)
+         symbols = extractDocumentSymbols(doc)
+         parent = nested and findSymbol(symbols, 'setup') or nil
+         methods = parent and parent.children or symbols
+         f = findSymbol(methods, 't.f')
+         assert(f and f.kind is SYMBOL_KIND.METHOD and f.detail is 'method',
+            f'Arrow value {value} must be a method at either scope.')
+         assert(findSymbol(methods, 't.g'), 'An arrow must not consume the following method as a child.')
+         assert((findSymbol(methods, 't.count') != nil) is not nested,
+            'Ordinary value entries must be listed only at module scope.')
+      end
+   end
+
+   doc = makeDoc('t.{ value = compute(A => A + 1), cfg = { cb = A => A } }\n')
+   symbols = extractDocumentSymbols(doc)
+   assert(findSymbol(symbols, 't.value').kind is SYMBOL_KIND.VARIABLE,
+      'An arrow argument must not turn its containing call into a method.')
+   assert(findSymbol(symbols, 't.cfg').kind is SYMBOL_KIND.OBJECT,
+      'An arrow table member must not turn its containing table into a method.')
 end

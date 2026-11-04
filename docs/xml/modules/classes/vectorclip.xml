@@ -27,7 +27,7 @@
     <field>
       <name>Flags</name>
       <comment>Optional flags.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VCLF">VCLF</type>
       <description>
 <types lookup="VCLF"/>
@@ -35,9 +35,19 @@
     </field>
 
     <field>
+      <name>SID</name>
+      <comment>String identifier for a vector.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>STRING</type>
+      <description>
+<p>The SID field is provided for SVG support.  Use the existing object name and UID for identification in all other circumstances.</p>
+      </description>
+    </field>
+
+    <field>
       <name>Units</name>
       <comment>Defines the coordinate system for fields X, Y, Width and Height.</comment>
-      <access read="G" write="S">Get/Set</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="VUNIT">VUNIT</type>
       <description>
 <p>The default coordinate system for clip-paths is <code>BOUNDING_BOX</code>, which positions the clipping region relative to the vector that references it.  The alternative is <code>USERSPACE</code>, which positions the path relative to the vector's parent viewport.</p>
@@ -48,7 +58,7 @@
     <field>
       <name>Viewport</name>
       <comment>This viewport hosts the Vector objects that will contribute to the clip path.</comment>
-      <access read="G">Get</access>
+      <access read="R">Read</access>
       <type class="VectorViewport">*VectorViewport</type>
       <description>
 <p>To define the path(s) that will be used to build the clipping mask, add at least one <class name="Vector">Vector</class> object to the viewport declared here.</p>

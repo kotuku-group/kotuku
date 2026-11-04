@@ -1,48 +1,68 @@
 #!/usr/bin/env origo
 --[[
-Basic demo of the View widget
+Basic demo of the View widget with an Include checkbox column.
+Click a checkbox or highlight a row and press Space to toggle whether it is included.
+Ctrl-click toggles row membership; Shift-click selects a range; Ctrl+Space selects a row.
 --]]
 
-   import 'gui/fileview'
-   import 'gui/columnview'
-   import 'gui/window'
+   import 'gui/columnview', 'gui/window', 'gui/listview'
 
-   lWindow = gui.window({ title='View Widget Example', insideWidth=400, insideHeight=200 })
-   lViewport = lWindow:clientViewport()
+   lWindow = gui.window({ title='View Widget Example', insideWidth=520, insideHeight=300 })
+   lViewport = lWindow.clientViewport()
 
    glView = gui.columnView({
-      target     = lViewport,
-      textAttrib = 'name',
-      x = 10,
-      y = 10,
-      xOffset = 10,
-      yOffset = 10,
-      itemSelected = function(View, Reason, Item)
-         print('Item selected: ' .. Item.name)
-      end,
-      activeChange = function(View, Reason, Item)
-         print('Active item changed: ' .. Item.name)
-      end,
-      itemDeselected = function(View, Reason, Item)
-         print('Item deselected: ' .. Item.name)
-      end,
-      itemActivated = function(View, Reason, Item)
-      end,
+      target      = lViewport,
+      textAttrib  = 'name',
+      multiSelect = true,
+      x           = 10,
+      y           = 10,
+      xOffset     = 10,
+      yOffset     = 10,
+      events = {
+         itemSelected = function(View, Reason, Item)
+            names = array<str>
+            for item in values(View.selectedItems()) do names.push(item.name) end
+            print('Selected rows: ' .. names.concat(', '))
+         end,
+         activeChange = function(View, Reason, Item)
+            print('Active item changed: ' .. (Item?.name ?? 'none'))
+         end,
+         itemDeselected = function(View, Reason, Item)
+            print('Item deselected: ' .. Item.name)
+         end,
+         itemActivated = function(View, Reason, Item)
+         end,
+         itemChecked = function(View, Reason, Item, Column, Checked)
+            print(f'{Item.name}: {Column.title} = {Checked} ({Reason})')
+         end
+      },
       items = {
-         { id=10, group='folder', path='kotuku:system/', name='vegetables', icon='folders/folder', size=0, dateCreated='', colour={ r=0, g=0, b=200, a=255 } },
-         { id=11, group='folder', path='kotuku:system/', name='cereals', icon='folders/folder', size=0, dateCreated='', colour={ r=0, g=0, b=200, a=255 } },
-         { id=2, group='file', path='kotuku:system/', name='apple.txt', icon='filetypes/text', size=123223, dateCreated='2018-12-23 17:03' },
-         { id=3, group='file', path='kotuku:system/', name='banana.jpg', icon='filetypes/text', size=82, dateCreated='2016-08-02' },
-         { id=4, group='file', path='kotuku:system/', name='avocado.mp3', icon='filetypes/text', size=51724, dateCreated='2015-03-02T06:42' },
-         { id=5, group='file', path='kotuku:system/', name='cherry.txt', icon='filetypes/text', size=143566143, dateCreated='2018-08-02T21:14' },
-         { id=5, group='file', path='kotuku:system/', name='fruit salad.dessert', icon='filetypes/text', size=143566143, dateCreated='2018-08-02T21:14' }
+         { id=1, group='folder', path='kotuku:system/', name='vegetables', included=true,
+            icon='folders/folder', size=0, dateCreated='', fill='rgb(0,0,200 / 1)' },
+         { id=2, group='folder', path='kotuku:system/', name='cereals', included=false,
+            icon='folders/folder', size=0, dateCreated='', fill='rgb(0,0,200 / 1)' },
+         { id=3, group='file', path='kotuku:system/', name='apple.txt', included=true,
+            icon='filetypes/text', size=123223, dateCreated='2018-12-23 17:03' },
+         { id=4, group='file', path='kotuku:system/', name='banana.jpg', included=false,
+            icon='filetypes/text', size=82, dateCreated='2016-08-02' },
+         { id=5, group='file', path='kotuku:system/', name='avocado.mp3', included=true,
+            icon='filetypes/text', size=51724, dateCreated='2015-03-02T06:42' },
+         { id=6, group='file', path='kotuku:system/', name='cherry.txt', included=false,
+            icon='filetypes/text', size=143566143, dateCreated='2018-08-02T21:14' },
+         { id=7, group='file', path='kotuku:system/', name='fruit salad.dessert', included=false,
+            icon='filetypes/text', size=143566143, dateCreated='2013-11-16T47:11' },
+         { id=8, group='file', path='kotuku:system/', name='Lemon Mint.doc', included=false,
+            icon='filetypes/text', size=143566143, dateCreated='2017-12-12T03:53' },
+         { id=9, group='file', path='kotuku:system/', name='miso-soup.txt', included=false,
+            icon='filetypes/text', size=143566143, dateCreated='2008-01-05T37:00' }
       },
       columns = {
-        { attrib='name',        title='Name', width=16, showIcons=true },
-        { attrib='size',        title='Size', width=7, type='bytesize', align='right' },
-        { attrib='dateCreated', title='Date', width=10, type='date', align='right' }
+         { attrib='included',    title='Include', width=6, checkBoxes=true, align='center' },
+         { attrib='name',        title='Name', width=16, showIcons=true },
+         { attrib='size',        title='Size', width=7, type='bytesize', align='right' },
+         { attrib='dateCreated', title='Date', width=10, type='date', align='right' }
       }
    })
 
-   lWindow:show()
+   lWindow.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

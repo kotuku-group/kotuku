@@ -910,6 +910,12 @@ static void asm_snap_alloc1(ASMState* as, IRRef ref)
       if (ra_used(ir)) return;
       if (ir->r == RID_SINK) {
          ir->r = RID_SUNK;
+         if (ir->o IS IR_CALLA and ir->op2 IS IRCALL_lj_func_newL_zero) {
+            IRIns *args = IR(ir->op1);
+            asm_snap_alloc1(as, args->op1);
+            asm_snap_alloc1(as, args->op2);
+            return;
+         }
 #if LJ_HASFFI
          if (ir->o == IR_CNEWI) {  // Allocate CNEWI value.
             asm_snap_alloc1(as, ir->op2);
@@ -967,6 +973,10 @@ static void asm_snap_alloc(ASMState* as, int snapno)
    SnapEntry* map = &as->T->snapmap[snap->mapofs];
    MSize n, nent = snap->nent;
    as->snapfilt1 = as->snapfilt2 = 0;
+   for (size_t context_index = 0; context_index < snap->context_count; context_index++) {
+      IRRef context_ref = snap->context_refs[context_index];
+      if (not irref_isk(context_ref)) asm_snap_alloc1(as, context_ref);
+   }
    for (n = 0; n < nent; n++) {
       SnapEntry sn = map[n];
       IRRef ref = snap_ref(sn);
@@ -1694,8 +1704,13 @@ static void asm_ir(ASMState* as, IRIns* ir)
       lj_assertA(!ra_used(ir),
          "IR %04d not unused", (int)(ir - as->ir) - REF_BIAS);
       break;
-   case IR_USE:
-      ra_alloc1(as, ir->op1, irt_isfp(ir->t) ? RSET_FPR : RSET_GPR); break;
+   case IR_USE: {
+      IRIns *allocation = IR(ir->op1);
+      if (allocation->o IS IR_CALLA and allocation->op2 IS IRCALL_lj_func_newL_zero and
+          (allocation->r IS RID_SINK or allocation->r IS RID_SUNK)) break;
+      ra_alloc1(as, ir->op1, irt_isfp(ir->t) ? RSET_FPR : RSET_GPR);
+      break;
+   }
    case IR_PHI: asm_phi(as, ir); break;
    case IR_HIOP: asm_hiop(as, ir); break;
    case IR_GCSTEP: asm_gcstep(as, ir); break;
@@ -2034,23 +2049,29 @@ static void asm_tail_link(ASMState* as)
       // Setup fixed registers for exit to interpreter.
       const BCIns* pc = snap_pc(&as->T->snapmap[snap->mapofs + snap->nent]);
       int32_t mres;
-      if (bc_op(*pc) == BC_JLOOP) {  // NYI: find a better way to do this.
+      if (bc_op(*pc) IS BC_JLOOP) {  // NYI: find a better way to do this.
          BCIns* retpc = &traceref(as->J, bc_d(*pc))->startins;
          if (bc_isret(bc_op(*retpc)))
             pc = retpc;
       }
       emit_loadu64(as, RID_LPC, u64ptr(pc));
-      mres = (int32_t)(snap->nslots - baseslot - LJ_FR2);
-      switch (bc_op(*pc)) {
-      case BC_CALLM: case BC_CALLMT:
-         mres -= (int32_t)(1 + LJ_FR2 + bc_a(*pc) + bc_c(*pc)); break;
-      case BC_RETM: mres -= (int32_t)(bc_a(*pc) + bc_d(*pc)); break;
-      case BC_TSETM: mres -= (int32_t)bc_a(*pc); break;
-      default:
-         // Fast function pseudo-opcodes (>= BC__MAX) need the same treatment as function headers
-         // to ensure MULTRES is set correctly for the argument count after trace stitch exits.
-         if (not bc_is_func_header(bc_op(*pc)) and bc_op(*pc) < BC__MAX) mres = 0;
-         break;
+      // BC_CHECK can separate a multi-result call from BC_RETM, while BC_CTXLEAVE consumes the dynamic contextual
+      // call result count.  Their interpreter handoffs must retain the count captured by the snapshot.
+      if (bc_op(*pc) IS BC_JMP or bc_op(*pc) IS BC_CHECK or bc_op(*pc) IS BC_CTXLEAVE)
+         mres = int32_t(snap->multres);
+      else {
+         mres = (int32_t)(snap->nslots - baseslot - LJ_FR2);
+         switch (bc_op(*pc)) {
+         case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
+            mres -= (int32_t)(1 + LJ_FR2 + bc_a(*pc) + bc_c(*pc)); break;
+         case BC_RETM: mres -= (int32_t)(bc_a(*pc) + bc_d(*pc)); break;
+         case BC_TSETM: mres -= (int32_t)bc_a(*pc); break;
+         default:
+            // Fast function pseudo-opcodes (>= BC__MAX) need the same treatment as function headers
+            // to ensure MULTRES is set correctly for the argument count after trace stitch exits.
+            if (not bc_is_func_header(bc_op(*pc)) and bc_op(*pc) < BC__MAX) mres = 0;
+            break;
+         }
       }
       ra_allockreg(as, mres, RID_RET);  //  Return MULTRES or 0.
    }
@@ -2183,9 +2204,20 @@ static void asm_setup_regsp(ASMState* as)
       case IR_CALLN: case IR_CALLA: case IR_CALLS: {
          const CCallInfo* ci = &lj_ir_callinfo[ir->op2];
          ir->prev = asm_setup_call_slots(as, ir, ci);
-         if (inloop)
-            as->modset |= (ci->flags & CCI_NOFPRCLOBBER) ?
-            (RSET_SCRATCH & ~RSET_FPR) : RSET_SCRATCH;
+         if (inloop) {
+            if (ci->flags & CCI_NOFPRCLOBBER) {
+               as->modset |= RSET_SCRATCH & ~RSET_FPR;
+            }
+#if LJ_TARGET_X64
+            else if (ir->op2 IS IRCALL_lj_vm_fmod) {
+               as->modset |= (RSET_SCRATCH & ~RSET_FPR) |
+                  RID2RSET(RID_XMM0) | RID2RSET(RID_XMM1);
+            }
+#endif
+            else {
+               as->modset |= RSET_SCRATCH;
+            }
+         }
          continue;
       }
       case IR_HIOP:
@@ -2467,3 +2499,7 @@ void lj_asm_trace(jit_State* J, GCtrace* T)
 }
 
 #undef IR
+
+#if defined(UNIT_TESTS) and LJ_TARGET_X64
+#include "unit_test_asm_x86.h"
+#endif

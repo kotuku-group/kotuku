@@ -270,7 +270,7 @@ cd src/xml/tests && ../../../install/agents/origo.exe ../../../tools/flute.tiri 
 
 **All XML Tests via CMake:**
 ```bash
-ctest --build-config [BuildType] --test-dir build/agents -R xml_
+ctest --preset agents -R xml_
 ```
 
 ## Common Usage Patterns

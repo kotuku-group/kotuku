@@ -5,6 +5,7 @@
 // sequence-building helpers declared in xpath_functions.cpp.
 
 #include "accessor_support.h"
+
 //********************************************************************************************************************
 // base-uri() as xs:anyURI?
 // Returns the base URI for the specified node, or the context node if no argument is provided
@@ -197,7 +198,7 @@ XPathVal XPathFunctionLibrary::function_static_base_uri(const std::vector<XPathV
    if (not base.has_value()) {
       if (Context.prolog) return XPathVal(Context.prolog->static_base_uri);
       else if (Context.xml) {
-         if (Context.xml->Path) return XPathVal(Context.xml->Path);
+         if (not Context.xml->Path.empty()) return XPathVal(Context.xml->Path);
       }
    }
 

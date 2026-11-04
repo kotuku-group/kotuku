@@ -28,10 +28,8 @@ class Component {
    public:
 
    Component(CSTRING pName) : Name(pName), Type(RFT_IDENTITY) {
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i] = i;
-         ILookup[i] = glLinearRGB.invert(i);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i;
+      update_ilookup();
    }
 
    std::string Name;
@@ -43,30 +41,29 @@ class Component {
    double Offset;             // If gamma; the offset of the gamma function.
    RFT    Type;               // The type of algorithm to use.
    uint8_t  Lookup[256];        // sRGB lookup
-   uint8_t  ILookup[256];       // Inverted linear RGB lookup
+   uint8_t  ILookup[256];       // Linear RGB lookup; composes sRGB->linear conversion, the transfer function and
+                                // linear->sRGB inversion so the render loop performs one lookup per channel.
+
+   void update_ilookup() {
+      for (size_t i=0; i < sizeof(ILookup); i++) ILookup[i] = glLinearRGB.invert(Lookup[glLinearRGB.convert(i)]);
+   }
 
    void select_invert() {
       Type = RFT_INVERT;
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i]  = 255 - i;
-         ILookup[i] = glLinearRGB.invert(255 - i);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = 255 - i;
+      update_ilookup();
    }
 
    void select_identity() {
       Type = RFT_IDENTITY;
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i] = i;
-         ILookup[i] = glLinearRGB.invert(i);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i;
+      update_ilookup();
    }
 
    void select_mask(uint8_t pMask) {
       Type = RFT_MASK;
-      for (size_t i=0; i < sizeof(Lookup); i++) {
-         Lookup[i]  = i & pMask;
-         ILookup[i] = glLinearRGB.invert(i & pMask);
-      }
+      for (size_t i=0; i < sizeof(Lookup); i++) Lookup[i] = i & pMask;
+      update_ilookup();
    }
 
    void select_linear(const double pSlope, const double pIntercept) {
@@ -75,10 +72,9 @@ class Component {
       Intercept = pIntercept;
 
       for (size_t i=0; i < sizeof(Lookup); i++) {
-         auto c = std::clamp(int((double(i) * pSlope) + pIntercept * 255.0), 0, 255);
-         Lookup[i] = c;
-         ILookup[i] = glLinearRGB.invert(c);
+         Lookup[i] = std::clamp(int((double(i) * pSlope) + pIntercept * 255.0), 0, 255);
       }
+      update_ilookup();
    }
 
    void select_gamma(const double pAmplitude, const double pExponent, const double pOffset) {
@@ -89,16 +85,15 @@ class Component {
 
       for (size_t i=0; i < sizeof(Lookup); i++) {
          double pe = pow(double(i) * (1.0/255.0), pExponent);
-         auto c = std::clamp(int(((pAmplitude * pe) + pOffset) * 255.0), 0, 255);
-         Lookup[i]  = c;
-         ILookup[i] = glLinearRGB.invert(c);
+         Lookup[i] = std::clamp(int(((pAmplitude * pe) + pOffset) * 255.0), 0, 255);
       }
+      update_ilookup();
    }
 
-   void select_discrete(const double *pValues, const int pSize) {
+   void select_discrete(kt::vector<double> &Values) {
       Type = RFT_DISCRETE;
       Table.clear();
-      Table.insert(Table.end(), pValues, pValues + pSize);
+      Table.insert(Table.end(), Values.data(), Values.data() + Values.size());
 
       uint32_t n = Table.size();
       for (size_t i=0; i < sizeof(Lookup); i++) {
@@ -107,14 +102,14 @@ class Component {
          auto val = 255.0 * double(Table[k]);
          val = std::max(0.0, std::min(255.0, val));
          Lookup[i] = uint8_t(val);
-         ILookup[i] = glLinearRGB.invert(uint8_t(val));
       }
+      update_ilookup();
    }
 
-   void select_table(const double *pValues, const int pSize) {
+   void select_table(kt::vector<double> &Values) {
       Type = RFT_TABLE;
       Table.clear();
-      Table.insert(Table.end(), pValues, pValues + pSize);
+      Table.insert(Table.end(), Values.data(), Values.data() + Values.size());
 
       uint32_t n = Table.size();
       for (size_t i=0; i < sizeof(Lookup); i++) {
@@ -123,8 +118,8 @@ class Component {
           double v = Table[std::min((k + 1), (n - 1))];
           int val = int(255.0 * (Table[k] + (c * (n - 1) - k) * (v - Table[k])));
           Lookup[i] = std::max(0, std::min(255, val));
-          ILookup[i] = glLinearRGB.invert(Lookup[i]);
       }
+      update_ilookup();
    }
 };
 
@@ -139,7 +134,8 @@ class extRemapFX : public extFilterEffect {
    Component Blue;
    Component Alpha;
 
-   extRemapFX() : Red("Red"), Green("Green"), Blue("Blue"), Alpha("Alpha") { }
+   extRemapFX(objMetaClass *ClassPtr, OBJECTID ObjectID) :
+      extFilterEffect(ClassPtr, ObjectID), Red("Red"), Green("Green"), Blue("Blue"), Alpha("Alpha") { }
 
    Component * getComponent(CMP Component) {
       switch(Component) {
@@ -185,9 +181,9 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
          for (int x=0; x < width; x++) {
             if (auto a = sp[A]) {
                uint8_t out[4];
-               out[R] = Self->Red.ILookup[glLinearRGB.convert(sp[R])];
-               out[G] = Self->Green.ILookup[glLinearRGB.convert(sp[G])];
-               out[B] = Self->Blue.ILookup[glLinearRGB.convert(sp[B])];
+               out[R] = Self->Red.ILookup[sp[R]];
+               out[G] = Self->Green.ILookup[sp[G]];
+               out[B] = Self->Blue.ILookup[sp[B]];
                out[A] = Self->Alpha.Lookup[a];
                dp[0] = ((uint32_t *)out)[0];
             }
@@ -219,22 +215,6 @@ static ERR REMAPFX_Draw(extRemapFX *Self, struct acDraw *Args)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR REMAPFX_Free(extRemapFX *Self)
-{
-   Self->~extRemapFX();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR REMAPFX_NewPlacement(extRemapFX *Self)
-{
-   new (Self) extRemapFX;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
@@ -245,12 +225,14 @@ minimum size of 1.
 
 -INPUT-
 int(CMP) Component: The pixel component to which the discrete function must be applied.
-array(double) Values: A list of values for the discrete function.
-arraysize Size: Total number of elements in the `Values` list.
+vector(double) Values: A list of values for the discrete function.
 
 -RESULT-
 Okay:
 NullArgs:
+
+-TAGS-
+mutates-object, copies-input
 
 *********************************************************************************************************************/
 
@@ -258,12 +240,12 @@ static ERR REMAPFX_SelectDiscrete(extRemapFX *Self, struct rf::SelectDiscrete *A
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Values)) return log.warning(ERR::NullArgs);
-   if ((Args->Size < 1) or (Args->Size > 1024)) return log.warning(ERR::Args);
+   if ((not Args) or (not Args->Values)) return log.warning(ERR::NullArgs);
+   if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_discrete(Args->Values, Args->Size);
-      log.detail("%s Values: %d", cmp->Name.c_str(), Args->Size);
+      cmp->select_discrete(*Args->Values);
+      log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -284,13 +266,16 @@ int(CMP) Component: The pixel component to which the identity function must be a
 Okay:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR REMAPFX_SelectIdentity(extRemapFX *Self, struct rf::SelectIdentity *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_identity();
@@ -318,13 +303,16 @@ double Exponent: The exponent of the gamma function.
 Okay:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR REMAPFX_SelectGamma(extRemapFX *Self, struct rf::SelectGamma *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_gamma(Args->Amplitude, Args->Exponent, Args->Offset);
@@ -352,13 +340,16 @@ Okay:
 Args:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR REMAPFX_SelectInvert(extRemapFX *Self, struct rf::SelectInvert *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_invert();
@@ -386,13 +377,16 @@ Okay:
 Args:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR REMAPFX_SelectLinear(extRemapFX *Self, struct rf::SelectLinear *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (Args->Slope < 0) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
@@ -423,13 +417,16 @@ Okay:
 Args:
 NullArgs:
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR REMAPFX_SelectMask(extRemapFX *Self, struct rf::SelectMask *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
       cmp->select_mask(Args->Mask);
@@ -451,13 +448,15 @@ If a single table value is supplied then the component will be output as a const
 
 -INPUT-
 int(CMP) Component: The pixel component to which the table function must be applied.
-array(double) Values: A list of values for the table function.
-arraysize Size: Total number of elements in the value list.
+vector(double) Values: A list of values for the table function.
 
 -RESULT-
 Okay:
 Args:
 NullArgs:
+
+-TAGS-
+mutates-object, copies-input
 
 *********************************************************************************************************************/
 
@@ -465,12 +464,12 @@ static ERR REMAPFX_SelectTable(extRemapFX *Self, struct rf::SelectTable *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Values)) return log.warning(ERR::NullArgs);
-   if ((Args->Size < 1) or (Args->Size > 1024)) return log.warning(ERR::Args);
+   if ((not Args) or (not Args->Values)) return log.warning(ERR::NullArgs);
+   if ((Args->Values->empty()) or (Args->Values->size() > 1024)) return log.warning(ERR::Args);
 
    if (auto cmp = Self->getComponent(Args->Component)) {
-      cmp->select_table(Args->Values, Args->Size);
-      log.detail("%s Values: %d", cmp->Name.c_str(), Args->Size);
+      cmp->select_table(*Args->Values);
+      log.detail("%s Values: %d", cmp->Name.c_str(), int(Args->Values->size()));
       return ERR::Okay;
    }
    else return log.warning(ERR::Args);
@@ -484,7 +483,7 @@ XMLDef: Returns an SVG compliant XML string that describes the filter.
 
 *********************************************************************************************************************/
 
-static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, STRING *Value)
+static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, std::string &Value)
 {
    std::stringstream stream;
 
@@ -495,7 +494,8 @@ static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, STRING *Value)
    stream << "<feFuncB/>";
    stream << "<feFuncA/>";
    stream << "</feComponentTransfer>";
-   *Value = strclone(stream.str());
+
+   Value = stream.str();
    return ERR::Okay;
 }
 
@@ -504,7 +504,7 @@ static ERR REMAPFX_GET_XMLDef(extRemapFX *Self, STRING *Value)
 #include "filter_remap_def.c"
 
 static const FieldArray clRemapFXFields[] = {
-   { "XMLDef", FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, REMAPFX_GET_XMLDef },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, REMAPFX_GET_XMLDef },
    END_FIELD
 };
 

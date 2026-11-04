@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines grayscale pixel formats and blending operations. Hooks into renderer_base, scanline renderers, span_solid,
+// and grayscale image filters. In the vector renderer it writes anti-aliased spans into gray buffers and mask-like
+// render targets.
 
-#ifndef AGG_PIXFMT_GRAY_INCLUDED
-#define AGG_PIXFMT_GRAY_INCLUDED
+#pragma once
 
 #include <string.h>
 #include "agg_basics.h"
@@ -411,6 +413,3 @@ namespace agg
     typedef pixfmt_alpha_blend_gray<blender_gray16,     rendering_buffer> pixfmt_gray16;     //----pixfmt_gray16
     typedef pixfmt_alpha_blend_gray<blender_gray16_pre, rendering_buffer> pixfmt_gray16_pre; //----pixfmt_gray16_pre
 }
-
-#endif
-

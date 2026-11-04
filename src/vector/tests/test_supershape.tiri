@@ -1,0 +1,211 @@
+   include 'vector'
+
+function traceShape(Fields)
+   local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { width=200, height=200 })
+   local shape = viewport.new('VectorShape', Fields)
+   local points = {}
+   function trace(Vector, Index, Command, X, Y)
+      points.insert({ x=X, y=Y })
+      return ERR_Okay
+   end
+   local err = shape.mtTrace(trace, 1.0, false)
+   assert(err is ERR_Okay or err is ERR_NoData, 'Trace should succeed or return an empty path')
+   return points
+end
+
+function near(Actual, Expected)
+   assert(math.abs(Actual - Expected) < 0.000001, f'Expected {Expected}, got {Actual}')
+end
+
+@Test function InvalidParametersAreRejected()
+   local scene <close> = obj.new('VectorScene')
+   local viewport = scene.new('VectorViewport')
+   for field in values({ 'a', 'b', 'n1', 'n2', 'n3', 'm', 'phi', 'radius', 'cx', 'cy',
+      'tolerance', 'startAngle', 'endAngle', 'offset' }) do
+      for value in values({ math.huge, -math.huge, 0/0 }) do
+         local fields = {}
+         fields[field] = value
+         try
+            viewport.new('VectorShape', fields)
+         except e
+            assert(e.code is ERR_InvalidValue, f'{field} should return InvalidValue')
+         success
+            assert(false, f'{field} must reject non-finite input')
+         end
+      end
+   end
+   for fields in values({ { a=0 }, { b=0 }, { n1=0 }, { radius=-1 }, { mod=-1 }, { mod=9 },
+      { tolerance=-1 }, { startAngle=-1 }, { endAngle=-1 },
+      { offset=-1 } }) do
+      try
+         viewport.new('VectorShape', fields)
+      except e
+         assert(e.code is ERR_InvalidValue, 'Invalid parameter should return InvalidValue')
+      success
+         assert(false, 'Zero divisors, negative radius and unknown modifiers must be rejected')
+      end
+   end
+end
+
+@Test function FiniteNegativeParametersRemainSupported()
+   local points = traceShape({ a=-1, b=-1, n1=-1, n2=2, n3=2, m=0, tolerance=0, vertices=8 })
+   assert(#points is 9, 'Finite negative parameters should remain supported where the formula is defined')
+end
+
+@Test function NegativeExtremaFitRadius()
+   local points = traceShape({ m=1, n1=1, n2=7, n3=8, radius=50, cx=7, cy=11, tolerance=0, vertices=360 })
+   local extent = 0
+   for point in values(points) do
+      extent = math.max(extent, math.abs(point.x-7), math.abs(point.y-11))
+   end
+   near(extent, 50)
+end
+
+@Test function SubPixelSamplesAndEndpointAreRetained()
+   local points = traceShape({ m=0, n1=1, n2=2, n3=2, radius=0.01, tolerance=0, vertices=8, close=0 })
+   assert(#points is 9, 'Eight intervals must retain all nine samples, including sub-pixel coordinates')
+   near(points[0].x, 0.01)
+   near(points[8].x, points[0].x)
+   near(points[8].y, points[0].y)
+   local half_end = traceShape({ m=0, radius=10, phi=3, tolerance=0, vertices=6, close=0 })
+   near(half_end[#half_end-1].x, -10)
+   near(half_end[#half_end-1].y, 0)
+end
+
+@Test function SpiralReachesFinalSweepPoint()
+   local points = traceShape({ m=0, radius=10, spiral=2, tolerance=0, vertices=8 })
+   assert(#points is 9, 'Spiral should include both sweep endpoints')
+   near(points[0].x, 0)
+   near(points[0].y, 0)
+   near(points[8].x, 10)
+   near(points[8].y, 0)
+end
+
+@Test function DegenerateShapesStayFinite()
+   for fields in values({ { m=0, mod=2, cx=7, cy=11 }, { radius=0, cx=7, cy=11 } }) do
+      local points = traceShape(fields)
+      assert(#points > 0, 'Degenerate shape should retain finite samples at the centre')
+      for point in values(points) do
+         near(point.x, 7)
+         near(point.y, 11)
+      end
+   end
+end
+
+@Test function SingularAndOverflowingGeometryIsEmpty()
+   for fields in values({ { m=0, n3=-1 }, { a=1e300, m=0, n1=1, n2=1, mod=1 },
+      { a=1e-300, m=0, n1=1, n2=1, mod=4 }, { phi=1e308 }, { m=1e308, phi=4 } }) do
+      assert(#traceShape(fields) is 0, 'Singular or overflowing geometry must not emit partial or invalid paths')
+   end
+end
+
+@Test function ExtremeFiniteRadiiNormaliseWithoutOverflow()
+   for a in values({ 1e-300, 1e300 }) do
+      local points = traceShape({ a=a, m=0, n1=1, n2=1, n3=1, radius=10, tolerance=0, vertices=8 })
+      assert(#points is 9, 'Finite formula radii should survive normalisation')
+      near(points[0].x, 10)
+      near(points[8].x, 10)
+   end
+end
+
+@Test function NaturalAndNormalisedRadii()
+   local fields = { m=0, a=2, n1=1, n2=1, n3=1, radius=10, vertices=8 }
+   local fitted = traceShape(fields)
+   fields.normalise = 0
+   local natural = traceShape(fields)
+   near(fitted[0].x, 10)
+   near(natural[0].x, 20)
+end
+
+@Test function PartialShapesRetainFullShapeScale()
+   local points = traceShape({ m=0, radius=10, startAngle=45, endAngle=135, tolerance=0, vertices=8, close=0 })
+   assert(#points is 3, 'Partial interval should include both endpoints and the interior sample')
+   near(points[0].x, math.sqrt(50))
+   near(points[0].y, math.sqrt(50))
+   near(points[2].x, -math.sqrt(50))
+   near(points[2].y, math.sqrt(50))
+   assert(#traceShape({ startAngle=180, endAngle=90 }) is 0, 'Reversed interval should be empty')
+   assert(#traceShape({ startAngle=90, endAngle=90 }) is 1, 'Equal endpoints should yield one point')
+   local spiral = traceShape({ m=0, radius=10, spiral=2, startAngle=360, endAngle=540, tolerance=0, vertices=8 })
+   near(spiral[0].x, 5)
+   near(spiral[#spiral-1].x, -7.5)
+end
+
+@Test function AdaptiveCircleErrorAndEndpoints()
+   local fields = { m=0, radius=100, vertices=3, tolerance=0.01, startAngle=15, endAngle=165, close=0 }
+   local points = traceShape(fields)
+   fields.tolerance = 1
+   local coarse = traceShape(fields)
+   assert(#points > #coarse, 'Smaller tolerance should refine the curve')
+   near(points[0].x, 100*math.cos(math.pi/12))
+   near(points[#points-1].x, 100*math.cos(11*math.pi/12))
+   for i in {0 to #points-1} do
+      local x = (points[i].x + points[i+1].x)/2
+      local y = (points[i].y + points[i+1].y)/2
+      assert(100-math.sqrt(x*x+y*y) <= 0.010001, 'Circle chord error should meet tolerance')
+   end
+end
+
+@Test function AdaptiveLimitsFailCleanly()
+   assert(#traceShape({ m=0, tolerance=1e-300 }) is 0, 'Unattainable accuracy should fail without partial geometry')
+   assert(#traceShape({ m=1e6, tolerance=0.1 }) is 0, 'Excessive initial subdivision should fail cleanly')
+end
+
+@Test function NewFieldsInvalidateCachedGeometry()
+   local scene <close> = obj.new('VectorScene', { pageWidth=200, pageHeight=200 })
+   local viewport = scene.new('VectorViewport', { width=200, height=200 })
+   local shape = viewport.new('VectorShape', { m=0, a=2, n1=1, n2=1, n3=1, radius=10, tolerance=0, vertices=8 })
+   local count = 0
+   local first_x = 0
+   function trace(Vector, Index, Command, X, Y)
+      if Index is 0 then first_x = X end
+      count++
+      return ERR_Okay
+   end
+   check shape.mtTrace(trace, 1.0, false)
+   near(first_x, 10)
+   shape.normalise = 0
+   check shape.mtTrace(trace, 1.0, false)
+   near(first_x, 20)
+   shape.startAngle = 90
+   shape.endAngle = 180
+   count = 0
+   check shape.mtTrace(trace, 1.0, false)
+   near(first_x, 0)
+   assert(count is 3, 'Clipping should regenerate the cached path')
+   shape.tolerance = 0.01
+   count = 0
+   check shape.mtTrace(trace, 1.0, false)
+   assert(count > 3, 'Adaptive sampling should regenerate the cached path')
+end
+
+@Test function AdaptiveLobesMatchDenseReference()
+   local fields = { m=8, n1=2, n2=6, n3=6, normalise=0, radius=20, endAngle=90, close=0, tolerance=0.02 }
+   local adaptive = traceShape(fields)
+   fields.tolerance = 0
+   local reference = traceShape(fields)
+   assert(#adaptive > 3 and #adaptive < #reference, 'Adaptive sampling should resolve lobes with fewer points')
+   for point in values(reference) do
+      local best = math.huge
+      for i in {0 to #adaptive-1} do
+         local a, b = adaptive[i], adaptive[i+1]
+         local dx, dy = b.x-a.x, b.y-a.y
+         local fraction = math.max(0, math.min(1, ((point.x-a.x)*dx + (point.y-a.y)*dy)/(dx*dx+dy*dy)))
+         local ex, ey = point.x-a.x-fraction*dx, point.y-a.y-fraction*dy
+         best = math.min(best, math.sqrt(ex*ex+ey*ey))
+      end
+      assert(best <= 0.021, f'Adaptive lobe differs from dense reference by {best}')
+   end
+end
+
+@Test function DefaultSamplingAdaptsToRadius()
+   local small = traceShape({ m=0, radius=10, close=0 })
+   local large = traceShape({ m=0, radius=1000, close=0 })
+   assert(#small > 2 and #large > #small, 'Default sampling should adapt to the shape size')
+   for i in {0 to #large-1} do
+      local x = (large[i].x + large[i+1].x)/2
+      local y = (large[i].y + large[i+1].y)/2
+      assert(1000-math.sqrt(x*x+y*y) <= 0.250001, 'Default circle error should meet tolerance')
+   end
+end

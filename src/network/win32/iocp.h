@@ -42,7 +42,7 @@ void iocp_set_socket_object(WSW_SOCKET Socket, int ObjectID);
 ERR iocp_prepare_connect(WSW_SOCKET Socket, const void *Address, int AddressSize);
 ERR iocp_begin_connect_wait(WSW_SOCKET Socket, int ObjectID, uintptr_t Callback);
 ERR iocp_complete_connect(WSW_SOCKET Socket);
-bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation);
+bool iocp_validate_completion(WSW_SOCKET Socket, uint64_t Generation, bool BeginUDPDispatch = false);
 
 ERR iocp_bind(WSW_SOCKET Socket, const void *Address, int AddressSize);
 ERR iocp_listen(WSW_SOCKET Socket, int Backlog);
@@ -64,7 +64,9 @@ ERR iocp_receive_from(WSW_SOCKET Socket, void *Buffer, size_t BufferSize, size_t
    int *AddressSize);
 
 ERR iocp_get_local_ip(WSW_SOCKET Socket, void *Address, int *AddressSize);
+ERR iocp_enable_keep_alive(WSW_SOCKET Socket);
 ERR iocp_enable_broadcast(WSW_SOCKET Socket);
+ERR iocp_set_socket_buffer_sizes(WSW_SOCKET Socket, int ReceiveBytes, int SendBytes);
 ERR iocp_set_multicast_ttl(WSW_SOCKET Socket, int TTL, bool IPv6);
 ERR iocp_parse_multicast_group(const char *Group, bool &IPv6);
 ERR iocp_join_multicast_group(WSW_SOCKET Socket, const char *Group, bool IPv6);

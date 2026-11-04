@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/divider",
+  "version": "1.0",
+  "description": "Resizable divider widget for split layouts in Tiri graphical interfaces.",
+  "entry": "divider.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "divider",
+    "gui",
+    "layout"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "divider.tiri",
+      "size": 7423,
+      "sha256": "824526dcacdef5d2ceff7ee48c7bc892be4a5d35384df5490d9fcad90ba0017c",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

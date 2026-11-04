@@ -1,6 +1,7 @@
 
 class objScintilla;
 class ScintillaKTK;
+class SurfacePan;
 
 #include <kotuku/modules/scintilla.h>
 #include "../link/unicode.h"
@@ -9,21 +10,66 @@ using namespace kt;
 
 class extScintilla : public objScintilla {
    public:
-   struct  SurfaceCoords Surface;
+   // Internal lexer and margin colours are configured through ThemeXML.
+   RGB8 CommentColour;
+   RGB8 KeywordColour;
+   RGB8 StringColour;
+   RGB8 NumberColour;
+   RGB8 OperatorColour;
+   RGB8 PreprocessorColour;
+   RGB8 TypeColour;
+   RGB8 ErrorColour;
+   RGB8 MarginColour;
+   RGB8 MarginBkgd;
+
+   struct pending_drop {
+      OBJECTID source = 0;
+      int item = 0;
+      int position = 0;
+      int64_t revision = 0;
+      bool active = false;
+   } Drop, PrimaryDrop;
+   int64_t DocumentRevision = 0;
+   int PrimaryItem = 0;
+   objClipboard *DragClipboard = nullptr;
+   std::string DragText;
    FUNCTION FileDrop;
    FUNCTION EventCallback;
+   FUNCTION MarginClick;
+   FUNCTION CompletionCallback;
    objFile *FileStream;
-   objFont *BoldFont;        // Bold version of the current font
-   objFont *ItalicFont;      // Italic version of the current font
-   objFont *BIFont;          // Bold-Italic version of the current font
+   APTR FontHandles[4] = {};         // Regular, bold, italic and bold italic; shared vector module handles
+   objVectorScene *Scene;        // The scene that hosts the Viewport
+   objVectorRectangle *Canvas;   // Displays the Bitmap within the Page
+   objVectorImage *Image;        // Scene definition that wraps the Bitmap for use as the Canvas fill
+   objBitmap *Bitmap;            // Scintilla paints into this bitmap; it covers the visible area of the View
+   objVectorColour *FillColour;  // Solid fill for shapes drawn with vec::DrawPath()
+   objVectorColour *StrokeColour; // Solid stroke for shapes drawn with vec::DrawPath()
+   objScript *MenuScript;        // Hosts the context menu with gui/menu (see pan_menu.cxx)
+   ClipRectangle Dirty;          // Area of the client that is waiting to be repainted
+   double CanvasX;               // Sub-pixel offset of the Canvas that aligns the Bitmap with whole device pixels
+   double CanvasY;
+   double PointerX;              // Client position of the pointer, as of the most recent movement event
+   double PointerY;
+   double MenuX;                 // Scene position at which the context menu was requested
+   double MenuY;
+   int    ScrollX;             // Scroll position reflected by the Page, i.e. Scintilla's xOffset in pixels
+   int    ScrollY;             // Scroll position reflected by the Page, i.e. Scintilla's topLine in pixels
+   int    PageWidth;           // Extent of the Page, as computed by ModifyScrollBars()
+   int    PageHeight;
    ScintillaKTK *API;
-   APTR   prvKeyEvent;
-   STRING StringBuffer;
+   std::string StringBuffer;
    int    LongestLine;         // Longest line in the document
-   int    LongestWidth;        // Pixel width of the longest line
+   int    LongestWidth;        // Scroll width: the pixel width of the longest line, plus padding
+   int    WidthCheckFirst = INT_MAX; // Range of modified lines to measure before the next paint
+   int    WidthCheckLast = -1;
    int    TabWidth;
-   int    InputHandle;
-   TIMER  TimerID;
+   int    ViewWidth;           // Pixel width of the View, i.e. Scintilla's client area
+   int    ViewHeight;          // Pixel height of the View
+   int    MarginDigits;        // Number of digits that the line number margin is sized for
+   TIMER  TickTimer;           // Calls Tick() while the caret is blinking
+   TIMER  IdleTimer;           // Calls Idle() while Scintilla has background work, e.g. word wrapping
+   APTR   KeyHandle = nullptr; // Subscription to all keyboard events, which track the modifier keys
    SEF    ReportEventFlags;    // For delayed event reporting.
    uint16_t KeyAlt:1;
    uint16_t KeyCtrl:1;
@@ -36,14 +82,87 @@ class extScintilla : public objScintilla {
    uint16_t AutoIndent:1;
    uint16_t HoldModify:1;
    uint16_t AllowTabs:1;
-   uint8_t  ScrollLocked;
+   uint16_t RepaintQueued:1;   // A Repaint message is queued for the Dirty area
+   uint16_t HasFocus:1;        // The Focus viewport, or one of its children, has the user focus
+   uint16_t PointerStale:1;    // The pointer entered the Canvas without a movement event, so PointerX/Y are outdated
+   uint16_t MenuOpen:1;        // The context menu is visible
+   uint8_t  ScrollLocked;      // Set while the editor is scrolling in response to a Page change
+
+   extScintilla(objMetaClass *ClassPtr, OBJECTID ObjectID) : objScintilla(ClassPtr, ObjectID) {
+      Face = "Source Code Pro";
+      FontSize = 14;
+      LeftMargin  = 4;
+      RightMargin = 30;
+      AutoIndent  = TRUE;
+      TabWidth    = 8;
+      AllowTabs   = FALSE;
+
+      BkgdColour    = RGB8 { 255, 255, 255, 255 };
+      TextColour    = RGB8 { 0, 0, 0, 255 };
+      CommentColour = RGB8 { 128, 128, 128, 255 };
+      KeywordColour = RGB8 { 178, 34, 34, 255 };
+      StringColour  = RGB8 { 176, 0, 0, 255 };
+      NumberColour  = RGB8 { 0, 0, 255, 255 };
+      OperatorColour = RGB8 { 0, 0, 0, 255 };
+      PreprocessorColour = RGB8 { 34, 139, 34, 255 };
+      TypeColour    = RGB8 { 148, 0, 211, 255 };
+      ErrorColour   = RGB8 { 255, 0, 0, 255 };
+      MarginColour  = RGB8 { 128, 128, 128, 255 };
+      MarginBkgd    = RGB8 { 224, 224, 224, 255 };
+      LineHighlight = RGB8 { 240, 240, 255, 255 };
+      CursorColour  = RGB8 { 0, 0, 0, 255 };
+      SelectFore    = RGB8 { 255, 255, 255, 255 };
+      SelectBkgd    = RGB8 { 0, 0, 180, 255 };
+   }
+
+   ~extScintilla();
+};
+
+/*********************************************************************************************************************
+** Code assistance pop-ups, i.e. the call tip and the completion list, are Scintilla platform Windows that are displayed
+** as separate viewports in the editor's scene.  The WindowID of a pop-up refers to its PanPopup, while the
+** WindowID of the editor refers to the extScintilla object.  See pan_popup.cxx.
+*/
+
+class PanPopup {
+public:
+   extScintilla *scintilla = nullptr;
+   objVectorViewport *viewport = nullptr; // Positions the pop-up in scene coordinates
+   objVectorRectangle *canvas = nullptr;  // Displays the bitmap and receives pointer input
+   objVectorImage *image = nullptr;       // Scene definition that wraps the bitmap for use as the canvas fill
+   objBitmap *bitmap = nullptr;           // The content of the pop-up is painted into this bitmap
+   Scintilla::PRectangle rect;            // Requested position, in the client coordinates of the editor
+   Scintilla::Point anchor;               // Client position of the anchor when the rect was set
+   double scene_x = 0, scene_y = 0;       // Position of the pop-up in the scene
+   bool shown = false;
+   bool dirty = false;                    // The bitmap needs to be repainted
+
+   PanPopup();
+   PanPopup(const PanPopup &) = delete;
+   PanPopup & operator=(const PanPopup &) = delete;
+   virtual ~PanPopup();
+
+   virtual void paint(SurfacePan &Surface) = 0;
+   virtual void input(const InputEvent *Event) = 0;
+   virtual int anchor_position() = 0;     // Document position that the pop-up is attached to
+   virtual void closed() { }              // Called when Scintilla closes the pop-up
+
+   ERR attach(extScintilla *Scintilla, CSTRING Name);
+   void set_position(Scintilla::PRectangle Rect);
+   void show(bool Show);
+   void invalidate();
+   bool place();
+   void redraw();
+   void release();
+
+   static PanPopup * find(Scintilla::WindowID ID);
 };
 
 // This class inherits from ScintillaBase which inherits from Editor.  Responsible for a lot of the editing code.
 
 class ScintillaKTK : public Scintilla::ScintillaBase {
 public:
-   ScintillaKTK(int SurfaceID, extScintilla *Scintilla);
+   ScintillaKTK(extScintilla *Scintilla);
    virtual ~ScintillaKTK();
    virtual void Initialise() {};
    virtual void Finalise();
@@ -52,49 +171,74 @@ public:
 //    virtual void CancelModes();
 //    virtual int KeyCommand(unsigned int iMessage);
    virtual void CreateCallTipWindow(Scintilla::PRectangle rc);
-   virtual void AddToPopUp(const char *label, int cmd=0, bool enabled=true);
-//    virtual void ButtonDown(Point pt, unsigned int curTime, bool shift, bool ctrl, bool alt);
+   virtual void AddToPopUp(const char *Label, int Command=0, bool Enabled=true);
 //    virtual void NotifyStyleToNeeded(int endStyleNeeded);
    virtual void SetVerticalScrollPos();
    virtual void SetHorizontalScrollPos();
    virtual bool ModifyScrollBars(int nMax, int nPage);
    virtual void ReconfigureScrollBars();
-   virtual void Cut();
    virtual void Copy();
    virtual void Paste();
    virtual void ClaimSelection();
+   void StartDrag() override;
+   void panEndDrag();
+   bool panDragging() const { return drag_active; }
+   int panDropPosition(double X, double Y);
+   ERR panDropText(int Position, std::string_view Text, extScintilla *Source = nullptr);
+   void panPrimaryPaste(double X, double Y);
    virtual void NotifyChange();
    // Called when Scintilla wants us to send a message to the parent of this widget
    virtual void NotifyParent(Scintilla::SCNotification scn);
    virtual void CopyToClipboard(const Scintilla::SelectionText &selectedText);
    virtual void ScrollText(int linesToMove);
    virtual void SetTicking(bool on);
+   virtual bool SetIdle(bool on);
    virtual void SetMouseCapture(bool on);
+   virtual void DisplayCursor(Scintilla::Window::Cursor Cursor);
    virtual bool HaveMouseCapture();
    virtual sptr_t DefWndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam);
    static sptr_t DirectFunction(ScintillaKTK *sci, unsigned int iMessage, uptr_t wParam, sptr_t lParam);
-   // Non-abstract virtual methods from Editor
-   virtual int KeyDefault(int key, int modifiers);
 
    // Custom interfacing methods
 
-   virtual void SetStyles(const struct styledef *Def, int Total);
-   virtual void panDraw(objSurface *, objBitmap *Bitmap);
-   virtual void panFontChanged(void *Font, void *BoldFont, void *ItalicFont, void *BIFont);
-   virtual void panIdleEvent();
-   virtual void panKeyDown(int Key, KQ);
-   virtual void panMousePress(JET ButtonFlags, double x, double y);
-   virtual void panMouseRelease(JET ButtonFlags, double x, double y);
-   virtual void panMouseMove(double x, double y);
+   virtual void SetStyleColours();
+   virtual void panPaint(Scintilla::PRectangle Area);
+   virtual void panRedraw();
+   virtual void panFontChanged();
+   virtual bool panTick();
+   virtual bool panIdle();
+   virtual void panKeyDown(KEY Code, KQ Qualifiers, int Unicode);
+   virtual void panMousePress(JET Button, double X, double Y, unsigned int Time);
+   virtual void panMouseRelease(JET Button, double X, double Y, unsigned int Time);
+   virtual void panMouseMove(double X, double Y);
+   virtual void panReleaseMouse();
    virtual void panResized();
-   virtual void panScrollToX(double x);
-   virtual void panScrollToY(double y);
-   virtual void panGotFocus();
-   virtual void panLostFocus();
+   virtual void panScrollTo(double X, double Y);
+   virtual void panScrollBy(int Columns, int Lines);
+   virtual void panSyncPage();
+   virtual void panSetFocus(bool Focus);
    virtual void panGetCursorPosition(int *line, int *index);
    virtual void panSetCursorPosition(int line, int index);
    virtual void panEnsureLineVisible(int line);
    virtual void panWordwrap(int);
+   virtual void panSetFolding(bool Enable);
+   virtual bool panToggleFold(int Line);
+   ERR panClipboard(CLIPMODE Mode);
+   void panContextMenu(double X, double Y, double SceneX, double SceneY);
+   void panShowPopup();
+   void panPopupCommand(int Command);
+   ERR panShowCompletions(int Length, std::string_view Candidates, SCACF Flags);
+   ERR panShowCallTip(int Pos, std::string_view Text, int HighlightStart, int HighlightEnd);
+   void panCancelPopups();
+   SCPOP panActivePopup();
+   int panCompletionStart();
+   int panCallTipStart() { return calltip_pos; }
+   int panLineHeight() { return vs.lineHeight; }
+   Scintilla::Point panLocation(int Pos) { return LocationFromPosition(Pos); }
+   void panPaintCallTip(Scintilla::Surface *Surface) { ct.PaintCT(Surface); }
+   void panCallTipClick(Scintilla::Point Point);
+   void panFlushCompletionReports();
+   void panCompletionClosed();
 
    // Brace match handling
    virtual void braceMatch();
@@ -105,7 +249,6 @@ public:
    virtual void selectToMatchingBrace();
 
    // Lexer handling
-   virtual void SetLexerLanguage(const char *languageName);
    virtual void SetLexer(uptr_t wParam);
 
    // Message handling
@@ -129,20 +272,53 @@ public:
    // Public so scintilla_send_message can use it
    virtual sptr_t WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam);
 
-   char   lastkeytrans[7];
-
 private:
-   void SetupStyles();
-   //void SetSelectedTextStyle(int style);
+   void SetKeywords();
+   void DefineFoldMarkers();
+   void ExpandAllFolds();
+   void FoldChanged(int Line, int LevelNow, int LevelPrev);
    void NotifyKey(int key, int modifiers);
+   void ReportCompletion(SCAC Event, int Position, int Value, CSTRING Text, bool Deferred);
+   void UpdateTimers();
+   bool TickRequired();
+   ERR clipboard_failed(ERR Error, CSTRING Message);
+   ERR copy_to_clipboard(const Scintilla::SelectionText &Text);
+   ERR read_clipboard(std::string &Content);
+   ERR cut_clipboard();
+   ERR paste_clipboard();
+   bool PopupCommandAllowed(int Command);
 
+   struct popup_item {
+      std::string label;
+      int command;
+      bool enabled;
+      std::string qualifier;
+      std::string key;
+   };
+
+   std::vector<popup_item> popup_items; // Context menu items, as added by ScintillaBase::ContextMenu()
+   std::unique_ptr<PanPopup> calltip_popup; // Created by CreateCallTipWindow() on first use
+   int calltip_pos = 0;                 // Document position that the call tip is attached to
+   bool completion_selected = false;    // A completion has been accepted and the list is about to close
+
+   struct completion_report {
+      SCAC event;
+      int position;
+      int value;
+      std::string text;
+   };
+
+   std::vector<completion_report> completion_reports; // Deferred CompletionCallback reports
+
+   Scintilla::Selection drag_selection;
+   int64_t drag_revision = 0;
+   bool drag_active = false;
+   int painted_top = -1;       // The topLine that the content of the Bitmap reflects, see ScrollText()
    int braceMode;
    int oldpos = -1;
-   Scintilla::ElapsedTime timer;
-   int8_t idle_timer_on:1;
-   int8_t ticking_on:1;
-   int8_t captured_mouse:1;
-   double lastticktime;
+   ERR clip_error = ERR::Okay; // Result of the most recent cut, copy or paste
+   uint8_t idle_on:1;
+   uint8_t ticking_on:1;
+   uint8_t captured_mouse:1;
    extScintilla *scintilla;
-   OBJECTID surfaceid;
 };

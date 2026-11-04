@@ -7,6 +7,7 @@
 #include <charconv>
 #include <concepts>
 #include <string_view>
+#include <kotuku/modules/tiri.h>
 
 constexpr int CHUNK_BUFFER_SIZE = 32 * 1024;
 constexpr int MAX_CHUNK_HEADER_SIZE = 128;
@@ -153,6 +154,144 @@ constexpr std::vector<std::pair<std::string_view, std::string_view>> parse_auth_
 }
 
 //********************************************************************************************************************
+// Invoke a pinned copy: callbacks may replace StateChanged while running.
+
+static ERR upgrade_notification(extHTTP *Self, HGS State)
+{
+   auto callback = Self->StateChanged;
+   if ((not callback.defined()) or callback.stale()) return ERR::FieldNotSet;
+
+   callback.pin();
+   auto release = kt::Defer([&]() { callback.unpin(); });
+   if (callback.isC()) {
+      auto routine = (ERR (*)(extHTTP *, HGS, APTR))callback.Routine;
+      return routine(Self, State, callback.Meta);
+   }
+
+   if (callback.isScript()) {
+      kt::ScopedObjectLock<objScript> script(callback.Context->UID);
+      if (not script.granted()) return ERR::Function;
+
+      ERR result = ERR::Terminate;
+      ERR returned = (State IS HGS::UPGRADE_READY) ? ERR::Terminate : ERR::Okay;
+      auto error = sc::Call(callback, std::to_array<ScriptArg>({
+         { "HTTP", Self->UID, FD_OBJECTID }, { "State", int(State) },
+         { "Result", &returned, FD_PTR|FD_RESULT|FD_ERROR }
+      }), result);
+
+      if (error != ERR::Okay) return error;
+      if (result != ERR::Okay) return result;
+      return returned;
+   }
+   return ERR::Function;
+}
+
+//********************************************************************************************************************
+
+static ERR handover_connection(extHTTP *Self, objNetSocket *Socket, int HeaderEnd)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((not Self->webSocketRequest()) or Self->inHandover() or (not Self->RequestActive)) return ERR::Terminate;
+
+   auto &upgrade = *Self->UpgradeState; // Never released before destruction; Self is pinned below.
+
+   Self->pin();
+   Socket->pin();
+   auto lifetime = kt::Defer([&]() { Socket->unpin(); Self->unpin(); });
+   const auto generation = Self->RequestGeneration;
+
+   // Local storage outlives callback-driven HTTP destruction and buffer changes.
+
+   kt::vector<int8_t> prefix(Self->Response.begin() + HeaderEnd, Self->Response.begin() + Self->ResponseIndex);
+   upgrade.Handover = true;
+   auto dispatch = FindField(Socket, kt::strhash("dispatchSuspended"), nullptr);
+   auto suspended = dispatch ? Socket->set(dispatch, 1) : ERR::NoFieldAccess;
+
+   if (suspended != ERR::Okay) {
+      log.warning("Socket dispatch suspension failed: %s", GetErrorMsg(suspended));
+      upgrade.Handover = false;
+      Self->Error = ERR::NoSupport;
+      Self->setCurrentState(HGS::TERMINATED);
+      return ERR::Terminate;
+   }
+
+   auto release = kt::Defer([&]() {
+      upgrade.Readable = false;
+      upgrade.Result = {};
+      upgrade.Snapshot = {};
+      upgrade.Handover = false;
+      auto resumed = Socket->set(dispatch, 0);
+      if (resumed != ERR::Okay) log.warning("Socket dispatch resume failed: %s", GetErrorMsg(resumed));
+   });
+
+   Self->CurrentState = HGS::UPGRADE_READY;
+   upgrade.ReadyDispatch = true;
+   auto accepted = upgrade_notification(Self, HGS::UPGRADE_READY);
+   upgrade.ReadyDispatch = false;
+   kt::ScopedObjectLock owner(upgrade.RequestOwner);
+
+   if ((accepted != ERR::Okay) or Self->collecting() or (not Self->RequestActive) or
+       (Self->RequestGeneration != generation) or (Self->Socket != Socket) or Socket->collecting() or
+       (Socket->State != NTC::CONNECTED) or (Self->CurrentState != HGS::UPGRADE_READY) or (not owner.granted()) or
+       (not valid_upgrade_owner(Self, *owner))) {
+      if (not Self->collecting()) {
+         Self->Error = (accepted > ERR::ExceptionThreshold) ? accepted : ERR::InvalidHTTPResponse;
+         Self->setCurrentState(HGS::TERMINATED);
+      }
+      return ERR::Terminate;
+   }
+
+   // SetOwner can itself invoke external NewChild/NewOwner handlers.  All objects remain pinned/locked.
+
+   owner->pin();
+   auto recipient_lifetime = kt::Defer([&]() { owner->unpin(); });
+   auto error = SetOwner(Socket, *owner);
+   if ((error != ERR::Okay) or (Socket->ownerID() != upgrade.RequestOwner)) {
+      Self->Error = (error != ERR::Okay) ? error : ERR::InvalidObject;
+      Self->setCurrentState(HGS::TERMINATED);
+      return ERR::Terminate;
+   }
+
+   if (Self->collecting() or owner->collecting() or Socket->collecting() or (not Self->RequestActive)) {
+      // Ownership hooks run before the commit.  Restore HTTP responsibility on cancellation.
+      if (SetOwner(Socket, Self) != ERR::Okay) {
+         Self->Socket = nullptr;
+         FreeResource(Socket);
+      }
+
+      if (not Self->collecting()) {
+         Self->Error = ERR::InvalidObject;
+         Self->setCurrentState(HGS::TERMINATED);
+      }
+      return ERR::Terminate;
+   }
+
+   // Commit: the staged owner change is validated; detach HTTP's socket reference irrevocably.
+
+   Self->Socket = nullptr;
+   Socket->setIncoming(FUNCTION{});
+   Socket->setOutgoing(FUNCTION{});
+   Socket->setFeedback(FUNCTION{});
+   Socket->ClientData = nullptr;
+
+   if (Self->TimeoutManager) { UpdateTimer(Self->TimeoutManager, 0); Self->TimeoutManager = 0; }
+
+   Self->RequestActive = false;
+   Self->KeepAlive = false;
+   Self->CurrentState = HGS::UPGRADED;
+   upgrade.Result = { upgrade.RequestOwner, Socket, std::move(prefix) };
+   upgrade.Readable = true;
+   if (not Self->collecting() and not owner->collecting()) {
+      auto notification = upgrade_notification(Self, HGS::UPGRADED);
+      if (notification != ERR::Okay) log.warning("UPGRADED callback returned %s.", GetErrorMsg(notification));
+   }
+
+   Self->Response.clear();
+   return ERR::Okay; // Never terminate the rebound socket on the old callback's return.
+}
+
+//********************************************************************************************************************
 
 static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 {
@@ -174,22 +313,25 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
          Self->Response.resize(std::min(Self->Response.size() + 1024, size_t(MAX_HEADER_SIZE)));
       }
 
-      int len;
-      Self->Error = acRead(Socket, Self->Response.data() + Self->ResponseIndex, Self->Response.size() - Self->ResponseIndex, &len);
+      int len = 0;
+      std::string_view buffered(Self->Response.data(), Self->ResponseIndex);
+      if (find_crlf_x2(buffered) IS buffered.end()) {
+         Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)Self->Response.data() + Self->ResponseIndex,
+            Self->Response.size() - Self->ResponseIndex), &len);
 
-      if (Self->Error != ERR::Okay) {
-         log.warning(Self->Error);
-         return ERR::Terminate;
+         if (Self->Error != ERR::Okay) {
+            log.warning(Self->Error);
+            return ERR::Terminate;
+         }
+
+         if (!len) break; // No more incoming data
+
+         #ifdef DEBUG_SOCKET
+            write_debug_socket_data(Self->Response.data() + Self->ResponseIndex, len);
+         #endif
+
+         Self->ResponseIndex += len;
       }
-
-      if (!len) break; // No more incoming data
-
-      #ifdef DEBUG_SOCKET
-         write_debug_socket_data(Self->Response.data() + Self->ResponseIndex, len);
-      #endif
-
-      Self->ResponseIndex += len;
-
       std::string_view response_view(Self->Response.c_str(), Self->ResponseIndex);
       auto crlf_iter = find_crlf_x2(response_view);
 
@@ -202,6 +344,21 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
             return ERR::Terminate;
          }
 
+         if ((int(Self->Status) >= 100) and (int(Self->Status) < 200) and
+             (Self->Status != HTS::SWITCH_PROTOCOLS)) {
+            Self->InterimHeaderBytes += i + 4;
+            if (Self->InterimHeaderBytes > MAX_HEADER_SIZE) {
+               Self->Error = ERR::InvalidHTTPResponse;
+               Self->setCurrentState(HGS::TERMINATED);
+               return ERR::Terminate;
+            }
+            Self->Response.erase(0, i + 4);
+            Self->ResponseIndex -= i + 4;
+            Self->HeaderFields.clear();
+            Self->ResponseHeaders.clear();
+            continue;
+         }
+
          if (Self->Tunneling) { // Proxy tunneling in progress
             if (Self->Status IS HTS::OKAY) {
                // Proxy tunnel established.  Convert the socket to an SSL connection, then send the HTTP command.
@@ -211,8 +368,15 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                   Socket->Flags |= NSF::DISABLE_SERVER_VERIFY;
                }
 
-               if (net::SetSSL(Socket, "EnableSSL", nullptr) IS ERR::Okay) {
-                  Self->setCurrentState(HGS::COMPLETED);
+               if (Self->ResponseIndex != i + 4) {
+                  Self->Error = ERR::InvalidHTTPResponse;
+                  Self->setCurrentState(HGS::TERMINATED);
+                  return ERR::Terminate;
+               }
+
+               if (!net::SetSSL(Socket, "EnableSSL", "")) {
+                  Self->Tunneling = false;
+                  Self->ContinueRequest = true;
                   return acActivate(Self);
                }
                else {
@@ -222,35 +386,66 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                }
             }
             else {
-               Self->Error = log.warning(ERR::ProxySSLTunnel);
+               Self->Error = log.warning((Self->Status IS HTS::PROXY_AUTHENTICATION) ?
+                  ERR::NoSupport : ERR::ProxySSLTunnel);
                Self->setCurrentState(HGS::TERMINATED);
                return ERR::Terminate;
             }
          }
 
-         if ((Self->CurrentState IS HGS::AUTHENTICATING) and (Self->Status != HTS::UNAUTHORISED)) {
+         if (Self->Status IS HTS::SWITCH_PROTOCOLS) {
+            bool connection_upgrade = false;
+            int protocols = 0;
+            bool websocket = true;
+
+            for (const auto &[name, value] : Self->HeaderFields) {
+               if (kt::iequals(name, "connection")) {
+                  connection_upgrade |= header_contains_token(value, "upgrade");
+                  if (header_contains_token(value, "close")) websocket = false;
+               }
+               else if (kt::iequals(name, "upgrade")) {
+                  ++protocols;
+                  std::string selected(value);
+                  kt::trim(selected);
+                  if (not kt::iequals(selected, "websocket")) websocket = false;
+               }
+            }
+
+            if ((not Self->webSocketRequest()) or (Self->ResponseVersion != 0x11) or
+                (not connection_upgrade) or (protocols != 1) or (not websocket)) {
+               Self->KeepAlive = false;
+               Self->Error = ERR::InvalidHTTPResponse;
+               Self->setCurrentState(HGS::TERMINATED);
+               return ERR::Terminate;
+            }
+            return handover_connection(Self, Socket, i + 4);
+         }
+
+         if ((not Self->webSocketRequest()) and (Self->CurrentState IS HGS::AUTHENTICATING) and
+             (Self->Status != HTS::UNAUTHORISED)) {
             log.msg("Authentication successful, reactivating...");
             Self->SecurePath = false;
             Self->setCurrentState(HGS::AUTHENTICATED);
-            QueueAction(AC::Activate, Self->UID);
-            return ERR::Okay;
+            Self->ContinueRequest = true;
+            return acActivate(Self);
          }
 
-         if ((Self->Status IS HTS::MOVED_PERMANENTLY) and ((Self->Flags & HTF::NO_AUTO_REDIRECT) IS HTF::NIL)) {
+         if ((not Self->webSocketRequest()) and (Self->Status IS HTS::MOVED_PERMANENTLY) and
+             ((Self->Flags & HTF::NO_AUTO_REDIRECT) IS HTF::NIL)) {
             if ((Self->Flags & HTF::MOVED) != HTF::NIL) {
                // Chaining of MovedPermanently messages is disallowed (could cause circular referencing).
 
                log.warning("Sequential MovedPermanently messages are not supported.");
             }
             else {
-               if (auto it = Self->ResponseKeys.find("location"); it != Self->ResponseKeys.end()) {
+               if (auto it = Self->ResponseHeaders.find("location"); it != Self->ResponseHeaders.end()) {
                   auto &location = it->second;
                   ERR redirect_error;
 
                   log.msg("MovedPermanently to %s", location.c_str());
 
                   if (auto active_socket = Self->Socket) {
-                     Self->Socket->set(FID_Feedback, (APTR)nullptr);
+                     Self->Socket->setFeedback(FUNCTION{});
                      Self->Socket = nullptr;
                      FreeResource(active_socket);
                   }
@@ -288,8 +483,9 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
             else Self->Flags |= HTF::REDIRECTED;
          }
 
-         if ((Self->ContentLength IS 0) and (!Self->Chunked)) {
+         if ((Self->ContentLength IS 0) and (!Self->Chunked) and (Self->Status != HTS::UNAUTHORISED)) {
             log.msg("Response header received, no content imminent.");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -313,7 +509,7 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                }
             }
 
-            if (auto auth_it = Self->ResponseKeys.find("www-authenticate"); auth_it != Self->ResponseKeys.end()) {
+            if (auto auth_it = Self->ResponseHeaders.find("www-authenticate"); auth_it != Self->ResponseHeaders.end()) {
                auto &authenticate = auth_it->second;
                if (kt::startswith("Digest", authenticate)) {
                   log.trace("Digest authentication mode.");
@@ -345,9 +541,9 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                Self->setCurrentState(HGS::AUTHENTICATING);
 
                // TODO: Needs a rewrite using the dialog script
-               std::string scriptfile((const char *)glAuthScript, 0, glAuthScriptLength);
+               std::string scriptfile((const char *)glAuthScript, glAuthScriptLength);
 
-               objScript::create script = { fl::String(scriptfile) };
+               objTiri::create script = { fl::String(scriptfile) };
                if (script.ok()) {
                   AdjustLogLevel(1);
                   auto error = script->activate();
@@ -368,6 +564,8 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
                kt::Log log(__FUNCTION__);
                log.branch("Reattempting request with preset password.");
                Self->setCurrentState(HGS::AUTHENTICATING);
+               Self->ContinueRequest = true;
+               Self->KeepAlive = false;
                // NB: This cancels the reading of any content that followed the header.
                return acActivate(Self);
             }
@@ -421,18 +619,13 @@ static ERR read_incoming_header(extHTTP *Self, objNetSocket *Socket)
 
          Self->Response.clear(); // Buffer no longer required, response key-values are in the Args table.
 
-         // Note that status check comes after processing of content, as it is legal for content to be attached
-         // with bad status codes (e.g. SOAP does this).
+         if (Self->CurrentState != HGS::READING_CONTENT) return ERR::Terminate;
+
+         // A status failure is recorded when the response body completes, as it is legal for content to be attached
+         // to a bad status code (for example, SOAP responses).
 
          if ((int(Self->Status) < 200) or (int(Self->Status) >= 300)) {
-            if (Self->CurrentState != HGS::READING_CONTENT) {
-               if (Self->Status IS HTS::UNAUTHORISED) log.warning("Exhausted maximum number of retries.");
-               else log.warning("Status code %d != 2xx", int(Self->Status));
-
-               Self->Error = ERR::Failed;
-               return ERR::Terminate;
-            }
-            else log.warning("Status code %d != 2xx.  Receiving content...", int(Self->Status));
+            log.warning("Status code %d != 2xx.  Receiving content...", int(Self->Status));
          }
 
          return ERR::Okay; // Response header has been read, process any remaining data
@@ -490,7 +683,8 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
 
       if (Self->ChunkBuffered < int(Self->Chunk.size())) {
          int read_bytes;
-         Self->Error = acRead(Socket, Self->Chunk.data() + Self->ChunkBuffered, Self->Chunk.size() - Self->ChunkBuffered, &read_bytes);
+         Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)Self->Chunk.data() + Self->ChunkBuffered,
+            Self->Chunk.size() - Self->ChunkBuffered), &read_bytes);
 
          #ifdef DEBUG_SOCKET
             write_debug_socket_data(Self->Chunk.data() + Self->ChunkBuffered, read_bytes);
@@ -500,6 +694,7 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
 
          if (Self->Error IS ERR::Disconnected) {
             log.detail("Received all chunked content (disconnected by peer).");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -548,12 +743,14 @@ static ERR read_incoming_chunks(extHTTP *Self, objNetSocket *Socket)
                      // interpretation.
 
                      log.detail("End of chunks reached, optional data follows.");
+                     set_http_status_error(Self);
                      Self->setCurrentState(HGS::COMPLETED);
                      return ERR::Terminate;
                   }
                   else {
                      // We have reached the terminating line (CRLF on an empty line)
                      log.trace("Received all chunked content.");
+                     set_http_status_error(Self);
                      Self->setCurrentState(HGS::COMPLETED);
                      return ERR::Terminate;
                   }
@@ -654,13 +851,14 @@ static ERR read_incoming_content(extHTTP *Self, objNetSocket *Socket)
          if (len > Self->ContentLength - Self->Index) len = Self->ContentLength - Self->Index;
       }
 
-      if ((Self->Error = acRead(Socket, buffer.data(), len, &len)) != ERR::Okay) {
+      if ((Self->Error = acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), len), &len)) != ERR::Okay) {
          #ifdef DEBUG_SOCKET
             write_debug_socket_data(buffer.data(), len);
          #endif
 
          if ((Self->Error IS ERR::Disconnected) and (Self->ContentLength IS -1)) {
             log.trace("Received all streamed content (disconnected by peer).");
+            set_http_status_error(Self);
             Self->setCurrentState(HGS::COMPLETED);
             return ERR::Terminate;
          }
@@ -698,7 +896,8 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
 {
    kt::Log log(__FUNCTION__);
 
-   Self->ResponseKeys.clear();
+   Self->ResponseHeaders.clear();
+   Self->HeaderFields.clear();
 
    log.detail("HTTP RESPONSE HEADER\n%.*s", int(Response.size()), Response.data());
 
@@ -710,10 +909,10 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
    }
 
    Response.remove_prefix(5);
-   if (Response.starts_with("1.1"))      Self->ResponseVersion = 0x11;
-   else if (Response.starts_with("1.0")) Self->ResponseVersion = 0x10;
-   else if (Response.starts_with("2.0")) Self->ResponseVersion = 0x20;
-   else if (Response.starts_with("3.0")) Self->ResponseVersion = 0x30;
+   if (Response.starts_with("1.1 "))      Self->ResponseVersion = 0x11;
+   else if (Response.starts_with("1.0 ")) Self->ResponseVersion = 0x10;
+   else if (Response.starts_with("2.0 ")) Self->ResponseVersion = 0x20;
+   else if (Response.starts_with("3.0 ")) Self->ResponseVersion = 0x30;
    else return log.warning(ERR::InvalidHTTPResponse);
 
    if (auto pos = Response.find(' '); pos != std::string_view::npos) {
@@ -723,10 +922,12 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
 
    int code = 0;
    auto [ ptr, error ] = std::from_chars(Response.data(), Response.data() + Response.size(), code);
-   if (error IS std::errc()) Self->Status = HTS(code);
-   else Self->Status = HTS::NIL;
+   if ((error != std::errc()) or (code < 100) or (code > 599) or
+       (ptr - Response.data() != 3) or ((ptr != Response.data() + Response.size()) and
+       (*ptr != ' ') and (*ptr != '\r'))) return ERR::InvalidHTTPResponse;
+   Self->Status = HTS(code);
 
-   if (Self->ProxyServer) Self->ContentLength = -1; // Some proxy servers (Squid) strip out information like 'transfer-encoding' yet pass all the requested content anyway :-/
+   if (not Self->ProxyServer.empty()) Self->ContentLength = -1; // Some proxy servers (Squid) strip out information like 'transfer-encoding' yet pass all the requested content anyway :-/
    else Self->ContentLength = 0;
    Self->Chunked = false;
 
@@ -741,17 +942,25 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
    for (auto header_line : split_http_headers(Response)) {
       auto [field_name, field_value] = parse_header_field(header_line);
 
-      if (field_name.empty()) continue;
+      if ((not valid_http_header_name(field_name)) or (not valid_http_header_value(field_value))) {
+         return ERR::InvalidHTTPResponse;
+      }
+      Self->HeaderFields.emplace_back(field_name, field_value);
 
       // Convert field name to lowercase
       std::string field_key;
       field_key.reserve(field_name.size());
       ranges::transform(field_name, std::back_inserter(field_key), [](char c) { return char(std::tolower(c)); });
 
-      Self->ResponseKeys[field_key] = std::string(field_value);
+      if ((field_key IS "connection") or (field_key IS "transfer-encoding")) {
+         auto &value = Self->ResponseHeaders[field_key];
+         if (not value.empty()) value += ", ";
+         value.append(field_value);
+      }
+      else Self->ResponseHeaders[field_key] = std::string(field_value);
    }
 
-   if (auto it = Self->ResponseKeys.find("content-length"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("content-length"); it != Self->ResponseHeaders.end()) {
       auto &value = it->second;
       Self->ContentLength = 0;
       int64_t temp_length = 0;
@@ -767,7 +976,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       }
    }
 
-   if (auto it = Self->ResponseKeys.find("transfer-encoding"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("transfer-encoding"); it != Self->ResponseHeaders.end()) {
       auto &value = it->second;
       if (header_contains_token(value, "chunked")) {
          if ((Self->Flags & HTF::RAW) IS HTF::NIL) Self->Chunked = true;
@@ -780,7 +989,7 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
    if (Self->ResponseVersion >= 0x11) Self->KeepAlive = true;
    else Self->KeepAlive = false;
 
-   if (auto it = Self->ResponseKeys.find("connection"); it != Self->ResponseKeys.end()) {
+   if (auto it = Self->ResponseHeaders.find("connection"); it != Self->ResponseHeaders.end()) {
       // HTTP/1.0 if keep-alive is not specified then the connection is closed by default.
       // HTTP/1.1 if keep-alive is not specified then the connection is persistent
       //
@@ -788,10 +997,10 @@ static ERR parse_response(extHTTP *Self, std::string_view Response)
       // being pro-active and disconnecting our side early will keep things predictable.
 
       auto &value = it->second;
-      if (kt::iequals(value, "close")) {
+      if (header_contains_token(value, "close")) {
          Self->KeepAlive = false;
       }
-      else if (kt::iequals(value, "keep-alive")) {
+      else if (header_contains_token(value, "keep-alive")) {
          Self->KeepAlive = true;
       }
    }
@@ -812,12 +1021,12 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
    Self->setIndex(Self->Index + Length); // Use Set() so that field subscribers can track progress with field monitoring
 
-   if ((!Self->flOutput) and (Self->OutputFile)) {
+   if ((!Self->flOutput) and (not Self->OutputFile.empty())) {
       FL flags;
       LOC type;
 
       if ((Self->Flags & HTF::RESUME) != HTF::NIL) {
-         if ((AnalysePath(Self->OutputFile, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if ((!AnalysePath(Self->OutputFile, &type)) and (type IS LOC::FILE)) {
             flags = FL::NIL;
          }
          else flags = FL::NEW;
@@ -838,7 +1047,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
 
    if (Self->flOutput) {
       int result = 0;
-      if (auto error = Self->flOutput->write(Buffer, Length, &result); error != ERR::Okay) {
+      if (auto error = Self->flOutput->write(std::span<const int8_t>((const int8_t *)Buffer, Length), &result);
+          error != ERR::Okay) {
          Self->Error = error;
          return Self->Error;
       }
@@ -852,6 +1062,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       Self->RecvBuffer.append(std::string_view((char *)Buffer, Length));
    }
 
+   if (Self->Incoming.stale()) clear_callback_function(Self->Incoming);
+
    if (Self->Incoming.defined()) {
       log.trace("Incoming callback is set.");
 
@@ -863,17 +1075,17 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       else if (Self->Incoming.isScript()) {
          // For speed, the client will receive a direct pointer to the buffer memory via the 'mem' interface.
 
-         log.trace("Calling script procedure %" PRId64, Self->Incoming.ProcedureID);
+         log.trace("Calling script procedure %u", Self->Incoming.procedureID());
 
+         std::span<std::byte> span((std::byte *)(Buffer), Length);
          if (sc::Call(Self->Incoming, std::to_array<ScriptArg>({
-               { "HTTP",       Self,   FD_OBJECTPTR },
-               { "Buffer",     Buffer, FD_PTRBUFFER },
-               { "BufferSize", Length, FD_INT|FD_BUFSIZE }
+               { "HTTP",   Self, FD_OBJECTPTR },
+               { "Buffer", &span, FDF_SPAN|FD_BYTE }
             }), error) != ERR::Okay) error = ERR::Terminate;
       }
       else error = ERR::InvalidValue;
 
-      if (error > ERR::ExceptionThreshold) Self->Error = error;
+      if (error > ERR::ExceptionThreshold) Self->Error = error; // ERR::Terminate excluded
 
       if (error IS ERR::Terminate) {
          kt::Log log(__FUNCTION__);
@@ -886,7 +1098,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
       if (Self->ObjectMode IS HOM::DATA_FEED) {
          kt::ScopedObjectLock output(Self->OutputObjectID);
          if (output.granted()) {
-            if (auto error = acDataFeed(*output, Self, Self->Datatype, Buffer, Length); error != ERR::Okay) {
+            if (auto error = acDataFeed(*output, Self, Self->Datatype,
+                  std::span<const int8_t>((const int8_t *)Buffer, size_t(Length))); error != ERR::Okay) {
                Self->Error = error;
                return Self->Error;
             }
@@ -900,7 +1113,8 @@ static ERR output_incoming_data(extHTTP *Self, APTR Buffer, int Length)
          kt::ScopedObjectLock output(Self->OutputObjectID);
          if (output.granted()) {
             int result = 0;
-            if (auto error = acWrite(*output, Buffer, Length, &result); error != ERR::Okay) {
+            if (auto error = acWrite(*output, std::span<const int8_t>((const int8_t *)Buffer, Length), &result);
+                error != ERR::Okay) {
                Self->Error = error;
                return Self->Error;
             }
@@ -927,18 +1141,26 @@ static ERR socket_incoming(objNetSocket *Socket)
    kt::Log log("http_incoming");
 
    auto Self = (extHTTP *)Socket->ClientData;
+   if (not Self) return ERR::Okay;
+   Self->pin();
+   auto lifetime = kt::Defer([&]() { Self->unpin(); });
+   const auto generation = Self->RequestGeneration;
 
    if (Self->classID() != CLASSID::HTTP) return log.warning(ERR::SystemCorrupt);
 
 restart:
 
-   if (Self->CurrentState >= HGS::COMPLETED) {
+   if (not http_active(Self->CurrentState)) {
       // Erroneous data received from server while we are in a completion/resting state.  Returning a terminate message
       // will cause the socket object to close the connection to the server so that we stop receiving erroneous data.
       // NB: This isn't considered a problem; changing to a completed state is permitted mid transfer.
       log.detail("Unwanted data remains on socket - terminating.");
       return ERR::Terminate;
    }
+
+   // CONNECT can start an asynchronous TLS handshake during this callback.
+   // Wait for the socket to finish handshaking before reading the origin response.
+   if (Socket->State IS NTC::HANDSHAKING) return ERR::Okay;
 
    if (Self->CurrentState IS HGS::SENDING_CONTENT) {
       // Sanity check failed - we should not be receiving data while we are sending content to the server.
@@ -958,7 +1180,10 @@ restart:
 
    if ((Self->CurrentState IS HGS::READING_HEADER) or (Self->CurrentState IS HGS::AUTHENTICATING)) {
       auto error = read_incoming_header(Self, Socket);
-      if (error IS ERR::Okay) goto restart; // Header read, process any remaining data
+      if (Self->collecting() or (Self->Socket != Socket) or (Self->RequestGeneration != generation)) {
+         return ERR::Okay;
+      }
+      if (!error) goto restart; // Header read, process any remaining data
       else return error;
    }
    else if (Self->CurrentState IS HGS::READING_CONTENT) {
@@ -969,7 +1194,7 @@ restart:
       std::string buffer;
       buffer.resize(512);
       int len;
-      if ((acRead(Socket, buffer.data(), buffer.size(), &len) IS ERR::Okay) and (len > 0)) {
+      if ((!acRead(Socket, std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &len)) and (len > 0)) {
          log.warning("WARNING: Received data whilst in state %d.", int(Self->CurrentState));
          log.warning("Content (%d bytes) Follows:\n%.80s", len, buffer.c_str());
       }

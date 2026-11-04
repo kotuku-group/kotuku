@@ -82,198 +82,13 @@ static bool same_client_ip(const IPAddress &Left, const IPAddress &Right)
 static std::string client_ip_label(const IPAddress &Address)
 {
    IPAddress printable = client_identity(Address);
-   CSTRING value = net::AddressToStr(&printable);
-   std::string label = value ? value : "<invalid>";
-   if (value) FreeResource((APTR)value);
-   return label;
+   std::string value;
+   if (net::AddressToStr(&printable, &value) != ERR::Okay) value = "<invalid>";
+   return value;
 }
 
 //********************************************************************************************************************
 
-static void server_accept_client_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
-{
-   kt::Log log(__FUNCTION__);
-
-   log.traceBranch("NetSocket: #%d, FD: %" PRId64, Self->UID, int64_t(SocketFD));
-
-   kt::SwitchContext context(Self);
-
-   auto accepted = network_platform().accept(Self, Self->Handle, Self->IPV6);
-   auto clientfd = accepted.Handle;
-   if (clientfd.is_invalid()) {
-      log.warning("accept() failed to return an FD.");
-      return;
-   }
-
-   // Accept before enforcing admission limits so IOCP-backed servers drain and close completed AcceptEx sockets.
-   if ((Self->TotalClients >= Self->ClientLimit) or (Self->TotalClients >= glSocketLimit)) {
-      log.error(ERR::ArrayFull);
-      network_platform().close_socket(clientfd);
-      return;
-   }
-
-   // Basic rate limiting - prevent connection floods
-
-   time_t current_time = time(nullptr);
-   static time_t last_accept = 0;
-   static int accept_count = 0;
-
-   if (current_time != last_accept) {
-      accept_count = 1;
-      last_accept = current_time;
-   }
-   else {
-      accept_count++;
-      if (accept_count > 100) { // Maximum 100 accepts per second
-         log.warning("Connection rate limit exceeded, rejecting connection");
-         network_platform().close_socket(clientfd);
-         return;
-      }
-   }
-
-   if ((accepted.Address.Type != IPADDR::V4) and (accepted.Address.Type != IPADDR::V6)) {
-      log.warning("Unsupported address type: %d", int(accepted.Address.Type));
-      network_platform().close_socket(clientfd);
-      return;
-   }
-
-   if (accepted.Address.Type IS IPADDR::V6) log.trace("Accepted IPv6 client connection");
-   else if (Self->IPV6) log.trace("Accepted IPv4 client connection on dual-stack socket");
-
-   // Check if this IP address already has a client structure from an earlier socket connection.
-   // (One NetClient represents a single IP address; Multiple ClientSockets can connect from that IP address)
-
-   objNetClient *client_ip;
-   auto accepted_ip = client_identity(accepted.Address);
-   for (client_ip=Self->Clients; client_ip; client_ip=client_ip->Next) {
-      if (same_client_ip(accepted_ip, client_ip->IP)) break;
-   }
-
-   if (!client_ip) {
-      if (NewObject(CLASSID::NETCLIENT, &client_ip) IS ERR::Okay) {
-         if (InitObject(client_ip) != ERR::Okay) {
-            FreeResource(client_ip);
-            network_platform().close_socket(clientfd);
-            return;
-         }
-      }
-      else {
-         network_platform().close_socket(clientfd);
-         return;
-      }
-
-      client_ip->IP = accepted_ip;
-      client_ip->TotalConnections = 0;
-      Self->TotalClients++;
-
-      if (!Self->Clients) Self->Clients = client_ip;
-      else {
-         if (Self->LastClient) Self->LastClient->Next = client_ip;
-         client_ip->Prev = Self->LastClient;
-      }
-      Self->LastClient = client_ip;
-   }
-   else if (client_ip->TotalConnections >= Self->SocketLimit) {
-      auto label = client_ip_label(client_ip->IP);
-      log.warning("Socket limit of %d reached for IP %s", Self->SocketLimit, label.c_str());
-      network_platform().close_socket(clientfd);
-      return;
-   }
-
-   if ((Self->Flags & NSF::MULTI_CONNECT) IS NSF::NIL) { // Check if the IP is already registered and alive
-      if (client_ip->Connections) {
-         auto label = client_ip_label(client_ip->IP);
-         log.msg("Preventing second connection attempt from IP %s", label.c_str());
-         network_platform().close_socket(clientfd);
-         return;
-      }
-   }
-
-   // Socket Management
-
-   extClientSocket *client_socket;
-   if (NewObject(CLASSID::CLIENTSOCKET, &client_socket) IS ERR::Okay) {
-      client_socket->Handle = clientfd;
-      client_socket->Client = client_ip;
-      if (InitObject(client_socket) IS ERR::Okay) {
-         // Note that if the connection is over SSL then handshaking won't have
-         // completed yet, in which case the connection feedback will be sent in a later state change.
-
-         if (client_socket->State IS NTC::CONNECTED) {
-            if (Self->Feedback.isC()) {
-               kt::SwitchContext context(Self->Feedback.Context);
-               auto routine = (void (*)(extNetSocket *, objClientSocket *, NTC, APTR))Self->Feedback.Routine;
-               if (routine) routine(Self, client_socket, client_socket->State, Self->Feedback.Meta);
-            }
-            else if (Self->Feedback.isScript()) {
-               sc::Call(Self->Feedback, std::to_array<ScriptArg>({
-                  { "NetSocket",    Self, FD_OBJECTPTR },
-                  { "ClientSocket", client_socket, FD_OBJECTPTR },
-                  { "State",        int(client_socket->State) }
-               }));
-            }
-         }
-      }
-      else {
-         log.warning(ERR::Init);
-         FreeResource(client_socket);
-         return;
-      }
-   }
-   else {
-      network_platform().close_socket(clientfd);
-      if (!client_ip->Connections) free_client(Self, client_ip);
-      return;
-   }
-
-   log.trace("Total clients: %d", Self->TotalClients);
-}
-
-//********************************************************************************************************************
-// Terminates all connections for a client IP address and removes associated resources.
-
-static void free_client(extNetSocket *Socket, objNetClient *Client)
-{
-   kt::Log log(__FUNCTION__);
-   static thread_local int8_t recursive = 0;
-
-   if (!Client) return;
-   if ((Socket->Flags & NSF::SERVER) IS NSF::NIL) return; // Must be a server
-
-   if (recursive) return;
-   recursive++;
-
-   auto label = client_ip_label(Client->IP);
-   log.branch("%s, Connections: %d", label.c_str(), Client->TotalConnections);
-
-   // Free all sockets (connections) related to this client IP
-
-   while (Client->Connections) {
-      objClientSocket *current_socket = Client->Connections;
-      FreeResource(current_socket); // Disconnects & sends a Feedback message
-      if (Client->Connections IS current_socket) { // Sanity check
-         log.warning("Resource management error detected in Client->Sockets");
-         break;
-      }
-   }
-
-   if (Client->Prev) {
-      Client->Prev->Next = Client->Next;
-      if (Client->Next) Client->Next->Prev = Client->Prev;
-   }
-   else {
-      Socket->Clients = Client->Next;
-      if (Socket->Clients) Socket->Clients->Prev = nullptr;
-   }
-
-   FreeResource(Client);
-
-   Socket->TotalClients--;
-
-   recursive--;
-}
-
-//********************************************************************************************************************
 static void netsocket_connect_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 {
    kt::Log log(__FUNCTION__);
@@ -306,10 +121,15 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    kt::SwitchContext context(Self); // Set context & lock
 
    if ((Self->Flags & NSF::UDP) IS NSF::NIL) {
-      if ((Self->Flags & NSF::SERVER) != NSF::NIL) { // Sanity check
-         log.warning("Invalid call from server socket.");
+      if (Self->classID() IS CLASSID::NETSERVER) { // Sanity check
+         log.warning("Invalid call from NetServer listener.");
          return;
       }
+   }
+
+   if (Self->DispatchSuspended) {
+      if (Self->IncomingRecursion) Self->IncomingRecursion = 2;
+      return;
    }
 
    if (Self->Terminating) { // Set by FreeWarning()
@@ -318,6 +138,10 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       return;
    }
 
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   uint64_t records_before = Self->TLS.Handle ? ssl_decrypted_records(Self->TLS.Handle) : 0;
+#endif
+
 #ifndef DISABLE_SSL
   #ifdef _WIN32
    if ((Self->TLS.Handle) and (Self->State IS NTC::HANDSHAKING)) {
@@ -325,7 +149,7 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       log.traceBranch("Windows SSL handshake in progress, reading raw data.");
       size_t result;
       std::vector<uint8_t> buffer;
-      if (ERR error = network_platform().append_receive(Self->Handle, buffer, 32768, result); error IS ERR::Okay) {
+      if (ERR error = network_platform().append_receive(Self->Handle, buffer, 32768, result); !error) {
          tls_handshake_received(Self, buffer.data(), int(buffer.size()));
 
          if ((Self->State != NTC::CONNECTED) or (!ssl_has_decrypted_data(Self->TLS.Handle) and !ssl_has_encrypted_data(Self->TLS.Handle))) {
@@ -359,7 +183,7 @@ static void netsocket_incoming_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       return;
     }
 
-    if (Self->TLS.HandshakeStatus != SHS::NIL) { // TODO: Check State is not HANDSHAKING instead
+    if (Self->TLS.HandshakeStatus != SHS::NIL) { // A TLS re-handshake can be pending while State remains CONNECTED.
       log.trace("SSL is handshaking.");
       return;
     }
@@ -384,6 +208,7 @@ restart:
 
    Self->ReadCalled = false;
    auto error = ERR::Okay;
+   if (Self->Incoming.stale()) clear_callback_function(Self->Incoming);
    if (Self->Incoming.defined()) {
       if (Self->Incoming.isC()) {
          auto routine = (ERR (*)(extNetSocket *, APTR))Self->Incoming.Routine;
@@ -405,7 +230,7 @@ restart:
       int total = 0;
       int result;
       do {
-         error = acRead(Self, buffer.data(), buffer.size(), &result);
+         error = acRead(Self, std::span<int8_t>((int8_t *)buffer.data(), buffer.size()), &result);
          total += result;
       } while (result > 0);
 
@@ -416,7 +241,7 @@ restart:
       log.traceBranch("Socket % " PRId64 " will be terminated.", int64_t(SocketFD));
       if (Self->Handle.is_valid()) {
          Self->CloseAfterWrite = true;
-         Self->Incoming.clear();
+         clear_callback_function(Self->Incoming);
          network_platform().register_write(Self->Handle, &netsocket_outgoing, Self);
       }
    }
@@ -426,13 +251,25 @@ restart:
       // of the data.
 
       Self->IncomingRecursion = 1;
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+      if (Self->TLS.Handle) records_before = ssl_decrypted_records(Self->TLS.Handle);
+#endif
       goto restart;
    }
 #ifndef DISABLE_SSL
  #ifdef _WIN32
-   else if (Self->TLS.Handle and (ssl_has_decrypted_data(Self->TLS.Handle) or ssl_has_encrypted_data(Self->TLS.Handle))) {
-      // SSL has buffered data that needs processing - continue without waiting for socket notification
+   else if (Self->TLS.Handle and (ssl_has_decrypted_data(Self->TLS.Handle) or
+      (ssl_has_encrypted_data(Self->TLS.Handle) and (ssl_decrypted_records(Self->TLS.Handle) != records_before)))) {
+      // SSL has buffered data that needs processing - continue without waiting for socket notification.  Buffered
+      // encrypted data only justifies another pass if this pass decrypted a record; otherwise it is an incomplete
+      // record, and repeating the callback would spin until the rest arrives.  Network reports new data itself.
       log.trace("SSL has buffered data, continuing processing");
+      Self->IncomingRecursion = 1;
+      records_before = ssl_decrypted_records(Self->TLS.Handle);
+      goto restart;
+   }
+ #else
+   else if (Self->TLS.Handle and (SSL_pending(Self->TLS.Handle) > 0)) {
       Self->IncomingRecursion = 1;
       goto restart;
    }
@@ -441,6 +278,16 @@ restart:
 
    Self->InUse--;
    Self->IncomingRecursion = 0;
+}
+
+static size_t netsocket_pending_tls_output(extNetSocket *Self)
+{
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   return Self->TLS.Handle ? ssl_pending_output_size(Self->TLS.Handle) : 0;
+#else
+   (void)Self;
+   return 0;
+#endif
 }
 
 //********************************************************************************************************************
@@ -457,6 +304,8 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    kt::Log log(__FUNCTION__);
 
    kt::SwitchContext context(Self); // Set context & lock
+
+   if (Self->DispatchSuspended) return;
 
    if (Self->Terminating) return;
 
@@ -497,10 +346,22 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
    Self->OutgoingRecursion++;
 
    auto error = ERR::Okay;
+   bool tls_output_blocked = false;
+
+#if !defined(DISABLE_SSL) and defined(_WIN32)
+   // The final plaintext write can leave an encrypted record waiting for IOCP capacity after WriteQueue empties.
+   if (netsocket_pending_tls_output(Self)) {
+      error = tls_flush_output(Self);
+      if (error IS ERR::BufferOverflow) {
+         error = ERR::Okay;
+         tls_output_blocked = true;
+      }
+   }
+#endif
 
    // Send out remaining queued data before getting new data to send
 
-   while (!Self->WriteQueue.Buffer.empty()) {
+   while ((!error) and (!tls_output_blocked) and (not Self->WriteQueue.Buffer.empty())) {
       size_t len = Self->WriteQueue.Buffer.size() - Self->WriteQueue.Index;
       #ifndef DISABLE_SSL
          if ((!Self->TLS.Handle) and (len > glMaxWriteLen)) len = glMaxWriteLen;
@@ -527,7 +388,8 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
 
    // Before feeding new data into the queue, the current buffer must be empty.
 
-   if ((error IS ERR::Okay) and Self->CloseAfterWrite and Self->WriteQueue.Buffer.empty() and
+   if ((!error) and Self->CloseAfterWrite and Self->WriteQueue.Buffer.empty() and
+       (not netsocket_pending_tls_output(Self)) and
        (not network_platform().has_pending_write(Self->Handle))) {
       Self->InUse--;
       Self->OutgoingRecursion--;
@@ -535,8 +397,9 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       return;
    }
 
-   if ((error IS ERR::Okay) and ((Self->WriteQueue.Buffer.empty()) or
+   if ((!error) and ((Self->WriteQueue.Buffer.empty()) or
        (Self->WriteQueue.Index >= Self->WriteQueue.Buffer.size()))) {
+      if (Self->Outgoing.stale()) clear_callback_function(Self->Outgoing);
       if (Self->Outgoing.defined()) {
          if (Self->Outgoing.isC()) {
             auto routine = (ERR (*)(extNetSocket *, APTR))Self->Outgoing.Routine;
@@ -547,7 +410,7 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
             if (sc::Call(Self->Outgoing, std::to_array<ScriptArg>({ { "NetSocket", Self, FD_OBJECTPTR } }), error) != ERR::Okay) error = ERR::Terminate;
          }
 
-         if (error != ERR::Okay) Self->Outgoing.clear();
+         if (error != ERR::Okay) clear_callback_function(Self->Outgoing);
       }
 
       // If the write queue is empty and all data has been retrieved, we can remove the FD-Write registration so that
@@ -555,15 +418,16 @@ static void netsocket_outgoing_impl(HOSTHANDLE SocketFD, extNetSocket *Self)
       // be assigned temporarily.
 
       if ((!Self->Outgoing.defined()) and (Self->WriteQueue.Buffer.empty()) and
+          (not netsocket_pending_tls_output(Self)) and
           (not network_platform().has_pending_write(Self->Handle))) {
          log.trace("Write-queue listening on socket %d will now stop.", Self->UID, Self->Handle.int_value());
          if (auto error = network_platform().remove_write(Self->Handle); error != ERR::Okay) log.warning(error);
       }
+   }
 
-      if (error != ERR::Okay) {
-         Self->ErrorCountdown--;
-         if (!Self->ErrorCountdown) Self->setState(NTC::DISCONNECTED);
-      }
+   if (error != ERR::Okay and error != ERR::BufferOverflow and error != ERR::Busy) {
+      Self->ErrorCountdown--;
+      if (!Self->ErrorCountdown) Self->setState(NTC::DISCONNECTED);
    }
 
    Self->InUse--;

@@ -38,16 +38,16 @@ end
          buffer = array<byte, 1024>
          err, read_len = Socket.acRead(buffer)
          if err is ERR_Okay then
-            print(buffer:getString(0, 80))
+            print(buffer.getString(0, 80))
          elseif err is ERR_Disconnected then
             Socket.acSignal()
          else
-            error('Read() failed on NetSocket.')
+            raise 'Read() failed on NetSocket.'
          end
       end
    } )
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { netsocket } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { netsocket } })
    check netsocket.mtConnect('kotuku.dev', 80)
    check proc.sleep()
 end

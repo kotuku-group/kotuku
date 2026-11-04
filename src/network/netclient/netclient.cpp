@@ -8,7 +8,7 @@ that is distributed with this package.  Please refer to it for further informati
 -CLASS-
 NetClient: Represents a single client IP address.
 
-When a connection is opened between a client IP and a @NetSocket object, a new NetClient object will be created for
+When a connection is opened between a client IP and a @NetServer object, a new NetClient object will be created for
 the client's IP address if one does not already exist.  All @ClientSocket connections to that IP address are then
 tracked under the single NetClient object.
 
@@ -18,28 +18,12 @@ NetClient objects are intended to be created from the network interfacing code e
 
 *********************************************************************************************************************/
 
-static ERR NETCLIENT_Free(objNetClient *Self)
-{
-   Self->~objNetClient();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR NETCLIENT_Init(objNetClient *Self)
 {
-   if (Self->Owner->classID() != CLASSID::NETSOCKET) {
+   if (Self->Owner->baseClassID() != CLASSID::NETSOCKET) {
       return kt::Log().warning(ERR::UnsupportedOwner);
    }
 
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR NETCLIENT_NewPlacement(objNetClient *Self)
-{
-   new (Self) objNetClient;
    return ERR::Okay;
 }
 
@@ -59,10 +43,10 @@ static ERR GET_IP(objNetClient *Self, struct IPAddress **Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Next: The next client IP with connections to the server socket.
+Next: The next client IP with connections to the NetServer.
 
 -FIELD-
-Prev: The previous client IP with connections to the server socket.
+Prev: The previous client IP with connections to the NetServer.
 
 -FIELD-
 Connections: Pointer to the first established socket connection for the client IP.
@@ -84,7 +68,7 @@ static const FieldArray clNetClientFields[] = {
    { "ClientData",  FDF_POINTER|FDF_RW },
    { "TotalConnections", FDF_INT|FDF_R },
    // Virtual fields
-   { "IP",          FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R, GET_IP, nullptr, "IPAddress" },
+   { "IP",          FDF_VIRTUAL|FDF_POINTER|FDF_STRUCT|FDF_R|FDF_PURE, GET_IP, nullptr, "IPAddress" },
    END_FIELD
 };
 

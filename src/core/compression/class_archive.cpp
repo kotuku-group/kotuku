@@ -16,15 +16,15 @@ ArchiveName for reference.  In the C++ example below, take note of the use of `u
 
 <pre>
 objCompression::create::untracked(
-   fl::Path("user:documents/myfile.zip"),
-   fl::ArchiveName("myfiles")
+   fl::Path('user:documents/myfile.zip'),
+   fl::ArchiveName('myfiles')
 );
 </pre>
 
 With the Compression object in place, opening files within the archive only requires the correct path
 reference.  The format is `archive:ArchiveName/path/to/file.ext` and the Tiri example below illustrates:
 
-`obj.new('file', { path='archive:myfiles/readme.txt', flags='!READ' })`
+`obj.new('file', { path='archive:myfiles/readme.txt', flags=FL_READ })`
 
 -END-
 
@@ -36,15 +36,15 @@ constexpr int LEN_ARCHIVE = 8; // "archive:" length
 
 struct prvFileArchive {
    ZipFile  Info;
-   z_stream Stream;
-   extFile  *FileStream;
-   extCompression *Archive;
-   uint8_t    InputBuffer[SIZE_COMPRESSION_BUFFER];
-   uint8_t    OutputBuffer[SIZE_COMPRESSION_BUFFER];
-   uint8_t    *ReadPtr;      // Current position within OutputBuffer
-   int     InputLength;
-   bool     Inflating;
-   bool     InvalidState; // Set to true if the archive is corrupt.
+   ZStream  Inflate;      // Streaming decompression state for the active archive entry
+   objFile  *FileStream = nullptr;
+   extCompression *Archive = nullptr;
+   uint8_t  InputBuffer[SIZE_COMPRESSION_BUFFER];
+   uint8_t  OutputBuffer[SIZE_COMPRESSION_BUFFER];
+   uint8_t  *ReadPtr = nullptr;   // Current position within OutputBuffer
+   int64_t  DataOffset = 0;       // Offset of the item's data within the archive file
+   int      InputLength = 0;
+   bool     InvalidState = false; // Set to true if the archive is corrupt.
 };
 
 struct ArchiveDriver {
@@ -55,28 +55,27 @@ static ankerl::unordered_dense::map<uint32_t, extCompression *> glArchives;
 
 static ERR close_folder(DirInfo *);
 static ERR open_folder(DirInfo *);
-static ERR get_info(std::string_view, FileInfo *, int);
+static ERR get_info(std::string_view, FileInfo &);
 static ERR scan_folder(DirInfo *);
 static ERR test_path(std::string &, RSF, LOC *);
 
 //********************************************************************************************************************
 
-static void reset_state(extFile *Self)
+static void reset_state(objFile *Self)
 {
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
 
-   if (prv->Inflating) { inflateEnd(&prv->Stream); prv->Inflating = false; }
-
-   prv->Stream.avail_in = 0;
+   prv->Inflate.reset();
+   prv->Inflate->avail_in = 0;
    prv->ReadPtr = nullptr;
    Self->Position = 0;
 }
 
 //********************************************************************************************************************
 
-static ERR seek_to_item(extFile *Self)
+static ERR seek_to_item(objFile *Self)
 {
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
    if (prv->InvalidState) return ERR::InvalidState;
 
    auto &item = prv->Info;
@@ -86,8 +85,8 @@ static ERR seek_to_item(extFile *Self)
 
    uint16_t extra_len;
    if (fl::ReadLE(prv->FileStream, &extra_len) != ERR::Okay) return ERR::Read;
-   uint32_t stream_start = item.Offset + HEAD_LENGTH + item.NameLen + extra_len;
-   if (acSeekStart(prv->FileStream, stream_start) != ERR::Okay) return ERR::Seek;
+   prv->DataOffset = int64_t(item.Offset) + HEAD_LENGTH + item.NameLen + extra_len;
+   if (acSeekStart(prv->FileStream, prv->DataOffset) != ERR::Okay) return ERR::Seek;
 
    if (item.CompressedSize > 0) {
       Self->Flags |= FL::FILE;
@@ -96,8 +95,7 @@ static ERR seek_to_item(extFile *Self)
          Self->Size = item.CompressedSize;
          return ERR::Okay;
       }
-      else if ((item.DeflateMethod IS 8) and (!inflateInit2(&prv->Stream, -MAX_WBITS))) {
-         prv->Inflating = true;
+      else if ((item.DeflateMethod IS 8) and (!prv->Inflate.inflate_init(-MAX_WBITS))) {
          Self->Size = item.OriginalSize;
          return ERR::Okay;
       }
@@ -150,11 +148,11 @@ static extCompression * find_archive(std::string_view Path, std::string &FilePat
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Activate(extFile *Self)
+static ERR ARCHIVE_Activate(objFile *Self)
 {
    Log log;
 
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    if (!prv->Archive) return log.warning(ERR::SystemCorrupt);
 
@@ -162,7 +160,7 @@ static ERR ARCHIVE_Activate(extFile *Self)
 
    log.msg("Allocating file stream for item %s", prv->Info.Name.c_str());
 
-   if ((prv->FileStream = extFile::create::local(
+   if ((prv->FileStream = objFile::create::local(
       fl::Name("ArchiveFileStream"),
       fl::Path(prv->Archive->Path),
       fl::Flags(FL::READ)))) {
@@ -176,22 +174,20 @@ static ERR ARCHIVE_Activate(extFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Free(extFile *Self)
+static ERR ARCHIVE_Free(objFile *Self)
 {
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
-
-   if (prv) {
-      if (prv->FileStream) { FreeResource(prv->FileStream); prv->FileStream = nullptr; }
-      if (prv->Inflating)  { inflateEnd(&prv->Stream); prv->Inflating = false; }
+   if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
+      if (prv->FileStream) FreeResource(prv->FileStream);
       prv->~prvFileArchive();
+      // Let Free release DerivedPtr
    }
 
-   return ERR::Okay;
+   return ERR::NothingDone;
 }
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Init(extFile *Self)
+static ERR ARCHIVE_Init(objFile *Self)
 {
    Log log;
 
@@ -202,9 +198,9 @@ static ERR ARCHIVE_Init(extFile *Self)
    if ((Self->Flags & (FL::NEW|FL::WRITE)) != FL::NIL) return log.warning(ERR::ReadOnly);
 
    ERR error = ERR::Search;
-   if (AllocMemory(sizeof(prvFileArchive), MEM::DATA, &Self->ChildPrivate, nullptr) IS ERR::Okay) {
-      auto prv = (prvFileArchive *)Self->ChildPrivate;
-      new (prv) prvFileArchive;
+   if ((Self->DerivedPtr = malloc(sizeof(prvFileArchive)))) {
+      auto prv = (prvFileArchive *)Self->DerivedPtr;
+      new (prv) prvFileArchive{};
 
       if (Self->Path.ends_with(':')) { // Nothing is referenced
          return ERR::Okay;
@@ -232,7 +228,7 @@ static ERR ARCHIVE_Init(extFile *Self)
 
             if (it != prv->Archive->Files.end()) {
                prv->Info = *it;
-               if ((error = Self->activate()) IS ERR::Okay) {
+               if (!(error = Self->activate())) {
                   error = Self->query();
                }
             }
@@ -241,8 +237,8 @@ static ERR ARCHIVE_Init(extFile *Self)
 
       if (error != ERR::Okay) {
          prv->~prvFileArchive();
-         FreeResource(Self->ChildPrivate);
-         Self->ChildPrivate = nullptr;
+         free(Self->DerivedPtr);
+         Self->DerivedPtr = nullptr;
       }
    }
    else error = ERR::AllocMemory;
@@ -252,9 +248,9 @@ static ERR ARCHIVE_Init(extFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Query(extFile *Self)
+static ERR ARCHIVE_Query(objFile *Self)
 {
-   auto prv = (prvFileArchive *)(Self->ChildPrivate);
+   auto prv = (prvFileArchive *)(Self->DerivedPtr);
 
    // Activate the source if this hasn't been done already.
 
@@ -289,20 +285,29 @@ static ERR ARCHIVE_Query(extFile *Self)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
+static ERR ARCHIVE_Read(objFile *Self, struct acRead *Args)
 {
    Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
-   else if (Args->Length IS 0) return ERR::Okay;
-   else if (Args->Length < 0) return ERR::OutOfRange;
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return ERR::OutOfRange;
+   const int length = int(Args->Buffer.size());
 
-   auto prv = (prvFileArchive *)Self->ChildPrivate;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
 
    if (prv->InvalidState) return ERR::InvalidState;
 
    if (prv->Info.DeflateMethod IS 0) {
-      ERR error = acRead(prv->FileStream, Args->Buffer, Args->Length, &Args->Result);
+      // Stored data is read directly from the archive, limited to the item's remaining bytes so that the read
+      // cannot run into the next item.
+
+      Args->Result = 0;
+      auto remaining = Self->Size - Self->Position;
+      if (remaining <= 0) return ERR::Okay; // End of item
+
+      auto span = Args->Buffer.first(size_t(std::min<int64_t>(remaining, length)));
+      ERR error = acRead(prv->FileStream, span, &Args->Result);
       if (error IS ERR::Okay) Self->Position += Args->Result;
       return error;
    }
@@ -311,31 +316,35 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
       auto &zf = prv->Info;
 
-      //log.trace("Decompressing %d bytes to %d, buffer size %d", zf.CompressedSize, zf.OriginalSize, Args->Length);
+      //log.trace("Decompressing %d bytes to %d, buffer size %d", zf.CompressedSize, zf.OriginalSize, length);
 
-      if ((prv->Inflating) and (!prv->Stream.avail_in)) { // Initial setup
+      if (!prv->ReadPtr) { // Initial setup following seek_to_item()
+         if (!prv->Inflate.active()) return ERR::Okay; // Empty item
+
          struct acRead read = {
-            .Buffer = prv->InputBuffer,
-            .Length = (zf.CompressedSize < SIZE_COMPRESSION_BUFFER) ? (int)zf.CompressedSize : SIZE_COMPRESSION_BUFFER
+            .Buffer = std::span<int8_t>((int8_t *)prv->InputBuffer,
+               (zf.CompressedSize < SIZE_COMPRESSION_BUFFER) ? size_t(zf.CompressedSize) : SIZE_COMPRESSION_BUFFER)
          };
 
          if (Action(AC::Read, prv->FileStream, &read) != ERR::Okay) return ERR::Read;
          if (read.Result <= 0) return ERR::Read;
 
-         prv->ReadPtr          = prv->OutputBuffer;
-         prv->InputLength      = zf.CompressedSize - read.Result;
-         prv->Stream.next_in   = prv->InputBuffer;
-         prv->Stream.avail_in  = read.Result;
-         prv->Stream.next_out  = prv->OutputBuffer;
-         prv->Stream.avail_out = SIZE_COMPRESSION_BUFFER;
+         prv->ReadPtr            = prv->OutputBuffer;
+         prv->InputLength        = zf.CompressedSize - read.Result;
+         prv->Inflate->next_in   = prv->InputBuffer;
+         prv->Inflate->avail_in  = read.Result;
+         prv->Inflate->next_out  = prv->OutputBuffer;
+         prv->Inflate->avail_out = SIZE_COMPRESSION_BUFFER;
       }
 
       while (true) {
-         // Output any buffered data to the client first
-         if (prv->ReadPtr < (uint8_t *)prv->Stream.next_out) {
-            int len = (int)(prv->Stream.next_out - (Bytef *)prv->ReadPtr);
-            if (len > Args->Length) len = Args->Length;
-            copymem(prv->ReadPtr, (char *)Args->Buffer + Args->Result, len);
+         // Output any buffered data to the client first, limited to the space that remains in the client's buffer.
+         // Undelivered output is retained for the next read.
+
+         if (prv->ReadPtr < (uint8_t *)prv->Inflate->next_out) {
+            int len = (int)(prv->Inflate->next_out - (Bytef *)prv->ReadPtr);
+            if (len > length - Args->Result) len = length - Args->Result;
+            copymem(prv->ReadPtr, Args->Buffer.data() + Args->Result, len);
             prv->ReadPtr   += len;
             Args->Result   += len;
             Self->Position += len;
@@ -343,45 +352,47 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
          // Stop if necessary
 
-         if (prv->Stream.total_out IS zf.OriginalSize) break; // All data decompressed
-         if (Args->Result >= Args->Length) return ERR::Okay;
-         if (!prv->Inflating) return ERR::Okay;
+         if (Args->Result >= length) return ERR::Okay;
+         if (!prv->Inflate.active()) return ERR::Okay; // All data has been decompressed and delivered
+         if (prv->Inflate->total_out IS zf.OriginalSize) break; // All data decompressed, output buffer is drained
 
          // Reset the output buffer and decompress more data
 
-         prv->Stream.next_out  = prv->OutputBuffer;
-         prv->Stream.avail_out = SIZE_COMPRESSION_BUFFER;
+         prv->Inflate->next_out  = prv->OutputBuffer;
+         prv->Inflate->avail_out = SIZE_COMPRESSION_BUFFER;
 
-         int result = inflate(&prv->Stream, (prv->Stream.avail_in) ? Z_SYNC_FLUSH : Z_FINISH);
+         int result = inflate(prv->Inflate.get(), (prv->Inflate->avail_in) ? Z_SYNC_FLUSH : Z_FINISH);
 
          prv->ReadPtr = prv->OutputBuffer;
 
          if ((result) and (result != Z_STREAM_END)) {
             prv->InvalidState = true;
-            return convert_zip_error(&prv->Stream, result);
+            return convert_zip_error(prv->Inflate.get(), result);
+         }
+
+         if ((result IS Z_STREAM_END) and (prv->Inflate->total_out != zf.OriginalSize)) {
+            // The stream ended at a size that disagrees with the archive directory
+            prv->InvalidState = true;
+            return ERR::InvalidCompression;
          }
 
          // Read more data from the source if necessary
 
-         if ((prv->Stream.avail_in <= 0) and (prv->InputLength > 0) and (result != Z_STREAM_END)) {
-            struct acRead read = { .Buffer = prv->InputBuffer };
-
-            if (prv->InputLength < SIZE_COMPRESSION_BUFFER) read.Length = prv->InputLength;
-            else read.Length = SIZE_COMPRESSION_BUFFER;
+         if ((prv->Inflate->avail_in <= 0) and (prv->InputLength > 0) and (result != Z_STREAM_END)) {
+            auto read_size = (prv->InputLength < SIZE_COMPRESSION_BUFFER) ? size_t(prv->InputLength) :
+               size_t(SIZE_COMPRESSION_BUFFER);
+            struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)prv->InputBuffer, read_size) };
 
             if (Action(AC::Read, prv->FileStream, &read) != ERR::Okay) return ERR::Read;
             if (read.Result <= 0) return ERR::Read;
 
             prv->InputLength -= read.Result;
-            prv->Stream.next_in  = prv->InputBuffer;
-            prv->Stream.avail_in = read.Result;
+            prv->Inflate->next_in  = prv->InputBuffer;
+            prv->Inflate->avail_in = read.Result;
          }
       }
 
-      if (prv->Inflating) {
-         inflateEnd(&prv->Stream);
-         prv->Inflating = false;
-      }
+      prv->Inflate.reset();
 
       return ERR::Okay;
    }
@@ -389,19 +400,34 @@ static ERR ARCHIVE_Read(extFile *Self, struct acRead *Args)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Seek(extFile *Self, struct acSeek *Args)
+static ERR ARCHIVE_Seek(objFile *Self, struct acSeek *Args)
 {
    Log log;
+   auto prv = (prvFileArchive *)Self->DerivedPtr;
    int64_t pos;
 
    log.traceBranch("Seek to offset %.2f from seek position %d", Args->Offset, int(Args->Position));
 
-   if (Args->Position IS SEEK::START) pos = int(Args->Offset);
-   else if (Args->Position IS SEEK::END) pos = Self->Size - int(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + int(Args->Offset);
+   if (Args->Position IS SEEK::START) pos = int64_t(Args->Offset);
+   else if (Args->Position IS SEEK::END) pos = Self->Size - int64_t(Args->Offset);
+   else if (Args->Position IS SEEK::CURRENT) pos = Self->Position + int64_t(Args->Offset);
    else return log.warning(ERR::Args);
 
-   if (pos < 0) return log.warning(ERR::OutOfRange);
+   // Clamp to the item boundaries, consistent with the File class.  Archived items are read-only, so a position
+   // beyond the end of the item has no purpose.
+
+   if (pos < 0) pos = 0;
+   else if (pos > Self->Size) pos = Self->Size;
+
+   if (pos IS Self->Position) return ERR::Okay;
+
+   if (prv->InvalidState) return log.warning(ERR::InvalidState);
+
+   if (prv->Info.DeflateMethod IS 0) { // Stored data can be seeked directly
+      if (acSeekStart(prv->FileStream, prv->DataOffset + pos) != ERR::Okay) return log.warning(ERR::Seek);
+      Self->Position = pos;
+      return ERR::Okay;
+   }
 
    if (pos < Self->Position) { // The position must be reset to zero if we need to backtrack
       reset_state(Self);
@@ -410,11 +436,14 @@ static ERR ARCHIVE_Seek(extFile *Self, struct acSeek *Args)
       if (error != ERR::Okay) return log.warning(error);
    }
 
+   // Deflated data has to be decompressed up to the new position
+
    uint8_t buffer[2048];
    while (Self->Position < pos) {
-      struct acRead read = { .Buffer = buffer, .Length = (int)(pos - Self->Position) };
-      if ((size_t)read.Length > sizeof(buffer)) read.Length = sizeof(buffer);
-      if (Action(AC::Read, Self, &read) != ERR::Okay) return ERR::Decompression;
+      auto read_size = std::min<size_t>(size_t(pos - Self->Position), sizeof(buffer));
+      struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)buffer, read_size) };
+      if (auto error = Action(AC::Read, Self, &read); error != ERR::Okay) return log.warning(error);
+      if (read.Result <= 0) return log.warning(ERR::Seek); // Item data ended early; the archive is inconsistent
    }
 
    return ERR::Okay;
@@ -422,17 +451,16 @@ static ERR ARCHIVE_Seek(extFile *Self, struct acSeek *Args)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_Write(extFile *Self, struct acWrite *Args)
+static ERR ARCHIVE_Write(objFile *Self, struct acWrite *Args)
 {
-   Log log;
-   return log.warning(ERR::NoSupport);
+   return kt::Log().warning(ERR::NoSupport);
 }
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_GET_Size(extFile *Self, int64_t *Value)
+static ERR ARCHIVE_GET_Size(objFile *Self, int64_t *Value)
 {
-   if (auto prv = (prvFileArchive *)Self->ChildPrivate) {
+   if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
       *Value = prv->Info.OriginalSize;
       return ERR::Okay;
    }
@@ -441,11 +469,11 @@ static ERR ARCHIVE_GET_Size(extFile *Self, int64_t *Value)
 
 //********************************************************************************************************************
 
-static ERR ARCHIVE_GET_Timestamp(extFile *Self, int64_t *Value)
+static ERR ARCHIVE_GET_Timestamp(objFile *Self, int64_t *Value)
 {
-   if (auto prv = (prvFileArchive *)Self->ChildPrivate) {
-      if (prv->Info.TimeStamp) {
-         *Value = prv->Info.TimeStamp;
+   if (auto prv = (prvFileArchive *)Self->DerivedPtr) {
+      if (prv->Info.Timestamp) {
+         *Value = prv->Info.Timestamp;
          return ERR::Okay;
       }
       else {
@@ -574,7 +602,7 @@ static ERR scan_folder(DirInfo *Dir)
       }
    }
 
-   return ERR::DirEmpty;
+   return ERR::EndOfSequence;
 }
 
 //********************************************************************************************************************
@@ -587,7 +615,7 @@ static ERR close_folder(DirInfo *Dir)
 
 //********************************************************************************************************************
 
-static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
+static ERR get_info(std::string_view Path, FileInfo &Info)
 {
    Log log(__FUNCTION__);
 
@@ -600,13 +628,13 @@ static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
    }
    else return ERR::DoesNotExist;
 
-   Info->Size     = item->OriginalSize;
-   Info->Flags    = RDF::NIL;
-   Info->Created  = item->Created;
-   Info->Modified = item->Modified;
+   Info.Size     = item->OriginalSize;
+   Info.Flags    = RDF::NIL;
+   Info.Created  = item->Created;
+   Info.Modified = item->Modified;
 
-   if ((item->Flags & FL::FOLDER) != FL::NIL) Info->Flags |= RDF::FOLDER;
-   else Info->Flags |= RDF::FILE|RDF::SIZE;
+   if ((item->Flags & FL::FOLDER) != FL::NIL) Info.Flags |= RDF::FOLDER;
+   else Info.Flags |= RDF::FILE|RDF::SIZE;
 
    // Extract the file name
 
@@ -614,14 +642,14 @@ static ERR get_info(std::string_view Path, FileInfo *Info, int InfoSize)
    auto i = Path.find_last_of("/\\:");
    if (i != std::string::npos) i++;
    if (Path.size()-i+1 > MAX_FILENAME) return ERR::BufferOverflow;
-   Info->Name.assign(Path, i, std::string::npos);
+   Info.Name.assign(Path, i, std::string::npos);
 
-   if ((Info->Flags & RDF::FOLDER) != RDF::NIL) Info->Name += '/';
+   if ((Info.Flags & RDF::FOLDER) != RDF::NIL) Info.Name += '/';
 
-   Info->Permissions = item->Permissions;
-   Info->UserID      = item->UserID;
-   Info->GroupID     = item->GroupID;
-   Info->Tags        = nullptr;
+   Info.Permissions = item->Permissions;
+   Info.UserID      = item->UserID;
+   Info.GroupID     = item->GroupID;
+   Info.Tags        = nullptr;
    return ERR::Okay;
 }
 
@@ -648,7 +676,7 @@ static ERR test_path(std::string &Path, RSF Flags, LOC *Type)
 
    if ((error != ERR::Okay) and ((Flags & RSF::APPROXIMATE) != RSF::NIL)) {
       file_path.append(".*");
-      if ((error = cmp->find(file_path.c_str(), TRUE, TRUE, &item)) IS ERR::Okay) {
+      if (!(error = cmp->find(file_path.c_str(), TRUE, TRUE, &item))) {
          // Point the path to the discovered item
          if (auto i = Path.find('/'); i != std::string::npos) {
             Path.resize(i + 1);
@@ -688,7 +716,7 @@ static const MethodEntry clArchiveMethods[] = {
 };
 
 static const struct FieldArray clArchiveFields[] = {
-   { "Size", FDF_INT64|FDF_R, ARCHIVE_GET_Size },
+   { "Size", FDF_INT64|FDF_R|FDF_PURE, ARCHIVE_GET_Size },
    { "Timestamp", FDF_INT64|FDF_R, ARCHIVE_GET_Timestamp },
    END_FIELD
 };

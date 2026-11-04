@@ -1,0 +1,259 @@
+
+@if(exists='modules:audio')
+
+   module audio as mAudio
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function command(Operation, Handle, Integer, Value)
+   return struct.new('AudioMixCommand', { operation=Operation, handle=Handle, integer=Integer ?? 0, value=Value ?? 0 })
+end
+
+function await_count(Results, Count)
+   for i in {0 to 500} do
+      if #Results >= Count then return end
+      processing.sleep(0.01)
+   end
+   assert(false, 'Batch completion callback timed out')
+end
+
+function slow_ticks(Audio, Channel)
+   results = array<int>
+   check mAudio.MixSubmitBatch(Audio,
+      array<struct<AudioMixCommand>> { command(MIX_TEMPO, Channel, 5) },
+      function(Audio, Error, FailedCommand)
+         assert(Error is ERR_Okay and FailedCommand is -1)
+         results.push(Error)
+      end)
+   await_count(results, 1)
+end
+
+@Test function BatchCallbackReportsExecutionOnceAndContinuesAfterFailure()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   results = array<table>
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_PLAY, channel),
+      command(MIX_SAMPLE, channel, 999999),
+      command(MIX_VOLUME, channel, 0, 0.5)
+   }
+   check mAudio.MixSubmitBatch(audio, batch, function(Audio, Error, FailedCommand)
+      assert(Audio.id is audio.id)
+      results.push({ error=Error, failed=FailedCommand })
+   end)
+   assert(#results is 0, 'Submission must not invoke the callback inline')
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+      function(Audio, Error, FailedCommand) results.push({ error=Error, failed=FailedCommand }) end)
+   await_count(results, 2)
+   assert(results[0].error is ERR_FieldNotSet and results[0].failed is 0,
+      'The first error must be preserved while remaining commands execute')
+   assert(results[1].error is ERR_Okay and results[1].failed is -1, 'Notifications follow batch order in a set')
+   processing.sleep(0.05)
+   assert(#results is 2, 'Completion must be delivered exactly once')
+end
+
+@Test function BatchCallbackCanSubmitAndDeactivate()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   results = array<int>
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_TEMPO, channel, 5) },
+      function(Audio, Error, FailedCommand)
+         assert(Error is ERR_Okay)
+         results.push(Error)
+         check mAudio.MixSubmitBatch(Audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+            function(Audio, Error, FailedCommand)
+               results.push(Error)
+               assert((Error is ERR_Cancelled and FailedCommand is 0) or
+                  (Error is ERR_Okay and FailedCommand is -1))
+            end)
+         check Audio.acDeactivate()
+      end)
+   await_count(results, 2)
+   @if(platform="windows")
+   assert(results[1] is ERR_Cancelled, 'Cancellation delivery must survive deactivation inside a callback')
+   @end
+end
+
+@Test function BatchCallbacksSurviveChannelClosureAndSampleRemoval()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   slow_ticks(audio, channel)
+   data = array<byte, 128>
+   data.fill(128)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   results = array<int>
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_SAMPLE, channel, sample) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   check audio.mtRemoveSample(sample)
+   err, replacement = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay and replacement is sample)
+   await_count(results, 1)
+   assert(results[0] is ERR_NoData or results[0] is ERR_Okay, 'Selection either executed before removal or fails')
+   @if(platform="windows")
+   assert(results[0] is ERR_NoData, 'The paced device must exercise removal before execution')
+   @end
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   check audio.mtCloseChannels(channel)
+   await_count(results, 2)
+   assert(results[1] is ERR_Cancelled or results[1] is ERR_Okay)
+   @if(platform="windows")
+   assert(results[1] is ERR_Cancelled, 'Channel removal must not discard its cancellation callback')
+   @end
+end
+
+@Test function RejectedAndDestroyedBatchesDoNotCallBack()
+   results = array<int>
+   audio = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   invalid = array<struct<AudioMixCommand>> { command(MIX_STOP, channel + 1) }
+   for i in {0 to 1030} do
+      err = mAudio.MixSubmitBatch(audio, invalid, function(Audio, Error, FailedCommand) results.push(Error) end)
+      assert(err is ERR_OutOfRange, 'Rejected submissions must not retain callback capacity')
+   end
+   processing.sleep(0.03)
+   assert(#results is 0, 'Rejected batches have no completion callback')
+   slow_ticks(audio, channel)
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_STOP, channel) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   audio.free()
+   processing.sleep(0.05)
+   assert(#results is 0, 'Freeing Audio must discard pending callbacks')
+end
+
+@Test function BatchCallbackCanFreeAudio()
+   audio = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   results = array<int>
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 1) },
+      function(Audio, Error, FailedCommand)
+         results.push(Error)
+         Audio.free()
+      end)
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 0) },
+      function(Audio, Error, FailedCommand) results.push(Error) end)
+   await_count(results, 1)
+   processing.sleep(0.05)
+   assert(#results is 1 and results[0] is ERR_Okay, 'Freeing Audio in a callback must suppress later callbacks')
+   assert(not audio.exists())
+end
+
+@Test function OwnedBatchesExecuteInOrder()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(2)
+   assert(err is ERR_Okay)
+   completed = array<int>
+   data = array<byte, 128>
+   data.fill(128)
+   err, first = audio.mtAddSample(function(Audio, Handle) completed.push(1) end, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   err, second = audio.mtAddSample(function(Audio, Handle) completed.push(2) end, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_SAMPLE, channel, first),
+      command(MIX_FREQUENCY, channel, 44100),
+      command(MIX_PLAY, channel)
+   }
+   processing.sleep(0.04)
+   assert(#completed is 0, 'A caller-owned batch has no effect before submission')
+   check mAudio.MixSubmitBatch(audio, batch)
+   batch[0] = command(MIX_SAMPLE, channel + 1, second)
+   batch[1] = command(MIX_FREQUENCY, channel + 1, 44100)
+   batch[2] = command(MIX_PLAY, channel + 1)
+   check mAudio.MixSubmitBatch(audio, batch)
+   batch.clear()
+   processing.sleep(0.2)
+   assert(#completed is 2, 'Submitted arrays are copied and each batch runs once')
+   assert(completed[0] is 1 and completed[1] is 2, 'Batches must execute in submission order')
+end
+
+@Test function RejectedSuffixDoesNotPublishPlayback()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   completed = 0
+   data = array<byte, 128>
+   data.fill(128)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_SAMPLE, channel, sample),
+      command(MIX_FREQUENCY, channel, 44100),
+      command(MIX_PLAY, channel),
+      command(MIX_STOP, channel + 1)
+   }
+   assert(mAudio.MixSubmitBatch(audio, batch) is ERR_OutOfRange)
+   processing.sleep(0.06)
+   assert(completed is 0, 'An invalid suffix must reject the playback prefix')
+   batch.clear()
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.1)
+   assert(completed is 1, 'Abandoning a batch must not buffer individual Mix calls')
+end
+
+@Test function TimingSingleCommandPriorityAndExecutionFailure()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(2)
+   assert(err is ERR_Okay)
+   completed = 0
+   data = array<byte, 128>
+   data.fill(128)
+   err, sample = audio.mtAddSample(function(Audio, Handle) completed++ end, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   -- Prime the update interval to 500 ms.  Tempo changes apply when the next boundary is scheduled.
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_TEMPO, channel, 5) })
+   check mAudio.MixSubmitBatch(audio, array<struct<AudioMixCommand>> { command(MIX_MUTE, channel, 0) })
+   processing.sleep(0.08)
+   batch = array<struct<AudioMixCommand>> {
+      command(MIX_PLAY, channel), -- No selected sample: this command fails at execution.
+      command(MIX_SAMPLE, channel, sample),
+      command(MIX_FREQUENCY, channel, 44100),
+      command(MIX_PLAY, channel),
+      command(MIX_SAMPLE, channel + 1, sample),
+      command(MIX_FREQUENCY, channel + 1, 44100),
+      command(MIX_PLAY, channel + 1)
+   }
+   check mAudio.MixSubmitBatch(audio, batch)
+   -- This later single command must run before the timed batch, whose frequency restores playback.
+   check mAudio.MixFrequency(audio, channel, 0)
+   for i in {0 to 60} do
+      if completed is 2 then break end
+      processing.sleep(0.05)
+   end
+   assert(completed is 2, 'Both channels must play despite the failed command and later single command')
+end
+
+@Test function TempoUnitsAndLimits()
+   audio <close> = obj.new('Audio', { device='null', outputRate=44100 })
+   check audio.acActivate()
+   err, channel = audio.mtOpenChannels(2)
+   assert(err is ERR_Okay)
+   for _, tempo in array<int> { 1, 125, 100000 } do
+      check mAudio.MixTempo(audio, channel + 1, tempo)
+   end
+   for _, tempo in array<int> { -1, 0, 100001 } do
+      assert(mAudio.MixTempo(audio, channel, tempo) is ERR_OutOfRange)
+      assert(mAudio.MixSubmitBatch(audio,
+         array<struct<AudioMixCommand>> { command(MIX_TEMPO, channel, tempo) }) is ERR_OutOfRange)
+   end
+end
+
+@end

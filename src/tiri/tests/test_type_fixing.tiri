@@ -16,6 +16,20 @@ function enforce_hotpath() end
    assert(count is 3.14159, "float value should work for num type")
 end
 
+@Test function BareAnnotationCreatesLocal()
+   entry, count:num = 5, 6
+   assert(entry is 5, "bare annotated assignment should retain its initial value")
+   assert(count is 6, "bare annotation on a later name should retain its initial value")
+   assert(debug.locality('entry') is 'local', "bare annotated assignment should create a local variable")
+   assert(debug.locality('count') is 'local', "bare annotation on a later name should create a local variable")
+
+   try
+      exec("entry, count:num = 5, 6; count = 'text'")
+   success
+      assert(false, "bare annotated assignment should enforce its declared type")
+   end
+end
+
 @Test function ExplicitStrAnnotation()
    local message: str = "hello"
    assert(message is "hello", "initial value should be 'hello'")
@@ -74,7 +88,7 @@ end
    assert(type(data) is "string", "any should accept string")
 
    data = true
-   assert(type(data) is "boolean", "any should accept boolean")
+   assert(type(data) is "bool", "any should accept bool")
 
    data = { x = 1 }
    assert(type(data) is "table", "any should accept table")
@@ -130,6 +144,47 @@ end
    assert(fn() is "replaced", "reassignment to different function should work")
 end
 
+@Test function NativeObjectCallResultTypes()
+   local task = obj.new('task')
+   check task.acSetKey('ProductName', 'Kotuku')
+   check task.acSetKey('FileVersion', '2026.7')
+   local err, value = task.acGetKey('ProductName')
+   assert(type(err) is 'number', 'Action error result should be numeric')
+   assert(type(value) is 'string', 'Action value result should be a string')
+
+   err, value = task.acGetKey('FileVersion')
+   assert(type(err) is 'number', 'Reassigned action error result should remain numeric')
+   assert(value is nil or type(value) is 'string', 'Reassigned action value should be a nullable string')
+
+   local method_err, environment = task.mtGetEnv('PATH')
+   assert(type(method_err) is 'number', 'Method error result should be numeric')
+   assert(environment is nil or type(environment) is 'string', 'Method value should be a nullable string')
+   environment = 'replacement'
+   task.free()
+end
+
+@Test function NativeObjectCallResultTypeMismatch()
+   try
+      exec([[
+local task = obj.new('task')
+local err, value = task.acGetKey('ProductName')
+value = 1
+]])
+   success
+      assert(false, 'Action string result should reject a later numeric assignment')
+   end
+
+   try
+      exec([[
+local task = obj.new('task')
+local err, value = task.mtGetEnv('PATH')
+value = 1
+]])
+   success
+      assert(false, 'Method string result should reject a later numeric assignment')
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- NIL SEMANTICS
 
@@ -142,6 +197,15 @@ end
    assert(result is 42, "now fixed to number")
    result = 100
    assert(result is 100, "reassignment same type should work")
+end
+
+@Test function UnmatchedScalarAssignmentRemainsUnfixed()
+   local first, second
+   first, second = 1
+   assert(first is 1, "explicit target should receive the scalar value")
+   assert(second is nil, "unmatched target should receive nil")
+   second = 2
+   assert(second is 2, "unmatched nil should not prevent later type fixation")
 end
 
 @Test function NilClearsValue()
@@ -174,45 +238,13 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- TYPE ANNOTATION ALIASES
-
-@Test function TypeAliases()
-   -- num/number are aliases
-   local n1: num = 1
-   local n2: number = 2
-   assert(n1 is 1, "num alias works")
-   assert(n2 is 2, "number alias works")
-
-   -- str/string are aliases
-   local s1: str = "a"
-   local s2: string = "b"
-   assert(s1 is "a", "str alias works")
-   assert(s2 is "b", "string alias works")
-
-   -- bool/boolean are aliases
-   local b1: bool = true
-   local b2: boolean = false
-   assert(b1 is true, "bool alias works")
-   assert(b2 is false, "boolean alias works")
-
-   -- func/function are aliases
-   local f1: func = function() return 1 end
-   local f2: function = function() return 2 end
-   assert(f1() is 1, "func alias works")
-   assert(f2() is 2, "function alias works")
-
-   -- obj/object are aliases
-   -- Skip actual object testing - just verify parsing works
-end
-
-----------------------------------------------------------------------------------------------------------------------
 -- TYPE MISMATCH ERROR DETECTION
 
 @Test function TypeMismatchNumberToString()
    try
       exec("local x = 10; x = 'text'")
    success
-      error("should have thrown type error for number to string")
+      assert(false, "should have thrown type error for number to string")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -221,7 +253,7 @@ end
    try
       exec("local name = 'Alice'; name = 42")
    success
-      error("should have thrown type error for string to number")
+      assert(false, "should have thrown type error for string to number")
    end
 end
 
@@ -231,7 +263,7 @@ end
    try
       exec("local flag = true; flag = 'yes'")
    success
-      error("should have thrown type error for boolean to string")
+      assert(false, "should have thrown type error for boolean to string")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -240,7 +272,7 @@ end
    try
       exec("local data = {}; data = 'not a table'")
    success
-      error("should have thrown type error for table to string")
+      assert(false, "should have thrown type error for table to string")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -249,7 +281,7 @@ end
    try
       exec("local fn = function() end; fn = 123")
    success
-      error("should have thrown type error for function to number")
+      assert(false, "should have thrown type error for function to number")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -258,9 +290,31 @@ end
    try
       exec("local count: num = 10; count = 'text'")
    success
-      error("should have thrown type error for annotated variable")
+      assert(false, "should have thrown type error for annotated variable")
    end
 end
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function TypeMismatchWithInferredGlobal()
+   try
+      exec("global glStickyMismatch = 'text'; glStickyMismatch = 42")
+   success
+      assert(false, "should have thrown type error for inferred global")
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function InferredGlobalFixesAfterNil()
+   exec([[
+global glStickyDeferred
+glStickyDeferred = nil
+glStickyDeferred = 'first'
+glStickyDeferred = 'second'
+assert(glStickyDeferred is 'second', 'The first concrete global assignment should fix its sticky type')
+]])
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function TypeMismatchInitialValue()
@@ -268,7 +322,7 @@ end
    try
       exec("local count: num = 'not a number'")
    success
-      error("should have thrown type error for mismatched initial value")
+      assert(false, "should have thrown type error for mismatched initial value")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -277,7 +331,7 @@ end
    try
       exec("local x: NotAType = 42")
    success
-      error("should have rejected unknown type name")
+      assert(false, "should have rejected unknown type name")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -287,7 +341,7 @@ end
    try
       exec("local result; result = 42; result = 'text'")
    success
-      error("should have thrown type error for deferred fixing mismatch")
+      assert(false, "should have thrown type error for deferred fixing mismatch")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -296,7 +350,7 @@ end
    try
       exec("local value; value = nil; value = nil; value = 100; value = 'wrong'")
    success
-      error("should have thrown type error for deferred fixing with nil assignments")
+      assert(false, "should have thrown type error for deferred fixing with nil assignments")
    end
 end
 ----------------------------------------------------------------------------------------------------------------------
@@ -346,7 +400,7 @@ end
 
 @Test function LoopVariableScope()
    -- Loop variables should be independent per iteration
-   for i in {0..3} do
+   for i in {0 to 3} do
       local item = i * 10
       assert(item is i * 10, "loop variable should be fixed in each iteration")
       item = i * 20
@@ -562,7 +616,7 @@ end
          x = data.value
       ]])
    success
-      error("Should raise error when table lookup type doesn't match")
+      assert(false, "Should raise error when table lookup type doesn't match")
    end
 end
 
@@ -577,7 +631,7 @@ end
          x = getString()
       ]])
    success
-      error("should raise error when function return type doesn't match")
+      assert(false, "should raise error when function return type doesn't match")
    end
 end
 
@@ -694,7 +748,7 @@ end
          x = getString()  -- Type mismatch: str vs num
       ]])
    success
-      error("mismatched return types should cause compile-time error")
+      assert(false, "mismatched return types should cause compile-time error")
    end
 end
 

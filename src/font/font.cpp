@@ -11,11 +11,13 @@ the FreeType home page at www.freetype.org.
 -MODULE-
 Font: Provides font management functionality and hosts the Font class.
 
-The Font module is responsible for managing the font database and provides support for client queries.  Fixed size
-bitmap fonts are supported via the Windows .fon file format, while Truetype fonts are support for scalable fonts.
+The Font module maintains the system font database and provides query functions for resolving font family names,
+styles, file paths and metadata.  Fixed-size bitmap fonts are recognised through the Windows `.fon` format, while
+TrueType fonts are scanned as scalable font resources.
 
-Bitmap fonts can be opened and drawn by the @Font class.  Drawing Truetype fonts is not supported by the Font module,
-but is instead provided by the #Vector module and @VectorText class.
+Bitmap fonts can be opened and drawn directly by the @Font class.  Scalable TrueType rendering is handled by the
+Vector module and @VectorText class; the Font module supplies the database information that allows those fonts to be
+selected.
 
 For a thorough introduction to typesetting history and terminology as it applies to computing, we recommend visiting
 Google Fonts Knowledge page: https://fonts.google.com/knowledge
@@ -29,23 +31,19 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 //#define DEBUG
 
 #include <ft2build.h>
-#include FT_SIZES_H
 #include FT_FREETYPE_H
 #include FT_MULTIPLE_MASTERS_H
-#include FT_ADVANCES_H
 #include FT_SFNT_NAMES_H
-
-#undef FT_INT64  // Avoid Freetype clash
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
 #include <kotuku/modules/font.h>
+#include <kotuku/modules/filesystem.h>
 #include <kotuku/modules/display.h>
+#include <kotuku/modules/config.h>
+#include <kotuku/modules/module.h>
 
 #include <sstream>
-#include <array>
-#include <math.h>
-#include <wchar.h>
 #include <kotuku/strings.hpp>
 #include "../link/unicode.h"
 
@@ -85,12 +83,39 @@ static OBJECTPTR clFont = nullptr;
 static OBJECTPTR modDisplay = nullptr;
 static FT_Library glFTLibrary = nullptr;
 
+// Information extracted from a scalable font file.
+
+struct scalable_face {
+   std::string family;
+   std::vector<std::string> styles; // Style names provided by the file
+   std::string axes;                // Axis tags of a variable font, e.g. 'wght,wdth'
+   bool variable = false;
+};
+
+// A family registered by RegisterFont().  Private fonts are held apart from the font database so that they are never
+// saved to fonts:fonts.cfg, are not shown in font lists and survive calls to RefreshFonts().  Access is serialised by
+// the glConfig lock.  A std::list is used so that names returned by ResolveFamilyName() remain valid.
+
+struct private_font {
+   std::string name;
+   std::vector<std::pair<std::string, std::string>> styles; // Style name, resolved file path
+   FMETA meta = FMETA::SCALED|FMETA::HIDDEN;
+
+   const std::string * find_style(std::string_view Style) const {
+      for (auto &[style, path] : styles) {
+         if (iequals(Style, style)) return &path;
+      }
+      return nullptr;
+   }
+};
+
+static std::list<private_font> glPrivateFonts;
+
 #include "font_structs.h"
 
 class extFont : public objFont {
    public:
    uint8_t *prvData;
-   std::string prvBuffer;
    struct FontCharacter *prvChar;
    class BitmapCache *BmpCache;
    int prvLineCount;
@@ -98,9 +123,18 @@ class extFont : public objFont {
    int16_t prvBitmapHeight;
    int16_t prvLineCountCR;
    char prvEscape[2];
-   char prvFace[32];
-   char prvStyle[20];
    uint8_t prvDefaultChar;
+
+   extFont(objMetaClass *ClassPtr, OBJECTID ObjectID) : objFont(ClassPtr, ObjectID) {
+      TabSize         = 8;
+      prvDefaultChar  = '.';
+      prvLineCountCR  = 1;
+      Colour.Alpha    = 255;
+      GlyphSpacing    = 1.0;
+      Style           = "Regular";
+   }
+
+   ~extFont();
 };
 
 #include "font_def.c"
@@ -108,42 +142,50 @@ class extFont : public objFont {
 #include "font_bitmap.cpp"
 
 static ERR add_font_class(void);
-static int getutf8(CSTRING, uint32_t *);
+static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &);
 static void scan_truetype_folder(objConfig *);
 static void scan_fixed_folder(objConfig *);
-static ERR analyse_bmp_font(CSTRING, winfnt_header_fields *, std::string &, std::vector<uint16_t> &);
-static void string_size(extFont *, CSTRING, int, int, int *, int *);
+static ERR analyse_bmp_font(std::string_view, winfnt_header_fields *, std::string &, std::vector<uint16_t> &);
+static void string_size(extFont *, std::string_view, int, int, int *, int *);
 
 //********************************************************************************************************************
 // Return the first unicode value from a given string address.
 
-static int getutf8(CSTRING Value, uint32_t *Unicode)
+static int getutf8(CSTRING Value, uint32_t *Unicode) = delete;
+
+static int getutf8(std::string_view Value, uint32_t *Unicode)
 {
    int i, len, code;
 
-   if ((*Value & 0x80) != 0x80) {
-      if (Unicode) *Unicode = *Value;
+   if (Value.empty()) {
+      if (Unicode) *Unicode = 0;
+      return 0;
+   }
+
+   const auto first = uint8_t(Value[0]);
+   if ((first & 0x80) != 0x80) {
+      if (Unicode) *Unicode = first;
       return 1;
    }
-   else if ((*Value & 0xe0) IS 0xc0) {
+   else if ((first & 0xe0) IS 0xc0) {
       len  = 2;
-      code = *Value & 0x1f;
+      code = first & 0x1f;
    }
-   else if ((*Value & 0xf0) IS 0xe0) {
+   else if ((first & 0xf0) IS 0xe0) {
       len  = 3;
-      code = *Value & 0x0f;
+      code = first & 0x0f;
    }
-   else if ((*Value & 0xf8) IS 0xf0) {
+   else if ((first & 0xf8) IS 0xf0) {
       len  = 4;
-      code = *Value & 0x07;
+      code = first & 0x07;
    }
-   else if ((*Value & 0xfc) IS 0xf8) {
+   else if ((first & 0xfc) IS 0xf8) {
       len  = 5;
-      code = *Value & 0x03;
+      code = first & 0x03;
    }
-   else if ((*Value & 0xfc) IS 0xfc) {
+   else if ((first & 0xfc) IS 0xfc) {
       len  = 6;
-      code = *Value & 0x01;
+      code = first & 0x01;
    }
    else {
       // Unprintable character
@@ -152,12 +194,12 @@ static int getutf8(CSTRING Value, uint32_t *Unicode)
    }
 
    for (i=1; i < len; ++i) {
-      if (!Value[i] or ((Value[i] & 0xc0) != 0x80)) {
+      if ((size_t(i) >= Value.size()) or ((uint8_t(Value[i]) & 0xc0) != 0x80)) {
          code = -1;
          break;
       }
       code <<= 6;
-      code |= Value[i] & 0x3f;
+      code |= uint8_t(Value[i]) & 0x3f;
    }
 
    if (code IS -1) {
@@ -183,23 +225,26 @@ constexpr T tab_advance(T Num, T Alignment) {
 
 static double glDefaultPoint = 10;
 static bool glPointSet = false;
+static std::mutex glPointMutex;
 
 static double global_point_size(void)
 {
-   if (!glPointSet) {
+   const std::lock_guard<std::mutex> lock(glPointMutex);
+
+   if (not glPointSet) {
       kt::Log log(__FUNCTION__);
       OBJECTID style_id;
-      if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &style_id) IS ERR::Okay) {
+      if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
          kt::ScopedObjectLock<objXML> style(style_id, 3000);
          if (style.granted()) {
-            char pointsize[20];
-            glPointSet = true;
-            if (acGetKey(style.obj, "/interface/@fontsize", pointsize, sizeof(pointsize)) IS ERR::Okay) {
-               glDefaultPoint = strtod(pointsize, nullptr);
+            std::string pointsize;
+            if (!acGetKey(style.obj, "/interface/@fontsize", pointsize)) {
+               glDefaultPoint = strtod(pointsize.c_str(), nullptr);
                if (glDefaultPoint < 6) glDefaultPoint = 6;
                else if (glDefaultPoint > 80) glDefaultPoint = 80;
                log.msg("Global font size is %.1f.", glDefaultPoint);
             }
+            glPointSet = true;
          }
       }
       else log.warning("glStyle XML object is not available");
@@ -212,7 +257,7 @@ static double global_point_size(void)
 
 inline void calc_lines(extFont *Self)
 {
-   if (Self->String) {
+   if (not Self->String.empty()) {
       if (Self->WrapEdge > 0) {
          string_size(Self, Self->String, -1, Self->WrapEdge - Self->X, nullptr, &Self->prvLineCount);
       }
@@ -222,15 +267,16 @@ inline void calc_lines(extFont *Self)
 }
 
 //********************************************************************************************************************
+// For use by calc_lines()
 
-static void string_size(extFont *Font, CSTRING String, int Chars, int Wrap, int *Width, int *Rows)
+static void string_size(extFont *Font, std::string_view String, int Chars, int Wrap, int *Width, int *Rows)
 {
    uint32_t unicode;
    int16_t rowcount, wordwidth, lastword, tabwidth, charwidth;
    uint8_t line_abort, pchar;
 
-   if ((!Font) or (!String)) return;
-   if (!Font->initialised()) return;
+   if ((not Font) or String.empty()) return;
+   if (not Font->initialised()) return;
 
    if (Chars IS FSS_LINE) {
       Chars = 0x7fffffff;
@@ -245,83 +291,82 @@ static void string_size(extFont *Font, CSTRING String, int Chars, int Wrap, int 
 
    //log.msg("StringSize: %.10s, Wrap %d, Chars %d, Abort: %d", String, Wrap, Chars, line_abort);
 
-   CSTRING start  = String;
    int x         = 0;
-   int prevglyph = 0;
    int longest   = 0;
    int charcount = 0;
    int wordindex = 0;
+   size_t cursor = 0;
    rowcount = line_abort ? 0 : 1;
-   while ((*String) and (charcount < Chars)) {
+   while ((cursor < String.size()) and (charcount < Chars)) {
       lastword = x;
 
       // Skip whitespace
 
-      while ((*String) and (*String <= 0x20)) {
-         if (*String IS ' ') x += Font->prvChar[' '].Advance * Font->GlyphSpacing;
-         else if (*String IS '\t') {
+      while ((cursor < String.size()) and (uint8_t(String[cursor]) <= 0x20)) {
+         auto ch = uint8_t(String[cursor]);
+         if (ch IS ' ') x += Font->prvChar[' '].Advance * Font->GlyphSpacing;
+         else if (ch IS '\t') {
             tabwidth = (Font->prvChar[' '].Advance * Font->GlyphSpacing) * Font->TabSize;
-            if (tabwidth) x += tab_advance<int>(x, tabwidth);
+            if (tabwidth) x = tab_advance<int>(x, tabwidth);
          }
-         else if (*String IS '\n') {
+         else if (ch IS '\n') {
             if (lastword > longest) longest = lastword;
             x = 0;
             if (line_abort) {
                line_abort = 2;
-               String++;
+               cursor++;
                break;
             }
             rowcount++;
          }
-         String++;
+         cursor++;
          charcount++;
-         prevglyph = 0;
       }
 
-      if ((!*String) or (line_abort IS 2)) break;
+      if ((cursor >= String.size()) or (line_abort IS 2)) break;
 
       // Calculate the width of the discovered word
 
-      wordindex = int(String - start);
+      wordindex = int(cursor);
       wordwidth = 0;
       charwidth = 0;
 
-      while (charcount < Chars) {
-         int charlen = getutf8(String, &unicode);
+      while ((cursor < String.size()) and (charcount < Chars)) {
+         int charlen = getutf8(String.substr(cursor), &unicode);
+         if (charlen <= 0) break;
 
          if (Font->FixedWidth > 0) charwidth = Font->FixedWidth;
          else if (unicode < 256) charwidth = Font->prvChar[unicode].Advance * Font->GlyphSpacing;
          else charwidth = Font->prvChar[(int)Font->prvDefaultChar].Advance * Font->GlyphSpacing;
 
-         if ((!x) and (x+wordwidth+charwidth >= Wrap)) {
+         if ((not x) and (x + wordwidth + charwidth >= Wrap)) {
             // This is the first word of the line and it exceeds the boundary, so we have to split it.
 
             lastword = wordwidth;
             wordwidth += charwidth; // This is just to ensure that a break occurs
-            wordindex = (int)(String - start);
+            wordindex = int(cursor);
             break;
          }
          else {
-            pchar = glWrapBreaks[(uint8_t)(*String)];
+            pchar = glWrapBreaks[uint8_t(String[cursor])];
             wordwidth += charwidth;
-            String += charlen;
+            cursor += size_t(charlen);
             charcount++;
 
             // Break if the previous char was a wrap character or current char is whitespace.
 
-            if ((pchar) or (*String <= 0x20)) break;
+            if ((pchar) or (cursor >= String.size()) or (uint8_t(String[cursor]) <= 0x20)) break;
          }
       }
 
       // Check the width of the word against the wrap boundary
 
       if (x + wordwidth >= Wrap) {
-         prevglyph = 0;
          if (lastword > longest) longest = lastword;
          rowcount++;
          if (line_abort) {
             x = 0;
-            String = start + wordindex;
+            cursor = size_t(wordindex);
             break;
          }
          else x = wordwidth;
@@ -332,7 +377,7 @@ static void string_size(extFont *Font, CSTRING String, int Chars, int Wrap, int 
    if (x > longest) longest = x;
 
    if (Rows) {
-      if (line_abort) *Rows = int(String - start);
+      if (line_abort) *Rows = int(cursor);
       else *Rows = rowcount;
    }
 
@@ -349,22 +394,38 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    CoreBase = argCoreBase;
 
-   argModule->get(FID_Root, modFont);
+   modFont = (OBJECTPTR)((objModule *)argModule)->Root;
+
+   auto cleanup = [] {
+      if (glFTLibrary) { FT_Done_FreeType(glFTLibrary); glFTLibrary = nullptr; }
+      if (glConfig)    { FreeResource(glConfig);        glConfig    = nullptr; }
+      if (clFont)      { FreeResource(clFont);          clFont      = nullptr; }
+      if (modDisplay)  { FreeResource(modDisplay);      modDisplay  = nullptr; }
+   };
 
    if (objModule::load("display", &modDisplay, &DisplayBase) != ERR::Okay) return ERR::LoadModule;
 
-   if (FT_Init_FreeType(&glFTLibrary)) return log.warning(ERR::LoadModule);
+   if (FT_Init_FreeType(&glFTLibrary)) {
+      cleanup();
+      return log.warning(ERR::LoadModule);
+   }
 
    LOC type;
    bool refresh = (AnalysePath("fonts:fonts.cfg", &type) != ERR::Okay) or (type != LOC::FILE);
 
    if ((glConfig = objConfig::create::global(fl::Name("cfgSystemFonts"), fl::Path("fonts:fonts.cfg")))) {
-      if (refresh) fnt::RefreshFonts();
+      if (refresh) {
+         if (auto error = fnt::RefreshFonts(); error != ERR::Okay) {
+            cleanup();
+            return error;
+         }
+      }
 
       ConfigGroups *groups;
-      if (not ((glConfig->get(FID_Data, groups) IS ERR::Okay) and (!groups->empty()))) {
+      if (not ((!glConfig->getGroups(groups)) and (not groups->empty()))) {
          log.error("Failed to build a database of valid fonts.");
-         return ERR::Failed;
+         cleanup();
+         return ERR::NoData;
       }
 
       // Merge tailored font options into the machine-generated database
@@ -373,15 +434,21 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    }
    else {
       log.error("Failed to load or prepare the font configuration file.");
-      return ERR::Failed;
+      cleanup();
+      return ERR::CreateObject;
    }
 
-   return add_font_class();
+   if (auto error = add_font_class(); error != ERR::Okay) {
+      cleanup();
+      return error;
+   }
+
+   return ERR::Okay;
 }
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -393,6 +460,7 @@ static ERR MODExpunge(void)
    if (clFont)       { FreeResource(clFont);          clFont       = nullptr; }
    if (modDisplay)   { FreeResource(modDisplay);      modDisplay   = nullptr; }
    glBitmapCache.clear();
+   glPrivateFonts.clear();
    return ERR::Okay;
 }
 
@@ -403,22 +471,28 @@ namespace fnt {
 -FUNCTION-
 CharWidth: Returns the width of a character.
 
-This function will return the pixel width of a bitmap font character.  The character is specified as a unicode value
-in the Char parameter.
+Returns the pixel width of a bitmap font character.  `Char` is interpreted as a Unicode character value.  Bitmap fonts
+provide a maximum of 256 glyph slots; unsupported characters fall back to the font's default character.
 
-The font's GlyphSpacing value is not used in calculating the character width.
+The font's #GlyphSpacing value is not included in the returned width.  If `Font` is `NULL` or has no character table,
+the result is `0`.
 
 -INPUT-
 obj(Font) Font: The font to use for calculating the character width.
-uint Char: A unicode character.
+uint Char: A Unicode character value.
 
 -RESULT-
-int: The pixel width of the character will be returned.
+int: The pixel width of the character, or `0` if it cannot be measured.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
 int CharWidth(objFont *Font, uint32_t Char)
 {
+   if (not Font) return 0;
+
    auto font = (extFont *)Font;
    if (Font->FixedWidth > 0) return Font->FixedWidth;
    else if ((Char < 256) and (font->prvChar)) return font->prvChar[Char].Advance;
@@ -428,172 +502,56 @@ int CharWidth(objFont *Font, uint32_t Char)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetList: Returns a list of all available system fonts.
-
-This function returns a linked list of all available system fonts.  The list must be terminated once it is no longer
-required.
-
--INPUT-
-&!struct(FontList) Result: The font list is returned here.
-
--ERRORS-
-Okay
-NullArgs
-AccessObject: Access to the font database was denied, or the object does not exist.
-
-*********************************************************************************************************************/
-
-ERR GetList(FontList **Result)
-{
-   kt::Log log(__FUNCTION__);
-
-   if (!Result) return log.warning(ERR::NullArgs);
-
-   log.branch();
-
-   *Result = NULL;
-
-   kt::ScopedObjectLock<objConfig> config(glConfig, 3000);
-   if (!config.granted()) return log.warning(ERR::AccessObject);
-
-   size_t size = 0;
-   ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) IS ERR::Okay) {
-      for (auto & [group, keys] : groups[0]) {
-         size += sizeof(FontList) + keys["Name"].size() + 1 + keys["Styles"].size() + 1 + (keys["Points"].size()*4) + 1;
-         if (keys.contains("Alias")) size += keys["Alias"].size() + 1;
-         if (keys.contains("Axes")) size += keys["Axes"].size() + 1;
-      }
-
-      FontList *list, *last_list = nullptr;
-      if (AllocMemory(size, MEM::DATA, &list) IS ERR::Okay) {
-         auto buffer = (STRING)(list + groups->size());
-         *Result = list;
-
-         for (auto & [group, keys] : groups[0]) {
-            last_list = list;
-            list->Next = list + 1;
-
-            if (keys.contains("Name")) {
-               list->Name = buffer;
-               buffer += strcopy(keys["Name"], buffer) + 1;
-            }
-
-            if (keys.contains("Hidden")) {
-               if (iequals("Yes", keys["Hidden"])) list->Hidden = true;
-            }
-
-            auto it = keys.find("Alias");
-            if ((it != keys.end()) and (!it->second.empty())) {
-               list->Alias = buffer;
-               buffer += strcopy(keys["Alias"], buffer) + 1;
-               // An aliased font can define a Name and Hidden values only.
-            }
-            else {
-               if (keys.contains("Styles")) {
-                  list->Styles = buffer;
-                  buffer += strcopy(keys["Styles"], buffer) + 1;
-               }
-
-               if (keys.contains("Scalable")) {
-                  if (iequals("Yes", keys["Scalable"])) list->Scalable = true;
-               }
-
-               if (keys.contains("Variable")) {
-                  if (iequals("Yes", keys["Variable"])) list->Variable = true;
-               }
-
-               if (keys.contains("Hinting")) {
-                  if (iequals("Normal", keys["Hinting"])) list->Hinting = HINT::NORMAL;
-                  else if (iequals("Internal", keys["Hinting"])) list->Hinting = HINT::INTERNAL;
-                  else if (iequals("Light", keys["Hinting"])) list->Hinting = HINT::LIGHT;
-               }
-
-               if (keys.contains("Axes")) {
-                  list->Axes = buffer;
-                  buffer += strcopy(keys["Axes"], buffer) + 1;
-               }
-
-               list->Points = nullptr;
-               if (keys.contains("Points")) {
-                  auto fontpoints = std::string_view(keys["Points"]);
-                  if (!fontpoints.empty()) {
-                     list->Points = (int *)buffer;
-                     std::size_t i = 0;
-                     for (int16_t j=0; i != std::string::npos; j++) {
-                        ((int *)buffer)[0] = svtonum<int>(fontpoints);
-                        buffer += sizeof(int);
-                        if (i = fontpoints.find(','); i != std::string::npos) fontpoints.remove_prefix(i+1);
-                     }
-                     ((int *)buffer)[0] = 0;
-                     buffer += sizeof(int);
-                  }
-               }
-            }
-
-            list++;
-         }
-
-         if (last_list) last_list->Next = nullptr;
-
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::NoData;
-}
-
-/*********************************************************************************************************************
-
--FUNCTION-
 StringWidth: Returns the pixel width of any given string in relation to a font's settings.
 
-This function calculates the pixel width of any string in relation to a font's object definition.  The routine takes
-into account any line feeds that might be specified in the String, so if the String contains 8 lines, then the width
-of the longest line will be returned.
+Calculates the pixel width of `String` using the supplied Font object's current metrics and spacing settings.  Line
+feeds are handled by measuring each line independently and returning the width of the longest line.
 
-Word wrapping will not be taken into account, even if it has been enabled in the font object.
+Word wrapping is not applied, even if #WrapEdge has been set on the Font object.
 
 -INPUT-
 obj(Font) Font: An initialised font object.
-cstr String: The string to be calculated.
-int Chars: The number of characters (not bytes, so consider UTF-8 serialisation) to be used in calculating the string length, or -1 to use the entire string.
+strview String: The string to be calculated.
+int Chars: The maximum number of characters to measure, or `-1` to measure the entire string.
 
 -RESULT-
-int: The pixel width of the string is returned - this will be zero if there was an error or the string is empty.
+int: The pixel width of the string, or `0` if `Font` is `NULL`, uninitialised or `String` is empty.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
-int StringWidth(objFont *Font, CSTRING String, int Chars)
+int StringWidth(objFont *Font, const std::string_view &String, int Chars)
 {
-   if ((!Font) or (!String)) return 0;
-   if (!Font->initialised()) return 0;
+   if ((not Font) or String.empty()) return 0;
+   if (not Font->initialised()) return 0;
 
    auto font = (extFont *)Font;
-   CSTRING str = String;
+   auto str = String;
    if (Chars < 0) Chars = 0x7fffffff;
 
    int len    = 0;
    int widest = 0;
    int whitespace = 0;
-   while ((*str) and (Chars > 0)) {
-      if (*str IS '\n') {
+   while ((not str.empty()) and (Chars > 0)) {
+      if (str.front() IS '\n') {
          if (widest < len) widest = len - whitespace;
          len  = 0; // Reset
-         str++;
+         str.remove_prefix(1);
          Chars--;
          whitespace = 0;
       }
-      else if (*str IS '\t') {
+      else if (str.front() IS '\t') {
          int16_t tabwidth = (font->prvChar[' '].Advance * Font->GlyphSpacing) * Font->TabSize;
          if (tabwidth) len = tab_advance<int>(len, tabwidth);
-         str++;
+         str.remove_prefix(1);
          Chars--;
          whitespace = 0;
       }
       else {
          uint32_t unicode;
-         str += getutf8(str, &unicode);
+         str.remove_prefix(size_t(getutf8(str, &unicode)));
          Chars--;
 
          int advance;
@@ -618,39 +576,48 @@ int StringWidth(objFont *Font, CSTRING String, int Chars)
 -FUNCTION-
 SelectFont: Searches for a 'best fitting' font file, based on family name and style.
 
-This function resolves a font family Name and Style to a font file path.  It works on a best efforts basis; the Name
-must exist but the Style is a non-mandatory preference.
+Resolves a font family `Name` and preferred `Style` to a font file path.  The family name must exist in the font
+database or have been registered with ~RegisterFont().  If the requested style is unavailable, the function falls back
+to the face's regular style or first registered style.
 
-The resulting Path must be freed once it is no longer required.
+Families registered with ~RegisterFont() are searched first and resolved exclusively from their registered files, so
+a private family will shadow a system family of the same name.  The `Meta` result for a private family includes the
+`HIDDEN` flag.
 
 -INPUT-
-cstr Name:  The name of a font face to search for (case insensitive).
-cstr Style: The required style, e.g. Bold or Italic.  Using camel-case for each word is compulsory.
-&!cstr Path: The location of the best-matching font file is returned in this parameter.
+strview Name:  The name of a font face to search for (case insensitive).
+strview Style: The preferred style, e.g. `Bold` or `Italic`.
+^&string Path: The location of the best-matching font file is returned in this parameter.
 &int(FMETA) Meta: Optional, returns additional meta information about the font file.
 
 -ERRORS-
 Okay
 NullArgs
 AccessObject: Access to the font database was denied, or the object does not exist.
+AllocMemory
 Search: Unable to find a suitable font.
+
+-TAGS-
+blocking, case-insensitive
 -END-
 
 *********************************************************************************************************************/
 
-ERR SelectFont(CSTRING Name, CSTRING Style, CSTRING *Path, FMETA *Meta)
+ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta)
 {
    kt::Log log(__FUNCTION__);
 
-   log.branch("%s:%s", Name, Style);
+   log.branch("%.*s:%.*s", int(Name.size()), Name.data(), int(Style.size()), Style.data());
 
-   if (not Name) return log.warning(ERR::NullArgs);
+   if (Name.empty() or (not Path)) return log.warning(ERR::NullArgs);
+
+   *Path = "";
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 5000);
    if (not config.granted()) return log.warning(ERR::AccessObject);
 
    ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) != ERR::Okay) return ERR::Search;
+   if (glConfig->getGroups(groups) != ERR::Okay) return ERR::Search;
 
    auto get_meta = [](ConfigKeys &Group) {
       auto meta = FMETA::NIL;
@@ -666,24 +633,47 @@ ERR SelectFont(CSTRING Name, CSTRING Style, CSTRING *Path, FMETA *Meta)
       return meta;
    };
 
-   auto get_font_path = [](ConfigKeys &Keys, const std::string &Style) {
-      if (Keys.contains(Style)) return strclone(Keys[Style]);
-      else if (!iequals("Regular", Style)) {
-         if (Keys.contains("Regular")) return strclone(Keys["Regular"]);
+   auto get_font_path = [](ConfigKeys &Keys, const std::string &Style, std::string *Path) {
+      if (Keys.contains(Style)) {
+         *Path = Keys[Style];
+         return ERR::Okay;
       }
-      return STRING(nullptr);
+      else if (not iequals("Regular", Style)) {
+         if (Keys.contains("Regular")) {
+            *Path = Keys["Regular"];
+            return ERR::Okay;
+         }
+      }
+      return ERR::Search;
    };
 
    std::string style_name(Style);
    kt::camelcase(style_name);
 
-   for (auto & [group, keys] : groups[0]) {
-      if (!iequals(Name, keys["Name"])) continue;
+   for (auto &font : glPrivateFonts) {
+      if (not iequals(Name, font.name)) continue;
 
-      if ((*Path = get_font_path(keys, style_name))) {
+      auto path = font.find_style(style_name);
+      if ((not path) and (not iequals("Regular", style_name))) path = font.find_style("Regular");
+      if (not path) {
+         log.traceWarning("Requested style '%s' not available, choosing first style.", style_name.c_str());
+         path = &font.styles.front().second;
+      }
+
+      *Path = *path;
+      if (Meta) *Meta = font.meta;
+      return ERR::Okay;
+   }
+
+   for (auto & [group, keys] : groups[0]) {
+      if (not iequals(Name, keys["Name"])) continue;
+
+      auto error = get_font_path(keys, style_name, Path);
+      if (!error) {
          if (Meta) *Meta = get_meta(keys);
          return ERR::Okay;
       }
+      else if (error != ERR::Search) return error;
 
       log.traceWarning("Requested style '%s' not available, choosing first style.", style_name.c_str());
 
@@ -693,14 +683,14 @@ ERR SelectFont(CSTRING Name, CSTRING Style, CSTRING *Path, FMETA *Meta)
       std::string first_style = styles.substr(0, end);
 
       if (keys.contains(first_style)) {
-         *Path = strclone(keys[first_style]);
+         *Path = keys[first_style];
          if (Meta) *Meta = get_meta(keys);
          return ERR::Okay;
       }
       else return ERR::Search;
    }
 
-   log.warning("The \"%s\" font is not available.", Name);
+   log.warning("The \"%.*s\" font is not available.", int(Name.size()), Name.data());
    return ERR::Search;
 }
 
@@ -709,14 +699,21 @@ ERR SelectFont(CSTRING Name, CSTRING Style, CSTRING *Path, FMETA *Meta)
 -FUNCTION-
 RefreshFonts: Refreshes the system font list with up-to-date font information.
 
-This function scans the `fonts:` volume and refreshes the font database.
+Scans the `fonts:` volume and rebuilds the font database.
 
-Refreshing fonts can take an extensive amount of time as each font file needs to be completely analysed for
-information.  The `fonts:fonts.cfg` file will be re-written on completion to reflect current font settings.
+Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style,
+metric and metadata information.  The `fonts:fonts.cfg` file is rewritten on completion.
+
+Fonts registered with ~RegisterFont() are private to the process and are neither cleared nor saved by a refresh.
 
 -ERRORS-
-Okay: Fonts were successfully refreshed.
+Okay
 AccessObject: Access to the font database was denied, or the object does not exist.
+GetField: Failed to read font database entries after scanning.
+OpenFile: Failed to open `fonts:fonts.cfg` for writing.
+
+-TAGS-
+blocking
 -END-
 
 *********************************************************************************************************************/
@@ -728,14 +725,14 @@ ERR RefreshFonts(void)
    log.branch();
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 3000);
-   if (!config.granted()) return log.warning(ERR::AccessObject);
+   if (not config.granted()) return log.warning(ERR::AccessObject);
 
-   acClear(glConfig); // Clear out existing font information
+   if (auto error = acClear(glConfig); error != ERR::Okay) return error; // Clear out existing font information
 
    scan_fixed_folder(glConfig);
    scan_truetype_folder(glConfig);
 
-   glConfig->sortByKey(nullptr, false); // Sort the font names into alphabetical order
+   if (auto error = glConfig->sortByKey("", false); error != ERR::Okay) return error; // Sort by font name.
 
    // Create a style list for each font, e.g.
    //
@@ -744,11 +741,11 @@ ERR RefreshFonts(void)
    //    Styles = Bold,Bold Italic,Italic,Regular
 
    ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) IS ERR::Okay) {
+   if (!glConfig->getGroups(groups)) {
       for (auto & [group, keys] : *groups) {
          std::list <std::string> styles;
          for (auto & [k, v] : keys) {
-            if (!v.compare(0, 6, "fonts:")) styles.push_front(k);
+            if (not v.compare(0, 6, "fonts:")) styles.push_front(k);
          }
 
          styles.sort();
@@ -762,13 +759,13 @@ ERR RefreshFonts(void)
          keys["Styles"] = style_list.str();
       }
    }
+   else return log.warning(ERR::GetField);
 
    // Save the font configuration file
 
    objFile::create file = { fl::Path("fonts:fonts.cfg"), fl::Flags(FL::NEW|FL::WRITE) };
-   if (file.ok()) glConfig->saveToObject(*file);
-
-   return ERR::Okay;
+   if (file.ok()) return glConfig->saveToObject(*file);
+   else return log.warning(ERR::OpenFile);
 }
 
 /*********************************************************************************************************************
@@ -776,81 +773,309 @@ ERR RefreshFonts(void)
 -FUNCTION-
 ResolveFamilyName: Convert a CSV family string to a single family name.
 
-Use ResolveFamilyName() to convert complex CSV family strings to a single family name.  The provided String will be
-parsed in sequence, with priority given from left to right.  If a single asterisk is used to terminate the list, it is
-guaranteed that the system default will be returned if no valid match is made.
+Converts a CSV family string to one resolved family name.  `String` is parsed from left to right, with each family name
+or wildcard tested against the font database in order.  If a single asterisk is used to terminate the list, the system
+default is returned when no earlier name matches.
 
-It is valid for individual names to utilise the common wildcards `?` and `*` to make a match.  E.g. `Times New *`
-would be able to match to `Times New Roman` if available.
+Individual names may use the common wildcards `?` and `*`; for example, `Times New *` can match `Times New Roman` if
+it is available.  Families registered with ~RegisterFont() are tested before the font database.
+
+The returned `Result` is borrowed storage.  Copy it immediately if it needs to survive a later font database refresh.
 
 -INPUT-
-cstr String: A CSV family string to resolve.
-&cstr Result: The nominated family name is returned in this parameter.
+strview String: A CSV family string to resolve.
+&strview Result: The resolved family name is returned in this parameter.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
 AccessObject: Access to the font database was denied, or the object does not exist.
-GetField:
+GetField
 Search: It was not possible to resolve the String to a known font family.
+
+-TAGS-
+volatile-result, null-terminated-result, blocking, case-insensitive
+
 -END-
 
 *********************************************************************************************************************/
 
-ERR ResolveFamilyName(CSTRING String, CSTRING *Result)
+ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((!String) or (!Result)) return ERR::NullArgs;
+   if ((String.empty()) or (not Result)) return ERR::NullArgs;
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 5000);
    if (not config.granted()) return log.warning(ERR::AccessObject);
 
    ConfigGroups *groups;
-   if (glConfig->get(FID_Data, groups) != ERR::Okay) return log.warning(ERR::GetField);
+   if (glConfig->getGroups(groups) != ERR::Okay) return log.warning(ERR::GetField);
 
    std::vector<std::string> names;
-   kt::split(std::string(String), std::back_inserter(names));
+   kt::split(String, std::back_inserter(names));
 
    for (auto &name : names) {
       kt::ltrim(name, "'\"");
       kt::rtrim(name, "'\"");
 
-restart:
-      if ((name[0] IS '*') and (!name[1])) {
-         // Default family requested - use the first font declaring a "Default" key
-         for (auto & [group, keys] : groups[0]) {
-            if (keys.contains("Default")) {
-               *Result = keys["Name"].c_str();
+      if (name.empty()) continue;
+
+      std::vector<std::string> visited_aliases;
+
+      for (;;) {
+         if ((name[0] IS '*') and (not name[1])) {
+            // Default family requested - use the first font declaring a "Default" key
+            for (auto & [group, keys] : groups[0]) {
+               if (keys.contains("Default")) {
+                  *Result = keys["Name"];
+                  return ERR::Okay;
+               }
+            }
+
+            *Result = "Noto Sans";
+            return ERR::Okay;
+         }
+
+         for (auto &font : glPrivateFonts) {
+            if (kt::wildcmp(name, font.name)) {
+               *Result = font.name;
                return ERR::Okay;
             }
          }
 
-         *Result = "Noto Sans";
-         return ERR::Okay;
-      }
+         bool alias_restart = false;
+         bool alias_loop = false;
 
-      for (auto & [group, keys] : groups[0]) {
-         if (kt::wildcmp(name, keys["Name"])) {
-            if (auto it = keys.find("Alias"); it != keys.end()) {
-               const std::string &alias = it->second;
-               if (!alias.empty()) {
-                  name = alias;
-                  goto restart;
+         for (auto & [group, keys] : groups[0]) {
+            if (kt::wildcmp(name, keys["Name"])) {
+               if (auto it = keys.find("Alias"); it != keys.end()) {
+                  const std::string &alias = it->second;
+                  if (not alias.empty()) {
+                     for (auto &visited : visited_aliases) {
+                        if (iequals(visited, keys["Name"])) {
+                           alias_loop = true;
+                           break;
+                        }
+                     }
+
+                     if (alias_loop) break;
+
+                     visited_aliases.push_back(keys["Name"]);
+                     name = alias;
+                     alias_restart = true;
+                     break;
+                  }
                }
-            }
 
-            *Result = keys["Name"].c_str();
-            return ERR::Okay;
+               *Result = keys["Name"];
+               return ERR::Okay;
+            }
          }
+
+         if (alias_loop) {
+            log.warning("Detected a cyclic alias while resolving family \"%.*s\"", int(String.size()), String.data());
+            break;
+         }
+         else if (alias_restart) continue;
+         else break;
       }
    }
 
-   log.msg("Failed to resolve family \"%s\"", String);
+   log.msg("Failed to resolve family \"%.*s\"", int(String.size()), String.data());
    return ERR::Search;
 }
 
+/*********************************************************************************************************************
+
+-FUNCTION-
+RegisterFont: Makes a font file available to the running process.
+
+Registers a scalable font file, such as a TrueType or OpenType file, so that its family can be referenced by name in
+the same way as an installed font.  This allows an application to use fonts that are distributed with it, without
+installing them to the `fonts:` volume.
+
+The family and style names are read from the file.  A variable font registers each of its named styles.  The resolved
+family name is returned in `Family` and can be used with the @VectorText.Face field, ~SelectFont() and
+~ResolveFamilyName().  Registering further files for the same family adds their styles to it, with the most recently
+registered file taking precedence for any style that is provided more than once.
+
+Registered fonts are private to the running process.  They are not saved to the font database, do not appear in the
+font lists that are built from `fonts:fonts.cfg` and are unaffected by ~RefreshFonts().  A registered family takes
+precedence over an installed family of the same name.  Registrations last until the Font module is expunged; there is
+no means of removing them.
+
+-INPUT-
+strview Path: The location of the font file.
+^&string Family: Optional, returns the family name of the registered font.
+
+-ERRORS-
+Okay
+NullArgs
+AccessObject: Access to the font database was denied, or the object does not exist.
+ResolvePath: The `Path` could not be resolved to an existing file.
+InvalidData: The file is not a recognised font format.
+NoSupport: The file is not a scalable font.
+
+-TAGS-
+blocking
+
+-END-
+
+*********************************************************************************************************************/
+
+ERR RegisterFont(const std::string_view &Path, std::string *Family)
+{
+   kt::Log log(__FUNCTION__);
+
+   log.branch("%.*s", int(Path.size()), Path.data());
+
+   if (Path.empty()) return log.warning(ERR::NullArgs);
+
+   std::string resolved;
+   if (ResolvePath(Path, RSF::NIL, &resolved) != ERR::Okay) return log.warning(ERR::ResolvePath);
+
+   kt::ScopedObjectLock<objConfig> config(glConfig, 5000);
+   if (not config.granted()) return log.warning(ERR::AccessObject);
+
+   std::string_view file_name(resolved);
+   if (auto sep = file_name.find_last_of("/\\"); sep != std::string_view::npos) file_name.remove_prefix(sep + 1);
+
+   scalable_face face;
+   if (auto error = analyse_scalable_font(resolved, file_name, face); error != ERR::Okay) return log.warning(error);
+
+   auto font = std::find_if(glPrivateFonts.begin(), glPrivateFonts.end(), [&face](const private_font &Font) {
+      return iequals(Font.name, face.family);
+   });
+
+   if (font IS glPrivateFonts.end()) font = glPrivateFonts.insert(glPrivateFonts.end(), { .name = face.family });
+
+   if (face.variable) font->meta |= FMETA::VARIABLE;
+
+   for (auto &style : face.styles) {
+      auto it = std::find_if(font->styles.begin(), font->styles.end(), [&style](const auto &Entry) {
+         return iequals(Entry.first, style);
+      });
+
+      if (it != font->styles.end()) it->second = resolved;
+      else font->styles.emplace_back(style, resolved);
+   }
+
+   log.msg("Registered family \"%s\" with %d style(s).", font->name.c_str(), int(face.styles.size()));
+
+   if (Family) *Family = font->name;
+   return ERR::Okay;
+}
+
 } // namespace
+
+//********************************************************************************************************************
+// Decode a UTF-16 big endian SFNT name to UTF-8.  A space is inserted wherever a capital follows a lower-case letter,
+// so that a style name such as 'SemiBold' is presented as 'Semi Bold'.
+
+static std::string decode_sfnt_name(const FT_SfntName &Name)
+{
+   char buffer[100];
+   int out = 0;
+   auto str = (uint16_t *)Name.string;
+   uint16_t prev_unicode = 0;
+   for (FT_UInt i=0; (i < Name.string_len>>1) and (out < std::ssize(buffer)-8); i++) {
+      uint16_t unicode = (str[i]>>8) | (uint8_t(str[i])<<8);
+      if ((unicode >= 'A') and (unicode <= 'Z')) {
+         if ((i > 0) and (prev_unicode >= 'a') and (prev_unicode <= 'z')) {
+            buffer[out++] = ' ';
+         }
+      }
+      out += UTF8WriteValue(unicode, std::span<int8_t>((int8_t *)(buffer + out), std::size(buffer) - size_t(out)));
+      prev_unicode = unicode;
+   }
+   return std::string(buffer, out);
+}
+
+//********************************************************************************************************************
+// Analyse a scalable font file and return its family name and the style names that it provides.  FileName is used to
+// name the family if the file does not declare one.  The caller must hold the glConfig lock, which serialises use of
+// glFTLibrary.
+
+static ERR analyse_scalable_font(const std::string &Path, std::string_view FileName, scalable_face &Face)
+{
+   kt::Log log(__FUNCTION__);
+
+   FT_Face ftface;
+   FT_Open_Args open = { .flags = FT_OPEN_PATHNAME, .pathname = (FT_String *)Path.c_str() };
+   if (FT_Open_Face(glFTLibrary, &open, 0, &ftface)) return ERR::InvalidData;
+
+   if (not FT_IS_SCALABLE(ftface)) { // Sanity check
+      FT_Done_Face(ftface);
+      return ERR::NoSupport;
+   }
+
+   log.msg("Detected font file \"%s\", name: %s, style: %s", Path.c_str(), ftface->family_name, ftface->style_name);
+
+   if (ftface->family_name) Face.family.assign(ftface->family_name);
+   else Face.family.assign(FileName.substr(0, FileName.find('.')));
+
+   // Strip any style references out of the font name and keep them as style flags
+
+   FTF style = FTF::NIL;
+   if (ftface->style_name) {
+      if (auto pos = Face.family.find(" Bold"); pos != std::string::npos) {
+         Face.family.replace(pos, 5, "");
+         style |= FTF::BOLD;
+      }
+
+      if (auto pos = Face.family.find(" Italic"); pos != std::string::npos) {
+         Face.family.replace(pos, 7, "");
+         style |= FTF::ITALIC;
+      }
+   }
+
+   kt::rtrim(Face.family);
+
+   if (FT_HAS_MULTIPLE_MASTERS(ftface)) { // A single ttf file can contain multiple named styles
+      Face.variable = true;
+
+      FT_MM_Var *mvar;
+      if (not FT_Get_MM_Var(ftface, &mvar)) {
+         FT_UInt index;
+         if (not FT_Get_Default_Named_Instance(ftface, &index)) {
+            auto name_table_size = FT_Get_Sfnt_Name_Count(ftface);
+            for (FT_UInt s=0; s < mvar->num_namedstyles; s++) {
+               for (int n=int(name_table_size)-1; n >= 0; n--) {
+                  FT_SfntName sft_name;
+                  if (not FT_Get_Sfnt_Name(ftface, n, &sft_name)) {
+                     if (sft_name.name_id IS mvar->namedstyle[s].strid) {
+                        Face.styles.push_back(decode_sfnt_name(sft_name));
+                        break;
+                     }
+                  }
+               }
+            }
+
+            std::ostringstream axes;
+            for (unsigned a=0; a < mvar->num_axis; a++) {
+               if (a > 0) axes << ',';
+               auto tag = (unsigned char *)&mvar->axis[a].tag;
+               axes << tag[3] << tag[2] << tag[1] << tag[0];
+            }
+            Face.axes = axes.str();
+         }
+
+         FT_Done_MM_Var(glFTLibrary, mvar);
+      }
+   }
+   else if ((ftface->style_name) and (not iequals("regular", ftface->style_name))) {
+      Face.styles.push_back(ftface->style_name);
+   }
+   else if (style IS FTF::BOLD) Face.styles.push_back("Bold");
+   else if (style IS FTF::ITALIC) Face.styles.push_back("Italic");
+   else if (style IS (FTF::BOLD|FTF::ITALIC)) Face.styles.push_back("Bold Italic");
+
+   if (Face.styles.empty()) Face.styles.push_back("Regular");
+
+   FT_Done_Face(ftface);
+   return ERR::Okay;
+}
 
 //********************************************************************************************************************
 
@@ -861,125 +1086,27 @@ static void scan_truetype_folder(objConfig *Config)
    log.branch("Scanning for truetype fonts.");
 
    std::string ttpath;
-   if (ResolvePath("fonts:truetype/", RSF::NO_FILE_CHECK|RSF::PATH, &ttpath) IS ERR::Okay) {
+   if (!ResolvePath("fonts:truetype/", RSF::NO_FILE_CHECK, &ttpath)) {
       DirInfo *dir;
-      if (OpenDir(ttpath.c_str(), RDF::FILE, &dir) IS ERR::Okay) {
+      if (!OpenDir(ttpath, RDF::FILE, &dir)) {
          LocalResource free_dir(dir);
 
          auto ttpath_len = ttpath.size();
-         while (ScanDir(dir) IS ERR::Okay) {
+         while (!ScanDir(dir)) {
             ttpath.resize(ttpath_len);
             ttpath.append(dir->Info->Name);
 
-            FT_Face ftface;
-            FT_Open_Args open = { .flags = FT_OPEN_PATHNAME, .pathname = (FT_String *)ttpath.c_str() };
-            if (not FT_Open_Face(glFTLibrary, &open, 0, &ftface)) {
-               if (!FT_IS_SCALABLE(ftface)) { // Sanity check
-                  FT_Done_Face(ftface);
-                  continue;
-               }
+            scalable_face face;
+            if (analyse_scalable_font(ttpath, dir->Info->Name, face) != ERR::Okay) continue;
 
-               log.msg("Detected font file \"%s\", name: %s, style: %s", ttpath.c_str(), ftface->family_name, ftface->style_name);
+            std::string path("fonts:truetype/");
+            path.append(dir->Info->Name);
 
-               std::string group;
-               if (ftface->family_name) group.assign(ftface->family_name);
-               else {
-                  unsigned i;
-                  for (i=0; dir->Info->Name[i] and (dir->Info->Name[i] != '.'); i++);
-                  group.assign(dir->Info->Name, i);
-               }
-
-               // Strip any style references out of the font name and keep them as style flags
-
-               FTF style = FTF::NIL;
-               if (ftface->style_name) {
-                  if (auto pos = group.find(" Bold"); pos != std::string::npos) {
-                     group.replace(pos, 5, "");
-                     style |= FTF::BOLD;
-                  }
-
-                  if (auto pos = group.find(" Italic"); pos != std::string::npos) {
-                     group.replace(pos, 7, "");
-                     style |= FTF::ITALIC;
-                  }
-               }
-
-               kt::rtrim(group);
-
-               Config->write(group.c_str(), "Name", group);
-               Config->write(group.c_str(), "Scalable", "Yes");
-
-               if (FT_HAS_MULTIPLE_MASTERS(ftface)) {
-                  // A single ttf file can contain multiple named styles
-                  Config->write(group.c_str(), "Variable", "Yes");
-
-                  FT_MM_Var *mvar;
-                  if (!FT_Get_MM_Var(ftface, &mvar)) {
-                     FT_UInt index;
-                     if (!FT_Get_Default_Named_Instance(ftface, &index)) {
-                        char buffer[100];
-                        auto name_table_size = FT_Get_Sfnt_Name_Count(ftface);
-                        for (FT_UInt s=0; (s < mvar->num_namedstyles); s++) {
-                           for (int n=int(name_table_size)-1; n >= 0; n--) {
-                              FT_SfntName sft_name;
-                              if (!FT_Get_Sfnt_Name(ftface, n, &sft_name)) {
-                                 if (sft_name.name_id IS mvar->namedstyle[s].strid) {
-                                    // Decode UTF16 Big Endian
-                                    int out = 0;
-                                    auto str = (uint16_t *)sft_name.string;
-                                    uint16_t prev_unicode = 0;
-                                    for (FT_UInt i=0; (i < sft_name.string_len>>1) and (out < std::ssize(buffer)-8); i++) {
-                                       uint16_t unicode = (str[i]>>8) | (uint8_t(str[i])<<8);
-                                       if ((unicode >= 'A') and (unicode <= 'Z')) {
-                                          if ((i > 0) and (prev_unicode >= 'a') and (prev_unicode <= 'z')) {
-                                             buffer[out++] = ' ';
-                                          }
-                                       }
-                                       out += UTF8WriteValue(unicode, buffer+out, std::ssize(buffer)-out);
-                                       prev_unicode = unicode;
-                                    }
-                                    buffer[out] = 0;
-
-                                    std::string path("fonts:truetype/");
-                                    path.append(dir->Info->Name);
-                                    Config->write(group.c_str(), buffer, path);
-                                    break;
-                                 }
-                              }
-                           }
-                        }
-
-                        std::ostringstream axes;
-                        for (unsigned a=0; a < mvar->num_axis; a++) {
-                           if (a > 0) axes << ',';
-                           auto tag = (unsigned char *)&mvar->axis[a].tag;
-                           axes << tag[3] << tag[2] << tag[1] << tag[0];
-                        }
-                        Config->write(group.c_str(), "Axes", axes.str());
-                     }
-
-                     FT_Done_MM_Var(glFTLibrary, mvar);
-                  }
-               }
-               else {
-                  // Add the style with a link to the font file location
-
-                  std::string path("fonts:truetype/");
-                  path.append(dir->Info->Name);
-
-                  if ((ftface->style_name) and (!iequals("regular", ftface->style_name))) {
-                     Config->write(group.c_str(), ftface->style_name, path);
-                  }
-                  else {
-                     if (style IS FTF::BOLD) Config->write(group.c_str(), "Bold", path);
-                     else if (style IS FTF::ITALIC) Config->write(group.c_str(), "Italic", path);
-                     else if (style IS (FTF::BOLD|FTF::ITALIC)) Config->write(group.c_str(), "Bold Italic", path);
-                     else Config->write(group.c_str(), "Regular", path);
-                  }
-               }
-
-               FT_Done_Face(ftface);
-            }
+            Config->write(face.family, "Name", face.family);
+            Config->write(face.family, "Scalable", "Yes");
+            if (face.variable) Config->write(face.family, "Variable", "Yes");
+            for (auto &style : face.styles) Config->write(face.family, style, path);
+            if (not face.axes.empty()) Config->write(face.family, "Axes", face.axes);
          }
       }
       else log.warning("Failed to open the fonts:truetype/ directory.");
@@ -995,17 +1122,18 @@ static void scan_fixed_folder(objConfig *Config)
    log.branch("Scanning for fixed fonts.");
 
    DirInfo *dir;
-   if (OpenDir("fonts:fixed/", RDF::FILE, &dir) IS ERR::Okay) {
-      while (ScanDir(dir) IS ERR::Okay) {
+   if (!OpenDir("fonts:fixed/", RDF::FILE, &dir)) {
+      LocalResource free_dir(dir);
+
+      while (!ScanDir(dir)) {
          std::string location("fonts:fixed/");
          location.append(dir->Info->Name);
-         auto src = location.c_str();
 
          winfnt_header_fields header;
          std::vector<uint16_t> points;
          std::string facename;
-         if (analyse_bmp_font(src, &header, facename, points) IS ERR::Okay) {
-            log.detail("Detected font file \"%s\", name: %s", src, facename.c_str());
+         if (!analyse_bmp_font(location, &header, facename, points)) {
+            log.detail("Detected font file \"%.*s\", name: %s", int(location.size()), location.data(), facename.c_str());
 
             if (facename.empty()) continue;
             std::string group(facename);
@@ -1044,15 +1172,15 @@ static void scan_fixed_folder(objConfig *Config)
 
             // Add the style with a link to the font file location
 
-            if (style IS FTF::BOLD) Config->write(gs, "Bold", src);
-            else if (style IS FTF::ITALIC) Config->write(gs, "Italic", src);
-            else if (style IS (FTF::BOLD|FTF::ITALIC)) Config->write(gs, "Bold Italic", src);
+            if (style IS FTF::BOLD) Config->write(gs, "Bold", location);
+            else if (style IS FTF::ITALIC) Config->write(gs, "Italic", location);
+            else if (style IS (FTF::BOLD|FTF::ITALIC)) Config->write(gs, "Bold Italic", location);
             else {
                // Font is regular, which also means we can convert it to bold/italic with some code
-               Config->write(gs, "Regular", src);
-               Config->write(gs, "Bold", src);
-               Config->write(gs, "Bold Italic", src);
-               Config->write(gs, "Italic", src);
+               Config->write(gs, "Regular", location);
+               Config->write(gs, "Bold", location);
+               Config->write(gs, "Bold Italic", location);
+               Config->write(gs, "Italic", location);
             }
 
             std::ostringstream out;
@@ -1065,123 +1193,60 @@ static void scan_fixed_folder(objConfig *Config)
 
             Config->write(gs, "Points", out.str());
          }
-         else log.warning("Failed to analyse %s", src);
+         else log.warning("Failed to analyse %.*s", int(location.size()), location.data());
       }
-      FreeResource(dir);
    }
    else log.warning("Failed to scan directory fonts:fixed/");
 }
 
 //********************************************************************************************************************
 
-static ERR analyse_bmp_font(CSTRING Path, winfnt_header_fields *Header, std::string &FaceName, std::vector<uint16_t> &Points)
+static ERR analyse_bmp_font(std::string_view Path, winfnt_header_fields *Header, std::string &FaceName, std::vector<uint16_t> &Points)
 {
    kt::Log log(__FUNCTION__);
-   winmz_header_fields mz_header;
-   winne_header_fields ne_header;
-   int i, res_offset, font_offset;
-   uint16_t size_shift, font_count, count;
    char face[50];
 
-   if ((!Path) or (!Header)) return ERR::NullArgs;
+   if ((Path.empty()) or (not Header)) return ERR::NullArgs;
 
    objFile::create file = { fl::Path(Path), fl::Flags(FL::READ) };
    if (file.ok()) {
-      file->read(&mz_header, sizeof(mz_header));
-
-      if (mz_header.magic IS ID_WINMZ) {
-         file->seekStart(mz_header.lfanew);
-
-         if ((file->read(&ne_header, sizeof(ne_header)) IS ERR::Okay) and (ne_header.magic IS ID_WINNE)) {
-            res_offset = mz_header.lfanew + ne_header.resource_tab_offset;
-            file->seekStart(res_offset);
-
-            font_count  = 0;
-            font_offset = 0;
-            size_shift  = 0;
-            fl::ReadLE(*file, &size_shift);
-
-            uint16_t type_id = 0;
-            for (fl::ReadLE(*file, &type_id); type_id; fl::ReadLE(*file, &type_id)) {
-               if (fl::ReadLE(*file, &count) IS ERR::Okay) {
-                  if (type_id IS 0x8008) {
-                     font_count  = count;
-                     file->get(FID_Position, font_offset);
-                     font_offset = font_offset + 4;
-                     break;
-                  }
-
-                  file->seekCurrent(4 + count * 12);
-               }
-            }
-
-            if ((!font_count) or (!font_offset)) {
-               log.warning("There are no fonts in file \"%s\"", Path);
-               return ERR::Failed;
-            }
-
-            file->seekStart(font_offset);
-
-            {
-               auto fonts = std::make_unique<winFont[]>(font_count);
-
-               // Get the offset and size of each font entry
-
-               for (int i=0; i < font_count; i++) {
-                  uint16_t offset = 0, size = 0;
-                  fl::ReadLE(*file, &offset);
-                  fl::ReadLE(*file, &size);
-                  fonts[i].Offset = offset<<size_shift;
-                  fonts[i].Size   = size<<size_shift;
-                  file->seekCurrent(8);
-               }
-
-               // Read font point sizes
-
-               for (i=0; i < font_count; i++) {
-                  file->seekStart(fonts[i].Offset);
-                  if (file->read(Header, sizeof(winfnt_header_fields)) IS ERR::Okay) {
-                     Points.push_back(Header->nominal_point_size);
-                  }
-               }
-
-               // Go to the first font in the file and read the font header
-
-               file->seekStart(fonts[0].Offset);
-
-               if (file->read(Header, sizeof(winfnt_header_fields)) != ERR::Okay) {
-                  return ERR::Read;
-               }
-
-                // NOTE: 0x100 indicates the Microsoft vector font format, which we do not support.
-
-               if ((Header->version != 0x200) and (Header->version != 0x300)) {
-                  log.warning("Font \"%s\" is written in unsupported version %d / $%x.", Path, Header->version, Header->version);
-                  return ERR::NoSupport;
-               }
-
-               if (Header->file_type & 1) {
-                  log.warning("Font \"%s\" is in the non-supported vector font format.", Path);
-                  return ERR::NoSupport;
-               }
-
-               // Extract the name of the font
-
-               file->seekStart(fonts[0].Offset + Header->face_name_offset);
-
-               for (i=0; (size_t)i < sizeof(face)-1; i++) {
-                  ERR result = file->read(face+i, 1);
-                  if ((result != ERR::Okay) or (!face[i])) break;
-               }
-               face[i] = 0;
-               FaceName = face;
-            }
-
-            return ERR::Okay;
-         }
-         else return ERR::NoSupport;
+      std::vector<winFont> fonts;
+      if (auto error = read_winfont_entries(*file, fonts); error IS ERR::NoData) {
+         log.warning("There are no fonts in file \"%.*s\"", int(Path.size()), Path.data());
+         return ERR::NoData;
       }
-      else return ERR::NoSupport;
+      else if (error != ERR::Okay) return error;
+
+      // Read font point sizes
+
+      for (auto &font : fonts) {
+         file->seekStart(font.Offset);
+         if (!file->read(std::span<int8_t>((int8_t *)Header, sizeof(winfnt_header_fields)))) {
+            Points.push_back(Header->nominal_point_size);
+         }
+      }
+
+      // Go to the first font in the file and read the font header
+
+      file->seekStart(fonts[0].Offset);
+
+      if (file->read(std::span<int8_t>((int8_t *)Header, sizeof(winfnt_header_fields))) != ERR::Okay) return ERR::Read;
+
+      if (auto error = validate_winfnt_header(*Header, Path); error != ERR::Okay) return error;
+
+      // Extract the name of the font
+
+      file->seekStart(fonts[0].Offset + Header->face_name_offset);
+
+      int i;
+      for (i=0; (size_t)i < sizeof(face)-1; i++) {
+         ERR result = file->read(std::span<int8_t>((int8_t *)face + i, 1));
+         if ((result != ERR::Okay) or (not face[i])) break;
+      }
+      face[i] = 0;
+      FaceName = face;
+
+      return ERR::Okay;
    }
    else return ERR::File;
 }
@@ -1192,9 +1257,5 @@ static ERR analyse_bmp_font(CSTRING Path, winfnt_header_fields *Header, std::str
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
-   { "FontList", sizeof(FontList) }
-};
-
-KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, nullptr)
 extern "C" struct ModHeader * register_font_module() { return &ModHeader; }

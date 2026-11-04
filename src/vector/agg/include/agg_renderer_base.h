@@ -5,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Provides the common renderer wrapper around a pixel format. Hooks into pixfmt_* classes and higher-level scanline,
+// primitive, and outline renderers. In the vector renderer it supplies clipping, clearing, copying, and pixel/span
+// writes to the destination buffer.
 
-#ifndef AGG_RENDERER_BASE_INCLUDED
-#define AGG_RENDERER_BASE_INCLUDED
+#pragma once
 
 #include <type_traits>
 #include "agg_basics.h"
@@ -571,5 +574,3 @@ public:
 };
 
 } // namespace
-
-#endif

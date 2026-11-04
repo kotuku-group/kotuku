@@ -1,0 +1,115 @@
+-- Flute test: two PeerConnection objects negotiate one bundled data-channel transport in this process.
+
+   include 'webrtc'
+
+@Test function PeerLoopback()
+   local first_state:num = RTCS_NEW
+   local second_state:num = RTCS_NEW
+   local first_candidate = ''
+   local second_candidate = ''
+   local first <close> = obj.new('peerconnection', {
+      flags='NO_MDNS',
+      feedback = function(Connection, State, IceState)
+         first_state = State
+      end,
+      onIceCandidate = function(Connection, Candidate)
+         first_candidate = Candidate
+      end
+   })
+   local second <close> = obj.new('peerconnection', {
+      flags='NO_MDNS',
+      feedback = function(Connection, State, IceState)
+         second_state = State
+      end,
+      onIceCandidate = function(Connection, Candidate)
+         second_candidate = Candidate
+      end
+   })
+
+   check first.mtCreateOffer()
+   local offer = first.localDescription
+   assert(offer.find('m=application'), 'Offer lacks a data-channel media section')
+   assert(first_candidate.startsWith('candidate:'), 'First host candidate callback did not run')
+   check first.mtSetLocalDescription(offer)
+   check second.mtSetRemoteDescription(offer)
+   check second.mtCreateAnswer()
+   local answer = second.localDescription
+   assert(second_candidate.startsWith('candidate:'), 'Second host candidate callback did not run')
+   check second.mtSetLocalDescription(answer)
+   check first.mtSetRemoteDescription(answer)
+
+   for _ in {0 to 500} do
+      if first.state is RTCS_CONNECTED and second.state is RTCS_CONNECTED and
+         first.iceState is RTCICE_COMPLETED and second.iceState is RTCICE_COMPLETED then break end
+      processing.sleep(0.01)
+   end
+   assert(first.state is RTCS_CONNECTED and second.state is RTCS_CONNECTED,
+      f'Peer states did not connect: {first.state}, {second.state}')
+   assert(first.iceState is RTCICE_COMPLETED and second.iceState is RTCICE_COMPLETED,
+      f'ICE nomination did not complete: {first.iceState}, {second.iceState}')
+   assert(first_state is RTCS_CONNECTED and second_state is RTCS_CONNECTED,
+      'Feedback did not report the connected state')
+   assert(first.signalingState is RTCSIG_STABLE and second.signalingState is RTCSIG_STABLE,
+      'Signalling did not return to stable')
+   assert(first.gatheringState is RTCGATHER_COMPLETE and second.gatheringState is RTCGATHER_COMPLETE,
+      'Host candidate gathering did not complete')
+   assert(#first.certificateFingerprint > 0 and #second.certificateFingerprint > 0,
+      'Peer certificates have no fingerprint')
+   assert(first.certificateFingerprint != second.certificateFingerprint,
+      'PeerConnection objects reused the same certificate')
+   local first_fingerprint = first.certificateFingerprint
+   local second_fingerprint = second.certificateFingerprint
+   check first.mtRestartIce()
+   assert(first.state is RTCS_CONNECTING and first.iceState is RTCICE_NEW,
+      'Restart did not reset the first ICE state')
+   assert(first_state is RTCS_CONNECTING, 'Restart did not report CONNECTING through Feedback')
+   local restart_offer = first.localDescription
+   assert(restart_offer != offer, 'Restart reused the original offer')
+   check first.mtSetLocalDescription(restart_offer)
+   check second.mtSetRemoteDescription(restart_offer)
+   assert(second.state is RTCS_CONNECTING and second.iceState is RTCICE_NEW,
+      'Restart did not reset the second ICE state')
+   assert(second_state is RTCS_CONNECTING, 'Remote restart did not report CONNECTING through Feedback')
+   check second.mtCreateAnswer()
+   local restart_answer = second.localDescription
+   assert(restart_answer != answer, 'Restart reused the original answer')
+   check second.mtSetLocalDescription(restart_answer)
+   check first.mtSetRemoteDescription(restart_answer)
+   for _ in {0 to 500} do
+      if first.state is RTCS_CONNECTED and second.state is RTCS_CONNECTED and
+         first.iceState is RTCICE_COMPLETED and second.iceState is RTCICE_COMPLETED then break end
+      processing.sleep(0.01)
+   end
+   assert(first.state is RTCS_CONNECTED and second.state is RTCS_CONNECTED and
+      first.iceState is RTCICE_COMPLETED and second.iceState is RTCICE_COMPLETED,
+      'Restarted peers did not reconnect')
+   assert(first.certificateFingerprint is first_fingerprint and
+      second.certificateFingerprint is second_fingerprint, 'Restart changed the DTLS certificate')
+   check first.mtClose()
+   check second.mtClose()
+   assert(first.state is RTCS_CLOSED and second.state is RTCS_CLOSED, 'Close did not update states')
+end
+
+@Test function FeedbackCanCloseConnection()
+   local reports = array<int>
+   local first <close> = obj.new('peerconnection', {
+      flags='NO_MDNS',
+      feedback = function(Connection, State, IceState)
+         reports.push(State)
+         if State is RTCS_CONNECTING then check Connection.mtClose() end
+      end
+   })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   check first.mtCreateOffer()
+   check first.mtSetLocalDescription(first.localDescription)
+   check second.mtSetRemoteDescription(first.localDescription)
+   check second.mtCreateAnswer()
+   check second.mtSetLocalDescription(second.localDescription)
+   check first.mtSetRemoteDescription(second.localDescription)
+   assert(first.state is RTCS_CLOSED, 'Feedback close did not persist')
+   assert(#reports is 2 and reports[0] is RTCS_CONNECTING and reports[1] is RTCS_CLOSED,
+      'Feedback missed or duplicated a transition during reentrant close')
+   check first.mtClose()
+   processing.sleep(0.12)
+   assert(#reports is 2, 'Repeated close or timer duplicated the CLOSED notification')
+end

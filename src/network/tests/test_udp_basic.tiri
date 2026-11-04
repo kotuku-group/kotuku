@@ -3,7 +3,9 @@ UDP Basic Communication Test
 --]]
 
    include 'network'
-   mNet ?= mod.load('network')
+module network as mNet
+
+extern logOutput
 
 glBasePort = 19800  -- Base port for UDP tests
 glTestTimeout = 3.0
@@ -22,19 +24,20 @@ glTestTimeout = 3.0
    cl_buffer = string.alloc(1024)
    cl_source = struct.new('IPAddress')
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       name    = 'UDPServer',
       port    = server_port,
       address = '127.0.0.1',
-      flags   = NSF_SERVER|NSF_UDP,
+      flags   = NSF_UDP,
       incoming = function(Socket)
          local err, bytesRead = Socket.mtRecvFrom(sv_source, sv_buffer)
          assert(err is ERR_Okay, 'Server failed to receive UDP data: ' .. mSys.GetErrorMsg(err))
 
          if (bytesRead > 0) then
-            local msg = sv_buffer:sub(0, bytesRead)
-            logOutput('[UDP Server] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(sv_source) .. ':' .. sv_source.port)
-            assert(msg:startsWith('Hello UDP Server'), 'Unexpected message received')
+            local msg = sv_buffer.sub(0, bytesRead)
+            local err, ip = mNet.AddressToStr(sv_source)
+            logOutput('[UDP Server] Received: "' .. msg .. '" from ' .. ip .. ':' .. sv_source.port)
+            assert(msg.startsWith('Hello UDP Server'), 'Unexpected message received')
 
             -- Echo back a response
             local response = 'Hello UDP Client'
@@ -54,16 +57,17 @@ glTestTimeout = 3.0
          assert(err is ERR_Okay, 'Client failed to receive UDP data: ' .. mSys.GetErrorMsg(err))
 
          if (bytesRead > 0) then
-            local msg = cl_buffer:sub(0, bytesRead)
-            logOutput('[UDP Client] Received: "' .. msg .. '" from ' .. mNet.AddressToStr(cl_source) .. ':' .. cl_source.port)
-            assert(msg:startsWith('Hello UDP Client'), 'Unexpected response received')
+            local msg = cl_buffer.sub(0, bytesRead)
+            local err, ip = mNet.AddressToStr(cl_source)
+            logOutput('[UDP Client] Received: "' .. msg .. '" from ' .. ip .. ':' .. cl_source.port)
+            assert(msg.startsWith('Hello UDP Client'), 'Unexpected response received')
             client_received = true
             Socket.acSignal()
          end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { client } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { client } })
 
    -- Client sends initial message
    message = 'Hello UDP Server'
@@ -75,7 +79,7 @@ glTestTimeout = 3.0
 
    err, bytesSent = client.mtSendTo(dest, message)
    assert(err is ERR_Okay, 'Client failed to send UDP data: ' .. mSys.GetErrorMsg(err))
-   assert(bytesSent is string.len(message), 'Not all bytes were sent')
+   assert(bytesSent is #message, 'Not all bytes were sent')
 
    check proc.sleep()
 
@@ -96,7 +100,112 @@ end
 end
 
 ------------------------------------------------------------------------------------------------------------------------
+-- A short receive buffer must discard the whole datagram and preserve the following packet.
+
+@Test function UDPTruncationAndSocketBuffers()
+   glBasePort++
+   local source = struct.new('IPAddress')
+   local buffer = string.alloc(16)
+   local overflow_seen = false
+   local short_seen = false
+
+   local server = obj.new('netserver', {
+      port = glBasePort,
+      address = '127.0.0.1',
+      flags = NSF_UDP,
+      incoming = function(Socket)
+         local err, bytes_read = Socket.mtRecvFrom(source, buffer)
+         if not overflow_seen then
+            assert(err is ERR_BufferOverflow, 'Oversized datagram must report BufferOverflow')
+            assert(bytes_read is 0, 'Truncated datagram must not expose payload bytes')
+            overflow_seen = true
+         elseif bytes_read > 0 then
+            assert(err is ERR_Okay, 'Following datagram must be readable')
+            assert(buffer.sub(0, bytes_read) is 'ok', 'Following datagram was corrupted')
+            short_seen = true
+            Socket.acSignal()
+         end
+      end
+   })
+
+   assert(server.mtSetBufferSizes(262144, 262144) is ERR_Okay, 'Could not set UDP socket buffers')
+   assert(server.mtSetBufferSizes(-1, 0) is ERR_Args, 'Negative buffer size must be rejected')
+
+   local client = obj.new('netsocket', { flags = NSF_UDP })
+   local destination = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', destination)
+   destination.port = server.port
+   check client.mtSendTo(destination, 'x'.rep(32))
+   check client.mtSendTo(destination, 'ok')
+
+   local proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
+   check proc.sleep()
+   assert(overflow_seen and short_seen, 'Server did not receive both datagrams')
+end
+
+------------------------------------------------------------------------------------------------------------------------
 -- Test UDP error conditions
+
+@if(platform="windows")
+@Test function UDPBufferedBurstResumes()
+   -- Exceed the IOCP user-space queue's 1 MiB limit before dispatching any owner-thread callbacks.
+   glBasePort++
+   local packet_count = 1536
+   local seen = array<byte, packet_count>
+   local received = 0
+   local source = struct.new('IPAddress')
+   local buffer = string.alloc(1200)
+   local server <close> = obj.new('netserver', {
+      port = glBasePort,
+      address = '127.0.0.1',
+      flags = NSF_UDP,
+      incoming = function(Socket)
+         while true do
+            local err, bytes_read = Socket.mtRecvFrom(source, buffer)
+            assert(err is ERR_Okay, 'Buffered burst receive failed')
+            if bytes_read is 0 then return end
+            assert(bytes_read is 1024, 'Buffered datagram length changed')
+            local index = tonumber(buffer.sub(0, 4))
+            assert(index != nil and index >= 0 and index < packet_count, 'Invalid buffered datagram identifier')
+            assert(seen[index] is 0, 'Buffered datagram was delivered twice')
+            seen[index] = 1
+            received++
+            if received is packet_count then Socket.acSignal() end
+         end
+      end
+   })
+   check server.mtSetBufferSizes(4 * 1024 * 1024, 0)
+   local client <close> = obj.new('netsocket', { flags = NSF_UDP })
+   local destination = struct.new('IPAddress')
+   check mNet.StrToAddress('127.0.0.1', destination)
+   destination.port = server.port
+   local padding = 'x'.rep(1020)
+   for i in {0 to packet_count} do
+      check client.mtSendTo(destination, string.format('%04d', i) .. padding)
+   end
+   local proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
+   check proc.sleep()
+   assert(received is packet_count, 'Buffered receive must resume after the queue reaches its limit')
+
+   -- Disabling Incoming discards unread data; restoring it must resume notifications for new traffic.
+   server.incoming = nil
+   check client.mtSendTo(destination, 'discard')
+   processing.sleep(0.05)
+   proc.flush()
+   local resumed = false
+   server.incoming = function(Socket)
+      local err, bytes_read = Socket.mtRecvFrom(source, buffer)
+      assert(err is ERR_Okay, 'Re-registered receive callback failed')
+      if bytes_read is 0 then return end
+      assert(buffer.sub(0, bytes_read) is 'resume', 'Paused receive queue lost or corrupted its datagram')
+      resumed = true
+      Socket.acSignal()
+   end
+   check client.mtSendTo(destination, 'resume')
+   check proc.sleep()
+   assert(resumed, 'Restoring Incoming must resume receive notifications')
+end
+@end
 
 @Test function UDPErrorHandling()
    udp_socket = obj.new('netsocket', { flags = NSF_UDP })
@@ -110,8 +219,8 @@ end
    assert(err != ERR_Okay, 'Connect should not work on UDP sockets')
 
    -- Test TCP-only operations on UDP socket
-   tcp_socket = obj.new('netsocket', {
-      flags = NSF_SERVER, port = 28390  -- TCP server
+   tcp_socket = obj.new('netserver', {
+      port = 28390  -- TCP server
    })
 
    dest = struct.new('IPAddress')
@@ -129,10 +238,10 @@ end
    server_port = glBasePort
    test_completed = false
 
-   server = obj.new('netsocket', {
+   server = obj.new('netserver', {
       port    = server_port,
       address = '127.0.0.1',
-      flags   = NSF_SERVER|NSF_UDP,
+      flags   = NSF_UDP,
       maxPacketSize = 65507,  -- Maximum UDP packet size
       incoming = function(Socket)
          local buffer = array<byte, 65600>  -- Larger than max packet
@@ -149,7 +258,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = glTestTimeout, signals = array<object> { server } })
+   proc = processing.new({ timeout = glTestTimeout, signals = array<obj> { server } })
    client = obj.new('netsocket', { flags = NSF_UDP })
 
    dest = struct.new('IPAddress')
@@ -164,7 +273,7 @@ end
    processing.halt(0.1)  -- Brief pause
 
    -- Test medium packet (1024 bytes)
-   medium_message = string.rep('M', 1024)
+   medium_message = 'M'.rep(1024)
    err, bytesSent = client.mtSendTo(dest, medium_message)
    assert(err is ERR_Okay, 'Failed to send medium packet')
    assert(bytesSent is 1024, 'Medium packet not fully sent')

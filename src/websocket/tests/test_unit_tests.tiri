@@ -1,0 +1,11 @@
+-- Call the compiled protocol unit tests embedded in the WebSocket module.  The tests are only present in builds
+-- configured with UNIT_TESTS=ON; use --log-api to view their output.
+
+   include 'websocket'
+
+@Test function UnitTests()
+   passed, total = mod.test('websocket')
+   assert(passed is total,
+      'Passed ' .. passed .. ' of ' .. total .. ' WebSocket unit tests.  Use --log-api for details.')
+   print('Passed all ' .. total .. ' embedded unit tests.')
+end

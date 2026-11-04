@@ -1,0 +1,144 @@
+global glFoldingTestUri = nil
+extern lspPathToUri, extractFoldingRanges
+
+@BeforeAll function SetupFoldingTests(State)
+   local err, sdk_path = mSys.ResolvePath(State.folder .. '../../../')
+   assert(err is ERR_Okay, 'Failed to resolve SDK path for LSP folding tests.')
+   mSys.SetVolume('sdk', sdk_path)
+
+   loadFile('sdk:tools/tiri_lsp/include/lsp_lib.tiri')
+   glFoldingTestUri = lspPathToUri('sdk:tools/tiri_lsp/tests/test_folding.tiri')
+   assert(glFoldingTestUri, 'Failed to create test document URI.')
+end
+
+function makeDoc(Content:str):table
+   return {
+      uri = glFoldingTestUri,
+      languageId = 'tiri',
+      version = 1,
+      content = Content,
+      lineIndex = nil
+   }
+end
+
+function findRange(Ranges:array<table>, StartLine:num, EndLine:num):table
+   for range in values(Ranges) do
+      if range.startLine is StartLine and range.endLine is EndLine then return range end
+   end
+end
+
+@Test function FunctionBlocksStillFold()
+   doc = makeDoc('function alpha()\n   print(1)\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 2), 'Function blocks should fold from declaration to end.')
+end
+
+@Test function NestedUsingBlocksPreserveFunctionFolding()
+   doc = makeDoc('function update()\n   using outer do\n      using outer.inner do\n' ..
+      '         print(&name)\n      end\n   end\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 3, 'Each using block and its enclosing function should create one folding range.')
+   assert(findRange(ranges, 2, 4), 'The inner using block should fold to its own end.')
+   assert(findRange(ranges, 1, 5), 'The outer using block should fold to its own end.')
+   assert(findRange(ranges, 0, 6), 'Using blocks must not close the enclosing function early.')
+end
+
+@Test function SplitUsingHeadersPreserveFunctionFolding()
+   doc = makeDoc('function update()\n   using\n      outer\n      -- opener\n   do\n' ..
+      '      using outer.inner\n      do\n         print(&name)\n      end\n   end\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 3, 'Each split using header and its enclosing function should fold once.')
+   assert(findRange(ranges, 5, 8), 'The inner split header must fold from using to its own end.')
+   assert(findRange(ranges, 1, 9), 'The outer split header must fold from using to its own end.')
+   assert(findRange(ranges, 0, 10), 'A split using header must not close its enclosing function early.')
+end
+
+@Test function UsingMembersDoNotOpenFoldingBlocks()
+   doc = makeDoc("function update()\n   local value = { using='member' }\n" ..
+      '   using = value\n   value.using()\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 1 and findRange(ranges, 0, 4), 'Using members and assignments must preserve function folding.')
+end
+
+@Test function UsingInStringsAndCommentsDoesNotFold()
+   doc = makeDoc('local text = "using context do"\n-- using context do\nprint(1)\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'Using inside strings and comments must not open folding blocks.')
+end
+
+@Test function SingleLineUsingDoesNotFold()
+   doc = makeDoc('using context do print(&name) end\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'A single-line using block should not create a folding range.')
+end
+
+@Test function MultilineStringsPreserveFunctionFolding()
+   doc = makeDoc('function alpha()\n   local text = [[\nusing context do\n' ..
+      '--[[ using context do\n]]\n   print(text)\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 1, 'Keywords and comment markers inside multiline strings must not create folds.')
+   assert(findRange(ranges, 0, 6), 'A multiline string must not consume the enclosing function end.')
+end
+
+@Test function QuotedIndexKeywordsPreserveUsingFolding()
+   doc = makeDoc('function alpha()\n   using contexts["end"] do\n' ..
+      '      print("end --[[")\n   end\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 2, 'Quoted keywords must not close blocks or open comments.')
+   assert(findRange(ranges, 1, 3), 'Using an indexed reference must fold to its own end.')
+   assert(findRange(ranges, 0, 4), 'Quoted keywords must preserve the enclosing function fold.')
+end
+
+@Test function BlockCommentsPreserveFunctionFolding()
+   doc = makeDoc('function alpha()\n   --[[\nusing context do\n   ]]\n' ..
+      '   --[[ using context do ]]\n   print(1)\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 2, 'Only the multiline comment and enclosing function should fold.')
+   comment_range = findRange(ranges, 1, 3)
+   assert(comment_range and comment_range.kind is "comment", 'Block comments must retain comment folding.')
+   assert(findRange(ranges, 0, 6), 'Comment keywords must not consume the enclosing function end.')
+end
+
+@Test function StructBlockFolds()
+   doc = makeDoc('struct User\n   Name: str\n   Age: int\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 3), 'Struct declaration blocks should fold to the end keyword.')
+end
+
+@Test function StructFollowedByFunctionFoldsBoth()
+   doc = makeDoc('struct User\n   Name: str\nend\n\nfunction greet()\n   print(2)\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 2), 'The struct block should fold.')
+   assert(findRange(ranges, 4, 6), 'A function after the struct should fold normally.')
+end
+
+@Test function SingleLineStructDoesNotFold()
+   doc = makeDoc('struct Point X: double, Y: double end\nprint(1)\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'A single-line struct declaration should not create a folding range.')
+end
+
+@Test function StructLibraryUsageDoesNotFold()
+   doc = makeDoc("u = struct.new('User')\nprint(u)\n")
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'struct.new() usage should not create a folding range.')
+end
+
+@Test function ObjectConstructorDoesNotCreateFoldingRanges()
+   doc = makeDoc('clock = obj<Time> { year=2026 }\nprint(clock.year)\n')
+   ranges = extractFoldingRanges(doc)
+   assert(#ranges is 0, 'An obj<Class> initialiser should not create block folding ranges.')
+end
+
+@Test function StructNameOnOpeningLineFolds()
+   doc = makeDoc('struct User\n   Name: str\n   Age: int\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 3), 'An end-terminated struct should fold from its declaration.')
+end
+
+@Test function FoldingResumesAfterStructEnd()
+   doc = makeDoc('struct Item\n   Value: int\nend\nfunction greet()\nend\n')
+   ranges = extractFoldingRanges(doc)
+   assert(findRange(ranges, 0, 2), 'The struct should close at its end keyword.')
+   assert(findRange(ranges, 3, 4), 'Folding should resume after the struct block.')
+end

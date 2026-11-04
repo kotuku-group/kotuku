@@ -1,0 +1,50 @@
+-- Internal file operations shared by settings, palette database persistence and explicit database exports.
+
+   namespace colourpicker_storage { }
+
+-- Distinguish a missing database from an unreadable one, which must never be replaced with defaults.
+
+colourpicker_storage.readDatabase = function(Path:str!):str
+   err = mSys.AnalysePath(Path)
+   if err is ERR_FileNotFound then return nil end
+   if err != ERR_Okay then raise err, f'Cannot inspect {Path}' end
+   return io.readAll(Path)
+end
+
+-- Remove a failed temporary write while preserving the original exception for the caller's error reporting.
+
+colourpicker_storage.replaceFile = function(Path:str!, Text:str!, Temporary:str!)
+   try
+      io.writeAll(Temporary, Text)
+      file <close> = obj.new('File', { path = Temporary })
+      check file.acRename(Path)
+   except e
+      try
+         file <close> = obj.new('File', { path = Temporary })
+         file.mtDelete()
+      end
+      raise
+   end
+end
+
+-- Encode only after checking the source snapshot.  The picker can supply its already encoded change comparison;
+-- the public model API supplies an encoder.  Both use the same conflict checks and snapshot updates.
+
+colourpicker_storage.saveDatabase = function(Path:str!, Database:table!, Encode:func!, Replace:bool):<bool, str>
+   temporary = f'{Path}.{mSys.PreciseTime()}-{mSys.AllocateID(IDTYPE_GLOBAL)}.tmp'
+   try
+      if not Replace then
+         current = colourpicker_storage.readDatabase(Path)
+         expected = (Database.sourcePath is Path) ? Database.sourceText : nil
+         if current != expected then
+            return false, 'Palettes changed in another window or application. Reopen the picker before saving.'
+         end
+      end
+      text = Encode()
+      colourpicker_storage.replaceFile(Path, text, temporary)
+      if not Replace then Database.sourcePath, Database.sourceText = Path, text end
+      return true
+   except e
+      return false, f'Cannot save {Path}: {e.message}'
+   end
+end

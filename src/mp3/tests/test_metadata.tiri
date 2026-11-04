@@ -1,0 +1,169 @@
+-- MP3 metadata queries do not create or activate an Audio object.
+
+@if(exists='modules:audio')
+
+   module mp3 as mMP3
+   include 'xml'
+
+@BeforeAll function setup(State)
+   global glMetadataFolder = State.folder
+   global glMetadataTemp = f'temp:mp3_metadata_{mSys.PreciseTime()}/'
+   folder <close> = obj.new('File', { path=glMetadataTemp, flags=FL_NEW|FL_FOLDER })
+   source <close> = obj.new('File', {
+      path=glMetadataFolder .. 'synth-cbr-joint-192k.mp3', flags=FL_READ
+   })
+   compressed = array<byte, source.size>
+   err, count = source.acRead(compressed)
+   assert(err is ERR_Okay and count is #compressed)
+   -- Remove the 46-byte ID3v2 block and 626-byte Info frame.
+   global glMetadataAudio = compressed.slice({672 to #compressed})
+end
+
+@AfterAll function cleanup()
+   check mSys.DeleteFile(glMetadataTemp)
+end
+
+function metadata_fixture(Name:str, Prefix:str, Trailer:str):str
+   path = glMetadataTemp .. Name
+   file <close> = obj.new('File', { path=path, flags=FL_NEW|FL_WRITE })
+   if #Prefix > 0 then check file.acWrite(Prefix) end
+   check file.acWrite(glMetadataAudio)
+   if #Trailer > 0 then check file.acWrite(Trailer) end
+   return path
+end
+
+function metadata_query(Path:str, Flags:num):str
+   err, xml = mMP3.GetMetadata(Path, Flags)
+   assert(err is ERR_Okay, f'Metadata query failed: {err}')
+   document <close> = obj.new('XML', { statement=xml })
+   assert(document.tags[0].attribs[0].name is 'mp3', 'Result must be an MP3 XML document')
+   return xml
+end
+
+function id3_header(Version:num, Size:num):str
+   return 'ID3' .. string.char(Version, 0, 0, (Size >> 21) & 127, (Size >> 14) & 127,
+      (Size >> 7) & 127, Size & 127)
+end
+
+function id3_frame(ID:str, Text:str):str
+   size = #Text
+   return ID .. string.char((size >> 24) & 255, (size >> 16) & 255, (size >> 8) & 255, size & 255, 0, 0) .. Text
+end
+
+@Test function HeaderDurationWithoutAudioDevice()
+   for _, name in ipairs({ 'synth-cbr-mono-192k.mp3', 'synth-vbr-joint-190k.mp3' }) do
+      xml = metadata_query(glMetadataFolder .. name, 0)
+      assert(xml.find('sampleRate="44100"') != nil)
+      assert(xml.find('source="xing" estimated="false"') != nil, 'Xing/Info must supply duration without a scan')
+      seconds = tonumber(r'seconds="([0-9.]+)"'.extract(xml))
+      assert(seconds > 4.9 and seconds < 5.1, f'Unexpected gapless duration: {seconds}')
+   end
+end
+
+@Test function QueryDepthControlsHeaderlessDuration()
+   path = metadata_fixture('headerless.mp3', '', '')
+   xml = metadata_query(path, 0)
+   assert(xml.find('<duration') is nil, 'Default query must leave headerless duration unknown')
+   xml = metadata_query(path, MPF_ESTIMATE)
+   assert(xml.find('source="estimate" estimated="true"') != nil, 'Estimates must be labelled')
+   xml = metadata_query(path, MPF_SCAN | MPF_ESTIMATE)
+   assert(xml.find('source="scan" estimated="false"') != nil, 'Explicit scanning takes precedence over estimation')
+   seconds = tonumber(r'seconds="([0-9.]+)"'.extract(xml))
+   assert(math.abs(seconds - 192 * 1152 / 44100) < 0.000001, 'Scanning must count all audio frames')
+end
+
+@Test function TextTagsAreOptInEscapedAndConverted()
+   title = id3_frame('TIT2', string.char(3) .. 'A & B <live>')
+   artist = id3_frame('TPE1', string.char(1, 255, 254, 0x42, 0, 0xf6, 0, 0x62, 0))
+   album = id3_frame('TALB', string.char(0) .. 'Caf' .. string.char(0xe9))
+   payload = title .. artist .. album
+   path = metadata_fixture('tags.mp3', id3_header(3, #payload) .. payload, '')
+   xml = metadata_query(path, 0)
+   assert(xml.find('<tags>') is nil, 'Default queries must not read text tags')
+   xml = metadata_query(path, MPF_TAGS)
+   assert(xml.find('<title>A &amp; B &lt;live&gt;</title>') != nil)
+   assert(xml.find('<artist>Böb</artist>') != nil, 'UTF-16 must be converted to UTF-8')
+   assert(xml.find('<album>Café</album>') != nil, 'Latin-1 must be converted to UTF-8')
+end
+
+@Test function ID3v1FallbackAndVersionSupport()
+   trailer = 'TAG' .. 'Old title' .. string.rep(' ', 21) .. 'Old artist' .. string.rep(' ', 20) ..
+      'Old album' .. string.rep(' ', 21) .. '2026' .. string.rep(' ', 28) .. string.char(0, 7, 17)
+   for _, version in ipairs({ 2, 4 }) do
+      text = string.char(3) .. 'New title'
+      frame = version is 2 ? 'TT2' .. string.char(0, 0, #text) .. text : id3_frame('TIT2', text)
+      path = metadata_fixture(f'tags_v{version}.mp3', id3_header(version, #frame) .. frame, trailer)
+      xml = metadata_query(path, MPF_TAGS)
+      assert(xml.find('<title>New title</title>') != nil, 'ID3v2 title must override ID3v1')
+      assert(xml.find('<artist>Old artist</artist>') != nil, 'Missing ID3v2 fields must fall back to ID3v1')
+      assert(xml.find('<track>7</track>') != nil)
+      assert(xml.find('<genre>Rock</genre>') != nil)
+   end
+end
+
+@Test function OversizedTagsAreSkipped()
+   payload = string.rep('x', 1024 * 1024 + 1)
+   path = metadata_fixture('large_tag.mp3', id3_header(3, #payload) .. payload, '')
+   xml = metadata_query(path, MPF_TAGS | MPF_SCAN)
+   assert(xml.find('<tags>') is nil, 'Oversized tag blocks must be skipped')
+   assert(xml.find('source="scan"') != nil, 'Skipping a tag must preserve the audio offset')
+end
+
+@Test function InvalidInputsReturnErrorsAndEmptyXML()
+   for _, flags in ipairs({ 0, MPF_TAGS, MPF_SCAN }) do
+      err, xml = mMP3.GetMetadata(glMetadataFolder .. 'missing.mp3', flags)
+      assert(err != ERR_Okay and xml is '', 'Missing files must fail with empty XML')
+   end
+   err, xml = mMP3.GetMetadata('', 0)
+   assert(err is ERR_Args and xml is '')
+   err, xml = mMP3.GetMetadata(glMetadataFolder .. 'synth-cbr-joint-192k.mp3', 0x100)
+   assert(err is ERR_Args and xml is '', 'Unknown flags must be rejected')
+   path = metadata_fixture('bad_tag.mp3', 'ID3' .. string.char(3, 0, 0, 128, 0, 0, 0), '')
+   err, xml = mMP3.GetMetadata(path, MPF_TAGS)
+   assert(err is ERR_InvalidData and xml is '', 'Invalid synchsafe sizes must fail')
+   file <close> = obj.new('File', { path=glMetadataTemp .. 'invalid.mp3', flags=FL_NEW|FL_WRITE })
+   check file.acWrite('This is not an MP3 file')
+   err, xml = mMP3.GetMetadata(file.path, 0)
+   assert(err is ERR_NoSupport and xml is '', 'Non-MP3 data must fail')
+end
+
+@Test function FramePrefixAndTruncatedTags()
+   source <close> = obj.new('File', {
+      path=glMetadataFolder .. 'synth-vbr-joint-190k.mp3', flags=FL_READ
+   })
+   compressed = array<byte, source.size>
+   check source.acRead(compressed)
+   -- Preserve Xing after removing the ID3v2 prefix, and precede it with unrelated bytes.
+   path = glMetadataTemp .. 'prefix.mp3'
+   do
+      file <close> = obj.new('File', { path=path, flags=FL_NEW|FL_WRITE })
+      check file.acWrite('prefix')
+      check file.acWrite(compressed.slice({46 to #compressed}))
+   end
+   xml = metadata_query(path, 0)
+   assert(xml.find('source="xing"') != nil, 'Frame offsets must not affect Xing bounds')
+   path = metadata_fixture('truncated_tag.mp3', id3_header(3, 1000000), '')
+   err, xml = mMP3.GetMetadata(path, MPF_TAGS)
+   assert(err is ERR_InvalidData and xml is '', 'Tags extending beyond EOF must be rejected')
+end
+
+@Test function UnsynchronisedTagsAndDataLengthIndicators()
+   -- ID3v2.3 unsynchronisation inserts a zero after FF and changes the on-disk tag size only.
+   text = string.char(0) .. 'A' .. string.char(255, 224) .. 'B'
+   frame = id3_frame('TIT2', text)
+   escaped = frame.replace(string.char(255), string.char(255, 0))
+   header = 'ID3' .. string.char(3, 0, 128, 0, 0, 0, #escaped)
+   path = metadata_fixture('unsync.mp3', header .. escaped, '')
+   xml = metadata_query(path, MPF_TAGS)
+   assert(xml.find('<title>AÿàB</title>') != nil, 'Tag-level unsynchronisation must be removed before parsing frames')
+
+   -- A v2.4 uncompressed frame can carry a four-byte synchsafe data-length indicator.
+   text = string.char(3) .. 'With length'
+   payload = string.char(0, 0, 0, #text) .. text
+   frame = 'TIT2' .. string.char(0, 0, 0, #payload, 0, 1) .. payload
+   path = metadata_fixture('data_length.mp3', id3_header(4, #frame) .. frame, '')
+   xml = metadata_query(path, MPF_TAGS)
+   assert(xml.find('<title>With length</title>') != nil, 'Data-length indicators must not be decoded as text')
+end
+
+@end

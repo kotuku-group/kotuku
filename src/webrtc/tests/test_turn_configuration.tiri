@@ -1,0 +1,57 @@
+   include 'webrtc'
+
+@Test function ConstructorConfiguration()
+   local peer <close> = obj.new('peerconnection', {
+      iceServers='[{"url":"turn:[::1]:3478?transport=tcp","username":"test","credential":"secret"}]',
+      flags='RELAY_ONLY|DISABLE_IPV6'
+   })
+   assert(peer.flags has RTCF_RELAY_ONLY, 'Relay-only flag was not retained')
+   assert(peer.flags has RTCF_DISABLE_IPV6, 'IPv6 policy was not retained')
+   try peer.iceServers = '[]'
+   except e
+      assert(e.code != ERR_Okay, 'Constructor field modification must fail')
+   success
+      assert(false, 'IceServers changed after initialisation')
+   end
+   try local leaked = peer.iceServers
+   except e
+      assert(e.code != ERR_Okay, 'Credential field read must fail')
+   success
+      assert(false, 'IceServers is readable')
+   end
+end
+
+@Test function RejectMalformedConfiguration()
+   local cases = array<str> {
+      '{}', '[{"url":"stun:localhost","url":"stun:localhost"}]',
+      '[{"url":"turn:localhost"}]', '[{"url":"turns:localhost?transport=udp","username":"a","credential":"b"}]',
+      '[{"url":"stun:localhost","extra":"x"}]', '[{"url":1}]',
+      '[{"url":"turn:user:password@localhost","username":"a","credential":"b"}]',
+      '[{"url":"turn:localhost","username":"a","credential":"\\u0000"}]'
+   }
+   for _, config in cases do
+      try local peer <close> = obj.new('peerconnection', { iceServers=config })
+      except e
+         assert(e.code != ERR_Okay, 'Invalid configuration must report an error')
+      success
+         assert(false, 'Malformed ICE configuration was accepted')
+      end
+   end
+end
+
+@Test function RelayOnlyHasNoDirectFallback()
+   local peer <close> = obj.new('peerconnection', { flags='RELAY_ONLY', iceServers='[]' })
+   check peer.mtCreateOffer()
+   assert(not peer.localDescription.find('candidate:'), 'Relay-only advertised a direct candidate')
+   processing.sleep(0.1)
+   assert(peer.state is RTCS_FAILED and peer.error is ERR_Timeout, 'Missing relay did not fail predictably')
+end
+
+@Test function LegacyPrecedence()
+   local override <close> = obj.new('peerconnection', {
+      iceServers='[{"url":"stun:localhost:3478"}]', stunServer='invalid legacy value'
+   })
+   check override.mtCreateOffer()
+   local fallback <close> = obj.new('peerconnection', { iceServers='[]', stunServer='invalid legacy value' })
+   assert(fallback.mtCreateOffer() is ERR_InvalidData, 'Empty array bypassed legacy validation')
+end

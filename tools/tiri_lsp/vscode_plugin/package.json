@@ -6,7 +6,7 @@
    "publisher": "kotuku",
    "repository": {
       "type": "git",
-      "url": "https://github.com/parasol-framework/kotuku.git",
+      "url": "https://github.com/kotuku-group/kotuku.git",
       "directory": "tools/tiri_lsp/vscode_plugin"
    },
    "icon": "images/tiri.png",
@@ -22,7 +22,8 @@
    "main": "./dist/extension.js",
    "scripts": {
       "bundle": "esbuild extension.js --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.js",
-      "vscode:prepublish": "npm run bundle"
+      "docs": "cmake -E chdir ../../../docs/xml cmake -E tar cf ../../tools/tiri_lsp/vscode_plugin/api-docs.zip --format=zip modules",
+      "vscode:prepublish": "npm run bundle && npm run docs"
    },
    "contributes": {
       "commands": [
@@ -85,6 +86,11 @@
                "default": false,
                "description": "Enable Origo/Core API logging for the Tiri LSP server. In stdio mode, logs are written to tiri.lsp.logFile or tiri-lsp-core.log in the workspace."
             },
+            "tiri.lsp.sdkDocs": {
+               "type": "string",
+               "default": "",
+               "description": "Path to an api-docs.zip archive or a folder of Kotuku XML API documentation, used when the extension starts the server. Leave empty to use the documentation packaged with the extension."
+            },
             "tiri.lsp.logFile": {
                "type": "string",
                "default": "",
@@ -123,6 +129,6 @@
    },
    "devDependencies": {
       "@types/vscode": "^1.75.0",
-      "esbuild": "^0.25.0"
+      "esbuild": "^0.28.1"
    }
 }

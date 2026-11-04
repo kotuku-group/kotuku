@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,23 +5,20 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Collects terminal marker positions from generated paths. Hooks into converter chains that need start and end markers.
+// In the vector renderer it records marker anchor points while the primary geometry continues through the pipeline.
+//
+// See Implemantation agg_vcgen_markers_term.cpp
+// Terminal markers generator (arrowhead/arrowtail)
 
-
-#ifndef AGG_VCGEN_MARKERS_TERM_INCLUDED
-#define AGG_VCGEN_MARKERS_TERM_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vertex_sequence.h"
 
 namespace agg
 {
-
-    //======================================================vcgen_markers_term
-    //
-    // See Implemantation agg_vcgen_markers_term.cpp
-    // Terminal markers generator (arrowhead/arrowtail)
-    //
-    //------------------------------------------------------------------------
     class vcgen_markers_term
     {
     public:
@@ -57,5 +53,3 @@ namespace agg
 
 
 }
-
-#endif

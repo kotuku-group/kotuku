@@ -323,6 +323,14 @@ inline std::string identifier_to_string(const Identifier &Identifier)
    return gcstr_to_string(Identifier.symbol);
 }
 
+// Compiler-generated bindings, such as the hidden base of a field assignment block, start with a byte that the lexer
+// cannot produce.  They and the member paths built on them must not surface as user symbols.
+
+inline bool is_hidden_binding_name(std::string_view Name)
+{
+   return not Name.empty() and Name.front() IS '\x1f';
+}
+
 static std::string function_name_to_string(const FunctionNamePath &Path)
 {
    std::string name;
@@ -332,12 +340,13 @@ static std::string function_name_to_string(const FunctionNamePath &Path)
       name += identifier_to_string(Path.segments[i]);
    }
 
-   if (Path.method.has_value()) {
-      name += ":";
-      name += identifier_to_string(Path.method.value());
-   }
-
    return name;
+}
+
+static SourceSpan function_name_span(const FunctionNamePath &Path)
+{
+   if (Path.segments.empty()) return {};
+   return Path.segments.front().span;
 }
 
 static std::string expression_name_to_string(const ExprNode &Expression)
@@ -358,21 +367,44 @@ static std::string expression_name_to_string(const ExprNode &Expression)
    return {};
 }
 
+static SourceSpan expression_name_span(const ExprNode &Expression)
+{
+   if (Expression.kind IS AstNodeKind::IdentifierExpr) {
+      if (const auto *name = std::get_if<NameRef>(&Expression.data)) return name->identifier.span;
+   }
+
+   if (Expression.kind IS AstNodeKind::MemberExpr) {
+      if (const auto *member = std::get_if<MemberExprPayload>(&Expression.data)) {
+         if (member->table) return expression_name_span(*member->table);
+      }
+   }
+
+   return Expression.span;
+}
+
+static std::string annotation_type_to_string(
+   TiriType Type, struct_record *StructDef, const ArrayElementDescriptor &ArrayElement)
+{
+   if (Type IS TiriType::Struct and StructDef) return std::format("struct<{}>", StructDef->Name);
+   if (Type IS TiriType::Array) return std::format("array<{}>", array_element_name(ArrayElement));
+   return type_to_string(Type);
+}
+
 static std::string build_signature(const std::string &Name, const FunctionExprPayload &Function)
 {
    std::string signature = Name + "(";
    bool first = true;
 
    for (const FunctionParameter &param : Function.parameters) {
-      if (param.is_self) continue;
 
       if (not first) signature += ", ";
       first = false;
 
       signature += identifier_to_string(param.name);
-      if (param.type != TiriType::Any and param.type != TiriType::Unknown) {
+      if ((param.type != TiriType::Any or param.required) and param.type != TiriType::Unknown) {
          signature += ": ";
-         signature += type_to_string(param.type);
+         signature += annotation_type_to_string(param.type, param.struct_def, param.array_element);
+         if (param.required) signature += "!";
       }
    }
 
@@ -385,13 +417,17 @@ static std::string build_signature(const std::string &Name, const FunctionExprPa
 
    if (Function.return_types.count IS 1) {
       signature += ":";
-      signature += type_to_string(Function.return_types.types[0]);
+      signature += annotation_type_to_string(Function.return_types.types[0], Function.return_types.struct_defs[0],
+         Function.return_types.array_elements[0]);
+      if (Function.return_types.required[0]) signature += "!";
    }
    else if (Function.return_types.count > 1) {
       signature += ":<";
       for (uint8_t i = 0; i < Function.return_types.count; ++i) {
          if (i > 0) signature += ", ";
-         signature += type_to_string(Function.return_types.types[i]);
+         signature += annotation_type_to_string(Function.return_types.types[i], Function.return_types.struct_defs[i],
+            Function.return_types.array_elements[i]);
+         if (Function.return_types.required[i]) signature += "!";
       }
       if (Function.return_types.is_variadic) signature += ", ...";
       signature += ">";
@@ -428,11 +464,11 @@ static void add_params(ParserSymbolMetadata &Symbol, const FunctionExprPayload &
    size_t param_index = 0;
 
    for (const FunctionParameter &param : Function.parameters) {
-      if (param.is_self) continue;
 
       ParserDocParamMetadata meta;
       meta.name = identifier_to_string(param.name);
-      meta.type = type_to_string(param.type);
+      meta.type = annotation_type_to_string(param.type, param.struct_def, param.array_element);
+      if (param.required) meta.type += "!";
 
       bool found = false;
       if (Doc) meta.doc = find_param_doc(*Doc, meta.name, param_index, found);
@@ -450,7 +486,6 @@ static TiriType infer_result_expression_type(const ExprNode &Expression, const F
          std::string expr_name = identifier_to_string(name->identifier);
 
          for (const FunctionParameter &param : Function.parameters) {
-            if (param.is_self) continue;
             if (identifier_to_string(param.name) IS expr_name and param.type != TiriType::Unknown) return param.type;
          }
       }
@@ -503,6 +538,11 @@ static bool infer_results_from_statement(FunctionReturnTypes &Result, const Stmt
          if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
          break;
       }
+      case AstNodeKind::RangeForStmt: {
+         const auto &payload = std::get<RangeForStmtPayload>(Statement.data);
+         if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
+         break;
+      }
       case AstNodeKind::GenericForStmt: {
          const auto &payload = std::get<GenericForStmtPayload>(Statement.data);
          if (payload.body and infer_results_from_block(Result, *payload.body, Function)) return true;
@@ -510,6 +550,11 @@ static bool infer_results_from_statement(FunctionReturnTypes &Result, const Stmt
       }
       case AstNodeKind::DoStmt: {
          const auto &payload = std::get<DoStmtPayload>(Statement.data);
+         if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
+         break;
+      }
+      case AstNodeKind::ContextStmt: {
+         const auto &payload = std::get<ContextStmtPayload>(Statement.data);
          if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
          break;
       }
@@ -525,6 +570,11 @@ static bool infer_results_from_statement(FunctionReturnTypes &Result, const Stmt
             if (clause.block and infer_results_from_block(Result, *clause.block, Function)) return true;
          }
          if (payload.success_block and infer_results_from_block(Result, *payload.success_block, Function)) return true;
+         break;
+      }
+      case AstNodeKind::CheckallStmt: {
+         const auto &payload = std::get<CheckallStmtPayload>(Statement.data);
+         if (payload.block and infer_results_from_block(Result, *payload.block, Function)) return true;
          break;
       }
       case AstNodeKind::WithStmt: {
@@ -559,9 +609,10 @@ static FunctionReturnTypes infer_function_results(const FunctionExprPayload &Fun
 static TiriType compact_result_type_at(const FunctionExprPayload &Function, const FunctionReturnTypes &Inferred,
    size_t Index, bool &InferredType)
 {
-   if (Function.return_types.is_explicit and (Index < Function.return_types.count or
+   if ((Function.return_types.is_explicit or Function.return_types.is_inferred) and
+       (Index < Function.return_types.count or
        (Function.return_types.is_variadic and Function.return_types.count > 0))) {
-      InferredType = false;
+      InferredType = Function.return_types.is_inferred;
       return Function.return_types.type_at(Index);
    }
 
@@ -572,12 +623,13 @@ static TiriType compact_result_type_at(const FunctionExprPayload &Function, cons
 
 static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload &Function, const ParsedDocText *Doc)
 {
-   size_t declared_count = Function.return_types.count;
+   size_t result_count = Function.return_types.count;
+   size_t explicit_count = Function.return_types.is_explicit ? result_count : 0;
    size_t doc_count = Doc ? Doc->results.size() : 0;
-   size_t count = declared_count > doc_count ? declared_count : doc_count;
+   size_t count = result_count > doc_count ? result_count : doc_count;
    FunctionReturnTypes inferred_results;
 
-   if (Doc and Doc->compact and doc_count > declared_count) {
+   if (Doc and Doc->compact and doc_count > result_count) {
       inferred_results = infer_function_results(Function);
    }
 
@@ -589,9 +641,11 @@ static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload 
          meta.type = type_to_string(compact_result_type_at(Function, inferred_results, i, inferred_type));
          meta.inferred = inferred_type;
       }
-      else if (i < declared_count) {
-         meta.type = type_to_string(Function.return_types.types[i]);
-         meta.inferred = false;
+      else if (i < result_count) {
+         meta.type = annotation_type_to_string(Function.return_types.types[i], Function.return_types.struct_defs[i],
+            Function.return_types.array_elements[i]);
+         if (Function.return_types.required[i]) meta.type += "!";
+         meta.inferred = i >= explicit_count;
       }
 
       if (Doc and i < Doc->results.size()) {
@@ -599,7 +653,7 @@ static void add_results(ParserSymbolMetadata &Symbol, const FunctionExprPayload 
          if ((not Doc->compact) and meta.type.empty()) meta.type = Doc->results[i].type;
       }
 
-      if (not (Doc and Doc->compact)) meta.inferred = i >= declared_count;
+      if (not (Doc and Doc->compact)) meta.inferred = i >= explicit_count;
       Symbol.results.push_back(std::move(meta));
    }
 }
@@ -619,6 +673,7 @@ static ParserSymbolMetadata make_function_symbol(const std::string &Name, const 
    symbol.span = Span;
    symbol.end_span = end_span_for(Function);
    symbol.signature = build_signature(Name, Function);
+   symbol.binding = context_binding_text(Function.context);
    symbol.annotations = collect_annotations(Function.annotations);
 
    std::string doc_text = find_doc_text(Function.annotations);
@@ -645,7 +700,7 @@ inline void collect_nested_function_body(ParserSymbolCollection &Collection, con
 }
 
 static void collect_assignment_functions(ParserSymbolCollection &Collection, const ExprNodeList &Targets,
-   const ExprNodeList &Values, SourceSpan Span)
+   const ExprNodeList &Values)
 {
    size_t count = Targets.size() < Values.size() ? Targets.size() : Values.size();
 
@@ -658,14 +713,69 @@ static void collect_assignment_functions(ParserSymbolCollection &Collection, con
       if (not function) continue;
 
       std::string name = expression_name_to_string(*target);
-      if (not name.empty()) Collection.symbols.push_back(make_function_symbol(name, *function, Span));
+      if (not name.empty() and not is_hidden_binding_name(name)) {
+         Collection.symbols.push_back(make_function_symbol(name, *function, expression_name_span(*target)));
+      }
       collect_nested_function_body(Collection, *function);
    }
 }
 
+// Field assignment blocks lower to `do local <hidden> = base; [if <hidden> != nil then] <hidden>.key = value ... end`.
+// Function entries are published as `base.key`, matching the equivalent `base.key = value` statements.  Entries of a
+// base without a plain dotted name are not published, but their function bodies are still walked.  Returns false if
+// the block is not a lowered field assignment block.
+
+static bool collect_field_block_functions(ParserSymbolCollection &Collection, const BlockStmt &Block)
+{
+   const StmtNodeList &statements = Block.statements;
+   if (statements.empty() or not statements[0] or statements[0]->kind != AstNodeKind::LocalDeclStmt) return false;
+
+   const auto &decl = std::get<LocalDeclStmtPayload>(statements[0]->data);
+   if (decl.names.size() != 1 or decl.values.size() != 1 or not decl.values[0]) return false;
+   if (identifier_to_string(decl.names[0]) != FIELD_BLOCK_BINDING_NAME) return false;
+
+   std::string base_name = expression_name_to_string(*decl.values[0]);
+
+   auto collect_entries = [&](const StmtNodeList &Entries, size_t Start) {
+      for (size_t i = Start; i < Entries.size(); ++i) {
+         const StmtNodePtr &entry = Entries[i];
+         if (not entry or entry->kind != AstNodeKind::AssignmentStmt) continue;
+
+         const auto &assignment = std::get<AssignmentStmtPayload>(entry->data);
+         if (assignment.targets.size() != 1 or assignment.values.size() != 1) continue;
+
+         const ExprNodePtr &target = assignment.targets[0];
+         const ExprNodePtr &value = assignment.values[0];
+         if (not target or not value or value->kind != AstNodeKind::FunctionExpr) continue;
+
+         const auto *function = std::get_if<FunctionExprPayload>(&value->data);
+         if (not function) continue;
+
+         const auto *member = target->kind IS AstNodeKind::MemberExpr ?
+            std::get_if<MemberExprPayload>(&target->data) : nullptr;
+         if (member and not base_name.empty()) {
+            std::string name = base_name + "." + identifier_to_string(member->member);
+            Collection.symbols.push_back(make_function_symbol(name, *function, member->member.span));
+         }
+         collect_nested_function_body(Collection, *function);
+      }
+   };
+
+   // The safe form wraps every entry in a single nil-guarded conditional.
+   if (statements.size() IS 2 and statements[1] and statements[1]->kind IS AstNodeKind::IfStmt) {
+      const auto &guard = std::get<IfStmtPayload>(statements[1]->data);
+      if (guard.clauses.size() IS 1 and guard.clauses[0].block) {
+         collect_entries(guard.clauses[0].block->statements, 0);
+         return true;
+      }
+   }
+
+   collect_entries(statements, 1);
+   return true;
+}
+
 template <typename DeclPayload>
-static void collect_decl_functions(ParserSymbolCollection &Collection, const DeclPayload &Payload,
-   SourceSpan Span)
+static void collect_decl_functions(ParserSymbolCollection &Collection, const DeclPayload &Payload)
 {
    size_t count = Payload.names.size() < Payload.values.size() ? Payload.names.size() : Payload.values.size();
 
@@ -676,7 +786,10 @@ static void collect_decl_functions(ParserSymbolCollection &Collection, const Dec
       const auto *function = std::get_if<FunctionExprPayload>(&value->data);
       if (not function) continue;
 
-      Collection.symbols.push_back(make_function_symbol(identifier_to_string(Payload.names[i]), *function, Span));
+      std::string name = identifier_to_string(Payload.names[i]);
+      if (not is_hidden_binding_name(name)) {
+         Collection.symbols.push_back(make_function_symbol(name, *function, Payload.names[i].span));
+      }
       collect_nested_function_body(Collection, *function);
    }
 }
@@ -688,7 +801,7 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
          const auto &payload = std::get<LocalFunctionStmtPayload>(Statement.data);
          if (payload.function) {
             Collection.symbols.push_back(make_function_symbol(identifier_to_string(payload.name),
-               *payload.function, Statement.span));
+               *payload.function, payload.name.span));
             collect_nested_function_body(Collection, *payload.function);
          }
          break;
@@ -697,24 +810,24 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
          const auto &payload = std::get<FunctionStmtPayload>(Statement.data);
          if (payload.function) {
             Collection.symbols.push_back(make_function_symbol(function_name_to_string(payload.name),
-               *payload.function, Statement.span));
+               *payload.function, function_name_span(payload.name)));
             collect_nested_function_body(Collection, *payload.function);
          }
          break;
       }
       case AstNodeKind::LocalDeclStmt: {
          const auto &payload = std::get<LocalDeclStmtPayload>(Statement.data);
-         collect_decl_functions(Collection, payload, Statement.span);
+         collect_decl_functions(Collection, payload);
          break;
       }
       case AstNodeKind::GlobalDeclStmt: {
          const auto &payload = std::get<GlobalDeclStmtPayload>(Statement.data);
-         collect_decl_functions(Collection, payload, Statement.span);
+         collect_decl_functions(Collection, payload);
          break;
       }
       case AstNodeKind::AssignmentStmt: {
          const auto &payload = std::get<AssignmentStmtPayload>(Statement.data);
-         collect_assignment_functions(Collection, payload.targets, payload.values, Statement.span);
+         collect_assignment_functions(Collection, payload.targets, payload.values);
          break;
       }
       case AstNodeKind::IfStmt: {
@@ -735,6 +848,11 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
          if (payload.body) collect_from_block(Collection, *payload.body);
          break;
       }
+      case AstNodeKind::RangeForStmt: {
+         const auto &payload = std::get<RangeForStmtPayload>(Statement.data);
+         if (payload.body) collect_from_block(Collection, *payload.body);
+         break;
+      }
       case AstNodeKind::GenericForStmt: {
          const auto &payload = std::get<GenericForStmtPayload>(Statement.data);
          if (payload.body) collect_from_block(Collection, *payload.body);
@@ -742,6 +860,13 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
       }
       case AstNodeKind::DoStmt: {
          const auto &payload = std::get<DoStmtPayload>(Statement.data);
+         if (payload.block and not collect_field_block_functions(Collection, *payload.block)) {
+            collect_from_block(Collection, *payload.block);
+         }
+         break;
+      }
+      case AstNodeKind::ContextStmt: {
+         const auto &payload = std::get<ContextStmtPayload>(Statement.data);
          if (payload.block) collect_from_block(Collection, *payload.block);
          break;
       }
@@ -764,6 +889,11 @@ static void collect_from_statement(ParserSymbolCollection &Collection, const Stm
          if (payload.success_block) collect_from_block(Collection, *payload.success_block);
          break;
       }
+      case AstNodeKind::CheckallStmt: {
+         const auto &payload = std::get<CheckallStmtPayload>(Statement.data);
+         if (payload.block) collect_from_block(Collection, *payload.block);
+         break;
+      }
       case AstNodeKind::WithStmt: {
          const auto &payload = std::get<WithStmtPayload>(Statement.data);
          if (payload.block) collect_from_block(Collection, *payload.block);
@@ -779,7 +909,7 @@ inline void collect_from_block(ParserSymbolCollection &Collection, const BlockSt
    for (const StmtNode &statement : Block.view()) collect_from_statement(Collection, statement);
 }
 
-void collect_parser_symbols(lua_State &Lua, const BlockStmt &Chunk)
+void collect_parser_symbols(lua_State &Lua, const LexState &Lex, const BlockStmt &Chunk)
 {
    if (Lua.parser_symbols) {
       delete Lua.parser_symbols;
@@ -790,5 +920,22 @@ void collect_parser_symbols(lua_State &Lua, const BlockStmt &Chunk)
 
    auto *collection = new ParserSymbolCollection();
    collect_from_block(*collection, Chunk);
+
+   // Struct declarations lower to plain local declarations in the AST, so they are surfaced from the parse-time
+   // metadata captured by parse_struct_declaration() rather than from the statement walk above.
+   for (const auto &declaration : Lex.struct_declaration_metadata) {
+      ParserSymbolMetadata symbol;
+      symbol.name = declaration.name;
+      symbol.kind = "struct";
+      symbol.signature = std::format("struct {}", declaration.name);
+      symbol.span = declaration.name_span;
+      symbol.end_span = declaration.end_span;
+      symbol.fields.reserve(declaration.fields.size());
+      for (const auto &field : declaration.fields) {
+         symbol.fields.push_back({ field.name, field.type, field.doc, field.span });
+      }
+      collection->symbols.push_back(std::move(symbol));
+   }
+
    Lua.parser_symbols = collection;
 }

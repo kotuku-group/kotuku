@@ -5,100 +5,135 @@
   <info>
     <name>Audio</name>
     <type>module</type>
-    <comment>Comprehensive audio processing and playback system with professional-grade mixing capabilities.</comment>
+    <comment>Sample mixing and playback system with a floating-point mixer and platform audio output.</comment>
     <version>1</version>
     <copyright>Paul Manias © 2002-2026</copyright>
     <description>
-<p>The Audio module provides a robust, cross-platform audio infrastructure that manages the complete audio pipeline from sample loading through to hardware output.  The module's architecture supports both high-level convenience interfaces and low-level professional audio control, making it suitable for applications ranging from simple media playback to sophisticated audio production environments.</p>
-<p>The module implements a client-server design pattern with two complementary class interfaces:</p>
+<p>The Audio module manages the audio pipeline from sample loading through to hardware output.  It provides three class interfaces:</p>
 <list type="bullet">
-<li>
-<class name="Audio">Audio</class>: Low-level hardware interface providing precise control over audio mixing, buffering, and output configuration.  Designed for applications requiring professional audio capabilities including real-time processing, multi-channel mixing, and advanced streaming architectures</li>
-<li>
-<class name="Sound">Sound</class>: High-level sample playback interface optimised for simplicity and performance.  Automatically manages resource allocation, format conversion, and hardware abstraction whilst providing intelligent streaming decisions</li>
+<li><class name="Sound">Sound</class>: High-level sample playback.  Loads WAVE files by default and supports an MP3 extension; manages its own resources and decides whether a sample is
+played from memory or streamed.  This is the recommended interface for most applications.</li>
+<li><class name="Audio">Audio</class>: Low-level mixer and device interface.  Provides channel sets, sample buffers and streams, command
+sequencing, and control over output rate, bit depth, buffering and mixing quality.</li>
+<li><class name="AudioEffect">AudioEffect</class>: Base class for DSP processors that attach to a channel set or to the global mix of an <class name="Audio">Audio</class>
+object.</li>
 </list>
-<p>The internal mixer is a floating-point engine that processes all audio internally at 32-bit precision regardless of output bit depth.  The mixer supports features that include:</p>
+<p>The internal mixer processes all audio as normalised 32-bit floating-point data regardless of the output bit depth. A magnitude of 1.0 is 0 dBFS, while intermediate buses retain finite values above unity as headroom.  The final output conversion is the only stage that clips and quantises samples for the selected hardware format.  The mixer supports:</p>
 <list type="bullet">
-<li>Oversampling with interpolation for enhanced quality and reduced aliasing</li>
-<li>Real-time volume ramping to eliminate audio artefacts during playback transitions</li>
-<li>Multi-stage filtering with configurable low-pass and high-pass characteristics</li>
-<li>Sample-accurate playback positioning with sub-sample interpolation</li>
-<li>Bidirectional and unidirectional looping with precision loop point handling</li>
+<li>Nearest-neighbour, linear, bounded cubic Hermite or ratio-aware band-limited sinc source resampling selected by
+<class name="Audio" field="Quality">Audio.Quality</class>.</li>
+<li>Volume ramping to avoid clicks when channel volumes change, enabled by <code>ADF::VOL_RAMPING</code> independently of Quality.
+Gains move by at most 0.01 per output frame, so a full-scale transition takes 100 output frames.</li>
+<li>Unidirectional and bidirectional sample looping, including a secondary loop region.</li>
+<li>Per-channel and global effect chains built from <class name="AudioEffect">AudioEffect</class> processors.</li>
 </list>
-<header>Platform-Specific Optimisations</header>
-<p>Audio implementation is optimised for each supported platform to maximise performance and minimise latency:</p>
+<p>Output behaviour differs by platform:</p>
 <list type="bullet">
-<li>
-<b>Linux (ALSA Integration):</b> Utilises ALSA's period-based buffering with configurable period counts and sizes.  All samples are processed through the unified mixer with support for system-wide volume control and hardware mixer integration</li>
-<li>
-<b>Windows (DirectSound Integration):</b> Implements dual-path audio where simple playback can bypass the internal mixer for reduced latency, whilst complex operations utilise the full mixing pipeline.  Automatic fallback ensures compatibility across Windows audio driver variations</li>
-<li>
-<b>Cross-Platform Consistency:</b> API behaviour remains consistent across platforms, with platform-specific optimisations operating transparently to applications</li>
+<li><b>Linux (ALSA):</b> All playback, including <class name="Sound">Sound</class> objects, is mixed by the internal mixer and written by a
+dedicated worker thread.  Buffering is configured with the <class name="Audio" field="Periods">Audio.Periods</class> and <class name="Audio" field="PeriodSize">Audio.PeriodSize</class> fields, and the
+ALSA mixer is used for system volume control.</li>
+<li><b>Windows (WASAPI):</b> All Sounds use the internal mixer and its application/global effects.  Each active
+Audio object owns an event-driven shared-mode stream at the endpoint mix rate.  IAudioClient3 uses the supported
+default period; event-driven IAudioClient is the compatibility fallback.  Windows 10 or later is supported.</li>
 </list>
-<header>Streaming and Memory Management</header>
-<p>The module implements streaming technology that automatically adapts to sample characteristics and system resources:</p>
+<p>The <class name="Sound" field="Stream">Sound.Stream</class> field determines whether a sample is loaded into memory or streamed from its source.  With <code>STREAM::SMART</code>, samples larger than 256KB are streamed; with <code>STREAM::ALWAYS</code>, samples larger than 16KB are streamed; with <code>STREAM::NEVER</code>, the sample is always memory-resident.  Loop points are preserved when a sample is streamed.</p>
+<p>Technical specifications:</p>
 <list type="bullet">
-<li>Smart streaming decisions based on sample size, available memory, and playback requirements</li>
-<li>Configurable streaming thresholds with support for forced streaming or memory-resident operation</li>
-<li>Rolling buffer architecture for large samples with automatic buffer management</li>
-<li>Loop-aware streaming that maintains loop points during streaming operations</li>
-</list>
-<header>Usage Guidelines</header>
-<p>For optimal results, choose the appropriate interface based on application requirements:</p>
-<list type="bullet">
-<li>
-<b>
-<class name="Sound">Sound</class> Class (Recommended for Most Applications):</b> Provides immediate audio playback with automatic resource management, format detection, and intelligent streaming.  Ideal for media players, games, and general-purpose audio applications</li>
-<li>
-<b>
-<class name="Audio">Audio</class> Class (Advanced Applications):</b> Offers complete control over the audio pipeline including custom mixer configurations, real-time effects processing, and professional-grade timing control.  Required for audio workstations, synthesisers, and applications with demanding audio requirements</li>
-</list>
-<header>Technical Specifications</header>
-<list type="bullet">
-<li>Internal processing: 32-bit floating-point precision</li>
-<li>Output formats: 8, 16, 24, and 32-bit with automatic conversion</li>
-<li>Sample rates: Up to 44.1 kHz (hardware dependent)</li>
-<li>Channel configurations: Mono and stereo with automatic format adaptation</li>
-<li>Latency: Platform-optimised with configurable buffering for real-time applications</li>
+<li>Internal processing: Normalised 32-bit floating-point with headroom above 0 dBFS.</li>
+<li>Output formats: 8-bit and 16-bit integer, and 32-bit floating-point.</li>
+<li>Output rates: Up to 192 kHz, subject to hardware negotiation.  Windows follows the endpoint mix rate.</li>
+<li>Channel configurations: Mono and stereo output.  Mono and stereo samples are converted to the output layout during
+mixing.</li>
 </list></description>
+    <source>
+      <file path="src/audio/">audio.cpp</file>
+      <file path="src/audio/">commands.cpp</file>
+    </source>
     <classes>
       <class>Audio</class>
+      <class>AudioAnalyser</class>
+      <class>AudioChorus</class>
+      <class>AudioCompressor</class>
+      <class>AudioCrossfeed</class>
+      <class>AudioDelay</class>
+      <class>AudioEffect</class>
+      <class>AudioEqualiser</class>
+      <class>AudioFlanger</class>
+      <class>AudioGate</class>
+      <class>AudioLimiter</class>
+      <class>AudioLoudness</class>
+      <class>AudioPhaser</class>
+      <class>AudioPitchShift</class>
+      <class>AudioReverb</class>
+      <class>AudioSaturator</class>
+      <class>AudioSplitter</class>
+      <class>AudioStereo</class>
       <class>Sound</class>
     </classes>
   </info>
 
   <function>
-    <name>MixContinue</name>
-    <comment>Continue playing a stopped channel.</comment>
-    <prototype>ERR snd::MixContinue(objAudio * Audio, INT Handle)</prototype>
-    <tiriPrototype>err = MixContinue(Audio:obj, Handle:num)</tiriPrototype>
+    <name>ExpandLayout</name>
+    <comment>Expands a named channel layout preset into its ordered channel identities.</comment>
+    <prototype>ERR snd::ExpandLayout(ACL Layout, kt::vector&lt;int&gt; * Channels)</prototype>
+    <tiriPrototype>err, Channels:array = ExpandLayout(Layout:num)</tiriPrototype>
+    <tags>mutates-input</tags>
     <input>
-      <param type="objAudio *" name="Audio">The target Audio object.</param>
-      <param type="INT" name="Handle">The target channel.</param>
+      <param type="ACL" name="Layout" lookup="ACL">The preset to expand.</param>
+      <param type="kt::vector&lt;int&gt; *" name="Channels">Receives the ordered channel identities from the <code>SPK</code> constants.</param>
     </input>
     <description>
-<p>This function will continue playback on a channel that has previously been stopped.</p>
+<p>A preset such as <code>ACL::STEREO</code> names a speaker arrangement.  ExpandLayout() returns the identities of that arrangement in interleaved frame order, ready for use in the <code>Layout</code> of an <st>AudioFormat</st> or the <class name="Audio" field="OutputLayout">Audio.OutputLayout</class> field.  A channel count alone never selects a layout; for instance, both 5.1 presets have six channels but place the surround pair differently.</p>
+<types lookup="ACL"/>
+<p>Expanding a preset does not imply that it can be played.  Playback support is confirmed when a format is registered or an output layout is activated.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Args">The preset is not recognised.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
   <function>
-    <name>MixEndSequence</name>
-    <comment>Ends the buffering of mix commands.</comment>
-    <prototype>ERR snd::MixEndSequence(objAudio * Audio, INT Handle)</prototype>
-    <tiriPrototype>err = MixEndSequence(Audio:obj, Handle:num)</tiriPrototype>
+    <name>GetFrameBytes</name>
+    <comment>Validates an AudioFormat and returns the byte size of one frame.</comment>
+    <prototype>ERR snd::GetFrameBytes(struct AudioFormat * Format, INT * Bytes)</prototype>
+    <tiriPrototype>err, Bytes:num = GetFrameBytes(Format:any)</tiriPrototype>
+    <input>
+      <param type="struct AudioFormat *" name="Format">The format to check.</param>
+      <param type="INT *" name="Bytes">Receives the size of one frame in bytes.</param>
+    </input>
+    <description>
+<p>A frame contains one sample for every channel in the format's <code>Layout</code>, so the frame size is the number of channels multiplied by the container size of one sample: one byte for <code>ASF::U8</code>, two for <code>ASF::S16</code> and four for <code>ASF::F32</code>. Byte offsets, lengths and loop boundaries passed to the Audio API must be multiples of this value.</p>
+<p>The format is checked for correctness, but not for playback support.  A format is malformed if its <code>SampleRate</code> is outside <code>1</code> to <code>768000</code>, its <code>SampleFormat</code> or <code>Flags</code> are invalid, or its <code>Layout</code> is empty, has more than 64 channels, or contains an invalid or duplicated channel identity.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Args">The format is malformed.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>MixContinue</name>
+    <comment>Resumes playback of a paused channel.</comment>
+    <prototype>ERR snd::MixContinue(objAudio * Audio, INT Handle)</prototype>
+    <tiriPrototype>err = MixContinue(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
     </input>
     <description>
-<p>Use this function to end a buffered command sequence that was started by <function>MixStartSequence</function>.</p>
+<p>This function resumes a channel that was paused by <function>MixPause</function>.  Playback continues from the paused position with the same loop phase, direction and release state.  If the note was released before or during the pause, it remains released.</p>
+<p>Only paused channels are affected.  Calling this function on a channel that is playing, released, stopped by <function>MixStop</function> or finished has no effect and returns <code>Okay</code>.  Use <function>MixPlay</function> to start a new playback after a stop or natural completion.</p>
+<p>On worker backends, <code>Okay</code> reports queue admission; the command is applied before a subsequent render period.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="BufferOverflow">A buffer overflow has occurred</error>
+      <error code="NotInitialised">The resource has not been initialised</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -108,6 +143,7 @@
     <comment>Sets a channel's playback rate.</comment>
     <prototype>ERR snd::MixFrequency(objAudio * Audio, INT Handle, INT Frequency)</prototype>
     <tiriPrototype>err = MixFrequency(Audio:obj, Handle:num, Frequency:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -118,6 +154,8 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Failed">General failure</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -127,6 +165,7 @@
     <comment>Mutes the audio of a channel.</comment>
     <prototype>ERR snd::MixMute(objAudio * Audio, INT Handle, INT Mute)</prototype>
     <tiriPrototype>err = MixMute(Audio:obj, Handle:num, Mute:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -137,6 +176,7 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -146,16 +186,46 @@
     <comment>Sets a channel's panning value.</comment>
     <prototype>ERR snd::MixPan(objAudio * Audio, INT Handle, DOUBLE Pan)</prototype>
     <tiriPrototype>err = MixPan(Audio:obj, Handle:num, Pan:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
       <param type="DOUBLE" name="Pan">The desired pan value between -1.0 and 1.0.</param>
     </input>
     <description>
-<p>Use this function to set a mixer channel's panning value.  Accepted values are between -1.0 (left) and 1.0 (right).</p>
+<p>Use this function to set a mixer channel's panning value, from -1.0 (left) through 0 (centre) to 1.0 (right). Finite values outside this range are clamped.  Non-finite values (NaN and infinities) are rejected with <code>OutOfRange</code> and the channel is not modified.</p>
+<p>Panning uses a linear balance law.  The side being panned towards keeps the channel's full volume, while the opposite side is attenuated linearly: for a volume <code>V</code> and a pan <code>P</code> below zero, the left gain is <code>V</code> and the right gain is <code>V * (1 + P)</code>; above zero, the left gain is <code>V * (1 - P)</code> and the right gain is <code>V</code>.  A centred channel is therefore played at full volume on both sides, not at constant power.  Pan has no effect when the Audio object outputs in mono.</p>
+<p>Pan is a mono/stereo balance control for the front speaker pair.  It is not an azimuth and does not address other speakers.  Mono and stereo sources in a wider output layout are placed on the front pair.  Sources with more than two channels require explicit routing, which is not yet available; such sources must use a neutral pan of zero.</p>
+<p>The pan applies from the next mixed frame, ramping towards the new gains if <code>ADF::VOL_RAMPING</code> is enabled, independently of Quality.  Gains move by at most 0.01 per output frame.  When the mixer runs on a worker thread, <code>Okay</code> confirms that the command was accepted for application before the next period is rendered.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">The channel handle is invalid or <code>Pan</code> is not a finite number.</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>MixPause</name>
+    <comment>Suspends playback on a channel without ending it.</comment>
+    <prototype>ERR snd::MixPause(objAudio * Audio, INT Handle)</prototype>
+    <tiriPrototype>err = MixPause(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
+    <input>
+      <param type="objAudio *" name="Audio">The target Audio object.</param>
+      <param type="INT" name="Handle">The target channel.</param>
+    </input>
+    <description>
+<p>This function suspends a playing or released channel.  The playback position, loop phase, direction and release state are preserved, and <function>MixContinue</function> resumes from exactly that point.  No <code>OnStop</code> notification is delivered, because the playback has not ended.</p>
+<p>Pausing a channel that is already paused, stopped or finished has no effect and returns <code>Okay</code>.  While paused, a channel can still be released with <function>MixRelease</function>, which takes effect on resumption (or ends the note immediately for loop modes where release ends it).  <function>MixStop</function> terminates a paused playback, and <function>MixPlay</function> replaces it.</p>
+<p>Streams continue to prefetch source data while paused.</p>
+<p>On worker backends, <code>Okay</code> reports queue admission; the command is applied before a subsequent render period.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="BufferOverflow">A buffer overflow has occurred</error>
+      <error code="NotInitialised">The resource has not been initialised</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -163,39 +233,59 @@
   <function>
     <name>MixPlay</name>
     <comment>Commences channel playback at a set frequency.</comment>
-    <prototype>ERR snd::MixPlay(objAudio * Audio, INT Handle, INT Position)</prototype>
+    <prototype>ERR snd::MixPlay(objAudio * Audio, INT Handle, INT64 Position)</prototype>
     <tiriPrototype>err = MixPlay(Audio:obj, Handle:num, Position:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
-      <param type="INT" name="Position">The new playing position, measured in bytes.</param>
+      <param type="INT64" name="Position">The new playing position, measured in bytes.  It must be aligned to a complete source frame.</param>
     </input>
     <description>
-<p>This function will start playback of the sound sample associated with the target mixer channel.  If the channel is already in playback mode, it will be stopped to facilitate the new playback request.</p>
+<p>This function will start playback of the sound sample associated with the target mixer channel.  Playback always starts in the first loop, unreleased.  This applies to every prior channel state: playing, released, paused, stopped and finished.  Replacing an active playback does not deliver the sample's <code>OnStop</code> notification for the replaced playback.</p>
+<p>For streams, a new playback also cancels any earlier <function>MixRelease</function>, so a configured stream loop is honoured again.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Playback successfully initiated.</error>
-      <error code="Failed">Channel not associated with a valid sample.</error>
+      <error code="Args">Position is not frame-aligned.</error>
+      <error code="NoData">The referenced sample is unconfigured.</error>
       <error code="OutOfRange">Position exceeds sample boundaries.</error>
+      <error code="FieldNotSet">Channel not associated with a valid sample.</error>
+      <error code="BufferOverflow">The worker command queue is full.</error>
+      <error code="NotInitialised">The audio worker is stopping.</error>
       <error code="NullArgs">Required parameters are null or missing.</error>
     </result>
   </function>
 
   <function>
-    <name>MixRate</name>
-    <comment>Sets a new update rate for a channel.</comment>
-    <prototype>ERR snd::MixRate(objAudio * Audio, INT Handle, INT Rate)</prototype>
-    <tiriPrototype>err = MixRate(Audio:obj, Handle:num, Rate:num)</tiriPrototype>
+    <name>MixRelease</name>
+    <comment>Releases the note playing on a channel.</comment>
+    <prototype>ERR snd::MixRelease(objAudio * Audio, INT Handle)</prototype>
+    <tiriPrototype>err = MixRelease(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
-      <param type="INT" name="Handle">The channel set allocated from OpenChannels().</param>
-      <param type="INT" name="Rate">The new update rate in milliseconds.</param>
+      <param type="INT" name="Handle">The target channel.</param>
     </input>
     <description>
-<p>This function will set a new update rate for all channels, measured in milliseconds.  The default update rate is 125, which is equivalent to 5000Hz.</p>
+<p>This function signals a note release (a 'key-off') to a playing or paused channel.  The effect depends on the loop mode of the channel's sample, as described by the <lk>LOOP</lk> constants:</p>
+<list type="bullet">
+<li><code>SINGLE_RELEASE</code>: Playback leaves the loop when it next reaches the loop end, then plays the remaining sample
+data.</li>
+<li><code>DOUBLE</code>: Playback moves to the second loop when it next reaches the end of the first loop.</li>
+<li>All other resident samples, including <code>SINGLE</code>, the Amiga modes and samples without a loop: the note ends
+immediately and the <code>OnStop</code> notification is delivered.  In oversampling mode the audible output fades out.</li>
+<li>Streams: playback leaves the stream loop and drains the remaining source data up to the loop end, then finishes.
+A stream without a loop is unaffected.</li>
+</list>
+<p>A release applies to the current playback only.  The sample's loop configuration is never modified, and the next <function>MixPlay</function> starts unreleased in the first loop.  If the channel is paused, the release is retained and takes effect when <function>MixContinue</function> resumes it.  A channel that is already released, stopped or finished is unaffected.</p>
+<p>On worker backends, <code>Okay</code> reports queue admission; the command is applied before a subsequent render period.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="BufferOverflow">A buffer overflow has occurred</error>
+      <error code="NotInitialised">The resource has not been initialised</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -205,6 +295,7 @@
     <comment>Associate a sound sample with a mixer channel.</comment>
     <prototype>ERR snd::MixSample(objAudio * Audio, INT Handle, INT Sample)</prototype>
     <tiriPrototype>err = MixSample(Audio:obj, Handle:num, Sample:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
@@ -216,84 +307,94 @@
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="NoData">The sample handle refers to a dead or unconfigured sample.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="DataSize">The sample has an invalid length.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
-    </result>
-  </function>
-
-  <function>
-    <name>MixStartSequence</name>
-    <comment>Initiates buffering of mix commands.</comment>
-    <prototype>ERR snd::MixStartSequence(objAudio * Audio, INT Handle)</prototype>
-    <tiriPrototype>err = MixStartSequence(Audio:obj, Handle:num)</tiriPrototype>
-    <input>
-      <param type="objAudio *" name="Audio">The target Audio object.</param>
-      <param type="INT" name="Handle">The target channel.</param>
-    </input>
-    <description>
-<p>Use this function to initiate the buffering of mix commands, up until a call to <function>MixEndSequence</function> is made.  The buffering of mix commands makes it possible to create batches of commands that are executed at timed intervals as determined by <function>MixRate</function>.</p>
-<header>Command Buffering Architecture</header>
-<p>When command buffering is activated, the mixer transitions to a batch processing mode with several key characteristics:</p>
-<list type="bullet">
-<li>
-<b>Deferred Execution:</b> All mixer operations (<function>MixPlay</function>, <function>MixVolume</function>, <function>MixPan</function>, <function>MixFrequency</function>, etc.) are queued rather than executed immediately</li>
-<li>
-<b>Atomic Batch Processing:</b> Queued commands are processed synchronously during the next mixer update cycle, ensuring sample-accurate timing coordination</li>
-<li>
-<b>Thread-Safe Queueing:</b> Commands can be safely queued from multiple threads without explicit synchronisation requirements</li>
-<li>
-<b>Overflow Protection:</b> Command buffers include overflow detection to prevent memory exhaustion during extended buffering periods</li>
-</list>
-<p>This feature can be used to implement complex sound mixes and digital music players.</p>
-<header>Advanced Usage Patterns</header>
-<list type="ordered">
-<li>
-<b>Sequence Initiation:</b> Call MixStartSequence() to begin command buffering for the target channel or channel set</li>
-<li>
-<b>Command Queuing:</b> Issue multiple mixer commands (volume, pan, play, frequency adjustments, etc.) which are automatically queued</li>
-<li>
-<b>Sequence Completion:</b> Call <function>MixEndSequence</function> to mark the end of the command batch and schedule execution</li>
-<li>
-<b>Automatic Execution:</b> Commands execute atomically at the next mixer update interval determined by <function>MixRate</function></li>
-</list>
-    </description>
-    <result type="ERR">
-      <error code="Okay">Command buffering successfully initiated.</error>
-      <error code="NullArgs">Required parameters are null or missing.</error>
     </result>
   </function>
 
   <function>
     <name>MixStop</name>
-    <comment>Stops all playback on a channel.</comment>
+    <comment>Terminates playback on a channel.</comment>
     <prototype>ERR snd::MixStop(objAudio * Audio, INT Handle)</prototype>
     <tiriPrototype>err = MixStop(Audio:obj, Handle:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
     </input>
     <description>
-<p>This function will stop a channel that is currently playing.</p>
+<p>This function ends the current playback on a channel.  The stop is terminal: the channel cannot be resumed with <function>MixContinue</function>, and a new playback must be started with <function>MixPlay</function>.  The channel's sample selection and loop configuration are unaffected.  Output stops at the next render boundary without a fade-out.</p>
+<p>If the channel is playing, released or paused, the sample's <code>OnStop</code> notification is delivered once for the ended playback.  Stopping a channel that has already stopped or finished has no effect and delivers no notification.</p>
+<p>On worker backends, <code>Okay</code> reports queue admission; the command is applied before a subsequent render period.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="BufferOverflow">A buffer overflow has occurred</error>
+      <error code="NotInitialised">The resource has not been initialised</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
   <function>
-    <name>MixStopLoop</name>
-    <comment>Cancels any playback loop configured for a channel.</comment>
-    <prototype>ERR snd::MixStopLoop(objAudio * Audio, INT Handle)</prototype>
-    <tiriPrototype>err = MixStopLoop(Audio:obj, Handle:num)</tiriPrototype>
+    <name>MixSubmitBatch</name>
+    <comment>Submits an independently owned batch of mixer commands.</comment>
+    <prototype>ERR snd::MixSubmitBatch(objAudio * Audio, const std::span&lt;const struct AudioMixCommand&gt; &amp;Commands, FUNCTION * OnComplete)</prototype>
+    <tiriPrototype>err = MixSubmitBatch(Audio:obj, Commands:array, OnComplete:func)</tiriPrototype>
+    <tags>mutates-object, copies-input</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
-      <param type="INT" name="Handle">The target channel.</param>
+      <param type="std::span&lt;const struct AudioMixCommand&gt;" name="Commands">Commands to copy into one channel set's queue.</param>
+      <param type="FUNCTION *" name="OnComplete">Optional completion callback; pass NULL when no execution acknowledgement is needed.</param>
     </input>
     <description>
-<p>This function will cancel the loop that is associated with the channel identified by Handle if in playback mode. The existing loop configuration will remain intact if playback is restarted.</p>
+<p>This function submits a list of mixer commands in a single batch.  <code>Commands</code> is an array of <st>AudioMixCommand</st> records.  Submission takes a copy of the complete array, or rejects it without publishing any commands.</p>
+<p>All commands must address live channels in the same channel set.  At most 1023 commands can be submitted at once; the set's queue holds 1024 entries, including one internal boundary entry per batch.  Invalid command types, channels or numeric arguments reject the entire batch.  Sample availability and playback state are checked at execution time.</p>
+<p>Batches execute in submission order within their set, with one batch per mixer update boundary as determined by <function>MixTempo</function>.  Commands execute in array order without rendering frames.  Different sets have independent update boundaries.  On worker backends, individual Mix calls use a separate FIFO which is drained before rendering each period (and by synchronous Sound queries); they can overtake queued batches, even when submitted later.  On backends without a worker, individual Mix calls execute immediately.</p>
+<p>Successful submission means queue admission, not successful playback or audible output.  A failed command does not roll back earlier commands or prevent later commands in the batch from running.</p>
+<p>The optional <code>OnComplete</code> callback receives <code>(Audio, Error, FailedCommand)</code> once all commands have executed or been cancelled.  <code>Error</code> is <code>Okay</code> on success and <code>FailedCommand</code> is -1.  Otherwise they identify the first failing command's error and zero-based array index.  Completion acknowledges application to mixer state, not audible output.  Native callbacks have the signature <code>void Callback(objAudio *Audio, ERR Error, int FailedCommand, APTR Meta)</code>.</p>
+<p>Callbacks run through the client event loop, outside the mixer mutex, never inline during submission or on the render worker.  They may submit more batches or deactivate Audio.  Notifications follow completion order; batches within a set execute FIFO, while different sets have independent boundaries.  Use a closure or native callback metadata to associate the notification with caller-owned batch state.  No callback is delivered for a rejected submission.</p>
+<p>Callback storage is reserved before admission.  Up to 1024 batches with callbacks may be awaiting execution or delivery per Audio object; exhaustion rejects admission with <code>BufferOverflow</code>.  Delivery releases storage automatically.  A <code>NULL</code> callback uses no completion slot.  The event loop must run to deliver notifications.</p>
+<p>Closing a channel set or deactivating Audio cancels its queued batches with <code>Cancelled</code> and failed index zero. Already completed results remain unchanged.  Notifications remain deliverable after deactivation and are independent of channel lifetime.  Removing a sample drains the single-command FIFO, then invalidates queued batch sample selections referencing it: they fail with <code>NoData</code> even if the sample slot is reused.  Other batch commands continue. Keep samples alive until completion when successful playback is required.</p>
+<p>The callback context is weakly pinned for stale-reference detection.  Destruction of that context suppresses delivery. Freeing Audio discards pending callbacks without invoking application code; deactivate Audio and process notifications before freeing it if cancellation reporting is required.  Device recovery may delay execution until it succeeds or shutdown cancels the queued batches.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="SystemLocked">Part of the system is unreachable due to a persistent lock</error>
+      <error code="BufferOverflow">A buffer overflow has occurred</error>
+      <error code="NotInitialised">The resource has not been initialised</error>
+      <error code="InvalidState">Object was in an incorrect state for the operation</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>MixTempo</name>
+    <comment>Sets the tracker tempo for a channel set.</comment>
+    <prototype>ERR snd::MixTempo(objAudio * Audio, INT Handle, INT Tempo)</prototype>
+    <tiriPrototype>err = MixTempo(Audio:obj, Handle:num, Tempo:num)</tiriPrototype>
+    <tags>mutates-object</tags>
+    <input>
+      <param type="objAudio *" name="Audio">The target Audio object.</param>
+      <param type="INT" name="Handle">The channel set allocated from OpenChannels(), or any live channel in that set.</param>
+      <param type="INT" name="Tempo">Tracker tempo from 1 to 100000 BPM inclusive.</param>
+    </input>
+    <description>
+<p>Sets the tempo in beats per minute (BPM), with 24 mixer ticks per beat.  Each tick is one channel-set update boundary at which one queued batch can execute.  The default tempo is 125 BPM: 50 ticks per second, or 20 ms per tick before frame rounding.  This setting affects every channel in the selected set.</p>
+<p>The ideal tick length is OutputRate * 2.5 / Tempo frames.  Round to the nearest even frame count, with exact odd-frame ties rounded upwards, then enforce a minimum of two frames.  Equivalently:</p>
+<pre>frames = max(2, 2 * floor((floor(OutputRate * 5 / (Tempo * 2)) + 1) / 2))</pre>
+<p>The actual tick duration is frames / OutputRate seconds.  At 125 BPM, output rates of 22050, 44100 and 48000 Hz produce 442, 882 and 960 frames respectively.  At 44100 Hz and 128 BPM, each tick contains 862 frames.</p>
+<p>A change preserves the frames remaining in the current tick.  The next tick scheduled after the command executes uses the new tempo.  A tempo command inside <function>MixSubmitBatch</function> therefore controls the interval immediately following that batch; if several tempo commands occur in a batch, the last one wins.  Worker-backed calls return <code>Okay</code> on queue admission and apply the command before a subsequent render period (or when a synchronous query drains the queue).  Already rendered audio is unaffected.  Other backends apply the command immediately.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">A value is outside of the valid range</error>
+      <error code="BufferOverflow">A buffer overflow has occurred</error>
+      <error code="NotInitialised">The resource has not been initialised</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
@@ -303,44 +404,67 @@
     <comment>Changes the volume of a channel.</comment>
     <prototype>ERR snd::MixVolume(objAudio * Audio, INT Handle, DOUBLE Volume)</prototype>
     <tiriPrototype>err = MixVolume(Audio:obj, Handle:num, Volume:num)</tiriPrototype>
+    <tags>mutates-object</tags>
     <input>
       <param type="objAudio *" name="Audio">The target Audio object.</param>
       <param type="INT" name="Handle">The target channel.</param>
-      <param type="DOUBLE" name="Volume">The new volume for the channel.</param>
+      <param type="DOUBLE" name="Volume">The new volume for the channel, from 0 to 1.0.</param>
     </input>
     <description>
-<p>This function will change the volume of the mixer channel identified by Handle.  Valid values are from 0 (silent) to 1.0 (maximum).</p>
+<p>This function will change the volume of the mixer channel identified by Handle.  Volume is a linear amplitude multiplier from 0 (silent) to 1.0 (unity gain).  It is not expressed in decibels; a value of 0.5 attenuates the channel by approximately 6 dB.  Finite values outside this range are clamped.  Non-finite values (NaN and infinities) are rejected with <code>OutOfRange</code> and the channel is not modified.</p>
+<p>The rendered gain of each side is the product of the channel volume, the pan attenuation described in <function>MixPan</function> and the Audio object's <code>MasterVolume</code>.  Stereo samples mixed to mono output are additionally halved.</p>
+<p>The volume applies from the next mixed frame, ramping towards the new gains if <code>ADF::VOL_RAMPING</code> is enabled, independently of Quality.  Gains move by at most 0.01 per output frame.  When the mixer runs on a worker thread, <code>Okay</code> confirms that the command was accepted for application before the next period is rendered.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
+      <error code="OutOfRange">The channel handle is invalid or <code>Volume</code> is not a finite number.</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
     </result>
   </function>
 
   <types>
-    <constants lookup="ADF" comment="Optional flags for the Audio object.">
-      <const name="AUTO_SAVE">Save configuration information on exit.</const>
-      <const name="FILTER_HIGH">Enable a high level of output filtering to minimise distortion.</const>
-      <const name="FILTER_LOW">Enable a low level of output filtering to minimise distortion.</const>
-      <const name="OVER_SAMPLING">Enables oversampling for higher quality audio at the cost of slower mixing.</const>
-      <const name="STEREO">Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.</const>
-      <const name="SYSTEM_WIDE">Mixer changes should be applied system-wide.</const>
-      <const name="VOL_RAMPING">Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).</const>
+    <constants lookup="ACL" comment="Named channel layout presets for ExpandLayout().">
+      <const name="MONO"><code>CENTRE</code>.</const>
+      <const name="STEREO"><code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>.</const>
+      <const name="SURROUND_5_1_REAR"><code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>, <code>CENTRE</code>, <code>LFE</code>, <code>REAR_LEFT</code>, <code>REAR_RIGHT</code>.</const>
+      <const name="SURROUND_5_1_SIDE"><code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>, <code>CENTRE</code>, <code>LFE</code>, <code>SIDE_LEFT</code>, <code>SIDE_RIGHT</code>.</const>
     </constants>
 
-    <constants lookup="CHF" comment="Optional flags for the AudioChannel structure.">
-      <const name="BACKWARD">Play channel backwards.</const>
-      <const name="CHANGED">Sample change</const>
-      <const name="MUTE">Channel is muted.</const>
-      <const name="VOL_RAMP">Volume ramping is enabled.</const>
+    <constants lookup="ADS" comment="Effect drain states reported by GetEffectStatus().">
+      <const name="ACTIVE">At least one source on the selected path is playing.</const>
+      <const name="DRAINING">Sources have stopped, but one or more effects are still producing tail output.</const>
+      <const name="IDLE">No sources are playing and no effect has pending output.</const>
     </constants>
 
-    <constants lookup="CHS" comment="Channel status types for the AudioChannel structure.">
-      <const name="FADE_OUT">Playback is fading out.</const>
-      <const name="FINISHED">Playback concluded by reaching the sample end.</const>
-      <const name="PLAYING">Sample playing and not released.</const>
-      <const name="RELEASED">Sample playing and note has been released.</const>
-      <const name="STOPPED">Playing was stopped by the client.</const>
+    <constants lookup="AFF" comment="Optional AudioFormat flags.">
+      <const name="BIG_ENDIAN_ORDER">Multi-byte samples are stored in big endian byte order.  Samples are little endian if this flag is not set.</const>
+    </constants>
+
+    <constants lookup="AMF" comment="Audio meter snapshot flags.">
+      <const name="BYPASSED">The effect is bypassed.  The VALID flag is not set.</const>
+      <const name="DISCONNECTED">The effect is not attached to an effect chain.  The VALID flag is not set.</const>
+      <const name="IDLE">The measurement is idle or stale.</const>
+      <const name="NO_SAMPLES">No samples have been measured yet.</const>
+      <const name="VALID">The snapshot holds a valid measurement.</const>
+    </constants>
+
+    <constants lookup="AMV" comment="Per-value flags returned by AudioEffect.ReadMeters().">
+      <const name="FLOOR">The measured value was below the meter floor.  The reported value is the floor.</const>
+      <const name="VALID">The value holds a measurement from the snapshot's interval.</const>
+    </constants>
+
+    <constants lookup="ASF" comment="Sample representations, independent of the channel count.">
+      <const name="F32">32-bit IEEE-754 floating point samples in four bytes, with a nominal range of <code>-1.0</code> to <code>1.0</code>.</const>
+      <const name="S16">Signed 16-bit integer samples in two bytes.</const>
+      <const name="U8">Unsigned 8-bit integer samples in one byte.  Silence is <code>128</code>.</const>
+    </constants>
+
+    <constants lookup="EQB" comment="Parametric equaliser band types.">
+      <const name="HIGH_PASS">High-pass filter; gain is ignored.</const>
+      <const name="HIGH_SHELF">High-frequency shelf with gain in decibels.</const>
+      <const name="LOW_PASS">Low-pass filter; gain is ignored.</const>
+      <const name="LOW_SHELF">Low-frequency shelf with gain in decibels.</const>
+      <const name="PEAK">Bell filter with gain in decibels.</const>
     </constants>
 
     <constants lookup="LOOP" comment="Loop modes for the AudioLoop structure.">
@@ -356,69 +480,95 @@
       <const name="UNIDIRECTIONAL">The sample playback position returns to the byte position specified in the Loop1Start field.</const>
     </constants>
 
-    <constants lookup="NOTE" comment="Definitions for the Note field.  An 'S' indicates a sharp note.">
-      <const name="A"/>
-      <const name="AS"/>
-      <const name="B"/>
-      <const name="C"/>
-      <const name="CS"/>
-      <const name="D"/>
-      <const name="DS"/>
-      <const name="E"/>
-      <const name="F"/>
-      <const name="FS"/>
-      <const name="G"/>
-      <const name="GS"/>
-      <const name="OCTAVE"/>
-    </constants>
-
-    <constants lookup="SDF" comment="Sound flags">
-      <const name="LOOP">Enables sample looping. The <fl>LoopStart</fl> and <fl>LoopEnd</fl> fields determine where the looping area lies within the sample data.</const>
-      <const name="NEW">Create the sample from scratch (e.g. for audio recording purposes).</const>
-      <const name="RESTRICT_PLAY">Restricts playback so that the sound can never play on more than one channel at any given time.</const>
-      <const name="STEREO">Indicates that the sound has multiple audio channels.</const>
-      <const name="STREAM">Read-Only. Indicates that streaming is enabled.</const>
-    </constants>
-
-    <constants lookup="SFM" comment="These audio bit formats are supported by AddSample and AddStream.">
-      <const name="F_BIG_ENDIAN">Combine this flag with any audio format to declare it as big endian.</const>
-      <const name="S16_BIT_MONO">16-bit mono signed sample.</const>
-      <const name="S16_BIT_STEREO">16-bit stereo signed sample.</const>
-      <const name="U8_BIT_MONO">8-bit mono unsigned sample.</const>
-      <const name="U8_BIT_STEREO">8-bit stereo unsigned sample.</const>
-    </constants>
-
-    <constants lookup="STREAM" comment="Streaming options">
-      <const name="ALWAYS">Stream if the sample length exceeds 64k.</const>
-      <const name="NEVER">No streaming - load all data into memory.</const>
-      <const name="SMART">Smart streaming is the default.  If the sample appears to be relatively small with respect to available system RAM, it will be loaded into memory.  Otherwise it will be streamed.</const>
-    </constants>
-
-    <constants lookup="SVF" comment="Flags for the SetVolume() method.">
-      <const name="CAPTURE">Set input, not output.</const>
-      <const name="MUTE">Mute the audio for this channel.</const>
-      <const name="UNMUTE">Unmute the audio for this channel.</const>
-    </constants>
-
-    <constants lookup="VCF" comment="Volume control flags">
-      <const name="CAPTURE">The mixer supports audio input.</const>
-      <const name="JOINED">The mixer channels are joined (e.g. left and right speakers cannot be adjusted separately).</const>
-      <const name="MONO">The mixer is restricted to mono input/output.</const>
-      <const name="MUTE">The mixer is muted.</const>
-      <const name="PLAYBACK">The mixer supports audio output.</const>
-      <const name="SYNC">The mixer is synchronised.</const>
+    <constants lookup="MIX" comment="Mixer batch operations.">
+      <const name="CONTINUE">Resume a paused channel; arguments ignored.</const>
+      <const name="FREQUENCY">Set playback frequency using Integer (0 to 192000 Hz).</const>
+      <const name="MUTE">Set mute using Integer (zero is unmuted).</const>
+      <const name="PAN">Set pan using Value (-1 to 1, clamped).</const>
+      <const name="PAUSE">Suspend playback, preserving position, loop and release state; arguments ignored.</const>
+      <const name="PLAY">Start playback at byte position Integer (non-negative).</const>
+      <const name="RELEASE">Release the playing note according to the sample's loop mode; arguments ignored.</const>
+      <const name="SAMPLE">Select sample handle Integer (positive).</const>
+      <const name="STOP">End playback terminally; arguments ignored.</const>
+      <const name="TEMPO">Set channel-set tracker tempo using Integer (1 to 100000 BPM; 24 ticks per beat).</const>
+      <const name="VOLUME">Set gain using Value (0 to 1, clamped).</const>
     </constants>
 
   </types>
   <structs>
+    <struct name="AudioBranch" comment="The level settings of one AudioSplitter branch.">
+      <field name="Gain" type="DOUBLE">Level of the branch output in the sum, in decibels</field>
+      <field name="Mute" type="INT">Set to 1 to remove the branch from the sum</field>
+    </struct>
+
+    <struct name="AudioEQBand" comment="One parametric equaliser band.">
+      <field name="Type" type="EQB" lookup="EQB">Filter type</field>
+      <field name="Frequency" type="DOUBLE">Centre or corner frequency in hertz</field>
+      <field name="Gain" type="DOUBLE">Band gain in decibels</field>
+      <field name="Q" type="DOUBLE">Quality factor or shelf slope</field>
+    </struct>
+
+    <struct name="AudioFormat" comment="Describes interleaved PCM audio data.">
+      <field name="SampleRate" type="INT">Nominal sample rate in frames per second</field>
+      <field name="SampleFormat" type="ASF" lookup="ASF">Representation of each sample</field>
+      <field name="Flags" type="AFF" lookup="AFF">Optional format flags</field>
+      <field name="Layout" type="kt::vector&lt;int&gt;">Ordered channel identities from SPK; the length is the channel count</field>
+    </struct>
+
     <struct name="AudioLoop" comment="Loop settings for the AddSample() method.">
       <field name="LoopMode" type="LOOP" lookup="LOOP">Loop mode (single, double)</field>
       <field name="Loop1Type" type="LTYPE" lookup="LTYPE">First loop type (unidirectional, bidirectional)</field>
       <field name="Loop2Type" type="LTYPE" lookup="LTYPE">Second loop type (unidirectional, bidirectional)</field>
-      <field name="Loop1Start" type="INT">Start of the first loop</field>
-      <field name="Loop1End" type="INT">End of the first loop</field>
-      <field name="Loop2Start" type="INT">Start of the second loop</field>
-      <field name="Loop2End" type="INT">End of the second loop</field>
+      <field name="Loop1Start" type="INT64">Byte position at the start of the first loop</field>
+      <field name="Loop1End" type="INT64">Byte position at the end of the first loop</field>
+      <field name="Loop2Start" type="INT64">Byte position at the start of the second loop</field>
+      <field name="Loop2End" type="INT64">Byte position at the end of the second loop</field>
+    </struct>
+
+    <struct name="AudioMixCommand" comment="One command in a caller-owned mixer batch.">
+      <field name="Operation" type="MIX" lookup="MIX">Mixer operation</field>
+      <field name="Handle" type="INT">Target channel; all commands in a batch must use the same channel set</field>
+      <field name="Integer" type="INT64">Integer argument for the selected operation; otherwise ignored</field>
+      <field name="Value" type="DOUBLE">Finite floating-point argument for PAN and VOLUME; otherwise ignored</field>
+    </struct>
+
+    <struct name="EffectStatus" comment="One coherent latency and drain-state snapshot from GetEffectStatus().">
+      <field name="Application" type="INT64">Application-chain algorithmic latency in frames</field>
+      <field name="Global" type="INT64">Global-chain algorithmic latency in frames</field>
+      <field name="Total" type="INT64">Total algorithmic latency along the selected path in frames</field>
+      <field name="Rate" type="INT">Negotiated output rate, or zero before configuration</field>
+      <field name="Generation" type="INT64">Configuration generation shared by all paths</field>
+      <field name="State" type="ADS" lookup="ADS">Selected chain's drain state</field>
+      <field name="Truncated" type="INT">One if automatic drain reached its safety deadline</field>
+    </struct>
+
+    <struct name="MeterInfo" comment="Describes one value published by an effect's meters.">
+      <field name="Key" type="STRING">Stable key, e.g. <code>input_peak_left</code></field>
+      <field name="Label" type="STRING">Human-readable label</field>
+      <field name="Unit" type="STRING">Unit of measurement, e.g. <code>dBFS</code>, or empty</field>
+      <field name="Scope" type="STRING">Either <code>channel</code> or <code>global</code></field>
+      <field name="Semantics" type="STRING">Kind of measurement, e.g. <code>sample-peak</code>, or empty</field>
+      <field name="Slot" type="INT">Index of the value in the Values of a MeterReading</field>
+      <field name="Channel" type="INT">Channel identity from SPK, or zero for a global value</field>
+    </struct>
+
+    <struct name="MeterLayout" comment="An owned snapshot of the descriptors returned by GetMeterLayout().">
+      <field name="ID" type="INT64">Configuration identifier shared with the matching MeterReading</field>
+      <field name="Meters" type="kt::vector&lt;MeterInfo&gt;">Meter descriptors in slot order</field>
+    </struct>
+
+    <struct name="MeterReading" comment="One coherent measurement of every meter value, from ReadMeters().">
+      <field name="Sequence" type="INT64">Publication sequence number; increases with each published interval</field>
+      <field name="ID" type="INT64">Configuration identifier; compare with the ID from GetMeterLayout()</field>
+      <field name="Position" type="INT64">Processed-frame position at the end of the interval</field>
+      <field name="Flags" type="AMF" lookup="AMF">Validity and lifecycle state of the reading</field>
+      <field name="Interval" type="INT">Length of the measurement interval in frames</field>
+      <field name="Values" type="kt::vector&lt;MeterValue&gt;">One value per meter descriptor, indexed by slot</field>
+    </struct>
+
+    <struct name="MeterValue" comment="One meter value in a MeterReading.">
+      <field name="Value" type="DOUBLE">Measured value in the units of its MeterInfo descriptor</field>
+      <field name="Flags" type="AMV" lookup="AMV">Validity of the value</field>
     </struct>
 
   </structs>

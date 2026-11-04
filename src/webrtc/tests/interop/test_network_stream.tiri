@@ -1,0 +1,77 @@
+-- Network stream probe.  Run through Flute by run_turn_fixture.py and test_linux_tls_shutdown.py.
+include 'network'
+
+@Test function StreamBinding()
+   port = tonumber(arg('port', '3478'))
+   secure = arg('secure', 'false') is 'true'
+   reject = arg('reject', 'false') is 'true'
+   shutdown = arg('shutdown', 'false') is 'true'
+   signal = obj.new('time', {})
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { signal } })
+   connected = false
+   disconnected = false
+   received = array<byte>
+   request = array<byte> { 0, 1, 0, 0, 0x21, 0x12, 0xa4, 0x42,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }
+   socket = obj.new('netsocket', {
+      address = '127.0.0.1', port = port, peerName = arg('identity', 'localhost'),
+      flags = secure ? 'SSL' : '', msgLimit = 65536,
+      feedback = function(Socket, State)
+         if State is NTC_CONNECTED then
+            connected = true
+            if reject then signal.acSignal(); return end
+            empty = array<byte, 32>
+            err, size = check Socket.acRead(empty)
+            assert(size is 0, 'Read before request must return immediately without data')
+            -- Deliberately split the STUN header across writes.
+            err, size = check Socket.acWrite(request.slice({0 to 7}))
+            assert(size is 7, 'First partial header was not accepted')
+            err, size = check Socket.acWrite(request.slice({7 to 20}))
+            assert(size is 13, 'Remaining partial header was not accepted')
+         elseif State is NTC_DISCONNECTED then
+            disconnected = true
+            signal.acSignal()
+         end
+      end,
+      incoming = function(Socket)
+         buffer = array<byte, 4096>
+         err, size = Socket.acRead(buffer)
+         if err is ERR_Disconnected then return end
+         check err
+         for i in {0 to size} do received.push(buffer[i]) end
+         if #received >= 20 then
+            length = (received[2] << 8) | received[3]
+            assert(length <= 65516, 'Unbounded STUN frame')
+            if #received >= length + 20 and not shutdown then signal.acSignal() end
+         end
+      end
+   })
+   defer socket.free() end
+   try
+      check proc.sleep()
+   except e
+      print(f'Stream Binding failure: secure={secure}, connected={connected}, disconnected={disconnected}, ' ..
+         f'received={#received}, queued={socket.outQueueSize}, socketError={socket.error}')
+      raise
+   end
+   if reject then
+      assert(not connected and disconnected, 'Invalid TLS peer must fail before CONNECTED')
+      assert(socket.error != ERR_Okay, 'TLS rejection must publish an error')
+   else
+      assert(connected, 'Stream connection did not complete')
+      assert(#received >= 20, 'Missing Binding response')
+      assert(received[0] is 1 and received[1] is 1, 'Expected Binding success')
+      for i in {8 to 20} do assert(received[i] is request[i], 'Transaction identity changed') end
+      assert(socket.outQueueSize <= 65536, 'Adapter queue budget exceeded')
+      if shutdown then assert(disconnected, 'Remote EOF must deliver DISCONNECTED') end
+   end
+end
+
+@Test function PartialQueuedWrite()
+   socket = obj.new('netsocket', { msgLimit = 1024 })
+   defer socket.free() end
+   bytes = array<byte, 2048>
+   err, accepted = socket.acWrite(bytes)
+   assert(err is ERR_BufferOverflow and accepted is 1024, 'Write must publish the accepted prefix')
+   assert(socket.outQueueSize is 1024, 'Only the accepted prefix belongs to the queue')
+end

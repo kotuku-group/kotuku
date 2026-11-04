@@ -86,7 +86,7 @@ extern void luaL_pushmodule(lua_State* L, CSTRING modname, int sizehint)
    lua_getfield(L, -1, modname);
    if (!lua_istable(L, -1)) {
       lua_pop(L, 1);
-      if (luaL_findtable(L, LUA_GLOBALSINDEX, modname, sizehint) != nullptr) lj_err_callerv(L, ErrMsg::BADMODN, modname);
+      if (luaL_findtable(L, LUA_GLOBALSINDEX, modname, sizehint) != nullptr) luaL_error(L, ErrMsg::BADMODN, modname);
       lua_pushvalue(L, -1);
       lua_setfield(L, -3, modname);  //  _LOADED[modname] = new table.
    }
@@ -272,6 +272,12 @@ extern int luaL_ref(lua_State* L, int t)
       return LUA_REFNIL;  //  `nil' has a unique fixed reference
    }
    lua_rawgeti(L, t, FREELIST_REF);  //  get first free element
+   if (lua_isnil(L, -1)) {
+      // First use: claim slot 0 for the freelist so allocated references never alias FREELIST_REF.  Without this,
+      // 0-based objlen() hands out ref 0, which both corrupts the freelist and reads as "no reference" to callers.
+      lua_pushinteger(L, 0);
+      lua_rawseti(L, t, FREELIST_REF);
+   }
    ref = (int)lua_tointeger(L, -1);  //  ref = t[FREELIST_REF]
    lua_pop(L, 1);  //  remove it from stack
    if (ref != 0) {  // any free element?
@@ -303,7 +309,7 @@ extern void luaL_unref(lua_State* L, int t, int ref)
 //********************************************************************************************************************
 // Default allocator and panic function
 
-static int panic(lua_State* L)
+static int panic(lua_State *L)
 {
    CSTRING s = lua_tostring(L, -1);
    fputs("PANIC: unprotected error in call to Lua API (", stderr);
@@ -315,32 +321,30 @@ static int panic(lua_State* L)
 
 #ifdef LUAJIT_USE_SYSMALLOC
 
-static void* mem_alloc(void* ud, void* ptr, size_t osize, size_t nsize)
+static void * mem_alloc(void* ud, void* ptr, size_t osize, size_t nsize)
 {
-   (void)ud;
-   (void)osize;
    if (nsize == 0) {
       free(ptr);
       return nullptr;
    }
-   else {
-      return realloc(ptr, nsize);
-   }
+   else return realloc(ptr, nsize);
 }
 
-extern lua_State* luaL_newstate(void)
+extern lua_State * luaL_newstate(class extTiri *Script)
 {
-   lua_State* L = lua_newstate(mem_alloc, nullptr);
-   if (L) G(L)->panic = panic;
+   lua_State *L = lua_newstate(mem_alloc, nullptr);
+   if (L) {
+      L->script = Script;
+      G(L)->panic = panic;
+   }
    return L;
 }
 
 #else
 
-extern lua_State* luaL_newstate(class objScript *Script)
+extern lua_State * luaL_newstate(class extTiri *Script)
 {
-   lua_State* L;
-   L = lua_newstate(LJ_ALLOCF_INTERNAL, nullptr);
+   lua_State *L = lua_newstate(LJ_ALLOCF_INTERNAL, nullptr);
    L->script = Script;
    if (L) G(L)->panic = panic;
    return L;

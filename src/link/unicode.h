@@ -2,10 +2,15 @@
 
 #include <kotuku/main.h>
 
+#include <span>
+#include <string_view>
+
 int UTF8Copy(CSTRING String, STRING Dest, int Chars, int Size);
-uint32_t UTF8ReadValue(CSTRING String, int *Length);
+// Bounded input, including U+0000.  Invalid input returns zero and Length=1; empty input returns Length=0.
+uint32_t UTF8ReadValue(std::string_view String, int *Length);
 //CSTRING UTF8ValidEncoding(CSTRING String, CSTRING Encoding);
-int UTF8WriteValue(int Value, STRING String, int StringSize);
+// Writes one scalar value in 1-4 bytes.  Invalid values or insufficient capacity return zero without writing.
+int UTF8WriteValue(int Value, std::span<int8_t> Buffer);
 
 /*********************************************************************************************************************
 
@@ -20,6 +25,9 @@ cstr String: Pointer to a UTF-8 string.
 
 -RESULT-
 int: Returns the number of bytes used to create the UTF-8 character referred to by the String argument.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -46,6 +54,9 @@ int Offset: The character number to translate to a byte offset.
 
 -RESULT-
 int: Returns the byte offset of the character.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -74,6 +85,9 @@ cstr String: Pointer to a UTF-8 string.
 -RESULT-
 int: Returns the total number of characters used in the supplied UTF-8 string.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 [[nodiscard]] static inline int UTF8Length(CSTRING String)
@@ -100,6 +114,9 @@ int Offset: The byte offset that you need a character number for.
 
 -RESULT-
 int: Returns the number of the character at the given byte position.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -130,6 +147,9 @@ int Offset: The byte index from which the size of the previous character should 
 
 -RESULT-
 int: Returns the byte-length of the previous character.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 

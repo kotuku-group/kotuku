@@ -49,20 +49,20 @@ double DUNIT::px(class layout &Layout) const {
       // Note that this is line-height as dictated by the font metrics, not the actual line height on display.
       case DU::LINE_HEIGHT:      return std::trunc(value * Layout.m_font->metrics.LineSpacing);
       case DU::CHAR:             return std::trunc(value * Layout.m_font->zero_width); // Equivalent to CSS
-      case DU::VP_WIDTH:         return std::trunc(value * Layout.m_viewport->Parent->get<double>(FID_Width) * 0.01);
-      case DU::VP_HEIGHT:        return std::trunc(value * Layout.m_viewport->Parent->get<double>(FID_Height) * 0.01);
+      case DU::VP_WIDTH:         return std::trunc(value * Layout.m_viewport->Parent->get<double>(strhash("width")) * 0.01);
+      case DU::VP_HEIGHT:        return std::trunc(value * Layout.m_viewport->Parent->get<double>(strhash("height")) * 0.01);
       case DU::ROOT_FONT_SIZE:   return std::trunc(value * Layout.Self->FontSize); // Measured in 72DPI pixels
       case DU::ROOT_LINE_HEIGHT: return std::trunc(value * (Layout.Self->FontSize * 1.3)); // Guesstimate
 
       case DU::VP_MIN: {
-         auto w = std::trunc(value * Layout.m_viewport->Parent->get<double>(FID_Width));
-         auto h = std::trunc(value * Layout.m_viewport->Parent->get<double>(FID_Height));
+         auto w = std::trunc(value * Layout.m_viewport->Parent->get<double>(strhash("width")));
+         auto h = std::trunc(value * Layout.m_viewport->Parent->get<double>(strhash("height")));
          return std::min(w, h);
       }
 
       case DU::VP_MAX: {
-         auto w = std::trunc(value * Layout.m_viewport->Parent->get<double>(FID_Width));
-         auto h = std::trunc(value * Layout.m_viewport->Parent->get<double>(FID_Height));
+         auto w = std::trunc(value * Layout.m_viewport->Parent->get<double>(strhash("width")));
+         auto h = std::trunc(value * Layout.m_viewport->Parent->get<double>(strhash("height")));
          return std::max(w, h);
       }
 

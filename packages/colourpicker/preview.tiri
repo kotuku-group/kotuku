@@ -1,0 +1,767 @@
+-- "Palette in context" preview for the colour picker.  Each palette mode with a preview supplies a builder, which lays
+-- out the preview's vectors and registers each coloured one under a paint role, and a colour function, which maps the
+-- mode's palette roles to the paint roles.  The layout is fixed when the preview is created, and update() only
+-- changes colours.
+
+   import 'gui/colourpicker/colour', 'gui/colourpicker/palette'
+   import './parts'
+
+   namespace colourpicker_preview { }
+
+PREVIEW_HEIGHT <const> = 158
+MENU_HEIGHT    <const> = 22
+STATUS_HEIGHT  <const> = 18
+PAD            <const> = 10
+FACE_SERIF     <const> = 'Noto Serif'
+
+colourpicker_preview.HEIGHT = PREVIEW_HEIGHT
+
+----------------------------------------------------------------------------------------------------------------------
+
+WHITE <const> = { r = 1, g = 1, b = 1 }
+
+-- The hex value of an OKLCH colour table, clipped to sRGB per channel as on the wheel.
+
+function colourHex(S:table):str
+   r, g, b = colourmath.oklchToSrgb(S.l, S.c, S.h)
+   return colourmath.toHex(r, g, b)
+end
+
+-- White if it is legible on the colour, otherwise a dark tone of the colour's hue.
+
+function readableOn(S:table):str
+   r, g, b = colourmath.oklchToSrgb(S.l, S.c, S.h)
+   bkgd = { r = math.clamp(r, 0, 1), g = math.clamp(g, 0, 1), b = math.clamp(b, 0, 1) }
+   if colourmath.wcagContrast(WHITE, bkgd) >= 3 then return '#FFFFFF' end
+   return colourmath.toOklchString(0.2, math.min(S.c, 0.05), S.h)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Interface: a small mock application window.
+
+-- The paint colours, from the Interface roles.  Each role is used as a gui palette uses its field: Surface fills the
+-- window, Background the document area, Mid Tone the scrollbar track, Handle the scrollbar thumb, Border the
+-- separators and widget strokes and Inverse the window frame.  Selected Ink is drawn over Primary, and Success and
+-- Error mark the status bar.
+
+function interfaceColours(Roles:table):table
+   return {
+      surface     = colourHex(Roles.Surface),
+      background  = colourHex(Roles.Background),
+      mid         = colourHex(Roles['Mid Tone']),
+      border      = colourHex(Roles.Border),
+      ink         = colourHex(Roles.Ink),
+      inverse     = colourHex(Roles.Inverse),
+      primary     = colourHex(Roles.Primary),
+      selectedInk = colourHex(Roles['Selected Ink']),
+      accent      = colourHex(Roles.Accent),
+      accentText  = readableOn(Roles.Accent),
+      handle      = colourHex(Roles.Handle),
+      error       = colourHex(Roles.Error),
+      success     = colourHex(Roles.Success)
+   }
+end
+
+function buildInterface(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
+   vp, width, height, paint = Viewport, Width, Height, Paint
+   text = colourpicker_parts.text
+   baseline = colourpicker_parts.baseline
+   mono = colourpicker_parts.FACE_MONO
+   status_top = height - 1 - STATUS_HEIGHT
+
+   paint(vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+   }), 'fill', 'surface')
+
+   -- Document area, between the separators under the menu bar and over the status bar, with a scrollbar
+
+   paint(vp.new('VectorRectangle', {
+      x = 1, y = MENU_HEIGHT + 1, width = width - 2, height = status_top - MENU_HEIGHT - 1
+   }), 'fill', 'background')
+   paint(vp.new('VectorRectangle', { x = 1, y = MENU_HEIGHT, width = width - 2, height = 1 }), 'fill', 'border')
+   paint(vp.new('VectorRectangle', { x = 1, y = status_top, width = width - 2, height = 1 }), 'fill', 'border')
+
+   paint(vp.new('VectorRectangle', {
+      x = width - 1 - 8, y = MENU_HEIGHT + 1, width = 8, height = status_top - MENU_HEIGHT - 1
+   }), 'fill', 'mid')
+   paint(vp.new('VectorRectangle', {
+      x = width - 1 - 7, y = MENU_HEIGHT + 4, width = 6, height = 36, roundX = 3, roundY = 3
+   }), 'fill', 'handle')
+
+   -- Menu bar
+
+   menu_y = baseline(1, MENU_HEIGHT - 1, 10.5)
+   x = 1 + 8
+   for item in values(array<str> { 'File', 'Edit', 'View', 'Help' }) do
+      if item is 'View' then -- The pill is created first so that it sits behind its label
+         pill = paint(vp.new('VectorRectangle', {
+            x = x, y = math.floor((MENU_HEIGHT - 15) * 0.5) + 1, width = 1, height = 15, roundX = 2, roundY = 2
+         }), 'fill', 'primary')
+         label = paint(text(vp, { x = x + 6, y = menu_y, size = 10.5, string = item }), 'fill', 'selectedInk')
+         pill.width = math.ceil(label.textWidth) + 12
+         x += pill.width + 12
+      else
+         label = paint(text(vp, { x = x, y = menu_y, size = 10.5, string = item }), 'fill', 'ink')
+         x += math.ceil(label.textWidth) + 12
+      end
+   end
+
+   app = paint(text(vp, {
+      x = width - 9, y = menu_y, size = 9.5, face = mono, string = 'demo.app', align = 'right'
+   }), 'fill', 'ink')
+   app.opacity = 0.6
+
+   -- Body
+
+   left = 1 + PAD
+   top = MENU_HEIGHT + PAD
+   paint(text(vp, {
+      x = left, y = top + 15, size = 18, face = FACE_SERIF, string = 'Aa Bb Cc Dd'
+   }), 'fill', 'ink')
+
+   top += 23
+   line_y = top + 11
+   lead = paint(text(vp, {
+      x = left, y = line_y, size = 10.5, string = 'The quick brown fox jumps over '
+   }), 'fill', 'ink')
+   link_x = left + math.ceil(lead.textWidth)
+   link = paint(text(vp, { x = link_x, y = line_y, size = 10.5, string = 'the link' }), 'fill', 'primary')
+   paint(vp.new('VectorRectangle', {
+      x = link_x, y = line_y + 2, width = math.ceil(link.textWidth), height = 1
+   }), 'fill', 'primary')
+   paint(text(vp, {
+      x = link_x + math.ceil(link.textWidth), y = line_y, size = 10.5, string = '.'
+   }), 'fill', 'ink')
+
+   -- Buttons
+
+   top += 25
+   x = left
+   for def in values(array<table> {
+      { text = 'Primary', fill = 'primary', ink = 'selectedInk' },
+      { text = 'Cancel',  fill = 'surface', stroke = 'border', ink = 'ink' },
+      { text = 'Ghost',   stroke = 'primary', ink = 'primary' }
+   }) do
+      pad = def.stroke ? 9 : 10
+      btn = vp.new('VectorRectangle', { x = x + 0.5, y = top + 0.5, width = 1, height = 21, roundX = 3, roundY = 3 })
+      if def.fill then paint(btn, 'fill', def.fill) end
+      if def.stroke then
+         btn.strokeWidth = 1
+         paint(btn, 'stroke', def.stroke)
+      end
+
+      label = paint(text(vp, {
+         x = x + pad, y = baseline(top, 22, 10.5), size = 10.5, style = (def.fill is 'primary') ? 'Bold' : 'Regular',
+         string = def.text
+      }), 'fill', def.ink)
+
+      btn.width = math.ceil(label.textWidth) + (pad * 2) - 1
+      x += btn.width + 1 + 6
+   end
+
+   -- Badge and accent note
+
+   top += 30
+   badge = paint(vp.new('VectorRectangle', {
+      x = left, y = top + 1, width = 1, height = 14, roundX = 7, roundY = 7
+   }), 'fill', 'accent')
+
+   badge_label = paint(text(vp, {
+      x = left + 6, y = baseline(top + 1, 14, 9.5), size = 9.5, style = 'Bold', string = 'NEW'
+   }), 'fill', 'accentText')
+
+   badge.width = math.ceil(badge_label.textWidth) + 12
+   paint(text(vp, {
+      x = left + badge.width + 6, y = baseline(top, 16, 10.5), size = 10.5,
+      string = 'Accent used for tags and highlights.'
+   }), 'fill', 'ink')
+
+   -- Status bar
+
+   status_y = baseline(status_top + 1, STATUS_HEIGHT, 9.5)
+   paint(vp.new('VectorEllipse', {
+      cx = 1 + 8 + 3, cy = status_top + 1 + (STATUS_HEIGHT * 0.5), radius = 3
+   }), 'fill', 'success')
+
+   ready = paint(text(vp, {
+      x = 1 + 8 + 6 + 4, y = status_y, size = 9.5, face = mono, string = 'Ready'
+   }), 'fill', 'ink')
+
+   pos = paint(text(vp, {
+      x = ready.x + math.ceil(ready.textWidth) + 10, y = status_y, size = 9.5, face = mono, string = 'Ln 12, Col 34'
+   }), 'fill', 'ink')
+
+   pos.opacity = 0.7
+   paint(text(vp, {
+      x = pos.x + math.ceil(pos.textWidth) + 10, y = status_y, size = 9.5, face = mono, string = '1 error'
+   }), 'fill', 'error')
+
+   space = paint(text(vp, {
+      x = width - 9, y = status_y, size = 9.5, face = mono, string = 'sRGB', align = 'right'
+   }), 'fill', 'ink')
+
+   space.opacity = 0.7
+
+   frame = vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5, strokeWidth = 1
+   })
+
+   paint(frame, 'stroke', 'inverse')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Web Site: a page with a nav bar, a hero heading, a paragraph with highlighted text and a link, buttons and a
+-- bordered card.
+
+function webColours(Roles:table):table
+   button, link, highlight = Roles.Button, Roles.Link, Roles.Highlight
+   return {
+      background    = colourHex(Roles.Background),
+      text          = colourHex(Roles.Text),
+      heading       = colourHex(Roles.Heading),
+      link          = colourHex(link),
+      button        = colourHex(button),
+      buttonText    = readableOn(button),
+      border        = colourHex(Roles.Border),
+      highlight     = colourHex(highlight),
+      highlightText = readableOn(highlight)
+   }
+end
+
+function buildWeb(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
+   vp, width, height, paint = Viewport, Width, Height, Paint
+   text = colourpicker_parts.text
+   baseline = colourpicker_parts.baseline
+
+   paint(vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+   }), 'fill', 'background')
+
+   -- Nav bar
+
+   nav_y = baseline(1, MENU_HEIGHT, 10.5)
+   paint(text(vp, {
+      x = 1 + PAD, y = nav_y, size = 11, style = 'Bold', string = 'Northwind'
+   }), 'fill', 'heading')
+
+   x = width - 1 - PAD
+   for item in values(array<str> { 'Contact', 'Blog', 'Pricing', 'Docs' }) do
+      label = paint(text(vp, {
+         x = x, y = nav_y, size = 10, string = item, align = 'right'
+      }), 'fill', (item is 'Docs') ? 'link' : 'text')
+      x -= math.ceil(label.textWidth) + 12
+   end
+
+   paint(vp.new('VectorRectangle', {
+      x = 1, y = MENU_HEIGHT, width = width - 2, height = 1
+   }), 'fill', 'border')
+
+   -- Hero heading and paragraph.  The highlight is created first so that it sits behind its label.
+
+   left = 1 + PAD
+   top = MENU_HEIGHT + PAD
+   paint(text(vp, {
+      x = left, y = top + 15, size = 18, face = FACE_SERIF, string = 'Pages that read well'
+   }), 'fill', 'heading')
+
+   line_y = top + 34
+   lead = paint(text(vp, { x = left, y = line_y, size = 10.5, string = 'Fast, ' }), 'fill', 'text')
+   x = left + math.ceil(lead.textWidth)
+   mark = paint(vp.new('VectorRectangle', {
+      x = x - 1, y = line_y - 9, width = 1, height = 12, roundX = 2, roundY = 2
+   }), 'fill', 'highlight')
+   marked = paint(text(vp, { x = x, y = line_y, size = 10.5, string = 'accessible' }), 'fill', 'highlightText')
+   mark.width = math.ceil(marked.textWidth) + 2
+   x += math.ceil(marked.textWidth)
+   mid = paint(text(vp, { x = x, y = line_y, size = 10.5, string = ' sites. Read ' }), 'fill', 'text')
+   x += math.ceil(mid.textWidth)
+   link = paint(text(vp, { x = x, y = line_y, size = 10.5, string = 'the guide' }), 'fill', 'link')
+   paint(vp.new('VectorRectangle', {
+      x = x, y = line_y + 2, width = math.ceil(link.textWidth), height = 1
+   }), 'fill', 'link')
+   paint(text(vp, {
+      x = x + math.ceil(link.textWidth), y = line_y, size = 10.5, string = '.'
+   }), 'fill', 'text')
+
+   -- Buttons
+
+   top = line_y + 10
+   btn = paint(vp.new('VectorRectangle', {
+      x = left + 0.5, y = top + 0.5, width = 1, height = 21, roundX = 3, roundY = 3
+   }), 'fill', 'button')
+   label = paint(text(vp, {
+      x = left + 10, y = baseline(top, 22, 10.5), size = 10.5, style = 'Bold', string = 'Get started'
+   }), 'fill', 'buttonText')
+   btn.width = math.ceil(label.textWidth) + 19
+
+   outline = vp.new('VectorRectangle', {
+      x = left + btn.width + 7.5, y = top + 0.5, width = 1, height = 21, roundX = 3, roundY = 3, strokeWidth = 1
+   })
+   paint(outline, 'stroke', 'border')
+   label = paint(text(vp, {
+      x = outline.x + 9.5, y = baseline(top, 22, 10.5), size = 10.5, string = 'Learn more'
+   }), 'fill', 'link')
+   outline.width = math.ceil(label.textWidth) + 18
+
+   -- Bordered card with a highlighted tag
+
+   top += 30
+   card = vp.new('VectorRectangle', {
+      x = left + 0.5, y = top + 0.5, width = width - 2 - (PAD * 2) - 1, height = height - top - PAD - 1,
+      roundX = 4, roundY = 4, strokeWidth = 1
+   })
+   paint(card, 'stroke', 'border')
+
+   tag = paint(vp.new('VectorRectangle', {
+      x = left + 9, y = top + 8, width = 1, height = 14, roundX = 7, roundY = 7
+   }), 'fill', 'highlight')
+   tag_label = paint(text(vp, {
+      x = left + 15, y = baseline(top + 8, 14, 9.5), size = 9.5, style = 'Bold', string = 'NEW'
+   }), 'fill', 'highlightText')
+   tag.width = math.ceil(tag_label.textWidth) + 12
+   paint(text(vp, {
+      x = left + 9 + tag.width + 6, y = baseline(top + 7, 16, 11), size = 11, style = 'Bold',
+      string = 'Release notes'
+   }), 'fill', 'heading')
+   paint(text(vp, {
+      x = left + 9, y = top + 36, size = 10, string = 'Version 2.0 adds dark themes and is faster'
+   }), 'fill', 'text')
+
+   vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Code Theme: a highlighted snippet with line numbers, a selected line and an error.  Each line is a list of
+-- { text, role } tokens; a token without a role is plain text.
+
+CODE_SIZE   <const> = 10
+CODE_LINE   <const> = 14
+CODE_GUTTER <const> = 22
+
+CODE_LINES <const> = array<array> {
+   array<table> { { '-- Count the visible items', 'comment' } },
+   array<table> { { 'function', 'keyword' }, { ' ' }, { 'count', 'function' }, { '(Items:' }, { 'array', 'type' },
+      { '):' }, { 'num', 'type' } },
+   array<table> { { '   total = ' }, { '0', 'number' } },
+   array<table> { { '   ' }, { 'for', 'keyword' }, { ' item ' }, { 'in', 'keyword' }, { ' ' },
+      { 'values', 'function' }, { '(Items) ' }, { 'do', 'keyword' } },
+   array<table> { { '      ' }, { 'if', 'keyword' }, { ' item.shown ' }, { 'then', 'keyword' }, { ' total += ' },
+      { '1', 'number' }, { ' ' }, { 'end', 'keyword' } },
+   array<table> { { '   ' }, { 'end', 'keyword' } },
+   array<table> { { '   ' }, { 'return', 'keyword' }, { ' total * ' }, { '1.5', 'number' } },
+   array<table> { { 'end', 'keyword' } },
+   array<table> { { 'print', 'function' }, { '(' }, { "'Shown: '", 'string' }, { ' .. ' }, { 'count', 'function' },
+      { '(' }, { 'lst', 'error' }, { '))' } }
+}
+
+CODE_SELECTED <const> = 4 -- Index of the selected line
+
+function codeColours(Roles:table):table
+   comment = Roles.Comment
+   return {
+      background = colourHex(Roles.Background),
+      text       = colourHex(Roles.Text),
+      comment    = colourHex(comment),
+      lineNumber = colourmath.toOklchString(comment.l, comment.c, comment.h, 0.6),
+      keyword    = colourHex(Roles.Keyword),
+      string     = colourHex(Roles.String),
+      number     = colourHex(Roles.Number),
+      ['function'] = colourHex(Roles.Function),
+      type       = colourHex(Roles.Type),
+      error      = colourHex(Roles.Error),
+      selection  = colourHex(Roles.Selection)
+   }
+end
+
+-- A wavy underline from X to X + Width with its peaks at Y.
+
+function squiggle(X:num, Y:num, Width:num):str
+   seq = f'M {X} {Y + 2}'
+   x = X
+   up = true
+   while x < X + Width do
+      x += 2
+      seq ..= f' L {x} {up ? Y : (Y + 2)}'
+      up = not up
+   end
+   return seq
+end
+
+-- The advance of a monospaced character.  Every token of a code line starts at a character column, so this is all
+-- that is needed to place them.
+
+function monoAdvance(Viewport:obj, Size:num):num
+   probe = colourpicker_parts.text(Viewport, {
+      size = Size, face = colourpicker_parts.FACE_MONO, string = '0000000000'
+   })
+   advance = probe.textWidth / 10
+   probe.free()
+   return advance
+end
+
+-- Draw a line of { text, role } tokens from Left.  A token without a role is drawn in Default.  OnToken, if given,
+-- is called with the role, x, baseline and width of each token that is drawn.
+
+function tokenLine(Viewport:obj, Paint:func, Left:num, Y:num, Size:num, Advance:num, Line:array<any>, Default:str,
+   OnToken:func)
+   column = 0
+   for token in values(Line) do
+      str = token[0]
+      x = Left + (column * Advance)
+      if str.trim() != '' then
+         role = token[1] ?? Default
+         Paint(colourpicker_parts.text(Viewport, {
+            x = x, y = Y, size = Size, face = colourpicker_parts.FACE_MONO, string = str
+         }), 'fill', role)
+         if OnToken then OnToken(role, x, Y, math.ceil(#str * Advance)) end
+      end
+      column += #str
+   end
+end
+
+function buildCode(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
+   vp, width, height, paint = Viewport, Width, Height, Paint
+   text = colourpicker_parts.text
+   mono = colourpicker_parts.FACE_MONO
+
+   paint(vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+   }), 'fill', 'background')
+
+   advance = monoAdvance(vp, CODE_SIZE)
+   top = math.floor((height - (#CODE_LINES * CODE_LINE)) * 0.5)
+   left = 1 + CODE_GUTTER + 8
+
+   paint(vp.new('VectorRectangle', {
+      x = 1, y = top + (CODE_SELECTED * CODE_LINE), width = width - 2, height = CODE_LINE
+   }), 'fill', 'selection')
+
+   function underline(Role:str, X:num, Y:num, TokenWidth:num)
+      if Role is 'error' then
+         paint(vp.new('VectorPath', { sequence = squiggle(X, Y + 2, TokenWidth), strokeWidth = 1 }), 'stroke', 'error')
+      end
+   end
+
+   for i, line in CODE_LINES do
+      y = colourpicker_parts.baseline(top + (i * CODE_LINE), CODE_LINE, CODE_SIZE)
+      paint(text(vp, {
+         x = 1 + CODE_GUTTER, y = y, size = CODE_SIZE, face = mono, string = tostring(i + 1), align = 'right'
+      }), 'fill', 'lineNumber')
+      tokenLine(vp, paint, left, y, CODE_SIZE, advance, line, 'text', underline)
+   end
+
+   vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Data Vis.: a grouped bar chart and a line chart over a shared grid, with a legend of the six series.  The meta
+-- text reports how distinct the series are.
+
+SERIES_COUNT <const> = 6
+CHART_SIZE   <const> = 8.5
+
+BAR_VALUES <const> = array<array> { -- Per group, one value (0 - 100) per series
+   array<int> { 72, 55, 88, 40, 63, 30 },
+   array<int> { 58, 80, 46, 70, 35, 52 }
+}
+
+LINE_VALUES <const> = array<array> { -- Per series, one value per point
+   array<int> { 20, 34, 30, 52, 66 },
+   array<int> { 44, 40, 58, 50, 62 },
+   array<int> { 70, 64, 72, 82, 90 },
+   array<int> { 10, 22, 18, 26, 38 },
+   array<int> { 56, 48, 42, 36, 30 },
+   array<int> { 32, 54, 66, 60, 76 }
+}
+
+function seriesRole(Index:num):str
+   return f'series{Index}'
+end
+
+function datavisColours(Roles:table):table
+   result = {
+      background = colourHex(Roles.Background),
+      text       = colourHex(Roles.Text),
+      grid       = colourHex(Roles.Grid)
+   }
+   for i in {0 to SERIES_COUNT} do
+      result[seriesRole(i)] = colourHex(Roles[f'Series {i + 1}'])
+   end
+   return result
+end
+
+-- The least OKLab ΔE (x 100) between the series for normal vision and each simulated colour vision deficiency.
+
+function datavisMeta(Roles:table):str
+   series = array<table>
+   for i in {0 to SERIES_COUNT} do series.push(Roles[f'Series {i + 1}']) end
+   function delta(Kind:str):str
+      d = colourmath.minDistance(series, Kind)
+      return string.format('%.0f', d * 100)
+   end
+   return f'ΔE {delta(nil)} · P {delta("protanopia")} · D {delta("deuteranopia")} · T {delta("tritanopia")}'
+end
+
+function buildDatavis(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
+   vp, width, height, paint = Viewport, Width, Height, Paint
+   text = colourpicker_parts.text
+   mono = colourpicker_parts.FACE_MONO
+
+   paint(vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+   }), 'fill', 'background')
+
+   -- Legend
+
+   legend_y = 1 + PAD
+   x = 1 + PAD
+   for i in {0 to SERIES_COUNT} do
+      paint(vp.new('VectorRectangle', {
+         x = x, y = legend_y + 1, width = 8, height = 8, roundX = 2, roundY = 2
+      }), 'fill', seriesRole(i))
+      label = paint(text(vp, {
+         x = x + 11, y = legend_y + 8, size = 9.5, string = f'S{i + 1}'
+      }), 'fill', 'text')
+      x += 11 + math.ceil(label.textWidth) + 12
+   end
+
+   -- Grid, with the value labels on the left
+
+   chart_top = legend_y + 20
+   chart_bottom = height - 1 - PAD - 12
+   chart_left = 1 + PAD + 18
+   chart_right = width - 1 - PAD
+   chart_h = chart_bottom - chart_top
+
+   for v in values(array<int> { 0, 50, 100 }) do
+      y = math.round(chart_bottom - (chart_h * v / 100))
+      paint(vp.new('VectorRectangle', {
+         x = chart_left, y = y, width = chart_right - chart_left, height = 1
+      }), 'fill', 'grid')
+      paint(text(vp, {
+         x = chart_left - 4, y = y + 3, size = CHART_SIZE, face = mono, string = tostring(v), align = 'right'
+      }), 'fill', 'text')
+   end
+
+   -- Grouped bars in the left half
+
+   half = math.floor((chart_right - chart_left) * 0.5)
+   bar_w = math.floor((half - 30) / (SERIES_COUNT * #BAR_VALUES))
+   group_w = SERIES_COUNT * bar_w
+   group_gap = math.floor((half - (group_w * #BAR_VALUES)) / (#BAR_VALUES + 1))
+   x = chart_left + group_gap
+   for g, group in BAR_VALUES do
+      for i, v in group do
+         bar_h = math.round(chart_h * v / 100)
+         paint(vp.new('VectorRectangle', {
+            x = x + (i * bar_w), y = chart_bottom - bar_h, width = bar_w - 1, height = bar_h
+         }), 'fill', seriesRole(i))
+      end
+      paint(text(vp, {
+         x = x + (group_w * 0.5), y = chart_bottom + 11, size = CHART_SIZE, face = mono, string = f'Q{g + 1}',
+         align = 'horizontal'
+      }), 'fill', 'text')
+      x += group_w + group_gap
+   end
+
+   -- Lines in the right half
+
+   line_left = chart_left + half + 10
+   line_w = chart_right - line_left - 4
+   points = #LINE_VALUES[0]
+   for i, series in LINE_VALUES do
+      seq = ''
+      for p, v in series do
+         px = line_left + (line_w * p / (points - 1))
+         py = chart_bottom - (chart_h * v / 100)
+         seq ..= f'{(p is 0) ? "M" : "L"} {px} {py} '
+      end
+      paint(vp.new('VectorPath', {
+         sequence = seq, strokeWidth = 1.5, lineJoin = 'round', lineCap = 'round'
+      }), 'stroke', seriesRole(i))
+   end
+
+   vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Terminal: a shell session that uses the ANSI colours as programs do, the 16 colours as two rows of blocks, a
+-- selection and the cursor.
+
+TERM_SIZE <const> = 10
+TERM_LINE <const> = 13
+
+ANSI_NAMES <const> = array<str> { 'Black', 'Red', 'Green', 'Yellow', 'Blue', 'Magenta', 'Cyan', 'White' }
+
+PROMPT <const> = array<table> { { '~/kotuku', 'brightBlue' }, { ' $ ', 'brightGreen' } }
+
+-- A prompt followed by a command, in the foreground colour.
+
+function command(Text:str):array<table>
+   line = PROMPT.clone()
+   if Text then line.push({ Text }) end
+   return line
+end
+
+-- Each line is a list of tokens as for the Code Theme preview, or 'normal' or 'bright' for a row of colour blocks.
+
+TERM_LINES <const> = array<any> {
+   command('git status -s'),
+   array<table> { { ' M', 'red' }, { ' palette.tiri' } },
+   array<table> { { 'A ', 'green' }, { ' preview.tiri' } },
+   array<table> { { '??', 'brightRed' }, { ' notes.txt' } },
+   command('make test'),
+   array<table> { { 'PASS', 'green' }, { ' 41  ' }, { 'FAIL', 'red' }, { ' 1  ' }, { 'SKIP', 'yellow' }, { ' 2  ' },
+      { '(0.84s)', 'brightBlack' } },
+   array<table> { { 'info', 'blue' }, { ' 2 slow, see ' }, { 'test.log', 'cyan' }, { ' [' }, { 'perf', 'magenta' },
+      { ']' } },
+   'normal',
+   'bright',
+   command()
+}
+
+TERM_SELECTED <const> = 2 -- The line with the selection, and the columns that it covers
+TERM_SELECT_FROM <const> = 3
+TERM_SELECT_TO <const> = 15
+
+-- The paint role of an ANSI role name: 'Bright Red' is brightRed.
+
+function ansiKey(Name:str):str
+   if Name.startsWith('Bright ') then return 'bright' .. Name.sub(7) end
+   return Name.lower()
+end
+
+function terminalColours(Roles:table):table
+   result = {
+      background = colourHex(Roles.Background),
+      foreground = colourHex(Roles.Foreground),
+      cursor     = colourHex(Roles.Cursor),
+      selection  = colourHex(Roles.Selection)
+   }
+   for name in values(ANSI_NAMES) do
+      result[ansiKey(name)] = colourHex(Roles[name])
+      result[ansiKey('Bright ' .. name)] = colourHex(Roles['Bright ' .. name])
+   end
+   return result
+end
+
+function buildTerminal(Viewport:obj, Width:num, Height:num, Paint:func, Tokens:table)
+   vp, width, height, paint = Viewport, Width, Height, Paint
+
+   paint(vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5
+   }), 'fill', 'background')
+
+   advance = monoAdvance(vp, TERM_SIZE)
+   top = math.floor((height - (#TERM_LINES * TERM_LINE)) * 0.5)
+   left = 1 + PAD
+
+   paint(vp.new('VectorRectangle', {
+      x = left + (TERM_SELECT_FROM * advance), y = top + (TERM_SELECTED * TERM_LINE),
+      width = (TERM_SELECT_TO - TERM_SELECT_FROM) * advance, height = TERM_LINE
+   }), 'fill', 'selection')
+
+   block_w = math.floor((width - 2 - (PAD * 2) + 2) / 8) - 2
+   for i, line in TERM_LINES do
+      line_top = top + (i * TERM_LINE)
+      if line is <str> then
+         prefix = (line is 'bright') ? 'Bright ' : ''
+         for b, name in ANSI_NAMES do
+            paint(vp.new('VectorRectangle', {
+               x = left + (b * (block_w + 2)), y = line_top + 1, width = block_w, height = TERM_LINE - 2
+            }), 'fill', ansiKey(prefix .. name))
+         end
+      else
+         y = colourpicker_parts.baseline(line_top, TERM_LINE, TERM_SIZE)
+         tokenLine(vp, paint, left, y, TERM_SIZE, advance, line, 'foreground')
+      end
+   end
+
+   -- The cursor follows the last prompt
+
+   columns = 0
+   for token in values(PROMPT) do columns += #token[0] end
+   paint(vp.new('VectorRectangle', {
+      x = left + (columns * advance), y = top + ((#TERM_LINES - 1) * TERM_LINE) + 1, width = math.ceil(advance),
+      height = TERM_LINE - 2
+   }), 'fill', 'cursor')
+
+   vp.new('VectorRectangle', {
+      x = 0.5, y = 0.5, width = width - 1, height = height - 1, roundX = 5, roundY = 5,
+      stroke = 'oklch(0 0 0 / 0.12)', strokeWidth = 1
+   })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- The previews by palette mode.  A mode without an entry has no preview.  A preview with a `meta` function reports
+-- its own panel meta text from the roles.
+
+PREVIEWS <const> = {
+   interface = { build = buildInterface, colours = interfaceColours },
+   web       = { build = buildWeb, colours = webColours },
+   code      = { build = buildCode, colours = codeColours },
+   dataviz   = { build = buildDatavis, colours = datavisColours, meta = datavisMeta },
+   terminal  = { build = buildTerminal, colours = terminalColours }
+}
+
+@Doc(text=[[
+@desc Return true if the palette mode has a preview.
+]])
+colourpicker_preview.has = function(Mode:str):bool
+   return (Mode != nil) and (PREVIEWS[Mode] != nil)
+end
+
+@Doc(text=[[
+@desc Create the preview of a palette mode.
+@input Target viewport
+@input Options: x, y, width, mode (a palette mode ID), tokens
+@result Table with `viewport`, `update(Palette)` and `free()`, or nil if the mode has no preview.  update() recolours
+the preview from the palette's roles and sets `meta` to the text for the panel meta, or nil for the default.  free()
+removes the preview's viewport.
+]])
+colourpicker_preview.new = function(Target:obj!, Options:table!):table
+   def = PREVIEWS[Options.mode ?? '']
+   def ?! return nil
+
+   vp = Target.new('VectorViewport', {
+      x = Options.x, y = Options.y, width = Options.width, height = PREVIEW_HEIGHT
+   })
+   self = { viewport = vp, mode = Options.mode }
+
+   -- Every coloured vector is registered under a paint role so that update() can recolour it.  Each entry is
+   -- { vector, field, role }.
+
+   paints = array<table>
+   function paint(Vector:obj, Field:str, Role:str):obj
+      paints.push({ vector = Vector, field = Field, role = Role })
+      return Vector
+   end
+
+   def.build(vp, Options.width, PREVIEW_HEIGHT, paint, Options.tokens)
+
+   self.update = function(Palette:table!)
+      roles = colourpalette.roles(Palette)
+      colours = def.colours(roles)
+      for p in values(paints) do
+         p.vector[p.field] = colours[p.role]
+      end
+      if def.meta then self.meta = def.meta(roles) end
+   end
+
+   self.free = function()
+      paints.clear()
+      vp.free()
+   end
+
+   return self
+end

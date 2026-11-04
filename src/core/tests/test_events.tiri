@@ -1,0 +1,55 @@
+-- Event dispatch must not mistake a new or idle subscription for an already notified listener.
+
+function broadcast(Name:str!)
+   -- Assemble the event ID as two words to preserve all 64 bits.
+   local event = array<int, 2>
+   event[0] = Name.hash()
+   event[1] = (EVG_USER << 24) | (('dispatch_test').hash() & 0xffffff)
+   check mSys.BroadcastEvent(event, 8)
+   processing.sleep(0)
+end
+
+@Test function IdleSubscriberSurvivesCounterWrap()
+   local calls = 0
+   local _, handle = check subscribeEvent('user.dispatch_test.idle', function() calls++ end)
+   defer unsubscribeEvent(handle) end
+
+   broadcast('idle')
+   assert(calls is 1, 'The first event must reach the subscriber')
+   for i in {0 to 255} do broadcast('other') end
+   broadcast('idle')
+   assert(calls is 2, 'An idle subscriber must receive its next event after 256 dispatches')
+end
+
+@Test function NewSubscriptionsReceiveTheirFirstEvent()
+   for i in {0 to 512} do
+      local calls = 0
+      local _, handle = check subscribeEvent('user.dispatch_test.churn', function() calls++ end)
+      defer unsubscribeEvent(handle) end
+      broadcast('churn')
+      assert(calls is 1, f'New subscription {i} must receive its first event exactly once')
+   end
+end
+
+@Test function RemovalDuringDispatchDoesNotRepeatListeners()
+   local survivor_calls = 0
+   local removed_calls = 0
+   local first_calls = 0
+   local _, survivor = check subscribeEvent('user.dispatch_test.removal', function() survivor_calls++ end)
+   defer unsubscribeEvent(survivor) end
+   local removed
+   _, removed = check subscribeEvent('user.dispatch_test.removal', function()
+      removed_calls++
+      unsubscribeEvent(removed)
+      removed = nil
+   end)
+   defer if removed then unsubscribeEvent(removed) end end
+   local _, first = check subscribeEvent('user.dispatch_test.removal', function() first_calls++ end)
+   defer unsubscribeEvent(first) end
+
+   broadcast('removal')
+   broadcast('removal')
+   assert(removed_calls is 1, 'A removed listener must not be called again')
+   assert(first_calls is 2, 'Restarting dispatch must not repeat a previously notified listener')
+   assert(survivor_calls is 2, 'Restarting dispatch must notify the surviving listener exactly once per event')
+end

@@ -1,6 +1,6 @@
 // TODO: These colour maps should be reduced from FRGB to RGB16 to cut resource usage by half.
 
-ankerl::unordered_dense::map<std::string, std::array<FRGB, 256>> glColourMaps = {
+ColourMapTable glColourMaps = {
   { "cmap:rocket", {{
     { 0.01060815, 0.01808215, 0.10018654 },
     { 0.01428972, 0.02048237, 0.10374486 },

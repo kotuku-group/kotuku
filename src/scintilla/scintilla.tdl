@@ -2,7 +2,9 @@
 
 module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, timestamp=20240611 }, function()
   c_include("<kotuku/modules/display.h>",
-  "<kotuku/modules/font.h>")
+  "<kotuku/modules/font.h>",
+  "<kotuku/modules/vector.h>",
+  "<kotuku/modules/xml.h>")
 
   restrict(function()
     loadFile(glPath .. 'common-graphics.tdl')
@@ -20,7 +22,7 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     ERRORLIST  = "10: ErrorList",
     MAKEFILE   = "11: Makefile",
     BATCH      = "12: Batch",
-    TIRI      = "15: Tiri",
+    TIRI       = "15: Tiri",
     DIFF       = "16: Diff",
     PASCAL     = "18: Pascal",
     RUBY       = "22: Ruby",
@@ -33,28 +35,82 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     REBOL      = "71: Rebol"
   })
 
+  constants("SCMK", { type="int", comment="Marker symbols for DefineMarker(), as defined by the Scintilla library." }, {
+    CIRCLE                 = "0: A filled circle.",
+    ROUND_RECT             = "1: A rectangle with rounded corners.",
+    ARROW                  = "2: An arrow that points right.",
+    SMALL_RECT             = "3: A small rectangle.",
+    SHORT_ARROW            = "4: A short arrow that points right.",
+    EMPTY                  = "5: Invisible.  Use this to reserve a marker number without drawing anything.",
+    ARROW_DOWN             = "6: An arrow that points down.",
+    MINUS                  = "7: A minus sign.",
+    PLUS                   = "8: A plus sign.",
+    VLINE                  = "9: A vertical line through the line height.",
+    LCORNER                = "10: A corner that joins a vertical line from above to the right.",
+    TCORNER                = "11: A vertical line with a branch to the right.",
+    BOX_PLUS               = "12: A plus sign in a box.",
+    BOX_PLUS_CONNECTED     = "13: A plus sign in a box, with a connecting vertical line.",
+    BOX_MINUS              = "14: A minus sign in a box.",
+    BOX_MINUS_CONNECTED    = "15: A minus sign in a box, with a connecting vertical line.",
+    LCORNER_CURVE          = "16: A curved corner that joins a vertical line from above to the right.",
+    TCORNER_CURVE          = "17: A vertical line with a curved branch to the right.",
+    CIRCLE_PLUS            = "18: A plus sign in a circle.",
+    CIRCLE_PLUS_CONNECTED  = "19: A plus sign in a circle, with a connecting vertical line.",
+    CIRCLE_MINUS           = "20: A minus sign in a circle.",
+    CIRCLE_MINUS_CONNECTED = "21: A minus sign in a circle, with a connecting vertical line.",
+    BACKGROUND             = "22: Fills the background of the line's text with the marker's background colour.",
+    DOTS                   = "23: Three dots.",
+    ARROWS                 = "24: Three arrows that point right.",
+    FULL_RECT              = "26: Fills the margin of the line with the marker's background colour.",
+    LEFT_RECT              = "27: Fills a narrow band at the left of the margin with the marker's background colour.",
+    UNDERLINE              = "29: Underlines the line's text with the marker's background colour."
+  })
+
+  enums("SCMG", { type="int", start=0, comment="Margin identifiers, as reported to the MarginClick callback." },
+    "LINE_NUMBERS: The line number margin.",
+    "SYMBOLS: The symbol margin, which shows the markers that are added with AddMarker().",
+    "FOLDING: The fold margin, which shows the fold markers.")
+
+  enums("SCAC", { type="int", start=1, comment="Events reported to the CompletionCallback." },
+    "REQUEST: The user pressed Ctrl+Space to request completion candidates.",
+    "CHAR_ADDED: A character has been typed into the document.  The Value is its Unicode code point.",
+    "SELECTED: A completion candidate has been accepted.  The Text is the candidate, and the Position is the start of the word that it replaces.",
+    "CANCELLED: The completion list has closed without a candidate being accepted.",
+    "CALL_TIP_CLICK: The call tip has been clicked.  The Value is 1 for the up arrow, 2 for the down arrow and 0 elsewhere.")
+
+  flags("SCACF", { comment="Options for ShowCompletions()." },
+    "IGNORE_CASE: Candidates are matched to the typed prefix without regard to case.",
+    "CHOOSE_SINGLE: If there is only one candidate, it is inserted immediately and no list is shown.",
+    "DROP_REST_OF_WORD: Accepting a candidate also replaces the word characters that follow the cursor.")
+
+  enums("SCPOP", { type="int", start=0, comment="Identifies the code assistance pop-up that is active." },
+    "NONE: No pop-up is active.",
+    "COMPLETIONS: The completion list is active.",
+    "CALL_TIP: The call tip is active.")
+
   flags("SCIF", { comment="Optional flags." },
-     "DISABLED: Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.",
+     "DISABLED:     Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.",
      "DETECT_LEXER: Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.",
-     "EDIT: Must be defined if the document is to be editable via user input.",
-     "EXT_PAGE: Extends the length of the document by one blank page.  This is a visual effect that only has an impact when the user scrolls to the end of the document.")
+     "EDIT:         Must be defined if the document is to be editable via user input.  Without it, the user can navigate and select, but edits are refused and reported as SEF::FAIL_RO.  The API can modify the document regardless.",
+     "EXT_PAGE:     Extends the length of the document by one blank page.  This is a visual effect that only has an impact when the user scrolls to the end of the document.")
    -- OVERWRITE
    -- AREA_SELECTED
    -- SYS_KEYS Support CTRL-C, CTRL-V etc?
 
   flags("SEF", { comment="Flags for EventCallback and EventFlags" },
-     "MODIFIED: The content has changed to a modified state, i.e. the user has made an edit.  The modified state will remain until the content is saved.",
+     "MODIFIED:   The content has changed to a modified state, i.e. the user has made an edit.  The modified state will remain until the content is saved.",
      "CURSOR_POS: The cursor position has changed.",
-     "FAIL_RO: User attempt to edit read-only content.",
-     "NEW_CHAR: At least one new character has been inserted.")
+     "FAIL_RO:    User attempt to edit read-only content.",
+     "NEW_CHAR:   At least one new character has been inserted.",
+     "FAIL_CLIPBOARD: A cut, copy or paste failed because the clipboard could not be read or written.")
 
   flags("STF", { comment="Scintilla search flags." },
-    "CASE: Case sensitive search.",
-    "MOVE_CURSOR: The cursor is moved to the discovered string.  If not set, the string is auto-selected.",
+    "CASE:           Case sensitive search.",
+    "MOVE_CURSOR:    The cursor is moved to the discovered string.  If not set, the string is auto-selected.",
     "SCAN_SELECTION: Limit search to within the user's current selection.",
-    "BACKWARDS: Search backwards.",
-    "EXPRESSION: Search text is a regular expression.",
-    "WRAP: Wrap search at the end of the document.")
+    "BACKWARDS:      Search backwards.",
+    "EXPRESSION:     Search text is a regular expression.",
+    "WRAP:           Wrap search at the end of the document.")
 
   methods("scintilla", "Sci", {
     { id=1,  name="SetFont" },
@@ -68,42 +124,52 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=9,  name="TrimWhitespace" },
     { id=10, name="GetPos" },
     { id=11, name="ReportEvent" },
-    { id=12, name="ScrollToPoint" }
+    { id=12, name="ScrollToPoint" },
+    { id=13, name="Repaint" },
+    { id=14, name="DefineMarker" },
+    { id=15, name="AddMarker" },
+    { id=16, name="RemoveMarker" },
+    { id=17, name="GetMarkers" },
+    { id=18, name="ToggleFold" },
+    { id=19, name="ShowCompletions" },
+    { id=20, name="ShowCallTip" },
+    { id=21, name="HidePopups" }
   })
 
-  class("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx" }, [[
-    obj(Font) Font             # Font to use for the text
-    cstr Path                  # Source text file
-    int(SEF) EventFlags        # SEF flags.  Indicates the events that will be reported.
-    oid Surface                # The object that should be rendered to
-    int(SCIF) Flags            # Optional flags
-    oid Focus
-    int Visible                # TRUE if the text is visible
-    int LeftMargin             # Size of the left margin
-    int RightMargin            # Size of the right margin
-    struct(RGB8) LineHighlight # Background colour for the current line of the cursor
-    struct(RGB8) SelectFore    # Default colour for text highlighting (foreground)
-    struct(RGB8) SelectBkgd    # Default colour for text highlighting (background)
-    struct(RGB8) BkgdColour    # Colour for text background
-    struct(RGB8) CursorColour  # The colour of the cursor
-    struct(RGB8) TextColour    # The colour of foreground text
-    int CursorRow              # Current cursor row
-    int CursorCol              # Current cursor column
-    int(SCLEX) Lexer           # Chosen lexer
-    int Modified               # TRUE if the document has been modified since last save.
+  klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx", extended=true }, [[
+    string Face                  # Font family used for all text styles
+    string Path                  # Source text file
+    int(SEF) EventFlags          # SEF flags.  Indicates the events that will be reported.
+    int(SCIF) Flags              # Optional flags
+    obj(VectorViewport) Viewport # The viewport that will host the editor
+    obj(VectorViewport) Focus    # Monitor this viewport for focus events
+    obj(VectorViewport) View     # An internally created viewport that clips the visible content
+    obj(VectorViewport) Page     # An internally created viewport that represents the document extent
+    int LeftMargin               # Size of the left margin
+    int RightMargin              # Size of the right margin
+    struct(RGB8) LineHighlight   # Background colour for the current line of the cursor
+    struct(RGB8) SelectFore      # Default colour for text highlighting (foreground)
+    struct(RGB8) SelectBkgd      # Default colour for text highlighting (background)
+    struct(RGB8) BkgdColour      # Colour for text background
+    struct(RGB8) CursorColour    # The colour of the cursor
+    struct(RGB8) TextColour      # The colour of foreground text
+    int CursorRow                # Current cursor row
+    int CursorCol                # Current cursor column
+    int(SCLEX) Lexer             # Chosen lexer
+    int Modified                 # TRUE if the document has been modified since last save.
+    int FontSize                 # Font em size in pixels
   ]])
 
   methods("scintillasearch", "Ss", {
-    { id=1, name="Next" },
-    { id=2, name="Prev" },
-    { id=3, name="Find" }
+    { id=1, name="Find" }
   })
 
-  class("ScintillaSearch", { comment="Simple search for Scintilla", src="class_scintilla_search.cxx" }, [[
-    obj(Scintilla) Scintilla  # The targeted Scintilla object.
-    cstr Text       # The text being searched for.
-    int(STF) Flags  # Optional flags affecting the search.
-    int Start       # Start of the current/most recent selection
-    int End         # End of the current/most recent selection
+  klass("ScintillaSearch", { comment="Simple search for Scintilla", src="class_scintilla_search.cxx",
+    output="class_scintilla_search_def.cxx", extended=true }, [[
+    obj(Scintilla) Scintilla     # The targeted Scintilla object.
+    string Text                  # The text being searched for.
+    int(STF) Flags               # Optional flags affecting the search.
+    int Start                    # Start of the most recent match
+    int End                      # End of the most recent match
   ]])
 end)

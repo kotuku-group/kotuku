@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string>
+#include <utility>
 
 #define lj_load_c
 #define LUA_CORE
@@ -21,9 +22,11 @@
 #include "lj_frame.h"
 #include "lj_vm.h"
 #include "../parser/lexer.h"
+#include "../parser/parser_diagnostics.h"
 #include "lj_bcdump.h"
 #include "../parser/parser.h"
 #include "../../defs.h"
+#include "load.h"
 
 //********************************************************************************************************************
 // Load Lua source code and bytecode
@@ -52,17 +55,57 @@ static TValue * cpparser(lua_State *L, lua_CFunction dummy, APTR ud)
 // Stack-allocated C++ objects with non-trivial destructors would leak their internal allocations (bc_stack,
 // vstack) when a parse error occurs.
 
-extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
+static int load(lua_State *Lua, std::string_view Source, CSTRING SourceName, BytecodeLoadMetadata *Metadata,
+   BytecodeLoadPolicy Policy = BytecodeLoadPolicy::Install, BytecodePayloadKind Kind = BytecodePayloadKind::Complete)
 {
+   if (Metadata) *Metadata = {};
+
+   if (Lua->parser_diagnostics) {
+      delete Lua->parser_diagnostics;
+      Lua->parser_diagnostics = nullptr;
+   }
+
    auto *ls = new LexState(Lua, Source, SourceName, std::nullopt);
+   ls->bytecode_load_policy = Policy;
+   ls->bytecode_payload_kind = Kind;
 
    // Set diagnose mode if enabled - this allows lexer to collect errors instead of throwing
 
-   auto *prv = (prvTiri *)Lua->script->ChildPrivate;
-   if ((prv->JitOptions & JOF::DIAGNOSE) != JOF::NIL) ls->diagnose_mode = true;
-   prv->CapturedVariables.clear();  // Clear previous captures before new parse
+   if ((Lua->script->JitOptions & JOF::DIAGNOSE) != JOF::NIL) ls->diagnose_mode = true;
+   Lua->script->CapturedVariables.clear();  // Clear previous captures before new parse
 
+   // Module captures belong to the root lexer.  Restore the caller's capture before deleting that lexer, including
+   // after Windows SEH, which skips parser-local destructors.  Nested bytecode loads retain the enclosing capture.
+
+   auto *saved_capture = Lua->cache_manifest_capture;
    auto status = lj_vm_cpcall(Lua, nullptr, ls, cpparser); // Call the parser
+   Lua->cache_manifest_capture = saved_capture;
+
+   BytecodeLoadMetadata completed;
+   if (not status and Metadata and ls->is_bytecode) {
+      completed.ImportedModules = std::move(ls->bytecode_import_module_records);
+      completed.FragmentReferences = std::move(ls->bytecode_fragment_references);
+      completed.Sources.reserve(ls->compilation_sources.size());
+      for (size_t i = 0; i < ls->compilation_sources.size(); ++i) {
+         const auto &source = ls->compilation_sources[i];
+         tiri::import_cache::SourceDescriptor descriptor;
+         descriptor.ResolvedPath = source.canonical_path;
+         descriptor.Filename = source.display_filename;
+         descriptor.DeclaredNamespace = source.declared_namespace;
+         descriptor.FirstLine = source.first_line.lineNumber();
+         descriptor.TotalLines = source.total_lines.lineNumber();
+         descriptor.ImportLine = source.import_line.lineNumber();
+         if (source.parent < i) {
+            descriptor.ParentResolvedPath = ls->compilation_sources[source.parent].canonical_path;
+         }
+         completed.Sources.push_back(std::move(descriptor));
+      }
+      completed.Package = std::move(ls->bytecode_package_identity);
+      completed.CompatibilityManifest.assign((const char *)ls->bytecode_compatibility_manifest.data(),
+         ls->bytecode_compatibility_manifest.size());
+      completed.Operations = ls->bytecode_load_operations;
+      completed.Bytecode = true;
+   }
 
    // Cleanup any pending import lexers left behind if parsing was interrupted by SEH
    for (void *lex : Lua->pending_import_lexers) {
@@ -71,8 +114,26 @@ extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
    Lua->pending_import_lexers.clear();
 
    delete ls;  // Manual cleanup required - SEH doesn't call C++ destructors
+   if (not status and Metadata) *Metadata = std::move(completed);
    lj_gc_check(Lua);
    return status;
+}
+
+extern int lua_load(lua_State *Lua, std::string_view Source, CSTRING SourceName)
+{
+   return load(Lua, Source, SourceName, nullptr);
+}
+
+extern int lj_load_with_bytecode_metadata(lua_State *Lua, std::string_view Source, CSTRING SourceName,
+   BytecodeLoadMetadata &Metadata, BytecodePayloadKind Kind)
+{
+   return load(Lua, Source, SourceName, &Metadata, BytecodeLoadPolicy::Install, Kind);
+}
+
+extern int lj_validate_bytecode(lua_State *Lua, std::string_view Source, CSTRING SourceName,
+   BytecodeLoadMetadata &Metadata, BytecodePayloadKind Kind)
+{
+   return load(Lua, Source, SourceName, &Metadata, BytecodeLoadPolicy::ValidateOnly, Kind);
 }
 
 //********************************************************************************************************************

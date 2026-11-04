@@ -1,0 +1,267 @@
+-- $TIRI
+-- Tests for SVG pattern preserveAspectRatio support, attribute inheritance through href and SVG export.
+
+   include 'svg', 'vector', 'display'
+   module display as mGfx
+
+glFiles = array<str>
+
+@AfterAll function removeFiles()
+   for path in values(glFiles) do
+      mSys.DeleteFile(path)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function newBitmap(Width:num, Height:num):obj
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function drawScene(Scene:obj, Bitmap:obj):num
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function isRed(Bitmap, X, Y)
+   p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return (p.red > 200) and (p.green < 50) and (p.blue < 50)
+end
+
+function isGreen(Bitmap, X, Y)
+   p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return (p.red < 50) and (p.green > 100) and (p.blue < 50)
+end
+
+function isBlack(Bitmap, X, Y)
+   p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return (p.red < 50) and (p.green < 50) and (p.blue < 50)
+end
+
+function newScene(Width:num, Height:num):obj
+   scene = obj.new('VectorScene', { pageWidth=Width, pageHeight=Height })
+   scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   return scene
+end
+
+-- Renders a document consisting of the given pattern definitions and a single consumer rectangle filled with the
+-- pattern referenced by FillID.
+
+function renderPatterns(Defs:str, FillID:str, Width:num, Height:num):<obj, obj, num>
+   doc = f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ' ..
+      f'width="{Width}" height="{Height}"><defs>{Defs}</defs>' ..
+      f'<rect x="0" y="0" width="{Width}" height="{Height}" fill="url(#{FillID})"/></svg>'
+
+   scene = newScene(Width, Height)
+   obj.new('svg', { target=scene, statement=doc })
+   bmp = newBitmap(Width, Height)
+   hash = drawScene(scene, bmp)
+   return scene, bmp, hash
+end
+
+function findPattern(Scene:obj, Name:str):obj
+   err, pattern = Scene.mtFindDef(Name)
+   assert(err is ERR_Okay, f'Pattern "{Name}" should be registered with the scene')
+   return pattern
+end
+
+-- A user-space 100x50 tile with a square 10x10 viewbox.  The content has a red upper half and a green lower half.
+
+function squarePattern(ID:str, Attribs:str):str
+   return f'<pattern id="{ID}" patternUnits="userSpaceOnUse" x="0" y="0" width="100" height="50" ' ..
+      f'viewBox="0 0 10 10" {Attribs}>' ..
+      '<rect x="0" y="0" width="10" height="5" fill="rgb(255,0,0)"/>' ..
+      '<rect x="0" y="5" width="10" height="5" fill="rgb(0,160,0)"/></pattern>'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DefaultAndNoneFitting()
+   scene, bmp = renderPatterns(squarePattern('p', ''), 'p', 100, 50)
+   assert(findPattern(scene, 'p').aspectRatio is ARF_MEET|ARF_X_MID|ARF_Y_MID, 'Default should be xMidYMid meet')
+   assert(isBlack(bmp, 15, 10) and isRed(bmp, 50, 10) and isGreen(bmp, 50, 40) and isBlack(bmp, 85, 10),
+      'Default fitting should centre 50x50 content')
+
+   scene, bmp = renderPatterns(squarePattern('p', 'preserveAspectRatio="none"'), 'p', 100, 50)
+   assert(isRed(bmp, 5, 10) and isRed(bmp, 95, 10) and isGreen(bmp, 95, 40), 'none should stretch the content')
+end
+
+@Test function SliceAndAlignment()
+   scene, bmp = renderPatterns(squarePattern('p', 'preserveAspectRatio="xMidYMin slice"'), 'p', 100, 50)
+   assert(isRed(bmp, 50, 10) and isRed(bmp, 50, 40), 'yMin slice should show the upper half only')
+
+   scene, bmp = renderPatterns(squarePattern('p', 'preserveAspectRatio="xMidYMax slice"'), 'p', 100, 50)
+   assert(isGreen(bmp, 50, 10) and isGreen(bmp, 50, 40), 'yMax slice should show the lower half only')
+
+   scene, bmp = renderPatterns(squarePattern('p', 'preserveAspectRatio="xMaxYMid meet"'), 'p', 100, 50)
+   assert(isBlack(bmp, 25, 10) and isRed(bmp, 75, 10), 'xMax meet should align the content to the right')
+end
+
+@Test function AlignmentOnlyImpliesMeet()
+   scene, bmp = renderPatterns(squarePattern('p', 'preserveAspectRatio="xMinYMin"'), 'p', 100, 50)
+   assert(findPattern(scene, 'p').aspectRatio is ARF_MEET|ARF_X_MIN|ARF_Y_MIN, 'xMinYMin should imply meet')
+   assert(isRed(bmp, 25, 10) and isBlack(bmp, 75, 10), 'xMinYMin should not stretch the content')
+end
+
+@Test function InvalidValueUsesDefault()
+   scene, bmp = renderPatterns(squarePattern('p', 'preserveAspectRatio="bogus"'), 'p', 100, 50)
+   assert(findPattern(scene, 'p').aspectRatio is ARF_MEET|ARF_X_MID|ARF_Y_MID, 'Invalid values should use the default')
+   assert(isBlack(bmp, 15, 10) and isRed(bmp, 50, 10), 'Invalid values should render with the default fitting')
+end
+
+@Test function BoundingBoxTilesHonourViewboxFitting()
+   defs = '<pattern id="p" patternUnits="objectBoundingBox" x="0" y="0" width="1" height="1" viewBox="0 0 10 10">' ..
+      '<rect x="0" y="0" width="10" height="10" fill="rgb(255,0,0)"/></pattern>'
+
+   scene, bmp = renderPatterns(defs, 'p', 100, 50)
+   assert(isBlack(bmp, 15, 25) and isRed(bmp, 50, 25) and isBlack(bmp, 85, 25),
+      'objectBoundingBox tiles should not force stretching of an explicit viewBox')
+end
+
+@Test function NoViewboxIgnoresAspectRatio()
+   defs = '<pattern id="p" patternUnits="objectBoundingBox" patternContentUnits="objectBoundingBox" ' ..
+      'width="1" height="1" preserveAspectRatio="xMaxYMax slice">' ..
+      '<rect x="0" y="0" width="0.5" height="0.5" fill="rgb(255,0,0)"/></pattern>'
+
+   scene, bmp = renderPatterns(defs, 'p', 100, 50)
+   assert(isRed(bmp, 45, 20) and isBlack(bmp, 55, 20) and isBlack(bmp, 45, 30),
+      'Bounding-box content without a viewBox should stretch independently on each axis')
+   assert(findPattern(scene, 'p').viewport.viewWidth is 0, 'No synthetic viewbox should be configured')
+end
+
+@Test function MixedUnitsUseConsumerBoundingBox()
+   defs = '<pattern id="p" patternUnits="userSpaceOnUse" patternContentUnits="objectBoundingBox" ' ..
+      'x="0" y="0" width="100" height="50"><rect x="0" y="0" width="0.25" height="0.25" fill="rgb(255,0,0)"/></pattern>'
+
+   scene, bmp = renderPatterns(defs, 'p', 200, 100)
+   assert(isRed(bmp, 45, 20) and isRed(bmp, 145, 70), 'Content should be 50x25 within every tile')
+   assert(isBlack(bmp, 55, 20) and isBlack(bmp, 45, 30), 'Content should be relative to the consumer bounding box')
+end
+
+@Test function ExplicitUnitViewboxIndependentOfAttributeOrder()
+   content = '<rect x="0" y="0" width="1" height="1" fill="rgb(255,0,0)"/></pattern>'
+   before = '<pattern id="p" patternUnits="userSpaceOnUse" width="100" height="50" ' ..
+      'patternContentUnits="objectBoundingBox" viewBox="0 0 1 1">' .. content
+   after = '<pattern id="p" patternUnits="userSpaceOnUse" width="100" height="50" ' ..
+      'viewBox="0 0 1 1" patternContentUnits="objectBoundingBox">' .. content
+
+   for _, defs in { before, after } do
+      scene, bmp = renderPatterns(defs, 'p', 100, 50)
+      assert(isBlack(bmp, 15, 25) and isRed(bmp, 50, 25) and isBlack(bmp, 85, 25),
+         'An explicit 0 0 1 1 viewBox should be fitted with meet')
+      pattern = findPattern(scene, 'p')
+      assert((pattern.viewport.viewWidth is 1) and (pattern.viewport.viewHeight is 1),
+         'Rendering should preserve the configured viewBox')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Inheritance through href.  The base pattern aligns its content to the left of each tile.
+
+glBase = '<pattern id="base" patternUnits="userSpaceOnUse" x="0" y="0" width="100" height="50" ' ..
+   'viewBox="0 0 10 10" preserveAspectRatio="xMinYMid meet">' ..
+   '<rect x="0" y="0" width="10" height="10" fill="rgb(255,0,0)"/></pattern>'
+
+@Test function InheritsFromReference()
+   scene, bmp = renderPatterns(glBase .. '<pattern id="p" href="#base"/>', 'p', 100, 50)
+   assert(isRed(bmp, 25, 25) and isBlack(bmp, 75, 25), 'Referenced viewBox and alignment should be inherited')
+end
+
+@Test function LocalAttributesWinRegardlessOfOrder()
+   for _, defs in {
+      '<pattern id="p" href="#base" preserveAspectRatio="xMaxYMid meet"/>',
+      '<pattern id="p" preserveAspectRatio="xMaxYMid meet" href="#base"/>'
+   } do
+      scene, bmp = renderPatterns(glBase .. defs, 'p', 100, 50)
+      assert(isBlack(bmp, 25, 25) and isRed(bmp, 75, 25), 'Local preserveAspectRatio should take precedence')
+   end
+end
+
+@Test function ViewboxAndAspectRatioResolveIndependently()
+   -- The local viewBox (-10 0 20 20) is combined with the inherited xMinYMid alignment.  The 10x10 red square then
+   -- maps to x=25..50, y=0..25.
+
+   scene, bmp = renderPatterns(glBase .. '<pattern id="p" viewBox="-10 0 20 20" xlink:href="#base"/>', 'p', 100, 50)
+   assert(isRed(bmp, 37, 12), 'Content should be positioned by the local viewBox')
+   assert(isBlack(bmp, 12, 12) and isBlack(bmp, 62, 12) and isBlack(bmp, 37, 37),
+      'Content should be aligned by the inherited preserveAspectRatio')
+end
+
+@Test function LocalChildrenReplaceReferencedContent()
+   defs = glBase .. '<pattern id="p" href="#base"><rect x="0" y="0" width="10" height="10" fill="rgb(0,160,0)"/></pattern>'
+   scene, bmp = renderPatterns(defs, 'p', 100, 50)
+   assert(isGreen(bmp, 25, 25), 'Local children should be used instead of the referenced content')
+end
+
+@Test function CyclicReferencesTerminate()
+   defs = '<pattern id="a" href="#b" patternUnits="userSpaceOnUse" width="100" height="50">' ..
+      '<rect x="0" y="0" width="20" height="20" fill="rgb(255,0,0)"/></pattern>' ..
+      '<pattern id="b" href="#a"/>'
+
+   scene, bmp = renderPatterns(defs, 'a', 100, 50)
+   assert(isRed(bmp, 10, 10), 'A cyclic reference should not prevent the pattern from rendering')
+
+   scene, bmp = renderPatterns(defs, 'b', 100, 50)
+   assert(isRed(bmp, 10, 10), 'The referencing pattern should inherit from the cycle once')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Export and reload
+
+function saveScene(Scene:obj, Path:str):str
+   svg = obj.new('svg', { target=Scene })
+   file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   glFiles.push(Path)
+   check svg.acSaveToObject(file, 0)
+   file = nil
+   return io.readAll(Path)
+end
+
+function reloadHash(Path:str, Width:num, Height:num):num
+   scene = newScene(Width, Height)
+   obj.new('svg', { target=scene, path=Path })
+   return drawScene(scene, newBitmap(Width, Height))
+end
+
+@Test function ExportPreservesAspectRatio()
+   for _, ratio in { 'none', 'xMinYMax slice', 'xMaxYMin meet' } do
+      scene, bmp, hash = renderPatterns(squarePattern('p', f'preserveAspectRatio="{ratio}"'), 'p', 100, 50)
+      path = 'temp:svg_pattern_aspect_ratio.svg'
+      saved = saveScene(scene, path)
+      assert(saved.find(f'preserveAspectRatio="{ratio}"', 0, true) != nil, f'Export should write "{ratio}"')
+      assert(reloadHash(path, 100, 50) is hash, f'Reloaded "{ratio}" pattern should render identically')
+   end
+end
+
+@Test function ExportOmitsSyntheticViewbox()
+   defs = '<pattern id="p" patternUnits="objectBoundingBox" patternContentUnits="objectBoundingBox" ' ..
+      'width="1" height="1"><rect x="0" y="0" width="0.5" height="0.5" fill="rgb(255,0,0)"/></pattern>'
+
+   scene, bmp, hash = renderPatterns(defs, 'p', 100, 50)
+   path = 'temp:svg_pattern_no_viewbox.svg'
+   saved = saveScene(scene, path)
+   start = saved.find('<pattern', 0, true)
+   assert(start != nil, 'Export should contain the pattern')
+   tag = saved.sub(start, saved.find('>', start, true))
+   assert(tag.find('viewBox', 0, true) is nil, f'A rendered pattern without a viewBox should not export one: {tag}')
+   assert(tag.find('preserveAspectRatio', 0, true) is nil, 'An inert aspect ratio should not be exported')
+   assert(reloadHash(path, 100, 50) is hash, 'Reloaded pattern should render identically')
+end
+
+@Test function ExportsNativeAspectRatio()
+   scene = newScene(100, 50)
+   pattern = scene.new('VectorPattern', { x=0, y=0, width=100, height=50, units=VUNIT_USERSPACE })
+   pattern.viewport.viewWidth = 10
+   pattern.viewport.viewHeight = 10
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=10, height=10, fill='rgb(255,0,0)' })
+   pattern.aspectRatio = ARF_X_MIN|ARF_Y_MID|ARF_SLICE
+   check scene.mtAddDef('native', pattern)
+
+   saved = saveScene(scene, 'temp:svg_pattern_native.svg')
+   assert(saved.find('preserveAspectRatio="xMinYMid slice"', 0, true) != nil,
+      'Native AspectRatio should be exported with the viewBox')
+end

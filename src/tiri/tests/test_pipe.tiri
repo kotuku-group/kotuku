@@ -49,7 +49,7 @@ end
       return 1, 2, 3, 4, 5
    end
 
-   function first_arg(a)
+   function first_arg(a):num
       return a
    end
 
@@ -66,6 +66,19 @@ end
    -- Limit to 2 values, passes to math.max
    result = returns_many() |2> math.max()
    assert(result is 2, "Failed limit two values: expected 2, got " .. tostring(result))  -- math.max(1, 2) = 2
+end
+
+@Test function LimitedPipeRecognitionIsBounded()
+   function returns_ten()
+      return 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+   end
+
+   local result = returns_ten() |10> math.max()
+   assert(result is 10, 'A two-digit result limit should be recognised')
+
+   assert((4 |1) is 5, 'A one-digit bitwise operand without > should remain bitwise OR')
+   assert((4 |12) is 12, 'A two-digit bitwise operand without > should remain bitwise OR')
+   assert(4 |123 > 0, 'Three digits followed by > should remain bitwise OR and comparison operators')
 end
 
 @Test function ComplexChaining()
@@ -101,6 +114,42 @@ end
    assert(result is 4, "Failed pipe with table: expected 4, got " .. tostring(result))
 end
 
+@Test function PipePassesCollectionsWithoutIteration()
+   function identity(Value:any):any
+      return Value
+   end
+
+   local stored_range = range(1, 4)
+   local stored_array = array<int> { 4, 5, 6 }
+   local stored_table = { value = 7 }
+   local custom = setmetatable({}, {
+      __iter = function():func
+         return function():num return end
+      end
+   })
+   local any_value:any = stored_range
+
+   assert(stored_range |> identity() is stored_range, 'A stored range should be passed as one pipe argument')
+   assert(stored_array |> identity() is stored_array, 'An array should be passed as one pipe argument')
+   assert(stored_table |> identity() is stored_table, 'A table should be passed as one pipe argument')
+   assert(any_value |> identity() is stored_range, 'An any value should not select an alternative pipe meaning')
+   assert(custom |> identity() is custom, 'A custom iterable should be passed to the requested call unchanged')
+end
+
+@Test function PipeReturnsRightHandResults()
+   function pair(Value:any):<any, num>
+      return Value, 42
+   end
+
+   function no_result(Value:any)
+   end
+
+   local table_value = { marker = true }
+   local first, second = table_value |> pair()
+   assert(first is table_value and second is 42, 'A pipe should return every right-hand call result')
+   assert(7 |> no_result() is nil, 'A pipe should retain a nil right-hand call result')
+end
+
 @Test function PipeWithMathFunctions()
    result = -5 |> math.abs()
    assert(result is 5, "Failed pipe with math.abs: expected 5, got " .. tostring(result))
@@ -120,7 +169,7 @@ end
 
 @Test function PipePrecedence()
    -- Pipe should have lower precedence than comparison, so this parses as (5 > 3) |> func()
-   function identity(x)
+   function identity(x):num
       return x
    end
 
@@ -141,17 +190,8 @@ end
    assert(result is 60, "Failed nested function pipe: expected 60, got " .. tostring(result))  -- outer(inner(5)) = outer(6) = 60
 end
 
-@Test function InvalidFloatLimit()
-   -- Floating-point limits like |2.5> should cause a parse error
-   script = obj.new('tiri', {
-      statement = [[
-         function identity(x) return x end
-         result = 1 |2.5> identity()
-      ]]
-   })
-
-   script.acActivate()
-   assert(script.error != ERR_Okay, "Script with float limit should have thrown an error")
+@Test function NonIntegerTextIsNotResultLimiter()
+   assert(1 |2.5 > 0, 'A decimal number followed by > should remain bitwise OR and comparison operators')
 end
 
 @Test function InvalidZeroLimit()

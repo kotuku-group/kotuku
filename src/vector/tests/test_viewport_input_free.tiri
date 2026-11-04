@@ -1,0 +1,56 @@
+-- Verifies that freeing a buffered viewport safely destroys descendants referenced by its cached input boundaries.
+
+   include 'display', 'vector'
+
+-- Write the little-endian IEEE-754 encoding of a non-negative double into Buffer at Offset.
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+@Test function FreeViewportWithSubscribedDescendant()
+   local surface <close> = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100, buffered=true })
+   root.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='#808080' })
+   local group = root.new('VectorGroup')
+   local child = group.new('VectorViewport', { x=10, y=10, width=20, height=20, buffered=true })
+   local content = child.new('VectorRectangle', { x=0, y=0, width=20, height=20, fill='#ff0000' })
+
+   local root_moves = 0
+   local content_moves = 0
+   root.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg) root_moves++ end)
+   content.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg) content_moves++ end)
+
+   surface.acShow()
+   surface.acDraw()
+   processing.sleep(0)
+   feed(JET_ABS_XY, 20, 20)
+   assert(content_moves is 1, 'The descendant did not receive the initial movement event')
+
+   child.free()
+   surface.acDraw() -- The buffered root must not replay the freed subtree's cached boundaries.
+
+   local before = root_moves
+   feed(JET_ABS_XY, 22, 22)
+   assert(root_moves - before is 1, 'The root did not receive movement over the freed viewport')
+end

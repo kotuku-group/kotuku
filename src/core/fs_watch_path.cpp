@@ -54,7 +54,7 @@ ERR fs_watch_path(extFile *File)
    if ((File->prvWatch->Flags & (MFF::MOVED|MFF::RENAME)) != MFF::NIL)  nflags |= IN_MOVED_FROM | IN_MOVED_TO;
 
    auto path = File->prvResolvedPath;
-   if (path.ends_with('/')) path.pop_back();
+   if ((path.size() > 1) and (path.ends_with('/'))) path.pop_back(); // Retain the slash for the root folder
    if (auto handle = inotify_add_watch(glInotify, path.c_str(), nflags); handle != -1) {
       File->prvWatch->Handle = handle;
       {
@@ -83,8 +83,9 @@ ERR fs_watch_path(extFile *File)
 
    // The path_monitor() function will be called whenever the Path or its content is modified.
 
-   if ((error = winWatchFile(int(File->prvWatch->Flags), File->prvResolvedPath.c_str(), (File->prvWatch + 1), &handle, &winflags)) IS ERR::Okay) {
-      if ((error = RegisterFD(handle, RFD::READ, (void (*)(HOSTHANDLE, APTR))&path_monitor, File)) IS ERR::Okay) {
+   if (!(error = winWatchFile(int(File->prvWatch->Flags), File->prvResolvedPath.c_str(),
+         File->prvWatch->Buffer.get(), &handle, &winflags))) {
+      if (!(error = RegisterFD(handle, RFD::READ, (void (*)(HOSTHANDLE, APTR))&path_monitor, File))) {
          File->prvWatch->Handle   = handle;
          File->prvWatch->WinFlags = winflags;
       }
@@ -253,7 +254,8 @@ static void path_monitor(HOSTHANDLE Handle, extFile *File)
       // Validate resources before each iteration to prevent crashes
 
       while ((File->prvWatch) and (File->prvWatch->Handle IS Handle)) {
-         ERR read_result = winReadChanges(File->prvWatch->Handle, (APTR)(File->prvWatch + 1), File->prvWatch->WinFlags, path.data(), int(path.size()), &status);
+         ERR read_result = winReadChanges(File->prvWatch->Handle, File->prvWatch->Buffer.get(),
+            File->prvWatch->WinFlags, path.data(), int(path.size()), &status);
          if (read_result != ERR::Okay) {
             // If we get an error other than NothingDone, stop monitoring
             if (read_result != ERR::NothingDone) {

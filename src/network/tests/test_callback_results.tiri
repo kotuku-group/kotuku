@@ -1,0 +1,60 @@
+-- Regression coverage for returned and raised callback error codes.
+   include 'network'
+
+function probe_incoming(Callback:func, Disconnect:bool)
+   called = false
+   disconnected = false
+   server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0,
+      incoming=function(Server, Client):any
+         buffer = array<byte, 64>
+         check Client.acRead(buffer)
+         called = true
+         return Callback()
+      end
+   })
+   client <close> = obj.new('netsocket', {
+      address='127.0.0.1', port=server.port,
+      feedback=function(Socket, State)
+         if State is NTC_CONNECTED then
+            check Socket.acWrite('callback result probe')
+         elseif State is NTC_DISCONNECTED then
+            disconnected = true
+         end
+      end
+   })
+
+   deadline = mSys.PreciseTime() + 1000000
+   while mSys.PreciseTime() < deadline and not (called and (not Disconnect or disconnected)) do
+      processing.sleep(0.005)
+   end
+   assert(called, 'The server incoming callback must run')
+   if Disconnect then
+      assert(disconnected, 'ERR_Terminate must disconnect the client')
+      assert(server.totalClients is 0, 'ERR_Terminate must remove the server client')
+   else
+      processing.sleep(0.02)
+      assert(not disconnected and client.state is NTC_CONNECTED, 'A successful callback must keep the connection')
+      assert(server.totalClients is 1, 'A successful callback must retain the server client')
+   end
+end
+
+@Test function ReturnedTerminateDisconnects()
+   probe_incoming(function() return ERR_Terminate end, true)
+end
+
+@Test function RaisedTerminateDisconnects()
+   probe_incoming(function() raise ERR_Terminate end, true)
+end
+
+@Test function ReturnedOkayKeepsConnection()
+   probe_incoming(function() return ERR_Okay end, false)
+end
+
+@Test function NoReturnKeepsConnection()
+   probe_incoming(function() end, false)
+end
+
+@Test function NumericStringIsNotAnErrorCode()
+   probe_incoming(function() return tostring(ERR_Terminate) end, false)
+end

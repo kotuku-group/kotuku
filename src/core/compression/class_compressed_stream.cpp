@@ -13,14 +13,15 @@ area.  The default compression algorithm is DEFLATE with gzip header data.  It i
 tools such as gzip.
 
 To decompress data, set the #Input field with a source object that supports the Read() action, such as a @File.
-Repeatedly reading from the CompressedStream will automatically handle the decompression process.  If the
-decompressed size of the incoming data is defined in the source header, it will be reflected in the #Size
-field.
+Repeatedly reading from the CompressedStream will automatically handle the decompression process.  The #Finished
+field becomes true only after the complete compressed stream, including its checksum, has been verified.  The #Size
+field remains unknown until that point.
 
 To compress data, set the #Output field with a source object that supports the Write() action, such as a @File.
 Repeatedly writing to the CompressedStream with raw data will automatically handle the compression process for you.
-Once all of the data has been written, call the #Write() action with a `Buffer` of `NULL` and `Length` `-1` to
-signal an end to the streaming process.
+Once all of the data has been written, call the #Write() action with a null empty `Buffer` to finalise the stream.  In
+Tiri, call `acWrite(nil)`.  Finalisation is mandatory and may report destination or compression errors.  No further
+writes are accepted after finalisation or a terminal failure until #Reset() is called.
 
 -END-
 
@@ -28,26 +29,54 @@ signal an end to the streaming process.
 
 class extCompressedStream : public objCompressedStream {
    public:
-   uint8_t *OutputBuffer;
-   uint8_t Inflating:1;
-   uint8_t Deflating:1;
-   z_stream Stream;
+
+   // Note: As PublicSize is defined, these fields are specific to CompressedStream and will otherwise be
+   // overwritten for derived classes.
+   std::vector<uint8_t> InputBuffer;
+   std::vector<uint8_t> OutputBuffer;
+   ZStream Stream;
    gz_header Header;
+   size_t InputOffset = 0;
+   size_t InputLength = 0;
+   ERR TerminalError = ERR::Okay;
+
+   ~extCompressedStream();
+
+   extCompressedStream(objMetaClass *ClassPtr, OBJECTID ObjectID) : objCompressedStream(ClassPtr, ObjectID) {
+      TotalOutput = 0;
+      TotalInput = 0;
+      Format = CF::GZIP;
+      Finished = false;
+      clearmem(&Header, sizeof(Header));
+   }
+
+   void reset() {
+      Finished = false;
+      TotalInput = 0;
+      TotalOutput = 0;
+      TerminalError = ERR::Okay;
+      InputOffset = 0;
+      InputLength = 0;
+
+      Stream.reset();
+      clearmem(&Header, sizeof(Header));
+
+      InputBuffer.clear();
+      InputBuffer.shrink_to_fit();
+      OutputBuffer.clear();
+      OutputBuffer.shrink_to_fit();
+   }
+
+   ERR fail(ERR Error) {
+      Stream.reset();
+      TerminalError = Error;
+      return Error;
+   }
 };
 
-static ERR CSTREAM_Reset(extCompressedStream *);
-
 //********************************************************************************************************************
 
-static ERR CSTREAM_Free(extCompressedStream *Self)
-{
-   CSTREAM_Reset(Self);
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static ERR CSTREAM_Init(extCompressedStream *Self)
+static ERR COMPRESSEDSTREAM_Init(extCompressedStream *Self)
 {
    kt::Log log;
 
@@ -61,13 +90,6 @@ static ERR CSTREAM_Init(extCompressedStream *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR CSTREAM_NewObject(extCompressedStream *Self) {
-   Self->Format = CF::GZIP;
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 -ACTION-
 Read: Decompress data from the input stream and write it to the supplied buffer.
@@ -76,86 +98,87 @@ Read: Decompress data from the input stream and write it to the supplied buffer.
 
 #define MIN_OUTPUT_SIZE ((32 * 1024) + 2048)
 
-static ERR CSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
+static ERR COMPRESSEDSTREAM_Read(extCompressedStream *Self, struct acRead *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Buffer.data())) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
 
    Args->Result = 0;
-   if (Args->Length <= 0) return ERR::Okay;
+   if (Self->TerminalError != ERR::Okay) return Self->TerminalError;
+   if (Self->Finished) return ERR::Okay;
+   if (Args->Buffer.empty()) return ERR::Okay;
+   if (Args->Buffer.size() > size_t(INT_MAX)) return log.warning(ERR::OutOfRange);
 
-   uint8_t inputstream[2048];
-   int length;
-
-   if (acRead(Self->Input, inputstream, sizeof(inputstream), &length) != ERR::Okay) return ERR::Read;
-
-   if (length <= 0) return ERR::Okay;
-
-   if (!Self->Inflating) {
+   if (!Self->Stream.active()) {
       log.trace("Initialising decompression of the stream.");
-      clearmem(&Self->Stream, sizeof(Self->Stream));
       switch (Self->Format) {
          case CF::ZLIB:
-            if (inflateInit2(&Self->Stream, MAX_WBITS) != Z_OK) return log.warning(ERR::Decompression);
+            if (Self->Stream.inflate_init(MAX_WBITS) != Z_OK) return Self->fail(log.warning(ERR::Decompression));
             break;
 
          case CF::DEFLATE:
-            if (inflateInit2(&Self->Stream, -MAX_WBITS) != Z_OK) return log.warning(ERR::Decompression);
+            if (Self->Stream.inflate_init(-MAX_WBITS) != Z_OK) return Self->fail(log.warning(ERR::Decompression));
             break;
 
          case CF::GZIP:
          default:
-            if (inflateInit2(&Self->Stream, 15 + 32) != Z_OK) return log.warning(ERR::Decompression);
-            // Read the uncompressed size from the gzip header
-            if (inflateGetHeader(&Self->Stream, &Self->Header) != Z_OK) {
-               return log.warning(ERR::InvalidData);
+            if (Self->Stream.inflate_init(15 + 32) != Z_OK) {
+               return Self->fail(log.warning(ERR::Decompression));
+            }
+            if (inflateGetHeader(Self->Stream.get(), &Self->Header) != Z_OK) {
+               return Self->fail(log.warning(ERR::InvalidData));
             }
       }
-
-      Self->Inflating = TRUE;
    }
 
-   APTR output = Args->Buffer;
-   int outputsize = Args->Length;
-   if (outputsize < MIN_OUTPUT_SIZE) {
-      // An internal buffer will need to be allocated if the one supplied to Read() is not large enough.
-      outputsize = MIN_OUTPUT_SIZE;
-      if (!(output = Self->OutputBuffer)) {
-         if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer, nullptr) != ERR::Okay) return ERR::AllocMemory;
-         output = Self->OutputBuffer;
-      }
-   }
+   if (Self->InputBuffer.empty()) Self->InputBuffer.resize(2048);
 
-   Self->Stream.next_in  = inputstream;
-   Self->Stream.avail_in = length;
+   Self->Stream->next_out = (Bytef *)Args->Buffer.data();
+   Self->Stream->avail_out = uInt(Args->Buffer.size());
 
-   ERR error = ERR::Okay;
-   int result = Z_OK;
-   while ((result IS Z_OK) and (Self->Stream.avail_in > 0) and (outputsize > 0)) {
-      Self->Stream.next_out  = (Bytef *)output;
-      Self->Stream.avail_out = outputsize;
-      result = inflate(&Self->Stream, Z_SYNC_FLUSH);
+   while (Self->Stream->avail_out > 0) {
+      if (Self->InputOffset >= Self->InputLength) {
+         int length = 0;
+         auto error = acRead(Self->Input,
+            std::span<int8_t>((int8_t *)Self->InputBuffer.data(), Self->InputBuffer.size()), &length);
+         if (error != ERR::Okay) return Self->fail(error);
+         if ((length < 0) or (size_t(length) > Self->InputBuffer.size())) {
+            return Self->fail(log.warning(ERR::Read));
+         }
+         if (length IS 0) return Self->fail(log.warning(ERR::Decompression));
 
-      if ((result) and (result != Z_STREAM_END)) {
-         error = convert_zip_error(&Self->Stream, result);
-         break;
+         Self->InputOffset = 0;
+         Self->InputLength = size_t(length);
       }
 
-      if (error != ERR::Okay) break;
+      Self->Stream->next_in = Self->InputBuffer.data() + Self->InputOffset;
+      Self->Stream->avail_in = uInt(Self->InputLength - Self->InputOffset);
 
-      Args->Result += outputsize - Self->Stream.avail_out;
-      output = (Bytef *)output + outputsize - Self->Stream.avail_out;
+      const auto available_input = Self->Stream->avail_in;
+      const auto available_output = Self->Stream->avail_out;
+      const int result = inflate(Self->Stream.get(), Z_NO_FLUSH);
+      const auto consumed = available_input - Self->Stream->avail_in;
+      const auto produced = available_output - Self->Stream->avail_out;
+      Self->InputOffset = Self->InputLength - Self->Stream->avail_in;
+      Self->TotalInput += int64_t(consumed);
+      Self->TotalOutput += int64_t(produced);
+      Args->Result += int(produced);
 
-      if (result IS Z_STREAM_END) { // Decompression is complete
-         Self->Inflating = FALSE;
-         Self->TotalOutput = Self->Stream.total_out;
+      if (result IS Z_STREAM_END) {
+         Self->Finished = true;
+         Self->Stream.reset();
          return ERR::Okay;
       }
+
+      if (result != Z_OK) return Self->fail(convert_zip_error(Self->Stream.get(), result));
+      if ((consumed IS 0) and (produced IS 0)) {
+         return Self->fail(log.warning(ERR::Decompression));
+      }
    }
 
-   return error;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -168,22 +191,9 @@ referenced objects separately.
 
 *********************************************************************************************************************/
 
-static ERR CSTREAM_Reset(extCompressedStream *Self)
+static ERR COMPRESSEDSTREAM_Reset(extCompressedStream *Self)
 {
-   Self->TotalOutput = 0;
-
-   if (Self->Inflating) {
-      inflateEnd(&Self->Stream);
-      Self->Inflating = FALSE;
-   }
-
-   if (Self->Deflating) {
-      deflateEnd(&Self->Stream);
-      Self->Deflating = FALSE;
-   }
-
-   if (Self->OutputBuffer) { FreeResource(Self->OutputBuffer); Self->OutputBuffer = nullptr; }
-
+   Self->reset();
    return ERR::Okay;
 }
 
@@ -193,7 +203,7 @@ Seek: For use in decompressing streams only.  Seeks to a position within the str
 -END-
 *********************************************************************************************************************/
 
-static ERR CSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
+static ERR COMPRESSEDSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
 {
    kt::Log log;
 
@@ -205,23 +215,28 @@ static ERR CSTREAM_Seek(extCompressedStream *Self, struct acSeek *Args)
 
    if (!Self->Input) return log.warning(ERR::FieldNotSet);
 
-   // Seeking results in a reset of the compression object's state.  It then needs to decompress the stream up to the
-   // position requested by the client.
-
-   CSTREAM_Reset(Self);
-
-   int64_t pos = 0;
-   if (Args->Position IS SEEK::START) pos = int(Args->Offset);
-   else if (Args->Position IS SEEK::CURRENT) pos = Self->TotalOutput + int(Args->Offset);
+   double position;
+   if (Args->Position IS SEEK::START) position = Args->Offset;
+   else if (Args->Position IS SEEK::CURRENT) position = double(Self->TotalOutput) + Args->Offset;
    else return log.warning(ERR::Args);
 
-   if (pos < 0) return log.warning(ERR::OutOfRange);
+   constexpr double int64_limit = 9223372036854775808.0;
+   if ((not std::isfinite(position)) or (position < 0) or (position >= int64_limit)) {
+      return log.warning(ERR::OutOfRange);
+   }
+   const int64_t pos_target = int64_t(position);
 
+   auto error = acSeek(Self->Input, 0, SEEK::START);
+   if (error != ERR::Okay) return error;
+   Self->reset();
+
+   int64_t pos = pos_target;
    uint8_t buffer[1024];
    while (pos > 0) {
-      struct acRead read = { .Buffer = buffer, .Length = (int)pos };
-      if ((size_t)read.Length > sizeof(buffer)) read.Length = sizeof(buffer);
-      if (Action(AC::Read, Self, &read) != ERR::Okay) return ERR::Decompression;
+      auto read_size = std::min<size_t>(size_t(pos), sizeof(buffer));
+      struct acRead read = { .Buffer = std::span<int8_t>((int8_t *)buffer, read_size) };
+      if (auto read_error = Action(AC::Read, Self, &read); read_error != ERR::Okay) return read_error;
+      if (read.Result IS 0) return log.warning(ERR::OutOfRange);
       pos -= read.Result;
    }
 
@@ -234,91 +249,94 @@ Write: Compress raw data in a buffer and write it to the Output object.
 -END-
 *********************************************************************************************************************/
 
-static ERR CSTREAM_Write(extCompressedStream *Self, struct acWrite *Args)
+static ERR COMPRESSEDSTREAM_Write(extCompressedStream *Self, struct acWrite *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Buffer)) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
    if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+   if (Args->Buffer.size() > size_t(UINT_MAX)) return log.warning(ERR::OutOfRange);
 
-   if (!Self->Deflating) {
-      clearmem(&Self->Stream, sizeof(Self->Stream));
+   Args->Result = 0;
+   if (Self->TerminalError != ERR::Okay) return Self->TerminalError;
+   if (Self->Finished) return log.warning(ERR::Finished);
 
+   const bool finishing = (not Args->Buffer.data()) and Args->Buffer.empty();
+   if ((not Args->Buffer.data()) and (not finishing)) return log.warning(ERR::NullArgs);
+
+   if (!Self->Stream.active()) {
+      int window_bits;
       switch (Self->Format) {
          case CF::ZLIB:
-            if (deflateInit2(&Self->Stream, 9, Z_DEFLATED, MAX_WBITS, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY)) {
-               return log.warning(ERR::Compression);
-            }
+            window_bits = MAX_WBITS;
             break;
 
          case CF::DEFLATE:
-            if (deflateInit2(&Self->Stream, 9, Z_DEFLATED, -MAX_WBITS, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY)) {
-               return log.warning(ERR::Compression);
-            }
+            window_bits = -MAX_WBITS;
             break;
 
          case CF::GZIP:
          default:
-            if (deflateInit2(&Self->Stream, 9, Z_DEFLATED, 15 + 32, ZLIB_MEM_LEVEL, Z_DEFAULT_STRATEGY)) {
-               return log.warning(ERR::Compression);
-            }
+            window_bits = 15 + 16;
       }
 
+      if (auto result = Self->Stream.deflate_init(9, window_bits); result != Z_OK) {
+         log.warning("deflateInit2() failed with zlib error %d.", result);
+         return Self->fail(log.warning(ERR::Compression));
+      }
+
+      Self->TotalInput = 0;
       Self->TotalOutput = 0;
-      Self->Deflating = TRUE;
    }
 
-   if (!Self->OutputBuffer) {
-      if (AllocMemory(MIN_OUTPUT_SIZE, MEM::DATA|MEM::NO_CLEAR, (APTR *)&Self->OutputBuffer, nullptr) != ERR::Okay) return ERR::AllocMemory;
-   }
+   if (Self->OutputBuffer.empty()) Self->OutputBuffer.resize(MIN_OUTPUT_SIZE);
 
-   Args->Result = 0;
-   int mode;
-   if (Args->Length IS -1) { // A length of -1 is a signal to complete the compression process.
-      mode = Z_FINISH;
-      Self->Stream.next_in  = Self->OutputBuffer;
-      Self->Stream.avail_in = 0;
-   }
-   else {
-      mode = Z_NO_FLUSH;
-      Self->Stream.next_in  = (Bytef *)Args->Buffer;
-      Self->Stream.avail_in = Args->Length;
-   }
+   const int mode = finishing ? Z_FINISH : Z_NO_FLUSH;
+   Self->Stream->next_in  = (Bytef *)Args->Buffer.data();
+   Self->Stream->avail_in = uInt(Args->Buffer.size());
 
    // If zlib succeeds but sets avail_out to zero, this means that data was written to the output buffer, but the
    // output buffer is not large enough (so keep calling until avail_out > 0).
 
-   Self->Stream.avail_out = 0;
-   while (Self->Stream.avail_out IS 0) {
-      Self->Stream.next_out  = Self->OutputBuffer;
-      Self->Stream.avail_out = MIN_OUTPUT_SIZE;
+   int result;
+   do {
+      Self->Stream->next_out  = Self->OutputBuffer.data();
+      Self->Stream->avail_out = MIN_OUTPUT_SIZE;
 
-      if ((deflate(&Self->Stream, mode))) {
-         deflateEnd(&Self->Stream);
-         Self->Deflating = FALSE;
-         return ERR::BufferOverflow;
+      const auto available_input = Self->Stream->avail_in;
+      result = deflate(Self->Stream.get(), mode);
+      Self->TotalInput += int64_t(available_input - Self->Stream->avail_in);
+      if ((result != Z_OK) and (result != Z_STREAM_END)) {
+         log.warning("deflate() failed with zlib error %d.", result);
+         return Self->fail(log.warning(ERR::Compression));
       }
 
-      const int len = MIN_OUTPUT_SIZE - Self->Stream.avail_out; // Get number of compressed bytes that were output
+      const int len = MIN_OUTPUT_SIZE - Self->Stream->avail_out; // Get number of compressed bytes that were output
 
       if (len > 0) {
-         Self->TotalOutput += len;
+         int written = 0;
+         auto error = acWrite(Self->Output,
+            std::span<const int8_t>((int8_t *)Self->OutputBuffer.data(), len), &written);
+         if (error != ERR::Okay) return Self->fail(error);
+
+         Self->TotalOutput += written;
+         if (written != len) return Self->fail(log.warning(ERR::Write));
          log.trace("%d bytes (total %" PF64 ") were compressed.", len, Self->TotalOutput);
-         acWrite(Self->Output, Self->OutputBuffer, len, nullptr);
       }
       else {
          // deflate() may not output anything if it needs more data to fill up a compression frame.  Return ERR::Okay
          // and wait for more data, or for the developer to end the stream.
 
          //log.trace("No data output on this cycle.");
-         break;
+         if (not finishing) break;
       }
-   }
+   } while ((Self->Stream->avail_out IS 0) or (finishing and (result != Z_STREAM_END)));
 
-   if (mode IS Z_FINISH) {
-      deflateEnd(&Self->Stream);
-      Self->Deflating = FALSE;
+   if (finishing) {
+      Self->Finished = true;
+      Self->Stream.reset();
    }
+   else Args->Result = int(Args->Buffer.size() - Self->Stream->avail_in);
 
    return ERR::Okay;
 }
@@ -346,24 +364,20 @@ permitted.
 The target object must be in a writeable state.  The Output field is mutually exclusive to the #Input field.
 
 -FIELD-
-Size: The uncompressed size of the input source, if known.
+Size: The full uncompressed size of the input source, if known.
 
-The Size field will reflect the uncompressed size of the input source, if this can be determined from the header.
-In the case of GZIP decompression, the size will not be known until the parser has consumed the header.
-This means that at least one call to the #Read() action is required before the Size is known.
+The Size field remains unknown while decompression is in progress.  It reports the full decoded byte count only after
+the compressed stream and its checksum have been read successfully and #Finished is true.
 
 If the size is unknown, a value of `-1` is returned.
 
 *********************************************************************************************************************/
 
-static ERR CSTREAM_GET_Size(extCompressedStream *Self, int64_t *Value)
+static ERR COMPRESSEDSTREAM_GET_Size(extCompressedStream *Self, int64_t *Value)
 {
    *Value = -1;
    if (Self->Input) {
-      if (Self->Header.done) {
-         if (Self->Header.extra) *Value = Self->Header.extra_len;
-      }
-
+      if (Self->Finished) *Value = Self->TotalOutput;
       return ERR::Okay;
    }
    else return ERR::InvalidState;
@@ -373,31 +387,41 @@ static ERR CSTREAM_GET_Size(extCompressedStream *Self, int64_t *Value)
 -FIELD-
 TotalOutput: A live counter of total bytes that have been output by the stream.
 -END-
+
+-FIELD-
+TotalInput: A live counter of total bytes consumed by the compression engine.
+
+During decompression this count excludes any trailing bytes that the Input object prefetched into the stream's input
+buffer.  The final value is retained after completion or failure and is reset to zero by #Reset().
+-END-
+
+-FIELD-
+Finished: True when compression has been finalised or decompression has verified the complete input stream.
+
+After decompression finishes, further reads remain at end-of-file.  After compression finishes, further writes return
+an error.  Call #Reset() before reusing the CompressedStream.
+-END-
 *********************************************************************************************************************/
 
-#include "class_compressed_stream_def.c"
+extCompressedStream::~extCompressedStream()
+{
+   this->reset();
+}
 
 //********************************************************************************************************************
 
+#include "class_compressed_stream_def.c"
+
 static const FieldArray clStreamFields[] = {
    { "TotalOutput", FDF_INT64|FDF_R },
+   { "TotalInput",  FDF_INT64|FDF_R },
    { "Input",       FDF_OBJECT|FDF_RI },
    { "Output",      FDF_OBJECT|FDF_RI },
    { "Format",      FDF_INT|FDF_LOOKUP|FD_RI, nullptr, nullptr, &clCompressedStreamFormat },
+   { "Finished",    FDF_INT|FDF_R },
    // Virtual fields
-   { "Size",        FDF_INT64|FDF_R, CSTREAM_GET_Size },
+   { "Size",        FDF_INT64|FDF_R|FDF_PURE, COMPRESSEDSTREAM_GET_Size },
    END_FIELD
-};
-
-static const ActionArray clStreamActions[] = {
-   { AC::Free,      CSTREAM_Free },
-   { AC::Init,      CSTREAM_Init },
-   { AC::NewObject, CSTREAM_NewObject },
-   { AC::Read,      CSTREAM_Read },
-   { AC::Reset,     CSTREAM_Reset },
-   { AC::Seek,      CSTREAM_Seek },
-   { AC::Write,     CSTREAM_Write },
-   { AC::NIL, nullptr }
 };
 
 extern ERR add_compressed_stream_class(void)
@@ -408,8 +432,9 @@ extern ERR add_compressed_stream_class(void)
       fl::Name("CompressedStream"),
       fl::FileDescription("GZip File"),
       fl::Category(CCF::DATA),
-      fl::Actions(clStreamActions),
+      fl::Actions(clCompressedStreamActions),
       fl::Fields(clStreamFields),
+      fl::PublicSize(sizeof(objCompressedStream)),
       fl::Size(sizeof(extCompressedStream)),
       fl::Path("modules:core"));
 

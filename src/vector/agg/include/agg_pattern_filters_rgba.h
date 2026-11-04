@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines RGBA pattern sampling filters. Hooks into span_pattern_rgba and rendering buffers used as pattern sources. In
+// the vector renderer it samples tiled image patterns before the resulting spans are blended.
 
-#ifndef AGG_PATTERN_FILTERS_RGBA8_INCLUDED
-#define AGG_PATTERN_FILTERS_RGBA8_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_line_aa_basics.h"
@@ -17,8 +18,6 @@
 
 namespace agg
 {
-
-    //=======================================================pattern_filter_nn
     template<class ColorT> struct pattern_filter_nn
     {
         typedef ColorT color_type;
@@ -113,5 +112,3 @@ namespace agg
     typedef pattern_filter_bilinear_rgba<rgba8>  pattern_filter_bilinear_rgba8;
     typedef pattern_filter_bilinear_rgba<rgba16> pattern_filter_bilinear_rgba16;
 }
-
-#endif

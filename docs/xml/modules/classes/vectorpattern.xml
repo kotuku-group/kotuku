@@ -14,30 +14,62 @@
     <copyright>Paul Manias © 2010-2026</copyright>
     <description>
 <p>The VectorPattern class is used by Vector painting algorithms to fill and stroke vectors with pre-rendered patterns. It is the most efficient way of rendering a common set of graphics multiple times.</p>
-<p>The VectorPattern must be registered with a <class name="VectorScene">VectorScene</class> via the <method class="VectorScene">AddDef</method> method. Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its name through the <class name="Vector" field="Fill">Vector.Fill</class> and <class name="Vector" field="Stroke">Vector.Stroke</class> fields.  For instance <code>url(#dots)</code>.</p>
-<p>A special use case is made for patterns that are applied as a fill operation in <class name="VectorViewport">VectorViewport</class> objects.  In this case the renderer will dynamically render the pattern as a background within the viewport.  This ensures that the pattern is rendered at maximum fidelity whenever it is used, and not affected by bitmap clipping restrictions.  It should be noted that this means the image caching feature will be disabled.</p>
+<p>The VectorPattern must be registered with a <class name="VectorScene">VectorScene</class> via the <class name="VectorScene" method="AddDef">VectorScene.AddDef()</class> method. Any vector within the target scene will be able to utilise the pattern for filling or stroking by referencing its name through the <class name="Vector" field="Fill">Vector.Fill</class> and <class name="Vector" field="Stroke">Vector.Stroke</class> fields.  For instance <code>url(#dots)</code>.</p>
+<p>A special use case is made for patterns that are applied as a fill operation in <class name="VectorViewport">VectorViewport</class> objects.  If the pattern is a single tile that covers the viewport, which is the default when <fl>Units</fl> is <code>BOUNDING_BOX</code>, <fl>X</fl> and <fl>Y</fl> are zero, <fl>Width</fl> and <fl>Height</fl> are <code>100%</code> and no <fl>Transform</fl> is set, the renderer will dynamically render the pattern as a background within the viewport.  This ensures that the pattern is rendered at maximum fidelity whenever it is used, and not affected by bitmap clipping restrictions.  It should be noted that this means the image caching feature will be disabled.</p>
+<p>Any other configuration is tiled within the viewport in the same way as a vector fill, with the viewport serving as both the bounding box and the user space of the pattern.  User space coordinates are therefore relative to the viewport's top-left corner.</p>
 <p>It is strongly recommended that the VectorPattern is owned by the <class name="VectorScene">VectorScene</class> that is handling the definition.  This will ensure that the VectorPattern is deallocated when the scene is destroyed.</p></description>
     <source>
       <file path="painters/">pattern.cpp</file>
     </source>
   </info>
 
+  <actions>
+    <action>
+      <name>Draw</name>
+      <comment>Draws object graphics to drawable areas.</comment>
+      <prototype>ERR acDraw(*Object, DOUBLE X, DOUBLE Y, DOUBLE Width, DOUBLE Height)</prototype>
+      <tiriPrototype>err = Object.acDraw(X:num, Y:num, Width:num, Height:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="X">The X position of the region to be drawn.</param>
+        <param type="INT" name="Y">The Y position of the region to be drawn.</param>
+        <param type="INT" name="Width">The width of the region to be drawn.</param>
+        <param type="INT" name="Height">The height of the region to be drawn.</param>
+      </input>
+    </action>
+
+  </actions>
+
   <fields>
     <field>
-      <name>Dimensions</name>
-      <comment>Dimension flags are stored here.</comment>
-      <access read="R">Read</access>
-      <type lookup="DMF">DMF</type>
+      <name>AspectRatio</name>
+      <comment>Controls how the viewport's viewbox is fitted to the pattern tile.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="ARF">ARF</type>
       <description>
-<types lookup="DMF"/>
+<p>The AspectRatio determines how the source area defined by the <fl>Viewport</fl>'s <code>ViewX</code>, <code>ViewY</code>, <code>ViewWidth</code> and <code>ViewHeight</code> fields is scaled and aligned within each pattern tile.  It is equivalent to the <code>preserveAspectRatio</code> attribute of SVG patterns.  The default value is <code>MEET|X_MID|Y_MID</code>, which scales the content uniformly so that it fits within the tile and centres it.  Use <code>SLICE</code> to fill the tile while clipping the overflowing content, or <code>NONE</code> to stretch the content independently on each axis.</p>
+<p>The AspectRatio is only effective if a viewbox has been defined for the <fl>Viewport</fl>.  It controls the fitting of content within a tile and has no effect on the tile's dimensions or position, which are determined by <fl>X</fl>, <fl>Y</fl>, <fl>Width</fl>, <fl>Height</fl> and <fl>Units</fl>.</p>
+<p>This field is a convenient alias for the <code>AspectRatio</code> of the pattern's <fl>Viewport</fl>, and the two always report the same value.</p>
+<types lookup="ARF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>ContentUnits</name>
+      <comment>Defines the coordinate system for the content of the pattern.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="VUNIT">VUNIT</type>
+      <description>
+<p>ContentUnits declares the coordinate system of the vectors in the pattern's <fl>Viewport</fl>.  The default setting is <code>USERSPACE</code>, in which content coordinates are expressed in the same units as the pattern tile.  If set to <code>BOUNDING_BOX</code>, content coordinates are expressed as fractions of the bounding box of the vector that is consuming the pattern, e.g. a coordinate of <code>(0.5,0.5)</code> refers to the centre of that bounding box.  In this case the content is stretched independently on each axis and the <fl>AspectRatio</fl> has no effect.  The mapping is always relative to the consumer's bounding box, regardless of the <fl>Units</fl> setting.</p>
+<p>In compliance with SVG, ContentUnits has no effect if a viewbox has been defined in the <fl>Viewport</fl>.  The viewbox determines the content's coordinate system in that case.</p>
+<types lookup="VUNIT"/>
       </description>
     </field>
 
     <field>
       <name>Height</name>
       <comment>Height of the pattern tile.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the pattern tile.  If the provided value is scaled, then the dimension is calculated relative to the bounding box or viewport applying the pattern, dependent on the <fl>Units</fl> setting.</p>
       </description>
@@ -55,12 +87,11 @@
 
     <field>
       <name>Matrices</name>
-      <comment>A linked list of transform matrices that have been applied to the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>APTR</type>
+      <comment>Applies one or more transforms to a pattern.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>kt::vector&lt;VectorMatrix&gt;</type>
       <description>
-<p>All transforms that have been applied to the pattern can be read from the Matrices field.  Each transform is represented by a <st>VectorMatrix</st> structure, and are linked in the order in which they were applied to the pattern.</p>
-<p>Setting this field is always additive unless NULL is passed, in which case all existing matrices are removed.</p>
+<p>A transform can be applied to a pattern via one or more matrices.  These will influence how pattern fills are rendered within their vector space.  Each matrix is represented by a <st>VectorMatrix</st> structure, and the matrices are linked in the order in which they should be applied.</p>
 <struct lookup="VectorMatrix"/>
       </description>
     </field>
@@ -91,7 +122,7 @@
       <access read="R" write="S">Read/Set</access>
       <type lookup="VSPREAD">VSPREAD</type>
       <description>
-<p>Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is PAD.</p>
+<p>Indicates what happens if the pattern starts or ends inside the bounds of the target vector.  The default value is <code>VSPREAD::PAD</code>.</p>
 <types lookup="VSPREAD"/>
       </description>
     </field>
@@ -112,7 +143,8 @@
       <access read="R" write="W">Read/Write</access>
       <type lookup="VUNIT">VUNIT</type>
       <description>
-<p>This field declares the coordinate system that is used for values in the <fl>X</fl> and <fl>Y</fl> fields.  The default setting is <code>BOUNDING_BOX</code>, which means the pattern will be drawn to scale in realtime.  The most efficient method is USERSPACE, which allows the pattern image to be persistently cached.</p>
+<p>This field declares the coordinate system that is used for values in the <fl>X</fl>, <fl>Y</fl>, <fl>Width</fl> and <fl>Height</fl> fields.  The default setting is <code>BOUNDING_BOX</code>, which means the pattern tile is sized relative to the bounding box of each vector that uses it.  With <code>USERSPACE</code>, the tile size is independent of the consumer, which makes it the most efficient choice when a pattern is shared by vectors of different sizes.</p>
+<p>In both cases the tile is rendered at its scale on the display, including any scaling from <fl>Transform</fl>, and it is cached until the definition or that display size changes.</p>
 <types lookup="VUNIT"/>
       </description>
     </field>
@@ -124,14 +156,15 @@
       <type class="VectorViewport">*VectorViewport</type>
       <description>
 <p>The Viewport refers to a <class name="VectorViewport">VectorViewport</class> object that is created to host the vectors for the rendered pattern.  If the Viewport does not contain at least one vector that renders an image, the pattern will be ineffective.</p>
+<p>The renderer manages the transform and size of the Viewport so that it matches each pattern tile.  Defining the Viewport's <code>ViewX</code>, <code>ViewY</code>, <code>ViewWidth</code> and <code>ViewHeight</code> fields establishes a viewbox for the pattern content, which is fitted to the tile according to the <fl>AspectRatio</fl>.</p>
       </description>
     </field>
 
     <field>
       <name>Width</name>
       <comment>Width of the pattern tile.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (Width,Height) field values define the dimensions of the pattern tile.  If the provided value is scaled, the dimension is calculated relative to the bounding box or viewport applying the pattern, dependent on the <fl>Units</fl> setting.</p>
       </description>
@@ -140,8 +173,8 @@
     <field>
       <name>X</name>
       <comment>X coordinate for the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the starting coordinate for mapping patterns.</p>
       </description>
@@ -150,8 +183,8 @@
     <field>
       <name>Y</name>
       <comment>Y coordinate for the pattern.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>DOUBLE</type>
+      <access read="R" write="S">Read/Set</access>
+      <type>UNIT</type>
       <description>
 <p>The (X,Y) field values define the starting coordinate for mapping patterns.</p>
       </description>
@@ -159,33 +192,16 @@
 
   </fields>
   <types>
-    <constants lookup="DMF">
-      <const name="FIXED_CENTER_X">The CenterX field is a fixed size.</const>
-      <const name="FIXED_CENTER_Y">The CenterY field is a fixed size.</const>
-      <const name="FIXED_DEPTH">The Depth field is a fixed size.</const>
-      <const name="FIXED_HEIGHT">The Height field is a fixed size.</const>
-      <const name="FIXED_RADIUS_X">The RadiusX field is a fixed size.</const>
-      <const name="FIXED_RADIUS_Y">The RadiusY field is a fixed size.</const>
-      <const name="FIXED_WIDTH">The Width field is a fixed suze.</const>
-      <const name="FIXED_X">The X field is a fixed coordinate.</const>
-      <const name="FIXED_X_OFFSET">The XOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Y">The Y field is a fixed coordinate.</const>
-      <const name="FIXED_Y_OFFSET">The YOffset field is a fixed coordinate.</const>
-      <const name="FIXED_Z">The Z field is a fixed coordinate.</const>
-      <const name="SCALED_CENTER_X">The CenterX field is scaled to this object's parent.</const>
-      <const name="SCALED_CENTER_Y">The CenterY field is scaled to this object's parent.</const>
-      <const name="SCALED_DEPTH">The Depth field is scaled to this object's parent.</const>
-      <const name="SCALED_HEIGHT">The Height field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_X">The RadiusX field is scaled to this object's parent.</const>
-      <const name="SCALED_RADIUS_Y">The RadiusY field is a scaled size to this object's parent.</const>
-      <const name="SCALED_WIDTH">The Width field is scaled to this object's parent.</const>
-      <const name="SCALED_X">The X field is scaled to this object's parent.</const>
-      <const name="SCALED_X_OFFSET">The XOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Y">The Y field is scaled to this object's parent.</const>
-      <const name="SCALED_Y_OFFSET">The YOffset field is scaled to this object's parent.</const>
-      <const name="SCALED_Z">The Z field is a scaled coordinate to this object's parent.</const>
-      <const name="STATUS_CHANGE_H"/>
-      <const name="STATUS_CHANGE_V"/>
+    <constants lookup="ARF" comment="Aspect ratios control alignment, scaling and clipping.">
+      <const name="MEET">Aspect ratio is preserved. The entire viewbox will be visible in the viewport.  The viewbox is scaled up as much as possible.</const>
+      <const name="NONE">Scale the viewbox to match the size of the viewport.  Aspect ratio is not preserved.</const>
+      <const name="SLICE">Aspect ratio is preserved. The viewbox can extend beyond the viewport's edges on one axis.  The viewbox is scaled up as much as possible.</const>
+      <const name="X_MAX">Align to the right.</const>
+      <const name="X_MID">Align to the horizontal center.</const>
+      <const name="X_MIN">Align to the left.</const>
+      <const name="Y_MAX">Align to the bottom.</const>
+      <const name="Y_MID">Align to the vertical center.</const>
+      <const name="Y_MIN">Align to the top.</const>
     </constants>
 
     <constants lookup="VSPREAD" comment="Spread method options define the method to use for tiling filled graphics.">

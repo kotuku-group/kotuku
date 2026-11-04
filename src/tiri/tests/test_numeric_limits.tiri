@@ -5,6 +5,176 @@
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
+local default_string_metatable = debug.getMetatable('')
+
+-- Restore the default JIT state and string metatable.  Do not call this from a defer: a defer that runs while an
+-- exception unwinds is restricted as for __gc, so JIT control and base metatable changes raise 'Bad action while in
+-- __gc metamethod' and replace the original failure.  Tests call this on entry and the runner calls it after each test.
+function reset_runtime()
+   debug.setMetatable('', default_string_metatable)
+   jit.on()
+   jit.flush()
+   jit.opt.start()
+end
+
+@AfterEach
+function restore_runtime()
+   reset_runtime()
+end
+
+function dynamic_remainder(Dividend:num, Divisor:num):num
+   return Dividend % Divisor
+end
+
+function dynamic_compound_remainder(Dividend:num, Divisor:num):num
+   Dividend %= Divisor
+   return Dividend
+end
+
+function remainder_workload(Iterations:num, SwitchDomain:bool):num
+   local result = 0
+   for i in {1 into Iterations} do
+      local dividend = i * 12.0
+      local divisor = (i % 7) + 1.0
+      if SwitchDomain and i > Iterations - 8 then dividend += 0.5 end
+      result += dividend % divisor
+   end
+   return result
+end
+
+function constant_remainders(Dividend:num):<num, num, num>
+   local compound = Dividend
+   compound %= -3
+   return Dividend % 100, compound, Dividend % 1
+end
+
+function integer_power_two_remainders(Dividend:num):<num, num, num, num>
+   local integer = Dividend | 0
+   return integer % 8, integer % -8, integer % -2147483648, integer % -1
+end
+
+function integer_constant_remainders(Dividend:num):<num, num, num>
+   local integer = Dividend | 0
+   local remainder = integer % 100
+   return remainder, remainder % 2, integer % -3
+end
+
+-- Divisors covering both multiplier roundings, the largest int32 magnitude and a negative divisor.
+function integer_reciprocal_remainders(Dividend:num):table
+   local integer = Dividend | 0
+   return { integer % 3, integer % 7, integer % -101, integer % 86400, integer % 1000000007, integer % 2147483647 }
+end
+
+function integer_floor_divisions(Dividend:num):table
+   local integer = Dividend | 0
+   return {
+      math.floor(integer / 3), math.floor(integer / 7), math.floor(integer / 101), math.floor(integer / 86400),
+      math.floor(integer / 1000000007), math.floor(integer / 2147483647), math.floor(integer / 8),
+      math.floor(integer * 0.25), math.floor(integer / 2147483648)
+   }
+end
+
+function negative_floor_divisions(Dividend:num):<num, num>
+   local integer = Dividend | 0
+   return math.floor(integer / -7), math.floor(integer * -0.5)
+end
+
+function index_remainder_sum(Count:num):num
+   local total = 0
+   for i in {0 to Count} do total += i % 7 + i % 1000 end
+   return total
+end
+
+function loop_carried_floor_sum(Count:num):num
+   local value = 0.5
+   local total = 0
+   for i in {0 to Count} do
+      total += math.floor(value / 7)
+      value = (i & 0x7fff) / 1
+   end
+   return total
+end
+
+function loop_carried_power_two_floor_sum(Count:num):num
+   local value = 0.5
+   local total = 0
+   for i in {0 to Count} do
+      total += math.floor(value / 8)
+      value = (i & 0x7fff) / 1
+   end
+   return total
+end
+
+-- Dividends at quotient boundaries for the divisors above, and at both int32 limits.
+local reciprocal_dividends = array<double> {
+   0, 1, -1, 2, -2, 6, -6, 7, -7, 8, -8, 100, -100, 101, -101, 202, -202, 86399, -86399, 86400, -86400, 86401, -86401,
+   123456789, -987654321, 1000000006, -1000000006, 1000000007, -1000000007, 2000000014, -2000000014,
+   2147483646, -2147483646, 2147483647, -2147483647, -2147483648
+}
+
+-- Report whether any compiled trace contains a live instance of one of the IR opcodes in Ops, and how many traces were
+-- inspected.  Opcode numbers follow IRDEF in lj_ir.h: 44 is IR_DIV and 52 is IR_FPMATH.
+--
+-- Only looping traces pass through IR dead-code elimination, so a function trace can retain instructions that a fold
+-- has superseded, such as the DIV beneath a reciprocal floor().  The backend never emits these, so an instruction
+-- only counts when it is a guard, has a side effect, or is referenced by a snapshot or another live instruction.
+function traces_contain(Ops:table):<bool, num>
+   local traces = 0
+   for trace_no in {1 into 64} do
+      local info = jit.util.traceInfo(trace_no)
+      if info is nil then continue end
+      traces++
+      local live = {}
+      for snap_no in {0 to info.nexit} do
+         local snap = jit.util.traceSnap(trace_no, snap_no)
+         -- Slots 0 and 1 hold the snapshot's position and slot count; entries keep a biased reference in 16 bits.
+         for index, entry in pairs(snap) do
+            if index >= 2 then live[(entry & 0xffff) - 0x8000] = true end
+         end
+      end
+      for instruction in {info.nins into 1 by -1} do
+         local mode, ir_ot, op1, op2 = jit.util.traceIR(trace_no, instruction)
+         if ir_ot is nil then continue end
+         -- Mirrors ir_sideeff() in lj_ir.h, where the type's guard bit enables the mode's weak side effect.
+         if live[instruction] or ((((ir_ot & 0xff) | 0x7f) & mode) >= 0x60) then
+            if (ir_ot >> 8) in Ops then return true, traces end
+            if (mode & 3) is 0 then live[op1] = true end
+            if ((mode >> 2) & 3) is 0 then live[op2] = true end
+         end
+      end
+   end
+   return false, traces
+end
+
+-- Run Func over every dividend with the JIT disabled and then hot, returning the interpreted and compiled results.
+function interpreted_and_compiled(Func:func):<table, table>
+   local expected = {}
+   local actual = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #reciprocal_dividends} do expected[i] = Func(reciprocal_dividends[i]) end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #reciprocal_dividends} do actual[i] = Func(reciprocal_dividends[i]) end
+   end
+   jit.off()
+   return expected, actual
+end
+
+function assert_same_remainder(Actual:num, Expected:num)
+   if Expected != Expected then
+      assert(Actual != Actual, 'Remainder should preserve NaN')
+   else
+      assert(Actual is Expected, 'Compiled remainder should match the interpreter exactly')
+      if Expected is 0 then
+         assert(1 / Actual is 1 / Expected, 'Floating-point remainder should preserve the sign of zero')
+      end
+   end
+end
+
 ----------------------------------------------------------------------------------------------------------------------
 -- IEEE 754 special values: NaN
 
@@ -141,7 +311,7 @@ end
 @Test function PrecisionOfRoundTrip()
    -- Values that should round-trip exactly
    exact_values = { 0.5, 0.25, 0.125, 0.0625 }  -- Powers of 2 fractions
-   for i = 0, #exact_values - 1 do
+   for i in {0 to #exact_values} do
       v = exact_values[i]
       assert(v * 2 / 2 is v, f'Power-of-2 fraction {v} should round-trip exactly')
    end
@@ -191,11 +361,34 @@ end
    assert(2 ** 10 is 1024, '2^10 should be exactly 1024')
 end
 
+@Test function BinaryIntegerZeroLiterals()
+   assert(0b0 is 0, 'A single binary zero digit should produce zero')
+   assert(0b00 is 0, 'Multiple binary zero digits should produce zero')
+   assert(0B000 is 0, 'An uppercase binary prefix should support an all-zero value')
+   assert(0b0001 is 1, 'Leading binary zero digits should preserve a non-zero value')
+end
+
 @Test function FloorAndCeilWithIntegers()
-   assert(math.floor(3.9) is 3, 'floor(3.9) should be 3')
-   assert(math.floor(-3.1) is -4, 'floor(-3.1) should be -4')
-   assert(math.ceil(3.1) is 4, 'ceil(3.1) should be 4')
-   assert(math.ceil(-3.9) is -3, 'ceil(-3.9) should be -3')
+   assert(math.floor(3.7) is 3, 'floor(3.7) should be 3')
+   assert(math.floor(-3.7) is -4, 'floor(-3.7) should be -4')
+   assert(math.floor(5) is 5 and math.floor(-5) is -5,
+      'floor() should preserve integral values')
+   assert(math.ceil(3.2) is 4, 'ceil(3.2) should be 4')
+   assert(math.ceil(-3.2) is -3, 'ceil(-3.2) should be -3')
+   assert(math.ceil(5) is 5 and math.ceil(-5) is -5,
+      'ceil() should preserve integral values')
+
+   assert(1 / math.floor(0.0) is math.huge, 'floor() should preserve positive zero')
+   assert(1 / math.floor(-0.0) is -math.huge, 'floor() should preserve negative zero')
+   assert(1 / math.ceil(-0.0) is -math.huge, 'ceil() should preserve negative zero')
+   assert(math.floor(math.huge) is math.huge and math.floor(-math.huge) is -math.huge,
+      'floor() should preserve infinities')
+   local nan = math.floor(0 / 0)
+   assert(nan != nan, 'floor() should preserve NaN')
+
+   local large = 4503599627370496.5
+   assert(math.floor(large) is 4503599627370496,
+      'floor() should handle values at the exact-integer precision boundary')
 end
 
 @Test function ModfSplitsParts()
@@ -212,22 +405,231 @@ end
 -- Modulo and remainder edge cases
 
 @Test function ModuloWithNegativeOperands()
-   -- Tiri/Lua % follows the sign of the divisor (Euclidean-style)
+   -- Tiri % is a truncating remainder, so a non-zero result follows the sign of the dividend.
    assert(7 % 3 is 1, '7 % 3 should be 1')
-   assert(-7 % 3 is 2, '-7 % 3 should be 2 (sign of divisor)')
-   assert(7 % -3 is -2, '7 % -3 should be -2 (sign of divisor)')
-   assert(-7 % -3 is -1, '-7 % -3 should be -1 (sign of divisor)')
+   assert(-7 % 3 is -1, '-7 % 3 should be -1 (sign of dividend)')
+   assert(7 % -3 is 1, '7 % -3 should be 1 (sign of dividend)')
+   assert(-7 % -3 is -1, '-7 % -3 should be -1 (sign of dividend)')
+   assert(dynamic_remainder(-17, 5) is -2, 'Runtime integer remainder should retain the dividend sign')
+   assert(dynamic_remainder(17, -5) is 2, 'Runtime integer remainder should ignore the divisor sign')
+   assert(dynamic_remainder(-19, 8) is -3,
+      'Runtime remainder by a power of two must not mask a negative dividend')
+   assert(dynamic_remainder(19, -8) is 3,
+      'Runtime remainder by a negative power of two must retain the dividend sign')
+   assert(dynamic_remainder(-2147483648, -1) is 0, 'Minimum int remainder by -1 should avoid overflow')
+   assert(dynamic_remainder(-2147483648, 3) is -2, 'Minimum int remainder should retain the dividend sign')
 end
 
 @Test function ModuloWithFloats()
-   result = 5.5 % 2.0
-   assert(math.abs(result - 1.5) < 1e-15, '5.5 % 2.0 should be 1.5')
+   assert(math.abs((5.5 % 2.0) - 1.5) < 1e-15, '5.5 % 2.0 should be 1.5')
+   assert(math.abs((-5.5 % 2.0) - -1.5) < 1e-15, '-5.5 % 2.0 should be -1.5')
+   assert(math.abs((5.5 % -2.0) - 1.5) < 1e-15, '5.5 % -2.0 should be 1.5')
+   assert(math.abs(dynamic_remainder(-5.5, 2.0) - -1.5) < 1e-15,
+      'Runtime floating-point remainder should retain the dividend sign')
+
+   negative_zero = dynamic_remainder(-4.5, 1.5)
+   assert(negative_zero is 0 and 1 / negative_zero is -math.huge,
+      'An exact negative floating-point remainder should preserve negative zero')
 end
 
-@Test function FmodConsistency()
-   -- fmod should match % behaviour for positive values
-   assert(math.fmod(7, 3) is 7 % 3, 'fmod(7,3) should match 7 % 3')
-   assert(math.fmod(5.5, 2.0) is 5.5 % 2.0, 'fmod(5.5, 2.0) should match 5.5 % 2.0')
+@Test function CompoundRemainderUsesTruncation()
+   value = -17
+   value %= 5
+   assert(value is -2, 'value %= 5 should retain the dividend sign')
+   assert(dynamic_compound_remainder(-17.5, 5) is -2.5,
+      'Runtime floating-point %= should retain the dividend sign')
+end
+
+@Test function RemainderSpecialisationKeepsFallbacks()
+   reset_runtime()
+
+   jit.off()
+   jit.flush()
+   local expected_integral = remainder_workload(80, false)
+   local expected_mixed = remainder_workload(80, true)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local actual_integral = remainder_workload(80, false)
+   local actual_mixed = remainder_workload(80, true)
+
+   assert(actual_integral is expected_integral,
+      'Positive integral remainder specialisation must match interpreted results')
+   assert(actual_mixed is expected_mixed,
+      'Fractional values after trace recording must use a correct fallback')
+end
+
+@Test function FmodIsRemoved()
+   assert(math.fmod is nil, 'math.fmod() should not remain available after % adopts truncating remainder semantics')
+end
+
+@Test function ConstantRemainderAcrossDomains()
+   reset_runtime()
+
+   -- Fractions and integers share a trace, followed by quotient boundaries and values requiring the helper.
+   local values = array<double> {
+      100.25, 101.0, 102.5, 103.0, 104.75, 105.0, 106.25, 107.0,
+      99.99999999999999, 100.0, 100.00000000000001, 299.99999999999994, 300.00000000000006,
+      2147483647.9999998, 2147483648.0, 2147483648.0000005,
+      4503599627370495.5, 4503599627370496.0, 4503599627370497.0,
+      -4503599627370495.5, -4503599627370496.0, -4503599627370497.0,
+      0.0, -0.0, 5e-324, -5e-324, -100.0, -100.25, 1e100, -1e100, math.huge, -math.huge, 0 / 0
+   }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b, c = constant_remainders(values[i])
+      expected[i] = { a, b, c }
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #values} do
+         local a, b, c = constant_remainders(values[i])
+         assert_same_remainder(a, expected[i][0])
+         assert_same_remainder(b, expected[i][1])
+         assert_same_remainder(c, expected[i][2])
+      end
+   end
+end
+
+@Test function IntegerPowerOfTwoRemainderAcrossSigns()
+   reset_runtime()
+
+   local values = array<double> { 19, -19, 24, -24, 0, -2147483648, -2147483647, 2147483647 }
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #values} do
+         local value = values[i]
+         local magnitude = math.abs(value)
+         local expected = magnitude - math.floor(magnitude / 8) * 8
+         if value < 0 then expected = -expected end
+         local a, b, c, d = integer_power_two_remainders(value)
+         assert(a is expected and b is expected, 'Integer power-of-two remainder should retain the dividend sign')
+         assert(c is (value is -2147483648 ? 0 :> value), 'Minimum integer divisor should avoid signed overflow')
+         assert(d is 0, 'Remainder by -1 should be zero, including for the minimum integer')
+      end
+   end
+end
+
+@Test function IntegerConstantRemainderChains()
+   reset_runtime()
+   local values = array<double> { 0, 1, -1, 99, -99, 100, -100, 101, -101, 2147483647, -2147483648 }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b, c = integer_constant_remainders(values[i])
+      expected[i] = { a, b, c }
+   end
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 40} do
+      for i in {0 to #values} do
+         local a, b, c = integer_constant_remainders(values[i])
+         assert(a is expected[i][0] and b is expected[i][1] and c is expected[i][2],
+            'Constant integer remainder chains must handle both signs, zero and int32 boundaries')
+      end
+   end
+end
+
+@Test function IntegerReciprocalRemainders()
+   reset_runtime()
+   local expected, actual = interpreted_and_compiled(integer_reciprocal_remainders)
+   local has_division, traces = traces_contain({ [44] = true })
+   assert(traces > 0, 'The remainder workload should compile')
+   assert(not has_division, 'Constant integer remainders should compile to a reciprocal multiply, not a division')
+   for i in {0 to #reciprocal_dividends} do
+      for j in {0 to #expected[i]} do
+         assert(actual[i][j] is expected[i][j],
+            f'Compiled {reciprocal_dividends[i]} remainder {j} gave {actual[i][j]}, expected {expected[i][j]}')
+      end
+   end
+end
+
+@Test function IndexRemainderReciprocal()
+   reset_runtime()
+   -- A non-negative loop index omits the reciprocal's sign correction.
+   jit.off()
+   jit.flush()
+   local expected = index_remainder_sum(5000)
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local actual = index_remainder_sum(5000)
+   jit.off()
+   assert(actual is expected, f'Compiled loop-index remainders gave {actual}, expected {expected}')
+   assert(not traces_contain({ [44] = true }), 'Loop-index remainders should not divide')
+end
+
+@Test function IntegerFloorDivisionReciprocal()
+   reset_runtime()
+   local expected, actual = interpreted_and_compiled(integer_floor_divisions)
+   local has_division, traces = traces_contain({ [44] = true, [52] = true })
+   assert(traces > 0, 'The floor division workload should compile')
+   -- Only the x64 backend exposes the SSE3 status key, even when that CPU feature is unavailable.
+   local _, flags = jit.status()
+   if 'SSE3' in flags then
+      assert(not has_division, 'math.floor() of an integer constant division should not divide or round')
+   end
+   for i in {0 to #reciprocal_dividends} do
+      for j in {0 to #expected[i]} do
+         assert(actual[i][j] is expected[i][j],
+            f'Compiled floor({reciprocal_dividends[i]} / divisor {j}) gave {actual[i][j]}, expected {expected[i][j]}')
+      end
+   end
+end
+
+@Test function FloorDivisionKeepsLoopCarriedConversions()
+   reset_runtime()
+   -- The division by one leaves an integer-to-number conversion on the backedge.  Its integer operand belongs
+   -- to the previous iteration, so folding floor() must respect the conversion's PHI barrier during unrolling.
+   jit.off()
+   jit.flush()
+   local expected = loop_carried_floor_sum(5000)
+   local expected_power_two = loop_carried_power_two_floor_sum(5000)
+   assert(expected is 1782501 and expected_power_two is 1559376, 'Floor division workloads should sum all iterations')
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   local actual = loop_carried_floor_sum(5000)
+   local actual_power_two = loop_carried_power_two_floor_sum(5000)
+   jit.off()
+   assert(actual is expected, f'Compiled floor division sum gave {actual}, expected {expected}')
+   assert(actual_power_two is expected_power_two,
+      f'Compiled power-of-two floor division sum gave {actual_power_two}, expected {expected_power_two}')
+end
+
+@Test function NegativeFloorDivisionKeepsSignedZero()
+   reset_runtime()
+   -- floor(0 / -7) is -0, which an integer quotient cannot represent, so negative divisors keep the FP path.
+   local values = array<double> { 0, 7, -7, 13, -13, 2147483647, -2147483648 }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b = negative_floor_divisions(values[i])
+      expected[i] = { a, b }
+   end
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for _ in {0 to 20} do
+      for i in {0 to #values} do
+         local a, b = negative_floor_divisions(values[i])
+         assert(a is expected[i][0] and b is expected[i][1], 'Negative divisor floor divisions should match')
+         assert(1 / a is 1 / expected[i][0] and 1 / b is 1 / expected[i][1],
+            'Negative divisor floor divisions should preserve the sign of zero')
+      end
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -266,50 +668,6 @@ end
    large = 2 ** 33  -- 8589934592
    result = large & 0xffffffff
    assert(result is 0, '2^33 should truncate to 0 in 32-bit context')
-end
-
-----------------------------------------------------------------------------------------------------------------------
--- num.* explicit type constructors
-
-@Test function NumIntCreation()
-   n = num.int(42)
-   assert(n.value is 42, 'num.int(42) should store value 42')
-end
-
-@Test function NumInt64Creation()
-   n = num.int64(100)
-   assert(n.value is 100, 'num.int64(100) should store value 100')
-end
-
-@Test function NumFloatCreation()
-   n = num.float(3.14)
-   -- Float precision is lower than double
-   assert(math.abs(n.value - 3.14) < 1e-6, 'num.float(3.14) should be approximately 3.14')
-end
-
-@Test function NumDoubleCreation()
-   n = num.double(3.141592653589793)
-   assert(n.value is 3.141592653589793, 'num.double should preserve full double precision')
-end
-
-@Test function NumInt16Creation()
-   n = num.int16(1000)
-   assert(n.value is 1000, 'num.int16(1000) should store value 1000')
-end
-
-@Test function NumByteCreation()
-   n = num.byte(127)
-   assert(n.value is 127, 'num.byte(127) should store value 127')
-end
-
-@Test function NumFloatPrecisionLoss()
-   -- Float (32-bit) has ~7 significant digits; double has ~15
-   precise = 1.23456789012345
-   float_val = num.float(precise)
-   double_val = num.double(precise)
-   -- Float should lose precision compared to double
-   assert(math.abs(double_val.value - precise) < 1e-15, 'Double should preserve full precision')
-   assert(math.abs(float_val.value - precise) > 1e-10, 'Float should show measurable precision loss')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -393,24 +751,13 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Rounding edge cases
 
-@Test function RoundingHalfUp()
+@Test function RoundingHalfAwayFromZero()
    assert(math.round(0.5) is 1, 'math.round(0.5) should round up to 1')
    assert(math.round(1.5) is 2, 'math.round(1.5) should round up to 2')
    assert(math.round(2.5) is 3, 'math.round(2.5) should round up to 3')
-end
-
-@Test function RoundingNegativeHalf()
-   -- Negative halves: round-half-up means towards positive infinity
-   assert(math.round(-0.5) is 0, 'math.round(-0.5) should round toward +inf to 0')
-   assert(math.round(-1.5) is -1, 'math.round(-1.5) should round toward +inf to -1')
-   assert(math.round(-2.5) is -2, 'math.round(-2.5) should round toward +inf to -2')
-end
-
-@Test function RoundingWithPrecision()
-   assert(math.round(1.005, 2) is 1.01 or math.abs(math.round(1.005, 2) - 1.0) < 0.01,
-      'math.round(1.005, 2) demonstrates floating-point representation issues')
-   assert(math.round(1.555, 2) is 1.56 or math.abs(math.round(1.555, 2) - 1.56) < 0.01,
-      'math.round(1.555, 2) should be approximately 1.56')
+   assert(math.round(-0.5) is -1, 'math.round(-0.5) should round away from zero to -1')
+   assert(math.round(-1.5) is -2, 'math.round(-1.5) should round away from zero to -2')
+   assert(math.round(-2.5) is -3, 'math.round(-2.5) should round away from zero to -3')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -421,6 +768,15 @@ end
    assert(1 ** math.huge is 1, '1^infinity should be 1')
    assert(2 ** -1 is 0.5, '2^(-1) should be 0.5')
    assert((-1) ** 0 is 1, '(-1)^0 should be 1')
+end
+
+@Test function PowerBindingAndAssociativity()
+   assert(-2 ** 2 is -4, '** should bind more tightly than unary negation')
+   assert((-2) ** 2 is 4, 'parentheses should apply negation before exponentiation')
+   assert(2 ** -2 is 0.25, '** should accept a unary expression as its right operand')
+   assert(2 ** 3 ** 2 is 512, '** should associate from right to left')
+   assert(~2 ** 2 is ~4, '** should bind more tightly than unary bitwise NOT')
+   assert((not 2 ** 2) is false, '** should bind more tightly than logical NOT')
 end
 
 @Test function PowerOverflow()
@@ -436,14 +792,173 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- String-to-number arithmetic coercion
 
-@Test function StringToNumberCoercionInArithmetic()
-   -- Tiri may or may not coerce strings in arithmetic; test the actual behaviour
+function expect_string_arithmetic_error(Operation:func, Description:str)
+   local raised = false
    try
-      result = 3 + '4'
-      -- If we get here, coercion happened
-      assert(result is 7, 'If string coercion occurs, 3 + "4" should be 7')
+      Operation()
    except
-      -- If we get here, coercion is not supported (which is safer)
-      assert(true, 'String-to-number coercion in arithmetic correctly raises error')
+      raised = true
+   end
+   assert(raised, Description .. ' must raise an arithmetic type error')
+end
+
+function string_arithmetic_metamethod_workload(Iterations:num):num
+   local text = '4'
+   local other_text = '5'
+   local total = 0
+
+   for _ in {0 to Iterations} do
+      total += 3 + text
+      total += text + 3
+      total += text + other_text
+      total += text % 3
+      total += 3 % text
+      total += 2 ** text
+      total += -text
+   end
+   return total
+end
+
+@Test function StringToNumberCoercionInArithmetic()
+   reset_runtime()
+   local text = '4'
+   local other_text = '5'
+
+   -- Arithmetic does not coerce strings; the operand must be converted explicitly with tonumber().
+   expect_string_arithmetic_error(function() return -text end, 'Unary minus on a string')
+   expect_string_arithmetic_error(function() return 3 + text end, 'Number plus string')
+   expect_string_arithmetic_error(function() return text + 3 end, 'String plus number')
+   expect_string_arithmetic_error(function() return text + other_text end, 'String plus string')
+   expect_string_arithmetic_error(function() return text % 3 end, 'String remainder number')
+   expect_string_arithmetic_error(function() return 3 % text end, 'Number remainder string')
+   expect_string_arithmetic_error(function() return 2 ** text end, 'Number to a string power')
+   assert(3 + tonumber('4') is 7, '3 + tonumber("4") should be 7')
+
+   -- A string arithmetic metamethod must run instead of implicit conversion in both the interpreter and JIT.
+   -- The runner's reset_runtime() restores the string metatable afterwards.
+   debug.setMetatable('', {
+      __unm = function(Value):num return 400 - tonumber(Value) end,
+      __add = function(Receiver, Other, LhsDispatch:bool):num
+         return 100 + tonumber(Receiver) + tonumber(Other)
+      end,
+      __mod = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 200 + (tonumber(Receiver) % tonumber(Other)) end
+         return 200 + (tonumber(Other) % tonumber(Receiver))
+      end,
+      __pow = function(Receiver, Other, LhsDispatch:bool):num
+         if LhsDispatch then return 300 + (tonumber(Receiver) ** tonumber(Other)) end
+         return 300 + (tonumber(Other) ** tonumber(Receiver))
+      end
+   })
+
+   jit.off()
+   jit.flush()
+   local expected = string_arithmetic_metamethod_workload(10)
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+   local actual = 0
+   for _ in {0 into 50} do actual = string_arithmetic_metamethod_workload(10) end
+
+   assert(actual is expected, 'JIT string arithmetic must match the interpreter metamethod result')
+
+   jit.off()
+   local trace_count = 0
+   for trace_no in {1 into 30} do
+      if jit.util.traceInfo(trace_no) != nil then trace_count++ end
+   end
+   jit.on()
+   assert(trace_count > 0, 'String arithmetic metamethod workload must produce a JIT trace')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- String-to-number bitwise coercion
+
+function expect_string_bitwise_error(Operation:func, Description:str)
+   local raised = false
+   try
+      Operation()
+   except
+      raised = true
+   end
+   assert(raised, Description .. ' must raise a bitwise type error')
+end
+
+@Test function StringToNumberCoercionInBitwise()
+   local text = '12'
+   local other_text = '5'
+
+   -- Bitwise operations do not coerce strings; the operand must be converted with tonumber().
+   expect_string_bitwise_error(function() return bit.band(text, 5) end, 'bit.band with string first argument')
+   expect_string_bitwise_error(function() return bit.band(12, other_text) end, 'bit.band with string second argument')
+   expect_string_bitwise_error(function() return bit.bor(text, 1) end, 'bit.bor with a string')
+   expect_string_bitwise_error(function() return bit.bxor(text, other_text) end, 'bit.bxor with two strings')
+   expect_string_bitwise_error(function() return bit.bnot(text) end, 'bit.bnot with a string')
+   expect_string_bitwise_error(function() return bit.lshift(text, 4) end, 'bit.lshift with a string value')
+   expect_string_bitwise_error(function() return bit.lshift(1, other_text) end, 'bit.lshift with a string count')
+   expect_string_bitwise_error(function() return bit.rshift(text, 4) end, 'bit.rshift with a string')
+   expect_string_bitwise_error(function() return bit.tobit(text) end, 'bit.tobit with a string')
+
+   -- The native C-style operators route to the same bit library and must not coerce either.
+   expect_string_bitwise_error(function() return text & 5 end, 'Native & with a string')
+   expect_string_bitwise_error(function() return text | 1 end, 'Native | with a string')
+   expect_string_bitwise_error(function() return ~text end, 'Native ~ with a string')
+   expect_string_bitwise_error(function() return text << 4 end, 'Native << with a string')
+
+   -- Explicit conversion with tonumber() restores the numeric result.
+   assert(bit.band(tonumber('12'), 5) is 4, 'bit.band(tonumber("12"), 5) should be 4')
+   assert((tonumber('12') & 5) is 4, 'tonumber("12") & 5 should be 4')
+   assert(bit.lshift(tonumber('1'), tonumber('4')) is 16, 'bit.lshift(tonumber("1"), tonumber("4")) should be 16')
+end
+
+function string_bitwise_workload(Iterations:num)
+   local text = '12'
+   for _ in {0 to Iterations} do
+      local ignore = bit.band(text, 5)
+   end
+end
+
+@Test function StringToNumberBitwiseUnderJIT()
+   -- A hot loop compiles a trace; a string operand must abort back to the interpreter and raise the
+   -- type error rather than silently coercing on the compiled path.
+   reset_runtime()
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   local raised = false
+   try
+      string_bitwise_workload(200)
+   except
+      raised = true
+   end
+   assert(raised, 'JIT bitwise on a string must raise a type error, not coerce')
+end
+
+@Test function ConstantRemainderNegativeTraceZeros()
+   reset_runtime()
+
+   -- Record the negative trace first, then exercise both zero signs and sign-changing side traces.
+   local values = array<double> { -100.25, -200.0, -0.0, 0.0, 100.25, 200.0, -5e-324, 5e-324 }
+   local expected = {}
+   jit.off()
+   jit.flush()
+   for i in {0 to #values} do
+      local a, b, c = constant_remainders(values[i])
+      expected[i] = { a, b, c }
+   end
+
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   for i in {0 to #values} do
+      for _ in {0 to 80} do
+         local a, b, c = constant_remainders(values[i])
+         assert_same_remainder(a, expected[i][0])
+         assert_same_remainder(b, expected[i][1])
+         assert_same_remainder(c, expected[i][2])
+      end
    end
 end

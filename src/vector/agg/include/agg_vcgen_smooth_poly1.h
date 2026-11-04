@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,24 +5,19 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Generates smoothed polygon vertices. Hooks into conv_smooth_poly1 through conv_adaptor_vcgen. In the vector renderer
+// it softens polygonal contours before stroke or fill rasterisation.
+//
+// See Implementation agg_vcgen_smooth_poly1.cpp
 
-
-#ifndef AGG_VCGEN_SMOOTH_POLY1_INCLUDED
-#define AGG_VCGEN_SMOOTH_POLY1_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vertex_sequence.h"
 
-
 namespace agg
 {
-
-    //======================================================vcgen_smooth_poly1
-    //
-    // See Implementation agg_vcgen_smooth_poly1.cpp
-    // Smooth polygon generator
-    //
-    //------------------------------------------------------------------------
     class vcgen_smooth_poly1
     {
         enum status_e
@@ -76,7 +70,3 @@ namespace agg
     };
 
 }
-
-
-#endif
-

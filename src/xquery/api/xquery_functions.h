@@ -27,6 +27,9 @@
 //********************************************************************************************************************
 // XPath Function Library
 
+bool read_text_resource(XPathEvaluator &Eval, const std::string &URI, const std::optional<std::string> &Encoding,
+   std::string * &Result);
+
 using XPathFunction = std::function<XPathVal(const std::vector<XPathVal> &, const XPathContext &)>;
 
 class XPathFunctionLibrary {

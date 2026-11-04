@@ -1,0 +1,149 @@
+-- Verify SCTP/DCEP wire fixture integrity independently of the SCTP codec.
+
+   import 'json'
+
+function expect(Condition:bool, Message:str)
+   if not Condition then raise ERR_Failed, Message end
+end
+
+-- Bitwise operators produce signed 32-bit results; convert to an unsigned value for comparison.
+
+function u32(Value:num):num
+   return Value < 0 ? Value + 0x100000000 : Value
+end
+
+function from_hex(Hex:str!):str
+   local bytes = array<str>
+   for i in {0 to #Hex by 2} do
+      bytes.push(string.char(tonumber(Hex.sub(i, i + 2), 16)))
+   end
+   return bytes.concat()
+end
+
+function be16(Data:str!, Pos:num!):num
+   return (Data.byte(Pos) << 8) | Data.byte(Pos + 1)
+end
+
+function be32(Data:str!, Pos:num!):num
+   return u32((Data.byte(Pos) << 24) | (Data.byte(Pos + 1) << 16) | (Data.byte(Pos + 2) << 8) | Data.byte(Pos + 3))
+end
+
+function le32(Data:str!, Pos:num!):num
+   return u32((Data.byte(Pos + 3) << 24) | (Data.byte(Pos + 2) << 16) | (Data.byte(Pos + 1) << 8) | Data.byte(Pos))
+end
+
+function reverse_bits(Value:num!, Width:num!):num
+   local result = 0
+   for _ in {0 to Width} do
+      result = (result << 1) | (Value & 1)
+      Value = Value >> 1
+   end
+   return result
+end
+
+function crc32c(Data:str!):num
+   -- MSB-first long division, deliberately unlike the codec's reflected implementation.
+   local remainder = 0xffffffff
+   for i in {0 to #Data} do
+      remainder = remainder ^ (reverse_bits(Data.byte(i), 8) << 24)
+      for _ in {0 to 8} do
+         local top = remainder & 0x80000000
+         remainder = remainder << 1
+         if top != 0 then remainder = remainder ^ 0x1edc6f41 end
+      end
+   end
+   return u32(reverse_bits(remainder, 32) ^ 0xffffffff)
+end
+
+-- Strict UTF-8 validation, rejecting overlong forms, surrogates and code points above U+10FFFF.
+
+function valid_utf8(Data:str!):bool
+   local i = 0
+   while i < #Data do
+      local c = Data.byte(i)
+      local extra, min_cp, cp = 0, 0, 0
+      if c < 0x80 then
+         extra = 0
+      elseif c >= 0xc2 and c <= 0xdf then
+         extra, min_cp, cp = 1, 0x80, c & 0x1f
+      elseif c >= 0xe0 and c <= 0xef then
+         extra, min_cp, cp = 2, 0x800, c & 0x0f
+      elseif c >= 0xf0 and c <= 0xf4 then
+         extra, min_cp, cp = 3, 0x10000, c & 0x07
+      else
+         return false
+      end
+      if i + extra >= #Data then return false end
+      for j in {1 to extra + 1} do  -- Ranges reverse when Stop < Start, so {1 into 0} would not be empty
+         local cc = Data.byte(i + j)
+         if (cc & 0xc0) != 0x80 then return false end
+         cp = (cp << 6) | (cc & 0x3f)
+      end
+      if extra > 0 and (cp < min_cp or cp > 0x10ffff or (cp >= 0xd800 and cp <= 0xdfff)) then return false end
+      i += extra + 1
+   end
+   return true
+end
+
+function verify_sctp(Fixtures:table!):num
+   for _, vector in Fixtures.crc32c do
+      expect(crc32c(from_hex(vector.hex)) is tonumber(vector.checksum, 16), f'crc32c known answer {vector.checksum}')
+   end
+
+   for _, fixture in Fixtures.packets do
+      local wire = from_hex(fixture.hex)
+      expect(be16(wire, 0) is fixture.source_port, f'{fixture.name}: source port')
+      expect(be16(wire, 2) is fixture.destination_port, f'{fixture.name}: destination port')
+      expect(be32(wire, 4) is fixture.verification_tag, f'{fixture.name}: verification tag')
+
+      local correct_crc = le32(wire, 8) is crc32c(wire.sub(0, 8) .. string.char(0, 0, 0, 0) .. wire.sub(12))
+      expect(correct_crc is (fixture.name != 'checksum_corruption'), fixture.name)
+
+      if fixture.valid then
+         local offset = 12
+         while offset < #wire do
+            local length = be16(wire, offset + 2)
+            expect(length >= 4 and offset + length <= #wire, f'{fixture.name}: chunk bounds')
+            offset += (length + 3) & ~3
+         end
+         expect(offset is #wire, f'{fixture.name}: packet length')
+      end
+   end
+
+   return #Fixtures.crc32c + #Fixtures.packets
+end
+
+function verify_dcep(Fixtures:table!):num
+   for _, fixture in Fixtures.messages do
+      local wire = from_hex(fixture.hex)
+      local valid = wire is string.char(2)
+      if #wire >= 12 and wire.byte(0) is 3 then
+         local kind            = wire.byte(1)
+         local priority        = be16(wire, 2)
+         local reliability     = be32(wire, 4)
+         local label_length    = be16(wire, 8)
+         local protocol_length = be16(wire, 10)
+         valid = (kind is 0 or kind is 1 or kind is 2 or kind is 128 or kind is 129 or kind is 130) and
+            #wire is 12 + label_length + protocol_length
+
+         local label    = wire.sub(12, 12 + label_length)
+         local protocol = wire.sub(12 + label_length)
+         if valid then valid = valid_utf8(label) and valid_utf8(protocol) end
+
+         if valid then
+            expect(priority is 256, f'{fixture.name}: priority')
+            expect(kind is fixture.channel_type, f'{fixture.name}: channel type')
+            expect(reliability is fixture.reliability, f'{fixture.name}: reliability')
+            expect(label is fixture.label, f'{fixture.name}: label')
+            expect(protocol is fixture.protocol, f'{fixture.name}: protocol')
+         end
+      end
+      expect(valid is fixture.valid, fixture.name)
+   end
+   return #Fixtures.messages
+end
+
+   local root = obj.find('self').workingPath .. 'fixtures/'
+   local count = verify_sctp(json.decode(io.readAll(root .. 'sctp_wire.json')))
+   count += verify_dcep(json.decode(io.readAll(root .. 'dcep_wire.json')))
+   print(f'Verified {count} CRC/wire fixtures.')

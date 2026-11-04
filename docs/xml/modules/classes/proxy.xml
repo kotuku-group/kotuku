@@ -67,7 +67,10 @@
       </description>
       <result>
         <error code="Okay">Proxy deleted.</error>
+        <error code="FieldNotSet">The proxy has no group name or record reference.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -83,10 +86,10 @@
 <p>The following example searches for all proxies available for use on port 80 (HTTP).</p>
 <pre>objProxy::create proxy;
 if (proxy.ok()) {
-   if (prxFind(*proxy, 80) IS ERR::Okay) {
+   if (!prxFind(*proxy, 80)) {
       do {
          ...
-      } while (prxFindNext(*proxy) IS ERR::Okay);
+      } while (!prxFindNext(*proxy));
    }
 }
 </pre>
@@ -94,7 +97,9 @@ if (proxy.ok()) {
       <result>
         <error code="Okay">A proxy was discovered.</error>
         <error code="NoSearchResult">No matching proxy was discovered.</error>
+        <error code="CreateObject">A call to CreateObject() failed</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
     <method>
@@ -109,6 +114,7 @@ if (proxy.ok()) {
         <error code="Okay">A proxy was discovered.</error>
         <error code="NoSearchResult">No matching proxy was discovered.</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
   </methods>
@@ -127,7 +133,7 @@ if (proxy.ok()) {
     <field>
       <name>GatewayFilter</name>
       <comment>The IP address of the gateway that the proxy is limited to.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>The GatewayFilter defines the IP address of the gateway that this proxy is limited to. It is intended to limit the results of searches performed by the <method>Find</method> method.</p>
@@ -148,7 +154,7 @@ if (proxy.ok()) {
     <field>
       <name>NetworkFilter</name>
       <comment>The name of the network that the proxy is limited to.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>The NetworkFilter defines the name of the network that this proxy is limited to. It is intended to limit the results of searches performed by the <method>Find</method> method.</p>
@@ -160,7 +166,7 @@ if (proxy.ok()) {
     <field>
       <name>Password</name>
       <comment>The password to use when authenticating against the proxy server.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>If the proxy requires authentication, the user password may be set here to enable an automated authentication process. If the password is not set, a dialog will need to be used to prompt the user for the password before communicating with the proxy.</p>
@@ -180,7 +186,7 @@ if (proxy.ok()) {
     <field>
       <name>ProxyName</name>
       <comment>A human readable name for the proxy server entry.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>A proxy can be given a human readable name by setting this field.</p>
@@ -201,7 +207,7 @@ if (proxy.ok()) {
     <field>
       <name>Server</name>
       <comment>The destination address of the proxy server - may be an IP address or resolvable domain name.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>The domain name or IP address of the proxy server must be defined here.</p>
@@ -221,7 +227,7 @@ if (proxy.ok()) {
     <field>
       <name>Username</name>
       <comment>The username to use when authenticating against the proxy server.</comment>
-      <access read="R" write="S">Read/Set</access>
+      <access read="R" write="W">Read/Write</access>
       <type>STRING</type>
       <description>
 <p>If the proxy requires authentication, the user name may be set here to enable an automated authentication process. If the username is not set, a dialog will be required to prompt the user for the user name before communicating with the proxy server.</p>

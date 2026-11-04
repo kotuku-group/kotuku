@@ -6,9 +6,11 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Stores anti-aliased scanlines for later replay. Hooks into rasteriser output, scanline_boolean_algebra, and
+// renderer_scanline. In the vector renderer it caches coverage when masks or compound operations need multiple passes.
 
-#ifndef AGG_SCANLINE_STORAGE_AA_INCLUDED
-#define AGG_SCANLINE_STORAGE_AA_INCLUDED
+#pragma once
 
 #include <string.h>
 #include <stdlib.h>
@@ -699,6 +701,3 @@ namespace agg
     typedef serialized_scanlines_adaptor_aa<int16u> serialized_scanlines_adaptor_aa16; //----serialized_scanlines_adaptor_aa16
     typedef serialized_scanlines_adaptor_aa<int32u> serialized_scanlines_adaptor_aa32; //----serialized_scanlines_adaptor_aa32
 }
-
-#endif
-

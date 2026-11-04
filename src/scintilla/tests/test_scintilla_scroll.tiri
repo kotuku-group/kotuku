@@ -1,0 +1,515 @@
+-- Tests for scrolling in the Scintilla class.  The View clips the document, and the Page represents the extent of the
+-- document.  Scrolling moves the Page within the View, while the Canvas rides inside the Page at the scroll position
+-- so that it always covers the View.  Scintilla scrolls by whole lines, so the Page is always snapped to a line.
+--
+-- These geometry tests explicitly use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of 4
+-- means that text starts at x = 4.  The 120 pixel high View shows 9 whole lines.
+
+   import 'gui', 'gui/scrollbar'
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+
+PAGE_WIDTH    = 300
+PAGE_HEIGHT   = 120
+LINE_HEIGHT   = 13
+GLYPH_WIDTH   = 7
+TEXT_LEFT     = 4
+VISIBLE_LINES = 9
+TOTAL_LINES   = 500
+MAX_TOP_LINE  = TOTAL_LINES - VISIBLE_LINES
+
+-- Wheel values as reported by the display drivers: upward rotation is negative.
+
+WHEEL_UP   <const> = -9
+WHEEL_DOWN <const> = 9
+
+-- Each line of the test document consists of 'H' characters, and line i has (i % 30) + 1 of them.  The length of a
+-- rendered line therefore identifies it.
+
+function lineLengthOf(Line:num):num
+   return (Line % 30) + 1
+end
+
+function newDocument():str
+   local text = ('H').rep(lineLengthOf(0))
+   for i in {1 to TOTAL_LINES} do text ..= '\n' .. ('H').rep(lineLengthOf(i)) end
+   return text
+end
+
+-- Create a headless scene with a host viewport and a Scintilla object, and a bitmap that the scene renders to.
+
+function newEditor(Options:table):<obj, obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
+   options.lineHighlight ?= '255,255,255,0'
+   local sci = vp.new('Scintilla', options)
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   return scene, vp, sci, bmp
+end
+
+function render(Scene:obj)
+   check Scene.acDraw()
+   processing.sleep(0)
+   check Scene.acDraw()
+end
+
+function getCanvas(Sci:obj):obj
+   return Sci.page.child
+end
+
+-- The line at the top of the View, as derived from the position of the Page.
+
+function topLine(Sci:obj):num
+   return -Sci.page.y / LINE_HEIGHT
+end
+
+-- Returns the number of glyphs drawn on the line that occupies a row of the View, measured from the right-most dark
+-- pixel.  ReadRGBPixel() results share one buffer, so the channels are read immediately.
+
+function glyphsOnRow(Bitmap:obj, Row:num):num
+   local right = -1
+   for py in {Row * LINE_HEIGHT to (Row + 1) * LINE_HEIGHT} do
+      for px in {TEXT_LEFT to PAGE_WIDTH} do
+         local p = mGfx.ReadRGBPixel(Bitmap, px, py)
+         if (p.red + p.green + p.blue < 300) and (px > right) then right = px end
+      end
+   end
+   if right < 0 then return 0 end
+   return math.floor((right - TEXT_LEFT) / GLYPH_WIDTH) + 1
+end
+
+function darkPixels(Bitmap:obj, X:num, Y:num, Width:num, Height:num):num
+   local total = 0
+   for py in {Y to Y + Height} do
+      for px in {X to X + Width} do
+         local p = mGfx.ReadRGBPixel(Bitmap, px, py)
+         if p.red + p.green + p.blue < 300 then total++ end
+      end
+   end
+   return total
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Page extent
+
+@Test function PageCoversDocument()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   -- The furthest that the Page can move within the View must reach the last scrollable line exactly.
+
+   local expected = (MAX_TOP_LINE * LINE_HEIGHT) + PAGE_HEIGHT
+   assert(sci.page.height is expected, f'The page height must be {expected}, got {sci.page.height}')
+   assert(sci.page.width is PAGE_WIDTH, f'Short lines must not widen the page, width is {sci.page.width}')
+   assert(sci.page.x is 0 and sci.page.y is 0, f'The page must start at 0,0, is at {sci.page.x},{sci.page.y}')
+end
+
+@Test function ShortDocumentDoesNotScroll()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'one\ntwo\nthree'
+   render(scene)
+   assert(sci.page.height is PAGE_HEIGHT, f'A short document needs no scrolling, page height is {sci.page.height}')
+
+   check sci.mtScrollToPoint(0, 100)
+   assert(sci.page.y is 0, f'A short document must not scroll, page.y is {sci.page.y}')
+end
+
+@Test function PageFollowsLineCount()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   check sci.mtInsertText('\nextra\nlines', -1)
+   render(scene)
+   local expected = ((MAX_TOP_LINE + 2) * LINE_HEIGHT) + PAGE_HEIGHT
+   assert(sci.page.height is expected, f'Adding lines must extend the page to {expected}, got {sci.page.height}')
+end
+
+@Test function ResizeUpdatesPageExtent()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', { x=0, y=0, width=200, height=60 })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   sci.string = newDocument()
+   render(scene)
+
+   -- 60 pixels show 4 whole lines.
+
+   local expected = ((TOTAL_LINES - 4) * LINE_HEIGHT) + 60
+   assert(sci.page.height is expected, f'Initial page height must be {expected}, got {sci.page.height}')
+
+   check sci.mtScrollToPoint(0, 1000000)
+   assert(topLine(sci) is TOTAL_LINES - 4, f'Must scroll to the last page, top line is {topLine(sci)}')
+
+   -- Enlarging the View at the end of the document must pull the top line back so that no space is wasted.
+
+   host.height = 90
+   render(scene)
+   expected = ((TOTAL_LINES - 6) * LINE_HEIGHT) + 90
+   assert(sci.page.height is expected, f'Resized page height must be {expected}, got {sci.page.height}')
+   assert(topLine(sci) is TOTAL_LINES - 6, f'The top line must be pulled back, is {topLine(sci)}')
+   assert(sci.page.y + sci.page.height is 90, 'The page must end at the bottom of the View')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Vertical scrolling
+
+@Test function ScrollToPointMovesPage()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+   assert(glyphsOnRow(bmp, 0) is lineLengthOf(0), 'Line 0 must be shown first')
+
+   check sci.mtScrollToPoint(0, 100 * LINE_HEIGHT)
+   assert(sci.page.y is -100 * LINE_HEIGHT, f'The page must move to the scroll position, page.y is {sci.page.y}')
+   assert(getCanvas(sci).y is 100 * LINE_HEIGHT,
+      f'The canvas must ride at the scroll position, canvas.y is {getCanvas(sci).y}')
+
+   render(scene)
+   assert(glyphsOnRow(bmp, 0) is lineLengthOf(100),
+      f'Line 100 must be rendered at the top, found a line of {glyphsOnRow(bmp, 0)} glyphs')
+   assert(glyphsOnRow(bmp, 1) is lineLengthOf(101), 'Line 101 must follow line 100')
+end
+
+@Test function ScrollToPointRoundsToLines()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   check sci.mtScrollToPoint(0, (100 * LINE_HEIGHT) + 5)
+   assert(topLine(sci) is 100, f'5 pixels past line 100 must round down, top line is {topLine(sci)}')
+   check sci.mtScrollToPoint(0, (100 * LINE_HEIGHT) + 8)
+   assert(topLine(sci) is 101, f'8 pixels past line 100 must round up, top line is {topLine(sci)}')
+end
+
+@Test function ScrollToPointIsClamped()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   check sci.mtScrollToPoint(0, 1000000)
+   assert(topLine(sci) is MAX_TOP_LINE, f'Scrolling must stop at line {MAX_TOP_LINE}, top line is {topLine(sci)}')
+   assert(sci.page.y + sci.page.height is PAGE_HEIGHT, 'The end of the page must align with the end of the View')
+
+   render(scene)
+   local last = TOTAL_LINES - 1
+   assert(glyphsOnRow(bmp, VISIBLE_LINES - 1) is lineLengthOf(last), 'The last line must be fully visible')
+
+   check sci.mtScrollToPoint(-50, -50)
+   assert(sci.page.x is 0 and sci.page.y is 0, f'Negative positions must clamp to 0,0, got {sci.page.x},{sci.page.y}')
+end
+
+@Test function GotoLineScrollsToCaret()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   check sci.mtGotoLine(300)
+   local top = topLine(sci)
+   assert(top is math.floor(top), f'The page must be positioned on a whole line, top line is {top}')
+   assert(top <= 300 and 300 < top + VISIBLE_LINES, f'Line 300 must be visible, top line is {top}')
+
+   render(scene)
+   assert(glyphsOnRow(bmp, 300 - top) is lineLengthOf(300), 'Line 300 must be rendered within the View')
+end
+
+@Test function ExternalPageMoveScrollsEditor()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   sci.page.y = -200 * LINE_HEIGHT
+   render(scene)
+   assert(sci.page.y is -200 * LINE_HEIGHT, f'The page must stay where it was moved, page.y is {sci.page.y}')
+   assert(getCanvas(sci).y is 200 * LINE_HEIGHT, f'The canvas must follow the page, canvas.y is {getCanvas(sci).y}')
+   assert(glyphsOnRow(bmp, 0) is lineLengthOf(200),
+      f'Line 200 must be rendered at the top, found a line of {glyphsOnRow(bmp, 0)} glyphs')
+end
+
+-- Snapping to the nearest line is required for stable thumb dragging.  A consequence is that repeated steps of less
+-- than half a line do not accumulate, so clients that step the Page must use at least half the line height.
+
+@Test function ExternalPageMoveSnapsToLines()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   sci.page.y = -(200 * LINE_HEIGHT) - 5
+   render(scene)
+   assert(sci.page.y is -200 * LINE_HEIGHT, f'The page must snap back to line 200, page.y is {sci.page.y}')
+
+   sci.page.y = -(200 * LINE_HEIGHT) - 9
+   render(scene)
+   assert(sci.page.y is -201 * LINE_HEIGHT, f'The page must snap forward to line 201, page.y is {sci.page.y}')
+   assert(glyphsOnRow(bmp, 0) is lineLengthOf(201), 'Line 201 must be rendered at the top')
+
+   sci.page.y = -1000000
+   render(scene)
+   assert(topLine(sci) is MAX_TOP_LINE, f'A page moved too far must be clamped, top line is {topLine(sci)}')
+end
+
+-- An external Page move is detected while the scene is drawn, when the editor cannot paint.  A move of a few lines
+-- shifts the existing content, so the frame drawn before the repaint shows the scrolled lines and a blank exposed band.
+
+@Test function ExternalPageMoveFirstFrame()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newDocument()
+   render(scene)
+
+   sci.page.y = -(3 * LINE_HEIGHT)
+   check scene.acDraw()
+   for row in {0 to VISIBLE_LINES - 3} do
+      assert(glyphsOnRow(bmp, row) is lineLengthOf(row + 3), f'Row {row} must show line {row + 3} before the repaint')
+   end
+   assert(glyphsOnRow(bmp, VISIBLE_LINES - 2) is 0, 'The exposed band must be blank before the repaint')
+
+   processing.sleep(0)
+   check scene.acDraw()
+   for row in {0 to VISIBLE_LINES} do
+      assert(glyphsOnRow(bmp, row) is lineLengthOf(row + 3), f'Row {row} must show line {row + 3} after the repaint')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Horizontal scrolling
+
+-- Line 0 consists of 50 spaces followed by 50 glyphs.  The glyphs start at x = 354, beyond the right edge of the
+-- View.  The scroll width is the longest line plus 30 pixels of padding.
+
+function newWideDocument():str
+   return (' ').rep(50) .. ('H').rep(50) .. '\nshort'
+end
+
+@Test function LongLinesWidenPage()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newWideDocument()
+   render(scene)
+
+   local expected = (100 * GLYPH_WIDTH) + 30 + TEXT_LEFT
+   assert(sci.page.width is expected, f'The page width must be {expected}, got {sci.page.width}')
+   assert(darkPixels(bmp, 0, 0, PAGE_WIDTH, LINE_HEIGHT) is 0, 'The glyphs must start beyond the View')
+end
+
+-- The scroll width is measured over the whole document, so a widest line beyond line 2000 sizes the Page exactly.
+
+function pageWidthFor(Glyphs:num):num
+   return (Glyphs * GLYPH_WIDTH) + 30 + TEXT_LEFT
+end
+
+function linesWithWideLine(Total:num, WideLine:num, Glyphs:num):str
+   local parts = array<str> { }
+   for i in {0 to Total} do parts.push((i is WideLine) ? ('H').rep(Glyphs) : 'short line') end
+   return parts.concat('\n')
+end
+
+@Test function WidestLineBeyondLine2000()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = linesWithWideLine(5000, 4321, 120)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(120), f'The page width must be {pageWidthFor(120)}, got {sci.page.width}')
+
+   -- A long document without wide lines is not padded beyond its widest line.
+   sci.string = linesWithWideLine(5000, -1, 0)
+   render(scene)
+   assert(sci.page.width is PAGE_WIDTH, f'Short lines must not widen the page, width is {sci.page.width}')
+end
+
+@Test function TypingWidensPage()
+   local scene <close>, vp, sci, bmp = newEditor({ flags=SCIF_EDIT })
+   sci.string = linesWithWideLine(3000, 10, 60)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(60), f'The page width must start at {pageWidthFor(60)}, got {sci.page.width}')
+
+   -- Widen line 2500, which is not visible, through the API.  The line becomes 90 glyphs wide.
+   local _, pos = check sci.mtGetPos(2500, 0)
+   check sci.mtInsertText(('H').rep(80), pos)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(90),
+      f'Inserting must widen the page to {pageWidthFor(90)}, got {sci.page.width}')
+
+   -- Typing extends the caret's line one character at a time.
+   check sci.mtGotoLine(2500)
+   check sci.mtSelectRange(pos + 80, pos + 80)
+   for i in {0 to 5} do
+      check sci.mtInsertText('H', -1)
+      render(scene)
+   end
+   assert(sci.page.width is pageWidthFor(95), f'Typing must widen the page to {pageWidthFor(95)}, got {sci.page.width}')
+
+   -- Edits do not narrow the page, which would move the view while typing.
+   check sci.mtDeleteLine(2500)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(95), f'Deleting must not narrow the page, got {sci.page.width}')
+
+   -- Edits that add lines above a pending line still measure the shifted line.
+   local _, pos10 = check sci.mtGetPos(10, 0)
+   check sci.mtInsertText(('H').rep(90), pos10)
+   check sci.mtInsertText('\n\n\n', 0)
+   render(scene)
+   assert(sci.page.width is pageWidthFor(150),
+      f'Shifted edits must widen the page to {pageWidthFor(150)}, got {sci.page.width}')
+end
+
+-- A proportional face can rank a narrow line of many glyphs above a wider line of fewer glyphs.  The wider line widens
+-- the Page once it is painted.
+
+@Test function ProportionalWideLineWidensWhenPainted()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Noto Sans', fontSize=12 })
+   sci.string = ('i').rep(90) .. '\n' .. linesWithWideLine(2600, 2500, 0).replace('short line', 'x') .. '\n' ..
+      ('W').rep(40)
+   render(scene)
+   local initial = sci.page.width
+   check sci.mtGotoLine(sci.lineCount - 1)
+   render(scene)
+   assert(sci.page.width > initial, f'Painting the wider line must widen the page beyond {initial}')
+   check sci.mtScrollToPoint(100000, sci.lineCount * 100)
+   render(scene)
+   local limit = sci.page.width - PAGE_WIDTH
+   assert(sci.page.x is -limit, f'The view must scroll to the widened limit {limit}, page.x is {sci.page.x}')
+end
+
+@Test function HorizontalScroll()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newWideDocument()
+   render(scene)
+
+   check sci.mtScrollToPoint(50 * GLYPH_WIDTH, 0)
+   assert(sci.page.x is -50 * GLYPH_WIDTH, f'The page must move left, page.x is {sci.page.x}')
+   assert(getCanvas(sci).x is 50 * GLYPH_WIDTH, f'The canvas must ride at the scroll position, is {getCanvas(sci).x}')
+
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, GLYPH_WIDTH, LINE_HEIGHT) > 0, 'The first glyph must be at the text margin')
+   assert(darkPixels(bmp, 0, 0, TEXT_LEFT, LINE_HEIGHT) is 0, 'The left margin must not scroll')
+
+   check sci.mtScrollToPoint(100000, 0)
+   local limit = sci.page.width - PAGE_WIDTH
+   assert(sci.page.x is -limit, f'Horizontal scrolling must stop at {limit}, page.x is {sci.page.x}')
+end
+
+@Test function ExternalHorizontalPageMove()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = newWideDocument()
+   render(scene)
+
+   sci.page.x = -(50 * GLYPH_WIDTH)
+   render(scene)
+   assert(getCanvas(sci).x is 50 * GLYPH_WIDTH, f'The canvas must follow the page, canvas.x is {getCanvas(sci).x}')
+   assert(darkPixels(bmp, TEXT_LEFT, 0, GLYPH_WIDTH, LINE_HEIGHT) > 0, 'The scrolled glyphs must be rendered')
+end
+
+@Test function WordwrapDisablesHorizontalScroll()
+   local scene <close>, vp, sci, bmp = newEditor({ wordwrap=true })
+   sci.string = newWideDocument()
+   render(scene)
+
+   assert(sci.page.width is PAGE_WIDTH, f'A wrapped document must not widen the page, width is {sci.page.width}')
+   check sci.mtScrollToPoint(200, 0)
+   assert(sci.page.x is 0, f'A wrapped document must not scroll horizontally, page.x is {sci.page.x}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Pointer input requires a surface.  Input boundaries are recorded when the scene is drawn.
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function newSurfaceEditor(Text:str!):<obj, obj, obj, obj>
+   local surface = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
+   sci.string = Text
+   return surface, scene, host, sci
+end
+
+function show(Surface:obj)
+   Surface.acShow()
+   Surface.acDraw()
+   processing.sleep(0)
+end
+
+@BeforeEach function resetPointer()
+   if obj.find('SystemPointer') then feed(JET_ABS_XY, 1000, 1000) end
+end
+
+@Test function WheelScrollsThreeLines()
+   local surface <close>, scene, host, sci = newSurfaceEditor(newDocument())
+   show(surface)
+
+   feed(JET_ABS_XY, surface.absX + 50, surface.absY + 50)
+   feed(JET_WHEEL, WHEEL_DOWN, 0)
+   assert(topLine(sci) is 3, f'One wheel step must scroll 3 lines, top line is {topLine(sci)}')
+   feed(JET_WHEEL, WHEEL_DOWN * 3, 0)
+   assert(topLine(sci) is 6, f'Each event scrolls 3 lines regardless of its value, top line is {topLine(sci)}')
+   feed(JET_WHEEL, WHEEL_UP, 0)
+   assert(topLine(sci) is 3, f'Upward rotation must scroll back, top line is {topLine(sci)}')
+end
+
+@Test function HorizontalWheel()
+   local surface <close>, scene, host, sci = newSurfaceEditor(newWideDocument())
+   show(surface)
+
+   feed(JET_ABS_XY, surface.absX + 50, surface.absY + 50)
+   feed(JET_WHEEL_X, WHEEL_DOWN, 0)
+   assert(sci.page.x is -6 * GLYPH_WIDTH, f'A horizontal wheel step must scroll 6 columns, page.x is {sci.page.x}')
+   feed(JET_WHEEL_X, WHEEL_UP, 0)
+   feed(JET_WHEEL_X, WHEEL_UP, 0)
+   assert(sci.page.x is 0, f'Horizontal scrolling must stop at the left edge, page.x is {sci.page.x}')
+end
+
+@Test function ScrollbarIntegration()
+   local surface <close>, scene, host, sci = newSurfaceEditor(newDocument())
+   local scrollbar = gui.scrollbar({ target=host, view=sci.view, page=sci.page, direction='vertical' })
+   show(surface)
+   processing.sleep(0)
+   surface.acDraw()
+   processing.sleep(0)
+
+   -- The scrollbar reserves space by offsetting the View, which the editor must follow.
+
+   local view_width = sci.view.width
+   assert(view_width < PAGE_WIDTH, f'The scrollbar must reduce the width of the View, width is {view_width}')
+   assert(getCanvas(sci).width is view_width + 1, f'The canvas must follow the View, width is {getCanvas(sci).width}')
+
+   -- The editor receives the wheel before the scrollbar's subscription to the Page.
+
+   feed(JET_ABS_XY, surface.absX + 50, surface.absY + 50)
+   feed(JET_WHEEL, WHEEL_DOWN, 0)
+   assert(topLine(sci) is 3, f'The wheel must be handled once by the editor, top line is {topLine(sci)}')
+
+   -- Scrolling through the scrollbar moves the page by an arbitrary amount, which the editor snaps to a line.
+
+   scrollbar.scrollPage(0, -100)
+   surface.acDraw()
+   processing.sleep(0)
+   assert(topLine(sci) is 11, f'The page must snap to the nearest line, top line is {topLine(sci)}')
+end

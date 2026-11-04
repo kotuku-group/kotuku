@@ -20,6 +20,14 @@ will be supporting them.  The VectorFilter will detect the filter objects and th
 in which they are added.  It is most optimal to create each pipeline in advance, and a new VectorFilter object should
 be created for each pipeline as necessary.
 
+The filter's output is composited into the target with the blend mode resolved for the client vector, as described
+for @Vector.ColourSpace, and the filter's #Opacity is applied at the same time.  The filter's own #ColourSpace
+governs effect processing only and does not affect how the output is composited.
+
+Effects can read content that lies beyond the edges of the page, within the filter region, so a filtered vector that
+touches or crosses a page edge is processed as if the page were larger.  Samples outside of the filter region are
+transparent black.  The output is clipped to the page and any clipping imposed by container viewports.
+
 It is important to note that filter effects are CPU intensive tasks and real-time performance may be disappointing.
 If this is an issue, consider pre-rendering the filter effects in advance and caching the results in memory or files.
 
@@ -31,6 +39,8 @@ It is a requirement that VectorFilter objects are owned by the @VectorScene they
 
 //#define DEBUG_FILTER_BITMAP
 //#define EXPORT_FILTER_BITMAP
+
+constexpr int64_t MAX_FILTER_MARGIN_AREA = 4096 * 4096; // Processing regions with margins are limited to this area
 
 struct target {
    double bound_x, bound_y, bound_width, bound_height;
@@ -63,23 +73,23 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
       // "Any length values within the filter definitions represent fractions or percentages of the bounding box
       // on the referencing element."
 
-      if (dmf::hasAnyX(Self->Dimensions)) p_x = std::round(filter->TargetX + (Self->X * filter->BoundWidth));
-      if (dmf::hasAnyY(Self->Dimensions)) p_y = std::round(filter->TargetY + (Self->Y * filter->BoundHeight));
-      if (dmf::hasAnyWidth(Self->Dimensions)) p_width = std::round(Self->Width * filter->BoundWidth);
-      if (dmf::hasAnyHeight(Self->Dimensions)) p_height = std::round(Self->Height * filter->BoundHeight);
+      if (Self->X.defined()) p_x = std::round(filter->TargetX + (Self->X * filter->BoundWidth));
+      if (Self->Y.defined()) p_y = std::round(filter->TargetY + (Self->Y * filter->BoundHeight));
+      if (Self->Width.defined()) p_width = std::round(Self->Width * filter->BoundWidth);
+      if (Self->Height.defined()) p_height = std::round(Self->Height * filter->BoundHeight);
    }
    else {
-      if (dmf::hasScaledX(Self->Dimensions)) p_x = std::round(filter->TargetX + (Self->X * filter->TargetWidth));
-      else if (dmf::hasX(Self->Dimensions))  p_x = std::round(Self->X);
+      if (Self->X.scaled()) p_x = std::round(filter->TargetX + (Self->X * filter->TargetWidth));
+      else if (Self->X.defined()) p_x = std::round(Self->X);
 
-      if (dmf::hasScaledY(Self->Dimensions)) p_y = std::round(filter->TargetY + (Self->Y * filter->TargetHeight));
-      else if (dmf::hasY(Self->Dimensions))  p_y = std::round(Self->Y);
+      if (Self->Y.scaled()) p_y = std::round(filter->TargetY + (Self->Y * filter->TargetHeight));
+      else if (Self->Y.defined()) p_y = std::round(Self->Y);
 
-      if (dmf::hasScaledWidth(Self->Dimensions)) p_width = std::round(filter->TargetWidth * Self->Width);
-      else if (dmf::hasWidth(Self->Dimensions))  p_width = std::round(Self->Width);
+      if (Self->Width.scaled()) p_width = std::round(filter->TargetWidth * Self->Width);
+      else if (Self->Width.defined()) p_width = std::round(Self->Width);
 
-      if (dmf::hasScaledHeight(Self->Dimensions)) p_height = std::round(filter->TargetHeight * Self->Height);
-      else if (dmf::hasHeight(Self->Dimensions))  p_height = std::round(Self->Height);
+      if (Self->Height.scaled()) p_height = std::round(filter->TargetHeight * Self->Height);
+      else if (Self->Height.defined()) p_height = std::round(Self->Height);
    }
 
    double x_scale = 1, y_scale = 1, align_x = 0, align_y = 0;
@@ -91,7 +101,7 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
    agg::trans_affine img_transform;
    img_transform.scale(x_scale, y_scale);
    img_transform.translate(p_x, p_y);
-   img_transform *= filter->ClientVector->Transform;
+   img_transform *= filter->Transform;
    img_transform.invert();
 
    if (img_transform.is_complex()) {
@@ -104,22 +114,36 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
       renderBase.clip_box(Self->Target->Clip.Left, Self->Target->Clip.Top, Self->Target->Clip.Right-1, Self->Target->Clip.Bottom-1);
 
       agg::span_interpolator_linear<> interpolator(img_transform);
-
-      agg::image_filter_lut ifilter;
-      set_filter(ifilter, SampleMethod, img_transform);
-
       agg::span_once<agg::pixfmt_psl> source(pixSource, 0, 0);
-      agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
-         spangen(source, interpolator, ifilter, false);
 
       set_raster_rect_path(raster, Self->Target->Clip.Left, Self->Target->Clip.Top,
          Self->Target->Clip.Right - Self->Target->Clip.Left,
          Self->Target->Clip.Bottom - Self->Target->Clip.Top);
 
-      renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      if (SampleMethod IS VSM::NEIGHBOUR) {
+         agg::span_image_filter_rgba_nn<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+            spangen(source, interpolator);
+         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      }
+      else {
+         const agg::image_filter_lut &ifilter = get_filter(SampleMethod, img_transform);
+         agg::span_image_filter_rgba<agg::span_once<agg::pixfmt_psl>, agg::span_interpolator_linear<>>
+            spangen(source, interpolator, ifilter, false);
+         renderSolidBitmap(renderBase, raster, spangen); // Solid render without blending.
+      }
    }
    else gfx::CopyArea(Bitmap, Self->Target, BAF::NIL, 0, 0, Bitmap->Width, Bitmap->Height, -img_transform.tx, -img_transform.ty);
 }
+
+//********************************************************************************************************************
+// SSE2 detection is shared via link/simd.h.  Filter effects use FILTER_SSE2 to guard their SIMD rendering
+// paths, falling back to scalar code on other architectures.
+
+#include "../../link/simd.h"
+
+#ifdef KOTUKU_SSE2
+   #define FILTER_SSE2 1
+#endif
 
 //********************************************************************************************************************
 
@@ -141,6 +165,24 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
 #include "filter_wavefunction.cpp"
 
 //********************************************************************************************************************
+// Compute a bounding box region when the AspectRatio is NONE.  The region extends from the bounds by distances
+// measured against the normalised diagonal, so that the margin around the content is the same on every side for any
+// shape.  The default region of (-10%, -10%, 120%, 120%) adds 10% of the diagonal to each side.
+
+static TClipRectangle<double> diagonal_region(extVectorFilter *Self, double Left, double Top, double Width,
+   double Height)
+{
+   double diag = dist(0, 0, Width, Height) * INV_SQRT2;
+   double x = Self->X.defined() ? double(Self->X) : 0.0;
+   double y = Self->Y.defined() ? double(Self->Y) : 0.0;
+   double width  = std::max(0.0, Width + (((Self->Width.defined() ? double(Self->Width) : 1.0) - 1.0) * diag));
+   double height = std::max(0.0, Height + (((Self->Height.defined() ? double(Self->Height) : 1.0) - 1.0) * diag));
+   double left = Left + (x * diag);
+   double top  = Top + (y * diag);
+   return { left, top, left + width, top + height };
+}
+
+//********************************************************************************************************************
 // Compute the Target* and Bound* values, which are used by filter effect algorithms to determine placement.  They
 // reflect positions *without* transforms.  The caller is expected to apply ClientVector->Transform after making
 // normalised coordinate calculations.
@@ -149,57 +191,65 @@ template <class T> void render_to_filter(T *Self, objBitmap *Bitmap, ARF AspectR
 //
 // BoundsWidth/Height reflect the bounds of the client vector and its children.  These values are to
 // be used by effects to compute their area when PrimitiveUnits = BOUNDING_BOX.
+//
+// The bounds are measured in the client vector's coordinate system.  Children that are transformed relative to the
+// client, e.g. by a nested viewBox, are mapped into that system so that the area matches the rendered content.
 
 static void compute_target_area(extVectorFilter *Self)
 {
    TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-   //TClipRectangle<double> bounds = { Self->ClientViewport->vpFixedWidth, Self->ClientViewport->vpFixedHeight, 0, 0 };
-   calc_full_boundary(Self->ClientVector, bounds, false, false);
+   calc_local_boundary(Self->ClientVector, bounds);
    double boundX = std::round(bounds.left);
    double boundY = std::round(bounds.top);
    Self->BoundWidth  = std::round(bounds.width());
    Self->BoundHeight = std::round(bounds.height());
 
-   if (Self->Units IS VUNIT::BOUNDING_BOX) {
-      if (dmf::hasX(Self->Dimensions)) Self->TargetX = boundX;
-      else if (dmf::hasScaledX(Self->Dimensions)) Self->TargetX = std::round(boundX + (Self->X * Self->BoundWidth));
+   if ((Self->Units IS VUNIT::BOUNDING_BOX) and (Self->AspectRatio IS VFA::NONE)) {
+      auto region = diagonal_region(Self, boundX, boundY, Self->BoundWidth, Self->BoundHeight);
+      Self->TargetX      = std::round(region.left);
+      Self->TargetY      = std::round(region.top);
+      Self->TargetWidth  = std::round(region.width());
+      Self->TargetHeight = std::round(region.height());
+   }
+   else if (Self->Units IS VUNIT::BOUNDING_BOX) {
+      if (Self->X.defined()) Self->TargetX = std::round(boundX + (Self->X * Self->BoundWidth));
       else Self->TargetX = boundX;
 
-      if (dmf::hasY(Self->Dimensions)) Self->TargetY = boundY;
-      else if (dmf::hasScaledY(Self->Dimensions)) Self->TargetY = std::round(boundY + (Self->Y * Self->BoundHeight));
+      if (Self->Y.defined()) Self->TargetY = std::round(boundY + (Self->Y * Self->BoundHeight));
       else Self->TargetY = boundY;
 
-      if (dmf::hasWidth(Self->Dimensions)) Self->TargetWidth = std::round(Self->Width * Self->BoundWidth);
-      else if (dmf::hasScaledWidth(Self->Dimensions)) Self->TargetWidth = std::round(Self->Width * Self->BoundWidth);
+      if (Self->Width.defined()) Self->TargetWidth = std::round(Self->Width * Self->BoundWidth);
       else Self->TargetWidth = Self->BoundWidth;
 
-      if (dmf::hasHeight(Self->Dimensions)) Self->TargetHeight = std::round(Self->Height * Self->BoundHeight);
-      else if (dmf::hasScaledHeight(Self->Dimensions)) Self->TargetHeight = std::round(Self->Height * Self->BoundHeight);
+      if (Self->Height.defined()) Self->TargetHeight = std::round(Self->Height * Self->BoundHeight);
       else Self->TargetHeight = Self->BoundHeight;
    }
    else { // USERSPACE: Scaled dimensions are measured against the client's viewport rather than the vector.
-      if (dmf::hasX(Self->Dimensions)) Self->TargetX = std::round(Self->X);
-      else if (dmf::hasScaledX(Self->Dimensions)) Self->TargetX = std::round(Self->X * Self->ClientViewport->vpFixedWidth);
+      if (Self->X.scaled()) Self->TargetX = std::round(Self->X * Self->ClientViewport->vpFixedWidth);
+      else if (Self->X.defined()) Self->TargetX = std::round(Self->X);
       else Self->TargetX = boundX;
 
-      if (dmf::hasY(Self->Dimensions)) Self->TargetY = std::round(Self->Y);
-      else if (dmf::hasScaledY(Self->Dimensions)) Self->TargetY = std::round(Self->Y * Self->ClientViewport->vpFixedHeight);
+      if (Self->Y.scaled()) Self->TargetY = std::round(Self->Y * Self->ClientViewport->vpFixedHeight);
+      else if (Self->Y.defined()) Self->TargetY = std::round(Self->Y);
       else Self->TargetY = boundY;
 
-      if (dmf::hasWidth(Self->Dimensions)) Self->TargetWidth = Self->Width;
-      else if (dmf::hasScaledWidth(Self->Dimensions)) Self->TargetWidth = std::round(Self->Width * Self->ClientViewport->vpFixedWidth);
+      if (Self->Width.scaled()) Self->TargetWidth = std::round(Self->Width * Self->ClientViewport->vpFixedWidth);
+      else if (Self->Width.defined()) Self->TargetWidth = Self->Width;
       else Self->TargetWidth = Self->ClientViewport->vpFixedWidth;
 
-      if (dmf::hasHeight(Self->Dimensions)) Self->TargetHeight = Self->Height;
-      else if (dmf::hasScaledHeight(Self->Dimensions)) Self->TargetHeight = std::round(Self->Height * Self->ClientViewport->vpFixedHeight);
+      if (Self->Height.scaled()) Self->TargetHeight = std::round(Self->Height * Self->ClientViewport->vpFixedHeight);
+      else if (Self->Height.defined()) Self->TargetHeight = Self->Height;
       else Self->TargetHeight = Self->ClientViewport->vpFixedHeight;
    }
 }
 
 //********************************************************************************************************************
 // Return a bitmap from the bank.  In order to save memory, bitmap data is managed internally so that it always
-// reflects the size of the clipping region.  The bitmap's size reflects the Filter's (X,Y), (Width,Height) values in
-// accordance with the unit setting.
+// reflects the size of the clipping region.  The bitmap uses local coordinates, so (0,0) is the top-left of
+// VectorClip and the bitmap size matches the processing region.
+//
+// Effects can call this function while they are the current context, so the filter is set as the owner explicitly.
+// The bank frees its bitmaps, which must not be freed earlier with an effect.
 
 static ERR get_banked_bitmap(extVectorFilter *Self, objBitmap **BitmapResult)
 {
@@ -210,10 +260,11 @@ static ERR get_banked_bitmap(extVectorFilter *Self, objBitmap **BitmapResult)
 
    if (bi >= Self->Bank.size()) Self->Bank.emplace_back(std::make_unique<filter_bitmap>());
 
+   auto clip = Self->scratch_clip();
    #ifdef DEBUG_FILTER_BITMAP
-      auto bmp = Self->Bank[bi].get()->get_bitmap(Self->ClientViewport->Scene->PageWidth, Self->ClientViewport->Scene->PageHeight, Self->VectorClip, true);
+      auto bmp = Self->Bank[bi].get()->get_bitmap(clip.right, clip.bottom, clip, true, Self->UID);
    #else
-      auto bmp = Self->Bank[bi].get()->get_bitmap(Self->ClientViewport->Scene->PageWidth, Self->ClientViewport->Scene->PageHeight, Self->VectorClip, false);
+      auto bmp = Self->Bank[bi].get()->get_bitmap(clip.right, clip.bottom, clip, false, Self->UID);
    #endif
 
    if (bmp) {
@@ -239,7 +290,8 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
 
    kt::SwitchContext ctx(Self);
 
-   log.branch("%s #%d <- ID: #%u, Type: %d", Self->ActiveEffect->Class->ClassName, Self->ActiveEffect->UID, Effect ? Effect->UID : 0, int(SourceType));
+   log.msg(VLF::BRANCH|VLF::DETAIL, "%s #%d <- ID: #%u, Type: %d", Self->ActiveEffect->Class->ClassName.c_str(),
+      Self->ActiveEffect->UID, Effect ? Effect->UID : 0, int(SourceType));
 
    objBitmap *bmp = nullptr;
    if (SourceType IS VSF::GRAPHIC) { // SourceGraphic: Render the source vector without transformations (transforms will be applied in the final steps).
@@ -275,23 +327,49 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
       if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
 
       if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         gfx::CopyArea(Self->BkgdBitmap, bmp, BAF::NIL, Self->VectorClip.left, Self->VectorClip.top,
-            Self->VectorClip.right - Self->VectorClip.left, Self->VectorClip.bottom - Self->VectorClip.top,
-            bmp->Clip.Left, bmp->Clip.Top);
+         // The renderer shifts Data for scene-coordinate drawing.  CopyArea expects local bitmap coordinates.
+         auto save_data = Self->BkgdBitmap->offset(Self->BkgdOriginX, Self->BkgdOriginY);
+         gfx::CopyArea(Self->BkgdBitmap, bmp, BAF::NIL,
+            Self->VectorClip.left - Self->BkgdOriginX, Self->VectorClip.top - Self->BkgdOriginY,
+            Self->VectorClip.width(), Self->VectorClip.height(), bmp->Clip.Left, bmp->Clip.Top);
+         Self->BkgdBitmap->Data = save_data;
       }
    }
    else if (SourceType IS VSF::BKGD_ALPHA) {
       if (auto error = get_banked_bitmap(Self, &bmp); error != ERR::Okay) return log.warning(error);
       if ((Self->BkgdBitmap) and ((Self->BkgdBitmap->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL)) {
-         int dy = bmp->Clip.Top;
-         for (int sy=Self->BkgdBitmap->Clip.Top; sy < Self->BkgdBitmap->Clip.Bottom; sy++) {
-            auto src = (uint32_t *)(Self->BkgdBitmap->Data + (sy * Self->BkgdBitmap->LineWidth));
-            auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
-            int dx = bmp->Clip.Left;
-            for (int sx=Self->BkgdBitmap->Clip.Left; sx < Self->BkgdBitmap->Clip.Right; sx++) {
-               dest[dx++] = src[sx] & 0xff000000;
+         int src_left = std::max(Self->VectorClip.left, Self->BkgdBitmap->Clip.Left + Self->BkgdOriginX);
+         int src_top = std::max(Self->VectorClip.top, Self->BkgdBitmap->Clip.Top + Self->BkgdOriginY);
+         int src_right = std::min(Self->VectorClip.right, Self->BkgdBitmap->Clip.Right + Self->BkgdOriginX);
+         int src_bottom = std::min(Self->VectorClip.bottom, Self->BkgdBitmap->Clip.Bottom + Self->BkgdOriginY);
+
+         int dest_x = bmp->Clip.Left + (src_left - Self->VectorClip.left);
+         int dest_y = bmp->Clip.Top + (src_top - Self->VectorClip.top);
+
+         if (dest_x < bmp->Clip.Left) {
+            src_left += bmp->Clip.Left - dest_x;
+            dest_x = bmp->Clip.Left;
+         }
+
+         if (dest_y < bmp->Clip.Top) {
+            src_top += bmp->Clip.Top - dest_y;
+            dest_y = bmp->Clip.Top;
+         }
+
+         int width = std::min(src_right - src_left, bmp->Clip.Right - dest_x);
+         int height = std::min(src_bottom - src_top, bmp->Clip.Bottom - dest_y);
+
+         if ((width > 0) and (height > 0)) {
+            int dy = dest_y;
+            for (int sy=src_top; sy < src_top + height; sy++) {
+               auto src = (uint32_t *)(Self->BkgdBitmap->Data + (sy * Self->BkgdBitmap->LineWidth));
+               auto dest = (uint32_t *)(bmp->Data + (dy * bmp->LineWidth));
+               int dx = dest_x;
+               for (int sx=src_left; sx < src_left + width; sx++) {
+                  dest[dx++] = src[sx] & 0xff000000;
+               }
+               dy++;
             }
-            dy++;
          }
       }
    }
@@ -305,12 +383,13 @@ static ERR get_source_bitmap(extVectorFilter *Self, objBitmap **BitmapResult, VS
          }
 
          if (!bmp) {
-            log.warning("%s has dependency on %s effect #%u and does not output a bitmap.", Self->ActiveEffect->Class->ClassName, Effect->Class->ClassName, Effect->UID);
+            log.warning("%s has dependency on %s effect #%u and does not output a bitmap.",
+               Self->ActiveEffect->Class->ClassName.c_str(), Effect->Class->ClassName.c_str(), Effect->UID);
             return ERR::NoData;
          }
       }
       else {
-         log.warning("%s source reference has not provided an effect.", Self->ActiveEffect->Class->ClassName);
+         log.warning("%s source reference has not provided an effect.", Self->ActiveEffect->Class->ClassName.c_str());
          return ERR::NoData;
       }
   }
@@ -346,83 +425,157 @@ objBitmap * get_source_graphic(extVectorFilter *Self)
    kt::Log log(__FUNCTION__);
 
    if (!Self->ClientVector) {
-      log.warning("%s No ClientVector defined.", Self->ActiveEffect->Class->ClassName);
+      log.warning("%s No ClientVector defined.", Self->ActiveEffect->Class->ClassName.c_str());
       return nullptr;
    }
 
-   if (Self->Rendered) return Self->SourceGraphic; // Source bitmap already exists and drawn at the correct size.
+   if (Self->Rendered) return Self->SourceGraphic.Bitmap; // Source bitmap already drawn at the correct size.
 
    kt::SwitchContext ctx(Self);
 
-   if (!Self->SourceGraphic) {
-      // The BlendMode is set to SRGB for the sake of SVG compatibility.  Otherwise the use of filters
-      // like feColorMatrix can produce unexpected results.
+   // The bitmap covers the processing region only, using the same local coordinates as the banked bitmaps.  The
+   // client is rendered with a matching origin, which allows content to the left of or above the page to be drawn.
 
-      if (!(Self->SourceGraphic = objBitmap::create::local(fl::Name("source_graphic"),
-         fl::Width(Self->ClientViewport->Scene->PageWidth),
-         fl::Height(Self->ClientViewport->Scene->PageHeight),
-         fl::BitsPerPixel(32),
-         fl::Flags(BMF::ALPHA_CHANNEL),
-         fl::BlendMode(BLM::SRGB),
-         fl::ColourSpace(CS::SRGB)))) return nullptr;
-   }
-   else if ((Self->ClientViewport->Scene->PageWidth > Self->SourceGraphic->Width) or
-            (Self->ClientViewport->Scene->PageHeight > Self->SourceGraphic->Height)) {
-      Self->SourceGraphic->resize(Self->ClientViewport->Scene->PageWidth, Self->ClientViewport->Scene->PageHeight);
-   }
+   auto clip = Self->scratch_clip();
+   #ifdef DEBUG_FILTER_BITMAP
+      auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, true, 0, "source_graphic");
+   #else
+      auto sg = Self->SourceGraphic.get_bitmap(clip.right, clip.bottom, clip, false, 0, "source_graphic");
+   #endif
+
+   if (!sg) return nullptr;
+
+   // The SourceGraphic is an sRGB-encoded intermediate, so it inherits the target's preference but not its encoding
+   // (LINEAR and NONE).  An explicit Vector.ColourSpace on the client or its ancestors still applies, which is how
+   // SVG content resolves to SRGB.
+
+   auto preference = Self->BkgdBitmap ? Self->BkgdBitmap->BlendMode : BLM::AUTO;
+   if ((preference IS BLM::LINEAR) or (preference IS BLM::NONE)) preference = BLM::AUTO;
+
+   sg->BlendMode   = preference;
+   sg->ColourSpace = CS::SRGB;
 
    if (!Self->SourceScene) {
       if ((Self->SourceScene = extVectorScene::create::local(
             fl::PageWidth(Self->ClientViewport->Scene->PageWidth),
             fl::PageHeight(Self->ClientViewport->Scene->PageHeight)))) {
 
-         if (!extVectorViewport::create::global(fl::Owner(Self->SourceScene->UID),
-               fl::ColourSpace(Self->ColourSpace))) return nullptr;
+         if (!extVectorViewport::create::global(fl::Owner(Self->SourceScene->UID))) return nullptr;
       }
       else return nullptr;
    }
-   else if ((Self->ClientViewport->Scene->PageWidth > Self->SourceGraphic->Width) or
-            (Self->ClientViewport->Scene->PageHeight > Self->SourceGraphic->Height)) {
+   else if ((Self->ClientViewport->Scene->PageWidth > Self->SourceScene->PageWidth) or
+            (Self->ClientViewport->Scene->PageHeight > Self->SourceScene->PageHeight)) {
       acResize(Self->SourceScene, Self->ClientViewport->Scene->PageWidth, Self->ClientViewport->Scene->PageHeight, 0);
    }
 
+   // The client is drawn outside of its scene graph, so the viewport supplies the colour space that the client
+   // resolved to in the renderer.  The filter's own ColourSpace applies to effect processing only.
+
+   ((extVector *)Self->SourceScene->Viewport)->ColourSpace = Self->ClientColourSpace;
+
    auto const save_child = Self->SourceScene->Viewport->Child;
    Self->SourceScene->Viewport->Child = Self->ClientVector;
-   Self->SourceGraphic->Clip = { Self->VectorClip.left, Self->VectorClip.top, Self->VectorClip.right, Self->VectorClip.bottom };
-
-   if (Self->SourceGraphic->Clip.Top < 0)  Self->SourceGraphic->Clip.Top = 0;
-   if (Self->SourceGraphic->Clip.Left < 0) Self->SourceGraphic->Clip.Left = 0;
-   if (Self->SourceGraphic->Clip.Bottom > Self->SourceGraphic->Height) Self->SourceGraphic->Clip.Bottom = Self->SourceGraphic->Height;
-   if (Self->SourceGraphic->Clip.Right  > Self->SourceGraphic->Width)  Self->SourceGraphic->Clip.Right  = Self->SourceGraphic->Width;
-
-   // These non-fatal clipping checks will trigger if vector bounds lie outside of the visible/drawable area.
-   if (Self->SourceGraphic->Clip.Top >= Self->SourceGraphic->Clip.Bottom) {
-      Self->SourceScene->Viewport->Child = save_child;
-      return nullptr;
-   }
-   if (Self->SourceGraphic->Clip.Left >= Self->SourceGraphic->Clip.Right) {
-      Self->SourceScene->Viewport->Child = save_child;
-      return nullptr;
-   }
 
    auto const save_vector = Self->ClientVector->Next; // Switch off the Next pointer to prevent processing of siblings.
    Self->ClientVector->Next = nullptr;
    Self->Disabled = true; // Turning off the filter is required to prevent infinite recursion.
 
-   gfx::DrawRectangle(Self->SourceGraphic, 0, 0, Self->SourceGraphic->Width, Self->SourceGraphic->Height, 0x00000000, BAF::FILL);
-   Self->SourceScene->Bitmap = Self->SourceGraphic;
+   gfx::DrawRectangle(sg, 0, 0, sg->Width, sg->Height, 0x00000000, BAF::FILL);
+   Self->SourceScene->Bitmap = sg;
+   Self->SourceScene->RenderOriginX = Self->VectorClip.left;
+   Self->SourceScene->RenderOriginY = Self->VectorClip.top;
    acDraw(Self->SourceScene);
+   Self->SourceScene->RenderOriginX = 0;
+   Self->SourceScene->RenderOriginY = 0;
 
    Self->Disabled = false;
    Self->ClientVector->Next = save_vector;
    Self->SourceScene->Viewport->Child = save_child;
 
    Self->Rendered = true;
-   return Self->SourceGraphic;
+   return sg;
 }
 
 //********************************************************************************************************************
-// Defines the VectorClip values, which are utilised by the filter renderers.
+// Estimates the distance, in bitmap pixels, over which the effect pipeline can move content or sample neighbouring
+// pixels.  Pixels further than this from the page cannot affect the visible output.  The estimate is the sum over
+// every effect, so it is safe for any arrangement of the pipeline.  Effects with no fixed limit, such as a wrapping
+// convolution or a displacement map, return infinity.
+
+static void filter_reach(extVectorFilter *Self, double &ReachX, double &ReachY)
+{
+   constexpr double UNBOUNDED = std::numeric_limits<double>::infinity();
+
+   ReachX = ReachY = 0;
+   for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
+      double x = 0, y = 0;
+      switch (e->classID()) {
+         case CLASSID::BLURFX:
+            ((extBlurFX *)e)->radii(x, y);
+            x = std::ceil(std::min(x, MAX_BLUR_RADIUS)) + 1;
+            y = std::ceil(std::min(y, MAX_BLUR_RADIUS)) + 1;
+            break;
+
+         case CLASSID::OFFSETFX: {
+            int dx, dy;
+            ((extOffsetFX *)e)->pixel_offset(dx, dy);
+            x = std::abs(dx);
+            y = std::abs(dy);
+            break;
+         }
+
+         case CLASSID::LIGHTINGFX: // Surface normals are computed from a 3x3 kernel
+            x = y = 2;
+            break;
+
+         case CLASSID::MORPHOLOGYFX:
+            x = std::max(((extMorphologyFX *)e)->RadiusX, 0) + 1;
+            y = std::max(((extMorphologyFX *)e)->RadiusY, 0) + 1;
+            break;
+
+         case CLASSID::CONVOLVEFX: {
+            auto convolve = (extConvolveFX *)e;
+            if (convolve->EdgeMode IS EM::WRAP) x = y = UNBOUNDED;
+            else {
+               x = std::ceil(convolve->MatrixColumns * convolve->unitPixelSpacingX()) + 1;
+               y = std::ceil(convolve->MatrixRows * convolve->unitPixelSpacingY()) + 1;
+            }
+            break;
+         }
+
+         // Effects that process each pixel independently of its neighbours
+
+         case CLASSID::COLOURFX:
+         case CLASSID::COMPOSITEFX:
+         case CLASSID::FLOODFX:
+         case CLASSID::IMAGEFX:
+         case CLASSID::MERGEFX:
+         case CLASSID::REMAPFX:
+         case CLASSID::SOURCEFX:
+         case CLASSID::TURBULENCEFX:
+         case CLASSID::WAVEFUNCTIONFX:
+            break;
+
+         default: // Including DISPLACEMENTFX, which can sample at any distance
+            x = y = UNBOUNDED;
+            break;
+      }
+
+      ReachX += x;
+      ReachY += y;
+   }
+}
+
+//********************************************************************************************************************
+// Defines the VectorClip values utilised by the filter renderers.  The processing region is the filter region,
+// limited to the scene page and a margin around it.  The margin allows effects such as blurs and offsets to read
+// content that lies beyond the page edges, and it retains source pixels outside the drawing clip that effects may move
+// into it.  The scene renderer clips the final composite to the drawable area, including any clipping imposed by
+// container viewports.
+//
+// VectorClip is measured in scene coordinates and can extend beyond the page on every side.  Filter bitmaps are
+// addressed in local coordinates relative to its top-left corner.
 
 static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector)
 {
@@ -437,51 +590,77 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
    }
 
    if (Self->Units IS VUNIT::BOUNDING_BOX) {
-      // All coordinates are relative to the client vector, or vectors if we are applied to a group.
-      // The bounds are oriented to the client vector's transforms.
+      // Diagonal margins are measured in the client's coordinate system before applying its transform.
 
       TClipRectangle<double> bounds = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0, 0 };
-      calc_full_boundary(Vector, bounds, false /* siblings */, true /* transforms */);
+      bool transform_region = Self->AspectRatio IS VFA::NONE;
+      if (transform_region) calc_local_boundary(Vector, bounds);
+      else calc_full_boundary(Vector, bounds, false /* siblings */, true /* transforms */);
 
       if ((bounds.right <= bounds.left) or (bounds.bottom <= bounds.top)) {
          // No child vector defines a path for a SourceGraphic.  Default back to the viewport.
          bounds = Viewport->vpBounds;
+         transform_region = false;
       }
       auto const bound_width  = bounds.width();
       auto const bound_height = bounds.height();
 
-      if (dmf::hasX(Self->Dimensions)) Self->VectorClip.left = std::round(bounds.left + Self->X);
-      else if (dmf::hasScaledX(Self->Dimensions)) Self->VectorClip.left = std::round(bounds.left + (Self->X * bound_width));
-      else Self->VectorClip.left = std::round(bounds.left);
+      if (Self->AspectRatio IS VFA::NONE) {
+         // Match the rounded target region used by effects, then map all four corners to the scene.
+         auto region = diagonal_region(Self, std::round(bounds.left), std::round(bounds.top),
+            std::round(bound_width), std::round(bound_height));
+         Self->VectorClip.left   = std::round(region.left);
+         Self->VectorClip.top    = std::round(region.top);
+         Self->VectorClip.right  = Self->VectorClip.left + std::round(region.width());
+         Self->VectorClip.bottom = Self->VectorClip.top + std::round(region.height());
+         if (transform_region) {
+            agg::path_storage rect;
+            rect.move_to(Self->VectorClip.left, Self->VectorClip.top);
+            rect.line_to(Self->VectorClip.right, Self->VectorClip.top);
+            rect.line_to(Self->VectorClip.right, Self->VectorClip.bottom);
+            rect.line_to(Self->VectorClip.left, Self->VectorClip.bottom);
+            rect.close_polygon();
 
-      if (dmf::hasY(Self->Dimensions)) Self->VectorClip.top = std::round(bounds.top + Self->Y);
-      else if (dmf::hasScaledY(Self->Dimensions)) Self->VectorClip.top = std::round(bounds.top + (Self->Y * bound_height));
-      else Self->VectorClip.top = std::round(bounds.top);
+            agg::conv_transform<agg::path_storage, agg::trans_affine> path(rect, Vector->Transform);
+            auto clip = get_bounds(path);
+            Self->VectorClip = { int(std::floor(clip.left)), int(std::floor(clip.top)),
+               int(std::ceil(clip.right)), int(std::ceil(clip.bottom)) };
+         }
+      }
+      else {
+         if (Self->X.defined()) Self->VectorClip.left = std::round(bounds.left + (Self->X * bound_width));
+         else Self->VectorClip.left = std::round(bounds.left);
 
-      if (dmf::hasWidth(Self->Dimensions)) Self->VectorClip.right = Self->VectorClip.left + std::round(Self->Width * bound_width);
-      else if (dmf::hasScaledWidth(Self->Dimensions)) Self->VectorClip.right = Self->VectorClip.left + std::round(Self->Width * bound_width);
-      else Self->VectorClip.right = Self->VectorClip.left + std::round(bound_width);
+         if (Self->Y.defined()) Self->VectorClip.top = std::round(bounds.top + (Self->Y * bound_height));
+         else Self->VectorClip.top = std::round(bounds.top);
 
-      if (dmf::hasHeight(Self->Dimensions)) Self->VectorClip.bottom = Self->VectorClip.top + std::round(Self->Height * bound_height);
-      else if (dmf::hasScaledHeight(Self->Dimensions)) Self->VectorClip.bottom = Self->VectorClip.top + std::round(Self->Height * bound_height);
-      else Self->VectorClip.bottom = Self->VectorClip.top + std::round(bound_height);
+         if (Self->Width.defined()) {
+            Self->VectorClip.right = Self->VectorClip.left + std::round(Self->Width * bound_width);
+         }
+         else Self->VectorClip.right = Self->VectorClip.left + std::round(bound_width);
+
+         if (Self->Height.defined()) {
+            Self->VectorClip.bottom = Self->VectorClip.top + std::round(Self->Height * bound_height);
+         }
+         else Self->VectorClip.bottom = Self->VectorClip.top + std::round(bound_height);
+      }
    }
    else { // USERSPACE
       double x, y, w, h;
-      if (dmf::hasX(Self->Dimensions)) x = std::round(Self->X);
-      else if (dmf::hasScaledX(Self->Dimensions)) x = std::round(Self->X * container_width);
+      if (Self->X.scaled()) x = std::round(Self->X * container_width);
+      else if (Self->X.defined()) x = std::round(Self->X);
       else x = 0;
 
-      if (dmf::hasY(Self->Dimensions)) y = std::round(Self->Y);
-      else if (dmf::hasScaledY(Self->Dimensions)) y = std::round(Self->Y * container_height);
+      if (Self->Y.scaled()) y = std::round(Self->Y * container_height);
+      else if (Self->Y.defined()) y = std::round(Self->Y);
       else y = 0;
 
-      if (dmf::hasWidth(Self->Dimensions)) w = std::round(Self->Width);
-      else if (dmf::hasScaledWidth(Self->Dimensions)) w = std::round(Self->Width * container_width);
+      if (Self->Width.scaled()) w = std::round(Self->Width * container_width);
+      else if (Self->Width.defined()) w = std::round(Self->Width);
       else w = std::round(container_width);
 
-      if (dmf::hasHeight(Self->Dimensions)) h = std::round(Self->Height);
-      else if (dmf::hasScaledHeight(Self->Dimensions)) h = std::round(Self->Height * container_height);
+      if (Self->Height.scaled()) h = std::round(Self->Height * container_height);
+      else if (Self->Height.defined()) h = std::round(Self->Height);
       else h = std::round(container_height);
 
       agg::path_storage rect;
@@ -495,10 +674,30 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
       Self->VectorClip = get_bounds<agg::conv_transform<agg::path_storage, agg::trans_affine>, int>(path);
    }
 
-   if (Self->VectorClip.left < Viewport->vpBounds.left)     Self->VectorClip.left   = Viewport->vpBounds.left;
-   if (Self->VectorClip.top  < Viewport->vpBounds.top)      Self->VectorClip.top    = Viewport->vpBounds.top;
-   if (Self->VectorClip.right  > Viewport->vpBounds.right)  Self->VectorClip.right  = Viewport->vpBounds.right;
-   if (Self->VectorClip.bottom > Viewport->vpBounds.bottom) Self->VectorClip.bottom = Viewport->vpBounds.bottom;
+   // The margin is limited so that unbounded effects do not process an excessive area around the page, and it is
+   // dropped if the processing region would become unreasonably large.
+
+   const int page_width  = Viewport->Scene->PageWidth;
+   const int page_height = Viewport->Scene->PageHeight;
+   const double max_margin = std::max(page_width, page_height);
+
+   double reach_x, reach_y;
+   filter_reach(Self, reach_x, reach_y);
+
+   const auto region = Self->VectorClip;
+   auto limit_region = [&](int MarginX, int MarginY) {
+      Self->VectorClip.left   = std::max(region.left, -MarginX);
+      Self->VectorClip.top    = std::max(region.top, -MarginY);
+      Self->VectorClip.right  = std::min(region.right, page_width + MarginX);
+      Self->VectorClip.bottom = std::min(region.bottom, page_height + MarginY);
+   };
+
+   limit_region(int(std::ceil(std::min(reach_x, max_margin))), int(std::ceil(std::min(reach_y, max_margin))));
+
+   const int64_t area = int64_t(Self->VectorClip.width()) * int64_t(Self->VectorClip.height());
+   if ((area > MAX_FILTER_MARGIN_AREA) and (area > int64_t(page_width) * int64_t(page_height))) {
+      limit_region(0, 0);
+   }
 
    if ((Self->VectorClip.bottom <= Self->VectorClip.top) or (Self->VectorClip.right <= Self->VectorClip.left)) {
       return log.warning(ERR::InvalidDimension);
@@ -509,14 +708,17 @@ static ERR set_clip_region(extVectorFilter *Self, extVectorViewport *Viewport, e
 
 //********************************************************************************************************************
 // Main rendering routine for filter effects.  Called by the scene graph renderer whenever a vector uses a filter.
+// ColourSpace is the client's resolved colour space in the renderer, which can be inherited from a vector that is not
+// a physical ancestor, e.g. the viewport that consumes a live pattern.
 
-ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector, objBitmap *BkgdBitmap, objBitmap **Output)
+ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector *Vector,
+   objBitmap *BkgdBitmap, VCS ColourSpace, objBitmap **Output, int BkgdOriginX, int BkgdOriginY)
 {
    kt::Log log(__FUNCTION__);
 
-   if (!Vector) return log.warning(ERR::NullArgs);
+   if ((!Vector) or (!Viewport)) return log.warning(ERR::NullArgs);
    if (Self->Disabled) return ERR::NothingDone;
-   if (!Self->Effects) return log.warning(ERR::UndefinedField);
+   if (!Self->Effects) return log.warning(ERR::FieldNotSet);
 
    kt::SwitchContext context(Self);
 
@@ -524,19 +726,27 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
    if ((!filter_name) or (!filter_name[0])) filter_name = "Unnamed";
    CSTRING vector_name = Vector->Name;
    if ((!vector_name) or (!vector_name[0])) vector_name = "Unnamed";
-   log.branch("Rendering '%s' filter content for %s #%d '%s'.", filter_name, Vector->Class->ClassName, Vector->UID, vector_name);
+   log.msg(VLF::BRANCH|VLF::DETAIL, "Rendering '%s' filter content for %s #%d '%s'.", filter_name,
+      Vector->Class->ClassName.c_str(), Vector->UID, vector_name);
 
    Self->ClientViewport = Viewport;
    Self->ClientVector   = Vector;
    Self->BkgdBitmap     = BkgdBitmap; // For VSF::BKGD and VSF::BKGD_ALPHA
+   Self->BkgdOriginX = BkgdOriginX;
+   Self->BkgdOriginY = BkgdOriginY;
+   Self->ClientColourSpace = ColourSpace;
    Self->Rendered       = false; // Set to true when SourceGraphic is rendered
    Self->BankIndex      = 0;
 
-   if (auto error = set_clip_region(Self, Viewport, Vector); error != ERR::Okay) return error;
-
-   // Calculate Self->Target* and Self->Bound* values
+   // Calculate Self->Target* and Self->Bound* values.  The reach of the effects depends on these, so they are
+   // computed before the clip region.
 
    compute_target_area(Self);
+
+   if (auto error = set_clip_region(Self, Viewport, Vector); error != ERR::Okay) return error;
+
+   Self->Transform = Vector->Transform;
+   Self->Transform.translate(-Self->VectorClip.left, -Self->VectorClip.top);
 
    // Render the effect pipeline in sequence.  Linked effects get their own bitmap, everything else goes to a shared
    // output bitmap.  After all effects are rendered, the shared output bitmap is returned for rendering to the scene graph.
@@ -549,7 +759,8 @@ ERR render_filter(extVectorFilter *Self, extVectorViewport *Viewport, extVector 
 
    objBitmap *out = nullptr;
    for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
-      log.detail("Effect: %s #%u, Pipelined: %c; Use Count: %d", e->Class->ClassName, e->UID, e->UsageCount > 0 ? 'Y' : 'N', e->UsageCount);
+      log.detail("Effect: %s #%u, Pipelined: %c; Use Count: %d", e->Class->ClassName.c_str(), e->UID,
+         e->UsageCount > 0 ? 'Y' : 'N', e->UsageCount);
 
       Self->ActiveEffect = e;
 
@@ -611,29 +822,18 @@ static ERR VECTORFILTER_Clear(extVectorFilter *Self)
 
 //********************************************************************************************************************
 
-static ERR VECTORFILTER_Free(extVectorFilter *Self)
-{
-   acClear(Self);
-
-   if (Self->SourceGraphic) { FreeResource(Self->SourceGraphic); Self->SourceGraphic = nullptr; }
-   if (Self->SourceScene)   { FreeResource(Self->SourceScene);   Self->SourceScene = nullptr; }
-
-   Self->~extVectorFilter();
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTORFILTER_Init(extVectorFilter *Self)
 {
-   kt::Log log(__FUNCTION__);
+   kt::Log log;
 
    if ((int(Self->Units) <= 0) or (int(Self->Units) >= int(VUNIT::END))) {
-      log.traceWarning("Invalid Units value of %d", Self->Units);
       return log.warning(ERR::OutOfRange);
    }
 
-   if (!Self->Scene) return log.warning(ERR::UnsupportedOwner);
+   if (not Self->Scene) {
+      if (Self->Owner->classID() IS CLASSID::VECTORSCENE) Self->Scene = (extVectorScene *)Self->Owner;
+      else return log.warning(ERR::UnsupportedOwner);
+   }
 
    return ERR::Okay;
 }
@@ -660,24 +860,6 @@ static ERR VECTORFILTER_NewChild(extVectorFilter *Self, struct acNewChild *Args)
 
 //********************************************************************************************************************
 
-static ERR VECTORFILTER_NewPlacement(extVectorFilter *Self)
-{
-   new (Self) extVectorFilter;
-   Self->Units          = VUNIT::BOUNDING_BOX;
-   Self->PrimitiveUnits = VUNIT::UNDEFINED;
-   Self->Opacity        = 1.0;
-   Self->X              = -0.1; // -10% default as per SVG requirements
-   Self->Y              = -0.1;
-   Self->Width          = 1.2;  // +120% default as per SVG requirements
-   Self->Height         = 1.2;
-   Self->AspectRatio    = VFA::MEET; // Scale X/Y values independently
-   Self->ColourSpace    = VCS::SRGB; // Our preferred colour-space is sRGB for speed.  Note that the SVG class will change this to linear by default.
-   Self->Dimensions     = DMF::SCALED_X|DMF::SCALED_Y|DMF::SCALED_WIDTH|DMF::SCALED_HEIGHT;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
 static ERR VECTORFILTER_NewOwner(extVectorFilter *Self, struct acNewOwner *Args)
 {
    if (Args->NewOwner->classID() IS CLASSID::VECTORSCENE) {
@@ -689,54 +871,62 @@ static ERR VECTORFILTER_NewOwner(extVectorFilter *Self, struct acNewOwner *Args)
 /*********************************************************************************************************************
 
 -FIELD-
+AspectRatio: Selects per-axis or diagonal scaling for bounding box units.
+
+AspectRatio affects the filter region when #Units is `BOUNDING_BOX`, and the effects that support it when
+#PrimitiveUnits is `BOUNDING_BOX`.  The default is `MEET`, which scales horizontal values by the width of the bounding
+box and vertical values by its height, as per the SVG standard.
+
+The `NONE` option is a Kōtuku extension that scales all values by the normalised diagonal of the bounding box, i.e.
+`sqrt(width^2 + height^2) / sqrt(2)`.  This is the same formula used by a scaled stroke width.  A blur radius or
+offset then covers the same distance on both axes for any shape, which is preferable for effects such as glows and
+drop shadows.  For the filter region, the #X, #Y, #Width and #Height values are measured from the edges of the
+bounding box, so the default region adds a margin of 10% of the normalised diagonal to every side.
+
+The following effects support `NONE`: @BlurFX, @LightingFX and @OffsetFX.
+
+-FIELD-
 ColourSpace: The colour space of the filter graphics (SRGB or linear RGB).
 
 By default, colour filters are processed in SRGB format.  This is the same colour space as used by the rest of the
 graphics system, which means that no special conversion is necessary prior to and post filter processing.  However,
 linear RGB is better suited for producing high quality results at a cost of speed.
 
-Note that if SVG compatibility is required, linear RGB must be used as the default.
+Intermediate images are always stored in sRGB encoding.  When `LINEAR_RGB` is selected, effects that honour this
+setting decode their inputs, process them in linear RGB and encode the result for storage.  These are @BlurFX,
+@ColourFX, @ConvolveFX, @DisplacementFX (for the displacement map), @LightingFX, @MergeFX, @MorphologyFX, @RemapFX
+and the `ARITHMETIC` operator of @CompositeFX.  The other @CompositeFX operators that mix colour components always do so
+in linear RGB.
+Colours that are input values, such as the colour of a @FloodFX, are stored as given and are not converted.
 
--FIELD-
-Dimensions: Dimension flags define whether individual dimension fields contain fixed or scaled values.
+This setting applies only to the processing of effects within the pipeline.  The composite of the filter's output into
+the target is governed by the client vector's @Vector.ColourSpace.
 
-The following dimension flags are supported:
-
-<types lookup="DMF">
-<type name="FIXED_X">The #X value is a fixed coordinate.</>
-<type name="FIXED_Y">The #Y value is a fixed coordinate.</>
-<type name="SCALED_X">The #X value is a scaled coordinate.</>
-<type name="SCALED_Y">The #Y value is a scaled coordinate.</>
-<type name="FIXED_WIDTH">The #Width value is a fixed coordinate.</>
-<type name="FIXED_HEIGHT">The #Height value is a fixed coordinate.</>
-<type name="SCALED_WIDTH">The #Width value is a scaled coordinate.</>
-<type name="SCALED_HEIGHT">The #Height value is a scaled coordinate.</>
-</types>
+The SVG standard defaults to linear RGB for filter effects, so the SVG parser selects `LINEAR_RGB` unless the
+`color-interpolation-filters` attribute states otherwise.  Filters created through the API retain the SRGB default.
 
 -FIELD-
 EffectXML: Returns a SVG XML string that defines the filter's effects.
 
-This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.  The string
-is allocated and must be freed once no longer in use.
+This field value will return a purpose-built string that defines the filter's effects in SVG compliant XML.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, CSTRING *Value)
+static ERR VECTORFILTER_GET_EffectXML(extVectorFilter *Self, std::string &Value)
 {
    std::stringstream ss;
 
    for (auto e = Self->Effects; e; e = (extFilterEffect *)e->Next) {
       ss << "<";
-      CSTRING def;
-      if (e->get(FID_XMLDef, def) IS ERR::Okay) {
+      std::string def;
+      if (!e->getXMLDef(def)) {
          ss << def;
-         FreeResource(def);
       }
       ss << "/>";
    }
 
-   if ((*Value = strclone(ss.str()))) return ERR::Okay;
-   else return ERR::AllocMemory;
+   Value = ss.str();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -747,24 +937,17 @@ Height: The height of the filter area.  Can be expressed as a fixed or scaled co
 The height of the filter area is expressed here as a fixed or scaled coordinate.  The #Width and Height effectively
 restrain the working space for the effect processing, making them an important consideration for efficiency.
 
-The coordinate system for the width and height depends on the value for #Units.
+The coordinate system for the width and height depends on the value for #Units.  In bounding-box mode, the
+#AspectRatio determines whether the value is relative to the bounding box or its normalised diagonal.
 
 The default values for #Width and Height is `120%`, as per the SVG standard.  This provides a buffer space for the
 filter algorithms to work with, and is usually a sufficient default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Height(extVectorFilter *Self, Unit *Value)
-{
-   Value->set(Self->Height);
-   return ERR::Okay;
-}
-
 static ERR VECTORFILTER_SET_Height(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
-      if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_HEIGHT) & (~DMF::FIXED_HEIGHT);
-      else Self->Dimensions = (Self->Dimensions | DMF::FIXED_HEIGHT) & (~DMF::SCALED_HEIGHT);
       Self->Height = Value;
       return ERR::Okay;
    }
@@ -801,9 +984,7 @@ is 1.0.
 
 static ERR VECTORFILTER_SET_Opacity(extVectorFilter *Self, double Value)
 {
-   if (Value < 0.0) Value = 0;
-   else if (Value > 1.0) Value = 1.0;
-   Self->Opacity = Value;
+   Self->Opacity = std::clamp(Value, 0.0, 1.0);
    return ERR::Okay;
 }
 
@@ -841,25 +1022,17 @@ Width: The width of the filter area.  Can be expressed as a fixed or scaled coor
 The width of the filter area is expressed here as a fixed or scaled coordinate.  The Width and #Height effectively
 restrain the working space for the effect processing, making them an important consideration for efficiency.
 
-The coordinate system for the width and height depends on the value for #Units.
+The coordinate system for the width and height depends on the value for #Units.  In bounding-box mode, the
+#AspectRatio determines whether the value is relative to the bounding box or its normalised diagonal.
 
 The default values for #Width and Height is `120%`, as per the SVG standard.  This provides a buffer space for the
 filter algorithms to work with, and is usually a sufficient default.
 
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Width(extVectorFilter *Self, Unit *Value)
-{
-   Value->set(Self->Width);
-   return ERR::Okay;
-}
-
 static ERR VECTORFILTER_SET_Width(extVectorFilter *Self, Unit &Value)
 {
    if (Value > 0) {
-      if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_WIDTH) & (~DMF::FIXED_WIDTH);
-      else Self->Dimensions = (Self->Dimensions | DMF::FIXED_WIDTH) & (~DMF::SCALED_WIDTH);
-
       Self->Width = Value;
       return ERR::Okay;
    }
@@ -872,35 +1045,19 @@ X: X coordinate for the filter.
 
 The meaning of the (X, #Y) field values depend on the value for #Units.  In userspace mode, the filter position will be
 relative to the client vector's parent viewport.  In bounding-box mode, the filter position is relative to the
-vector's position.  It is important to note that coordinates are measured before any transforms are applied.
+vector's position, and the #AspectRatio determines whether the value is relative to the bounding box or its
+normalised diagonal.  It is important to note that coordinates are measured before any transforms are applied.
 
 The default values for X and #Y is `10%`, as per the SVG standard.  This provides a buffer space for the filter
 algorithms to work with, and is usually a sufficient default.
 
-*********************************************************************************************************************/
-
-static ERR VECTORFILTER_GET_X(extVectorFilter *Self, Unit *Value)
-{
-   Value->set(Self->X);
-   return ERR::Okay;
-}
-
-static ERR VECTORFILTER_SET_X(extVectorFilter *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_X) & (~DMF::FIXED_X);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_X) & (~DMF::SCALED_X);
-
-   Self->X = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
 -FIELD-
 Y: Y coordinate for the filter.
 
 The meaning of the (#X, Y) field values depend on the value for #Units.  In userspace mode, the filter position will be
 relative to the client vector's parent viewport.  In bounding-box mode, the filter position is relative to the
-vector's position.  It is important to note that coordinates are measured before any transforms are applied.
+vector's position, and the #AspectRatio determines whether the value is relative to the bounding box or its
+normalised diagonal.  It is important to note that coordinates are measured before any transforms are applied.
 
 The default values for #X and Y is `10%`, as per the SVG standard.  This provides a buffer space for the filter
 algorithms to work with, and is usually a sufficient default.
@@ -908,53 +1065,23 @@ algorithms to work with, and is usually a sufficient default.
 -END-
 *********************************************************************************************************************/
 
-static ERR VECTORFILTER_GET_Y(extVectorFilter *Self, Unit *Value)
-{
-   Value->set(Self->Y);
-   return ERR::Okay;
-}
-
-static ERR VECTORFILTER_SET_Y(extVectorFilter *Self, Unit &Value)
-{
-   if (Value.scaled()) Self->Dimensions = (Self->Dimensions | DMF::SCALED_Y) & (~DMF::FIXED_Y);
-   else Self->Dimensions = (Self->Dimensions | DMF::FIXED_Y) & (~DMF::SCALED_Y);
-
-   Self->Y = Value;
-   return ERR::Okay;
-}
-
-//********************************************************************************************************************
-
-static const FieldDef clFilterDimensions[] = {
-   { "FixedX",       DMF::FIXED_X },
-   { "FixedY",       DMF::FIXED_Y },
-   { "ScaledX",      DMF::SCALED_X },
-   { "ScaledY",      DMF::SCALED_Y },
-   { "FixedWidth",   DMF::FIXED_WIDTH },
-   { "FixedHeight",  DMF::FIXED_HEIGHT },
-   { "ScaledWidth",  DMF::SCALED_WIDTH },
-   { "ScaledHeight", DMF::SCALED_HEIGHT },
-   { nullptr, 0 }
-};
-
 #include "filter_def.c"
 
 static const FieldArray clFilterFields[] = {
-   { "X",              FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORFILTER_GET_X, VECTORFILTER_SET_X },
-   { "Y",              FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORFILTER_GET_Y, VECTORFILTER_SET_Y },
-   { "Width",          FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORFILTER_GET_Width, VECTORFILTER_SET_Width },
-   { "Height",         FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, VECTORFILTER_GET_Height, VECTORFILTER_SET_Height },
+   { "X",              FDF_UNIT|FDF_RW },
+   { "Y",              FDF_UNIT|FDF_RW },
+   { "Width",          FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_Width },
+   { "Height",         FDF_UNIT|FDF_RW, nullptr, VECTORFILTER_SET_Height },
    { "Opacity",        FDF_DOUBLE|FDF_RW, nullptr, VECTORFILTER_SET_Opacity },
    { "Inherit",        FDF_OBJECT|FDF_RW, nullptr, VECTORFILTER_SET_Inherit },
    { "ResX",           FDF_INT|FDF_RI },
    { "ResY",           FDF_INT|FDF_RI },
    { "Units",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterUnits },
    { "PrimitiveUnits", FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterPrimitiveUnits },
-   { "Dimensions",     FDF_INTFLAGS|FDF_R, nullptr, nullptr,        &clFilterDimensions },
    { "ColourSpace",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterColourSpace },
    { "AspectRatio",    FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, nullptr, &clVectorFilterAspectRatio },
    // Virtual fields
-   { "EffectXML",      FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, VECTORFILTER_GET_EffectXML },
+   { "EffectXML",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, VECTORFILTER_GET_EffectXML },
    END_FIELD
 };
 

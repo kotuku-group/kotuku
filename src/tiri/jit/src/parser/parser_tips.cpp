@@ -29,7 +29,8 @@ std::string ParserTip::to_string(std::string_view Filename) const
    SourceSpan span = token.span();
    if (Filename.starts_with("=")) Filename.remove_prefix(1);
    else if (Filename.starts_with("@")) Filename.remove_prefix(1);
-   return std::format("[TIP] {}:{}:{}: {}: {}", Filename, span.line, span.column, category_name(category), message);
+   return std::format("[TIP] {}:{}:{}: {}: {}", Filename, span.line.lineNumber(), span.column.lineNumber(),
+      category_name(category), message);
 }
 
 //********************************************************************************************************************
@@ -39,7 +40,7 @@ void TipEmitter::emit(const ParserTip &Tip, std::string_view Filename)
 {
    if (should_emit(Tip.priority)) {
       tip.push_back(Tip);
-      printf("%s\n", Tip.to_string(Filename).c_str());
+      if (this->print_output) printf("%s\n", Tip.to_string(Filename).c_str());
    }
 }
 

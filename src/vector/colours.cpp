@@ -1,6 +1,4 @@
 
-#include <kotuku/modules/display.h>
-
 static const ankerl::unordered_dense::map<uint32_t, RGB8> glNamedColours = { // For vecReadPainter()
   { kt::strhash("none"),                 { 0, 0, 0, 0 } },
   { kt::strhash("aliceblue"),            { 240,248,255, 255 } },
@@ -122,6 +120,7 @@ static const ankerl::unordered_dense::map<uint32_t, RGB8> glNamedColours = { // 
   { kt::strhash("plum"),                { 221,160,221, 255 } },
   { kt::strhash("powderblue"),          { 176,224,230, 255 } },
   { kt::strhash("purple"),              { 128,0,128, 255 } },
+  { kt::strhash("rebeccapurple"),       { 102,51,153, 255 } },
   { kt::strhash("red"),                 { 255,0,0, 255 } },
   { kt::strhash("rosybrown"),           { 188,143,143, 255 } },
   { kt::strhash("royalblue"),           { 65,105,225, 255 } },
@@ -143,6 +142,7 @@ static const ankerl::unordered_dense::map<uint32_t, RGB8> glNamedColours = { // 
   { kt::strhash("teal"),                { 0,128,128, 255 } },
   { kt::strhash("thistle"),             { 216,191,216, 255 } },
   { kt::strhash("tomato"),              { 255,99,71, 255 } },
+  { kt::strhash("transparent"),         { 0,0,0, 0 } },
   { kt::strhash("turquoise"),           { 64,224,208, 255 } },
   { kt::strhash("violet"),              { 238,130,238, 255 } },
   { kt::strhash("wheat"),               { 245,222,179, 255 } },

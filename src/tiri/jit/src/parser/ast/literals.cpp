@@ -11,13 +11,97 @@
 // - Result filter expressions
 // - Return type annotations
 
+#include <unordered_map>
+
+//********************************************************************************************************************
+// Parses the optional context binding that immediately follows the function keyword: `[]`, `[X]` or `[<weak> X]`.
+// The current token must be the one after the keyword.  The reference grammar matches `using` (identifier, member
+// and index chains) plus `&&` and `&field`, so that X is a stable path that can be evaluated once at closure creation.
+// Calls, operators, literals and safe navigation are rejected.  A kind of None is returned if no binding is present.
+
+ParserResult<FunctionContextBinding> AstBuilder::parse_function_binding(bool IsThunk)
+{
+   FunctionContextBinding binding;
+   if (not this->ctx.check(TokenKind::LeftBracket)) {
+      return ParserResult<FunctionContextBinding>::success(std::move(binding));
+   }
+
+   Token open_token = this->ctx.tokens().current();
+   if (IsThunk) {
+      return this->fail<FunctionContextBinding>(ParserErrorCode::UnexpectedToken, open_token,
+         "context binding is not supported on thunks");
+   }
+
+   this->ctx.tokens().advance();
+
+   bool weak = false;
+   if (this->ctx.tokens().current().raw() IS '<') {
+      this->ctx.tokens().advance();
+      auto attribute = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      if (not attribute.ok()) return ParserResult<FunctionContextBinding>::failure(attribute.error_ref());
+
+      GCstr *name = attribute.value_ref().identifier();
+      if (not name or std::string_view(strdata(name), name->len) != "weak") {
+         return this->fail<FunctionContextBinding>(ParserErrorCode::UnexpectedToken, attribute.value_ref(),
+            "function context binding accepts only the <weak> attribute");
+      }
+
+      if (not this->ctx.lex_opt('>')) {
+         return this->fail<FunctionContextBinding>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+            "expected '>' after attribute");
+      }
+      weak = true;
+   }
+
+   if (this->ctx.check(TokenKind::RightBracket)) {
+      if (weak) {
+         return this->fail<FunctionContextBinding>(ParserErrorCode::ExpectedIdentifier, this->ctx.tokens().current(),
+            "<weak> function context binding requires a reference");
+      }
+      binding.kind = FunctionContextKind::Ordinary;
+   }
+   else {
+      Token reference_token = this->ctx.tokens().current();
+      auto reference = this->parse_primary();
+      if (not reference.ok()) return ParserResult<FunctionContextBinding>::failure(reference.error_ref());
+
+      auto is_reference = [](const ExprNode *Node, const auto &Self) -> bool {
+         if (not Node) return false;
+         if (Node->kind IS AstNodeKind::IdentifierExpr) return true;
+         if (Node->kind IS AstNodeKind::CurrentContextExpr) return true;
+         if (Node->kind IS AstNodeKind::MemberExpr) {
+            const auto &payload = std::get<MemberExprPayload>(Node->data);
+            return Self(payload.table.get(), Self);
+         }
+         if (Node->kind IS AstNodeKind::IndexExpr) {
+            const auto &payload = std::get<IndexExprPayload>(Node->data);
+            return Self(payload.table.get(), Self);
+         }
+         return false;
+      };
+
+      if (not is_reference(reference.value_ref().get(), is_reference)) {
+         return this->fail<FunctionContextBinding>(ParserErrorCode::UnexpectedToken, reference_token,
+            "function context binding requires an identifier, member, index or context reference");
+      }
+
+      binding.kind = weak ? FunctionContextKind::Weak : FunctionContextKind::Strong;
+      binding.reference = std::move(reference.value_ref());
+   }
+
+   auto close = this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
+   if (not close.ok()) return ParserResult<FunctionContextBinding>::failure(close.error_ref());
+   return ParserResult<FunctionContextBinding>::success(std::move(binding));
+}
+
 //********************************************************************************************************************
 // Parses function literals (anonymous functions) with parameters and body.
 // Parses optional return type annotation after parameters for all functions.
-// If is_thunk is true, validates thunk-specific constraints.
+// If is_thunk is true, validates thunk-specific constraints.  Binding is the context binding parsed by
+// parse_function_binding(), if any.
 
 ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
-   const Token &FunctionToken, bool IsThunk, GCstr *FunctionName)
+   const Token &FunctionToken, bool IsThunk, GCstr *FunctionName, FunctionContextBinding Binding)
 {
    auto params = this->parse_parameter_list(false);
    if (not params.ok()) return ParserResult<ExprNodePtr>::failure(params.error_ref());
@@ -32,12 +116,6 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
    if (not type_result.ok()) return ParserResult<ExprNodePtr>::failure(type_result.error_ref());
    FunctionReturnTypes return_types = type_result.value_ref();
 
-   // For thunk compatibility: extract single return type for thunk_return_type field
-   TiriType thunk_return_type = TiriType::Any;
-   if (IsThunk and return_types.count > 0) {
-      thunk_return_type = return_types.types[0];
-   }
-
    const TokenKind terms[] = { TokenKind::EndToken };
    FunctionNameScope function_name_scope(*this, FunctionName);
    ++this->function_depth;
@@ -47,90 +125,29 @@ ParserResult<ExprNodePtr> AstBuilder::parse_function_literal(
 
    this->ctx.consume(TokenKind::EndToken, ParserErrorCode::ExpectedToken);
    ExprNodePtr node = make_function_expr(FunctionToken.span(), std::move(params.value_ref().parameters),
-      params.value_ref().is_vararg, std::move(body.value_ref()), IsThunk, thunk_return_type, return_types);
+      params.value_ref().is_vararg, std::move(body.value_ref()), IsThunk, return_types);
+   std::get<FunctionExprPayload>(node->data).context = std::move(Binding);
    return ParserResult<ExprNodePtr>::success(std::move(node));
 }
 
-//********************************************************************************************************************
-// Checks if the token stream matches a range literal pattern using lookahead.
-// Valid patterns: {num..num}, {ident..ident}, {-num..num}, {ident..-num}, etc.
-// Returns true if the pattern matches, and sets is_inclusive for ... (three dots).
-
-static bool check_range_pattern(ParserContext& ctx, bool& is_inclusive)
-{
-   is_inclusive = false;
-
-   // Helper to get the token count for a simple range operand (number, identifier, or -number)
-   // Returns 0 if not a valid range operand
-   auto operand_length = [&ctx](int start_offset) -> int {
-      Token tok = ctx.tokens().peek(start_offset);
-      if (tok.kind() IS TokenKind::Number or tok.kind() IS TokenKind::Identifier) return 1;
-
-      if (tok.kind() IS TokenKind::Minus) {
-         Token next = ctx.tokens().peek(start_offset + 1);
-         if (next.kind() IS TokenKind::Number) return 2;  // -num
-      }
-      return 0;
-   };
-
-   // Check first operand
-
-   int first_len = operand_length(0);
-   if (first_len IS 0) return false;
-
-   // Check for range operator at expected position
-
-   Token range_op = ctx.tokens().peek(first_len);
-   if (range_op.kind() IS TokenKind::Cat) is_inclusive = false;
-   else if (range_op.kind() IS TokenKind::Dots) is_inclusive = true;
-   else return false;
-
-   // Check second operand
-
-   int second_len = operand_length(first_len + 1);
-   if (second_len IS 0) return false;
-
-   // Verify the range is followed by closing brace (strict pattern match)
-
-   Token closing = ctx.tokens().peek(first_len + 1 + second_len);
-   return closing.kind() IS TokenKind::RightBrace;
-}
-
-//********************************************************************************************************************
 // Parses table constructor expressions with array and record fields.
-// Also handles range literals: {start..stop} (exclusive) and {start...stop} (inclusive)
+// Also handles range literals: {start to stop} (exclusive), {start into stop} (inclusive) and optional `by step`.
 
-ParserResult<ExprNodePtr> AstBuilder::parse_table_literal()
+ParserResult<ExprNodePtr> AstBuilder::parse_table_literal(bool AllowRange)
 {
    Token token = this->ctx.tokens().current();
-   this->ctx.tokens().advance();
 
-   // Check for range literal pattern using lookahead: {expr..expr} or {expr...expr}
-   // This avoids ambiguity with string concatenation like {'str' .. func(), ...}
-
-   if (not this->ctx.check(TokenKind::RightBrace)) {
-      bool is_inclusive = false;
-
-      if (check_range_pattern(this->ctx, is_inclusive)) {
-         // Confirmed range pattern - parse start expression
-         auto first_expr = this->parse_unary();
-         if (not first_expr.ok()) return ParserResult<ExprNodePtr>::failure(first_expr.error_ref());
-
-         // Consume the range operator (already verified by lookahead)
-         this->ctx.tokens().advance();
-
-         // Parse stop expression
-         auto stop_expr = this->parse_unary();
-         if (not stop_expr.ok()) return ParserResult<ExprNodePtr>::failure(stop_expr.error_ref());
-
-         this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
-         ExprNodePtr node = make_range_expr(token.span(), std::move(first_expr.value_ref()),
-            std::move(stop_expr.value_ref()), is_inclusive);
-         return ParserResult<ExprNodePtr>::success(std::move(node));
+   if (AllowRange) {
+      RangeLiteralScan scan;
+      if (scan_range_literal(this->ctx, scan)) {
+         auto range = this->parse_scanned_range_in_braces(scan.has_step, scan.has_bare_string_operand);
+         if (not range.ok()) return range;
+         return range;
       }
    }
 
    // Standard table parsing path
+   this->ctx.tokens().advance();
    bool has_array = false;
    auto fields = this->parse_table_fields(&has_array);
    if (not fields.ok()) return ParserResult<ExprNodePtr>::failure(fields.error_ref());
@@ -138,6 +155,62 @@ ParserResult<ExprNodePtr> AstBuilder::parse_table_literal()
    this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
    ExprNodePtr node = make_table_expr(token.span(), std::move(fields.value_ref()), has_array);
    return ParserResult<ExprNodePtr>::success(std::move(node));
+}
+
+//********************************************************************************************************************
+// Parses the braced initialiser of a typed array: array<Type> { Value, Value, ... }
+//
+// Typed arrays are positional by construction, so this parser returns the values directly instead of building a
+// throw-away table literal.  Avoiding parse_table_fields() also avoids allocating a TableField per value and hashing
+// a canonical key that is sequential by definition.
+//
+// Range scanning is deliberately absent: `to` and `into` are ordinary identifiers inside these braces, matching the
+// previous parse_table_literal(false) behaviour.  Separators are consumed through the normal token stream, because
+// peeking across one can pre-expand an f-string value into the lexer's buffered tokens and corrupt later parsing.
+
+ParserResult<ExprNodeList> AstBuilder::parse_array_initialiser()
+{
+   ExprNodeList values;
+
+   if (not this->ctx.match(TokenKind::LeftBrace).ok()) {
+      return this->fail<ExprNodeList>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+         "Expected '{' to open array initialiser");
+   }
+
+   while (not this->ctx.check(TokenKind::RightBrace)) {
+      Token current = this->ctx.tokens().current();
+
+      // Reject keyed syntax at the offending field rather than at the array type token.  Lookahead is limited to the
+      // start of the field so that buffered interpolation tokens are never disturbed.
+
+      const bool record_key = (current.is_identifier_or_future_reserved() or
+         current.kind() IS TokenKind::CheckallToken) and
+         this->ctx.tokens().peek(1).kind() IS TokenKind::Equals;
+
+      if (record_key or current.kind() IS TokenKind::LeftBracket) {
+         return this->fail<ExprNodeList>(ParserErrorCode::UnexpectedToken, current,
+            "Array initialiser can only contain sequential values, not key-value pairs");
+      }
+
+      auto value = this->parse_expression();
+      if (not value.ok()) return ParserResult<ExprNodeList>::failure(value.error_ref());
+
+      values.push_back(std::move(value.value_ref()));
+
+      // Separators are optional; adjacent values are accepted for source compatibility.  In diagnose mode a failed
+      // expression parse can leave the stream stationary, so guarantee forward progress rather than looping forever.
+
+      if (this->ctx.match(TokenKind::Comma).ok() or this->ctx.match(TokenKind::Semicolon).ok()) continue;
+
+      if (this->ctx.tokens().current().kind() IS current.kind() and
+          this->ctx.tokens().current().span().offset IS current.span().offset) {
+         return this->fail<ExprNodeList>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "Expected a value or '}' in array initialiser");
+      }
+   }
+
+   this->ctx.consume(TokenKind::RightBrace, ParserErrorCode::ExpectedToken);
+   return ParserResult<ExprNodeList>::success(std::move(values));
 }
 
 //********************************************************************************************************************
@@ -161,6 +234,275 @@ ParserResult<ExprNodeList> AstBuilder::parse_expression_list()
 //********************************************************************************************************************
 // Parses comma-separated lists of identifiers with optional attributes (e.g., <close>).
 
+ParserResult<Token> AstBuilder::parse_type_annotation(
+   TiriType &Type, struct_record *&StructDef, ArrayElementDescriptor &ArrayElement, bool &Required)
+{
+   Token type_token = this->ctx.tokens().current();
+   auto kind = type_token.kind();
+   std::string_view type_view;
+   Required = false;
+
+   auto finish_annotation = [&]() -> ParserResult<Token> {
+      if (this->ctx.tokens().current().raw() IS '!') {
+         Token required_token = this->ctx.tokens().current();
+         this->ctx.tokens().advance();
+         if (Type IS TiriType::Nil) {
+            return this->fail<Token>(ParserErrorCode::UnexpectedToken, required_token,
+               "'nil!' is contradictory because a required value cannot be nil");
+         }
+         Required = true;
+      }
+      return ParserResult<Token>::success(type_token);
+   };
+
+   if (kind IS TokenKind::ArrayTyped) {
+      this->ctx.tokens().advance();
+      if (not this->ctx.lex().array_typed_size.is_absent()) {
+         return this->fail<Token>(ParserErrorCode::UnexpectedToken, type_token,
+            "Array type annotations cannot declare a size");
+      }
+      GCstr *element_symbol = type_token.payload().as_string();
+      std::string_view element_name(strdata(element_symbol), element_symbol->len);
+      if (element_name.starts_with("array<") and element_name.find(',') != std::string_view::npos) {
+         return this->fail<Token>(ParserErrorCode::UnexpectedToken, type_token,
+            "Array type annotations cannot declare a nested size");
+      }
+      if (element_name IS "object") {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+            "Unknown array element type 'object'; use 'obj'");
+      }
+      auto element = parse_array_element_type(element_name, &this->ctx.lua(), &this->ctx.lex());
+      if (not element or element->storage IS AET::PTR or
+          (element->storage IS AET::STRUCT and not element->struct_def)) {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+            std::format("Unknown array element type '{}'", element_name));
+      }
+      Type = TiriType::Array;
+      ArrayElement = *element;
+      this->track_struct_reference(element->struct_def);
+      return finish_annotation();
+   }
+
+   if (kind IS TokenKind::StructTyped) {
+      // struct<Name> lexes as a single token carrying the referenced struct name
+      this->ctx.tokens().advance();
+      GCstr *name_symbol = type_token.payload().as_string();
+      std::string_view name(strdata(name_symbol), name_symbol->len);
+      auto found = find_struct(&this->ctx.lua(), name);
+      if (not found) {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+            std::format("Unknown struct name '{}'; declarations must precede use", name));
+      }
+      Type = TiriType::Struct;
+      StructDef = found;
+      this->track_struct_reference(found);
+      return finish_annotation();
+   }
+
+   if (kind IS TokenKind::Identifier) {
+      this->ctx.tokens().advance();
+      GCstr *type_symbol = type_token.identifier();
+      if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
+   }
+   else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
+      this->ctx.tokens().advance();
+      type_view = token_kind_name_constexpr(kind);
+   }
+   else return this->fail<Token>(ParserErrorCode::ExpectedTypeName, type_token, "Expected type name after ':'");
+
+   Type = parse_type_name(type_view);
+   if (Type IS TiriType::Unknown) {
+      return this->fail<Token>(ParserErrorCode::UnknownTypeName, type_token,
+         std::format("Unknown type name '{}'; expected a valid type name", type_view));
+   }
+
+   if (Type IS TiriType::Array) {
+      if (this->ctx.check(TokenKind::Less)) {
+         this->ctx.tokens().advance();
+         Token element_token = this->ctx.tokens().current();
+         std::string element_storage;
+         if (element_token.kind() IS TokenKind::StructTyped) {
+            GCstr *name = element_token.payload().as_string();
+            element_storage = std::format("struct<{}>", std::string_view(strdata(name), name->len));
+            this->ctx.tokens().advance();
+         }
+         else if (element_token.kind() IS TokenKind::ArrayTyped) {
+            GCstr *name = element_token.payload().as_string();
+            element_storage.assign(strdata(name), name->len);
+            if (not this->ctx.lex().array_typed_size.is_absent()) {
+               return this->fail<Token>(ParserErrorCode::UnexpectedToken, element_token,
+                  "Array type annotations cannot declare a nested size");
+            }
+            this->ctx.tokens().advance();
+         }
+         else if (element_token.kind() IS TokenKind::Identifier) {
+            GCstr *name = element_token.identifier();
+            element_storage.assign(strdata(name), name->len);
+            this->ctx.tokens().advance();
+         }
+         else {
+            return this->fail<Token>(ParserErrorCode::ExpectedTypeName, element_token,
+               "Expected an array element type");
+         }
+
+         if (this->ctx.check(TokenKind::Comma)) {
+            return this->fail<Token>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+               "Array type annotations cannot declare a size");
+         }
+         auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+         if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
+
+         if (element_storage IS "object") {
+            return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,
+               "Unknown array element type 'object'; use 'obj'");
+         }
+         auto element = parse_array_element_type(element_storage, &this->ctx.lua(), &this->ctx.lex());
+         if (not element or element->storage IS AET::PTR or
+             (element->storage IS AET::STRUCT and not element->struct_def)) {
+            return this->fail<Token>(ParserErrorCode::UnknownTypeName, element_token,
+               std::format("Unknown array element type '{}'", element_storage));
+         }
+         ArrayElement = *element;
+         this->track_struct_reference(element->struct_def);
+         return finish_annotation();
+      }
+      return this->fail<Token>(ParserErrorCode::ExpectedTypeName, type_token,
+         "Array annotations require an element type; use array<any> for a wildcard array contract");
+   }
+
+   if (Type IS TiriType::Struct and this->ctx.check(TokenKind::Less)) {
+      this->ctx.tokens().advance();
+      auto name_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      if (not name_token.ok()) return ParserResult<Token>::failure(name_token.error_ref());
+      GCstr *name_symbol = name_token.value_ref().identifier();
+      std::string_view name(strdata(name_symbol), name_symbol->len);
+      auto found = find_struct(&this->ctx.lua(), name);
+      if (not found) {
+         return this->fail<Token>(ParserErrorCode::UnknownTypeName, name_token.value_ref(),
+            std::format("Unknown struct name '{}'; declarations must precede use", name));
+      }
+      StructDef = found;
+      this->track_struct_reference(found);
+      auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+      if (not close.ok()) return ParserResult<Token>::failure(close.error_ref());
+   }
+   return finish_annotation();
+}
+
+//********************************************************************************************************************
+// Parses the contextual descriptor following `is` or `is not`.  Aggregate type tests permit an optional,
+// whitespace-separated inner constraint, unlike declaration annotations.
+
+ParserResult<TypeTestDescriptor> AstBuilder::parse_type_test_descriptor()
+{
+   auto opened = this->ctx.consume(TokenKind::Less, ParserErrorCode::ExpectedToken);
+   if (not opened.ok()) return ParserResult<TypeTestDescriptor>::failure(opened.error_ref());
+
+   Token type_token = this->ctx.tokens().current();
+   std::string_view type_name_view;
+   if (type_token.kind() IS TokenKind::Identifier) {
+      GCstr *symbol = type_token.identifier();
+      type_name_view = std::string_view(strdata(symbol), symbol->len);
+      this->ctx.tokens().advance();
+   }
+   else if (type_token.kind() IS TokenKind::Nil) {
+      type_name_view = "nil";
+      this->ctx.tokens().advance();
+   }
+   else {
+      return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedTypeName, type_token,
+         "Type-test descriptor requires a Tiri type name");
+   }
+
+   TypeTestDescriptor descriptor;
+   descriptor.type = parse_type_name(type_name_view);
+   if (descriptor.type IS TiriType::Unknown) {
+      return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, type_token,
+         std::format("Unknown type-test name '{}'; expected a Tiri type", type_name_view));
+   }
+
+   if (not this->ctx.check(TokenKind::Greater)) {
+      Token constraint_token = this->ctx.tokens().current();
+      if (descriptor.type != TiriType::Array and descriptor.type != TiriType::Object and
+          descriptor.type != TiriType::Struct) {
+         return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, constraint_token,
+            std::format("Type-test descriptor '<{}>' does not accept an inner name", type_name_view));
+      }
+
+      std::string constraint_name;
+      if (constraint_token.kind() IS TokenKind::Identifier) {
+         GCstr *constraint_symbol = constraint_token.identifier();
+         constraint_name.assign(strdata(constraint_symbol), constraint_symbol->len);
+      }
+      else if (descriptor.type IS TiriType::Array and constraint_token.kind() IS TokenKind::ArrayTyped) {
+         if (not this->ctx.lex().array_typed_size.is_absent()) {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, constraint_token,
+               "Array type-test descriptors cannot declare a size");
+         }
+         GCstr *constraint_symbol = constraint_token.payload().as_string();
+         constraint_name = std::format("array<{}>",
+            std::string_view(strdata(constraint_symbol), constraint_symbol->len));
+      }
+      else if (descriptor.type IS TiriType::Array and constraint_token.kind() IS TokenKind::StructTyped) {
+         GCstr *constraint_symbol = constraint_token.payload().as_string();
+         constraint_name = std::format("struct<{}>",
+            std::string_view(strdata(constraint_symbol), constraint_symbol->len));
+      }
+      else {
+         return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedIdentifier, constraint_token,
+            "Expected one inner constraint in type-test descriptor");
+      }
+
+      this->ctx.tokens().advance();
+      descriptor.constrained = true;
+
+      if (descriptor.type IS TiriType::Array) {
+         auto element = parse_array_element_type(constraint_name, &this->ctx.lua(), &this->ctx.lex());
+         if (element and element->storage != AET::PTR and
+             (element->storage != AET::STRUCT or element->struct_def)) {
+            descriptor.array_element = *element;
+            this->track_struct_reference(element->struct_def);
+         }
+         else if (struct_record *definition = find_struct(&this->ctx.lua(), constraint_name)) {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Structure array type tests require 'struct<{}>'; use '<array struct<{}>>'",
+                  definition->Name, definition->Name));
+         }
+         else {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Unknown array element type '{}'", constraint_name));
+         }
+      }
+      else if (descriptor.type IS TiriType::Object) {
+         descriptor.object_class_id = ResolveClassName(constraint_name);
+         if (descriptor.object_class_id IS CLASSID::NIL) {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Unknown Kōtuku class '{}'", constraint_name));
+         }
+      }
+      else {
+         descriptor.struct_def = find_struct(&this->ctx.lua(), constraint_name);
+         if (not descriptor.struct_def) {
+            return this->fail<TypeTestDescriptor>(ParserErrorCode::UnknownTypeName, constraint_token,
+               std::format("Unknown structure '{}'; declarations must precede use", constraint_name));
+         }
+         this->track_struct_reference(descriptor.struct_def);
+      }
+
+      if (not this->ctx.check(TokenKind::Greater)) {
+         return this->fail<TypeTestDescriptor>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "Type-test descriptors accept at most one inner constraint");
+      }
+   }
+
+   auto close = this->ctx.consume(TokenKind::Greater, ParserErrorCode::ExpectedToken);
+   if (not close.ok()) {
+      return this->fail<TypeTestDescriptor>(ParserErrorCode::ExpectedToken, this->ctx.tokens().current(),
+         "Type-test descriptor is missing '>'");
+   }
+   return ParserResult<TypeTestDescriptor>::success(descriptor);
+}
+
 ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
 {
    std::vector<Identifier> names;
@@ -170,40 +512,26 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       if (not token.ok()) return ParserResult<Identifier>::failure(token.error_ref());
 
       Identifier identifier = make_identifier(token.value_ref());
+      if (this->is_module_namespace_name(identifier.symbol)) {
+         return this->fail<Identifier>(ParserErrorCode::UnexpectedToken, token.value_ref(),
+            std::format("Module namespace '{}' cannot be declared as a variable",
+               std::string_view(strdata(identifier.symbol), identifier.symbol->len)));
+      }
 
       // Parse optional type annotation (:type)
       if (this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
-
-         Token type_token = this->ctx.tokens().current();
-         std::string_view type_view;
-
-         auto kind = type_token.kind();
-         if (kind IS TokenKind::Identifier) {
-            this->ctx.tokens().advance();
-            GCstr* type_symbol = type_token.identifier();
-            if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
-         }
-         else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
-            this->ctx.tokens().advance();
-            type_view = token_kind_name_constexpr(kind);
-         }
-         else {
-            this->ctx.emit_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'");
-            return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
-         }
-
-         identifier.type = parse_type_name(type_view);
-         if (identifier.type IS TiriType::Unknown) {
-            std::string message("Invalid type.  Common types are: any, bool, num, str, table, array");
-            this->ctx.emit_error(ParserErrorCode::UnknownTypeName, type_token, message);
-            return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::UnknownTypeName, type_token, std::move(message)));
+         bool required = false;
+         auto parsed = this->parse_type_annotation(
+            identifier.type, identifier.struct_def, identifier.array_element, required);
+         if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
+         if (required) {
+            return this->fail<Identifier>(ParserErrorCode::UnexpectedToken, parsed.value_ref(),
+               "Required annotations are only permitted on function parameters and return values");
          }
       }
 
-      // Check for attribute: either '<' (normal case) or 'const'/'close' followed by '<' (buffered case)
+      // Check for attribute: either '<' (normal case) or its buffered identifier followed by '<'.
       // The buffered case occurs when the lexer's '<identifier' handling put the identifier in the buffer
       // before the '<', and then when we advanced past the variable name, we got the buffered identifier.
       bool is_buffered_attribute = false;
@@ -211,7 +539,8 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
          GCstr *maybe_attr = this->ctx.tokens().current().identifier();
          if (maybe_attr) {
             std::string_view attr_view(strdata(maybe_attr), maybe_attr->len);
-            if ((attr_view IS "const" or attr_view IS "close") and this->ctx.tokens().peek(1).raw() IS '<') {
+            if ((attr_view IS "const" or attr_view IS "close" or attr_view IS "view" or attr_view IS "weak") and
+                  this->ctx.tokens().peek(1).raw() IS '<') {
                is_buffered_attribute = true;
             }
          }
@@ -220,15 +549,19 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
       if (this->ctx.tokens().current().raw() IS '<' or is_buffered_attribute) {
          bool is_close_attribute = false;
          bool is_const_attribute = false;
+         bool is_view_attribute = false;
+         bool is_weak_attribute = false;
 
          if (is_buffered_attribute) {
-            // Current token is already the attribute name ('const' or 'close')
+            // Current token is already the attribute name.
             GCstr *attr_name = this->ctx.tokens().current().identifier();
             std::string_view view(strdata(attr_name), attr_name->len);
             if (view IS "close") is_close_attribute = true;
             else if (view IS "const") is_const_attribute = true;
+            else if (view IS "view") is_view_attribute = true;
+            else if (view IS "weak") is_weak_attribute = true;
 
-            this->ctx.tokens().advance();  // Advance past 'const'/'close'
+            this->ctx.tokens().advance();  // Advance past the attribute name
             this->ctx.tokens().advance();  // Advance past '<'
          }
          else {
@@ -242,6 +575,8 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
                std::string_view view(strdata(attr_name), attr_name->len);
                if (view IS std::string_view("close")) is_close_attribute = true;
                else if (view IS std::string_view("const")) is_const_attribute = true;
+               else if (view IS std::string_view("view")) is_view_attribute = true;
+               else if (view IS std::string_view("weak")) is_weak_attribute = true;
             }
          }
 
@@ -249,45 +584,36 @@ ParserResult<std::vector<Identifier>> AstBuilder::parse_name_list()
             Token current = this->ctx.tokens().current();
             this->ctx.emit_error(ParserErrorCode::ExpectedToken, current, "expected '>' after attribute");
             return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::ExpectedToken, current, "expected '>' after attribute"));
+               this->ctx.make_error(ParserErrorCode::ExpectedToken, current, "expected '>' after attribute"));
          }
 
          if (is_close_attribute) identifier.has_close = true;
          else if (is_const_attribute) identifier.has_const = true;
+         else if (is_view_attribute) identifier.has_view = true;
+         else if (is_weak_attribute) identifier.has_weak = true;
          else {
             this->ctx.emit_error(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(), "unknown attribute");
          }
       }
 
+      if ((identifier.has_weak or identifier.has_const or identifier.has_close or identifier.has_view) and
+          (this->ctx.tokens().current().raw() IS '<' or
+           (this->ctx.tokens().current().kind() IS TokenKind::Identifier and
+            this->ctx.tokens().peek(1).raw() IS '<'))) {
+         return this->fail<Identifier>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+            "Declaration attributes cannot be combined; <weak> excludes <const>, <close> and <view>");
+      }
+
       // Parse optional type annotation (:type) after attribute (supports `name <const>:type` syntax)
       if (identifier.type IS TiriType::Unknown and this->ctx.check(TokenKind::Colon)) {
          this->ctx.tokens().advance();
-
-         Token type_token = this->ctx.tokens().current();
-         std::string_view type_view;
-
-         auto kind = type_token.kind();
-         if (kind IS TokenKind::Identifier) {
-            this->ctx.tokens().advance();
-            GCstr* type_symbol = type_token.identifier();
-            if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
-         }
-         else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
-            this->ctx.tokens().advance();
-            type_view = token_kind_name_constexpr(kind);
-         }
-         else {
-            this->ctx.emit_error(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'");
-            return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::ExpectedTypeName, type_token, "expected type name after ':'"));
-         }
-
-         identifier.type = parse_type_name(type_view);
-         if (identifier.type IS TiriType::Unknown) {
-            auto message = std::format("Invalid type.  Common types are: any, bool, num, str, table, array", type_view);
-            this->ctx.emit_error(ParserErrorCode::UnknownTypeName, type_token, message);
-            return ParserResult<Identifier>::failure(
-               ParserError(ParserErrorCode::UnknownTypeName, type_token, std::move(message)));
+         bool required = false;
+         auto parsed = this->parse_type_annotation(
+            identifier.type, identifier.struct_def, identifier.array_element, required);
+         if (not parsed.ok()) return ParserResult<Identifier>::failure(parsed.error_ref());
+         if (required) {
+            return this->fail<Identifier>(ParserErrorCode::UnexpectedToken, parsed.value_ref(),
+               "Required annotations are only permitted on function parameters and return values");
          }
       }
 
@@ -329,34 +655,18 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 
          FunctionParameter param;
          param.name = make_identifier(name.value_ref());
+         if (this->is_module_namespace_name(param.name.symbol)) {
+            return this->fail<ParameterListResult>(ParserErrorCode::UnexpectedToken, name.value_ref(),
+               std::format("Module namespace '{}' cannot be declared as a function parameter",
+                  std::string_view(strdata(param.name.symbol), param.name.symbol->len)));
+         }
 
          if (this->ctx.check(TokenKind::Colon)) {
             this->ctx.tokens().advance();
-
-            Token type_token = this->ctx.tokens().current();
-            std::string_view type_view;
-
-            auto kind = type_token.kind();
-            if (kind IS TokenKind::Identifier) {
-               this->ctx.tokens().advance();
-               GCstr *type_symbol = type_token.identifier();
-               if (type_symbol) type_view = std::string_view(strdata(type_symbol), type_symbol->len);
-            }
-            else if (kind IS TokenKind::Function or kind IS TokenKind::Nil) {
-               this->ctx.tokens().advance();
-               type_view = token_kind_name_constexpr(kind);
-            }
-            else {
-               return this->fail<ParameterListResult>(ParserErrorCode::ExpectedTypeName, type_token,
-                  "Expected type name after ':'");
-            }
-
-            param.type = parse_type_name(type_view);
-            // If parse_type_name returns an invalid type, emit error
-            if (param.type IS TiriType::Unknown) {
-               return this->fail<ParameterListResult>(ParserErrorCode::UnknownTypeName, type_token,
-                  std::format("Unknown type name '{}'; expected a valid type name", type_view));
-            }
+            auto parsed = this->parse_type_annotation(
+               param.type, param.struct_def, param.array_element, param.required);
+            if (not parsed.ok()) return ParserResult<ParameterListResult>::failure(parsed.error_ref());
+            param.type_is_explicit = true;
          }
          else { // No type annotation provided - emit tips for untyped parameter
             if (param.name.symbol) {
@@ -366,6 +676,12 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
                this->ctx.emit_tip(1, TipCategory::TypeSafety, std::move(message), name.value_ref());
                #endif
             }
+         }
+         if (this->ctx.tokens().current().raw() IS '<' or
+             (this->ctx.tokens().current().kind() IS TokenKind::Identifier and
+              this->ctx.tokens().peek(1).raw() IS '<')) {
+            return this->fail<ParameterListResult>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+               "Declaration attributes, including <weak>, are not permitted on function parameters");
          }
          result.parameters.push_back(param);
       } while (this->ctx.match(TokenKind::Comma).ok());
@@ -377,10 +693,135 @@ ParserResult<AstBuilder::ParameterListResult> AstBuilder::parse_parameter_list(b
 //********************************************************************************************************************
 // Parses the fields inside table constructors, distinguishing between array, record, and computed key forms.
 
+// Canonical form of a statically known table-constructor key, used to detect provable duplicates.
+//
+// Numerical keys are canonicalised so that equivalent integer and floating representations collide, and named
+// fields collide with equivalent constant string keys.  Keys whose value cannot be proven without evaluating user
+// code are not represented here and are never diagnosed.
+
+namespace {
+
+struct ConstantKey {
+   enum class Kind : uint8_t { Number, String, Boolean } kind;
+   lua_Number number{};
+   std::string text;
+   bool boolean{};
+
+   [[nodiscard]] bool operator==(const ConstantKey &Other) const
+   {
+      if (kind != Other.kind) return false;
+      switch (kind) {
+         case Kind::Number:  return number IS Other.number;
+         case Kind::String:  return text IS Other.text;
+         case Kind::Boolean: return boolean IS Other.boolean;
+      }
+      return false;
+   }
+
+   [[nodiscard]] std::string describe() const
+   {
+      switch (kind) {
+         case Kind::Number:  return std::format("{}", number);
+         case Kind::String:  return std::format("'{}'", text);
+         case Kind::Boolean: return boolean ? "true" : "false";
+      }
+      return "?";
+   }
+};
+
+struct ConstantKeyHash {
+   [[nodiscard]] size_t operator()(const ConstantKey &Key) const noexcept
+   {
+      const size_t kind_hash = size_t(Key.kind) << 1;
+      switch (Key.kind) {
+         case ConstantKey::Kind::Number:  return std::hash<lua_Number>{}(Key.number) ^ kind_hash;
+         case ConstantKey::Kind::String:  return std::hash<std::string>{}(Key.text) ^ kind_hash;
+         case ConstantKey::Kind::Boolean: return std::hash<bool>{}(Key.boolean) ^ kind_hash;
+      }
+      return kind_hash;
+   }
+};
+
+// These expressions retain a variable result count when they are the final positional field.  Their nominal array
+// index is not guaranteed to be written, so it cannot participate in a provable duplicate-key diagnostic.
+
+[[nodiscard]] bool can_expand_table_tail(const ExprNode &Expression)
+{
+   return Expression.kind IS AstNodeKind::CallExpr or Expression.kind IS AstNodeKind::SafeCallExpr or
+      Expression.kind IS AstNodeKind::VarArgExpr or Expression.kind IS AstNodeKind::PipeExpr or
+      Expression.kind IS AstNodeKind::ResultFilterExpr;
+}
+
+// The canonical key of a `name =` entry.
+
+[[nodiscard]] std::optional<ConstantKey> name_constant_key(const Identifier &Name)
+{
+   if (not Name.symbol) return std::nullopt;
+   ConstantKey key;
+   key.kind = ConstantKey::Kind::String;
+   key.text.assign(strdata(Name.symbol), Name.symbol->len);
+   return key;
+}
+
+// The canonical key of a `[key] =` entry.  Only a literal key is statically provable.
+
+[[nodiscard]] std::optional<ConstantKey> computed_constant_key(const ExprNode *Key)
+{
+   if (not Key or Key->kind != AstNodeKind::LiteralExpr) return std::nullopt;
+   const auto *literal = std::get_if<LiteralValue>(&Key->data);
+   if (not literal) return std::nullopt;
+
+   ConstantKey key;
+   switch (literal->kind) {
+      case LiteralKind::Number:
+         key.kind = ConstantKey::Kind::Number;
+         key.number = literal->number_value;
+         return key;
+      case LiteralKind::String:
+         if (not literal->string_value) return std::nullopt;
+         key.kind = ConstantKey::Kind::String;
+         key.text.assign(strdata(literal->string_value), literal->string_value->len);
+         return key;
+      case LiteralKind::Boolean:
+         key.kind = ConstantKey::Kind::Boolean;
+         key.boolean = literal->bool_value;
+         return key;
+      default:
+         return std::nullopt;  //  A nil key is rejected at runtime, not here.
+   }
+}
+
+// Extract the canonical key of a field, if the parser can prove it without evaluating user code.
+
+[[nodiscard]] std::optional<ConstantKey> constant_key_of(const TableField &Field, int32_t &NextArrayIndex)
+{
+   if (Field.kind IS TableFieldKind::Record) {
+      if (not Field.name) return std::nullopt;
+      return name_constant_key(*Field.name);
+   }
+
+   if (Field.kind IS TableFieldKind::Array) {
+      // Positional entries occupy consecutive indices from zero, so they collide with equivalent explicit keys.
+      ConstantKey key;
+      key.kind = ConstantKey::Kind::Number;
+      key.number = (lua_Number)NextArrayIndex++;
+      return key;
+   }
+
+   return computed_constant_key(Field.key.get());
+}
+
+} // namespace
+
 ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_array_part)
 {
    std::vector<TableField> fields;
    bool array = false;
+
+   // Provable duplicate keys within one literal are rejected: the overwritten intermediate value cannot be observed
+   // and the later entry unambiguously wins today, so accepting the literal can only hide a mistake.
+   std::unordered_map<ConstantKey, Token, ConstantKeyHash> seen_keys;
+   int32_t next_array_index = 0;
 
    while (not this->ctx.check(TokenKind::RightBrace)) {
       TableField field;
@@ -398,7 +839,8 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
          field.key = std::move(key.value_ref());
          field.value = std::move(value.value_ref());
       }
-      else if (current.kind() IS TokenKind::Identifier and this->ctx.tokens().peek(1).kind() IS TokenKind::Equals) {
+      else if ((current.is_identifier() or current.has_flag(TKF_RESERVED)) and
+         this->ctx.tokens().peek(1).kind() IS TokenKind::Equals) {
          this->ctx.tokens().advance();
          this->ctx.tokens().advance();
          auto value = this->parse_expression();
@@ -417,12 +859,184 @@ ParserResult<std::vector<TableField>> AstBuilder::parse_table_fields(bool *has_a
          array = true;
       }
       field.span = current.span();
+
+      // Consume the separator through the normal token stream before checking for a trailing separator.  Peeking
+      // across it can pre-expand an f-string field into the lexer's buffered tokens and corrupt subsequent parsing.
+      const bool has_separator = this->ctx.match(TokenKind::Comma).ok() or
+         this->ctx.match(TokenKind::Semicolon).ok();
+      const bool final_field = this->ctx.check(TokenKind::RightBrace);
+      const bool variable_tail = final_field and field.kind IS TableFieldKind::Array and field.value and
+         can_expand_table_tail(*field.value);
+
+      if (auto key = constant_key_of(field, next_array_index)) {
+         if (not variable_tail) {
+            auto [entry, inserted] = seen_keys.emplace(*key, current);
+            if (not inserted) {
+               return this->fail<std::vector<TableField>>(ParserErrorCode::UnexpectedToken, current,
+                  std::format("Duplicate key {} in table constructor; first defined at line {}",
+                     key->describe(), entry->second.span().line));
+            }
+         }
+      }
+
       fields.push_back(std::move(field));
-      if (this->ctx.match(TokenKind::Comma).ok()) continue;
-      if (this->ctx.match(TokenKind::Semicolon).ok()) continue;
+      if (has_separator) continue;
    }
    if (has_array_part) *has_array_part = array;
    return ParserResult<std::vector<TableField>>::success(std::move(fields));
+}
+
+//********************************************************************************************************************
+// Parses a field assignment block `ref.{ name = value, [key] = value }` or `ref?.{ ... }` and lowers it to existing
+// statements:
+//
+//   do
+//      local <hidden> = ref
+//      if <hidden> != nil then   -- `?.{` only
+//         <hidden>.name = value
+//         <hidden>[key] = value
+//      end
+//   end
+//
+// The base is evaluated once and held in a hidden local whose name the lexer cannot produce.  The local is used even
+// for a plain local base so that a value which reassigns the base cannot redirect later entries.  Each entry is an
+// ordinary store, evaluated and assigned in source order.  Values are parsed in the enclosing scope.
+
+ParserResult<StmtNodePtr> AstBuilder::parse_field_assignment_block(ExprNodePtr Base, bool Safe)
+{
+   const bool valid_base = Base->is_grouped or Base->kind IS AstNodeKind::IdentifierExpr or
+      Base->kind IS AstNodeKind::MemberExpr or Base->kind IS AstNodeKind::IndexExpr or
+      Base->kind IS AstNodeKind::SafeMemberExpr or Base->kind IS AstNodeKind::SafeIndexExpr or
+      Base->kind IS AstNodeKind::CallExpr or Base->kind IS AstNodeKind::SafeCallExpr or
+      Base->kind IS AstNodeKind::CurrentContextExpr;
+
+   Token block_token = this->ctx.tokens().current();
+   if (not valid_base) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, block_token,
+         "field assignment block base must be a variable, field, call or parenthesised expression");
+   }
+
+   this->ctx.tokens().advance(); // Consume '.' or '?.'
+   this->ctx.tokens().advance(); // Consume '{'
+
+   const SourceSpan base_span = Base->span;
+   NameRef hidden;
+   hidden.identifier = Identifier::from_keepstr(this->ctx.lex().keepstr(FIELD_BLOCK_BINDING_NAME), base_span);
+
+   StmtNodeList assignments;
+   std::unordered_map<ConstantKey, Token, ConstantKeyHash> seen_keys;
+
+   while (not this->ctx.check(TokenKind::RightBrace)) {
+      Token current = this->ctx.tokens().current();
+      ExprNodePtr target;
+      std::optional<ConstantKey> key;
+
+      if (current.kind() IS TokenKind::LeftBracket) {
+         this->ctx.tokens().advance();
+         auto index = this->parse_expression();
+         if (not index.ok()) return ParserResult<StmtNodePtr>::failure(index.error_ref());
+         this->ctx.consume(TokenKind::RightBracket, ParserErrorCode::ExpectedToken);
+
+         if (this->ctx.tokens().current().has_flag(TKF_COMPOUND_ASSIGNMENT)) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, this->ctx.tokens().current(),
+               "compound assignment is not supported in field assignment blocks; use '[key] = value'");
+         }
+
+         key = computed_constant_key(index.value_ref().get());
+         target = make_index_expr(current.span(), make_identifier_expr(current.span(), hidden),
+            std::move(index.value_ref()));
+      }
+      else if (current.is_identifier() or current.has_flag(TKF_RESERVED)) {
+         Token next = this->ctx.tokens().peek(1);
+         if (next.has_flag(TKF_COMPOUND_ASSIGNMENT)) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, next,
+               "compound assignment is not supported in field assignment blocks; use 'name = value'");
+         }
+
+         if (next.kind() != TokenKind::Equals) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
+               "field assignment blocks require 'name = value' or '[key] = value' entries");
+         }
+
+         this->ctx.tokens().advance();
+         Identifier member = make_identifier(current);
+         key = name_constant_key(member);
+         target = make_member_expr(current.span(), make_identifier_expr(current.span(), hidden), member);
+      }
+      else if (current.kind() IS TokenKind::Dots) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
+            "varargs cannot be used in field assignment blocks");
+      }
+      else {
+         return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
+            "field assignment blocks require 'name = value' or '[key] = value' entries");
+      }
+
+      if (key) {
+         auto [entry, inserted] = seen_keys.emplace(*key, current);
+         if (not inserted) {
+            return this->fail<StmtNodePtr>(ParserErrorCode::UnexpectedToken, current,
+               std::format("duplicate field {} in field assignment block; first assigned at line {}",
+                  key->describe(), entry->second.span().line));
+         }
+      }
+
+      Token equals = this->ctx.tokens().current();
+      if (not this->ctx.match(TokenKind::Equals).ok()) {
+         return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, equals,
+            "expected '=' after field assignment block key");
+      }
+
+      auto value = this->parse_expression();
+      if (not value.ok()) return ParserResult<StmtNodePtr>::failure(value.error_ref());
+
+      ExprNodeList targets;
+      targets.push_back(std::move(target));
+      ExprNodeList values;
+      values.push_back(std::move(value.value_ref()));
+      assignments.push_back(make_assignment_stmt(current.span(), AssignmentOperator::Plain, std::move(targets),
+         std::move(values)));
+
+      const bool has_separator = this->ctx.match(TokenKind::Comma).ok() or
+         this->ctx.match(TokenKind::Semicolon).ok();
+      if (not has_separator) break;
+   }
+
+   Token close_token = this->ctx.tokens().current();
+   if (not this->ctx.match(TokenKind::RightBrace).ok()) {
+      return this->fail<StmtNodePtr>(ParserErrorCode::ExpectedToken, close_token,
+         "expected ',' or '}' in field assignment block");
+   }
+
+   const SourceSpan span = span_from(block_token, close_token);
+
+   std::vector<Identifier> names;
+   names.push_back(hidden.identifier);
+   ExprNodeList base_values;
+   base_values.push_back(std::move(Base));
+
+   StmtNodeList statements;
+   statements.push_back(make_local_decl_stmt(base_span, std::move(names), std::move(base_values)));
+
+   if (Safe) {
+      // Mirrors `?.`: only nil short-circuits, and no value is evaluated when it does.
+      IfClause clause;
+      clause.condition = make_binary_expr(block_token.span(), AstBinaryOperator::NotEqual,
+         make_identifier_expr(block_token.span(), hidden), make_literal_expr(block_token.span(), LiteralValue::nil()));
+      clause.block = make_block(span, std::move(assignments));
+      std::vector<IfClause> clauses;
+      clauses.push_back(std::move(clause));
+      auto if_stmt = std::make_unique<StmtNode>(AstNodeKind::IfStmt, block_token.span());
+      if_stmt->data = IfStmtPayload(std::move(clauses));
+      statements.push_back(std::move(if_stmt));
+   }
+   else {
+      for (auto &assignment : assignments) statements.push_back(std::move(assignment));
+   }
+
+   auto stmt = std::make_unique<StmtNode>(AstNodeKind::DoStmt, base_span);
+   stmt->data = DoStmtPayload(make_block(span, std::move(statements)));
+   return ParserResult<StmtNodePtr>::success(std::move(stmt));
 }
 
 //********************************************************************************************************************
@@ -441,8 +1055,10 @@ ParserResult<ExprNodeList> AstBuilder::parse_call_arguments(bool *ForwardsMultre
 
          args = std::move(parsed.value_ref());
          if (not args.empty()) {
+            // A trailing call, vararg or result filter forwards every value it produces.
             const ExprNodePtr& tail = args.back();
-            if (tail and (tail->kind IS AstNodeKind::CallExpr or tail->kind IS AstNodeKind::VarArgExpr)) {
+            if (tail and (tail->kind IS AstNodeKind::CallExpr or tail->kind IS AstNodeKind::VarArgExpr or
+                tail->kind IS AstNodeKind::ResultFilterExpr)) {
                *ForwardsMultret = true;
             }
          }
@@ -560,7 +1176,7 @@ ParserResult<AstBuilder::ResultFilterInfo> AstBuilder::parse_result_filter_patte
 }
 
 //********************************************************************************************************************
-// Parses result filter expressions: [_*]func(), [*_]obj:method(), etc.
+// Parses result filter expressions: [_*]func(), [*_]obj.method(), etc.
 // This syntax allows selective extraction of return values from multi-value function calls.
 
 ParserResult<ExprNodePtr> AstBuilder::parse_result_filter_expr(const Token &StartToken)
@@ -624,47 +1240,42 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
    if (current.raw() IS '<') {
       this->ctx.tokens().advance();  // consume '<'
 
+      // An empty list is an explicit void declaration.
+      if (this->ctx.tokens().current().raw() IS '>') {
+         this->ctx.tokens().advance();
+         return ParserResult<FunctionReturnTypes>::success(result);
+      }
+
       // Parse comma-separated type list
       do {
          current = this->ctx.tokens().current();
 
          // Check for variadic marker ...
          if (current.kind() IS TokenKind::Dots) {
+            if (result.count IS 0) {
+               return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedToken, current,
+                  "variadic result marker requires a preceding result type");
+            }
             this->ctx.tokens().advance();
             result.is_variadic = true;
             break;  // ... must be last
          }
 
-         // Handle overflow: 9th+ types force 8th to 'any'
          if (result.count >= MAX_RETURN_TYPES) {
-            if (result.count IS MAX_RETURN_TYPES) {
-               result.types[MAX_RETURN_TYPES - 1] = TiriType::Any;
-            }
-            // Skip remaining types until '>' or '...'
-            if (current.kind() IS TokenKind::Identifier) this->ctx.tokens().advance();
-            result.count++;
-            continue;
+            return this->fail<FunctionReturnTypes>(ParserErrorCode::TooManyReturnTypes, current,
+               "A function supports at most 8 declared return types");
          }
 
-         // Parse type name
-         auto type_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+         TiriType parsed = TiriType::Unknown;
+         struct_record *struct_def = nullptr;
+         ArrayElementDescriptor array_element;
+         bool required = false;
+         auto type_token = this->parse_type_annotation(parsed, struct_def, array_element, required);
          if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
-
-         GCstr *type_name_str = type_token.value_ref().identifier();
-         if (type_name_str IS nullptr) {
-            return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedIdentifier, type_token.value_ref(),
-               "expected type name in return type list");
-         }
-
-         std::string_view type_str(strdata(type_name_str), type_name_str->len);
-         TiriType parsed = parse_type_name(type_str);
-
-         if (parsed IS TiriType::Unknown) {
-            return this->fail<FunctionReturnTypes>(ParserErrorCode::UnexpectedToken, type_token.value_ref(),
-               std::format("unknown type name '{}'", type_str));
-         }
-
-         result.types[result.count++] = parsed;
+         result.types[result.count] = parsed;
+         result.struct_defs[result.count] = struct_def;
+         result.array_elements[result.count] = array_element;
+         result.required[result.count++] = required;
 
       } while (this->ctx.match(TokenKind::Comma).ok());
 
@@ -674,25 +1285,9 @@ ParserResult<FunctionReturnTypes> AstBuilder::parse_return_type_annotation()
       else return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedToken, current, "expected '>' to close return type list");
    }
    else {
-      // Single type: :typename
-      auto type_token = this->ctx.expect_identifier(ParserErrorCode::ExpectedIdentifier);
+      auto type_token = this->parse_type_annotation(
+         result.types[0], result.struct_defs[0], result.array_elements[0], result.required[0]);
       if (not type_token.ok()) return ParserResult<FunctionReturnTypes>::failure(type_token.error_ref());
-
-      GCstr *type_name_str = type_token.value_ref().identifier();
-      if (type_name_str IS nullptr) {
-         return this->fail<FunctionReturnTypes>(ParserErrorCode::ExpectedIdentifier, type_token.value_ref(),
-            "expected type name after ':'");
-      }
-
-      std::string_view type_str(strdata(type_name_str), type_name_str->len);
-      TiriType parsed = parse_type_name(type_str);
-
-      if (parsed IS TiriType::Unknown) {
-         return this->fail<FunctionReturnTypes>(ParserErrorCode::UnexpectedToken, type_token.value_ref(),
-            std::format("unknown type name '{}'", type_str));
-      }
-
-      result.types[0] = parsed;
       result.count = 1;
    }
 

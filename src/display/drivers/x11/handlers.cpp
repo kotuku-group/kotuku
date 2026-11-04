@@ -1,0 +1,1485 @@
+#include "x11_native.h"
+
+#include <X11/Xatom.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <poll.h>
+
+namespace display {
+
+static X11Driver::State *glEventState = nullptr;
+
+constexpr size_t MAX_CLIPBOARD_TRANSFER = 64 * 1024 * 1024;
+constexpr auto CLIPBOARD_TIMEOUT = std::chrono::seconds(2);
+constexpr auto OUTGOING_CLIPBOARD_TIMEOUT = std::chrono::seconds(30);
+
+#define XDisplay (glEventState->Connection)
+#define atomSurfaceID (glEventState->SurfaceAtom)
+#define XWADeleteWindow (glEventState->DeleteAtom)
+#define XWATakeFocus (glEventState->TakeFocusAtom)
+#define KeyHeld (glEventState->KeyHeld)
+#define glKeyFlags (glEventState->KeyFlags)
+#define glDriverCallbacks (*glEventState->Callbacks)
+
+void process_movement(Window Window, int X, int Y);
+
+static inline OBJECTID resolve_surface(Window Window)
+{
+   const std::lock_guard lock(glEventState->NativeLock);
+   if (auto it = glEventState->Windows.find(Window); it != glEventState->Windows.end()) {
+      if (it->second->SurfaceID) return it->second->SurfaceID;
+
+      // The fallback matches against Surface.DisplayWindow, which records the native window handle rather than
+      // the driver's opaque HOSTWINDOW.
+
+      return glDriverCallbacks.ResolveSurface((APTR)(uintptr_t)it->second->Native);
+   }
+   return 0;
+}
+
+static inline bool adopted_window(Window Window)
+{
+   const std::lock_guard lock(glEventState->NativeLock);
+   auto it = glEventState->Windows.find(Window);
+   return (it != glEventState->Windows.end()) and it->second->Adopted;
+}
+
+//********************************************************************************************************************
+
+static size_t maximum_property_bytes()
+{
+   auto units = XExtendedMaxRequestSize(XDisplay);
+   if (not units) units = XMaxRequestSize(XDisplay);
+   auto bytes = size_t(units) * 4;
+   bytes = bytes > 1024 ? bytes - 1024 : 0;
+   return std::min(bytes, size_t(std::numeric_limits<int>::max()));
+}
+
+//********************************************************************************************************************
+
+static std::string utf8_to_latin1(std::string_view Text)
+{
+   std::string result;
+   result.reserve(Text.size());
+   for (size_t offset = 0; offset < Text.size();) {
+      auto lead = uint8_t(Text[offset]);
+      size_t expected = lead < 0x80 ? 1 : ((lead & 0xe0) IS 0xc0 ? 2 :
+         ((lead & 0xf0) IS 0xe0 ? 3 : ((lead & 0xf8) IS 0xf0 ? 4 : 0)));
+      if ((not expected) or (offset + expected > Text.size())) {
+         result.push_back('?');
+         offset++;
+         continue;
+      }
+      int length = 0;
+      auto codepoint = UTF8ReadValue(Text.substr(offset), &length);
+      if ((length <= 0) or (codepoint IS 0)) {
+         result.push_back('?');
+         offset++;
+      }
+      else {
+         result.push_back(codepoint <= 0xff ? char(codepoint) : '?');
+         offset += size_t(length);
+      }
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+
+static std::string latin1_to_utf8(const unsigned char *Data, size_t Length)
+{
+   std::string result;
+   result.reserve(Length * 2);
+   for (size_t i = 0; i < Length; i++) {
+      if (Data[i] < 0x80) result.push_back(char(Data[i]));
+      else {
+         result.push_back(char(0xc0 | (Data[i] >> 6)));
+         result.push_back(char(0x80 | (Data[i] & 0x3f)));
+      }
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+// Keyboard grabs, such as those held by the window manager while it cycles windows, generate focus events that do
+// not change the focus window.  Events with a virtual or inferior detail report focus moving within the window's own
+// hierarchy, and pointer-root events concern the root window.  NotifyPointer events report that keyboard input
+// follows the pointer into a window that has not been given the focus.  They are only honoured for adopted windows,
+// which receive keyboard input this way when the host application focusses one of their ancestors.
+
+static bool real_focus_change(const XFocusChangeEvent &Event)
+{
+   if ((Event.mode != NotifyNormal) and (Event.mode != NotifyWhileGrabbed)) return false;
+
+   switch (Event.detail) {
+      case NotifyAncestor:
+      case NotifyNonlinear: return true;
+      case NotifyPointer:   return adopted_window(Event.window);
+      default:              return false;
+   }
+}
+
+//********************************************************************************************************************
+
+static void update_server_timestamp(const XEvent &Event)
+{
+   Time timestamp = CurrentTime;
+   switch (Event.type) {
+      case KeyPress:
+      case KeyRelease: timestamp = Event.xkey.time; break;
+      case ButtonPress:
+      case ButtonRelease: timestamp = Event.xbutton.time; break;
+      case MotionNotify: timestamp = Event.xmotion.time; break;
+      case EnterNotify:
+      case LeaveNotify: timestamp = Event.xcrossing.time; break;
+      case PropertyNotify: timestamp = Event.xproperty.time; break;
+      case SelectionClear: timestamp = Event.xselectionclear.time; break;
+      case SelectionRequest: timestamp = Event.xselectionrequest.time; break;
+      case SelectionNotify: timestamp = Event.xselection.time; break;
+   }
+   if (timestamp != CurrentTime) {
+      const std::lock_guard lock(glEventState->NativeLock);
+      glEventState->LastServerTimestamp = timestamp;
+   }
+}
+
+//********************************************************************************************************************
+
+static void finish_primary_read();
+
+static void expire_clipboard_transfer()
+{
+   const std::lock_guard lock(glEventState->NativeLock);
+   if (glEventState->ClipboardTransfer and
+       (std::chrono::steady_clock::now() - glEventState->TransferStarted >= CLIPBOARD_TIMEOUT)) {
+      kt::Log("X11Mgr").trace("Abandoning an X11 clipboard transfer after two seconds.");
+      glEventState->ClipboardTransfer = false;
+      glEventState->TransferIncremental = false;
+      glEventState->TransferData.clear();
+      glEventState->TransferGeneration++;
+   }
+
+   auto now = std::chrono::steady_clock::now();
+   if (glEventState->PrimaryRead.window and (now - glEventState->PrimaryRead.started >= CLIPBOARD_TIMEOUT))
+      finish_primary_read();
+   for (auto it = glEventState->ClipboardWrites.begin(); it != glEventState->ClipboardWrites.end();) {
+      if (now - it->Updated < OUTGOING_CLIPBOARD_TIMEOUT) { it++; continue; }
+      auto requestor = it->Requestor;
+      auto previous_mask = it->PreviousEventMask;
+      it = glEventState->ClipboardWrites.erase(it);
+      if (std::none_of(glEventState->ClipboardWrites.begin(), glEventState->ClipboardWrites.end(),
+            [requestor](const X11ClipboardWrite &Write) { return Write.Requestor IS requestor; })) {
+         XSelectInput(XDisplay, requestor, previous_mask);
+      }
+   }
+}
+
+//********************************************************************************************************************
+
+static bool selection_payload(Atom Target, std::string &Data, Atom &Type, bool Primary)
+{
+   Type = Target;
+   if ((not Primary) and glEventState->ClipboardIsFiles) {
+      if (Target IS glEventState->URIListAtom) Data = glEventState->ClipboardUris;
+      else if (Target IS glEventState->GnomeFilesAtom) Data = glEventState->ClipboardGnomeFiles;
+      else return false;
+   }
+   else if ((Target IS glEventState->UTF8StringAtom) or (Target IS glEventState->TextUTF8Atom) or
+            (Target IS glEventState->TextPlainAtom) or (Target IS glEventState->TextAtom)) {
+      Data = Primary ? glEventState->PrimaryText : glEventState->ClipboardText;
+      if (Target IS glEventState->TextAtom) Type = glEventState->UTF8StringAtom;
+   }
+   else if (Target IS XA_STRING) Data = utf8_to_latin1(Primary ?
+      glEventState->PrimaryText : glEventState->ClipboardText);
+   else return false;
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool write_selection_property(Atom Target, Window Requestor, Atom Property, bool Primary = false)
+{
+   if ((not Property) or (Target IS glEventState->MultipleAtom)) return false;
+
+   if (Target IS glEventState->TargetsAtom) {
+      std::vector<Atom> targets = { glEventState->TargetsAtom, glEventState->MultipleAtom,
+         glEventState->TimestampAtom, glEventState->SaveTargetsAtom };
+      if ((not Primary) and glEventState->ClipboardIsFiles) {
+         targets.push_back(glEventState->URIListAtom);
+         targets.push_back(glEventState->GnomeFilesAtom);
+      }
+      else {
+         targets.insert(targets.end(), { glEventState->UTF8StringAtom, glEventState->TextUTF8Atom,
+            glEventState->TextPlainAtom, XA_STRING, glEventState->TextAtom });
+      }
+      XChangeProperty(XDisplay, Requestor, Property, XA_ATOM, 32, PropModeReplace,
+         (const unsigned char *)targets.data(), int(targets.size()));
+      return true;
+   }
+
+   if (Target IS glEventState->TimestampAtom) {
+      unsigned long timestamp = Primary ? glEventState->PrimaryTimestamp : glEventState->ClipboardTimestamp;
+      XChangeProperty(XDisplay, Requestor, Property, XA_INTEGER, 32, PropModeReplace,
+         (const unsigned char *)&timestamp, 1);
+      return true;
+   }
+
+   if (Target IS glEventState->SaveTargetsAtom) {
+      XChangeProperty(XDisplay, Requestor, Property, Target, 8, PropModeReplace, nullptr, 0);
+      return true;
+   }
+
+   std::string data;
+   Atom type = None;
+   if (not selection_payload(Target, data, type, Primary)) return false;
+
+   if (data.size() > maximum_property_bytes()) {
+      unsigned long size = data.size();
+      XWindowAttributes attributes = {};
+      long previous_mask = 0;
+      auto existing = std::find_if(glEventState->ClipboardWrites.begin(), glEventState->ClipboardWrites.end(),
+         [Requestor](const X11ClipboardWrite &Write) { return Write.Requestor IS Requestor; });
+      if (existing != glEventState->ClipboardWrites.end()) previous_mask = existing->PreviousEventMask;
+      else {
+         if (XGetWindowAttributes(XDisplay, Requestor, &attributes)) previous_mask = attributes.your_event_mask;
+         XSelectInput(XDisplay, Requestor, previous_mask|PropertyChangeMask);
+      }
+      XChangeProperty(XDisplay, Requestor, Property, glEventState->IncrAtom, 32, PropModeReplace,
+         (const unsigned char *)&size, 1);
+      glEventState->ClipboardWrites.push_back({ Requestor, Property, type, std::move(data), 0, previous_mask,
+         std::chrono::steady_clock::now() });
+      return true;
+   }
+
+   XChangeProperty(XDisplay, Requestor, Property, type, 8, PropModeReplace,
+      (const unsigned char *)data.data(), int(data.size()));
+   return true;
+}
+
+//********************************************************************************************************************
+
+static bool write_multiple_selection(const XSelectionRequestEvent &Request)
+{
+   if (Request.property IS None) return false;
+
+   Atom actual_type = None;
+   int actual_format = 0;
+   unsigned long count = 0, remaining = 0;
+   unsigned char *property = nullptr;
+   auto maximum_longs = std::min<size_t>(maximum_property_bytes() / 4,
+      size_t(std::numeric_limits<long>::max()));
+   auto status = XGetWindowProperty(XDisplay, Request.requestor, Request.property, 0, long(maximum_longs), False,
+      glEventState->AtomPairAtom, &actual_type, &actual_format, &count, &remaining, &property);
+   if ((status != Success) or remaining or (actual_type != glEventState->AtomPairAtom) or
+       (actual_format != 32) or (count & 1)) {
+      if (property) XFree(property);
+      return false;
+   }
+
+   auto pairs = (Atom *)property;
+   for (unsigned long i = 0; i < count; i += 2) {
+      if (not write_selection_property(pairs[i], Request.requestor, pairs[i + 1], Request.selection IS XA_PRIMARY))
+         pairs[i] = None;
+   }
+   XChangeProperty(XDisplay, Request.requestor, Request.property, glEventState->AtomPairAtom, 32, PropModeReplace,
+      property, int(count));
+   if (property) XFree(property);
+   return true;
+}
+
+//********************************************************************************************************************
+
+static void handle_selection_request(const XSelectionRequestEvent &Request)
+{
+   XSelectionEvent reply = {};
+   reply.type = SelectionNotify;
+   reply.display = Request.display;
+   reply.requestor = Request.requestor;
+   reply.selection = Request.selection;
+   reply.target = Request.target;
+   reply.time = Request.time;
+   reply.property = None;
+
+   const std::lock_guard lock(glEventState->NativeLock);
+   if ((Request.owner IS glEventState->ClipboardWindow) and
+       ((Request.selection IS glEventState->ClipboardAtom) or (Request.selection IS XA_PRIMARY)) and
+       (XGetSelectionOwner(XDisplay, Request.selection) IS glEventState->ClipboardWindow)) {
+      if (Request.target IS glEventState->MultipleAtom) {
+         if (write_multiple_selection(Request)) reply.property = Request.property;
+      }
+      else {
+         auto property = Request.property IS None ? Request.target : Request.property;
+         if (write_selection_property(Request.target, Request.requestor, property, Request.selection IS XA_PRIMARY))
+            reply.property = property;
+      }
+   }
+
+   XSendEvent(XDisplay, Request.requestor, False, NoEventMask, (XEvent *)&reply);
+}
+
+//********************************************************************************************************************
+
+static void handle_selection_clear(const XSelectionClearEvent &Event)
+{
+   if (Event.selection IS XA_PRIMARY) {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if (XGetSelectionOwner(XDisplay, XA_PRIMARY) != glEventState->ClipboardWindow)
+         glEventState->PrimaryText.clear();
+      return;
+   }
+   bool notify = false;
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if ((Event.window IS glEventState->ClipboardWindow) and
+          (Event.selection IS glEventState->ClipboardAtom) and
+          (XGetSelectionOwner(XDisplay, glEventState->ClipboardAtom) != glEventState->ClipboardWindow)) {
+         glEventState->ClipboardText.clear();
+         glEventState->ClipboardUris.clear();
+         glEventState->ClipboardGnomeFiles.clear();
+         glEventState->ClipboardIsFiles = false;
+         glEventState->ClipboardTimestamp = CurrentTime;
+         notify = true;
+      }
+   }
+   if (notify and glDriverCallbacks.ClipboardLost) glDriverCallbacks.ClipboardLost();
+}
+
+//********************************************************************************************************************
+
+static Atom select_clipboard_target(const Atom *Targets, size_t Count)
+{
+   const Atom preferences[] = { glEventState->URIListAtom, glEventState->UTF8StringAtom,
+      glEventState->TextUTF8Atom, glEventState->TextPlainAtom, XA_STRING };
+   for (auto preference : preferences) {
+      for (size_t i = 0; i < Count; i++) if (Targets[i] IS preference) return preference;
+   }
+   return None;
+}
+
+//********************************************************************************************************************
+
+static void request_clipboard_target(Atom Target)
+{
+   glEventState->TransferTarget = Target;
+   glEventState->TransferStarted = std::chrono::steady_clock::now();
+   XConvertSelection(XDisplay, glEventState->ClipboardAtom, Target,
+      glEventState->TransferProperty, glEventState->ClipboardWindow, glEventState->TransferTimestamp);
+}
+
+//********************************************************************************************************************
+
+static void finish_primary_read()
+{
+   if (glEventState->PrimaryRead.window) XDestroyWindow(XDisplay, glEventState->PrimaryRead.window);
+   glEventState->PrimaryRead = {};
+}
+
+struct primary_result {
+   OBJECTID recipient;
+   int item;
+   std::string text;
+};
+
+// The native lock is held by the caller.  Return owned bytes so framework delivery can run after releasing it.
+
+static std::optional<primary_result> read_primary_property(bool Initial)
+{
+   auto &read = glEventState->PrimaryRead;
+   if (XGetSelectionOwner(XDisplay, XA_PRIMARY) != read.owner) { finish_primary_read(); return std::nullopt; }
+
+   Atom type = None;
+   int format = 0;
+   unsigned long count = 0, remaining = 0;
+   unsigned char *property = nullptr;
+   auto status = XGetWindowProperty(XDisplay, read.window, read.property, 0,
+      long(MAX_CLIPBOARD_TRANSFER / 4), True, AnyPropertyType, &type, &format, &count, &remaining, &property);
+
+   const auto release = kt::Defer([&]() { if (property) XFree(property); });
+   if ((status != Success) or remaining) { finish_primary_read(); return std::nullopt; }
+
+   if (Initial and (type IS glEventState->IncrAtom)) {
+      if ((format != 32) or (count != 1) or (*(unsigned long *)property > MAX_CLIPBOARD_TRANSFER)) {
+         finish_primary_read();
+         return std::nullopt;
+      }
+      read.incremental = true;
+      return std::nullopt;
+   }
+
+   if ((format != 8) or ((type != glEventState->UTF8StringAtom) and (type != XA_STRING)) or
+       (count > MAX_CLIPBOARD_TRANSFER - read.text.size()) or (read.type and read.type != type)) {
+      finish_primary_read();
+      return std::nullopt;
+   }
+
+   read.type = type;
+   read.started = std::chrono::steady_clock::now();
+   if (count) read.text.append((const char *)property, count);
+   if (read.incremental and count) return std::nullopt;
+   auto text = type IS XA_STRING ? latin1_to_utf8((const unsigned char *)read.text.data(), read.text.size()) :
+      std::move(read.text);
+
+   const auto recipient = read.recipient;
+   const auto item = read.item;
+   finish_primary_read();
+
+   return primary_result { recipient, item, std::move(text) };
+}
+
+static void handle_selection_notify(const XSelectionEvent &Event)
+{
+   if (Event.selection IS XA_PRIMARY) {
+      std::optional<primary_result> result;
+
+      {
+         const std::lock_guard lock(glEventState->NativeLock);
+         auto &read = glEventState->PrimaryRead;
+         if ((Event.requestor != read.window) or (Event.target != read.target)) return;
+
+         if (Event.property IS None) {
+            if (read.target IS XA_STRING) { finish_primary_read(); return; }
+            read.target = XA_STRING;
+            XConvertSelection(XDisplay, XA_PRIMARY, XA_STRING, read.property, read.window, CurrentTime);
+         }
+         else if (Event.property IS read.property) result = read_primary_property(true);
+      }
+
+      if (result and glDriverCallbacks.PrimarySelection)
+         glDriverCallbacks.PrimarySelection(result->recipient, result->item, result->text.data(), result->text.size());
+      return;
+   }
+
+   if ((Event.requestor IS glEventState->ClipboardWindow) and
+       (Event.selection IS glEventState->ClipboardManagerAtom) and
+       (Event.target IS glEventState->SaveTargetsAtom)) {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if (glEventState->SaveTargetsPending) {
+         glEventState->SaveTargetsSucceeded = Event.property != None;
+         glEventState->SaveTargetsComplete = true;
+      }
+
+      return;
+   }
+
+   std::string data;
+   std::string mime;
+   bool deliver = false;
+
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if ((Event.requestor != glEventState->ClipboardWindow) or
+          (Event.selection != glEventState->ClipboardAtom) or (not glEventState->ClipboardTransfer) or
+          (Event.time != glEventState->TransferTimestamp)) return;
+
+      if (Event.property IS None) {
+         kt::Log("X11Mgr").trace("The X11 clipboard owner refused target %lu.", Event.target);
+         // A failed conversion does not return the request property, so it cannot be associated safely with one of
+         // two rapidly superseded requests that share a timestamp.  Leave the current request active until it either
+         // succeeds or expires rather than allowing an old refusal to cancel it.
+         return;
+      }
+
+      if ((Event.property != glEventState->TransferProperty) or
+          (XGetSelectionOwner(XDisplay, glEventState->ClipboardAtom) != glEventState->TransferOwner)) {
+         XDeleteProperty(XDisplay, glEventState->ClipboardWindow, Event.property);
+         return;
+      }
+
+      Atom actual_type = None;
+      int actual_format = 0;
+      unsigned long count = 0, remaining = 0;
+      unsigned char *property = nullptr;
+      auto maximum_longs = std::min<size_t>(maximum_property_bytes() / 4,
+         size_t(std::numeric_limits<long>::max()));
+      auto status = XGetWindowProperty(XDisplay, glEventState->ClipboardWindow, Event.property, 0,
+         long(maximum_longs), True, AnyPropertyType, &actual_type, &actual_format, &count, &remaining, &property);
+
+      if ((status != Success) or remaining) {
+         if (property) XFree(property);
+         glEventState->ClipboardTransfer = false;
+         return;
+      }
+
+      if (actual_type IS glEventState->IncrAtom) {
+         unsigned long expected = 0;
+
+         if ((actual_format IS 32) and (count IS 1)) expected = *(unsigned long *)property;
+         if (property) XFree(property);
+
+         glEventState->TransferData.clear();
+         if (expected <= MAX_CLIPBOARD_TRANSFER) glEventState->TransferData.reserve(size_t(expected));
+
+         glEventState->TransferDataType = None;
+         glEventState->TransferDataFormat = 0;
+         glEventState->TransferIncremental = true;
+         glEventState->TransferDiscard = expected > MAX_CLIPBOARD_TRANSFER;
+         glEventState->TransferStarted = std::chrono::steady_clock::now();
+         return;
+      }
+
+      if (Event.target IS glEventState->TargetsAtom) {
+         Atom selected = None;
+         if ((actual_type IS XA_ATOM) and (actual_format IS 32)) {
+            selected = select_clipboard_target((Atom *)property, count);
+         }
+
+         if (property) XFree(property);
+         if (selected IS None) {
+            glEventState->ClipboardTransfer = false;
+            return;
+         }
+
+         request_clipboard_target(selected);
+         return;
+      }
+
+      if (actual_format != 8) {
+         if (property) XFree(property);
+         glEventState->ClipboardTransfer = false;
+         return;
+      }
+
+      if ((glEventState->TransferTarget IS XA_STRING) or (actual_type IS XA_STRING))
+         data = latin1_to_utf8(property, count);
+      else if (count) data.assign((const char *)property, count);
+
+      if (property) XFree(property);
+
+      mime = glEventState->TransferTarget IS glEventState->URIListAtom ? "text/uri-list" :
+         "text/plain;charset=utf-8";
+      glEventState->ClipboardTransfer = false;
+      deliver = true;
+   }
+
+   if (deliver and glDriverCallbacks.ClipboardData)
+      glDriverCallbacks.ClipboardData(mime.c_str(), data.data(), data.size(), false, 0);
+}
+
+//********************************************************************************************************************
+
+static void send_incremental_chunk(const XPropertyEvent &Event)
+{
+   const std::lock_guard lock(glEventState->NativeLock);
+   if (Event.state != PropertyDelete) return;
+
+   auto match = std::find_if(glEventState->ClipboardWrites.begin(), glEventState->ClipboardWrites.end(),
+      [&Event](const X11ClipboardWrite &Write) {
+         return (Write.Requestor IS Event.window) and (Write.Property IS Event.atom);
+      });
+
+   if (match IS glEventState->ClipboardWrites.end()) return;
+
+   auto remaining = match->Data.size() - match->Offset;
+   auto length = std::min(remaining, maximum_property_bytes());
+   XChangeProperty(XDisplay, match->Requestor, match->Property, match->Type, 8, PropModeAppend,
+      (const unsigned char *)match->Data.data() + match->Offset, int(length));
+
+   match->Offset += length;
+   match->Updated = std::chrono::steady_clock::now();
+
+   if (not length) {
+      auto requestor = match->Requestor;
+      auto previous_mask = match->PreviousEventMask;
+      glEventState->ClipboardWrites.erase(match);
+      if (std::none_of(glEventState->ClipboardWrites.begin(), glEventState->ClipboardWrites.end(),
+            [requestor](const X11ClipboardWrite &Write) { return Write.Requestor IS requestor; })) {
+         XSelectInput(XDisplay, requestor, previous_mask);
+      }
+   }
+}
+
+//********************************************************************************************************************
+
+static void receive_incremental_chunk(const XPropertyEvent &Event)
+{
+   std::optional<primary_result> primary;
+   bool primary_event = false;
+
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      auto &read = glEventState->PrimaryRead;
+      if ((Event.window IS read.window) and (Event.atom IS read.property) and (Event.state IS PropertyNewValue)) {
+         primary_event = true;
+         if (read.incremental) primary = read_primary_property(false);
+      }
+   }
+
+   if (primary_event) {
+      if (primary and glDriverCallbacks.PrimarySelection) {
+         glDriverCallbacks.PrimarySelection(primary->recipient, primary->item, primary->text.data(),
+            primary->text.size());
+      }
+      return;
+   }
+
+   std::string data;
+   std::string mime;
+   bool deliver = false;
+
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      if ((Event.state != PropertyNewValue) or (Event.window != glEventState->ClipboardWindow) or
+          (Event.atom != glEventState->TransferProperty) or (not glEventState->ClipboardTransfer) or
+          (not glEventState->TransferIncremental)) return;
+
+      Atom actual_type = None;
+      int actual_format = 0;
+      unsigned long count = 0, remaining = 0;
+      unsigned char *property = nullptr;
+
+      auto maximum_longs = std::min<size_t>(maximum_property_bytes() / 4,
+         size_t(std::numeric_limits<long>::max()));
+
+      auto status = XGetWindowProperty(XDisplay, glEventState->ClipboardWindow, Event.atom, 0,
+         long(maximum_longs), True, AnyPropertyType, &actual_type, &actual_format, &count, &remaining, &property);
+
+      auto expected_format = glEventState->TransferTarget IS glEventState->TargetsAtom ? 32 : 8;
+
+      if ((status != Success) or remaining or (actual_format != expected_format)) {
+         if (property) XFree(property);
+         glEventState->ClipboardTransfer = false;
+         glEventState->TransferIncremental = false;
+         glEventState->TransferData.clear();
+         return;
+      }
+
+      glEventState->TransferStarted = std::chrono::steady_clock::now();
+      if (count) {
+         if (glEventState->TransferDataType IS None) {
+            glEventState->TransferDataType = actual_type;
+            glEventState->TransferDataFormat = actual_format;
+         }
+         else if ((actual_type != glEventState->TransferDataType) or
+                  (actual_format != glEventState->TransferDataFormat)) glEventState->TransferDiscard = true;
+
+         auto bytes = actual_format IS 32 ? size_t(count) * sizeof(Atom) : size_t(count);
+
+         if ((not glEventState->TransferDiscard) and
+             (bytes <= MAX_CLIPBOARD_TRANSFER - glEventState->TransferData.size())) {
+            glEventState->TransferData.append((const char *)property, bytes);
+         }
+         else glEventState->TransferDiscard = true;
+
+         if (property) XFree(property);
+         return;
+      }
+
+      if (property) XFree(property);
+
+      if (not glEventState->TransferDiscard) {
+         if (glEventState->TransferTarget IS glEventState->TargetsAtom) {
+            Atom selected = None;
+            if ((glEventState->TransferDataType IS XA_ATOM) and
+                (glEventState->TransferDataFormat IS 32) and
+                (not (glEventState->TransferData.size() % sizeof(Atom)))) {
+               auto count = glEventState->TransferData.size() / sizeof(Atom);
+               std::vector<Atom> targets(count);
+               std::memcpy(targets.data(), glEventState->TransferData.data(), glEventState->TransferData.size());
+               selected = select_clipboard_target(targets.data(), targets.size());
+            }
+
+            glEventState->TransferIncremental = false;
+            glEventState->TransferData.clear();
+            glEventState->TransferDataType = None;
+            glEventState->TransferDataFormat = 0;
+            if (selected != None) {
+               request_clipboard_target(selected);
+               return;
+            }
+         }
+         else if ((glEventState->TransferTarget IS XA_STRING) or
+             (glEventState->TransferDataType IS XA_STRING)) {
+            data = latin1_to_utf8((const unsigned char *)glEventState->TransferData.data(),
+               glEventState->TransferData.size());
+         }
+         else data = std::move(glEventState->TransferData);
+
+         mime = glEventState->TransferTarget IS glEventState->URIListAtom ? "text/uri-list" :
+            "text/plain;charset=utf-8";
+         deliver = true;
+      }
+
+      glEventState->ClipboardTransfer = false;
+      glEventState->TransferIncremental = false;
+      glEventState->TransferData.clear();
+   }
+
+   if (deliver and glDriverCallbacks.ClipboardData)
+      glDriverCallbacks.ClipboardData(mime.c_str(), data.data(), data.size(), false, 0);
+}
+
+#ifdef XFIXES_ENABLED
+//********************************************************************************************************************
+
+static void handle_xfixes_selection(const XFixesSelectionNotifyEvent &Event)
+{
+   if ((Event.selection != glEventState->ClipboardAtom) or
+       (Event.window != glEventState->ClipboardWindow)) return;
+
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      glEventState->LastServerTimestamp = Event.timestamp;
+   }
+
+   if ((Event.subtype IS XFixesSetSelectionOwnerNotify) and
+       (Event.owner != glEventState->ClipboardWindow) and (Event.owner != None)) {
+      if (glDriverCallbacks.ClipboardLost) glDriverCallbacks.ClipboardLost();
+      x11_request_clipboard(glEventState, Event.selection_timestamp, Event.owner);
+   }
+   else if (((Event.subtype IS XFixesSetSelectionOwnerNotify) and (Event.owner IS None)) or
+            (Event.subtype IS XFixesSelectionWindowDestroyNotify) or
+            (Event.subtype IS XFixesSelectionClientCloseNotify)) {
+      {
+         const std::lock_guard lock(glEventState->NativeLock);
+         glEventState->ClipboardTransfer = false;
+         glEventState->TransferIncremental = false;
+         glEventState->TransferData.clear();
+         glEventState->TransferGeneration++;
+      }
+      if (glDriverCallbacks.ClipboardLost) glDriverCallbacks.ClipboardLost();
+   }
+}
+#endif
+
+//********************************************************************************************************************
+// X11 desktop environments announce a change of display scaling by updating Xft.dpi in the root window's resource
+// database.  As with WM_DPICHANGED on Windows, the surface of each window is notified so that its display discards
+// the cached density.
+
+static void handle_resource_change()
+{
+   auto dpi = x11_read_dpi(glEventState);
+   if (glEventState->DPI.exchange(dpi) IS dpi) return;
+
+   kt::Log log("X11Mgr");
+   log.msg("Desktop DPI changed to %d.", dpi);
+   if (not glDriverCallbacks.DPIChanged) return;
+
+   std::vector<Window> windows;
+
+   {
+      const std::lock_guard lock(glEventState->NativeLock);
+      for (auto &[native, record] : glEventState->Windows) windows.push_back(native);
+   }
+
+   for (auto window : windows) {
+      if (auto surface_id = resolve_surface(window)) glDriverCallbacks.DPIChanged(surface_id);
+   }
+}
+
+//********************************************************************************************************************
+
+void X11ManagerLoop(HOSTHANDLE FD, APTR Data)
+{
+   kt::Log log("X11Mgr");
+   XEvent xevent;
+   XEvent last_motion;
+   bool processed_events = false;
+   last_motion.xany.window = 0;
+
+   if (not XDisplay) return;
+
+   while (true) {
+      {
+         const std::lock_guard lock(glEventState->NativeLock);
+         if (not XPending(XDisplay)) break;
+         XNextEvent(XDisplay, &xevent);
+      }
+      processed_events = true;
+      update_server_timestamp(xevent);
+      expire_clipboard_transfer();
+      if ((xevent.type != MotionNotify) and (last_motion.xany.window)) {
+         // Buffered MotionNotify event detected, process it now
+         process_movement(last_motion.xany.window, last_motion.xmotion.x_root, last_motion.xmotion.y_root);
+         last_motion.xany.window = 0;
+      }
+
+#ifdef XFIXES_ENABLED
+      if (glEventState->XFixes and
+          (xevent.type IS glEventState->XFixesEventBase + XFixesSelectionNotify)) {
+         handle_xfixes_selection(*(XFixesSelectionNotifyEvent *)&xevent);
+         continue;
+      }
+#endif
+
+      switch (xevent.type) {
+         case ButtonPress:      handle_button_press(&xevent); break;
+         case ButtonRelease:    handle_button_release(&xevent); break;
+         case ConfigureNotify:  handle_configure_notify(&xevent.xconfigure); break;
+         case EnterNotify:
+         case LeaveNotify:      handle_crossing_notify(&xevent.xcrossing); break;
+         //case Expose:           handle_exposure(&xevent.xexpose); break;
+         case KeyPress:         handle_key_press(&xevent); break;
+         case KeyRelease:       handle_key_release(&xevent); break;
+         case CirculateNotify:  handle_stack_change(&xevent.xcirculate); break;
+         case SelectionRequest: handle_selection_request(xevent.xselectionrequest); break;
+         case SelectionClear:   handle_selection_clear(xevent.xselectionclear); break;
+         case SelectionNotify:  handle_selection_notify(xevent.xselection); break;
+
+         case PropertyNotify:
+            send_incremental_chunk(xevent.xproperty);
+            receive_incremental_chunk(xevent.xproperty);
+            if ((xevent.xproperty.window IS DefaultRootWindow(XDisplay)) and
+                (xevent.xproperty.atom IS XA_RESOURCE_MANAGER)) handle_resource_change();
+            break;
+
+         case MotionNotify:
+            // Handling of motion events is delayed in case there is a long series of them
+            // (i.e. due to rapid pointer movement).
+            last_motion = xevent;
+            break;
+
+         case FocusIn: {
+            kt::Log log("X11Mgr");
+            if (not real_focus_change(xevent.xfocus)) {
+               log.trace("XFocusIn ignored, mode %d detail %d.", xevent.xfocus.mode, xevent.xfocus.detail);
+            }
+            else if (auto surface_id = resolve_surface(xevent.xany.window)) {
+               log.traceBranch("XFocusIn surface #%d", surface_id);
+               glDriverCallbacks.FocusState(surface_id, true);
+            }
+            else log.trace("XFocusIn failed to resolve the window surface.");
+            break;
+         }
+
+         case FocusOut: {
+            kt::Log log("X11Mgr");
+            if (not real_focus_change(xevent.xfocus)) {
+               log.trace("XFocusOut ignored, mode %d detail %d.", xevent.xfocus.mode, xevent.xfocus.detail);
+            }
+            else if (auto surface_id = resolve_surface(xevent.xany.window)) {
+               log.traceBranch("XFocusOut surface #%d", surface_id);
+               glDriverCallbacks.FocusState(surface_id, false);
+            }
+
+            break;
+         }
+
+         case ClientMessage:
+            // Only WM_PROTOCOLS messages carry a protocol atom in l[0].  Other messages, such as the compositor's
+            // _NET_WM_FRAME_DRAWN, carry arbitrary values there that can coincide with a protocol atom.
+
+            if (xevent.xclient.message_type != glEventState->ProtocolsAtom) break;
+
+            if (Atom(xevent.xclient.data.l[0]) IS XWADeleteWindow) {
+               auto surface_id = resolve_surface(xevent.xany.window);
+               if (glDriverCallbacks.WindowClose(surface_id) IS ERR::Cancelled) break;
+            }
+            else if (Atom(xevent.xclient.data.l[0]) IS XWATakeFocus) {
+               XSetInputFocus(XDisplay, xevent.xclient.window, RevertToParent, Time(xevent.xclient.data.l[1]));
+            }
+            else if ((glEventState->SyncRequestAtom) and
+                  (Atom(xevent.xclient.data.l[0]) IS glEventState->SyncRequestAtom)) {
+               // The window manager is about to configure the window and will wait for the counter to reach this
+               // value, which is set once the next frame has been presented.
+
+               const std::lock_guard lock(glEventState->NativeLock);
+               if (auto it = glEventState->Windows.find(xevent.xclient.window); it != glEventState->Windows.end()) {
+                  it->second->SyncRequest = int64_t((uint64_t(uint32_t(xevent.xclient.data.l[3])) << 32) |
+                     uint64_t(uint32_t(xevent.xclient.data.l[2])));
+                  it->second->SyncRequestExtended = xevent.xclient.data.l[4] != 0;
+                  if (it->second->SyncRequestExtended) x11_begin_frame(glEventState, it->second);
+               }
+            }
+            break;
+
+         case DestroyNotify:
+            // Only adopted windows are torn down here, because the client owns the parent and its destruction is the
+            // sole notification that the display has gone away.  Windows created by this driver are erased from the
+            // window table before XDestroyWindow() is issued, so this path must not be relied upon for them.
+
+            if (adopted_window(xevent.xany.window)) {
+               glDriverCallbacks.WindowDestroyed(resolve_surface(xevent.xany.window));
+            }
+            break;
+      }
+
+      #ifdef XRANDR_ENABLED
+      // XRRUpdateConfiguration() refreshes Xlib's cached screen size and must see every screen change event.
+
+      if ((glEventState->RandR) and XRRUpdateConfiguration(&xevent) and
+          (xevent.type IS glEventState->RandREventBase + RRScreenChangeNotify)) {
+         XGetWindowAttributes(XDisplay, DefaultRootWindow(XDisplay), &glEventState->RootAttributes);
+         log.msg("Screen size changed to %dx%d.", glEventState->RootAttributes.width,
+            glEventState->RootAttributes.height);
+
+         // If the root window hosts a display (full-screen mode), resize the display to match.  Refer to
+         // SetDisplay() for more information.
+
+         auto notify = (XRRScreenChangeNotifyEvent *)&xevent;
+         if (auto surface_id = resolve_surface(xevent.xany.window)) {
+            glDriverCallbacks.WindowResized(surface_id, 0, 0, notify->width, notify->height,
+               0, 0, notify->width, notify->height);
+         }
+      }
+      #endif
+   }
+
+   if (last_motion.xany.window) {
+      processed_events = true;
+      process_movement(last_motion.xany.window, last_motion.xmotion.x_root, last_motion.xmotion.y_root);
+   }
+
+   if (processed_events) {
+      XFlush(XDisplay);
+   }
+}
+
+void x11_process_events(X11Driver::State *State)
+{
+   if ((not State) or (not State->Callbacks) or State->Closing) return;
+   glEventState = State;
+   X11ManagerLoop(State->ConnectionFD, State);
+   glEventState = nullptr;
+}
+
+//********************************************************************************************************************
+
+static Bool clipboard_save_event(Display *, XEvent *Event, XPointer Data)
+{
+   auto state = (X11Driver::State *)Data;
+
+   if (Event->type IS SelectionRequest) {
+      return (Event->xselectionrequest.owner IS state->ClipboardWindow) and
+         (Event->xselectionrequest.selection IS state->ClipboardAtom);
+   }
+
+   if (Event->type IS SelectionNotify) {
+      return (Event->xselection.requestor IS state->ClipboardWindow) and
+         (Event->xselection.selection IS state->ClipboardManagerAtom) and
+         (Event->xselection.target IS state->SaveTargetsAtom);
+   }
+
+   if (Event->type != PropertyNotify) return False;
+   return std::any_of(state->ClipboardWrites.begin(), state->ClipboardWrites.end(),
+      [Event](const X11ClipboardWrite &Write) {
+         return (Write.Requestor IS Event->xproperty.window) and (Write.Property IS Event->xproperty.atom);
+      });
+}
+
+//********************************************************************************************************************
+
+static void process_clipboard_save_events(X11Driver::State *State)
+{
+   glEventState = State;
+   XEvent event = {};
+
+   bool processed = false;
+   while (XCheckIfEvent(State->Connection, &event, clipboard_save_event, (XPointer)State)) {
+      processed = true;
+      update_server_timestamp(event);
+      if (event.type IS SelectionRequest) handle_selection_request(event.xselectionrequest);
+      else if (event.type IS SelectionNotify) handle_selection_notify(event.xselection);
+      else if (event.type IS PropertyNotify) send_incremental_chunk(event.xproperty);
+   }
+
+   if (processed) XFlush(State->Connection);
+   glEventState = nullptr;
+}
+
+//********************************************************************************************************************
+
+void x11_save_clipboard(X11Driver::State *State, Time Timestamp)
+{
+   {
+      const std::lock_guard lock(State->NativeLock);
+      if ((XGetSelectionOwner(State->Connection, State->ClipboardAtom) != State->ClipboardWindow) or
+          (XGetSelectionOwner(State->Connection, State->ClipboardManagerAtom) IS None)) return;
+
+      std::vector<Atom> targets;
+      if (State->ClipboardIsFiles) targets = { State->URIListAtom, State->GnomeFilesAtom };
+      else targets = { State->UTF8StringAtom, State->TextUTF8Atom, State->TextPlainAtom, XA_STRING, State->TextAtom };
+      XChangeProperty(State->Connection, State->ClipboardWindow, State->SaveTargetsPropertyAtom, XA_ATOM, 32,
+         PropModeReplace, (const unsigned char *)targets.data(), int(targets.size()));
+      State->SaveTargetsPending = true;
+      State->SaveTargetsComplete = false;
+      State->SaveTargetsSucceeded = false;
+      XConvertSelection(State->Connection, State->ClipboardManagerAtom, State->SaveTargetsAtom,
+         State->SaveTargetsPropertyAtom, State->ClipboardWindow, Timestamp);
+      XFlush(State->Connection);
+   }
+
+   auto deadline = std::chrono::steady_clock::now() + CLIPBOARD_TIMEOUT;
+   while (std::chrono::steady_clock::now() < deadline) {
+      process_clipboard_save_events(State);
+      {
+         const std::lock_guard lock(State->NativeLock);
+         if (State->SaveTargetsComplete) break;
+      }
+      pollfd descriptor = { State->ConnectionFD, POLLIN, 0 };
+      poll(&descriptor, 1, 20);
+   }
+
+   const std::lock_guard lock(State->NativeLock);
+   if (not State->SaveTargetsComplete) kt::Log("X11Mgr").trace("Clipboard manager hand-off timed out.");
+   else if (not State->SaveTargetsSucceeded) kt::Log("X11Mgr").trace("Clipboard manager refused SAVE_TARGETS.");
+   State->SaveTargetsPending = false;
+}
+
+//********************************************************************************************************************
+
+// Translate the modifier state of a pointer event.  The X server reports this state even when the window lacks the
+// keyboard focus, but cannot distinguish left from right keys, so the side is taken from tracked key presses if known.
+
+static KQ pointer_qualifiers(unsigned State)
+{
+   auto side = [](KQ Pair, KQ Left) {
+      auto held = glKeyFlags & Pair;
+      return (held != KQ::NIL) ? held : Left;
+   };
+
+   auto flags = KQ::NIL;
+   if (State & ShiftMask)   flags |= side(KQ::SHIFT, KQ::L_SHIFT);
+   if (State & ControlMask) flags |= side(KQ::CONTROL, KQ::L_CONTROL);
+   if (State & Mod1Mask)    flags |= side(KQ::ALT, KQ::L_ALT);
+   return flags;
+}
+
+//********************************************************************************************************************
+// Buttons 4 and 5 are vertical wheel rotation, 6 and 7 are horizontal (wheel tilt or touchpad scrolling).
+
+void handle_button_press(XEvent *xevent)
+{
+   auto surface_id = resolve_surface(xevent->xbutton.window);
+   auto button = xevent->xbutton.button;
+
+   if ((button >= 4) and (button <= 7)) {
+      auto qualifiers = pointer_qualifiers(xevent->xbutton.state);
+      if (button IS 4) glDriverCallbacks.WheelMovement(surface_id, 0, -9.0, qualifiers);
+      else if (button IS 5) glDriverCallbacks.WheelMovement(surface_id, 0, 9.0, qualifiers);
+      else if (button IS 6) glDriverCallbacks.WheelMovement(surface_id, -9.0, 0, qualifiers);
+      else glDriverCallbacks.WheelMovement(surface_id, 9.0, 0, qualifiers);
+   }
+   else if (xevent->xbutton.button IS 1) glDriverCallbacks.ButtonInput(0x0001, true);
+   else if (xevent->xbutton.button IS 2) glDriverCallbacks.ButtonInput(0x0004, true);
+   else if (xevent->xbutton.button IS 3) glDriverCallbacks.ButtonInput(0x0002, true);
+   else if (xevent->xbutton.button IS 8) glDriverCallbacks.ButtonInput(0x0008, true);
+   else if (xevent->xbutton.button IS 9) glDriverCallbacks.ButtonInput(0x0010, true);
+
+   XFlush(XDisplay);
+}
+
+//********************************************************************************************************************
+
+void handle_button_release(XEvent *xevent)
+{
+   if (xevent->xbutton.button IS 1) glDriverCallbacks.ButtonInput(0x0001, false);
+   else if (xevent->xbutton.button IS 2) glDriverCallbacks.ButtonInput(0x0004, false);
+   else if (xevent->xbutton.button IS 3) glDriverCallbacks.ButtonInput(0x0002, false);
+   else if (xevent->xbutton.button IS 8) glDriverCallbacks.ButtonInput(0x0008, false);
+   else if (xevent->xbutton.button IS 9) glDriverCallbacks.ButtonInput(0x0010, false);
+
+   XFlush(XDisplay);
+
+   // The window manager does not focus override-redirect windows, so a click focusses them directly.  Wheel buttons
+   // (4 to 7) do not change the focus, nor do surfaces that refuse it, such as a pop-up menu owned by another window.
+
+   if ((xevent->xbutton.button >= 4) and (xevent->xbutton.button <= 7)) return;
+
+   XWindowAttributes attributes;
+   if ((XGetWindowAttributes(XDisplay, xevent->xany.window, &attributes)) and (attributes.override_redirect)) {
+      auto surface_id = resolve_surface(xevent->xany.window);
+      if ((not surface_id) or (glDriverCallbacks.AcceptsFocus(surface_id))) {
+         XSetInputFocus(XDisplay, xevent->xany.window, RevertToNone, xevent->xbutton.time);
+      }
+   }
+}
+
+//********************************************************************************************************************
+
+void handle_stack_change(XCirculateEvent *xevent)
+{
+   kt::Log log(__FUNCTION__);
+   log.trace("Window %d stack position has changed.", (int)xevent->window);
+}
+
+//********************************************************************************************************************
+// Event handler for window resizing and movement
+
+void handle_configure_notify(XConfigureEvent *xevent)
+{
+   kt::Log log(__FUNCTION__);
+
+   int x = xevent->x;
+   int y = xevent->y;
+   int width = xevent->width;
+   int height = xevent->height;
+
+   XEvent event;
+   while (XCheckTypedWindowEvent(XDisplay, xevent->window, ConfigureNotify, &event) IS True) {
+      x = event.xconfigure.x;
+      y = event.xconfigure.y;
+      width = event.xconfigure.width;
+      height = event.xconfigure.height;
+   }
+
+   log.traceBranch("Win: %d, Pos: %dx%d,%dx%d", (int)xevent->window, x, y, width, height);
+
+   int absx, absy;
+   Window child;
+   XTranslateCoordinates(XDisplay, xevent->window, DefaultRootWindow(XDisplay), 0, 0, &absx, &absy, &child);
+   glDriverCallbacks.WindowResized(resolve_surface(xevent->window), absx, absy, width, height,
+      absx, absy, width, height);
+}
+
+//********************************************************************************************************************
+
+void handle_exposure(XExposeEvent *event)
+{
+   XEvent xevent;
+   while (XCheckWindowEvent(XDisplay, event->window, ExposureMask, &xevent) IS True);
+   glDriverCallbacks.ExposeRegion(resolve_surface(event->window), event->x, event->y, event->width, event->height);
+}
+
+//********************************************************************************************************************
+// XK symbols are defined in X11/keysymdef.h
+
+KEY xkeysym_to_pkey(KeySym KSym)
+{
+   switch(KSym) {
+      case XK_A: return KEY::A;
+      case XK_B: return KEY::B;
+      case XK_C: return KEY::C;
+      case XK_D: return KEY::D;
+      case XK_E: return KEY::E;
+      case XK_F: return KEY::F;
+      case XK_G: return KEY::G;
+      case XK_H: return KEY::H;
+      case XK_I: return KEY::I;
+      case XK_J: return KEY::J;
+      case XK_K: return KEY::K;
+      case XK_L: return KEY::L;
+      case XK_M: return KEY::M;
+      case XK_N: return KEY::N;
+      case XK_O: return KEY::O;
+      case XK_P: return KEY::P;
+      case XK_Q: return KEY::Q;
+      case XK_R: return KEY::R;
+      case XK_S: return KEY::S;
+      case XK_T: return KEY::T;
+      case XK_U: return KEY::U;
+      case XK_V: return KEY::V;
+      case XK_W: return KEY::W;
+      case XK_X: return KEY::X;
+      case XK_Y: return KEY::Y;
+      case XK_Z: return KEY::Z;
+      case XK_a: return KEY::A;
+      case XK_b: return KEY::B;
+      case XK_c: return KEY::C;
+      case XK_d: return KEY::D;
+      case XK_e: return KEY::E;
+      case XK_f: return KEY::F;
+      case XK_g: return KEY::G;
+      case XK_h: return KEY::H;
+      case XK_i: return KEY::I;
+      case XK_j: return KEY::J;
+      case XK_k: return KEY::K;
+      case XK_l: return KEY::L;
+      case XK_m: return KEY::M;
+      case XK_n: return KEY::N;
+      case XK_o: return KEY::O;
+      case XK_p: return KEY::P;
+      case XK_q: return KEY::Q;
+      case XK_r: return KEY::R;
+      case XK_s: return KEY::S;
+      case XK_t: return KEY::T;
+      case XK_u: return KEY::U;
+      case XK_v: return KEY::V;
+      case XK_w: return KEY::W;
+      case XK_x: return KEY::X;
+      case XK_y: return KEY::Y;
+      case XK_z: return KEY::Z;
+
+      case XK_bracketleft:  return KEY::L_SQUARE;
+      case XK_backslash:    return KEY::BACK_SLASH;
+      case XK_bracketright: return KEY::R_SQUARE;
+      case XK_asciicircum:  return KEY::SIX; // US conversion
+      case XK_underscore:   return KEY::MINUS; // US conversion
+      case XK_grave:        return KEY::REVERSE_QUOTE;
+      case XK_space:        return KEY::SPACE;
+      case XK_exclam:       return KEY::ONE; // US conversion
+      case XK_quotedbl:     return KEY::APOSTROPHE; // US conversion
+      case XK_numbersign:   return KEY::THREE; // US conversion
+      case XK_dollar:       return KEY::FOUR; // US conversion
+      case XK_percent:      return KEY::FIVE; // US conversion
+      case XK_ampersand:    return KEY::SEVEN; // US conversion
+      case XK_apostrophe:   return KEY::APOSTROPHE;
+      case XK_parenleft:    return KEY::NINE; // US conversion
+      case XK_parenright:   return KEY::ZERO; // US conversion
+      case XK_asterisk:     return KEY::EIGHT; // US conversion
+      case XK_plus:         return KEY::EQUALS; // US conversion
+      case XK_comma:        return KEY::COMMA;
+      case XK_minus:        return KEY::MINUS;
+      case XK_period:       return KEY::PERIOD;
+      case XK_slash:        return KEY::SLASH;
+      case XK_0:            return KEY::ZERO;
+      case XK_1:            return KEY::ONE;
+      case XK_2:            return KEY::TWO;
+      case XK_3:            return KEY::THREE;
+      case XK_4:            return KEY::FOUR;
+      case XK_5:            return KEY::FIVE;
+      case XK_6:            return KEY::SIX;
+      case XK_7:            return KEY::SEVEN;
+      case XK_8:            return KEY::EIGHT;
+      case XK_9:            return KEY::NINE;
+      case XK_KP_0:         return KEY::NP_0;
+      case XK_KP_1:         return KEY::NP_1;
+      case XK_KP_2:         return KEY::NP_2;
+      case XK_KP_3:         return KEY::NP_3;
+      case XK_KP_4:         return KEY::NP_4;
+      case XK_KP_5:         return KEY::NP_5;
+      case XK_KP_6:         return KEY::NP_6;
+      case XK_KP_7:         return KEY::NP_7;
+      case XK_KP_8:         return KEY::NP_8;
+      case XK_KP_9:         return KEY::NP_9;
+      case XK_colon:        return KEY::SEMI_COLON; // US conversion
+      case XK_semicolon:    return KEY::SEMI_COLON;
+      case XK_less:         return KEY::COMMA; // US conversion
+      case XK_equal:        return KEY::EQUALS;
+      case XK_greater:      return KEY::PERIOD; // US conversion
+      case XK_question:     return KEY::SLASH; // US conversion
+      case XK_at:           return KEY::AT;
+      case XK_KP_Multiply:  return KEY::NP_MULTIPLY;
+      case XK_KP_Add:       return KEY::NP_PLUS;
+      case XK_KP_Separator: return KEY::NP_BAR;
+      case XK_KP_Subtract:  return KEY::NP_MINUS;
+      case XK_KP_Decimal:   return KEY::NP_DOT;
+      case XK_KP_Divide:    return KEY::NP_DIVIDE;
+      case XK_KP_Enter:     return KEY::NP_ENTER;
+
+      // Keypad keys are looked up at level 0, which is the Num Lock off symbol of a digit or decimal key.  They report
+      // the keypad position regardless of Num Lock, as in the Wayland driver; the Unicode value indicates the state.
+
+      case XK_KP_Insert:    return KEY::NP_0;
+      case XK_KP_End:       return KEY::NP_1;
+      case XK_KP_Down:      return KEY::NP_2;
+      case XK_KP_Next:      return KEY::NP_3;
+      case XK_KP_Left:      return KEY::NP_4;
+      case XK_KP_Begin:     return KEY::NP_5;
+      case XK_KP_Right:     return KEY::NP_6;
+      case XK_KP_Home:      return KEY::NP_7;
+      case XK_KP_Up:        return KEY::NP_8;
+      case XK_KP_Prior:     return KEY::NP_9;
+      case XK_KP_Delete:    return KEY::NP_DOT;
+
+      case XK_Shift_L:      return KEY::L_SHIFT;
+      case XK_Shift_R:      return KEY::R_SHIFT;
+      case XK_Control_L:    return KEY::L_CONTROL;
+      case XK_Control_R:    return KEY::R_CONTROL;
+      case XK_Caps_Lock:    return KEY::CAPS_LOCK;
+      //case XK_Shift_Lock:   return KEY::SHIFT_LOCK;
+
+      case XK_Meta_L:       return KEY::L_COMMAND;
+      case XK_Meta_R:       return KEY::R_COMMAND;
+      case XK_Alt_L:        return KEY::L_ALT;
+      case XK_Alt_R:        return KEY::R_ALT;
+      //case XK_Super_L:      return KEY::;
+      //case XK_Super_R:      return KEY::;
+      //case XK_Hyper_L:      return KEY::;
+      //case XK_Hyper_R:      return KEY::;
+
+      case XK_BackSpace:    return KEY::BACKSPACE;
+      case XK_Tab:          return KEY::TAB;
+      case XK_Linefeed:     return KEY::ENTER;
+      case XK_Clear:        return KEY::CLEAR;
+      case XK_Return:       return KEY::ENTER;
+      case XK_Pause:        return KEY::PAUSE;
+      case XK_Scroll_Lock:  return KEY::SCR_LOCK;
+      case XK_Sys_Req:      return KEY::SYSRQ;
+      case XK_Escape:       return KEY::ESCAPE;
+      case XK_Delete:       return KEY::DELETE;
+
+      case XK_Home:         return KEY::HOME;
+      case XK_Left:         return KEY::LEFT;
+      case XK_Up:           return KEY::UP;
+      case XK_Right:        return KEY::RIGHT;
+      case XK_Down:         return KEY::DOWN;
+      case XK_Page_Up:      return KEY::PAGE_UP;
+      case XK_Page_Down:    return KEY::PAGE_DOWN;
+      case XK_End:          return KEY::END;
+
+      case XK_Select:        return KEY::SELECT;
+      //case XK_3270_PrintScreen: return KEY::PRT_SCR;
+      case XK_Print:         return KEY::PRINT;
+      case XK_Execute:       return KEY::EXECUTE;
+      case XK_Insert:        return KEY::INSERT;
+      case XK_Undo:          return KEY::UNDO;
+      case XK_Redo:          return KEY::REDO;
+      case XK_Menu:          return KEY::MENU;
+      case XK_Find:          return KEY::FIND;
+      case XK_Cancel:        return KEY::CANCEL;
+      case XK_Help:          return KEY::HELP;
+      case XK_Break:         return KEY::BREAK;
+      case XK_Num_Lock:      return KEY::NUM_LOCK;
+      //case XK_Mode_switch:   return KEY::;  /* Character set switch */
+      //case XK_script_switch: return KEY::;  /* Alias for mode_switch */
+
+      case XK_F1:           return KEY::F1;
+      case XK_F2:           return KEY::F2;
+      case XK_F3:           return KEY::F3;
+      case XK_F4:           return KEY::F4;
+      case XK_F5:           return KEY::F5;
+      case XK_F6:           return KEY::F6;
+      case XK_F7:           return KEY::F7;
+      case XK_F8:           return KEY::F8;
+      case XK_F9:           return KEY::F9;
+      case XK_F10:          return KEY::F10;
+      case XK_F11:          return KEY::F11;
+      case XK_F12:          return KEY::F12;
+      case XK_F13:          return KEY::F13;
+      case XK_F14:          return KEY::F14;
+      case XK_F15:          return KEY::F15;
+      case XK_F16:          return KEY::F16;
+      case XK_F17:          return KEY::F17;
+      case XK_F18:          return KEY::F18;
+      case XK_F19:          return KEY::F19;
+      case XK_F20:          return KEY::F20;
+      default: return KEY::NIL;
+   }
+}
+
+/*********************************************************************************************************************
+** Refer: man page XKeyEvent
+*/
+
+void handle_key_press(XEvent *xevent)
+{
+   kt::Log log(__FUNCTION__);
+   uint32_t unicode = 0;
+   KeySym mod_sym; // A KeySym is an encoding of a symbol on the cap of a key.  See X11/keysym.h
+   static XComposeStatus glXComposeStatus = { 0, 0 };
+   char buffer[12];
+   int out;
+   if ((out = XLookupString(&xevent->xkey, buffer, sizeof(buffer)-1, &mod_sym, &glXComposeStatus)) > 0) {
+      if (buffer[0] >= 0x20) {
+         buffer[out] = 0;
+         unicode = UTF8ReadValue(std::string_view(buffer, out), nullptr);
+      }
+   }
+   else if ((mod_sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0,
+         xevent->xkey.state & ShiftMask ? 1 : 0)) != NoSymbol) {
+   }
+   else {
+      log.trace("Failed to convert keycode to keysym.");
+      return;
+   }
+
+   KeySym sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0, 0);
+
+   log.traceBranch("XCode: $%x, XSym: $%x, ModSym: $%x, XState: $%x", xevent->xkey.keycode, (int)sym,
+      (int)mod_sym, xevent->xkey.state);
+
+   auto value = xkeysym_to_pkey(sym);
+   auto flags = KQ::PRESSED;
+
+   if (xevent->xkey.state & LockMask) flags |= KQ::CAPS_LOCK;
+   if (((int(value) >= int(KEY::NP_0)) and (int(value) <= int(KEY::NP_DIVIDE))) or (value IS KEY::NP_ENTER)) {
+      flags |= KQ::NUM_PAD;
+   }
+
+   if ((value != KEY::NIL) and (int(value) < std::ssize(KeyHeld))) {
+      if (KeyHeld[int(value)]) flags |= KQ::REPEAT;
+      else KeyHeld[int(value)] = 1;
+
+      if (value IS KEY::L_COMMAND)      glKeyFlags |= KQ::L_COMMAND;
+      else if (value IS KEY::R_COMMAND) glKeyFlags |= KQ::R_COMMAND;
+      else if (value IS KEY::L_SHIFT)   glKeyFlags |= KQ::L_SHIFT;
+      else if (value IS KEY::R_SHIFT)   glKeyFlags |= KQ::R_SHIFT;
+      else if (value IS KEY::L_CONTROL) glKeyFlags |= KQ::L_CONTROL;
+      else if (value IS KEY::R_CONTROL) glKeyFlags |= KQ::R_CONTROL;
+      else if (value IS KEY::L_ALT)     glKeyFlags |= KQ::L_ALT;
+      else if (value IS KEY::R_ALT)     glKeyFlags |= KQ::R_ALT;
+   }
+
+   if ((value != KEY::NIL) or (unicode != 0xffffffff)) {
+     if ((unicode < 0x20) or (unicode IS 127)) flags |= KQ::NOT_PRINTABLE;
+      glDriverCallbacks.KeyPressed(glKeyFlags|flags, value, int(unicode));
+   }
+}
+
+//********************************************************************************************************************
+
+void handle_key_release(XEvent *xevent)
+{
+   kt::Log log(__FUNCTION__);
+
+   // Check if the key is -really- released (when keys are held down, X11 annoyingly generates a stream of release
+   // events until it is really released).
+
+   if (XPending(XDisplay)) {
+      XEvent peekevent;
+      XPeekEvent(XDisplay, &peekevent);
+      if ((peekevent.type IS KeyPress) and
+          (peekevent.xkey.keycode IS xevent->xkey.keycode) and
+          ((peekevent.xkey.time - xevent->xkey.time) < 2)) {
+         // The key is held and repeated, so do not release it
+         log.trace("XKey $%x is held and repeated, not releasing.", xevent->xkey.keycode);
+         return;
+      }
+   }
+
+   // A KeySym is an encoding of a symbol on the cap of a key.  See X11/keysym.h
+
+   uint32_t unicode = 0;
+   KeySym mod_sym;
+   static XComposeStatus glXComposeStatus = { 0, 0 };
+   char buf[12];
+   int out;
+   if ((out = XLookupString(&xevent->xkey, buf, sizeof(buf)-1, &mod_sym, &glXComposeStatus)) > 0) {
+      buf[out] = 0;
+      unicode = UTF8ReadValue(std::string_view(buf, out), nullptr);
+   }
+   else if ((mod_sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0,
+         xevent->xkey.state & ShiftMask ? 1 : 0)) != NoSymbol) {
+   }
+   else {
+      log.trace("XLookupString() failed to convert keycode to keysym.");
+      return;
+   }
+
+   KeySym sym = XkbKeycodeToKeysym(XDisplay, xevent->xkey.keycode, 0, 0);
+
+   auto value = xkeysym_to_pkey(sym);
+   auto flags = KQ::RELEASED;
+
+   if ((value != KEY::NIL) and (int(value) < std::ssize(KeyHeld))) {
+      KeyHeld[int(value)] = 0;
+
+      if (value IS KEY::L_COMMAND)      glKeyFlags &= ~KQ::L_COMMAND;
+      else if (value IS KEY::R_COMMAND) glKeyFlags &= ~KQ::R_COMMAND;
+      else if (value IS KEY::L_SHIFT)   glKeyFlags &= ~KQ::L_SHIFT;
+      else if (value IS KEY::R_SHIFT)   glKeyFlags &= ~KQ::R_SHIFT;
+      else if (value IS KEY::L_CONTROL) glKeyFlags &= ~KQ::L_CONTROL;
+      else if (value IS KEY::R_CONTROL) glKeyFlags &= ~KQ::R_CONTROL;
+      else if (value IS KEY::L_ALT)     glKeyFlags &= ~KQ::L_ALT;
+      else if (value IS KEY::R_ALT)     glKeyFlags &= ~KQ::R_ALT;
+   }
+
+  if ((value != KEY::NIL) or (unicode != 0xffffffff)) {
+     if ((unicode < 0x20) or (unicode IS 127)) flags |= KQ::NOT_PRINTABLE;
+      glDriverCallbacks.KeyReleased(glKeyFlags|flags, value);
+   }
+}
+
+//********************************************************************************************************************
+
+void handle_crossing_notify(XCrossingEvent *xevent)
+{
+   auto surface_id = resolve_surface(xevent->window);
+   bool entered = xevent->type IS EnterNotify;
+   glDriverCallbacks.Crossing(surface_id, entered, xevent->x_root, xevent->y_root);
+   if (entered) glDriverCallbacks.Movement(surface_id, xevent->x_root, xevent->y_root, false);
+}
+
+//********************************************************************************************************************
+
+void process_movement(Window Window, int X, int Y)
+{
+   glDriverCallbacks.Movement(resolve_surface(Window), X, Y, false);
+}
+
+} // namespace display

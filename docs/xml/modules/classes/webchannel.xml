@@ -1,0 +1,279 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>WebChannel</name>
+    <type>class</type>
+    <module>WebRTC</module>
+    <comment>Exchanges text and binary messages with a remote peer over a PeerConnection.</comment>
+    <version>1</version>
+    <id>d2428553</id>
+    <idstring>WEBCHANNEL</idstring>
+    <category>Network</category>
+    <copyright>Paul Manias © 2026</copyright>
+    <description>
+<p>A WebChannel is a bidirectional message channel that is carried by a <class name="PeerConnection">PeerConnection</class>.  Messages are always delivered whole, and each is flagged as either text or binary.  A connection can carry many channels, each with its own label, ordering and reliability settings.</p>
+<p>WebChannel objects cannot be created directly.  A local channel is created with <class name="PeerConnection" method="CreateWebChannel">PeerConnection.CreateWebChannel()</class>, and a channel that is announced by the remote peer is delivered through <class name="PeerConnection" field="OnWebChannel">PeerConnection.OnWebChannel</class>.  In both cases the channel is owned by the PeerConnection and is destroyed with it.  The <fl>Label</fl>, <fl>Protocol</fl>, <fl>Negotiated</fl>, <fl>Ordered</fl>, <fl>MaxRetransmits</fl> and <fl>MaxPacketLifeTime</fl> fields are set on creation and cannot be changed.</p>
+<p>A new channel starts in the <code>CONNECTING</code> state and calls <fl>OnOpen</fl> when it is ready for use.  A local channel opens once the remote peer acknowledges it, or once the connection is established if the channel is negotiated.  A remote channel is reported through <class name="PeerConnection" field="OnWebChannel">PeerConnection.OnWebChannel</class> before any of its other events.  Messages are then sent with <method>Send</method> and received through <fl>OnMessage</fl>.</p>
+<p>When a channel closes normally, <fl>OnClose</fl> is called once.  If the channel fails, <fl>OnError</fl> is called first, followed by <fl>OnClose</fl>.  Freeing a channel closes it without making any further callbacks.</p>
+<p>Channel events are delivered by the parent's framework timer, so the thread that created the PeerConnection must process messages, and the channel must only be used from that thread.  Callbacks are never made from within a call to <method>Send</method> or <method>Close</method>.  A callback can safely send messages, or close or free the channel or its parent.</p></description>
+    <source>
+      <file path="webchannel/">webchannel.cpp</file>
+    </source>
+  </info>
+
+  <methods>
+    <method>
+      <name>Close</name>
+      <comment>Closes the channel in both directions.</comment>
+      <prototype>ERR wch::Close(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = Close()</tiriPrototype>
+      <description>
+<p>Close() changes <fl>State</fl> to <code>CLOSING</code> and rejects any further calls to <method>Send</method>.  Reliable messages that have already been queued are delivered before the channel's stream is reset.  Partially reliable messages remain subject to their <fl>MaxRetransmits</fl> or <fl>MaxPacketLifeTime</fl> limits.  <fl>OnClose</fl> is called once the remote peer has completed the reset.</p>
+<p>If the remote peer does not complete the reset within five seconds, the connection fails with <code>ERR::Timeout</code>.  A channel that has not yet been assigned a stream is closed immediately.</p>
+<p>Calling Close() on a channel that is closing or closed has no effect.  Freeing the channel also closes it, but without calling <fl>OnClose</fl>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="BufferOverflow">Too many stream resets are pending on the connection.</error>
+        <error code="InvalidState">Object was in an incorrect state for the operation</error>
+      </result>
+      <tags>non-blocking, mutates-object, idempotent</tags>
+    </method>
+
+    <method>
+      <name>Send</name>
+      <comment>Queues a message for delivery to the remote peer.</comment>
+      <prototype>ERR wch::Send(OBJECTPTR Object, std::span&lt;const int8_t&gt; Data, WCM Type)</prototype>
+      <tiriPrototype>err = Send(Data:array, Type:num)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">The message content.</param>
+        <param type="WCM" name="Type" lookup="WCM">Declares the message as <code>TEXT</code> or <code>BINARY</code>.</param>
+      </input>
+      <description>
+<p>Send() copies a complete message to the channel's send queue and returns immediately.  The message is either queued in full or rejected, and is delivered to the remote peer as a single message.  A successful result does not indicate that the message has been sent or received.  The number of bytes awaiting transmission is reported by <fl>BufferedAmount</fl>.</p>
+<p>The <code>Type</code> is delivered with the message so that the receiver can tell text from binary data; the content itself is not altered.  Use <code>TEXT</code> for strings, which browsers receive as a JavaScript string, and <code>BINARY</code> for arbitrary bytes, which browsers receive as an <code>ArrayBuffer</code> or <code>Blob</code>.  Both types can be mixed on the same channel.  Refer to RFC 8831 for further information.</p>
+<p>The channel must be in the <code>OPEN</code> state.  Messages of type <code>TEXT</code> must be valid UTF-8, and no message can exceed <fl>MaxMessageSize</fl>.  Empty messages are permitted.</p>
+<p>The send queue is limited to 16 MiB and 1024 messages for each channel, and 32 MiB and 4096 messages across the connection.  If a message would exceed these limits it is rejected with <code>ERR::BufferOverflow</code>, and the client should wait for <fl>OnBufferedAmountLow</fl> before sending more data.  Messages are also rejected with <code>ERR::BufferOverflow</code> while 4094 or more channel events, such as received messages, are awaiting delivery to the client's callbacks.</p>
+<p>In Tiri, <code>Data</code> can be a string, which may contain embedded null bytes, an <code>array&lt;byte&gt;</code>, or <code>nil</code> for an empty message.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="InvalidData">A <code>TEXT</code> message is not valid UTF-8.</error>
+        <error code="NoSupport">The remote peer does not support partially reliable delivery.</error>
+        <error code="OutOfRange">The message exceeds <fl>MaxMessageSize</fl>.</error>
+        <error code="BufferOverflow">The send queue is full, or too many channel events are awaiting delivery.</error>
+        <error code="InvalidState">The channel is not open.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue"><code>Type</code> is not a recognised value.</error>
+      </result>
+      <tags>non-blocking, mutates-object, copies-input</tags>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>BufferedAmount</name>
+      <comment>The number of message bytes that are queued and have not yet been transmitted.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>BufferedAmount counts the message content that has been queued with <method>Send</method> but not yet passed to the transport.  It decreases as data is transmitted, or when partially reliable messages are abandoned.  Protocol overhead and retransmissions are not counted.</p>
+<p>Transmitted data continues to occupy the send queue until the remote peer acknowledges it, so <method>Send</method> can reject a message with <code>ERR::BufferOverflow</code> even when BufferedAmount is low.  Use <fl>BufferedAmountLowThreshold</fl> and <fl>OnBufferedAmountLow</fl> to regulate the rate of sending.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>BufferedAmountLowThreshold</name>
+      <comment>The <fl>BufferedAmount</fl> level, in bytes, at which <fl>OnBufferedAmountLow</fl> is called.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT64</type>
+      <description>
+<p><fl>OnBufferedAmountLow</fl> is called when <fl>BufferedAmount</fl> falls from above this threshold to a value at or below it.  The default is zero, and the value can be set from 0 to 16777216.  Changing the threshold does not trigger a callback.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Error</name>
+      <comment>The error that caused the channel to fail.</comment>
+      <access read="R">Read</access>
+      <type>ERR</type>
+      <description>
+<p>Error is set when the channel fails, before <fl>OnError</fl> is called.  It remains <code>ERR::Okay</code> if the channel opens and closes normally.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Label</name>
+      <comment>The name of the channel.</comment>
+      <access read="R">Read</access>
+      <type>STRING</type>
+      <description>
+<p>Label is a UTF-8 string that is set when the channel is created.  For a channel created by the remote peer, it is the label chosen by that peer.  Labels do not need to be unique.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MaxMessageSize</name>
+      <comment>The largest message, in bytes, that can be sent to the remote peer.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>MaxMessageSize reflects the limit advertised in the remote peer's session description, and is zero until the remote description has been applied.  If the remote peer does not advertise a limit, the default is 65536 bytes.  If it advertises no limit, or a limit above 16 MiB, the value is capped at 16 MiB.  Messages sent with <method>Send</method> cannot exceed this size.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MaxPacketLifeTime</name>
+      <comment>The maximum lifetime of an outgoing message, in milliseconds.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>If MaxPacketLifeTime is set, a message that has not been delivered within this time of being queued is abandoned rather than retransmitted.  It is -1 if no lifetime limit applies.  It cannot be set in conjunction with <fl>MaxRetransmits</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>MaxRetransmits</name>
+      <comment>The maximum number of times an outgoing message is retransmitted.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>If MaxRetransmits is set, a message that is not delivered after this many retransmissions is abandoned.  A value of zero means that each message is sent only once.  It is -1 if no retransmission limit applies.  It cannot be set in conjunction with <fl>MaxPacketLifeTime</fl>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Negotiated</name>
+      <comment>True if the channel was negotiated by the client rather than announced in-band.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>A negotiated channel is created by both peers with the same <fl>StreamID</fl>, and the remote peer is not notified of its creation.  Channels that are announced in-band are delivered to the remote peer through <class name="PeerConnection" field="OnWebChannel">PeerConnection.OnWebChannel</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OnBufferedAmountLow</name>
+      <comment>A callback that is notified when the send queue falls to <fl>BufferedAmountLowThreshold</fl>.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The function referenced here is called when <fl>BufferedAmount</fl> falls from above <fl>BufferedAmountLowThreshold</fl> to a value at or below it.  It is typically used to resume sending after the queue has filled.  The callback is only made while the channel is open.  The C++ prototype is <code>Function(*WebChannel, APTR Meta)</code>.</p>
+<p>The Tiri prototype is <code>function(WebChannel)</code>.</p>
+<p>The callback can send further messages.  If these cause the threshold to be crossed again, the next notification is made in a later cycle rather than from within the current callback.</p>
+      </description>
+      <tags>callback-held</tags>
+    </field>
+
+    <field>
+      <name>OnClose</name>
+      <comment>A callback that is notified when the channel has closed.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The function referenced here is called once when the channel closes, whether it was closed by either peer or failed. <fl>State</fl> is <code>CLOSED</code> when the callback is made.  It is not called if the channel is freed.  The C++ prototype is <code>Function(*WebChannel, APTR Meta)</code>.</p>
+<p>The Tiri prototype is <code>function(WebChannel)</code>.</p>
+      </description>
+      <tags>callback-held</tags>
+    </field>
+
+    <field>
+      <name>OnError</name>
+      <comment>A callback that is notified when the channel fails.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The function referenced here is called once if the channel fails, and is followed by a call to <fl>OnClose</fl>.  <fl>State</fl> and <fl>Error</fl> are updated before the callback is made.  The C++ prototype is <code>Function(*WebChannel, ERR Error, APTR Meta)</code>.</p>
+<p>The Tiri prototype is <code>function(WebChannel, Error)</code>.</p>
+      </description>
+      <tags>callback-held</tags>
+    </field>
+
+    <field>
+      <name>OnMessage</name>
+      <comment>A callback that receives each message from the remote peer.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The function referenced here is called for each complete message that is received while the channel is open.  The <code>Type</code> is <code>TEXT</code> or <code>BINARY</code>, as declared by the sender.  Empty messages are delivered with a length of zero.  The C++ prototype is <code>ERR Function(*WebChannel, const void *Data, INT Length, WCM Type, APTR Meta)</code>.</p>
+<p>The Tiri prototype is <code>function(WebChannel, Buffer, Type)</code>, where <code>Buffer</code> is an <code>array&lt;byte&gt;</code>.</p>
+<p>The message data is only valid for the duration of the callback, and must be copied if it is to be retained.  Errors returned by the callback are logged and otherwise ignored.</p>
+      </description>
+      <tags>callback-held, volatile-result</tags>
+    </field>
+
+    <field>
+      <name>OnOpen</name>
+      <comment>A callback that is notified when the channel is ready for use.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>The function referenced here is called once when <fl>State</fl> changes to <code>OPEN</code>.  Messages can be sent with <method>Send</method> from this point.  The C++ prototype is <code>Function(*WebChannel, APTR Meta)</code>.</p>
+<p>The Tiri prototype is <code>function(WebChannel)</code>.</p>
+      </description>
+      <tags>callback-held</tags>
+    </field>
+
+    <field>
+      <name>Ordered</name>
+      <comment>True if messages are delivered in the order that they were sent.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>If Ordered is false, messages may be delivered to the remote peer in a different order to that in which they were sent.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Protocol</name>
+      <comment>The name of the sub-protocol used by the channel.</comment>
+      <access read="R">Read</access>
+      <type>STRING</type>
+      <description>
+<p>Protocol is a UTF-8 string that is set when the channel is created.  It is not interpreted by the channel and is available for the client to identify the format of the messages.  It may be empty.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>State</name>
+      <comment>The current state of the channel.</comment>
+      <access read="R">Read</access>
+      <type lookup="WCS">WCS</type>
+      <description>
+<p>The channel starts in the <code>CONNECTING</code> state and changes to <code>OPEN</code> when <fl>OnOpen</fl> is called.  It changes to <code>CLOSING</code> when either peer starts to close it, and to <code>CLOSED</code> when the closure is complete or the channel fails.</p>
+<types lookup="WCS"/>
+      </description>
+    </field>
+
+    <field>
+      <name>StreamID</name>
+      <comment>The channel's SCTP stream ID.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>The stream ID identifies the channel on the connection.  If the ID was not specified when the channel was created, it is -1 until it is assigned automatically after the DTLS handshake.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="WCM" comment="WebChannel complete-message types.">
+      <const name="BINARY"/>
+      <const name="TEXT"/>
+    </constants>
+
+    <constants lookup="WCS" comment="WebChannel lifecycle states.">
+      <const name="CLOSED"/>
+      <const name="CLOSING"/>
+      <const name="CONNECTING"/>
+      <const name="OPEN"/>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

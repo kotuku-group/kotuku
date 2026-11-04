@@ -12,14 +12,14 @@ This file contains all logging functions.
 Log levels are:
 
 0  CRITICAL Display the message irrespective of the log level.
-1  ERROR Major errors that should be displayed to the user.
-2  WARN Any error suitable for display to a developer or technically minded user.
-3  Application log message, level 1
-4  INFO Application log message, level 2
-5  API Top-level API messages, e.g. function entry points (default)
-6  DETAIL Detailed API messages.  For messages within functions, and entry-points for minor functions.
-8  TRACE Extremely detailed API messages suitable for intensive debugging only.
-9  Noisy debug messages that will appear frequently, e.g. being used in inner loops.
+1  ERROR    Major errors that should be displayed to the user.
+2  WARN     Any error suitable for display to a developer or technically minded user.
+3  APP      Application log message, level 1
+4  INFO     Application log message, level 2
+5  API      Top-level API messages, e.g. function entry points (default)
+6  DETAIL   Detailed API messages.  For messages within functions, and entry-points for minor functions.
+8  DEBUG    Debug-build only API messages, suitable for intensive debugging only.
+9  TRACE    Noisy debug messages that will appear frequently, e.g. being used in inner loops.
 
 *********************************************************************************************************************/
 
@@ -32,7 +32,6 @@ Log levels are:
 #endif
 
 #include <stdarg.h>
-#include <fcntl.h>
 
 #ifdef __ANDROID__
 #include <android/log.h>
@@ -41,8 +40,14 @@ Log levels are:
 #include "defs.h"
 
 static void fmsg(CSTRING, STRING, int8_t, int8_t);
-static FILE *log_output(void);
-static bool log_output_is_file(void);
+static void dispatch_log_callbacks(VLF, CSTRING, CSTRING, va_list, uint8_t);
+static void dispatch_log_message_callbacks(CSTRING, CSTRING, uint8_t, uint8_t);
+static void invoke_log_callbacks(LogCallback **, int, CSTRING, CSTRING, uint8_t, uint8_t);
+static CSTRING log_callback_header(CSTRING);
+static int collect_log_callbacks(uint8_t, LogCallback **);
+static uint8_t callback_depth(void);
+static uint8_t effective_log_level(void);
+static uint8_t message_log_level(VLF);
 
 #ifdef __ANDROID__
 static const int COLUMN1 = 40;
@@ -50,23 +55,110 @@ static const int COLUMN1 = 40;
 static const int COLUMN1 = 30;
 #endif
 
-//#if !defined(_WIN32)
-   #define ESC_OUTPUT 1
-//#endif
+#define ESC_OUTPUT 1
 
-enum { MS_NONE, MS_FUNCTION, MS_MSG };
-enum { EL_NONE=0, EL_MINOR, EL_MAJOR, EL_MAJORBOLD };
+enum { MS_FUNCTION = 1, MS_MSG = 2 };
 
 static thread_local int tlBaseLine = 0;
+static thread_local bool tlLogCallbackActive = false;
+static thread_local std::vector<char> tlLogCallbackBuffer;
 
-static FILE *log_output(void)
+inline FILE * log_output(void)
 {
    return glLogFile ? glLogFile : stderr;
 }
 
-static bool log_output_is_file(void)
+inline bool log_output_is_file(void)
 {
    return glLogFile;
+}
+
+inline bool log_callbacks_available(void)
+{
+   return glLogCallbackCount.load(std::memory_order_relaxed) > 0;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+SetLogCallback: Register a callback for log messages.
+
+This function registers `Callback` to observe log messages while logging is active.  The callback must use the
+`LOG_CALLBACK` signature:
+
+<pre>void Callback(CSTRING Header, CSTRING Message, INT Depth, INT MsgLevel, INT LogLevel)</pre>
+
+The `Header` argument identifies the origin of the message.  When the caller did not supply a header, Core derives one
+from the current action, method or application context.  The `Message` argument contains the formatted log text.  The
+header and message pointers are valid only for the duration of the callback call, so a callback must copy either string
+if it needs to retain it.  `Depth` is the current branch depth, `MsgLevel` is the severity or detail level assigned to
+the message, and `LogLevel` is the effective active log level after baseline adjustment.
+
+The `DepthLimit` and `LogLimit` parameters are used to reduce log noise.  `DepthLimit` suppresses callbacks when the
+current branch depth is greater than the limit, and `LogLimit` suppresses callbacks when the message level is
+greater than the limit.  Use a suitably large limit to receive all messages for that filter.  Messages emitted from
+inside a log callback are not forwarded recursively to log callbacks on the same thread.
+
+Passing `NULL` for `Callback` has no effect.  Registering the same callback address again updates its `DepthLimit` and
+`LogLimit` values.  Passing zero for both limits unregisters a matching callback if it exists.  The number of unique
+callbacks that can be registered is limited; when all callback slots are in use, additional registrations are ignored.
+
+-INPUT-
+ptr Callback: Pointer to the log callback function to register.
+int DepthLimit: Maximum branch depth to forward to the callback.
+int LogLimit: Maximum message log level to forward to the callback.
+
+-TAGS-
+callback-held, does-not-take-ownership, non-blocking
+
+-END-
+
+*********************************************************************************************************************/
+
+void SetLogCallback(APTR Callback, int DepthLimit, int LogLimit)
+{
+   if (not Callback) return;
+
+   auto routine = (LOG_CALLBACK)Callback;
+   bool unregister = (not DepthLimit) and (not LogLimit);
+
+   // Check if the callback is already registered.
+
+   for (auto &slot : glLogCallbacks) {
+      if (slot.State.load(std::memory_order_acquire) != LCS_ACTIVE) continue;
+
+      auto &callback = slot.Callback;
+      if (callback.Callback IS routine) {
+         if (LogLimit or DepthLimit) {
+            // These updates are not a threading concern
+            callback.LogLimit = LogLimit;
+            callback.DepthLimit = DepthLimit;
+         }
+         else {
+            slot.State.store(uint8_t(LCS_EMPTY), std::memory_order_release);
+            glLogCallbackCount.fetch_sub(1, std::memory_order_relaxed);
+         }
+         return;
+      }
+   }
+
+   if (unregister) return;
+
+   // Store the callback in the first available slot.
+
+   for (auto &slot : glLogCallbacks) {
+      auto state = uint8_t(LCS_EMPTY);
+
+      if (slot.State.compare_exchange_strong(state, uint8_t(LCS_WRITING), std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+         slot.Callback.Callback = routine;
+         slot.Callback.LogLimit = LogLimit;
+         slot.Callback.DepthLimit = DepthLimit;
+         slot.State.store(uint8_t(LCS_ACTIVE), std::memory_order_release);
+         glLogCallbackCount.fetch_add(1, std::memory_order_relaxed);
+         return;
+      }
+   }
 }
 
 /*********************************************************************************************************************
@@ -84,11 +176,14 @@ noise if the user has the log level set to 5 (API).  Re-running the program with
 make the messages visible again.
 
 A secondary use of this function is to increase the verbosity of log messages when debugging an area of interest.
-For instance, if a program is run with a warning level of 2 and we want to see the log outupt for a function at API
+For instance, if a program is run with a warning level of 2 and we want to see the log output for a function at API
 level, call AdjustLogLevel() with a `Delta` of -3 to raise the base-line to 5.
 
 Adjustments to the base-line are accumulative, so small increments of 1 or 2 are encouraged.  To revert logging to the
 previous base-line, call this function again with a negation of the previously passed value.
+
+Note: This function is complemented by the ~SetResource() function with the `RES::LOG_LEVEL` option, which
+permanently changes the log level for the duration of the program.
 
 -INPUT-
 int Delta: The level of adjustment to make to new log messages.  Zero is no change.  The maximum level is +/- 9.
@@ -143,6 +238,9 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
    if (tlLogStatus <= 0) { if ((Flags & VLF::BRANCH) != VLF::NIL) tlDepth++; return; }
    FILE *fd = log_output();
    const bool file_output = log_output_is_file();
+   const uint8_t log_level = effective_log_level();
+
+   if (log_callbacks_available()) dispatch_log_callbacks(Flags, Header, Message, Args, log_level);
 
    static const VLF log_levels[10] = {
       VLF::CRITICAL,
@@ -153,8 +251,8 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
       VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
       VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
       VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
-      VLF::TRACE|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
-      VLF::TRACE|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL
+      VLF::DEBUG|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL,
+      VLF::TRACE|VLF::DEBUG|VLF::DETAIL|VLF::API|VLF::INFO|VLF::WARNING|VLF::ERROR|VLF::CRITICAL
    };
 
    if ((Flags & VLF::CRITICAL) != VLF::NIL) { // Print the message irrespective of the log level
@@ -192,9 +290,7 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
       return;
    }
 
-   int level = glLogLevel - tlBaseLine;
-   if (level > 9) level = 9;
-   else if (level < 0) level = 0;
+   int level = log_level;
 
    if (((log_levels[level] & Flags) != VLF::NIL) or
        ((level > 1) and ((Flags & (VLF::WARNING|VLF::ERROR|VLF::CRITICAL)) != VLF::NIL)))  {
@@ -209,13 +305,12 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
       if ((Flags & (VLF::BRANCH|VLF::FUNCTION)) != VLF::NIL) msgstate = MS_FUNCTION;
       else msgstate = MS_MSG;
 
-      if (glLogThreads) fprintf(fd, "%.4d ", int(get_thread_id()));
+      if (glLogThreads) fprintf(fd, "%.4d ", GetThreadID());
 
       #if defined(__unix__) and !defined(__ANDROID__)
          bool flushdbg;
          if ((fd IS stderr) and (level >= 3)) {
             flushdbg = true;
-            if (tlPublicLockCount) flushdbg = false;
             if (flushdbg) fcntl(STDERR_FILENO, F_SETFL, glStdErrFlags & (~O_NONBLOCK));
          }
          else flushdbg = false;
@@ -287,7 +382,7 @@ void VLogF(VLF Flags, CSTRING Header, CSTRING Message, va_list Args)
          }
 
          if (obj->Class) {
-            name = obj->Name[0] ? obj->Name : obj->Class->ClassName;
+            name = obj->Name[0] ? obj->Name : obj->Class->ClassName.c_str();
 
             if (level > 5) {
                if (ctx.field) {
@@ -354,8 +449,7 @@ error: Returns the same code that was specified in the `Error` parameter.
 ERR FuncError(CSTRING Header, ERR Code)
 {
    if (tlLogStatus <= 0) return Code;
-   int level = glLogLevel - tlBaseLine;
-   if (level < 2) return Code;
+   int level = effective_log_level();
    if ((tlDepth >= glMaxDepth) or (tlLogStatus <= 0)) return Code;
 
    auto &ctx = tlContext.back();
@@ -368,6 +462,10 @@ ERR FuncError(CSTRING Header, ERR Code)
       }
       else Header = "Function";
    }
+
+   if (log_callbacks_available()) dispatch_log_message_callbacks(Header, glMessages[int(Code)], 2, uint8_t(level));
+
+   if (level < 2) return Code;
 
    #ifdef __ANDROID__
       if (obj->Class) {
@@ -399,7 +497,7 @@ ERR FuncError(CSTRING Header, ERR Code)
       fmsg(Header, msgheader, MS_MSG, 2);
 
       if (obj->Class) {
-         CSTRING name = obj->Name[0] ? obj->Name : obj->Class->ClassName;
+         CSTRING name = obj->Name[0] ? obj->Name : obj->Class->ClassName.c_str();
 
          if (ctx.field) {
             fprintf(fd, "%s%s[%s:%d:%s] %s%s\n", histart, msgheader, name, obj->UID, ctx.field->Name, glMessages[int(Code)], hiend);
@@ -441,6 +539,148 @@ void LogReturn(void)
 }
 
 //********************************************************************************************************************
+// Returns the active log level after applying this thread's temporary baseline adjustment.
+
+static uint8_t effective_log_level(void)
+{
+   int level = glLogLevel - tlBaseLine;
+   if (level > 9) return 9;
+   else if (level < 0) return 0;
+   else return uint8_t(level);
+}
+
+//********************************************************************************************************************
+// Converts VLF flags to the numeric log level used by callback filters.
+
+static uint8_t message_log_level(VLF Flags)
+{
+   if ((Flags & VLF::CRITICAL) != VLF::NIL) return 0;
+   if ((Flags & VLF::ERROR) != VLF::NIL) return 1;
+   if ((Flags & VLF::WARNING) != VLF::NIL) return 2;
+   if ((Flags & VLF::DEBUG) != VLF::NIL) return 8;
+   if ((Flags & VLF::TRACE) != VLF::NIL) return 9;
+   if ((Flags & VLF::DETAIL) != VLF::NIL) return 6;
+   if ((Flags & VLF::API) != VLF::NIL) return 5;
+   if ((Flags & VLF::INFO) != VLF::NIL) return 3;
+
+   return 4;
+}
+
+//********************************************************************************************************************
+// Returns the current branch depth in the byte-sized range passed to log callbacks.
+
+static uint8_t callback_depth(void)
+{
+   if (tlDepth <= 0) return 0;
+   else if (tlDepth > 255) return 255;
+   else return uint8_t(tlDepth);
+}
+
+//********************************************************************************************************************
+// Resolves the header string that will be passed to callbacks when the caller did not provide one.
+
+static CSTRING log_callback_header(CSTRING Header)
+{
+   if ((Header) and (*Header)) return Header;
+
+   auto &ctx = tlContext.back();
+   auto obj = ctx.obj;
+
+   if (ctx.action > AC::NIL) return ActionTable[int(ctx.action)].Name;
+   else if (ctx.action < AC::NIL) {
+      if (obj->Class) return ((extMetaClass *)obj->Class)->Methods[-int(ctx.action)].Name;
+      else return "Method";
+   }
+   else return "App";
+}
+
+//********************************************************************************************************************
+// Gathers registered callbacks that should receive a message at the supplied level.
+
+static int collect_log_callbacks(uint8_t MsgLevel, LogCallback **Callbacks)
+{
+   int total = 0;
+
+   if (tlLogCallbackActive) return total;
+
+   for (auto &slot : glLogCallbacks) {
+      if (slot.State.load(std::memory_order_acquire) != LCS_ACTIVE) continue;
+
+      auto &callback = slot.Callback;
+      if (not callback.Callback) continue;
+      if (tlDepth > callback.DepthLimit) continue;
+      if (MsgLevel > callback.LogLimit) continue;
+
+      Callbacks[total++] = &callback;
+   }
+
+   return total;
+}
+
+//********************************************************************************************************************
+// Invokes a prepared callback list while suppressing recursive callback dispatch on this thread.
+
+static void invoke_log_callbacks(LogCallback **Callbacks, int Total, CSTRING Header, CSTRING Message, uint8_t MsgLevel,
+   uint8_t LogLevel)
+{
+   tlLogCallbackActive = true;
+   uint8_t depth = callback_depth();
+   for (int i=0; i < Total; i++) {
+      Callbacks[i]->Callback(Header, Message, depth, MsgLevel, LogLevel);
+   }
+   tlLogCallbackActive = false;
+}
+
+//********************************************************************************************************************
+// Dispatches a preformatted message, such as an error string, to interested log callbacks.
+
+static void dispatch_log_message_callbacks(CSTRING Header, CSTRING Message, uint8_t MsgLevel, uint8_t LogLevel)
+{
+   LogCallback *callbacks[LC_LIMIT];
+   int total = collect_log_callbacks(MsgLevel, callbacks);
+
+   if (not total) return;
+
+   invoke_log_callbacks(callbacks, total, Header, Message, MsgLevel, LogLevel);
+}
+
+//********************************************************************************************************************
+// Formats a variadic log message and dispatches it to interested log callbacks.
+
+static void dispatch_log_callbacks(VLF Flags, CSTRING Header, CSTRING Message, va_list Args, uint8_t LogLevel)
+{
+   uint8_t msg_level = message_log_level(Flags);
+   LogCallback *callbacks[LC_LIMIT];
+   int total = collect_log_callbacks(msg_level, callbacks);
+
+   if (not total) return;
+
+   Header = log_callback_header(Header);
+
+   char buffer[256];
+   va_list copy;
+   va_copy(copy, Args);
+   int len = vsnprintf(buffer, sizeof(buffer), Message ? Message : "", copy);
+   va_end(copy);
+
+   if (len < 0) return;
+
+   if (size_t(len) < sizeof(buffer)) {
+      invoke_log_callbacks(callbacks, total, Header, buffer, msg_level, LogLevel);
+   }
+   else {
+      if (tlLogCallbackBuffer.size() < size_t(len) + 1) tlLogCallbackBuffer.resize(size_t(len) + 1);
+
+      va_copy(copy, Args);
+      vsnprintf(tlLogCallbackBuffer.data(), tlLogCallbackBuffer.size(), Message ? Message : "", copy);
+      va_end(copy);
+
+      invoke_log_callbacks(callbacks, total, Header, tlLogCallbackBuffer.data(), msg_level, LogLevel);
+   }
+}
+
+//********************************************************************************************************************
+// Formats the fixed-width log prefix used before printed log messages.
 
 static void fmsg(CSTRING Header, STRING Buffer, int8_t Colon, int8_t Sub) // Buffer must be COLUMN1+1 in size
 {
@@ -487,12 +727,12 @@ static void fmsg(CSTRING Header, STRING Buffer, int8_t Colon, int8_t Sub) // Buf
    if (pos < col) { // Print as many function letters as possible.
       int16_t len;
       for (len=0; (Header[len]) and (pos < col); len++) Buffer[pos++] = Header[len];
-      if ((!Colon) and (Header[len-1] != ':') and (Header[len-1] != ')')) Colon = MS_MSG;
+      bool has_suffix = (len > 0) and ((Header[len - 1] IS ':') or (Header[len - 1] IS ')'));
       if (Colon IS MS_MSG) {
-         if ((Header[len-1] != ':') and (Header[len-1] != ')') and (pos < col)) Buffer[pos++] = ':';
+         if ((not has_suffix) and (pos < col)) Buffer[pos++] = ':';
       }
       else if (Colon IS MS_FUNCTION) {
-         if ((Header[len-1] != ':') and (Header[len-1] != ')') and (pos < col-1)) {
+         if ((not has_suffix) and (pos < col - 1)) {
             Buffer[pos++] = '(';
             Buffer[pos++] = ')';
          }

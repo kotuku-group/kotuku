@@ -524,7 +524,7 @@ CELL layout::lay_cell(bc_table *Table)
 
       layout sl(Self, cell.stream, *cell.viewport, Table->cell_padding);
       sl.m_depth = m_depth + 1;
-      if (auto error = sl.do_layout(&m_font, cell.width, cell.height, vertical_repass); not (error IS ERR::Okay)) {
+      if (auto error = sl.do_layout(&m_font, cell.width, cell.height, vertical_repass); error != ERR::Okay) {
          Self->Error = error;
          return CELL::ABORT;
       }
@@ -657,7 +657,7 @@ void layout::size_widget(widget_mgr &Widget, bool ScaleToFont)
    }
 
    if (!Widget.label.empty()) {
-      Widget.label_width = vec::StringWidth(m_font->handle, Widget.label.c_str(), -1);
+      Widget.label_width = vec::StringWidth(m_font->handle, Widget.label, -1);
    }
    else Widget.label_width = 0;
 }
@@ -776,8 +776,7 @@ WRAP layout::lay_button(bc_button &Button)
       sl.m_depth = m_depth + 1;
 
       bool vertical_repass = false;
-      if (auto error = sl.do_layout(&m_font, Button.final_width, Button.final_height, vertical_repass);
-          not (error IS ERR::Okay)) {
+      if (auto error = sl.do_layout(&m_font, Button.final_width, Button.final_height, vertical_repass); error != ERR::Okay) {
          Self->Error = error;
          return WRAP::DO_NOTHING;
       }
@@ -1083,7 +1082,7 @@ void layout::lay_paragraph()
          para.item_indent = list->item_indent;
 
          if (!para.value.empty()) {
-            auto strwidth = vec::StringWidth(m_font->handle, para.value.c_str(), -1) + 10;
+            auto strwidth = vec::StringWidth(m_font->handle, para.value, -1) + 10;
             auto item_indent = list->item_indent.px(*this);
             if (strwidth > item_indent) {
                list->item_indent = DUNIT(strwidth, DU::PIXEL);
@@ -1138,7 +1137,7 @@ void layout::lay_paragraph()
    if (!m_font) {
       kt::Log log;
       DLAYOUT("Failed to lookup font for %s:%d", para.font.face.c_str(), para.font.pixel_size);
-      Self->Error = ERR::Failed;
+      Self->Error = ERR::Search;
       return;
    }
 
@@ -1601,10 +1600,10 @@ static void layout_doc(extDocument *Self)
       Self->CalcWidth = page_width;
    }
 
-   if (Self->Error IS ERR::Okay) Self->EditCells = l.m_ecells;
+   if (!Self->Error) Self->EditCells = l.m_ecells;
    else Self->EditCells.clear();
 
-   if ((Self->Error IS ERR::Okay) and (!l.m_segments.empty())) Self->Segments = l.m_segments;
+   if ((!Self->Error) and (!l.m_segments.empty())) Self->Segments = l.m_segments;
    else Self->Segments.clear();
 
    Self->UpdatingLayout = false;
@@ -1636,7 +1635,7 @@ static void layout_doc(extDocument *Self)
    else {
       acResize(Self->Page, Self->CalcWidth, Self->PageHeight, 0);
 
-      if (l.gen_scene_init(Self->Page) IS ERR::Okay) {
+      if (!l.gen_scene_init(Self->Page)) {
          l.gen_scene_graph(Self->Page, l.m_segments);
       }
 
@@ -1737,7 +1736,7 @@ extend_page:
    m_line.index.set(0);
    m_line.full_reset(m_margins.left);
 
-   for (idx = 0; (idx < INDEX(m_stream->size())) and (Self->Error IS ERR::Okay); idx++) {
+   for (idx = 0; (idx < INDEX(m_stream->size())) and (!Self->Error); idx++) {
       if ((m_cursor_x >= MAX_PAGE_WIDTH) or (m_cursor_y >= MAX_PAGE_HEIGHT)) {
          log.warning("Invalid cursor position reached @ %gx%g", m_cursor_x, m_cursor_y);
          Self->Error = ERR::InvalidDimension;
@@ -1975,10 +1974,11 @@ extend_page:
                   fl::Name("table_path"), fl::Owner(table->viewport->UID)
                }));
 
-               if (!table->fill.empty()) table->path->set(FID_Fill, table->fill);
+               if (!table->fill.empty()) table->path->setFill(table->fill);
 
                if (!table->stroke.empty()) {
-                  table->path->setFields(fl::Stroke(table->stroke), fl::StrokeWidth(table_values.stroke_width));
+                  table->path->setStroke(table->stroke);
+                  table->path->setStrokeWidth(table_values.stroke_width);
                }
             }
 
@@ -2450,8 +2450,8 @@ font_entry * bc_font::layout_font(layout &Layout)
 
    // Check the cache for this font
 
-   CSTRING resolved_face;
-   if (fnt::ResolveFamilyName(face.c_str(), &resolved_face) IS ERR::Okay) {
+   std::string_view resolved_face;
+   if (!fnt::ResolveFamilyName(face, &resolved_face)) {
       face.assign(resolved_face);
    }
 
@@ -2465,7 +2465,7 @@ font_entry * bc_font::layout_font(layout &Layout)
    }
 
    APTR new_handle = nullptr;
-   if (vec::GetFontHandle(face.c_str(), style.c_str(), 400, pixel_size, &new_handle) IS ERR::Okay) {
+   if (!vec::GetFontHandle(face, style, 400, pixel_size, &new_handle)) {
       std::lock_guard lk(glFontsMutex);
 
       if (auto it = glFontIndexCache.find(cache_key); it != glFontIndexCache.end()) {

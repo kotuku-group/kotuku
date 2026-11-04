@@ -4,6 +4,10 @@
 // Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice
 // appears in all copies.  This software is provided "as is" without express or implied warranty, and with no
 // claim as to its suitability for any purpose.
+// ---
+// Defines unpacked anti-aliased scanlines with one coverage span per run. Hooks into rasterizer_scanline_aa and
+// renderer_scanline. In the vector renderer it favours straightforward coverage access when scanline memory compaction
+// is less important.
 //
 // This is a general purpose scanline container with *packed* spans.  It is best used in conjunction with cover
 // values that mostly continuous.  See description of scanline_u8 for details.
@@ -70,8 +74,7 @@
 // conditions for the processor cache system are better, because switching between two different areas of memory
 // (that can be very large) occurs less frequently.
 
-#ifndef AGG_SCANLINE_U_INCLUDED
-#define AGG_SCANLINE_U_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -214,6 +217,3 @@ private:
 };
 
 } // namespace
-
-#endif
-

@@ -6,10 +6,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Wraps a span generator with a post-generation span converter. Hooks into renderer_scanline pipelines that need
+// colour-space or alpha adjustments after generation. In the vector renderer it allows generated spans to be
+// transformed before they reach the pixel blender.
 
-
-#ifndef AGG_SPAN_CONVERTER_INCLUDED
-#define AGG_SPAN_CONVERTER_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
@@ -47,5 +49,3 @@ namespace agg
     };
 
 }
-
-#endif

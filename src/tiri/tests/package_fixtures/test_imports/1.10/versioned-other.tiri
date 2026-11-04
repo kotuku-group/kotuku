@@ -1,0 +1,3 @@
+@Package(name="tests/other-package", version="1.10")
+
+namespace versioned_other { }

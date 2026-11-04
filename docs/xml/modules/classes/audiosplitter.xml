@@ -1,0 +1,176 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioSplitter</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>Processes copies of a signal along parallel branches of effects and sums the results.</comment>
+    <version>1</version>
+    <id>39445ed8</id>
+    <idstring>AUDIOSPLITTER</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>AudioSplitter divides an effect chain into parallel paths.  It sends an identical copy of its input through each of its branches, where every branch is an ordinary chain of effects, and adds the branch outputs together.  The splitter is a single node in its own chain, so effects can run before and after it.  Typical uses include:</p>
+<list type="bullet">
+<li>Parallel compression: an empty branch carries the dry signal, while a second branch holds an <class name="AudioCompressor">AudioCompressor</class>.
+</li>
+<li>Bass enhancement: one branch processes the full signal, while a second branch isolates the bass with the
+<code>low_pass</code> and <code>high_pass</code> bands of an <class name="AudioEqualiser">AudioEqualiser</class> and shapes it with further effects.</li>
+<li>Wet and dry mixing of any effect, with independent levels for each path.</li>
+</list>
+<p>Create the splitter as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field.  Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application splitters accept live changes; global splitters and the effects in their branches become immutable after initialisation.</p>
+<header>Branches</header>
+<p>A splitter holds between one and eight branches.  Each branch has two level settings, described by the <st>AudioBranch</st> structure:</p>
+<list type="bullet">
+<li><code>Gain</code>: the level of the branch output in the sum, from -48 to +12 dB.</li>
+<li><code>Mute</code>: when set to 1, the branch is removed from the sum.  A muted branch continues to process its input, so its
+effects keep their state and meters.</li>
+</list>
+<p>A new splitter has one unmuted branch, so it passes audio through unchanged.  Use <method>InsertBranch</method>, <method>SetBranch</method> and <method>RemoveBranch</method> to edit individual branches, and <method>GetBranch</method> to read one.  An empty branch passes its copy of the input through unchanged.</p>
+<p>An effect is attached to a branch by setting its <class name="AudioEffect" field="Parent">AudioEffect.Parent</class> field to the splitter and its <class name="AudioEffect" field="Branch">AudioEffect.Branch</class> field to the branch index, or by creating it as a child of the splitter.  The splitter must be initialised first. Within a branch, effects are ordered by <class name="AudioEffect" field="Order">AudioEffect.Order</class>.  The following builds a parallel compressor on a channel set:</p>
+<pre>splitter = obj.new('AudioSplitter', { audio=audio, channel=channel })
+check splitter.mtInsertBranch(1, struct.new('AudioBranch', { gain=-6, mute=0 }))
+compressor = splitter.new('AudioCompressor', { branch=1 })
+</pre>
+<p>The same settings are published through the inherited <class name="AudioEffect">AudioEffect</class> schema as the <code>branches</code> group, with <code>gain</code> and <code>mute</code> members.  Use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class> to change several branches in a single step.  A branch inserted with the <code>insert</code> command of <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class> is muted until it is enabled, so that inserting it is inaudible:</p>
+<pre>splitter.mtBatch(array&lt;str&gt; { 'insert branches 1', 'set branches[1].mute 0', 'set branches[1].gain -6' })
+</pre>
+<p>Removing a branch disconnects the effects in that branch, and later branches move down by one.  Effects follow their branch when other branches are inserted or removed, and <class name="AudioEffect" field="Branch">AudioEffect.Branch</class> reports the current index.  Freeing the splitter, or disconnecting it from its Audio object or channel set, disconnects every branch effect.  A splitter cannot be placed inside the branch of another splitter.</p>
+<header>Levels</header>
+<p>The sum is not normalised: two unprocessed branches at 0 dB produce a signal 6 dB louder than the input.  Lower the branch gains, or place an <class name="AudioLimiter">AudioLimiter</class> after the splitter, when the branches can add up to more than full scale.</p>
+<header>Latency Alignment</header>
+<p>Effects such as <class name="AudioLimiter">AudioLimiter</class> delay the signal.  If the branches had different delays, their sum would suffer from comb filtering, so the splitter delays each branch to align it with the others.  Every branch emerges after a fixed <fl>LatencyBudget</fl>, which the splitter reports as its <class name="AudioEffect" field="Latency">AudioEffect.Latency</class>.  The budget is zero by default, which permits only effects without latency in the branches.</p>
+<p>Set the budget before initialisation to at least the greatest combined latency of the effects in any one branch. Attaching an effect that would take its branch beyond the budget fails with <code>ERR::OutOfRange</code>.  If an effect is attached before the Audio object has been activated, the check is made at activation, which reports any excess in its log; the excess delays that branch beyond the others.</p>
+<p>Latency is counted whether or not an effect is bypassed.  When bypass, attachment or detachment changes the latency of a branch, the branch moves to its new alignment with a 10 ms crossfade.</p>
+<header>Live Changes</header>
+<p>Gain and mute changes ramp over 10 ms.  An inserted branch starts at zero gain and ramps in.  A removed branch ramps out over 10 ms, during which its former effects continue to process the signal although they are already disconnected.  Bypassing the splitter skips every branch; leaving bypass, device reactivation and reaching idle discard alignment history and reset every branch effect.</p>
+<header>Drain</header>
+<p>Sample <class name="Sound" field="OnStop">Sound.OnStop</class> notifications are held until the tails of the effects in audible branches, such as a reverb, have drained through the splitter.  Muted branches do not hold notifications.</p>
+<header>Meters</header>
+<p>The splitter publishes the standard input and output peaks for each channel, measured before and after the sum.  The levels of individual branches are read from the meters of the effects inside them.</p></description>
+    <source>
+      <file>class_audiosplitter.cpp</file>
+    </source>
+  </info>
+
+  <methods>
+    <method>
+      <name>GetBranch</name>
+      <comment>Reads the level settings of one branch.</comment>
+      <prototype>ERR split::GetBranch(OBJECTPTR Object, INT Index, struct AudioBranch * Branch)</prototype>
+      <tiriPrototype>err = GetBranch(Index:num, Branch:any)</tiriPrototype>
+      <input>
+        <param type="INT" name="Index">The zero-based index of the branch.</param>
+        <param type="struct AudioBranch *" name="Branch">Receives the branch's gain and mute state.</param>
+      </input>
+      <description>
+<p>Copies the committed gain and mute state of the branch at <code>Index</code> to <code>Branch</code>.  Branches can be read before initialisation, from a global splitter, and after the splitter has been disconnected.</p>
+<pre>branch = struct.new('AudioBranch')
+check splitter.mtGetBranch(0, branch)
+</pre>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange"><code>Index</code> does not refer to an existing branch.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>InsertBranch</name>
+      <comment>Inserts an empty branch with the given level settings.</comment>
+      <prototype>ERR split::InsertBranch(OBJECTPTR Object, INT Index, struct AudioBranch * Branch)</prototype>
+      <tiriPrototype>err = InsertBranch(Index:num, Branch:any)</tiriPrototype>
+      <input>
+        <param type="INT" name="Index">The position of the new branch, from zero to the current branch count.</param>
+        <param type="struct AudioBranch *" name="Branch">The gain and mute state of the new branch.</param>
+      </input>
+      <description>
+<p>Inserts a branch at <code>Index</code>, moving the branch at that position and every later branch up by one.  Effects in the moved branches stay attached, keep their state and report their new index in <class name="AudioEffect" field="Branch">AudioEffect.Branch</class>.  The new branch has no effects, so it passes its copy of the input through unchanged until effects are attached to it.</p>
+<p><code>Branch</code> sets the gain and mute state of the new branch.  An unmuted branch ramps in from zero gain over 10 ms.  Set <code>Mute</code> to 1 to insert a silent branch and enable it once its effects are attached, which is the behaviour of the <code>insert</code> command of <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+<pre>check splitter.mtInsertBranch(1, struct.new('AudioBranch', { gain=-6, mute=1 }))
+compressor = splitter.new('AudioCompressor', { branch=1 })
+check splitter.mtSetBranch(1, struct.new('AudioBranch', { gain=-6, mute=0 }))
+</pre>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange"><code>Index</code> is greater than the branch count, or the splitter already has eight branches.</error>
+        <error code="NotInitialised">The splitter has been disconnected from its Audio object.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">The gain is outside -48 to +12 dB, or <code>Mute</code> is not 0 or 1.</error>
+        <error code="Immutable">The splitter is attached to the global chain.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>RemoveBranch</name>
+      <comment>Removes one branch and disconnects its effects.</comment>
+      <prototype>ERR split::RemoveBranch(OBJECTPTR Object, INT Index)</prototype>
+      <tiriPrototype>err = RemoveBranch(Index:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Index">The zero-based index of the branch.</param>
+      </input>
+      <description>
+<p>Removes the branch at <code>Index</code> and disconnects every effect attached to it, as described in the class documentation. Later branches move down by one, and their effects stay attached and report their new index in <class name="AudioEffect" field="Branch">AudioEffect.Branch</class>.  The removed branch ramps out over 10 ms.  The last remaining branch cannot be removed.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange"><code>Index</code> does not refer to an existing branch, or it refers to the only branch.</error>
+        <error code="NotInitialised">The splitter has been disconnected from its Audio object.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="Immutable">The splitter is attached to the global chain.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>SetBranch</name>
+      <comment>Replaces the level settings of one branch.</comment>
+      <prototype>ERR split::SetBranch(OBJECTPTR Object, INT Index, struct AudioBranch * Branch)</prototype>
+      <tiriPrototype>err = SetBranch(Index:num, Branch:any)</tiriPrototype>
+      <input>
+        <param type="INT" name="Index">The zero-based index of the branch.</param>
+        <param type="struct AudioBranch *" name="Branch">The new gain and mute state.</param>
+      </input>
+      <description>
+<p>Replaces the gain and mute state of the branch at <code>Index</code> as a single change.  The effects in the branch stay attached and keep their state, and a live change ramps over 10 ms.</p>
+<pre>check splitter.mtSetBranch(0, struct.new('AudioBranch', { gain=-3, mute=0 }))
+</pre>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange"><code>Index</code> does not refer to an existing branch.</error>
+        <error code="NotInitialised">The splitter has been disconnected from its Audio object.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">The gain is outside -48 to +12 dB, or <code>Mute</code> is not 0 or 1.</error>
+        <error code="Immutable">The splitter is attached to the global chain.</error>
+      </result>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>LatencyBudget</name>
+      <comment>The fixed delay, in milliseconds, within which the latencies of all branches are aligned.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>Every branch is delayed so that its output emerges exactly LatencyBudget milliseconds after its input, rounded up to whole frames at the output rate, regardless of the latency of the effects in the branch.  This keeps the branches aligned when they are summed, and is reported as the splitter's <class name="AudioEffect" field="Latency">AudioEffect.Latency</class>.</p>
+<p>The budget must be at least the greatest combined latency of the effects in any one branch, including bypassed effects.  For example, a branch containing an <class name="AudioLimiter">AudioLimiter</class>, which has a 5 ms lookahead, requires a budget of at least 5 ms.  With the default of zero, only effects without latency can be attached to a branch.</p>
+<p>The value ranges from 0 to 100 and can only be set before initialisation.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+    <struct name="AudioBranch" comment="The level settings of one AudioSplitter branch.">
+      <field name="Gain" type="DOUBLE">Level of the branch output in the sum, in decibels</field>
+      <field name="Mute" type="INT">Set to 1 to remove the branch from the sum</field>
+    </struct>
+
+  </structs>
+</book>

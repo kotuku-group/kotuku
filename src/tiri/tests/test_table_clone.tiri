@@ -1,0 +1,162 @@
+-- Graph and metadata regressions for table.clone().
+
+@Test function BasicCloneAndCalls()
+   local source = { a=1, b={ 2, 3 }, false, 0, '' }
+   local clone = table.clone(source)
+   assert(not rawequal(clone, source) and not rawequal(clone.b, source.b))
+   clone.b[0] = 99
+   assert(source.b[0] is 2 and clone[0] is false and clone[1] is 0 and clone[2] is '')
+   assert(not rawequal(source.clone(), source))
+   local callable = table.clone
+   assert(callable(nil).size() is 0 and not rawequal(callable(nil), callable(nil)))
+   assert(callable(source, 'ignored').b[0] is 2)
+   assert(debug.validate('local copy:table = table.clone(nil)').success)
+   assert(not debug.validate('table.clone({}, 1)').success)
+   for invalid in values({ false, 1, '', array<int> { 1 } }) do
+      local caught = false
+      try
+         callable(invalid)
+      except e
+         caught = true
+      end
+      assert(caught)
+   end
+   local caught = false
+   try
+      callable()
+   except e
+      caught = true
+   end
+   assert(caught)
+   assert(({ 1 } |> table.clone())[0] is 1)
+end
+
+@Test function CyclesKeysAndAliases()
+   local child = { value=7 }
+   local source = { left=child, right=child }
+   source.self = source
+   source[source] = child
+   source[child] = source
+   local clone = source.clone()
+   assert(rawequal(clone.self, clone))
+   assert(rawequal(clone.left, clone.right) and not rawequal(clone.left, child))
+   assert(rawequal(clone[clone], clone.left) and rawequal(clone[clone.left], clone))
+   assert(clone[source] is nil and clone[child] is nil)
+   assert(not rawequal(source.clone().left, clone.left))
+end
+
+@Test function RawCopyAndMetatables()
+   local calls = 0
+   local function hook() calls++; raise 'hook called during cloning' end
+   local fallback = { inherited=8 }
+   local metatable = { __metatable='hidden', __index=fallback, __newindex=hook, __pairs=hook,
+      __len=hook, __eq=hook }
+   local source = setmetatable({ nested=setmetatable({ x=1 }, metatable), meta=metatable }, metatable)
+   local clone = table.clone(source)
+   assert(calls is 0 and getmetatable(clone) is 'hidden')
+   assert(getmetatable(clone.nested) is 'hidden' and clone.inherited is 8)
+   assert(rawequal(clone.meta, metatable) is false)
+   assert(rawequal(clone.nested.x, source.nested.x))
+   local self_meta = {}
+   setmetatable(self_meta, self_meta)
+   local self_copy = table.clone(self_meta)
+   assert(getmetatable(self_copy) is self_meta)
+end
+
+@Test function SparseHistoryAndNonTableReferences()
+   local source = table.new(64, 8)
+   source[-1] = false
+   source[0.5] = 0
+   source[1000000] = ''
+   source[-1] = nil
+   local nested = { n=1 }
+   local array_value = array<table> { nested }
+   local function reference() return source end
+   local object <close> = obj.new('tiri')
+   source.array = array_value
+   source.fn = reference
+   source.object = object
+   source[reference] = object
+   local clone = table.clone(source)
+   assert(clone.kind() is source.kind() and clone[0.5] is 0 and clone[1000000] is '')
+   assert(clone[-1] is nil and rawequal(clone.array, array_value) and rawequal(clone.fn(), source))
+   assert(rawequal(clone.object, object) and rawequal(clone[reference], object))
+end
+
+@Test function ContextAndDepth()
+   local source = entity { read=function() return && end }
+   local clone = source.clone()
+   assert(clone.read() is clone)
+   local head = {}
+   local cursor = head
+   for i in {0 to 5000} do
+      cursor.next = {}
+      cursor = cursor.next
+   end
+   local copy = head.clone()
+   for i in {0 to 5000} do copy = copy.next end
+   assert(copy.next is nil)
+end
+
+@Test function WeakEdgesAndAliases()
+   local key = {}
+   local value = { marker=1 }
+   local strong = { child=value }
+   local weak_keys = setmetatable({ [key]=strong }, { __mode='k' })
+   local weak_values = setmetatable({ child=value }, { __mode='v' })
+   local source = { strong=strong, keys=weak_keys, values=weak_values }
+   local clone = table.clone(source)
+   assert(rawequal(getmetatable(clone.keys), getmetatable(weak_keys)))
+   assert(rawequal(getmetatable(clone.values), getmetatable(weak_values)))
+   assert(rawequal(clone.values.child, clone.strong.child))
+   local cloned_key
+   for found_key, found_value in clone.keys do
+      cloned_key = found_key
+      assert(rawequal(found_value, clone.strong))
+   end
+   assert(cloned_key != nil and not rawequal(cloned_key, key))
+   cloned_key = nil
+   processing.collect('full')
+   assert(clone.keys.size() is 0)
+   assert(rawequal(clone.values.child, clone.strong.child))
+end
+
+@Test function FinalisersRegisterSeparately()
+   local finished = 0
+   local metatable = { __gc=function() finished++ end }
+   local source = setmetatable({ child=setmetatable({}, metatable) }, metatable)
+   local clone = table.clone(source)
+   assert(finished is 0)
+   assert(rawequal(getmetatable(clone), metatable) and rawequal(getmetatable(clone.child), metatable))
+   source = nil
+   clone = nil
+   processing.collect('full')
+   processing.collect('full')
+   assert(finished is 4, 'Each original and cloned table should be finalised once')
+end
+
+@Test function BytecodeRoundTrip()
+   local function factory():table return table.clone({ child={ 1 } }) end
+   for stripped in values({ false, true }) do
+      local result = exec(string.dump(factory, stripped))
+      assert(result.child[0] is 1)
+   end
+end
+
+@Test function HotChangingGraphs()
+   local retained = array<table> {}
+   for iteration in {0 to 160} do
+      local source = { marker=iteration }
+      if iteration % 3 is 0 then source.child = { value=iteration }
+      elseif iteration % 3 is 1 then source.self = source
+      else source[iteration + 1000] = false
+      end
+      local copy = table.clone(source)
+      assert(copy.marker is iteration and not rawequal(copy, source))
+      if source.child then assert(copy.child.value is iteration and not rawequal(copy.child, source.child)) end
+      if source.self then assert(rawequal(copy.self, copy)) end
+      retained.push(copy)
+      if iteration % 20 is 0 then processing.collect('full') end
+   end
+   assert(retained[159].marker is 159)
+end

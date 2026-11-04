@@ -1,0 +1,105 @@
+-- Verifies that a buffered viewport renders the same result as an unbuffered one.  The buffer holds device pixels, so
+-- scaling inherited from parent viewports must be applied once, content must never be drawn outside the buffer, and
+-- the buffer must be redrawn when the viewport moves by a fraction of a pixel.
+
+   include 'display', 'vector'
+   module display as mGfx
+
+WIDTH  <const> = 300
+HEIGHT <const> = 160
+
+-- Build a white scene, scaled by Scale through the root viewport's view box, with a page viewport at (X, Y) that holds
+-- a black bar.  Returns the scene, the page and the bar.
+
+function newScene(Buffered:bool!, Scale:num!, X:num!, Y:num!):<obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=WIDTH, pageHeight=HEIGHT })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=WIDTH, height=HEIGHT,
+      viewX=0, viewY=0, viewWidth=WIDTH / Scale, viewHeight=HEIGHT / Scale })
+   root.new('VectorRectangle', { x=0, y=0, width='100%', height='100%', fill='rgb(255,255,255)' })
+   local page = root.new('VectorViewport', { x=X, y=Y, width=100, height=50, buffered=Buffered })
+   local bar = page.new('VectorRectangle', { x=10, y=10, width=60, height=20, fill='rgb(0,0,0)' })
+   return scene, page, bar
+end
+
+function render(Scene:obj!):obj
+   local bmp = obj.new('bitmap', { width=WIDTH, height=HEIGHT, bitsPerPixel=32, bkgd='255,255,255,255' })
+   bmp.acClear()
+   Scene.bitmap = bmp
+   Scene.acDraw()
+   return bmp
+end
+
+-- Bounding box of the pixels that are darker than mid-grey, as a string for comparison.
+
+function darkExtent(Bitmap:obj!):str
+   local x1, y1, x2, y2 = WIDTH, HEIGHT, -1, -1
+   for y in {0 to HEIGHT} do
+      for x in {0 to WIDTH} do
+         if mGfx.ReadRGBPixel(Bitmap, x, y).red < 128 then
+            if x < x1 then x1 = x end
+            if y < y1 then y1 = y end
+            if x > x2 then x2 = x end
+            if y > y2 then y2 = y end
+         end
+      end
+   end
+   return f'{x1},{y1}..{x2},{y2}'
+end
+
+function extentOf(Buffered:bool!, Scale:num!, X:num!, Y:num!):str
+   local scene <close> = newScene(Buffered, Scale, X, Y)
+   local bmp <close> = render(scene)
+   return darkExtent(bmp)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ScaledParentAppliedOnce()
+   for scale in values(array<double> { 1, 0.5, 0.97, 1.5, 2 }) do
+      local expected = extentOf(false, scale, 20, 10)
+      local actual = extentOf(true, scale, 20, 10)
+      assert(actual is expected, f'At scale {scale} the buffered bar spans {actual}, expected {expected}')
+   end
+end
+
+@Test function FractionalPositionMatchesUnbuffered()
+   for scale in values(array<double> { 1, 0.97 }) do
+      local expected = extentOf(false, scale, 20.4, 10.7)
+      local actual = extentOf(true, scale, 20.4, 10.7)
+      assert(actual is expected, f'At scale {scale} the buffered bar spans {actual}, expected {expected}')
+   end
+end
+
+-- Content that extends past a buffered viewport must be clipped to the buffer.  Drawing beyond it previously wrote
+-- outside the buffer's memory, which corrupted the heap and aborted the process when the scene was freed.
+
+@Test function OverflowingContentStaysInBuffer()
+   for scale in values(array<double> { 1, 2 }) do
+      local scene <close>, page = newScene(true, scale, 20, 10)
+      page.new('VectorRectangle', { x=-4, y=-4, xOffset=-4, yOffset=-4, fill='rgb(0,0,0)' })
+      local bmp <close> = render(scene)
+      local right = math.floor(120 * scale)
+      local bottom = math.floor(60 * scale)
+      assert(mGfx.ReadRGBPixel(bmp, right, 20).red is 255, f'Content leaked right of the viewport at scale {scale}')
+      assert(mGfx.ReadRGBPixel(bmp, 40, bottom).red is 255, f'Content leaked below the viewport at scale {scale}')
+      assert(mGfx.ReadRGBPixel(bmp, right - 1, 20).red is 0, f'Content is missing at the right edge at scale {scale}')
+   end
+end
+
+-- The buffer is rendered at the viewport's sub-pixel offset, so it must be redrawn after a fractional move.
+
+@Test function FractionalMoveRedrawsBuffer()
+   local scene <close>, page = newScene(true, 1, 20, 10)
+   local first <close> = render(scene)
+   assert(darkExtent(first) is extentOf(false, 1, 20, 10), 'The initial buffered render must match')
+   page.x = 20.5
+   local moved <close> = render(scene)
+   local expected = extentOf(false, 1, 20.5, 10)
+   assert(darkExtent(moved) is expected,
+      f'After a fractional move the bar spans {darkExtent(moved)}, expected {expected}')
+
+   page.x = 25.5
+   local whole <close> = render(scene)
+   local expected_whole = extentOf(false, 1, 25.5, 10)
+   assert(darkExtent(whole) is expected_whole, f'After a whole-pixel move the bar spans {darkExtent(whole)}')
+end

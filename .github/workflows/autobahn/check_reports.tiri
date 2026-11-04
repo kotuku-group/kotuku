@@ -1,0 +1,68 @@
+-- $TIRI
+-- Summarises one or more Autobahn testsuite index.json reports and raises an exception, giving a non-zero exit code,
+-- if any case failed.
+--
+--   origo .github/workflows/autobahn/check_reports.tiri \
+--      reports=autobahn-reports/servers/index.json,autobahn-reports/clients/index.json \
+--      expected_count_file=autobahn-reports/case_count.txt
+
+   import 'json'
+
+   -- Results that Autobahn does not count as failures.  UNIMPLEMENTED applies to the permessage-deflate cases, which
+   -- are excluded by the configuration files in any case.
+
+   local accepted       = { OK=true, ['NON-STRICT']=true, INFORMATIONAL=true, UNIMPLEMENTED=true }
+   local accepted_close = { OK=true, INFORMATIONAL=true, WRONG_CODE=true }
+
+   local paths               = arg('reports')
+   local expected_count_file = arg('expected_count_file')
+   if not paths?? then raise 'Usage: check_reports.tiri reports=index.json[,index.json...]' end
+   if not expected_count_file?? then raise 'An expected_count_file argument is required' end
+
+   local expected_count = tonumber(io.readAll(expected_count_file))
+   if expected_count is nil or expected_count <= 0 then
+      raise f'Invalid expected case count in {expected_count_file}'
+   end
+
+   local failures = 0
+   for path in values(paths.split(',')) do
+      local content = io.readAll(path)
+      if not content?? then raise f'Unable to read {path}' end
+
+      local report = json.decode(content)
+      local agents = 0
+      for agent, cases in report do
+         agents++
+         local ids = {}
+         for id in cases do table.insert(ids, id) end
+         table.sort(ids)
+
+         if #ids != expected_count then
+            print(f'FAIL {path} {agent}: expected {expected_count} cases, found {#ids}')
+            failures++
+         end
+
+         local counts = {}
+         for id in values(ids) do
+            local result = cases[id]
+            counts[result.behavior] = (counts[result.behavior] or 0) + 1
+            if not accepted[result.behavior] or not accepted_close[result.behaviorClose] then
+               local code = (result.remoteCloseCode is json.null) ? 'none' : result.remoteCloseCode
+               print(f'FAIL {path} {agent} case {id}: behavior {result.behavior}, close {result.behaviorClose}, ' ..
+                  f'remote close code {code}')
+               failures++
+            end
+         end
+
+         local summary = ''
+         for behavior, count in counts do summary ..= f' {behavior}={count}' end
+         print(f'{path} {agent}: {#ids} cases,{summary}')
+      end
+      if agents is 0 then
+         print(f'FAIL {path}: report contains no agents')
+         failures++
+      end
+   end
+
+   if failures > 0 then raise f'{failures} Autobahn case(s) failed' end
+   print('All Autobahn cases passed')

@@ -1,0 +1,527 @@
+-- Verifies that the vector focus list survives the destruction of vectors in the focus chain.  Freeing the focused
+-- vector, or one of its ancestors, must leave the focus with the surviving ancestors so that their keyboard
+-- subscriptions continue to receive key presses.
+
+   include 'display', 'vector'
+
+-- Broadcast a key event in the form of an evKey record: { int64 EventID; KQ Qualifiers; KEY Code; int Unicode },
+-- padded to 24 bytes.  The 64-bit event ID is composed as GetEventID() does, because a Tiri number cannot represent it
+-- exactly.
+
+function sendKey(Code:num!, Qualifiers:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = Qualifiers ?? KQ_PRESSED
+   ev[3] = Code
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+-- Create a focused scene with a keyboard subscription on every vector in Names.  Vectors are nested in the order
+-- given, with the last receiving the focus by virtue of having the lowest tab order.  Returns the surface, a table of
+-- vectors by name, a table of key press counts by name, and a table of focus-event counts by name.
+
+function focusedScene(Names:array<str>!):<obj, table, table, table>
+   local surface = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local parent:obj = scene
+   local vectors = { }
+   local hits = { }
+   local focus_events = { }
+   for i, name in Names do
+      local key = name
+      local vp = parent.new('VectorViewport', { x=0, y=0, width=100, height=100, tabOrder=#Names - i })
+      vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) hits[key]++ end)
+      focus_events[key] = { has=0, child=0 }
+      vp.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS, function(Vector, EventFlag, EventObject)
+         if EventFlag is FM_HAS_FOCUS then focus_events[key].has++
+         elseif EventFlag is FM_CHILD_HAS_FOCUS then focus_events[key].child++ end
+      end)
+      vectors[key] = vp
+      hits[key] = 0
+      parent = vp
+   end
+
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   sendKey(KEY_A)
+   for name in values(Names) do
+      assert(hits[name] is 1, f'{name} did not receive the key press before any vector was freed')
+   end
+   return surface, vectors, hits, focus_events
+end
+
+@Test function FreeFocusedChild()
+   local surface <close>, vectors, hits, focus_events = focusedScene(array<str> { 'root', 'child' })
+
+   local prior_has_focus = focus_events.root.has
+   vectors.child.free()
+   assert(focus_events.root.has is prior_has_focus + 1,
+      'Freeing the focused child did not report that its parent gained the primary focus')
+   sendKey(KEY_A)
+   assert(hits.root is 2, 'Freeing the focused child removed the focus from its parent')
+end
+
+@Test function FreeFocusedAncestor()
+   local surface <close>, vectors, hits = focusedScene(array<str> { 'root', 'container', 'leaf' })
+
+   vectors.container.free() -- Also frees the focused leaf
+   sendKey(KEY_A)
+   assert(hits.root is 2, 'Freeing an ancestor of the focused vector removed the focus from the root')
+   assert(hits.container is 1, 'A freed container received a key press')
+   assert(hits.leaf is 1, 'A freed leaf received a key press')
+end
+
+@Test function FreeUnfocusedSibling()
+   local surface <close>, vectors, hits = focusedScene(array<str> { 'root', 'child' })
+
+   sibling = vectors.root.new('VectorViewport', { x=0, y=0, width=10, height=10 })
+   sibling.free()
+   sendKey(KEY_A)
+   assert(hits.root is 2, 'Freeing an unfocused vector removed the focus from the root')
+   assert(hits.child is 2, 'Freeing an unfocused vector removed the focus from the focused child')
+end
+
+@Test function ExplicitFocusTransfersKeyboardAndFeedback()
+   local surface <close>, vectors, hits, focus_events = focusedScene(array<str> { 'root', 'child' })
+   local prior_focus = focus_events.root.has
+   check vectors.root.acFocus()
+   sendKey(KEY_A)
+   assert(focus_events.root.has is prior_focus + 1, 'Focus must notify the new primary vector')
+   assert(hits.root is 2 and hits.child is 1, 'Focus must remove the previous child from keyboard routing')
+   check vectors.child.acFocus()
+   sendKey(KEY_A)
+   assert(hits.root is 3 and hits.child is 2, 'Focus must restore routing to a child and its ancestor')
+end
+
+@Test function ExplicitFocusRejectsHiddenDisabledAndInactiveTargets()
+   local surface <close>, vectors, hits = focusedScene(array<str> { 'root', 'child' })
+   check vectors.root.acFocus()
+   vectors.child.acHide()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'Hidden vectors must not gain focus')
+   vectors.child.acShow()
+   vectors.root.acDisable()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'Disabled ancestors must prevent focus')
+   vectors.root.acEnable()
+   sendKey(KEY_A)
+   assert(hits.root is 2 and hits.child is 1, 'Rejected focus requests must preserve the current focus')
+   surface.acLostFocus()
+   assert(vectors.child.acFocus() is ERR_NothingDone, 'An inactive surface must not acquire vector focus')
+end
+
+-- The scene orders its keyboard subscribers by tab order.  Changing the tab order of a vector after it has subscribed
+-- must not prevent other subscribers from receiving keys.  Here the focused vector is the oldest subscriber, so it
+-- precedes the later subscribers until their tab orders are raised; a stale ordering would hide it from key dispatch.
+
+@Test function TabOrderChangeAfterSubscription()
+   local surface <close> = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100 })
+
+   local hits = 0
+   local target = root.new('VectorViewport', { x=0, y=0, width=10, height=10 })
+   target.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) hits++ end)
+
+   local others = array<obj>
+   for i in {0 to 8} do
+      local vp = root.new('VectorViewport', { x=10, y=0, width=10, height=10 })
+      vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) end)
+      others.push(vp)
+   end
+
+   for vp in values(others) do vp.tabOrder = 2 end
+   assert(others[0].tabOrder is 2, 'The tab order must be updated')
+
+   surface.acShow()
+   surface.acFocus()
+   check target.acFocus()
+   processing.sleep(0)
+
+   sendKey(KEY_A)
+   assert(hits is 1, 'Changing the tab order of other subscribers removed the focused vector from key dispatch')
+end
+
+-- Hiding a surface does not take the focus from it, so a popup that hides itself leaves its scene subscribed to key
+-- events.  That scene must not take the vector focus on Tab, otherwise Tab in the visible scene restarts from its first
+-- subscriber instead of advancing from the focused vector.
+
+@Test function TabIgnoresHiddenPopupScene()
+   local surface <close> = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100 })
+   local hits = array<int, 3>
+   local controls = array<obj>
+   for i in {0 to 3} do
+      local index = i
+      local vp = root.new('VectorViewport', { x=i * 10, y=0, width=10, height=10 })
+      vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) hits[index] += 1 end)
+      controls.push(vp)
+   end
+
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   local popup = surface.new('Surface', { x=0, y=0, width=50, height=50 })
+   local popup_scene = popup.new('VectorScene', { surface=popup })
+   local popup_vp = popup_scene.new('VectorViewport', { })
+   local popup_hits = 0
+   popup_vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) popup_hits++ end)
+   popup.acShow()
+   popup.acFocus()
+   check popup_vp.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_A)
+   assert(popup_hits is 1, 'The visible popup did not receive a key press')
+
+   popup.acHide()
+   check controls[0].acFocus()
+   processing.sleep(0)
+   sendKey(KEY_TAB, KQ_RELEASED)
+   sendKey(KEY_A)
+   assert(popup_hits is 1, 'The hidden popup received a key press')
+   assert(hits[0] is 0 and hits[1] is 1, 'Tab did not advance from the first control to the second')
+end
+
+-- Create a focused window surface whose scene holds Total keyboard controls.  Returns the surface, the controls, their
+-- key press counts and their FM_HAS_FOCUS counts.
+
+function controlScene(Total:num!):<obj, array<obj>, array<int>, array<int>>
+   local surface = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100 })
+   local hits = array<int>
+   local focus_events = array<int>
+   local controls = array<obj>
+   for i in {0 to Total} do
+      local index = i
+      local vp = root.new('VectorViewport', { x=i * 10, y=0, width=10, height=10 })
+      vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) hits[index] += 1 end)
+      vp.mtSubscribeFeedback(FM_HAS_FOCUS, function(Vector, EventFlag, EventObject) focus_events[index] += 1 end)
+      controls.push(vp)
+      hits.push(0)
+      focus_events.push(0)
+   end
+
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   return surface, controls, hits, focus_events
+end
+
+-- Open a focused popup surface with its own scene and keyboard subscriber.  OnKey, if provided, is called with the
+-- popup and the key details for each key press received.  Returns the popup and a table holding its key press count.
+
+function openPopup(Parent:obj!, OnKey:func):<obj, table>
+   local popup = Parent.new('Surface', { x=0, y=0, width=50, height=50 })
+   local popup_scene = popup.new('VectorScene', { surface=popup })
+   local popup_vp = popup_scene.new('VectorViewport', { })
+   local counts = { hits=0 }
+   popup_vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode)
+      counts.hits++
+      if OnKey then OnKey(popup, Qualifiers, Code) end
+   end)
+   popup.acShow()
+   popup.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_A)
+   assert(counts.hits is 1, 'The visible popup did not receive a key press')
+   return popup, counts
+end
+
+-- Closing a popup must return the vector focus to the control that held it before the popup was opened, without any
+-- help from the application.
+
+@Test function PopupHideRestoresFocus()
+   local surface <close>, controls, hits, focus_events = controlScene(4)
+   check controls[1].acFocus()
+   processing.sleep(0)
+   local prior_focus = focus_events[1]
+
+   local popup, popup_counts = openPopup(surface)
+   assert(hits[1] is 0, 'The window control received a key press meant for the popup')
+
+   popup.acHide()
+   processing.sleep(0)
+   assert(focus_events[1] is prior_focus + 1, 'Hiding the popup did not return the focus to the second control')
+   sendKey(KEY_A)
+   assert(hits[1] is 1, 'The second control did not receive the key press after the popup was hidden')
+   assert(popup_counts.hits is 1, 'The hidden popup received a key press')
+end
+
+@Test function PopupHideThenTabAdvances()
+   local surface <close>, controls, hits = controlScene(4)
+   check controls[1].acFocus()
+   processing.sleep(0)
+
+   local popup = openPopup(surface)
+   popup.acHide()
+   processing.sleep(0)
+   sendKey(KEY_TAB, KQ_RELEASED)
+   sendKey(KEY_A)
+   assert(hits[2] is 1, 'Tab did not advance from the restored control to the next')
+   assert(hits[0] is 0 and hits[1] is 0, 'Tab did not move the focus away from the restored control')
+end
+
+@Test function PopupFreeRestoresFocus()
+   local surface <close>, controls, hits, focus_events = controlScene(4)
+   check controls[1].acFocus()
+   processing.sleep(0)
+   local prior_focus = focus_events[1]
+
+   local popup = openPopup(surface)
+   popup.free()
+   processing.sleep(0)
+   assert(focus_events[1] is prior_focus + 1, 'Freeing the popup did not return the focus to the second control')
+   sendKey(KEY_A)
+   assert(hits[1] is 1, 'The second control did not receive the key press after the popup was freed')
+end
+
+-- A key press that closes a popup is still being dispatched when the focus returns to the window's scene.  That scene
+-- must not deliver the same press to the vector that regains the focus, otherwise an Enter press that activates a menu
+-- item would reach the button that opened the menu and reopen it.
+
+function closeOnEnter(Popup:obj!, Qualifiers:num!, Code:num!)
+   if (Code is KEY_ENTER) and (Qualifiers has KQ_PRESSED) then Popup.acHide() end
+end
+
+@Test function ClosingKeyNotRedeliveredOnRestore()
+   local surface <close>, controls, hits, focus_events = controlScene(4)
+   check controls[1].acFocus()
+   processing.sleep(0)
+   local prior_focus = focus_events[1]
+
+   local popup, popup_counts = openPopup(surface, closeOnEnter)
+   sendKey(KEY_ENTER)
+   assert(popup_counts.hits is 2, 'The popup did not receive the Enter press')
+   assert(focus_events[1] is prior_focus + 1, 'Closing the popup did not return the focus to the second control')
+   assert(hits[1] is 0, 'The Enter press that closed the popup was delivered again to the restored control')
+
+   sendKey(KEY_ENTER)
+   assert(hits[1] is 1, 'The restored control did not receive the next key press')
+   assert(popup_counts.hits is 2, 'The hidden popup received a key press')
+end
+
+@Test function ClosingKeyNotRedeliveredOnExplicitFocus()
+   local surface <close>, controls, hits = controlScene(4)
+   check controls[1].acFocus()
+   processing.sleep(0)
+
+   local popup = openPopup(surface, function(Popup:obj!, Qualifiers:num!, Code:num!)
+      if (Code is KEY_ENTER) and (Qualifiers has KQ_PRESSED) then
+         Popup.acHide()
+         check controls[3].acFocus()
+      end
+   end)
+
+   sendKey(KEY_ENTER)
+   assert(hits[3] is 0, 'The Enter press that closed the popup was delivered to the newly focused control')
+   assert(hits[1] is 0, 'The Enter press that closed the popup was delivered to the restored control')
+   sendKey(KEY_A)
+   assert(hits[3] is 1, 'The newly focused control did not receive the next key press')
+end
+
+-- A scene that subscribes to key events while a key is being dispatched does not receive that key, so it must not be
+-- marked to skip it.  Otherwise the scene would discard the next key press instead.
+
+@Test function FocusToUnsubscribedSceneKeepsNextKey()
+   local first <close>, first_controls, first_hits = controlScene(2)
+   local second <close>, second_controls, second_hits = controlScene(2)
+   assert(first.userFocus is second.id, 'The second surface did not receive the focus')
+
+   second_controls[0].mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode)
+      if (Code is KEY_ENTER) and (Qualifiers has KQ_PRESSED) then first.acFocus() end
+   end)
+
+   sendKey(KEY_ENTER)
+   assert(first.userFocus is first.id, 'The key handler did not move the focus to the first surface')
+   assert(first_hits[0] is 0, 'The first surface received the key press that focussed it')
+
+   sendKey(KEY_ENTER)
+   assert(first_hits[0] is 1, 'The first surface did not receive the next key press')
+end
+
+-- Identical events can reuse the message buffer.  Closing on the second Enter must still suppress delivery to the
+-- restored control, while the following identical Enter must be delivered normally.
+
+@Test function RepeatedClosingKeyNotRedelivered()
+   local surface <close>, controls, hits = controlScene(4)
+   check controls[1].acFocus()
+   processing.sleep(0)
+   local enters = 0
+   local popup, popup_counts = openPopup(surface, function(Popup:obj!, Qualifiers:num!, Code:num!)
+      if (Code is KEY_ENTER) and (Qualifiers has KQ_PRESSED) then
+         enters++
+         if enters is 2 then Popup.acHide() end
+      end
+   end)
+
+   sendKey(KEY_ENTER)
+   assert(enters is 1, 'The popup did not receive the first Enter press')
+   assert(hits[1] is 0, 'The window received a key press meant for the popup')
+   sendKey(KEY_ENTER)
+   assert(enters is 2, 'The popup did not receive the second Enter press')
+   assert(surface.userFocus is surface.id, 'The second Enter press did not close the popup')
+   assert(hits[1] is 0, 'The second Enter press was delivered again to the restored control')
+
+   sendKey(KEY_ENTER)
+   assert(hits[1] is 1, 'The restored control did not receive the following identical Enter press')
+   assert(popup_counts.hits is 3, 'The hidden popup received another key press')
+end
+
+-- Create a focused window scene whose root viewport holds Total keyboard controls, with FM_TAB_FOCUS subscriptions on
+-- the root and on every control.  Returns the surface, the scene, the controls, and a table that records the
+-- EventObject of each FM_TAB_FOCUS event by receiver ('root', or the control index).
+
+function tabFocusScene(Total:num!):<obj, obj, array<obj>, table>
+   local surface = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100 })
+   local events = { root = array<obj> }
+   root.mtSubscribeFeedback(FM_TAB_FOCUS, function(Vector, EventFlag, EventObject)
+      assert(EventFlag is FM_TAB_FOCUS, 'An unrequested feedback event was received')
+      events.root.push(EventObject)
+   end)
+
+   local controls = array<obj>
+   for i in {0 to Total} do
+      local index = i
+      events[index] = array<obj>
+      local vp = root.new('VectorViewport', { x=i * 10, y=0, width=10, height=10 })
+      vp.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) end)
+      vp.mtSubscribeFeedback(FM_TAB_FOCUS, function(Vector, EventFlag, EventObject)
+         events[index].push(EventObject)
+      end)
+      controls.push(vp)
+   end
+
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   return surface, scene, controls, events
+end
+
+-- The root receives nothing from FM_CHILD_HAS_FOCUS when the focus moves between two of its children, but it must
+-- receive FM_TAB_FOCUS on every Tab press with the focused child as the EventObject.
+
+@Test function TabFocusFeedbackReachesAncestors()
+   local surface <close>, scene, controls, events = tabFocusScene(3)
+   check controls[0].acFocus()
+   processing.sleep(0)
+
+   sendKey(KEY_TAB, KQ_RELEASED)
+   assert(#events.root is 1, f'The root received {#events.root} tab focus events, expected 1')
+   assert(events.root[0].id is controls[1].id, 'The tab focus event did not identify the second control')
+   assert(#events[1] is 1 and events[1][0].id is controls[1].id, 'The focused control did not receive the event')
+   assert(#events[0] is 0 and #events[2] is 0, 'An unfocused control received the tab focus event')
+
+   sendKey(KEY_TAB, KQ_RELEASED | KQ_SHIFT)
+   assert(#events.root is 2, 'The root did not receive the event for Shift+Tab')
+   assert(events.root[1].id is controls[0].id, 'Shift+Tab did not identify the first control')
+   assert(#events[0] is 1, 'The first control did not receive the event for Shift+Tab')
+end
+
+-- Focus changes made by the Focus action or by a key press are not tab cycling.
+
+@Test function ExplicitFocusSendsNoTabFocus()
+   local surface <close>, scene, controls, events = tabFocusScene(3)
+   check controls[2].acFocus()
+   processing.sleep(0)
+   sendKey(KEY_TAB) -- Pressed, not released, so the focus does not cycle
+   assert(#events.root is 0, 'An explicit focus change or a Tab press sent a tab focus event')
+   assert(#events[2] is 0, 'An explicitly focused control received a tab focus event')
+end
+
+@Test function SceneNextSendsTabFocus()
+   local surface <close>, scene, controls, events = tabFocusScene(3)
+   check controls[0].acFocus()
+   processing.sleep(0)
+
+   check scene.acNext()
+   assert(#events.root is 1 and events.root[0].id is controls[1].id, 'Next did not send a tab focus event')
+   check scene.acPrev()
+   assert(#events.root is 2 and events.root[1].id is controls[0].id, 'Prev did not send a tab focus event')
+   check scene.acPrev() -- Wraps to the last control
+   assert(#events.root is 3 and events.root[2].id is controls[2].id, 'Prev did not wrap to the last control')
+end
+
+-- Disabled and hidden subscribers, and those within a disabled or hidden ancestor, can't take the focus, so the tab
+-- cycle skips them in both directions.
+
+@Test function TabSkipsDisabledAndHiddenControls()
+   local surface <close>, scene, controls, events = tabFocusScene(6)
+   local group = controls[4]
+   local nested = group.new('VectorViewport', { x=0, y=0, width=5, height=5 }) -- Last in the tab order
+   nested.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode) end)
+   controls[1].acDisable()
+   controls[2].visibility = VIS_HIDDEN
+   group.visibility = VIS_HIDDEN
+   check controls[0].acFocus()
+   processing.sleep(0)
+
+   check scene.acNext()
+   assert(events.root[0].id is controls[3].id, 'Next did not skip the disabled and hidden controls')
+   check scene.acNext()
+   assert(events.root[1].id is controls[5].id, 'Next did not skip the hidden group and its child')
+   check scene.acPrev()
+   check scene.acPrev()
+   assert(events.root[3].id is controls[0].id, 'Prev did not skip the disabled and hidden controls')
+
+   controls[1].acEnable()
+   group.visibility = VIS_VISIBLE
+   check scene.acNext()
+   assert(events.root[4].id is controls[1].id, 'An enabled control did not rejoin the tab cycle')
+   check scene.acPrev()
+   check scene.acPrev()
+   assert(events.root[6].id is nested.id, 'The child of a shown group did not rejoin the tab cycle')
+end
+
+-- When nothing else can take the focus, Tab leaves it where it is.
+
+@Test function TabKeepsTheFocusWithNoOtherFocusableControl()
+   local surface <close>, scene, controls, events = tabFocusScene(3)
+   controls[1].acDisable()
+   controls[2].visibility = VIS_HIDDEN
+   check controls[0].acFocus()
+   processing.sleep(0)
+   check scene.acNext()
+   assert(#events.root is 1 and events.root[0].id is controls[0].id, 'Next moved the focus to an unfocusable control')
+end
+
+-- With one subscriber the focus cannot move, but Tab still confirms where the focus is.
+
+@Test function TabFocusWithSingleSubscriber()
+   local surface <close>, scene, controls, events = tabFocusScene(1)
+   check controls[0].acFocus()
+   processing.sleep(0)
+   sendKey(KEY_TAB, KQ_RELEASED)
+   assert(#events.root is 1 and events.root[0].id is controls[0].id, 'The root did not receive the tab focus event')
+   assert(#events[0] is 1, 'The single control did not receive the tab focus event')
+end
+
+@Test function IgnoreTabSendsNoTabFocus()
+   local surface <close>, scene, controls, events = tabFocusScene(3)
+   check controls[0].acFocus()
+   processing.sleep(0)
+   scene.flags = scene.flags | VPF_IGNORE_TAB
+   sendKey(KEY_TAB, KQ_RELEASED)
+   assert(#events.root is 0, 'A Tab press sent a tab focus event while the scene ignores Tab')
+end
+
+-- A tab focus callback that moves the focus elsewhere must stop the event from reaching the remaining ancestors,
+-- which would otherwise be told of a focus change that has already been superseded.
+
+@Test function TabFocusStopsWhenFocusMoves()
+   local surface <close>, scene, controls, events = tabFocusScene(3)
+   check controls[0].acFocus()
+   processing.sleep(0)
+   controls[1].mtSubscribeFeedback(FM_TAB_FOCUS, function(Vector, EventFlag, EventObject)
+      controls[2].acFocus()
+   end)
+   sendKey(KEY_TAB, KQ_RELEASED)
+   assert(#events[1] is 1, 'The tab focused control did not receive the event')
+   assert(#events.root is 0, 'The root received a tab focus event for a superseded target')
+end

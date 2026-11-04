@@ -17,6 +17,27 @@
 
 namespace xml::schema
 {
+   struct SchemaStringHash
+   {
+      using is_avalanching = void;
+      using is_transparent = void;
+
+      [[nodiscard]] size_t operator()(std::string_view Value) const noexcept {
+         return ankerl::unordered_dense::hash<std::string_view>{}(Value);
+      }
+
+      [[nodiscard]] size_t operator()(const std::string &Value) const noexcept {
+         return (*this)(std::string_view(Value));
+      }
+
+      [[nodiscard]] size_t operator()(const char *Value) const noexcept {
+         return (*this)(std::string_view(Value));
+      }
+   };
+
+   template<typename Value> using SchemaStringMap =
+      ankerl::unordered_dense::map<std::string, Value, SchemaStringHash, std::equal_to<>>;
+
    enum class SchemaType
    {
       XPathNodeSet,
@@ -73,8 +94,8 @@ namespace xml::schema
    {
       private:
       ankerl::unordered_dense::map<SchemaType, std::shared_ptr<SchemaTypeDescriptor>> descriptors_by_type;
-      ankerl::unordered_dense::map<std::string, std::shared_ptr<SchemaTypeDescriptor>> descriptors_by_name;
-      ankerl::unordered_dense::map<std::string, std::shared_ptr<SchemaTypeDescriptor>> descriptors_by_expanded_name;
+      SchemaStringMap<std::shared_ptr<SchemaTypeDescriptor>> descriptors_by_name;
+      SchemaStringMap<std::shared_ptr<SchemaTypeDescriptor>> descriptors_by_expanded_name;
 
       void register_builtin_types();
 

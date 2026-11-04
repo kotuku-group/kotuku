@@ -272,11 +272,11 @@ static XPathValue xq_meta_to_map(const extDocument *Self)
    XPathValue result(XPVT::Map);
    result.map_storage = std::make_shared<XPathMapStorage>();
 
-   if (Self->Title)       xq_map_append_string(result.map_storage, "title", Self->Title);
-   if (Self->Author)      xq_map_append_string(result.map_storage, "author", Self->Author);
-   if (Self->Description) xq_map_append_string(result.map_storage, "description", Self->Description);
-   if (Self->Copyright)   xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
-   if (Self->Keywords)    xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
+   if (not Self->Title.empty())       xq_map_append_string(result.map_storage, "title", Self->Title);
+   if (not Self->Author.empty())      xq_map_append_string(result.map_storage, "author", Self->Author);
+   if (not Self->Description.empty()) xq_map_append_string(result.map_storage, "description", Self->Description);
+   if (not Self->Copyright.empty())   xq_map_append_string(result.map_storage, "copyright", Self->Copyright);
+   if (not Self->Keywords.empty())    xq_map_append_string(result.map_storage, "keywords", Self->Keywords);
    if (not Self->Path.empty()) xq_map_append_string(result.map_storage, "path", Self->Path);
    xq_map_append_number(result.map_storage, "line-no", double(Self->Segments.size()));
 
@@ -494,7 +494,7 @@ static ERR xq_document_object_exists(objXQuery *, std::string_view, const std::v
    OBJECTID object_id = 0;
    bool exists = false;
    if ((not object_name.empty()) and
-      (FindObject(object_name.c_str(), CLASSID::NIL, FOF::NIL, &object_id) IS ERR::Okay)) {
+      (!FindObject(object_name.c_str(), CLASSID::NIL, &object_id))) {
       exists = valid_objectid(Parser->Self, object_id) ? true : false;
    }
 
@@ -607,7 +607,7 @@ static ERR xq_resolve_document_object(const parser *Parser, std::string_view Obj
    }
    else {
       auto object_name = std::string(ObjectName);
-      if (FindObject(object_name.c_str(), CLASSID::NIL, FOF::SMART_NAMES, &ObjectID) != ERR::Okay) {
+      if (FindObject(object_name.c_str(), CLASSID::NIL, &ObjectID) != ERR::Okay) {
          return ERR::NoMatchingObject;
       }
    }
@@ -624,19 +624,11 @@ static ERR xq_get_object_key(OBJECTPTR Object, std::string_view Key, std::string
    if (CheckAction(Object, AC::GetKey) != ERR::Okay) return ERR::Search;
 
    auto key = std::string(Key);
-   std::string buffer(4096, 0);
-   while (true) {
-      buffer.back() = 0;
-      struct acGetKey var = { key.c_str(), buffer.data(), int(buffer.size()) };
-      if (Action(AC::GetKey, Object, &var) != ERR::Okay) return ERR::Search;
-      if (buffer.back()) {
-         buffer.resize(buffer.size() * 2);
-         continue;
-      }
-
-      Result.assign(buffer.c_str());
-      return ERR::Okay;
-   }
+   std::string buffer;
+   struct acGetKey var = { key, &buffer };
+   if (Action(AC::GetKey, Object, &var) != ERR::Okay) return ERR::Search;
+   Result.assign(buffer);
+   return ERR::Okay;
 }
 
 static ERR xq_get_object_field(OBJECTID ObjectID, std::string_view FieldName, std::string &Result)
@@ -796,14 +788,14 @@ static ERR xq_prepare_query(parser *Parser, std::string_view Expression, XQEval 
    }
 
    query->setResolveVariable(C_FUNCTION(xq_resolve_runtime_scope, Parser));
-   query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION.data(), C_FUNCTION(xq_document_object_exists, Parser));
-   query->registerFunction(XQ_OBJECT_ID_FUNCTION.data(), C_FUNCTION(xq_document_object_id, Parser));
-   query->registerFunction(XQ_SELF_ID_FUNCTION.data(), C_FUNCTION(xq_document_self_id, Parser));
-   query->registerFunction(XQ_UID_FUNCTION.data(), C_FUNCTION(xq_document_uid, Parser));
-   query->registerFunction(XQ_PLATFORM_FUNCTION.data(), C_FUNCTION(xq_document_platform, Parser));
-   query->registerFunction(XQ_FIELD_FUNCTION.data(), C_FUNCTION(xq_document_field, Parser));
-   query->registerFunction(XQ_KEY_FUNCTION.data(), C_FUNCTION(xq_document_key, Parser));
-   query->registerFunction(XQ_TEMPLATE_CONTENT_FUNCTION.data(), C_FUNCTION(xq_document_template_content, Parser));
+   query->registerFunction(XQ_OBJECT_EXISTS_FUNCTION, C_FUNCTION(xq_document_object_exists, Parser));
+   query->registerFunction(XQ_OBJECT_ID_FUNCTION, C_FUNCTION(xq_document_object_id, Parser));
+   query->registerFunction(XQ_SELF_ID_FUNCTION, C_FUNCTION(xq_document_self_id, Parser));
+   query->registerFunction(XQ_UID_FUNCTION, C_FUNCTION(xq_document_uid, Parser));
+   query->registerFunction(XQ_PLATFORM_FUNCTION, C_FUNCTION(xq_document_platform, Parser));
+   query->registerFunction(XQ_FIELD_FUNCTION, C_FUNCTION(xq_document_field, Parser));
+   query->registerFunction(XQ_KEY_FUNCTION, C_FUNCTION(xq_document_key, Parser));
+   query->registerFunction(XQ_TEMPLATE_CONTENT_FUNCTION, C_FUNCTION(xq_document_template_content, Parser));
 
    if (query->setStatement(eval_expression) != ERR::Okay) {
       Self->Error = ERR::SetField;
@@ -850,10 +842,10 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    }
 
    if (auto err = query->evaluate(effective_xml, effective_tag ? effective_tag->ID : 0, XEF::NIL); err != ERR::Okay) {
-      CSTRING msg;
-      if (query->get(FID_ErrorMsg, msg) IS ERR::Okay) {
+      std::string_view msg;
+      if (!query->getErrorMsg(msg)) {
          Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
-            "XQuery error evaluating \"{}\": {}.", Expression, msg ? msg : "(none)");
+            "XQuery error evaluating \"{}\": {}.", Expression, msg.empty() ? std::string_view("(none)") : msg);
       }
       else Parser->log_error(effective_tag, err, "doc.xquery-evaluation-failed",
          "XQuery error evaluating \"{}\".", Expression);
@@ -861,7 +853,7 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
    }
 
    XPathValue *query_value = nullptr;
-   if ((query->get(FID_Result, query_value) IS ERR::Okay) and query_value) {
+   if ((!query->getResult(query_value)) and query_value) {
       raw_value = *query_value;
       have_raw_value = true;
       if (OutValue) *OutValue = raw_value;
@@ -877,17 +869,17 @@ static ERR xq_execute_query(parser *Parser, objXML *XMLContext, const XTag *Cont
          if (raw_value.Type IS XPVT::Boolean) *OutBoolean = raw_value.NumberValue != 0.0;
          else {
             std::string boolean_text;
-            if ((xq_value_to_string(raw_value, boolean_text) IS ERR::Okay) and (iequals("true", boolean_text))) {
+            if ((!xq_value_to_string(raw_value, boolean_text)) and (iequals("true", boolean_text))) {
                *OutBoolean = true;
             }
          }
       }
    }
    else {
-      CSTRING result = nullptr;
-      if (query->get(FID_ResultString, result) IS ERR::Okay) {
-         if ((OutString) and result) OutString->assign(result);
-         if ((OutBoolean) and result and iequals("true", result)) *OutBoolean = true;
+      std::string_view result;
+      if (!query->getResultString(result)) {
+         if ((OutString) and not result.empty()) OutString->assign(result);
+         if ((OutBoolean) and not result.empty() and iequals("true", result)) *OutBoolean = true;
       }
    }
 
@@ -1323,7 +1315,7 @@ static ERR xq_stringify_select_value(const XPathValue &Value, std::string &Resul
 }
 
 //********************************************************************************************************************
-// print@select always inserts text.  Callers may fall back to the exposed FID_ResultString when the raw value is not
+// print@select always inserts text.  Callers may fall back to the exposed ResultString when the raw value is not
 // available from the XQuery object.
 
 static ERR xq_select_to_print_text(const XPathValue &Value, std::string_view Fallback, bool HasValue,
@@ -1332,7 +1324,7 @@ static ERR xq_select_to_print_text(const XPathValue &Value, std::string_view Fal
    OutText.clear();
 
    if (HasValue) {
-      if (auto err = xq_stringify_select_value(Value, OutText); err IS ERR::Okay) return ERR::Okay;
+      if (auto err = xq_stringify_select_value(Value, OutText); !err) return ERR::Okay;
    }
 
    OutText.assign(Fallback);
@@ -1726,7 +1718,7 @@ void parser::tag_print(const tag_view &Tag)
          // This option is only supported in unrestricted mode
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             CacheFile *cache;
-            if (LoadFile(Tag.Attribs[1].Value.c_str(), LDF::NIL, &cache) IS ERR::Okay) {
+            if (!LoadFile(Tag.Attribs[1].Value, LDF::NIL, &cache)) {
                insert_text(Self, m_stream, m_index, std::string((CSTRING)cache->Data), (m_style.options & FSO::PREFORMAT) != FSO::NIL);
                UnloadFile(cache);
             }

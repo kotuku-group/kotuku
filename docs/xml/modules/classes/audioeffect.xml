@@ -1,0 +1,447 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioEffect</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>Support class for processors attached to an Audio mixing chain.</comment>
+    <version>1</version>
+    <id>93ba38b3</id>
+    <idstring>AUDIOEFFECT</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>AudioEffect is a support class for audio processors.  Use a derived class to perform DSP; the AudioEffect class itself passes samples through unchanged.</p>
+<p>A zero <fl>Channel</fl> applies the effect universally.  Otherwise use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>. Application chains process their channel set before it is added to the master mix.  The global chain processes the master mix before the built-in output filter.  Lower <fl>Order</fl> values run first; ties retain attachment order.</p>
+<p>Attachment, field changes and detachment are serialised with mixing.  Freeing an effect waits for any current mix window before detaching it.  Closing its channel set or freeing its Audio target disconnects the effect; a disconnected effect must be replaced to attach it again.  Global effects are immutable after initialisation.</p>
+<header>Parallel Branches</header>
+<p>Each chain processes its effects one after another.  To divide the signal and process it along separate paths, attach a container effect such as <class name="AudioSplitter">AudioSplitter</class> to the chain.  A container hosts a set of branches, each being an ordinary chain of effects, and sums their outputs.  The container is a single node in its chain, so effects can run before and after it.</p>
+<p>An effect is attached to a branch by setting its <fl>Parent</fl> to the container and its <fl>Branch</fl> to the branch index before initialisation, or by creating it as a child of the container.  It inherits the container's <fl>Audio</fl> and <fl>Channel</fl>, and is ordered by <fl>Order</fl> within its branch.  Branch effects publish meters, accept live changes and can be bypassed in the same way as effects in a top-level chain.  Containers cannot be nested.</p>
+<header>Stop Notifications</header>
+<p>Effects such as reverbs and delays continue to produce output after their source stops.  When a voice's path has effects, being its channel set's chain followed by the global chain, the sample's <code>OnStop</code> notification and the <class name="Sound" field="OnStop">Sound.OnStop</class> callback are held until that output has drained.  They are then delivered after the device queue, as for a path without effects, so the callback marks the approximate end of everything that the voice made audible.</p>
+<header>Parameter Schema</header>
+<p>Subclasses can publish their parameters in the <fl>Schema</fl> field, so that a client can present and change any effect without prior knowledge of class attributes.  The schema is an XML document:</p>
+<pre>&lt;effect class=&quot;AudioEqualiser&quot; version=&quot;1&quot; description=&quot;A parametric equaliser.&quot;&gt;
+  &lt;param key=&quot;gain&quot; label=&quot;Output Trim&quot; type=&quot;double&quot; unit=&quot;dB&quot; scale=&quot;linear&quot; min=&quot;-48&quot; max=&quot;48&quot; default=&quot;0&quot;/&gt;
+  &lt;group key=&quot;bands&quot; label=&quot;Band&quot; min=&quot;0&quot; max=&quot;64&quot;&gt;
+    &lt;param key=&quot;type&quot; label=&quot;Type&quot; type=&quot;enum&quot; default=&quot;0&quot;&gt;
+      &lt;option value=&quot;0&quot; key=&quot;peak&quot; label=&quot;Peak&quot; description=&quot;Boosts or cuts a range.&quot;/&gt;
+    &lt;/param&gt;
+    &lt;param key=&quot;q&quot; label=&quot;Q&quot; type=&quot;double&quot; scale=&quot;log&quot; min=&quot;0.1&quot; max=&quot;20&quot; default=&quot;0.707&quot;&gt;
+      &lt;rule key=&quot;type&quot; values=&quot;1,2&quot; max=&quot;1&quot;/&gt;
+    &lt;/param&gt;
+  &lt;/group&gt;
+  &lt;output key=&quot;response&quot; type=&quot;curve&quot;/&gt;
+&lt;/effect&gt;
+</pre>
+<p>The <code>effect</code>, <code>group</code>, <code>param</code> and <code>option</code> elements may carry a <code>description</code> attribute.  It contains one or more complete sentences that explain the item's purpose in terms suitable for presentation to the user, e.g. as a tooltip. The attribute is omitted if no description is available.</p>
+<p>A <code>param</code> element describes one value.  Its <code>type</code> is <code>double</code>, <code>int</code>, <code>bool</code> or <code>enum</code>; enumerations list their values as <code>option</code> elements.  The <code>unit</code> attribute is omitted for unitless values.  The <code>scale</code> is <code>linear</code> or <code>log</code> and indicates how a control should map positions to values.  The <code>min</code> and <code>max</code> bounds are inclusive unless <code>min-exclusive</code> or <code>max-exclusive</code> is set.  A <code>max</code> of <code>nyquist</code> means half of the <fl>OutputRate</fl> and is always exclusive. A <code>step</code> is present only for stepped values.</p>
+<p>A <code>group</code> element describes a repeated structure, such as a list of equaliser bands, with <code>min</code> and <code>max</code> entry counts. Its entries are numbered from zero. Use <method>GetGroupCount</method> to read the number of entries.</p>
+<p>A <code>rule</code> element relates a parameter to a sibling in the same group, or to another top-level parameter.  If the sibling named by <code>key</code> holds one of the listed <code>values</code>, the parameter is either ignored by the processor (<code>inactive=&quot;1&quot;</code>) or limited to a lower <code>max</code>.</p>
+<p>An <code>output</code> element names data that can be read back from the processor.  A <code>curve</code> output is read with <method>GetResponse</method>.  The <code>spectrum</code> and <code>waveform</code> outputs of an <class name="AudioAnalyser">AudioAnalyser</class> are read with its own methods.  Scalar outputs are meter values, read together with <method>ReadMeters</method> or individually with <method>GetOutput</method>. Their <code>label</code>, <code>description</code>, <code>unit</code>, <code>scope</code>, <code>semantics</code> and zero-based <code>slot</code> attributes describe the value and its location in the current meter layout.  A <code>channel</code> scope identifies a value measured on one channel of the processing layout, and its <code>channel</code> attribute holds the channel identity from the <code>SPK</code> constants.  A <code>global</code> scope identifies a value that applies to every channel, such as linked gain reduction.  Keys are stable, e.g. <code>input_peak_left</code>, and only channels present in the processing layout are listed.  Sample peaks are not true-peak measurements.  Gain reduction, where offered, is non-negative attenuation in decibels.  Other scalar outputs, such as the loudness and applied gain of an <class name="AudioLoudness">AudioLoudness</class>, are computed by the processor and described by their <code>unit</code> and <code>semantics</code>.</p>
+<p>The <code>slot</code> attributes describe the meter layout that was current when the schema was read.  A change of processing layout replaces the meter layout; use <method>GetMeterLayout</method> to resolve keys to slots, and repeat the resolution whenever <method>ReadMeters</method> reports a different <code>ID</code>.</p>
+<p>Parameters are addressed by key-paths: <code>key</code> for a top-level parameter, or <code>group[index].key</code> for a group member, e.g. <code>bands[2].frequency</code>.  Values are always in real units, such as hertz or decibels; they are never normalised.</p>
+<header>Changing Parameters</header>
+<p>Every top-level parameter of a built-in subclass is also available as a typed field, e.g. <class name="AudioCompressor" field="Threshold">AudioCompressor.Threshold</class>. The field name is the upper camel-case form of the schema key, so <code>max_boost</code> is <code>MaxBoost</code>.  Boolean parameters are integer fields that hold 0 or 1, and enumerations are integer lookup fields.  Parameter groups are edited with class-specific methods instead, such as <class name="AudioEqualiser" method="SetBand">AudioEqualiser.SetBand()</class> and <class name="AudioSplitter" method="InsertBranch">AudioSplitter.InsertBranch()</class>, which replace, insert or remove one entry as a single change.</p>
+<pre>comp = obj.new('AudioCompressor', { audio=audio, channel=channel, threshold=-24, ratio=3 })
+comp.makeup = 6
+</pre>
+<p>Field writes and group methods follow the same validation and commit path as <method>Batch</method>, with one parameter or entry per change:</p>
+<types type="State">
+<type name="Before Init()">The value is checked against its own range and stored.  Rules are not checked;
+<code>Init()</code> validates the complete state.</type>
+<type name="After Init()">The value is validated against every rule and committed immediately.  The processor ramps
+to the new value where it supports doing so.</type>
+<type name="Global chain">After initialisation the write fails with <code>ERR::Immutable</code>.</type>
+<type name="Disconnected">The write fails with <code>ERR::NotInitialised</code>.</type>
+</types>
+<p>An out-of-range value or a broken rule fails with <code>ERR::InvalidValue</code> and leaves the committed value unchanged.  Field reads return the committed value, as <action>GetKey</action> does.  Use <method>Batch</method> when several parameters must change together, for instance where a rule relates one parameter to another.</p>
+<p><method>Batch</method> is the generic interface.  It takes an ordered list of commands and applies them as one validated change, so related edits, such as switching a band's type together with its Q, never expose the processor to the state between them.  A command is a sequence of tokens separated by spaces or tabs.  Verbs are lower-case:</p>
+<types type="Command">
+<type name="set KEY VALUE">Sets the parameter at the key-path <code>KEY</code> to <code>VALUE</code>.  The value is a finite number with
+an optional leading <code>+</code>.  An enumeration also accepts the <code>key</code> of one of its options, e.g.
+<code>set bands[0].type low_shelf</code>.</type>
+<type name="insert GROUP INDEX">Inserts an entry filled with the schema defaults at <code>INDEX</code>, from zero to the current
+entry count.</type>
+<type name="remove GROUP INDEX">Removes the entry at <code>INDEX</code>.  Later entries move down by one and keep their processing
+state.</type>
+</types>
+<p>Commands apply in order to a working copy that exists only for the duration of the call.  An index in a later command refers to the working copy after the earlier commands, so <code>insert bands 0</code> followed by <code>set bands[0].gain 3</code> edits the new band.  Setting a key more than once is permitted; the last value wins.  Each value is checked against its own range as its command is applied.  Rules are checked once, against the final working copy, so the order of related <code>set</code> commands does not matter.</p>
+<p>Before initialisation the result is stored directly and <code>Init()</code> validates the complete state.  After initialisation the result is validated and committed as a single change.  If any command or rule fails, nothing is applied.</p>
+<p>Values are parsed as written.  Tiri f-strings format numbers to 14 significant digits (<code>f'{0.1 + 0.2}'</code> is <code>0.3</code>), so values built with them are not bit-exact.  This is harmless for audio parameters.  <action>GetKey</action> returns values with sufficient precision to preserve the original number.</p></description>
+    <source>
+      <file>class_audioeffect.cpp</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>GetKey</name>
+      <comment>Reads a parameter value by key.</comment>
+      <prototype>ERR acGetKey(*Object, std::string_view Key, std::string &amp;Value)</prototype>
+      <tiriPrototype>err, str = Object.acGetKey(Key:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">The name of a key value.</param>
+        <param type="STRING" name="Value">Pointer to a buffer space large enough to hold the retrieved value.</param>
+      </input>
+      <description>
+<p>Reads the committed value of a parameter published in the <fl>Schema</fl>.  Values are returned as numeric strings with sufficient precision to preserve the original number, including enumerated values.  Convert the result to a number when performing arithmetic.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Failed">The value could not be formatted.</error>
+        <error code="Search">The key is malformed or names an unknown parameter.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">The group index does not refer to an existing entry.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </action>
+
+  </actions>
+
+  <methods>
+    <method>
+      <name>Batch</name>
+      <comment>Applies a sequence of parameter edits as a single change.</comment>
+      <prototype>ERR fx::Batch(OBJECTPTR Object, kt::vector&lt;std::string&gt; Commands, INT * Failed)</prototype>
+      <tiriPrototype>err, Failed:num = Batch(Commands:array)</tiriPrototype>
+      <input>
+        <param type="kt::vector&lt;std::string&gt;" name="Commands">Ordered edit commands, e.g. <code>set gain -3</code> or <code>insert bands 0</code>.</param>
+        <param type="INT *" name="Failed">The zero-based index of the command that failed, or -1.</param>
+      </input>
+      <description>
+<p>Batch() applies an ordered list of edit commands to the parameters published in the <fl>Schema</fl>, then validates and commits the result as one change.  The processor never runs a partially edited state, and if any command fails or the result breaks a rule, nothing is applied.  The command grammar is described in the class documentation.</p>
+<pre>check eq.mtBatch(array&lt;str&gt; {
+   'insert bands 0',
+   'set bands[0].type low_shelf',
+   'set bands[0].frequency 100',
+   'set bands[0].q 0.7'
+})
+</pre>
+<p>Commands apply in order to a working copy that is private to the call.  Each value is checked against its own range as its command is applied, while rules that relate parameters to each other are checked once against the final state. Before initialisation the rules are not checked; <code>Init()</code> validates the complete state.  After initialisation the result is committed immediately and the processor ramps to the new values where it supports doing so.</p>
+<p><code>Failed</code> receives the zero-based index of the command that failed to parse, resolve or pass its range check.  It is -1 on success and when the failure cannot be attributed to a single command, such as a precondition or a broken rule. <code>ERR::InvalidValue</code> with a <code>Failed</code> value of -1 therefore indicates that the final state breaks a rule.</p>
+      </description>
+      <result>
+        <error code="Okay">Every command was applied, or <code>Commands</code> is empty.</error>
+        <error code="Search">A key or group is unknown.</error>
+        <error code="Args"><code>Commands</code> holds more than 1024 entries.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="OutOfRange">A group index is invalid, the group is full, or the group is at its minimum size.</error>
+        <error code="NotInitialised">The effect has been disconnected from its Audio object.</error>
+        <error code="Syntax">A command is empty, has an unknown verb, has the wrong number of tokens or has a malformed index.</error>
+        <error code="InvalidState">The change would alter the configured processor's algorithmic latency.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A value is malformed or out of range, or the resulting state breaks a rule.</error>
+        <error code="Immutable">The effect is attached to the global chain.</error>
+      </result>
+    </method>
+
+    <method>
+      <name>GetGroupCount</name>
+      <comment>Reads the number of entries in a parameter group.</comment>
+      <prototype>ERR fx::GetGroupCount(OBJECTPTR Object, STRVIEW Group, INT * Count)</prototype>
+      <tiriPrototype>err, Count:num = GetGroupCount(Group:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Group">The group key published in <fl>Schema</fl>, e.g. <code>bands</code>.</param>
+        <param type="INT *" name="Count">The number of entries is returned here.</param>
+      </input>
+      <description>
+<p>Returns the committed entry count for the named group.  The count can be read before initialisation or after the effect has been disconnected.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">The group is unknown.</error>
+        <error code="NoSupport">The effect does not publish a schema.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>GetMeterLayout</name>
+      <comment>Describes the values published by the effect's meters.</comment>
+      <prototype>ERR fx::GetMeterLayout(OBJECTPTR Object, struct MeterLayout ** Layout)</prototype>
+      <tiriPrototype>err, Layout:any = GetMeterLayout()</tiriPrototype>
+      <input>
+        <param type="struct MeterLayout **" name="Layout">Receives an owned snapshot of the meter descriptors and their ID.</param>
+      </input>
+      <description>
+<p>Call GetMeterLayout() to discover the meter values that the effect measures, typically to build level meters in a user interface.  The result is a <st>MeterLayout</st> snapshot containing a configuration identifier and a <code>Meters</code> array of <st>MeterInfo</st> records in slot order.  The <code>Slot</code> of each record is the index of its value in the <code>Values</code> of a reading from <method>ReadMeters</method>.</p>
+<p>Each record gives the value's stable <code>Key</code>, a human-readable <code>Label</code>, its <code>Unit</code> (e.g. <code>dBFS</code>), a <code>Scope</code> of either <code>channel</code> or <code>global</code>, and the <code>Semantics</code> of the measurement (e.g. <code>sample-peak</code>).  Values measured on one channel carry that channel's identity from the <code>SPK</code> constants in <code>Channel</code>, while global values such as linked gain reduction have a <code>Channel</code> of zero.  Missing units or semantics are empty strings.</p>
+<p>Descriptors are published only for the channels in the effect's processing layout, e.g. <code>input_peak_left</code> and <code>input_peak_right</code> for stereo, or <code>input_peak_centre</code> for mono.  Slots are dense and stable within one layout configuration.  Stable keys and channel identities, not slot numbers, preserve a value's meaning when the layout changes.</p>
+<p><code>ID</code> is the configuration identifier that the descriptors belong to, and uses the same definition as the <code>ID</code> of a <st>MeterReading</st> result.  Keep it with the descriptors and compare it with the <code>ID</code> of each reading from <method>ReadMeters</method>.  If the two differ, call GetMeterLayout() again before interpreting the values.  Any change to the meter layout, e.g. activating the <class name="Audio">Audio</class> object with a different output layout, changes the ID.  Other configuration changes, such as committing a parameter or toggling bypass, change it too, so a client can re-read an unchanged layout; this is harmless.</p>
+<p>The descriptors and their ID are copied together.  The snapshot owns its records and strings, so it remains valid after the effect's layout changes or the effect is freed.  The snapshot is allocated by the effect and must be released with <function module="Core">FreeResource</function> by C++ clients.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>caller-owns-result</tags>
+    </method>
+
+    <method>
+      <name>GetOutput</name>
+      <comment>Reads one value from a schema key.</comment>
+      <prototype>ERR fx::GetOutput(OBJECTPTR Object, STRVIEW Key, DOUBLE * Value)</prototype>
+      <tiriPrototype>err, Value:num = GetOutput(Key:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Key">Scalar output key from <fl>Schema</fl> or <method>GetMeterLayout</method>.</param>
+        <param type="DOUBLE *" name="Value">Latest value in the descriptor's units.</param>
+      </input>
+      <description>
+<p>Returns the latest completed interval value for a <code>Key</code>.  Keys are resolved against the current meter layout, so a key for a channel that is absent from the processing layout is not found.  GetOutput() is a convenience for reading a single value; use <method>ReadMeters</method> for coherent multi-value reads and lifecycle flags.  Curve outputs continue to use <method>GetResponse</method>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">Unknown key, including keys for channels absent from the processing layout.</error>
+        <error code="NoSupport">The key names a curve or another unsupported output kind.</error>
+        <error code="NotInitialised">The effect is disconnected.</error>
+        <error code="InvalidState">No current valid measurement is available, or the effect is idle or bypassed.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>GetProcessingFormat</name>
+      <comment>Reads the PCM format processed by the effect.</comment>
+      <prototype>ERR fx::GetProcessingFormat(OBJECTPTR Object, INT * SampleRate, ASF * SampleFormat, kt::vector&lt;int&gt; * Layout, INT64 * Generation, AFS * State)</prototype>
+      <tiriPrototype>err, SampleRate:num, SampleFormat:num, Layout:array, Generation:num, State:num = GetProcessingFormat()</tiriPrototype>
+      <input>
+        <param type="INT *" name="SampleRate">Frames per second, or zero if no format is available.</param>
+        <param type="ASF *" name="SampleFormat" lookup="ASF">Sample representation of the processed audio.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Layout">Receives the ordered channel identities from the <code>SPK</code> constants.</param>
+        <param type="INT64 *" name="Generation">Output configuration generation of the reported format.</param>
+        <param type="AFS *" name="State" lookup="AFS">Availability of the reported format.</param>
+      </input>
+      <description>
+<p>GetProcessingFormat() reports the committed format of the audio that passes through the effect.  Effects process the Audio object's floating-point mix, so <code>SampleFormat</code> is always <code>ASF::F32</code> in native byte order.  The input and output layouts of an effect are always identical.  Channel identities are listed in interleaved frame order.</p>
+<p>The format is committed when the <class name="Audio">Audio</class> object is activated.  An effect attached to an inactive Audio object has no committed format until activation, in which case <code>State</code> is <code>AFS::UNAVAILABLE</code> and the remaining results are empty. After the Audio object is deactivated, or if the effect is disconnected, the last committed format remains available and <code>State</code> is <code>AFS::INACTIVE</code>.</p>
+<types lookup="AFS"/>
+<p><code>Generation</code> identifies the committed output configuration and matches the value reported by <class name="Audio" method="GetOutputFormat">Audio.GetOutputFormat()</class> for the same configuration.  It changes whenever the Audio object commits a new processing configuration, including reactivation with an unchanged layout.  Meter layouts follow the processing layout; see <method>GetMeterLayout</method>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>GetResponse</name>
+      <comment>Computes the effect's frequency response.</comment>
+      <prototype>ERR fx::GetResponse(OBJECTPTR Object, std::span&lt;const double&gt; Frequencies, std::span&lt;double&gt; Magnitudes)</prototype>
+      <tiriPrototype>err = GetResponse(Frequencies:array, Magnitudes:array)</tiriPrototype>
+      <input>
+        <param type="std::span&lt;const double&gt;" name="Frequencies">Frequencies in hertz.  Each must be above zero and below half of the <fl>OutputRate</fl>.</param>
+        <param type="std::span&lt;double&gt;" name="Magnitudes">Receives the response in decibels.  Must be the same length as <code>Frequencies</code>.</param>
+      </input>
+      <description>
+<p>Computes the response of the effect at each of the given frequencies, in decibels, from its committed parameters at the current <fl>OutputRate</fl>.  Effects that support this method list an <code>output</code> of type <code>curve</code> in their <fl>Schema</fl>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">The arrays are empty, of different lengths, or longer than 4096 entries.</error>
+        <error code="NoSupport">The effect does not compute a response.</error>
+        <error code="NotInitialised">The output rate is not yet known.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+        <error code="InvalidValue">A frequency is not above zero and below half of the output rate.</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>ReadMeters</name>
+      <comment>Reads one coherent measurement of every meter value.</comment>
+      <prototype>ERR fx::ReadMeters(OBJECTPTR Object, struct MeterReading ** Reading)</prototype>
+      <tiriPrototype>err, Reading:any = ReadMeters()</tiriPrototype>
+      <input>
+        <param type="struct MeterReading **" name="Reading">Receives the latest measurement.</param>
+      </input>
+      <description>
+<p>ReadMeters() returns the effect's latest measurement interval as a <st>MeterReading</st> structure.  All values and metadata describe the same interval, so readings from different intervals are never mixed.  Use <method>GetOutput</method> instead when only one value is needed.</p>
+<p><code>Values</code> holds one element per meter descriptor, indexed by the <code>Slot</code> of the descriptors from <method>GetMeterLayout</method>. Compare the reading's <code>ID</code> with the ID returned by <method>GetMeterLayout</method>.  If they differ, the layout may have changed since the descriptors were read, e.g. after a device reconfiguration, so call <method>GetMeterLayout</method> again before interpreting the values.</p>
+<p>Peaks are sample peaks in dBFS, floored at -120 dBFS.  Gain reduction is non-negative attenuation in dB.  Values that the processor computes, such as loudness, are read at the end of the interval and are flagged <code>FLOOR</code> when they are at the floor of their range.  The <code>Flags</code> of each element of <code>Values</code> is a combination of the following:</p>
+<types lookup="AMV"/>
+<p>Intervals contain <code>ceil(OutputRate / 20)</code> frames (50 ms rounded up).  Reads are non-destructive; slow readers can miss intervals.  Idle publishes a partial final interval.  Reset and reconfiguration invalidate measurements. <code>Sequence</code> increases on publication.  <code>Position</code> counts processed output frames since reset; <code>Interval</code> is the number of frames represented.  <code>ID</code> identifies configuration and path changes, including changes to the meter layout.</p>
+<p>The reading's <code>Flags</code> reports the snapshot's validity and lifecycle state.  Bypassed and disconnected snapshots do not set <code>VALID</code>, and none of their values are flagged as valid.</p>
+<types lookup="AMF"/>
+<p>The reading is allocated by the effect and must be released with <function module="Core">FreeResource</function> by C++ clients.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
+        <error code="NotInitialised">The effect has not been initialised.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>caller-owns-result</tags>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>Audio</name>
+      <comment>Target Audio object, inherited from an Audio owner if omitted.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>OBJECTID</type>
+      <description>
+<p>Set before initialisation.  Explicit targets take precedence over ownership.  Ownership changes after attachment do not change the target.  Freeing the target disconnects all its effects, including effects owned by other objects.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Branch</name>
+      <comment>Zero-based index of the container branch that hosts the effect.</comment>
+      <access read="G" write="I">Get/Init</access>
+      <type>INT</type>
+      <description>
+<p>Set Branch before initialisation, together with <fl>Parent</fl>, to select the branch of a container effect such as <class name="AudioSplitter">AudioSplitter</class> that the effect is attached to.  Initialisation fails with <code>ERR::OutOfRange</code> if the branch does not exist.  The field is ignored if <fl>Parent</fl> is zero.</p>
+<p>Branch indexes change when the container's <code>branches</code> group is edited: removing an earlier branch moves the effect down by one, and inserting an earlier branch moves it up by one.  The effect stays attached to the same branch and reading this field returns its current index.  After the effect's branch is removed, the field retains the last index that the effect had.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Channel</name>
+      <comment>Channel-set handle, or zero for the global chain.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>INT</type>
+      <description>
+<p>Set before initialisation.  Use the complete handle returned by <class name="Audio" method="OpenChannels">Audio.OpenChannels()</class>, with a zero low word. Individual channel handles and closed channel sets are rejected.  This identifies a set of voice channels, not a speaker; the effect always processes every speaker channel of its processing layout.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Flags</name>
+      <comment>Optional processing flags.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type lookup="AEF">AEF</type>
+      <description>
+<types lookup="AEF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Latency</name>
+      <comment>Returns committed algorithmic delay in output frames.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>Latency reports the fixed delay, measured in frames at the <fl>OutputRate</fl>, that the effect's processor adds to the signal path.  The value should not be read until after the processor is configured.  Effects with no look-ahead or buffering, such as the equaliser, report zero.</p>
+<p>Setting the <code>BYPASS</code> flag reduces the reported latency to zero, because a bypassed effect does not delay the signal. The delay of a complete chain, including the global chain, can be read with the Audio class' <code>GetEffectStatus()</code> method.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Mutable</name>
+      <comment>Indicates whether the effect's parameters can be changed.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>Returns zero for an initialised effect in the global chain or an initialised effect disconnected from its Audio object or channel set.  Otherwise returns one.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Order</name>
+      <comment>Processing position within the chain.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>INT</type>
+      <description>
+<p>Lower values run first.  Ties resolve by original attachment order, including after an application effect is reordered. Global effects cannot change order after initialisation.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OutputRate</name>
+      <comment>Output sample rate of the attached Audio object.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+      <description>
+<p>Updated when the Audio device is activated.  Processors reset before processing the new output configuration.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Parent</name>
+      <comment>The container effect that hosts this effect, or zero for an effect in a top-level chain.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type>OBJECTID</type>
+      <description>
+<p>Set Parent before initialisation to attach the effect to a branch of a container effect such as <class name="AudioSplitter">AudioSplitter</class>, instead of attaching it directly to an Audio chain.  The <fl>Branch</fl> field selects the branch.  Creating the effect as a child of a container sets Parent automatically.</p>
+<p>The container must be initialised.  The effect inherits the container's <fl>Audio</fl> and <fl>Channel</fl>; if either field has been set to a different value, initialisation fails with <code>ERR::InvalidValue</code>.  Like the container, the effect is immutable after initialisation if it belongs to the global chain.  A container cannot be attached to the branch of another container.</p>
+<p>Within its branch, the effect is ordered by <fl>Order</fl>.  Removing the branch from the container, freeing the container, or disconnecting the container from its Audio object or channel set disconnects the effect.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Schema</name>
+      <comment>An XML description of the effect's parameters.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>The schema describes every parameter that can be read with <action>GetKey</action> and changed with <method>Batch</method>, including units, ranges, defaults, repeated groups and the rules between parameters.  The format is described in the class documentation.  Scalar outputs are listed for the channels of the current processing layout, with slots from the current meter layout.  Instance-specific bounds, such as the Nyquist frequency, are resolved against <fl>OutputRate</fl>.</p>
+<p>The value is empty if the class does not publish a schema.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="AEF" comment="Audio effect flags.">
+      <const name="BYPASS">Skip an application effect.  Global effects cannot be bypassed.</const>
+    </constants>
+
+    <constants lookup="AFS" comment="Availability of a reported processing format.">
+      <const name="ACTIVE">The reported format is committed and in use.</const>
+      <const name="INACTIVE">Processing has stopped.  The last committed format is reported.</const>
+      <const name="UNAVAILABLE">No processing format has been committed.  The format results are empty.</const>
+    </constants>
+
+    <constants lookup="AMF" comment="Audio meter snapshot flags.">
+      <const name="BYPASSED">The effect is bypassed.  The VALID flag is not set.</const>
+      <const name="DISCONNECTED">The effect is not attached to an effect chain.  The VALID flag is not set.</const>
+      <const name="IDLE">The measurement is idle or stale.</const>
+      <const name="NO_SAMPLES">No samples have been measured yet.</const>
+      <const name="VALID">The snapshot holds a valid measurement.</const>
+    </constants>
+
+    <constants lookup="AMV" comment="Per-value flags returned by AudioEffect.ReadMeters().">
+      <const name="FLOOR">The measured value was below the meter floor.  The reported value is the floor.</const>
+      <const name="VALID">The value holds a measurement from the snapshot's interval.</const>
+    </constants>
+
+    <constants lookup="ASF" comment="Sample representations, independent of the channel count.">
+      <const name="F32">32-bit IEEE-754 floating point samples in four bytes, with a nominal range of <code>-1.0</code> to <code>1.0</code>.</const>
+      <const name="S16">Signed 16-bit integer samples in two bytes.</const>
+      <const name="U8">Unsigned 8-bit integer samples in one byte.  Silence is <code>128</code>.</const>
+    </constants>
+
+  </types>
+  <structs>
+    <struct name="MeterInfo" comment="Describes one value published by an effect's meters.">
+      <field name="Key" type="STRING">Stable key, e.g. <code>input_peak_left</code></field>
+      <field name="Label" type="STRING">Human-readable label</field>
+      <field name="Unit" type="STRING">Unit of measurement, e.g. <code>dBFS</code>, or empty</field>
+      <field name="Scope" type="STRING">Either <code>channel</code> or <code>global</code></field>
+      <field name="Semantics" type="STRING">Kind of measurement, e.g. <code>sample-peak</code>, or empty</field>
+      <field name="Slot" type="INT">Index of the value in the Values of a MeterReading</field>
+      <field name="Channel" type="INT">Channel identity from SPK, or zero for a global value</field>
+    </struct>
+
+    <struct name="MeterLayout" comment="An owned snapshot of the descriptors returned by GetMeterLayout().">
+      <field name="ID" type="INT64">Configuration identifier shared with the matching MeterReading</field>
+      <field name="Meters" type="kt::vector&lt;MeterInfo&gt;">Meter descriptors in slot order</field>
+    </struct>
+
+    <struct name="MeterReading" comment="One coherent measurement of every meter value, from ReadMeters().">
+      <field name="Sequence" type="INT64">Publication sequence number; increases with each published interval</field>
+      <field name="ID" type="INT64">Configuration identifier; compare with the ID from GetMeterLayout()</field>
+      <field name="Position" type="INT64">Processed-frame position at the end of the interval</field>
+      <field name="Flags" type="AMF" lookup="AMF">Validity and lifecycle state of the reading</field>
+      <field name="Interval" type="INT">Length of the measurement interval in frames</field>
+      <field name="Values" type="kt::vector&lt;MeterValue&gt;">One value per meter descriptor, indexed by slot</field>
+    </struct>
+
+  </structs>
+</book>

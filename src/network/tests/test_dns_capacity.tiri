@@ -1,0 +1,20 @@
+   include 'network'
+
+@Test; @Requires(network=true) function CompletedLookupsReleaseCapacity()
+   local completed = 0
+   local lookup <close> = obj.new('NetLookup', {
+      flags=NLF_NO_CACHE,
+      callback=function(Lookup, Error)
+         assert(Error is ERR_Okay, 'Numeric forward resolution failed')
+         assert(#Lookup.addresses > 0, 'Forward resolution returned no addresses')
+         completed += 1
+      end
+   })
+
+   for i in {1 into 40} do
+      check lookup.mtResolveName('127.0.0.' .. i)
+      local deadline = mSys.PreciseTime() + 5000000
+      while completed < i and mSys.PreciseTime() < deadline do processing.sleep(0.001) end
+      assert(completed is i, 'Completed resolution did not release capacity')
+   end
+end

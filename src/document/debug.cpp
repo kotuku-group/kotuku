@@ -1,9 +1,7 @@
 
 //********************************************************************************************************************
 
-static std::string printable(RSTREAM &, stream_char, uint32_t = 60) __attribute__ ((unused));
-
-static std::string printable(RSTREAM &Stream, stream_char Start, uint32_t Length)
+[[maybe_unused]] static std::string printable(RSTREAM &Stream, stream_char Start, uint32_t Length = 60)
 {
    std::string result;
    result.reserve(Length);

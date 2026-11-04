@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/toggle",
+  "version": "1.0",
+  "description": "Toggle widget for Tiri graphical interfaces.",
+  "entry": "toggle.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "toggle",
+    "checkbox",
+    "gui",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0"
+  },
+  "files": [
+    {
+      "path": "toggle.tiri",
+      "size": 7709,
+      "sha256": "4cbdf30a4ac86d92959f037122f1b8ec688932f5b84a103e02ab1c0ad41484c5",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+<svg viewBox="0 0 200 190" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    The tile origin defined by x and y is part of the pattern coordinate system, so patternTransform must be applied
+    to it as well as to the tile content: user = patternTransform * (x + px, y + py).
+
+    In each row, the left panel is filled with the pattern and the right panel is a reference drawn with plain
+    rectangles.  The two panels are identical if the pattern is rendered correctly.  Both patterns produce
+    horizontal bands, so the reference is valid at any horizontal position.
+  -->
+
+  <!-- Row 1: rotate(90) maps the tile origin (5,0) to (0,5), so the red bands start at y = 5, 25, 45... -->
+  <pattern id="rotated" patternUnits="userSpaceOnUse" x="5" y="0" width="20" height="20"
+    patternTransform="rotate(90)">
+    <rect x="0" y="0" width="10" height="20" fill="red"/>
+    <rect x="10" y="0" width="10" height="20" fill="lime"/>
+  </pattern>
+
+  <rect x="0" y="0" width="90" height="90" fill="url(#rotated)"/>
+
+  <rect x="110" y="0" width="90" height="90" fill="lime"/>
+  <rect x="110" y="5" width="90" height="10" fill="red"/>
+  <rect x="110" y="25" width="90" height="10" fill="red"/>
+  <rect x="110" y="45" width="90" height="10" fill="red"/>
+  <rect x="110" y="65" width="90" height="10" fill="red"/>
+  <rect x="110" y="85" width="90" height="5" fill="red"/>
+
+  <!-- Row 2: scale(2) maps the tile origin (0,5) to (0,10), so the red bands start at y = 10, 50, 90... -->
+  <pattern id="scaled" patternUnits="userSpaceOnUse" x="0" y="5" width="20" height="20"
+    patternTransform="scale(2)">
+    <rect x="0" y="0" width="20" height="10" fill="red"/>
+    <rect x="0" y="10" width="20" height="10" fill="lime"/>
+  </pattern>
+
+  <rect x="0" y="100" width="90" height="90" fill="url(#scaled)"/>
+
+  <rect x="110" y="100" width="90" height="90" fill="lime"/>
+  <rect x="110" y="100" width="90" height="10" fill="red"/>
+  <rect x="110" y="130" width="90" height="20" fill="red"/>
+  <rect x="110" y="170" width="90" height="20" fill="red"/>
+</svg>

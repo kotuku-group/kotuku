@@ -1,0 +1,147 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>AudioReverb</name>
+    <type>class</type>
+    <module>Audio</module>
+    <comment>An algorithmic reverberator that simulates room ambience.</comment>
+    <version>1</version>
+    <id>6e30bc98</id>
+    <idstring>AUDIOREVERB</idstring>
+    <category>Audio</category>
+    <copyright>Paul Manias © 2002-2026</copyright>
+    <description>
+<p>The reverberator is a feedback-delay network of eight delay lines mixed by an orthogonal matrix, with an optional early-reflection stage that simulates the first distinct echoes from the walls of the room.</p>
+<p>Create new reverberator objects as a child of an <class name="Audio">Audio</class> object or set the inherited <class name="AudioEffect" field="Audio">AudioEffect.Audio</class> field. Use <class name="AudioEffect" field="Channel">AudioEffect.Channel</class> to process one channel set, or leave it at zero to process the global mix.  Application reverberators accept live changes; global reverberators become immutable after initialisation.</p>
+<p>Each parameter is available as a field, such as <fl>Decay</fl> and <fl>Size</fl>.  Field writes before initialisation are range-checked and stored; after initialisation each write is validated and applied immediately.  The same parameters are published through the inherited <class name="AudioEffect">AudioEffect</class> schema under lower-case keys, where they can be changed together with <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>:</p>
+<list type="bullet">
+<li><code>decay</code>: the time, in milliseconds, for the reverberation to fall by 60 dB at low frequencies.</li>
+<li><code>size</code>: the scale of the simulated room from 0 to 100 percent.  Delay-line lengths range from approximately
+9-18 ms at zero to 43-90 ms at 100 percent.</li>
+<li><code>pre_delay</code>: a gap of up to 250 ms that is inserted before the input reaches the reverberator.</li>
+<li><code>damping</code>: how much faster high frequencies decay than low frequencies.  The decay time at 4 kHz is reduced by
+0.9% for every percent of damping, so 100 percent decays 4 kHz ten times faster than low frequencies.  At output
+rates below 10 kHz the reference frequency is 40% of the output rate.</li>
+<li><code>diffusion</code>: the density of the reflections, controlled by four all-pass diffusers on each input channel.  Their
+coefficient is 0.75 at 100 percent.</li>
+<li><code>early_level</code>: the level of the early reflections in the wet output, from 0 to 100 percent.  The default of zero
+disables them.</li>
+<li><code>early_length</code>: the time from the first to the last early reflection, from 5 to 100 ms, which corresponds to the
+length of the room.</li>
+<li><code>mix</code>: the linear blend of dry and wet signals.  Zero passes the input unchanged and 100 percent outputs only
+the reverberation.</li>
+</list>
+<p>The wet signal is normalised so that its energy is close to that of the input, whatever the decay and size.  Longer decays therefore spread the same energy over a longer time rather than becoming louder.  Damping removes energy and is not compensated.  The normalisation holds on average across frequencies, but the reverberation's response is uneven, so a sustained tone can emerge up to about 10 dB above its input level.  Leave headroom at high mix settings, or place an effect that limits peaks after the reverb.</p>
+<p>The following creates a large hall for a playing channel set, then lengthens its decay:</p>
+<pre>reverb = obj.new('AudioReverb', { audio=audio, channel=channel, size=90, mix=30 })
+reverb.decay = 3500
+</pre>
+<p>Every field write after initialisation is a separate change.  To change several parameters in a single step, apply them together with <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>:</p>
+<pre>reverb.mtBatch(array&lt;str&gt; { 'set size 40', 'set decay 900', 'set early_level 50' })
+</pre>
+<p>A mono output is processed as a single channel.  A stereo input feeds alternate delay lines from each channel, and the two outputs are taken from orthogonal combinations of every line, so the wet signal is decorrelated between the speakers.</p>
+<header>Early Reflections</header>
+<p>The early reflections are eight taps on a delay line that each channel feeds after the pre-delay.  Their times follow a fixed pattern of prime numbers that is scaled by <code>early_length</code>, and the left and right channels use different times so that the reflections are decorrelated between the speakers.  The first left reflection arrives at the end of the pre-delay and the last right reflection arrives <code>early_length</code> later.  A mono output uses the left pattern.  The amplitude of each reflection falls with the distance it travels, and the reflections of an impulse carry the same energy as the input, as the late reverberation does.</p>
+<p>The early reflections are added to the wet output and do not feed the network, so the late reverberation is the same at every <code>early_level</code>.  At zero, the output is identical to that of a reverberator without early reflections.  Short lengths at high levels can sound like a flutter echo; combine them with a moderate <code>early_level</code>.</p>
+<p>The following adds the reflections of a long room to a small, diffuse reverberation:</p>
+<pre>reverb.mtBatch(array&lt;str&gt; { 'set early_level 60', 'set early_length 70', 'set size 30' })
+</pre>
+<header>Live Changes</header>
+<p>Changes to decay, damping, diffusion, early level and mix ramp linearly over 10 ms and preserve the reverberation that is already present.  A pre-delay or early length change crossfades from the old to the new delays over 10 ms, avoiding a pitch sweep.  A size change crossfades the input to a second network over 10 ms, while the output of the previous network fades out over 100 ms. Both networks are allocated when the processor is configured, so edits never allocate memory, and processing cost is up to twice the normal level during a size transition.  An edit that arrives during a pre-delay or early length crossfade, or a size transition, replaces a single queued target, which is applied when the current transition finishes.</p>
+<p>Device reactivation, leaving bypass and reaching idle discard the reverberation and apply the latest parameters without a transition.</p>
+<header>Tail and Drain</header>
+<p>The reverb has zero algorithmic latency.  After its input stops, it remains pending until every value written to its delay memory has stayed at least 120 dB below the largest input sample since the last reset, for long enough to overwrite that memory.  This takes approximately 1.5 times the decay time after a short sound, and up to 2.5 times after a sustained tone, which builds up a higher internal level.  Add the pre-delay and 250 ms to both figures.  The residual is relative to the input, so it is independent of the output bit depth.</p>
+<p>When other audio shares the reverb, a stopped voice's tail is estimated as the pre-delay, the longest delay line, the early reflection length when the early reflections are audible, and the decay time.  The published tail bound covers the early reflection length and 180 dB of decay.  A 60 dB decay time is not a guarantee of complete silence: with long decay settings, draining can reach <class name="Audio" field="MaxDrain">Audio.MaxDrain</class>, which then fades and discards the remainder.  Hard bypass and destruction cut the tail abruptly.</p>
+<p>Output rates from 8000 to 192000 Hz are supported.  Configuring the effect for any other rate fails with <code>ERR::NoSupport</code>.  Memory use is approximately 340 KB at 48 kHz in stereo, and scales in proportion to the output rate.</p></description>
+    <source>
+      <file>class_audioreverb.cpp</file>
+    </source>
+  </info>
+
+  <fields>
+    <field>
+      <name>Damping</name>
+      <comment>How much faster high frequencies decay than low frequencies, as a percentage.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 100% and the default is 50%.  This field mirrors the <code>damping</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Decay</name>
+      <comment>The time, in milliseconds, for the reverberation to fall by 60 dB at low frequencies.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 100 to 20000 ms and the default is 1500 ms.  This field mirrors the <code>decay</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Diffusion</name>
+      <comment>The density of the reflections, as a percentage.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 100% and the default is 70%.  Low values produce distinct echoes and high values a smooth wash.  This field mirrors the <code>diffusion</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>EarlyLength</name>
+      <comment>The time, in milliseconds, from the first to the last early reflection.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 5 to 100 ms and the default is 30 ms.  This field mirrors the <code>early_length</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>EarlyLevel</name>
+      <comment>The level of the early reflections in the wet output, as a percentage.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 100% and the default is 0%.  Zero disables the early reflections.  This field mirrors the <code>early_level</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Mix</name>
+      <comment>The proportion of reverberation in the output, as a percentage.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 100% and the default is 20%.  Zero leaves the input unchanged.  This field mirrors the <code>mix</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>PreDelay</name>
+      <comment>The gap, in milliseconds, before the input reaches the reverberation.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 250 ms and the default is 20 ms.  This field mirrors the <code>pre_delay</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Size</name>
+      <comment>The scale of the simulated room, as a percentage.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>The range is 0 to 100% and the default is 50%.  Larger rooms space their reflections further apart.  This field mirrors the <code>size</code> schema key.  To change it together with other parameters in a single step, use <class name="AudioEffect" method="Batch">AudioEffect.Batch()</class>.</p>
+      </description>
+    </field>
+
+  </fields>
+  <structs>
+  </structs>
+</book>

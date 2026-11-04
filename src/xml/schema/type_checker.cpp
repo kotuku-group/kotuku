@@ -183,7 +183,7 @@ namespace xml::schema
       if (Descriptor.children.empty()) return true;
 
       ankerl::unordered_dense::map<const ElementDescriptor *, size_t> counters;
-      ankerl::unordered_dense::map<std::string, const ElementDescriptor *> lookup;
+      SchemaStringMap<const ElementDescriptor *> lookup;
 
       for (const auto &child : Descriptor.children) {
          if (!child) continue;
@@ -202,10 +202,10 @@ namespace xml::schema
          std::string_view child_name(Child.Attribs[0].Name);
          const ElementDescriptor *rule = nullptr;
 
-         auto iter = lookup.find(std::string(child_name));
+         auto iter = lookup.find(child_name);
          if (iter != lookup.end()) rule = iter->second;
          else {
-            auto local_name = std::string(extract_local_name(child_name));
+            auto local_name = extract_local_name(child_name);
             auto local_iter = lookup.find(local_name);
             if (local_iter != lookup.end()) rule = local_iter->second;
          }

@@ -1,0 +1,338 @@
+-- Flute regression tests for collection-aware generic for loops.
+
+@Test function BareArrayIteration()
+   local values = array<int> { 10, 20, 30 }
+   local total = 0
+   local expected_index = 0
+   for index, value in values do
+      assert(index is expected_index, 'Bare array iteration should yield zero-based indices')
+      total += value
+      expected_index++
+   end
+   assert(total is 60, 'Bare array iteration should yield every element')
+end
+
+@Test function BareTableIteration()
+   local values = { alpha = 2, beta = 3, [7] = 5 }
+   local total = 0
+   local count = 0
+   for key, value in values do
+      assert(values[key] is value, 'Bare table iteration should yield matching key/value pairs')
+      total += value
+      count++
+   end
+   assert(total is 10 and count is 3, 'Bare table iteration should visit every entry')
+end
+
+@Test function BareTableHonoursPairsMetamethod()
+   local values = setmetatable({ ignored = 1 }, {
+      __pairs = function():<func, table, nil>
+         return next, { custom = 42 }, nil
+      end
+   })
+
+   local count = 0
+   for key, value in values do
+      assert(key is 'custom' and value is 42, 'Bare table iteration should use __pairs results')
+      count++
+   end
+   assert(count is 1, 'Custom __pairs iteration should control the result set')
+end
+
+@Test function BareTablePrefersIterMetamethod()
+   local iter_calls = 0
+   local pair_calls = 0
+   local values = { start = 2, stop = 4 }
+   setmetatable(values, {
+      __iter = function(...):func
+         assert(&& is values, '__iter should expose its table receiver as the current context')
+         assert(#{...} is 0, '__iter should receive no visible arguments for a table receiver')
+         iter_calls++
+         local current = &start - 1
+         local stop = &stop
+         return function():<num, num>
+            current++
+            if current > stop then return end
+            return current, current * 10
+         end
+      end,
+      __pairs = function(...):<func, table, nil>
+         assert(&& is values, '__pairs should retain its table receiver context')
+         assert(#{...} is 0, '__pairs should receive no visible arguments')
+         pair_calls++
+         return next, { fallback = 100 }, nil
+      end
+   })
+
+   local total = 0
+   for value, multiple in values do total += value + multiple end
+   assert(total is 99 and iter_calls is 1 and pair_calls is 0,
+      'Bare iteration should invoke __iter once and prefer it over __pairs')
+
+   total = 0
+   for _, value in pairs(values) do total += value end
+   assert(total is 100 and pair_calls is 1, 'Explicit pairs() should bypass __iter')
+end
+
+@Test function BareIterTargetEvaluatesOnceBeforePreparation()
+   local target_calls = 0
+   local iter_calls = 0
+   local values = {}
+   setmetatable(values, {
+      __iter = function():func
+         assert(target_calls is 1, 'The bare target should be evaluated before __iter runs')
+         iter_calls++
+         local emitted = false
+         return function():str
+            if emitted then return end
+            emitted = true
+            return 'prepared'
+         end
+      end
+   })
+
+   local function make_values():table
+      target_calls++
+      return values
+   end
+
+   local total = 0
+   for value in make_values() do
+      assert(value is 'prepared', 'The iterator returned by __iter should drive the loop')
+      total++
+   end
+   assert(target_calls is 1 and iter_calls is 1 and total is 1,
+      'Target evaluation and iterator preparation should both occur exactly once')
+end
+
+@Test function BareIterIgnoresOrdinaryAndIndexFields()
+   local field_calls = 0
+   local indexed_calls = 0
+   local field_values = { visible = 7 }
+   field_values.__iter = function():func
+      field_calls++
+      return function():num return 99 end
+   end
+
+   local total = 0
+   for key, value in field_values do
+      if key is 'visible' then total += value end
+   end
+   assert(total is 7 and field_calls is 0, 'An ordinary __iter field must not select the iteration protocol')
+
+   local indexed_values = setmetatable({ visible = 5 }, {
+      __index = function(Key):func
+         if Key is '__iter' then
+            indexed_calls++
+            return function():num return 99 end
+         end
+      end
+   })
+   total = 0
+   for key, value in indexed_values do
+      if key is 'visible' then total += value end
+   end
+   assert(total is 5 and indexed_calls is 0, '__index must not synthesise an iteration protocol')
+end
+
+@Test function BareIterRequiresAFunctionResult()
+   local script = obj.new('tiri', {
+      statement = 'local values = setmetatable({}, { __iter = function() return 42 end }); for value in values do end'
+   })
+   local result = script.acActivate()
+   assert(result != ERR_Okay or script.error != ERR_Okay, 'A non-function __iter result should fail preparation')
+   assert(script.errorMessage.find('__iter must return a function, got number') != nil,
+      'Invalid __iter results should identify the received type: ' .. script.errorMessage)
+end
+
+@Test function BareNativeValuesCanOverrideIteration()
+   local values = array<int> { 1, 2, 3 }
+   local handler_calls = 0
+   debug.setMetatable(values, {
+      __iter = function(Target):func
+         assert(Target is values, 'Native __iter handlers should receive their target as an explicit argument')
+         handler_calls++
+         local emitted = false
+         return function():num
+            if emitted then return end
+            emitted = true
+            return 99
+         end
+      end
+   })
+
+   local total = 0
+   for value in values do total += value end
+   assert(total is 99 and handler_calls is 1,
+      'A native value metatable should override the normal bare-array iterator')
+end
+
+@Test function CustomIteratorsRemainCorrectAfterJITAndMetatableMutation()
+   local values = {}
+   local meta = {}
+   setmetatable(values, meta)
+
+   meta.__iter = function():func
+      local current = 0
+      return function():num
+         current++
+         if current > 3 then return end
+         return current
+      end
+   end
+
+   function sum_custom(Target:table):num
+      local total = 0
+      for value in Target do total += value end
+      return total
+   end
+
+   jit.off()
+   local interpreted = sum_custom(values)
+
+   jit.on()
+   jit.flush()
+   local compiled = 0
+   for _ in {0 to 250} do compiled = sum_custom(values) end
+   assert(interpreted is 6 and compiled is 6, 'Custom iterators should agree before and after JIT compilation')
+
+   meta.__iter = function():func
+      local emitted = false
+      return function():num
+         if emitted then return end
+         emitted = true
+         return 99
+      end
+   end
+   assert(sum_custom(values) is 99, 'A later loop entry should observe a replacement __iter handler')
+end
+
+@Test function BareStoredRangeIteration()
+   local cases = {
+      { value = range(0, 5), expected = 10 },
+      { value = range(5, 0), expected = 15 },
+      { value = range(0, 4, true, 0.5), expected = 18 },
+      { value = range(3, 3), expected = 0 }
+   }
+   for _, case in pairs(cases) do
+      local total = 0
+      for value in case.value do total += value end
+      assert(total is case.expected,
+         f'Bare stored range iteration produced {total}; expected {case.expected} for {case.value}')
+   end
+end
+
+@Test function CollectionTargetEvaluatedOnce()
+   local calls = 0
+   function make_values():array<int>
+      calls++
+      return array<int> { 1, 2, 3 }
+   end
+
+   local total = 0
+   for _, value in make_values() do total += value end
+   assert(calls is 1 and total is 6, 'A bare collection target should be evaluated exactly once')
+end
+
+@Test function CallableTableUsesPairsWhenBare()
+   local call_count = 0
+   local values = setmetatable({ amount = 7 }, {
+      __call = function():num
+         call_count++
+         return &amount
+      end
+   })
+
+   local seen = 0
+   for key, value in values do
+      if key is 'amount' then seen = value end
+   end
+   assert(seen is 7 and call_count is 0, 'A bare callable table should use table iteration')
+   assert(values() is 7 and call_count is 1, 'An explicit call should continue to use __call')
+end
+
+@Test function DynamicTargetCanChangeCategory()
+   function sum_dynamic(Target:any, UseSecond:bool):num
+      local total = 0
+      for first, second in Target do total += UseSecond ? second : first end
+      return total
+   end
+
+   local values = array<int> { 2, 3, 5 }
+   for _ in {0 to 250} do assert(sum_dynamic(values, true) is 10) end
+   assert(sum_dynamic({ a = 4, b = 6 }, true) is 10)
+   assert(sum_dynamic(range(1, 5), false) is 10)
+   assert(sum_dynamic(values, true) is 10, 'Dynamic dispatch should remain valid after changing categories')
+end
+
+@Test function InterpreterAndJITResultsMatch()
+   function sum_array(Target:array<int>):num
+      local total = 0
+      for index, value in Target do total += index + value end
+      return total
+   end
+
+   function sum_table(Target:table):num
+      local total = 0
+      for _, value in Target do total += value end
+      return total
+   end
+
+   function sum_range(Target:range):num
+      local total = 0
+      for value in Target do total += value end
+      return total
+   end
+
+   local values = array<int> { 2, 3, 5 }
+   local entries = { a = 4, b = 6 }
+   local numbers = range(1, 5)
+
+   jit.off()
+   local interpreted = { sum_array(values), sum_table(entries), sum_range(numbers) }
+
+   jit.on()
+   jit.flush()
+   local compiled
+   for _ in {0 to 250} do
+      compiled = { sum_array(values), sum_table(entries), sum_range(numbers) }
+   end
+
+   assert(interpreted[1] is compiled[1] and interpreted[2] is compiled[2] and interpreted[3] is compiled[3],
+      'Known collection loops should produce matching interpreter and JIT results')
+end
+
+@Test function ExistingIteratorProtocolsRemainSupported()
+   function iterator(State, Control):<num, num>
+      local next_value = (Control ?? 0) + 1
+      if next_value > State then return end
+      return next_value, next_value * 2
+   end
+
+   local total = 0
+   for key, value in iterator, 3, 0 do total += key + value end
+   assert(total is 18, 'Explicit iterator triples should retain their established behaviour')
+
+   total = 0
+   for key, value in pairs({ a = 2, b = 3 }) do total += value end
+   assert(total is 5, 'Explicit pairs() should retain its established behaviour')
+end
+
+@Test function UnsupportedBareTargetsHaveFocusedDiagnostic()
+   local cases = {
+      { source = 'local value:any = nil; for item in value do end', type_name = 'nil' },
+      { source = 'local value:func = nil; for item in value do end', type_name = 'nil' },
+      { source = 'local value:any = 7; for item in value do end', type_name = 'number' },
+      { source = "local value:any = 'text'; for item in value do end", type_name = 'string' },
+      { source = 'local value:any = false; for item in value do end', type_name = 'bool' }
+   }
+
+   for _, case in pairs(cases) do
+      local script = obj.new('tiri', { statement = case.source })
+      local result = script.acActivate()
+      assert(result != ERR_Okay or script.error != ERR_Okay,
+         'Unsupported bare targets should fail before iteration')
+      assert(script.errorMessage.find('cannot iterate over a ' .. case.type_name .. ' value') != nil,
+         'Unsupported bare target diagnostic should identify its runtime type: ' .. script.errorMessage)
+   end
+end

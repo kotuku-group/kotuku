@@ -1,114 +1,59 @@
 
 // Style codes for each lexer are defined in SciLexer.h
 
-#define COL_BLACK          0x000000
-#define COL_DARKSLATEGREY  0x2F4F4F
-#define COL_LIGHTSLATEGREY 0x576889
-#define COL_GREY           0x808080
-#define COL_LIGHTGREY      0xd3d3d3
-#define COL_MIDNIGHTBLUE   0x191970
-#define COL_NAVYBLUE       0x000080
-#define COL_BLUE           0x0000ff
-#define COL_CYAN           0x00ffff
-#define COL_TURQUOISE      0x00ced1
-#define COL_CADETBLUE      0x5f9ea0
-#define COL_OLIVE          0x6b8e23
-#define COL_KHAKI          0xBDB76B
-#define COL_GOLD           0xFFD700
-#define COL_INDIANRED      0xCD5C5C
-#define COL_SADDLEBROWN    0x8B4513
-#define COL_FIREBRICK      0xB22222
-#define COL_BROWN          0xA52A2A
-#define COL_FORESTGREEN    0x228B22
-#define COL_BRIGHTRED      0xFF0000
-#define COL_BRIGHTGREEN    0xFF0000
-#define COL_DARKVIOLET     0x9400D3
-#define COL_RED            0xb00000
+#include <format>
 
-static const struct styledef std_styles[] = {
-   { STYLE_DEFAULT,    COL_BLACK, FTF::NIL },
-   { STYLE_LINENUMBER, COL_BLACK, FTF::NIL },
-   { STYLE_BRACELIGHT, COL_BRIGHTRED, FTF::BOLD },
-   { STYLE_BRACEBAD,   COL_BRIGHTRED, FTF::BOLD|FTF::ITALIC }  // Somebody set us up the bomb
-};
-
-static const struct styledef c_styles[] = {
-   { SCE_C_DEFAULT,                COL_BLACK, FTF::NIL },          // What you say?
-   { SCE_C_COMMENT,                COL_GREY, FTF::NIL },           // Standard C comment
-   { SCE_C_COMMENTLINE,            COL_GREY, FTF::NIL },           // // style comment
-   { SCE_C_COMMENTDOC,             COL_LIGHTSLATEGREY, FTF::NIL }, // Double-star comments
-   { SCE_C_NUMBER,                 COL_BLUE, FTF::NIL },           // Any number or float
-   { SCE_C_WORD,                   COL_FIREBRICK, FTF::NIL },
-   { SCE_C_STRING,                 COL_RED, FTF::NIL },          // Strings "..."
-   { SCE_C_CHARACTER,              COL_RED, FTF::NIL },          // Characters ' '
-   { SCE_C_UUID,                   COL_BRIGHTRED, FTF::NIL },    // \n, \r
-   { SCE_C_PREPROCESSOR,           COL_FORESTGREEN, FTF::NIL },  // #include, #define etc
-   { SCE_C_OPERATOR,               COL_BLACK, FTF::NIL },        // + - *
-   { SCE_C_IDENTIFIER,             COL_BLACK, FTF::NIL },        // The default colour
-   { SCE_C_STRINGEOL,              COL_BRIGHTRED, FTF::NIL },
-   { SCE_C_VERBATIM,               COL_BRIGHTRED, FTF::NIL },
-   { SCE_C_REGEX,                  COL_BLUE, FTF::NIL },
-   { SCE_C_COMMENTLINEDOC,         COL_GREY, FTF::NIL }, // // style comment
-   { SCE_C_WORD2,                  COL_BRIGHTRED, FTF::NIL },
-   { SCE_C_COMMENTDOCKEYWORD,      COL_GREY, FTF::NIL },
-   { SCE_C_COMMENTDOCKEYWORDERROR, COL_GREY, FTF::NIL },
-   { SCE_C_GLOBALCLASS,            COL_RED, FTF::NIL }
-};
-
-void ScintillaKTK::SetStyles(const struct styledef *Def, int Total)
-{
-   kt::Log log("SetStyles");
-   int i, index;
-
-   log.branch("%d", Total);
-
-   for (i=0; i < Total; i++) {
-      index = Def[i].Index;
-      WndProc(SCI_STYLESETFONT, index, (MAXINT)"courier"); // Font name, must be set to something
-      WndProc(SCI_STYLESETSIZE, index, 10); // Default Size
-      WndProc(SCI_STYLESETFORE, index, SCICOLOUR((uint8_t)(Def[i].Colour>>16), (uint8_t)(Def[i].Colour>>8), Def[i].Colour));
-
-      if ((index IS STYLE_BRACELIGHT) or (index IS STYLE_BRACEBAD)) {
-         WndProc(SCI_STYLESETBACK, index, SCICOLOUR(255, 255, 200));
-      }
-
-      if ((Def[i].FontStyle & FTF::BOLD) != FTF::NIL) WndProc(SCI_STYLESETBOLD, index, 1);
-      if ((Def[i].FontStyle & FTF::ITALIC) != FTF::NIL) WndProc(SCI_STYLESETITALIC, index, 1);
-   }
-
-   WndProc(SCI_STYLESETBACK, STYLE_DEFAULT, (long int)SCICOLOUR(scintilla->BkgdColour.Red, scintilla->BkgdColour.Green, scintilla->BkgdColour.Blue));
-   WndProc(SCI_STYLESETFORE, STYLE_DEFAULT, (long int)SCICOLOUR(scintilla->TextColour.Red, scintilla->TextColour.Green, scintilla->TextColour.Blue));
-}
+#include "lexer_styles.cxx"
+#include "lexer_keywords.cxx"
 
 /*********************************************************************************************************************
 ** This is the main entry point, we're called from the Init action here.
 */
 
-ScintillaKTK::ScintillaKTK(int SurfaceID, extScintilla *Scintilla)
-:  scintilla(Scintilla), surfaceid(SurfaceID)
+ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
+:  scintilla(Scintilla)
 {
-   lastkeytrans[0] = 0;
-   idle_timer_on   = false;
-   lastticktime    = 0;
-   captured_mouse  = false;
+   idle_on        = false;
+   ticking_on     = false;
+   captured_mouse = false;
 
-   // Assign the OBJECTID of the native Pandora Surface to the Platform-wrapper Scintilla object
+   // The platform Window is identified by the Kotuku Scintilla object (see pan_window.cxx)
 
    wMain = Scintilla;
 
-   SetStyles(c_styles, std::ssize(c_styles));
-   SetStyles(std_styles, std::ssize(std_styles));
+   SendScintilla(SCI_STYLESETFONT, STYLE_DEFAULT, "Clean");
+   SendScintilla(SCI_STYLESETSIZE, STYLE_DEFAULT, 10);
+   SendScintilla(SCI_STYLECLEARALL);
+   SendScintilla(SCI_STYLESETBOLD, STYLE_BRACELIGHT, 1);
+   SendScintilla(SCI_STYLESETBOLD, STYLE_BRACEBAD, 1);
+   SendScintilla(SCI_STYLESETITALIC, STYLE_BRACEBAD, 1);
+   SetStyleColours();
 
-   SendScintilla(SCI_SETMODEVENTMASK, SC_MOD_INSERTTEXT, SC_MOD_DELETETEXT |
+   // SC_MOD_CHANGEFOLD is required by FoldChanged()
+
+   SendScintilla(SCI_SETMODEVENTMASK, SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT | SC_MOD_CHANGEFOLD |
       SC_PERFORMED_USER | SC_PERFORMED_UNDO | SC_PERFORMED_REDO |
       SC_MULTISTEPUNDOREDO | SC_LASTSTEPINUNDOREDO | SC_MOD_BEFOREINSERT |
       SC_MOD_BEFOREDELETE | SC_MULTILINEUNDOREDO);
+
+   // Margin 1 shows the client's markers and margin 2 shows the fold markers.  Their widths are managed by the Symbols
+   // and FoldingMarkers fields, and the symbol margin is made sensitive while a MarginClick callback is defined.
+
+   SendScintilla(SCI_SETMARGINTYPEN, 1UL, long(SC_MARGIN_SYMBOL));
+   SendScintilla(SCI_SETMARGINMASKN, 1UL, long(~SC_MASK_FOLDERS));
+   SendScintilla(SCI_SETMARGINTYPEN, 2UL, long(SC_MARGIN_SYMBOL));
+   SendScintilla(SCI_SETMARGINMASKN, 2UL, long(SC_MASK_FOLDERS));
+   SendScintilla(SCI_SETMARGINSENSITIVEN, 2UL, 1L);
+   SendScintilla(SCI_SETFOLDFLAGS, (unsigned long)SC_FOLDFLAG_LINEAFTER_CONTRACTED);
+   DefineFoldMarkers();
 
    // We're always UTF-8
 
    SendScintilla(SCI_SETCODEPAGE, SC_CP_UTF8);
 
-   SetTicking(true);
+   // Call tips are drawn with STYLE_CALLTIP rather than fixed colours.  Tabs are not expanded.
+
+   SendScintilla(SCI_CALLTIPUSESTYLE, 0UL);
 }
 
 ScintillaKTK::~ScintillaKTK()
@@ -120,248 +65,468 @@ ScintillaKTK::~ScintillaKTK()
 
 void ScintillaKTK::Finalise()
 {
-   kt::Log log(__FUNCTION__);
+   kt::Log(__FUNCTION__).trace("");
 
-   log.trace("");
-
-   SetTicking(true);
+   SetTicking(false);
    ScintillaBase::Finalise();
 }
 
-//********************************************************************************************************************
-
-void ScintillaKTK::CreateCallTipWindow(Scintilla::PRectangle rc)
-{
-   kt::Log log(__FUNCTION__);
-   log.trace("");
-}
-
-//********************************************************************************************************************
-
-void ScintillaKTK::AddToPopUp(const char *label, int cmD, bool enabled)
-{
-   kt::Log log(__FUNCTION__);
-   log.trace("%s", label);
-
-   // The one and only Menu object is a member of ScintillaBase: Menu popup;
-
-   auto menu = reinterpret_cast<OBJECTPTR>(popup.GetID());
-
-   if (menu) {
-      char buffer[200];
-      snprintf(buffer, sizeof(buffer), "<item text=\"%s\"></item>", label);
-      acDataXML(menu, buffer);
-   }
-}
-
-//********************************************************************************************************************
-
-void ScintillaKTK::SetVerticalScrollPos()
-{
-   kt::Log log(__FUNCTION__);
-
-   log.traceBranch("%d", topLine);
-
-   DwellEnd(true); // Cancel any current mouse hover
-/*
-   if (!scintilla->ScrollLocked) {
-      scroll.ViewSize = -1;
-      scroll.PageSize = -1;
-      scroll.Position = topLine * vs.lineHeight;
-      scroll.Unit     = vs.lineHeight;
-      if (glBitmap) QueueAction(sc::UpdateScroll::id, scintilla->VScrollID, &scroll);
-      else ActionMsg(sc::UpdateScroll::id, scintilla->VScrollID, &scroll);
-   }
+/*********************************************************************************************************************
+** Code assistance.  The completion list and call tip are displayed by pan_listbox.cxx and pan_popup.cxx, while the
+** editing behaviour is ScintillaBase's.
 */
+
+ERR ScintillaKTK::panShowCompletions(int Length, std::string_view Candidates, SCACF Flags)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or (not scintilla->Viewport)) {
+      return log.warning(ERR::NotPossible);
+   }
+   if ((scintilla->Flags & SCIF::EDIT) IS SCIF::NIL) return log.warning(ERR::ReadOnly);
+
+   const int caret = sel.MainCaret();
+   if ((Length < 0) or (caret - Length < pdoc->LineStart(pdoc->LineFromPosition(caret)))) {
+      return log.warning(ERR::OutOfRange);
+   }
+
+   // AutoComplete finds the typed prefix with a binary search, which requires the order of its own comparison.
+
+   const bool ignore_case = (Flags & SCACF::IGNORE_CASE) != SCACF::NIL;
+
+   std::vector<std::string_view> list;
+   while (not Candidates.empty()) {
+      auto end = Candidates.find('\n');
+      auto item = Candidates.substr(0, end);
+      if (item.ends_with('\r')) item.remove_suffix(1);
+      if (not item.empty()) list.push_back(item);
+      if (end IS std::string_view::npos) break;
+      Candidates.remove_prefix(end + 1);
+   }
+
+   if (list.empty()) return ERR::NoData;
+
+   if (ignore_case) {
+      std::stable_sort(list.begin(), list.end(), [](std::string_view A, std::string_view B) {
+         return std::lexicographical_compare(A.begin(), A.end(), B.begin(), B.end(), [](char X, char Y) {
+            return Scintilla::MakeUpperCase(X) < Scintilla::MakeUpperCase(Y);
+         });
+      });
+   }
+   else std::sort(list.begin(), list.end());
+
+   list.erase(std::unique(list.begin(), list.end()), list.end());
+
+   std::string joined;
+   for (auto &item : list) {
+      if (not joined.empty()) joined.push_back('\n');
+      joined.append(item);
+   }
+
+   log.traceBranch("%d candidates, prefix length %d", int(list.size()), Length);
+
+   SendScintilla(SCI_AUTOCSETSEPARATOR, (unsigned long)'\n');
+   SendScintilla(SCI_AUTOCSETTYPESEPARATOR, 0UL);
+   SendScintilla(SCI_AUTOCSETIGNORECASE, (unsigned long)ignore_case);
+
+   // The engine's chooseSingle shortcut bypasses acceptance notifications and dropRestOfWord, and leaves an
+   // existing list open.  Start the normal list and accept its matching candidate before it can be painted.
+
+   SendScintilla(SCI_AUTOCSETCHOOSESINGLE, 0UL);
+   SendScintilla(SCI_AUTOCSETDROPRESTOFWORD, (unsigned long)((Flags & SCACF::DROP_REST_OF_WORD) != SCACF::NIL));
+   SendScintilla(SCI_AUTOCSHOW, (unsigned long)Length, joined.c_str());
+   if ((list.size() IS 1) and ((Flags & SCACF::CHOOSE_SINGLE) != SCACF::NIL) and (ac.Active())) {
+      AutoCompleteCompleted();
+   }
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// CallTipShow() closes any completion list, which is reported by panCompletionClosed().
+
+ERR ScintillaKTK::panShowCallTip(int Pos, std::string_view Text, int HighlightStart, int HighlightEnd)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or (not scintilla->Viewport)) {
+      return log.warning(ERR::NotPossible);
+   }
+
+   if (Pos IS -1) Pos = sel.MainCaret();
+   else if ((Pos < 0) or (Pos > pdoc->Length())) return log.warning(ERR::OutOfRange);
+
+   std::string text(Text);
+   calltip_pos = Pos;
+   SendScintilla(SCI_CALLTIPSHOW, (unsigned long)Pos, text.c_str());
+   if ((HighlightStart >= 0) and (HighlightEnd > HighlightStart)) {
+      SendScintilla(SCI_CALLTIPSETHLT, (unsigned long)HighlightStart, long(HighlightEnd));
+   }
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-void ScintillaKTK::SetHorizontalScrollPos()
+void ScintillaKTK::panCancelPopups()
 {
-   kt::Log log(__FUNCTION__);
+   AutoCompleteCancel();
+   ct.CallTipCancel();
+}
 
-   log.traceBranch("%d", xOffset);
+//********************************************************************************************************************
 
-   DwellEnd(true); // Cancel any current mouse hover
-/*
-   scroll.ViewSize = -1;
-   scroll.PageSize = -1;
-   scroll.Position = xOffset;
-   scroll.Unit     = vs.lineHeight;
-   if (glBitmap) QueueAction(sc::UpdateScroll::id, scintilla->HScrollID, &scroll);
-   else ActionMsg(sc::UpdateScroll::id, scintilla->HScrollID, &scroll);
-*/
+SCPOP ScintillaKTK::panActivePopup()
+{
+   if (ac.Active()) return SCPOP::COMPLETIONS;
+   if (ct.inCallTipMode) return SCPOP::CALL_TIP;
+   return SCPOP::NONE;
+}
+
+//********************************************************************************************************************
+// The position of the start of the word that is being completed.
+
+int ScintillaKTK::panCompletionStart()
+{
+   return ac.posStart - ac.startLen;
+}
+
+//********************************************************************************************************************
+// Point is in the coordinate system of the call tip.  CallTipClick() reports SCN_CALLTIPCLICK.
+
+void ScintillaKTK::panCallTipClick(Scintilla::Point Point)
+{
+   ct.MouseClick(Point);
+   CallTipClick();
 }
 
 /*********************************************************************************************************************
-** nMax: Total number of lines in document
-** nPage: Number of lines per view.
+** Report an event to the CompletionCallback.  Events that occur part way through an operation of ScintillaBase are
+** deferred, because the client may respond by opening or closing a pop-up, which would interfere with the operation.
+** Deferred events are reported by the ReportEvent method in the order that they occurred.
+*/
+
+void ScintillaKTK::ReportCompletion(SCAC Event, int Position, int Value, CSTRING Text, bool Deferred)
+{
+   auto &callback = scintilla->CompletionCallback;
+   if (not callback.defined()) return;
+
+   if (Deferred) {
+      completion_reports.push_back({ Event, Position, Value, Text ? Text : "" });
+      QueueAction(sci::ReportEvent::id, scintilla->UID);
+      return;
+   }
+
+   if (callback.stale()) {
+      callback.unpin();
+      callback.clear();
+      return;
+   }
+
+   if (not Text) Text = "";
+
+   if (callback.isC()) {
+      kt::SwitchContext ctx(callback.Context);
+      auto routine = (void (*)(extScintilla *, SCAC, int, int, CSTRING, APTR))callback.Routine;
+      routine(scintilla, Event, Position, Value, Text, callback.Meta);
+   }
+   else if (callback.isScript()) {
+      sc::Call(callback, std::to_array<ScriptArg>({
+         { "Scintilla", scintilla, FD_OBJECTPTR },
+         { "Event", int(Event) },
+         { "Position", Position },
+         { "Value", Value },
+         { "Text", Text }
+      }));
+   }
+}
+
+//********************************************************************************************************************
+// Called when the completion list closes.  A closure that does not follow an accepted completion is a cancellation.
+
+void ScintillaKTK::panCompletionClosed()
+{
+   if (completion_selected) completion_selected = false;
+   else ReportCompletion(SCAC::CANCELLED, sel.MainCaret(), 0, nullptr, true);
+}
+
+//********************************************************************************************************************
+// Called by the ReportEvent method.  The reports are moved out first because the callback can add more.
+
+void ScintillaKTK::panFlushCompletionReports()
+{
+   if (completion_reports.empty()) return;
+
+   auto reports = std::move(completion_reports);
+   completion_reports.clear();
+   for (auto &report : reports) {
+      ReportCompletion(report.event, report.position, report.value, report.text.c_str(), false);
+   }
+}
+
+/*********************************************************************************************************************
+** Scintilla calls these when topLine or xOffset change.  Scrollbars are external to the editor (see gui.scrollbar), so
+** the scroll position is expressed by moving the Page within the View.
+*/
+
+void ScintillaKTK::SetVerticalScrollPos()
+{
+   kt::Log(__FUNCTION__).trace("%d", topLine);
+   DwellEnd(true); // Cancel any current mouse hover
+   panSyncPage();
+}
+
+void ScintillaKTK::SetHorizontalScrollPos()
+{
+   kt::Log(__FUNCTION__).trace("%d", xOffset);
+   DwellEnd(true); // Cancel any current mouse hover
+   panSyncPage();
+}
+
+/*********************************************************************************************************************
+** Scintilla calls this with nMax = MaxScrollPos() + nPage - 1, where nPage is the number of lines that fit in the
+** client area.  The Page is sized so that the furthest that it can be moved within the View corresponds to the
+** maximum scroll positions of Scintilla, i.e. MaxScrollPos() lines vertically and the scroll width minus the width of
+** the text area horizontally.
+**
+** The result is always false.  Scintilla repaints the entire client when the result is true, because a native
+** scrollbar can change the client area.  The Page is external to the client area, so a change to its extent does not
+** require a repaint: the edits that change the extent invalidate the affected areas themselves.  This avoids a full
+** repaint for every character typed at the end of the widest line, and for every line added.
 */
 
 bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
 {
    kt::Log log(__FUNCTION__);
 
-   if (scintilla->ScrollLocked) return FALSE;
-#if 0
-   // Note: Sometimes Scintilla will attempt to change the scrollbars in the middle of surface redrawing.  This can
-   // cause problems, so message delays are used in those cases.
+   int height = (nMax - nPage + 1) * vs.lineHeight + scintilla->ViewHeight;
+   int width  = scintilla->ViewWidth;
+   if (wrapState IS eWrapNone) width = std::max(width, scrollWidth + vs.fixedColumnWidth + vs.rightMarginWidth);
 
-   // Horizontal scrollbar
+   if ((width IS scintilla->PageWidth) and (height IS scintilla->PageHeight)) return false;
 
-   scroll.ViewSize = -1;
-   scroll.PageSize = SendScintilla(SCI_GETSCROLLWIDTH);
-   scroll.Position = xOffset;
-   scroll.Unit     = vs.lineHeight;
+   log.traceBranch("Lines: %d/%d, Page: %dx%d", nMax, nPage, width, height);
+   DwellEnd(true);
 
-   log.traceBranch("Lines: %d, PageWidth: %d/%d, Delay: %c", nMax, scroll.PageSize, scroll.ViewSize, (glBitmap ? 'Y' : 'N'));
+   scintilla->PageWidth  = width;
+   scintilla->PageHeight = height;
 
-   if (glBitmap) QueueAction(sc::UpdateScroll::id, scintilla->HScrollID, &scroll);
-   else ActionMsg(sc::UpdateScroll::id, scintilla->HScrollID, &scroll);
-
-   // Vertical scrollbar
-
-   lines = SendScintilla(SCI_GETLINECOUNT);
-
-   if ((scintilla->Flags & SCIF::EXT_PAGE) != SCIF::NIL) {
-      // Scintilla's nMax variable caters for all the lines, plus the height of the viewing area.
-
-      scroll.ViewSize = nPage * vs.lineHeight;
-      scroll.PageSize = nMax * vs.lineHeight;
-   }
-   else {
-      scroll.ViewSize = -1;
-      scroll.PageSize = (nMax+1) * vs.lineHeight;
-      if ((scroll.PageSize > scintilla->Surface.Height) and (vs.lineHeight > 0)) {
-         scroll.PageSize -= (scintilla->Surface.Height / vs.lineHeight);
-      }
+   if (scintilla->Page) {
+      scintilla->Page->setWidth(width);
+      scintilla->Page->setHeight(height);
    }
 
-   scroll.Position = topLine * vs.lineHeight;
-   scroll.Unit     = vs.lineHeight;
-
-   log.trace("PageLength: %d/%d (lines: %d/%d), Pos: %d", scroll.PageSize, scroll.ViewSize, lines, nMax, scroll.Position);
-
-   if (glBitmap) QueueAction(sc::UpdateScroll::id, scintilla->VScrollID, &scroll);
-   else ActionMsg(sc::UpdateScroll::id, scintilla->VScrollID, &scroll);
-#endif
-   return TRUE;
+   return false;
 }
 
 //********************************************************************************************************************
-// Called after SCI_SETWRAPMODE and SCI_SETHSCROLLBAR.
+// Called after SCI_SETWRAPMODE and SCI_SETHSCROLLBAR.  Scrollbars are not managed by the editor, so there is nothing
+// to show or hide.
 
 void ScintillaKTK::ReconfigureScrollBars()
 {
-   kt::Log log(__FUNCTION__);
-   log.traceBranch();
-
-/*
-	 if (horizontalScrollBarVisible) acShowID(scintilla->HScroll);
-	 else acHideID(scintilla->HScroll);
-
-	 if (verticalScrollBarVisible) acShowID(scintilla->VScroll);
-	 else acHideID(scintilla->VScroll);
-*/
 }
 
-/****************************************************************************
-** Copies the selected text section to the Pandora clipboard.
-*/
+//********************************************************************************************************************
+// The clipboard holds plain text, so it cannot mark a clip as a rectangular selection.  The text of the most recent
+// rectangular copy is retained instead, and pasting identical text from the clipboard is treated as a rectangular
+// paste.  The record is shared by all editors in the process, so a rectangular clip can be pasted from one editor into
+// another.  Copying the same text from another application is indistinguishable and also pastes as a rectangle.
+// Scintilla objects are only used from the main thread.
+
+static std::string glRectangularClip;
+
+//********************************************************************************************************************
+// Report a clipboard failure with a log message and SEF::FAIL_CLIPBOARD.  Scintilla's cut, copy and paste have no
+// return value, so the error is also recorded for panClipboard().
+
+ERR ScintillaKTK::clipboard_failed(ERR Error, CSTRING Message)
+{
+   kt::Log log(__FUNCTION__);
+   log.warning("%s: %s", Message, GetErrorMsg(Error));
+
+   scintilla->ReportEventFlags |= SEF::FAIL_CLIPBOARD;
+   QueueAction(sci::ReportEvent::id, scintilla->UID);
+   return Error;
+}
+
+//********************************************************************************************************************
+// Copy text to the clipboard.  The text is copied in the document's line ending mode.  Text.len includes the
+// terminating null.
+
+ERR ScintillaKTK::copy_to_clipboard(const Scintilla::SelectionText &Text)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((not Text.s) or (Text.len <= 1)) return ERR::Okay;
+
+   std::string_view text(Text.s, size_t(Text.len - 1));
+   log.traceBranch("%d bytes, rectangular: %c", int(text.size()), Text.rectangular ? 'Y' : 'N');
+
+   objClipboard::create clipboard = { };
+   if (not clipboard.ok()) return clipboard_failed(ERR::CreateObject, "Failed to create a Clipboard object");
+
+   if (auto error = clipboard->addText(text); error != ERR::Okay) {
+      return clipboard_failed(error, "Failed to copy text to the clipboard");
+   }
+
+   if (Text.rectangular) glRectangularClip.assign(text);
+   else glRectangularClip.clear();
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Read the most recent text clip.  ERR::NoData is returned without a failure report if the clipboard holds no text.
+
+ERR ScintillaKTK::read_clipboard(std::string &Content)
+{
+   objClipboard::create clipboard = { };
+   if (not clipboard.ok()) return clipboard_failed(ERR::CreateObject, "Failed to create a Clipboard object");
+
+   kt::vector<std::string> files;
+   if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr); error != ERR::Okay) {
+      if (error IS ERR::NoData) return ERR::NoData;
+      return clipboard_failed(error, "Failed to query the clipboard");
+   }
+
+   if (files.empty()) return ERR::NoData;
+
+   objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
+   if (not file.ok()) return clipboard_failed(ERR::OpenFile, "Failed to open the clipboard file");
+
+   int64_t size;
+   if (auto error = file->getSize(size); error != ERR::Okay) {
+      return clipboard_failed(error, "Failed to read the clipboard file size");
+   }
+
+   if (size <= 0) return ERR::NoData;
+
+   Content.resize(size_t(size));
+   int len;
+   if (auto error = file->read(std::span<int8_t>((int8_t *)Content.data(), Content.size()), &len);
+       error != ERR::Okay) {
+      return clipboard_failed(error, "Failed to read the clipboard file");
+   }
+
+   Content.resize(size_t(len));
+
+   // Text clips are not null terminated.  If a null is present, the text ends there.
+
+   if (auto end = Content.find('\0'); end != std::string::npos) Content.resize(end);
+   if (Content.empty()) return ERR::NoData;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Paste the most recent text clip at the selection, replacing it.  Line endings are converted to the document's mode
+// unless SCI_SETPASTECONVERTENDINGS has disabled this.  A clip that came from a rectangular copy is pasted as a
+// rectangle.  The paste is a single undo action.
+
+ERR ScintillaKTK::paste_clipboard()
+{
+   kt::Log log(__FUNCTION__);
+
+   if (not CanPaste()) {
+      pdoc->CheckReadOnly(); // Reports SCN_MODIFYATTEMPTRO
+      return ERR::ReadOnly;
+   }
+
+   std::string content;
+   if (auto error = read_clipboard(content); error != ERR::Okay) return error;
+
+   const bool rectangular = (not glRectangularClip.empty()) and (content IS glRectangularClip);
+
+   log.traceBranch("%d bytes, rectangular: %c", int(content.size()), rectangular ? 'Y' : 'N');
+
+   {
+      Scintilla::UndoGroup ug(pdoc);
+      ClearSelection(multiPasteMode IS SC_MULTIPASTE_EACH);
+      auto start = sel.IsRectangular() ? sel.Rectangular().Start() : sel.Range(sel.Main()).Start();
+
+      if (rectangular) PasteRectangular(start, content.data(), int(content.size()));
+      else if (convertPastes) {
+         int len;
+         std::unique_ptr<char[]> text(Scintilla::Document::TransformLineEnds(&len, content.data(), content.size(),
+            pdoc->eolMode));
+         InsertPaste(start, text.get(), len);
+      }
+      else InsertPaste(start, content.data(), int(content.size()));
+   }
+
+   calc_longest_line(scintilla);
+   Redraw();
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Called by Scintilla for copy operations that do not go through Copy(), e.g. SCI_COPYRANGE and SCI_COPYTEXT.
 
 void ScintillaKTK::CopyToClipboard(const Scintilla::SelectionText &selectedText)
 {
-   kt::Log log(__FUNCTION__);
-   log.traceBranch();
-
-   auto clipboard = objClipboard::create { };
-   if (clipboard.ok()) {
-      if (clipboard->addText(selectedText.s) IS ERR::Okay) {
-
-      }
-   }
+   clip_error = copy_to_clipboard(selectedText);
 }
 
 /*********************************************************************************************************************
-** Cut the selected text to the clipboard.
+** Cut the selected text to the clipboard.  As for Scintilla's own implementation, a read-only document refuses the
+** cut entirely.  The selection is retained if the clipboard does not accept the text.  Editor::Cut() is not virtual,
+** so WndProc() routes SCI_CUT and SCI_LINECUT here.
 */
 
-void ScintillaKTK::Cut()
+ERR ScintillaKTK::cut_clipboard()
 {
-   kt::Log log(__FUNCTION__);
-   log.traceBranch();
+   if (SelectionEmpty()) return ERR::Okay;
 
-   if (SendScintilla(SCI_GETSELECTIONSTART) != SendScintilla(SCI_GETSELECTIONEND)) {
-      Scintilla::SelectionText text;
-      CopySelectionRange(&text);
-      CopyToClipboard(text);
-      ClearSelection();
-   }
+   pdoc->CheckReadOnly(); // Reports SCN_MODIFYATTEMPTRO
+   if ((pdoc->IsReadOnly()) or (SelectionContainsProtected())) return ERR::ReadOnly;
+
+   Scintilla::SelectionText text;
+   CopySelectionRange(&text);
+   if (auto error = copy_to_clipboard(text); error != ERR::Okay) return error;
+
+   ClearSelection();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
-** Copy the selected text to the clipboard.
+** Copy the selected text to the clipboard.  A rectangular selection is copied with a line ending after each row.
 */
 
 void ScintillaKTK::Copy()
 {
-   kt::Log log(__FUNCTION__);
-   log.traceBranch();
+   clip_error = ERR::Okay;
+   if (SelectionEmpty()) return;
 
-   if (SendScintilla(SCI_GETSELECTIONSTART) != SendScintilla(SCI_GETSELECTIONEND)) {
-      Scintilla::SelectionText text;
-      CopySelectionRange(&text);
-      CopyToClipboard(text);
-   }
+   Scintilla::SelectionText text;
+   CopySelectionRange(&text);
+   clip_error = copy_to_clipboard(text);
 }
 
 //********************************************************************************************************************
 
 void ScintillaKTK::Paste()
 {
-   kt::Log log(__FUNCTION__);
+   clip_error = paste_clipboard();
+}
 
-   log.traceBranch();
+/*********************************************************************************************************************
+** Run a clipboard operation for the Clipboard action.  The operation is sent as a Scintilla message, so it behaves as
+** the equivalent key press does.  If SCIF::EDIT is not set, cut and paste are refused and reported as SEF::FAIL_RO.
+*/
 
-   objClipboard::create clipboard = { };
-   if (clipboard.ok()) {
-      CSTRING *files;
-      if (clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr) IS ERR::Okay) {
-         objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
-         if (file.ok()) {
-            int len, size;
-            if ((file->get(FID_Size, size) IS ERR::Okay) and (size > 0)) {
-               STRING buffer;
-               if (AllocMemory(size, MEM::STRING, &buffer) IS ERR::Okay) {
-                  if (file->read(buffer, size, &len) IS ERR::Okay) {
-                     pdoc->BeginUndoAction();
+ERR ScintillaKTK::panClipboard(CLIPMODE Mode)
+{
+   unsigned int msg;
+   if (Mode IS CLIPMODE::CUT) msg = SCI_CUT;
+   else if (Mode IS CLIPMODE::COPY) msg = SCI_COPY;
+   else if (Mode IS CLIPMODE::PASTE) msg = SCI_PASTE;
+   else return ERR::Args;
 
-                        ClearSelection();
-                        pdoc->InsertString(CurrentPosition(), (char *)buffer, len);
-                        SetEmptySelection(CurrentPosition() + len);
+   const bool read_only = (scintilla->Flags & SCIF::EDIT) IS SCIF::NIL;
+   if (read_only) SendScintilla(SCI_SETREADONLY, 1UL);
 
-                     pdoc->EndUndoAction();
+   clip_error = ERR::Okay;
+   SendScintilla(msg);
 
-                     NotifyChange();
-                     Redraw();
-
-                     calc_longest_line(scintilla);
-                  }
-                  else error_dialog("Paste Error", "Failed to read data from the clipboard file.", ERR::Okay);
-
-                  FreeResource(buffer);
-               }
-               else error_dialog("Paste Error", nullptr, ERR::AllocMemory);
-            }
-         }
-         else {
-            char msg[200];
-            snprintf(msg, sizeof(msg), "Failed to load clipboard file \"%s\"", files[0]);
-            error_dialog("Paste Error", msg, ERR::Okay);
-         }
-      }
-   }
+   if (read_only) SendScintilla(SCI_SETREADONLY, 0UL);
+   return clip_error;
 }
 
 //********************************************************************************************************************
@@ -371,8 +536,12 @@ void ScintillaKTK::ClaimSelection()
 {
    kt::Log log(__FUNCTION__);
    log.traceBranch();
-   if (!SelectionEmpty()) primarySelection = true;
-   else primarySelection = false;
+   primarySelection = not SelectionEmpty();
+   if (primarySelection) {
+      Scintilla::SelectionText text;
+      CopySelectionRange(&text);
+      if (text.s and (text.len > 1)) gfx::SetPrimarySelection(std::string_view(text.s, text.len - 1));
+   }
 }
 
 //********************************************************************************************************************
@@ -458,7 +627,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
          row = SendScintilla(SCI_LINEFROMPOSITION, pos);
          col = SendScintilla(SCI_GETCOLUMN, pos);
 
-         if (row > 1) {
+         if (row > 0) {
             indent = SendScintilla(SCI_GETLINEINDENTATION, row - 1); // indent = The indentation of the previous line
 
             if (indent <= col);
@@ -476,6 +645,8 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       scintilla->ReportEventFlags |= SEF::NEW_CHAR;
       QueueAction(sci::ReportEvent::id, scintilla->UID);
+
+      ReportCompletion(SCAC::CHAR_ADDED, SendScintilla(SCI_GETCURRENTPOS), scn.ch, nullptr, false);
    }
    else if (code IS SCN_SAVEPOINTREACHED) {
       // The document is unmodified (recently saved)
@@ -488,7 +659,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       log.trace("[SAVEPOINTLEFT]");
 
       if (!scintilla->HoldModify) {
-         scintilla->set(FID_Modified, TRUE);
+         scintilla->setModified(TRUE);
       }
       else {
          // 'Hold Modifications' means that we have to tell Scintilla that the document is unmodified.
@@ -510,6 +681,12 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       // See HTML documentation for more information.
 
       log.trace("[MODIFIED] Type: %d, Length: %d, LinesAdded: %d, Line: %d", scn.modificationType, scn.length, scn.linesAdded, scn.line);
+
+      if (scn.modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) {
+         scintilla->DocumentRevision++;
+         track_modified_lines(scintilla, SendScintilla(SCI_LINEFROMPOSITION, scn.position), scn.linesAdded);
+      }
+      if (scn.modificationType & SC_MOD_CHANGEFOLD) FoldChanged(scn.line, scn.foldLevelNow, scn.foldLevelPrev);
    }
    else if (code IS SCEN_SETFOCUS) {
       log.trace("[SETFOCUS]");
@@ -530,16 +707,19 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       log.trace("[MACRORECORD]");
    }
    else if (code IS SCN_MARGINCLICK) {
-      // This notification tells the container that the mouse was clicked inside a margin that was marked as sensitive
-      // (see SCI_SETMARGINSENSITIVEN). This can be used to perform folding or to place breakpoints. The following
-      // SCNotification fields are used:
-      //
-      // Field   Usage
-      // modifiers The appropriate combination of SCI_SHIFT, SCI_CTRL and SCI_ALT to indicate the keys that were held down at the time of the margin click.
-      // position  The position of the start of the line in the document that corresponds to the margin click.
-      // margin    The margin number that was clicked.
+      // The mouse was clicked inside a sensitive margin.  The position is the start of the clicked line.  A click in
+      // the fold margin toggles the fold of a header line, and every click is then reported to the client.
 
-      log.trace("[MARGINCLICK]");
+      int line = pdoc->LineFromPosition(scn.position);
+      log.traceBranch("[MARGINCLICK] Margin: %d, Line: %d", scn.margin, line);
+
+      if ((scn.margin IS 2) and (pdoc->GetLevel(line) & SC_FOLDLEVELHEADERFLAG)) ToggleContraction(line);
+
+      KQ qualifiers = KQ::NIL;
+      if (scn.modifiers & SCI_SHIFT) qualifiers |= KQ::SHIFT;
+      if (scn.modifiers & SCI_CTRL)  qualifiers |= KQ::CTRL;
+      if (scn.modifiers & SCI_ALT)   qualifiers |= KQ::ALT;
+      report_margin_click(scintilla, SCMG(scn.margin), line, qualifiers);
    }
    else if (code IS SCN_NEEDSHOWN) {
       // Scintilla has determined that a range of lines that is currently invisible should be made visible. An example of where this may be
@@ -548,16 +728,14 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       // visible by calling SCI_ENSUREVISIBLE. The position and length fields of SCNotification indicate the range of the document that should be
       // made visible.
 
-      int i, first, last;
+      // The range is inclusive of the line at position + length, as an insertion has a length of zero.
 
-      first = SendScintilla(SCI_LINEFROMPOSITION, scn.position);
-      last = SendScintilla(SCI_LINEFROMPOSITION, scn.position + scn.length - 1);
+      int first = SendScintilla(SCI_LINEFROMPOSITION, scn.position);
+      int last = SendScintilla(SCI_LINEFROMPOSITION, scn.position + scn.length);
 
       log.trace("[NEEDSHOWN] First: %d, Last: %d", first, last);
 
-      for (i=first; i < last; ++i) {
-         SendScintilla(SCI_ENSUREVISIBLE, i);
-      }
+      for (int line=first; line <= last; line++) SendScintilla(SCI_ENSUREVISIBLE, line);
    }
    else if (code IS SCN_PAINTED) {
       // Painting has just been done. Useful when you want to update some other widgets based on a change in Scintilla,
@@ -606,6 +784,8 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       // elsewhere.
 
       log.trace("[CALLTIPCLICK]");
+
+      ReportCompletion(SCAC::CALL_TIP_CLICK, calltip_pos, scn.position, nullptr, true);
    }
    else if (code IS SCN_AUTOCSELECTION) {
       // The user has selected an item in an autocompletion list. The notification is sent before the selection is inserted. Automatic
@@ -616,6 +796,15 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       // text: The text of the selection.
 
       log.trace("[AUTOCSELECTION]");
+
+      completion_selected = true;
+      ReportCompletion(SCAC::SELECTED, int(scn.lParam), 0, scn.text, true);
+   }
+   else if (code IS SCN_AUTOCCANCELLED) {
+      // Not every cancellation is notified, so they are reported by panCompletionClosed() instead.
+   }
+   else if (code IS SCN_AUTOCCHARDELETED) {
+      // A character was deleted while the completion list is open, which updates the selected item.
    }
    else if (code IS 2012) {
       // Deprecated
@@ -625,65 +814,168 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
 //********************************************************************************************************************
 
+/*********************************************************************************************************************
+** Scintilla calls ScrollText() for vertical scrolls of up to ten lines, after topLine has changed.  The Bitmap content
+** is shifted by the scrolled distance and only the exposed band is invalidated.  The caret, margins and selection
+** scroll with the text because they are document-relative.
+**
+** The shift is only safe if the Bitmap reflects the previous topLine, which is tracked by painted_top.  A pending
+** Dirty area may have been recorded in either the old or the new client coordinates (Scintilla can invalidate between
+** changing topLine and calling ScrollText()), so both the original and the shifted areas remain dirty.  A full repaint
+** is used if the Bitmap is out of step, the editor is disabled (it is always painted in full) or most of the View
+** would be exposed anyway.
+*/
+
 void ScintillaKTK::ScrollText(int linesToMove)
 {
-   if (!surfaceid) return;
-/*
-   log.traceBranch("linesToMove: %d", linesToMove);
+   auto bmp = scintilla->Bitmap;
+   const int dy = linesToMove * vs.lineHeight;
+   const int height = scintilla->ViewHeight;
+   auto &dirty = scintilla->Dirty;
+   const bool dirty_empty = (dirty.Right <= dirty.Left) or (dirty.Bottom <= dirty.Top);
 
-   Scintilla::PRectangle rect = GetClientRectangle();
+   if ((not bmp) or (not bmp->Data) or (dy IS 0) or (std::abs(dy) * 2 >= height) or
+       (painted_top != topLine + linesToMove) or ((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or
+       ((not dirty_empty) and (dirty.Top <= 0) and (dirty.Bottom >= height))) {
+      painted_top = -1;
+      Redraw();
+      return;
+   }
 
-   struct mtMoveContent movecontent;
-   movecontent.XCoord = rect.left;
-   movecontent.YCoord = rect.top - (vs.lineHeight * linesToMove);
-   movecontent.Width  = rect.Width();
-   movecontent.Height = rect.Height();
-   movecontent.XDest  = rect.left;
-   movecontent.YDest  = rect.top;
-   movecontent.ClipLeft   = rect.left;
-   movecontent.ClipTop    = rect.top;
-   movecontent.ClipRight  = rect.left + rect.Width();
-   movecontent.ClipBottom = rect.top + rect.Height();
-   movecontent.Flags = 0;
-   ActionMsg(drw::MoveContent, surfaceid, &movecontent);
-*/
-   Scintilla::PRectangle rect = GetClientRectangle();
-   kt::ScopedObjectLock surface(surfaceid);
-   if (surface.granted()) acDrawArea(*surface, rect.left, rect.top, rect.Width(), rect.Height());
+   kt::Log(__FUNCTION__).trace("Lines: %d, Pixels: %d", linesToMove, dy);
+
+   // The Bitmap is one row taller than the View, and every row is shifted.
+
+   const size_t stride = size_t(bmp->LineWidth);
+   const int keep = bmp->Height - std::abs(dy);
+   if (dy > 0) memmove(bmp->Data + (size_t(dy) * stride), bmp->Data, size_t(keep) * stride);
+   else memmove(bmp->Data, bmp->Data + (size_t(-dy) * stride), size_t(keep) * stride);
+   painted_top = topLine;
+
+   // The exposed band is cleared so that a frame drawn before the repaint, e.g. after an external Page move that is
+   // detected during scene rendering, shows the background rather than duplicated rows.
+
+   auto &bkgd = scintilla->BkgdColour;
+   gfx::DrawRectangle(bmp, 0, (dy > 0) ? 0 : keep, bmp->Width, std::abs(dy),
+      bmp->packPixel(bkgd.Red, bkgd.Green, bkgd.Blue, 255), BAF::FILL);
+
+   if (not dirty_empty) {
+      auto pending = dirty;
+      invalidate_area(scintilla, pending.Left, pending.Top + dy, pending.Right, pending.Bottom + dy);
+   }
+
+   // The exposed band includes the row below the View, which is only painted as part of a partially visible line.
+
+   if (dy > 0) invalidate_area(scintilla, 0, 0, scintilla->ViewWidth, dy);
+   else invalidate_area(scintilla, 0, height + dy - 1, scintilla->ViewWidth, height);
 }
 
-//********************************************************************************************************************
+/*********************************************************************************************************************
+** Scintilla calls SetTicking(true) whenever the caret is shown at a new position.  The caret blink is restarted so that
+** the caret remains visible for a full period after it moves.  See UpdateTimers() for the conditions under which the
+** tick timer runs.
+*/
 
 void ScintillaKTK::SetTicking(bool On)
 {
    kt::Log log(__FUNCTION__);
    log.traceBranch("State: %d", On);
 
-   if (!On) ticking_on = false;
-   else if (!ticking_on) {
-      ticking_on = true;
-      lastticktime = (PreciseTime() / 1000LL);
+   ticking_on = On;
+   if (On) {
+      timer.ticksToWait = caret.period;
+      UpdateTimers();
    }
 }
 
+/*********************************************************************************************************************
+** Scintilla requests idle processing when it has background work to do, such as wrapping lines.  Returning true
+** confirms that Idle() will be called until it reports that the work is complete.
+*/
+
+bool ScintillaKTK::SetIdle(bool On)
+{
+   idle_on = On;
+   if (On) UpdateTimers();
+   return true;
+}
+
+/*********************************************************************************************************************
+** Start the tick and idle timers if they are required.  Timers are not stopped here because a timer cannot be removed
+** while its own callback is running.  Instead, tick_timer() and idle_timer() end their subscriptions when panTick() or
+** panIdle() report that there is nothing left to do.  The timers are subscribed for the Scintilla object, so that
+** they are removed with it.
+*/
+
+void ScintillaKTK::UpdateTimers()
+{
+   kt::SwitchContext ctx(scintilla);
+
+   if ((TickRequired()) and (not scintilla->TickTimer)) {
+      // Tick() counts down the caret period and other delays in steps of tickSize milliseconds.
+      SubscribeTimer(double(timer.tickSize) / 1000.0, C_FUNCTION(tick_timer), &scintilla->TickTimer);
+   }
+
+   if ((idle_on) and (not scintilla->IdleTimer)) {
+      SubscribeTimer(IDLE_INTERVAL, C_FUNCTION(idle_timer), &scintilla->IdleTimer);
+   }
+}
+
+/*********************************************************************************************************************
+** Ticking is only necessary for blinking the caret while the editor has the focus, and for scrolling while the mouse
+** is captured.  Tick() repeats the last mouse movement while the mouse is captured, which scrolls the document if the
+** pointer is held outside the client area.
+*/
+
+bool ScintillaKTK::TickRequired()
+{
+   return (HaveMouseCapture()) or ((ticking_on) and (hasFocus) and (caret.period > 0));
+}
+
 //********************************************************************************************************************
-// Grab or release the mouse and keyboard.  This is usually called when the user clicks a mouse button and holds it
-// while dragging the mouse (e.g. when highlighting text).
+// Called by tick_timer().  Returns false if the timer is no longer required.
+
+bool ScintillaKTK::panTick()
+{
+   if (not TickRequired()) return false;
+   Tick(); // Goes to -> Editor::Tick()
+   return TickRequired();
+}
+
+//********************************************************************************************************************
+// Called by idle_timer().  Returns false if the timer is no longer required.
+
+bool ScintillaKTK::panIdle()
+{
+   if (idle_on) idle_on = Idle();
+   return idle_on;
+}
+
+//********************************************************************************************************************
+// Scintilla captures the mouse while the user holds a button and drags (e.g. when selecting text).  The scene already
+// directs all pointer input to the Canvas while the LMB is held, so the capture state is only recorded here.  The tick
+// timer runs while the mouse is captured, so that holding the pointer outside the client keeps scrolling.
 
 void ScintillaKTK::SetMouseCapture(bool On)
 {
    kt::Log log(__FUNCTION__);
    log.traceBranch("State: %d", On);
    captured_mouse = On;
+   if (On) UpdateTimers();
 }
 
-/*********************************************************************************************************************
-** Simply returns the capture state.
-*/
+//********************************************************************************************************************
+// Scintilla shows the arrow over selected text and the reverse arrow over margins.
+
+void ScintillaKTK::DisplayCursor(Scintilla::Window::Cursor Cursor)
+{
+   ScintillaBase::DisplayCursor(Cursor);
+}
+
+//********************************************************************************************************************
 
 bool ScintillaKTK::HaveMouseCapture()
 {
-   //log.trace("HaveMouseCapture()");
    return captured_mouse;
 }
 
@@ -698,6 +990,22 @@ sptr_t ScintillaKTK::WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam
 
    case SCI_GETDIRECTPOINTER:
       return reinterpret_cast<sptr_t>(this);
+
+   case SCI_CUT: // Editor::Cut() is not virtual
+      if (recordingMacro) NotifyMacroRecord(iMessage, wParam, lParam);
+      clip_error = cut_clipboard();
+      SetLastXChosen();
+      return 0;
+
+   case SCI_LINECUT: { // Cut the lines that the selection touches, as Editor::KeyCommand() does
+      if (recordingMacro) NotifyMacroRecord(iMessage, wParam, lParam);
+      int start = pdoc->LineStart(pdoc->LineFromPosition(SelectionStart().Position()));
+      int end = pdoc->LineStart(pdoc->LineFromPosition(SelectionEnd().Position()) + 1);
+      SetSelection(start, end);
+      clip_error = cut_clipboard();
+      SetLastXChosen();
+      return 0;
+   }
 
    default:
       return ScintillaBase::WndProc(iMessage, wParam, lParam);
@@ -722,59 +1030,66 @@ sptr_t ScintillaKTK::DefWndProc(unsigned int iMessage, uptr_t wParam, sptr_t lPa
 }
 
 /*********************************************************************************************************************
-** Refer to the pan_surface.cxx file for the drawing routines that are used when panDraw() is active.
+** Paint an Area of the client into the Scintilla object's Bitmap.  Refer to pan_surface.cxx for the drawing routines.
+** If Scintilla abandons the paint because a wider area needs to be redrawn (for instance, styling has spilled over a
+** line end) then the entire client is repainted immediately, as the GTK platform does.
 */
 
-void ScintillaKTK::panDraw(objSurface *TargetSurface, objBitmap *Bitmap)
+void ScintillaKTK::panPaint(Scintilla::PRectangle Area)
 {
    kt::Log log(__FUNCTION__);
-   Scintilla::PRectangle rcClient;
-   Scintilla::Surface *surface;
 
    if (this->paintState != notPainting) return; // Recursion prevention
+   if (not scintilla->Bitmap) return;
 
-   Scintilla::PRectangle paintrect(Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right, Bitmap->Clip.Bottom);
+   auto rcClient = GetClientRectangle();
+
+   log.traceBranch("Area: %dx%d - %dx%d", Area.left, Area.top, Area.Width(), Area.Height());
+
+   std::unique_ptr<Scintilla::Surface> surface(Scintilla::Surface::Allocate());
+   if (not surface) return;
+   surface->Init(scintilla->Bitmap, wMain.GetID());
 
    this->paintState = painting;
-   this->rcPaint    = paintrect;
-   rcClient         = GetClientRectangle();
+   this->rcPaint    = Area;
    this->paintingAllText = rcPaint.Contains(rcClient);
-
-   log.traceBranch("Area: %dx%d - %dx%d", rcClient.left, rcClient.top, rcClient.Width(), rcClient.Height());
-
-   // Create a new surface object (SurfacePan)
-
-   if ((surface = Scintilla::Surface::Allocate())) {
-      surface->Init(Bitmap, nullptr);
-      this->Paint(surface, paintrect);      // Get Scintilla to do the painting.  See Editor::paint()
-      surface->Release();
-      delete surface;
-   }
+   this->Paint(surface.get(), rcPaint);
 
    if (this->paintState IS paintAbandoned) {
-      // Painting area was insufficient to cover new styling or brace highlight positions, word wrapping etc.  This
-      // means that the clipping area needs to be extended, and we're not able to do that from inside a Draw() call.
-      // The simplest solution is to send a new draw message to the parent surface, telling it to redraw the entire area.
-
-      QueueAction(AC::Draw, TargetSurface->UID);
+      this->paintState = painting;
+      this->rcPaint    = rcClient;
+      this->paintingAllText = true;
+      this->Paint(surface.get(), rcPaint);
    }
 
    this->paintState = notPainting;
+   painted_top = topLine;
+
+   // Painted lines that are wider than the scroll width widen the Page, e.g. a proportional face can rank a line
+   // below a narrower one in calc_longest_line().
+
+   if ((wrapState IS eWrapNone) and (lineWidthMaxSeen > 0)) {
+      grow_scroll_width(scintilla, lineWidthMaxSeen, scintilla->LongestLine);
+   }
+}
+
+//********************************************************************************************************************
+// Invalidate the entire client area.
+
+void ScintillaKTK::panRedraw()
+{
+   Redraw();
 }
 
 /*********************************************************************************************************************
-** Called from the SetFont() method whenever the user opts to change the font.
+** Called on initialisation and whenever Face or FontSize changes.  SurfacePan::GetFont() reads the style handles
+** from the owning Scintilla object.
 */
 
-void ScintillaKTK::panFontChanged(void *Font, void *BoldFont, void *ItalicFont, void *BIFont)
+void ScintillaKTK::panFontChanged()
 {
    kt::Log log(__FUNCTION__);
    log.traceBranch();
-
-   glFont       = (OBJECTPTR)Font;
-   glBoldFont   = (OBJECTPTR)BoldFont;
-   glItalicFont = (OBJECTPTR)ItalicFont;
-   glBIFont     = (OBJECTPTR)BIFont;
 
    this->InvalidateStyleRedraw();
    this->RefreshStyleData();
@@ -809,94 +1124,98 @@ void ScintillaKTK::panWordwrap(int Value)
    //SendScintilla(SCI_ENSUREVISIBLE, SendScintilla(SCI_LINEFROMPOSITION, SendScintilla(SCI_GETCURRENTPOS)));
 }
 
-//********************************************************************************************************************
+/*********************************************************************************************************************
+** Process a key press.  Command keys are translated to Scintilla key codes and passed through the key map, while
+** printable characters are inserted as text.  Letters are always passed to the key map in upper case, because that is
+** how its shortcuts are defined (e.g. Ctrl+Z).
+**
+** Ctrl and Alt combinations are treated as shortcuts, with the exception of AltGr.  AltGr is reported as R_ALT on X11
+** layouts that map it to Alt_R, and with an additional Ctrl on Windows.  A printable character that is produced with
+** AltGr is text.  On X11 layouts that map AltGr to ISO_Level3_Shift, no qualifier is reported for it.
+**
+** If SCIF::EDIT is not set, the document is read-only for the duration of the key press.  Navigation and selection
+** are unaffected, while edits are refused and reported as SEF::FAIL_RO.  The document is otherwise left writable so
+** that it can always be modified through the API.
+*/
 
-void ScintillaKTK::panIdleEvent()
+void ScintillaKTK::panKeyDown(KEY Code, KQ Qualifiers, int Unicode)
 {
-   if (idle_timer_on) {
-      bool keepidling = Idle();
+   const bool shift = (Qualifiers & KQ::SHIFT) != KQ::NIL;
+   const bool ctrl  = (Qualifiers & KQ::CTRL) != KQ::NIL;
+   const bool alt   = (Qualifiers & KQ::ALT) != KQ::NIL;
+   const bool altgr = ((Qualifiers & KQ::R_ALT) != KQ::NIL) and ((Qualifiers & KQ::L_ALT) IS KQ::NIL);
+   const bool printable = ((Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) and (Unicode >= 0x20) and (Unicode != 0x7f);
 
-      if (!keepidling) {
-         //SetIdle(false);
-         idle_timer_on = FALSE;
-      }
+   const bool read_only = (scintilla->Flags & SCIF::EDIT) IS SCIF::NIL;
+
+   // Ctrl+Space requests completion candidates from the client.  It has no binding in Scintilla's key map.
+
+   if ((ctrl) and (not alt) and (not shift) and (Code IS KEY::SPACE)) {
+      if (not read_only) ReportCompletion(SCAC::REQUEST, SendScintilla(SCI_GETCURRENTPOS), 0, nullptr, false);
+      return;
    }
 
-   if (ticking_on) {
-#ifdef _DEBUG
-      if ((int)((PreciseTime()/1000LL) - lastticktime) >= caret.period) {
-#else
-      if ((int)((PreciseTime()/1000LL) - lastticktime) >= caret.period / 5) {
-#endif
-    	 Tick();  // Goes to -> Editor::Tick()
-         lastticktime = (PreciseTime()/1000LL);
-      }
+   if (read_only) SendScintilla(SCI_SETREADONLY, 1UL);
+
+   if (int key = command_key(Code, printable)) KeyDown(key, shift, ctrl, alt);
+   else if ((printable) and ((altgr) or ((not ctrl) and (not alt)))) {
+      char utf8[8];
+      int len = UTF8WriteValue(Unicode, std::span<int8_t>((int8_t *)utf8, sizeof(utf8)));
+      if (len > 0) AddCharUTF(utf8, len);
    }
+   else if (int key = shortcut_key(Code)) KeyDown(key, shift, ctrl, alt);
+
+   if (read_only) SendScintilla(SCI_SETREADONLY, 0UL);
 }
 
-//********************************************************************************************************************
+/*********************************************************************************************************************
+** Process a mouse button press at a client position.  The Time is in milliseconds and allows Scintilla to detect
+** double and triple clicks.  Modifier keys are taken from the state that key_event() tracks: Shift extends the
+** selection, and Alt starts a rectangular selection.
+*/
 
-void ScintillaKTK::panKeyDown(int Key, KQ Flags)
-{
-   bool consumed;
-
-   // After we call KeyDown(), Scintilla will call KeyDefault()
-
-   KeyDown(Key, (Flags & KQ::SHIFT) != KQ::NIL, (Flags & KQ::CTRL) != KQ::NIL, (Flags & KQ::ALT) != KQ::NIL, &consumed);
-}
-
-//********************************************************************************************************************
-
-int ScintillaKTK::KeyDefault(int key, int modifiers)
-{
-   //log.msg("%d, $%.8x", key, modifiers);
-   AddCharUTF(lastkeytrans, strlen(lastkeytrans), false);
-   return 1;
-}
-
-//********************************************************************************************************************
-
-void ScintillaKTK::panMousePress(JET Button, double x, double y)
+void ScintillaKTK::panMousePress(JET Button, double X, double Y, unsigned int Time)
 {
    kt::Log log(__FUNCTION__);
-
-   log.traceBranch("%.0fx%.0f", x, y);
+   log.traceBranch("%.0fx%.0f", X, Y);
 
    if (Button IS JET::LMB) {
-      // This disables the current selection (effectively eliminating the potential for drag and drop).
+      Scintilla::Point point(int(std::floor(X)), int(std::floor(Y)));
 
-      SetEmptySelection(CurrentPosition());
-      Scintilla::Point point((int)x, (int)y);
-      ButtonDown(point, (PreciseTime()/1000LL), scintilla->KeyShift, scintilla->KeyCtrl, scintilla->KeyAlt);
+      ButtonDown(point, Time, scintilla->KeyShift, scintilla->KeyCtrl, scintilla->KeyAlt);
    }
-   else if (Button IS JET::RMB) {
-
-
-
-
-   }
+   else if (Button IS JET::MMB) panPrimaryPaste(X, Y);
 }
 
 //********************************************************************************************************************
 
-void ScintillaKTK::panMouseMove(double x, double y)
+void ScintillaKTK::panMouseMove(double X, double Y)
 {
-   Scintilla::Point point((int)x, (int)y);
-   ButtonMove(point);
+   ButtonMove(Scintilla::Point(int(std::floor(X)), int(std::floor(Y))));
 }
 
 //********************************************************************************************************************
 
-void ScintillaKTK::panMouseRelease(JET Button, double x, double y)
+void ScintillaKTK::panMouseRelease(JET Button, double X, double Y, unsigned int Time)
 {
    kt::Log log(__FUNCTION__);
-   Scintilla::Point point((int)x, (int)y);
+   log.trace("%.0fx%.0f", X, Y);
 
-   log.trace("%.0fx%.0f", x, y);
-
-   if (Button IS JET::LMB) {
-      ButtonUp(point, (PreciseTime()/1000LL), scintilla->KeyCtrl);
+   if ((Button IS JET::LMB) and (not drag_active)) {
+      ButtonUp(Scintilla::Point(int(std::floor(X)), int(std::floor(Y))), Time, scintilla->KeyCtrl);
    }
+}
+
+//********************************************************************************************************************
+// Abandon a mouse drag, e.g. when the editor is disabled while a button is held.  The selection is left as it is.
+
+void ScintillaKTK::panReleaseMouse()
+{
+   if (drag_active) {
+      if (auto pointer = gfx::AccessPointer()) { acDeactivate(pointer); ReleaseObject(pointer); }
+      panEndDrag();
+   }
+   if (HaveMouseCapture()) SetMouseCapture(false);
 }
 
 //********************************************************************************************************************
@@ -908,47 +1227,54 @@ void ScintillaKTK::panResized()
    ChangeSize();
 }
 
-//********************************************************************************************************************
+/*********************************************************************************************************************
+** Scroll to a point in the document, expressed in pixels from the top-left corner.  Scintilla scrolls vertically by
+** whole lines, so Y is rounded to the nearest line.  Both axes are clamped to the extent of the Page.  The Page is
+** then snapped to the resulting position, which also corrects a Page that was moved to an unreachable position.
+*/
 
-void ScintillaKTK::panScrollToX(double x)
+void ScintillaKTK::panScrollTo(double X, double Y)
 {
    kt::Log log(__FUNCTION__);
-   log.traceBranch("%.2f", x);
-   HorizontalScrollTo((int)(x));
+   log.traceBranch("%.2f, %.2f", X, Y);
+
+   if (vs.lineHeight > 0) {
+      int max_x = std::max(0, scintilla->PageWidth - scintilla->ViewWidth);
+
+      scintilla->ScrollLocked++;
+      ScrollTo(int(std::lround(Y / vs.lineHeight)));
+      HorizontalScrollTo(std::clamp(int(std::lround(X)), 0, max_x));
+      scintilla->ScrollLocked--;
+   }
+
+   panSyncPage();
 }
 
 //********************************************************************************************************************
+// Scroll relative to the current position by a number of columns (measured in space widths) and lines.
 
-void ScintillaKTK::panScrollToY(double y)
+void ScintillaKTK::panScrollBy(int Columns, int Lines)
 {
-   kt::Log log(__FUNCTION__);
-   log.traceBranch("%.2f", y);
-   ScrollTo((int)(y / vs.lineHeight));
+   panScrollTo(xOffset + (Columns * vs.spaceWidth), (topLine + Lines) * vs.lineHeight);
 }
 
 //********************************************************************************************************************
-#if 0
-void ScintillaKTK::SetSelectedTextStyle(int style)
-{
-   kt::Log log(__FUNCTION__);
-   log.traceBranch("Style: %d", style);
+// Move the Page and Canvas to reflect Scintilla's current scroll position.
 
-   WndProc(SCI_STARTSTYLING, SelectionStart(), 0x1f);//mask - only overwrite the 5 style bits
-   WndProc(SCI_SETSTYLING, SelectionEnd() - SelectionStart(), style);//style
-}
-#endif
-//********************************************************************************************************************
-
-void ScintillaKTK::panGotFocus()
+void ScintillaKTK::panSyncPage()
 {
-   SetFocusState(TRUE);
+   scintilla->ScrollX = xOffset;
+   scintilla->ScrollY = topLine * vs.lineHeight;
+   sync_page(scintilla);
 }
 
 //********************************************************************************************************************
+// Showing the caret on receipt of the focus starts the tick timer.  On losing the focus, the timer ends itself on its
+// next call.
 
-void ScintillaKTK::panLostFocus()
+void ScintillaKTK::panSetFocus(bool Focus)
 {
-   SetFocusState(FALSE);
+   if (Focus != hasFocus) SetFocusState(Focus);
 }
 
 /*********************************************************************************************************************
@@ -996,7 +1322,116 @@ void ScintillaKTK::panEnsureLineVisible(int line)
 }
 
 /*********************************************************************************************************************
-** Set the lexer.  To turn off the lexer, use SCLEX_NULL.
+** Enable or disable folding.  The lexers only compute fold levels while the 'fold' property is set.  Disabling folding
+** expands every fold first, because the lines of a contracted fold could not be shown again.
+*/
+
+void ScintillaKTK::panSetFolding(bool Enable)
+{
+   if (not Enable) ExpandAllFolds();
+   SendScintilla(SCI_SETPROPERTY, "fold", Enable ? "1" : "0");
+}
+
+/*********************************************************************************************************************
+** Toggle the fold of a header line, or of the fold that contains the line if it is not a header.  Fold levels are
+** computed when a line is styled, so the document is styled up to the end of the line first.  Returns false if
+** folding is disabled, or if the line is not within a fold that has content.
+*/
+
+bool ScintillaKTK::panToggleFold(int Line)
+{
+   if (not scintilla->FoldingMarkers) return false; // The fold levels are stale while folding is disabled
+   if ((Line < 0) or (Line >= pdoc->LinesTotal())) return false;
+
+   pdoc->EnsureStyledTo(pdoc->LineStart(Line + 1));
+
+   if (not (pdoc->GetLevel(Line) & SC_FOLDLEVELHEADERFLAG)) {
+      Line = pdoc->GetFoldParent(Line);
+      if (Line < 0) return false;
+   }
+
+   if (pdoc->GetLastChild(Line) <= Line) return false;
+
+   ToggleContraction(Line);
+   return true;
+}
+
+/*********************************************************************************************************************
+** The fold margin uses the 'box tree' style.  The markers are drawn in the background colour with a contrasting
+** foreground, so they are visible on the margin's chequer pattern.
+*/
+
+void ScintillaKTK::DefineFoldMarkers()
+{
+   static const struct { int Marker, Symbol; } folders[] = {
+      { SC_MARKNUM_FOLDEROPEN,    SC_MARK_BOXMINUS },
+      { SC_MARKNUM_FOLDER,        SC_MARK_BOXPLUS },
+      { SC_MARKNUM_FOLDERSUB,     SC_MARK_VLINE },
+      { SC_MARKNUM_FOLDERTAIL,    SC_MARK_LCORNER },
+      { SC_MARKNUM_FOLDEREND,     SC_MARK_BOXPLUSCONNECTED },
+      { SC_MARKNUM_FOLDEROPENMID, SC_MARK_BOXMINUSCONNECTED },
+      { SC_MARKNUM_FOLDERMIDTAIL, SC_MARK_TCORNER }
+   };
+
+   for (auto &folder : folders) {
+      SendScintilla(SCI_MARKERDEFINE, folder.Marker, folder.Symbol);
+      SendScintilla(SCI_MARKERSETFORE, folder.Marker, SCICOLOUR(scintilla->MarginBkgd.Red,
+         scintilla->MarginBkgd.Green, scintilla->MarginBkgd.Blue));
+      SendScintilla(SCI_MARKERSETBACK, folder.Marker, SCICOLOUR(scintilla->MarginColour.Red,
+         scintilla->MarginColour.Green, scintilla->MarginColour.Blue));
+   }
+}
+
+//********************************************************************************************************************
+// Show every line and mark every fold as expanded.
+
+void ScintillaKTK::ExpandAllFolds()
+{
+   int total = pdoc->LinesTotal();
+   bool changed = cs.HiddenLines();
+   for (int line=0; line < total; line++) {
+      if (cs.SetExpanded(line, true)) changed = true;
+   }
+
+   if (changed) {
+      cs.SetVisible(0, total - 1, true);
+      SetScrollBars();
+      Redraw();
+   }
+}
+
+/*********************************************************************************************************************
+** Called when the fold level of a line changes.  If a contracted fold loses its header, for instance because its
+** opening brace was deleted, its lines would remain hidden with no means of showing them.  The hidden lines that
+** follow the line are therefore shown, and any contracted folds among them are expanded so that their markers match.
+** This is called while the lexer is folding, so it relies only on the contraction state.
+*/
+
+void ScintillaKTK::FoldChanged(int Line, int LevelNow, int LevelPrev)
+{
+   if ((not (LevelPrev & SC_FOLDLEVELHEADERFLAG)) or (LevelNow & SC_FOLDLEVELHEADERFLAG)) return;
+   if (cs.GetExpanded(Line)) return;
+
+   cs.SetExpanded(Line, true);
+   if (not cs.GetVisible(Line)) return; // The lines are revealed when the enclosing fold is expanded
+
+   int last = Line;
+   for (int line=Line + 1; (line < pdoc->LinesTotal()) and (not cs.GetVisible(line)); line++) {
+      cs.SetExpanded(line, true);
+      last = line;
+   }
+
+   if (last > Line) {
+      cs.SetVisible(Line + 1, last, true);
+      SetScrollBars();
+      Redraw();
+   }
+}
+
+/*********************************************************************************************************************
+** Set the lexer.  To turn off the lexer, use SCLEX_NULL.  The fold levels of the previous lexer no longer apply, so all
+** folds are expanded.  Scintilla does not pass its stored properties to a new lexer, so the 'fold' property is set
+** again.
 */
 
 void ScintillaKTK::SetLexer(uptr_t LexID)
@@ -1004,17 +1439,17 @@ void ScintillaKTK::SetLexer(uptr_t LexID)
    kt::Log log(__FUNCTION__);
    log.branch("Using lexer %d", (int)LexID);
 
-//   SendScintilla(SCI_STYLERESETDEFAULT);
-   SendScintilla(SCI_SETLEXER, LexID);
-   //SendScintilla(SCI_CLEARDOCUMENTSTYLE);
-
-   SendScintilla(SCI_STARTSTYLING, 0, 0x1f);
-   QueueAction(AC::Draw, scintilla->SurfaceID);
-}
-
-void ScintillaKTK::SetLexerLanguage(const char *languageName)
-{
-   SendScintilla(SCI_SETLEXERLANGUAGE, 0UL, languageName);
+   ExpandAllFolds();
+   // ASP uses the HTML lexer with VBScript in server blocks.  NIL uses the null lexer rather than container styling.
+   auto lexer = LexID IS int(SCLEX::ASP) ? SCLEX_HTML : (LexID ? LexID : SCLEX_NULL);
+   SendScintilla(SCI_SETLEXER, lexer);
+   SendScintilla(SCI_SETSTYLEBITS, SendScintilla(SCI_GETSTYLEBITSNEEDED));
+   SendScintilla(SCI_SETPROPERTY, "asp.default.language", LexID IS int(SCLEX::ASP) ? "2" : "1");
+   SendScintilla(SCI_SETPROPERTY, "fold", scintilla->FoldingMarkers ? "1" : "0");
+   SetKeywords();
+   SetStyleColours();
+   SendScintilla(SCI_COLOURISE, 0, -1);
+   InvalidateStyleRedraw();
 }
 
 /*********************************************************************************************************************
@@ -1152,1150 +1587,3 @@ void ScintillaKTK::gotoMatchingBrace(bool select)
       else SendScintilla(SCI_SETSEL,braceOpposite,braceOpposite);
    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#if 0
-
-// The default fold margin width.
-static const int defaultFoldMarginWidth = 14;
-
-// The default set of characters that make up a word.
-static const char *defaultWordChars = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-/*********************************************************************************************************************
-** Handle a possible change to any current call tip.
-*/
-
-#if 0
-void ScintillaKTK::panCallTip()
-{
-   if (!ctAPIs) return;
-
-   long pos = SendScintilla(SCI_GETCURRENTPOS);
-   long linenr = SendScintilla(SCI_LINEFROMPOSITION,pos);
-   long linelen = SendScintilla(SCI_LINELENGTH,linenr);
-
-   char *lbuf = new char[linelen + 1];
-
-   int loff = SendScintilla(SCI_GETCURLINE,linelen + 1,lbuf);
-   int commas = 0, start = -1;
-
-   // Move backwards through the line looking for the start of the current call tip and working out which argument it is.
-
-   while (loff > 0) {
-      char ch = lbuf[--loff];
-
-      if (ch IS ',')
-         ++commas;
-      else if (ch IS ')')
-      {
-         int depth = 1;
-
-         // Ignore everything back to the start of the corresponding parenthesis.
-         while (loff > 0)
-         {
-            ch = lbuf[--loff];
-
-            if (ch IS ')')
-               ++depth;
-            else if (ch IS '(' and --depth IS 0)
-               break;
-         }
-      }
-      else if (ch IS '(' and loff > 0)
-      {
-         if (isWordChar(lbuf[loff - 1]))
-         {
-            // The parenthesis is preceded by a word so
-            // find the start of that word.
-            lbuf[loff--] = '\0';
-
-            while (loff >= 0 and isWordChar(lbuf[loff]))
-               --loff;
-
-            start = loff + 1;
-            break;
-         }
-
-         // We are between parentheses that do not correspond to
-         // a call tip, so reset the argument count.
-         commas = 0;
-      }
-   }
-
-   // Cancel any existing call tip.
-   SendScintilla(SCI_CALLTIPCANCEL);
-
-   // Done if there is no new call tip to set.
-   if (start < 0)
-   {
-      delete []lbuf;
-      return;
-   }
-
-   QString ct = ctAPIs -> callTips(&lbuf[start],maxCallTips,commas);
-
-   delete []lbuf;
-
-   if (ct.isEmpty())
-      return;
-
-   ctpos = SendScintilla(SCI_POSITIONFROMLINE,linenr) + start;
-
-   SendScintilla(SCI_CALLTIPSHOW,ctpos,ct.latin1());
-
-   // Done if there is more than one line in the call tip or there isn't a
-   // down arrow at the start.
-   if (ct[0] IS '\002' or ct.find('\n') >= 0)
-      return;
-
-   // Highlight the current argument.
-   int astart;
-
-   if (commas IS 0)
-      astart = ct.find('(');
-   else
-   {
-      astart = -1;
-
-      do
-         astart = ct.find(',',astart + 1);
-      while (astart >= 0 and --commas > 0);
-   }
-
-   int len = ct.length();
-
-   if (astart < 0 or ++astart IS len)
-      return;
-
-   // The end is at the next comma or unmatched closing parenthesis.
-   int aend, depth = 0;
-
-   for (aend = astart; aend < len; ++aend)
-   {
-      QChar ch = ct.at(aend);
-
-      if (ch IS ',' and depth IS 0)
-         break;
-      else if (ch IS '(')
-         ++depth;
-      else if (ch IS ')')
-      {
-         if (depth IS 0)
-            break;
-
-         --depth;
-      }
-   }
-
-   if (astart != aend) SendScintilla(SCI_CALLTIPSETHLT,astart,aend);
-}
-#endif
-
-#if 0
-// Handle a call tip click.
-void ScintillaKTK::handleCallTipClick(int dir)
-{
-   if (!ctAPIs)
-      return;
-
-   QString ct = ctAPIs -> callTipsNextPrev(dir);
-
-   if (ct.isNull())
-      return;
-
-   SendScintilla(SCI_CALLTIPSHOW,ctpos,ct.latin1());
-}
-#endif
-
-/*********************************************************************************************************************
-** Possibly start auto-completion.
-*/
-
-void ScintillaKTK::panStartAutoCompletion(AutoCompletionSource acs, bool checkThresh,bool emptyRoot, bool single)
-{
-   long wend, wstart;
-
-   if (emptyRoot) wend = wstart = 0;
-   else {
-      // See how long a word has been entered so far.
-      wend = SendScintilla(SCI_GETCURRENTPOS);
-      wstart = SendScintilla(SCI_WORDSTARTPOSITION,wend,TRUE);
-   }
-
-   int wlen = wend - wstart;
-
-   if (checkThresh and wlen < acThresh) return;
-
-   // Get the word entered so far.
-   char *word = new char[wlen + 1];
-   char *cp = word;
-
-   for (long i = wstart; i < wend; ++i) {
-      *cp++ = SendScintilla(SCI_GETCHARAT,i);
-   }
-
-   *cp = '\0';
-
-   // Generate the string representing the valid words to select from.
-   QStringList wlist;
-   bool cs = !SendScintilla(SCI_AUTOCGETIGNORECASE);
-
-   if (acs IS AcsDocument)
-   {
-      SendScintilla(SCI_SETSEARCHFLAGS,SCFIND_WORDSTART | (cs ? SCFIND_MATCHCASE : 0));
-
-      long pos = 0;
-      long dlen = SendScintilla(SCI_GETLENGTH);
-      QString root(word);
-
-      for (;;)
-      {
-         long fstart;
-
-         SendScintilla(SCI_SETTARGETSTART,pos);
-         SendScintilla(SCI_SETTARGETEND,dlen);
-
-         if ((fstart = SendScintilla(SCI_SEARCHINTARGET,wlen,word)) < 0)
-            break;
-
-         // Move past the root part.
-         pos = fstart + wlen;
-
-         // Skip if this is the word we are auto-completing.
-         if (fstart IS wstart)
-            continue;
-
-         // Get the rest of this word.
-         QString w(root);
-
-         while (pos < dlen)
-         {
-            char ch = SendScintilla(SCI_GETCHARAT,pos);
-
-            if (!isWordChar(ch))
-               break;
-
-            w += ch;
-
-            ++pos;
-         }
-
-         // Add the word if it isn't already there.
-         if (wlist.findIndex(w) < 0)
-            wlist.append(w);
-      }
-
-      wlist.sort();
-   }
-   else if (acAPIs)
-      wlist = acAPIs -> autoCompletionList(word,cs);
-
-   delete []word;
-
-   if (wlist.isEmpty())
-      return;
-
-   char sep = SendScintilla(SCI_AUTOCGETSEPARATOR);
-   acWordList = wlist.join(QChar(sep));
-
-   SendScintilla(SCI_AUTOCSETCHOOSESINGLE,single);
-   SendScintilla(SCI_AUTOCSHOW,wlen,acWordList.latin1());
-}
-
-/*********************************************************************************************************************
-** Maintain the indentation of the previous line.
-*/
-
-void ScintillaKTK::panMaintainIndentation(char ch,long pos)
-{
-   if (ch != '\r' and ch != '\n') return;
-
-   int curr_line = SendScintilla(SCI_LINEFROMPOSITION,pos);
-
-   // Get the indentation of the preceding non-zero length line.
-   int ind = 0;
-
-   for (int line = curr_line - 1; line >= 0; --line) {
-      if (SendScintilla(SCI_GETLINEENDPOSITION,line) > SendScintilla(SCI_POSITIONFROMLINE,line)) {
-         ind = indentation(line);
-         break;
-      }
-   }
-
-   if (ind > 0) autoIndentLine(pos,curr_line,ind);
-}
-
-/*********************************************************************************************************************
-** Implement auto-indentation.
-*/
-
-void ScintillaKTK::panAutoIndentation(char ch,long pos)
-{
-   int curr_line = SendScintilla(SCI_LINEFROMPOSITION,pos);
-   int ind_width = indentationWidth();
-   long curr_line_start = SendScintilla(SCI_POSITIONFROMLINE,curr_line);
-
-   const char *block_start = lexer -> blockStart();
-   bool start_single = (block_start and strlen(block_start) IS 1);
-
-   const char *block_end = lexer -> blockEnd();
-   bool end_single = (block_end and strlen(block_end) IS 1);
-
-   if (end_single and block_end[0] IS ch)
-   {
-      if (!(lexer -> autoIndentStyle() & AiClosing) and rangeIsWhitespace(curr_line_start,pos - 1))
-         autoIndentLine(pos,curr_line,blockIndent(curr_line - 1) - indentationWidth());
-   }
-   else if (start_single and block_start[0] IS ch)
-   {
-      // De-indent if we have already indented because the previous
-      // line was a start of block keyword.
-      if (!(lexer -> autoIndentStyle() & AiOpening) and getIndentState(curr_line - 1) IS isKeywordStart and rangeIsWhitespace(curr_line_start,pos - 1))
-         autoIndentLine(pos,curr_line,blockIndent(curr_line - 1) - indentationWidth());
-   }
-   else if (ch IS '\r' or ch IS '\n')
-      autoIndentLine(pos,curr_line,blockIndent(curr_line - 1));
-}
-
-/*********************************************************************************************************************
-** Set the indentation for a line.
-*/
-
-void ScintillaKTK::panAutoIndentLine(long pos,int line,int indent)
-{
-   if (indent < 0) return;
-
-   long pos_before = SendScintilla(SCI_GETLINEINDENTPOSITION,line);
-   SendScintilla(SCI_SETLINEINDENTATION,line,indent);
-   long pos_after = SendScintilla(SCI_GETLINEINDENTPOSITION,line);
-   long new_pos = -1;
-
-   if (pos_after > pos_before) new_pos = pos + (pos_after - pos_before);
-   else if (pos_after < pos_before and pos >= pos_after) {
-      if (pos >= pos_before) new_pos = pos + (pos_after - pos_before);
-      else new_pos = pos_after;
-   }
-
-   if (new_pos >= 0) SendScintilla(SCI_SETSEL,new_pos,new_pos);
-}
-
-/*********************************************************************************************************************
-** Return the indentation of the block defined by the given line (or something significant before).
-*/
-
-int ScintillaKTK::panBlockIndent(int line)
-{
-   if (line < 0) return 0;
-
-   // Handle the trvial case.
-   if (!lexer -> blockStartKeyword() and !lexer -> blockStart() and !lexer -> blockEnd()) return indentation(line);
-
-   int line_limit = line - lexer -> blockLookback();
-
-   if (line_limit < 0) line_limit = 0;
-
-   for (int l = line; l >= line_limit; --l) {
-      IndentState istate = getIndentState(l);
-
-      if (istate != isNone) {
-         int ind_width = indentationWidth();
-         int ind = indentation(l);
-
-         if (istate IS isBlockStart) {
-            if (!(lexer -> autoIndentStyle() & AiOpening)) ind += ind_width;
-         }
-         else if (istate IS isBlockEnd) {
-            if (lexer -> autoIndentStyle() & AiOpening) ind -= ind_width;
-            if (ind < 0) ind = 0;
-         }
-         else if (line IS l) ind += ind_width;
-         return ind;
-      }
-   }
-
-   return indentation(line);
-}
-
-/*********************************************************************************************************************
-** Return TRUE if all characters starting at spos up to, but not including epos, are spaces or tabs.
-*/
-
-bool ScintillaKTK::panRangeIsWhitespace(long spos,long epos)
-{
-   while (spos < epos) {
-      char ch = SendScintilla(SCI_GETCHARAT,spos);
-      if (ch != ' ' and ch != '\t') return FALSE;
-      ++spos;
-   }
-
-   return TRUE;
-}
-
-/*********************************************************************************************************************
-** Returns the indentation state of a line.
-*/
-
-ScintillaKTK::IndentState ScintillaKTK::panGetIndentState(int line)
-{
-   IndentState istate;
-
-   // Get the styled text.
-   long spos = SendScintilla(SCI_POSITIONFROMLINE,line);
-   long epos = SendScintilla(SCI_POSITIONFROMLINE,line + 1);
-
-   char *text = new char[(epos - spos + 1) * 2];
-
-   SendScintilla(SCI_GETSTYLEDTEXT,spos,epos,text);
-
-   const char *words;
-   int style, bstart_off, bend_off;
-
-   // Block start/end takes precedence over keywords.
-   words = lexer -> blockStart(&style);
-   bstart_off = findStyledWord(text,style,words);
-
-   words = lexer -> blockEnd(&style);
-   bend_off = findStyledWord(text,style,words);
-
-   if (bstart_off > bend_off)
-      istate = isBlockStart;
-   else if (bend_off > bstart_off)
-      istate = isBlockEnd;
-   else
-   {
-      words = lexer -> blockStartKeyword(&style);
-
-      istate = (findStyledWord(text,style,words) >= 0) ? isKeywordStart : isNone;
-   }
-
-   delete[] text;
-
-   return istate;
-}
-
-/*********************************************************************************************************************
-** Text is a pointer to some styled text (ie. a character byte followed by a
-// style byte).  style is a style number.  words is a space separated list of
-// words.  Returns the position in the text of the last one of the words with
-// the style.  The reason we are after the last, and not the first, occurance
-// is that we are looking for words that start and end a block where the latest
-// one is the most significant.
-*/
-
-int ScintillaKTK::panFindStyledWord(const char *text, int style, const char *words)
-{
-   if (!words) return -1;
-
-   // Find the range of text with the style we are looking for.
-   const char *stext;
-
-   for (stext = text; stext[1] != style; stext += 2)
-      if (stext[0] IS '\0') return -1;
-
-   // Move to the last character.
-   const char *etext = text;
-
-   while (etext[2] != '\0') etext += 2;
-
-   // Backtrack until we find the style.  There will be one.
-   while (etext[1] != style) etext -= 2;
-
-   // Look for each word in turn.
-   while (words[0] != '\0') {
-      // Find the end of the word.
-      const char *eword = words;
-
-      while (eword[1] != ' ' and eword[1] != '\0') ++eword;
-
-      // Now search the text backwards.
-      const char *wp = eword;
-
-      for (const char *tp = etext; tp >= stext; tp -= 2) {
-         if (tp[0] != wp[0] or tp[1] != style) {
-            // Reset the search.
-            wp = eword;
-            continue;
-         }
-
-         // See if all the word has matched.
-         if (wp-- IS words) return (tp - text) / 2;
-      }
-
-      // Move to the start of the next word if there is one.
-      words = eword + 1;
-
-      if (words[0] IS ' ') ++words;
-   }
-
-   return -1;
-}
-
-/*********************************************************************************************************************
-** Return the end-of-line mode.
-*/
-
-// Set the folding style.
-void ScintillaKTK::setFolding(FoldStyle folding)
-{
-   fold = folding;
-
-   if (folding IS NoFoldStyle) {
-      SendScintilla(SCI_SETMARGINWIDTHN,2,0L);
-      return;
-   }
-
-   int mask = SendScintilla(SCI_GETMODEVENTMASK);
-   SendScintilla(SCI_SETMODEVENTMASK,mask | SC_MOD_CHANGEFOLD);
-   SendScintilla(SCI_SETFOLDFLAGS,SC_FOLDFLAG_LINEAFTER_CONTRACTED);
-   SendScintilla(SCI_SETMARGINTYPEN,2,(long)SC_MARGIN_SYMBOL);
-   SendScintilla(SCI_SETMARGINMASKN,2,SC_MASK_FOLDERS);
-   SendScintilla(SCI_SETMARGINSENSITIVEN,2,1);
-
-   // Set the marker symbols to use.
-   switch (folding) {
-   case PlainFoldStyle:
-      setFoldMarker(SC_MARKNUM_FOLDEROPEN,SC_MARK_MINUS);
-      setFoldMarker(SC_MARKNUM_FOLDER,SC_MARK_PLUS);
-      setFoldMarker(SC_MARKNUM_FOLDERSUB);
-      setFoldMarker(SC_MARKNUM_FOLDERTAIL);
-      setFoldMarker(SC_MARKNUM_FOLDEREND);
-      setFoldMarker(SC_MARKNUM_FOLDEROPENMID);
-      setFoldMarker(SC_MARKNUM_FOLDERMIDTAIL);
-      break;
-
-   case CircledFoldStyle:
-      setFoldMarker(SC_MARKNUM_FOLDEROPEN,SC_MARK_CIRCLEMINUS);
-      setFoldMarker(SC_MARKNUM_FOLDER,SC_MARK_CIRCLEPLUS);
-      setFoldMarker(SC_MARKNUM_FOLDERSUB);
-      setFoldMarker(SC_MARKNUM_FOLDERTAIL);
-      setFoldMarker(SC_MARKNUM_FOLDEREND);
-      setFoldMarker(SC_MARKNUM_FOLDEROPENMID);
-      setFoldMarker(SC_MARKNUM_FOLDERMIDTAIL);
-      break;
-
-   case BoxedFoldStyle:
-      setFoldMarker(SC_MARKNUM_FOLDEROPEN,SC_MARK_BOXMINUS);
-      setFoldMarker(SC_MARKNUM_FOLDER,SC_MARK_BOXPLUS);
-      setFoldMarker(SC_MARKNUM_FOLDERSUB);
-      setFoldMarker(SC_MARKNUM_FOLDERTAIL);
-      setFoldMarker(SC_MARKNUM_FOLDEREND);
-      setFoldMarker(SC_MARKNUM_FOLDEROPENMID);
-      setFoldMarker(SC_MARKNUM_FOLDERMIDTAIL);
-      break;
-
-   case CircledTreeFoldStyle:
-      setFoldMarker(SC_MARKNUM_FOLDEROPEN,SC_MARK_CIRCLEMINUS);
-      setFoldMarker(SC_MARKNUM_FOLDER,SC_MARK_CIRCLEPLUS);
-      setFoldMarker(SC_MARKNUM_FOLDERSUB,SC_MARK_VLINE);
-      setFoldMarker(SC_MARKNUM_FOLDERTAIL,SC_MARK_LCORNERCURVE);
-      setFoldMarker(SC_MARKNUM_FOLDEREND,SC_MARK_CIRCLEPLUSCONNECTED);
-      setFoldMarker(SC_MARKNUM_FOLDEROPENMID,SC_MARK_CIRCLEMINUSCONNECTED);
-      setFoldMarker(SC_MARKNUM_FOLDERMIDTAIL,SC_MARK_TCORNERCURVE);
-      break;
-
-   case BoxedTreeFoldStyle:
-      setFoldMarker(SC_MARKNUM_FOLDEROPEN,SC_MARK_BOXMINUS);
-      setFoldMarker(SC_MARKNUM_FOLDER,SC_MARK_BOXPLUS);
-      setFoldMarker(SC_MARKNUM_FOLDERSUB,SC_MARK_VLINE);
-      setFoldMarker(SC_MARKNUM_FOLDERTAIL,SC_MARK_LCORNER);
-      setFoldMarker(SC_MARKNUM_FOLDEREND,SC_MARK_BOXPLUSCONNECTED);
-      setFoldMarker(SC_MARKNUM_FOLDEROPENMID,SC_MARK_BOXMINUSCONNECTED);
-      setFoldMarker(SC_MARKNUM_FOLDERMIDTAIL,SC_MARK_TCORNER);
-      break;
-   }
-
-   SendScintilla(SCI_SETMARGINWIDTHN,2,defaultFoldMarginWidth);
-}
-
-
-// Set up a folder marker.
-void ScintillaKTK::setFoldMarker(int marknr,int mark)
-{
-   SendScintilla(SCI_MARKERDEFINE,marknr,mark);
-
-   if (mark != SC_MARK_EMPTY) {
-      SendScintilla(SCI_MARKERSETFORE,marknr,white);
-      SendScintilla(SCI_MARKERSETBACK,marknr,black);
-   }
-}
-
-
-// Handle a click in the fold margin.  This is mostly taken from SciTE.
-void ScintillaKTK::foldClick(int lineClick,int bstate)
-{
-   if ((bstate & ShiftButton) and (bstate & ControlButton)) {
-      foldAll();
-      return;
-   }
-
-   int levelClick = SendScintilla(SCI_GETFOLDLEVEL,lineClick);
-
-   if (levelClick & SC_FOLDLEVELHEADERFLAG) {
-      if (bstate & ShiftButton) {
-         // Ensure all children are visible.
-         SendScintilla(SCI_SETFOLDEXPANDED,lineClick,1);
-         foldExpand(lineClick,TRUE,TRUE,100,levelClick);
-      }
-      else if (bstate & ControlButton) {
-         if (SendScintilla(SCI_GETFOLDEXPANDED,lineClick)) {
-            // Contract this line and all its children.
-            SendScintilla(SCI_SETFOLDEXPANDED,lineClick,0L);
-            foldExpand(lineClick,FALSE,TRUE,0,levelClick);
-         }
-         else { // Expand this line and all its children.
-            SendScintilla(SCI_SETFOLDEXPANDED,lineClick,1);
-            foldExpand(lineClick,TRUE,TRUE,100,levelClick);
-         }
-      }
-      else { // Toggle this line.
-         SendScintilla(SCI_TOGGLEFOLD,lineClick);
-      }
-   }
-}
-
-// Do the hard work of hiding and showing  lines.  This is mostly taken from SciTE.
-
-void ScintillaKTK::foldExpand(int &line,bool doExpand,bool force, int visLevels,int level)
-{
-   int lineMaxSubord = SendScintilla(SCI_GETLASTCHILD,line,level & SC_FOLDLEVELNUMBERMASK);
-
-   line++;
-
-   while (line <= lineMaxSubord) {
-      if (force) {
-         if (visLevels > 0) SendScintilla(SCI_SHOWLINES,line,line);
-         else SendScintilla(SCI_HIDELINES,line,line);
-      }
-      else if (doExpand) SendScintilla(SCI_SHOWLINES,line,line);
-
-      int levelLine = level;
-
-      if (levelLine IS -1) levelLine = SendScintilla(SCI_GETFOLDLEVEL,line);
-
-      if (levelLine & SC_FOLDLEVELHEADERFLAG) {
-         if (force) {
-            if (visLevels > 1) SendScintilla(SCI_SETFOLDEXPANDED,line,1);
-            else SendScintilla(SCI_SETFOLDEXPANDED,line,0L);
-
-            foldExpand(line,doExpand,force,visLevels - 1);
-         }
-         else if (doExpand) {
-            if (!SendScintilla(SCI_GETFOLDEXPANDED,line)) SendScintilla(SCI_SETFOLDEXPANDED,line,1);
-            foldExpand(line,TRUE,force,visLevels - 1);
-         }
-         else foldExpand(line,FALSE,force,visLevels - 1);
-      }
-      else line++;
-   }
-}
-
-// Fully expand (if there is any line currently folded) all text.  Otherwise,
-// fold all text.  This is mostly taken from SciTE.
-void ScintillaKTK::foldAll()
-{
-   recolor();
-
-   int maxLine = SendScintilla(SCI_GETLINECOUNT);
-   bool expanding = TRUE;
-
-   for (int lineSeek=0; lineSeek < maxLine; lineSeek++) {
-      if (SendScintilla(SCI_GETFOLDLEVEL,lineSeek) & SC_FOLDLEVELHEADERFLAG) {
-         expanding = !SendScintilla(SCI_GETFOLDEXPANDED,lineSeek);
-         break;
-      }
-   }
-
-   for (int line=0; line < maxLine; line++) {
-      int level = SendScintilla(SCI_GETFOLDLEVEL,line);
-
-      if ((level & SC_FOLDLEVELHEADERFLAG) and (SC_FOLDLEVELBASE IS (level & SC_FOLDLEVELNUMBERMASK))) {
-         if (expanding) {
-            SendScintilla(SCI_SETFOLDEXPANDED,line,1);
-            foldExpand(line,TRUE,FALSE,0,level);
-            line--;
-         }
-         else {
-            int lineMaxSubord = SendScintilla(SCI_GETLASTCHILD,line,-1);
-            SendScintilla(SCI_SETFOLDEXPANDED,line,0L);
-            if (lineMaxSubord > line) SendScintilla(SCI_HIDELINES,line + 1,lineMaxSubord);
-         }
-      }
-   }
-}
-
-
-// Handle a fold change.  This is mostly taken from SciTE.
-void ScintillaKTK::foldChanged(int line,int levelNow,int levelPrev)
-{
-   if (levelNow & SC_FOLDLEVELHEADERFLAG) {
-      if (!(levelPrev & SC_FOLDLEVELHEADERFLAG)) SendScintilla(SCI_SETFOLDEXPANDED,line,1);
-   }
-   else if (levelPrev & SC_FOLDLEVELHEADERFLAG) {
-      if (!SendScintilla(SCI_GETFOLDEXPANDED,line)) {
-         // Removing the fold from one that has been contracted
-         // so should expand.  Otherwise lines are left
-         // invisible with no way to make them visible.
-         foldExpand(line,TRUE,FALSE,0,levelPrev);
-      }
-   }
-}
-
-
-// Toggle the fold for a line if it contains a fold marker.
-void ScintillaKTK::foldLine(int line)
-{
-   SendScintilla(SCI_TOGGLEFOLD,line);
-}
-
-
-// Handle the SCN_MODIFIED notification.
-void ScintillaKTK::handleModified(int pos,int mtype,const char *text,int len,
-               int added,int line,int foldNow,int foldPrev)
-{
-   if (mtype & SC_MOD_CHANGEFOLD)
-   {
-      if (fold)
-         foldChanged(line,foldNow,foldPrev);
-   }
-   else if (mtype & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT))
-      emit textChanged();
-}
-
-
-// Query the modified state.
-bool ScintillaKTK::isModified()
-{
-   // We don't use SCI_GETMODIFY as it seems to be buggy in Scintilla
-   // v1.61.
-   return modified;
-}
-
-/*********************************************************************************************************************
-** Handle the SCN_MARGINCLICK notification.
-*/
-
-void ScintillaKTK::handleMarginClick(int pos,int modifiers,int margin)
-{
-   int state = 0;
-
-   if (modifiers & SCMOD_SHIFT) state |= ShiftButton;
-   if (modifiers & SCMOD_CTRL) state |= ControlButton;
-   if (modifiers & SCMOD_ALT) state |= AltButton;
-
-   int line = SendScintilla(SCI_LINEFROMPOSITION,pos);
-
-   if (fold and margin IS 2) foldClick(line,state);
-   else emit marginClicked(margin,line,(ButtonState)state);
-}
-
-/*********************************************************************************************************************
-** Return the state of indentation guides.
-*/
-
-bool ScintillaKTK::indentationGuides()
-{
-   return SendScintilla(SCI_GETINDENTATIONGUIDES);
-}
-
-// Enable and disable indentation guides.
-void ScintillaKTK::setIndentationGuides(bool enable)
-{
-   SendScintilla(SCI_SETINDENTATIONGUIDES,enable);
-}
-
-/*********************************************************************************************************************
-** Define a marker based on a character.
-*/
-
-int ScintillaKTK::panMarkerDefine(char ch,int mnr)
-{
-   checkMarker(mnr);
-   if (mnr >= 0) SendScintilla(SCI_MARKERDEFINE,mnr,static_cast<long>(SC_MARK_CHARACTER) + ch);
-   return mnr;
-}
-
-/*********************************************************************************************************************
-** Add a marker to a line.
-*/
-
-int ScintillaKTK::panMarkerAdd(int linenr,int mnr)
-{
-   if (mnr < 0 or mnr > MARKER_MAX or (allocatedMarkers & (1 << mnr)) IS 0) return -1;
-   return SendScintilla(SCI_MARKERADD,linenr,mnr);
-}
-
-/*********************************************************************************************************************
-** Get the marker mask for a line.
-*/
-
-unsigned ScintillaKTK::panMarkersAtLine(int linenr)
-{
-   return SendScintilla(SCI_MARKERGET,linenr);
-}
-
-/*********************************************************************************************************************
-** Delete a marker from a line.
-*/
-
-void ScintillaKTK::panMarkerDelete(int linenr,int mnr)
-{
-   if (mnr <= MARKER_MAX) {
-      if (mnr < 0) {
-         unsigned am = allocatedMarkers;
-
-         for (int m = 0; m <= MARKER_MAX; ++m) {
-            if (am & 1) SendScintilla(SCI_MARKERDELETE,linenr,m);
-            am >>= 1;
-         }
-      }
-      else if (allocatedMarkers & (1 << mnr)) SendScintilla(SCI_MARKERDELETE,linenr,mnr);
-   }
-}
-
-/*********************************************************************************************************************
-** Delete a marker from the text.
-*/
-
-void ScintillaKTK::panMarkerDeleteAll(int mnr)
-{
-   if (mnr <= MARKER_MAX) {
-      if (mnr < 0) SendScintilla(SCI_MARKERDELETEALL,-1);
-      else if (allocatedMarkers & (1 << mnr)) SendScintilla(SCI_MARKERDELETEALL,mnr);
-   }
-}
-
-/*********************************************************************************************************************
-** Delete a marker handle from the text.
-*/
-
-void ScintillaKTK::panMarkerDeleteHandle(int mhandle)
-{
-   SendScintilla(SCI_MARKERDELETEHANDLE,mhandle);
-}
-
-/*********************************************************************************************************************
-** Return the line containing a marker instance.
-*/
-
-int ScintillaKTK::panMarkerLine(int mhandle)
-{
-   return SendScintilla(SCI_MARKERLINEFROMHANDLE,mhandle);
-}
-
-/*********************************************************************************************************************
-** Search forwards for a marker.
-*/
-
-int ScintillaKTK::panMarkerFindNext(int linenr,unsigned mask)
-{
-   return SendScintilla(SCI_MARKERNEXT,linenr,mask);
-}
-
-/*********************************************************************************************************************
-** Search backwards for a marker.
-*/
-
-int ScintillaKTK::panMarkerFindPrevious(int linenr,unsigned mask)
-{
-   return SendScintilla(SCI_MARKERPREVIOUS,linenr,mask);
-}
-
-/*********************************************************************************************************************
-** Set the marker background colour.
-*/
-
-void ScintillaKTK::panSetMarkerBackgroundColor(const QColor &col,int mnr)
-{
-   if (mnr <= MARKER_MAX)
-   {
-      if (mnr < 0)
-      {
-         unsigned am = allocatedMarkers;
-
-         for (int m = 0; m <= MARKER_MAX; ++m)
-         {
-            if (am & 1)
-               SendScintilla(SCI_MARKERSETBACK,m,col);
-
-            am >>= 1;
-         }
-      }
-      else if (allocatedMarkers & (1 << mnr))
-         SendScintilla(SCI_MARKERSETBACK,mnr,col);
-   }
-}
-
-/*********************************************************************************************************************
-** Set the marker foreground colour.
-*/
-
-void ScintillaKTK::panSetMarkerForegroundColor(const QColor &col,int mnr)
-{
-   if (mnr <= MARKER_MAX)
-   {
-      if (mnr < 0)
-      {
-         unsigned am = allocatedMarkers;
-
-         for (int m = 0; m <= MARKER_MAX; ++m)
-         {
-            if (am & 1)
-               SendScintilla(SCI_MARKERSETFORE,m,col);
-
-            am >>= 1;
-         }
-      }
-      else if (allocatedMarkers & (1 << mnr))
-         SendScintilla(SCI_MARKERSETFORE,mnr,col);
-   }
-}
-
-/*********************************************************************************************************************
-** Check a marker, allocating a marker number if necessary.
-*/
-
-void ScintillaKTK::panCheckMarker(int &mnr)
-{
-   if (mnr >= 0)
-   {
-      // Check the explicit marker number isn't already allocated.
-      if (mnr > MARKER_MAX or allocatedMarkers & (1 << mnr))
-         mnr = -1;
-   }
-   else
-   {
-      unsigned am = allocatedMarkers;
-
-      // Find the smallest unallocated marker number.
-      for (mnr = 0; mnr <= MARKER_MAX; ++mnr)
-      {
-         if ((am & 1) IS 0)
-            break;
-
-         am >>= 1;
-      }
-   }
-
-   // Define the marker if it is valid.
-   if (mnr >= 0)
-      allocatedMarkers |= (1 << mnr);
-}
-
-/*********************************************************************************************************************
-** Reset the fold margin colours.
-*/
-
-void ScintillaKTK::resetFoldMarginColors()
-{
-   SendScintilla(SCI_SETFOLDMARGINHICOLOUR,0,0L);
-   SendScintilla(SCI_SETFOLDMARGINCOLOUR,0,0L);
-}
-
-/*********************************************************************************************************************
-** Set the fold margin colours.
-*/
-
-void ScintillaKTK::panSetFoldMarginColors(const QColor &fore,const QColor &back)
-{
-   SendScintilla(SCI_SETFOLDMARGINHICOLOUR,1,fore);
-   SendScintilla(SCI_SETFOLDMARGINCOLOUR,1,back);
-}
-
-/*********************************************************************************************************************
-** Handle a change to the user visible user interface.
-*/
-
-// Return a position from a line number and an index within the line.
-long ScintillaKTK::posFromLineIndex(int line,int index)
-{
-   long pos = SendScintilla(SCI_POSITIONFROMLINE,line) + index;
-   long eol = SendScintilla(SCI_GETLINEENDPOSITION,line);
-
-   if (pos > eol)
-      pos = eol;
-
-   return pos;
-}
-
-
-// Return a line number and an index within the line from a position.
-void ScintillaKTK::lineIndexFromPos(long pos,int *line,int *index)
-{
-   long lin = SendScintilla(SCI_LINEFROMPOSITION,pos);
-   long linpos = SendScintilla(SCI_POSITIONFROMLINE,lin);
-
-   *line = lin;
-   *index = pos - linpos;
-}
-
-
-// Convert a Scintilla string to a Qt Unicode string.
-QString ScintillaKTK::convertText(const char *s)
-{
-   if (isUtf8())
-      return QString::fromUtf8(s);
-
-   QString qs;
-
-   qs.setLatin1(s);
-
-   return qs;
-}
-
-
-// Set the source of the auto-completion list.
-void ScintillaKTK::setAutoCompletionSource(AutoCompletionSource source)
-{
-   acSource = source;
-}
-
-
-// Set the threshold for automatic auto-completion.
-void ScintillaKTK::setAutoCompletionThreshold(int thresh)
-{
-   acThresh = thresh;
-}
-
-
-// Set the APIs for auto-completion.
-void ScintillaKTK::setAutoCompletionAPIs(ScintillaKTKAPIs *apis)
-{
-   acAPIs = apis;
-}
-
-
-// Explicitly auto-complete from the APIs.
-void ScintillaKTK::autoCompleteFromAPIs()
-{
-   // If we are not in a word then display all APIs.
-   startAutoCompletion(AcsAPIs,FALSE,!currentCharInWord(),showSingle);
-}
-
-
-// Explicitly auto-complete from the document.
-void ScintillaKTK::autoCompleteFromDocument()
-{
-   // If we are not in a word then ignore.
-   if (currentCharInWord())
-      startAutoCompletion(AcsDocument,FALSE,FALSE,showSingle);
-}
-
-/*********************************************************************************************************************
-** Return TRUE if the current character (ie. the one before the carat) is part
-** of a word.
-*/
-
-bool ScintillaKTK::currentCharInWord()
-{
-   long pos = SendScintilla(SCI_GETCURRENTPOS);
-   if (pos <= 0) return FALSE;
-   return isWordChar(SendScintilla(SCI_GETCHARAT,pos - 1));
-}
-
-/*********************************************************************************************************************
-** Registered an image.
-*/
-
-void ScintillaKTK::registerImage(int id,const QPixmap *pm)
-{
-   SendScintilla(SCI_REGISTERIMAGE,id,pm);
-}
-
-/*********************************************************************************************************************
-** Clear all registered images.
-*/
-
-void ScintillaKTK::clearRegisteredImages()
-{
-   SendScintilla(SCI_CLEARREGISTEREDIMAGES);
-}
-
-/*********************************************************************************************************************
-** Set the fill-up characters for auto-completion.
-*/
-
-void ScintillaKTK::setAutoCompletionFillups(const char *fillups)
-{
-   SendScintilla(SCI_AUTOCSETFILLUPS,fillups);
-}
-
-/*********************************************************************************************************************
-** Set the case sensitivity for auto-completion.
-*/
-
-void ScintillaKTK::setAutoCompletionCaseSensitivity(bool cs)
-{
-   SendScintilla(SCI_AUTOCSETIGNORECASE,!cs);
-}
-
-/*********************************************************************************************************************
-** Return the case sensitivity for auto-completion.
-*/
-
-bool ScintillaKTK::autoCompletionCaseSensitivity()
-{
-   return !SendScintilla(SCI_AUTOCGETIGNORECASE);
-}
-
-/*********************************************************************************************************************
-** Set the replace word mode for auto-completion.
-*/
-
-void ScintillaKTK::setAutoCompletionReplaceWord(bool replace)
-{
-   SendScintilla(SCI_AUTOCSETDROPRESTOFWORD,replace);
-}
-
-/*********************************************************************************************************************
-** Return the replace word mode for auto-completion.
-*/
-
-bool ScintillaKTK::autoCompletionReplaceWord()
-{
-   return SendScintilla(SCI_AUTOCGETDROPRESTOFWORD);
-}
-
-/*********************************************************************************************************************
-** Set the single item mode for auto-completion.
-*/
-
-void ScintillaKTK::setAutoCompletionShowSingle(bool single)
-{
-   showSingle = single;
-}
-
-/*********************************************************************************************************************
-** Return the single item mode for auto-completion.
-*/
-
-bool ScintillaKTK::autoCompletionShowSingle()
-{
-   return showSingle;
-}
-
-#endif

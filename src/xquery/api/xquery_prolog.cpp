@@ -13,6 +13,7 @@
 #include <ranges>
 
 #include "xquery_errors.h"
+#include "xquery_functions.h"
 #include "../functions/accessor_support.h"
 #include "../../xml/uri_utils.h"
 
@@ -362,7 +363,7 @@ uint32_t XQueryProlog::resolve_prefix(std::string_view prefix, const extXML *doc
    }
 
    if (document) {
-      auto doc_entry = document->Prefixes.find(std::string(prefix));
+      auto doc_entry = document->Prefixes.find(prefix);
       if (doc_entry != document->Prefixes.end()) return doc_entry->second;
    }
 

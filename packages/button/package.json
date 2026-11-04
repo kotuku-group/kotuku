@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/button",
+  "version": "1.0",
+  "description": "Push-button widget for Tiri graphical interfaces.",
+  "entry": "button.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "button",
+    "gui",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/tooltip": "1.0"
+  },
+  "files": [
+    {
+      "path": "button.tiri",
+      "size": 13663,
+      "sha256": "58798f71f2ad611888a18da19b9becf4e775bd4dc846df191d76bb1885c4f64d",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

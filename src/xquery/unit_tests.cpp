@@ -162,7 +162,10 @@ static ERR registered_function_test_callback(objXQuery *Query, std::string_view 
 static bool compile_query_for_test(extXQuery &Query, std::string_view Statement, FUNCTION ResolveVariable = FUNCTION())
 {
    Query.Statement.assign(Statement);
+   if (Query.ResolveVariable.defined()) Query.ResolveVariable.unpin();
+   Query.ResolveVariable.disable();
    Query.ResolveVariable = ResolveVariable;
+   if (Query.ResolveVariable.defined()) Query.ResolveVariable.pin();
    Query.ParseResult = CompiledXQuery();
    Query.ModuleCache.reset();
    Query.ErrorMsg.clear();
@@ -662,7 +665,7 @@ static void test_resolve_variable_callback()
          auto error = search_query_text(query, (extXML *)*xml, "/root/item[@id = $wanted]",
             &resolve_context, search_results);
 
-         bool matched = (error IS ERR::Okay) and (search_results.ids.size() IS 1) and (search_results.ids[0] IS "b");
+         bool matched = (!error) and (search_results.ids.size() IS 1) and (search_results.ids[0] IS "b");
          test_assert(matched, "ResolveVariable search callback",
             "Search() evaluation should accept callback-backed variables inside predicates");
          test_assert(resolve_context.call_count IS 1, "ResolveVariable search cache",
@@ -722,6 +725,7 @@ static void test_registered_function_qname_normalisation()
       registered_function_test_context context;
       FUNCTION callback = C_FUNCTION(registered_function_test_callback, &context);
       query.RegisteredFunctions["ext:double"] = callback;
+      query.RegisteredFunctions["ext:double"].pin();
 
       XPathVal result;
       bool ok = evaluate_query_text(query,
@@ -747,6 +751,7 @@ static void test_registered_function_qname_normalisation()
       registered_function_test_context context;
       FUNCTION callback = C_FUNCTION(registered_function_test_callback, &context);
       query.RegisteredFunctions["double"] = callback;
+      query.RegisteredFunctions["double"].pin();
 
       XPathVal result;
       bool ok = evaluate_query_text(query,
@@ -886,19 +891,18 @@ static void test_prolog_in_xpath()
 
 //********************************************************************************************************************
 
-static void run_unit_tests(CSTRING Options, int &Passed, int &Total)
+static void run_unit_tests(std::string_view Options, int &Passed, int &Total)
 {
    kt::Log log("XQueryTests");
-   std::string_view options = Options ? std::string_view(Options) : std::string_view();
 
    test_count = 0;
    pass_count = 0;
    fail_count = 0;
 
-   if (options IS "resolve_variable") {
+   if (Options IS "resolve_variable") {
       test_resolve_variable_callback();
    }
-   else if (options IS "registered_function") {
+   else if (Options IS "registered_function") {
       test_registered_function_qname_normalisation();
    }
    else {

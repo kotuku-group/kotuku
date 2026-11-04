@@ -1282,8 +1282,8 @@ void parser::tag_body(const tag_view &Tag)
       switch (strhash(Tag.Attribs[i].Name)) {
          case HASH_clip_path: {
             OBJECTPTR clip;
-            if (Self->Scene->findDef(Tag.Attribs[i].Value.c_str(), &clip) IS ERR::Okay) {
-               Self->Page->set(FID_Mask, clip);
+            if (!Self->Scene->findDef(Tag.Attribs[i].Value, &clip)) {
+               Self->Page->setMask(clip);
             }
             break;
          }
@@ -1429,7 +1429,7 @@ void parser::tag_call(const tag_view &Tag)
             auto script_name_text = std::string(script_name);
 
             OBJECTID id;
-            if (FindObject(script_name_text.c_str(), CLASSID::NIL, FOF::NIL, &id) IS ERR::Okay) script = (objScript *)GetObjectPtr(id);
+            if (!FindObject(script_name_text, CLASSID::NIL, &id)) script = (objScript *)GetObjectPtr(id);
 
             function.assign(function_ref.substr(i + 1));
          }
@@ -1443,7 +1443,7 @@ void parser::tag_call(const tag_view &Tag)
    }
 
    if (not script) {
-      log_error(&Tag, ERR::Failed, "doc.call-no-script", "No script is available in this document for the requested <call/>.");
+      log_error(&Tag, ERR::NotFound, "doc.call-no-script", "No script is available in this document for the requested <call/>.");
       return;
    }
 
@@ -1472,10 +1472,10 @@ void parser::tag_call(const tag_view &Tag)
 
    // Check for a result and print it
 
-   CSTRING *results;
-   int size;
-   if ((script->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement(results[0]), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
+   std::span<std::string> results;
+   if ((!script->getResults(results)) and (not results.empty())) {
+      auto xmlinc = objXML::create::global(fl::Statement(results[0]),
+         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);
          parse_tags(xmlinc->Tags);
@@ -1487,7 +1487,6 @@ void parser::tag_call(const tag_view &Tag)
       }
       else log_error(&Tag, ERR::Syntax, "doc.call-result-xml-parse-failed",
          "<call/> returned content that could not be parsed as XML/RIPL.");
-      FreeResource(results);
    }
 }
 
@@ -1672,8 +1671,11 @@ void parser::tag_checkbox(const tag_view &Tag)
             fl::Fill("white")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-8), fl::ViewY(-8), fl::ViewWidth(54), fl::ViewHeight(54));
+         vp->setAspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-8);
+         vp->setViewY(-8);
+         vp->setViewWidth(54);
+         vp->setViewHeight(54);
 
          Self->Viewport->Scene->addDef("/widget/checkbox/on", pattern_on);
       }
@@ -1698,8 +1700,11 @@ void parser::tag_checkbox(const tag_view &Tag)
             fl::Fill("rgb(255 255 255 / .5)")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-8), fl::ViewY(-8), fl::ViewWidth(54), fl::ViewHeight(54));
+         vp->setAspectRatio(ARF::X_MIN|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-8);
+         vp->setViewY(-8);
+         vp->setViewWidth(54);
+         vp->setViewHeight(54);
 
          Self->Viewport->Scene->addDef("/widget/checkbox/off", pattern_off);
       }
@@ -1750,10 +1755,9 @@ void parser::tag_combobox(const tag_view &Tag)
             // Client is overriding the decorator: A custom SVG background is expected, defs and body
             // adjustments may also be provided.
             if (scan.hasContent()) {
-               STRING xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, &xml_ser) IS ERR::Okay) {
+               std::string xml_ser;
+               if (!m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser)) {
                   widget.style = xml_ser;
-                  FreeResource(xml_ser);
                }
             }
          }
@@ -1761,10 +1765,9 @@ void parser::tag_combobox(const tag_view &Tag)
             std::string value;
 
             if (not scan.Children.empty()) {
-               STRING xml_ser;
-               if (m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, &xml_ser) IS ERR::Okay) {
+               std::string xml_ser;
+               if (!m_xml->serialise(scan.Children[0].ID, XMF::INCLUDE_SIBLINGS, xml_ser)) {
                   value = xml_ser;
-                  FreeResource(xml_ser);
                }
             }
 
@@ -1801,8 +1804,8 @@ void parser::tag_combobox(const tag_view &Tag)
             fl::Fill("rgb(0 0 0 / .7)")
          });
 
-         std::array<double, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
-         rect->set(FID_Rounding, round);
+         std::array<Unit, 8> round = { 0, 0, 6, 6, 6, 6, 0, 0 };
+         rect->setRounding(round);
 
          objVectorPath::create::global({ // Down arrow
             fl::Owner(vp->UID),
@@ -1811,9 +1814,11 @@ void parser::tag_combobox(const tag_view &Tag)
             fl::Fill("rgb(255 255 255 / .86)")
          });
 
-         vp->setFields(fl::AspectRatio(ARF::X_MAX|ARF::Y_MIN|ARF::MEET),
-            fl::ViewX(-PAD), fl::ViewY(-PAD),
-            fl::ViewWidth(29+(PAD*2)), fl::ViewHeight(29+(PAD*2)));
+         vp->setAspectRatio(ARF::X_MAX|ARF::Y_MIN|ARF::MEET);
+         vp->setViewX(-PAD);
+         vp->setViewY(-PAD);
+         vp->setViewWidth(29+(PAD*2));
+         vp->setViewHeight(29+(PAD*2));
 
          Self->Viewport->Scene->addDef("/widget/combobox", pattern_cb);
       }
@@ -2055,37 +2060,21 @@ void parser::tag_head(const tag_view &Tag)
    // The head contains information about the document
 
    for (auto &scan : Tag.Children) {
-      // Anything allocated here needs to be freed in unload_doc()
       std::string_view name = scan.name();
       if ("title" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Title) FreeResource(Self->Title);
-            Self->Title = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Title.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("author" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Author) FreeResource(Self->Author);
-            Self->Author = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Author.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("copyright" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Copyright) FreeResource(Self->Copyright);
-            Self->Copyright = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Copyright.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("keywords" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Keywords) FreeResource(Self->Keywords);
-            Self->Keywords = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Keywords.assign(scan.Children[0].Attribs[0].Value);
       }
       else if ("description" IS name) {
-         if (scan.hasContent()) {
-            if (Self->Description) FreeResource(Self->Description);
-            Self->Description = kt::strclone(scan.Children[0].Attribs[0].Value);
-         }
+         if (scan.hasContent()) Self->Description.assign(scan.Children[0].Attribs[0].Value);
       }
       else log_hint(&scan, "doc.unknown-head-tag", "Unknown head tag '{}'.", name);
    }
@@ -2493,15 +2482,14 @@ void parser::tag_template(const tag_view &Tag)
       return;
    }
 
-   STRING strxml;
-   if (m_xml->serialise(Tag.ID, XMF::NIL, &strxml) IS ERR::Okay) {
+   std::string strxml;
+   if (!m_xml->serialise(Tag.ID, XMF::NIL, strxml)) {
       // Remove any existing tag that uses the same name.
       if (Self->TemplateIndex.contains(strhash(Tag.Attribs[n].Value))) {
          Self->Templates->removeTag(Tag.ID, 1);
       }
 
       Self->Templates->insertXML(Self->Templates->Tags[0].ID, XMI::END, strxml, 0);
-      FreeResource(strxml);
 
       Self->RefreshTemplates = true; // Force a refresh of the TemplateIndex because the pointers will be changed
    }
@@ -2621,7 +2609,7 @@ void parser::tag_script(const tag_view &Tag)
          // Reference an external script as the default for function calls
          if ((Self->Flags & DCF::UNRESTRICTED) != DCF::NIL) {
             OBJECTID id;
-            if (FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, FOF::NIL, &id) IS ERR::Okay) {
+            if (!FindObject(Tag.Attribs[i].Value.c_str(), CLASSID::NIL, &id)) {
                Self->DefaultScript = (objScript *)GetObjectPtr(id);
                return;
             }
@@ -2708,11 +2696,8 @@ void parser::tag_script(const tag_view &Tag)
 
    // Pass document arguments to the script
 
-   KEYVALUE *vs;
-   if ((script->get(FID_Variables, vs) IS ERR::Okay) and (vs) and (vs->size() > 0)) {
-      Self->Vars   = *vs;
-      Self->Params = *vs;
-   }
+   script->Vars.insert(Self->Vars.begin(), Self->Vars.end());
+   script->Vars.insert(Self->Params.begin(), Self->Params.end());
 
    if (auto err = acActivate(script); err != ERR::Okay) {
       log_error(&Tag, err, "doc.script-activate-failed", "Failed to activate script '{}'.", name.empty() ? type : name);
@@ -2729,10 +2714,10 @@ void parser::tag_script(const tag_view &Tag)
 
    // Any results returned from the script are processed as XML
 
-   CSTRING *results;
-   int size;
-   if ((script->get(FID_Results, results, size) IS ERR::Okay) and (size > 0)) {
-      auto xmlinc = objXML::create::global(fl::Statement(results[0]), fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
+   std::span<std::string> results;
+   if ((!script->getResults(results)) and (not results.empty())) {
+      auto xmlinc = objXML::create::global(fl::Statement(results[0]),
+         fl::Flags(XMF::PARSE_HTML|XMF::STRIP_HEADERS));
       if (xmlinc) {
          auto old_xml = change_xml(xmlinc);
          parse_tags(xmlinc->Tags);
@@ -3069,7 +3054,7 @@ void parser::tag_table(const tag_view &Tag)
             }
          }
 
-         if (end IS std::string_view::npos) break;
+         if (end IS std::string_view::npos) { parsed_columns++; break; }
          remaining.remove_prefix(end + 1);
       }
 
@@ -3318,9 +3303,12 @@ void parser::tag_trigger(const tag_view &Tag)
       // Get the script
 
       std::string args;
-      if (extract_script(Self, function_name, &script, function_name, args) IS ERR::Okay) {
-         if (script->getProcedureID(function_name.c_str(), &function_id) IS ERR::Okay) {
-            Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, function_id));
+      if (!extract_script(Self, function_name, &script, function_name, args)) {
+         if (!script->getProcedureID(function_name, &function_id)) {
+            bool subscribe_context = not has_script_free_callback(Self, script);
+            Self->Triggers[int(trigger_code)].emplace_back(FUNCTION(script, uint32_t(function_id)));
+            Self->Triggers[int(trigger_code)].back().pin();
+            if (subscribe_context) SubscribeAction(script, AC::Free, C_FUNCTION(notify_free_script_context));
          }
          else log_warning(&Tag, "doc.trigger-procedure-missing", attrib_name("function"),
             "Unable to resolve '{}' in script #{} to a function ID (the procedure may not exist).",

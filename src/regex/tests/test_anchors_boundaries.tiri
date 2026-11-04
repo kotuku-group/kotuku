@@ -10,7 +10,7 @@ end
    try
       matcher = regex.new("\\Astart.+finish\\Z")
    success
-      error("\\A and \\Z are not supported by ECMAScript")
+      assert(false, "\\A and \\Z are not supported by ECMAScript")
    end
 end
 

@@ -1,0 +1,22 @@
+#!/usr/bin/env origo
+-- Colour Picker test
+
+   import 'gui'
+   import 'gui/colourpicker'
+
+   proc = processing.new()
+
+   gui.dialog.colour({
+      colour  = 'rgb(255,0,0)',
+      theme   = arg('theme'),
+      feedback = function(Colour)
+         if not Colour then
+            print('Dialog was cancelled.')
+         else
+            print(f'The user selected colour is {Colour} (sRGB), {Colour.css} in the {Colour.gamut} target')
+         end
+         proc.signal()
+      end
+   })
+
+   proc.sleep(nil, true)

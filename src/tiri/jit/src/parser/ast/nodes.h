@@ -38,13 +38,20 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "lexer.h"
+#include "../static_type_descriptor.h"
+#include "../../../../packaging/import_module_format.h"
+#include "../../../../packaging/import_module_bundle.h"
+#include "../../../../packaging/version_constraints.h"
 
 class ParserDiagnostics;
+class InstalledImportInterface;
 
 // Forward declarations for recursive ownership.
 struct ExprNode;
@@ -56,18 +63,38 @@ using StmtNodePtr = std::unique_ptr<StmtNode>;
 using ExprNodeList = std::vector<ExprNodePtr>;
 using StmtNodeList = std::vector<StmtNodePtr>;
 
+// Hidden local that holds the base of a lowered field assignment block.  The leading byte cannot be produced by the
+// lexer, so user code can never name it.
+
+inline constexpr std::string_view FIELD_BLOCK_BINDING_NAME = "\x1f" "fieldblock";
+
 // Function return type declaration for static analysis
 struct FunctionReturnTypes {
    std::array<TiriType, MAX_RETURN_TYPES> types{};  // Return types (Unknown = unused slot)
-   uint8_t count = 0;           // Number of declared types (0 = not declared)
+   std::array<CLASSID, MAX_RETURN_TYPES> object_class_ids{}; // Inferred object-class constraints
+   std::array<struct_record *, MAX_RETURN_TYPES> struct_defs{}; // Resolved layouts for struct<Name> results
+   std::array<ArrayElementDescriptor, MAX_RETURN_TYPES> array_elements{};
+   std::array<StaticValueHandle, MAX_RETURN_TYPES> descriptors{};
+   std::array<bool, MAX_RETURN_TYPES> required{};
+   uint8_t count = 0;           // Number of stored result types (0 = none)
    bool is_variadic = false;    // True if declaration ends with ... (last type repeats)
    bool is_explicit = false;    // True if explicitly declared, false if inferred
+   bool is_inferred = false;    // True when semantic analysis validated every returned position
+   bool has_thunk_type = false; // First result also supplies an advisory runtime type for a synthetic thunk
 
    [[nodiscard]] bool is_void() const { return count IS 0 and is_explicit; }
    [[nodiscard]] bool is_any() const { return count IS 1 and types[0] IS TiriType::Any; }
    [[nodiscard]] TiriType type_at(size_t Index) const {
       if (Index >= count) return is_variadic ? types[count - 1] : TiriType::Unknown;
       return types[Index];
+   }
+   [[nodiscard]] bool required_at(size_t Index) const {
+      if (Index >= count) return is_variadic and count > 0 ? required[count - 1] : false;
+      return required[Index];
+   }
+   [[nodiscard]] TiriType thunk_type() const {
+      if (count IS 0 or (not is_explicit and not has_thunk_type)) return TiriType::Unknown;
+      return types[0];
    }
 };
 
@@ -85,6 +112,7 @@ struct FunctionReturnTypes {
 struct InferredTypeInfo {
    TiriType type = TiriType::Unknown;
    CLASSID object_class_id = CLASSID::NIL; // Object type identifier
+   struct_record *struct_def = nullptr; // Resolved layout for Struct results
 };
 [[nodiscard]] InferredTypeInfo infer_expression_type_ext(const ExprNode& Expr);
 
@@ -107,6 +135,7 @@ struct AnnotationArgValue {
    bool bool_value = false;
    double number_value = 0.0;
    GCstr* string_value = nullptr;
+   bool string_literal = false;
    std::vector<AnnotationArgValue> array_value;
 };
 
@@ -139,6 +168,7 @@ enum class AstBinaryOperator : uint8_t {
    Concat,
    NotEqual,
    Equal,
+   Approx,
    LessThan,
    GreaterEqual,
    LessEqual,
@@ -151,7 +181,13 @@ enum class AstBinaryOperator : uint8_t {
    LogicalAnd,
    LogicalOr,
    IfEmpty,
-   HasFlag
+   HasFlag,
+   Contains
+};
+
+enum class TernaryConditionMode : uint8_t {
+   Standard,
+   Extended
 };
 
 enum class NameResolution : uint8_t {
@@ -159,8 +195,23 @@ enum class NameResolution : uint8_t {
    Local,
    Upvalue,
    Global,
-   Environment
+   Environment,
+   BuiltinCallable
 };
+
+enum class AssignmentTargetResolution : uint8_t {
+   Unresolved,
+   Blank,
+   ExistingLocal,
+   ExistingUpvalue,
+   ExistingGlobal,
+   NewLocal,
+   Invalid
+};
+
+[[nodiscard]] bool assignment_target_is_existing_lexical(AssignmentTargetResolution Resolution) noexcept;
+[[nodiscard]] bool assignment_target_is_existing_storage(AssignmentTargetResolution Resolution) noexcept;
+[[nodiscard]] bool assignment_target_creates_local(AssignmentTargetResolution Resolution) noexcept;
 
 enum class TableFieldKind : uint8_t {
    Array,
@@ -187,7 +238,30 @@ enum class LoopStyle : uint8_t {
 
 enum class CallDispatch : uint8_t {
    Direct,
-   Method
+   // Member forms retain their receiver.  Runtime context management is gated on that receiver being a table.
+   MemberNamed,
+   MemberComputed,
+   SafeMemberNamed,
+   SafeMemberComputed,
+   // receiver.member?(...): the receiver must be a table and only a nil member skips the call.
+   OptionalMemberNamed,
+   LegacyMethod,
+   LegacySafeMethod
+};
+
+// Receiver handling for a statically selected built-in dot method.
+
+enum class MethodReceiverGuard : uint8_t {
+   None,         // receiver.method(...)
+   NilSafe,      // receiver?.method(...): a nil receiver skips the call
+   RequireTable  // receiver.method?(...): a non-table receiver raises before the call
+};
+
+enum class CallArgumentSyntax : uint8_t {
+   Synthetic,
+   Parenthesised,
+   TableConstructor,
+   StringLiteral
 };
 
 //********************************************************************************************************************
@@ -198,7 +272,19 @@ struct Identifier {
    bool is_blank = false;
    bool has_close = false;
    bool has_const = false;  // Const attribute flag - variable cannot be reassigned
+   bool has_view = false;   // View attribute flag - first object array read is non-owning
+   bool has_weak = false;   // Weak-value cell backing for a local target
+   bool is_future_reserved = false;  // True when parsed from a keyword reserved for future syntax
    TiriType type = TiriType::Unknown;  // Explicit type annotation (Unknown = no annotation)
+   struct_record *struct_def = nullptr; // Resolved layout for struct<Name> annotations
+   ArrayElementDescriptor array_element{}; // Member identity for array<Element> annotations
+   mutable StaticBindingID binding_id{};
+   mutable StaticValueHandle static_value{};
+   mutable TiriType global_contract_type = TiriType::Unknown;
+   mutable CLASSID global_contract_object_class_id = CLASSID::NIL;
+   mutable struct_record *global_contract_struct_def = nullptr;
+   mutable ArrayElementDescriptor global_contract_array_element{};
+   mutable GlobalContractPolicy global_contract_policy = GlobalContractPolicy::Advisory;
 
    // Default constructor
    Identifier() = default;
@@ -216,6 +302,9 @@ struct Identifier {
       id.is_blank = false;
       id.has_close = false;
       id.has_const = false;
+      id.has_view = false;
+      id.has_weak = false;
+      id.is_future_reserved = false;
       return id;
    }
 };
@@ -223,7 +312,9 @@ struct Identifier {
 struct NameRef {
    Identifier identifier;
    NameResolution resolution = NameResolution::Unresolved;
+   AssignmentTargetResolution assignment_resolution = AssignmentTargetResolution::Unresolved;
    uint16_t slot = 0;
+   mutable StaticBindingID binding_id{};
 };
 
 struct LiteralValue {
@@ -266,7 +357,10 @@ struct LiteralValue {
 struct FunctionParameter {
    Identifier name;
    TiriType type = TiriType::Any;
-   bool is_self = false;
+   struct_record *struct_def = nullptr;
+   ArrayElementDescriptor array_element{};
+   bool type_is_explicit = false;
+   bool required = false;
 };
 
 struct DirectCallTarget {
@@ -279,30 +373,9 @@ struct DirectCallTarget {
    ~DirectCallTarget();
 };
 
-struct MethodCallTarget {
-   MethodCallTarget() = default;
-   MethodCallTarget(const MethodCallTarget&) = delete;
-   MethodCallTarget& operator=(const MethodCallTarget&) = delete;
-   MethodCallTarget(MethodCallTarget&&) noexcept = default;
-   MethodCallTarget& operator=(MethodCallTarget&&) noexcept = default;
-   ExprNodePtr receiver;
-   Identifier method;
-   ~MethodCallTarget();
-};
+using CallTarget = std::variant<DirectCallTarget>;
 
-struct SafeMethodCallTarget {
-   SafeMethodCallTarget() = default;
-   SafeMethodCallTarget(const SafeMethodCallTarget&) = delete;
-   SafeMethodCallTarget& operator=(const SafeMethodCallTarget&) = delete;
-   SafeMethodCallTarget(SafeMethodCallTarget&&) noexcept = default;
-   SafeMethodCallTarget& operator=(SafeMethodCallTarget&&) noexcept = default;
-   ExprNodePtr receiver;
-   Identifier method;
-   ~SafeMethodCallTarget();
-};
-
-using CallTarget = std::variant<DirectCallTarget, MethodCallTarget, SafeMethodCallTarget>;
-
+struct CurrentContextExprPayload {};
 struct VarArgExprPayload {};
 
 struct UnaryExprPayload {
@@ -328,6 +401,26 @@ struct UpdateExprPayload {
    ~UpdateExprPayload();
 };
 
+struct TypeTestDescriptor {
+   TiriType type = TiriType::Unknown;
+   ArrayElementDescriptor array_element{};
+   CLASSID object_class_id = CLASSID::NIL;
+   struct_record *struct_def = nullptr;
+   bool constrained = false;
+};
+
+struct TypeTestExprPayload {
+   TypeTestExprPayload() = default;
+   TypeTestExprPayload(const TypeTestExprPayload&) = delete;
+   TypeTestExprPayload& operator=(const TypeTestExprPayload&) = delete;
+   TypeTestExprPayload(TypeTestExprPayload&&) noexcept = default;
+   TypeTestExprPayload& operator=(TypeTestExprPayload&&) noexcept = default;
+   ExprNodePtr value;
+   TypeTestDescriptor descriptor{};
+   bool negated = false;
+   ~TypeTestExprPayload();
+};
+
 struct BinaryExprPayload {
    BinaryExprPayload() = default;
    BinaryExprPayload(const BinaryExprPayload&) = delete;
@@ -340,12 +433,24 @@ struct BinaryExprPayload {
    ~BinaryExprPayload();
 };
 
+struct ComparisonChainExprPayload {
+   ComparisonChainExprPayload() = default;
+   ComparisonChainExprPayload(const ComparisonChainExprPayload&) = delete;
+   ComparisonChainExprPayload& operator=(const ComparisonChainExprPayload&) = delete;
+   ComparisonChainExprPayload(ComparisonChainExprPayload&&) noexcept = default;
+   ComparisonChainExprPayload& operator=(ComparisonChainExprPayload&&) noexcept = default;
+   std::vector<AstBinaryOperator> operators;
+   ExprNodeList operands;
+   ~ComparisonChainExprPayload();
+};
+
 struct TernaryExprPayload {
    TernaryExprPayload() = default;
    TernaryExprPayload(const TernaryExprPayload&) = delete;
    TernaryExprPayload& operator=(const TernaryExprPayload&) = delete;
    TernaryExprPayload(TernaryExprPayload&&) noexcept = default;
    TernaryExprPayload& operator=(TernaryExprPayload&&) noexcept = default;
+   TernaryConditionMode condition_mode = TernaryConditionMode::Standard;
    ExprNodePtr condition;
    ExprNodePtr if_true;
    ExprNodePtr if_false;
@@ -369,9 +474,8 @@ struct PipeExprPayload {
    PipeExprPayload(PipeExprPayload&&) noexcept = default;
    PipeExprPayload& operator=(PipeExprPayload&&) noexcept = default;
    ExprNodePtr lhs;              // Left-hand side expression (piped value)
-   ExprNodePtr rhs_call;         // Right-hand side call expression (or function ref for deferred iteration)
+   ExprNodePtr rhs_call;         // Right-hand side CallExpr or SafeCallExpr
    uint32_t limit = 0;           // Result limit (0 = unlimited)
-   bool deferred_iteration = false; // True when RHS is a function ref and LHS type is unknown at parse time
    ~PipeExprPayload();
 };
 
@@ -382,10 +486,40 @@ struct CallExprPayload {
    CallExprPayload(CallExprPayload&&) noexcept = default;
    CallExprPayload& operator=(CallExprPayload&&) noexcept = default;
    CallTarget target;
+   CallDispatch dispatch = CallDispatch::Direct;
    ExprNodeList arguments;
+   CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic;
    bool forwards_multret = false;
+   bool receives_pipe_results = false;
+   BuiltinCallableID compiler_callable = BuiltinCallableID::Invalid;
+   struct BuiltinMethodCall {
+      const fprototype *prototype = nullptr;
+      BuiltinCallableID callable = BuiltinCallableID::Invalid;
+      TiriType receiver_type = TiriType::Unknown;
+      MethodReceiverGuard guard = MethodReceiverGuard::None;
+      bool arguments_validated = false;
+   };
+   mutable std::optional<BuiltinMethodCall> builtin_method;
+   mutable const fprototype *native_prototype = nullptr;
+   mutable bool native_arguments_validated = false;
+   struct RuntimeBuiltinMethodCall {
+      GCstr *member = nullptr;
+      bool safe = false;
+   };
+   mutable std::optional<RuntimeBuiltinMethodCall> runtime_builtin_method;
+   // Set when this is a direct call to the unshadowed built-in setmetatable() whose target the author owns.
+   // Only an authorised call may promote an ordinary table to contextual; every other spelling raises at runtime instead.
+   mutable bool authorised_contextual_designation = false;
+   // Static contextuality of the table returned by an authorised designation.  An unresolved metatable deliberately
+   // leaves this Unknown unless the target was already contextual.
+   mutable StaticContextuality contextual_designation_result = StaticContextuality::Unknown;
+   mutable bool unresolved_method_reported = false;
+   mutable bool optional_receiver_reported = false;
    mutable TiriType result_type = TiriType::Unknown;  // Inferred return type (e.g., Object for obj.new())
    mutable CLASSID object_class_id = CLASSID::NIL; // CLASSID if result is Object
+   mutable struct_record *struct_def = nullptr; // Resolved layout if result is Struct, or callable struct definition
+   mutable StaticCallableHandle callable{};
+   mutable StaticResultSetHandle results{};
    ~CallExprPayload();
 };
 
@@ -397,11 +531,24 @@ struct MemberExprPayload {
    MemberExprPayload& operator=(MemberExprPayload&&) noexcept = default;
    ExprNodePtr table;
    Identifier member;
-   bool uses_method_dispatch = false;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/object) expression
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
+   mutable bool builtin_shadow_reported = false;
    ~MemberExprPayload();
+};
+
+// Selection of a module function through a compiler-managed namespace, e.g. mCore.PreciseTime.
+//
+// This is a leaf node: it carries no base expression, because a module namespace is compiler metadata rather than a
+// script value.  The emitter resolves `binding` to the hidden local that dependency activation produced, so no
+// table member lookup is involved.  Retaining a dedicated node keeps generic member emission from restoring table
+// semantics to a namespace, and gives static analysis the module signature without a value descriptor.
+
+struct ModuleFunctionExprPayload {
+   Identifier binding;                                // Hidden local holding the callable, assigned by the dependency
+   Identifier function;                               // Canonical function name, for diagnostics and metadata lookup
+   StaticModuleHandle module = nullptr;               // Immutable module signature; never a script value
+   GCstr *namespace_name = nullptr;                   // Source namespace spelling, for diagnostics
 };
 
 struct IndexExprPayload {
@@ -412,7 +559,6 @@ struct IndexExprPayload {
    IndexExprPayload& operator=(IndexExprPayload&&) noexcept = default;
    ExprNodePtr table;
    ExprNodePtr index;
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/array) expression
    ~IndexExprPayload();
 };
 
@@ -425,7 +571,6 @@ struct SafeMemberExprPayload {
    ExprNodePtr table;
    Identifier member;
    bool is_call_target = false;                       // True if this expression is the callee of a function call
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/object) expression
    mutable CLASSID class_id = CLASSID::NIL;           // CLASSID if base is Object
    ~SafeMemberExprPayload();
 };
@@ -438,7 +583,6 @@ struct SafeIndexExprPayload {
    SafeIndexExprPayload& operator=(SafeIndexExprPayload&&) noexcept = default;
    ExprNodePtr table;
    ExprNodePtr index;
-   mutable TiriType base_type = TiriType::Unknown;  // Known type of the base (table/array) expression
    ~SafeIndexExprPayload();
 };
 
@@ -468,6 +612,7 @@ struct TableField {
    std::optional<Identifier> name;
    ExprNodePtr key;
    ExprNodePtr value;
+   bool builtin_shadow_reported = false;
    ~TableField();
 };
 
@@ -479,7 +624,31 @@ struct TableExprPayload {
    TableExprPayload& operator=(TableExprPayload&&) noexcept = default;
    std::vector<TableField> fields;
    bool has_array_part = false;
+   // Set by the `entity { ... }` prefix designation form.  The constructed table is permanently contextual, and the
+   // emitter appends the uniform table-marking operation after the constructor has been materialised.
+   bool contextual = false;
    ~TableExprPayload();
+};
+
+// Context binding declared by `function[...]`.  The reference is evaluated once, in the enclosing scope, when the
+// closure is created.  Every kind other than None carries the ordinary dispatch policy, so entity dispatch does not
+// push the receiver and native callback registration captures no context.
+
+enum class FunctionContextKind : uint8_t {
+   None,     // No binding; entity dispatch pushes the receiver
+   Ordinary, // function[]: inherits the caller's context and binds nothing
+   Strong,   // function[X]: always runs in X, which the closure retains
+   Weak      // function[<weak> X]: always runs in X, which the closure holds weakly
+};
+
+struct FunctionContextBinding {
+   FunctionContextKind kind = FunctionContextKind::None;
+   ExprNodePtr reference;              // X for Strong and Weak; null otherwise
+   mutable bool reported = false;      // A binding diagnostic was issued; suppresses repeats from later passes
+
+   [[nodiscard]] bool is_bound() const {
+      return kind IS FunctionContextKind::Strong or kind IS FunctionContextKind::Weak;
+   }
 };
 
 struct FunctionExprPayload {
@@ -491,12 +660,24 @@ struct FunctionExprPayload {
    std::vector<FunctionParameter> parameters;
    bool is_vararg = false;
    bool is_thunk = false;              // Marks function as thunk
-   TiriType thunk_return_type = TiriType::Any;  // Return type for thunk (kept for IR emission compatibility)
-   FunctionReturnTypes return_types{};            // General return type tracking for type checking
+   FunctionContextBinding context;     // function[], function[X] or function[<weak> X]
+   mutable FunctionReturnTypes return_types{}; // Declared, validated inferred or advisory result metadata
+   mutable StaticCallableHandle callable{};
    std::unique_ptr<BlockStmt> body;
    std::vector<AnnotationEntry> annotations;  // Annotations attached to this function
+
+   // True if the function inherits the caller's context during entity member dispatch.
+   [[nodiscard]] bool is_ordinary() const { return context.kind != FunctionContextKind::None; }
+
    ~FunctionExprPayload();
 };
+
+// Render a function context binding for diagnostics and tooling.  The reference overload returns the reference as
+// written ('a.b', 'a[...]', '&field' or '&&'); the binding overload returns '[]', '[X]' or '[<weak> X]', or an empty
+// string when there is no binding.
+
+[[nodiscard]] std::string context_binding_text(const ExprNode &Reference);
+[[nodiscard]] std::string context_binding_text(const FunctionContextBinding &Binding);
 
 // Deferred expression payload: wraps an expression for lazy evaluation <{ expr }> or <type{ expr }>
 struct DeferredExprPayload {
@@ -511,7 +692,7 @@ struct DeferredExprPayload {
    ~DeferredExprPayload();
 };
 
-// Range expression payload: represents {start..stop} or {start...stop} literal syntax
+// Range expression payload: represents {start to stop} or {start into stop} literal syntax
 
 struct RangeExprPayload {
    RangeExprPayload() = default;
@@ -521,7 +702,8 @@ struct RangeExprPayload {
    RangeExprPayload& operator=(RangeExprPayload&&) noexcept = default;
    ExprNodePtr start;      // Start index expression
    ExprNodePtr stop;       // Stop index expression
-   bool inclusive = false; // True for ... (inclusive), false for .. (exclusive)
+   ExprNodePtr step;       // Optional step expression
+   bool inclusive = false; // True for `into` (inclusive), false for `to` (exclusive)
    ~RangeExprPayload();
 };
 
@@ -544,7 +726,8 @@ struct ChooseCase {
    ChooseCase(ChooseCase&&) noexcept = default;
    ChooseCase& operator=(ChooseCase&&) noexcept = default;
 
-   ExprNodePtr pattern;     // Pattern to match (nullptr for else or wildcard or tuple)
+   ExprNodePtr pattern;     // Pattern to match (nullptr for else, wildcard, tuple or type pattern)
+   std::optional<TypeTestDescriptor> type_pattern; // Type-test descriptor for a single-value type pattern
    ExprNodeList tuple_patterns;    // Patterns for tuple match positions (empty if single-value)
    std::vector<bool> tuple_wildcards; // True for wildcard positions in tuple patterns
    ExprNodePtr guard;       // Optional when clause (nullptr if none)
@@ -582,20 +765,41 @@ struct ChooseExprPayload {
    ~ChooseExprPayload();
 };
 
+// Shared raise payload. A single value is classified as code or message at runtime.
+struct RaisePayload {
+   RaisePayload() = default;
+   RaisePayload(const RaisePayload&) = delete;
+   RaisePayload& operator=(const RaisePayload&) = delete;
+   RaisePayload(RaisePayload&&) noexcept = default;
+   RaisePayload& operator=(RaisePayload&&) noexcept = default;
+
+   bool rethrow = false;
+   ExprNodePtr error_code;   // Code or message value; absent only for rethrow
+   ExprNodePtr message;      // Optional: explicit custom error message
+
+   ~RaisePayload();
+};
+
 struct ExprNode {
    AstNodeKind kind = AstNodeKind::LiteralExpr;
    SourceSpan span{};
-   std::variant<LiteralValue, NameRef, VarArgExprPayload, UnaryExprPayload,
-      UpdateExprPayload, BinaryExprPayload, TernaryExprPayload,
+   bool is_grouped = false;
+   bool is_checked = false; // Promote an unsafe first result while preserving the expression's complete result set
+   mutable StaticValueHandle static_value{};
+   mutable StaticResultSetHandle static_results{};
+   std::variant<LiteralValue, NameRef, CurrentContextExprPayload, VarArgExprPayload, UnaryExprPayload,
+      UpdateExprPayload, TypeTestExprPayload, BinaryExprPayload, ComparisonChainExprPayload, TernaryExprPayload,
       PresenceExprPayload, PipeExprPayload, CallExprPayload, MemberExprPayload,
       IndexExprPayload, SafeMemberExprPayload, SafeIndexExprPayload,
       ResultFilterPayload, TableExprPayload, FunctionExprPayload, DeferredExprPayload,
-      RangeExprPayload, ChooseExprPayload>
+      RangeExprPayload, ChooseExprPayload, ModuleFunctionExprPayload, RaisePayload>
       data;
 
    ExprNode() = default;
    ExprNode(AstNodeKind Kind, SourceSpan Span) : kind(Kind), span(Span) {}
 };
+
+[[nodiscard]] bool expression_never_returns(const ExprNode &Expression);
 
 struct IfClause {
    IfClause() = default;
@@ -632,6 +836,8 @@ struct LocalDeclStmtPayload {
    AssignmentOperator op = AssignmentOperator::Plain;  // Supports ??= conditional assignment
    std::vector<Identifier> names;
    ExprNodeList values;
+   bool implicit_declaration = false; // Source omitted the explicit 'local' keyword
+   uint32_t module_dependency = UINT32_MAX; // Descriptor ordinal for compiler-generated module activation
    ~LocalDeclStmtPayload();
 };
 
@@ -648,6 +854,17 @@ struct GlobalDeclStmtPayload {
    ~GlobalDeclStmtPayload();
 };
 
+struct ExternDeclStmtPayload {
+   explicit ExternDeclStmtPayload(std::vector<Identifier> Names)
+      : names(std::move(Names)) {}
+   ExternDeclStmtPayload(const ExternDeclStmtPayload&) = delete;
+   ExternDeclStmtPayload& operator=(const ExternDeclStmtPayload&) = delete;
+   ExternDeclStmtPayload(ExternDeclStmtPayload&&) noexcept = default;
+   ExternDeclStmtPayload& operator=(ExternDeclStmtPayload&&) noexcept = default;
+   std::vector<Identifier> names;
+   ~ExternDeclStmtPayload();
+};
+
 struct LocalFunctionStmtPayload {
    LocalFunctionStmtPayload(Identifier name, std::unique_ptr<FunctionExprPayload> function)
       : name(std::move(name)), function(std::move(function)) {}
@@ -662,7 +879,6 @@ struct LocalFunctionStmtPayload {
 
 struct FunctionNamePath {
    std::vector<Identifier> segments;
-   std::optional<Identifier> method;
    bool is_explicit_global = false;  // True when declared with `global function`
 };
 
@@ -719,6 +935,30 @@ struct NumericForStmtPayload {
    ~NumericForStmtPayload();
 };
 
+struct RangeForStmtPayload {
+   RangeForStmtPayload(Identifier Control, ExprNodePtr Start, ExprNodePtr Stop, ExprNodePtr Step,
+                       bool Inclusive, std::unique_ptr<BlockStmt> Body)
+      : control(std::move(Control)), start(std::move(Start)), stop(std::move(Stop)), step(std::move(Step)),
+        inclusive(Inclusive), body(std::move(Body)) {}
+   RangeForStmtPayload(const RangeForStmtPayload&) = delete;
+   RangeForStmtPayload& operator=(const RangeForStmtPayload&) = delete;
+   RangeForStmtPayload(RangeForStmtPayload&&) noexcept = default;
+   RangeForStmtPayload& operator=(RangeForStmtPayload&&) noexcept = default;
+   Identifier control;
+   ExprNodePtr start;
+   ExprNodePtr stop;
+   ExprNodePtr step;
+   bool inclusive = false;
+   std::unique_ptr<BlockStmt> body;
+   ~RangeForStmtPayload();
+};
+
+enum class GenericForTarget : uint8_t {
+   IteratorProtocol,
+   BareTable,
+   BareTarget
+};
+
 struct GenericForStmtPayload {
    GenericForStmtPayload(std::vector<Identifier> names, ExprNodeList iterators,
                          std::unique_ptr<BlockStmt> body)
@@ -729,6 +969,7 @@ struct GenericForStmtPayload {
    GenericForStmtPayload& operator=(GenericForStmtPayload&&) noexcept = default;
    std::vector<Identifier> names;
    ExprNodeList iterators;
+   GenericForTarget target = GenericForTarget::IteratorProtocol;
    std::unique_ptr<BlockStmt> body;
    ~GenericForStmtPayload();
 };
@@ -770,6 +1011,18 @@ struct DoStmtPayload {
    DoStmtPayload& operator=(DoStmtPayload&&) noexcept = default;
    std::unique_ptr<BlockStmt> block;
    ~DoStmtPayload();
+};
+
+struct ContextStmtPayload {
+   ContextStmtPayload(ExprNodePtr Reference, std::unique_ptr<BlockStmt> Block)
+      : reference(std::move(Reference)), block(std::move(Block)) {}
+   ContextStmtPayload(const ContextStmtPayload&) = delete;
+   ContextStmtPayload& operator=(const ContextStmtPayload&) = delete;
+   ContextStmtPayload(ContextStmtPayload&&) noexcept = default;
+   ContextStmtPayload& operator=(ContextStmtPayload&&) noexcept = default;
+   ExprNodePtr reference;
+   std::unique_ptr<BlockStmt> block;
+   ~ContextStmtPayload();
 };
 
 struct ConditionalShorthandStmtPayload {
@@ -816,19 +1069,20 @@ struct TryExceptPayload {
    ~TryExceptPayload();
 };
 
-// Raise statement payload: raise error_code [, message]
-struct RaiseStmtPayload {
-   RaiseStmtPayload() = default;
-   RaiseStmtPayload(const RaiseStmtPayload&) = delete;
-   RaiseStmtPayload& operator=(const RaiseStmtPayload&) = delete;
-   RaiseStmtPayload(RaiseStmtPayload&&) noexcept = default;
-   RaiseStmtPayload& operator=(RaiseStmtPayload&&) noexcept = default;
+struct CheckallStmtPayload {
+   CheckallStmtPayload() = default;
+   explicit CheckallStmtPayload(std::unique_ptr<BlockStmt> Block) : block(std::move(Block)) {}
+   CheckallStmtPayload(const CheckallStmtPayload&) = delete;
+   CheckallStmtPayload& operator=(const CheckallStmtPayload&) = delete;
+   CheckallStmtPayload(CheckallStmtPayload&&) noexcept = default;
+   CheckallStmtPayload& operator=(CheckallStmtPayload&&) noexcept = default;
 
-   ExprNodePtr error_code;   // Required: expression evaluating to error code
-   ExprNodePtr message;      // Optional: custom error message
+   std::unique_ptr<BlockStmt> block;
 
-   ~RaiseStmtPayload();
+   ~CheckallStmtPayload();
 };
+
+using RaiseStmtPayload = RaisePayload;
 
 // Check statement payload: check expression
 struct CheckStmtPayload {
@@ -843,7 +1097,91 @@ struct CheckStmtPayload {
    ~CheckStmtPayload();
 };
 
-// Import statement payload: import 'library' - compile-time file inlining
+enum class ImportedModuleState : uint8_t {
+   Resolving,
+   Parsed,
+   InterfaceReady,
+   Emitted,
+   Failed
+};
+
+struct ImportedModuleKey {
+   std::string resolved_path;
+   std::string logical_request;
+   std::string selected_version;
+   bool package_managed = false;
+   bool imported_root = true;
+
+   bool operator==(const ImportedModuleKey &) const = default;
+};
+
+struct ImportedModuleKeyHash {
+   size_t operator()(const ImportedModuleKey &Key) const noexcept {
+      size_t hash = std::hash<std::string>{}(Key.resolved_path);
+      hash ^= std::hash<std::string>{}(Key.logical_request) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      hash ^= std::hash<std::string>{}(Key.selected_version) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      hash ^= size_t(Key.package_managed) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      hash ^= size_t(Key.imported_root) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+      return hash;
+   }
+};
+
+// Exports of a module compiled from source, indexed by the same declarations and first-declaration precedence that
+// its portable interface applies.  Cold importers use it before interface preparation; see source_module_member().
+struct SourceModuleExports {
+   std::unordered_map<std::string, const FunctionExprPayload *> exports; // Qualified name to callable, if any
+   std::unordered_set<std::string> namespaces;
+};
+
+// Definition-level state shared by every non-local import edge in one root compilation.
+struct ImportedModuleUnit {
+   ImportedModuleKey key;
+   ImportedModuleState state = ImportedModuleState::Resolving;
+   std::shared_ptr<BlockStmt> body;
+   std::string module_identity;
+   tiri::import_cache::Identity module_cache_identity;
+   std::optional<tiri::PackageIdentity> declared_package;
+   std::optional<tiri::DependencyRequirements> dependency_requirements;
+   tiri::import_cache::FinalisedInterfacePtr interface_artifact;
+   tiri::import_cache::CachedModuleArtifactPtr cache_artifact; // Validated fragment graph of a cache hit.
+   std::shared_ptr<const InstalledImportInterface> installed_interface;
+   std::unique_ptr<SourceModuleExports> source_exports;
+   std::vector<FuncState::DependencyDescriptor> module_dependencies;
+   uint8_t file_source_idx = 0;
+   bool module_cache_hit = false;
+   bool assignment_resolved = false;
+   bool static_discovered = false;
+   uint32_t static_propagation_generation = 0;
+   bool type_analysed = false;
+   bool unanalysed_lowered = false;
+   bool interface_prepared = false;
+   bool ownership_visited = false;
+   uint32_t compilation_record = UINT32_MAX;
+};
+
+struct ImportEntryPayload {
+   ImportEntryPayload() = default;
+   ImportEntryPayload(const ImportEntryPayload&) = delete;
+   ImportEntryPayload& operator=(const ImportEntryPayload&) = delete;
+   ImportEntryPayload(ImportEntryPayload&&) noexcept = default;
+   ImportEntryPayload& operator=(ImportEntryPayload&&) noexcept = default;
+
+   std::optional<Identifier> namespace_name;   // The local variable name (alias or default)
+   std::string lib_path;                       // Resolved path to library file
+   std::string default_namespace;              // The declared namespace for _LIB lookup
+   std::unique_ptr<BlockStmt> inlined_body;    // Parsed content of imported file
+   std::shared_ptr<ImportedModuleUnit> module_unit; // Shared definition for a non-local imported module
+   std::optional<tiri::PackageImportRequirement> package_requirement; // Constraint belonging to this import edge
+   uint8_t file_source_idx = 0;                // FileSource index for this imported file
+   bool module_initialiser = false;            // Execute body through a child prototype for non-local imports
+   bool module_already_imported = false;       // Publish aliases without repeating an earlier module activation
+   bool state_satisfied = false;               // Active state supplies the module; emit no executable reference
+   bool reuses_namespace_binding = false;      // A declaration or import already bound this registry namespace locally
+
+   ~ImportEntryPayload();
+};
+
+// Import statement payload: local imports are inlined; non-local imports retain source AST for module initialisers.
 struct ImportStmtPayload {
    ImportStmtPayload() = default;
    ImportStmtPayload(const ImportStmtPayload&) = delete;
@@ -851,13 +1189,29 @@ struct ImportStmtPayload {
    ImportStmtPayload(ImportStmtPayload&&) noexcept = default;
    ImportStmtPayload& operator=(ImportStmtPayload&&) noexcept = default;
 
-   std::optional<Identifier> namespace_name;  // The local variable name (alias or default)
-   std::string lib_path;                      // Resolved path to library file
-   std::string default_namespace;             // The declared namespace for _LIB lookup
-   std::unique_ptr<BlockStmt> inlined_body;   // Parsed content of imported file
-   uint8_t file_source_idx = 0;               // FileSource index for this imported file
+   std::vector<ImportEntryPayload> entries;
 
    ~ImportStmtPayload();
+};
+
+enum class NamespaceDeclarationMode : uint8_t {
+   Create,
+   Join
+};
+
+struct NamespaceStmtPayload {
+   NamespaceStmtPayload() = default;
+   NamespaceStmtPayload(const NamespaceStmtPayload&) = delete;
+   NamespaceStmtPayload& operator=(const NamespaceStmtPayload&) = delete;
+   NamespaceStmtPayload(NamespaceStmtPayload&&) noexcept = default;
+   NamespaceStmtPayload& operator=(NamespaceStmtPayload&&) noexcept = default;
+
+   Identifier name;
+   ExprNodePtr initialiser;
+   NamespaceDeclarationMode mode = NamespaceDeclarationMode::Join;
+   bool reuses_import_binding = false;
+
+   ~NamespaceStmtPayload();
 };
 
 // With statement payload: with obj1, obj2 do ... end - auto-lock/unlock objects
@@ -890,11 +1244,11 @@ struct StmtNode {
    AstNodeKind kind = AstNodeKind::ExpressionStmt;
    SourceSpan span{};
    std::variant<AssignmentStmtPayload, LocalDeclStmtPayload, GlobalDeclStmtPayload,
-      LocalFunctionStmtPayload, FunctionStmtPayload, IfStmtPayload,
-      LoopStmtPayload, NumericForStmtPayload, GenericForStmtPayload,
+      ExternDeclStmtPayload, LocalFunctionStmtPayload, FunctionStmtPayload, IfStmtPayload,
+      LoopStmtPayload, NumericForStmtPayload, RangeForStmtPayload, GenericForStmtPayload,
       ReturnStmtPayload, BreakStmtPayload, ContinueStmtPayload, DeferStmtPayload,
-      DoStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
-      RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, WithStmtPayload,
+      DoStmtPayload, ContextStmtPayload, ConditionalShorthandStmtPayload, TryExceptPayload,
+      CheckallStmtPayload, RaiseStmtPayload, CheckStmtPayload, ImportStmtPayload, NamespaceStmtPayload, WithStmtPayload,
       ExpressionStmtPayload>
       data;
 
@@ -977,29 +1331,40 @@ struct BlockStmt {
 
 ExprNodePtr make_literal_expr(SourceSpan span, const LiteralValue& literal);
 ExprNodePtr make_identifier_expr(SourceSpan span, const NameRef& reference);
+ExprNodePtr make_current_context_expr(SourceSpan span);
 ExprNodePtr make_vararg_expr(SourceSpan span);
 ExprNodePtr make_unary_expr(SourceSpan span, AstUnaryOperator op, ExprNodePtr operand);
 ExprNodePtr make_update_expr(SourceSpan span, AstUpdateOperator op, bool is_postfix, ExprNodePtr target);
+ExprNodePtr make_type_test_expr(
+   SourceSpan span, ExprNodePtr value, TypeTestDescriptor descriptor, bool negated);
 ExprNodePtr make_binary_expr(SourceSpan span, AstBinaryOperator op, ExprNodePtr left, ExprNodePtr right);
-ExprNodePtr make_ternary_expr(SourceSpan span, ExprNodePtr condition, ExprNodePtr if_true, ExprNodePtr if_false);
+ExprNodePtr make_comparison_chain_expr(SourceSpan span, std::vector<AstBinaryOperator> operators,
+   ExprNodeList operands);
+ExprNodePtr make_ternary_expr(SourceSpan span, TernaryConditionMode mode, ExprNodePtr condition, ExprNodePtr if_true,
+   ExprNodePtr if_false);
 ExprNodePtr make_presence_expr(SourceSpan span, ExprNodePtr value);
 ExprNodePtr make_pipe_expr(SourceSpan span, ExprNodePtr lhs, ExprNodePtr rhs_call, uint32_t limit);
-ExprNodePtr make_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret);
-ExprNodePtr make_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments, bool forwards_multret);
-ExprNodePtr make_safe_method_call_expr(SourceSpan span, ExprNodePtr receiver, Identifier method, ExprNodeList arguments,
+ExprNodePtr make_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments, bool forwards_multret,
+   CallArgumentSyntax argument_syntax = CallArgumentSyntax::Synthetic);
+ExprNodePtr make_optional_member_call_expr(SourceSpan span, ExprNodePtr callee, ExprNodeList arguments,
    bool forwards_multret);
-ExprNodePtr make_member_expr(SourceSpan span, ExprNodePtr table, Identifier member, bool uses_method_dispatch);
+ExprNodePtr make_member_expr(SourceSpan span, ExprNodePtr table, Identifier member);
+ExprNodePtr make_module_function_expr(SourceSpan span, Identifier binding, Identifier function,
+   StaticModuleHandle module, GCstr *namespace_name);
 ExprNodePtr make_index_expr(SourceSpan span, ExprNodePtr table, ExprNodePtr index);
 ExprNodePtr make_safe_member_expr(SourceSpan span, ExprNodePtr table, Identifier member);
 ExprNodePtr make_safe_index_expr(SourceSpan span, ExprNodePtr table, ExprNodePtr index);
 ExprNodePtr make_result_filter_expr(SourceSpan span, ExprNodePtr expression, uint64_t keep_mask, uint8_t explicit_count, bool trailing_keep);
 ExprNodePtr make_table_expr(SourceSpan span, std::vector<TableField> fields, bool has_array_part);
-ExprNodePtr make_function_expr(SourceSpan span, std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool is_thunk = false, TiriType thunk_return_type = TiriType::Any, FunctionReturnTypes return_types = {});
+ExprNodePtr make_function_expr(SourceSpan Span, std::vector<FunctionParameter> Parameters, bool IsVararg,
+   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {});
 ExprNodePtr make_deferred_expr(SourceSpan span, ExprNodePtr inner, TiriType type = TiriType::Unknown, bool type_explicit = false);
-ExprNodePtr make_range_expr(SourceSpan span, ExprNodePtr start, ExprNodePtr stop, bool inclusive);
+ExprNodePtr make_range_expr(SourceSpan span, ExprNodePtr start, ExprNodePtr stop, bool inclusive,
+   ExprNodePtr step = nullptr);
 ExprNodePtr make_choose_expr(SourceSpan span, ExprNodePtr scrutinee, std::vector<ChooseCase> cases, size_t inferred_arity = 0);
 ExprNodePtr make_choose_expr_tuple(SourceSpan span, ExprNodeList scrutinee_tuple, std::vector<ChooseCase> cases);
-std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> parameters, bool is_vararg, std::unique_ptr<BlockStmt> body, bool is_thunk = false, TiriType thunk_return_type = TiriType::Any, FunctionReturnTypes return_types = {});
+std::unique_ptr<FunctionExprPayload> make_function_payload(std::vector<FunctionParameter> Parameters, bool IsVararg,
+   std::unique_ptr<BlockStmt> Body, bool IsThunk = false, FunctionReturnTypes ReturnTypes = {});
 std::unique_ptr<BlockStmt> make_block(SourceSpan span, StmtNodeList statements);
 StmtNodePtr make_assignment_stmt(SourceSpan span, AssignmentOperator op, ExprNodeList targets, ExprNodeList values);
 StmtNodePtr make_local_decl_stmt(SourceSpan span, std::vector<Identifier> names, ExprNodeList values);

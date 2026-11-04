@@ -1,13 +1,15 @@
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
-// Permission to copy, use, modify, sell and distribute this software
-// is granted provided this copyright notice appears in all copies.
-// This software is provided "as is" without express or implied
-// warranty, and with no claim as to its suitability for any purpose.
+// Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice
+// appears in all copies.  This software is provided "as is" without express or implied warranty, and with no
+// claim as to its suitability for any purpose.
+// ---
+// Computes bounds for one or more vertex-source paths. Hooks into any source that implements rewind() and vertex(),
+// including path_storage and converters. In the vector renderer it provides quick geometry extents for clipping,
+// culling, and layout decisions.
 
-#ifndef AGG_BOUNDING_RECT_INCLUDED
-#define AGG_BOUNDING_RECT_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
@@ -82,5 +84,3 @@ bool bounding_rect_single(VertexSource& vs, unsigned path_id, V* x1, V* y1, V* x
 }
 
 } // namespace
-
-#endif

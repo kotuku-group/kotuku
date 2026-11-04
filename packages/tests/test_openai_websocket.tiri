@@ -1,0 +1,225 @@
+include 'websocket'
+import 'json'
+import 'ai/openai'
+
+function waitFor(Stream:table)
+   local deadline = mSys.PreciseTime() + 3000000
+   while (Stream.state() is 'pending' or Stream.state() is 'open') and mSys.PreciseTime() < deadline do
+      processing.sleep(0.01)
+   end
+   assert(Stream.state() != 'pending' and Stream.state() != 'open', 'WebSocket response must finish')
+end
+
+@Test function PolicyCanDisableWebSocket()
+   local client = openai.client({ credential=openai.apiKey('fixture-key'),
+      policy={ capabilities=function():table return { websocket=false } end } })
+   assert(not client.capabilities().websocket, 'Policy narrows WebSocket capability')
+   local connection, err = client.responses.connect()
+   assert(not connection and err.code is 'unsupported_capability',
+      'Unsupported routes fail before opening a connection')
+end
+
+@Test; @Requires(network=true) function HandshakeIgnoresScriptSignals()
+   local server <close> = obj.new('websocketserver', {
+      address='127.0.0.1', port=0, path='/v1/responses',
+      accept=function(Server:obj, Request:table)
+         processing.signal()
+         return ERR_Okay
+      end
+   })
+   local client = openai.client({ credential=openai.apiKey('fixture-key'),
+      baseURL='http://127.0.0.1:' .. server.port .. '/v1', testLoopback=true, timeout=2 })
+   defer processing.flush() end
+   processing.signal()
+   local connection, err = client.responses.connect()
+   assert(connection and not err and connection.state() is 'open',
+      'Signals before and during the handshake must not abort the connection')
+   connection.close()
+end
+
+function connectionErrorDetails(StreamIDs:array<str>, Flat:bool)
+   local count = 0
+   local server <close> = obj.new('websocketserver', {
+      address='127.0.0.1', port=0, path='/v1/responses',
+      connected=function(Server:obj, Socket:obj)
+         Socket.incoming = function(WS:obj, Buffer:array<byte>, Type:num, Final:num)
+            count++
+            if count is #StreamIDs then
+               local details = { code='websocket_connection_limit_reached', message='Reconnect required',
+                  param='connection' }
+               local event = Flat and details or { error=details }
+               event.type = 'error'
+               event.status = 400
+               check WS.mtSend(json.encode(event), WSM_TEXT)
+            end
+         end
+      end
+   })
+   local client = openai.client({ credential=openai.apiKey('fixture-key'),
+      baseURL='http://127.0.0.1:' .. server.port .. '/v1', testLoopback=true, timeout=2 })
+   local connection, err = client.responses.connect()
+   assert(connection and not err, 'Responses WebSocket opens')
+   defer connection.close() end
+   local streams = array<table>
+   for stream_id in values(StreamIDs) do
+      local stream, create_err = connection.create({ model='fixture', input='test' },
+         stream_id != '' and stream_id or nil)
+      assert(stream and not create_err, 'Each response starts before the connection error')
+      streams.push(stream)
+   end
+   local completions = 0
+   for stream in values(streams) do
+      stream.onComplete(function(Response:table, Error:table)
+         assert(not Response and Error.code is 'websocket_connection_limit_reached',
+            'Completion receives the connection provider error')
+         completions++
+      end)
+   end
+   for stream in values(streams) do
+      waitFor(stream)
+      local response, failure = stream.result()
+      assert(not response and stream.state() is 'failed' and failure.kind is 'invalid_request' and
+         failure.code is 'websocket_connection_limit_reached' and failure.message is 'Reconnect required' and
+         failure.param is 'connection' and failure.httpStatus is 400 and not failure.retryable,
+         'Connection errors preserve provider details for every active stream')
+   end
+   processing.sleep(0)
+   assert(connection.state() is 'closed' and completions is #StreamIDs,
+      'Connection errors close the connection and deliver each completion once')
+   local rejected, rejected_err = connection.create({ model='fixture', input='after failure' })
+   assert(not rejected and rejected_err.code is 'connection_closed', 'A failed connection rejects new requests')
+end
+
+@Test; @Requires(network=true) function ConnectionErrorsPreserveProviderDetails()
+   for stream_ids in values(array<array> {
+      array<str> { 'main', 'other' }, array<str> { '', 'other' }, array<str> { '' }
+   }) do
+      connectionErrorDetails(stream_ids, false)
+      connectionErrorDetails(stream_ids, true)
+   end
+end
+
+@Test; @Requires(network=true) function DefaultLaneErrorsLeaveNamedResponsesActive()
+   local server <close> = obj.new('websocketserver', {
+      address='127.0.0.1', port=0, path='/v1/responses',
+      connected=function(Server:obj, Socket:obj)
+         Socket.incoming = function(WS:obj, Buffer:array<byte>, Type:num, Final:num)
+            local request = json.decode(Buffer.getString())
+            if request.input is 'hang' then return end
+            if request.input is 'error' then
+               check WS.mtSend(json.encode({ type='error', status=400,
+                  error={ code='bad_input', message='Rejected', param='input' } }), WSM_TEXT)
+               return
+            end
+            check WS.mtSend(json.encode({ type='response.completed', stream_id='other',
+               response={ id='named-response', status='completed', output=array<table> } }), WSM_TEXT)
+            check WS.mtSend(json.encode({ type='response.completed',
+               response={ id='default-response', status='completed', output=array<table> } }), WSM_TEXT)
+         end
+      end
+   })
+   local client = openai.client({ credential=openai.apiKey('fixture-key'),
+      baseURL='http://127.0.0.1:' .. server.port .. '/v1', testLoopback=true, timeout=2 })
+   local connection, err = client.responses.connect()
+   assert(connection and not err, 'Responses WebSocket opens')
+   defer connection.close() end
+   local named, named_err = connection.create({ model='fixture', input='hang' }, 'other')
+   local failed, failed_err = connection.create({ model='fixture', input='error' })
+   assert(named and not named_err and failed and not failed_err, 'Both lanes start')
+   waitFor(failed)
+   local response, failure = failed.result()
+   assert(not response and failure.code is 'bad_input' and failed.state() is 'failed',
+      'An unscoped request error fails the default response')
+   assert(connection.state() is 'open' and (named.state() is 'pending' or named.state() is 'open'),
+      'The named response stays active after the default request fails')
+   local reused, reuse_err = connection.create({ model='fixture', input='continue' })
+   assert(reused and not reuse_err, 'The default lane can be reused after a request error')
+   waitFor(named)
+   waitFor(reused)
+   assert(named.result()?.id is 'named-response' and reused.result()?.id is 'default-response',
+      'The original named response and reused default lane both complete')
+end
+
+@Test; @Requires(network=true) function ResponsesWebSocketConnection()
+   local seen = array<table>
+   local authorization = ''
+   local count = 0
+   local server <close> = obj.new('websocketserver', {
+      address='127.0.0.1', port=0, path='/v1/responses',
+      accept=function(Server:obj, Request:table)
+         authorization = Request.headers
+         return ERR_Okay
+      end,
+      connected=function(Server:obj, Socket:obj)
+         Socket.incoming = function(WS:obj, Buffer:array<byte>, Type:num, Final:num)
+            assert(Type is WSM_TEXT and Final is 1, 'Responses requests must be complete text messages')
+            local request = json.decode(Buffer.getString())
+            seen.push(request)
+            if request.input is 'hang' then return end
+            if request.input is 'error' then
+               check WS.mtSend(json.encode({ type='error', stream_id=request.stream_id,
+                  status=400, error={ code='bad_input', message='Rejected', param='input' } }), WSM_TEXT)
+               return
+            end
+            count++
+            check WS.mtSend(json.encode({ type='response.output_text.delta', stream_id=request.stream_id,
+               sequence_number=1, delta='hello' }), WSM_TEXT)
+            check WS.mtSend(json.encode({ type='response.completed', stream_id=request.stream_id,
+               sequence_number=2, response={ id='resp-' .. count, status='completed',
+                  output=array<table> { { type='message', role='assistant', content=array<table> {
+                     { type='output_text', text='hello' } } } } } }), WSM_TEXT)
+         end
+      end
+   })
+
+   local client = openai.client({ credential=openai.apiKey('fixture-key'),
+      baseURL='http://127.0.0.1:' .. server.port .. '/v1', testLoopback=true, timeout=2 })
+   assert(client.capabilities().websocket, 'Standard Responses client advertises WebSocket support')
+   local connection, err = client.responses.connect()
+   assert(connection and not err and connection.state() is 'open', 'Responses WebSocket opens')
+   defer connection.close() end
+   assert(authorization.lower().find('authorization: bearer fixture-key'),
+      'Credential is sent in the WebSocket handshake')
+
+   local first, first_err = connection.create({ model='fixture', input='first', store=false, stream=true }, 'main')
+   assert(first and not first_err, 'The first response starts')
+   local busy, busy_err = connection.create({ model='fixture', input='overlap' }, 'main')
+   assert(not busy and busy_err.code is 'stream_busy', 'A lane cannot run overlapping responses')
+   local parallel, parallel_err = connection.create({ model='fixture', input='parallel' }, 'other')
+   assert(parallel and not parallel_err, 'A second lane can run in parallel')
+   waitFor(first)
+   waitFor(parallel)
+   local response, response_err = first.result()
+   assert(not response_err and response.id is 'resp-1' and response.outputText() is 'hello',
+      'Completed WebSocket response uses the existing response wrapper')
+   assert(parallel.result()?.id is 'resp-2', 'Parallel lane has its own response')
+
+   local second, second_err = connection.create({ model='fixture', input='next', store=false,
+      previous_response_id=response.id }, 'main')
+   assert(second and not second_err, 'A response can continue on the same connection')
+   waitFor(second)
+   assert(seen[0].type is 'response.create' and seen[0].stream_id is 'main' and seen[0].stream is nil and
+      seen[2].previous_response_id is 'resp-1', 'Wire messages use the Responses WebSocket protocol')
+
+   local failed = connection.create({ model='fixture', input='error' }, 'other')
+   waitFor(failed)
+   local failed_err:any = nil
+   _, failed_err = failed.result()
+   assert(failed_err and failed_err.kind is 'invalid_request' and failed_err.code is 'bad_input' and
+      failed_err.param is 'input' and
+      failed_err.httpStatus is 400,
+      'Request scoped error terminates only its response')
+   assert(connection.state() is 'open', 'A request error leaves the connection open')
+   local invalid, invalid_err = connection.create({ model='fixture', input='x' }, 'bad lane')
+   assert(not invalid and invalid_err.code is 'invalid_stream_id', 'Invalid stream IDs are rejected locally')
+   local default = connection.create({ model='fixture', input='default' })
+   waitFor(default)
+   assert(default.result()?.status is 'completed' and seen[4].stream_id is nil,
+      'Omitting the stream ID selects the default lane')
+   local pending = connection.create({ model='fixture', input='hang' }, 'main')
+   processing.sleep(0.01)
+   connection.close()
+   assert(connection.state() is 'closed', 'Connection closes cleanly')
+   _, failed_err = pending.result()
+   assert(failed_err and pending.state() is 'interrupted', 'Closing interrupts an in-flight response')
+end

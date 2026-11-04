@@ -4,12 +4,21 @@
 // Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice
 // appears in all copies.  This software is provided "as is" without express or implied warranty, and with no
 // claim as to its suitability for any purpose.
+// ---
+// Defines packed anti-aliased scanlines with compact span coverage storage. Hooks into rasterizer_scanline_aa and
+// renderer_scanline. In the vector renderer it carries generated coverage from the rasterizer to span blending with low
+// memory overhead.
 //
 // This is a general purpose scanline container with *packed* spans.  It is best used in conjunction with cover
-// values that mostly continuous.  See description of scanline_u8 for details.
+// values that are mostly continuous.  See description of scanline_u8 for details.
+//
+// This variant combines the int32 coordinate range of AGG's scanline32_p8 with the flat span storage of
+// scanline_p8: spans live in a single contiguous array addressed through a bumped tail pointer, so appending
+// and iterating avoid the block-vector double indirection of the original 32-bit container.  reset() bounds
+// the worst-case span count (every span covers at least one pixel), so the array is sized once per sweep
+// with no reallocation during scanline construction.
 
-#ifndef AGG_SCANLINE_P_INCLUDED
-#define AGG_SCANLINE_P_INCLUDED
+#pragma once
 
 #include "agg_array.h"
 
@@ -22,62 +31,64 @@ public:
    typedef int32 coord_type;
 
    struct span {
-      span() {}
-      span(coord_type x_, coord_type len_, const cover_type* covers_) :
-         x(x_), len(len_), covers(covers_) {}
-
       coord_type x;
       coord_type len; // If negative, it's a solid span, covers is valid
       const cover_type* covers;
    };
-   typedef pod_bvector<span, 4> span_array_type;
 
-   class const_iterator {
-   public:
-      const_iterator(const span_array_type& spans) : m_spans(spans), m_span_idx(0) { }
-      const span& operator*()  const { return m_spans[m_span_idx];  }
-      const span* operator->() const { return &m_spans[m_span_idx]; }
-      void operator ++ () { ++m_span_idx; }
-   private:
-      const span_array_type& m_spans;
-      unsigned               m_span_idx;
-   };
+   typedef const span* const_iterator;
 
-   scanline32_p8() : m_max_len(0), m_last_x(0x7FFFFFF0), m_covers(), m_cover_ptr(0) { }
+   scanline32_p8() : m_max_len(0), m_last_x(0x7FFFFFF0), m_y(0), m_cover_ptr(0), m_cur_span(0) { }
 
    void reset(int min_x, int max_x) {
       unsigned max_len = max_x - min_x + 3;
-      if (max_len > m_covers.size()) m_covers.resize(max_len);
+      if (max_len > m_max_len) {
+         m_covers.resize(max_len);
+         m_spans.resize(max_len);
+         m_max_len = max_len;
+      }
       m_last_x    = 0x7FFFFFF0;
       m_cover_ptr = &m_covers[0];
-      m_spans.remove_all();
+      m_cur_span  = &m_spans[0]; // Sentinel; begin() starts at m_spans[1]
+      m_cur_span->len = 0;
    }
 
    void add_cell(int x, unsigned cover) {
       *m_cover_ptr = cover_type(cover);
-      if ((x == m_last_x+1) and (m_spans.size()) and (m_spans.last().len > 0)) m_spans.last().len++;
-      else m_spans.add(span(coord_type(x), 1, m_cover_ptr));
+      if ((x IS m_last_x+1) and (m_cur_span->len > 0)) m_cur_span->len++;
+      else {
+         m_cur_span++;
+         m_cur_span->x      = coord_type(x);
+         m_cur_span->len    = 1;
+         m_cur_span->covers = m_cover_ptr;
+      }
       m_last_x = x;
       m_cover_ptr++;
    }
 
    void add_cells(int x, unsigned len, const cover_type *covers) {
       memcpy(m_cover_ptr, covers, len * sizeof(cover_type));
-      if ((x == m_last_x+1) and (m_spans.size()) and (m_spans.last().len > 0)) {
-         m_spans.last().len += coord_type(len);
+      if ((x IS m_last_x+1) and (m_cur_span->len > 0)) m_cur_span->len += coord_type(len);
+      else {
+         m_cur_span++;
+         m_cur_span->x      = coord_type(x);
+         m_cur_span->len    = coord_type(len);
+         m_cur_span->covers = m_cover_ptr;
       }
-      else m_spans.add(span(coord_type(x), coord_type(len), m_cover_ptr));
       m_cover_ptr += len;
       m_last_x = x + len - 1;
    }
 
    void add_span(int x, unsigned len, unsigned cover) {
-      if ((x == m_last_x+1) and (m_spans.size()) and (m_spans.last().len < 0) and (cover == *m_spans.last().covers)) {
-         m_spans.last().len -= coord_type(len);
+      if ((x IS m_last_x+1) and (m_cur_span->len < 0) and (cover IS *m_cur_span->covers)) {
+         m_cur_span->len -= coord_type(len);
       }
       else {
          *m_cover_ptr = cover_type(cover);
-         m_spans.add(span(coord_type(x), -coord_type(len), m_cover_ptr++));
+         m_cur_span++;
+         m_cur_span->x      = coord_type(x);
+         m_cur_span->len    = -coord_type(len);
+         m_cur_span->covers = m_cover_ptr++;
       }
       m_last_x = x + len - 1;
    }
@@ -87,12 +98,13 @@ public:
    void reset_spans() {
       m_last_x    = 0x7FFFFFF0;
       m_cover_ptr = &m_covers[0];
-      m_spans.remove_all();
+      m_cur_span  = &m_spans[0];
+      m_cur_span->len = 0;
    }
 
    int y() const { return m_y; }
-   unsigned num_spans() const { return m_spans.size(); }
-   const_iterator begin() const { return const_iterator(m_spans); }
+   unsigned num_spans() const { return unsigned(m_cur_span - &m_spans[0]); }
+   const_iterator begin() const { return &m_spans[1]; }
 
 private:
    scanline32_p8(const self_type&);
@@ -102,11 +114,9 @@ private:
    int m_last_x;
    int m_y;
    pod_array<cover_type> m_covers;
+   pod_array<span> m_spans;
    cover_type *m_cover_ptr;
-   span_array_type m_spans;
+   span *m_cur_span;
 };
 
 } // namespace
-
-#endif
-

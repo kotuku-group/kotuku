@@ -36,6 +36,7 @@ end
       t.hour = 5
    end
    -- Object should still be accessible after the with block
+   assert(t.exists(), 'Expected object to remain alive after with block')
    val = t.hour
    assert(val is 5, 'Expected hour to be 5 after with block, got ' .. tostring(val))
 end
@@ -64,7 +65,7 @@ end
 
 @Test function WithBreak()
    t = obj.new('time', { })
-   for i = 0, 9 do
+   for i in {0 to 10} do
       with t do
          t.hour = i
          if i is 3 then break end
@@ -80,7 +81,7 @@ end
 
 @Test function WithContinue()
    t = obj.new('time', { })
-   for i = 0, 4 do
+   for i in {0 to 5} do
       with t do
          if i is 2 then continue end
          t.hour = i
@@ -120,7 +121,7 @@ end
    function inner()
       with t do
          t.hour = 11
-         error('test error inside with')
+         raise 'test error inside with'
       end
    end
 
@@ -148,7 +149,7 @@ end
       with t1, t2 do
          t1.hour = 1
          t2.hour = 2
-         error('multi-object error')
+         raise 'multi-object error'
       end
    end
 
@@ -174,7 +175,7 @@ end
    t = obj.new('time', { })
    t.acQuery()
    with t do
-      for i = 0, 10000 do
+      for i in {0 to 10000} do
          val = t.hour
       end
    end

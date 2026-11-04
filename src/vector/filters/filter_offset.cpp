@@ -6,6 +6,12 @@ OffsetFX: A filter effect that offsets the position of an input source.
 This filter offsets the input image relative to its current position in the image space by the specified vector
 of `(XOffset,YOffset)`.
 
+If the @VectorFilter.PrimitiveUnits of the filter is `BOUNDING_BOX`, the offsets are fractions of the bounding box.
+By default the X offset is scaled by the bounding box width and the Y offset by its height, as per the SVG standard.
+If the @VectorFilter.AspectRatio is `NONE`, both offsets are scaled by the normalised diagonal of the bounding box,
+which is the same formula used by a scaled stroke width.  The direction of the offset is then the same for any shape,
+which suits drop shadows.
+
 -END-
 
 *********************************************************************************************************************/
@@ -16,7 +22,29 @@ class extOffsetFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "OffsetFX";
    using create = kt::Create<extOffsetFX>;
 
-   int XOffset, YOffset;
+   double XOffset = 0, YOffset = 0;
+
+   extOffsetFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
+   // Computes the offset in bitmap pixels.
+
+   void pixel_offset(int &DX, int &DY) const {
+      double dx = XOffset, dy = YOffset;
+      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+         if (Filter->AspectRatio IS VFA::NONE) {
+            double diag = dist(0, 0, Filter->BoundWidth, Filter->BoundHeight) * INV_SQRT2;
+            dx *= diag;
+            dy *= diag;
+         }
+         else {
+            dx *= Filter->BoundWidth;
+            dy *= Filter->BoundHeight;
+         }
+      }
+
+      DX = int(std::lround(dx * Filter->ClientVector->Transform.sx));
+      DY = int(std::lround(dy * Filter->ClientVector->Transform.sy));
+   }
 };
 
 //********************************************************************************************************************
@@ -24,9 +52,9 @@ class extOffsetFX : public extFilterEffect {
 static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
 {
    objBitmap *inBmp;
-   int dx = int((double)Self->XOffset * Self->Filter->ClientVector->Transform.sx);
-   int dy = int((double)Self->YOffset * Self->Filter->ClientVector->Transform.sy);
-   if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) IS ERR::Okay) {
+   if (!get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false)) {
+      int dx, dy;
+      Self->pixel_offset(dx, dy);
       gfx::CopyArea(inBmp, Self->Target, BAF::NIL, 0, 0, inBmp->Width, inBmp->Height, dx, dy);
       return ERR::Okay;
    }
@@ -38,44 +66,14 @@ static ERR OFFSETFX_Draw(extOffsetFX *Self, struct acDraw *Args)
 -FIELD-
 XOffset: The delta X coordinate for the input graphic.
 
-The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.
-
-*********************************************************************************************************************/
-
-static ERR OFFSETFX_GET_XOffset(extOffsetFX *Self, int *Value)
-{
-   *Value = Self->XOffset;
-   return ERR::Okay;
-}
-
-static ERR OFFSETFX_SET_XOffset(extOffsetFX *Self, int Value)
-{
-   Self->XOffset = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
+The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.  The
+value is measured in the units of the filter's @VectorFilter.PrimitiveUnits.
 
 -FIELD-
 YOffset: The delta Y coordinate for the input graphic.
 
-The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.
-
-*********************************************************************************************************************/
-
-static ERR OFFSETFX_GET_YOffset(extOffsetFX *Self, int *Value)
-{
-   *Value = Self->YOffset;
-   return ERR::Okay;
-}
-
-static ERR OFFSETFX_SET_YOffset(extOffsetFX *Self, int Value)
-{
-   Self->YOffset = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
+The `(XOffset, YOffset)` field values define the offset of the input source within the target clipping area.  The
+value is measured in the units of the filter's @VectorFilter.PrimitiveUnits.
 
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
@@ -83,11 +81,12 @@ XMLDef: Returns an SVG compliant XML string that describes the effect.
 
 *********************************************************************************************************************/
 
-static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, STRING *Value)
+static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "feOffset dx=\"" << Self->XOffset << "\" dy=\"" << Self->YOffset << "\"";
-   *Value = strclone(stream.str());
+
+   Value = stream.str();
    return ERR::Okay;
 }
 
@@ -96,9 +95,9 @@ static ERR OFFSETFX_GET_XMLDef(extOffsetFX *Self, STRING *Value)
 #include "filter_offset_def.c"
 
 static const FieldArray clOffsetFXFields[] = {
-   { "XOffset", FDF_VIRTUAL|FDF_INT|FDF_RW, OFFSETFX_GET_XOffset, OFFSETFX_SET_XOffset },
-   { "YOffset", FDF_VIRTUAL|FDF_INT|FDF_RW, OFFSETFX_GET_YOffset, OFFSETFX_SET_YOffset },
-   { "XMLDef",  FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, OFFSETFX_GET_XMLDef },
+   { "XOffset", FDF_DOUBLE|FDF_RW },
+   { "YOffset", FDF_DOUBLE|FDF_RW },
+   { "XMLDef",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, OFFSETFX_GET_XMLDef },
    END_FIELD
 };
 

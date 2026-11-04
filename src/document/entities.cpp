@@ -14,5 +14,5 @@ void bc_cell::set_fill(const std::string Fill)
          rect_fill->moveToBack();
       }
    }
-   else rect_fill->set(FID_Fill, Fill);
+   else rect_fill->setFill(Fill);
 }

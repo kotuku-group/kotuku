@@ -11,12 +11,14 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include "lj_arch.h"
+#include "runtime/lj_tab.h"
 #include "runtime/lj_thunk.h"
 #include "runtime/lj_proto_registry.h"
 
 extern "C" int luaopen_range(lua_State* L);
 extern "C" int luaopen_array(lua_State* L);
 extern "C" int luaopen_object(lua_State* L);
+extern "C" int luaopen_struct(lua_State* L);
 
 static const luaL_Reg lj_lib_load[] = {
   { "",       luaopen_base },
@@ -29,6 +31,7 @@ static const luaL_Reg lj_lib_load[] = {
   { "range",  luaopen_range },
   { "array",  luaopen_array },
   { "obj",    luaopen_object },
+  { "struct", luaopen_struct },
   { nullptr,  nullptr }
 };
 
@@ -66,3 +69,19 @@ extern void luaL_openlibs(lua_State* L)
    lua_setglobal(L, "_LIB");
 }
 
+extern void lua_protect_globals(lua_State* L)
+{
+   GCtab* globals = tabref(L->env);
+   Node* node = noderef(globals->node);
+
+   // The array part only represents integer keys.  Global names live in the hash part as string keys.
+   for (MSize i = 0; i <= globals->hmask; ++i) {
+      Node* entry = &node[i];
+      if (not tvisnil(&entry->val) and tvisstr(&entry->key)) {
+         strV(&entry->key)->flags |= STRFLAG_PROTECTED_GLOBAL;
+      }
+   }
+
+   // Marking must follow registration: from here on, every store route treats the environment as policy-checked.
+   lj_env_mark(L, globals);
+}

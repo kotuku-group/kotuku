@@ -1,0 +1,102 @@
+   import './webchannel_support'
+   import 'json'
+
+function stats(Peer:obj):table
+   local _, text = check Peer.mtGetStats()
+   return json.decode(text)
+end
+
+@Test function NewGatheringFailedAndClosedSnapshots()
+   local peer <close> = obj.new('peerconnection', { flags='RELAY_ONLY', iceServers='[]' })
+   local _, retained = check peer.mtGetStats()
+   local initial = json.decode(retained)
+   assert(initial.version is 1 and initial.selectedRoute is json.null and initial.iceRttUs is json.null,
+      'New peer reported a live route or RTT')
+   assert(initial.connection.sentBytes is '0' and initial.sctp is json.null, 'New counters are not empty')
+   check peer.mtCreateOffer()
+   local gathering = stats(peer)
+   assert(gathering.selectedRoute is json.null, 'Gathering invented a selected route')
+   channelTest.waitFor(function() return peer.state is RTCS_FAILED end)
+   assert(stats(peer).selectedRoute is json.null, 'Failed relay-only peer disclosed a direct route')
+   check peer.mtClose()
+   local closed = stats(peer)
+   assert(closed.selectedRoute is json.null and closed.route is json.null and closed.sctp is json.null,
+      'Closed peer retained live transport state')
+   assert(json.decode(retained).connection.sentBytes is '0', 'Retained snapshot changed')
+end
+
+@Test function TrafficRestartAndRetainedOwnership()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local channel = channelTest.create(first, 'statistics')
+   local echoed = ''
+   second.onWebChannel = function(Peer, Child)
+      Child.onMessage = function(Child, Buffer, Type) check Child.mtSend(Buffer, Type) end
+   end
+   channel.onMessage = function(Child, Buffer, Type) echoed = Buffer.getString() end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN end)
+   local _, retained = check first.mtGetStats()
+   local before = json.decode(retained)
+   assert(before.selectedRoute != json.null and before.route != json.null, 'No selected-route evidence')
+   assert(before.selectedRoute.turnTransport is json.null, 'Direct path claims TURN')
+   assert(before.selectedRoute.localEndpoint != json.null, 'Explicit numeric policy suppressed host endpoint')
+   assert(before.sctp.rtoUs >= 1000000 and before.sctp.pathMtuBytes > 0 and before.sctp.cwndBytes > 0,
+      'SCTP units or validity are incorrect')
+   check channel.mtSend('statistics-payload', WCM_TEXT)
+   channelTest.waitFor(function() return echoed is 'statistics-payload' end)
+   local after = stats(first)
+   assert(tonumber(after.connection.sentBytes) > tonumber(before.connection.sentBytes) and
+      tonumber(after.connection.receivedBytes) > tonumber(before.connection.receivedBytes), 'Traffic was not counted')
+   assert(after.connection.turnSentBytes is '0', 'Direct traffic counted as TURN')
+   check first.mtRestartIce()
+   channelTest.waitFor(function() return first.gatheringState is RTCGATHER_COMPLETE end)
+   assert(stats(first).selectedRoute is json.null and stats(first).iceRttUs is json.null,
+      'Restart kept stale selection')
+   check first.mtSetLocalDescription(first.localDescription)
+   check second.mtSetRemoteDescription(first.localDescription)
+   check second.mtCreateAnswer()
+   channelTest.waitFor(function() return second.gatheringState is RTCGATHER_COMPLETE end)
+   check second.mtSetLocalDescription(second.localDescription)
+   check first.mtSetRemoteDescription(second.localDescription)
+   channelTest.waitFor(function() return first.state is RTCS_CONNECTED and second.state is RTCS_CONNECTED end)
+   local restarted = stats(first)
+   assert(restarted.selectedRoute.id != before.selectedRoute.id and restarted.generation != before.generation,
+      'Restart reused route identity')
+   assert(tonumber(restarted.connection.sentBytes) >= tonumber(after.connection.sentBytes), 'Restart lost totals')
+   local copied = retained
+   check first.mtClose()
+   local closed = stats(first)
+   assert(closed.selectedRoute is json.null and closed.iceRttUs is json.null, 'Close kept live route')
+   assert(tonumber(closed.connection.sentBytes) >= tonumber(restarted.connection.sentBytes), 'Close lost totals')
+   first.free()
+   assert(retained is copied and json.decode(retained).selectedRoute.id is before.selectedRoute.id,
+      'Snapshot ownership depended on peer lifetime')
+end
+
+@Test function DefaultPrivacyUsesSignalledNames()
+   local first <close> = obj.new('peerconnection', {})
+   local second <close> = obj.new('peerconnection', {})
+   local channel = channelTest.create(first, 'private-statistics')
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN end)
+   local snapshot = stats(first)
+   for _, endpoint in array<any> { snapshot.selectedRoute.localEndpoint, snapshot.selectedRoute.remoteEndpoint } do
+      if endpoint != json.null then
+         assert(endpoint.address.endsWith('.local'), 'Statistics disclosed a private numeric mapping')
+      end
+   end
+end
+
+@Test function CredentialsNeverEnterSnapshots()
+   local peer <close> = obj.new('peerconnection', {
+      iceServers='[{"url":"turn:127.0.0.1:9","username":"private-user","credential":"private-secret"}]',
+      flags='RELAY_ONLY|NO_HOST|DISABLE_IPV6'
+   })
+   local _, snapshot = check peer.mtGetStats()
+   assert(not snapshot.find('private-user') and not snapshot.find('private-secret'), 'Statistics leaked credentials')
+   check peer.mtCreateOffer()
+   check peer.mtClose()
+   local closed = stats(peer)
+   assert(closed.selectedRoute is json.null and closed.iceRttUs is json.null, 'Cancelled gathering retained selection')
+end

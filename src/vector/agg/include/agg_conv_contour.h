@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Converts a path into an expanded or contracted contour outline. Hooks into conv_adaptor_vcgen with vcgen_contour and
+// any upstream vertex source. In the vector renderer it offsets path geometry for contour effects before scanline
+// rasterisation.
 
-//
-// conv_stroke
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_CONV_CONTOUR_INCLUDED
-#define AGG_CONV_CONTOUR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vcgen_contour.h"
@@ -21,7 +19,6 @@
 namespace agg
 {
 
-    //-----------------------------------------------------------conv_contour
     template<class VertexSource>
     struct conv_contour : public conv_adaptor_vcgen<VertexSource, vcgen_contour>
     {
@@ -32,8 +29,8 @@ namespace agg
         {
         }
 
-        void line_join(line_join_e lj) { base_type::generator().line_join(lj); }
-        void inner_join(inner_join_e ij) { base_type::generator().inner_join(ij); }
+        void line_join(VLJ LineJoin) { base_type::generator().line_join(LineJoin); }
+        void inner_join(VIJ InnerJoin) { base_type::generator().inner_join(InnerJoin); }
         void width(double w) { base_type::generator().width(w); }
         void miter_limit(double ml) { base_type::generator().miter_limit(ml); }
         void miter_limit_theta(double t) { base_type::generator().miter_limit_theta(t); }
@@ -41,8 +38,8 @@ namespace agg
         void approximation_scale(double as) { base_type::generator().approximation_scale(as); }
         void auto_detect_orientation(bool v) { base_type::generator().auto_detect_orientation(v); }
 
-        line_join_e line_join() const { return base_type::generator().line_join(); }
-        inner_join_e inner_join() const { return base_type::generator().inner_join(); }
+        VLJ line_join() const { return base_type::generator().line_join(); }
+        VIJ inner_join() const { return base_type::generator().inner_join(); }
         double width() const { return base_type::generator().width(); }
         double miter_limit() const { return base_type::generator().miter_limit(); }
         double inner_miter_limit() const { return base_type::generator().inner_miter_limit(); }
@@ -56,5 +53,3 @@ namespace agg
     };
 
 }
-
-#endif

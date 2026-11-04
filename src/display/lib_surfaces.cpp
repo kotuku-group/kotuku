@@ -10,42 +10,142 @@ Name: Surfaces
 
 SURFACELIST glSurfaces;
 static OBJECTID glModalID = 0;
+static std::recursive_mutex glModalLock;
+
+//********************************************************************************************************************
+// Returns true if a surface is within the scope of a modal surface.  This is the case if the surface is the modal,
+// one of its children, or a pop-over (such as a menu) that is anchored to a surface within the modal's scope.
+
+bool in_modal_scope(OBJECTID ModalID, OBJECTID SurfaceID)
+{
+   if ((!ModalID) or (!SurfaceID)) return false;
+
+   const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
+
+   for (int depth=0; (SurfaceID) and (depth < 8); depth++) { // The depth limit guards against pop-over cycles
+      auto id = SurfaceID;
+      SurfaceID = 0;
+      while (id) {
+         if (id IS ModalID) return true;
+         auto i = find_surface_list(id);
+         if (i IS -1) return false;
+         if ((glSurfaces[i].PopOverID) and (!SurfaceID)) SurfaceID = glSurfaces[i].PopOverAnchorID;
+         id = glSurfaces[i].ParentID;
+      }
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
+// Resolves a pop-over reference to the ancestor that is a sibling of the surface, so that clients can refer to any
+// surface within a window.  The reference is unchanged if no such ancestor exists.
+
+void resolve_popover(extSurface *Self)
+{
+   if (!Self->PopOverID) return;
+
+   const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
+
+   for (auto id = Self->PopOverID; id; ) {
+      auto i = find_surface_list(id);
+      if (i IS -1) return;
+      if (glSurfaces[i].ParentID IS Self->ParentID) {
+         Self->PopOverID = id;
+         return;
+      }
+      id = glSurfaces[i].ParentID;
+   }
+}
 
 //********************************************************************************************************************
 // Called when windows has an item to be dropped on our display area.
 
 #ifdef _WIN32
-void winDragDropFromHost_Drop(int SurfaceID, char *Datatypes)
+int winDragDropFromHost_Over(int SurfaceID, int X, int Y, const char *Datatypes, int Length)
 {
-#ifdef WIN_DRAGDROP
-   kt::Log log(__FUNCTION__);
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return 0;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   if ((pointer->DragSourceID) and (not pointer->NativeDrag)) return 0;
 
-   log.branch("Surface: %d", SurfaceID);
-
-   if (auto pointer = gfx::AccessPointer()) {
-      // Pass AC::DragDrop to the surface underneath the mouse cursor.  If a surface subscriber accepts the data, it
-      // will send a DATA::REQUEST to the relevant display object.  See DISPLAY_DataFeed() and winGetData().
-
-      OBJECTID modal_id = gfx::GetModalSurface();
-      if (modal_id IS SurfaceID) modal_id = 0;
-
-      if (!modal_id) {
-         SURFACEINFO *info;
-         if (gfx::GetSurfaceInfo(pointer->OverObjectID, &info) IS ERR::Okay) {
-            kt::ScopedObjectLock display(info->DisplayID);
-            if (display.granted()) {
-               kt::ScopedObjectLock obj(pointer->OverObjectID);
-               if (obj.granted()) acDragDrop(*obj, *display, -1, Datatypes);
-            }
-         }
-         else log.warning(ERR::GetSurfaceInfo);
-      }
-      else log.msg("Program is modal - drag/drop cancelled.");
-
-      ReleaseObject(pointer);
+   const auto modal = gfx::GetModalSurface();
+   SURFACEINFO *info;
+   if ((not SurfaceID) or ((modal) and (not in_modal_scope(modal, SurfaceID))) or
+       (gfx::GetSurfaceInfo(SurfaceID, &info) != ERR::Okay)) {
+      winDragDropFromHost_Leave();
+      return 0;
    }
-#endif
+
+   pointer->NativeDrag = true;
+   pointer->DragSourceID = info->DisplayID;
+   watch_drag_keys(pointer);
+   pointer->DragItem = -1;
+   pointer->DragFeedback = -1;
+   pointer->DragData.fill(0);
+   pointer->DragDataSize = uint8_t(std::min(size_t(Length), pointer->DragData.size()));
+   copymem(Datatypes, pointer->DragData.data(), pointer->DragDataSize);
+   display::DriverMovement(SurfaceID, X, Y, false);
+
+   InputEvent event = {};
+   event.Type = JET::ABS_XY;
+   event.Flags = event.Mask = JTYPE::DRAG_ITEM;
+   event.RecipientID = event.OverID = pointer->OverObjectID;
+   event.X = pointer->OverX;
+   event.Y = pointer->OverY;
+   {
+      const std::lock_guard lock(glInputLock);
+      glInputEvents.push_back(event);
+   }
+   // OLE runs a nested message loop.  Feedback cannot wait for the application's next input cycle.
+   input_event_loop(HOSTHANDLE{}, nullptr);
+   // Legacy recipients leave DragFeedback at -1; only an explicit zero refuses the offer.
+   return (pointer->NativeDrag) and (pointer->DragFeedback != 0);
 }
+
+int winDragDropFromHost_Drop(int SurfaceID, int X, int Y, const char *Datatypes)
+{
+   kt::Log log(__FUNCTION__);
+   log.branch("Surface: %d, Position: %d,%d", SurfaceID, X, Y);
+   auto pointer = (extPointer *)gfx::AccessPointer();
+   if (not pointer) return 0;
+   auto release = kt::Defer([&]() { ReleaseObject(pointer); });
+   const auto modal = gfx::GetModalSurface();
+   if ((modal) and (not in_modal_scope(modal, SurfaceID))) return 0;
+
+   // Prepare at OLE release, and keep data retrieval inside this synchronous native offer lifetime.
+   int abs_x = 0, abs_y = 0;
+   if (gfx::GetSurfaceCoords(SurfaceID, nullptr, nullptr, &abs_x, &abs_y, nullptr, nullptr) != ERR::Okay) return 0;
+   NativeDrop drop;
+   drop.SurfaceID = SurfaceID;
+   drop.X = X - abs_x;
+   drop.Y = Y - abs_y;
+   if (not display::DriverDragStart(drop)) return 0;
+   kt::ScopedObjectLock display(drop.DisplayID);
+   kt::ScopedObjectLock destination(drop.TargetID);
+   if ((not display.granted()) or (not destination.granted())) return 0;
+   const auto previous_session = pointer->DropSessionID;
+   auto restore = kt::Defer([&]() {
+      pointer->DropSessionID = previous_session;
+      pointer->DragDelivering = false;
+   });
+   drop.Snapshot->Consumed = true;
+   pointer->DropSessionID = drop.Snapshot->ID;
+   pointer->DragFeedback = -1;
+   pointer->DragDelivering = true;
+   acDragDrop(*destination, *display, -1, Datatypes);
+   return pointer->DragFeedback != 0;
+}
+
+void winDragDropFromHost_Leave(void)
+{
+   if (auto pointer = (extPointer *)gfx::AccessPointer()) {
+      if (pointer->NativeDrag) end_cursor_drag(pointer, false);
+      ReleaseObject(pointer);
+      input_event_loop(HOSTHANDLE{}, nullptr);
+   }
+}
+
 #endif
 
 //********************************************************************************************************************
@@ -89,8 +189,8 @@ static void check_bmp_buffer_depth(extSurface *Self, objBitmap *Bitmap)
 
    if ((Bitmap->Flags & BMF::FIXED_DEPTH) != BMF::NIL) return;  // Don't change bitmaps marked as fixed-depth
 
-   DISPLAYINFO *info;
-   if (gfx::GetDisplayInfo(Self->DisplayID, &info) IS ERR::Okay) {
+   DisplayInfo *info;
+   if (!gfx::GetDisplayInfo(Self->DisplayID, &info)) {
       if (info->BitsPerPixel != Bitmap->BitsPerPixel) {
          log.msg("[%d] Updating buffer Bitmap %dx%dx%d to match new display depth of %dbpp.", Bitmap->UID, Bitmap->Width, Bitmap->Height, Bitmap->BitsPerPixel, info->BitsPerPixel);
          acResize(Bitmap, Bitmap->Width, Bitmap->Height, info->BitsPerPixel);
@@ -382,7 +482,13 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
    // our Index field will not match with the surface that is referenced in Self.  We need to ensure
    // correctness before going any further.
 
+   if ((Index < 0) or (Index >= int(list.size()))) return;
    if (list[Index].SurfaceID != Self->UID) Index = find_surface_list(Self, list.size());
+   if ((Index < 0) or (Index >= int(list.size()))) return;
+
+   // Explicitly managed buffers survive redraws, including queued redraws and composite-window damage.
+
+   if ((Self->Flags & RNF::MANUAL_RENDER) != RNF::NIL) return;
 
    // Prepare the buffer so that it matches the exposed area
 
@@ -390,11 +496,14 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
    int xo = 0, yo = 0;
    if (Self->BitmapOwnerID != Self->UID) {
       for (i=Index; (i > 0) and (list[i].SurfaceID != Self->BitmapOwnerID); i--);
+      if (list[i].SurfaceID != Self->BitmapOwnerID) return;
       xo = list[Index].Left - list[i].Left;
       yo = list[Index].Top - list[i].Top;
       data = DestBitmap->offset(xo, yo);
    }
    else data = DestBitmap->Data;
+
+   auto drawn_data = DestBitmap->Data;
 
    DestBitmap->Clip.Left   = Area.Left - list[Index].Left - xo; // Untested
    DestBitmap->Clip.Top    = Area.Top - list[Index].Top - yo;
@@ -418,10 +527,10 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
       prepare_background(Self, list, Index, DestBitmap, abs, STAGE_PRECOPY);
    }
    else if ((Self->Flags & RNF::COMPOSITE) != RNF::NIL) {
-      gfx::DrawRectangle(DestBitmap, 0, 0, Self->Width, Self->Height, DestBitmap->packPixel(0, 0, 0, 0), BAF::FILL);
+      gfx::DrawRectangle(DestBitmap, 0, 0, Self->FixedWidth, Self->FixedHeight, DestBitmap->packPixel(0, 0, 0, 0), BAF::FILL);
    }
    else if (Self->Colour.Alpha > 0) {
-      gfx::DrawRectangle(DestBitmap, 0, 0, Self->Width, Self->Height, DestBitmap->packPixel(Self->Colour.Red, Self->Colour.Green, Self->Colour.Blue), BAF::FILL);
+      gfx::DrawRectangle(DestBitmap, 0, 0, Self->FixedWidth, Self->FixedHeight, DestBitmap->packPixel(Self->Colour.Red, Self->Colour.Green, Self->Colour.Blue), BAF::FILL);
    }
 
    // Draw graphics to the buffer
@@ -455,7 +564,10 @@ void _redraw_surface_do(extSurface *Self, const SURFACELIST &list, int Index, Cl
       }
    }
 
-   DestBitmap->Data = data;
+   // Client callbacks can resize the bitmap while it is being drawn.  If that happened then the original pointer is
+   // stale and must not be restored.
+
+   if (DestBitmap->Data IS drawn_data) DestBitmap->Data = data;
 }
 
 //********************************************************************************************************************
@@ -496,7 +608,8 @@ int find_bitmap_owner(const SURFACELIST &List, int Index)
 }
 
 //********************************************************************************************************************
-// This function is responsible for inserting new surface objects into the list of layers for positional/depth management.
+// This function is called on initialisation only, and is responsible for inserting new surface objects into the
+// list of layers for positional/depth management.
 //
 // Surface levels start at 1, which indicates the top-most level.
 
@@ -513,23 +626,24 @@ ERR track_layer(extSurface *Self)
    record.BitmapID      = Self->BufferID;
    record.DisplayID     = Self->DisplayID;
    record.PopOverID     = Self->PopOverID;
+   record.PopOverAnchorID = Self->PopOverAnchorID;
    record.Flags         = Self->Flags;
-   record.X             = Self->X;
-   record.Y             = Self->Y;
-   record.Opacity       = Self->Opacity;
+   record.X             = Self->FixedX;
+   record.Y             = Self->FixedY;
+   record.Width         = Self->FixedWidth;
+   record.Height        = Self->FixedHeight;
    record.BitsPerPixel  = Self->BitsPerPixel;
    record.BytesPerPixel = Self->BytesPerPixel;
    record.LineWidth     = Self->LineWidth;
    record.Data          = Self->Data;
    record.Cursor        = int8_t(Self->Cursor);
    record.RootID        = Self->RootID;
-   record.Width         = Self->Width;
-   record.Height        = Self->Height;
+   record.Opacity       = surface_opacity_to_byte(Self->Opacity);
 
    // Find the position at which the surface object should be inserted
 
    if (!Self->ParentID) {
-      record.setArea(Self->X, Self->Y, Self->X + Self->Width, Self->Y + Self->Height);
+      record.setArea(Self->FixedX, Self->FixedY, Self->FixedX + Self->FixedWidth, Self->FixedY + Self->FixedHeight);
       record.Level  = 1;
       glSurfaces.push_back(record);
    }
@@ -540,8 +654,8 @@ ERR track_layer(extSurface *Self)
          return ERR::Search;
       }
 
-      record.setArea(glSurfaces[parent].Left + Self->X, glSurfaces[parent].Top + Self->Y,
-         record.X + Self->Width, record.Y + Self->Height);
+      record.setArea(glSurfaces[parent].Left + Self->FixedX, glSurfaces[parent].Top + Self->FixedY,
+         record.X + Self->FixedWidth, record.Y + Self->FixedHeight);
 
       record.Level = glSurfaces[parent].Level + 1;
 
@@ -571,8 +685,7 @@ void untrack_layer(OBJECTID ObjectID)
 
    if (auto i = find_surface_list(ObjectID); i != -1) {
       #ifdef DBG_LAYERS
-         kt::Log log(__FUNCTION__);
-         log.msg("%d, Index: %d/%d", ObjectID, i, int(glSurfaces.size()));
+         kt::Log(__FUNCTION__).msg("%d, Index: %d/%d", ObjectID, i, int(glSurfaces.size()));
          //print_layer_list("untrack_layer", glSurfaces, i);
       #endif
 
@@ -596,8 +709,8 @@ void untrack_layer(OBJECTID ObjectID)
 
 ERR update_surface_copy(extSurface *Self)
 {
-   if (!Self) return ERR::NullArgs;
-   if (!Self->initialised()) return ERR::Okay;
+   if (not Self) return ERR::NullArgs;
+   if (not Self->initialised()) return ERR::Okay;
 
    const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
    auto &list = glSurfaces;
@@ -609,8 +722,8 @@ ERR update_surface_copy(extSurface *Self)
    int absx, absy;
    if (Self->ParentID) {
       if ((i = find_parent_list(list, Self)) != -1) {
-         absx = list[i].Left + Self->X;
-         absy = list[i].Top + Self->Y;
+         absx = list[i].Left + Self->FixedX;
+         absy = list[i].Top + Self->FixedY;
          i = find_surface_list(Self);
       }
       else {
@@ -619,8 +732,8 @@ ERR update_surface_copy(extSurface *Self)
       }
    }
    else {
-      absx = Self->X;
-      absy = Self->Y;
+      absx = Self->FixedX;
+      absy = Self->FixedY;
       i = find_surface_list(Self);
    }
 
@@ -630,16 +743,17 @@ ERR update_surface_copy(extSurface *Self)
       list[i].BitmapID      = Self->BufferID;
       list[i].DisplayID     = Self->DisplayID;
       list[i].PopOverID     = Self->PopOverID;
-      list[i].X             = Self->X;
-      list[i].Y             = Self->Y;
+      list[i].PopOverAnchorID = Self->PopOverAnchorID;
+      list[i].X             = Self->FixedX;
+      list[i].Y             = Self->FixedY;
       list[i].Left          = absx;        // Synonym: Left
       list[i].Top           = absy;        // Synonym: Top
-      list[i].Width         = Self->Width;
-      list[i].Height        = Self->Height;
-      list[i].Right         = absx + Self->Width;
-      list[i].Bottom        = absy + Self->Height;
+      list[i].Width         = Self->FixedWidth;
+      list[i].Height        = Self->FixedHeight;
+      list[i].Right         = absx + Self->FixedWidth;
+      list[i].Bottom        = absy + Self->FixedHeight;
       list[i].Flags         = Self->Flags;
-      list[i].Opacity       = Self->Opacity;
+      list[i].Opacity       = surface_opacity_to_byte(Self->Opacity);
       list[i].BitsPerPixel  = Self->BitsPerPixel;
       list[i].BytesPerPixel = Self->BytesPerPixel;
       list[i].LineWidth     = Self->LineWidth;
@@ -698,30 +812,28 @@ void move_layer_pos(SURFACELIST &List, int Src, int Dest)
 ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int InsideWidth,
    int InsideHeight, int BPP, double RefreshRate, int DeviceFlags)
 {
-   if (!Width)  Width = Self->Width;
-   if (!Height) Height = Self->Height;
+   if (not Width)  Width = Self->FixedWidth;
+   if (not Height) Height = Self->FixedHeight;
 
-   if (!Self->initialised()) {
-      Self->X = X;
-      Self->Y = Y;
-      Self->Width  = Width;
-      Self->Height = Height;
+   if (not Self->initialised()) {
+      Self->setFixedArea(X, Y, Width, Height);
       return ERR::Okay;
    }
 
-   if ((Self->X IS X) and (Self->Y IS Y) and (Self->Width IS Width) and (Self->Height IS Height) and
-       (Self->ParentID)) {
+   if ((Self->FixedX IS X) and (Self->FixedY IS Y) and (Self->FixedWidth IS Width) and
+       (Self->FixedHeight IS Height) and (Self->ParentID)) {
       return ERR::Okay;
    }
 
    kt::Log log;
 
-   log.traceBranch("resize_layer() %dx%d,%dx%d TO %dx%d,%dx%dx%d", Self->X, Self->Y, Self->Width, Self->Height, X, Y, Width, Height, BPP);
+   log.traceBranch("resize_layer() %dx%d,%dx%d TO %dx%d,%dx%dx%d", Self->FixedX, Self->FixedY,
+      Self->FixedWidth, Self->FixedHeight, X, Y, Width, Height, BPP);
 
    if (Self->BitmapOwnerID IS Self->UID) {
       kt::ScopedObjectLock<objBitmap> bitmap(Self->BufferID, 5000);
       if (bitmap.granted()) {
-         if (bitmap->resize(Width, Height, BPP) IS ERR::Okay) {
+         if (!bitmap->resize(Width, Height, BPP)) {
             Self->LineWidth     = bitmap->LineWidth;
             Self->BytesPerPixel = bitmap->BytesPerPixel;
             Self->BitsPerPixel  = bitmap->BitsPerPixel;
@@ -733,35 +845,35 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
       else return log.warning(ERR::AccessObject);
    }
 
-   if (!Self->ParentID) {
+   auto oldx = Self->FixedX;
+   auto oldy = Self->FixedY;
+   auto oldw = Self->FixedWidth;
+   auto oldh = Self->FixedHeight;
+
+   if (not Self->ParentID) {
       if ((Self->MaxWidth > 0) and (Width > Self->MaxWidth)) Width = Self->MaxWidth;
       if ((Self->MaxHeight > 0) and (Height > Self->MaxHeight)) Height = Self->MaxHeight;
       if (InsideWidth < Width) InsideWidth = Width;
       if (InsideHeight < Height) InsideHeight = Height;
 
       if (ScopedObjectLock<objDisplay> display(Self->DisplayID, 5000); display.granted()) { // NB: SetDisplay() always processes coordinates relative to the client area in order to resolve issues when in hosted mode.
+         // The new area is recorded first so that synchronous display feedback (headless) sees no change and does
+         // not duplicate the Redimension notification sent below.
+
+         Self->setFixedArea(X, Y, Width, Height);
          if (display->setDisplay(X, Y, Width, Height, InsideWidth, InsideHeight, BPP, RefreshRate, DeviceFlags) != ERR::Okay) {
+            Self->setFixedArea(oldx, oldy, oldw, oldh);
             return log.warning(ERR::Redimension);
          }
 
-         Width = display->get<int>(FID_Width);
-         Height = display->get<int>(FID_Height);
+         display->getWidth(Width);
+         display->getHeight(Height);
       }
       else return log.warning(ERR::AccessObject);
    }
 
-   auto oldx = Self->X;
-   auto oldy = Self->Y;
-   auto oldw = Self->Width;
-   auto oldh = Self->Height;
-
-   Self->X = X;
-   Self->Y = Y;
-   Self->Width  = Width;
-   Self->Height = Height;
+   Self->setFixedArea(X, Y, Width, Height);
    UpdateSurfaceRecord(Self);
-
-   if (!Self->initialised()) return ERR::Okay;
 
    // Send a Resize notification to our subscribers.  Basically, this informs our surface children to resize themselves
    // to the new dimensions.  Surface objects are not permitted to redraw themselves when they receive the Redimension
@@ -792,7 +904,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
       log.traceBranch("Redrawing the resized surface.");
 
       _redraw_surface(Self->UID, list, index, list[index].Left, list[index].Top, list[index].Right, list[index].Bottom, IRF::NIL);
-      _expose_surface(Self->UID, list, index, 0, 0, Self->Width, Self->Height, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
+      _expose_surface(Self->UID, list, index, 0, 0, Self->FixedWidth, Self->FixedHeight, EXF::CHILDREN|EXF::REDRAW_VOLATILE_OVERLAP);
 
       if (Self->ParentID) {
          // Update external regions on all four sides that have been exposed by the resize, for example due to a decrease in area or a coordinate shift.
@@ -808,6 +920,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
          for (parent_index=index-1; parent_index >= 0; parent_index--) {
             if (list[parent_index].SurfaceID IS Self->ParentID) break;
          }
+         if (parent_index < 0) return log.warning(ERR::Search);
 
          ClipRectangle region_b(list[parent_index].Left + oldx, list[parent_index].Top + oldy,
             (list[parent_index].Left + oldx) + oldw, (list[parent_index].Top + oldy) + oldh);
@@ -823,7 +936,7 @@ ERR resize_layer(extSurface *Self, int X, int Y, int Width, int Height, int Insi
       }
    }
 
-   refresh_pointer(Self);
+   refresh_pointer();
    return ERR::Okay;
 }
 
@@ -834,25 +947,27 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
    kt::Log log(__FUNCTION__);
 
    #ifdef DBG_DRAW_ROUTINES
-      log.traceBranch("Bitmap: %d, Count: %d", Bitmap->UID, Self->CallbackCount);
+      log.traceBranch("Bitmap: %d, Count: %d", Bitmap->UID, int(Self->Callback.size()));
    #endif
 
-   for (int i=0; i < Self->CallbackCount; i++) {
+   for (int i=0; i < std::ssize(Self->Callback); ) {
       Bitmap->Opacity = 255;
-      auto &cb = Self->Callback[i].Function;
-      if (cb.isC()) {
+      auto &cb = Self->Callback[i];
+      if (cb.stale()) {
+         deref_surface_callback(cb);
+         Self->Callback.erase(Self->Callback.begin() + i);
+         continue;
+      }
+      else if (cb.isC()) {
          auto routine = (void (*)(APTR, extSurface *, objBitmap *, APTR))cb.Routine;
 
          #ifdef DBG_DRAW_ROUTINES
             kt::Log log(__FUNCTION__);
-            log.branch("%d/%d: Routine: %p, Object: %p, Context: %p", i, Self->CallbackCount, routine, Self->Callback[i].Object, cb.Context);
+            log.branch("%d/%d: Routine: %p, Context: %p", i, int(Self->Callback.size()), routine, cb.Context);
          #endif
 
-         if (cb.Context) {
-            kt::SwitchContext context(cb.Context);
-            routine(cb.Context, Self, Bitmap, cb.Meta);
-         }
-         else routine(Self->Callback[i].Object, Self, Bitmap, cb.Meta);
+         kt::SwitchContext context(cb.Context);
+         routine(cb.Context, Self, Bitmap, cb.Meta);
       }
       else if (cb.isScript()) {
          sc::Call(cb, std::to_array<ScriptArg>({
@@ -860,6 +975,7 @@ void process_surface_callbacks(extSurface *Self, extBitmap *Bitmap)
             { "Bitmap",  Bitmap, FD_OBJECTPTR }
          }));
       }
+      i++;
    }
 
    Bitmap->Opacity = 255;
@@ -943,7 +1059,7 @@ void print_layer_list(STRING Function, int POI)
       // Error checks
 
       if (!list[i].SurfaceID) fprintf(stderr, " <---- ERROR");
-      else if (CheckObjectExists(list[i].SurfaceID) != ERR::True) fprintf(stderr, " <---- OBJECT MISSING");
+      else if (CheckResourceExists(list[i].SurfaceID) != ERR::True) fprintf(stderr, " <---- OBJECT MISSING");
 
       // Does the parent exist in the layer list?
 
@@ -978,6 +1094,9 @@ oid Child: The child surface to check.
 True: The `Child` surface belongs to the `Parent`.
 False: The `Child` surface is not a child of `Parent`.
 NullArgs
+
+-TAGS-
+blocking, pure-query
 
 *********************************************************************************************************************/
 
@@ -1032,10 +1151,12 @@ NullArgs
 Search: The supplied `Surface` ID did not refer to a recognised surface object
 AccessObject
 
+-TAGS-
+mutates-object, blocking
+
 *********************************************************************************************************************/
 
-ERR CopySurface(OBJECTID SurfaceID, objBitmap *Bitmap, BDF Flags,
-          int X, int Y, int Width, int Height, int XDest, int YDest)
+ERR CopySurface(OBJECTID SurfaceID, objBitmap *Bitmap, BDF Flags, int X, int Y, int Width, int Height, int XDest, int YDest)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1129,6 +1250,9 @@ Okay
 NullArgs
 Search: The `Surface` ID does not refer to an existing surface object
 
+-TAGS-
+mutates-object, blocking
+
 *********************************************************************************************************************/
 
 ERR ExposeSurface(OBJECTID SurfaceID, int X, int Y, int Width, int Height, EXF Flags)
@@ -1159,14 +1283,18 @@ This function returns the modal surface for the running process.  Returns zero i
 -RESULT-
 oid: The UID of the modal surface, or zero.
 
+-TAGS-
+blocking
+
 *********************************************************************************************************************/
 
 OBJECTID GetModalSurface(void)
 {
+   const std::lock_guard<std::recursive_mutex> lock(glModalLock);
+
    // Safety check: Confirm that the object still exists
-   if ((glModalID) and (CheckObjectExists(glModalID) != ERR::True)) {
-      kt::Log log(__FUNCTION__);
-      log.msg("Modal surface #%d no longer exists.", glModalID);
+   if ((glModalID) and (CheckResourceExists(glModalID) != ERR::True)) {
+      kt::Log(__FUNCTION__).msg("Modal surface #%d no longer exists.", glModalID);
       glModalID = 0;
    }
 
@@ -1193,16 +1321,18 @@ oid Surface: The surface to query.  If zero, the top-level display is queried.
 -ERRORS-
 Okay
 Search: The supplied `Surface` ID did not refer to a recognised surface object.
+SystemCall
+
+-TAGS-
+blocking, pure-query
 
 *********************************************************************************************************************/
 
 ERR GetSurfaceCoords(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height)
 {
-   kt::Log log(__FUNCTION__);
-
    if (!SurfaceID) {
-      DISPLAYINFO *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      DisplayInfo *display;
+      if (!gfx::GetDisplayInfo(0, &display)) {
          if (X)      *X = 0;
          if (Y)      *Y = 0;
          if (AbsX)   *AbsX = 0;
@@ -1246,18 +1376,19 @@ oid Surface: The surface to query.  If zero, the top-level surface is queried.
 -ERRORS-
 Okay
 NullArgs
-AccessMemory
+Search
+
+-TAGS-
+blocking, pure-query
 
 *********************************************************************************************************************/
 
 ERR GetSurfaceFlags(OBJECTID SurfaceID, RNF *Flags)
 {
-   kt::Log log(__FUNCTION__);
-
    if (Flags) *Flags = RNF::NIL;
-   else return log.warning(ERR::NullArgs);
+   else return ERR::NullArgs;
 
-   if (!SurfaceID) return log.warning(ERR::NullArgs);
+   if (!SurfaceID) return ERR::NullArgs;
 
    const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
    int i;
@@ -1270,7 +1401,7 @@ ERR GetSurfaceFlags(OBJECTID SurfaceID, RNF *Flags)
 /*********************************************************************************************************************
 
 -FUNCTION-
-GetSurfaceInfo: Retrieves display information for any surface object without having to access it directly.
+GetSurfaceInfo: Retrieves display information for any surface object, whilst avoiding direct access.
 
 GetSurfaceInfo() is used for quickly retrieving basic information from surfaces, allowing the client to bypass the
 ~Core.AccessObject() function.  The resulting structure values are good only up until the next call to this function,
@@ -1285,16 +1416,18 @@ Okay
 NullArgs
 Search: The supplied SurfaceID did not refer to a recognised surface object.
 
+-TAGS-
+api-owns-result, volatile-result, blocking
+
 *********************************************************************************************************************/
 
 ERR GetSurfaceInfo(OBJECTID SurfaceID, SURFACEINFO **Info)
 {
-   kt::Log log(__FUNCTION__);
    static thread_local SURFACEINFO info;
 
    // Note that a SurfaceID of zero is fine (returns the root surface).
 
-   if (!Info) return log.warning(ERR::NullArgs);
+   if (!Info) return ERR::NullArgs;
 
    const std::lock_guard<std::recursive_mutex> lock(glSurfaceLock);
 
@@ -1338,6 +1471,9 @@ This function returns the unique ID of the surface that has the user's focus.
 -RESULT-
 oid: Returns the ID of the surface object that has the user focus, or zero on failure.
 
+-TAGS-
+blocking, pure-query
+
 *********************************************************************************************************************/
 
 OBJECTID GetUserFocus(void)
@@ -1370,18 +1506,19 @@ oid Surface: The surface to query.  If zero, the top-level display will be queri
 
 -ERRORS-
 Okay
-Failed
 Search: The supplied `Surface` ID did not refer to a recognised surface object.
+SystemCall
+
+-TAGS-
+blocking, pure-query
 
 *********************************************************************************************************************/
 
 ERR GetVisibleArea(OBJECTID SurfaceID, int *X, int *Y, int *AbsX, int *AbsY, int *Width, int *Height)
 {
-   kt::Log log(__FUNCTION__);
-
    if (!SurfaceID) {
-      DISPLAYINFO *display;
-      if (gfx::GetDisplayInfo(0, &display) IS ERR::Okay) {
+      DisplayInfo *display;
+      if (!gfx::GetDisplayInfo(0, &display)) {
          if (X) *X = 0;
          if (Y) *Y = 0;
          if (Width)  *Width = display->Width;
@@ -1432,11 +1569,15 @@ oid Surface: The surface to enable as modal.
 -RESULT-
 oid: The object ID of the previous modal surface is returned (zero if there was no currently modal surface).
 
+-TAGS-
+mutates-object, blocking, callback-inlines
+
 *********************************************************************************************************************/
 
 OBJECTID SetModalSurface(OBJECTID SurfaceID)
 {
    kt::Log log(__FUNCTION__);
+   const std::lock_guard<std::recursive_mutex> lock(glModalLock);
 
    log.branch("#%d, CurrentFocus: %d", SurfaceID, gfx::GetUserFocus());
 
@@ -1484,14 +1625,25 @@ WindowHook: Adds a function hook for receiving window messages from a host deskt
 
 Adds a function hook for receiving window events from a host desktop.
 
+`WH::DROP_SNAPSHOT` is called synchronously at native button release with `(SurfaceID, Snapshot, X, Y)`, where Snapshot
+is a temporary @Config and X/Y are relative to the destination surface.  C callbacks also receive their Meta pointer
+and return an ERR code.  Returning an error rejects the drop.  Routers reserve the `Drop` config group for scene,
+viewport and local position identity.  Store additional client state elsewhere.  Never request payload data here:
+the native source answers only during the subsequent synchronous DragDrop notification.
+
+Passing a null Callback removes the hook.  Only one hook exists for each surface/event pair.
+
 -INPUT-
 oid SurfaceID: A hosted surface to be monitored.
 int(WH) Event: A window hook event.
-ptr(func) Callback: A function to callback when the event is triggered.
+ptr(func) Callback: A function to callback when the event is triggered, or null to remove the hook.
 
 -ERRORS-
 Okay
 NullArgs
+
+-TAGS-
+callback-held, does-not-take-ownership, blocking
 
 -END-
 
@@ -1499,10 +1651,26 @@ NullArgs
 
 ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback)
 {
-   if ((!SurfaceID) or (Event IS WH::NIL) or (!Callback)) return ERR::NullArgs;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Callback) and (not retained_callback)) Callback->consume();
+   });
+
+   if ((!SurfaceID) or (Event IS WH::NIL)) return ERR::NullArgs;
 
    const WinHook hook(SurfaceID, Event);
-   glWindowHooks[hook] = *Callback;
+   const std::lock_guard<std::recursive_mutex> lock(glWindowHookLock);
+   if (auto existing = glWindowHooks.find(hook); existing != glWindowHooks.end()) {
+      release_display_callback(existing->second);
+      if (Callback) existing->second = *Callback;
+      else { glWindowHooks.erase(existing); return ERR::Okay; }
+   }
+   else if (Callback) glWindowHooks[hook] = *Callback;
+   else return ERR::Okay;
+
+   Callback->pin();
+   retained_callback = true;
    return ERR::Okay;
 }
 

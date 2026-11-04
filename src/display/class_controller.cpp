@@ -9,9 +9,12 @@ Unlike analog devices that stream input commands (e.g. mice), gamepad controller
 at any time.  The controller state is normally read at least once per frame, which can be achieved in a program's
 inner loop, or in a separate timer.
 
-Controller input management is governed by the @Display class.  The `GRAB_CONTROLLERS` flag must be defined in the
-active Display's Flags field in order to ensure that controller input can be received.  Failure to do so may mean
-that the Controller object appears to work but does not receive input.
+On Linux, controllers are read through the `/dev/input/js*` joystick API.  The user running the application must have
+read access to these device nodes.
+
+Controller input management is governed by the @Display class.  The `GRAB_CONTROLLERS` flag should be defined in the
+active @Display.Flags field in order to ensure that controller input can be received from the host.  Failure to do
+so may mean that the Controller object works inconsistently across different systems.
 
 -END-
 
@@ -19,24 +22,37 @@ that the Controller object appears to work but does not receive input.
 
 #include "defs.h"
 
-#ifdef _WIN32
-using namespace display;
+#ifdef __linux__
+extern ERR linuxReadController(int Port, double *Values, CON &Buttons);
+extern ERR linuxGetControllerPorts(int &Value);
 #endif
 
 /*********************************************************************************************************************
 -ACTION-
 Query: Get the current controller state.
+
+Query will update the controller field values with the state of the controller connected to the specified port.
+On failure, all axis and button fields are cleared while #Port is preserved.  Repeated calls to Query() return
+`ERR::Disconnected` until a controller is connected to the selected port, or any port when #Port is `-1`.
+
+-ERRORS-
+Okay:
+Args:
+AccessObject:
+NotInitialised: Controller access is not enabled on a suitable display.
+NoSupport: The host does not support controller input.
+Disconnected: No controller is connected to the specified port.
+OutOfRange: The port number is outside of acceptable range.
+SystemCall: A call to the host system failed.
 -END-
 *********************************************************************************************************************/
 
 static ERR CONTROLLER_Query(objController *Self)
 {
-#ifdef _WIN32
-   if (auto error = winReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons); error IS ERR::Okay) {
-      return ERR::Okay;
-   }
-   else return error;
+#ifdef __linux__
+   return linuxReadController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons);
 #else
+   if (glDriver) return glDriver->readController(Self->Port, (double *)&Self->LeftTrigger, Self->Buttons);
    return ERR::NoSupport;
 #endif
 }
@@ -62,28 +78,41 @@ RightStickX: Right analog stick value for X axis, between -1.0 and 1.0.
 RightStickY: Right analog stick value for Y axis, between -1.0 and 1.0.
 
 -FIELD-
-Buttons: JET button values expressed as bit-fields.
+Buttons: Button values expressed as bit-fields.
 
 -FIELD-
 Port: The port number assigned to the controller.
 
-Set the port number to choose the controller that will be queried for state changes.  The default of zero is assigned
-to the primary controller.
+Set the port number to choose the controller that will be queried for state changes.  The default of -1 is used
+to indicate the primary (first available) controller.  Fixed port numbers start from zero.  There is no guarantee
+that the existence of a port means that a controller is connected to it.
 
-The port number can be changed at any time, so multiple controllers can be queried through one interface at the cost
-of overwriting the previous state.  Check #TotalPorts if your program supports more than one controller.
+On Windows, XInput user indices occupy ports zero through three.  DirectInput controllers use stable slots from four
+through 31 while connected.  This reservation means that a DirectInput-only controller can produce a #TotalPorts value
+of five while ports zero through three remain disconnected.
+
+It is acceptable to set the port number post-initialisation, so multiple controllers can be queried through one
+interface at the cost of overwriting the previous state.  Enumeration for the discovery of controllers can be
+achieved by calling #Query() for each port and checking for `ERR::Okay`.
+
+Read #TotalPorts to get the maximum number of controller ports.
 
 -FIELD-
-TotalPorts: Reports the total number of controllers connected to the system.
+TotalPorts: Reports the number of controller ports that should be scanned.
+
+Port values range from zero to `TotalPorts - 1`.  Some platforms, including Linux and Windows, may expose sparse
+controller indices, so an individual port in that range can fail to query if its device is not currently connected.
+Windows DirectInput mappings support two sticks, two triggers, the first POV hat and the first 12 common gamepad
+buttons.  Additional or specialist controls are ignored.
 
 *********************************************************************************************************************/
 
 static ERR CONTROLLER_GET_TotalPorts(extSurface *Self, int &Value)
 {
-#ifdef _WIN32
-   if (glLastPort >= 0) Value = glLastPort;
-   else Value = 0;
-   return ERR::Okay;
+#ifdef __linux__
+   return linuxGetControllerPorts(Value);
+#else
+   if (glDriver) return glDriver->totalControllerPorts(Value);
 #endif
 
    return ERR::NoSupport;
@@ -100,8 +129,8 @@ static const FieldArray clFields[] = {
    { "LeftStickY",   FDF_DOUBLE|FDF_R },
    { "RightStickX",  FDF_DOUBLE|FDF_R },
    { "RightStickY",  FDF_DOUBLE|FDF_R },
-   { "Buttons",      FDF_INT|FDF_R },
-   { "Port",         FDF_INT|FDF_RI },
+   { "Buttons",      FDF_INT|FDF_R, nullptr, nullptr, &clControllerButtons },
+   { "Port",         FDF_INT|FDF_RW },
    { "TotalPorts",   FDF_VIRTUAL|FDF_INT|FDF_R, CONTROLLER_GET_TotalPorts },
    END_FIELD
 };
@@ -118,7 +147,7 @@ ERR create_controller_class(void)
       fl::Actions(clControllerActions),
       fl::Fields(clFields),
       fl::Size(sizeof(objController)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clController ? ERR::Okay : ERR::AddClass;
 }

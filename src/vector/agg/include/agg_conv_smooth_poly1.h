@@ -6,13 +6,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Smooths polygonal paths using AGG's first-order smoothing generator. Hooks into conv_adaptor_vcgen with
+// vcgen_smooth_poly1. In the vector renderer it reduces sharp polygonal artefacts before curves or scanline
+// rasterisation are emitted.
 
-//
-// Smooth polygon generator
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_CONV_SMOOTH_POLY1_INCLUDED
-#define AGG_CONV_SMOOTH_POLY1_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vcgen_smooth_poly1.h"
@@ -22,8 +21,6 @@
 
 namespace agg
 {
-
-    //-------------------------------------------------------conv_smooth_poly1
     template<class VertexSource>
     struct conv_smooth_poly1 :
     public conv_adaptor_vcgen<VertexSource, vcgen_smooth_poly1>
@@ -44,9 +41,6 @@ namespace agg
             operator = (const conv_smooth_poly1<VertexSource>&);
     };
 
-
-
-    //-------------------------------------------------conv_smooth_poly1_curve
     template<class VertexSource>
     struct conv_smooth_poly1_curve :
     public conv_curve<conv_smooth_poly1<VertexSource> >
@@ -69,7 +63,3 @@ namespace agg
     };
 
 }
-
-
-#endif
-

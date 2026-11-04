@@ -14,7 +14,12 @@
     <copyright>Paul Manias © 2002-2026</copyright>
     <description>
 <p>The Audio class provides a comprehensive audio service that works across multiple platforms and follows a client-server design model. It serves as the foundation for all audio operations in Kōtuku framework, managing hardware resources, sample mixing, and output buffering.</p>
-<p>The Audio class supports 8/16/32 bit output in stereo or mono configurations, with advanced features including oversampling for enhanced quality, intelligent streaming for large samples, multiple simultaneous audio channels, and command sequencing for precise timing control. The internal floating-point mixer ensures high-quality audio processing regardless of the target hardware bit depth.</p>
+<p>The Audio class supports 8/16/32 bit output, nearest-neighbour, linear, cubic or band-limited sinc source resampling, fixed output smoothing, streaming for large samples, simultaneous audio channels, and command sequencing for precise timing control.  The internal mixer uses 32-bit floating-point arithmetic regardless of Quality or the hardware bit depth.</p>
+<header>Formats and Layouts</header>
+<p>PCM data is described by the <st>AudioFormat</st> structure, which separates the sample representation from the channel layout.  A layout is an ordered list of channel identities, one for each sample in an interleaved frame:</p>
+<types lookup="SPK"/>
+<p>Named layouts can be expanded with the ExpandLayout() function.  The output layout is requested with <fl>OutputLayout</fl> and the committed processing format is reported by <method>GetOutputFormat</method>.  The format model can describe layouts, such as 5.1, that the mixer cannot currently render.  Such layouts are rejected with <code>ERR::NoSupport</code> rather than being reinterpreted; the mixer currently renders mono (<code>CENTRE</code>) and stereo (<code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>) output.</p>
+<p>The term 'channel' has two meanings in the Audio API.  Voice channels, as allocated by <method>OpenChannels</method> and referenced by mixer handles, play one sample each.  Speaker channels are the members of a layout.  A voice channel playing a stereo sample contributes to two speaker channels.</p>
 <p>For straightforward audio playback requirements, we recommend using the <class name="Sound">Sound</class> class interface, which provides a simplified API whilst utilising the Audio class internally. Direct use of the Audio class is appropriate for applications requiring precise mixer control, multiple simultaneous samples, or custom audio processing workflows.</p>
 <p>Note: Support for audio recording is not currently available in this implementation.</p></description>
     <source>
@@ -30,14 +35,16 @@
       <tiriPrototype>err = Object.acActivate()</tiriPrototype>
       <description>
 <p>An audio object must be activated before it can play audio samples. The activation process involves several critical steps: hardware resource acquisition, mixer buffer allocation, and platform-specific driver initialisation.</p>
-<p>Activation attempts to gain exclusive or shared access to the audio hardware device. On some platforms, this may fail if another process has obtained an exclusive lock on the audio device. The specific behaviour depends on the underlying audio system (ALSA on Linux, DirectSound on Windows).</p>
+<p>Activation attempts to gain exclusive or shared access to the audio hardware device. On some platforms, this may fail if another process has obtained an exclusive lock on the audio device. The specific behaviour depends on the underlying audio system (ALSA on Linux, WASAPI on Windows).</p>
 <p>If activation fails, the audio object remains in an inactive state but retains its configuration. Common failure causes include hardware device unavailability, insufficient system resources, or driver compatibility issues.</p>
+<p>The <fl>OutputLayout</fl> is negotiated with the device during activation.  An explicitly requested layout is exact: if the mixer or device cannot provide it, activation fails with <code>ERR::NoSupport</code> and the previously committed format is unchanged.  The default stereo request can settle on mono output if the device only supports mono.  A successful activation commits a new processing configuration, which is reported by <method>GetOutputFormat</method>.</p>
 <p>All resources and device locks obtained during activation can be released through <action>Deactivate</action>. An inactive audio object can perform configuration operations but cannot process audio samples.</p>
       </description>
       <result>
         <error code="Okay">Hardware activation completed successfully.</error>
-        <error code="Failed">Hardware device unavailable or driver initialisation failed.</error>
-        <error code="AllocMemory">Failed to allocate internal mixing buffers.</error>
+        <error code="NoSupport">The requested output layout or format cannot be provided.</error>
+        <error code="Activate">The hardware device could not begin playback.</error>
+        <error code="CreateResource">The hardware audio buffer could not be created.</error>
       </result>
     </action>
 
@@ -65,7 +72,7 @@
       <tiriPrototype>err = Object.acSaveToObject(Dest:obj, ClassID:num)</tiriPrototype>
       <input>
         <param type="OBJECTID" name="Dest">Refers to an object that will receive the encoded data.</param>
-        <param type="CLASSID" name="ClassID">Can refer to a sub-class that should be used when encoding the data.</param>
+        <param type="CLASSID" name="ClassID">Can refer to a derived class that should be used when encoding the data.</param>
       </input>
     </action>
 
@@ -75,22 +82,24 @@
     <method>
       <name>AddSample</name>
       <comment>Adds a new sample to an audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, SFM SampleFormat, APTR Data, INT DataSize, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
-      <tiriPrototype>err, Result:num = AddSample(OnStop:func, SampleFormat:num, Data:any, DataSize:num, Loop:any, LoopSize:num)</tiriPrototype>
+      <prototype>ERR snd::AddSample(OBJECTPTR Object, FUNCTION OnStop, struct AudioFormat * Format, std::span&lt;const int8_t&gt; Data, struct AudioLoop * Loop, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddSample(OnStop:func, Format:any, Data:array, Loop:any)</tiriPrototype>
       <input>
         <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
-        <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
-        <param type="APTR" name="Data">Points to the address of the sample data.</param>
-        <param type="INT" name="DataSize">Size of the sample data, in bytes.</param>
+        <param type="struct AudioFormat *" name="Format">Describes the format of the sample data.</param>
+        <param type="std::span&lt;const int8_t&gt;" name="Data">Points to the address of the sample data.</param>
         <param type="struct AudioLoop *" name="Loop">Optional sample loop information.</param>
-        <param type="INT" name="LoopSize">Must be set to <code>sizeof(AudioLoop)</code> if <code>Loop</code> is defined.</param>
         <param type="INT *" name="Result">The resulting sample handle will be returned in this parameter.</param>
       </input>
       <description>
 <p>Audio samples can be loaded into an Audio object for playback via the AddSample() or <method>AddStream</method> methods.  For small samples under 512k we recommend AddSample(), while anything larger should be supported through <method>AddStream</method>.</p>
-<p>When adding a sample, it is essential to select the correct bit format for the sample data.  While it is important to differentiate between simple attributes such as 8 or 16 bit data, mono or stereo format, you should also be aware of whether or not the data is little or big endian, and if the sample data consists of signed or unsigned values.  Because of the possible variations there are a number of sample formats, as illustrated in the following table:</p>
-<types lookup="SFM"/>
-<p>By default, all samples are assumed to be in little endian format, as supported by Intel CPU's.  If the data is in big endian format, logical-or the SampleFormat value with <code>SFM::F_BIG_ENDIAN</code>.</p>
+<p>The <code>Format</code> describes the sample data with an <st>AudioFormat</st> structure:</p>
+<struct lookup="AudioFormat"/>
+<p>The <code>SampleFormat</code> selects the representation of each sample, independently of the channel count:</p>
+<types lookup="ASF"/>
+<p>The <code>Layout</code> lists the identity of each channel in the order that its samples appear within a frame.  Use ExpandLayout() to obtain the layout of a named preset.  Multi-byte samples are little endian unless <code>AFF::BIG_ENDIAN_ORDER</code> is set in <code>Flags</code>.  The <code>SampleRate</code> records the nominal rate of the source.  It does not change the playback frequency, which is always set explicitly with <function>MixFrequency</function>.</p>
+<p>The format is copied, including its layout, so the client's descriptor does not need to outlive the call.  A malformed format is rejected with <code>ERR::Args</code>.  The mixer currently plays <code>ASF::U8</code> and <code>ASF::S16</code> samples in mono (<code>CENTRE</code>) or stereo (<code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>) layouts, and other valid formats are rejected with <code>ERR::NoSupport</code>.</p>
+<p>The byte length of <code>Data</code> and all loop boundaries must be multiples of the frame size, which is the number of channels multiplied by the container size of one sample.  <function>GetFrameBytes</function> returns this value for a format.</p>
 <p>It is also possible to supply loop information with the sample data.  This is achieved by configuring the <st>AudioLoop</st> structure:</p>
 <struct lookup="AudioLoop"/>
 <p>The types that can be specified in the <code>LoopMode</code> field are:</p>
@@ -100,34 +109,34 @@
       </description>
       <result>
         <error code="Okay">Sample successfully added to the audio system.</error>
-        <error code="Args">Invalid argument values provided.</error>
+        <error code="Args">The format is malformed, or the data length or a loop boundary is not aligned to a complete frame.</error>
+        <error code="NoSupport">The format is valid, but its representation or layout cannot be played.</error>
         <error code="AllocMemory">Failed to allocate enough memory to hold the sample data.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
+      <tags>mutates-object, copies-input, callback-held, creates-resource</tags>
     </method>
 
     <method>
       <name>AddStream</name>
       <comment>Adds a new sample-stream to an Audio object for channel-based playback.</comment>
-      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, SFM SampleFormat, INT SampleLength, INT PlayOffset, struct AudioLoop * Loop, INT LoopSize, INT * Result)</prototype>
-      <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, SampleFormat:num, SampleLength:num, PlayOffset:num, Loop:any, LoopSize:num)</tiriPrototype>
+      <prototype>ERR snd::AddStream(OBJECTPTR Object, FUNCTION Callback, FUNCTION OnStop, struct AudioFormat * Format, INT64 SampleLength, INT64 PlayOffset, struct AudioLoop * Loop, INT * Result)</prototype>
+      <tiriPrototype>err, Result:num = AddStream(Callback:func, OnStop:func, Format:any, SampleLength:num, PlayOffset:num, Loop:any)</tiriPrototype>
       <input>
-        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.</param>
-        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.</param>
-        <param type="SFM" name="SampleFormat" lookup="SFM">Indicates the format of the sample data that you are adding.</param>
-        <param type="INT" name="SampleLength">Total byte-length of the sample data that is being streamed.  May be set to zero if the length is infinite or unknown.</param>
-        <param type="INT" name="PlayOffset">Offset the playing position by this byte index.</param>
+        <param type="FUNCTION" name="Callback">This callback function must be able to return raw audio data for streaming.  The function context will be pinned as a safety measure.</param>
+        <param type="FUNCTION" name="OnStop">This optional callback function will be called when the stream stops playing.  The function context will be pinned as a safety measure.</param>
+        <param type="struct AudioFormat *" name="Format">Describes the format of the stream data.</param>
+        <param type="INT64" name="SampleLength">Total byte length of the stream, or <code>-1</code> when the length is unknown.  Zero is also accepted as the legacy unknown-length value.</param>
+        <param type="INT64" name="PlayOffset">Initial byte position.  It must be aligned to a complete source frame.</param>
         <param type="struct AudioLoop *" name="Loop">Refers to sample loop information, or <code>NULL</code> if no loop is required.</param>
-        <param type="INT" name="LoopSize">Must be set to <code>sizeof(AudioLoop)</code>.</param>
         <param type="INT *" name="Result">The resulting sample handle will be returned in this parameter.</param>
       </input>
       <description>
 <p>Use AddStream to load large sound samples to an Audio object, allowing it to play those samples on the client machine without over-provisioning available resources.  For small samples under 256k consider using <method>AddSample</method> instead.</p>
-<p>The data source used for a stream will need to be provided by a client provided <code>Callback</code> function.  The prototype is <code>INT callback(INT SampleHandle, INT Offset, UINT8 *Buffer, INT BufferSize)</code>.</p>
-<p>The <code>Offset</code> reflects the retrieval point of the decoded data and is measured in bytes.  The <code>Buffer</code> and <code>BufferSize</code> reflect the target for the decoded data.  The function must return the total number of bytes that were written to the <code>Buffer</code>. If an error occurs, return zero.</p>
-<p>When creating a new stream, pay attention to the audio format that is being used for the sample data. It is important to differentiate between 8-bit, 16-bit, mono and stereo, but also be aware of whether or not the data is little or big endian, and if the sample data consists of signed or unsigned values.  Because of the possible variations there are a number of sample formats, as illustrated in the following table:</p>
-<types lookup="SFM"/>
-<p>By default, all samples are assumed to be in little endian format, as supported by Intel CPU's.  If the data is in big endian format, logical-or the <code>SampleFormat</code> value with the flag <code>SFM::F_BIG_ENDIAN</code>.</p>
+<p>The data source used for a stream must be provided by a client callback.  The native prototype is <code>INT callback(INT SampleHandle, INT64 Offset, UINT8 *Buffer, INT BufferSize)</code>.</p>
+<p>The <code>Offset</code> is the 64-bit byte position of the decoded data, or <code>-1</code> to continue from the end of the previous request.  The <code>Buffer</code> and <code>BufferSize</code> identify the destination.  <code>BufferSize</code> is always a whole number of frames.  The callback must return the number of bytes written, which should also be a whole number of frames, or zero when no data is currently available.  A result that ends with an incomplete frame is invalid: the incomplete frame is discarded and the next request specifies the <code>Offset</code> of the first missing frame explicitly.  Offset, stream length, play offset and loop boundaries must be aligned to a complete source frame.</p>
+<p>On ALSA and Windows, callbacks run on the client thread and fill a frame-aligned source ring.  The saved <code>StreamBufferMs</code> setting requests 100–10000 ms of source data at <fl>OutputRate</fl> (default 1000 ms), capped at 8 MiB per stream and 64 MiB per Audio object.  Refills are requested at half capacity.  Initial playback uses the first fill; a short fill permits playback with the available data.  A zero-byte result is retried without blocking other sounds.  If the ring empties, that source contributes silence and resumes from its preserved position when data arrives.  Source prefetch adds no output queue latency.  Sources played faster than <fl>OutputRate</fl> exhaust the ring proportionally sooner.</p>
+<p>The <code>Format</code> describes the stream data as an !AudioFormat.  The rules are the same as for <method>AddSample</method>: the format is copied, malformed formats are rejected with <code>ERR::Args</code>, and valid formats that cannot be played are rejected with <code>ERR::NoSupport</code>.  A stream's format is fixed for its lifetime; create a new stream to change it.</p>
 <p>It is also possible to supply loop information with the stream.  The Audio class supports a number of different looping formats via the <st>AudioLoop</st> structure:</p>
 <struct lookup="AudioLoop"/>
 <p>There are three types of loop modes that can be specified in the <code>LoopMode</code> field:</p>
@@ -136,10 +145,13 @@
       </description>
       <result>
         <error code="Okay">Stream successfully configured and added to the audio system.</error>
-        <error code="Args">Invalid argument values provided.</error>
+        <error code="Args">The format is malformed, or an offset, length or loop boundary is not aligned to a complete frame.</error>
+        <error code="NoSupport">The format is valid, but its representation or layout cannot be played.</error>
+        <error code="OutOfRange">A length, play offset or loop boundary is outside the stream.</error>
         <error code="AllocMemory">Failed to allocate the stream buffer.</error>
         <error code="NullArgs">Required parameters are null or missing.</error>
       </result>
+      <tags>mutates-object, retains-input, callback-held, creates-resource</tags>
     </method>
 
     <method>
@@ -160,6 +172,7 @@
         <error code="NoSupport">PC speaker support is not available.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking</tags>
     </method>
 
     <method>
@@ -178,6 +191,88 @@
         <error code="Args">Invalid arguments passed to function</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>GetEffectStatus</name>
+      <comment>Reads DSP drain state and serial-path latency together.</comment>
+      <prototype>ERR snd::GetEffectStatus(OBJECTPTR Object, INT Channel, struct EffectStatus ** Status)</prototype>
+      <tiriPrototype>err, Status:any = GetEffectStatus(Channel:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Channel">Channel-set handle, or zero for the global path.</param>
+        <param type="struct EffectStatus **" name="Status">Receives an owned snapshot of the path's latency and drain state.</param>
+      </input>
+      <description>
+<p>GetEffectStatus() returns a consistent snapshot of one signal path's effect latency and drain state, taken under the mixer lock so that all fields of the returned <st>EffectStatus</st> describe the same moment.</p>
+<p>The path is selected with <code>Channel</code>.  A channel-set handle selects that application's chain followed by the global chain.  Zero selects the global path, in which case <code>Application</code> is always zero and the drain state accounts for every application's sources and chains.  Latencies are expressed in frames at the returned <code>Rate</code>.  <code>Total</code> is the sum of <code>Application</code> and <code>Global</code>, and only includes effects that are not bypassed.</p>
+<p><code>State</code> takes one of the following values:</p>
+<types lookup="ADS"/>
+<p><code>Truncated</code> is set to 1 if the selected chain's automatic drain was cut short at the <fl>MaxDrain</fl> deadline while effects still had pending output.  It is cleared when new source audio reaches the chain or the chain is reset.</p>
+<p><code>Generation</code> is incremented whenever the effect configuration or DSP history of any path changes, and is written even when validation fails.  Compare it between calls to detect intervening resets or reconfiguration.  The remaining fields are not meaningful if an error is returned.  If allocation fails, no snapshot is returned.</p>
+<p>The snapshot is allocated by the Audio object and remains valid after later calls or configuration changes.  C++ clients must release it with <function module="Core">FreeResource</function>, including when the method returns a validation error.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">The channel-set handle is invalid or closed.</error>
+        <error code="OutOfRange">Serial latency cannot be represented in a signed 64-bit frame count.</error>
+        <error code="AllocMemory">Failed to create a new memory block</error>
+        <error code="NotInitialised">No output configuration is available; Status.Rate is zero.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>caller-owns-result</tags>
+    </method>
+
+    <method>
+      <name>GetOutputFormat</name>
+      <comment>Reads the committed PCM format processed by the mixer and effects.</comment>
+      <prototype>ERR snd::GetOutputFormat(OBJECTPTR Object, INT * SampleRate, ASF * SampleFormat, kt::vector&lt;int&gt; * Layout, INT64 * Generation, AFS * State)</prototype>
+      <tiriPrototype>err, SampleRate:num, SampleFormat:num, Layout:array, Generation:num, State:num = GetOutputFormat()</tiriPrototype>
+      <input>
+        <param type="INT *" name="SampleRate">Frames per second, or zero if no format is available.</param>
+        <param type="ASF *" name="SampleFormat" lookup="ASF">Sample representation of the processed audio.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Layout">Receives the ordered channel identities from the <code>SPK</code> constants.</param>
+        <param type="INT64 *" name="Generation">Configuration generation of the reported format.</param>
+        <param type="AFS *" name="State" lookup="AFS">Availability of the reported format.</param>
+      </input>
+      <description>
+<p>GetOutputFormat() reports the processing format committed by the most recent successful activation.  This is the format of the mix that is processed by the effect chains, not the format of the physical endpoint.  The mixer works in floating point, so <code>SampleFormat</code> is always <code>ASF::F32</code> in native byte order.  An endpoint may have more channels or a different sample encoding than the processing format; for instance, a Windows endpoint with six channels receives a stereo mix on its front pair, and this method reports stereo.</p>
+<p>The requested <fl>OutputLayout</fl> is independent of the committed format.  No format is available before the first successful activation, in which case <code>State</code> is <code>AFS::UNAVAILABLE</code> and the remaining results are empty.  After deactivation the last committed format remains available and <code>State</code> is <code>AFS::INACTIVE</code>.  A failed activation does not change the committed format.</p>
+<types lookup="AFS"/>
+<p><code>Generation</code> is incremented whenever a processing configuration is committed, including reactivation with an unchanged layout and the automatic reopening of a Windows endpoint.  Effects report the same value through <class name="AudioEffect" method="GetProcessingFormat">AudioEffect.GetProcessingFormat()</class> once they have adopted the configuration, which occurs before processing resumes.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>GetVolumeChannels</name>
+      <comment>Lists the channel selectors of a volume control.</comment>
+      <prototype>ERR snd::GetVolumeChannels(OBJECTPTR Object, INT Index, STRVIEW Name, kt::vector&lt;int&gt; * Channels, kt::vector&lt;int&gt; * Speakers, VCF * Flags)</prototype>
+      <tiriPrototype>err, Channels:array, Speakers:array, Flags:num = GetVolumeChannels(Index:num, Name:str)</tiriPrototype>
+      <input>
+        <param type="INT" name="Index">The index of the volume control, used if <code>Name</code> is empty.</param>
+        <param type="STRVIEW" name="Name">The name of the volume control, e.g. <code>Master</code>.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Channels">Receives the valid channel selectors.</param>
+        <param type="kt::vector&lt;int&gt; *" name="Speakers">Receives the speaker identity of each selector, or zero if it is unknown.</param>
+        <param type="VCF *" name="Flags" lookup="VCF">Receives the control's flags.</param>
+      </input>
+      <description>
+<p>GetVolumeChannels() describes the channels of the mixer volume control that is selected by <code>Index</code> or <code>Name</code>, using the same rules as <method>SetVolume</method>.  Each entry of <code>Channels</code> is a valid <code>Channel</code> selector for <method>SetVolume</method>, and the matching entry of <code>Speakers</code> is the identity of the speaker that it addresses, from the <code>SPK</code> constants.  If the backend cannot identify a speaker, its identity is reported as zero rather than guessed.</p>
+<p>Channel selectors belong to the volume control.  They are not indices into the Audio object's output buffer or its <fl>OutputLayout</fl>.  A <code>Channel</code> of <code>-1</code> always selects every channel of the control.</p>
+<p>The control's flags are returned in <code>Flags</code>.  If <code>VCF::JOINED</code> is set, the channels cannot be adjusted independently and changing any selector changes all of them.  The absence of <code>VCF::MONO</code> does not imply that the control has exactly two channels.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Search">No control matches the <code>Name</code>.</error>
+        <error code="NoSupport">The Audio object has no volume controls.</error>
+        <error code="OutOfRange">The <code>Index</code> is out of range.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
@@ -191,6 +286,7 @@
       </input>
       <description>
 <p>Use the OpenChannels method to open audio channels for sample playback.  Channels are allocated in sets with a size range between 1 and 64.  Channel sets make it easier to segregate playback between users of the same audio object.</p>
+<p>These are voice channels: each plays one sample at a time, whatever the number of channels in that sample's format. They are unrelated to the speaker channels of an output layout; a voice channel playing a stereo sample contributes to both front speakers.</p>
 <p>The resulting handle returned from this method is an integer consisting of two parts.  The upper word uniquely identifies the channel set that has been provided to you, while the lower word is used to refer to specific channel numbers.  If referring to a specific channel is required for a function, use the formula <code>Channel = Handle | ChannelNo</code>.</p>
 <p>To destroy allocated channels, use the <method>CloseChannels</method> method.</p>
       </description>
@@ -200,6 +296,7 @@
         <error code="AllocMemory">Memory for the audio channels could not be allocated.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object, creates-resource</tags>
     </method>
 
     <method>
@@ -219,6 +316,27 @@
         <error code="OutOfRange">The provided sample handle is not within the valid range.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>ResetEffects</name>
+      <comment>Discards one chain's DSP history at its next render boundary.</comment>
+      <prototype>ERR snd::ResetEffects(OBJECTPTR Object, INT Channel)</prototype>
+      <tiriPrototype>err = ResetEffects(Channel:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Channel">Channel-set handle, or zero for the global chain.</param>
+      </input>
+      <description>
+<p>ResetEffects() clears the internal state of every effect in one chain, such as filter history and buffered samples, so that subsequent audio is processed as if the chain had just been created.  Use it when switching to unrelated content, e.g. after seeking, so that residual output from the previous material does not bleed through.</p>
+<p>The chain is selected with <code>Channel</code>.  A channel-set handle selects that application's chain, while zero selects the global chain.  Only the selected chain is affected; resetting an application's chain does not reset the global chain. If the channel set has no effects attached, the call succeeds without doing anything.</p>
+<p>The reset is deferred to the mixer and each effect's history is cleared before it processes its next block of audio. Any pending effect tail is discarded rather than drained.  Effect parameters and bypass states are unchanged.  The chain's drain state returns to <code>ADS::IDLE</code>, its <code>Truncated</code> status is cleared, effect meters are restarted, and the <code>Generation</code> counter reported by <method>GetEffectStatus</method> is incremented.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">The channel-set handle is invalid or closed.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </method>
 
     <method>
@@ -236,38 +354,44 @@
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
-        <error code="Failed">Sample is not a stream.</error>
         <error code="Args">Invalid arguments passed to function</error>
+        <error code="NoSupport">Sample is not a stream.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
       <name>SetVolume</name>
       <comment>Sets the volume for input and output mixers.</comment>
-      <prototype>ERR snd::SetVolume(OBJECTPTR Object, INT Index, CSTRING Name, SVF Flags, INT Channel, DOUBLE Volume)</prototype>
+      <prototype>ERR snd::SetVolume(OBJECTPTR Object, INT Index, STRVIEW Name, SVF Flags, INT Channel, DOUBLE Volume)</prototype>
       <tiriPrototype>err = SetVolume(Index:num, Name:str, Flags:num, Channel:num, Volume:num)</tiriPrototype>
       <input>
         <param type="INT" name="Index">The index of the mixer that you want to set.</param>
-        <param type="CSTRING" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>
+        <param type="STRVIEW" name="Name">If the correct index number is unknown, the name of the mixer may be set here.</param>
         <param type="SVF" name="Flags" lookup="SVF">Optional flags.</param>
-        <param type="INT" name="Channel">A specific channel to modify (e.g. <code>0</code> for left, <code>1</code> for right).  If <code>-1</code>, all channels are affected.</param>
+        <param type="INT" name="Channel">A channel selector reported by <method>GetVolumeChannels</method>.  If <code>-1</code>, all channels are affected.</param>
         <param type="DOUBLE" name="Volume">The volume to set for the mixer, from 0 to 1.0.  If <code>-1</code>, the current volume values are retained.</param>
       </input>
       <description>
 <p>To change volume and mixer levels, use the SetVolume method.  It is possible to make adjustments to any of the available mixers and for different channels per mixer - for instance you may set different volumes for left and right speakers.  Support is also provided for special options such as muting.</p>
 <p>To set the volume for a mixer, use its index or set its name (to change the master volume, use a name of <code>Master</code>).</p>
-<p>A target <code>Channel</code> such as the left <code>0</code> or right <code>1</code> speaker can be specified.  Set the <code>Channel</code> to <code>-1</code> if all channels should be the same value.</p>
+<p>A target <code>Channel</code> can be specified to change one channel of the mixer control.  Channel selectors belong to the control, not to the Audio object's output buffer; use <method>GetVolumeChannels</method> to list the valid selectors of a control and the speaker that each one addresses, where known.  Set the <code>Channel</code> to <code>-1</code> if all channels should be the same value. A control that reports <code>VCF::JOINED</code> cannot adjust its channels independently, so any selector applies to every channel.  The absence of <code>VCF::MONO</code> does not imply that a control has exactly two channels.</p>
 <p>The new mixer value is set in the <code>Volume</code> field.</p>
 <p>Optional flags may be set as follows:</p>
 <types lookup="SVF"/>
       </description>
       <result>
         <error code="Okay">The new volume was applied successfully.</error>
+        <error code="Search">A search routine in this function failed</error>
         <error code="Args">Invalid arguments passed to function</error>
-        <error code="OutOfRange">The <code>Volume</code> or <code>Index</code> is out of the acceptable range.</error>
+        <error code="NoSupport">Operation not supported</error>
+        <error code="OutOfRange">The <code>Volume</code>, <code>Index</code> or <code>Channel</code> is out of the acceptable range.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
+      <tags>blocking, mutates-object</tags>
     </method>
 
   </methods>
@@ -279,7 +403,7 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>This field manages the bit depth for audio mixing and output.  Valid bit depths are <code>8</code>, <code>16</code> and <code>24</code>, with <code>16</code> being the recommended value for CD quality playback.</p>
+<p>Windows uses a 32-bit float mixer and converts to the endpoint format at the output boundary. ALSA supports <code>8</code>, <code>16</code> and <code>32</code> (floating point) output.  The recommended value for CD quality playback is <code>16</code>.</p>
       </description>
     </field>
 
@@ -290,17 +414,28 @@
       <type>STRING</type>
       <description>
 <p>A host platform may have multiple audio devices installed, but a given audio object can represent only one device at a time.  A new audio object will always represent the default device initially.  Choose a different device by setting the <code>Device</code> field to a valid alternative.</p>
-<p>The default device can always be referenced with a name of <code>default</code>.</p>
+<p>The default device can always be referenced with a name of <code>default</code>.  Windows also accepts a WASAPI endpoint ID. ALSA PCM names such as <code>hw:0,0</code> and <code>plughw:0,0</code> are also accepted.  Direct hardware access can avoid sound-server buffering, but may require exclusive access and stricter sample-format support.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Dither</name>
+      <comment>Selects triangular dither for integer output.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="ADITHER">ADITHER</type>
+      <description>
+<p>The default is <code>ADITHER::AUTO</code>.  Real-time changes take effect at the next mixer-window boundary.</p>
+<types lookup="ADITHER"/>
       </description>
     </field>
 
     <field>
       <name>Flags</name>
       <comment>Special audio flags can be set here.</comment>
-      <access read="R" write="I">Read/Init</access>
+      <access read="R" write="S">Read/Set</access>
       <type lookup="ADF">ADF</type>
       <description>
-<p>The audio class supports a number of special flags that affect internal behaviour.  The following table illustrates the publicly available flags:</p>
+<p>Flags can be selected before initialisation.  Source resampling is controlled by <fl>Quality</fl>.</p>
 <types lookup="ADF"/>
       </description>
     </field>
@@ -327,12 +462,24 @@
     </field>
 
     <field>
+      <name>MaxDrain</name>
+      <comment>Limits the time that DSP effect chains can continue to produce output after their source audio ends.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>DOUBLE</type>
+      <description>
+<p>When the sources feeding an effect chain stop, effects such as reverbs, delays and recursive filters can continue to produce output as their internal history decays.  This drain phase continues until the chain has no pending output, or until MaxDrain seconds of drain time have elapsed.  The limit applies independently to each application chain and to the global chain, and it resets when new source audio reaches a chain.</p>
+<p>If a chain reaches the deadline while effects still have pending output, the remaining output is faded out over approximately 10 ms and discarded, and the <code>Truncated</code> result of <method>GetEffectStatus</method> is set.  The limit acts as a safety net for effects that have no finite tail, such as an <class name="AudioEqualiser">AudioEqualiser</class> with long decays or feedback that never fully settles.</p>
+<p>The default is 30 seconds.  Valid values range from 0.01 to 300 seconds; <code>ERR::OutOfRange</code> is returned otherwise. The value can only be changed while effects are not configured, i.e. before the Audio object is activated or after it has been deactivated.  Otherwise, <code>ERR::InvalidState</code> is returned.</p>
+      </description>
+    </field>
+
+    <field>
       <name>MixerLag</name>
       <comment>Returns the lag time of the internal mixer, measured in seconds.</comment>
       <access read="G">Get</access>
       <type>DOUBLE</type>
       <description>
-<p>This field will return the worst-case value for latency imposed by the internal audio mixer.  The value is measured in seconds and will differ between platforms and user configurations.</p>
+<p>On Windows this field estimates the outstanding submitted frames from the most recent endpoint padding and render time.  It can be zero while idle, so an idle reading is not a buffer-capacity or future callback-latency estimate. On ALSA it is the negotiated buffer size in frames divided by the output rate, and is zero while inactive. It excludes client scheduling, source starvation, and downstream sound-server or wireless-device buffering; it is not an acoustic latency guarantee.  Source prefetch uses the saved <code>StreamBufferMs</code> setting (100–10000ms, default 1000ms) independently of this value.</p>
       </description>
     </field>
 
@@ -343,6 +490,21 @@
       <type>INT</type>
       <description>
 <p>Audio output can be muted at any time by setting this value to <code>true</code>.  To restart audio output after muting, set the field to <code>false</code>.  Muting does not disable the audio system, which is achieved by calling <action>Deactivate</action>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>OutputLayout</name>
+      <comment>The requested output channel layout.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT []</type>
+      <description>
+<p>OutputLayout lists the channel identities of the requested output, in interleaved frame order.  The default is stereo: <code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>.  Wider layouts are never enabled automatically.  Use ExpandLayout() to obtain the layout of a named preset:</p>
+<pre>err, layout = mAudio.ExpandLayout(ACL_MONO)
+audio = obj.new('Audio', { outputLayout=layout })
+</pre>
+<p>The request is applied when the Audio object is activated.  An explicitly set layout is exact: if it cannot be provided, activation fails with <code>ERR::NoSupport</code> rather than being downmixed or reinterpreted.  The mixer currently renders mono (<code>CENTRE</code>) and stereo (<code>FRONT_LEFT</code>, <code>FRONT_RIGHT</code>) output.  Only the default stereo request can settle on mono output for a device that only supports mono.</p>
+<p>The layout can be changed before activation and after deactivation.  Writes are rejected with <code>ERR::InvalidState</code> while the object is active.  A malformed layout, i.e. one that is empty, exceeds 64 channels or contains an invalid or duplicated identity, is rejected with <code>ERR::Args</code>.  Reading this field returns the request, not the negotiated result; use <method>GetOutputFormat</method> to read the committed processing format.</p>
       </description>
     </field>
 
@@ -359,31 +521,11 @@
 
     <field>
       <name>PeriodSize</name>
-      <comment>Defines the byte size of each period allocated to the internal audio buffer.</comment>
+      <comment>Defines the number of frames in each ALSA period.</comment>
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>The PeriodSize field determines the granularity of audio buffer management, affecting system responsiveness, processing efficiency, and overall audio quality. This setting works in conjunction with the <fl>Periods</fl> field to define the complete buffering architecture.</p>
-<list type="bullet">
-<li>
-<b>Minimum</b>: 1024 bytes (1KB) - Enables very low latency but requires high-performance processing.</li>
-<li>
-<b>Maximum</b>: 16384 bytes (16KB) - Provides maximum buffering and processing time per period.</li>
-<li>
-<b>Recommended</b>: 2048 bytes (2KB) - Optimal balance for most applications and hardware configurations.</li>
-</list>
-<p>Period latency (in seconds) = <code>PeriodSize ÷ (SampleRate × Channels × BytesPerSample)</code></p>
-<p>For example, with a 2048-byte period at 44100Hz stereo 16-bit <code>Latency = 2048 ÷ (44100 × 2 × 2) = 11.6ms per period</code></p>
-<p>The combination of PeriodSize and <fl>Periods</fl> creates a multi-stage buffering system where audio data flows through sequential periods, providing time for processing whilst maintaining continuous playback.</p>
-<header>Application Guidelines</header>
-<list type="bullet">
-<li>
-<b>Real-time applications</b>: Use smaller periods (1-2KB) with fewer periods for minimal latency.</li>
-<li>
-<b>General applications</b>: Use medium periods (2-4KB) with 4 periods for reliable performance.</li>
-<li>
-<b>Background audio</b>: Use larger periods (8-16KB) with more periods for maximum efficiency.</li>
-</list>
+<p>A frame contains one sample for every output channel.  Period duration is <code>PeriodSize / OutputRate</code> seconds, independent of bit depth and channel count.  The default ALSA request is 256 frames in three periods. Values are clamped to 32–16384 frames before activation; ALSA may negotiate a different value. After activation this field reports the negotiated period size.</p>
       </description>
     </field>
 
@@ -396,12 +538,9 @@
 <p>The Periods field controls the segmentation of the internal audio buffer, directly affecting latency, performance, and audio continuity. This setting is particularly relevant for ALSA-based systems where period-based buffering is fundamental to audio driver operation.</p>
 <p>The total audio buffer is divided into discrete periods, each representing a contiguous block of audio data. The audio system processes data period by period, allowing for predictable latency characteristics and efficient interrupt handling.</p>
 <list type="bullet">
-<li>
-<b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
-<li>
-<b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
-<li>
-<b>Recommended</b>: 4 periods (balances latency and reliability for most use cases)</li>
+<li><b>Minimum</b>: 2 periods (provides double-buffering for basic audio continuity)</li>
+<li><b>Maximum</b>: 16 periods (enables extensive buffering for demanding applications)</li>
+<li><b>Recommended</b>: 3 periods (balances latency and reliability for most use cases)</li>
 </list>
 <p>Fewer periods reduce overall system latency but increase the risk of audio dropouts if processing cannot keep pace with audio consumption. More periods provide greater buffering security at the cost of increased latency.</p>
       </description>
@@ -413,39 +552,53 @@
       <access read="R" write="S">Read/Set</access>
       <type>INT</type>
       <description>
-<p>The Quality field controls the precision and filtering applied during audio mixing operations. This setting automatically configures multiple internal processing parameters to balance audio fidelity against computational overhead.</p>
-<p>The value range spans from 0 (minimal processing) to 100 (maximum fidelity), with recommended settings between 70-80 for most applications. This range provides an optimal balance between audio clarity and system performance.</p>
-<p>Setting the Quality value automatically adjusts the following processing flags:</p>
+<p>Quality selects source resampling and integer output dither.  No profile enables post-mix smoothing. All profiles mix in 32-bit floating-point; this field does not change arithmetic precision or perform true oversampling. The default is 80. Values outside 0..100 return <code>ERR::OutOfRange</code> without changing the current profile.  Invalid saved values retain the default.</p>
 <list type="bullet">
-<li>
-<b>Quality 0-9</b>: Minimal processing, no filtering or oversampling applied.</li>
-<li>
-<b>Quality 10-32</b>: Enables <code>ADF::FILTER_LOW</code> for basic output filtering.</li>
-<li>
-<b>Quality 33-65</b>: Activates <code>ADF::FILTER_HIGH</code> for enhanced frequency response.</li>
-<li>
-<b>Quality 66-100</b>: Implements <code>ADF::OVER_SAMPLING</code> and <code>ADF::FILTER_HIGH</code> for maximum fidelity.</li>
+<li><b>Quality 0-9</b>: Nearest-neighbour resampling.</li>
+<li><b>Quality 10-32</b>: Linear interpolation.</li>
+<li><b>Quality 33-65</b>: Bounded four-point cubic Hermite interpolation.</li>
+<li><b>Quality 66-100</b>: Ratio-aware band-limited sinc resampling.
+Quality 90-100 currently aliases High; it does not select a longer kernel.</li>
 </list>
+<p>With <fl>Dither</fl> set to <code>ADITHER::AUTO</code>, Quality 33 and above enables TPDF dither for 8-bit and 16-bit output. <code>ADITHER::OFF</code> always disables it; <code>ADITHER::TPDF</code> enables it at every Quality.  Float conversion is unchanged. Dither is added immediately before rounding to nearest integer, with triangular noise bounded by one destination LSB in either direction.  Both representable endpoints saturate, including samples at or beyond -1 and +1. Exact-zero samples suppress noise immediately, without a silent-interval timer.  Independent channel streams advance through silence and reset to fixed seeds on deactivation and every committed output configuration. Live policy changes do not reset the streams.  No noise shaping is applied.</p>
+<p>A live Quality change takes effect as a complete profile at the next mixer-window boundary; processing already in progress retains its selected profile. Source interpolation blends to the new mode over 32 rendered output frames per channel, independently of volume ramping. Ordinary source endpoints repeat the endpoint value, while looping sources extend their loop.  Neither linear nor cubic interpolation is a ratio-dependent anti-alias filter.  High uses a centred 128-tap Blackman-windowed sinc with 256 fractional phases. Its per-source cutoff follows the playback-to-output rate ratio; unity-rate and upsampled sources use the full source bandwidth.  Coefficients are prepared during module loading.  Streaming retains 63 past frames and requires 64 future frames; starvation waits without advancing the source clock, and end-of-source repeats the last frame. The centred interpolation preserves source timing and adds no effect latency or delayed command completion. The fixed kernel is characterised through 2.7 times downsampling; at extreme ratios its finite support limits anti-alias rejection.  Sinc overshoot is preserved until final output conversion.</p>
       </description>
-    </field>
-
-    <field>
-      <name>Stereo</name>
-      <comment>Set to <code>true</code> for stereo output and <code>false</code> for mono output.</comment>
-      <access read="G" write="S">Get/Set</access>
-      <type>INT</type>
     </field>
 
   </fields>
   <types>
     <constants lookup="ADF" comment="Optional flags for the Audio object.">
       <const name="AUTO_SAVE">Save configuration information on exit.</const>
-      <const name="FILTER_HIGH">Enable a high level of output filtering to minimise distortion.</const>
-      <const name="FILTER_LOW">Enable a low level of output filtering to minimise distortion.</const>
-      <const name="OVER_SAMPLING">Enables oversampling for higher quality audio at the cost of slower mixing.</const>
-      <const name="STEREO">Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.</const>
       <const name="SYSTEM_WIDE">Mixer changes should be applied system-wide.</const>
-      <const name="VOL_RAMPING">Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).</const>
+      <const name="VOL_RAMPING">Enable channel gain and voice de-clicking at every Quality (enabled by default).</const>
+    </constants>
+
+    <constants lookup="ADITHER" comment="Integer output dither policy.">
+      <const name="AUTO">Enable TPDF for Quality 33 and above (the default).</const>
+      <const name="OFF">Disable dither regardless of Quality.</const>
+      <const name="TPDF">Enable triangular dither for all Quality settings.</const>
+    </constants>
+
+    <constants lookup="ADS" comment="Effect drain states reported by GetEffectStatus().">
+      <const name="ACTIVE">At least one source on the selected path is playing.</const>
+      <const name="DRAINING">Sources have stopped, but one or more effects are still producing tail output.</const>
+      <const name="IDLE">No sources are playing and no effect has pending output.</const>
+    </constants>
+
+    <constants lookup="AFF" comment="Optional AudioFormat flags.">
+      <const name="BIG_ENDIAN_ORDER">Multi-byte samples are stored in big endian byte order.  Samples are little endian if this flag is not set.</const>
+    </constants>
+
+    <constants lookup="AFS" comment="Availability of a reported processing format.">
+      <const name="ACTIVE">The reported format is committed and in use.</const>
+      <const name="INACTIVE">Processing has stopped.  The last committed format is reported.</const>
+      <const name="UNAVAILABLE">No processing format has been committed.  The format results are empty.</const>
+    </constants>
+
+    <constants lookup="ASF" comment="Sample representations, independent of the channel count.">
+      <const name="F32">32-bit IEEE-754 floating point samples in four bytes, with a nominal range of <code>-1.0</code> to <code>1.0</code>.</const>
+      <const name="S16">Signed 16-bit integer samples in two bytes.</const>
+      <const name="U8">Unsigned 8-bit integer samples in one byte.  Silence is <code>128</code>.</const>
     </constants>
 
     <constants lookup="LOOP" comment="Loop modes for the AudioLoop structure.">
@@ -461,12 +614,16 @@
       <const name="UNIDIRECTIONAL">The sample playback position returns to the byte position specified in the Loop1Start field.</const>
     </constants>
 
-    <constants lookup="SFM" comment="These audio bit formats are supported by AddSample and AddStream.">
-      <const name="F_BIG_ENDIAN">Combine this flag with any audio format to declare it as big endian.</const>
-      <const name="S16_BIT_MONO">16-bit mono signed sample.</const>
-      <const name="S16_BIT_STEREO">16-bit stereo signed sample.</const>
-      <const name="U8_BIT_MONO">8-bit mono unsigned sample.</const>
-      <const name="U8_BIT_STEREO">8-bit stereo unsigned sample.</const>
+    <constants lookup="SPK" comment="Channel identities for the Layout of an AudioFormat.">
+      <const name="CENTRE">Front centre speaker.  An ordinary mono channel also uses this identity.</const>
+      <const name="DISCRETE">Base identity for a discrete channel that has no speaker position.  Add a zero-based index from <code>0</code> to <code>0xffff</code>.</const>
+      <const name="FRONT_LEFT">Front left speaker.</const>
+      <const name="FRONT_RIGHT">Front right speaker.</const>
+      <const name="LFE">Low-frequency effects channel.</const>
+      <const name="REAR_LEFT">Rear left speaker.</const>
+      <const name="REAR_RIGHT">Rear right speaker.</const>
+      <const name="SIDE_LEFT">Side left speaker.</const>
+      <const name="SIDE_RIGHT">Side right speaker.</const>
     </constants>
 
     <constants lookup="SVF" comment="Flags for the SetVolume() method.">
@@ -475,16 +632,42 @@
       <const name="UNMUTE">Unmute the audio for this channel.</const>
     </constants>
 
+    <constants lookup="VCF" comment="Volume control flags">
+      <const name="CAPTURE">The mixer supports audio input.</const>
+      <const name="JOINED">The control's channels are joined and cannot be adjusted separately.</const>
+      <const name="MONO">The control has a single channel.  Its absence does not imply exactly two channels.</const>
+      <const name="MUTE">The mixer is muted.</const>
+      <const name="PLAYBACK">The mixer supports audio output.</const>
+      <const name="SYNC">The mixer is synchronised.</const>
+    </constants>
+
   </types>
   <structs>
+    <struct name="AudioFormat" comment="Describes interleaved PCM audio data.">
+      <field name="SampleRate" type="INT">Nominal sample rate in frames per second</field>
+      <field name="SampleFormat" type="ASF" lookup="ASF">Representation of each sample</field>
+      <field name="Flags" type="AFF" lookup="AFF">Optional format flags</field>
+      <field name="Layout" type="kt::vector&lt;int&gt;">Ordered channel identities from SPK; the length is the channel count</field>
+    </struct>
+
     <struct name="AudioLoop" comment="Loop settings for the AddSample() method.">
       <field name="LoopMode" type="LOOP" lookup="LOOP">Loop mode (single, double)</field>
       <field name="Loop1Type" type="LTYPE" lookup="LTYPE">First loop type (unidirectional, bidirectional)</field>
       <field name="Loop2Type" type="LTYPE" lookup="LTYPE">Second loop type (unidirectional, bidirectional)</field>
-      <field name="Loop1Start" type="INT">Start of the first loop</field>
-      <field name="Loop1End" type="INT">End of the first loop</field>
-      <field name="Loop2Start" type="INT">Start of the second loop</field>
-      <field name="Loop2End" type="INT">End of the second loop</field>
+      <field name="Loop1Start" type="INT64">Byte position at the start of the first loop</field>
+      <field name="Loop1End" type="INT64">Byte position at the end of the first loop</field>
+      <field name="Loop2Start" type="INT64">Byte position at the start of the second loop</field>
+      <field name="Loop2End" type="INT64">Byte position at the end of the second loop</field>
+    </struct>
+
+    <struct name="EffectStatus" comment="One coherent latency and drain-state snapshot from GetEffectStatus().">
+      <field name="Application" type="INT64">Application-chain algorithmic latency in frames</field>
+      <field name="Global" type="INT64">Global-chain algorithmic latency in frames</field>
+      <field name="Total" type="INT64">Total algorithmic latency along the selected path in frames</field>
+      <field name="Rate" type="INT">Negotiated output rate, or zero before configuration</field>
+      <field name="Generation" type="INT64">Configuration generation shared by all paths</field>
+      <field name="State" type="ADS" lookup="ADS">Selected chain's drain state</field>
+      <field name="Truncated" type="INT">One if automatic drain reached its safety deadline</field>
     </struct>
 
   </structs>

@@ -1,0 +1,21 @@
+-- Fill presets for effects, used as fill(<name>).  Each is a vertical gradient from first to last.  Use outline() to
+-- stroke icon paths.
+
+   namespace gui
+
+gui.fills = {
+   carbon  = { first=gui.strToRGB('oklch(0.468 0.000 89.8)'),  last=gui.strToRGB('oklch(0.412 0.066 283.1)') },
+   yellow  = { first=gui.strToRGB('oklch(0.841 0.173 111.7)'), last=gui.strToRGB('oklch(0.690 0.148 68.1)') },
+   orange  = { first=gui.strToRGB('oklch(0.857 0.164 87.6)'),  last=gui.strToRGB('oklch(0.698 0.174 43.8)') },
+   blue    = { first=gui.strToRGB('oklch(0.543 0.124 264.7)'), last=gui.strToRGB('oklch(0.281 0.063 262.9)') },
+   ocean   = { first=gui.strToRGB('oklch(0.813 0.093 268.1)'), last=gui.strToRGB('oklch(0.385 0.165 284)') },
+   green   = { first=gui.strToRGB('oklch(0.649 0.154 122.8)'), last=gui.strToRGB('oklch(0.444 0.116 152.4)') },
+   red     = { first=gui.strToRGB('oklch(0.615 0.835 40.4)'),  last=gui.strToRGB('oklch(0.615 0.235 30.4)') },
+   indigo  = { first=gui.strToRGB('oklch(0.570 0.134 345.2)'), last=gui.strToRGB('oklch(0.284 0.117 311.0)') },
+   rose    = { first=gui.strToRGB('oklch(0.863 0.083 51.5)'),  last=gui.strToRGB('oklch(0.834 0.095 7.8)') },
+   pink    = { first=gui.strToRGB('oklch(0.927 0.038 9.8)'),   last=gui.strToRGB('oklch(0.777 0.099 10.8)') },
+   grey    = { first=gui.strToRGB('oklch(0.503 0.000 89.8)'),  last=gui.strToRGB('oklch(0.394 0.000 89.8)') },
+   pearl   = { first=gui.strToRGB('oklch(0.983 0.002 67.8)'),  last=gui.strToRGB('oklch(0.804 0.002 247.8)') }
+}
+
+gui.fills.default = gui.fills.carbon

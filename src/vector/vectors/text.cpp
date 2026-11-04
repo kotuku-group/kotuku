@@ -3,7 +3,7 @@
 -CLASS-
 VectorText: Extends the Vector class with support for generating text.
 
-To create text along a path, set the @Vector.Morph field with a reference to any @Vector object that generates a path.  The
+To create text along a path, set the @Vector.GuidePath field with a reference to any @Vector object that generates a path.  The
 following extract illustrates the SVG equivalent of this feature:
 
 <pre>
@@ -48,7 +48,7 @@ textPath warping could be more accurate if the character angles were calculated 
 rather than the bottom left corner.  However, this would be more computationally intensive and only useful in situations
 where large glyphs were oriented around sharp corners.  The process would look something like this:
 
-+ Compute the (x,y) of the character's middle vertex in context of the morph path.
++ Compute the (x,y) of the character's middle vertex in context of the guide path.
 + Compute the angle from the middle vertex to the first vertex (start_x, start_y)
 + Compute the angle from the middle vertex to the last vertex (end_x, end_y)
 + Interpolate the two angles
@@ -56,31 +56,33 @@ where large glyphs were oriented around sharp corners.  The process would look s
 + The final character position is moved to the mid-point rather than start_x,start_y
 */
 
+#include <kotuku/modules/filesystem.h>
+
 #include "agg_path_length.h"
+#include "text_word_ranges.h"
 
 const int DEFAULT_WEIGHT = 400;
 
-static FIELD FID_FreetypeFace;
 objConfig *glFontConfig = nullptr;
 
 //********************************************************************************************************************
 
 class TextCursor {
 private:
+   void position(extVectorText *, int, int, bool);
    int  mColumn, mRow; // The column is the character position after taking UTF8 sequences into account.
 
 public:
    APTR  timer;
-   extVectorPoly *vector;
+   extVectorPolygon *vector;
    int  flash;
-   int  savePos;
-   int  endColumn, endRow; // For area selections
+   int  preferredColumn; // Retained across consecutive vertical moves, including selection extension
+   std::optional<double> preferredX; // Horizontal position retained across wrapped visual lines
    int  selectColumn, selectRow;
 
    TextCursor() :
       mColumn(0), mRow(0),
-      timer(nullptr), vector(nullptr), flash(0), savePos(0),
-      endColumn(0), endRow(0),
+      timer(nullptr), vector(nullptr), flash(0), preferredColumn(-1),
       selectColumn(0), selectRow(0) { }
 
    ~TextCursor() {
@@ -121,6 +123,7 @@ public:
    }
 
    void move(extVectorText *, int, int, bool ValidateWidth = false);
+   void extend(extVectorText *, int, int);
    void reset_vector(extVectorText *) const;
    void validate_position(extVectorText *) const;
 };
@@ -130,10 +133,14 @@ public:
 class CharPos {
 public:
    double x1, y1, x2, y2;
-   CharPos(double X1, double Y1, double X2, double Y2) : x1(X1), y1(Y1), x2(X2), y2(Y2) { }
+   double lineTop, lineHeight; // Full ascent-to-descent box, independent of the visible caret stroke.
+   CharPos(double X1, double Y1, double X2, double Y2) :
+      x1(X1), y1(Y1), x2(X2), y2(Y2), lineTop(Y1), lineHeight(Y2 - Y1) { }
 };
 
 //********************************************************************************************************************
+
+enum class TextCharClass : uint8_t { WORD, SPACE, SEPARATOR };
 
 class TextLine : public std::string {
 public:
@@ -143,6 +150,15 @@ public:
    TextLine(std::string Value) : std::string{ Value } { }
 
    std::vector<CharPos> chars;
+   std::vector<int> wrapOffsets; // Byte offsets at which word-wrapping starts a new visual line
+   std::vector<TextCharClass> characterClasses;
+   bool classesValid = false;
+
+   void invalidate_text() {
+      classesValid = false;
+      chars.clear(); // Retain layout storage for the next generation.
+      wrapOffsets.clear();
+   }
 
    inline int charLength(uint32_t Offset = 0) const { // Total number of bytes used by the char at Offset
       return UTF8CharLength(c_str() + Offset);
@@ -153,7 +169,7 @@ public:
    }
 
    inline int utf8Length() const { // Total number of unicode characters in the string
-      return UTF8Length(c_str());
+      return classesValid ? int(characterClasses.size()) : UTF8Length(c_str());
    }
 
    inline int lastChar() const { // Return a direct offset to the start of the last character.
@@ -167,6 +183,24 @@ public:
 
 //********************************************************************************************************************
 
+static ERR cursor_timer(class extVectorText *, int64_t, int64_t);
+static std::string selected_text(class extVectorText *);
+static void clear_selection(class extVectorText *);
+static void selection_changed(class extVectorText *);
+static void report_cursor_move(class extVectorText *);
+static void rebuild_selection(class extVectorText *);
+static bool replace_selection(class extVectorText *, std::string_view);
+static void insert_char(class extVectorText *, int);
+static void generate_text(class extVectorText *, agg::path_storage &Path);
+static void raster_text_to_bitmap(class extVectorText *);
+static void key_event(evKey *, int, class extVectorText *);
+static ERR reset_font(class extVectorText *, bool = false);
+static ERR text_input_events(class extVector *Vector, const InputEvent *Events);
+static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta);
+static void activate_text_input(class extVectorText *);
+
+//********************************************************************************************************************
+
 class extVectorText : public extVector {
    public:
    static constexpr CLASSID CLASS_ID = CLASSID::VECTORTEXT;
@@ -174,54 +208,115 @@ class extVectorText : public extVector {
    using create = kt::Create<extVectorText>;
 
    std::vector<TextLine> txLines;
-   FUNCTION txValidateInput;
    FUNCTION txOnChange;
+   FUNCTION txOnCursorMove;
+   int txCursorUpdateDepth = 0;
+   int txReportedRow = 0, txReportedColumn = 0, txReportedSelectRow = 0, txReportedSelectColumn = 0;
+   bool txReportedSelection = false, txCursorChanged = false, txReportingCursor = false;
    double txInlineSize; // Enables word-wrapping
-   double txX, txY;
+   VTW txWrapMode = VTW::WORD; // Permitted break points when word-wrapping
+   Unit txX = Unit(0), txY = Unit(0);
    double txTextLength;
-   double txFontSize;  // Font size measured in pixels @ 72 DPI.  Should always be a whole number.
+   double txFontSize;  // Em size in pixels (CSS px; FreeType runs at 72 DPI so 1pt = 1px).  Always a whole number.
    double txLetterSpacing; // SVG: Acts as a multiplier or fixed unit addition to the spacing of each glyph
    double txWidth; // Width of the text computed by path generation.  Not for client use as GetBoundary() can be used for that.
    double txStartOffset; // TODO
    double txSpacing; // TODO
    double txXOffset, txYOffset; // X,Y adjustment for ensuring that the cursor is visible.
-   double *txDX, *txDY; // A series of spacing adjustments that apply on a per-character level.
-   double *txRotate;  // A series of angles that will rotate each individual character.
+   std::vector<double> txDX, txDY; // A series of spacing adjustments that apply on a per-character level.
+   std::vector<double> txRotate; // A series of angles that will rotate each individual character.
    objFont *txBitmapFont;
    objBitmap *txAlphaBitmap; // Host for the bitmap font texture
    extVectorImage *txBitmapImage;
    common_font *txHandle;
    TextCursor txCursor;
-   CSTRING txFamily; // Family name(s) as requested by the client
+   extVectorPath *txSelection;
+   std::string txSelectFill = "rgba(0,120,215,0.35)";
+   bool txSelectionHidden = false;
+   bool txHasFocus = false;
+   bool txDragging = false, txDragPending = false, txMouseShift = false;
+   APTR txDragTimer = nullptr;
+   double txDragX = 0, txDragY = 0, txClickX = 0, txClickY = 0;
+   int64_t txClickTime = 0;
+   int txClickCount = 0, txClickSlop = 4;
+   std::string txFamily; // Family name(s) as requested by the client
+   std::string txFontStyle;
+   std::string txFontSizeString;
    APTR    txKeyEvent;
    OBJECTID txFocusID;
    OBJECTID txShapeInsideID;   // Enable word-wrapping within this shape
    OBJECTID txShapeSubtractID; // Subtract this shape from the path defined by shape-inside
-   int  txTotalLines;
+   int  txWrappedLines = 0; // Extra lines created by InlineSize word-wrapping, computed by path generation
    int  txLineLimit, txCharLimit;
-   int  txTotalRotate, txTotalDX, txTotalDY;
    int  txWeight; // 100 - 300 (Light), 400 (Normal), 700 (Bold), 900 (Boldest)
    ALIGN txAlignFlags;
    VTXF  txFlags;
-   char  txFontStyle[30];
    bool txScaledFontSize;
-   bool txXScaled:1;
-   bool txYScaled:1;
 // bool txSpacingAndGlyphs:1;
+
+   bool needs_caret_geometry() const {
+      return (txFlags & (VTXF::EDITABLE|VTXF::SELECTABLE)) != VTXF::NIL;
+   }
+
+   // The wrap mode used by layout.  SECRET text always wraps at whitespace, so that the line breaks do not reveal
+   // where symbols occur in the hidden string.
+
+   VTW effective_wrap_mode() const {
+      return ((txFlags & VTXF::SECRET) != VTXF::NIL) ? VTW::WORD : txWrapMode;
+   }
+
+   extVectorText(objMetaClass *ClassPtr, OBJECTID ObjectID) : extVector(ClassPtr, ObjectID) {
+      txFontStyle     = "Regular";
+      GeneratePath    = (void (*)(extVector *, agg::path_storage &))&generate_text;
+      StrokeWidth     = 0.0;
+      txWeight        = DEFAULT_WEIGHT;
+      txFontSize      = 16; // Pixel units, equivalent to 12pt
+      txCharLimit     = 0x7fffffff;
+      txFamily        = "Noto Sans";
+      Fill.Colour     = FRGB(1, 1, 1, 1);
+      txLetterSpacing = 1.0;
+      DisableHitTesting = true;
+   }
+
+   ~extVectorText() {
+      if (txHandle) {
+         // TODO: This would be a good opportunity to garbage-collect stale glyphs
+      }
+
+      auto parent_view = ((extVector *)this)->ParentView;
+      if ((parent_view) and (not parent_view->terminating()) and (parent_view->Scene) and
+            (parent_view->Scene->SurfaceID)) {
+         parent_view->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
+      }
+
+      if (txDragTimer) UpdateTimer(txDragTimer, 0);
+      if (txSelection) FreeResource(txSelection);
+      if (txBitmapImage)  FreeResource(txBitmapImage);
+      if (txAlphaBitmap)  FreeResource(txAlphaBitmap);
+      if (txKeyEvent)     UnsubscribeEvent(txKeyEvent);
+      release_callback(txOnChange);
+      release_callback(txOnCursorMove);
+
+      if (txFocusID) {
+         if (kt::ScopedObjectLock<extVector> focus(txFocusID, 5000); focus.granted()) {
+            focus->subscribeFeedback(FM::NIL, C_FUNCTION(text_focus_event));
+         }
+      }
+   }
 };
 
 //********************************************************************************************************************
+// Nested editing helpers may move both endpoints several times.  Report only their final state, after OnChange.
 
-static void add_line(extVectorText *, std::string, int Offset, int Length, int Line = -1);
-static ERR cursor_timer(extVectorText *, int64_t, int64_t);
-static void delete_selection(extVectorText *);
-static void insert_char(extVectorText *, int, int);
-static void generate_text(extVectorText *, agg::path_storage &Path);
-static void raster_text_to_bitmap(extVectorText *);
-static void key_event(evKey *, int, extVectorText *);
-static ERR reset_font(extVectorText *, bool = false);
-static ERR text_input_events(extVector *, const InputEvent *);
-static ERR text_focus_event(extVector *, FM, OBJECTPTR, APTR);
+class CursorUpdate {
+   extVectorText *mText;
+
+public:
+   explicit CursorUpdate(extVectorText *Text) : mText(Text) { mText->txCursorUpdateDepth++; }
+   ~CursorUpdate() {
+      if (--mText->txCursorUpdateDepth IS 0) report_cursor_move(mText);
+   }
+};
 
 //********************************************************************************************************************
 
@@ -230,19 +325,6 @@ freetype_font::~freetype_font() {
 }
 
 //********************************************************************************************************************
-
-inline void get_kerning_xy(FT_Face Face, int Glyph, int PrevGlyph, double &X, double &Y)
-{
-   FT_Vector delta;
-   if (!FT_Get_Kerning(Face, PrevGlyph, Glyph, FT_KERNING_DEFAULT, &delta)) {
-      X = int26p6_to_dbl(delta.x);
-      Y = int26p6_to_dbl(delta.y);
-   }
-   else {
-      X = 0;
-      Y = 0;
-   }
-}
 
 inline double get_kerning(FT_Face Face, int Glyph, int PrevGlyph)
 {
@@ -255,7 +337,9 @@ inline double get_kerning(FT_Face Face, int Glyph, int PrevGlyph)
 
 inline void report_change(extVectorText *Self)
 {
-   if (Self->txOnChange.isC()) {
+   Self->txCursorChanged = true;
+   if (Self->txOnChange.stale()) release_callback(Self->txOnChange);
+   else if (Self->txOnChange.isC()) {
       auto routine = (void (*)(extVectorText *))Self->txOnChange.Routine;
       kt::SwitchContext context(Self->txOnChange.Context);
       routine(Self);
@@ -265,6 +349,77 @@ inline void report_change(extVectorText *Self)
          { "VectorText", Self, FD_OBJECTPTR }
       }));
    }
+}
+
+//********************************************************************************************************************
+// Measure the word at the start of String, for word-wrapping.  The word ends at whitespace, a control character or
+// the end of the string.  Bytes are compared unsigned, so that the bytes of multi-byte UTF-8 characters belong to the
+// word.  Returns the length of the word in bytes and in characters.
+
+struct WordExtent {
+   int bytes, chars;
+};
+
+static WordExtent word_extent(const char *String)
+{
+   WordExtent word = { 0, 0 };
+   while ((String[word.bytes]) and (uint8_t(String[word.bytes]) > 0x20)) {
+      for (++word.bytes; (String[word.bytes] & 0xc0) IS 0x80; word.bytes++);
+      word.chars++;
+   }
+   return word;
+}
+
+//********************************************************************************************************************
+// Symbols after which a line may break in VTW::SYMBOL and VTW::ANYWHERE modes.  Changes to this list must be
+// reflected in the WrapMode documentation.
+
+static constexpr bool is_break_symbol(char Char)
+{
+   switch (Char) {
+      case '/': case '\\': case '-': case '_': case '?': case '&': case '=': return true;
+      default: return false;
+   }
+}
+
+//********************************************************************************************************************
+// Measure the wrapping segment at the start of String.  A segment is the unit that word-wrapping measures and moves
+// to a new line.  In VTW::WORD mode a segment is a whole word, as for word_extent().  In the other modes a word is
+// also split after each break symbol, unless:
+//
+//   1. The symbol is the last character of the word.
+//   2. The next character is also a break symbol, so that runs such as // and -- stay together.
+//   3. The symbol is a '-' in the run of hyphens that starts a word, as in -5 and --log-warning.
+//   4. The symbol is a '-' that is followed by a digit, as in x-1.
+//
+// WordStart is true if String is the start of a word rather than the continuation of one.  Returns the length of the
+// segment in bytes and in characters.
+
+static WordExtent segment_extent(const char *String, VTW Mode, bool WordStart)
+{
+   if (Mode IS VTW::WORD) return word_extent(String);
+
+   WordExtent segment = { 0, 0 };
+   bool leading_hyphens = WordStart;
+   while ((String[segment.bytes]) and (uint8_t(String[segment.bytes]) > 0x20)) {
+      const char current = String[segment.bytes];
+      for (++segment.bytes; (String[segment.bytes] & 0xc0) IS 0x80; segment.bytes++);
+      segment.chars++;
+
+      if ((leading_hyphens) and (current != '-')) leading_hyphens = false;
+
+      if (!is_break_symbol(current)) continue;
+
+      const char next = String[segment.bytes];
+      if (uint8_t(next) <= 0x20) break; // Rule 1: the end of the word also ends the segment
+      if (is_break_symbol(next)) continue; // Rule 2
+      if (current IS '-') {
+         if (leading_hyphens) continue; // Rule 3
+         if ((next >= '0') and (next <= '9')) continue; // Rule 4
+      }
+      break;
+   }
+   return segment;
 }
 
 //********************************************************************************************************************
@@ -303,6 +458,92 @@ static int string_width(extVectorText *Self, const std::string_view &String)
 }
 
 /*********************************************************************************************************************
+-ACTION-
+Clipboard: Copies, cuts or pastes selected text through the system clipboard.
+
+`CLIPMODE::COPY` copies #SelectedText as UTF-8.  `CLIPMODE::CUT` copies the selection and removes it only after the
+clipboard accepts the text.  Both operations leave the clipboard and text unchanged when nothing is selected or
+`VTXF::SECRET` is set in #TextFlags.
+
+`CLIPMODE::PASTE` replaces the selection, or inserts at the cursor when nothing is selected.  CRLF and CR line endings
+are normalised to LF.  With #LineLimit set to 1, each line ending becomes a space.  Other line limits reject a paste
+that would exceed the limit after replacing the selected rows.  #CharLimit truncates each resulting line in character
+columns, matching keyboard editing.  Text after a null byte is ignored.
+
+Cut and paste require `VTXF::EDITABLE`.  Copy does not change the selection or call #OnChange.  Cut and paste call
+#OnChange once if the text changes.
+
+-ERRORS-
+Okay: The operation completed, or there was nothing to copy or change.
+NullArgs
+Args: The clipboard mode is not supported.
+ReadOnly: Cut or paste was requested for non-editable text.
+NoData: No text is available to paste.
+CreateObject: The Clipboard object could not be created.
+OpenFile: The clipboard file could not be opened.
+OutOfRange: The clipboard file is too large to read.
+-END-
+
+*********************************************************************************************************************/
+
+static ERR VECTORTEXT_Clipboard(extVectorText *Self, struct acClipboard *Args)
+{
+   CursorUpdate update(Self);
+   if ((not Args) or (Args->Mode IS CLIPMODE::NIL)) return ERR::NullArgs;
+   if ((Args->Mode != CLIPMODE::COPY) and (Args->Mode != CLIPMODE::CUT) and
+       (Args->Mode != CLIPMODE::PASTE)) return ERR::Args;
+   if ((Args->Mode != CLIPMODE::COPY) and ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL)) {
+      return ERR::ReadOnly;
+   }
+
+   if (Args->Mode != CLIPMODE::PASTE) {
+      const auto text = selected_text(Self);
+      if (text.empty()) return ERR::Okay;
+      objClipboard::create clipboard = { };
+      if (not clipboard.ok()) return ERR::CreateObject;
+      if (auto error = clipboard->addText(text); error != ERR::Okay) return error;
+      if ((Args->Mode IS CLIPMODE::CUT) and replace_selection(Self, "")) report_change(Self);
+      return ERR::Okay;
+   }
+
+   objClipboard::create clipboard = { };
+   if (not clipboard.ok()) return ERR::CreateObject;
+   kt::vector<std::string> files;
+   if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr);
+       error != ERR::Okay) return error;
+   if (files.empty()) return ERR::NoData;
+
+   objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
+   if (not file.ok()) return ERR::OpenFile;
+   int64_t size;
+   if (auto error = file->getSize(size); error != ERR::Okay) return error;
+   if (size <= 0) return ERR::NoData;
+   if (size > 0x7fffffff) return ERR::OutOfRange;
+
+   std::string content(size_t(size), '\0');
+   int length;
+   if (auto error = file->read(std::span<int8_t>((int8_t *)content.data(), content.size()), &length);
+       error != ERR::Okay) return error;
+   content.resize(size_t(length));
+   if (auto end = content.find('\0'); end != std::string::npos) content.resize(end);
+   if (content.empty()) return ERR::NoData;
+
+   std::string text;
+   text.reserve(content.size());
+   for (size_t i=0; i < content.size(); i++) {
+      auto ch = content[i];
+      if (ch IS '\r') {
+         if ((i + 1 < content.size()) and (content[i + 1] IS '\n')) i++;
+         ch = '\n';
+      }
+      if ((ch IS '\n') and (Self->txLineLimit IS 1)) ch = ' ';
+      text += ch;
+   }
+   if (replace_selection(Self, text)) report_change(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 
 -METHOD-
 DeleteLine: Deletes any line number.
@@ -317,18 +558,24 @@ int Line: The line number that you want to delete.  If negative, the last line w
 -ERRORS-
 Okay: The line was deleted.
 Args: The Line value was out of the valid range.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 static ERR VECTORTEXT_DeleteLine(extVectorText *Self, struct vt::DeleteLine *Args)
 {
+   CursorUpdate update(Self);
    if (Self->txLines.empty()) return ERR::Okay;
+   const bool changed = (Self->txLines.size() > 1) or not Self->txLines.front().empty();
 
    if ((not Args) or (Args->Line < 0)) Self->txLines.pop_back();
    else if ((size_t)Args->Line < Self->txLines.size()) Self->txLines.erase(Self->txLines.begin() + Args->Line);
    else return ERR::Args;
 
+   Self->txCursorChanged |= changed;
    mark_dirty(Self, RC::BASE_PATH);
 
    if ((Args) and (Self->txCursor.row() IS Args->Line)) {
@@ -338,39 +585,127 @@ static ERR VECTORTEXT_DeleteLine(extVectorText *Self, struct vt::DeleteLine *Arg
       Self->txCursor.move(Self, Self->txLines.size()-1, Self->txCursor.column());
    }
 
-   Self->txFlags &= ~VTXF::AREA_SELECTED;
+   clear_selection(Self);
 
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
+/*********************************************************************************************************************
 
-static ERR VECTORTEXT_Free(extVectorText *Self)
+-METHOD-
+SelectArea: Selects an area of text.
+
+SelectArea() marks a region of text as selected, starting at the position given by `Row` and `Column`.  The cursor is
+moved to the end of the region at `EndRow` and `EndColumn`, which may come before the start for a reversed selection.
+Columns are character positions, so UTF-8 sequences count as one column each.  A negative `EndRow` refers to the
+last line and a negative `EndColumn` refers to the end of its line, so `SelectArea(0, 0, -1, -1)` selects all of the
+text.  Positions beyond the text are clamped to its limits.
+
+While an area is selected the `AREA_SELECTED` bit is set in #TextFlags.  For editable text, the next character typed,
+or a press of Backspace, Delete, Clear or Enter, will replace or delete the selected text.  Moving the cursor without
+extending the selection deselects the area.
+
+Text with `VTXF::EDITABLE` or `VTXF::SELECTABLE` displays the selected area with the #SelectFill painter.  The highlight
+is hidden when focus is lost and restored when focus returns; the selection range is retained.
+
+If the start and end positions are identical, the cursor is moved and no area is selected.
+
+-INPUT-
+int Row: The line at which the selection starts.
+int Column: The character column at which the selection starts.
+int EndRow: The line at which the selection ends.  If negative, the last line is used.
+int EndColumn: The character column at which the selection ends.  If negative, the end of the line is used.
+
+-ERRORS-
+Okay: The area was selected.
+NullArgs: No arguments were provided.
+NoData: The object contains no text.
+
+-TAGS-
+mutates-object
+-END-
+
+*********************************************************************************************************************/
+
+static ERR VECTORTEXT_SelectArea(extVectorText *Self, struct vt::SelectArea *Args)
 {
-   Self->txLines.~vector<TextLine>();
-   Self->txCursor.~TextCursor();
+   CursorUpdate update(Self);
+   if (not Args) return ERR::NullArgs;
+   if (Self->txLines.empty()) return ERR::NoData;
 
-   if (Self->txHandle) {
-      // TODO: This would be a good opportunity to garbage-collect stale glyphs
-   }
+   auto last_row = int(Self->txLines.size()) - 1;
 
-   if ((((extVector *)Self)->ParentView) and (((extVector *)Self)->ParentView->Scene->SurfaceID)) {
-      ((extVector *)Self)->ParentView->subscribeInput(JTYPE::NIL, C_FUNCTION(text_input_events));
-   }
+   auto row = std::clamp(Args->Row, 0, last_row);
+   auto column = std::clamp(Args->Column, 0, Self->txLines[row].utf8Length());
 
-   if (Self->txBitmapImage)  { FreeResource(Self->txBitmapImage); Self->txBitmapImage = nullptr; }
-   if (Self->txAlphaBitmap)  { FreeResource(Self->txAlphaBitmap); Self->txAlphaBitmap = nullptr; }
-   if (Self->txFamily)       { FreeResource(Self->txFamily); Self->txFamily = nullptr; }
-   if (Self->txDX)           { FreeResource(Self->txDX); Self->txDX = nullptr; }
-   if (Self->txDY)           { FreeResource(Self->txDY); Self->txDY = nullptr; }
-   if (Self->txKeyEvent)     { UnsubscribeEvent(Self->txKeyEvent); Self->txKeyEvent = nullptr; }
+   auto end_row = (Args->EndRow < 0) ? last_row : std::min(Args->EndRow, last_row);
+   auto end_length = Self->txLines[end_row].utf8Length();
+   auto end_column = (Args->EndColumn < 0) ? end_length : std::min(Args->EndColumn, end_length);
 
-   if (Self->txFocusID) {
-      if (kt::ScopedObjectLock<extVector> focus(Self->txFocusID, 5000); focus.granted()) {
-         focus->subscribeFeedback(FM::NIL, C_FUNCTION(text_focus_event));
-      }
-   }
+   Self->txCursor.move(Self, row, column);
+   Self->txCursor.extend(Self, end_row, end_column);
 
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetCaretBounds: Returns the line box at a character position.
+
+Use GetCaretBounds to find where the caret sits at a given character position, for example to position a popup or
+scroll a container so that the cursor stays in view.  The result describes a vertical line: X is the caret position,
+and Y and Height cover the line from the font's ascent to its descent.
+
+Coordinates are in the parent viewport's coordinate space and include the scroll offset that keeps the cursor visible.
+Transforms applied to the VectorText are not included.
+
+Out-of-range Row and Column values are clamped to the nearest valid position.  A Column equal to the length of the line
+returns the position after the last character.
+
+Caret geometry is only maintained when `VTXF::EDITABLE` or `VTXF::SELECTABLE` is set in #TextFlags.  The text layout
+is regenerated if necessary before the bounds are read.
+
+-INPUT-
+int Row: Logical row, or a negative value for the current cursor row.
+int Column: Character column, or a negative value for the current cursor column.
+&double X: Receives the horizontal caret position.
+&double Y: Receives the top of the line box.
+&double Height: Receives the full ascent-to-descent height.
+
+-ERRORS-
+Okay
+NullArgs
+NoData: Neither `EDITABLE` nor `SELECTABLE` is set in #TextFlags, or no caret positions have been calculated.
+NoSupport: The text follows a guide path.
+-END-
+
+*********************************************************************************************************************/
+
+static ERR VECTORTEXT_GetCaretBounds(extVectorText *Self, struct vt::GetCaretBounds *Args)
+{
+   if (not Args) return ERR::NullArgs;
+
+   validate_object_link(Self->GuidePath);
+   if (Self->GuidePath) return ERR::NoSupport;
+   if (not Self->needs_caret_geometry()) return ERR::NoData;
+
+   gen_vector_tree(Self);
+
+   if (Self->txLines.empty()) return ERR::NoData;
+
+   const auto row = std::clamp(Args->Row < 0 ? Self->txCursor.row() : Args->Row, 0, int(Self->txLines.size()) - 1);
+   const auto &line = Self->txLines[row];
+
+   if (line.chars.empty()) return ERR::NoData;
+
+   const auto column = std::clamp(Args->Column < 0 ? Self->txCursor.column() : Args->Column,
+      0, int(line.chars.size()) - 1);
+   const auto &caret = line.chars[column];
+
+   Args->X = Self->FinalX - Self->txXOffset + caret.x1;
+   Args->Y = Self->FinalY - Self->txYOffset + caret.lineTop;
+   Args->Height = caret.lineHeight;
    return ERR::Okay;
 }
 
@@ -378,7 +713,7 @@ static ERR VECTORTEXT_Free(extVectorText *Self)
 
 static ERR VECTORTEXT_Init(extVectorText *Self)
 {
-   if ((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) {
+   if (Self->needs_caret_geometry()) {
       if (not Self->txFocusID) {
          if (Self->ParentView) Self->txFocusID = Self->ParentView->UID;
       }
@@ -387,46 +722,34 @@ static ERR VECTORTEXT_Init(extVectorText *Self)
          focus->subscribeFeedback(FM::HAS_FOCUS|FM::CHILD_HAS_FOCUS|FM::LOST_FOCUS, C_FUNCTION(text_focus_event));
       }
 
-      // The editing cursor will inherit transforms from the VectorText as long as it is a direct child.
+      // The editing cursor inherits transforms from the VectorText as a direct child.
 
-      if ((Self->txCursor.vector = extVectorPoly::create::global(
+      if ((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) {
+         Self->txCursor.vector = extVectorPolygon::create::global(
             fl::Name("VTCursor"),
             fl::X1(0), fl::Y1(0), fl::X2(1), fl::Y2(1),
             fl::Closed(false),
             fl::Stroke("rgb(255,0,0,255)"),
             fl::StrokeWidth(1.25),
-            fl::Visibility(VIS::HIDDEN)))) {
+            fl::Visibility(VIS::HIDDEN));
+         if (not Self->txCursor.vector) return ERR::CreateObject;
       }
-      else return ERR::CreateObject;
+
+      Self->txSelection = extVectorPath::create::global(
+         fl::Name("VTSelection"), fl::Owner(Self->UID), fl::Fill(Self->txSelectFill),
+         fl::StrokeWidth(0), fl::Visibility(VIS::HIDDEN));
+      if (not Self->txSelection) return ERR::CreateObject;
+      Self->txSelection->DisableHitTesting = true;
+      if (Self->txCursor.vector) acMoveToFront(Self->txCursor.vector);
 
       if (Self->txLines.empty()) Self->txLines.emplace_back(std::string(""));
 
       if ((Self->ParentView) and (Self->ParentView->Scene->SurfaceID)) {
-         Self->ParentView->subscribeInput(JTYPE::BUTTON, C_FUNCTION(text_input_events));
+         Self->ParentView->subscribeInput(JTYPE::BUTTON|JTYPE::MOVEMENT, C_FUNCTION(text_input_events));
       }
    }
 
    return reset_font(Self, true);
-}
-
-//********************************************************************************************************************
-
-static ERR VECTORTEXT_NewObject(extVectorText *Self)
-{
-   new (&Self->txLines) std::vector<TextLine>;
-   new (&Self->txCursor) TextCursor;
-
-   strcopy("Regular", Self->txFontStyle, sizeof(Self->txFontStyle));
-   Self->GeneratePath = (void (*)(extVector *, agg::path_storage &))&generate_text;
-   Self->StrokeWidth  = 0.0;
-   Self->txWeight     = DEFAULT_WEIGHT;
-   Self->txFontSize   = 16; // Pixel units @ 72 DPI
-   Self->txCharLimit  = 0x7fffffff;
-   Self->txFamily     = strclone("Noto Sans");
-   Self->Fill[0].Colour  = FRGB(1, 1, 1, 1);
-   Self->txLetterSpacing = 1.0;
-   Self->DisableHitTesting = true;
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -450,19 +773,24 @@ static ERR TEXT_GET_Align(extVectorText *Self, ALIGN *Value)
 static ERR TEXT_SET_Align(extVectorText *Self, ALIGN Value)
 {
    Self->txAlignFlags = Value;
+   reset_path(Self);
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -FIELD-
-CharLimit: Limits the total characters allowed in the string.
+CharLimit: Limits the characters allowed on each logical line during editing.
 
-Set the CharLimit field to limit the number of characters that can appear in the string.  The minimum possible value
-is 0 for no characters.  If the object is in edit mode then the user will be unable to extend the string beyond the
-limit.
+CharLimit sets the maximum number of characters on each logical line, counted in UTF-8 characters rather than bytes.
+The limit applies to each line separately, not to the text as a whole.  Use #LineLimit to restrict the number of lines.
 
-Note that it is valid for the #String length to exceed the limit if set manually.  Only the display of the string
-characters will be affected by the CharLimit value.
+The limit applies to keyboard input and to pastes made through the #Clipboard() action.  If an edit would exceed the
+limit, the line is cut off at the limit and any characters past that point are discarded.  Deletions are always
+permitted.
+
+Writing to the #String field bypasses the limit, and reducing CharLimit does not shorten existing text.  The default
+value is the maximum positive 32-bit integer, so there is effectively no limit.  A value of 0 prevents any characters
+from being entered.  Negative values are rejected with `ERR::OutOfRange`.
 
 *********************************************************************************************************************/
 
@@ -495,7 +823,7 @@ static ERR TEXT_GET_CursorColumn(extVectorText *Self, int *Value)
 static ERR TEXT_SET_CursorColumn(extVectorText *Self, int Value)
 {
    if (Value >= 0) {
-      Self->txCursor.move(Self, Self->txCursor.row(), Value);
+      Self->txCursor.move(Self, Self->txCursor.row(), Value, true);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -516,8 +844,7 @@ static ERR TEXT_GET_CursorRow(extVectorText *Self, int *Value)
 static ERR TEXT_SET_CursorRow(extVectorText *Self, int Value)
 {
    if (Value >= 0) {
-      if (Value < Self->txTotalLines) Self->txCursor.move(Self, Value, Self->txCursor.column());
-      else Self->txCursor.move(Self, Self->txTotalLines - 1, Self->txCursor.column());
+      Self->txCursor.move(Self, Value, Self->txCursor.column(), true);
       return ERR::Okay;
    }
    else return ERR::InvalidValue;
@@ -525,10 +852,11 @@ static ERR TEXT_SET_CursorRow(extVectorText *Self, int Value)
 
 /*********************************************************************************************************************
 -FIELD-
-Descent: The font descent measured in pixels, after DPI conversion.
+Descent: The font descent measured in pixels.
 
-Use Descent to retrieve the height of the font descent region in actual display pixels, after DPI conversion has been
-taken into account.
+Use Descent to retrieve the height of the font descent region, which is the space reserved below the baseline.  The
+value is measured in the same pixel units as #FontSize, so it is unaffected by the display density and is subject to
+the same transforms as the text.
 
 *********************************************************************************************************************/
 
@@ -548,10 +876,11 @@ static ERR TEXT_GET_Descent(extVectorText *Self, int *Value)
 
 /*********************************************************************************************************************
 -FIELD-
-DisplayHeight: The font height measured in pixels, after DPI conversion.
+DisplayHeight: The font height measured in pixels.
 
-Use DisplayHeight to retrieve the font height in actual display pixels, after DPI conversion has been taken into
-account.  The height includes the top region reserved for accents, but excludes the descent value.
+Use DisplayHeight to retrieve the height of the font, measured in the same pixel units as #FontSize.  For scalable
+fonts the value is the sum of the ascent and #Descent.  The value does not account for the display density or for
+transforms applied to the text.
 
 *********************************************************************************************************************/
 
@@ -571,11 +900,13 @@ static ERR TEXT_GET_DisplayHeight(extVectorText *Self, int *Value)
 
 /*********************************************************************************************************************
 -FIELD-
-DisplaySize: The FontSize measured in pixels, after DPI conversion.
+DisplaySize: The FontSize converted to points.
 
-Use DisplaySize to retrieve the #FontSize in actual display pixels, after DPI conversion has been taken into account.
-For example, if #FontSize is set to `16` in a 96 DPI environment, the resulting value is `12` after performing the
-calculation `16 * 72 / 96`.
+DisplaySize returns the #FontSize converted from pixels to points at the fixed reference density of 96 DPI, calculated
+as `FontSize * 72 / 96` and truncated to an integer.  For example, a #FontSize of `16` returns `12`.  The display
+density is not taken into account.
+
+This value matches #Point, except that #Point is rounded to the nearest integer rather than truncated.
 
 *********************************************************************************************************************/
 
@@ -612,27 +943,18 @@ else (b) no extra shift along the x-axis occurs.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_DX(extVectorText *Self, double **Values, int *Elements)
+static ERR TEXT_GET_DX(extVectorText *Self, std::span<double> &Array)
 {
-   *Values = Self->txDX;
-   *Elements = Self->txTotalDX;
+   Array = std::span<double>(Self->txDX.data(), Self->txDX.size());
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_DX(extVectorText *Self, double *Values, int Elements)
+static ERR TEXT_SET_DX(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txDX) { FreeResource(Self->txDX); Self->txDX = nullptr; Self->txTotalDX = 0; }
-
-   if ((Values) and (Elements > 0)) {
-      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, &Self->txDX) IS ERR::Okay) {
-         copymem(Values, Self->txDX, Elements * sizeof(double));
-         Self->txTotalDX = Elements;
-         reset_path(Self);
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if ((not Array.data()) or Array.empty()) Self->txDX.clear();
+   else Self->txDX.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -643,27 +965,18 @@ This field follows the same rules described in #DX.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_DY(extVectorText *Self, double **Values, int *Elements)
+static ERR TEXT_GET_DY(extVectorText *Self, std::span<double> &Array)
 {
-   *Values   = Self->txDY;
-   *Elements = Self->txTotalDY;
+   Array = std::span<double>(Self->txDY.data(), Self->txDY.size());
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_DY(extVectorText *Self, double *Values, int Elements)
+static ERR TEXT_SET_DY(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txDY) { FreeResource(Self->txDY); Self->txDY = nullptr; Self->txTotalDY = 0; }
-
-   if ((Values) and (Elements > 0)) {
-      if (AllocMemory(sizeof(double) * Elements, MEM::DATA, &Self->txDY) IS ERR::Okay) {
-         copymem(Values, Self->txDY, Elements * sizeof(double));
-         Self->txTotalDY = Elements;
-         reset_path(Self);
-         return ERR::Okay;
-      }
-      else return ERR::AllocMemory;
-   }
-   else return ERR::Okay;
+   if ((not Array.data()) or Array.empty()) Self->txDY.clear();
+   else Self->txDY.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -677,10 +990,10 @@ The callback function prototype is `void Function(*VectorText)`.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_OnChange(extVectorText *Self, FUNCTION **Value)
+static ERR TEXT_GET_OnChange(extVectorText *Self, FUNCTION * &Value)
 {
    if (Self->txOnChange.defined()) {
-      *Value = &Self->txOnChange;
+      Value = &Self->txOnChange;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -688,11 +1001,49 @@ static ERR TEXT_GET_OnChange(extVectorText *Self, FUNCTION **Value)
 
 static ERR TEXT_SET_OnChange(extVectorText *Self, FUNCTION *Value)
 {
+   release_callback(Self->txOnChange);
    if (Value) {
-      if (Self->txOnChange.isScript()) UnsubscribeAction(Self->txOnChange.Context, AC::Free);
       Self->txOnChange = *Value;
+      if (Self->txOnChange.defined()) Self->txOnChange.pin();
    }
-   else Self->txOnChange.clear();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+OnCursorMove: Receives notifications after cursor or selection changes.
+
+Set this field with a function reference to be notified when the cursor position, selected area or text content
+changes.  This is commonly used to update status displays or to keep the cursor in view with #GetCaretBounds().
+
+An operation that moves the cursor or selection more than once triggers a single notification, which reports the
+final state.  When the text changes, #OnChange is called first.  Text layout is regenerated before the callback runs,
+so caret geometry and cursor fields are up to date.  Cursor or selection changes made from inside the callback do not
+trigger another notification.
+
+Notifications are only sent after initialisation, and only when `VTXF::EDITABLE` or `VTXF::SELECTABLE` is set in
+#TextFlags.
+
+The callback function prototype is `void Function(*VectorText)`.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_OnCursorMove(extVectorText *Self, FUNCTION * &Value)
+{
+   if (Self->txOnCursorMove.defined()) {
+      Value = &Self->txOnCursorMove;
+      return ERR::Okay;
+   }
+   return ERR::FieldNotSet;
+}
+
+static ERR TEXT_SET_OnCursorMove(extVectorText *Self, FUNCTION *Value)
+{
+   release_callback(Self->txOnCursorMove);
+   if (Value) {
+      Self->txOnCursorMove = *Value;
+      if (Self->txOnCursorMove.defined()) Self->txOnCursorMove.pin();
+   }
    return ERR::Okay;
 }
 
@@ -708,36 +1059,33 @@ closest matching font will be stored as the Face value.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_Face(extVectorText *Self, CSTRING *Value)
+static ERR TEXT_GET_Face(extVectorText *Self, std::string_view &Value)
 {
-   *Value = Self->txFamily;
+   Value = Self->txFamily;
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_Face(extVectorText *Self, CSTRING Value)
+static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
 {
-   if (Value) {
-      if (Self->txFamily) { FreeResource(Self->txFamily); Self->txFamily = nullptr; }
+   if (Value.empty()) return ERR::InvalidValue;
 
-      CSTRING name;
-      if (fnt::ResolveFamilyName(Value, &name) IS ERR::Okay) {
-         Self->txFamily = strclone(name);
-      }
-      else Self->txFamily = strclone("Noto Sans"); // Better to resort to a default than fail completely
-
-      if (Self->initialised()) return reset_font(Self);
-
-      return ERR::Okay;
+   std::string_view name;
+   if (!fnt::ResolveFamilyName(Value, &name)) {
+      Self->txFamily = name.empty() ? "Noto Sans" : name;
    }
-   else return ERR::InvalidValue;
+   else Self->txFamily = "Noto Sans"; // Better to resort to a default than fail completely
+
+   if (Self->initialised()) return reset_font(Self);
+
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -FIELD-
 Focus: Refers to the object that will be monitored for user focussing.
 
-A VectorText object in edit mode will become active when its nearest viewport receives the focus.  Setting the Focus
-field to a different vector in the scene graph will redirect monitoring to it.
+A VectorText object with `VTXF::EDITABLE` or `VTXF::SELECTABLE` becomes active when its nearest viewport receives the
+focus.  Setting the Focus field to a different vector in the scene graph redirects monitoring to it.
 
 Changing this value post-initialisation has no effect.
 
@@ -773,12 +1121,10 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
    if (Value->baseClassID() IS CLASSID::FONT) {
       auto other = (objFont *)Value;
 
-      if (Self->txFamily) { FreeResource(Self->txFamily); Self->txFamily = nullptr; }
-
-      Self->txFamily = strclone(other->Face);
-      Self->txFontSize = std::trunc(other->Point * (96.0 / 72.0));
+      Self->txFamily         = other->Face.empty() ? "Noto Sans" : other->Face;
+      Self->txFontSize       = std::max(1.0, std::round(other->Point * (96.0 / 72.0)));
       Self->txScaledFontSize = false;
-      strcopy(other->Style, Self->txFontStyle);
+      Self->txFontStyle      = other->Style.empty() ? "Regular" : other->Style;
 
       if (Self->initialised()) return reset_font(Self);
       else return ERR::Okay;
@@ -786,12 +1132,10 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
    else if (Value->classID() IS CLASSID::VECTORTEXT) {
       auto other = (extVectorText *)Value;
 
-      if (Self->txFamily) { FreeResource(Self->txFamily); Self->txFamily = nullptr; }
-
-      Self->txFamily = strclone(other->txFamily);
-      Self->txFontSize = other->txFontSize;
+      Self->txFamily         = other->txFamily;
+      Self->txFontSize       = other->txFontSize;
       Self->txScaledFontSize = false;
-      strcopy(other->txFontStyle, Self->txFontStyle);
+      Self->txFontStyle      = other->txFontStyle;
 
       if (Self->initialised()) return reset_font(Self);
       else return ERR::Okay;
@@ -808,42 +1152,40 @@ The painter used for filling a vector path can be defined through this field usi
 string is parsed through the ~Vector.ReadPainter() function.  Please refer to it for further details on
 valid formatting.
 
-It is possible to enable dual-fill painting via this field, whereby a second fill operation can follow the first by
-separating them with a semi-colon `;` character.  This feature makes it easy to use a common background fill and
-follow it with an independent foreground, alleviating the need for additional vector objects.  Be aware that this
-feature is intended for programmed use-cases and is not SVG compliant.
+Fallback colours and layered fill painters are supported in the same way as the @Vector.Fill field.  Please refer to it
+for further details.
 
 *********************************************************************************************************************/
 // Override the existing Vector Fill field - this is required for bitmap fonts as they need a path reset to be
 // triggered when decorative changes occur.
 
-static ERR TEXT_GET_Fill(extVectorText *Self, CSTRING *Value)
+static ERR TEXT_GET_Fill(extVectorText *Self, std::string_view &Value)
 {
-   *Value = Self->FillString;
+   Value = Self->FillString;
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_Fill(extVectorText *Self, CSTRING Value)
+static ERR TEXT_SET_Fill(extVectorText *Self, const std::string_view &Value)
 {
-   if (Self->FillString) { FreeResource(Self->FillString); Self->FillString = nullptr; }
+   Self->FillString.clear();
+   Self->reset_fill();
 
-   CSTRING next;
-   if (auto error = vec::ReadPainter(Self->Scene, Value, &Self->Fill[0], &next); error IS ERR::Okay) {
-      Self->FillString = strclone(Value);
+   if (Value.empty()) {
+      return ERR::Okay;
+   }
 
-      if (next) {
-         vec::ReadPainter(Self->Scene, next, &Self->Fill[1], nullptr);
-         Self->FGFill = true;
-      }
-      else Self->FGFill = false;
+   if (auto error = read_fill_painters(Self->Scene, Value, Self->Fill, Self->ExtFill); !error) {
+      Self->FillString = Value;
 
       // Bitmap font reset/redraw required
       if (Self->txBitmapFont) reset_path(Self);
 
       return ERR::Okay;
    }
-   else return error;
-
+   else {
+      Self->reset_fill();
+      return error;
+   }
 }
 
 /*********************************************************************************************************************
@@ -854,15 +1196,18 @@ The FontSize is equivalent to the SVG `font-size` attribute and refers to the he
 baseline to the hanging baseline.  This would mean that a capitalised letter without accents should fill the entire
 vertical space defined by FontSize.
 
-The default unit value of FontSize is in pixels at a resolution of 72 DPI.  This means that if the display
-is configured to a more common 96 DPI for instance, the actual pixel size on the display will be `FontSize * 72 / 96`.
-Point sizes are also measured at a constant ratio of `1/72` irrespective of display settings, and this may need to
-factor into precise size calculations.
+The default unit of FontSize is the pixel, and the value defines the em size of the font.  A FontSize of `16` produces
+an em that is 16 pixels high in the text's coordinate space, which matches the behaviour of CSS and SVG.  The display
+density is not applied, so the size on the display only changes if the text is transformed.
 
-Standard unit measurements such as `px`, `em` and `pt` are supported by appending them after the numeric value.
-1em is equivalent to the 'default font size', which is typically 16px unless modified.
+Standard unit measurements such as `px`, `pt`, `pc`, `in`, `cm`, `mm` and `em` are supported by appending them after
+the numeric value.  Physical units are converted to pixels at a fixed reference density of 96 DPI, irrespective of the
+display, so `12pt` is equivalent to `16px`.  Clients that need a physical size on a high density display must scale
+the value themselves, for example by multiplying a point size by `DisplayDPI / 96`.  The `em` unit is fixed at 16
+pixels.  The final value is rounded to the nearest whole pixel, so `11pt` (14.67px) becomes `15px`.  A size that
+rounds to less than one pixel is rejected with `ERR::OutOfRange`.
 
-When retrieving the font size, the resulting string must be freed by the client when no longer in use.
+Reading FontSize returns the pixel size as a numeric string without a unit suffix.
 
 NOTE: The FontSize is derived from information defined by the font author.  Due to opinionated views on how font
 height is determined, the value is not transferrable between fonts.  The primary difference is that some fonts will
@@ -870,23 +1215,27 @@ include the space for accents in the FontSize value, while others will not.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_FontSize(extVectorText *Self, CSTRING *Value)
+static ERR TEXT_GET_FontSize(extVectorText *Self, std::string_view &Value)
 {
-   *Value = strclone(std::to_string(Self->txFontSize));
+   Self->txFontSizeString = std::to_string(Self->txFontSize);
+   Value = Self->txFontSizeString;
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_FontSize(extVectorText *Self, CSTRING Value)
+static ERR TEXT_SET_FontSize(extVectorText *Self, const std::string_view &Value)
 {
    bool pct;
-   auto size = read_unit(Value, pct);
+
+   CSTRING val = Value.data();
+   auto size = read_unit(val, pct);
 
    // TODO: With respect to supporting sub-pixel point sizes and being cache-friendly, we could try caching fonts
    // at pre-determined point sizes (4,6,8,10,12,14,20,30,40,50,60,...) and then use scaling to cater to other
    // 'non-standard' sizes.  This would allow for hinting to remain effective when regular point sizes are being chosen.
 
-   if (size > 0) {
-      auto new_size = std::trunc(size);
+   // Rounding ensures that physical units resolve to the nearest pixel, e.g. 11pt is 14.67px and becomes 15px.
+
+   if (auto new_size = std::round(size); new_size >= 1) {
       if (Self->txFontSize IS new_size) return ERR::Okay;
       Self->txFontSize = new_size;
       Self->txScaledFontSize = pct;
@@ -902,23 +1251,23 @@ FontStyle: Determines font styling.
 
 Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are `Bold`,
 `Bold Italic`, `Italic` and `Regular` (the default).  Because TrueType fonts can use any style name that the
-designer chooses such as `Thin`, `Narrow` or `Wide`, use ~Font.GetList() for a definitive list of available
+designer chooses such as `Thin`, `Narrow` or `Wide`, read `fonts:fonts.cfg` for a definitive list of available
 style names.
 
 Errors are not returned if the style name is invalid or unavailable.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_FontStyle(extVectorText *Self, CSTRING *Value)
+static ERR TEXT_GET_FontStyle(extVectorText *Self, std::string_view &Value)
 {
-   *Value = Self->txFontStyle;
+   Value = Self->txFontStyle;
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_FontStyle(extVectorText *Self, CSTRING Value)
+static ERR TEXT_SET_FontStyle(extVectorText *Self, const std::string_view &Value)
 {
-   if ((not Value) or (not Value[0])) strcopy("Regular", Self->txFontStyle, sizeof(Self->txFontStyle));
-   else strcopy(Value, Self->txFontStyle, sizeof(Self->txFontStyle));
+   if (Value.empty()) Self->txFontStyle = "Regular";
+   else Self->txFontStyle = Value;
    return ERR::Okay;
 }
 
@@ -926,10 +1275,15 @@ static ERR TEXT_SET_FontStyle(extVectorText *Self, CSTRING Value)
 -FIELD-
 InlineSize: Enables word-wrapping at a fixed area size.
 
-The inline-size property allows one to set the wrapping area to a rectangular shape. The computed value of the
+The inline-size property allows the client to set the wrapping area to a rectangular shape. The computed value of the
 property sets the width of the rectangle for horizontal text and the height of the rectangle for vertical text.
 The other dimension (height for horizontal text, width for vertical text) is of infinite length. A value of zero
 (the default) disables the creation of a wrapping area.
+
+By default, lines only break at whitespace and a word that is wider than the wrapping area will overflow it.  Set
+#WrapMode to allow lines to break within long words such as file paths and URLs.
+
+The #WrappedLines field reports the number of lines that are displayed after wrapping.
 
 *********************************************************************************************************************/
 
@@ -943,6 +1297,60 @@ static ERR TEXT_SET_InlineSize(extVectorText *Self, double Value)
 {
    Self->txInlineSize = Value;
    reset_path(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+WrapMode: Controls where word-wrapping may break a line.
+Lookup: VTW
+
+WrapMode determines where a line may be broken when #InlineSize enables word-wrapping.  It has no effect if
+#InlineSize is zero.
+
+The default, `WORD`, only breaks lines at whitespace.  A word that is wider than the wrapping area stays on a line of
+its own and overflows it.
+
+In `SYMBOL` mode, a word is also divided into segments after each of the following symbols, and a line may break
+between any two segments:
+
+<types type="Symbol">
+<type name="/ \">File and URL paths, e.g. `/usr/` `share/` `kotuku`</type>
+<type name="-">Hyphenated words, e.g. `well-` `known`</type>
+<type name="_">Identifiers, e.g. `field_` `name`</type>
+<type name="? &amp; =">URL queries, e.g. `page?` `id=` `4&amp;` `x=` `2`</type>
+</types>
+
+A break after a symbol is suppressed if the symbol is the last character of the word, or the next character is also
+a break symbol (so `//` and `--` are never split).  A `-` does not permit a break if it is part of the hyphens that
+start a word, as in `--log-warning`, or if it is followed by a digit, as in `x-1`.  Periods, commas, colons and
+semi-colons are not break symbols, so numbers such as `3.14`, times and file extensions are kept whole.  The symbol
+always remains at the end of the earlier line and no hyphen is inserted at the break.
+
+`ANYWHERE` mode extends `SYMBOL` by breaking between characters when a segment is too wide to fit on a line of its
+own, so that no line overflows the wrapping area.  A segment is only divided in this way when it cannot fit on an
+empty line.  At least one character is always placed on each line, so a glyph that is wider than the wrapping area
+will overflow it.  Breaks are made between UTF-8 characters, but combining marks are not treated specially and can
+be separated from the character that they modify.
+
+Text with the `SECRET` flag in #TextFlags is always wrapped in `WORD` mode, so that the line breaks do not reveal the
+positions of symbols in the hidden string.  Text that follows a guide path is not wrapped.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_WrapMode(extVectorText *Self, VTW *Value)
+{
+   *Value = Self->txWrapMode;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_WrapMode(extVectorText *Self, VTW Value)
+{
+   if ((int(Value) < int(VTW::WORD)) or (int(Value) > int(VTW::ANYWHERE))) return ERR::OutOfRange;
+   if (Self->txWrapMode != Value) {
+      Self->txWrapMode = Value;
+      reset_path(Self);
+   }
    return ERR::Okay;
 }
 
@@ -992,7 +1400,8 @@ static ERR TEXT_SET_LineLimit(extVectorText *Self, int Value)
 -FIELD-
 LineSpacing: The number of pixels from one line to the next.
 
-This field can be queried for the amount of space between each line, measured in display pixels.
+This field can be queried for the vertical advance between each line of text.  The value is measured in the same pixel
+units as #FontSize, so it is unaffected by the display density and is subject to the same transforms as the text.
 
 *********************************************************************************************************************/
 
@@ -1020,7 +1429,9 @@ static ERR TEXT_GET_LineSpacing(extVectorText *Self, int *Value)
 -FIELD-
 Point: Returns the point-size of the font.
 
-Reading the Point value will return the point-size of the font, calculated as `FontSize * 72 / DisplayDPI`.
+Reading the Point value will return the point-size of the font, calculated as `FontSize * 72 / 96` and rounded to the
+nearest integer.  The conversion uses the fixed reference density of 96 DPI that applies to all #FontSize units, not
+the density of the display.
 
 *********************************************************************************************************************/
 
@@ -1037,7 +1448,7 @@ SelectColumn: Indicates the column position of a selection's beginning.
 If the user has selected an area of text, the starting column of that area will be indicated by this field.  If an area
 has not been selected, the value of the SelectColumn field is undefined.
 
-To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the #Flags field.
+To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the #TextFlags field.
 
 *********************************************************************************************************************/
 
@@ -1054,7 +1465,7 @@ SelectRow: Indicates the line position of a selection's beginning.
 If the user has selected an area of text, the starting row of that area will be indicated by this field.  If an area
 has not been selected, the value of the SelectRow field is undefined.
 
-To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the #Flags field.
+To check whether or not an area has been selected, test the `AREA_SELECTED` bit in the #TextFlags field.
 
 *********************************************************************************************************************/
 
@@ -1105,7 +1516,7 @@ static ERR TEXT_SET_StartOffset(extVectorText *Self, double Value)
 
 /*********************************************************************************************************************
 -FIELD-
-TextFlags: Private.  Optional flags.
+TextFlags: Controls text presentation, editing and selection.
 
 -END-
 *********************************************************************************************************************/
@@ -1118,7 +1529,26 @@ static ERR TEXT_GET_Flags(extVectorText *Self, VTXF *Value)
 
 static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
 {
+   CursorUpdate update(Self);
+   const auto previous_flags = Self->txFlags;
+   constexpr auto input_flags = VTXF::EDITABLE|VTXF::SELECTABLE;
+   const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
+   if ((Value & VTXF::NO_AUTO_OFFSET) != VTXF::NIL) {
+      Self->txXOffset = 0;
+      Self->txYOffset = 0;
+      reset_path(Self);
+   }
+   if (Self->needs_caret_geometry() and not had_caret_geometry) reset_path(Self);
+   if ((Value & VTXF::EDITABLE) IS VTXF::NIL) {
+      if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
+      if (Self->txCursor.timer) { UpdateTimer(Self->txCursor.timer, 0); Self->txCursor.timer = nullptr; }
+   }
+   if (Self->initialised() and Self->txHasFocus and Self->needs_caret_geometry() and
+       ((previous_flags & input_flags) != (Value & input_flags))) {
+      activate_text_input(Self);
+   }
+   else selection_changed(Self);
    return ERR::Okay;
 }
 
@@ -1130,9 +1560,9 @@ The x-axis coordinate of the text is specified here as a fixed value.  Scaled co
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_X(extVectorText *Self, Unit *Value)
+static ERR TEXT_GET_X(extVectorText *Self, Unit &Value)
 {
-   Value->set(Self->txX);
+   Value = Self->txX;
    return ERR::Okay;
 }
 
@@ -1153,9 +1583,9 @@ Unlike other vector shapes, the Y coordinate positions the text from its base li
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_Y(extVectorText *Self, Unit *Value)
+static ERR TEXT_GET_Y(extVectorText *Self, Unit &Value)
 {
-   Value->set(Self->txY);
+   Value = Self->txY;
    return ERR::Okay;
 }
 
@@ -1192,24 +1622,61 @@ and is supplemental to any rotation due to text on a path and to 'glyph-orientat
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_Rotate(extVectorText *Self, double **Values, int *Elements)
+static ERR TEXT_GET_Rotate(extVectorText *Self, std::span<double> &Array)
 {
-   *Values = Self->txRotate;
-   *Elements = Self->txTotalRotate;
+   Array = std::span<double>(Self->txRotate.data(), Self->txRotate.size());
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_Rotate(extVectorText *Self, double *Values, int Elements)
+static ERR TEXT_SET_Rotate(extVectorText *Self, std::span<const double> &Array)
 {
-   if (Self->txRotate) { FreeResource(Self->txRotate); Self->txRotate = nullptr; Self->txTotalRotate = 0; }
+   if ((not Array.data()) or Array.empty()) Self->txRotate.clear();
+   else Self->txRotate.assign(Array.begin(), Array.end());
+   reset_path(Self);
+   return ERR::Okay;
+}
 
-   if (AllocMemory(sizeof(double) * Elements, MEM::DATA, &Self->txRotate) IS ERR::Okay) {
-      copymem(Values, Self->txRotate, Elements * sizeof(double));
-      Self->txTotalRotate = Elements;
-      reset_path(Self);
-      return ERR::Okay;
+/*********************************************************************************************************************
+-FIELD-
+SelectFill: The painter used to highlight selected editable text.
+
+Accepts the same colours, paint servers and layered painters as @Vector.Fill.  The default is
+`rgba(0,120,215,0.35)`.  The highlight is drawn over the glyphs, so a translucent painter keeps them legible.
+Selection highlights follow the text's transforms and are hidden while focus is lost.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_SelectFill(extVectorText *Self, std::string_view &Value)
+{
+   Value = Self->txSelectFill;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_SelectFill(extVectorText *Self, const std::string_view &Value)
+{
+   if (Self->txSelection) {
+      if (auto error = Self->txSelection->setFill(Value); error != ERR::Okay) {
+         Self->txSelection->setFill(Self->txSelectFill);
+         return error;
+      }
    }
-   else return ERR::AllocMemory;
+   Self->txSelectFill = Value;
+   selection_changed(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+SelectedText: The selected text, with line breaks separating selected lines.
+
+Returns an empty string when there is no selection or the `SECRET` flag is set in #TextFlags.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_SelectedText(extVectorText *Self, std::string &Value)
+{
+   Value = selected_text(Self);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1262,38 +1729,45 @@ static ERR TEXT_SET_ShapeSubtract(extVectorText *Self, OBJECTID Value)
 -FIELD-
 String: The string to use for drawing the glyphs is defined here.
 
-The string for drawing the glyphs is defined here in UTF-8 format.
+The string for drawing the glyphs is defined here in UTF-8 format.  Lines are separated by line feeds.
 
-When retrieving a string that contains return codes, only the first line of text is returned.
+The retrieved string contains every line of the text, separated by line feeds, including any changes made by the user
+while editing.  Line breaks introduced by word-wrapping (see #InlineSize) are not included.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_String(extVectorText *Self, CSTRING *Value)
+static ERR TEXT_GET_String(extVectorText *Self, std::string &Value)
 {
-   if (Self->txLines.size() > 0) {
-      *Value = Self->txLines[0].c_str();
-      return ERR::Okay;
+   Value.clear();
+   for (size_t i=0; i < Self->txLines.size(); i++) {
+      if (i > 0) Value.push_back('\n');
+      Value.append(Self->txLines[i]);
    }
-   else return ERR::FieldNotSet;
+   return ERR::Okay;
 }
 
-static ERR TEXT_SET_String(extVectorText *Self, CSTRING Value)
+static ERR TEXT_SET_String(extVectorText *Self, const std::string_view &Value)
 {
+   CursorUpdate update(Self);
+   std::string previous;
+   TEXT_GET_String(Self, previous);
+   Self->txCursorChanged |= previous != Value;
    Self->txLines.clear();
 
-   if (Value) {
-      while (*Value) {
+   if (not Value.empty()) {
+      std::string_view scan(Value);
+      while (not scan.empty()) {
          size_t total;
-         for (total=0; (Value[total]) and (Value[total] != '\n'); total++);
-         Self->txLines.emplace_back(std::string(Value, total));
-         Value += total;
-         if (*Value IS '\n') Value++;
+         for (total=0; (total < scan.size()) and (scan[total] != '\n'); total++);
+         Self->txLines.emplace_back(std::string(scan.data(), total));
+         scan.remove_prefix(total);
+         if ((not scan.empty()) and (scan[0] IS '\n')) scan.remove_prefix(1);
       }
+      if (Value.back() IS '\n') Self->txLines.emplace_back();
    }
-   else Self->txLines.emplace_back("");
 
    reset_path(Self);
-   if (Self->txCursor.vector) Self->txCursor.validate_position(Self);
+   Self->txCursor.move(Self, Self->txCursor.row(), Self->txCursor.column(), true);
    return ERR::Okay;
 }
 
@@ -1301,9 +1775,8 @@ static ERR TEXT_SET_String(extVectorText *Self, CSTRING Value)
 -FIELD-
 TextLength: The expected length of the text after all computations have been taken into account.
 
-The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the
-#Width that is initially computed does not match this value, then the text will be scaled to match the
-TextLength.
+The purpose of this attribute is to allow exact alignment of the text graphic in the computed result.  If the computed
+text width does not match this value, then the text will be scaled to match the TextLength.
 
 *********************************************************************************************************************/
 
@@ -1342,7 +1815,7 @@ static ERR TEXT_GET_TextWidth(extVectorText *Self, int *Value)
    int width = 0;
    for (auto &line : Self->txLines) {
       if (Self->txBitmapFont) {
-         auto w = fnt::StringWidth(Self->txBitmapFont, line.c_str(), -1);
+         auto w = fnt::StringWidth(Self->txBitmapFont, line, -1);
          if (w > width) width = w;
       }
       else {
@@ -1363,6 +1836,24 @@ TotalLines: The total number of lines stored in the object.
 static ERR TEXT_GET_TotalLines(extVectorText *Self, int *Value)
 {
    *Value = Self->txLines.size();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+WrappedLines: The total number of lines after word-wrapping is applied.
+
+WrappedLines reports the number of lines that are displayed by the text, including the additional lines created when
+#InlineSize wraps a line of the #String.  If word-wrapping is disabled, the value is the same as #TotalLines.
+
+Reading this field will update the text layout if it is out of date, which can be expensive for large blocks of text.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_WrappedLines(extVectorText *Self, int *Value)
+{
+   if (Self->initialised()) gen_vector_tree(Self);
+   *Value = int(Self->txLines.size()) + Self->txWrappedLines;
    return ERR::Okay;
 }
 
@@ -1398,47 +1889,40 @@ static ERR TEXT_SET_Weight(extVectorText *Self, int Value)
 // Calculate the cursor that would be displayed at this character position and save it to the
 // line's chars array.
 
-static void calc_caret_position(TextLine &Line, agg::trans_affine &transform, double FontSize, double PathScale = 1.0)
+static void calc_caret_position(TextLine &Line, agg::trans_affine &Transform, double Ascent, double Descent)
 {
    agg::path_storage cursor_path;
    double cx1, cy1, cx2, cy2;
 
-   cursor_path.move_to(0, -(FontSize * PathScale) - (FontSize * 0.2));
-   cursor_path.line_to(0, FontSize * 0.1);
-   agg::conv_transform<agg::path_storage, agg::trans_affine> trans_cursor(cursor_path, transform);
+   cursor_path.move_to(0, -Ascent * 1.2);
+   cursor_path.line_to(0, Ascent * 0.1);
+   agg::conv_transform<agg::path_storage, agg::trans_affine> trans_cursor(cursor_path, Transform);
 
    trans_cursor.vertex(&cx1, &cy1);
    trans_cursor.vertex(&cx2, &cy2);
    Line.chars.emplace_back(cx1, cy1, cx2, cy2);
-}
-
-static void calc_caret_position(TextLine &Line, double FontSize, double PathScale = 1.0)
-{
-   agg::path_storage cursor_path;
-   double cx1, cy1, cx2, cy2;
-
-   cursor_path.move_to(0, -(FontSize * PathScale) - (FontSize * 0.2));
-   cursor_path.line_to(0, FontSize * 0.1);
-   cursor_path.vertex(&cx1, &cy1);
-   cursor_path.vertex(&cx2, &cy2);
-   Line.chars.emplace_back(cx1, cy1, cx2, cy2);
+   double top_x = 0, top_y = -Ascent, bottom_x = 0, bottom_y = Descent;
+   Transform.transform(&top_x, &top_y);
+   Transform.transform(&bottom_x, &bottom_y);
+   Line.chars.back().lineTop = std::min(top_y, bottom_y);
+   Line.chars.back().lineHeight = std::abs(bottom_y - top_y);
 }
 
 //********************************************************************************************************************
 
 extern void set_text_final_xy(extVectorText *Vector)
 {
-   double x = Vector->txX, y = Vector->txY;
+   Unit x = Vector->txX, y = Vector->txY;
 
-   if (Vector->txXScaled) x *= get_parent_width(Vector);
-   if (Vector->txYScaled) y *= get_parent_height(Vector);
+   if (x.scaled()) x = Unit(x * get_parent_width(Vector));
+   if (y.scaled()) y = Unit(y * get_parent_height(Vector));
 
-   if ((Vector->txAlignFlags & ALIGN::RIGHT) != ALIGN::NIL) x -= Vector->txWidth;
-   else if ((Vector->txAlignFlags & ALIGN::HORIZONTAL) != ALIGN::NIL) x -= Vector->txWidth * 0.5;
+   if ((Vector->txAlignFlags & ALIGN::RIGHT) != ALIGN::NIL) x = x - Vector->txWidth;
+   else if ((Vector->txAlignFlags & ALIGN::HORIZONTAL) != ALIGN::NIL) x = x - (Vector->txWidth * 0.5);
 
    if (Vector->txBitmapFont) {
       // Rastered fonts need an adjustment because the Y coordinate corresponds to the base-line.
-      y -= Vector->txBitmapFont->Height + Vector->txBitmapFont->Leading;
+      y = y - (Vector->txBitmapFont->Height + Vector->txBitmapFont->Leading);
    }
 
    Vector->FinalX = x + Vector->txXOffset;
@@ -1454,7 +1938,7 @@ static ERR reset_font(extVectorText *Vector, bool Force)
    if ((not Vector->initialised()) and (not Force)) return ERR::NotInitialised;
 
    kt::Log log;
-   if (auto error = get_font(log, Vector->txFamily, Vector->txFontStyle, Vector->txWeight, Vector->txFontSize, &Vector->txHandle); error IS ERR::Okay) {
+   if (auto error = get_font(log, Vector->txFamily, Vector->txFontStyle, Vector->txWeight, Vector->txFontSize, &Vector->txHandle); !error) {
       if (Vector->txHandle->type IS CF_BITMAP) {
          Vector->txBitmapFont = ((bmp_font *)Vector->txHandle)->font;
          Vector->txFontSize = std::trunc(double(Vector->txBitmapFont->Height) * (DISPLAY_DPI / 72.0));
@@ -1484,65 +1968,49 @@ static ERR cursor_timer(extVectorText *Self, int64_t Elapsed, int64_t CurrentTim
 
 //********************************************************************************************************************
 
-static void add_line(extVectorText *Self, std::string String, int Offset, int Length, int Line)
+static void activate_text_input(extVectorText *Self)
 {
-   if (Length < 0) Length = String.length();
+   if (not Self->needs_caret_geometry()) return;
+   Self->txSelectionHidden = false;
+   selection_changed(Self);
 
-   // Stop the string from exceeding the acceptable character limit
-
-   if (Length >= Self->txCharLimit) {
-      int i = 0;
-      for (int unicodelen=0, i=0; (i < Length) and (unicodelen < Self->txCharLimit); unicodelen++) {
-         for (++i; (String[i] & 0xc0) IS 0x80; i++);
-      }
-      Length = i;
+   if (not Self->txKeyEvent) {
+      SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, Self), &Self->txKeyEvent);
    }
 
-   if (Line < 0) {
-      Self->txLines.emplace_back(String.substr(Offset, Length));
+   if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and Self->txCursor.vector) {
+      acMoveToFront(Self->txCursor.vector);
+      if (Self->txCursor.timer) UpdateTimer(Self->txCursor.timer, 1.0);
+      else SubscribeTimer(0.8, C_FUNCTION(cursor_timer), &Self->txCursor.timer);
+      Self->txCursor.resetFlash();
+      Self->txCursor.vector->setVisibility(VIS::VISIBLE);
    }
-   else {
-      TextLine tl(String.substr(Offset, Length));
-      Self->txLines.insert(Self->txLines.begin() + Line, 1, tl);
-   }
-
    acDraw(Self);
 }
 
 //********************************************************************************************************************
 
-static ERR text_focus_event(extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta)
+static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta)
 {
    auto Self = (extVectorText *)CurrentContext();
 
    if ((Event & FM::HAS_FOCUS) != FM::NIL) {
-      if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and (Self->txCursor.vector)) {
-         acMoveToFront(Self->txCursor.vector);
-
-         if (Self->txCursor.timer) UpdateTimer(Self->txCursor.timer, 1.0);
-         else {
-            SubscribeTimer(0.8, C_FUNCTION(cursor_timer), &Self->txCursor.timer);
-
-            if (not Self->txKeyEvent) {
-               SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, Self), &Self->txKeyEvent);
-            }
-         }
-
-         Self->txCursor.resetFlash();
-         Self->txCursor.vector->setVisibility(VIS::VISIBLE);
-         acDraw(Self);
-      }
+      Self->txHasFocus = true;
+      activate_text_input(Self);
    }
    else if ((Event & (FM::LOST_FOCUS|FM::CHILD_HAS_FOCUS)) != FM::NIL) {
+      Self->txHasFocus = false;
       if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
       if (Self->txCursor.timer)  { UpdateTimer(Self->txCursor.timer, 0); Self->txCursor.timer = 0; }
       if (Self->txKeyEvent)      { UnsubscribeEvent(Self->txKeyEvent); Self->txKeyEvent = nullptr; }
 
-      // When a simple input line loses the focus, all selections are deselected
-
-      if (Self->txLineLimit IS 1) {
-         if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) Self->txFlags &= ~VTXF::AREA_SELECTED;
-      }
+      Self->txDragging = false;
+      Self->txDragPending = false;
+      Self->txMouseShift = false;
+      Self->txClickCount = 0;
+      if (Self->txDragTimer) { UpdateTimer(Self->txDragTimer, 0); Self->txDragTimer = nullptr; }
+      Self->txSelectionHidden = true;
+      selection_changed(Self);
 
       acDraw(Self);
    }
@@ -1552,113 +2020,394 @@ static ERR text_focus_event(extVector *Vector, FM Event, OBJECTPTR EventObject, 
 
 //********************************************************************************************************************
 
-static ERR text_input_events(extVector *Vector, const InputEvent *Events)
+struct TextPosition {
+   int row, column;
+};
+
+static void select_mouse_word(extVectorText *, TextPosition);
+
+// Carets use text coordinates; the pointer uses scene coordinates.  The complete transform includes alignment,
+// scrolling, the text position and parent viewboxes.  Choose the visual line first for ordinary text, so clicks
+// beyond a short line cannot jump to a longer neighbour.  Distance to a segment handles rotated caret edges.
+
+static TextPosition hit_test(extVectorText *Self, double X, double Y, bool Character = false, int Row = -1)
+{
+   gen_vector_tree(Self);
+
+   const bool line_priority = not Self->GuidePath and not Self->Transition and
+      (std::abs(Self->Transform.determinant()) > 1e-14);
+
+   double text_x = X, text_y = Y;
+
+   if (line_priority) Self->Transform.inverse_transform(&text_x, &text_y);
+
+   double shortest_line_dist = std::numeric_limits<double>::max();
+   double shortest_dist = std::numeric_limits<double>::max();
+   TextPosition nearest { std::max(0, Row), 0 };
+
+   for (int row=0; row < std::ssize(Self->txLines); row++) {
+      if ((Row >= 0) and (row != Row)) continue;
+
+      const auto &chars = Self->txLines[row].chars;
+      for (int col=0; col + (Character ? 1 : 0) < std::ssize(chars); col++) {
+         const auto line_distance = line_priority ?
+            std::abs(text_y - chars[col].lineTop - chars[col].lineHeight * 0.5) : 0.0;
+
+         if (line_distance > shortest_line_dist) continue;
+
+         double x1 = chars[col].x1, y1 = chars[col].y1;
+         double x2 = chars[col].x2, y2 = chars[col].y2;
+
+         if (Character) {
+            // Measure along the glyph's centre line: its right half still belongs to this character even
+            // when the nearest insertion caret is at the beginning of the next word or whitespace run.
+            x1 = (chars[col].x1 + chars[col].x2) * 0.5;
+            y1 = (chars[col].y1 + chars[col].y2) * 0.5;
+            x2 = (chars[col + 1].x1 + chars[col + 1].x2) * 0.5;
+            y2 = (chars[col + 1].y1 + chars[col + 1].y2) * 0.5;
+         }
+
+         Self->Transform.transform(&x1, &y1);
+         Self->Transform.transform(&x2, &y2);
+         const auto dx = x2 - x1, dy = y2 - y1;
+         const auto length = dx * dx + dy * dy;
+         const auto t = length > 0 ? std::clamp(((X - x1) * dx + (Y - y1) * dy) / length, 0.0, 1.0) : 0.0;
+         const auto distance = std::hypot(X - x1 - t * dx, Y - y1 - t * dy);
+
+         if ((line_distance < shortest_line_dist) or (distance < shortest_dist)) {
+            shortest_line_dist = line_distance;
+            shortest_dist = distance;
+            nearest = { row, col };
+         }
+      }
+   }
+   return nearest;
+}
+
+static void extend_mouse_selection(extVectorText *Self)
+{
+   Self->txDragPending = false;
+   const auto position = hit_test(Self, Self->txDragX, Self->txDragY);
+   if ((position.row != Self->txCursor.row()) or (position.column != Self->txCursor.column())) {
+      Self->txCursor.extend(Self, position.row, position.column);
+      Self->txCursor.resetFlash();
+   }
+}
+
+// Coalesce pointer movement into one selection update per frame.  Release flushes a pending endpoint immediately.
+
+static ERR text_drag_timer(extVectorText *Self, int64_t Elapsed, int64_t CurrentTime)
+{
+   Self->txDragTimer = nullptr;
+   if (Self->txDragging and Self->txDragPending) extend_mouse_selection(Self);
+   return ERR::Terminate;
+}
+
+static ERR text_input_events(class extVector *Vector, const InputEvent *Events)
 {
    auto Self = (extVectorText *)CurrentContext();
-
-   kt::Log log(__FUNCTION__);
-
+   if (not Self->needs_caret_geometry()) return ERR::Okay;
    for (; Events; Events = Events->Next) {
-      if ((Events->Type IS JET::LMB) and ((Events->Flags & JTYPE::REPEATED) IS JTYPE::NIL) and (Events->Value IS 1)) {
-         // Determine the nearest caret position to the clicked point.
-
-         if (Self->txLines.empty()) {
-            Self->txCursor.move(Self, 0, 0);
-            Self->txCursor.resetFlash();
+      CursorUpdate update(Self);
+      if ((Events->Type IS JET::LMB) and ((Events->Flags & JTYPE::REPEATED) IS JTYPE::NIL)) {
+         if (Events->Value <= 0) {
+            if (Self->txDragging and Self->txDragPending) extend_mouse_selection(Self);
+            Self->txDragging = false;
+            if (Self->txDragTimer) { UpdateTimer(Self->txDragTimer, 0); Self->txDragTimer = nullptr; }
             continue;
          }
 
-         agg::trans_affine transform;
-         if (Self->txLines.size() > 1) {
-            apply_parent_transforms(Self, transform);
-         }
-
-         double shortest_dist = 100000000000;
-         int nearest_row = 0, nearest_col = 0;
-         int row = 0;
-
-         // This lambda finds the closest caret entry point relative to the click position.
-         // TODO: If the transforms are limited to scaling and translation, we can optimise further
-         // by dropping the dist() check and comparing against the X axis only.
-
-         auto find_insertion = [&](TextLine &line) {
-            int coli = 0;
-            for (auto &col : line.chars) {
-               double mx = Self->FinalX + ((col.x1 + col.x2) * 0.5); // Calculate the caret midpoint
-               double my = Self->FinalY + ((col.y1 + col.y2) * 0.5);
-               double d = std::abs(dist(Events->X, Events->Y, mx, my)); // Distance to the midpoint.
-
-               if (d < shortest_dist) {
-                  shortest_dist = d;
-                  nearest_row = row;
-                  nearest_col = coli;
-               }
-               coli++;
+         const auto position = hit_test(Self, Events->AbsX, Events->AbsY);
+         double interval = 0.3;
+         int slop = 4;
+         OBJECTID pointer_id;
+         if (FindObject("SystemPointer", CLASSID::POINTER, &pointer_id) IS ERR::Okay) {
+            if (kt::ScopedObjectLock<objPointer> pointer(pointer_id); pointer.granted()) {
+               interval = pointer->DoubleClick;
+               slop = pointer->ClickSlop;
             }
-         };
-
-         if (Self->txLines.size() IS 1) {
-            // For single rows we can skip the boundary check and calculate the caret position immediately.
-            find_insertion(Self->txLines[0]);
-         }
-         else {
-            for (row=0; row < std::ssize(Self->txLines); row++) {
-               agg::path_storage path;
-
-               if (Self->txBitmapFont) {
-                  double offset = Self->txBitmapFont->LineSpacing * row;
-                  path.move_to(0, -Self->txBitmapFont->LineSpacing + offset);
-                  path.line_to(Self->txWidth, -Self->txBitmapFont->LineSpacing + offset);
-                  path.line_to(Self->txWidth, offset);
-                  path.line_to(0, offset);
-                  path.close_polygon();
-               }
-               else if (Self->txHandle->type IS CF_FREETYPE) {
-                  auto pt = (freetype_font::ft_point *)Self->txHandle;
-
-                  double offset = pt->line_spacing * row;
-                  path.move_to(0, -pt->line_spacing + offset);
-                  path.line_to(Self->txWidth, -pt->line_spacing + offset);
-                  path.line_to(Self->txWidth, offset);
-                  path.line_to(0, offset);
-                  path.close_polygon();
-               }
-
-               path.transform(transform);
-
-               double bx1, bx2, by1, by2;
-               bounding_rect_single(path, 0, &bx1, &by1, &bx2, &by2);
-
-               if ((Events->AbsX >= bx1) and (Events->AbsY >= by1) and (Events->AbsX < bx2) and (Events->AbsX < by2)) {
-                  find_insertion(Self->txLines[row]);
-                  break;
-               }
-            }
-
-            // Default to the first row if the click wasn't within a known boundary
-            if (row >= std::ssize(Self->txLines)) find_insertion(Self->txLines[0]);
          }
 
-         Self->txCursor.move(Self, nearest_row, nearest_col);
+         Self->txClickSlop = slop;
+         const auto elapsed = Events->Timestamp - Self->txClickTime;
+         const bool consecutive = (Self->txClickCount > 0) and (elapsed >= 0) and
+            (elapsed <= interval * 1000000.0) and
+            (std::hypot(Events->AbsX - Self->txClickX, Events->AbsY - Self->txClickY) <= slop);
+
+         Self->txClickCount = consecutive ? Self->txClickCount % 3 + 1 : 1;
+         Self->txClickTime = Events->Timestamp;
+         Self->txClickX = Events->AbsX;
+         Self->txClickY = Events->AbsY;
+
+         if (Self->txMouseShift) {
+            Self->txCursor.extend(Self, position.row, position.column);
+            Self->txClickCount = 1;
+         }
+         else if ((Self->txClickCount IS 3) and not Self->txLines.empty()) {
+            Self->txCursor.move(Self, position.row, 0);
+            if (position.row + 1 < std::ssize(Self->txLines)) Self->txCursor.extend(Self, position.row + 1, 0);
+            else Self->txCursor.extend(Self, position.row, Self->txLines[position.row].utf8Length());
+         }
+         else if (Self->txClickCount IS 2) {
+            select_mouse_word(Self, hit_test(Self, Events->AbsX, Events->AbsY, true, position.row));
+         }
+         else Self->txCursor.move(Self, position.row, position.column);
+
          Self->txCursor.resetFlash();
+         Self->txDragging = true;
+         Self->txDragPending = false;
+      }
+      else if (Self->txDragging and ((Events->Flags & JTYPE::MOVEMENT) != JTYPE::NIL)) {
+         Self->txDragX = Events->AbsX;
+         Self->txDragY = Events->AbsY;
+         Self->txDragPending = true;
+
+         // Moving beyond click slop breaks the multi-click sequence.
+
+         if (std::hypot(Events->AbsX - Self->txClickX, Events->AbsY - Self->txClickY) > Self->txClickSlop) {
+            Self->txClickCount = 0;
+         }
+
+         if (not Self->txDragTimer) SubscribeTimer(1.0 / 60.0, C_FUNCTION(text_drag_timer), &Self->txDragTimer);
       }
    }
-
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
+static TextCharClass text_character_class(uint32_t Unicode)
+{
+   auto in_ranges = [Unicode](const auto &Ranges) {
+      const auto match = std::lower_bound(Ranges.begin(), Ranges.end(), Unicode,
+         [](const TextUnicodeRange &Range, uint32_t Value) { return Range.last < Value; });
+      return (match != Ranges.end()) and (match->first <= Unicode);
+   };
+   if ((Unicode IS '_') or in_ranges(glTextWordRanges)) return TextCharClass::WORD;
+   if (in_ranges(glTextWhitespaceRanges)) return TextCharClass::SPACE;
+   return TextCharClass::SEPARATOR;
+}
+
+// Shared Unicode classification for keyboard boundaries and mouse word/separator/whitespace runs.
+static const std::vector<TextCharClass> & text_character_classes(TextLine &Line)
+{
+   if (Line.classesValid) return Line.characterClasses;
+   auto &classes = Line.characterClasses;
+   classes.clear();
+   auto remaining = std::string_view(Line);
+   while (not remaining.empty()) {
+      int length;
+      const auto unicode = UTF8ReadValue(remaining, &length);
+      classes.push_back(text_character_class(unicode));
+      remaining.remove_prefix(std::max(1, length));
+   }
+
+   Line.classesValid = true;
+   return classes;
+}
+
+static void select_mouse_word(extVectorText *Self, TextPosition Position)
+{
+   if (Self->txLines.empty()) return;
+   const auto &classes = text_character_classes(Self->txLines[Position.row]);
+
+   if (classes.empty()) {
+      Self->txCursor.move(Self, Position.row, 0);
+      return;
+   }
+
+   int first = std::min(Position.column, int(classes.size()) - 1), last = first + 1;
+   const auto type = classes[first];
+   while ((first > 0) and (classes[first - 1] IS type)) first--;
+   while ((last < std::ssize(classes)) and (classes[last] IS type)) last++;
+   Self->txCursor.move(Self, Position.row, first);
+   Self->txCursor.extend(Self, Position.row, last);
+}
+
+// Classification survives navigation and is invalidated only when a line's text changes.
+// A logical line break is whitespace, so word movement can cross empty lines.
+
+static TextPosition word_boundary(extVectorText *Self, TextPosition Position, bool Forward)
+{
+   auto character = [&](TextPosition At) -> std::optional<TextCharClass> {
+      const auto &classes = text_character_classes(Self->txLines[At.row]);
+      if (At.column < std::ssize(classes)) return classes[At.column];
+      if (At.row + 1 < std::ssize(Self->txLines)) return TextCharClass::SPACE;
+      return std::nullopt;
+   };
+
+   auto advance = [&]() {
+      const auto &classes = text_character_classes(Self->txLines[Position.row]);
+      if (Position.column < std::ssize(classes)) Position.column++;
+      else { Position.row++; Position.column = 0; }
+   };
+
+   auto previous = [&]() -> std::optional<TextPosition> {
+      if (Position.column > 0) return TextPosition { Position.row, Position.column - 1 };
+      if (Position.row IS 0) return std::nullopt;
+      const auto &classes = text_character_classes(Self->txLines[Position.row - 1]);
+      return TextPosition { Position.row - 1, int(classes.size()) };
+   };
+
+   if (Forward) {
+      auto type = character(Position);
+      if (type and *type != TextCharClass::SPACE) {
+         do { advance(); } while (character(Position) IS type);
+      }
+      while (character(Position) IS TextCharClass::SPACE) advance();
+   }
+   else {
+      auto before = previous();
+      while (before and (character(*before) IS TextCharClass::SPACE)) {
+         Position = *before;
+         before = previous();
+      }
+
+      if (before) {
+         const auto type = character(*before);
+
+         do {
+            Position = *before;
+            before = previous();
+         } while (before and (character(*before) IS type));
+      }
+   }
+   return Position;
+}
+
+// Locate the adjacent visual line using the generated caret positions, then choose its nearest horizontal position.
+// Logical rows and columns remain unchanged by wrapping, including at UTF-8 and explicit newline boundaries.
+
+static TextPosition visual_vertical_position(extVectorText *Self, TextPosition Position, bool Forward, double X)
+{
+   const auto &chars = Self->txLines[Position.row].chars;
+   if (chars.empty()) return Position;
+
+   const auto column = std::min(Position.column, int(chars.size()) - 1);
+   const auto top = chars[column].lineTop;
+   auto target_row = Position.row;
+   auto target_column = column;
+   const auto step = Forward ? 1 : -1;
+
+   while ((target_column >= 0) and (target_column < std::ssize(chars)) and
+          (std::abs(chars[target_column].lineTop - top) < 0.01)) target_column += step;
+
+   if ((target_column < 0) or (target_column >= std::ssize(chars))) {
+      target_row += step;
+      if ((target_row < 0) or (target_row >= std::ssize(Self->txLines))) return Position;
+      const auto &next_chars = Self->txLines[target_row].chars;
+      if (next_chars.empty()) return Position;
+      target_column = Forward ? 0 : int(next_chars.size()) - 1;
+   }
+
+   const auto &target = Self->txLines[target_row].chars;
+   const auto target_top = target[target_column].lineTop;
+   while ((target_column > 0) and
+          (std::abs(target[target_column - 1].lineTop - target_top) < 0.01)) target_column--;
+
+   auto best_column = target_column;
+   auto distance = std::abs(target[target_column].x1 - X);
+   for (auto i = target_column + 1; i < std::ssize(target); i++) {
+      if (std::abs(target[i].lineTop - target_top) >= 0.01) break;
+      const auto next_distance = std::abs(target[i].x1 - X);
+      if (next_distance < distance) {
+         distance = next_distance;
+         best_column = i;
+      }
+   }
+
+   return TextPosition { target_row, best_column };
+}
+
+static bool navigate_text(extVectorText *Self, const evKey *Event)
+{
+   const bool shift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
+   const bool ctrl = (Event->Qualifiers & KQ::CTRL) != KQ::NIL;
+   const bool system_keys = (Self->txFlags & VTXF::NO_SYS_KEYS) IS VTXF::NIL;
+
+   if (ctrl and (Event->Code IS KEY::A)) {
+      if (system_keys and not Self->txLines.empty()) {
+         Self->txCursor.move(Self, 0, 0);
+         Self->txCursor.extend(Self, int(Self->txLines.size()) - 1, Self->txLines.back().utf8Length());
+      }
+      return true;
+   }
+
+   switch (Event->Code) {
+      case KEY::LEFT: case KEY::RIGHT: case KEY::UP: case KEY::DOWN: case KEY::HOME: case KEY::END: break;
+      default: return false;
+   }
+
+   Self->txCursor.validate_position(Self);
+   auto &cursor = Self->txCursor;
+   TextPosition position { cursor.row(), cursor.column() };
+   if (not shift and ((Event->Code IS KEY::LEFT) or (Event->Code IS KEY::RIGHT)) and
+       ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL)) {
+      int row, column, end_row, end_column;
+      cursor.selectedArea(Self, &row, &column, &end_row, &end_column);
+      if (Event->Code IS KEY::LEFT) cursor.move(Self, row, column);
+      else cursor.move(Self, end_row, end_column);
+      return true;
+   }
+
+   int preferred_column = -1;
+   std::optional<double> preferred_x;
+   switch (Event->Code) {
+      case KEY::HOME: position.column = 0; break;
+      case KEY::END: position.column = Self->txLines[position.row].utf8Length(); break;
+      case KEY::LEFT:
+         if (ctrl and system_keys) position = word_boundary(Self, position, false);
+         else if (position.column > 0) position.column--;
+         else if (position.row > 0) {
+            position.row--;
+            position.column = Self->txLines[position.row].utf8Length();
+         }
+         break;
+      case KEY::RIGHT:
+         if (ctrl and system_keys) position = word_boundary(Self, position, true);
+         else if (position.column < Self->txLines[position.row].utf8Length()) position.column++;
+         else if (position.row + 1 < std::ssize(Self->txLines)) { position.row++; position.column = 0; }
+         break;
+      case KEY::UP: case KEY::DOWN:
+         if (Self->txInlineSize and not Self->GuidePath and not Self->Transition) {
+            gen_vector_tree(Self); // Edits and width changes can leave the caret layout dirty before this key.
+            const auto &chars = Self->txLines[position.row].chars;
+            if (not chars.empty()) {
+               preferred_x = cursor.preferredX.value_or(chars[std::min(position.column, int(chars.size()) - 1)].x1);
+               position = visual_vertical_position(Self, position, Event->Code IS KEY::DOWN, *preferred_x);
+               break;
+            }
+         }
+         preferred_column = cursor.preferredColumn >= 0 ? cursor.preferredColumn : position.column;
+         position.row = std::clamp(position.row + (Event->Code IS KEY::UP ? -1 : 1),
+            0, int(Self->txLines.size()) - 1);
+         position.column = std::min(preferred_column, Self->txLines[position.row].utf8Length());
+         break;
+      default: break;
+   }
+
+   if (shift) cursor.extend(Self, position.row, position.column);
+   else cursor.move(Self, position.row, position.column, true);
+   cursor.preferredColumn = preferred_column;
+   cursor.preferredX = preferred_x;
+   return true;
+}
+
 static void key_event(evKey *Event, int Size, extVectorText *Self)
 {
+   CursorUpdate update(Self);
+   if (not Self->needs_caret_geometry()) return;
+   Self->txMouseShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
    if ((Event->Qualifiers & KQ::PRESSED) IS KQ::NIL) return;
 
    kt::Log log(__FUNCTION__);
 
    log.trace("$%.8x, Value: %d", int(Event->Qualifiers), int(Event->Code));
 
-   Self->txCursor.resetFlash(); // Reset the flashing cursor to make it visible
-   Self->txCursor.vector->setVisibility(VIS::VISIBLE);
+   if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and Self->txCursor.vector) {
+      Self->txCursor.resetFlash(); // Reset the flashing cursor to make it visible
+      Self->txCursor.vector->setVisibility(VIS::VISIBLE);
+   }
 
    if (((Self->txFlags & VTXF::NO_SYS_KEYS) IS VTXF::NIL) and ((Event->Qualifiers & KQ::CTRL) != KQ::NIL)) {
       switch(Event->Code) {
@@ -1676,10 +2425,15 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
             acClipboard(Self, CLIPMODE::PASTE);
             return;
 
-         case KEY::K: // Delete line
+         case KEY::K: { // Delete line
             if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
-            ((objVectorText *)Self)->deleteLine(Self->txCursor.row());
+            const bool changed = (Self->txLines.size() > 1) or
+               ((not Self->txLines.empty()) and (not Self->txLines.front().empty()));
+            if ((((objVectorText *)Self)->deleteLine(Self->txCursor.row()) IS ERR::Okay) and changed) {
+               report_change(Self);
+            }
             return;
+         }
 
          case KEY::Z: // Undo
             if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
@@ -1694,176 +2448,62 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
       }
    }
 
+   if (navigate_text(Self, Event)) return;
+
+   if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
+
    if ((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) { // and (!(Flags & KQ::INSTRUCTIONKEYS))
       // Printable character handling
 
-      if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) {
-         log.trace("Object does not have the EDIT flag set.");
-         return;
-      }
-
-      if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) delete_selection(Self);
-
-      insert_char(Self, Event->Unicode, Self->txCursor.column());
+      insert_char(Self, Event->Unicode);
       return;
    }
 
    switch(Event->Code) {
    case KEY::BACKSPACE:
-      if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) delete_selection(Self);
-      else if (Self->txCursor.column() > 0) {
-         if ((size_t)Self->txCursor.column() > Self->txLines[Self->txCursor.row()].length()) {
-            Self->txCursor.move(Self, Self->txCursor.row(), Self->txLines[Self->txCursor.row()].lastChar()-1);
-         }
-         else Self->txCursor.move(Self, Self->txCursor.row(), Self->txCursor.column()-1);
-
-         auto offset = Self->txLines[Self->txCursor.row()].utf8CharOffset(Self->txCursor.column());
-         Self->txLines[Self->txCursor.row()].replace(offset, Self->txLines[Self->txCursor.row()].charLength(offset), "");
+      if ((Self->txFlags & VTXF::AREA_SELECTED) IS VTXF::NIL) {
+         Self->txCursor.validate_position(Self);
+         const auto row = Self->txCursor.row(), column = Self->txCursor.column();
+         if (column > 0) Self->txCursor.extend(Self, row, column - 1);
+         else if (row > 0) Self->txCursor.extend(Self, row - 1, Self->txLines[row - 1].utf8Length());
       }
-      else if (Self->txCursor.row() > 0) { // The current line will be shifted up into the line above it
-         if ((not Self->txLines[Self->txCursor.row()-1].empty()) or (not Self->txLines[Self->txCursor.row()].empty())) {
-            Self->txLines[Self->txCursor.row()-1] += Self->txLines[Self->txCursor.row()];
-            Self->txLines.erase(Self->txLines.begin() + Self->txCursor.row());
-            Self->txCursor.move(Self, Self->txCursor.row()-1, Self->txLines[Self->txCursor.row()].utf8Length());
-         }
-         else {
-            Self->txLines.erase(Self->txLines.begin() + Self->txCursor.row());
-            Self->txCursor.move(Self, Self->txCursor.row()-1, Self->txLines[Self->txCursor.row()-1].length());
-         }
-      }
-      else; // Do nothing, cursor at (0,0)
-
-      mark_dirty(Self, RC::BASE_PATH);
-      acDraw(Self);
-      report_change(Self);
+      if (replace_selection(Self, "")) report_change(Self);
       break;
 
    case KEY::CLEAR:
-      if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) delete_selection(Self);
+      if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) {
+         if (replace_selection(Self, "")) report_change(Self);
+      }
       else {
          Self->txCursor.move(Self, Self->txCursor.row(), 0);
          ((objVectorText *)Self)->deleteLine(Self->txCursor.row());
+         report_change(Self);
       }
-      report_change(Self);
       break;
 
    case KEY::DELETE:
-      if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) delete_selection(Self);
-      else if ((size_t)Self->txCursor.column() < Self->txLines[Self->txCursor.row()].length()) {
-         auto offset = Self->txLines[Self->txCursor.row()].utf8CharOffset(Self->txCursor.column());
-         Self->txLines[Self->txCursor.row()].replace(offset, Self->txLines[Self->txCursor.row()].charLength(offset), "");
+      if ((Self->txFlags & VTXF::AREA_SELECTED) IS VTXF::NIL) {
+         Self->txCursor.validate_position(Self);
+         const auto row = Self->txCursor.row(), column = Self->txCursor.column();
+         if (column < Self->txLines[row].utf8Length()) Self->txCursor.extend(Self, row, column + 1);
+         else if (row + 1 < std::ssize(Self->txLines)) Self->txCursor.extend(Self, row + 1, 0);
       }
-      else if ((size_t)Self->txCursor.row() < Self->txLines.size() - 1) { // The next line is going to be pulled up into the current line
-         Self->txLines[Self->txCursor.row()] += Self->txLines[Self->txCursor.row()+1];
-         Self->txLines.erase(Self->txLines.begin() + Self->txCursor.row() + 1);
-      }
-      mark_dirty(Self, RC::BASE_PATH);
-      acDraw(Self);
-      report_change(Self);
-      break;
-
-   case KEY::END:
-      Self->txCursor.move(Self, Self->txCursor.row(), Self->txLines[Self->txCursor.row()].length());
+      if (replace_selection(Self, "")) report_change(Self);
       break;
 
    case KEY::TAB:
       break;
 
    case KEY::ENTER:
-   case KEY::NP_ENTER: {
-      if ((Self->txLineLimit) and (Self->txLines.size() >= (size_t)Self->txLineLimit)) break;
-
-      if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) delete_selection(Self);
-      if (Self->txLines.empty()) Self->txLines.resize(1);
-
-      auto row    = Self->txCursor.row();
-      auto offset = Self->txLines[row].utf8CharOffset(Self->txCursor.column());
-      Self->txCursor.move(Self, row + 1, 0);
-      add_line(Self, Self->txLines[row], offset, Self->txLines[row].length() - offset, row+1);
-
-      if (not offset) Self->txLines[row].clear();
-      else Self->txLines[row].replace(offset, Self->txLines[row].length() - offset, "");
-      mark_dirty(Self, RC::BASE_PATH);
-      acDraw(Self);
-      report_change(Self);
-      break;
-   }
-
-   case KEY::HOME:
-      Self->txCursor.move(Self, Self->txCursor.row(), 0);
+   case KEY::NP_ENTER:
+      // Ctrl+Enter is left to the client, e.g. to submit a form from a multi-line field.
+      if ((Event->Qualifiers & KQ::CTRL) != KQ::NIL) break;
+      if (replace_selection(Self, "\n")) report_change(Self);
       break;
 
    case KEY::INSERT:
       if ((Self->txFlags & VTXF::OVERWRITE) != VTXF::NIL) Self->txFlags &= ~VTXF::OVERWRITE;
       else Self->txFlags |= VTXF::OVERWRITE;
-      break;
-
-   case KEY::LEFT:
-      Self->txCursor.resetFlash();
-      Self->txCursor.vector->setVisibility(VIS::VISIBLE);
-      if (Self->txCursor.column() > 0) Self->txCursor.move(Self, Self->txCursor.row(), Self->txCursor.column()-1);
-      else if (Self->txCursor.row() > 0) Self->txCursor.move(Self, Self->txCursor.row()-1, Self->txLines[Self->txCursor.row()-1].utf8Length());
-      break;
-
-   case KEY::RIGHT:
-      Self->txCursor.resetFlash();
-      Self->txCursor.vector->setVisibility(VIS::VISIBLE);
-      if (not Self->txLines.empty()) {
-         if (Self->txCursor.column() < Self->txLines[Self->txCursor.row()].utf8Length()) {
-            Self->txCursor.move(Self, Self->txCursor.row(), Self->txCursor.column()+1);
-         }
-         else if ((size_t)Self->txCursor.row() < Self->txLines.size() - 1) {
-            Self->txCursor.move(Self, Self->txCursor.row()+1, 0);
-         }
-      }
-      break;
-
-   case KEY::DOWN:
-   case KEY::UP:
-      Self->txCursor.resetFlash();
-      Self->txCursor.vector->setVisibility(VIS::VISIBLE);
-      if (((Event->Code IS KEY::UP) and (Self->txCursor.row() > 0)) or
-          ((Event->Code IS KEY::DOWN) and ((size_t)Self->txCursor.row() < Self->txLines.size()-1))) {
-         int end_column;
-
-         // Determine the current true position of the current cursor column, in UTF-8.  Then determine the cursor
-         // character that we are going to be at when we end up at the row above us.
-
-         if (((Self->txCursor.row() << 16) | Self->txCursor.column()) IS Self->txCursor.savePos) {
-            end_column = Self->txCursor.endColumn;
-         }
-         else {
-            Self->txCursor.endColumn = 0;
-            end_column = Self->txCursor.column();
-         }
-
-         int colchar = 0;
-         int col = 0;
-         int i = 0;
-         while (((size_t)i < Self->txLines[Self->txCursor.row()].length()) and (colchar < end_column)) {
-            col++;
-            colchar++;
-            for (++i; (Self->txLines[Self->txCursor.row()][i] & 0xc0) == 0x80; i++);
-         }
-
-         Self->txFlags &= ~VTXF::AREA_SELECTED;
-
-         int new_row;
-         if (Event->Code IS KEY::UP) new_row = Self->txCursor.row() - 1;
-         else new_row = Self->txCursor.row() + 1;
-
-         int new_column;
-         for (new_column=0, i=0; (col > 0) and ((size_t)i < Self->txLines[new_row].length());) {
-            col--;
-            new_column++;
-            for (++i; (Self->txLines[new_row][i] & 0xc0) IS 0x80; i++);
-         }
-
-         if (new_column > Self->txCursor.endColumn) Self->txCursor.endColumn = new_column;
-         Self->txCursor.savePos = ((int)new_row << 16) | new_column;
-         Self->txCursor.move(Self, new_row, new_column);
-         acDraw(Self);
-      }
       break;
 
    default:
@@ -1873,93 +2513,372 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
 
 //********************************************************************************************************************
 
-static void delete_selection(extVectorText *Self)
-{
-   Self->txFlags &= ~VTXF::AREA_SELECTED;
-
+struct SelectionRange {
    int row, column, end_row, end_column;
-   Self->txCursor.selectedArea(Self, &row, &column, &end_row, &end_column);
-   column = Self->txLines[row].utf8CharOffset(column);
-   end_column = Self->txLines[end_row].utf8CharOffset(end_column);
+};
 
-   if (row IS end_row) { // Selection limited to one line
-      Self->txLines[row].replace(column, end_column - column, "");
-      Self->txCursor.move(Self, row, column);
+static std::optional<SelectionRange> selection_range(extVectorText *Self)
+{
+   if (((Self->txFlags & VTXF::AREA_SELECTED) IS VTXF::NIL) or Self->txLines.empty()) return std::nullopt;
+   SelectionRange range;
+   Self->txCursor.selectedArea(Self, &range.row, &range.column, &range.end_row, &range.end_column);
+   return range;
+}
+
+static std::string selected_text(extVectorText *Self)
+{
+   if ((Self->txFlags & VTXF::SECRET) != VTXF::NIL) return {};
+   const auto range = selection_range(Self);
+   if (not range) return {};
+
+   std::string result;
+   for (int row=range->row; row <= range->end_row; row++) {
+      const auto &line = Self->txLines[row];
+      const auto start = row IS range->row ? line.utf8CharOffset(range->column) : 0;
+      const auto end = row IS range->end_row ? line.utf8CharOffset(range->end_column) : int(line.size());
+      if (row != range->row) result += '\n';
+      result.append(line, start, end - start);
    }
-   else {
-      Self->txLines[row].resize(column); // Truncate to end of the first line
-      Self->txCursor.move(Self, row, column);
+   return result;
+}
 
-      row++;
-      if (row < end_row) Self->txLines.erase(Self->txLines.begin() + row, Self->txLines.begin() + end_row);
+// Builds closed quads in text coordinates.  Ordinary glyphs with matching caret heights form a single run;
+// transitions and guide paths retain individual quads so their transformed caret edges are preserved.
+static void rebuild_selection(extVectorText *Self)
+{
+   auto selection = Self->txSelection;
+   if (not selection) return;
+   auto &commands = selection->Commands;
+   commands.clear();
+   const auto range = selection_range(Self);
 
-      if (end_column > 0) Self->txLines[row].replace(0, end_column, "");
+   auto quad = [&](const CharPos &Start, const CharPos &End) {
+      commands.push_back(PathCommand { .Type=PE::Move, .X=Start.x1, .Y=Start.y1 });
+      commands.push_back(PathCommand { .Type=PE::Line, .X=End.x1, .Y=End.y1 });
+      commands.push_back(PathCommand { .Type=PE::Line, .X=End.x2, .Y=End.y2 });
+      commands.push_back(PathCommand { .Type=PE::Line, .X=Start.x2, .Y=Start.y2 });
+      commands.push_back(PathCommand { .Type=PE::ClosePath });
+   };
+   auto same_height = [](const CharPos &Left, const CharPos &Right) {
+      return (std::abs(Left.x1 - Left.x2) < 0.001) and (std::abs(Right.x1 - Right.x2) < 0.001) and
+         (std::abs(Left.y1 - Right.y1) < 0.001) and (std::abs(Left.y2 - Right.y2) < 0.001);
+   };
+
+   if (range) {
+      const bool plain = not Self->Transition and not Self->GuidePath;
+      for (int row=range->row; row <= range->end_row; row++) {
+         const auto &line = Self->txLines[row];
+         if (line.chars.empty()) continue;
+         const auto last = int(line.chars.size()) - 1;
+         const auto start = std::min(row IS range->row ? range->column : 0, last);
+         const auto end = std::min(row IS range->end_row ? range->end_column : line.utf8Length(), last);
+         auto run_start = line.chars[start];
+         auto run_end = run_start;
+         bool have_run = false;
+         int byte_offset = 0, byte_column = 0;
+         for (int col=start; col < end; col++) {
+            const auto &left = line.chars[col];
+            auto right = line.chars[col + 1];
+            if (plain and not same_height(left, right)) {
+               // A wrapped word starts on another visual line.  Finish this glyph on its own line instead
+               // of joining its highlight diagonally to the next line's first caret.
+               int char_length;
+               // Advance from the previous wrap boundary, never rescan the line prefix.
+               byte_offset += UTF8CharOffset(line.c_str() + byte_offset, col - byte_column);
+               byte_column = col;
+               const auto glyph = std::string_view(line).substr(byte_offset);
+               const auto unicode = UTF8ReadValue(glyph, &char_length);
+               const auto width = Self->txBitmapFont ? fnt::CharWidth(Self->txBitmapFont, unicode) :
+                  string_width(Self, glyph.substr(0, char_length));
+               right = left;
+               right.x1 += width;
+               right.x2 += width;
+            }
+            if (have_run and plain and same_height(run_end, left) and same_height(left, right)) {
+               run_end = right;
+            }
+            else {
+               if (have_run) quad(run_start, run_end);
+               run_start = left;
+               run_end = right;
+               have_run = true;
+            }
+         }
+         if (have_run) quad(run_start, run_end);
+         if (row < range->end_row) {
+            auto left = line.chars[end];
+            auto right = left;
+            const auto gap = std::max(1.0, Self->txFontSize * 0.33);
+            const auto height = std::hypot(left.x2 - left.x1, left.y2 - left.y1);
+            // Extend along the caret's perpendicular, preserving its orientation on a guide path.
+            const auto dx = height > 0 ? (left.y2 - left.y1) / height * gap : gap;
+            const auto dy = height > 0 ? -(left.x2 - left.x1) / height * gap : 0.0;
+            right.x1 += dx;
+            right.x2 += dx;
+            right.y1 += dy;
+            right.y2 += dy;
+            quad(left, right);
+         }
+      }
+   }
+   selection->CommandsChanged = true;
+   reset_path(selection);
+   mark_dirty(selection, RC::TRANSFORM);
+   selection->setVisibility(range and not Self->txSelectionHidden ? VIS::VISIBLE : VIS::HIDDEN);
+}
+
+// The generic guide-path morph runs after generate_text().  Keep editing geometry in the same coordinates
+// as the morphed glyphs before rebuilding the child overlay.
+void morph_text_carets(extVectorText *Self, const agg::trans_single_path &Transform, double YOffset)
+{
+   for (auto &line : Self->txLines) {
+      for (auto &caret : line.chars) {
+         caret.y1 += YOffset;
+         caret.y2 += YOffset;
+         Transform.transform(&caret.x1, &caret.y1);
+         Transform.transform(&caret.x2, &caret.y2);
+      }
+   }
+   Self->txCursor.reset_vector(Self);
+   rebuild_selection(Self);
+}
+
+static void selection_changed(extVectorText *Self)
+{
+   // Path regeneration also rebuilds the highlight, using the new glyph positions.  Text without a highlight
+   // stays lazy, so that properties set after the string (e.g. GuidePath) still apply to the first generation.
+   if (Self->txSelection and Self->initialised() and Self->dirty()) gen_vector_tree(Self);
+   rebuild_selection(Self);
+   // Selection changes do not report text edits.  An unattached scene has no surface to redraw.
+   if (Self->Scene and Self->Scene->SurfaceID) acDraw(Self);
+   report_cursor_move(Self);
+}
+
+static void report_cursor_move(extVectorText *Self)
+{
+   if (Self->txCursorUpdateDepth or Self->txReportingCursor) return;
+   const bool selected = (Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL;
+   const bool changed = Self->txCursorChanged or (Self->txReportedRow != Self->txCursor.row()) or
+      (Self->txReportedColumn != Self->txCursor.column()) or (Self->txReportedSelection != selected) or
+      (selected and ((Self->txReportedSelectRow != Self->txCursor.selectRow) or
+       (Self->txReportedSelectColumn != Self->txCursor.selectColumn)));
+   auto remember_position = [&]() {
+      Self->txReportedRow = Self->txCursor.row();
+      Self->txReportedColumn = Self->txCursor.column();
+      Self->txReportedSelectRow = Self->txCursor.selectRow;
+      Self->txReportedSelectColumn = Self->txCursor.selectColumn;
+      Self->txReportedSelection = (Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL;
+      Self->txCursorChanged = false;
+   };
+   remember_position();
+   if (not changed or not Self->initialised() or not Self->needs_caret_geometry()) return;
+
+   gen_vector_tree(Self);
+   Self->txReportingCursor = true;
+   if (Self->txOnCursorMove.stale()) release_callback(Self->txOnCursorMove);
+   else if (Self->txOnCursorMove.isC()) {
+      auto routine = (void (*)(extVectorText *))Self->txOnCursorMove.Routine;
+      kt::SwitchContext context(Self->txOnCursorMove.Context);
+      routine(Self);
+   }
+   else if (Self->txOnCursorMove.isScript()) {
+      sc::Call(Self->txOnCursorMove, std::to_array<ScriptArg>({
+         { "VectorText", Self, FD_OBJECTPTR }
+      }));
+   }
+   Self->txReportingCursor = false;
+   remember_position();
+}
+
+static void clear_selection(extVectorText *Self)
+{
+   if ((Self->txFlags & VTXF::AREA_SELECTED) != VTXF::NIL) {
+      Self->txFlags &= ~VTXF::AREA_SELECTED;
+      selection_changed(Self);
+   }
+}
+
+static bool replace_selection(extVectorText *Self, std::string_view Value)
+{
+   auto range = selection_range(Self);
+   if (not range and Value.empty()) return false;
+   if (Self->txLines.empty()) Self->txLines.resize(1);
+   if (not range) {
+      Self->txCursor.validate_position(Self);
+      range = SelectionRange { Self->txCursor.row(), Self->txCursor.column(),
+         Self->txCursor.row(), Self->txCursor.column() };
    }
 
+   // Most keystrokes only change one line.  Preserve its buffers and leave subsequent rows in place.
+   if ((range->row IS range->end_row) and (Value.find('\n') IS std::string_view::npos)) {
+      auto &line = Self->txLines[range->row];
+      const auto start = line.utf8CharOffset(range->column);
+      const auto end = line.utf8CharOffset(range->end_column);
+      int inserted_columns = 0;
+      for (auto remaining = Value; not remaining.empty();) {
+         int length;
+         UTF8ReadValue(remaining, &length);
+         remaining.remove_prefix(std::max(1, length));
+         inserted_columns++;
+      }
+      const auto total_columns = line.utf8Length() - (range->end_column - range->column) + inserted_columns;
+      // Limit truncation uses the general path, which compares the final result before reporting a change.
+      if (Value.empty() or (total_columns <= Self->txCharLimit)) {
+         const bool changed = std::string_view(line).substr(start, end - start) != Value;
+         if (changed) {
+            line.replace(start, end - start, Value);
+            line.invalidate_text();
+            mark_dirty(Self, RC::BASE_PATH);
+         }
+         Self->txCursor.move(Self, range->row, range->column + inserted_columns, true);
+         return changed;
+      }
+   }
+
+   std::vector<TextLine> replacement;
+   auto prefix = Self->txLines[range->row].substr(0, Self->txLines[range->row].utf8CharOffset(range->column));
+   replacement.emplace_back(prefix);
+   for (size_t start=0; start < Value.size();) {
+      const auto end = Value.find('\n', start);
+      if (end IS std::string_view::npos) {
+         replacement.back().append(Value.substr(start));
+         break;
+      }
+      replacement.back().append(Value.substr(start, end - start));
+      replacement.emplace_back();
+      start = end + 1;
+   }
+
+   const auto total_rows = Self->txLines.size() - (range->end_row - range->row + 1) + replacement.size();
+   if ((Self->txLineLimit > 0) and (replacement.size() > 1) and
+       (total_rows > size_t(Self->txLineLimit))) return false;
+
+   const auto cursor_row = range->row + int(replacement.size()) - 1;
+   auto cursor_column = replacement.back().utf8Length();
+   replacement.back().append(Self->txLines[range->end_row],
+      Self->txLines[range->end_row].utf8CharOffset(range->end_column), std::string::npos);
+   for (auto &line : replacement) {
+      if (not Value.empty() and line.utf8Length() > Self->txCharLimit) {
+         line.resize(line.utf8CharOffset(Self->txCharLimit));
+      }
+   }
+   cursor_column = std::min(cursor_column, replacement.back().utf8Length());
+
+   bool changed = replacement.size() != size_t(range->end_row - range->row + 1);
+   for (size_t i=0; not changed and i < replacement.size(); i++) {
+      if (replacement[i].compare(Self->txLines[range->row + i]) != 0) changed = true;
+   }
+   if (not changed) {
+      Self->txCursor.move(Self, cursor_row, cursor_column, true);
+      return false;
+   }
+
+   // Reuse overlapping rows; shift the remaining rows only when the line count changes.
+   const auto old_rows = range->end_row - range->row + 1;
+   const auto common_rows = std::min(old_rows, int(replacement.size()));
+   for (int i=0; i < common_rows; i++) {
+      auto &line = Self->txLines[range->row + i];
+      line.assign(replacement[i]);
+      line.invalidate_text();
+   }
+   if (int(replacement.size()) < old_rows) {
+      Self->txLines.erase(Self->txLines.begin() + range->row + common_rows,
+         Self->txLines.begin() + range->end_row + 1);
+   }
+   else if (int(replacement.size()) > old_rows) {
+      Self->txLines.insert(Self->txLines.begin() + range->end_row + 1,
+         std::make_move_iterator(replacement.begin() + common_rows), std::make_move_iterator(replacement.end()));
+   }
    mark_dirty(Self, RC::BASE_PATH);
+   Self->txCursor.move(Self, cursor_row, cursor_column, true);
+   return true;
 }
 
 //********************************************************************************************************************
 // Note: This function validates boundaries except for the column going beyond the string length.
 
+void TextCursor::position(extVectorText *Vector, int Row, int Column, bool ValidateWidth)
+{
+   if (Vector->txLines.empty()) Vector->txLines.resize(1);
+   Row = std::clamp(Row, 0, int(Vector->txLines.size()) - 1);
+   Column = std::max(0, Column);
+   if (ValidateWidth) {
+      const auto max_col = Vector->txLines[Row].utf8Length();
+      Column = std::min(Column, max_col);
+   }
+   mRow = Row;
+   mColumn = Column;
+   preferredColumn = -1;
+   preferredX.reset();
+   reset_vector(Vector);
+}
+
 void TextCursor::move(extVectorText *Vector, int Row, int Column, bool ValidateWidth)
 {
    Vector->txFlags &= ~VTXF::AREA_SELECTED;
+   position(Vector, Row, Column, ValidateWidth);
+   selectRow = mRow;
+   selectColumn = mColumn;
+   selection_changed(Vector);
+}
 
-   if (Row < 0) Row = 0;
-   else if ((size_t)Row >= Vector->txLines.size()) {
-      if (not Vector->txLines.empty()) Row = (int)Vector->txLines.size() - 1;
+void TextCursor::extend(extVectorText *Vector, int Row, int Column)
+{
+   if ((Vector->txFlags & VTXF::AREA_SELECTED) IS VTXF::NIL) {
+      selectRow = mRow;
+      selectColumn = mColumn;
    }
-
-   if (Column < 0) Column = 0;
-   else if (ValidateWidth) {
-      if (not Vector->txLines.empty()) {
-         int max_col = Vector->txLines[mRow].utf8Length();
-         if (Column > max_col) Column = max_col;
-      }
-   }
-
-   mRow = Row;
-   mColumn = Column;
-
-   reset_vector(Vector);
-
-   acDraw(Vector);
+   position(Vector, Row, Column, true);
+   if ((selectRow != mRow) or (selectColumn != mColumn)) Vector->txFlags |= VTXF::AREA_SELECTED;
+   else Vector->txFlags &= ~VTXF::AREA_SELECTED;
+   selection_changed(Vector);
 }
 
 //********************************************************************************************************************
 
 void TextCursor::reset_vector(extVectorText *Vector) const
 {
-   if (Vector->txCursor.vector) {
+   if (Vector->needs_caret_geometry() and not Vector->txLines.empty()) {
       auto &line = Vector->txLines[mRow];
 
       if (not line.chars.empty()) {
          auto col = mColumn;
          if ((size_t)col >= line.chars.size()) col = line.chars.size() - 1;
-         Vector->txCursor.vector->Points[0].X = line.chars[col].x1 + 0.5;
-         Vector->txCursor.vector->Points[0].Y = line.chars[col].y1;
-         Vector->txCursor.vector->Points[1].X = line.chars[col].x2 + 0.5;
-         Vector->txCursor.vector->Points[1].Y = line.chars[col].y2;
-         reset_path(Vector->txCursor.vector);
+         if (Vector->txCursor.vector) {
+            Vector->txCursor.vector->Points[0].X = line.chars[col].x1 + 0.5;
+            Vector->txCursor.vector->Points[0].Y = line.chars[col].y1;
+            Vector->txCursor.vector->Points[1].X = line.chars[col].x2 + 0.5;
+            Vector->txCursor.vector->Points[1].Y = line.chars[col].y2;
+            reset_path(Vector->txCursor.vector);
+            mark_dirty(Vector->txCursor.vector, RC::TRANSFORM);
+         }
+
+         Unit x = Vector->txX, y = Vector->txY;
+
+         if (x.scaled()) x = Unit(x * get_parent_width(Vector));
+         if (y.scaled()) y = Unit(y * get_parent_height(Vector));
 
          // If the cursor X,Y lies outside of the parent viewport, offset the text so that it remains visible to
-         // the user.
+         // the user.  The text is positioned in the parent's coordinate space, which is its view box if it has one,
+         // so a scaled viewport is measured in view box units rather than its displayed size.
 
-         if ((not Vector->Morph) and (Vector->ParentView)) {
-            auto p_width = Vector->ParentView->vpFixedWidth;
+         if ((not Vector->GuidePath) and Vector->ParentView and
+             ((Vector->txFlags & VTXF::NO_AUTO_OFFSET) IS VTXF::NIL)) {
+            auto p_width = viewport_coordinate_width(Vector->ParentView);
             double xo = 0;
             const double CURSOR_MARGIN = Vector->txFontSize * 0.5;
             if (p_width > 8) {
-               if (Vector->txX + line.chars[col].x1 <= 0) xo = Vector->txX + line.chars[col].x1;
-               else if (Vector->txX + line.chars[col].x1 + CURSOR_MARGIN > p_width) xo = -(Vector->txX + line.chars[col].x1 + CURSOR_MARGIN - p_width);
+               if (x + line.chars[col].x1 <= 0) xo = x + line.chars[col].x1;
+               else if (x + line.chars[col].x1 + CURSOR_MARGIN > p_width) xo = -(x + line.chars[col].x1 + CURSOR_MARGIN - p_width);
             }
 
-            auto p_height = Vector->ParentView->vpFixedHeight;
+            auto p_height = viewport_coordinate_height(Vector->ParentView);
             double yo = 0;
-            if ((mRow > 0) and (p_height > Vector->txFontSize)) {
-               if (Vector->txY + line.chars[col].y1 <= 0) yo = Vector->txY + line.chars[col].y1;
-               else if (Vector->txY + line.chars[col].y2 > p_height) yo = -(Vector->txY + line.chars[col].y2 - p_height + CURSOR_MARGIN);
+            if ((line.chars[col].y1 > 0) and (p_height > Vector->txFontSize)) {
+               if (y + line.chars[col].y1 <= 0) yo = -(y + line.chars[col].y1);
+               else if (y + line.chars[col].y2 > p_height) {
+                  yo = -(y + line.chars[col].y2 - p_height + CURSOR_MARGIN);
+               }
             }
 
             if ((xo != Vector->txXOffset) or (yo != Vector->txYOffset)) {
@@ -1982,7 +2901,7 @@ void TextCursor::validate_position(extVectorText *Self) const
    auto col = mColumn;
 
    if (Self->txLines.empty()) Self->txLines.resize(1);
-   if ((size_t)row > Self->txLines.size()) row = Self->txLines.size() - 1;
+   if ((size_t)row >= Self->txLines.size()) row = Self->txLines.size() - 1;
 
    if (Self->txLines[row].empty()) {
       if (col != 0) col = 0;
@@ -1997,43 +2916,21 @@ void TextCursor::validate_position(extVectorText *Self) const
 
 //********************************************************************************************************************
 
-static void insert_char(extVectorText *Self, int Unicode, int Column)
+static void insert_char(extVectorText *Self, int Unicode)
 {
    if ((not Self) or (not Unicode)) return;
-
-   mark_dirty(Self, RC::BASE_PATH);
+   Self->txCursor.validate_position(Self);
+   const auto column = Self->txCursor.column();
 
    char buffer[6];
-   int charlen = UTF8WriteValue(Unicode, buffer, 6);
+   const auto length = UTF8WriteValue(Unicode, std::span<int8_t>((int8_t *)buffer, 6));
+   if (length <= 0) return;
 
-   if (Self->txLines.empty()) {
-      Self->txLines.emplace_back(std::string(buffer, charlen));
-      Self->txCursor.move(Self, 0, 1);
+   if (((Self->txFlags & (VTXF::OVERWRITE|VTXF::AREA_SELECTED)) IS VTXF::OVERWRITE) and
+       (column < Self->txLines[Self->txCursor.row()].utf8Length())) {
+      Self->txCursor.extend(Self, Self->txCursor.row(), column + 1);
    }
-   else if (Self->txLines[Self->txCursor.row()].empty()) {
-      if (Self->txCharLimit < 1) return;
-      Self->txLines[Self->txCursor.row()].append(buffer, charlen);
-      Self->txCursor.move(Self, Self->txCursor.row(), 1);
-   }
-   else {
-      auto offset = Self->txLines[Self->txCursor.row()].utf8CharOffset(Column);
-
-      if (((Self->txFlags & VTXF::OVERWRITE) != VTXF::NIL) and ((size_t)offset < Self->txLines[Self->txCursor.row()].length())) {
-         Self->txLines[Self->txCursor.row()].replace(offset, Self->txLines[Self->txCursor.row()].charLength(offset), "");
-      }
-
-      Self->txLines[Self->txCursor.row()].insert(offset, buffer, charlen);
-
-      // Enforce character limits (delete the character at the end of this line to keep it within limits)
-
-      if (Self->txLines[Self->txCursor.row()].utf8Length() > Self->txCharLimit) {
-         Self->txLines[Self->txCursor.row()].resize(Self->txLines[Self->txCursor.row()].lastChar());
-      }
-
-      Self->txCursor.move(Self, Self->txCursor.row(), Self->txCursor.column() + 1, true);
-   }
-
-   report_change(Self);
+   if (replace_selection(Self, std::string_view(buffer, length))) report_change(Self);
 }
 
 //********************************************************************************************************************
@@ -2054,43 +2951,48 @@ static const FieldDef clTextAlign[] = {
 };
 
 static const FieldArray clTextFields[] = {
-   { "X",             FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, TEXT_GET_X, TEXT_SET_X },
-   { "Y",             FDF_VIRTUAL|FDF_UNIT|FDF_DOUBLE|FDF_SCALED|FDF_RW, TEXT_GET_Y, TEXT_SET_Y },
-   { "Weight",        FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_Weight, TEXT_SET_Weight },
-   { "String",        FDF_VIRTUAL|FDF_STRING|FDF_RW, TEXT_GET_String, TEXT_SET_String },
-   { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
-   { "Face",          FDF_VIRTUAL|FDF_STRING|FDF_RW, TEXT_GET_Face, TEXT_SET_Face },
-   { "Fill",          FDF_VIRTUAL|FDF_STRING|FDF_RW, TEXT_GET_Fill, TEXT_SET_Fill },
-   { "FontSize",      FDF_VIRTUAL|FDF_ALLOC|FDF_STRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
-   { "FontStyle",     FDF_VIRTUAL|FDF_STRING|FDF_RI, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
+   { "X",             FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_X, TEXT_SET_X },
+   { "Y",             FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_Y, TEXT_SET_Y },
+   { "Weight",        FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_Weight, TEXT_SET_Weight },
+   { "String",        FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_RW|FDF_PURE, TEXT_GET_String, TEXT_SET_String },
+   { "Align",         FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Align, TEXT_SET_Align, &clTextAlign },
+   { "Fill",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Fill, TEXT_SET_Fill }, // Override
+   { "Face",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Face, TEXT_SET_Face },
+   { "FontSize",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
+   { "FontStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
    { "Descent",       FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_Descent },
    { "DisplayHeight", FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplayHeight },
    { "DisplaySize",   FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplaySize },
-   { "DX",            FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW, TEXT_GET_DX, TEXT_SET_DX },
-   { "DY",            FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW, TEXT_GET_DY, TEXT_SET_DY },
-   { "InlineSize",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, TEXT_GET_InlineSize, TEXT_SET_InlineSize },
-   { "LetterSpacing", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, TEXT_GET_LetterSpacing, TEXT_SET_LetterSpacing },
-   { "Point",         FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_Point },
+   { "DX",            FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_DX, TEXT_SET_DX },
+   { "DY",            FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_DY, TEXT_SET_DY },
+   { "InlineSize",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_InlineSize, TEXT_SET_InlineSize },
+   { "WrapMode",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, TEXT_GET_WrapMode, TEXT_SET_WrapMode, &clVectorTextVTW },
+   { "LetterSpacing", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_LetterSpacing, TEXT_SET_LetterSpacing },
+   { "Point",         FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_Point },
    { "LineSpacing",   FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_LineSpacing },
-   { "Rotate",        FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW, TEXT_GET_Rotate, TEXT_SET_Rotate },
-   { "ShapeInside",   FDF_VIRTUAL|FDF_OBJECTID|FDF_RW, TEXT_GET_ShapeInside, TEXT_SET_ShapeInside, CLASSID::VECTOR },
-   { "ShapeSubtract", FDF_VIRTUAL|FDF_OBJECTID|FDF_RW, TEXT_GET_ShapeSubtract, TEXT_SET_ShapeSubtract, CLASSID::VECTOR },
-   { "TextLength",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, TEXT_GET_TextLength, TEXT_SET_TextLength },
-   { "TextFlags",     FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW, TEXT_GET_Flags, TEXT_SET_Flags, &clVectorTextVTXF },
+   { "Rotate",        FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_Rotate, TEXT_SET_Rotate },
+   { "ShapeInside",   FDF_VIRTUAL|FDF_OBJECTID|FDF_RW|FDF_PURE, TEXT_GET_ShapeInside, TEXT_SET_ShapeInside, CLASSID::VECTOR },
+   { "ShapeSubtract", FDF_VIRTUAL|FDF_OBJECTID|FDF_RW|FDF_PURE, TEXT_GET_ShapeSubtract, TEXT_SET_ShapeSubtract, CLASSID::VECTOR },
+   { "TextLength",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_TextLength, TEXT_SET_TextLength },
+   { "TextFlags",     FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Flags, TEXT_SET_Flags, &clVectorTextVTXF },
    { "TextWidth",     FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_TextWidth },
-   { "StartOffset",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, TEXT_GET_StartOffset, TEXT_SET_StartOffset },
-   { "Spacing",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, TEXT_GET_Spacing, TEXT_SET_Spacing },
+   { "StartOffset",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_StartOffset, TEXT_SET_StartOffset },
+   { "Spacing",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_Spacing, TEXT_SET_Spacing },
    { "Font",          FDF_VIRTUAL|FDF_OBJECT|FDF_I, nullptr, TEXT_SET_Font },
    // Non-SVG fields related to real-time text editing
-   { "OnChange",      FDF_VIRTUAL|FDF_FUNCTIONPTR|FDF_RW, TEXT_GET_OnChange, TEXT_SET_OnChange },
-   { "Focus",         FDF_VIRTUAL|FDF_OBJECTID|FDF_RI, TEXT_GET_Focus, TEXT_SET_Focus },
+   { "OnChange",      FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, TEXT_GET_OnChange, TEXT_SET_OnChange },
+   { "OnCursorMove",  FDF_VIRTUAL|FDF_FUNCTION|FDF_RW|FDF_PURE, TEXT_GET_OnCursorMove, TEXT_SET_OnCursorMove },
+   { "Focus",         FDF_VIRTUAL|FDF_OBJECTID|FDF_RI|FDF_PURE, TEXT_GET_Focus, TEXT_SET_Focus },
    { "CursorColumn",  FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_CursorColumn, TEXT_SET_CursorColumn },
    { "CursorRow",     FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_CursorRow, TEXT_SET_CursorRow },
-   { "TotalLines",    FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_TotalLines },
-   { "SelectRow",     FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_SelectRow },
-   { "SelectColumn",  FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_SelectColumn },
-   { "LineLimit",     FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_LineLimit, TEXT_SET_LineLimit },
-   { "CharLimit",     FDF_VIRTUAL|FDF_INT|FDF_RW, TEXT_GET_CharLimit, TEXT_SET_CharLimit },
+   { "TotalLines",    FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_TotalLines },
+   { "WrappedLines",  FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_WrappedLines },
+   { "SelectRow",     FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_SelectRow },
+   { "SelectColumn",  FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_SelectColumn },
+   { "LineLimit",     FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_LineLimit, TEXT_SET_LineLimit },
+   { "CharLimit",     FDF_VIRTUAL|FDF_INT|FDF_RW|FDF_PURE, TEXT_GET_CharLimit, TEXT_SET_CharLimit },
+   { "SelectedText",  FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R, TEXT_GET_SelectedText },
+   { "SelectFill",    FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_SelectFill, TEXT_SET_SelectFill },
    END_FIELD
 };
 
@@ -2098,10 +3000,8 @@ static const FieldArray clTextFields[] = {
 
 static ERR init_text(void)
 {
-   FID_FreetypeFace = strihash("FreetypeFace");
-
    OBJECTID id;
-   if (FindObject("cfgSystemFonts", CLASSID::CONFIG, FOF::NIL, &id) IS ERR::Okay) {
+   if (!FindObject("cfgSystemFonts", CLASSID::CONFIG, &id)) {
       glFontConfig = (objConfig *)GetObjectPtr(id);
    }
 

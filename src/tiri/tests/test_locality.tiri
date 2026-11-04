@@ -62,13 +62,33 @@ end
 
 @Test function GlobalInFunction()
    function innerFunction()
-      global gFromFunction = 'created inside'
+      global glFromFunction = 'created inside'
    end
 
-   assert(debug.locality('gFromFunction') is 'nil', 'gFromFunction should not exist before function call')
+   assert(debug.locality('glFromFunction') is 'nil', 'glFromFunction should not exist before function call')
    innerFunction()
-   assert(gFromFunction is 'created inside', 'Global should be accessible after function call')
-   assert(debug.locality('gFromFunction') is 'global', 'gFromFunction should have global locality')
+   assert(glFromFunction is 'created inside', 'Global should be accessible after function call')
+   assert(debug.locality('glFromFunction') is 'global', 'glFromFunction should have global locality')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A global declared in one function must not affect assignment resolution in a sibling function.
+
+@Test function NestedGlobalDeclarationDoesNotLeakToSibling()
+   defer rawset(_G, 'nested_declaration_only', nil) end
+
+   local function declare_global()
+      global nested_declaration_only = 'global value'
+   end
+
+   local function assign_local()
+      nested_declaration_only = 'local value'
+      return true
+   end
+
+   assert(assign_local(), 'The sibling assignment function should run')
+   assert(rawget(_G, 'nested_declaration_only') is nil,
+      'A nested global declaration must not redirect a sibling assignment to the environment')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -109,6 +129,7 @@ end
 -- Test debug.locality with nil argument
 
 @Test(hotpath=true) function LocalityNilArg()
+   assert(debug.locality() is 'nil', 'debug.locality() should accept a missing name')
    assert(debug.locality(nil) is 'nil', 'debug.locality(nil) should return nil')
 end
 
@@ -228,7 +249,7 @@ end
 -- Test that for loop variables are local
 
 @Test(hotpath=true) function ForLoopLocality()
-   for i = 1, 3 do
+   for i in {1 to 4} do
       assert(debug.locality('i') is 'local', 'For loop variable should be local')
    end
 
@@ -270,6 +291,28 @@ end
    undeclaredPlainVar = 'test value'
    assert(undeclaredPlainVar is 'test value', 'Undeclared variable should be assigned')
    assert(debug.locality('undeclaredPlainVar') is 'local', 'Undeclared variable with plain assignment should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Naming conventions are hints only and must not override local-by-default assignment semantics.
+
+@Test(hotpath=true) function GlobalStylePrefixesStillCreateLocals()
+   glPrefixedLocal = 'gl hint'
+   mPrefixedLocal = 'module hint'
+
+   assert(debug.locality('glPrefixedLocal') is 'local', 'gl prefix must not promote a plain assignment to global')
+   assert(debug.locality('mPrefixedLocal') is 'local', 'm prefix must not promote a plain assignment to global')
+end
+
+@Test function GlobalStylePrefixAtTopLevelStillCreatesLocal()
+   local script = obj.new('tiri', { statement = [[
+glTopLevelLocal = 'gl hint'
+assert(debug.locality('glTopLevelLocal') is 'local', 'gl prefix must remain local at the top level')
+assert(_G.glTopLevelLocal is nil, 'plain assignment must not publish a gl-prefixed name globally')
+]] })
+
+   local err = script.acActivate()
+   assert(err is ERR_Okay, 'Top-level gl-prefixed local should activate: ' .. tostring(script.errorMessage))
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -326,12 +369,12 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test that reading undeclared variable returns nil (falls back to global lookup)
+-- Test that reading undeclared variables is rejected by the parser
 
-@Test(hotpath=true) function ReadUndeclaredReturnsNil()
-   -- Reading an undeclared variable should return nil (global lookup returns nil)
-   value = thisVariableDoesNotExist
-   assert(value is nil, 'Reading undeclared variable should return nil')
+@Test(hotpath=true) function ReadUndeclaredReportsParserError()
+   result = debug.validate("value = thisVariableDoesNotExist")
+   assert(result.success is false, 'Reading undeclared variable should fail validation')
+   assert(result.diagnostics[0].code is 'UndefinedVariable', 'Expected UndefinedVariable diagnostic')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -406,6 +449,20 @@ end
    assert(debug.locality('first') is 'local', 'first should be local')
    assert(debug.locality('second') is 'local', 'second should be local')
    assert(debug.locality('third') is 'local', 'third should be local')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Surplus function results remain valid even though surplus explicit values are rejected.
+
+@Test(hotpath=true) function MultiReturnSurplusResults()
+   function three_values()
+      return 'first', 'second', 'discarded'
+   end
+
+   first, second = three_values()
+
+   assert(first is 'first', 'first should receive the first function result')
+   assert(second is 'second', 'second should receive the second function result')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -635,10 +692,10 @@ end
       return 'static'
    end
 
-   function myTable:instanceMethod()
+   function myTable.instanceMethod(Self)
       return 'instance'
    end
 
    assert(myTable.staticMethod() is 'static', 'Static method should work')
-   assert(myTable:instanceMethod() is 'instance', 'Instance method should work')
+   assert(myTable.instanceMethod(myTable) is 'instance', 'Instance method should work')
 end

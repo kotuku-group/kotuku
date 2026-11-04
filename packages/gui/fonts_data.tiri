@@ -1,0 +1,54 @@
+   namespace gui
+
+-- Merges the configured overrides into a copy of the defaults, converts percentage font sizes to points, scales all
+-- point sizes to the interface density and sets the default style.  Overrides are partial; a role keeps the defaults
+-- for the keys that it does not set.  Overrides for unknown roles are ignored.
+--
+-- A point is always 1/72 inch, but VectorText converts points to pixels at a fixed 96 DPI.  Multiplying by dpi/96
+-- compensates, so that the rendered pixel size is pt * dpi / 72.  The stored sizes are therefore 96 DPI equivalents
+-- and only match the true point size when the interface density is 96.
+
+thunk scaledFonts(Defaults:table!, Overrides:table):table
+   rxFontSize <const> = r[[^(-?\d+(?:\.\d+)?)%$]]
+   scale = gui.interface.dpi / 96
+   fonts = table.clone(Defaults)
+   for role, font in Overrides ?? { } do
+      if fonts[role] then
+         fonts[role] = table.merge(fonts[role], font)
+      else
+         print(f'Style configuration: unknown font role "fonts.{role}" has been ignored.')
+      end
+   end
+
+   for font in values(fonts) do
+      if font.size is <str> and rxFontSize.test(font.size) then
+         pct = tonumber(rxFontSize.extract(font.size))
+         font.size = gui.interface.fontSize * (pct / 100)
+      end
+
+      if font.size is <num> then font.size = math.round(font.size * scale) end
+
+      font.style ?= 'medium'
+   end
+   return fonts
+end
+
+glFontDefaults = {
+   -- Percentages are converted to numeric pt sizes, relative to gui.interface.fontSize
+   -- Numeric sizes are points (1/72 in); scaled by dpi/96 to offset VectorText's fixed 96 DPI pt conversion
+   -- All sizes are scaled to gui.interface.dpi on first access
+   default  = { face='Source Sans Pro', size='100%', style='Medium' }, -- Always matches gui.interface.fontSize
+   window   = { face='Source Sans Pro', size='100%', style='Medium' }, -- For text placed against the window background, e.g. labels
+   button   = { face='Source Sans Pro', size='100%', style='Medium' }, -- Button labels
+   filesys  = { face='Source Sans Pro', size='100%', style='Medium' }, -- Text for files, folders
+   icon     = { face='Noto Sans,Source Sans Pro', size='100%', style='Medium' }, -- Labeling for icons
+   menu     = { face='Noto Sans,Source Sans Pro', size='100%', style='Medium' }, -- Menu & dropdown item text
+   page     = { face='Noto Sans,Source Sans Pro', size='100%', style='Medium' }, -- Multiple lines of text
+   small    = { face='Source Sans Pro', size=9, style='Medium' }, -- Recommended text for small sizes
+   xsmall   = { face='Micro', size=6, style='Medium' }, -- The smallest available, still legible size
+   large    = { face='Noto Sans,Source Sans Pro', size='130%', style='Medium' }, -- Recommended text for headers
+   input    = { face='Source Sans Pro', size='100%', style='Medium' }, -- Text inside input widgets (e.g. combobox)
+   widget   = { face='Source Sans Pro', size='100%', style='Medium' } -- Text inside non-input widgets (e.g. button)
+}
+
+gui.fonts = scaledFonts(glFontDefaults, glStyle.fonts)

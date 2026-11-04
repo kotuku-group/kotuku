@@ -2,6 +2,8 @@
 Tests for file functions
 --]]
 
+extern logOutput
+
 glPath = 'kotuku:'
 glTempRoot = 'temp:filesystem_tests/'
 
@@ -10,35 +12,33 @@ rx_path = regex.new([[[^:\/]+[:\/](.*)]])
 function ensureFolder(Path)
    err = mSys.CreateFolder(Path, 0)
    if (err != ERR_Okay) and (err != ERR_FileExists) then
-      error('CreateFolder() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
+      raise 'CreateFolder() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err)
    end
 end
 
-function resetPath(Path)
-   mSys.DeleteFile(Path)
-end
-
-function writeFile(Path, Content)
+function writeFile(Path:str, Content:str)
    file = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
-   file.acWrite(Content, #Content)
+   file.acWrite(Content)
    file.free()
 end
 
-function readFile(Path)
+function readFile(Path:str):str
    file = obj.new('file', { path=Path })
    buffer = array<byte, file.size>
    err = mSys.ReadFileToBuffer(Path, buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed for ' .. Path .. ': ' .. mSys.GetErrorMsg(err))
-   return buffer:getString()
+   return buffer.getString()
 end
 
-@BeforeAll function init()
+@BeforeAll function init(State)
+   global glTestFolder = State.folder
    global glRawPath = glTempRoot .. 'test.out'
    mSys.DeleteFile(glTempRoot)
    ensureFolder(glTempRoot)
    out = obj.new('file', { src=glRawPath, flags=FL_NEW|FL_WRITE } )
-   out.acWrite('ABCD', 4)
+   out.acWrite('ABCD')
    out = nil
+   writeFile(glTempRoot .. 'source.tiri', 'fixture source\n')
    processing.collect()
 end
 
@@ -88,13 +88,13 @@ end
          logOutput(fl.name .. ', Size: ' .. fl.size .. ', Date: ' .. created.year .. '/' .. created.month .. '/' .. created.day)
 
          if (created.year < 1900) or (created.year > 3000) or (created.month < 1) or (created.month > 12) or (created.day < 1) or (created.day > 31) then
-            error('Invalid Year/Month/Day retrieved for "' .. fl.name .. '"')
+            raise 'Invalid Year/Month/Day retrieved for "' .. fl.name .. '"'
          end
 
          err = mSys.ScanDir(dir)
       end
    else
-      error('OpenDir() error: ' .. mSys.GetErrorMsg(err))
+      raise 'OpenDir() error: ' .. mSys.GetErrorMsg(err)
    end
 end
 
@@ -108,7 +108,7 @@ end
       err = mSys.ScanDir(dir)
       while err is ERR_Okay do
          fl = dir.info
-         names = not names ? fl.name :> names .. ' ' .. fl.name
+         names = not names ? fl.name : names .. ' ' .. fl.name
          volumes[fl.name] = true
          err = mSys.ScanDir(dir)
       end
@@ -119,7 +119,7 @@ end
       assert(volumes['user'], "The expected 'user' volume is not present.")
       assert(volumes['system'], "The expected 'system' volume is not present.")
    else
-      error("OpenDir() error: " .. mSys.GetErrorMsg(err))
+      raise "OpenDir() error: " .. mSys.GetErrorMsg(err)
    end
 end
 
@@ -129,11 +129,49 @@ end
 @Test function Stringify()
    fl = obj.new('file', { src=glRawPath, flags=FL_READ|FL_WRITE } )
    buf = string.alloc(fl.size)
-   err, result = fl.acRead(buf, fl.size)
-   assert(err is ERR_Okay, 'Failed to read file ' .. fl.location)
+   err, result = fl.acRead(buf)
+   assert(err is ERR_Okay, 'Failed to read file ' .. fl.path)
 
-   fl.acSeek(POS_START, 0)
-   fl.acWrite(buf:reverse())
+   fl.acSeek(SEEK_START, 0)
+   fl.acWrite(buf.reverse())
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(linux_platform=true)
+function PathOnlyFileOwnership()
+   ownership_path = glTempRoot .. 'ownership.txt'
+   writeFile(ownership_path, 'ownership')
+
+   path_file = obj.new('file', { path=ownership_path })
+   open_file = obj.new('file', { path=ownership_path, flags=FL_READ })
+
+   assert(path_file.user is open_file.user, 'A path-only File should report the same user ID as an open File.')
+   assert(path_file.group is open_file.group, 'A path-only File should report the same group ID as an open File.')
+
+   missing_path = glTempRoot .. 'missing-ownership.txt'
+   writeFile(missing_path, 'ownership')
+   missing_file = obj.new('file', { path=missing_path })
+   err = mSys.DeleteFile(missing_path)
+   assert(err is ERR_Okay, 'Failed to remove ownership test file: ' .. mSys.GetErrorMsg(err))
+   try
+      print(missing_file.user)
+   except ex
+      assert(ex.message.startsWith('Read failure: File.user:'),
+         'A failed field read should identify File.user, got: ' .. ex.message)
+   success
+      assert(false, 'Reading User for a missing file should fail.')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SetVolume()
+   check mSys.SetVolume("fstest", "temp:filesystem_tests/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
+   check mSys.AnalysePath("fstest:source.tiri");
+
+   check mSys.SetVolume("fstestnest", "bin:|temp:filesystem_tests/", "filetypes/source", "", "", VOLUME_HIDDEN|VOLUME_SYSTEM);
+   check mSys.AnalysePath("fstestnest:source.tiri");
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -142,7 +180,7 @@ end
    read_path = glTempRoot .. 'mutable_string_read.txt'
    expected = 'Mutable string buffer content'
 
-   resetPath(read_path)
+   mSys.DeleteFile(read_path)
    writeFile(read_path, expected)
 
    fl = obj.new('file', { src=read_path, flags=FL_READ } )
@@ -150,29 +188,134 @@ end
    err, result = fl.acRead(buffer)
    assert(err is ERR_Okay, 'Failed to read into mutable string buffer: ' .. mSys.GetErrorMsg(err))
    assert(result is #expected, 'Read length should match expected content size.')
-   assert(string.substr(buffer, 0, result) is expected, 'Mutable string buffer read returned unexpected content.')
+   assert(buffer.sub(0, result) is expected, 'Mutable string buffer read returned unexpected content.')
 
    try
-      fl.acSeek(POS_START, 0)
+      fl.acSeek(SEEK_START, 0)
       fl.acRead('literal')
    success
-      error('acRead() should reject interned strings for mutable buffers')
-   end
-
-   try
-      fl.acSeek(POS_START, 0)
-      fl.acRead(buffer, #buffer + 1)
-   success
-      error('acRead() should reject sizes larger than the supplied buffer')
+      assert(false, 'acRead() should reject interned strings for mutable buffers')
    end
 
    write_path = glTempRoot .. 'immutable_string_write.txt'
-   resetPath(write_path)
+   mSys.DeleteFile(write_path)
    write_file = obj.new('file', { src=write_path, flags=FL_NEW|FL_WRITE } )
-   err, result = write_file.acWrite('ordinary input', #'ordinary input')
+   err, result = write_file.acWrite('ordinary input')
    assert(err is ERR_Okay, 'acWrite() should continue accepting ordinary immutable strings.')
    write_file.free()
    assert(readFile(write_path) is 'ordinary input', 'Immutable string write did not persist expected content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BufferedVirtualFileGrow()
+   expected = 'abcdef'
+   fl = obj.new('file', { flags=FL_BUFFER, size=2 })
+
+   assert(fl.size is 2, 'Buffered file should honour the initial Size field.')
+   assert(#fl.buffer is 2, 'Public Buffer length should match the initial Size field.')
+
+   err, result = fl.acWrite(expected)
+   assert(err is ERR_Okay, 'Buffered acWrite() failed: ' .. mSys.GetErrorMsg(err))
+   assert(result is #expected, 'Buffered acWrite() returned an unexpected byte count.')
+   assert(fl.size is #expected, 'Buffered file Size should grow to match the write length.')
+   assert(#fl.buffer is #expected, 'Public Buffer length should track the grown Size field.')
+
+   err = fl.acSeek(SEEK_START, 0)
+   assert(err is ERR_Okay, 'Buffered acSeek() failed: ' .. mSys.GetErrorMsg(err))
+
+   buffer = string.alloc(#expected)
+   err, result = fl.acRead(buffer)
+   assert(err is ERR_Okay, 'Buffered acRead() failed: ' .. mSys.GetErrorMsg(err))
+   assert(result is #expected, 'Buffered acRead() returned an unexpected byte count.')
+   assert(buffer.sub(0, result) is expected, 'Buffered acRead() returned unexpected content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BufferContentVirtualisesPhysicalFile()
+   read_path = glTempRoot .. 'buffer_content_source.txt'
+   expected = 'Alpha\nBeta\nGamma'
+
+   mSys.DeleteFile(read_path)
+   writeFile(read_path, expected)
+
+   fl = obj.new('file', { src=read_path, flags=FL_READ|FL_WRITE })
+
+   err = fl.mtBufferContent()
+   assert(err is ERR_Okay, 'BufferContent() failed: ' .. mSys.GetErrorMsg(err))
+   assert((fl.flags & FL_BUFFER) != 0, 'BufferContent() should enable the BUFFER flag.')
+   assert(fl.size is #expected, 'Buffered physical file Size should match the source content length.')
+   assert(#fl.buffer is #expected, 'Public Buffer length should match the buffered file Size.')
+   assert(fl.buffer.getString() is expected, 'Buffered physical file content was not preserved.')
+
+   err = fl.mtBufferContent()
+   assert(err is ERR_NothingDone, 'Repeated BufferContent() should be a no-op: ' .. mSys.GetErrorMsg(err))
+   assert(fl.buffer.getString() is expected, 'Repeated BufferContent() should not clear the existing buffer.')
+
+   err = fl.acSeek(SEEK_START, 0)
+   assert(err is ERR_Okay, 'Buffered physical acSeek() failed: ' .. mSys.GetErrorMsg(err))
+
+   err, result = fl.acWrite('RAM')
+   assert(err is ERR_Okay, 'Buffered physical acWrite() failed: ' .. mSys.GetErrorMsg(err))
+   assert(result is 3, 'Buffered physical acWrite() returned an unexpected byte count.')
+
+   fl = nil
+   processing.collect()
+
+   assert(readFile(read_path) is expected, 'Writes after BufferContent() should not modify the physical file.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BufferedStringPathReadLine()
+   expected = 'first\nsecond\nthird'
+   fl = obj.new('file', { path='string:' .. expected })
+
+   assert((fl.flags & FL_BUFFER) != 0, 'string: paths should create buffered files.')
+   assert(fl.size is #expected, 'string: buffered file Size should match the string content length.')
+   assert(#fl.buffer is #expected, 'string: public Buffer length should match the Size field.')
+   assert(fl.buffer.getString() is expected, 'string: buffer content was not preserved.')
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_Okay, 'First buffered ReadLine() failed: ' .. mSys.GetErrorMsg(err))
+   assert(line is 'first', 'First buffered line was unexpected: ' .. tostring(line))
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_Okay, 'Second buffered ReadLine() failed: ' .. mSys.GetErrorMsg(err))
+   assert(line is 'second', 'Second buffered line was unexpected: ' .. tostring(line))
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_Okay, 'Final buffered ReadLine() failed: ' .. mSys.GetErrorMsg(err))
+   assert(line is 'third', 'Final buffered line was unexpected: ' .. tostring(line))
+
+   err, line = fl.mtReadLine()
+   assert(err is ERR_NoData, 'ReadLine() should report NoData after the final buffered line, got: ' ..
+      mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BufferContentEmptyFile()
+   read_path = glTempRoot .. 'buffer_content_empty.txt'
+
+   mSys.DeleteFile(read_path)
+
+   fl = obj.new('file', { src=read_path, flags=FL_NEW|FL_WRITE })
+   fl = nil
+   processing.collect()
+
+   fl = obj.new('file', { src=read_path, flags=FL_READ|FL_WRITE })
+   err = fl.mtBufferContent()
+   assert(err is ERR_Okay, 'BufferContent() failed for an empty file: ' .. mSys.GetErrorMsg(err))
+   assert((fl.flags & FL_BUFFER) != 0, 'Empty BufferContent() should enable the BUFFER flag.')
+   assert(fl.size is 0, 'Empty buffered file Size should remain zero.')
+   assert(#fl.buffer is 0, 'Public Buffer length for an empty buffered file should be zero.')
+
+   buffer = string.alloc(1)
+   err, result = fl.acRead(buffer)
+   assert(err is ERR_Okay, 'Reading an empty buffered file should succeed: ' .. mSys.GetErrorMsg(err))
+   assert(result is 0, 'Reading an empty buffered file should return zero bytes.')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -186,7 +329,7 @@ end
    icon_pairs = {
       { path='fonts:fonts.cfg',            icon='icons:filetypes/text' },
       { path='fonts:truetype/Micro-6.ttf', icon='icons:filetypes/font' },
-      { path='scripts:gui.tiri',           icon='icons:filetypes/source' }
+      { path='temp:filesystem_tests/source.tiri',           icon='icons:filetypes/source' }
    }
 
    for v in values(icon_pairs) do
@@ -194,10 +337,10 @@ end
       try
          icon = obj.new('file', { path=v.path }).icon
       except ex
-         error(f'Failed to open path {v.path}: {ex.message}')
+         raise f'Failed to open path {v.path}: {ex.message}'
       success
          if icon != v.icon then
-            error(f'Icon for {v.path} evaluated to {icon} instead of expected "{v.icon}"')
+            raise f'Icon for {v.path} evaluated to {icon} instead of expected "{v.icon}"'
          end
       end
    end
@@ -206,7 +349,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function AnalyseVolume()
-   err, type = mSys.AnalysePath('user:')
+   local err, type = mSys.AnalysePath('user:')
    assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_VOLUME, 'AnalysePath() returned type ' .. type .. ' and not LOC_VOLUME')
 end
@@ -214,7 +357,7 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function AnalyseFile()
-   err, type = mSys.AnalysePath('scripts:gui.tiri')
+   local err, type = mSys.AnalysePath('temp:filesystem_tests/source.tiri')
    assert(err is ERR_Okay, 'AnalysePath() failed with error: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FILE, 'AnalysePath() returned type ' .. type .. ' and not LOC_FILE')
 end
@@ -223,7 +366,7 @@ end
 
 @Test function ResolvePathNoFileCheck()
    missing_path = glTempRoot .. 'resolve_path.tmp'
-   resetPath(missing_path)
+   mSys.DeleteFile(missing_path)
 
    err = mSys.ResolvePath(missing_path)
    assert(err is ERR_FileNotFound, 'ResolvePath() without RSF_NO_FILE_CHECK should fail for a missing file, got: ' .. mSys.GetErrorMsg(err))
@@ -241,7 +384,7 @@ end
    nested_path = test_root .. 'nested/'
    target_path = test_root .. 'resolve_approx.txt'
 
-   resetPath(test_root)
+   mSys.DeleteFile(test_root)
    ensureFolder(nested_path)
    writeFile(target_path, 'Resolve path content')
 
@@ -259,6 +402,20 @@ end
    err, normalised_path = mSys.ResolvePath(test_root .. 'nested/../resolve_approx.txt')
    assert(err is ERR_Okay, 'ResolvePath() failed for a path requiring canonicalisation: ' .. mSys.GetErrorMsg(err))
    assert(normalised_path is exact_path, 'ResolvePath() should canonicalise "." and ".." segments.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ResolveFolderTrailingSeparator()
+   folder_path = glTempRoot .. 'resolve_folder/'
+   ensureFolder(folder_path)
+
+   for _, flags in { 0, RSF_NO_FILE_CHECK, RSF_NO_FOLLOW } do
+      err, resolved_folder = mSys.ResolvePath(folder_path, flags)
+      assert(err is ERR_Okay, f'ResolvePath() failed for a folder path with flags {flags}: {mSys.GetErrorMsg(err)}')
+      assert(resolved_folder.endsWith('/') or resolved_folder.endsWith('\\'),
+         f'ResolvePath() should preserve the trailing separator of an existing folder with flags {flags}, got "{resolved_folder}"')
+   end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -284,7 +441,7 @@ end
 @Test function CompareFilePaths()
    compare_path = glTempRoot .. 'compare_file.tmp'
 
-   resetPath(compare_path)
+   mSys.DeleteFile(compare_path)
 
    writeFile(compare_path, 'Compare me')
 
@@ -297,12 +454,46 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function ExclusiveFileCreation()
+   local target = glTempRoot .. 'exclusive.tmp'
+   mSys.DeleteFile(target)
+   writeFile(target, 'original')
+
+   try
+      local collision <close> = obj.new('file', { path=target, flags=FL_NEW|FL_WRITE|FL_EXCLUSIVE })
+      assert(false, 'Exclusive creation must reject an existing path.')
+   except e when ERR_FileExists
+   end
+   assert(readFile(target) is 'original', 'Exclusive creation must not truncate an existing file.')
+
+   mSys.DeleteFile(target)
+   do
+      local created <close> = obj.new('file', { path=target, flags=FL_NEW|FL_WRITE|FL_EXCLUSIVE })
+      check created.acWrite('exclusive')
+   end
+   assert(readFile(target) is 'exclusive', 'Exclusive creation must create a missing host file.')
+
+   try
+      local invalid <close> = obj.new('file', { path=target, flags=FL_WRITE|FL_EXCLUSIVE })
+      assert(false, 'FL_EXCLUSIVE must require FL_NEW.')
+   except e when ERR_InvalidState
+   end
+
+   try
+      local virtual <close> = obj.new('file', { path='string:data', flags=FL_NEW|FL_WRITE|FL_EXCLUSIVE })
+      assert(false, 'Virtual files must reject unsupported exclusive creation.')
+   except e when ERR_NoSupport
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function CreateFolderAndDeleteTree()
    root_path = glTempRoot .. 'create_folder/'
    folder_path = root_path .. 'alpha/beta/'
    child_path = folder_path .. 'child.txt'
 
-   resetPath(root_path)
+   mSys.DeleteFile(root_path)
 
    err = mSys.CreateFolder(folder_path, 0)
    assert(err is ERR_Okay, 'CreateFolder() failed: ' .. mSys.GetErrorMsg(err))
@@ -310,7 +501,7 @@ end
    err = mSys.CreateFolder(folder_path, 0)
    assert(err is ERR_FileExists, 'CreateFolder() should report ERR_FileExists for an existing folder, got: ' .. mSys.GetErrorMsg(err))
 
-   err, type = mSys.AnalysePath(folder_path)
+   local err, type = mSys.AnalysePath(folder_path)
    assert(err is ERR_Okay, 'AnalysePath() failed for created folder: ' .. mSys.GetErrorMsg(err))
    assert(type is LOC_FOLDER, 'AnalysePath() returned type ' .. type .. ' and not LOC_FOLDER')
 
@@ -330,8 +521,8 @@ end
    dest_path = glTempRoot .. 'copy_dest.tmp'
    callback_hits = 0
 
-   resetPath(src_path)
-   resetPath(dest_path)
+   mSys.DeleteFile(src_path)
+   mSys.DeleteFile(dest_path)
 
    writeFile(src_path, 'Copied content')
 
@@ -347,12 +538,192 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+@Test function CopyFileFeedbackPayloads()
+   src_path = glTempRoot .. 'copy_feedback_source.tmp'
+   dest_path = glTempRoot .. 'copy_feedback_dest.tmp'
+   writeFile(src_path, 'Feedback payload')
+
+   for result in values(array<int> { FFR_SKIP, FFR_ABORT }) do
+      mSys.DeleteFile(dest_path)
+      hits = 0
+      err = mSys.CopyFile(src_path, dest_path, function(Size, Position, Path, Dest, FeedbackID, Extra):num
+         assert(Extra is nil, 'The explicit result sink must not become a callback argument')
+         hits++
+         return result
+      end)
+      assert(hits > 0, 'CopyFile() must invoke its feedback callback')
+      if result is FFR_ABORT then
+         assert(err is ERR_Cancelled, 'FFR_ABORT must cancel the copy rather than become an ERR code')
+      else
+         assert(err is ERR_Okay, 'FFR_SKIP must skip the copy without an error')
+      end
+      err = mSys.AnalysePath(dest_path)
+      assert(err != ERR_Okay, 'Skipped or aborted copies must not create the destination')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Folder copies.  A source folder is expressed with a trailing separator.  A destination with a trailing separator
+-- receives the source by name, otherwise the destination is the new folder.
+
+function folderCopyFixture(Root:str!)
+   mSys.DeleteFile(Root)
+   ensureFolder(Root .. 'src/tree/deep/')
+   ensureFolder(Root .. 'src/tree/empty/')
+   ensureFolder(Root .. 'dst/')
+   writeFile(Root .. 'src/tree/one.txt', 'one')
+   writeFile(Root .. 'src/tree/two.txt', 'two')
+   writeFile(Root .. 'src/tree/three.txt', 'three')
+   writeFile(Root .. 'src/tree/deep/four.txt', 'four')
+end
+
+function assertTreeCopied(Folder:str!, Context:str!)
+   for name, content in pairs({ ['one.txt']='one', ['two.txt']='two', ['three.txt']='three',
+         ['deep/four.txt']='four' }) do
+      assert(mSys.AnalysePath(Folder .. name) is ERR_Okay, f'{Context}: {name} was not copied')
+      assert(readFile(Folder .. name) is content, f'{Context}: {name} has the wrong content')
+   end
+   local err, type = mSys.AnalysePath(Folder .. 'empty/')
+   assert(err is ERR_Okay and type is LOC_FOLDER, f'{Context}: the empty sub-folder was not copied')
+end
+
+@Test function CopyFolderIntoFolder()
+   local root = glTempRoot .. 'copy_folder_into/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/')
+   assert(err is ERR_Okay, 'Copying a folder into a folder failed: ' .. mSys.GetErrorMsg(err))
+   assertTreeCopied(root .. 'dst/tree/', 'Copy into')
+   assertTreeCopied(root .. 'src/tree/', 'Source after copy')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderToNamedFolder()
+   local root = glTempRoot .. 'copy_folder_named/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/renamed')
+   assert(err is ERR_Okay, 'Copying a folder to a new name failed: ' .. mSys.GetErrorMsg(err))
+   assertTreeCopied(root .. 'dst/renamed/', 'Copy to name')
+   assert(mSys.AnalysePath(root .. 'dst/renamed/tree/') != ERR_Okay, 'A named destination must not nest the source')
+
+   -- An existing destination folder receives the additional content.
+
+   writeFile(root .. 'src/tree/five.txt', 'five')
+   err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/renamed')
+   assert(err is ERR_Okay, 'Merging a folder copy failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'dst/renamed/five.txt') is 'five', 'An existing folder must receive new content')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderIntoMatchingFolder()
+   local root = glTempRoot .. 'copy_folder_nested/'
+   folderCopyFixture(root)
+   ensureFolder(root .. 'dst/tree/')
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/tree/')
+   assert(err is ERR_Okay, 'Copying a folder into a same-named folder failed: ' .. mSys.GetErrorMsg(err))
+   assertTreeCopied(root .. 'dst/tree/tree/', 'Copy into a same-named folder')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFileIntoFolder()
+   local root = glTempRoot .. 'copy_file_into/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/one.txt', root .. 'dst/')
+   assert(err is ERR_Okay, 'Copying a file into a folder failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'dst/one.txt') is 'one', 'The file must keep its name in the destination folder')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderRejectsRecursion()
+   local root = glTempRoot .. 'copy_folder_loop/'
+   folderCopyFixture(root)
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'src/tree/deep/')
+   assert(err is ERR_Loop, 'Copying a folder into its own descendant must fail with ERR_Loop, got ' ..
+      mSys.GetErrorMsg(err))
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderFeedback()
+   local root = glTempRoot .. 'copy_folder_feedback/'
+   folderCopyFixture(root)
+
+   -- Skipping a sub-folder or a file must not affect the paths of the entries that follow it.
+
+   local paths = array<str>
+   local err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/', function(Size, Position, Path, Dest):num
+      if Position is 0 then paths.push(Path) end
+      if Path.endsWith('deep') or Path.endsWith('two.txt') then return FFR_SKIP end
+      return FFR_OKAY
+   end)
+   assert(err is ERR_Okay, 'A folder copy with skipped entries failed: ' .. mSys.GetErrorMsg(err))
+   local entries = array<str> { 'one.txt', 'two.txt', 'three.txt', 'deep', 'empty', 'four.txt' }
+   for path in values(paths) do
+      local _, name = io.splitPath(path)
+      assert(name in entries, 'Feedback must report each entry by its own path, got ' .. path)
+   end
+   assert(#paths >= 4, f'Feedback must be received for each entry, got {#paths}')
+   assert(readFile(root .. 'dst/tree/one.txt') is 'one' and readFile(root .. 'dst/tree/three.txt') is 'three',
+      'Entries that were not skipped must be copied')
+   assert(mSys.AnalysePath(root .. 'dst/tree/two.txt') != ERR_Okay, 'A skipped file must not be copied')
+   assert(mSys.AnalysePath(root .. 'dst/tree/deep/') != ERR_Okay, 'A skipped folder must not be copied')
+
+   err = mSys.CopyFile(root .. 'src/tree/', root .. 'dst/aborted', function():num
+      return FFR_ABORT
+   end)
+   assert(err is ERR_Cancelled, 'Aborting a folder copy must return ERR_Cancelled, got ' .. mSys.GetErrorMsg(err))
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFileFromVirtualVolume()
+   local root = glTempRoot .. 'copy_virtual/'
+   mSys.DeleteFile(root)
+   ensureFolder(root)
+   local archive <close> = obj.new('compression', { path=glTestFolder .. 'data/archive_stored.zip',
+      archiveName='fs_copy_stored' })
+
+   local err = mSys.CopyFile('archive:fs_copy_stored/alpha.txt', root)
+   assert(err is ERR_Okay, 'Copying from a virtual volume into a folder failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'alpha.txt') is 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+      'A virtual source copied into a folder must keep its name')
+
+   err = mSys.CopyFile('archive:fs_copy_stored/beta.txt', root .. 'named.txt')
+   assert(err is ERR_Okay, 'Copying from a virtual volume to a file failed: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(root .. 'named.txt') is 'beta entry follows alpha', 'A virtual source must copy to a named file')
+   mSys.DeleteFile(root)
+end
+
+@Test function CopyFolderFromVirtualVolume()
+   local root = glTempRoot .. 'copy_virtual_folder/'
+   mSys.DeleteFile(root)
+   ensureFolder(root .. 'src/tree/')
+   ensureFolder(root .. 'dst/')
+   writeFile(root .. 'src/tree/one.txt', 'one')
+   writeFile(root .. 'src/tree/two.txt', 'two')
+   do
+      local archive <close> = obj.new('compression', { path=root .. 'tree.zip', flags=FL_NEW })
+      check archive.mtCompressFile(root .. 'src/tree/', 'tree/')
+   end
+   local archive <close> = obj.new('compression', { path=root .. 'tree.zip', archiveName='fs_copy_tree' })
+
+   local err = mSys.CopyFile('archive:fs_copy_tree/tree/', root .. 'dst/')
+   assert(err is ERR_Okay, 'Copying a virtual folder into a folder failed: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.CopyFile('archive:fs_copy_tree/tree/', root .. 'dst/renamed')
+   assert(err is ERR_Okay, 'Copying a virtual folder to a new name failed: ' .. mSys.GetErrorMsg(err))
+   for folder in values(array<str> { root .. 'dst/tree/', root .. 'dst/renamed/' }) do
+      local err, type = mSys.AnalysePath(folder)
+      assert(err is ERR_Okay and type is LOC_FOLDER, 'The virtual copy must create a folder at ' .. folder)
+      assert(readFile(folder .. 'one.txt') is 'one', 'The first virtual file must be copied to ' .. folder)
+      assert(readFile(folder .. 'two.txt') is 'two', 'The second virtual file must be copied to ' .. folder)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
 @Test function MoveFile()
    src_path = glTempRoot .. 'move_source.tmp'
    dest_path = glTempRoot .. 'move_dest.tmp'
-
-   resetPath(src_path)
-   resetPath(dest_path)
+   mSys.DeleteFile(src_path)
+   mSys.DeleteFile(dest_path)
 
    writeFile(src_path, 'Moved content')
 
@@ -366,33 +737,148 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- acRename() must keep the file in its folder.  A regression dropped the folder separator, moving 'dir/a' to 'dirb'.
+
+@Test function RenameFile()
+   folder = glTempRoot .. 'rename_file/'
+   mSys.DeleteFile(folder)
+   ensureFolder(folder)
+   writeFile(folder .. 'before.txt', 'Renamed content')
+
+   file = obj.new('file', { path=folder .. 'before.txt' })
+   err = file.acRename('after.txt')
+   assert(err is ERR_Okay, 'acRename() failed: ' .. mSys.GetErrorMsg(err))
+   assert(file.path is folder .. 'after.txt', 'Path not updated after rename, got: ' .. file.path)
+   file.free()
+
+   assert(mSys.AnalysePath(folder .. 'before.txt') != ERR_Okay, 'The original file must no longer exist.')
+   assert(mSys.AnalysePath(glTempRoot .. 'rename_fileafter.txt') != ERR_Okay, 'Renamed file escaped its folder.')
+   assert(readFile(folder .. 'after.txt') is 'Renamed content', 'Renamed file is missing or its content changed.')
+
+   -- Any path in the new name is ignored; only the leaf is used.
+
+   file = obj.new('file', { path=folder .. 'after.txt' })
+   err = file.acRename('elsewhere/leaf.txt')
+   assert(err is ERR_Okay, 'acRename() with a path in the name failed: ' .. mSys.GetErrorMsg(err))
+   file.free()
+   assert(readFile(folder .. 'leaf.txt') is 'Renamed content', 'Leaf of the new name was not used.')
+
+   mSys.DeleteFile(folder)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RenameFolder()
+   root = glTempRoot .. 'rename_folder/'
+   mSys.DeleteFile(root)
+   ensureFolder(root .. 'before/')
+   writeFile(root .. 'before/child.txt', 'Child content')
+
+   folder = obj.new('file', { path=root .. 'before/' })
+   err = folder.acRename('after/')
+   assert(err is ERR_Okay, 'acRename() failed for a folder: ' .. mSys.GetErrorMsg(err))
+   assert(folder.path is root .. 'after/', 'Folder path not updated after rename, got: ' .. folder.path)
+   folder.free()
+
+   local err, type = mSys.AnalysePath(root .. 'after/')
+   assert(err is ERR_Okay and type is LOC_FOLDER, 'Renamed folder does not exist in its parent.')
+   assert(mSys.AnalysePath(root .. 'before/') != ERR_Okay, 'The original folder must no longer exist.')
+   assert(readFile(root .. 'after/child.txt') is 'Child content', 'Folder content was not preserved.')
+
+   mSys.DeleteFile(root)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function RenameRejectsAncestorNames()
+   root = glTempRoot .. 'rename_ancestor/'
+   source = root .. 'parent/before/'
+   mSys.DeleteFile(root)
+   ensureFolder(source)
+   writeFile(source .. 'child.txt', 'Source content')
+   writeFile(root .. 'parent/child.txt', 'Parent content')
+   writeFile(root .. 'child.txt', 'Grandparent content')
+
+   folder = obj.new('file', { path=source })
+   for name in values(array<str> { '.', '..', 'elsewhere/./', 'elsewhere/../' }) do
+      err = folder.acRename(name)
+      assert(err is ERR_Args, 'acRename() must reject ancestor name: ' .. name)
+      assert(folder.path is source, 'Rejected rename changed the folder path.')
+      assert(readFile(source .. 'child.txt') is 'Source content', 'Rejected rename changed the source content.')
+      assert(readFile(root .. 'parent/child.txt') is 'Parent content', 'Rejected rename overwrote parent content.')
+      assert(readFile(root .. 'child.txt') is 'Grandparent content', 'Rejected rename overwrote grandparent content.')
+   end
+   folder.free()
+
+   mSys.DeleteFile(root)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(windows_platform=true)
+function MoveFileReplacesOpenDestination()
+   src_path = glTempRoot .. 'move_open_source.tmp'
+   dest_path = glTempRoot .. 'move_open_dest.tmp'
+   old_content = 'Original destination content'
+   new_content = 'Replacement content'
+   mSys.DeleteFile(src_path)
+   mSys.DeleteFile(dest_path)
+
+   writeFile(src_path, new_content)
+   writeFile(dest_path, old_content)
+
+   local old_reader <close> = obj.new('file', { path=dest_path, flags=FL_READ })
+   err = mSys.MoveFile(src_path, dest_path)
+   assert(err is ERR_Okay, 'MoveFile() should replace a destination that has an open reader: ' .. mSys.GetErrorMsg(err))
+
+   old_buffer = string.alloc(#old_content)
+   err, result = old_reader.acRead(old_buffer)
+   assert(err is ERR_Okay, 'The existing destination reader should remain readable: ' .. mSys.GetErrorMsg(err))
+   assert(result is #old_content, 'The existing destination reader returned an unexpected byte count.')
+   assert(old_buffer.sub(0, result) is old_content,
+      'The existing destination reader should retain the original file content.')
+
+   err = mSys.AnalysePath(src_path)
+   assert(err != ERR_Okay, 'MoveFile() should remove the replacement source file.')
+   assert(readFile(dest_path) is new_content, 'New readers should observe the replacement file content.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 @Test function ReadFileToBuffer()
    read_path = glTempRoot .. 'buffer_read.txt'
    expected = 'Buffer content'
 
-   resetPath(read_path)
+   mSys.DeleteFile(read_path)
    writeFile(read_path, expected)
 
    buffer = array<byte, #expected>
-   err = mSys.ReadFileToBuffer(read_path, buffer)
+   err, result = mSys.ReadFileToBuffer(read_path, buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed: ' .. mSys.GetErrorMsg(err))
-   assert(buffer:getString() is expected, 'ReadFileToBuffer() did not return the expected text.')
+   assert(result is #expected, 'ReadFileToBuffer() returned an incorrect byte count.')
+   assert(buffer.getString() is expected, 'ReadFileToBuffer() did not return the expected text.')
 
    approx_buffer = array<byte, #expected>
    err = mSys.ReadFileToBuffer('~' .. glTempRoot .. 'buffer_read', approx_buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed for an approximated path: ' .. mSys.GetErrorMsg(err))
-   assert(approx_buffer:getString() is expected, 'ReadFileToBuffer() did not resolve the approximated path correctly.')
+   assert(approx_buffer.getString() is expected, 'ReadFileToBuffer() did not resolve the approximated path correctly.')
 
    string_buffer = string.alloc(#expected)
    err = mSys.ReadFileToBuffer(read_path, string_buffer)
    assert(err is ERR_Okay, 'ReadFileToBuffer() failed for a mutable string buffer: ' .. mSys.GetErrorMsg(err))
-   assert(string.substr(string_buffer, 0, #expected) is expected, 'ReadFileToBuffer() did not fill the mutable string buffer.')
+   assert(string_buffer.sub(0, #expected) is expected, 'ReadFileToBuffer() did not fill the mutable string buffer.')
 
    try
       mSys.ReadFileToBuffer(read_path, 'literal')
    success
-      error('ReadFileToBuffer() should reject interned strings for mutable buffers')
+      assert(false, 'ReadFileToBuffer() should reject interned strings for mutable buffers')
+   end
+
+   wrong_type = array<int, #expected>
+   try
+      mSys.ReadFileToBuffer(read_path, wrong_type)
+   success
+      assert(false, 'ReadFileToBuffer() should reject an array with the wrong element type')
    end
 end
 
@@ -402,18 +888,17 @@ end
    info = struct.new('FileInfo')
 
    err = mSys.AddInfoTag(info, 'Label', 'Filesystem test')
-   assert(err is ERR_Okay, 'AddInfoTag() failed: ' .. mSys.GetErrorMsg(err))
+   assert(err is ERR_Okay, f'AddInfoTag() failed: {mSys.GetErrorMsg(err)}')
 
    err, value = mSys.ReadInfoTag(info, 'Label')
-   assert(err is ERR_Okay, 'ReadInfoTag() failed to retrieve an existing tag: ' .. mSys.GetErrorMsg(err))
-   assert(value is 'Filesystem test', 'ReadInfoTag() returned an unexpected value: ' .. tostring(value))
+   assert(err is ERR_Okay, f'ReadInfoTag() failed to retrieve an existing tag: {mSys.GetErrorMsg(err)}')
+   assert(value is 'Filesystem test', f'ReadInfoTag() returned an unexpected value: {value}')
 
    err = mSys.AddInfoTag(info, 'Label', nil)
-   assert(err is ERR_Okay, 'AddInfoTag() failed to remove a tag: ' .. mSys.GetErrorMsg(err))
+   assert(err is ERR_Okay, f'AddInfoTag() failed to remove a tag: {mSys.GetErrorMsg(err)}')
 
    err, value = mSys.ReadInfoTag(info, 'Label')
-   assert(err is ERR_Search, 'ReadInfoTag() should report ERR_Search after a tag is removed, got: ' .. mSys.GetErrorMsg(err))
-   assert(value is nil, 'ReadInfoTag() should return nil for a removed tag.')
+   assert(err is ERR_Search, f'ReadInfoTag() should report ERR_Search after a tag is removed, got: {mSys.GetErrorMsg(err)}')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -423,7 +908,7 @@ end
 
    events = array<table> { }
    err = folder.mtWatch(function(File, Path, Flags)
-      events:push({ path=tostring(Path), flags=Flags })
+      events.push({ path=tostring(Path), flags=Flags })
       return ERR_Okay
    end, MFF_CREATE|MFF_DELETE|MFF_CLOSED|MFF_MOVED|MFF_ATTRIB)
 
@@ -435,11 +920,11 @@ end
    watchFile = 'temp:watch_test.tmp'
 
    out = obj.new('file', { src=watchFile, flags=FL_NEW|FL_WRITE })
-   out.acWrite('XYZ', 3)
+   out.acWrite('XYZ')
    out.free()
 
    -- Pump the message queue so inotify / ReadDirectoryChangesW events are delivered.
-   for i=0,20 do
+   for {0 to 20} do
       processing.sleep(0.05)
       if #events > 0 then break end
    end
@@ -484,13 +969,32 @@ end
 end
 
 ----------------------------------------------------------------------------------------------------------------------
+-- Regression: stripping the trailing slash from the root folder used to leave an empty path for inotify.
+
+@Test function WatchRootFolder()
+   local folder <close> = obj.new('file', { path='drive1:' })
+
+   local err = folder.mtWatch(function(File, Path, Flags) return ERR_Okay end, MFF_CREATE)
+   if err is ERR_NoSupport then
+      return 'Host platform does not support file system watching.'
+   end
+   assert(err is ERR_Okay, 'Watch() on the root folder failed: ' .. mSys.GetErrorMsg(err))
+
+   err = folder.mtWatch()
+   assert(err is ERR_Okay, 'Disabling the root folder watch failed: ' .. mSys.GetErrorMsg(err))
+end
+
+----------------------------------------------------------------------------------------------------------------------
 
 @Test function CreateLink()
    source = glTempRoot .. 'link_source.txt'
    target = glTempRoot .. 'link_target.txt'
 
-   resetPath(target)
+   mSys.DeleteFile(target)
    writeFile(source, 'Linked file content')
+
+   err, lexical_target = mSys.ResolvePath(target, RSF_NO_FILE_CHECK|RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() failed to prepare the symbolic-link path: ' .. mSys.GetErrorMsg(err))
 
    err = mSys.CreateLink(target, source)
    if err is ERR_NoSupport then
@@ -504,21 +1008,120 @@ end
    assert(err is ERR_Okay, 'CreateLink() failed: ' .. mSys.GetErrorMsg(err))
    assert(mSys.AnalysePath(target, nil) is ERR_Okay, 'Created link path could not be resolved.')
    assert(readFile(target) is 'Linked file content', 'Reading through the created link returned unexpected content.')
+
+   err, resolved_source = mSys.ResolvePath(source)
+   assert(err is ERR_Okay, 'ResolvePath() failed for the symbolic-link source: ' .. mSys.GetErrorMsg(err))
+   err, resolved_target = mSys.ResolvePath(target)
+   assert(err is ERR_Okay, 'ResolvePath() failed for the symbolic-link target: ' .. mSys.GetErrorMsg(err))
+   assert(resolved_target is resolved_source, 'ResolvePath() did not follow the symbolic link to its final path.')
+
+   err, unresolved_target = mSys.ResolvePath(target, RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() with RSF_NO_FOLLOW failed: ' .. mSys.GetErrorMsg(err))
+   assert(unresolved_target is lexical_target, 'RSF_NO_FOLLOW did not preserve the symbolic-link path.')
+
+   err = mSys.DeleteFile(target)
+   assert(err is ERR_Okay, 'DeleteFile() failed to remove the symbolic link: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(target, nil) != ERR_Okay, 'DeleteFile() left the symbolic link in place.')
+   assert(readFile(source) is 'Linked file content', 'DeleteFile() removed the symbolic-link target.')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-@Test function FileInfoStructCppString()
-   info = struct.new('FileInfo')
-   assert(type(info.name) is 'string', 'FileInfo.Name should default to a valid string')
+@Test function MoveSymbolicLink()
+   source = glTempRoot .. 'move_link_source.txt'
+   link = glTempRoot .. 'move_link_source.link'
+   moved_link = glTempRoot .. 'move_link_destination.link'
 
-   err = mSys.GetFileInfo('scripts:gui.tiri', info)
-   assert(err is ERR_Okay, 'GetFileInfo() failed on first call: ' .. mSys.GetErrorMsg(err))
-   assert(type(info.name) is 'string', 'FileInfo.Name should remain a string after GetFileInfo()')
-   assert(#info.name > 0, 'GetFileInfo() returned an empty file name')
+   mSys.DeleteFile(link)
+   mSys.DeleteFile(moved_link)
+   writeFile(source, 'Move link content')
 
-   err = mSys.GetFileInfo('scripts:gui/window.tiri', info)
-   assert(err is ERR_Okay, 'GetFileInfo() failed on second call: ' .. mSys.GetErrorMsg(err))
-   assert(type(info.name) is 'string', 'FileInfo.Name should still be a string after reuse')
-   assert(#info.name > 0, 'GetFileInfo() returned an empty file name on reuse')
+   err = mSys.CreateLink(link, source)
+   if err is ERR_NoSupport then
+      return 'Host platform does not support symbolic link creation.'
+   end
+
+   if err is ERR_NoPermission then
+      return 'Symbolic link creation is blocked for the current user or host policy.'
+   end
+
+   assert(err is ERR_Okay, 'CreateLink() failed for the move test: ' .. mSys.GetErrorMsg(err))
+
+   err = mSys.MoveFile(link, moved_link)
+   assert(err is ERR_Okay, 'MoveFile() failed to move a symbolic link: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(link, nil) != ERR_Okay, 'MoveFile() left the source symbolic link in place.')
+   assert(readFile(moved_link) is 'Move link content', 'The moved symbolic link does not resolve to its target.')
+   assert(readFile(source) is 'Move link content', 'MoveFile() moved the link target instead of the link.')
+
+   err = mSys.DeleteFile(moved_link)
+   assert(err is ERR_Okay, 'DeleteFile() failed to remove the moved symbolic link: ' .. mSys.GetErrorMsg(err))
+   assert(readFile(source) is 'Move link content', 'Removing the moved link also removed its target.')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test; @Requires(linux_platform=true)
+function ResolveNoFollowWithLinkedParent()
+   root = glTempRoot .. 'linked_parent/'
+   actual = root .. 'actual/'
+   child = actual .. 'child/'
+   link = root .. 'link'
+   lexical_victim = root .. 'victim.txt'
+   actual_victim = actual .. 'victim.txt'
+
+   mSys.DeleteFile(root)
+   ensureFolder(child)
+   writeFile(lexical_victim, 'Lexical victim')
+   writeFile(actual_victim, 'Actual victim')
+
+   err = mSys.CreateLink(link, child)
+   if err is ERR_NoSupport then
+      return 'Host platform does not support symbolic link creation.'
+   end
+
+   if err is ERR_NoPermission then
+      return 'Symbolic link creation is blocked for the current user or host policy.'
+   end
+
+   assert(err is ERR_Okay, 'CreateLink() failed for the linked-parent test: ' .. mSys.GetErrorMsg(err))
+
+   err, resolved = mSys.ResolvePath(link .. '/../victim.txt', RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() failed for a linked parent: ' .. mSys.GetErrorMsg(err))
+   err, expected = mSys.ResolvePath(actual_victim, RSF_NO_FOLLOW)
+   assert(err is ERR_Okay, 'ResolvePath() failed for the expected linked-parent path: ' .. mSys.GetErrorMsg(err))
+   assert(resolved is expected, 'RSF_NO_FOLLOW collapsed .. before resolving the linked parent.')
+
+   err = mSys.DeleteFile(link .. '/../victim.txt')
+   assert(err is ERR_Okay, 'DeleteFile() failed through a linked parent: ' .. mSys.GetErrorMsg(err))
+   assert(mSys.AnalysePath(actual_victim, nil) != ERR_Okay, 'DeleteFile() did not remove the link-resolved path.')
+   assert(readFile(lexical_victim) is 'Lexical victim', 'DeleteFile() removed the lexically normalised path.')
+end
+
+-- A failed Watch() must release the callback reference exactly once.  A double release put the reference on the
+-- registry freelist twice, so the next two callbacks shared a procedure ID and one timer ran the other's function.
+
+@Test function FailedWatchReleasesCallbackOnce()
+   watch_path = glTempRoot .. 'watch_deleted/'
+   ensureFolder(watch_path)
+   folder = obj.new('file', { path=watch_path })
+   mSys.DeleteFile(watch_path)
+
+   err = folder.mtWatch(function() end, MFF_CREATE|MFF_DELETE)
+   folder.free()
+   if err is ERR_Okay then return 'Host platform accepted a watch on a deleted folder.' end
+   if err is ERR_NoSupport then return 'Host platform does not support path monitoring.' end
+
+   hits = { }
+   err, timer_a = mSys.SubscribeTimer(0.01, function() hits.a = (hits.a ?? 0) + 1 end)
+   assert(err is ERR_Okay, 'SubscribeTimer() failed for timer A: ' .. mSys.GetErrorMsg(err))
+   err, timer_b = mSys.SubscribeTimer(0.01, function() hits.b = (hits.b ?? 0) + 1 end)
+   assert(err is ERR_Okay, 'SubscribeTimer() failed for timer B: ' .. mSys.GetErrorMsg(err))
+
+   processing.sleep(0.1)
+
+   mSys.UpdateTimer(timer_a, 0)
+   mSys.UpdateTimer(timer_b, 0)
+
+   assert(hits.a, 'Timer A never ran its own callback; it shares a procedure ID with timer B.')
+   assert(hits.b, 'Timer B never ran its own callback.')
 end

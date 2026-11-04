@@ -36,7 +36,7 @@ extern "C" void ssl_debug_to_kotuku_log(const char* message, int level)
 //********************************************************************************************************************
 // Setup SSL context for Windows
 
-static ERR tls_setup(extNetSocket *Self)
+static ERR tls_setup_client(extNetSocket *Self)
 {
    kt::Log log(__FUNCTION__);
 
@@ -47,38 +47,58 @@ static ERR tls_setup(extNetSocket *Self)
    if (GetResource(RES::LOG_LEVEL) >= 5) ssl_enable_logging();
 
    bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
-   bool server_mode = ((Self->Flags & NSF::SERVER) != NSF::NIL);
-   if (Self->TLS.Handle = ssl_create_context(validate_cert, server_mode); !Self->TLS.Handle) {
-      return ERR::Failed;
+   if (Self->TLS.Handle = ssl_create_context(validate_cert, false); !Self->TLS.Handle) {
+      return ERR::CreateResource;
    }
 
-   // Load custom certificate if specified for server mode
-   if (server_mode) {
-      if (Self->SSLCertificate) {
-         log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate);
+   return ERR::Okay;
+}
 
-         ssl_certificate_paths paths;
-         if (auto error = resolve_ssl_certificate_paths(Self, paths); error != ERR::Okay) {
-            ssl_free_context(Self->TLS.Handle);
-            Self->TLS.Handle = nullptr;
-            return log.warning(error);
-         }
+static ERR tls_setup_server(extNetServer *Self)
+{
+   kt::Log log(__FUNCTION__);
 
-         auto error = ssl_load_server_certificate(Self->TLS.Handle, paths.Certificate, paths.PrivateKey,
-            paths.Password);
-         if (error != SSL_OK) {
-            ssl_free_context(Self->TLS.Handle);
-            Self->TLS.Handle = nullptr;
-            return log.warning(ERR::Failed);
-         }
+   if (Self->TLS.Handle) return ERR::Okay;
+
+   log.traceBranch("Setting up SSL context.");
+
+   if (GetResource(RES::LOG_LEVEL) >= 5) ssl_enable_logging();
+
+   bool validate_cert = (Self->Flags & NSF::DISABLE_SERVER_VERIFY) != NSF::NIL ? false : true;
+   if (Self->TLS.Handle = ssl_create_context(validate_cert, true); !Self->TLS.Handle) {
+      return ERR::CreateResource;
+   }
+
+   if (not Self->SSLCertificate.empty()) {
+      log.msg("Loading custom SSL server certificate: %s", Self->SSLCertificate.c_str());
+
+      ssl_certificate_paths paths;
+      if (auto error = resolve_ssl_certificate_paths(Self, paths); error != ERR::Okay) {
+         ssl_free_context(Self->TLS.Handle);
+         Self->TLS.Handle = nullptr;
+         return log.warning(error);
       }
-      else {
-         if (!load_pkcs12_certificate(Self->TLS.Handle, glCertPath + "localhost.p12")) {
-            if (!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem")) {
-               ssl_free_context(Self->TLS.Handle);
-               Self->TLS.Handle = nullptr;
-               return log.warning(ERR::Failed);
-            }
+
+      auto error = ssl_load_server_certificate(Self->TLS.Handle, paths.Certificate, paths.PrivateKey,
+         paths.Password);
+      if (error != SSL_OK) {
+         ssl_free_context(Self->TLS.Handle);
+         Self->TLS.Handle = nullptr;
+         return log.warning(ERR::LoadCertificate);
+      }
+   }
+   else {
+      auto private_key_path = glCertPath + "localhost-key.pem";
+      std::optional<const std::string> private_key(private_key_path);
+      std::optional<const std::string> no_private_key;
+      std::optional<const std::string> no_password;
+
+      if (!load_pkcs12_certificate(Self->TLS.Handle, glCertPath + "localhost.p12", no_password)) {
+         if ((!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem", private_key, no_password)) and
+             (!load_pem_certificate(Self->TLS.Handle, glCertPath + "localhost.pem", no_private_key, no_password))) {
+            ssl_free_context(Self->TLS.Handle);
+            Self->TLS.Handle = nullptr;
+            return log.warning(ERR::LoadCertificate);
          }
       }
    }
@@ -89,11 +109,11 @@ static ERR tls_setup(extNetSocket *Self)
 //********************************************************************************************************************
 // Setup SSL state for a newly accepted server-side client socket.
 
-static ERR tls_accept_client(extClientSocket *Self, extNetSocket *Server)
+static ERR tls_accept_client(extClientSocket *Self, extNetServer *Server)
 {
    kt::Log log(__FUNCTION__);
 
-   Self->TLS.Handle = ssl_create_context(false, true); // No verification, server mode.
+   Self->TLS.Handle = ssl_create_context(false, true); // No verification for server-side SSL.
    if (Self->TLS.Handle) {
       if (ssl_set_server_certificate(Server->TLS.Handle, Self->TLS.Handle) IS SSL_OK) {
          ssl_set_socket(Self->TLS.Handle, (void *)(size_t)Self->Handle.socket());
@@ -139,6 +159,7 @@ template <class T> ERR tls_flush_output(T *Self)
       else if (error != ERR::Okay) return error;
    }
 
+   Self->TLS.PendingPlaintext = 0;
    return ERR::Okay;
 }
 
@@ -152,18 +173,32 @@ template <class T> ERR tls_receive_encrypted(T *Self)
    size_t bytes_received = 0;
 
    auto error = network_platform().receive(Self->Handle, buffer.data(), buffer.size(), bytes_received);
-   if ((error IS ERR::Okay) and (bytes_received > 0)) {
+   if ((!error) and (bytes_received > 0)) {
       if (auto ssl_error = ssl_queue_encrypted_input(Self->TLS.Handle, buffer.data(), int(bytes_received));
           ssl_error != SSL_OK) {
-         kt::Log(__FUNCTION__).warning("Failed to queue encrypted SSL input: %d", ssl_error);
-         return ERR::Failed;
+         if (ssl_error IS SSL_ERROR_BUFFER_OVERFLOW) {
+            kt::Log(__FUNCTION__).warning(
+               "Encrypted SSL input buffer full while receiving %d bytes: queued=%d, limit=%d",
+               int(bytes_received), int(ssl_encrypted_input_size(Self->TLS.Handle)),
+               int(ssl_encrypted_input_limit(Self->TLS.Handle)));
+            return ERR::BufferOverflow;
+         }
+
+         kt::Log(__FUNCTION__).warning(
+            "Failed to queue encrypted SSL input: %d (incoming=%d, queued=%d, limit=%d)",
+            ssl_error, int(bytes_received), int(ssl_encrypted_input_size(Self->TLS.Handle)),
+            int(ssl_encrypted_input_limit(Self->TLS.Handle)));
+         return ERR::Write;
       }
 
       auto prepare_error = ssl_prepare_read(Self->TLS.Handle);
       if ((prepare_error != SSL_OK) and (prepare_error != SSL_ERROR_WOULD_BLOCK)) {
          if (prepare_error IS SSL_ERROR_DISCONNECTED) return ERR::Disconnected;
-         kt::Log(__FUNCTION__).warning("Failed to decrypt SSL input: %d", prepare_error);
-         return ERR::Failed;
+         kt::Log(__FUNCTION__).warning(
+            "Failed to decrypt SSL input: %d (queued=%d, security-status=0x%08x)",
+            prepare_error, int(ssl_encrypted_input_size(Self->TLS.Handle)),
+            unsigned(ssl_last_security_status(Self->TLS.Handle)));
+         return ERR::Decryption;
       }
    }
 
@@ -210,8 +245,9 @@ template <class T> ERR tls_handshake_received(T *Self, const void *Data, int Len
          log.warning("SSL handshake failed: %d; SecStatus: 0x%08X; WinError: %d", result,
             ssl_last_security_status(Self->TLS.Handle),
             ssl_last_win32_error(Self->TLS.Handle));
+         if constexpr (requires { Self->Error; }) Self->Error = ERR::Handshake;
          Self->setState(NTC::DISCONNECTED);
-         return ERR::Failed;
+         return ERR::Handshake;
    }
 }
 
@@ -224,9 +260,9 @@ template <class T> ERR tls_connect(T *Self)
 
    log.traceBranch("Attempting SSL handshake.");
 
-   if (!Self->TLS.Handle) return ERR::FieldNotSet;
+   if (not Self->TLS.Handle) return ERR::FieldNotSet;
 
-   std::string hostname = Self->Address ? Self->Address : "";
+   std::string hostname = Self->PeerName.empty() ? Self->Address : Self->PeerName;
    auto result = ssl_connect(Self->TLS.Handle, (void *)(size_t)Self->Handle.socket(), hostname);
    auto flush_error = tls_flush_output(Self);
    if ((flush_error != ERR::Okay) and (flush_error != ERR::BufferOverflow)) return flush_error;
@@ -251,7 +287,8 @@ template <class T> ERR tls_connect(T *Self)
          log.warning("Security status: 0x%08X, Win32 error: %d",
             ssl_last_security_status(Self->TLS.Handle),
             ssl_last_win32_error(Self->TLS.Handle));
+         if constexpr (requires { Self->Error; }) Self->Error = ERR::Handshake;
          Self->setState(NTC::DISCONNECTED);
-         return ERR::Failed;
+         return ERR::Handshake;
    }
 }

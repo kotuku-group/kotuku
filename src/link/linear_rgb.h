@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <math.h>
 
 class rgb_to_linear {
@@ -11,6 +12,12 @@ private:
       if (Value <= 0.04045) Value /= 12.92;
       else Value = std::pow((Value + 0.055) / 1.055, 2.4);
       return int((Value * 255.0) + 0.5);
+   }
+
+   inline static uint16_t conv_r2l16(double Value) {
+      if (Value <= 0.04045) Value /= 12.92;
+      else Value = std::pow((Value + 0.055) / 1.055, 2.4);
+      return int((Value * 65535.0) + 0.5);
    }
 
    inline static uint8_t conv_l2r(double Value) {
@@ -28,7 +35,18 @@ public:
       for (int i=0; i < 256; i++) {
          r2l[i] = conv_r2l((double)i * (1.0 / 255.0));
          l2r[i] = conv_l2r((double)i * (1.0 / 255.0));
+         r2l16[i] = conv_r2l16((double)i * (1.0 / 255.0));
       }
+
+      // Sample the centre of each 12-bit bucket so every sRGB byte survives a 16-bit round trip.
+      for (int i=0; i < 4096; i++) l2r16[i] = conv_l2r((double((i << 4) + 8)) * (1.0 / 65535.0));
+
+      #ifndef NDEBUG
+         for (int i=0; i < 256; i++) {
+            assert(invert16(r2l16[i]) IS i);
+            assert(std::abs(int(r2l16[i] >> 8) - int(r2l[i])) <= 1);
+         }
+      #endif
    }
 
    inline constexpr uint8_t convert(const uint8_t Colour) { // RGB to linear
@@ -37,6 +55,14 @@ public:
 
    inline constexpr uint8_t invert(const uint8_t Colour) { // Linear to RGB
       return l2r[Colour];
+   }
+
+   inline constexpr uint16_t convert16(const uint8_t Colour) { // RGB to 16-bit linear
+      return r2l16[Colour];
+   }
+
+   inline constexpr uint8_t invert16(const uint16_t Colour) { // 16-bit linear to RGB
+      return l2r16[Colour >> 4];
    }
 
    // Notice that the alpha channel is not impacted by the RGB conversion.
@@ -84,6 +110,8 @@ public:
 private:
    uint8_t r2l[256];
    uint8_t l2r[256];
+   uint16_t r2l16[256];
+   uint8_t l2r16[4096];
 };
 
 extern rgb_to_linear glLinearRGB;

@@ -11,6 +11,28 @@ function enforce_hotpath() end
    assert(result is "Hello World", "Basic interpolation failed: " .. tostring(result))
 end
 
+@Test function FallbackInterpolation()
+   opts = { face = 'hello' }
+   x = 'goodbye'
+   assert((opts.face ?? f'{x} world') is 'hello', 'A present value should bypass the formatted fallback')
+
+   opts.face = nil
+   assert((opts.face ?? f'{x} world') is 'goodbye world', 'A missing value should use the full formatted fallback')
+   assert((opts.face ?? f'{x}') is 'goodbye', 'An expression-only formatted fallback should remain intact')
+   assert((opts.face ?? (f'{x} world')) is 'goodbye world', 'Parenthesised formatted fallbacks should remain intact')
+end
+
+@Test function FallbackInterpolationAfterBufferedTokens()
+   opts = {}
+   x = 'goodbye'
+   assert((opts.face ?? 'prefix ' .. f'{x} world') is 'prefix goodbye world',
+      'Lookahead should preserve tokens preceding a formatted string')
+   assert((opts.face ?? f'prefix {x} world') is 'prefix goodbye world',
+      'Lookahead should preserve the leading literal of a formatted string')
+   assert((opts.face ?? f'{x} {x}') is 'goodbye goodbye',
+      'Lookahead should preserve multiple interpolated expressions')
+end
+
 @Test function MultipleExpressions()
    a = 1
    b = 2
@@ -34,6 +56,51 @@ end
    value = nil
    result = f"Value is {value}"
    assert(result is "Value is nil", "Nil value failed: " .. tostring(result))
+end
+
+@Test function MissingFunctionResult()
+   local calls = 0
+   function no_result()
+      calls++
+   end
+   function bare_return()
+      return
+   end
+   function nil_result()
+      return nil
+   end
+
+   assert(tostring() is 'nil', 'A missing tostring argument should stringify as nil')
+   assert(tostring(nil) is 'nil', 'An explicit nil should stringify as nil')
+   assert(tostring(no_result()) is 'nil', 'A call returning no values should stringify as nil')
+   assert(f'{no_result()}' is 'nil', 'A missing interpolated result should stringify as nil')
+   assert(f'before {no_result()} after' is 'before nil after', 'Missing results should preserve surrounding text')
+   assert(f'{bare_return()}{nil_result()}' is 'nilnil', 'Bare and explicit nil returns should stringify as nil')
+   assert(calls is 3, 'Each call should execute exactly once')
+end
+
+@Test function MissingArgumentHotLoop()
+   for index in {0 to 200} do
+      assert(tostring() is 'nil', 'A missing argument should stringify as nil on compiled traces')
+      assert(tostring(nil) is 'nil', 'Explicit nil should stringify as nil on compiled traces')
+   end
+end
+
+@Test function StringificationErrorRecovery()
+   local value = setmetatable({}, {
+      __tostring = function():str
+         raise 'stringification failed'
+      end
+   })
+   local caught = false
+   try
+      local result = f'{value}'
+   except e
+      caught = true
+      assert('stringification failed' in e.message, 'Stringification errors should preserve their message')
+   end
+   assert(caught, 'Stringification errors should propagate')
+   assert(tostring() is 'nil', 'Stringification should remain usable after an error')
 end
 
 @Test function BooleanValue()
@@ -82,7 +149,7 @@ end
 end
 
 @Test function NestedStringInExpression()
-   result = f"Nested: {string.substr('hello world', 0, 5)}"
+   result = f"Nested: {'hello world'.sub(0, 5)}"
    assert(result is "Nested: hello", "Nested string in expression failed: " .. tostring(result))
 end
 
@@ -183,9 +250,9 @@ end
 @Test function MethodCall()
    t = {
       name = "Method",
-      getName = function(self) return self.name end
+      getName = function(Self):str return Self.name end
    }
-   result = f"Name: {t:getName()}"
+   result = f"Name: {t.getName(t)}"
    assert(result is "Name: Method", "Method call failed: " .. tostring(result))
 end
 
@@ -197,7 +264,7 @@ end
 end
 
 @Test function ArrowFunction()
-   fn = x => x * 2
+   fn = x => num: x * 2
    result = f"{fn(3)}"
    assert(result is "6", "Arrow function failed: " .. tostring(result))
 end
@@ -225,7 +292,7 @@ end
 
 @Test function TernaryOperator()
    x = 5
-   result = f"{x > 3 ? 'big' :> 'small'}"
+   result = f"{x > 3 ? 'big' : 'small'}"
    assert(result is "big", "Ternary operator failed: " .. tostring(result))
 end
 

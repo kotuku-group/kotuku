@@ -15,14 +15,43 @@
 #include "lj_func.h"
 #include "lj_state.h"
 #include "lj_bc.h"
+#include "lj_bcdump.h"
 #include "lj_strfmt.h"
 #include "lexer.h"
 #include "parser.h"
 #include "lj_vm.h"
+#include "lj_meta.h"
 #include "lj_vmevent.h"
+#include "../runtime/import_module_graph.h"
+#include "../runtime/import_module_state.h"
+#include "lauxlib.h"
+#include "lualib.h"
 #include "field_type_lookup.h"
+#include "../../../defs.h"
+
+#ifdef UNIT_TESTS
+static thread_local ImportedModuleCompilationCounters glLastImportedModuleCounters;
+static thread_local tiri::import_cache::LifecycleCounters glLastImportCacheCounters;
+
+const ImportedModuleCompilationCounters &parser_last_imported_module_counters()
+{
+   return glLastImportedModuleCounters;
+}
+
+const tiri::import_cache::LifecycleCounters &parser_last_import_cache_counters()
+{
+   return glLastImportCacheCounters;
+}
+#endif
+
+#include "../../../packaging/import_module_bundle.h"
+#include "../../../packaging/import_module_format.h"
+#include "../../../packaging/version_constraints.h"
+#include "tiri_build_identity.h"
 
 #include <kotuku/main.h>
+
+#include <limits>
 
 // Priorities for each binary operator. ORDER OPR.
 
@@ -32,14 +61,17 @@ static const struct {
    CSTRING name;      // Name for bitlib function (if applicable).
    uint8_t name_len;  // Cached name length for bitlib lookups.
 } priority[] = {
-  {6,6,nullptr,0}, {6,6,nullptr,0}, {7,7,nullptr,0}, {7,7,nullptr,0}, {7,7,nullptr,0},   // ADD SUB MUL DIV MOD
-  {10,9,nullptr,0}, {5,4,nullptr,0},                  // POW CONCAT (right associative)
-  {3,3,nullptr,0}, {3,3,nullptr,0},                  // EQ NE
-  {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0},      // LT GE GT LE
-  {5,4,"band",4}, {3,2,"bor",3}, {4,3,"bxor",4}, {7,5,"lshift",6}, {7,5,"rshift",6},   // BAND BOR BXOR SHL SHR (C-style precedence: XOR binds tighter than OR)
-  {2,2,nullptr,0}, {1,1,nullptr,0}, {1,1,nullptr,0},         // AND OR IF_EMPTY
-  {3,3,"band",4},                     // HAS (flag test: bit.band(a,b) != 0)
-  {1,1,nullptr,0}                     // TERNARY
+   {9,9,nullptr,0}, {9,9,nullptr,0},                         // ADD SUB
+   {10,10,nullptr,0}, {10,10,nullptr,0}, {10,10,nullptr,0},  // MUL DIV MOD
+   {12,11,nullptr,0}, {6,5,nullptr,0},                       // POW CONCAT (right associative)
+   {3,3,nullptr,0}, {3,3,nullptr,0},                         // EQ NE
+   {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, {3,3,nullptr,0}, // LT GE GT LE
+   {7,7,"band",4}, {4,4,"bor",3}, {5,5,"bxor",4},        // BAND BOR BXOR
+   {8,8,"lshift",6}, {8,8,"rshift",6},                    // SHL SHR
+   {2,2,nullptr,0}, {1,1,nullptr,0}, {1,1,nullptr,0},        // AND OR IF_EMPTY
+   {3,3,"band",4},                                          // HAS (flag test: bit.band(a,b) != 0)
+   {3,3,nullptr,0},                                          // APPROX
+   {1,1,nullptr,0}                                           // TERNARY
 };
 
 #include "dump_bytecode.h"
@@ -48,6 +80,11 @@ static const struct {
 #include "parse_internal.h"
 #include "parser_symbols.h"
 #include "parser_profiler.h"
+#include "import_module_validation.h"
+#include "import_interface_export.h"
+#include "assignment_target_resolution.h"
+#include "static_type_descriptor.h"
+#include "static_descriptor_analysis.h"
 #include "value_categories.h"
 #include "../../../defs.h"
 
@@ -55,10 +92,17 @@ static const struct {
 #include "token_stream.cpp"
 #include "parser_diagnostics.cpp"
 #include "parser_context.cpp"
+#include "import_module_validation.cpp"
+#include "static_type_descriptor.cpp"
+#include "static_descriptor_analysis.cpp"
+#include "table_ownership.cpp"
 #include "ast/nodes.cpp"
+#include "assignment_target_resolution.cpp"
 #include "ast/builder.cpp"
 #include "parser_symbols.cpp"
+#include "import_interface_export.cpp"
 #include "parse_control_flow.cpp"
+#include "constant_evaluator.cpp"
 #include "ir_emitter/ir_emitter.cpp"
 #include "parse_constants.cpp"
 #include "parse_scope.cpp"
@@ -80,13 +124,18 @@ static void raise_accumulated_diagnostics(ParserContext &Context)
 
    auto summary = std::format("parser reported {} {}:\n", entries.size(), entries.size() IS 1 ? "error" : "errors");
 
+   lua_State *L = &Context.lua();
+
    for (const auto& diagnostic : entries) {
       SourceSpan span = diagnostic.token.span();
-      if (diagnostic.message.empty()) summary += std::format("   line {}:{} - unexpected token\n", span.line, span.column);
-      else summary += std::format("   line {}:{} - {}\n", span.line, span.column, diagnostic.message);
+      std::string location = std::format("{}:{}", span.line.lineNumber(), span.column.lineNumber());
+      if (not L->file_sources.empty()) {
+         const FileSource *src = get_file_source(L, diagnostic.file_index);
+         if (src and not src->filename.empty()) location = src->filename + ":" + location;
+      }
+      if (diagnostic.message.empty()) summary += std::format("   {} - unexpected token\n", location);
+      else summary += std::format("   {} - {}\n", location, diagnostic.message);
    }
-
-   lua_State *L = &Context.lua();
 
    // Store diagnostic information in lua_State before throwing
    if (L->parser_diagnostics) delete (ParserDiagnostics*)L->parser_diagnostics;
@@ -101,7 +150,7 @@ static void raise_accumulated_diagnostics(ParserContext &Context)
 
 static void report_pipeline_error(ParserContext &Context, const ParserError &Error)
 {
-   Context.emit_error(Error.code, Error.token, Error.message);
+   Context.emit_error(Error);  // Preserves the error's file_index for errors raised in imported files
 }
 
 //********************************************************************************************************************
@@ -118,13 +167,13 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
 {
    kt::Log log("AST-Boundary");
 
-   auto prv = (prvTiri *)Context.lua().script->ChildPrivate;
-   if ((prv->JitOptions & JOF::TRACE_BOUNDARY) IS JOF::NIL) return;
+   auto script = Context.lua().script;
+   if ((script->JitOptions & JOF::TRACE_BOUNDARY) IS JOF::NIL) return;
 
    StatementListView statements = Chunk.view();
    SourceSpan span = Chunk.span;
    log.branch("[%s]: statements=%" PRId64 " span=%d:%d offset=%" PRId64,
-      Stage, statements.size(), int(span.line), int(span.column), span.offset);
+      Stage, statements.size(), span.line.lineNumber(), span.column.lineNumber(), span.offset);
 
    size_t index = 0;
    for (const StmtNode &stmt : statements) {
@@ -136,7 +185,7 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
       size_t children = ast_statement_child_count(stmt);
       SourceSpan stmt_span = stmt.span;
       log.msg("stmt[%" PRId64 "] kind=%d children=%" PRId64 " span=%d:%d offset=%" PRId64, index,
-         int(stmt.kind), children, int(stmt_span.line), int(stmt_span.column), stmt_span.offset);
+         int(stmt.kind), children, stmt_span.line.lineNumber(), stmt_span.column.lineNumber(), stmt_span.offset);
 
       if (stmt.kind IS AstNodeKind::ExpressionStmt) {
          const auto *payload = std::get_if<ExpressionStmtPayload>(&stmt.data);
@@ -145,7 +194,7 @@ static void trace_ast_boundary(ParserContext &Context, const BlockStmt &Chunk, C
             size_t expr_children = ast_expression_child_count(expr);
             SourceSpan expr_span = expr.span;
             log.msg("   expr kind=%d children=%" PRId64 " span=%d:%d offset=%" PRId64,
-               int(expr.kind), expr_children, int(expr_span.line), int(expr_span.column), expr_span.offset);
+               int(expr.kind), expr_children, expr_span.line.lineNumber(), expr_span.column.lineNumber(), expr_span.offset);
          }
       }
 
@@ -165,6 +214,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
 
    if (not chunk_result.ok()) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       report_pipeline_error(Context, chunk_result.error_ref());
       flush_non_fatal_errors(Context);
       return;
@@ -175,12 +225,20 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
 
    if (Context.diagnostics().has_errors() and Context.config().abort_on_error) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       raise_accumulated_diagnostics(Context);
       return;
    }
 
    trace_ast_boundary(Context, *chunk, "parse");
-   collect_parser_symbols(Context.lua(), *chunk);
+   resolve_assignment_targets(Context, *chunk);
+   discover_static_bindings(Context, *chunk);
+
+   // Publish the first descriptor pass before semantic type analysis so dynamic-ingress policy can distinguish
+   // genuinely unknown values from concrete native and callable results.  A second pass below refreshes descriptors
+   // after type analysis has refined inferred function results.
+
+   propagate_static_descriptors(Context, *chunk);
 
    if (Context.config().enable_type_analysis) {
       ParserProfiler::StageTimer type_timer = Profiler.stage("type_analysis");
@@ -191,10 +249,20 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
       // In diagnose mode (abort_on_error=false), continue to emit to collect more errors.
       if (Context.diagnostics().has_errors() and Context.config().abort_on_error) {
          builder.rollback_registered_enum_constants();
+         builder.rollback_registered_structs();
          raise_accumulated_diagnostics(Context);
          return;
       }
    }
+
+   propagate_static_descriptors(Context, *chunk);
+   std::string interface_diagnostic;
+   if (not prepare_import_interfaces(Context, *chunk, interface_diagnostic)) {
+      Context.emit_error(ParserErrorCode::InternalInvariant, Token{}, interface_diagnostic);
+      raise_accumulated_diagnostics(Context);
+      return;
+   }
+   collect_parser_symbols(Context.lua(), Context.lex(), *chunk);
 
    // Emit bytecode instructions
 
@@ -203,6 +271,7 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
    auto emit_result = emitter.emit_chunk(*chunk);
    if (not emit_result.ok()) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       report_pipeline_error(Context, emit_result.error_ref());
       flush_non_fatal_errors(Context);
       return;
@@ -210,10 +279,12 @@ static void run_ast_pipeline(ParserContext &Context, ParserProfiler &Profiler)
 
    if (Context.diagnostics().has_errors()) {
       builder.rollback_registered_enum_constants();
+      builder.rollback_registered_structs();
       return;
    }
 
    builder.commit_registered_enum_constants();
+   builder.commit_registered_structs();
 
    emit_timer.stop();
 }
@@ -224,12 +295,11 @@ static ParserConfig make_parser_config(lua_State &State)
 {
    ParserConfig config;
 
-   auto prv = (prvTiri *)State.script->ChildPrivate;
-
-   if ((prv->JitOptions & JOF::DIAGNOSE) != JOF::NIL) {
+   if ((State.script->JitOptions & JOF::DIAGNOSE) != JOF::NIL) {
       // Cancel aborting on error and enable deeper log tracing.
       config.abort_on_error = false;
       config.max_diagnostics = 32;
+      config.warn_unresolved_methods = not State.script->SuppressUnresolvedMethodWarnings;
    }
 
    return config;
@@ -245,8 +315,6 @@ extern GCproto * lj_parse(LexState *State)
    GCproto   *pt;
    lua_State *L = State->L;
 
-   auto prv = (prvTiri *)L->script->ChildPrivate;
-
 #ifdef LUAJIT_DISABLE_DEBUGINFO
    State->chunk_name = lj_str_newlit(L, "=");
 #else
@@ -257,6 +325,11 @@ extern GCproto * lj_parse(LexState *State)
    // should fall back to their chunk name in diagnostics rather than being added to the persistent file source map.
    // Note: We don't clear existing file_sources to preserve import deduplication across loadFile() calls.
 
+   BCLine source_lines = 1;
+   for (char c : State->source) {
+      if (c IS '\n') source_lines++;
+   }
+
    if (State->chunk_arg and State->chunk_arg[0] IS '@') {
       std::string path = State->chunk_arg;
       path = path.substr(1);
@@ -265,16 +338,31 @@ extern GCproto * lj_parse(LexState *State)
       auto pos = path.find_last_of("/\\");
       std::string filename = (pos != std::string::npos) ? path.substr(pos + 1) : path;
 
-      // Estimate source lines from the source view (count newlines + 1)
-      BCLine source_lines = 1;
-      for (char c : State->source) {
-         if (c IS '\n') source_lines++;
-      }
       State->current_file_index = register_main_file_source(L, path, filename, source_lines);
+      State->compilation_sources.push_back(CompilationSourceRecord{
+         .role = CompilationSourceRole::Main,
+         .canonical_path = path,
+         .display_filename = filename,
+         .first_line = 1,
+         .total_lines = source_lines,
+         .runtime_index = State->current_file_index
+      });
    }
-   else State->current_file_index = FILESOURCE_OVERFLOW_INDEX;
+   else {
+      State->current_file_index = FILESOURCE_SYNTHETIC_INDEX;
+      std::string display = State->chunk_arg ? State->chunk_arg : "=(anonymous)";
+      State->compilation_sources.push_back(CompilationSourceRecord{
+         .role = CompilationSourceRole::Synthetic,
+         .display_filename = std::move(display),
+         .first_line = 1,
+         .total_lines = source_lines,
+         .runtime_index = FILESOURCE_SYNTHETIC_INDEX
+      });
+   }
+   State->current_source_descriptor = 0;
 
-   log.branch("Chunk: %.*s, Registered: %c", State->chunk_name->len, strdata(State->chunk_name), State->current_file_index IS FILESOURCE_OVERFLOW_INDEX ? 'N' : 'Y');
+   log.branch("Chunk: %.*s, Registered: %c", State->chunk_name->len, strdata(State->chunk_name),
+      State->current_file_index < FILESOURCE_SYNTHETIC_INDEX ? 'Y' : 'N');
 
    setstrV(L, L->top, State->chunk_name);  // Anchor chunk_name string.
    incr_top(L);
@@ -293,20 +381,133 @@ extern GCproto * lj_parse(LexState *State)
    ParserConfig    session_config = make_parser_config(*L);
 
    ParserSession   root_session(root_context, session_config);
-   ParserProfiler  profiler((prv->JitOptions & JOF::PROFILE) != JOF::NIL, &root_context.profiling_result());
+   ParserProfiler  profiler((L->script->JitOptions & JOF::PROFILE) != JOF::NIL, &root_context.profiling_result());
 
    State->next(); // Read-ahead first token.
 
    run_ast_pipeline(root_context, profiler);
 
-   if ((prv->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
+   const auto &cache_counters = State->import_cache_counters;
+   if (cache_counters.SourceReads or cache_counters.EnvelopeDecodes or cache_counters.SourceCompilations) {
+      log.msg("Imported-module validation: hits=%u misses=%u source-reads=%u envelope-decodes=%u "
+         "payload-validations=%u payload-bundle-decodes=%u validation-reuses=%u validation-states=%u "
+         "source-compilations=%u publications=%u validation-loads=%u destination-loads=%u prototype-decodes=%u "
+         "source-records=%u registrations=%u line-remaps=%u structure-commits=%u source-maps=%u directories=%u",
+         cache_counters.CacheHits, cache_counters.LookupMisses, cache_counters.SourceReads,
+         cache_counters.EnvelopeDecodes, cache_counters.PayloadValidations, cache_counters.PayloadBundleDecodes,
+         cache_counters.ValidationReuses, cache_counters.ValidationStateCreations, cache_counters.SourceCompilations,
+         cache_counters.Publications, cache_counters.ValidationPayloadLoads, cache_counters.DestinationPayloadLoads,
+         cache_counters.PrototypeDecodes, cache_counters.SourceRecordsDecoded,
+         cache_counters.FileSourceRegistrations, cache_counters.LineMapRemaps, cache_counters.StructureCommits,
+         cache_counters.SourceMapAllocations, cache_counters.ExecutableDirectoryAllocations);
+   }
+
+#ifdef UNIT_TESTS
+   glLastImportedModuleCounters = State->imported_module_counters;
+   glLastImportCacheCounters = State->import_cache_counters;
+#endif
+
+   if ((L->script->JitOptions & JOF::DUMP_BYTECODE) != JOF::NIL) dump_bytecode(root_context.func());
 
    flush_non_fatal_errors(root_context);
+
+   if (not root_context.config().abort_on_error and not root_context.diagnostics().empty()) {
+      if (L->parser_diagnostics) delete (ParserDiagnostics*)L->parser_diagnostics;
+      L->parser_diagnostics = new ParserDiagnostics(root_context.diagnostics());
+   }
 
    if (profiler.enabled()) profiler.log_results(log);
 
    if (State->tok != TK_eof) State->err_token(TK_eof);
    pt = State->fs_finish(State->effective_line());
+   setprotoV(L, L->top, pt);
+   incr_top(L);
+   attach_compilation_sources(L, pt, State->compilation_sources);
+   install_proto_package_metadata(L, pt, State->package_identity);
+
+   std::vector<tiri::CompatibilityRecord> compatibility_records;
+   const auto &root_source = State->compilation_sources.front();
+   compatibility_records.push_back({ root_source.canonical_path.empty() ? root_source.display_filename :
+      root_source.canonical_path, State->dependency_requirements.value_or(tiri::DependencyRequirements {}) });
+   for (const auto &record : State->import_module_records) {
+      tiri::import_cache::Interface interface_value;
+      if (tiri::import_cache::decode_interface(record.interface_bytes, interface_value) !=
+          tiri::cache::FormatError::OKAY) {
+         luaL_error(L, ERR::InvalidData, "Invalid imported-module compatibility interface.");
+      }
+      std::vector<tiri::CompatibilityRecord> nested;
+      if (tiri::decode_compatibility_manifest(interface_value.CompatibilityManifest, nested)) {
+         luaL_error(L, ERR::InvalidData, "Invalid imported-module compatibility manifest.");
+      }
+      compatibility_records.insert(compatibility_records.end(), nested.begin(), nested.end());
+   }
+   std::string compatibility_manifest;
+   if (tiri::encode_compatibility_manifest(compatibility_records, compatibility_manifest)) {
+      luaL_error(L, ERR::InvalidData, "Cannot encode compatibility manifest.");
+   }
+   install_proto_compatibility_manifest(L, pt, compatibility_manifest);
+
+   std::vector<uint8_t> struct_manifest;
+   std::string manifest_detail;
+   ERR manifest_error = build_declared_struct_manifest(L, State->compilation_struct_roots,
+      State->compilation_structs, State->dynamic_struct_reference, struct_manifest, &manifest_detail);
+   if (manifest_error IS ERR::Okay) {
+      auto manifest = (uint8_t *)lj_mem_new(L, MSize(struct_manifest.size()));
+      memcpy(manifest, struct_manifest.data(), struct_manifest.size());
+      setmref(pt->struct_manifest, manifest);
+      pt->struct_manifest_size = uint32_t(struct_manifest.size());
+   }
+   std::vector<ImportModuleGraphInput> module_inputs;
+   module_inputs.reserve(State->import_module_records.size());
+   for (const auto &record : State->import_module_records) {
+      module_inputs.push_back({ record.lookup_identity, record.compiled_identity, record.interface_bytes,
+         record.dependencies, record.initialiser, record.source_index });
+   }
+   PreparedImportModuleGraph module_graph;
+   if (not prepare_import_module_graph(
+       module_inputs, State->compilation_sources, {}, true, module_graph)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+   }
+   std::vector<GCproto *> final_relocation_roots = module_graph.initialisers;
+   final_relocation_roots.push_back(pt);
+   ImportModuleRelocationPlan final_relocation;
+   if (not preflight_import_module_relocations(
+       final_relocation_roots, module_graph.compilation_to_canonical, final_relocation)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable references.");
+   }
+   auto bundle = (uint8_t *)lj_mem_new(L, MSize(module_graph.bundle.size()));
+   memcpy(bundle, module_graph.bundle.data(), module_graph.bundle.size());
+   setmref(pt->import_module_bundle, bundle);
+   pt->import_module_bundle_size = uint32_t(module_graph.bundle.size());
+   if (module_graph.directory.entry_count and not install_import_module_directory(
+       L, pt, module_graph.assembly.records(), module_graph.initialisers, module_graph.directory)) {
+      luaL_error(L, ERR::InvalidData, "Invalid imported-module executable graph.");
+   }
+   apply_import_module_relocations(final_relocation);
+   for (GCproto *initialiser : module_graph.initialisers) {
+      if (not initialiser or gcref(initialiser->source_root) != obj2gco(pt)) {
+         luaL_error(L, ERR::InvalidData, "Imported-module initialiser has no final metadata root.");
+      }
+   }
+   State->release_import_module_staging_metadata();
+   const auto &staging = State->imported_module_counters;
+   if (staging.staging_metadata_roots) {
+      log.trace("Imported-module staging release: roots=%u source-bytes=%" PRIu64
+         " package-bytes=%" PRIu64 " compatibility-bytes=%" PRIu64 " manifest-bytes=%" PRIu64
+         " bundle-bytes=%" PRIu64
+         " directory-bytes=%" PRIu64,
+         staging.staging_metadata_roots, staging.staging_compilation_source_bytes,
+         staging.staging_package_metadata_bytes, staging.staging_compatibility_manifest_bytes,
+         staging.staging_struct_manifest_bytes,
+         staging.staging_import_module_bundle_bytes,
+         staging.staging_import_module_table_bytes);
+   }
+   for (int reference : State->import_module_anchors) luaL_unref(L, LUA_REGISTRYINDEX, reference);
+   State->import_module_anchors.clear();
+#ifdef UNIT_TESTS
+   glLastImportedModuleCounters = State->imported_module_counters;
+#endif
+   L->top--;
    L->top--;  // Drop chunk_name.
 
    // Transfer tips to lua_State for debug.validate() access

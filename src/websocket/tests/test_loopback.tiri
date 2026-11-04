@@ -1,0 +1,265 @@
+-- Flute tests: the module's WebSocket client against the module's WebSocketServer.  Both ends run on this thread, so a
+-- loop that sends without processing messages leaves the other end unread, which is how backpressure is produced.
+
+   include 'websocket'
+
+local MAX_FILL <const> = 64 * 1024 * 1024 -- Upper bound for loops that send until the queue is full
+
+function waitFor(Condition:func, Seconds:num)
+   local limit = (Seconds or 3) * 100
+   for i in {0 to limit} do
+      if Condition() then return end
+      processing.sleep(0.01)
+   end
+end
+
+-- Starts a server.  Options.connected(Server, WebSocket, State) and Options.incoming(WebSocket, Text, Type, State) are
+-- optional; without Options.incoming, messages are echoed.
+
+function newServer(Options:table):table
+   local state = { connections=array<obj>, closed=0, disconnected=0, received={} }
+
+   local server = obj.new('websocketserver')
+   server.port = 0
+   if Options.sendLimit then server.sendLimit = Options.sendLimit end
+   if Options.pingInterval then server.pingInterval = Options.pingInterval end
+   if Options.maxMessageSize then server.maxMessageSize = Options.maxMessageSize end
+
+   server.connected = function(Server, WebSocket)
+      state.connections.push(WebSocket)
+      WebSocket.incoming = function(WS, Buffer, Type, Final)
+         if Options.incoming then
+            Options.incoming(WS, Buffer.getString(), Type, state)
+         else
+            WS.mtSend(Buffer.getString(), Type)
+         end
+      end
+      WebSocket.stateChanged = function(WS, State)
+         if State is WSS_CLOSED then state.closed++ end
+      end
+      if Options.connected then Options.connected(Server, WebSocket, state) end
+   end
+
+   server.disconnected = function(Server, WebSocket)
+      state.disconnected++
+      state.closeCode = WebSocket.closeCode
+      state.error = WebSocket.error
+   end
+
+   check server.init()
+   state.server = server
+   return state
+end
+
+-- Opens a client connection to Server and waits for it to open.
+
+function newClient(Server:table, Options:table):table
+   Options = Options or {}
+   local client = { messages={}, types={}, heartbeats={}, state=WSS_CLOSED }
+   local ws = obj.new('websocket', {
+      location = f'ws://127.0.0.1:{Server.server.port}/loopback',
+      stateChanged = function(WebSocket, State)
+         client.state = State
+         if State is WSS_CLOSED then
+            client.closeCode = WebSocket.closeCode
+            client.error = WebSocket.error
+         end
+      end,
+      incoming = function(WebSocket, Buffer, Type, Final)
+         table.insert(client.messages, Buffer.getString())
+         table.insert(client.types, Type)
+      end
+   })
+   if Options.flags then ws.flags = Options.flags end
+   if Options.heartbeat then
+      ws.heartbeat = function(WebSocket, Buffer, Pong)
+         table.insert(client.heartbeats, Pong)
+      end
+   end
+   client.ws = ws
+   check ws.acActivate()
+   waitFor((() => client.state is WSS_OPEN and #Server.connections > (Options.index or 0)))
+   assert(client.state is WSS_OPEN, 'Client did not connect to the server')
+   return client
+end
+
+function pattern(Size:num, Seed:num):str
+   local bytes = array<byte, Size>
+   for i in {0 to Size} do bytes[i] = (i * 31 + Seed) & 255 end
+   return (Size > 0) ? bytes.getString(0, Size) : ''
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function RoundTrips()
+   local server = newServer({})
+   defer server.server.free() end
+   local client = newClient(server)
+
+   local sizes = array<int> { 0, 125, 126, 65535, 65536, 1048576 }
+   local expected = {}
+   for _, size in sizes do
+      local text = string.rep('t', size)
+      local binary = pattern(size, size)
+      check client.ws.mtSend(text, WSM_TEXT)
+      check client.ws.mtSend(binary, WSM_BINARY)
+      table.insert(expected, { text, WSM_TEXT })
+      table.insert(expected, { binary, WSM_BINARY })
+   end
+
+   waitFor((() => #client.messages >= #expected), 20)
+   assert(#client.messages is #expected, f'Expected {#expected} echoes, received {#client.messages}')
+   for i, item in ipairs(expected) do
+      assert(client.types[i] is item[1], f'Echo {i} has the wrong type')
+      assert(client.messages[i] is item[0], f'Echo {i} ({#item[0]} bytes) is not byte-exact')
+   end
+
+   check client.ws.mtClose(1000, 'bye')
+   waitFor((() => client.state is WSS_CLOSED and server.disconnected > 0))
+   assert(client.closeCode is 1000 and server.closeCode is 1000, 'The closing handshake did not complete')
+   assert(client.error is ERR_Okay and server.error is ERR_Okay, 'A clean close reported an error')
+   assert(server.server.totalConnections is 0, 'The connection was not removed')
+end
+
+@Test function Broadcast()
+   local server = newServer({ incoming = function(WS, Text, Type, State) end })
+   defer server.server.free() end
+   local clients = {}
+   for i in {0 to 3} do table.insert(clients, newClient(server, { index = i })) end
+   assert(server.server.totalConnections is 3, 'TotalConnections does not count three clients')
+
+   local err:num, recipients:num = server.server.mtBroadcast('to everyone', WSM_TEXT)
+   assert(err is ERR_Okay and recipients is 3, f'Broadcast reached {recipients} connections')
+   waitFor(function()
+      for client in values(clients) do
+         if #client.messages < 1 then return false end
+      end
+      return true
+   end)
+   for i, client in ipairs(clients) do
+      assert(#client.messages is 1 and client.messages[0] is 'to everyone', f'Client {i} did not receive the broadcast')
+   end
+
+   assert(server.server.mtBroadcast('\xc0\xaf', WSM_TEXT) is ERR_InvalidData, 'Invalid UTF-8 was broadcast')
+
+   -- A closing connection is skipped.
+
+   check clients[0].ws.mtClose(1000, nil)
+   waitFor((() => server.disconnected > 0))
+   err, recipients = server.server.mtBroadcast(pattern(10, 1), WSM_BINARY)
+   assert(recipients is 2, f'Broadcast after a close reached {recipients} connections')
+end
+
+@Test function SlowReaderBackpressure()
+   -- The server sends to a client that cannot read while this loop runs.  The kernel buffers fill, then the
+   -- server-side queue, which must stop at SendLimit.  Outgoing resumes the producer.
+
+   local LIMIT <const> = 65536
+   local SIZE <const> = 32768
+   local filler = string.rep('z', SIZE - 8)
+   local producer = { sent=0, overflowed=0, resumed=0, finished=false, maxPending=0 }
+
+   local server = newServer({ sendLimit = LIMIT, incoming = function(WS, Text, Type, State) end })
+   defer server.server.free() end
+   local client = newClient(server)
+   local ws = server.connections[0]
+
+   function produce(WebSocket:obj)
+      while producer.sent * SIZE < 8 * 1024 * 1024 do
+         local err = WebSocket.mtSend(string.format('%08d', producer.sent) .. filler, WSM_BINARY)
+         producer.maxPending = math.max(producer.maxPending, WebSocket.pending)
+         if err is ERR_BufferOverflow then
+            producer.overflowed++
+            return
+         end
+         assert(err is ERR_Okay, f'Send failed with {err}')
+         producer.sent++
+      end
+      producer.finished = true
+   end
+
+   ws.outgoing = function(WebSocket)
+      producer.resumed++
+      produce(WebSocket)
+   end
+
+   produce(ws)
+   assert(producer.overflowed > 0, 'The producer never met SendLimit')
+
+   waitFor((() => producer.finished and #client.messages >= producer.sent), 30)
+   assert(producer.finished, f'The producer stalled after {producer.sent} messages')
+   assert(producer.resumed > 0, 'Outgoing never resumed the producer')
+   assert(producer.maxPending <= LIMIT, f'Pending reached {producer.maxPending}, beyond SendLimit')
+   assert(#client.messages is producer.sent, f'Sent {producer.sent} messages, received {#client.messages}')
+   for i, message in ipairs(client.messages) do
+      if message.sub(0, 8) != string.format('%08d', i) then
+         assert(false, f'Message {i} is out of order')
+      end
+   end
+end
+
+@Test function KeepAlive()
+   local server = newServer({ pingInterval = 0.1 })
+   defer server.server.free() end
+   local client = newClient(server, { heartbeat = true })
+   waitFor((() => #client.heartbeats >= 2), 3)
+   assert(#client.heartbeats >= 2 and client.heartbeats[0] is 0, 'Keep-alive pings were not received')
+   assert(client.state is WSS_OPEN, 'Answered keep-alive pings closed the connection')
+
+   -- A client that does not answer pings is dropped once a further interval passes without input.
+
+   local silent = newClient(server, { index = 1, flags = WSF_NO_AUTO_PONG })
+   waitFor((() => server.disconnected > 0), 3)
+   assert(server.disconnected is 1, 'A client that never answered was not dropped')
+   assert(server.closeCode is WSC_ABNORMAL and server.error is ERR_TimeOut,
+      f'Keep-alive failure reported {server.closeCode} / {server.error}')
+   waitFor((() => silent.state is WSS_CLOSED), 3)
+   assert(silent.state is WSS_CLOSED and silent.closeCode is WSC_ABNORMAL, 'The dropped client did not see 1006')
+   assert(client.state is WSS_OPEN, 'The responsive client was dropped')
+end
+
+@Test function FreeFromIncoming()
+   local server = newServer({
+      incoming = function(WS, Text, Type, State)
+         State.freed = true
+         WS.free()
+      end
+   })
+   defer server.server.free() end
+   local client = newClient(server)
+
+   check client.ws.mtSend('free me', WSM_TEXT)
+   waitFor((() => client.state is WSS_CLOSED), 3)
+   assert(server.freed, 'The server did not receive the message')
+   assert(client.state is WSS_CLOSED and client.closeCode is WSC_ABNORMAL, 'Freeing the connection did not drop it')
+   processing.sleep(0.05)
+   assert(server.server.totalConnections is 0, 'A freed connection is still counted')
+   assert(server.disconnected is 0, 'Disconnected should not be called for a freed connection')
+
+   -- The server continues to accept connections.
+
+   local second = newClient(server, { index = 1 })
+   check second.ws.mtSend('again', WSM_TEXT)
+   waitFor((() => second.state is WSS_CLOSED), 3)
+   assert(second.closeCode is WSC_ABNORMAL, 'The second connection was not handled')
+end
+
+@Test function FreeServerWithConnections()
+   local server = newServer({})
+   local clients = {}
+   for i in {0 to 3} do table.insert(clients, newClient(server, { index = i })) end
+
+   server.server.free()
+   waitFor(function()
+      for client in values(clients) do
+         if client.state != WSS_CLOSED then return false end
+      end
+      return true
+   end)
+
+   assert(server.closed is 3, f'{server.closed} of 3 connections reported CLOSED')
+   assert(server.disconnected is 0, 'Disconnected should not be called while the server is freed')
+   for i, client in ipairs(clients) do
+      assert(client.state is WSS_CLOSED and client.closeCode is WSC_ABNORMAL, f'Client {i} did not see the drop')
+   end
+end

@@ -6,8 +6,11 @@
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
 //
-// Adaptation for high precision colors has been sponsored by
-// Liberty Technology Systems, Inc., visit http://lib-sys.com
+// Adaptation for high precision colors has been sponsored by Liberty Technology Systems, Inc., visit http://lib-sys.com
+// ---
+// Defines packed RGB pixel formats, byte-order adapters, and blending operations. Hooks into renderer_base, RGB span
+// generators, image filters, and rendering_buffer. In the vector renderer it is used when the destination surface has
+// no stored alpha channel.
 
 #pragma once
 

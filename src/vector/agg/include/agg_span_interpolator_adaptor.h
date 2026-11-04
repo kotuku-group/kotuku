@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,17 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Adapts a span interpolator with an additional coordinate transform. Hooks into span image and gradient generators
+// that request interpolated source coordinates. In the vector renderer it composes transform stages without changing
+// individual span generators.
 
-
-#ifndef AGG_SPAN_INTERPOLATOR_ADAPTOR_INCLUDED
-#define AGG_SPAN_INTERPOLATOR_ADAPTOR_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //===============================================span_interpolator_adaptor
     template<class Interpolator, class Distortion>
     class span_interpolator_adaptor : public Interpolator
     {
@@ -25,16 +24,12 @@ namespace agg
         typedef typename base_type::trans_type trans_type;
         typedef Distortion distortion_type;
 
-        //--------------------------------------------------------------------
         span_interpolator_adaptor() {}
-        span_interpolator_adaptor(const trans_type& trans,
-                                  const distortion_type& dist) :
-            base_type(trans),
-            m_distortion(&dist)
+        span_interpolator_adaptor(const trans_type& trans, const distortion_type& dist) :
+            base_type(trans), m_distortion(&dist)
         {
         }
 
-        //--------------------------------------------------------------------
         span_interpolator_adaptor(const trans_type& trans,
                                   const distortion_type& dist,
                                   double x, double y, unsigned len) :
@@ -67,6 +62,3 @@ namespace agg
         const distortion_type* m_distortion;
     };
 }
-
-
-#endif

@@ -15,6 +15,9 @@ the standard deviation in the y direction, as specified by #SX and #SY.
 
 At least one of #SX or #SY should be greater than 0, otherwise no rendering is performed.
 
+The blur is not restricted to whole pixels.  It changes continuously with the standard deviation and the display
+scale, so a blur that covers less than a pixel still softens the input.
+
 -END-
 
 W3C: Frequently this operation will take place on alpha-only images, such as that produced by the built-in input,
@@ -79,8 +82,307 @@ class extBlurFX : public extFilterEffect {
    static constexpr CSTRING CLASS_NAME = "BlurFX";
    using create = kt::Create<extBlurFX>;
 
-   double SX, SY;
+   double SX = 0, SY = 0;
+
+   extBlurFX(objMetaClass *ClassPtr, OBJECTID ObjectID) noexcept : extFilterEffect(ClassPtr, ObjectID) { }
+
+   // Computes the stack blur radius of each axis in bitmap pixels.  The radius is twice the standard deviation.
+
+   void radii(double &RX, double &RY) const {
+      double scale = 1.0;
+      if (Filter->ClientVector) scale = Filter->ClientVector->Transform.scale();
+
+      if (Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
+         if (Filter->AspectRatio IS VFA::NONE) {
+            // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
+            double diag = dist(0, 0, Filter->BoundWidth, Filter->BoundHeight) * INV_SQRT2;
+            RX = SX * diag * 2 * scale;
+            RY = SY * diag * 2 * scale;
+         }
+         else {
+            // Scaling is stretched independently of each axis
+            RX = SX * Filter->BoundWidth * 2 * scale;
+            RY = SY * Filter->BoundHeight * 2 * scale;
+         }
+      }
+      else {
+         RX = SX * 2 * scale;
+         RY = SY * 2 * scale;
+      }
+   }
 };
+
+//********************************************************************************************************************
+// SSE2 implementation of the stack blur pass.  The algorithm is identical to the scalar version below, but the
+// per-channel running sums are held in packed 32-bit lanes so that all four channels advance per operation.  All
+// arithmetic is integral, so the output is bit-identical to the scalar path.  Channel byte order is irrelevant
+// because every channel is processed independently and identically.  Samples outside of the line are transparent.
+
+#ifdef FILTER_SSE2
+
+inline uint32_t blur_read32(const uint8_t *Pixel)
+{
+   uint32_t v;
+   memcpy(&v, Pixel, 4);
+   return v;
+}
+
+inline void blur_write32(uint8_t *Pixel, uint32_t Value)
+{
+   memcpy(Pixel, &Value, 4);
+}
+
+// Spread the four bytes of a pixel into 32-bit lanes, and vice versa.  Packing truncates each lane to its lowest
+// byte, matching the scalar code's uint8_t assignment.
+
+inline __m128i blur_unpack(uint32_t Pixel)
+{
+   auto v = _mm_cvtsi32_si128(int(Pixel));
+   v = _mm_unpacklo_epi8(v, _mm_setzero_si128());
+   return _mm_unpacklo_epi16(v, _mm_setzero_si128());
+}
+
+inline uint32_t blur_pack(__m128i Value)
+{
+   Value = _mm_and_si128(Value, _mm_set1_epi32(0xff));
+   Value = _mm_packs_epi32(Value, Value);
+   Value = _mm_packus_epi16(Value, Value);
+   return uint32_t(_mm_cvtsi128_si32(Value));
+}
+
+// 32-bit low multiply; _mm_mullo_epi32 requires SSE4.1 so it is emulated with paired 32x32->64 multiplies.
+
+inline __m128i blur_mullo32(__m128i A, __m128i B)
+{
+   auto even = _mm_mul_epu32(A, B);
+   auto odd  = _mm_mul_epu32(_mm_srli_si128(A, 4), _mm_srli_si128(B, 4));
+   return _mm_unpacklo_epi32(_mm_shuffle_epi32(even, _MM_SHUFFLE(0, 0, 2, 0)),
+                             _mm_shuffle_epi32(odd, _MM_SHUFFLE(0, 0, 2, 0)));
+}
+
+// One full stack blur pass over an axis.  The horizontal pass walks lines of `Count` pixels stepping 4 bytes at a
+// time; the vertical pass swaps the roles of LineStep and PixelStep so that lines become columns.
+
+static void stack_blur_axis_sse2(const uint8_t *InData, uint8_t *OutData, int LineStep, int PixelStep,
+   int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum)
+{
+   const int max_index = Count - 1;
+   const uint32_t div = (Radius * 2) + 1;
+   std::vector<uint32_t> stack(div);
+
+   const auto mul = _mm_set1_epi32(int(MulSum));
+   const auto shr = _mm_cvtsi32_si128(int(ShrSum));
+
+   for (int line=0; line < Lines; line++) {
+      const uint8_t *line_in = InData + (LineStep * line);
+      uint8_t *line_out = OutData + (LineStep * line);
+
+      auto sum     = _mm_setzero_si128();
+      auto sum_in  = _mm_setzero_si128();
+      auto sum_out = _mm_setzero_si128();
+
+      // Pixels outside of the line are transparent, so only the first pixel contributes to the left half.
+
+      auto src = line_in;
+      for (int i=0; i < Radius; i++) stack[i] = 0;
+      stack[Radius] = blur_read32(src);
+      const auto first = blur_unpack(stack[Radius]);
+      sum     = blur_mullo32(first, _mm_set1_epi32(Radius + 1));
+      sum_out = first;
+
+      for (int i=1; i <= Radius; i++) {
+         uint32_t px = 0;
+         if (i <= max_index) {
+            src += PixelStep;
+            px = blur_read32(src);
+         }
+         stack[i + Radius] = px;
+         const auto v = blur_unpack(px);
+         sum    = _mm_add_epi32(sum, blur_mullo32(v, _mm_set1_epi32(Radius + 1 - i)));
+         sum_in = _mm_add_epi32(sum_in, v);
+      }
+
+      uint32_t stack_ptr = Radius;
+      int xp = (Radius > max_index) ? max_index : Radius; // Index of the last pixel read from the line
+      src = line_in + (xp * PixelStep);
+      auto dst = line_out;
+      for (int i=0; i < Count; i++) {
+         blur_write32(dst, blur_pack(_mm_srl_epi32(blur_mullo32(sum, mul), shr)));
+         dst += PixelStep;
+
+         sum = _mm_sub_epi32(sum, sum_out);
+
+         uint32_t stack_start = stack_ptr + div - Radius;
+         if (stack_start >= div) stack_start -= div;
+         sum_out = _mm_sub_epi32(sum_out, blur_unpack(stack[stack_start]));
+
+         uint32_t px = 0;
+         if (xp < max_index) {
+            src += PixelStep;
+            ++xp;
+            px = blur_read32(src);
+         }
+
+         stack[stack_start] = px;
+         sum_in = _mm_add_epi32(sum_in, blur_unpack(px));
+         sum    = _mm_add_epi32(sum, sum_in);
+
+         ++stack_ptr;
+         if (stack_ptr >= div) stack_ptr = 0;
+         const auto sv = blur_unpack(stack[stack_ptr]);
+         sum_out = _mm_add_epi32(sum_out, sv);
+         sum_in  = _mm_sub_epi32(sum_in, sv);
+      }
+   }
+}
+
+#endif
+
+//********************************************************************************************************************
+// Scalar implementation of the stack blur pass, with the same interface and output as the SSE2 version.  Samples
+// outside of the line are treated as transparent black, matching the SVG edge mode of 'none'.
+
+#ifndef FILTER_SSE2
+
+static const uint8_t BLUR_ZERO[4] = { 0, 0, 0, 0 }; // Transparent pixel for samples outside of the line
+
+static void stack_blur_axis(const uint8_t *InData, uint8_t *OutData, int LineStep, int PixelStep,
+   int Lines, int Count, int Radius, uint32_t MulSum, uint32_t ShrSum)
+{
+   const int max_index = Count - 1;
+   const uint32_t div = (Radius * 2) + 1;
+   std::vector<std::array<uint8_t, 4>> stack(div);
+
+   for (int line=0; line < Lines; line++) {
+      const uint8_t *line_in = InData + (LineStep * line);
+      uint8_t *line_out = OutData + (LineStep * line);
+
+      uint32_t sum[4] = { 0, 0, 0, 0 }, sum_in[4] = { 0, 0, 0, 0 }, sum_out[4] = { 0, 0, 0, 0 };
+
+      // Pixels outside of the line are transparent, so only the first pixel contributes to the left half.
+
+      auto src = line_in;
+      for (int i=0; i < Radius; i++) stack[i] = { 0, 0, 0, 0 };
+      for (int c=0; c < 4; c++) {
+         stack[Radius][c] = src[c];
+         sum[c]     = src[c] * (Radius + 1);
+         sum_out[c] = src[c];
+      }
+
+      for (int i=1; i <= Radius; i++) {
+         const uint8_t *in = BLUR_ZERO;
+         if (i <= max_index) {
+            src += PixelStep;
+            in = src;
+         }
+         for (int c=0; c < 4; c++) {
+            stack[i + Radius][c] = in[c];
+            sum[c]    += in[c] * (Radius + 1 - i);
+            sum_in[c] += in[c];
+         }
+      }
+
+      uint32_t stack_ptr = Radius;
+      int xp = (Radius > max_index) ? max_index : Radius; // Index of the last pixel read from the line
+      src = line_in + (xp * PixelStep);
+      auto dst = line_out;
+      for (int i=0; i < Count; i++) {
+         for (int c=0; c < 4; c++) dst[c] = uint8_t((sum[c] * MulSum) >> ShrSum);
+         dst += PixelStep;
+
+         uint32_t stack_start = stack_ptr + div - Radius;
+         if (stack_start >= div) stack_start -= div;
+         auto &start = stack[stack_start];
+
+         const uint8_t *in = BLUR_ZERO;
+         if (xp < max_index) {
+            src += PixelStep;
+            ++xp;
+            in = src;
+         }
+
+         for (int c=0; c < 4; c++) {
+            sum[c]     -= sum_out[c];
+            sum_out[c] -= start[c];
+            start[c]    = in[c];
+            sum_in[c]  += in[c];
+            sum[c]     += sum_in[c];
+         }
+
+         ++stack_ptr;
+         if (stack_ptr >= div) stack_ptr = 0;
+         auto &next = stack[stack_ptr];
+
+         for (int c=0; c < 4; c++) {
+            sum_out[c] += next[c];
+            sum_in[c]  -= next[c];
+         }
+      }
+   }
+}
+
+#endif
+
+//********************************************************************************************************************
+// Blurs one axis of a Width x Height region with a fractional Radius.  The stack blur only supports integral radii,
+// so the results of the two nearest radii are blended according to the fraction.  This keeps the blur continuous as
+// the radius changes, so that a magnified graphic is blurred in proportion and small radii are not lost to
+// truncation.  A radius below 1 is blended with the unblurred input.
+//
+// InData and OutData can refer to the same region.  Temp is resized as necessary to hold the larger radius.
+
+constexpr double MIN_BLUR_RADIUS = 0.5 / 256.0; // Below this, the blend weight rounds to zero
+constexpr double MAX_BLUR_RADIUS = 254.0;       // Limited by the size of the stack blur tables
+
+static void blur_axis(const uint8_t *InData, uint8_t *OutData, std::vector<uint8_t> &Temp, int Width, int Height,
+   int Stride, bool Vertical, double Radius)
+{
+   const int line_step  = Vertical ? 4 : Stride;
+   const int pixel_step = Vertical ? Stride : 4;
+   const int lines      = Vertical ? Width : Height;
+   const int count      = Vertical ? Height : Width;
+
+   auto stack_blur = [&](const uint8_t *Src, uint8_t *Dest, int R) {
+#ifdef FILTER_SSE2
+      stack_blur_axis_sse2(Src, Dest, line_step, pixel_step, lines, count, R,
+         stack_blur_tables<int>::g_stack_blur8_mul[R], stack_blur_tables<int>::g_stack_blur8_shr[R]);
+#else
+      stack_blur_axis(Src, Dest, line_step, pixel_step, lines, count, R,
+         stack_blur_tables<int>::g_stack_blur8_mul[R], stack_blur_tables<int>::g_stack_blur8_shr[R]);
+#endif
+   };
+
+   if (Radius > MAX_BLUR_RADIUS) Radius = MAX_BLUR_RADIUS;
+   const int lower  = int(Radius);
+   const int weight = int(std::lround((Radius - lower) * 256.0)); // Weight of the upper radius, out of 256
+
+   if (weight >= 256) {
+      stack_blur(InData, OutData, lower + 1);
+      return;
+   }
+
+   uint8_t *upper = nullptr;
+   if (weight > 0) { // The upper radius is rendered first because the lower pass may overwrite InData
+      Temp.resize(size_t(Stride) * Height);
+      upper = Temp.data();
+      stack_blur(InData, upper, lower + 1);
+   }
+
+   if (lower > 0) stack_blur(InData, OutData, lower);
+   else if (InData != OutData) {
+      for (int y=0; y < Height; y++) copymem(InData + (y * Stride), OutData + (y * Stride), Width * 4);
+   }
+
+   if (upper) {
+      for (int y=0; y < Height; y++) {
+         auto dst = OutData + (y * Stride);
+         auto src = upper + (y * Stride);
+         for (int i=0; i < Width * 4; i++) {
+            dst[i] = uint8_t(dst[i] + ((((int(src[i]) - int(dst[i])) * weight) + 128) >> 8));
+         }
+      }
+   }
+}
 
 //********************************************************************************************************************
 // This is the stack blur algorithm originally implemented in AGG.  It is intended to produce a near identical output
@@ -94,31 +396,15 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    auto outBmp = Self->Target;
    if (outBmp->BytesPerPixel != 4) return ERR::InvalidState;
 
-   double scale = 1.0;
-   if (Self->Filter->ClientVector) scale = Self->Filter->ClientVector->Transform.scale();
+   double rx, ry;
+   Self->radii(rx, ry);
 
-   int rx, ry;
-   if (Self->Filter->PrimitiveUnits IS VUNIT::BOUNDING_BOX) {
-      if (Self->Filter->AspectRatio IS VFA::NONE) {
-         // Scaling is applied evenly on both axis.  Uses the same formula as a scaled stroke-width.
-         double diag = dist(0, 0, Self->Filter->BoundWidth, Self->Filter->BoundHeight) * INV_SQRT2;
-         rx = int(Self->SX * diag * 2 * scale);
-         ry = int(Self->SY * diag * 2 * scale);
-      }
-      else {
-         // Scaling is stretched independently of each axis
-         rx = int(Self->SX * Self->Filter->BoundWidth * 2 * scale);
-         ry = int(Self->SY * Self->Filter->BoundHeight * 2 * scale);
-      }
-   }
-   else {
-      rx = int(Self->SX * 2 * scale);
-      ry = int(Self->SY * 2 * scale);
-   }
+   const bool blur_x = rx >= MIN_BLUR_RADIUS;
+   const bool blur_y = ry >= MIN_BLUR_RADIUS;
 
    objBitmap *inBmp;
 
-   if ((rx < 1) and (ry < 1)) {
+   if ((not blur_x) and (not blur_y)) {
       if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
       BAF copy_flags = (Self->Filter->ColourSpace IS VCS::LINEAR_RGB) ? BAF::LINEAR : BAF::NIL;
       gfx::CopyArea(inBmp, outBmp, copy_flags, 0, 0, inBmp->Width, inBmp->Height, 0, 0);
@@ -128,7 +414,7 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
    if (get_source_bitmap(Self->Filter, &inBmp, Self->SourceType, Self->Input, false) != ERR::Okay) return ERR::NoData;
    if ((Self->SourceType IS VSF::REFERENCE) and (Self->Input)) {
       objBitmap *copy_bmp;
-      if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); error IS ERR::Okay) {
+      if (auto error = get_banked_bitmap(Self->Filter, &copy_bmp); !error) {
          gfx::CopyArea(inBmp, copy_bmp, BAF::NIL,
             inBmp->Clip.Left,
             inBmp->Clip.Top,
@@ -146,248 +432,17 @@ static ERR BLURFX_Draw(extBlurFX *Self, struct acDraw *Args)
 
    inBmp->premultiply();
 
-   uint8_t *dst_pix_ptr;
-   agg::rgba8 *stack_pix_ptr;
-
    const int w = (outBmp->Clip.Right - outBmp->Clip.Left);
    const int h = (outBmp->Clip.Bottom - outBmp->Clip.Top);
-   const int wm = w - 1;
-   const int hm = h - 1;
-
-   uint8_t A = inBmp->ColourFormat->AlphaPos>>3;
-   uint8_t R = inBmp->ColourFormat->RedPos>>3;
-   uint8_t G = inBmp->ColourFormat->GreenPos>>3;
-   uint8_t B = inBmp->ColourFormat->BluePos>>3;
 
    uint8_t *in_data  = inBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
    uint8_t *out_data = outBmp->Data + (outBmp->Clip.Left<<2) + (outBmp->Clip.Top * inBmp->LineWidth);
 
-   uint32_t sum_r, sum_g, sum_b, sum_a;
-   uint32_t sum_in_r, sum_in_g, sum_in_b, sum_in_a;
-   uint32_t sum_out_r, sum_out_g, sum_out_b, sum_out_a;
-   int x, y, xp, yp;
-   uint32_t stack_ptr;
-   uint32_t stack_start;
-   uint32_t div;
-   uint32_t mul_sum;
-   uint32_t shr_sum;
+   std::vector<uint8_t> temp;
+   if (blur_x) blur_axis(in_data, out_data, temp, w, h, outBmp->LineWidth, false, rx);
 
-   std::vector<agg::rgba8> stack;
-
-   if (rx > 0) {
-      if (rx > 254) rx = 254;
-      div = rx * 2 + 1;
-      mul_sum = stack_blur_tables<int>::g_stack_blur8_mul[rx];
-      shr_sum = stack_blur_tables<int>::g_stack_blur8_shr[rx];
-      stack.resize(div);
-
-      for (y=0; y < h; y++) {
-         sum_r = sum_g = sum_b = sum_a = sum_in_r = sum_in_g = sum_in_b = sum_in_a = sum_out_r = sum_out_g = sum_out_b = sum_out_a = 0;
-
-         const uint8_t * src_pix_ptr = in_data + (outBmp->LineWidth * y);
-         for (int i=0; i <= rx; i++) {
-             stack_pix_ptr    = &stack[i];
-             stack_pix_ptr->r = src_pix_ptr[R];
-             stack_pix_ptr->g = src_pix_ptr[G];
-             stack_pix_ptr->b = src_pix_ptr[B];
-             stack_pix_ptr->a = src_pix_ptr[A];
-             sum_r     += src_pix_ptr[R] * (i + 1);
-             sum_g     += src_pix_ptr[G] * (i + 1);
-             sum_b     += src_pix_ptr[B] * (i + 1);
-             sum_a     += src_pix_ptr[A] * (i + 1);
-             sum_out_r += src_pix_ptr[R];
-             sum_out_g += src_pix_ptr[G];
-             sum_out_b += src_pix_ptr[B];
-             sum_out_a += src_pix_ptr[A];
-         }
-
-         for (int i=1; i <= rx; i++) {
-            if (i <= wm) src_pix_ptr += 4;
-            stack_pix_ptr = &stack[i + rx];
-            stack_pix_ptr->r = src_pix_ptr[R];
-            stack_pix_ptr->g = src_pix_ptr[G];
-            stack_pix_ptr->b = src_pix_ptr[B];
-            stack_pix_ptr->a = src_pix_ptr[A];
-            sum_r    += src_pix_ptr[R] * (rx + 1 - i);
-            sum_g    += src_pix_ptr[G] * (rx + 1 - i);
-            sum_b    += src_pix_ptr[B] * (rx + 1 - i);
-            sum_a    += src_pix_ptr[A] * (rx + 1 - i);
-            sum_in_r += src_pix_ptr[R];
-            sum_in_g += src_pix_ptr[G];
-            sum_in_b += src_pix_ptr[B];
-            sum_in_a += src_pix_ptr[A];
-         }
-
-         stack_ptr = rx;
-         xp = rx;
-         if (xp > wm) xp = wm;
-         src_pix_ptr = in_data + (outBmp->LineWidth * y) + (xp<<2);
-         dst_pix_ptr = out_data + (outBmp->LineWidth * y);
-         for (int x=0; x < w; x++) {
-            dst_pix_ptr[R] = (sum_r * mul_sum) >> shr_sum;
-            dst_pix_ptr[G] = (sum_g * mul_sum) >> shr_sum;
-            dst_pix_ptr[B] = (sum_b * mul_sum) >> shr_sum;
-            dst_pix_ptr[A] = (sum_a * mul_sum) >> shr_sum;
-            dst_pix_ptr += 4;
-
-            sum_r -= sum_out_r;
-            sum_g -= sum_out_g;
-            sum_b -= sum_out_b;
-            sum_a -= sum_out_a;
-
-            stack_start = stack_ptr + div - rx;
-            if (stack_start >= div) stack_start -= div;
-            stack_pix_ptr = &stack[stack_start];
-
-            sum_out_r -= stack_pix_ptr->r;
-            sum_out_g -= stack_pix_ptr->g;
-            sum_out_b -= stack_pix_ptr->b;
-            sum_out_a -= stack_pix_ptr->a;
-
-            if (xp < wm) {
-               src_pix_ptr += 4;
-               ++xp;
-            }
-
-            stack_pix_ptr->r = src_pix_ptr[R];
-            stack_pix_ptr->g = src_pix_ptr[G];
-            stack_pix_ptr->b = src_pix_ptr[B];
-            stack_pix_ptr->a = src_pix_ptr[A];
-
-            sum_in_r += src_pix_ptr[R];
-            sum_in_g += src_pix_ptr[G];
-            sum_in_b += src_pix_ptr[B];
-            sum_in_a += src_pix_ptr[A];
-            sum_r    += sum_in_r;
-            sum_g    += sum_in_g;
-            sum_b    += sum_in_b;
-            sum_a    += sum_in_a;
-
-            ++stack_ptr;
-            if (stack_ptr >= div) stack_ptr = 0;
-            stack_pix_ptr = &stack[stack_ptr];
-
-            sum_out_r += stack_pix_ptr->r;
-            sum_out_g += stack_pix_ptr->g;
-            sum_out_b += stack_pix_ptr->b;
-            sum_out_a += stack_pix_ptr->a;
-            sum_in_r  -= stack_pix_ptr->r;
-            sum_in_g  -= stack_pix_ptr->g;
-            sum_in_b  -= stack_pix_ptr->b;
-            sum_in_a  -= stack_pix_ptr->a;
-         }
-      }
-   }
-
-   if (ry > 0) {
-      if (rx > 0) {
-         in_data = out_data; // If rx was already processed, the dest becomes the source
-      }
-
-      if (ry > 254) ry = 254;
-      div = ry * 2 + 1;
-      mul_sum = stack_blur_tables<int>::g_stack_blur8_mul[ry];
-      shr_sum = stack_blur_tables<int>::g_stack_blur8_shr[ry];
-      stack.resize(div);
-
-      int stride = outBmp->LineWidth;
-      for (x = 0; x < w; x++) {
-         sum_r = sum_g = sum_b = sum_a = sum_in_r = sum_in_g = sum_in_b = sum_in_a = sum_out_r = sum_out_g = sum_out_b = sum_out_a = 0;
-
-         const uint8_t * src_pix_ptr = in_data + (x<<2);
-         for (int i = 0; i <= ry; i++) {
-             stack_pix_ptr    = &stack[i];
-             stack_pix_ptr->r = src_pix_ptr[R];
-             stack_pix_ptr->g = src_pix_ptr[G];
-             stack_pix_ptr->b = src_pix_ptr[B];
-             stack_pix_ptr->a = src_pix_ptr[A];
-             sum_r += src_pix_ptr[R] * (i + 1);
-             sum_g += src_pix_ptr[G] * (i + 1);
-             sum_b += src_pix_ptr[B] * (i + 1);
-             sum_a += src_pix_ptr[A] * (i + 1);
-             sum_out_r += src_pix_ptr[R];
-             sum_out_g += src_pix_ptr[G];
-             sum_out_b += src_pix_ptr[B];
-             sum_out_a += src_pix_ptr[A];
-         }
-
-         for (int i = 1; i <= ry; i++) {
-             if (i <= hm) src_pix_ptr += stride;
-             stack_pix_ptr = &stack[i + ry];
-             stack_pix_ptr->r = src_pix_ptr[R];
-             stack_pix_ptr->g = src_pix_ptr[G];
-             stack_pix_ptr->b = src_pix_ptr[B];
-             stack_pix_ptr->a = src_pix_ptr[A];
-             sum_r += src_pix_ptr[R] * (ry + 1 - i);
-             sum_g += src_pix_ptr[G] * (ry + 1 - i);
-             sum_b += src_pix_ptr[B] * (ry + 1 - i);
-             sum_a += src_pix_ptr[A] * (ry + 1 - i);
-             sum_in_r += src_pix_ptr[R];
-             sum_in_g += src_pix_ptr[G];
-             sum_in_b += src_pix_ptr[B];
-             sum_in_a += src_pix_ptr[A];
-         }
-
-         stack_ptr = ry;
-         yp = ry;
-         if (yp > hm) yp = hm;
-         src_pix_ptr = in_data + (x<<2) + (outBmp->LineWidth * yp);
-         dst_pix_ptr = out_data + (x<<2);
-         for (int y = 0; y < h; y++) {
-            dst_pix_ptr[R] = (sum_r * mul_sum) >> shr_sum;
-            dst_pix_ptr[G] = (sum_g * mul_sum) >> shr_sum;
-            dst_pix_ptr[B] = (sum_b * mul_sum) >> shr_sum;
-            dst_pix_ptr[A] = (sum_a * mul_sum) >> shr_sum;
-            dst_pix_ptr += stride;
-
-            sum_r -= sum_out_r;
-            sum_g -= sum_out_g;
-            sum_b -= sum_out_b;
-            sum_a -= sum_out_a;
-
-            stack_start = stack_ptr + div - ry;
-            if (stack_start >= div) stack_start -= div;
-
-            stack_pix_ptr = &stack[stack_start];
-            sum_out_r -= stack_pix_ptr->r;
-            sum_out_g -= stack_pix_ptr->g;
-            sum_out_b -= stack_pix_ptr->b;
-            sum_out_a -= stack_pix_ptr->a;
-
-            if (yp < hm) {
-                src_pix_ptr += stride;
-                ++yp;
-            }
-
-            stack_pix_ptr->r = src_pix_ptr[R];
-            stack_pix_ptr->g = src_pix_ptr[G];
-            stack_pix_ptr->b = src_pix_ptr[B];
-            stack_pix_ptr->a = src_pix_ptr[A];
-
-            sum_in_r += src_pix_ptr[R];
-            sum_in_g += src_pix_ptr[G];
-            sum_in_b += src_pix_ptr[B];
-            sum_in_a += src_pix_ptr[A];
-            sum_r    += sum_in_r;
-            sum_g    += sum_in_g;
-            sum_b    += sum_in_b;
-            sum_a    += sum_in_a;
-
-            ++stack_ptr;
-            if (stack_ptr >= div) stack_ptr = 0;
-            stack_pix_ptr = &stack[stack_ptr];
-
-            sum_out_r += stack_pix_ptr->r;
-            sum_out_g += stack_pix_ptr->g;
-            sum_out_b += stack_pix_ptr->b;
-            sum_out_a += stack_pix_ptr->a;
-            sum_in_r  -= stack_pix_ptr->r;
-            sum_in_g  -= stack_pix_ptr->g;
-            sum_in_b  -= stack_pix_ptr->b;
-            sum_in_a  -= stack_pix_ptr->a;
-         }
-      }
-   }
+   // If the X axis was already processed, the dest becomes the source
+   if (blur_y) blur_axis(blur_x ? out_data : in_data, out_data, temp, w, h, outBmp->LineWidth, true, ry);
 
    //bmpDemultiply(inBmp);
 
@@ -411,22 +466,6 @@ The (SX,SY) field values define the standard deviation of the gaussian blur alon
 
 If either value is 0 or less, the effect is disabled on that axis.
 
-*********************************************************************************************************************/
-
-static ERR BLURFX_GET_SX(extBlurFX *Self, double *Value)
-{
-   *Value = Self->SX;
-   return ERR::Okay;
-}
-
-static ERR BLURFX_SET_SX(extBlurFX *Self, double Value)
-{
-   Self->SX = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 SY: The standard deviation of the blur on the x axis.
 
@@ -434,33 +473,17 @@ The (SX,SY) field values define the standard deviation of the gaussian blur alon
 
 If either value is 0 or less, the effect is disabled on that axis.
 
-*********************************************************************************************************************/
-
-static ERR BLURFX_GET_SY(extBlurFX *Self, double *Value)
-{
-   *Value = Self->SY;
-   return ERR::Okay;
-}
-
-static ERR BLURFX_SET_SY(extBlurFX *Self, double Value)
-{
-   Self->SY = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
 XMLDef: Returns an SVG compliant XML string that describes the effect.
 -END-
 
 *********************************************************************************************************************/
 
-static ERR BLURFX_GET_XMLDef(extBlurFX *Self, STRING *Value)
+static ERR BLURFX_GET_XMLDef(extBlurFX *Self, std::string &Value)
 {
    std::stringstream stream;
    stream << "feGaussianBlur stdDeviation=\"" << Self->SX << " " << Self->SY << "\"";
-   *Value = strclone(stream.str());
+   Value = stream.str();
    return ERR::Okay;
 }
 
@@ -469,9 +492,9 @@ static ERR BLURFX_GET_XMLDef(extBlurFX *Self, STRING *Value)
 #include "filter_blur_def.c"
 
 static const FieldArray clBlurFXFields[] = {
-   { "SX",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, BLURFX_GET_SX, BLURFX_SET_SX },
-   { "SY",     FDF_VIRTUAL|FDF_DOUBLE|FDF_RW, BLURFX_GET_SY, BLURFX_SET_SY },
-   { "XMLDef", FDF_VIRTUAL|FDF_STRING|FDF_ALLOC|FDF_R, BLURFX_GET_XMLDef, nullptr },
+   { "SX",     FDF_DOUBLE|FDF_RW },
+   { "SY",     FDF_DOUBLE|FDF_RW },
+   { "XMLDef", FDF_VIRTUAL|FDF_CPPSTRING|FDF_STORE|FDF_R|FDF_PURE, BLURFX_GET_XMLDef },
    END_FIELD
 };
 

@@ -1,10 +1,8 @@
 -- Call integrated unit tests in the XQuery module
 
-   xq = mod.load('xquery')
-
 -----------------------------------------------------------------------------------------------------------------------
 
 @Test function UnitTests()
-   local passed, total = mod.test(xq)
+   local passed, total = mod.test('xquery')
    assert(passed is total, "Passed " .. passed .. " of " .. total .. " XQuery unit tests.  Use --log-api for details.")
 end

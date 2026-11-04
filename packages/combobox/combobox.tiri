@@ -1,0 +1,491 @@
+@Package(name='gui/combobox', version='1.0')
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui', 'gui/layout', './dropdown'
+
+   namespace gui
+
+function iconTheme(Widget:table!):str
+   return gui.rgbToIconTheme(Widget.input_theme.text?.fill ?? Widget.theme.window.text.fill)
+end
+
+-- Returns the first selectable entry in a list of items, skipping group headers.
+
+function firstItem(Items:any):table
+   for item in values(Items ?? { }) do
+      if item.label then return item end
+   end
+end
+
+-- Reports the drop-down item if selected, otherwise the text string is reported for editable comboboxes
+
+function reportFeedback(Item:any)
+   &events.activate ?! return
+   text     = &text.string
+   new_hash = text ? string.hash(text) : 0
+   if new_hash != &hash then
+      &hash = new_hash
+      &events.activate(Item ?? text)
+   end
+end
+
+function toggleMenu()
+   if &disabled then return end
+
+   if not &menu.visible and #&menu.items is 0 then return end -- Nothing to show for a combobox without presets
+
+   -- The boundary is in display coordinates and includes any scaling applied by parent viewports, so the menu is
+   -- scaled to match the input box.
+
+   err, bx, by, bw, bh = &inputViewport.mtGetBoundary(0)
+   if err is ERR_Okay then
+      &menu.x = bx
+      &menu.y = by + bh
+      if &inputViewport.width > 0 then &menu.scale = bw / &inputViewport.width end
+   end
+
+   -- An unlocked menu keeps its natural width if that is wider than the box, but never appears narrower than it.
+
+   if &unlockMenuWidth then
+      &menu.width = math.max(&_menuWidth, &inputViewport.width)
+   else
+      &menu.width = &inputViewport.width
+   end
+
+   if not &menu.visible then
+      &_menuNavigated = false
+      &menu.highlightText(&text.string)
+   end
+
+   &menu.toggle()
+end
+
+-- Creates the dropdown menu for Items, replacing any existing menu.
+
+function createMenu(Items:any)
+   if &menu then
+      &menu.hide()
+      &menu.surface?.free()
+   end
+
+   &menu = gui._dropdown({
+      target    = 0, -- Open on the host desktop so the menu can extend beyond the combobox window
+      relative  = &viewport,
+      items     = Items ?? { },
+      lineLimit = 8,
+      feedback = function[<weak> &&](Item:table!)
+         &text.string = Item.label
+         reportFeedback(Item)
+         &viewport.acDraw()
+      end,
+      theme = &dropdownTheme
+   })
+
+   &_menuWidth = &menu.width -- The natural width of the menu content
+
+   if &unlockMenuWidth then -- Size the box to the width of the menu, but never below the default
+      width = math.max(&menu.width, gui.rpixel('200dp'))
+      if &_label then width = &_label.expand(width, &_boxHeight) end
+      &viewport.width = width
+   end
+end
+
+-- Recreates the dropdown menu with its current items, e.g. after a theme change.  An open menu is reopened with the
+-- same highlight.
+
+function rebuildMenu()
+   items = { }
+   for item in values(&menu.items) do items.insert(item.config) end
+
+   was_visible = &menu.visible
+   highlight   = &menu.hItem?.config?.label
+   navigated   = &_menuNavigated
+
+   createMenu(items)
+
+   if was_visible then
+      toggleMenu()
+      if highlight then &menu.highlightText(highlight) end
+      &_menuNavigated = navigated
+   end
+end
+
+gui.combobox = function(Options:table)
+   self = entity { -- Public interface
+      events         = Options.events ?? { },
+      label          = Options.label,
+      labelPos       = Options.labelPos ?? 'left',
+      labelAlign     = Options.labelAlign ?? 'left',
+      labelWidth     = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
+      parentViewport = Options.target,
+      allowCustom    = Options.allowCustom,
+      menuIcon       = Options.menuIcon ?? 'arrows/down',
+      _menuNavigated = false,
+      text           = nil, -- A VectorText that represents the string
+      viewport       = nil  -- The primary viewport
+   }
+
+   -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
+   -- the base theme or the override changes.
+
+   base_theme = nil
+   override = nil -- Per-instance override from setTheme()
+
+   local FONT_MAX_HEIGHT, FONT_HEIGHT, DEFAULT_HEIGHT, MARGIN
+
+   function buildTheme()
+      &theme = base_theme
+      if Options.theme then &theme = table.merge(&theme, Options.theme, true, true) end
+      if override then &theme = table.merge(&theme, override, true, true) end
+      &input_theme = &theme.input
+
+      -- Apply the combobox text theme to the dropdown for consistency.  A dropdown section in the theme option or the
+      -- override takes precedence.
+
+      &dropdownTheme = table.clone(&theme.dropdown)
+      &dropdownTheme.text = table.merge(&dropdownTheme.text, &input_theme.text, true)
+
+      if Options.theme?.dropdown then
+         &dropdownTheme = table.merge(&dropdownTheme, Options.theme.dropdown, true, true)
+      end
+
+      if override?.dropdown then
+         &dropdownTheme = table.merge(&dropdownTheme, override.dropdown, true, true)
+      end
+
+      FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(&input_theme.text)
+      DEFAULT_HEIGHT = math.floor(FONT_MAX_HEIGHT * 1.1)
+      MARGIN = math.floor(FONT_HEIGHT * 0.5)
+   end
+
+   -- Compose the box style from the current focus and disabled states.  Focus styling is suppressed while the
+   -- combobox is disabled.
+
+   function refreshStyle()
+      gui.applyStyle(&bkgd, &input_theme.bkgd)
+      if &disabled then
+         gui.applyStyle(&bkgd, &input_theme.disabled)
+      elseif &_focus then
+         gui.applyStyle(&bkgd, &input_theme.focus)
+      end
+   end
+
+   -- Change the active state of the combobox box to disabled or enabled
+
+   self.disable = function()
+      &disabled = true
+      &menu?.hide()
+      &viewport.acDisable()
+      &viewport.opacity = 0.5
+      refreshStyle()
+      &events.disable?()
+      &viewport.acDraw()
+   end
+
+   self.enable = function()
+      &disabled = false
+      &viewport.acEnable()
+      &viewport.opacity = 1
+      refreshStyle()
+      &events.enable?()
+      &viewport.acDraw()
+   end
+
+   -- Replace the text without reporting an activate event.
+
+   self.setText = function(Text:str)
+      &text.string = Text ?? ''
+      &hash = Text ? string.hash(Text) : 0
+      &viewport.acDraw()
+   end
+
+   -- Replace the list of items in the menu.  If custom text is not allowed and the current text does not match an
+   -- item, the text is reset to the first item.
+
+   self.setItems = function(Items:any!)
+      assert(&allowCustom or firstItem(Items), 'A list of items is required.')
+      createMenu(Items)
+
+      if not &allowCustom then
+         current = &text.string
+         found = false
+         for item in values(Items) do
+            if item.label is current then
+               found = true
+               break
+            end
+         end
+
+         if not found then
+            &setText(firstItem(Items).label)
+         end
+      end
+
+      &viewport.acDraw()
+   end
+
+   -- Main entry point --
+
+   using self do
+      assert(Options.target, 'A target viewport is required.')
+      assert(Options.allowCustom or firstItem(Options.items), 'A list of items is required.')
+
+      base_theme = gui.getTheme(&parentViewport)
+      buildTheme()
+      gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
+
+      vps = { -- Viewport settings
+         x       = Options.x is <num> ? math.floor(Options.x) : Options.x,
+         y       = Options.y is <num> ? math.floor(Options.y) : Options.y,
+         width   = Options.width,
+         height  = Options.height ?? DEFAULT_HEIGHT,
+         xOffset = Options.xOffset is <num> ? math.floor(Options.xOffset) : Options.xOffset,
+         yOffset = Options.yOffset is <num> ? math.floor(Options.yOffset) : Options.yOffset
+      }
+
+      if not vps.x and not vps.xOffset then vps.x = 0 end
+      if not vps.y and not vps.yOffset then vps.y = 0 end
+      if not vps.width and not vps.xOffset then
+         vps.width = gui.rpixel('340dp')
+         &unlockMenuWidth = true
+      end
+
+      &viewport = &parentViewport.new('VectorViewport', vps)
+
+      -- The menu lives on the desktop rather than inside the combobox, so it is not freed with the viewport.
+
+      &viewport.subscribe('free', function(Viewport, Args)
+         &menu?.surface?.free()
+      end)
+
+      -- The box takes the space that remains after the label reservation.  Explicit dimensions include the label, and
+      -- a default height grows to fit a stacked label.
+
+      box = { x = 0, y = 0, xOffset = 0, yOffset = 0 }
+
+      if &label then
+         &_label = gui.layout.label(&viewport, {
+            string = &label, pos = &labelPos,
+            align = &labelAlign,
+            width = &labelWidth,
+            style = &theme.window.text
+         })
+         &labelText = &_label.text
+         &_label.reserve(box)
+
+         if &_label.stacked and not Options.height then
+            _, height = &_label.expand(0, DEFAULT_HEIGHT)
+            &viewport.height = height
+         end
+      end
+
+      &_boxHeight = &viewport.height - box.y - box.yOffset
+      BOX_HEIGHT <const> = &_boxHeight
+
+      &inputViewport = &viewport.new('VectorViewport', box)
+
+      if &_label then
+         &_label.place(&viewport.width, &viewport.height, box.y, BOX_HEIGHT)
+         &_label.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+            &_label.place(Width, Height, box.y, &_boxHeight)
+         end
+      end
+
+      edge = (&input_theme.bkgd.strokeWidth ?? 0) * 0.5 -- Adjustment for crisp strokes
+      &bkgd = &inputViewport.new('VectorRectangle', table.merge({
+         x = edge, y = edge, xOffset = edge, yOffset = edge
+      }, &input_theme.bkgd))
+
+      clip_inset = math.ceil(&input_theme.bkgd.strokeWidth) -- Whole pixels keep the text and icon sharp
+      ICON_SIZE = math.min(FONT_HEIGHT, BOX_HEIGHT - (clip_inset * 2))
+
+      -- Returns the drop-down icon pattern in the current text colour, and the placement of the viewport that paints
+      -- it.  The viewport is padded to suit the pattern tile, see gui.createIcon().
+
+      function iconSettings():table
+         icon = gui.createIcon(&viewport.scene, &menuIcon, ICON_SIZE, iconTheme(&&))
+         return {
+            xOffset = MARGIN - icon.margin,
+            y       = math.floor((BOX_HEIGHT - ICON_SIZE) * 0.5) - icon.margin,
+            width   = ICON_SIZE + (icon.margin * 2),
+            height  = ICON_SIZE + (icon.margin * 2),
+            fill    = icon.fill
+         }
+      end
+
+      &iconRender = &inputViewport.new('VectorViewport', iconSettings())
+
+      &_textClip = &inputViewport.new('VectorViewport', {
+         cursor = (function()
+            if &allowCustom then return 'text' end
+         end)(),
+         x = clip_inset, y = clip_inset, xOffset = ICON_SIZE + MARGIN + MARGIN, yOffset = clip_inset,
+         overflow = VOF_HIDDEN
+      })
+
+      defaultText = Options.text
+      if not Options.allowCustom and not defaultText then
+         defaultText = firstItem(Options.items).label
+      end
+
+      -- The text is inset from the left by the space above it, so that the margins look even at any box height.
+
+      text_inset = math.floor((BOX_HEIGHT - FONT_HEIGHT - (clip_inset * 2)) * 0.5)
+
+      &text = &_textClip.new('VectorText', table.merge({
+         x         = text_inset,
+         y         = FONT_HEIGHT + text_inset,
+         string    = defaultText,
+         lineLimit = 1,
+         textFlags = (function()
+            flags = 0
+            if &allowCustom then
+               flags = flags | VTXF_EDITABLE
+            end
+            return flags
+         end)()
+      }, &input_theme.text))
+
+      if Options.selectAll then &text.mtSelectArea(0, 0, -1, -1) end -- Select all of the text
+
+      focus_mask = FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS | FM_TAB_FOCUS
+      &viewport.mtSubscribeFeedback(focus_mask, function(Viewport, Event)
+         if Event is FM_TAB_FOCUS then
+            -- Focus that arrives by keyboard selects all of the editable text.  Pointer focus leaves the caret where
+            -- the user clicked.
+
+            if &allowCustom and not &disabled then &text.mtSelectArea(0, 0, -1, -1) end
+         elseif Event is FM_LOST_FOCUS then
+            &_focus = false
+            refreshStyle()
+            &events.lostFocus?()
+            if &allowCustom then
+               reportFeedback()
+            end
+
+            &menu.hide()
+         else
+            &_lastGoodInput = &text.string
+            &_focus = true
+            refreshStyle()
+            if not &disabled then &events.focus?() end
+         end
+
+         Viewport.acDraw()
+      end)
+
+      &_textClip.mtSubscribeKeyboard(function(Viewport, Qualifiers, Value, Unicode)
+         if not (Qualifiers has KQ_PRESSED) then return end
+
+         -- The menu cannot take the focus, so navigation keys are forwarded to it while it is open.  Home and End
+         -- are left to the caret if the text is editable.
+
+         if &menu.visible then
+            if Value is KEY_UP then
+               &_menuNavigated = true
+               &menu.step(-1)
+               return
+            elseif Value is KEY_DOWN then
+               &_menuNavigated = true
+               &menu.step(1)
+               return
+            elseif (Value is KEY_PAGE_UP) or (Value is KEY_PAGE_DOWN) then
+               page = &menu.lineLimit ?? 8
+               &_menuNavigated = true
+               &menu.step(Value is KEY_PAGE_UP ? -page : page)
+               return
+            elseif (Value is KEY_HOME) and (not &allowCustom) then
+               &_menuNavigated = true
+               &menu.moveToEnd(false)
+               return
+            elseif (Value is KEY_END) and (not &allowCustom) then
+               &_menuNavigated = true
+               &menu.moveToEnd(true)
+               return
+            elseif Value is KEY_ESCAPE then
+               &menu.hide() return
+            elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or ((not &allowCustom) and (Value is KEY_SPACE)) then
+               if (not &allowCustom) or &_menuNavigated then
+                  if &menu.activate() then return end
+               end
+            end
+
+            -- Any other key resumes text editing, so an earlier menu highlight must not replace the edited value.
+
+            if &allowCustom then &_menuNavigated = false end
+         elseif (Value is KEY_UP) or (Value is KEY_DOWN) then
+            toggleMenu()
+            return
+         end
+
+         if (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or ((not &allowCustom) and (Value is KEY_SPACE)) then
+            toggleMenu()
+            if &allowCustom then
+               reportFeedback()
+            end
+         end
+      end)
+
+      &inputViewport.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Msg:any!)
+         repeat
+            if (Msg.type is JET_LMB) and (Msg.value > 0) then
+               toggleMenu()
+            end
+            Msg = Msg.next
+         until Msg is nil
+      end)
+
+      -- Apply the current theme to the existing vectors.  The font, the position of the text and the size of the icon
+      -- are not changed.  The drop-down list is rebuilt for the new theme.
+
+      function restyle()
+         sw = &input_theme.bkgd.strokeWidth ?? 0
+         edge = sw * 0.5
+         &bkgd.{ x = edge, y = edge, xOffset = edge, yOffset = edge }
+         refreshStyle()
+
+         inset = math.ceil(sw)
+         &_textClip.{ x = inset, y = inset, yOffset = inset }
+
+         if &input_theme.text.fill then &text.fill = &input_theme.text.fill end
+         if &labelText and &theme.window.text.fill then &labelText.fill = &theme.window.text.fill end
+
+         try
+            gui.applyStyle(&iconRender, iconSettings())
+         except e
+            msg(f'Failed to restyle combobox icon "{&menuIcon}": {e.message}')
+         end
+
+         rebuildMenu()
+         &viewport.acDraw()
+      end
+
+      -- Style this combobox instance.  Override is merged over the complete theme, as for Options.theme, and is kept
+      -- when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+      &setTheme = function(Override:table)
+         override = Override
+         buildTheme()
+         restyle()
+      end
+
+      -- Called by gui.broadcastTheme() with the window's new theme.
+
+      &applyTheme = function(Theme:table!)
+         base_theme = Theme
+         buildTheme()
+         restyle()
+      end
+
+      createMenu(Options.items)
+      gui.registerWidget(&viewport, &&)
+
+      if Options.disabled then &disable() end
+      &events.show?()
+
+      return &&
+   end
+end

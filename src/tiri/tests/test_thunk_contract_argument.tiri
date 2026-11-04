@@ -1,0 +1,13 @@
+-- Regression test for resolving deferred expressions before parameter type contracts.
+
+function accept_string(String:str):str
+   return String
+end
+
+@Test function DeferredStringArgumentResolvesBeforeContract()
+   local deferred_string = <{ 'resolved string' }>
+   assert(deferred_string is 'resolved string', 'The deferred expression must resolve to a string')
+
+   local result = accept_string(<{ 'resolved string' }>)
+   assert(result is 'resolved string', 'The typed parameter must receive the resolved string')
+end

@@ -1,0 +1,5 @@
+module core as mImportedCore
+
+global function imported_module_time():num
+   return mImportedCore.PreciseTime()
+end

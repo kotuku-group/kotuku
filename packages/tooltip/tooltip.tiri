@@ -1,0 +1,299 @@
+@Package(name="gui/tooltip", version="1.0")
+
+--[[
+Creates a short-lived surface that disappears when the mouse is moved.
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   include 'display', 'vector'
+
+   module display as mGfx
+   module vector as mVec
+
+   namespace gui
+
+DEFAULT_MAX_WIDTH <const> = 360  -- Text that would exceed this width (in pixels) is word-wrapped
+MOVE_LIMIT <const>        = 16   -- Pointer movement (in pixels) that dismisses the tooltip
+HOVER_DELAY <const>       = 0.75 -- Seconds that the pointer must rest on a hover target before its tip is shown
+
+glLastTip = 0 -- Surface ID of the most recent tooltip.  Only one tooltip can be displayed at a time.
+
+-- Word-wrap Text to fit Width pixels when drawn with Font.  Line breaks in Text are preserved, so that a blank line
+-- can separate paragraphs.  If Font is nil then only the existing line breaks are applied.
+
+function wrapText(Font:any, Text:str!, Width:num!):array<str>
+   lines = array<str>
+   for para in values(Text.split('\n')) do
+      line:str
+      for word in values(para.split(' ')) do
+         if #word > 0 then
+            candidate = line ? (line .. ' ' .. word) : word
+            if line and Font and (mVec.StringWidth(Font, candidate, -1) > Width) then
+               lines.push(line)
+               line = word
+            else
+               line = candidate
+            end
+         end
+      end
+      lines.push(line ?? '')
+   end
+   return lines
+end
+
+-- Returns the desktop area that a tooltip at the pointer position must remain within.  This is the monitor that
+-- hosts the target's display, or the primary monitor if the target's display cannot be resolved.  If the pointer is
+-- outside of that monitor (e.g. the window spans several monitors) then the complete virtual desktop is used.
+
+function screenBounds(Target:any, PointerX:num!, PointerY:num!):<num, num, num, num>
+   err, info = mGfx.GetDisplayInfo(Target?.scene?.surface?.display ?? 0)
+   if (err != ERR_Okay) or ((info.monitorWidth ?? 0) <= 0) then
+      err, info = mGfx.GetDisplayInfo(0)
+      if err != ERR_Okay then return 0, 0, math.huge, math.huge end
+   end
+
+   left   = info.monitorX
+   top    = info.monitorY
+   right  = left + ((info.monitorWidth > 0) ? info.monitorWidth : info.width)
+   bottom = top + ((info.monitorHeight > 0) ? info.monitorHeight : info.height)
+
+   if ((PointerX < left) or (PointerX >= right) or (PointerY < top) or (PointerY >= bottom)) and
+         (info.virtualWidth > 0) then
+      left   = info.virtualX
+      top    = info.virtualY
+      right  = left + info.virtualWidth
+      bottom = top + info.virtualHeight
+   end
+
+   return left, top, right, bottom
+end
+
+gui.tooltip = function(Options:table)
+   -- New tooltips are refused until the previous tooltip's surface has been removed.
+
+   if (glLastTip != 0) and obj.find(glLastTip) then return nil end
+
+   local self = setmetatable(entity { -- Public interface
+      }, {
+         __gc = function()
+            &surface?.free()
+         end
+      })
+
+   using self do
+      theme = Options.theme ?? gui.getTheme(Options.target).tooltip
+
+      -- The system pointer does not exist until a display has been shown, and never exists in headless mode.
+
+      ptr = obj.find('systempointer')
+      ptr ?! return nil
+
+      &surface = obj.new('surface', {
+         name     = 'rgnTip',
+         x        = ptr.x + 6,
+         y        = ptr.y,
+         width    = 300,
+         parent   = 0,
+         presence = SPT_NONE,
+         flags    = RNF_STICK_TO_FRONT | RNF_COMPOSITE
+      })
+
+      &surface.detach()
+
+      glLastTip = &surface.id
+
+      &scene = &surface.new('VectorScene', { flags = VPF_RESIZE, surface = &surface })
+
+      &viewport = &scene.new('VectorViewport', { })
+
+      &box = &viewport.new('VectorRectangle', table.merge({
+         x = 1, y = 1, xOffset = 1, yOffset = 1,
+      }, theme.bkgd))
+
+      font = choose #Options.text from
+         < 50 -> gui.fonts.page
+         else -> gui.fonts.small
+      end
+
+      pad = font.size
+
+      &text = &viewport.new('VectorText', table.merge({
+         x         = pad,
+         face      = font.face,
+         fontStyle = font.style,
+         fontSize  = string.format('%.2fpt', font.size),
+         textFlags = VTXF_RASTER
+      }, theme.text))
+
+      -- Long text is word-wrapped to the maximum width, less the padding on either side.  The font is measured
+      -- after the theme has been applied, as the theme can override the face, style and size.
+
+      err, font = mVec.GetFontHandle(&text.face, &text.fontStyle ?? 'Regular', 0,
+         math.round(tonumber(&text.fontSize)))
+
+      lines = wrapText((err is ERR_Okay) ? font : nil, Options.text ?? '',
+         (Options.maxWidth ?? DEFAULT_MAX_WIDTH) - (pad * 2))
+
+      &text.string = lines.concat('\n')
+
+      -- The first line is centred within a single-line tooltip's height, and each further line adds the line
+      -- spacing.
+
+      line_height = (pad * 1.5) + tonumber(&text.fontSize)
+
+      &surface.{
+         height = line_height + ((#lines - 1) * &text.lineSpacing),
+         width  = (pad * 2) + &text.textWidth,
+         y      = ptr.y - &surface.height
+      }
+
+      &text.y = math.floor((line_height * 0.5) + (&text.displaySize * 0.5))
+
+      -- The tooltip is terminated when a button is pressed, or when the pointer has moved at least MOVE_LIMIT
+      -- pixels from where it was when the tooltip was created.  The small tolerance prevents hand tremor from
+      -- dismissing the tooltip.  The callbacks use function[] and refer to the surface by ID so that the input
+      -- subscription does not retain the tooltip entity.  Freeing the surface by any means releases the
+      -- subscription.
+
+      surface_id = &surface.id
+      start_x = ptr.x
+      start_y = ptr.y
+
+      local function[] dismissTip(Input, Event)
+         if Event.flags has JTYPE_MOVEMENT then
+            dx = Event.absX - start_x
+            dy = Event.absY - start_y
+            if (dx * dx) + (dy * dy) < MOVE_LIMIT * MOVE_LIMIT then return end
+         end
+         Input.unsubscribe()
+         obj.find(surface_id)?.free()
+      end
+
+      local dismiss
+      local function[] releaseDismiss()
+         dismiss.unsubscribe()
+      end
+
+      if Options.bind then
+         -- Tie tooltip visibility to viewport-cursor interaction
+         Options.bind.mtSubscribeInput(JTYPE_CROSSING, function[<weak> &&](Viewport:obj!, Msg:any!)
+            repeat
+               if Msg.type is JET_CROSSED_OUT then
+                  &surface.acFree()
+                  return ERR_Terminate
+               end
+               Msg = Msg.next
+            until not Msg
+         end)
+      else
+         dismiss = input.subscribe(JTYPE_CROSSING | JTYPE_MOVEMENT | JTYPE_BUTTON, nil, 0, dismissTip)
+         &surface.subscribe('free', releaseDismiss)
+      end
+
+      -- Adjust the position of the tooltip so that it fits on the screen.
+
+      left, top, right, bottom = screenBounds(Options.target, ptr.x, ptr.y)
+
+      if &surface.y < top then
+         &surface.y = ptr.y + 20
+      end
+
+      if &surface.x + &surface.width > right then
+         &surface.x = math.max(left, right - &surface.width)
+      end
+
+      if &surface.y + &surface.height > bottom then
+         &surface.y = math.max(top, bottom - &surface.height)
+      end
+
+      &surface.acShow()
+
+      return &&
+   end
+end
+
+-- Show a tooltip for a viewport after the pointer has rested on it.  The delay starts when the pointer enters the
+-- target, and is cancelled when the pointer leaves it or a button is pressed.  The subscription holds the returned
+-- table, so it lasts as long as the target.
+
+gui.hoverTip = function(Options:table!)
+   target = Options.target
+   target ?! raise ERR_NullArgs
+   target_id = target.id
+
+   self = setmetatable(entity {
+      target   = target,
+      text     = Options.text, -- A string, or a function that returns the text when the delay expires
+      delay    = (Options.delay != nil) ? Options.delay : HOVER_DELAY,
+      maxWidth = Options.maxWidth,
+      theme    = Options.theme,
+      tooltip  = nil, -- The displayed tooltip, retained because it is removed when its table is collected
+      timer    = nil
+   }, {
+      __gc = function()
+         &cancel()
+      end
+   })
+
+   using self do
+      function stopTimer()
+         if &timer then
+            mSys.UpdateTimer(&timer, 0)
+            &timer = nil
+         end
+      end
+
+      -- Show the tooltip now, if the target still exists and there is text to show.
+
+      &show = function()
+         stopTimer()
+         if not obj.find(target_id) then return end
+         text = &text
+         if text is <func> then text = text() end
+         if (text != <str>) or (#text is 0) then return end
+         &tooltip = gui.tooltip({ target = &target, text = text, maxWidth = &maxWidth, theme = &theme })
+      end
+
+      -- Start the delay, or restart it if it is already running.
+
+      &start = function()
+         if &delay <= 0 then
+            &show()
+         elseif &timer then
+            mSys.UpdateTimer(&timer, &delay)
+         else
+            err, &timer = mSys.SubscribeTimer(&delay, function()
+               &timer = nil
+               &show()
+               raise ERR_Terminate
+            end)
+         end
+      end
+
+      -- Stop the delay and remove the tooltip if it is displayed.
+
+      &cancel = function()
+         stopTimer()
+         tip = &tooltip
+         &tooltip = nil
+         tip?.surface?.free()
+      end
+
+      target.mtSubscribeInput(JTYPE_CROSSING | JTYPE_BUTTON, function[&&](Viewport:obj!, Msg:any!)
+         repeat
+            if Msg.type is JET_CROSSED_IN then
+               &start()
+            elseif Msg.type is JET_CROSSED_OUT then
+               &cancel()
+            elseif (Msg.flags has JTYPE_BUTTON) and (Msg.value > 0) then
+               &cancel()
+            end
+            Msg = Msg.next
+         until not Msg
+      end)
+
+      return &&
+   end
+end

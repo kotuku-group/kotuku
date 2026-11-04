@@ -10,13 +10,17 @@ extern "C" ModHeader * register_font_module();
 extern "C" ModHeader * register_http_module();
 extern "C" ModHeader * register_jpeg_module();
 extern "C" ModHeader * register_json_module();
+extern "C" ModHeader * register_lzma_module();
 extern "C" ModHeader * register_mp3_module();
 extern "C" ModHeader * register_network_module();
-extern "C" ModHeader * register_picture_module();
+extern "C" ModHeader * register_crypto_module();
+extern "C" ModHeader * register_image_module();
 extern "C" ModHeader * register_regex_module();
 extern "C" ModHeader * register_scintilla_module();
 extern "C" ModHeader * register_svg_module();
 extern "C" ModHeader * register_vector_module();
+extern "C" ModHeader * register_websocket_module();
+extern "C" ModHeader * register_webrtc_module();
 extern "C" ModHeader * register_xml_module();
 extern "C" ModHeader * register_xquery_module();
 
@@ -61,6 +65,10 @@ static void register_static_modules(void)
    glStaticModules["json"] = register_json_module();
    #endif
 
+   #ifdef INC_MOD_LZMA
+   glStaticModules["lzma"] = register_lzma_module();
+   #endif
+
    #ifdef INC_MOD_MP3
    glStaticModules["mp3"] = register_mp3_module();
    #endif
@@ -69,8 +77,12 @@ static void register_static_modules(void)
    glStaticModules["network"] = register_network_module();
    #endif
 
-   #ifdef INC_MOD_PICTURE
-   glStaticModules["picture"] = register_picture_module();
+   #ifdef INC_MOD_CRYPTO
+   glStaticModules["crypto"] = register_crypto_module();
+   #endif
+
+   #ifdef INC_MOD_IMAGE
+   glStaticModules["image"] = register_image_module();
    #endif
 
    #ifdef INC_MOD_REGEX
@@ -87,6 +99,14 @@ static void register_static_modules(void)
 
    #ifdef INC_MOD_VECTOR
    glStaticModules["vector"] = register_vector_module();
+   #endif
+
+   #ifdef INC_MOD_WEBSOCKET
+   glStaticModules["websocket"] = register_websocket_module();
+   #endif
+
+   #ifdef INC_MOD_WEBRTC
+   glStaticModules["webrtc"] = register_webrtc_module();
    #endif
 
    #ifdef INC_MOD_XML

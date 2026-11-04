@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,17 +5,17 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Adapts a vertex source to a vertex-processing generator. Hooks into clipping and viewport-style generators that
+// transform or filter vertices as they stream through. In the vector renderer it lets path processors sit in the
+// conversion chain before rasterisation.
 
-
-#ifndef AGG_CONV_ADAPTOR_VPGEN_INCLUDED
-#define AGG_CONV_ADAPTOR_VPGEN_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //======================================================conv_adaptor_vpgen
     template<class VertexSource, class VPGen> class conv_adaptor_vpgen
     {
     public:
@@ -148,7 +147,3 @@ namespace agg
 
 
 }
-
-
-#endif
-

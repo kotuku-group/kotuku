@@ -33,6 +33,7 @@ module.
 
 #include <kotuku/main.h>
 #include <kotuku/modules/regex.h>
+#include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
 #include "srell/srell.hpp"
 
@@ -138,16 +139,13 @@ static srell::regex_constants::match_flag_type convert_match_flags(RMATCH Flags)
 //********************************************************************************************************************
 // C++ destructor for cleaning up compiled Regex objects
 
-static ERR regex_free(APTR Address)
+static ERR regex_free(ResourceRecord &Resource, APTR Address)
 {
    ((extRegex *)Address)->~extRegex();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
-static ResourceManager glRegexMgr = {
-   "Regex",
-   &regex_free
-};
+static ResourceManager glRegexMgr = { "Regex", &regex_free, false };
 
 //********************************************************************************************************************
 
@@ -159,7 +157,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODOpen(OBJECTPTR Module)
 {
-   Module->set(FID_FunctionList, glFunctions);
+   ((objModule *)Module)->setFunctionList(glFunctions);
    return ERR::Okay;
 }
 
@@ -182,16 +180,18 @@ compiled regex object can be reused for multiple match or search operations, imp
 removed with ~Core:FreeResource() when no longer needed to avoid memory leaks.
 
 -INPUT-
-cpp(strview) Pattern: A regex pattern string.
+strview Pattern: A regex pattern string.
 flags(REGEX) Flags:  Optional flags.
-&cpp(str) ErrorMsg: Optional reference for storing custom error messages.
-!ptr(struct(Regex)) Result: Pointer to store the created regex object.
+^&string ErrorMsg: Optional reference for storing custom error messages.
+!struct(Regex) Result: Pointer to store the created regex object.
 
 -ERRORS-
 Okay
-NullArgs
 AllocMemory
 Syntax
+
+-TAGS-
+caller-owns-result, creates-resource, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -203,8 +203,7 @@ ERR Compile(const std::string_view &Pattern, REGEX Flags, std::string *ErrorMsg,
    log.traceBranch("Pattern: '%.*s', Flags: $%.8x", int(Pattern.size()), Pattern.data(), int(Flags));
 
    extRegex *regex;
-   if (AllocMemory(sizeof(struct extRegex), MEM::MANAGED, &regex) IS ERR::Okay) {
-      SetResourceMgr(regex, &glRegexMgr);
+   if (!AllocResource(sizeof(struct extRegex), MEM::NIL, (APTR *)&regex, &glRegexMgr)) {
       new (regex) extRegex();
       regex->Pattern = Pattern;
       regex->Flags = Flags;
@@ -250,14 +249,17 @@ multiple groups to share the same name; this function therefore returns every in
 If no capture groups match the provided name, `ERR::Search` is returned.
 
 -INPUT-
-ptr(struct(Regex)) Regex: The compiled regex object.
-cpp(strview) Name: The capture group name to resolve.
-&cpp(array(int)) Indices: Receives the resulting capture indices.
+struct(Regex) Regex: The compiled regex object.
+strview Name: The capture group name to resolve.
+^&vector(int) Indices: Receives the resulting capture indices.
 
 -ERRORS-
 Okay: The name was resolved and Indices populated.
 NullArgs: One or more required arguments were null.
 Search: The provided name does not exist within the regex.
+
+-TAGS-
+mutates-input, pure-query
 -END-
 
 *********************************************************************************************************************/
@@ -287,15 +289,18 @@ the input text, a replacement string, and optional flags to modify the replaceme
 string can include back-references like `\1`, `\2`, etc., to refer to captured groups from the regex match.
 
 -INPUT-
-ptr(struct(Regex)) Regex: The compiled regex object.
-cpp(strview) Text: The input text to perform replacements on.
-cpp(strview) Replacement: The replacement string, which can include back-references like `\1`, `\2`, etc.
-&cpp(str) Output: Receives the resulting string after replacements.
+struct(Regex) Regex: The compiled regex object.
+strview Text: The input text to perform replacements on.
+strview Replacement: The replacement string, which can include back-references like `\1`, `\2`, etc.
+^&string Output: Receives the resulting string after replacements.
 int(RMATCH) Flags: Optional flags to modify the replacement behavior.
 
 -ERRORS-
 Okay: Successful execution, does not necessarily mean replacements were made.
 NullArgs: One or more required input arguments were null.
+
+-TAGS-
+mutates-input
 -END-
 
 *********************************************************************************************************************/
@@ -514,8 +519,8 @@ pattern (including the full match at index 0). Optional groups that did not matc
 `std::string_view` instances, ensuring consistent indexing across matches.
 
 -INPUT-
-ptr(struct(Regex)) Regex: The compiled regex object.
-cpp(strview) Text: The input text to perform matching on.
+struct(Regex) Regex: The compiled regex object.
+strview Text: The input text to perform matching on.
 int(RMATCH) Flags: Optional flags to modify the matching behavior.
 ptr(func) Callback: Receives the match results.
 
@@ -523,6 +528,10 @@ ptr(func) Callback: Receives the match results.
 Okay: At least one match was found and processed.
 NullArgs: One or more required input arguments were null.
 Search: No matches were found.
+Terminate
+
+-TAGS-
+callback-inlines, does-not-take-ownership
 -END-
 
 *********************************************************************************************************************/
@@ -530,6 +539,10 @@ Search: No matches were found.
 ERR Search(Regex *Regex, const std::string_view &Text, RMATCH Flags, FUNCTION *Callback)
 {
    kt::Log log(__FUNCTION__);
+
+   auto consume_callback = kt::Defer([&]() {
+      if (Callback) Callback->consume();
+   });
 
    if (not Regex) return log.warning(ERR::NullArgs);
 
@@ -590,14 +603,17 @@ The resulting tokens are stored in the provided output array.
 If no matches are found, the entire input text is returned as a single token.
 
 -INPUT-
-ptr(struct(Regex)) Regex: The compiled regex object.
-cpp(strview) Text: The input text to split.
-&cpp(array(cpp(str))) Output: Receives the resulting string tokens.
+struct(Regex) Regex: The compiled regex object.
+strview Text: The input text to split.
+^&vector(string) Output: Receives the resulting string tokens.
 int(RMATCH) Flags: Optional flags to modify the splitting behavior.
 
 -ERRORS-
 Okay: The string was successfully split into tokens. If no matches are found, the entire input text is returned as a single token.
 NullArgs: One or more required input arguments were null.
+
+-TAGS-
+mutates-input
 -END-
 
 *********************************************************************************************************************/
@@ -649,8 +665,8 @@ ERR Split(Regex *Regex, const std::string_view &Text, kt::vector<std::string> *O
 
 //********************************************************************************************************************
 
-static STRUCTS glStructures = {
-   { "Regex", sizeof(struct Regex) }
+static ModHeader::STRUCTS glStructures = {
+   { "Regex", { sizeof(struct Regex), alignof(struct Regex) } }
 };
 
 KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)

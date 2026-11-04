@@ -1,12 +1,11 @@
--- Flute tests for horizontal ellipsis (…) operator
--- The … Unicode character (U+2026) should map to ... (varargs)
+-- Flute tests for ASCII varargs and rejection of the legacy Unicode ellipsis token.
 
 @BeforeEach(hotpath=true)
 function enforce_hotpath() end
 
-@Test function EllipsisBasic()
-   function variadic(…)
-      return {…}
+@Test function AsciiVarargsBasic()
+   function variadic(...)
+      return {...}
    end
 
    result = variadic(1, 2, 3)
@@ -16,42 +15,9 @@ function enforce_hotpath() end
    assert(result[2] is 3, "Third element should be 3")
 end
 
-@Test function EllipsisNoArgs()
-   function variadic(…)
-      return {…}
-   end
-
-   result = variadic()
-   assert(#result is 0, "Variadic with no args should have 0 elements")
-end
-
-@Test function EllipsisSingleArg()
-   function variadic(…)
-      return {…}
-   end
-
-   result = variadic("hello")
-   assert(#result is 1, "Variadic with 1 arg should have 1 element")
-   assert(result[0] is "hello", "First element should be 'hello'")
-end
-
-@Test function EllipsisMultipleTypes()
-   function variadic(…)
-      return {…}
-   end
-
-   -- Note: nil values are dropped by Lua when captured with {...}
-   result = variadic(1, "two", 3.0, true)
-   assert(#result is 4, "Variadic with 4 args should have 4 elements")
-   assert(result[0] is 1, "First element should be 1")
-   assert(result[1] is "two", "Second element should be 'two'")
-   assert(result[2] is 3.0, "Third element should be 3.0")
-   assert(result[3] is true, "Fourth element should be true")
-end
-
-@Test function EllipsisWithNamedParams()
-   function variadic(a, b, …)
-      return a, b, {…}
+@Test function AsciiVarargsWithNamedParams()
+   function variadic(a, b, ...):<any, ...>
+      return a, b, {...}
    end
 
    a, b, rest = variadic(10, 20, 30, 40, 50)
@@ -63,13 +29,13 @@ end
    assert(rest[2] is 50, "Rest[2] should be 50")
 end
 
-@Test function EllipsisForwarding()
-   function inner(…)
-      return {…}
+@Test function AsciiVarargsForwarding()
+   function inner(...)
+      return {...}
    end
 
-   function wrapper(…)
-      return inner(…)
+   function wrapper(...)
+      return inner(...)
    end
 
    result = wrapper("a", "b", "c")
@@ -79,42 +45,26 @@ end
    assert(result[2] is "c", "Element 2 should be 'c'")
 end
 
-@Test function EllipsisUnpacking()
-   function variadic(…)
-      count = 0
-      for _ in ipairs({…}) do
-         count++
-      end
-      return count
+@Test function UnicodeEllipsisRejectedInParameterList()
+   try
+      exec("function variadic(\u{2026}) return {} end")
+   success
+      assert(false, "Unicode ellipsis should not be accepted as a vararg parameter")
    end
-
-   result = variadic(1, 2, 3, 4, 5)
-   assert(result is 5, "Count of 5 args should be 5")
 end
 
-@Test function EllipsisInStringFormat()
-   function format_args(fmt, …)
-      return string.format(fmt, …)
+@Test function UnicodeEllipsisRejectedInExpression()
+   try
+      exec("function variadic(...) return {\u{2026}} end")
+   success
+      assert(false, "Unicode ellipsis should not be accepted as a vararg expression")
    end
-
-   result = format_args("Number: %d, String: %s", 42, "test")
-   assert(result is "Number: 42, String: test", "Format with variadic args should work")
 end
 
-@Test function AsciiEllipsisMixedWithUnicode()
-   -- Test that both ASCII ... and Unicode … can coexist
-   function ascii_variadic(...)
-      return {...}
+@Test function UnicodeEllipsisRejectedInsideIdentifier()
+   try
+      exec("local value\u{2026} = 1")
+   success
+      assert(false, "Unicode ellipsis should not be accepted inside an identifier")
    end
-
-   function unicode_variadic(…)
-      return {…}
-   end
-
-   ascii_result = ascii_variadic(1, 2, 3)
-   unicode_result = unicode_variadic(1, 2, 3)
-
-   assert(#ascii_result is 3, "ASCII ... should work")
-   assert(#unicode_result is 3, "Unicode … should work")
-   assert(ascii_result[0] is unicode_result[0], "Both should capture same values")
 end

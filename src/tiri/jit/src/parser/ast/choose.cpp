@@ -5,9 +5,37 @@
 // - Single value scrutinee: choose expr from pattern -> result ... end
 // - Tuple scrutinee: choose (expr1, expr2) from (pattern1, pattern2) -> result ... end
 // - Relational patterns: < <= > >=
+// - Type patterns: <Type>
 // - Wildcard patterns: _
 // - Table patterns: { key = value }
 // - Guard clauses: when condition
+
+//********************************************************************************************************************
+// Determines whether the current `<` begins a complete contextual type-test descriptor.  The lookahead is deliberately
+// limited to the descriptor grammar so relational patterns continue to be parsed as expressions.
+
+bool AstBuilder::choose_case_has_type_test_descriptor() const
+{
+   if (not this->ctx.check(TokenKind::Less)) return false;
+
+   Token primary = this->ctx.tokens().peek(1);
+   if (primary.kind() != TokenKind::Identifier and primary.kind() != TokenKind::Nil) return false;
+
+   Token close_or_constraint = this->ctx.tokens().peek(2);
+   size_t close_offset = 0;
+   if (close_or_constraint.kind() IS TokenKind::Greater) {
+      close_offset = 2;
+   }
+   else if (close_or_constraint.kind() IS TokenKind::Identifier or
+      close_or_constraint.kind() IS TokenKind::ArrayTyped or close_or_constraint.kind() IS TokenKind::StructTyped) {
+      if (this->ctx.tokens().peek(3).kind() != TokenKind::Greater) return false;
+      close_offset = 3;
+   }
+   else return false;
+
+   Token after_descriptor = this->ctx.tokens().peek(close_offset + 1);
+   return after_descriptor.kind() IS TokenKind::When or after_descriptor.kind() IS TokenKind::CaseArrow;
+}
 
 //********************************************************************************************************************
 // Parses a choose expression: choose scrutinee from pattern -> result ... end
@@ -186,6 +214,15 @@ ParserResult<ExprNodePtr> AstBuilder::parse_choose_expr()
 
             if (all_wildcards) case_arm.is_wildcard = true;
          }
+         // Check for a complete contextual type-test descriptor before treating '<' as a relational operator.
+         else if (tuple_arity IS 0 and this->choose_case_has_type_test_descriptor()) {
+            auto descriptor = this->parse_type_test_descriptor();
+            if (not descriptor.ok()) {
+               this->in_choose_expression = false;
+               return ParserResult<ExprNodePtr>::failure(descriptor.error_ref());
+            }
+            case_arm.type_pattern = descriptor.value_ref();
+         }
          // Check for relational pattern operators (< <= > >=)
          else if (current.raw() IS '<') {
             this->ctx.tokens().advance();  // consume '<'
@@ -322,26 +359,8 @@ ParserResult<ExprNodePtr> AstBuilder::parse_choose_expr()
 
       // Check if this is an assignment statement
       Token maybe_assign = this->ctx.tokens().current();
-      bool is_assignment = false;
-      switch (maybe_assign.kind()) {
-         case TokenKind::Equals:
-         case TokenKind::CompoundAdd:
-         case TokenKind::CompoundSub:
-         case TokenKind::CompoundMul:
-         case TokenKind::CompoundDiv:
-         case TokenKind::CompoundMod:
-         case TokenKind::CompoundConcat:
-         case TokenKind::CompoundIfEmpty:
-         case TokenKind::CompoundIfNil:
-            is_assignment = true;
-            break;
-         case TokenKind::Comma:
-            // Multi-target assignment: a, b = ...
-            is_assignment = true;
-            break;
-         default:
-            break;
-      }
+      bool is_assignment = maybe_assign.kind() IS TokenKind::Equals or maybe_assign.kind() IS TokenKind::Comma or
+         maybe_assign.has_flag(TKF_COMPOUND_ASSIGNMENT);
 
       if (is_assignment) {
          // Parse as statement - build assignment AST
@@ -368,11 +387,14 @@ ParserResult<ExprNodePtr> AstBuilder::parse_choose_expr()
             return ParserResult<ExprNodePtr>::failure(values.error_ref());
          }
 
-         auto stmt = std::make_unique<StmtNode>(AstNodeKind::AssignmentStmt, op.span());
-         AssignmentStmtPayload payload(assignment_op, std::move(targets), std::move(values.value_ref()));
-         stmt->data = std::move(payload);
+         auto stmt = this->make_assignment_statement(
+            op, assignment_op, std::move(targets), std::move(values.value_ref()));
+         if (not stmt.ok()) {
+            this->in_choose_expression = false;
+            return ParserResult<ExprNodePtr>::failure(stmt.error_ref());
+         }
 
-         case_arm.result_stmt = std::move(stmt);
+         case_arm.result_stmt = std::move(stmt.value_ref());
          case_arm.has_statement_result = true;
       }
       else { // Parse as expression (original behaviour)

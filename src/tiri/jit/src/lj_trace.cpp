@@ -1,4 +1,6 @@
 // Trace management.
+//
+// Copyright © 2025-2026 Paul Manias
 // Copyright (C) 2005-2022 Mike Pall. See Copyright Notice in luajit.h
 
 #define lj_trace_c
@@ -31,13 +33,98 @@
 #include "lj_prng.h"
 #include "../../defs.h"
 
+struct TraceAbortStackState {
+   jit_State *jit;
+   ptrdiff_t base_before;
+   ptrdiff_t top_before;
+   ptrdiff_t top_after;
+   int32_t cframe_result_metadata_before;
+   int32_t error;
+   bool cframe_saved;
+   bool top_changed;
+};
+
+static thread_local TraceAbortStackState glTraceAbortStack;
+
+//********************************************************************************************************************
+// Trace aborts normalise L->top to curr_top() before pushing the trace error object.  Retry paths that continue
+// recording must restore the pre-abort logical top, otherwise lj_trace_ins() sees a stack mutation after retry.
+
+static void trace_abort_stack_snapshot(jit_State *J, TraceError Error, TValue *SafeTop)
+{
+   lua_State *L = J->L;
+
+   // Store stack positions as offsets because error unwinding and VM events may resize the stack before retry.
+   glTraceAbortStack.jit = J;
+   glTraceAbortStack.base_before = savestack(L, L->base);
+   glTraceAbortStack.top_before = savestack(L, L->top);
+   glTraceAbortStack.top_after = savestack(L, SafeTop);
+   glTraceAbortStack.cframe_result_metadata_before =
+      L->cframe ? cframe_result_metadata(cframe_raw(L->cframe)) : 0;
+   glTraceAbortStack.error = int32_t(Error);
+   glTraceAbortStack.cframe_saved = L->cframe != nullptr;
+   glTraceAbortStack.top_changed = not (L->top IS SafeTop);
+
+#ifdef LUA_USE_ASSERT
+   if (glTraceAbortStack.top_changed) {
+      kt::Log(__FUNCTION__).msg("Trace abort normalised stack top.  Error: %d, State: %d, Base: %p, Top: %p -> %p",
+         glTraceAbortStack.error, int32_t(J->state), restorestack(L, glTraceAbortStack.base_before),
+         restorestack(L, glTraceAbortStack.top_before), restorestack(L, glTraceAbortStack.top_after));
+   }
+#endif
+}
+
+//********************************************************************************************************************
+// Restore the logical stack state that existed before lj_trace_err() normalised L->top.  This is only used when
+// trace_abort() is about to retry recording or assembly; non-retry aborts leave normal unwinding to own the stack.
+
+static void trace_abort_restore_retry_stack(jit_State *J, CSTRING Path)
+{
+#ifndef LUA_USE_ASSERT
+   UNUSED(Path);
+#endif
+
+   if (glTraceAbortStack.jit IS J) {
+      lua_State *L = J->L;
+
+#ifdef LUA_USE_ASSERT
+      TValue *base_before = restorestack(L, glTraceAbortStack.base_before);
+#endif
+
+      TValue *top_before = restorestack(L, glTraceAbortStack.top_before);
+
+#ifdef LUA_USE_ASSERT
+      if (not (L->base IS base_before)) {
+         kt::Log(__FUNCTION__).msg(
+            "Trace abort retry with changed stack base.  Path: %s, Error: %d, Base: %p -> %p",
+            Path, glTraceAbortStack.error, base_before, L->base);
+         lj_assertJ(L->base IS base_before, "trace abort retry changed stack base");
+      }
+
+      if (not (L->top IS top_before)) {
+         kt::Log(__FUNCTION__).msg(
+            "Trace abort retry restored stack top.  Path: %s, Error: %d, Top: %p -> %p",
+            Path, glTraceAbortStack.error, L->top, top_before);
+      }
+#endif
+
+      L->top = top_before;
+      // lj_trace_err() writes the saved-stack offset to match the normalised top. Restore the prior frame state
+      // before retrying the recorder.
+      if (L->cframe and glTraceAbortStack.cframe_saved) {
+         set_cframe_result_metadata(cframe_raw(L->cframe), glTraceAbortStack.cframe_result_metadata_before);
+      }
+      glTraceAbortStack.jit = nullptr;
+   }
+}
+
 //********************************************************************************************************************
 // Synchronous abort of the JIT tracing process, with error message.
 
 void lj_trace_err(jit_State *J, TraceError e)
 {
 #ifdef LUA_USE_ASSERT
-   kt::Log(__FUNCTION__).msg("Aborting JIT trace.");
+   kt::Log(__FUNCTION__).msg("Aborting JIT trace.  Error: %d", int(e));
 #endif
 
    // Mark that we're aborting trace recording. This flag survives through Windows SEH unwinding
@@ -51,9 +138,12 @@ void lj_trace_err(jit_State *J, TraceError e)
 
    // Prefer the interpreter's view of the current frame to avoid clobbering live locals.
    TValue *safe_top = curr_top(J->L);
+   // MULTRES may extend past the fixed frame size; never overwrite those live results with the abort error.
+   if (safe_top < J->L->top) safe_top = J->L->top;
    if (safe_top < J->L->base) safe_top = J->L->base;
+   trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;
-   if (J->L->cframe) cframe_nres(cframe_raw(J->L->cframe)) = -int32_t(savestack(J->L, safe_top));
+   if (J->L->cframe) set_cframe_stack_offset(cframe_raw(J->L->cframe), savestack(J->L, safe_top));
 
    setnilV(&J->errinfo);  //  No error info.
    setintV(J->L->top++, (int32_t)e);
@@ -66,7 +156,7 @@ void lj_trace_err(jit_State *J, TraceError e)
 void lj_trace_err_info(jit_State *J, TraceError e)
 {
 #ifdef LUA_USE_ASSERT
-   kt::Log(__FUNCTION__).msg("Aborting JIT trace.");
+   kt::Log(__FUNCTION__).msg("Aborting JIT trace.  Error: %d", int(e));
 #endif
 
    J->abort_in_progress = true; // Mark that we're aborting trace recording.
@@ -74,9 +164,12 @@ void lj_trace_err_info(jit_State *J, TraceError e)
    // Ensure L->top is valid before pushing error
    // Prefer the interpreter's view of the current frame to avoid clobbering live locals.
    TValue *safe_top = curr_top(J->L);
+   // MULTRES may extend past the fixed frame size; never overwrite those live results with the abort error.
+   if (safe_top < J->L->top) safe_top = J->L->top;
    if (safe_top < J->L->base) safe_top = J->L->base;
+   trace_abort_stack_snapshot(J, e, safe_top);
    J->L->top = safe_top;
-   if (J->L->cframe) cframe_nres(cframe_raw(J->L->cframe)) = -int32_t(savestack(J->L, safe_top));
+   if (J->L->cframe) set_cframe_stack_offset(cframe_raw(J->L->cframe), savestack(J->L, safe_top));
 
    setintV(J->L->top++, (int32_t)e);
    lj_err_throw(J->L, LUA_ERRRUN);
@@ -487,6 +580,7 @@ static void trace_start(jit_State *J)
    setgcref(J->cur.startpt, obj2gco(J->pt));
 
    L = J->L;
+   lj_context_debug_trace_start(L);
    lj_vmevent_send(L, TRACE, setstrV(L, L->top++, lj_str_newlit(L, "start"));
    setintV(L->top++, traceno);
    setfuncV(L, L->top++, J->fn);
@@ -497,7 +591,7 @@ static void trace_start(jit_State *J)
    }
    else {
       BCOp op = bc_op(*J->pc);
-      if (op IS BC_CALLM or op IS BC_CALL or op IS BC_ITERC) {
+      if (op IS BC_CALLM or op IS BC_CALL or op IS BC_CTXCALLM or op IS BC_CTXCALL or op IS BC_ITERC) {
          setintV(L->top++, J->exitno);  //  Parent of stitched trace.
          setintV(L->top++, -1);
       }
@@ -511,6 +605,7 @@ static void trace_start(jit_State *J)
 
 static void trace_stop(jit_State *J)
 {
+   lj_context_debug_trace_compiled(J->L);
    BCIns *pc = mref<BCIns>(J->cur.startpc);
    BCOp op = bc_op(J->cur.startins);
    GCproto* pt = &gcref(J->cur.startpt)->pt;
@@ -534,6 +629,7 @@ static void trace_stop(jit_State *J)
       pt->trace = (TraceNo1)traceno;
       break;
    case BC_ITERN:
+   case BC_ITERA:
    case BC_RET:
    case BC_RET0:
    case BC_RET1:
@@ -559,6 +655,8 @@ static void trace_stop(jit_State *J)
       break;
    case BC_CALLM:
    case BC_CALL:
+   case BC_CTXCALLM:
+   case BC_CTXCALL:
    case BC_ITERC:
       // Trace stitching: patch link of previous trace.
       traceref(J, J->exitno)->link = traceno;
@@ -607,6 +705,7 @@ static int trace_downrec(jit_State *J)
 static int trace_abort(jit_State *J)
 {
    lua_State* L = J->L;
+   lj_context_debug_trace_abort(L);
    TraceError e = LJ_TRERR_RECERR;
    TraceNo traceno;
 
@@ -622,6 +721,7 @@ static int trace_abort(jit_State *J)
 
    if (e IS LJ_TRERR_MCODELM) {
       L->top--;  //  Remove error object
+      trace_abort_restore_retry_stack(J, "mcode-limit");
       J->state = TraceState::ASM;
       return 1;  //  Retry ASM with new MCode area.
    }
@@ -669,7 +769,10 @@ static int trace_abort(jit_State *J)
    }
 
    L->top--;  //  Remove error object
-   if (e IS LJ_TRERR_DOWNREC) return trace_downrec(J);
+   if (e IS LJ_TRERR_DOWNREC) {
+      trace_abort_restore_retry_stack(J, "down-recursion");
+      return trace_downrec(J);
+   }
    else if (e IS LJ_TRERR_MCODEAL) lj_trace_flushall(L);
    return 0;
 }
@@ -792,25 +895,28 @@ void lj_trace_ins(jit_State *J, const BCIns *pc)
    J->pc = pc;
    J->fn = curr_func(J->L);
    J->pt = isluafunc(J->fn) ? funcproto(J->fn) : nullptr;
-   TValue *base_before = J->L->base;
-   TValue *top_before = J->L->top;
+   ptrdiff_t base_before = savestack(J->L, J->L->base);
+   ptrdiff_t top_before = savestack(J->L, J->L->top);
 
    while (true) {
       if (lj_vm_cpcall(J->L, nullptr, (void *)J, trace_state) IS 0) break;
       J->state = TraceState::ERR;
    }
 
-   if (not (J->L->base IS base_before) or not (J->L->top IS top_before)) {
-      log.msg("Stack changed.  Base: %p→%p, Top: %p→%p, State: %d", base_before, J->L->base, top_before, J->L->top, (int)J->state);
+   TValue *expected_base = restorestack(J->L, base_before);
+   TValue *expected_top = restorestack(J->L, top_before);
+   if (not (J->L->base IS expected_base) or not (J->L->top IS expected_top)) {
+      log.msg("Stack changed.  Base: %p→%p, Top: %p→%p, State: %d",
+         expected_base, J->L->base, expected_top, J->L->top, (int)J->state);
 #ifdef LUA_USE_ASSERT
       lj_assertJ(J->state IS TraceState::ERR or J->state IS TraceState::IDLE, "trace recorder mutated stack");
 #endif
       if (J->state IS TraceState::ERR or J->state IS TraceState::IDLE) {
          // try-except may have changed the stack, this stabilises it.  Ideally this
          // doesn't happen in practice, hence the assert above.
-         log.msg("Restoring stack: base=%p, top=%p", (void*)base_before, (void*)top_before);
-         J->L->base = base_before;
-         J->L->top = top_before;
+         log.msg("Restoring stack: base=%p, top=%p", (void*)expected_base, (void*)expected_top);
+         J->L->base = expected_base;
+         J->L->top = expected_top;
       }
    }
 }
@@ -894,10 +1000,11 @@ typedef struct ExitDataCP {
 
 static TValue* trace_exit_cp(lua_State* L, lua_CFunction dummy, void* ud)
 {
+   lj_context_debug_side_exit(L);
    ExitDataCP* exd = (ExitDataCP*)ud;
    // Always catch error here and don't call error function.
    cframe_errfunc(L->cframe) = 0;
-   cframe_nres(L->cframe) = -2 * LUAI_MAXSTACK * (int)sizeof(TValue);
+   set_cframe_stack_offset(L->cframe, 2 * LUAI_MAXSTACK * (int)sizeof(TValue));
    exd->pc = lj_snap_restore(exd->J, exd->exptr);
    return nullptr;
 }
@@ -976,6 +1083,7 @@ int lj_trace_exit(jit_State *J, void *exptr)
    }
 #endif
    lj_assertJ(T != nullptr and J->exitno < T->nsnap, "bad trace or exit number");
+   uint16_t snapshot_multres = T->snap[J->exitno].multres;
    exd.J = J;
    exd.exptr = exptr;
    errcode = lj_vm_cpcall(L, nullptr, &exd, trace_exit_cp);
@@ -1021,15 +1129,28 @@ int lj_trace_exit(jit_State *J, void *exptr)
             pc = retpc;
             setcframe_pc(cf, pc);
          }
+         else if (J2G(J)->hookmask & (HOOK_GC | HOOK_VMEVENT)) {
+            // Protected cleanup cannot record the side trace needed to leave this iterator root. Retire the
+            // root so the interpreter executes ITERN/ITERA at its original PC, with the following ITERL intact,
+            // instead of repeatedly entering the same failing trace.
+            lj_trace_flush(J, bc_d(*pc));
+         }
       }
    }
    // Return MULTRES or 0.
    ERRNO_RESTORE
+      // BC_CHECK can separate a multi-result call from BC_RETM, and BC_CTXENTER separates a multi-result argument from
+      // BC_CTXCALLM.  Their interpreter handoff must retain that count.
+      if (bc_op(*pc) IS BC_JMP or bc_op(*pc) IS BC_CHECK or bc_op(*pc) IS BC_CTXENTER) return int(snapshot_multres);
       switch (bc_op(*pc)) {
-      case BC_CALLM: case BC_CALLMT:
+      case BC_CALLM: case BC_CALLMT: case BC_CTXCALLM:
          return (int)((BCREG)(L->top - L->base) - bc_a(*pc) - bc_c(*pc) - LJ_FR2);
       case BC_RETM:
          return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc) - bc_d(*pc));
+      case BC_CTXLEAVE:
+         // The restored snapshot can already contain CTXLEAVE's compacted result layout, so its stack extent cannot
+         // recover the dynamic call result count.  Preserve the explicit sentinel captured before the side exit.
+         return int(snapshot_multres);
       case BC_TSETM:
          return (int)((BCREG)(L->top - L->base) + 1 - bc_a(*pc));
       default:

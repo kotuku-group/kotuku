@@ -4,7 +4,7 @@
 #pragma warning (disable : 4244 4311 4312 4267 4244 4068) // Disable annoying VC++ warnings
 #endif
 
-#define _WIN32_WINNT 0x0600 // Required for CRITICAL_SECTION - min version. Windows Vista
+#define _WIN32_WINNT 0x0A00 // Required for FileRenameInfoEx and POSIX-style file replacement.
 #define NO_STRICT // Turn off type management due to C++ mangling issues.
 #define PSAPI_VERSION 1
 
@@ -33,6 +33,8 @@
 #endif
 #include <winioctl.h>
 #include <shlobj.h>
+#include <shellapi.h>
+#include <aclapi.h>
 
 #include <tchar.h>
 #include <imagehlp.h>
@@ -43,6 +45,7 @@
 
 #include "windefs.h"
 #include <kotuku/system/errors.h>
+#include <kotuku/strings.hpp>
 
 #define STD_TIMEOUT 1000
 
@@ -58,7 +61,16 @@ constexpr int MAX_ENV_VALUE = 512;
 
 #include <string>
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+#include <cstring>
+#include <vector>
+
+static std::string win_wide_to_utf8(const wchar_t *Text);
+static std::wstring win_utf8_to_wide(std::string_view Text);
 
 #define WAITLOCK_EVENTS 1 // Use events instead of semaphores for waitlocks (recommended)
 
@@ -298,12 +310,20 @@ static int8_t is_console(HANDLE h)
 // If the program is launched from a console, attach to it.  Otherwise create a new console window and redirect output
 // to it (e.g. if launched from a desktop icon).
 
-extern "C" bool activate_console(int8_t AllowOpenConsole)
+enum class CONTYPE : int;
+
+constexpr CONTYPE CONTYPE_NIL      = CONTYPE(0); // No console available
+constexpr CONTYPE CONTYPE_TERMINAL = CONTYPE(1); // Launched from a terminal
+constexpr CONTYPE CONTYPE_HANDLE   = CONTYPE(2); // Redirected to a file handle
+constexpr CONTYPE CONTYPE_MANUAL   = CONTYPE(3); // Console created manually
+
+extern "C" CONTYPE activate_console(int8_t AllowOpenConsole)
 {
    static bool activated = false;
-   static bool console_available = false;
+   static CONTYPE console_type = CONTYPE_NIL;
 
    if (not activated) {
+      activated = true;
       HANDLE current_out = GetStdHandle(STD_OUTPUT_HANDLE);
       HANDLE current_err = GetStdHandle(STD_ERROR_HANDLE);
       const bool out_valid = (current_out) and (current_out != INVALID_HANDLE_VALUE);
@@ -318,13 +338,13 @@ extern "C" bool activate_console(int8_t AllowOpenConsole)
             SetConsoleCP(CP_UTF8);
          }
 
-         activated = true;
-         console_available = has_console;
-         return console_available;
+         console_type = CONTYPE_HANDLE;
+         return CONTYPE_HANDLE;
       }
 
       if (has_console) {
          // Already attached to a console; keep the inherited handles and update the code page below.
+         console_type = CONTYPE_TERMINAL;
       }
       else {
          char value[8];
@@ -336,26 +356,35 @@ extern "C" bool activate_console(int8_t AllowOpenConsole)
 
             if (((stdout_fd >= 0) and (not _isatty(stdout_fd))) or ((stderr_fd >= 0) and (not _isatty(stderr_fd))) or
                 (out_valid and not out_console) or (err_valid and not err_console)) {
-               activated = true;
-               console_available = false;
-               return console_available;
+               return CONTYPE_NIL;
             }
 
-            AttachConsole(ATTACH_PARENT_PROCESS);
+            if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+               const HANDLE attached_out = GetStdHandle(STD_OUTPUT_HANDLE);
+               const HANDLE attached_err = GetStdHandle(STD_ERROR_HANDLE);
+               const bool attached_out_valid = (attached_out) and (attached_out != INVALID_HANDLE_VALUE);
+               const bool attached_err_valid = (attached_err) and (attached_err != INVALID_HANDLE_VALUE);
+               const bool attached_out_console = attached_out_valid and is_console(attached_out);
+               const bool attached_err_console = attached_err_valid and is_console(attached_err);
 
-            // Double-check if we're attached to the console with is_console() because the parent process may have
-            // redirected the std* descriptors to a file for instance.  If we freopen() blindly then we otherwise
-            // revert output back to the console.
+               // Double-check if we're attached to the console with is_console() because the parent process may have
+               // redirected the std* descriptors to a file for instance.  If we freopen() blindly then we otherwise
+               // revert output back to the console.
 
-            if (is_console(current_out)) freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the attached console.
-            if (is_console(current_err)) freopen("CON", "w", stderr);
+               if (attached_out_console) freopen("CON", "w", stdout);
+               if (attached_err_console) freopen("CON", "w", stderr);
+               if (attached_out_console or attached_err_console) console_type = CONTYPE_TERMINAL;
+               else return CONTYPE_NIL;
+            }
+            else return CONTYPE_NIL;
          }
          else if (AllowOpenConsole) { // Assume that executable was launched from desktop without a console
-            AllocConsole();
-            freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the attached console.
+            AllocConsole(); // Create a console window
+            freopen("CON", "w", stdout);  // Redirect stdout and stderr descriptors to the created console.
             freopen("CON", "w", stderr);
+            console_type = CONTYPE_MANUAL;
          }
-         else return false;
+         else return CONTYPE_NIL;
       }
 
       // Set console mode to handle UTF-8 properly
@@ -368,37 +397,20 @@ extern "C" bool activate_console(int8_t AllowOpenConsole)
       ZeroMemory(title, sizeof(title));
       if (GetModuleFileName(nullptr, title, sizeof(title) - 1)) {
          title[sizeof(title) - 1] = 0; // Ensure null termination
-         char* last_slash = strrchr(title, '\\');
+         char *last_slash = strrchr(title, '\\');
          if (last_slash) {
             last_slash++; // Skip the slash
             // Remove file extension for cleaner title
-            char* dot = strrchr(last_slash, '.');
+            char *dot = strrchr(last_slash, '.');
             if (dot) *dot = 0;
          }
          else last_slash = title; // No path, use the whole string
          SetConsoleTitle(last_slash);
       }
 
-      activated = true;
-      console_available = true;
-      return console_available;
+      return console_type;
    }
-   else return console_available;
-}
-
-//********************************************************************************************************************
-
-static inline unsigned int LCASEHASH(const char* String) noexcept
-{
-   unsigned int hash = 5381;
-   unsigned char c;
-   while ((c = *String++)) {
-      if ((c >= 'A') and (c <= 'Z')) {
-         hash = (hash<<5) + hash + c - 'A' + 'a';
-      }
-      else hash = (hash<<5) + hash + c;
-   }
-   return hash;
+   else return console_type;
 }
 
 //********************************************************************************************************************
@@ -407,20 +419,14 @@ static inline unsigned int LCASEHASH(const char* String) noexcept
 static char glSymbolsLoaded = false;
 static void windows_print_stacktrace(CONTEXT* context)
 {
-   if (!glSymbolsLoaded) return;
+   if (not glSymbolsLoaded) return;
 
    STACKFRAME frame = { {0} };
 
-   // setup initial stack frame
-   #ifdef _LP64
-      frame.AddrPC.Offset    = context->Rip;
-      frame.AddrStack.Offset = context->Rsp;
-      frame.AddrFrame.Offset = context->Rbp;
-   #else
-      frame.AddrPC.Offset    = context->Eip;
-      frame.AddrStack.Offset = context->Esp;
-      frame.AddrFrame.Offset = context->Ebp;
-   #endif
+   // setup initial stack frame (64-bit)
+   frame.AddrPC.Offset    = context->Rip;
+   frame.AddrStack.Offset = context->Rsp;
+   frame.AddrFrame.Offset = context->Rbp;
    frame.AddrPC.Mode    = AddrModeFlat;
    frame.AddrStack.Mode = AddrModeFlat;
    frame.AddrFrame.Mode = AddrModeFlat;
@@ -435,11 +441,7 @@ static void windows_print_stacktrace(CONTEXT* context)
       symbol->SizeOfStruct  = sizeof(IMAGEHLP_SYMBOL) + 255;
       symbol->MaxNameLength = 254;
 
-      #ifdef _LP64
-         DWORD64 displacement = 0;
-      #else
-         DWORD displacement = 0;
-      #endif
+      DWORD64 displacement = 0;
       if (SymGetSymFromAddr(GetCurrentProcess(), frame.AddrPC.Offset, &displacement, symbol)) {
          fprintf(stderr, "0x%p %s\n", (APTR)frame.AddrPC.Offset, symbol->Name);
 
@@ -499,7 +501,7 @@ extern "C" ERR winInitialise(unsigned int *PathHash, BREAK_HANDLER BreakHandler)
       if (VirtualQuery(LPCVOID(winInitialise), &mbiInfo, sizeof(mbiInfo))) {
          if ((len = GetModuleFileName((HINSTANCE)mbiInfo.AllocationBase, path, sizeof(path) - 1))) {
             path[sizeof(path) - 1] = 0;
-            *PathHash = LCASEHASH(path);
+            *PathHash = kt::strihash(path);
          }
       }
    }
@@ -520,7 +522,7 @@ extern "C" ERR winInitialise(unsigned int *PathHash, BREAK_HANDLER BreakHandler)
    InitializeCriticalSection(&csJob);
 
    // Initialize global access critical section
-   if (!csGlobalInitialized) {
+   if (not csGlobalInitialized) {
       InitializeCriticalSection(&csGlobalAccess);
       csGlobalInitialized = true;
    }
@@ -560,7 +562,7 @@ extern "C" ERR plAllocPrivateSemaphore(HANDLE *Semaphore, int InitialValue)
       .lpSecurityDescriptor = nullptr,
       .bInheritHandle = false
    };
-   if (!(*Semaphore = CreateSemaphore(&security, 0, InitialValue, nullptr))) return ERR::SemaphoreOperation;
+   if (not (*Semaphore = CreateSemaphore(&security, 0, InitialValue, nullptr))) return ERR::SemaphoreOperation;
    else return ERR::Okay;
 }
 
@@ -643,7 +645,7 @@ static HANDLE handle_cache(int OtherProcess, HANDLE OtherHandle, BYTE *Free)
 
    *Free = false;
 
-   if ((OtherProcess IS glProcessID) or (!OtherProcess)) return OtherHandle;
+   if ((OtherProcess IS glProcessID) or (not OtherProcess)) return OtherHandle;
 
    EnterCriticalSection(&csHandleBank);
 
@@ -677,7 +679,7 @@ static HANDLE handle_cache(int OtherProcess, HANDLE OtherHandle, BYTE *Free)
 
 extern "C" ERR alloc_public_waitlock(HANDLE *Lock, const char *Name)
 {
-   if (!Lock) return ERR::NullArgs;
+   if (not Lock) return ERR::NullArgs;
 
 #ifdef WAITLOCK_EVENTS
    HANDLE event = nullptr;
@@ -718,13 +720,13 @@ extern "C" void free_public_waitlock(HANDLE Lock) noexcept
 
 extern "C" ERR wake_waitlock(HANDLE Lock, int TotalSleepers) noexcept
 {
-   if (!Lock) return ERR::NullArgs;
+   if (not Lock) return ERR::NullArgs;
 
    ERR error = ERR::Okay;
 
    #ifdef WAITLOCK_EVENTS
       while (TotalSleepers-- > 0) {
-         if (!SetEvent(Lock)) {
+         if (not SetEvent(Lock)) {
             fprintf(stderr, "SetEvent() failed: %s\n", winFormatMessage(GetLastError()).c_str());
             error = ERR::SystemCall;
             break;
@@ -732,7 +734,7 @@ extern "C" ERR wake_waitlock(HANDLE Lock, int TotalSleepers) noexcept
       }
    #else
       int prev;
-      if (!ReleaseSemaphore(Lock, 1, &prev)) error = ERR::SystemCall;
+      if (not ReleaseSemaphore(Lock, 1, &prev)) error = ERR::SystemCall;
    #endif
 
    return error;
@@ -742,7 +744,7 @@ extern "C" ERR wake_waitlock(HANDLE Lock, int TotalSleepers) noexcept
 
 extern "C" DWORD winGetExeDirectory(DWORD Length, LPSTR String)
 {
-   if (!String or Length < 4) return 0; // Need at least "C:\\" + null terminator
+   if ((not String) or (Length < 4)) return 0; // Need at least "C:\\" + null terminator
 
    int len, i;
    WCHAR **list;
@@ -976,10 +978,10 @@ extern "C" HANDLE winLoadLibrary(LPCSTR Name)
 
 //********************************************************************************************************************
 
-extern "C" FARPROC winGetProcAddress(HMODULE Module, LPCSTR Name)
+extern "C" FARPROC winGetProcAddress(HMODULE Module, std::string_view Name)
 {
-   if (!Module) return GetProcAddress(GetModuleHandle(nullptr), Name);
-   else return GetProcAddress(Module, Name);
+   if (not Module) return GetProcAddress(GetModuleHandle(nullptr), std::string(Name).c_str());
+   else return GetProcAddress(Module, std::string(Name).c_str());
 }
 
 //********************************************************************************************************************
@@ -1034,7 +1036,7 @@ extern "C" int winReadStdInput(HANDLE FD, APTR Buffer, DWORD BufferSize, DWORD *
 
 extern "C" HANDLE winGetStdInput(void)
 {
-   if (!glCachedStdInput) {
+   if (not glCachedStdInput) {
       glCachedStdInput = GetStdHandle(STD_INPUT_HANDLE);
       if (glCachedStdInput and !SetConsoleMode(glCachedStdInput, ENABLE_PROCESSED_INPUT)) {
          glConsoleMode = false;
@@ -1112,13 +1114,13 @@ extern "C" int winReadPipe(HANDLE FD, APTR Buffer, DWORD *Size)
    // Check if there is data available on the pipe
 
    DWORD avail = 0;
-   if (!PeekNamedPipe(FD, nullptr, 0, nullptr, &avail, nullptr)) {
+   if (not PeekNamedPipe(FD, nullptr, 0, nullptr, &avail, nullptr)) {
       *Size = 0;
       if (GetLastError() IS ERROR_BROKEN_PIPE) return -2;
       else return -1;
    }
 
-   if (!avail) {
+   if (not avail) {
       *Size = 0;
       return 0;
    }
@@ -1206,7 +1208,7 @@ HANDLE glMemoryPool;
 
 extern "C" int winCreateSharedMemory(char *Name, int mapsize, int initial_size, HANDLE *ControlID, void **Address)
 {
-   if (!ControlID or !Address or initial_size <= 0) return -3; // Invalid arguments
+   if ((not ControlID) or (not Address) or (initial_size <= 0)) return -3; // Invalid arguments
 
    *ControlID = nullptr;
    *Address = nullptr;
@@ -1257,7 +1259,7 @@ extern "C" void * winAllocProtectedMemory(size_t Size, int ProtectionFlags)
 
 extern "C" int winFreeProtectedMemory(void *Address, size_t Size)
 {
-   if (!Address) return 0;
+   if (not Address) return 0;
    // VirtualFree with MEM_RELEASE ignores the size parameter and releases the entire region
    return VirtualFree(Address, 0, MEM_RELEASE) ? 1 : 0;
 }
@@ -1277,7 +1279,7 @@ extern "C" size_t winGetPageSize(void)
 
 extern "C" int winProtectMemory(void *Address, size_t Size, bool Read, bool Write, bool Exec)
 {
-   if ((not Address) or (Size == 0)) return 0;
+   if ((not Address) or (Size IS 0)) return 0;
 
    DWORD protect = PAGE_NOACCESS;
    if (Write and Exec) protect = PAGE_EXECUTE_READWRITE;
@@ -1302,7 +1304,7 @@ extern "C" int winDeleteFile(const char *Path)
 extern "C" void winGetEnv(const char *Name, std::string &Buffer)
 {
    Buffer.clear();
-   if (!Name) return;
+   if (not Name) return;
    char buffer[4096];
    int result = GetEnvironmentVariable(Name, buffer, sizeof(buffer));
    if (result > 0) Buffer.assign(buffer, result);
@@ -1344,7 +1346,7 @@ static BOOL break_handler(DWORD CtrlType)
 extern "C" void winSetUnhandledExceptionFilter(int (*Function)(int, APTR, int, APTR))
 {
    if (Function) glCrashHandler = Function;
-   else if (!glCrashHandler) return;  // If we're set with nullptr and no crash handler already exists, do not set or change the exception filter.
+   else if (not glCrashHandler) return;  // If we're set with nullptr and no crash handler already exists, do not set or change the exception filter.
    SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)&ExceptionFilter);
 }
 
@@ -1525,6 +1527,44 @@ extern "C" int winGetFullPathName(const char *Path, int PathLength, char *Output
 
 //********************************************************************************************************************
 
+extern "C" int winGetFinalPathName(CSTRING Path, std::string &Result)
+{
+   if ((not Path) or (not Path[0])) return 0;
+
+   auto path = win_utf8_to_wide(Path);
+   if (path.empty()) return 0;
+
+   const bool trailing_separator = path.ends_with('/') or path.ends_with('\\');
+
+   auto handle = CreateFileW(path.c_str(), 0, FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+   if (handle IS INVALID_HANDLE_VALUE) return 0;
+
+   constexpr DWORD flags = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS;
+   const DWORD required = GetFinalPathNameByHandleW(handle, nullptr, 0, flags);
+   if (not required) {
+      CloseHandle(handle);
+      return 0;
+   }
+
+   std::wstring final_path(required, 0);
+   const DWORD written = GetFinalPathNameByHandleW(handle, final_path.data(), DWORD(final_path.size()), flags);
+   CloseHandle(handle);
+   if ((not written) or (written >= final_path.size())) return 0;
+
+   final_path.resize(written);
+   std::string result = win_wide_to_utf8(final_path.c_str());
+   if (result.starts_with("\\\\?\\UNC\\")) result.replace(0, 8, "\\\\");
+   else if (result.starts_with("\\\\?\\")) result.erase(0, 4);
+   if (result.empty()) return 0;
+   if (trailing_separator and (not result.ends_with('/')) and (not result.ends_with('\\'))) result += '\\';
+
+   Result = std::move(result);
+   return 1;
+}
+
+//********************************************************************************************************************
+
 extern "C" int8_t winGetCommand(char *Path, char *Buffer, int BufferSize)
 {
    if (BufferSize < MAX_PATH+3) return 1;
@@ -1544,7 +1584,7 @@ extern "C" int8_t winGetCommand(char *Path, char *Buffer, int BufferSize)
 
 extern "C" int winCurrentDirectory(char *Buffer, int BufferSize)
 {
-   if (!Buffer or BufferSize <= 0) return 0;
+   if ((not Buffer) or (BufferSize <= 0)) return 0;
 
    Buffer[0] = 0;
    if (auto len = GetModuleFileNameA(nullptr, Buffer, BufferSize - 1)) {
@@ -1559,7 +1599,7 @@ extern "C" int winCurrentDirectory(char *Buffer, int BufferSize)
 
    // If GetModuleFileName() failed, try GetCurrentDirectory()
 
-   if (!Buffer[0]) GetCurrentDirectoryA(BufferSize, Buffer);
+   if (not Buffer[0]) GetCurrentDirectoryA(BufferSize, Buffer);
 
    if (Buffer[0]) return 1;
    else return 0;
@@ -1590,7 +1630,7 @@ extern "C" ERR winGetFileAttributesEx(const char *Path, int8_t *Hidden, int8_t *
 {
    WIN32_FILE_ATTRIBUTE_DATA info;
 
-   if (!GetFileAttributesEx(Path, GetFileExInfoStandard, &info)) return ERR::SystemCall;
+   if (not GetFileAttributesEx(Path, GetFileExInfoStandard, &info)) return ERR::SystemCall;
 
    if (info.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) *Hidden = true;
    else *Hidden = false;
@@ -1672,7 +1712,7 @@ static ERR convert_link_error(DWORD Error)
 
 extern "C" ERR winCreateLink(CSTRING Target, CSTRING Link)
 {
-   if ((!Target) or (!Target[0]) or (!Link) or (!Link[0])) return ERR::NullArgs;
+   if ((not Target) or (not Target[0]) or (not Link) or (not Link[0])) return ERR::NullArgs;
 
    std::string symlink_path(Target);
    std::string target_path(Link);
@@ -1780,7 +1820,7 @@ static ERR win_rearm_watch_request(HANDLE Handle, OVERLAPPED *Ovlap, FILE_NOTIFY
    memset(Fni, 0, win_get_watch_notify_buffer_size());
 
    DWORD empty;
-   if (!ReadDirectoryChangesW(Handle, Fni, win_get_watch_notify_buffer_size(), WatchFolders, WatchFlags, &empty, Ovlap, nullptr)) {
+   if (not ReadDirectoryChangesW(Handle, Fni, win_get_watch_notify_buffer_size(), WatchFolders, WatchFlags, &empty, Ovlap, nullptr)) {
       auto error = GetLastError();
       if (error IS ERROR_ACCESS_DENIED) return ERR::NoPermission;
       else return ERR::SystemCall;
@@ -1800,7 +1840,7 @@ extern "C" int winGetWatchBufferSize(void)
 
 extern "C" int winValidateHandle(HANDLE Handle)
 {
-   if (!Handle or (Handle IS INVALID_HANDLE_VALUE)) return 0;
+   if (not Handle or (Handle IS INVALID_HANDLE_VALUE)) return 0;
 
    DWORD flags;
    if (GetHandleInformation(Handle, &flags)) return 1;
@@ -1811,13 +1851,13 @@ extern "C" int winValidateHandle(HANDLE Handle)
 
 ERR winAnalysePath(CSTRING Path, bool &IsDirectory, bool &IsSymbolicLink)
 {
-   if (!Path) return ERR::NullArgs;
+   if (not Path) return ERR::NullArgs;
 
    IsDirectory = false;
    IsSymbolicLink = false;
 
    WIN32_FILE_ATTRIBUTE_DATA fileData;
-   if (!GetFileAttributesEx(Path, GetFileExInfoStandard, &fileData)) {
+   if (not GetFileAttributesEx(Path, GetFileExInfoStandard, &fileData)) {
       return ERR::FileNotFound; // Path doesn't exist or access denied
    }
 
@@ -1873,7 +1913,7 @@ extern "C" void winSetDllDirectory(LPCSTR Path)
 
 extern "C" ERR winWatchFile(int Flags, CSTRING Path, APTR WatchBuffer, HANDLE *Handle, int *WinFlags)
 {
-   if ((!Path) or (!Path[0]) or (!Handle) or (!WinFlags) or (!WatchBuffer)) return ERR::Args;
+   if ((not Path) or (not Path[0]) or (not Handle) or (not WinFlags) or (not WatchBuffer)) return ERR::Args;
 
    *Handle = nullptr;
    *WinFlags = 0;
@@ -1891,7 +1931,7 @@ extern "C" ERR winWatchFile(int Flags, CSTRING Path, APTR WatchBuffer, HANDLE *H
    //if (Flags & MFF_CLOSED) nflags |= ?; // Not supported by Windows
    if (Flags & (MFF_MOVED|MFF_RENAME)) nflags |= FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME;
 
-   if (!nflags) return ERR::NoSupport;
+   if (not nflags) return ERR::NoSupport;
 
    std::string monitor_path, resolved_path;
 
@@ -1951,7 +1991,7 @@ extern "C" ERR winWatchFile(int Flags, CSTRING Path, APTR WatchBuffer, HANDLE *H
 
 extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, char *PathOutput, int PathSize, int *Status)
 {
-   if ((!Handle) or (!WatchBuffer) or (!PathOutput) or (PathSize < 2) or (!Status)) return ERR::Args;
+   if ((not Handle) or (not WatchBuffer) or (not PathOutput) or (PathSize < 2) or (not Status)) return ERR::Args;
 
    DWORD bytes_out = 0;
    auto ovlap = (OVERLAPPED *)WatchBuffer;
@@ -1965,7 +2005,7 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
    *Status = 0;
    PathOutput[0] = '\0';
 
-   if (!GetOverlappedResult(Handle, ovlap, &bytes_out, false)) {
+   if (not GetOverlappedResult(Handle, ovlap, &bytes_out, false)) {
       DWORD error = GetLastError();
       if (error IS ERROR_IO_INCOMPLETE or error IS ERROR_IO_PENDING) {
          return ERR::NothingDone;
@@ -1986,7 +2026,7 @@ extern "C" ERR winReadChanges(HANDLE Handle, APTR WatchBuffer, int NotifyFlags, 
    }
 
    // Buffer corruption detection - validate the FILE_NOTIFY_INFORMATION structure
-   if ((!fni->Action) or (fni->FileNameLength > max_filename_bytes)) {
+   if ((not fni->Action) or (fni->FileNameLength > max_filename_bytes)) {
       auto rearm_error = win_rearm_watch_request(Handle, ovlap, fni, watch_folders, watch_flags);
       if (rearm_error != ERR::Okay) return rearm_error;
       return ERR::NothingDone;
@@ -2124,24 +2164,15 @@ extern "C" int winReadRootKey(LPCSTR Key, LPCSTR Value, LPBYTE Buffer, int Lengt
 
 extern "C" int winGetUserName(STRING Buffer, int Length)
 {
-   if (!Buffer or Length <= 0) return 0;
+   if ((not Buffer) or (Length <= 0)) return 0;
    if (Length > MAX_USERNAME) Length = MAX_USERNAME;
 
    DWORD len = Length;
    auto result = GetUserName(Buffer, &len);
-   if (!result or !len) return 0;
+   if ((not result) or (not len)) return 0;
 
    Buffer[len - 1] = 0;
    return len - 1;
-}
-
-//********************************************************************************************************************
-
-static bool case_sensitive_name_match(CSTRING Location, int NameStart, int NameEnd, CSTRING ActualName)
-{
-   int index = 0;
-   while ((NameStart + index < NameEnd) and (Location[NameStart + index] IS ActualName[index]) and ActualName[index]) index++;
-   return (NameStart + index IS NameEnd) and (ActualName[index] IS 0);
 }
 
 //********************************************************************************************************************
@@ -2169,9 +2200,175 @@ extern "C" int winGetUserFolder(STRING Buffer, int Size)
 
 //********************************************************************************************************************
 
+static void set_open_errno(DWORD Error)
+{
+   switch (Error) {
+      case ERROR_FILE_EXISTS:
+      case ERROR_ALREADY_EXISTS:        errno = EEXIST; break;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND:        errno = ENOENT; break;
+      case ERROR_ACCESS_DENIED:
+      case ERROR_SHARING_VIOLATION:
+      case ERROR_LOCK_VIOLATION:        errno = EACCES; break;
+      case ERROR_FILENAME_EXCED_RANGE:  errno = ENAMETOOLONG; break;
+      case ERROR_INVALID_PARAMETER:
+      case ERROR_INVALID_NAME:          errno = EINVAL; break;
+      case ERROR_TOO_MANY_OPEN_FILES:   errno = EMFILE; break;
+      default:                          errno = EIO; break;
+   }
+}
+
+// Open a host file with delete sharing so that POSIX-style replacement can preserve existing readers on Windows.
+
+extern "C" int winOpenFile(CSTRING Location, int OpenFlags, int Permissions)
+{
+   (void)Permissions;
+
+   if (not Location) {
+      errno = EINVAL;
+      return -1;
+   }
+
+   auto location = win_utf8_to_wide(Location);
+   if (location.empty()) {
+      errno = EINVAL;
+      return -1;
+   }
+
+   DWORD access;
+   if (OpenFlags & O_RDWR) access = GENERIC_READ|GENERIC_WRITE;
+   else if (OpenFlags & O_WRONLY) access = GENERIC_WRITE;
+   else access = GENERIC_READ;
+
+   DWORD creation;
+   if ((OpenFlags & O_CREAT) and (OpenFlags & O_EXCL)) creation = CREATE_NEW;
+   else if ((OpenFlags & O_CREAT) and (OpenFlags & O_TRUNC)) creation = CREATE_ALWAYS;
+   else if (OpenFlags & O_CREAT) creation = OPEN_ALWAYS;
+   else if (OpenFlags & O_TRUNC) creation = TRUNCATE_EXISTING;
+   else creation = OPEN_EXISTING;
+
+   auto handle = CreateFileW(location.c_str(), access, FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr,
+      creation, FILE_ATTRIBUTE_NORMAL, nullptr);
+   if (handle IS INVALID_HANDLE_VALUE) {
+      set_open_errno(GetLastError());
+      return -1;
+   }
+
+   int descriptor_flags = OpenFlags & (O_APPEND|O_RDONLY|O_WRONLY|O_RDWR|O_BINARY|O_TEXT);
+   int descriptor = _open_osfhandle((intptr_t)handle, descriptor_flags);
+   if (descriptor IS -1) CloseHandle(handle);
+   return descriptor;
+}
+
+//********************************************************************************************************************
+
+struct WinRenameInfo {
+   DWORD Flags;
+   HANDLE RootDirectory;
+   DWORD FileNameLength;
+   WCHAR FileName[1];
+};
+
+constexpr DWORD WIN_FILE_RENAME_REPLACE_IF_EXISTS = 0x00000001;
+constexpr DWORD WIN_FILE_RENAME_POSIX_SEMANTICS = 0x00000002;
+constexpr int WIN_FILE_RENAME_INFO_EX = 22;
+constexpr int WIN_RENAME_ATTEMPTS = 5;
+
+static std::atomic_bool glPosixRenameSupported = true;
+
+static bool retryable_rename_error(DWORD Error)
+{
+   return (Error IS ERROR_ACCESS_DENIED) or (Error IS ERROR_SHARING_VIOLATION) or (Error IS ERROR_LOCK_VIOLATION);
+}
+
+static DWORD win_rename_file(CSTRING OldName, CSTRING NewName)
+{
+   std::string old_path(OldName);
+   std::string new_path(NewName);
+   trim_trailing_separators(old_path);
+   trim_trailing_separators(new_path);
+
+   auto old_name = win_utf8_to_wide(old_path);
+   auto new_name = win_utf8_to_wide(new_path);
+   if (old_name.empty() or new_name.empty()) return ERROR_INVALID_NAME;
+
+   for (int attempt = 0; attempt < WIN_RENAME_ATTEMPTS; attempt++) {
+      DWORD error = ERROR_SUCCESS;
+
+      if (glPosixRenameSupported.load(std::memory_order_relaxed)) {
+         auto handle = CreateFileW(old_name.c_str(), DELETE,
+            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+         if (handle IS INVALID_HANDLE_VALUE) error = GetLastError();
+         else {
+            const size_t name_size = new_name.size() * sizeof(WCHAR);
+            std::vector<uint8_t> buffer(offsetof(WinRenameInfo, FileName) + name_size + sizeof(WCHAR));
+            auto info = (WinRenameInfo *)buffer.data();
+            info->Flags = WIN_FILE_RENAME_REPLACE_IF_EXISTS|WIN_FILE_RENAME_POSIX_SEMANTICS;
+            info->RootDirectory = nullptr;
+            info->FileNameLength = DWORD(name_size);
+            memcpy(info->FileName, new_name.c_str(), name_size + sizeof(WCHAR));
+
+            if (SetFileInformationByHandle(handle, FILE_INFO_BY_HANDLE_CLASS(WIN_FILE_RENAME_INFO_EX), info,
+                  DWORD(buffer.size()))) {
+               CloseHandle(handle);
+               return ERROR_SUCCESS;
+            }
+
+            error = GetLastError();
+            CloseHandle(handle);
+            if ((error IS ERROR_INVALID_PARAMETER) or (error IS ERROR_NOT_SUPPORTED) or
+                (error IS ERROR_INVALID_FUNCTION)) {
+               if (error IS ERROR_INVALID_PARAMETER) glPosixRenameSupported.store(false, std::memory_order_relaxed);
+               if (MoveFileExW(old_name.c_str(), new_name.c_str(), MOVEFILE_REPLACE_EXISTING)) return ERROR_SUCCESS;
+               error = GetLastError();
+            }
+         }
+      }
+      else {
+         if (MoveFileExW(old_name.c_str(), new_name.c_str(), MOVEFILE_REPLACE_EXISTING)) return ERROR_SUCCESS;
+         error = GetLastError();
+      }
+
+      if (not retryable_rename_error(error) or (attempt + 1 IS WIN_RENAME_ATTEMPTS)) return error;
+      Sleep(DWORD(1 << attempt));
+   }
+
+   return ERROR_GEN_FAILURE;
+}
+
+static ERR convert_rename_error(DWORD Error)
+{
+   switch (Error) {
+      case ERROR_SUCCESS:           return ERR::Okay;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND:    return ERR::FileNotFound;
+      case ERROR_ACCESS_DENIED:     return ERR::NoPermission;
+      case ERROR_SHARING_VIOLATION:
+      case ERROR_LOCK_VIOLATION:    return ERR::InUse;
+      case ERROR_NOT_SAME_DEVICE:
+      case ERROR_NOT_SUPPORTED:     return ERR::NoSupport;
+      case ERROR_DISK_FULL:         return ERR::OutOfSpace;
+      default:                      return ERR::Failed;
+   }
+}
+
+extern "C" ERR winRenameFile(CSTRING OldName, CSTRING NewName)
+{
+   if ((not OldName) or (not NewName)) return ERR::NullArgs;
+   return convert_rename_error(win_rename_file(OldName, NewName));
+}
+
+//********************************************************************************************************************
+
 extern "C" int winMoveFile(STRING oldname, STRING newname)
 {
-   return MoveFile(oldname, newname);
+   if (win_rename_file(oldname, newname) IS ERROR_SUCCESS) return 1;
+
+   auto old_name = win_utf8_to_wide(oldname);
+   auto new_name = win_utf8_to_wide(newname);
+   if (old_name.empty() or new_name.empty()) return 0;
+   return MoveFileExW(old_name.c_str(), new_name.c_str(), MOVEFILE_REPLACE_EXISTING|MOVEFILE_COPY_ALLOWED);
 }
 
 //********************************************************************************************************************
@@ -2254,27 +2451,31 @@ extern ERR winGetVolumeInformation(STRING Volume, std::string &Label, std::strin
 
 //********************************************************************************************************************
 
-extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
+extern "C" int winTestLocation(CSTRING Location, int8_t CaseSensitive)
 {
-   int len, result;
-   HANDLE handle;
-   WIN32_FIND_DATA find;
-   char save;
-   int i, savepos;
-   bool found = false;
+   if (not Location) return 0;
 
-   for (len=0; Location[len]; len++);
-   if (len < 1) return 0;
+   const std::string_view location(Location);
+   if (location.empty()) return 0;
 
-   if ((Location[len-1] IS '/') or (Location[len-1] IS '\\')) {
+   const auto is_path_separator = [](const char Value) {
+      return (Value IS '/') or (Value IS '\\');
+   };
 
-      if (len IS 3) {
+   const auto filename_start = [is_path_separator](std::string_view Path, size_t End) {
+      while ((End > 0) and (not is_path_separator(Path[End - 1]))) End--;
+      return End;
+   };
+
+   if (is_path_separator(location.back())) {
+      if (location.size() IS 3) {
          // Checking for the existence of a drive letter - does not necessarily mean that there is media in the device.
 
          char volname[60], fsname[40];
          DWORD volserial, maxcomp, fileflags;
 
-         if (GetVolumeInformation(Location, volname, sizeof(volname), &volserial, &maxcomp, &fileflags, fsname, sizeof(fsname))) {
+         if (GetVolumeInformation(Location, volname, sizeof(volname), &volserial, &maxcomp, &fileflags, fsname,
+            sizeof(fsname))) {
             return LOC_DIRECTORY;
          }
          else return 0;
@@ -2282,11 +2483,12 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
       else {
          // We have been asked to check for the explicit existence of a folder.
 
-         result = 0;
-         savepos = len-1;
-         save = Location[savepos];
-         Location[savepos] = 0; // Remove the trailing slash
-         if ((handle = FindFirstFile(Location, &find)) != INVALID_HANDLE_VALUE) {
+         auto result = 0;
+         auto found = false;
+         WIN32_FIND_DATA find;
+         const std::string folder_path(location.data(), location.size() - 1);
+
+         if (auto handle = FindFirstFile(folder_path.c_str(), &find); handle != INVALID_HANDLE_VALUE) {
             found = true;
             if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) result = LOC_DIRECTORY;
             else while (FindNextFile(handle, &find)) {
@@ -2302,19 +2504,21 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
             // Check that the filename of the given location matches that of the actual name set on the file system.
 
             if (found and result) {
-               i = savepos;
-               while ((i > 0) and (Location[i-1] != '/') and (Location[i-1] != '\\')) i--;
-               if (!case_sensitive_name_match(Location, i, savepos, find.cFileName)) result = 0; // Not a case sensitive match
+               const auto name_start = filename_start(folder_path, folder_path.size());
+               if (not (folder_path.substr(name_start) IS std::string_view(find.cFileName))) {
+                  result = 0; // Not a case sensitive match
+               }
             }
             else result = 0;
          }
-
-         Location[savepos] = save;
+         return result;
       }
-
-      return result;
    }
-   else if ((handle = FindFirstFile(Location, &find)) != INVALID_HANDLE_VALUE) {
+
+   WIN32_FIND_DATA find;
+   if (auto handle = FindFirstFile(Location, &find); handle != INVALID_HANDLE_VALUE) {
+      int result;
+
       if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
          result = LOC_DIRECTORY;
       }
@@ -2325,9 +2529,10 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
       if (CaseSensitive) {
          // Check that the filename of the given location matches that of the actual name set on the file system.
 
-         i = len;
-         while ((i > 0) and (Location[i-1] != '/') and (Location[i-1] != '\\')) i--;
-         if (!case_sensitive_name_match(Location, i, len, find.cFileName)) return 0; /* Not a case sensitive match */
+         const auto name_start = filename_start(location, location.size());
+         if (not (location.substr(name_start) IS std::string_view(find.cFileName))) {
+            return 0; // Not a case sensitive match
+         }
       }
 
       return result;
@@ -2338,18 +2543,84 @@ extern "C" int winTestLocation(STRING Location, int8_t CaseSensitive)
 //********************************************************************************************************************
 // Helper function to remove read-only attribute and delete a file
 
+static ERR grant_delete_access(CSTRING Path, bool Folder)
+{
+   HANDLE token = nullptr;
+   if (not OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return ERR::NoPermission;
+
+   DWORD token_size = 0;
+   GetTokenInformation(token, TokenUser, nullptr, 0, &token_size);
+   if (not (GetLastError() IS ERROR_INSUFFICIENT_BUFFER)) {
+      CloseHandle(token);
+      return ERR::SystemCall;
+   }
+
+   std::vector<uint8_t> token_buffer(token_size);
+   if (not GetTokenInformation(token, TokenUser, token_buffer.data(), token_size, &token_size)) {
+      CloseHandle(token);
+      return ERR::SystemCall;
+   }
+   CloseHandle(token);
+
+   auto token_user = (TOKEN_USER *)token_buffer.data();
+
+   PACL old_dacl = nullptr;
+   PACL new_dacl = nullptr;
+   PSECURITY_DESCRIPTOR security = nullptr;
+
+   auto result = GetNamedSecurityInfoA((LPSTR)Path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr,
+      &old_dacl, nullptr, &security);
+   if (not (result IS ERROR_SUCCESS)) return ERR::NoPermission;
+
+   EXPLICIT_ACCESSA access;
+   memset(&access, 0, sizeof(access));
+   access.grfAccessPermissions = DELETE;
+   access.grfAccessMode        = GRANT_ACCESS;
+   access.grfInheritance       = Folder ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+   access.Trustee.TrusteeForm  = TRUSTEE_IS_SID;
+   access.Trustee.TrusteeType  = TRUSTEE_IS_USER;
+   access.Trustee.ptstrName    = (LPSTR)token_user->User.Sid;
+
+   result = SetEntriesInAclA(1, &access, old_dacl, &new_dacl);
+   if (result IS ERROR_SUCCESS) {
+      result = SetNamedSecurityInfoA((LPSTR)Path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr,
+         new_dacl, nullptr);
+   }
+
+   if (new_dacl) LocalFree(new_dacl);
+   if (security) LocalFree(security);
+
+   if (result IS ERROR_SUCCESS) return ERR::Okay;
+   else return ERR::NoPermission;
+}
+
+//********************************************************************************************************************
+
 static ERR delete_file_helper(const std::string &FilePath)
 {
-   DWORD attrib = GetFileAttributes(FilePath.c_str());
-   if (attrib != INVALID_FILE_ATTRIBUTES) {
+   if (auto attrib = GetFileAttributes(FilePath.c_str()); attrib != INVALID_FILE_ATTRIBUTES) {
       if (attrib & FILE_ATTRIBUTE_READONLY) {
          attrib &= ~FILE_ATTRIBUTE_READONLY;
          SetFileAttributes(FilePath.c_str(), attrib);
       }
    }
 
-   if (unlink(FilePath.c_str()) IS 0) return ERR::Okay;
-   else return convert_errno(errno, ERR::SystemCall);
+   if (DeleteFileA(FilePath.c_str())) return ERR::Okay;
+
+   auto error = GetLastError();
+   if (error IS ERROR_ACCESS_DENIED) {
+      if (!grant_delete_access(FilePath.c_str(), false)) {
+         if (DeleteFileA(FilePath.c_str())) return ERR::Okay;
+         error = GetLastError();
+      }
+   }
+
+   switch (error) {
+      case ERROR_ACCESS_DENIED: return ERR::NoPermission;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND: return ERR::FileNotFound;
+      default: return ERR::SystemCall;
+   }
 }
 
 //********************************************************************************************************************
@@ -2357,8 +2628,7 @@ static ERR delete_file_helper(const std::string &FilePath)
 
 static ERR delete_directory_helper(const std::string &DirPath)
 {
-   auto attrib = GetFileAttributes(DirPath.c_str());
-   if (attrib != INVALID_FILE_ATTRIBUTES) {
+   if (auto attrib = GetFileAttributes(DirPath.c_str()); attrib != INVALID_FILE_ATTRIBUTES) {
       if (attrib & FILE_ATTRIBUTE_READONLY) {
          attrib &= ~FILE_ATTRIBUTE_READONLY;
          SetFileAttributes(DirPath.c_str(), attrib);
@@ -2366,7 +2636,21 @@ static ERR delete_directory_helper(const std::string &DirPath)
    }
 
    if (RemoveDirectory(DirPath.c_str())) return ERR::Okay;
-   else return ERR::SystemCall;
+
+   auto error = GetLastError();
+   if (error IS ERROR_ACCESS_DENIED) {
+      if (!grant_delete_access(DirPath.c_str(), true)) {
+         if (RemoveDirectory(DirPath.c_str())) return ERR::Okay;
+         error = GetLastError();
+      }
+   }
+
+   switch (error) {
+      case ERROR_ACCESS_DENIED: return ERR::NoPermission;
+      case ERROR_FILE_NOT_FOUND:
+      case ERROR_PATH_NOT_FOUND: return ERR::FileNotFound;
+      default: return ERR::SystemCall;
+   }
 }
 
 //********************************************************************************************************************
@@ -2397,12 +2681,15 @@ extern ERR delete_tree(std::string &Path, FUNCTION *Callback, struct FileFeedbac
             Path.append(find.cFileName);
 
             if (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-               ERR result = delete_tree(Path, Callback, Feedback);
-               if (result != ERR::Okay and result != ERR::Cancelled) {
-                  // Continue with other files even if one fails
+               if (auto result = delete_tree(Path, Callback, Feedback); result != ERR::Okay) {
+                  FindClose(handle);
+                  return result;
                }
             }
-            else delete_file_helper(Path);
+            else if (auto result = delete_file_helper(Path); result != ERR::Okay) {
+               FindClose(handle);
+               return result;
+            }
          }
 
          cont = FindNextFile(handle, &find);
@@ -2466,7 +2753,7 @@ extern "C" HANDLE winFindFile(CSTRING Location, HANDLE *Handle, STRING Result)
 
    if (*Handle) {
       while (FindNextFile(*Handle, &find)) {
-         if (!(find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+         if (not (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
             for (i=0; find.cFileName[i]; i++) Result[i] = find.cFileName[i];
             Result[i] = 0;
             return *Handle;
@@ -2476,7 +2763,7 @@ extern "C" HANDLE winFindFile(CSTRING Location, HANDLE *Handle, STRING Result)
    }
    else if ((*Handle = FindFirstFile(Location, &find)) != INVALID_HANDLE_VALUE) {
       do {
-         if (!(find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+         if (not (find.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
             for (i=0; find.cFileName[i]; i++) Result[i] = find.cFileName[i];
             Result[i] = 0;
             return *Handle;
@@ -2505,7 +2792,7 @@ extern "C" int winScan(HANDLE *Handle, CSTRING Path, std::string &Name, long lon
          *Handle = FindFirstFile(Path, &find);
          if (*Handle IS INVALID_HANDLE_VALUE) return 0;
       }
-      else if (!FindNextFile(*Handle, &find)) return 0;
+      else if (not FindNextFile(*Handle, &find)) return 0;
 
       if ((find.cFileName[0] IS '.') and (find.cFileName[1] IS 0)) continue;
       if ((find.cFileName[0] IS '.') and (find.cFileName[1] IS '.') and (find.cFileName[2] IS 0)) continue;
@@ -2582,7 +2869,7 @@ extern "C" void winGetAttrib(CSTRING Path, int *Flags)
 
 extern "C" int winFileInfo(CSTRING Path, size_t *Size, struct DateTime *Time, int8_t *Folder)
 {
-   if (!Path) return 0;
+   if (not Path) return 0;
 
    int len;
    for (len=0; Path[len]; len++);
@@ -2686,6 +2973,325 @@ extern "C" int winCheckDirectoryExists(CSTRING Path)
 
       return 0;
    }
+}
+
+//********************************************************************************************************************
+// Time zone information wrappers.
+
+struct WindowsZoneMap {
+   CSTRING IANA;
+   CSTRING Windows;
+};
+
+static const WindowsZoneMap glWindowsZones[] = {
+   { "Etc/UTC",                "UTC" },
+   { "UTC",                    "UTC" },
+   { "Etc/GMT",                "UTC" },
+   { "Europe/London",          "GMT Standard Time" },
+   { "Europe/Dublin",          "GMT Standard Time" },
+   { "Europe/Lisbon",          "GMT Standard Time" },
+   { "Europe/Berlin",          "W. Europe Standard Time" },
+   { "Europe/Paris",           "Romance Standard Time" },
+   { "Europe/Madrid",          "Romance Standard Time" },
+   { "Europe/Rome",            "W. Europe Standard Time" },
+   { "Europe/Amsterdam",       "W. Europe Standard Time" },
+   { "America/New_York",       "Eastern Standard Time" },
+   { "America/Detroit",        "Eastern Standard Time" },
+   { "America/Chicago",        "Central Standard Time" },
+   { "America/Denver",         "Mountain Standard Time" },
+   { "America/Phoenix",        "US Mountain Standard Time" },
+   { "America/Los_Angeles",    "Pacific Standard Time" },
+   { "America/Anchorage",      "Alaskan Standard Time" },
+   { "Pacific/Honolulu",       "Hawaiian Standard Time" },
+   { "America/Toronto",        "Eastern Standard Time" },
+   { "America/Vancouver",      "Pacific Standard Time" },
+   { "America/Mexico_City",    "Central Standard Time (Mexico)" },
+   { "America/Sao_Paulo",      "E. South America Standard Time" },
+   { "America/Argentina/Buenos_Aires", "Argentina Standard Time" },
+   { "Asia/Tokyo",             "Tokyo Standard Time" },
+   { "Asia/Shanghai",          "China Standard Time" },
+   { "Asia/Hong_Kong",         "China Standard Time" },
+   { "Asia/Singapore",         "Singapore Standard Time" },
+   { "Asia/Seoul",             "Korea Standard Time" },
+   { "Asia/Kolkata",           "India Standard Time" },
+   { "Asia/Dubai",             "Arabian Standard Time" },
+   { "Australia/Sydney",       "AUS Eastern Standard Time" },
+   { "Australia/Melbourne",    "AUS Eastern Standard Time" },
+   { "Australia/Perth",        "W. Australia Standard Time" },
+   { "Pacific/Auckland",       "New Zealand Standard Time" },
+   { nullptr,                   nullptr }
+};
+
+//********************************************************************************************************************
+
+static bool win_string_iequals(std::string_view Left, CSTRING Right)
+{
+   if (not Right) return false;
+   const auto right_len = strlen(Right);
+   return (Left.size() IS right_len) and (_strnicmp(Left.data(), Right, right_len) IS 0);
+}
+
+//********************************************************************************************************************
+
+static bool win_is_utc_zone(std::string_view ZoneID)
+{
+   return win_string_iequals(ZoneID, "UTC") or win_string_iequals(ZoneID, "Etc/UTC") or
+      win_string_iequals(ZoneID, "Etc/GMT") or win_string_iequals(ZoneID, "GMT") or
+      win_string_iequals(ZoneID, "Zulu");
+}
+
+//********************************************************************************************************************
+
+static int64_t win_utc_year_start_us(const int Year)
+{
+   auto day = std::chrono::sys_days(std::chrono::year(Year) / std::chrono::January / 1);
+   return int64_t(std::chrono::duration_cast<std::chrono::microseconds>(day.time_since_epoch()).count());
+}
+
+//********************************************************************************************************************
+
+static void win_fill_utc_timezone_info(rkTimeZoneInfo &Info, const int StartYear, const int EndYear, const int IsLocal,
+   const int IsFallback)
+{
+   Info = rkTimeZoneInfo();
+   Info.ZoneID             = "UTC";
+   Info.NativeID           = "UTC";
+   Info.Source             = "utc";
+   Info.BaseOffset         = 0;
+   Info.StartYear          = StartYear;
+   Info.EndYear            = EndYear;
+   Info.IsLocal            = IsLocal;
+   Info.IsFallback         = IsFallback;
+}
+
+//********************************************************************************************************************
+
+static std::string win_wide_to_utf8(const wchar_t *Text)
+{
+   if ((not Text) or (not Text[0])) return {};
+
+   const int size = WideCharToMultiByte(CP_UTF8, 0, Text, -1, nullptr, 0, nullptr, nullptr);
+   if (size <= 1) return {};
+
+   std::string result(size, 0);
+   WideCharToMultiByte(CP_UTF8, 0, Text, -1, result.data(), size, nullptr, nullptr);
+   result.pop_back();
+   return result;
+}
+
+//********************************************************************************************************************
+
+static std::wstring win_utf8_to_wide(std::string_view Text)
+{
+   if (Text.empty()) return {};
+
+   const int size = MultiByteToWideChar(CP_UTF8, 0, Text.data(), int(Text.size()), nullptr, 0);
+   if (size <= 0) return {};
+
+   std::wstring result(size, 0);
+   MultiByteToWideChar(CP_UTF8, 0, Text.data(), int(Text.size()), result.data(), size);
+   return result;
+}
+
+//********************************************************************************************************************
+
+extern "C" ERR winOpenURI(const std::string_view &URI)
+{
+   const auto uri = win_utf8_to_wide(URI);
+   if (uri.empty()) return ERR::InvalidURI;
+
+   const auto result = intptr_t(ShellExecuteW(nullptr, L"open", uri.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+   if (result > 32) return ERR::Okay;
+
+   switch(result) {
+      case SE_ERR_FNF:
+      case SE_ERR_PNF:
+      case SE_ERR_DLLNOTFOUND:
+         return ERR::FileNotFound;
+      case SE_ERR_ACCESSDENIED:
+         return ERR::NoPermission;
+      case SE_ERR_OOM:
+         return ERR::NoMemory;
+      case SE_ERR_ASSOCINCOMPLETE:
+      case SE_ERR_NOASSOC:
+         return ERR::NoSupport;
+      default:
+         return ERR::SystemCall;
+   }
+}
+
+//********************************************************************************************************************
+
+static CSTRING win_windows_id_from_iana(std::string_view ZoneID)
+{
+   for (auto map = glWindowsZones; map->IANA; map++) {
+      if (win_string_iequals(ZoneID, map->IANA)) return map->Windows;
+   }
+
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static CSTRING win_iana_from_windows_id(std::string_view NativeID)
+{
+   for (auto map = glWindowsZones; map->IANA; map++) {
+      if (win_string_iequals(NativeID, map->Windows)) return map->IANA;
+   }
+
+   return nullptr;
+}
+
+//********************************************************************************************************************
+
+static bool win_find_timezone(std::string_view NativeID, DYNAMIC_TIME_ZONE_INFORMATION &Zone)
+{
+   const auto native_wide = win_utf8_to_wide(NativeID);
+   if (native_wide.empty()) return false;
+   if (native_wide.size() >= std::size(Zone.TimeZoneKeyName)) return false;
+
+   memset(&Zone, 0, sizeof(Zone));
+   wcscpy_s(Zone.TimeZoneKeyName, std::size(Zone.TimeZoneKeyName), native_wide.c_str());
+   return true;
+}
+
+//********************************************************************************************************************
+
+static int win_timezone_offset_seconds(const LONG Bias, const LONG Adjustment)
+{
+   return -int(Bias + Adjustment) * 60;
+}
+
+//********************************************************************************************************************
+
+static int win_last_day_of_month(const int Year, const int Month)
+{
+   auto last = std::chrono::year_month_day_last(std::chrono::year(Year) / std::chrono::month(unsigned(Month)) /
+      std::chrono::last);
+   return int(unsigned(last.day()));
+}
+
+//********************************************************************************************************************
+
+static bool win_transition_local_us(const int Year, const SYSTEMTIME &Rule, int64_t &LocalTime)
+{
+   if (Rule.wMonth IS 0) return false;
+
+   const auto first_day = std::chrono::sys_days(std::chrono::year(Year) / std::chrono::month(Rule.wMonth) / 1);
+   const auto first_weekday = std::chrono::weekday(first_day).c_encoding();
+   int day = 1 + int((7 + int(Rule.wDayOfWeek) - int(first_weekday)) % 7) + (int(Rule.wDay) - 1) * 7;
+
+   const int month_days = win_last_day_of_month(Year, int(Rule.wMonth));
+   if (day > month_days) day -= 7;
+
+   LocalTime = int64_t(std::chrono::duration_cast<std::chrono::microseconds>(first_day.time_since_epoch()).count());
+   LocalTime += int64_t(day - 1) * 24LL * 60LL * 60LL * 1000000LL;
+   LocalTime += int64_t(Rule.wHour) * 60LL * 60LL * 1000000LL;
+   LocalTime += int64_t(Rule.wMinute) * 60LL * 1000000LL;
+   LocalTime += int64_t(Rule.wSecond) * 1000000LL;
+   LocalTime += int64_t(Rule.wMilliseconds) * 1000LL;
+   return true;
+}
+
+//********************************************************************************************************************
+
+static void win_add_timezone_transition(std::vector<rkTimeZoneTransition> &Transitions, const int Year,
+   const SYSTEMTIME &Rule, const int OffsetBefore, const int OffsetAfter, const int DaylightSaving,
+   const std::string &Name, const int StartYear, const int EndYear)
+{
+   int64_t local_us = 0;
+   if (not win_transition_local_us(Year, Rule, local_us)) return;
+
+   rkTimeZoneTransition transition;
+   transition.Instant         = local_us - (int64_t(OffsetBefore) * 1000000LL);
+   transition.Abbreviation    = Name;
+   transition.OffsetBefore    = OffsetBefore;
+   transition.OffsetAfter     = OffsetAfter;
+   transition.DaylightSaving  = DaylightSaving;
+
+   if ((transition.Instant >= win_utc_year_start_us(StartYear)) and
+         (transition.Instant < win_utc_year_start_us(EndYear + 1))) {
+      Transitions.push_back(std::move(transition));
+   }
+}
+
+//********************************************************************************************************************
+
+ERR winGetTimeZoneInfo(std::string_view ZoneID, const int StartYear, const int EndYear, rkTimeZoneInfo &Info)
+{
+   const bool is_local = ZoneID.empty();
+   DYNAMIC_TIME_ZONE_INFORMATION dynamic_zone;
+   memset(&dynamic_zone, 0, sizeof(dynamic_zone));
+
+   std::string native_id;
+
+   if (is_local) {
+      if (GetDynamicTimeZoneInformation(&dynamic_zone) IS TIME_ZONE_ID_INVALID) {
+         win_fill_utc_timezone_info(Info, StartYear, EndYear, 1, 1);
+         return ERR::Okay;
+      }
+
+      native_id = win_wide_to_utf8(dynamic_zone.TimeZoneKeyName);
+      if (native_id.empty()) native_id = win_wide_to_utf8(dynamic_zone.StandardName);
+   }
+   else {
+      CSTRING mapped_id = win_windows_id_from_iana(ZoneID);
+      native_id = mapped_id ? mapped_id : std::string(ZoneID);
+
+      if (win_is_utc_zone(native_id)) {
+         win_fill_utc_timezone_info(Info, StartYear, EndYear, 0, 0);
+         return ERR::Okay;
+      }
+
+      if (not win_find_timezone(native_id, dynamic_zone)) return ERR::Search;
+   }
+
+   Info = rkTimeZoneInfo();
+   Info.NativeID    = native_id;
+   Info.Source      = "win32";
+   Info.StartYear   = StartYear;
+   Info.EndYear     = EndYear;
+   Info.IsLocal     = is_local ? 1 : 0;
+   Info.IsFallback  = 0;
+
+   if (is_local) {
+      CSTRING iana_id = win_iana_from_windows_id(native_id);
+      Info.ZoneID = iana_id ? iana_id : native_id;
+   }
+   else Info.ZoneID = std::string(ZoneID);
+
+   TIME_ZONE_INFORMATION year_zone;
+   memset(&year_zone, 0, sizeof(year_zone));
+
+   if (not GetTimeZoneInformationForYear(USHORT(StartYear), &dynamic_zone, &year_zone)) {
+      if (is_local) return ERR::SystemCall;
+      else return ERR::Search;
+   }
+
+   Info.BaseOffset = win_timezone_offset_seconds(year_zone.Bias, year_zone.StandardBias);
+
+   for (int year = StartYear; year <= EndYear; year++) {
+      memset(&year_zone, 0, sizeof(year_zone));
+      if (not GetTimeZoneInformationForYear(USHORT(year), &dynamic_zone, &year_zone)) return ERR::SystemCall;
+
+      const int standard_offset = win_timezone_offset_seconds(year_zone.Bias, year_zone.StandardBias);
+      const int daylight_offset = win_timezone_offset_seconds(year_zone.Bias, year_zone.DaylightBias);
+
+      if ((year_zone.DaylightDate.wMonth IS 0) or (year_zone.StandardDate.wMonth IS 0) or
+            (standard_offset IS daylight_offset)) {
+         continue;
+      }
+
+      win_add_timezone_transition(Info.Transitions, year, year_zone.DaylightDate, standard_offset, daylight_offset, 1,
+         win_wide_to_utf8(year_zone.DaylightName), StartYear, EndYear);
+      win_add_timezone_transition(Info.Transitions, year, year_zone.StandardDate, daylight_offset, standard_offset, 0,
+         win_wide_to_utf8(year_zone.StandardName), StartYear, EndYear);
+   }
+
+   std::sort(Info.Transitions.begin(), Info.Transitions.end(), [](const rkTimeZoneTransition &A,
+      const rkTimeZoneTransition &B) { return A.Instant < B.Instant; });
+
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************

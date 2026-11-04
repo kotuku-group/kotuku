@@ -6,6 +6,7 @@
 #include "lj_obj.h"
 #include "lj_err.h"
 
+//********************************************************************************************************************
 // CheckGuard: RAII-style argument validation guard
 //
 // Provides automatic error handling for argument validation. When a check fails, it throws an error via lj_err_arg()
@@ -45,6 +46,7 @@ public:
    CheckGuard & operator=(CheckGuard &&) = delete;
 };
 
+//********************************************************************************************************************
 // RangeGuard: RAII-style range validation guard
 //
 // Validates that a value is within an acceptable range. Throws an error if the value is out of bounds.
@@ -75,6 +77,7 @@ public:
    RangeGuard & operator=(RangeGuard &&) = delete;
 };
 
+//********************************************************************************************************************
 // TypeGuard: RAII-style type validation guard
 //
 // Validates that a TValue has the expected type. Throws an error if the type
@@ -102,7 +105,6 @@ public:
          case LUA_TTABLE:    passed_ = tvistab(o); break;
          case LUA_TFUNCTION: passed_ = tvisfunc(o); break;
          case LUA_TUSERDATA: passed_ = tvisudata(o); break;
-         case LUA_TTHREAD:   passed_ = tvisthread(o); break;
          default:            passed_ = false; break;
       }
 
@@ -118,6 +120,7 @@ public:
    TypeGuard & operator=(TypeGuard &&) = delete;
 };
 
+//********************************************************************************************************************
 // NotNilGuard: RAII-style nil validation guard
 //
 // Validates that a value is not nil. This is a common pattern in library functions that require a value to be present.
@@ -147,6 +150,7 @@ public:
    NotNilGuard & operator=(NotNilGuard &&) = delete;
 };
 
+//********************************************************************************************************************
 // Convenience macros for common validation patterns
 //
 // These macros create CheckGuard instances with meaningful names for debugging.
@@ -165,6 +169,7 @@ public:
 #define LJ_CHECK_NOT_NIL(L, arg, o) \
    NotNilGuard _not_nil_guard_##arg##_line_##__LINE__(L, arg, o)
 
+//********************************************************************************************************************
 // Inline validation helpers
 //
 // These provide convenient inline validation without creating guard objects.
@@ -183,6 +188,7 @@ template<typename T>
    return value >= min_val and value <= max_val;
 }
 
+//********************************************************************************************************************
 // Error message builders
 //
 // These helpers construct error messages for common validation patterns.

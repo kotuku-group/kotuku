@@ -563,8 +563,8 @@ end
    local err, result = xml.mtEvaluate('1 to 5')
    assert(err is ERR_Okay, "Range operator should succeed: " .. mSys.GetErrorMsg(err))
    -- Result should be sequence: 1 2 3 4 5
-   assert(string.find(result, "1"), "Range should contain 1")
-   assert(string.find(result, "5"), "Range should contain 5")
+   assert(result.find("1"), "Range should contain 1")
+   assert(result.find("5"), "Range should contain 5")
 end
 
 -- Test range with count
@@ -723,7 +723,7 @@ end
    assert(err != ERR_Okay, 'Unknown constructor type should raise XPST0051')
 
    local message = string.lower(tostring(xml.errorMsg))
-   assert(string.find(message, 'xpst0051', 0, true),
+   assert(message.find('xpst0051', 0, true),
       'Error message should include XPST0051 for unknown constructor types, got ' .. message)
 end
 
@@ -734,7 +734,7 @@ end
    assert(err != ERR_Okay, 'Constructor with unbound prefix should raise XPST0081')
 
    local message = string.lower(tostring(xml.errorMsg))
-   assert(string.find(message, 'xpst0081', 0, true),
+   assert(message.find('xpst0081', 0, true),
       'Error message should include XPST0081 for missing namespace bindings, got ' .. message)
 end
 

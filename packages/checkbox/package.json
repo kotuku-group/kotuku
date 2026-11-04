@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/checkbox",
+  "version": "1.0",
+  "description": "Deprecated checkbox widget alias that forwards to gui/toggle.",
+  "entry": "checkbox.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2016-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "checkbox",
+    "gui",
+    "widget"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/toggle": "1.0"
+  },
+  "files": [
+    {
+      "path": "checkbox.tiri",
+      "size": 368,
+      "sha256": "3b4bcb9deb60b229fabf9401f6090c34c08f76e3b9d8fd212dd424ff48c6b81c",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

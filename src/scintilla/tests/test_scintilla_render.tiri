@@ -1,0 +1,532 @@
+-- Tests for the presentation layer of the Scintilla class.  The editor paints into an internal bitmap that the scene
+-- shows through the Canvas rectangle.  Painting is deferred to the next cycle of message processing, so each render
+-- draws the scene, processes messages and then draws the scene again before pixels are probed.
+--
+-- These geometry tests explicitly use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of 4
+-- means that text starts at x = 4.
+
+   include 'scintilla', 'vector', 'display'
+   module vector as mVec
+   module display as mGfx
+
+PAGE_WIDTH  = 300
+PAGE_HEIGHT = 120
+LINE_HEIGHT = 13
+TEXT_LEFT   = 4
+
+-- Create a headless scene with a host viewport and a Scintilla object, and a bitmap that the scene renders to.
+-- The caret line highlight is disabled by default so that it does not interfere with background probes.
+
+function newEditor(Options:table):<obj, obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
+   options.lineHighlight ?= '255,255,255,0'
+   local sci = vp.new('Scintilla', options)
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   return scene, vp, sci, bmp
+end
+
+function render(Scene:obj)
+   check Scene.acDraw()
+   processing.sleep(0)
+   check Scene.acDraw()
+end
+
+-- Returns the colour of a pixel as an 'r,g,b' string.  ReadRGBPixel() results share one buffer, so the channels are
+-- copied immediately.
+
+function colourAt(Bitmap:obj, X:num, Y:num):str
+   local p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return f'{p.red},{p.green},{p.blue}'
+end
+
+-- Counts the pixels in an area (exclusive of the right and bottom edges) that satisfy a test of their channels.
+
+function countPixels(Bitmap:obj, X:num, Y:num, Width:num, Height:num, Test:func):num
+   local total = 0
+   for py in {Y to Y + Height} do
+      for px in {X to X + Width} do
+         local p = mGfx.ReadRGBPixel(Bitmap, px, py)
+         if Test(p.red, p.green, p.blue) then total++ end
+      end
+   end
+   return total
+end
+
+function isDark(R:num, G:num, B:num):bool
+   return R + G + B < 300
+end
+
+function isGrey(R:num, G:num, B:num):bool
+   return (R > 20 and R < 235) or (G > 20 and G < 235) or (B > 20 and B < 235)
+end
+
+function darkPixels(Bitmap:obj, X:num, Y:num, Width:num, Height:num):num
+   return countPixels(Bitmap, X, Y, Width, Height, isDark)
+end
+
+-- The Canvas is the only child of the Page.
+
+function getCanvas(Sci:obj):obj
+   return Sci.page.child
+end
+
+-- Returns a string that records which rows of an area contain dark pixels, e.g. '0011100'.
+
+function darkRowProfile(Bitmap:obj, X:num, Y:num, Width:num, Height:num):str
+   local profile = ''
+   for py in {Y to Y + Height} do
+      profile ..= (darkPixels(Bitmap, X, py, Width, 1) > 0) ? '1' : '0'
+   end
+   return profile
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Background and text
+
+@Test function BackgroundColour()
+   local scene <close>, vp, sci, bmp = newEditor({ bkgdColour='250,240,200,255' })
+   sci.string = 'Hello'
+   render(scene)
+
+   assert(colourAt(bmp, 200, 6) is '250,240,200', 'The text line beyond its end must use BkgdColour, got ' ..
+      colourAt(bmp, 200, 6))
+   assert(colourAt(bmp, 200, 60) is '250,240,200', 'The area beyond the last line must use BkgdColour, got ' ..
+      colourAt(bmp, 200, 60))
+   assert(colourAt(bmp, 1, 6) is '250,240,200', 'The left margin must use BkgdColour, got ' .. colourAt(bmp, 1, 6))
+end
+
+@Test function BackgroundColourChange()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'Hello'
+   render(scene)
+   assert(colourAt(bmp, 200, 6) is '255,255,255', 'The default background must be white')
+
+   sci.bkgdColour = '20,30,40,255'
+   render(scene)
+   assert(colourAt(bmp, 200, 6) is '20,30,40', 'Changing BkgdColour must repaint the text lines, got ' ..
+      colourAt(bmp, 200, 6))
+   assert(colourAt(bmp, 200, 60) is '20,30,40', 'Changing BkgdColour must repaint the empty area, got ' ..
+      colourAt(bmp, 200, 60))
+end
+
+@Test function TextOnFirstLine()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'Hello'
+   render(scene)
+
+   local width = 5 * 7
+   assert(darkPixels(bmp, TEXT_LEFT, 0, width, LINE_HEIGHT) > 20, 'Text pixels must be present on line 0')
+   assert(darkPixels(bmp, TEXT_LEFT + width + 2, 0, 100, LINE_HEIGHT) is 0, 'No text may appear past the line end')
+   assert(darkPixels(bmp, 0, LINE_HEIGHT, 200, LINE_HEIGHT) is 0, 'No text may appear on line 1')
+   assert(darkPixels(bmp, 0, 0, TEXT_LEFT, LINE_HEIGHT) is 0, 'No text may appear in the left margin')
+end
+
+@Test function TextColour()
+   local scene <close>, vp, sci, bmp = newEditor({ textColour='200,0,0,255' })
+   sci.string = 'Hello'
+   render(scene)
+
+   local red = countPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT, (R, G, B) => R is 200 and G is 0 and B is 0)
+   assert(red > 20, f'Plain text must be drawn in TextColour, found {red} pixels')
+end
+
+@Test function TextIsBaselineAligned()
+   -- Line 1 must start exactly one line height below line 0, so the two lines must have the same row profile.
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'Hxg\nHxg'
+   render(scene)
+
+   local line0 = darkRowProfile(bmp, TEXT_LEFT, 0, 21, LINE_HEIGHT)
+   local line1 = darkRowProfile(bmp, TEXT_LEFT, LINE_HEIGHT, 21, LINE_HEIGHT)
+   assert(line0 is line1, f'Both lines must be drawn at the same offset: {line0} vs {line1}')
+   assert(line0.sub(0, 1) is '0', f'The glyph cell must not be clipped at the top of the line: {line0}')
+end
+
+@Test function EditsAreDeferredUntilMessagesAreProcessed()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'Hello'
+   render(scene)
+   assert(darkPixels(bmp, 0, LINE_HEIGHT, 200, LINE_HEIGHT) is 0, 'Line 1 must be empty')
+
+   check sci.mtInsertText('\nWorld', 5)
+   check scene.acDraw()
+   assert(darkPixels(bmp, 0, LINE_HEIGHT, 200, LINE_HEIGHT) is 0, 'Painting must wait for message processing')
+
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, LINE_HEIGHT, 35, LINE_HEIGHT) > 20, 'The inserted line must be painted')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Selection and whitespace
+
+@Test function SelectionBackground()
+   local scene <close>, vp, sci, bmp = newEditor({ selectBkgd='0,128,0,255', selectFore='255,255,255,255' })
+   sci.string = 'Hello World'
+   check sci.mtSelectRange(0, 5)
+   render(scene)
+
+   local isSelection = (R, G, B) => R is 0 and G is 128 and B is 0
+   local selected = countPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT, isSelection)
+   assert(selected > 100, f'The selected text must be drawn over SelectBkgd, found {selected} pixels')
+   assert(countPixels(bmp, TEXT_LEFT + 42, 0, 35, LINE_HEIGHT, isSelection) is 0,
+      'Unselected text must not use SelectBkgd')
+end
+
+-- Translucent highlights blend like a translucent vector fill, i.e. with the framework's gamma-correct blending.  The
+-- reference colour is rendered by a scene so that the expectation does not depend on the blending formula.
+
+function blendedOverWhite(Fill:str):<num, num, num>
+   local scene <close> = obj.new('VectorScene', { pageWidth=4, pageHeight=4 })
+   local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   vp.new('VectorRectangle', { x=0, y=0, width=4, height=4, fill='#ffffff' })
+   vp.new('VectorRectangle', { x=0, y=0, width=4, height=4, fill=Fill })
+   local bmp <close> = obj.new('bitmap', { width=4, height=4, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   check scene.acDraw()
+   local p = mGfx.ReadRGBPixel(bmp, 2, 2)
+   return p.red, p.green, p.blue
+end
+
+function near(A:num, B:num):bool
+   return math.abs(A - B) <= 1
+end
+
+@Test function TranslucentSelectionBlendsOverText()
+   local r, g, b = blendedOverWhite('#0000ff80')
+   assert(r > 0 and r < 255 and b is 255, f'The reference blend must be translucent blue, got {r},{g},{b}')
+
+   local scene <close>, vp, sci, bmp = newEditor({ selectBkgd='0,0,255,128', selectFore='0,0,0,0' })
+   sci.string = 'HHHH        end'
+   check sci.mtSelectRange(0, 12)
+   render(scene)
+
+   local isBlend = (R, G, B) => near(R, r) and near(G, g) and near(B, b)
+   local spaces = 8 * 7
+   local blended = countPixels(bmp, TEXT_LEFT + 28, 0, spaces, LINE_HEIGHT, isBlend)
+   assert(blended is spaces * LINE_HEIGHT,
+      f'Selected spaces must be uniformly blended to {r},{g},{b}, matched {blended} of {spaces * LINE_HEIGHT}')
+   assert(countPixels(bmp, TEXT_LEFT, 0, 28, LINE_HEIGHT, isBlend) > 100, 'The selection must cover the text')
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 28, LINE_HEIGHT) > 20, 'Text must remain visible beneath the selection')
+   assert(colourAt(bmp, TEXT_LEFT + 2, LINE_HEIGHT + 4) is '255,255,255', 'Unselected rows must not be blended')
+
+   -- An opaque colour returns to drawing the selection beneath the text.
+   sci.selectBkgd = '0,128,0,255'
+   render(scene)
+   assert(colourAt(bmp, TEXT_LEFT + 40, 6) is '0,128,0', 'An opaque selection must use SelectBkgd exactly')
+end
+
+@Test function WhitespaceArrows()
+   -- Visible tabs are drawn as arrows, which use horizontal and diagonal lines.
+   local scene <close>, vp, sci, bmp = newEditor({ showWhitespace=true, tabWidth=8 })
+   sci.string = '\tX'
+   render(scene)
+
+   local arrow = darkPixels(bmp, TEXT_LEFT + 1, 0, 50, LINE_HEIGHT)
+   assert(arrow > 10, f'A tab arrow must be drawn, found {arrow} pixels')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Margins
+
+-- Returns the width of the line number margin by scanning for the end of the margin colour below the last line.
+
+function marginWidth(Bitmap:obj):num
+   local margin = colourAt(Bitmap, 0, PAGE_HEIGHT - 2)
+   for x in {0 to PAGE_WIDTH} do
+      if colourAt(Bitmap, x, PAGE_HEIGHT - 2) != margin then return x end
+   end
+   return PAGE_WIDTH
+end
+
+@Test function LineNumberMarginFitsLineCount()
+   local scene <close>, vp, sci, bmp = newEditor({ lineNumbers=true })
+   sci.string = 'one\ntwo\nthree'
+   render(scene)
+   assert(marginWidth(bmp) is 21, f'Two digits plus padding is 21 pixels, got {marginWidth(bmp)}')
+
+   local text = 'line 0'
+   for i in {1 to 1500} do text ..= f'\nline {i}' end
+   sci.string = text
+   render(scene)
+   assert(marginWidth(bmp) is 35, f'Four digits plus padding is 35 pixels, got {marginWidth(bmp)}')
+
+   sci.lineNumbers = false
+   render(scene)
+   assert(colourAt(bmp, 2, 6) is '255,255,255', 'Without line numbers only the left margin remains, got ' ..
+      colourAt(bmp, 2, 6))
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 42, LINE_HEIGHT) > 20, 'Text must move to the left margin')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Geometry
+
+@Test function ResizeUpdatesCanvas()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', { x=0, y=0, width=200, height=60 })
+   local sci = host.new('Scintilla', { })
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   sci.string = 'Hello'
+   render(scene)
+
+   -- The Canvas is one pixel wider and taller than the View for alignment.
+
+   local canvas = getCanvas(sci)
+   assert(canvas.width is 201 and canvas.height is 61,
+      f'Initial canvas is {canvas.width}x{canvas.height}')
+
+   host.width  = 250
+   host.height = 90
+   render(scene)
+   assert(sci.view.width is 250 and sci.view.height is 90,
+      f'The View must follow the host, is {sci.view.width}x{sci.view.height}')
+   assert(canvas.width is 251 and canvas.height is 91,
+      f'Resized canvas is {canvas.width}x{canvas.height}')
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT) > 20, 'Text must be repainted after a resize')
+   assert(colourAt(bmp, 240, 80) is '255,255,255', 'The enlarged area must be painted with the background')
+end
+
+@Test function ResizeRetainsContentUntilRepaint()
+   -- The repaint that follows a resize is deferred to message processing, so the scene is drawn at least once with
+   -- the resized Bitmap before Scintilla paints it.  That draw must show the prior content rather than a blank area
+   -- (previously the Bitmap was cleared, causing the editor to flash while a window was being resized).
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', { x=0, y=0, width=200, height=60 })
+   local sci = host.new('Scintilla', { bkgdColour='250,240,200,255' })
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   sci.string = 'Hello\nWorld'
+   render(scene)
+
+   local reference = darkRowProfile(bmp, 0, 0, 60, 2 * LINE_HEIGHT)
+   assert(reference.find('1'), 'The text must be drawn before the resize')
+
+   host.width  = 250
+   host.height = 90
+   check scene.acDraw()
+   assert(darkRowProfile(bmp, 0, 0, 60, 2 * LINE_HEIGHT) is reference,
+      'Growing the editor must retain the prior content until it is repainted')
+   assert(colourAt(bmp, 240, 80) is '250,240,200',
+      f'The exposed area must use BkgdColour, got {colourAt(bmp, 240, 80)}')
+
+   -- Shrinking changes the row stride of the Bitmap, which must not skew the retained content.
+
+   processing.sleep(0)
+   host.width  = 120
+   host.height = 40
+   check scene.acDraw()
+   assert(darkRowProfile(bmp, 0, 0, 60, 2 * LINE_HEIGHT) is reference,
+      'Shrinking the editor must retain the prior content until it is repainted')
+end
+
+@Test function FractionalHostIsPixelAligned()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', { x=10.5, y=20.25, width=200, height=60 })
+   local sci = host.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   sci.string = 'Hello World\nSecond line'
+   render(scene)
+
+   local canvas = getCanvas(sci)
+   assert(canvas.x is -0.5 and canvas.y is -0.25,
+      f'The canvas must be offset to whole pixels, is {canvas.x},{canvas.y}')
+   assert(darkPixels(bmp, 10, 20, 100, 30) > 50, 'The text must be visible')
+   local grey = countPixels(bmp, 10, 20, 100, 30, isGrey)
+   assert(grey is 0, f'Text must not be resampled, found {grey} intermediate pixels')
+
+   host.x = 40.75
+   render(scene)
+   assert(canvas.x is -0.75, f'Moving the host must realign the canvas, x is {canvas.x}')
+   grey = countPixels(bmp, 40, 20, 100, 30, isGrey)
+   assert(grey is 0, f'Text must not be resampled after a move, found {grey} intermediate pixels')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- State
+
+@Test function DisabledDimsContent()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'Hello'
+   render(scene)
+   local enabled = darkPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT)
+   assert(enabled > 20, 'Text must be dark while enabled')
+
+   vp.acDisable()
+   assert(sci.flags has SCIF_DISABLED, 'Disabling the host viewport must disable the editor')
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT) is 0, 'Text must be dimmed while disabled')
+   assert(colourAt(bmp, 200, 60) is '255,255,255', 'Dimming must blend towards the background colour')
+
+   -- Repeated repaints must not accumulate the dimming.
+   local sample = countPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT, (R, G, B) => R < 255)
+   sci.acDraw()
+   render(scene)
+   assert(countPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT, (R, G, B) => R < 255) is sample,
+      'A repaint while disabled must produce the same result')
+
+   vp.acEnable()
+   assert(not (sci.flags has SCIF_DISABLED), 'Enabling the host viewport must enable the editor')
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT) is enabled, 'Text must be restored when enabled')
+end
+
+@Test function IndependentFontsRender()
+   -- Defect 2: each instance must draw with its own fonts.  Clean has a 13 pixel line height and Small has 10.
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local left = root.new('VectorViewport', { x=0, y=0, width=150, height=PAGE_HEIGHT })
+   local right = root.new('VectorViewport', { x=150, y=0, width=150, height=PAGE_HEIGHT })
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+
+   local clean = left.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
+   clean.string = 'H\nH\nH'
+   render(scene)
+   local reference = darkRowProfile(bmp, 0, 0, 20, 40)
+
+   local small = right.new('Scintilla', { face='Small', fontSize=11, lineHighlight='255,255,255,0' })
+   check small.mtSetFont('Small')
+   small.string = 'H\nH\nH'
+   render(scene)
+
+   local clean_profile = darkRowProfile(bmp, 0, 0, 20, 40)
+   local small_profile = darkRowProfile(bmp, 150, 0, 20, 40)
+   assert(clean_profile is reference,
+      f'Adding a second editor must not change the first: {clean_profile} vs {reference}')
+   assert(small_profile != clean_profile, 'The editors must render with their own fonts')
+   assert(small_profile.sub(10, 20) != '0000000000', 'Line 1 of the Small editor must start within 10 pixels')
+end
+
+@Test function LexerChangeAfterInit()
+   -- Loading a file with DETECT_LEXER changes the lexer after initialisation.  The style data must be refreshed, or
+   -- the document is painted with stale colours (previously black).
+   local path = 'temp:scintilla_render_lexer.c'
+   defer mSys.DeleteFile(path) end
+   do
+      local file <close> = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+      check file.acWrite('int x;')
+   end
+
+   local scene <close>, vp, sci, bmp = newEditor({ flags=SCIF_DETECT_LEXER, bkgdColour='250,240,200,255' })
+   sci.string = 'Hello'
+   render(scene)
+   sci.path = path
+   render(scene)
+
+   assert(sci.lexer is SCLEX_CPP, 'The C lexer must be detected')
+   assert(colourAt(bmp, 200, 6) is '250,240,200', f'The text line must use BkgdColour, got {colourAt(bmp, 200, 6)}')
+   assert(colourAt(bmp, 200, 60) is '250,240,200', 'The area beyond the last line must use BkgdColour')
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 6 * 7, LINE_HEIGHT) > 20, 'The text must be drawn')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Scalable font drawing and layout
+
+@Test function TrueTypeFaceRenders()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=20 })
+   sci.string = 'Scalable text'
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 200, 35) > 100, 'A TrueType face must draw visible glyphs')
+   assert(countPixels(bmp, TEXT_LEFT, 0, 200, 35, isGrey) > 20, 'TrueType outlines must be antialiased')
+end
+
+@Test function MonospacedCombiningMarkSelection()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Inconsolata', fontSize=20, selectBkgd='255,0,0,255' })
+   local _, handle = check mVec.GetFontHandle(sci.face, 'Regular', 0, sci.fontSize)
+   local text = 'i\u{0301}i'
+   local width = math.floor(mVec.StringWidth(handle, text, -1) + 0.5)
+   assert(width is mVec.StringWidth(handle, 'ii', -1), 'The combining accent must have zero advance')
+   sci.string = text
+   check sci.mtSelectRange(0, #text)
+   render(scene)
+
+   local selected = (R, G, B) => R is 255 and G is 0 and B is 0
+   assert(countPixels(bmp, TEXT_LEFT, 0, width, 40, selected) > 0, 'The selected text must be highlighted')
+   assert(countPixels(bmp, TEXT_LEFT + width, 0, 20, 40, selected) is 0,
+      'The selection must end at the rendered advance, without an extra cell for the combining accent')
+end
+
+@Test function MonospacedCombiningMarkScrollWidth()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Inconsolata', fontSize=20 })
+   sci.string = ('ii').rep(30)
+   render(scene)
+   local width = sci.page.width
+   assert(width > PAGE_WIDTH, 'The text must be wide enough to scroll')
+
+   sci.string = ('i\u{0301}i').rep(30)
+   render(scene)
+   assert(sci.page.width is width, 'Zero-width combining accents must not enlarge the horizontal scroll range')
+end
+
+@Test function BitmapFaceStillRenders()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Clean', fontSize=11 })
+   sci.string = 'H\nH'
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 7, LINE_HEIGHT) > 10, 'Clean must still draw its first glyph')
+   assert(darkRowProfile(bmp, TEXT_LEFT, 0, 7, LINE_HEIGHT) is
+      darkRowProfile(bmp, TEXT_LEFT, LINE_HEIGHT, 7, LINE_HEIGHT), 'Clean must retain its 13 pixel line spacing')
+end
+
+@Test function FontSizeChangesLineHeight()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=12 })
+   sci.string = ('H\n').rep(50)
+   render(scene)
+   local old_height = sci.page.height
+   sci.fontSize = 24
+   render(scene)
+   assert(sci.page.height > old_height * 1.7, 'A larger size must update the page line spacing')
+   local resized = darkRowProfile(bmp, TEXT_LEFT, 0, 20, 80)
+   local other_scene <close>, other_vp, other, other_bmp = newEditor({ face='Source Code Pro', fontSize=24 })
+   other.string = sci.string
+   render(other_scene)
+   assert(resized is darkRowProfile(other_bmp, TEXT_LEFT, 0, 20, 80),
+      'Resizing after Init must match creating an editor at that size')
+end
+
+@Test function AccentedCapitalsStayInLine()
+   local scene <close>, vp, sci, bmp = newEditor({ face='Noto Sans', fontSize=24 })
+   local _, handle = check mVec.GetFontHandle('Noto Sans', 'Regular', 0, 24)
+   local metrics = struct<FontMetrics>
+   check mVec.GetFontMetrics(handle, metrics)
+   sci.string = '\nÉÅ\n'
+   render(scene)
+   assert(darkPixels(bmp, TEXT_LEFT, 0, 70, metrics.lineSpacing) is 0,
+      'Accented capitals must not paint into the preceding line')
+   assert(darkPixels(bmp, TEXT_LEFT, metrics.lineSpacing, 70, metrics.lineSpacing) > 50,
+      'The accented capitals must remain visible within their line')
+end
+
+@Test function VariableFontStylesResolve()
+   for face in values(array<str> { 'Source Code Pro', 'Noto Sans' }) do
+      local handles = { }
+      for i, style in ipairs({ 'Regular', 'Bold', 'Italic', 'Bold Italic' }) do
+         local _, handle = check mVec.GetFontHandle(face, style, 0, 24)
+         for _, previous in pairs(handles) do
+            assert(handle != previous, f'{face} {style} must resolve a distinct style handle')
+         end
+         handles[i] = handle
+      end
+   end
+end
+
+@Test function BoldStyleIsHeavier()
+   -- C++ brace matching uses the bold brace-light style.  Move the caret away for the regular reference.
+   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=32, lexer=SCLEX_CPP })
+   sci.string = '{} '
+   check sci.mtSelectRange(3, 3)
+   render(scene)
+   local regular = countPixels(bmp, TEXT_LEFT, 0, 40, 50, (R, G, B) => R < 240 or G < 240 or B < 240)
+   check sci.mtSelectRange(1, 1)
+   render(scene)
+   local bold = countPixels(bmp, TEXT_LEFT, 0, 40, 50, (R, G, B) => R < 240 or G < 240 or B < 240)
+   assert(bold > regular, f'The bold brace style must add ink: regular={regular}, bold={bold}')
+end

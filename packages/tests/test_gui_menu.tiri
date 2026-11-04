@@ -1,0 +1,1425 @@
+   import 'gui', 'gui/menu', 'gui/menubar'
+   include 'display', 'vector'
+   module vector as mVec
+
+function sendKey(Code:num!, Qualifiers:num, Unicode:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = Qualifiers ?? KQ_PRESSED
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function newTarget():<obj, obj>
+   local surface = obj.new('Surface', { width=500, height=200 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   return surface, viewport
+end
+
+@Test function SectionedThemesStyleMenusAndMenubarsWithoutLeaking()
+   for name in values(array<str> { 'light', 'dark' }) do
+      local surface <close>, target = newTarget()
+      gui.setTheme(target.scene, name)
+      local base = gui.themes[name]
+      local base_fill = base.menu.text.fill
+      local base_bar_fill = base.menubar.text.fill
+      local overrides = {
+         menubar={ text={ fill='#abcdef' }, bkgd={ fill='#182332' },
+            highlight={ fill='#355c7d' }, focus={ fill='#487da8' } },
+         menu={ text={ fill='#fedcba' }, bkgd={ fill='#202e40' },
+            border={ stroke='#7994ad', opacity=0.75 }, highlight={ fill='#654321' }, icon='fill(pearl)' }
+      }
+      local bar = gui.menubar({ target=target, theme=overrides, createItems=function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table> { { label='Open' } })
+      end })
+      local icon_item = { label='Copy', icon='items/file_new' }
+      local menu = gui.menu({ target=surface, relative=target, theme=overrides,
+         items=array<table> { icon_item } })
+      defer menu.surface?.free() end
+
+      assert(bar._lookup.file.vectorText.fill is '#abcdef' and bar._bkgd.child.fill is '#182332',
+         'The menubar must read its own theme section')
+      assert(bar._highlight.fill is '#355c7d' and bar._focusEdge.fill is '#487da8',
+         'Menubar highlight and focus overrides must reach the vectors')
+      assert(menu._rows[0].text.fill is '#fedcba' and menu.content.child.fill is '#202e40',
+         'A standalone menu must read the menu section of the same table')
+      assert(menu.highlight.fill is '#654321' and menu.highlight.next.stroke is '#7994ad' and
+         menu.highlight.next.opacity is 0.75, 'Menu highlight and border overrides must reach the vectors')
+      assert(icon_item.iconView, 'Custom menu icons must render')
+      local spacing = gui.getFontHeight(gui.fonts.menu)
+      local icon_size = math.floor(math.floor(spacing * 1.5) * 0.8)
+      local expected_icon = gui.createIcon(menu.viewport.scene, icon_item.icon, icon_size, overrides.menu.icon)
+      assert(icon_item.iconView.fill is expected_icon.fill, 'Menu icons must use the supplied icon theme')
+      assert(not overrides.menu.text.face and not overrides.menubar.text.face,
+         'Resolving defaults must not modify caller tables')
+      assert(base.menu.text.fill is base_fill and base.menubar.text.fill is base_bar_fill,
+         'Customisation must not modify either shared theme section')
+      overrides.menu.text.fill = '#123456'
+      overrides.menubar.text.fill = '#123456'
+      assert(menu._rows[0].text.fill is '#fedcba' and bar._lookup.file.vectorText.fill is '#abcdef',
+         'Later changes to caller tables must not restyle existing widgets')
+
+      local plain = gui.menu({ target=surface, relative=target, items=array<table> { { label='Plain' } } })
+      defer plain.surface?.free() end
+      local plain_bar = gui.menubar({ target=target, createItems=function(Bar)
+         Bar.addItem('plain', 'Plain', nil, nil)
+      end })
+      assert(menu._rows[0].text.face is plain._rows[0].text.face and
+         menu._rows[0].text.fontSize is plain._rows[0].text.fontSize,
+         'Unspecified text defaults must survive the merge')
+      assert(plain._rows[0].text.fill is base_fill and plain_bar._lookup.plain.vectorText.fill is base_bar_fill,
+         'Subsequent widgets must retain the window theme')
+   end
+end
+
+@Test function MenuThemeSurvivesMenubarPreparationAndNestedRebuilds()
+   local surface <close>, target = newTarget()
+   local calls = 0
+   local bar = gui.menubar({ target=target,
+      theme={ menubar={ text={ fill='#abcdef' } }, menu={ text={ fill='#fedcba' } } },
+      createItems=function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table>, function(Items)
+            calls++
+            &items = array<table> { { label='Parent', items=array<table> { { label=f'Child {calls}' } } } }
+         end)
+      end
+   })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   local menu = bar._lookup.file.menu
+   assert(menu._rows[0].text.fill is '#fedcba', 'Dropdowns must use the sibling menu section')
+   menu.selectItem(0)
+   assert(menu.currentMenu._rows[0].text.fill is '#fedcba', 'Nested menus must inherit dropdown overrides')
+   menu.hide()
+   menu.show()
+   menu.selectItem(0)
+   assert(calls is 2 and menu.currentMenu._rows[0].text.string is 'Child 2' and
+      menu.currentMenu._rows[0].text.fill is '#fedcba', 'Prepared replacement items must keep the menu theme')
+end
+
+@Test function CustomMenuFontsExpandGeometryAndHitRegions()
+   local surface <close>, target = newTarget()
+   local overrides = { menubar={ text={ fontSize='30pt' } }, menu={ text={ fontSize='30pt' } } }
+   local bar = gui.menubar({ target=target, theme=overrides, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil)
+   end })
+   local item = bar._lookup.file
+   local _, _, by, _, bh = item.vectorText.mtGetBoundary(0)
+   assert(by >= 0 and by + bh <= bar.viewport.height and item.height is bar.viewport.height,
+      'Custom menubar fonts and hit regions must fit the viewport')
+   local menu = gui.menu({ target=surface, relative=target, theme=overrides,
+      items=array<table> { { label='Large text', key='L' }, { label='Second' } } })
+   defer menu.surface?.free() end
+   local first = menu._rows[0]
+   local _, _, text_y, _, text_height = first.text.mtGetBoundary(0)
+   assert(text_y >= first.y and text_y + text_height <= first.y + first.height,
+      'Custom menu text must fit its row')
+   local _, _, key_y, _, key_height = first.keyText.mtGetBoundary(0)
+   assert(key_y >= first.y and key_y + key_height <= first.y + first.height,
+      'Shortcut text must fit the same row')
+   assert(menu._rows[1].y >= first.y + first.height and menu.selectItem(1) and
+      menu.highlight.height is menu._rows[1].height, 'Rows and selection highlights must use the custom font geometry')
+end
+
+@Test function MenuRejectsDisabledItemsAndOpensSubmenus()
+   local surface <close>, target = newTarget()
+   local menu = gui.menu({
+      target = surface,
+      items = array<table> {
+         { id='disabled', label='Disabled', disabled=true },
+         { id='parent', label='Parent', items=array<table> { { id='child', label='Child' } } }
+      }
+   })
+
+   assert(not menu.selectItem('disabled'), 'Disabled menu items must not be selectable')
+   assert(menu.selectItem('parent'), 'Enabled menu items must be selectable')
+   assert(menu.currentMenu?.visible, 'Selecting a submenu item must open its nested menu')
+
+   menu.surface.free()
+end
+
+@Test function MenuEventsReachNestedItemsWithTheOwningContext()
+   local surface <close>, target = newTarget()
+   local calls = array<table>
+   local child = { id='child', label='Child', onActivate=function(Item)
+      calls.push({ source='item', menu=&&, item=Item })
+   end }
+   local items = array<table> { { id='parent', label='Parent', items=array<table> { child } } }
+   local menu = gui.menu({ target=surface, relative=target, items=items,
+      events={ activate=function(Item)
+         calls.push({ source='menu', menu=&&, item=Item })
+      end }
+   })
+   defer menu.surface?.free() end
+
+   assert(menu.items is items, 'The public items field must retain the original item definitions')
+   menu.selectItem('parent')
+   local submenu = menu.currentMenu
+   assert(submenu.activate('child'), 'A nested leaf must activate')
+   assert(#calls is 2 and calls[0].source is 'item' and calls[1].source is 'menu',
+      'The item callback must run before the menu event')
+   for call in values(calls) do
+      assert(call.menu is submenu and call.item is child,
+         'Both callbacks must receive the original item with its owning submenu as context')
+   end
+end
+
+@Test function MenubarRelayoutsAndUpdatesItemsImmediately()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({
+      target = target,
+      createItems = function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table> { { label='Open' } })
+      end
+   })
+
+   local file = bar._lookup.file
+   local original_width = file.width
+   bar.addItem('edit', 'Edit', nil, nil, array<table> { { label='Copy' } })
+   assert(bar._lookup.edit.vectorText, 'Items added after construction must render immediately')
+   assert(bar._lookup.edit.x is original_width, 'A newly added item must be positioned after existing items')
+
+   bar.disableItem('edit')
+   assert(bar._lookup.edit.vectorText.opacity is 0.5, 'Disabling an item must update its presentation immediately')
+   bar.enableItem('edit')
+   assert(bar._lookup.edit.vectorText.opacity is 1, 'Enabling an item must restore its presentation immediately')
+
+   assert(bar.setItemLabel('edit', 'Edit Menu'), 'setItemLabel() must report success for a known item')
+   assert(bar._lookup.edit.name is 'Edit Menu' and bar._lookup.edit.width > original_width,
+      'setItemLabel() must update the item and recompute its width')
+   assert(bar.removeItem('file'), 'removeItem() must report success for a known item')
+   assert(not bar._lookup.file and bar._first is bar._lookup.edit,
+      'removeItem() must unlink the item and update lookup state')
+end
+
+@Test function MenubarUsesAltAndF10WithoutConsumingTab()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({
+      target = target,
+      createItems = function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table> { { label='Open' } })
+         Bar.addItem('edit', 'Edit', nil, nil, array<table> { { label='Copy' } })
+      end
+   })
+
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   sendKey(KEY_F10)
+   assert(bar._currentItem is bar._lookup.file, 'F10 must activate the first enabled menubar item')
+   sendKey(KEY_RIGHT)
+   assert(bar._currentItem is bar._lookup.edit, 'Right must advance menubar keyboard selection')
+   sendKey(KEY_TAB)
+   assert(bar._currentItem is bar._lookup.edit, 'The menubar must leave Tab available for normal focus traversal')
+
+   bar._currentItem = nil
+   sendKey(KEY_L_ALT)
+   assert(bar._currentItem is bar._lookup.file, 'Alt must activate the first enabled menubar item')
+end
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576 -- The top 20 bits of the mantissa occupy the high word
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+@BeforeEach
+function resetPointer()
+   -- Keep pointer position from an earlier test from selecting a newly created menu or suppressing a repeated move.
+   if obj.find('SystemPointer') then feed(JET_ABS_XY, 1000, 1000) end
+end
+
+@Test function MenuReportsHighlightChanges()
+   local surface <close>, target = newTarget()
+   local events = array<table>
+   local first = { id='first', label='First' }
+   local second = { id='second', label='Second' }
+   local child = { id='child', label='Child' }
+   local parent = { id='parent', label='Parent', items=array<table> { child } }
+   local menu = gui.menu({ target=surface, relative=target,
+      items=array<table> { first, { group='Heading' }, { label='Disabled', disabled=true }, second, parent },
+      events={ highlight=function(Item)
+         events.push({ menu=&&, item=Item })
+      end }
+   })
+   defer menu.surface?.free() end
+
+   assert(not menu.selectItem('Disabled'), 'Disabled rows must reject selection')
+   assert(menu.selectItem('first') and events[0].menu is menu and events[0].item is first,
+      'Programmatic highlighting must pass the owning menu and original item')
+   menu.selectItem('first')
+   assert(#events is 1, 'Selecting the same row twice must not repeat the callback')
+   menu.step(1)
+   assert(#events is 2 and events[1].item is second, 'Keyboard navigation must report the next selectable row')
+
+   surface.acShow()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu._rows[0].y + 5)
+   assert(#events is 3 and events[2].item is first, 'Pointer highlighting must report the new row')
+   feed(JET_ABS_XY, menu.surface.absX + 11, menu.surface.absY + menu._rows[0].y + 5)
+   assert(#events is 3, 'Pointer movement within one row must not repeat the callback')
+
+   menu.selectItem('parent')
+   local submenu = menu.currentMenu
+   submenu.selectItem('child')
+   assert(#events is 5 and events[3].menu is menu and events[3].item is parent and
+      events[4].menu is submenu and events[4].item is child,
+      'Submenu highlighting must inherit the callback and report its own menu')
+
+   menu.hide()
+   menu.show()
+   assert(#events is 5, 'Clearing a highlight while hiding must not invoke the callback')
+   menu.selectItem('first')
+   assert(#events is 6 and events[5].item is first, 'Reopening must allow the row to be reported again')
+end
+
+@Test function DisabledBarRejectsKeyboard()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('run', 'Run', nil, function() hits++ end)
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   bar.disable()
+   sendKey(KEY_F10)
+   sendKey(KEY_ENTER)
+   assert(hits is 0, f'Disabled bar invoked callback {hits} times')
+   bar.enable()
+   sendKey(KEY_F10)
+   sendKey(KEY_ENTER)
+   assert(hits is 1, 'Re-enabling the bar must restore keyboard activation')
+end
+
+@Test function ReopenSubmenuOnSameItem()
+   local surface <close>, target = newTarget()
+   local menu = gui.menu({ target=surface, items=array<table> {
+      { id='parent', label='Parent', items=array<table> { { label='Child' } } }
+   } })
+   defer menu.surface?.free() end
+   menu.selectItem('parent')
+   menu.currentMenu.hide()
+   menu.selectItem('parent')
+   assert(menu.currentMenu?.visible, 'Reselecting parent did not reopen its submenu')
+end
+
+@Test function MenuUsesRelativeViewportOffset()
+   local surface <close>, target = newTarget()
+   target.x = 70
+   target.y = 40
+   local menu = gui.menu({ target=surface, relative=target, x=10, y=20,
+      items=array<table> { { label='Open' } } })
+   defer menu.surface?.free() end
+   surface.acShow()
+   surface.acDraw()
+   processing.sleep(0)
+   menu.show()
+   assert(menu.surface.x is 80 and menu.surface.y is 60,
+      f'Menu positioned at {menu.surface.x},{menu.surface.y} instead of 80,60')
+end
+
+@Test function DisabledRowDoesNotActivatePreviousRow()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local menu = gui.menu({ target=surface, relative=target, x=0, y=0,
+      items=array<table> {
+         { id='enabled', label='Enabled', onActivate=function() hits++ end },
+         { id='disabled', label='Disabled', disabled=true }
+      } })
+   defer menu.surface?.free() end
+   surface.acShow()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu._rows[0].y + 5)
+   assert(menu.hItem is menu._rows[0], 'Enabled row not highlighted by pointer')
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu._rows[1].y + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0, f'Clicking disabled row invoked enabled row {hits} times')
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu._rows[0].y + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1 and not menu.visible, 'Clicking the enabled row must activate it exactly once')
+end
+
+@Test function MenubarRoutesKeysToOpenMenu()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local bar = gui.menubar({
+      target=target,
+      createItems=function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table> {
+            { label='Open' }, { label='Save', onActivate=function() hits++ end }
+         })
+         Bar.addItem('edit', 'Edit', nil, nil, array<table> { { label='Copy' } })
+      end
+   })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   local menu = bar._lookup.file.menu
+   assert(menu?.visible and bar._currentItem is bar._lookup.file,
+      'Down must open the selected menu without advancing to the next menubar item')
+   assert(surface.flags has RNF_HAS_FOCUS, 'Opening a menubar menu must preserve its host window focus')
+   sendKey(KEY_DOWN)
+   sendKey(KEY_DOWN)
+   assert(bar._currentItem is bar._lookup.file, 'Down must not switch top-level menus')
+   assert(menu.hItem is menu._rows[1], 'Down must advance through dropdown rows')
+   sendKey(KEY_ENTER)
+   assert(hits is 1 and not menu.visible, 'Enter must activate the selected row exactly once and close the menu')
+   sendKey(KEY_ENTER)
+   assert(menu.visible, 'Enter must reopen the menu after activation')
+   sendKey(KEY_RIGHT)
+   assert(bar._lookup.edit.menu?.visible and not menu.visible, 'Right must switch top-level leaf menus')
+   sendKey(KEY_ESCAPE)
+   assert(not bar._lookup.edit.menu.visible, 'Escape must dismiss the active dropdown')
+end
+
+@Test function SpaceDismissesAnUnselectedMenubarMenu()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { label='Open', onActivate=function() hits++ end }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_SPACE)
+   local menu = bar._lookup.file.menu
+   assert(menu?.visible and not menu.hItem, 'Space must open the menu without selecting a row')
+   sendKey(KEY_SPACE)
+   assert(not menu.visible and not (menu.surface.flags has RNF_VISIBLE) and hits is 0,
+      'A second Space must dismiss the untouched menu without invoking an action')
+   assert(not bar._lastMenu and bar._currentItem is bar._lookup.file,
+      'Dismissal must preserve the menubar selection and clear the active menu')
+   sendKey(KEY_SPACE)
+   sendKey(KEY_DOWN)
+   sendKey(KEY_SPACE)
+   assert(hits is 1 and not menu.visible, 'Space must still activate a selected dropdown item')
+end
+
+@Test function MenuRoutesNestedKeysOnceAndSurvivesReopening()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local menu = gui.menu({
+      target=surface, relative=target, client=target,
+      items=array<table> {
+         { id='parent', label='Parent', items=array<table> {
+            { label='First', onActivate=function() hits++ end }, { label='Second' }
+         } }
+      }
+   })
+   surface.acShow()
+   menu.show()
+   surface.acFocus()
+   check target.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_DOWN)
+   local child = menu.currentMenu
+   assert(child?.visible, 'Selecting a parent must open its submenu')
+   sendKey(KEY_RIGHT)
+   assert(child.hItem is child._rows[0], 'Right must select the first submenu item')
+   sendKey(KEY_DOWN)
+   assert(child.hItem is child._rows[1], 'Down must reach the submenu exactly once')
+   sendKey(KEY_LEFT)
+   assert(not child.visible and menu.visible, 'Left must close only the submenu')
+   sendKey(KEY_RIGHT)
+   assert(child.visible and child.hItem is child._rows[0], 'Right must reopen and select the submenu')
+   sendKey(KEY_ENTER)
+   assert(hits is 1 and not menu.visible and not child.visible, 'Activation must close the entire menu chain')
+   menu.show()
+   sendKey(KEY_DOWN)
+   sendKey(KEY_RIGHT)
+   sendKey(KEY_ENTER)
+   assert(hits is 2, 'Reopening must preserve keyboard input without duplicate subscriptions')
+end
+
+@Test function FocusLossWhileClickingSubmenuHidesWholeChain()
+   local surface <close>, target = newTarget()
+   local menu = gui.menu({
+      target=surface, relative=target,
+      items=array<table> {
+         { label='Undo' },
+         { id='clipboard', label='Clipboard', items=array<table> { { label='Copy' } } }
+      }
+   })
+   target.mtSubscribeKeyboard(function() end)
+   target.mtSubscribeFeedback(FM_LOST_FOCUS, function() menu.hide() end)
+   surface.acShow()
+   surface.acFocus()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+
+   local row = menu._rows[1]
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + row.y + 5)
+   local child = menu.currentMenu
+   assert(menu.visible and child?.visible, 'Hovering Clipboard must open its submenu')
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(not menu.visible, 'The focus-loss handler must dismiss the parent menu')
+   assert(not child.visible and not (child.surface.flags has RNF_VISIBLE),
+      'The pending click must not reopen a submenu after focus loss hides its parent')
+end
+
+@Test function FocusLossWhileClickingLeafStillActivatesItem()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local menu = gui.menu({
+      target=surface, relative=target,
+      items=array<table> { { label='Copy', onActivate=function() hits++ end } }
+   })
+   target.mtSubscribeKeyboard(function() end)
+   target.mtSubscribeFeedback(FM_LOST_FOCUS, function() menu.hide() end)
+   surface.acShow()
+   surface.acFocus()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu._rows[0].y + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1 and not menu.visible, 'Focus loss must not swallow the pending leaf-item action')
+end
+
+@Test function SubmenuPreviewDoesNotCaptureKeyboardNavigation()
+   local surface <close>, target = newTarget()
+   local menu = gui.menu({
+      target=surface, relative=target, client=target,
+      items=array<table> {
+         { label='New File' },
+         { label='Open Recent', items=array<table> { { label='Project Notes' }, { label='Widget Ideas' } } },
+         { label='Save' }
+      }
+   })
+   surface.acShow()
+   menu.show()
+   surface.acFocus()
+   check target.acFocus()
+   processing.sleep(0)
+
+   sendKey(KEY_DOWN)
+   sendKey(KEY_DOWN)
+   local child = menu.currentMenu
+   assert(child?.visible, 'Open Recent must show a submenu preview')
+   sendKey(KEY_DOWN)
+   assert(menu.hItem is menu._rows[2] and not child.visible,
+      'Down must move past Open Recent to Save without entering the preview')
+   sendKey(KEY_UP)
+   assert(child.visible, 'Returning to Open Recent must restore its preview')
+   sendKey(KEY_RIGHT)
+   assert(child.hItem is child._rows[0], 'Right must enter the submenu at its first item')
+   sendKey(KEY_DOWN)
+   assert(child.hItem is child._rows[1] and menu.hItem is menu._rows[1],
+      'After Right, Down must navigate within the submenu')
+   sendKey(KEY_LEFT)
+   sendKey(KEY_DOWN)
+   assert(menu.hItem is menu._rows[2], 'Left must return keyboard navigation to the parent')
+   sendKey(KEY_UP)
+   sendKey(KEY_UP)
+   assert(menu.hItem is menu._rows[0] and not child.visible,
+      'A cached submenu selection must not capture Up when its preview is reopened')
+   sendKey(KEY_DOWN)
+   sendKey(KEY_ENTER)
+   assert(child.hItem is child._rows[0], 'Enter must also explicitly enter a submenu')
+   sendKey(KEY_DOWN)
+   assert(child.hItem is child._rows[1], 'Enter must transfer keyboard navigation to the submenu')
+end
+
+@Test function HidingMenusClearsSelectionThroughoutTheChain()
+   local surface <close>, target = newTarget()
+   local menu = gui.menu({
+      target=surface, relative=target,
+      items=array<table> {
+         { label='New File' },
+         { id='recent', label='Open Recent', items=array<table> { { label='First' }, { label='Second' } } }
+      }
+   })
+   surface.acShow()
+   menu.show()
+   menu.selectItem('recent')
+   local child = menu.currentMenu
+   child.moveToEnd(true)
+   assert(child.hItem is child._rows[1], 'The submenu must have a selection before hiding')
+
+   child.hide()
+   assert(not child.hItem, 'Hiding a submenu must clear its selected item')
+   menu.selectItem('recent')
+   assert(child.visible and not child.hItem, 'A reopened preview must start without a selection')
+   child.step(1)
+   assert(child.hItem is child._rows[0], 'Down in a reopened submenu must start at the first item')
+
+   menu.surface.acHide()
+   assert(not menu.hItem and not child.hItem, 'Hiding the root surface must clear every menu selection')
+   menu.show()
+   assert(not menu.hItem and not menu.currentMenu, 'The root menu must reopen without selection or an open child')
+   menu.step(1)
+   assert(menu.hItem is menu._rows[0], 'Down in a reopened root menu must start at the first item')
+end
+
+@Test function F10FocusesMenubarFromAnotherWidget()
+   local surface <close>, target = newTarget()
+   local sibling = target.new('VectorViewport', { y=50, width=100, height=50, tabOrder=1 })
+   local sibling_keys = 0
+   sibling.mtSubscribeKeyboard(function() sibling_keys++ end)
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('disabled', 'Disabled')
+      Bar.addItem('file', 'File')
+      Bar.addItem('edit', 'Edit')
+   end })
+   bar.disableItem('disabled')
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_A)
+   assert(sibling_keys is 1 and not bar._hasFocus, 'The sibling must initially own keyboard focus')
+
+   sendKey(KEY_F10)
+   assert(bar._hasFocus and bar._currentItem is bar._lookup.file,
+      'F10 must focus the menubar and select its first enabled item')
+   local prior_keys = sibling_keys
+   sendKey(KEY_RIGHT)
+   assert(bar._currentItem is bar._lookup.edit and sibling_keys is prior_keys,
+      'Subsequent navigation must reach the menubar rather than the previous widget')
+
+   check sibling.acFocus()
+   bar.disable()
+   sendKey(KEY_F10)
+   assert(not bar._hasFocus, 'A disabled menubar must not take focus on F10')
+   bar.enable()
+   bar.viewport.free()
+   sendKey(KEY_F10)
+   assert(not bar.viewport, 'Freeing a menubar must remove its F10 listener')
+end
+
+@Test function F10DoesNotFocusAnInactiveWindowMenubar()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({ target=target, createItems=function(Bar) Bar.addItem('file', 'File') end })
+   local other_surface <close>, other_target = newTarget()
+   other_target.mtSubscribeKeyboard(function() end)
+   surface.acShow()
+   other_surface.acShow()
+   other_surface.acFocus()
+   surface.acLostFocus()
+   processing.sleep(0)
+   assert(not (surface.flags has RNF_HAS_FOCUS), 'The first window must be inactive before pressing F10')
+   local focus_events = 0
+   bar.viewport.mtSubscribeFeedback(FM_HAS_FOCUS, function() focus_events++ end)
+   local prior_item = bar._currentItem
+   sendKey(KEY_F10)
+   assert(focus_events is 0 and bar._currentItem is prior_item and not (surface.flags has RNF_HAS_FOCUS),
+      'F10 must not activate a menubar in an unfocused window')
+end
+
+@Test function UpAtFirstSelectableRowReturnsToMenubar()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { group='Files' },
+         { label='Unavailable', disabled=true },
+         { label='Open Recent', items=array<table> { { label='Project Notes' } } },
+         { label='Save' }
+      })
+      Bar.addItem('edit', 'Edit', nil, nil, array<table> { { label='Copy' } })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   sendKey(KEY_DOWN)
+   local menu = bar._lookup.file.menu
+   local child = menu.currentMenu
+   assert(menu.hItem is menu._rows[2] and child?.visible,
+      'Initial navigation must skip the heading and disabled row and show the submenu preview')
+   sendKey(KEY_DOWN)
+   sendKey(KEY_UP)
+   assert(menu.visible and menu.hItem is menu._rows[2], 'Up from a later row must keep the dropdown open')
+   sendKey(KEY_UP)
+   assert(not menu.visible and not child.visible and not bar._lastMenu,
+      'Up at the first interactive row must close the dropdown and its preview')
+   assert(bar._hasFocus and bar._currentItem is bar._lookup.file,
+      'The same menubar item must remain active after returning from its dropdown')
+   sendKey(KEY_DOWN)
+   assert(menu.visible and not menu.hItem, 'Down must reopen the selected menu with a fresh selection')
+   sendKey(KEY_DOWN)
+   sendKey(KEY_UP)
+   sendKey(KEY_RIGHT)
+   assert(bar._currentItem is bar._lookup.edit and not bar._lastMenu,
+      'Right must resume horizontal menubar navigation after the dropdown closes')
+end
+
+@Test function ShortcutsActivateUnopenedNestedMenusWithoutTakingFocus()
+   local surface <close>, target = newTarget()
+   local sibling = target.new('VectorViewport', { y=50, width=100, height=50, tabOrder=1 })
+   local typed = 0
+   sibling.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code) if Code is KEY_A then typed++ end end)
+   local calls = 0
+   local opens = 0
+   local received_menu:table
+   local config = { id='copy', label='Copy', qualifier='ctrl', key='c', onActivate=function(Item)
+      calls++
+      received_menu = &&
+      assert(Item.id is 'copy', 'The activation callback must receive the original shortcut item')
+   end }
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('edit', 'Edit', nil, function() opens++ end, array<table> {
+         { menu={ label='Clipboard', items=array<table> { config } } }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   assert(not bar._lookup.edit.menu, 'Shortcut dispatch must work before any menu is constructed')
+   sendKey(KEY_C, KQ_PRESSED | KQ_R_CONTROL)
+   assert(calls is 1 and opens is 0, 'The shortcut must invoke the leaf once without invoking the menu-open callback')
+   assert(received_menu.parentMenu is bar._lookup.edit.menu and not received_menu.visible,
+      'The callback must receive its owning submenu without showing it')
+   assert(not bar._lookup.edit.menu.visible and not bar._lastMenu, 'Shortcut dispatch must not open any menu')
+   sendKey(KEY_A)
+   assert(typed is 1 and not bar._hasFocus, 'Shortcut activation must preserve the previous widget focus')
+end
+
+@Test function ShortcutsRequireExactModifiersAndRespectDynamicDisabledState()
+   local surface <close>, target = newTarget()
+   local saves = 0
+   local save_as = 0
+   local config = { label='Save As', qualifier='Ctrl + Shift', key='S', disabled=true,
+      onActivate=function() save_as++ end }
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { label='Save', qualifier='CONTROL', key='S', onActivate=function() saves++ end }, config,
+         { label='Invalid', qualifier='TYPO', key='S', onActivate=function() raise 'Invalid modifier matched' end }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_S)
+   sendKey(KEY_S, KQ_RELEASED | KQ_CTRL)
+   sendKey(KEY_S, KQ_PRESSED | KQ_CTRL | KQ_SHIFT)
+   sendKey(KEY_S, KQ_PRESSED | KQ_CTRL | KQ_ALT)
+   assert(saves is 0 and save_as is 0, 'Missing, additional and released modifiers must not match')
+   sendKey(KEY_S, KQ_PRESSED | KQ_L_CONTROL | KQ_CAPS_LOCK)
+   assert(saves is 1, 'Caps Lock must not interfere with Ctrl+S')
+   config.disabled = false
+   sendKey(KEY_S, KQ_PRESSED | KQ_R_CONTROL | KQ_R_SHIFT)
+   assert(save_as is 1 and saves is 1, 'Re-enabling an item must enable its exact Ctrl+Shift shortcut')
+   bar.disableItem('file')
+   sendKey(KEY_S, KQ_PRESSED | KQ_CTRL)
+   bar.enableItem('file')
+   bar.disable()
+   sendKey(KEY_S, KQ_PRESSED | KQ_CTRL)
+   bar.enable()
+   bar.removeItem('file')
+   sendKey(KEY_S, KQ_PRESSED | KQ_CTRL)
+   assert(saves is 1, 'Disabled bars, disabled menus and removed menus must not dispatch shortcuts')
+end
+
+@Test function ShortcutsWorkForFunctionAndPunctuationKeys()
+   local surface <close>, target = newTarget()
+   local hits = { reload=0, plus=0, minus=0, zero=0 }
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('view', 'View', nil, nil, array<table> {
+         { label='Reload', key='F5', onActivate=function() hits.reload++ end },
+         { label='Zoom In', key='+', qualifier='CTRL', onActivate=function() hits.plus++ end },
+         { label='Zoom Out', key='-', qualifier='CTRL', onActivate=function() hits.minus++ end },
+         { label='Reset', key='0', qualifier='CTRL', onActivate=function() hits.zero++ end }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F5)
+   sendKey(KEY_EQUALS, KQ_PRESSED | KQ_CTRL | KQ_SHIFT)
+   sendKey(KEY_NP_PLUS, KQ_PRESSED | KQ_CTRL)
+   sendKey(KEY_PLUS, KQ_PRESSED | KQ_CTRL)
+   sendKey(KEY_R_SQUARE, KQ_PRESSED | KQ_CTRL, 43)
+   sendKey(KEY_MINUS, KQ_PRESSED | KQ_CTRL)
+   sendKey(KEY_ZERO, KQ_PRESSED | KQ_CTRL)
+   assert(hits.reload is 1 and hits.plus is 4 and hits.minus is 1 and hits.zero is 1,
+      'Function keys, shifted plus, keypad plus and digit shortcuts must resolve correctly')
+end
+
+@Test function ShortcutDispatchDoesNotAlsoActivateTheSelectedMenuRow()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local wrong_hits = 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { label='Selected', onActivate=function() wrong_hits++ end },
+         { label='Shortcut', key='Space', qualifier='CTRL', onActivate=function() hits++ end }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   sendKey(KEY_DOWN)
+   sendKey(KEY_SPACE, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 1 and wrong_hits is 0, 'A shortcut must run once without activating the highlighted row')
+   assert(not bar._lookup.file.menu.visible, 'A shortcut action must dismiss an open menu')
+end
+
+@Test function ShortcutsSkipDisabledAncestorsAndUseFirstEnabledMatch()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local wrong_hits = 0
+   local branch = { label='Clipboard', disabled=true, items=array<table> {
+      { label='Copy', qualifier='CTRL', key='C', onActivate=function() hits++ end }
+   } }
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('edit', 'Edit', nil, nil, array<table> { { menu=branch } })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_C, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 0 and not bar._lookup.edit.menu, 'Disabled ancestors must prevent shortcut dispatch')
+   branch.disabled = false
+   sendKey(KEY_C, KQ_PRESSED | KQ_CTRL)
+   bar.addItem('duplicate', 'Duplicate', nil, nil, array<table> {
+      { label='Other Copy', qualifier='CTRL', key='C', onActivate=function() wrong_hits++ end }
+   })
+   sendKey(KEY_C, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 2 and wrong_hits is 0, 'Duplicate shortcuts must dispatch only the first enabled match')
+   branch.disabled = true
+   sendKey(KEY_C, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 2 and wrong_hits is 1, 'Disabling an ancestor must make the next enabled match available')
+   surface.acLostFocus()
+   sendKey(KEY_C, KQ_PRESSED | KQ_CTRL)
+   assert(wrong_hits is 1, 'Shortcuts must not fire in an inactive window')
+end
+
+@Test function ShortcutCallbacksCanRemoveTheirOwnMenu()
+   local surface <close>, target = newTarget()
+   local bar:table
+   local hits = 0
+   bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { label='Remove Menu', qualifier='CTRL', key='D', onActivate=function()
+            hits++
+            bar.removeItem('file')
+         end }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_D, KQ_PRESSED | KQ_CTRL)
+   sendKey(KEY_D, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 1 and not bar._lookup.file, 'Shortcut cleanup must tolerate activation freeing its own menu')
+end
+
+@Test function ShortcutMatcherSupportsNamedKeysAndRejectsUnknownBindings()
+   local config = array<table> {
+      { label='Alt Home', qualifier='alt', key='Home' },
+      { label='Command F20', qualifier='cmd', key='F20' },
+      { label='Invalid', qualifier='Hyper', key='S' },
+      { label='Invalid Key', key='UnknownKey' }
+   }
+   assert(gui.findMenuShortcut(config, KQ_PRESSED | KQ_R_ALT, KEY_HOME)[0] is config[0],
+      'Named keys and right-hand Alt must match')
+   assert(gui.findMenuShortcut(config, KQ_PRESSED | KQ_R_COMMAND, KEY_F20)[0] is config[1],
+      'Command and F20 must match')
+   assert(not gui.findMenuShortcut(config, KQ_PRESSED, KEY_S), 'Unknown modifiers must not become bare-key bindings')
+   assert(not gui.findMenuShortcut(config, KQ_PRESSED, 0), 'Unknown names must not match a key')
+end
+
+@Test function StandalonePopupReceivesKeyboardWithoutAClient()
+   local surface <close>, target = newTarget()
+   target.mtSubscribeKeyboard(function() end)
+   surface.acShow()
+   surface.acFocus()
+   local hits = 0
+   local menu = gui.menu({ popup=true, items=array<table> {
+      { group='Files' },
+      { label='Disabled', disabled=true },
+      { label='Open', onActivate=function() hits++ end },
+      { label='Recent', items=array<table> {
+         { label='First', onActivate=function() hits++ end }, { label='Second' }
+      } }
+   } })
+   defer menu.surface?.free() end
+   menu.show()
+   processing.sleep(0)
+   sendKey(KEY_DOWN)
+   assert(menu.hItem is menu._rows[2], 'A popup without a client must receive Down and skip non-interactive rows')
+   sendKey(KEY_DOWN)
+   local child = menu.currentMenu
+   assert(child?.visible, 'Popup keyboard navigation must preview nested menus')
+   sendKey(KEY_RIGHT)
+   sendKey(KEY_DOWN)
+   assert(child.hItem is child._rows[1], 'The root popup must route keys into its submenu')
+   sendKey(KEY_LEFT)
+   assert(not child.visible and menu.visible, 'Left must return to the popup')
+   sendKey(KEY_ESCAPE)
+   assert(not menu.visible, 'Escape must dismiss a standalone popup')
+   menu.show()
+   processing.sleep(0)
+   sendKey(KEY_DOWN)
+   sendKey(KEY_ENTER)
+   assert(hits is 1 and not menu.visible, 'A reopened popup must receive keys and activate an item once')
+end
+
+@Test function PopupUsesOwnKeyboardFocusEvenWithAClient()
+   local surface <close>, target = newTarget()
+   target.mtSubscribeKeyboard(function() end)
+   local hits = 0
+   local menu = gui.menu({ target=surface, popup=true, client=target, items=array<table> {
+      { label='Save', key='S', qualifier='CTRL', onActivate=function() hits++ end }
+   } })
+   surface.acShow()
+   surface.acFocus()
+   menu.show()
+   processing.sleep(0)
+   sendKey(KEY_S, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 1 and not menu.visible, 'The focused popup must handle its shortcut without using the old client')
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_S, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 1, 'A hidden popup must not retain an active shortcut listener on its client')
+end
+
+@Test function CheckableItemsToggleBeforePointerAndKeyboardActivation()
+   local surface <close>, target = newTarget()
+   local states = array<any>
+   local menu_states = array<any>
+   local config = { id='grid', label='Show Grid', checkable=true,
+      onActivate=function(Item) states.push(Item.checked) end }
+   local menu = gui.menu({ target=surface, relative=target, showIcons=false,
+      events={ activate=function(Item) menu_states.push(Item.checked) end },
+      items=array<table> { config, { label='Disabled', checkable=true, checked=true, disabled=true } }
+   })
+   assert(menu.getChecked('grid') is false, 'Checkable items must default to unchecked')
+   assert(menu._rows[0].checkmark and menu._rows[0].checkmark.visibility is VIS_HIDDEN,
+      'Check indicators must exist even when icons are disabled')
+   surface.acShow()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu._rows[0].y + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(config.checked and states[0] and menu_states[0], 'Pointer activation must toggle before both callbacks')
+   menu.show()
+   assert(menu._rows[0].checkmark.visibility is VIS_VISIBLE, 'A checkmark must persist after reopening')
+   menu.selectItem('grid')
+   menu.handleKey(KQ_PRESSED, KEY_SPACE)
+   assert(not config.checked and not states[1] and not menu_states[1], 'Keyboard activation must toggle off')
+   assert(#states is 2 and #menu_states is 2 and not menu.visible, 'Each activation must notify once and dismiss')
+   assert(not menu.activate(1) and menu.getChecked(1), 'Disabled checkable items must not toggle')
+end
+
+@Test function CheckedStateCanBeUpdatedWithoutActivation()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local config = { id='checked', label='Checked', checkable=true, checked=true, icon='items/file_new',
+      qualifier='CTRL', key='G',
+      onActivate=function() hits++ end }
+   local menu = gui.menu({ target=surface, relative=target, items=array<table> {
+      config, { id='ordinary', label='A much longer ordinary menu item' }, { group='Heading' },
+      { id='parent', label='Submenu', checkable=true, items=array<table> { { label='Child' } } },
+      { id='second', label='Second', checkable=true }
+   } })
+   assert(menu.getChecked('checked') and menu._rows[0].checkmark.visibility is VIS_VISIBLE,
+      'Initially checked items must render a checkmark')
+   -- The icon's pattern tile pads the artwork (see gui.createIcon()), so the column is found from the icon's centre.
+   -- The icon size follows the menu's own formula.
+   local font_max = gui.getFontHeight(gui.fonts.menu)
+   local icon_size = math.floor(math.floor(font_max * 1.5) * 0.8)
+   local icon = config.iconView
+   local icon_x = icon.x + ((icon.width - icon_size) * 0.5)
+   assert(math.abs(icon_x - 6) < 0.001 and icon.width > icon_size and menu._rows[0].text.x > icon.x + icon.width,
+      f'Icons must retain their original left-hand column ({icon_x})')
+   local _, text_x, _, text_width = menu._rows[1].text.mtGetBoundary(0)
+   local _, check_x, _, check_width = menu._rows[0].checkmark.mtGetBoundary(0)
+   local _, shortcut_x = menu._rows[0].keyText.mtGetBoundary(0)
+   local _, second_check_x = menu._rows[4].checkmark.mtGetBoundary(0)
+   assert(check_x > text_x + text_width and check_x + check_width < shortcut_x,
+      'The check column must sit after the widest label and before the shortcut column')
+   assert(second_check_x is check_x, 'Checked and unchecked items must share the same reserved column')
+   assert(menu.setChecked(config, false) and not menu.getChecked('checked'),
+      'setChecked must update the original config')
+   assert(menu._rows[0].checkmark.visibility is VIS_HIDDEN and hits is 0,
+      'Programmatic changes must not invoke activation callbacks')
+   assert(not menu.setChecked('ordinary', true) and menu.getChecked('ordinary') is nil,
+      'Ordinary items must not be converted into checkable items')
+   assert(not menu.setChecked('parent', true) and not menu.setChecked('missing', true),
+      'Submenu parents and unknown items must reject checked-state updates')
+   config.checked = true
+   surface.acShow()
+   menu.show()
+   assert(menu._rows[0].checkmark.visibility is VIS_VISIBLE,
+      'Showing a menu must refresh externally changed checked state')
+end
+
+@Test function NestedCheckableShortcutsToggleExactlyOnce()
+   local surface <close>, target = newTarget()
+   local states = array<any>
+   local config = { id='grid', label='Show Grid', checkable=true, qualifier='CTRL', key='G',
+      onActivate=function(Item) states.push(Item.checked) end }
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('view', 'View', nil, nil, array<table> {
+         { menu={ label='Display', items=array<table> { config } } }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
+   sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
+   assert(#states is 2 and states[0] and not states[1] and not config.checked,
+      'Nested shortcuts must toggle once before the callback on each activation')
+   config.disabled = true
+   sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
+   assert(#states is 2 and not config.checked, 'Disabled shortcut items must preserve checked state')
+end
+
+@Test function PopupOpensAtExplicitDisplayCoordinates()
+   local surface <close>, target = newTarget()
+   surface.acShow()
+   local menu = gui.menu({ popup=true, popupX=120, popupY=70, items=array<table> { { label='Open' } } })
+   defer menu.surface?.free() end
+   menu.show()
+   assert(menu.surface.absX is 119 and menu.surface.absY is 69,
+      f'popupX and popupY must replace the pointer position, got {menu.surface.absX},{menu.surface.absY}')
+   menu.hide()
+   menu.popupX = 0
+   menu.popupY = 0
+   menu.show()
+   -- Popups open one pixel above and to the left of the pointer, which is not clamped at the display origin.
+   assert(menu.surface.absX is -1 and menu.surface.absY is -1,
+      f'Zero must be accepted as a popup coordinate, got {menu.surface.absX},{menu.surface.absY}')
+end
+
+@Test function FreeingPopupReleasesItsKeyboardScene()
+   local surface <close>, target = newTarget()
+   surface.acShow()
+   local menu = gui.menu({ target=surface, popup=true, items=array<table> { { label='Open' } } })
+   menu.show()
+   local scene_id = menu.scene.id
+   menu.surface.free()
+   assert(not obj.find(scene_id), 'Freeing a popup must release its scene and keyboard subscriptions')
+end
+
+@Test function PrepareRefreshesLayoutOnEachOpening()
+   local surface <close>, target = newTarget()
+   local calls = 0
+   local config = array<table> { { id='save', label='Save', checkable=true } }
+   local menu = gui.menu({ target=surface, relative=target, items=config,
+      prepare=function(Config)
+         assert(&items is Config and Config is config, 'Prepare must receive the live configuration')
+         assert(not &visible, 'Prepare must run before the menu becomes visible')
+         calls++
+         Config[0].label = calls is 1 ? 'Save the current document' : 'Save'
+         Config[0].checked = calls is 1
+         Config[0].disabled = calls is 1
+         if calls is 1 then Config.push({ id='new', label='New', key='N', qualifier='CTRL' })
+         else Config.pop()
+         end
+         &show()
+      end
+   })
+   local viewport_id = menu.viewport.id
+   local content_id = menu.content.id
+   local initial_width = menu.surface.width
+   assert(calls is 0, 'Construction must not call prepare')
+   surface.acShow()
+   menu.show()
+   local expanded_height = menu.surface.height
+   assert(calls is 1 and #menu._rows is 2 and menu.surface.width > initial_width,
+      'Prepare must rebuild the rows and resize before showing')
+   assert(menu._rows[0].text.string is config[0].label and menu._rows[0].checkmark.visibility is VIS_VISIBLE,
+      'Prepared labels and checked state must be rendered')
+   assert(not menu.selectItem('save') and menu.selectItem('new'), 'Prepared disabled state must apply')
+   assert(menu.viewport.id is viewport_id and not obj.find(content_id),
+      'Relayout must preserve the input viewport and release old graphics')
+   menu.show()
+   assert(calls is 1, 'Showing an already visible menu must not prepare it again')
+   menu.hide()
+   menu.show()
+   assert(calls is 2 and #menu._rows is 1 and menu.surface.height < expanded_height,
+      'Reopening must prepare again and remove stale rows')
+   assert(menu.selectItem('save') and menu._rows[0].checkmark.visibility is VIS_HIDDEN,
+      'Reopening must apply updated enabled and checked state')
+end
+
+@Test function SubmenusPrepareWhenOpenedAndReleaseRebuiltChildren()
+   local surface <close>, target = newTarget()
+   local calls = 0
+   local menu = gui.menu({ target=surface, relative=target, prepare=function() end,
+      items=array<table> { { menu={ label='Recent', items=array<table>,
+         prepare=function(Config)
+            calls++
+            &items = array<table> { { id='recent', label=f'Recent document {calls}',
+               key='R', qualifier='CTRL' } }
+         end
+      } } }
+   })
+   surface.acShow()
+   menu.show()
+   assert(calls is 0, 'Preparing the parent must not prepare unopened submenus')
+   menu.selectItem(0)
+   local child = menu.currentMenu
+   local child_id = child.surface.id
+   assert(calls is 1 and child._rows[0].text.string is 'Recent document 1', 'Submenus must prepare before showing')
+   child.hide()
+   menu.selectItem(0)
+   assert(calls is 2 and menu.currentMenu is child and child._rows[0].text.string is 'Recent document 2',
+      'Cached submenus must prepare again when reopened')
+   local path = gui.findMenuShortcut(menu.items, KQ_PRESSED | KQ_CTRL, KEY_R)
+   assert(path and menu.activateShortcut(path), 'Shortcuts must find replaced submenu configuration')
+   menu.show()
+   assert(not obj.find(child_id), 'Rebuilding the parent must dispose of its cached submenu')
+   menu.selectItem(0)
+   assert(calls is 3 and menu.currentMenu != child, 'Rebuilt parents must create and prepare fresh submenus')
+end
+
+@Test function MenubarPreparesInitiallyEmptyMenusAndUpdatesShortcuts()
+   local surface <close>, target = newTarget()
+   local calls, hits = 0, 0
+   local entry
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      entry = Bar.addItem('file', 'File', nil, nil, nil, function(Config)
+         calls++
+         &items = array<table> { { label='Dynamic action', key='G', qualifier='CTRL',
+            onActivate=function() hits++ end } }
+      end)
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   assert(calls is 1 and entry.menu.visible and #entry.menu._rows is 1,
+      'Menubar entries with prepare must support initially empty contents')
+   sendKey(KEY_ESCAPE)
+   sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 1 and calls is 1, 'Shortcuts must use prepared configuration without invoking prepare again')
+end
+
+@Test function PrepareFailureLeavesMenuHiddenAndAllowsRetry()
+   local surface <close>, target = newTarget()
+   local calls = 0
+   local menu = gui.menu({ target=surface, relative=target, items=array<table> { { label='Open' } },
+      prepare=function()
+         calls++
+         if calls is 1 then raise 'Expected prepare failure' end
+      end
+   })
+   local failed = false
+   try menu.show()
+   except e
+      failed = true
+   end
+   assert(failed and not menu.visible, 'Failed preparation must leave the menu hidden')
+   surface.acShow()
+   menu.show()
+   assert(calls is 2 and menu.visible, 'A failed prepare must not prevent later opening')
+end
+
+@Test function FocusedMenubarRejectsClicksOutsideEnabledItems()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, function() hits++ end,
+         array<table> { { label='Open' } })
+      Bar.addItem('disabled', 'Disabled')
+   end })
+   bar.disableItem('disabled')
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   feed(JET_ABS_XY, surface.absX + 450, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0 and not bar._lastMenu, 'Blank space must not activate the keyboard-selected item')
+   feed(JET_ABS_XY, surface.absX + bar._lookup.disabled.x + 5, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0 and not bar._lastMenu, 'Disabled rows must not activate the keyboard-selected item')
+   assert(bar._currentItem is bar._lookup.file, 'Ignored clicks must preserve keyboard selection')
+   sendKey(KEY_DOWN)
+   assert(hits is 1 and bar._lastMenu.visible, 'Keyboard activation must still open the selected menu')
+   feed(JET_ABS_XY, surface.absX + 450, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1 and bar._lastMenu.visible, 'Blank clicks must not toggle an already open menu')
+end
+
+@Test function MenubarHoverSwitchesWithoutActivationCallbacks()
+   local surface <close>, target = newTarget()
+   local hits, prepares = 0, 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> { { label='Open' } })
+      Bar.addItem('edit', 'Edit', nil, function() hits++ end,
+         array<table> { { label='Copy' } }, function() prepares++ end)
+      Bar.addItem('help', 'Help', nil, function() hits++ end)
+   end })
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   local file_menu = bar._lastMenu
+   feed(JET_ABS_XY, surface.absX + bar._lookup.edit.x + 5, surface.absY + 5)
+   assert(not file_menu.visible and bar._lookup.edit.menu.visible,
+      'Hovering another menu must switch the open dropdown')
+   assert(hits is 0 and prepares is 1, 'Hover switching must prepare the menu without activating its callback')
+   feed(JET_ABS_XY, surface.absX + bar._lookup.help.x + 5, surface.absY + 5)
+   assert(hits is 0 and not bar._lastMenu, 'Hovering an action-only item must close the menu without activation')
+   feed(JET_ABS_XY, surface.absX + bar._lookup.edit.x + 5, surface.absY + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1 and prepares is 2 and bar._lastMenu.visible,
+      'Explicit pointer activation must invoke the callback once and prepare the menu again')
+   local selected = bar._currentItem
+   feed(JET_ABS_XY, 1000, 1000)
+   assert(bar._currentItem is selected and bar._lastMenu.visible and bar._highlight.visibility is VIS_VISIBLE,
+      'Leaving the bar while a menu is open must preserve its selection and highlight')
+end
+
+@Test function WrappedSubmenusRespectLiveDisabledState()
+   local surface <close>, target = newTarget()
+   local wrapper = { disabled=true, menu={ id='wrapped', label='Wrapped', items=array<table> {
+      { label='Child', key='G', qualifier='CTRL' }
+   } } }
+   local menu = gui.menu({ target=surface, relative=target, items=array<table> {
+      wrapper, { label='Enabled' }
+   } })
+   assert(not menu.selectItem('wrapped') and not menu.activate('wrapped'),
+      'Disabled wrappers must reject selection and activation')
+   surface.acShow()
+   menu.show()
+   menu.surface.acDraw()
+   processing.sleep(0)
+   feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + menu._rows[0].y + 5)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(not menu.currentMenu, 'Pointer input must not open a disabled wrapped submenu')
+   menu.handleKey(KQ_PRESSED, KEY_DOWN)
+   assert(menu.hItem is menu._rows[1], 'Keyboard navigation must skip disabled wrappers')
+   wrapper.disabled = false
+   assert(menu.selectItem('wrapped') and menu.currentMenu.visible, 'Enabling the wrapper must allow opening')
+   menu.currentMenu.hide()
+   wrapper.menu.disabled = true
+   assert(not menu.selectItem('wrapped') and not menu.activate('wrapped'),
+      'The inner menu disabled state must also prevent opening')
+   wrapper.menu.disabled = false
+   wrapper.disabled = true
+   assert(not menu.selectItem('wrapped') and not menu.activate('wrapped'),
+      'Disabling the wrapper again must apply without rebuilding the menu')
+end
+
+@Test function MenubarMnemonicsReserveCapitalsBeforeResolvingConflicts()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File')
+      Bar.addItem('format', 'Format')
+      Bar.addItem('open', 'Open')
+      Bar.addItem('lower', 'tools')
+      Bar.addItem('embedded', 'my Help')
+      Bar.addItem('duplicate', 'FFF')
+      Bar.addItem('empty', '')
+      Bar.addItem('punctuation', '123!?')
+   end })
+   assert(bar._lookup.file.mnemonic is 'F' and bar._lookup.open.mnemonic is 'O',
+      'The first pass must reserve first capitals for all items')
+   assert(bar._lookup.format.mnemonic is 'R', 'Conflicts must skip letters reserved by later items')
+   assert(bar._lookup.lower.mnemonic is 'T' and bar._lookup.embedded.mnemonic is 'H',
+      'Lowercase labels need a fallback; embedded capitals take priority')
+   assert(not bar._lookup.duplicate.mnemonic and not bar._lookup.empty.mnemonic and
+      not bar._lookup.punctuation.mnemonic, 'Items without an available letter must remain unbound')
+   bar.disableItem('file')
+   assert(bar._lookup.file.mnemonic is 'F' and bar._lookup.format.mnemonic is 'R',
+      'Disabling an item must not reassign mnemonics')
+   bar.setItemLabel('open', 'View')
+   assert(bar._lookup.open.mnemonic is 'V' and bar._lookup.format.mnemonic is 'O',
+      'Renaming must recompute both mnemonic passes')
+   bar.removeItem('file')
+   assert(bar._lookup.format.mnemonic is 'F', 'Removing an item must release its letter')
+   local item = bar.addItem('find', 'Find')
+   assert(item.mnemonic is 'I', 'Items added later must receive an available letter')
+end
+
+@Test function AltMnemonicsFocusOpenAndSwitchMenus()
+   local surface <close>, target = newTarget()
+   local sibling = target.new('VectorViewport', { y=50, width=100, height=50, tabOrder=1 })
+   sibling.mtSubscribeKeyboard(function() end)
+   local calls, shortcut_hits, action_hits, unmatched_hits = 0, 0, 0, 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { label='Other action', qualifier='ALT', key='F', onActivate=function() shortcut_hits++ end },
+         { label='Unassigned letter', qualifier='ALT', key='Z', onActivate=function() unmatched_hits++ end }
+      }, function() calls++ end)
+      Bar.addItem('edit', 'Edit', nil, nil, array<table> { { label='Copy' } })
+      Bar.addItem('help', 'Help', nil, function() action_hits++ end)
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   check sibling.acFocus()
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT | KQ_CTRL)
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT | KQ_SHIFT)
+   sendKey(KEY_F, KQ_ALT)
+   assert(not bar._hasFocus and calls is 0, 'Only pressed Alt-letter without other modifiers may activate')
+   sendKey(KEY_Z, KQ_PRESSED | KQ_ALT)
+   assert(unmatched_hits is 1 and calls is 0 and not bar._hasFocus,
+      'Unassigned Alt letters must still dispatch explicit shortcuts without taking focus')
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(bar._hasFocus and bar._currentItem is bar._lookup.file and bar._lastMenu.visible and calls is 1,
+      'Alt-letter must focus the bar and prepare and open its menu')
+   assert(shortcut_hits is 0, 'Assigned mnemonics must take priority over matching menu shortcuts')
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(bar._lastMenu.visible and calls is 1, 'Repeating a mnemonic must leave its menu open')
+   local file_menu = bar._lastMenu
+   sendKey(KEY_E, KQ_PRESSED | KQ_ALT)
+   assert(not file_menu.visible and bar._lookup.edit.menu.visible and bar._currentItem is bar._lookup.edit,
+      'Alt-letter must switch from an open menu to the matching menu')
+   sendKey(KEY_DOWN)
+   assert(bar._lastMenu.hItem, 'The opened menu must accept normal keyboard navigation')
+   sendKey(KEY_H, KQ_PRESSED | KQ_ALT)
+   assert(action_hits is 1 and not bar._lastMenu, 'Action-only items must activate exactly once')
+   bar.disableItem('file')
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(calls is 1 and shortcut_hits is 0, 'Disabled mnemonics must not activate or fall through to shortcuts')
+   bar.disable()
+   check sibling.acFocus()
+   sendKey(KEY_E, KQ_PRESSED | KQ_ALT)
+   assert(not bar._hasFocus, 'Disabled menubars must not take focus through mnemonics')
+end
+
+@Test function AltMnemonicsIgnoreInactiveWindowsAndReleaseBindingsOnFree()
+   local surface <close>, target = newTarget()
+   local hits = 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, function() hits++ end)
+   end })
+   local other_surface <close>, other_target = newTarget()
+   other_target.mtSubscribeKeyboard(function() end)
+   surface.acShow()
+   other_surface.acShow()
+   other_surface.acFocus()
+   surface.acLostFocus()
+   processing.sleep(0)
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(hits is 0, 'Mnemonics must ignore inactive windows')
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(hits is 1, 'The active window must handle its mnemonic')
+   bar.viewport.free()
+   sendKey(KEY_F, KQ_PRESSED | KQ_ALT)
+   assert(hits is 1, 'Freeing the menubar must release mnemonic handling')
+end
+
+@Test function MenubarCanStartDisabled()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({ target=target, disabled=true, createItems=function(Bar)
+      Bar.addItem('file', 'File')
+   end })
+
+   assert(bar._disabled and bar._lookup.file.vectorText.opacity is 0.5,
+      'A menubar created disabled must dim its items')
+   bar.enable()
+   assert(not bar._disabled and bar._lookup.file.vectorText.opacity is 1,
+      'Enabling the menubar must restore its items')
+end
+
+-- Measure a text's font independently of the widget, from the text's own rendered size.
+
+function capHeight(Text:obj!):num
+   _, handle = check mVec.GetFontHandle(Text.face, Text.fontStyle, 0, tonumber(Text.fontSize))
+   metrics = struct<FontMetrics>
+   check mVec.GetFontMetrics(handle, metrics)
+   return metrics.ascent
+end
+
+@Test function MenubarMenusMatchScaledViewport()
+   local surface <close>, target = newTarget()
+   target.{ viewX = 0, viewY = 0, viewWidth = 250, viewHeight = 100 } -- Scales the content by 2
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table> {
+         { id='open', label='Open' },
+         { menu={ id='recent', label='Recent', items=array<table> { { id='one', label='One' } } } }
+      })
+   end })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+   sendKey(KEY_F10)
+   sendKey(KEY_ENTER)
+
+   local item = bar._first
+   local menu = item.menu
+   assert(menu?.visible, 'Enter must open the menubar item menu')
+   defer menu.surface?.free() end
+   assert(math.abs(menu.scale - 2) < 0.01, f'Menu scale must match the bar, got {menu.scale}')
+   assert(menu.surface.width is math.ceil(menu.width * menu.scale) and
+      menu.surface.height is math.ceil(menu.height * menu.scale), 'The menu surface must be scaled')
+   assert(math.abs(menu.viewport.viewWidth * menu.scale - menu.surface.width) < 0.01,
+      'The view box must map the unscaled content to the surface')
+   assert(math.abs(menu.x - item.x * menu.scale) < 0.01, 'The menu must open under its scaled bar item')
+
+   assert(menu.selectItem('recent'), 'The submenu row must be selectable')
+   local submenu = menu.currentMenu
+   assert(submenu?.visible and submenu.scale is menu.scale, 'Submenus must inherit the scale of their parent')
+   assert(submenu.surface.width is math.ceil(submenu.width * submenu.scale), 'The submenu surface must be scaled')
+end
+
+@Test function ScaledMenusOpenAboveAnchorWithoutOverlap()
+   for scale in values(array<double> { 0.5, 1, 2 }) do
+      local surface <close>, target = newTarget()
+      target.y = 190
+      local menu = gui.menu({ target=surface, relative=target, scale=scale, y=20,
+         items=array<table> { { label='First' }, { label='Second' } } })
+      defer menu.surface?.free() end
+      menu.y = 20 * scale -- Menubars update the offset to match their display scale before showing the menu.
+      surface.acShow()
+      menu.show()
+      processing.sleep(0)
+
+      assert(menu.surface.absY + menu.surface.height is surface.absY + target.absY,
+         f'At scale {scale}, an upward-opening menu must end at its anchor')
+   end
+end

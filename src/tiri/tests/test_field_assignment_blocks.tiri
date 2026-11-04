@@ -1,0 +1,330 @@
+-- Flute tests for field assignment blocks: ref.{ name = value, [key] = value } and ref?.{ ... }
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AssignsNamedFields()
+   local dec = {}
+   dec.{
+      x = 1,
+      y = 2,
+      z = 3
+   }
+   assert(dec.x is 1 and dec.y is 2 and dec.z is 3, 'Multi-line block should assign every field')
+
+   dec.{ x = 10, y = 20; z = 30, }
+   assert(dec.x is 10 and dec.y is 20 and dec.z is 30, 'Single-line block with mixed and trailing separators')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function AssignsComputedKeys()
+   local dec = {}
+   local name = 'label'
+   local flag = true
+   dec.{ [name] = 'text', [0] = 'zero', [flag] = 'yes', ['quoted'] = 4, [name .. '2'] = 'more' }
+   assert(dec.label is 'text', 'A computed string key should be assigned')
+   assert(dec[0] is 'zero', 'A numeric key should be assigned')
+   assert(dec[true] is 'yes', 'A boolean key should be assigned')
+   assert(dec.quoted is 4, 'A literal string key should be assigned')
+   assert(dec.label2 is 'more', 'An expression key should be assigned')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReservedWordsAreFieldNames()
+   local dec = {}
+   dec.{ end = 1, function = 2 }
+   assert(dec['end'] is 1 and dec['function'] is 2, 'Reserved words should be accepted as field names')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EmptyBlockEvaluatesBaseOnly()
+   local calls = 0
+   local target = {}
+   function make()
+      calls++
+      return target
+   end
+
+   make().{}
+   assert(calls is 1, 'An empty block should still evaluate its base once, got ' .. calls)
+   assert(table.empty(target), 'An empty block should not assign anything')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BaseIsEvaluatedOnce()
+   local calls = 0
+   local target = {}
+   function make()
+      calls++
+      return target
+   end
+
+   make().{ x = 1, y = 2, z = 3 }
+   assert(calls is 1, 'The base call should run once, got ' .. calls)
+   assert(target.x is 1 and target.y is 2 and target.z is 3, 'Every entry should reach the single base value')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function EntriesInterleaveInSourceOrder()
+   local log = {}
+   local proxy = setmetatable({}, {
+      __newindex = function(Key, Value)
+         log.insert('store:' .. Key)
+         rawset(&&, Key, Value)
+      end
+   })
+
+   function value(Name:str):str
+      log.insert('value:' .. Name)
+      return Name
+   end
+
+   proxy.{ a = value('a'), b = value('b'), c = value('c') }
+   local text = log.concat(',')
+   assert(text is 'value:a,store:a,value:b,store:b,value:c,store:c',
+      'Each value should be evaluated and stored before the next, got ' .. text)
+   assert(rawget(proxy, 'b') is 'b', '__newindex should receive every store')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ValuesUseCallerScope()
+   local x = 5
+   local t = { x = 100 }
+   t.{ y = x }
+   assert(t.y is 5, 'A value should read the caller\'s local, not the base field, got ' .. tostring(t.y))
+
+   function capture() return x end
+   t.{ z = capture() }
+   assert(t.z is 5, 'A called function should observe the caller scope')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ReassigningBaseDoesNotRedirect()
+   local first = {}
+   local second = {}
+   local dec = first
+   function swap()
+      dec = second
+      return 1
+   end
+
+   dec.{ a = swap(), b = 2 }
+   assert(first.a is 1 and first.b is 2, 'Later entries should still target the original base')
+   assert(second.b is nil, 'Reassigning the base variable must not redirect later entries')
+   assert(dec is second, 'The base variable itself should have been reassigned')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SingleValueTruncation()
+   function pair() return 'first', 'second' end
+   local t = {}
+   t.{ a = pair(), b = 2 }
+   assert(t.a is 'first', 'A call value should be truncated to its first result')
+   assert(t.b is 2, 'Truncation must not disturb later entries')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ContextFieldBase()
+   local view = entity {
+      style = {},
+      configure = function()
+         &style.{ colour = 'red', width = 3 }
+         &&.{ configured = true }
+      end
+   }
+   view.configure()
+   assert(view.style.colour is 'red' and view.style.width is 3, '&field should be usable as a block base')
+   assert(view.configured is true, '&& should be usable as a block base')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function NestedChainsAndBlocks()
+   local a = { b = { [2] = {} } }
+   local c = 2
+   a.b[c].{ deep = true }
+   assert(a.b[2].deep is true, 'A member and index chain should be a valid base')
+
+   local t = {}
+   local u = {}
+   t.{ x = (function() u.{ y = 1 } return 2 end)() }
+   assert(t.x is 2 and u.y is 1, 'A block nested inside a value should run independently')
+
+   local choice = true
+   local left = {}
+   local right = {}
+   ;(choice ? left : right).{ picked = true } -- The separator stops `{}` from being called by the parenthesis
+   assert(left.picked is true and right.picked is nil, 'A parenthesised base should be accepted')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function SafeVariantSkipsNil()
+   local calls = 0
+   function f()
+      calls++
+      return 1
+   end
+
+   local missing = nil
+   missing?.{ x = f(), y = f() }
+   assert(calls is 0, 'A nil base should skip every value, got ' .. calls)
+
+   local present = {}
+   present?.{ x = f(), y = f() }
+   assert(calls is 2, 'A non-nil base should evaluate every value')
+   assert(present.x is 1 and present.y is 1, 'A non-nil base should be assigned')
+
+   -- Only nil short-circuits; false is indexed and therefore raises.
+   local raised = false
+   local flag = false
+   try
+      flag?.{ x = 1 }
+   except e
+      raised = true
+   end
+   assert(raised, 'A false base should not short-circuit')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function FailingEntryKeepsEarlierEntries()
+   local t = {}
+   function fail()
+      raise 'entry failed'
+   end
+
+   local caught = false
+   try
+      t.{ a = 1, b = fail(), c = 3 }
+   except e
+      caught = true
+      assert(e.message.find('entry failed') != nil, 'The entry exception should propagate')
+   end
+   assert(caught, 'A raising entry should propagate its exception')
+   assert(t.a is 1, 'Entries before the failure should remain applied')
+   assert(t.b is nil and t.c is nil, 'Entries at and after the failure should not be applied')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ErrorLineIsTheEntry()
+   -- A native setter failure reports the line of the store, which must be the entry rather than the block opening.
+   local clock = obj.new('time')
+   local block_line = nil
+   local plain_line = nil
+   try
+      clock.{
+         month = 2,
+         year = {}
+      }
+   except e
+      block_line = e.line
+   end
+
+   try
+      clock.year = {}
+   except e
+      plain_line = e.line
+   end
+
+   assert(block_line != nil and plain_line != nil, 'Both stores should raise with a line')
+   assert(block_line is plain_line - 7, 'The error should point at the failing entry, got ' ..
+      tostring(block_line) .. ' with the plain store at ' .. tostring(plain_line))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectFields()
+   local clock = obj.new('time')
+   clock.{ year = 2001, month = 2, day = 3 }
+   assert(clock.year is 2001 and clock.month is 2 and clock.day is 3, 'Object fields should be assigned')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectFieldErrorsMatchPlainAssignment()
+   local clock = obj.new('time')
+
+   function capture(Callback)
+      try
+         Callback()
+      except e
+         return e.message
+      end
+      return nil
+   end
+
+   local block_unknown = capture(() => do clock.{ bogus = 1 } end)
+   local plain_unknown = capture(() => do clock.bogus = 1 end)
+   assert(block_unknown != nil, 'An unknown object field should raise')
+   assert(block_unknown is plain_unknown, 'Unknown field errors should match: ' .. tostring(block_unknown) ..
+      ' / ' .. tostring(plain_unknown))
+
+   local block_type = capture(() => do clock.{ year = {} } end)
+   local plain_type = capture(() => do clock.year = {} end)
+   assert(block_type != nil, 'An incompatible field value should raise')
+   assert(block_type is plain_type, 'Field type errors should match: ' .. tostring(block_type) .. ' / ' ..
+      tostring(plain_type))
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function ConstFieldTablesStillMutable()
+   local settings <const> = {}
+   settings.{ mode = 'fast' }
+   assert(settings.mode is 'fast', '<const> protects the binding, not the table contents')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function HiddenLocalIsNotReadable()
+   local result = debug.validate('local t = {} t.{ x = 1 } print(fieldblock)')
+   assert(result.success is false, 'The hidden base should not be reachable by name')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function BlockInHotLoopCompiles()
+   jit.on()
+   jit.flush()
+   jit.opt.start('hotloop=1', 'hotexit=1', 'minstitch=0')
+
+   function traced_block(Count)
+      local t = { x = 0, y = 0 }
+      local sum = 0
+      for i in {0 to Count} do
+         t.{ x = i, y = i * 2 }
+         sum += t.x + t.y
+      end
+      return sum
+   end
+
+   local total = 0
+   for _ in {0 to 20} do
+      total = traced_block(50)
+   end
+   assert(total is 3675, 'The loop should produce an index-dependent sum, got ' .. total)
+
+   -- A trace containing a LOOP instruction proves that the loop body holding the block was compiled.
+   local ir_loop <const> = 17 -- IRDEF order; traceIR exposes the opcode as traceIR(...).ot >> 8.
+   local loop_found = false
+   for trace_no in {1 into 30} do
+      local info = jit.util.traceInfo(trace_no)
+      if info != nil then
+         for idx in {1 into info.nins} do
+            local _, ir_ot = jit.util.traceIR(trace_no, idx)
+            if ir_ot != nil and (ir_ot >> 8) is ir_loop then loop_found = true end
+         end
+      end
+   end
+   assert(loop_found, 'A field assignment block in a hot loop should compile to a looping trace')
+end

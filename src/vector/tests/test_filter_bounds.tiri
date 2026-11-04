@@ -1,0 +1,513 @@
+   include 'display', 'vector'
+   module display as mGfx
+   module vector as mVec
+
+-- A filter's bounding-box region is measured in the coordinate system of the vector that the filter is applied to.
+-- Content that is transformed relative to that vector, such as the children of a viewBox or of a scaled group, must
+-- be mapped into the same system.  Previously each child was measured in its own units, so a filter on an SVG icon
+-- covered only a small patch of the icon.
+--
+-- A blue flood reveals the filter region.  The default region extends the content bounds by 10% on each side, and is
+-- clipped to the page.
+
+PAGE = 200
+
+function newScene():<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local filter = scene.new('VectorFilter')
+   filter.new('FloodFX', { colour=struct<FRGB> { red=0, green=0, blue=1, alpha=1 } })
+   check scene.mtAddDef('blue', filter)
+   return scene, root
+end
+
+function draw(Scene:obj):obj
+   local bmp = obj.new('bitmap', { width=PAGE, height=PAGE, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   Scene.bitmap = bmp
+   check Scene.acDraw()
+   return bmp
+end
+
+-- Return the bounding box of the blue pixels in Bitmap.
+
+function blueRegion(Bitmap:obj):table
+   local region = { left=PAGE, top=PAGE, right=-1, bottom=-1 }
+   for y in {0 into PAGE-1} do
+      for x in {0 into PAGE-1} do
+         if mGfx.ReadRGBPixel(Bitmap, x, y).blue > 200 then
+            if x < region.left then region.left = x end
+            if y < region.top then region.top = y end
+            if x > region.right then region.right = x end
+            if y > region.bottom then region.bottom = y end
+         end
+      end
+   end
+   return region
+end
+
+function assertRegion(Region:table, Left:num, Top:num, Right:num, Bottom:num, Label:str)
+   local tolerance = 2
+   assert((math.abs(Region.left - Left) <= tolerance) and (math.abs(Region.top - Top) <= tolerance) and
+      (math.abs(Region.right - Right) <= tolerance) and (math.abs(Region.bottom - Bottom) <= tolerance),
+      f'{Label}: expected filter region {Left},{Top} -> {Right},{Bottom}, got ' ..
+      f'{Region.left},{Region.top} -> {Region.right},{Region.bottom}')
+end
+
+-- The icon content is 26x38 units, scaled by 150/38 and centred horizontally in a 150x150 viewport at (20,20).  It
+-- covers (43.7,20) -> (146.3,170) on the page.
+
+ICON = { left=33, top=5, right=156, bottom=184 }
+
+@Test function NestedViewBox()
+   local scene, root = newScene()
+   local vp = root.new('VectorViewport', { x=20, y=20, width=150, height=150, filter='url(#blue)' })
+   local icon = vp.new('VectorViewport', {
+      x=0, y=0, width='100%', height='100%', viewX=25, viewY=19, viewWidth=26, viewHeight=38
+   })
+   icon.new('VectorRectangle', { x=25, y=19, width=26, height=38, fill='rgb(255,0,0)' })
+   assertRegion(blueRegion(draw(scene)), ICON.left, ICON.top, ICON.right, ICON.bottom, 'Nested viewBox')
+end
+
+@Test function OwnViewBox()
+   local scene, root = newScene()
+   local vp = root.new('VectorViewport', {
+      x=20, y=20, width=150, height=150, viewX=25, viewY=19, viewWidth=26, viewHeight=38, filter='url(#blue)'
+   })
+   vp.new('VectorRectangle', { x=25, y=19, width=26, height=38, fill='rgb(255,0,0)' })
+   assertRegion(blueRegion(draw(scene)), ICON.left, ICON.top, ICON.right, ICON.bottom, 'Own viewBox')
+end
+
+@Test function ScaledGroupChild()
+   -- Content is (30,0) -> (120,150) in the viewport, or (50,20) -> (140,170) on the page.
+   local scene, root = newScene()
+   local vp = root.new('VectorViewport', { x=20, y=20, width=150, height=150, filter='url(#blue)' })
+   local group = vp.new('VectorGroup', { })
+   local err, matrix = group.mtNewMatrix()
+   check mVec.Scale(matrix, 3, 3)
+   group.new('VectorRectangle', { x=10, y=0, width=30, height=50, fill='rgb(255,0,0)' })
+   assertRegion(blueRegion(draw(scene)), 41, 5, 149, 184, 'Scaled group child')
+end
+
+@Test function PlainChild()
+   -- Content is (60,20) -> (160,170) on the page.
+   local scene, root = newScene()
+   local vp = root.new('VectorViewport', { x=20, y=20, width=150, height=150, filter='url(#blue)' })
+   vp.new('VectorRectangle', { x=40, y=0, width=100, height=150, fill='rgb(255,0,0)' })
+   assertRegion(blueRegion(draw(scene)), 50, 5, 169, 184, 'Plain child')
+end
+
+-- A filter region may extend beyond the viewport that contains the filtered vector, as for drop shadows and glows.
+-- It is limited only by viewports that clip their content.  Content is (50,50) -> (150,150) on the page, and fills
+-- its container.
+
+function nestedFilter(Overflow:num):obj
+   local scene, root = newScene()
+   local container = root.new('VectorViewport', { x=50, y=50, width=100, height=100, overflow=Overflow })
+   local vp = container.new('VectorViewport', { x=0, y=0, width='100%', height='100%', filter='url(#blue)' })
+   vp.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='rgb(255,0,0)' })
+   return scene
+end
+
+@Test function RegionExtendsBeyondContainer()
+   assertRegion(blueRegion(draw(nestedFilter(VOF_VISIBLE))), 40, 40, 159, 159, 'Visible container')
+end
+
+@Test function HiddenContainerClipsRegion()
+   assertRegion(blueRegion(draw(nestedFilter(VOF_HIDDEN))), 50, 50, 149, 149, 'Hidden container')
+end
+
+@Test function PartialRedrawRetainsOffsetInputs()
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { width=PAGE, height=PAGE })
+   local filter = scene.new('VectorFilter', { x='-50%', y='-50%', width='200%', height='200%' })
+   filter.new('OffsetFX', { xOffset=20, yOffset=20 })
+   check scene.mtAddDef('offset', filter)
+   root.new('VectorRectangle', { x=60, y=60, width=80, height=80, fill='white', filter='url(#offset)' })
+
+   local full <close> = draw(scene)
+   local partial <close> = obj.new('bitmap', { width=PAGE, height=PAGE, bitsPerPixel=32, bkgd='0,0,0,255' })
+   partial.acClear()
+   check partial.mtSetClipRegion(100, 100, 150, 150)
+   scene.bitmap = partial
+   check scene.acDraw()
+
+   for y in {100 to 150} do
+      for x in {100 to 150} do
+         local expected = mGfx.ReadRGBPixel(full, x, y).red
+         local actual = mGfx.ReadRGBPixel(partial, x, y).red
+         assert(actual is expected, f'Partial redraw differs at {x},{y}: expected {expected}, got {actual}')
+      end
+   end
+
+   check partial.mtSetClipRegion(0, 0, PAGE, PAGE)
+   for probe in values(array<table> { {x=90,y=110}, {x=110,y=90}, {x=155,y=110}, {x=110,y=155} }) do
+      assert(mGfx.ReadRGBPixel(partial, probe.x, probe.y).red is 0, 'The final copy must respect the drawing clip')
+   end
+end
+
+@Test function ScaledClient()
+   -- The client's own transform is applied after the region is computed.  Content is (60,30) -> (159,180).
+   local scene, root = newScene()
+   local rect = root.new('VectorRectangle', { x=20, y=10, width=33, height=50, fill='rgb(255,0,0)', filter='url(#blue)' })
+   local err, matrix = rect.mtNewMatrix()
+   check mVec.Scale(matrix, 3, 3)
+   assertRegion(blueRegion(draw(scene)), 50, 15, 169, 194, 'Scaled client')
+end
+
+-- Bounding-box blur radii are fractions of the content bounds, so identical content must blur identically whether or
+-- not it is drawn through a viewBox.
+
+function renderBlur(ViewBox:bool):obj
+   local scene = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local filter = scene.new('VectorFilter', { primitiveUnits=VUNIT_BOUNDING_BOX })
+   filter.new('BlurFX', { sx=0.05, sy=0.05 })
+   check scene.mtAddDef('blur', filter)
+
+   if ViewBox then
+      local vp = root.new('VectorViewport', {
+         x=25, y=25, width=150, height=150, viewX=0, viewY=0, viewWidth=15, viewHeight=15, filter='url(#blur)'
+      })
+      vp.new('VectorRectangle', { x=3, y=3, width=9, height=9, fill='rgb(255,255,255)' })
+   else
+      local vp = root.new('VectorViewport', { x=25, y=25, width=150, height=150, filter='url(#blur)' })
+      vp.new('VectorRectangle', { x=30, y=30, width=90, height=90, fill='rgb(255,255,255)' })
+   end
+   return draw(scene)
+end
+
+@Test function BlurRadiusMatchesThroughViewBox()
+   local plain = renderBlur(false)
+   local boxed = renderBlur(true)
+
+   -- The rectangle edge is at x = 55.  Sample across it, inside and outside the content.
+
+   for x in {40 into 70} do
+      local a = mGfx.ReadRGBPixel(plain, x, 100).red
+      local b = mGfx.ReadRGBPixel(boxed, x, 100).red
+      assert(math.abs(a - b) <= 2, f'Blur differs at x={x}: plain={a}, viewBox={b}')
+   end
+
+   local outside = mGfx.ReadRGBPixel(plain, 50, 100).red
+   assert((outside > 20) and (outside < 128), f'Expected a partial blur outside the edge, got {outside}')
+end
+
+-- OffsetFX offsets in bounding box units are scaled by the width and height of the bounds by default, as per SVG.
+-- With an AspectRatio of NONE they are scaled by the normalised diagonal, so that a shadow keeps its direction on wide
+-- shapes.  The content is a 120x40 rectangle at (20,80), whose normalised diagonal is sqrt(120^2 + 40^2) / sqrt(2) =
+-- 89.4.
+
+function offsetScene(AspectRatio:num, Units:num, XOffset:num, YOffset:num):obj
+   local scene = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local filter = scene.new('VectorFilter', {
+      x='-50%', y='-50%', width='200%', height='200%', primitiveUnits=Units, aspectRatio=AspectRatio
+   })
+   filter.new('OffsetFX', { xOffset=XOffset, yOffset=YOffset })
+   check scene.mtAddDef('offset', filter)
+   root.new('VectorRectangle', { x=20, y=80, width=120, height=40, fill='white', filter='url(#offset)' })
+   return scene
+end
+
+-- Return the bounding box of the white pixels in Bitmap.
+
+function whiteRegion(Bitmap:obj):table
+   local region = { left=PAGE, top=PAGE, right=-1, bottom=-1 }
+   for y in {0 into PAGE-1} do
+      for x in {0 into PAGE-1} do
+         if mGfx.ReadRGBPixel(Bitmap, x, y).red > 200 then
+            if x < region.left then region.left = x end
+            if y < region.top then region.top = y end
+            if x > region.right then region.right = x end
+            if y > region.bottom then region.bottom = y end
+         end
+      end
+   end
+   return region
+end
+
+function assertExact(Region:table, Left:num, Top:num, Right:num, Bottom:num, Label:str)
+   assert((Region.left is Left) and (Region.top is Top) and (Region.right is Right) and (Region.bottom is Bottom),
+      f'{Label}: expected {Left},{Top} -> {Right},{Bottom}, got ' ..
+      f'{Region.left},{Region.top} -> {Region.right},{Region.bottom}')
+end
+
+@Test function OffsetBoundingBoxPerAxis()
+   local scene <close> = offsetScene(VFA_MEET, VUNIT_BOUNDING_BOX, 0.1, 0.1)
+   local bmp <close> = draw(scene)
+   assertExact(whiteRegion(bmp), 32, 84, 151, 123, 'Offset of 12 by width and 4 by height')
+end
+
+@Test function OffsetBoundingBoxDiagonal()
+   local scene <close> = offsetScene(VFA_NONE, VUNIT_BOUNDING_BOX, 0.1, 0.1)
+   local bmp <close> = draw(scene)
+   assertExact(whiteRegion(bmp), 29, 89, 148, 128, 'Diagonal offset of 8.94 on both axes')
+end
+
+@Test function OffsetUserSpaceFraction()
+   -- User space offsets are unaffected by the aspect ratio, and fractions are rounded rather than truncated.
+   for aspect in values(array<int> { VFA_MEET, VFA_NONE }) do
+      local scene <close> = offsetScene(aspect, VUNIT_USERSPACE, 10.6, -4.6)
+      local bmp <close> = draw(scene)
+      assertExact(whiteRegion(bmp), 31, 75, 150, 114, f'User space offset with aspect ratio {aspect}')
+   end
+end
+
+-- With an AspectRatio of NONE, a bounding box region extends from the bounds by fractions of the normalised diagonal,
+-- so the margin is equal on every side.  The content is a 120x40 rectangle at (40,80) with a normalised diagonal of
+-- 89.4.
+
+function regionScene(Region:table):obj
+   local scene = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local filter = scene.new('VectorFilter', Region)
+   filter.new('FloodFX', { colour=struct<FRGB> { red=0, green=0, blue=1, alpha=1 } })
+   check scene.mtAddDef('blue', filter)
+   root.new('VectorRectangle', { x=40, y=80, width=120, height=40, fill='rgb(255,0,0)', filter='url(#blue)' })
+   return scene
+end
+
+@Test function RegionPerAxis()
+   -- The default 10% margin is 12 horizontally and 4 vertically.
+   local scene <close> = regionScene({ aspectRatio=VFA_MEET })
+   local bmp <close> = draw(scene)
+   assertRegion(blueRegion(bmp), 28, 76, 171, 123, 'Per-axis default region')
+end
+
+@Test function RegionDiagonal()
+   -- The default 10% margin is 8.94 on every side.
+   local scene <close> = regionScene({ aspectRatio=VFA_NONE })
+   local bmp <close> = draw(scene)
+   assertRegion(blueRegion(bmp), 31, 71, 168, 128, 'Diagonal default region')
+end
+
+@Test function RegionDiagonalCustom()
+   -- A 25% margin is 22.36 on every side.
+   local scene <close> = regionScene({ aspectRatio=VFA_NONE, x='-25%', y='-25%', width='150%', height='150%' })
+   local bmp <close> = draw(scene)
+   assertRegion(blueRegion(bmp), 18, 58, 182, 142, 'Diagonal custom region')
+end
+
+@Test function RegionDiagonalNonUniformScale()
+   -- The local 25% margin is 10 units.  Scaling by (3,1) must turn it into 30 horizontal and 10 vertical pixels.
+   local scene <close> = obj.new('VectorScene', { pageWidth=PAGE, pageHeight=PAGE })
+   local root = scene.new('VectorViewport', { width=PAGE, height=PAGE })
+   local filter = scene.new('VectorFilter', {
+      aspectRatio=VFA_NONE, x='-25%', y='-25%', width='150%', height='150%'
+   })
+   filter.new('FloodFX', { colour=struct<FRGB> { red=0, green=0, blue=1, alpha=1 } })
+   check scene.mtAddDef('blue', filter)
+   local rect = root.new('VectorRectangle', { x=10, y=80, width=40, height=40, fill='red', filter='url(#blue)' })
+   local _, matrix = check rect.mtNewMatrix()
+   check mVec.Scale(matrix, 3, 1)
+   local bmp <close> = draw(scene)
+   assertRegion(blueRegion(bmp), 0, 70, 179, 129, 'Non-uniformly scaled diagonal region')
+end
+
+-- Filters must process content beyond the page edges, so that a shape touching or crossing an edge is filtered as if
+-- the page were larger.  The processing region was once clamped to the page, so a blur saw no slope at the edge and an
+-- emboss lost its bevel.  Each case is compared with a padded reference in which the page is enlarged by EDGE_PAD on
+-- every side and the content is moved by the same distance, so that it never reaches the reference page edges.  The
+-- filter region is in user space and moves with the content.
+
+EDGE_PAGE = 80
+EDGE_PAD  = 60
+
+function emboss(Filter:obj)
+   Filter.new('BlurFX', { sourceType='Alpha', sx=3.5, sy=3.5 })
+   local light = Filter.new('LightingFX', { type=LT_DIFFUSE, scale=5, constant=0.6 / (1.2 * math.sin(math.rad(40))) })
+   check light.mtSetDistantLight(225, 40)
+   Filter.new('CompositeFX', { operator=OP_IN, mixType='Alpha' })
+   Filter.new('CompositeFX', { operator=OP_ARITHMETIC, mixType='Graphic', k1=1.2, k3=0.4 })
+end
+
+function alphaBlur(Filter:obj)
+   Filter.new('BlurFX', { sourceType='Alpha', sx=3, sy=3 })
+end
+
+function edgeRender(Page:num, Shift:num, Rect:table, Build:func, Options:table):obj
+   local margin = Rect.margin ?? 20
+   local scene <close> = obj.new('VectorScene', { pageWidth=Page, pageHeight=Page })
+   local root = scene.new('VectorViewport', { width=Page, height=Page })
+   local filter = scene.new('VectorFilter', {
+      units=VUNIT_USERSPACE, primitiveUnits=VUNIT_USERSPACE, x=Rect.x + Shift - margin, y=Rect.y + Shift - margin,
+      width=Rect.width + (margin * 2), height=Rect.height + (margin * 2)
+   })
+   Build(filter)
+   check scene.mtAddDef('fx', filter)
+   local host = root
+   if Options?.isolated then
+      host = root.new('VectorGroup', { flags=VF_ISOLATED, filter='url(#fx)' })
+   end
+   local vector = host.new('VectorRectangle', {
+      x=Rect.x + Shift, y=Rect.y + Shift, width=Rect.width, height=Rect.height, fill='#957152',
+      filter=Options?.isolated ? nil : 'url(#fx)'
+   })
+   if Options?.background then
+      local background = scene.new('VectorFilter', {
+         units=VUNIT_USERSPACE, primitiveUnits=VUNIT_USERSPACE, x=Rect.x + Shift, y=Rect.y + Shift,
+         width=Rect.width, height=Rect.height
+      })
+      background.new('CompositeFX', {
+         operator=OP_ARITHMETIC, sourceType=Options.background, mixType='Graphic', k2=0.5, k4=0.25
+      })
+      check scene.mtAddDef('background', background)
+      vector.filter = nil
+      host.new('VectorRectangle', {
+         x=Rect.x + Shift, y=Rect.y + Shift, width=Rect.width, height=Rect.height, filter='url(#background)'
+      })
+   end
+   if Options?.maskUnits then
+      local units = Options.maskUnits
+      local mask = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=units })
+      if units is VUNIT_BOUNDING_BOX then
+         mask.viewport.{ viewWidth=1, viewHeight=1 }
+         mask.viewport.new('VectorRectangle', { width=1, height=1, fill='white' })
+      else
+         mask.viewport.new('VectorRectangle', {
+            x=Rect.x + Shift, y=Rect.y + Shift, width=Rect.width, height=Rect.height, fill='white'
+         })
+      end
+      vector.mask = mask
+   end
+   local bmp = obj.new('bitmap', { width=Page, height=Page, bitsPerPixel=32, bkgd='255,255,255,255' })
+   bmp.acClear()
+   scene.bitmap = bmp
+   check scene.acDraw()
+   if Options?.maskUnits then
+      local first_hash = mSys.GenCRC32(0, bmp.data, bmp.size)
+      bmp.acClear()
+      check scene.acDraw()
+      assert(mSys.GenCRC32(0, bmp.data, bmp.size) is first_hash, 'Cached masks must preserve their origin')
+   end
+   return bmp
+end
+
+-- Compares every page pixel with the padded reference and returns the number of pixels that differ from the white
+-- background, so that callers can confirm that the filter produced output.
+
+function isWhite(Pixel:struct):bool
+   return (Pixel.red is 255) and (Pixel.green is 255) and (Pixel.blue is 255)
+end
+
+function assertMatchesReference(Bitmap:obj, Reference:obj, Label:str):num
+   local drawn = 0
+   for y in {0 to EDGE_PAGE} do
+      for x in {0 to EDGE_PAGE} do
+         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
+         local r, g, b = p.red, p.green, p.blue
+         local q = mGfx.ReadRGBPixel(Reference, x + EDGE_PAD, y + EDGE_PAD)
+         assert((r is q.red) and (g is q.green) and (b is q.blue),
+            f'{Label}: pixel {x},{y} is {r},{g},{b}, expected {q.red},{q.green},{q.blue}')
+         if not isWhite(q) then drawn++ end
+      end
+   end
+   return drawn
+end
+
+function assertEdgeCases(Build:func, Name:str, Options:table)
+   local cases = {
+      { label='left',   x=-20, y=20,  width=60, height=40 },
+      { label='top',    x=20,  y=-20, width=40, height=60 },
+      { label='right',  x=40,  y=20,  width=60, height=40 },
+      { label='bottom', x=20,  y=40,  width=40, height=60 },
+      { label='corner', x=-20, y=-20, width=60, height=60 },
+      { label='touching the left edge', x=0, y=20, width=40, height=40 },
+      { label='covering the page', x=-10, y=-10, width=100, height=100 }
+   }
+   for _, rect in cases do
+      local bmp <close> = edgeRender(EDGE_PAGE, 0, rect, Build, Options)
+      local reference <close> = edgeRender(EDGE_PAGE + (EDGE_PAD * 2), EDGE_PAD, rect, Build, Options)
+      local drawn = assertMatchesReference(bmp, reference, f'{Name} {rect.label}')
+      assert(drawn > 0, f'{Name} {rect.label}: the filter produced no output')
+   end
+end
+
+@Test function BlurAtPageEdges()
+   assertEdgeCases(alphaBlur, 'Blur')
+end
+
+@Test function EmbossAtPageEdges()
+   assertEdgeCases(emboss, 'Emboss')
+end
+
+-- An offset can move content from beyond the page into view.  The rectangle lies entirely above the page and is moved
+-- 40 units down, so it covers rows 10 to 29.
+
+function assertOffPageOffset(Options:table)
+   local offset = function(Filter:obj)
+      Filter.new('OffsetFX', { xOffset=-30, yOffset=40 })
+   end
+
+   local rect = { x=50, y=-30, width=40, height=20, margin=50 }
+   local bmp <close> = edgeRender(EDGE_PAGE, 0, rect, offset, Options)
+   local reference <close> = edgeRender(EDGE_PAGE + (EDGE_PAD * 2), EDGE_PAD, rect, offset, Options)
+   assertMatchesReference(bmp, reference, 'Offset from above the page')
+   assert(mGfx.ReadRGBPixel(bmp, 40, 20).red is 149, 'The offset content must be visible')
+   assert(isWhite(mGfx.ReadRGBPixel(bmp, 40, 35)), 'The offset content must keep its size')
+   assert(isWhite(mGfx.ReadRGBPixel(bmp, 40, 5)), 'The offset content must keep its position')
+end
+
+@Test function OffsetMovesOffPageContentIntoView()
+   assertOffPageOffset()
+end
+
+@Test function MaskedFiltersAtPageEdges()
+   for units in values(array<int> { VUNIT_USERSPACE, VUNIT_BOUNDING_BOX }) do
+      local options = { maskUnits=units }
+      assertEdgeCases(alphaBlur, 'Masked blur', options)
+      assertOffPageOffset(options)
+   end
+end
+
+@Test function IsolatedFiltersAtPageEdges()
+   local options = { isolated=true }
+   assertEdgeCases(alphaBlur, 'Isolated blur', options)
+   assertOffPageOffset(options)
+   local graphic_blur = function(Filter:obj)
+      Filter.new('BlurFX', { sx=3, sy=3 })
+   end
+   -- Background inputs must also account for a local isolation buffer with a positive scene origin.
+   local rect = { x=20, y=20, width=40, height=40 }
+   for source in values(array<str> { 'Bkgd', 'BkgdAlpha' }) do
+      local background_options = { isolated=true, background=source }
+      local bmp <close> = edgeRender(EDGE_PAGE, 0, rect, graphic_blur, background_options)
+      local reference <close> = edgeRender(EDGE_PAGE + (EDGE_PAD * 2), EDGE_PAD, rect,
+         graphic_blur, background_options)
+      assertMatchesReference(bmp, reference, f'Isolated {source} origin')
+   end
+end
+
+-- A filter that moves between regions of different sizes must produce the same output as a newly created filter.
+
+@Test function RepeatedDrawsResizeTheRegion()
+   local scene <close> = obj.new('VectorScene', { pageWidth=EDGE_PAGE, pageHeight=EDGE_PAGE })
+   local root = scene.new('VectorViewport', { width=EDGE_PAGE, height=EDGE_PAGE })
+   local filter = scene.new('VectorFilter', { units=VUNIT_USERSPACE, primitiveUnits=VUNIT_USERSPACE })
+   emboss(filter)
+   check scene.mtAddDef('fx', filter)
+   local vector = root.new('VectorRectangle', { fill='#957152', filter='url(#fx)' })
+   local bmp <close> = obj.new('bitmap', {
+      width=EDGE_PAGE, height=EDGE_PAGE, bitsPerPixel=32, bkgd='255,255,255,255'
+   })
+   scene.bitmap = bmp
+
+   for _, rect in { { x=-20, y=-20, width=60, height=60 }, { x=30, y=30, width=20, height=20 },
+                    { x=-10, y=-10, width=100, height=100 }, { x=20, y=20, width=40, height=40 } } do
+      vector.{ x=rect.x, y=rect.y, width=rect.width, height=rect.height }
+      filter.{ x=rect.x - 20, y=rect.y - 20, width=rect.width + 40, height=rect.height + 40 }
+      bmp.acClear()
+      check scene.acDraw()
+
+      local fresh <close> = edgeRender(EDGE_PAGE, 0, rect, emboss)
+      for y in {0 to EDGE_PAGE by 3} do
+         for x in {0 to EDGE_PAGE by 3} do
+            local p = mGfx.ReadRGBPixel(bmp, x, y)
+            local r, b = p.red, p.blue
+            local q = mGfx.ReadRGBPixel(fresh, x, y)
+            assert((r is q.red) and (b is q.blue), f'Redraw at {rect.x},{rect.y} differs at {x},{y}')
+         end
+      end
+   end
+end

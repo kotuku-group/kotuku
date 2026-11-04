@@ -12,6 +12,7 @@
 // All value evaluators consume comparison utilities from xpath_evaluator_detail.h and navigation
 // functions from xpath_evaluator_navigation.cpp to maintain clean separation of concerns.
 
+#include "eval_detail.h"
 #include "../api/xquery_functions.h"
 #include "../../xml/schema/schema_types.h"
 
@@ -174,23 +175,6 @@ struct ConstructorLookupResult
    return true;
 }
 
-[[nodiscard]] static std::optional<std::string> resolve_namespace_uri(const XPathContext &Context, std::string_view Prefix)
-{
-   if (Prefix.empty()) return std::nullopt;
-
-   if (auto prolog = Context.prolog) {
-      auto iter = prolog->declared_namespace_uris.find(std::string(Prefix));
-      if (iter != prolog->declared_namespace_uris.end()) return iter->second;
-   }
-
-   if (Prefix IS std::string_view("xs")) return std::string(xml_schema_namespace_uri);
-   if (Prefix IS std::string_view("fn")) return std::string(xpath_functions_namespace_uri);
-   if (Prefix IS std::string_view("local")) return std::string(xquery_local_namespace_uri);
-   if (Prefix IS std::string_view("xml")) return std::string(xml_namespace_uri);
-   if (Prefix IS std::string_view("xmlns")) return std::string(xmlns_namespace_uri);
-   return std::nullopt;
-}
-
 [[nodiscard]] static ConstructorLookupResult resolve_constructor_descriptor(
    std::string_view FunctionName, const XPathContext &Context)
 {
@@ -262,55 +246,6 @@ struct ConstructorLookupResult
    return result;
 }
 
-static bool parse_qname_lexical_value(std::string_view Value, std::string &Prefix, std::string &Local)
-{
-   auto trimmed = trim_view(Value);
-   if (trimmed.empty()) return false;
-
-   size_t colon = trimmed.find(':');
-   if (colon IS std::string_view::npos)
-   {
-      if (not is_valid_ncname(trimmed)) return false;
-      Prefix.clear();
-      Local.assign(trimmed);
-      return true;
-   }
-
-   std::string_view prefix_view = trimmed.substr(0, colon);
-   std::string_view local_view = trimmed.substr(colon + 1);
-   if (prefix_view.empty() or local_view.empty()) return false;
-   if (not is_valid_ncname(prefix_view) or not is_valid_ncname(local_view)) return false;
-   if (prefix_view IS std::string_view("xmlns")) return false;
-
-   Prefix.assign(prefix_view);
-   Local.assign(local_view);
-   return true;
-}
-
-static std::string canonicalise_qname_value(std::string_view NamespaceURI, std::string_view Prefix,
-   std::string_view Local)
-{
-   std::string result("Q{");
-   result.append(NamespaceURI);
-   result.push_back('}');
-   if (!Prefix.empty())
-   {
-      result.append(Prefix);
-      result.push_back(':');
-   }
-   result.append(Local);
-   return result;
-}
-
-static std::optional<std::string> resolve_default_element_namespace(const XPathContext &Context)
-{
-   if (auto prolog = Context.prolog)
-   {
-      if (prolog->default_element_namespace_uri.has_value()) return prolog->default_element_namespace_uri;
-   }
-   return std::nullopt;
-}
-
 [[nodiscard]] static bool is_expanded_qname(std::string_view QName)
 {
    if ((QName.size() <= 3) or (not (QName[0] IS 'Q')) or (not (QName[1] IS '{'))) return false;
@@ -333,6 +268,69 @@ static std::optional<std::string> resolve_default_element_namespace(const XPathC
 }
 
 } // namespace
+
+std::optional<std::string> resolve_namespace_uri(const XPathContext &Context, std::string_view Prefix)
+{
+   if (Prefix.empty()) return std::nullopt;
+
+   if (auto prolog = Context.prolog) {
+      auto iter = prolog->declared_namespace_uris.find(Prefix);
+      if (iter != prolog->declared_namespace_uris.end()) return iter->second;
+   }
+
+   if (Prefix IS std::string_view("xs")) return std::string(xml_schema_namespace_uri);
+   if (Prefix IS std::string_view("fn")) return std::string(xpath_functions_namespace_uri);
+   if (Prefix IS std::string_view("local")) return std::string(xquery_local_namespace_uri);
+   if (Prefix IS std::string_view("xml")) return std::string(xml_namespace_uri);
+   if (Prefix IS std::string_view("xmlns")) return std::string(xmlns_namespace_uri);
+   return std::nullopt;
+}
+
+bool parse_qname_lexical_value(std::string_view Value, std::string &Prefix, std::string &Local)
+{
+   auto trimmed = trim_view(Value);
+   if (trimmed.empty()) return false;
+
+   size_t colon = trimmed.find(':');
+   if (colon IS std::string_view::npos) {
+      if (not is_valid_ncname(trimmed)) return false;
+      Prefix.clear();
+      Local.assign(trimmed);
+      return true;
+   }
+
+   std::string_view prefix_view = trimmed.substr(0, colon);
+   std::string_view local_view = trimmed.substr(colon + 1);
+   if (prefix_view.empty() or local_view.empty()) return false;
+   if (not is_valid_ncname(prefix_view) or not is_valid_ncname(local_view)) return false;
+   if (prefix_view IS std::string_view("xmlns")) return false;
+
+   Prefix.assign(prefix_view);
+   Local.assign(local_view);
+   return true;
+}
+
+std::string canonicalise_qname_value(std::string_view NamespaceURI, std::string_view Prefix,
+   std::string_view Local)
+{
+   std::string result("Q{");
+   result.append(NamespaceURI);
+   result.push_back('}');
+   if (!Prefix.empty()) {
+      result.append(Prefix);
+      result.push_back(':');
+   }
+   result.append(Local);
+   return result;
+}
+
+std::optional<std::string> resolve_default_element_namespace(const XPathContext &Context)
+{
+   if (auto prolog = Context.prolog) {
+      if (prolog->default_element_namespace_uri.has_value()) return prolog->default_element_namespace_uri;
+   }
+   return std::nullopt;
+}
 
 //********************************************************************************************************************
 
@@ -535,6 +533,11 @@ static std::optional<XPathVal> resolve_registered_function(XPathEvaluator &Evalu
    }
 
    if (callback IS Evaluator.query->RegisteredFunctions.end()) return std::nullopt;
+   if (callback->second.stale()) {
+      callback->second.unpin();
+      Evaluator.query->RegisteredFunctions.erase(callback);
+      return std::nullopt;
+   }
 
    std::vector<XPathValue> public_args;
    public_args.reserve(Args.size());
@@ -1912,7 +1915,7 @@ XPathVal XPathEvaluator::evaluate_computed_element_constructor(const XPathNode *
       if (not context.context_node) [[unlikely]] return std::nullopt;
 
       uint32_t resolved_hash = 0;
-      if (xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash) IS ERR::Okay) return resolved_hash;
+      if (!xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash)) return resolved_hash;
       return std::nullopt;
    };
 
@@ -2037,7 +2040,7 @@ XPathVal XPathEvaluator::evaluate_computed_attribute_constructor(const XPathNode
       if (not context.context_node) [[unlikely]] return std::nullopt;
 
       uint32_t resolved_hash = 0;
-      if (xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash) IS ERR::Okay) return resolved_hash;
+      if (!xml->resolvePrefix(Prefix, context.context_node->ID, resolved_hash)) return resolved_hash;
       return std::nullopt;
    };
 
@@ -2452,7 +2455,7 @@ ERR XPathEvaluator::process_expression_node_set(const XPathVal &Value)
 
 ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_t CurrentPrefix)
 {
-   if (not Node) return ERR::Failed;
+   if (not Node) return ERR::NullArgs;
 
    const XPathNode *expression = Node;
 
@@ -2465,7 +2468,7 @@ ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_
    auto value = evaluate_expression(expression, CurrentPrefix);
    if (expression_unsupported) {
       if (xml and xml->ErrorMsg.empty()) xml->ErrorMsg = "Unsupported XPath expression.";
-      return ERR::Failed;
+      return ERR::NoSupport;
    }
 
    switch (value.Type) {
@@ -2483,7 +2486,7 @@ ERR XPathEvaluator::evaluate_top_level_expression(const XPathNode *Node, uint32_
          return ERR::Okay;
    }
 
-   return ERR::Failed;
+   return ERR::InvalidType;
 }
 
 //********************************************************************************************************************

@@ -1,0 +1,446 @@
+-- Internal transport and viewport routing, using deterministic pointer input on the headless driver.
+
+   include 'display', 'vector'
+   module display as mGfx
+   module vector as mVec
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576 -- The top 20 bits of the mantissa occupy the high word
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, Value0:num!, Value1:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, Value0)
+   putDouble(input, 8, Value1)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function moveTo(Surface:obj!, X:num!, Y:num!)
+   feed(JET_ABS_XY, Surface.absX + X, Surface.absY + Y)
+end
+
+function newScene():<obj, obj, obj>
+   local surface = obj.new('Surface', { width=200, height=120 })
+   local scene = surface.new('VectorScene', { surface=surface, flags=VPF_DROP_TARGETS })
+   local root = scene.new('VectorViewport', { width=200, height=120 })
+   surface.acShow()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, scene, root
+end
+
+function beginDrag(Surface:obj!, Source:obj!, Types:str!)
+   moveTo(Surface, 10, 10)
+   feed(JET_LMB, 1, 0)
+   check mGfx.StartCursorDrag(Source.id, 42, Types, 0)
+end
+
+@AfterEach function releaseButtons()
+   local pointer = obj.find('SystemPointer')
+   if pointer then
+      pointer.acDeactivate()
+      feed(JET_LMB, 0, 0)
+      feed(JET_RMB, 0, 0)
+   end
+end
+
+@Test function AdjacentNestedAndEmptyTargets()
+   local surface <close>, scene, root = newScene()
+   local left = root.new('VectorViewport', { width=100, height=120, dropTarget=1 })
+   local right = root.new('VectorViewport', { x=100, width=100, height=120, dropTarget=1 })
+   local nested = right.new('VectorViewport', { x=20, y=20, width=40, height=40, dropTarget=1 })
+   nested.new('VectorRectangle', { width=40, height=40, fill='red' }) -- Decorative child selects its container.
+   local hits = { left=0, right=0, nested=0 }
+   left.subscribe('DragDrop', function() hits.left++ end)
+   right.subscribe('DragDrop', function() hits.right++ end)
+   nested.subscribe('DragDrop', function(Script, Args)
+      hits.nested++
+      assert(Args.item is 42, 'The original item number must be forwarded')
+      assert(Args.source.id is left.id, 'The source must be a usable object reference')
+      local err = mGfx.StartCursorDrag(left.id, 43, string.char(DATA_TEXT), 0)
+      assert(err is ERR_InUse, 'A receiver must not replace the session while completion is in progress')
+      assert(scene.dropTarget?.id is nested.id, 'The dispatch target must be frozen')
+      assert(math.abs(scene.dropX - 10) < 0.01 and math.abs(scene.dropY - 10) < 0.01,
+         'Drop coordinates must be local to the nested target')
+      moveTo(surface, 180, 100)
+      assert(scene.dropTarget?.id is nested.id and math.abs(scene.dropX - 10) < 0.01,
+         'Pointer movement during delivery must not change the snapshot')
+   end)
+   -- Only the source subscribes to ordinary input. Drop targets must not depend on input boundaries.
+   left.mtSubscribeInput(JTYPE_MOVEMENT|JTYPE_BUTTON, function() end)
+   surface.acDraw()
+   beginDrag(surface, left, string.char(DATA_TEXT))
+   moveTo(surface, 130, 30)
+   assert(scene.dropTarget?.id is nested.id, 'Destination hover must ignore the source button capture')
+   feed(JET_RMB, 1, 0)
+   feed(JET_RMB, 0, 0)
+   assert(obj.find('SystemPointer').dragSource?.id is left.id, 'Secondary release must preserve the session')
+   assert(hits.nested is 0, 'Secondary release must not deliver a drop')
+   feed(JET_LMB, 0, 0)
+   assert(hits.nested is 1 and hits.left is 0 and hits.right is 0, 'Exactly one nested target must receive a drop')
+   assert(obj.find('SystemPointer').dragSource is nil, 'Completion must clear the source')
+
+   beginDrag(surface, left, string.char(DATA_TEXT))
+   moveTo(surface, 180, 100) -- No shapes here: the registered viewport itself is the target.
+   feed(JET_LMB, 0, 0)
+   assert(hits.right is 1 and hits.left is 0, 'Empty adjacent target space must receive a drop')
+end
+
+@Test function DatatypesAreBoundedAndReplaced()
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local received = ''
+   root.subscribe('DragDrop', function(Script, Args) received = Args.datatype end)
+   local types = string.char(1, 2, 0, 4, 5, 6, 7, 8, 9, 10)
+   beginDrag(surface, root, types)
+   feed(JET_LMB, 0, 0)
+   assert(received is string.char(1, 2, 0, 4, 5, 6, 7, 8), 'An unterminated sequence must be bounded at eight bytes')
+   beginDrag(surface, root, string.char(DATA_TEXT))
+   feed(JET_LMB, 0, 0)
+   assert(received is string.char(DATA_TEXT), 'Shorter sessions must not advertise stale bytes')
+end
+
+@Test function CancellationAndSourceDestruction()
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local hits = 0
+   root.subscribe('DragDrop', function() hits++ end)
+   local source = root.new('VectorRectangle', { width=10, height=10 })
+   local preview <close> = obj.new('Surface', { width=20, height=20 })
+   moveTo(surface, 10, 10)
+   feed(JET_LMB, 1, 0)
+   check mGfx.StartCursorDrag(source.id, 1, string.char(DATA_TEXT), preview.id)
+   check obj.find('SystemPointer').acDeactivate()
+   assert(obj.find('SystemPointer').dragSource is nil, 'Explicit cancellation must clear the source')
+   assert(obj.find('SystemPointer').dragItem is 0 and scene.dropTarget is nil,
+      'Cancellation must clear the item and drag destination')
+   assert(not (preview.flags has RNF_VISIBLE), 'Cancellation must hide the preview without freeing it')
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0, 'Cancellation must not deliver a drop')
+   beginDrag(surface, source, string.char(DATA_TEXT))
+   source.free()
+   assert(obj.find('SystemPointer').dragSource is nil, 'Freeing the source must cancel the session')
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0, 'A destroyed source must never deliver a drop')
+end
+
+@Test function ClippingVisibilityAndStacking()
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local parent = root.new('VectorViewport', { x=20, y=20, width=50, height=50 })
+   local child = parent.new('VectorViewport', { x=30, width=50, height=50, dropTarget=1 })
+   local front = root.new('VectorViewport', { x=100, width=100, height=120 })
+   beginDrag(surface, root, string.char(DATA_TEXT))
+   moveTo(surface, 60, 30)
+   assert(scene.dropTarget?.id is child.id, 'A nested target must be selectable inside its ancestor clip')
+   moveTo(surface, 80, 30)
+   assert(scene.dropTarget?.id is root.id, 'Overflow outside the parent viewport must not select its child')
+   moveTo(surface, 130, 30)
+   assert(scene.dropTarget?.id is root.id, 'Unregistered front viewports must route to the nearest registered ancestor')
+   front.dropTarget = 1
+   assert(scene.dropTarget?.id is front.id, 'Registration must take effect without drawing or input subscription')
+   front.visibility = VIS_HIDDEN
+   assert(scene.dropTarget?.id is root.id, 'Hidden targets must be excluded immediately')
+   child.free()
+   moveTo(surface, 60, 30)
+   assert(scene.dropTarget?.id is root.id, 'Freed targets must not leave stale registration')
+end
+
+@Test function OverlappingEmptyViewports()
+   local surface <close>, scene, root = newScene()
+   local back = root.new('VectorViewport', { width=100, height=100, dropTarget=1 })
+   local front = root.new('VectorViewport', { width=100, height=100, dropTarget=1 })
+   local back_hits = 0
+   local front_hits = 0
+   back.subscribe('DragDrop', function() back_hits++ end)
+   front.subscribe('DragDrop', function() front_hits++ end)
+   beginDrag(surface, root, string.char(DATA_TEXT))
+   moveTo(surface, 30, 30)
+   assert(scene.dropTarget?.id is front.id, 'The front empty viewport must win over the back viewport')
+   feed(JET_LMB, 0, 0)
+   assert(front_hits is 1 and back_hits is 0, 'Only the front viewport must receive the drop')
+end
+
+@Test function HiddenFirstViewportWithVisibleSibling()
+   local surface <close>, scene, root = newScene()
+   root.visibility = VIS_HIDDEN
+   local sibling = scene.new('VectorViewport', { width=200, height=120, dropTarget=1 })
+   local hits = 0
+   sibling.subscribe('DragDrop', function() hits++ end)
+   beginDrag(surface, sibling, string.char(DATA_TEXT))
+   assert(scene.dropTarget?.id is sibling.id, 'A visible top-level sibling must remain a drop target')
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1, 'Hiding the first viewport must not prevent delivery to its visible sibling')
+end
+
+@Test function RotatedRootRejectsBoundingBoxCorners()
+   local surface <close>, scene, root = newScene()
+   root.{ x=80, y=0, width=100, height=50, overflow=VOF_HIDDEN, dropTarget=1 }
+   local _, matrix = check root.mtNewMatrix()
+   check mVec.ParseTransform(matrix, 'rotate(45)')
+   local hits = 0
+   root.subscribe('DragDrop', function() hits++ end)
+   surface.acDraw()
+   beginDrag(surface, root, string.char(DATA_TEXT))
+   moveTo(surface, 80, 35)
+   assert(scene.dropTarget?.id is root.id, 'A point inside the rotated root must select it')
+   moveTo(surface, 50, 5) -- Inside the bounding rectangle, but outside the rotated viewport path.
+   assert(scene.dropTarget is nil, 'A point outside the rotated root path must not select a target')
+   assert(scene.dropX is 0 and scene.dropY is 0, 'A rejected drop point must have no target coordinates')
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0, 'A point outside the rotated root path must not deliver a drop')
+end
+
+@Test function OneRoutingScenePerSurface()
+   local surface <close>, scene, root = newScene()
+   local rejected = false
+   try
+      local other <close> = surface.new('VectorScene', { surface=surface, flags=VPF_DROP_TARGETS })
+   except e
+      rejected = true
+   end
+   assert(rejected, 'A second routing scene must be rejected to prevent duplicate delivery')
+end
+
+@Test function CrossSurfaceAndTransformedTarget()
+   local origin <close>, source_scene, source = newScene()
+   local destination <close>, scene, root = newScene()
+   origin.x = 300
+   local target = root.new('VectorViewport', { x=40, y=20, width=40, height=30, dropTarget=1 })
+   local _, matrix = check target.mtNewMatrix()
+   check mVec.ParseTransform(matrix, 'scale(2)')
+   local hits = 0
+   target.subscribe('DragDrop', function()
+      hits++
+      assert(math.abs(scene.dropX - 30) < 0.01 and math.abs(scene.dropY - 15) < 0.01,
+         'Transformed targets must receive inverse-transformed coordinates')
+   end)
+   destination.acDraw()
+   obj.find('SystemPointer').surface = origin
+   beginDrag(origin, source, string.char(DATA_TEXT))
+   -- A host window-enter event changes the pointer's root surface. Emulate that event for separate headless windows.
+   obj.find('SystemPointer').surface = destination
+   moveTo(destination, 100, 50)
+   assert(scene.dropTarget?.id is target.id, 'An independent scene on another surface must resolve its target')
+   feed(JET_LMB, 0, 0)
+   assert(hits is 1, 'A cross-surface drop must be delivered exactly once')
+end
+
+@Test function SynchronousReceiptThroughVectorBridge()
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local requested = false
+   local received = false
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes)
+         assert(Item is 42 and Datatypes[0] is DATA_FILE, 'The exact item and requested datatype must reach the source')
+         requested = true
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT,
+            '<receipt id="42"><file path="/tmp/one &amp; two.txt"/><file path="/tmp/三.txt"/></receipt>')
+      end
+   })
+   root.subscribe('DragDrop', function(Script, Args)
+      input.requestItem(Args.source, Args.item, 'file', function(Items)
+         assert(#Items is 2, 'Both files must be available within the synchronous offer lifetime')
+         assert(Items[0].path is '/tmp/one & two.txt' and Items[1].path is '/tmp/三.txt',
+            'Receipt paths must preserve spaces, XML characters and Unicode')
+         received = true
+      end)
+      assert(received, 'Receipt retrieval must finish before the drop callback returns')
+   end)
+   beginDrag(surface, source, string.char(DATA_FILE))
+   feed(JET_LMB, 0, 0)
+   assert(requested and received, 'The vector bridge must preserve synchronous request and receipt delivery')
+end
+
+-- Receipts are correlated with requests by source and item.  These call input.requestItem() directly, without a
+-- pointer session.
+
+function itemReceipt(Item:num!):str
+   return f'<receipt id="{Item}"><file path="/item{Item}"/></receipt>'
+end
+
+@Test function ReceiptCallbackCanRequestFromTheSameSource()
+   local results = array<str>
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes)
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT, itemReceipt(Item))
+      end
+   })
+   input.requestItem(source, 1, 'file', function(Items)
+      results.push('first:' .. Items[0].path)
+      input.requestItem(source, 2, 'file', function(Items)
+         results.push('second:' .. Items[0].path)
+      end)
+   end)
+   assert(#results is 2, f'Each request must be answered exactly once, got {#results} callbacks')
+   assert(results[0] is 'first:/item1' and results[1] is 'second:/item2',
+      f'A nested request must receive its own receipt, got {results[0]} and {results[1]}')
+end
+
+@Test function DeferredReceiptsAreMatchedByItem()
+   local requester
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes)
+         requester = Requester -- Answered later
+      end
+   })
+   local results = { }
+   input.requestItem(source, 1, 'file', function(Items) results.first = Items[0].path end)
+   input.requestItem(source, 2, 'file', function(Items) results.second = Items[0].path end)
+   assert(requester, 'The source must receive the requests')
+
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(9))
+   assert(results.first is nil and results.second is nil, 'A receipt for an unrequested item must be ignored')
+
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(2))
+   assert(results.second is '/item2' and results.first is nil, 'A receipt must only answer the matching request')
+
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(1))
+   assert(results.first is '/item1', 'An earlier request must still be answered after a later one')
+
+   results.first = nil
+   check requester.acDataFeed(source, DATA_RECEIPT, itemReceipt(1))
+   assert(results.first is nil, 'A request must not be answered twice')
+end
+
+@Test function ReceiptWithoutIdAnswersTheOldestRequest()
+   local requester
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes) requester = Requester end
+   })
+   local order = array<int>
+   input.requestItem(source, 5, 'file', function(Items) order.push(5) end)
+   input.requestItem(source, 6, 'file', function(Items) order.push(6) end)
+   check requester.acDataFeed(source, DATA_RECEIPT, '<receipt><file path="/anonymous"/></receipt>')
+   assert(#order is 1 and order[0] is 5, 'A receipt without an id must answer only the oldest request')
+   check requester.acDataFeed(source, DATA_RECEIPT, '<receipt><file path="/anonymous"/></receipt>')
+   assert(#order is 2 and order[1] is 6, 'The next receipt without an id must answer the remaining request')
+end
+
+-- Native text receipts (Windows and Wayland) carry the text as element content rather than an attribute.
+
+@Test function ReceiptElementContentIsExposed()
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      requestHandler=function(Clipboard, Requester, Item, Datatypes)
+         check Requester.acDataFeed(Clipboard, DATA_RECEIPT,
+            f'<receipt id="{Item}"><text>one &amp; &lt;two&gt; 三</text><text/>' ..
+            '<file path="/a"/><note content="attrib">ignored</note></receipt>')
+      end
+   })
+   local items
+   input.requestItem(source, 3, 'text', function(Items) items = Items end)
+   assert(items, 'The receipt must be delivered')
+   assert(items[0].item is 'text' and items[0].content is 'one & <two> 三',
+      f'Text content must be unescaped and exposed as content, got {items[0].content}')
+   assert(items[1].item is 'text' and items[1].content is nil, 'An empty element must have no content field')
+   assert(items[2].path is '/a' and items[2].content is nil, 'An attribute-only element must have no content field')
+   assert(items[3].content is 'attrib', 'A content attribute must take precedence over element content')
+end
+
+@Test function ClipboardSourceIsToldHowTheSessionEnded()
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local pointer = obj.find('SystemPointer')
+   local results = array<int>
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP,
+      dragEndHandler=function(Clipboard, Item, Result)
+         assert(Item is 42, 'The session item must be reported to the source')
+         assert(pointer.dragSource is nil, 'The pointer session must be clear before the source is notified')
+         results.push(Result)
+      end
+   })
+   beginDrag(surface, source, string.char(DATA_TEXT))
+   feed(JET_LMB, 0, 0)
+   assert(#results is 1 and results[0] is ERR_Okay, 'A dispatched drop must be reported once with ERR_Okay')
+
+   beginDrag(surface, source, string.char(DATA_TEXT))
+   check pointer.acDeactivate()
+   feed(JET_LMB, 0, 0)
+   assert(#results is 2 and results[1] is ERR_Cancelled, 'Cancellation must be reported once with ERR_Cancelled')
+   check pointer.acDeactivate()
+   assert(#results is 2, 'Deactivate without an active session must not notify the source')
+
+   root.subscribe('DragDrop', function() pointer.acDeactivate() end)
+   beginDrag(surface, source, string.char(DATA_TEXT))
+   feed(JET_LMB, 0, 0)
+   assert(#results is 3 and results[2] is ERR_Cancelled,
+      'A session cancelled during delivery must be reported once, as a cancellation')
+end
+
+@Test function FreedClipboardSourceIsNotNotified()
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local notified = 0
+   local hits = 0
+   root.subscribe('DragDrop', function() hits++ end)
+   local source = obj.new('Clipboard', { flags=CPF_DRAG_DROP, dragEndHandler=function() notified++ end })
+   beginDrag(surface, source, string.char(DATA_TEXT))
+   source.free()
+   feed(JET_LMB, 0, 0)
+   assert(notified is 0 and hits is 0, 'A freed source must be neither notified nor delivered')
+end
+
+@Test function ParentedDragPreviewStartsAndMovesAtPointerOffset()
+   local surface <close>, scene, root = newScene()
+   surface.x, surface.y = 100, 80
+   root.dropTarget = 1
+   local parent = surface.new('Surface', { x=20, y=15, width=150, height=90 })
+   parent.acShow()
+   local preview <close> = parent.new('Surface', {
+      width=32, height=32, flags=RNF_COMPOSITE | RNF_NO_FOCUS
+   })
+   local source <close> = obj.new('Clipboard', { flags=CPF_DRAG_DROP })
+   moveTo(surface, 10, 10)
+   feed(JET_LMB, 1, 0)
+   check mGfx.StartCursorDrag(source.id, 1, string.char(DATA_XML), preview.id)
+   local pointer = obj.find('SystemPointer')
+   assert(preview.flags has RNF_VISIBLE, 'Starting a drag shows the preview')
+   assert(preview.absX is pointer.x + 10 and preview.absY is pointer.y + 12,
+      'Initial placement accounts for every ancestor of the preview')
+   moveTo(surface, 15, 15)
+   assert(preview.absX is pointer.x + 10 and preview.absY is pointer.y + 12,
+      'Movement uses the same offset as the initial placement')
+   feed(JET_LMB, 0, 0)
+   assert(not (preview.flags has RNF_VISIBLE), 'Dropping hides the preview without freeing it')
+   assert(obj.find(preview.id), 'The client retains ownership after a drop')
+end
+
+@Test function WindowsDragOutsideRegisteredWindowsIsCancelled()
+   if mGfx.GetDisplayType() != DT_WINGDI then return end
+   local surface <close>, scene, root = newScene()
+   root.dropTarget = 1
+   local pointer = obj.find('SystemPointer')
+   pointer.surface = surface
+   local hits = 0
+   local result
+   root.subscribe('DragDrop', function() hits++ end)
+   local source <close> = obj.new('Clipboard', {
+      flags=CPF_DRAG_DROP, dragEndHandler=function(Clipboard, Item, Result) result = Result end
+   })
+   beginDrag(surface, source, string.char(DATA_TEXT))
+   -- Windows reports surface zero while capture continues outside the application's client windows.
+   pointer.surface = 0
+   feed(JET_ABS_XY, surface.absX + surface.width + 40, surface.absY + surface.height + 40)
+   assert(pointer.overObject is nil, 'Leaving registered windows must clear the internal drop destination')
+   feed(JET_LMB, 0, 0)
+   assert(hits is 0 and result is ERR_Cancelled, 'An outside release must cancel without dispatching a drop')
+end

@@ -6,9 +6,9 @@ implementations.
 
 ## Overview
 
-The LuaJIT library system uses a sophisticated code generation pipeline where source annotations (LJLIB_* macros) are
-processed by the `buildvm` tool at build time to generate dispatch tables, function enumerations, and recording hints
-for the JIT compiler.
+The LuaJIT library system uses a code generation pipeline where source annotations (`LJLIB_*` macros) are processed
+by the `buildvm` tool at build time to generate dispatch tables, function enumerations, bytecode metadata and recording
+hints for the JIT compiler.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -17,7 +17,8 @@ for the JIT compiler.
                              │ buildvm (build-time tool)
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Generated headers: lj_ffdef.h, lj_libdef.h, lj_recdef.h     │
+│ Generated headers: lj_bcdef.h, lj_ffdef.h, lj_libdef.h,     │
+│                    lj_recdef.h                              │
 └────────────────────────────┬────────────────────────────────┘
                              │ compiled into
                              ▼
@@ -28,8 +29,8 @@ for the JIT compiler.
 
 ## LIB Macros Reference
 
-The LJLIB_* macros are defined in `lib.h` and serve as annotations that buildvm parses. They do not generate code
-directly - instead, buildvm extracts the information and produces header files.
+The `LJLIB_*` macros are defined in `lib.h` and serve as annotations that `buildvm` parses.  Most expand to nothing in
+the C++ compiler; `LJLIB_CF` and `LJLIB_ASM` also declare their implementation functions.
 
 ### Function Declaration Macros
 
@@ -38,7 +39,10 @@ directly - instead, buildvm extracts the information and produces header files.
 | `LJLIB_CF(name)` | Pure C function implementation | `lj_cf_##name(lua_State *L)` |
 | `LJLIB_ASM(name)` | Assembly fast-path with C fallback | `lj_ffh_##name(lua_State *L)` |
 | `LJLIB_ASM_(name)` | Assembly-only (no C fallback) | None (asm only) |
-| `LJLIB_LUA(name)` | Lua bytecode implementation | Embedded bytecode |
+| `LJLIB_LUA(name)` | Deprecated and rejected by `buildvm` | None |
+
+Do not add `LJLIB_LUA`.  Convert embedded implementations to `LJLIB_CF`; the former precompiled-bytecode path is no
+longer supported.
 
 **Example:**
 ```cpp
@@ -68,8 +72,13 @@ LJLIB_ASM(assert)
 |-------|---------|
 | `LJLIB_PUSH(value)` | Push a value onto the stack during library init |
 | `LJLIB_SET(name)` | Set the pushed value as a field in the library table |
-| `LJLIB_NOREG` | Do not register the function in the library table |
-| `LJLIB_NOREGUV` | Do not register but support upvalues |
+| `LJLIB_NOREG` | Reserve the fast-function ID without creating or registering a closure |
+| `LJLIB_NOREGUV` | Create an internal closure with upvalues but no public table entry |
+| `LJLIB_INTRINSIC` | Register an internal compiler intrinsic without publishing a table entry |
+
+Registration markers apply to the next generated-library function and are mutually exclusive.  Every generated
+function receives a stable built-in callable identity.  Closures created for normal, `NOREGUV` and `INTRINSIC`
+entries are rooted in the state-local built-in registry; `NOREG` only advances the ID.
 
 **LJLIB_PUSH values:**
 - String literals: `LJLIB_PUSH("string")`
@@ -109,40 +118,42 @@ LJLIB_REC(xpairs 1)                  // Uses recff_xpairs with data=1 for ipairs
 
 ## Buildvm Code Generation
 
-The `buildvm` tool (source in `../host/buildvm_lib.cpp`) processes library source files and generates multiple headers.
+The `buildvm` tool (source in `../host/buildvm_lib.cpp`) processes the ordered `LJLIB_C` source list in
+`../../../CMakeLists.txt` and generates multiple headers.  The list order is significant because it defines fast
+function IDs.
 
-### Build Commands
+### Generation Commands
 
 ```bash
-buildvm -m ffdef  -o lj_ffdef.h   lib_*.cpp   # Fast function enumeration
-buildvm -m libdef -o lj_libdef.h  lib_*.cpp   # Library initialisation data
-buildvm -m recdef -o lj_recdef.h  lib_*.cpp   # JIT recording dispatch map
-buildvm -m bcdef  -o lj_bcdef.h   lib_*.cpp   # Bytecode definitions
+build/agents/src/tiri/jitlib-generated/buildvm -m ffdef -o <output>/lj_ffdef.h <ordered-LJLIB_C-inputs>
 ```
+
+This illustrates the generated command only.  Use CMake (`cmake --build build/agents --config Debug --target tiri
+--parallel`) rather than invoking `buildvm` manually: CMake supplies the complete ordered inputs and also runs the
+`bcdef`, `libdef`, `recdef`, `folddef`, VM-definition and architecture-specific VM generation steps.
 
 ### Generated Files
 
 **lj_ffdef.h** - Fast Function Definitions:
 ```cpp
 // Generated enumeration of all fast functions
-FFDEF(assert)       // FF_assert = 1
-FFDEF(type)         // FF_type = 2
-FFDEF(math_sqrt)    // FF_math_sqrt = 40
-// ... ~147 total functions
+FFDEF(assert, "assert")
+FFDEF(type, "type")
+FFDEF(math_sqrt, "math.sqrt")
 ```
 
 **lj_libdef.h** - Library Initialisation:
 ```cpp
 // Function pointer arrays
 static const lua_CFunction lj_lib_cf_base[] = {
-   lj_cf_assert,
+   lj_ffh_assert,
    lj_ffh_type,
    // ...
 };
 
 // Binary-encoded initialisation data
 static const uint8_t lj_lib_init_base[] = {
-   2, 0, 26,                              // ffid, ffasmfunc, hash size
+   2, 0, 22,                              // ffid, ffasmfunc, hash size
    70,97,115,115,101,114,116,195,        // "assert" + tag
    // ... encoded names and metadata
    255                                    // LIBINIT_END
@@ -154,9 +165,8 @@ static const uint8_t lj_lib_init_base[] = {
 // Maps fast function IDs to recorder handlers
 static const uint16_t recff_idmap[] = {
    0,                          // FF_C (no recorder)
-   0x0100,                     // FF_assert → recff_func[1]
-   // ...
-   0x1400+(IRFPM_SQRT),        // FF_math_sqrt → recff_math_unary
+   0x0100,                     // FF_assert → recff_assert
+   // ... one entry per generated fast function
 };
 ```
 
@@ -164,13 +174,13 @@ static const uint16_t recff_idmap[] = {
 
 Library initialisation data uses a compact binary format:
 
-| Tag (upper 2 bits) | Meaning |
-|-------------------|---------|
+| Tag or marker | Meaning |
+|---------------|---------|
 | `0x00` | Pure C function (`LIBINIT_CF`) |
 | `0x40` | ASM-backed function (`LIBINIT_ASM`) |
 | `0x80` | ASM-only function (`LIBINIT_ASM_`) |
 | `0xc0` | String constant (`LIBINIT_STRING`) |
-| `0xf9` | Lua function (`LIBINIT_LUA`) |
+| `0xf9` | Legacy Lua function (`LIBINIT_LUA`; no longer generated) |
 | `0xfa` | Set table field (`LIBINIT_SET`) |
 | `0xfb` | Numeric constant (`LIBINIT_NUMBER`) |
 | `0xfc` | Copy from stack (`LIBINIT_COPY`) |
@@ -180,7 +190,7 @@ Library initialisation data uses a compact binary format:
 
 ## Two-Tier Function Implementation
 
-Fast functions use a two-tier implementation strategy for optimal performance:
+`LJLIB_ASM` functions use a two-tier implementation strategy for optimal performance:
 
 ### Tier 1: Assembly Fast Path (vm_*.dasc)
 
@@ -216,7 +226,7 @@ LJLIB_ASM(math_sqrt) LJLIB_REC(math_unary IRFPM_SQRT)
 | `FFH_RETRY` (0) | Retry fast path after argument correction |
 | `FFH_RES(n)` | Success, returning n values |
 | `FFH_TAILCALL` (-1) | Perform tail call to metamethod |
-| `FFH_UNREACHABLE` | Should never be reached |
+| `FFH_UNREACHABLE` | Alias for `FFH_RETRY`, used when the retried fast path is expected to complete |
 
 ### Execution Flow Example: math.sqrt("3.14")
 
@@ -243,12 +253,13 @@ The `LJLIB_REC()` annotations connect library functions to the JIT trace recorde
                              │ buildvm generates
                              ▼
 ┌────────────────────────────────────────────────────┐
-│ recff_idmap[FF_math_sqrt] = 0x1400 + IRFPM_SQRT    │
+│ recff_idmap[FF_math_sqrt] = (handler << 8)         │
+│                                 + IRFPM_SQRT       │
 └────────────────────────────┬───────────────────────┘
                              │ runtime lookup
                              ▼
 ┌────────────────────────────────────────────────────┐
-│ recff_func[0x14] = &recff_math_unary               │
+│ recff_func[handler] = &recff_math_unary            │
 │ Called with rd->data = IRFPM_SQRT                  │
 └────────────────────────────┬───────────────────────┘
                              │ generates
@@ -263,9 +274,10 @@ The `LJLIB_REC()` annotations connect library functions to the JIT trace recorde
 
 ```cpp
 typedef struct RecordFFData {
-   TValue* argv;        // Argument values from stack
-   ptrdiff_t nres;      // Number of results
-   uint32_t data;       // Auxiliary data from LJLIB_REC()
+   TValue* argv;                       // Runtime argument values
+   ptrdiff_t result_count;             // Number of returned results (defaults to 1)
+   uint32_t data;                      // Auxiliary data from LJLIB_REC()
+   RecordFFDisposition disposition;    // Completed, stopped or pending call
 } RecordFFData;
 ```
 
@@ -274,7 +286,7 @@ typedef struct RecordFFData {
 | Pattern | Example | Usage |
 |---------|---------|-------|
 | Unary math | `recff_math_abs` | Emits single-operand IR node |
-| Binary operation | `recff_bit_band` | Type checks + IR_BAND node |
+| Binary operation | `recff_bit_nary` | Type checks + bitwise IR node selected by `rd->data` |
 | Table access | `recff_rawget` | Uses RecordIndex helpers |
 | Call emission | `recff_math_call` | Emits `lj_ir_call()` |
 | Parameterised | `recff_xpairs` | Uses rd->data to distinguish ipairs/pairs |
@@ -284,17 +296,18 @@ typedef struct RecordFFData {
 ### File Dependencies
 
 ```
-lib_*.cpp (source)
+lib_*.cpp (ordered sources from CMake's LJLIB_C list)
     │
-    ├──→ buildvm ──→ lj_ffdef.h   (FF_* enums)
+    ├──→ buildvm ──→ lj_bcdef.h   (bytecode modes and fast-path offsets)
+    │           ├──→ lj_ffdef.h   (FF_* enums and canonical names)
     │           ├──→ lj_libdef.h  (init data + function arrays)
     │           └──→ lj_recdef.h  (recording map)
     │
-    ├──→ lj_lib.cpp               (library registration)
+    ├──→ lib.cpp                  (library registration and built-in registry)
     │
-    └──→ lj_ffrecord.cpp          (JIT recording)
+    └──→ ../lj_ffrecord.cpp       (JIT recording)
              │
-             └──→ vm_*.dasc       (assembly implementations)
+             └──→ ../jit/vm_*.dasc  (assembly implementations)
 ```
 
 ### Runtime Initialisation
@@ -302,7 +315,7 @@ lib_*.cpp (source)
 1. `lj_lib_register()` reads binary init data from `lj_lib_init_*[]`
 2. Decodes function names and metadata
 3. Populates global library tables (`math`, `string`, etc.)
-4. Associates fast function IDs with function closures
+4. Registers each closure by built-in callable ID in the state-local built-in registry
 
 ### Call Dispatch
 
@@ -320,16 +333,29 @@ lib_*.cpp (source)
 // In lib_mylib.cpp
 #define LJLIB_MODULE_mylib
 
-LJLIB_ASM(mylib_myfunc) LJLIB_REC(.)   // Use default recorder
+LJLIB_CF(mylib_myfunc)
 {
-   // C fallback implementation
-   double arg = lj_lib_checknum(L, 1);
-   // ... handle edge cases
-   return FFH_RETRY;
+   lua_Number arg = lj_lib_checknum(L, 1);
+   lua_pushnumber(L, arg);
+   return 1;
+}
+
+extern int luaopen_mylib(lua_State *L)
+{
+   LJ_LIB_REG(L, "mylib", mylib);
+   return 1;
 }
 ```
 
+Add a new `lib_*.cpp` file to the explicit `LJLIB_C` list in `src/tiri/CMakeLists.txt`; the compilation source glob is
+separate from the code-generation input list.  Register a new public library's `luaopen_*` function in `lib_init.cpp`.
+Prefer `LJLIB_CF` unless the function has a real DynASM fast path.  When extending an existing library, add the
+function to that library's source file and retain its existing `luaopen_*` registration.
+
 ### Step 2: Add Assembly Implementation (Optional)
+
+Change the declaration to `LJLIB_ASM(mylib_myfunc)` and add a matching fast function to each supported architecture.
+The C++ body then becomes the fallback used when the assembly path cannot handle the arguments.
 
 ```asm
 // In vm_x64.dasc
@@ -338,25 +364,35 @@ LJLIB_ASM(mylib_myfunc) LJLIB_REC(.)   // Use default recorder
 |  // Fall through to C on failure
 ```
 
-### Step 3: Add Recorder (If JIT Support Needed)
+### Step 3: Add Recorder (If JIT Support Is Needed)
 
 ```cpp
 // In lj_ffrecord.cpp
 static void recff_mylib_myfunc(jit_State *J, RecordFFData *rd)
 {
-   TRef tr = recff_argc_check(J, rd, 1);
-   // Generate IR for the operation
-   J->base[0] = emitir(/* IR nodes */);
+   // Validate the recorded arguments and emit the result into J->base[0].
+   // Update rd->result_count or rd->disposition when the normal single-result path does not apply.
 }
 ```
 
-### Step 4: Rebuild
+Add `LJLIB_REC(.)` to the function declaration only when the matching `recff_mylib_myfunc` handler exists.  A shared
+recorder can instead be selected with `LJLIB_REC(handler data)`.
+
+### Step 4: Preserve the Fast-Function ABI
+
+Generated fast-function order is part of the private `BC_BFUNC` bytecode ABI.  Adding, removing or reordering an entry
+requires a `BCDUMP_VERSION` bump in `../bytecode/lj_bcdump.h` and an update to the expected generated-order fingerprint
+in `../debug/lj_ff.h`.  The fingerprint assertion deliberately fails the build when this maintenance is omitted.
+
+### Step 5: Rebuild and Install
 
 ```bash
-cmake --build build/agents --target tiri --parallel
+cmake --build build/agents --config Debug --target tiri --parallel
+cmake --install build/agents --config Debug
 ```
 
-Buildvm automatically processes the new function and updates all generated headers.
+In a static build, build `tiri origo_cmd` so that the executable is relinked.  Install before running integration or
+Flute tests.
 
 ## Key Files Reference
 
@@ -368,8 +404,11 @@ Buildvm automatically processes the new function and updates all generated heade
 | `lib_string.cpp` | String library |
 | `lib_table.cpp` | Table library |
 | `lib_bit.cpp` | Bitwise operations |
-| `lib_ffi.cpp` | FFI library |
+| `lib_array.cpp` | Typed array library |
+| `lib_object.cpp` | Kōtuku object integration |
 | `../host/buildvm_lib.cpp` | Buildvm library processor |
 | `../lj_ffrecord.cpp` | JIT fast function recording |
-| `../lj_lib.cpp` | Library registration |
-| `../vm_x64.dasc` | x64 assembly implementations |
+| `lib.cpp` | Library registration and built-in callable registry |
+| `../jit/vm_x64.dasc` | x64 assembly implementations |
+| `../debug/lj_ff.h` | Generated fast-function IDs, names and ABI fingerprint |
+| `../bytecode/lj_bcdump.h` | Bytecode dump version |

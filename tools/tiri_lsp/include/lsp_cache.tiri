@@ -15,6 +15,113 @@ rx_source_file_path  = <{ regex.new([[<file\s+path="([^"]*)">([^<]+)<\/file>]]) 
 rx_source_file_plain = <{ regex.new([[<file>([^<]+)<\/file>]]) }>
 rx_input_param       = <{ regex.new([[<param\s+([^>]*)>(.*?)<\/param>]], regex.DOT_ALL) }>
 rx_xml_attr          = <{ regex.new([=[([A-Za-z_][A-Za-z0-9_]*)="([^"]*)"]=]) }>
+rx_constants_block   = <{ regex.new([[<constants\s+([^>]*)>(.*?)<\/constants>]], regex.DOT_ALL) }>
+rx_const_entry       = <{ regex.new([[<const\s+name="([^"]*)"\s*(?:\/>|>(.*?)<\/const>)]], regex.DOT_ALL) }>
+rx_inline_code       = <{ regex.new([[<code>(.*?)<\/code>]], regex.DOT_ALL) }>
+rx_xml_tag           = <{ regex.new([[<[^>]+>]]) }>
+
+function countTableEntries(Tbl:table):num
+   local count = 0
+   for _ in pairs(Tbl or {}) do count++ end
+   return count
+end
+
+function countXmlElements(Content:str, TagName:str):num
+   local count = 0
+   local position = 0
+   local opening_tag = '<' .. TagName .. '>'
+   local closing_tag = '</' .. TagName .. '>'
+
+   while true do
+      local found = Content.find(opening_tag, position, true)
+      found ?! break
+
+      local closing = Content.find(closing_tag, found + #opening_tag, true)
+      closing ?! break
+
+      local name_tag = Content.find('<name>', found + #opening_tag, true)
+      if name_tag and name_tag < closing then count++ end
+      position = closing + #closing_tag
+   end
+
+   return count
+end
+
+function createSourceManifestEntry(Content:str, Kind:str):table
+   return {
+      kind = Kind,
+      size = #Content,
+      hash = Content.hash(true),
+      functions = countXmlElements(Content, 'function'),
+      methods = countXmlElements(Content, 'method'),
+      actions = countXmlElements(Content, 'action'),
+      fields = countXmlElements(Content, 'field')
+   }
+end
+
+global function buildDocManifest(DocPath:str):table
+   local manifest = {}
+
+   function scanSources(Path:str, Kind:str, MaxDepth:num)
+      io.search(Path, {
+         nameFilter = regex.new([[\.xml$]]),
+         maxDepth = MaxDepth,
+         matchFeedback = function(FolderPath, FileName, _)
+            local full_path = FolderPath .. FileName
+            local content = io.readAll(full_path)
+            if content then
+               manifest[full_path.replace(DocPath, '')] = createSourceManifestEntry(content, Kind)
+            end
+         end
+      })
+   end
+
+   scanSources(DocPath .. 'modules/', 'module', 0)
+   scanSources(DocPath .. 'modules/classes/', 'class', 1)
+   return manifest
+end
+
+global function validateDocCache(Cache:table, DocPath:str, CurrentManifest:table):bool
+   if not Cache or Cache.version != 8 or Cache.sdkPath != DocPath then return false end
+   if not Cache.modules or not Cache.classes or not Cache.sourceManifest or not CurrentManifest then return false end
+   if countTableEntries(Cache.sourceManifest) != countTableEntries(CurrentManifest) then return false end
+
+   local entries_by_file = {}
+   for _, entry in pairs(Cache.modules) do
+      if not entry.file or entries_by_file[entry.file] then return false end
+      entries_by_file[entry.file] = entry
+   end
+   for _, entry in pairs(Cache.classes) do
+      if not entry.file or entries_by_file[entry.file] then return false end
+      entries_by_file[entry.file] = entry
+   end
+
+   if countTableEntries(entries_by_file) != countTableEntries(CurrentManifest) then return false end
+
+   local module_source_count = 0
+   local class_source_count = 0
+   for source_path, current_source in pairs(CurrentManifest) do
+      local cached_source = Cache.sourceManifest[source_path]
+      local cached_entry = entries_by_file[source_path]
+      if not cached_source or not cached_entry then return false end
+      if cached_source.kind != current_source.kind or cached_source.size != current_source.size or
+         cached_source.hash != current_source.hash then return false end
+
+      if current_source.kind is 'module' then
+         module_source_count++
+         if countTableEntries(cached_entry.functions) != current_source.functions then return false end
+      elseif current_source.kind is 'class' then
+         class_source_count++
+         if countTableEntries(cached_entry.methods) != current_source.methods or
+            countTableEntries(cached_entry.actions) != current_source.actions or
+            countTableEntries(cached_entry.fields) != current_source.fields then return false end
+      else
+         return false
+      end
+   end
+
+   return (module_source_count > 0) and (class_source_count > 0)
+end
 
 @Doc(text='Encode a field entry to compact string format')
 function encodeField(Access, Type, ByteStart, ByteEnd, Comment):str
@@ -26,9 +133,9 @@ global function decodeField(Str:any):table
    if type(Str) != 'string' then return Str end  -- Already decoded or nil
 
    result = {}
-   for field in values(Str:split('\t')) do
-      key = field:sub(0, 1)
-      value = field:sub(2)
+   for field in values(Str.split('\t')) do
+      key = field.sub(0, 1)
+      value = field.sub(2)
       if key is 'A' then
          result.access = value
       elseif key is 'L' then
@@ -61,7 +168,7 @@ function extractAttrFromText(Text:str, AttrName:str):str
    for start, stop, cap in rx_xml_attr.findAll(Text or '') do
       if cap[0] is AttrName then
          value = cap[1]
-         value?:unescapeXML()
+         value?.unescapeXML()
          return value
       end
    end
@@ -86,14 +193,14 @@ function extractXMLElement(Content:str, TagName:str, StartPos):table
    openTag = f'<{TagName}>'
    closeTag = f'</{TagName}>'
 
-   tagStart = Content:find(openTag, StartPos)
-   tagStart ?? return
+   tagStart = Content.find(openTag, StartPos)
+   tagStart ?! return
 
-   tagEnd = Content:find(closeTag, tagStart)
-   tagEnd ?? return
+   tagEnd = Content.find(closeTag, tagStart)
+   tagEnd ?! return
 
-   content = Content:sub(tagStart + #openTag, tagEnd - 1)
-   content = content?:unescapeXML()
+   content = Content.sub(tagStart + #openTag, tagEnd - 1)
+   content = content?.unescapeXML()
 
    return {
       byteStart = tagStart,
@@ -106,7 +213,7 @@ function extractChildText(Content:str, TagName:str):str
    -- Extract text content of a child element
    rx = regex.new(f'<{TagName}>([^<]*)<\\/{TagName}>')
    content = rx.extract(Content)
-   content?:unescapeXML()
+   content?.unescapeXML()
    return content
 end
 
@@ -114,24 +221,24 @@ function extractChildAttr(Content:str, TagName:str, AttrName:str):str
    -- Extract attribute value from a child element
    rx = regex.new(f'<{TagName}[^>]*{AttrName}="([^"]*)"')
    content = rx.extract(Content)
-   content?:unescapeXML()
+   content?.unescapeXML()
    return content
 end
 
-function extractSources(Content:str):array
+function extractSources(Content:str):array<table>
    sources = array<table>
    sourceMatch = extractXMLElement(Content, 'source', 0)
-   sourceMatch ?? return sources
+   sourceMatch ?! return sources
 
    for start, stop, cap in rx_source_file_path.findAll(sourceMatch.content) do
-      sources:push({
+      sources.push({
          path = cap[0] or '',
          file = cap[1] or ''
       })
    end
 
    for start, stop, cap in rx_source_file_plain.findAll(sourceMatch.content) do
-      sources:push({
+      sources.push({
          path = '',
          file = cap[0] or ''
       })
@@ -140,16 +247,16 @@ function extractSources(Content:str):array
    return sources
 end
 
-function extractInputParams(Content:str):array
+function extractInputParams(Content:str):array<table>
    params = array<table>
    inputMatch = extractXMLElement(Content, 'input', 0)
-   inputMatch ?? return params
+   inputMatch ?! return params
 
    for start, stop, cap in rx_input_param.findAll(inputMatch.content) do
       attrs = cap[0] or ''
       comment = cap[1] or ''
-      comment = comment:unescapeXML()
-      params:push({
+      comment = comment.unescapeXML()
+      params.push({
          name = extractAttrFromText(attrs, 'name') or '',
          type = extractAttrFromText(attrs, 'type') or '',
          doc = comment
@@ -159,19 +266,45 @@ function extractInputParams(Content:str):array
    return params
 end
 
+-- Reduce inline XML markup in a constant description to markdown.
+
+function constantCommentToMarkdown(Text:str):str
+   if Text is '' then return '' end
+   local text:str = rx_inline_code.replace(Text, '`$1`')
+   text = rx_xml_tag.replace(text, '')
+   return text.unescapeXML().trim()
+end
+
+-- Extract constant groups from a module or class XML file.  Constants are keyed by their script name (PREFIX_NAME)
+-- and map to their description; group descriptions are keyed by prefix.
+
+function extractConstants(Content:str):<table, table>
+   local constants = {}
+   local groups = {}
+   for _, _, block in rx_constants_block.findAll(Content) do
+      local prefix = extractAttrFromText(block[0], 'lookup')
+      if not prefix then continue end
+      groups[prefix] = extractAttrFromText(block[0], 'comment') or ''
+      for _, _, entry in rx_const_entry.findAll(block[1] or '') do
+         constants[prefix .. '_' .. entry[0]] = constantCommentToMarkdown(entry[1] or '')
+      end
+   end
+   return constants, groups
+end
+
 function processModuleXML(FilePath:str, DocPath:str):<str,table>
    -- Process a module XML file and extract function information
    content = io.readAll(FilePath)
-   content ?? return
+   content ?! return
 
-   relativePath = FilePath:replace(DocPath, '')
+   relativePath = FilePath.replace(DocPath, '')
 
    -- Extract module info
    infoMatch = extractXMLElement(content, 'info', 0)
-   infoMatch ?? return
+   infoMatch ?! return
 
    modName = extractChildText(infoMatch.content, 'name')
-   modName ?? return
+   modName ?! return
 
    modEntry = {
       file = relativePath,
@@ -182,11 +315,13 @@ function processModuleXML(FilePath:str, DocPath:str):<str,table>
       functions = {}
    }
 
+   modEntry.constants, modEntry.constantGroups = extractConstants(content)
+
    -- Extract functions (using compact string format)
    pos = 0
    while true do
       funcMatch = extractXMLElement(content, 'function', pos)
-      funcMatch ?? break
+      funcMatch ?! break
 
       funcName = extractChildText(funcMatch.content, 'name')
       if funcName then
@@ -209,18 +344,18 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 -- Process a class XML file and extract method/action/field information
 
-function processClassXML(FilePath, DocPath)
+function processClassXML(FilePath:str, DocPath:str):<str, table>
    content = io.readAll(FilePath)
-   content ?? return
+   content ?! return
 
-   relativePath = FilePath:replace(DocPath, '')
+   relativePath = FilePath.replace(DocPath, '')
 
    -- Extract class info
    infoMatch = extractXMLElement(content, 'info', 0)
-   infoMatch ?? return
+   infoMatch ?! return
 
    className = extractChildText(infoMatch.content, 'name')
-   className ?? return
+   className ?! return
 
    classEntry = {
       file      = relativePath,
@@ -234,11 +369,13 @@ function processClassXML(FilePath, DocPath)
       fields    = {}
    }
 
+   classEntry.constants, classEntry.constantGroups = extractConstants(content)
+
    -- Extract methods (using compact string format)
    pos = 0
    while true do
       methodMatch = extractXMLElement(content, 'method', pos)
-      methodMatch ?? break
+      methodMatch ?! break
 
       methodName = extractChildText(methodMatch.content, 'name')
       if methodName then
@@ -259,7 +396,7 @@ function processClassXML(FilePath, DocPath)
    pos = 0
    while true do
       actionMatch = extractXMLElement(content, 'action', pos)
-      actionMatch ?? break
+      actionMatch ?! break
 
       actionName = extractChildText(actionMatch.content, 'name')
       if actionName then
@@ -280,7 +417,7 @@ function processClassXML(FilePath, DocPath)
    pos = 0
    while true do
       fieldMatch = extractXMLElement(content, 'field', pos)
-      fieldMatch ?? break
+      fieldMatch ?! break
 
       fieldName = extractChildText(fieldMatch.content, 'name')
       if fieldName then
@@ -304,15 +441,16 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-global function buildDocCache(DocPath)
+global function buildDocCache(DocPath):table
    -- Build the documentation cache from XML files
 
    cache = {
-      version = 6,
+      version = 8,
       built   = mSys.PreciseTime() / 1000000,
       sdkPath = DocPath,
       modules = {},
-      classes = {}
+      classes = {},
+      sourceManifest = {}
    }
 
    modulesPath = DocPath .. 'modules/'
@@ -360,6 +498,7 @@ global function buildDocCache(DocPath)
    msg('Scan completed')
 
    processing.collect()
+   cache.sourceManifest = buildDocManifest(DocPath)
    return cache
 end
 
@@ -373,29 +512,29 @@ function serializeTable(Tbl:any, Indent):str
    if type(Tbl) != 'table' and type(Tbl) != 'array' then
       if type(Tbl) is 'string' then
          -- Escape special characters
-         escaped = Tbl:replace('\\', '\\\\'):replace('\n', '\\n'):replace('\r', '\\r'):replace("'", "\\'")
+         escaped = Tbl.replace('\\', '\\\\').replace('\n', '\\n').replace('\r', '\\r').replace("'", "\\'")
          return "'" .. escaped .. "'"
       elseif type(Tbl) is 'number' then
          return tostring(Tbl)
-      elseif type(Tbl) is 'boolean' then
+      elseif type(Tbl) is 'bool' then
          return Tbl and 'true' or 'false'
       else
          return 'nil'
       end
    end
 
-   parts = array<string>
+   parts = array<str>
    for k, v in pairs(Tbl) do
       keyStr = type(k) is 'string' and "['" .. k .. "']" or '[' .. tostring(k) .. ']'
       valStr = serializeTable(v, nextIndent)
-      parts:push(nextIndent .. keyStr .. ' = ' .. valStr)
+      parts.push(nextIndent .. keyStr .. ' = ' .. valStr)
    end
 
    if #parts is 0 then
       return '{}'
    end
 
-   return '{\n' .. parts:join(',\n') .. Indent .. '}'
+   return '{\n' .. parts.concat(',\n') .. Indent .. '}'
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -413,7 +552,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-global function loadDocCache(DocPath)
+global function loadDocCache(DocPath):table
    -- Attempt to load the cache, returns nil if invalid
    msg('Loading document cache from ' .. CACHE_PATH)
 
@@ -422,19 +561,17 @@ global function loadDocCache(DocPath)
       cache = loadFile(CACHE_PATH)
    except ex
       msg('Failed to run cache file.  Error: ' .. ex.message)
-      return nil
+      return
    end
 
-   if cache.version != 6 then msg('Unsupported version'); return nil end
-   if cache.sdkPath != DocPath then msg('Path mismatch: ' .. cache.sdkPath .. ' != ' .. DocPath); return nil end
+   if type(cache) != 'table' then msg('Invalid documentation cache'); return end
+   if cache.version != 8 then msg('Unsupported version'); return end
+   if cache.sdkPath != DocPath then msg('Path mismatch: ' .. cache.sdkPath .. ' != ' .. DocPath); return end
 
-   module_count = 0
-   class_count = 0
-   for k, v in pairs(cache.modules or {}) do module_count++ end
-   for k, v in pairs(cache.classes or {}) do class_count++ end
-   if module_count is 0 or class_count is 0 then
-      msg('Documentation cache is empty; rebuilding.')
-      return nil
+   local current_manifest = buildDocManifest(DocPath)
+   if not validateDocCache(cache, DocPath, current_manifest) then
+      msg('Documentation cache is stale or incomplete; rebuilding.')
+      return
    end
 
    return cache

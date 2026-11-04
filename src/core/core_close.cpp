@@ -1,6 +1,4 @@
 
-static void free_private_memory(void);
-
 //********************************************************************************************************************
 
 static void free_classes(void)
@@ -57,16 +55,36 @@ static void remove_schedulers(void)
 static void remove_object_locks(void)
 {
    kt::Log log(__FUNCTION__);
+   struct object_lock {
+      OBJECTID ObjectID;
+      int Locks;
+   };
 
-   if (auto lock = std::unique_lock{glmMemory}) {
-      for (const auto & [ id, mem ] : glPrivateMemory) {
-         if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (mem.AccessCount > 0)) {
-            if (auto obj = mem.Object) {
-               log.warning("Removing locks on object #%d, Owner: %d, Locks: %d", obj->UID, obj->Owner ? obj->Owner->UID : 0, mem.AccessCount);
-               for (auto count=mem.AccessCount; count > 0; count--) ReleaseObject(obj);
-            }
+   std::vector<object_lock> locked_objects;
+   {
+      std::unique_lock lock(glmObjects);
+      for (const auto & rec : glObjects) {
+         if (auto obj = rec.second.Object) {
+            const auto locks = int(obj->Queue.load(std::memory_order_relaxed));
+            if (locks > 0) locked_objects.emplace_back(obj->UID, locks);
          }
       }
+   }
+
+   for (auto & rec : locked_objects) {
+      OBJECTPTR obj = nullptr;
+      {
+         std::lock_guard lock(glmObjects);
+         if (auto object_rec = glObjects.find(rec.ObjectID); object_rec != glObjects.end()) {
+            obj = object_rec->second.Object;
+         }
+      }
+
+      if (not obj) continue;
+
+      log.warning("Removing locks on object #%d, Owner: %d, Locks: %d",
+         obj->UID, obj->Owner ? obj->Owner->UID : 0, rec.Locks);
+      for (auto count = rec.Locks; count > 0; count--) ReleaseObject(obj);
    }
 }
 
@@ -116,7 +134,7 @@ void CloseCore(void)
                // to stop foreign processes that we've launched.
                kill(task.ProcessID, SIGHUP);
             #else
-               SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
+               SendMessage(MSGID::QUIT, MSF::NIL, {});
             #endif
 
             WaitTime(-0.1); // Wait 0.1 seconds without processing messages
@@ -182,7 +200,16 @@ void CloseCore(void)
       // Removing objects that are tracked to the task before the first expunge will make for a cleaner exit.
 
       if (glCurrentTask) {
-         const auto children = glObjectChildren[glCurrentTask->UID]; // Take an immutable copy of the resource list
+         std::vector<OBJECTID> children;
+
+         {
+            std::lock_guard lock(glmObjects);
+            if (auto object_rec = glObjects.find(glCurrentTask->UID); object_rec != glObjects.end()) {
+               // Snapshot UIDs rather than pointers; freeing one child can cascade-free another and
+               // FreeResource() on a stale UID is a safe no-op.
+               for (const auto child : object_rec->second.Children) children.push_back(child->UID);
+            }
+         }
 
          if (children.size() > 0) {
             log.branch("Freeing %d objects allocated to task #%d.", (int)children.size(), glCurrentTask->UID);
@@ -204,7 +231,7 @@ void CloseCore(void)
 
       if (!glCrashStatus) {
          #ifdef __linux__
-            if (glFileMonitor) { FreeResource(glFileMonitor); glFileMonitor = nullptr; }
+            if (glFileMonitor) { FreeResource(GetMemoryID(glFileMonitor)); glFileMonitor = nullptr; }
          #endif
 
          free_file_cache();
@@ -253,35 +280,37 @@ void CloseCore(void)
       }
    #endif
 
-   if (glCodeIndex < CP_REMOVE_PRIVATE_LOCKS) {
-      glCodeIndex = CP_REMOVE_PRIVATE_LOCKS;
-
-      log.msg("Removing all resource locks.");
-
-      if (auto lock = std::unique_lock{glmMemory}) {
-         for (auto & [ id, mem ] : glPrivateMemory) {
-            if ((mem.Address) and (mem.AccessCount > 0)) {
-               if (!glCrashStatus) log.msg("Removing %d locks on private memory block #%d, size %d.", mem.AccessCount, mem.MemoryID, mem.Size);
-               mem.AccessCount = 0;
-            }
-         }
-      }
-   }
-
    if (!glCrashStatus) {
       if (glTaskClass) { FreeResource(glTaskClass); glTaskClass = 0; }
-      // Although we haven't crashed, setting this to true enables safer shutdown behaviour in memory deallocations from this point.
-      glCrashStatus = 1;
    }
 
    if (glCodeIndex < CP_FREE_COREBASE) {
       glCodeIndex = CP_FREE_COREBASE;
-      if (LocalCoreBase) { FreeResource(LocalCoreBase); LocalCoreBase = nullptr; }
+      if (LocalCoreBase) { free(LocalCoreBase); LocalCoreBase = nullptr; }
    }
 
    if (glCodeIndex < CP_FREE_PRIVATE_MEMORY) {
       glCodeIndex = CP_FREE_PRIVATE_MEMORY;
-      free_private_memory();
+      release_zombie_blocks();
+
+      // It is assumed that no threads are running by this point in the shutdown process
+
+      if (not glCrashStatus) {
+         log.branch("Checking for orphaned objects and resources...");
+
+         // Print warnings only.  Resource managers like a stable system environment, and additionally
+         // because modules have been expunged by this point, they can be unsafe to call or inspect.
+         for (const auto & [ id, resource ] : glResources) {
+            if (not resource.Address) continue;
+            log.warning("Unfreed resource #%d/%p, Owner: #%d.", id, resource.Address, resource.OwnerID);
+         }
+
+         for (const auto & [ id, record ] : glObjects) {
+            if (not record.Object) continue;
+            auto owner_id = record.Owner ? record.Owner->UID : 0;
+            log.warning("Unfreed object #%d/%p, Owner: #%d.", id, record.Object, owner_id);
+         }
+      }
    }
 
    #ifdef _WIN32
@@ -348,13 +377,20 @@ __export void Expunge(int16_t Force)
             // if the module code is in use.
 
             bool class_in_use = false;
-            for (const auto & id : glObjectChildren[mod_master->UID]) {
-               auto mem = glPrivateMemory.find(id);
-               if (mem IS glPrivateMemory.end()) continue;
+            std::vector<OBJECTPTR> children;
 
-               if (auto mc = (extMetaClass *)mem->second.Address; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
+            {
+               std::lock_guard lock(glmObjects);
+               if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
+                  children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
+               }
+            }
+
+            for (auto child : children) {
+               if (auto mc = (extMetaClass *)child; (mc) and (mc->classID() IS CLASSID::METACLASS)) {
                   if (mc->OpenCount > 0) {
-                     log.msg("Module %s manages a class that is in use - Class: %s, Count: %d.", mod_master->Name.c_str(), mc->ClassName, mc->OpenCount);
+                     log.msg("Module %s manages a class that is in use - Class: %s, Count: %d.",
+                        mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
                      class_in_use = true;
                   }
                   else if (not mc->SubClasses.empty()) {
@@ -364,7 +400,8 @@ __export void Expunge(int16_t Force)
                      }
 
                      if (ext_count > 0) {
-                        log.msg("Module %s manages a class with active sub-classes - Class: %s, Count: %d.", mod_master->Name.c_str(), mc->ClassName, ext_count);
+                        log.msg("Module %s manages a class with active derived classes - Class: %s, Count: %d.",
+                           mod_master->Name.c_str(), mc->ClassName.c_str(), ext_count);
                         class_in_use = true;
                      }
                   }
@@ -375,7 +412,7 @@ __export void Expunge(int16_t Force)
                if (mod_master->Expunge) {
                   kt::Log log(__FUNCTION__);
                   log.branch("Expunging %s module #%d.", mod_master->Name.c_str(), mod_master->UID);
-                  if (auto error = mod_master->Expunge(); error IS ERR::Okay) {
+                  if (auto error = mod_master->Expunge(); !error) {
                      ccount++;
                      if (FreeResource(mod_master) != ERR::Okay) {
                         log.warning("RootModule is corrupt");
@@ -421,20 +458,36 @@ __export void Expunge(int16_t Force)
                // Search for classes that have been created by this module and check their open count values to figure
                // out if the module code is in use.
 
-               for (const auto & id : glObjectChildren[mod_master->UID]) {
-                  auto mem = glPrivateMemory.find(id);
-                  if (mem IS glPrivateMemory.end()) continue;
+               std::vector<OBJECTPTR> children;
 
-                  auto mc = (extMetaClass *)mem->second.Address;
+               {
+                  std::lock_guard lock(glmObjects);
+                  if (auto object_rec = glObjects.find(mod_master->UID); object_rec != glObjects.end()) {
+                     children.assign(object_rec->second.Children.begin(), object_rec->second.Children.end());
+                  }
+               }
+
+               for (auto child : children) {
+                  auto mc = (extMetaClass *)child;
                   if ((mc) and (mc->classID() IS CLASSID::METACLASS) and (mc->OpenCount > 0)) {
-                     log.warning("Warning: The %s module holds a class with existing objects (Class: %s, Objects: %d)", mod_master->Name.c_str(), mc->ClassName, mc->OpenCount);
+                     log.warning("Warning: The %s module holds a class with existing objects (Class: %s, Objects: %d)",
+                        mod_master->Name.c_str(), mc->ClassName.c_str(), mc->OpenCount);
 
-                     for (auto & [ id, mem ] : glPrivateMemory) {
-                        if (((mem.Flags & MEM::OBJECT) != MEM::NIL) and (mem.Object)) {
-                           if (mem.Object->classID() IS mc->ClassID) {
-                              log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d", mc->ClassName, mem.Object->UID, mem.Object->ownerID(), mem.Object->RefCount.load(), mem.Object->Queue.load());
+                     std::vector<OBJECTPTR> objects;
+
+                     {
+                        std::lock_guard lock(glmObjects);
+                        for (auto &entry : glObjects) {
+                           if ((entry.second.Object) and (entry.second.Object->classID() IS mc->ClassID)) {
+                              objects.push_back(entry.second.Object);
                            }
                         }
+                     }
+
+                     for (auto object : objects) {
+                        log.warning("   Unfreed %s #%d, Owner #%d, RefCount: %d, Queue: %d",
+                           mc->ClassName.c_str(), object->UID, object->ownerID(),
+                           object->RefCount.load(), object->Queue.load());
                      }
                   }
                }
@@ -444,16 +497,44 @@ __export void Expunge(int16_t Force)
          }
       }
 
-      // If we are shutting down, force the expunging of any stubborn modules.  Freeing the modules in order of their
-      // original allocation (i.e. by UID) is a good heuristic for avoiding problems with modules that have circular
-      // dependencies on each other.
+      // If we are shutting down, force the expunging of any stubborn modules.  A forced expunge can release module
+      // handles and make other roots normally eligible, so always process those roots before forcing another module.
+      // Forcing a root that another loaded module still holds a handle on would leave that handle referencing a freed
+      // root, so stubborn modules that no other root holds are forced first.  If every stubborn module is held (a
+      // cyclic dependency) then the one with the lowest open count is chosen.
 
-      RootModule *sanity_check = nullptr;
+      objRootModule *sanity_check = nullptr;
 restart_forced_expunge:
-      auto mod_master = glModuleList;
-      for (auto scan=mod_master; scan; scan=scan->Next) {
-         if (scan->UID < mod_master->UID) mod_master = scan;
+      std::unordered_set<objRootModule *> held_roots;
+
+      {
+         std::lock_guard lock(glmObjects);
+         for (auto scan=glModuleList; scan; scan=scan->Next) {
+            if (auto object_rec = glObjects.find(scan->UID); object_rec != glObjects.end()) {
+               for (auto child : object_rec->second.Children) {
+                  if (child->classID() IS CLASSID::MODULE) {
+                     if (auto root = ((extModule *)child)->Root; (root) and (root != scan)) held_roots.insert(root);
+                  }
+               }
+            }
+         }
       }
+
+      auto force_priority = [&held_roots](objRootModule *Root) {
+         return std::make_tuple(held_roots.contains(Root), Root->OpenCount, Root->UID);
+      };
+
+      objRootModule *mod_master = nullptr;
+      objRootModule *stubborn_module = nullptr;
+      for (auto scan=glModuleList; scan; scan=scan->Next) {
+         if (scan->OpenCount <= 0) {
+            if ((not mod_master) or (scan->UID < mod_master->UID)) mod_master = scan;
+         }
+         else if ((not stubborn_module) or (force_priority(scan) < force_priority(stubborn_module))) {
+            stubborn_module = scan;
+         }
+      }
+      if (not mod_master) mod_master = stubborn_module;
 
       if ((mod_master) and (sanity_check != mod_master)) {
          if (mod_master->Expunge) {
@@ -467,51 +548,4 @@ restart_forced_expunge:
          goto restart_forced_expunge;
       }
    }
-}
-
-//********************************************************************************************************************
-
-static void free_private_memory(void)
-{
-   kt::Log log("Shutdown");
-
-   log.branch("Checking for orphaned memory allocations...");
-
-   int count = 0;
-
-   if (auto lock = std::unique_lock{glmMemory}) {
-      // Free strings first
-
-      for (auto & [ id, mem ] : glPrivateMemory) {
-         if ((mem.Address) and ((mem.Flags & MEM::STRING) != MEM::NIL)) {
-            if (!glCrashStatus) log.warning("Unfreed string \"%.80s\" (%p, #%d)", (CSTRING)mem.Address, mem.Address, mem.MemoryID);
-            mem.AccessCount = 0;
-            FreeResource(mem.Address);
-            mem.Address = nullptr;
-            count++;
-         }
-      }
-
-      // Free all other memory blocks
-
-      for (auto & [ id, mem ] : glPrivateMemory) {
-         if (mem.Address) {
-            if (!glCrashStatus) {
-               if ((mem.Flags & MEM::OBJECT) != MEM::NIL) {
-                  // Note: Class pointers are all invalid at this stage
-                  log.warning("Unfreed object #%d, Size %d, Container: #%d.",
-                     mem.MemoryID, mem.Size, mem.OwnerID);
-               }
-               else log.warning("Unfreed memory #%d/%p, Size %d, Container: #%d, Locks: %d, ThreadLock: %d.",
-                  mem.MemoryID, mem.Address, mem.Size, mem.OwnerID, mem.AccessCount, int(mem.ThreadLockID));
-            }
-            mem.AccessCount = 0;
-            FreeResource(mem.Address);
-            mem.Address = nullptr;
-            count++;
-         }
-      }
-   }
-
-   if ((glCrashStatus) and (count > 0)) log.msg("%d memory blocks were freed.", count);
 }

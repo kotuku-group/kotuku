@@ -30,7 +30,7 @@ Field * lookup_id(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target)
       else return &field[i];
    }
 
-   // Sub-class fields (located in the upper register of FieldLookup)
+   // Derived class fields (located in the upper register of FieldLookup)
 
    if (mc->BaseCeiling < mc->FieldLookup.size()) {
       unsigned floor = mc->BaseCeiling;
@@ -81,14 +81,17 @@ uint FieldID: The unique field hash to resolve.
 -RESULT-
 cstr: The name of the field is returned.
 
+-TAGS-
+api-owns-result, null-terminated-result, non-null-result, blocking
+
 *********************************************************************************************************************/
 
 extern thread_local char tlFieldName[10]; // $12345678\0
 
 CSTRING FieldName(uint32_t FieldID)
 {
-   if (auto lock = std::unique_lock{glmFieldKeys, 1s}) {
-      if (glFields.contains(FieldID)) return glFields[FieldID].c_str();
+   if (auto lock = std::shared_lock{glmFieldKeys, 1s}) {
+      if (auto field = glFields.find(FieldID); field != glFields.end()) return field->second.c_str();
    }
    snprintf(tlFieldName, sizeof(tlFieldName), "$%.8x", FieldID);
    return tlFieldName;
@@ -103,7 +106,7 @@ The FindField() function checks if an object supports a specified field by scann
 If a matching field is declared, its descriptor is returned.  For example:
 
 <pre>
-if (auto field = FindField(Display, FID_Width, NULL)) {
+if (auto field = FindField(Display, strhash("width"), nullptr)) {
    log.msg("The field name is \"%s\".", field-&gt;Name);
 }
 </pre>
@@ -114,17 +117,20 @@ Note: To lookup the field definition of a @MetaClass, use the @MetaClass.FindFie
 
 -INPUT-
 obj Object:   The target object.
-uint FieldID: The 'FID' number to lookup.
+uint FieldID: The hash of the field name to lookup.
 &obj Target:  (Optional) The object that represents the field is returned here (in case a field belongs to an integrated child object).
 
 -RESULT-
-struct(Field): Returns a pointer to the !Field descriptor, otherwise `NULL` if not found.
+cstruct(Field): Returns a pointer to the !Field descriptor, otherwise `NULL` if not found.
+
+-TAGS-
+object-owns-result, nullable-result, pure-query
 -END-
 
 *********************************************************************************************************************/
 
 // Please note that FieldID is explicitly defined as 32-bit because using the FIELD type would make it 64-bit.
-Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) // Read-only, thread safe function.
+const Field * FindField(OBJECTPTR Object, uint32_t FieldID, OBJECTPTR *Target) // Read-only, thread safe function.
 {
    OBJECTPTR dummy;
    if (!Target) Target = &dummy;

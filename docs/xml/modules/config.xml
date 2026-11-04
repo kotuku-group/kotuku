@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="module.xsl"?>
+
+<book>
+  <info>
+    <name>Config</name>
+    <type>module</type>
+    <copyright>Paul Manias © 2026</copyright>
+    <classes>
+      <class>Config</class>
+    </classes>
+  </info>
+
+  <structs>
+  </structs>
+</book>

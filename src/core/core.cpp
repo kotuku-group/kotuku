@@ -22,21 +22,15 @@ This documentation is intended for technical reference and is not suitable as an
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <inttypes.h>
 #include <string.h>
 
 #ifdef _MSC_VER
- #include <io.h>
 #else
  #include <unistd.h>
 #endif
 
 #include <forward_list>
 #include <sstream>
-
-#ifdef _WIN32
-#include <time.h>
-#endif
 
 #ifdef __APPLE__
  #include <limits.h>
@@ -142,15 +136,13 @@ static std::string glHomeFolderName;
 
 //********************************************************************************************************************
 
-static void print_class_list(void) __attribute__ ((unused));
-static void print_class_list(void)
+[[maybe_unused]] static void print_class_list(void)
 {
-   kt::Log log("Class List");
    std::ostringstream out;
    for (auto & [ cid, v ] : glClassDB) {
       out << v.Name << " ";
    }
-   log.msg("Total: %d, %s", (int)glClassDB.size(), out.str().c_str());
+   kt::Log("Class List").msg("Total: %d, %s", (int)glClassDB.size(), out.str().c_str());
 }
 
 //********************************************************************************************************************
@@ -197,9 +189,11 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    int i;
 
    if (!Info) return ERR::NullArgs;
-   glOpenInfo   = *Info;
-   tlMainThread = true;
-   glCodeIndex  = 0; // Reset the code index so that CloseCore() will work.
+   glOpenInfo     = *Info;
+   tlMainThread   = true;
+   glMainThreadID = THREADID(GetThreadID());
+   glCodeIndex    = 0; // Reset the code index so that CloseCore() will work.
+   glAsyncActionsClosed = false;
 
    if (glProcessID) fprintf(log_output(), "Core module has already been initialised (OpenCore() called more than once.)\n");
 
@@ -327,7 +321,6 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
 
    if ((Info->Flags & OPF::DETAIL) != OPF::NIL)      glLogLevel = (int16_t)Info->Detail;
    if ((Info->Flags & OPF::MAX_DEPTH) != OPF::NIL)   glMaxDepth = (int16_t)Info->MaxDepth;
-   if ((Info->Flags & OPF::SHOW_MEMORY) != OPF::NIL) glShowPrivate = true;
 
    // Android sets an important JNI pointer on initialisation.
 
@@ -362,14 +355,10 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          if ((arg[0] != '-') or (arg[1] != '-')) { newargs.push_back(arg); continue; }
          arg += 2; // Skip '--' as this prepends all Core arguments
 
-         if (iequals(arg, "log-memory")) {
-            glShowPrivate = true;
-            glDebugMemory = true;
-         }
-         else if (startswith("gfx-driver=", arg)) {
+         if (startswith("gfx-driver=", arg)) {
             glDisplayDriver.assign(arg+11);
          }
-         else if ((iequals(arg, "set-volume")) and (i+1 < Info->ArgCount)) { // --set-volume scripts=my:location/
+         else if ((iequals(arg, "set-volume")) and (i+1 < Info->ArgCount)) { // --set-volume assets=my:location/
             volumes.emplace_front(Info->Args[++i]);
          }
          else if (iequals(arg, "log-file")) {
@@ -396,14 +385,14 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          else if (iequals(arg, "log-info"))    glLogLevel = 4; // Levels 3/4 are for applications (no internal detail)
          else if (iequals(arg, "log-api"))     glLogLevel = 5; // Default level for API messages
          else if (iequals(arg, "log-xapi"))    glLogLevel = 6; // Extended API messages (detail() level).
-         else if (iequals(arg, "log-debug"))   glLogLevel = 7;
-         else if (iequals(arg, "log-trace"))   glLogLevel = 9;
+         else if (iequals(arg, "log-debug"))   glLogLevel = 8; // Messages in debug builds only
+         else if (iequals(arg, "log-trace"))   glLogLevel = 9; // Extremely detailed messages in debug builds
          else if (iequals(arg, "log-all"))     glLogLevel = 9; // 9 is the absolute maximum
          else if (iequals(arg, "time"))        glTimeLog = PreciseTime();
          #if defined(__unix__) && !defined(__ANDROID__)
          else if (iequals(arg, "holdpriority")) hold_priority = true;
          #endif
-         else if (startswith("home=", arg)) glHomeFolderName.assign(arg + 7);
+         else if (startswith("home=", arg)) glHomeFolderName.assign(arg + 5);
          else newargs.push_back(Info->Args[i]);
       }
 
@@ -416,8 +405,6 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
          KMSG("Parameters: %s\n", cmdline.str().c_str());
       }
    }
-
-   glShowIO = ((Info->Flags & OPF::SHOW_IO) != OPF::NIL);
 
 #if defined(__unix__) && !defined(__ANDROID__)
    // Setting stdout to non-blocking can prevent dead-locks at the cost of dropping excess output.  It is only
@@ -493,7 +480,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    AdjustLogLevel(1); // Temporarily limit log output when opening the Core because it's not that interesting
 
 #ifdef _WIN32
-   glConsoleEnabled = activate_console((glLogLevel > 0) and (auto_console));
+   glConsoleType = activate_console((glLogLevel > 0) and (auto_console));
 
    // An exception handler deals with crashes unless the program is being debugged.
 
@@ -502,7 +489,16 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    }
    else log.msg("A debugger is active.");
 #else
-   glConsoleEnabled = isatty(STDOUT_FILENO) or isatty(STDERR_FILENO);
+   struct stat stdout_info;
+   struct stat stderr_info;
+   const bool stdout_valid = (fstat(STDOUT_FILENO, &stdout_info) != -1);
+   const bool stderr_valid = (fstat(STDERR_FILENO, &stderr_info) != -1);
+
+   if ((stdout_valid and isatty(STDOUT_FILENO)) or (stderr_valid and isatty(STDERR_FILENO))) {
+      glConsoleType = CONTYPE::TERMINAL;
+   }
+   else if (stdout_valid or stderr_valid) glConsoleType = CONTYPE::HANDLE;
+   else glConsoleType = CONTYPE::NONE;
 #endif
 
    // Sockets are used on Unix systems to tell our processes when new messages are available for them to read.
@@ -556,7 +552,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       RegisterFD(glChildSignalFD[0], RFD::READ, &process_child_signals, nullptr);
    #endif
 
-   log.msg("Process: %d, Sync: %s, Root: %s", glProcessID, (glSync) ? "Y" : "N", glRootPath.c_str());
+   log.msg("Process: %d, Sync: %s, Root: %s, Console Type: %d", glProcessID, (glSync) ? "Y" : "N", glRootPath.c_str(), int(glConsoleType));
 #ifdef __unix__
    log.msg("UID: %d (%d), EUID: %d (%d); GID: %d (%d), EGID: %d (%d)", getuid(), glUID, geteuid(), glEUID, getgid(), glGID, getegid(), glEGID);
 #endif
@@ -595,11 +591,11 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    if ((Info->Flags & OPF::SCAN_MODULES) IS OPF::NIL) {
 
       if (auto file = objFile::create { fl::Path(glClassBinPath), fl::Flags(FL::READ) }; file.ok()) {
-         int filesize;
-         file->get(FID_Size, filesize);
+         int64_t filesize;
+         file->getSize(filesize);
 
          int hdr;
-         file->read(&hdr, sizeof(hdr));
+         file->read(std::span((int8_t *)&hdr, sizeof(hdr)));
          if (hdr IS CLASSDB_HEADER) {
             ERR error = ERR::Okay;
             while (file->Position + extClassRecord::MIN_SIZE < filesize) {
@@ -625,14 +621,14 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
    }
 #endif
 
-   if (!newargs.empty()) glCurrentTask->set(FID_Parameters, newargs);
+   if (!newargs.empty()) glCurrentTask->setParameters(newargs);
 
    // In Windows, set the PATH environment variable so that DLL's installed under modules:lib can be found.
 
 #ifdef _WIN32
    {
       std::string libpath;
-      if (ResolvePath("modules:lib", RSF::NO_FILE_CHECK, &libpath) IS ERR::Okay) {
+      if (!ResolvePath("modules:lib", RSF::NO_FILE_CHECK, &libpath)) {
          winSetDllDirectory(libpath.c_str());
       }
       else log.trace("Failed to resolve modules:lib");
@@ -655,7 +651,7 @@ ERR OpenCore(OpenInfo *Info, struct CoreBase **JumpTable)
       kt::Log log("Core");
       log.branch("Initialising %d static modules.", int(std::ssize(glStaticModules)));
       for (auto & [ name, hdr ] : glStaticModules) {
-         objModule::create mod = { kt::FieldValue(FID_Name, name.c_str()) };
+         objModule::create mod = { kt::FieldValue(strhash("name"), std::string_view(name)) };
       }
    }
 #endif
@@ -916,7 +912,7 @@ static void CrashHandler(int SignalNumber, siginfo_t *Info, APTR Context)
    if (glCrashStatus IS 0) {
       if (((SignalNumber IS SIGQUIT) or (SignalNumber IS SIGHUP) or (SignalNumber IS SIGTERM))) {
          log.msg("Termination request - SIGQUIT / SIGHUP / SIGTERM.");
-         SendMessage(MSGID::QUIT, MSF::NIL, nullptr, 0);
+         SendMessage(MSGID::QUIT, MSF::NIL, {});
          glCrashStatus = 1;
          return;
       }
@@ -989,8 +985,6 @@ const CSTRING ExceptionTable[EXP_END] = {
    "Illegal instruction execution",
    "Stack overflow"
 };
-
-APTR glExceptionAddress = 0;
 
 static int CrashHandler(int Code, APTR Address, int Continuable, int *Info)
 {
@@ -1099,7 +1093,7 @@ static void BreakHandler(void)
 #ifdef _WIN32
 static void win32_enum_folders(CSTRING Volume, CSTRING Label, CSTRING Path, CSTRING Icon, int8_t Hidden)
 {
-   SetVolume(Volume, Path, Icon, Label, nullptr, VOLUME::REPLACE | (Hidden ? VOLUME::HIDDEN : VOLUME::NIL));
+   SetVolume(Volume, Path, Icon, Label, "", VOLUME::REPLACE | (Hidden ? VOLUME::HIDDEN : VOLUME::NIL));
 }
 #endif
 
@@ -1145,26 +1139,26 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    // OPF::SYSTEM_PATH : system  : glSystemPath = %ROOT%/share/kotuku
 
    #if defined(_WIN32)
-      SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("system", glRootPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("kotuku", glRootPath, "programs/filemanager", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("system", glRootPath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
 
       #ifndef KOTUKU_STATIC
       if (!glModulePath.empty()) {
-         SetVolume("modules", glModulePath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+         SetVolume("modules", glModulePath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
-      else SetVolume("modules", "system:lib/", "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      else SetVolume("modules", "system:lib/", "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       #endif
    #elif defined(__unix__) or defined(__APPLE__)
-      SetVolume("kotuku", glRootPath.c_str(), "programs/filemanager", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("system", glSystemPath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
+      SetVolume("kotuku", glRootPath, "programs/filemanager", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("system", glSystemPath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
 
       #ifndef KOTUKU_STATIC
       if (!glModulePath.empty()) {
-         SetVolume("modules", glModulePath.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+         SetVolume("modules", glModulePath, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       else {
          std::string path = glRootPath + "lib/kotuku/";
-         SetVolume("modules", path.c_str(), "misc/brick", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+         SetVolume("modules", path, "misc/brick", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
       #endif
 
@@ -1174,33 +1168,31 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
          SetVolume("drive1", "/", "devices/storage", "Mac", "fixed", VOLUME::REPLACE|VOLUME::SYSTEM);
       #endif
 
-      SetVolume("etc", "/etc", "tools/cog", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
-      SetVolume("usr", "/usr", nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
+      SetVolume("etc", "/etc", "tools/cog", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
+      SetVolume("usr", "/usr", "", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
 
       auto temp_path = host_temp_path();
-      SetVolume("HostTemp:", temp_path.c_str(), "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
+      SetVolume("HostTemp:", temp_path, "items/trash", "Temp", "", VOLUME::REPLACE|VOLUME::HIDDEN);
    #endif
 
    // Configure some standard volumes.
 
    #ifdef __ANDROID__
-      SetVolume("assets", "EXT:FileAssets", nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("templates", "assets:templates/", "misc/openbook", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("config", "localcache:config/|assets:config/", "tools/cog", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("HostTemp:", "temp:", "items/trash", "Temp", nullptr, VOLUME::REPLACE|VOLUME::HIDDEN);
+      SetVolume("assets", "EXT:FileAssets", "", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("config", "localcache:config/|assets:config/", "tools/cog", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("HostTemp:", "temp:", "items/trash", "Temp", "", VOLUME::REPLACE|VOLUME::HIDDEN);
    #else
-      SetVolume("templates", "scripts:templates/", "misc/openbook", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      SetVolume("config", "system:config/", "tools/cog", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-      if (AnalysePath("kotuku:bin/", nullptr) IS ERR::Okay) { // Bin is the location of the tiri and kotuku binaries
-         SetVolume("bin", "kotuku:bin/", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("config", "system:config/", "tools/cog", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+      if (!AnalysePath("kotuku:bin/", nullptr)) { // Bin is the location of the tiri and kotuku binaries
+         SetVolume("bin", "kotuku:bin/", "", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
       }
-      else SetVolume("bin", "kotuku:", nullptr, nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
+      else SetVolume("bin", "kotuku:", "", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
    #endif
 
-   SetVolume("temp", "user:temp/", "items/trash", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-   SetVolume("fonts", "system:config/fonts/", "items/font", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-   SetVolume("scripts", "system:scripts/", "filetypes/source", nullptr, nullptr, VOLUME::HIDDEN|VOLUME::SYSTEM);
-   SetVolume("styles", "system:config/styles/", "tools/image_gallery", nullptr, nullptr, VOLUME::HIDDEN);
+   SetVolume("temp", "user:temp/", "items/trash", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+   SetVolume("fonts", "system:config/fonts/", "items/font", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+   SetVolume("packages", "system:packages/", "filetypes/source", "", "", VOLUME::HIDDEN|VOLUME::SYSTEM);
+   SetVolume("styles", "system:config/styles/", "tools/image_gallery", "", "", VOLUME::HIDDEN);
 
    // Some platforms need to have special volumes added - these are provided in the OpenInfo structure passed to
    // the Core.
@@ -1209,11 +1201,11 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       for (int i=0; int(glOpenInfo.Options[i].Tag) != TAGEND; i++) {
          switch (glOpenInfo.Options[i].Tag) {
             case TOI::LOCAL_CACHE: {
-               SetVolume("localcache", glOpenInfo.Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+               SetVolume("localcache", glOpenInfo.Options[i].Value.String, "", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
                break;
             }
             case TOI::LOCAL_STORAGE: {
-               SetVolume("localstorage", glOpenInfo.Options[i].Value.String, nullptr, nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+               SetVolume("localstorage", glOpenInfo.Options[i].Value.String, "", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
                break;
             }
             default:
@@ -1233,7 +1225,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
          buffer = homedir;
          if (buffer.back() IS '/') buffer.pop_back();
 
-         SetVolume("home", buffer.c_str(), "users/user", nullptr, nullptr, VOLUME::REPLACE);
+         SetVolume("home", buffer, "users/user", "", "", VOLUME::REPLACE);
 
          buffer += "/." + glHomeFolderName + "/";
       }
@@ -1259,10 +1251,10 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    if (buffer != "config:users/default/") {
       LOC location_type = LOC::NIL;
-      if ((AnalysePath(buffer.c_str(), &location_type) != ERR::Okay) or (location_type != LOC::DIRECTORY)) {
+      if ((AnalysePath(buffer, &location_type) != ERR::Okay) or (location_type != LOC::DIRECTORY)) {
          buffer.pop_back();
          SetDefaultPermissions(-1, -1, PERMIT::READ|PERMIT::WRITE);
-            CopyFile("config:users/default/", buffer.c_str(), nullptr);
+            CopyFile("config:users/default/", buffer, nullptr);
          SetDefaultPermissions(-1, -1, PERMIT::NIL);
          buffer += '/';
       }
@@ -1270,7 +1262,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       buffer += "|config:users/default/";
    }
 
-   SetVolume("user", buffer.c_str(), "users/user", nullptr, nullptr, VOLUME::REPLACE|VOLUME::SYSTEM);
+   SetVolume("user", buffer, "users/user", "", "", VOLUME::REPLACE|VOLUME::SYSTEM);
 
    // Make sure that certain default directories exist
 
@@ -1278,11 +1270,11 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
    CreateFolder("user:temp/", PERMIT::READ|PERMIT::EXEC|PERMIT::WRITE);
 
    if (AnalysePath("temp:", nullptr) != ERR::Okay) {
-      SetVolume("temp", "user:temp/", "items/trash", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("temp", "user:temp/", "items/trash", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
    }
 
    if (AnalysePath("clipboard:", nullptr) != ERR::Okay) {
-      SetVolume("clipboard", "temp:clipboard/", "items/clipboard", nullptr, nullptr, VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
+      SetVolume("clipboard", "temp:clipboard/", "items/clipboard", "", "", VOLUME::REPLACE|VOLUME::HIDDEN|VOLUME::SYSTEM);
    }
 
 #ifdef _WIN32
@@ -1305,23 +1297,23 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
             switch(type) {
                case DRIVETYPE_USB:
-                  SetVolume(usb, buffer+i, "devices/usb_drive", label.c_str(), "usb", VOLUME::NIL);
+                  SetVolume(usb, buffer+i, "devices/usb_drive", label, "usb", VOLUME::NIL);
                   usb[sizeof(usb)-2]++;
                   break;
                case DRIVETYPE_REMOVABLE: // Unspecific removable media, possibly USB or some form of disk or tape.
-                  SetVolume(portable, buffer+i, "devices/storage", label.c_str(), "portable", VOLUME::NIL);
+                  SetVolume(portable, buffer+i, "devices/storage", label, "portable", VOLUME::NIL);
                   portable[sizeof(portable)-2]++;
                   break;
                case DRIVETYPE_CDROM:
-                  SetVolume(cd, buffer+i, "devices/compactdisc", label.c_str(), "cd", VOLUME::NIL);
+                  SetVolume(cd, buffer+i, "devices/compactdisc", label, "cd", VOLUME::NIL);
                   cd[sizeof(cd)-2]++;
                   break;
                case DRIVETYPE_FIXED:
                   hd[0] = buffer[i];
-                  SetVolume(hd, buffer+i, "devices/storage", label.c_str(), "fixed", VOLUME::NIL);
+                  SetVolume(hd, buffer+i, "devices/storage", label, "fixed", VOLUME::NIL);
                   break;
                case DRIVETYPE_NETWORK:
-                  SetVolume(net, buffer+i, "devices/network", label.c_str(), "network", VOLUME::NIL);
+                  SetVolume(net, buffer+i, "devices/network", label, "network", VOLUME::NIL);
                   net[sizeof(net)-2]++;
                   break;
                default:
@@ -1356,42 +1348,41 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
       lseek(file, 0, SEEK_SET);
       if (size < 1) size = 8192;
 
-      STRING buffer;
-      if (AllocMemory(size + 1, MEM::NO_CLEAR, (APTR *)&buffer, nullptr) IS ERR::Okay) {
-         if ((size = read(file, buffer, size)) > 0) {
-            buffer[size] = 0;
+      std::string buffer(size, '\0');
+      if ((size = read(file, buffer.data(), size)) > 0) {
+         buffer.resize(size);
 
-            CSTRING str = buffer;
-            while (*str) {
-               if (std::string_view(str, size).starts_with("/dev/hd")) {
-                  // Extract mount point
+         std::string_view str = buffer;
+         while (!str.empty()) {
+            if (str.starts_with("/dev/hd")) {
+               // Extract mount point
 
-                  int i = 0;
-                  while ((*str) and (*str > 0x20)) {
-                     if (i < std::ssize(devpath)-1) devpath[i++] = *str;
-                     str++;
-                  }
-                  devpath[i] = 0;
-
-                  while ((*str) and (*str <= 0x20)) str++;
-                  for (i=0; (*str) and (*str > 0x20) and (i < std::ssize(mount)-1); i++) mount[i] = *str++;
-                  mount[i] = 0;
-
-                  if ((mount[0] IS '/') and (!mount[1]));
-                  else {
-                     strcopy(std::to_string(driveno++), drivename+5, 3);
-                     SetVolume(drivename, mount, "devices/storage", nullptr, "fixed", VOLUME::NIL);
-                  }
+               int i = 0;
+               while ((!str.empty()) and (str.front() > 0x20)) {
+                  if (i < std::ssize(devpath)-1) devpath[i++] = str.front();
+                  str.remove_prefix(1);
                }
+               devpath[i] = 0;
 
-               // Next line
-               while ((*str) and (*str != '\n')) str++;
-               while ((*str) and (*str <= 0x20)) str++;
+               while ((!str.empty()) and (str.front() <= 0x20)) str.remove_prefix(1);
+               for (i=0; (!str.empty()) and (str.front() > 0x20) and (i < std::ssize(mount)-1); i++) {
+                  mount[i] = str.front();
+                  str.remove_prefix(1);
+               }
+               mount[i] = 0;
+
+               if ((mount[0] IS '/') and (!mount[1]));
+               else {
+                  strcopy(std::to_string(driveno++), drivename+5, 3);
+                  SetVolume(drivename, mount, "devices/storage", "", "fixed", VOLUME::NIL);
+               }
             }
+
+            // Next line
+            while ((!str.empty()) and (str.front() != '\n')) str.remove_prefix(1);
+            while ((!str.empty()) and (str.front() <= 0x20)) str.remove_prefix(1);
          }
-         FreeResource(buffer);
       }
-      else log.warning(ERR::AllocMemory);
 
       close(file);
    }
@@ -1405,7 +1396,7 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
 
    for (int i=0; i < std::ssize(cdroms); i++) {
       if (!access(cdroms[i], F_OK)) {
-         SetVolume(cdname, cdroms[i], "devices/compactdisc", nullptr, "cd", VOLUME::NIL);
+         SetVolume(cdname, cdroms[i], "devices/compactdisc", "", "cd", VOLUME::NIL);
          cdname[2] = cdname[2] + 1;
       }
    }
@@ -1422,16 +1413,19 @@ static ERR init_volumes(const std::forward_list<std::string> &Volumes)
          std::string name(vol, 0, v);
          std::string path(vol, v + 1, vol.size() - (v + 1));
 
-         VOLUME flags = glVolumes.contains(name) ? VOLUME::NIL : VOLUME::HIDDEN;
+         auto flags = VOLUME::HIDDEN;
+         if (auto lock = std::shared_lock{glmVolumes, 1s}) {
+            if (glVolumes.contains(name)) flags = VOLUME::NIL;
+         }
 
-         SetVolume(name.c_str(), path.c_str(), nullptr, nullptr, nullptr, VOLUME::PRIORITY|flags);
+         SetVolume(name, path, "", "", "", VOLUME::PRIORITY|flags);
       }
    }
 
 #ifndef KOTUKU_STATIC
    // Change glModulePath to an absolute path to optimise the loading of modules.
    std::string mpath;
-   if (ResolvePath("modules:", RSF::NO_FILE_CHECK, &mpath) IS ERR::Okay) {
+   if (!ResolvePath("modules:", RSF::NO_FILE_CHECK, &mpath)) {
       glModulePath.assign(mpath);
    }
 #endif

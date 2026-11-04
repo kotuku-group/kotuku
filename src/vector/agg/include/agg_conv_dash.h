@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,9 +5,12 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Applies dash patterns to streamed path geometry. Hooks into conv_adaptor_vcgen with vcgen_dash and then into stroke
+// or rasteriser stages. In the vector renderer it turns styled strokes into separate dash subpaths before outline
+// generation.
 
-#ifndef AGG_CONV_DASH_INCLUDED
-#define AGG_CONV_DASH_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_vcgen_dash.h"
@@ -50,5 +52,3 @@ namespace agg
          operator = (const conv_dash<VertexSource, Markers>&);
    };
 }
-
-#endif

@@ -4,13 +4,12 @@
 # SPECIAL FEATURES:
 #  Enable LUAJIT_USE_SYSMALLOC temporarily if you need to figure out memory management and overflow issues.
 #  Enable LUAJIT_USE_GDBJIT temporarily if debugging with GDB.
-#  Enable ENABLE_UNIT_TESTS to include unit tests for non-release builds.  You will need to run test_unit_tests.tiri with
+#  Enable UNIT_TESTS to include unit tests for non-release builds.  You will need to run test_unit_tests.tiri with
 #    the --log-api option to view any output.
 #
 # GENERATED HEADERS OVERVIEW:
 #
 # From TDL files (Kōtuku Interface Definition Language):
-#   hashes.h                      - Hash definitions for Tiri internal use
 #   include/kotuku/modules/tiri.h - Public API header for Tiri module
 #
 # From LuaJIT build process:
@@ -44,11 +43,9 @@ set (MOD "tiri")
 set (INC_MOD_TIRI TRUE PARENT_SCOPE)
 
 # Enable unit tests for deep testing of non-release builds only.
-# set (ENABLE_UNIT_TESTS ON)
+# set (UNIT_TESTS ON)
 
 # IDL processing for headers and documentation
-
-idl_gen ("hashes.tdl" NAME ${MOD}_hashes OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/hashes.h")
 
 idl_gen ("${MOD}.tdl" NAME ${MOD}_defs
    OUTPUT "${INCLUDE_OUTPUT}/modules/${MOD}.h"
@@ -122,6 +119,48 @@ set (JIT_LAYOUT_HEADERS
    "${JIT_SRC}/lj_dispatch.h"
 )
 
+set (JIT_KOTUKU_HEADER_DEPENDENCIES
+   "${PROJECT_SOURCE_DIR}/include/kotuku/main.h"
+   "${PROJECT_SOURCE_DIR}/include/kotuku/objects.h"
+   "${PROJECT_SOURCE_DIR}/include/kotuku/system/types.h"
+   "${INCLUDE_OUTPUT}/modules/core.h"
+   "${INCLUDE_OUTPUT}/system/errors.h"
+   "${INCLUDE_OUTPUT}/system/registry.h"
+)
+
+set (JIT_TIRI_HEADER_DEPENDENCIES
+   "${CMAKE_CURRENT_SOURCE_DIR}/packaging/cache_manifest.h"
+   "${CMAKE_CURRENT_SOURCE_DIR}/defs.h"
+   "${CMAKE_CURRENT_SOURCE_DIR}/struct_def.h"
+   "${JIT_SRC}/runtime/lj_contract.h"
+)
+
+# The non-MSVC JIT build compiles each source with a hand-written custom command, so CMake cannot infer header
+# dependencies the way it does for ordinary targets.  Compiler-generated depfiles restore that tracking; without them
+# an edit to a JIT header such as lj_asm_x86.h does not rebuild the objects that include it.  Makefile generators
+# gained depfile support in CMake 3.20 and Xcode in 3.21; unsupported combinations fall back to a glob of every JIT
+# header.  The explicit dependency lists above are still required either way, because they order the first build
+# against headers that are themselves generated.
+
+if (CMAKE_GENERATOR MATCHES "Ninja"
+    OR CMAKE_GENERATOR MATCHES "Makefiles"
+    OR CMAKE_GENERATOR STREQUAL "Xcode")
+   set (JIT_USE_DEPFILES TRUE)
+   set (JIT_HEADER_DEPENDENCIES "")
+else ()
+   set (JIT_USE_DEPFILES FALSE)
+   file (GLOB JIT_HEADER_DEPENDENCIES CONFIGURE_DEPENDS
+      "${JIT_SRC}/*.h"
+      "${JIT_SRC}/bytecode/*.h"
+      "${JIT_SRC}/debug/*.h"
+      "${JIT_SRC}/host/*.h"
+      "${JIT_SRC}/jit/*.h"
+      "${JIT_SRC}/lib/*.h"
+      "${JIT_SRC}/parser/*.h"
+      "${JIT_SRC}/runtime/*.h"
+   )
+endif ()
+
 option(KOTUKU_PARSER_TRACE "Emit parser token and expectation traces" OFF)
 option(INCLUDE_TIPS "Include the parser tips system for code analysis" ON)
 
@@ -135,9 +174,9 @@ if (INCLUDE_TIPS)
    list(APPEND JIT_NON_MSVC_DEFS -DINCLUDE_TIPS)
 endif ()
 
-if (ENABLE_UNIT_TESTS)
-   list(APPEND JIT_COMMON_DEFS ENABLE_UNIT_TESTS)
-   list(APPEND JIT_NON_MSVC_DEFS -DENABLE_UNIT_TESTS)
+if (UNIT_TESTS)
+   list(APPEND JIT_COMMON_DEFS UNIT_TESTS)
+   list(APPEND JIT_NON_MSVC_DEFS -DUNIT_TESTS)
 endif ()
 
 # LUA_USE_ASSERT enables runtime assertions for early detection of VM state issues.
@@ -157,8 +196,8 @@ endif ()
 
 if (WIN32)
    # Convert paths to forward slashes for safe use in C string literals.
-   file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" LJ_PDB_BUILD_PATH)
-   file(TO_CMAKE_PATH "${CMAKE_INSTALL_PREFIX}" LJ_PDB_INSTALL_PATH)
+   cmake_path (CONVERT "${CMAKE_BINARY_DIR}" TO_CMAKE_PATH_LIST LJ_PDB_BUILD_PATH NORMALIZE)
+   cmake_path (CONVERT "${CMAKE_INSTALL_PREFIX}" TO_CMAKE_PATH_LIST LJ_PDB_INSTALL_PATH NORMALIZE)
 endif ()
 
 # Common host tool sources (used by both MSVC and non-MSVC builds)
@@ -177,8 +216,10 @@ set (LJLIB_C
    "${JIT_SRC}/lib/lib_range.cpp"
    "${JIT_SRC}/lib/lib_array.cpp"
    "${JIT_SRC}/lib/lib_object.cpp"
+   "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_debug.cpp"
    "${JIT_SRC}/lib/lib_jit.cpp"
+   "${JIT_SRC}/lib/lib_regex.cpp"
 )
 
 # Buildvm source files (used in both build paths)
@@ -191,9 +232,40 @@ set (BUILDVM_SOURCES
 )
 
 # Common compiler flags and paths (use lists instead of strings for proper handling)
+# The host tools (minilua, buildvm) only run during the build, so they stay optimised in every configuration.
 set (JIT_HOST_CFLAGS -O2 -Wall)
 set (JIT_INCLUDE_DIRS -I${PROJECT_SOURCE_DIR}/include -I${CMAKE_BINARY_DIR} -I${JIT_SRC} -I${JIT_BUILD_DIR} -I${JIT_SRC}/bytecode -I${JIT_SRC}/debug -I${JIT_SRC}/jit -I${JIT_SRC}/lib -I${JIT_SRC}/parser -I${JIT_SRC}/runtime)
-set (JIT_COMMON_CXXFLAGS -fPIC -O2 -fomit-frame-pointer -Wall -std=c++20 -Wno-invalid-offsetof)
+
+# The JIT sources are compiled by bespoke custom commands rather than a CMake target, so the per-configuration flags
+# that CMake would normally supply (CMAKE_CXX_FLAGS_<CONFIG>) never reach them. Select the optimisation and debug
+# flags explicitly from the build type instead, otherwise every configuration silently compiles as -O2 with frame
+# pointers omitted, which makes the JIT effectively undebuggable in a Debug build.
+
+if (KOTUKU_MULTI_CONFIG)
+   # Multi-config generators resolve the configuration at build time, not configure time. Custom commands cannot
+   # vary their optimisation flags per configuration here, so keep the optimised defaults. Both branches of this
+   # expression must produce an argument: an empty one is passed to the compiler as an input file in Debug builds.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer $<IF:$<CONFIG:Debug>,-O2,-DNDEBUG>)
+elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
+   # Unoptimised with full debug info. Frame pointers are retained so that the interpreter and JIT-generated frames
+   # remain walkable in gdb, which matters when diagnosing trace and VM faults.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O0 -g -fno-omit-frame-pointer)
+elseif (CMAKE_BUILD_TYPE STREQUAL "FastBuild")
+   # Optimised for compilation speed rather than runtime performance, matching the top-level FastBuild settings.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O0 -g1 -fno-var-tracking -fno-var-tracking-assignments)
+elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -g -fno-omit-frame-pointer -DNDEBUG)
+elseif (CMAKE_BUILD_TYPE STREQUAL "MinSizeRel")
+   set (JIT_BUILD_TYPE_CXXFLAGS -Os -fomit-frame-pointer -DNDEBUG)
+else ()
+   # Release and any unrecognised configuration.  NDEBUG must be supplied here because CMAKE_CXX_FLAGS_RELEASE is
+   # not applied to custom commands, and without it Log::trace() and assert() remain active in release builds.
+   set (JIT_BUILD_TYPE_CXXFLAGS -O2 -fomit-frame-pointer -DNDEBUG)
+endif ()
+
+message (STATUS "Tiri JIT build flags (${CMAKE_BUILD_TYPE}): ${JIT_BUILD_TYPE_CXXFLAGS}")
+
+set (JIT_COMMON_CXXFLAGS -fPIC ${JIT_BUILD_TYPE_CXXFLAGS} -Wall -std=c++20 -Wno-invalid-offsetof)
 
 # Platform-specific math library (empty on Windows, -lm on Unix)
 if (WIN32)
@@ -210,13 +282,13 @@ if (MSVC)
 
    # Expand glob patterns for dependencies (only source headers, not generated ones)
 
-   file(GLOB JIT_CORE_SOURCES
+   file(GLOB JIT_CORE_SOURCES CONFIGURE_DEPENDS
       "${JIT_SRC}/debug/lj_*.cpp"
       "${JIT_SRC}/debug/try_except.cpp"
       "${JIT_SRC}/runtime/lj_*.cpp"
       "${JIT_SRC}/lj_*.cpp")
 
-   file(GLOB JIT_LIB_SOURCES "${JIT_SRC}/lib/lib_*.cpp")
+   file(GLOB JIT_LIB_SOURCES CONFIGURE_DEPENDS "${JIT_SRC}/lib/lib_*.cpp")
 
    # Exclude library and parser files that are compiled into the Tiri module instead
    list(FILTER JIT_LIB_SOURCES EXCLUDE REGEX "lib_.*\\.cpp$")
@@ -285,6 +357,7 @@ if (MSVC)
          ${JIT_BUILD_DIR}/buildvm_lib.obj
          ${JIT_BUILD_DIR}/buildvm_fold.obj
       DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
+         "${JIT_SRC}/lj_ircall.h" ${JIT_KOTUKU_HEADER_DEPENDENCIES}
       WORKING_DIRECTORY "${JIT_BUILD_DIR}"
       COMMENT "Building buildvm host tool for ${JIT_ARCH}"
       VERBATIM
@@ -319,8 +392,8 @@ if (MSVC)
       ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/jit/lib"
    )
    # Convert paths to forward slashes for safe use in C string literals
-   file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" LJ_PDB_BUILD_PATH)
-   file(TO_CMAKE_PATH "${CMAKE_INSTALL_PREFIX}" LJ_PDB_INSTALL_PATH)
+   cmake_path (CONVERT "${CMAKE_BINARY_DIR}" TO_CMAKE_PATH_LIST LJ_PDB_BUILD_PATH NORMALIZE)
+   cmake_path (CONVERT "${CMAKE_INSTALL_PREFIX}" TO_CMAKE_PATH_LIST LJ_PDB_INSTALL_PATH NORMALIZE)
 
    target_compile_definitions(jit_lib PRIVATE
       ${JIT_COMMON_DEFS}
@@ -421,9 +494,10 @@ else ()
       file(WRITE "${JIT_BUILD_DIR}/test_arch.c" "#include <lj_arch.h>\n")
    endif ()
 
-   # Write the dynasm runner script
+   # Write the dynasm runner script.  file(CONFIGURE) only touches the file when its content changes; file(WRITE) would
+   # refresh the timestamp on every reconfigure and force dynasm, buildvm and the entire Tiri library to rebuild.
 
-   file(WRITE ${DYNASM_SCRIPT}
+   string(CONCAT DYNASM_SCRIPT_CONTENT
          "# Use architecture determined by CMake\n"
          "set(ARCH \"${JIT_TARGET_ARCH}\")\n"
          "set(DASM_DASC \"${JIT_SRC}/jit/vm_\${ARCH}.dasc\")\n"
@@ -489,6 +563,8 @@ else ()
          "endif()\n"
       )
 
+   file(CONFIGURE OUTPUT ${DYNASM_SCRIPT} CONTENT "${DYNASM_SCRIPT_CONTENT}" @ONLY NEWLINE_STYLE UNIX)
+
    add_custom_command(
       OUTPUT ${BUILDVM_ARCH_H}
       COMMAND ${CMAKE_COMMAND} -E env TARGET_GENDIR=${JIT_BUILD_DIR} ${CMAKE_COMMAND} -P ${DYNASM_SCRIPT}
@@ -499,17 +575,50 @@ else ()
       VERBATIM
    )
 
-   # Build buildvm host tool
-   # Note: lj_obj.h contains MMDEF which defines metamethod tables used by buildvm
+   # Build buildvm host tool.  Compile each source with a separate custom command so parallel builds can schedule the
+   # objects independently instead of making one compiler driver process compile every source in sequence.
+   # Note: lj_obj.h contains MMDEF which defines metamethod tables used by buildvm.
+
+   set (BUILDVM_OBJECTS "")
+   foreach (BUILDVM_SOURCE ${BUILDVM_SOURCES})
+      get_filename_component(BUILDVM_FILENAME ${BUILDVM_SOURCE} NAME_WE)
+      set (BUILDVM_OBJECT "${JIT_BUILD_DIR}/host_${BUILDVM_FILENAME}.o")
+      list (APPEND BUILDVM_OBJECTS ${BUILDVM_OBJECT})
+
+      set (BUILDVM_SOURCE_DEPENDENCIES "")
+      if (BUILDVM_FILENAME STREQUAL "buildvm")
+         list (APPEND BUILDVM_SOURCE_DEPENDENCIES "${JIT_SRC}/lj_ircall.h")
+      endif ()
+
+      set (BUILDVM_DEPFILE_FLAGS "")
+      set (BUILDVM_DEPFILE_ARGS "")
+      if (JIT_USE_DEPFILES)
+         set (BUILDVM_DEPFILE_FLAGS -MD -MP -MF "${BUILDVM_OBJECT}.d")
+         set (BUILDVM_DEPFILE_ARGS DEPFILE "${BUILDVM_OBJECT}.d")
+      endif ()
+
+      add_custom_command(
+         OUTPUT ${BUILDVM_OBJECT}
+         COMMAND ${CMAKE_CXX_COMPILER} ${JIT_COMMON_CXXFLAGS}
+            ${JIT_NON_MSVC_DEFS}
+            ${JIT_INCLUDE_DIRS}
+            ${BUILDVM_DEPFILE_FLAGS}
+            -c ${BUILDVM_SOURCE} -o ${BUILDVM_OBJECT}
+         DEPENDS ${BUILDVM_SOURCE} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
+            ${BUILDVM_SOURCE_DEPENDENCIES} ${JIT_KOTUKU_HEADER_DEPENDENCIES}
+            ${JIT_HEADER_DEPENDENCIES}
+         ${BUILDVM_DEPFILE_ARGS}
+         COMMENT "Compiling host/${BUILDVM_FILENAME}.cpp"
+         VERBATIM
+      )
+   endforeach ()
 
    add_custom_command(
       OUTPUT ${BUILDVM_TARGET}
       COMMAND ${CMAKE_CXX_COMPILER} ${JIT_COMMON_CXXFLAGS}
-         ${JIT_NON_MSVC_DEFS}
-         ${JIT_INCLUDE_DIRS}
-         -o ${BUILDVM_TARGET} ${BUILDVM_SOURCES} ${JIT_MATH_LIB}
-      DEPENDS ${BUILDVM_SOURCES} ${BUILDVM_ARCH_H} ${JIT_LAYOUT_HEADERS}
-      COMMENT "Building buildvm host tool"
+         -o ${BUILDVM_TARGET} ${BUILDVM_OBJECTS} ${JIT_MATH_LIB}
+      DEPENDS ${BUILDVM_OBJECTS}
+      COMMENT "Linking buildvm host tool"
       VERBATIM
    )
 
@@ -532,16 +641,41 @@ else ()
       set(JIT_VM_COMMENT "Generating JIT headers and VM assembly via buildvm")
    endif ()
 
+   set (JIT_LIB_GENERATORS bcdef ffdef libdef recdef)
+   foreach (JIT_GENERATOR ${JIT_LIB_GENERATORS})
+      set (JIT_GENERATOR_OUTPUT "${JIT_BUILD_DIR}/lj_${JIT_GENERATOR}.h")
+      add_custom_command(
+         OUTPUT ${JIT_GENERATOR_OUTPUT}
+         COMMAND ${BUILDVM_TARGET} -m ${JIT_GENERATOR} -o ${JIT_GENERATOR_OUTPUT} ${LJLIB_C}
+         DEPENDS ${BUILDVM_TARGET} ${LJLIB_C}
+         WORKING_DIRECTORY ${JIT_SRC}
+         COMMENT "Generating lj_${JIT_GENERATOR}.h"
+         VERBATIM
+      )
+   endforeach ()
+
    add_custom_command(
-      OUTPUT ${JIT_GENERATED_HEADERS} ${JIT_VM_OUTPUT} ${JIT_VMDEF_LUA}
-      COMMAND ${BUILDVM_TARGET} -m bcdef -o ${JIT_BUILD_DIR}/lj_bcdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m ffdef -o ${JIT_BUILD_DIR}/lj_ffdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m libdef -o ${JIT_BUILD_DIR}/lj_libdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m recdef -o ${JIT_BUILD_DIR}/lj_recdef.h ${LJLIB_C}
-      COMMAND ${BUILDVM_TARGET} -m folddef -o ${JIT_BUILD_DIR}/lj_folddef.h "${JIT_SRC}/lj_opt_fold.cpp"
+      OUTPUT "${JIT_BUILD_DIR}/lj_folddef.h"
+      COMMAND ${BUILDVM_TARGET} -m folddef -o "${JIT_BUILD_DIR}/lj_folddef.h" "${JIT_SRC}/lj_opt_fold.cpp"
+      DEPENDS ${BUILDVM_TARGET} "${JIT_SRC}/lj_opt_fold.cpp"
+      WORKING_DIRECTORY ${JIT_SRC}
+      COMMENT "Generating lj_folddef.h"
+      VERBATIM
+   )
+
+   add_custom_command(
+      OUTPUT ${JIT_VMDEF_LUA}
       COMMAND ${BUILDVM_TARGET} -m vmdef -o ${JIT_VMDEF_LUA} ${LJLIB_C}
+      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C}
+      WORKING_DIRECTORY ${JIT_SRC}
+      COMMENT "Generating jit/vmdef.lua"
+      VERBATIM
+   )
+
+   add_custom_command(
+      OUTPUT ${JIT_VM_OUTPUT}
       COMMAND ${BUILDVM_TARGET} -m ${JIT_VM_MODE} -o ${JIT_VM_OUTPUT}
-      DEPENDS ${BUILDVM_TARGET} ${LJLIB_C} "${JIT_SRC}/lj_opt_fold.cpp" ${JIT_LAYOUT_HEADERS}
+      DEPENDS ${BUILDVM_TARGET} ${JIT_LAYOUT_HEADERS}
       WORKING_DIRECTORY ${JIT_SRC}
       COMMENT ${JIT_VM_COMMENT}
       VERBATIM
@@ -561,13 +695,13 @@ else ()
 
    # Expand glob patterns for source files (mirrors MSVC approach)
 
-   file(GLOB JIT_CORE_SOURCES
+   file(GLOB JIT_CORE_SOURCES CONFIGURE_DEPENDS
       "${JIT_SRC}/debug/lj_*.cpp"
       "${JIT_SRC}/debug/try_except.cpp"
       "${JIT_SRC}/runtime/lj_*.cpp"
       "${JIT_SRC}/lj_*.cpp")
 
-   file(GLOB JIT_LIB_SOURCES "${JIT_SRC}/lib/lib_*.cpp")
+   file(GLOB JIT_LIB_SOURCES CONFIGURE_DEPENDS "${JIT_SRC}/lib/lib_*.cpp")
 
    # Exclude library and parser files that are compiled into the Tiri module instead
    list(FILTER JIT_LIB_SOURCES EXCLUDE REGEX "lib_.*\\.cpp$")
@@ -591,6 +725,15 @@ else ()
          list(APPEND JIT_SOURCE_CXXFLAGS -mavx2)
       endif ()
 
+      # Emit a depfile alongside the object so that edits to any included header rebuild it.  -MP adds phony targets
+      # for each header, which keeps the build working after a header is renamed or deleted.
+      set (JIT_SOURCE_DEPFILE_FLAGS "")
+      set (JIT_SOURCE_DEPFILE_ARGS "")
+      if (JIT_USE_DEPFILES)
+         set (JIT_SOURCE_DEPFILE_FLAGS -MD -MP -MF "${OBJECT_FILE}.d")
+         set (JIT_SOURCE_DEPFILE_ARGS DEPFILE "${OBJECT_FILE}.d")
+      endif ()
+
       # Create custom command to compile each source file with explicit flags
       add_custom_command(
          OUTPUT ${OBJECT_FILE}
@@ -601,8 +744,12 @@ else ()
             -DLUA_ROOT=\"${CMAKE_INSTALL_PREFIX}\"
             ${JIT_INCLUDE_DIRS}
             -Wno-trigraphs
+            ${JIT_SOURCE_DEPFILE_FLAGS}
             -c ${SOURCE_FILE} -o ${OBJECT_FILE}
          DEPENDS ${SOURCE_FILE} ${JIT_GENERATED_HEADERS} "${JIT_SRC}/lj_ircall.h"
+            ${JIT_KOTUKU_HEADER_DEPENDENCIES} ${JIT_TIRI_HEADER_DEPENDENCIES}
+            ${JIT_HEADER_DEPENDENCIES}
+         ${JIT_SOURCE_DEPFILE_ARGS}
          COMMENT "Compiling ${FILENAME}.cpp"
          VERBATIM
       )
@@ -660,14 +807,34 @@ add_library (${MOD})
 
 set_module_defaults (${MOD} "Fl")
 
+# Export the ModHeader symbol only.
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT KOTUKU_STATIC)
+   target_link_options (${MOD} PRIVATE
+      "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map")
+   set_property (TARGET ${MOD} APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/exports.map")
+endif ()
+
+if (TARGET ${MOD}_defs)
+   add_dependencies (${MOD} ${MOD}_defs)
+endif ()
+
 add_dependencies (${MOD} ${FFI_PROJECT} jitlib jit_codegen)
 
 if (BUILD_DEFS)
-   add_dependencies (${MOD} ${MOD}_hashes)
+   add_dependencies (jit_codegen core_defs)
+   add_dependencies (jit_lib core_defs)
 endif ()
 
-set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.cpp" "tiri_processing.cpp"
-   "tiri_number.cpp" "tiri_functions.cpp" "tiri_regex.cpp"
+set (TIRI_SOURCES "${MOD}.cpp" "bytecode_storage.cpp" "packaging/cache_manifest.cpp" "packaging/package_identity.cpp"
+   "packaging/package_resolver.cpp"
+   "packaging/version_constraints.cpp"
+   "packaging/import_module_format.cpp" "packaging/import_module_bundle.cpp"
+   "packaging/import_module_cache.cpp"
+   "tiri_module.cpp"
+   "tiri_async.cpp" "tiri_struct.cpp"
+   "tiri_processing.cpp"
+   "tiri_functions.cpp" "tiri_regex.cpp"
    "tiri_io.cpp" "tiri_class.cpp"
    "${JIT_SRC}/lib/lib.cpp"
    "${JIT_SRC}/lib/load.cpp"
@@ -680,29 +847,42 @@ set (TIRI_SOURCES "${MOD}.cpp" "tiri_module.cpp" "tiri_async.cpp" "tiri_struct.c
    "${JIT_SRC}/lib/lib_jit.cpp"
    "${JIT_SRC}/lib/lib_math.cpp"
    "${JIT_SRC}/lib/lib_object.cpp"
+   "${JIT_SRC}/lib/lib_struct.cpp"
    "${JIT_SRC}/lib/lib_range.cpp"
+   "${JIT_SRC}/lib/lib_regex.cpp"
    "${JIT_SRC}/lib/lib_string.cpp"
    "${JIT_SRC}/lib/lib_table.cpp"
+   "${JIT_SRC}/runtime/lj_array_search.cpp"
+   "${JIT_SRC}/runtime/import_module_graph.cpp"
+   "${JIT_SRC}/runtime/import_module_state.cpp"
    "${JIT_SRC}/bytecode/lj_bc.cpp"
    "${JIT_SRC}/bytecode/lj_bcread.cpp"
    "${JIT_SRC}/bytecode/lj_bcwrite.cpp"
    "${JIT_SRC}/debug/dump_bytecode.cpp"
    "${JIT_SRC}/debug/filesource.cpp"
    "${JIT_SRC}/parser/parser.cpp"
+   "${JIT_SRC}/parser/import_interface.cpp"
    "${JIT_SRC}/parser/lexer.cpp"
-   "${JIT_SRC}/parser/parser_unit_tests.cpp"
-   "${JIT_SRC}/parser/field_type_lookup.cpp")
+   "${JIT_SRC}/parser/parser_unit_tests.cpp")
 
 if (INCLUDE_TIPS)
    list (APPEND TIRI_SOURCES "${JIT_SRC}/parser/parser_tips.cpp")
 endif ()
 
-if (ENABLE_UNIT_TESTS)
+if (UNIT_TESTS)
+   list (APPEND TIRI_SOURCES "tests/unit_cache_manifest.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_import_module_format.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_import_module_cache.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_module_marshalling.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_set_variable.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_bytecode_files.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_version_constraints.cpp")
+   list (APPEND TIRI_SOURCES "tests/unit_package_resolver.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_indexing.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_test_vm_asm.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_arrays.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_allocator.cpp")
-   list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_bulk.cpp")
+   list (APPEND TIRI_SOURCES "${JIT_SRC}/runtime/unit_tests_gc.cpp")
    list (APPEND TIRI_SOURCES "${JIT_SRC}/jit/jit_unit_tests.cpp")
 
    # Add MASM assembly file for register capture on MSVC x64
@@ -715,6 +895,28 @@ endif ()
 if (NOT DISABLE_DISPLAY)
    list (APPEND TIRI_SOURCES "tiri_input.cpp")
 endif ()
+
+# Generate the same current-commit build marker used by `origo --version`.  Refreshing at build time prevents an
+# existing build tree from retaining the commit that was current when CMake was last configured.
+
+set (TIRI_BUILD_IDENTITY_H "${JIT_BUILD_DIR}/tiri_build_identity.h")
+set (TIRI_BUILD_IDENTITY_ARGS
+   "-DSRC_DIR=${PROJECT_SOURCE_DIR}"
+   "-DVERSION_IN=${CMAKE_CURRENT_SOURCE_DIR}/tiri_build_identity.h.in"
+   "-DVERSION_OUT=${TIRI_BUILD_IDENTITY_H}")
+
+execute_process (
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake")
+
+add_custom_target (tiri_build_identity ALL
+   COMMAND ${CMAKE_COMMAND} ${TIRI_BUILD_IDENTITY_ARGS}
+      -P "${PROJECT_SOURCE_DIR}/src/origo/generate_version.cmake"
+   BYPRODUCTS "${TIRI_BUILD_IDENTITY_H}"
+   COMMENT "Refreshing Tiri bytecode build identity"
+   VERBATIM)
+
+add_dependencies (${MOD} tiri_build_identity)
 
 target_sources (${MOD} PRIVATE ${TIRI_SOURCES})
 
@@ -745,15 +947,20 @@ target_compile_definitions(${MOD} PRIVATE
    $<$<CONFIG:Debug>:LUA_USE_ASSERT>)
 
 if (MSVC)
-   # /MP enables multi-processor compilation for parallel builds within this target
-   target_compile_options(${MOD} PRIVATE /MP)
+   # parser.cpp is an amalgamation unit that exceeds the standard COFF section limit in Debug builds.  Keep MSVC
+   # options scoped to C++ so that the register-capture MASM source does not receive them.
+   target_compile_options(${MOD} PRIVATE
+      "$<$<COMPILE_LANGUAGE:CXX>:/MP>"
+      "$<$<COMPILE_LANGUAGE:CXX>:/bigobj>")
 else ()
    # Suppress offsetof warnings for non-standard-layout types (lua_State, GG_State contain C++ members)
    target_compile_options(${MOD} PRIVATE -Wno-invalid-offsetof)
 endif ()
 
-if (ENABLE_UNIT_TESTS)
-   target_compile_definitions(${MOD} PRIVATE ENABLE_UNIT_TESTS)
+if (UNIT_TESTS)
+   target_compile_definitions(${MOD} PRIVATE
+      UNIT_TESTS
+      TIRI_PACKAGE_TEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/package_fixtures/")
 endif ()
 
 if (DISABLE_DISPLAY)
@@ -763,13 +970,29 @@ endif ()
 # Register Flute tests
 
 set (TIRI_TESTS
-   defer debuglog io object regex struct async async_actions async_wait xml strings math array array_any array_manip
-   array_functional array_typed_syntax bitshift bitwise has_operator if_empty presence blank ternary table stress unit_tests
-   jitoptions fstring const import_scope unicode ellipsis safe_nav close type_annotations type_fixing
-   type_inference jit pipe pipe_iteration arrow_functions result_filter thunks deferred_expr shadow_assert ranges
-   annotations locality anonymous_for key_values debug_filesources compound choose_from enum flow table_slice options
-   try_except import processing metatables with thunk_table_index debug numeric_limits return_types url tips
-   compile_if_import
+   defer debuglog io filesearch object regex struct async async_actions async_wait xml strings math array array_any array_manip
+   array_element_validation array_view
+   array_functional array_typed_syntax recursive_array_types bitshift bitwise has_operator approx if_empty if_empty_guard
+   presence blank ternary table stress unit_tests bytecode_files bytecode_jit_eligibility
+   weak_bindings jitoptions fstring const const_optimisation import_scope unicode ellipsis safe_nav close
+   type_annotations type_fixing
+   type_inference jit jit_uclo jit_fnew jit_stack_stores jit_arrays jit_objects jit_try_regex pipe for_each
+   arrow_functions
+   result_filter thunks deferred_expr shadow_assert ranges contains bare_iteration compiler_intrinsics
+   annotations ordinary_annotation package_annotation dependencies_annotation locality anonymous_for key_values
+   debug_filesources compound choose_from enum flow
+   table_slice table_merge table_clone options type_name
+   library_namespaces
+   try_except checkall import versioned_import package_index_import include_list processing metatables with thunk_table_index debug
+   malformed_syntax numeric_limits return_types url tips tempus
+   comparison_chaining reserved_keywords compile_if_import overflow protected_globals constant_shadowing config_library
+   module_namespaces module_result_contracts builtin_methods
+   object_pinning import_type_analysis global_types type_contracts type_tests thunk_contract_argument type_signature_dumps
+   type_guided_emission type_guided_jit_signatures
+   context_access contextual_member_calls contextual_designation context_blocks context_materialisation
+   gc_lifecycle
+   metamethod_context_dispatch stack_growth function_callback_context function_context_binding
+   callback_results setter_error_registers field_assignment_blocks mixed_assignment
 )
 
 foreach (TEST_NAME ${TIRI_TESTS})

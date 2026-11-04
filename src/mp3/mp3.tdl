@@ -1,0 +1,44 @@
+--$TIRI:Include
+
+module({
+  name="MP3",
+  src="metadata.cpp",
+  copyright="Paul Manias © 2006-2026",
+  version=1.0,
+  status="stable",
+  timestamp=20240611
+},
+function()
+  c_include('<kotuku/modules/audio.h>')
+
+  flags('MPF', { comment='Controls the cost and detail of an MP3 metadata query.' },
+    'TAGS: Read ID3v1 and supported ID3v2 text tags, up to a 1 MiB ID3v2 block. Artwork is excluded.',
+    'ESTIMATE: Allow an estimated duration based on compressed audio size and the first frame bitrate.',
+    'SCAN: Allow a complete frame-header scan when Xing/Info does not supply duration. Takes precedence over ESTIMATE.')
+
+  functionNames('mp3', 'GetMetadata')
+
+  c_insert([[
+#ifndef PRV_MP3_MODULE
+namespace mp3 {
+inline ERR GetMetadata(const std::string_view &Path, MPF Flags, std::string &XML) {
+   return GetMetadata(Path, Flags, &XML);
+}
+}
+#endif
+  ]])
+
+  restrict(function()
+    loadFile(glPath .. 'common.tdl')
+  end)
+
+  klass('MP3', {
+    base = 'Sound',
+    src = { 'mp3.cpp' },
+    output = 'mp3_def.cpp'
+  },
+  nil,
+  [[
+   ~objMP3();
+  ]])
+end)

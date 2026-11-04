@@ -132,8 +132,9 @@ static void emit_lsglptr(ASMState* as, PPCIns pi, Reg r, int32_t ofs)
 #define emit_setgl(as, r, field) \
   emit_lsglptr(as, PPCI_STW, (r), (int32_t)offsetof(global_State, field))
 
-// Trace number is determined from per-trace exit stubs.
-#define emit_setvmstate(as, i)      UNUSED(i)
+// Trace exits determine the trace number from their stubs, but helpers need the active trace while on-trace.
+#define emit_setvmstate(as, i) \
+  (emit_setgl(as, RID_TMP, vmstate), emit_loadi(as, RID_TMP, (i)))
 
 // -- Emit control-flow instructions --------------------------------------
 
@@ -241,4 +242,3 @@ static void emit_spsub(ASMState* as, int32_t ofs)
          CFRAME_SIZE + (as->parent ? as->parent->spadjust : 0));
    }
 }
-

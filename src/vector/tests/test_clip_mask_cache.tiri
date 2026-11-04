@@ -1,0 +1,289 @@
+   include 'vector', 'display'
+   module display as mGfx
+
+function newBitmap(Width, Height)
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function hashBitmap(Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   Scene.acDraw()
+   return hashBitmap(Bitmap)
+end
+
+function newClipScene(Units)
+   scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=Units })
+   local mask_shape:obj
+
+   if Units is VUNIT_BOUNDING_BOX then
+      clip.viewport.viewWidth = 1
+      clip.viewport.viewHeight = 1
+      mask_shape = clip.viewport.new('VectorRectangle', { x=0, y=0, width=0.5, height=1, fill='rgb(255,255,255)' })
+   else
+      mask_shape = clip.viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,255,255)' })
+   end
+
+   return scene, viewport, clip, mask_shape
+end
+
+@Test function UserSpaceMaskRenderIsStableAcrossRepeatedDraws()
+   scene, viewport, clip, mask_shape = newClipScene(VUNIT_USERSPACE)
+   target = viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,0,0)', mask=clip })
+   bmp = newBitmap(120, 80)
+
+   first_hash = drawScene(scene, bmp)
+   second_hash = drawScene(scene, bmp)
+
+   assert(first_hash is second_hash, 'Repeated render of unchanged user-space clip mask should be stable')
+   assert(first_hash != 0, 'Masked render should produce a non-zero bitmap hash')
+end
+
+@Test function ClipVisualChangeInvalidatesCachedMaskWithoutConsumerPathChange()
+   scene, viewport, clip, mask_shape = newClipScene(VUNIT_USERSPACE)
+   target = viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,0,0)', mask=clip })
+   bmp = newBitmap(120, 80)
+
+   initial_hash = drawScene(scene, bmp)
+   initial_timestamp = target.pathTimestamp
+
+   mask_shape.fill = 'rgb(0,0,0)'
+   changed_hash = drawScene(scene, bmp)
+
+   assert(target.pathTimestamp is initial_timestamp, 'Changing clip fill should not regenerate the consumer path')
+   assert(changed_hash != initial_hash, 'Changing clip fill should invalidate and redraw the cached mask')
+end
+
+@Test function BoundingBoxMaskIsCachedPerConsumerTransform()
+   scene, viewport, clip, mask_shape = newClipScene(VUNIT_BOUNDING_BOX)
+   left = viewport.new('VectorRectangle', { x=10, y=10, width=40, height=40, fill='rgb(255,0,0)', mask=clip })
+   right = viewport.new('VectorRectangle', { x=70, y=10, width=40, height=40, fill='rgb(0,0,255)', mask=clip })
+   bmp = newBitmap(120, 80)
+
+   first_hash = drawScene(scene, bmp)
+   second_hash = drawScene(scene, bmp)
+   left_timestamp = left.pathTimestamp
+   right_timestamp = right.pathTimestamp
+
+   assert(first_hash is second_hash, 'Shared bounding-box clip should render stably for multiple consumers')
+
+   mask_shape.fill = 'rgb(0,0,0)'
+   changed_hash = drawScene(scene, bmp)
+
+   assert(left.pathTimestamp is left_timestamp, 'Changing shared clip fill should not regenerate the left consumer path')
+   assert(right.pathTimestamp is right_timestamp, 'Changing shared clip fill should not regenerate the right consumer path')
+   assert(changed_hash != first_hash, 'Changing shared bounding-box clip content should invalidate every consumer cache')
+end
+
+function patternClipPixel(Units, ParentOpacity, ShapeOpacity, FillOpacity, PatternOpacity)
+   scene = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   pattern = scene.new('VectorPattern', {
+      width=10, height=10, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REPEAT, opacity=PatternOpacity
+   })
+   pattern.viewport.new('VectorRectangle', { width=10, height=10, fill='white' })
+   check scene.mtAddDef('mask_pattern', pattern)
+
+   clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=Units })
+   group = clip.viewport.new('VectorGroup', { opacity=ParentOpacity })
+   local size = Units is VUNIT_BOUNDING_BOX ? 1 : 40
+   if Units is VUNIT_BOUNDING_BOX then
+      clip.viewport.viewWidth = 1
+      clip.viewport.viewHeight = 1
+   end
+   group.new('VectorRectangle', {
+      width=size, height=size, fill='url(#mask_pattern)', opacity=ShapeOpacity, fillOpacity=FillOpacity
+   })
+   viewport.new('VectorRectangle', { width=40, height=40, fill='red', mask=clip })
+   bmp = newBitmap(120, 80)
+   drawScene(scene, bmp)
+   return struct.toTable(mGfx.ReadRGBPixel(bmp, 20, 20)).red
+end
+
+@Test function ClipPatternCombinesShapeAndAncestorOpacity()
+   for units in values(array<int> { VUNIT_USERSPACE, VUNIT_BOUNDING_BOX }) do
+      opaque = patternClipPixel(units, 1, 1, 1, 1)
+      half = patternClipPixel(units, 1, 1, 0.5, 1)
+      sixteenth = patternClipPixel(units, 1, 1, 0.0625, 1)
+      shape = patternClipPixel(units, 1, 0.5, 1, 1)
+      ancestor = patternClipPixel(units, 0.5, 1, 1, 1)
+      combined = patternClipPixel(units, 0.5, 0.5, 0.5, 0.5)
+
+      assert(opaque > 245, 'An opaque white pattern should leave the red target fully visible')
+      assert((sixteenth > 0) and (sixteenth < half) and (half < opaque),
+         'Reference fill opacities should produce progressively lighter masks')
+      assert(math.abs(shape - half) <= 1, f'Clip pattern should include shape opacity (got {shape})')
+      assert(math.abs(ancestor - half) <= 1, f'Clip pattern should include ancestor opacity (got {ancestor})')
+      assert(math.abs(combined - sixteenth) <= 1,
+         f'Clip pattern should multiply ancestor, shape, fill and pattern opacity (got {combined})')
+   end
+end
+
+function layeredClipPixels(Fill:str!, Units:num!):<num, num>
+   local scene <close> = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   local stops = array<struct<GradientStop>>
+   for _, entry in array<table> {
+      { offset=0, alpha=1 }, { offset=0.5, alpha=1 }, { offset=0.5, alpha=0 }, { offset=1, alpha=0 }
+   } do
+      local stop = struct<GradientStop>
+      stop.offset = entry.offset
+      stop.rgb.red = 1
+      stop.rgb.green = 1
+      stop.rgb.blue = 1
+      stop.rgb.alpha = entry.alpha
+      stops.push(stop)
+   end
+   local gradient = scene.new('GradientLinear', {
+      units=VUNIT_BOUNDING_BOX, x1=0, y1=0, x2=1, y2=0, stops=stops
+   })
+   check scene.mtAddDef('half', gradient)
+   local pattern = scene.new('VectorPattern', {
+      width=10, height=10, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REPEAT
+   })
+   pattern.viewport.new('VectorRectangle', { width=10, height=10, fill='white' })
+   check scene.mtAddDef('white_pattern', pattern)
+
+   local clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=Units })
+   local size = Units is VUNIT_BOUNDING_BOX ? 1 : 40
+   if Units is VUNIT_BOUNDING_BOX then
+      clip.viewport.viewWidth = 1
+      clip.viewport.viewHeight = 1
+   end
+   clip.viewport.new('VectorRectangle', { width=size, height=size, fill=Fill })
+   viewport.new('VectorRectangle', { width=40, height=40, fill='red', mask=clip })
+   local bmp <close> = newBitmap(120, 80)
+   drawScene(scene, bmp)
+   return struct.toTable(mGfx.ReadRGBPixel(bmp, 10, 20)).red,
+      struct.toTable(mGfx.ReadRGBPixel(bmp, 30, 20)).red
+end
+
+@Test function ClipSolidLayersFollowPainterOrder()
+   for units in values(array<int> { VUNIT_USERSPACE, VUNIT_BOUNDING_BOX }) do
+      for _, fill in array<str> { 'none;black;white', 'white, black, none' } do
+         local left, right = layeredClipPixels(fill, units)
+         assert((left > 245) and (right > 245), f'Upper white clip layer must reveal the target for {fill}')
+      end
+      for _, fill in array<str> { 'none;white;black', 'black, white, none' } do
+         local left, right = layeredClipPixels(fill, units)
+         assert((left is 0) and (right is 0), f'Upper black clip layer must hide the target for {fill}')
+      end
+   end
+end
+
+@Test function ClipGradientLayersCompositeOverLowerPainters()
+   for units in values(array<int> { VUNIT_USERSPACE, VUNIT_BOUNDING_BOX }) do
+      local _, red = layeredClipPixels('red', units)
+      for _, fill in array<str> { 'none;red;url(#half)', 'url(#half), red, none' } do
+         local left, right = layeredClipPixels(fill, units)
+         assert(left > 245, f'Upper gradient must reveal the target on the left for {fill}')
+         assert((red > 0) and (math.abs(right - red) <= 1),
+            f'Transparent gradient must preserve the lower red painter for {fill}')
+      end
+   end
+end
+
+@Test function ClipExtendedPatternLayerIsRendered()
+   for units in values(array<int> { VUNIT_USERSPACE, VUNIT_BOUNDING_BOX }) do
+      local left, right = layeredClipPixels('none;black;url(#white_pattern)', units)
+      assert((left > 245) and (right > 245), 'An extended pattern painter must reveal the masked target')
+   end
+end
+
+-- A filter's output must be clipped by masks inherited from container viewports.  The mask reveals the left half of
+-- the page, and the red flood covers the full page, so the right half must remain black.  Previously the filter
+-- output was copied to the target without consulting the mask stack.
+
+function filterUnderMaskPixels(NestedViewport:bool):<table, table>
+   local scene <close> = obj.new('VectorScene', { pageWidth=120, pageHeight=80 })
+   local root = scene.new('VectorViewport', { width='100%', height='100%' })
+   local filter = scene.new('VectorFilter')
+   filter.new('FloodFX', { colour=struct<FRGB> { red=1, green=0, blue=0, alpha=1 } })
+   check scene.mtAddDef('red_flood', filter)
+
+   local clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=VUNIT_USERSPACE })
+   clip.viewport.new('VectorRectangle', { width=60, height=80, fill='white' })
+
+   local masked = root.new('VectorViewport', { width='100%', height='100%' })
+   masked.mask = clip
+   if NestedViewport then
+      local inner = masked.new('VectorViewport', { x=10, y=10, width=100, height=60, filter='url(#red_flood)' })
+      inner.new('VectorRectangle', { width='100%', height='100%', fill='white' })
+   else
+      masked.new('VectorRectangle', { x=10, y=10, width=100, height=60, fill='white', filter='url(#red_flood)' })
+   end
+
+   local bmp <close> = newBitmap(120, 80)
+   drawScene(scene, bmp)
+   return struct.toTable(mGfx.ReadRGBPixel(bmp, 30, 40)), struct.toTable(mGfx.ReadRGBPixel(bmp, 90, 40))
+end
+
+@Test function FilterOutputIsClippedByAncestorMask()
+   for _, nested in { false, true } do
+      local inside, outside = filterUnderMaskPixels(nested)
+      assert((inside.red > 245) and (inside.green < 10), f'Filter output inside the mask must be drawn (nested={nested})')
+      assert((outside.red < 10) and (outside.green < 10) and (outside.blue < 10),
+         f'Filter output outside the mask must be hidden, got {outside.red},{outside.green},{outside.blue} ' ..
+         f'(nested={nested})')
+   end
+end
+
+-- Translucent filter output beneath an ancestor mask must blend exactly as it does without a mask.  The masked path
+-- previously used the target's gamma-correct blend instead of the sRGB blend of the unmasked copy, which visibly
+-- weakened drop shadows while a viewport mask was active (e.g. during vfx.wipe()).
+
+function translucentFilterPixel(Masked:bool, Opacity:num, Buffered:bool, X:num, Y:num):table
+   local scene <close> = obj.new('VectorScene', { pageWidth=300, pageHeight=180 })
+   local root = scene.new('VectorViewport', { width='100%', height='100%' })
+   root.new('VectorRectangle', { width='100%', height='100%', fill='rgb(255,255,255)' })
+   local page = root.new('VectorViewport', { x=X, y=Y, width=120, height=80, buffered=Buffered })
+   page.new('VectorRectangle', { width='100%', height='100%', fill='white' })
+   local filter = scene.new('VectorFilter')
+   filter.new('FloodFX', { colour=struct<FRGB> { red=1, green=0, blue=0, alpha=1 }, opacity=Opacity })
+   check scene.mtAddDef('translucent_flood', filter)
+
+   local target = page.new('VectorViewport', { width='100%', height='100%' })
+   if Masked then
+      local clip = scene.new('VectorClip', { flags=VCLF_APPLY_FILLS, units=VUNIT_USERSPACE })
+      clip.viewport.new('VectorRectangle', { width=120, height=80, fill='white' })
+      target.mask = clip
+   end
+   target.new('VectorRectangle', { x=10, y=10, width=100, height=60, fill='white', filter='url(#translucent_flood)' })
+
+   local bmp <close> = newBitmap(300, 180)
+   drawScene(scene, bmp)
+   return struct.toTable(mGfx.ReadRGBPixel(bmp, X + 60, Y + 40))
+end
+
+@Test function TranslucentFilterOutputBlendIsMaskIndependent()
+   for _, opacity in { 0.25, 0.5, 0.75 } do
+      local plain  = translucentFilterPixel(false, opacity, false, 0, 0)
+      local masked = translucentFilterPixel(true, opacity, false, 0, 0)
+      assert((math.abs(plain.green - masked.green) <= 1) and (plain.red is masked.red),
+         f'Masked filter output must blend like unmasked output at opacity {opacity}, got ' ..
+         f'{masked.red},{masked.green},{masked.blue} vs {plain.red},{plain.green},{plain.blue}')
+   end
+end
+
+-- A buffered target uses scene coordinates even when its origin lies beyond its local bitmap dimensions.
+
+@Test function BufferedMaskedFilterPreservesSceneClip()
+   for _, position in array<table> { { x=20, y=10 }, { x=150, y=10 }, { x=20, y=90 }, { x=150, y=90 } } do
+      local plain = translucentFilterPixel(true, 0.5, false, position.x, position.y)
+      local buffered = translucentFilterPixel(true, 0.5, true, position.x, position.y)
+      -- 50% red over white reads green ~128 under sRGB blending and ~186 under the default gamma-correct blend.
+      assert((plain.green > 100) and (plain.green < 200), 'Reference filter must produce translucent red')
+      assert((plain.red is buffered.red) and (math.abs(plain.green - buffered.green) <= 1) and
+         (math.abs(plain.blue - buffered.blue) <= 1),
+         f'Buffered masked filter at {position.x},{position.y} must match the unbuffered output, got ' ..
+         f'{buffered.red},{buffered.green},{buffered.blue} vs {plain.red},{plain.green},{plain.blue}')
+   end
+end

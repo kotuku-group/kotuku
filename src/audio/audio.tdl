@@ -2,19 +2,89 @@
 
 module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timestamp=20240611, src={ "audio.cpp", "commands.cpp" } }, function()
   flags("ADF", { comment="Optional flags for the Audio object." },
-    "OVER_SAMPLING: Enables oversampling for higher quality audio at the cost of slower mixing.",
-    "FILTER_LOW: Enable a low level of output filtering to minimise distortion.",
-    "FILTER_HIGH: Enable a high level of output filtering to minimise distortion.",
-    "STEREO: Enable stereo output (set by default if the platform supports stereo).  If not set, output is in mono.",
-    "VOL_RAMPING: Enable volume ramping for softer playback when a sample is played multiple times (enabled by default).",
-    "AUTO_SAVE: Save configuration information on exit.",
-    "SYSTEM_WIDE: Mixer changes should be applied system-wide.")
+    { VOL_RAMPING = "0x00000008: Enable channel gain and voice de-clicking at every Quality (enabled by default)." },
+    { AUTO_SAVE = "0x00000010: Save configuration information on exit." },
+    { SYSTEM_WIDE = "0x00000020: Mixer changes should be applied system-wide." })
+
+  enums("ADITHER", { type="int", start=0, comment="Integer output dither policy." },
+    "AUTO: Enable TPDF for Quality 33 and above (the default).",
+    "OFF: Disable dither regardless of Quality.",
+    "TPDF: Enable triangular dither for all Quality settings.")
+
+  flags("AEF", { comment="Audio effect flags." },
+    "BYPASS: Skip an application effect.  Global effects cannot be bypassed.")
+
+  flags("AMF", { comment="Audio meter snapshot flags." },
+    "VALID: The snapshot holds a valid measurement.",
+    "IDLE: The measurement is idle or stale.",
+    "BYPASSED: The effect is bypassed.  The VALID flag is not set.",
+    "DISCONNECTED: The effect is not attached to an effect chain.  The VALID flag is not set.",
+    "NO_SAMPLES: No samples have been measured yet.")
+
+  flags("AMV", { comment="Per-value flags returned by AudioEffect.ReadMeters()." },
+    "VALID: The value holds a measurement from the snapshot's interval.",
+    "FLOOR: The measured value was below the meter floor.  The reported value is the floor.")
+
+  enums("ASF", { type="int", start=1, comment="Sample representations, independent of the channel count." },
+    "U8: Unsigned 8-bit integer samples in one byte.  Silence is `128`.",
+    "S16: Signed 16-bit integer samples in two bytes.",
+    "F32: 32-bit IEEE-754 floating point samples in four bytes, with a nominal range of `-1.0` to `1.0`.")
+
+  flags("AFF", { comment="Optional AudioFormat flags." },
+    "BIG_ENDIAN_ORDER: Multi-byte samples are stored in big endian byte order.  Samples are little endian if this flag is not set.")
+
+  constants("SPK", { type="int", comment="Channel identities for the Layout of an AudioFormat." }, {
+    CENTRE      = "1: Front centre speaker.  An ordinary mono channel also uses this identity.",
+    FRONT_LEFT  = "2: Front left speaker.",
+    FRONT_RIGHT = "3: Front right speaker.",
+    LFE         = "4: Low-frequency effects channel.",
+    SIDE_LEFT   = "5: Side left speaker.",
+    SIDE_RIGHT  = "6: Side right speaker.",
+    REAR_LEFT   = "7: Rear left speaker.",
+    REAR_RIGHT  = "8: Rear right speaker.",
+    DISCRETE    = "0x10000: Base identity for a discrete channel that has no speaker position.  Add a zero-based index from `0` to `0xffff`."
+  })
+
+  enums("ACL", { type="int", start=1, comment="Named channel layout presets for ExpandLayout()." },
+    "MONO: `CENTRE`.",
+    "STEREO: `FRONT_LEFT`, `FRONT_RIGHT`.",
+    "SURROUND_5_1_SIDE: `FRONT_LEFT`, `FRONT_RIGHT`, `CENTRE`, `LFE`, `SIDE_LEFT`, `SIDE_RIGHT`.",
+    "SURROUND_5_1_REAR: `FRONT_LEFT`, `FRONT_RIGHT`, `CENTRE`, `LFE`, `REAR_LEFT`, `REAR_RIGHT`.")
+
+  enums("AFS", { type="int", start=0, comment="Availability of a reported processing format." },
+    "UNAVAILABLE: No processing format has been committed.  The format results are empty.",
+    "ACTIVE: The reported format is committed and in use.",
+    "INACTIVE: Processing has stopped.  The last committed format is reported.")
+
+  enums("ADS", { type="int", start=0, comment="Effect drain states reported by GetEffectStatus()." },
+    "IDLE: No sources are playing and no effect has pending output.",
+    "ACTIVE: At least one source on the selected path is playing.",
+    "DRAINING: Sources have stopped, but one or more effects are still producing tail output.")
+
+  enums("EQB", { type="int", start=0, comment="Parametric equaliser band types." },
+    "PEAK: Bell filter with gain in decibels.",
+    "LOW_SHELF: Low-frequency shelf with gain in decibels.",
+    "HIGH_SHELF: High-frequency shelf with gain in decibels.",
+    "LOW_PASS: Low-pass filter; gain is ignored.",
+    "HIGH_PASS: High-pass filter; gain is ignored.")
+
+  enums("SATS", { type="int", start=0, comment="AudioSaturator transfer curve shapes." },
+    "SOFT: Smooth saturation that approaches full scale gradually.",
+    "HARD: Hard clipping at full scale, for a harsher sound.")
+
+  enums("DLM", { type="int", start=0, comment="AudioDelay stereo routing modes." },
+    "NORMAL: Every channel is delayed independently, preserving the stereo image.",
+    "PING_PONG: The echoes alternate between the left and right channels, starting on the left.")
+
+  enums("GTM", { type="int", start=0, comment="AudioGate attenuation modes." },
+    "EXPANDER: Attenuation increases progressively as the signal falls further below the threshold.",
+    "GATE: The full range of attenuation is applied whenever the gate is closed.")
 
   flags("VCF", { comment="Volume control flags" },
     { PLAYBACK = "0x00000001: The mixer supports audio output." },
     { CAPTURE  = "0x00000010: The mixer supports audio input." },
-    { JOINED   = "0x00000100: The mixer channels are joined (e.g. left and right speakers cannot be adjusted separately)." },
-    { MONO     = "0x00001000: The mixer is restricted to mono input/output." },
+    { JOINED   = "0x00000100: The control's channels are joined and cannot be adjusted separately." },
+    { MONO     = "0x00001000: The control has a single channel.  Its absence does not imply exactly two channels." },
     { MUTE     = "0x00010000: The mixer is muted." },
     { SYNC     = "0x00100000: The mixer is synchronised." }
   )
@@ -34,20 +104,10 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
   flags("SDF", { type='int', comment="Sound flags" },
     "LOOP: Enables sample looping. The #LoopStart and #LoopEnd fields determine where the looping area lies within the sample data.",
     "NEW: Create the sample from scratch (e.g. for audio recording purposes).",
-    "STEREO: Indicates that the sound has multiple audio channels.",
     "RESTRICT_PLAY: Restricts playback so that the sound can never play on more than one channel at any given time.",
     { STREAM = "0x40000000: Read-Only. Indicates that streaming is enabled." },
     { NOTE = "0x80000000: Internal. Used for managing playback." }
   )
-
-  constants("SFM", { type="uint", comment="These audio bit formats are supported by AddSample and AddStream." }, {
-    U8_BIT_MONO    = "1: 8-bit mono unsigned sample.",
-    S16_BIT_MONO   = "2: 16-bit mono signed sample.",
-    U8_BIT_STEREO  = "3: 8-bit stereo unsigned sample.",
-    S16_BIT_STEREO = "4: 16-bit stereo signed sample.",
-    END            = "5: Private.",
-    F_BIG_ENDIAN   = "0x80000000: Combine this flag with any audio format to declare it as big endian."
-  })
 
   enums("LOOP", { type='short', start=1, comment="Loop modes for the AudioLoop structure." },
     "SINGLE: Single loop: Releasing will end the note.",
@@ -75,14 +135,92 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
    "RELEASED: Sample playing and note has been released.",
    "FADE_OUT: Playback is fading out.")
 
-  struct("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
+  enums("MIX", { type="int", start=1, comment="Mixer batch operations." },
+    "CONTINUE: Resume a paused channel; arguments ignored.",
+    "FREQUENCY: Set playback frequency using Integer (0 to 192000 Hz).",
+    "MUTE: Set mute using Integer (zero is unmuted).",
+    "PAN: Set pan using Value (-1 to 1, clamped).",
+    "PAUSE: Suspend playback, preserving position, loop and release state; arguments ignored.",
+    "PLAY: Start playback at byte position Integer (non-negative).",
+    "RELEASE: Release the playing note according to the sample's loop mode; arguments ignored.",
+    "TEMPO: Set channel-set tracker tempo using Integer (1 to 100000 BPM; 24 ticks per beat).",
+    "SAMPLE: Select sample handle Integer (positive).",
+    "STOP: End playback terminally; arguments ignored.",
+    "VOLUME: Set gain using Value (0 to 1, clamped).")
+
+  structdef("AudioMixCommand", { comment="One command in a caller-owned mixer batch." }, [[
+    int(MIX) Operation # Mixer operation
+    int Handle         # Target channel; all commands in a batch must use the same channel set
+    large Integer      # Integer argument for the selected operation; otherwise ignored
+    double Value       # Finite floating-point argument for PAN and VOLUME; otherwise ignored
+  ]])
+
+  structdef("AudioLoop", { comment="Loop settings for the AddSample() method." }, [[
     short(LOOP) LoopMode    # Loop mode (single, double)
     char(LTYPE) Loop1Type   # First loop type (unidirectional, bidirectional)
     char(LTYPE) Loop2Type   # Second loop type (unidirectional, bidirectional)
-    int Loop1Start          # Start of the first loop
-    int Loop1End            # End of the first loop
-    int Loop2Start          # Start of the second loop
-    int Loop2End            # End of the second loop
+    large Loop1Start        # Byte position at the start of the first loop
+    large Loop1End          # Byte position at the end of the first loop
+    large Loop2Start        # Byte position at the start of the second loop
+    large Loop2End          # Byte position at the end of the second loop
+  ]])
+
+  structdef("AudioFormat", { comment="Describes interleaved PCM audio data." }, [[
+    int SampleRate          # Nominal sample rate in frames per second
+    int(ASF) SampleFormat   # Representation of each sample
+    int(AFF) Flags          # Optional format flags
+    vector(int) Layout      # Ordered channel identities from SPK; the length is the channel count
+  ]])
+
+  structdef("EffectStatus", { comment="One coherent latency and drain-state snapshot from GetEffectStatus()." }, [[
+    large Application  # Application-chain algorithmic latency in frames
+    large Global       # Global-chain algorithmic latency in frames
+    large Total        # Total algorithmic latency along the selected path in frames
+    int Rate           # Negotiated output rate, or zero before configuration
+    large Generation   # Configuration generation shared by all paths
+    int(ADS) State     # Selected chain's drain state
+    int Truncated      # One if automatic drain reached its safety deadline
+  ]])
+
+  structdef("MeterInfo", { comment="Describes one value published by an effect's meters." }, [[
+    string Key         # Stable key, e.g. `input_peak_left`
+    string Label       # Human-readable label
+    string Unit        # Unit of measurement, e.g. `dBFS`, or empty
+    string Scope       # Either `channel` or `global`
+    string Semantics   # Kind of measurement, e.g. `sample-peak`, or empty
+    int Slot           # Index of the value in the Values of a MeterReading
+    int Channel        # Channel identity from SPK, or zero for a global value
+  ]])
+
+  structdef("MeterLayout", { comment="An owned snapshot of the descriptors returned by GetMeterLayout()." }, [[
+    large ID                              # Configuration identifier shared with the matching MeterReading
+    vector(struct(MeterInfo)) Meters # Meter descriptors in slot order
+  ]])
+
+  structdef("MeterValue", { comment="One meter value in a MeterReading." }, [[
+    double Value    # Measured value in the units of its MeterInfo descriptor
+    int(AMV) Flags  # Validity of the value
+  ]])
+
+  structdef("MeterReading", { comment="One coherent measurement of every meter value, from ReadMeters()." }, [[
+    large Sequence                    # Publication sequence number; increases with each published interval
+    large ID                          # Configuration identifier; compare with the ID from GetMeterLayout()
+    large Position                    # Processed-frame position at the end of the interval
+    int(AMF) Flags                    # Validity and lifecycle state of the reading
+    int Interval                      # Length of the measurement interval in frames
+    vector(struct(MeterValue)) Values # One value per meter descriptor, indexed by slot
+  ]])
+
+  structdef("AudioEQBand", { comment="One parametric equaliser band." }, [[
+    int(EQB) Type      # Filter type
+    double Frequency   # Centre or corner frequency in hertz
+    double Gain        # Band gain in decibels
+    double Q           # Quality factor or shelf slope
+  ]])
+
+  structdef("AudioBranch", { comment="The level settings of one AudioSplitter branch." }, [[
+    double Gain        # Level of the branch output in the sum, in decibels
+    int Mute           # Set to 1 to remove the branch from the sum
   ]])
 
   methods("Audio", "Snd", {
@@ -93,35 +231,232 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
     { id=5, name="SetSampleLength" },
     { id=6, name="AddStream" },
     { id=7, name="Beep" },
-    { id=8, name="SetVolume" }
+    { id=8, name="SetVolume" },
+    { id=9, name="GetEffectStatus" },
+    { id=10, name="ResetEffects" },
+    { id=11, name="GetOutputFormat" },
+    { id=12, name="GetVolumeChannels" }
   })
 
-  class("Audio", { src="class_audio.cpp", output="audio_def.c" }, [[
+  klass("Audio", { version=1, src="class_audio.cpp", output="class_audio_def.c", extended=true }, [[
     int OutputRate
     int InputRate
     int Quality
     int(ADF) Flags     # Special flags
+    int(ADITHER) Dither
     int BitDepth       # Typically `8` or `16` bit, reflects the hardware driver's bit depth
     int Periods        # Number of periods for ALSA audio buffering
-    int PeriodSize     # Period size for ALSA audio buffering
+    int PeriodSize     # Frames per period for ALSA audio buffering
   ]])
 
-  class("Sound", { src="class_sound.cpp" }, [[
+  methods("AudioEffect", "Fx", {
+    { id=5, name="GetResponse" },
+    { id=6, name="GetGroupCount" },
+    { id=7, name="GetMeterLayout" },
+    { id=8, name="GetOutput" },
+    { id=9, name="ReadMeters" },
+    { id=10, name="GetProcessingFormat" },
+    { id=11, name="Batch" }
+  })
+
+  klass("AudioEffect", { version=1, src="class_audioeffect.cpp", output="class_audioeffect_def.c", extended=true }, [[
+    oid Audio
+    int Channel
+    int Order
+    int(AEF) Flags
+    int OutputRate
+    oid Parent
+    int Branch
+    ~large Latency
+    ~int Mutable
+    ~string Schema
+  ]])
+
+  -- AudioEqualiser method IDs start high enough to give a cushion from inherited AudioEffect methods.
+
+  methods("AudioEqualiser", "Eq", {
+    { id=30, name="GetBand" },
+    { id=31, name="SetBand" },
+    { id=32, name="InsertBand" },
+    { id=33, name="RemoveBand" }
+  })
+
+  klass("AudioEqualiser", { base="AudioEffect", src="class_audioequaliser.cpp",
+    output="class_audioequaliser_def.c", extended=true }, [[
+    ~array(struct(AudioEQBand)) Bands
+    ~double Gain
+    ~int Loudness
+    ~double ListeningLevel
+  ]])
+
+  klass("AudioReverb", { base="AudioEffect", src="class_audioreverb.cpp",
+    output="class_audioreverb_def.c", extended=true }, [[
+    ~double Decay
+    ~double Size
+    ~double PreDelay
+    ~double Damping
+    ~double Diffusion
+    ~double EarlyLevel
+    ~double EarlyLength
+    ~double Mix
+  ]])
+
+  klass("AudioCompressor", { base="AudioEffect", src="class_audiocompressor.cpp",
+    output="class_audiocompressor_def.c", extended=true }, [[
+    ~double Threshold
+    ~double Ratio
+    ~double Attack
+    ~double Release
+    ~double Knee
+    ~double Makeup
+    ~double Mix
+  ]])
+
+  klass("AudioLimiter", { base="AudioEffect", src="class_audiolimiter.cpp",
+    output="class_audiolimiter_def.c", extended=true }, [[
+    ~double Ceiling
+    ~double Release
+    ~double Gain
+  ]])
+
+  klass("AudioGate", { base="AudioEffect", src="class_audiogate.cpp",
+    output="class_audiogate_def.c", references={ "GTM" }, extended=true }, [[
+    ~int(GTM) Mode
+    ~double Threshold
+    ~double Ratio
+    ~double Range
+    ~double Hysteresis
+    ~double Attack
+    ~double Hold
+    ~double Release
+  ]])
+
+  klass("AudioDelay", { base="AudioEffect", src="class_audiodelay.cpp",
+    output="class_audiodelay_def.c", references={ "DLM" }, extended=true }, [[
+    ~double Time
+    ~double Feedback
+    ~double Damping
+    ~int(DLM) Mode
+    ~double Mix
+  ]])
+
+  klass("AudioChorus", { base="AudioEffect", src="class_audiochorus.cpp",
+    output="class_audiochorus_def.c", extended=true }, [[
+    ~double Rate
+    ~double Delay
+    ~double Depth
+    ~double Spread
+    ~double Mix
+  ]])
+
+  klass("AudioFlanger", { base="AudioEffect", src="class_audioflanger.cpp",
+    output="class_audioflanger_def.c", extended=true }, [[
+    ~double Rate
+    ~double Delay
+    ~double Depth
+    ~double Feedback
+    ~double Mix
+  ]])
+
+  klass("AudioLoudness", { base="AudioEffect", src="class_audioloudness.cpp",
+    output="class_audioloudness_def.c", extended=true }, [[
+    ~double Target
+    ~double MaxBoost
+    ~double MaxCut
+    ~double Response
+    ~double Gate
+    ~int Link
+  ]])
+
+  klass("AudioPhaser", { base="AudioEffect", src="class_audiophaser.cpp",
+    output="class_audiophaser_def.c", extended=true }, [[
+    ~double Rate
+    ~double Centre
+    ~double Depth
+    ~double Feedback
+    ~double Mix
+  ]])
+
+  klass("AudioSaturator", { base="AudioEffect", src="class_audiosaturator.cpp",
+    output="class_audiosaturator_def.c", references={ "SATS" },
+    extended=true }, [[
+    ~double Drive
+    ~int(SATS) Shape
+    ~double Gain
+    ~double Mix
+  ]])
+
+  -- AudioSplitter method IDs start high enough to give a cushion from inherited AudioEffect methods.
+
+  methods("AudioSplitter", "Split", {
+    { id=30, name="GetBranch" },
+    { id=31, name="SetBranch" },
+    { id=32, name="InsertBranch" },
+    { id=33, name="RemoveBranch" }
+  })
+
+  klass("AudioSplitter", { base="AudioEffect", src="class_audiosplitter.cpp",
+    output="class_audiosplitter_def.c", extended=true }, [[
+    ~double LatencyBudget
+  ]])
+
+  klass("AudioStereo", { base="AudioEffect", src="class_audiostereo.cpp",
+    output="class_audiostereo_def.c", extended=true }, [[
+    ~double Width
+    ~double Balance
+    ~int Swap
+    ~int Split
+    ~double Crossover
+    ~double BassWidth
+    ~double Gain
+  ]])
+
+  klass("AudioCrossfeed", { base="AudioEffect", src="class_audiocrossfeed.cpp",
+    output="class_audiocrossfeed_def.c", extended=true }, [[
+    ~double Amount
+    ~double Cutoff
+    ~double Delay
+    ~double Gain
+  ]])
+
+  klass("AudioPitchShift", { base="AudioEffect", src="class_audiopitchshift.cpp",
+    output="class_audiopitchshift_def.c", extended=true }, [[
+    ~double Semitones
+    ~double Mix
+    ~double Gain
+  ]])
+
+  -- AudioAnalyser method IDs start high enough to give a cushion from inherited AudioEffect methods.
+
+  methods("AudioAnalyser", "Ana", {
+    { id=30, name="GetSpectrum" },
+    { id=31, name="GetWaveform" }
+  })
+
+  klass("AudioAnalyser", { base="AudioEffect", src="class_audioanalyser.cpp",
+    output="class_audioanalyser_def.c", extended=true }, [[
+    ~int ChannelIndex
+  ]])
+
+  klass("Sound", { version=1, src="class_sound.cpp", output="class_sound_def.c", extended=true }, [[
+    ~struct(*AudioFormat) SourceFormat
+    ~int Channels
+    ~int FrameBytes
+    ~int SampleRate
+    string Path
     double Volume      # Volume of sample (0 - 100%)
     double Pan         # Horizontal positioning for playback on stereo speakers (`-100` to `+100`)
     large Position     # Byte position to start playing from
+    large Length       # Length of sample data in bytes
+    large LoopStart    # Byte position of looping start
+    large LoopEnd      # Byte position of looping end
     int Priority       # Priority over other sounds
-    int Length         # Length of sample data in bytes
     int Octave         # Current octave to use for playing back notes (defaults to zero)
     int(SDF) Flags     # Sound flags
-    int Frequency      # Frequency of sampled sound (nb: does not affect playback - use the Playback field)
     int Playback       # Frequency to use for sample playback
     int Compression    # Compression rating (0% none, 100% high)
-    int BytesPerSecond # Bytes per second, measured as `Frequency * BytesPerSample`
-    int BitsPerSample  # Usually set to `8` or `16` bit
+    int BytesPerSecond # Bytes per second, measured as `SampleRate * FrameBytes`
     oid Audio          # Reference to an @Audio object to use for audio output and input
-    int LoopStart      # Byte position of looping start
-    int LoopEnd        # Byte position of looping end
     int(STREAM) Stream # Streaming type (smart by default)
     int Handle         # Audio handle acquired at the audio object [Private - Available to child classes]
     int ChannelIndex   # Channel handle that the sound was last played on
@@ -132,13 +467,15 @@ module({ name="Audio", copyright="Paul Manias © 2002-2026", version=1.0, timest
      "MixFrequency",
      "MixMute",
      "MixPan",
+     "MixPause",
      "MixPlay",
-     "MixRate",
+     "MixRelease",
+     "MixTempo",
      "MixSample",
      "MixStop",
-     "MixStopLoop",
      "MixVolume",
-     "MixStartSequence",
-     "MixEndSequence")
+     "MixSubmitBatch",
+     "ExpandLayout",
+     "GetFrameBytes")
 
 end)

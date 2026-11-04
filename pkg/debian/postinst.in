@@ -33,11 +33,6 @@ case "$1" in
             find /usr/share/kotuku/config -type d -exec chmod 755 {} \;
         fi
 
-        # Make scripts executable if they exist
-        if [ -d /usr/share/kotuku/scripts ]; then
-            find /usr/share/kotuku/scripts -name "*.fluid" -exec chmod 644 {} \;
-            find /usr/share/kotuku/scripts -type d -exec chmod 755 {} \;
-        fi
         ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

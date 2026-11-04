@@ -20,6 +20,7 @@ extern "C" {
    double cmath_sinh(double x) { return sinh(x); }
    double cmath_cosh(double x) { return cosh(x); }
    double cmath_tanh(double x) { return tanh(x); }
+   double cmath_fmod(double x, double y) { return fmod(x, y); }
    double cmath_sqrt(double x) { return sqrt(x); }
    double cmath_log(double x) { return log(x); }
    double cmath_log2(double x) { return log2(x); }

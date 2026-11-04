@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,13 +5,14 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Collects AGG mathematical constants, comparisons, and geometry helpers. Hooks into transforms, curve flattening,
+// stroking, clipping, and gradient calculations. In the vector renderer it keeps numeric tolerances and geometry
+// operations consistent across the pipeline.
 // Bessel function (besj) was adapted for use in AGG library by Andy Wilk
 // Contact: castor.vulgaris@gmail.com
-//----------------------------------------------------------------------------
 
-#ifndef AGG_MATH_INCLUDED
-#define AGG_MATH_INCLUDED
+#pragma once
 
 #include <cmath>
 #include <cstdlib>
@@ -217,79 +217,12 @@ namespace agg {
         return sum * 0.5;
     }
 
-    // Tables for fast sqrt
-    extern int16u g_sqrt_table[1024];
-    extern int8   g_elder_bit_table[256];
+    // Integer square root.
 
-    //Fast integer Sqrt - really fast: no cycles, divisions or multiplications
-    #if defined(_MSC_VER)
-    #pragma warning(push)
-    #pragma warning(disable : 4035) //Disable warning "no return value"
-    #endif
-    AGG_INLINE unsigned fast_sqrt(unsigned val)
-    {
-    #if defined(_M_IX86) and defined(_MSC_VER) and !defined(AGG_NO_ASM)
-        //For Ix86 family processors this assembler code is used.
-        //The key command here is bsr - determination the number of the most
-        //significant bit of the value. For other processors
-        //(and maybe compilers) the pure C "#else" section is used.
-        __asm
-        {
-            mov ebx, val
-            mov edx, 11
-            bsr ecx, ebx
-            sub ecx, 9
-            jle less_than_9_bits
-            shr ecx, 1
-            adc ecx, 0
-            sub edx, ecx
-            shl ecx, 1
-            shr ebx, cl
-    less_than_9_bits:
-            xor eax, eax
-            mov  ax, g_sqrt_table[ebx*2]
-            mov ecx, edx
-            shr eax, cl
-        }
-    #else
-
-        // This code is portable to most arcitectures including 64bit ones.
-
-        unsigned t = val;
-        int bit=0;
-        unsigned shift = 11;
-
-        // The following piece of code is just an emulation of the
-        // Ix86 assembler command "bsr" (see above). However on old
-        // Intels (like Intel MMX 233MHz) this code is about twice
-        // faster (sic!) then just one "bsr". On PIII and PIV the
-        // bsr is optimized quite well.
-
-        bit = t >> 24;
-        if (bit) bit = g_elder_bit_table[bit] + 24;
-        else {
-           bit = (t >> 16) & 0xFF;
-           if (bit) bit = g_elder_bit_table[bit] + 16;
-           else {
-              bit = (t >> 8) & 0xFF;
-              if (bit) bit = g_elder_bit_table[bit] + 8;
-              else bit = g_elder_bit_table[t];
-           }
-        }
-
-        // This code calculates the sqrt.
-        bit -= 9;
-        if (bit > 0) {
-           bit = (bit >> 1) + (bit & 1);
-           shift -= bit;
-           val >>= (bit << 1);
-        }
-        return g_sqrt_table[val] >> shift;
-    #endif
+    AGG_INLINE unsigned fast_sqrt(unsigned val) {
+       // Compiling to a hardware sqrt instruction is expected from the compiler
+       return unsigned(std::sqrt(double(val)));
     }
-    #if defined(_MSC_VER)
-    #pragma warning(pop)
-    #endif
 
     // Function BESJ calculates Bessel function of first kind of order n
     // Arguments:
@@ -376,6 +309,3 @@ namespace agg {
     }
 
 }
-
-
-#endif

@@ -7,6 +7,9 @@
     <type>module</type>
     <version>1</version>
     <copyright>Paul Manias © 2010-2026</copyright>
+    <source>
+      <file path="src/svg/">svg.cpp</file>
+    </source>
     <classes>
       <class>SVG</class>
     </classes>

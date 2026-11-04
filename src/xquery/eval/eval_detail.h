@@ -7,6 +7,9 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
+
+struct XPathContext;
 
 enum class RelationalOperator {
    LESS,
@@ -39,6 +42,12 @@ int xpath_compare_order_keys(const XPathVal &LeftValue, bool LeftEmpty, const XP
 // String and whitespace utilities
 bool is_space_character(char Ch) noexcept;
 std::string_view trim_view(std::string_view Text);
+
+// QName construction and namespace resolution
+[[nodiscard]] std::optional<std::string> resolve_namespace_uri(const XPathContext &Context, std::string_view Prefix);
+std::optional<std::string> resolve_default_element_namespace(const XPathContext &Context);
+bool parse_qname_lexical_value(std::string_view Value, std::string &Prefix, std::string &Local);
+std::string canonicalise_qname_value(std::string_view NamespaceURI, std::string_view Prefix, std::string_view Local);
 
 // Predicate value extraction and comparison (implemented in xpath_evaluator_predicates.cpp)
 std::string node_set_string_value(const XPathVal &Value, size_t Index);

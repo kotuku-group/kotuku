@@ -46,20 +46,23 @@
 /projects/*
 
 /install/
-/packages/
 /extras/
 /temp/
 /tests/
 
 /3rdparty/zlib-*/
+/3rdparty/bearssl/
 .idea/
 local/
 build/
 out/
 CLAUDE.local.md
+AGENTS.local.md
 src/link/kotuku.manifest
 src/link/resource.rc
-data/ssl/localhost.p12
-data/ssl/localhost.pem
+data/ssl/localhost*.p12
+data/ssl/localhost*.pem
 docs/kotuku*/
 tools/tiri_lsp/vscode_plugin/node_modules/
+
+!/CMakePresets.json

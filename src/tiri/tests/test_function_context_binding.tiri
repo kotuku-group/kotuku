@@ -1,0 +1,466 @@
+-- Explicit function contexts: dispatch, cleanup, lifetimes, native callbacks and cached bytecode.
+
+module core as mCore
+
+function collect_twice()
+   processing.collect()
+   processing.collect()
+end
+
+function assert_compiled_trace()
+   local traces = 0
+   for number in {1 into 100} do
+      if jit.util.traceInfo(number) != nil then traces++ end
+   end
+   assert(traces > 0, 'The bound-function workload must compile JIT traces')
+end
+
+@Test function DispatchOverridesReceiverAndPreservesArguments()
+   local caller = entity { name='caller' }
+   local owner = { name='bound' }
+   local receiver = entity { name='receiver' }
+   local callback = function[owner](Argument):<table, table> return &&, Argument end
+   receiver.callback = callback
+   function receiver.invoke(Callback:func):table return Callback() end
+   local root = &&
+   using caller do
+      local context, argument = callback(&&)
+      assert(context is owner and argument is caller, 'Direct calls must enter the bound context')
+      context, argument = receiver.callback(&&)
+      assert(context is owner and argument is caller, 'Entity dispatch must bind the body after evaluating arguments')
+      context, argument = receiver['callback'](&&)
+      assert(context is owner and argument is caller, 'Computed calls must keep the same binding policy')
+      context, argument = receiver?.callback(&&)
+      assert(context is owner and argument is caller, 'Safe calls must keep the same binding policy')
+      assert(receiver.invoke(function[&&]():table return && end) is caller,
+         'A binding created in contextual call arguments must read the caller context')
+      assert(&& is caller, 'Each bound call must restore its caller')
+      local ordinary = function[]():table return && end
+      receiver.ordinary = ordinary
+      assert(receiver.ordinary() is caller, 'Empty bindings must inherit the caller without entering the receiver')
+   end
+   assert(&& is root, 'Calls must restore the root context')
+   local callable = setmetatable(entity { name='metamethod receiver' }, {
+      __call=function[owner]():table return && end,
+      __index=function[<weak> owner](Key):str return &name .. Key end
+   })
+   assert(callable() is owner, 'Metamethod calls must honour the binding instead of their receiver')
+   assert(callable.suffix is 'boundsuffix', 'Bound __index must receive its key and use the bound context')
+   assert(&& is root, 'Metamethod calls must restore root context')
+end
+
+@Test function NestedCallsErrorsAndDefersRestoreContext()
+   local caller = { name='caller' }
+   local first = { name='first' }
+   local second = { name='second' }
+   local events = array<str>
+   local inner = function[second](Fail:bool):str
+      defer events.push('defer:' .. &name) end
+      assert(&& is second)
+      if Fail then raise ERR_InvalidData, 'bound failure' end
+      return &name
+   end
+   local outer = function[first](Fail:bool):<str, num>
+      defer events.push('defer:' .. &name) end
+      assert(inner(Fail) is 'second')
+      assert(&& is first, 'Nested return must restore the outer binding')
+      return &name, 42
+   end
+   using caller do
+      local name, number = outer(false)
+      assert(name is 'first' and number is 42, 'Bound returns must preserve all values')
+      assert(&& is caller)
+      try
+         outer(true)
+      except e
+         assert(e.code is ERR_InvalidData and e.message is 'bound failure')
+         assert(&& is caller, 'Error unwinding must restore the caller before the handler')
+      success
+         assert(false, 'The bound error must reach the caller')
+      end
+   end
+   assert(#events is 4 and events[0] is 'defer:second' and events[1] is 'defer:first' and
+      events[2] is 'defer:second' and events[3] is 'defer:first', 'Defers must run once in their bound contexts')
+   local fallthrough = function[first]() &value = 17 end
+   fallthrough()
+   assert(first.value is 17 and &name is nil, 'Fall-through must also restore context')
+end
+
+@Test(hotpath=3) function TailPositionCalleesKeepTheBinding()
+   defer jit.off() jit.opt.start() end
+   local combo = entity { name='combo', text='' }
+   local menu = entity { name='menu', text='' }
+   local function set_text(Item:str):str &text = Item return &name end
+   local function describe():str return &name .. ':' .. &text end
+   local callbacks = {
+      function[combo](Item) set_text(Item) return describe() end,
+      function[combo](Item) set_text(Item) local result = describe() return result end,
+      function[combo](Item):str set_text(Item) return describe() end,
+      function[combo](Item) return set_text(Item) end
+   }
+   function menu.select(Callback:func, Item:str):any return Callback(Item) end
+   for enabled in values({ false, true }) do
+      jit.off()
+      jit.flush()
+      if enabled then jit.on() jit.opt.start('hotloop=1', 'hotexit=1') end
+      for i in {0 to 100} do
+         for index in {0 to 4} do
+            local result = menu.select(callbacks[index], 'value')
+            assert(result is ((index is 3) ? 'combo' : 'combo:value'),
+               'Every tail-position helper must observe the bound context')
+            assert(combo.text is 'value' and menu.text is '', 'Tail-position writes must reach the bound owner')
+         end
+      end
+      if enabled then assert_compiled_trace() end
+   end
+   jit.off()
+   jit.opt.start()
+   local factory = function[combo]():func
+      local function recurse(Depth:num):num
+         if Depth is 0 then return 42 end
+         return recurse(Depth - 1)
+      end
+      return recurse
+   end
+   assert(factory()(100000) is 42, 'An unbound closure nested in a bound body must retain tail-call elimination')
+end
+
+@Test function ReferenceIsEvaluatedOnceAndTemporaryCapturesStayClosed()
+   local lookups = 0
+   local first = { name='first' }
+   local second = { name='second' }
+   local holder = { child=first }
+   local function key():str lookups++ return 'child' end
+   local callback = function[holder[key()]]():table return && end
+   local weak_callback = function[<weak> holder[key()]]():table return && end
+   holder.child = second
+   assert(lookups is 2 and weak_callback() is first and callback() is first and callback() is first,
+      'Indexed references must be evaluated only at closure creation')
+   local function pair(Left:func, Marker:num, Right:func):<func, num, func> return Left, Marker, Right end
+   local left, marker, right = pair(function[first]():table return && end, 42,
+      function[second]():table return && end)
+   assert(left() is first and right() is second and marker is 42, 'Reused argument registers must not alter captures')
+   local callbacks = { function[first]():table return && end, second=function[second]():table return && end }
+   assert(callbacks[0]() is first and callbacks.second() is second, 'Constructor slots must keep independent captures')
+   using first do
+      local current = function[&&]():table return && end
+      &child = second
+      local field = function[&child]():table return && end
+      assert(current() is first and field() is second, 'Context references must bind in their enclosing scope')
+      local function[&&] recursive(Depth:num, ...):<table, any, ...>
+         if Depth > 0 then return recursive(Depth - 1, ...) end
+         return &&, ...
+      end
+      local context, number, text = recursive(12, 42, 'varargs')
+      assert(context is first and number is 42 and text is 'varargs', 'Named recursion must keep binding and varargs')
+   end
+end
+
+@Test function StrongAndWeakBindingsControlLifetime()
+   local strong_finalised = false
+   local strong_owner = setmetatable({ name='strong' }, { __gc=function() strong_finalised = true end })
+   local strong = function[strong_owner]():str return &name end
+   local strong_weak = setmetatable({ owner=strong_owner }, { __mode='v' })
+   strong_owner = nil
+   collect_twice()
+   assert(strong_weak.owner != nil and not strong_finalised and strong() is 'strong',
+      'A strong binding must keep its context alive')
+   strong = nil
+   collect_twice()
+   assert(strong_weak.owner is nil and strong_finalised, 'Releasing the closure must release its strong binding')
+
+   local weak_finalised = false
+   local entered = false
+   local weak_owner = setmetatable({ name='weak' }, { __gc=function() weak_finalised = true end })
+   local weak = function[<weak> weak_owner]():str entered = true return &name end
+   assert(weak() is 'weak')
+   weak_owner = nil
+   entered = false
+   collect_twice()
+   assert(weak_finalised, 'Weak bindings must allow context finalisation while the closure survives')
+   local caller = { name='surviving caller' }
+   using caller do
+      try
+         weak()
+      except e
+         assert(e.code is ERR_Terminate and e.message is 'Resource collected', 'Dead weak bindings must raise D1')
+         assert(&& is caller and not entered, 'A dead binding must neither enter its context nor run its body')
+      success
+         assert(false, 'A collected binding must raise')
+      end
+   end
+end
+
+@Test function ActiveWeakCallsKeepTheirOwnerAlive()
+   local finalised = false
+   local owner = setmetatable({ name='active' }, { __gc=function() finalised = true end })
+   local weak = setmetatable({ owner=owner }, { __mode='v' })
+   local release_owner = function[]() owner = nil collect_twice() end
+   local callback = function[<weak> owner]()
+      release_owner()
+      assert(&name is 'active' and weak.owner != nil and not finalised,
+         'A weak binding must retain the acquired context until the call ends')
+   end
+   callback()
+   collect_twice()
+   assert(weak.owner is nil and finalised, 'The active-call reference must be released on return')
+end
+
+@Test function InvalidDynamicBindingsFailAtCreation()
+   local function dynamic(Value):any return Value end
+   for weak in values({ false, true }) do
+      for value in values({ 42, 'wrong', false }) do
+         local candidate:any = dynamic(value)
+         local caller = &&
+         try
+            if weak then
+               local callback = function[<weak> candidate]() end
+            else
+               local callback = function[candidate]() end
+            end
+         except e
+            assert(e.code is ERR_TypeMismatch and e.message.find('candidate') != nil,
+               'Creation errors must identify the invalid binding')
+            assert(&& is caller, 'Failed creation must leave context untouched')
+         success
+            assert(false, 'Non-table bindings must fail before a call')
+         end
+      end
+      local candidate:any = dynamic(nil)
+      try
+         if weak then
+            local callback = function[<weak> candidate]() end
+         else
+            local callback = function[candidate]() end
+         end
+      except e
+         assert(e.code is ERR_TypeMismatch and e.message.find('candidate') != nil)
+      success
+         assert(false, 'Nil bindings must fail at creation')
+      end
+   end
+end
+
+@Test function TimersUseTheBindingAndDeadWeakTimersUnsubscribe()
+   local owner = { name='timer' }
+   local registration = { name='registration' }
+   local hits = 0
+   local observed
+   local callback = function[<weak> owner]() observed = &name hits++ processing.signal() end
+   local timer
+   using registration do
+      _, timer = check mCore.SubscribeTimer(0.005, callback)
+   end
+   defer
+      if owner and timer then check mCore.UpdateTimer(timer, 0) end
+   end
+   check processing.sleep(1)
+   assert(hits is 1 and observed is 'timer', 'Native timers must use their explicit binding')
+   -- Once the local is cleared, the timer owns the last closure reference until it unsubscribes.
+   local weak = setmetatable({ callback=callback }, { __mode='v' })
+   owner = nil
+   callback = nil
+   collect_twice()
+   assert(weak.callback != nil, 'The timer must retain its registered closure until dispatch')
+   local caller = &&
+   processing.sleep(0.03)
+   collect_twice()
+   assert(&& is caller, 'Dead native callbacks must restore the interrupted context')
+   assert(hits is 1 and weak.callback is nil, 'A dead weak callback must unsubscribe and release its closure')
+end
+
+@Test(hotpath=3) function HotDirectAndDispatchedCalls()
+   local owner = { count=0 }
+   local receiver = entity { count=-100 }
+   local strong = function[owner](Value:num):num &count += Value return &count end
+   local weak = function[<weak> owner](Value:num):num &count += Value return &count end
+   receiver.callback = weak
+   jit.flush()
+   jit.on()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   defer jit.off() jit.opt.start() end
+   for i in {0 to 300} do
+      assert(strong(1) is i * 2 + 1 and receiver.callback(1) is i * 2 + 2)
+   end
+   assert(owner.count is 600 and receiver.count is -100 and &count is nil,
+      'Hot direct and dispatched calls must keep their binding and restore the root')
+   assert_compiled_trace()
+end
+
+local glRoot
+
+@BeforeAll function setup_binding_files()
+   local err, temp = mSys.ResolvePath('temp:', 0)
+   check err
+   glRoot = temp .. f'binding.tests_{processing.task().id}_{mSys.PreciseTime()}/'
+   local folder <close> = obj.new('file', { path=glRoot, flags=FL_NEW|FL_FOLDER })
+   local source <close> = obj.new('file', { path=glRoot .. 'source.txt', flags=FL_NEW|FL_WRITE })
+   check source.acWrite('bound native callback fixture\n')
+end
+
+@AfterAll function cleanup_binding_files()
+   if glRoot then check mSys.DeleteFile(glRoot) end
+end
+
+@Test(hotpath=3) function HotNativeCallbacksOverrideRegistration()
+   local owner = { name='native bound', hits=0 }
+   local registration = { name='registration' }
+   local callback = function[owner]()
+      assert(&name is 'native bound', 'Native calls must use the binding instead of the registration context')
+      &hits++
+   end
+   jit.flush()
+   jit.on()
+   jit.opt.start('hotloop=1', 'hotexit=1')
+   defer jit.off() jit.opt.start() end
+   using registration do
+      for _ in {0 to 80} do
+         check mCore.CopyFile(glRoot .. 'source.txt', glRoot .. 'copy.txt', callback)
+         assert(&& is registration, 'Synchronous native callbacks must restore the interrupted context')
+      end
+   end
+   assert(owner.hits >= 80 and &name is nil, 'Hot native dispatch must call the bound body and restore root')
+   assert_compiled_trace()
+end
+
+@Test function ActionSubscriptionsUseTheBindingAndKeepIdentity()
+   local owner = { hits=0 }
+   local registration = { hits=-100 }
+   local clock <close> = obj.new('time')
+   local callback = function[<weak> owner]() &hits++ end
+   using registration do
+      clock.subscribe('query', callback)
+   end
+   check clock.acQuery()
+   assert(owner.hits is 1 and registration.hits is -100, 'Action subscriptions must enter the explicit binding')
+   clock.unsubscribe('query', callback)
+   check clock.acQuery()
+   assert(owner.hits is 1, 'Unsubscribing by the original bound closure must preserve callback identity')
+end
+
+@Test function ObjectFieldCallbacksUseTheBinding()
+   local owner = { name='field bound', observed=nil }
+   local registration = { name='registration' }
+   local task:obj
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   using registration do
+      task = obj.new('task', { location=executable, args='--version', exitCallback=function[<weak> owner]()
+         &observed = &name
+         processing.signal()
+      end })
+   end
+   defer task?.free() end
+   check task.acActivate()
+   check processing.sleep(1)
+   assert(owner.observed is 'field bound' and &name is nil, 'Native field callbacks must use and restore the binding')
+end
+
+@Test @Requires(display=true) function VectorFeedbackUsesTheBinding()
+   include 'vector'
+   local owner = { hits=0 }
+   local registration = { hits=-100 }
+   local scene <close> = obj.new('VectorScene')
+   local viewport = scene.new('VectorViewport')
+   local rect = viewport.new('VectorRectangle', { width=100, height=80 })
+   local callback = function[owner]() &hits++ end
+   using registration do
+      check rect.mtSubscribeFeedback(FM_PATH_CHANGED, callback)
+   end
+   rect.width = 110
+   check rect.mtGetBoundary(VBF_NO_TRANSFORM)
+   assert(owner.hits > 0 and registration.hits is -100, 'Vector feedback must use the explicit binding')
+   check rect.mtSubscribeFeedback(0, callback)
+   local previous = owner.hits
+   rect.width = 120
+   check rect.mtGetBoundary(VBF_NO_TRANSFORM)
+   assert(owner.hits is previous, 'Vector feedback must unsubscribe using the original bound function')
+end
+
+function write_binding_file(Path:str, Source:str)
+   local file <close> = obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE })
+   check file.acWrite(Source)
+end
+
+function binding_child(Arguments:array<str>):str
+   local output = ''
+   local executable = processing.task().processPath .. 'origo'
+   if mSys.GetSystemState().platform is 'Windows' then executable ..= '.exe' end
+   local task <close> = obj.new('task', { location=executable, flags=TSF_WAIT, timeout=20,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      errorCallback=function(Task, Buffer) output ..= Buffer.getString() end
+   })
+   for argument in values(Arguments) do check task.mtAddArgument(argument) end
+   check task.acActivate()
+   assert(task.returnCode is 0, output)
+   assert(output.find('BINDING_CACHE_OK') != nil, output)
+   assert(output.find('Failed to load cache') is nil,
+      'A malformed cache must not silently fall back to source: ' .. output)
+   return output
+end
+
+@Test function ImportedBindingsSurviveColdAndWarmCaches()
+   local helper = glRoot .. 'binding_helper.tiri'
+   local source = glRoot .. 'binding_main.tiri'
+   local cache = glRoot .. 'binding_main.tbc'
+   local runner = glRoot .. 'binding_runner.tiri'
+   write_binding_file(helper, [[
+namespace bindingFixture {}
+local owner = { name='cached owner' }
+bindingFixture.owner = owner
+bindingFixture.strong = function[owner]():str return &name end
+bindingFixture.weak = function[<weak> owner]():str return &name end
+bindingFixture.ordinary = function[]():table return && end
+local unused = function[owner]() end
+bindingFixture.factory = function():table
+   local target = { name='factory' }
+   return { function[target]():str return &name end, weak=function[<weak> target]():str return &name end,
+      owner=target }
+end
+]])
+   write_binding_file(source, [[
+import './binding_helper'
+local caller = entity { name='caller' }
+caller.strong = bindingFixture.strong
+caller.weak = bindingFixture.weak
+caller.ordinary = bindingFixture.ordinary
+using caller do
+   assert(caller.strong() is 'cached owner' and caller.weak() is 'cached owner')
+   assert(caller.ordinary() is caller)
+end
+local callbacks = bindingFixture.factory()
+assert(callbacks[0]() is 'factory' and callbacks.weak() is 'factory')
+bindingFixture.owner = nil
+processing.collect()
+processing.collect()
+assert(bindingFixture.strong() is 'cached owner', 'The strong binding must survive cached creation')
+bindingFixture.strong = nil
+caller.strong = nil
+processing.collect()
+processing.collect()
+try
+   bindingFixture.weak()
+except e
+   assert(e.code is ERR_Terminate and e.message is 'Resource collected')
+success
+   assert(false, 'Cached weak binding must not retain its owner')
+end
+print('BINDING_CACHE_OK')
+]])
+   write_binding_file(runner, [[
+local script <close> = obj.new('tiri', { path=arg('source'), cacheFile=arg('cache') })
+check script.acActivate()
+assert(script.error is ERR_Okay, script.errorMessage)
+]])
+   for _ in {0 to 2} do
+      binding_child(array<str> { runner, 'source=' .. source, 'cache=' .. cache, '--log-warning' })
+      assert(mSys.AnalysePath(cache) is ERR_Okay, 'A cold run must publish its bytecode cache')
+   end
+   check mSys.DeleteFile(source)
+   check mSys.DeleteFile(helper)
+   for mode in values({ 'off', '' }) do
+      local arguments = array<str> { cache, '--log-warning' }
+      if mode != '' then arguments.push('--jit-options') arguments.push(mode) end
+      binding_child(arguments)
+   end
+end

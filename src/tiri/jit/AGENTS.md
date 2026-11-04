@@ -24,46 +24,77 @@ src/
 ├── debug/               # Error guard documentation
 ├── host/                # Build tools (buildvm, minilua)
 
-build/agents/src/tiri/jitlib-generated/  # Generated headers, VM object, host helpers
-build/agents/jit/lib/              # Final static library
+build/agents/src/tiri/jitlib-generated/  # Generated headers, VM code, host helpers and non-MSVC objects
+build/agents/jit/lib/                    # Platform-specific JIT static library
 ```
+
+## Lua State Thread Confinement
+
+A `lua_State` is strictly confined to the thread that owns it and cannot be shared with, accessed from, or transferred
+to another thread.  This restriction includes every value owned by the state, such as stack entries, closures, tables,
+userdata and GC-managed objects including `GCstruct` instances.  Threads that execute Tiri code must use independent
+Lua states and must not pass Lua values or internal GC pointers between those states.
+
+Keep this invariant in mind during concurrency and lifetime analysis: two threads cannot concurrently operate on the
+same `lua_State` or one of its GC-managed values.  Cross-thread communication must use Kōtuku's thread-safe native
+interfaces and copy or otherwise marshal data between the independent states.
 
 
 ## Integration & Build Tips
-- Always rebuild via CMake (e.g. `cmake --build build/agents --config <BuildType>`) after touching LuaJIT or Tiri sources so the static library target is regenerated and relinked into the Tiri module.
+
+- Use the repository's Debug build.  Always rebuild via CMake after touching LuaJIT or Tiri sources so the JIT static
+  library is regenerated and relinked into the Tiri module.
 - CMake drives three build strategies, matching the logic in `src/tiri/CMakeLists.txt`:
-  - **MSVC**: `msvcbuild_codegen.bat` produces generated headers and `lj_vm.obj`, and CMake links `lua51.lib` next to the upstream sources.
-  - **Unix-like toolchains**: CMake builds the host tools (`minilua` and `buildvm`), generates assembly with DynASM, then archives `lj_vm.o` + `ljamalg.o` into `libluajit-5.1.a`.
-- Install (`cmake --install build/agents --config <BuildType>`) before running tests so the freshly built `origo` binary (or `origo.exe` on Windows) and scripts land in `build/agents-install/`.
+  - **MSVC**: CMake builds `minilua` and `buildvm`, generates the headers and `lj_vm.obj`, then creates `lua51.lib`.
+  - **MinGW**: CMake uses DynASM and `buildvm` to generate a PE VM object, then creates `libjitlib.a` from that object
+    and the separately compiled JIT sources.
+  - **Unix-like toolchains**: CMake selects the x64, arm64 or PPC DynASM source, generates `lj_vm.S`, compiles the JIT
+    sources separately and archives them as `libjitlib.a`.
+- The generated headers, VM code and host tools live under `build/agents/src/tiri/jitlib-generated/`.  Do not edit them.
+  CMake tracks the source and layout-header dependencies needed to regenerate them.
+- Install (`cmake --install build/agents --config Debug`) before running tests so the freshly built `origo` binary (or
+  `origo.exe` on Windows) and scripts land in `build/agents-install/`.
 
 ## Error Handling Configuration
-- **Windows (MSVC)**: Must NOT define `LUAJIT_NO_UNWIND`. MSVC always uses Structured Exception Handling (SEH) via `RaiseException()` and `lj_err_unwind_win()`.  There is no "internal unwinding" implementation for MSVC - SEH is the only viable mechanism. Setting `LJ_NO_UNWIND` for MSVC breaks exception handling and causes catch() tests to fail with "attempt to call a nil value" errors.
-- The `LJ_NO_UNWIND` flag results in broken code that corrupts memory if used in GCC builds.
+
+- **Windows (MSVC)**: Do not define `LUAJIT_NO_UNWIND`.  MSVC uses Structured Exception Handling (SEH) through
+  `RaiseException()` and `lj_err_unwind_win()`; forcing no-unwind mode breaks Tiri exception handling.
+- **GCC and Clang**: CMake supplies `-funwind-tables -DLUAJIT_UNWIND_EXTERNAL` to the JIT runtime and generated VM
+  assembly.  Do not remove these flags or force `LUAJIT_NO_UNWIND`; the runtime frame layout and error paths assume the
+  configured external unwinder.
 
 ## Testing
 
 ### Running Tests
+
 ```bash
 # Run all tests
-ctest --build-config <BuildType> --test-dir build/agents
+ctest --preset agents
 
 # Run specific test by label
-ctest --build-config <BuildType> --test-dir build/agents -R <label>
+ctest --preset agents -L '^tiri_debug$'
 ```
 
 ### Manual Testing
+
 ```bash
 # Quick checks with log output
-origo --no-crash-handler --log-warning your_script.tiri
+build/agents-install/origo --statement "print('Hello')" --log-warning
+
+# Run one Flute file directly while iterating
+build/agents-install/origo tools/flute.tiri file=src/tiri/tests/test_debug.tiri --log-warning
 ```
 
 ### After Modifying LuaJIT Sources
 
 **Critical**: Rebuild and reinstall after touching LuaJIT C sources:
 ```bash
-cmake --build build/agents --config <BuildType> --parallel
-cmake --install build/agents --config <BuildType>
+cmake --build build/agents --config Debug --parallel
+cmake --install build/agents --config Debug
 ```
+
+For a targeted modular build, use `--target tiri`.  In a static build, use `--target tiri origo_cmd` so the `origo`
+executable is relinked with the changes.
 
 ### JIT Debugging Options
 
@@ -92,6 +123,7 @@ Run `origo` with `--jit-options` to pass JIT engine flags as a CSV list:
 Example: `--jit-options dump-bytecode,trace-registers`
 
 ### Per-Script JIT Options
+
 ```lua
 local script = obj.new('tiri', {
    statement = [[
@@ -113,7 +145,7 @@ Function annotations are parsed in the C++ parser and can follow two different p
 - Runtime registration: `src/parser/ir_emitter/emit_function.cpp` and `src/lib/lib_debug.cpp` emit
   `debug.anno.set(func, "...", source, name)` for annotated functions so runtime code can inspect annotations.
 - Parser metadata extraction: `src/parser/parser_symbols.cpp`, `src/parser/parser_symbols.h` and
-  `src/lib/lib_debug.cpp` build the `debug.validate(Source, "symbols").symbols` table for LSP and documentation
+  `src/lib/lib_debug.cpp` build the `debug.validate(Source, { symbols = true }).symbols` table for LSP and documentation
   tooling.
 
 ### Runtime Annotation Registration
@@ -135,10 +167,10 @@ payloads in `debug.anno`.  Tooling paths that need the payload must enable `SCF:
 
 ### Parser Symbol Extraction
 
-`debug.validate(Source, "symbols")` is the public extraction path for parser-provided symbol and documentation metadata.
+`debug.validate(Source, { symbols = true })` is the public extraction path for parser-provided symbol and documentation metadata.
 In `LJLIB_CF(debug_validate)`:
 
-1. The `"symbols"` flag temporarily sets `L->script->Flags |= SCF::PROCESS_DOC`.
+1. The `symbols` option temporarily sets `L->script->Flags |= SCF::PROCESS_DOC`.
 2. `lua_load()` parses the source in diagnose mode.
 3. `collect_parser_symbols()` is called after AST construction from `parser.cpp`.
 4. `push_symbol_metadata()` converts `L->parser_symbols` into a Tiri table named `symbols`.
@@ -147,8 +179,9 @@ In `LJLIB_CF(debug_validate)`:
 `collect_parser_symbols()` is deliberately gated on `SCF::PROCESS_DOC`; without the flag it deletes any stale
 `Lua.parser_symbols` value and returns without walking the AST.
 
-The collector walks function declarations and function expressions assigned to variables or members.  For every function
-it builds a `ParserSymbolMetadata` record:
+The collector recursively walks function declarations and function expressions assigned to variables or members.
+Struct declarations are collected separately while parsing because they lower to ordinary local declarations in the
+AST.  Both paths produce `ParserSymbolMetadata` records:
 
 ```cpp
 struct ParserSymbolMetadata {
@@ -162,7 +195,21 @@ struct ParserSymbolMetadata {
    std::vector<ParserDocParamMetadata> params;
    std::vector<ParserDocReturnMetadata> results;
    std::vector<ParserDocErrorMetadata> errors;
+   std::vector<ParserStructFieldMetadata> fields;  // Populated for "struct" symbols only
 };
+```
+
+For this source, the function name begins at line 5, column 10, and the terminating `end` token begins at line 7,
+column 1:
+
+```lua
+@Doc(text=[[
+@desc Returns a greeting.
+@input Person to greet
+]])
+function greet(Name: str):str
+   return "Hello " .. Name
+end
 ```
 
 The table exposed to Tiri is zero-indexed and has this shape:
@@ -174,9 +221,9 @@ The table exposed to Tiri is zero-indexed and has this shape:
          name = "greet",
          kind = "function",
          signature = "greet(Name: str):str",
-         line = 0,
-         column = 0,
-         endLine = 6,
+         line = 5,
+         column = 10,
+         endLine = 7,
          endColumn = 1,
          annotations = {
             [0] = { name = "Doc", args = { text = "..." } }
@@ -195,7 +242,8 @@ The table exposed to Tiri is zero-indexed and has this shape:
          },
          errors = {
             [0] = { code = "Args", doc = "If the name is invalid", inferred = false }
-         }
+         },
+         fields = {}
       }
    }
 }
@@ -203,6 +251,10 @@ The table exposed to Tiri is zero-indexed and has this shape:
 
 The parser exposes result values as `results`, not `returns`.  This matches the field name used by
 `ParserSymbolMetadata` and by the Tiri tests.
+
+Struct symbols use `kind = "struct"`, a signature of `struct Name`, and a zero-indexed `fields` table.  Each field has
+`name`, `type`, `doc`, `line` and `column` entries.  Function symbols expose an empty `fields` table for a consistent
+consumer shape.
 
 ### `@Doc(text=...)` Parsing
 
@@ -288,8 +340,11 @@ Documentation text augments parser-derived signature metadata; it does not repla
   collector yet, so `errors[].inferred` is currently `false`.
 
 ### Unit Tests
+
 - Unit tests are managed by `MODTests()` in `src/tiri/tiri.cpp`
-- Run compiled-in unit tests: `src/tiri/tests/test_unit_tests.tiri` with `--log-api`
+- Run compiled-in unit tests with
+  `build/agents-install/origo tools/flute.tiri file=src/tiri/tests/test_unit_tests.tiri --log-api`.
+- Add new unit tests only when a code path cannot be exercised by a Flute-based Tiri test.
 
 ## Common Gotchas
 
@@ -299,33 +354,67 @@ Documentation text augments parser-derived signature metadata; it does not repla
 
 ## VM Assembly and buildvm Dependencies
 
-**Critical Build Dependency**: The `lj_obj.h` file contains the `MMDEF` macro which defines the metamethod table. When modifying `MMDEF` (e.g., adding new metamethods like `__close`), both `buildvm` and `lj_vm.obj` must be regenerated.
+**Critical Build Dependency**: The `lj_obj.h` file contains the `MMDEF` macro which defines the metamethod table.  When
+modifying `MMDEF`, `buildvm` and the platform-specific generated VM code must be regenerated.
 
 **Why This Matters:**
-- `buildvm` generates `lj_vm.obj` with hardcoded metamethod offsets derived from `MMDEF`
-- If `lj_obj.h` changes but `lj_vm.obj` is not regenerated, the VM assembly will have stale offsets
+- `buildvm` generates the VM object or assembly with hardcoded metamethod offsets derived from `MMDEF`.
+- If `lj_obj.h` changes but the generated VM code is not regenerated, the VM will have stale offsets.
 - This causes cryptic runtime failures like `PANIC: unprotected error in call to Lua API ()` affecting *all* Tiri scripts
 
 ### Adding New Metamethods
 
 When adding entries to `MMDEF` in `lj_obj.h`:
 
-1. **Position matters**: The `MMDEF` macro generates an enum (`MM_*`) with sequential values. The first 6-8 metamethods are "fast" (negative cached). Add new metamethods at the end, after `_(tostring)`, to avoid shifting existing indices.
+1. **Position matters**: The `MMDEF` macro generates sequential `MM_*` values.  The first six metamethods, through
+   `MM_len`, are negative-cached fast metamethods.  Add new metamethods at the end of `MMDEF` unless the implementation
+   explicitly requires a particular ordering.
+2. **Rebuild through CMake**: Run `cmake --build build/agents --config Debug --parallel`.  `lj_obj.h` is a dependency of
+   both the `buildvm` host objects and VM generation, so normal CMake builds regenerate the affected outputs.  Manual
+   deletion should only be necessary when diagnosing a damaged or externally modified build tree.
 
-2. **Force rebuild**: After modifying `MMDEF`, delete the generated VM files:
-   ```bash
-   # Windows
-   del build\agents\src\tiri\jitlib-generated\buildvm.exe
-   del build\agents\src\tiri\jitlib-generated\lj_vm.obj
+## Environment Mutation Boundary (Global Type Contracts)
 
-   # Unix
-   rm build/agents/src/tiri/jitlib-generated/buildvm
-   rm build/agents/src/tiri/jitlib-generated/lj_vm.o
-   ```
+Every runtime write to a global environment table is policy-checked through `lj_env_check()` in
+`src/runtime/lj_meta.cpp` (protected built-ins, sticky type contracts, atomic failure). `lj_env_store()` composes that
+check with the raw write used by `rawset()`.
+Key facts when working near this machinery:
 
-3. **Full rebuild**: Run `cmake --build build/agents --config <BuildType> --parallel`
+- A table is "an environment" iff `GCtab.global_type_contracts` is non-null (`lj_tab_is_environment()` in
+  `lj_tab.h`). `lj_env_mark()` sets it eagerly from `lua_protect_globals()`, which every script state calls after
+  built-in registration. **Ordering matters**: library registration must complete before marking, because the
+  routed store paths reject writes to protected names afterwards. Re-running `luaL_openlibs()` on a protected
+  state raises.
+- Routed paths: the interpreter's `BC_TSETS_Z` (shared by `BC_GSET`, `BC_TSETS` and string-keyed `BC_TSETV`)
+  tests the marker and branches to `->vmeta_envcheck` before resuming the ordinary store; `lua_settable()` and
+  `lua_setfield()` check before normal metamethod dispatch, while `lua_rawset()` uses the checked raw store in
+  `lj_api.cpp`; JIT recording emits an `IRCALL_lj_env_check` (see below). `table.clear()` rejects marked environments
+  before mutation, and its recorder guards the marker so ordinary-table traces side-exit when passed an environment.
+  Direct `lj_tab_setstr()` calls from C are the trusted bootstrap path and bypass the boundary deliberately.
+- `lj_env_check()` requires a rooted Lua stack slot. The recorder writes the trace value into its corresponding Lua
+  stack slot before checking instead of using `IR_TMPREF`/`global_State::tmptv`. `lj_env_store()` also requires a stack
+  slot so the raw value can be recovered after stack reallocation.
+- `vm_x64.dasc`, `vm_arm64.dasc` and `vm_ppc.dasc` implement the `BC_TSETS_Z` marker test and `vmeta_envcheck` stub —
+  keep all three in sync when touching any of them.
 
-**Note**: CMake includes `lj_obj.h` in the `DEPENDS` clause for both buildvm compilation and VM generation, ensuring automatic regeneration when `lj_obj.h` changes.
+### JIT interaction
+
+- `lj_record_idx()` guards the marker (`IRFL_TAB_GCONTRACTS` FLOAD vs null) on every recorded string-keyed table
+  store. Marked environments emit the policy-check `IRCALL` and then use the regular recorded store and metamethod
+  path; dynamic string keys on a marked environment abort the trace (`LJ_TRERR_NYIENVKEY`).
+
+### IR enum lists
+
+`IRCALLDEF` (lj_ircall.h) and `IRFLDEF` (lj_ir.h) are sensitive to change.  Inserting mid-list shifts the numeric ids
+of every later entry, which breaks tests that assert on indices through
+`jit.util.traceIR()` (`test_type_guided_jit_signatures.tiri` hard-codes `IRFL_*` numbers).
+
+## Reference Indexing Gotcha (luaL_ref)
+
+Kotuku's 0-based conversion means `luaL_ref()` must never hand out index 0: slot 0 is `FREELIST_REF`. The
+implementation in `lib/lib_aux.cpp` claims slot 0 for the freelist on first use so references start at 1. Host
+code (e.g. `MainChunkRef` in tiri_class.cpp) treats reference 0 as "no reference", so a 0-valued ref silently
+re-triggers initialisation paths.
 
 ---
 

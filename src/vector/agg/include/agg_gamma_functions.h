@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,24 +5,23 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines reusable gamma and threshold transfer functions. Hooks into gamma_lut, rasterizer gamma controls, and
+// coverage correction paths. In the vector renderer it maps computed coverage values to perceptual or thresholded alpha
+// output.
 
-
-#ifndef AGG_GAMMA_FUNCTIONS_INCLUDED
-#define AGG_GAMMA_FUNCTIONS_INCLUDED
+#pragma once
 
 #include <math.h>
 #include "agg_basics.h"
 
 namespace agg
 {
-    //===============================================================gamma_none
     struct gamma_none
     {
         double operator()(double x) const { return x; }
     };
 
-
-    //==============================================================gamma_power
     class gamma_power
     {
     public:
@@ -111,8 +109,3 @@ namespace agg
     };
 
 }
-
-#endif
-
-
-

@@ -7,3 +7,24 @@ static const struct FieldDef clCompressedStreamFormat[] = {
    { nullptr, 0 }
 };
 
+static ERR COMPRESSEDSTREAM_New(extCompressedStream *Self) {
+   new (Self) extCompressedStream(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR COMPRESSEDSTREAM_Free(extCompressedStream *Self) {
+   Self->~extCompressedStream();
+   return ERR::Okay;
+}
+
+static const struct ActionArray clCompressedStreamActions[] = {
+   { AC::Free, COMPRESSEDSTREAM_Free },
+   { AC::Init, COMPRESSEDSTREAM_Init },
+   { AC::New, COMPRESSEDSTREAM_New },
+   { AC::Read, COMPRESSEDSTREAM_Read },
+   { AC::Reset, COMPRESSEDSTREAM_Reset },
+   { AC::Seek, COMPRESSEDSTREAM_Seek },
+   { AC::Write, COMPRESSEDSTREAM_Write },
+   { AC::NIL, nullptr }
+};
+

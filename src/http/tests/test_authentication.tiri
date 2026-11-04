@@ -1,0 +1,71 @@
+-- Upload authentication must survive the transition from HEAD preflight to the requested method.
+
+   include 'http', 'network'
+
+function authenticatedUpload(Method:num, MethodName:str)
+   local requests = array<str>
+   local buffers = {}
+   local payload = 'payload'
+   local server <close> = obj.new('netserver', {
+      address='127.0.0.1', port=0, flags=NSF_MULTI_CONNECT,
+      incoming=function(Server, Client)
+         local buffer = string.alloc(4096)
+         local err, size = Client.acRead(buffer)
+         if err != ERR_Okay then return ERR_Terminate end
+
+         local request = buffers[Client.id] ?? ''
+         request ..= buffer.sub(0, size)
+         buffers[Client.id] = request
+         local header_end = request.find('\r\n\r\n')
+         if header_end then
+            local upload = request.startsWith(MethodName .. ' ')
+            local request_end = header_end + 4 + (upload and #payload or 0)
+            if #request < request_end then return end
+
+            requests.push(request.sub(0, request_end))
+            buffers[Client.id] = request.sub(request_end)
+            if request.find('Authorization: Basic ') then
+               check Client.acWrite('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n')
+            else
+               check Client.acWrite('HTTP/1.1 401 Unauthorised\r\nWWW-Authenticate: Basic realm="local"\r\n' ..
+                  'Content-Length: 0\r\nConnection: close\r\n\r\n')
+            end
+         end
+      end
+   })
+
+   local http <close> = obj.new('http', {
+      location=f'http://127.0.0.1:{server.port}/upload', method=Method,
+      flags=HTF_NO_DIALOG, inputFile='string:' .. payload, size=#payload,
+      username='user', password='password',
+      stateChanged=function(HTTP, State)
+         if State is HGS_COMPLETED or State is HGS_TERMINATED then HTTP.acSignal() end
+      end
+   })
+   local proc = processing.new({ timeout=3, signals=array<obj> { http } })
+   check http.acActivate()
+   check proc.sleep()
+
+   assert(#requests is 3, f'{MethodName} did not complete in one authentication retry')
+   assert(requests[0].startsWith('HEAD '), 'First request was not an authentication preflight')
+   assert(not requests[0].find('Authorization:'), 'Initial preflight unexpectedly sent credentials')
+   assert(requests[1].startsWith('HEAD ') and requests[1].find('Authorization: Basic '),
+      'Preflight retry omitted credentials')
+   assert(requests[2].startsWith(MethodName .. ' ') and requests[2].find('Authorization: Basic '),
+      f'{MethodName} lost credentials after the authenticated preflight')
+   assert(requests[2].endsWith('\r\n\r\n' .. payload), f'{MethodName} did not send the upload body')
+   assert(http.currentState is HGS_COMPLETED and http.status is 200 and http.error is ERR_Okay,
+      f'{MethodName} did not complete successfully')
+end
+
+@Test function AuthenticatedPost()
+   authenticatedUpload(HTM_POST, 'POST')
+end
+
+@Test function AuthenticatedPut()
+   authenticatedUpload(HTM_PUT, 'PUT')
+end
+
+@Test function AuthenticatedPatch()
+   authenticatedUpload(HTM_PATCH, 'PATCH')
+end

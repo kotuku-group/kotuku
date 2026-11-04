@@ -1,0 +1,135 @@
+   import './webchannel_support'
+
+function mdnsWait(Peer:obj)
+   channelTest.waitFor(function() return Peer.gatheringState is RTCGATHER_COMPLETE end, 5)
+end
+
+@Test function DefaultPrivacyAndGenerationRetirement()
+   -- Retiring a registration must not withdraw the surviving pair's names.
+   local doomed <close> = obj.new('peerconnection', {})
+   check doomed.mtCreateOffer()
+   doomed.free()
+   local first_candidates = array<str>
+   local second_candidates = array<str>
+   local first <close> = obj.new('peerconnection', {
+      onIceCandidate=function(Peer, Candidate) first_candidates.push(Candidate) end
+   })
+   local second <close> = obj.new('peerconnection', {
+      onIceCandidate=function(Peer, Candidate) second_candidates.push(Candidate) end
+   })
+   local channel = channelTest.create(first, 'private')
+   local echoed = ''
+   second.onWebChannel=function(Peer, Child)
+      Child.onMessage=function(Child, Buffer, Type) check Child.mtSend(Buffer, Type) end
+   end
+   channel.onMessage=function(Child, Buffer, Type) echoed = Buffer.getString() end
+   channelTest.connect(first, second)
+   channelTest.waitFor(function() return channel.state is WCS_OPEN end)
+   assert(#first_candidates > 0 and #second_candidates > 0, 'No multicast-capable host was registered')
+   for _, candidate in first_candidates do
+      assert(candidate.find('.local') and candidate.find('typ host'), 'Numeric first host leaked')
+      assert(not candidate.find('raddr'), 'Related address leaked')
+      assert(not second.localDescription.find(candidate), 'Connection reused another peer name')
+   end
+   for _, candidate in second_candidates do
+      assert(candidate.find('.local') and candidate.find('typ host'), 'Numeric second host leaked')
+   end
+   local reports = 0
+   local callback_free <close> = obj.new('peerconnection', {
+      onIceCandidate=function(Peer, Candidate)
+         reports += 1
+         Peer.free()
+      end
+   })
+   check callback_free.mtCreateOffer()
+   channelTest.waitFor(function() return not callback_free.exists() end, 3)
+   processing.sleep(0.1)
+   assert(reports is 1, 'Retired peer delivered another candidate callback')
+   assert(first.state is RTCS_CONNECTED and second.state is RTCS_CONNECTED,
+      'Closing another responder withdrew this pair')
+   assert(first.localDescription.find('c=IN IP4 0.0.0.0'), 'SDP connection address disclosed a host')
+   assert(not first.remoteDescription.find('raddr'), 'Remote name identity was replaced with an endpoint')
+   check channel.mtSend('private-data', WCM_TEXT)
+   channelTest.waitFor(function() return echoed is 'private-data' end)
+   local retired = first_candidates[0]
+   first_candidates.clear()
+   check first.mtRestartIce()
+   mdnsWait(first)
+   assert(#first_candidates > 0 and first_candidates[0] != retired and
+      not first.localDescription.find(retired), 'Restart retained an old name')
+   check first.mtSetLocalDescription(first.localDescription)
+   check second.mtSetRemoteDescription(first.localDescription)
+   check second.mtCreateAnswer()
+   mdnsWait(second)
+   check second.mtSetLocalDescription(second.localDescription)
+   check first.mtSetRemoteDescription(second.localDescription)
+   channelTest.waitFor(function() return first.state is RTCS_CONNECTED and second.state is RTCS_CONNECTED end)
+   echoed = ''
+   check channel.mtSend('after-restart', WCM_TEXT)
+   channelTest.waitFor(function() return echoed is 'after-restart' end)
+end
+
+@Test function EndOfCandidatesAndPendingCancellation()
+   local first <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   local second <close> = obj.new('peerconnection', {})
+   check first.mtCreateOffer()
+   check first.mtSetLocalDescription(first.localDescription)
+   -- Use an offer without candidate completion, then queue an unresolved name before closing input.
+   local offer = first.localDescription.replace('a=end-of-candidates\r\n', '')
+   check second.mtSetRemoteDescription(offer)
+   check second.mtCreateAnswer()
+   check second.mtSetLocalDescription(second.localDescription)
+   check second.mtAddIceCandidate('candidate:missing 1 udp 2122260223 never-answer-this-name.local 60000 typ host')
+   check second.mtAddIceCandidate('end-of-candidates')
+   assert(second.mtAddIceCandidate('candidate:late 1 udp 2122260223 late.local 60000 typ host') is ERR_InvalidState,
+      'End-of-candidates accepted new work')
+   check second.mtClose()
+   processing.sleep(0.1)
+   assert(second.state is RTCS_CLOSED and second.error is ERR_Okay, 'Late resolution revived a closed peer')
+end
+
+@Test function ExplicitPolicyPrivacy()
+   local numeric <close> = obj.new('peerconnection', { flags='NO_MDNS' })
+   check numeric.mtCreateOffer()
+   assert(numeric.localDescription.find('typ host') and not numeric.localDescription.find('.local'),
+      'Explicit numeric policy did not signal numeric hosts')
+   for _, flags in array<str> { 'NO_HOST', 'NO_HOST|NO_MDNS', 'RELAY_ONLY', 'RELAY_ONLY|NO_MDNS' } do
+      local suppressed <close> = obj.new('peerconnection', { flags=flags })
+      check suppressed.mtCreateOffer()
+      assert(not suppressed.localDescription.find('typ host') and not suppressed.localDescription.find('raddr'),
+         'Suppressed host address leaked')
+   end
+end
+
+@Test function UnresolvedNamesFinishAfterEndOfCandidates()
+   local candidates = array<str>
+   local source <close> = obj.new('peerconnection', {
+      flags='NO_MDNS', onIceCandidate=function(Peer, Candidate) candidates.push(Candidate) end
+   })
+   local peer <close> = obj.new('peerconnection', {})
+   check source.mtCreateOffer()
+   local offer = source.localDescription
+   for _, candidate in candidates do offer = offer.replace('a=' .. candidate .. '\r\n', '') end
+   offer = offer.replace('a=end-of-candidates',
+      'a=candidate:unresolved 1 udp 2122260223 no-such-random-mdns-peer.local 60000 typ host\r\na=end-of-candidates')
+   check peer.mtSetRemoteDescription(offer)
+   check peer.mtCreateAnswer()
+   check peer.mtSetLocalDescription(peer.localDescription)
+   channelTest.waitFor(function() return peer.state is RTCS_FAILED end, 5)
+   assert(peer.iceState is RTCICE_FAILED, 'Unresolved generation did not terminate its ICE checklist')
+   assert(peer.remoteDescription.find('no-such-random-mdns-peer.local'), 'Resolution replaced signalled identity')
+end
+
+@Test function CloseFromCandidateCancelsTheRemainingBatch()
+   local reports = 0
+   local peer <close> = obj.new('peerconnection', {
+      onIceCandidate=function(Peer, Candidate)
+         reports += 1
+         check Peer.mtClose()
+      end
+   })
+   check peer.mtCreateOffer()
+   channelTest.waitFor(function() return peer.state is RTCS_CLOSED end, 3)
+   processing.sleep(0.1)
+   assert(reports is 1, 'Close delivered another candidate from the queued batch')
+end

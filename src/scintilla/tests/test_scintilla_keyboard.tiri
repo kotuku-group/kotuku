@@ -1,0 +1,538 @@
+-- Tests for keyboard input in the Scintilla class.  Keyboard input is received from the Focus viewport, which
+-- defaults to the host Viewport, while it or one of its children has the focus.  Key presses are injected as evKey
+-- records through mSys.BroadcastEvent(), which requires a scene that is linked to a focused surface.
+--
+-- These geometry tests explicitly use Clean, which has 7 pixel wide glyphs and a 13 pixel line height.  The default LeftMargin of 4
+-- means that text starts at x = 4.  The 120 pixel high View shows 9 whole lines.
+
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+
+PAGE_WIDTH  = 300
+PAGE_HEIGHT = 120
+LINE_HEIGHT = 13
+TEXT_LEFT   = 4
+
+-- Wheel values as reported by the display drivers: upward rotation is negative.
+
+WHEEL_DOWN <const> = 9
+
+-- Broadcast a key event in the form of an evKey record: { int64 EventID; KQ Qualifiers; KEY Code; int Unicode },
+-- padded to 24 bytes.  The 64-bit event ID is composed as GetEventID() does, because a Tiri number cannot represent it
+-- exactly.  The PRESSED qualifier is added unless RELEASED is given.
+
+function sendKey(Code:num!, Qualifiers:num, Unicode:num)
+   local qualifiers = Qualifiers ?? 0
+   if not (qualifiers has KQ_RELEASED) then qualifiers = qualifiers | KQ_PRESSED end
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = qualifiers
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+-- Press a key that does not produce a character, such as an arrow key or a Ctrl shortcut.
+
+function pressKey(Code:num!, Qualifiers:num)
+   sendKey(Code, (Qualifiers ?? 0) | KQ_NOT_PRINTABLE, 0)
+end
+
+-- Type each character of an ASCII string.  Letters and digits are reported with their key codes; the code of any other
+-- character is irrelevant to text input.
+
+function typeText(Text:str!)
+   for i in {0 to #Text} do
+      local ch = Text.sub(i, i + 1)
+      local code:num = 0
+      local qualifiers = 0
+      local lower = ch.lower()
+      if lower >= 'a' and lower <= 'z' then
+         code = KEY_A + lower.byte() - ('a').byte()
+         if ch != lower then qualifiers = KQ_L_SHIFT end
+      elseif ch >= '1' and ch <= '9' then
+         code = KEY_ONE + ch.byte() - ('1').byte()
+      elseif ch is '0' then
+         code = KEY_ZERO
+      elseif ch is ' ' then
+         code = KEY_SPACE
+      end
+      sendKey(code, qualifiers, ch.byte())
+   end
+end
+
+-- Create a surface with a focused scene that hosts a Scintilla object.  The editor is editable unless Options
+-- specifies the flags.  The caret line highlight is disabled unless Options specifies it.
+
+function newEditor(Options:table):<obj, obj, obj, obj>
+   local surface = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local options = Options ?? { }
+   options.face ?= 'Clean'
+   options.fontSize ?= 11
+   options.flags ?= SCIF_EDIT
+   options.lineHighlight ?= '255,255,255,0'
+   local sci = host.new('Scintilla', options)
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, scene, host, sci
+end
+
+-- Create a second keyboard subscriber that can take the focus away from the editor.  Returns the viewport and a table
+-- that counts the key presses that it receives.
+
+function newFocusThief(Scene:obj!):<obj, table>
+   local received = { presses=0 }
+   local other = Scene.new('VectorViewport', { x=0, y=0, width=1, height=1 })
+   other.mtSubscribeKeyboard(function(Vector, Qualifiers, Code, Unicode)
+      if Qualifiers has KQ_PRESSED then received.presses++ end
+   end)
+   return other, received
+end
+
+-- Copy the surface to a bitmap after the pending repaints have been drawn.  ReadRGBPixel() results share one buffer,
+-- so callers copy the channels immediately.
+
+function snapshot(Surface:obj!):obj
+   processing.sleep(0)
+   Surface.acDraw()
+   processing.sleep(0.02)
+   Surface.acDraw()
+   processing.sleep(0)
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   check mGfx.CopySurface(Surface.id, bmp, 0, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, 0, 0)
+   return bmp
+end
+
+function colourAt(Bitmap:obj, X:num, Y:num):str
+   local p = mGfx.ReadRGBPixel(Bitmap, X, Y)
+   return f'{p.red},{p.green},{p.blue}'
+end
+
+-- The caret is 2 pixels wide and is drawn at the left edge of the text when the cursor is at column 0.
+
+function caretVisible(Surface:obj):bool
+   local p = mGfx.ReadRGBPixel(snapshot(Surface), TEXT_LEFT, LINE_HEIGHT / 2)
+   return p.red + p.green + p.blue < 100
+end
+
+-- Record the events reported by an editor.  Returns the editor options and a table of the received flags.
+
+function eventOptions(Mask:num!):<table, table>
+   local received = { flags=0, calls=0 }
+   local options = {
+      eventFlags    = Mask,
+      eventCallback = function(Scintilla, EventFlags)
+         received.flags = received.flags | EventFlags
+         received.calls++
+      end
+   }
+   return options, received
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Text input
+
+@Test function TypingInsertsText()
+   local options, received = eventOptions(SEF_NEW_CHAR)
+   local surface <close>, scene, host, sci = newEditor(options)
+
+   typeText('Hello World')
+   processing.sleep(0)
+   assert(sci.string is 'Hello World', f'Typed text must be inserted, got "{sci.string}"')
+   assert(sci.cursorCol is 11, f'The cursor must follow the typed text, column is {sci.cursorCol}')
+   assert(received.flags is SEF_NEW_CHAR, f'Only the subscribed NEW_CHAR event may be reported, got {received.flags}')
+end
+
+@Test function MultiByteCharacters()
+   local surface <close>, scene, host, sci = newEditor()
+
+   sendKey(KEY_E, 0, 0xe9)     -- é
+   sendKey(0, 0, 0x20ac)      -- €
+   assert(sci.string is 'é€', f'Characters must be inserted as UTF-8, got "{sci.string}"')
+   assert(#sci.string is 5, f'The document must hold 5 bytes, has {#sci.string}')
+   assert(sci.cursorCol is 2, f'The cursor must be at column 2, is at {sci.cursorCol}')
+end
+
+@Test function ReleasedKeysAreIgnored()
+   local surface <close>, scene, host, sci = newEditor()
+
+   sendKey(KEY_A, KQ_RELEASED, ('a').byte())
+   assert(sci.string is nil, f'A key release must not insert text, got "{sci.string}"')
+end
+
+@Test function ControlCharactersAreNotInserted()
+   local surface <close>, scene, host, sci = newEditor()
+
+   sendKey(0, 0, 0x7f)
+   sendKey(0, 0, 0x01)
+   assert(sci.string is nil, f'Control characters must not be inserted, got "{sci.string}"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Navigation and selection
+
+@Test function ArrowsHomeAndEnd()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = 'one\ntwo\nthree'
+
+   pressKey(KEY_DOWN)
+   assert(sci.cursorRow is 1 and sci.cursorCol is 0, f'Down must move to 1:0, at {sci.cursorRow}:{sci.cursorCol}')
+   pressKey(KEY_END)
+   assert(sci.cursorCol is 3, f'End must move to the end of the line, column is {sci.cursorCol}')
+   pressKey(KEY_RIGHT)
+   assert(sci.cursorRow is 2 and sci.cursorCol is 0, f'Right must wrap to 2:0, at {sci.cursorRow}:{sci.cursorCol}')
+   pressKey(KEY_RIGHT)
+   pressKey(KEY_RIGHT)
+   pressKey(KEY_LEFT)
+   assert(sci.cursorCol is 1, f'Left must move back one column, column is {sci.cursorCol}')
+   pressKey(KEY_HOME)
+   assert(sci.cursorCol is 0, f'Home must move to the start of the line, column is {sci.cursorCol}')
+   pressKey(KEY_UP)
+   assert(sci.cursorRow is 1, f'Up must move to the previous line, row is {sci.cursorRow}')
+
+   pressKey(KEY_END, KQ_L_CTRL)
+   assert(sci.cursorRow is 2 and sci.cursorCol is 5,
+      f'Ctrl+End must move to the end of the document, at {sci.cursorRow}:{sci.cursorCol}')
+   pressKey(KEY_HOME, KQ_R_CTRL)
+   assert(sci.cursorRow is 0 and sci.cursorCol is 0,
+      f'Ctrl+Home must move to the start of the document, at {sci.cursorRow}:{sci.cursorCol}')
+end
+
+@Test function ShiftArrowsSelect()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = 'abcdef\nghi'
+
+   pressKey(KEY_RIGHT, KQ_L_SHIFT)
+   pressKey(KEY_RIGHT, KQ_L_SHIFT)
+   pressKey(KEY_RIGHT, KQ_R_SHIFT)
+   typeText('X')
+   assert(sci.string is 'Xdef\nghi', f'Typing must replace the selection, got "{sci.string}"')
+
+   pressKey(KEY_END, KQ_L_SHIFT)
+   pressKey(KEY_DELETE)
+   assert(sci.string is 'X\nghi', f'Shift+End must select to the end of the line, got "{sci.string}"')
+end
+
+-- Keypad keys navigate when they do not produce a character, i.e. while Num Lock is off.
+
+@Test function KeypadKeys()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = 'abc\ndef'
+
+   pressKey(KEY_NP_2, KQ_NUM_PAD)
+   pressKey(KEY_NP_6, KQ_NUM_PAD)
+   assert(sci.cursorRow is 1 and sci.cursorCol is 1,
+      f'Keypad 2 and 6 must move down and right, at {sci.cursorRow}:{sci.cursorCol}')
+   pressKey(KEY_NP_DOT, KQ_NUM_PAD)
+   assert(sci.string is 'abc\ndf', f'Keypad Del must delete forwards, got "{sci.string}"')
+
+   sendKey(KEY_NP_5, KQ_NUM_PAD, ('5').byte())
+   assert(sci.string is 'abc\nd5f', f'A keypad digit must be inserted while Num Lock is on, got "{sci.string}"')
+
+   pressKey(KEY_NP_ENTER, KQ_NUM_PAD)
+   assert(sci.cursorRow is 2, f'Keypad Enter must start a new line, row is {sci.cursorRow}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Shortcuts and modifiers
+
+@Test function CtrlShortcuts()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = 'one two'
+
+   pressKey(KEY_A, KQ_L_CTRL)
+   typeText('X')
+   assert(sci.string is 'X', f'Ctrl+A must select all, got "{sci.string}"')
+
+   pressKey(KEY_Z, KQ_L_CTRL)
+   assert(sci.string is 'one two', f'Ctrl+Z must undo, got "{sci.string}"')
+
+   pressKey(KEY_Y, KQ_R_CTRL)
+   assert(sci.string is 'X', f'Ctrl+Y must redo, got "{sci.string}"')
+end
+
+@Test function ModifiedKeysDoNotInsertText()
+   local surface <close>, scene, host, sci = newEditor()
+
+   -- Platforms can report a character for a Ctrl or Alt combination; it must not be inserted.
+
+   sendKey(KEY_Q, KQ_L_CTRL, ('q').byte())
+   sendKey(KEY_W, KQ_L_ALT, ('w').byte())
+   sendKey(KEY_E, KQ_L_ALT | KQ_R_ALT, ('e').byte())
+   assert(sci.string is nil, f'Ctrl and Alt combinations must not insert text, got "{sci.string}"')
+end
+
+-- AltGr is reported as R_ALT on X11 and as Ctrl+R_ALT on Windows.  The characters that it produces are text.
+
+@Test function AltGrInsertsText()
+   local surface <close>, scene, host, sci = newEditor()
+
+   sendKey(KEY_Q, KQ_R_ALT, ('@').byte())
+   sendKey(KEY_E, KQ_L_CTRL | KQ_R_ALT, 0x20ac)
+   assert(sci.string is '@€', f'Characters produced with AltGr must be inserted, got "{sci.string}"')
+end
+
+@Test function EnterAutoIndents()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = '   abc'
+
+   -- The first line is a regression case: lines were only indented from the third line onwards.
+
+   pressKey(KEY_END)
+   pressKey(KEY_ENTER)
+   assert(sci.string is '   abc\n   ', f'Enter must indent the new line, got "{sci.string}"')
+   assert(sci.cursorRow is 1 and sci.cursorCol is 3,
+      f'The cursor must follow the indentation, at {sci.cursorRow}:{sci.cursorCol}')
+end
+
+@Test function EnterWithoutAutoIndent()
+   local surface <close>, scene, host, sci = newEditor({ autoIndent=false })
+   sci.string = '   abc'
+
+   pressKey(KEY_END)
+   pressKey(KEY_ENTER)
+   assert(sci.cursorRow is 1 and sci.cursorCol is 0,
+      f'Enter must not indent without AutoIndent, at {sci.cursorRow}:{sci.cursorCol}')
+end
+
+-- The scene uses Tab to cycle the focus unless IGNORE_TAB is set.  Tab is tested after text, because Tab within
+-- the indentation of a line re-indents the whole line.
+
+@Test function TabRespectsAllowTabs()
+   local surface <close>, scene, host, sci = newEditor({ allowTabs=true })
+   scene.flags = scene.flags | VPF_IGNORE_TAB
+   sci.string = 'ab'
+
+   pressKey(KEY_END)
+   pressKey(KEY_TAB)
+   assert(sci.string is 'ab\t', f'Tab must insert a tab character when tabs are allowed, got "{sci.string}"')
+
+   sci.allowTabs = false
+   pressKey(KEY_TAB)
+   assert(sci.string is 'ab\t        ', f'Tab must insert spaces up to the next tab stop, got "{sci.string}"')
+   assert(sci.cursorCol is 16, f'The cursor must be at the second tab stop, column is {sci.cursorCol}')
+
+   pressKey(KEY_TAB, KQ_L_SHIFT)
+   assert(sci.cursorCol is 8, f'Shift+Tab must move back a tab stop, column is {sci.cursorCol}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Read-only, focus and disabled states
+
+@Test function ReadOnlyAllowsNavigation()
+   local options, received = eventOptions(SEF_FAIL_RO | SEF_NEW_CHAR)
+   options.flags = 0
+   local surface <close>, scene, host, sci = newEditor(options)
+   sci.string = 'abc\ndef'
+
+   pressKey(KEY_DOWN)
+   pressKey(KEY_END, KQ_L_SHIFT)
+   assert(sci.cursorRow is 1 and sci.cursorCol is 3,
+      f'Navigation and selection must work while read-only, at {sci.cursorRow}:{sci.cursorCol}')
+
+   typeText('x')
+   pressKey(KEY_BACKSPACE)
+   pressKey(KEY_ENTER)
+   processing.sleep(0)
+   assert(sci.string is 'abc\ndef', f'A read-only document must not be edited by keys, got "{sci.string}"')
+   assert(received.flags is SEF_FAIL_RO, f'Edits must be reported as FAIL_RO only, got {received.flags}')
+
+   -- The read-only state applies to user input only.
+
+   sci.string = 'changed'
+   check sci.mtInsertText('!', -1)
+   assert(sci.string is '!changed', f'The API must be able to modify a read-only document, got "{sci.string}"')
+end
+
+@Test function UnfocusedEditorIgnoresKeys()
+   local surface <close>, scene, host, sci = newEditor()
+   local other, received = newFocusThief(scene)
+
+   check other.acFocus()
+   typeText('a')
+   assert(received.presses is 1, f'The focused vector must receive the key, received {received.presses}')
+   assert(sci.string is nil, f'An unfocused editor must ignore keys, got "{sci.string}"')
+
+   check host.acFocus()
+   typeText('b')
+   assert(sci.string is 'b', f'The editor must receive keys after regaining the focus, got "{sci.string}"')
+   assert(received.presses is 1, 'The unfocused vector must not receive the key')
+end
+
+@Test function DisabledEditorIgnoresKeys()
+   local surface <close>, scene, host, sci = newEditor()
+
+   check sci.acDisable()
+   typeText('a')
+   assert(sci.string is nil, f'A disabled editor must ignore keys, got "{sci.string}"')
+
+   check sci.acEnable()
+   typeText('b')
+   assert(sci.string is 'b', f'A re-enabled editor must accept keys, got "{sci.string}"')
+end
+
+@Test function CustomFocusViewport()
+   local surface = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   defer surface.free() end
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local focus = scene.new('VectorViewport', { x=0, y=0, width=1, height=1 })
+   local sci = host.new('Scintilla', { flags=SCIF_EDIT, focus=focus })
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   check host.acFocus()
+   typeText('a')
+   assert(sci.string is nil, f'Keys must only be received through the Focus viewport, got "{sci.string}"')
+
+   check focus.acFocus()
+   typeText('b')
+   assert(sci.string is 'b', f'The Focus viewport must deliver keys to the editor, got "{sci.string}"')
+
+   focus.free()
+   check host.acFocus()
+   typeText('c')
+   assert(sci.string is 'b', f'Freeing the Focus viewport must end keyboard input, got "{sci.string}"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Caret presentation
+
+@Test function CaretLineHighlightRequiresFocus()
+   local surface <close>, scene, host, sci = newEditor({ lineHighlight='200,220,255,255' })
+   sci.string = 'one\ntwo'
+   local other = newFocusThief(scene)
+
+   local colour = colourAt(snapshot(surface), 150, LINE_HEIGHT / 2)
+   assert(colour is '200,220,255', f'The cursor row must be highlighted while focused, got {colour}')
+   colour = colourAt(snapshot(surface), 150, LINE_HEIGHT + (LINE_HEIGHT / 2))
+   assert(colour is '255,255,255', f'Other rows must not be highlighted, got {colour}')
+
+   pressKey(KEY_DOWN)
+   colour = colourAt(snapshot(surface), 150, LINE_HEIGHT + (LINE_HEIGHT / 2))
+   assert(colour is '200,220,255', f'The highlight must follow the cursor, got {colour}')
+
+   check other.acFocus()
+   colour = colourAt(snapshot(surface), 150, LINE_HEIGHT + (LINE_HEIGHT / 2))
+   assert(colour is '255,255,255', f'The highlight must be removed on losing the focus, got {colour}')
+end
+
+-- A translucent highlight blends over the row like a translucent vector fill, so it must differ from both the opaque
+-- colour and the background, and must be uniform along the row.
+
+@Test function TranslucentCaretLineHighlight()
+   local surface <close>, scene, host, sci = newEditor({ lineHighlight='0,0,255,96' })
+   sci.string = 'one\ntwo'
+   local bmp = snapshot(surface)
+   local first = colourAt(bmp, 150, LINE_HEIGHT / 2)
+   assert(first != '0,0,255' and first != '255,255,255', f'The cursor row must be blended, got {first}')
+   assert(colourAt(bmp, 250, LINE_HEIGHT / 2) is first, 'The blended highlight must be uniform along the row')
+   assert(colourAt(bmp, 150, LINE_HEIGHT + (LINE_HEIGHT / 2)) is '255,255,255', 'Other rows must not be highlighted')
+
+   sci.lineHighlight = '0,0,255,255'
+   local colour = colourAt(snapshot(surface), 150, LINE_HEIGHT / 2)
+   assert(colour is '0,0,255', f'An opaque highlight must use the colour exactly, got {colour}')
+end
+
+@Test function CaretBlinksWhileFocused()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = 'text'
+   local other = newFocusThief(scene)
+
+   -- The default caret period is 500ms.  Sampling for 1.5 seconds must observe both states.
+
+   local on, off = 0, 0
+   for i in {0 to 15} do
+      if caretVisible(surface) then on++ else off++ end
+      processing.sleep(0.08)
+   end
+   assert(on > 0 and off > 0, f'The caret must blink while focused, observed on={on} off={off}')
+
+   check other.acFocus()
+   on = 0
+   for i in {0 to 8} do
+      if caretVisible(surface) then on++ end
+      processing.sleep(0.08)
+   end
+   assert(on is 0, f'The caret must be hidden while unfocused, observed on={on}')
+end
+
+@Test function TypingRestartsCaretBlink()
+   local surface <close>, scene, host, sci = newEditor()
+
+   -- The caret remains visible for a full period after moving, so it is never hidden while typing.
+
+   for i in {0 to 8} do
+      typeText('x')
+      pressKey(KEY_HOME)
+      processing.sleep(0.07)
+      assert(caretVisible(surface), f'The caret must remain visible while typing, hidden after {i} key presses')
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Modifier state for pointer input
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function topLine(Sci:obj):num
+   return -Sci.page.y / LINE_HEIGHT
+end
+
+@Test function CtrlWheelScrollsByPage()
+   local surface <close>, scene, host, sci = newEditor()
+   local other = newFocusThief(scene)
+   local text = 'line'
+   for i in {1 to 100} do text ..= '\nline' end
+   sci.string = text
+   surface.acDraw()
+   processing.sleep(0)
+
+   feed(JET_ABS_XY, surface.absX + 50, surface.absY + 50)
+   pressKey(KEY_L_CONTROL, KQ_L_CTRL)
+   feed(JET_WHEEL, WHEEL_DOWN, 0)
+   assert(topLine(sci) is 8, f'Ctrl+wheel must scroll by a page less one line, top line is {topLine(sci)}')
+
+   pressKey(KEY_L_CONTROL, KQ_RELEASED)
+   feed(JET_WHEEL, WHEEL_DOWN, 0)
+   assert(topLine(sci) is 11, f'Releasing Ctrl must restore line scrolling, top line is {topLine(sci)}')
+
+   -- The release of a modifier is not reported to an unfocused editor, so the state is reset on losing the focus.
+
+   pressKey(KEY_L_CONTROL, KQ_L_CTRL)
+   check other.acFocus()
+   feed(JET_WHEEL, WHEEL_DOWN, 0)
+   assert(topLine(sci) is 14, f'Losing the focus must reset the Ctrl state, top line is {topLine(sci)}')
+
+   feed(JET_ABS_XY, 1000, 1000)
+end

@@ -4,9 +4,15 @@
    "scopeName": "source.tiri",
    "patterns": [
       { "include": "#comments" },
+      { "include": "#versioned-imports" },
       { "include": "#strings" },
       { "include": "#annotations" },
+      { "include": "#typetests" },
+      { "include": "#choose-type-patterns" },
+      { "include": "#weak-bindings" },
+      { "include": "#function-bindings" },
       { "include": "#functions" },
+      { "include": "#using-blocks" },
       { "include": "#keywords" },
       { "include": "#operators" },
       { "include": "#numbers" },
@@ -14,6 +20,109 @@
       { "include": "#variables" }
    ],
    "repository": {
+      "using-blocks": {
+         "patterns": [
+            {
+               "name": "meta.context.header.tiri",
+               "begin": "(?<![.\\w&])\\b(using)\\b(?=[ \\t]*(?:$|--|[ \\t]+[A-Za-z_][A-Za-z0-9_]*\\b))",
+               "beginCaptures": {
+                  "1": {
+                     "name": "keyword.control.tiri"
+                  }
+               },
+               "end": "\\b(do)\\b|(?=[=;])",
+               "endCaptures": {
+                  "1": {
+                     "name": "keyword.control.tiri"
+                  }
+               },
+               "patterns": [
+                  {
+                     "include": "#comments"
+                  },
+                  {
+                     "include": "#strings"
+                  },
+                  {
+                     "include": "#variables"
+                  }
+               ]
+            }
+         ]
+      },
+      "weak-bindings": {
+         "patterns": [
+            {
+               "name": "meta.declaration.attribute.tiri",
+               "match": "(<)[ \\t]*(weak)[ \\t]*(>)(?=[ \\t]*(?::|\\?\\??=|=|,|;|--|$))",
+               "captures": {
+                  "1": { "name": "punctuation.definition.attribute.begin.tiri" },
+                  "2": { "name": "storage.modifier.tiri" },
+                  "3": { "name": "punctuation.definition.attribute.end.tiri" }
+               }
+            }
+         ]
+      },
+      "function-bindings": {
+         "patterns": [
+            {
+               "name": "meta.function.binding.tiri",
+               "begin": "\\b(function)[ \\t]*(\\[)",
+               "beginCaptures": {
+                  "1": { "name": "storage.type.function.tiri" },
+                  "2": { "name": "punctuation.definition.binding.begin.tiri" }
+               },
+               "end": "(\\])(?:[ \\t]*([A-Za-z_][A-Za-z0-9_]*(?:[.:][A-Za-z_][A-Za-z0-9_]*)*)(?=[ \\t]*\\())?",
+               "endCaptures": {
+                  "1": { "name": "punctuation.definition.binding.end.tiri" },
+                  "2": { "name": "entity.name.function.tiri" }
+               },
+               "patterns": [
+                  {
+                     "name": "meta.function.binding.attribute.tiri",
+                     "match": "(<)[ \\t]*(weak)[ \\t]*(>)",
+                     "captures": {
+                        "1": { "name": "punctuation.definition.attribute.begin.tiri" },
+                        "2": { "name": "storage.modifier.tiri" },
+                        "3": { "name": "punctuation.definition.attribute.end.tiri" }
+                     }
+                  },
+                  {
+                     "begin": "\\[",
+                     "end": "\\]",
+                     "patterns": [ { "include": "$self" } ]
+                  },
+                  { "include": "$self" }
+               ]
+            }
+         ]
+      },
+      "versioned-imports": {
+         "patterns": [
+            {
+               "name": "meta.import.versioned.tiri",
+               "begin": "\\b(import)\\b(?=\\s*['\\\"])",
+               "beginCaptures": {
+                  "1": { "name": "keyword.other.import.tiri" }
+               },
+               "end": "(?=;)|$",
+               "patterns": [
+                  { "include": "#comments" },
+                  {
+                     "match": "(\\G\\s*)('(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\")(\\s+)(version)\\b",
+                     "captures": {
+                        "2": { "name": "string.quoted.tiri" },
+                        "4": { "name": "keyword.other.version.tiri" }
+                     }
+                  },
+                  { "include": "#strings" },
+                  { "name": "keyword.other.alias.tiri", "match": "\\bas\\b" },
+                  { "name": "keyword.operator.logical.tiri", "match": "\\band\\b" },
+                  { "name": "keyword.operator.comparison.tiri", "match": "<=|>=|<|>" }
+               ]
+            }
+         ]
+      },
       "comments": {
          "patterns": [
             {
@@ -27,11 +136,133 @@
             }
          ]
       },
+      "typetests": {
+         "patterns": [
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Contextual structure-array `is [not] <array struct<Name>>` boolean type test.",
+               "match": "\\b(is)\\b(?:\\s+(not))?\\s*(<)\\s*(array)\\s+(struct)\\s*(<)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(>)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.logical.tiri" },
+                  "2": { "name": "keyword.operator.logical.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "support.type.primitive.tiri" },
+                  "6": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "7": { "name": "entity.name.type.tiri" },
+                  "8": { "name": "punctuation.definition.type-test.end.tiri" },
+                  "9": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Contextual constrained `is [not] <aggregate Name>` boolean type test.",
+               "match": "\\b(is)\\b(?:\\s+(not))?\\s*(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.logical.tiri" },
+                  "2": { "name": "keyword.operator.logical.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "entity.name.type.tiri" },
+                  "6": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Structure-array `!= <array struct<Name>>` or `≠ <array struct<Name>>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(array)\\s+(struct)\\s*(<)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(>)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.comparison.tiri" },
+                  "2": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "6": { "name": "entity.name.type.tiri" },
+                  "7": { "name": "punctuation.definition.type-test.end.tiri" },
+                  "8": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Contextual unconstrained `is [not] <type>` boolean type test.",
+               "match": "\\b(is)\\b(?:\\s+(not))?\\s*(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.logical.tiri" },
+                  "2": { "name": "keyword.operator.logical.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "4": { "name": "support.type.primitive.tiri" },
+                  "5": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Constrained `!= <aggregate Name>` or `≠ <aggregate Name>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.comparison.tiri" },
+                  "2": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "entity.name.type.tiri" },
+                  "5": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.type-test.tiri",
+               "comment": "Unconstrained `!= <type>` or `≠ <type>` boolean type test.",
+               "match": "(!=|≠)\\s*(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)",
+               "captures": {
+                  "1": { "name": "keyword.operator.comparison.tiri" },
+                  "2": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            }
+         ]
+      },
+      "choose-type-patterns": {
+         "patterns": [
+            {
+               "name": "meta.choose.type-pattern.tiri",
+               "comment": "Structure-array `<array struct<Name>>` choose type pattern before when or ->.",
+               "match": "(<)\\s*(array)\\s+(struct)\\s*(<)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(>)\\s*(>)(?=\\s*(?:when\\b|->))",
+               "captures": {
+                  "1": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "2": { "name": "support.type.primitive.tiri" },
+                  "3": { "name": "support.type.primitive.tiri" },
+                  "4": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "5": { "name": "entity.name.type.tiri" },
+                  "6": { "name": "punctuation.definition.type-test.end.tiri" },
+                  "7": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.choose.type-pattern.tiri",
+               "comment": "Constrained `<aggregate Name>` choose type pattern before when or ->.",
+               "match": "(<)\\s*(array|struct|obj|object)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(>)(?=\\s*(?:when\\b|->))",
+               "captures": {
+                  "1": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "2": { "name": "support.type.primitive.tiri" },
+                  "3": { "name": "entity.name.type.tiri" },
+                  "4": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            },
+            {
+               "name": "meta.choose.type-pattern.tiri",
+               "comment": "Unconstrained `<type>` choose type pattern before when or ->.",
+               "match": "(<)\\s*(any|nil|bool|num|str|table|array|func|struct|obj|object|range|userdata)\\s*(>)(?=\\s*(?:when\\b|->))",
+               "captures": {
+                  "1": { "name": "punctuation.definition.type-test.begin.tiri" },
+                  "2": { "name": "support.type.primitive.tiri" },
+                  "3": { "name": "punctuation.definition.type-test.end.tiri" }
+               }
+            }
+         ]
+      },
       "annotations": {
          "patterns": [
             {
                "name": "support.constant.parser-annotation.tiri",
-               "match": "@(FunctionName|SourceFile|SourceLine)\\b"
+               "match": "@(FunctionName|SourceFile|SourceLine|Package|Dependencies)\\b"
             },
             {
                "name": "entity.name.function.annotation.tiri",
@@ -118,6 +349,10 @@
       "string-escapes": {
          "patterns": [
             {
+               "name": "constant.character.escape.brace.tiri",
+               "match": "(\\{\\{|\\}\\})"
+            },
+            {
                "name": "constant.character.escape.tiri",
                "match": "\\\\."
             }
@@ -165,7 +400,7 @@
             },
             {
                "name": "keyword.control.exception.tiri",
-               "match": "\\b(try|except|when|success|raise|check|assert|error)\\b"
+               "match": "\\b(try|checkall|except|when|success|raise|check|assert)\\b"
             },
             {
                "name": "keyword.control.defer.tiri",
@@ -193,11 +428,15 @@
             },
             {
                "name": "keyword.other.import.tiri",
-               "match": "\\b(require|include|using)\\b"
+               "match": "\\b(import|require|include)\\b"
+            },
+            {
+               "name": "keyword.other.alias.tiri",
+               "match": "\\b(as)\\b"
             },
             {
                "name": "support.function.builtin.tiri",
-               "match": "\\b(pcall|xpcall|print|msg|type|resolve|tonumber|tostring|pairs|ipairs|next|select|unpack|setmetatable|getmetatable|rawget|rawset|collectgarbage)\\b"
+               "match": "\\b(pcall|xpcall|print|msg|type|resolve|tonumber|tostring|pairs|ipairs|next|unpack|setmetatable|getmetatable|rawget|rawset)\\b"
             },
             {
                "name": "constant.other.error.tiri",
@@ -240,7 +479,7 @@
                "match": "\\?\\."
             },
             {
-               "name": "keyword.operator.nullish.tiri",
+               "name": "keyword.operator.if-empty.tiri",
                "match": "\\?\\?"
             },
             {
@@ -252,12 +491,16 @@
                "match": "(<<|>>)"
             },
             {
+               "name": "keyword.operator.context.tiri",
+               "match": "&&"
+            },
+            {
                "name": "keyword.operator.bitwise.tiri",
                "match": "[&|~]"
             },
             {
                "name": "keyword.operator.comparison.tiri",
-               "match": "(==|!=|<=|>=|<|>)"
+               "match": "(==|!=|<=|>=|≈|≠|≤|≥|<|>)"
             },
             {
                "name": "keyword.operator.assignment.tiri",
@@ -300,6 +543,42 @@
                }
             },
             {
+               "name": "meta.struct.declaration.tiri",
+               "match": "\\b(struct)\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
+               "captures": {
+                  "1": {
+                     "name": "storage.type.struct.tiri"
+                  },
+                  "2": {
+                     "name": "entity.name.type.struct.tiri"
+                  }
+               }
+            },
+            {
+               "name": "meta.enum.declaration.tiri",
+               "match": "\\b(enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+               "captures": {
+                  "1": {
+                     "name": "storage.type.enum.tiri"
+                  },
+                  "2": {
+                     "name": "entity.name.type.enum.tiri"
+                  }
+               }
+            },
+            {
+               "name": "meta.function-call.optional.tiri",
+               "match": "(?<=\\.)([A-Za-z_][A-Za-z0-9_]*)(\\?)(?=\\()",
+               "captures": {
+                  "1": {
+                     "name": "entity.name.function.call.tiri"
+                  },
+                  "2": {
+                     "name": "keyword.operator.optional-call.tiri"
+                  }
+               }
+            },
+            {
                "name": "entity.name.function.call.tiri",
                "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
             },
@@ -313,7 +592,7 @@
          "patterns": [
             {
                "name": "support.type.primitive.tiri",
-               "match": "\\b(any|bool|boolean|double|float|int|integer|num|number|ptr|string|table|void)\\b"
+               "match": "\\b(any|bool|byte|char|cstr|double|float|func|int|int8|int16|int32|int64|integer|num|number|ptr|string|table|uint|uint8|uint16|uint32|uint64|void)\\b"
             },
             {
                "name": "support.class.tiri",

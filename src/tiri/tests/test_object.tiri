@@ -48,6 +48,7 @@ end
    f = obj.new('time')
    child = f.new('time')
    assert(type(child) is 'object', "Expected child to be an object")
+   assert(child.owner.id is f.id, 'Expected parent.new() to retain the receiving object as owner')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -106,9 +107,56 @@ end
 @Test function ObjInit()
    -- Create object without auto-init (no fields table)
    f = obj.new('time')
-   -- Object is auto-initialised, so init() returns Okay
-   err = f.init()
-   assert(err is ERR_Okay, "Expected init() to return Okay, got " .. tostring(err))
+   -- Object is auto-initialised, so init() completes without a result.
+   result = f.init()
+   assert(result is nil, 'Expected init() to return no result')
+end
+
+@Test function ObjInitFailure()
+   f = obj.new('file')
+
+   try
+      f.init()
+   except error_value when ERR_MissingPath
+      -- Expected failure due to missing path
+   success
+      assert(false, 'Expected a file without a path to fail initialisation')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Compiler-owned obj<Class> construction performs the same immediate root initialisation as obj.new(Class, Fields).
+
+@Test function TypedObjectConstruction()
+   local typed = obj<Time> { year=2026 }
+   local explicit = obj.new('Time', { year=2026 })
+
+   assert(typed.class.name is 'Time', 'Typed construction should create the requested class')
+   assert(typed.year is 2026, 'Typed construction should assign initialiser fields before Init()')
+   assert(typed.owner.id is explicit.owner.id, 'Typed and explicit root construction should retain the same owner')
+
+   local empty = obj<Time> {}
+   empty.init()
+end
+
+@Test function TypedObjectConstructionFailures()
+   try
+      exec([[ local invalid = obj<Time> { does_not_exist=1 } ]])
+   except ex
+      assert(ex.message.find('Parsing failed') or ex.message.find('does_not_exist'),
+         'Invalid typed constructor fields should retain the regular object-field diagnostic: ' .. ex.message)
+   success
+      assert(false, 'Expected an invalid typed constructor field to fail')
+   end
+
+   try
+      local unavailable = obj<UnavailableObjectClass> {}
+   except ex
+      assert(ex.message.find('UnavailableObjectClass') or ex.message.find('class'),
+         'Unavailable typed constructor classes should fail through object creation: ' .. ex.message)
+   success
+      assert(false, 'Expected unavailable typed constructor class creation to fail')
+   end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -130,8 +178,8 @@ end
 -- Direct field access (most optimal route)
 
 @Test(hotpath=true) function ObjGetSetDirect()
-   t = obj.new('time', { })
-   f = obj.new('file')
+   local t = obj.new('time', { })
+   local f = obj.new('file')
 
    -- Set and get string field that has function backing
 
@@ -142,45 +190,72 @@ end
 
    t.year = 2025
 
-   year = t.year
+   local year = t.year
    assert(type(year) is 'number', "Expected get('year') to return a number")
    assert(year is 2025, "Expected year field to be 2025, got " .. tostring(year))
 
    -- Test compile-time detection of non-existent field (read)
    try
       exec([[
-         t = obj.new('time')
-         invalid = t.not_a_field
+         local tm = obj.new('time')
+         local invalid = tm.not_a_field
       ]])
    except ex
       -- exec() doesn't preserve full error details, just check parsing failed
-      assert(ex.message:find("Parsing failed") or ex.message:find("not_a_field"),
+      assert(ex.message.find("Parsing failed") or ex.message.find("not_a_field"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when accessing invalid field")
+      assert(false, "Expected error when accessing invalid field")
    end
 
-   -- Test OBSETF - write to a read-only field (runtime error, timeStamp exists in dictionary)
+   -- Test OBSETF - write to a read-only field (runtime error, timestamp exists in dictionary)
    try
-      t.timeStamp = 1
+      t.timestamp = 1
+   except ex when ERR_ImmutableField
+      assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
    except ex
-      assert(ex.message:find('Time.timeStamp'), "Error message should mention the accessed field, got: " .. ex.message)
+      assert(false, "Expected ImmutableField, got error code " .. tostring(ex.code) .. ": " .. ex.message)
    success
-      error("Expected error when writing a read-only field")
+      assert(false, "Expected error when writing a read-only field")
+   end
+
+   -- Computed-key assignments use object_newindex() and must report the same error code.
+   local dynamic_t:any = obj.new('time', {})
+   local field_name = 'timestamp'
+   try
+      dynamic_t[field_name] = 1
+   except ex when ERR_ImmutableField
+      assert(ex.message.find('Time.timestamp'), "Error message should mention the accessed field, got: " .. ex.message)
+   except ex
+      assert(false,
+         "Expected ImmutableField for computed key, got error code " .. tostring(ex.code) .. ": " .. ex.message)
+   success
+      assert(false, "Expected error when writing a read-only field through a computed key")
+   end
+
+   field_name = 'does_not_exist'
+   try
+      dynamic_t[field_name] = 1
+   except ex when ERR_UnsupportedField
+   except ex
+      assert(false,
+         "Expected UnsupportedField for absent computed key, got error code " .. tostring(ex.code) .. ": " .. ex.message)
+   success
+      assert(false, "Expected error when writing an absent field through a computed key")
    end
 
    -- Test compile-time detection of non-existent field (write)
    try
       exec([[
-         t = obj.new('time')
+         local t = obj.new('time')
          t.does_not_exist = print
       ]])
    except ex
       -- exec() doesn't preserve full error details, just check parsing failed
-      assert(ex.message:find("Parsing failed") or ex.message:find("does_not_exist"),
+      assert(ex.message.find("Parsing failed") or ex.message.find("does_not_exist"),
          "Expected parsing error for invalid field, got: " .. ex.message)
    success
-      error("Expected error when writing a non-existent field")
+      assert(false, "Expected error when writing a non-existent field")
    end
 end
 
@@ -226,20 +301,61 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Test obj._state() for per-object state storage
+-- Test obj.state() for per-object state storage
 
 @Test(hotpath=true) function ObjState()
    f = obj.new('file')
 
-   state = f._state()
-   assert(type(state) is 'table', "Expected _state() to return a table")
+   state = f.state()
+   assert(type(state) is 'table', "Expected state() to return a table")
 
    -- Store something in state
    state.myvalue = 42
 
    -- Retrieve state again and verify
-   state2 = f._state()
+   state2 = f.state()
    assert(state2.myvalue is 42, "Expected state to persist value")
+
+   f.free()
+   caught = false
+   try
+      f.state()
+   except e
+      caught = true
+   end
+   assert(caught, 'Expected state() to reject a dead object')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Registered obj.* methods, including new and state, are dispatched as canonical built-in methods with the object
+-- supplied as an explicit receiver.
+
+@Test(hotpath=true) @Requires(display=true)
+function RegisteredMethodsUseExplicitReceiver()
+   f = obj.new('file', { path='temp:' })
+   assert(f.exists(), "exists() should dispatch through the explicit receiver")
+   assert(f.get('path') is 'temp:', "get() should read a field through the explicit receiver")
+
+   scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   vp = scene.new('VectorViewport', { x=0, y=0, width=50, height=50 })
+
+   err = vp.set('opacity', 0.5)
+   assert(err is ERR_Okay, "set() should update a field through the explicit receiver")
+   assert(math.abs(vp.get('opacity') - 0.5) < 0.0001, "set() should have persisted the field value")
+
+   state = f.state()
+   state.marker = 7
+   assert(f.state().marker is 7, "state() should use the explicit receiver and persist state")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+
+@Test function ObjectMethodEscapePaths()
+   parent = obj.new('time')
+   assert(parent.new is nil, 'Bare new access should not manufacture a bound closure')
+   assert(parent.state is nil, 'Bare state access should not manufacture a bound closure')
+   assert(parent['new'] is nil, 'Computed new access should not manufacture a bound closure')
+   assert(parent['state'] is nil, 'Computed state access should not manufacture a bound closure')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -267,6 +383,135 @@ end
    f.free()
 
    assert(callback_count is 1, "Expected Free action callback to be called once")
+end
+
+-- Every subscription to the same object and action must be called once, in order.  Unsubscribing from a callback
+-- stops the remaining callbacks for that action.
+
+@Test function MultipleActionSubscriptions()
+   local f = obj.new('time', { })
+   local calls = array<str>
+   f.subscribe('Query', function() calls.push('a') end)
+   f.subscribe('Query', function() calls.push('b') end)
+   f.subscribe('Free', function() calls.push('free1') end)
+   f.subscribe('Free', function() calls.push('free2') end)
+   check f.acQuery()
+   assert(calls.concat(',') is 'a,b', 'Each Query subscription must be called once: ' .. calls.concat(','))
+
+   f.subscribe('Query', function()
+      calls.push('c')
+      f.unsubscribe('Query')
+   end)
+   f.subscribe('Query', function() calls.push('d') end)
+   check f.acQuery()
+   check f.acQuery()
+   assert(calls.concat(',') is 'a,b,a,b,c', 'Unsubscribing must stop the remaining callbacks: ' .. calls.concat(','))
+
+   f.subscribe('Query', function() calls.push('e') end)
+   check f.acQuery()
+   f.free()
+   assert(calls.concat(',') is 'a,b,a,b,c,e,free1,free2', 'Resubscription and Free must notify every subscriber')
+end
+
+-- Subscriptions to actions other than Free must be released when their object is freed, so that their callbacks
+-- (and whatever the callbacks reference) can be collected.
+
+function subscriptionCollected(Setup:func):bool
+   weak = setmetatable({ }, { __mode = 'k' })
+   do
+      owner = { }
+      weak[owner] = true
+      f = obj.new('time', { })
+      Setup(f, owner)
+      f.free()
+      owner = nil
+      f = nil
+   end
+   -- JIT traces can retain callbacks and their captured owner after the native subscriptions have been released.
+   -- Remove those roots so this checks subscription and state ownership independently of test order.
+   jit.flush()
+   processing.collect()
+   processing.collect()
+   return next(weak) is nil
+end
+
+@Test function FreedObjectsReleaseActionSubscriptions()
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Query', function() Owner.x = 1 end)
+   end), 'A Query subscription must be released when its object is freed')
+
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Query', function() Owner.x = 1 end)
+      F.subscribe('Free', function() Owner.y = 1 end)
+   end), 'Query and Free subscriptions must both be released')
+
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Free', function() end)
+      F.subscribe('Query', function() Owner.x = 1 end)
+      F.unsubscribe('Free')
+   end), 'Unsubscribing from Free must keep the release of the remaining subscriptions')
+
+   removed_free_called = false
+   assert(subscriptionCollected(function(F, Owner)
+      F.subscribe('Query', function()
+         Owner.x = 1
+         F.unsubscribe('Free')
+      end)
+      F.subscribe('Free', function() removed_free_called = true end)
+      check F.acQuery()
+   end), 'Unsubscribing from Free during notification must preserve subscription cleanup')
+   assert(not removed_free_called, 'Unsubscribed Free callback must not run')
+
+   free_state_updated = false
+   assert(subscriptionCollected(function(F, Owner)
+      state = F.state()
+      F.subscribe('Free', function()
+         F.unsubscribe('Free')
+         state.owner = Owner
+         free_state_updated = true
+      end)
+   end), 'State updated by a Free callback must be released after the callbacks finish')
+   assert(free_state_updated, 'The Free callback must update its captured state table successfully')
+
+   -- Free callbacks still run when the object also has other subscriptions, in either subscription order.
+
+   calls = array<str>
+   f = obj.new('time', { })
+   f.subscribe('Query', function() calls.push('query') end)
+   f.subscribe('Free', function() calls.push('free') end)
+   check f.acQuery()
+   f.free()
+   g = obj.new('time', { })
+   g.subscribe('Free', function() calls.push('free') end)
+   g.subscribe('Query', function() calls.push('query') end)
+   g.free()
+   assert(calls.concat(',') is 'query,free,free', 'Free callbacks must still run: ' .. calls.concat(','))
+end
+
+@Test function FreedObjectsReleaseStateTables()
+   assert(subscriptionCollected(function(F, Owner)
+      F.state().owner = Owner
+   end), 'A state table must be released when its object is freed')
+
+   assert(subscriptionCollected(function(F, Owner)
+      F.state().owner = Owner
+      F.subscribe('Free', function() end)
+      F.unsubscribe('Free')
+   end), 'Unsubscribing from Free must keep the release of the state table')
+
+   f = obj.new('time', { })
+   f.state().value = 42
+   processing.collect()
+   assert(f.state().value is 42, 'A live object keeps its state table')
+   f.free()
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Actions appended to AC must have a matching Tiri jump-table entry.  A missing entry dispatches through null.
+
+@Test function AppendedActionDispatch()
+   target = obj.new('config')
+   assert(target.acPause(1) is ERR_NoAction, 'Expected an unsupported Pause action to return ERR_NoAction')
 end
 
 -----------------------------------------------------------------------------------------------------------------------
@@ -308,29 +553,32 @@ end
          time_obj = file_obj
       ]])
    success
-      error("Expected error when assigning object of different class")
+      assert(false, "Expected error when assigning object of different class")
    end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Compile-time field type checking: assigning string field to number variable should fail
+-- Typed assignment checking: assigning a string field to a number variable should fail
 
 @Test function FieldTypeCheckStrToNum()
    try
       exec([[
          c = obj.new('config')
-         count = 0
-         count = c.path
+         c.path = 'kotuku:test.cfg'
+         local count:num = 0
+         local wrong:any = c.path
+         count = wrong
       ]])
    except ex
-      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+      assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
+         "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected compile-time error when assigning str field to num variable")
+      assert(false, "Expected type error when assigning str field to num variable")
    end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
--- Compile-time field type checking: assigning number field to string variable should fail
+-- Typed assignment checking: assigning a number field to a string variable should fail
 
 @Test function FieldTypeCheckNumToStr()
    try
@@ -340,9 +588,10 @@ end
          name = c.totalKeys
       ]])
    except ex
-      assert(ex.message:find('Type mismatch'), "Expected type mismatch error, got: " .. ex.message)
+      assert(ex.message.find('Type mismatch') or ex.message.find('type contract failed'),
+         "Expected type mismatch error, got: " .. ex.message)
    success
-      error("Expected compile-time error when assigning num field to str variable")
+      assert(false, "Expected type error when assigning num field to str variable")
    end
 end
 
@@ -384,4 +633,65 @@ end
 
    str_value = c.keyFilter  -- str_value is inferred as str
    assert(type(str_value) is 'string', "Expected str_value to be a string")
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Object class identity remains exact for inferred bindings, while explicit obj annotations remain broad.
+
+@Test function ObjectClassAssignmentControls()
+   local matching = obj.new('time')
+   matching = obj.new('time')
+   assert(matching.class.name is 'Time', 'A matching object class assignment should remain valid')
+
+   try
+      exec([[
+local value = obj.new('time')
+value = obj.new('file')
+]])
+   except ex
+      assert(ex.message.find('object class mismatch') != nil or ex.message.find('ObjectClassMismatch') != nil,
+         'A visible cross-class assignment should retain its compile-time diagnostic: ' .. ex.message)
+   success
+      assert(false, 'Expected a compile-time object class mismatch')
+   end
+
+   local broad:obj = obj.new('time')
+   broad = obj.new('file')
+   assert(broad.class.name is 'File', 'An explicit obj annotation should accept either object class')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Assigning a number to a string field converts a copy; the source variable must remain a number.  Previously the
+-- source register was rewritten in place, which also tripped the JIT recorder's slot type check in hot loops.
+
+@Test function StringFieldKeepsNumberSource()
+   local typed = obj.new('file')
+   local x = 5
+   typed.path = x
+   assert(type(x) is 'number' and x is 5, 'Fast-path field write changed the source to ' .. type(x))
+   assert(typed.path is '5', 'The field must receive the number converted to a string')
+
+   local dynamic:any = obj.new('file')
+   local y = 7.5
+   dynamic.path = y
+   assert(type(y) is 'number' and y is 7.5, 'Dynamic field write changed the source to ' .. type(y))
+   assert(dynamic.path is '7.5', 'Dynamic field write must convert the number to a string')
+
+   local total = 0
+   for i in {1 to 200} do
+      typed.path = i
+      total += i
+   end
+   assert(total is 19900, 'Loop variable must stay numeric while written to a string field')
+end
+
+@Test function StringFieldNumberInitialisers()
+   local source = 5
+   local config = obj.new('config', { name=source })
+   assert(config.name is '5', 'Object initialisation must convert a numeric string-field value')
+   assert(type(source) is 'number' and source is 5, 'Object initialisation must preserve the source number')
+
+   local child = config.new('config', { name=7 })
+   assert(child.name is '7', 'Child initialisation must convert a numeric string-field value')
+   assert(child.owner.id is config.id, 'Child initialisation must preserve the owner')
 end

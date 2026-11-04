@@ -1,0 +1,142 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="class.xsl"?>
+
+<book>
+  <info>
+    <name>ScintillaSearch</name>
+    <type>class</type>
+    <module>Scintilla</module>
+    <comment>Provides search functionality for use on Scintilla objects.</comment>
+    <version>1</version>
+    <id>159ed89f</id>
+    <idstring>SCINTILLASEARCH</idstring>
+    <category>Tool</category>
+    <copyright>Paul Manias © 2005-2026</copyright>
+    <description>
+<p>A ScintillaSearch object scans the document of a <class name="Scintilla">Scintilla</class> object for the <fl>Text</fl> string.  Call <method>Find</method> to locate the first match, then the <action>Next</action> and <action>Prev</action> actions to step through the matches that follow or precede it.  The <fl>Flags</fl> determine the direction of the search, whether it is case sensitive or a regular expression, whether it wraps at the end of the document and whether it is limited to the user's selection.</p>
+<p>Each match is selected in the Scintilla object, unless <code>STF::MOVE_CURSOR</code> is set, in which case the cursor is moved to the start of the match.  The <fl>Start</fl> and <fl>End</fl> fields record the position of the most recent match.</p></description>
+    <source>
+      <file>class_scintilla_search.cxx</file>
+    </source>
+  </info>
+
+  <actions>
+    <action>
+      <name>Next</name>
+      <comment>Continues a text search.</comment>
+      <prototype>ERR acNext(*Object)</prototype>
+      <tiriPrototype>err = Object.acNext()</tiriPrototype>
+      <description>
+<p>Use Next() to continue a search after calling <method>Find</method>.  The search proceeds in the direction indicated by <fl>Flags</fl>, starting from the most recent match.  If the user has moved the cursor since the most recent match, the search starts from the cursor instead.</p>
+<p>If a match is discovered, the <fl>Start</fl> and <fl>End</fl> fields are updated with its position.  If there are no further matches, <code>ERR::Search</code> is returned.  The search wraps at the end of the document if <code>STF::WRAP</code> is set.</p>
+      </description>
+      <result>
+        <error code="Okay">A match was found.</error>
+        <error code="Search">No match was found.</error>
+        <error code="FieldNotSet">The <fl>Text</fl> field is empty.</error>
+      </result>
+    </action>
+
+    <action>
+      <name>Prev</name>
+      <comment>Continues a text search in reverse.</comment>
+      <prototype>ERR acPrev(*Object)</prototype>
+      <tiriPrototype>err = Object.acPrev()</tiriPrototype>
+      <description>
+<p>The Prev() action operates in the same way as <action>Next</action>, except that the search proceeds in the opposite direction to the one indicated by <fl>Flags</fl>.</p>
+      </description>
+      <result>
+        <error code="Okay">A match was found.</error>
+        <error code="Search">No match was found.</error>
+        <error code="FieldNotSet">The <fl>Text</fl> field is empty.</error>
+      </result>
+    </action>
+
+  </actions>
+
+  <methods>
+    <method>
+      <name>Find</name>
+      <comment>Searches for the first match of the Text string.</comment>
+      <prototype>ERR ss::Find(OBJECTPTR Object, INT From)</prototype>
+      <tiriPrototype>err = Find(From:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="From">The byte position to start searching from.  Set to -1 to start from the cursor, or from the edge of the selection that faces the search direction if <code>STF::SCAN_SELECTION</code> is set.</param>
+      </input>
+      <description>
+<p>Call Find() to start a new search for <fl>Text</fl> within the targeted <fl>Scintilla</fl> object.  The search begins at the <code>From</code> position and proceeds forwards, or backwards if <code>STF::BACKWARDS</code> is set in <fl>Flags</fl>.  If no match is found before the end of the document is reached, the search fails unless <code>STF::WRAP</code> is set, in which case it continues from the opposite end.</p>
+<p>If <code>STF::SCAN_SELECTION</code> is set, the user's current selection is recorded and the search is limited to it, including any subsequent calls to <action>Next</action> and <action>Prev</action>.  The <code>From</code> position is restricted to the selection.</p>
+<p>The match is selected in the Scintilla object, or the cursor is moved to it if <code>STF::MOVE_CURSOR</code> is set.  The <fl>Start</fl> and <fl>End</fl> fields are updated with the position of the match.</p>
+<p>To find subsequent matches, use the <action>Next</action> and <action>Prev</action> actions.</p>
+      </description>
+    </method>
+
+  </methods>
+
+  <fields>
+    <field>
+      <name>End</name>
+      <comment>The end of the most recent match.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>The End field records the byte position immediately after the most recent match, or -1 if there is no match.  It is reset by <method>Find</method>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Flags</name>
+      <comment>Optional flags.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type lookup="STF">STF</type>
+      <description>
+<p>Optional flags that affect the search process are specified here.  They apply to <method>Find</method>, <action>Next</action> and <action>Prev</action>, and can be changed between calls.</p>
+<types lookup="STF"/>
+      </description>
+    </field>
+
+    <field>
+      <name>Scintilla</name>
+      <comment>Targets a Scintilla object for searching.</comment>
+      <access read="R" write="I">Read/Init</access>
+      <type class="Scintilla">*Scintilla</type>
+      <description>
+<p>A Scintilla object must be targeted in this field in order to perform the search process.  If it is not set prior to initialisation, the nearest Scintilla object in the ownership hierarchy is used.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Start</name>
+      <comment>The start of the most recent match.</comment>
+      <access read="R">Read</access>
+      <type>INT</type>
+      <description>
+<p>The Start field records the byte position of the most recent match, or -1 if there is no match.  It is reset by <method>Find</method>.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>Text</name>
+      <comment>The string sequence to search for.</comment>
+      <access read="R" write="W">Read/Write</access>
+      <type>STRING</type>
+      <description>
+<p>This field defines the string sequence that will be searched for when calling either <method>Find</method>, <action>Next</action> or <action>Prev</action>.  If <code>STF::EXPRESSION</code> is set in <fl>Flags</fl>, the Text is a regular expression.</p>
+      </description>
+    </field>
+
+  </fields>
+  <types>
+    <constants lookup="STF" comment="Scintilla search flags.">
+      <const name="BACKWARDS">Search backwards.</const>
+      <const name="CASE">Case sensitive search.</const>
+      <const name="EXPRESSION">Search text is a regular expression.</const>
+      <const name="MOVE_CURSOR">The cursor is moved to the discovered string.  If not set, the string is auto-selected.</const>
+      <const name="SCAN_SELECTION">Limit search to within the user's current selection.</const>
+      <const name="WRAP">Wrap search at the end of the document.</const>
+    </constants>
+
+  </types>
+  <structs>
+  </structs>
+</book>

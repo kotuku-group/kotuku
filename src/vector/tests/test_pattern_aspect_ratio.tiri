@@ -1,0 +1,381 @@
+   include 'vector', 'display'
+   module display as mGfx
+
+-- Tests for VectorPattern.AspectRatio and the fitting of pattern content within each tile.  All patterns use simple
+-- solid shapes so that interior pixel samples can confirm the scale and alignment of the content.  Samples are kept
+-- away from shape edges to avoid antialiasing.
+
+DEFAULT_ARF = ARF_MEET|ARF_X_MID|ARF_Y_MID
+
+function newBitmap(Width, Height):obj
+   bmp = obj.new('bitmap', { width=Width, height=Height, bitsPerPixel=32, bkgd='0,0,0,255' })
+   bmp.acClear()
+   return bmp
+end
+
+function hashBitmap(Bitmap)
+   return mSys.GenCRC32(0, Bitmap.data, Bitmap.size)
+end
+
+function drawScene(Scene, Bitmap)
+   Bitmap.acClear()
+   Scene.bitmap = Bitmap
+   check Scene.acDraw()
+   return hashBitmap(Bitmap)
+end
+
+function readPixel(Bitmap, X, Y)
+   return mGfx.ReadRGBPixel(Bitmap, X, Y)
+end
+
+function isRed(Bitmap, X, Y)
+   p = readPixel(Bitmap, X, Y)
+   return (p.red > 200) and (p.green < 50) and (p.blue < 50)
+end
+
+function isGreen(Bitmap, X, Y)
+   p = readPixel(Bitmap, X, Y)
+   return (p.red < 50) and (p.green > 100) and (p.blue < 50)
+end
+
+function isBlack(Bitmap, X, Y)
+   p = readPixel(Bitmap, X, Y)
+   return (p.red < 50) and (p.green < 50) and (p.blue < 50)
+end
+
+function newScene(Width, Height):<obj, obj>
+   scene = obj.new('VectorScene', { pageWidth=Width, pageHeight=Height })
+   viewport = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   return scene, viewport
+end
+
+-- Creates a pattern with a single tile of TileWidth x TileHeight user-space units.
+
+function newUserSpacePattern(Scene, TileWidth, TileHeight):obj
+   return Scene.new('VectorPattern', {
+      x=0, y=0, width=TileWidth, height=TileHeight, units=VUNIT_USERSPACE, spreadMethod=VSPREAD_REPEAT
+   })
+end
+
+-- A square 10x10 viewbox filled with a red upper half and a green lower half.
+
+function addSplitSquare(Pattern)
+   Pattern.viewport.viewX = 0
+   Pattern.viewport.viewY = 0
+   Pattern.viewport.viewWidth = 10
+   Pattern.viewport.viewHeight = 10
+   Pattern.viewport.new('VectorRectangle', { x=0, y=0, width=10, height=5, fill='rgb(255,0,0)' })
+   Pattern.viewport.new('VectorRectangle', { x=0, y=5, width=10, height=5, fill='rgb(0,160,0)' })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function DefaultIsCentredMeetAndAliasesViewport()
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+
+   assert(pattern.aspectRatio is DEFAULT_ARF, 'Default AspectRatio should be MEET|X_MID|Y_MID')
+   assert(pattern.viewport.aspectRatio is DEFAULT_ARF, 'Viewport should report the same default')
+
+   pattern.aspectRatio = ARF_NONE
+   assert(pattern.viewport.aspectRatio is ARF_NONE, 'Writes to the pattern should be visible through the viewport')
+
+   pattern.viewport.aspectRatio = ARF_SLICE|ARF_X_MIN|ARF_Y_MAX
+   assert(pattern.aspectRatio is ARF_SLICE|ARF_X_MIN|ARF_Y_MAX,
+      'Writes to the viewport should be visible through the pattern')
+end
+
+@Test function SquareViewboxMeetIsCentredInWideTile()
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   pattern.viewport.viewWidth = 10
+   pattern.viewport.viewHeight = 10
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=10, height=10, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   drawScene(scene, bmp)
+   assert(isBlack(bmp, 15, 25), 'MEET should leave the left margin of the tile empty')
+   assert(isRed(bmp, 30, 25) and isRed(bmp, 70, 25), 'MEET should centre 50x50 content horizontally')
+   assert(isBlack(bmp, 85, 25), 'MEET should leave the right margin of the tile empty')
+
+   pattern.aspectRatio = ARF_NONE
+   drawScene(scene, bmp)
+   assert(isRed(bmp, 5, 25) and isRed(bmp, 95, 25), 'NONE should stretch the content across the full tile')
+end
+
+@Test function SliceAlignsAndClipsWithinWideTile()
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   addSplitSquare(pattern)
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   -- SLICE scales the 10x10 source to 100x100; only half of it is visible in the 100x50 tile.
+
+   pattern.aspectRatio = ARF_SLICE|ARF_X_MID|ARF_Y_MID
+   drawScene(scene, bmp)
+   assert(isRed(bmp, 50, 10), 'yMid slice should show the red half in the upper part of the tile')
+   assert(isGreen(bmp, 50, 40), 'yMid slice should show the green half in the lower part of the tile')
+
+   pattern.aspectRatio = ARF_SLICE|ARF_X_MID|ARF_Y_MIN
+   drawScene(scene, bmp)
+   assert(isRed(bmp, 50, 10) and isRed(bmp, 50, 40), 'yMin slice should show only the red upper half')
+
+   pattern.aspectRatio = ARF_SLICE|ARF_X_MID|ARF_Y_MAX
+   drawScene(scene, bmp)
+   assert(isGreen(bmp, 50, 10) and isGreen(bmp, 50, 40), 'yMax slice should show only the green lower half')
+end
+
+@Test function MeetAlignsVerticallyInTallTile()
+   scene, viewport = newScene(50, 100)
+   pattern = newUserSpacePattern(scene, 50, 100)
+   addSplitSquare(pattern)
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=50, height=100, fill='url(#pat)' })
+   bmp = newBitmap(50, 100)
+
+   pattern.aspectRatio = ARF_MEET|ARF_X_MID|ARF_Y_MIN
+   drawScene(scene, bmp)
+   assert(isRed(bmp, 25, 10) and isGreen(bmp, 25, 40), 'yMin meet should place content at the top of the tile')
+   assert(isBlack(bmp, 25, 75), 'yMin meet should leave the bottom of the tile empty')
+
+   pattern.aspectRatio = ARF_MEET|ARF_X_MID|ARF_Y_MAX
+   drawScene(scene, bmp)
+   assert(isBlack(bmp, 25, 25), 'yMax meet should leave the top of the tile empty')
+   assert(isRed(bmp, 25, 60) and isGreen(bmp, 25, 90), 'yMax meet should place content at the bottom of the tile')
+
+   pattern.aspectRatio = ARF_MEET|ARF_X_MID|ARF_Y_MID
+   drawScene(scene, bmp)
+   assert(isBlack(bmp, 25, 15) and isBlack(bmp, 25, 85), 'yMid meet should leave equal margins')
+   assert(isRed(bmp, 25, 35) and isGreen(bmp, 25, 65), 'yMid meet should centre the content vertically')
+end
+
+@Test function HorizontalAlignmentInWideTile()
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   addSplitSquare(pattern)
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   pattern.aspectRatio = ARF_MEET|ARF_X_MIN|ARF_Y_MID
+   drawScene(scene, bmp)
+   assert(isRed(bmp, 25, 10) and isBlack(bmp, 75, 10), 'xMin meet should place content at the left of the tile')
+
+   pattern.aspectRatio = ARF_MEET|ARF_X_MAX|ARF_Y_MID
+   drawScene(scene, bmp)
+   assert(isBlack(bmp, 25, 10) and isRed(bmp, 75, 10), 'xMax meet should place content at the right of the tile')
+end
+
+@Test function BothTileUnitModesFitEquivalently()
+   bmp_user = newBitmap(100, 50)
+   bmp_box = newBitmap(100, 50)
+
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   addSplitSquare(pattern)
+   pattern.aspectRatio = ARF_MEET|ARF_X_MAX|ARF_Y_MID
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   drawScene(scene, bmp_user)
+
+   scene2, viewport2 = newScene(100, 50)
+   pattern2 = scene2.new('VectorPattern', {
+      x=0, y=0, width='100%', height='100%', units=VUNIT_BOUNDING_BOX, spreadMethod=VSPREAD_REPEAT
+   })
+   addSplitSquare(pattern2)
+   pattern2.aspectRatio = ARF_MEET|ARF_X_MAX|ARF_Y_MID
+   check scene2.mtAddDef('pat', pattern2)
+   viewport2.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   drawScene(scene2, bmp_box)
+
+   for _, pt in { { 25, 10 }, { 75, 10 }, { 75, 40 } } do
+      a = readPixel(bmp_user, pt[0], pt[1])
+      b = readPixel(bmp_box, pt[0], pt[1])
+      assert((a.red is b.red) and (a.green is b.green) and (a.blue is b.blue),
+         f'Pixel at {pt[0]},{pt[1]} should match between user-space and bounding-box tile units')
+   end
+
+   assert(isBlack(bmp_box, 25, 10), 'Bounding-box tiles should not force stretching of an explicit viewbox')
+   assert(isRed(bmp_box, 75, 10) and isGreen(bmp_box, 75, 40), 'Bounding-box tiles should honour xMax meet')
+end
+
+@Test function AspectRatioHasNoEffectWithoutViewbox()
+   -- User-space content without a viewbox keeps its coordinate scale.
+
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=20, height=20, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   default_hash = drawScene(scene, bmp)
+   assert(isRed(bmp, 10, 10) and isBlack(bmp, 30, 10) and isBlack(bmp, 10, 30), 'Content should keep user scale')
+
+   for _, ratio in { ARF_NONE, ARF_SLICE|ARF_X_MAX|ARF_Y_MAX, ARF_MEET|ARF_X_MIN|ARF_Y_MIN } do
+      pattern.aspectRatio = ratio
+      assert(drawScene(scene, bmp) is default_hash, f'AspectRatio {ratio} should not affect user-space content')
+   end
+end
+
+@Test function BoundingBoxContentStretchesWithoutViewbox()
+   scene, viewport = newScene(100, 50)
+   pattern = scene.new('VectorPattern', {
+      x=0, y=0, width='100%', height='100%', units=VUNIT_BOUNDING_BOX, contentUnits=VUNIT_BOUNDING_BOX,
+      spreadMethod=VSPREAD_REPEAT
+   })
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=0.5, height=0.5, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   default_hash = drawScene(scene, bmp)
+   assert(isRed(bmp, 45, 20), 'Content should cover half of the bounding box on each axis')
+   assert(isBlack(bmp, 55, 20) and isBlack(bmp, 45, 30), 'Content should be stretched independently on each axis')
+
+   pattern.aspectRatio = ARF_MEET|ARF_X_MAX|ARF_Y_MAX
+   assert(drawScene(scene, bmp) is default_hash, 'AspectRatio should not affect bounding-box content without a viewbox')
+end
+
+@Test function MixedUnitsMapContentToConsumerBoundingBox()
+   -- User-space tiles with bounding-box content: the content is relative to the consumer's bounding box (200x100),
+   -- not the 100x50 tile.
+
+   scene, viewport = newScene(200, 100)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   pattern.contentUnits = VUNIT_BOUNDING_BOX
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=0.25, height=0.25, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=200, height=100, fill='url(#pat)' })
+   bmp = newBitmap(200, 100)
+
+   default_hash = drawScene(scene, bmp)
+   assert(isRed(bmp, 45, 20) and isRed(bmp, 145, 70), 'Content should be 50x25 in every tile')
+   assert(isBlack(bmp, 55, 20) and isBlack(bmp, 45, 30), 'Content should not be scaled to the tile size')
+
+   pattern.aspectRatio = ARF_NONE
+   assert(drawScene(scene, bmp) is default_hash, 'AspectRatio should not affect mixed units without a viewbox')
+end
+
+@Test function ExplicitUnitViewboxOverridesContentUnits()
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   pattern.contentUnits = VUNIT_BOUNDING_BOX
+   pattern.viewport.viewWidth = 1
+   pattern.viewport.viewHeight = 1
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=1, height=1, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   drawScene(scene, bmp)
+   assert(isBlack(bmp, 15, 25) and isRed(bmp, 50, 25) and isBlack(bmp, 85, 25),
+      'An explicit 1x1 viewbox should be fitted with MEET despite bounding-box content units')
+   assert(pattern.viewport.viewWidth is 1 and pattern.viewport.viewHeight is 1,
+      'Rendering should not alter the configured viewbox')
+end
+
+@Test function ChangeAfterRenderInvalidatesPattern()
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   addSplitSquare(pattern)
+   check scene.mtAddDef('pat', pattern)
+   target = viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   meet_hash = drawScene(scene, bmp)
+   assert(drawScene(scene, bmp) is meet_hash, 'Repeated render of an unchanged pattern should be stable')
+   timestamp = target.pathTimestamp
+   assert(isBlack(bmp, 10, 10), 'MEET should leave the left margin empty')
+
+   pattern.aspectRatio = ARF_NONE
+   none_hash = drawScene(scene, bmp)
+   assert(none_hash != meet_hash, 'Changing the pattern AspectRatio should invalidate the cached tile')
+   assert(isRed(bmp, 10, 10), 'NONE should stretch the content into the left margin')
+   assert(drawScene(scene, bmp) is none_hash, 'Repeated render after the change should be stable')
+
+   pattern.viewport.aspectRatio = DEFAULT_ARF
+   assert(drawScene(scene, bmp) is meet_hash, 'Changing the viewport AspectRatio should invalidate the cached tile')
+   assert(target.pathTimestamp is timestamp, 'AspectRatio changes should not regenerate the consumer path')
+end
+
+@Test function NonZeroViewboxOrigin()
+   scene, viewport = newScene(100, 50)
+   pattern = newUserSpacePattern(scene, 100, 50)
+   pattern.viewport.viewX = 10
+   pattern.viewport.viewY = 10
+   pattern.viewport.viewWidth = 10
+   pattern.viewport.viewHeight = 10
+   pattern.viewport.new('VectorRectangle', { x=10, y=10, width=5, height=10, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   drawScene(scene, bmp)
+   assert(isBlack(bmp, 20, 25) and isRed(bmp, 35, 25) and isBlack(bmp, 60, 25),
+      'The viewbox origin should map to the left edge of the centred content')
+end
+
+@Test function SharedPatternAcrossConsumerSizes()
+   scene, viewport = newScene(200, 100)
+   pattern = scene.new('VectorPattern', {
+      x=0, y=0, width='100%', height='100%', units=VUNIT_BOUNDING_BOX, contentUnits=VUNIT_BOUNDING_BOX,
+      spreadMethod=VSPREAD_REPEAT
+   })
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=0.5, height=0.5, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorRectangle', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   viewport.new('VectorRectangle', { x=120, y=0, width=60, height=40, fill='url(#pat)' })
+   bmp = newBitmap(200, 100)
+
+   first_hash = drawScene(scene, bmp)
+   assert(isRed(bmp, 45, 20) and isBlack(bmp, 55, 20) and isBlack(bmp, 45, 30), 'First consumer should be 50x25')
+   assert(isRed(bmp, 145, 15) and isBlack(bmp, 155, 15) and isBlack(bmp, 145, 25), 'Second consumer should be 30x20')
+   assert(drawScene(scene, bmp) is first_hash, 'Alternating consumers should render consistently')
+end
+
+@Test function ViewportFillUsesConsumerBoundingBox()
+   scene, viewport = newScene(200, 100)
+   pattern = scene.new('VectorPattern', {
+      x=0, y=0, width='100%', height='100%', units=VUNIT_BOUNDING_BOX, contentUnits=VUNIT_BOUNDING_BOX,
+      spreadMethod=VSPREAD_REPEAT
+   })
+   pattern.viewport.new('VectorRectangle', { x=0, y=0, width=0.5, height=0.5, fill='rgb(255,0,0)' })
+   check scene.mtAddDef('pat', pattern)
+
+   -- The same pattern is consumed directly by a viewport fill and as a tiled fill of a rectangle.
+
+   viewport.new('VectorViewport', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   viewport.new('VectorRectangle', { x=120, y=0, width=60, height=40, fill='url(#pat)' })
+   bmp = newBitmap(200, 100)
+
+   first_hash = drawScene(scene, bmp)
+   assert(isRed(bmp, 45, 20) and isBlack(bmp, 55, 20) and isBlack(bmp, 45, 30),
+      'Viewport fill content should be relative to the viewport bounds')
+   assert(isRed(bmp, 145, 15) and isBlack(bmp, 155, 15) and isBlack(bmp, 145, 25),
+      'Tiled fill should not inherit the viewport fill state')
+   assert(drawScene(scene, bmp) is first_hash, 'Switching between direct and tiled rendering should be stable')
+end
+
+@Test function ViewportFillHonoursAspectRatio()
+   scene, viewport = newScene(100, 50)
+   pattern = scene.new('VectorPattern', {
+      x=0, y=0, width='100%', height='100%', units=VUNIT_BOUNDING_BOX, spreadMethod=VSPREAD_REPEAT
+   })
+   addSplitSquare(pattern)
+   check scene.mtAddDef('pat', pattern)
+   viewport.new('VectorViewport', { x=0, y=0, width=100, height=50, fill='url(#pat)' })
+   bmp = newBitmap(100, 50)
+
+   drawScene(scene, bmp)
+   assert(isBlack(bmp, 15, 10) and isRed(bmp, 50, 10) and isBlack(bmp, 85, 10),
+      'Viewport fill should centre the viewbox with MEET')
+
+   pattern.aspectRatio = ARF_NONE
+   drawScene(scene, bmp)
+   assert(isRed(bmp, 10, 10) and isGreen(bmp, 90, 40), 'Viewport fill should stretch the viewbox with NONE')
+end

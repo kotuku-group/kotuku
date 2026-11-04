@@ -1,0 +1,3 @@
+function imported_lexical_error()
+   return 1.trim()
+end

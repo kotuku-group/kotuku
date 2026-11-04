@@ -33,48 +33,7 @@ static const struct FieldDef clSurfaceFlags[] = {
    { "IgnoreFocus", 0x00800000 },
    { "InitOnly", 0x00cb0e81 },
    { "AspectRatio", 0x01000000 },
-   { nullptr, 0 }
-};
-
-static const struct FieldDef clSurfaceAlign[] = {
-   { "Left", 0x00000001 },
-   { "Right", 0x00000002 },
-   { "Horizontal", 0x00000004 },
-   { "Vertical", 0x00000008 },
-   { "Center", 0x0000000c },
-   { "Middle", 0x0000000c },
-   { "Top", 0x00000010 },
-   { "Bottom", 0x00000020 },
-   { nullptr, 0 }
-};
-
-static const struct FieldDef clSurfaceDimensions[] = {
-   { "ScaledX", 0x00000001 },
-   { "ScaledY", 0x00000002 },
-   { "FixedX", 0x00000004 },
-   { "FixedY", 0x00000008 },
-   { "ScaledXOffset", 0x00000010 },
-   { "ScaledYOffset", 0x00000020 },
-   { "FixedXOffset", 0x00000040 },
-   { "FixedYOffset", 0x00000080 },
-   { "FixedHeight", 0x00000100 },
-   { "FixedWidth", 0x00000200 },
-   { "ScaledHeight", 0x00000400 },
-   { "ScaledWidth", 0x00000800 },
-   { "FixedDepth", 0x00001000 },
-   { "ScaledDepth", 0x00002000 },
-   { "FixedZ", 0x00004000 },
-   { "ScaledZ", 0x00008000 },
-   { "ScaledRadiusX", 0x00010000 },
-   { "FixedRadiusX", 0x00020000 },
-   { "ScaledCenterX", 0x00040000 },
-   { "ScaledCenterY", 0x00080000 },
-   { "FixedCenterX", 0x00100000 },
-   { "FixedCenterY", 0x00200000 },
-   { "StatusChangeH", 0x00400000 },
-   { "StatusChangeV", 0x00800000 },
-   { "ScaledRadiusY", 0x01000000 },
-   { "FixedRadiusY", 0x02000000 },
+   { "ManualRender", 0x02000000 },
    { nullptr, 0 }
 };
 
@@ -119,48 +78,6 @@ static const struct FieldDef clSurfaceType[] = {
    { nullptr, 0 }
 };
 
-static const struct FieldDef clSurfaceDMF[] = {
-   { "ScaledX", 0x00000001 },
-   { "ScaledY", 0x00000002 },
-   { "FixedX", 0x00000004 },
-   { "FixedY", 0x00000008 },
-   { "ScaledXOffset", 0x00000010 },
-   { "ScaledYOffset", 0x00000020 },
-   { "FixedXOffset", 0x00000040 },
-   { "FixedYOffset", 0x00000080 },
-   { "FixedHeight", 0x00000100 },
-   { "FixedWidth", 0x00000200 },
-   { "ScaledHeight", 0x00000400 },
-   { "ScaledWidth", 0x00000800 },
-   { "FixedDepth", 0x00001000 },
-   { "ScaledDepth", 0x00002000 },
-   { "FixedZ", 0x00004000 },
-   { "ScaledZ", 0x00008000 },
-   { "ScaledRadiusX", 0x00010000 },
-   { "FixedRadiusX", 0x00020000 },
-   { "ScaledCenterX", 0x00040000 },
-   { "ScaledCenterY", 0x00080000 },
-   { "FixedCenterX", 0x00100000 },
-   { "FixedCenterY", 0x00200000 },
-   { "StatusChangeH", 0x00400000 },
-   { "StatusChangeV", 0x00800000 },
-   { "ScaledRadiusY", 0x01000000 },
-   { "FixedRadiusY", 0x02000000 },
-   { nullptr, 0 }
-};
-
-static const struct FieldDef clSurfaceALIGN[] = {
-   { "Left", 0x00000001 },
-   { "Right", 0x00000002 },
-   { "Horizontal", 0x00000004 },
-   { "Vertical", 0x00000008 },
-   { "Center", 0x0000000c },
-   { "Middle", 0x0000000c },
-   { "Top", 0x00000010 },
-   { "Bottom", 0x00000020 },
-   { nullptr, 0 }
-};
-
 static const struct FieldDef clSurfaceJTYPE[] = {
    { "Secondary", 0x00000001 },
    { "Anchored", 0x00000002 },
@@ -174,6 +91,8 @@ static const struct FieldDef clSurfaceJTYPE[] = {
    { "DblClick", 0x00000200 },
    { "Repeated", 0x00000400 },
    { "DragItem", 0x00000800 },
+   { "Touch", 0x00001000 },
+   { "Alt", 0x00002000 },
    { nullptr, 0 }
 };
 
@@ -192,7 +111,7 @@ static const struct FieldDef clSurfaceJET[] = {
    { "Button9", 0x00000009 },
    { "Button10", 0x0000000a },
    { "Wheel", 0x0000000b },
-   { "WheelTilt", 0x0000000c },
+   { "WheelX", 0x0000000c },
    { "PenTiltXY", 0x0000000d },
    { "AbsXY", 0x0000000e },
    { "CrossedIn", 0x0000000f },
@@ -201,6 +120,18 @@ static const struct FieldDef clSurfaceJET[] = {
    { "DeviceTiltXY", 0x00000012 },
    { "DeviceTiltZ", 0x00000013 },
    { "DisplayEdge", 0x00000014 },
+   { "TouchDown", 0x00000015 },
+   { "TouchMotion", 0x00000016 },
+   { "TouchUp", 0x00000017 },
+   { "TouchCancel", 0x00000018 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clSurfaceSPT[] = {
+   { "Host", 0x00000000 },
+   { "Taskbar", 0x00000001 },
+   { "IconTray", 0x00000002 },
+   { "None", 0x00000003 },
    { nullptr, 0 }
 };
 
@@ -209,9 +140,9 @@ FDEF maExposeToDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT
 FDEF maInvalidateRegion[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { 0, 0 } };
 FDEF maSetDisplay[] = { { "X", FD_INT }, { "Y", FD_INT }, { "Width", FD_INT }, { "Height", FD_INT }, { "InsideWidth", FD_INT }, { "InsideHeight", FD_INT }, { "BitsPerPixel", FD_INT }, { "RefreshRate", FD_DOUBLE }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maSetOpacity[] = { { "Value", FD_DOUBLE }, { "Adjustment", FD_DOUBLE }, { 0, 0 } };
-FDEF maAddCallback[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
-FDEF maResetDimensions[] = { { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { "XOffset", FD_DOUBLE }, { "YOffset", FD_DOUBLE }, { "Width", FD_DOUBLE }, { "Height", FD_DOUBLE }, { "Dimensions", FD_INT }, { 0, 0 } };
-FDEF maRemoveCallback[] = { { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
+FDEF maAddCallback[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maRemoveCallback[] = { { "Callback", FD_FUNCTION }, { 0, 0 } };
+FDEF maScheduleRedraw[] = { { "RefreshRate", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clSurfaceMethods[] = {
    { AC(-1), (APTR)SURFACE_InheritedFocus, "InheritedFocus", maInheritedFocus, sizeof(struct drw::InheritedFocus) },
@@ -221,11 +152,20 @@ static const struct MethodEntry clSurfaceMethods[] = {
    { AC(-5), (APTR)SURFACE_SetOpacity, "SetOpacity", maSetOpacity, sizeof(struct drw::SetOpacity) },
    { AC(-6), (APTR)SURFACE_AddCallback, "AddCallback", maAddCallback, sizeof(struct drw::AddCallback) },
    { AC(-7), (APTR)SURFACE_Minimise, "Minimise", 0, 0 },
-   { AC(-8), (APTR)SURFACE_ResetDimensions, "ResetDimensions", maResetDimensions, sizeof(struct drw::ResetDimensions) },
-   { AC(-9), (APTR)SURFACE_RemoveCallback, "RemoveCallback", maRemoveCallback, sizeof(struct drw::RemoveCallback) },
-   { AC(-10), (APTR)SURFACE_ScheduleRedraw, "ScheduleRedraw", 0, 0 },
+   { AC(-8), (APTR)SURFACE_RemoveCallback, "RemoveCallback", maRemoveCallback, sizeof(struct drw::RemoveCallback) },
+   { AC(-9), (APTR)SURFACE_ScheduleRedraw, "ScheduleRedraw", maScheduleRedraw, sizeof(struct drw::ScheduleRedraw) },
    { AC::NIL, 0, 0, 0, 0 }
 };
+
+static ERR SURFACE_New(extSurface *Self) {
+   new (Self) extSurface(Self->Class, Self->UID);
+   return ERR::Okay;
+}
+
+static ERR SURFACE_Free(extSurface *Self) {
+   Self->~extSurface();
+   return ERR::Okay;
+}
 
 static const struct ActionArray clSurfaceActions[] = {
    { AC::Activate, SURFACE_Activate },
@@ -241,7 +181,7 @@ static const struct ActionArray clSurfaceActions[] = {
    { AC::MoveToBack, SURFACE_MoveToBack },
    { AC::MoveToFront, SURFACE_MoveToFront },
    { AC::MoveToPoint, SURFACE_MoveToPoint },
-   { AC::NewObject, SURFACE_NewObject },
+   { AC::New, SURFACE_New },
    { AC::NewOwner, SURFACE_NewOwner },
    { AC::Redimension, SURFACE_Redimension },
    { AC::Resize, SURFACE_Resize },

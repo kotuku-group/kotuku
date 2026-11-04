@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,18 +5,20 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
+// ---
+// Defines subpixel constants and helpers for anti-aliased line rendering. Hooks into outline rasterisers, outline
+// renderers, and line profile calculations. In the vector renderer it provides shared arithmetic for crisp stroked
+// outlines and primitive lines.
+//
+// See Implementation agg_line_aa_basics.cpp
 
-#ifndef AGG_LINE_AA_BASICS_INCLUDED
-#define AGG_LINE_AA_BASICS_INCLUDED
+#pragma once
 
 #include <stdlib.h>
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    // See Implementation agg_line_aa_basics.cpp
-
      static const int line_subpixel_shift = 8;
      static const int line_subpixel_scale  = 1 << line_subpixel_shift;
      static const int line_subpixel_mask  = line_subpixel_scale - 1;
@@ -165,5 +166,3 @@ namespace agg
 
 
 }
-
-#endif

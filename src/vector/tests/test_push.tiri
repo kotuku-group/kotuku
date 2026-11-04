@@ -1,0 +1,104 @@
+-- Tests for the Push() method and the MoveToBack()/MoveToFront() actions of the Vector class, including the
+-- STICK_TO_BACK flag that moves a vector to the back on initialisation and prevents siblings from being pushed behind
+-- it.
+
+   include 'vector'
+
+-- Create a viewport containing a child rectangle for each entry in Names.  Names prefixed with '*' are marked with
+-- STICK_TO_BACK.  Returns the parent viewport and a table of children by name.
+
+function buildStack(Names:array<str>!):<obj, table>
+   local scene = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local parent = scene.new('VectorViewport', { x=0, y=0, width=100, height=100 })
+   local children = { }
+   for _, name in Names do
+      local flags:num = 0
+      local key:str = name
+      if name.startsWith('*') then
+         flags = VF_STICK_TO_BACK
+         key = name.sub(1)
+      end
+      children[key] = parent.new('VectorRectangle', { name=key, x=0, y=0, width=10, height=10, flags=flags })
+   end
+   return parent, children
+end
+
+-- Return the sibling order of a parent's children as a comma separated list of names.
+
+function stackOrder(Parent:obj!):str
+   local order = ''
+   local scan:any = Parent.child
+   while scan do
+      if order != '' then order ..= ',' end
+      order ..= scan.name
+      scan = scan.next
+   end
+   return order
+end
+
+function assertOrder(Parent, Expected, Message)
+   local actual = stackOrder(Parent)
+   assert(actual is Expected, f'{Message}: expected {Expected}, got {actual}')
+end
+
+@Test function PushBackwardWithoutFlag()
+   local parent, v = buildStack(array<str> { 'a', 'b', 'c', 'd' })
+   check v.d.mtPush(-2)
+   assertOrder(parent, 'a,d,b,c', 'Push(-2) should move two places back')
+end
+
+@Test function MoveToBackWithoutFlag()
+   local parent, v = buildStack(array<str> { 'a', 'b', 'c', 'd' })
+   check v.d.acMoveToBack()
+   assertOrder(parent, 'd,a,b,c', 'MoveToBack() should reach the head of the stack')
+   assert(parent.child.name is 'd', 'Parent child reference should be updated')
+end
+
+@Test function MoveToBackStopsAtStickyHead()
+   local parent, v = buildStack(array<str> { '*a', 'b', 'c', 'd' })
+   check v.d.acMoveToBack()
+   assertOrder(parent, 'a,d,b,c', 'MoveToBack() should stop in front of a STICK_TO_BACK vector')
+   assert(parent.child.name is 'a', 'Sticky vector should remain at the head of the stack')
+end
+
+@Test function PushStopsAtStickyMiddle()
+   local parent, v = buildStack(array<str> { 'a', '*b', 'c', 'd' })
+   check v.b.mtPush(1)
+   assertOrder(parent, 'a,b,c,d', 'A STICK_TO_BACK vector can be pushed forward')
+   check v.d.mtPush(-10)
+   assertOrder(parent, 'a,b,d,c', 'Push() should not pass a STICK_TO_BACK vector in the middle of the stack')
+end
+
+@Test function PushStopsAtLastStickyEncountered()
+   local parent, v = buildStack(array<str> { '*a', '*b', 'c', 'd' })
+   check v.d.acMoveToBack()
+   assertOrder(parent, 'a,b,d,c', 'MoveToBack() should stop at the first STICK_TO_BACK vector encountered')
+end
+
+@Test function PushDirectlyInFrontOfStickyIsNoOp()
+   local parent, v = buildStack(array<str> { '*a', 'b', 'c' })
+   check v.b.acMoveToBack()
+   assertOrder(parent, 'a,b,c', 'A vector directly in front of a STICK_TO_BACK vector should not move')
+end
+
+@Test function PushForwardUnaffected()
+   local parent, v = buildStack(array<str> { '*a', 'b', 'c' })
+   check v.b.acMoveToFront()
+   assertOrder(parent, 'a,c,b', 'MoveToFront() should be unaffected by STICK_TO_BACK')
+end
+
+@Test function InitMovesStickyToBack()
+   local parent, v = buildStack(array<str> { 'a', 'b', '*c' })
+   assertOrder(parent, 'c,a,b', 'A STICK_TO_BACK vector should move to the back on initialisation')
+   assert(parent.child.name is 'c', 'Parent child reference should be updated')
+end
+
+@Test function InitStickyStaysInFrontOfExistingSticky()
+   local parent, v = buildStack(array<str> { '*a', 'b', '*c', 'd', '*e' })
+   assertOrder(parent, 'a,c,e,b,d', 'Initialised STICK_TO_BACK vectors should queue in front of existing ones')
+end
+
+@Test function InitStickyAsOnlyChild()
+   local parent, v = buildStack(array<str> { '*a' })
+   assertOrder(parent, 'a', 'A sole STICK_TO_BACK vector should remain in place')
+end

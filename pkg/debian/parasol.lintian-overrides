@@ -5,7 +5,7 @@
 kotuku: unused-shlib-entry-in-control-file
 
 # Kotuku includes example scripts that may have different permissions
-kotuku: script-not-executable usr/share/kotuku/scripts/*
+kotuku: script-not-executable usr/share/kotuku/packages/*
 
 # Kotuku may include some large data files for graphics/fonts
 kotuku: package-contains-large-file
@@ -14,4 +14,4 @@ kotuku: package-contains-large-file
 kotuku: non-standard-dir-in-usr usr/share/kotuku/
 
 # Kotuku framework specific paths
-kotuku: unusual-interpreter usr/share/kotuku/scripts/*.fluid
+kotuku: unusual-interpreter usr/share/kotuku/packages/*.fluid

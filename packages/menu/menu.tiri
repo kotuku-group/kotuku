@@ -1,0 +1,927 @@
+@Package(name="gui/menu", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+To be used in conjunction with the gui.menubar or as an independent pop-up only.
+
+Menubars automatically dispatch the `key` and `qualifier` fields of enabled leaf items within their focused window.
+
+Popups open at the pointer, or at the display coordinates in the popupX and popupY options when both are set.
+Popups handle navigation and shortcuts while focused.  Other standalone hosts can use gui.findMenuShortcut() and
+menu.activateShortcut() with their own keyboard listener.
+
+Qualifiers are case-insensitive CTRL/CONTROL, SHIFT, ALT and CMD/COMMAND tokens joined with '+'.  Modifier matching
+is exact and ignores lock flags.  Key names accept letters, digits, F1-F20, navigation keys and common punctuation.
+The '+' key also accepts Shift+Equals and keypad Plus.  Bare F10 is reserved by the menubar; duplicate shortcuts use
+the first enabled item in menu order.  Shortcut activation callbacks receive the owning menu and original item configuration.
+--]]
+
+   import 'gui'
+   include 'display'
+
+   namespace gui
+
+   module display as mGfx
+
+HMARGIN      <const> = 6
+KB_HIGHLIGHT <const> = 'rgb(0 0 0 / .5)'
+ICON_STRIP   <const> = 'rgb(255 255 255 / .15)'
+
+SHORTCUT_KEYS <const> = {
+   SPACE=KEY_SPACE, ENTER=KEY_ENTER, RETURN=KEY_ENTER, NP_ENTER=KEY_NP_ENTER,
+   TAB=KEY_TAB, ESC=KEY_ESCAPE, ESCAPE=KEY_ESCAPE, BACKSPACE=KEY_BACKSPACE,
+   DELETE=KEY_DELETE, DEL=KEY_DELETE, INSERT=KEY_INSERT, INS=KEY_INSERT,
+   HOME=KEY_HOME, END=KEY_END, PAGE_UP=KEY_PAGE_UP, PAGE_DOWN=KEY_PAGE_DOWN,
+   PAGEUP=KEY_PAGE_UP, PAGEDOWN=KEY_PAGE_DOWN, UP=KEY_UP, DOWN=KEY_DOWN, LEFT=KEY_LEFT, RIGHT=KEY_RIGHT,
+   ['0']=KEY_ZERO, ['-']=KEY_MINUS, ['=']=KEY_EQUALS, ['[']=KEY_L_SQUARE, [']']=KEY_R_SQUARE,
+   [';']=KEY_SEMI_COLON, ["'"]=KEY_APOSTROPHE, [',']=KEY_COMMA, ['.']=KEY_DOT,
+   ['/']=KEY_SLASH, ['\\']=KEY_BACK_SLASH, ['`']=KEY_REVERSE_QUOTE,
+   F18=KEY_F18, F19=KEY_F19, F20=KEY_F20
+}
+
+function shortcutMatches(Item:table!, Qualifiers:num!, Code:num!, Unicode:num):bool
+   if not (Item.key is <str>) then return false end
+
+   key = Item.key.trim().upper()
+   wanted = 0
+
+   if Item.qualifier?? then
+      if not (Item.qualifier is <str>) then return false end
+      for token in values(Item.qualifier.upper().split('+')) do
+         token = token.trim()
+         if token is 'CTRL' or token is 'CONTROL' then wanted = wanted | KQ_CTRL
+         elseif token is 'SHIFT' then wanted = wanted | KQ_SHIFT
+         elseif token is 'ALT' then wanted = wanted | KQ_ALT
+         elseif token is 'CMD' or token is 'COMMAND' then wanted = wanted | KQ_COMMAND
+         else return false
+         end
+      end
+   end
+
+   actual = 0
+   if Qualifiers has KQ_CTRL then actual = actual | KQ_CTRL end
+   if Qualifiers has KQ_SHIFT then actual = actual | KQ_SHIFT end
+   if Qualifiers has KQ_ALT then actual = actual | KQ_ALT end
+   if Qualifiers has KQ_COMMAND then actual = actual | KQ_COMMAND end
+
+   if key is '+' or key is 'PLUS' then
+      if (Code is KEY_EQUALS and (Qualifiers has KQ_SHIFT)) or Unicode is 43 then
+         -- Shift is part of typing '+', rather than an extra accelerator modifier.
+         if not (wanted has KQ_SHIFT) then
+            actual = actual & ~KQ_SHIFT
+         end
+      elseif Code != KEY_PLUS and Code != KEY_NP_PLUS then
+         return false
+      end
+
+      return actual is wanted
+   end
+
+   if actual != wanted then return false end
+   key_code:num = SHORTCUT_KEYS[key]
+
+   if #key is 1 then
+      byte = key.byte()
+      if byte >= 65 and byte <= 90 then
+         key_code = KEY_A + byte - 65
+      elseif byte >= 49 and byte <= 57 then
+         key_code = KEY_ONE + byte - 49
+      end
+   elseif key.startsWith('F') then
+      number = tonumber(key.sub(1))
+      if number and number >= 1 and number <= 17 and number is math.floor(number) then
+         key_code = KEY_F1 + number - 1
+      end
+   end
+
+   return key_code is Code
+end
+
+-- Return the original configuration path without constructing or showing any menus.
+
+function findMenuShortcut(Config, Qualifiers:num!, Code:num!, Unicode:num):array<table>
+   if not (Qualifiers has KQ_PRESSED) then return nil end
+
+   for source in values(Config) do
+      item = source.menu ?? source
+      if source.disabled or item.disabled then continue end
+
+      if item.items then
+         path = findMenuShortcut(item.items, Qualifiers, Code, Unicode)
+         if path then
+            path.insert(0, item)
+            return path
+         end
+      elseif item.label and shortcutMatches(item, Qualifiers, Code, Unicode) then
+         return array<table> { item }
+      end
+   end
+end
+
+gui.findMenuShortcut = findMenuShortcut
+
+gui.menu = function(Options:table!)
+   -- The menu adopts the theme of the window that it is opened from.  The global theme is the fallback for popups
+   -- that have no reference to a window.
+
+   theme_source = Options.relative?.scene ?? Options.parentMenu?.scene ?? Options.hostScene ?? Options.client?.scene
+   theme_name = gui.getThemeName(theme_source)
+
+   MARGIN <const> = gui.sizing.widget.margin
+
+   theme = table.merge(gui.themes[theme_name].menu, Options.theme?.menu, true, true)
+
+   base_text = gui.themes[theme_name].menu.text
+   custom_font = theme.text.face != base_text.face or theme.text.fontSize != base_text.fontSize or
+      theme.text.fontStyle != base_text.fontStyle
+   -- Preserve the default geometry; custom fonts use the renderer's resolved units.
+   font_spacing = gui.getFontHeight(custom_font ? theme.text : gui.fonts.menu)
+   item_height <const> = math.floor(font_spacing * 1.5)
+   vmargin <const> = math.floor(item_height * 0.33)
+   icon_size <const> = math.floor(item_height * 0.8)
+
+   self = entity { -- Public interface
+      surface     = nil,
+      reverseX    = false,
+      timeShow    = 0,
+      timeHide    = 0,
+      visible     = false,
+      client      = Options.client,
+      events      = Options.events ?? {},
+      prepare     = Options.prepare,
+      items       = Options.items,
+      x           = Options.x ?? 0,
+      y           = Options.y ?? 0,
+      width       = 0, -- Unscaled width of the menu content
+      height      = 0, -- Unscaled height of the menu content
+      scale       = Options.scale ?? 1, -- Display scale, e.g. to match a scaled client viewport.  Submenus inherit it
+      popup       = Options.popup ?? false,
+      popupX      = Options.popupX,
+      popupY      = Options.popupY,
+      relative    = Options.relative,
+      parentMenu  = Options.parentMenu,
+      parentItem  = Options.parentItem,
+      _rows       = array<table>
+   }
+
+   function selectable(Item:table):bool
+      return Item and not (Item.lineBreak or Item.disabled or Item.config.disabled or Item.source?.disabled)
+   end
+
+   function itemIndex(Item:table):num
+      if not Item then return nil end
+      for i in {0 to #&_rows} do
+         if &_rows[i] is Item then return i end
+      end
+   end
+
+   function seek(Start:num!, Step:num!):table
+      i = Start
+      while i >= 0 and i < #&_rows do
+         if selectable(&_rows[i]) then return &_rows[i] end
+         i += Step
+      end
+   end
+
+   function resolveItem(Reference:any):table
+      if Reference is <table> then
+         for item in values(&_rows) do
+            if (item is Reference) or (item.config is Reference) then return item end
+         end
+      else
+         for item in values(&_rows) do
+            if (item.config.id is Reference) or (item.config.label is Reference) then return item end
+         end
+         if Reference is <num> and Reference >= 0 and Reference < #&_rows then return &_rows[Reference] end
+      end
+   end
+
+   local highlightItem:func, openSubmenu:func
+
+   -- The content is laid out at 1:1 and the view box scales it to fit the surface.
+
+   function applyScale()
+      using self do
+         scale = &scale > 0 ? &scale : 1
+         &surface.{ width = math.ceil(&width * scale), height = math.ceil(&height * scale) }
+         &viewport.{ viewWidth = &surface.width / scale, viewHeight = &surface.height / scale }
+      end
+   end
+
+   function initVectorScene()
+      using self do
+         &content = &viewport.new('VectorGroup')
+         showIcons = Options.showIcons is nil ? true : Options.showIcons
+         checks_present = false
+         icons_present = false
+         for source in values(&items) do
+            item = source.menu ?? source
+            if item.checkable and not item.items then checks_present = true end
+            if showIcons and (item.icon or source.icon) then icons_present = true end
+         end
+
+         icon_x = HMARGIN
+         TEXT_X = icon_x + (icons_present ? icon_size + HMARGIN + HMARGIN : 0)
+
+         -- Clients can use the hostScene option to gain access to external fills via url()
+
+         -- Offsets fit the background and border to the view box, whereas a resizeEvent would report the scaled
+         -- surface dimensions.
+
+         &content.new('VectorRectangle', table.merge({ -- Background fill
+            x = 0, y = 0, xOffset = 0, yOffset = 0
+         }, theme.bkgd))
+
+         &highlight = &content.new('VectorRectangle', table.merge({ -- Item highlighting
+            x = 2, y = 0, xOffset = 2, height = item_height,
+            fill = theme.highlight, visibility = 'hidden'
+         }, theme.highlight))
+
+         &content.new('VectorRectangle', table.merge({ -- Foreground border
+            stroke = 'none', strokeWidth = 1.5,
+            x = 1, y = 1, xOffset = 1, yOffset = 1
+         }, theme.border))
+
+         &_rows = array<table>
+         widestItem = 0
+         widestKey = 0
+         y = vmargin
+         for source in values(&items) do
+            item = source.menu ?? source
+            if source.menu then item.icon ?= source.icon end
+
+            if item.label then
+               mi = { y=y, config=item, source=source, submenuConfig=item.items }
+
+               vText = &content.new('VectorText', table.merge({
+                  x        = TEXT_X,
+                  face     = gui.fonts.menu.face,
+                  fill     = 'black',
+                  fontSize = string.format('%.2fpt', gui.fonts.menu.size),
+                  align    = 'left',
+                  string   = item.label
+               }, theme.text))
+
+               err, bx, by, bw, bh = vText.mtGetBoundary(0)
+
+               mi.text = vText
+               mi.textY = y + math.floor((vText.lineSpacing + vText.displayHeight) * 0.5)
+
+               if bw > widestItem then widestItem = bw end
+
+               if showIcons and item['icon'] then
+                  try
+                     info = gui.createIcon(Options.hostScene ?? &viewport.scene, item.icon, icon_size, theme.icon)
+
+                     item.iconView = &content.new('VectorRectangle', {
+                        x = icon_x - info.margin, y = y + math.floor((item_height - icon_size) * 0.5) - info.margin,
+                        width = icon_size + (info.margin * 2), height = icon_size + (info.margin * 2), fill = info.fill
+                     })
+                  end
+               end
+
+               if item.checkable and not mi.submenuConfig then item.checked ?= false end
+
+               if item['key'] then
+                  key = item['key']
+                  if item['qualifier'] then
+                     key = item['qualifier'] .. ' + ' .. key
+                  end
+
+                  kb_highlight = &content.new('VectorRectangle', {
+                     fill = KB_HIGHLIGHT, xOffset = HMARGIN, y = y + 2, width = 1, height = item_height - 4,
+                     roundX = item_height * 0.5, roundY = item_height * 0.5
+                  })
+
+                  vKey = &content.new('VectorText', table.merge({
+                     x        = &surface.width,
+                     face     = gui.fonts.menu.face,
+                     fontSize = string.format('%.2fpt', gui.fonts.menu.size),
+                     fill     = 'black',
+                     align    = 'right',
+                     string   = key
+                  }, theme.text))
+
+                  err, bx, by, bw, bh = vKey.mtGetBoundary(0)
+
+                  vKey.y = y + math.floor((vKey.lineSpacing + vKey.displayHeight) * 0.5)
+
+                  keyWidth = bw
+                  if keyWidth > widestKey then widestKey = keyWidth end
+                  mi.keyText = vKey
+                  kb_highlight.width = keyWidth + HMARGIN + HMARGIN
+               elseif mi.submenuConfig then
+                  vKey = &content.new('VectorText', table.merge({
+                     x        = &surface.width,
+                     face     = gui.fonts.menu.face,
+                     fontSize = string.format('%.2fpt', gui.fonts.menu.size),
+                     fill     = 'black',
+                     align    = 'right',
+                     string   = '>'
+                  }, theme.text))
+
+                  _, _, _, bw = vKey.mtGetBoundary(0)
+                  vKey.y = mi.textY
+                  widestKey = math.max(widestKey, bw)
+                  mi.keyText = vKey
+               end
+
+               vText.y = mi.textY
+               mi.height = item_height
+               y = math.ceil(y + mi.height)
+
+               &_rows.push(mi)
+            elseif source.group then
+               mi = { y = y, height = item_height, config = source, lineBreak = true }
+
+               group_text = &content.new('VectorText', table.merge({
+                  x         = 0,
+                  y         = 0,
+                  face      = gui.fonts.menu.face,
+                  fontSize  = string.format('%.2fpt', gui.fonts.menu.size * 0.85),
+                  fontStyle = gui.fonts.menu.style,
+                  align     = 'middle',
+                  fill      = 'black',
+                  opacity   = 0.7,
+                  string    = source.group
+               }, theme.text))
+
+               _, bx, by, bw, bh = group_text.mtGetBoundary(0)
+
+               group_text.y = y + (item_height - bh) * 0.5 - by
+               mi.text = group_text
+               mi.textWidth = bw
+               if bw > widestItem then widestItem = bw end
+               y += item_height
+               &_rows.push(mi)
+            end
+         end
+
+         check_column = checks_present ? icon_size + HMARGIN : 0
+         check_x = TEXT_X + widestItem + HMARGIN * 4
+         width = TEXT_X + widestItem + (HMARGIN * 6) + check_column + widestKey + HMARGIN
+
+         &width  = width
+         &height = y + vmargin
+         applyScale()
+
+         for item in values(&_rows) do
+            if not item.lineBreak and item.config.checkable and not item.submenuConfig then
+               check_y = item.y + (item_height - icon_size) * 0.5
+
+               -- Checkmark icon
+               item.checkmark = &content.new('VectorPath', {
+                  stroke = theme.text?.fill ?? 'white', strokeWidth = 2, fill = 'none',
+                  visibility = item.config.checked ? 'visible' : 'hidden',
+                  sequence = string.format('M%f,%f L%f,%f L%f,%f',
+                     check_x + icon_size * 0.15, check_y + icon_size * 0.5,
+                     check_x + icon_size * 0.4, check_y + icon_size * 0.75,
+                     check_x + icon_size * 0.85, check_y + icon_size * 0.2)
+               })
+            end
+
+            if item.lineBreak then
+               item.text.x = width * 0.5
+               line_y      = math.floor(item.y + item_height * 0.5) + 0.5
+               line_end    = (width - item.textWidth) * 0.5 - HMARGIN
+               &content.new('VectorPath', {
+                  stroke = theme.text?.fill ?? 'white', strokeWidth = 1, opacity = 0.35,
+                  sequence = string.format('M%f,%f H%f M%f,%f H%f',
+                     HMARGIN * 2, line_y, line_end, width - line_end, line_y, width - HMARGIN * 2)
+               })
+            elseif item['keyText'] then
+               item.keyText.x = width - HMARGIN - HMARGIN
+            end
+         end
+      end
+   end
+
+   -- toggle() alternates the visible state of the menu.  A TimeLapse is supported so that rapid changes to
+   -- menu visibility can be avoided.
+
+   lastTime = 0
+   self.toggle = function(TimeLapse):num
+      local timelapse = (TimeLapse and TimeLapse >= 0) ? TimeLapse * 1000 : 5000
+
+      currentTime = mSys.PreciseTime()
+      if &timeShow > &timeHide then -- Hide the menu
+         if currentTime - &timeShow >= timelapse then &hide() end
+         lastTime = currentTime
+         return 0
+      else
+         if currentTime - &timeHide >= timelapse then &show() end
+         lastTime = currentTime
+         return 1
+      end
+   end
+
+   self.selectItem = function(Reference:any):bool
+      item = resolveItem(Reference)
+      if not selectable(item) then return false end
+      highlightItem(item)
+      return true
+   end
+
+   self.getItem = function(Reference:any):table
+      return resolveItem(Reference)?.config
+   end
+
+   -- Programmatic updates change state and presentation without invoking activation callbacks.
+
+   self.setChecked = function(Reference:any, Checked:bool!):bool
+      item = resolveItem(Reference)
+      if not item?.checkmark then return false end
+      item.config.checked = Checked
+      item.checkmark.visibility = Checked ? 'visible' : 'hidden'
+      &surface.mtScheduleRedraw()
+      return true
+   end
+
+   self.getChecked = function(Reference:any):bool
+      item = resolveItem(Reference)
+      if item?.checkmark then return item.config.checked is true end
+      return nil
+   end
+
+   self.hide = function()
+      &currentMenu?.hide()
+      &currentMenu = nil
+      &surface?.acHide()
+      &timeHide = mSys.PreciseTime()
+   end
+
+   self.show = function()
+      surface = &surface
+      if surface.flags has RNF_VISIBLE or &_preparing then return end
+
+      -- Rebuild only the content so input subscriptions and viewport focus remain intact.
+      if &prepare then
+         &_preparing = true
+         defer &_preparing = false end
+         &prepare(&items)
+         if not &surface then return end
+         if &parentItem then
+            &parentItem.config.items = &items
+            &parentItem.submenuConfig = &items
+         end
+         &currentMenu?.hide()
+         for item in values(&_rows) do item.submenu?.surface?.free() end
+         &currentMenu = nil
+         &_keyboardMenu = nil
+         &hItem = nil
+         &content.free()
+         initVectorScene()
+      end
+
+      &reverseX = Options.reverseX ?? false
+
+      if &parentMenu then &scale = &parentMenu.scale end
+      applyScale()
+      scale = &scale > 0 ? &scale : 1
+
+      if &popup then
+         -- Popups open at the pointer unless the client has set display coordinates in popupX and popupY.
+
+         local err:num, cursor_x:num, cursor_y:num
+         if (&popupX != nil) and (&popupY != nil) then
+            err, cursor_x, cursor_y = ERR_Okay, &popupX, &popupY
+         else
+            err, cursor_x, cursor_y = mGfx.GetCursorPos()
+         end
+
+         if err is ERR_Okay then
+            parent = { }
+
+            sp = surface.parent
+            if sp then
+               err, parentInfo = mGfx.GetSurfaceInfo(sp)
+               if err is ERR_Okay then
+                  parent.width  = parentInfo.width
+                  parent.height = parentInfo.height
+                  parent.absX   = parentInfo.absX
+                  parent.absY   = parentInfo.absY
+               else
+                  raise 'Failed to analyse parent surface: ' .. mSys.GetErrorMsg(err)
+               end
+            else
+               err, scrInfo = mGfx.GetDisplayInfo(0)
+               if err is ERR_Okay then
+                  parent.width  = scrInfo.width
+                  parent.height = scrInfo.height
+                  parent.absX   = 0
+                  parent.absY   = 0
+               else
+                  parent.absX   = 0
+                  parent.absY   = 0
+                  parent.width  = 0
+                  parent.height = 0
+               end
+            end
+
+            if parent.width and parent.height then
+               -- Determine the position at which the pop-up menu will open at, relative to the parent surface.
+               -- Notice that we don't want the menu to appear off the edge of the parent if we can help it.
+
+               local x:num
+               if &reverseX then
+                  x = cursor_x - parent.absX - 1 - surface.width + MARGIN
+                  if x < 0 then
+                     x = 0
+                     &reverseX = false
+                  end
+               else
+                  x = cursor_x - parent.absX - 1
+                  if x + surface.width > parent.width - 2 then
+                     x -= surface.width + MARGIN
+                     &reverseX = true
+                  end
+               end
+
+               y = cursor_y - parent.absY - 1
+               if y + surface.height > parent.height - 2 then
+                  y -= surface.height
+               end
+
+               surface.acMoveToPoint(x, y, 0, MTF_X | MTF_Y)
+            end
+         end
+      elseif &parentMenu then -- Display this menu alongside its highlighted parent item.
+         err, parent = mGfx.GetSurfaceInfo(&parentMenu.surface)
+         if err is ERR_Okay then
+            target = { absX=0, absY=0, width=4096, height=4096 }
+            if Options.target then
+               local err, info = mGfx.GetSurfaceInfo(Options.target)
+               if err is ERR_Okay then
+                  target.absX = info.absX; target.absY = info.absY
+                  target.width = info.width; target.height = info.height
+               end
+            else
+               local err, info = mGfx.GetDisplayInfo(0)
+               if err is ERR_Okay then
+                  target.width = info.width
+                  target.height = info.height
+               end
+            end
+
+            x = parent.absX - target.absX + parent.width - MARGIN * scale
+            parent_item = &parentItem
+            y = parent.absY - target.absY + ((parent_item?.y ?? 0) - vmargin) * scale
+            if x + surface.width > target.width then
+               x = parent.absX - target.absX - surface.width + MARGIN * scale
+               &reverseX = true
+            end
+
+            if y + surface.height > target.height then y = target.height - surface.height end
+            if y < 0 then y = 0 end
+            surface.acMoveToPoint(x, y, 0, MTF_X | MTF_Y)
+         end
+      elseif &relative then
+         -- Correct the position of the menu according to the relative vector that it is offset from.
+
+         err, relative_info = mGfx.GetSurfaceInfo(&relative.scene.surface)
+         if err is ERR_Okay then
+            rel = {
+               absX = relative_info.absX + &relative.absX,
+               absY = relative_info.absY + &relative.absY
+            }
+            target = { absX = 0, absY = 0, height = 4096 }
+
+            if Options.target then
+               err, info = mGfx.GetSurfaceInfo(Options.target)
+               if err is ERR_Okay then
+                  target.absX   = info.absX
+                  target.absY   = info.absY
+                  target.height = info.height
+               end
+            else
+               err, display = mGfx.GetDisplayInfo(0)
+               if err is ERR_Okay then
+                  target.height = display.height
+               end
+            end
+
+            x = rel.absX + &x - target.absX
+            y = rel.absY + &y - target.absY
+
+            if &reverseY then
+               y = rel.absY + (Options.y ?? 0) - target.absY - surface.height
+            end
+
+            if y + surface.height > target.height then
+               if &parentMenu then -- Child menu
+                  y -= surface.height
+               else
+                  y -= surface.height + &y
+               end
+            end
+
+            surface.acMoveToPoint(x, y, 0, MTF_X | MTF_Y)
+         end
+      end
+
+      &surface.acShow()
+      &surface.acMoveToFront()
+      &timeShow = mSys.PreciseTime()
+   end
+
+   highlightItem = function(Item:table)
+      if Item and not selectable(Item) then Item = nil end
+      if Item is &hItem then
+         if Item?.submenuConfig and not &currentMenu?.visible then openSubmenu(Item) end
+         return
+      end
+
+      if &hItem then  -- Redraw the previously highlighted item
+         if &hItem != Item then
+            &currentMenu?.hide()
+            &currentMenu = nil
+         end
+         &surface.mtScheduleRedraw()
+         &hItem = nil
+      end
+
+      &hItem = Item
+
+      if Item then -- Draw the newly highlighted area
+         &highlight.y = Item.y
+         &highlight.height = Item.height
+         &highlight.visibility = 'visible'
+         &surface.mtScheduleRedraw()
+         if Item.submenuConfig then openSubmenu(Item) end
+         if &events.highlight then &events.highlight(Item.config) end
+      else
+         &highlight.visibility = 'hidden'
+         &surface.mtScheduleRedraw()
+      end
+   end
+
+   function getSubmenu(Item:table!):table
+      if not Item.submenu then
+         Item.submenu = gui.menu({
+            target       = Options.target,
+            parentMenu   = self,
+            parentItem   = Item,
+            client       = Options.client,
+            items        = Item.submenuConfig,
+            prepare      = Item.config.prepare,
+            showIcons    = Options.showIcons,
+            theme        = { menu = theme },
+            events       = &events,
+            hostScene    = Options.hostScene
+         })
+      end
+      return Item.submenu
+   end
+
+   openSubmenu = function(Item:table):bool
+      if not Item?.submenuConfig then return false end
+      submenu = getSubmenu(Item)
+      if &currentMenu and &currentMenu != submenu then &currentMenu.hide() end
+      &currentMenu = submenu
+      &currentMenu.show()
+      return true
+   end
+
+   self.step = function(Count:num!)
+      direction = Count > 0 ? 1 : -1
+      index = itemIndex(&hItem)
+      start = index is nil ? (direction > 0 ? 0 : #&_rows - 1) : math.clamp(index + Count, 0, #&_rows - 1)
+      item = seek(start, direction) or seek(start, -direction)
+      if item then highlightItem(item) end
+   end
+
+   self.moveToEnd = function(Last:bool)
+      item = Last ? seek(#&_rows - 1, -1) : seek(0, 1)
+      if item then highlightItem(item) end
+   end
+
+   self.activate = function(Reference:any):bool
+      item = Reference is nil ? &hItem : resolveItem(Reference)
+      if not selectable(item) then return false end
+      if item.submenuConfig then return openSubmenu(item) end
+      if item.checkmark then &setChecked(item, not item.config.checked) end
+
+      item.config?.onActivate(item.config)
+      if &events.activate then &events.activate(item.config) end
+
+      menu = &&
+      while menu do
+         parent = menu.parentMenu
+         menu.hide()
+         menu = parent
+      end
+
+      return true
+   end
+
+   self.activateShortcut = function(Path:array<table>!, Index:num):bool
+      index = Index ?? 0
+      item = resolveItem(Path[index])
+
+      if not selectable(item) then return false end
+
+      if index + 1 < #Path then
+         if not item.submenuConfig then return false end
+         return getSubmenu(item).activateShortcut(Path, index + 1)
+      end
+
+      if item.submenuConfig then return false end
+
+      return &activate(item.config)
+   end
+
+   -- Visible submenus are previews until entered explicitly.  Return false for keys the menubar may handle.
+
+   self.handleKey = function(Qualifiers:num!, Value:num!):bool
+      if not &surface or not &visible or not (Qualifiers has KQ_PRESSED) then return false end
+
+      if &_keyboardMenu?.visible then
+         return &_keyboardMenu.handleKey(Qualifiers, Value)
+      end
+
+      if Value is KEY_UP then
+         -- Let the hosting menubar reclaim navigation above the first selectable root-menu row.
+         if not &parentMenu and &hItem and (&hItem is seek(0, 1)) then return false end
+         &step(-1)
+      elseif Value is KEY_DOWN then
+         &step(1)
+      elseif Value is KEY_HOME then
+         &moveToEnd(false)
+      elseif Value is KEY_END then
+         &moveToEnd(true)
+      elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or (Value is KEY_SPACE) then
+         if &hItem?.submenuConfig then
+            openSubmenu(&hItem)
+            &_keyboardMenu = &currentMenu
+            &_keyboardMenu.moveToEnd(false)
+         else
+            &activate()
+         end
+      elseif Value is KEY_RIGHT then
+         if not &hItem?.submenuConfig then return false end
+         openSubmenu(&hItem)
+         &_keyboardMenu = &currentMenu
+         &_keyboardMenu.moveToEnd(false)
+      elseif Value is KEY_LEFT then
+         if not &parentMenu then return false end
+         &hide()
+      elseif Value is KEY_ESCAPE then
+         &hide()
+      else
+         return false
+      end
+      return true
+   end
+
+   -- Main entry point --
+
+   assert(Options.items, 'An items value is required to define the Menu items')
+
+   using self do
+      &surface = obj.new('surface')
+      &surface.name     = 'menu'
+      &surface.width    = Options.width ?? 400
+      &surface.parent   = Options.target
+      &surface.flags    = RNF_STICK_TO_FRONT | RNF_COMPOSITE
+      &surface.x        = -10000
+      &surface.y        = -10000
+      &surface.presence = SPT_NONE
+      &surface.height   = 400
+
+      -- Desktop menus pop over the surface that opened them, which also places them within the scope of a modal
+      -- window.
+
+      if not Options.target or Options.target is 0 then
+         anchor = Options.parentMenu?.surface ?? Options.relative?.scene?.surface ?? Options.hostScene?.surface ??
+            Options.client?.scene?.surface
+         if anchor then &surface.popOver = anchor end
+      end
+
+      &surface.init()
+
+      &scene = &surface.new('VectorScene', { flags=VPF_RESIZE, surface=&surface, hostScene=Options.hostScene })
+      gui.setTheme(&scene, theme_name)
+      &viewport = &scene.new('VectorViewport', { })
+
+      -- A popup takes surface focus, so its own viewport must receive keys rather than the invoking widget.
+      -- Register before focusing the surface so the scene can choose this viewport as its keyboard target.
+
+      if &popup and not &parentMenu then
+         &viewport.mtSubscribeKeyboard(function(Viewport, Qualifiers, Code, Unicode)
+            if not &visible then return end
+            path = findMenuShortcut(&items, Qualifiers, Code, Unicode)
+            if path then &activateShortcut(path)
+            else &handleKey(Qualifiers, Code)
+            end
+         end)
+      end
+
+      &surface.subscribe('free', function()
+         for item in values(&_rows) do
+            item.submenu?.surface?.free()
+         end
+
+         &currentMenu = nil
+         &_keyboardMenu = nil
+         &surface = nil
+      end)
+
+      if &popup then
+         &surface.subscribe('lostfocus', function(Surface:obj!, Args:table!)
+            &surface.acHide()
+         end)
+      end
+
+      &surface.subscribe('hide', function(Surface:obj!, Args:table!)
+         &currentMenu?.hide()
+         &currentMenu   = nil
+         &_keyboardMenu = nil
+         &visible       = false
+         &hItem         = nil
+         &highlight.visibility = 'hidden'
+         &timeHide = mSys.PreciseTime()
+         parent_menu = &parentMenu
+
+         if parent_menu?.currentMenu is && then parent_menu.currentMenu = nil end
+         if parent_menu?._keyboardMenu is && then parent_menu._keyboardMenu = nil end
+      end)
+
+      &surface.subscribe('show', function(Surface:obj!, Args:table!)
+         for item in values(&_rows) do
+            if item.checkmark then
+               item.checkmark.visibility = item.config.checked ? 'visible' : 'hidden'
+            end
+         end
+
+         &visible = true
+
+         if &popup then
+            &surface.acFocus()
+            &viewport.acFocus()
+         end
+
+         &timeShow = mSys.PreciseTime()
+
+         -- A root menu owns keyboard routing for its entire submenu chain.
+
+         if &client and not &popup and not &parentMenu and not &_subscribedKb then
+            if &client.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode:num!)
+               &handleKey(Qualifiers, Value)
+            end) is ERR_Okay then
+               &_subscribedKb = true
+            end
+         end
+      end)
+
+      &viewport.mtSubscribeInput(JTYPE_MOVEMENT | JTYPE_BUTTON | JTYPE_CROSSING, function(Viewport:obj!, Events)
+         ev = Events
+         scale = &scale > 0 ? &scale : 1
+         while ev do
+            ev_y = ev.y / scale -- Input is reported in surface units rather than those of the view box
+            if ev.type is JET_BUTTON_1 then
+               if ev.value is 1 then
+                  for item in values(&_rows) do
+                     if ev_y >= item.y and ev_y < item.y + item.height then
+                        if selectable(item) then
+                           -- Focus loss can hide the chain before this click is delivered.  Leaf actions may
+                           -- still complete, but a dismissed parent must not reopen its submenu.
+                           if item.submenuConfig and not &visible then return end
+                           highlightItem(item)
+                           &activate()
+                        else
+                           highlightItem(nil)
+                        end
+                        break
+                     end
+                  end
+               end
+            elseif ev.type is JET_ABS_XY then
+               if not &visible then return end
+               highlightFound = false
+               for item in values(&_rows) do
+                  if selectable(item) then
+                     if (ev_y >= item.y) and (ev_y < item.y + item.height) then
+                        highlightItem(item)
+                        highlightFound = true
+                        break
+                     end
+                  end
+               end
+
+               -- Remove existing menu highlighting if the cursor is no longer positioned over a highlight-able item.
+
+               if not highlightFound and &hItem then
+                  highlightItem(nil)
+               end
+            elseif ev.type is JET_CROSSED_OUT then
+               if &hItem and not &currentMenu?.visible then highlightItem(nil) end
+            end
+
+            ev = ev.next
+         end
+      end)
+
+      initVectorScene()
+      return &&
+   end
+end

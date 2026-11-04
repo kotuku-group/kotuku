@@ -1,0 +1,14 @@
+--$TIRI:Include
+
+module({ name="LZMA", copyright="Paul Manias © 2024-2026", version=1.0, status="stable", timestamp=20240611 },
+function()
+  c_include('<kotuku/modules/compression.h>')
+  c_include('<kotuku/modules/core.h>')
+
+  klass('LZMAStream', {
+    base = 'CompressedStream',
+    src = { 'lzma.cpp' },
+    output = 'lzma_def.cpp',
+    extended = true
+  })
+end)

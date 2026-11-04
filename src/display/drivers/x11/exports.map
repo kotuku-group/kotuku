@@ -1,0 +1,12 @@
+{
+   global:
+      ModHeader;
+      create_display_driver;
+      destroy_display_driver;
+      x11_process_driver_events;
+      x11_driver_clipboard_window;
+      x11_driver_bitmap_size;
+      x11_driver_bitmap_shmid;
+   local:
+      *;
+};

@@ -7,18 +7,14 @@
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
 
-//
 // Stroke generator
-//
-//----------------------------------------------------------------------------
+
 #include <math.h>
 #include "agg_vcgen_stroke.h"
 #include "agg_shorten_path.h"
 
-namespace agg
-{
+namespace agg {
 
-    //------------------------------------------------------------------------
     vcgen_stroke::vcgen_stroke() :
         m_stroker(),
         m_src_vertices(),
@@ -31,7 +27,6 @@ namespace agg
     {
     }
 
-    //------------------------------------------------------------------------
     void vcgen_stroke::remove_all()
     {
         m_src_vertices.remove_all();
@@ -39,8 +34,6 @@ namespace agg
         m_status = initial;
     }
 
-
-    //------------------------------------------------------------------------
     void vcgen_stroke::add_vertex(double x, double y, unsigned cmd)
     {
         m_status = initial;
@@ -61,7 +54,6 @@ namespace agg
         }
     }
 
-    //------------------------------------------------------------------------
     void vcgen_stroke::rewind(unsigned)
     {
         if(m_status == initial)
@@ -75,8 +67,6 @@ namespace agg
         m_out_vertex = 0;
     }
 
-
-    //------------------------------------------------------------------------
     unsigned vcgen_stroke::vertex(double* x, double* y)
     {
         unsigned cmd = path_cmd_line_to;

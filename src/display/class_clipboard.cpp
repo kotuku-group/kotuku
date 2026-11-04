@@ -6,29 +6,38 @@ that is distributed with this package.  Please refer to it for further informati
 **********************************************************************************************************************
 
 -CLASS-
-Clipboard: The Clipboard class manages cut, copy and paste between applications.
+Clipboard: Manages copied, cut and dragged data for paste operations.
 
-The Clipboard class manages data transfer between applications on behalf of the user.  Depending on the host system,
-behaviour between platforms can vary.
+The Clipboard class stores references to copied data so that applications can offer cut, copy, paste and drag-and-drop
+workflows.  Clipboard entries are grouped by datatype and are exposed to consumers as readable files, allowing large
+items to be pasted without first loading their contents into application memory.
 
-On Windows the clipboard is tightly integrated by default, allowing it to support native Windows applications.  This
-reduces the default feature set, but ensures that the clipboard behaves in a way that the user would expect it to.
-If historical buffering is enabled with the `CPF::HISTORY_BUFFER` option then the clipboard API will actively monitor
-the clipboard and store copied data in the local `clipboard:` file cache.  This results in additional overhead to
-clipboard management.
+Multiple Clipboard objects can be created, but they share the same clipboard store for the current process and user
+session.  Each datatype normally has one active group of items.  Adding a new group for the same datatype replaces the
+previous group unless the `CEF::EXTEND` flag is used.
 
-On Linux the clipboard is localised and data is shared between Kōtuku applications only.
+On Windows, text and file references are integrated with the host clipboard when possible, so Kōtuku applications can
+exchange those datatypes with native Windows applications.  If `CPF::HISTORY_BUFFER` is enabled, the clipboard actively
+monitors host changes and caches copied data in the local `clipboard:` volume.  This enables limited history at the
+cost of additional monitoring and storage overhead.
 
-Multiple clipboard objects can be created, but they will share the same group of clipped data for the logged-in user.
+On Wayland, plain UTF-8 text and local file references are exchanged with other desktop applications through the
+compositor's data device.  X11 exchanges plain UTF-8 text and local file references through the `CLIPBOARD` selection
+and supports incremental transfers for large payloads.  Incoming transfers complete asynchronously, so GetFiles() may
+return `ERR::NoData` until a new selection has finished transferring.  Receiving on X11 requires the XFixes extension.
+When an X11 application exits, it asks an available clipboard manager to preserve its selection; without a clipboard
+manager, the published data is lost.
 
-There is a limit on the number of clipped items that can be stored in the clipboard.  Only 1 grouping of each
-datatype is permitted (for example, only one group of image clips may exist at any time).  In historical buffer mode
-there is a fixed limit to the clip count and the oldest members are automatically removed.
+When history buffering is active, a fixed number of clip groups is retained and the oldest group is removed when the
+limit is exceeded.  Cached clipboard files are kept under `clipboard:` and stale generated files are cleaned up during
+display initialisation.
 -END-
 
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/time.h>
+#include <fstream>
 
 #ifdef _WIN32
 using namespace display;
@@ -47,9 +56,14 @@ static const FieldDef glDatatypes[] = {
 };
 
 std::list<ClipRecord> glClips;
+std::recursive_mutex glClipboardLock;
 static int glCounter = 1;
 static int glHistoryLimit = 1;
 static std::string glProcessID;
+static std::atomic_bool glHostSelectionGone = false;
+static CLIPTYPE glDropType = CLIPTYPE::NIL;
+static std::vector<std::string> glDropPaths;
+static std::string glDropText;
 #ifdef _WIN32
 static int glLastClipID = -1;
 #endif
@@ -58,8 +72,45 @@ static int glLastClipID = -1;
 
 static std::string get_datatype(CLIPTYPE);
 static ERR add_clip(CLIPTYPE, const std::vector<ClipItem> &, CEF = CEF::NIL);
-static ERR add_clip(CSTRING);
+static ERR add_clip(std::string_view);
 static ERR CLIPBOARD_AddObjects(objClipboard *, struct clip::AddObjects *);
+
+static bool host_keeps_clipboard()
+{
+   return glDriver and (glDriver->displayType() IS DT::WINGDI);
+}
+
+#ifdef _WIN32
+static std::u16string utf8_to_utf16(std::string_view String, bool SurrogatePairs)
+{
+   std::u16string result;
+   if (String.empty()) return result;
+
+   auto str = String.data();
+   int chars, bytes = 0;
+   for (chars=0; bytes < std::ssize(String); chars++) {
+      for (++bytes; (bytes < std::ssize(String)) and ((str[bytes] & 0xc0) IS 0x80); bytes++);
+   }
+
+   result.reserve(size_t(chars));
+
+   int pos = 0;
+   while (pos < std::ssize(String)) {
+      int len;
+      uint32_t codepoint = UTF8ReadValue(String.substr(pos), &len);
+      if (SurrogatePairs and (codepoint >= 0x10000)) {
+         codepoint -= 0x10000;
+         result.push_back((char16_t)(0xD800 + (codepoint >> 10)));
+         result.push_back((char16_t)(0xDC00 + (codepoint & 0x3FF)));
+      }
+      else result.push_back((char16_t)codepoint);
+
+      pos += len;
+   }
+
+   return result;
+}
+#endif
 
 //********************************************************************************************************************
 // Remove stale clipboard files that are over 24hrs old
@@ -67,24 +118,26 @@ static ERR CLIPBOARD_AddObjects(objClipboard *, struct clip::AddObjects *);
 void clean_clipboard(void)
 {
    auto time = objTime::create { };
-   if (!time.ok()) return;
+   if (not time.ok()) return;
 
    time->query();
-   int64_t now = time->get<int64_t>(FID_TimeStamp) / 1000000LL;
+   int64_t timestamp;
+   time->getTimestamp(timestamp);
+   int64_t now = timestamp / 1000000LL;
    int64_t yesterday = now - (24 * 60LL * 60LL);
 
    DirInfo *dir;
-   if (OpenDir("clipboard:", RDF::FILE|RDF::DATE, &dir) IS ERR::Okay) {
+   if (!OpenDir("clipboard:", RDF::FILE|RDF::DATE, &dir)) {
       LocalResource free_dir(dir);
 
       Regex *compiled;
-      if (rx::Compile("^\\d+(?:_text|_image|_file|_object)\\d*\\.\\d{3}$", REGEX::NIL, nullptr, &compiled) IS ERR::Okay) {
-         while (ScanDir(dir) IS ERR::Okay) {
-            if (rx::Match(compiled, dir->Info->Name, RMATCH::NIL, nullptr) IS ERR::Okay) {
-               if (dir->Info->TimeStamp < yesterday) {
+      if (!rx::Compile("^\\d+(?:_text|_image|_file|_object)\\d*\\.\\d{3}$", REGEX::NIL, nullptr, &compiled)) {
+         while (!ScanDir(dir)) {
+            if (!rx::Match(compiled, dir->Info->Name, RMATCH::NIL, nullptr)) {
+               if (dir->Info->Timestamp < yesterday) {
                   std::string path("clipboard:");
                   path.append(dir->Info->Name);
-                  DeleteFile(path.c_str(), nullptr);
+                  DeleteFile(path, nullptr);
                }
             }
          }
@@ -98,11 +151,7 @@ void clean_clipboard(void)
 ClipRecord::~ClipRecord() {
    kt::Log log(__FUNCTION__);
 
-   if (Datatype != CLIPTYPE::FILE) {
-      log.branch("Deleting clip files for %s datatype.", get_datatype(Datatype).c_str());
-      for (auto &item : Items) DeleteFile(item.Path.c_str(), nullptr);
-   }
-   else log.branch("Datatype: File");
+   for (auto &item : Items) if (item.Owned) DeleteFile(item.Path, nullptr);
 }
 
 //********************************************************************************************************************
@@ -118,12 +167,6 @@ static std::string get_datatype(CLIPTYPE Datatype)
 
 //********************************************************************************************************************
 
-static void notify_script_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, nullptr_t Args)
-{
-   auto Self = (objClipboard *)CurrentContext();
-   Self->RequestHandler.clear();
-}
-
 //********************************************************************************************************************
 
 static ERR add_file_to_host(objClipboard *Self, const std::vector<ClipItem> &Items, bool Cut)
@@ -138,72 +181,51 @@ static ERR add_file_to_host(objClipboard *Self, const std::vector<ClipItem> &Ite
    std::basic_stringstream<char16_t> list;
    for (auto &item : Items) {
       std::string path;
-      if (ResolvePath(item.Path, RSF::NIL, &path) IS ERR::Okay) {
-         // Convert UTF-8 to UTF-16 manually
-         std::u16string dest;
-         const char *src = path.c_str();
-         while (*src) {
-            uint32_t codepoint = 0;
-            int len = UTF8CharLength(src);
-            if (len IS 1) codepoint = *src;
-            else codepoint = UTF8ReadValue(src, nullptr);
-
-            if (codepoint < 0x10000) {
-               dest.push_back(static_cast<char16_t>(codepoint));
-            }
-            else {
-               // Surrogate pair for codepoints >= 0x10000
-               codepoint -= 0x10000;
-               dest.push_back(static_cast<char16_t>(0xD800 + (codepoint >> 10)));
-               dest.push_back(static_cast<char16_t>(0xDC00 + (codepoint & 0x3FF)));
-            }
-            src += len;
-         }
-         list << dest << '\0';
+      if (!ResolvePath(item.Path, RSF::NIL, &path)) {
+         list << utf8_to_utf16(path, true) << char16_t(0);
       }
    }
-   list << '\0'; // An extra null byte is required to terminate the list for Windows HDROP
+   list << char16_t(0); // An extra null byte is required to terminate the list for Windows HDROP
 
    auto str = list.str();
-   winAddFileClip(str.c_str(), str.size() * sizeof(char16_t), Cut);
-   return ERR::Okay;
+   auto error = (ERR)winAddFileClip(str.c_str(), str.size() * sizeof(char16_t), Cut);
+   if (error != ERR::Okay) log.warning(error);
+   return error;
 #else
+   if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) {
+      std::vector<std::string> paths;
+      for (auto &item : Items) paths.push_back(item.Path);
+      auto error = glDriver->clipboardAddFiles(CLIPTYPE::FILE, paths, Cut);
+      if (error IS ERR::Okay) glHostSelectionGone = false;
+      return error;
+   }
    return ERR::NoSupport;
 #endif
 }
 
 //********************************************************************************************************************
 
-static ERR add_text_to_host(objClipboard *Self, CSTRING String, int Length = 0x7fffffff)
+static ERR add_text_to_host(objClipboard *Self, std::string_view String)
 {
    kt::Log log(__FUNCTION__);
 
    if ((Self->Flags & CPF::DRAG_DROP) != CPF::NIL) return ERR::NoSupport;
 
 #ifdef _WIN32
-   // Copy text to the windows clipboard.  This requires a conversion from UTF-8 to UTF-16.
+   // Copy text to the Windows clipboard.  This requires a conversion from UTF-8 to UTF-16.
 
-   auto str = String;
-   int chars, bytes = 0;
-   for (chars=0; (str[bytes]) and (bytes < Length); chars++) {
-      for (++bytes; (bytes < Length) and ((str[bytes] & 0xc0) IS 0x80); bytes++);
-   }
+   auto utf16 = utf8_to_utf16(String, false);
+   utf16.push_back(0);
 
-   std::vector<uint16_t> utf16(size_t(chars + 1) * sizeof(uint16_t));
-
-   int i = 0;
-   while (i < bytes) {
-      int len = UTF8CharLength(str);
-      if (i + len >= bytes) break; // Avoid corrupt UTF-8 sequences resulting in minor buffer overflow
-      utf16[i++] = UTF8ReadValue(str, nullptr);
-      str += len;
-   }
-   utf16[i] = 0;
-
-   auto error = (ERR)winAddClip(int(CLIPTYPE::TEXT), utf16.data(), utf16.size() * sizeof(uint16_t), false);
+   auto error = (ERR)winAddClip(int(CLIPTYPE::TEXT), utf16.data(), utf16.size() * sizeof(char16_t), false);
    if (error != ERR::Okay) log.warning(error);
    return error;
 #else
+   if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) {
+      auto error = glDriver->clipboardAddText(std::string(String).c_str());
+      if (error IS ERR::Okay) glHostSelectionGone = false;
+      return error;
+   }
    return ERR::NoSupport;
 #endif
 }
@@ -211,12 +233,14 @@ static ERR add_text_to_host(objClipboard *Self, CSTRING String, int Length = 0x7
 /*********************************************************************************************************************
 
 -METHOD-
-AddFile: Add files to the clipboard.
+AddFile: Adds a file reference to the clipboard.
 
-This method is used to add a file to the clipboard.  You are required to specify the type of data that is represented
-by the file. This allows the file content to be pasted by other applications that understand the data.  Adding files
-to the clipboard with a known datatype can be very efficient compared to other methods, as it saves loading the data
-into memory until the user is ready to paste the content.
+Use AddFile() when the data to copy is already available as a file.  The method stores the file path as a clipboard
+entry and associates it with a `CLIPTYPE` value so that paste targets can decide whether they understand the content.
+This is efficient for large items because the clipboard does not need to load the file contents into memory.
+
+If the clipboard can publish the file reference to the host platform, and history buffering is disabled, the method may
+return after updating the host clipboard.  Otherwise the file reference is recorded in the Kōtuku clipboard store.
 
 Recognised data types are:
 
@@ -227,14 +251,17 @@ Optional flags that may be passed to this method are as follows:
 <types lookup="CEF"/>
 
 -INPUT-
-int(CLIPTYPE) Datatype: Set this argument to indicate the type of data you are copying to the clipboard.
-cstr Path: The path of the file to add.
+int(CLIPTYPE) Datatype: Identifies the type of data represented by the file.
+strview Path: Path of the file to add.
 int(CEF) Flags: Optional flags.
 
 -ERRORS-
 Okay: The files were added to the clipboard.
 NullArgs
-MissingPath: The Files argument was not correctly specified.
+MissingPath: `Path` was not specified.
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -243,14 +270,40 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
-   if ((!Args->Path) or (!Args->Path[0])) return log.warning(ERR::MissingPath);
+   if (not Args) return log.warning(ERR::NullArgs);
+   if (Args->Path.empty()) return log.warning(ERR::MissingPath);
 
-   log.branch("Path: %s", Args->Path);
+   std::string path(Args->Path);
+   log.branch("Path: %s", path.c_str());
 
-   std::vector<ClipItem> items = { std::string(Args->Path) };
-   if (add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false) IS ERR::Okay) {
-      if (glHistoryLimit <= 1) return ERR::Okay;
+   std::vector<ClipItem> items = { path };
+   if (glDriver and (not host_keeps_clipboard()) and
+         ((glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) and
+         ((Self->Flags & CPF::DRAG_DROP) IS CPF::NIL)) {
+      if (auto error = add_clip(Args->Datatype, items, Args->Flags & (CEF::DELETE|CEF::EXTEND));
+            error != ERR::Okay) return error;
+      if (Args->Datatype IS CLIPTYPE::FILE) {
+         std::vector<ClipItem> current;
+         {
+            const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+            if (not glClips.empty() and (glClips.front().Datatype IS CLIPTYPE::FILE)) current = glClips.front().Items;
+         }
+         add_file_to_host(Self, current, ((Args->Flags & CEF::DELETE) != CEF::NIL));
+      }
+      else if (Args->Datatype IS CLIPTYPE::TEXT) {
+         std::string resolved;
+         if (ResolvePath(path, RSF::NIL, &resolved) IS ERR::Okay) {
+            std::ifstream stream(resolved, std::ios::binary);
+            if (stream) {
+               std::string content((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+               add_text_to_host(Self, content);
+            }
+         }
+      }
+      return ERR::Okay;
+   }
+   if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
+      if (glHistoryLimit <= 1 and host_keeps_clipboard()) return ERR::Okay;
    }
 
    return add_clip(Args->Datatype, items, Args->Flags & (CEF::DELETE|CEF::EXTEND));
@@ -259,32 +312,34 @@ static ERR CLIPBOARD_AddFile(objClipboard *Self, struct clip::AddFile *Args)
 /*********************************************************************************************************************
 
 -METHOD-
-AddObjects: Extract data from objects and add it all to the clipboard.
+AddObjects: Saves objects to clipboard cache files.
 
-Data can be saved to the clipboard directly from an object if the object's class supports the SaveToObject() action.  The
-clipboard will ask that the object save its data directly to a cache file, completely removing the need for the
-client to save the object data to an interim file for the clipboard.
+Use AddObjects() to copy one or more objects by asking each object to save itself to a generated file in the
+`clipboard:` volume.  This avoids requiring the caller to create temporary files before copying object data.
 
-Certain classes are recognised by the clipboard system and will be added to the correct datatype automatically (for
-instance, @Picture objects will be put into the `CLIPTYPE::IMAGE` data category).  If an object's class is not recognised by
-the clipboard system then the data will be stored in the `CLIPTYPE::OBJECT` category to signify that there is a class in the
-system that recognises the data.  If you want to over-ride any aspect of this behaviour, force the `Datatype`
-parameter with one of the available `CLIPTYPE` values.
+If `Datatype` is `CLIPTYPE::NIL`, the clipboard chooses a datatype from the source object's class where possible.
+@Image objects are stored as `CLIPTYPE::IMAGE`, sound objects are stored as `CLIPTYPE::AUDIO`, and unrecognised
+classes are stored as `CLIPTYPE::OBJECT`.  Set `Datatype` explicitly to override this automatic selection.
 
-This method supports groups of objects in a single clip, thus requires an array of object ID's terminated
-with a zero entry.
+All objects in a single call must belong to the same class.  The `Objects` array must be terminated with a zero entry.
 
 Optional flags that may be passed to this method are the same as those specified in the #AddFile() method.  The
 `CEF::DELETE` flag has no effect on objects.
 
 -INPUT-
-int(CLIPTYPE) Datatype: The type of data representing the objects, or NULL for automatic recognition.
-ptr(oid) Objects: Array of object ID's to add to the clipboard.
+int(CLIPTYPE) Datatype: Type of data represented by the objects, or zero for automatic recognition.
+ptr(oid) Objects: Zero-terminated array of object IDs to add to the clipboard.
 int(CEF) Flags: Optional flags.
 
 -ERRORS-
 Okay: The objects were added to the clipboard.
+NullArgs
 Args
+Lock
+CreateFile
+
+-TAGS-
+blocking, mutates-object, creates-resource
 -END-
 
 *********************************************************************************************************************/
@@ -293,7 +348,7 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->Objects) or (!Args->Objects[0])) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Objects) or (not Args->Objects[0])) return log.warning(ERR::NullArgs);
 
    log.branch();
 
@@ -309,25 +364,29 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
 
          if (classid IS object.obj->classID()) { // The client may not mix and match classes.
             if (datatype IS CLIPTYPE::NIL) {
-               if (object.obj->classID() IS CLASSID::PICTURE) datatype = CLIPTYPE::IMAGE;
+               if (object.obj->classID() IS CLASSID::IMAGE) datatype = CLIPTYPE::IMAGE;
                else if (object.obj->classID() IS CLASSID::SOUND) datatype = CLIPTYPE::AUDIO;
                else datatype = CLIPTYPE::OBJECT;
             }
 
             char idx[5];
             snprintf(idx, sizeof(idx), ".%.3d", i);
-            auto path = std::string("clipboard:") + glProcessID + "_" + get_datatype(datatype) + std::to_string(counter) + idx;
+            auto path = std::string("clipboard:") + glProcessID + "_" + get_datatype(datatype) +
+               std::to_string(counter) + idx;
 
             auto file = objFile::create { fl::Path(path), fl::Flags(FL::WRITE|FL::NEW) };
-            if (file.ok()) acSaveToObject(*object, *file);
+            if (file.ok()) {
+               if (auto error = acSaveToObject(*object, *file); error != ERR::Okay) return log.warning(error);
+               items.emplace_back(path, true);
+            }
             else return ERR::CreateFile;
          }
       }
       else return ERR::Lock;
    }
 
-   if (add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false) IS ERR::Okay) {
-      if (glHistoryLimit <= 1) return ERR::Okay;
+   if (!add_file_to_host(Self, items, ((Args->Flags & CEF::DELETE) != CEF::NIL) ? true : false)) {
+      if (glHistoryLimit <= 1 and host_keeps_clipboard()) return ERR::Okay;
    }
 
    return add_clip(datatype, items, Args->Flags & CEF::EXTEND);
@@ -338,15 +397,21 @@ static ERR CLIPBOARD_AddObjects(objClipboard *Self, struct clip::AddObjects *Arg
 -METHOD-
 AddText: Adds a block of text to the clipboard.
 
-Plain UTF-8 text can be added to the clipboard using the AddText() method.
+Use AddText() to place plain UTF-8 text on the clipboard.  Empty strings are ignored and return `ERR::Okay`.
+
+On Windows, the text is also published to the host clipboard when supported.  If history buffering is disabled and the
+host clipboard accepts the text, no local cache file is created.
 
 -INPUT-
-cstr String: The text to add to the clipboard.
+strview String: UTF-8 text to add to the clipboard.
 
 -ERRORS-
 Okay
 NullArgs
 CreateFile
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -355,41 +420,59 @@ static ERR CLIPBOARD_AddText(objClipboard *Self, struct clip::AddText *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->String)) return log.warning(ERR::NullArgs);
-   if (!Args->String[0]) return ERR::Okay;
+   if (not Args) return log.warning(ERR::NullArgs);
+   if (Args->String.empty()) return ERR::Okay;
 
-   if (add_text_to_host(Self, Args->String) IS ERR::Okay) {
-      if (glHistoryLimit <= 1) return ERR::Okay;
-   }
+   add_text_to_host(Self, Args->String);
 
    return add_clip(Args->String);
 }
 
 /*********************************************************************************************************************
 -ACTION-
-Clear: Destroys all cached data that is stored in the clipboard.
+Clear: Removes all cached clipboard data.
+
+Clear deletes the generated clipboard cache and removes all clip records tracked by the current process.  Use
+#Remove() to delete only selected datatypes.
+
 -END-
 *********************************************************************************************************************/
 
 static ERR CLIPBOARD_Clear(objClipboard *Self)
 {
+   if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL) glDriver->clipboardClear();
    std::string path;
-   if (ResolvePath("clipboard:", RSF::NO_FILE_CHECK, &path) IS ERR::Okay) {
-      DeleteFile(path.c_str(), nullptr);
-      CreateFolder(path.c_str(), PERMIT::READ|PERMIT::WRITE);
+   if (!ResolvePath("clipboard:", RSF::NO_FILE_CHECK, &path)) {
+      DeleteFile(path, nullptr);
+      CreateFolder(path, PERMIT::READ|PERMIT::WRITE);
    }
 
-   glClips.clear();
+   {
+      const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+      glClips.clear();
+   }
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -ACTION-
-DataFeed: This action can be used to place data in a clipboard.
+DataFeed: Sends data to the clipboard or handles drag-and-drop requests.
 
-Data can be sent to a clipboard object via the DataFeed action. Currently, only the `DATA::TEXT` type is supported.
-All data that is sent to a clipboard object through this action will replace any stored information that matches the
-given data type.
+For regular clipboard writes, DataFeed currently accepts `DATA::TEXT`.  Text received through this action replaces the
+current text clip and is cached as a generated file unless the host clipboard accepts it and no history buffer is
+active.
+
+When the clipboard is in drag-and-drop mode, DataFeed also accepts `DATA::REQUEST`.  Requests are forwarded to the
+#RequestHandler callback so the source application can provide the requested data to the requester.
+
+-ERRORS-
+Okay
+NullArgs
+Write
+CreateObject
+FieldNotSet
+NoSupport
+Terminate
 -END-
 *********************************************************************************************************************/
 
@@ -397,18 +480,27 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (Args->Datatype IS DATA::TEXT) {
       log.msg("Copying text to the clipboard.");
 
-      add_text_to_host(Self, (CSTRING)Args->Buffer, Args->Size);
+      if ((not Args->Buffer.data()) and (not Args->Buffer.empty())) return log.warning(ERR::NullArgs);
+      if (auto error = add_text_to_host(Self,
+            std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()));
+            (error != ERR::Okay) and (error != ERR::NoSupport)) {
+         return log.warning(error);
+      }
 
-      std::vector<ClipItem> items = { std::string("clipboard:") + glProcessID + "_text" + std::to_string(glCounter++) + std::string(".000") };
-      if (auto error = add_clip(CLIPTYPE::TEXT, items); error IS ERR::Okay) {
-         auto file = objFile::create { fl::Path(items[0].Path), fl::Flags(FL::NEW|FL::WRITE), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
+      std::vector<ClipItem> items = { ClipItem(std::string("clipboard:") + glProcessID + "_text" +
+         std::to_string(glCounter++) + std::string(".000"), true) };
+      if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
+         auto file = objFile::create { fl::Path(items[0].Path), fl::Flags(FL::NEW|FL::WRITE),
+            fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
          if (file.ok()) {
-            if (file->write(Args->Buffer, Args->Size, 0) != ERR::Okay) return log.warning(ERR::Write);
+            if (file->write(Args->Buffer) != ERR::Okay) {
+               return log.warning(ERR::Write);
+            }
             return ERR::Okay;
          }
          else return log.warning(ERR::CreateObject);
@@ -416,45 +508,89 @@ static ERR CLIPBOARD_DataFeed(objClipboard *Self, struct acDataFeed *Args)
       else return log.warning(error);
    }
    else if ((Args->Datatype IS DATA::REQUEST) and ((Self->Flags & CPF::DRAG_DROP) != CPF::NIL))  {
-      auto request = (struct dcRequest *)Args->Buffer;
-      log.branch("Data request from #%d received for item %d, datatype %d", Args->Object->UID, request->Item, request->Preference[0]);
+      if ((not Args->Buffer.data()) or (not Args->Object)) return log.warning(ERR::NullArgs);
+      if (Args->Buffer.size() < sizeof(struct dcRequest)) return log.warning(ERR::Args);
+
+      struct dcRequest request;
+      copymem(Args->Buffer.data(), &request, sizeof(request));
+      log.branch("Data request from #%d received for item %d, datatype %d", Args->Object->UID, request.Item,
+         request.Preference[0]);
 
       ERR error = ERR::Okay;
+      if (Self->RequestHandler.stale()) {
+         Self->RequestHandler.unpin();
+         Self->RequestHandler.disable();
+      }
+
       if (Self->RequestHandler.isC()) {
          auto routine = (ERR (*)(objClipboard *, OBJECTPTR, int, char *, APTR))Self->RequestHandler.Routine;
          kt::SwitchContext ctx(Self->RequestHandler.Context);
-         error = routine(Self, Args->Object, request->Item, request->Preference, Self->RequestHandler.Meta);
+         error = routine(Self, Args->Object, request.Item, request.Preference, Self->RequestHandler.Meta);
       }
       else if (Self->RequestHandler.isScript()) {
+         std::span<char> span(request.Preference, sizeof(request.Preference));
          if (sc::Call(Self->RequestHandler, std::to_array<ScriptArg>({
             { "Clipboard", Self, FD_OBJECTPTR },
             { "Requester", Args->Object, FD_OBJECTPTR },
-            { "Item",      request->Item },
-            { "Datatypes", request->Preference, FD_ARRAY|FD_BYTE },
-            { "Size",      int(std::ssize(request->Preference)), FD_INT|FD_ARRAYSIZE }
+            { "Item",      request.Item },
+            { "Datatypes", &span, FDF_SPAN|FD_BYTE }
          }), error) != ERR::Okay) error = ERR::Terminate;
       }
       else error = log.warning(ERR::FieldNotSet);
 
-      if (error IS ERR::Terminate) Self->RequestHandler.Type = CALL::NIL;
+      if (error IS ERR::Terminate) {
+         Self->RequestHandler.unpin();
+         Self->RequestHandler.disable();
+      }
 
-      return ERR::Okay;
+      return error;
    }
    else log.warning("Unrecognised data type %d.", int(Args->Datatype));
 
-   return ERR::Okay;
+   return ERR::NoSupport;
+}
+
+//********************************************************************************************************************
+// Reports the end of a drag and drop session to its source.  Only a Clipboard with a DragEndHandler is notified.  The
+// pointer session is already clear, so the handler may free the clipboard or prepare a new session.
+
+void notify_drag_end(OBJECTID SourceID, int Item, ERR Result)
+{
+   kt::ScopedObjectLock<objClipboard> src(SourceID);
+   if ((not src.granted()) or (src->classID() != CLASSID::CLIPBOARD)) return;
+
+   auto Self = *src;
+   if (Self->DragEndHandler.stale()) {
+      Self->DragEndHandler.unpin();
+      Self->DragEndHandler.disable();
+   }
+
+   if (Self->DragEndHandler.isC()) {
+      auto routine = (void (*)(objClipboard *, int, ERR, APTR))Self->DragEndHandler.Routine;
+      kt::SwitchContext ctx(Self->DragEndHandler.Context);
+      routine(Self, Item, Result, Self->DragEndHandler.Meta);
+   }
+   else if (Self->DragEndHandler.isScript()) {
+      ERR error;
+      if (sc::Call(Self->DragEndHandler, std::to_array<ScriptArg>({
+         { "Clipboard", Self, FD_OBJECTPTR },
+         { "Item",      Item },
+         { "Result",    int(Result) }
+      }), error) != ERR::Okay) error = ERR::Terminate;
+
+      if (error IS ERR::Terminate) {
+         Self->DragEndHandler.unpin();
+         Self->DragEndHandler.disable();
+      }
+   }
 }
 
 //********************************************************************************************************************
 
-static ERR CLIPBOARD_Free(objClipboard *Self)
+objClipboard::~objClipboard()
 {
-   if (Self->RequestHandler.isScript()) {
-      UnsubscribeAction(Self->RequestHandler.Context, AC::Free);
-      Self->RequestHandler.clear();
-   }
-
-   return ERR::Okay;
+   if (RequestHandler.defined()) RequestHandler.unpin();
+   if (DragEndHandler.defined()) DragEndHandler.unpin();
 }
 
 /*********************************************************************************************************************
@@ -462,34 +598,38 @@ static ERR CLIPBOARD_Free(objClipboard *Self)
 -METHOD-
 GetFiles: Retrieve the most recently clipped data as a list of files.
 
-This method returns a list of items that are on the clipboard.  The caller must declare the types of data that it
-supports (or zero if all datatypes are recognised).
+GetFiles() returns clipboard entries as readable file paths.  The caller can request a specific set of datatypes through
+`Filter`, or pass `CLIPTYPE::NIL` to accept any datatype.
 
-The most recently clipped datatype is always returned.  To scan for all available clip items, set the `Filter`
-parameter to zero and repeatedly call this method with incremented Index numbers until the error code `ERR::OutOfRange`
-is returned.
+Without history buffering, only the most recent clip group is available.  With history buffering enabled, pass
+`CLIPTYPE::NIL` as `Filter` and increment `Index` to scan retained history from newest to oldest until
+`ERR::OutOfRange` is returned.
 
-On success this method will return a list of files (terminated with a `NULL` entry) in the `Files` parameter.  Each file is
-a readable clipboard entry - how the client reads it depends on the resulting `Datatype`.  Additionally, the
-~Core.IdentifyFile() function could be used to find a class that supports the data.  The resulting `Files` array is a
-memory allocation that must be freed with a call to ~Core.FreeResource().
+On success, `Datatype` reports the datatype of the returned clip and `Files` receives the matching file paths.  How the
+caller reads each file depends on `Datatype`; ~Core.IdentifyFile() can also be used to find a class that supports the
+data.  `Files` must refer to an empty caller-owned array and remains owned by the caller after the method returns.
+On Wayland, an incoming selection is copied asynchronously into the local file cache.  This method returns
+`ERR::NoData` while that transfer is pending when history buffering is disabled.
 
-If this method returns the `CEF::DELETE` flag in the `Flags` parameter, the client must delete the source files after
-successfully copying the data.  When cutting and pasting files within the file system, using ~Core.MoveFile() is
-recommended as the most efficient method.
+If `CEF::DELETE` is returned in `Flags`, the caller must delete the source files after successfully copying the data in
+order to complete a cut operation.  When cutting and pasting files within the same file system, ~Core.MoveFile() is
+usually the most efficient way to consume those entries.
 
 -INPUT-
-int(CLIPTYPE) Filter: Filter down to the specified data type.  This parameter will be updated to reflect the retrieved data type when the method returns.  Set to zero to disable.
-int Index: If the `Filter` parameter is zero and clipboard history is enabled, this parameter refers to a historical clipboard item, with zero being the most recent.
-&int(CLIPTYPE) Datatype: The resulting datatype of the requested clip data.
-!array(cstr) Files: The resulting location(s) of the requested clip data are returned in this parameter; terminated with a `NULL` entry.  The client must free the returned array with ~Core.FreeResource().
-&int(CEF) Flags: Result flags are returned in this parameter.  If `DELETE` is defined, the client must delete the files after use in order to support the 'cut' operation.
+int(CLIPTYPE) Filter: Datatype filter.  Set to zero to accept any datatype.
+int Index: History index to read when Filter is zero.  Zero is the most recent clip group.
+&int(CLIPTYPE) Datatype: Datatype of the returned clip group.
+^&vector(string) Files: An empty string array is required to receive the file list.
+&int(CEF) Flags: Result flags.  If the delete flag is set, delete the files after use to complete a cut operation.
 
 -ERRORS-
 Okay: A matching clip was found and returned.
-Args:
+NullArgs
 OutOfRange: The specified `Index` is out of the range of the available clip items.
 NoData: No clip was available that matched the requested data type.
+
+-TAGS-
+mutates-input
 -END-
 
 *********************************************************************************************************************/
@@ -498,11 +638,9 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if ((not Args) or (not Args->Files)) return log.warning(ERR::NullArgs);
 
    log.branch("Datatype: $%.8x", int(Args->Datatype));
-
-   Args->Files = nullptr;
 
    if ((Self->Flags & CPF::HISTORY_BUFFER) IS CPF::NIL) {
 #ifdef _WIN32
@@ -511,6 +649,10 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
 #endif
    }
 
+   if (glHostSelectionGone and (Self->Flags & CPF::HISTORY_BUFFER) IS CPF::NIL) return ERR::NoData;
+
+   const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+
    if (glClips.empty()) return ERR::NoData;
 
    ClipRecord *clip = &glClips.front();
@@ -518,9 +660,11 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
    // Find the first clipboard entry to match what has been requested
 
    if ((Self->Flags & CPF::HISTORY_BUFFER) != CPF::NIL) {
-      if (Args->Filter IS CLIPTYPE::NIL) { // Retrieve the most recent clip item, or the one indicated in the Index parameter.
+      if (Args->Filter IS CLIPTYPE::NIL) { // Return the newest clip or the item at Index.
          if ((Args->Index < 0) or (Args->Index >= int(glClips.size()))) return log.warning(ERR::OutOfRange);
-         std::advance(clip, Args->Index);
+         auto selected = glClips.begin();
+         std::advance(selected, Args->Index);
+         clip = &*selected;
       }
       else {
          bool found = false;
@@ -532,7 +676,7 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
             }
          }
 
-         if (!found) {
+         if (not found) {
             log.warning("No clips available for datatype $%x", int(Args->Filter));
             return ERR::NoData;
          }
@@ -542,25 +686,14 @@ static ERR CLIPBOARD_GetFiles(objClipboard *Self, struct clip::GetFiles *Args)
       if ((clip->Datatype & Args->Filter) IS CLIPTYPE::NIL) return ERR::NoData;
    }
 
-   CSTRING *list = nullptr;
-   int str_len = 0;
-   for (auto &item : clip->Items) str_len += item.Path.size() + 1;
-   if (AllocMemory(((clip->Items.size()+1) * sizeof(STRING)) + str_len, MEM::NO_CLEAR|MEM::CALLER, &list) IS ERR::Okay) {
-      Args->Files    = list;
-      Args->Flags    = clip->Flags;
-      Args->Datatype = clip->Datatype;
+   auto &list = *Args->Files;
+   Args->Flags    = clip->Flags;
+   Args->Datatype = clip->Datatype;
 
-      auto dest = (char *)list + ((clip->Items.size() + 1) * sizeof(STRING));
-      for (auto &item : clip->Items) {
-         *list++ = dest;
-         copymem(item.Path.c_str(), dest, item.Path.size() + 1);
-         dest += item.Path.size() + 1;
-      }
-      *list = nullptr;
-
-      return ERR::Okay;
+   for (auto &item : clip->Items) {
+      list.push_back(item.Path);
    }
-   else return ERR::AllocMemory;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -576,28 +709,23 @@ static ERR CLIPBOARD_Init(objClipboard *Self)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-
-static ERR CLIPBOARD_NewObject(objClipboard *Self)
-{
-   return ERR::Okay;
-}
-
 /*********************************************************************************************************************
 
 -METHOD-
-Remove: Remove items from the clipboard.
+Remove: Removes selected datatypes from the clipboard.
 
-The Remove() method will clear all items that match a specified datatype.  Clear multiple datatypes by combining flags
-in the `Datatype` parameter.  To clear all content from the clipboard, use the #Clear() action instead of this method.
+Remove() clears all active clip groups whose datatype matches `Datatype`.  Multiple datatypes can be removed by
+combining `CLIPTYPE` flags.  To clear all content from the clipboard, use #Clear().
 
 -INPUT-
-int(CLIPTYPE) Datatype: The datatype(s) that will be deleted (datatypes may be logically-or'd together).
+int(CLIPTYPE) Datatype: Datatype flags to remove.  Values may be combined.
 
 -ERRORS-
 Okay
 NullArgs
-AccessMemory: The clipboard memory data was not accessible.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -606,9 +734,11 @@ static ERR CLIPBOARD_Remove(objClipboard *Self, struct clip::Remove *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (Args->Datatype IS CLIPTYPE::NIL)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Datatype IS CLIPTYPE::NIL)) return log.warning(ERR::NullArgs);
 
    log.branch("Datatype: $%x", int(Args->Datatype));
+
+   const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
 
    for (auto it=glClips.begin(); it != glClips.end();) {
       if ((it->Datatype & Args->Datatype) != CLIPTYPE::NIL) {
@@ -616,6 +746,8 @@ static ERR CLIPBOARD_Remove(objClipboard *Self, struct clip::Remove *Args)
             #ifdef _WIN32
             winClearClipboard();
             #endif
+            if (glDriver and (glDriver->capabilities() & DCAP::CLIPBOARD) != DCAP::NIL)
+               glDriver->clipboardClear();
          }
          it = glClips.erase(it);
       }
@@ -628,28 +760,74 @@ static ERR CLIPBOARD_Remove(objClipboard *Self, struct clip::Remove *Args)
 /*********************************************************************************************************************
 
 -FIELD-
-Flags: Optional flags.
+DragEndHandler: Callback for the end of a drag and drop operation sourced from this clipboard.
+
+If the clipboard is the source of a drag and drop operation started with ~Display.StartCursorDrag(), the
+DragEndHandler is called once when that operation ends.  The callback uses this signature:
+
+`void DragEndHandler(*Clipboard, int Item, ERR Result)`
+
+`Item` is the item number passed to ~Display.StartCursorDrag().  `Result` is `ERR::Okay` if the drop was dispatched to
+the surface under the pointer, or `ERR::Cancelled` if the operation ended without a drop, for instance because the
+@Pointer received a Deactivate action or a modal surface blocked the drop.  A dispatched drop does not imply that the
+destination accepted the data or completed a transfer; any data requests made by the destination will already have
+reached the #RequestHandler.
+
+The pointer's drag session is clear when the callback runs.  No notification is sent if the clipboard is freed while
+the operation is active.
 
 -FIELD-
-RequestHandler: Provides a hook for responding to drag and drop requests.
+Flags: Optional clipboard behaviour flags.
+Lookup: CPF
 
-Applications can request data from a clipboard if it is in drag-and-drop mode by sending a `DATA::REQUEST` to the
-Clipboard's DataFeed action.  Doing so will result in a callback to the function that is referenced in the
-RequestHandler, which must be defined by the source application.  The RequestHandler function must follow this
-template:
+-FIELD-
+RequestHandler: Callback for drag-and-drop data requests.
+
+When the clipboard is in drag-and-drop mode, applications can request source data by sending a `DATA::REQUEST` to
+#DataFeed().  The request is forwarded to the callback stored in RequestHandler, which must be supplied by the source
+application.
+
+The callback uses this signature:
 
 `ERR RequestHandler(*Clipboard, OBJECTPTR Requester, int Item, BYTE Datatypes[4])`
 
-The function will be expected to send a `DATA::RECEIPT` to the object referenced in the Requester paramter.  The
-receipt must provide coverage for the referenced Item and use one of the indicated Datatypes as the data format.
-If this cannot be achieved then `ERR::NoSupport` should be returned by the function.
+The callback is expected to send a `DATA::RECEIPT` to the object referenced by `Requester`.  The receipt must cover
+`Item` and use one of the preferred datatypes supplied in `Datatypes`.  If the request cannot be fulfilled, the
+callback should return `ERR::NoSupport`.
 
 *********************************************************************************************************************/
 
-static ERR GET_RequestHandler(objClipboard *Self, FUNCTION **Value)
+static ERR GET_DragEndHandler(objClipboard *Self, FUNCTION * &Value)
+{
+   if (Self->DragEndHandler.defined()) {
+      Value = &Self->DragEndHandler;
+      return ERR::Okay;
+   }
+   else return ERR::FieldNotSet;
+}
+
+static ERR SET_DragEndHandler(objClipboard *Self, FUNCTION *Value)
+{
+   if (Self->DragEndHandler.defined()) {
+      Self->DragEndHandler.unpin();
+      Self->DragEndHandler.disable();
+   }
+
+   if (Value) {
+      Self->DragEndHandler = *Value;
+      if (Self->DragEndHandler.defined()) Self->DragEndHandler.pin();
+   }
+   else Self->DragEndHandler.disable();
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+
+static ERR GET_RequestHandler(objClipboard *Self, FUNCTION * &Value)
 {
    if (Self->RequestHandler.defined()) {
-      *Value = &Self->RequestHandler;
+      Value = &Self->RequestHandler;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -657,14 +835,17 @@ static ERR GET_RequestHandler(objClipboard *Self, FUNCTION **Value)
 
 static ERR SET_RequestHandler(objClipboard *Self, FUNCTION *Value)
 {
-   if (Value) {
-      if (Self->RequestHandler.isScript()) UnsubscribeAction(Self->RequestHandler.Context, AC::Free);
-      Self->RequestHandler = *Value;
-      if (Self->RequestHandler.isScript()) {
-         SubscribeAction(Self->RequestHandler.Context, AC::Free, C_FUNCTION(notify_script_free));
-      }
+   if (Self->RequestHandler.defined()) {
+      Self->RequestHandler.unpin();
+      Self->RequestHandler.disable();
    }
-   else Self->RequestHandler.clear();
+
+   if (Value) {
+      Self->RequestHandler = *Value;
+      if (Self->RequestHandler.defined()) Self->RequestHandler.pin();
+   }
+   else Self->RequestHandler.disable();
+
    return ERR::Okay;
 }
 
@@ -678,19 +859,16 @@ static ERR add_clip(CLIPTYPE Datatype, const std::vector<ClipItem> &Items, CEF F
 
    if (Items.empty()) return ERR::Args;
 
+   const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+
    if ((Flags & CEF::EXTEND) != CEF::NIL) {
       // Search for an existing clip that matches the requested datatype
       for (auto it = glClips.begin(); it != glClips.end(); it++) {
          if (it->Datatype IS Datatype) {
             log.msg("Extending existing clip record for datatype $%x.", int(Datatype));
 
-            auto clip = *it;
-            clip.Items.insert(clip.Items.end(), Items.begin(), Items.end());
-
-            // Move clip to the front of the queue.
-
-            glClips.erase(it);
-            glClips.insert(glClips.begin(), clip);
+            it->Items.insert(it->Items.end(), Items.begin(), Items.end());
+            glClips.splice(glClips.begin(), glClips, it);
             return ERR::Okay;
          }
       }
@@ -703,7 +881,7 @@ static ERR add_clip(CLIPTYPE Datatype, const std::vector<ClipItem> &Items, CEF F
       else it++;
    }
 
-   if (int(glClips.size()) > glHistoryLimit) glClips.pop_back(); // Remove oldest clip if history buffer is full.
+   if (int(glClips.size()) >= glHistoryLimit) glClips.pop_back(); // Remove oldest clip if history buffer is full.
 
    glClips.emplace_front(Datatype, Flags & CEF::DELETE, Items);
    return ERR::Okay;
@@ -711,21 +889,143 @@ static ERR add_clip(CLIPTYPE Datatype, const std::vector<ClipItem> &Items, CEF F
 
 //********************************************************************************************************************
 
-static ERR add_clip(CSTRING String)
+static ERR add_clip(std::string_view String)
 {
    kt::Log log(__FUNCTION__);
    log.branch();
 
-   std::vector<ClipItem> items = { std::string("clipboard:") + glProcessID + "_text" + std::to_string(glCounter++) + ".000" };
-   if (auto error = add_clip(CLIPTYPE::TEXT, items); error IS ERR::Okay) {
-      kt::Create<objFile> file = { fl::Path(items[0].Path), fl::Flags(FL::WRITE|FL::NEW), fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
+   std::vector<ClipItem> items = { ClipItem(std::string("clipboard:") + glProcessID + "_text" +
+      std::to_string(glCounter++) + ".000", true) };
+   if (auto error = add_clip(CLIPTYPE::TEXT, items); !error) {
+      kt::Create<objFile> file = { fl::Path(items[0].Path), fl::Flags(FL::WRITE|FL::NEW),
+         fl::Permissions(PERMIT::READ|PERMIT::WRITE) };
       if (file.ok()) {
-         file->write(String, strlen(String), 0);
+         if (auto error = file->write(std::span<const int8_t>((const int8_t *)String.data(), String.size()));
+             error != ERR::Okay) return log.warning(error);
          return ERR::Okay;
       }
       else return log.warning(ERR::CreateFile);
    }
    else return log.warning(error);
+}
+
+static int hex_digit(char Value)
+{
+   if ((Value >= '0') and (Value <= '9')) return Value - '0';
+   if ((Value >= 'a') and (Value <= 'f')) return Value - 'a' + 10;
+   if ((Value >= 'A') and (Value <= 'F')) return Value - 'A' + 10;
+   return -1;
+}
+
+void lose_host_clipboard()
+{
+   glHostSelectionGone = true;
+}
+
+void clear_host_drop()
+{
+   const std::lock_guard lock(glClipboardLock);
+   glDropType = CLIPTYPE::NIL;
+   glDropPaths.clear();
+   glDropText.clear();
+}
+
+bool receive_host_clipboard(CSTRING Mime, std::string_view Data, bool Dropped, OBJECTID SurfaceID)
+{
+   if (not Mime) return false;
+   const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+   if (Dropped) { glDropType = CLIPTYPE::NIL; glDropPaths.clear(); glDropText.clear(); }
+   if (std::string_view(Mime) IS "text/uri-list") {
+      std::vector<ClipItem> items;
+      size_t start = 0;
+      while (start < Data.size()) {
+         auto end = Data.find_first_of("\r\n", start);
+         if (end IS std::string_view::npos) end = Data.size();
+         auto line = Data.substr(start, end - start);
+         start = Data.find_first_not_of("\r\n", end);
+         if (start IS std::string_view::npos) start = Data.size();
+         if (not line.starts_with("file://")) continue;
+         line.remove_prefix(7);
+         if (line.starts_with("localhost")) line.remove_prefix(9);
+         if (line.empty() or (line[0] != '/')) continue;
+         std::string path;
+         for (size_t i=0; i < line.size(); i++) {
+            if ((line[i] IS '%') and (i + 2 < line.size())) {
+               auto hi = hex_digit(line[i + 1]);
+               auto lo = hex_digit(line[i + 2]);
+               if ((hi >= 0) and (lo >= 0)) {
+                  auto ch = char((hi << 4) | lo);
+                  if (ch IS 0) { path.clear(); break; }
+                  path.push_back(ch);
+                  i += 2;
+                  continue;
+               }
+            }
+            path.push_back(line[i]);
+         }
+         if (not path.empty()) {
+            // URI lists do not distinguish folders, but CopyFile requires their trailing separator.
+            LOC type;
+            if ((AnalysePath(path, &type) IS ERR::Okay) and (type IS LOC::DIRECTORY) and
+                  (path.back() != '/')) path.push_back('/');
+            items.emplace_back(path);
+         }
+      }
+      if (not items.empty()) {
+         if (Dropped) {
+            glDropPaths.clear();
+            for (auto &item : items) glDropPaths.push_back(item.Path);
+            glDropType = CLIPTYPE::FILE;
+         }
+         else if (add_clip(CLIPTYPE::FILE, items) IS ERR::Okay) glHostSelectionGone = false;
+      }
+   }
+   else if ((std::string_view(Mime) IS "text/plain") or
+         (std::string_view(Mime) IS "text/plain;charset=utf-8")) {
+      if (Dropped) { glDropText = Data; glDropType = CLIPTYPE::TEXT; }
+      else if (add_clip(Data) IS ERR::Okay) glHostSelectionGone = false;
+   }
+   if (Dropped and SurfaceID and glDropType != CLIPTYPE::NIL) {
+      const char datatype[] = { char(glDropType IS CLIPTYPE::FILE ? DATA::FILE : DATA::TEXT), 0 };
+      display::DriverDragDropped(SurfaceID, datatype);
+   }
+   return (not Dropped) or (glDropType != CLIPTYPE::NIL);
+}
+
+static void append_xml(std::string &Output, std::string_view Text)
+{
+   for (char ch : Text) {
+      if (ch IS '&') Output.append("&amp;");
+      else if (ch IS '<') Output.append("&lt;");
+      else if (ch IS '>') Output.append("&gt;");
+      else if (ch IS '"') Output.append("&quot;");
+      else Output.push_back(ch);
+   }
+}
+
+ERR respond_wayland_drop_request(OBJECTPTR Display, OBJECTPTR Requester, int Item, char Preference)
+{
+   if ((not Display) or (not Requester)) return ERR::NullArgs;
+   const std::lock_guard<std::recursive_mutex> lock(glClipboardLock);
+   std::string xml = "<receipt totalitems=\"";
+   if ((glDropType IS CLIPTYPE::FILE) and (Preference IS char(DATA::FILE))) {
+      xml.append(std::to_string(glDropPaths.size()));
+      xml.append("\" id=\"").append(std::to_string(Item)).append("\">");
+      for (auto &path : glDropPaths) {
+         xml.append("<file path=\"");
+         append_xml(xml, path);
+         xml.append("\"/>");
+      }
+   }
+   else if ((glDropType IS CLIPTYPE::TEXT) and (Preference IS char(DATA::TEXT))) {
+      xml.append("1\" id=\"").append(std::to_string(Item)).append("\"><text>");
+      append_xml(xml, glDropText);
+      xml.append("</text>");
+   }
+   else return ERR::NoSupport;
+   xml.append("</receipt>");
+   return acDataFeed(Requester, Display, DATA::RECEIPT,
+      std::span<const int8_t>((const int8_t *)xml.data(), xml.size()));
 }
 
 //********************************************************************************************************************
@@ -784,22 +1084,22 @@ extern "C" void report_windows_hdrop(const char *Data, int CutOperation, char Wi
 
             // Convert to UTF-8
             if (codepoint < 0x80) {
-               utf8_path.push_back(static_cast<char>(codepoint));
+               utf8_path.push_back((char)codepoint);
             }
             else if (codepoint < 0x800) {
-               utf8_path.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
-               utf8_path.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+               utf8_path.push_back((char)(0xC0 | (codepoint >> 6)));
+               utf8_path.push_back((char)(0x80 | (codepoint & 0x3F)));
             }
             else if (codepoint < 0x10000) {
-               utf8_path.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
-               utf8_path.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-               utf8_path.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+               utf8_path.push_back((char)(0xE0 | (codepoint >> 12)));
+               utf8_path.push_back((char)(0x80 | ((codepoint >> 6) & 0x3F)));
+               utf8_path.push_back((char)(0x80 | (codepoint & 0x3F)));
             }
             else {
-               utf8_path.push_back(static_cast<char>(0xF0 | (codepoint >> 18)));
-               utf8_path.push_back(static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F)));
-               utf8_path.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
-               utf8_path.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+               utf8_path.push_back((char)(0xF0 | (codepoint >> 18)));
+               utf8_path.push_back((char)(0x80 | ((codepoint >> 12) & 0x3F)));
+               utf8_path.push_back((char)(0x80 | ((codepoint >> 6) & 0x3F)));
+               utf8_path.push_back((char)(0x80 | (codepoint & 0x3F)));
             }
          }
          items.emplace_back(utf8_path);
@@ -846,7 +1146,7 @@ extern "C" void report_windows_clip_utf16(uint16_t *String)
       }
    }
 
-   add_clip(buffer.str().c_str());
+   add_clip(buffer.str());
    glLastClipID = winCurrentClipboardID();
 }
 
@@ -867,7 +1167,8 @@ extern "C" void win_clipboard_updated()
 
 static const FieldArray clFields[] = {
    { "Flags",          FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clClipboardFlags },
-   { "RequestHandler", FDF_FUNCTIONPTR|FDF_RW, GET_RequestHandler, SET_RequestHandler },
+   { "DragEndHandler", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_DragEndHandler, SET_DragEndHandler },
+   { "RequestHandler", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_RequestHandler, SET_RequestHandler },
    END_FIELD
 };
 
@@ -884,10 +1185,10 @@ ERR create_clipboard_class(void)
       fl::Methods(clClipboardMethods),
       fl::Fields(clFields),
       fl::Size(sizeof(objClipboard)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    int pid;
-   if (CurrentTask()->get(FID_ProcessID, pid) IS ERR::Okay) glProcessID = std::to_string(pid);
+   if (!CurrentTask()->getProcess(pid)) glProcessID = std::to_string(pid);
 
    return clClipboard ? ERR::Okay : ERR::AddClass;
 }

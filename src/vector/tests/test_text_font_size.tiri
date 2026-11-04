@@ -1,0 +1,34 @@
+   include 'vector'
+
+-- VectorText resolves FontSize to a whole number of pixels.  Physical units convert at the fixed 96 DPI reference
+-- and are rounded to the nearest pixel rather than truncated.
+
+function resolvedSize(Value:str!):num
+   local text <close> = obj.new('VectorText')
+   text.fontSize = Value
+   return tonumber(text.fontSize)
+end
+
+@Test function PointSizesRoundToNearestPixel()
+   assert(resolvedSize('11pt') is 15, '11pt (14.67px) must round to 15px')
+   assert(resolvedSize('10pt') is 13, '10pt (13.33px) must round to 13px')
+   assert(resolvedSize('12pt') is 16, '12pt must resolve to exactly 16px')
+end
+
+@Test function FractionalPixelSizesRound()
+   assert(resolvedSize('14.4') is 14, '14.4px must round down')
+   assert(resolvedSize('14.6px') is 15, '14.6px must round up')
+   assert(resolvedSize('0.6') is 1, 'Sizes that round to one pixel are accepted')
+end
+
+@Test function SubPixelSizesAreRejected()
+   local scene <close> = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   text = scene.new('VectorViewport').new('VectorText', { fontSize=20 })
+   try
+      text.fontSize = '0.4'
+   except e when ERR_OutOfRange
+   success
+      raise 'A size that rounds to zero pixels must be rejected'
+   end
+   assert(tonumber(text.fontSize) is 20, 'A rejected size must not change the existing size')
+end

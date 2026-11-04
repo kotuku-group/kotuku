@@ -10,6 +10,9 @@
     <copyright>Paul Manias © 2025-2026</copyright>
     <description>
 <p>The XQuery module provides comprehensive support for XPath 2.0 and XQuery languages, enabling powerful querying and navigation of XML documents.  It provides the <class name="XQuery">XQuery</class> class as its primary interface, and operates in conjunction with the <class name="XML">XML</class> class to provide a standards-compliant query engine with extensive functionality.</p></description>
+    <source>
+      <file path="src/xquery/">xquery.cpp</file>
+    </source>
     <classes>
       <class>XQuery</class>
     </classes>

@@ -13,7 +13,7 @@ detail with our existing vector API.  Consequently, document formatting is close
 and seamlessly inherits SVG functionality such as filling and stroking commands.
 
 The native document format for Kōtuku is RIPL.  Documentation for RIPL is available in the Kotuku Wiki.  Other
-document formats may be supported as sub-classes, but bear in mind that document parsing is a one-way trip and
+document formats may be supported as derived classes, but bear in mind that document parsing is a one-way trip and
 stateful information such as the HTML DOM is not supported.
 
 The Document class does not include a security barrier in its current form.  Documents that include scripted code
@@ -28,12 +28,12 @@ https://github.com/microsoft/win32-app-isolation is one potential way of doing t
 
 static void notify_disable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   if (Result IS ERR::Okay) acDisable(CurrentContext());
+   if (!Result) acDisable(CurrentContext());
 }
 
 static void notify_enable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
-   if (Result IS ERR::Okay) acEnable(CurrentContext());
+   if (!Result) acEnable(CurrentContext());
 }
 
 static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
@@ -55,13 +55,16 @@ static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result
 static void notify_free_script_context(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
 {
    auto Self = (extDocument *)CurrentContext();
-   if ((Self->EventCallback.isScript()) and (Self->EventCallback.Context IS Object)) Self->EventCallback.clear();
+   if ((Self->EventCallback.isScript()) and (Self->EventCallback.Context IS Object)) {
+      deref_document_callback(Self->EventCallback);
+   }
 
    for (int t=0; t < int(DRT::END); t++) {
 restart:
       auto &triggers = Self->Triggers[t];
       for (auto cb=triggers.begin(); cb != triggers.end(); cb++) {
          if (cb->Context IS Object) {
+            deref_document_callback(*cb);
             Self->Triggers[t].erase(cb);
             goto restart;
          }
@@ -114,10 +117,11 @@ static ERR feedback_view(objVectorViewport *View, FM Event)
    kt::Log log(__FUNCTION__);
    auto Self = (extDocument *)CurrentContext();
 
-   auto width  = View->get<double>(FID_ViewWidth);
-   auto height = View->get<double>(FID_ViewHeight);
-   if (not width) width = View->get<double>(FID_Width);
-   if (not height) height = View->get<double>(FID_Height);
+   double width, height;
+   View->getViewWidth(width);
+   View->getViewHeight(height);
+   if (not width)  { Unit w; View->getWidth(w);  width = w; }
+   if (not height) { Unit h; View->getHeight(h); height = h; }
 
    if ((Self->VPWidth IS width) and (Self->VPHeight IS height)) return ERR::Okay;
 
@@ -166,7 +170,7 @@ static ERR DOCUMENT_Activate(extDocument *Self)
    log.branch();
 
    kt::vector<ChildEntry> list;
-   if (ListChildren(Self->UID, &list) IS ERR::Okay) {
+   if (!ListChildren(Self->UID, &list)) {
       for (unsigned i=0; i < list.size(); i++) {
          kt::ScopedObjectLock obj(list[i].ObjectID);
          if (obj.granted()) acActivate(*obj);
@@ -208,31 +212,43 @@ subscriptions, nor is there any handling for multiple copies of a subscription t
 
 -INPUT-
 int(DRT) Trigger: The unique identifier for the trigger.
-ptr(func) Function: The function to call when the trigger activates.
+func Function: The function to call when the trigger activates.
 
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+
+-TAGS-
+mutates-object, callback-held
 -END-
 
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_AddListener(extDocument *Self, doc::AddListener *Args)
 {
-   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function)) return ERR::NullArgs;
+   bool retained_callback = false;
+
+   auto consume_callback = kt::Defer([&]() {
+      if ((Args) and (not retained_callback)) Args->Function.consume();
+   });
+
+   if ((not Args) or (Args->Trigger IS DRT::NIL) or (not Args->Function.defined())) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    bool subscribe_context = false;
-   if (Args->Function->isScript()) {
-      subscribe_context = not has_script_free_callback(Self, Args->Function->Context);
+   if (Args->Function.isScript()) {
+      subscribe_context = not has_script_free_callback(Self, Args->Function.Context);
    }
 
-   Self->Triggers[int(Args->Trigger)].push_back(*Args->Function);
+   Self->Triggers[int(Args->Trigger)].push_back(Args->Function);
+   Args->Function.pin();
+   retained_callback = true;
 
    // Scripts can't auto-remove listeners, so a Free subscription is necessary.  Functional
    // subscribers are expected to self-manage however.
 
-   if (subscribe_context) SubscribeAction(Args->Function->Context, AC::Free, C_FUNCTION(notify_free_script_context));
+   if (subscribe_context) SubscribeAction(Args->Function.Context, AC::Free, C_FUNCTION(notify_free_script_context));
    return ERR::Okay;
 }
 
@@ -251,7 +267,7 @@ formatted - please refer to the @Script class' Exec method for more information 
 parameters.
 
 -INPUT-
-cstr Function:  The name of the function that will be called.
+strview Function: The name of the function that will be called.
 struct(*ScriptArg) Args: Pointer to an optional list of parameters to pass to the procedure.
 int TotalArgs: The total number of entries in the `Args` array.
 
@@ -259,19 +275,22 @@ int TotalArgs: The total number of entries in the `Args` array.
 Okay
 NullArgs
 
+-TAGS-
+callback-inlines
+
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_CallFunction(extDocument *Self, doc::CallFunction *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Function)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Function.empty())) return log.warning(ERR::NullArgs);
 
    // Function is in the format 'function()' or 'script.function()'
 
    objScript *script;
    std::string function_name, args;
-   if (auto error = extract_script(Self, Args->Function, &script, function_name, args); error IS ERR::Okay) {
+   if (auto error = extract_script(Self, Args->Function, &script, function_name, args); !error) {
       return script->exec(function_name.c_str(), Args->Args, Args->TotalArgs);
    }
    else return error;
@@ -324,7 +343,7 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
          objClipboard::create clipboard = { };
          if (clipboard.ok()) {
-            if (auto error = clipboard->addText(buffer.c_str()); error IS ERR::Okay) {
+            if (auto error = clipboard->addText(buffer); !error) {
                // Delete the highlighted document if the CUT mode was used
                if (Args->Mode IS CLIPMODE::CUT) {
                   //delete_selection(Self);
@@ -345,30 +364,31 @@ static ERR DOCUMENT_Clipboard(extDocument *Self, struct acClipboard *Args)
 
       if ((Self->Flags & DCF::EDIT) IS DCF::NIL) {
          log.warning("Edit mode is not enabled, paste operation aborted.");
-         return ERR::Failed;
+         return ERR::ReadOnly;
       }
 
       objClipboard::create clipboard = { };
       if (clipboard.ok()) {
-         CSTRING *files;
-         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, &files, nullptr); error IS ERR::Okay) {
-            if (not files) return ERR::NoData;
+         kt::vector<std::string> files;
+         if (auto error = clipboard->getFiles(CLIPTYPE::TEXT, 0, nullptr, files, nullptr); !error) {
+            if (files.empty()) return ERR::NoData;
 
             objFile::create file = { fl::Path(files[0]), fl::Flags(FL::READ) };
             if (file.ok()) {
-               int size;
-               if ((error = file->get(FID_Size, size)) IS ERR::Okay) {
+               int64_t size;
+               if (!(error = file->getSize(size))) {
                   if (size <= 0) return ERR::NoData;
 
                   if (auto buffer = new (std::nothrow) char[size+1]) {
                      int result;
-                     if ((error = file->read(buffer, size, &result)) IS ERR::Okay) {
+                     if (!(error = file->read(std::span<int8_t>((int8_t *)buffer, size_t(size)), &result))) {
                         buffer[result] = 0;
-                        error = acDataText(Self, buffer);
+                        error = Self->dataFeed(Self, DATA::TEXT,
+                           std::span<const int8_t>((const int8_t *)buffer, size_t(result)));
                      }
                      else error_dialog("Clipboard Paste Error", ERR::Read);
                      delete[] buffer;
-                     if (not (error IS ERR::Okay)) return error;
+                     if (error != ERR::Okay) return error;
                   }
                   else {
                      error_dialog("Clipboard Paste Error", ERR::AllocMemory);
@@ -404,6 +424,10 @@ Okay
 NullArgs
 AllocMemory: The Document's memory buffer could not be expanded.
 Mismatch:    The data type that was passed to the action is not supported by the Document class.
+NotInitialised
+Recursion
+CreateObject
+
 -END-
 
 *********************************************************************************************************************/
@@ -412,7 +436,8 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Buffer)) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
+   if ((not Args->Buffer.data()) and (not Args->Buffer.empty())) return log.warning(ERR::NullArgs);
 
    if ((Args->Datatype IS DATA::TEXT) or (Args->Datatype IS DATA::XML)) {
       // Incoming data is translated on the fly and added to the end of the current document page.  The original XML
@@ -424,9 +449,8 @@ static ERR DOCUMENT_DataFeed(extDocument *Self, struct acDataFeed *Args)
       if (Self->Processing) return log.warning(ERR::Recursion);
 
       objXML::create xml = {
-         fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED),
-         fl::Statement(CSTRING(Args->Buffer)),
-         fl::ReadOnly(true)
+         fl::Flags(XMF::INCLUDE_WHITESPACE|XMF::PARSE_HTML|XMF::STRIP_HEADERS|XMF::WELL_FORMED|XMF::READ_ONLY),
+         fl::Statement(std::string_view((const char *)Args->Buffer.data(), Args->Buffer.size()))
       };
 
       if (xml.ok()) {
@@ -495,13 +519,16 @@ If the editable section is associated with an `OnEnter` trigger, the trigger wil
 invoked.
 
 -INPUT-
-cstr Name: The name of the edit cell that will be activated.
+strview Name: The name of the edit cell that will be activated.  If empty, the current edit cell is deactivated.
 int Flags: Optional flags.
 
 -ERRORS-
 Okay
 NullArgs
 Search: The cell was not found.
+
+-TAGS-
+mutates-object, callback-inlines
 -END-
 
 *********************************************************************************************************************/
@@ -510,7 +537,7 @@ static ERR DOCUMENT_Edit(extDocument *Self, doc::Edit *Args)
 {
    if (not Args) return ERR::NullArgs;
 
-   if (not Args->Name) {
+   if (Args->Name.empty()) {
       if ((not Self->CursorIndex.valid()) or (not Self->ActiveEditDef)) return ERR::Okay;
       deactivate_edit(Self, true);
       return ERR::Okay;
@@ -541,11 +568,16 @@ FeedParser: Private. Inserts content into a document during the parsing stage.
 Private
 
 -INPUT-
-cstr String: Content to insert
+strview String: Content to insert
 
 -ERRORS-
 Okay
 NullArgs
+InvalidState: The document is not in a parsing state.
+NoSupport
+
+-TAGS-
+mutates-object, private
 
 *********************************************************************************************************************/
 
@@ -553,9 +585,9 @@ static ERR DOCUMENT_FeedParser(extDocument *Self, doc::FeedParser *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->String)) return ERR::NullArgs;
+   if ((not Args) or (Args->String.empty())) return ERR::NullArgs;
 
-   if (not Self->Processing) return log.warning(ERR::Failed);
+   if (not Self->Processing) return log.warning(ERR::InvalidState);
 
 
 
@@ -579,7 +611,7 @@ will be returned as byte indexes in the document stream.  The starting byte will
 the end byte will refer to an `SCODE::INDEX_END` code.
 
 -INPUT-
-cstr Name:  The name of the index to search for.
+strview Name: The name of the index to search for.
 &int Start: The byte position of the index is returned in this parameter.
 &int End:   The byte position at which the index ends is returned in this parameter.
 
@@ -588,15 +620,18 @@ Okay: The index was found and the `Start` and `End` parameters reflect its posit
 NullArgs:
 Search: The index was not found.
 
+-TAGS-
+pure-query
+
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_FindIndex(extDocument *Self, doc::FindIndex *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
-   log.trace("Name: %s", Args->Name);
+   log.trace("Name: %.*s", int(Args->Name.size()), Args->Name.data());
 
    auto name_hash = strihash(Args->Name);
    for (INDEX i=0; i < INDEX(Self->Stream.size()); i++) {
@@ -621,7 +656,7 @@ static ERR DOCUMENT_FindIndex(extDocument *Self, doc::FindIndex *Args)
       }
    }
 
-   log.detail("Failed to find index '%s'", Args->Name);
+   log.detail("Failed to find index '%.*s'", int(Args->Name.size()), Args->Name.data());
    return ERR::Search;
 }
 
@@ -639,29 +674,26 @@ static ERR DOCUMENT_Focus(extDocument *Self, APTR Args)
 
 //********************************************************************************************************************
 
-static ERR DOCUMENT_Free(extDocument *Self)
+extDocument::~extDocument()
 {
-   if (Self->FlashTimer)  { UpdateTimer(Self->FlashTimer, 0); Self->FlashTimer = 0; }
+   if (FlashTimer)  UpdateTimer(FlashTimer, 0);
 
-   if ((Self->Focus) and (Self->Focus != Self->Viewport)) UnsubscribeAction(Self->Focus, AC::NIL);
+   if ((Focus) and (Focus != Viewport)) UnsubscribeAction(Focus, AC::NIL);
 
-   if (Self->PretextXML) { FreeResource(Self->PretextXML); Self->PretextXML = nullptr; }
+   if (PretextXML) FreeResource(PretextXML);
 
-   if (Self->Viewport) UnsubscribeAction(Self->Viewport, AC::NIL);
+   if (Viewport) UnsubscribeAction(Viewport, AC::NIL);
 
-   if (Self->EventCallback.isScript()) {
-      UnsubscribeAction(Self->EventCallback.Context, AC::Free);
-      Self->EventCallback.clear();
+   if (EventCallback.isScript()) {
+      UnsubscribeAction(EventCallback.Context, AC::Free);
+      deref_document_callback(EventCallback);
    }
 
-   unload_doc(Self, ULD::NIL);
+   unload_doc(this, ULD::NIL);
 
-   if (Self->Query) { FreeResource(Self->Query); Self->Query = nullptr; }
-   if (Self->Page) { FreeResource(Self->Page); Self->Page = nullptr; }
-   if (Self->View) { FreeResource(Self->View); Self->View = nullptr; }
-
-   Self->~extDocument();
-   return ERR::Okay;
+   if (Query) FreeResource(Query);
+   if (Page) FreeResource(Page);
+   if (View) FreeResource(View);
 }
 
 /*********************************************************************************************************************
@@ -679,18 +711,18 @@ key-value will be given the same name as that specified in the widget's element.
 
 static ERR DOCUMENT_GetKey(extDocument *Self, struct acGetKey *Args)
 {
-   if ((not Args) or (not Args->Value) or (not Args->Key) or (Args->Size < 2)) return ERR::Args;
+   if ((not Args) or (not Args->Value)) return ERR::Args;
 
-   if (Self->Vars.contains(Args->Key)) {
-      strcopy(Self->Vars[Args->Key], Args->Value, Args->Size);
+   if (auto key_it = Self->Vars.find(Args->Key); key_it != Self->Vars.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
-   else if (Self->Params.contains(Args->Key)) {
-      strcopy(Self->Params[Args->Key], Args->Value, Args->Size);
+   else if (auto key_it = Self->Params.find(Args->Key); key_it != Self->Params.end()) {
+      Args->Value->assign(key_it->second);
       return ERR::Okay;
    }
 
-   Args->Value[0] = 0;
+   Args->Value->clear();
    return ERR::UnsupportedField;
 }
 
@@ -706,12 +738,15 @@ it is named.  Then make calls to HideIndex() and #ShowIndex() with the index nam
 The document layout is automatically updated and pushed to the display when this method is called.
 
 -INPUT-
-cstr Name: The name of the index.
+strview Name: The name of the index.
 
 -ERRORS-
 Okay
 NullArgs
 Search
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -721,9 +756,9 @@ static ERR DOCUMENT_HideIndex(extDocument *Self, doc::HideIndex *Args)
    kt::Log log(__FUNCTION__);
    int tab;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
-   log.msg("Index: %s", Args->Name);
+   log.msg("Index: %.*s", int(Args->Name.size()), Args->Name.data());
 
    auto &stream = Self->Stream;
    auto name_hash = strihash(Args->Name);
@@ -814,13 +849,13 @@ static ERR DOCUMENT_Init(extDocument *Self)
 
    SubscribeAction(Self->Viewport, AC::Free, C_FUNCTION(notify_free_viewport));
 
-   Self->VPWidth  = Self->Viewport->get<double>(FID_ViewWidth);
-   Self->VPHeight = Self->Viewport->get<double>(FID_ViewHeight);
-   if (not Self->VPWidth) Self->VPWidth = Self->Viewport->get<double>(FID_Width);
-   if (not Self->VPHeight) Self->VPHeight = Self->Viewport->get<double>(FID_Height);
+   Self->Viewport->getViewWidth(Self->VPWidth);
+   Self->Viewport->getViewHeight(Self->VPHeight);
+   if (not Self->VPWidth)  { Unit w; Self->Viewport->getWidth(w);  Self->VPWidth = w; }
+   if (not Self->VPHeight) { Unit h; Self->Viewport->getHeight(h); Self->VPHeight = h; }
 
-   float bkgd[4] = { 1.0, 1.0, 1.0, 1.0 };
-   Self->Viewport->setFillColour(bkgd, 4);
+   FRGB bkgd { 1.0, 1.0, 1.0, 1.0 };
+   Self->Viewport->setFillColour(bkgd);
 
    // Allocate the view and page areas.  NB: If the parent Viewport is terminated then the
    // Page and View references will be nullified automatically.
@@ -905,7 +940,7 @@ The document view will not be automatically redrawn by this method.  This must b
 to the document are complete.
 
 -INPUT-
-cstr XML: An XML string in RIPL format.
+strview XML: An XML string in RIPL format.
 int Index: The byte position at which to insert the new content.
 
 -ERRORS-
@@ -914,6 +949,9 @@ NullArgs
 NoData
 CreateObject
 OutOfRange
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -922,7 +960,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->XML)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->XML.empty())) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > int(Self->Stream.size()))) return log.warning(ERR::OutOfRange);
 
    if (Self->Stream.data.empty()) return ERR::NoData;
@@ -937,7 +975,7 @@ static ERR DOCUMENT_InsertXML(extDocument *Self, doc::InsertXML *Args)
       Self->invalidate_text_width_cache();
 
       ERR error = insert_xml(Self, &Self->Stream, *xml, xml->Tags, (Args->Index IS -1) ? Self->Stream.size() : Args->Index, STYLE::NIL);
-      if (error != ERR::Okay) log.warning("Insert failed for: %s", Args->XML);
+      if (error != ERR::Okay) log.warning("Insert failed for: %.*s", int(Args->XML.size()), Args->XML.data());
 
       return error;
    }
@@ -959,7 +997,7 @@ The document view will not be automatically redrawn by this method.  This must b
 to the document are complete.
 
 -INPUT-
-cstr Text: A UTF-8 text string.
+strview Text: A UTF-8 text string.
 int Index: Reference to a `TEXT` control code that will receive the content.  If `-1`, the text will be inserted at the end of the document stream.
 int Char: A character offset within the `TEXT` control code that will be injected with content.  If `-1`, the text will be injected at the end of the target string.
 int Preformat: If `true`, the text will be treated as pre-formatted (all whitespace, including consecutive whitespace will be recognised).
@@ -969,6 +1007,9 @@ Okay
 NullArgs
 OutOfRange
 Failed
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -977,7 +1018,7 @@ static ERR DOCUMENT_InsertText(extDocument *Self, doc::InsertText *Args)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Args) or (not Args->Text)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Text.empty())) return log.warning(ERR::NullArgs);
    if ((Args->Index < -1) or (Args->Index > std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
 
    log.traceBranch("Index: %d, Preformat: %d", Args->Index, Args->Preformat);
@@ -996,20 +1037,6 @@ static ERR DOCUMENT_InsertText(extDocument *Self, doc::InsertText *Args)
    #endif
 
    return error;
-}
-
-//********************************************************************************************************************
-
-static ERR DOCUMENT_NewObject(extDocument *Self)
-{
-   unload_doc(Self);
-   return ERR::Okay;
-}
-
-static ERR DOCUMENT_NewPlacement(extDocument *Self)
-{
-   new (Self) extDocument;
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -1654,14 +1681,18 @@ resulting data.
 int(DATA) Format: Set to `TEXT` to receive plain-text, `RAW` to receive the original byte-code, or `XML` to receive a textual XML serialisation of the stream.
 int Start:  An index in the document stream from which data will be extracted.
 int End:    An index in the document stream at which extraction will stop.
-!str Result: The data is returned in this parameter as an allocated string.
+^&string Result: The data is returned in this parameter.
 
 -ERRORS-
 Okay
 NullArgs
 OutOfRange: The Start index is not within the stream.
+NoData: No data was extractable - applies to XML type only; other types return an empty string.
 Args
-NoData: Operation successful, but no data was present for extraction.
+AllocMemory
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
@@ -1669,9 +1700,7 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 {
    kt::Log log(__FUNCTION__);
 
-   if (not Args) return log.warning(ERR::NullArgs);
-
-   Args->Result = nullptr;
+   if ((not Args) or (not Args->Result)) return log.warning(ERR::NullArgs);
 
    if ((Args->Start < 0) or (Args->Start >= std::ssize(Self->Stream))) return log.warning(ERR::OutOfRange);
    if (Args->End <= Args->Start) return log.warning(ERR::Args);
@@ -1690,21 +1719,13 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
          }
       }
 
-      auto str = buffer.str();
-      if (str.empty()) return ERR::NoData;
-      if ((Args->Result = strclone(str))) return ERR::Okay;
-      else return log.warning(ERR::AllocMemory);
+      *Args->Result = std::move(buffer).str();
+      return ERR::Okay;
    }
    else if (Args->Format IS DATA::RAW) {
-      STRING output;
       auto size = (end - Args->Start) * INDEX(sizeof(stream_code));
-      if (AllocMemory(size + 1, MEM::NO_CLEAR, &output) IS ERR::Okay) {
-         copymem(Self->Stream.data.data() + Args->Start, output, size);
-         output[size] = 0;
-         Args->Result = output;
-         return ERR::Okay;
-      }
-      else return log.warning(ERR::AllocMemory);
+      Args->Result->assign((CSTRING)(Self->Stream.data.data() + Args->Start), size);
+      return ERR::Okay;
    }
    else if (Args->Format IS DATA::XML) {
       std::ostringstream buffer;
@@ -1721,9 +1742,8 @@ static ERR DOCUMENT_ReadContent(extDocument *Self, doc::ReadContent *Args)
 
       if (not has_content) return ERR::NoData;
 
-      auto str = buffer.str();
-      if ((Args->Result = strclone(str))) return ERR::Okay;
-      else return log.warning(ERR::AllocMemory);
+      *Args->Result = std::move(buffer).str();
+      return ERR::Okay;
    }
    else return log.warning(ERR::Args);
 }
@@ -1751,7 +1771,7 @@ static ERR DOCUMENT_Refresh(extDocument *Self)
          // The refresh trigger can return ERR::Skip to prevent a complete reload of the document.
 
          ERR error;
-         if (sc::Call(trigger, error) IS ERR::Okay) {
+         if (!sc::Call(trigger, error)) {
             if (error IS ERR::Skip) {
                log.msg("The refresh request has been handled by an event trigger.");
                Self->Processing--;
@@ -1796,6 +1816,9 @@ NullArgs
 OutOfRange: The area to be removed is outside the bounds of the document's data stream.
 Args
 
+-TAGS-
+mutates-object
+
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_RemoveContent(extDocument *Self, doc::RemoveContent *Args)
@@ -1831,37 +1854,47 @@ This method removes a previously configured listener from the document.  The ori
 
 -INPUT-
 int Trigger: The unique identifier for the trigger.
-ptr(func) Function: The function that is called when the trigger activates.
+func Function: The function that is called when the trigger activates.
 
 -ERRORS-
 Okay
 NullArgs
+OutOfRange
+
+-TAGS-
+mutates-object
 
 *********************************************************************************************************************/
 
 static ERR DOCUMENT_RemoveListener(extDocument *Self, doc::RemoveListener *Args)
 {
-   if ((not Args) or (not Args->Trigger) or (not Args->Function)) return ERR::NullArgs;
+   auto consume_callback = kt::Defer([&]() {
+      if (Args) Args->Function.consume();
+   });
+
+   if ((not Args) or (not Args->Trigger) or (not Args->Function.defined())) return ERR::NullArgs;
    if (not valid_trigger(Args->Trigger)) return ERR::OutOfRange;
 
    if (Self->Unloading) return ERR::Okay; // Do nothing, termination will take care of cleaning up.
 
-   if (Args->Function->isC()) {
+   if (Args->Function.isC()) {
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
-         if ((it->isC()) and (it->Routine IS Args->Function->Routine)) {
+         if ((it->isC()) and (it->Routine IS Args->Function.Routine)) {
+            deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             return ERR::Okay;
          }
       }
    }
-   else if (Args->Function->isScript()) {
-      auto context = Args->Function->Context;
+   else if (Args->Function.isScript()) {
+      auto context = Args->Function.Context;
       bool removed_listener = false;
 
       for (auto it = Self->Triggers[Args->Trigger].begin(); it != Self->Triggers[Args->Trigger].end(); it++) {
          if ((it->isScript()) and
-               (it->Context IS Args->Function->Context) and
-               (it->ProcedureID IS Args->Function->ProcedureID)) {
+                (it->Context IS Args->Function.Context) and
+                (it->scriptValue() IS Args->Function.scriptValue())) {
+            deref_document_callback(*it);
             Self->Triggers[Args->Trigger].erase(it);
             removed_listener = true;
             break;
@@ -1890,11 +1923,11 @@ static ERR DOCUMENT_SaveToObject(extDocument *Self, struct acSaveToObject *Args)
 
    log.branch("Destination: %d", Args->Dest->UID);
 
-   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), nullptr };
-   if (auto error = DOCUMENT_ReadContent(Self, &read); error IS ERR::Okay) {
-      error = acWrite(Args->Dest, read.Result, strlen(read.Result), nullptr);
-      FreeResource(read.Result);
-      if (error IS ERR::Okay) return ERR::Okay;
+   std::string result;
+   doc::ReadContent read = { DATA::XML, 0, int(Self->Stream.size()), &result };
+   if (auto error = DOCUMENT_ReadContent(Self, &read); !error) {
+      error = acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)result.data(), result.size()));
+      if (!error) return ERR::Okay;
       else return log.warning(ERR::Write);
    }
    else return error;
@@ -1917,12 +1950,16 @@ selectable links due to the nature of their functionality.
 
 -INPUT-
 int Index: Index to a link (links are in the order in which they are created in the document, zero being the first link).  Ignored if the `Name` parameter is set.
-cstr Name: The name of the link to select (set to `NULL` if an `Index` is defined).
+strview Name: The name of the link to select.  Leave empty if an `Index` is defined.
 
 -ERRORS-
 Okay
 NullArgs
 OutOfRange
+NoSupport
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1933,7 +1970,7 @@ static ERR DOCUMENT_SelectLink(extDocument *Self, doc::SelectLink *Args)
 
    if (not Args) return log.warning(ERR::NullArgs);
 
-   if ((Args->Name) and (Args->Name[0])) {
+   if (not Args->Name.empty()) {
 /*
       LONG i;
       for (i=0; i < Self->Tabs.size(); i++) {
@@ -1969,10 +2006,13 @@ static ERR DOCUMENT_SetKey(extDocument *Self, struct acSetKey *Args)
 {
    // Note: Zero-length parameter values are permitted.
 
-   if ((not Args) or (not Args->Key)) return ERR::NullArgs;
-   if (not Args->Key[0]) return ERR::Args;
+   if ((not Args) or (Args->Key.empty())) return ERR::NullArgs;
 
-   Self->Vars[Args->Key] = Args->Value;
+   auto key_it = Self->Vars.lower_bound(Args->Key);
+   if ((key_it != Self->Vars.end()) and (not Self->Vars.key_comp()(Args->Key, key_it->first))) {
+      key_it->second.assign(Args->Value);
+   }
+   else Self->Vars.emplace_hint(key_it, std::string(Args->Key), std::string(Args->Value));
 
    return ERR::Okay;
 }
@@ -1989,12 +2029,15 @@ it is named.  Then make calls to #HideIndex() and ShowIndex() with the index nam
 The document layout is automatically updated and pushed to the display when this method is called.
 
 -INPUT-
-cstr Name: The name of the index.
+strview Name: The name of the index.
 
 -ERRORS-
 Okay
 NullArgs
 Search: The index could not be found.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -2003,9 +2046,9 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
 {
    kt::Log log;
 
-   if ((not Args) or (not Args->Name)) return log.warning(ERR::NullArgs);
+   if ((not Args) or (Args->Name.empty())) return log.warning(ERR::NullArgs);
 
-   log.branch("Index: %s", Args->Name);
+   log.branch("Index: %.*s", int(Args->Name.size()), Args->Name.data());
 
    auto &stream = Self->Stream;
    auto name_hash = strihash(Args->Name);
@@ -2074,28 +2117,28 @@ static ERR DOCUMENT_ShowIndex(extDocument *Self, doc::ShowIndex *Args)
 #include "document_def.c"
 
 static const FieldArray clFields[] = {
-   { "Description",  FDF_STRING|FDF_R },
-   { "Title",        FDF_STRING|FDF_R },
-   { "Author",       FDF_STRING|FDF_R },
-   { "Copyright",    FDF_STRING|FDF_R },
-   { "Keywords",     FDF_STRING|FDF_R },
+   { "Description",  FDF_CPPSTRING|FDF_R },
+   { "Title",        FDF_CPPSTRING|FDF_R },
+   { "Author",       FDF_CPPSTRING|FDF_R },
+   { "Copyright",    FDF_CPPSTRING|FDF_R },
+   { "Keywords",     FDF_CPPSTRING|FDF_R },
+   { "Path",         FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
+   { "Src",          FDF_SYNONYM },
    { "Viewport",     FDF_OBJECT|FDF_RW, nullptr, SET_Viewport, CLASSID::VECTORVIEWPORT },
    { "Focus",        FDF_OBJECT|FDF_RI, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
    { "View",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
    { "Page",         FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
+   { "ClientScript", FDF_OBJECT|FDF_I },
    { "TabFocus",     FDF_OBJECTID|FDF_RW },
    { "EventMask",    FDF_INTFLAGS|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clDocumentEventMask },
    { "Flags",        FDF_INTFLAGS|FDF_RI, nullptr, SET_Flags, &clDocumentFlags },
    { "PageHeight",   FDF_INT|FDF_R },
    { "Error",        FDF_INT|FDF_R },
    // Virtual fields
-   { "ClientScript",  FDF_OBJECT|FDF_I,        nullptr, SET_ClientScript },
-   { "EventCallback", FDF_FUNCTIONPTR|FDF_RW,  GET_EventCallback, SET_EventCallback },
-   { "Path",          FDF_STRING|FDF_RW,       GET_Path, SET_Path },
-   { "Origin",        FDF_STRING|FDF_RW,       GET_Path, SET_Origin },
-   { "PageWidth",     FDF_UNIT|FDF_INT|FDF_SCALED|FDF_RW, GET_PageWidth, SET_PageWidth },
-   { "Pretext",       FDF_STRING|FDF_W,        nullptr, SET_Pretext },
-   { "Src",           FDF_SYNONYM|FDF_STRING|FDF_RW, GET_Path, SET_Path },
-   { "WorkingPath",   FDF_STRING|FDF_R,        GET_WorkingPath, nullptr },
+   { "EventCallback", FDF_FUNCTION|FDF_RW,  GET_EventCallback, SET_EventCallback },
+   { "Origin",        FDF_CPPSTRING|FDF_RW, GET_Origin, SET_Origin },
+   { "PageWidth",     FDF_UNIT|FDF_RW,      GET_PageWidth, SET_PageWidth },
+   { "Pretext",       FDF_CPPSTRING|FDF_W,  nullptr, SET_Pretext },
+   { "WorkingPath",   FDF_CPPSTRING|FDF_R,  GET_WorkingPath, nullptr },
    END_FIELD
 };

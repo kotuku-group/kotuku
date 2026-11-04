@@ -87,9 +87,8 @@ private:
    APTR prvDriverStorage = nullptr;
 };
 
-static ERR folder_free(APTR Address)
+static ERR folder_free(ResourceRecord &Resource, APTR Address)
 {
-   kt::Log log("CloseDir");
    auto folder = (extDirInfo *)Address;
 
    // Note: Virtual file systems should focus on destroying handles as fs_closedir() will take care of memory and list
@@ -98,20 +97,17 @@ static ERR folder_free(APTR Address)
    if ((folder->prvVirtualID) and (folder->prvVirtualID != DEFAULT_VIRTUALID)) {
       auto id = folder->prvVirtualID;
       if (auto vd = get_virtual_drive(id)) {
-         log.trace("Virtual file driver function @ %p", vd->CloseDir);
+         kt::Log("CloseDir").trace("Virtual file driver function @ %p", vd->CloseDir);
          if (vd->CloseDir) vd->CloseDir(folder);
       }
    }
 
    fs_closedir(folder);
    folder->~extDirInfo();
-   return ERR::Okay;
+   return ERR::Terminate;
 }
 
-static ResourceManager glResourceFolder = {
-   "Folder",
-   &folder_free
-};
+static ResourceManager glResourceFolder = { "Folder", &folder_free, true };
 
 /*********************************************************************************************************************
 
@@ -123,11 +119,11 @@ accessed, a !DirInfo structure will be returned in the Info parameter, which wil
 the scanning process is complete, call the ~FreeResource() function.
 
 When opening a folder, it is necessary to indicate the type of files that are of interest.  If no flags are defined,
-the scanner will return file and folder names only.  Only a subset of the available `RDF` flags may be used, namely
-`SIZE`, `DATE`, `PERMISSIONS`, `FILE`, `FOLDER`, `QUALIFY`, `TAGS`.
+the scanner will return file and folder names only.  Only a subset of the available `RDF` flags may be used,
+specifically `SIZE`, `DATE`, `PERMISSIONS`, `FILE`, `FOLDER`, `QUALIFY`, `TAGS`.
 
 -INPUT-
-cstr Path: The folder location to be scanned.  Using an empty string will scan for volume names.
+strview Path: The folder location to be scanned.  Using an empty string will scan for volume names.
 int(RDF) Flags: Optional flags.
 !resource(DirInfo) Info: A !DirInfo structure will be returned in the pointer referenced here.
 
@@ -135,44 +131,46 @@ int(RDF) Flags: Optional flags.
 Okay
 Args
 NullArgs
-DirEmpty
+EndOfSequence
 AllocMemory
+ResolvePath
+
+-TAGS-
+caller-owns-result, creates-resource, opens-handle, blocking, path-resolved
 
 *********************************************************************************************************************/
 
-ERR OpenDir(CSTRING Path, RDF Flags, DirInfo **Result)
+ERR OpenDir(const std::string_view &Path, RDF Flags, DirInfo **Result)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Path) or (not Result)) return log.warning(ERR::NullArgs);
+   if (not Result) return log.warning(ERR::NullArgs);
 
-   log.traceBranch("Path: '%s'", Path);
+   log.traceBranch("Path: '%.*s'", int(Path.size()), Path.data());
 
    *Result = nullptr;
 
    if ((Flags & (RDF::FOLDER|RDF::FILE)) IS RDF::NIL) Flags |= RDF::FOLDER|RDF::FILE;
 
    std::string resolved_path;
-   if (not Path[0]) Path = ":"; // A path of ':' will return all known volumes.
-   if (auto error = ResolvePath(Path, RSF::NIL, &resolved_path); error IS ERR::Okay) {
+   if (auto error = ResolvePath(Path.empty() ? ":" : Path, RSF::NIL, &resolved_path); !error) {
       auto vd = get_fs(resolved_path);
 
       extDirInfo *dir;
-      if (AllocMemory(sizeof(extDirInfo), MEM::DATA|MEM::MANAGED, (APTR *)&dir, nullptr) != ERR::Okay) {
+      if (AllocResource(sizeof(extDirInfo), MEM::NIL, (APTR *)&dir, &glResourceFolder) != ERR::Okay) {
          return ERR::AllocMemory;
       }
 
       new (dir) extDirInfo();
-      SetResourceMgr(dir, &glResourceFolder);
       if (auto error = dir->initialise(Path, resolved_path, Flags, vd.DriverSize); error != ERR::Okay) {
          FreeResource(dir);
          return error;
       }
 
-      if ((Path[0] IS ':') or (not Path[0])) {
+      if ((Path.starts_with(':')) or (Path.empty())) {
          if ((Flags & RDF::FOLDER) IS RDF::NIL) {
             FreeResource(dir);
-            return ERR::DirEmpty;
+            return ERR::EndOfSequence;
          }
          *Result = dir;
          return ERR::Okay;
@@ -180,10 +178,10 @@ ERR OpenDir(CSTRING Path, RDF Flags, DirInfo **Result)
 
       if (not vd.OpenDir) {
          FreeResource(dir);
-         return ERR::DirEmpty;
+         return ERR::EndOfSequence;
       }
 
-      if ((error = vd.OpenDir(dir)) IS ERR::Okay) {
+      if (!(error = vd.OpenDir(dir))) {
          dir->prvVirtualID = vd.VirtualID;
          *Result = dir;
          return ERR::Okay;
@@ -227,7 +225,14 @@ resource(DirInfo) Info: Pointer to a !DirInfo structure for storing scan results
 -ERRORS-
 Okay: An item was successfully scanned from the folder.
 Args
-DirEmpty: There are no more items to scan.
+NullArgs
+EndOfSequence: There are no more items to scan.
+InvalidData
+NoSupport
+SystemLocked
+
+-TAGS-
+mutates-input, updates-seek-index, blocking
 -END-
 
 *********************************************************************************************************************/
@@ -253,18 +258,21 @@ ERR ScanDir(DirInfo *Dir)
    // Support for scanning of volume names
 
    if ((Dir->prvPath[0] IS ':') or (not Dir->prvPath[0])) {
-      if (auto lock = std::unique_lock{glmVolumes, 4s}) {
+      if (auto lock = std::shared_lock{glmVolumes, 4s}) {
          int count = 0;
          for (auto const &pair : glVolumes) {
             if (count IS Dir->prvIndex) {
                Dir->prvIndex++;
                auto &volume = pair.first;
+               auto &keys = pair.second;
                file->Name = volume;
                if ((Dir->prvFlags & RDF::QUALIFY) != RDF::NIL) file->Name += ':';
-               if (glVolumes[volume]["Hidden"] IS "Yes") file->Flags |= RDF::HIDDEN;
+               if (auto hidden = keys.find("Hidden"); (hidden != keys.end()) and (hidden->second IS "Yes")) {
+                  file->Permissions |= PERMIT::HIDDEN;
+               }
 
-               if (glVolumes[volume].contains("Label")) {
-                  AddInfoTag(file, "Label", glVolumes[volume]["Label"].c_str());
+               if (auto label = keys.find("Label"); label != keys.end()) {
+                  AddInfoTag(file, "Label", label->second);
                }
 
                file->Flags |= RDF::VOLUME;
@@ -273,7 +281,7 @@ ERR ScanDir(DirInfo *Dir)
             else count++;
          }
 
-         return ERR::DirEmpty;
+         return ERR::EndOfSequence;
       }
       else return log.warning(ERR::SystemLocked);
    }
@@ -289,7 +297,7 @@ ERR ScanDir(DirInfo *Dir)
    }
 
    if ((not file->Name.empty()) and ((Dir->prvFlags & RDF::DATE) != RDF::NIL)) {
-      file->TimeStamp = calc_timestamp(&file->Modified);
+      file->Timestamp = calc_timestamp(&file->Modified);
    }
 
    return error;

@@ -4,12 +4,22 @@
 function enforce_hotpath() end
 
 @Test function ArrayAnyNew()
-   arr = array<any, 5>
-   assert(#arr is 5, "array should have 5 elements")
+   arr = array<any, 129>
+   assert(#arr is 129, "array should span the allocator boundary used by the native regression")
    assert(array.type(arr) is 'any', "array type should be 'any'")
    -- All elements should be nil initially
    for i, v in arr do
       assert(v is nil, "element " .. i .. " should be nil, got " .. type(v))
+   end
+end
+
+@Test function ArrayAnyGrowthInitialisesNewSlots()
+   local arr = array<any> { 17, 25.0 }
+   arr.resize(129)
+
+   assert(arr[0] is 17 and arr[1] is 25.0, 'Growing an any array should preserve existing values')
+   for index in {2 to 129} do
+      assert(arr[index] is nil, f'Grown any-array slot {index} should be nil')
    end
 end
 
@@ -35,7 +45,7 @@ end
 
    assert(type(arr[0]) is 'number', "element 0 should be number")
    assert(type(arr[1]) is 'string', "element 1 should be string")
-   assert(type(arr[2]) is 'boolean', "element 2 should be boolean")
+   assert(type(arr[2]) is 'bool', "element 2 should be bool")
    assert(arr[3] is nil, "element 3 should be nil")
    assert(type(arr[4]) is 'table', "element 4 should be table")
    assert(type(arr[5]) is 'number', "element 5 should be number")
@@ -163,12 +173,13 @@ end
 ----------------------------------------------------------------------------------------------------------------------
 
 @Test function ArrayAnyToTable()
-   arr = array<any> { 42, 'text', true }
+   arr = array<any> { nil, 42, 3.5, 'bulk' }
    t = array.table(arr)
 
-   assert(t[0] is 42, "table[0] should be 42")
-   assert(t[1] is 'text', "table[1] should be 'text'")
-   assert(t[2] is true, "table[2] should be true")
+   assert(t[0] is nil, 'table[0] should preserve nil')
+   assert(t[1] is 42, 'table[1] should preserve an integer')
+   assert(t[2] is 3.5, 'table[2] should preserve a number')
+   assert(t[3] is 'bulk', 'table[3] should preserve a string')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -203,7 +214,7 @@ end
 
 @Test function ArrayAnyMap()
    arr = array<any> { 1, 2, 3 }
-   mapped = array.map(arr, i => i * 10)
+   mapped = array.mapSame(arr, i => i * 10)
 
    assert(mapped[0] is 10, "first should be 10, got " .. tostring(mapped[0]))
    assert(mapped[1] is 20, "second should be 20, got " .. tostring(mapped[1]))
@@ -214,7 +225,7 @@ end
 
 @Test function ArrayAnyReduce()
    arr = array<any> { 1, 2, 3, 4 }
-   sum = array.reduce(arr, 0, function(acc, v)
+   sum = array.reduce(arr, 0, function(acc, v):num
       return acc + v
    end)
 
@@ -266,7 +277,7 @@ end
 
 @Test function ArrayAnyGCStress()
    -- Create many any arrays with GC objects to stress-test garbage collection
-   for i = 0, 100 do
+   for i in {0 to 100} do
       arr = array<any> { { x = i }, 'str' .. i, { y = i * 2 } }
       local t = array.table(arr)
       assert(t[0].x is i, "table x should match i")

@@ -42,7 +42,7 @@ SERVER_PORT <const> = 18945
             handler = function(req, res)
                res.json({
                   message = 'Received chunked data',
-                  bodyLength = req.body and req.body:len() or 0
+                  bodyLength = req.body and #req.body or 0
                })
             end
          },
@@ -61,7 +61,7 @@ SERVER_PORT <const> = 18945
             handler = function(req, res)
                res.json({
                   message = 'Upload received',
-                  bodyLength = req.body and req.body:len() or 0
+                  bodyLength = req.body and #req.body or 0
                })
             end
          },
@@ -79,7 +79,7 @@ SERVER_PORT <const> = 18945
             handler = function(req, res)
                res.json({
                   message = 'Empty request handled',
-                  bodyLength = req.body and req.body:len() or 0,
+                  bodyLength = req.body and #req.body or 0,
                   hasBody = req.body != nil
                })
             end
@@ -105,7 +105,7 @@ end
       connectTimeout = 2, -- Short timeout
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if State is HGS_TERMINATED then
@@ -117,7 +117,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 3.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 3.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Timeout test failed to activate")
 
    err = proc.sleep()
@@ -138,7 +138,7 @@ end
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
          if Buffer then
-            content ..= Buffer:getString()
+            content ..= Buffer.getString()
          end
       end,
       stateChanged = function(HTTP, State)
@@ -148,7 +148,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Aborted connection test failed to activate")
 
    err = proc.sleep()
@@ -173,14 +173,14 @@ end
       flags = HTF_NO_HEAD,
       contentLength = -1, -- Enable chunked
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
          if testCompleted then return end
          -- The server will send malformed chunked data in response
          HTTP.acWrite('test data for malformed chunks')
          testCompleted = true
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -189,7 +189,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Malformed chunks test failed to activate")
 
    err = proc.sleep()
@@ -209,7 +209,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -218,7 +218,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Content mismatch test failed to activate")
 
    err = proc.sleep()
@@ -227,7 +227,7 @@ end
    -- Server sends less data than Content-Length indicates.  The client should complete or terminate without hanging.
    assert((http.status is 200) or (http.currentState is HGS_TERMINATED), 'Content mismatch should complete gracefully')
 
-   print('Content-Length mismatch test passed: received ' .. content:len() .. ' bytes')
+   print('Content-Length mismatch test passed: received ' .. #content .. ' bytes')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -236,7 +236,7 @@ end
    content = ''
 
    -- Create a body larger than server's maxRequestSize (which we'll set to 1KB)
-   oversizedBody = string.rep('X', 2048) -- 2KB body
+   oversizedBody = 'X'.rep(2048) -- 2KB body
 
    http = obj.new('http', {
       src = 'http://127.0.0.1:' .. SERVER_PORT .. '/upload/test',
@@ -244,9 +244,9 @@ end
       contentType = 'text/plain',
       flags = HTF_NO_HEAD,
       inputFile = 'string:' .. oversizedBody,
-      size = oversizedBody:len(),
+      size = #oversizedBody,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -255,7 +255,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Max size test failed to activate")
 
    err = proc.sleep()
@@ -279,7 +279,7 @@ end
       method = 'GET',
       flags = HTF_NO_HEAD,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -288,7 +288,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "HTTP version test failed to activate")
 
    err = proc.sleep()
@@ -311,10 +311,10 @@ end
       flags     = HTF_NO_HEAD,
       contentLength = -1,
       incoming = function(HTTP, Buffer)
-         content ..= Buffer:getString()
+         content ..= Buffer.getString()
       end,
       outgoing = function(HTTP)
-         check ERR_Terminate
+         raise ERR_Terminate
       end,
       stateChanged = function(HTTP, State)
          if (State is HGS_COMPLETED) or (State is HGS_TERMINATED) then
@@ -323,7 +323,7 @@ end
       end
    })
 
-   proc = processing.new({ timeout = 5.0, signals = array<object> { http } })
+   proc = processing.new({ timeout = 5.0, signals = array<obj> { http } })
    assert(http.acActivate() is ERR_Okay, "Empty request test failed to activate")
 
    err = proc.sleep()

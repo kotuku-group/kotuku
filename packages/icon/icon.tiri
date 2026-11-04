@@ -1,0 +1,352 @@
+@Package(name="gui/icon", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui'
+
+   namespace gui
+   module vector as mVec
+
+rx_whitespace = <{ regex.new([[\s+]]) }>
+rx_volume_prefix = <{ regex.new([[^[^:\/\\]+:]]) }>
+
+-- NB: If a custom SVG file is desired then the client must specify a volume in the path.
+
+function imageLocation(Path:str!):str
+   if Path.startsWith('icons:') then
+      return Path
+   elseif rx_volume_prefix.test(Path) then
+      return Path
+   else
+      return 'icons:' .. Path
+   end
+end
+
+gui.icon = function(Options:table!)
+   self = setmetatable(entity { -- Public interface
+      parentViewport = Options.target,
+      events         = Options.events ?? { },
+      disabled       = false,
+      label          = Options.label,
+      image          = Options.image,
+      viewport       = nil -- The icon's primary viewport
+   }, {
+      __gc = function()
+         &svg?.free()
+         &viewport?.free()
+         &svg = nil
+         &viewport = nil
+         &iconVP = nil
+      end
+   })
+
+   -- Weak bindings retain the widget only for the duration of each callback.
+
+   text_words:array<str>, text_group:obj, icon_effect:any, theme:table, base_theme:table
+   override = nil -- Per-instance override from setTheme()
+
+   click_state  = { held=false, x=0, y=0 }
+   words        = array<table>
+   lines        = array<str>
+   icon_size    = Options.size ?? gui.rpixel('100dp')
+   icon_width   = icon_size
+   font_size_px = 0
+   margin       = 0
+   line_height  = 0
+
+   function[<weak> self] inputFeedback(Viewport:obj!, Msg)
+      if &disabled then return end
+
+      repeat
+         activation:str
+         if Msg.type is JET_BUTTON_1 then
+            if Msg.value > 0 then
+               click_state.{ held = true, x = Msg.absX, y = Msg.absY }
+               Viewport.opacity = 0.5
+               Viewport.acMoveToFront()
+            else
+               held = click_state.held
+               click_state.held = false
+               Viewport.opacity = 1.0
+               if held and (math.abs(Msg.absX - click_state.x) <= 2) and
+                  (math.abs(Msg.absY - click_state.y) <= 2) then
+                  activation = (Msg.flags has JTYPE_DBL_CLICK) ? 'dblclick' : 'click'
+               end
+            end
+
+            Viewport.acDraw()
+         elseif (Msg.type is JET_BUTTON_2) and (Msg.value is 0) then
+            activation = 'altclick'
+         end
+
+         if activation then
+            &events.activate?({ name=activation })
+         end
+
+         if &disabled then return end
+
+         Msg = Msg.next
+      until not Msg
+   end
+
+   -- The applied theme is layered as base.icon <- Options.theme <- the override from setTheme().  It is rebuilt
+   -- whenever the base theme or the override changes.
+
+   function buildTheme()
+      theme = base_theme.icon
+      if Options.theme then theme = table.merge(theme, Options.theme, true, true) end
+      if override then theme = table.merge(theme, override, true, true) end
+      icon_effect = theme.effect ?? 'fill(carbon)'
+   end
+
+   function calcWords()
+      words = array<table>
+      lines = array<str>
+      icon_width  = icon_size
+      line_height = 0
+      text_words ?! return
+
+      scale = choose icon_size from
+         < 26 -> 0.5
+         < 60 -> 2 / 3
+         else -> 5 / 6
+      end
+
+      font_size_px = gui.pixel(theme.text.fontSize, 96) * scale
+
+      err, font    = check mVec.GetFontHandle(theme.text.face, theme.text.fontStyle ?? "Medium", 0, font_size_px)
+      metrics      = struct<FontMetrics>
+      err          = check mVec.GetFontMetrics(font, metrics)
+      line_height  = metrics.lineSpacing
+      margin       = math.floor(metrics.height * 0.5) + 1
+
+      -- Extract each word's pixel width
+
+      widest_word = 0
+      for word in values(text_words) do
+         width = mVec.StringWidth(font, word, -1)
+         if width > widest_word then widest_word = width end
+         words.push({ word=word, width=width })
+      end
+
+      -- If necessary, expand the width of the icon to fit the longest word.
+
+      icon_width = icon_size
+      if widest_word + (margin * 2) > icon_width then
+         icon_width = widest_word + (margin * 2)
+      end
+
+      local current_line:str
+      for word in values(words) do
+         if not current_line then
+            current_line = word.word
+         else
+            new_line = current_line .. ' ' .. word.word
+            width    = mVec.StringWidth(font, new_line, -1)
+            if width + (margin * 2) < icon_width then
+               current_line = new_line
+            else
+               lines.push(current_line)
+               current_line = word.word -- Push the word to the next line
+            end
+         end
+      end
+
+      if current_line then
+         lines.push(current_line)
+      end
+   end
+
+   function initText()
+      -- Create a dark rounded box in the background of the text, this will make it easier to distinguish the text
+      -- against a busy background or one of a similar colour.
+
+      if #lines is 0 then return end
+
+      box_height = &viewport.height - (icon_size + margin)
+      y = icon_size + margin
+
+      text_group = &viewport.new('VectorGroup', { })
+
+      text_group.new('VectorRectangle', {
+         fill   = base_theme.palette.shade,
+         x      = 0,
+         y      = math.floor(y),
+         roundX = gui.pixel('7.5dp'),
+         roundY = gui.pixel('7.5dp'),
+         width  = icon_width,
+         height = box_height
+      })
+
+      for line in values(lines) do
+         text_vector = text_group.new('VectorText', table.merge({
+            x         = math.floor(icon_width * 0.5),
+            fontSize  = string.format('%.2fpx', font_size_px),
+            align     = 'horizontal',
+            string    = line
+         }, theme.text, false))
+
+         y += line_height
+         text_vector.y = math.floor(y)
+      end
+   end
+
+   function arrangeText()
+      text_group?.free()
+      text_group = nil
+      calcWords()
+      &iconVP.x = (icon_width - icon_size) * 0.5
+      &viewport.{ width = icon_width, height = icon_size }
+
+      if #lines > 0 then
+         &viewport.height += math.max(icon_size * 0.1, 2) + margin + (line_height * #lines)
+      end
+
+      initText()
+      &viewport.acDraw()
+   end
+
+   self.setLabel = function(Label:str)
+      &label = Label
+
+      if Label != nil and Label.trim() != '' then
+         text_words = rx_whitespace.replace(Label.trim(), ' ').split(' ')
+      else
+         text_words = nil
+      end
+
+      arrangeText()
+   end
+
+   self.setImage = function(Path:str!)
+      assert(Path??, 'An image path is required.')
+
+      -- Stage the replacement so a failed load cannot clear the current image.
+      replacement_vp = &viewport.new('VectorViewport', {
+         x = (icon_width - icon_size) * 0.5, y = 0, width = icon_size, height = icon_size
+      })
+
+      replacement_svg:obj
+
+      try
+         replacement_svg = obj.new('svg', {
+            target = replacement_vp,
+            path   = imageLocation(Path)
+         })
+
+         gui.applyFillEffect(icon_effect, replacement_vp)
+      except ex
+         replacement_svg?.free()
+         replacement_vp.free()
+         raise
+      end
+
+      &svg?.free()
+      &iconVP.free()
+      &iconVP = replacement_vp
+      &svg    = replacement_svg
+      &image  = Path
+      &viewport.acDraw()
+   end
+
+   -- Apply the current theme to the image effect and the label.  The label is rebuilt, so a change of font in the
+   -- theme also changes the size of the icon.
+
+   function restyle()
+      gui.applyFillEffect(icon_effect, &iconVP)
+      arrangeText()
+   end
+
+   -- Style this icon instance.  Override is merged over the icon section of the theme, as for Options.theme, and is
+   -- kept when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+   self.setTheme = function(Override:table)
+      override = Override
+      buildTheme()
+      restyle()
+   end
+
+   -- Called by gui.broadcastTheme() with the window's new theme.
+
+   self.applyTheme = function(Theme:table!)
+      base_theme = Theme
+      buildTheme()
+      restyle()
+   end
+
+   self.disable = function()
+      if &disabled then return end
+      &disabled = true
+      click_state.held = false
+      &viewport.acDisable()
+      &viewport.opacity = 0.5
+      &viewport.acDraw()
+      &events.disable?()
+   end
+
+   self.enable = function()
+      if not &disabled then return end
+      &disabled = false
+      &viewport.acEnable()
+      &viewport.opacity = 1
+      &viewport.acDraw()
+      &events.enable?()
+   end
+
+   -- Main entry point
+
+   using self do
+      if Options.label != nil and Options.label.trim() != '' then
+         text_words = rx_whitespace.replace(Options.label.trim(), ' ').split(' ')
+      else
+         text_words = nil
+      end
+
+      assert(Options.target, 'A target viewport is required.')
+      assert(Options.image??, 'The image option is required.')
+
+      base_theme = gui.getTheme(Options.target)
+      buildTheme()
+
+      &viewport = Options.target.new('VectorViewport', {
+         x           = Options.x ?? 0,
+         y           = Options.y ?? 0,
+         width       = icon_size,
+         height      = icon_size,
+         aspectRatio = ARF_X_MID|ARF_Y_MIN|ARF_MEET,
+         cursor      = 'hand'
+      })
+
+      &iconVP = &viewport.new('VectorViewport', {
+         x = 0, y = 0, width = icon_size, height = icon_size
+      })
+
+      local vp = &viewport
+      if Options.draggable then
+         vp.dragCallback = function[<weak> &&](Viewport:obj!, X:num!, Y:num!)
+            if &disabled then return end
+            Viewport.{ x = X, y = Y }
+            Viewport.acDraw()
+         end
+      end
+
+      src = imageLocation(Options.image)
+      assert(src, 'Invalid image source ' .. Options.image)
+
+      &svg = obj.new('svg', { target=&iconVP, path=src })
+      gui.applyFillEffect(icon_effect, &iconVP)
+
+      check vp.mtSubscribeInput(JTYPE_BUTTON, inputFeedback)
+
+      arrangeText()
+      gui.registerWidget(&viewport, &&)
+      if Options.disabled then &disable() end
+
+      &events.show?()
+      &viewport?.acDraw()
+
+      return &&
+   end
+end

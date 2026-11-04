@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "retrieved_at": "2026-09-29",
+  "status": "preview",
+  "sources": {
+    "overview": "https://developers.openai.com/siwc/token-sharing-open-source",
+    "sign_in": "https://developers.openai.com/siwc/token-sharing-open-source/sign-in",
+    "accounts_and_sessions": "https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions",
+    "models_and_inference": "https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference",
+    "token_reference": "https://developers.openai.com/siwc/token-sharing-open-source/token-reference",
+    "errors_and_recovery": "https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery",
+    "preview_limitations": "https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations",
+    "oidc_identity": "https://developers.openai.com/siwc/website",
+    "oidc_discovery": "https://auth.openai.com/.well-known/openid-configuration"
+  },
+  "oidc": {
+    "issuer": "https://auth.openai.com",
+    "authorization_endpoint": "https://auth.openai.com/api/accounts/authorize",
+    "token_endpoint": "https://auth.openai.com/api/accounts/oauth/token",
+    "revocation_endpoint": "https://auth.openai.com/api/accounts/oauth/revoke",
+    "jwks_uri": "https://auth.openai.com/.well-known/jwks.json",
+    "resource": "https://api.openai.com/v1",
+    "initial_client_id": "dynamic_agent_client",
+    "issued_client_id_prefix_example": "oaiapp_",
+    "response_type": "code",
+    "grant_types": [
+      "authorization_code",
+      "refresh_token"
+    ],
+    "public_client_token_endpoint_auth_method": "none",
+    "pkce_method": "S256",
+    "id_token_signing_algorithms": [
+      "RS256"
+    ],
+    "requested_scopes": [
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "resource.invoke",
+      "chatgpt.tokens.use.direct"
+    ],
+    "required_plan_usage_scope": "chatgpt.tokens.use.direct",
+    "initial_authorization_parameters": [
+      "client_id",
+      "agent_name_hint",
+      "ext_agent_host_id",
+      "response_type",
+      "redirect_uri",
+      "scope",
+      "resource",
+      "state",
+      "nonce",
+      "code_challenge_method",
+      "code_challenge"
+    ],
+    "reauthorization_optional_parameters": [
+      "id_token_hint",
+      "login_hint"
+    ],
+    "consent_parameters": {
+      "prompt": "consent",
+      "force_reconsent": "deployment-dependent; use only after OpenAI confirms it for the integration"
+    },
+    "callback": {
+      "scheme": "http",
+      "host": "127.0.0.1",
+      "path": "/auth/callback",
+      "port": "ephemeral",
+      "success_fields": [
+        "code",
+        "state"
+      ],
+      "initial_registration_fields": [
+        "client_id"
+      ],
+      "optional_fields": [
+        "scope"
+      ],
+      "error_fields": [
+        "error",
+        "error_description"
+      ]
+    },
+    "authorization_code_exchange_fields": [
+      "grant_type",
+      "client_id",
+      "code",
+      "code_verifier",
+      "redirect_uri",
+      "resource"
+    ],
+    "refresh_exchange_fields": [
+      "grant_type",
+      "client_id",
+      "refresh_token",
+      "resource"
+    ],
+    "revocation_fields": [
+      "token",
+      "token_type_hint",
+      "client_id"
+    ],
+    "token_response_fields": [
+      "access_token",
+      "refresh_token",
+      "id_token",
+      "token_type",
+      "expires_in",
+      "scope",
+      "earliest_refresh_at"
+    ],
+    "access_token_lifetime_seconds": 3600,
+    "refresh_token_lifetime_days": 30,
+    "refresh_token_rotation": true,
+    "id_token_required_claims": [
+      "iss",
+      "aud",
+      "exp",
+      "iat",
+      "nonce",
+      "sub"
+    ],
+    "access_token_claims": [
+      "sub",
+      "aud",
+      "client_id",
+      "scope",
+      "https://api.openai.com/auth",
+      "iss",
+      "iat",
+      "exp",
+      "jti",
+      "nbf"
+    ],
+    "opaque_access_token_metadata": [
+      "https://api.openai.com/auth.per_user_salt",
+      "https://api.openai.com/auth.encrypted_auth_metadata"
+    ]
+  },
+  "models": {
+    "method": "GET",
+    "endpoint": "https://api.openai.com/v1/models",
+    "top_level_array_field": "models",
+    "entry_fields_used": [
+      "slug",
+      "display_name",
+      "visibility"
+    ],
+    "display_visibility": "list",
+    "ordering": "server"
+  },
+  "responses": {
+    "method": "POST",
+    "endpoint": "https://api.openai.com/v1/responses",
+    "required_fields": {
+      "store": false,
+      "stream": true
+    },
+    "context_field": "input",
+    "context_field_type": "array",
+    "system_message_item_supported": false,
+    "instructions_supported": true,
+    "developer_message_supported": true,
+    "previous_response_id_supported_over_http": false,
+    "success_terminal_event": "response.completed",
+    "other_terminal_conditions": [
+      "response.failed",
+      "response.incomplete",
+      "stream_interrupted"
+    ],
+    "unsupported_fields": [
+      "background",
+      "conversation",
+      "max_output_tokens",
+      "max_tool_calls",
+      "metadata",
+      "moderation",
+      "multi_agent",
+      "previous_response_id",
+      "prompt",
+      "prompt_cache_retention",
+      "safety_identifier",
+      "temperature",
+      "top_logprobs",
+      "top_p",
+      "truncation",
+      "user"
+    ],
+    "supported_tools": [
+      "function",
+      "custom",
+      "web_search_subject_to_model_and_account_policy"
+    ],
+    "function_and_custom_tool_declaration": "group in namespaces or provide through additional_tools input items",
+    "unsupported_tools": [
+      "image_generation",
+      "file_search",
+      "code_interpreter",
+      "computer_use",
+      "hosted_mcp",
+      "connectors",
+      "tool_search",
+      "programmatic_tool_calling_in_top_level_tools"
+    ],
+    "supported_input_modalities": [
+      "text",
+      "image_when_supported_by_model",
+      "file_when_supported_by_model"
+    ],
+    "unsupported_input_and_upload_routes": [
+      "audio_input",
+      "video_input",
+      "files_upload_api",
+      "transcription_api"
+    ]
+  },
+  "errors": {
+    "authorization_callback_codes": [
+      "access_denied"
+    ],
+    "authorization_code_exchange_codes": [
+      "invalid_grant"
+    ],
+    "direct_admission_body_is_stable_schema": false,
+    "direct_admission_http_statuses": {
+      "401": "identity_or_direct_permission_not_accepted",
+      "403": "policy_or_permission_restriction",
+      "503": "direct_routing_unavailable"
+    },
+    "response_codes": {
+      "subscription_sharing_user_not_eligible": 403,
+      "subscription_sharing_usage_limit_exceeded": 429,
+      "subscription_sharing_usage_unavailable": 503,
+      "subscription_sharing_unsupported_capability": 400,
+      "subscription_sharing_route_not_supported": 403,
+      "subscription_sharing_invalid_user": 401,
+      "chatpass_v2_scope_not_authorized": 403,
+      "chatpass_v2_invalid_authorization_context": 403,
+      "subscription_sharing_user_unavailable": 503
+    },
+    "terminal_refresh_codes": [
+      "invalid_grant",
+      "invalid_refresh_token",
+      "token_expired",
+      "refresh_token_expired",
+      "refresh_token_invalidated",
+      "refresh_token_reused"
+    ],
+    "configuration_refresh_codes": [
+      "invalid_client"
+    ]
+  }
+}

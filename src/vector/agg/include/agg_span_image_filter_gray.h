@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,27 +5,25 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
 //
 // Adaptation for high precision colors has been sponsored by
 // Liberty Technology Systems, Inc., visit http://lib-sys.com
 //
 // Liberty Technology Systems, Inc. is the provider of
 // PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
-#ifndef AGG_SPAN_IMAGE_FILTER_GRAY_INCLUDED
-#define AGG_SPAN_IMAGE_FILTER_GRAY_INCLUDED
+// ---
+// Generates grayscale image spans with nearest, bilinear, and filtered resampling. Hooks into image accessors,
+// image_filters, span interpolators, and grayscale pixel formats. In the vector renderer it samples transformed gray
+// images and patterns before scanline blending.
+
+#pragma once
 
 #include "agg_basics.h"
 #include "agg_color_gray.h"
 #include "agg_span_image_filter.h"
 
-
 namespace agg
 {
-
-    //==============================================span_image_filter_gray_nn
     template<class Source, class Interpolator>
     class span_image_filter_gray_nn :
     public span_image_filter<Source, Interpolator>
@@ -735,9 +732,3 @@ namespace agg
 
 
 }
-
-
-#endif
-
-
-

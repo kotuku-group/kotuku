@@ -1,0 +1,307 @@
+
+@if(exists='modules:audio')
+
+   module audio as mAudio
+   import './effect_fields'
+
+function u8_mono()
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=ASF_U8, layout=array<int> { SPK_CENTRE } })
+end
+
+function band(Type:num, Frequency:num, Gain:num, Q:num):struct
+   return struct.new('AudioEQBand', { type=Type, frequency=Frequency, gain=Gain, q=Q })
+end
+
+-- Assert that the band at Index has the given values, as read by GetBand() and GetKey().
+
+function assert_band(Eq:obj, Index:num, Type:num, Frequency:num, Gain:num, Q:num)
+   result = struct.new('AudioEQBand')
+   check Eq.mtGetBand(Index, result)
+   assert(result.type is Type and result.frequency is Frequency and result.gain is Gain and result.q is Q,
+      f'Band {Index} reads {result.type}, {result.frequency}, {result.gain}, {result.q}')
+   for key, value in { type=Type, frequency=Frequency, gain=Gain, q=Q } do
+      err, text = Eq.acGetKey(f'bands[{Index}].{key}')
+      assert(err is ERR_Okay and tonumber(text) is value, f'GetKey(bands[{Index}].{key}) must match GetBand()')
+   end
+end
+
+-- Append the commands that set every value of a band to a batch.
+
+function add_band(Commands:array<str>, Index:num, Type:num, Frequency:num, Gain:num, Q:num):array<str>
+   Commands.push(f'set bands[{Index}].type {Type}')
+   Commands.push(f'set bands[{Index}].frequency {Frequency}')
+   Commands.push(f'set bands[{Index}].gain {Gain}')
+   Commands.push(f'set bands[{Index}].q {Q}')
+   return Commands
+end
+
+@Test function BandsAndLiveChanges()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel, gain=-2 })
+   assert(eq.outputRate is 48000 and eq.gain is -2)
+   commands = array<str> { 'insert bands 0', 'insert bands 1' }
+   add_band(commands, 0, EQB_LOW_SHELF, 100, 4, 0.7)
+   add_band(commands, 1, EQB_PEAK, 3000, -2, 1.2)
+   check eq.mtBatch(commands)
+   assert(#eq.bands is 2 and eq.bands[0].frequency is 100)
+   check eq.mtBatch(add_band(array<str>, 0, EQB_HIGH_PASS, 40, 0, 0.7))
+   assert(eq.bands[0].type is EQB_HIGH_PASS)
+   eq.gain = -3
+   check eq.mtBatch(array<str> { 'remove bands 1' })
+   assert(#eq.bands is 1 and eq.gain is -3)
+   eq.flags = AEF_BYPASS
+   eq.flags = 0
+   check audio.acActivate()
+   data = array<byte, 4096>
+   data.fill(128)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   check eq.mtBatch(add_band(array<str>, 0, EQB_LOW_PASS, 8000, 0, 0.7))
+   check audio.mtCloseChannels(channel)
+   err, failed = eq.mtBatch(array<str> { 'set bands[0].frequency 500' })
+   assert(err is ERR_NotInitialised and failed is -1)
+end
+
+@Test function LoudnessCompensation()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   check eq.mtBatch(add_band(array<str> { 'insert bands 0' }, 0, EQB_PEAK, 3000, -4, 1))
+
+   frequencies = array<double> { 20, 50, 1000, 3000, 12500 }
+   plain = array<double, 5>
+   check eq.mtGetResponse(frequencies, plain)
+
+   -- The listening level is ignored while compensation is off, so the response is unchanged.
+
+   err, value_text = eq.acGetKey('listening_level')
+   value = tonumber(value_text)
+   assert(err is ERR_Okay and value is -20, 'The listening level defaults to -20 dB')
+   check eq.mtBatch(array<str> { 'set listening_level -40' })
+   magnitudes = array<double, 5>
+   check eq.mtGetResponse(frequencies, magnitudes)
+   for i in {0 to 5} do assert(magnitudes[i] is plain[i], 'Disabled compensation must not alter the response') end
+
+   -- Enabling compensation boosts bass and treble relative to 1 kHz, after the bands.
+
+   check eq.mtBatch(array<str> { 'set loudness 1' })
+   check eq.mtGetResponse(frequencies, magnitudes)
+   assert(magnitudes[0] - plain[0] > 15, f'Expected a bass boost at -40 dB, got {magnitudes[0] - plain[0]}')
+   assert(math.abs(magnitudes[2] - plain[2]) < 1, 'Compensation is nearly flat at 1 kHz')
+   assert(magnitudes[4] - plain[4] > 3, 'Expected a treble boost at 12.5 kHz')
+   assert(magnitudes[3] < magnitudes[2], 'The band remains in the response')
+
+   -- Lower listening levels receive more compensation, and the reference level is flat.
+
+   bass_at_40 = magnitudes[0] - plain[0]
+   check eq.mtBatch(array<str> { 'set listening_level -60' })
+   check eq.mtGetResponse(frequencies, magnitudes)
+   assert(magnitudes[0] - plain[0] > bass_at_40)
+   check eq.mtBatch(array<str> { 'set listening_level 0' })
+   check eq.mtGetResponse(frequencies, magnitudes)
+   for i in {0 to 5} do
+      assert(math.abs(magnitudes[i] - plain[i]) < 1e-9, 'Compensation is flat at the reference level')
+   end
+
+   assert(eq.mtBatch(array<str> { 'set listening_level -61' }) is ERR_InvalidValue)
+   assert(eq.mtBatch(array<str> { 'set listening_level 1' }) is ERR_InvalidValue)
+   assert(eq.mtBatch(array<str> { 'set loudness 0.5' }) is ERR_InvalidValue)
+
+   -- Live edits while playing exercise the crossfaded transitions.
+
+   check eq.mtBatch(array<str> { 'set listening_level -30' })
+   check audio.acActivate()
+   data = array<byte, 4096>
+   data.fill(128)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   check eq.mtBatch(array<str> { 'set listening_level -50' })
+   check eq.mtBatch(array<str> { 'set loudness 0' })
+   err, value_text = eq.acGetKey('loudness')
+   value = tonumber(value_text)
+   assert(err is ERR_Okay and value is 0)
+   check audio.mtCloseChannels(channel)
+end
+
+@Test function LoudnessSchema()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   schema = eq.schema
+   assert(schema.find('<effect class="AudioEqualiser" version="2"') != nil, 'The equaliser schema is version 2')
+   assert(schema.find('<param key="loudness" label="Loudness"') != nil, 'loudness must be published')
+   assert(schema.find('<rule key="loudness" values="0" inactive="1"/>') != nil,
+      'listening_level is inactive while loudness is off')
+end
+
+@Test function BandListAndGlobalImmutability()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   eq = audio.new('AudioEqualiser')
+   eq.bands = array<struct<AudioEQBand>> {
+      struct.new('AudioEQBand', { type=EQB_LOW_SHELF, frequency=100, gain=3, q=0.7 }),
+      struct.new('AudioEQBand', { type=EQB_HIGH_SHELF, frequency=10000, gain=-1, q=0.7 })
+   }
+   eq.gain = -2
+   assert(eq.mutable is 1)
+   eq.init()
+   assert(#eq.bands is 2)
+   assert(eq.mutable is 0)
+   for command in values({ 'set bands[0].gain 2', 'insert bands 0', 'remove bands 0' }) do
+      err, failed = eq.mtBatch(array<str> { command })
+      assert(err is ERR_Immutable and failed is -1, f'{command} must be refused on a global effect')
+   end
+   err, value_text = eq.acGetKey('bands[0].frequency')
+   value = tonumber(value_text)
+   assert(err is ERR_Okay and value is 100, 'Global effects remain readable')
+   try
+      eq.gain = 0
+   except e when ERR_Immutable
+   success
+      raise 'Global gain must be immutable'
+   end
+   try
+      eq.bands = array<struct<AudioEQBand>, 0>
+   except e when ERR_Immutable
+   success
+      raise 'Global bands must be immutable'
+   end
+   assert(eq.mtInsertBand(0, band(EQB_PEAK, 500, 1, 1)) is ERR_Immutable, 'InsertBand() must be refused')
+   assert(eq.mtSetBand(0, band(EQB_PEAK, 500, 1, 1)) is ERR_Immutable, 'SetBand() must be refused')
+   assert(eq.mtRemoveBand(0) is ERR_Immutable, 'RemoveBand() must be refused')
+   assert_band(eq, 0, EQB_LOW_SHELF, 100, 3, 0.7)
+end
+
+@Test function TypedFields()
+   effect_fields.checkFields('AudioEqualiser')
+end
+
+-- Band methods before Init() are range-checked and stored.  Init() then validates the complete state, including the
+-- shelf Q rule.
+
+@Test function BandMethodsBeforeInit()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser')
+   eq.audio = audio
+   eq.channel = channel
+   check eq.mtInsertBand(0, band(EQB_PEAK, 1000, 3, 4))
+   check eq.mtInsertBand(1, band(EQB_HIGH_PASS, 40, 0, 0.7))
+   assert(#eq.bands is 2)
+   assert_band(eq, 0, EQB_PEAK, 1000, 3, 4)
+   assert(eq.mtSetBand(0, band(EQB_PEAK, 1000, 3, 21)) is ERR_InvalidValue, 'Q above 20 must be rejected')
+   assert(eq.mtInsertBand(0, band(EQB_PEAK, 0, 0, 1)) is ERR_InvalidValue, 'A zero frequency must be rejected')
+   assert(#eq.bands is 2)
+   assert_band(eq, 0, EQB_PEAK, 1000, 3, 4)
+
+   -- Changing the type alone leaves a shelf with Q 4, which is stored but rejected by Init().
+
+   check eq.mtSetBand(0, band(EQB_LOW_SHELF, 1000, 3, 4))
+   try
+      eq.init()
+   except e when ERR_InvalidValue
+   success
+      raise 'Init() must reject a shelf with Q above 1'
+   end
+   check eq.mtSetBand(0, band(EQB_LOW_SHELF, 1000, 3, 1))
+   eq.init()
+   assert_band(eq, 0, EQB_LOW_SHELF, 1000, 3, 1)
+end
+
+@Test function BandMethodsLive()
+   audio <close> = obj.new('Audio', { device='null', outputRate=48000 })
+   err, channel = audio.mtOpenChannels(1)
+   assert(err is ERR_Okay)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   check audio.acActivate()
+   data = array<byte, 4096>
+   data.fill(128)
+   err, sample = audio.mtAddSample(nil, u8_mono(), data, nil)
+   assert(err is ERR_Okay)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+
+   -- Round trip, including an append at the band count.
+
+   check eq.mtInsertBand(0, band(EQB_PEAK, 1000, 3, 4))
+   check eq.mtInsertBand(1, band(EQB_HIGH_SHELF, 8000, -2, 0.5))
+   check eq.mtInsertBand(0, band(EQB_HIGH_PASS, 40, 0, 0.7))
+   err, count = eq.mtGetGroupCount('bands')
+   assert(err is ERR_Okay and count is 3 and #eq.bands is 3)
+   assert_band(eq, 0, EQB_HIGH_PASS, 40, 0, 0.7)
+   assert_band(eq, 1, EQB_PEAK, 1000, 3, 4)
+   assert_band(eq, 2, EQB_HIGH_SHELF, 8000, -2, 0.5)
+
+   -- Changing the peak's type alone breaks the shelf Q cap, so a Batch() must change both together.  SetBand()
+   -- always does, and gives the same result as the equivalent Batch().
+
+   err, failed = eq.mtBatch(array<str> { 'set bands[1].type low_shelf' })
+   assert(err is ERR_InvalidValue and failed is -1, 'A shelf with Q 4 must break the rule')
+   assert(eq.mtSetBand(1, band(EQB_LOW_SHELF, 1000, 3, 4)) is ERR_InvalidValue, 'SetBand() must apply the rule')
+   assert_band(eq, 1, EQB_PEAK, 1000, 3, 4)
+   check eq.mtSetBand(1, band(EQB_LOW_SHELF, 150, 5, 0.8))
+   assert_band(eq, 1, EQB_LOW_SHELF, 150, 5, 0.8)
+
+   twin <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   check twin.mtInsertBand(0, band(EQB_PEAK, 1000, 3, 4))
+   check twin.mtBatch(add_band(array<str>, 0, EQB_LOW_SHELF, 150, 5, 0.8))
+   frequencies = array<double> { 50, 150, 1000, 8000 }
+   expected = array<double, 4>
+   actual = array<double, 4>
+   check twin.mtGetResponse(frequencies, expected)
+   check eq.mtRemoveBand(2)
+   check eq.mtRemoveBand(0)
+   check eq.mtGetResponse(frequencies, actual)
+   for i in {0 to 4} do assert(actual[i] is expected[i], 'SetBand() must match the equivalent Batch()') end
+
+   -- Insertion and removal leave the neighbouring bands unchanged.
+
+   check eq.mtInsertBand(0, band(EQB_HIGH_PASS, 30, 0, 0.7))
+   check eq.mtInsertBand(2, band(EQB_PEAK, 2500, -6, 2))
+   check eq.mtInsertBand(1, band(EQB_PEAK, 600, 2, 1.5))
+   assert_band(eq, 0, EQB_HIGH_PASS, 30, 0, 0.7)
+   assert_band(eq, 1, EQB_PEAK, 600, 2, 1.5)
+   assert_band(eq, 2, EQB_LOW_SHELF, 150, 5, 0.8)
+   assert_band(eq, 3, EQB_PEAK, 2500, -6, 2)
+   check eq.mtRemoveBand(1)
+   assert(#eq.bands is 3)
+   assert_band(eq, 0, EQB_HIGH_PASS, 30, 0, 0.7)
+   assert_band(eq, 1, EQB_LOW_SHELF, 150, 5, 0.8)
+   assert_band(eq, 2, EQB_PEAK, 2500, -6, 2)
+
+   -- Indexes outside the band list, and insertion into a full list, fail without changing anything.
+
+   result = struct.new('AudioEQBand')
+   valid = band(EQB_PEAK, 1000, 0, 1)
+   assert(eq.mtGetBand(-1, result) is ERR_OutOfRange)
+   assert(eq.mtGetBand(3, result) is ERR_OutOfRange)
+   assert(eq.mtSetBand(3, valid) is ERR_OutOfRange)
+   assert(eq.mtSetBand(-1, valid) is ERR_OutOfRange)
+   assert(eq.mtInsertBand(4, valid) is ERR_OutOfRange)
+   assert(eq.mtInsertBand(-1, valid) is ERR_OutOfRange)
+   assert(eq.mtRemoveBand(3) is ERR_OutOfRange)
+   assert(eq.mtRemoveBand(-1) is ERR_OutOfRange)
+   assert(eq.mtSetBand(0, band(99, 1000, 0, 1)) is ERR_InvalidValue, 'An unknown type must be rejected')
+   assert(eq.mtSetBand(0, band(EQB_PEAK, 24000, 0, 1)) is ERR_InvalidValue, 'The Nyquist bound must apply')
+   assert(#eq.bands is 3)
+   assert_band(eq, 0, EQB_HIGH_PASS, 30, 0, 0.7)
+   while #eq.bands < 64 do check eq.mtInsertBand(#eq.bands, valid) end
+   assert(eq.mtInsertBand(0, valid) is ERR_OutOfRange, 'A full band list must reject insertion')
+
+   check audio.mtCloseChannels(channel)
+   assert(eq.mtRemoveBand(0) is ERR_NotInitialised, 'Band edits must fail after disconnection')
+   assert_band(eq, 0, EQB_HIGH_PASS, 30, 0, 0.7)
+end
+
+@end

@@ -6,6 +6,7 @@
 #pragma once
 
 #include "lj_obj.h"
+#include "lj_state.h"
 
 //********************************************************************************************************************
 // StackFrame: RAII wrapper for automatic L->top restoration
@@ -60,26 +61,26 @@
 
 class StackFrame {
    lua_State *L_;
-   TValue *saved_top_;
+   ptrdiff_t saved_top_;
 
 public:
    explicit StackFrame(lua_State* L) noexcept
-      : L_(L), saved_top_(L->top) {}
+      : L_(L), saved_top_(savestack(L, L->top)) {}
 
    ~StackFrame() noexcept {
-      if (L_) L_->top = saved_top_;
+      if (L_) L_->top = restorestack(L_, saved_top_);
    }
 
    // Disarm the guard without restoring
    constexpr void disarm() noexcept { L_ = nullptr; }
 
    // Commit n results and disarm (keeps n values on stack)
-   constexpr void commit(int nresults) noexcept {
-      L_->top = saved_top_ + nresults;
+   void commit(int nresults) noexcept {
+      L_->top = restorestack(L_, saved_top_) + nresults;
       L_ = nullptr;
    }
 
-   [[nodiscard]] constexpr TValue * saved() const noexcept { return saved_top_; }
+   [[nodiscard]] TValue * saved() const noexcept { return restorestack(L_, saved_top_); }
 
    // Prevent copying
    StackFrame(const StackFrame&) = delete;
@@ -93,7 +94,7 @@ public:
 
    StackFrame& operator=(StackFrame&& other) noexcept {
       if (this != &other) {
-         if (L_) L_->top = saved_top_;
+         if (L_) L_->top = restorestack(L_, saved_top_);
          L_ = other.L_;
          saved_top_ = other.saved_top_;
          other.L_ = nullptr;

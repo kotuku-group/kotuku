@@ -1,4 +1,3 @@
-//----------------------------------------------------------------------------
 // Anti-Grain Geometry - Version 2.4
 // Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
 //
@@ -6,26 +5,21 @@
 // is granted provided this copyright notice appears in all copies.
 // This software is provided "as is" without express or implied
 // warranty, and with no claim as to its suitability for any purpose.
-
+// ---
+// Generates grayscale pattern spans from a repeated source buffer. Hooks into pattern filters, image accessors, and
+// grayscale renderer_scanline paths. In the vector renderer it fills geometry with tiled gray images or masks.
 //
 // Adaptation for high precision colors has been sponsored by
 // Liberty Technology Systems, Inc., visit http://lib-sys.com
 //
-// Liberty Technology Systems, Inc. is the provider of
-// PostScript and PDF technology for software developers.
-//
-//----------------------------------------------------------------------------
+// Liberty Technology Systems, Inc. is the provider of PostScript and PDF technology for software developers.
 
-
-#ifndef AGG_SPAN_PATTERN_GRAY_INCLUDED
-#define AGG_SPAN_PATTERN_GRAY_INCLUDED
+#pragma once
 
 #include "agg_basics.h"
 
 namespace agg
 {
-
-    //=======================================================span_pattern_gray
     template<class Source> class span_pattern_gray
     {
     public:
@@ -83,6 +77,3 @@ namespace agg
     };
 
 }
-
-#endif
-

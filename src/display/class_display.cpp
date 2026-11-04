@@ -1,21 +1,30 @@
 /*********************************************************************************************************************
 
 -CLASS-
-Display: Manages the video display and graphics hardware.
+Display: Represents a drawable display target and its host window or video mode.
 
-A Display object represents a region of displayable video memory and metadata that defines the display mode.
-The Display is a primitive, hardware oriented interface.  It is recommended that unless otherwise required, the
-@Surface class is used to create displayable graphics regions.
+A Display object owns the bitmap-backed area that is presented to the user.  Depending on the active display driver,
+the object may represent a hosted desktop window, a native full-screen video mode or a platform-managed rendering
+surface.
+
+Display is a low-level interface for display mode, window and bitmap management.  Most application code should create
+and manipulate @Surface objects instead, using Display directly only when it needs to configure the underlying window,
+display mode, palette, gamma or hardware-facing bitmap.
 
 -END-
 
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <kotuku/modules/vector.h>
+#include <kotuku/modules/svg.h>
 
-#ifdef _WIN32
-using namespace display;
+#if defined(__linux__) and not defined(__ANDROID__)
+ #define DESKTOP_ENTRIES
+ #include "linux/desktop_entry.h"
+ #include "linux/graphics_hardware.h"
 #endif
+
 
 // Class definition at end of this source file.
 
@@ -23,85 +32,19 @@ static ERR DISPLAY_Resize(extDisplay *, struct acResize *);
 [[maybe_unused]] static CSTRING dpms_name(DPMS Index);
 
 static void alloc_display_buffer(extDisplay *Self);
+static void apply_window_icon(extDisplay *Self);
+static std::string escape_xml_attrib(std::string_view Value);
 
-#ifdef _GLES_
-static const int attributes[] = {
-   EGL_BUFFER_SIZE,
-   EGL_ALPHA_SIZE,
-   EGL_BLUE_SIZE,
-   EGL_GREEN_SIZE,
-   EGL_RED_SIZE,
-   EGL_DEPTH_SIZE,
-   EGL_STENCIL_SIZE,
-   EGL_CONFIG_CAVEAT,
-   EGL_CONFIG_ID,
-   EGL_LEVEL,
-   EGL_MAX_PBUFFER_HEIGHT,
-   EGL_MAX_PBUFFER_PIXELS,
-   EGL_MAX_PBUFFER_WIDTH,
-   EGL_NATIVE_RENDERABLE,
-   EGL_NATIVE_VISUAL_ID,
-   EGL_NATIVE_VISUAL_TYPE,
-   0x3030, // EGL10.EGL_PRESERVED_RESOURCES,
-   EGL_SAMPLES,
-   EGL_SAMPLE_BUFFERS,
-   EGL_SURFACE_TYPE,
-   EGL_TRANSPARENT_TYPE,
-   EGL_TRANSPARENT_RED_VALUE,
-   EGL_TRANSPARENT_GREEN_VALUE,
-   EGL_TRANSPARENT_BLUE_VALUE,
-   0x3039, // EGL10.EGL_BIND_TO_TEXTURE_RGB,
-   0x303A, // EGL10.EGL_BIND_TO_TEXTURE_RGBA,
-   0x303B, // EGL10.EGL_MIN_SWAP_INTERVAL,
-   0x303C, // EGL10.EGL_MAX_SWAP_INTERVAL,
-   EGL_LUMINANCE_SIZE,
-   EGL_ALPHA_MASK_SIZE,
-   EGL_COLOR_BUFFER_TYPE,
-   EGL_RENDERABLE_TYPE,
-   0x3042 // EGL10.EGL_CONFORMANT
-};
 
-static const CSTRING names[] = {
-  "EGL_BUFFER_SIZE",         "EGL_ALPHA_SIZE",            "EGL_BLUE_SIZE",               "EGL_GREEN_SIZE",
-  "EGL_RED_SIZE",            "EGL_DEPTH_SIZE",            "EGL_STENCIL_SIZE",            "EGL_CONFIG_CAVEAT",
-  "EGL_CONFIG_ID",           "EGL_LEVEL",                 "EGL_MAX_PBUFFER_HEIGHT",      "EGL_MAX_PBUFFER_PIXELS",
-  "EGL_MAX_PBUFFER_WIDTH",   "EGL_NATIVE_RENDERABLE",     "EGL_NATIVE_VISUAL_ID",        "EGL_NATIVE_VISUAL_TYPE",
-  "EGL_PRESERVED_RESOURCES", "EGL_SAMPLES",               "EGL_SAMPLE_BUFFERS",          "EGL_SURFACE_TYPE",
-  "EGL_TRANSPARENT_TYPE",    "EGL_TRANSPARENT_RED_VALUE", "EGL_TRANSPARENT_GREEN_VALUE", "EGL_TRANSPARENT_BLUE_VALUE",
-  "EGL_BIND_TO_TEXTURE_RGB", "EGL_BIND_TO_TEXTURE_RGBA",  "EGL_MIN_SWAP_INTERVAL",       "EGL_MAX_SWAP_INTERVAL",
-  "EGL_LUMINANCE_SIZE",      "EGL_ALPHA_MASK_SIZE",       "EGL_COLOR_BUFFER_TYPE",       "EGL_RENDERABLE_TYPE",
-  "EGL_CONFORMANT"
-};
-
-static void printConfig(EGLDisplay display, EGLConfig config) __attribute__ ((unused));
-static void printConfig(EGLDisplay display, EGLConfig config) {
-   kt::Log log(__FUNCTION__);
-   int value[1];
-
-   log.branch();
-
-   for (int i=0; i < std::ssize(attributes); i++) {
-      int attribute = attributes[i];
-      CSTRING name = names[i];
-      if (eglGetConfigAttrib(display, config, attribute, value)) {
-         log.msg("%d: %s: %d", i, name, value[0]);
-      }
-      else {
-         while (eglGetError() != EGL_SUCCESS);
-      }
-   }
-}
-
-#endif
 
 //********************************************************************************************************************
 
 static void update_displayinfo(extDisplay *Self)
 {
-   if (!iequals("SystemDisplay", Self->Name)) return;
+   if (not iequals("SystemDisplay", Self->Name)) return;
 
    glDisplayInfo.DisplayID = 0;
-   get_display_info(Self->UID, &glDisplayInfo, sizeof(DISPLAYINFO));
+   get_display_info(Self->UID, &glDisplayInfo);
 }
 
 //********************************************************************************************************************
@@ -111,6 +54,11 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
    kt::Log log(__FUNCTION__);
 
    log.traceBranch("%dx%d, %dx%d", X, Y, Width, Height);
+
+   // Feedback may be a copy sharing the stored field's weak pin, so a stale subscription is only skipped here;
+   // release is performed by release_stale_resize_feedback() where the owning display is locked.
+
+   if (Feedback->stale()) return;
 
    if (Feedback->isC()) {
       auto routine = (ERR (*)(OBJECTID, int, int, int, int, APTR))Feedback->Routine;
@@ -128,16 +76,9 @@ void resize_feedback(FUNCTION *Feedback, OBJECTID DisplayID, int X, int Y, int W
    }
 }
 
-//********************************************************************************************************************
-
-static void notify_resize_free(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
-{
-   ((extDisplay *)CurrentContext())->ResizeFeedback.clear();
-}
-
 /*********************************************************************************************************************
 -ACTION-
-Activate: Activating a display has the same effect as calling the Show action.
+Activate: Shows the display.
 -END-
 *********************************************************************************************************************/
 
@@ -152,51 +93,40 @@ CheckXWindow: Private. Checks that the Display dimensions match the X11 window d
 
 Private
 
+-TAGS-
+mutates-object, private
+
 -END-
 *********************************************************************************************************************/
 
 static ERR DISPLAY_CheckXWindow(extDisplay *Self)
 {
-#ifdef __xwindows__
+   if (glDriver) {
+      int x, y, width, height;
+      if (auto error = glDriver->windowCoords(Self->WindowHandle, x, y, width, height); error != ERR::Okay) {
+         return error;
+      }
 
-   Window childwin;
-   int absx, absy;
-
-   XTranslateCoordinates(XDisplay, Self->XWindowHandle, DefaultRootWindow(XDisplay), 0, 0, &absx, &absy, &childwin);
-
-   if ((Self->X != absx) or (Self->Y != absy)) {
-      kt::Log log;
-      log.msg("Repairing coordinates, pos is %dx%d, was %dx%d", absx, absy, Self->X, Self->Y);
-
-      Self->X = absx;
-      Self->Y = absy;
-
-      resize_feedback(&Self->ResizeFeedback, Self->UID, absx, absy, Self->Width, Self->Height);
+      if ((Self->X != x) or (Self->Y != y)) {
+         Self->X = x;
+         Self->Y = y;
+         release_stale_resize_feedback(Self);
+         resize_feedback(&Self->ResizeFeedback, Self->UID, x, y, Self->Width, Self->Height);
+      }
+      return ERR::Okay;
    }
-
-#endif
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -ACTION-
-Clear: Clears a display's image data and hardware buffers (e.g. OpenGL)
+Clear: Clears the display's drawable image data.
 -END-
 *********************************************************************************************************************/
 
 static ERR DISPLAY_Clear(extDisplay *Self)
 {
-#ifdef _GLES_
-   if (!lock_graphics_active(__func__)) {
-      glClearColorx(Self->Bitmap->BkgdRGB.Red, Self->Bitmap->BkgdRGB.Green, Self->Bitmap->BkgdRGB.Blue, 255);
-      glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-      unlock_graphics();
-      return ERR::Okay;
-   }
-   else return ERR::LockFailed;
-#else
    return acClear(Self->Bitmap);
-#endif
 }
 
 /*********************************************************************************************************************
@@ -209,40 +139,49 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
+
+#ifdef __linux__
+   if (Args->Datatype IS DATA::REQUEST) {
+      if ((not Args->Object) or (Args->Buffer.size() < sizeof(struct dcRequest))) return ERR::NullArgs;
+      struct dcRequest request;
+      copymem(Args->Buffer.data(), &request, sizeof(request));
+      return respond_wayland_drop_request(Self, Args->Object, request.Item, request.Preference[0]);
+   }
+#endif
 
 #ifdef _WIN32
    if (Args->Datatype IS DATA::REQUEST) {
       // Supported for handling the windows clipboard
 
-      auto request = (struct dcRequest *)Args->Buffer;
+      if ((not Args->Buffer.data()) or (not Args->Object)) return log.warning(ERR::NullArgs);
+      if (Args->Buffer.size() < sizeof(struct dcRequest)) return log.warning(ERR::Args);
+      struct dcRequest request;
+      copymem(Args->Buffer.data(), &request, sizeof(request));
 
-      log.traceBranch("Received data request from object %d, item %d", Args->Object ? Args->Object->UID : 0, request->Item);
+      log.traceBranch("Received data request from object %d, item %d", Args->Object ? Args->Object->UID : 0,
+         request.Item);
 
       #ifdef WIN_DRAGDROP
       struct WinDT *data;
       int total_items;
-      if (!winGetData(request->Preference, &data, &total_items)) {
+      if (not display::winGetData(request.Preference, &data, &total_items)) {
          std::ostringstream xml;
-         xml << "<receipt totalitems=\"" << total_items << "\" id=\"" << request->Item << "\">";
+         xml << "<receipt totalitems=\"" << total_items << "\" id=\"" << request.Item << "\">";
          for (int i=0; i < total_items; i++) {
             if (DATA(data[i].Datatype) IS DATA::FILE) {
-               xml << "<file path=\"" << (CSTRING)data[i].Data << "\"/>";
+               xml << "<file path=\"" << escape_xml_attrib((CSTRING)data[i].Data) << "\"/>";
             }
             else if (DATA(data[i].Datatype) IS DATA::TEXT) {
-               xml << "<text>" << (CSTRING)data[i].Data << "</text>";
+               xml << "<text>" << escape_xml_attrib((CSTRING)data[i].Data) << "</text>";
             }
             //else TODO: other types like images need their data saved to disk and referenced as a path, e.g. <image path="clipboard:abc.001"/>
          }
          xml << "</receipt>";
 
-         struct acDataFeed dc;
          auto result = xml.str();
-         dc.Object   = Self;
-         dc.Datatype = DATA::RECEIPT;
-         dc.Buffer   = kt::strclone(result);
-         dc.Size     = result.size() + 1;
-         Action(AC::DataFeed, Args->Object, &dc);
+         return acDataFeed(Args->Object, Self, DATA::RECEIPT,
+            std::span<const int8_t>((const int8_t *)result.data(), result.size()));
       }
       else return log.warning(ERR::NoSupport);
       #endif
@@ -257,8 +196,9 @@ static ERR DISPLAY_DataFeed(extDisplay *Self, struct acDataFeed *Args)
 -ACTION-
 Disable: Disables the display (goes into power saving mode).
 
-Disabling a display will put the display into power saving mode.  The DPMS mode is determined by the user's system
-settings and cannot be changed by the developer.  The display will remain off until the Enable action is called.
+Disabling a display requests display power management, where supported by the active driver.  The DPMS mode is
+determined by user and system configuration.  The display remains disabled until #Enable() is called or the platform
+restores it.
 
 This action does nothing if the display is in hosted mode.
 
@@ -276,7 +216,7 @@ static ERR DISPLAY_Disable(extDisplay *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Enable: Restores the screen display from power saving mode.
+Enable: Restores the display from power saving mode.
 -END-
 *********************************************************************************************************************/
 
@@ -297,20 +237,17 @@ static ERR DISPLAY_Draw(extDisplay *Self)
 
 /*********************************************************************************************************************
 -ACTION-
-Flush: Flush pending graphics operations to the display.
+Flush: Flushes pending graphics operations to the display driver.
+
+Flush synchronises pending X11 requests or flushes OpenGL ES commands where those backends are active.  On other
+drivers it is a harmless no-op.
+
 -END-
 *********************************************************************************************************************/
 
 static ERR DISPLAY_Flush(extDisplay *Self)
 {
-#ifdef __xwindows__
-   XSync(XDisplay, False);
-#elif _GLES_
-   if (!lock_graphics_active(__func__)) {
-      glFlush();
-      unlock_graphics();
-   }
-#endif
+   if (glDriver) return glDriver->flush();
    return ERR::Okay;
 }
 
@@ -321,143 +258,102 @@ static ERR DISPLAY_Focus(extDisplay *Self)
    kt::Log log;
 
    log.traceBranch();
-#ifdef _WIN32
-   winFocus(Self->WindowHandle);
-#elif __xwindows__
-   if ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
-#endif
+
+   if (Self->UID IS glHostFocusDisplay) { // The host already gave this window the focus; see DriverFocusState()
+      log.trace("Focus already set by the host.");
+      return ERR::Okay;
+   }
+
+   if (glDriver) return glDriver->focusWindow(Self->WindowHandle);
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static ERR DISPLAY_Free(extDisplay *Self)
+extDisplay::~extDisplay()
 {
    kt::Log log;
 
-   if ((Self->Flags & SCR::AUTO_SAVE) != SCR::NIL) {
+   if (ResizeFeedback.defined()) {
+      ResizeFeedback.unpin();
+      ResizeFeedback.clear();
+   }
+
+   if ((Flags & SCR::AUTO_SAVE) != SCR::NIL) {
       log.trace("Autosave enabled.");
-      acSaveSettings(Self);
+      acSaveSettings(this);
    }
    else log.trace("Autosave disabled.");
 
-#ifdef __xwindows__
-   XEvent xevent;
 
-   if (Self->WindowHandle IS (APTR)glDisplayWindow) glDisplayWindow = 0;
+   if ((glDriver) and (WindowHandle)) glDriver->destroyWindow(WindowHandle);
 
-   if (Self->XPixmap) {
-      XFreePixmap(XDisplay, Self->XPixmap);
-      Self->XPixmap = 0;
-      ((extBitmap *)Self->Bitmap)->x11.drawable = 0;
-   }
 
-   // Kill all expose events associated with the X Window owned by the display
-
-   if (XDisplay) {
-      while (XCheckWindowEvent(XDisplay, Self->XWindowHandle,
-         ExposureMask|FocusChangeMask|StructureNotifyMask, &xevent) IS True);
-
-      if ((Self->Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
-         if (Self->WindowHandle) {
-            XDestroyWindow(XDisplay, Self->XWindowHandle);
-            Self->WindowHandle = nullptr;
-         }
-      }
-   }
-
-   XSync(XDisplay, False);
-#endif
-
-#ifdef _WIN32
-   if ((Self->Flags & SCR::CUSTOM_WINDOW) IS SCR::NIL) {
-      if (Self->WindowHandle) {
-         winDestroyWindow(Self->WindowHandle);
-         Self->WindowHandle = nullptr;
-      }
-   }
-#endif
-
-#ifdef _GLES_
-   glActiveDisplayID = 0;
-#endif
-
-   acHide(Self);  // Hide the display.  In OpenGL this will remove the display resources.
+   acHide(this);  // Hide the display.  In OpenGL this will remove the display resources.
 
    // Free the display's bitmap buffer
 
-   if (Self->BufferID) { FreeResource(Self->BufferID); Self->BufferID = 0; }
+   if (BufferID) FreeResource(BufferID);
 
    // Free the display's video bitmap
 
-   if (Self->Bitmap) { FreeResource(Self->Bitmap); Self->Bitmap = nullptr; }
-
-   Self->~extDisplay();
-   return ERR::Okay;
+   if (Bitmap) FreeResource(Bitmap);
 }
 
 /*********************************************************************************************************************
--ACTION-
-GetKey: Retrieve formatted information from the display.
+
+-METHOD-
+GetFrame: Returns window frame size information for hosted displays.
+
+On hosted displays, GetFrame() returns the thickness of the host window frame around the client display area.
+
+-INPUT-
+&int Left: Returns the width of the left side of the window frame, in pixels.
+&int Top: Returns the height of the top of the window frame, in pixels.
+&int Right: Returns the width of the right side of the window frame, in pixels.
+&int Bottom: Returns the height of the bottom of the window frame, in pixels.
+
+-ERRORS-
+Okay
+NullArgs
+NoSupport
+SystemCall
+
+-TAGS-
+pure-query
+
 -END-
+
 *********************************************************************************************************************/
 
-static ERR DISPLAY_GetKey(extDisplay *Self, struct acGetKey *Args)
+static ERR DISPLAY_GetFrame(extDisplay *Self, gfx::GetFrame *Args)
 {
-   kt::Log log;
+   if (not Args) return ERR::NullArgs;
 
-   if ((!Args) or (!Args->Key) or (!Args->Value)) return log.warning(ERR::NullArgs);
-   if (Args->Size < 1) return log.warning(ERR::Args);
-
-   if (kt::startswith("resolution(", Args->Key)) {
-      // Field is in the format:  Resolution(Index, Format) Where 'Format' contains % symbols to indicate variable references.
-
-      CSTRING str = Args->Key + 11;
-      int index = strtol(str, nullptr, 0);
-      while ((*str) and (*str != ')') and (*str != ',')) str++;
-      if (*str IS ',') str++;
-      while ((*str) and (*str <= 0x20)) str++;
-
-      if (Self->Resolutions.empty()) get_resolutions(Self);
-
-      if (!Self->Resolutions.empty()) {
-         if (index >= std::ssize(Self->Resolutions)) return ERR::OutOfRange;
-
-         std::ostringstream out;
-         while ((*str) and (*str != ')')) {
-            if (*str != '%') out << *str++;
-            else if (str[1] IS '%') { // Escape?
-               out << '%';
-               str += 2;
-            }
-            else {
-               switch (str[1]) {
-                  case 'w': out << Self->Resolutions[index].width; break;
-                  case 'h': out << Self->Resolutions[index].height; break;
-                  case 'd': out << Self->Resolutions[index].bpp; break;
-                  case 'c': if (Self->Resolutions[index].bpp <= 24) out << (1<<Self->Resolutions[index].bpp);
-                            else out << (1<<24);
-                            break;
-               }
-               str += 2;
-            }
-         }
-         kt::strcopy(out.str(), Args->Value, Args->Size);
-
-         return ERR::Okay;
-      }
-      else return ERR::NoData;
+   if ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) {
+      Args->Top    = 0;
+      Args->Right  = 0;
+      Args->Bottom = 0;
+      Args->Left   = 0;
+      return ERR::Okay;
    }
-   else return ERR::NoSupport;
+
+   if (glDriver) return glDriver->frameMargins(Self->WindowHandle, Args->Left, Args->Top, Args->Right, Args->Bottom);
+   Args->Top    = 0;
+   Args->Right  = 0;
+   Args->Bottom = 0;
+   Args->Left   = 0;
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -ACTION-
 Hide: Hides a display from the user's view.
 
-Calling this action will hide a display from the user's view.  If the hidden display was at the front of the display
-and there is a display object behind it, then the next underlying display will be displayed.  If there are no other
-displays available then the user's viewport will be blank after calling this action.
+Hide removes a hosted display window from view, or releases the visible presentation resources used by native and
+OpenGL ES drivers.  The display remains valid and can be shown again with #Show().
+
+The `SCR::VISIBLE` flag is cleared after the hide request is processed.
 -END-
 *********************************************************************************************************************/
 
@@ -467,14 +363,8 @@ static ERR DISPLAY_Hide(extDisplay *Self)
 
    log.branch();
 
-#ifdef _WIN32
-   winHideWindow(Self->WindowHandle);
-#elif __xwindows__
-   if ((XDisplay) and (Self->XWindowHandle)) {
-      XUnmapWindow(XDisplay, Self->XWindowHandle);
-      XSync(XDisplay, False);
-   }
-#elif __snap__
+   if (glDriver) glDriver->hideWindow(Self->WindowHandle);
+#if   __snap__
    // If the system is shutting down, don't touch the display.  This makes things look tidier when the system shuts down.
 
    int state = GetResource(RES::SYSTEM_STATE);
@@ -483,10 +373,6 @@ static ERR DISPLAY_Hide(extDisplay *Self)
    }
    else sciCloseVideoMode(Self->VideoHandle);
 
-#elif _GLES_
-   if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
-      adHideDisplay(Self->UID);
-   }
 #endif
 
    Self->Flags &= ~SCR::VISIBLE;
@@ -499,72 +385,32 @@ static ERR DISPLAY_Init(extDisplay *Self)
 {
    kt::Log log;
 
-   #ifdef __xwindows__
-      // Figure out how many bits and bytes are used per pixel on this XDisplay
-
-      auto xbpp = DefaultDepth(XDisplay, DefaultScreen(XDisplay));
-
-      if (xbpp <= 8) {
-         log.msg(VLF::CRITICAL, "Please change your X11 setup so that it runs in 15 bit mode or better.");
-         log.msg(VLF::CRITICAL, "Currently X11 is configured to use %d bit graphics.", xbpp);
-         return ERR::NoSupport;
-      }
-
-      int xbytes;
-      if (xbpp <= 8) xbytes = 1;
-      else if (xbpp <= 16) xbytes = 2;
-      else if (xbpp <= 24) xbytes = 3;
-      else xbytes = 4;
-
-      int count;
-      if (auto list = XListPixmapFormats(XDisplay, &count)) {
-         for (int i=0; i < count; i++) {
-            if (list[i].depth IS xbpp) {
-               xbytes = list[i].bits_per_pixel;
-               if (list[i].bits_per_pixel <= 8) xbytes = 1;
-               else if (list[i].bits_per_pixel <= 16) xbytes = 2;
-               else if (list[i].bits_per_pixel <= 24) xbytes = 3;
-               else xbytes = 4;
-            }
-         }
-         XFree(list);
-      }
-
-      if ((xbpp IS 24) and (xbytes IS 3)) {
-         static bool bpp_warning = false;
-         if (!bpp_warning) {
-            bpp_warning = true;
-            log.warning("Running in 32bpp instead of 24bpp is strongly recommended.");
-         }
-      }
-
-      #ifdef XRANDR_ENABLED
-      if (glXRRAvailable) {
-         // Set the refresh rate to zero to indicate that we have some control of the display (the default is -1 if there is no control).
-         Self->RefreshRate = 0;
-      }
-      #endif
-   #endif
 
    // Set defaults
 
    auto bmp = (extBitmap *)Self->Bitmap;
 
-   DISPLAYINFO info;
-   if (get_display_info(0, &info, sizeof(info)) != ERR::Okay) return log.warning(ERR::SystemCall);
+   DisplayInfo info;
+   if (get_display_info(0, &info) != ERR::Okay) return log.warning(ERR::SystemCall);
 
-   if (!Self->Width) {
+   // X11 desktop-manager and maximised windows use the root-window dimensions.  Resolve those dimensions before the
+   // display bitmap is initialised so that its storage, clipping region and pixel routines describe the actual window.
+
+   if ((glDriver) and (glDriver->displayType() IS DT::X11) and
+         (((glDriver->capabilities() & DCAP::DESKTOP_MANAGER) != DCAP::NIL) or
+            ((Self->Flags & SCR::MAXIMISE) != SCR::NIL))) {
       Self->Width = info.Width;
-      #ifdef _WIN32
-         Self->Width -= 60;
-      #endif
+      Self->Height = info.Height;
    }
 
-   if (!Self->Height) {
+   if (not Self->Width) {
+      Self->Width = info.Width;
+      if ((glDriver) and (glDriver->displayType() IS DT::WINGDI)) Self->Width -= 60;
+   }
+
+   if (not Self->Height) {
       Self->Height = info.Height;
-      #ifdef _WIN32
-         Self->Height -= 80;
-      #endif
+      if ((glDriver) and (glDriver->displayType() IS DT::WINGDI)) Self->Height -= 80;
    }
 
    if (Self->Width  < 4)  Self->Width  = 4;
@@ -585,274 +431,62 @@ static ERR DISPLAY_Init(extDisplay *Self)
       if (Self->Height > 4096) Self->Height = 4096;
    }
 
-   #ifdef __xwindows__
-      // If the display object will act as window manager, the dimensions must match that of the root window.
-
-      if ((glX11.Manager) or ((Self->Flags & SCR::MAXIMISE) != SCR::NIL)) {
-         Self->Width  = glRootWindow.width;
-         Self->Height = glRootWindow.height;
-      }
-
-      if (Self->Width > glRootWindow.width) Self->Width = glRootWindow.width;
-      if (Self->Height > glRootWindow.height) Self->Height = glRootWindow.height;
-   #endif
 
    if (bmp->Width  < Self->Width)  bmp->Width = Self->Width;
    if (bmp->Height < Self->Height) bmp->Height = Self->Height;
 
    // Fix up the bitmap dimensions
 
-   if (!bmp->Width) bmp->Width  = Self->Width;
+   if (not bmp->Width) bmp->Width  = Self->Width;
    else if (Self->Width > bmp->Width) bmp->Width  = Self->Width;
 
-   if (!bmp->Height) bmp->Height = Self->Height;
+   if (not bmp->Height) bmp->Height = Self->Height;
    else if (Self->Height > bmp->Height) bmp->Height = Self->Height;
 
    bmp->Type = BMP::CHUNKY;
 
-   #ifdef __xwindows__
-      if (xbytes IS 4) bmp->BitsPerPixel = 32;
-      else bmp->BitsPerPixel = xbpp;
-      bmp->BytesPerPixel = xbytes;
-   #elif _WIN32
-      if ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) {
-         log.msg("Composite mode will force a 32-bit window area.");
-         bmp->BitsPerPixel = 32;
-         bmp->BytesPerPixel = 4;
-      }
-   #endif
+   if ((glDriver) and (not glHeadless) and ((Self->Flags & SCR::COMPOSITE) != SCR::NIL)) {
+      log.msg("Composite mode will force a 32-bit window area.");
+      bmp->BitsPerPixel = 32;
+      bmp->BytesPerPixel = 4;
+   }
 
-   if (!bmp->BitsPerPixel) {
+   if (not bmp->BitsPerPixel) {
       bmp->BitsPerPixel = info.BitsPerPixel;
       bmp->BytesPerPixel = info.BytesPerPixel;
    }
 
-   #ifdef __xwindows__
-
-      bmp->Flags |= BMF::NO_DATA;
-      bmp->DataFlags = MEM::VIDEO;
-
-      // Set the Window Attributes structure
-
-      XSetWindowAttributes swa;
-      swa.bit_gravity = CenterGravity;
-      swa.win_gravity = CenterGravity;
-      swa.cursor      = C_Default;
-      swa.override_redirect = (Self->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL;
-      swa.event_mask  = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask
-                        |KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
-
-      if (!glX11.Manager) {
-         // Window creation for running inside a foreign window manager.
-
-         log.msg("Creating X11 window %dx%d,%dx%d, Override: %d, XDisplay: %p, Parent: %" PRId64, Self->X, Self->Y, Self->Width, Self->Height, swa.override_redirect, XDisplay, (int64_t)Self->XWindowHandle);
-
-         int cwflags   = CWEventMask|CWOverrideRedirect;
-         int depth     = CopyFromParent;
-         Visual *visual = CopyFromParent;
-         if ((swa.override_redirect) and (glXCompositeSupported)) {
-            swa.colormap         = XCreateColormap(XDisplay, DefaultRootWindow(XDisplay), glXInfoAlpha.visual, AllocNone);
-            swa.background_pixel = 0;
-            swa.border_pixel     = 0;
-            cwflags |= CWColormap|CWBackPixel|CWBorderPixel;
-            visual   = glXInfoAlpha.visual;
-            depth    = glXInfoAlpha.depth;
-            bmp->Flags |= BMF::ALPHA_CHANNEL|BMF::FIXED_DEPTH;
-            bmp->BitsPerPixel  = 32;
-            bmp->BytesPerPixel = 4;
-            xbpp = 32;
-         }
-
-         if (!Self->XWindowHandle) {
-            if (!(Self->XWindowHandle = XCreateWindow(XDisplay, DefaultRootWindow(XDisplay),
-                  Self->X, Self->Y, Self->Width, Self->Height, 0 /* Border */, depth, InputOutput,
-                  visual, cwflags, &swa))) {
-               return log.warning(ERR::SystemCall);
-            }
-         }
-         else { // If the WindowHandle field is already set, use it as the parent for the new window.
-            if (!(Self->XWindowHandle = XCreateWindow(XDisplay, Self->XWindowHandle,
-                  0, 0, Self->Width, Self->Height, 0, depth, InputOutput, visual, cwflags, &swa))) {
-               return log.warning(ERR::SystemCall);
-            }
-         }
-
-         bmp->x11.window = Self->XWindowHandle;
-
-         if ((bmp->Flags & BMF::ALPHA_CHANNEL) != BMF::NIL) {
-            // For composite windows, we can draw directly to the Window handle
-            bmp->x11.drawable = Self->XWindowHandle;
-         }
-         else {
-            // Create a pixmap buffer and associate it with the window by setting it as the background.
-
-            // Although creating a pixmap with the same size as the display is a little excessive, it produces
-            // the best user experience when resizing windows
-            bmp->x11.pix_width  = info.Width;  //Self->Width;
-            bmp->x11.pix_height = info.Height; //Self->Height;
-            if (!(Self->XPixmap = XCreatePixmap(XDisplay, Self->XWindowHandle, bmp->x11.pix_width, bmp->x11.pix_height, xbpp))) {
-               return log.warning(ERR::SystemCall);
-            }
-
-            // Blanking the pixmap reduces visible glitches caused by window resizing.
-            if (auto gc = XCreateGC(XDisplay, Self->XPixmap, 0, 0)) {
-               XSetFunction(XDisplay, gc, GXcopy);
-               if ((swa.override_redirect) and (glXCompositeSupported)) {
-                  XSetForeground(XDisplay, gc, 0x000000);
-               }
-               else XSetForeground(XDisplay, gc, 0xd0d0d0);
-               XFillRectangle(XDisplay, Self->XPixmap, gc, 0, 0, info.Width, info.Height);
-               XFreeGC(XDisplay, gc);
-            }
-
-            XSetWindowBackgroundPixmap(XDisplay, Self->XWindowHandle, Self->XPixmap);
-
-            bmp->x11.drawable = Self->XPixmap;
-         }
-
-         CSTRING name;
-         if ((CurrentTask()->get(FID_Name, name) IS ERR::Okay) and (name)) {
-            XStoreName(XDisplay, Self->XWindowHandle, name);
-         }
-         else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
-
-         Atom protocols[1] = { XWADeleteWindow };
-         XSetWMProtocols(XDisplay, Self->XWindowHandle, protocols, std::ssize(protocols));
-
-         Self->Flags |= SCR::HOSTED;
-
-         bmp->Width  = Self->Width;
-         bmp->Height = Self->Height;
-
-         if (swa.override_redirect) { // Composite windows require a dedicated GC for drawing
-            XGCValues gcv = { .function = GXcopy, .graphics_exposures = False };
-            bmp->x11.gc = XCreateGC(XDisplay, Self->XWindowHandle, GCGraphicsExposures|GCFunction, &gcv);
-         }
-
-         if (glStickToFront) {
-            // KDE doesn't honour this request, not sure how many window managers would but it's worth a go.
-
-            XSetTransientForHint(XDisplay, Self->XWindowHandle, DefaultRootWindow(XDisplay));
-         }
-
-         // Indicate that the window position is not to be meddled with by the window manager.
-
-         XSizeHints hints = { .flags = USPosition|USSize };
-         XSetWMNormalHints(XDisplay, Self->XWindowHandle, &hints);
-
-         if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
-      }
-      else { // If we are the window manager, set up the root window as our display.
-         if (!Self->WindowHandle) Self->XWindowHandle = DefaultRootWindow(XDisplay);
-         bmp->set(FID_Handle, (APTR)Self->XWindowHandle);
-         XChangeWindowAttributes(XDisplay, Self->XWindowHandle, CWEventMask|CWCursor, &swa);
-
-         #ifdef XRANDR_ENABLED
-         if (glXRRAvailable) XRRSelectInput(XDisplay, DefaultRootWindow(XDisplay), RRScreenChangeNotifyMask);
-         #endif
-
-         XWindowAttributes winattrib;
-         XGetWindowAttributes(XDisplay, Self->XWindowHandle, &winattrib);
-         Self->Width  = winattrib.width;
-         Self->Height = winattrib.height;
-         bmp->Width   = Self->Width;
-         bmp->Height  = Self->Height;
-
-         if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
-
-         if (glDGAAvailable) {
-            bmp->Flags |= BMF::X11_DGA;
-            bmp->Data = (uint8_t *)glDGAVideo;
-         }
-      }
-
-      glDisplayWindow = Self->XWindowHandle;
-
-      XChangeProperty(XDisplay, Self->XWindowHandle, atomSurfaceID, atomSurfaceID, 32, PropModeReplace, (uint8_t *)&Self->UID, 1);
-
-   #elif _WIN32
-
-      // Initialise the Bitmap.  We will set the Bitmap->Data field later on.  The Drawable field
-      // in the Bitmap object will also be pointed to the window that we have created, but this
-      // will be managed by the Surface class.
-
-      bmp->Flags |= BMF::NO_DATA;
-      bmp->DataFlags = MEM::VIDEO;
-
-      if (InitObject(bmp) != ERR::Okay) {
-         return log.warning(ERR::Init);
-      }
-
-      if (!Self->WindowHandle) {
-         bool desktop = false;
-         if ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) {
-            // Not a desktop
-         }
-         else {
-            OBJECTID surface_id;
-            if (FindObject("SystemSurface", CLASSID::SURFACE, FOF::NIL, &surface_id) IS ERR::Okay) {
-               if (surface_id IS Self->ownerID()) desktop = true;
-            }
-         }
-
-         CSTRING name = nullptr;
-         CurrentTask()->get(FID_Name, name);
-         HWND popover = 0;
-         if (Self->PopOverID) {
-            if (ScopedObjectLock<extDisplay> other_display(Self->PopOverID, 3000); other_display.granted()) {
-               popover = other_display->WindowHandle;
-            }
-            else log.warning(ERR::AccessObject);
-         }
-
-         if (!(Self->WindowHandle = (APTR)winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
-               ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? 1 : 0, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? 1 : 0, name,
-               ((Self->Flags & SCR::COMPOSITE) != SCR::NIL) ? 1 : 0, Self->Opacity, desktop))) {
-            return log.warning(ERR::SystemCall);
-         }
+   if ((glDriver) and (glHeadless)) {
+      bmp->MemType = BMT::DATA;
+      if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
+   }
+   else if ((glDriver) and (not glHeadless)) {
+      if (glDriver->displayType() IS DT::WAYLAND) {
+         bmp->BitsPerPixel = 32;
+         bmp->BytesPerPixel = 4;
+         bmp->MemType = BMT::DATA;
       }
       else {
-         // If we have been passed a foreign window handle, we need to set the procedure for it so that we can process
-         // window related messages.
-
-         if (!(Self->WindowHandle = (APTR)winCreateChild(Self->WindowHandle, Self->X, Self->Y, Self->Width, Self->Height))) {
-            return log.warning(ERR::SystemCall);
-         }
+         bmp->Flags |= BMF::NO_DATA;
+         bmp->MemType = BMT::VIDEO;
       }
 
+      if (InitObject(bmp) != ERR::Okay) return log.warning(ERR::Init);
+
+      HOSTWINDOW window = nullptr;
+      ERR window_error;
+      if (Self->PendingNativeWindow) window_error = glDriver->adoptWindow(Self, Self->PendingNativeWindow, window);
+      else window_error = glDriver->createWindow(Self, window);
+      if (window_error != ERR::Okay) return log.warning(window_error);
+      Self->WindowHandle = window;
       Self->Flags |= SCR::HOSTED;
 
-      // Get the size of the host window frame.  Note that the winCreateScreen() function we called earlier
-      // would have already reset the X/Y fields so that they reflect the absolute client position of the window.
+      if (not Self->IconImages.empty()) apply_window_icon(Self);
 
-      winGetMargins(Self->WindowHandle, &Self->LeftMargin, &Self->TopMargin, &Self->RightMargin, &Self->BottomMargin);
-
-   #elif _GLES_
-      ERR error;
-
-      if (Self->Bitmap->BitsPerPixel) glEGLPreferredDepth = Self->Bitmap->BitsPerPixel;
-      else glEGLPreferredDepth = 0;
-
-      if (!pthread_mutex_lock(&glGraphicsMutex)) {
-         error = init_egl();
-         eglMakeCurrent(glEGLDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT); // Give up our access to EGL because we're releasing the graphics mutex.
-         pthread_mutex_unlock(&glGraphicsMutex);
-      }
-      if (error) return error;
-
-      refresh_display_from_egl(Self);
-
-      // Initialise the video bitmap that will represent the OpenGL surface
-
-      bmp->Flags |= BMF::NO_DATA;
-      bmp->DataFlags = MEM::VIDEO;
-      if (InitObject(bmp) != ERR::Okay) {
-         return log.warning(ERR::Init);
-      }
-
-   #else
-      return log.warning(ERR::NoSupport);
-   #endif
+      glDriver->frameMargins(Self->WindowHandle, Self->LeftMargin, Self->TopMargin,
+         Self->RightMargin, Self->BottomMargin);
+   }
+   if (not glDriver) return log.warning(ERR::NoSupport);
 
    if ((Self->Flags & SCR::BUFFER) != SCR::NIL) alloc_display_buffer(Self);
 
@@ -874,16 +508,21 @@ static ERR DISPLAY_Init(extDisplay *Self)
 -METHOD-
 Minimise: Minimise the desktop window hosting the display.
 
-If a display is hosted in a desktop window, calling the Minimise method will perform the default minimise action
-on that window.  On a platform such as Microsoft Windows, this would normally result in the window being
-minimised to the task bar.
+If a display is hosted in a desktop window, Minimise() performs the platform's default minimise action for that window.
+On Microsoft Windows this normally minimises the window to the taskbar.  On X11 the current implementation unmaps the
+window.
 
-Calling Minimise on a display that is already in the minimised state may result in the host window being restored to
-the desktop.  This behaviour is platform dependent and should be manually tested to confirm its reliability on the
-host platform.
+Calling Minimise() on a display that is already minimised may restore the host window on some platforms.  Treat that
+behaviour as platform dependent.
+
+On Wayland, the compositor decides whether and when to minimise the window.  Showing the window again does not
+guarantee that it will be restored.
 
 -ERRORS-
 Okay
+
+-TAGS-
+blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -892,14 +531,7 @@ static ERR DISPLAY_Minimise(extDisplay *Self)
 {
    kt::Log log;
    log.branch();
-#ifdef _WIN32
-   winMinimiseWindow(Self->WindowHandle);
-#elif __xwindows__
-   if (XDisplay) {
-      XUnmapWindow(XDisplay, Self->XWindowHandle);
-      XSync(XDisplay, False);
-   }
-#endif
+   if (glDriver) return glDriver->minimiseWindow(Self->WindowHandle);
    return ERR::Okay;
 }
 
@@ -927,7 +559,18 @@ host graphics card may need a large amount of memory to support this method of s
 
 /*********************************************************************************************************************
 -ACTION-
-Move: Move the display to a new display position (relative coordinates).
+Move: Moves the display by a relative offset.
+
+Move adjusts the hosted window or native display position by the supplied delta values.  Hosted drivers interpret the
+movement in window-manager coordinates.
+
+Wayland does not provide absolute top-level coordinates.  Move returns `ERR::NoSupport` for a Wayland window.
+
+-ERRORS-
+Okay
+NullArgs
+SystemCall
+NoSupport
 -END-
 *********************************************************************************************************************/
 
@@ -935,28 +578,28 @@ static ERR DISPLAY_Move(extDisplay *Self, struct acMove *Args)
 {
    kt::Log log;
 
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    //log.branch("Moving display by %dx%d", (LONG)Args->DeltaX, (LONG)Args->DeltaY);
 
-#ifdef _WIN32
+   if (glDriver) {
+      // Headless displays have no host window, so the position is tracked here and reported to the owning surface
+      // in place of a host move event.
+      if (glHeadless) {
+         Self->X += Args->DeltaX;
+         Self->Y += Args->DeltaY;
+         release_stale_resize_feedback(Self);
+         resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
+         return ERR::Okay;
+      }
 
-   if (!winMoveWindow(Self->WindowHandle,
-      Self->X + Self->LeftMargin + Args->DeltaX,
-      Self->Y + Self->TopMargin + Args->DeltaY)) return ERR::SystemCall;
+      if (auto error = glDriver->moveWindow(Self->WindowHandle,
+         Self->X + Self->LeftMargin + Args->DeltaX,
+         Self->Y + Self->TopMargin + Args->DeltaY); error != ERR::Okay) return error;
 
-   return ERR::Okay;
-
-#elif __xwindows__
-
-   // Handling margins isn't necessary as the window manager will take that into account when it receives the move request.
-
-   if (!XDisplay) return ERR::NoSupport;
-
-   XMoveWindow(XDisplay, Self->XWindowHandle, Self->X + Args->DeltaX, Self->Y + Args->DeltaY);
-   return ERR::Okay;
-
-#elif __snap__
+      return ERR::Okay;
+   }
+#if   __snap__
 
    Self->X += Args->DeltaX;
    Self->Y += Args->DeltaY;
@@ -972,7 +615,12 @@ static ERR DISPLAY_Move(extDisplay *Self, struct acMove *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-MoveToBack: Move the display to the back of the display list.
+MoveToBack: Moves the hosted display window behind other windows.
+
+This action lowers the host window where the active platform supports window stacking.
+
+Wayland does not expose top-level stacking control, so this action returns `ERR::NoSupport` there.
+
 -END-
 *********************************************************************************************************************/
 
@@ -981,18 +629,19 @@ static ERR DISPLAY_MoveToBack(extDisplay *Self)
    kt::Log log;
    log.branch("%s", Self->Name);
 
-#ifdef _WIN32
-   winMoveToBack(Self->WindowHandle);
-#elif __xwindows__
-   if (XDisplay) XLowerWindow(XDisplay, Self->XWindowHandle);
-#endif
+   if (glDriver) return glDriver->lowerWindow(Self->WindowHandle);
 
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -ACTION-
-MoveToFront: Move the display to the front of the display list.
+MoveToFront: Moves the hosted display window in front of other windows.
+
+This action raises the host window where the active platform supports window stacking.
+
+Wayland does not expose top-level stacking control, so this action returns `ERR::NoSupport` there.
+
 -END-
 *********************************************************************************************************************/
 
@@ -1000,14 +649,13 @@ static ERR DISPLAY_MoveToFront(extDisplay *Self)
 {
    kt::Log log;
    log.branch("%s", Self->Name);
-#ifdef _WIN32
-   winMoveToFront(Self->WindowHandle);
-#elif __xwindows__
-   if (XDisplay) {
-      XRaiseWindow(XDisplay, Self->XWindowHandle);
-      XSync(XDisplay, False);
-   }
-#endif
+
+   // The window manager decides whether a window that it focusses is also raised, so a focus change reported by the
+   // host does not raise the window.  See DriverFocusState().
+
+   if (Self->UID IS glHostFocusDisplay) return ERR::Okay;
+
+   if (glDriver) return glDriver->raiseWindow(Self->WindowHandle);
    return ERR::Okay;
 }
 
@@ -1015,14 +663,27 @@ static ERR DISPLAY_MoveToFront(extDisplay *Self)
 -ACTION-
 MoveToPoint: Move the display to a new position.
 
-The MoveToPoint action moves the display to a new position.
+MoveToPoint moves the display to an absolute position.  The `MTF::X` and `MTF::Y` flags determine which coordinates
+are applied.
 
-In a hosted environment, the supplied coordinates are treated as being indicative of the absolute position of the host
-window (not the client area).
+In a hosted environment, the supplied coordinates describe the host window position.  The #LeftMargin and #TopMargin
+fields can be used when translating between host window coordinates and client-area coordinates.
 
 For full-screen displays, MoveToPoint can alter the screen position for the hardware device managing the display
 output.  This is a rare feature that requires hardware support.  `ERR::NoSupport` is returned if this feature is
 unavailable.
+
+Wayland does not expose absolute top-level positions.  This action returns `ERR::NoSupport` there and leaves the
+display coordinates unchanged.
+
+Headless displays have no host window.  The coordinates are stored directly and the owning surface is notified through
+#ResizeFeedback.
+
+-ERRORS-
+Okay
+NullArgs
+SystemCall
+NoSupport
 -END-
 *********************************************************************************************************************/
 
@@ -1030,109 +691,33 @@ static ERR DISPLAY_MoveToPoint(extDisplay *Self, struct acMoveToPoint *Args)
 {
    kt::Log log;
 
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    log.traceBranch("Moving display to %dx%d", int(Args->X), int(Args->Y));
 
-#ifdef _WIN32
+   if (glDriver) {
+      if (not glHeadless) {
+         if (auto error = glDriver->moveWindow(Self->WindowHandle,
+               ((Args->Flags & MTF::X) != MTF::NIL) ? Args->X : int(Self->X) + Self->LeftMargin,
+               ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : int(Self->Y) + Self->TopMargin);
+               error != ERR::Okay) {
+            return error;
+         }
+      }
 
-   // winMoveWindow() treats the coordinates as being indicative of the client area.
+      if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = int(Args->X) + Self->LeftMargin;
+      if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = int(Args->Y) + Self->TopMargin;
 
-   if (!winMoveWindow(Self->WindowHandle,
-         ((Args->Flags & MTF::X) != MTF::NIL) ? Args->X : int(Self->X) + Self->LeftMargin,
-         ((Args->Flags & MTF::Y) != MTF::NIL) ? Args->Y : int(Self->Y) + Self->TopMargin)) return ERR::SystemCall;
-
-   if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = int(Args->X) + Self->LeftMargin;
-   if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = int(Args->Y) + Self->TopMargin;
-   return ERR::Okay;
-
-#elif __xwindows__
-
-   // Handling margins isn't necessary as the window manager will take that into account when it receives the move request.
-
-   XMoveWindow(XDisplay, Self->XWindowHandle,
-      ((Args->Flags & MTF::X) != MTF::NIL) ? int(Args->X) : Self->X,
-      ((Args->Flags & MTF::Y) != MTF::NIL) ? int(Args->Y) : Self->Y);
-
-   if ((Args->Flags & MTF::X) != MTF::NIL) Self->X = int(Args->X);
-   if ((Args->Flags & MTF::Y) != MTF::NIL) Self->Y = int(Args->Y);
-   return ERR::Okay;
-
-#else
+      // Headless displays receive no host move event, so the owning surface is notified directly.
+      if (glHeadless) {
+         release_stale_resize_feedback(Self);
+         resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
+      }
+      return ERR::Okay;
+   }
 
    return ERR::NoSupport;
 
-#endif
-}
-
-//********************************************************************************************************************
-
-static ERR DISPLAY_NewObject(extDisplay *Self)
-{
-   if (NewLocalObject(CLASSID::BITMAP, &Self->Bitmap) != ERR::Okay) return ERR::NewObject;
-
-   OBJECTID id;
-   if (FindObject("SystemVideo", CLASSID::NIL, FOF::NIL, &id) != ERR::Okay) SetName(Self->Bitmap, "SystemVideo");
-
-   if (!Self->Name[0]) {
-      if (FindObject("SystemDisplay", CLASSID::NIL, FOF::NIL, &id) != ERR::Okay) SetName(Self, "SystemDisplay");
-   }
-
-   #ifdef __xwindows__
-
-      strcopy("X11", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("X Windows", Self->Display, sizeof(Self->Display));
-      strcopy("N/A", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("N/A", Self->Manufacturer, sizeof(Self->Manufacturer));
-
-   #elif _WIN32
-
-      strcopy("Windows", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("Windows", Self->Display, sizeof(Self->Display));
-      strcopy("N/A", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("N/A", Self->Manufacturer, sizeof(Self->Manufacturer));
-
-   #elif _GLES_
-
-      strcopy("OpenGLES", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("OpenGL", Self->Display, sizeof(Self->Display));
-      strcopy("N/A", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("N/A", Self->Manufacturer, sizeof(Self->Manufacturer));
-
-   #else
-
-      strcopy("Unknown", Self->Chipset, sizeof(Self->Chipset));
-      strcopy("Unknown", Self->Display, sizeof(Self->Display));
-      strcopy("Unknown", Self->DisplayManufacturer, sizeof(Self->DisplayManufacturer));
-      strcopy("Unknown", Self->Manufacturer, sizeof(Self->Manufacturer));
-
-   #endif
-
-   Self->Width       = 800;
-   Self->Height      = 600;
-   Self->RefreshRate = -1;
-   Self->Gamma[0]    = 1.0;
-   Self->Gamma[1]    = 1.0;
-   Self->Gamma[2]    = 1.0;
-   Self->Opacity     = 255;
-
-   #ifdef __xwindows__
-      Self->DisplayType = DT::X11;
-   #elif _WIN32
-      Self->DisplayType = DT::WINGDI;
-   #elif _GLES_
-      Self->DisplayType = DT::GLES;
-   #else
-      Self->DisplayType = DT::NATIVE;
-   #endif
-
-   return ERR::Okay;
-}
-
-static ERR DISPLAY_NewPlacement(extDisplay *Self)
-{
-   new (Self) extDisplay;
-   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1143,21 +728,35 @@ Redimension: Moves and resizes a display object in a single action call.
 
 static ERR DISPLAY_Redimension(extDisplay *Self, struct acRedimension *Args)
 {
-   if (!Args) return ERR::NullArgs;
+   if (not Args) return ERR::NullArgs;
 
    struct acMoveToPoint moveto = { Args->X, Args->Y, 0, MTF::X|MTF::Y };
-   DISPLAY_MoveToPoint(Self, &moveto);
+   if (auto error = DISPLAY_MoveToPoint(Self, &moveto); error != ERR::Okay) return error;
 
    struct acResize resize = { Args->Width, Args->Height, Args->Depth };
-   DISPLAY_Resize(Self, &resize);
-   return ERR::Okay;
+   return DISPLAY_Resize(Self, &resize);
 }
 
 /*********************************************************************************************************************
 -ACTION-
 Resize: Resizes the dimensions of a display object.
 
-If the display is hosted, the Width and Height values will determine the size of the inside area of the window.
+Resize changes the display viewport size and resizes the underlying #Bitmap.  If a display buffer is active, it is
+reallocated after the resize.
+
+For hosted displays, `Width` and `Height` describe the client area inside the host window, not the full outer window
+including frame decorations.
+
+On Wayland, a normal window changes size when the client commits a buffer of the requested dimensions.  A compositor
+resize is applied when its configure event is acknowledged.  Maximised and full-screen windows cannot be resized by
+this action until restored.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Resize
+NoSupport
 -END-
 *********************************************************************************************************************/
 
@@ -1167,39 +766,32 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
    log.branch();
 
-   if (!Self->initialised()) return log.warning(ERR::NotInitialised);
+   if (not Args) return log.warning(ERR::NullArgs);
+   if (not Self->initialised()) return log.warning(ERR::NotInitialised);
 
-#ifdef _WIN32
+   if (glDriver) {
+      // Headless displays only have a bitmap; there is no native window to resize.
+      if (not glHeadless) {
+         if (auto error = glDriver->resizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff,
+               Args->Width, Args->Height); error != ERR::Okay) return error;
+      }
 
-   if (!Args) return log.warning(ERR::NullArgs);
-
-   if (!winResizeWindow(Self->WindowHandle, 0x7fffffff, 0x7fffffff, Args->Width, Args->Height)) {
-      return ERR::Resize;
+      if (auto error = Action(AC::Resize, Self->Bitmap, Args); error != ERR::Okay) return error;
+      Self->Width = Self->Bitmap->Width;
+      Self->Height = Self->Bitmap->Height;
+      // Wayland and headless displays receive no host resize event for this change, so the owning surface is
+      // notified directly.
+      if ((glHeadless) or (glDriver->displayType() IS DT::WAYLAND)) {
+         release_stale_resize_feedback(Self);
+         resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
+      }
    }
-
-   Action(AC::Resize, Self->Bitmap, Args);
-   Self->Width = Self->Bitmap->Width;
-   Self->Height = Self->Bitmap->Height;
-
-#elif __xwindows__
-
-   if (!Args) return log.warning(ERR::NullArgs);
-
-   if (XDisplay) {
-      resize_pixmap(Self, Args->Width, Args->Height);
-      XResizeWindow(XDisplay, Self->XWindowHandle, Args->Width, Args->Height);
-   }
-
-   Action(AC::Resize, Self->Bitmap, Args);
-   Self->Width = Self->Bitmap->Width;
-   Self->Height = Self->Bitmap->Height;
-
-#elif __snap__
+#if   __snap__
 
    // Scan the available display modes and choose the one that most closely matches the requested display dimensions.
 
-   if (!(width = Args->Width)) width = Self->Width;
-   if (!(height = Args->Height)) height = Self->Height;
+   if (not (width = Args->Width)) width = Self->Width;
+   if (not (height = Args->Height)) height = Self->Height;
 
    uint16_t *modes = glSNAPDevice->AvailableModes;
    if (glSNAP->Init.GetDisplayOutput) display = glSNAP->Init.GetDisplayOutput() & gaOUTPUT_SELECTMASK;
@@ -1208,7 +800,7 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
    bestweight = 0x7fffffff;
    for (i=0; modes[i] != 0xffff; i++) {
       modeinfo.dwSize = sizeof(modeinfo);
-      if (!glSNAP->Init.GetVideoModeInfoExt(modes[i], &modeinfo, display, nullptr)) {
+      if (not glSNAP->Init.GetVideoModeInfoExt(modes[i], &modeinfo, display, nullptr)) {
          if (modeinfo.AttributesExt & gaIsPanningMode) continue;
          if (modeinfo.Attributes & gaIsTextMode) continue;
 
@@ -1253,15 +845,14 @@ static ERR DISPLAY_Resize(extDisplay *Self, struct acResize *Args)
 
    update_displayinfo(Self);
 
-   Self->HDensity = 0; // DPI needs to be recalculated.
-   Self->VDensity = 0;
+   Self->invalidateDensity(); // Automatic DPI values need to be recalculated.
 
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
 -ACTION-
-SaveImage: Saves the image of a display to a data object.
+SaveImage: Saves the display bitmap image to a data object.
 -END-
 *********************************************************************************************************************/
 
@@ -1272,7 +863,16 @@ static ERR DISPLAY_SaveImage(extDisplay *Self, struct acSaveImage *Args)
 
 /*********************************************************************************************************************
 -ACTION-
-SaveSettings: Saves the current display settings as the default.
+SaveSettings: Saves the current display settings as defaults.
+
+SaveSettings stores supported window and display preferences, such as window position, size, DPMS setting and
+full-screen state, in the user display configuration.
+
+Wayland stores the normal window size and full-screen or maximised preference without saving a top-level position.
+
+-ERRORS-
+Okay
+CreateObject
 -END-
 *********************************************************************************************************************/
 
@@ -1280,55 +880,31 @@ static ERR DISPLAY_SaveSettings(extDisplay *Self)
 {
    kt::Log log;
 
-#ifdef __xwindows__
-
-   log.branch();
-
-   objConfig::create config = { fl::Path("user:config/display.cfg") };
-
-   if (config.ok()) {
-      if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-         config->write("DISPLAY", "WindowX", std::to_string(Self->X));
-         config->write("DISPLAY", "WindowY", std::to_string(Self->Y));
-
-         if (Self->Width >= 600) config->write("DISPLAY", "WindowWidth", std::to_string(Self->Width));
-         else config->write("DISPLAY", "WindowWidth", "600");
-
-         if (Self->Height >= 480) config->write("DISPLAY", "WindowHeight", std::to_string(Self->Height));
-         else config->write("DISPLAY", "WindowHeight", "480");
-      }
-
-      config->write("DISPLAY", "DPMS", dpms_name(Self->PowerMode));
-      config->write("DISPLAY", "FullScreen", ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? "1" : "0");
-
-      config->saveSettings();
-   }
-
-#elif _WIN32
-
-   if ((Self->WindowHandle) and (Self->Width >= 640) and (Self->Height > 480)) {
-      // Save the current window status to file, but only if it is large enough to be considered 'screen sized'.
-
+   if ((glDriver) and (Self->WindowHandle) and (Self->Width >= 640) and (Self->Height > 480)) {
       objConfig::create config = { fl::Path("user:config/display.cfg") };
+      if (not config.ok()) return log.warning(ERR::CreateObject);
 
-      if (config.ok()) {
-         int x, y, width, height, maximise;
-
-         if (winGetWindowInfo(Self->WindowHandle, &x, &y, &width, &height, &maximise)) {
-            config->write("DISPLAY", "WindowWidth", std::to_string(width));
-            config->write("DISPLAY", "WindowHeight", std::to_string(height));
+      int x, y, width, height;
+      if ((glDriver->displayType() IS DT::WAYLAND) or
+            (glDriver->windowCoords(Self->WindowHandle, x, y, width, height) IS ERR::Okay)) {
+         if (glDriver->displayType() IS DT::WAYLAND) {
+            if (glDriver->normalWindowSize(Self->WindowHandle, width, height) != ERR::Okay) return ERR::NoSupport;
+         }
+         config->write("DISPLAY", "WindowWidth", std::to_string(width));
+         config->write("DISPLAY", "WindowHeight", std::to_string(height));
+         if (glDriver->displayType() != DT::WAYLAND) {
             config->write("DISPLAY", "WindowX", std::to_string(x));
             config->write("DISPLAY", "WindowY", std::to_string(y));
-            config->write("DISPLAY", "Maximise", std::to_string(maximise));
-            config->write("DISPLAY", "DPMS", dpms_name(Self->PowerMode));
-            config->write("DISPLAY", "FullScreen", ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? "1" : "0");
-            acSaveSettings(*config);
          }
+         config->write("DISPLAY", "Maximise", ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) ? "1" : "0");
+         if (glDriver->displayType() != DT::WAYLAND)
+            config->write("DISPLAY", "DPMS", dpms_name(Self->PowerMode));
+         config->write("DISPLAY", "FullScreen", ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? "1" : "0");
+         acSaveSettings(*config);
       }
-      else return log.warning(ERR::CreateObject);
+      return ERR::Okay;
    }
 
-#endif
 
    return ERR::Okay;
 }
@@ -1342,50 +918,44 @@ If a display is hosted in a desktop window, it may be possible to enforce size r
 from being shrunk or expanded beyond a certain size.  This feature is platform dependent and `ERR::NoSupport`
 will be returned if it is not implemented.
 
+A negative value leaves the corresponding limit at the value set by the previous call, while zero removes it.  This
+convention is honoured by the X11 and Wayland drivers.
+
+Window managers ignore aspect ratio and maximum size hints when a window is maximised.  On X11, setting
+`EnforceAspect` therefore also asks the window manager to remove the window's maximise function, and clearing it
+restores that function.
+
+Wayland applies minimum and maximum dimensions.  It cannot enforce an aspect ratio through xdg-shell; if
+`EnforceAspect` is true, the size limits are still applied and `ERR::NoSupport` is returned.
+
 -INPUT-
 int MinWidth: The minimum width of the window.
 int MinHeight: The minimum height of the window.
 int MaxWidth: The maximum width of the window.
-int MaxHeight: The maximum width of the window.
+int MaxHeight: The maximum height of the window.
 int EnforceAspect: Set to true to enforce an aspect ratio that is scaled from MinWidth,MinHeight to MaxWidth,MaxHeight.
 
 -ERRORS-
 Okay
+NullArgs
 NoSupport: The host platform does not support this feature.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
 
 static ERR DISPLAY_SizeHints(extDisplay *Self, gfx::SizeHints *Args)
 {
-#ifdef __xwindows__
-   XSizeHints hints = { .flags = 0 };
+   if (not Args) return ERR::NullArgs;
 
-   if ((Args->MaxWidth > 0) and (Args->MaxHeight > 0)) {
-      hints.max_width  = Args->MaxWidth;
-      hints.max_height = Args->MaxHeight;
-      hints.flags |= PMaxSize;
+   if (glDriver) {
+      return glDriver->setSizeHints(Self->WindowHandle, Args->MinWidth, Args->MinHeight,
+         Args->MaxWidth, Args->MaxHeight, Args->EnforceAspect);
    }
 
-   if ((Args->MinWidth > 0) and (Args->MinHeight > 0)) {
-      hints.min_width  = Args->MinWidth;
-      hints.min_height = Args->MinHeight;
-      hints.flags |= PMinSize;
-   }
-
-   if ((Args->EnforceAspect) and (hints.flags & PMaxSize) and (hints.flags & PMinSize)) {
-      hints.flags |= PAspect;
-      hints.min_aspect.x = Args->MinWidth;
-      hints.max_aspect.x = Args->MinWidth;
-      hints.min_aspect.y = Args->MinHeight;
-      hints.max_aspect.y = Args->MinHeight;
-   }
-
-   XSetWMNormalHints(XDisplay, Self->XWindowHandle, &hints);
-   return ERR::Okay;
-#else
    return ERR::NoSupport;
-#endif
 }
 
 /*********************************************************************************************************************
@@ -1393,16 +963,21 @@ static ERR DISPLAY_SizeHints(extDisplay *Self, gfx::SizeHints *Args)
 -METHOD-
 SetDisplay: Changes the current display mode.
 
-The SetDisplay method changes the current display settings for the screen. It can alter the position and screen
-dimensions and the display refresh rate. The new settings are applied immediately, although minor delays are possible
-while the graphics card and monitor adjust to the changes.
+SetDisplay() changes the active display mode or hosted display size, depending on the platform.  It can alter display
+position, viewport dimensions, bit depth and refresh rate when the active display driver supports those features.  The
+new settings are applied immediately, although the graphics card, monitor or host window manager may introduce a short
+delay.
+
+On Wayland, X and Y must match the current display coordinates.  A size change takes effect when the client commits
+new content.  Compositor-initiated size changes arrive through configure events.
+
+Headless displays have no host window.  The new geometry is applied to the display bitmap and reported immediately
+through #ResizeFeedback.
 
 To keep any of the display settings at their current value, set the appropriate parameters to zero to leave them
 unchanged.  Only the parameters that you set will be used.
 
-If the display parameters do not match with a valid display mode - for instance if you request a screen size of
-1280x1024 and the nearest equivalent is 1024x768, the SetDisplay method will automatically adjust to match against the
-nearest screen size.
+If a requested full-screen mode is not available, the driver may choose the closest supported mode.
 
 Only the original owner of the display object is allowed to change the display settings.
 
@@ -1418,9 +993,14 @@ double RefreshRate: Refresh rate, measured in floating point format for precisio
 int Flags: Optional flags.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+Resize
+NoSupport
 Failed: Failed to switch to the requested display mode.
+
+-TAGS-
+blocking, mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1429,57 +1009,43 @@ static ERR DISPLAY_SetDisplay(extDisplay *Self, gfx::SetDisplay *Args)
 {
    kt::Log log;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
-#ifdef _WIN32
-   // NOTE: Dimensions are measured relative to the client area, not the window including its borders.
+   if (glDriver) {
+      // NOTE: Dimensions are measured relative to the client area, not the window including its borders.
 
-   log.msg(VLF::BRANCH|VLF::DETAIL, "%dx%d, %dx%d", Args->X, Args->Y, Args->Width, Args->Height);
+      log.msg(VLF::BRANCH|VLF::DETAIL, "%dx%d, %dx%d", Args->X, Args->Y, Args->Width, Args->Height);
 
-   if (!winResizeWindow(Self->WindowHandle, Args->X, Args->Y, Args->Width, Args->Height)) {
-      return log.warning(ERR::Resize);
-   }
+      const bool wayland = glDriver->displayType() IS DT::WAYLAND;
+      const int width = (glHeadless or wayland) and (not Args->Width) ? Self->Width : Args->Width;
+      const int height = (glHeadless or wayland) and (not Args->Height) ? Self->Height : Args->Height;
 
-   log.trace("Resizing the video bitmap.");
-
-   acResize(Self->Bitmap, Args->Width, Args->Height, 0);
-   Self->Width = Self->Bitmap->Width;
-   Self->Height = Self->Bitmap->Height;
-
-#elif __xwindows__
-   // NOTE: Dimensions are measured relative to the client area, not the window.
-
-   log.branch("%dx%d,%dx%d @ %.2fHz, %d bit", Args->X, Args->Y, Args->Width, Args->Height, Args->RefreshRate, Args->BitsPerPixel);
-
-   if ((Args->Width IS Self->Width) and (Args->Height IS Self->Height)) return ERR::Okay;
-
-   int width = Args->Width;
-   int height = Args->Height;
-
-   if (glX11.Manager) { // The video mode can only be changed with the XRandR extension
-#ifdef XRANDR_ENABLED
-      if ((glXRRAvailable) and (xr_set_display_mode(&width, &height) IS ERR::Okay)) {
-         Self->RefreshRate = 0;
-         Self->Width  = width;
-         Self->Height = height;
-
-         // x11SetDisplayMode() posts a request to the X server.  Our response to display mode changes can be found in handler.c.
-
-         // Note: The RandR extension changes the video mode without actually changing the size of the bitmap area, so we don't resize the bitmap.
-
-         return ERR::Okay;
+      // Headless displays only have a bitmap; there is no native window to resize and no host event will report the
+      // new position, so the coordinates are recorded directly.
+      if (glHeadless) {
+         Self->X = Args->X;
+         Self->Y = Args->Y;
       }
-      else return ERR::NoSupport;
-#endif
-   }
-   else {
-      XResizeWindow(XDisplay, Self->XWindowHandle, width, height);
-      acResize(Self->Bitmap, width, height, 0.0);
-      Self->Width  = width;
-      Self->Height = height;
-   }
+      else {
+         const int x = wayland and (Args->X IS Self->X) ? 0x7fffffff : Args->X;
+         const int y = wayland and (Args->Y IS Self->Y) ? 0x7fffffff : Args->Y;
+         if (auto error = glDriver->resizeWindow(Self->WindowHandle, x, y, width, height);
+               error != ERR::Okay) return log.warning(error);
+      }
 
-#elif __snap__
+      log.trace("Resizing the video bitmap.");
+
+      if (auto error = acResize(Self->Bitmap, width, height, 0); error != ERR::Okay) return error;
+      Self->Width = Self->Bitmap->Width;
+      Self->Height = Self->Bitmap->Height;
+
+      if (glHeadless) {
+         release_stale_resize_feedback(Self);
+         resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
+      }
+      return ERR::Okay;
+   }
+#if   __snap__
 
    // Broadcast the change in resolution so that all video buffered bitmaps can move their graphics out of video memory.
 
@@ -1506,8 +1072,8 @@ The SetGamma method controls the gamma correction levels for the display.  Gamma
 colour components can be set at floating point precision.  The default gamma level for each component is 1.0; the
 minimum value is 0.0 and the maximum value is 100.
 
-Optional flags include `GMF::SAVE`.  This option will save the requested settings as the user default when future displays
-are opened.
+Optional flags include `GMF::SAVE`.  This option stores the requested gamma values on the Display object so they can
+be saved as defaults where the driver supports persistent display settings.
 
 If you would like to know the default gamma correction settings for a display, please refer to the #Gamma
 field.
@@ -1522,6 +1088,9 @@ int(GMF) Flags: Optional flags.
 Okay
 NullArgs
 NoSupport: The graphics hardware does not support gamma correction.
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1533,7 +1102,7 @@ static ERR DISPLAY_SetGamma(extDisplay *Self, gfx::SetGamma *Args)
    GA_palette palette[256];
    double intensity, red, green, blue;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    red   = Args->Red;
    green = Args->Green;
@@ -1572,8 +1141,8 @@ static ERR DISPLAY_SetGamma(extDisplay *Self, gfx::SetGamma *Args)
 -METHOD-
 SetGammaLinear: Sets the display gamma level using a linear algorithm.
 
-Call SetGammaLinear() to update a target display's gamma values with a linear algorithm that takes input from `Red`,
-`Green` and `Blue` parameters provided by the client.
+SetGammaLinear() updates display gamma values with a linear algorithm where the active driver supports it.  Values are
+clamped to the supported range before being applied.
 
 -INPUT-
 double Red: New red gamma value.
@@ -1582,8 +1151,12 @@ double Blue: New blue gamma value.
 int(GMF) Flags: Use `SAVE` to store the new settings.
 
 -ERRORS-
-Okay:
-NullArgs:
+Okay
+NullArgs
+NoSupport
+
+-TAGS-
+mutates-object
 -END-
 
 *********************************************************************************************************************/
@@ -1594,7 +1167,7 @@ static ERR DISPLAY_SetGammaLinear(extDisplay *Self, gfx::SetGammaLinear *Args)
    kt::Log log;
    GA_palette palette[256];
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    double red   = Args->Red;
    double green = Args->Green;
@@ -1640,19 +1213,17 @@ static ERR DISPLAY_SetGammaLinear(extDisplay *Self, gfx::SetGammaLinear *Args)
 -METHOD-
 SetMonitor: Changes the default monitor settings.
 
-Use the SetMonitor() method to change the settings that configure the user's monitor display.  You can set the model name
-of the monitor and the frequencies that are supported by it.  Altering the display frequencies will affect the
-available display resolutions, as well as the maximum allowable refresh rate.
+Use SetMonitor() to change the monitor metadata and scan-rate limits used by native display drivers.  Altering the
+supported frequencies can change the available display resolutions and maximum refresh rate.
 
-An AutoDetect option is available, which if defined will cause the display settings to be automatically detected when
-the desktop is loaded at startup. If it is not possible to detect the correct settings for the plugged-in display, it
-reverts to the default display settings.
+The auto-detect option requests monitor detection when the desktop starts.  If detection fails, the system reverts to
+its default monitor settings.
 
 This method does not work on hosted platforms.  All parameters passed to this method are optional (set a value to zero
 if it should not be changed).
 
 -INPUT-
-cstr Name: The name of the display.
+strview Name: The name of the display.
 int MinH: The minimum horizontal scan rate.  Usually set to 31.
 int MaxH: The maximum horizontal scan rate.
 int MinV: The minimum vertical scan rate.  Usually set to 50.
@@ -1662,6 +1233,11 @@ int(MON) Flags: Set to `AUTO_DETECT` if the monitor settings should be auto-dete
 -ERRORS-
 Okay
 NullArgs
+NoPermission
+NoSupport
+
+-TAGS-
+mutates-object, copies-input
 -END-
 
 *********************************************************************************************************************/
@@ -1674,20 +1250,21 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
    GA_monitor monitor;
    ERR priverror;
 
-   if (!Args) return log.warning(ERR::NullArgs);
+   if (not Args) return log.warning(ERR::NullArgs);
 
    if (CurrentTaskID() != Self->ownerTask()) {
       log.warning("Only the owner of the display may call this method.");
       return ERR::NoPermission;
    }
 
-   log.branch("%s", Args->Name);
+   std::string name(Args->Name);
+   log.branch("%s", name.c_str());
 
    glSixBitDisplay = ((Args->Flags & MON::BIT_6) != MON::NIL);
    if (glSixBitDisplay) Self->Flags |= SCR::BIT_6;
    else Self->Flags &= ~SCR::BIT_6;
 
-   if (Args->Name) StrCopy(Args->Name, Self->Display, sizeof(Self->Display));
+   if (not Args->Name.empty()) StrCopy(name.c_str(), Self->Display, sizeof(Self->Display));
 
    // Get the current monitor record, then set the new scan rates against it.
 
@@ -1743,7 +1320,7 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
       config->saveSettings();
    }
 
-   if (!priverror) SetResource(RES::PRIVILEGED_USER, 0);
+   if (not priverror) SetResource(RES::PRIVILEGED_USER, 0);
    return ERR::Okay;
 #else
    return ERR::NoSupport;
@@ -1755,14 +1332,13 @@ static ERR DISPLAY_SetMonitor(extDisplay *Self, gfx::SetMonitor *Args)
 -ACTION-
 Show: Presents a display object to the user.
 
-This method presents a display object to the user.  On a hosted platform, this will result in a window appearing on
-screen.  By default the window will be hosted within a window border which may contain regular window gadgets such as a
-titlebar and buttons for close, maximise and minimise operations.  The position of the window is determined by the
-#X and #Y fields.  In Kōtuku's native environment, the user's screen display will be altered to match the required
-resolution and the graphics of the display's #Bitmap object will take up the entirety of the screen.
+Show presents a display object to the user.  On hosted platforms this maps or shows the host window.  By default the
+window uses the platform's normal border, title and window controls.  The initial window position is determined by the
+#X and #Y fields.  On native full-screen drivers, showing the display may switch the active video mode and present the
+display #Bitmap across the screen.
 
-If the `BORDERLESS` flag has been set in the #Flags field, the window will appear without the surrounding border
-and gadgets normally associated with new windows.
+If `SCR::BORDERLESS` is set in #Flags, the host window is created without the normal window border and controls where
+the platform supports that mode.
 
 In Microsoft Windows, the #LeftMargin, #RightMargin, #TopMargin and #BottomMargin fields will be updated to reflect
 the position of the client area within the hosted window.  In X11 these field values are all set to zero.
@@ -1770,7 +1346,12 @@ the position of the client area within the hosted window.  In X11 these field va
 If the window is minimised at the time this action is called, the window will be restored to its original position if
 the code for the host platform supports this capability.
 
-The `VISIBLE` flag in the #Flags field will be set if the Show operation is successful.
+The `SCR::VISIBLE` flag is set if the Show operation succeeds.  Showing the first display also ensures that the shared
+`SystemPointer` object exists.
+
+-ERRORS-
+Okay
+NoSupport
 -END-
 
 *********************************************************************************************************************/
@@ -1781,86 +1362,36 @@ ERR DISPLAY_Show(extDisplay *Self)
 
    log.branch();
 
-   #ifdef __xwindows__
-      if (!XDisplay) {
-         log.error("No X11 display has been found for this machine.");
-         return ERR::NoSupport;
+   if (glDriver) {
+      if (not glHeadless) {
+         if (auto error = glDriver->showWindow(Self->WindowHandle,
+               (Self->Flags & SCR::MAXIMISE) != SCR::NIL); error != ERR::Okay) return error;
+         glDriver->frameMargins(Self->WindowHandle, Self->LeftMargin, Self->TopMargin,
+            Self->RightMargin, Self->BottomMargin);
       }
-
-      // Some window managers fool with our position when mapping, so we use XMoveWindow() before and after to be
-      // certain that we get the position that we want.
-
-      if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-         XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
-      }
-
-      XMapWindow(XDisplay, Self->XWindowHandle);
-
-      if ((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) {
-         XMoveWindow(XDisplay, Self->XWindowHandle, Self->X, Self->Y);
-      }
-
-      XSync(XDisplay, False);
-
-      Self->LeftMargin   = 0;
-      Self->TopMargin    = 0;
-      Self->RightMargin  = 0;
-      Self->BottomMargin = 0;
-
-      // Mapping a window may cause the window manager to resize it without sending a notification event, so check the
-      // window size on a delay.
-
-      QueueAction(gfx::CheckXWindow::id, Self->UID);
-
-      // Originally introduced as a hack to manage focusing for dropdown menus, possibly no longer required as focus should remain with the instigator.
-
-      //if (iequals("SystemDisplay", Self->Name)) {
-      //   XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
-      //}
-
-   #elif _WIN32
-
-      if ((Self->Flags & SCR::MAXIMISE) != SCR::NIL) winShowWindow(Self->WindowHandle, TRUE);
-      else winShowWindow(Self->WindowHandle, FALSE);
-
-      winUpdateWindow(Self->WindowHandle);
-      winGetMargins(Self->WindowHandle, &Self->LeftMargin, &Self->TopMargin, &Self->RightMargin, &Self->BottomMargin);
-
-   #elif __snap__
+   }
+   #if   __snap__
+   else {
 
       if (glSNAP->Init.GetCurrentRefreshRate) Self->RefreshRate = (glSNAP->Init.GetCurrentRefreshRate() + 50) / 100;
       else Self->RefreshRate = -1;
 
       gfxSetGamma(Self, Self->Gamma[0], Self->Gamma[1], Self->Gamma[2]);
-
-   #elif _GLES_
-
-      #warning TODO: Bring back the native window if it is hidden.
-      glActiveDisplayID = Self->UID;
-      Self->Flags &= ~SCR::NOACCELERATION;
+   }
 
    #else
-      return log.warning(ERR::NoSupport);
+      if (not glDriver) return log.warning(ERR::NoSupport);
    #endif
 
    Self->Flags |= SCR::VISIBLE;
 
    objPointer *pointer;
    OBJECTID pointer_id;
-   if (FindObject("SystemPointer", CLASSID::POINTER, FOF::NIL, &pointer_id) != ERR::Okay) {
-      if (NewObject(CLASSID::POINTER, NF::UNTRACKED, (OBJECTPTR *)&pointer) IS ERR::Okay) {
+   if (FindObject("SystemPointer", CLASSID::POINTER, &pointer_id) != ERR::Okay) {
+      if (!NewObject(CLASSID::POINTER, NF::UNTRACKED, (OBJECTPTR *)&pointer)) {
          SetName(pointer, "SystemPointer");
          if ((Self->Owner) and (Self->Owner->classID() IS CLASSID::SURFACE)) pointer->setSurface(Self->Owner->UID);
 
-         #ifdef __ANDROID__
-            AConfiguration *config;
-            if (!adGetConfig(&config)) {
-               double dp_factor = 160.0 / AConfiguration_getDensity(config);
-               pointer->ClickSlop = F2I(8.0 * dp_factor);
-               log.trace("Click-slop calculated as %d.", pointer->ClickSlop);
-            }
-            else log.warning("Failed to get Android Config object.");
-         #endif
 
          if (InitObject(pointer) != ERR::Okay) FreeResource(pointer);
          else acShow(pointer);
@@ -1874,8 +1405,8 @@ ERR DISPLAY_Show(extDisplay *Self)
 -METHOD-
 UpdatePalette: Updates the video display palette to new colour values if in 256 colour mode.
 
-Call UpdatePalette() to copy a new palette to the display bitmap's internal palette.  If the video display is running in
-256 colour mode, the new palette colours will also be reflected in the display.
+Call UpdatePalette() to copy a new palette to the display bitmap's internal palette.  If the video display is running
+in 256-colour mode, the new palette colours are also applied to the display where supported.
 
 This method has no visible effect on RGB pixel displays.
 
@@ -1885,6 +1416,10 @@ struct(*RGBPalette) NewPalette: The new palette to apply to the display bitmap.
 -ERRORS-
 Okay
 NullArgs
+Args
+
+-TAGS-
+mutates-object, copies-input
 
 *********************************************************************************************************************/
 
@@ -1892,7 +1427,7 @@ static ERR DISPLAY_UpdatePalette(extDisplay *Self, gfx::UpdatePalette *Args)
 {
    kt::Log log;
 
-   if ((!Args) or (!Args->NewPalette)) return ERR::NullArgs;
+   if ((not Args) or (not Args->NewPalette)) return ERR::NullArgs;
 
    log.branch("Palette: %p, Colours: %d", Args->NewPalette, Args->NewPalette->AmtColours);
 
@@ -1911,12 +1446,15 @@ static ERR DISPLAY_UpdatePalette(extDisplay *Self, gfx::UpdatePalette *Args)
 -METHOD-
 WaitVBL: Waits for a vertical blank.
 
-This method waits for the strobe to reach the vertical blank area at the bottom of the display.  Not all graphics
-hardware will support this method.  If this is the case, WaitVBL() will return immediately with `ERR::NoSupport`.
+WaitVBL() waits for the display to reach vertical blank where the active driver exposes that timing primitive.  Drivers
+that do not support it return `ERR::NoSupport` immediately.
 
 -ERRORS-
 Okay
 NoSupport
+
+-TAGS-
+blocking
 
 *********************************************************************************************************************/
 
@@ -1930,23 +1468,23 @@ ERR DISPLAY_WaitVBL(extDisplay *Self)
 -FIELD-
 Bitmap: Reference to the display's bitmap information.
 
-The @Bitmap object describes the video region that will be used for displaying graphics. It holds details on the width,
-height, type, number of colours and so on.  The display class inherits the bitmap's attributes, so it is not necessary
-to retrieve a direct reference to the bitmap object in order to make adjustments.
+The @Bitmap object describes the drawable pixel region presented by the display.  It stores the width, height, colour
+format, palette and related bitmap state.  Display fields mirror the most common bitmap dimensions, so callers rarely
+need to access the bitmap directly for simple sizing operations.
 
-The @Bitmap.Width and @Bitmap.Height can be larger than the display area, but never smaller.
+The @Bitmap.Width and @Bitmap.Height can be larger than the visible display area, but never smaller.
 
 -FIELD-
 BmpX: The horizontal coordinate of the bitmap within a display.
 
-This field defines the horizontal offset for the #Bitmap, which is positioned 'behind' the display. To achieve
-hardware scrolling, call the #Move() action on the Bitmap in order to change this value and update the display.
+This field stores the horizontal offset of the #Bitmap relative to the visible display viewport.  It is used by drivers
+that support a bitmap larger than the visible display area.
 
 -FIELD-
 BmpY: The vertical coordinate of the Bitmap within a display.
 
-This field defines the vertical offset for the #Bitmap, which is positioned 'behind' the display.  To achieve hardware
-scrolling, you will need to call the Move() action on the #Bitmap in order to change this value and update the display.
+This field stores the vertical offset of the #Bitmap relative to the visible display viewport.  It is used by drivers
+that support a bitmap larger than the visible display area.
 
 -FIELD-
 BottomMargin: In hosted mode, indicates the bottom margin of the client window.
@@ -1957,23 +1495,32 @@ and the bottom window edge.
 -FIELD-
 Chipset: String describing the graphics chipset.
 
-This string describes the graphic card's chipset, if known.
+This string describes the graphic card's chipset, if known.  On Linux the chipset of the primary graphics device is
+resolved from the system's PCI ID database, e.g. `TU106 [GeForce RTX 2060 Rev. A]`.  If the device is not listed, its
+PCI vendor and device IDs are reported instead.
 
 *********************************************************************************************************************/
 
-static ERR GET_Chipset(extDisplay *Self, STRING *Value)
+static ERR GET_Chipset(extDisplay *Self, std::string_view &Value)
 {
-   *Value = Self->Chipset;
+#ifdef DESKTOP_ENTRIES
+   if (auto &device = graphics_hardware::primary_device(); (not glHeadless) and (not device.Device.empty())) {
+      Value = device.Device;
+      return ERR::Okay;
+   }
+#endif
+   Value = Self->Chipset;
    return ERR::Okay;
 }
 
 /*********************************************************************************************************************
+
 -FIELD-
 HDensity: Returns the horizontal pixel density for the display.
 
 Reading the HDensity field will return the horizontal pixel density for the display (pixels per inch).  If the physical
-size of the display is unknown, a default value based on knowledge of the platform will be retuned.  For standard PC's
-this will usually be 96.
+size of the display is unknown, a default value based on the platform is returned.  For standard desktop systems this
+will usually be 96.
 
 A custom density value can be enforced by setting the `/interface/@dpi` value in the loaded style, or by setting
 HDensity.
@@ -1989,42 +1536,30 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
       return ERR::Okay;
    }
 
-   #ifdef __ANDROID__
-      Self->HDensity = 160; // Android devices tend to have a high DPI by default (compared to monitors)
-   #else
-      Self->HDensity = 96; // Standard PC DPI, matches Windows
-   #endif
+   *Value = Self->HDensity = 96; // Standard PC DPI, matches Windows
 
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
    OBJECTID style_id;
-   if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &style_id) IS ERR::Okay) {
+   if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
-         char strdpi[32];
-         if (acGetKey(style.obj, "/interface/@dpi", strdpi, sizeof(strdpi)) IS ERR::Okay) {
-            *Value = strtol(strdpi, NULL, 0);
+         std::string strdpi;
+         if (!acGetKey(style.obj, "/interface/@dpi", strdpi)) {
+            *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->HDensity = *Value; // Store for future use.
-            if (!Self->VDensity) Self->VDensity = Self->HDensity;
+            if (not Self->VDensity) Self->VDensity = Self->HDensity;
+            if (*Value >= 96) return ERR::Okay;
          }
-         if (*Value >= 96) return ERR::Okay;
       }
    }
 
-   #ifdef __ANDROID__
-      AConfiguration *config;
-      if (!adGetConfig(&config)) {
-         int density = AConfiguration_getDensity(config);
-         if ((density > 60) and (density < 20000)) {
-            Self->HDensity = density;
-            Self->VDensity = density;
-         }
-      }
-   #elif _WIN32
-      winGetDPI(&Self->HDensity, &Self->VDensity);
-      if (Self->HDensity < 96) Self->HDensity = 96;
-      if (Self->VDensity < 96) Self->VDensity = 96;
-   #endif
+   if (glDriver) {
+      int horizontal = 96, vertical = 96;
+      glDriver->density(Self->WindowHandle, horizontal, vertical);
+      Self->HDensity = horizontal;
+      if (not Self->VDensity) Self->VDensity = vertical;
+   }
 
    *Value = Self->HDensity;
    return ERR::Okay;
@@ -2033,6 +1568,7 @@ ERR GET_HDensity(extDisplay *Self, int *Value)
 static ERR SET_HDensity(extDisplay *Self, int Value)
 {
    Self->HDensity = Value;
+   Self->CustomHDensity = Value != 0;
    return ERR::Okay;
 }
 
@@ -2042,8 +1578,8 @@ static ERR SET_HDensity(extDisplay *Self, int Value)
 VDensity: Returns the vertical pixel density for the display.
 
 Reading the VDensity field will return the vertical pixel density for the display (pixels per inch).  If the physical
-size of the display is unknown, a default value based on knowledge of the platform will be retuned.  For standard PC's
-this will usually be 96.
+size of the display is unknown, a default value based on the platform is returned.  For standard desktop systems this
+will usually be 96.
 
 A custom density value can be enforced by setting the `/interface/@dpi` value in the loaded style, or by setting
 VDensity.
@@ -2059,42 +1595,30 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
       return ERR::Okay;
    }
 
-   #ifdef __ANDROID__
-      Self->VDensity = 160; // Android devices tend to have a high DPI by default (compared to monitors)
-   #else
-      Self->VDensity = 96; // Standard PC DPI, matches Windows
-   #endif
+   *Value = Self->VDensity = 96; // Standard PC DPI, matches Windows
 
    // If the user has overridden the DPI with a preferred value, we have to use it.
 
    OBJECTID style_id;
-   if (FindObject("glStyle", CLASSID::XML, FOF::NIL, &style_id) IS ERR::Okay) {
+   if (!FindObject("glStyle", CLASSID::XML, &style_id)) {
       kt::ScopedObjectLock<objXML> style(style_id, 3000);
       if (style.granted()) {
-         char strdpi[32];
-         if (acGetKey(style.obj, "/interface/@dpi", strdpi, sizeof(strdpi)) IS ERR::Okay) {
-            *Value = strtol(strdpi, NULL, 0);
+         std::string strdpi;
+         if (!acGetKey(style.obj, "/interface/@dpi", strdpi)) {
+            *Value = strtol(strdpi.c_str(), nullptr, 0);
             Self->VDensity = *Value;
-            if (!Self->HDensity) Self->HDensity = Self->VDensity;
+            if (not Self->HDensity) Self->HDensity = Self->VDensity;
+            if (*Value >= 96) return ERR::Okay;
          }
-         if (*Value >= 96) return ERR::Okay;
       }
    }
 
-   #ifdef __ANDROID__
-      AConfiguration *config;
-      if (!adGetConfig(&config)) {
-         int density = AConfiguration_getDensity(config);
-         if ((density > 60) and (density < 20000)) {
-            Self->HDensity = density;
-            Self->VDensity = density;
-         }
-      }
-   #elif _WIN32
-      winGetDPI(&Self->HDensity, &Self->VDensity);
-      if (Self->HDensity < 96) Self->HDensity = 96;
-      if (Self->VDensity < 96) Self->VDensity = 96;
-   #endif
+   if (glDriver) {
+      int horizontal = 96, vertical = 96;
+      glDriver->density(Self->WindowHandle, horizontal, vertical);
+      Self->VDensity = vertical;
+      if (not Self->HDensity) Self->HDensity = horizontal;
+   }
 
    *Value = Self->VDensity;
    return ERR::Okay;
@@ -2103,6 +1627,7 @@ ERR GET_VDensity(extDisplay *Self, int *Value)
 static ERR SET_VDensity(extDisplay *Self, int Value)
 {
    Self->VDensity = Value;
+   Self->CustomVDensity = Value != 0;
    return ERR::Okay;
 }
 
@@ -2113,44 +1638,26 @@ Display: String describing the display (e.g. model name of the monitor).
 
 This string describes the display device that is connected to the user's graphics card.
 
-*********************************************************************************************************************/
-
-static ERR GET_Display(extDisplay *Self, CSTRING *Value)
-{
-   if (Self->Display[0]) *Value = Self->Display;
-   else *Value = nullptr;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
-DisplayManufacturer: String describing the display manufacturer.
+DisplayMfr: String describing the display manufacturer.
 
 This string names the manufacturer of the user's display device.
 
-*********************************************************************************************************************/
-
-static ERR GET_DisplayManufacturer(extDisplay *Self, CSTRING *Value)
-{
-   if (Self->DisplayManufacturer[0]) *Value = Self->DisplayManufacturer;
-   else *Value = nullptr;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
 -FIELD-
-DisplayType: In hosted mode, indicates the bottom margin of the client window.
+DisplayType: Identifies the active display backend.
+Lookup: DT
 
-If the display is hosted in a client window, the #BottomMargin indicates the number of pixels between the client area
-and the bottom window edge.
+This field reports the selected display driver type, including native Wayland, X11, Windows GDI and OpenGL ES.
 
 -FIELD-
 Flags: Optional flag settings.
+Lookup: SCR
 
-Optional display flags can be defined here.  Post-initialisation, the only flags that can be set are `AUTO_SAVE` and
-`BORDERLESS`.
+Display flags configure hosted-window behaviour, buffering, visibility, controller grabbing and driver-reported
+capabilities.  After initialisation, only a limited subset can be changed and support for changing window style is
+platform dependent.
+
+On Wayland, changing `SCR::BORDERLESS` requests full-screen mode.  The compositor determines the resulting size.
 
 *********************************************************************************************************************/
 
@@ -2165,145 +1672,60 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
       auto accept = Value & ACCEPT_FLAGS;
       Self->Flags = (Self->Flags & (~ACCEPT_FLAGS)) | accept;
 
-      if ((((Self->Flags & SCR::BORDERLESS) != SCR::NIL) and ((Value & SCR::BORDERLESS) IS SCR::NIL)) or
+      if ((glDriver) and (Self->WindowHandle)) {
+         glDriver->setWindowControllers(Self->WindowHandle, (Self->Flags & SCR::GRAB_CONTROLLERS) != SCR::NIL);
+      }
+
+      if ((glDriver) and (glDriver->displayType() IS DT::WAYLAND) and
+            (((Self->Flags & SCR::BORDERLESS) != SCR::NIL) != ((Value & SCR::BORDERLESS) != SCR::NIL))) {
+         if (auto error = glDriver->setFullscreen(Self->WindowHandle,
+               (Value & SCR::BORDERLESS) != SCR::NIL); error != ERR::Okay) return error;
+         Self->Flags = Self->Flags ^ SCR::BORDERLESS;
+      }
+      else if ((((Self->Flags & SCR::BORDERLESS) != SCR::NIL) and ((Value & SCR::BORDERLESS) IS SCR::NIL)) or
           (((Self->Flags & SCR::BORDERLESS) IS SCR::NIL) and ((Value & SCR::BORDERLESS) != SCR::NIL))) {
-      #ifdef _WIN32
+         if (glDriver) {
+            log.msg("Switching window type.");
 
-         log.msg("Switching window type.");
-
-         bool maximise = true;
-         CSTRING title = nullptr;
-         Self->get(FID_Title, title); // Get the window title before we kill it
-
-         OBJECTID surface_id = winLookupSurfaceID(Self->WindowHandle);
-         winSetSurfaceID(Self->WindowHandle, 0); // Nullify the surface ID to prevent WM_DESTROY from being acted upon
-         winDestroyWindow(Self->WindowHandle);
-
-         HWND popover = 0;
-         if ((Self->WindowHandle = winCreateScreen(popover, &Self->X, &Self->Y, &Self->Width, &Self->Height,
-               maximise, ((Self->Flags & SCR::BORDERLESS) != SCR::NIL) ? false : true, title, FALSE, 255, TRUE))) {
+            OBJECTID surface_id = 0;
+            std::string title;
+            glDriver->windowTitle(Self->WindowHandle, title);
+            glDriver->windowSurface(Self->WindowHandle, surface_id);
+            glDriver->setWindowSurface(Self->WindowHandle, 0);
+            glDriver->destroyWindow(Self->WindowHandle);
 
             Self->Flags = Self->Flags ^ SCR::BORDERLESS;
+            HOSTWINDOW window = nullptr;
+            if (auto error = glDriver->createWindow(Self, window); error != ERR::Okay) return error;
+            Self->WindowHandle = window;
+            if (not title.empty()) glDriver->setWindowTitle(Self->WindowHandle, title.c_str());
+            if (not Self->IconImages.empty()) apply_window_icon(Self);
+            glDriver->setWindowSurface(Self->WindowHandle, surface_id);
+            glDriver->frameMargins(Self->WindowHandle, Self->LeftMargin, Self->TopMargin,
+               Self->RightMargin, Self->BottomMargin);
 
-            winSetSurfaceID(Self->WindowHandle, surface_id);
-            winGetMargins(Self->WindowHandle, &Self->LeftMargin, &Self->TopMargin, &Self->RightMargin, &Self->BottomMargin);
-
-            // Report the new window dimensions
-
-            int cx, cy, cwidth, cheight;
-            winGetCoords(Self->WindowHandle, Self->X, Self->Y, Self->Width, Self->Height, cx, cy, cwidth, cheight);
-
-            resize_feedback(&Self->ResizeFeedback, Self->UID, cx, cy, cwidth, cheight);
+            release_stale_resize_feedback(Self);
+            resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
 
             if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
-               winShowWindow(Self->WindowHandle, TRUE);
+               glDriver->showWindow(Self->WindowHandle, true);
                QueueAction(AC::Focus, Self->UID);
             }
          }
-
-      #elif __xwindows__
-
-         if (glX11.Manager) return ERR::NoSupport;
-
-         XSetWindowAttributes swa;
-
-         log.msg("Destroying current window.");
-
-         swa.event_mask  = 0;
-         XChangeWindowAttributes(XDisplay, Self->XWindowHandle, CWEventMask, &swa);
-
-         XDestroyWindow(XDisplay, Self->XWindowHandle);
-         Self->WindowHandle = nullptr;
-
-         Self->Flags = Self->Flags ^ SCR::BORDERLESS;
-
-         swa.bit_gravity = CenterGravity;
-         swa.win_gravity = CenterGravity;
-         swa.cursor      = C_Default;
-         swa.override_redirect = (Self->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL;
-         swa.event_mask  = ExposureMask|EnterWindowMask|LeaveWindowMask|PointerMotionMask|StructureNotifyMask
-                           |KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|FocusChangeMask;
-
-         int cwflags = CWEventMask|CWOverrideRedirect;
-
-         if ((Self->Flags & (SCR::BORDERLESS|SCR::COMPOSITE)) != SCR::NIL) {
-            Self->X = 0;
-            Self->Y = 0;
-            Self->Width  = glRootWindow.width;
-            Self->Height = glRootWindow.height;
-         }
-         else {
-            Self->X = 50;
-            Self->Y = 70;
-            Self->Width  = glRootWindow.width - 100;
-            Self->Height = glRootWindow.height - 140;
-            if (Self->X+Self->Width > glRootWindow.width) Self->Width = glRootWindow.width - Self->X;
-            if (Self->Y+Self->Height > glRootWindow.height) Self->Height = glRootWindow.height - Self->Y;
-         }
-
-         if (!(Self->WindowHandle = (APTR)XCreateWindow(XDisplay, DefaultRootWindow(XDisplay),
-               Self->X, Self->Y, Self->Width, Self->Height, 0, CopyFromParent, InputOutput,
-               CopyFromParent, cwflags, &swa))) {
-            log.warning("Failed in call to XCreateWindow().");
-            return ERR::CreateResource;
-         }
-
-         STRING name;
-         if ((CurrentTask()->get(FID_Name, name) IS ERR::Okay) and (name)) {
-            XStoreName(XDisplay, Self->XWindowHandle, name);
-         }
-         else XStoreName(XDisplay, Self->XWindowHandle, "Kotuku");
-
-         Atom protocols[1] = { XWADeleteWindow };
-         XSetWMProtocols(XDisplay, Self->XWindowHandle, protocols, 1);
-
-         if (glStickToFront) {
-            XSetTransientForHint(XDisplay, Self->XWindowHandle, DefaultRootWindow(XDisplay));
-         }
-
-         XChangeProperty(XDisplay, Self->XWindowHandle, atomSurfaceID, atomSurfaceID, 32, PropModeReplace, (uint8_t *)&Self->UID, 1);
-
-         // Indicate that the window position is not to be meddled with by the window manager.
-
-         XSizeHints hints = { .flags = USPosition|USSize };
-         XSetWMNormalHints(XDisplay, Self->XWindowHandle, &hints);
-
-         // The keyboard qualifiers need to be reset, because if the user is holding down any keys we will lose any
-         // key-release messages due on the window that we've terminated.
-
-         glKeyFlags = KQ::NIL;
-
-         Self->Bitmap->set(FID_Handle, Self->WindowHandle);
-         acResize(Self->Bitmap, Self->Width, Self->Height, 0);
-
-         if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) {
-            acShow(Self);
-            XSetInputFocus(XDisplay, Self->XWindowHandle, RevertToNone, CurrentTime);
-            QueueAction(AC::Focus, Self->UID);
-         }
-
-         resize_feedback(&Self->ResizeFeedback, Self->UID, Self->X, Self->Y, Self->Width, Self->Height);
-
-         XSync(XDisplay, False);
-      #endif
       }
 
       if (((Self->Flags & SCR::MAXIMISE) != SCR::NIL) and ((Value & SCR::MAXIMISE) IS SCR::NIL)) { // Turn maximise off
-         #ifdef _WIN32
-            if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) winShowWindow(Self->WindowHandle, FALSE);
-            Self->Flags |= SCR::MAXIMISE;
-         #elif __xwindows__
-
-         #endif
+         if (glDriver) {
+            if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) glDriver->showWindow(Self->WindowHandle, false);
+            Self->Flags &= ~SCR::MAXIMISE;
+         }
       }
 
       if (((Self->Flags & SCR::MAXIMISE) IS SCR::NIL) and ((Value & SCR::MAXIMISE) != SCR::NIL)) { // Turn maximise on
-         #ifdef _WIN32
-            if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) winShowWindow(Self->WindowHandle, TRUE);
+         if (glDriver) {
+            if ((Self->Flags & SCR::VISIBLE) != SCR::NIL) glDriver->showWindow(Self->WindowHandle, true);
             Self->Flags |= SCR::MAXIMISE;
-         #elif __xwindows__
-
-         #endif
+         }
       }
    }
    else Self->Flags = (Value) & (~SCR::READ_ONLY);
@@ -2317,25 +1739,22 @@ static ERR SET_Flags(extDisplay *Self, SCR Value)
 Gamma: Contains red, green and blue values for the display's gamma setting.
 
 The gamma settings for the display are stored in this field.  The settings are stored in an array of 3 floating point
-values that represent red, green and blue colours guns.  The default gamma value for each colour gun is 1.0.
+values that represent the red, green and blue colour components.  The default gamma value for each component is 1.0.
 
 To modify the display gamma values, please refer to the #SetGamma() and #SetGammaLinear() methods.
 
 *********************************************************************************************************************/
 
-static ERR GET_Gamma(extDisplay *Self, double **Value, int *Elements)
+static ERR GET_Gamma(extDisplay *Self, std::span<const double> &Value)
 {
-   *Elements = 3;
-   *Value = Self->Gamma;
+   Value = std::span<const double>(Self->Gamma, 3);
    return ERR::Okay;
 }
 
-static ERR SET_Gamma(extDisplay *Self, double *Value, int Elements)
+static ERR SET_Gamma(extDisplay *Self, std::span<const double> &Array)
 {
-   if (Value) {
-      if (Elements > 3) Elements = 3;
-      int16_t i;
-      for (i=0; i < Elements; i++) Self->Gamma[i] = Value[i];
+   if (Array.data()) {
+      for (unsigned i=0; i < std::min<size_t>(Array.size(), 3); i++) Self->Gamma[i] = Array[i];
    }
    return ERR::Okay;
 }
@@ -2345,8 +1764,8 @@ static ERR SET_Gamma(extDisplay *Self, double *Value, int Elements)
 -FIELD-
 Height: Defines the height of the display.
 
-This field defines the height of a display.  This is known as the 'viewport' that the bitmap data is displayed through.
-If the height exceeds allowable limits, it will be restricted to a value that the display hardware can handle.
+This field defines the visible display viewport height.  If the height exceeds allowable limits, it is restricted to a
+value that the display driver can handle.
 
 If the display is hosted, the height reflects the internal height of the host window.  On some hosted systems, the true
 height of the window can be calculated by reading the #TopMargin and #BottomMargin fields.
@@ -2362,11 +1781,335 @@ static ERR SET_Height(extDisplay *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+Icon: Defines the icon that represents the display's host window.
+
+Setting the Icon assigns an image to the host window, which the desktop environment may use to represent the window in
+its title bar, taskbar and task switcher.  The value is a path to an SVG file, or to a bitmap image in any format that
+is supported by the @Image class.
+
+The icon is rendered at a range of sizes, from 16 to 256 pixels, at the time that the field is set.  This allows the
+host to select the most appropriate size for each context in which the icon is shown.  SVG sources are rendered
+directly from their vector data.  Bitmap sources are loaded at their native resolution and resampled by the vector
+renderer, which produces a higher quality result than simple pixel scaling.  Sources that are not square are centred
+and scaled to fit, preserving their aspect ratio.  A white circle is drawn behind the source, which is centred
+in an inset square occupying 68% of the icon size.  Pixels outside the circle remain transparent.
+
+The Icon can be set before or after initialisation, and is automatically reapplied if the host window is recreated.
+Setting an empty string removes the icon.
+
+Window icons are currently supported by the X11 driver only.  On other platforms the icon source is validated and
+retained, but has no visible effect.
+
+GNOME 46 and later ignore window icons, and display the icon of the `.desktop` application entry that matches the
+window's X11 class or Wayland app ID.  Kōtuku windows match the installed `org.kotuku.Origo` entry by default.  When
+running under GNOME, setting the Icon also publishes a hidden entry named `org.kotuku.Origo.Icon-<hash>.desktop` in
+`$XDG_DATA_HOME/applications`, with a copy of the icon in `$XDG_DATA_HOME/kotuku/icons`, and assigns the matching
+class to the window.  The hash is derived from the icon's path, so windows that use the same icon share an entry.
+Generated entries are retained after the process exits, and are marked with `X-Kotuku-Generated=true`.
+
+*********************************************************************************************************************/
+
+// Icons are rendered at a range of sizes so that the host can choose the most appropriate size for each context.
+
+static constexpr int glIconSizes[] = { 16, 24, 32, 48, 64, 128, 256 };
+
+static std::string escape_xml_attrib(std::string_view Value)
+{
+   std::string result;
+   result.reserve(Value.size());
+   for (auto ch : Value) {
+      switch (ch) {
+         case '&':  result += "&amp;"; break;
+         case '<':  result += "&lt;"; break;
+         case '>':  result += "&gt;"; break;
+         case '"':  result += "&quot;"; break;
+         case '\'': result += "&apos;"; break;
+         default:   result += ch; break;
+      }
+   }
+   return result;
+}
+
+static ERR render_icon(const std::string &Path, std::vector<DisplayIcon> &Icons)
+{
+   kt::Log log(__FUNCTION__);
+
+   log.branch("%s", Path.c_str());
+
+   // Bitmap sources are hosted in an SVG document so that resizing benefits from the vector renderer's resampling.
+   // The image is loaded at its native resolution and fitted to the page with its aspect ratio preserved.  As the
+   // SVG parser treats a failed image load as non-fatal, the image ID is checked to confirm that a VectorImage was
+   // registered for the source; on failure the ID refers to the image's placeholder rectangle instead.
+
+   const bool is_svg = wildcmp("*.svg|*.svgz", Path);
+   std::string statement;
+   if (not is_svg) {
+      statement = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\">"
+         "<image id=\"display_icon\" href=\"" + escape_xml_attrib(Path) + "\" width=\"256\" height=\"256\"/></svg>";
+   }
+
+   objSVG::create svg = is_svg ?
+      objSVG::create { fl::Path(Path) } :
+      objSVG::create { fl::Statement(statement), fl::Flags(SVF::AUTOSCALE) };
+
+   if (not svg.ok()) return log.warning(ERR::CreateObject);
+
+   if (is_svg and svg->Viewport) {
+      auto viewport = svg->Viewport;
+      double view_width, view_height;
+      if (auto error = viewport->getViewWidth(view_width); error != ERR::Okay) return log.warning(error);
+      if (auto error = viewport->getViewHeight(view_height); error != ERR::Okay) return log.warning(error);
+
+      // Autoscaling changes the target size only.  Without a viewBox, retain the intrinsic dimensions as the
+      // source area before replacing the target dimensions, otherwise small icons crop the original artwork.
+
+      if ((view_width <= 0) and (view_height <= 0)) {
+         Unit width(0, FD_PURE), height(0, FD_PURE);
+         if (auto error = viewport->getWidth(width); error != ERR::Okay) return log.warning(error);
+         if (auto error = viewport->getHeight(height); error != ERR::Okay) return log.warning(error);
+         if (width.defined() and height.defined() and (not width.scaled()) and (not height.scaled()) and
+               (double(width) > 0) and (double(height) > 0)) {
+            if (auto error = viewport->setViewWidth(width); error != ERR::Okay) return log.warning(error);
+            if (auto error = viewport->setViewHeight(height); error != ERR::Okay) return log.warning(error);
+         }
+      }
+
+      if (auto error = viewport->setWidth(Unit(1.0, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+      if (auto error = viewport->setHeight(Unit(1.0, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   }
+
+   if (not is_svg) {
+      OBJECTPTR def = nullptr;
+      if ((svg->Scene->findDef("display_icon", &def) != ERR::Okay) or (def->classID() != CLASSID::VECTORIMAGE)) {
+         log.warning("Unable to load \"%s\" as an image.", Path.c_str());
+         return ERR::File;
+      }
+   }
+
+   // Fit even square artwork inside the circular backing, retaining the source's colours and aspect ratio.
+   // Both documents render at the final size so the circle and source retain antialiased edges at small sizes.
+
+   if (not svg->Viewport) return log.warning(ERR::InvalidObject);
+   auto viewport = svg->Viewport;
+   if (auto error = viewport->setX(Unit(0.16, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   if (auto error = viewport->setY(Unit(0.16, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   if (auto error = viewport->setWidth(Unit(0.68, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+   if (auto error = viewport->setHeight(Unit(0.68, FD_SCALED)); error != ERR::Okay) return log.warning(error);
+
+   objSVG::create backing { fl::Statement(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 256 256\">"
+      "<circle cx=\"128\" cy=\"128\" r=\"128\" fill=\"white\"/></svg>"), fl::Flags(SVF::AUTOSCALE) };
+   if (not backing.ok()) return log.warning(ERR::CreateObject);
+
+   std::vector<DisplayIcon> icons;
+   icons.reserve(std::size(glIconSizes));
+
+   for (auto size : glIconSizes) {
+      objBitmap::create bmp { fl::Width(size), fl::Height(size), fl::BitsPerPixel(32),
+         fl::Flags(BMF::ALPHA_CHANNEL) };
+      if (not bmp.ok()) return log.warning(ERR::CreateObject);
+
+      clearmem(bmp->Data, bmp->LineWidth * bmp->Height);
+
+      if (auto error = backing->render(*bmp, 0, 0, size, size); error != ERR::Okay) return log.warning(error);
+      if (auto error = svg->render(*bmp, 0, 0, size, size); error != ERR::Okay) return log.warning(error);
+
+      if ((bmp->Flags & BMF::PREMUL) != BMF::NIL) bmp->demultiply();
+
+      auto &icon = icons.emplace_back();
+      icon.Width  = size;
+      icon.Height = size;
+      icon.Pixels.reserve(size * size);
+
+      for (int y=0; y < size; y++) {
+         auto row = (uint32_t *)(bmp->Data + (y * bmp->LineWidth));
+         for (int x=0; x < size; x++) {
+            auto pixel = row[x];
+            icon.Pixels.push_back((uint32_t(bmp->unpackAlpha(pixel)) << 24) | (uint32_t(bmp->unpackRed(pixel)) << 16) |
+               (uint32_t(bmp->unpackGreen(pixel)) << 8) | uint32_t(bmp->unpackBlue(pixel)));
+         }
+      }
+   }
+
+   Icons = std::move(icons);
+   return ERR::Okay;
+}
+
+#ifdef DESKTOP_ENTRIES
+
+// GNOME 46 and later ignore window icons, and resolve a window's icon from the .desktop entry that matches its X11
+// class or Wayland app ID.  When running under GNOME, a custom Icon is therefore published as a generated entry in
+// $XDG_DATA_HOME/applications, with a window class derived from the icon source.  The session type does not change
+// during the lifetime of the process, so it is evaluated once.
+
+static bool gnome_integration()
+{
+   static const bool gnome = []() {
+      auto current = std::getenv("XDG_CURRENT_DESKTOP");
+      return desktop_entry::is_gnome_desktop(current ? current : "");
+   }();
+
+   if ((not gnome) or (not glDriver) or glHeadless) return false;
+   return (glDriver->displayType() IS DT::X11) or (glDriver->displayType() IS DT::WAYLAND);
+}
+
+// Saves an icon image as a PNG file.  It is written under a temporary name and renamed into place, so that the
+// desktop never reads a partial file.
+
+static ERR save_icon_png(const DisplayIcon &Icon, const std::filesystem::path &Path)
+{
+   // FORCE_ALPHA_32 stores alpha in the bitmap's pixel data, which the PNG encoder writes directly.  PCF::ALPHA would
+   // instead save the alpha from a separate mask bitmap.
+
+   objImage::create pic { fl::Width(Icon.Width), fl::Height(Icon.Height), fl::BitsPerPixel(32),
+      fl::Flags(PCF::NEW|PCF::FORCE_ALPHA_32) };
+   if (not pic.ok()) return ERR::CreateObject;
+
+   auto bmp = pic->Bitmap;
+   for (int y=0; y < Icon.Height; y++) {
+      auto row = (uint32_t *)(bmp->Data + (y * bmp->LineWidth));
+      for (int x=0; x < Icon.Width; x++) {
+         auto pixel = Icon.Pixels[(y * Icon.Width) + x];
+         row[x] = bmp->packPixel(uint8_t(pixel >> 16), uint8_t(pixel >> 8), uint8_t(pixel), uint8_t(pixel >> 24));
+      }
+   }
+
+   if (not desktop_entry::create_folders(Path.parent_path())) return ERR::CreateFile;
+
+   std::error_code fs_error;
+   auto temp = Path.parent_path() / ("." + Path.filename().string() + ".tmp-" + std::to_string(getpid()));
+
+   {
+      objFile::create file { fl::Path(temp.string()), fl::Flags(FL::NEW|FL::WRITE) };
+      if (not file.ok()) return ERR::CreateFile;
+      if (auto error = acSaveImage(*pic, *file); error != ERR::Okay) {
+         file->del({});
+         return error;
+      }
+   }
+
+   // The core clears the process umask, so the mode is set explicitly to prevent a world-writable file.
+
+   std::filesystem::permissions(temp, std::filesystem::perms(0644), fs_error);
+   if (not fs_error) std::filesystem::rename(temp, Path, fs_error);
+   if (fs_error) {
+      std::filesystem::remove(temp, fs_error);
+      return ERR::File;
+   }
+   return ERR::Okay;
+}
+
+// Publishes the icon as a generated .desktop entry and records the matching window class.  Files are only rewritten
+// when their content has changed, which avoids needless reloads by the desktop.  Failures are non-fatal, in which
+// case the window keeps the default identity.
+
+static void update_desktop_identity(extDisplay *Self)
+{
+   Self->WindowClass.clear();
+   if ((not Self->WindowHandle) or Self->IconImages.empty() or (not gnome_integration())) return;
+
+   kt::Log log(__FUNCTION__);
+
+   auto data_home = desktop_entry::data_home();
+   if (data_home.empty()) return;
+
+   std::string source;
+   if (ResolvePath(Self->Icon, RSF::NO_FILE_CHECK, &source) != ERR::Okay) source = Self->Icon;
+
+   std::string title;
+   if ((glDriver->windowTitle(Self->WindowHandle, title) != ERR::Okay) or title.empty()) return;
+
+   std::error_code fs_error;
+   auto exe = std::filesystem::read_symlink("/proc/self/exe", fs_error);
+
+   auto &largest = Self->IconImages.back();
+   desktop_entry::Entry entry;
+   entry.AppID    = desktop_entry::app_id(source);
+   entry.Name     = title;
+   entry.Exec     = fs_error ? "origo" : exe.string();
+   entry.Icon     = (data_home / "kotuku" / "icons" / (entry.AppID + ".png")).string();
+   entry.Source   = Self->Icon;
+   entry.IconHash = desktop_entry::fnv1a(std::string_view((const char *)largest.Pixels.data(),
+      largest.Pixels.size() * sizeof(uint32_t)));
+
+   // Retain an established name to avoid desktop reloads when a title changes between runs.  Older entries may
+   // contain the fallback name from an icon assigned before window creation; replace it when a title is available.
+
+   auto entry_path = data_home / "applications" / (entry.AppID + ".desktop");
+   if (auto name = desktop_entry::read_key(entry_path, "Name");
+         (not name.empty()) and ((name != "Origo") or title.empty())) entry.Name = name;
+   auto text = desktop_entry::format_entry(entry);
+
+   if ((not desktop_entry::file_matches(entry_path, text)) or (not std::filesystem::exists(entry.Icon, fs_error))) {
+      if (auto error = save_icon_png(largest, entry.Icon); error != ERR::Okay) {
+         log.warning("Failed to save icon \"%s\": %s", entry.Icon.c_str(), GetErrorMsg(error));
+         return;
+      }
+
+      if (not desktop_entry::write_atomic(entry_path, text)) {
+         log.warning("Failed to write desktop entry \"%s\"", entry_path.c_str());
+         return;
+      }
+
+      log.msg("Published desktop entry %s", entry_path.c_str());
+   }
+
+   Self->WindowClass = entry.AppID;
+}
+
+#endif
+
+// Drivers that do not support window icons are ignored, as the icon is a cosmetic hint to the host.
+
+static void apply_window_icon(extDisplay *Self)
+{
+   if ((not glDriver) or (not Self->WindowHandle)) return;
+
+   if (auto error = glDriver->setWindowIcon(Self->WindowHandle, Self->IconImages);
+         (error != ERR::Okay) and (error != ERR::NoSupport)) {
+      kt::Log(__FUNCTION__).warning(error);
+   }
+
+#ifdef DESKTOP_ENTRIES
+   if (gnome_integration()) {
+      update_desktop_identity(Self);
+      glDriver->setWindowClass(Self->WindowHandle, Self->WindowClass.c_str());
+   }
+#endif
+}
+
+static ERR GET_Icon(extDisplay *Self, std::string_view &Value)
+{
+   Value = Self->Icon;
+   return ERR::Okay;
+}
+
+static ERR SET_Icon(extDisplay *Self, const std::string_view &Value)
+{
+   kt::Log log;
+
+   if (Value.empty()) {
+      Self->Icon.clear();
+      Self->IconImages.clear();
+   }
+   else {
+      std::vector<DisplayIcon> icons;
+      if (auto error = render_icon(std::string(Value), icons); error != ERR::Okay) return log.warning(error);
+      Self->Icon = Value;
+      Self->IconImages = std::move(icons);
+   }
+
+   apply_window_icon(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 InsideHeight: Represents the internal height of the display.
 
-On full-screen displays, the video data area can exceed the height of the screen display.  The InsideHeight reflects
-the height of the video data in pixels.  If this feature is not in use or is unavailable, the InsideWidth is equal to
-the display #Height.
+On drivers that support a drawable area larger than the visible viewport, InsideHeight reflects the internal bitmap
+height in pixels.  If this feature is not in use, InsideHeight is equal to #Height.
 
 *********************************************************************************************************************/
 
@@ -2381,9 +2124,8 @@ static ERR GET_InsideHeight(extDisplay *Self, int *Value)
 -FIELD-
 InsideWidth: Represents the internal width of the display.
 
-On full-screen displays, the video data area can exceed the width of the screen display.  The InsideWidth reflects the
-width of the video data in pixels.  If this feature is not in use or is unavailable, the InsideWidth is equal to the
-display #Width.
+On drivers that support a drawable area larger than the visible viewport, InsideWidth reflects the internal bitmap
+width in pixels.  If this feature is not in use, InsideWidth is equal to #Width.
 
 *********************************************************************************************************************/
 
@@ -2404,15 +2146,21 @@ the left window edge.
 -FIELD-
 Manufacturer: String describing the manufacturer of the graphics hardware.
 
-The string in this field returns the name of the manufacturer that created the user's graphics card.  If this
-information is not detectable, a `NULL` pointer is returned.
+The string in this field returns the name of the manufacturer that created the user's graphics card.  On Linux the
+manufacturer of the primary graphics device is resolved from the system's PCI ID database.  If this information is
+not detectable, a placeholder such as `N/A` or `Unknown` is returned.
 
 *********************************************************************************************************************/
 
-static ERR GET_Manufacturer(extDisplay *Self, STRING *Value)
+static ERR GET_Manufacturer(extDisplay *Self, std::string_view &Value)
 {
-   if (Self->Manufacturer[0]) *Value = Self->Manufacturer;
-   else *Value = nullptr;
+#ifdef DESKTOP_ENTRIES
+   if (auto &device = graphics_hardware::primary_device(); (not glHeadless) and (not device.Vendor.empty())) {
+      Value = device.Vendor;
+      return ERR::Okay;
+   }
+#endif
+   Value = Self->Manufacturer;
    return ERR::Okay;
 }
 
@@ -2443,30 +2191,23 @@ If the display output device supports variable refresh rates, this field will re
 supported by the device.  If variable refresh rates are not supported, this field is set to zero.
 
 -FIELD-
-Opacity: Determines the level of translucency applied to the display (hosted displays only).
+Opacity: Determines the level of translucency applied to the display window (hosted displays only).
 
-This field determines the translucency level applied to a display. Its support level is limited to hosted displays that
-support translucent windows (for example, Windows XP).  The default setting is 100%, which means that the display will
-be solid.  High values will retain the boldness of the display, while low values reduce visibility.
+This field determines the translucency level applied to a hosted display window, expressed as a normalised value.  The
+default setting is 1, which makes the display fully opaque.  Lower values make the window more transparent where the
+host platform supports translucent windows.
 
-****************************************************************************/
-
-static ERR GET_Opacity(extDisplay *Self, double *Value)
-{
-   *Value = Self->Opacity * 100 / 255;
-   return ERR::Okay;
-}
+*********************************************************************************************************************/
 
 static ERR SET_Opacity(extDisplay *Self, double Value)
 {
-#ifdef _WIN32
+   if ((glDriver) and ((glDriver->capabilities() & DCAP::COMPOSITING) != DCAP::NIL)) {
    if (Value < 0) Self->Opacity = 0;
-   else if (Value > 100) Self->Opacity = 255;
-   else Self->Opacity = Value * 255 / 100;
+   else if (Value > 1) Self->Opacity = 1.0;
+   else Self->Opacity = Value;
    return ERR::Okay;
-#else
+   }
    return ERR::NoSupport;
-#endif
 }
 
 /*********************************************************************************************************************
@@ -2487,63 +2228,54 @@ static ERR SET_PopOver(extDisplay *Self, OBJECTID Value)
 {
    kt::Log log;
 
-#ifdef __xwindows__
-
-   if (Self->initialised()) {
-      if (!Value) {
-         Self->PopOverID = 0;
-         XSetTransientForHint(XDisplay, Self->XWindowHandle, (Window)0);
+   if (glDriver) {
+      if (Value) {
+         if (GetClassID(Value) IS CLASSID::DISPLAY) Self->PopOverID = Value;
+         else return log.warning(ERR::WrongClass);
       }
-      else if (ScopedObjectLock<extDisplay> popover(Value, 2000); popover.granted()) {
-         if (popover->Class->BaseClassID IS CLASSID::DISPLAY) {
-            Self->PopOverID = Value;
-            XSetTransientForHint(XDisplay, Self->XWindowHandle, (Window)popover->WindowHandle);
-         }
-      }
-      else return ERR::AccessObject;
+      else Self->PopOverID = 0;
+      return ERR::Okay;
    }
-   else if (Value) {
-      if (GetClassID(Value) IS CLASSID::DISPLAY) {
-         Self->PopOverID = Value;
-      }
-      else return log.warning(ERR::WrongClass);
-   }
-   else Self->PopOverID = 0;
 
-   return ERR::Okay;
-
-#elif _WIN32
-
-   if (Value) {
-      if (GetClassID(Value) IS CLASSID::DISPLAY) Self->PopOverID = Value;
-      else return log.warning(ERR::WrongClass);
-   }
-   else Self->PopOverID = 0;
-
-   return ERR::Okay;
-
-#else
 
    return ERR::NoSupport;
 
-#endif
 }
 
 /*********************************************************************************************************************
 
 -FIELD-
 PowerMode: The display's power management method.
+Lookup: DPMS
 
-When DPMS is enabled via a call to #Disable(), the DPMS method that is applied is controlled by this field.
+When DPMS is supported and #Disable() is called, this field identifies the requested power-management mode.
 
-DPMS is a user configurable option and it is not recommended that the PowerMode value is changed manually.
+DPMS is normally user-configurable, so applications should avoid changing PowerMode without user intent.
 
 -FIELD-
-RefreshRate: This field manages the display refresh rate.
+RefreshRate: Active display refresh rate.
 
-The value in this field reflects the refresh rate of the currently active display, if operating in full-screen mode.
+This field reflects the refresh rate of the active display mode, measured in Hz.  For a hosted display, this is the
+refresh rate of the monitor that the window is currently positioned on, and it can change if the window is moved to
+another monitor.  A value of `-1` is returned if the driver cannot report the refresh rate.
 
 *********************************************************************************************************************/
+
+static ERR GET_RefreshRate(extDisplay *Self, double *Value)
+{
+   if ((glDriver) and (Self->WindowHandle)) {
+      DisplayInfo info;
+      clearmem(&info, sizeof(info));
+      info.DisplayID = Self->UID;
+      if ((glDriver->displayInfo(info) IS ERR::Okay) and (info.RefreshRate > 1.0)) {
+         *Value = info.RefreshRate;
+         return ERR::Okay;
+      }
+   }
+
+   *Value = Self->RefreshRate;
+   return ERR::Okay;
+}
 
 static ERR SET_RefreshRate(extDisplay *Self, double Value)
 {
@@ -2553,16 +2285,17 @@ static ERR SET_RefreshRate(extDisplay *Self, double Value)
 /*********************************************************************************************************************
 
 -FIELD-
-ResizeFeedback: This field manages the display refresh rate.
+ResizeFeedback: Callback invoked when the display position or size changes.
 
-The value in this field reflects the refresh rate of the currently active display, if operating in full-screen mode.
+Set this field to receive display resize feedback from hosted-window events and display-managed coordinate repairs.
+The callback receives the display object ID, X, Y, Width and Height values.
 
 *********************************************************************************************************************/
 
-static ERR GET_ResizeFeedback(extDisplay *Self, FUNCTION **Value)
+static ERR GET_ResizeFeedback(extDisplay *Self, FUNCTION * &Value)
 {
    if (Self->ResizeFeedback.defined()) {
-      *Value = &Self->ResizeFeedback;
+      Value = &Self->ResizeFeedback;
       return ERR::Okay;
    }
    else return ERR::FieldNotSet;
@@ -2570,12 +2303,10 @@ static ERR GET_ResizeFeedback(extDisplay *Self, FUNCTION **Value)
 
 static ERR SET_ResizeFeedback(extDisplay *Self, FUNCTION *Value)
 {
+   if (Self->ResizeFeedback.defined()) Self->ResizeFeedback.unpin();
    if (Value) {
-      if (Self->ResizeFeedback.isScript()) UnsubscribeAction(Self->ResizeFeedback.Context, AC::Free);
       Self->ResizeFeedback = *Value;
-      if (Self->ResizeFeedback.isScript()) {
-         SubscribeAction(Self->ResizeFeedback.Context, AC::Free, C_FUNCTION(notify_resize_free));
-      }
+      Self->ResizeFeedback.pin();
    }
    else Self->ResizeFeedback.clear();
    return ERR::Okay;
@@ -2609,8 +2340,8 @@ static ERR GET_TotalResolutions(extDisplay *Self, int *Value)
 -FIELD-
 Width: Defines the width of the display.
 
-This field defines the width of a display.  This is known as the 'viewport' that the bitmap data is displayed through.
-If the width exceeds allowable limits, it will be restricted to a value that the display hardware can handle.
+This field defines the visible display viewport width.  If the width exceeds allowable limits, it is restricted to a
+value that the display driver can handle.
 
 If the display is hosted, the width reflects the internal width of the host window.  On some hosted systems, the true
 width of the window can be calculated by reading the #LeftMargin and #RightMargin fields.
@@ -2633,18 +2364,20 @@ static ERR SET_Width(extDisplay *Self, int Value)
 -FIELD-
 WindowHandle: Refers to a display object's window handle, if relevant.
 
-This field refers to the window handle of a display object, but only if such a thing is relevant to the platform that
-the system is running on.  Currently, this field is only usable when creating a display within an X11 window manager or
-Microsoft Windows.
+This field refers to the platform window handle owned or used by the display.  It is relevant only on hosted display
+backends such as X11 and Microsoft Windows.
 
-It is possible to set the WindowHandle field prior to initialisation if you want a display object to be based on a
-window that already exists.
+Set WindowHandle before initialisation to bind the Display object to an existing host window.  In that case the display
+sets `SCR::CUSTOM_WINDOW` and will not destroy the host window as its own resource.
 
 *********************************************************************************************************************/
 
 static ERR GET_WindowHandle(extDisplay *Self, APTR *Value)
 {
-   *Value = Self->WindowHandle;
+   if ((Self->initialised()) and (glDriver) and (Self->WindowHandle)) {
+      return glDriver->nativeWindowHandle(Self->WindowHandle, *Value);
+   }
+   *Value = Self->PendingNativeWindow;
    return ERR::Okay;
 }
 
@@ -2653,11 +2386,8 @@ static ERR SET_WindowHandle(extDisplay *Self, APTR Value)
    if (Self->initialised()) return ERR::Immutable;
 
    if (Value) {
-      Self->WindowHandle = Value;
+      Self->PendingNativeWindow = Value;
       Self->Flags |= SCR::CUSTOM_WINDOW;
-      #ifdef __xwindows__
-         glPlugin = TRUE;
-      #endif
    }
 
    return ERR::Okay;
@@ -2669,56 +2399,53 @@ Title: Sets the window title (hosted environments only).
 
 *********************************************************************************************************************/
 
-#if defined(_WIN32)
-static STRING glWindowTitle = nullptr;
-#endif
+static std::string glWindowTitle;
 
-static ERR GET_Title(extDisplay *Self, CSTRING *Value)
+static ERR GET_Title(extDisplay *Self, std::string_view &Value)
 {
-#ifdef __xwindows__
-   return ERR::NoSupport;
-#elif _WIN32
-   char buffer[128];
-   STRING str;
-
-   buffer[0] = 0;
-   winGetWindowTitle(Self->WindowHandle, buffer, sizeof(buffer));
-   if (AllocMemory(strlen(buffer) + 1, MEM::STRING|MEM::UNTRACKED, &str) IS ERR::Okay) {
-      strcopy(buffer, str);
-      if (glWindowTitle) FreeResource(glWindowTitle);
-      glWindowTitle = str;
-      *Value = glWindowTitle;
+   if (glHeadless) {
+      Value = Self->Title;
       return ERR::Okay;
    }
-   else return ERR::AllocMemory;
-#else
+   else if (glDriver) {
+      if (auto error = glDriver->windowTitle(Self->WindowHandle, glWindowTitle); error != ERR::Okay) return error;
+      Value = glWindowTitle;
+      return ERR::Okay;
+   }
    return ERR::NoSupport;
-#endif
 }
 
-static ERR SET_Title(extDisplay *Self, CSTRING Value)
+static ERR SET_Title(extDisplay *Self, const std::string_view &Value)
 {
-#ifdef __xwindows__
-   XStoreName(XDisplay, Self->XWindowHandle, Value);
-   return ERR::Okay;
-#elif _WIN32
-   winSetWindowTitle(Self->WindowHandle, Value);
-   return ERR::Okay;
-#else
-   return ERR::NoSupport;
+   if (glHeadless) {
+      Self->Title = Value;
+      return ERR::Okay;
+   }
+   else if (glDriver) {
+      auto error = glDriver->setWindowTitle(Self->WindowHandle, Value.data());
+#ifdef DESKTOP_ENTRIES
+      if ((error IS ERR::Okay) and Self->WindowClass.empty() and (not Self->IconImages.empty())) {
+         apply_window_icon(Self);
+      }
 #endif
+      return error;
+   }
+   return ERR::NoSupport;
 }
 
 /*********************************************************************************************************************
 -FIELD-
 X: Defines the horizontal coordinate of the display.
 
-The X field defines the horizontal hardware coordinate for a display.  This field should be set to zero unless the
-screen requires adjustment.  Most hardware drivers and output devices do not support this feature.
+The X field defines the horizontal coordinate of the display.  On native full-screen drivers this is a hardware offset
+and should normally remain zero unless the output device requires adjustment.
 
 On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is
 created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the
 display window.  The #LeftMargin can be used to determine the actual position of the host window.
+
+Wayland does not report global top-level coordinates.  Setting this field after initialisation returns
+`ERR::NoSupport` on Wayland.
 
 To adjust the position of the display, use the #MoveToPoint() action rather than setting this field directly.
 
@@ -2726,7 +2453,7 @@ To adjust the position of the display, use the #MoveToPoint() action rather than
 
 static ERR SET_X(extDisplay *Self, int Value)
 {
-   if (!(Self->initialised())) {
+   if (not (Self->initialised())) {
       Self->X = Value;
       return ERR::Okay;
    }
@@ -2737,12 +2464,15 @@ static ERR SET_X(extDisplay *Self, int Value)
 -FIELD-
 Y: Defines the vertical coordinate of the display.
 
-The Y field defines the vertical hardware coordinate for a display.  This field should be set to zero unless the
-screen requires adjustment.  Most hardware drivers and output devices do not support this feature.
+The Y field defines the vertical coordinate of the display.  On native full-screen drivers this is a hardware offset
+and should normally remain zero unless the output device requires adjustment.
 
-On hosted displays, prior to initialisation the coordinate will reflect the position of the display window  when it is
+On hosted displays, prior to initialisation the coordinate will reflect the position of the display window when it is
 created.  After initialisation, the coordinate is altered to reflect the absolute position of the client area of the
 display window.  The #TopMargin can be used to determine the actual position of the host window.
+
+Wayland does not report global top-level coordinates.  Setting this field after initialisation returns
+`ERR::NoSupport` on Wayland.
 
 To adjust the position of the display, use the #MoveToPoint() action rather than setting this field directly.
 -END-
@@ -2750,7 +2480,7 @@ To adjust the position of the display, use the #MoveToPoint() action rather than
 
 static ERR SET_Y(extDisplay *Self, int Value)
 {
-   if (!(Self->initialised())) {
+   if (not (Self->initialised())) {
       Self->Y = Value;
       return ERR::Okay;
    }
@@ -2774,12 +2504,8 @@ void alloc_display_buffer(extDisplay *Self)
          fl::BitsPerPixel(Self->Bitmap->BitsPerPixel),
          fl::BytesPerPixel(Self->Bitmap->BytesPerPixel),
          fl::Width(Self->Bitmap->Width),
-         fl::Height(Self->Bitmap->Height),
-         #ifdef __xwindows__
-            fl::DataFlags(MEM::DATA)
-         #else
-            fl::DataFlags(MEM::TEXTURE)
-         #endif
+         fl::Height(Self->Bitmap->Height)
+            , fl::MemType(BMT::TEXTURE)
       )) {
       Self->BufferID = buffer->UID;
    }
@@ -2792,7 +2518,7 @@ void alloc_display_buffer(extDisplay *Self)
 
 static const FieldArray DisplayFields[] = {
    // Re-compile the TDL if making changes
-   { "RefreshRate",    FDF_DOUBLE|FDF_RW, nullptr, SET_RefreshRate },
+   { "RefreshRate",    FDF_DOUBLE|FDF_RW, GET_RefreshRate, SET_RefreshRate },
    { "Bitmap",         FDF_LOCAL|FDF_R, nullptr, nullptr, CLASSID::BITMAP },
    { "Flags",          FDF_INTFLAGS|FDF_RW, nullptr, SET_Flags, &clDisplayFlags },
    { "Width",          FDF_INT|FDF_RW, nullptr, SET_Width },
@@ -2815,20 +2541,21 @@ static const FieldArray DisplayFields[] = {
    { "TopMargin",      FDF_INT|FDF_R },
    { "BottomMargin",   FDF_INT|FDF_R },
    // Virtual fields
-   { "Chipset",             FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_Chipset },
-   { "Gamma",               FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_RI, GET_Gamma, SET_Gamma },
-   { "HDensity",            FDF_VIRTUAL|FDF_INT|FDF_RW,      GET_HDensity, SET_HDensity },
-   { "VDensity",            FDF_VIRTUAL|FDF_INT|FDF_RW,      GET_VDensity, SET_VDensity },
-   { "Display",             FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_Display },
-   { "DisplayManufacturer", FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_DisplayManufacturer },
-   { "InsideWidth",         FDF_VIRTUAL|FDF_INT|FDF_R,       GET_InsideWidth },
-   { "InsideHeight",        FDF_VIRTUAL|FDF_INT|FDF_R,       GET_InsideHeight },
-   { "Manufacturer",        FDF_VIRTUAL|FDF_STRING|FDF_R,    GET_Manufacturer },
-   { "Opacity",             FDF_VIRTUAL|FDF_DOUBLE|FDF_W,    GET_Opacity, SET_Opacity },
-   { "ResizeFeedback",      FDF_VIRTUAL|FDF_FUNCTION|FDF_RW, GET_ResizeFeedback, SET_ResizeFeedback },
-   { "WindowHandle",        FDF_VIRTUAL|FDF_POINTER|FDF_RW,  GET_WindowHandle, SET_WindowHandle },
-   { "Title",               FDF_VIRTUAL|FDF_STRING|FDF_RW,   GET_Title, SET_Title },
-   { "TotalResolutions",    FDF_VIRTUAL|FDF_INT|FDF_R,       GET_TotalResolutions },
+   { "Manufacturer",     FDF_CPPSTRING|FDF_R, GET_Manufacturer },
+   { "Chipset",          FDF_CPPSTRING|FDF_R, GET_Chipset },
+   { "Display",          FDF_CPPSTRING|FDF_R },
+   { "DisplayMfr",       FDF_CPPSTRING|FDF_R },
+   { "Opacity",          FDF_DOUBLE|FDF_RW, nullptr, SET_Opacity },
+   { "Gamma",            FDF_VIRTUAL|FDF_DOUBLE|FDF_ARRAY|FDF_PURE|FDF_RI, GET_Gamma, SET_Gamma },
+   { "HDensity",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_HDensity, SET_HDensity },
+   { "VDensity",         FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_RW,       GET_VDensity, SET_VDensity },
+   { "Icon",             FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_RW, GET_Icon, SET_Icon },
+   { "InsideWidth",      FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideWidth },
+   { "InsideHeight",     FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_InsideHeight },
+   { "ResizeFeedback",   FDF_VIRTUAL|FDF_FUNCTION|FDF_PURE|FDF_RW,  GET_ResizeFeedback, SET_ResizeFeedback },
+   { "WindowHandle",     FDF_VIRTUAL|FDF_POINTER|FDF_PURE|FDF_RW,   GET_WindowHandle, SET_WindowHandle },
+   { "Title",            FDF_VIRTUAL|FDF_CPPSTRING|FDF_PURE|FDF_RW, GET_Title, SET_Title },
+   { "TotalResolutions", FDF_VIRTUAL|FDF_INT|FDF_PURE|FDF_R,        GET_TotalResolutions },
    END_FIELD
 };
 
@@ -2852,7 +2579,7 @@ ERR create_display_class(void)
       fl::Methods(clDisplayMethods),
       fl::Fields(DisplayFields),
       fl::Size(sizeof(extDisplay)),
-      fl::Path(MOD_PATH));
+      fl::Path("modules:display"));
 
    return clDisplay ? ERR::Okay : ERR::AddClass;
 }

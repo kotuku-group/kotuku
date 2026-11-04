@@ -75,12 +75,16 @@
 #define lj_opt_loop_c
 #define LUA_CORE
 
+#include <kotuku/main.h>
+
 #include "lj_obj.h"
 #include "lj_err.h"
 #include "lj_buf.h"
+#include "lj_frame.h"
 #include "lj_ir.h"
 #include "lj_jit.h"
 #include "lj_iropt.h"
+#include "lj_state.h"
 #include "lj_trace.h"
 #include "lj_snap.h"
 #include "lj_vm.h"
@@ -223,10 +227,21 @@ static void loop_subst_snap(jit_State* J, SnapShot* osnap, SnapEntry* loopmap, I
    // Setup new snapshot.
    snap->mapofs = (uint32_t)nmapofs;
    snap->ref = (IRRef1)J->cur.nins;
+   snap->context_count = osnap->context_count;
+   for (size_t context_index = 0; context_index < snap->context_count; context_index++) {
+      IRRef context_ref = osnap->context_refs[context_index];
+      if (context_ref and not irref_isk(context_ref)) {
+         lj_assertJ(subst[context_ref] != REF_DROP, "virtual context dropped during loop substitution");
+         context_ref = subst[context_ref];
+      }
+      snap->context_refs[context_index] = IRRef1(context_ref);
+      snap->context_owner_slots[context_index] = osnap->context_owner_slots[context_index];
+   }
    snap->mcofs = 0;
+   snap->multres = osnap->multres;
    snap->nslots = nslots;
    snap->topslot = osnap->topslot;
-   snap->count = 0;
+   snap->count = snap->context_count ? SNAPCOUNT_DONE : 0;
    nmap = &J->cur.snapmap[nmapofs];
    // Substitute snapshot slots.
    on = ln = nn = 0;
@@ -374,6 +389,21 @@ static void loop_unroll(LoopState* lps)
    *psentinel = J->cur.snapmap[J->cur.snap[0].nent];  //  Restore PC.
 
    loop_emit_phi(J, subst, phi, nphi, onsnap);
+
+   // Contextual calls remove their receiver slot after the call and retain the overwritten function/result refs for
+   // SLOAD forwarding.  Loop copy-substitution must advance those retained refs just like the ordinary slot map;
+   // otherwise they can point at an instruction number that the loop body has reused for a different value.
+   for (size_t slot = 0; slot < LJ_MAX_JSLOTS + LJ_STACK_EXTRA; slot++) {
+      TRef *retained_refs[] = {
+         &J->context_call_func[slot], &J->context_call_receiver[slot], &J->context_call_result[slot]
+      };
+      for (TRef *retained_ref : retained_refs) {
+         IRRef ref = tref_ref(*retained_ref);
+         if (ref >= REF_FIRST and ref < invar and subst[ref] != REF_DROP) {
+            *retained_ref = (*retained_ref & ~TREF_REFMASK) | subst[ref];
+         }
+      }
+   }
 }
 
 // Undo any partial changes made by the loop optimization.
@@ -409,27 +439,58 @@ static TValue* cploop_opt(lua_State* L, lua_CFunction dummy, void* ud)
 // Loop optimization.
 int lj_opt_loop(jit_State* J)
 {
+   lua_State* L = J->L;
    IRRef nins = J->cur.nins;
    SnapNo nsnap = J->cur.nsnap;
    MSize nsnapmap = J->cur.nsnapmap;
    LoopState lps;
+#ifdef LUA_USE_ASSERT
+   ptrdiff_t base_before = savestack(L, L->base);
+#endif
+   ptrdiff_t top_before = savestack(L, L->top);
+   int32_t cframe_result_metadata_before = L->cframe ? cframe_result_metadata(cframe_raw(L->cframe)) : 0;
    int errcode;
    lps.J = J;
    lps.subst = nullptr;
    lps.sizesubst = 0;
-   errcode = lj_vm_cpcall(J->L, nullptr, &lps, cploop_opt);
+   errcode = lj_vm_cpcall(L, nullptr, &lps, cploop_opt);
    lj_mem_freevec(J2G(J), lps.subst, lps.sizesubst, IRRef1);
    if (LJ_UNLIKELY(errcode)) {
-      lua_State* L = J->L;
-      if (errcode == LUA_ERRRUN and tvisnumber(L->top - 1)) {  // Trace error?
+      if (errcode IS LUA_ERRRUN and tvisnumber(L->top - 1)) {  // Trace error?
          int32_t e = numberVint(L->top - 1);
          switch ((TraceError)e) {
          case LJ_TRERR_TYPEINS:  //  Type instability.
          case LJ_TRERR_GFAIL:  //  Guard would always fail.
             // Unrolling via recording fixes many cases, e.g. a flipped boolean.
-            if (--J->instunroll < 0)  //  But do not unroll forever.
-               break;
-            L->top--;  //  Remove error object.
+            if (--J->instunroll < 0) break;  //  But do not unroll forever.
+
+            {
+#ifdef LUA_USE_ASSERT
+               TValue* expected_base = restorestack(L, base_before);
+#endif
+               TValue* expected_top = restorestack(L, top_before);
+#ifdef LUA_USE_ASSERT
+               if (not (L->base IS expected_base)) {
+                  kt::Log(__FUNCTION__).msg(
+                     "Recoverable loop optimisation trace error changed stack base.  Error: %d, Base: %p -> %p",
+                     e, expected_base, L->base);
+                  lj_assertJ(L->base IS expected_base, "recoverable loop optimisation trace error changed stack base");
+               }
+#endif
+               L->top--;  //  Remove error object.
+               if (not (L->top IS expected_top)) {
+#ifdef LUA_USE_ASSERT
+                  kt::Log(__FUNCTION__).msg(
+                     "Recoverable loop optimisation trace error changed stack top.  Error: %d, Top: %p -> %p",
+                     e, expected_top, L->top);
+#endif
+                  L->top = expected_top;
+               }
+               if (L->cframe) {
+                  set_cframe_result_metadata(cframe_raw(L->cframe), cframe_result_metadata_before);
+               }
+            }
+
             loop_undo(J, nins, nsnap, nsnapmap);
             return 1;  //  Loop optimization failed, continue recording.
          default:

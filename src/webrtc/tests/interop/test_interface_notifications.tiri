@@ -1,0 +1,78 @@
+-- Real Linux link/address events, confined to a disposable user/network namespace.
+-- Run through Flute with monitor=<native-interface-monitor>.
+
+function namespaceLink(Kind:str!):str
+   local file <close> = obj<File> { path='/proc/self/ns/' .. Kind }
+   return file.link
+end
+
+function runCommand(Program:str!, Arguments:array<str>):num
+   local task <close> = obj<Task> { location=Program, flags=TSF_WAIT|TSF_ATTACHED, timeout=20 }
+   for value in values(Arguments) do check task.mtAddArgument(value) end
+   local err = task.acActivate()
+   if err != ERR_Okay then
+      task.mtQuit()
+      task.mtQuit()
+      raise err, 'Command did not complete: ' .. Program
+   end
+   assert(task.returnCode is 0, 'Command failed: ' .. Program)
+   return task.returnCode
+end
+
+@Test function InterfaceNotifications()
+   local monitor = arg('monitor')
+   assert(monitor, 'monitor=<native-interface-monitor> is required')
+   if arg('inside') != 'true' then
+      local _, test_path = check mSys.ResolvePath(arg('file'), 0)
+      local folder = io.splitPath(test_path)
+      local root = folder .. '../../../../'
+      runCommand('unshare', array<str> {
+         '-Urn', processing.task().processPath .. 'origo', root .. 'tools/flute.tiri',
+         'file=' .. root .. 'src/webrtc/tests/interop/test_interface_notifications.tiri',
+         'monitor=' .. monitor, 'inside=true', 'outerNet=' .. namespaceLink('net'),
+         'outerUser=' .. namespaceLink('user'), '--log-warning', '--gfx-driver=headless'
+      })
+      return
+   end
+
+   -- Verify isolation before any network mutation, including direct invocation of the inner fixture.
+   assert(arg('outerNet') and arg('outerNet') != namespaceLink('net'), 'A new network namespace is required')
+   assert(arg('outerUser') and arg('outerUser') != namespaceLink('user'), 'A new user namespace is required')
+   runCommand('ip', array<str> { 'link', 'set', 'lo', 'up' })
+   local output = ''
+   local finished = false
+   local probe = obj<Task> {
+      location=monitor, flags=TSF_ATTACHED,
+      outputCallback=function(Task, Buffer) output ..= Buffer.getString() end,
+      exitCallback=function(Task) finished = true end
+   }
+   defer
+      if not finished then
+         probe.mtQuit()
+         probe.mtQuit()
+      end
+      probe.free()
+   end
+   check probe.mtAddArgument('--watch')
+   check probe.acActivate()
+
+   function waitFor(Marker:str)
+      local deadline = mSys.PreciseTime() + 10000000
+      while mSys.PreciseTime() < deadline do
+         if Marker and output.find(Marker .. '\n') then return end
+         if not Marker and finished then return end
+         assert(not finished, 'Monitor exited before ' .. (Marker ?? 'completion') .. ': ' .. output)
+         processing.sleep(0.01)
+      end
+      raise ERR_Timeout, 'Interface monitor timed out: ' .. output
+   end
+
+   waitFor('READY')
+   runCommand('ip', array<str> { 'link', 'add', 'rtc_fixture', 'type', 'dummy' })
+   runCommand('ip', array<str> { 'addr', 'add', '192.0.2.1/24', 'dev', 'rtc_fixture' })
+   runCommand('ip', array<str> { 'link', 'set', 'rtc_fixture', 'up' })
+   waitFor('CHANGED')
+   runCommand('ip', array<str> { 'link', 'del', 'rtc_fixture' })
+   waitFor(nil)
+   assert(probe.returnCode is 0, 'Interface monitor failed: ' .. output)
+end

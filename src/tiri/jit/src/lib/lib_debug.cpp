@@ -12,8 +12,8 @@
 //   debug.getRegistry()         - Returns the Tiri registry table
 //   debug.getMetatable(obj)     - Returns the metatable of any object
 //   debug.setMetatable(obj, mt) - Sets the metatable of any object
-//   debug.getEnv(obj)           - Returns the environment of a function/thread/userdata
-//   debug.setEnv(obj, env)      - Sets the environment of a function/thread/userdata
+//   debug.getEnv(func)          - Returns the environment of a function
+//   debug.setEnv(func, env)     - Sets the environment of a function
 //   debug.getInfo(f [, what])   - Returns debug information about a function or stack level
 //   debug.getLocal(level, idx)  - Returns local variable name and value at stack level
 //   debug.setLocal(level, idx, val) - Sets local variable value at stack level
@@ -26,7 +26,7 @@
 //   debug.setHook([hook, mask [, count]]) - Sets the debug hook
 //   debug.getHook()             - Returns the current hook settings
 //   debug.traceback([msg [, level]]) - Returns a traceback string
-//   debug.validate(code [, flags]) - Parses code and returns diagnostics without execution
+//   debug.validate(code [, options]) - Parses code and returns diagnostics without execution
 //   debug.locality(name [, level]) - Returns locality of a variable: "local", "upvalue", "global", or "nil"
 //   debug.anno.get(func)        - Returns annotation entry for a function
 //   debug.anno.set(func, annotations [, source [, name]]) - Sets annotations for a function
@@ -66,6 +66,7 @@
 #include <string>       // For std::string
 #include <string_view>  // For std::string_view
 #include <charconv>     // For std::from_chars
+#include <unordered_set> // For debug.validate struct registry snapshots
 
 #define LEVELS1   12   //  size of the first part of the stack
 #define LEVELS2   10   //  size of the second part of the stack
@@ -455,7 +456,7 @@ LJLIB_CF(debug_getRegistry)
 // debug.fileSources(): Returns a table of all registered file sources.
 //
 // Each entry in the returned array contains:
-//   index       - File index (0 = main file, 255 = overflow)
+//   index       - Runtime file index (0-253)
 //   path        - Full resolved path
 //   filename    - Short name for error display
 //   namespace   - Declared namespace (empty string if none)
@@ -463,7 +464,7 @@ LJLIB_CF(debug_getRegistry)
 //   sourceLines - Total lines in source file
 //   parentIndex - Which file imported this one (0 for main)
 //   importLine  - Line in parent where import occurred (0 for main)
-//   isOverflow  - True if this is the overflow fallback (index 255)
+//   isOverflow  - Reserved for compatibility; real records are never overflow sentinels
 //
 // Example:
 //   local sources = debug.fileSources()
@@ -568,10 +569,10 @@ LJLIB_CF(debug_setMetatable)
 }
 
 //********************************************************************************************************************
-// debug.getEnv(object:any):table
+// debug.getEnv(function:func):table
 //
-// Returns the environment of the given object.  The object can be a Tiri function, a thread, or a userdata.
-// For functions, this is the table that is used for global variable access within the function.
+// Returns the table used for global variable access within the given function.  Use debug.getUserValue() to access
+// the value associated with userdata.
 //
 // Example:
 //   env = debug.getEnv(myFunction)
@@ -579,20 +580,19 @@ LJLIB_CF(debug_setMetatable)
 
 LJLIB_CF(debug_getEnv)
 {
-   lj_lib_checkany(L, 1);
+   lj_lib_checkfunc(L, 1);
    lua_getfenv(L, 1);
    return 1;
 }
 
 //********************************************************************************************************************
-// debug.setEnv(object:any, table):any
+// debug.setEnv(function:func, table):func
 //
-// Sets the environment of the given object to the given table.  The object can be a Tiri function, a thread,
-// or a userdata.  For functions, this changes the table used for global variable access.  Throws an error if the
-// environment cannot be set (e.g., for C functions)
+// Sets the table used for global variable access within the given function.  Use debug.setUserValue() to associate a
+// table with userdata.
 //
-//   object - A function, thread, or userdata
-//   table  - The new environment table
+//   function - A function value
+//   table    - The new environment table
 //
 // Example:
 //   sandbox = { print = print }
@@ -600,9 +600,10 @@ LJLIB_CF(debug_getEnv)
 
 LJLIB_CF(debug_setEnv)
 {
+   lj_lib_checkfunc(L, 1);
    lj_lib_checktab(L, 2);
    L->top = L->base + 2;
-   if (not lua_setfenv(L, 1)) lj_err_caller(L, ErrMsg::SETFENV);
+   if (not lua_setfenv(L, 1)) luaL_error(L, ErrMsg::SETFENV);
    return 1;
 }
 
@@ -617,7 +618,7 @@ LJLIB_CF(debug_setEnv)
 //              'n' - name, nameWhat
 //              'S' - source, shortSource, lineDefined, lastLineDefined, what
 //              'l' - currentLine
-//              'u' - nups, nParams, isVarArg
+//              'u' - nUpvalues, nParams, isVarArg
 //              'f' - func (pushes the function onto the stack)
 //              'L' - activeLines (table of valid line numbers)
 //
@@ -631,7 +632,7 @@ LJLIB_CF(debug_setEnv)
 //     currentLine    - Current line being executed
 //     name           - Name of the function (if available)
 //     nameWhat       - How the name was obtained ("global", "local", "method", "field", "")
-//     nups           - Number of upvalues
+//     nUpvalues      - Number of upvalues
 //     nParams        - Number of parameters
 //     isVarArg       - Whether the function is variadic
 //     func           - The function itself
@@ -695,7 +696,7 @@ LJLIB_CF(debug_getInfo)
             settabsi(L, "currentLine", ar.currentline);
             break;
          case 'u':
-            settabsi(L, "nups", ar.nups);
+            settabsi(L, "nUpvalues", ar.nupvalues);
             settabsi(L, "nParams", ar.nparams);
             settabsb(L, "isVarArg", ar.isvararg);
             break;
@@ -872,6 +873,9 @@ LJLIB_CF(debug_upvalueJoin)
       n = debug_idx(lj_lib_checkint(L, 2 * i + 2)) - 1;
       if ((uint32_t)n >= fn[i]->l.nupvalues) lj_err_arg(L, 2 * i + 2, ErrMsg::IDXRNG);
       p[i] = &fn[i]->l.uvptr[n];
+      if (lj_tab_is_weak_binding(uvval(gco_to_upval(gcref(*p[i]))))) {
+         lj_err_callermsg(L, ERR::InvalidValue, "Cannot join a weak binding through the debugger");
+      }
    }
    setgcrefr(*p[0], *p[1]);
    lj_gc_objbarrier(L, fn[0], gcref(*p[1]));
@@ -1002,35 +1006,39 @@ LJLIB_CF(debug_traceback)
 }
 
 //********************************************************************************************************************
-// debug.validate(statement [, flags]) - Parse code and return diagnostics without execution
+// debug.validate(statement [, options]) - Parse code and return diagnostics without execution
 //
 // Returns a table with:
 //   success     - boolean: true if no errors
 //   diagnostics - array of diagnostic entries, each containing:
-//     line      - 0-based line number
-//     column    - 0-based column number
-//     endColumn - 0-based end column (column + 1 as approximation)
+//     line      - 1-based line number
+//     column    - 1-based column number
+//     endColumn - 1-based exclusive end column (column + 1 as approximation)
 //     severity  - 0=Info, 1=Warning, 2=Error
 //     code      - string error code (e.g., "UnexpectedToken")
 //     message   - human-readable error message
 //   tips        - array of code improvement hints (LSP severity 4), each containing:
-//     line      - 0-based line number
-//     column    - 0-based column number
-//     endColumn - 0-based end column
+//     line      - 1-based line number
+//     column    - 1-based column number
+//     endColumn - 1-based exclusive end column
 //     severity  - 3 (Hint - maps to LSP severity 4)
 //     priority  - 1=critical, 2=medium, 3=low
 //     category  - hint category (e.g., "performance", "code-quality")
 //     message   - human-readable improvement suggestion
 //
-// Optional flags parameter (string, reserved for future use):
-//   "s" - syntax only (default, just parse)
-//   "t" - include type checking (future)
+// All source positions returned by debug.validate() are 1-based.  A value of zero indicates an unavailable position.
+//
+// The optional second argument may be an options table for richer control:
+//   flags - a string of comma/space separated flags (e.g. "symbols" to include parsed symbol metadata)
+//   path  - the source file path, enabling relative imports ('./lib') to resolve against its directory
 
 static CSTRING diagnostic_code_name(ParserErrorCode Code)
 {
    switch (Code) {
       case ParserErrorCode::None:                   return "None";
       case ParserErrorCode::UnexpectedToken:        return "UnexpectedToken";
+      case ParserErrorCode::DeprecatedSyntax:       return "DeprecatedSyntax";
+      case ParserErrorCode::DeprecatedApi:          return "DeprecatedApi";
       case ParserErrorCode::ExpectedToken:          return "ExpectedToken";
       case ParserErrorCode::ExpectedIdentifier:     return "ExpectedIdentifier";
       case ParserErrorCode::UnexpectedEndOfFile:    return "UnexpectedEndOfFile";
@@ -1048,6 +1056,11 @@ static CSTRING diagnostic_code_name(ParserErrorCode Code)
       case ParserErrorCode::RecursiveFunctionNeedsType: return "RecursiveFunctionNeedsType";
       case ParserErrorCode::TooManyReturnTypes:     return "TooManyReturnTypes";
       case ParserErrorCode::RecoverySkippedTokens:  return "RecoverySkippedTokens";
+      case ParserErrorCode::InvalidAssignment:      return "InvalidAssignment";
+      case ParserErrorCode::UnresolvedMethodReceiver: return "UnresolvedMethodReceiver";
+      case ParserErrorCode::TooManyExceptionFilters: return "TooManyExceptionFilters";
+      case ParserErrorCode::InvalidContextBinding: return "InvalidContextBinding";
+      case ParserErrorCode::InvalidOptionalCall: return "InvalidOptionalCall";
       default: return "Unknown";
    }
 }
@@ -1068,6 +1081,13 @@ static void set_table_int(lua_State *L, CSTRING Key, int Value)
 {
    lua_pushinteger(L, Value);
    lua_setfield(L, -2, Key);
+}
+
+static int source_position(BCLine Position)
+{
+   if (not Position.isValid()) return 0;
+   int position = Position.lineNumber();
+   return position > 0 ? position : 0;
 }
 
 static void push_annotation_metadata(lua_State *L, const std::vector<ParserAnnotationMetadata> &Annotations)
@@ -1149,6 +1169,22 @@ static void push_errors_metadata(lua_State *L, const std::vector<ParserDocErrorM
    }
 }
 
+static void push_fields_metadata(lua_State *L, const std::vector<ParserStructFieldMetadata> &Fields)
+{
+   lua_newtable(L);
+   int idx = 0;
+
+   for (const auto &field : Fields) {
+      lua_newtable(L);
+      set_table_string(L, "name", field.name);
+      set_table_string(L, "type", field.type);
+      set_table_string(L, "doc", field.doc);
+      set_table_int(L, "line", source_position(field.span.line));
+      set_table_int(L, "column", source_position(field.span.column));
+      lua_rawseti(L, -2, idx++);
+   }
+}
+
 static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Symbols)
 {
    lua_newtable(L);
@@ -1161,10 +1197,11 @@ static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Sym
       set_table_string(L, "name", symbol.name);
       set_table_string(L, "kind", symbol.kind);
       set_table_string(L, "signature", symbol.signature);
-      set_table_int(L, "line", symbol.span.line > 0 ? int(symbol.span.line) - 1 : 0);
-      set_table_int(L, "column", symbol.span.column > 0 ? int(symbol.span.column) - 1 : 0);
-      set_table_int(L, "endLine", symbol.end_span.line > 0 ? int(symbol.end_span.line) - 1 : 0);
-      set_table_int(L, "endColumn", symbol.end_span.column > 0 ? int(symbol.end_span.column) - 1 : 0);
+      if (not symbol.binding.empty()) set_table_string(L, "binding", symbol.binding);
+      set_table_int(L, "line", source_position(symbol.span.line));
+      set_table_int(L, "column", source_position(symbol.span.column));
+      set_table_int(L, "endLine", source_position(symbol.end_span.line));
+      set_table_int(L, "endColumn", source_position(symbol.end_span.column));
 
       push_params_metadata(L, symbol.params);
       lua_setfield(L, -2, "params");
@@ -1174,6 +1211,9 @@ static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Sym
 
       push_errors_metadata(L, symbol.errors);
       lua_setfield(L, -2, "errors");
+
+      push_fields_metadata(L, symbol.fields);
+      lua_setfield(L, -2, "fields");
 
       push_doc_metadata(L, symbol.doc);
       lua_setfield(L, -2, "doc");
@@ -1188,33 +1228,64 @@ static void push_symbol_metadata(lua_State *L, const ParserSymbolCollection *Sym
 LJLIB_CF(debug_validate)
 {
    CSTRING statement = luaL_checkstring(L, 1);
-   CSTRING flags = luaL_optstring(L, 2, "");
-   bool include_symbols = flags and std::string_view(flags).find("symbols") != std::string_view::npos;
 
-   // Create result table
-   lua_newtable(L);
+   // The optional second argument may be an options table.  The 'symbols' boolean enables parser symbol extraction,
+   // 'path' enables relative import resolution against the source file's directory (used by the LSP), and
+   // 'unresolvedMethods' opts into advisory warnings for dot-method receivers classified at runtime.
 
-   // Check that script context is available
-   if (L->script IS nullptr) {
-      settabsb(L, "success", false);
-      lua_newtable(L);
-      lua_setfield(L, -2, "diagnostics");
-      return 1;
+   std::string source_path;
+   bool include_symbols = false;
+   bool include_unresolved_methods = false;
+   if (lua_istable(L, 2)) {
+      lua_getfield(L, 2, "symbols");
+      bool has_symbols_option = not lua_isnil(L, -1);
+      if (has_symbols_option) include_symbols = lua_toboolean(L, -1);
+      lua_pop(L, 1);
+
+      lua_getfield(L, 2, "path");
+      if (CSTRING p = lua_tostring(L, -1)) source_path.assign(p);
+      lua_pop(L, 1);
+
+      lua_getfield(L, 2, "unresolvedMethods");
+      if (not lua_isnil(L, -1)) include_unresolved_methods = lua_toboolean(L, -1);
+      lua_pop(L, 1);
    }
+
+   // The chunk name carries the source path through to the parser so that relative imports ('./lib') resolve
+   // against the document's directory.  Use a literal chunk name so validation of unsaved or stale LSP buffers does
+   // not register the buffer path as a real FileSource entry.
+
+   std::string chunk_name = source_path.empty() ? std::string("=validate") : (std::string("=") + source_path);
+
+   lua_newtable(L); // Create result table
 
    // Parse the statement using lua_load with DIAGNOSE mode
    // This requires temporarily enabling JOF::DIAGNOSE
-   auto *prv = (prvTiri *)L->script->ChildPrivate;
-   JOF old_options = prv ? prv->JitOptions : JOF::NIL;
+   JOF old_options = L->script->JitOptions;
    SCF old_flags = L->script->Flags;
-   if (prv) prv->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;
+   bool old_suppress_unresolved_methods = L->script->SuppressUnresolvedMethodWarnings;
+   L->script->JitOptions |= JOF::DIAGNOSE|JOF::ALL_TIPS;
+   L->script->SuppressUnresolvedMethodWarnings = not include_unresolved_methods;
    if (include_symbols) L->script->Flags |= SCF::PROCESS_DOC;
    if (L->parser_symbols) { delete L->parser_symbols; L->parser_symbols = nullptr; }
 
-   int parse_result = lua_load(L, std::string_view(statement, strlen(statement)), "=validate");
+   // Validation must be side-effect free with respect to the state-local struct registry.  A successful parse
+   // registers declared structs permanently, so a subsequent validation of an edited declaration would report a
+   // bogus layout conflict.  Snapshot the key set and discard any additions once the parse completes.
 
-   if (prv) prv->JitOptions = old_options;  // Restore options
+   std::unordered_set<uint32_t> struct_snapshot;
+   struct_snapshot.reserve(L->struct_declarations.size());
+   for (const auto &entry : L->struct_declarations) struct_snapshot.insert(entry.first);
+
+   int parse_result = lua_load(L, std::string_view(statement, strlen(statement)), chunk_name.c_str());
+
+   std::erase_if(L->struct_declarations, [&struct_snapshot](const auto &Entry) {
+      return not struct_snapshot.contains(Entry.first);
+   });
+
+   L->script->JitOptions = old_options;  // Restore options
    L->script->Flags = old_flags;
+   L->script->SuppressUnresolvedMethodWarnings = old_suppress_unresolved_methods;
 
    // Pop the compiled chunk or error message
    lua_pop(L, 1);
@@ -1229,13 +1300,19 @@ LJLIB_CF(debug_validate)
          lua_newtable(L);  // diagnostic entry
 
          SourceSpan span = entry.token.span();
-         // LSP uses 0-based line/column, Tiri parser uses 1-based
-         settabsi(L, "line", span.line > 0 ? span.line - 1 : 0);
-         settabsi(L, "column", span.column > 0 ? span.column - 1 : 0);
-         settabsi(L, "endColumn", span.column);  // Already correct after -1 adjustment
+         int line = source_position(span.line);
+         int column = source_position(span.column);
+         settabsi(L, "line", line);
+         settabsi(L, "column", column);
+         settabsi(L, "endColumn", column > 0 ? column + int(entry.length ? entry.length : 1) : 0);
          settabsi(L, "severity", int(entry.severity));
          settabss(L, "code", diagnostic_code_name(entry.code));
          settabss(L, "message", entry.message.empty() ? "Syntax error" : entry.message.c_str());
+
+         if (not L->file_sources.empty()) { // Attribute the diagnostic to its source file
+            const FileSource *src = get_file_source(L, entry.file_index);
+            if (src and not src->filename.empty()) settabss(L, "file", src->filename.c_str());
+         }
 
          lua_rawseti(L, -2, diag_idx++);
       }
@@ -1257,10 +1334,11 @@ LJLIB_CF(debug_validate)
          lua_newtable(L);  // tip entry
 
          SourceSpan span = entry.token.span();
-         // LSP uses 0-based line/column, Tiri parser uses 1-based
-         settabsi(L, "line", span.line > 0 ? span.line - 1 : 0);
-         settabsi(L, "column", span.column > 0 ? span.column - 1 : 0);
-         settabsi(L, "endColumn", span.column);  // Already correct after -1 adjustment
+         int line = source_position(span.line);
+         int column = source_position(span.column);
+         settabsi(L, "line", line);
+         settabsi(L, "column", column);
+         settabsi(L, "endColumn", column > 0 ? column + 1 : 0);
          settabsi(L, "severity", 3);  // Hint severity (maps to LSP severity 4)
          settabsi(L, "priority", entry.priority);
          settabss(L, "category", category_name(entry.category));
@@ -1553,26 +1631,33 @@ extern int luaopen_debug(lua_State *L)
    reg_iface_prototype("debug", "fileSources", { TiriType::Array }, {});
    reg_iface_prototype("debug", "getMetatable", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setMetatable", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "getEnv", { TiriType::Table }, { TiriType::Any });
-   reg_iface_prototype("debug", "setEnv", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "getInfo", { TiriType::Table }, { TiriType::Any, TiriType::Str });
+   reg_iface_prototype("debug", "getEnv", { TiriType::Table }, { TiriType::Func });
+   reg_iface_prototype("debug", "setEnv", { TiriType::Func }, { TiriType::Func, TiriType::Table });
+   reg_iface_prototype("debug", "getInfo", { TiriType::Table }, { TiriType::Any, TiriType::Str },
+      FProtoFlags::None, FProtoArity::required(1));
    reg_iface_prototype("debug", "getLocal", { TiriType::Str, TiriType::Any }, { TiriType::Num, TiriType::Num });
    reg_iface_prototype("debug", "setLocal", { TiriType::Str }, { TiriType::Num, TiriType::Num, TiriType::Any });
    reg_iface_prototype("debug", "getUpvalue", { TiriType::Str, TiriType::Any }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "setUpvalue", { TiriType::Str }, { TiriType::Func, TiriType::Num, TiriType::Any });
-   reg_iface_prototype("debug", "upvalueID", { TiriType::Any }, { TiriType::Func, TiriType::Num });
+   reg_iface_prototype("debug", "upvalueID", { TiriType::Userdata }, { TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "upvalueJoin", {}, { TiriType::Func, TiriType::Num, TiriType::Func, TiriType::Num });
    reg_iface_prototype("debug", "getUserValue", { TiriType::Table }, { TiriType::Any });
    reg_iface_prototype("debug", "setUserValue", { TiriType::Any }, { TiriType::Any, TiriType::Table });
-   reg_iface_prototype("debug", "setHook", {}, { TiriType::Func, TiriType::Str, TiriType::Num });
+   reg_iface_prototype("debug", "setHook", {}, { TiriType::Func, TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
    reg_iface_prototype("debug", "getHook", { TiriType::Func, TiriType::Str, TiriType::Num }, {});
-   reg_iface_prototype("debug", "traceback", { TiriType::Str }, { TiriType::Str, TiriType::Num });
-   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Str });
-   reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num });
+   reg_iface_prototype("debug", "traceback", { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
+   reg_iface_prototype("debug", "validate", { TiriType::Table }, { TiriType::Str, TiriType::Any }, FProtoFlags::None,
+      FProtoArity::required(1));
+   reg_iface_prototype("debug", "locality", { TiriType::Str }, { TiriType::Str, TiriType::Num }, FProtoFlags::None,
+      FProtoArity::required(0));
 
    // Register debug.anno interface prototypes
    reg_iface_prototype("debug.anno", "get", { TiriType::Table }, { TiriType::Func });
-   reg_iface_prototype("debug.anno", "set", { TiriType::Table }, { TiriType::Func, TiriType::Any, TiriType::Str, TiriType::Str });
+   reg_iface_prototype("debug.anno", "set", { TiriType::Table },
+      { TiriType::Func, TiriType::Any, TiriType::Str, TiriType::Str }, FProtoFlags::None,
+      FProtoArity::required(2));
    reg_iface_prototype("debug.anno", "list", { TiriType::Table }, {});
 
    return 1;

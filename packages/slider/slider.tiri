@@ -1,0 +1,997 @@
+@Package(name="gui/slider", version="1.0")
+
+--[[
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui', 'gui/layout'
+
+   module vector as mVec
+   include 'vector'
+
+   namespace gui
+
+FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.default)
+DEFAULT_THICKNESS <const> = math.floor(FONT_MAX_HEIGHT * 1.4)
+MARGIN <const>            = math.floor(FONT_HEIGHT * 0.5) + 1
+VALUE_INSET <const>       = 2 -- Minimum space between vertical value text and the track's sides
+DIGITS <const>            = r'[0-9]'
+MAX_PLACES <const>        = 10 -- Maximum decimal places in the value readout
+TICK_LENGTH <const>       = math.floor(FONT_HEIGHT * 0.5) -- Length of major ticks
+TICK_MINOR_LENGTH <const> = math.round(TICK_LENGTH * 0.6)
+TICK_GAP <const>          = math.floor(FONT_HEIGHT * 0.25) -- Space between the track's host and its ticks
+TICK_MIN_SPACING <const>  = 4 -- Minimum distance between adjacent ticks, in pixels, before ticks are thinned
+
+-- Count the decimal places needed to write a value exactly, or nil if it does not terminate within MAX_PLACES.
+
+function decimalPlaces(Value:num!):num
+   for places in {0 into MAX_PLACES} do
+      -- The tolerance is relative so that tiny steps are not mistaken for whole numbers, and the search stops before
+      -- the scaled value is large enough for that tolerance to accept a non-terminating fraction.
+      scaled = math.abs(Value) * (10 ** places)
+      if math.abs(scaled - math.round(scaled)) <= scaled * 1e-13 then return places end
+      if scaled >= 1e12 then return nil end
+   end
+   return nil
+end
+
+-- Thin a sorted list of tick values until adjacent ticks are at least TICK_MIN_SPACING pixels apart.  Every Nth tick
+-- is kept for the smallest N that satisfies the spacing, and the first and last ticks are always kept.
+
+function thinTicks(List:array<double>!, Scale:num!):array<double>
+   unique = array<double>
+   for v in values(List) do
+      if (#unique is 0) or (v != unique.last()) then unique.push(v) end
+   end
+
+   function spaced(Kept:array<double>!):bool
+      for i in {1 to #Kept} do
+         if ((Kept[i] - Kept[i - 1]) * Scale) < TICK_MIN_SPACING then return false end
+      end
+      return true
+   end
+
+   count = #unique
+   if (count < 3) or spaced(unique) then return unique end
+
+   for stride in {2 to count} do
+      kept = array<double>
+      i = 0
+      while i < count - 1 do
+         kept.push(unique[i])
+         i += stride
+      end
+      if (#kept > 1) and (((unique[count - 1] - kept.last()) * Scale) < TICK_MIN_SPACING) then kept.pop() end
+      kept.push(unique[count - 1])
+      if spaced(kept) then return kept end
+   end
+
+   return array<double> { unique[0], unique[count - 1] }
+end
+
+gui.slider = function(Options:table!)
+   min = Options.min or 0
+   max = Options.max or 1
+
+   self = setmetatable(entity {
+      min        = min,
+      max        = max,
+      step       = Options.step or 0,
+      value      = Options.value or (min + ((max - min) * 0.5)),
+      label      = Options.label,
+      valuePos   = Options.valuePos,
+      valueWidth = Options.valueWidth, -- Fixed breadth for value text beside the track; defaults to the widest value
+      labelPos   = Options.labelPos ?? 'left',
+      labelAlign = Options.labelAlign ?? 'left',
+      labelWidth = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
+      thickness  = Options.thickness ?? DEFAULT_THICKNESS, -- Breadth of the track
+      thumbSize  = Options.thumbSize ? Options.thumbSize : '100%', -- Pixels or % of thickness
+      thumbLength = Options.thumbLength, -- Thumb size along the track in pixels or % of thickness; defaults to thumbSize
+      increment  = Options.increment, -- Change per arrow key or wheel event; nil for the default
+      anchored   = Options.anchored is true, -- The thumb extends from the minimum end to the value
+      ticks      = Options.ticks, -- true, an interval, { major, minor } or an array of values
+      tickPos    = Options.tickPos ?? 'end',
+      events     = Options.events ?? { },
+      viewport   = nil,
+      disabled   = false,
+      hasFocus   = false,
+      prvHover   = false,
+
+      setRange = function(Min:num!, Max:num!)
+         assert(Max > Min, 'The min/max values are invalid.')
+         &min = Min
+         &max = Max
+         if &valueText then &prvMeasureValue() end
+         if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end
+         &prvPlaceSlider()
+         &viewport.acDraw()
+         &setValue(&value) -- Clamp and snap the existing value to the new range
+      end,
+
+      -- Replace the tick specification.  Tick space is reserved outside the track, so adding or removing ticks
+      -- relayouts the widget.
+
+      setTicks = function(Ticks:any)
+         &prvCheckTicks(Ticks)
+         &ticks = Ticks
+         &prvReserveTicks(&trackVP)
+         &prvTickKey = nil
+         if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end
+         &prvPlaceSlider()
+         &viewport.acDraw()
+      end,
+
+      -- Change the active state of the slider.  A disabled slider ignores pointer and keyboard input.
+
+      disable = function()
+         &disabled = true
+         &viewport.acDisable()
+         &prvHover = false
+         &prvApplyStyle()
+         &viewport.acDraw()
+         &events?.disable()
+      end,
+
+      enable = function()
+         &disabled = false
+         &viewport.acEnable()
+         &prvApplyStyle()
+         &viewport.acDraw()
+         &events?.enable()
+      end,
+
+      prvApplyStyle = function()
+         theme = &prvTheme
+         gui.applyStyle(&prvBarBkgd, table.merge({ opacity = 1 }, theme.bkgd))
+         gui.applyStyle(&button, theme.fore)
+
+         if &disabled then
+            gui.applyStyle(&prvBarBkgd, theme.disabled)
+         else
+            if &prvHover then gui.applyStyle(&button, theme.foreHighlight) end
+            if &hasFocus then gui.applyStyle(&button, theme.foreFocus) end
+         end
+
+         for _, path in &prvTickPaths do &prvStyleTicks(path) end
+      end,
+
+      prvStyleTicks = function(Path:obj!)
+         theme = &prvTheme
+         gui.applyStyle(Path, table.merge({ opacity = 1 }, theme.tick ?? { }))
+         if &disabled then gui.applyStyle(Path, theme.disabled) end
+      end,
+
+      prvCheckTicks = function(Ticks:any)
+         if (Ticks is nil) or (Ticks is false) then return end
+         if Ticks is true then
+            assert(&step > 0, 'ticks=true requires a step greater than zero.')
+         elseif Ticks is <num> then
+            assert(Ticks > 0, f"Invalid tick interval '{Ticks}'")
+         elseif Ticks is <array> then
+            for v in values(Ticks) do assert(v is <num>, 'Explicit tick values must be numbers.') end
+         elseif Ticks is <table> then
+            assert((Ticks.major is <num>) and (Ticks.major > 0), f"Invalid major tick interval '{Ticks.major}'")
+            minor = Ticks.minor
+            assert((minor is nil) or ((minor is <num>) and (minor > 0) and (minor < Ticks.major)),
+               f"Invalid minor tick interval '{minor}'")
+         else
+            raise f"Invalid ticks '{Ticks}'"
+         end
+      end,
+
+      -- Reserve TICK_GAP + TICK_LENGTH on each side that carries ticks.  The reservation is adjusted by delta so that
+      -- space reserved for the label and value text is preserved.  Host is the host viewport or its pending options.
+
+      prvReserveTicks = function(Host:any!)
+         space = &ticks ? (TICK_GAP + TICK_LENGTH) : 0
+         delta = space - &prvTickSpace
+         if delta is 0 then return end
+
+         for side in values(&prvTickSides) do
+            Host[side] = Host[side] + delta
+            if &orientation is 'V' then
+               if &prvAutoWidth then &viewport.width += delta end
+            elseif &prvAutoHeight then
+               &viewport.height += delta
+            end
+         end
+
+         &prvTickSpace = space
+      end,
+
+      -- Generate major and minor tick values for a thumb travel in pixels, thinned so that adjacent ticks are at least
+      -- TICK_MIN_SPACING apart.  Interval ticks are counted from min, and max always receives a tick.
+
+      prvTickLayout = function(Travel:num!):<array<double>, array<double>>
+         majors = array<double>
+         minors = array<double>
+         spec = &ticks
+         if (not spec) or (Travel <= 0) then return majors, minors end
+
+         span = &max - &min
+         scale = Travel / span -- Pixels per value unit
+         tolerance = span * 1e-9
+
+         -- Explicit values outside the range are ignored rather than clamped.
+
+         if spec is <array> then
+            for v in values(spec) do
+               if (v >= &min) and (v <= &max) then majors.push(v) end
+            end
+            majors.sort()
+            return thinTicks(majors, scale), minors
+         end
+
+         major = (spec is true) ? &step : ((spec is <num>) ? spec : spec.major)
+         stride = math.max(1, math.ceil((TICK_MIN_SPACING / (major * scale)) - 1e-9))
+         k = 0
+         value = &min
+         while value < (&max - tolerance) do
+            majors.push(value)
+            k += stride
+            value = &min + (k * major) -- Multiply rather than accumulate, as prvSnap() does
+         end
+
+         if (#majors > 1) and (((&max - majors.last()) * scale) < TICK_MIN_SPACING) then majors.pop() end
+         majors.push(&max)
+
+         -- Minor ticks are dropped entirely when too dense.  Keep them clear of neighbouring major ticks, including
+         -- the range ends, even when the major and minor intervals are not multiples of one another.
+
+         minor = (spec is <table>) ? spec.minor : nil
+         if minor and (stride is 1) and ((minor * scale) >= (TICK_MIN_SPACING - 1e-9)) then
+            j = 1
+            major_index = 0
+            origin = (&orientation is 'V') ? &trackVP.y : &trackVP.x
+            previous = nil
+            value = &min + minor
+            while value < (&max - tolerance) do
+               while (major_index < #majors - 2) and (majors[major_index + 1] <= value) do major_index++ end
+               position = &prvTickPosition(value, Travel, origin)
+               before = math.abs(position - &prvTickPosition(majors[major_index], Travel, origin))
+               after = math.abs(&prvTickPosition(majors[major_index + 1], Travel, origin) - position)
+               if (before >= TICK_MIN_SPACING) and (after >= TICK_MIN_SPACING)
+                  and ((previous is nil) or (math.abs(position - previous) >= TICK_MIN_SPACING)) then
+                  minors.push(value)
+                  previous = position
+               end
+               j++
+               value = &min + (j * minor)
+            end
+         end
+
+         return majors, minors
+      end,
+
+      -- Use the same pixel-centre rounding for tick spacing checks and path coordinates.
+
+      prvTickPosition = function(Value:num!, Travel:num!, Origin:num!):num
+         fraction = (Value - &min) / (&max - &min)
+         if &orientation is 'V' then fraction = 1 - fraction end
+         return math.floor(Origin + (&prvThumbLength * 0.5) + (fraction * Travel)) + 0.5
+      end,
+
+      -- Each tick is drawn where the thumb centre sits for its value, snapped to a pixel centre.  Paths are rebuilt
+      -- only when the host geometry, range or tick specification changes, not on every value change.
+
+      prvPlaceTicks = function(Width:num!, Height:num!)
+         if (not &ticks) and (#&prvTickStops is 0) then return end
+         host = &trackVP
+         host_x = host.x
+         host_y = host.y
+         key = f'{Width}|{Height}|{host_x}|{host_y}|{&min}|{&max}'
+         if key is &prvTickKey then return end
+         &prvTickKey = key
+
+         vertical = &orientation is 'V'
+         travel = (vertical ? Height : Width) - &prvThumbLength
+         majors, minors = &prvTickLayout(travel)
+
+         &prvTickStops = majors.clone()
+         for v in values(minors) do &prvTickStops.push(v) end
+         &prvTickStops.sort()
+
+         for side in values(&prvTickSides) do
+            path = &prvTickPaths[side]
+            if not path then
+               path = &viewport.new('VectorPath', { name = 'Ticks' })
+               path.acDisable() -- Ticks must not intercept track clicks, thumb dragging or wheel input.
+               &prvStyleTicks(path)
+               &prvTickPaths[side] = path
+            end
+
+            outward = ((side is 'xOffset') or (side is 'yOffset')) ? 1 : -1
+            base = vertical ? host_x : host_y
+            if outward > 0 then base += (vertical ? Width : Height) end
+            base = math.round(base + (TICK_GAP * outward))
+
+            sequence = ''
+            function addTicks(Values:array<double>!, Length:num!)
+               tip = base + (Length * outward)
+               for v in values(Values) do
+                  p = &prvTickPosition(v, travel, vertical ? host_y : host_x)
+                  if vertical then
+                     sequence ..= f'M{base} {p} L{tip} {p} '
+                  else
+                     sequence ..= f'M{p} {base} L{p} {tip} '
+                  end
+               end
+            end
+
+            addTicks(majors, TICK_LENGTH)
+            addTicks(minors, TICK_MINOR_LENGTH)
+            path.sequence = sequence
+         end
+      end,
+
+      -- Move to the next drawn tick in a direction, skipping ticks that snap back to the current value.  Without a
+      -- tick in that direction, the value moves to the end of the range.
+
+      prvTickStep = function(Direction:num!)
+         tolerance = (&max - &min) * 1e-9
+         stops = &prvTickStops
+         count = #stops
+         i = (Direction > 0) ? 0 : count - 1
+         while (i >= 0) and (i < count) do
+            stop = stops[i]
+            ahead = (Direction > 0) ? (stop > (&value + tolerance)) : (stop < (&value - tolerance))
+            if ahead then
+               if &prvSnap(stop) != &value then
+                  &setValue(stop)
+                  return
+               end
+            end
+            i += Direction
+         end
+         &setValue((Direction > 0) ? &max : &min)
+      end,
+
+      -- Silent updates do not call the activate event, so that a client can reflect external state in the slider.
+
+      setValue = function(Value:num, Silent:bool)
+         Value = &prvSnap(Value)
+         if Value is &value then return end
+         &value = Value
+         &prvPlaceSlider()
+         &viewport.scene.surface.mtScheduleRedraw()
+         if not Silent then &events.activate?(Value) end
+      end,
+
+      -- The increment defaults to the step, or one percent of the range for continuous sliders.
+
+      prvIncrement = function():num
+         if &increment then return &increment end
+         return (&step > 0) ? &step : ((&max - &min) / 100)
+      end,
+
+      -- Keyboard and wheel input share increments and handling of a maximum outside the step grid.
+
+      prvAdjust = function(Steps:num!)
+         increment = &prvIncrement()
+         if (&increment is nil) and (Steps <= -1) and (&step > 0) and (&value is &max) then
+            previous = &min + ((math.ceil((&max - &min) / &step) - 1) * &step)
+            -- Decimal round-off can reconstruct the maximum; ensure the snapped value actually decreases.
+            if &prvSnap(previous) is &max then previous -= &step end
+            &setValue(previous + (increment * (Steps + 1)))
+         else
+            &setValue(&value + (increment * Steps))
+         end
+      end,
+
+      -- Clamp a value to the slider range and snap it to the nearest step.  Steps are counted from min, and max is
+      -- always reachable even if the range is not an exact multiple of the step.
+
+      prvSnap = function(Value:num):num
+         Value = math.clamp(Value, &min, &max)
+         if &step <= 0 then return Value end
+         snapped = math.min(&min + (math.round((Value - &min) / &step) * &step), &max)
+         if (&max - Value) < (Value - snapped) then snapped = &max end
+         return snapped
+      end,
+
+      -- Convert a slider position within the track to a value.  Vertical sliders place max at the top.
+
+      prvTrackValue = function(Position:num):num
+         track = ((&orientation is 'V') ? &trackVP.height : &trackVP.width) - &prvThumbLength
+         if track <= 0 then return &value end -- Pointer input cannot adjust a thumb with no room to travel.
+
+         if &orientation is 'V' then
+            return &min + ((&max - &min) * math.clamp((track - Position) / track, 0, 1))
+         else
+            return &min + ((&max - &min) * math.clamp(Position / track, 0, 1))
+         end
+      end,
+
+      -- A theme with overhang places the thumb centre on each end of the track at the range limits, so the track is
+      -- inset from the host by half the thumb length.  The inset is whole pixels to keep the track ends sharp.
+
+      prvTrackInset = function():num
+         return &prvTheme.overhang ? math.floor(&prvThumbLength * 0.5) : 0
+      end,
+
+      -- Reachable values are min + (n * step) and max, so the readout needs the decimal places of all three.
+
+      prvValueFormat = function():str
+         if &step <= 0 then return '%.2f' end
+         places = decimalPlaces(&step)
+         if not places then
+            -- A step with no terminating decimal form gets one digit more than is needed to separate adjacent values.
+            places = 1
+            while (places < MAX_PLACES) and ((&step * (10 ** places)) < 10) do places++ end
+         end
+         places = math.max(places, decimalPlaces(&min) ?? 0, decimalPlaces(&max) ?? 0)
+         return f'%.{places}f'
+      end,
+
+      -- Reserve a stable width for all digits in the range, so value changes do not resize the track.  Vertical
+      -- values in line with the track are scaled down until the widest value fits across it.
+
+      prvMeasureValue = function()
+         -- The widest values are the range ends with every digit drawn as 8, e.g. 8.88 for 0.00
+
+         format = &prvValueFormat()
+         samples = array<str> {
+            DIGITS.replace(string.format(format, &min), '8'), DIGITS.replace(string.format(format, &max), '8')
+         }
+
+         function widest():num
+            width = 0
+            for sample in values(samples) do
+               &valueText.string = sample
+               width = math.max(width, &valueText.textWidth)
+            end
+            return width
+         end
+
+         &valueText.fontSize = f'{&prvValueFontSize}px'
+         &prvValueWidth = widest()
+         &valueText.acShow()
+
+         -- Font sizes are whole pixels and hinted widths are not proportional, so step down from the estimate.
+
+         if (&orientation is 'V') and (&valuePos != 'out-centre') then
+            available = math.max(0, &thickness - (VALUE_INSET * 2))
+            if &prvValueWidth > available then
+               size = math.max(1, math.floor(&prvValueFontSize * available / &prvValueWidth))
+               while size >= 1 do
+                  &valueText.fontSize = f'{size}px'
+                  &prvValueWidth = widest()
+                  if &prvValueWidth <= available then break end
+                  size -= 1
+               end
+
+               -- A one-pixel font is the minimum; hide values that still cannot fit within the track.
+
+               if &prvValueWidth > available then &valueText.acHide() end
+            end
+         end
+
+         &prvValueHeight, ascent = gui.layout.textMetrics(&valueText)
+         &prvValueBaseline = (&prvValueHeight + ascent) * 0.5
+         &valueText.string = string.format(format, &value)
+
+         if &prvValueSide and &trackVP then
+            space = &prvValueReserve()
+            delta = space - &prvValueSpace
+            &trackVP[&prvValueSide] = &trackVP[&prvValueSide] + delta
+
+            if ((&prvValueSide is 'x') or (&prvValueSide is 'xOffset')) and &prvAutoWidth then
+               &viewport.width += delta
+            elseif ((&prvValueSide is 'y') or (&prvValueSide is 'yOffset')) and &prvAutoHeight then
+               &viewport.height += delta
+            end
+
+            &prvValueSpace = space
+         end
+
+         if &trackVP and &prvAutoWidth and (&orientation is 'H') and &valuePos.startsWith('in-') then
+            extra = &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2) - &trackVP.width
+            if extra > 0 then &viewport.width += extra end
+         end
+      end,
+
+      -- Space reserved beside the track for outside value text.  An explicit valueWidth replaces the measured width of
+      -- text placed to the left or right of the track, so that the track length does not depend on the range.
+
+      prvValueReserve = function():num
+         if (&prvValueSide is 'x') or (&prvValueSide is 'xOffset') then
+            return (&valueWidth ?? &prvValueWidth) + MARGIN
+         end
+         return &prvValueHeight + MARGIN
+      end,
+
+      prvPlaceValue = function(Width:num!, Height:num!)
+         &valueText.string = string.format(&prvValueFormat(), &value)
+         x = &trackVP.x
+         y = &trackVP.y
+         text_width = &valueText.textWidth
+         outside = &valuePos.startsWith('out-')
+         position = &valuePos.sub(outside ? 4 : 3)
+         tick_space = (&tickPos != 'start') ? &prvTickSpace : 0 -- out-centre text is placed beyond end ticks
+
+         -- Inside text is drawn over the track, which is inset from the host for an overhanging thumb.
+
+         if not outside then
+            inset = &prvTrackInset()
+            if &orientation is 'H' then
+               x += inset
+               Width -= inset * 2
+            else
+               y += inset
+               Height -= inset * 2
+            end
+         end
+
+         if &orientation is 'H' then
+            if outside and (position is 'min') then
+               x -= MARGIN + text_width
+            elseif outside and (position is 'max') then
+               x += Width + MARGIN
+            else
+               x += choose position from
+                  'min' -> MARGIN
+                  'max' -> Width - text_width - MARGIN
+                  else  -> (Width - text_width) * 0.5
+               end
+            end
+
+            y += (outside and (position is 'centre')) ? Height + tick_space + MARGIN + &prvValueBaseline :
+               &prvValueBaseline + ((Height - &prvValueHeight) * 0.5)
+         else
+            x += (outside and (position is 'centre')) ? Width + tick_space + MARGIN : (Width - text_width) * 0.5
+            y += choose position from
+               'min' -> (outside ? Height + MARGIN + &prvValueBaseline :
+                  Height - &prvValueHeight - MARGIN + &prvValueBaseline)
+               'max' -> (outside ? -MARGIN - &prvValueHeight + &prvValueBaseline : MARGIN + &prvValueBaseline)
+               else  -> &prvValueBaseline + ((Height - &prvValueHeight) * 0.5)
+            end
+         end
+
+         &valueText.x = x
+         &valueText.y = y
+      end,
+
+      -- Labels are placed in a line of the label's lineHeight across the reading direction, with their capitals
+      -- centred in it.  Centred stacked labels on vertical sliders follow the track, which excludes space reserved
+      -- for outside value text.  Rotated side labels align their breadth within the slot.
+
+      prvPlaceLabel = function(Width:num!, Height:num!)
+         label = &prvLabel
+         host = &trackVP
+         if &orientation is 'V' then
+            label.place(Width, Height)
+            label_height = &labelText.textWidth
+            line_height = label.lineHeight
+            local x:num, y:num
+
+            if label.stacked then
+               track_x = host ? host.x : 0
+               track_width = Width - track_x - (host ? host.xOffset : 0)
+               x = choose &labelAlign from
+                  'centre' -> track_x + ((track_width - line_height) * 0.5)
+                  'right'  -> Width - line_height
+                  else     -> 0
+               end
+               y = 0
+            else
+               x = choose &labelAlign from
+                  'centre' -> (label.breadth - line_height) * 0.5
+                  'right'  -> label.breadth - line_height
+                  else     -> 0
+               end
+               y = (Height - label_height) * 0.5
+            end
+
+            -- The rotated capitals extend to the left of the baseline.
+
+            &labelText.x = math.round(x + label.baseline)
+            &labelText.y = y + label_height
+
+            check mVec.ResetMatrix(&prvLabelMatrix)
+            check mVec.Rotate(&prvLabelMatrix, -90, &labelText.x, &labelText.y)
+         else
+            track_y = host ? host.y : 0
+            label.place(Width, Height, track_y, Height - track_y - (host ? host.yOffset : 0))
+         end
+      end,
+
+      -- The track and thumb are centred across the host; whole-pixel offsets keep their edges sharp.
+
+      prvPlaceSlider = function(Width:num, Height:num)
+         width = (Width != nil) ? Width : &trackVP.width
+         height = (Height != nil) ? Height : &trackVP.height
+         fraction = (&value - &min) / (&max - &min)
+         inset = &prvTrackInset()
+
+         if &orientation is 'V' then
+            track = math.max(0, height - &prvThumbLength)
+            &thumbVP.y = track - (fraction * track)
+            if &anchored then &thumbVP.height = &prvThumbLength + (fraction * track) end
+            &thumbVP.x = math.floor((width - &prvThumbSize) * 0.5)
+            &prvBarBkgd.x = math.floor((width - &thickness) * 0.5)
+            if &prvTheme.overhang then
+               &prvBarBkgd.y = inset
+               &prvBarBkgd.height = math.max(0, height - (inset * 2))
+            end
+         else
+            travel = fraction * math.max(0, width - &prvThumbLength)
+            if &anchored then &thumbVP.width = &prvThumbLength + travel else &thumbVP.x = travel end
+            &thumbVP.y = math.floor((height - &prvThumbSize) * 0.5)
+            &prvBarBkgd.y = math.floor((height - &thickness) * 0.5)
+            if &prvTheme.overhang then
+               &prvBarBkgd.x = inset
+               &prvBarBkgd.width = math.max(0, width - (inset * 2))
+            end
+         end
+
+         if &anchored and &button then
+            &button.width = &thumbVP.width - (&prvGapX * 2)
+            &button.height = &thumbVP.height - (&prvGapY * 2)
+         end
+
+         if &valueText then &prvPlaceValue(width, height) end
+         &prvPlaceTicks(width, height)
+      end,
+
+      -- The position along the track that corresponds to the value, as used by prvTrackValue().  An anchored thumb
+      -- is resized rather than moved, so its position is that of its maximum end less the configured thumb length.
+
+      prvThumbPosition = function():num
+         if &orientation is 'V' then return &thumbVP.y end
+         return &anchored ? (&thumbVP.width - &prvThumbLength) : &thumbVP.x
+      end
+   }, {
+      __gc = function()
+         &viewport?.free()
+         &viewport = nil
+      end
+   })
+
+   -- Weak bindings retain the widget only for the duration of each callback.
+
+   using self do
+      target = Options.target
+      assert(target, 'A target viewport is required.')
+      assert(&max > &min, 'The min/max values are invalid.')
+      assert(&step >= 0, 'The step value cannot be negative.')
+      gui.layout.checkLabel(&labelPos, &labelWidth, &labelAlign)
+
+      assert((&valuePos is nil) or (&valuePos is 'in-min') or (&valuePos is 'in-centre')
+         or (&valuePos is 'in-max') or (&valuePos is 'out-min') or (&valuePos is 'out-centre')
+         or (&valuePos is 'out-max'), f"Invalid valuePos '{&valuePos}'")
+      assert((&valueWidth is nil) or ((&valueWidth is <num>) and (&valueWidth > 0)),
+         f"Invalid valueWidth '{&valueWidth}'")
+      assert((&tickPos is 'start') or (&tickPos is 'end') or (&tickPos is 'both'), f"Invalid tickPos '{&tickPos}'")
+      &prvCheckTicks(&ticks)
+
+      -- The applied theme is layered as base.slider <- Options.theme <- the override from setTheme().  It is rebuilt
+      -- whenever the base theme or the override changes.
+
+      base_theme = gui.getTheme(target)
+      override = nil -- Per-instance override from setTheme()
+
+      function buildTheme()
+         &prvTheme = base_theme.slider
+         if Options.theme then &prvTheme = table.merge(&prvTheme, Options.theme, true, true) end
+         if override then &prvTheme = table.merge(&prvTheme, override, true, true) end
+      end
+
+      buildTheme()
+      &orientation = (Options.orientation is 'vertical') ? 'V' : 'H'
+
+      -- Ticks occupy the host's start and/or end side across the track: below a horizontal track or to the right of a
+      -- vertical track for 'end'.
+
+      &prvTickSides = array<str>
+      if &tickPos != 'end' then &prvTickSides.push((&orientation is 'V') ? 'x' : 'y') end
+      if &tickPos != 'start' then &prvTickSides.push((&orientation is 'V') ? 'xOffset' : 'yOffset') end
+      &prvTickPaths = { }
+      &prvTickStops = array<double>
+      &prvTickSpace = 0
+      &value = &prvSnap(&value)
+
+      assert((&thickness is <num>) and (&thickness > 0), f"Invalid thickness '{&thickness}'")
+
+      function thumbPixels(Size:any, Name:str!):num
+         if (Size is <str>) and Size.endsWith('%') then
+            percent = tonumber(Size.sub(0, -1))
+            assert(percent and (percent > 0), f"Invalid {Name} '{Size}'")
+            return math.max(1, math.round(&thickness * percent / 100))
+         end
+         assert((Size is <num>) and (Size > 0), f"Invalid {Name} '{Size}'")
+         return Size
+      end
+
+      &prvThumbSize = thumbPixels(&thumbSize, 'thumbSize') -- Breadth across the track
+      &prvThumbLength = (&thumbLength != nil) ? thumbPixels(&thumbLength, 'thumbLength') : &prvThumbSize
+      assert((&increment is nil) or ((&increment is <num>) and (&increment > 0)), f"Invalid increment '{&increment}'")
+
+      breadth = math.max(&thickness, &prvThumbSize)
+
+      vps = {
+         x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+         xOffset = Options.xOffset, yOffset = Options.yOffset
+      }
+
+      if vps.x is nil and vps.xOffset is nil then vps.x = 0 end
+      if vps.y is nil and vps.yOffset is nil then vps.y = 0 end
+
+      if vps.width is nil and not (vps.x != nil and vps.xOffset != nil) then
+         vps.width = (&orientation is 'V') ? breadth : 100
+      end
+
+      if vps.height is nil and not (vps.y != nil and vps.yOffset != nil) then
+         vps.height = (&orientation is 'V') ? 100 : breadth
+      end
+
+      &prvAutoWidth = Options.width is nil and not (Options.x != nil and Options.xOffset != nil)
+      &prvAutoHeight = Options.height is nil and not (Options.y != nil and Options.yOffset != nil)
+      &viewport = target.new('VectorViewport', vps)
+
+      host = { x = 0, y = 0, xOffset = 0, yOffset = 0 }
+
+      if &label then
+         &prvLabel = gui.layout.label(&viewport, {
+            string = &label, pos = &labelPos, align = &labelAlign, width = &labelWidth, style = &prvTheme.text,
+            rotated = &orientation is 'V'
+         })
+         &labelText = &prvLabel.text
+
+         if &orientation is 'V' then
+            _, matrix = check &labelText.mtNewMatrix(false)
+            &prvLabelMatrix = matrix
+         end
+
+         &prvLabel.reserve(host)
+
+         -- Expand default dimensions for the label; explicit and stretched dimensions include it.
+
+         width, height = &prvLabel.expand(&viewport.width, &viewport.height)
+         if &prvAutoWidth then &viewport.width = width end
+         if &prvAutoHeight then &viewport.height = height end
+
+         &prvPlaceLabel(&viewport.width, &viewport.height)
+
+         &prvLabel.slot.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+            &prvPlaceLabel(Width, Height)
+         end
+      end
+
+      if &valuePos then
+         &valueText = &viewport.new('VectorText', table.merge({
+            name='Value', x=0, y=0, face=gui.fonts.window.face,
+            fontSize=string.format('%.2fpt', gui.fonts.window.size), fontStyle=gui.fonts.window.style,
+            lineLimit=1
+         }, &prvTheme.text))
+
+         &prvValueFontSize = tonumber(&valueText.fontSize) -- Unscaled size in pixels
+         &valueText.align = 'start'
+         &valueText.acDisable() -- Value text must not intercept track clicks or thumb dragging.
+         &prvMeasureValue()
+
+         if &valuePos.startsWith('out-') then
+            position = &valuePos.sub(4)
+            &prvValueSide = (&orientation is 'H') ?
+               ((position is 'min') ? 'x' : ((position is 'max') ? 'xOffset' : 'yOffset')) :
+               ((position is 'min') ? 'yOffset' : ((position is 'max') ? 'y' : 'xOffset'))
+
+            horizontal_space = (&prvValueSide is 'x') or (&prvValueSide is 'xOffset')
+            &prvValueSpace = &prvValueReserve()
+            host[&prvValueSide] += &prvValueSpace
+
+            if horizontal_space and &prvAutoWidth then &viewport.width += &prvValueSpace end
+            if not horizontal_space and &prvAutoHeight then &viewport.height += &prvValueSpace end
+         end
+
+         -- A default width grows for horizontal inside values, which run along the track.  Vertical values are
+         -- scaled to the track's breadth instead.
+
+         if &prvAutoWidth and (&orientation is 'H') and &valuePos.startsWith('in-') then
+            available = &viewport.width - host.x - host.xOffset
+            needed = &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2)
+            if needed > available then &viewport.width += needed - available end
+         end
+
+         if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end
+      end
+
+      &prvReserveTicks(host) -- Ticks sit between the track and any outside value text or label
+      &trackVP = &viewport.new('VectorViewport', host)
+      if &labelText then &prvPlaceLabel(&viewport.width, &viewport.height) end -- Centre on the track
+      &prvBarBkgd = &trackVP.new('VectorRectangle', table.merge({
+         flags = VF_STICK_TO_BACK,
+         x = 0, y = 0,
+         width = (&orientation is 'V') ? &thickness : '100%',
+         height = (&orientation is 'V') ? '100%' : &thickness
+      }, &prvTheme.bkgd))
+
+      &thumbVP = &trackVP.new('VectorViewport', {
+         width  = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength,
+         height = (&orientation is 'V') ? &prvThumbLength : &prvThumbSize
+      })
+
+      -- Drag coordinates are relative to the drag origin, so snapping the slider does not impede its movement.  The
+      -- pointer movement is measured in display pixels, so it is converted to track units when an ancestor scales the
+      -- slider, e.g. with a view box.  The drag origin is the thumb's coordinate when the drag started, which does not
+      -- follow the value of an anchored thumb, so the position at the time of the press is used instead.
+
+      &prvDragPosition = 0
+
+      self.thumbVP.dragCallback = function[<weak> self](Viewport:obj!, X:num!, Y:num!, OriginX:num!, OriginY:num!)
+         if &disabled then return end
+         local track_vp = &trackVP
+         _, _, _, display_w, display_h = track_vp.mtGetBoundary(0)
+         if &orientation is 'V' then
+            scale = ((display_h ?? 0) > 0) ? display_h / track_vp.height : 1
+            origin = &anchored ? &prvDragPosition : OriginY
+            &setValue(&prvTrackValue(origin + ((Y - OriginY) / scale)))
+         else
+            scale = ((display_w ?? 0) > 0) ? display_w / track_vp.width : 1
+            origin = &anchored ? &prvDragPosition : OriginX
+            &setValue(&prvTrackValue(origin + ((X - OriginX) / scale)))
+         end
+      end
+
+      if &anchored then
+         function[<weak> &&] anchoredPress(Viewport:obj!, Msg)
+            repeat
+               if (Msg.type is JET_LMB) and (Msg.value > 0) then &prvDragPosition = &prvThumbPosition() end
+               Msg = Msg.next
+            until Msg is nil
+         end
+
+         &thumbVP.mtSubscribeInput(JTYPE_BUTTON, anchoredPress)
+      end
+
+      &prvPlaceSlider()
+
+      self.thumbVP.resizeEvent = function[<weak> self](Viewport, Vector, X, Y, Width, Height)
+         &prvPlaceSlider(Width, Height)
+      end
+
+      GAP <const> = math.ceil(&prvTheme.bkgd.strokeWidth) -- Whole pixels keep the thumb edges sharp
+      -- Reduce each inset independently to leave at least one pixel, or the full dimension for subpixel thumbs.  The
+      -- insets follow the configured thumb dimensions, which an anchored thumb exceeds as it grows.
+      thumb_width = (&orientation is 'V') ? &prvThumbSize : &prvThumbLength
+      thumb_height = (&orientation is 'V') ? &prvThumbLength : &prvThumbSize
+      &prvGapX = math.min(GAP, math.max(0, (thumb_width - 1) * 0.5))
+      &prvGapY = math.min(GAP, math.max(0, (thumb_height - 1) * 0.5))
+
+      &button = &thumbVP.new('VectorRectangle', table.merge({
+         x = &prvGapX, y = &prvGapY, width = &thumbVP.width - (&prvGapX * 2), height = &thumbVP.height - (&prvGapY * 2)
+      }, &prvTheme.fore))
+
+      if &valueText then
+         &valueText.acMoveToFront()
+         &prvPlaceValue(&trackVP.width, &trackVP.height)
+      end
+
+      function[<weak> &&] focusFeedback(Viewport, Event)
+         &hasFocus = Event != FM_LOST_FOCUS
+
+         &prvApplyStyle()
+         Viewport.acDraw()
+
+         if Event is FM_LOST_FOCUS then
+            &events.lostFocus?()
+         elseif not &disabled then
+            &events.focus?()
+         end
+      end
+
+      &viewport.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, focusFeedback)
+
+      -- Keyboard registration makes the whole widget a single stop in the scene's tab order.  The arrow keys move one
+      -- increment; Page Up/Down move to the next tick, or ten increments if the slider has no ticks.
+
+      function[<weak> &&] keyboardInput(Viewport:obj!, Qualifiers:num!, Code:num!, Unicode)
+         if &disabled or not (Qualifiers has KQ_PRESSED) then return end
+
+         increment = &prvIncrement()
+         if (Code is KEY_RIGHT) or (Code is KEY_UP) then
+            &prvAdjust(1)
+         elseif (Code is KEY_LEFT) or (Code is KEY_DOWN) then
+            &prvAdjust(-1)
+         elseif Code is KEY_PAGE_UP then
+            if #&prvTickStops > 0 then &prvTickStep(1) else &setValue(&value + (increment * 10)) end
+         elseif Code is KEY_PAGE_DOWN then
+            if #&prvTickStops > 0 then &prvTickStep(-1) else &setValue(&value - (increment * 10)) end
+         elseif Code is KEY_HOME then
+            &setValue(&min)
+         elseif Code is KEY_END then
+            &setValue(&max)
+         end
+      end
+
+      if Options.keyboard != false then &viewport.mtSubscribeKeyboard(keyboardInput) end
+
+      function[<weak> &&] wheelInput(Viewport:obj!, Msg)
+         if &disabled then return end
+
+         -- Upward rotation is reported as a negative value and increases the slider.  Display drivers scale the value
+         -- inconsistently (a notch can be 3 or 9 units), so each wheel event moves one increment regardless of size.
+         -- Shift redirects rotation to JET_WHEEL_X with JTYPE_ALT set, which is treated as ordinary rotation.  Native
+         -- horizontal movement only applies to horizontal sliders, where movement to the right increases the value.
+
+         repeat
+            if Msg.value != 0 then
+               if (Msg.type is JET_WHEEL) or ((Msg.type is JET_WHEEL_X) and (Msg.flags has JTYPE_ALT)) then
+                  &prvAdjust((Msg.value < 0) ? 1 : -1)
+               elseif (Msg.type is JET_WHEEL_X) and (&orientation is 'H') then
+                  &prvAdjust((Msg.value > 0) ? 1 : -1)
+               end
+            end
+            Msg = Msg.next
+         until not Msg
+      end
+
+      &viewport.mtSubscribeInput(JTYPE_EXT_MOVEMENT, wheelInput)
+
+      function[<weak> &&] crossingInput(Viewport, Msg)
+         if &disabled then return end
+
+         repeat
+            if Msg.type is JET_CROSSED_IN then
+               &prvHover = true
+            elseif Msg.type is JET_CROSSED_OUT then
+               &prvHover = false
+            end
+            Msg = Msg.next
+         until not Msg
+
+         &prvApplyStyle()
+         Viewport.acDraw()
+      end
+
+      &thumbVP.mtSubscribeInput(JTYPE_CROSSING, crossingInput)
+
+      function[<weak> &&] trackInput(Viewport:obj!, Msg)
+         repeat
+            if (Msg.type is JET_LMB) and (Msg.value > 0) and (not &disabled) then
+               -- Centre the slider on the click position.
+               position = ((&orientation is 'V') ? Msg.y : Msg.x) - (&prvThumbLength * 0.5)
+               &setValue(&prvTrackValue(position))
+            end
+            Msg = Msg.next
+         until Msg is nil
+      end
+
+      &trackVP.mtSubscribeInput(JTYPE_BUTTON, trackInput)
+
+      -- Apply the current theme to the existing vectors.  The size of the track and thumb, the font and the layout are
+      -- not changed.
+
+      function restyle()
+         &prvApplyStyle()
+         fill = &prvTheme.text?.fill
+         if fill then
+            if &labelText then &labelText.fill = fill end
+            if &valueText then &valueText.fill = fill end
+         end
+         &viewport.acDraw()
+      end
+
+      -- Style this slider instance.  Override is merged over the slider section of the theme, as for Options.theme, and
+      -- is kept when the window theme changes.  Each call replaces the previous override; nil removes it.
+
+      &setTheme = function(Override:table)
+         override = Override
+         buildTheme()
+         restyle()
+      end
+
+      -- Called by gui.broadcastTheme() with the window's new theme.
+
+      &applyTheme = function(Theme:table!)
+         base_theme = Theme
+         buildTheme()
+         restyle()
+      end
+
+      gui.registerWidget(&viewport, &&)
+
+      if Options.disabled then &disable() end
+      &events.show?()
+      return &&
+   end
+end

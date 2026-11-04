@@ -1,0 +1,221 @@
+-- Format descriptors, output layouts and their observations.  The null device renders nothing audible.
+   module audio as mAudio
+
+function format(SampleFormat:num, Layout:array<int>, Flags:num):any
+   return struct.new('AudioFormat', { sampleRate=44100, sampleFormat=SampleFormat, flags=Flags ?? 0, layout=Layout })
+end
+
+function expand(Preset:num):array<int>
+   err, layout = mAudio.ExpandLayout(Preset)
+   assert(err is ERR_Okay, 'ExpandLayout() must support every named preset')
+   return layout
+end
+
+@Test function PresetsExpandToOrderedIdentities()
+   assert(expand(ACL_MONO)[0] is SPK_CENTRE and #expand(ACL_MONO) is 1)
+   stereo = expand(ACL_STEREO)
+   assert(#stereo is 2 and stereo[0] is SPK_FRONT_LEFT and stereo[1] is SPK_FRONT_RIGHT)
+   side = expand(ACL_SURROUND_5_1_SIDE)
+   rear = expand(ACL_SURROUND_5_1_REAR)
+   assert(#side is 6 and #rear is 6 and side[4] is SPK_SIDE_LEFT and rear[4] is SPK_REAR_LEFT,
+      'Both 5.1 presets have six channels but different surround identities')
+   assert(side[2] is SPK_CENTRE and side[3] is SPK_LFE)
+   assert(mAudio.ExpandLayout(99) is ERR_Args)
+end
+
+@Test function FrameBytesAndMalformedFormats()
+   err, bytes = mAudio.GetFrameBytes(format(ASF_S16, expand(ACL_SURROUND_5_1_REAR)))
+   assert(err is ERR_Okay and bytes is 12, 'A frame holds one sample for every channel')
+   err, bytes = mAudio.GetFrameBytes(format(ASF_F32, array<int> { SPK_DISCRETE, SPK_DISCRETE + 1, SPK_DISCRETE + 2 }))
+   assert(err is ERR_Okay and bytes is 12)
+   err, bytes = mAudio.GetFrameBytes(format(ASF_U8, expand(ACL_MONO)))
+   assert(err is ERR_Okay and bytes is 1)
+
+   assert(mAudio.GetFrameBytes(format(ASF_S16, array<int, 0>)) is ERR_Args, 'Empty layouts are malformed')
+   assert(mAudio.GetFrameBytes(format(ASF_S16, array<int> { SPK_FRONT_LEFT, SPK_FRONT_LEFT })) is ERR_Args,
+      'Duplicate identities are malformed')
+   assert(mAudio.GetFrameBytes(format(ASF_S16, array<int> { 99 })) is ERR_Args, 'Unknown identities are malformed')
+   assert(mAudio.GetFrameBytes(format(0, expand(ACL_MONO))) is ERR_Args)
+   assert(mAudio.GetFrameBytes(format(ASF_S16, expand(ACL_MONO), 0x100)) is ERR_Args)
+   zero_rate = struct.new('AudioFormat', { sampleRate=0, sampleFormat=ASF_S16, layout=expand(ACL_MONO) })
+   assert(mAudio.GetFrameBytes(zero_rate) is ERR_Args)
+   wide = array<int, 65>
+   for i in {0 to 65} do wide[i] = SPK_DISCRETE + i end
+   assert(mAudio.GetFrameBytes(format(ASF_U8, wide)) is ERR_Args, 'Layouts are limited to 64 channels')
+end
+
+@Test function RegistrationDistinguishesMalformedFromUnsupported()
+   audio <close> = obj.new('Audio', { device='null' })
+   data = array<byte, 48>
+   assert(audio.mtAddSample(nil, format(ASF_S16, expand(ACL_SURROUND_5_1_SIDE)), data, nil) is ERR_NoSupport,
+      'Valid 5.1 data cannot be played yet and must not be treated as mono')
+   assert(audio.mtAddSample(nil, format(ASF_F32, expand(ACL_STEREO)), data, nil) is ERR_NoSupport)
+   assert(audio.mtAddSample(nil, format(ASF_S16, array<int> { SPK_FRONT_RIGHT, SPK_FRONT_LEFT }), data, nil) is
+      ERR_NoSupport, 'A reversed stereo layout is valid but not playable')
+   assert(audio.mtAddSample(nil, format(ASF_S16, array<int, 0>), data, nil) is ERR_Args)
+   assert(audio.mtAddSample(nil, format(ASF_S16, expand(ACL_STEREO)), array<byte, 6>, nil) is ERR_Args,
+      'Sample data must contain complete frames')
+   assert(audio.mtAddStream(function() return 0 end, nil, format(ASF_S16, expand(ACL_SURROUND_5_1_REAR)), 1200,
+      0, nil) is ERR_NoSupport)
+   assert(audio.mtAddStream(function() return 0 end, nil, format(ASF_S16, expand(ACL_STEREO)), 1200, 2, nil) is
+      ERR_Args, 'Play offsets must be aligned to a frame')
+
+   fmt = format(ASF_S16, expand(ACL_STEREO), AFF_BIG_ENDIAN_ORDER)
+   err, sample = audio.mtAddSample(nil, fmt, data, nil)
+   assert(err is ERR_Okay, 'Big endian 16-bit data is converted on registration')
+   fmt.layout = expand(ACL_SURROUND_5_1_SIDE) -- The registered format is a copy.
+   check audio.mtRemoveSample(sample)
+end
+
+@Test function OutputLayoutLifecycle()
+   audio <close> = obj.new('Audio', { device='null' })
+   requested = audio.outputLayout
+   assert(#requested is 2 and requested[0] is SPK_FRONT_LEFT, 'Stereo is the default request')
+
+   err, rate, sample_format, layout, generation, state = audio.mtGetOutputFormat()
+   assert(err is ERR_Okay and state is AFS_UNAVAILABLE and rate is 0 and #layout is 0 and generation is 0,
+      'No format is available before activation')
+
+   -- An unsupported request fails without changing the committed state.
+
+   audio.outputLayout = expand(ACL_SURROUND_5_1_SIDE)
+   assert(audio.acActivate() is ERR_NoSupport)
+   err, rate, sample_format, layout, generation, state = audio.mtGetOutputFormat()
+   assert(state is AFS_UNAVAILABLE and generation is 0)
+
+   audio.outputLayout = expand(ACL_STEREO)
+   check audio.acActivate()
+   err, rate, sample_format, layout, first, state = audio.mtGetOutputFormat()
+   assert(state is AFS_ACTIVE and rate is audio.outputRate and sample_format is ASF_F32)
+   assert(#layout is 2 and layout[1] is SPK_FRONT_RIGHT and first > 0)
+
+   try
+      audio.outputLayout = expand(ACL_MONO)
+      assert(false, 'The layout cannot change while active')
+   except e
+      assert(e.code is ERR_InvalidState)
+   end
+
+   check audio.acDeactivate()
+   err, rate, sample_format, layout, generation, state = audio.mtGetOutputFormat()
+   assert(state is AFS_INACTIVE and #layout is 2 and generation is first, 'The last format remains inspectable')
+
+   audio.outputLayout = expand(ACL_SURROUND_5_1_REAR)
+   assert(audio.acActivate() is ERR_NoSupport)
+   err, rate, sample_format, layout, generation, state = audio.mtGetOutputFormat()
+   assert(state is AFS_INACTIVE and #layout is 2 and generation is first)
+
+   try
+      audio.outputLayout = array<int> { SPK_CENTRE, SPK_CENTRE }
+      assert(false, 'Malformed layouts are rejected')
+   except e
+      assert(e.code is ERR_Args)
+   end
+
+   audio.outputLayout = expand(ACL_MONO)
+   check audio.acActivate()
+   err, rate, sample_format, layout, second, state = audio.mtGetOutputFormat()
+   assert(state is AFS_ACTIVE and #layout is 1 and layout[0] is SPK_CENTRE and second > first)
+   check audio.acDeactivate()
+end
+
+@Test function EffectsAdoptTheCommittedFormat()
+   audio <close> = obj.new('Audio', { device='null' })
+   err, channel = audio.mtOpenChannels(1)
+   eq <close> = obj.new('AudioEqualiser', { audio=audio, channel=channel })
+   err, rate, sample_format, layout, generation, state = eq.mtGetProcessingFormat()
+   assert(err is ERR_Okay and state is AFS_UNAVAILABLE and #layout is 0)
+
+   check audio.acActivate()
+   err, rate, sample_format, layout, generation, state = eq.mtGetProcessingFormat()
+   err, out_rate, out_format, out_layout, out_generation, out_state = audio.mtGetOutputFormat()
+   assert(state is AFS_ACTIVE and generation is out_generation and rate is out_rate and #layout is #out_layout)
+   assert(sample_format is ASF_F32)
+
+   check audio.acDeactivate()
+   err, rate, sample_format, layout, generation, state = eq.mtGetProcessingFormat()
+   assert(state is AFS_INACTIVE and generation is out_generation)
+
+   -- An effect attached to an active Audio object adopts its committed format immediately.
+
+   check audio.acActivate()
+   eq_global <close> = obj.new('AudioEqualiser', { audio=audio })
+   err, rate, sample_format, layout, generation, state = eq_global.mtGetProcessingFormat()
+   err, out_rate, out_format, out_layout, out_generation = audio.mtGetOutputFormat()
+   assert(state is AFS_ACTIVE and generation is out_generation)
+   check audio.acDeactivate()
+end
+
+@Test function SoundSourceFormat()
+   audio <close> = obj.new('Audio', { device='null' })
+   snd <close> = obj.new('Sound', { path=glFolder .. 'low-tone.wav', audio=audio })
+   assert(snd.channels is 1 and snd.sampleRate is 11025 and snd.frameBytes is 2 and snd.bytesPerSecond is 22050)
+   fmt = snd.sourceFormat
+   assert(fmt.sampleFormat is ASF_S16 and #fmt.layout is 1 and fmt.layout[0] is SPK_CENTRE)
+   assert(snd.playback is 11025, 'Playback defaults to the nominal sample rate')
+   try
+      snd.sourceFormat = format(ASF_U8, expand(ACL_STEREO))
+      assert(false, 'The source format is immutable after initialisation')
+   except e
+      assert(e.code != ERR_Okay)
+   end
+   assert(snd.channels is 1)
+
+   raw <close> = obj.new('Sound', { flags=SDF_NEW, audio=audio,
+      sourceFormat=format(ASF_S16, expand(ACL_SURROUND_5_1_SIDE)) })
+   assert(raw.channels is 6 and raw.frameBytes is 12 and raw.bytesPerSecond is 44100 * 12)
+
+   unset <close> = obj.new('Sound', { flags=SDF_NEW, audio=audio })
+   assert(unset.channels is 0 and unset.frameBytes is 0)
+   try
+      fmt = unset.sourceFormat
+      assert(false, 'The format is unavailable until configured')
+   except e when ERR_FieldNotSet
+   end
+
+   try
+      bad <close> = obj.new('Sound', { flags=SDF_NEW, audio=audio, sourceFormat=format(ASF_S16, array<int, 0>) })
+      assert(false, 'Malformed source formats are rejected')
+   except e
+   end
+end
+
+@Test function VolumeChannelDiscovery()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   err, selectors, speakers, flags = audio.mtGetVolumeChannels(0, 'Master')
+   assert(err is ERR_Okay and #selectors >= 1 and #selectors is #speakers)
+   for i in {0 to #speakers} do
+      assert(speakers[i] is 0 or (speakers[i] >= SPK_CENTRE and speakers[i] <= SPK_REAR_RIGHT),
+         'Speakers are known identities or zero')
+   end
+   assert(audio.mtGetVolumeChannels(0, 'NoSuchControl') is ERR_Search)
+   assert(audio.mtSetVolume(0, 'Master', 0, 99, 0.5) is ERR_OutOfRange, 'Unknown selectors are rejected')
+   check audio.mtSetVolume(0, 'Master', 0, selectors[0], 1)
+   check audio.acDeactivate()
+end
+
+@Test function StreamPartialFramesAreRequestedAgain()
+   audio <close> = obj.new('Audio', { device='null' })
+   check audio.acActivate()
+   offsets = array<int, 0>
+   err, sample = audio.mtAddStream(function(Handle, Offset, Buffer)
+      offsets.push(Offset)
+      if #offsets is 1 then return 6 end -- One complete S16 stereo frame and half of another
+      return 0
+   end, nil, format(ASF_S16, expand(ACL_STEREO)), 4000, 0, nil)
+   assert(err is ERR_Okay)
+   err, channel = audio.mtOpenChannels(1)
+   check mAudio.MixSample(audio, channel, sample)
+   check mAudio.MixFrequency(audio, channel, 44100)
+   check mAudio.MixPlay(audio, channel, 0)
+   processing.sleep(0.1)
+   assert(#offsets >= 2, 'The producer should be asked for more data')
+   assert(offsets[0] is 0 and offsets[1] is 4,
+      f'The incomplete frame must be requested again from an explicit offset, got {offsets[1]}')
+   check audio.acDeactivate()
+end
+
+@BeforeAll function init(State)
+   global glFolder = State.folder
+end

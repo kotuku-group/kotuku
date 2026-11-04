@@ -1,0 +1,16 @@
+@Package(name="gui/checkbox", version="1.0")
+
+--[[
+The gui.checkbox API is retained for backwards compatibility and forwards to gui.toggle.  New code should import
+'gui/toggle' instead.
+
+Documentation is available in the Kotuku Wiki.
+--]]
+
+   import 'gui', 'gui/toggle'
+
+   namespace gui
+
+gui.checkbox = function(Options:table):table
+   return gui.toggle(Options)
+end

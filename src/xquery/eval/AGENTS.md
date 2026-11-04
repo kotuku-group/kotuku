@@ -55,7 +55,7 @@ After modifying dispatch logic or handlers, run the module build and labelled te
 ```bash
 cmake --build build/agents --config Release --target xquery --parallel
 cmake --install build/agents
-ctest --build-config Release --test-dir build/agents -L xquery
+ctest --preset agents -L xquery
 ```
 
 These steps rebuild the evaluator, install updated artefacts, and execute the dedicated XQuery regression suite.

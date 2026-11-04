@@ -20,15 +20,20 @@
 
 #define LJLIB_MODULE_bit
 
+// Bitwise operations do not coerce strings to numbers (mirroring Tiri arithmetic).  A non-numeric
+// operand, including a numeric string, raises a type error; callers must convert explicitly with
+// tonumber(), e.g. bit.band(tonumber('12'), 5).
+
+static void bit_checknumber(lua_State* L, int narg)
+{
+   TValue* o = L->base + narg - 1;
+   if (!(o < L->top and tvisnumber(o))) lj_err_argt(L, narg, LUA_TNUMBER);
+}
+
 static int32_t bit_checkbit(lua_State* L, int narg)
 {
    TValue* o = L->base + narg - 1;
-   if (o < L->top and lj_strscan_numberobj(o)) {
-      // Valid number argument
-   }
-   else {
-      lj_err_argt(L, narg, LUA_TNUMBER);  // Keep original type error for now
-   }
+   bit_checknumber(L, narg);
 
    if (LJ_LIKELY(tvisint(o))) return intV(o);
    else {
@@ -40,7 +45,7 @@ static int32_t bit_checkbit(lua_State* L, int narg)
 
 LJLIB_ASM(bit_tobit)      LJLIB_REC(bit_tobit)
 {
-   lj_lib_checknumber(L, 1);
+   bit_checknumber(L, 1);
    return FFH_RETRY;
 }
 
@@ -51,7 +56,7 @@ LJLIB_ASM(bit_bnot)      LJLIB_REC(bit_unary IR_BNOT)
    uint64_t x = lj_carith_check64(L, 1, &id);
    return id ? bit_result64(L, id, ~x) : FFH_RETRY;
 #else
-   lj_lib_checknumber(L, 1);
+   bit_checknumber(L, 1);
    return FFH_RETRY;
 #endif
 }
@@ -63,7 +68,7 @@ LJLIB_ASM(bit_bswap)      LJLIB_REC(bit_unary IR_BSWAP)
    uint64_t x = lj_carith_check64(L, 1, &id);
    return id ? bit_result64(L, id, lj_bswap64(x)) : FFH_RETRY;
 #else
-   lj_lib_checknumber(L, 1);
+   bit_checknumber(L, 1);
    return FFH_RETRY;
 #endif
 }
@@ -81,7 +86,7 @@ LJLIB_ASM(bit_lshift)      LJLIB_REC(bit_shift IR_BSHL)
    if (id2) setintV(L->base + 1, sh);
    return FFH_RETRY;
 #else
-   lj_lib_checknumber(L, 1);
+   bit_checknumber(L, 1);
    bit_checkbit(L, 2);
    return FFH_RETRY;
 #endif
@@ -113,7 +118,7 @@ LJLIB_ASM(bit_band)      LJLIB_REC(bit_nary IR_BAND)
    return FFH_RETRY;
 #else
    int i = 0;
-   do { lj_lib_checknumber(L, ++i); } while (L->base + i < L->top);
+   do { bit_checknumber(L, ++i); } while (L->base + i < L->top);
    return FFH_RETRY;
 #endif
 }

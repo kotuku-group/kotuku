@@ -9,6 +9,7 @@
 #include <math.h>
 
 #include "lj_object.h"
+#include "runtime/lj_struct.h"
 #include "lj_obj.h"
 #include "lj_gc.h"
 #include "lj_buf.h"
@@ -17,6 +18,8 @@
 #include "lj_ir.h"
 #include "lj_jit.h"
 #include "lj_ircall.h"
+#include "runtime/lj_state.h"
+#include "runtime/lj_func.h"
 #include "lj_iropt.h"
 #include "lj_trace.h"
 #include "lj_record.h"
@@ -26,6 +29,7 @@
 #include "lj_strfmt.h"
 #include "lj_prng.h"
 #include "lj_vmarray.h"
+#include "lib/lib_range.h"
 
 // Some local macros to save typing. Undef'd at the end.
 #define IR(ref)         (&J->cur.ir[(ref)])
@@ -153,7 +157,7 @@ TRef lj_ir_ggfload(jit_State* J, IRType t, uintptr_t ofs)
    lj_assertJ((ofs & 3) == 0, "unaligned GG_State field offset");
    ofs >>= 2;
    lj_assertJ(ofs >= IRFL__MAX and ofs <= 0x3ff,
-      "GG_State field offset breaks 10 bit FOLD key limit");
+      "GG_State field offset %llu breaks 10 bit FOLD key limit", (unsigned long long)(ofs << 2));
    lj_ir_set(J, IRT(IR_FLOAD, t), REF_NIL, ofs);
    return lj_opt_fold(J);
 }

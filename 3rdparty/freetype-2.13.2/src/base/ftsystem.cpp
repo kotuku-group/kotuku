@@ -253,7 +253,7 @@ extern struct CoreBase *CoreBase;
 
    if (file) {
       LONG size;
-      file->get(FID_Size, &size);
+      file->get(kt::strhash("size"), &size);
       stream->size = size;
       stream->descriptor.pointer = file;
       stream->pathname.pointer   = (char *)filepathname;

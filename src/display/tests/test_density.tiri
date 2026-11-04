@@ -1,0 +1,103 @@
+   module display as mGfx
+
+@Test function HorizontalOverride()
+   local surface <close> = obj.new('Surface', { width=160, height=100 })
+   local display = surface.display
+   display.hDensity = 317
+   display.vDensity = 0
+   assert(display.vDensity >= 96, 'Automatic vertical density must remain available')
+   assert(display.hDensity is 317, 'Reading vertical density replaced the horizontal override')
+   local _, info = check mGfx.GetDisplayInfo(display)
+   assert(info.hDensity is 317, 'Display information lost the horizontal override')
+end
+
+@Test function VerticalOverride()
+   local surface <close> = obj.new('Surface', { width=160, height=100 })
+   local display = surface.display
+   display.vDensity = 319
+   display.hDensity = 0
+   assert(display.hDensity >= 96, 'Automatic horizontal density must remain available')
+   assert(display.vDensity is 319, 'Reading horizontal density replaced the vertical override')
+   local _, info = check mGfx.GetDisplayInfo(display)
+   assert(info.vDensity is 319, 'Display information lost the vertical override')
+end
+
+@Test function ClearOverrides()
+   local surface <close> = obj.new('Surface', { width=160, height=100 })
+   local display = surface.display
+   local horizontal = display.hDensity
+   local vertical = display.vDensity
+   display.hDensity = 317
+   display.vDensity = 319
+   display.hDensity = 0
+   assert(display.hDensity is horizontal, 'Zero must restore automatic horizontal density')
+   assert(display.vDensity is 319, 'Clearing horizontal density changed the vertical override')
+   display.vDensity = 0
+   assert(display.vDensity is vertical, 'Zero must restore automatic vertical density')
+end
+
+@Test function InitialOverrides()
+   local display <close> = obj.new('Display', { hDensity=317, vDensity=319 })
+   assert(display.hDensity is 317 and display.vDensity is 319, 'Initialisation replaced explicit densities')
+end
+
+-- Run this test on a disposable X server with isolatedX11=true; it changes the root RESOURCE_MANAGER property.
+@Test; @Requires(linux_platform=true)
+function X11DPIChanges()
+   if mGfx.GetDisplayType() != DT_X11 or arg('isolatedX11', 'false') != 'true' then return end
+   local _, xdisplay = check processing.task().mtGetEnv('KOTUKU_XDISPLAY')
+
+   function set_dpi(DPI)
+      local task <close> = obj.new('Task', { location=arg('xprop', '/usr/bin/xprop'), flags=TSF_WAIT, timeout=5 })
+      for argument in values(array<str> { '-display', xdisplay, '-root', '-f', 'RESOURCE_MANAGER', '8s', '-set',
+         'RESOURCE_MANAGER', f'Xft.dpi:\t{DPI}\n' }) do
+         check task.mtAddArgument(argument)
+      end
+      check task.acActivate()
+      assert(task.returnCode is 0, 'Unable to update Xft.dpi on the disposable X server')
+   end
+
+   local surface <close> = obj.new('Surface', { width=160, height=100 })
+   local display = surface.display
+   function await_density(Horizontal, Vertical)
+      for _ in {0 to 100} do
+         processing.sleep(0.01)
+         if display.hDensity is Horizontal and display.vDensity is Vertical then return end
+      end
+      assert(false,
+         f'Expected density {Horizontal}x{Vertical}, got {display.hDensity}x{display.vDensity} after Xft.dpi')
+   end
+
+   for overrides in {0 to 4} do
+      display.hDensity = 0
+      display.vDensity = 0
+      set_dpi(120)
+      await_density(120, 120)
+      assert(display.hDensity is 120 and display.vDensity is 120, 'Initial density must match Xft.dpi')
+      if overrides & 1 != 0 then display.hDensity = 317 end
+      if overrides & 2 != 0 then display.vDensity = 319 end
+
+      for dpi in values(array<int> { 144, 168 }) do
+         set_dpi(dpi)
+         local horizontal = overrides & 1 != 0 ? 317 : dpi
+         local vertical = overrides & 2 != 0 ? 319 : dpi
+         await_density(horizontal, vertical)
+         assert(display.hDensity is horizontal, 'Xft.dpi change replaced the horizontal override or kept stale DPI')
+         assert(display.vDensity is vertical, 'Xft.dpi change replaced the vertical override or kept stale DPI')
+         local _, info = check mGfx.GetDisplayInfo(display)
+         assert(info.hDensity is horizontal and info.vDensity is vertical,
+            'Display information must preserve overrides and refresh automatic density')
+      end
+
+      check display.acResize(180, 120, 0)
+      assert(display.hDensity is (overrides & 1 != 0 ? 317 : 168), 'Resize lost horizontal density')
+      assert(display.vDensity is (overrides & 2 != 0 ? 319 : 168), 'Resize lost vertical density')
+
+      display.hDensity = 0
+      display.vDensity = 0
+      assert(display.hDensity is 168 and display.vDensity is 168, 'Cleared overrides must use current desktop DPI')
+      set_dpi(192)
+      await_density(192, 192)
+      assert(display.hDensity is 192 and display.vDensity is 192, 'Cleared overrides must follow later DPI changes')
+   end
+end

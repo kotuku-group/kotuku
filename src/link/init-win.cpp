@@ -10,6 +10,10 @@ This file is in the public domain and may be distributed and modified without re
 
 #include <kotuku/main.h>
 
+#ifdef KOTUKU_STATIC
+#include <kotuku/modules/module.h> // Declares OpenCore() and CloseCore() for static builds
+#endif
+
 #ifndef KOTUKU_STATIC
 #define DLLCALL // __declspec(dllimport)
 #define WINAPI  __stdcall
@@ -63,7 +67,7 @@ extern "C" const char * init_kotuku(int argc, CSTRING *argv)
    info.ArgCount    = argc;
    info.Flags       = OPF::ARGS;
 
-   if (auto error = OpenCore(&info, &CoreBase); error IS ERR::Okay) return nullptr;
+   if (auto error = OpenCore(&info, &CoreBase); !error) return nullptr;
    else {
 #ifndef KOTUKU_STATIC
       FreeLibrary(corehandle);

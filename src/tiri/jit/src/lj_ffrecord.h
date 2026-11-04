@@ -9,11 +9,18 @@
 #include "lj_jit.h"
 
 #if LJ_HASJIT
+enum class RecordFFDisposition : uint8_t {
+   Completed,
+   Stopped,
+   PendingCall
+};
+
 // Data used by handlers to record a fast function.
 typedef struct RecordFFData {
-   TValue* argv;      //  Runtime argument values.
-   ptrdiff_t nres;   //  Number of returned results (defaults to 1).
-   uint32_t data;   //  Per-ffid auxiliary data (opcode, literal etc.).
+   TValue* argv;                       // Runtime argument values.
+   ptrdiff_t result_count;             // Number of returned results (defaults to 1).
+   uint32_t data;                      // Per-ffid auxiliary data (opcode, literal etc.).
+   RecordFFDisposition disposition;    // Whether return processing should continue.
 } RecordFFData;
 
 LJ_FUNC void lj_ffrecord_func(jit_State* J);

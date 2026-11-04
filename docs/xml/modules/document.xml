@@ -7,6 +7,9 @@
     <type>module</type>
     <version>1</version>
     <copyright>Paul Manias © 2005-2026</copyright>
+    <source>
+      <file path="src/document/">document.cpp</file>
+    </source>
     <classes>
       <class>Document</class>
     </classes>
@@ -28,6 +31,7 @@
       <const name="Flush"/>
       <const name="Focus"/>
       <const name="Free"/>
+      <const name="FreePlacement"/>
       <const name="FreeWarning"/>
       <const name="GetKey"/>
       <const name="Hide"/>
@@ -84,25 +88,6 @@
       <const name="COPY">Copy from the clipboard.</const>
       <const name="CUT">Cut from the clipboard.</const>
       <const name="PASTE">Paste from the clipboard.</const>
-    </constants>
-
-    <constants lookup="CON" comment="Gamepad controller buttons.">
-      <const name="DPAD_DOWN">Directional pad down.</const>
-      <const name="DPAD_LEFT">Directional pad left.</const>
-      <const name="DPAD_RIGHT">Directional pad right.</const>
-      <const name="DPAD_UP">Directional pad up.</const>
-      <const name="GAMEPAD_E">East button (B)</const>
-      <const name="GAMEPAD_N">North button (Y)</const>
-      <const name="GAMEPAD_S">South button (A)</const>
-      <const name="GAMEPAD_W">West button (X)</const>
-      <const name="LEFT_BUMPER_1">Gamepad left-hand bumper 1 (top, primary).</const>
-      <const name="LEFT_BUMPER_2">Gamepad left-hand bumper 2 (lower).</const>
-      <const name="LEFT_THUMB">Left thumb stick depressed.</const>
-      <const name="RIGHT_BUMPER_1">Gamepad right-hand bumper 1 (top, primary).</const>
-      <const name="RIGHT_BUMPER_2">Gamepad right-hand bumper 2 (lower).</const>
-      <const name="RIGHT_THUMB">Right thumb stick depressed.</const>
-      <const name="SELECT">Gamepad select or back button.</const>
-      <const name="START">Gamepad start button.</const>
     </constants>
 
     <constants lookup="DATA" comment="Data codes">
@@ -195,12 +180,12 @@
 
     <constants lookup="FD" comment="Field descriptors.">
       <const name="ALLOC">Indicates the returned value is a dynamic allocation that needs to be manually freed (by default is a memory pointer, can be an object if combined with <code>FD_OBJECT</code>)</const>
-      <const name="ARRAY">Indicates an array of values.  Follow with <code>ARRAYSIZE</code> if used in a function.</const>
-      <const name="ARRAYSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>ARRAY</code> to indicate total elements in the array.  It is preferred that any null terminator is not counted.  If <code>ARRAYSIZE</code> not specified, <code>ARRAY</code> must be null-terminated.</const>
+      <const name="ARRAY">Indicates an array of values.  Function descriptors must combine this flag with <code>CPP</code> to represent a <code>kt::vector</code>; raw pointer arrays are unsupported for calls.</const>
       <const name="BUFFER">FUNCDEF Overrides <code>WRITE</code>.  Indicates a buffer that can be filled with data by the function if paired with <code>RESULT</code>; must be paired with <code>BUFSIZE</code> in second argument.</const>
       <const name="BUFSIZE">FUNCDEF Overrides <code>LOOKUP</code>.  Pair with <code>BUFFER</code> to indicate the byte size of the buffer memory.</const>
       <const name="BYTE">8 bit integer.</const>
-      <const name="CPP">Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>std::vector</code>.</const>
+      <const name="CLASS_TYPES">All types that directly contribute to the core definition of a C/C++ type</const>
+      <const name="CPP">Use the C++ variant of the indicated type, e.g. <code>ARRAY</code> is a <code>kt::vector</code>.</const>
       <const name="CUSTOM"/>
       <const name="DOUBLE">64 bit float.</const>
       <const name="DOUBLERESULT">For actions and methods</const>
@@ -217,7 +202,8 @@
       <const name="INTRESULT">For actions and methods</const>
       <const name="LOCAL">CLASSDEF Pointer to an object that is local to the class</const>
       <const name="LOOKUP">CLASSDEF</const>
-      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, it indicates that the returned content is volatile (valid for a limited time).</const>
+      <const name="MUTABLE">FUNCDEF Overrides <code>VIRTUAL</code>.  The function will overwrite incoming BUFFER or STRING content.  If used in conjunction with the RESULT flag, an empty buffer is expected for output.</const>
+      <const name="NORMALISED">Supplementary, indicates a normalised float value for multiplicative scaling.</const>
       <const name="OBJECT">Supplementary, can be used with ints (for IDs) or pointers</const>
       <const name="OBJECTID">Synonym for <code>INT | OBJECT</code></const>
       <const name="OBJECTPTR">Synonym for <code>PTR | OBJECT</code></const>
@@ -230,14 +216,14 @@
       <const name="PTR_DOUBLERESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INT64RESULT">Use for pointer-based value results only.</const>
       <const name="PTR_INTRESULT">Use for pointer-based value results only.</const>
+      <const name="PURE">Supplementary, indicates that the Getter function for a field is non-mutating and context free (inc. non-logging).</const>
       <const name="R">Synonym for <code>READ</code></const>
       <const name="READ">CLASSDEF</const>
       <const name="RESOURCE">The referenced struct or pointer is a special resource.  Changes some behaviours, e.g. a resourced struct will use direct value references rather than being copied in Tiri.</const>
       <const name="RESULT">FUNCDEF Overrides <code>READ</code></const>
-      <const name="RGB">Supplementary, if an int type then format is <code>0xAARRGGBB</code>, if pointer then refers to an RGB structure.</const>
       <const name="RI">Synonym for <code>READ | INIT</code></const>
       <const name="RW">Synonym for <code>READ | WRITE</code></const>
-      <const name="SCALED">Supplementary, indicates a float value for multiplicative scaling.</const>
+      <const name="SCALED">Synonym for <code>NORMALISED</code></const>
       <const name="STR">Synonym for <code>STRING</code></const>
       <const name="STRING">Pointer to a string.</const>
       <const name="STRRESULT">Synonym for <code>STR | RESULT</code></const>
@@ -334,24 +320,16 @@
     </constants>
 
     <constants lookup="MEM" comment="Memory types used by AllocMemory().  The lower 16 bits are stored with allocated blocks, the upper 16 bits are function-relative only.">
-      <const name="AUDIO">The memory space is reserved by an audio device such as a sound card.</const>
-      <const name="CALLER">This flag is usable only in routines that are supporting a class method.  It forces the memory allocation to be tracked to the object that made the method call.  This is particularly important in methods that return memory blocks that do not form a part of the object itself.</const>
-      <const name="CODE">Set if the memory will contain executable program code.</const>
+      <const name="AUDIO">Identifies memory located on an audio device, such as a sound card.</const>
+      <const name="CODE">Used for memory that can execute code.</const>
       <const name="DATA">The default type, <code>DATA</code>, is used to indicate a standard memory allocation from system RAM.</const>
-      <const name="HIDDEN">Hidden blocks are not recorded and are excluded from resource tracking.</const>
-      <const name="MANAGED">Enables custom resource management for the memory block.  The start of the block will need to be reserved with a pointer to a <code>ResourceManager</code> structure, which is included as part of the block's declared Size.  The <code>Free()</code> callback will be called when the block is removed.</const>
-      <const name="NO_BLOCK">Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</const>
-      <const name="NO_BLOCKING">Permanently turn off all accesses to this memory block.  This means that multiple threads can have full read/write access to the memory block at once regardless of other acces flags.</const>
       <const name="NO_CLEAR">Do not clear the memory on allocation (saves time).</const>
-      <const name="NO_LOCK">For AllocMemory() only, indicates that the (private) memory block should not be locked on return.</const>
-      <const name="NO_POOL">Gives a hint to the allocator to allocate the block outside of the memory pool.</const>
       <const name="READ">The memory is explicitly marked as readable.</const>
       <const name="READ_WRITE">Synonym for <code>READ | WRITE</code></const>
-      <const name="STRING">Identifies the memory content as a null terminated string. Useful for debugging and run-time type identification in scripts.</const>
-      <const name="TEXTURE">The memory space is reserved by a video driver for hosting texture graphics.</const>
-      <const name="TMP_LOCK">Enables temporary locking restrictions.  Prevents processes from sleeping while holding a lock on the memory block.</const>
-      <const name="UNTRACKED">Allocating an untracked memory block will prevent the memory block from being tracked back to the object holding the current context.</const>
-      <const name="VIDEO">The memory space is reserved by a video device such as a graphics card for display purposes, e.g. framebuffer.</const>
+      <const name="STRING">Identifies the memory content as a null terminated string, which aids diagnostics.</const>
+      <const name="TEXTURE">Identifies non-displayable video memory, e.g. texture graphics.</const>
+      <const name="UNTRACKED">Prevents the memory block from being tracked back to the current context.</const>
+      <const name="VIDEO">Identifies video memory, such as the frame buffer.</const>
       <const name="WRITE">The memory is explicitly marked as writeable.</const>
     </constants>
 
@@ -377,6 +355,7 @@
       <const name="GROUP_WRITE">Group members can write.</const>
       <const name="HIDDEN">Recommends that the file is hidden from view by default.</const>
       <const name="INHERIT">Inherit permissions from parent folder and logical OR them with preset permission flags.</const>
+      <const name="META">Synonym for <code>HIDDEN | PASSWORD | OFFLINE | NETWORK</code></const>
       <const name="NETWORK">File is hosted on another machine.</const>
       <const name="OFFLINE">File content for this networked file has not been cached on the local PC.</const>
       <const name="OTHERS">Synonym for <code>OTHERS_READ | OTHERS_WRITE | OTHERS_EXEC | OTHERS_DELETE</code></const>

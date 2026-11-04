@@ -1,0 +1,396 @@
+-- Tests for clipboard support in the Scintilla class.  Cut, copy and paste are available through the Clipboard action
+-- and through the editor's key bindings.  The clipboard is shared by every Clipboard object in the process, so each
+-- test sets the clipboard content that it depends on.
+--
+-- Key presses are injected as evKey records through mSys.BroadcastEvent(), which requires a scene that is linked to a
+-- focused surface.  The document's line ending mode is LF.
+
+   include 'scintilla', 'vector', 'display'
+
+PAGE_WIDTH  = 300
+PAGE_HEIGHT = 120
+
+-- Broadcast a key event in the form of an evKey record, as test_scintilla_keyboard.tiri does.
+
+function pressKey(Code:num!, Qualifiers:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = (Qualifiers ?? 0) | KQ_PRESSED | KQ_NOT_PRINTABLE
+   ev[3] = Code
+   ev[4] = 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+-- Create a surface with a focused scene that hosts a Scintilla object.  The editor is editable unless Options
+-- specifies the flags.
+
+function newEditor(Options:table):<obj, obj>
+   local surface = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local options = Options ?? { }
+   options.flags ?= SCIF_EDIT
+   local sci = host.new('Scintilla', options)
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, sci
+end
+
+-- Record the events reported by an editor.  Returns the editor options and a table of the received flags.
+
+function eventOptions(Mask:num!):<table, table>
+   local received = { flags=0 }
+   local options = {
+      eventFlags    = Mask,
+      eventCallback = function(Scintilla, EventFlags)
+         received.flags = received.flags | EventFlags
+      end
+   }
+   return options, received
+end
+
+function setClipboard(Text:str!)
+   local clipboard <close> = obj.new('Clipboard')
+   check clipboard.mtAddText(Text)
+end
+
+function clipboardText():str
+   local clipboard <close> = obj.new('Clipboard')
+   local err, datatype, files = clipboard.mtGetFiles(CLIPTYPE_TEXT, 0)
+   if err != ERR_Okay or #files is 0 then return nil end
+   return io.readAll(files[0])
+end
+
+function clearClipboard()
+   local clipboard <close> = obj.new('Clipboard')
+   check clipboard.mtRemove(CLIPTYPE_TEXT)
+end
+
+-- Place the cursor at a document position without selecting anything.  SelectRange(0, 0) deselects without moving the
+-- cursor, so GotoLine() is used for the start of the document.
+
+function moveTo(Sci:obj!, Pos:num!)
+   if Pos is 0 then
+      check Sci.mtGotoLine(0)
+   else
+      check Sci.mtSelectRange(Pos, Pos)
+   end
+end
+
+@AfterAll function cleanup()
+   clearClipboard()
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Copy and cut
+
+@Test function CopyPlacesSelectionOnClipboard()
+   local surface <close>, sci = newEditor()
+   sci.string = 'hello wörld'
+
+   check sci.mtSelectRange(6, 12)
+   check sci.acClipboard(CLIPMODE_COPY)
+   assert(clipboardText() is 'wörld', f'The selection must be copied as UTF-8, got "{clipboardText()}"')
+   assert(sci.string is 'hello wörld', f'Copy must not change the document, got "{sci.string}"')
+end
+
+@Test function CopyWithoutSelectionKeepsClipboard()
+   local surface <close>, sci = newEditor()
+   sci.string = 'hello'
+   setClipboard('previous')
+
+   moveTo(sci, 2)
+   check sci.acClipboard(CLIPMODE_COPY)
+   check sci.acClipboard(CLIPMODE_CUT)
+   assert(clipboardText() is 'previous', f'An empty selection must not change the clipboard, got "{clipboardText()}"')
+   assert(sci.string is 'hello', f'An empty selection must not be cut, got "{sci.string}"')
+end
+
+@Test function CutRemovesSelection()
+   local surface <close>, sci = newEditor()
+   sci.string = 'one two three'
+
+   check sci.mtSelectRange(4, 8)
+   check sci.acClipboard(CLIPMODE_CUT)
+   assert(clipboardText() is 'two ', f'The selection must be copied, got "{clipboardText()}"')
+   assert(sci.string is 'one three', f'The selection must be deleted, got "{sci.string}"')
+
+   sci.acUndo()
+   assert(sci.string is 'one two three', f'Undo must restore the cut text, got "{sci.string}"')
+end
+
+@Test function CopyKeepsDocumentLineEndings()
+   local surface <close>, sci = newEditor()
+   sci.string = 'a\nb\nc'
+
+   check sci.mtSelectRange(0, -1)
+   check sci.acClipboard(CLIPMODE_COPY)
+   assert(clipboardText() is 'a\nb\nc', f'Lines must be copied with LF endings, got "{clipboardText()}"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Paste
+
+@Test function PasteIntoEmptySelection()
+   local surface <close>, sci = newEditor()
+   sci.string = 'hello world'
+   setClipboard('big ')
+
+   moveTo(sci, 6)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'hello big world', f'The clip must be inserted at the cursor, got "{sci.string}"')
+   assert(sci.cursorCol is 10, f'The cursor must follow the pasted text, column is {sci.cursorCol}')
+end
+
+@Test function PasteReplacesSelection()
+   local surface <close>, sci = newEditor()
+   sci.string = 'hello world'
+   setClipboard('there')
+
+   check sci.mtSelectRange(6, 11)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'hello there', f'The clip must replace the selection, got "{sci.string}"')
+   assert(sci.cursorCol is 11, f'The cursor must follow the pasted text, column is {sci.cursorCol}')
+end
+
+@Test function PasteIsOneUndoStep()
+   local surface <close>, sci = newEditor()
+   sci.string = 'hello world'
+   setClipboard('there\nand back')
+
+   check sci.mtSelectRange(6, 11)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'hello there\nand back', f'The clip must replace the selection, got "{sci.string}"')
+
+   sci.acUndo()
+   assert(sci.string is 'hello world', f'One undo must reverse the whole paste, got "{sci.string}"')
+   sci.acRedo()
+   assert(sci.string is 'hello there\nand back', f'One redo must restore the whole paste, got "{sci.string}"')
+end
+
+@Test function PasteConvertsLineEndings()
+   local surface <close>, sci = newEditor()
+   sci.string = 'x'
+   setClipboard('a\r\nb\rc\n')
+
+   moveTo(sci, 0)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'a\nb\nc\nx', f'CRLF and CR line endings must be pasted as LF, got "{sci.string}"')
+   assert(sci.cursorRow is 3 and sci.cursorCol is 0,
+      f'The cursor must follow the converted text, at {sci.cursorRow}:{sci.cursorCol}')
+end
+
+@Test function PasteStopsAtNull()
+   local surface <close>, sci = newEditor()
+   sci.string = 'x'
+   setClipboard('ab\0cd')
+
+   moveTo(sci, 1)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'xab', f'Clip text must end at a null byte, got "{sci.string}"')
+end
+
+@Test function PasteEmptyClipboard()
+   local options, received = eventOptions(SEF_FAIL_CLIPBOARD | SEF_FAIL_RO)
+   local surface <close>, sci = newEditor(options)
+   sci.string = 'hello'
+   clearClipboard()
+
+   local err = sci.acClipboard(CLIPMODE_PASTE)
+   processing.sleep(0)
+   assert(err is ERR_NoData, f'Pasting from an empty clipboard must return NoData, got {mSys.GetErrorMsg(err)}')
+   assert(sci.string is 'hello', f'The document must not change, got "{sci.string}"')
+   assert(received.flags is 0, f'An empty clipboard is not a failure, received events {received.flags}')
+end
+
+@Test function PasteWidensPage()
+   local surface <close>, sci = newEditor()
+   sci.string = 'short'
+   processing.sleep(0)
+   local width = sci.page.width
+   setClipboard(('0123456789').rep(20))
+
+   moveTo(sci, 5)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   processing.sleep(0)
+   assert(sci.page.width > width + 1000, f'The Page must widen to the pasted line, {width} -> {sci.page.width}')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rectangular selections
+
+-- Select columns 1 to 3 of lines 0 and 1 with Alt+Shift+arrows.
+
+function selectRectangle(Sci:obj!)
+   moveTo(Sci, 1)
+   pressKey(KEY_RIGHT, KQ_L_ALT | KQ_L_SHIFT)
+   pressKey(KEY_RIGHT, KQ_L_ALT | KQ_L_SHIFT)
+   pressKey(KEY_DOWN, KQ_L_ALT | KQ_L_SHIFT)
+end
+
+@Test function RectangularCopyAndPaste()
+   local surface <close>, sci = newEditor()
+   sci.string = 'abcd\nefgh\nijkl'
+
+   selectRectangle(sci)
+   check sci.acClipboard(CLIPMODE_COPY)
+   assert(clipboardText() is 'bc\nfg\n', f'Each row must be copied with a line ending, got "{clipboardText()}"')
+
+   moveTo(sci, 14) -- End of the last line
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'abcd\nefgh\nijklbc\n    fg',
+      f'A rectangular clip must be pasted as a rectangle, got "{sci.string}"')
+
+   sci.acUndo()
+   assert(sci.string is 'abcd\nefgh\nijkl', f'One undo must reverse a rectangular paste, got "{sci.string}"')
+end
+
+@Test function RectangularCutAndPaste()
+   local surface <close>, sci = newEditor()
+   sci.string = 'abcd\nefgh\nijkl'
+
+   selectRectangle(sci)
+   check sci.acClipboard(CLIPMODE_CUT)
+   assert(sci.string is 'ad\neh\nijkl', f'A rectangular cut must remove each row, got "{sci.string}"')
+
+   moveTo(sci, 1)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'abcd\nefgh\nijkl', f'Pasting the cut rectangle must restore the text, got "{sci.string}"')
+end
+
+@Test function StreamCopyEndsRectangularPaste()
+   local surface <close>, sci = newEditor()
+   sci.string = 'abcd\nefgh\nbc\nfg\n'
+
+   selectRectangle(sci)
+   check sci.acClipboard(CLIPMODE_COPY)
+
+   -- Copying identical text from a stream selection must not be pasted as a rectangle.
+
+   check sci.mtSelectRange(10, 16)
+   check sci.acClipboard(CLIPMODE_COPY)
+   assert(clipboardText() is 'bc\nfg\n', f'The stream selection must be copied, got "{clipboardText()}"')
+
+   moveTo(sci, 2)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'abbc\nfg\ncd\nefgh\nbc\nfg\n', f'The clip must be pasted as a stream, got "{sci.string}"')
+end
+
+@Test function ExternalTextIsNotRectangular()
+   local surface <close>, sci = newEditor()
+   sci.string = 'abcd\nefgh'
+
+   selectRectangle(sci)
+   check sci.acClipboard(CLIPMODE_COPY)
+   setClipboard('xy\nz\n')
+
+   moveTo(sci, 1)
+   check sci.acClipboard(CLIPMODE_PASTE)
+   assert(sci.string is 'axy\nz\nbcd\nefgh', f'Other clipboard text must be pasted as a stream, got "{sci.string}"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Key bindings
+
+@Test function CtrlShortcuts()
+   local surface <close>, sci = newEditor()
+   sci.string = 'one two'
+
+   check sci.mtSelectRange(0, 4)
+   pressKey(KEY_C, KQ_L_CTRL)
+   assert(clipboardText() is 'one ', f'Ctrl+C must copy the selection, got "{clipboardText()}"')
+   assert(sci.string is 'one two', f'Ctrl+C must not change the document, got "{sci.string}"')
+
+   check sci.mtSelectRange(4, 7)
+   pressKey(KEY_X, KQ_R_CTRL)
+   assert(clipboardText() is 'two', f'Ctrl+X must copy the selection, got "{clipboardText()}"')
+   assert(sci.string is 'one ', f'Ctrl+X must delete the selection, got "{sci.string}"')
+
+   moveTo(sci, 0)
+   pressKey(KEY_V, KQ_L_CTRL)
+   assert(sci.string is 'twoone ', f'Ctrl+V must paste at the cursor, got "{sci.string}"')
+end
+
+@Test function InsertAndDeleteShortcuts()
+   local surface <close>, sci = newEditor()
+   sci.string = 'one two'
+
+   check sci.mtSelectRange(0, 3)
+   pressKey(KEY_INSERT, KQ_L_CTRL)
+   assert(clipboardText() is 'one', f'Ctrl+Insert must copy the selection, got "{clipboardText()}"')
+
+   check sci.mtSelectRange(3, 7)
+   pressKey(KEY_DELETE, KQ_L_SHIFT)
+   assert(clipboardText() is ' two', f'Shift+Delete must copy the selection, got "{clipboardText()}"')
+   assert(sci.string is 'one', f'Shift+Delete must delete the selection, got "{sci.string}"')
+
+   moveTo(sci, 0)
+   pressKey(KEY_INSERT, KQ_R_SHIFT)
+   assert(sci.string is ' twoone', f'Shift+Insert must paste at the cursor, got "{sci.string}"')
+end
+
+@Test function LineCopyAndCutShortcuts()
+   local surface <close>, sci = newEditor()
+   sci.string = 'one\ntwo\nthree'
+
+   moveTo(sci, 5)
+   pressKey(KEY_T, KQ_L_CTRL | KQ_L_SHIFT)
+   assert(clipboardText() is 'two\n', f'Ctrl+Shift+T must copy the current line, got "{clipboardText()}"')
+   assert(sci.string is 'one\ntwo\nthree', f'Ctrl+Shift+T must not change the document, got "{sci.string}"')
+
+   check sci.mtSelectRange(1, 6)
+   pressKey(KEY_L, KQ_L_CTRL)
+   assert(clipboardText() is 'one\ntwo\n', f'Ctrl+L must copy the selected lines, got "{clipboardText()}"')
+   assert(sci.string is 'three', f'Ctrl+L must delete the selected lines, got "{sci.string}"')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Read-only documents and failures
+
+@Test function ReadOnlyAllowsCopyOnly()
+   local options, received = eventOptions(SEF_FAIL_RO)
+   options.flags = 0
+   local surface <close>, sci = newEditor(options)
+   sci.string = 'one two'
+
+   check sci.mtSelectRange(0, 3)
+   check sci.acClipboard(CLIPMODE_COPY)
+   assert(clipboardText() is 'one', f'Copy must work while read-only, got "{clipboardText()}"')
+
+   setClipboard('clip')
+   local err = sci.acClipboard(CLIPMODE_CUT)
+   assert(err is ERR_ReadOnly, f'Cut must be refused with ReadOnly, got {mSys.GetErrorMsg(err)}')
+   err = sci.acClipboard(CLIPMODE_PASTE)
+   assert(err is ERR_ReadOnly, f'Paste must be refused with ReadOnly, got {mSys.GetErrorMsg(err)}')
+   pressKey(KEY_X, KQ_L_CTRL)
+   pressKey(KEY_V, KQ_L_CTRL)
+   processing.sleep(0)
+
+   assert(sci.string is 'one two', f'A read-only document must not be changed, got "{sci.string}"')
+   assert(clipboardText() is 'clip', f'A refused cut must not change the clipboard, got "{clipboardText()}"')
+   assert(received.flags is SEF_FAIL_RO, f'Refused edits must be reported as FAIL_RO, got {received.flags}')
+end
+
+@Test function UnreadableClipIsReported()
+   local options, received = eventOptions(SEF_FAIL_CLIPBOARD)
+   local surface <close>, sci = newEditor(options)
+   sci.string = 'hello'
+
+   local clipboard <close> = obj.new('Clipboard')
+   check clipboard.mtAddFile(CLIPTYPE_TEXT, 'temp:scintilla_missing_clip.txt', 0)
+
+   -- The failure is logged as a warning, which is expected here.
+
+   mSys.AdjustLogLevel(2)
+   local err = sci.acClipboard(CLIPMODE_PASTE)
+   mSys.AdjustLogLevel(-2)
+   processing.sleep(0)
+
+   assert(err is ERR_OpenFile, f'An unreadable clip must return OpenFile, got {mSys.GetErrorMsg(err)}')
+   assert(sci.string is 'hello', f'The document must not change, got "{sci.string}"')
+   assert(received.flags is SEF_FAIL_CLIPBOARD, f'The failure must be reported as FAIL_CLIPBOARD, got {received.flags}')
+end

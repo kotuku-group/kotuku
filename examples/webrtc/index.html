@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kōtuku local WebRTC chat</title>
+<style>
+body { font: 17px system-ui; max-width: 760px; margin: 3rem auto; padding: 0 1rem; }
+label { display: block; margin: 1rem 0; } button,input { font: inherit; padding: .5rem; }
+pre { background: #f1f3f5; padding: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<h1>Kōtuku local WebRTC chat</h1>
+<p>Linux localhost demonstration. Launch Chromium with the flags in the README to expose numeric ICE addresses.</p>
+<label>Signalling URL <input id="url" value="ws://127.0.0.1:9320/"></label>
+<label><input id="native" type="checkbox"> Native peer creates the offer</label>
+<button id="connect">Connect</button> <button id="disconnect" disabled>Disconnect</button>
+<p>Signalling: <strong id="signal">disconnected</strong> · Data channel: <strong id="channel">closed</strong></p>
+<form id="form"><input id="text" placeholder="Message" maxlength="4096"><button id="send" disabled>Send</button></form>
+<pre id="log" aria-live="polite"></pre>
+<script>
+'use strict';
+let pc, ws, chat;
+const el = id => document.getElementById(id);
+const log = text => { el('log').textContent = (el('log').textContent + text + '\n').slice(-16000); };
+function cleanup() {
+   if (pc) pc.close();
+   if (ws) ws.close();
+   pc = ws = chat = null;
+   el('signal').textContent = 'disconnected'; el('channel').textContent = 'closed';
+   el('send').disabled = el('disconnect').disabled = true; el('connect').disabled = false;
+}
+el('disconnect').onclick = cleanup;
+el('connect').onclick = () => {
+   el('connect').disabled = true; el('disconnect').disabled = false;
+   const peer = pc = new RTCPeerConnection({ iceServers: [] });
+   let socket;
+   try { socket = ws = new WebSocket(el('url').value); }
+   catch (error) { log(error.message); cleanup(); return; }
+   const send = message => socket.send(JSON.stringify(message));
+   peer.onicecandidate = ({ candidate }) => {
+      if (candidate && ws === socket && socket.readyState === WebSocket.OPEN) {
+         send({ type: 'candidate', candidate: candidate.candidate });
+      }
+   };
+   peer.ondatachannel = ({ channel }) => {
+      if (pc !== peer || channel.label !== 'chat') return;
+      chat = channel;
+      channel.onopen = () => {
+         if (pc !== peer) return;
+         el('channel').textContent = 'open'; el('send').disabled = false;
+      };
+      channel.onmessage = ({ data }) => { if (pc === peer) log('Native: ' + data); };
+      channel.onclose = () => {
+         if (pc !== peer) return;
+         el('channel').textContent = 'closed'; el('send').disabled = true;
+      };
+      channel.onerror = () => log('Data channel error');
+   };
+   // A negotiated channel ensures the browser's initial offer has an SCTP media section.
+   peer.createDataChannel('negotiated', { negotiated: true, id: 100 });
+   socket.onopen = () => {
+      if (ws !== socket) return;
+      el('signal').textContent = 'connected';
+      send({ type: 'join', nativeOffer: el('native').checked });
+   };
+   let signalling = Promise.resolve();
+   const pendingCandidates = [];
+   socket.onmessage = ({ data }) => {
+      signalling = signalling.then(async () => {
+         if (ws !== socket) return;
+         const message = JSON.parse(data);
+         if (message.type === 'ready') {
+            await peer.setLocalDescription(await peer.createOffer());
+            send({ type: 'offer', sdp: peer.localDescription.sdp });
+         } else if (message.type === 'restart-required') {
+            if (peer.signalingState !== 'stable') throw new Error('Restart needs a stable signalling exchange');
+            await peer.setLocalDescription(await peer.createOffer({ iceRestart: true }));
+            send({ type: 'offer', sdp: peer.localDescription.sdp });
+         } else if (message.type === 'stats') {
+            log(JSON.stringify(message.snapshot));
+         } else if (message.type === 'offer') {
+            await peer.setRemoteDescription({ type: 'offer', sdp: message.sdp });
+            await peer.setLocalDescription(await peer.createAnswer());
+            send({ type: 'answer', sdp: peer.localDescription.sdp });
+         } else if (message.type === 'answer') {
+            await peer.setRemoteDescription({ type: 'answer', sdp: message.sdp });
+         } else if (message.type === 'candidate') {
+            const candidate = { candidate: message.candidate, sdpMid: '0', sdpMLineIndex: 0 };
+            if (peer.remoteDescription) await peer.addIceCandidate(candidate);
+            else pendingCandidates.push(candidate);
+         } else if (message.type === 'error') log('Error: ' + message.message);
+         if (peer.remoteDescription) {
+            for (const candidate of pendingCandidates.splice(0)) await peer.addIceCandidate(candidate);
+         }
+      }).catch(error => { if (ws === socket) { log(error.message); cleanup(); } });
+   };
+   socket.onerror = () => log('Signalling connection failed');
+   socket.onclose = () => { if (ws === socket) cleanup(); };
+};
+el('form').onsubmit = event => {
+   event.preventDefault();
+   if (chat?.readyState !== 'open') return;
+   if (chat.bufferedAmount > 65536) { log('Send queue busy; wait before retrying'); return; }
+   chat.send(el('text').value); log('You: ' + el('text').value); el('text').value = '';
+};
+window.addEventListener('pagehide', cleanup);
+</script>
+</html>

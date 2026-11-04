@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "gui/input",
+  "version": "1.0",
+  "description": "Single and multi-line text input widget for Tiri graphical interfaces.",
+  "entry": "input.tiri",
+  "authors": [
+    {
+      "name": "Paul Manias",
+      "url": "https://kotuku.dev"
+    }
+  ],
+  "copyright": "Copyright © 2006-2026 Paul Manias",
+  "license": "LGPL-2.1",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "repository": "https://github.com/kotuku-group/kotuku.git",
+  "keywords": [
+    "form",
+    "gui",
+    "input"
+  ],
+  "requires": {
+    "tiri": "1.0"
+  },
+  "dependencies": {
+    "gui": "1.0",
+    "gui/scrollbar": "1.0"
+  },
+  "files": [
+    {
+      "path": "input.tiri",
+      "size": 19475,
+      "sha256": "d6a49c17f55aaa750441f6412cc6eb12cdc67878db982bb1ad5e5182e54c7ca4",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ]
+}

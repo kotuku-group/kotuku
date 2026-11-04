@@ -28,7 +28,8 @@ function renderDocToBitmap(Path:str, Width:num)
    scene.bitmap = bmp
    scene.acDraw()
 
-   return { doc = doc, bmp = bmp }
+   -- The scene owns the viewport and document; it must be returned to keep the document alive for the caller.
+   return { scene = scene, doc = doc, bmp = bmp }
 end
 
 function benchmarkDoc(Name:str, Path:str, Widths, MinHeight:num)
@@ -49,7 +50,8 @@ function benchmarkDoc(Name:str, Path:str, Widths, MinHeight:num)
          f'{Name} bitmap height mismatch at {width}px, got {result.bmp.height}, pageHeight {result.doc.pageHeight}')
       assert(result.bmp.size > 0, f'{Name} bitmap must contain pixel data at {width}px')
 
-      crc = mSys.GenCRC32(0, result.bmp.data, result.bmp.size)
+      bmpdata = result.bmp.data
+      crc = mSys.GenCRC32(0, bmpdata, #bmpdata)
       assert(crc >= 0, f'{Name} CRC generation failed at {width}px')
 
       print(f'pageHeight={result.doc.pageHeight}, render={elapsed}s')
@@ -63,22 +65,22 @@ end
    benchmarkDoc('PlainTextFlow', 'benchmark/plain_text_flow.rpl', array<int> { 1024, 720, 480 }, 250)
 end
 
-@Test(priority=1) function ManyParagraphs()
+@Test(priority=2) function ManyParagraphs()
    benchmarkDoc('ManyParagraphs', 'benchmark/many_paragraphs.rpl', array<int> { 1024, 720, 480 }, 700)
 end
 
-@Test(priority=2) function LongWords()
+@Test(priority=3) function LongWords()
    benchmarkDoc('LongWords', 'benchmark/long_words.rpl', array<int> { 1024, 640, 420 }, 180)
 end
 
-@Test(priority=2) function FloatingWidgets()
+@Test(priority=4) function FloatingWidgets()
    benchmarkDoc('FloatingWidgets', 'benchmark/floating_widgets.rpl', array<int> { 1024, 700, 520 }, 260)
 end
 
-@Test(priority=3) function NestedTables()
+@Test(priority=5) function NestedTables()
    benchmarkDoc('NestedTables', 'benchmark/nested_tables.rpl', array<int> { 1024, 760, 560 }, 260)
 end
 
---@Test(priority=3) function EditCells()
+--@Test(priority=6) function EditCells()
 --   benchmarkDoc('EditCells', 'benchmark/edit_cells.rpl', array<int> { 1024, 720, 520 }, 220)
 --end

@@ -3,18 +3,12 @@
 A file viewer for recognised documents like SVG and RIPL
 --]]
 
-   import 'gui'
-   import 'gui/window'
-   import 'gui/divider'
-   import 'gui/fileview'
-   import 'gui/listview'
-   import 'gui/scrollbar'
-   import 'gui/filedialog'
+   import 'gui', 'gui/window', 'gui/divider', 'gui/fileview', 'gui/listview', 'gui/scrollbar', 'gui/filedialog'
    import 'options'
-   include 'svg'
-   include 'picture'
 
-CLASSID_PICTURE <const> = 'Picture':hash()
+   include 'svg', 'image'
+
+CLASSID_IMAGE <const> = 'Image'.hash()
 
 glBody = [[<body fill="rgb(68 68 90)" font-fill="white" font-face="Noto Sans" font-size="12pt" margins="2em"/>]]
 
@@ -64,62 +58,63 @@ glIntroduction = [[
          { name = 'height', type = 'int', default = 800, comment = 'Height of the application window.' },
          { name = 'browser', kind = 'flag', default = true, comment = 'Show or hide the file browser panel.' },
          { name = 'animate', kind = 'flag', default = true, comment = 'Enables automated animation.' },
+         { name = 'output', type = 'file', comment = 'Save the input file to this output file, using PNG format (extension automatically applied).' },
          { name = 'help', kind = 'flag', hidden = true,
-            exec = function(Parser:table)
+            exec = function(Parser:table!)
                print(Parser.getHelp())
                raise ERR_Terminate
             end
-      }
+         }
       }
    })
 
    glArgs = glParser.process()
    if glArgs is nil then return end
 
-   local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea, glStats, glAppBar, glSaveRoutine
+   local glWindow, glFileView, glTerminateView, glScrollbar, glViewArea:obj, glStats, glAppBar, glSaveRoutine
 
    glOpenFilter = array<table> {
       { name='SVG Images', ext='.svg' },
-      { name='RIPL Documents', ext=array<string> { 'ripl', 'rpl' } }
+      { name='RIPL Documents', ext=array<str> { 'ripl', 'rpl' } }
    }
 
    glSaveFilter = array<table> { }
 
    glScript = obj.find('self')
-   mSys.SetVolume('vuepoint', glScript.workingPath)
+   mSys.SetVolume('vuepoint', glScript.workingPath, 'misc/gallery', 'Vuepoint', nil, VOLUME_HIDDEN)
 
-   picmeta = mSys.FindClass(CLASSID_PICTURE)
+   picmeta = mSys.FindClass(CLASSID_IMAGE)
    file_ext = picmeta.fileExtension
    if file_ext then
-      local save_ext
-      if file_ext:find('|') then
-         file_ext = file_ext:split('|')
+      local save_ext:str
+      if file_ext.find('|') then
+         file_ext = file_ext.split('|')
          save_ext = file_ext[0]
       else
          save_ext = file_ext
       end
       desc = picmeta.fileDescription
       if not desc then desc = picmeta.name .. ' Image' end
-      glOpenFilter:push({ name=desc, ext=file_ext })
-      glSaveFilter:push({ name=desc, ext=save_ext })
+      glOpenFilter.push({ name=desc, ext=file_ext })
+      glSaveFilter.push({ name=desc, ext=save_ext })
    end
 
    pic_classes = picmeta.subClasses
    if pic_classes then
       err, class_list = mSys.ClassDatabase()
       for c in values(class_list) do
-         if c.parentID is CLASSID_PICTURE then
+         if c.parentID is CLASSID_IMAGE then
             if c.name is 'RSVG' then continue end
             file_ext = c.extension
             if file_ext then
-               local save_ext
-               if file_ext:find('|') then
-                  file_ext = file_ext:split('|')
+               local save_ext:str
+               if file_ext.find('|') then
+                  file_ext = file_ext.split('|')
                   save_ext = file_ext[0]
                else
                   save_ext = file_ext
                end
-               glOpenFilter:push({ name=c.description ? c.description :> c.name .. ' Image', ext=file_ext, icon=c.icon })
+               glOpenFilter.push({ name=c.description ?? c.name .. ' Image', ext=file_ext, icon=c.icon })
             else
                print('No file extension for class ' .. c.name)
             end
@@ -129,7 +124,7 @@ glIntroduction = [[
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function configureScrollbar(View:obj, Page:obj)
+function configureScrollbar(View:obj!, Page:obj!)
    if glScrollbar then
       glScrollbar.changeViewport(View, Page)
    else
@@ -144,7 +139,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function displayInlineDoc(Content:str, Parameters:table)
+function displayInlineDoc(Content:str!, Parameters:table!)
    msg('displayInlineDoc()')
 
    doc = glViewArea.new('document', { })
@@ -162,14 +157,14 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function displayError(Message:str)
+function displayError(Message:str!)
    page = glBody .. [[<page name="Index">]] .. Message .. [[</page>]]
    displayInlineDoc(page, { })
 end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-function displaySVG(Path:str)
+function displaySVG(Path:str!)
    vp = glViewArea.new('VectorViewport', { x=0, y=0, xOffset=0, yOffset=0, overflow='hidden' })
    -- The ENFORCE_TRACKING flag ensures that registered defs are deallocated with the svg object.
    svg = vp.new('svg', { target=vp, path=Path, flags=SVF_ENFORCE_TRACKING })
@@ -185,7 +180,9 @@ function displaySVG(Path:str)
    end
 end
 
-function displayDoc(Path:str)
+----------------------------------------------------------------------------------------------------------------------
+
+function displayDoc(Path:str!)
    msg(f'displayDoc() {Path}')
 
    doc = glViewArea.new('document', { path = Path .. '#Index' })
@@ -197,12 +194,14 @@ function displayDoc(Path:str)
    end
 end
 
-function displayImage(Path:str)
+----------------------------------------------------------------------------------------------------------------------
+
+function displayImage(Path:str!)
    msg(f'displayImage() {Path}')
 
    try
-      pic = glWindow.scene.new('picture', { src=Path, flags='ForceAlpha32' })
-      img = glWindow.scene.new('VectorImage', { picture = pic })
+      pic = glWindow.scene.new('image', { src=Path, flags='ForceAlpha32' })
+      img = glWindow.scene.new('VectorImage', { image = pic })
       glWindow.scene.mtAddDef('Image', img)
 
       window = glViewArea.new('VectorViewport', { x = 0, y = 0, width='100%', height='100%', overflow='hidden' })
@@ -217,7 +216,7 @@ function displayImage(Path:str)
          img.free()
       end
 
-      glSaveRoutine = function(Path:str)
+      glSaveRoutine = function(Path:str!)
          pic.acSaveImage(obj.new('file', { path=Path, flags=FL_NEW|FL_WRITE }))
       end
 
@@ -229,12 +228,16 @@ function displayImage(Path:str)
    end
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function displayText(Path:str)
 
 end
 
+----------------------------------------------------------------------------------------------------------------------
+
 function displayFile(Path:str)
-   Path ?? return
+   Path ?! return
 
    msg(f'Load file {Path}')
 
@@ -246,14 +249,14 @@ function displayFile(Path:str)
    glStats = { } -- Status bar information
    glSaveRoutine = nil
 
-   lpath = Path:lower()
-   if lpath:endsWith('.png') then
+   lpath = Path.lower()
+   if lpath.endsWith('.png') then
       displayImage(Path)
-   elseif lpath:endsWith('.jpeg') or lpath:endsWith('.jpg') then
+   elseif lpath.endsWith('.jpeg') or lpath.endsWith('.jpg') then
       displayImage(Path)
-   elseif lpath:endsWith('.svg') then
+   elseif lpath.endsWith('.svg') then
       displaySVG(Path)
-   elseif lpath:endsWith('.ripl') or lpath:endsWith('.rpl') then
+   elseif lpath.endsWith('.ripl') or lpath.endsWith('.rpl') then
       displayDoc(Path)
    else -- File is unsupported
       displayError(f'<p>Unrecognised file "{Path}"</p>')
@@ -266,6 +269,95 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
+glImageClasses = array<table>
+
+function discoverImageClasses()
+   err, classdb = mSys.ClassDatabase()
+   if err is ERR_Okay then
+      for cl in values(classdb) do
+         if cl.classID is CLASSID_IMAGE or cl.parentID is CLASSID_IMAGE then
+            if cl.extension then
+               msg('Found class ' .. cl.name .. ', extension ' .. cl.extension)
+               glImageClasses.push({
+                  name = cl.name,
+                  extensions = cl.extension.split('|')
+               })
+            end
+         end
+      end
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+   discoverImageClasses()
+
+   if glArgs.output?? then -- Output mode
+      output_path = glArgs.output
+
+      -- Compute the correct output class to use, based on the extension
+
+      rx_ext = r'.*\.([a-zA-Z0-9]+)$'
+      ext = rx_ext.extract(output_path)
+      local output_class:num
+      if ext then
+         ext = ext.lower()
+         for cl in values(glImageClasses) do
+            if ext in cl.extensions then
+               output_class = cl.name.hash()
+               msg('Output class is ' .. cl.name)
+               break
+            end
+         end
+         output_class ?! raise ERR_NoSupport, f'File extension "{ext}" not supported.'
+      else
+         output_class = CLASSID_IMAGE -- PNG default for output
+         output_path ..= '.png'
+      end
+
+      glArgs.file ?! raise ERR_Args, 'No input file specified for output mode.'
+
+      local bmp:obj, pic:obj, file:obj
+
+      src_path = glArgs.file.lower()
+      if src_path.endsWith('.png') or src_path.endsWith('.jpeg') or src_path.endsWith('.jpg') then
+         pic = obj.new('image', { src=glArgs.file, flags=PCF_FORCE_ALPHA_32 })
+      elseif src_path.endsWith('.svg') then
+         svg = obj.new('svg', { path=glArgs.file })
+
+         scene = svg.scene
+         vp_width = scene.viewport.width
+         vp_height = scene.viewport.height
+         if vp_width  <= 0 then vp_width  = scene.viewport.viewWidth end
+         if vp_height <= 0 then vp_height = scene.viewport.viewHeight end
+         if vp_width  <= 0 then vp_width  = 1920 end
+         if vp_height <= 0 then vp_height = 1080 end
+         vp_width = math.ceil(vp_width)
+         vp_height = math.ceil(vp_height)
+         scene.pageWidth = vp_width
+         scene.pageHeight = vp_height
+
+         white = struct<RGB8> { red = 255, green = 255, blue = 255, alpha = 0 }
+         bmp = obj.new('bitmap', { width=vp_width, height=vp_height, bitsPerPixel=32, flags=BMF_ALPHA_CHANNEL|BMF_CLEAR, bkgd=white })
+         scene.bitmap = bmp
+         scene.acDraw()
+
+         pic = obj.new('image', {
+            width = bmp.width, height = bmp.height, bitsPerPixel = bmp.bitsPerPixel,
+            flags = PCF_NEW|PCF_FORCE_ALPHA_32
+         })
+
+         bmp.acCopyData(pic.bitmap)
+      else
+         raise ERR_Args, f'Input file unsupported for direct rendering: :{glArgs.file}"'
+      end
+
+      file = obj.new('file', { flags=FL_NEW|FL_WRITE, path=output_path })
+      pic.acSaveImage(file, output_class)
+      print(f'Saved {pic.bitmap.width} x {pic.bitmap.height} image to {output_path}')
+      return
+   end
+
    glWindow = gui.window({
       width      = glArgs.width,
       height     = glArgs.height,
@@ -276,7 +368,7 @@ end
       borderless = true
    })
 
-   glViewport = glWindow:clientViewport({ aspectRatio = ARF_MEET })
+   glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    if glArgs.browser != true then
       glViewArea = glViewport.new('VectorViewport', {
@@ -297,17 +389,17 @@ end
          },
          target      = glViewport,
          style       = 'list',
-         toolBar     = { navigation=true, views=true },
+         toolbar     = { navigation=true, views=true },
          displayPath = true,
          path        = glArgs.path,
-         filterList = glOpenFilter,
-         fileSelected = function(FileView:table)
+         filterList  = glOpenFilter,
+         fileSelected = function(FileView:table!)
             displayFile(FileView.selectionPath())
             title = FileView.selectionFile()
             if glStats.width and glStats.height then
                title ..= f' [ {glStats.width} x {glStats.height} ]'
             end
-            glWindow:setTitle(title)
+            glWindow.setTitle(title)
          end
       })
 
@@ -318,11 +410,7 @@ end
         xOffset=glWindow.margins.right, yOffset=glWindow.margins.top
       })
 
-      -- Copy, Save As, Info, Zoom, Rotate Left / Right
-
-      bkgd = glViewManager.new('VectorRectangle', {
-         x=0, y=0, xOffset=0, height=1, fill=gui.palette.inverse
-      })
+      -- TODO: Copy, Save As, Info, Zoom, Rotate Left / Right
 
       glAppBar = gui.toolbar({
          target  = glViewManager,
@@ -334,14 +422,14 @@ end
             Bar.addItem(2, 'Save As', 'Save Image As', 'items/file_saveas', function()
                gui.dialog.file({
                   title       = 'Save Image As...',
-                  okText      = 'Save',
-                  cancelText  = 'Cancel',
+                  okLabel     = 'Save',
+                  cancelLabel = 'Cancel',
                   modal       = true,
                   popOver     = glWindow.surface,
                   warnExists  = true,
                   allowNew    = true,
-                  feedback = function(Dialog, Path:str, Files)
-                     Files ?? return
+                  feedback = function(Dialog, Path:str!, Files)
+                     Files ?! return
 
                      target_file = Path .. Files[0].filename
                      print('Saving image to ' .. target_file)
@@ -351,7 +439,7 @@ end
                      else
                         bmp = glViewArea.buffer
                         if bmp then
-                           pic = obj.new('picture', {
+                           pic = obj.new('image', {
                               width = bmp.width, height = bmp.height, bitsPerPixel = bmp.bitsPerPixel,
                               flags = PCF_NEW|PCF_FORCE_ALPHA_32
                            })
@@ -365,8 +453,6 @@ end
             end)
          end
       })
-
-      bkgd.height = glAppBar.viewport.height
 
       advance = gui.separator(glViewManager, 'h', glAppBar.viewport.height)
 
@@ -394,8 +480,6 @@ end
       end
    end
 
-   processing.collect()
-
-   glWindow:show(true)
+   glWindow.show(true)
 
    processing.sleep()
