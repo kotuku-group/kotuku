@@ -4983,15 +4983,18 @@ static void rec_range_value(jit_State *J, BCREG Base)
    lua_Number runtime_step = numberVnum(&J->L->base[Base + RANGE_FOR_VALUE_STEP]);
    lua_Number runtime_ordinal_stop = numberVnum(&J->L->base[Base + FORL_STOP]);
    int step_exponent;
-   bool exact_scaled_integer = runtime_start IS 0.0 and not std::signbit(runtime_start) and
+   lua_Number ordinal_limit = std::min(0x1p53, DBL_MAX / std::abs(runtime_step));
+   bool exact_scaled_integer = not integer_result and runtime_start IS 0.0 and not std::signbit(runtime_start) and
       std::isnormal(runtime_step) and std::frexp(std::abs(runtime_step), &step_exponent) IS 0.5 and
-      runtime_ordinal_stop >= 0.0 and runtime_ordinal_stop <= 0x1p53 and
-      runtime_ordinal_stop <= DBL_MAX / std::abs(runtime_step);
+      runtime_ordinal_stop >= 0.0 and runtime_ordinal_stop <= ordinal_limit;
    if (exact_scaled_integer) {
+      // Guard the ordinal range that keeps values exact rather than the stop value itself.  An equality guard would
+      // fail on entry whenever the loop bound changes between calls, spawning a new side trace for every bound.
       TRef ordinal_stop = rec_range_number(J, Base + FORL_STOP, inherited_constant);
       ir.guard(IR_EQ, IRT_NUM, start, lj_ir_knum(J, runtime_start));
       ir.guard(IR_EQ, IRT_NUM, step, lj_ir_knum(J, runtime_step));
-      ir.guard(IR_EQ, IRT_NUM, ordinal_stop, lj_ir_knum(J, runtime_ordinal_stop));
+      ir.guard(IR_GE, IRT_NUM, ordinal_stop, lj_ir_knum_zero(J));
+      ir.guard(IR_LE, IRT_NUM, ordinal_stop, lj_ir_knum(J, ordinal_limit));
    }
 
    TRef value;
