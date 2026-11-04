@@ -384,7 +384,7 @@ gui._dropdown = function(Options)
       widestItem = 0
       widestKey  = 0
       y          = VMARGIN
-      _, _, ascent = gui.getFontHeight(dropdown.text, false)
+      _, _, ascent = gui.getFontHeight(dropdown.text)
 
       for item in values(Options.items) do
          if item.label then

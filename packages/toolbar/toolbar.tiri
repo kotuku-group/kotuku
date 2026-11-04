@@ -19,13 +19,13 @@ gui.toolbar = function(Options:table)
    self = entity { -- Public interface
       host           = nil,
       viewport       = nil,  -- The main viewport for the toolbar
-      _groupMargin   = gui.getFontHeight(gui.fonts.default, true) * 0.25, -- Gap between groups
+      _groupMargin   = gui.getFontHeight(gui.fonts.default) * 0.25, -- Gap between groups
       _groupCount    = 0,
       _round         = gui.rpixel('6dp'),
       _disabled      = false,
       _lookup        = { },
       _hasFocus      = false,
-      _cellMargin    = Options.cellMargin ?? math.round(gui.getFontHeight(gui.fonts.default, true) * 0.4)
+      _cellMargin    = Options.cellMargin ?? math.round(gui.getFontHeight(gui.fonts.default) * 0.4)
    }
 
    -- The applied theme is layered as base <- Options.theme <- the override from setTheme().  It is rebuilt whenever
@@ -766,7 +766,7 @@ gui.toolbar = function(Options:table)
 
       base_theme = gui.getTheme(Options.target)
       buildTheme()
-      icon_size = tb_theme.iconSize ?? math.floor(gui.getFontHeight(gui.fonts.default, true))
+      icon_size = tb_theme.iconSize ?? math.floor(gui.getFontHeight(gui.fonts.default))
 
       if Options.groupMargin then
          &_groupMargin = Options.groupMargin

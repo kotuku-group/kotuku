@@ -60,7 +60,7 @@ gui.listView = function(Options:table!):table
    -- Row and font metrics are stored per view instance.
 
    function computeMetrics(View:table!)
-      line_height, font_height, ascent = gui.getFontHeight(View.theme.page.text, false)
+      line_height, font_height, ascent = gui.getFontHeight(View.theme.page.text)
 
       line_height = math.round(line_height)
       row_height  = Options.rowHeight ?? line_height

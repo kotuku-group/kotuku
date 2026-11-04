@@ -21,7 +21,7 @@ A floating strip previews the selected colours while dragging.
       minHeight=300, dragDrop=true })
    viewport = win.clientViewport({})
    theme = gui.getTheme(viewport)
-   _, _, glAscent = gui.getFontHeight(theme.page.text, false)
+   _, _, glAscent = gui.getFontHeight(theme.page.text)
 
    glNextID = 0
    glBaseLine = math.round((ROW_HEIGHT + glAscent) * 0.5)

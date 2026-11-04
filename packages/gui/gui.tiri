@@ -434,7 +434,6 @@ Text is centred vertically in a box by placing its baseline at (BoxHeight + Asce
 
 -INPUT-
 Font: Font table with face, fontSize (or size) and fontStyle (or style) fields.
-Cache: If true (the default), metrics are stored in Font as spacing, height and ascent and reused by later calls.
 
 -RESULTS-
 num: Line spacing in pixels.

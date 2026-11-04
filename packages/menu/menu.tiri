@@ -135,7 +135,7 @@ gui.menu = function(Options:table!)
    custom_font = theme.text.face != base_text.face or theme.text.fontSize != base_text.fontSize or
       theme.text.fontStyle != base_text.fontStyle
    -- Preserve the default geometry; custom fonts use the renderer's resolved units.
-   font_spacing = gui.getFontHeight(custom_font ? theme.text : gui.fonts.menu, false)
+   font_spacing = gui.getFontHeight(custom_font ? theme.text : gui.fonts.menu)
    item_height <const> = math.floor(font_spacing * 1.5)
    vmargin <const> = math.floor(item_height * 0.33)
    icon_size <const> = math.floor(item_height * 0.8)

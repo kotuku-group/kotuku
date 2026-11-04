@@ -156,7 +156,7 @@ gui.combobox = function(Options:table)
          &dropdownTheme = table.merge(&dropdownTheme, override.dropdown, true, true)
       end
 
-      FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(&input_theme.text, false)
+      FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(&input_theme.text)
       DEFAULT_HEIGHT = math.floor(FONT_MAX_HEIGHT * 1.1)
       MARGIN = math.floor(FONT_HEIGHT * 0.5)
    end
