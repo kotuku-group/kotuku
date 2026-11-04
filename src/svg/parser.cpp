@@ -128,6 +128,18 @@ static RQ shape_rendering_to_render_quality(const std::string_view Value)
 }
 
 //********************************************************************************************************************
+// Enables or disables font kerning on a VectorText without affecting its other text flags.
+
+static void set_kerning(objVectorText *Text, bool Enable)
+{
+   VTXF flags = VTXF::NIL;
+   Text->getTextFlags(flags);
+   if (Enable) flags &= ~VTXF::NO_KERNING;
+   else flags |= VTXF::NO_KERNING;
+   Text->setTextFlags(flags);
+}
+
+//********************************************************************************************************************
 // Apply current state values to a new vector as its defaults.  Used for applying state to child vectors.
 // If you're adding more to this, matching code is needed in svgState::applyTag()
 
@@ -150,6 +162,7 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
       if (!m_font_family.empty()) vt->setFace(m_font_family);
       if (!m_font_size.empty())   vt->setFontSize(m_font_size);
       if (m_font_weight)          vt->setWeight(m_font_weight);
+      if (m_font_kerning >= 0)    set_kerning(vt, m_font_kerning);
    }
 
    if (!m_display.empty()) {
@@ -261,6 +274,15 @@ void svgState::applyTag(const XTag &Tag) noexcept
 
          case SVF_stroke_width: svtonum(val, m_stroke_width); break;
          case SVF_font_family:  m_font_family = val; break;
+         case SVF_font_kerning: // CSS: auto | normal | none
+            switch(strhash(val)) {
+               case SVF_auto: case SVF_normal: m_font_kerning = 1; break;
+               case SVF_none: m_font_kerning = 0; break;
+            }
+            break;
+         case SVF_kerning: // SVG 1.1: auto | <length>.  A length disables automatic kerning but is not applied.
+            m_font_kerning = (strhash(val) IS SVF_auto) ? 1 : 0;
+            break;
          case SVF_font_size:
             m_font_size = val;
             m_font_size_px = SVGUnit(val);
@@ -3688,6 +3710,19 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                vt->setFace(StrValue);
                return ERR::Okay;
 
+            case SVF_font_kerning: // CSS: auto | normal | none
+               switch(strhash(StrValue)) {
+                  case SVF_auto: case SVF_normal: set_kerning(vt, true); return ERR::Okay;
+                  case SVF_none: set_kerning(vt, false); return ERR::Okay;
+                  case SVF_inherit: return ERR::Okay;
+                  default: log.warning("font-kerning: No support for value '%s'", StrValue.c_str());
+               }
+               break;
+
+            case SVF_kerning: // SVG 1.1: auto | <length>.  A length disables automatic kerning but is not applied.
+               set_kerning(vt, strhash(StrValue) IS SVF_auto);
+               return ERR::Okay;
+
             case SVF_font_size:
                // A plain numeric font size is interpreted as "a height value corresponding to the current user
                // coordinate system".  Alternatively the user can specify the unit identifier, e.g. '12pt', '10%', '30px'
@@ -3762,7 +3797,6 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
             //case SVF_xlink_href:  // Used for drawing text along a path.
             //   return ERR::Okay;
 
-            //case SVF_kerning:        vt->set(FID_Kerning, StrValue); return ERR::Okay; // Spacing between letters, default=1.0
             //case SVF_letter_spacing: vt->set(FID_LetterSpacing, StrValue); return ERR::Okay;
             //case SVF_pathLength:     vt->set(FID_PathLength, StrValue); return ERR::Okay;
             //case SVF_word_spacing:   vt->set(FID_WordSpacing, StrValue); return ERR::Okay;

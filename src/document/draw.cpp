@@ -865,9 +865,10 @@ void layout::gen_scene_graph(objVectorViewport *Viewport, std::vector<doc_segmen
 
                      txt.vector_text.push_back(vt);
 
-                     int text_width;
-                     vt->getTextWidth(text_width);
-                     x_advance += text_width;
+                     // The fractional width matches the glyph advances used by the layout, whereas TextWidth is
+                     // rounded up to a whole pixel.
+
+                     x_advance += vec::StringWidth(font->handle, str, -1);
                   }
                }
                break;

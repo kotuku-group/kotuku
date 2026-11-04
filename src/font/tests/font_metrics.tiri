@@ -5,6 +5,7 @@ A simple test program for confirming that our fonts and reported metrics values 
    import 'gui/window'
    import 'gui/combobox'
    import 'gui/listview'
+   import 'gui/toggle'
 
    module font as mFont
    module vector as mVec
@@ -19,9 +20,12 @@ local glFace
 local HINT_MODES = { Default=0, Normal=HINT_NORMAL, Light=HINT_LIGHT, Internal=HINT_INTERNAL }
 local glHints = { }
 
+local glKerning = true -- Cleared by the kerning toggle, which sets VTXF_NO_KERNING on the sample text
+
 function setFont(Face, Size)
    if glText then glText.free() end
    if glSmallText then glSmallText.free() end
+   if glKernText then glKernText.free() end
 
    glFace = Face
    local _, fh = mVec.GetFontHandle(Face, "Regular", 0, Size)
@@ -92,6 +96,18 @@ function setFont(Face, Size)
       string   = 'ÄĆÃÊ The quick brown Fox jumped Over the lazy Dog'
    })
 
+   -- Pairs that are kerned by most fonts.  Compare against the toggle to see the effect of the font's kerning.
+
+   global glKernText = glViewport.new('vectortext', {
+      x         = glWindow.margins.left,
+      y         = glText.y + metrics.lineSpacing * 3,
+      face      = Face,
+      fontSize  = Size,
+      fill      = 'rgb(0,0,0)',
+      textFlags = glKerning ? 0 : VTXF_NO_KERNING,
+      string    = 'AV To Ty WA LT Yo P. F, "A" 11'
+   })
+
    global glInitialised = true
    processing.collect()
 end
@@ -146,6 +162,19 @@ end
             if Reason != 'user' then return end
             check mVec.SetFontHinting(glFace, HINT_MODES[Item.name])
             glHints[glFace] = (Item.name != 'Default') ? Item.name : nil
+            setFont(glFace, glFontSize)
+         end
+      }
+   })
+   local kernToggle:table -- Declared before its initialiser, which reads it in the activate event
+   kernToggle = gui.toggle({
+      target = glViewport,
+      label  = 'Kerning',
+      x      = hintList.viewport.x + hintList.viewport.width + 16, y = y,
+      value  = glKerning,
+      events = {
+         activate = function()
+            glKerning = kernToggle.value
             setFont(glFace, glFontSize)
          end
       }

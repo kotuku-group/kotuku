@@ -10,7 +10,7 @@ static constexpr int MAX_PAGE_HEIGHT  = 100000;
 static constexpr int MIN_PAGE_WIDTH   = 20;
 static constexpr int MAX_DEPTH        = 40;    // Limits recursion from tables-within-tables
 static constexpr int WIDTH_LIMIT      = 4000;
-static constexpr int MAX_WORD_TOKEN_WIDTH = 0x7fff; // Cached word widths are limited to signed 16-bit range.
+static constexpr int MAX_WORD_TOKEN_WIDTH = 0x7fff; // Upper limit for the pixel width of a single word.
 static constexpr int DEFAULT_FONTSIZE = 14;    // 72DPI pixel size
 static std::string DEFAULT_FONTSTYLE("Medium");
 static std::string DEFAULT_FONTFACE("Noto Sans");
@@ -282,14 +282,14 @@ struct font_entry {
    FontMetrics metrics; // Derived from vec::GetFontMetrics() at the time of caching
    int font_size; // 72 DPI pixel size
    ALIGN align;
-   int16_t space_width = 0; // Cached pixel width of ' ' (matches m_space_width type)
+   double space_width = 0;  // Cached pixel width of ' ' (fractional for scalable fonts)
    double zero_width = 0;   // Cached pixel width of '0' (for DU::CHAR unit conversion)
 
    font_entry(APTR pHandle, const std::string_view pFace, const std::string_view pStyle, double pSize) :
       handle(pHandle), face(pFace), style(pStyle), font_size(pSize), align(ALIGN::NIL) {
       vec::GetFontMetrics(pHandle, &metrics);
       double kerning = 0;
-      space_width = int16_t(vec::CharWidth(pHandle, ' ', 0, &kerning) + kerning);
+      space_width = vec::CharWidth(pHandle, ' ', 0, &kerning) + kerning;
       kerning = 0;
       zero_width = vec::CharWidth(pHandle, '0', 0, &kerning) + kerning;
    }
@@ -974,7 +974,7 @@ enum class text_token_kind : uint8_t {
 struct word_token {
    uint16_t start = 0;          // Inclusive byte offset into bc_text.text
    uint16_t stop = 0;           // Exclusive byte offset into bc_text.text
-   int16_t width = -1;          // Cached pixel width for WORD tokens, -1 if unknown
+   float width = -1;            // Cached pixel width for WORD tokens (fractional), -1 if unknown
    uint16_t last_char = 0;      // Last unicode codepoint in the token, used to restore kerning state on cache hits
    text_token_kind kind = text_token_kind::WORD;
 

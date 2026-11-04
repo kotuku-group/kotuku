@@ -39,8 +39,17 @@ freetype_font::glyph & freetype_font::ft_point::get_glyph(uint32_t Unicode)
 
    // WARNING: FT_Load_Glyph leaks memory if you call it repeatedly for the same glyph (hence the importance of caching).
 
-   if (FT_Load_Glyph(font->face, path.glyph_index, font->glyph_flags)) return path;
-   path.adv_x = int26p6_to_dbl(font->face->glyph->advance.x);
+   if (FT_Load_Glyph(font->face, path.glyph_index, font->glyph_flags|FT_LOAD_LINEAR_DESIGN)) return path;
+
+   // The hinted advance is rounded to whole pixels, which accumulates as visible spacing errors and disagrees with
+   // the unrounded kerning.  The linear advance is the unhinted value in font units, including any variations, and
+   // is scaled in the same way as the kerning.  FreeType's own scaling of the linear advance is avoided because it
+   // passes through a rounded 16.16 scale factor.
+
+   if (FT_IS_SCALABLE(font->face) and (em_scale > 0)) {
+      path.adv_x = double(font->face->glyph->linearHoriAdvance) * em_scale;
+   }
+   else path.adv_x = int26p6_to_dbl(font->face->glyph->advance.x);
    path.adv_y = int26p6_to_dbl(font->face->glyph->advance.y);
 
    const FT_Outline &outline = font->face->glyph->outline;
@@ -186,6 +195,53 @@ _close:
 }
 
 //********************************************************************************************************************
+// Returns separate placement and advance adjustments in pixels, at the scale of the glyph outlines.
+// Values are not rounded.  GPOS pair positioning takes priority; faces without it use a legacy 'kern' table.
+//
+// REQUIREMENT: The caller must have acquired a lock on glFontMutex.
+
+gpos_kerning::adjustment freetype_font::ft_point::positioning(int PrevGlyph, int Glyph)
+{
+   if ((not PrevGlyph) or (not Glyph) or (not kerning_enabled)) return {};
+
+   auto &gpos = font->get_gpos();
+   if (gpos.enabled()) {
+      if (not kern_ready) {
+         // The normalised coordinates of the style are read back from FreeType, which has already applied any
+         // 'avar' mapping to them.
+
+         std::vector<int> coords;
+         if (not axis.empty()) {
+            if (font->active_size != this) {
+               FT_Set_Var_Design_Coordinates(font->face, axis.size(), axis.data());
+               font->active_size = this;
+            }
+
+            std::vector<FT_Fixed> blend(axis.size());
+            if (!FT_Get_Var_Blend_Coordinates(font->face, blend.size(), blend.data())) {
+               for (auto v : blend) coords.push_back(int(std::lround(double(v) / 4.0))); // 16.16 to F2Dot14
+            }
+         }
+         kern_instance.set_coords(coords);
+         kern_ready = true;
+      }
+      auto value = gpos.pair_adjustment(PrevGlyph, Glyph, kern_instance);
+      value.first_advance *= em_scale;
+      value.second_advance *= em_scale;
+      value.first_placement *= em_scale;
+      value.second_placement *= em_scale;
+      return value;
+   }
+   else if (FT_HAS_KERNING(font->face)) {
+      FT_Vector delta;
+      if (!FT_Get_Kerning(font->face, PrevGlyph, Glyph, FT_KERNING_UNSCALED, &delta)) {
+         return { double(delta.x) * em_scale };
+      }
+   }
+   return {};
+}
+
+//********************************************************************************************************************
 // For truetype fonts, this path generator creates text as a single path by concatenating the paths of all individual
 // characters in the string.
 
@@ -258,6 +314,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
    // that match Chrome's output.  It also means that 1:1 metrics don't need to be converted to 96 DPI
    // point sizes.
 
+   const bool kern = (Vector->txFlags & VTXF::NO_KERNING) IS VTXF::NIL;
+
    FT_Activate_Size(pt.ft_size);
    if (pt.font->face->size->metrics.height != dbl_to_int26p6(Vector->txFontSize)) {
       FT_Set_Char_Size(pt.font->face, 0, dbl_to_int26p6(Vector->txFontSize), 72, 72);
@@ -272,6 +330,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
       for (auto &line : Vector->txLines) {
          line.chars.clear();
          line.wrapOffsets.clear(); // Guide paths do not wrap
+         prev_glyph_index = 0; // Kerning does not apply across lines
 
          int char_len;
          for (auto str=line.c_str(); *str; ) {
@@ -288,11 +347,13 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             auto &glyph = pt.get_glyph(unicode);
 
-            double kx, ky;
-            get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
-            start_x += kx * advance_scale;
+            auto adjustment = kern ? pt.positioning(prev_glyph_index, glyph.glyph_index) :
+               gpos_kerning::adjustment{};
+            start_x += adjustment.first_advance * advance_scale;
+            const double placement = kern ? adjustment.second_placement +
+               pt.first_placement(glyph.glyph_index, str) : 0;
 
-            double char_width = glyph.adv_x * std::abs(transform.sx) * advance_scale;
+            double char_width = (glyph.adv_x + adjustment.second_advance) * std::abs(transform.sx) * advance_scale;
 
             // Compute end_vx,end_vy (the last vertex to use for angle computation) and store the distance from start_x,start_y to end_vx,end_vy in dist.
             if (char_width > dist) {
@@ -336,6 +397,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             //log.trace("Char '%c' is at (%.2f %.2f) to (%.2f %.2f), angle: %.2f, remaining dist: %.2f", unicode, tx, ty, start_x, start_y, angle / DEG2RAD, dist);
 
+            tx += placement * advance_scale * cos(angle);
+            ty += placement * advance_scale * sin(angle);
             transform.rotate(angle); // Rotate the character in accordance with its position on the path angle.
             transform.translate(tx, ty); // Move the character to its correct position on the path.
             if (unicode > 0x20) {
@@ -344,6 +407,8 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             }
 
             if (Vector->needs_caret_geometry()) {
+               transform.tx -= placement * advance_scale * cos(angle);
+               transform.ty -= placement * advance_scale * sin(angle);
                calc_caret_position(line, transform, pt.ascent, pt.descent);
                if (not *str) {
                   transform.tx = start_x;
@@ -369,7 +434,10 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
          line.wrapOffsets.clear();
          bool in_word = false;
          bool char_break = false; // ANYWHERE mode: break between characters until segment_end is reached
+         prev_glyph_index = 0; // Kerning does not apply across lines
          const char *segment_end = nullptr; // End of the current wrapping segment
+         unsigned previous_start = Path.total_vertices(), previous_end = previous_start;
+         double previous_sx = 1, previous_shy = 0;
 
          auto wrap_line = [&](const char *Position) {
             if (dx > longest_line_width) longest_line_width = dx;
@@ -395,7 +463,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             // segment_extent() reports.  In VTW::WORD mode the segments are whole words.
 
             bool segment_start = false, word_start = false;
-            if (unicode <= 0x20) { in_word = false; char_break = false; prev_glyph_index = 0; }
+            if (unicode <= 0x20) { in_word = false; char_break = false; }
             else if (not in_word) { in_word = true; segment_start = true; word_start = true; }
             else if ((segment_end) and (str >= segment_end)) segment_start = true;
 
@@ -430,24 +498,42 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
 
             auto &glyph = pt.get_glyph(unicode);
 
-            double kx, ky;
-            get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
+            auto adjustment = kern ? pt.positioning(prev_glyph_index, glyph.glyph_index) :
+               gpos_kerning::adjustment{};
+            double kx = adjustment.first_advance;
             if (Vector->txInlineSize and not segment_start and char_break and (dx > 0) and
                 ((dx + kx + glyph.adv_x) * std::abs(transform.sx) > Vector->txInlineSize)) {
                wrap_line(str);
-               get_kerning_xy(pt.font->face, glyph.glyph_index, prev_glyph_index, kx, ky);
+               kx = 0; // Kerning does not apply across a line break
+               adjustment = {};
             }
             dx += kx;
 
             str += char_len;
 
-            double char_width = glyph.adv_x * std::abs(transform.sx); // transform.scale();
+            double char_width = (glyph.adv_x + adjustment.second_advance) * std::abs(transform.sx);
 
-            transform.translate(dx, dy);
+            // Apply first-glyph placement only after wrapping has decided whether this pair stays together.
+            if (adjustment.first_placement) {
+               for (auto vertex=previous_start; vertex < previous_end; vertex++) {
+                  double x, y;
+                  if (agg::is_vertex(Path.vertex(vertex, &x, &y))) {
+                     Path.modify_vertex(vertex, x + adjustment.first_placement * previous_sx,
+                        y + adjustment.first_placement * previous_shy);
+                  }
+               }
+            }
+            previous_start = Path.total_vertices();
+            previous_sx = transform.sx;
+            previous_shy = transform.shy;
+            const double placement = adjustment.second_placement;
+            transform.translate(dx + placement, dy);
             agg::conv_transform<agg::path_storage, agg::trans_affine> trans_char(glyph.path, transform);
             Path.concat_path(trans_char);
+            previous_end = Path.total_vertices();
 
             if (Vector->needs_caret_geometry()) {
+               transform.tx -= placement;
                calc_caret_position(line, transform, pt.ascent, pt.descent);
 
                if (!*str) { // Last character reached, add a final cursor entry past the character position.
@@ -457,7 +543,7 @@ static void generate_text(extVectorText *Vector, agg::path_storage &Path)
             }
 
             dx += char_width;
-            dy += glyph.adv_y + ky;
+            dy += glyph.adv_y;
 
             prev_glyph_index = glyph.glyph_index;
          }

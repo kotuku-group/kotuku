@@ -10,6 +10,8 @@
 #include FT_TRUETYPE_TABLES_H
 #include FT_TRUETYPE_TAGS_H
 
+#include "kerning.h"
+
 #define CF_BITMAP 0
 #define CF_FREETYPE 1
 
@@ -72,9 +74,25 @@ class freetype_font {
             double ascent;  // Ascent from the baseline (cap height), does not include accents.  Typically matches the font-size in pixels
             double descent; // Number of pixels allocated below the baseline for glyphs, not including vertical whitespace
             double line_spacing; // The vertical advance for a newline, if not predefined then is set to height * 1.15
+            double em_scale = 0; // Pixels per font unit, matching the scale of the glyph outlines
             METRIC_GROUP axis;
+            gpos_kerning::instance kern_instance; // GPOS kerning state for this style instance
+            bool kern_ready = false; // True once kern_instance has the design coordinates of this style
+            bool kerning_enabled = true; // False if the font configuration sets Kerning = No
 
             glyph & get_glyph(uint32_t);
+            gpos_kerning::adjustment positioning(int PrevGlyph, int Glyph);
+            double kerning(int PrevGlyph, int Glyph) {
+               auto value = positioning(PrevGlyph, Glyph);
+               return value.first_advance + value.second_advance;
+            }
+            double first_placement(int Glyph, const std::string_view &Remaining) {
+               if (Remaining.empty()) return 0;
+               int length;
+               auto unicode = UTF8ReadValue(Remaining, &length);
+               if (unicode IS '\n') return 0;
+               return positioning(Glyph, FT_Get_Char_Index(font->face, unicode)).first_placement;
+            }
 
             ft_point() : common_font(CF_FREETYPE) { }
 
@@ -107,6 +125,10 @@ class freetype_font {
 
                   FT_Set_Char_Size(font->face, 0, Size<<6, 72, 72);
 
+                  // Kerning is computed from font units and scaled without rounding.
+
+                  if (font->face->units_per_EM) em_scale = double(Size) / double(font->face->units_per_EM);
+
                   // The FreeType metrics are scaled by a fixed 72/96 (DISPLAY_DPI), which acts as a calibration
                   // constant.  The display density must not be used here: the glyph outlines ignore it, so a
                   // density-dependent factor would shrink the metrics relative to the glyphs on high DPI displays,
@@ -135,31 +157,31 @@ class freetype_font {
                      if (config.granted()) {
                         APTR group_ptr;
                         if (!glFontConfig->getData(group_ptr)) {
+                           auto apply_options = [this](const ConfigKeys &Keys) {
+                              if (auto it = Keys.find("LineSpacing"); it != Keys.end()) {
+                                 line_spacing *= std::stod(it->second);
+                              }
+                              if (auto it = Keys.find("Descent"); it != Keys.end()) {
+                                 descent *= std::stod(it->second);
+                              }
+                              if (auto it = Keys.find("Ascent"); it != Keys.end()) {
+                                 ascent *= std::stod(it->second);
+                              }
+                              if (auto it = Keys.find("Kerning"); it != Keys.end()) {
+                                 kerning_enabled = not (kt::iequals(it->second, "No") or
+                                    kt::iequals(it->second, "False") or (it->second IS "0"));
+                              }
+                           };
+
                            auto groups = (ConfigGroups *)group_ptr;
                            for (auto & [group, keys] : groups[0]) {
                               if (kt::iequals(group, font->face->family_name)) {
-                                 if (auto it = keys.find("LineSpacing"); it != keys.end()) {
-                                    line_spacing *= std::stod(it->second);
-                                 }
-                                 if (auto it = keys.find("Descent"); it != keys.end()) {
-                                    descent *= std::stod(it->second);
-                                 }
-                                 if (auto it = keys.find("Ascent"); it != keys.end()) {
-                                    ascent *= std::stod(it->second);
-                                 }
+                                 apply_options(keys);
                                  break;
                               }
                               else if (auto it = keys.find("Name"); it != keys.end()) {
                                  if (kt::iequals(it->second, font->face->family_name)) {
-                                    if (auto it = keys.find("LineSpacing"); it != keys.end()) {
-                                       line_spacing *= std::stod(it->second);
-                                    }
-                                    if (auto it = keys.find("Descent"); it != keys.end()) {
-                                       descent *= std::stod(it->second);
-                                    }
-                                    if (auto it = keys.find("Ascent"); it != keys.end()) {
-                                       ascent *= std::stod(it->second);
-                                    }
+                                    apply_options(keys);
                                     break;
                                  }
                               }
@@ -189,6 +211,8 @@ class freetype_font {
       int glyph_flags = 0;
       uint32_t family_hash = 0; // strihash() of the resolved family name that first loaded this face
       ft_point *active_size = nullptr;
+      gpos_kerning gpos; // GPOS pair kerning, loaded on first use by get_gpos()
+      bool gpos_loaded = false;
 
       freetype_font()  { }
       freetype_font(FT_Face pFace, STYLE_CACHE &pStyles, METRIC_TABLE &pMetrics, FMETA pMeta, uint32_t pFamilyHash,
@@ -211,6 +235,25 @@ class freetype_font {
             glyph_flags = FT_LOAD_DEFAULT;
             if (stub_hinted(face)) glyph_flags |= FT_LOAD_NO_AUTOHINT;
          }
+      }
+
+      // Returns the GPOS kerning reader for the face, loading it on the first call.  A face without usable GPOS
+      // kerning returns a disabled reader.
+
+      gpos_kerning & get_gpos() {
+         if (not gpos_loaded) {
+            gpos_loaded = true;
+            if (FT_IS_SFNT(face)) gpos.load(load_sfnt_table(TTAG_GPOS), load_sfnt_table(TTAG_GDEF));
+         }
+         return gpos;
+      }
+
+      std::vector<uint8_t> load_sfnt_table(FT_ULong Tag) {
+         FT_ULong size = 0;
+         if (FT_Load_Sfnt_Table(face, Tag, 0, nullptr, &size) or (not size)) return {};
+         std::vector<uint8_t> table(size);
+         if (FT_Load_Sfnt_Table(face, Tag, 0, table.data(), &size)) return {};
+         return table;
       }
 
       // Discards the cached glyphs of every style and size, forcing them to be reloaded with the current flags.
@@ -258,18 +301,3 @@ extern ankerl::unordered_dense::map<uint32_t, std::unique_ptr<freetype_font>> gl
 extern ankerl::unordered_dense::map<uint32_t, HINT> glHintOverrides; // Family name hash to SetFontHinting() value
 
 extern FT_Library glFTLibrary;
-
-// Shared by VectorText layout and direct text drawing; callers must hold glFontMutex.
-
-inline void get_kerning_xy(FT_Face Face, int Glyph, int PrevGlyph, double &X, double &Y)
-{
-   FT_Vector delta;
-   if (!FT_Get_Kerning(Face, PrevGlyph, Glyph, FT_KERNING_DEFAULT, &delta)) {
-      X = int26p6_to_dbl(delta.x);
-      Y = int26p6_to_dbl(delta.y);
-   }
-   else {
-      X = 0;
-      Y = 0;
-   }
-}

@@ -365,7 +365,11 @@ parameter.  Kerning can also be returned for positioning the character against a
 preceding character in `KChar` and a `Kerning` pointer to receive the horizontal adjustment.  If kerning information is
 not required, set `KChar` to zero and `Kerning` to `NULL`.
 
-The font's glyph spacing value is not used in calculating the character width.
+The kerning value is the font's pair adjustment for the active style instance, scaled from font units without
+rounding.  It is typically negative and is zero for pairs that the font does not kern.
+
+For scalable fonts the width is the glyph's unhinted advance, which is fractional.  The font's glyph spacing value is
+not used in calculating the character width.
 
 -INPUT-
 ptr FontHandle: The font to use for calculating the character width.
@@ -393,11 +397,7 @@ double CharWidth(APTR Handle, uint32_t Char, uint32_t KChar, double *Kerning)
 
       auto &cache = pt->get_glyph(Char);
       if (Kerning) {
-         if (KChar) {
-            FT_Vector delta;
-            FT_Get_Kerning(pt->ft_size->face, FT_Get_Char_Index(pt->font->face, KChar), cache.glyph_index, FT_KERNING_DEFAULT, &delta);
-            *Kerning = int26p6_to_dbl(delta.x);
-         }
+         if (KChar) *Kerning = pt->kerning(FT_Get_Char_Index(pt->font->face, KChar), cache.glyph_index);
          else *Kerning = 0;
       }
       return cache.adv_x;
@@ -627,14 +627,15 @@ ERR DrawText(objBitmap *Bitmap, APTR FontHandle, double X, double Y, const std::
          uint32_t unicode;
          i += get_utf8(String, unicode, i);
          auto &glyph = pt->get_glyph(unicode);
-         double kx, ky;
-         get_kerning_xy(pt->font->face, glyph.glyph_index, prev_glyph, kx, ky);
-         pen_x += kx;
-         agg::trans_affine_translation transform(X + pen_x, Y + pen_y);
+         auto adjustment = pt->positioning(prev_glyph, glyph.glyph_index);
+         pen_x += adjustment.first_advance;
+         const double placement = adjustment.second_placement +
+            pt->first_placement(glyph.glyph_index, String.substr(i));
+         agg::trans_affine_translation transform(X + pen_x + placement, Y + pen_y);
          agg::conv_transform<agg::path_storage, agg::trans_affine> path(glyph.path, transform);
          text.mPath.concat_path(path);
-         pen_x += glyph.adv_x;
-         pen_y += glyph.adv_y + ky;
+         pen_x += glyph.adv_x + adjustment.second_advance;
+         pen_y += glyph.adv_y;
          prev_glyph = glyph.glyph_index;
       }
    }
@@ -1600,7 +1601,9 @@ StringWidth: Calculates the rendered width of a UTF-8 string.
 This function calculates the pixel width of `String` for a known font.  Line-feeds are treated as line breaks, so for
 multi-line strings the width of the longest line is returned.
 
-For scalable fonts, kerning is included when computing the distance between glyphs.
+For scalable fonts, the pair kerning defined by the font is included when computing the distance between glyphs.  The
+result is fractional because the glyph advances and kerning are scaled from font units without rounding.  Kerning does
+not apply across a line-feed.  Fonts that have `Kerning = No` in `fonts:options.cfg` are not kerned.
 
 -INPUT-
 ptr FontHandle: A font handle obtained from ~GetFontHandle().
@@ -1634,25 +1637,20 @@ double StringWidth(APTR Handle, const std::string_view &String, int Chars)
       double widest  = 0;
       int prev_glyph = 0;
       int i = 0;
-      const bool has_kerning = FT_HAS_KERNING(pt->ft_size->face);
       const size_t end = std::min(size_t(Chars), String.size());
       const auto limited_string = String.substr(0, end);
       while (i < std::ssize(limited_string)) {
          if (limited_string[i] IS '\n') {
             if (widest < len) widest = len;
             len = 0;
+            prev_glyph = 0; // Kerning does not apply across lines
             i++;
          }
          else {
             uint32_t unicode;
             auto charlen = get_utf8(limited_string, unicode, i);
             auto &glyph  = pt->get_glyph(unicode);
-            len += glyph.adv_x;
-            if ((has_kerning) and (prev_glyph)) {
-               FT_Vector delta;
-               FT_Get_Kerning(pt->ft_size->face, prev_glyph, glyph.glyph_index, FT_KERNING_DEFAULT, &delta);
-               len += int26p6_to_dbl(delta.x);
-            }
+            len += glyph.adv_x + pt->kerning(prev_glyph, glyph.glyph_index);
             prev_glyph = glyph.glyph_index;
             i += charlen;
          }
