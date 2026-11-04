@@ -184,11 +184,8 @@ private:
    // These are soft thresholds, not a capacity.  channel_events has no hard cap: one collect_channel_events() call
    // can append up to SctpChannels::MAX_EVENTS beyond EVENT_BACKPRESSURE, and terminate_channels() appends ERROR and
    // CLOSE for every open channel.  EVENT_ADMISSION is therefore not derived from a terminal-event reserve or from
-   // SctpChannels::MAX_EVENTS, and no rationale for its value is recorded.
-   //
-   // create_channel() refuses above EVENT_ADMISSION while send_channel() refuses at it, so a channel can still be
-   // created when exactly EVENT_ADMISSION events are queued.  The asymmetry is long-standing behaviour with no
-   // recorded intent; it has been preserved and is not covered by tests.
+   // SctpChannels::MAX_EVENTS, and no rationale for its value is recorded.  create_channel() and send_channel() both
+   // refuse once EVENT_ADMISSION events are queued.
 
    static constexpr size_t EVENT_ADMISSION = 4094;
    static constexpr size_t EVENT_BACKPRESSURE = 3072;

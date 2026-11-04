@@ -264,22 +264,20 @@ private:
    // Disjoint hard reservations cover payloads, one completion copy, descriptors/nodes, records and output.
    // The generous metadata allowance includes 64-bit container links, shared owners and allocation overhead.
    // The channel reserve covers channel metadata/events and the bounded aggregate label/protocol storage.
-   //
-   // The record term reserves RECORD_METADATA_ALLOWANCE for each of MAX_RECEIVE_RECORDS receive records.  Queued
-   // send descriptors (a SendMessage and its shared PolicyState, up to MAX_QUEUED_MESSAGES + MAX_CONTROL_MESSAGES)
-   // are not reserved by any term.  They fit within the budget's current headroom at the same allowance, but that is
-   // not asserted.  The original expression did not record which records were intended; treat this as unresolved
-   // before relying on the assertion for send-side metadata.
+   // RECORD_METADATA_ALLOWANCE is reserved for every receive record and every queued send message (its SendMessage
+   // descriptor and shared PolicyState).
 
    static constexpr size_t CHUNK_METADATA_ALLOWANCE = 256;
    static constexpr size_t RECORD_METADATA_ALLOWANCE = 512;
    static constexpr size_t CHANNEL_METADATA_RESERVE = 2 * 1024 * 1024;
    static constexpr size_t MEMORY_BUDGET = 128 * 1024 * 1024;
    static_assert(SctpChannels::MAX_LABEL_BYTES < CHANNEL_METADATA_RESERVE);
+   static constexpr size_t MAX_SEND_RECORDS = MAX_QUEUED_MESSAGES + MAX_CONTROL_MESSAGES;
+   static_assert(sizeof(SendMessage) + sizeof(PolicyState) <= RECORD_METADATA_ALLOWANCE);
    static_assert(2 * MAX_PAYLOAD + MAX_MESSAGE +
       MAX_CHUNKS * (sizeof(SentChunk) + sizeof(Fragment) + CHUNK_METADATA_ALLOWANCE) +
-      MAX_RECEIVE_RECORDS * RECORD_METADATA_ALLOWANCE + MAX_OUTPUT * sctp::MAX_PACKET_SIZE + MAX_CONTROL_BYTES +
-      CHANNEL_METADATA_RESERVE < MEMORY_BUDGET);
+      (MAX_RECEIVE_RECORDS + MAX_SEND_RECORDS) * RECORD_METADATA_ALLOWANCE + MAX_OUTPUT * sctp::MAX_PACKET_SIZE +
+      MAX_CONTROL_BYTES + CHANNEL_METADATA_RESERVE < MEMORY_BUDGET);
 
    std::deque<SendMessage> queued;
    std::deque<SentChunk> sent;

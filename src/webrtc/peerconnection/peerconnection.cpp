@@ -534,7 +534,7 @@ be used.
 Freeing the PeerConnection destroys all of its channels.  Freeing a channel explicitly resets its stream and
 suppresses any further callbacks.  Releasing a Tiri reference to a channel does not free it.  A maximum of 256
 channels can be open at any time, and the labels and protocols of those channels cannot exceed 256 KiB in total.  New
-channels are also refused while more than 4094 channel events are awaiting delivery to the client.
+channels are also refused while 4094 or more channel events are awaiting delivery to the client.
 
 -INPUT-
 strview Label: UTF-8 label for the channel, at most 65535 bytes.  Can be empty.
