@@ -56,7 +56,7 @@
 <p>Send() copies a complete message to the channel's send queue and returns immediately.  The message is either queued in full or rejected, and is delivered to the remote peer as a single message.  A successful result does not indicate that the message has been sent or received.  The number of bytes awaiting transmission is reported by <fl>BufferedAmount</fl>.</p>
 <p>The <code>Type</code> is delivered with the message so that the receiver can tell text from binary data; the content itself is not altered.  Use <code>TEXT</code> for strings, which browsers receive as a JavaScript string, and <code>BINARY</code> for arbitrary bytes, which browsers receive as an <code>ArrayBuffer</code> or <code>Blob</code>.  Both types can be mixed on the same channel.  Refer to RFC 8831 for further information.</p>
 <p>The channel must be in the <code>OPEN</code> state.  Messages of type <code>TEXT</code> must be valid UTF-8, and no message can exceed <fl>MaxMessageSize</fl>.  Empty messages are permitted.</p>
-<p>The send queue is limited to 16 MiB for each channel and 32 MiB across the connection.  If a message would exceed these limits it is rejected with <code>ERR::BufferOverflow</code>, and the client should wait for <fl>OnBufferedAmountLow</fl> before sending more data.</p>
+<p>The send queue is limited to 16 MiB and 1024 messages for each channel, and 32 MiB and 4096 messages across the connection.  If a message would exceed these limits it is rejected with <code>ERR::BufferOverflow</code>, and the client should wait for <fl>OnBufferedAmountLow</fl> before sending more data.  Messages are also rejected with <code>ERR::BufferOverflow</code> while 4094 or more channel events, such as received messages, are awaiting delivery to the client's callbacks.</p>
 <p>In Tiri, <code>Data</code> can be a string, which may contain embedded null bytes, an <code>array&lt;byte&gt;</code>, or <code>nil</code> for an empty message.</p>
       </description>
       <result>
@@ -64,7 +64,7 @@
         <error code="InvalidData">A <code>TEXT</code> message is not valid UTF-8.</error>
         <error code="NoSupport">The remote peer does not support partially reliable delivery.</error>
         <error code="OutOfRange">The message exceeds <fl>MaxMessageSize</fl>.</error>
-        <error code="BufferOverflow">The send queue is full.</error>
+        <error code="BufferOverflow">The send queue is full, or too many channel events are awaiting delivery.</error>
         <error code="InvalidState">The channel is not open.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="InvalidValue"><code>Type</code> is not a recognised value.</error>

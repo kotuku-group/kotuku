@@ -179,8 +179,16 @@ private:
    static constexpr size_t MAX_LABEL_BYTES = SctpChannels::MAX_LABEL_BYTES;
 
    // Queued public channel events.  SCTP pumping pauses above EVENT_BACKPRESSURE, and channel creation and sends
-   // are refused at EVENT_ADMISSION.  The queue itself is not capped: collection and termination may append beyond
-   // both thresholds.  Delivery drains up to EVENT_BATCH events per notification.
+   // are refused at EVENT_ADMISSION.  Delivery drains up to EVENT_BATCH events per notification.
+   //
+   // These are soft thresholds, not a capacity.  channel_events has no hard cap: one collect_channel_events() call
+   // can append up to SctpChannels::MAX_EVENTS beyond EVENT_BACKPRESSURE, and terminate_channels() appends ERROR and
+   // CLOSE for every open channel.  EVENT_ADMISSION is therefore not derived from a terminal-event reserve or from
+   // SctpChannels::MAX_EVENTS, and no rationale for its value is recorded.
+   //
+   // create_channel() refuses above EVENT_ADMISSION while send_channel() refuses at it, so a channel can still be
+   // created when exactly EVENT_ADMISSION events are queued.  The asymmetry is long-standing behaviour with no
+   // recorded intent; it has been preserved and is not covered by tests.
 
    static constexpr size_t EVENT_ADMISSION = 4094;
    static constexpr size_t EVENT_BACKPRESSURE = 3072;

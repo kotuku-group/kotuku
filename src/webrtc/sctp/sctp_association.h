@@ -264,6 +264,12 @@ private:
    // Disjoint hard reservations cover payloads, one completion copy, descriptors/nodes, records and output.
    // The generous metadata allowance includes 64-bit container links, shared owners and allocation overhead.
    // The channel reserve covers channel metadata/events and the bounded aggregate label/protocol storage.
+   //
+   // The record term reserves RECORD_METADATA_ALLOWANCE for each of MAX_RECEIVE_RECORDS receive records.  Queued
+   // send descriptors (a SendMessage and its shared PolicyState, up to MAX_QUEUED_MESSAGES + MAX_CONTROL_MESSAGES)
+   // are not reserved by any term.  They fit within the budget's current headroom at the same allowance, but that is
+   // not asserted.  The original expression did not record which records were intended; treat this as unresolved
+   // before relying on the assertion for send-side metadata.
 
    static constexpr size_t CHUNK_METADATA_ALLOWANCE = 256;
    static constexpr size_t RECORD_METADATA_ALLOWANCE = 512;

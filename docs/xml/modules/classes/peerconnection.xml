@@ -132,14 +132,14 @@ remote peer to <method>AddIceCandidate</method>.</li>
 <p>By default the remote peer is notified of the new channel in-band and receives it through <fl>OnWebChannel</fl>.  If <code>Negotiated</code> is true, no notification is sent and both peers must create the channel with the same <code>ID</code>.</p>
 <p>When <code>ID</code> is -1, a stream ID is assigned automatically after the DTLS handshake, with even IDs used by the DTLS client and odd IDs by the server.  An explicit <code>ID</code> is reserved immediately.  If it later conflicts with the negotiated DTLS role or stream count, the channel reports <class name="WebChannel" field="OnError">WebChannel.OnError</class> followed by <class name="WebChannel" field="OnClose">WebChannel.OnClose</class>.</p>
 <p>Messages are delivered reliably unless <code>MaxRetransmits</code> or <code>MaxPacketLifeTime</code> is set.  Only one of these options can be used.</p>
-<p>Freeing the PeerConnection destroys all of its channels.  Freeing a channel explicitly resets its stream and suppresses any further callbacks.  Releasing a Tiri reference to a channel does not free it.  A maximum of 256 channels can be open at any time.</p>
+<p>Freeing the PeerConnection destroys all of its channels.  Freeing a channel explicitly resets its stream and suppresses any further callbacks.  Releasing a Tiri reference to a channel does not free it.  A maximum of 256 channels can be open at any time, and the labels and protocols of those channels cannot exceed 256 KiB in total.  New channels are also refused while more than 4094 channel events are awaiting delivery to the client.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>
         <error code="InvalidData"><code>Label</code> or <code>Protocol</code> is not valid UTF-8.</error>
         <error code="NoSupport">Operation not supported</error>
         <error code="OutOfRange">A numeric option is outside of its permitted range.</error>
-        <error code="BufferOverflow">The channel limit has been reached.</error>
+        <error code="BufferOverflow">The channel, label storage or pending channel event limit has been reached.</error>
         <error code="InvalidState">The connection is closed or has failed.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="InvalidValue">A boolean option is not 0 or 1, both reliability options are set, or <code>ID</code> is unavailable.</error>

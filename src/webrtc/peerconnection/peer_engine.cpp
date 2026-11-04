@@ -1468,6 +1468,8 @@ ERR PeerConnection::create_channel(const SctpChannelOptions &Options, uint64_t &
       if (Options.id and channel.id IS int(*Options.id)) return ERR::InvalidValue;
    }
 
+   // Note '>' for events, whereas send_channel() uses '>='.  See EVENT_ADMISSION in peer_engine.h.
+
    if (active >= MAX_CHANNELS or label_bytes > MAX_LABEL_BYTES or channel_events.size() > EVENT_ADMISSION) {
       return ERR::BufferOverflow;
    }
@@ -1505,7 +1507,7 @@ ERR PeerConnection::send_channel(uint64_t Handle, std::span<const uint8_t> Paylo
        not channels) return ERR::InvalidState;
 
    if (Payload.size() > max_message_size()) return ERR::OutOfRange;
-   if (channel_events.size() >= EVENT_ADMISSION) return ERR::BufferOverflow;
+   if (channel_events.size() >= EVENT_ADMISSION) return ERR::BufferOverflow; // Unlike create_channel(), see header
 
    auto error = channels->send(uint16_t(it->second.id), Payload, Text, now_us());
    if (error IS ERR::Okay) {

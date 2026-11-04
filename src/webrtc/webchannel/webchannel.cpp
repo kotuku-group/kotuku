@@ -195,9 +195,10 @@ RFC 8831 for further information.
 The channel must be in the `OPEN` state.  Messages of type `TEXT` must be valid UTF-8, and no message can exceed
 #MaxMessageSize.  Empty messages are permitted.
 
-The send queue is limited to 16 MiB for each channel and 32 MiB across the connection.  If a message would exceed
-these limits it is rejected with `ERR::BufferOverflow`, and the client should wait for #OnBufferedAmountLow before
-sending more data.
+The send queue is limited to 16 MiB and 1024 messages for each channel, and 32 MiB and 4096 messages across the
+connection.  If a message would exceed these limits it is rejected with `ERR::BufferOverflow`, and the client should
+wait for #OnBufferedAmountLow before sending more data.  Messages are also rejected with `ERR::BufferOverflow` while
+4094 or more channel events, such as received messages, are awaiting delivery to the client's callbacks.
 
 In Tiri, `Data` can be a string, which may contain embedded null bytes, an `array<byte>`, or `nil` for an empty
 message.
@@ -213,7 +214,7 @@ InvalidState: The channel is not open.
 InvalidValue: `Type` is not a recognised value.
 InvalidData: A `TEXT` message is not valid UTF-8.
 OutOfRange: The message exceeds #MaxMessageSize.
-BufferOverflow: The send queue is full.
+BufferOverflow: The send queue is full, or too many channel events are awaiting delivery.
 NoSupport: The remote peer does not support partially reliable delivery.
 
 -TAGS-
