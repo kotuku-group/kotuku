@@ -301,17 +301,19 @@ bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
    int width  = scintilla->ViewWidth;
    if (wrapState IS eWrapNone) width = std::max(width, scrollWidth + vs.fixedColumnWidth + vs.rightMarginWidth);
 
-   if ((width IS scintilla->PageWidth) and (height IS scintilla->PageHeight)) return false;
+   if ((width IS scintilla->PageWidth) and (height IS scintilla->PageHeight) and
+       (scintilla->Scale IS scintilla->PageScale)) return false;
 
    log.traceBranch("Lines: %d/%d, Page: %dx%d", nMax, nPage, width, height);
    DwellEnd(true);
 
    scintilla->PageWidth  = width;
    scintilla->PageHeight = height;
+   scintilla->PageScale  = scintilla->Scale;
 
-   if (scintilla->Page) {
-      scintilla->Page->setWidth(width);
-      scintilla->Page->setHeight(height);
+   if (scintilla->Page) { // The Page is sized in View units
+      scintilla->Page->setWidth(width / scintilla->Scale);
+      scintilla->Page->setHeight(height / scintilla->Scale);
    }
 
    return false;
@@ -1225,6 +1227,27 @@ void ScintillaKTK::panResized()
    kt::Log log(__FUNCTION__);
    log.traceBranch();
    ChangeSize();
+}
+
+/*********************************************************************************************************************
+** Called after the device scale has changed by Ratio, and the fonts and metrics have been reloaded.  The top line is
+** retained, and the horizontal scroll position is converted to the new client units.  The content of the Bitmap no
+** longer reflects any line, so the next paint is in full.
+*/
+
+void ScintillaKTK::panRescaled(double Ratio)
+{
+   kt::Log log(__FUNCTION__);
+   log.traceBranch("Ratio: %.3f", Ratio);
+
+   painted_top = -1;
+   ChangeSize();
+
+   scintilla->ScrollLocked++;
+   HorizontalScrollTo(int(std::lround(xOffset * Ratio)));
+   scintilla->ScrollLocked--;
+
+   panSyncPage();
 }
 
 /*********************************************************************************************************************

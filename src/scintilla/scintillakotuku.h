@@ -47,15 +47,20 @@ class extScintilla : public objScintilla {
    objVectorColour *StrokeColour; // Solid stroke for shapes drawn with vec::DrawPath()
    objScript *MenuScript;        // Hosts the context menu with gui/menu (see pan_menu.cxx)
    ClipRectangle Dirty;          // Area of the client that is waiting to be repainted
-   double CanvasX;               // Sub-pixel offset of the Canvas that aligns the Bitmap with whole device pixels
-   double CanvasY;
+   double Scale = 1.0;           // Device pixels per unit of the View.  Scintilla's client units are device pixels
+   double PageScale = 1.0;       // Device scale used when the Page's dimensions were last set
+   double HostScale = 1.0;       // Scale of the View in the scene, see update_host_transform()
+   double HostX = 0;             // Scene position of the View's origin
+   double HostY = 0;
+   double CanvasX;               // Sub-pixel offset of the Canvas (in View units) that aligns the Bitmap with whole
+   double CanvasY;               //   device pixels
    double PointerX;              // Client position of the pointer, as of the most recent movement event
    double PointerY;
    double MenuX;                 // Scene position at which the context menu was requested
    double MenuY;
-   int    ScrollX;             // Scroll position reflected by the Page, i.e. Scintilla's xOffset in pixels
-   int    ScrollY;             // Scroll position reflected by the Page, i.e. Scintilla's topLine in pixels
-   int    PageWidth;           // Extent of the Page, as computed by ModifyScrollBars()
+   int    ScrollX;             // Scroll position reflected by the Page, i.e. Scintilla's xOffset in client pixels
+   int    ScrollY;             // Scroll position reflected by the Page, i.e. Scintilla's topLine in client pixels
+   int    PageWidth;           // Extent of the Page in client pixels, as computed by ModifyScrollBars()
    int    PageHeight;
    ScintillaKTK *API;
    std::string StringBuffer;
@@ -64,8 +69,8 @@ class extScintilla : public objScintilla {
    int    WidthCheckFirst = INT_MAX; // Range of modified lines to measure before the next paint
    int    WidthCheckLast = -1;
    int    TabWidth;
-   int    ViewWidth;           // Pixel width of the View, i.e. Scintilla's client area
-   int    ViewHeight;          // Pixel height of the View
+   int    ViewWidth;           // Width of the View in client pixels, i.e. Scintilla's client area
+   int    ViewHeight;          // Height of the View in client pixels
    int    MarginDigits;        // Number of digits that the line number margin is sized for
    TIMER  TickTimer;           // Calls Tick() while the caret is blinking
    TIMER  IdleTimer;           // Calls Idle() while Scintilla has background work, e.g. word wrapping
@@ -86,6 +91,8 @@ class extScintilla : public objScintilla {
    uint16_t HasFocus:1;        // The Focus viewport, or one of its children, has the user focus
    uint16_t PointerStale:1;    // The pointer entered the Canvas without a movement event, so PointerX/Y are outdated
    uint16_t MenuOpen:1;        // The context menu is visible
+   uint16_t HostUniform:1;     // The View is unrotated and scaled equally on both axes
+   uint16_t ScalableFace:1;    // The Face is scalable, so the fonts follow the device scale
    uint8_t  ScrollLocked;      // Set while the editor is scrolling in response to a Page change
 
    extScintilla(objMetaClass *ClassPtr, OBJECTID ObjectID) : objScintilla(ClassPtr, ObjectID) {
@@ -213,6 +220,7 @@ public:
    virtual void panMouseMove(double X, double Y);
    virtual void panReleaseMouse();
    virtual void panResized();
+   void panRescaled(double Ratio);
    virtual void panScrollTo(double X, double Y);
    virtual void panScrollBy(int Columns, int Lines);
    virtual void panSyncPage();

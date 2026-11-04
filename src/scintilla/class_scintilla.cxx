@@ -32,6 +32,16 @@ highlight and the selection are coloured from the per-editor palette, which is c
 #ThemeXML.  Applications that use the GUI packages can build the theme from their GUI palette and reassign it when
 the palette changes.  The editor has no dependency on the GUI packages.
 
+Sizes and positions, including #FontSize, #LeftMargin, #RightMargin, #ScrollToPoint() and the extent of the #Page,
+are expressed in the units of the #View.  If the host is scaled, the editor renders at the device resolution: the
+device scale is taken from all transforms and view boxes that apply to the #View, the bitmap is sized in device
+pixels, and fonts, margins and the caret are drawn at that scale.  An editor in a host scaled by 1.5 therefore renders
+the same pixels as an unscaled editor with a #FontSize that is 1.5 times larger, and pointer input is mapped to the
+same positions.  A change of scale, such as zooming the window, reloads the fonts and repaints the editor while
+retaining the top line and horizontal scroll position.  The completion list and call tip are closed by a change of
+scale.  The display density is not applied automatically; applications that use the GUI packages scale #FontSize by
+`gui.interface.dpi / 96` as the other widgets do.
+
 Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and
 Select All.  Items are disabled when they cannot be used: edits require `SCIF::EDIT`, Cut, Copy and Delete require a
 selection, and Paste requires text on the clipboard.  The menu is displayed with `gui/menu` at the pointer position,
@@ -43,8 +53,8 @@ Code assistance is provided through a completion list and a call tip, which the 
 as typed characters and Ctrl+Space, as well as accepted and cancelled completions.  Only one of the two pop-ups is
 open at a time.  They are drawn above the content of the scene with the editor's font and colours, are positioned
 at the text that they refer to, and are kept within the bounds of the scene.  They follow that text when the editor
-scrolls, and close if it scrolls out of view.  Pop-ups are not transformed with a rotated or scaled host, although
-their position follows it.  Refer to #ShowCompletions() for the
+scrolls, and close if it scrolls out of view.  Pop-ups are drawn at the device scale of the host, but are not
+rotated with it, although their position follows it.  Refer to #ShowCompletions() for the
 keyboard and pointer interaction.
 
 Drag and drop requires the hosting @VectorScene to have `VPF::DROP_TARGETS` set.  The editor registers its visible
@@ -61,8 +71,11 @@ at that position as one undo action, with document line-ending conversion and re
 The following limitations apply to the current implementation:
 
 <list type="bullet">
-<li>The bitmap is sized in the logical units of the #View.  Text is sharp when the host is untransformed, but is
-resampled, and appears soft, if the host is scaled or rotated.  Display scaling is not applied to the content.</li>
+<li>Device scaling applies to scalable faces only.  Bitmap faces have fixed sizes, so they are drawn at the size of
+the #View and resampled if the host is scaled.</li>
+<li>The device scale is limited to the range 0.5 to 4.  Beyond it, and if the host is rotated, skewed or scaled
+unequally on each axis, the bitmap is resampled.  The larger axis scale is used in those cases so that text is never
+magnified.  Lines, such as indentation guides and fold lines, remain one device pixel wide.</li>
 <li>A modifier key that is pressed while the application window does not have the keyboard focus is not known to the
 editor until it is pressed again.</li>
 <li>Rectangular clipboard content is recognised only within the process that copied it.  Refer to #Clipboard() for
@@ -284,7 +297,14 @@ static ERR feedback_page(objVectorViewport *, FM);
 static ERR feedback_focus(objVectorViewport *, FM);
 static void update_focus(extScintilla *);
 static ERR input_canvas(objVectorRectangle *, const InputEvent *);
-static void align_canvas(extScintilla *, double, double);
+static void update_host_transform(extScintilla *, double, double);
+static double device_scale(extScintilla *, bool);
+static void update_view(extScintilla *);
+static void align_canvas(extScintilla *);
+static void apply_metrics(extScintilla *);
+static bool face_scalable(std::string_view);
+static ERR get_font_handles(std::string_view, int, APTR *);
+static void fonts_changed(extScintilla *);
 static void sync_page(extScintilla *);
 static void clear_bitmap(extScintilla *);
 static ERR resize_bitmap(extScintilla *, int, int);
@@ -293,6 +313,13 @@ static void paint_dirty(extScintilla *);
 static void update_margin_width(extScintilla *);
 static ERR load_file(extScintilla *, std::string_view);
 static void calc_longest_line(extScintilla *);
+
+// Convert a length in View units to client pixels.
+
+static int scaled(extScintilla *Self, int Value)
+{
+   return int(std::lround(Value * Self->Scale));
+}
 
 // Scintilla draws opaque highlights beneath the text, and translucent highlights over it.
 
@@ -366,7 +393,8 @@ static ERR prepare_editor_drop(objVectorViewport *, objConfig *Snapshot, double 
    ReleaseObject(pointer);
    if (not accepted) return ERR::Cancelled;
    Snapshot->write("Scintilla", "Editor", std::to_string(Self->UID));
-   Snapshot->write("Scintilla", "Position", std::to_string(Self->API->panDropPosition(X, Y)));
+   Snapshot->write("Scintilla", "Position", std::to_string(Self->API->panDropPosition(
+      (X - Self->CanvasX) * Self->Scale, (Y - Self->CanvasY) * Self->Scale)));
    Snapshot->write("Scintilla", "Revision", std::to_string(Self->DocumentRevision));
    return ERR::Okay;
 }
@@ -384,7 +412,7 @@ static void notify_dragdrop(OBJECTPTR, ACTIONID, ERR Result, struct acDragDrop *
    double x = 0, y = 0;
    Self->Scene->getDropX(x);
    Self->Scene->getDropY(y);
-   int position = Self->API->panDropPosition(x, y);
+   int position = Self->API->panDropPosition((x - Self->CanvasX) * Self->Scale, (y - Self->CanvasY) * Self->Scale);
    OBJECTID snapshot_id = 0;
    pointer->getDropSession(snapshot_id);
    if (snapshot_id) {
@@ -510,31 +538,71 @@ static ERR feedback_view(objVectorViewport *View, FM Event)
 
    if ((Self->API) and (Self->API->panActivePopup() != SCPOP::NONE)) queue_repaint(Self);
 
+   update_view(Self);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+** Size the client and the Bitmap to match the View at the device scale.  If the scale has changed, the fonts and
+** metrics are reloaded, the pop-ups are closed because they were laid out at the former scale, and the editor is
+** repainted in full.  The Dirty area is in the former client units, so it is replaced.
+*/
+
+static void update_view(extScintilla *Self)
+{
+   if (not Self->View) return;
+
    Unit w, h;
-   View->getWidth(w);
-   View->getHeight(h);
-   int width  = std::max(1, int(std::lround(double(w))));
-   int height = std::max(1, int(std::lround(double(h))));
+   Self->View->getWidth(w);
+   Self->View->getHeight(h);
+   update_host_transform(Self, double(w), double(h));
 
-   align_canvas(Self, double(w), double(h));
+   const double old_scale = Self->Scale;
+   Self->Scale = device_scale(Self, Self->ScalableFace);
+   const bool rescaled = Self->Scale != old_scale;
 
-   if ((Self->ViewWidth IS width) and (Self->ViewHeight IS height)) return ERR::Okay;
+   int width  = std::max(1, int(std::lround(double(w) * Self->Scale)));
+   int height = std::max(1, int(std::lround(double(h) * Self->Scale)));
+
+   if ((not rescaled) and (Self->ViewWidth IS width) and (Self->ViewHeight IS height)) {
+      align_canvas(Self);
+      return;
+   }
 
    Self->ViewWidth  = width;
    Self->ViewHeight = height;
 
-   // The Bitmap is one pixel wider and taller than the View to cover the sub-pixel alignment offset.
+   // The Bitmap is one pixel wider and taller than the View to cover the sub-pixel alignment offset.  The Canvas maps
+   // the Bitmap's device pixels to View units.
 
    if ((Self->Bitmap) and (resize_bitmap(Self, width + 1, height + 1) IS ERR::Okay)) {
       if (Self->Canvas) {
-         Self->Canvas->setWidth(Self->Bitmap->Width);
-         Self->Canvas->setHeight(Self->Bitmap->Height);
+         Self->Canvas->setWidth(Self->Bitmap->Width / Self->Scale);
+         Self->Canvas->setHeight(Self->Bitmap->Height / Self->Scale);
       }
    }
 
-   if (Self->API) Self->API->panResized();
+   if (rescaled) {
+      Self->Dirty = { 0, 0, 0, 0 };
+      Self->PointerX *= Self->Scale / old_scale;
+      Self->PointerY *= Self->Scale / old_scale;
+
+      APTR handles[4];
+      if (get_font_handles(Self->Face, scaled(Self, Self->FontSize), handles) IS ERR::Okay) {
+         std::copy(std::begin(handles), std::end(handles), Self->FontHandles);
+      }
+
+      if (Self->API) {
+         Self->API->panCancelPopups();
+         apply_metrics(Self);
+         fonts_changed(Self);
+         Self->API->panRescaled(Self->Scale / old_scale);
+      }
+   }
+   else if (Self->API) Self->API->panResized();
+
+   align_canvas(Self);
    invalidate_area(Self, 0, 0, Self->ViewWidth, Self->ViewHeight);
-   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -550,9 +618,9 @@ static ERR feedback_page(objVectorViewport *Page, FM Event)
    Unit x, y;
    Page->getX(x);
    Page->getY(y);
-   if ((-double(x) IS Self->ScrollX) and (-double(y) IS Self->ScrollY)) return ERR::Okay;
+   if ((-double(x) IS Self->ScrollX / Self->Scale) and (-double(y) IS Self->ScrollY / Self->Scale)) return ERR::Okay;
 
-   Self->API->panScrollTo(-double(x), -double(y));
+   Self->API->panScrollTo(-double(x) * Self->Scale, -double(y) * Self->Scale);
    return ERR::Okay;
 }
 
@@ -561,8 +629,9 @@ static ERR feedback_page(objVectorViewport *Page, FM Event)
 // events from reaching a scrollbar's subscription to the Page, which would otherwise scroll the Page a second time.
 //
 // The Canvas reports positions in the coordinate system of the Page, which are converted to Scintilla's client
-// coordinates by removing the Canvas position.  While the left mouse button is held, the scene continues to deliver
-// movement to the Canvas when the pointer is outside of it, which Scintilla uses to extend the selection and scroll.
+// coordinates by removing the Canvas position and applying the device scale.  While the left mouse button is held, the
+// scene continues to deliver movement to the Canvas when the pointer is outside of it, which Scintilla uses to extend
+// the selection and scroll.
 //
 // Button events are reported at the position of the most recent movement event, in the coordinate system of the Page
 // at that time.  The editor may have scrolled since then (e.g. while autoscrolling), so button events use the client
@@ -601,8 +670,8 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
       // pointer has not moved.
 
       if ((event->Flags & JTYPE::MOVEMENT) != JTYPE::NIL) {
-         Self->PointerX = event->X - (Self->ScrollX + Self->CanvasX);
-         Self->PointerY = event->Y - (Self->ScrollY + Self->CanvasY);
+         Self->PointerX = (event->X - (Self->ScrollX / Self->Scale + Self->CanvasX)) * Self->Scale;
+         Self->PointerY = (event->Y - (Self->ScrollY / Self->Scale + Self->CanvasY)) * Self->Scale;
          Self->PointerStale = false;
       }
       else if ((event->Flags & JTYPE::CROSSING) != JTYPE::NIL) {
@@ -611,8 +680,8 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
          continue;
       }
       else if (Self->PointerStale) {
-         Self->PointerX = event->X - (Self->ScrollX + Self->CanvasX);
-         Self->PointerY = event->Y - (Self->ScrollY + Self->CanvasY);
+         Self->PointerX = (event->X - (Self->ScrollX / Self->Scale + Self->CanvasX)) * Self->Scale;
+         Self->PointerY = (event->Y - (Self->ScrollY / Self->Scale + Self->CanvasY)) * Self->Scale;
          Self->PointerStale = false;
       }
 
@@ -653,23 +722,87 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
    return ERR::Okay;
 }
 
-//********************************************************************************************************************
-// Image sampling blurs the text unless the Bitmap is mapped to whole device pixels.  If the View is neither scaled nor
-// rotated, the Canvas is offset by the fractional part of the View's device position.  Transformed hosts are left
-// unaligned because the Bitmap is resampled regardless.
+/*********************************************************************************************************************
+** Scintilla's client coordinates are device pixels, so that text and graphics are painted at the resolution at which
+** they are displayed.  The device scale is the number of device pixels per unit of the View.  It is derived from the
+** corners of the View in the scene, and so includes every transform and view box that applies to the host.
+**
+** A uniformly scaled and unrotated View maps the Bitmap to whole device pixels.  If the View is scaled unequally,
+** rotated or skewed, the larger of its axis scales is used so that the Bitmap is never magnified, and the Bitmap is
+** resampled.  The scale is limited to MIN_SCALE and MAX_SCALE, beyond which the Bitmap is also resampled.  Changes of
+** less than 0.001 are ignored so that the editor is not reconfigured by rounding errors.
+*/
 
-static void align_canvas(extScintilla *Self, double Width, double Height)
+static constexpr double MIN_SCALE = 0.5;
+static constexpr double MAX_SCALE = 4.0;
+
+struct view_corners {
+   double x[4], y[4];
+   int count = 0;
+};
+
+static ERR trace_view_corner(objVector *Vector, int Index, int Command, double X, double Y, APTR Meta)
+{
+   auto corners = (view_corners *)Meta;
+   if (corners->count >= 4) return ERR::Terminate;
+   corners->x[corners->count] = X;
+   corners->y[corners->count] = Y;
+   corners->count++;
+   return ERR::Okay;
+}
+
+static void update_host_transform(extScintilla *Self, double Width, double Height)
+{
+   Self->HostScale = 1.0;
+   Self->HostUniform = false;
+
+   view_corners corners;
+   if ((not Self->View) or (Width <= 0) or (Height <= 0)) return;
+   if (Self->View->trace(C_FUNCTION(trace_view_corner, &corners), 1.0, true) != ERR::Okay) return;
+   if (corners.count < 4) return;
+
+   // Corners are traced from the origin, clockwise.  The first and last edges give the transformed axes.
+
+   const double ax = (corners.x[1] - corners.x[0]) / Width, ay = (corners.y[1] - corners.y[0]) / Width;
+   const double bx = (corners.x[3] - corners.x[0]) / Height, by = (corners.y[3] - corners.y[0]) / Height;
+   const double scale_x = std::hypot(ax, ay), scale_y = std::hypot(bx, by);
+   const double scale = std::max(scale_x, scale_y);
+   if (not std::isfinite(scale) or (scale <= 0)) return;
+
+   Self->HostX = corners.x[0];
+   Self->HostY = corners.y[0];
+   Self->HostScale = scale;
+   Self->HostUniform = (std::abs(ay) < 1e-6) and (std::abs(bx) < 1e-6) and (ax > 0) and (by > 0) and
+      (std::abs(scale_x - scale_y) < 1e-6);
+}
+
+//********************************************************************************************************************
+// Return the device scale for the host, as used by a scalable face.  Bitmap faces have fixed sizes, so they are
+// always painted at a scale of 1 and resampled.
+
+static double device_scale(extScintilla *Self, bool Scalable)
+{
+   if (not Scalable) return 1.0;
+   const double scale = std::clamp(Self->HostScale, MIN_SCALE, MAX_SCALE);
+   if (std::abs(scale - Self->Scale) < 0.001) return Self->Scale;
+   return scale;
+}
+
+//********************************************************************************************************************
+// Image sampling blurs the text unless the Bitmap is mapped to whole device pixels.  If the View is aligned to the
+// device pixel grid at the editor's scale, the Canvas is offset by the fractional part of the View's device position.
+// Other hosts are left unaligned because the Bitmap is resampled regardless.
+
+static void align_canvas(extScintilla *Self)
 {
    if (not Self->Canvas) return;
 
-   double x = 0, y = 0, ax = 0, ay = 0, w, h;
-   if (Self->View->getBoundary(VBF::NIL, &x, &y, &w, &h) IS ERR::Okay) {
-      if ((std::abs(w - Width) < 0.01) and (std::abs(h - Height) < 0.01)) {
-         ax = std::floor(x + 0.001) - x;
-         ay = std::floor(y + 0.001) - y;
-         if (ax > -0.001) ax = 0;
-         if (ay > -0.001) ay = 0;
-      }
+   double ax = 0, ay = 0;
+   if ((Self->HostUniform) and (std::abs(Self->HostScale - Self->Scale) < 0.001)) {
+      ax = std::floor(Self->HostX + 0.001) - Self->HostX;
+      ay = std::floor(Self->HostY + 0.001) - Self->HostY;
+      ax = (ax > -0.001) ? 0 : ax / Self->Scale;
+      ay = (ay > -0.001) ? 0 : ay / Self->Scale;
    }
 
    if ((ax != Self->CanvasX) or (ay != Self->CanvasY)) {
@@ -681,22 +814,27 @@ static void align_canvas(extScintilla *Self, double Width, double Height)
 
 //********************************************************************************************************************
 // The Page is positioned at the negated scroll position, and the Canvas is positioned at the scroll position within
-// the Page so that it always covers the View.
+// the Page so that it always covers the View.  Scroll positions are converted from client pixels to View units.
 
 static void sync_page(extScintilla *Self)
 {
    if ((not Self->Page) or (not Self->Canvas)) return;
 
+   // Reading a position can regenerate the scene graph, which can scroll the editor through feedback_page(), so the
+   // scroll position is read afterwards.
+
    Unit x, y;
    Self->Page->getX(x);
    Self->Page->getY(y);
-   if (double(x) != -Self->ScrollX) Self->Page->setX(-Self->ScrollX);
-   if (double(y) != -Self->ScrollY) Self->Page->setY(-Self->ScrollY);
+   if (double(x) != -Self->ScrollX / Self->Scale) Self->Page->setX(-Self->ScrollX / Self->Scale);
+   if (double(y) != -Self->ScrollY / Self->Scale) Self->Page->setY(-Self->ScrollY / Self->Scale);
 
    Self->Canvas->getX(x);
    Self->Canvas->getY(y);
-   if (double(x) != Self->ScrollX + Self->CanvasX) Self->Canvas->setX(Self->ScrollX + Self->CanvasX);
-   if (double(y) != Self->ScrollY + Self->CanvasY) Self->Canvas->setY(Self->ScrollY + Self->CanvasY);
+   const double canvas_x = Self->ScrollX / Self->Scale + Self->CanvasX;
+   const double canvas_y = Self->ScrollY / Self->Scale + Self->CanvasY;
+   if (double(x) != canvas_x) Self->Canvas->setX(canvas_x);
+   if (double(y) != canvas_y) Self->Canvas->setY(canvas_y);
 }
 
 //********************************************************************************************************************
@@ -808,6 +946,30 @@ static void update_margin_width(extScintilla *Self)
    }
 
    SCICALL(SCI_SETMARGINWIDTHN, 0, (long)width);
+}
+
+//********************************************************************************************************************
+// Apply the metrics that are defined in View units, which are converted to client pixels at the device scale.  The
+// caret is limited to three pixels by Scintilla.
+
+static void apply_metrics(extScintilla *Self)
+{
+   static const int SYMBOL_MARGIN = 20;
+   static const int FOLD_MARGIN = 20;
+   static const int CARET_WIDTH = 2;
+
+   if (not Self->API) return;
+
+   SCICALL(SCI_SETMARGINLEFT, 0, scaled(Self, Self->LeftMargin));
+
+   // The initial RightMargin applies only to the caret policy; preserve a zero text margin.
+
+   if (SCICALL(SCI_GETMARGINRIGHT) > 0) SCICALL(SCI_SETMARGINRIGHT, 0, scaled(Self, Self->RightMargin));
+
+   SCICALL(SCI_SETXCARETPOLICY, CARET_SLOP|CARET_STRICT|CARET_EVEN, scaled(Self, Self->RightMargin));
+   SCICALL(SCI_SETCARETWIDTH, std::max(1, scaled(Self, CARET_WIDTH)));
+   SCICALL(SCI_SETMARGINWIDTHN, 1, Self->Symbols ? scaled(Self, SYMBOL_MARGIN) : 0L);
+   SCICALL(SCI_SETMARGINWIDTHN, 2, Self->FoldingMarkers ? scaled(Self, FOLD_MARGIN) : 0L);
 }
 
 //********************************************************************************************************************
@@ -1319,9 +1481,12 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    Self->Scene = Self->Viewport->Scene;
 
-   if (auto error = resolve_fonts(Self, Self->Face, Self->FontSize); error != ERR::Okay) return error;
+   // The canvas determines the device scale at which the fonts are loaded.  Only scalable faces follow the scale.
 
+   Self->ScalableFace = face_scalable(Self->Face);
    if (auto error = create_canvas(Self); error != ERR::Okay) return error;
+
+   if (auto error = resolve_fonts(Self, Self->Face, Self->FontSize); error != ERR::Okay) return error;
 
    if (Self->Scene->SurfaceID) { // Make UI subscriptions as long as we're not headless
       // Keyboard input is delivered while the Focus viewport or one of its children has the focus.
@@ -1372,7 +1537,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    Self->API->SetLexer(int(Self->Lexer));
 
-   if (Self->LongestWidth >= 60) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
+   if (Self->LongestWidth >= scaled(Self, 60)) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
    else SCICALL(SCI_SETSCROLLWIDTH, 1UL);
 
    if ((Self->Flags & SCIF::EXT_PAGE) != SCIF::NIL) {
@@ -1381,7 +1546,6 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    }
    else SCICALL(SCI_SETENDATLASTLINE, 1UL);
 
-   SCICALL(SCI_SETMARGINLEFT, 0, Self->LeftMargin);
    SCICALL(SCI_SETMARGINRIGHT, 0, 0L);
 
    SCICALL(SCI_SETTABWIDTH, Self->TabWidth);
@@ -1400,7 +1564,6 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    SCICALL(SCI_SETCARETLINEVISIBLE, (unsigned long int)(Self->LineHighlight.Alpha > 0));
 
    SCICALL(SCI_SETCARETFORE, SCICOLOUR(Self->CursorColour.Red, Self->CursorColour.Green, Self->CursorColour.Blue));
-   SCICALL(SCI_SETCARETWIDTH, 2);
 
    // Show whitespace characters like tabs
 
@@ -1414,7 +1577,6 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    // Caret visibility policy
 
    SCICALL(SCI_SETYCARETPOLICY, CARET_SLOP|CARET_STRICT|CARET_EVEN, 3);
-   SCICALL(SCI_SETXCARETPOLICY, CARET_SLOP|CARET_STRICT|CARET_EVEN, Self->RightMargin);
 
    // Caret visibility policy (folding margins)
 
@@ -1432,11 +1594,9 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    SCICALL(SCI_SETMARGINWIDTHN, 0, 0L);
    update_margin_width(Self);
 
-   if (Self->Symbols) SCICALL(SCI_SETMARGINWIDTHN, 1, 20L);
-   else SCICALL(SCI_SETMARGINWIDTHN, 1, 0L);
+   // The text margins, the caret policy and width, and the symbol and folding margins scale with the display.
 
-   if (Self->FoldingMarkers) SCICALL(SCI_SETMARGINWIDTHN, 2, 20L);
-   else SCICALL(SCI_SETMARGINWIDTHN, 2, 0L);
+   apply_metrics(Self);
 
    SCICALL(SCI_SETMARGINSENSITIVEN, 1, (long)Self->MarginClick.defined());
    Self->API->panSetFolding(Self->FoldingMarkers);
@@ -1790,17 +1950,18 @@ static ERR SCINTILLA_SetFont(extScintilla *Self, struct sci::SetFont *Args)
 /*********************************************************************************************************************
 
 -METHOD-
-ScrollToPoint: Scrolls the document to a pixel position.
+ScrollToPoint: Scrolls the document to a position in the units of the View.
 
-This method scrolls the document so that the point (`X`, `Y`), measured in pixels from the top-left corner of the
-document, appears at the top-left corner of the #View.  The #Page is moved to `(-X, -Y)` to reflect the change.
+This method scrolls the document so that the point (`X`, `Y`), measured in the units of the #View from the top-left
+corner of the document, appears at the top-left corner of the #View.  The #Page is moved to `(-X, -Y)` to reflect the
+change.
 
 The editor scrolls vertically by whole lines, so `Y` is rounded to the nearest line.  Both coordinates are clamped to
 the scrollable range of the document.
 
 -INPUT-
-int X: Horizontal scroll position in pixels.
-int Y: Vertical scroll position in pixels.
+int X: Horizontal scroll position in the units of the View.
+int Y: Vertical scroll position in the units of the View.
 
 -RESULT-
 Okay:
@@ -1816,7 +1977,7 @@ static ERR SCINTILLA_ScrollToPoint(extScintilla *Self, struct sci::ScrollToPoint
 
    log.traceBranch("%dx%d", Args->X, Args->Y);
 
-   Self->API->panScrollTo(Args->X, Args->Y);
+   Self->API->panScrollTo(Args->X * Self->Scale, Args->Y * Self->Scale);
    return ERR::Okay;
 }
 
@@ -2315,14 +2476,14 @@ static ERR SET_FoldingMarkers(extScintilla *Self, int Value)
    if (Value) {
       Self->FoldingMarkers = TRUE;
       if (Self->initialised()) {
-         SCICALL(SCI_SETMARGINWIDTHN, 2, 20L);
+         apply_metrics(Self);
          Self->API->panSetFolding(true);
       }
    }
    else {
       Self->FoldingMarkers = FALSE;
       if (Self->initialised()) {
-         SCICALL(SCI_SETMARGINWIDTHN, 2, 0L);
+         apply_metrics(Self);
          Self->API->panSetFolding(false);
       }
    }
@@ -2357,7 +2518,9 @@ static ERR SET_Face(extScintilla *Self, const std::string_view &Value)
 FontSize: The font em size in pixels.
 
 Sets a positive integer pixel size for every text style.  The default is 14 pixels.  This is not a point size and
-is independent of display density.  Bitmap faces select their nearest supported point size.
+is independent of display density.  The size is expressed in the units of the #View, so the fonts are loaded at the
+size multiplied by the device scale of the host, rounded to whole pixels.  Bitmap faces select their nearest
+supported point size and are not scaled.
 Set this field before or after initialisation.  Changing it reloads the font handles and updates layout and margins.
 
 *********************************************************************************************************************/
@@ -2375,15 +2538,15 @@ static ERR SET_FontSize(extScintilla *Self, int Value)
 -FIELD-
 LeftMargin: The amount of white-space at the left side of the page.
 
+The margin is expressed in the units of the #View, and is scaled with the content if the host is scaled.
+
 *********************************************************************************************************************/
 
 static ERR SET_LeftMargin(extScintilla *Self, int Value)
 {
    if ((Value >= 0) and (Value <= 100)) {
       Self->LeftMargin = Value;
-      if (Self->initialised()) {
-         SCICALL(SCI_SETMARGINLEFT, 0, Self->LeftMargin);
-      }
+      if (Self->initialised()) apply_metrics(Self);
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -2607,15 +2770,15 @@ static ERR SET_Modified(extScintilla *Self, int Value)
 -FIELD-
 RightMargin: Defines the amount of white-space at the right side of the page.
 
+The margin is expressed in the units of the #View, and is scaled with the content if the host is scaled.
+
 *********************************************************************************************************************/
 
 static ERR SET_RightMargin(extScintilla *Self, int Value)
 {
    if ((Value >= 0) and (Value <= 100)) {
       Self->RightMargin = Value;
-      if (Self->initialised()) {
-         SCICALL(SCI_SETMARGINRIGHT, 0, Self->RightMargin);
-      }
+      if (Self->initialised()) SCICALL(SCI_SETMARGINRIGHT, 0, scaled(Self, Self->RightMargin));
       return ERR::Okay;
    }
    else return ERR::OutOfRange;
@@ -2809,11 +2972,11 @@ static ERR SET_Symbols(extScintilla *Self, int Value)
 {
    if (Value) {
       Self->Symbols = TRUE;
-      if (Self->initialised()) SCICALL(SCI_SETMARGINWIDTHN, 1, 20L);
+      if (Self->initialised()) apply_metrics(Self);
    }
    else {
       Self->Symbols = FALSE;
-      if (Self->initialised()) SCICALL(SCI_SETMARGINWIDTHN, 1, 0L);
+      if (Self->initialised()) apply_metrics(Self);
    }
    return ERR::Okay;
 }
@@ -3023,30 +3186,67 @@ static ERR SET_Wordwrap(extScintilla *Self, int Value)
 
 //********************************************************************************************************************
 
-static ERR resolve_fonts(extScintilla *Self, std::string_view Face, int Size)
+// Fonts are resolved through the font database, which reports whether a face is scalable.
+
+static bool face_scalable(std::string_view Face)
+{
+   std::string family(Face.empty() ? "*" : Face);
+   if (not family.ends_with("*")) family.append(",*");
+   std::string_view resolved;
+   if (fnt::ResolveFamilyName(family, &resolved) != ERR::Okay) return false;
+
+   std::string path;
+   FMETA meta = FMETA::NIL;
+   if (fnt::SelectFont(resolved, "Regular", &path, &meta) != ERR::Okay) return false;
+   return (meta & FMETA::SCALED) != FMETA::NIL;
+}
+
+static ERR get_font_handles(std::string_view Face, int Size, APTR *Handles)
 {
    kt::Log log(__FUNCTION__);
-   APTR handles[4] = {};
    constexpr CSTRING styles[] = { "Regular", "Bold", "Italic", "Bold Italic" };
 
-   if (auto error = vec::GetFontHandle(Face, styles[0], 0, Size, &handles[0]); error != ERR::Okay) return error;
+   Size = std::max(1, Size);
+   if (auto error = vec::GetFontHandle(Face, styles[0], 0, Size, &Handles[0]); error != ERR::Okay) return error;
 
-   for (int i = 0; i < 4; i++) {
-      if (i and (vec::GetFontHandle(Face, styles[i], 0, Size, &handles[i]) != ERR::Okay)) {
-         handles[i] = handles[0];
+   for (int i = 1; i < 4; i++) {
+      if (vec::GetFontHandle(Face, styles[i], 0, Size, &Handles[i]) != ERR::Okay) {
+         Handles[i] = Handles[0];
          log.warning("Unable to resolve %.*s %s; using Regular.", int(Face.size()), Face.data(), styles[i]);
       }
    }
+   return ERR::Okay;
+}
+
+// Update the styles and the measurements that depend on the fonts.
+
+static void fonts_changed(extScintilla *Self)
+{
+   Self->API->panFontChanged();
+   calc_longest_line(Self);
+   Self->MarginDigits = -1;
+   update_margin_width(Self);
+}
+
+// Fonts are loaded at the device scale, because Scintilla's client units are device pixels.  A change of face can
+// change the device scale, in which case the View is reconfigured for it.
+
+static ERR resolve_fonts(extScintilla *Self, std::string_view Face, int Size)
+{
+   const bool scalable = face_scalable(Face);
+   const double scale = device_scale(Self, scalable);
+
+   APTR handles[4];
+   if (auto error = get_font_handles(Face, int(std::lround(Size * scale)), handles); error != ERR::Okay) return error;
 
    Self->Face = Face;
    Self->FontSize = Size;
+   Self->ScalableFace = scalable;
    std::copy(std::begin(handles), std::end(handles), Self->FontHandles);
 
    if (Self->initialised()) {
-      Self->API->panFontChanged();
-      calc_longest_line(Self);
-      Self->MarginDigits = -1;
-      update_margin_width(Self);
+      if (scale != Self->Scale) update_view(Self);
+      else fonts_changed(Self);
    }
    return ERR::Okay;
 }
@@ -3071,16 +3271,21 @@ static ERR create_canvas(extScintilla *Self)
    Unit w, h;
    Self->View->getWidth(w);
    Self->View->getHeight(h);
-   Self->ViewWidth  = std::max(1, int(std::lround(double(w))));
-   Self->ViewHeight = std::max(1, int(std::lround(double(h))));
+   update_host_transform(Self, double(w), double(h));
+   Self->Scale      = device_scale(Self, Self->ScalableFace);
+   Self->ViewWidth  = std::max(1, int(std::lround(double(w) * Self->Scale)));
+   Self->ViewHeight = std::max(1, int(std::lround(double(h) * Self->Scale)));
    Self->PageWidth  = Self->ViewWidth;
    Self->PageHeight = Self->ViewHeight;
+   Self->PageScale  = Self->Scale;
 
    if (!(Self->Page = objVectorViewport::create::global(
          fl::Name("sciPage"),
          fl::Owner(Self->View->UID),
          fl::X(0), fl::Y(0),
-         fl::Width(Self->PageWidth), fl::Height(Self->PageHeight)))) return log.warning(ERR::CreateObject);
+         fl::Width(Self->PageWidth / Self->Scale), fl::Height(Self->PageHeight / Self->Scale)))) {
+      return log.warning(ERR::CreateObject);
+   }
 
    // The Bitmap is one pixel wider and taller than the View to cover the sub-pixel alignment offset (see
    // align_canvas()).
@@ -3115,14 +3320,14 @@ static ERR create_canvas(extScintilla *Self)
          fl::Name("sciCanvas"),
          fl::Owner(Self->Page->UID),
          fl::X(0), fl::Y(0),
-         fl::Width(Self->Bitmap->Width), fl::Height(Self->Bitmap->Height),
+         fl::Width(Self->Bitmap->Width / Self->Scale), fl::Height(Self->Bitmap->Height / Self->Scale),
          fl::Cursor(PTC::TEXT),
          fl::Fill(std::format("url(#{})", def_name))))) return log.warning(ERR::CreateObject);
 
    // The View's path has already been generated in order to read its size, so the first path change is not reported
    // to feedback_view().
 
-   align_canvas(Self, double(w), double(h));
+   align_canvas(Self);
 
    Self->View->subscribeFeedback(FM::PATH_CHANGED, C_FUNCTION(feedback_view));
    Self->Page->subscribeFeedback(FM::PATH_CHANGED, C_FUNCTION(feedback_page));
@@ -3413,7 +3618,7 @@ static int measure_widest_line(extScintilla *Self, int First, int Last, int &Lin
 static void set_scroll_width(extScintilla *Self)
 {
    if (not Self->initialised()) return;
-   if (Self->LongestWidth >= 60) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
+   if (Self->LongestWidth >= scaled(Self, 60)) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
    else SCICALL(SCI_SETSCROLLWIDTH, 1UL);
 }
 
@@ -3436,7 +3641,8 @@ static void calc_longest_line(extScintilla *Self)
    }
    else {
       int line;
-      Self->LongestWidth = measure_widest_line(Self, 0, SCICALL(SCI_GETLINECOUNT) - 1, line) + SCROLL_WIDTH_PADDING;
+      Self->LongestWidth = measure_widest_line(Self, 0, SCICALL(SCI_GETLINECOUNT) - 1, line) +
+         scaled(Self, SCROLL_WIDTH_PADDING);
       Self->LongestLine  = line;
    }
 
@@ -3452,8 +3658,9 @@ static void calc_longest_line(extScintilla *Self)
 
 static void grow_scroll_width(extScintilla *Self, int Width, int Line)
 {
-   if ((Self->Wordwrap) or (Width + SCROLL_WIDTH_PADDING <= Self->LongestWidth)) return;
-   Self->LongestWidth = Width + SCROLL_WIDTH_PADDING;
+   const int padding = scaled(Self, SCROLL_WIDTH_PADDING);
+   if ((Self->Wordwrap) or (Width + padding <= Self->LongestWidth)) return;
+   Self->LongestWidth = Width + padding;
    Self->LongestLine  = Line;
    set_scroll_width(Self);
 }

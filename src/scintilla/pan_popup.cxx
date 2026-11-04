@@ -9,7 +9,8 @@
 ** the editor itself is freed, so they cannot outlive it.  If the scene is freed first, the pop-up drops its references
 ** to the vectors.
 **
-** Pop-ups are not transformed with the host.  They are drawn at the editor's font size, and are attached to the scene
+** Pop-ups are not transformed with the host.  They are drawn with the editor's fonts, which are loaded at the device
+** scale of the host, so a uniformly scaled host gives pop-ups of a matching size.  They are attached to the scene
 ** position of the document position that they refer to (see place()).  Positioning and painting are deferred to the
 ** Repaint method, which follows any scrolling of the editor and any change to the position of the host.  Scrolling
 ** the referenced position out of the View closes the pop-ups.

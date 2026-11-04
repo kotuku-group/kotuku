@@ -108,6 +108,7 @@ flute_test (scintilla_clipboard "tests/test_scintilla_clipboard.tiri")
 flute_test (scintilla_margins "tests/test_scintilla_margins.tiri")
 flute_test (scintilla_highlighting "tests/test_scintilla_highlighting.tiri")
 flute_test (scintilla_completion "tests/test_scintilla_completion.tiri")
+flute_test (scintilla_hidpi "tests/test_scintilla_hidpi.tiri")
 
 flute_test (scintilla_mouse "tests/test_scintilla_mouse.tiri")
 

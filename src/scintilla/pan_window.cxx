@@ -15,7 +15,8 @@ inline extScintilla * get_scintilla(Scintilla::Window *Win)
 //********************************************************************************************************************
 // Retrieve the mapping of the editor's client coordinates to the coordinates of its scene.  The mapping is derived
 // from the transformed bounds of the View, which is exact for translated and scaled hosts.  Rotated and skewed hosts
-// are approximated by their bounding box.
+// are approximated by their bounding box.  Client coordinates are device pixels, so the scale is normally 1 unless
+// the device scale is limited (see get_view_transform()).
 
 static bool view_mapping(extScintilla *Self, double &X, double &Y, double &ScaleX, double &ScaleY)
 {
@@ -27,8 +28,8 @@ static bool view_mapping(extScintilla *Self, double &X, double &Y, double &Scale
    Unit w, h;
    Self->View->getWidth(w);
    Self->View->getHeight(h);
-   ScaleX = (double(w) > 0) ? width / double(w) : 1.0;
-   ScaleY = (double(h) > 0) ? height / double(h) : 1.0;
+   ScaleX = (double(w) > 0) ? width / (double(w) * Self->Scale) : 1.0;
+   ScaleY = (double(h) > 0) ? height / (double(h) * Self->Scale) : 1.0;
    if ((ScaleX <= 0) or (ScaleY <= 0)) ScaleX = ScaleY = 1.0;
    return true;
 }

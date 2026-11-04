@@ -1,0 +1,352 @@
+-- Tests for the HiDPI rendering of the Scintilla class.  The editor paints in device pixels: the device scale is taken
+-- from the transforms that apply to the host, the fonts and metrics are loaded at that scale, and the Canvas maps the
+-- Bitmap back to the units of the View.  An editor in a host that is scaled by S must therefore render the same pixels
+-- as an unscaled editor whose FontSize and margins are multiplied by S.
+--
+-- The Canvas is (W * S + 1) / S wide for a View that is W units wide, which shows the scale that the editor uses.
+
+   include 'scintilla', 'vector', 'display'
+   module vector as mVec
+   module display as mGfx
+
+PAGE_WIDTH  = 300
+PAGE_HEIGHT = 120
+FACE        = 'Source Code Pro'
+TEXT        = 'int main() {\n   return value;\n}\n'
+
+-- Create a headless scene that renders to a bitmap, with a host of Width x Height units scaled by Scale.
+
+function newEditor(Width:num!, Height:num!, Scale:num, Options:table):<obj, obj, obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
+   local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
+   local host = root.new('VectorViewport', { x=0, y=0, width=Width, height=Height })
+   if Scale then
+      local _, matrix = check host.mtNewMatrix()
+      check mVec.Scale(matrix, Scale, Scale)
+   end
+   local options = Options ?? { }
+   options.face ?= FACE
+   options.fontSize ?= 14
+   options.lineHighlight ?= '255,255,255,0'
+   local sci = host.new('Scintilla', options)
+   local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   return scene, host, sci, bmp
+end
+
+function render(Scene:obj)
+   check Scene.acDraw()
+   processing.sleep(0)
+   check Scene.acDraw()
+end
+
+function canvasWidth(Sci:obj):num
+   return Sci.page.child.width
+end
+
+function assertNear(Actual:num, Expected:num, Message:str)
+   assert(math.abs(Actual - Expected) < 0.001, f'{Message}: expected {Expected}, got {Actual}')
+end
+
+-- Count the pixels of two bitmaps that differ by more than Tolerance in any channel.  ReadRGBPixel() results share a
+-- buffer, so the channels of the first pixel are copied before the second is read.
+
+function differingPixels(A:obj!, B:obj!, Tolerance:num):num
+   local tolerance = Tolerance ?? 0
+   local total = 0
+   for y in {0 to PAGE_HEIGHT} do
+      for x in {0 to PAGE_WIDTH} do
+         local p = mGfx.ReadRGBPixel(A, x, y)
+         local r, g, b = p.red, p.green, p.blue
+         local q = mGfx.ReadRGBPixel(B, x, y)
+         if math.abs(r - q.red) > tolerance or math.abs(g - q.green) > tolerance or
+            math.abs(b - q.blue) > tolerance then
+            total++
+         end
+      end
+   end
+   return total
+end
+
+-- Count the pixels that are neither the background nor fully dark, i.e. anti-aliased or resampled pixels.
+
+function greyPixels(Bitmap:obj!):num
+   local total = 0
+   for y in {0 to PAGE_HEIGHT} do
+      for x in {0 to PAGE_WIDTH} do
+         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
+         if p.red > 40 and p.red < 215 then total++ end
+      end
+   end
+   return total
+end
+
+-- Render a scaled editor and an unscaled reference with the equivalent device metrics, and compare them.
+
+function compareWithReference(Scale:num!, Setup:func)
+   local width, height = PAGE_WIDTH / Scale, PAGE_HEIGHT / Scale
+   local scene <close>, host, sci, bmp = newEditor(width, height, Scale)
+   local ref_scene <close>, ref_host, ref, ref_bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT, nil, {
+      fontSize = math.round(14 * Scale), leftMargin = math.round(4 * Scale)
+   })
+
+   for editor in values(array<obj> { sci, ref }) do
+      editor.string = TEXT
+      if Setup then Setup(editor) end
+   end
+   render(scene)
+   render(ref_scene)
+
+   assertNear(canvasWidth(sci), (PAGE_WIDTH + 1) / Scale, f'The Canvas must map the device Bitmap at scale {Scale}')
+   local diff = differingPixels(bmp, ref_bmp, 2)
+   assert(diff is 0, f'A host scaled by {Scale} must render as the reference at device size, {diff} pixels differ')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Rendering at the device scale
+
+@Test function UnscaledHostUsesScaleOne()
+   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT)
+   sci.string = TEXT
+   render(scene)
+   assertNear(canvasWidth(sci), PAGE_WIDTH + 1, 'An unscaled host must use a scale of 1')
+end
+
+@Test function IntegerScaleRendersAtDeviceResolution()
+   compareWithReference(2)
+end
+
+@Test function FractionalScaleRendersAtDeviceResolution()
+   compareWithReference(1.5)
+end
+
+-- The selection and line number margin are laid out in client pixels, so they must align with the text.
+
+@Test function SelectionAndMarginsFollowTheScale()
+   compareWithReference(1.5, function(Editor)
+      Editor.lineNumbers = true
+      check Editor.mtSelectRange(4, 15)
+   end)
+end
+
+-- Without device scaling, a 2x host would magnify a 1x Bitmap and produce many intermediate grey pixels.
+
+@Test function ScaledTextIsNotResampled()
+   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 2)
+   local ref_scene <close>, ref_host, ref, ref_bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT, nil, { fontSize=28 })
+   sci.string = TEXT
+   ref.string = TEXT
+   render(scene)
+   render(ref_scene)
+   local grey, ref_grey = greyPixels(bmp), greyPixels(ref_bmp)
+   assert(grey <= ref_grey, f'Scaled text must be no softer than native text, {grey} vs {ref_grey} grey pixels')
+end
+
+-- Bitmap faces have fixed sizes, so they are painted at a scale of 1 and resampled.
+
+@Test function BitmapFacesAreResampled()
+   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 2, { face='Clean', fontSize=11 })
+   sci.string = TEXT
+   render(scene)
+   assertNear(canvasWidth(sci), PAGE_WIDTH / 2 + 1, 'A bitmap face must use a scale of 1')
+
+   sci.face = FACE
+   render(scene)
+   assertNear(canvasWidth(sci), (PAGE_WIDTH + 1) / 2, 'Changing to a scalable face must apply the device scale')
+
+   sci.face = 'Clean'
+   render(scene)
+   assertNear(canvasWidth(sci), PAGE_WIDTH / 2 + 1, 'Changing back to a bitmap face must restore a scale of 1')
+end
+
+@Test function FallbackFamiliesUseTheResolvedFaceScale()
+   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 2, {
+      face = 'Missing font family,' .. FACE
+   })
+   sci.string = TEXT
+   render(scene)
+   assertNear(canvasWidth(sci), (PAGE_WIDTH + 1) / 2, 'A scalable fallback face must use the device scale')
+
+   sci.face = 'Missing font family,Clean'
+   render(scene)
+   assertNear(canvasWidth(sci), PAGE_WIDTH / 2 + 1, 'A bitmap fallback face must use a scale of 1')
+
+   sci.face = 'Source Code *'
+   render(scene)
+   assertNear(canvasWidth(sci), (PAGE_WIDTH + 1) / 2, 'A scalable wildcard face must use the device scale')
+end
+
+@Test function ScaleIsLimited()
+   local scene <close>, host, sci, bmp = newEditor(30, 20, 8)
+   sci.string = TEXT
+   render(scene)
+   assertNear(canvasWidth(sci), (30 * 4 + 1) / 4, 'The device scale must be limited to 4')
+end
+
+-- Rotated and unequally scaled hosts use the larger axis scale, so the Bitmap is never magnified.
+
+@Test function TransformedHostsUseTheLargerAxisScale()
+   local scene <close>, host, sci, bmp = newEditor(100, 50, nil)
+   local _, matrix = check host.mtNewMatrix()
+   check mVec.ParseTransform(matrix, 'rotate(30) scale(1.5, 2)')
+   sci.string = TEXT
+   render(scene)
+   assertNear(canvasWidth(sci), (100 * 2 + 1) / 2, 'The larger axis scale must be used')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Changes of scale
+
+@Test function ScaleChangePreservesScrollPosition()
+   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT)
+   sci.string = (('line\n').rep(40)) .. ('x').rep(200)
+   render(scene)
+   check sci.mtScrollToPoint(0, 10 * 18)
+   render(scene)
+   assert(sci.page.y is -10 * 18, f'The editor must scroll to line 10, got {sci.page.y}')
+
+   local _, matrix = check host.mtNewMatrix()
+   check mVec.Scale(matrix, 2, 2)
+   render(scene)
+
+   -- Source Code Pro has a line height of 37 pixels at 28 pixels, i.e. 18.5 units.
+
+   assertNear(canvasWidth(sci), (PAGE_WIDTH * 2 + 1) / 2, 'The new scale must be applied')
+   assertNear(sci.page.y, -10 * 18.5, 'The top line must be retained after a change of scale')
+   check sci.mtScrollToPoint(0, 0)
+   render(scene)
+   assertNear(sci.page.y, 0, 'Scrolling must continue to work after a change of scale')
+end
+
+@Test function ScaleChangePreservesHorizontalScroll()
+   local scene <close>, host, sci, bmp = newEditor(PAGE_WIDTH, PAGE_HEIGHT)
+   sci.string = ('x').rep(200)
+   render(scene)
+   check sci.mtScrollToPoint(100, 0)
+   render(scene)
+   local before = sci.page.x
+   assert(before < -50, f'The editor must scroll horizontally, got {before}')
+
+   local _, matrix = check host.mtNewMatrix()
+   check mVec.Scale(matrix, 2, 2)
+   render(scene)
+   assert(math.abs(sci.page.x - before) <= 1, f'The horizontal position must be retained, {before} became {sci.page.x}')
+end
+
+@Test function ResizeUnderScaleCoversTheView()
+   local scene <close>, host, sci, bmp = newEditor(100, 50, 1.5)
+   sci.string = TEXT
+   render(scene)
+   host.width = 160
+   render(scene)
+   assertNear(canvasWidth(sci), (160 * 1.5 + 1) / 1.5, 'The Canvas must follow a resize under scaling')
+end
+
+@Test function ScaleChangeWithFixedDeviceSizeUpdatesPage()
+   local scene <close>, host, sci, bmp = newEditor(150, 60)
+   sci.string = 'x'
+   render(scene)
+
+   local _, matrix = check host.mtNewMatrix()
+   check mVec.Scale(matrix, 2, 2)
+   host.width = 75
+   host.height = 30
+   render(scene)
+   assertNear(sci.page.width, 75, 'The Page width must follow the scale when its device width is unchanged')
+   assertNear(sci.page.height, 30, 'The Page height must follow the scale when its device height is unchanged')
+
+   check mVec.Scale(matrix, 0.5, 0.5)
+   host.width = 150
+   host.height = 60
+   render(scene)
+   assertNear(sci.page.width, 150, 'The Page width must be restored when zooming back out')
+   assertNear(sci.page.height, 60, 'The Page height must be restored when zooming back out')
+end
+
+@Test function RightMarginFollowsScaleChange()
+   local scene <close>, host, sci, bmp = newEditor(150, 60)
+   sci.string = ('x').rep(200)
+   sci.rightMargin = 20
+   render(scene)
+
+   local _, matrix = check host.mtNewMatrix()
+   check mVec.Scale(matrix, 2, 2)
+   render(scene)
+   local width = sci.page.width
+
+   sci.rightMargin = 20
+   render(scene)
+   assertNear(sci.page.width, width, 'Reassigning the same right margin after zooming must preserve the Page width')
+
+   sci.rightMargin = 0
+   render(scene)
+   assertNear(width - sci.page.width, 20, 'The right margin must remain 20 View units after zooming')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Pointer input is mapped to device pixels.
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   Value = math.abs(Value)
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+-- Feed one dcDeviceInput record: { double Values[2]; int64 Timestamp; OBJECTID DeviceID; JTYPE Flags; JET Type }.
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+@BeforeEach function resetPointer()
+   if obj.find('SystemPointer') then feed(JET_ABS_XY, 2000, 2000) end
+end
+
+@Test function ClicksMapToScaledGlyphs()
+   for scale in values(array<double> { 1.5, 2 }) do
+      local surface <close> = obj.new('Surface', { width=600, height=140 })
+      local scene = surface.new('VectorScene', { surface=surface })
+      local host = scene.new('VectorViewport', { x=10, y=5, width=300, height=60 })
+      local _, matrix = check host.mtNewMatrix()
+      check mVec.Scale(matrix, scale, scale)
+      local sci = host.new('Scintilla', { face=FACE, fontSize=14, flags=SCIF_EDIT, lineHighlight='255,255,255,0' })
+      sci.string = 'first line\nabcdefghijklmnopqrstuvwxyz'
+      check surface.acShow()
+      check surface.acFocus()
+      check surface.acDraw()
+      processing.sleep(0)
+      check surface.acDraw()
+
+      local _, handle = check mVec.GetFontHandle(FACE, 'Regular', 0, math.round(14 * scale))
+      local advance = mVec.CharWidth(handle, 0x78, 0)
+      local metrics = struct<FontMetrics>
+      check mVec.GetFontMetrics(handle, metrics)
+      local margin = math.round(4 * scale)
+
+      for column in values(array<int> { 3, 12, 20 }) do
+         -- Target the centre of the glyph in device pixels, which are the scene's pixels.
+         local x = 10 + margin + (column + 0.5) * advance
+         local y = 5 + metrics.lineSpacing * 1.5
+         feed(JET_ABS_XY, surface.absX + x - 2, surface.absY + y)
+         feed(JET_ABS_XY, surface.absX + x, surface.absY + y)
+         feed(JET_LMB, 1, 0)
+         feed(JET_LMB, 0, 0)
+         assert(sci.cursorRow is 1, f'The click must select row 1 at scale {scale}, got {sci.cursorRow}')
+         assert(sci.cursorCol is column or sci.cursorCol is column + 1,
+            f'The click at column {column} must place the caret at its edge at scale {scale}, got {sci.cursorCol}')
+      end
+   end
+end
