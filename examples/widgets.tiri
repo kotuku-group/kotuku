@@ -635,7 +635,7 @@ end
 
    glHouseIcon = gui.icon({
       target = viewport,
-      x      = gui.rpixel('180dp'),
+      x      = gui.rpixel('170dp'),
       y      = y,
       image  = 'programs/filemanager',
       label  = 'Wilhelm\'s House',
@@ -664,7 +664,7 @@ end
 
    glMessage = gui.icon({
       target = viewport,
-      x      = gui.rpixel('330dp'),
+      x      = gui.rpixel('310dp'),
       y      = y,
       image  = 'programs/message',
       label  = 'Instant Messenger',

@@ -482,8 +482,8 @@ gui.panel = function(Options:table!)
 
       if not vps.x and not vps.xOffset then vps.x = 0 end
       if not vps.y and not vps.yOffset then vps.y = 0 end
-      if not vps.width and not (vps.x and vps.xOffset) then vps.width = gui.sizing.widget.width * 2 end
-      if not vps.height and not (vps.y and vps.yOffset) then vps.height = gui.sizing.widget.width end
+      if not vps.width and not (vps.x and vps.xOffset) then vps.width = gui.rpixel('400dp') end
+      if not vps.height and not (vps.y and vps.yOffset) then vps.height = gui.rpixel('400dp') end
 
       &viewport = target.new('VectorViewport', vps)
 
