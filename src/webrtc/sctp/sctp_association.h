@@ -231,15 +231,49 @@ private:
    static constexpr size_t MAX_PAYLOAD = 32 * 1024 * 1024;
    static constexpr size_t MAX_CHUNKS = 65536;
 
+   // Send queue admission.  DCEP control messages have a separate reservation so that an application backlog
+   // cannot reject a channel's opening ACK.
+
+   static constexpr size_t MAX_QUEUED_MESSAGES = 4096;      // Application messages across all streams
+   static constexpr size_t MAX_STREAM_MESSAGES = 1024;      // Application messages on one stream
+   static constexpr size_t MAX_CONTROL_MESSAGES = 512;
+   static constexpr size_t MAX_CONTROL_BYTES = 256 * 1024;
+
+   // Output.  Control packets are bounded by bytes separately from DATA.  A DATA burst leaves output slots free for
+   // SACK, HEARTBEAT and shutdown.  State events are bounded independently of output despite the equal value.
+
+   static constexpr size_t MAX_CONTROL_OUTPUT_BYTES = 256 * 1024;
+   static constexpr size_t OUTPUT_RESERVE = 8;
+   static constexpr size_t MAX_BURST_PACKETS = 48;
+   static constexpr size_t MAX_BURST_CHUNKS = 256;
+   static constexpr size_t MAX_STATE_EVENTS = 64;
+   static_assert(MAX_BURST_PACKETS <= MAX_OUTPUT - OUTPUT_RESERVE);
+
+   // Receive admission.  A record is a message from its first fragment until its receive credit is released.
+
+   static constexpr size_t MAX_RECEIVE_RECORDS = 4096;
+   static constexpr size_t MAX_PENDING_MESSAGES = 64;       // Complete messages awaiting take_messages()
+   static constexpr size_t MAX_ASSEMBLIES = 256;            // Partial messages, including orphaned fragments
+   static constexpr size_t MAX_STREAM_ASSEMBLIES = 16;
+   static constexpr size_t MAX_STREAM_ORPHANS = 16;         // Fragments received before their first fragment
+   static constexpr size_t MAX_DEFERRED_FRAGMENTS = 256;    // Held behind a pending incoming stream reset
+
    // DATA remains retransmittable down to the codec's minimum supported packet capacity.
    static constexpr size_t DATA_PACKET_FLOOR = 128;
 
    // Disjoint hard reservations cover payloads, one completion copy, descriptors/nodes, records and output.
    // The generous metadata allowance includes 64-bit container links, shared owners and allocation overhead.
-   // Two MiB also reserve channel metadata/events and the bounded aggregate label/protocol storage.
+   // The channel reserve covers channel metadata/events and the bounded aggregate label/protocol storage.
+
+   static constexpr size_t CHUNK_METADATA_ALLOWANCE = 256;
+   static constexpr size_t RECORD_METADATA_ALLOWANCE = 512;
+   static constexpr size_t CHANNEL_METADATA_RESERVE = 2 * 1024 * 1024;
+   static constexpr size_t MEMORY_BUDGET = 128 * 1024 * 1024;
+   static_assert(SctpChannels::MAX_LABEL_BYTES < CHANNEL_METADATA_RESERVE);
    static_assert(2 * MAX_PAYLOAD + MAX_MESSAGE +
-      MAX_CHUNKS * (sizeof(SentChunk) + sizeof(Fragment) + 256) + 4096 * 512 +
-      MAX_OUTPUT * sctp::MAX_PACKET_SIZE + 256 * 1024 + 2 * 1024 * 1024 < 128 * 1024 * 1024);
+      MAX_CHUNKS * (sizeof(SentChunk) + sizeof(Fragment) + CHUNK_METADATA_ALLOWANCE) +
+      MAX_RECEIVE_RECORDS * RECORD_METADATA_ALLOWANCE + MAX_OUTPUT * sctp::MAX_PACKET_SIZE + MAX_CONTROL_BYTES +
+      CHANNEL_METADATA_RESERVE < MEMORY_BUDGET);
 
    std::deque<SendMessage> queued;
    std::deque<SentChunk> sent;

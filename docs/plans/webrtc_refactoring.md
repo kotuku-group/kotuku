@@ -1,7 +1,7 @@
 # WebRTC Refactoring Plan
 
 Created: 2026-10-15
-Status: Implementation order steps 1 and 2 complete (recommendations 1, 6 and 7); steps 3-5 not started.
+Status: Implementation order steps 1-3 complete (recommendations 1, 6, 7 and 8); steps 4-5 not started.
 Related plan: [Native WebRTC support](webrtc_native_support.md).
 
 ## Scope and evidence
@@ -108,10 +108,10 @@ Priority: Medium. Confidence: High.
 
 Evidence: `peerconnection/peer_engine.cpp:1173`, `sctp/sctp_streams.cpp:610` and `sctp/sctp_association.h:232` use related limits across layers: 256 channels, 256 KiB of labels, 4096 events, 4094 admission thresholds, 3072 backpressure threshold and a 64-packet output allowance.
 
-- [ ] Give limits descriptive names at their owning layer.
-- [ ] Express actual dependencies, including terminal-event reserves and the relationship to `MAX_OUTPUT`.
-- [ ] Keep unrelated limits distinct even when numeric values coincide.
-- [ ] Preserve existing budget values in the initial cleanup.
+- [x] Give limits descriptive names at their owning layer.
+- [x] Express actual dependencies, including terminal-event reserves and the relationship to `MAX_OUTPUT`.  The terminal-event reserve could not be confirmed and was not encoded; see Progress.
+- [x] Keep unrelated limits distinct even when numeric values coincide.
+- [x] Preserve existing budget values in the initial cleanup.
 
 Validation: Admission boundaries, reserved error/close events, backpressure, queue exhaustion and existing compile-time memory-budget assertions.
 
@@ -147,3 +147,9 @@ ICE-lite has real test callers and is not a dead-code removal target. Generated 
   - Recommendation 6: `webrtc.cpp` adds `rtc_clear_callback()`, `rtc_set_callback()`, `rtc_live_callback()` and `RetainedCallback`.  All PeerConnection and WebChannel setters, destructors and notification paths use them; object pins and `rtc_release_pin()` remain explicit, and the callback copy is released before the object pin as before.  Added Flute test `ReplaceCallbacksFromWithin` (clearing Feedback and replacing OnMessage from inside the callback).
   - Recommendation 7: `ice/network_endpoint.h` provides `from_network()`, `to_network()` and `unmap_ipv4()` for both socket adapters.  TURN UDP source validation now compares normalised endpoints; the only behavioural difference is that a plain IPv4 source would now match a server configured as an IPv4-mapped IPv6 literal, which cannot occur on the dual-stack socket used for such servers.  `stun::valid_attribute()` and `stun::encode_xor_address()` replace the ICE-lite, full ICE and TURN copies.  Added conversion checks to `test_ice_socket` and RFC 5769 section 2.2/2.3 XOR-address vectors plus cardinality checks to `test_stun`.
   - Validation: `cmake --build build/agents` with no new warnings; `ctest --preset agents -R webrtc` 36/39 after every change (same three pre-existing failures).  Fuzz targets `turn_codec`, `turn_state` and `stun` were built manually with clang 18 (`-fsanitize=fuzzer,address,undefined`; `-Wno-invalid-constexpr` was needed for an unrelated `core.h` diagnostic).  Their regression corpora replayed cleanly, and 60-second campaigns found no issues.  Not run: full-module ASan build, browser/TURN interop beyond the registered ctest fixtures, and Windows.
+- 2026-11-04: Completed implementation order step 3 (recommendation 8).
+  - `SctpChannels` exposes `MAX_CHANNELS`, `MAX_LABEL_BYTES`, `MAX_EVENTS` and `MAX_EVENT_BYTES`.  `SctpAssociation` names its send admission (`MAX_QUEUED_MESSAGES`, `MAX_STREAM_MESSAGES`, `MAX_CONTROL_MESSAGES`, `MAX_CONTROL_BYTES`), output (`MAX_CONTROL_OUTPUT_BYTES`, `OUTPUT_RESERVE`, `MAX_BURST_PACKETS`, `MAX_BURST_CHUNKS`, `MAX_STATE_EVENTS`) and receive (`MAX_RECEIVE_RECORDS`, `MAX_PENDING_MESSAGES`, `MAX_ASSEMBLIES`, `MAX_STREAM_ASSEMBLIES`, `MAX_STREAM_ORPHANS`, `MAX_DEFERRED_FRAGMENTS`) limits.  The memory-budget assertion now uses these names plus `CHUNK_METADATA_ALLOWANCE`, `RECORD_METADATA_ALLOWANCE`, `CHANNEL_METADATA_RESERVE` and `MEMORY_BUDGET`.  `PeerConnection` names `EVENT_ADMISSION`, `EVENT_BACKPRESSURE`, `EVENT_BATCH`, `MAX_SCTP_INPUT_RECORDS`, `MAX_SCTP_INPUT_BYTES`, `PUMP_INPUT_CHUNKS`, `PUMP_OUTPUT_ROOM` and `MAX_REMOTE_NAMES`.
+  - Dependencies expressed in code: public `MAX_CHANNELS`/`MAX_LABEL_BYTES` are defined from `SctpChannels`, because channels queued before SCTP starts are opened later with the same checks.  `PUMP_OUTPUT_ROOM` is `SctpAssociation::MAX_OUTPUT * (DtlsTransport::DEFAULT_MTU + 128)`.  New compile-time assertions: `MAX_BURST_PACKETS <= MAX_OUTPUT - OUTPUT_RESERVE`; `PUMP_INPUT_CHUNKS >= sctp::MAX_ITEMS` (otherwise a maximal packet could never be fed); `PUMP_OUTPUT_ROOM <= turn::MAX_QUEUED - turn::MAINTENANCE_RESERVE` (otherwise relayed routes could never pump); `EVENT_BACKPRESSURE < EVENT_ADMISSION`; `SctpChannels::MAX_LABEL_BYTES < CHANNEL_METADATA_RESERVE`.
+  - Kept distinct despite equal values: association state events (64) versus `MAX_OUTPUT`; control send bytes versus control output bytes (both 256 KiB); `SctpChannels::MAX_EVENT_BYTES` versus `MAX_PAYLOAD` (both 32 MiB).
+  - Not encoded, needs follow-up: (a) the 4094 admission threshold is not demonstrably "4096 minus a terminal ERROR/CLOSE reserve".  `channel_events` has no hard cap, `collect_channel_events()` can append up to `SctpChannels::MAX_EVENTS` beyond the backpressure threshold, and `terminate_channels()` appends two events per open channel.  `create_channel()` rejects at `> EVENT_ADMISSION` while `send_channel()` rejects at `>= EVENT_ADMISSION`; this off-by-one asymmetry was preserved.  (b) The memory-budget term previously written `4096 * 512` was mapped to receive records; queued send records (up to 4096 data plus 512 control) are not separately reserved.  Decide intent before changing either.
+  - Validation: optimised (`-O2 -g0`) object code for `sctp_transfer.cpp`, `sctp_streams.cpp`, `sctp_association.cpp` and `peer_engine.cpp` was compiled before and after the change with the module's compile flags; `objdump -d -r` output is identical for all four, confirming that values and behaviour are unchanged.  `cmake --build --preset agents-install` with no warnings; `ctest --preset agents -R webrtc` 36/39 with the same three pre-existing `webrtc_network_change_*` failures.  Existing boundary coverage (`resource_boundaries` and `quota_and_close_timeout` in `test_sctp_streams`, `ConstructorFieldsAndPendingQuota` in `test_webchannel_lifecycle.tiri`) passes; no new runtime tests were added because no values changed.

@@ -393,7 +393,7 @@ ERR PeerConnection::ensure_socket(ice::Role IceRole, DtlsRole DtlsRole)
    IceDtlsCallbacks dtls_callbacks;
    dtls_callbacks.receive = [this](std::span<const uint8_t> Packet) {
       // Copy borrowed records; association output must wait until the DTLS call has returned.
-      if (sctp_input.size() >= 4096 or Packet.size() > 256 * 1024 - sctp_input_bytes) {
+      if (sctp_input.size() >= MAX_SCTP_INPUT_RECORDS or Packet.size() > MAX_SCTP_INPUT_BYTES - sctp_input_bytes) {
          sctp_input_overflow = true;
          return;
       }
@@ -564,7 +564,7 @@ void PeerConnection::queue_host(ice::CandidateLine Value, uint64_t NowUs)
 
 //********************************************************************************************************************
 // Adds a remote candidate to ICE.  An mDNS candidate is resolved first, and is added by pump_mdns() once the name has
-// resolved.  Duplicate candidates are ignored, and at most 64 names are tracked per generation.
+// resolved.  Duplicate candidates are ignored, and at most MAX_REMOTE_NAMES names are tracked per generation.
 
 ERR PeerConnection::accept_remote(ice::CandidateLine Value, uint64_t NowUs)
 {
@@ -576,7 +576,7 @@ ERR PeerConnection::accept_remote(ice::CandidateLine Value, uint64_t NowUs)
 
    auto text = ice::format_candidate(Value);
    for (const auto &name : remote_names) if (ice::format_candidate(name.line) IS text) return ERR::Okay;
-   if (remote_names.size() >= 64) return ERR::BufferOverflow;
+   if (remote_names.size() >= MAX_REMOTE_NAMES) return ERR::BufferOverflow;
 
    bool duplicate = std::any_of(remote_names.begin(), remote_names.end(), [&](const RemoteName &Name) {
       return Name.line.mdns_name IS Value.mdns_name;
@@ -1227,17 +1227,19 @@ ERR PeerConnection::tick(uint64_t NowUs)
 
 //********************************************************************************************************************
 // Drives SCTP once DTLS has connected and ICE has a selected pair.  The association is created on first use and is
-// informed when the selected path changes.  Received records are fed within a budget of 256 chunks per pump, and
-// output is sent while ICE remains connected.  Pumping pauses while channel events or transport output are backed up.
+// informed when the selected path changes.  Received records are fed within a budget of PUMP_INPUT_CHUNKS per pump,
+// and output is sent while ICE remains connected.  Pumping pauses while channel events or transport output are
+// backed up.
 
 ERR PeerConnection::pump_sctp(uint64_t NowUs)
 {
    if (sctp_input_overflow) return ERR::BufferOverflow;
-   if (channel_events.size() > 3072) return ERR::Okay;
+   if (channel_events.size() > EVENT_BACKPRESSURE) return ERR::Okay;
 
-   // At most 64 SCTP packets are emitted per pump.  Leave accepted messages in the association under stream pressure.
+   // At most MAX_OUTPUT SCTP packets are emitted per pump.  Leave accepted messages in the association under stream
+   // pressure.
 
-   if (socket->output_room() < 64 * (1200 + 128)) return ERR::Okay;
+   if (socket->output_room() < PUMP_OUTPUT_ROOM) return ERR::Okay;
    if (not local_committed or not remote_committed or socket->state() != DtlsState::CONNECTED) return ERR::Okay;
 
    if (not socket->selected_remote() or not socket->selected_local() or
@@ -1270,7 +1272,7 @@ ERR PeerConnection::pump_sctp(uint64_t NowUs)
    while (not sctp_input.empty()) {
       auto &packet = sctp_input.front();
       auto count = sctp::chunk_count(packet);
-      if (received_chunks + count > 256) break;
+      if (received_chunks + count > PUMP_INPUT_CHUNKS) break;
       received_chunks += count;
       auto error = association->feed(packet, NowUs);
       sctp_input_bytes -= packet.size();
@@ -1466,7 +1468,9 @@ ERR PeerConnection::create_channel(const SctpChannelOptions &Options, uint64_t &
       if (Options.id and channel.id IS int(*Options.id)) return ERR::InvalidValue;
    }
 
-   if (active >= 256 or label_bytes > 256 * 1024 or channel_events.size() > 4094) return ERR::BufferOverflow;
+   if (active >= MAX_CHANNELS or label_bytes > MAX_LABEL_BYTES or channel_events.size() > EVENT_ADMISSION) {
+      return ERR::BufferOverflow;
+   }
 
    PublicChannel channel;
    channel.options = Options;
@@ -1501,7 +1505,7 @@ ERR PeerConnection::send_channel(uint64_t Handle, std::span<const uint8_t> Paylo
        not channels) return ERR::InvalidState;
 
    if (Payload.size() > max_message_size()) return ERR::OutOfRange;
-   if (channel_events.size() >= 4094) return ERR::BufferOverflow;
+   if (channel_events.size() >= EVENT_ADMISSION) return ERR::BufferOverflow;
 
    auto error = channels->send(uint16_t(it->second.id), Payload, Text, now_us());
    if (error IS ERR::Okay) {
@@ -1660,12 +1664,13 @@ void PeerConnection::terminate_channels(ERR Error)
 }
 
 //********************************************************************************************************************
-// Returns up to 64 pending channel events.  The caller must pass them to release_channel_events() after delivery.
+// Returns up to EVENT_BATCH pending channel events.  The caller must pass them to release_channel_events() after
+// delivery.
 
 std::vector<PublicChannelEvent> PeerConnection::take_channel_events()
 {
    std::vector<PublicChannelEvent> result;
-   for (size_t count = 0; count < 64 and not channel_events.empty(); ++count) {
+   for (size_t count = 0; count < EVENT_BATCH and not channel_events.empty(); ++count) {
       result.push_back(std::move(channel_events.front()));
       channel_events.pop_front();
    }

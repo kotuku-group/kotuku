@@ -262,7 +262,7 @@ bool SctpAssociation::receive_forward(std::span<const uint8_t> Value)
       for (unsigned count = 0; count < 1024 and not sequence_after(expected, skip); ++count, ++expected) {
          auto it = pending.find(expected);
          if (it != pending.end()) {
-            if (messages.size() >= 64) return fail(ERR::BufferOverflow);
+            if (messages.size() >= MAX_PENDING_MESSAGES) return fail(ERR::BufferOverflow);
             messages.push_back(std::move(it->second));
             pending.erase(it);
          }
@@ -609,7 +609,7 @@ const SctpChannel * SctpChannels::channel(uint16_t ID) const
 
 bool SctpChannels::event(SctpChannelEvent Event)
 {
-   if (events.size() >= 4096 or Event.payload.size() > 32 * 1024 * 1024 - event_bytes) return false;
+   if (events.size() >= MAX_EVENTS or Event.payload.size() > MAX_EVENT_BYTES - event_bytes) return false;
    event_bytes += Event.payload.size();
    events.push_back(std::move(Event));
    return true;
@@ -652,7 +652,8 @@ ERR SctpChannels::open(const SctpChannelOptions &Options, uint64_t NowUs, uint16
    error = association.require_extensions(Options.reliability.partial(), true);
    if (error != ERR::Okay) return error;
 
-   if (channels.size() >= 256 or Options.label.size() + Options.protocol.size() > 256 * 1024 - label_bytes) {
+   if (channels.size() >= MAX_CHANNELS or
+       Options.label.size() + Options.protocol.size() > MAX_LABEL_BYTES - label_bytes) {
       return ERR::BufferOverflow;
    }
 
@@ -664,7 +665,7 @@ ERR SctpChannels::open(const SctpChannelOptions &Options, uint64_t NowUs, uint16
 
    if (id >= count) return ERR::OutOfRange;
    if (channels.contains(id) or (not Options.negotiated and bool(id & 1) IS client)) return ERR::InvalidValue;
-   if (events.size() >= 4096) return ERR::BufferOverflow;
+   if (events.size() >= MAX_EVENTS) return ERR::BufferOverflow;
 
    if (not Options.negotiated) {
       std::vector<uint8_t> wire;
@@ -777,7 +778,8 @@ ERR SctpChannels::process(uint16_t ID, uint32_t PPID, bool Unordered, std::vecto
          return channel_error(ID, ERR::InvalidData, NowUs);
       }
 
-      if (channels.size() >= 256 or options.label.size() + options.protocol.size() > 256 * 1024 - label_bytes) {
+      if (channels.size() >= MAX_CHANNELS or
+          options.label.size() + options.protocol.size() > MAX_LABEL_BYTES - label_bytes) {
          return channel_error(ID, ERR::BufferOverflow, NowUs);
       }
 

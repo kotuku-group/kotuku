@@ -168,7 +168,7 @@ void SctpAssociation::set_state(SctpState State, ERR Error, bool Restarted)
 
    current_state = State;
    last_error = Error;
-   if (events.size() < MAX_OUTPUT) events.push_back({ State, Error, Restarted });
+   if (events.size() < MAX_STATE_EVENTS) events.push_back({ State, Error, Restarted });
 }
 
 //********************************************************************************************************************
@@ -191,7 +191,7 @@ bool SctpAssociation::control_room(size_t Bytes)
 {
    size_t used = retry_packet.size();
    for (const auto &packet : output) if (packet[12] != DATA) used += packet.size();
-   return used + Bytes <= 256 * 1024 ? true : fail(ERR::BufferOverflow);
+   return used + Bytes <= MAX_CONTROL_OUTPUT_BYTES ? true : fail(ERR::BufferOverflow);
 }
 
 //********************************************************************************************************************

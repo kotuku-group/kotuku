@@ -173,6 +173,39 @@ private:
    void refresh_buffered();
    void wake() { if (callbacks.wake) callbacks.wake(); }
 
+   // Public channels queued before SCTP starts are opened later, so admission mirrors the SCTP channel limits.
+
+   static constexpr size_t MAX_CHANNELS = SctpChannels::MAX_CHANNELS;
+   static constexpr size_t MAX_LABEL_BYTES = SctpChannels::MAX_LABEL_BYTES;
+
+   // Queued public channel events.  SCTP pumping pauses above EVENT_BACKPRESSURE, and channel creation and sends
+   // are refused at EVENT_ADMISSION.  The queue itself is not capped: collection and termination may append beyond
+   // both thresholds.  Delivery drains up to EVENT_BATCH events per notification.
+
+   static constexpr size_t EVENT_ADMISSION = 4094;
+   static constexpr size_t EVENT_BACKPRESSURE = 3072;
+   static constexpr size_t EVENT_BATCH = 64;
+   static_assert(EVENT_BACKPRESSURE < EVENT_ADMISSION);
+
+   // Decrypted DTLS records awaiting the association, and the chunk budget for feeding them per pump.  The budget
+   // must admit any packet that the codec can count, or a single large packet would stall input.
+
+   static constexpr size_t MAX_SCTP_INPUT_RECORDS = 4096;
+   static constexpr size_t MAX_SCTP_INPUT_BYTES = 256 * 1024;
+   static constexpr size_t PUMP_INPUT_CHUNKS = 256;
+   static_assert(PUMP_INPUT_CHUNKS >= sctp::MAX_ITEMS);
+
+   // SCTP output is taken only when the route can accept a full association output queue.  Each packet is bounded
+   // by the DTLS MTU plus an allowance for relay framing.  The room must not exceed a relay's application capacity,
+   // or relayed routes would never pump.
+
+   static constexpr size_t RELAY_FRAMING_ALLOWANCE = 128;
+   static constexpr size_t PUMP_OUTPUT_ROOM = SctpAssociation::MAX_OUTPUT *
+      (size_t(DtlsTransport::DEFAULT_MTU) + RELAY_FRAMING_ALLOWANCE);
+   static_assert(PUMP_OUTPUT_ROOM <= turn::MAX_QUEUED - turn::MAINTENANCE_RESERVE);
+
+   static constexpr size_t MAX_REMOTE_NAMES = 64; // Remote mDNS candidates tracked per ICE generation
+
    // Description text.  Call local_changed() after any change to the local description.
 
    void local_changed() { ++local_revision; }

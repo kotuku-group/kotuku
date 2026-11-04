@@ -61,6 +61,11 @@ struct SctpResetEvent { uint16_t stream; bool incoming; };
 // PeerConnection queues channels created before role selection and translates these events to public objects.
 class SctpChannels {
 public:
+   static constexpr size_t MAX_CHANNELS    = 256;              // Open or closing channels
+   static constexpr size_t MAX_LABEL_BYTES = 256 * 1024;       // Aggregate label and protocol storage
+   static constexpr size_t MAX_EVENTS      = 4096;             // Queued events awaiting take_events()
+   static constexpr size_t MAX_EVENT_BYTES = 32 * 1024 * 1024; // Aggregate payload of queued events
+
    explicit SctpChannels(SctpAssociation &Association, bool DtlsClient);
    ~SctpChannels();
    SctpChannels(const SctpChannels &) = delete;
