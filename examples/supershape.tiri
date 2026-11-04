@@ -42,9 +42,11 @@ end
 function addSlider(Label:str, Value:num, Min:num, Max:num, Step:num, Apply:func)
    caption_format = (Step and Step % 1 is 0) ? '%s: %.0f' : '%s: %.2f'
    caption = glViewport.new('VectorText', table.merge({
-      x = 16, y = glY + 14,
-      face = gui.fonts.label.face, fontSize = '10pt',
-      string = string.format(caption_format, Label, Value)
+      x        = 16,
+      y        = glY + 14,
+      face     = gui.fonts.window.face,
+      fontSize = gui.fonts.window.size,
+      string   = string.format(caption_format, Label, Value)
    }, gui.getTheme(glViewport).window.text))
 
    sliders.push(gui.slider({
@@ -112,8 +114,13 @@ function buildScene()
    end)
 
    gui.combobox({
-      target = glViewport, label = 'Mode:', text = glMode, x = 16, y = glY,
-      items = array<table> { { label = 'Shape' }, { label = 'Repeat' }, { label = 'Spiral' } },
+      target = glViewport,
+      label  = 'Mode:',
+      labelWidth = gui.rpixel('70dp'),
+      text   = glMode,
+      x      = 16,
+      y      = glY,
+      items  = array<table> { { label = 'Shape' }, { label = 'Repeat' }, { label = 'Spiral' } },
       events = {
          activate = function(Item:table!)
             glMode = Item.label
@@ -128,8 +135,13 @@ function buildScene()
    for i in {0 to #MODS} do mod_items.push({ label = MODS[i] }) end
 
    gui.combobox({
-      target = glViewport, label = 'Mod:', text = MODS[0], x = 16, y = glY,
-      items = mod_items,
+      target = glViewport,
+      label  = 'Mod:',
+      labelWidth = gui.rpixel('70dp'),
+      text   = MODS[0],
+      x      = 16,
+      y      = glY,
+      items  = mod_items,
       events = {
          activate = function(Item:table!)
             for i in {0 to #MODS} do
@@ -143,7 +155,10 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 
-   glWindow = gui.window({ title = 'Supershape Demo', insideWidth = 1024, insideHeight = 800, minWidth = 1024, minHeight = 800 })
+   glWindow = gui.window({
+      title = 'Supershape Demo', insideWidth = 1024, insideHeight = 800, minWidth = 1024, minHeight = 800
+   })
+
    glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })
 
    buildScene()

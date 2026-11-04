@@ -20,9 +20,11 @@ end
 
 function addSlider(Label:str, Value:num, Min:num, Max:num, Apply:func)
    caption = glViewport.new('VectorText', table.merge({
-      x = 16, y = glY + 14,
-      face = gui.fonts.label.face, fontSize = '10pt',
-      string = string.format('%s: %.2f', Label, Value)
+      x        = 16,
+      y        = glY + 14,
+      face     = gui.fonts.window.face,
+      fontSize = gui.fonts.window.size,
+      string   = string.format('%s: %.2f', Label, Value)
    }, gui.getTheme(glViewport).window.text))
 
    sliders.push(gui.slider({

@@ -282,7 +282,7 @@ gui.button = function(Options)
       if not vps.x and not vps.xOffset then vps.x = 0 end
       if not vps.y and not vps.yOffset then vps.y = 0 end
       if not vps.width and not (vps.xOffset and vps.x) then
-         vps.width = gui.sizing.widget.width
+         vps.width = gui.rpixel('300dp')
          calc_width = true
       end
 

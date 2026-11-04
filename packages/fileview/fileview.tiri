@@ -1101,7 +1101,7 @@ gui.fileview = function(Options)
          },
          content = function[&&](Dialog:table, Viewport:obj, Width:num):num
             gap = gui.sizing.widget.gap
-            label_width = math.round(gui.sizing.widget.width * 0.4)
+            label_width = gui.rpixel('200dp')
             txt_name = gui.input({
                target = Viewport, x = 0, y = 0, width = Width, label = 'Name:', labelWidth = label_width,
                text = Shortcut

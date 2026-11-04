@@ -249,7 +249,7 @@ gui.combobox = function(Options:table)
       if not vps.x and not vps.xOffset then vps.x = 0 end
       if not vps.y and not vps.yOffset then vps.y = 0 end
       if not vps.width and not vps.xOffset then
-         vps.width = gui.sizing.widget.width
+         vps.width = gui.rpixel('340dp')
          &unlockMenuWidth = true
       end
 

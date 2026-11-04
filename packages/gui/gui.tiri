@@ -441,27 +441,28 @@ num: Line spacing in pixels.
 num: Font height in pixels.
 num: Ascent (cap height) in pixels.
 ]])
-gui.getFontHeight = function(Font:table, Cache:bool):<num,num,num>
+gui.getFontHeight = function(Font:table):<num,num,num>
    try <trace>
-      if Cache is nil then Cache = true end
+      global _FONT_CACHE ?= { }
 
-      if Cache != true or Font.height is nil or Font.ascent is nil then
-         size = Font.fontSize ?? Font.size
-         -- Match VectorText's fixed 96 DPI conversion for font-size units.
-         if not (size is <num>) then size = gui.pixel(tostring(size), 96) end
+      style = Font.fontStyle ?? Font.style ?? "Medium"
+      size = Font.fontSize ?? Font.size
+      key = f'{Font.face}:{style}:{size}'
 
-         err, handle = check mVec.GetFontHandle(Font.face, Font.fontStyle ?? Font.style ?? 'Medium', 0, size)
-         metrics = struct<FontMetrics>
-         check mVec.GetFontMetrics(handle, metrics)
-
-         if Cache then
-            Font.{ height = metrics.height, spacing = metrics.lineSpacing, ascent = metrics.ascent }
-         else
-            return metrics.lineSpacing, metrics.height, metrics.ascent
-         end
+      if _FONT_CACHE[key] then
+         return _FONT_CACHE[key].spacing, _FONT_CACHE[key].height, _FONT_CACHE[key].ascent
       end
 
-      return Font.spacing, Font.height, Font.ascent
+      -- Match VectorText's fixed 96 DPI conversion for font-size units.
+      if not (size is <num>) then size = gui.pixel(tostring(size), 96) end
+
+      err, handle = check mVec.GetFontHandle(Font.face, style, 0, size)
+      metrics = struct<FontMetrics>
+      check mVec.GetFontMetrics(handle, metrics)
+
+      _FONT_CACHE[key] = { height = metrics.height, spacing = metrics.lineSpacing, ascent = metrics.ascent }
+
+      return metrics.lineSpacing, metrics.height, metrics.ascent
    except ex
       raise f'{ex.message}\n{ex.stackTrace}'
    end
@@ -1758,8 +1759,7 @@ glStyleDefaults <const> = {
          gap = 12
       },
       widget = {
-         width     = 160, -- Default width for common widgets (px at 96 DPI)
-         gap       = 6,   -- Recommended gap between widgets (px at 96 DPI)
+         gap       = 4,   -- Recommended gap between widgets (px at 96 DPI)
          margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
          labelGap  = 12,  -- Spacing between labels and the widget parts
          edgeWidth = 1.5, -- Default stroke-width for widget edges (px at 96 DPI)
@@ -2669,18 +2669,18 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text          = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
-         tick          = { stroke = Palette.text, strokeWidth = 1, opacity = 0.6 },
+         tick          = { stroke = Palette.text, strokeWidth = gui.rpixel('1px'), opacity = 0.6 },
          disabled      = { opacity = 0.5 }
       },
       scrollbar_v = {
-         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = f'{Palette.handle};url(#dark_vslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = gui.rpixel('2px') },
+         fore          = { fill = f'{Palette.handle};url(#dark_vslider)', stroke = 'none', opacity = 0.75, strokeWidth = gui.rpixel('2px') },
          foreHighlight = { fill = f'{Palette.contrast};url(#dark_vslider)', opacity = 1 },
          thickness     = gui.rpixel('18dp')
       },
       scrollbar_h = {
-         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = f'{Palette.handle};url(#dark_hslider)', stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = gui.rpixel('2px') },
+         fore          = { fill = f'{Palette.handle};url(#dark_hslider)', stroke = 'none', opacity = 0.75, strokeWidth = gui.rpixel('2px') },
          foreHighlight = { fill = f'{Palette.contrast};url(#dark_hslider)', opacity = 1 },
          thickness     = gui.rpixel('18dp')
       },
@@ -2799,13 +2799,13 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, roundX = Edge.round, roundY = Edge.round, strokeWidth = Edge.width },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          foreFocus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
-         tick          = { stroke = Palette.text, strokeWidth = 1, opacity = 0.6 },
+         tick          = { stroke = Palette.text, strokeWidth = gui.rpixel('1px'), opacity = 0.6 },
          text          = { fill = Palette.text, face = gui.fonts.widget.face, fontSize = string.format('%.2fpt', gui.fonts.widget.size), fontStyle = gui.fonts.widget.style },
          disabled      = { opacity = 0.5 }
       },
       scrollbar = {
-         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = 2 },
-         fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, strokeWidth = 2 },
+         bkgd          = { fill = Palette.mid, stroke = 'none', strokeWidth = gui.rpixel('2px') },
+         fore          = { fill = Palette.handle, stroke = 'none', opacity = 0.75, strokeWidth = gui.rpixel('2px') },
          foreHighlight = { fill = Palette.contrast, opacity = 1 },
          thickness     = gui.rpixel('18dp')
       },
@@ -2817,13 +2817,13 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          iconHighlight = Icon('fill(pearl)')
       },
       tooltip = {
-         bkgd = { fill = Palette.bkgd, roundX = 4, roundY = 4, strokeWidth = 2, stroke = Palette.edge },
+         bkgd = { fill = Palette.bkgd, roundX = 4, roundY = 4, strokeWidth = gui.rpixel('2px'), stroke = Palette.edge },
          text = { fill = Palette.text }
       },
       window = {
          bkgd   = { fill = Palette.neutral },
          text   = { fill = Palette.text, face = gui.fonts.window.face, fontSize = string.format('%.2fpt', gui.fonts.window.size), fontStyle = gui.fonts.window.style },
-         stroke = { stroke = modifyAlpha(Palette.inverse, 0.5), strokeWidth = 2 },
+         stroke = { stroke = modifyAlpha(Palette.inverse, 0.5), strokeWidth = gui.rpixel('2px') },
          icon   = Icon('fill(carbon)'),
          tabPing  = { stroke = Palette.prime, strokeWidth = gui.rpixel('3dp') } -- Tab ping ring
       },
@@ -2837,14 +2837,14 @@ end
 -FUNCTION-
 buildTheme: Builds a complete light or dark theme table from a palette, icon style and edge sizing.
 
-Creates a new theme table for the `light` or `dark` Scheme.  The result has the same structure as the entries of
+Creates a new theme table for the `light` or `dark` ColourScheme.  The result has the same structure as the entries of
 `gui.themes`, including the `scheme`, `palette` and `init` fields, and is suitable for `gui.window.setTheme()`.  Each
 call creates new tables, so the result can be modified without affecting other themes.
 
 Options that are not provided take the values that the gui library loaded from the user's style configuration:
 
 * `palette`: A palette table from `gui.palettes`, holding `light` and `dark` variants.  The variant that matches
-  Scheme is used.  Defaults to `gui.palette`.
+  ColourScheme is used.  Defaults to `gui.palette`.
 * `fill`: An icon fill spec, such as `'fill(cmap:flare)'`, that replaces the theme's default icon fills.  Defaults to
   the configured fill.  Pass `false` to use the theme's own fills.
 * `effects`: An effects spec, such as `'emboss()'`, that is appended to every icon fill.  Defaults to the configured
@@ -2856,18 +2856,20 @@ Fonts and all other sizing values come from the resolved `gui.fonts` and `gui.si
 layout depends on them.
 
 -INPUT-
-Scheme: The colour scheme to build, either `light` or `dark`.
+ColourScheme: The colour scheme to build, either `light` or `dark`.
 Options: Optional table of overrides, as described above.
 
 -RESULTS-
 table: A new theme table.
 ]])
-gui.buildTheme = function(Scheme:str!, Options:table):table
-   if Scheme != 'light' and Scheme != 'dark' then raise ERR_Args, f'Unsupported theme scheme "{Scheme}".' end
+gui.buildTheme = function(ColourScheme:str!, Options:table):table
+   if ColourScheme != 'light' and ColourScheme != 'dark' then
+      raise ERR_Args, f'Unsupported colour scheme "{ColourScheme}".'
+   end
 
    Options ?= { }
-   palette = (Options.palette ?? gui.palette)[Scheme]
-   if not (palette is <table>) then raise ERR_Args, f'The palette has no "{Scheme}" variant.' end
+   palette = (Options.palette ?? gui.palette)[ColourScheme]
+   if not (palette is <table>) then raise ERR_Args, f'The palette has no "{ColourScheme}" variant.' end
 
    fill, effects = gui.defaultFill, gui.defaultFX
    if Options.fill != nil then fill = Options.fill end
@@ -2882,11 +2884,14 @@ gui.buildTheme = function(Scheme:str!, Options:table):table
       return iconTheme(Default, fill, effects)
    end
 
-   theme = (Scheme is 'dark') ? darkTheme(palette, edge, icon) : lightTheme(palette, edge, icon)
+   theme = (ColourScheme is 'dark') ? darkTheme(palette, edge, icon) : lightTheme(palette, edge, icon)
    theme.menubar.menu = theme.menu -- Shared section
    return theme
 end
 
 -- The theme tables are deferred until first access because they read gui.fonts, which depends on the display density.
 
-gui.themes = <table{ { dark = gui.buildTheme('dark'), light = gui.buildTheme('light') } }>
+gui.themes = <table{ {
+   dark  = gui.buildTheme('dark'),
+   light = gui.buildTheme('light') }
+}>
