@@ -844,6 +844,63 @@ end
 end
 
 -----------------------------------------------------------------------------------------------------------------------
+-- A range loop whose stop value changes between calls must reuse its trace.  The recorder previously guarded the
+-- recorded stop value, so each new bound failed on entry and spawned a side trace until maxside was exhausted.
+
+@Test function ChangingRangeBoundTraceStability()
+   local function integer_sum(Stop):num
+      local total = 0
+      for value in {0 to Stop} do
+         total += value
+      end
+      return total
+   end
+
+   local function half_step_sum(Stop):num
+      local total = 0
+      for value in {0 to Stop by 0.5} do
+         total += value
+      end
+      return total
+   end
+
+   local function run_workload(Workload)
+      local total = 0
+      for call in {0 to 300} do
+         total += Workload(200 + (call * 37) % 100)
+      end
+      return total
+   end
+
+   for _, workload in ipairs({ integer_sum, half_step_sum }) do
+      jit.off()
+      local expected = run_workload(workload)
+
+      jit.on()
+      jit.flush()
+      jit.opt.start('hotloop=56', 'hotexit=10', 'minstitch=0')
+
+      local compiled = 0
+      local aborted = 0
+      local function trace_event(Event, TraceNo, Func)
+         if Func != workload then return end
+         if Event is 'stop' then compiled++
+         elseif Event is 'abort' then aborted++
+         end
+      end
+
+      jit.attach(trace_event, 'trace')
+      local result = run_workload(workload)
+      jit.attach(trace_event)
+
+      assert(result is expected, f'Changing range bound should match the interpreter result of {expected}, got {result}')
+      assert(compiled > 0, 'Changing range bound should compile at least one trace')
+      assert(aborted is 0, f'Changing range bound should not abort trace recording, observed {aborted} aborts')
+      assert(compiled < 5, f'Changing range bound should record fewer than 5 traces, observed {compiled}')
+   end
+end
+
+-----------------------------------------------------------------------------------------------------------------------
 
 @Test function NestedRuntimeRangeTraceLinksMaterialiseHiddenState()
    defer
