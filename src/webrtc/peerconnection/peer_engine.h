@@ -101,6 +101,14 @@ public:
 
    [[nodiscard]] const std::string & local_description() const { return local_text; }
    [[nodiscard]] const std::string & remote_description() const { return remote_text; }
+
+   // Advances whenever the text of the local or remote description changes.
+
+   [[nodiscard]] uint64_t description_revision() const { return text_revision; }
+
+   // The number of times that the local description has been serialised, for performance diagnostics.
+
+   [[nodiscard]] uint64_t local_serialisations() const { return serialisations; }
    [[nodiscard]] const std::string & certificate_fingerprint() const { return local.data.fingerprint; }
    [[nodiscard]] PeerState state() const { return current_state; }
    [[nodiscard]] SignalingState signaling_state() const { return signal_state; }
@@ -165,6 +173,52 @@ private:
    void refresh_buffered();
    void wake() { if (callbacks.wake) callbacks.wake(); }
 
+   // Public channels queued before SCTP starts are opened later, so admission mirrors the SCTP channel limits.
+
+   static constexpr size_t MAX_CHANNELS = SctpChannels::MAX_CHANNELS;
+   static constexpr size_t MAX_LABEL_BYTES = SctpChannels::MAX_LABEL_BYTES;
+
+   // Queued public channel events.  SCTP pumping pauses above EVENT_BACKPRESSURE, and channel creation and sends
+   // are refused at EVENT_ADMISSION.  Delivery drains up to EVENT_BATCH events per notification.
+   //
+   // These are soft thresholds, not a capacity.  channel_events has no hard cap: one collect_channel_events() call
+   // can append up to SctpChannels::MAX_EVENTS beyond EVENT_BACKPRESSURE, and terminate_channels() appends ERROR and
+   // CLOSE for every open channel.  EVENT_ADMISSION is therefore not derived from a terminal-event reserve or from
+   // SctpChannels::MAX_EVENTS, and no rationale for its value is recorded.  create_channel() and send_channel() both
+   // refuse once EVENT_ADMISSION events are queued.
+
+   static constexpr size_t EVENT_ADMISSION = 4094;
+   static constexpr size_t EVENT_BACKPRESSURE = 3072;
+   static constexpr size_t EVENT_BATCH = 64;
+   static_assert(EVENT_BACKPRESSURE < EVENT_ADMISSION);
+
+   // Decrypted DTLS records awaiting the association, and the chunk budget for feeding them per pump.  The budget
+   // must admit any packet that the codec can count, or a single large packet would stall input.
+
+   static constexpr size_t MAX_SCTP_INPUT_RECORDS = 4096;
+   static constexpr size_t MAX_SCTP_INPUT_BYTES = 256 * 1024;
+   static constexpr size_t PUMP_INPUT_CHUNKS = 256;
+   static_assert(PUMP_INPUT_CHUNKS >= sctp::MAX_ITEMS);
+
+   // SCTP output is taken only when the route can accept a full association output queue.  Each packet is bounded
+   // by the DTLS MTU plus an allowance for relay framing.  The room must not exceed a relay's application capacity,
+   // or relayed routes would never pump.
+
+   static constexpr size_t RELAY_FRAMING_ALLOWANCE = 128;
+   static constexpr size_t PUMP_OUTPUT_ROOM = SctpAssociation::MAX_OUTPUT *
+      (size_t(DtlsTransport::DEFAULT_MTU) + RELAY_FRAMING_ALLOWANCE);
+   static_assert(PUMP_OUTPUT_ROOM <= turn::MAX_QUEUED - turn::MAINTENANCE_RESERVE);
+
+   static constexpr size_t MAX_REMOTE_NAMES = 64; // Remote mDNS candidates tracked per ICE generation
+
+   // Description text.  Call local_changed() after any change to the local description.
+
+   void local_changed() { ++local_revision; }
+   [[nodiscard]] bool serialise_local();
+   void refresh_local();
+   void clear_local_text();
+   void set_remote_text(std::string_view Text);
+
    std::unique_ptr<InterfaceMonitor> interfaces;
    bool needs_restart = false;
    uint64_t restart_request_generation = 0, recovery_started = 0;
@@ -202,6 +256,10 @@ private:
    sdp::Description remote;
    std::string local_text;
    std::string remote_text;
+   uint64_t local_revision = 0;      // Advanced by every change to the local description
+   uint64_t serialised_revision = 0; // The local_revision that local_text was serialised from
+   uint64_t text_revision = 0;       // Advanced by every change to local_text or remote_text
+   uint64_t serialisations = 0;
    std::string local_ufrag;
    std::string local_password;
    ice::Endpoint stun_server;            // Legacy StunServer

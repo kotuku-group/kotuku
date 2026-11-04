@@ -393,7 +393,7 @@ ERR PeerConnection::ensure_socket(ice::Role IceRole, DtlsRole DtlsRole)
    IceDtlsCallbacks dtls_callbacks;
    dtls_callbacks.receive = [this](std::span<const uint8_t> Packet) {
       // Copy borrowed records; association output must wait until the DTLS call has returned.
-      if (sctp_input.size() >= 4096 or Packet.size() > 256 * 1024 - sctp_input_bytes) {
+      if (sctp_input.size() >= MAX_SCTP_INPUT_RECORDS or Packet.size() > MAX_SCTP_INPUT_BYTES - sctp_input_bytes) {
          sctp_input_overflow = true;
          return;
       }
@@ -474,6 +474,7 @@ ERR PeerConnection::gather_routes()
    local.data.ice_pwd = local_password;
    local.data.fingerprint = certificate->fingerprint();
    local.data.end_of_candidates = gather_state IS GatheringState::COMPLETE;
+   local_changed();
 
    ice::CandidateLine line;
    line.foundation = "1";
@@ -535,6 +536,7 @@ void PeerConnection::queue_host(ice::CandidateLine Value, uint64_t NowUs)
       auto text = ice::format_candidate(Value);
       if (text.empty()) return;
       local.data.candidates.push_back(text);
+      local_changed();
       if (callbacks.candidate) callbacks.candidate(text);
       return;
    }
@@ -562,7 +564,7 @@ void PeerConnection::queue_host(ice::CandidateLine Value, uint64_t NowUs)
 
 //********************************************************************************************************************
 // Adds a remote candidate to ICE.  An mDNS candidate is resolved first, and is added by pump_mdns() once the name has
-// resolved.  Duplicate candidates are ignored, and at most 64 names are tracked per generation.
+// resolved.  Duplicate candidates are ignored, and at most MAX_REMOTE_NAMES names are tracked per generation.
 
 ERR PeerConnection::accept_remote(ice::CandidateLine Value, uint64_t NowUs)
 {
@@ -574,7 +576,7 @@ ERR PeerConnection::accept_remote(ice::CandidateLine Value, uint64_t NowUs)
 
    auto text = ice::format_candidate(Value);
    for (const auto &name : remote_names) if (ice::format_candidate(name.line) IS text) return ERR::Okay;
-   if (remote_names.size() >= 64) return ERR::BufferOverflow;
+   if (remote_names.size() >= MAX_REMOTE_NAMES) return ERR::BufferOverflow;
 
    bool duplicate = std::any_of(remote_names.begin(), remote_names.end(), [&](const RemoteName &Name) {
       return Name.line.mdns_name IS Value.mdns_name;
@@ -630,7 +632,8 @@ void PeerConnection::pump_mdns(uint64_t NowUs)
             if (name.reported) {
                socket->retire_host(name.line.candidate.endpoint);
                std::erase(local.data.candidates, ice::format_candidate(name.line));
-               if (local_committed) local_text = sdp::serialize(local);
+               local_changed();
+               refresh_local();
             }
          }
          continue;
@@ -646,7 +649,8 @@ void PeerConnection::pump_mdns(uint64_t NowUs)
       name.reported = true;
       auto text = ice::format_candidate(name.line);
       local.data.candidates.push_back(text);
-      if (local_committed) local_text = sdp::serialize(local);
+      local_changed();
+      refresh_local();
       if (callbacks.candidate) callbacks.candidate(text);
       if (current_state IS PeerState::CLOSED or not socket or generation != mdns_generation) return;
    }
@@ -673,11 +677,58 @@ void PeerConnection::pump_mdns(uint64_t NowUs)
 }
 
 //********************************************************************************************************************
+// Serialises the local description and records the revision that the text represents.  The description revision
+// only advances if the text has changed, so that owners can skip redundant copies.  Returns false if serialisation
+// failed.
+
+bool PeerConnection::serialise_local()
+{
+   auto text = sdp::serialize(local);
+   ++serialisations;
+   serialised_revision = local_revision;
+
+   if (text != local_text) {
+      local_text = std::move(text);
+      ++text_revision;
+   }
+
+   return not local_text.empty();
+}
+
+//********************************************************************************************************************
+// Re-serialises a committed local description if it has changed since it was last serialised.  An uncommitted
+// description is left as created, because SetLocalDescription() must receive the exact text that was returned.
+
+void PeerConnection::refresh_local()
+{
+   if (local_committed and serialised_revision != local_revision) (void)serialise_local();
+}
+
+//********************************************************************************************************************
+
+void PeerConnection::clear_local_text()
+{
+   if (local_text.empty()) return;
+   local_text.clear();
+   ++text_revision;
+}
+
+//********************************************************************************************************************
+
+void PeerConnection::set_remote_text(std::string_view Text)
+{
+   if (Text IS remote_text) return;
+   remote_text.assign(Text);
+   ++text_revision;
+}
+
+//********************************************************************************************************************
 // Creates an offer.  The offerer is the controlling ICE agent and offers actpass for the DTLS role.
 
 ERR PeerConnection::create_offer()
 {
    local.data.max_message_size = receive_limit;
+   local_changed();
 
    if (current_state IS PeerState::CLOSED or signal_state != SignalingState::STABLE or
        not local_text.empty()) return ERR::InvalidState;
@@ -686,8 +737,8 @@ ERR PeerConnection::create_offer()
    if (error != ERR::Okay) return error;
 
    local.data.setup = sdp::Setup::ACTPASS;
-   local_text = sdp::serialize(local);
-   return local_text.empty() ? ERR::InvalidData : ERR::Okay;
+   local_changed();
+   return serialise_local() ? ERR::Okay : ERR::InvalidData;
 }
 
 //********************************************************************************************************************
@@ -709,6 +760,7 @@ void PeerConnection::network_changed(uint64_t NowUs)
    remote_names.clear();
    early_candidates.clear();
    local.data.candidates.clear();
+   local_changed();
    local_sockets_ready = false;
 
    if (socket->state() != DtlsState::CONNECTED) {
@@ -753,6 +805,7 @@ ERR PeerConnection::restart_routes(std::string Ufrag, std::string Password)
    local_ufrag = std::move(Ufrag);
    local_password = std::move(Password);
    local.data.candidates.clear();
+   local_changed();
    sctp_path_reset = true;
 
    auto error = gather_routes();
@@ -789,12 +842,13 @@ ERR PeerConnection::restart_ice()
    local.data.ice_pwd = local_password;
    local.data.setup = sdp::Setup::ACTPASS;
    ++local.session_version;
-   local_text = sdp::serialize(local);
+   local_changed();
+   auto serialised = serialise_local();
    local_committed = false;
    remote_committed = false;
    ice_started = false;
    update_state();
-   return local_text.empty() ? ERR::InvalidData : ERR::Okay;
+   return serialised ? ERR::Okay : ERR::InvalidData;
 }
 
 //********************************************************************************************************************
@@ -804,6 +858,7 @@ ERR PeerConnection::restart_ice()
 ERR PeerConnection::create_answer(bool Active)
 {
    local.data.max_message_size = receive_limit;
+   local_changed();
 
    if (current_state IS PeerState::CLOSED or signal_state != SignalingState::HAVE_REMOTE_OFFER or
        not local_text.empty()) return ERR::InvalidState;
@@ -814,8 +869,8 @@ ERR PeerConnection::create_answer(bool Active)
    if (socket->state() IS DtlsState::CONNECTED) Active = socket->dtls_role() IS DtlsRole::CLIENT;
    local.data.mid = remote.data.mid;
    local.data.setup = Active ? sdp::Setup::ACTIVE : sdp::Setup::PASSIVE;
-   local_text = sdp::serialize(local);
-   return local_text.empty() ? ERR::InvalidData : ERR::Okay;
+   local_changed();
+   return serialise_local() ? ERR::Okay : ERR::InvalidData;
 }
 
 //********************************************************************************************************************
@@ -831,7 +886,7 @@ ERR PeerConnection::set_local_description(std::string_view Text)
 
    // Keep the created description usable until committed, then expose all candidates gathered so far.
 
-   local_text = sdp::serialize(local);
+   refresh_local();
    if (local.data.setup IS sdp::Setup::ACTPASS) signal_state = SignalingState::HAVE_LOCAL_OFFER;
    else signal_state = SignalingState::STABLE;
 
@@ -887,12 +942,13 @@ ERR PeerConnection::set_remote_description(std::string_view Text)
       local.data.ice_pwd = local_password;
       local.data.mid = parsed.data.mid;
       ++local.session_version;
-      local_text.clear();
+      local_changed();
+      clear_local_text();
       local_committed = false;
       ice_started = false;
       signal_state = SignalingState::HAVE_REMOTE_OFFER;
       remote = std::move(parsed);
-      remote_text.assign(Text);
+      set_remote_text(Text);
       update_state();
       return ERR::Okay;
    }
@@ -921,7 +977,7 @@ ERR PeerConnection::set_remote_description(std::string_view Text)
 
    remote_end = parsed.data.end_of_candidates;
    remote = std::move(parsed);
-   remote_text.assign(Text);
+   set_remote_text(Text);
    remote_committed = true;
    if (local_committed) return configure_remote();
    return ERR::Okay;
@@ -1113,6 +1169,7 @@ ERR PeerConnection::tick(uint64_t NowUs)
          auto text = ice::format_candidate(line);
          if (text.empty()) return ERR::Failed;
          local.data.candidates.push_back(text);
+         local_changed();
          if (callbacks.candidate) callbacks.candidate(text);
          if (not socket or current_state IS PeerState::CLOSED) return ERR::InvalidState;
       }
@@ -1125,10 +1182,11 @@ ERR PeerConnection::tick(uint64_t NowUs)
           NowUs - gathering_started >= 30000000)) {
          gather_state = GatheringState::COMPLETE;
          local.data.end_of_candidates = true;
+         local_changed();
          cancel_servers();
          socket->finish_gathering();
          if (socket->gathering_error() != ERR::Okay) stun_lookup_error = socket->gathering_error();
-         if (local_committed) local_text = sdp::serialize(local);
+         refresh_local();
 
          if (local.data.candidates.empty() and not (policy & (POLICY_NO_HOST | POLICY_RELAY_ONLY | POLICY_NO_MDNS))) {
             mdns_error = ERR::Timeout;
@@ -1146,7 +1204,7 @@ ERR PeerConnection::tick(uint64_t NowUs)
             return stun_lookup_error;
          }
       }
-      else if (local_committed) local_text = sdp::serialize(local);
+      else refresh_local();
 
       if (gather_state IS GatheringState::COMPLETE and local_committed and remote_committed and not ice_started) {
          auto configured = configure_remote();
@@ -1169,17 +1227,19 @@ ERR PeerConnection::tick(uint64_t NowUs)
 
 //********************************************************************************************************************
 // Drives SCTP once DTLS has connected and ICE has a selected pair.  The association is created on first use and is
-// informed when the selected path changes.  Received records are fed within a budget of 256 chunks per pump, and
-// output is sent while ICE remains connected.  Pumping pauses while channel events or transport output are backed up.
+// informed when the selected path changes.  Received records are fed within a budget of PUMP_INPUT_CHUNKS per pump,
+// and output is sent while ICE remains connected.  Pumping pauses while channel events or transport output are
+// backed up.
 
 ERR PeerConnection::pump_sctp(uint64_t NowUs)
 {
    if (sctp_input_overflow) return ERR::BufferOverflow;
-   if (channel_events.size() > 3072) return ERR::Okay;
+   if (channel_events.size() > EVENT_BACKPRESSURE) return ERR::Okay;
 
-   // At most 64 SCTP packets are emitted per pump.  Leave accepted messages in the association under stream pressure.
+   // At most MAX_OUTPUT SCTP packets are emitted per pump.  Leave accepted messages in the association under stream
+   // pressure.
 
-   if (socket->output_room() < 64 * (1200 + 128)) return ERR::Okay;
+   if (socket->output_room() < PUMP_OUTPUT_ROOM) return ERR::Okay;
    if (not local_committed or not remote_committed or socket->state() != DtlsState::CONNECTED) return ERR::Okay;
 
    if (not socket->selected_remote() or not socket->selected_local() or
@@ -1212,7 +1272,7 @@ ERR PeerConnection::pump_sctp(uint64_t NowUs)
    while (not sctp_input.empty()) {
       auto &packet = sctp_input.front();
       auto count = sctp::chunk_count(packet);
-      if (received_chunks + count > 256) break;
+      if (received_chunks + count > PUMP_INPUT_CHUNKS) break;
       received_chunks += count;
       auto error = association->feed(packet, NowUs);
       sctp_input_bytes -= packet.size();
@@ -1408,7 +1468,9 @@ ERR PeerConnection::create_channel(const SctpChannelOptions &Options, uint64_t &
       if (Options.id and channel.id IS int(*Options.id)) return ERR::InvalidValue;
    }
 
-   if (active >= 256 or label_bytes > 256 * 1024 or channel_events.size() > 4094) return ERR::BufferOverflow;
+   if (active >= MAX_CHANNELS or label_bytes > MAX_LABEL_BYTES or channel_events.size() >= EVENT_ADMISSION) {
+      return ERR::BufferOverflow;
+   }
 
    PublicChannel channel;
    channel.options = Options;
@@ -1443,7 +1505,7 @@ ERR PeerConnection::send_channel(uint64_t Handle, std::span<const uint8_t> Paylo
        not channels) return ERR::InvalidState;
 
    if (Payload.size() > max_message_size()) return ERR::OutOfRange;
-   if (channel_events.size() >= 4094) return ERR::BufferOverflow;
+   if (channel_events.size() >= EVENT_ADMISSION) return ERR::BufferOverflow;
 
    auto error = channels->send(uint16_t(it->second.id), Payload, Text, now_us());
    if (error IS ERR::Okay) {
@@ -1602,12 +1664,13 @@ void PeerConnection::terminate_channels(ERR Error)
 }
 
 //********************************************************************************************************************
-// Returns up to 64 pending channel events.  The caller must pass them to release_channel_events() after delivery.
+// Returns up to EVENT_BATCH pending channel events.  The caller must pass them to release_channel_events() after
+// delivery.
 
 std::vector<PublicChannelEvent> PeerConnection::take_channel_events()
 {
    std::vector<PublicChannelEvent> result;
-   for (size_t count = 0; count < 64 and not channel_events.empty(); ++count) {
+   for (size_t count = 0; count < EVENT_BATCH and not channel_events.empty(); ++count) {
       result.push_back(std::move(channel_events.front()));
       channel_events.pop_front();
    }

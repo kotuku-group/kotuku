@@ -25,7 +25,47 @@ static int fail(const char *Message) {
    return 1;
 }
 
+//********************************************************************************************************************
+// XOR-address encoding against the RFC 5769 sections 2.2 and 2.3 response vectors, and attribute cardinality rules.
+
+static int wire_helpers() {
+   std::array<uint8_t, 12> tx{ 0xb7, 0xe7, 0xa7, 0x01, 0xbc, 0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae };
+
+   std::array<uint8_t, 16> ipv4{ 192, 0, 2, 1 };
+   auto encoded = encode_xor_address(ipv4, 32853, false, tx);
+   auto expected = from_hex("0001a147e112a643");
+   if (not std::equal(expected.begin(), expected.end(), encoded.begin())) return fail("IPv4 XOR address mismatch");
+
+   std::array<uint8_t, 16> ipv6{ 0x20, 0x01, 0x0d, 0xb8, 0x12, 0x34, 0x56, 0x78,
+      0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77 };
+   encoded = encode_xor_address(ipv6, 32853, true, tx);
+   expected = from_hex("0002a1470113a9faa5d3f179bc25f4b5bed2b9d9");
+   if (not std::equal(expected.begin(), expected.end(), encoded.begin())) return fail("IPv6 XOR address mismatch");
+
+   Message message;
+   message.transaction_id = tx;
+   message.attributes.push_back({ ATTR_XOR_MAPPED_ADDRESS, std::span<const uint8_t>(encoded.data(), 20), 0 });
+   std::array<uint8_t, 16> address{};
+   uint16_t port = 0;
+   bool is_ipv6 = false;
+   if (not decode_xor_address(message.attributes[0], message, address, port, is_ipv6) or not is_ipv6 or
+       port != 32853 or address != ipv6) return fail("IPv6 XOR address did not round-trip");
+
+   std::array<uint8_t, 4> four{};
+   message.attributes.clear();
+   if (valid_attribute(message, ATTR_FINGERPRINT, 4, true) or
+       not valid_attribute(message, ATTR_FINGERPRINT, 4, false)) return fail("Absent attribute cardinality wrong");
+   message.attributes.push_back({ ATTR_FINGERPRINT, four, 0 });
+   if (not valid_attribute(message, ATTR_FINGERPRINT, 4, true) or
+       valid_attribute(message, ATTR_FINGERPRINT, 8, false)) return fail("Single attribute validation wrong");
+   message.attributes.push_back({ ATTR_FINGERPRINT, four, 8 });
+   if (valid_attribute(message, ATTR_FINGERPRINT, 4, true) or
+       valid_attribute(message, ATTR_FINGERPRINT, 4, false)) return fail("Duplicate attribute accepted");
+   return 0;
+}
+
 int main() {
+   if (auto result = wire_helpers()) return result;
    // RFC 5769 section 2.1: a real ICE Binding Request with HMAC-SHA1, padding and FINGERPRINT.
    auto request = from_hex(
       "000100582112a442b7e7a701bc34d686fa87dfae"

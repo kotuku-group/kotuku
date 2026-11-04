@@ -2,64 +2,13 @@
 // manages host sockets, server-reflexive discovery and TURN relays for full ICE, and accounts for traffic per route.
 
 #include "ice_socket.h"
+#include "network_endpoint.h"
 
 #include <algorithm>
 #include <chrono>
-#include <cstring>
 #include <utility>
 
 namespace rtc {
-namespace {
-
-//********************************************************************************************************************
-// Converts a Network module address to an ICE endpoint.  IPv4-mapped IPv6 addresses are converted to IPv4, so that
-// dual-stack sockets report the same endpoint as the candidate that was signalled.
-
-ice::Endpoint from_network(const IPAddress &Source)
-{
-   ice::Endpoint result;
-   result.port = uint16_t(Source.Port);
-   result.ipv6 = Source.Type IS IPADDR::V6;
-
-   if (result.ipv6) {
-      std::memcpy(result.address.data(), Source.Data, 16);
-      bool mapped = true;
-      for (int i = 0; i < 10; ++i) if (result.address[i] != 0) mapped = false;
-      if (mapped and result.address[10] IS 0xff and result.address[11] IS 0xff) {
-         std::array<uint8_t, 4> ipv4{};
-         std::copy_n(result.address.begin() + 12, 4, ipv4.begin());
-         result.address = {};
-         std::copy(ipv4.begin(), ipv4.end(), result.address.begin());
-         result.ipv6 = false;
-      }
-   }
-   else { // IPv4 addresses are stored in host byte order
-      result.address[0] = uint8_t(Source.Data[0] >> 24);
-      result.address[1] = uint8_t(Source.Data[0] >> 16);
-      result.address[2] = uint8_t(Source.Data[0] >> 8);
-      result.address[3] = uint8_t(Source.Data[0]);
-   }
-
-   return result;
-}
-
-//********************************************************************************************************************
-
-IPAddress to_network(const ice::Endpoint &Destination)
-{
-   IPAddress result{};
-   result.Type = Destination.ipv6 ? IPADDR::V6 : IPADDR::V4;
-   result.Port = Destination.port;
-
-   if (Destination.ipv6) std::memcpy(result.Data, Destination.address.data(), 16);
-   else result.Data[0] = (uint32_t(Destination.address[0]) << 24) |
-      (uint32_t(Destination.address[1]) << 16) | (uint32_t(Destination.address[2]) << 8) |
-      Destination.address[3];
-
-   return result;
-}
-
-} // namespace
 
 //********************************************************************************************************************
 // IceSocket: ICE-lite and DTLS on a single UDP socket.

@@ -39,12 +39,7 @@ extWebChannel::~extWebChannel()
       if (Parent->Connection) Parent->Connection->detach_channel(Handle);
    }
 
-   for (auto field : {&OnOpen, &OnMessage, &OnClose, &OnError, &OnBufferedAmountLow}) {
-      if (field->defined()) {
-         field->unpin();
-         field->clear();
-      }
-   }
+   for (auto field : {&OnOpen, &OnMessage, &OnClose, &OnError, &OnBufferedAmountLow}) rtc_clear_callback(*field);
 }
 
 //********************************************************************************************************************
@@ -100,16 +95,10 @@ static void channel_notify(extWebChannel *Self, FUNCTION &Field, const rtc::Publ
 {
    if (Self->collecting() or not Self->Parent or Self->Parent->collecting()) return;
 
-   if (Field.stale()) {
-      Field.unpin();
-      Field.clear();
-   }
+   if (not rtc_live_callback(Field)) return;
 
-   if (not Field.defined()) return;
-
-   auto callback = Field;
-   callback.pin();
-   auto lifetime = kt::Defer([&]() { callback.unpin(); });
+   RetainedCallback retained(Field);
+   auto &callback = retained.function;
 
    ERR error = ERR::Okay;
    if (callback.isC()) {
@@ -206,9 +195,10 @@ RFC 8831 for further information.
 The channel must be in the `OPEN` state.  Messages of type `TEXT` must be valid UTF-8, and no message can exceed
 #MaxMessageSize.  Empty messages are permitted.
 
-The send queue is limited to 16 MiB for each channel and 32 MiB across the connection.  If a message would exceed
-these limits it is rejected with `ERR::BufferOverflow`, and the client should wait for #OnBufferedAmountLow before
-sending more data.
+The send queue is limited to 16 MiB and 1024 messages for each channel, and 32 MiB and 4096 messages across the
+connection.  If a message would exceed these limits it is rejected with `ERR::BufferOverflow`, and the client should
+wait for #OnBufferedAmountLow before sending more data.  Messages are also rejected with `ERR::BufferOverflow` while
+4094 or more channel events, such as received messages, are awaiting delivery to the client's callbacks.
 
 In Tiri, `Data` can be a string, which may contain embedded null bytes, an `array<byte>`, or `nil` for an empty
 message.
@@ -224,7 +214,7 @@ InvalidState: The channel is not open.
 InvalidValue: `Type` is not a recognised value.
 InvalidData: A `TEXT` message is not valid UTF-8.
 OutOfRange: The message exceeds #MaxMessageSize.
-BufferOverflow: The send queue is full.
+BufferOverflow: The send queue is full, or too many channel events are awaiting delivery.
 NoSupport: The remote peer does not support partially reliable delivery.
 
 -TAGS-
@@ -356,17 +346,7 @@ static ERR GET_OnClose(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnClose(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnClose.defined()) {
-      Self->OnClose.unpin();
-      Self->OnClose.clear();
-   }
-
-   if (Value) {
-      Self->OnClose = *Value;
-      Self->OnClose.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnClose, Value);
 }
 
 /*********************************************************************************************************************
@@ -394,17 +374,7 @@ static ERR GET_OnOpen(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnOpen(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnOpen.defined()) {
-      Self->OnOpen.unpin();
-      Self->OnOpen.clear();
-   }
-
-   if (Value) {
-      Self->OnOpen = *Value;
-      Self->OnOpen.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnOpen, Value);
 }
 
 /*********************************************************************************************************************
@@ -432,17 +402,7 @@ static ERR GET_OnError(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnError(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnError.defined()) {
-      Self->OnError.unpin();
-      Self->OnError.clear();
-   }
-
-   if (Value) {
-      Self->OnError = *Value;
-      Self->OnError.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnError, Value);
 }
 
 /*********************************************************************************************************************
@@ -474,17 +434,7 @@ static ERR GET_OnMessage(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnMessage(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnMessage.defined()) {
-      Self->OnMessage.unpin();
-      Self->OnMessage.clear();
-   }
-
-   if (Value) {
-      Self->OnMessage = *Value;
-      Self->OnMessage.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnMessage, Value);
 }
 
 /*********************************************************************************************************************
@@ -516,17 +466,7 @@ static ERR GET_OnBufferedAmountLow(extWebChannel *Self, FUNCTION * &Value)
 
 static ERR SET_OnBufferedAmountLow(extWebChannel *Self, FUNCTION *Value)
 {
-   if (Self->OnBufferedAmountLow.defined()) {
-      Self->OnBufferedAmountLow.unpin();
-      Self->OnBufferedAmountLow.clear();
-   }
-
-   if (Value) {
-      Self->OnBufferedAmountLow = *Value;
-      Self->OnBufferedAmountLow.pin();
-   }
-
-   return ERR::Okay;
+   return rtc_set_callback(Self->OnBufferedAmountLow, Value);
 }
 
 /*********************************************************************************************************************

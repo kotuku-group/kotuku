@@ -205,12 +205,12 @@ ERR SctpAssociation::enqueue(uint16_t Stream, uint32_t PPID, std::span<const uin
    // DCEP has a separate reservation: an application backlog must not reject the opening ACK.
 
    if (control) {
-      if (control_message_count >= 512 or Payload.size() > 256 * 1024 - control_send_bytes) {
+      if (control_message_count >= MAX_CONTROL_MESSAGES or Payload.size() > MAX_CONTROL_BYTES - control_send_bytes) {
          return ERR::BufferOverflow;
       }
    }
-   else if (send_message_count - control_message_count >= 4096 or
-       (count != channel_message_counts.end() and count->second >= 1024) or
+   else if (send_message_count - control_message_count >= MAX_QUEUED_MESSAGES or
+       (count != channel_message_counts.end() and count->second >= MAX_STREAM_MESSAGES) or
        retained_bytes - control_send_bytes > MAX_PAYLOAD - Payload.size()) return ERR::BufferOverflow;
 
    if (bytes != channel_send_bytes.end() and bytes->second > MAX_MESSAGE - Payload.size()) {
@@ -267,8 +267,8 @@ std::vector<uint8_t> SctpAssociation::data_value(const SentChunk &Chunk) const
 
 //********************************************************************************************************************
 // Packs DATA chunks into packets, subject to the congestion window, the peer's receive window and the path MTU.
-// Retransmissions take priority over new data.  A burst is limited to 256 chunks, after which the send timer resumes
-// transmission so that control output is never starved.
+// Retransmissions take priority over new data.  A burst is limited to MAX_BURST_CHUNKS, after which the send timer
+// resumes transmission so that control output is never starved.
 
 bool SctpAssociation::pump_data()
 {
@@ -283,8 +283,9 @@ bool SctpAssociation::pump_data()
    size_t payload_flight = 0;
    for (const auto &chunk : sent) if (not chunk.gap_acked and not chunk.abandoned) payload_flight += chunk.length;
 
-   size_t remaining = 256;
-   for (size_t packets = 0; packets < 48 and remaining and output.size() < MAX_OUTPUT - 8; ++packets) {
+   size_t remaining = MAX_BURST_CHUNKS;
+   for (size_t packets = 0; packets < MAX_BURST_PACKETS and remaining and output.size() < MAX_OUTPUT - OUTPUT_RESERVE;
+        ++packets) {
       Encoder encoder(config.local_port, config.remote_port, remote.tag, path_mtu);
       size_t used = HEADER_SIZE, chunks = 0;
       bool added = false;
@@ -387,7 +388,7 @@ bool SctpAssociation::pump_data()
       output.push_back(encoder.finish());
    }
 
-   if ((not queued.empty() or not remaining) and (output.size() >= MAX_OUTPUT - 8 or not remaining)) {
+   if ((not queued.empty() or not remaining) and (output.size() >= MAX_OUTPUT - OUTPUT_RESERVE or not remaining)) {
       return schedule(send_due, 1000);
    }
 
@@ -496,7 +497,7 @@ bool SctpAssociation::receive_data(const Item &Chunk)
 
    if (incoming_reset and after(tsn, incoming_reset->barrier) and
        std::ranges::find(incoming_reset->streams, stream) != incoming_reset->streams.end()) {
-      if (reset_deferred.size() >= 256) return send_sack();
+      if (reset_deferred.size() >= MAX_DEFERRED_FRAGMENTS) return send_sack();
       reset_deferred.emplace(tsn, Fragment{stream, sequence, ppid, Chunk.flags,
          std::vector<uint8_t>(payload.begin(), payload.end())});
       receive_bytes += payload.size();
@@ -526,15 +527,18 @@ bool SctpAssociation::receive_data(const Item &Chunk)
    if (not continuation and not (Chunk.flags & 2)) {
       size_t orphan_count = 0;
       for (const auto &[number, part] : fragments) if (part.stream IS stream) ++orphan_count;
-      if (assemblies.size() + fragments.size() >= 256 or orphan_count >= 16) return send_sack();
+      if (assemblies.size() + fragments.size() >= MAX_ASSEMBLIES or orphan_count >= MAX_STREAM_ORPHANS) {
+         return send_sack();
+      }
    }
 
    if (Chunk.flags & 2) { // First fragment: begin a new assembly
-      if (receive_records >= 4096 or messages.size() >= 64 or assemblies.size() >= 256) return send_sack();
+      if (receive_records >= MAX_RECEIVE_RECORDS or messages.size() >= MAX_PENDING_MESSAGES or
+          assemblies.size() >= MAX_ASSEMBLIES) return send_sack();
 
       size_t in_channel = 0;
       for (const auto &[begin, assembly] : assemblies) if (assembly.message.stream IS stream) ++in_channel;
-      if (in_channel >= 16) return send_sack();
+      if (in_channel >= MAX_STREAM_ASSEMBLIES) return send_sack();
 
       size_t reserve = (Chunk.flags & 1) ? payload.size() : limit;
       size_t orphan_bytes = 0;
@@ -591,12 +595,12 @@ bool SctpAssociation::receive_data(const Item &Chunk)
 
 //********************************************************************************************************************
 // Reassembles stored fragments into complete messages.  Unordered messages are delivered immediately, while ordered
-// messages are held until every earlier SSN on their stream has been delivered.  No more than 64 messages are
-// pending delivery at any time.
+// messages are held until every earlier SSN on their stream has been delivered.  No more than MAX_PENDING_MESSAGES
+// are pending delivery at any time.
 
 bool SctpAssociation::collect_messages()
 {
-   for (auto it = assemblies.begin(); it != assemblies.end() and messages.size() < 64;) {
+   for (auto it = assemblies.begin(); it != assemblies.end() and messages.size() < MAX_PENDING_MESSAGES;) {
       auto &assembly = it->second;
       bool complete = false;
 
@@ -642,7 +646,7 @@ bool SctpAssociation::collect_messages()
 
    for (auto &[stream, pending] : ordered_messages) {
       auto &sequence = receive_sequences[stream];
-      while (messages.size() < 64) {
+      while (messages.size() < MAX_PENDING_MESSAGES) {
          auto item = pending.find(sequence);
          if (item IS pending.end()) break;
          messages.push_back(std::move(item->second));
@@ -651,7 +655,7 @@ bool SctpAssociation::collect_messages()
       }
    }
 
-   if (messages.size() > 64) return fail(ERR::BufferOverflow);
+   if (messages.size() > MAX_PENDING_MESSAGES) return fail(ERR::BufferOverflow);
    return true;
 }
 

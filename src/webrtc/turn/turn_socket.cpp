@@ -2,12 +2,12 @@
 // for UDP or a NetSocket for TCP and TLS.
 
 #include "turn_socket.h"
+#include "../ice/network_endpoint.h"
 
 #include <openssl/rand.h>
 
 #include <algorithm>
 #include <chrono>
-#include <cstring>
 
 namespace rtc {
 namespace {
@@ -18,22 +18,6 @@ uint64_t turn_now_us()
 {
    return uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::steady_clock::now().time_since_epoch()).count());
-}
-
-//********************************************************************************************************************
-// Converts an ICE endpoint to a Network module address.  IPv4 addresses are stored in host byte order.
-
-IPAddress network_address(const ice::Endpoint &Endpoint)
-{
-   IPAddress result{};
-   result.Type = Endpoint.ipv6 ? IPADDR::V6 : IPADDR::V4;
-   result.Port = Endpoint.port;
-
-   if (Endpoint.ipv6) std::memcpy(result.Data, Endpoint.address.data(), 16);
-   else result.Data[0] = (uint32_t(Endpoint.address[0]) << 24) | (uint32_t(Endpoint.address[1]) << 16) |
-      (uint32_t(Endpoint.address[2]) << 8) | Endpoint.address[3];
-
-   return result;
 }
 
 //********************************************************************************************************************
@@ -89,7 +73,7 @@ ERR TurnSocket::open(uint64_t NowUs)
 {
    deadline = NowUs + 30000000;
 
-   auto address = network_address(id.server);
+   auto address = to_network(id.server);
    std::string text;
    if (net::AddressToStr(&address, &text) != ERR::Okay) return error = ERR::InvalidValue;
 
@@ -179,7 +163,7 @@ void TurnSocket::flush(uint64_t NowUs)
          accepted = args.Result;
       }
       else {
-         auto destination = network_address(id.server);
+         auto destination = to_network(id.server);
          result = udp->sendTo(&destination, bytes, &accepted);
       }
 
@@ -335,20 +319,11 @@ ERR TurnSocket::incoming_udp(objNetServer *Socket, APTR Context)
       if (Socket->recvFrom(&source, std::span(buffer).first(capacity), &received) != ERR::Okay or received <= 0) break;
       work += size_t(received);
 
-      auto expected = network_address(self->id.server);
-      if (source.Type IS IPADDR::V6 and expected.Type IS IPADDR::V4) {
-         auto bytes = (const uint8_t *)source.Data;
-         if (std::all_of(bytes, bytes + 10, [](uint8_t Byte) { return Byte IS 0; }) and
-             bytes[10] IS 0xff and bytes[11] IS 0xff) {
-            auto value = (uint32_t(bytes[12]) << 24) | (uint32_t(bytes[13]) << 16) |
-               (uint32_t(bytes[14]) << 8) | bytes[15];
-            source.Type = IPADDR::V4;
-            source.Data[0] = value;
-         }
-      }
+      // Dual-stack sockets can report an IPv4 server through an IPv4-mapped address.
 
-      if (source.Type != expected.Type or source.Port != expected.Port or
-          std::memcmp(source.Data, expected.Data, source.Type IS IPADDR::V6 ? 16 : 4)) continue;
+      auto expected = unmap_ipv4(self->id.server);
+      expected.route = 0;
+      if (from_network(source) != expected) continue;
 
       add_counter(self->counters.turn_received_bytes, size_t(received));
       self->receive({(const uint8_t *)buffer.data(), size_t(received)}, turn_now_us());
