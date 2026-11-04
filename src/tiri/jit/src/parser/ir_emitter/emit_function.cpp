@@ -662,8 +662,167 @@ ParserResult<ExpDesc> IrEmitter::emit_assignment_identifier(const NameRef &Refer
    return invariant("assignment target has an unknown semantic category");
 }
 
+//********************************************************************************************************************
+// Report whether Expr reads a struct element of a proved array, either directly (`arr[i]`) or through embedded struct
+// fields (`arr[i].Inner`).  Such a read produces a copy of the element, so stores through it require an
+// ElementStorePlan to reach the array.
+
+bool IrEmitter::is_struct_element_path(const ExprNode &Expr) const
+{
+   const auto &catalogue = this->ctx.descriptors();
+
+   if (Expr.kind IS AstNodeKind::IndexExpr) {
+      const auto &payload = std::get<IndexExprPayload>(Expr.data);
+      if (not payload.table or not payload.index or payload.index->kind IS AstNodeKind::RangeExpr) return false;
+      if (not can_use_static_receiver(catalogue, payload.table->static_value, TiriType::Array, true)) return false;
+      const auto &element = catalogue.value(payload.table->static_value).array_element;
+      return element.storage IS AET::STRUCT and element.struct_def;
+   }
+
+   if (Expr.kind IS AstNodeKind::MemberExpr) {
+      const auto &payload = std::get<MemberExprPayload>(Expr.data);
+      if (not payload.table or not payload.member.symbol) return false;
+      if (not can_use_static_receiver(catalogue, Expr.static_value, TiriType::Struct, true)) return false;
+      if (not can_use_static_receiver(catalogue, payload.table->static_value, TiriType::Struct, true)) return false;
+      return this->is_struct_element_path(*payload.table);
+   }
+
+   return false;
+}
+
+//********************************************************************************************************************
+// Evaluate the array and key of a struct element path once, and load the element copy and any embedded struct views
+// into it.  Record these loads for replay before subsequent reads or stores, preserving receiver validation before
+// evaluation of the right-hand side.  Expr must satisfy is_struct_element_path().
+
+ParserResult<ExpDesc> IrEmitter::prepare_struct_element_receiver(const ExprNode &Expr, ElementStorePlan &Plan)
+{
+   FuncState *fs = &this->func_state;
+   RegisterAllocator allocator(fs);
+
+   auto apply_descriptor = [&](ExpDesc &Result) {
+      if (not Expr.static_value) return;
+      const auto &descriptor = this->ctx.descriptors().value(Expr.static_value);
+      Result.static_value = Expr.static_value;
+      Result.result_type = descriptor.primary;
+      Result.object_class_id = descriptor.object_class_id;
+      Result.struct_def = descriptor.struct_def;
+   };
+
+   if (Expr.kind IS AstNodeKind::IndexExpr) {
+      const auto &payload = std::get<IndexExprPayload>(Expr.data);
+
+      // The array and a non-constant key are copied to fresh registers so that the right-hand side of the assignment
+      // cannot redirect the write-back, e.g. by reassigning a local that a closure has captured.
+
+      auto array_result = this->emit_expression(*payload.table);
+      if (not array_result.ok()) return array_result;
+      ExpDesc array = array_result.value_ref();
+      this->materialise_to_next_reg(array, "struct element array");
+
+      auto key_result = this->emit_expression(*payload.index);
+      if (not key_result.ok()) return key_result;
+      ExpDesc key = key_result.value_ref();
+      ExpressionValue key_value(fs, key);
+      key_value.to_val();
+      key = key_value.legacy();
+      if (not key.is_num_constant()) this->materialise_to_next_reg(key, "struct element key");
+      expr_index(fs, &array, &key);
+
+      IndexOperand operand(array.u.s.aux);
+      allocator.reserve(BCReg(1));
+      Plan.array   = array.u.s.info;
+      Plan.key     = array.u.s.aux;
+      Plan.element = fs->freereg - 1;
+      Plan.top     = fs->freereg;
+
+      if (operand.kind() IS IndexOperandKind::ByteConstant) {
+         Plan.reload.push_back(BCINS_ABC(BC_AGETB, Plan.element, Plan.array, operand.byte_constant()));
+      }
+      else Plan.reload.push_back(BCINS_ABC(BC_AGETV, Plan.element, Plan.array, operand.register_index()));
+      bcemit_INS(fs, Plan.reload.back());
+
+      ExpDesc result;
+      result.init(ExpKind::NonReloc, Plan.element);
+      apply_descriptor(result);
+      return ParserResult<ExpDesc>::success(result);
+   }
+
+   // Embedded struct field reads produce a view into the receiver's payload, so stores through it reach the element
+   // copy.  A string key outside the byte-sized constant range uses the generic register-key read.
+
+   const auto &payload = std::get<MemberExprPayload>(Expr.data);
+   auto receiver_result = this->prepare_struct_element_receiver(*payload.table, Plan);
+   if (not receiver_result.ok()) return receiver_result;
+   ExpDesc receiver = receiver_result.value_ref();
+
+   ExpDesc view = receiver;
+   ExpDesc key(ExpKind::Str);
+   key.u.sval = payload.member.symbol;
+   expr_index(fs, &view, &key);
+   apply_struct_field_metadata(view, receiver.struct_def, payload.member.symbol);
+
+   IndexOperand operand(view.u.s.aux);
+   allocator.reserve(BCReg(1));
+   BCREG view_reg = fs->freereg - 1;
+   Plan.top = fs->freereg;
+   if (operand.is_string_constant()) {
+      Plan.reload.push_back(BCINS_ABCP(BC_STGETF, view_reg, receiver.u.s.info, operand.string_constant(),
+         view.struct_field_index));
+   }
+   else {
+      Plan.reload.push_back(BCINS_ABC(BC_TGETV, view_reg, receiver.u.s.info, operand.register_index()));
+   }
+   bcemit_INS(fs, Plan.reload.back());
+
+   ExpDesc result;
+   result.init(ExpKind::NonReloc, view_reg);
+   apply_descriptor(result);
+   return ParserResult<ExpDesc>::success(result);
+}
+
+//********************************************************************************************************************
+// Load a fresh copy of the element, and any embedded struct views into it, into the registers of the plan.
+
+void IrEmitter::emit_element_reload(const ElementStorePlan &Plan)
+{
+   for (BCIns ins : Plan.reload) bcemit_INS(&this->func_state, ins);
+}
+
+//********************************************************************************************************************
+// Store Value into an assignment target.  Targets with an active ElementStorePlan reload the element copy immediately
+// before the store and write it back to the array afterwards, so that the store reaches the array and observes any
+// changes made to the element since the target was prepared.
+
+void IrEmitter::emit_target_store(const ElementStorePlan &Plan, ExpDesc *Target, ExpDesc *Value)
+{
+   FuncState *fs = &this->func_state;
+   if (not Plan.active()) {
+      bcemit_store(fs, Target, Value);
+      return;
+   }
+
+   // Discharge the value first: replaying the reload must not separate a pending value from its jump lists.
+
+   expr_toanyreg(fs, Value);
+   fs_check_assert(fs, Value->u.s.info >= Plan.top or Value->u.s.info < Plan.array,
+      "struct element store value overlaps the element registers");
+
+   this->emit_element_reload(Plan);
+   bcemit_store(fs, Target, Value);
+
+   IndexOperand key(Plan.key);
+   if (key.kind() IS IndexOperandKind::ByteConstant) {
+      bcemit_ABC(fs, BC_ASETB, Plan.element, Plan.array, key.byte_constant());
+   }
+   else bcemit_ABC(fs, BC_ASETV, Plan.element, Plan.array, key.register_index());
+}
+
+//********************************************************************************************************************
+
 ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(
-   const ExprNode &Expr, bool AllocNewLocal, ControlFlowEdge* SafeNavSkip, bool UseAssignmentResolution)
+   const ExprNode &Expr, bool AllocNewLocal, ControlFlowEdge* SafeNavSkip, bool UseAssignmentResolution,
+   ElementStorePlan *ElementPlan)
 {
    auto append_safe_nav_skip = [&](BCPos SkipPos) {
       if (not SafeNavSkip) return;
@@ -695,7 +854,9 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(
 
          auto table_result = SafeNavSkip
             ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false)
-            : this->emit_expression(*payload.table);
+            : (ElementPlan and this->is_struct_element_path(*payload.table))
+               ? this->prepare_struct_element_receiver(*payload.table, *ElementPlan)
+               : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
          ExpDesc table = table_result.value_ref();
          StaticValueHandle receiver_descriptor = table.static_value;
@@ -744,7 +905,9 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(
 
          auto table_result = SafeNavSkip
             ? this->emit_lvalue_expr(*payload.table, false, SafeNavSkip, false)
-            : this->emit_expression(*payload.table);
+            : (ElementPlan and this->is_struct_element_path(*payload.table))
+               ? this->prepare_struct_element_receiver(*payload.table, *ElementPlan)
+               : this->emit_expression(*payload.table);
          if (not table_result.ok()) return table_result;
 
          ExpDesc table = table_result.value_ref();
@@ -769,6 +932,9 @@ ParserResult<ExpDesc> IrEmitter::emit_lvalue_expr(
          ExpressionValue key_toval_idx(&this->func_state, key);
          key_toval_idx.to_val();
          key = key_toval_idx.legacy();
+         if (ElementPlan and ElementPlan->active() and not key.is_constant()) {
+            this->materialise_to_next_reg(key, "struct element field key");
+         }
          expr_index(&this->func_state, &table, &key);
 
          // Select specialised store bytecodes only when the receiver's static descriptor proves its category.

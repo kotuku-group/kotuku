@@ -119,6 +119,24 @@ private:
    OperatorEmitter operator_emitter;
 };
 
+//********************************************************************************************************************
+// Store plan for an assignment target that addresses a struct element of a proved array, e.g. `arr[i].x` or
+// `arr[i].Inner.V`.  Reading a struct element produces a copy, so a store is lowered to: reload the copy (and any
+// embedded struct views into it), store into the copy, then write the copy back to the array.  The array and key are
+// evaluated once into fresh registers, while the reload instructions are recorded so that they can be replayed
+// immediately before every read or store of the target.  This keeps the copy current when other targets or the
+// right-hand side modify the same element.
+
+struct ElementStorePlan {
+   std::vector<BCIns> reload;   // AGETV/AGETB of the element followed by STGETF/TGETV for embedded struct views
+   BCREG array = 0;             // Fresh register holding the array
+   uint32_t key = 0;            // IndexOperand encoding of the element key (byte constant or fresh register)
+   BCREG element = 0;           // Register receiving the element copy
+   BCREG top = 0;               // One past the highest register used by the plan
+
+   [[nodiscard]] inline bool active() const noexcept { return not this->reload.empty(); }
+};
+
 struct PreparedAssignment {
    PreparedAssignment() = default;
    PreparedAssignment(PreparedAssignment&&) = default;
@@ -139,6 +157,7 @@ struct PreparedAssignment {
    BCLine pending_line = 0;      // Line number for deferred variable declaration
    BCLine pending_column = 0;    // Column number for deferred variable declaration
    ControlFlowEdge safe_nav_skip;
+   ElementStorePlan element_plan; // Active when the target is a field of a struct array element
 };
 
 //********************************************************************************************************************
@@ -288,7 +307,11 @@ private:
    ParserResult<ExpDesc> emit_expression_list(const ExprNodeList& expressions, BCReg& count);
    ParserResult<ExpDesc> emit_lvalue_expr(
       const ExprNode& expr, bool allow_new_local = true, ControlFlowEdge* safe_nav_skip = nullptr,
-      bool UseAssignmentResolution = true);
+      bool UseAssignmentResolution = true, ElementStorePlan *ElementPlan = nullptr);
+   [[nodiscard]] bool is_struct_element_path(const ExprNode &Expr) const;
+   ParserResult<ExpDesc> prepare_struct_element_receiver(const ExprNode &Expr, ElementStorePlan &Plan);
+   void emit_element_reload(const ElementStorePlan &Plan);
+   void emit_target_store(const ElementStorePlan &Plan, ExpDesc *Target, ExpDesc *Value);
    ParserResult<ExpDesc> emit_assignment_identifier(const NameRef &, bool AllocNewLocal);
    ParserResult<ControlFlowEdge> emit_condition_jump(const ExprNode& expr);
    ParserResult<ExpDesc> emit_function_lvalue(const FunctionNamePath& path);

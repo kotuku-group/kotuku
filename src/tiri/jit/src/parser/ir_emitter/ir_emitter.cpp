@@ -3518,10 +3518,12 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
 
    // For update expressions, do not create a new local for unscoped variables.  The variable must already exist.
 
-   auto target_result = this->emit_lvalue_expr(*Payload.target, false);
+   ElementStorePlan element_plan;
+   auto target_result = this->emit_lvalue_expr(*Payload.target, false, nullptr, true, &element_plan);
    if (not target_result.ok()) return target_result;
    ExpDesc target = target_result.value_ref();
 
+   this->emit_element_reload(element_plan);
    RegisterAllocator allocator(&this->func_state);
 
    // For indexed expressions, we need to duplicate table operands to avoid clobbering
@@ -3549,7 +3551,7 @@ ParserResult<ExpDesc> IrEmitter::emit_update_expr(const UpdateExprPayload &Paylo
    // Use OperatorEmitter for arithmetic operation (operand +/- 1)
    this->operator_emitter.emit_binary_arith(op, ExprValue(&infix), delta);
 
-   bcemit_store(&this->func_state, &target, &infix);
+   this->emit_target_store(element_plan, &target, &infix);
    allocator.release(copies.reserved);
    release_indexed_original(this->func_state, target);
 
