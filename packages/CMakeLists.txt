@@ -233,3 +233,5 @@ flute_test (package_chatgpt "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_chatgpt.tiri
 #flute_test (package_smtp "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_smtp.tiri") Run manually
 flute_test (package_gui_menu "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_menu.tiri")
 flute_test (package_gui_slider "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_slider.tiri")
+flute_test (package_file_transfer "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_file_transfer.tiri")
+flute_test (package_gui_fileview_move "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_fileview_move.tiri")

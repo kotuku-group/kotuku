@@ -1,6 +1,6 @@
 @Package(name="io/filemgr", version="1.0")
 
--- Support for the mass copying of files to a folder
+-- Support for the mass copying and moving of files to a folder
 -- Designed for calling from a script in a dedicated thread.
 
    import 'gui/dialog'
@@ -10,20 +10,33 @@ io.ui ?= { }
 rxCopy = <{ regex.new('^[A-Z].+') }>
 rxStripFolder = <{ regex.new([[^(.*?)[\/\\]*$]], regex.DOT_ALL) }> -- Remove trailing folder separators
 
-local progress_status, progress_dialog:table, progress_time
+local progress_status, progress_dialog:table, progress_time, progress_verb:str, progress_cancel:func
 
 -- Resets the progress state at the start of an operation, so that a cancelled operation cannot affect the next one.
+-- Cancel is an optional function that returns true when the client wants the operation to stop.
 
-function startProgress()
+function startProgress(Verb:str, Cancel:func)
    progress_status = nil
    progress_dialog = nil
    progress_time = mSys.PreciseTime()
+   progress_verb = Verb ?? 'Copying'
+   progress_cancel = Cancel
 end
 
 function endProgress()
    progress_dialog?.window?.surface?.free()
    progress_dialog = nil
    progress_status = nil
+   progress_cancel = nil
+end
+
+function progressCancelled():bool
+   if progress_status is 'cancel' then return true end
+   if progress_cancel and progress_cancel() then
+      progress_status = 'cancel'
+      return true
+   end
+   return false
 end
 
 -- copyFeedback() is called for every file that is copied, or multiple times for large files.
@@ -31,7 +44,7 @@ end
 function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, FeedbackID)
    msg(f'Copy feedback: {Path} TO {Dest}')
 
-   if progress_status is 'cancel' then
+   if progressCancelled() then
       return FFR_ABORT
    elseif progress_status is 'closed' then
       return FFR_OKAY
@@ -44,7 +57,7 @@ function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, Feed
          image   = 'items/file_transfer',
          title   = 'File Transfer Progress',
          type    = 'info',
-         message = 'Copying...\nPlease wait...',
+         message = f'{progress_verb}...\nPlease wait...',
          options = { { id=-1, label='Cancel', icon='items/cancel' } },
          feedback = function(Dialog, Response, State)
             if Response and Response.id is -1 then
@@ -64,15 +77,15 @@ function copyFeedback(Size:num!, Position:num!, Path:str!, Dest:str!, User, Feed
       local msg
       if Position is 0 then
          if Size >= 1048576 then
-            msg = string.format('Copying: %s\n\n%.2f MB', file, Size / 1048576.0)
+            msg = string.format('%s: %s\n\n%.2f MB', progress_verb, file, Size / 1048576.0)
          else
-            msg = string.format('Copying: %s\n\n%.2f KB', file, Size / 1024.0)
+            msg = string.format('%s: %s\n\n%.2f KB', progress_verb, file, Size / 1024.0)
          end
       elseif mSys.PreciseTime() - progress_time > 50000 then
          if Size >= 1048576 then
-            msg = string.format('Copying: %s\n\n%.2f / %.2f MB', file, Position / 1048576.0, Size / 1048576.0)
+            msg = string.format('%s: %s\n\n%.2f / %.2f MB', progress_verb, file, Position / 1048576.0, Size / 1048576.0)
          else
-            msg = string.format('Copying: %s\n\n%.2f / %.2f KB', file, Position / 1024.0, Size / 1024.0)
+            msg = string.format('%s: %s\n\n%.2f / %.2f KB', progress_verb, file, Position / 1024.0, Size / 1024.0)
          end
       end
 
@@ -109,27 +122,133 @@ io.ui.paste = function(Dest:str!)
 end
 
 ----------------------------------------------------------------------------------------------------------------------
--- NB: This call can block if it needs a response from the user.  It does not return until the copy is complete.
+-- Item results reported by io.ui.transfer().  Every source receives exactly one final status:
+--
+--   accepted:  Queued for the transfer.  This status only remains if the transfer has not processed the item yet.
+--   completed: The destination was written.  For a move, the source was also confirmed as removed.
+--   skipped:   The item was deliberately not transferred (see reason).  The source is unchanged.
+--   cancelled: The operation was cancelled or aborted before the item completed (see reason).  The source is
+--              unchanged, although a cancelled item can leave a partial destination.
+--   failed:    The item could not be transferred, or for a move its source could not be removed (see reason and
+--              error).  The source remains in place unless reason is 'delete' and its removal was only partial.
 
-io.ui.copy = function(Source:any!, Dest:str!, Move:bool)
-   if Source is <str> then
-      Source = array<str> { Source }
-   elseif Source != <table> and Source != <array> then
-      raise 'Provided Source is not a collection'
+function pathExists(Path:str!):bool
+   local err, resolved = mSys.ResolvePath(Path, RSF_NO_FILE_CHECK)
+   if err != ERR_Okay then return false end
+   local status, kind = mSys.AnalysePath(resolved)
+   return status is ERR_Okay and (kind is LOC_FILE or kind is LOC_DIRECTORY)
+end
+
+-- Moves one item.  The platform move is accepted only when it completes without copying data, e.g. a rename within
+-- the same file system.  If it starts to copy, it is stopped and replaced with an explicit copy, so that the source is
+-- only removed after its destination has been written in full.  The outcome is verified against the file system in
+-- both cases.  Returns an error code and, on failure, the stage that failed ('transfer' or 'delete').
+
+function moveItem(Source:str!, Dest:str!):<num, str>
+   local first = true
+   local fallback = false
+   local err = mSys.MoveFile(Source, Dest, function(Size, Position, Path, DestPath, User, FeedbackID)
+      if first then -- Issued before the rename is attempted
+         first = false
+         return copyFeedback(Size, Position, Path, DestPath) ?? FFR_OKAY
+      end
+      fallback = true
+      return FFR_ABORT
+   end)
+
+   if fallback then
+      err = mSys.CopyFile(Source, Dest, copyFeedback)
+      if err != ERR_Okay then return err, 'transfer' end
+      if not pathExists(Dest) then return ERR_Failed, 'transfer' end
+      err = mSys.DeleteFile(Source)
+      if err != ERR_Okay then return err, 'delete' end
+      if pathExists(Source) then return ERR_DeleteFile, 'delete' end
+      return ERR_Okay
+   end
+
+   if err is ERR_Okay then
+      if not pathExists(Dest) then return ERR_Failed, 'transfer' end
+      if pathExists(Source) then return ERR_DeleteFile, 'delete' end
+      return ERR_Okay
+   end
+   -- A failed platform move does not confirm that copying completed.  An existing destination may be unchanged.
+   return err, 'transfer'
+end
+
+function transferError(Operation:str!, Item:table!):str
+   local _, name = io.splitPath(rxStripFolder.extract(Item.source))
+   if Item.reason is 'delete' then
+      return f'The item was copied to its destination, but the original could not be removed:\n\n{name}\n\n' ..
+         mSys.GetErrorMsg(Item.error)
+   elseif Item.error is ERR_OutOfSpace then
+      return f'There is not enough space in the destination drive to {Operation} this item:\n\n{name}'
+   elseif Item.error is ERR_Permissions then
+      return f'You do not have the necessary permissions to {Operation} this item:\n\n{name}'
+   end
+   return f'An error occurred while processing this item:\n\n{name}\n\n{mSys.GetErrorMsg(Item.error)} ' ..
+      'Process cancelled.'
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Copies or moves files and folders into the Dest folder, with progress, collision and error handling.  Sources is a
+-- path or a collection of paths; folders must end with a separator.  NB: This call can block if it needs a response
+-- from the user.  It does not return until the operation is complete.
+--
+-- Options:
+--   operation:   'copy' (default) or 'move'.
+--   collision:   function(Info):str, replaces the overwrite dialog.  Info has source, dest, name and folder fields.
+--                Return 'yes', 'no', 'yes-all', 'no-all' or 'cancel'.
+--   error:       function(Item, Message), replaces the error dialog.
+--   isCancelled: function():bool, polled before each item and during transfers.  Return true to cancel.
+--
+-- Returns a table of { operation, dest, error, items, completed, skipped, cancelled, failed }.  Items holds one
+-- { source, dest, status, reason, error } entry per source, in source order.  The error is ERR_Okay, ERR_Cancelled
+-- or ERR_File.  The first failure ends the operation, and later items are reported as cancelled ('aborted').
+--
+-- For moves, a source is only removed once its destination is complete.  A rename is used where the platform supports
+-- it, otherwise the item is copied and the source is then deleted.  Sources that already occupy their destination are
+-- skipped.
+
+io.ui.transfer = function(Sources:any!, Dest:str!, Options:table):table
+   Options ?= { }
+   local operation = Options.operation ?? 'copy'
+   if operation != 'copy' and operation != 'move' then
+      raise ERR_Args, f'Unsupported file transfer operation "{operation}"'
+   end
+   local move = operation is 'move'
+
+   if Sources is <str> then
+      Sources = array<str> { Sources }
+   elseif Sources != <table> and Sources != <array> then
+      raise 'Provided Sources is not a collection'
    end
 
    local last = Dest.sub(-1)
    if last != '/' and last != '\\' and last != ':' then Dest ..= '/' end
 
-   -- Scan the file list and move or copy each file to the Dest folder
+   local results = { operation=operation, dest=Dest, error=ERR_Okay, items=array<table> { } }
+   for src in values(Sources) do results.items.push({ source=src, status='accepted' }) end
 
-   startProgress()
+   startProgress(move ? 'Moving' : 'Copying', Options.isCancelled)
    defer endProgress() end
+
    local response = 'yes'
-   local err:num = ERR_Okay
-   for src_path in values(Source) do
+   local stopped:str -- Set to the reason when the operation ends early
+   for item in values(results.items) do
+      if not stopped and progressCancelled() then
+         stopped = 'user'
+         results.error = ERR_Cancelled
+      end
+
+      if stopped then
+         item.status = 'cancelled'
+         item.reason = stopped
+         continue
+      end
+
       if response != 'yes-all' and response != 'no-all' then response = 'yes' end -- Reset to the default
 
+      local src_path = item.source
       msg('Processing file source ' .. src_path)
 
       -- A folder source ends with a separator.  Its name is the last path component, and the destination path is
@@ -139,107 +258,125 @@ io.ui.copy = function(Source:any!, Dest:str!, Move:bool)
       local is_folder = #src_stripped < #src_path
       local _, src_file = io.splitPath(src_stripped)
       if src_file is '' then
-         msg(f'Skipping "{src_path}", it has no name to copy to.')
+         msg(f'Skipping "{src_path}", it has no name to {operation} to.')
+         item.status = 'skipped'
+         item.reason = 'name'
          continue
       end
       local dest_path = Dest .. src_file
 
-      -- Check if the destination already exists
+      if src_stripped is dest_path then
+         if move then -- Do nothing when moving an item to its current location
+            item.status = 'skipped'
+            item.reason = 'identical'
+            continue
+         elseif rxCopy.test(dest_path) then
+            dest_path = Dest .. 'Copy of ' .. src_file
+         else
+            dest_path = Dest .. 'copy of ' .. src_file
+         end
+      end
+      item.dest = dest_path
 
-      if response != 'yes-all' then
-         if src_stripped is dest_path then
-            if Move then
-               continue -- Do nothing for move operations when the source and destination are identical
-            elseif rxCopy.test(dest_path) then
-               dest_path = Dest .. 'Copy of ' .. src_file
+      -- Check if the destination already exists and request user confirmation
+
+      if response != 'yes-all' and pathExists(dest_path) then
+         if response != 'no-all' then
+            if Options.collision then
+               response = Options.collision({ source=src_path, dest=dest_path, name=src_file, folder=is_folder })
             else
-               dest_path = Dest .. 'copy of ' .. src_file
+               local dlg = gui.dialog.message({
+                  type    = 'warning',
+                  image   = 'items/file_alert',
+                  options = { { id=-2, label='No to All', icon='items/cancel' },
+                              { id=-1, label='No', icon='items/cancel' },
+                              { id=1, label='Yes', icon='items/checkmark' },
+                              { id=2, label='Yes to All', icon='items/checkmark_many' } },
+                  title   = 'Confirmation Required',
+                  message = is_folder ?
+                     'A folder with this name already exists.  Should its contents be replaced?\n\n' .. src_file :
+                     'You are about to overwrite this file.  Should it be replaced?\n\n' .. src_file,
+                  feedback = function(Dialog, Response, State)
+                     response = choose Response?.id from
+                        -1 -> 'no'
+                        -2 -> 'no-all'
+                        1  -> 'yes'
+                        2  -> 'yes-all'
+                        else -> 'cancel'
+                     end
+                  end
+               })
+
+               dlg.wait()
             end
+
+            progress_time = mSys.PreciseTime() -- Reset the start time whenever the user is consulted
          end
 
-         -- Request user confirmation
-
-         local exists = false
-         local err, path = mSys.ResolvePath(dest_path, RSF_NO_FILE_CHECK)
-         if err is ERR_Okay then -- Resolve to avoid multi-directory volume problems
-            local err, file_type = mSys.AnalysePath(path)
-            if (err is ERR_Okay) and (file_type is LOC_FILE or file_type is LOC_DIRECTORY) then
-               exists = true
-            end
-         end
-
-         if exists and response is 'no-all' then
+         if response is 'no' or response is 'no-all' then
+            msg('Skipping file ' .. src_file .. ', response ' .. response)
+            item.status = 'skipped'
+            item.reason = 'exists'
+            continue
+         elseif response != 'yes' and response != 'yes-all' then
+            msg(f'{operation} operation cancelled.')
+            item.status = 'cancelled'
+            item.reason = 'user'
+            stopped = 'user'
+            results.error = ERR_Cancelled
             continue
          end
-
-         if exists then
-            local dlg = gui.dialog.message({
-               type    = 'warning',
-               image   = 'items/file_alert',
-               options = { { id=-2, label='No to All', icon='items/cancel' },
-                           { id=-1, label='No', icon='items/cancel' },
-                           { id=1, label='Yes', icon='items/checkmark' },
-                           { id=2, label='Yes to All', icon='items/checkmark_many' } },
-               title   = 'Confirmation Required',
-               message = is_folder ?
-                  'A folder with this name already exists.  Should its contents be replaced?\n\n' .. src_file :
-                  'You are about to overwrite this file.  Should it be replaced?\n\n' .. src_file,
-               feedback = function(Dialog, Response, State)
-                  response = choose Response?.id from
-                     -1 -> 'no'
-                     -2 -> 'no-all'
-                     1  -> 'yes'
-                     2  -> 'yes-all'
-                     else -> 'cancel'
-                  end
-               end
-            })
-
-            progress_time = mSys.PreciseTime() -- Reset the start time whenever a user dialog is presented
-
-            dlg.wait()
-         end
       end
 
-      if response is 'cancel' then
-         msg('Paste operation cancelled.')
-         return ERR_Cancelled
-      end
+      msg(f'{operation} from "{src_path}" TO "{dest_path}"')
 
-      if response is 'no' or response is 'no-all' then
-         msg('Skipping file ' .. src_file .. ', response ' .. response)
+      local err, stage
+      if move then
+         err, stage = moveItem(src_path, dest_path)
       else
-         msg('Copy from "' .. src_path .. '" TO "' .. dest_path .. '"')
+         err = mSys.CopyFile(src_path, dest_path, copyFeedback)
+         stage = 'transfer'
+      end
 
-         if Move then
-            err = mSys.MoveFile(src_path, dest_path, copyFeedback)
+      if err is ERR_Okay then
+         item.status = 'completed'
+      elseif err is ERR_Cancelled and stage is 'transfer' then
+         msg(f'{operation} operation cancelled.')
+         item.status = 'cancelled'
+         item.reason = 'user'
+         stopped = 'user'
+         results.error = ERR_Cancelled
+      else
+         msg(f'Error during {operation} operation [{err}]: {mSys.GetErrorMsg(err)}')
+         item.status = 'failed'
+         item.reason = stage
+         item.error  = err
+         stopped = 'aborted'
+         results.error = ERR_File
+
+         local message = transferError(operation, item)
+         if Options.error then
+            Options.error(item, message)
          else
-            err = mSys.CopyFile(src_path, dest_path, copyFeedback)
-         end
-
-         if err is ERR_Cancelled then return err end
-
-         if err != ERR_Okay then
-            msg('Error during paste operation [' .. err .. ']: ' .. mSys.GetErrorMsg(err))
-
-            local message
-            if err is ERR_OutOfSpace then
-               message = f'There is not enough space in the destination drive to copy this file:\n\n{src_file}'
-            elseif err is ERR_Permissions then
-               message = f'You do not have the necessary permissions to copy this file:\n\n{src_file}'
-            else
-               local emsg = mSys.GetErrorMsg(err)
-               message = f'An error occurred while copying this file:\n\n{src_file}\n\n{emsg} Process cancelled.'
-            end
-
-            local dlg = gui.dialog.error('File Paste Failure', message)
+            local dlg = gui.dialog.error(move ? 'File Move Failure' : 'File Copy Failure', message)
             dlg.wait()
-            return ERR_File
          end
       end
-   end -- for loop
+   end
 
-   return err
+   for status in values({ 'completed', 'skipped', 'cancelled', 'failed' }) do
+      results[status] = 0
+   end
+   for item in values(results.items) do
+      if results[item.status] then results[item.status] += 1 end
+   end
+   return results
+end
+
+-- Retained for compatibility.  Copies, or moves if Move is true, and returns ERR_Okay, ERR_Cancelled or ERR_File.
+
+io.ui.copy = function(Source:any!, Dest:str!, Move:bool):num
+   return io.ui.transfer(Source, Dest, { operation = Move ? 'move' : 'copy' }).error
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -251,7 +388,7 @@ io.ui.delete = function(Paths)
       raise 'Path must be a string or collection.'
    end
 
-   startProgress()
+   startProgress('Deleting')
    defer endProgress() end
    for path in values(Paths) do
       mSys.DeleteFile(path, function(Size, Position, Path)
