@@ -939,6 +939,10 @@ the currently plotted point.  The `X` and `Y` parameters reflect the coordinate 
 
 If the `Callback` returns `ERR::Terminate`, then no further coordinates will be processed.
 
+The path of a @VectorViewport is its clipping rectangle.  Without transforms it is traced at the viewport's position
+and size in the coordinate system of its parent.  With transforms it is traced in the coordinate system of the scene,
+which is useful for determining the scale and orientation of the viewport's content.
+
 -INPUT-
 func Callback: A function to call with the path coordinates.
 double Scale: Set to `1.0` (recommended) to trace the path at a scale of 1 to 1.
@@ -970,8 +974,26 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
 
    if (Self->BasePath.empty()) return ERR::NoData;
 
-   Self->BasePath.rewind(0);
-   Self->BasePath.approximation_scale(Args->Scale);
+   // The path of a viewport is stored with its transforms applied, so its untransformed rectangle is reconstructed
+   // from its position and size if the transforms are not wanted.
+
+   agg::path_storage local_path;
+   agg::path_storage *path = &Self->BasePath;
+   agg::trans_affine transform;
+
+   if (Self->classID() IS CLASSID::VECTORVIEWPORT) {
+      if (not Args->Transform) {
+         auto view = (extVectorViewport *)Self;
+         local_path.rect(view->vpFixedWidth, view->vpFixedHeight);
+         local_path.translate(view->FinalX, view->FinalY);
+         path = &local_path;
+      }
+   }
+   else if (Args->Transform) transform = Self->Transform;
+
+   path->rewind(0);
+   path->approximation_scale(Args->Scale);
+   agg::conv_transform<agg::path_storage, agg::trans_affine> t_path(*path, transform);
 
    double x, y;
    int cmd = -1;
@@ -982,27 +1004,12 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
 
       kt::SwitchContext context(ParentContext());
 
-      if (Args->Transform) {
-         agg::conv_transform<agg::path_storage, agg::trans_affine> t_path(Self->BasePath, Self->Transform);
-         do {
-            cmd = t_path.vertex(&x, &y);
-            if (agg::is_vertex(cmd)) {
-               if (routine(Self, index++, cmd, x, y, Args->Callback.Meta) IS ERR::Terminate) {
-                  return ERR::Okay;
-               }
-            }
-         } while (cmd != agg::path_cmd_stop);
-      }
-      else {
-         do {
-            cmd = Self->BasePath.vertex(&x, &y);
-            if (agg::is_vertex(cmd)) {
-               if (routine(Self, index++, cmd, x, y, Args->Callback.Meta) IS ERR::Terminate) {
-                  return ERR::Okay;
-               }
-            }
-         } while (cmd != agg::path_cmd_stop);
-      }
+      do {
+         cmd = t_path.vertex(&x, &y);
+         if (agg::is_vertex(cmd)) {
+            if (routine(Self, index++, cmd, x, y, Args->Callback.Meta) IS ERR::Terminate) return ERR::Okay;
+         }
+      } while (cmd != agg::path_cmd_stop);
    }
    else if (Args->Callback.isScript()) {
       std::array<ScriptArg, 5> args {{
@@ -1014,35 +1021,18 @@ static ERR VECTOR_Trace(extVector *Self, struct vec::Trace *Args)
       }};
       args[0].Int = Self->UID;
 
-      if (Args->Transform) {
-         agg::conv_transform<agg::path_storage, agg::trans_affine> t_path(Self->BasePath, Self->Transform);
-         ERR result;
-         do {
-            cmd = t_path.vertex(&x, &y);
-            if (agg::is_vertex(cmd)) {
-               args[1].Int = index++;
-               args[2].Int = cmd;
-               args[3].Double = x;
-               args[4].Double = y;
-               if (sc::Call(Args->Callback, args, result) != ERR::Okay) return ERR::Function;
-               if (result IS ERR::Terminate) return ERR::Okay;
-            }
-         } while (cmd != agg::path_cmd_stop);
-      }
-      else {
-         ERR result;
-         do {
-            cmd = Self->BasePath.vertex(&x, &y);
-            if (agg::is_vertex(cmd)) {
-               args[1].Int = index++;
-               args[2].Int = cmd;
-               args[3].Double = x;
-               args[4].Double = y;
-               if (sc::Call(Args->Callback, args, result) != ERR::Okay) return ERR::Function;
-               if (result IS ERR::Terminate) return ERR::Okay;
-            }
-         } while (cmd != agg::path_cmd_stop);
-      }
+      ERR result;
+      do {
+         cmd = t_path.vertex(&x, &y);
+         if (agg::is_vertex(cmd)) {
+            args[1].Int = index++;
+            args[2].Int = cmd;
+            args[3].Double = x;
+            args[4].Double = y;
+            if (sc::Call(Args->Callback, args, result) != ERR::Okay) return ERR::Function;
+            if (result IS ERR::Terminate) return ERR::Okay;
+         }
+      } while (cmd != agg::path_cmd_stop);
    }
 
    return ERR::Okay;
