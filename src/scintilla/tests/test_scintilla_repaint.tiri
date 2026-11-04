@@ -254,7 +254,7 @@ end
 
 ----------------------------------------------------------------------------------------------------------------------
 -- The caret is only drawn while the editor has the focus, which requires a focused surface.  Moving the caret
--- restarts its blink period, so each comparison completes while the caret is visible.
+-- restarts its blink period of 500ms, so each comparison completes while the caret is visible.
 
 @Test function CaretMovement()
    local surface <close> = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
@@ -266,10 +266,13 @@ end
    check surface.acShow()
    check surface.acFocus()
 
+   -- The editor's repaint schedules a redraw of the surface for its next frame, and Surface.acDraw() does nothing while
+   -- that redraw is pending.  Waiting for longer than a frame at the 25 FPS minimum lets the scheduled redraw run.
+
    function snapshot():array<int>
       processing.sleep(0)
+      processing.sleep(0.05)
       check surface.acDraw()
-      processing.sleep(0)
       local bmp <close> = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
       check mGfx.CopySurface(surface.id, bmp, 0, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, 0, 0)
       return capture(bmp)

@@ -61,8 +61,10 @@ gui.listView = function(Options:table!):table
 
    function computeMetrics(View:table!)
       line_height, font_height, ascent = gui.getFontHeight(View.theme.page.text, false)
+
       line_height = math.round(line_height)
       row_height  = Options.rowHeight ?? line_height
+
       View._metrics = {
          lineHeight = line_height,
          rowHeight  = row_height,
@@ -242,10 +244,12 @@ gui.listView = function(Options:table!):table
 
    function syncState(View:table!, Item:table!, Force:bool)
       if not Item._rowReady then return end
+
       changed = updateState(View, Item)
       if changed and lContentHook then
          dispatch(View, lContentHook, Item, Item._vectors.viewport, 'state')
       end
+
       if changed or Force then applyHighlight(View, Item) end
    end
 
@@ -319,6 +323,7 @@ gui.listView = function(Options:table!):table
             View.scrollbar.setDynamicPageSize(0, 0, View.frame.height)
             View.page.height = '100%'
          end
+
          View.scrollbar.scrollPage(0, 0) -- Clamp the page position to the new extent
       end
 
@@ -338,6 +343,7 @@ gui.listView = function(Options:table!):table
          x = EDGE, xOffset = EDGE, y = EDGE, height = View._metrics.rowHeight,
          visibility = Item.hidden ? VIS_HIDDEN : VIS_VISIBLE
       })
+
       if lContentHook then vp.overflow = VOF_HIDDEN end
       Item._vectors.viewport = vp
 

@@ -52,7 +52,7 @@ gui.icon = function(Options:table!)
    lines        = array<str>
    icon_size    = Options.size ?? gui.rpixel('100dp')
    icon_width   = icon_size
-   font_size_pt = 0
+   font_size_px = 0
    margin       = 0
    line_height  = 0
 
@@ -114,11 +114,9 @@ gui.icon = function(Options:table!)
          else -> 5 / 6
       end
 
-      font_size_pt = gui.interface.fontSize * scale
-      font_size    = string.format('%.2fpt', font_size_pt)
-      pixel_size   = gui.pixel(font_size, 96)
+      font_size_px = gui.pixel(theme.text.fontSize, 96) * scale
 
-      err, font    = check mVec.GetFontHandle(theme.text.face, theme.text.fontStyle ?? "Regular", 0, pixel_size)
+      err, font    = check mVec.GetFontHandle(theme.text.face, theme.text.fontStyle ?? "Medium", 0, font_size_px)
       metrics      = struct<FontMetrics>
       err          = check mVec.GetFontMetrics(font, metrics)
       line_height  = metrics.lineSpacing
@@ -185,7 +183,7 @@ gui.icon = function(Options:table!)
       for line in values(lines) do
          text_vector = text_group.new('VectorText', table.merge({
             x         = math.floor(icon_width * 0.5),
-            fontSize  = string.format('%.2fpt', font_size_pt),
+            fontSize  = string.format('%.2fpx', font_size_px),
             align     = 'horizontal',
             string    = line
          }, theme.text, false))

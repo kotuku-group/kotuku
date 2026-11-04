@@ -8,10 +8,6 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
-FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(gui.fonts.widget)
-DEFAULT_HEIGHT <const> = math.floor(FONT_MAX_HEIGHT * 1.35) + 1
-MARGIN <const> = math.floor(FONT_HEIGHT * 0.5) + 1
-
 function iconTheme(Widget:table!):str
    return gui.rgbToIconTheme(Widget.input_theme.text?.fill ?? Widget.theme.window.text.fill)
 end
@@ -91,7 +87,7 @@ function createMenu(Items:any)
    &_menuWidth = &menu.width -- The natural width of the menu content
 
    if &unlockMenuWidth then -- Size the box to the width of the menu, but never below the default
-      width = math.max(&menu.width, gui.sizing.widget.width)
+      width = math.max(&menu.width, gui.rpixel('200dp'))
       if &_label then width = &_label.expand(width, &_boxHeight) end
       &viewport.width = width
    end
@@ -138,6 +134,8 @@ gui.combobox = function(Options:table)
    base_theme = nil
    override = nil -- Per-instance override from setTheme()
 
+   local FONT_MAX_HEIGHT, FONT_HEIGHT, DEFAULT_HEIGHT, MARGIN
+
    function buildTheme()
       &theme = base_theme
       if Options.theme then &theme = table.merge(&theme, Options.theme, true, true) end
@@ -157,6 +155,10 @@ gui.combobox = function(Options:table)
       if override?.dropdown then
          &dropdownTheme = table.merge(&dropdownTheme, override.dropdown, true, true)
       end
+
+      FONT_MAX_HEIGHT, FONT_HEIGHT = gui.getFontHeight(&input_theme.text, false)
+      DEFAULT_HEIGHT = math.floor(FONT_MAX_HEIGHT * 1.1)
+      MARGIN = math.floor(FONT_HEIGHT * 0.5)
    end
 
    -- Compose the box style from the current focus and disabled states.  Focus styling is suppressed while the
@@ -211,7 +213,10 @@ gui.combobox = function(Options:table)
          current = &text.string
          found = false
          for item in values(Items) do
-            if item.label is current then found = true break end
+            if item.label is current then
+               found = true
+               break
+            end
          end
 
          if not found then
@@ -263,7 +268,10 @@ gui.combobox = function(Options:table)
 
       if &label then
          &_label = gui.layout.label(&viewport, {
-            string = &label, pos = &labelPos, align = &labelAlign, width = &labelWidth, style = &theme.window.text
+            string = &label, pos = &labelPos,
+            align = &labelAlign,
+            width = &labelWidth,
+            style = &theme.window.text
          })
          &labelText = &_label.text
          &_label.reserve(box)

@@ -73,7 +73,6 @@ gui.button = function(Options)
          size = label_size
          width = &_label.textWidth
          if (width > MaxWidth) and (width > 0) then
-            msg(f'Scaling button label down to fit: "{&_label.string}"')
             size = math.max(MIN_FONT_SIZE, math.floor(label_size * MaxWidth / width))
             &_label.fontSize = size
             while (size > MIN_FONT_SIZE) and (&_label.textWidth > MaxWidth) do
@@ -323,7 +322,7 @@ gui.button = function(Options)
 
       if Options.label then &setLabel(Options.label) end
 
-      arrange(true, false)
+      arrange(true, Options.width ? true : false)
 
       gui.registerWidget(&viewport, &&)
 
