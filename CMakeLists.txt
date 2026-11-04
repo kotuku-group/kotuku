@@ -1,10 +1,10 @@
 # Kotuku Core Build File
 #
 # Release Config:  cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
-# Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
+# Debug Config:    cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE -DLINKED_PACKAGES=ON
 # Fast Config:     cmake -S . -B build/fast -DCMAKE_BUILD_TYPE=FastBuild -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #                  (FastBuild optimises for compilation speed rather than runtime performance - uses -O0, faster linkers, minimal debug info)
-# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF -DBUILD_DEFS=OFF
+# Git Release:     cmake -S . -B build/release-git -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=TRUE -DCMAKE_INSTALL_PREFIX=kotuku-linux64-$(date +'%Y%m%d') -DRUN_ANYWHERE=TRUE -DBUILD_TESTS=OFF
 #
 # A build can target a local folder by adding -DCMAKE_INSTALL_PREFIX=local -DRUN_ANYWHERE=TRUE
 #
@@ -19,7 +19,7 @@
 #
 # Windows release packages can be created using CPack integration:
 #
-#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DKOTUKU_STATIC=ON -DINSTALL_EXAMPLES=ON -DENABLE_CPACK=ON
+#   cmake -S . -B release -DCMAKE_BUILD_TYPE=Release -DINSTALL_EXAMPLES=ON -DENABLE_CPACK=ON
 #   cmake --build release --config Release
 #   cmake --install release
 #   cd release && cpack -G ZIP
@@ -29,7 +29,11 @@
 #   - 7-Zip installed for SFX generation (optional, auto-detected)
 #   - NSIS for installer generation (optional, auto-detected)
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.28)
+
+set (CMAKE_COLOR_DIAGNOSTICS ON)
+set (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
+   "$<$<CONFIG:Debug,RelWithDebInfo,FastBuild>:Embedded>")
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
    message (STATUS "CMAKE_BUILD_TYPE not set, defaulting to Release")
@@ -49,34 +53,56 @@ include (CheckLibraryExists)
 include (TestBigEndian)
 include (ExternalProject)
 
-if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-   include(CTest)
-endif()
-
 file(READ "${CMAKE_SOURCE_DIR}/pkg/version.txt" KOTUKU_VERSION_STRING)
 string(STRIP "${KOTUKU_VERSION_STRING}" KOTUKU_VERSION_STRING)
 
 project (Kotuku VERSION ${KOTUKU_VERSION_STRING} LANGUAGES C CXX)
 
-cmake_policy (SET CMP0082 NEW) # Process install commands in the order that they appear
+if (PROJECT_IS_TOP_LEVEL)
+   include (CTest)
+else ()
+   set (BUILD_TESTING OFF)
+endif ()
+
+include (CMakeDependentOption)
+
+set (TIRI_LANGUAGE_VERSION "1.0")
+
+if (NOT TIRI_LANGUAGE_VERSION MATCHES "^(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*))*$")
+   message (FATAL_ERROR "Invalid canonical Tiri language version: ${TIRI_LANGUAGE_VERSION}")
+endif ()
+
+if (NOT KOTUKU_VERSION_STRING MATCHES "^(0|[1-9][0-9]*)(\\.(0|[1-9][0-9]*))*$")
+   message (FATAL_ERROR "Invalid canonical Kotuku runtime version: ${KOTUKU_VERSION_STRING}")
+endif ()
+
+configure_file ("${PROJECT_SOURCE_DIR}/src/tiri/runtime_versions.h.in"
+   "${CMAKE_BINARY_DIR}/runtime_versions.h" @ONLY)
+
 if(POLICY CMP0177)
    cmake_policy(SET CMP0177 NEW) # Normalise install destination paths (converts slashes etc)
 endif()
 
 # To switch on a custom option use -D, e.g. -DKOTUKU_VLOG=ON
 
-option (KOTUKU_STATIC   "Build as a set of static libraries instead of the default modular build." OFF)
-option (KOTUKU_INSTALL  "Create installation targets" ON)
-option (KOTUKU_VLOG     "Enable verbose log messages in the generated binaries" OFF)
-option (ORIGO_CONSOLE   "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
+option (KOTUKU_STATIC            "Build as a set of static libraries instead of the default modular build." OFF)
+option (KOTUKU_INSTALL           "Create installation targets" ON)
+option (LINKED_PACKAGES          "Link installed package versions to their SDK source directories" OFF)
+option (KOTUKU_VLOG              "Enable verbose log messages in the generated binaries" OFF)
+option (KOTUKU_ICON_DEPENDENCIES "Track icon source files as dependencies for rebuilding the icon package." ON)
+option (ORIGO_CONSOLE            "Build Origo as a Windows console application rather than a GUI application (Windows only)" OFF)
 if (UNIX)
    option (RUN_ANYWHERE  "Create a build that can run directly from the main folder.  Typically used if redefining CMAKE_INSTALL_PREFIX" OFF)
 else ()
    set (RUN_ANYWHERE ON)
 endif ()
-option (BUILD_TESTS       "Build/enable tests" ON)
-option (BUILD_DEFS        "Auto-generate C/C++ headers and documentation" OFF)
+cmake_dependent_option (BUILD_TESTS "Enable Flute integration tests" ON
+   "BUILD_TESTING;PROJECT_IS_TOP_LEVEL" OFF)
+cmake_dependent_option (UNIT_TESTS "Enable compiled and embedded unit tests" OFF
+   "BUILD_TESTING;PROJECT_IS_TOP_LEVEL" OFF)
+option (BUILD_DEFS        "Build generated C/C++ headers and documentation as part of the default build" OFF)
 option (DISABLE_SSL       "Disable built-in SSL support even if available on this system" OFF)
+option (DISABLE_CRYPTO    "Disable Crypto API" OFF)
 option (DISABLE_X11       "Disable X11 even if available on this system" OFF)
 option (DISABLE_AUDIO     "Disable Audio API" OFF)
 option (DISABLE_BACKSTAGE "Disable Backstage API" OFF)
@@ -84,13 +110,20 @@ option (DISABLE_DISPLAY   "Disable Display API" OFF)
 option (DISABLE_DOCUMENT  "Disable Document API" OFF)
 option (DISABLE_FONT      "Disable Font API" OFF)
 option (DISABLE_HTTP      "Disable HTTP API" OFF)
+option (DISABLE_LZMA      "Disable LZMA decompression support" OFF)
 option (DISABLE_MP3       "Disable MP3 support" OFF)
 option (DISABLE_NETWORK   "Disable Network API" OFF)
-option (DISABLE_PICTURE   "Disable Picture API" OFF)
+option (DISABLE_IMAGE     "Disable Image API" OFF)
 option (DISABLE_JPEG      "Disable JPEG support" OFF)
-option (DISABLE_SCINTILLA "Disable Scintilla API" ON)
+option (DISABLE_SCINTILLA "Disable Scintilla API" OFF)
 option (DISABLE_SVG       "Disable SVG support" OFF)
 option (DISABLE_VECTOR    "Disable Vector API" OFF)
+option (DISABLE_WEBSOCKET "Disable WebSocket API" OFF)
+if (WIN32) # Off by default until native Schannel DTLS replaces the OpenSSL dependency
+   option (DISABLE_WEBRTC "Disable WebRTC support" ON)
+else ()
+   option (DISABLE_WEBRTC "Disable WebRTC support" OFF)
+endif ()
 option (DISABLE_XSLT      "Disable XSLT API" OFF)
 option (INSTALL_EXAMPLES  "Install the example scripts, typically for compiling a distribution" OFF)
 option (INSTALL_INCLUDES  "Install the header files.  Turn this off for client releases." OFF)
@@ -123,6 +156,8 @@ endif ()
 
 set (CMAKE_CXX_STANDARD 20)
 set (CMAKE_CXX_STANDARD_REQUIRED True)
+set (CMAKE_C_STANDARD 11)
+set (CMAKE_C_STANDARD_REQUIRED True)
 set (CMAKE_POSITION_INDEPENDENT_CODE ON) # Enables -fPIC and -fPIE in gcc
 set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -130,6 +165,12 @@ set (BUILD_RPATH_USE_ORIGIN TRUE)
 
 set (INCLUDE_OUTPUT "${PROJECT_SOURCE_DIR}/include/kotuku")
 set (DOCS "${PROJECT_SOURCE_DIR}/docs/xml")
+
+# Ensure the top-level include directory is visible to all builds and tools that
+# run during the build (some generated-header steps and tools may compile
+# helper sources outside target-specific include directories). This helps
+# avoid C1083 errors when headers under include/kotuku are referenced.
+include_directories("${PROJECT_SOURCE_DIR}/include")
 
 set(REQUIRED_MODS core tiri xml xquery regex json)
 
@@ -161,12 +202,14 @@ if (SYSTEM_ENDIAN_STYLE EQUAL 0) # Little endian (Intel)
    set (LITTLE_ENDIAN TRUE)
 endif ()
 
+set (KOTUKU_OPENSSL_MINIMUM_VERSION 1.1.1)
+
 if (NOT DISABLE_SSL)
    if (WIN32)
       # Win32 SSL support is supported natively
    else ()
       set (OPENSSL_USE_STATIC_LIBS TRUE)
-      include (FindOpenSSL)
+      find_package (OpenSSL ${KOTUKU_OPENSSL_MINIMUM_VERSION} QUIET)
       if (NOT OpenSSL_FOUND)
          set (DISABLE_SSL TRUE)
       else ()
@@ -190,18 +233,17 @@ if (MINGW) # Undo the use of 'lib' as the default prefix set by MinGW
    set(CMAKE_STATIC_LIBRARY_PREFIX "")
 endif ()
 
-# MSVC-specific optimization flags for Release builds
+# MSVC-specific optimisation for Release builds
 if (MSVC AND FULL_OPTIMISATION)
-   # Replace default /O2 with /Ox for maximum optimization
-   # /GL enables whole program optimization at compile time
-   # /LTCG enables link-time code generation for cross-module optimization
-   string(REPLACE "/O2" "/Ox /GL" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-   string(REPLACE "/O2" "/Ox /GL" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
-
-   if (KOTUKU_STATIC)
-      set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG")
-      set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
+   include (CheckIPOSupported)
+   check_ipo_supported (RESULT KOTUKU_IPO_SUPPORTED OUTPUT KOTUKU_IPO_ERROR LANGUAGES C CXX)
+   if (KOTUKU_IPO_SUPPORTED)
+      set (CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+   else ()
+      message (WARNING "Full optimisation requested, but IPO is unavailable: ${KOTUKU_IPO_ERROR}")
    endif ()
+   add_compile_options ("$<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:C,MSVC>>:/Ox>"
+      "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANG_AND_ID:CXX,MSVC>>:/Ox>")
 endif ()
 
 include_directories("${PROJECT_SOURCE_DIR}/include"
@@ -236,6 +278,33 @@ int main() {
 	PRINTF64_PRID
    FAIL_REGEX "warning")
 
+check_cxx_source_compiles ("
+#include <cstddef>
+#include <cstdint>
+
+struct Base {
+   void *Pointer;
+   uint16_t Count;
+   ~Base() {}
+};
+
+struct Derived : public Base {
+   int Value;
+};
+
+static_assert(offsetof(Derived, Value) < sizeof(Base));
+
+int main() {
+   return 0;
+}"
+   KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+
+if (KOTUKU_CXX_REUSES_BASE_TAIL_PADDING)
+   message (STATUS "C++ compiler reuses base-class tail padding for derived fields.")
+else ()
+   message (STATUS "C++ compiler keeps derived fields after the full base-class size.")
+endif ()
+
 find_program (XXD_CMD "xxd")
 find_program (OD_CMD "od")
 find_program (ORIGO_CMD "origo" NO_DEFAULT_PATH PATHS "${ORIGO_CMD_PATH}")
@@ -243,18 +312,22 @@ find_file (IDL_C_SCRIPT "idl-c.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (IDL_COMPILE_SCRIPT "idl-compile.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools/idl")
 find_file (FLUTE_SCRIPT "flute.tiri" PATHS "${PROJECT_SOURCE_DIR}/tools")
 
+set (KOTUKU_DEFS_AVAILABLE TRUE)
+
 if (ORIGO_CMD STREQUAL "ORIGO_CMD-NOTFOUND")
-   message (STATUS "Definitions will not be built and tests are disabled.")
+   message (STATUS "Definition generation targets are unavailable because no installed Origo executable was found.")
+   set (KOTUKU_DEFS_AVAILABLE FALSE)
    set (BUILD_DEFS OFF)
 else ()
    if (BUILD_DEFS)
       message (STATUS "Definitions will be built with the Origo exe installed @ ${ORIGO_CMD}.")
+   else ()
+      message (STATUS "Definition generation is available with: cmake --build <build-dir> --target build_headers")
    endif ()
 endif ()
 
-if (BUILD_TESTS)
-   message (STATUS "Integration tests are enabled.")
-   enable_testing()
+if (BUILD_TESTS OR UNIT_TESTS)
+   message (STATUS "Testing is enabled (Flute: ${BUILD_TESTS}, unit: ${UNIT_TESTS}).")
 endif ()
 
 if (IDL_C_SCRIPT STREQUAL "IDL_C_SCRIPT-NOTFOUND")
@@ -277,12 +350,12 @@ if (WIN32)
    if (KOTUKU_STATIC)
       # NB: MinGW does not guarantee that libgcc and libstdc++ will be static even if these flags are specified.
       if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+         add_link_options ("$<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:-static;-static-libgcc;-static-libstdc++>")
       endif ()
       set (INIT_LINK "init-win" kotuku_static)
    else ()
       if (MINGW)
-         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+         add_link_options ("$<$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>:-static>")
       endif ()
       set (INIT_LINK "init-win")
    endif ()
@@ -295,7 +368,16 @@ else ()
    endif ()
 endif ()
 
-add_custom_target(build_headers ALL COMMENT "Generate headers and definition files on the fly")
+if (BUILD_DEFS)
+   add_custom_target (build_headers ALL COMMENT "Generate headers and definition files on the fly")
+elseif (KOTUKU_DEFS_AVAILABLE)
+   add_custom_target (build_headers COMMENT "Generate headers and definition files on demand")
+else ()
+   add_custom_target (build_headers
+      COMMAND ${CMAKE_COMMAND} -E echo "Cannot generate definitions: install or build Origo, then reconfigure this build tree."
+      COMMAND ${CMAKE_COMMAND} -E false
+      COMMENT "Definition generation is unavailable")
+endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Register generated header targets with the aggregate target while also making them discoverable for
@@ -363,9 +445,9 @@ endfunction ()
 # idl_gen() is used to generate both C/C++ headers and IDL strings from TDL files.
 
 function (idl_gen)
-   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES")
+   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;APPEND_IDL;NAME" "ARGS;FILES;DEPENDS;BYPRODUCTS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
@@ -377,7 +459,7 @@ function (idl_gen)
       endif ()
 
       set (IDLC_STAMP "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${OUTPUT_NAME}.stamp")
-      set (IDLC_BYPRODUCTS "${IDLC_OUTPUT}")
+      set (IDLC_BYPRODUCTS "${IDLC_OUTPUT}" ${IDLC_BYPRODUCTS})
 
       foreach (ARG IN LISTS IDLC_ARGS)
          if (ARG MATCHES "^output-(defs|proto)=(.+)$")
@@ -418,7 +500,7 @@ function (idl_gen)
          ${COMMAND_LIST}
          COMMAND ${CMAKE_COMMAND} -E touch "${IDLC_STAMP}"
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-         DEPENDS ${ARGV0}
+         DEPENDS ${ARGV0} ${IDLC_DEPENDS}
          COMMENT "Generating C header file ${IDLC_OUTPUT} from ${ARGV0}"
          VERBATIM)
 
@@ -435,9 +517,9 @@ endfunction ()
 # Always provide a full path for OUTPUT
 
 function (idl_compile)
-   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS;FILES")
+   cmake_parse_arguments (PARSE_ARGV 0 IDLC "" "OUTPUT;NAME" "ARGS")
 
-   if (BUILD_DEFS)
+   if (KOTUKU_DEFS_AVAILABLE)
       if (DEFINED IDLC_NAME)
          set (OUTPUT_NAME ${IDLC_NAME})
       else ()
@@ -493,7 +575,7 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
          PROPERTIES
          PREFIX ""
          CXX_STANDARD 20
-         CMAKE_POSITION_INDEPENDENT_CODE ON # Enables -fPIC and -fPIE in gcc
+         POSITION_INDEPENDENT_CODE ON
          LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib"
          RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/release/lib")
 
@@ -510,7 +592,7 @@ function (set_module_defaults ARG_TARGET ARG_NAMESPACE)
    endif ()
 
    get_property (KOTUKU_LOCAL_HEADER_TARGETS DIRECTORY PROPERTY KOTUKU_GENERATED_HEADER_TARGETS)
-   if (KOTUKU_LOCAL_HEADER_TARGETS)
+   if (BUILD_DEFS AND KOTUKU_LOCAL_HEADER_TARGETS)
       add_dependencies (${ARG_TARGET} ${KOTUKU_LOCAL_HEADER_TARGETS})
    endif ()
 
@@ -539,6 +621,24 @@ else ()
 #   set (KOTUKU_ARCH "-m32")
 endif ()
 
+# --------------------------------------------------------------------------------------------------------------------
+# SIMD baseline.  SSE4.2 is the mandatory floor for all x86/x86-64 builds (guaranteed on any 64-bit CPU from ~2008
+# onwards).  This unlocks SSE4.2 intrinsics for scalar codegen and lets the compiler auto-vectorise with the full
+# SSE1-4.2 instruction set.  AVX2 remains an opt-in, per-function path gated by simd_has_avx2() at run time -- see
+# src/link/simd.h.  Non-x86 targets (ARM/AArch64, Apple Silicon) are unaffected.
+
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|amd64|AMD64|i[3-6]86|x86)")
+   if (MSVC AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      # MSVC has no /arch:SSE4.2 flag (its /arch jumps SSE2 -> AVX) and SSE4.2 intrinsics are always available
+      # without a flag, so no compile option is required to guarantee the baseline for the MSVC toolchain.
+      message (STATUS "SIMD baseline: SSE4.2 (MSVC intrinsics available unconditionally)")
+   else ()
+      # GCC/Clang (including clang-cl) require an explicit flag to raise the baseline above SSE2.
+      message (STATUS "SIMD baseline: SSE4.2 (-msse4.2)")
+      add_compile_options ("-msse4.2")
+   endif ()
+endif ()
+
 if (KOTUKU_VLOG)
    add_compile_definitions ("_DEBUG")
 endif ()
@@ -564,64 +664,58 @@ if (MSVC)
    if (ENABLE_ANALYSIS)
       # Note that this option is not compatible with /ZI (edit-and-continue).  To rectify complaints about the asan DLL, you may also need a line like this one added to each entry in launch.vs.json:
       # "env": { "Path": "${env:Path};C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.38.33130\\bin\\Hostx64\\x64" }
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fsanitize=address")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fsanitize=address")
+      add_compile_options ("/fsanitize=address")
+      add_link_options ("/fsanitize=address")
    endif ()
 
+   # Remove CMake's default exception model so it does not conflict with the configuration-specific flags below.
+   string (REGEX REPLACE "(^|[ \t])[-/]EHsc([ \t]|$)" "\\1\\2" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
    # We don't use exceptions in optimised configurations, so disable exception support there.
-   string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
    add_compile_definitions ("$<$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>:_HAS_EXCEPTIONS=0>")
    add_compile_options (
       "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>:/EHs-c->"
       "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>:/GR>"
       "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:FastBuild>>>>:/EHsc>")
 
-   # Specifying the fast FP option shows no descernible improvement in benchmarked release builds.
-   #set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /fp:fast")
-   #set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /fp:fast")
+   # Specifying the fast FP option shows no discernible improvement in benchmarked release builds.
 else ()
    if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
       add_compile_definitions ("_DARWIN_C_SOURCE")
    elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
       add_compile_definitions ("_GNU_SOURCE")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=auto -fdata-sections -ffunction-sections -fno-strict-aliasing -Wno-pointer-sign")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=auto -fdata-sections -ffunction-sections -fno-strict-aliasing")
+      add_compile_options (-fdata-sections -ffunction-sections -fno-strict-aliasing
+         "$<$<COMPILE_LANGUAGE:C>:-Wno-pointer-sign>")
    elseif (WIN32)
-      add_definitions ("-D_WIN32" "-U__unix__")
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -fdiagnostics-color=auto -fdata-sections -ffunction-sections -fno-strict-aliasing -Wno-pointer-sign ${KOTUKU_ARCH}")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdata-sections -fdiagnostics-color=auto -ffunction-sections -fno-strict-aliasing ${KOTUKU_ARCH}")
+      add_compile_definitions ("_WIN32")
+      add_compile_options (-U__unix__ -fdata-sections -ffunction-sections -fno-strict-aliasing
+         "$<$<COMPILE_LANGUAGE:C>:-Wno-pointer-sign>")
       if (PRINTF64_ID)
          add_compile_definitions ("PRINTF64I")
       endif ()
       if (PRINTF64_PRID)
          add_compile_definitions ("PRINTF64_PRID")
       endif ()
-   elseif (CMAKE_SYSTEM_NAME STREQUAL "Android")
-      # TODO
    endif ()
 
-   set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions")
+   add_compile_options ("$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CONFIG:Release>>:-fno-exceptions>")
 
    if (ENABLE_ANALYSIS)
       # NB: The use of dlclose() is not permitted when analysis is enabled because it upsets the log output.
       # In addition, gdb breakpoints are unlikely to work with these features enabled.
-      set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize=leak -DANALYSIS_ENABLED")
-      set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fsanitize=leak -DANALYSIS_ENABLED")
+      add_compile_options (-fsanitize=address -fsanitize=leak)
+      add_link_options (-fsanitize=address -fsanitize=leak)
+      add_compile_definitions (ANALYSIS_ENABLED)
       set (DISABLE_AUDIO ON)
       if (NOT KOTUKU_STATIC)
          message (FATAL_ERROR "Address analysis requires the build to be compiled with KOTUKU_STATIC on.")
       endif ()
    endif ()
 
-   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-empty-body -Wno-unused-result -Wno-format-zero-length -Wno-unused-but-set-variable -Wno-stringop-overflow")
-   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-empty-body -Wno-unused-result -Wno-format-zero-length -Wno-unused-but-set-variable -Wno-stringop-overflow")
-
-   # These default compile options are for use by target_compile_options()
-   # TODO: Utilise target_compile_options() in the makefiles
+   add_compile_options (-Wall -Wno-empty-body -Wno-unused-result -Wno-format-zero-length
+      -Wno-unused-but-set-variable -Wno-stringop-overflow)
 
    set (GCC_COMPAT "$<COMPILE_LANG_AND_ID:CXX,ARMClang,AppleClang,Clang,GNU>")
-   set (DEFAULT_GCC_FLAGS "-Wall" "-Wno-empty-body" "-Wno-unused-result" "-Wno-format-zero-length" "-Wno-unused-but-set-variable" "-Wno-stringop-overflow")
-   set (DEFAULT_GCXX_FLAGS "-Wall" "-Wno-empty-body" "-Wno-unused-result" "-Wno-format-zero-length" "-Wno-unused-but-set-variable" "-Wno-stringop-overflow")
 endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -642,38 +736,28 @@ if (KOTUKU_FASTBUILD_ENABLED)
 
    if (MSVC)
       # MSVC: Use /Od for no optimisation, /MP for parallel compilation, /Z7 for minimal debug info
-      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} /Od /MP /Z7")
-      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} /Od /MP /Z7")
+      add_compile_options ("$<$<CONFIG:FastBuild>:/Od;/MP>")
 
       # Disable exception handling for faster compilation (matches Release build behaviour)
       add_compile_definitions ("$<$<CONFIG:FastBuild>:_HAS_EXCEPTIONS=0>")
    else ()
       # GCC/Clang: Use -O0 for no optimisation, -g1 for minimal debug info
-      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} -O0 -g1")
-      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -O0 -g1")
-
-      # Disable variable tracking for faster compilation
-      set (CMAKE_C_FLAGS_FASTBUILD "${CMAKE_C_FLAGS_FASTBUILD} -fno-var-tracking -fno-var-tracking-assignments")
-      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -fno-var-tracking -fno-var-tracking-assignments")
+      add_compile_options ("$<$<CONFIG:FastBuild>:-O0;-g1;-fno-var-tracking;-fno-var-tracking-assignments>"
+         "$<$<AND:$<CONFIG:FastBuild>,$<COMPILE_LANGUAGE:CXX>>:-fno-exceptions>")
 
       # Try to use faster linkers if available
       include(CheckLinkerFlag)
       check_linker_flag(CXX "-fuse-ld=lld" HAVE_LLD_LINKER)
       if (HAVE_LLD_LINKER)
-         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
-         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
+         add_link_options ("$<$<CONFIG:FastBuild>:-fuse-ld=lld>")
          message (STATUS "Using LLD linker for faster linking")
       else ()
          check_linker_flag(CXX "-fuse-ld=gold" HAVE_GOLD_LINKER)
          if (HAVE_GOLD_LINKER)
-            set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
-            set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
+            add_link_options ("$<$<CONFIG:FastBuild>:-fuse-ld=gold>")
             message (STATUS "Using Gold linker for faster linking")
          endif ()
       endif ()
-
-      # Disable exceptions for faster compilation (matches Release build behaviour)
-      set (CMAKE_CXX_FLAGS_FASTBUILD "${CMAKE_CXX_FLAGS_FASTBUILD} -fno-exceptions")
    endif ()
 endif ()
 
@@ -691,6 +775,14 @@ endif (MINGW)
 add_library(linear_rgb OBJECT src/link/linear_rgb.cpp)
 add_library(unicode OBJECT src/link/unicode.cpp)
 add_library(base64 OBJECT src/link/base64.cpp)
+
+if (UNIT_TESTS)
+   add_executable (test_unicode src/link/tests/test_unicode.cpp)
+   target_link_libraries (test_unicode PRIVATE unicode)
+   set_target_properties (test_unicode PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+   add_test (NAME unicode_scalar_values COMMAND test_unicode)
+   set_tests_properties (unicode_scalar_values PROPERTIES LABELS unicode)
+endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
 
@@ -761,6 +853,8 @@ else ()
          ${ZLIB_IMPLIB_PATH_DEBUG})
    endif ()
 endif ()
+
+list (REMOVE_DUPLICATES ZLIB_BUILD_BYPRODUCTS)
 
 set (ZLIB_CMAKE_ARGS
    -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
@@ -876,58 +970,13 @@ elseif (KOTUKU_INSTALL AND KOTUKU_STATIC AND WIN32)
 endif ()
 
 if (NOT DISABLE_FONT)
-   if (DEFINED SKIP_INSTALL_ALL)
-      set (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL "${SKIP_INSTALL_ALL}")
-      set (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED TRUE)
-   else ()
-      set (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED FALSE)
-   endif ()
-
-   set (SKIP_INSTALL_ALL TRUE)
-   add_subdirectory (3rdparty/freetype-2.14.3)
-
-   if (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED)
-      set (SKIP_INSTALL_ALL "${KOTUKU_ORIGINAL_SKIP_INSTALL_ALL}")
-   else ()
-      unset (SKIP_INSTALL_ALL)
-   endif ()
-   unset (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL)
-   unset (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED)
-
-   if (KOTUKU_INSTALL AND NOT KOTUKU_STATIC)
-      install(CODE
-         "file(REMOVE
-            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetype.dll\"
-            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetyped.dll\"
-            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetype.lib\"
-            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetyped.lib\")")
-      install(CODE [=[
-         file(REMOVE_RECURSE
-            "${CMAKE_INSTALL_PREFIX}/include/freetype2"
-            "${CMAKE_INSTALL_PREFIX}/lib/cmake/freetype")
-         file(REMOVE
-            "${CMAKE_INSTALL_PREFIX}/bin/freetype.dll"
-            "${CMAKE_INSTALL_PREFIX}/bin/freetyped.dll"
-            "${CMAKE_INSTALL_PREFIX}/lib/freetype.lib"
-            "${CMAKE_INSTALL_PREFIX}/lib/freetyped.lib"
-            "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/freetype2.pc")
-         file(GLOB KOTUKU_STALE_FREETYPE_LIBS
-            "${CMAKE_INSTALL_PREFIX}/lib/libfreetype*")
-         if (KOTUKU_STALE_FREETYPE_LIBS)
-            file(REMOVE ${KOTUKU_STALE_FREETYPE_LIBS})
-         endif ()
-      ]=])
-      install(TARGETS freetype
-         RUNTIME DESTINATION "${LIB_TARGET}/lib"
-         LIBRARY DESTINATION "${LIB_TARGET}/lib"
-         ARCHIVE DESTINATION "${LIB_TARGET}/lib")
-   endif ()
-endif ()
+   add_subdirectory (3rdparty/freetype-2.13.2 SYSTEM)
+endif()
 
 # --------------------------------------------------------------------------------------------------------------------
-# Build libjpeg-turbo as an external project (only if JPEG and Picture support is enabled)
+# Build libjpeg-turbo as an external project (only if JPEG and Image support is enabled)
 
-if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE)
+if (NOT DISABLE_JPEG AND NOT DISABLE_IMAGE)
    if (MSVC)
       set(LIBJPEG_TURBO_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo/lib/jpeg-static.lib")
    else ()
@@ -968,7 +1017,8 @@ if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE)
       endif ()
 
       if (LIBJPEG_TURBO_NASM_COMPILER)
-         file(TO_CMAKE_PATH "${LIBJPEG_TURBO_NASM_COMPILER}" LIBJPEG_TURBO_NASM_COMPILER)
+         cmake_path (CONVERT "${LIBJPEG_TURBO_NASM_COMPILER}" TO_CMAKE_PATH_LIST
+            LIBJPEG_TURBO_NASM_COMPILER NORMALIZE)
          list(APPEND LIBJPEG_TURBO_CMAKE_ARGS
             -DCMAKE_ASM_NASM_COMPILER:FILEPATH=${LIBJPEG_TURBO_NASM_COMPILER})
          message(STATUS "libjpeg-turbo NASM compiler: ${LIBJPEG_TURBO_NASM_COMPILER}")
@@ -1009,10 +1059,6 @@ if (NOT DISABLE_AUDIO)
    list (APPEND LIB_LIST audio)
 endif ()
 
-#if (NOT DISABLE_BACKSTAGE AND NOT DISABLE_NETWORK)
-#   add_subdirectory (src/backstage)
-#   list (APPEND LIB_LIST backstage)
-#endif()
 
 if (NOT DISABLE_DISPLAY)
    add_subdirectory (src/display)
@@ -1034,6 +1080,11 @@ if (NOT DISABLE_HTTP AND NOT DISABLE_NETWORK)
    list (APPEND LIB_LIST http)
 endif ()
 
+if (NOT DISABLE_LZMA)
+   add_subdirectory (src/lzma)
+   list (APPEND LIB_LIST lzma)
+endif ()
+
 if (NOT DISABLE_MP3 AND NOT DISABLE_AUDIO)
    add_subdirectory (src/mp3)
    list (APPEND LIB_LIST mp3)
@@ -1044,13 +1095,50 @@ if (NOT DISABLE_NETWORK)
    list (APPEND LIB_LIST network)
 endif ()
 
-if (NOT DISABLE_PICTURE AND NOT DISABLE_DISPLAY)
-   add_subdirectory (src/picture)
-   list (APPEND LIB_LIST picture)
+if (NOT DISABLE_CRYPTO)
+   if (WIN32)
+      add_subdirectory (src/crypto)
+      list (APPEND LIB_LIST crypto)
+   elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      add_subdirectory (src/crypto)
+      list (APPEND LIB_LIST crypto)
+   else ()
+      message (STATUS "Crypto module disabled: unsupported platform '${CMAKE_SYSTEM_NAME}'.")
+   endif ()
 endif ()
 
-if (NOT DISABLE_JPEG AND NOT DISABLE_PICTURE AND NOT DISABLE_DISPLAY)
-   add_subdirectory (src/picture_jpeg)
+if (NOT DISABLE_WEBSOCKET)
+   if (TARGET network AND TARGET http AND TARGET crypto)
+      add_subdirectory (src/websocket)
+      list (APPEND LIB_LIST websocket)
+   else ()
+      message (STATUS "WebSocket module disabled: requires the Network, HTTP and Crypto modules.")
+   endif ()
+endif ()
+
+if (NOT DISABLE_WEBRTC)
+   if (TARGET network AND TARGET crypto)
+      add_subdirectory (src/webrtc)
+      if (TARGET webrtc)
+         list (APPEND LIB_LIST webrtc)
+      endif ()
+   else ()
+      message (STATUS "WebRTC disabled: requires the Network and Crypto modules.")
+   endif ()
+endif ()
+
+if (NOT DISABLE_BACKSTAGE AND TARGET network AND TARGET websocket AND TARGET http)
+   add_subdirectory (src/backstage)
+   list (APPEND LIB_LIST backstage)
+endif()
+
+if (NOT DISABLE_IMAGE AND NOT DISABLE_DISPLAY)
+   add_subdirectory (src/image)
+   list (APPEND LIB_LIST image)
+endif ()
+
+if (NOT DISABLE_JPEG AND NOT DISABLE_IMAGE AND NOT DISABLE_DISPLAY)
+   add_subdirectory (src/image_jpeg)
    list (APPEND LIB_LIST jpeg)
 endif ()
 
@@ -1079,32 +1167,60 @@ add_subdirectory (src/xquery)
 add_subdirectory (src/json)
 add_subdirectory (src/regex)
 
-add_subdirectory (src/launcher)
+add_subdirectory (src/origo)
+add_subdirectory (packages)
+
+if (EXISTS "${PROJECT_SOURCE_DIR}/docs/tiri/CMakeLists.txt")
+   add_subdirectory (docs/tiri)
+endif ()
 
 add_subdirectory (apps)
 add_subdirectory (tools/tiri_lsp)
 
-add_generated_header_dependencies (display xml_defs regex_defs picture_defs)
+add_generated_header_dependencies (display xml_defs regex_defs image_defs)
 add_generated_header_dependencies (document display_defs font_defs svg_defs xml_defs xquery_defs)
 add_generated_header_dependencies (font display_defs xml_defs)
 add_generated_header_dependencies (http network_defs)
 add_generated_header_dependencies (init-unix core_defs)
 add_generated_header_dependencies (init-win core_defs)
-add_generated_header_dependencies (jpeg display_defs picture_defs)
+add_generated_header_dependencies (jpeg display_defs image_defs)
 add_generated_header_dependencies (json xml_defs)
 add_generated_header_dependencies (base64 core_defs)
 add_generated_header_dependencies (linear_rgb core_defs)
+add_generated_header_dependencies (lzma core_defs)
 add_generated_header_dependencies (mp3 audio_defs)
 add_generated_header_dependencies (origo_cmd core_defs display_defs)
-add_generated_header_dependencies (picture display_defs)
+add_generated_header_dependencies (image display_defs)
 add_generated_header_dependencies (scintilla display_defs font_defs vector_defs xml_defs)
-add_generated_header_dependencies (svg display_defs picture_defs vector_defs xml_defs)
-add_generated_header_dependencies (tiri display_defs regex_defs xml_defs)
+add_generated_header_dependencies (svg display_defs image_defs vector_defs xml_defs)
+add_generated_header_dependencies (tiri core_defs display_defs regex_defs xml_defs)
 add_generated_header_dependencies (unicode core_defs)
-add_generated_header_dependencies (vector display_defs font_defs picture_defs xml_defs)
+add_generated_header_dependencies (vector display_defs font_defs image_defs xml_defs)
 add_generated_header_dependencies (xml xquery_defs)
 add_generated_header_dependencies (xquery regex_defs xml_defs)
 resolve_generated_header_dependencies ()
+
+# --------------------------------------------------------------------------------------------------------------------
+# Generate the platform configuration header
+
+configure_file ("src/config.h.in" "kotuku/config.h" NEWLINE_STYLE UNIX)
+
+file (GLOB_RECURSE KOTUKU_PUBLIC_HEADERS CONFIGURE_DEPENDS
+   "${PROJECT_SOURCE_DIR}/include/kotuku/*.h"
+   "${PROJECT_SOURCE_DIR}/include/kotuku/*.hpp")
+
+add_library (kotuku_headers INTERFACE)
+target_sources (kotuku_headers INTERFACE
+   FILE_SET public_headers TYPE HEADERS
+      BASE_DIRS "${PROJECT_SOURCE_DIR}/include"
+      FILES ${KOTUKU_PUBLIC_HEADERS}
+   FILE_SET generated_config TYPE HEADERS
+      BASE_DIRS "${CMAKE_BINARY_DIR}"
+      FILES "${CMAKE_BINARY_DIR}/kotuku/config.h")
+target_include_directories (kotuku_headers INTERFACE
+   "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
+   "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>"
+   "$<INSTALL_INTERFACE:include>")
 
 # --------------------------------------------------------------------------------------------------------------------
 # Create a combined static library that links all modules together
@@ -1114,20 +1230,17 @@ if (KOTUKU_STATIC)
    # Create an interface library that groups all modules together
    add_library (kotuku_static INTERFACE)
 
-   target_link_libraries (kotuku_static INTERFACE core ${LIB_LIST})
+   target_link_libraries (kotuku_static INTERFACE kotuku_headers core ${LIB_LIST})
 
    message(STATUS "Created combined interface library 'kotuku_static' with modules: core ${LIB_LIST}")
 endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
-# Generate the platform configuration header
-
-configure_file ("src/config.h.in" "kotuku/config.h" NEWLINE_STYLE UNIX)
-
-# --------------------------------------------------------------------------------------------------------------------
 # Icons are installed as a zip file
 
-file(GLOB_RECURSE icon_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/icons/Default/*.svg")
+if (KOTUKU_ICON_DEPENDENCIES)
+   file(GLOB_RECURSE icon_files CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/icons/Default/*.svg")
+endif ()
 
 add_custom_command (
    OUTPUT  "${CMAKE_CURRENT_BINARY_DIR}/icons/Default.zip"
@@ -1185,19 +1298,39 @@ endif()
 # Installation steps
 
 if (KOTUKU_INSTALL)
+   if (UNIX AND NOT APPLE)
+      install (FILES "${PROJECT_SOURCE_DIR}/data/org.kotuku.Origo.desktop"
+         DESTINATION "share/applications")
+      #install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-ext.svg"
+      #   DESTINATION "share/icons/hicolor/scalable/apps"
+      #   RENAME "origo.svg")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-16.png"
+         DESTINATION "share/icons/hicolor/16x16/apps"
+         RENAME "origo.png")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-32.png"
+         DESTINATION "share/icons/hicolor/32x32/apps"
+         RENAME "origo.png")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/logos/kotuku-badge-256.png"
+         DESTINATION "share/icons/hicolor/256x256/apps"
+         RENAME "origo.png")
+   endif ()
+
    if (INSTALL_INCLUDES)
-      install (DIRECTORY "${INCLUDE_OUTPUT}" DESTINATION "include")
-      install (FILES "${CMAKE_BINARY_DIR}/kotuku/config.h" DESTINATION "include/kotuku/")
+      install (TARGETS kotuku_headers
+         FILE_SET public_headers DESTINATION "include"
+         FILE_SET generated_config DESTINATION "include")
    endif ()
 
    if (NOT DISABLE_SSL)
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/ssl/" DESTINATION "${CONFIG_TARGET}/ssl")
-   endif ()
-   if (NOT DISABLE_FONT)
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/" DESTINATION "${CONFIG_TARGET}/fonts")
+      install (FILES "${PROJECT_SOURCE_DIR}/data/ssl/ca-bundle.crt" DESTINATION "${CONFIG_TARGET}/ssl")
    endif ()
 
-   install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/styles/" DESTINATION "${CONFIG_TARGET}/styles")
+   if (NOT DISABLE_FONT)
+      install (DIRECTORY "${PROJECT_SOURCE_DIR}/data/fonts/"
+         DESTINATION "${CONFIG_TARGET}/fonts"
+         PATTERN "NotoColorEmoji.ttf" EXCLUDE)
+   endif ()
+
    install (FILES "${CMAKE_BINARY_DIR}/icons/Default.zip" DESTINATION "${CONFIG_TARGET}/styles/icons")
 
    install (DIRECTORY "${PROJECT_SOURCE_DIR}/apps/data" DESTINATION "${SHARE_TARGET}/apps")
@@ -1210,22 +1343,32 @@ if (KOTUKU_INSTALL)
       "${PROJECT_SOURCE_DIR}/apps/vuepoint.tiri"
       DESTINATION "${SHARE_TARGET}/apps")
 
-   install (DIRECTORY "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/include" DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
-   install (FILES
-      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/server.tiri"
-      "${PROJECT_SOURCE_DIR}/tools/tiri_lsp/README.md"
-      DESTINATION "${SHARE_TARGET}/tools/tiri_lsp")
-
-   install (DIRECTORY "${PROJECT_SOURCE_DIR}/scripts/" DESTINATION "${SHARE_TARGET}/scripts")
-
    if (INSTALL_EXAMPLES)
-      install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION "${SHARE_TARGET}/examples")
+      install (FILES
+         "${PROJECT_SOURCE_DIR}/examples/data/alarm.mp3"
+         "${PROJECT_SOURCE_DIR}/examples/data/football.svg"
+         "${PROJECT_SOURCE_DIR}/examples/data/mandril.png"
+         "${PROJECT_SOURCE_DIR}/examples/data/wilhelm.mp3"
+         DESTINATION "${SHARE_TARGET}/examples/data")
+
+      install (FILES
+         "${PROJECT_SOURCE_DIR}/examples/benchmark_particles.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/gamepad.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/gradients.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/image_filtering.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/spiral.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/supershape.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/wave.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/wavefunction.tiri"
+         "${PROJECT_SOURCE_DIR}/examples/widgets.tiri"
+         DESTINATION "${SHARE_TARGET}/examples")
    endif ()
 
    if (NOT KOTUKU_STATIC)
-      install (CODE "file(REMOVE \"${KOTUKU_ROOT}/config/classes.bin\")")
-      install (CODE "MESSAGE(STATUS \"${ORIGO_CMD_TARGET} --log-warning --gfx-driver=headless --verify\")")
-      install (CODE "execute_process(COMMAND \"${ORIGO_CMD_TARGET}\" --log-warning --gfx-driver=headless --verify WORKING_DIRECTORY \"${CMAKE_INSTALL_PREFIX}\")")
+      file(RELATIVE_PATH install_origo_path "${CMAKE_INSTALL_PREFIX}" "${ORIGO_CMD_TARGET}${CMAKE_EXECUTABLE_SUFFIX}")
+      configure_file("${PROJECT_SOURCE_DIR}/pkg/cmake/verify_install.cmake.in"
+         "${CMAKE_CURRENT_BINARY_DIR}/verify_install.cmake" @ONLY)
+      install (SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/verify_install.cmake")
    endif ()
 
    if (RUN_ANYWHERE)
@@ -1389,12 +1532,12 @@ if(WIN32 AND ENABLE_CPACK)
    # NSIS installer configuration (for modular builds)
    if(NOT KOTUKU_STATIC)
       set(CPACK_NSIS_DISPLAY_NAME "Kotuku ${PROJECT_VERSION}")
-      set(CPACK_NSIS_PACKAGE_NAME "Kotuku")
+      set(CPACK_NSIS_PACKAGE_NAME "Kotuku Runtime")
       set(CPACK_NSIS_INSTALLED_ICON_NAME "origo.exe")
       set(CPACK_NSIS_MUI_ICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
       set(CPACK_NSIS_MUI_UNIICON "${PROJECT_SOURCE_DIR}/src/link/kotuku.ico")
-      set(CPACK_NSIS_HELP_LINK "https://github.com/parasol-framework/kotuku")
-      set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/parasol-framework/kotuku")
+      set(CPACK_NSIS_HELP_LINK "https://github.com/kotuku-group/kotuku")
+      set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/kotuku-group/kotuku")
       set(CPACK_NSIS_CONTACT "support@kotuku.dev")
 
       # Create shortcuts for installer
@@ -1408,8 +1551,13 @@ if(WIN32 AND ENABLE_CPACK)
          "Delete '$DESKTOP\\\\Origo.lnk'"
       )
 
+      # Remove the class cache generated at runtime before removing installed directories.
+      string(REPLACE "/" "\\\\" nsis_classes_cache "${CONFIG_TARGET}/classes.bin")
+      set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "Delete '$INSTDIR\\\\${nsis_classes_cache}'")
+
       # Add to PATH for command-line access
       set(CPACK_NSIS_MODIFY_PATH ON)
+      set(CPACK_MODULE_PATH "${PROJECT_SOURCE_DIR}/pkg/cpack" ${CMAKE_MODULE_PATH})
 
       # Installation directory
       if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -1419,30 +1567,13 @@ if(WIN32 AND ENABLE_CPACK)
       endif()
    endif()
 
-   # License file (if available)
-   if(EXISTS "${PROJECT_SOURCE_DIR}/LICENSE")
-      set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
-   elseif(EXISTS "${PROJECT_SOURCE_DIR}/LICENSE.md")
-      set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE.md")
-   endif()
+   # Display the project licence in the installer.
+   set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/license.txt")
 
-   # Component configuration (matches existing install structure)
-   set(CPACK_COMPONENTS_ALL Runtime Config Scripts Examples)
-   set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME "Kotuku Runtime")
-   set(CPACK_COMPONENT_RUNTIME_DESCRIPTION "Core Kotuku executable and libraries")
-   set(CPACK_COMPONENT_RUNTIME_REQUIRED TRUE)
-
-   set(CPACK_COMPONENT_CONFIG_DISPLAY_NAME "Configuration Files")
-   set(CPACK_COMPONENT_CONFIG_DESCRIPTION "Fonts, styles, and configuration data")
-   set(CPACK_COMPONENT_CONFIG_REQUIRED TRUE)
-
-   set(CPACK_COMPONENT_SCRIPTS_DISPLAY_NAME "Tiri Scripts")
-   set(CPACK_COMPONENT_SCRIPTS_DESCRIPTION "Standard library and GUI toolkit")
-   set(CPACK_COMPONENT_SCRIPTS_REQUIRED TRUE)
-
-   set(CPACK_COMPONENT_EXAMPLES_DISPLAY_NAME "Examples")
-   set(CPACK_COMPONENT_EXAMPLES_DESCRIPTION "Example applications and demonstrations")
-   set(CPACK_COMPONENT_EXAMPLES_REQUIRED FALSE)
+   # Install rules do not assign components.  Package the complete install tree so that
+   # component-aware generators such as NSIS include all files.  INSTALL_EXAMPLES still
+   # controls whether example scripts are included in the install tree.
+   set(CPACK_MONOLITHIC_INSTALL ON)
 
    # Include CPack
    include(CPack)
