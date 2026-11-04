@@ -644,6 +644,28 @@ follow a <code>url()</code> reference.</li>
   </function>
 
   <function>
+    <name>SetFontHinting</name>
+    <comment>Overrides the hinting mode of a scalable font family.</comment>
+    <prototype>ERR vec::SetFontHinting(STRVIEW Family, INT Hint)</prototype>
+    <tiriPrototype>err = SetFontHinting(Family:str, Hint:num)</tiriPrototype>
+    <tags>blocking, idempotent, thread-safe</tags>
+    <input>
+      <param type="STRVIEW" name="Family">The name of the font family.  Aliases are resolved to the family that they refer to.</param>
+      <param type="INT" name="Hint">A <code>HINT</code> value, or zero to restore the configured hinting.</param>
+    </input>
+    <description>
+<p>SetFontHinting() changes the hinting mode that is applied when glyphs are loaded from a scalable font family.  It is intended for diagnostics and for tuning the <code>Hinting</code> option of a font's configuration, as the change applies to every user of the family in the process.</p>
+<p>The <code>Hint</code> value is a <code>HINT</code> constant from the Font module.  <code>HINT::NORMAL</code> gives preference to the hinting instructions in the font, <code>HINT::LIGHT</code> imposes the light FreeType auto-hinter, and <code>HINT::INTERNAL</code> imposes the normal FreeType auto-hinter.  Set <code>Hint</code> to zero to remove the override and revert to the font's configured <code>Hinting</code> option.</p>
+<p>The override persists for the lifetime of the process and also applies to the family if it is loaded later.  Glyph caches for the family are cleared so that new font handles and text layouts reflect the change.  Existing <class name="VectorText">VectorText</class> objects keep their current layout until they are next laid out, e.g. after a change to their <class name="VectorText" field="String">VectorText.String</class>.  Bitmap fonts are not affected.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Search">The <code>Family</code> is not recognised.</error>
+      <error code="Args"><code>Hint</code> is not a valid <code>HINT</code> value.</error>
+    </result>
+  </function>
+
+  <function>
     <name>Skew</name>
     <comment>Applies a skew transform to a matrix.</comment>
     <prototype>ERR vec::Skew(struct VectorMatrix * Matrix, DOUBLE X, DOUBLE Y)</prototype>

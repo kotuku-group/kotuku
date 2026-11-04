@@ -54,14 +54,14 @@ freetype_font::glyph & freetype_font::ft_point::get_glyph(uint32_t Unicode)
       FT_Vector v_last  = outline.points[last];
       FT_Vector v_control = v_start;
       FT_Vector *point = outline.points + first;
-      char *tags = outline.tags  + first;
+      auto tags = outline.tags + first;
       char tag   = FT_CURVE_TAG(tags[0]);
 
-      if (tag == FT_CURVE_TAG_CUBIC) return path; // A contour cannot start with a cubic control point!
+      if (tag IS FT_CURVE_TAG_CUBIC) return path; // A contour cannot start with a cubic control point!
 
       // check first point to determine origin
-      if (tag == FT_CURVE_TAG_CONIC) { // first point is conic control.  Yes, this happens.
-         if (FT_CURVE_TAG(outline.tags[last]) == FT_CURVE_TAG_ON) { // start at last point if it is on the curve
+      if (tag IS FT_CURVE_TAG_CONIC) { // first point is conic control.  Yes, this happens.
+         if (FT_CURVE_TAG(outline.tags[last]) IS FT_CURVE_TAG_ON) { // start at last point if it is on the curve
             v_start = v_last;
             limit--;
          }
@@ -106,7 +106,7 @@ freetype_font::glyph & freetype_font::ft_point::get_glyph(uint32_t Unicode)
                       vec.x = point->x;
                       vec.y = point->y;
 
-                      if (tag == FT_CURVE_TAG_ON) {
+                      if (tag IS FT_CURVE_TAG_ON) {
                           x1 = int26p6_to_dbl(v_control.x);
                           y1 = -int26p6_to_dbl(v_control.y);
                           x2 = int26p6_to_dbl(vec.x);

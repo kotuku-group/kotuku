@@ -980,6 +980,67 @@ ERR GetFontMetrics(APTR Handle, struct FontMetrics *Metrics)
 /*********************************************************************************************************************
 
 -FUNCTION-
+SetFontHinting: Overrides the hinting mode of a scalable font family.
+
+SetFontHinting() changes the hinting mode that is applied when glyphs are loaded from a scalable font family.  It is
+intended for diagnostics and for tuning the `Hinting` option of a font's configuration, as the change applies to
+every user of the family in the process.
+
+The `Hint` value is a `HINT` constant from the Font module.  `HINT::NORMAL` gives preference to the hinting
+instructions in the font, `HINT::LIGHT` imposes the light FreeType auto-hinter, and `HINT::INTERNAL` imposes the
+normal FreeType auto-hinter.  Set `Hint` to zero to remove the override and revert to the font's configured
+`Hinting` option.
+
+The override persists for the lifetime of the process and also applies to the family if it is loaded later.  Glyph
+caches for the family are cleared so that new font handles and text layouts reflect the change.  Existing
+@VectorText objects keep their current layout until they are next laid out, e.g. after a change to their
+@VectorText.String.  Bitmap fonts are not affected.
+
+-INPUT-
+strview Family: The name of the font family.  Aliases are resolved to the family that they refer to.
+int Hint: A `HINT` value, or zero to restore the configured hinting.
+
+-ERRORS-
+Okay
+Args: `Hint` is not a valid `HINT` value.
+Search: The `Family` is not recognised.
+
+-TAGS-
+blocking, idempotent, thread-safe
+-END-
+
+*********************************************************************************************************************/
+
+ERR SetFontHinting(const std::string_view &Family, int Hint)
+{
+   kt::Log log(__FUNCTION__);
+
+   if ((Hint < int(HINT::NIL)) or (Hint > int(HINT::LIGHT))) return log.warning(ERR::Args);
+
+   std::string_view name;
+   if (fnt::ResolveFamilyName(Family, &name) != ERR::Okay) return log.warning(ERR::Search);
+
+   log.branch("%.*s: %d", int(name.size()), name.data(), Hint);
+
+   const std::lock_guard lock{glFontMutex};
+
+   const auto family_hash = strihash(name);
+   if (Hint IS int(HINT::NIL)) glHintOverrides.erase(family_hash);
+   else glHintOverrides[family_hash] = HINT(Hint);
+
+   for (auto & [key, font] : glFreetypeFonts) {
+      if (font->family_hash != family_hash) continue;
+      font->set_hinting(HINT(Hint));
+      font->clear_glyphs();
+   }
+
+   glTextCoverageCache.clear(); // Coverage keys do not identify the hinting mode
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
 TracePath: Calls a function for each traced coordinate in a generated path.
 
 Any generated path can be traced by calling this function.  Tracing allows the caller to follow the `Path`

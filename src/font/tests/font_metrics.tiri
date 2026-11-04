@@ -4,18 +4,29 @@ A simple test program for confirming that our fonts and reported metrics values 
 
    import 'gui/window'
    import 'gui/combobox'
+   import 'gui/listview'
 
    module font as mFont
+   module vector as mVec
 
 glFontSize = 30
 local glViewport, glWindow, glTextY
+local glFace
+
+-- Hinting overrides applied through SetFontHinting().  The override persists for the process, so the chosen mode is
+-- remembered per family and reselected in the list when the family is chosen again.
+
+local HINT_MODES = { Default=0, Normal=HINT_NORMAL, Light=HINT_LIGHT, Internal=HINT_INTERNAL }
+local glHints = { }
 
 function setFont(Face, Size)
    if glText then glText.free() end
+   if glSmallText then glSmallText.free() end
 
-   local err, font = mVec.GetFontHandle(Face, "Regular", 0, Size)
+   glFace = Face
+   local _, fh = mVec.GetFontHandle(Face, "Regular", 0, Size)
    metrics = struct.new('FontMetrics')
-   err = mVec.GetFontMetrics(font, metrics)
+   check mVec.GetFontMetrics(fh, metrics)
 
    if not glInitialised then
       -- CAP-HEIGHT: YELLOW
@@ -72,6 +83,15 @@ function setFont(Face, Size)
    glAscent.y1 = glText.y - metrics.ascent
    glAscent.y2 = glText.y - metrics.ascent
 
+   global glSmallText = glViewport.new('vectortext', {
+      x        = glWindow.margins.left,
+      y        = glText.y + metrics.lineSpacing * 2,
+      face     = Face,
+      fontSize = '8pt',
+      fill     = 'rgb(0,0,0)',
+      string   = 'ÄĆÃÊ The quick brown Fox jumped Over the lazy Dog'
+   })
+
    global glInitialised = true
    processing.collect()
 end
@@ -91,6 +111,15 @@ end
       end
    end
 
+   local hintList:table -- Declared ahead of the font combobox, which updates it
+
+   -- Reselects the hinting mode recorded for Face.  The 'manual' selection reason is ignored by itemSelected.
+
+   function showHinting(Face:str)
+      mode = glHints[Face] ?? 'Default'
+      hintList.selectItems(Item => Item.name is mode)
+   end
+
    combobox = gui.combobox({
       target = glViewport,
       label  = 'Font:',
@@ -98,14 +127,34 @@ end
       items  = items,
       events = {
          activate = function(Item:table!)
+            showHinting(Item.label)
             setFont(Item.label, glFontSize)
          end
       }
    })
-   y += combobox.viewport.height + 12
+
+   hintList = gui.listView({
+      target    = glViewport,
+      x         = combobox.viewport.x + combobox.viewport.width + 16, y = y,
+      width     = 120,
+      height    = 96,
+      showIcons = false,
+      scrollDirection = 'vertical',
+      items     = array<table> { { name='Default' }, { name='Normal' }, { name='Light' }, { name='Internal' } },
+      events    = {
+         itemSelected = function(View:table, Reason:str, Item:table)
+            if Reason != 'user' then return end
+            check mVec.SetFontHinting(glFace, HINT_MODES[Item.name])
+            glHints[glFace] = (Item.name != 'Default') ? Item.name : nil
+            setFont(glFace, glFontSize)
+         end
+      }
+   })
+   y += math.max(combobox.viewport.height, hintList.viewport.height) + 12
 
    glTextY = y
 
+   showHinting(items[0].label)
    setFont(items[0].label, glFontSize)
 
    glWindow.show()

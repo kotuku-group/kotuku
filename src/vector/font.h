@@ -7,6 +7,8 @@
 #include FT_MULTIPLE_MASTERS_H
 #include FT_FREETYPE_H
 #include FT_SFNT_NAMES_H
+#include FT_TRUETYPE_TABLES_H
+#include FT_TRUETYPE_TAGS_H
 
 #define CF_BITMAP 0
 #define CF_FREETYPE 1
@@ -185,15 +187,60 @@ class freetype_font {
       METRIC_TABLE metrics; // For variable fonts, these are pre-defined metrics with style names
       FMETA meta = FMETA::NIL;
       int glyph_flags = 0;
+      uint32_t family_hash = 0; // strihash() of the resolved family name that first loaded this face
       ft_point *active_size = nullptr;
 
       freetype_font()  { }
-      freetype_font(FT_Face pFace, STYLE_CACHE &pStyles, METRIC_TABLE &pMetrics, FMETA pMeta = FMETA::NIL)
-         : face(pFace), style_cache(pStyles), metrics(pMetrics), meta(pMeta) {
-         if ((pMeta & FMETA::HINT_INTERNAL) != FMETA::NIL) glyph_flags = FT_LOAD_TARGET_NORMAL|FT_LOAD_FORCE_AUTOHINT;
-         else if ((pMeta & FMETA::HINT_LIGHT) != FMETA::NIL) glyph_flags = FT_LOAD_TARGET_LIGHT;
-         else if ((pMeta & FMETA::HINT_NORMAL) != FMETA::NIL) glyph_flags = FT_LOAD_TARGET_NORMAL; // Use the font's hinting information
-         else glyph_flags = FT_LOAD_DEFAULT; // Default, typically matches FT_LOAD_TARGET_NORMAL
+      freetype_font(FT_Face pFace, STYLE_CACHE &pStyles, METRIC_TABLE &pMetrics, FMETA pMeta, uint32_t pFamilyHash,
+         HINT pHint)
+         : face(pFace), style_cache(pStyles), metrics(pMetrics), meta(pMeta), family_hash(pFamilyHash) {
+         set_hinting(pHint);
+      }
+
+      // Selects the glyph load flags.  A HINT value overrides the Hinting option from the font configuration, while
+      // HINT::NIL reverts to it.  Cached glyphs are not affected; see clear_glyphs().
+
+      void set_hinting(HINT Hint) {
+         if ((Hint IS HINT::INTERNAL) or ((Hint IS HINT::NIL) and ((meta & FMETA::HINT_INTERNAL) != FMETA::NIL))) {
+            glyph_flags = FT_LOAD_TARGET_NORMAL|FT_LOAD_FORCE_AUTOHINT;
+         }
+         else if ((Hint IS HINT::LIGHT) or ((Hint IS HINT::NIL) and ((meta & FMETA::HINT_LIGHT) != FMETA::NIL))) {
+            glyph_flags = FT_LOAD_TARGET_LIGHT;
+         }
+         else { // HINT::NORMAL and the default use the font's hinting information (FT_LOAD_TARGET_NORMAL is zero)
+            glyph_flags = FT_LOAD_DEFAULT;
+            if (stub_hinted(face)) glyph_flags |= FT_LOAD_NO_AUTOHINT;
+         }
+      }
+
+      // Discards the cached glyphs of every style and size, forcing them to be reloaded with the current flags.
+
+      void clear_glyphs() {
+         for (auto & [style, sizes] : style_cache) {
+            for (auto & [size, point] : sizes) point.glyphs.clear();
+         }
+      }
+
+      // FreeType 2.14 auto-hints TrueType fonts that have no 'fpgm' table and a 'prep' table of up to 7 bytes, where
+      // 2.13 required both to be empty.  Unhinted fonts that ship a stub 'prep' (e.g. Noto Sans) would otherwise
+      // switch to the auto-hinter, whose hinted advances change letter spacing.  This keeps such fonts on the native
+      // loader to retain the original glyph layout.
+
+      static bool stub_hinted(FT_Face Face) {
+         if ((not FT_IS_SFNT(Face)) or (not FT_IS_SCALABLE(Face))) return false;
+
+         // A null buffer with a valid length pointer only queries the table size.
+
+         FT_ULong fpgm_size = 0, prep_size = 0, glyf_size = 0;
+         FT_Load_Sfnt_Table(Face, TTAG_fpgm, 0, nullptr, &fpgm_size);
+         FT_Load_Sfnt_Table(Face, TTAG_prep, 0, nullptr, &prep_size);
+         if ((fpgm_size != 0) or (prep_size > 7)) return false;
+
+         FT_Load_Sfnt_Table(Face, TTAG_glyf, 0, nullptr, &glyf_size);
+         if (glyf_size IS 0) return false; // Not glyf-based, e.g. CFF or bitmap-only
+
+         auto maxp = (TT_MaxProfile *)FT_Get_Sfnt_Table(Face, FT_SFNT_MAXP);
+         return (prep_size > 0) or (maxp and (maxp->maxSizeOfInstructions > 0));
       }
 
       ~freetype_font();
@@ -208,6 +255,7 @@ extern ERR get_font(kt::Log &Log, std::string_view, std::string_view, int, int, 
 extern std::recursive_mutex glFontMutex;
 extern ankerl::unordered_dense::map<uint32_t, std::unique_ptr<bmp_font>> glBitmapFonts;
 extern ankerl::unordered_dense::map<uint32_t, std::unique_ptr<freetype_font>> glFreetypeFonts;
+extern ankerl::unordered_dense::map<uint32_t, HINT> glHintOverrides; // Family name hash to SetFontHinting() value
 
 extern FT_Library glFTLibrary;
 
