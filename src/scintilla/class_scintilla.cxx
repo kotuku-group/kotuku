@@ -13,6 +13,25 @@ as well as simple user input features for text input boxes.  The code is based o
 http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its
 capabilities.
 
+The editor is hosted by a @VectorViewport, which is referenced by #Viewport and defaults to the Scintilla object's
+owner.  On initialisation the editor creates a #View viewport that covers the host and clips the content, and a #Page
+viewport within the View that represents the extent of the document.  Scrolling moves the Page within the View, so the
+View and Page can be passed to a scrollbar such as `gui/scrollbar` without further integration.  The visible text is
+painted into an internal bitmap that is drawn as the fill of a rectangle within the Page, and only the regions affected
+by edits, selection changes and scrolling are repainted.  The editor follows changes to the size of the host.  If the
+host is freed before the editor, the editor closes its pop-ups and releases its graphics, and operations that display
+content, such as #ShowCompletions(), fail with `ERR::NotPossible`.
+
+Keyboard input and the caret require the user focus, which is monitored through the #Focus viewport.  The hosting
+@VectorScene must be linked to a @Surface for keyboard input, and should have the `VPF::IGNORE_TAB` flag if the Tab
+key is to reach the editor.
+
+Text is drawn by the Vector module with the font family in #Face at the pixel size in #FontSize.  Scalable and bitmap
+faces are supported, and all styles share the same family and size.  Lexer styles, margins, the caret, the line
+highlight and the selection are coloured from the per-editor palette, which is configured in one operation through
+#ThemeXML.  Applications that use the GUI packages can build the theme from their GUI palette and reassign it when
+the palette changes.  The editor has no dependency on the GUI packages.
+
 Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and
 Select All.  Items are disabled when they cannot be used: edits require `SCIF::EDIT`, Cut, Copy and Delete require a
 selection, and Paste requires text on the clipboard.  The menu is displayed with `gui/menu` at the pointer position,
@@ -38,6 +57,20 @@ dragging and X11 XDND inbound transport depend on Display support and are separa
 
 On X11, selecting text publishes it as the primary selection.  The middle mouse button inserts the primary selection
 at that position as one undo action, with document line-ending conversion and read-only enforcement.
+
+The following limitations apply to the current implementation:
+
+<list type="bullet">
+<li>The bitmap is sized in the logical units of the #View.  Text is sharp when the host is untransformed, but is
+resampled, and appears soft, if the host is scaled or rotated.  Display scaling is not applied to the content.</li>
+<li>A modifier key that is pressed while the application window does not have the keyboard focus is not known to the
+editor until it is pressed again.</li>
+<li>Rectangular clipboard content is recognised only within the process that copied it.  Refer to #Clipboard() for
+details.</li>
+<li>Primary selection is supported only by the X11 display driver.</li>
+<li>If the #Page is moved a large distance by a third party, such as a scrollbar, the previous content can be shown
+for one frame before the editor repaints.</li>
+</list>
 -END-
 
 *********************************************************************************************************************/
@@ -2302,10 +2335,9 @@ static ERR SET_FoldingMarkers(extScintilla *Self, int Value)
 Face: The font family used for drawing and measuring document text.
 
 Accepts a font family name supported by the vector module's GetFontHandle() function, including bitmap faces such
-as `Clean`.
-The default is `Source Code Pro`.  Regular, bold, italic and bold italic styles share this family and #FontSize.
-Set this field before or after initialisation.  Changing it reloads the styles and updates layout and margins.
-#SetFont() provides the same operation.  A failed resolution preserves the current face and handles.
+as `Clean`.  The default is `Source Code Pro`.  Regular, bold, italic and bold italic styles share this family and
+#FontSize.  Set this field before or after initialisation.  Changing it reloads the styles and updates layout and
+margins.  #SetFont() provides the same operation.  A failed resolution preserves the current face and handles.
 
 This field and #FontSize replace the former Font object field; scripts must use these fields to customise fonts.
 

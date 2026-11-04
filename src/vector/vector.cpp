@@ -42,6 +42,7 @@ std::recursive_mutex glFontMutex;
 text_coverage_cache glTextCoverageCache;
 ankerl::unordered_dense::map<uint32_t, std::unique_ptr<bmp_font>> glBitmapFonts;
 ankerl::unordered_dense::map<uint32_t, std::unique_ptr<freetype_font>> glFreetypeFonts;
+ankerl::unordered_dense::map<uint32_t, HINT> glHintOverrides;
 
 static ERR init_clip(void);
 static ERR init_ellipse(void);
@@ -126,6 +127,7 @@ static ERR MODExpunge(void)
       glTextCoverageCache.clear();
       glBitmapFonts.clear();
       glFreetypeFonts.clear();
+      glHintOverrides.clear();
    }
 
    if (glFTLibrary) { FT_Done_FreeType(glFTLibrary); glFTLibrary = nullptr; }

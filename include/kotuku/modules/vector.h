@@ -6118,6 +6118,7 @@ struct VectorBase {
    double (*_StringWidth)(APTR FontHandle, const std::string_view &String, int Chars);
    ERR (*_FlushMatrix)(struct VectorMatrix *Matrix);
    ERR (*_TracePath)(APTR Path, FUNCTION *Callback, double Scale);
+   ERR (*_SetFontHinting)(const std::string_view &Family, int Hint);
 #endif // KOTUKU_STATIC
 };
 
@@ -6156,6 +6157,7 @@ inline double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *
 inline double StringWidth(APTR FontHandle, const std::string_view &String, int Chars) { return VectorBase->_StringWidth(FontHandle,String,Chars); }
 inline ERR FlushMatrix(struct VectorMatrix *Matrix) { return VectorBase->_FlushMatrix(Matrix); }
 inline ERR TracePath(APTR Path, FUNCTION *Callback, double Scale) { return VectorBase->_TracePath(Path,Callback,Scale); }
+inline ERR SetFontHinting(const std::string_view &Family, int Hint) { return VectorBase->_SetFontHinting(Family,Hint); }
 } // namespace
 #else
 namespace vec {
@@ -6191,6 +6193,7 @@ extern double CharWidth(APTR FontHandle, uint32_t Char, uint32_t KChar, double *
 extern double StringWidth(APTR FontHandle, const std::string_view &String, int Chars);
 extern ERR FlushMatrix(struct VectorMatrix *Matrix);
 extern ERR TracePath(APTR Path, FUNCTION *Callback, double Scale);
+extern ERR SetFontHinting(const std::string_view &Family, int Hint);
 } // namespace
 #endif // KOTUKU_STATIC
 

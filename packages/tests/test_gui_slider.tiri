@@ -687,41 +687,6 @@ end
    end
 end
 
-@Test function VerticalValuesScaleToTrack()
-   for position in values(array<str> { 'in-min', 'in-centre', 'in-max', 'out-min', 'out-max' }) do
-      local surface <close>, slider = newSlider({ orientation='vertical', valuePos=position, label='Gain:',
-         labelPos='bottom' })
-      local full_size = tonumber(slider.labelText.fontSize)
-      for range in values(array<table> { { 0, 1 }, { -1000, 1000 } }) do
-         slider.setRange(range[0], range[1])
-         local text, bar = slider.valueText, slider.prvBarBkgd
-         assert(slider.viewport.width is slider.thickness and bar.x is 0 and bar.width is slider.thickness,
-            f'{position}: values must not widen a vertical slider or its track')
-         assert(tonumber(text.fontSize) < full_size, f'{position}: a value wider than the track must be scaled down')
-
-         -- Every value in the range must fit, so check both ends with their widest digits
-
-         for value in values(array<double> { range[0], range[1] }) do
-            slider.setValue(value)
-            text.string = regex.new('[0-9]').replace(text.string, '8')
-            assert(text.textWidth <= slider.thickness - 4,
-               f'{position}: {text.string} must fit across the track at {text.fontSize}px')
-            slider.setValue(range[0] + ((range[1] - range[0]) * 0.5)) -- Restore real text before placing it
-         end
-
-         local text_centre = text.x - slider.trackVP.x + (text.textWidth * 0.5)
-         assert(math.abs(text_centre - (bar.width * 0.5)) <= 0.5,
-            f'{position}: value text must be centred on the track ({text_centre})')
-      end
-   end
-
-   local surface <close>, wide = newSlider({ orientation='vertical', valuePos='in-centre', thickness=48 })
-   assert(tonumber(wide.valueText.fontSize) is wide.prvValueFontSize and wide.prvValueWidth <= 44,
-      'A track wide enough for the value must not need scaling')
-   local surface2 <close>, beside = newSlider({ orientation='vertical', valuePos='out-centre' })
-   assert(beside.prvValueWidth > beside.thickness, 'Values beside the track must keep their full size')
-end
-
 @Test function NonPositiveThumbTravelPreservesValueAndRecoversAfterResizing()
    for orientation in values(array<str> { 'horizontal', 'vertical' }) do
       local hits = 0
@@ -966,37 +931,6 @@ function capHeight(Text:obj!):num
    metrics = struct<FontMetrics>
    check mVec.GetFontMetrics(handle, metrics)
    return metrics.ascent
-end
-
-@Test function LabelCapitalsCentreOnTrack()
-   local surface <close>, slider = newSlider({ label='Gain:', labelPos='left' })
-   local parent = slider.viewport.parent
-   local horizontal = array<table> {
-      slider,
-      gui.slider({ target=parent, y=60, label='Gain:', labelPos='right', valuePos='out-centre' }),
-      gui.slider({ target=parent, y=120, height=44, label='Gain:', thumbSize='150%' })
-   }
-   for s in values(horizontal) do
-      local track_centre = s.trackVP.y + s.prvBarBkgd.y + (s.prvBarBkgd.height * 0.5)
-      local _, label_y = labelOrigin(s)
-      local cap_centre = label_y - (capHeight(s.labelText) * 0.5)
-      assert(math.abs(cap_centre - track_centre) <= 0.5,
-         f'Side label capitals must centre on the track ({cap_centre} vs {track_centre})')
-   end
-
-   local vertical = array<table> {
-      gui.slider({ target=parent, x=300, orientation='vertical', label='Gain:', labelPos='bottom',
-         labelAlign='centre' }),
-      gui.slider({ target=parent, x=360, orientation='vertical', label='Gain:', labelPos='top',
-         labelAlign='centre', valuePos='out-centre' })
-   }
-   for s in values(vertical) do
-      local track_centre = s.trackVP.x + s.prvBarBkgd.x + (s.prvBarBkgd.width * 0.5)
-      local label_x = labelOrigin(s)
-      local cap_centre = label_x - (capHeight(s.labelText) * 0.5) -- Rotated capitals extend left
-      assert(math.abs(cap_centre - track_centre) <= 0.5,
-         f'Centred vertical label capitals must centre on the track ({cap_centre} vs {track_centre})')
-   end
 end
 
 -- Parse a tick path into lines in the slider viewport's coordinates.

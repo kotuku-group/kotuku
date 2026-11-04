@@ -29,6 +29,7 @@ FDEF argsResetMatrix[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix"
 FDEF argsRewindPath[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { 0, 0 } };
 FDEF argsRotate[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { "Angle", FD_DOUBLE }, { "CenterX", FD_DOUBLE }, { "CenterY", FD_DOUBLE }, { 0, 0 } };
 FDEF argsScale[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
+FDEF argsSetFontHinting[] = { { "Error", FD_INT|FD_ERROR }, { "Family", FDF_CPPSTRING }, { "Hint", FD_INT }, { 0, 0 } };
 FDEF argsSkew[] = { { "Error", FD_INT|FD_ERROR }, { "VectorMatrix:Matrix", FD_PTR|FD_STRUCT }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
 FDEF argsSmooth3[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
 FDEF argsSmooth4[] = { { "Void", FD_VOID }, { "Path", FD_PTR }, { "CtrlX", FD_DOUBLE }, { "CtrlY", FD_DOUBLE }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
@@ -70,6 +71,7 @@ const struct Function glFunctions[] = {
    { (APTR)vec::StringWidth, "StringWidth", argsStringWidth },
    { (APTR)vec::FlushMatrix, "FlushMatrix", argsFlushMatrix },
    { (APTR)vec::TracePath, "TracePath", argsTracePath },
+   { (APTR)vec::SetFontHinting, "SetFontHinting", argsSetFontHinting },
    { nullptr, nullptr, nullptr }
 };
 

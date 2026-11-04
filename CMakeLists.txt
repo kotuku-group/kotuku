@@ -978,7 +978,17 @@ if (NOT DISABLE_FONT)
    endif ()
 
    set (SKIP_INSTALL_ALL TRUE)
+
+   # Freetype is built without external dependencies.  Normal variables override any cached option values.
+   foreach (FT_DEP ZLIB BZIP2 PNG HARFBUZZ BROTLI)
+      set (FT_DISABLE_${FT_DEP} ON)
+   endforeach ()
+
    add_subdirectory (3rdparty/freetype-2.14.3)
+
+   foreach (FT_DEP ZLIB BZIP2 PNG HARFBUZZ BROTLI)
+      unset (FT_DISABLE_${FT_DEP})
+   endforeach ()
 
    if (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED)
       set (SKIP_INSTALL_ALL "${KOTUKU_ORIGINAL_SKIP_INSTALL_ALL}")

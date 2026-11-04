@@ -1423,3 +1423,179 @@ end
          f'At scale {scale}, an upward-opening menu must end at its anchor')
    end
 end
+
+@Test function PreparedShortcutsSurviveMenubarRestyling()
+   local surface <close>, target = newTarget()
+   local calls, hits = 0, 0
+   local bar = gui.menubar({ target=target, createItems=function(Bar)
+      Bar.addItem('file', 'File', nil, nil, array<table>, function(Config)
+         calls++
+         &items = array<table> { { label='Dynamic action', key='G', qualifier='CTRL',
+            onActivate=function() hits++ end } }
+      end)
+   end })
+   defer bar._lookup.file.menu?.surface?.free() end
+   surface.acShow()
+   surface.acFocus()
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   sendKey(KEY_ESCAPE)
+   sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 1 and calls is 1, 'The prepared shortcut must work before restyling')
+
+   bar.setTheme({ menubar={ text={ fill='#abcdef' } } })
+   sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 2 and calls is 1, 'Restyling must retain prepared shortcuts without invoking prepare again')
+
+   bar.setTheme(nil)
+   gui.broadcastTheme(target.scene, gui.getTheme(target))
+   sendKey(KEY_G, KQ_PRESSED | KQ_CTRL)
+   assert(hits is 3 and calls is 1, 'Prepared shortcuts must survive clearing overrides and window theme updates')
+end
+
+@Test function PreparedMenuHighlightSurvivesMenubarRestyling()
+   for mode in values(array<str> { 'id', 'label' }) do
+      local use_id = mode is 'id'
+      local surface <close>, target = newTarget()
+      local calls = 0
+      local bar = gui.menubar({ target=target, createItems=function(Bar)
+         Bar.addItem('file', 'File', nil, nil, array<table>, function(Config)
+            calls++
+            &items = array<table> {
+               { id=use_id ? 1 : nil, label=use_id ? f'First {calls}' : 'First' },
+               { id=use_id ? 0 : nil, label=use_id ? f'Second {calls}' : 'Second' }
+            }
+         end)
+      end })
+      defer bar._lookup.file.menu?.surface?.free() end
+      surface.acShow()
+      surface.acFocus()
+      sendKey(KEY_F10)
+      sendKey(KEY_DOWN)
+      assert(bar._lookup.file.menu.selectItem(use_id ? 0 : 'Second'), 'The second row must be selectable')
+
+      bar.setTheme({ menubar={ text={ fill='#abcdef' } } })
+      local menu = bar._lookup.file.menu
+      assert(menu.visible and calls is 2, 'Restyling must reopen and prepare the menu')
+      assert(menu.hItem, 'The rebuilt menu must retain its highlight with fresh configuration tables')
+      if use_id then
+         assert(menu.hItem.config.id is 0 and menu.hItem.config.label is 'Second 2',
+            'A zero-valued stable ID must retain selection even when the label changes')
+      else
+         assert(menu.hItem.config.label is 'Second', 'Items without IDs must retain selection by label')
+      end
+   end
+end
+
+@Test function MenubarRestylingRemovesOmittedProperties()
+   local surface <close>, target = newTarget()
+   local bar = gui.menubar({ target=target, theme={ menubar={ highlight={ opacity=0.8 } } },
+      createItems=function(Bar) Bar.addItem('file', 'File', nil, nil) end })
+   local original_stroke = bar._bkgdRect.stroke
+   local original_opacity = bar._highlight.opacity
+   local original_rounding = bar._bkgdRect.rounding
+   bar.setTheme({ menubar={
+      bkgd={ stroke='red', strokeWidth=4, roundX=12, roundY=6 },
+      highlight={ opacity=0.2 }, focus={ opacity=0.3 }
+   } })
+   assert(bar._bkgdRect.stroke is 'red' and math.abs(bar._highlight.opacity - 0.2) < 0.001,
+      'The override must be applied')
+
+   bar.setTheme({ menubar={ text={ fill='#abcdef' } } })
+   assert(bar._bkgdRect.stroke is original_stroke, 'Replacing the override must remove its omitted stroke')
+   assert(math.abs(bar._highlight.opacity - original_opacity) < 0.001,
+      'The original theme option must remain in effect')
+   assert(bar._focusEdge.opacity is 1, 'Omitted focus opacity must return to its native value')
+   for i, value in bar._bkgdRect.rounding do
+      local original = original_rounding[i]
+      assert((value is original) or ((value != value) and (original != original)),
+         'Omitted rounding must restore every corner, including unset native coordinates')
+   end
+
+   bar.setTheme({ menubar={ bkgd={ stroke='blue' } } })
+   bar.setTheme(nil)
+   assert(bar._bkgdRect.stroke is original_stroke, 'Clearing the override must restore a nil stroke')
+end
+
+@Test function MenubarFollowsTheWindowTheme()
+   local surface <close>, target = newTarget()
+   local light = gui.setTheme(target.scene, 'light')
+   local dark = gui.themes.dark
+   local file_items = array<table> {
+      { label='New', id='new' }, { label='Open', id='open' }, { label='Wrap', id='wrap', checkable=true, checked=true },
+      { label='Save', id='save' }
+   }
+   local bar = gui.menubar({ target=target, x=0, y=0, xOffset=0, createItems=function(Bar)
+      Bar.addItem(1, 'File', 'devices/harddisk', nil, file_items)
+      Bar.addItem(2, 'Edit', nil, nil, array<table> { { label='Undo' } })
+      Bar.addItem(3, 'Help', 'items/help')
+   end })
+   local styled = gui.menubar({ target=target, x=0, y=100, xOffset=0, disabled=true,
+      theme={ menubar={ bkgd={ fill='#c80000' } } }, createItems=function(Bar) Bar.addItem(1, 'Only') end })
+   local file = bar._lookup[1]
+   local edit = bar._lookup[2]
+   defer
+      file.menu?.surface?.free()
+      edit.menu?.surface?.free()
+   end
+   surface.acShow()
+   surface.acFocus()
+   processing.sleep(0)
+
+   local icon_fill = file.icon.fill
+   local height = bar.viewport.height
+   local item_text = file.vectorText
+   assert(bar._bkgdRect.fill is light.menubar.bkgd.fill, 'The menubar must start with the light theme')
+
+   -- Cache the Edit menu, then open File and highlight the checkable row.
+
+   sendKey(KEY_F10)
+   sendKey(KEY_RIGHT)
+   sendKey(KEY_DOWN)
+   assert(edit.menu?.visible, 'The Edit menu must open')
+   local edit_surface = edit.menu.surface.id
+   sendKey(KEY_LEFT)
+   local file_menu = file.menu
+   local file_surface = file.menu?.surface?.id
+   sendKey(KEY_DOWN)
+   sendKey(KEY_DOWN)
+   sendKey(KEY_DOWN)
+   assert(file.menu?.hItem?.config?.label is 'Wrap', 'The File menu must highlight the third row')
+
+   gui.broadcastTheme(target.scene, gui.setTheme(target.scene, 'dark'))
+   assert(bar._bkgdRect.fill is dark.menubar.bkgd.fill, 'The bar background must take the dark theme')
+   assert(bar._highlight.fill is dark.menubar.highlight.fill, 'The bar highlight must take the dark theme')
+   assert(bar._focusEdge.fill is dark.menubar.focus.fill, 'The focus edge must take the dark theme')
+   assert(file.vectorText != item_text and file.vectorText.fill is dark.menubar.text.fill,
+      'The item text must be recreated with the dark theme')
+   assert(bar.viewport.height is height, 'A theme change must not resize the bar')
+   assert(edit.menu is nil and obj.find(edit_surface) is nil, 'A closed cached menu must be freed')
+   assert(obj.find(file_surface) is nil, 'The open menu must be rebuilt')
+   assert(file.menu != file_menu and file.menu?.visible, 'The rebuilt menu must be reopened')
+   assert(file.menu.hItem?.config?.label is 'Wrap', 'The reopened menu must keep its highlight')
+   assert(file.menu._rows[0].text.fill is dark.menu.text.fill, 'The reopened menu must use the dark theme')
+   assert(file.menu.getChecked('wrap') is true, 'The checked state must be kept')
+   assert(bar._highlight.x is file.x and bar._lastMenu is file.menu, 'The bar must track the reopened menu')
+   assert(styled._bkgdRect.fill is '#c80000', 'Options.theme must survive the broadcast')
+   sendKey(KEY_DOWN)
+   assert(file.menu.hItem?.config?.label is 'Save', 'Keys must reach the reopened menu')
+   sendKey(KEY_ESCAPE)
+
+   -- Dark item text needs a dark icon pattern, and the override's menu section reaches menus opened later.
+
+   bar.setTheme({ menubar={ bkgd={ fill='#010203' }, text={ fill='#141414' } }, menu={ text={ fill='#090807' } } })
+   assert(bar._bkgdRect.fill is '#010203', 'setTheme() must apply the per-instance override')
+   assert(file.icon.fill != icon_fill, 'Dark item text must rebuild the item icon')
+   sendKey(KEY_F10)
+   sendKey(KEY_DOWN)
+   assert(file.menu?._rows[0].text.fill is '#090807', 'Menus opened later must use the override menu section')
+   sendKey(KEY_ESCAPE)
+
+   gui.broadcastTheme(target.scene, gui.setTheme(target.scene, 'light'))
+   assert(bar._bkgdRect.fill is '#010203', 'The override must survive the broadcast')
+   bar.setTheme(nil)
+   assert(bar._bkgdRect.fill is light.menubar.bkgd.fill, 'setTheme(nil) must clear the override')
+   assert(file.icon.fill is icon_fill and file.vectorText.fill is light.menubar.text.fill,
+      'The item icon and text must return to the light theme')
+   assert(bar.removeItem(3), 'Items must be removable after a restyle')
+end

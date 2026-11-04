@@ -606,7 +606,11 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
                }
                else styles.try_emplace(style);
 
-               glFreetypeFonts.try_emplace(key, std::make_unique<freetype_font>(ftface, styles, metrics, meta));
+               const auto family_hash = strihash(family);
+               auto hint = HINT::NIL;
+               if (auto it = glHintOverrides.find(family_hash); it != glHintOverrides.end()) hint = it->second;
+               glFreetypeFonts.try_emplace(key,
+                  std::make_unique<freetype_font>(ftface, styles, metrics, meta, family_hash, hint));
             }
             else return Log.warning(ERR::ResolvePath);
          }
