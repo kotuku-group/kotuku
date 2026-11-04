@@ -316,6 +316,7 @@ the <code>Focus</code> action.</type>
 <p>Any vector that generates a path can be traced by calling this method.  Tracing allows the caller to follow the path from point-to-point if the path were to be rendered with a stroke.  The prototype of the callback function is <code>ERR Function(OBJECTPTR Vector, INT Index, INT Command, DOUBLE X, DOUBLE Y, APTR Meta)</code>.</p>
 <p>The <code>Vector</code> parameter refers to the vector targeted by the method.  The <code>Index</code> is an incrementing counter that reflects the currently plotted point.  The <code>X</code> and <code>Y</code> parameters reflect the coordinate of a point on the path.</p>
 <p>If the <code>Callback</code> returns <code>ERR::Terminate</code>, then no further coordinates will be processed.</p>
+<p>The path of a <class name="VectorViewport">VectorViewport</class> is its clipping rectangle.  Without transforms it is traced at the viewport's position and size in the coordinate system of its parent.  With transforms it is traced in the coordinate system of the scene, which is useful for determining the scale and orientation of the viewport's content.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>

@@ -148,6 +148,42 @@ end
    assert(traced > 0, 'Applied curve path should produce traced coordinates')
 end
 
+@Test function ViewportTraceAppliesTransformsOnce()
+   local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=400, height=400 })
+   local host = root.new('VectorViewport', { x=10, y=20, width=100, height=50 })
+   local _, matrix = check host.mtNewMatrix()
+   check mVec.ParseTransform(matrix, 'scale(2) rotate(90)')
+   local view = host.new('VectorViewport', { x=5, y=6, width=30, height=40 })
+
+   local xs, ys
+   function trace(Vector, Index, Command, X, Y)
+      xs.push(X)
+      ys.push(Y)
+      return ERR_Okay
+   end
+
+   xs, ys = array<double>, array<double>
+   check view.mtTrace(trace, 1.0, false)
+   assert(#xs >= 4, f'Untransformed viewport trace should produce four corners, got {#xs}')
+   assertNear(xs[0], 5, 'untransformed top-left X')
+   assertNear(ys[0], 6, 'untransformed top-left Y')
+   assertNear(xs[2], 35, 'untransformed bottom-right X')
+   assertNear(ys[2], 46, 'untransformed bottom-right Y')
+
+   -- In scene coordinates (5,6) maps to (10 - 2*6, 20 + 2*5), and the width extends along +Y.
+
+   xs, ys = array<double>, array<double>
+   check view.mtTrace(trace, 1.0, true)
+   assert(#xs >= 4, f'Transformed viewport trace should produce four corners, got {#xs}')
+   assertNear(xs[0], -2, 'transformed top-left X')
+   assertNear(ys[0], 30, 'transformed top-left Y')
+   assertNear(xs[1], -2, 'transformed top-right X')
+   assertNear(ys[1], 90, 'transformed top-right Y')
+   assertNear(xs[3], -82, 'transformed bottom-left X')
+   assertNear(ys[3], 30, 'transformed bottom-left Y')
+end
+
 @Test function GeneratedSmoothQuadraticApplies()
    err, source = mVec.GeneratePath('M 0 0 Q 10 0 20 20 T 30 20')
    check err

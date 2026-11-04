@@ -1198,6 +1198,79 @@ end
    assert(large[299].X is 5 and large[key].X is 6, 'Keys beyond the byte-constant range should persist')
 end
 
+@Test function StructArrayElementComputedFieldKeys()
+   local pts = array<struct<ElementPoint>, 2>
+   local field = 'X'
+   local change_field = function()
+      field = 'Y'
+      return 7
+   end
+
+   pts[0][field] = change_field()
+   assert(pts[0].X is 7 and pts[0].Y is 0, 'Plain stores should retain the field selected before the RHS')
+
+   field = 'X'
+   pts[0][field] += change_field()
+   assert(pts[0].X is 14 and pts[0].Y is 0, 'Compound stores should retain the field selected before the RHS')
+
+   field = 'X'
+   pts[1][field] ??= change_field()
+   assert(pts[1].X is 7 and pts[1].Y is 0, 'Conditional stores should retain the field selected before the RHS')
+
+   field = 'X'
+   pts[1][field], field = 11, 'Y'
+   assert(pts[1].X is 11 and pts[1].Y is 0, 'Another assignment target must not redirect a computed field store')
+end
+
+@Test function StructArrayElementReceiverValidationOrder()
+   local pts = array<struct<ElementPoint>, 1>
+   local rhs_calls = 0
+   local rhs = function()
+      rhs_calls++
+      return 42
+   end
+   local field_calls = 0
+   local field = function()
+      field_calls++
+      return 'X'
+   end
+
+   expect_struct_error(function()
+      pts[99][field()] = rhs()
+   end, ERR_OutOfBounds, 'Literal element indices should be checked before the field key and RHS')
+
+   local index = 99
+   expect_struct_error(function()
+      pts[index].Inner.V = rhs()
+   end, ERR_OutOfBounds, 'Computed element indices should be checked before the RHS')
+
+   assert(field_calls is 0, 'An invalid element receiver must prevent evaluation of its field key')
+   assert(rhs_calls is 0, 'An invalid element receiver must prevent evaluation of the RHS')
+end
+
+@Test function StructArrayElementStoresWithManyConstants()
+   local source = [[
+      struct ElementConstantInner
+         V: int
+      end
+      struct ElementConstantOuter
+         Inner: struct<ElementConstantInner>
+      end
+      local padding = {}
+   ]]
+   for i in {0 to 280} do
+      source ..= f"padding[{i}] = 'padding_{i}'\n"
+   end
+   source ..= [[
+      local pts = array<struct<ElementConstantOuter>, 1>
+      pts[0].Inner.V = 42
+      pts[0].Inner.V += 3
+      pts[0].Inner.V++
+      assert(pts[0].Inner.V is 46, 'Embedded field stores should support register-based string keys')
+   ]]
+   exec(source)
+end
+
 @Test function StructArrayElementStoresAcrossScopes()
    local pts = array<struct<ElementPoint>, 4>
    element_store_typed_param(pts, 3, 77)
