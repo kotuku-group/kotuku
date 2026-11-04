@@ -970,8 +970,53 @@ elseif (KOTUKU_INSTALL AND KOTUKU_STATIC AND WIN32)
 endif ()
 
 if (NOT DISABLE_FONT)
-   add_subdirectory (3rdparty/freetype-2.13.2 SYSTEM)
-endif()
+   if (DEFINED SKIP_INSTALL_ALL)
+      set (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL "${SKIP_INSTALL_ALL}")
+      set (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED TRUE)
+   else ()
+      set (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED FALSE)
+   endif ()
+
+   set (SKIP_INSTALL_ALL TRUE)
+   add_subdirectory (3rdparty/freetype-2.14.3)
+
+   if (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED)
+      set (SKIP_INSTALL_ALL "${KOTUKU_ORIGINAL_SKIP_INSTALL_ALL}")
+   else ()
+      unset (SKIP_INSTALL_ALL)
+   endif ()
+   unset (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL)
+   unset (KOTUKU_ORIGINAL_SKIP_INSTALL_ALL_DEFINED)
+
+   if (KOTUKU_INSTALL AND NOT KOTUKU_STATIC)
+      install(CODE
+         "file(REMOVE
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetype.dll\"
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetyped.dll\"
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetype.lib\"
+            \"\${CMAKE_INSTALL_PREFIX}/${LIB_TARGET}/lib/freetyped.lib\")")
+      install(CODE [=[
+         file(REMOVE_RECURSE
+            "${CMAKE_INSTALL_PREFIX}/include/freetype2"
+            "${CMAKE_INSTALL_PREFIX}/lib/cmake/freetype")
+         file(REMOVE
+            "${CMAKE_INSTALL_PREFIX}/bin/freetype.dll"
+            "${CMAKE_INSTALL_PREFIX}/bin/freetyped.dll"
+            "${CMAKE_INSTALL_PREFIX}/lib/freetype.lib"
+            "${CMAKE_INSTALL_PREFIX}/lib/freetyped.lib"
+            "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig/freetype2.pc")
+         file(GLOB KOTUKU_STALE_FREETYPE_LIBS
+            "${CMAKE_INSTALL_PREFIX}/lib/libfreetype*")
+         if (KOTUKU_STALE_FREETYPE_LIBS)
+            file(REMOVE ${KOTUKU_STALE_FREETYPE_LIBS})
+         endif ()
+      ]=])
+      install(TARGETS freetype
+         RUNTIME DESTINATION "${LIB_TARGET}/lib"
+         LIBRARY DESTINATION "${LIB_TARGET}/lib"
+         ARCHIVE DESTINATION "${LIB_TARGET}/lib")
+   endif ()
+endif ()
 
 # --------------------------------------------------------------------------------------------------------------------
 # Build libjpeg-turbo as an external project (only if JPEG and Image support is enabled)
