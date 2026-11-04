@@ -1,3 +1,4 @@
+   include 'vector'
 
 struct DeclaredChild
    Value: int
@@ -1099,4 +1100,137 @@ end
    assert(err is ERR_Okay, 'Struct disassembly probe should succeed')
    assert(disassembly.find('STGETF'), 'Known struct reads should emit STGETF')
    assert(disassembly.find('STSETF'), 'Known struct writes should emit STSETF')
+end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- Field stores through a struct element of a typed array are written back to the array.  Reading an element still
+-- produces a copy, so a struct held in a local remains independent of the array.
+
+struct ElementInner
+   V: int
+end
+
+struct ElementPoint
+   X: double
+   Y: double
+   Inner: struct<ElementInner>
+end
+
+function element_store_typed_param(Points:array<struct<ElementPoint>>, Index:num, Value:num)
+   Points[Index].X = Value
+   Points[Index].Inner.V += Value
+end
+
+function element_store_untyped_param(Points, Index, Value)
+   Points[Index].X = Value
+end
+
+@Test function StructArrayElementFieldStores()
+   local cmds = array<struct<PathCommand>, 8>
+   cmds[3].x = 7
+   assert(cmds[3].x is 7, f'Native element field store should persist, got {cmds[3].x}')
+
+   local pts = array<struct<ElementPoint>, 4>
+   pts[1].X = 5
+   assert(pts[1].X is 5, f'Declared element field store should persist, got {pts[1].X}')
+
+   pts[2].Inner.V = 6
+   assert(pts[2].Inner.V is 6, f'Embedded field store through an element should persist, got {pts[2].Inner.V}')
+
+   pts[0]['Y'] = 13
+   assert(pts[0].Y is 13, f'Computed field store through an element should persist, got {pts[0].Y}')
+
+   local copy = pts[1]
+   copy.X = 99
+   assert(pts[1].X is 5, 'A struct read from an array element should remain an independent copy')
+   pts[1] = copy
+   assert(pts[1].X is 99, 'Assigning a whole struct should replace the element')
+end
+
+@Test function StructArrayElementCompoundStores()
+   local pts = array<struct<ElementPoint>, 4>
+   pts[0].X += 3
+   assert(pts[0].X is 3, f'Compound element store should persist, got {pts[0].X}')
+   pts[0].X++
+   assert(pts[0].X is 4, f'Increment through an element should persist, got {pts[0].X}')
+   local previous = pts[0].X++
+   assert(previous is 4 and pts[0].X is 5, 'Postfix increment should return the old value and store the new one')
+
+   pts[1].Inner.V += 4
+   pts[1].Inner.V ??= 11
+   assert(pts[1].Inner.V is 4, f'??= should keep a non-empty embedded field, got {pts[1].Inner.V}')
+   pts[2].Inner.V ??= 11
+   assert(pts[2].Inner.V is 11, f'??= should store into an empty embedded field, got {pts[2].Inner.V}')
+
+   local cmds = array<struct<PathCommand>, 2>
+   cmds[1].y -= 2.5
+   assert(cmds[1].y is -2.5, f'Compound native element store should persist, got {cmds[1].y}')
+end
+
+@Test function StructArrayElementStoreOrdering()
+   local pts = array<struct<ElementPoint>, 4>
+   pts[1].X, pts[1].Y = 1, 2
+   assert(pts[1].X is 1 and pts[1].Y is 2, 'Multiple targets in the same element should all persist')
+
+   pts[1].X, pts[1].Y = pts[1].Y, pts[1].X
+   assert(pts[1].X is 2 and pts[1].Y is 1, 'Swapping fields of one element should persist both values')
+
+   local bump = function()
+      pts[2].Y = 9
+      return 7
+   end
+   pts[2].X = bump()
+   assert(pts[2].X is 7 and pts[2].Y is 9, 'A right-hand side that modifies the same element must not be overwritten')
+
+   local calls = 0
+   local index = function()
+      calls++
+      return 3
+   end
+   pts[index()].X += 1
+   assert(calls is 1, f'The element key should be evaluated once, got {calls} calls')
+   assert(pts[3].X is 1, f'Compound store with a computed key should persist, got {pts[3].X}')
+
+   local large = array<struct<ElementPoint>, 300>
+   large[299].X = 5
+   local key = 298
+   large[key].X = 6
+   assert(large[299].X is 5 and large[key].X is 6, 'Keys beyond the byte-constant range should persist')
+end
+
+@Test function StructArrayElementStoresAcrossScopes()
+   local pts = array<struct<ElementPoint>, 4>
+   element_store_typed_param(pts, 3, 77)
+   assert(pts[3].X is 77 and pts[3].Inner.V is 77, 'Stores through a typed array parameter should persist')
+
+   local store = function()
+      pts[2].X = 55
+   end
+   store()
+   assert(pts[2].X is 55, 'Stores through an upvalue array should persist')
+
+   -- The compiler cannot see the element type of an untyped parameter, so the store reaches a copy.
+   element_store_untyped_param(pts, 0, 1234)
+   assert(pts[0].X is 0, 'Stores through an untyped array parameter are not written back')
+end
+
+@Test(hotpath=true)
+function StructArrayElementStoresInHotLoop()
+   local pts = array<struct<ElementPoint>, 16>
+   for n in {0 to 2000} do
+      local j = n % 16
+      pts[j].X += n
+      pts[j].Inner.V++
+   end
+
+   local total = 0
+   for i in {0 to 16} do total += pts[i].Inner.V end
+   assert(total is 2000, f'Every traced increment should reach the array, got {total}')
+   assert(pts[0].X is 124000, f'Traced compound stores should accumulate, got {pts[0].X}')
+
+   local cmds = array<struct<PathCommand>, 100>
+   for n in {0 to 1000} do
+      cmds[n % 100].x = n
+   end
+   assert(cmds[99].x is 999, f'Traced native element stores should persist, got {cmds[99].x}')
 end

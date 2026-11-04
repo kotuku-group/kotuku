@@ -296,7 +296,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
          }
 
          if (not is_blank_target(target.storage)) {
-            bcemit_store(&this->func_state, &target.storage, &tail);
+            this->emit_target_store(target.element_plan, &target.storage, &tail);
          }
       }
       else {
@@ -304,7 +304,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
          if (not is_blank_target(target.storage)) {
             ExpDesc stack_value;
             stack_value.init(ExpKind::NonReloc, this->func_state.freereg - 1);
-            bcemit_store(&this->func_state, &target.storage, &stack_value);
+            this->emit_target_store(target.element_plan, &target.storage, &stack_value);
          }
       }
 
@@ -416,13 +416,13 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
 
             ExpDesc value_expr;
             value_expr.init(ExpKind::NonReloc, value_slot);
-            bcemit_store(&this->func_state, &target.storage, &value_expr);
+            this->emit_target_store(target.element_plan, &target.storage, &value_expr);
          }
          else {
             // Existing target - copy value to it
             ExpDesc value_expr;
             value_expr.init(ExpKind::NonReloc, value_slot);
-            bcemit_store(&this->func_state, &target.storage, &value_expr);
+            this->emit_target_store(target.element_plan, &target.storage, &value_expr);
          }
 
          release_prepared_assignment(allocator, this->func_state, target);
@@ -440,7 +440,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
          ExpDesc stack_value;
          stack_value.init(ExpKind::NonReloc, this->func_state.freereg - 1);
          if (not is_blank_target(first->storage)) {
-            bcemit_store(&this->func_state, &first->storage, &stack_value);
+            this->emit_target_store(first->element_plan, &first->storage, &stack_value);
          }
          else {
             // Discard the value's register so earlier targets retain their result positions.
@@ -466,7 +466,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
       // Skip blank identifiers for the last target
 
       if (not is_blank_target(targets.back().storage)) {
-         bcemit_store(&this->func_state, &targets.back().storage, &tail);
+         this->emit_target_store(targets.back().element_plan, &targets.back().storage, &tail);
       }
       else {
          // Discard the value only after forcing deferred reads and their observable effects.
@@ -516,6 +516,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
    auto count = BCReg(0);
    RegisterGuard register_guard(&this->func_state);
 
+   this->emit_element_reload(target.element_plan);
    RegisterAllocator allocator(&this->func_state);
    TableOperandCopies copies = allocator.duplicate_table_operands(target.storage);
    ExpDesc working = copies.duplicated;
@@ -576,7 +577,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       result.u.s.aux = call_base;
       if (target.storage.result_type IS TiriType::Array) result.result_type = TiriType::Array;
 
-      bcemit_store(&this->func_state, &target.storage, &result);
+      this->emit_target_store(target.element_plan, &target.storage, &result);
    }
    else if (mapped.value() IS BinOpr::Concat) {
       ExpDesc infix = working;
@@ -592,7 +593,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
 
       rhs = list.value_ref();
       this->operator_emitter.complete_concat(ExprValue(&infix), rhs);
-      bcemit_store(&this->func_state, &target.storage, &infix);
+      this->emit_target_store(target.element_plan, &target.storage, &infix);
    }
    else {
       this->materialise_to_next_reg(working, "compound assignment base");
@@ -622,7 +623,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_compound_assignment(AssignmentOperator 
       infix.object_class_id = CLASSID::NIL;
       infix.struct_def = nullptr;
 
-      bcemit_store(&this->func_state, &target.storage, &infix);
+      this->emit_target_store(target.element_plan, &target.storage, &infix);
    }
 
    return finish_compound_assignment();
@@ -659,7 +660,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
       }
 
       ExpDesc rhs = list.value_ref();
-      bcemit_store(&this->func_state, &target.storage, &rhs);
+      this->emit_target_store(target.element_plan, &target.storage, &rhs);
       this->func_state.reset_freereg();
       return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
    }
@@ -668,6 +669,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
    RegisterGuard register_guard(&this->func_state);
 
    // Use RegisterAllocator::duplicate_table_operands()
+   this->emit_element_reload(target.element_plan);
    RegisterAllocator allocator(&this->func_state);
    TableOperandCopies copies = allocator.duplicate_table_operands(target.storage);
    ExpDesc working = copies.duplicated;
@@ -696,7 +698,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_empty_assignment(PreparedAssignment 
    }
 
    ExpDesc rhs = list.value_ref();
-   bcemit_store(&this->func_state, &target.storage, &rhs);
+   this->emit_target_store(target.element_plan, &target.storage, &rhs);
 
    falsey_edge.patch_to(BCPos(assign_pos));
    skip_assign.patch_to(BCPos(this->func_state.pc));
@@ -740,7 +742,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
       }
 
       ExpDesc rhs = list.value_ref();
-      bcemit_store(&this->func_state, &target.storage, &rhs);
+      this->emit_target_store(target.element_plan, &target.storage, &rhs);
       this->func_state.reset_freereg();
       return ParserResult<IrEmitUnit>::success(IrEmitUnit{});
    }
@@ -750,6 +752,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
 
    // Use RegisterAllocator::duplicate_table_operands()
 
+   this->emit_element_reload(target.element_plan);
    RegisterAllocator allocator(&this->func_state);
    TableOperandCopies copies = allocator.duplicate_table_operands(target.storage);
    ExpDesc working = copies.duplicated;
@@ -784,7 +787,7 @@ ParserResult<IrEmitUnit> IrEmitter::emit_if_nil_assignment(PreparedAssignment ta
    }
 
    ExpDesc rhs = list.value_ref();
-   bcemit_store(&this->func_state, &target.storage, &rhs);
+   this->emit_target_store(target.element_plan, &target.storage, &rhs);
 
    check_nil.patch_to(BCPos(assign_pos));
    skip_assign.patch_to(BCPos(this->func_state.pc));
@@ -848,7 +851,8 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
       }
 
       PreparedAssignment prepared;
-      auto lvalue = this->emit_lvalue_expr(*node, AllocNewLocal, AllowSafeNav ? &prepared.safe_nav_skip : nullptr);
+      auto lvalue = this->emit_lvalue_expr(*node, AllocNewLocal, AllowSafeNav ? &prepared.safe_nav_skip : nullptr,
+         true, &prepared.element_plan);
       if (not lvalue.ok()) return ParserResult<std::vector<PreparedAssignment>>::failure(lvalue.error_ref());
 
       ExpDesc slot = lvalue.value_ref();
@@ -873,7 +877,11 @@ ParserResult<std::vector<PreparedAssignment>> IrEmitter::prepare_assignment_targ
          // The actual local slot will be determined later in emit_plain_assignment
       }
 
-      TableOperandCopies copies = allocator.duplicate_table_operands(slot);
+      // Element plan receivers and computed field keys are already held in private registers for this target.
+
+      TableOperandCopies copies;
+      if (prepared.element_plan.active()) copies.duplicated = slot;
+      else copies = allocator.duplicate_table_operands(slot);
       prepared.storage = copies.duplicated;
       prepared.reserved = std::move(copies.reserved);
       prepared.target = LValue::from_expdesc(&prepared.storage);
