@@ -19,62 +19,6 @@ constexpr uint16_t ATTR_ICE_CONTROLLING = 0x802a;
 constexpr uint16_t ATTR_ERROR_CODE = 0x0009;
 constexpr uint16_t BINDING_ERROR = 0x0111;
 
-//********************************************************************************************************************
-
-void write16(uint8_t *Bytes, uint16_t Value)
-{
-   Bytes[0] = uint8_t(Value >> 8);
-   Bytes[1] = uint8_t(Value);
-}
-
-//********************************************************************************************************************
-// Returns true if the attribute is present exactly once with the expected size.
-
-bool same_attribute(const stun::Message &Message, uint16_t Type, size_t ExpectedSize)
-{
-   size_t count = 0;
-   for (const auto &attribute : Message.attributes) {
-      if (attribute.type IS Type) {
-         if (attribute.value.size() != ExpectedSize) return false;
-         ++count;
-      }
-   }
-   return count IS 1;
-}
-
-//********************************************************************************************************************
-// Returns true if the attribute is absent, or present once with the expected size.
-
-bool optional_attribute(const stun::Message &Message, uint16_t Type, size_t ExpectedSize)
-{
-   size_t count = 0;
-   for (const auto &attribute : Message.attributes) {
-      if (attribute.type IS Type) {
-         if (attribute.value.size() != ExpectedSize) return false;
-         ++count;
-      }
-   }
-   return count <= 1;
-}
-
-//********************************************************************************************************************
-// Encodes an XOR-MAPPED-ADDRESS value masked with the magic cookie.  The caller applies the transaction ID mask to IPv6
-// addresses.
-
-std::array<uint8_t, 20> mapped_address(const Endpoint &Source)
-{
-   std::array<uint8_t, 20> result{};
-   result[1] = Source.ipv6 ? 2 : 1;
-   write16(result.data() + 2, Source.port ^ uint16_t(stun::MAGIC_COOKIE >> 16));
-   std::array<uint8_t, 16> mask{};
-   mask[0] = uint8_t(stun::MAGIC_COOKIE >> 24);
-   mask[1] = uint8_t(stun::MAGIC_COOKIE >> 16);
-   mask[2] = uint8_t(stun::MAGIC_COOKIE >> 8);
-   mask[3] = uint8_t(stun::MAGIC_COOKIE);
-   for (size_t i = 0; i < (Source.ipv6 ? 16u : 4u); ++i) result[4 + i] = Source.address[i] ^ mask[i];
-   return result;
-}
-
 } // namespace
 
 //********************************************************************************************************************
@@ -95,13 +39,13 @@ CheckResult LiteResponder::receive(std::span<const uint8_t> Datagram, const Endp
 
    stun::Message request;
    if (not stun::parse(Datagram, request) or request.type != stun::BINDING_REQUEST) return result;
-   if (not same_attribute(request, stun::ATTR_USERNAME, local_ufrag.size() + 1 + remote_ufrag.size()) or
-       not same_attribute(request, stun::ATTR_MESSAGE_INTEGRITY, 20) or
-       not same_attribute(request, stun::ATTR_FINGERPRINT, 4) or
-       not same_attribute(request, ATTR_PRIORITY, 4) or
-       not optional_attribute(request, ATTR_USE_CANDIDATE, 0) or
-       not optional_attribute(request, ATTR_ICE_CONTROLLING, 8) or
-       not optional_attribute(request, ATTR_ICE_CONTROLLED, 8)) return result;
+   if (not stun::valid_attribute(request, stun::ATTR_USERNAME, local_ufrag.size() + 1 + remote_ufrag.size(), true) or
+       not stun::valid_attribute(request, stun::ATTR_MESSAGE_INTEGRITY, 20, true) or
+       not stun::valid_attribute(request, stun::ATTR_FINGERPRINT, 4, true) or
+       not stun::valid_attribute(request, ATTR_PRIORITY, 4, true) or
+       not stun::valid_attribute(request, ATTR_USE_CANDIDATE, 0, false) or
+       not stun::valid_attribute(request, ATTR_ICE_CONTROLLING, 8, false) or
+       not stun::valid_attribute(request, ATTR_ICE_CONTROLLED, 8, false)) return result;
 
    auto username = request.find(stun::ATTR_USERNAME);
    auto integrity = request.find(stun::ATTR_MESSAGE_INTEGRITY);
@@ -141,10 +85,7 @@ CheckResult LiteResponder::receive(std::span<const uint8_t> Datagram, const Endp
       return result;
    }
 
-   auto mapped = mapped_address(Source);
-   for (size_t i = 4; i < (Source.ipv6 ? 20u : 8u); ++i) {
-      if (Source.ipv6 and i >= 8) mapped[i] ^= request.transaction_id[i - 8];
-   }
+   auto mapped = stun::encode_xor_address(Source.address, Source.port, Source.ipv6, request.transaction_id);
 
    stun::Attribute address{ stun::ATTR_XOR_MAPPED_ADDRESS,
       std::span<const uint8_t>(mapped.data(), Source.ipv6 ? 20u : 8u), 0 };

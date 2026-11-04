@@ -206,6 +206,37 @@ bool decode_xor_address(const Attribute &AttributeValue, const Message &Parsed,
 }
 
 //********************************************************************************************************************
+
+std::array<uint8_t, 20> encode_xor_address(const std::array<uint8_t, 16> &Address, uint16_t Port, bool IPv6,
+   std::span<const uint8_t, 12> TransactionId)
+{
+   std::array<uint8_t, 20> result{};
+   result[1] = IPv6 ? 2 : 1;
+   write16(result.data() + 2, Port ^ uint16_t(MAGIC_COOKIE >> 16));
+
+   std::array<uint8_t, 16> mask{};
+   write32(mask.data(), MAGIC_COOKIE);
+   std::copy(TransactionId.begin(), TransactionId.end(), mask.begin() + 4);
+   for (size_t i = 0; i < (IPv6 ? 16u : 4u); ++i) result[4 + i] = Address[i] ^ mask[i];
+   return result;
+}
+
+//********************************************************************************************************************
+
+bool valid_attribute(const Message &Parsed, uint16_t Type, size_t Size, bool Required)
+{
+   size_t count = 0;
+   for (const auto &attribute : Parsed.attributes) {
+      if (attribute.type IS Type) {
+         if (attribute.value.size() != Size) return false;
+         ++count;
+      }
+   }
+
+   return Required ? count IS 1 : count <= 1;
+}
+
+//********************************************************************************************************************
 // Decodes a MAPPED-ADDRESS or ALTERNATE-SERVER attribute.
 
 bool decode_mapped_address(const Attribute &AttributeValue,

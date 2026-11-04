@@ -35,12 +35,6 @@ uint32_t peer_reflexive_priority(const Candidate &Value)
 //********************************************************************************************************************
 // Big-endian field accessors
 
-void write16(uint8_t *Bytes, uint16_t Value)
-{
-   Bytes[0] = uint8_t(Value >> 8);
-   Bytes[1] = uint8_t(Value);
-}
-
 void write32(uint8_t *Bytes, uint32_t Value)
 {
    Bytes[0] = uint8_t(Value >> 24);
@@ -68,22 +62,6 @@ uint64_t read64(const uint8_t *Bytes)
 }
 
 //********************************************************************************************************************
-// Checks that an attribute appears at most once with the expected size, and exactly once if Required.
-
-bool valid_attribute(const stun::Message &Message, uint16_t Type, size_t Size, bool Required)
-{
-   size_t count = 0;
-   for (const auto &attribute : Message.attributes) {
-      if (attribute.type IS Type) {
-         if (attribute.value.size() != Size) return false;
-         ++count;
-      }
-   }
-
-   return Required ? count IS 1 : count <= 1;
-}
-
-//********************************************************************************************************************
 
 bool valid_endpoint(const Endpoint &Value)
 {
@@ -98,22 +76,6 @@ const Endpoint & socket_endpoint(const Candidate &Value)
 {
    return Value.type IS CandidateType::RELAY ? Value.endpoint :
       (valid_endpoint(Value.base) ? Value.base : Value.endpoint);
-}
-
-//********************************************************************************************************************
-// Encodes an XOR-MAPPED-ADDRESS value for a response to Request.
-
-std::array<uint8_t, 20> mapped_address(const Endpoint &Source, const stun::Message &Request)
-{
-   std::array<uint8_t, 20> mapped{};
-   mapped[1] = Source.ipv6 ? 2 : 1;
-   write16(mapped.data() + 2, Source.port ^ uint16_t(stun::MAGIC_COOKIE >> 16));
-
-   std::array<uint8_t, 16> mask{};
-   write32(mask.data(), stun::MAGIC_COOKIE);
-   std::copy(Request.transaction_id.begin(), Request.transaction_id.end(), mask.begin() + 4);
-   for (size_t i = 0; i < (Source.ipv6 ? 16u : 4u); ++i) mapped[4 + i] = Source.address[i] ^ mask[i];
-   return mapped;
 }
 
 //********************************************************************************************************************
@@ -509,13 +471,13 @@ void FullAgent::process_request(std::span<const uint8_t> Datagram, const stun::M
    });
    if (local IS local_candidates.end()) return;
 
-   if (not valid_attribute(Parsed, stun::ATTR_USERNAME, local_ufrag.size() + 1 + remote_ufrag.size(), true) or
-       not valid_attribute(Parsed, stun::ATTR_MESSAGE_INTEGRITY, 20, true) or
-       not valid_attribute(Parsed, stun::ATTR_FINGERPRINT, 4, true) or
-       not valid_attribute(Parsed, ATTR_PRIORITY, 4, true) or
-       not valid_attribute(Parsed, ATTR_USE_CANDIDATE, 0, false) or
-       not valid_attribute(Parsed, ATTR_ICE_CONTROLLING, 8, false) or
-       not valid_attribute(Parsed, ATTR_ICE_CONTROLLED, 8, false)) return;
+   if (not stun::valid_attribute(Parsed, stun::ATTR_USERNAME, local_ufrag.size() + 1 + remote_ufrag.size(), true) or
+       not stun::valid_attribute(Parsed, stun::ATTR_MESSAGE_INTEGRITY, 20, true) or
+       not stun::valid_attribute(Parsed, stun::ATTR_FINGERPRINT, 4, true) or
+       not stun::valid_attribute(Parsed, ATTR_PRIORITY, 4, true) or
+       not stun::valid_attribute(Parsed, ATTR_USE_CANDIDATE, 0, false) or
+       not stun::valid_attribute(Parsed, ATTR_ICE_CONTROLLING, 8, false) or
+       not stun::valid_attribute(Parsed, ATTR_ICE_CONTROLLED, 8, false)) return;
 
    auto username = Parsed.find(stun::ATTR_USERNAME);
    auto integrity = Parsed.find(stun::ATTR_MESSAGE_INTEGRITY);
@@ -571,7 +533,7 @@ void FullAgent::process_request(std::span<const uint8_t> Datagram, const stun::M
 
    if (Parsed.find(ATTR_USE_CANDIDATE) and current_role != Role::CONTROLLED) return;
 
-   auto mapped = mapped_address(Source, Parsed);
+   auto mapped = stun::encode_xor_address(Source.address, Source.port, Source.ipv6, Parsed.transaction_id);
    stun::Attribute mapped_attribute{ stun::ATTR_XOR_MAPPED_ADDRESS,
       std::span<const uint8_t>(mapped.data(), Source.ipv6 ? 20u : 8u), 0 };
    std::vector<uint8_t> response;
@@ -649,8 +611,8 @@ void FullAgent::process_response(std::span<const uint8_t> Datagram, const stun::
          auto fingerprint = Parsed.find(stun::ATTR_FINGERPRINT);
          if (socket_endpoint(selected.local) != Local or selected.remote.endpoint != Source or
              not stun::unknown_required_attributes(Parsed).empty() or
-             not valid_attribute(Parsed, stun::ATTR_MESSAGE_INTEGRITY, 20, true) or
-             not valid_attribute(Parsed, stun::ATTR_FINGERPRINT, 4, true) or
+             not stun::valid_attribute(Parsed, stun::ATTR_MESSAGE_INTEGRITY, 20, true) or
+             not stun::valid_attribute(Parsed, stun::ATTR_FINGERPRINT, 4, true) or
              not integrity or not fingerprint or integrity->offset >= fingerprint->offset or
              not stun::verify_integrity(Datagram, Parsed, password_bytes(remote_password)) or
              not stun::verify_fingerprint(Datagram, Parsed)) return;
@@ -699,8 +661,8 @@ void FullAgent::process_response(std::span<const uint8_t> Datagram, const stun::
    if (not stun::unknown_required_attributes(Parsed).empty()) return;
 
    auto &pair = pairs[found->pair_index];
-   if (not valid_attribute(Parsed, stun::ATTR_MESSAGE_INTEGRITY, 20, true) or
-       not valid_attribute(Parsed, stun::ATTR_FINGERPRINT, 4, true)) return;
+   if (not stun::valid_attribute(Parsed, stun::ATTR_MESSAGE_INTEGRITY, 20, true) or
+       not stun::valid_attribute(Parsed, stun::ATTR_FINGERPRINT, 4, true)) return;
 
    auto integrity = Parsed.find(stun::ATTR_MESSAGE_INTEGRITY);
    auto fingerprint = Parsed.find(stun::ATTR_FINGERPRINT);

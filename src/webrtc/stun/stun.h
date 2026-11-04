@@ -77,6 +77,15 @@ bool verify_fingerprint(std::span<const uint8_t> Datagram, const Message &Parsed
 bool decode_xor_address(const Attribute &AttributeValue, const Message &Parsed,
    std::array<uint8_t, 16> &Address, uint16_t &Port, bool &IPv6);
 
+// Encodes an XOR-MAPPED-ADDRESS value, the format shared by XOR-PEER-ADDRESS and XOR-RELAYED-ADDRESS.  The port and
+// address are masked with the magic cookie, and IPv6 addresses also with the transaction ID.  The value occupies the
+// first 8 bytes of the result for IPv4 and all 20 bytes for IPv6.
+std::array<uint8_t, 20> encode_xor_address(const std::array<uint8_t, 16> &Address, uint16_t Port, bool IPv6,
+   std::span<const uint8_t, 12> TransactionId);
+
+// Returns true if the attribute appears at most once with the expected value size, and exactly once if Required.
+bool valid_attribute(const Message &Parsed, uint16_t Type, size_t Size, bool Required);
+
 // Decode the unobfuscated MAPPED-ADDRESS and ALTERNATE-SERVER attribute formats.
 bool decode_mapped_address(const Attribute &AttributeValue,
    std::array<uint8_t, 16> &Address, uint16_t &Port, bool &IPv6);

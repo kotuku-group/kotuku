@@ -99,14 +99,8 @@ bool encode_xor_address(const Endpoint &Peer, const TransactionId &Id, std::vect
    Result.clear();
    if (not Peer.port) return false;
 
-   Result.resize(Peer.ipv6 ? 20 : 8);
-   Result[1] = Peer.ipv6 ? 2 : 1;
-   write16(Result.data() + 2, Peer.port ^ uint16_t(stun::MAGIC_COOKIE >> 16));
-
-   std::array<uint8_t, 16> mask{};
-   write32(mask.data(), stun::MAGIC_COOKIE);
-   std::copy(Id.begin(), Id.end(), mask.begin() + 4);
-   for (size_t i = 0; i < (Peer.ipv6 ? 16u : 4u); ++i) Result[i + 4] = Peer.address[i] ^ mask[i];
+   auto encoded = stun::encode_xor_address(Peer.address, Peer.port, Peer.ipv6, Id);
+   Result.assign(encoded.begin(), encoded.begin() + (Peer.ipv6 ? 20 : 8));
    return true;
 }
 
