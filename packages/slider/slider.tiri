@@ -80,6 +80,7 @@ gui.slider = function(Options:table!)
       value      = Options.value or (min + ((max - min) * 0.5)),
       label      = Options.label,
       valuePos   = Options.valuePos,
+      valueWidth = Options.valueWidth, -- Fixed breadth for value text beside the track; defaults to the widest value
       labelPos   = Options.labelPos ?? 'left',
       labelAlign = Options.labelAlign ?? 'left',
       labelWidth = Options.labelWidth, -- Slot breadth for side labels; defaults to the label's own breadth
@@ -470,8 +471,7 @@ gui.slider = function(Options:table!)
          &valueText.string = string.format(format, &value)
 
          if &prvValueSide and &trackVP then
-            space = ((&prvValueSide is 'x') or (&prvValueSide is 'xOffset')) ? &prvValueWidth : &prvValueHeight
-            space += MARGIN
+            space = &prvValueReserve()
             delta = space - &prvValueSpace
             &trackVP[&prvValueSide] = &trackVP[&prvValueSide] + delta
 
@@ -488,6 +488,16 @@ gui.slider = function(Options:table!)
             extra = &prvValueWidth + (MARGIN * 2) + (&prvTrackInset() * 2) - &trackVP.width
             if extra > 0 then &viewport.width += extra end
          end
+      end,
+
+      -- Space reserved beside the track for outside value text.  An explicit valueWidth replaces the measured width of
+      -- text placed to the left or right of the track, so that the track length does not depend on the range.
+
+      prvValueReserve = function():num
+         if (&prvValueSide is 'x') or (&prvValueSide is 'xOffset') then
+            return (&valueWidth ?? &prvValueWidth) + MARGIN
+         end
+         return &prvValueHeight + MARGIN
       end,
 
       prvPlaceValue = function(Width:num!, Height:num!)
@@ -649,6 +659,8 @@ gui.slider = function(Options:table!)
       assert((&valuePos is nil) or (&valuePos is 'in-min') or (&valuePos is 'in-centre')
          or (&valuePos is 'in-max') or (&valuePos is 'out-min') or (&valuePos is 'out-centre')
          or (&valuePos is 'out-max'), f"Invalid valuePos '{&valuePos}'")
+      assert((&valueWidth is nil) or ((&valueWidth is <num>) and (&valueWidth > 0)),
+         f"Invalid valueWidth '{&valueWidth}'")
       assert((&tickPos is 'start') or (&tickPos is 'end') or (&tickPos is 'both'), f"Invalid tickPos '{&tickPos}'")
       &prvCheckTicks(&ticks)
 
@@ -747,8 +759,8 @@ gui.slider = function(Options:table!)
 
       if &valuePos then
          &valueText = &viewport.new('VectorText', table.merge({
-            name='Value', x=0, y=0, face=gui.fonts.label.face,
-            fontSize=string.format('%.2fpt', gui.fonts.label.size), fontStyle=gui.fonts.label.style,
+            name='Value', x=0, y=0, face=gui.fonts.window.face,
+            fontSize=string.format('%.2fpt', gui.fonts.window.size), fontStyle=gui.fonts.window.style,
             lineLimit=1
          }, &prvTheme.text))
 
@@ -764,7 +776,7 @@ gui.slider = function(Options:table!)
                ((position is 'min') ? 'yOffset' : ((position is 'max') ? 'y' : 'xOffset'))
 
             horizontal_space = (&prvValueSide is 'x') or (&prvValueSide is 'xOffset')
-            &prvValueSpace = (horizontal_space ? &prvValueWidth : &prvValueHeight) + MARGIN
+            &prvValueSpace = &prvValueReserve()
             host[&prvValueSide] += &prvValueSpace
 
             if horizontal_space and &prvAutoWidth then &viewport.width += &prvValueSpace end

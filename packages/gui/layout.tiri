@@ -167,9 +167,9 @@ gui.layout.label = function(Target:obj!, Options:table!):table
          name      = 'Label',
          x         = 0,
          y         = 0,
-         face      = gui.fonts.label.face,
-         fontSize  = string.format('%.2fpt', gui.fonts.label.size),
-         fontStyle = gui.fonts.label.style,
+         face      = gui.fonts.window.face,
+         fontSize  = string.format('%.2fpt', gui.fonts.window.size),
+         fontStyle = gui.fonts.window.style,
          string    = Options.string,
          lineLimit = 1
       }, Options.style))
