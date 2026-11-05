@@ -2,24 +2,19 @@
 A simple test program for confirming that our fonts and reported metrics values are in-line with what we would expect.
 --]]
 
-   import 'gui/window'
-   import 'gui/combobox'
-   import 'gui/listview'
-   import 'gui/toggle'
+   import 'gui/window', 'gui/combobox', 'gui/listview', 'gui/toggle'
 
    module font as mFont
    module vector as mVec
 
 glFontSize = 30
-local glViewport, glWindow, glTextY
-local glFace, glStyle
-local glFontList:table
+local glViewport, glWindow, glTextY, glFace, glStyle, glFontList:table
 
 -- Returns the style to use for Face.  'Regular' is preferred, and is always used for aliases so that the alias's own
 -- Style is applied.  Families without a Regular style use the first style in their list.
 
-local function faceStyle(Face:str):str
-   local rec = glFontList[Face]
+function faceStyle(Face:str):str
+   rec = glFontList[Face]
    if (not rec) or rec.alias or ('Regular' in rec.styles) then return 'Regular' end
    return rec.styles[0] ?? 'Regular'
 end
@@ -27,10 +22,10 @@ end
 -- Hinting overrides applied through SetFontHinting().  The override persists for the process, so the chosen mode is
 -- remembered per family and reselected in the list when the family is chosen again.
 
-local HINT_MODES = { Default=0, Normal=HINT_NORMAL, Light=HINT_LIGHT, Internal=HINT_INTERNAL }
-local glHints = { }
+HINT_MODES = { Default=0, Normal=HINT_NORMAL, Light=HINT_LIGHT, Internal=HINT_INTERNAL }
+glHints = { }
 
-local glKerning = true -- Cleared by the kerning toggle, which sets VTXF_NO_KERNING on the sample text
+glKerning = true -- Cleared by the kerning toggle, which sets VTXF_NO_KERNING on the sample text
 
 function setFont(Face, Size)
    if glText then glText.free() end
@@ -39,7 +34,7 @@ function setFont(Face, Size)
 
    glFace  = Face
    glStyle = faceStyle(Face)
-   local _, fh = mVec.GetFontHandle(Face, glStyle, 0, Size)
+   _, fh = mVec.GetFontHandle(Face, glStyle, 0, Size)
    metrics = struct.new('FontMetrics')
    check mVec.GetFontMetrics(fh, metrics)
 
@@ -143,7 +138,7 @@ end
       end
    end
 
-   local hintList:table -- Declared ahead of the font combobox, which updates it
+   hintList:table -- Declared ahead of the font combobox, which updates it
 
    -- Reselects the hinting mode recorded for Face.  The 'manual' selection reason is ignored by itemSelected.
 
@@ -182,7 +177,8 @@ end
          end
       }
    })
-   local kernToggle:table -- Declared before its initialiser, which reads it in the activate event
+
+   kernToggle:table -- Declared before its initialiser, which reads it in the activate event
    kernToggle = gui.toggle({
       target = glViewport,
       label  = 'Kerning',
