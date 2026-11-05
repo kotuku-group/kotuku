@@ -9,6 +9,7 @@
 #include FT_SFNT_NAMES_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_TRUETYPE_TAGS_H
+#include FT_OUTLINE_H
 
 #include "kerning.h"
 
@@ -84,6 +85,15 @@ class freetype_font {
             gpos_kerning::instance kern_instance; // GPOS kerning state for this style instance
             bool kern_ready = false; // True once kern_instance has the design coordinates of this style
             bool kerning_enabled = true; // False if the font configuration sets Kerning = No
+            bool small_text = false; // True if the size is below SMALL_TEXT_LIMIT
+            FT_Pos embolden_x = 0, embolden_y = 0; // Outline emboldening for small sizes, in 26.6 pixels
+
+            // Small text is light-hinted and emboldened to counteract the thin, soft stems produced by linear-light
+            // blending.  Emboldening is only enabled by the Embolden option of a font family.  The strength is at
+            // its maximum for sizes up to SMALL_TEXT_FULL and tapers to zero at SMALL_TEXT_LIMIT.
+
+            static constexpr int SMALL_TEXT_LIMIT = 14;
+            static constexpr int SMALL_TEXT_FULL  = 8;
 
             glyph & get_glyph(uint32_t);
             gpos_kerning::adjustment positioning(int PrevGlyph, int Glyph);
@@ -134,6 +144,9 @@ class freetype_font {
 
                   if (font->face->units_per_EM) em_scale = double(Size) / double(font->face->units_per_EM);
 
+                  small_text = Size < SMALL_TEXT_LIMIT;
+                  double embolden[2] = { 0, 0 };
+
                   // The FreeType metrics are scaled by a fixed 72/96 (DISPLAY_DPI), which acts as a calibration
                   // constant.  The display density must not be used here: the glyph outlines ignore it, so a
                   // density-dependent factor would shrink the metrics relative to the glyphs on high DPI displays,
@@ -162,7 +175,7 @@ class freetype_font {
                      if (config.granted()) {
                         APTR group_ptr;
                         if (!glFontConfig->getData(group_ptr)) {
-                           auto apply_options = [this](const ConfigKeys &Keys) {
+                           auto apply_options = [this, &embolden](const ConfigKeys &Keys) {
                               if (auto it = Keys.find("LineSpacing"); it != Keys.end()) {
                                  line_spacing *= std::stod(it->second);
                               }
@@ -175,6 +188,16 @@ class freetype_font {
                               if (auto it = Keys.find("Kerning"); it != Keys.end()) {
                                  kerning_enabled = not (kt::iequals(it->second, "No") or
                                     kt::iequals(it->second, "False") or (it->second IS "0"));
+                              }
+                              if (auto it = Keys.find("Embolden"); it != Keys.end()) {
+                                 // Embolden = X[, Y] gives the strength in pixels at SMALL_TEXT_FULL and below.
+                                 // A missing Y defaults to a third of X.
+                                 double x = 0, y = -1;
+                                 if (sscanf(it->second.c_str(), "%lf , %lf", &x, &y) >= 1) {
+                                    if (y < 0) y = x / 3.0;
+                                    embolden[0] = std::max(0.0, x);
+                                    embolden[1] = std::max(0.0, y);
+                                 }
                               }
                            };
 
@@ -196,6 +219,13 @@ class freetype_font {
                   }
 
                   height  = ascent + descent;
+
+                  if (small_text) {
+                     const double range = SMALL_TEXT_LIMIT - SMALL_TEXT_FULL;
+                     auto taper = std::clamp(double(SMALL_TEXT_LIMIT - Size) / range, 0.0, 1.0);
+                     embolden_x = FT_Pos(std::lround(embolden[0] * taper * 64.0));
+                     embolden_y = FT_Pos(std::lround(embolden[1] * taper * 64.0));
+                  }
                }
             }
 
