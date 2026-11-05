@@ -35,20 +35,20 @@
     },
     {
       "path": "fonts_data.tiri",
-      "size": 3174,
-      "sha256": "0bc3d71b5ef3ec1b9ebe28bdef98d7adfd5de9ccfc19c2316842f963d6799c67",
+      "size": 3025,
+      "sha256": "006d9e8ce23c16ee7ddb08f7888279f72026f46d3c1c0f90e4fac4133a87cf0c",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "gui.tiri",
-      "size": 117918,
-      "sha256": "76caffb64f4dbcfd19dc560f7416a30a018b9201b6c7a9c2cc6eba68ccaae019",
+      "size": 119122,
+      "sha256": "6a6191e71f30e604ee16cbbec787321d7868ebcc5551326efa43b389d61c3249",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {
       "path": "layout.tiri",
-      "size": 6873,
-      "sha256": "91c2bdf6e82dfb94fcff6142b4eb7c4257a9543b89e4ed55b98b144acd165a11",
+      "size": 6876,
+      "sha256": "c06490469397aa6d325f588646f35e309fa5dd554e214d1fe45462dd8358dbb6",
       "mediaType": "application/vnd.kotuku.tiri"
     },
     {

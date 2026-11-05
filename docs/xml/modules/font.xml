@@ -50,6 +50,30 @@
 <p>Scans the <code>fonts:</code> volume and rebuilds the font database.  The tailored options in <code>fonts:options.cfg</code>, such as family aliases and metric modifiers, are merged into the database again once the refresh is complete.</p>
 <p>Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style, metric and metadata information.  The font database is saved to <code>fonts:fonts.cfg</code> on completion, unless an alternative location is specified in <code>Path</code>.</p>
 <p>Fonts registered with <function>RegisterFont</function> are private to the process and are neither cleared nor saved by a refresh.</p>
+<p>Each family is recorded as a group, keyed by family name, in which each style name refers to the file that provides it.  The following keys describe the family as a whole:</p>
+<types type="Key">
+<type name="Name">The family name.</type>
+<type name="Styles">A sorted CSV list of the family's style names.</type>
+<type name="Scalable"><code>Yes</code> if the family is an outline font.  Bitmap families omit this key.</type>
+<type name="Variable"><code>Yes</code> if the family is a variable font.</type>
+<type name="Points">Bitmap families only: a CSV list of the point sizes available.</type>
+<type name="Class">The family's classification: <code>Serif</code>, <code>Sans</code>, <code>Mono</code>, <code>Script</code>, <code>Display</code> or <code>Symbol</code>.  The class is
+read from the OS/2 PANOSE and family class data of outline fonts and the pitch and family field of bitmap fonts.  If an
+outline font does not declare a class, its serifs are measured on the capital I and T.  The key is omitted if the class
+cannot be determined.</type>
+<type name="Axes">Variable families only: a CSV list of axis tags, e.g. <code>wght,wdth</code>.</type>
+<type name="AxisRanges">Variable families only: the range of each axis as <code>tag:min:default:max</code>, e.g.
+<code>wght:100:400:900,wdth:62.5:100:100</code>.  The ranges of all files in the family are combined.</type>
+<type name="Features">A sorted CSV list of the OpenType layout features found in the GSUB and GPOS tables, e.g.
+<code>kern,liga,tnum</code>.  A legacy <code>kern</code> table is reported as <code>kern</code>.</type>
+<type name="Coverage">The percentage of each character set that is mapped by the family, as <code>id:percent</code>, e.g.
+<code>basic-latin:100,greek:89</code>.  Percentages are rounded down, so <code>100</code> indicates complete coverage, and a set with any
+coverage reports at least <code>1</code>.  Sets that have no coverage are omitted.  The set ids are <code>basic-latin</code>, <code>latin-1</code>,
+<code>latin-ext-a</code>, <code>latin-ext-b</code>, <code>pasifika</code> (macron vowels and the ʻokina), <code>vietnamese</code>, <code>greek</code>, <code>cyrillic</code>, <code>ipa</code>,
+<code>arrows-math</code>, <code>box-drawing</code>, <code>emoji</code> and <code>cjk</code>.</type>
+<type name="Characters">The count of characters mapped by the family's largest file.</type>
+</types>
+<p>Bitmap fonts are treated as Latin-1 for coverage purposes, which matches how the Font class maps their characters.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>

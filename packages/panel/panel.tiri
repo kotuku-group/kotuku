@@ -160,7 +160,13 @@ gui.panel = function(Options:table!)
             until not Msg
          end)
 
-         &_metaTip = gui.hoverTip({ target = hit, text = function[<weak> &&]() return &metaTip end })
+         &_metaTip = gui.hoverTip({
+            target = hit,
+            text = function[<weak> &&]()
+               return &metaTip
+            end
+         })
+
          &_metaHit = hit
          return hit
       end
@@ -183,7 +189,8 @@ gui.panel = function(Options:table!)
             right -= gui.sizing.widget.gap
          end
 
-         local lead_width:num
+         lead_width:num
+
          if &_lead then
             vp = &_lead.viewport
             vp.{ x = left, y = itemY(vp) }
@@ -194,11 +201,12 @@ gui.panel = function(Options:table!)
             title.string = &_title
             lead_width = (#&_title > 0) ? title.textWidth : 0
          end
+
          title.x = left
 
          flashing = &_flash != nil
          meta_item = &_metaItem
-         if meta_item then meta_item.viewport.visibility = flashing ? VIS_HIDDEN : VIS_VISIBLE end
+         meta_item?.viewport.visibility = flashing ? VIS_HIDDEN : VIS_VISIBLE
 
          clickable = false
          if meta_item and not flashing then
@@ -208,6 +216,7 @@ gui.panel = function(Options:table!)
                gui.layout.fitText(title, &_title, right - left - gap)
                lead_width = title.textWidth
             end
+
             x = left + lead_width + gap
             stretchItem(meta_item, x, math.max(0, right - x))
          else
@@ -305,15 +314,18 @@ gui.panel = function(Options:table!)
 
       &flash = function(Text:str, Seconds:num)
          if not &header then return end
+
          stopFlashTimer()
          &_flash = Text ?? ''
          viewport_id = &viewport.id
+
          err, &_flashTimer = mSys.SubscribeTimer(Seconds ?? gui.interface.flashTime, function[<weak> &&]()
             &_flashTimer = nil
             &_flash = nil
             if obj.find(viewport_id) then &relayout() end
             raise ERR_Terminate
          end)
+
          &relayout()
       end
 
@@ -348,6 +360,7 @@ gui.panel = function(Options:table!)
 
       &removeHeaderItem = function(Widget:table!)
          found = false
+
          if &_lead is Widget then
             &_lead = nil
             found = true
@@ -381,7 +394,12 @@ gui.panel = function(Options:table!)
             if rec.widget is Widget then return Widget end
          end
 
-         rec = { widget = Widget, enabled = not Widget.disabled, enable = Widget.enable, disable = Widget.disable }
+         rec = {
+            widget  = Widget,
+            enabled = not Widget.disabled,
+            enable  = Widget.enable,
+            disable = Widget.disable
+         }
 
          rec.apply = function[Widget](Enable:bool)
             if Enable then rec.enable() else rec.disable() end
@@ -546,7 +564,9 @@ gui.panel = function(Options:table!)
             name = 'PanelMeta', x = 0, y = 0, string = &_meta, align = 'right', lineLimit = 1
          }, theme.meta))
 
-         for k in theme.metaHighlight do meta_base[k] = &metaText[k] end
+         for k in theme.metaHighlight do
+            meta_base[k] = &metaText[k]
+         end
 
          -- The header holds the larger of the two text lines.  Taller header items are centred and may overflow it.
 
@@ -593,7 +613,9 @@ gui.panel = function(Options:table!)
          frame = &body.new('VectorViewport', {
             name = 'PanelFrame', x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN
          })
-         &page = frame.new('VectorViewport', { name = 'PanelPage', x = 0, y = 0, width = '100%', height = '100%' })
+         &page = frame.new('VectorViewport', {
+            name = 'PanelPage', x = 0, y = 0, width = '100%', height = '100%'
+         })
 
          -- Where the body meets the inside of a rounded border, the scrollbar tracks are rounded to the inner edge of
          -- the border, and margins keep the sliders out of the rounded ends.  A bar that meets the divider, or the

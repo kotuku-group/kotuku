@@ -59,6 +59,37 @@ gui.fontList = thunk():table
       font.styles = entry.Styles ? entry.Styles.split(',') : array<str> { 'Medium' }
       if entry.Axes then font.axes = entry.Axes.split(',') end -- Variable font axis tags, e.g. wght,wdth
 
+      -- Axis ranges by tag, e.g. wght = { min = 100, default = 400, max = 900 }
+
+      if entry.AxisRanges then
+         font.axisRanges = { }
+         for range in values(entry.AxisRanges.split(',')) do
+            parts = range.split(':')
+            tag = parts[0]
+            if #parts is 4 then
+               font.axisRanges[tag] = {
+                  min = tonumber(parts[1]), default = tonumber(parts[2]), max = tonumber(parts[3])
+               }
+            end
+         end
+      end
+
+      if entry.Class then font.classification = entry.Class.lower() end -- serif, sans, mono, script, display, symbol
+      if entry.Features then font.features = entry.Features.split(',') end -- OpenType feature tags, e.g. liga,kern
+
+      -- Character set coverage as percentages, e.g. coverage['basic-latin'] = 100.  Absent sets have no coverage.
+
+      if entry.Coverage then
+         font.coverage = { }
+         for set in values(entry.Coverage.split(',')) do
+            parts = set.split(':')
+            id = parts[0]
+            if #parts is 2 then font.coverage[id] = tonumber(parts[1]) end
+         end
+      end
+
+      if entry.Characters then font.characters = tonumber(entry.Characters) end
+
       if entry.Points then
          sizes = array<int>
          for point in values(entry.Points.split(',')) do
