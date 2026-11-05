@@ -3866,11 +3866,10 @@ ParserResult<ExpDesc> IrEmitter::emit_if_empty_expr(ExpDesc lhs, const ExprNode&
 
    skip_rhs.patch_to(BCPos(this->func_state.pc));
 
-   // Preserve result register by adjusting what RegisterGuard will restore to
-   // Only restore to saved_freereg if it's beyond the result register
+   // Discharging the LHS may have freed table/key temporaries below the saved register level.
+   // Keep only the result and the live registers below it; do not resurrect those temporaries.
 
-   if (register_guard.saved() > BCReg(lhs_reg + 1)) register_guard.adopt_saved(register_guard.saved());
-   else register_guard.disarm();  // Keep current freereg (lhs_reg + 1)
+   register_guard.adopt_saved(BCReg(lhs_reg + 1));
 
    // Result is in lhs_reg
 
@@ -4195,11 +4194,10 @@ ParserResult<ExpDesc> IrEmitter::emit_ternary_expr(const TernaryExprPayload &Pay
       return ParserResult<ExpDesc>::success(ExpDesc(ExpKind::Unreachable));
    }
 
-   // Preserve result register by adjusting what RegisterGuard will restore to
-   // Only restore to saved_freereg if it's beyond the result register
+   // The condition's temporaries have been consumed.  Preserve the result and earlier live registers,
+   // rather than restoring the register level saved before the condition was discharged.
 
-   if (register_guard.saved() > BCReg(result_reg + 1)) register_guard.adopt_saved(register_guard.saved());
-   else register_guard.disarm();  // Keep current freereg (result_reg + 1)
+   register_guard.adopt_saved(BCReg(result_reg + 1));
 
    ExpDesc result;
    result.init(ExpKind::NonReloc, result_reg);

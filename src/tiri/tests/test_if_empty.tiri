@@ -530,3 +530,113 @@ end
    v = empty ?? 'truthy' : 'falsey'
    assert(v is 'falsey', "Empty array in extended ternary should be falsey: expected 'falsey', got '" .. tostring(v) .. "'")
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Computed keys on global/upvalue tables must release operand temporaries before call argument placement.
+
+function captureConditionalArguments(...)
+   return { ... }
+end
+
+function expectConditionalArguments(Actual, Expected)
+   assert(#Actual is #Expected, f"Expected {#Expected} arguments, got {#Actual}")
+   for i in {0 to #Expected} do
+      assert(Actual[i] is Expected[i], f"Argument {i}: expected {Expected[i]}, got {Actual[i]}")
+   end
+end
+
+@Test function ComputedUpvalueCallArguments()
+   local conditional_argument_lookup = { left = 'Left' }
+   function exercise()
+      s = { align = 'left', n = { k = 'left' } }
+      k = 'left'
+      function key():str return s.align end
+      function identity(Value:any):any return Value end
+
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.align] ?? 'fb'), { 'Left' })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.align] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.zz] ?? 'fb', 2), { 'fb', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.n.k] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[key()] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[k .. ''] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         identity(conditional_argument_lookup[s.align] ?? 'fb'), 2), { 'before', 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.zz] ?? identity('fb'), 2), { 'before', 'fb', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.align] ? 'yes' : 'no'), { 'yes' })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.align] ? identity('yes') : 'no', 2), { 'before', 'yes', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.zz] ? 'yes' : identity('no'), 2), { 'before', 'no', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.align] ?? 'yes' : 'no', 2), { 'before', 'yes', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.zz] ?? 'yes' : 'no', 2), { 'before', 'no', 2 })
+
+      -- Locals and previously placed arguments must survive either operator.
+      expectConditionalArguments(captureConditionalArguments(s, s.align ?? 'fb', k), { s, 'left', 'left' })
+      expectConditionalArguments(captureConditionalArguments(s, s.align ? k : 'no', k), { s, 'left', 'left' })
+      function setMeta(Text:str, Options:table)
+         assert(Text is 'Left', 'The typed callee must receive the computed text')
+         assert(Options is nil, 'The typed callee must not receive operand temporaries')
+      end
+      setMeta(conditional_argument_lookup[s.align] ?? '')
+      assert(s.align is 'left' and k is 'left', 'Conditional expressions must preserve local operands')
+   end
+   exercise()
+end
+
+@Test function ComputedGlobalCallArguments()
+   global conditional_argument_lookup = { left = 'Left' }
+   function exercise()
+      s = { align = 'left', n = { k = 'left' } }
+      k = 'left'
+      function key():str return s.align end
+      function identity(Value:any):any return Value end
+
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.align] ?? 'fb'), { 'Left' })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.align] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.zz] ?? 'fb', 2), { 'fb', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.n.k] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[key()] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[k .. ''] ?? 'fb', 2), { 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         identity(conditional_argument_lookup[s.align] ?? 'fb'), 2), { 'before', 'Left', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.zz] ?? identity('fb'), 2), { 'before', 'fb', 2 })
+      expectConditionalArguments(captureConditionalArguments(
+         conditional_argument_lookup[s.align] ? 'yes' : 'no'), { 'yes' })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.align] ? identity('yes') : 'no', 2), { 'before', 'yes', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.zz] ? 'yes' : identity('no'), 2), { 'before', 'no', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.align] ?? 'yes' : 'no', 2), { 'before', 'yes', 2 })
+      expectConditionalArguments(captureConditionalArguments('before',
+         conditional_argument_lookup[s.zz] ?? 'yes' : 'no', 2), { 'before', 'no', 2 })
+
+      -- Locals and previously placed arguments must survive either operator.
+      expectConditionalArguments(captureConditionalArguments(s, s.align ?? 'fb', k), { s, 'left', 'left' })
+      expectConditionalArguments(captureConditionalArguments(s, s.align ? k : 'no', k), { s, 'left', 'left' })
+      function setMeta(Text:str, Options:table)
+         assert(Text is 'Left', 'The typed callee must receive the computed text')
+         assert(Options is nil, 'The typed callee must not receive operand temporaries')
+      end
+      setMeta(conditional_argument_lookup[s.align] ?? '')
+      assert(s.align is 'left' and k is 'left', 'Conditional expressions must preserve local operands')
+   end
+   exercise()
+end
