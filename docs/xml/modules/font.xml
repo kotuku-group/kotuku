@@ -40,19 +40,22 @@
   <function>
     <name>RefreshFonts</name>
     <comment>Refreshes the system font list with up-to-date font information.</comment>
-    <prototype>ERR fnt::RefreshFonts()</prototype>
-    <tiriPrototype>err = RefreshFonts()</tiriPrototype>
+    <prototype>ERR fnt::RefreshFonts(STRVIEW Path)</prototype>
+    <tiriPrototype>err = RefreshFonts(Path:str)</tiriPrototype>
     <tags>blocking</tags>
+    <input>
+      <param type="STRVIEW" name="Path">Optional.  Overrides the default <code>fonts:fonts.cfg</code> location that the font database is saved to.</param>
+    </input>
     <description>
 <p>Scans the <code>fonts:</code> volume and rebuilds the font database.</p>
-<p>Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style, metric and metadata information.  The <code>fonts:fonts.cfg</code> file is rewritten on completion.</p>
+<p>Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style, metric and metadata information.  The font database is saved to <code>fonts:fonts.cfg</code> on completion, unless an alternative location is specified in <code>Path</code>.</p>
 <p>Fonts registered with <function>RegisterFont</function> are private to the process and are neither cleared nor saved by a refresh.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
       <error code="AccessObject">Access to the font database was denied, or the object does not exist.</error>
       <error code="GetField">Failed to read font database entries after scanning.</error>
-      <error code="OpenFile">Failed to open <code>fonts:fonts.cfg</code> for writing.</error>
+      <error code="OpenFile">Failed to open the font database file for writing.</error>
     </result>
   </function>
 
@@ -84,17 +87,19 @@
   <function>
     <name>ResolveFamilyName</name>
     <comment>Convert a CSV family string to a single family name.</comment>
-    <prototype>ERR fnt::ResolveFamilyName(STRVIEW String, STRVIEW * Result)</prototype>
-    <tiriPrototype>err, Result:str = ResolveFamilyName(String:str)</tiriPrototype>
+    <prototype>ERR fnt::ResolveFamilyName(STRVIEW String, STRVIEW * Result, STRVIEW * Alias)</prototype>
+    <tiriPrototype>err, Result:str, Alias:str = ResolveFamilyName(String:str)</tiriPrototype>
     <tags>volatile-result, null-terminated-result, blocking, case-insensitive</tags>
     <input>
       <param type="STRVIEW" name="String">A CSV family string to resolve.</param>
       <param type="STRVIEW *" name="Result">The resolved family name is returned in this parameter.</param>
+      <param type="STRVIEW *" name="Alias">Optional.  Returns the name of the alias that the family was resolved through, or an empty string.</param>
     </input>
     <description>
 <p>Converts a CSV family string to one resolved family name.  <code>String</code> is parsed from left to right, with each family name or wildcard tested against the font database in order.  If a single asterisk is used to terminate the list, the system default is returned when no earlier name matches.</p>
 <p>Individual names may use the common wildcards <code>?</code> and <code>*</code>; for example, <code>Times New *</code> can match <code>Times New Roman</code> if it is available.  Families registered with <function>RegisterFont</function> are tested before the font database.</p>
-<p>The returned <code>Result</code> is borrowed storage.  Copy it immediately if it needs to survive a later font database refresh.</p>
+<p>A family can be an alias of another, as declared by the <code>Alias</code> key in <code>fonts:options.cfg</code>.  Aliases are followed to the family that they refer to, and the name of the first alias that was matched is returned in <code>Alias</code>.  The alias's group in the font configuration can then be consulted for its <code>Style</code> and metric options.  <code>Alias</code> is empty if the family was not resolved through an alias.</p>
+<p>The returned <code>Result</code> and <code>Alias</code> are borrowed storage.  Copy them immediately if they need to survive a later font database refresh.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>

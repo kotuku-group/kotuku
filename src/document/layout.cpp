@@ -2450,9 +2450,10 @@ font_entry * bc_font::layout_font(layout &Layout)
 
    // Check the cache for this font
 
-   std::string_view resolved_face;
-   if (!fnt::ResolveFamilyName(face, &resolved_face)) {
-      face.assign(resolved_face);
+   std::string_view resolved_face, alias;
+   if (!fnt::ResolveFamilyName(face, &resolved_face, &alias)) {
+      // Keep alias styles and metrics in the font request, cache key and stored face used for drawing.
+      face.assign(alias.empty() ? resolved_face : alias);
    }
 
    auto cache_key = font_cache_key { face, style, pixel_size };

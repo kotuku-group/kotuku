@@ -1023,7 +1023,7 @@ ERR SetFontHinting(const std::string_view &Family, int Hint)
    if ((Hint < int(HINT::NIL)) or (Hint > int(HINT::LIGHT))) return log.warning(ERR::Args);
 
    std::string_view name;
-   if (fnt::ResolveFamilyName(Family, &name) != ERR::Okay) return log.warning(ERR::Search);
+   if (fnt::ResolveFamilyName(Family, &name, nullptr) != ERR::Okay) return log.warning(ERR::Search);
 
    log.branch("%.*s: %d", int(name.size()), name.data(), Hint);
 

@@ -3193,7 +3193,7 @@ static bool face_scalable(std::string_view Face)
    std::string family(Face.empty() ? "*" : Face);
    if (not family.ends_with("*")) family.append(",*");
    std::string_view resolved;
-   if (fnt::ResolveFamilyName(family, &resolved) != ERR::Okay) return false;
+   if (fnt::ResolveFamilyName(family, &resolved, nullptr) != ERR::Okay) return false;
 
    std::string path;
    FMETA meta = FMETA::NIL;

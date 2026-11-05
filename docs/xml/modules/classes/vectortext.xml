@@ -296,11 +296,19 @@ italic=yes;weight=Light
 <p>Conventional style names are <code>Regular</code> (the default), <code>Bold</code>, <code>Italic</code> and <code>Bold Italic</code>.  Fonts can use any style name that the designer chooses, such as <code>Thin</code> or <code>Condensed Bold</code>; read <code>fonts:fonts.cfg</code> for the styles that are installed.</p>
 <p>The following descriptors are supported.  Keys and keywords are case-insensitive, and spaces, hyphens and underscores in keywords are ignored, so <code>ExtraCondensed</code> and <code>extra-condensed</code> are equivalent.</p>
 <list type="bullet">
-<li><code>weight</code>: A number from 1 to 1000, or a keyword: <code>Thin</code> or <code>Hairline</code> (100), <code>ExtraLight</code> or <code>UltraLight</code> (200), <code>Light</code> (300), <code>Regular</code>, <code>Normal</code> or <code>Book</code> (400), <code>Medium</code> (500), <code>SemiBold</code> or <code>DemiBold</code> (600), <code>Bold</code> (700), <code>ExtraBold</code> or <code>UltraBold</code> (800), <code>Black</code> or <code>Heavy</code> (900), <code>ExtraBlack</code> or <code>UltraBlack</code> (950).  Sets the <code>wght</code> axis.</li>
-<li><code>width</code>: A percentage such as <code>75%</code>, a plain number that is read as a percentage, or a keyword: <code>UltraCondensed</code> (50), <code>ExtraCondensed</code> (62.5), <code>Condensed</code> (75), <code>SemiCondensed</code> (87.5), <code>Normal</code> (100), <code>SemiExpanded</code> (112.5), <code>Expanded</code> (125), <code>ExtraExpanded</code> (150), <code>UltraExpanded</code> (200).  Sets the <code>wdth</code> axis.</li>
-<li><code>italic</code>: <code>yes</code>, <code>no</code>, <code>true</code>, <code>false</code>, <code>on</code>, <code>off</code>, <code>1</code> or <code>0</code>.  Selects the italic file of the family, and sets the <code>ital</code> axis if the font has one.</li>
-<li><code>slant</code>: An oblique angle in degrees, where positive values lean to the right as in CSS.  Sets the <code>slnt</code> axis to the negated value.</li>
-<li><code>opsz</code>: The optical size, which is a number, <code>auto</code> or <code>none</code>.  The default, <code>auto</code>, sets the optical size to the font size in points.  <code>none</code> uses the value of the named style or font default.</li>
+<li><code>weight</code>: A number from 1 to 1000, or a keyword: <code>Thin</code> or <code>Hairline</code> (100), <code>ExtraLight</code> or <code>UltraLight</code> (200),
+<code>Light</code> (300), <code>Regular</code>, <code>Normal</code> or <code>Book</code> (400), <code>Medium</code> (500), <code>SemiBold</code> or <code>DemiBold</code> (600), <code>Bold</code> (700),
+<code>ExtraBold</code> or <code>UltraBold</code> (800), <code>Black</code> or <code>Heavy</code> (900), <code>ExtraBlack</code> or <code>UltraBlack</code> (950).  Sets the <code>wght</code>
+axis.</li>
+<li><code>width</code>: A percentage such as <code>75%</code>, a plain number that is read as a percentage, or a keyword: <code>UltraCondensed</code>
+(50), <code>ExtraCondensed</code> (62.5), <code>Condensed</code> (75), <code>SemiCondensed</code> (87.5), <code>Normal</code> (100), <code>SemiExpanded</code> (112.5),
+<code>Expanded</code> (125), <code>ExtraExpanded</code> (150), <code>UltraExpanded</code> (200).  Sets the <code>wdth</code> axis.</li>
+<li><code>italic</code>: <code>yes</code>, <code>no</code>, <code>true</code>, <code>false</code>, <code>on</code>, <code>off</code>, <code>1</code> or <code>0</code>.  Selects the italic file of the family, and sets
+the <code>ital</code> axis if the font has one.</li>
+<li><code>slant</code>: An oblique angle in degrees, where positive values lean to the right as in CSS.  Sets the <code>slnt</code> axis to
+the negated value.</li>
+<li><code>opsz</code>: The optical size, which is a number, <code>auto</code> or <code>none</code>.  The default, <code>auto</code>, sets the optical size to the
+font size in points.  <code>none</code> uses the value of the named style or font default.</li>
 </list>
 <p>Any other four-character key is an OpenType axis tag, e.g. <code>GRAD=-50</code>.  Axis tags are case-sensitive.</p>
 <p>For variable fonts, the design coordinates are resolved in the following order, with later values taking precedence: the font defaults, the named style, the <fl>Weight</fl> field, the descriptors listed above, and finally axis tags.  Values are clamped to the range of each axis, and axes that the font does not have are ignored.  Strings that resolve to the same coordinates share the same cached font, so <code>weight=Bold</code> and <code>Bold</code> are equivalent.</p>

@@ -255,6 +255,7 @@ class extVectorText : public extVector {
    int64_t txClickTime = 0;
    int txClickCount = 0, txClickSlop = 4;
    std::string txFamily; // Family name(s) as requested by the client
+   std::string txAlias;  // The alias that txFamily was resolved through, if any
    std::string txFontStyle;
    std::string txFontSizeString;
    APTR    txKeyEvent;
@@ -1077,11 +1078,15 @@ static ERR TEXT_SET_Face(extVectorText *Self, const std::string_view &Value)
 {
    if (Value.empty()) return ERR::InvalidValue;
 
-   std::string_view name;
-   if (!fnt::ResolveFamilyName(Value, &name)) {
+   std::string_view name, alias;
+   if (!fnt::ResolveFamilyName(Value, &name, &alias)) {
       Self->txFamily = name.empty() ? "Noto Sans" : name;
+      Self->txAlias  = alias;
    }
-   else Self->txFamily = "Noto Sans"; // Better to resort to a default than fail completely
+   else {
+      Self->txFamily = "Noto Sans"; // Better to resort to a default than fail completely
+      Self->txAlias.clear();
+   }
 
    if (Self->initialised()) return reset_font(Self);
 
@@ -1130,6 +1135,7 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
       auto other = (objFont *)Value;
 
       Self->txFamily         = other->Face.empty() ? "Noto Sans" : other->Face;
+      Self->txAlias.clear();
       Self->txFontSize       = std::max(1.0, std::round(other->Point * (96.0 / 72.0)));
       Self->txScaledFontSize = false;
       Self->txFontStyle      = other->Style.empty() ? "Regular" : other->Style;
@@ -1141,6 +1147,7 @@ static ERR TEXT_SET_Font(extVectorText *Self, OBJECTPTR Value)
       auto other = (extVectorText *)Value;
 
       Self->txFamily         = other->txFamily;
+      Self->txAlias          = other->txAlias;
       Self->txFontSize       = other->txFontSize;
       Self->txScaledFontSize = false;
       Self->txFontStyle      = other->txFontStyle;
@@ -1995,7 +2002,11 @@ static ERR reset_font(extVectorText *Vector, bool Force)
    if ((not Vector->initialised()) and (not Force)) return ERR::NotInitialised;
 
    kt::Log log;
-   if (auto error = get_font(log, Vector->txFamily, Vector->txFontStyle, Vector->txWeight, Vector->txFontSize, &Vector->txHandle); !error) {
+   // Resolving through the alias, if any, applies its Style and metric options from fonts:options.cfg.
+
+   auto &family = Vector->txAlias.empty() ? Vector->txFamily : Vector->txAlias;
+   if (auto error = get_font(log, family, Vector->txFontStyle, Vector->txWeight, Vector->txFontSize,
+         &Vector->txHandle); !error) {
       if (Vector->txHandle->type IS CF_BITMAP) {
          Vector->txBitmapFont = ((bmp_font *)Vector->txHandle)->font;
          Vector->txFontSize = std::trunc(double(Vector->txBitmapFont->Height) * (DISPLAY_DPI / 72.0));

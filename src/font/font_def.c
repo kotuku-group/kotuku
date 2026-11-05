@@ -3,9 +3,9 @@
 namespace fnt {
 extern int StringWidth(objFont * Font, const std::string_view & String, int Chars);
 extern int CharWidth(objFont * Font, uint32_t Char);
-extern ERR RefreshFonts();
+extern ERR RefreshFonts(const std::string_view & Path);
 extern ERR SelectFont(const std::string_view & Name, const std::string_view & Style, std::string * Path, FMETA * Meta);
-extern ERR ResolveFamilyName(const std::string_view & String, std::string_view * Result);
+extern ERR ResolveFamilyName(const std::string_view & String, std::string_view * Result, std::string_view * Alias);
 extern ERR RegisterFont(const std::string_view & Path, std::string * Family);
 
 } // namespace
@@ -14,9 +14,9 @@ extern ERR RegisterFont(const std::string_view & Path, std::string * Family);
 #endif
 
 FDEF argsCharWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "Char", FD_INT|FD_UNSIGNED }, { 0, 0 } };
-FDEF argsRefreshFonts[] = { { "Error", FD_INT|FD_ERROR }, { 0, 0 } };
+FDEF argsRefreshFonts[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsRegisterFont[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Family", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
-FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "Result", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
+FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "Result", FD_RESULT|FDF_CPPSTRING }, { "Alias", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsSelectFont[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Style", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { "Meta", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsStringWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "String", FDF_CPPSTRING }, { "Chars", FD_INT }, { 0, 0 } };
 

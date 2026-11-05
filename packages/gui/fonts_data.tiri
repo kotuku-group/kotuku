@@ -37,18 +37,18 @@ glFontDefaults = {
    -- Percentages are converted to numeric pt sizes, relative to gui.interface.fontSize
    -- Numeric sizes are points (1/72 in); scaled by dpi/96 to offset VectorText's fixed 96 DPI pt conversion
    -- All sizes are scaled to gui.interface.dpi on first access
-   default  = { face='Source Sans Pro', size='100%', style='Medium' }, -- Always matches gui.interface.fontSize
-   window   = { face='Source Sans Pro', size='100%', style='Medium' }, -- For text placed against the window background, e.g. labels
-   button   = { face='Source Sans Pro', size='100%', style='Medium' }, -- Button labels
-   filesys  = { face='Source Sans Pro', size='100%', style='Medium' }, -- Text for files, folders
-   icon     = { face='Noto Sans,Source Sans Pro', size='100%', style='Medium' }, -- Labeling for icons
-   menu     = { face='Noto Sans,Source Sans Pro', size='100%', style='Medium' }, -- Menu & dropdown item text
-   page     = { face='Noto Sans,Source Sans Pro', size='100%', style='Medium' }, -- Multiple lines of text
-   small    = { face='Source Sans Pro', size=9, style='Medium' }, -- Recommended text for small sizes
+   default  = { face='Noto Sans UI', size='100%', style='Regular' }, -- Always matches gui.interface.fontSize
+   window   = { face='Noto Sans UI', size='100%', style='Regular' }, -- For text placed against the window background, e.g. labels
+   button   = { face='Noto Sans UI', size='100%', style='Regular' }, -- Button labels
+   filesys  = { face='Noto Sans UI', size='100%', style='Regular' }, -- Text for files, folders
+   icon     = { face='Noto Sans,Noto Sans UI', size='100%', style='Bold' }, -- Labeling for icons
+   menu     = { face='Noto Sans,Noto Sans UI', size='100%', style='Medium' }, -- Menu & dropdown item text
+   page     = { face='Noto Sans,Noto Sans UI', size='100%', style='Medium' }, -- Multiple lines of text
+   small    = { face='Noto Sans UI', size=9, style='Regular' }, -- Recommended text for small sizes
    xsmall   = { face='Micro', size=6, style='Medium' }, -- The smallest available, still legible size
-   large    = { face='Noto Sans,Source Sans Pro', size='130%', style='Medium' }, -- Recommended text for headers
-   input    = { face='Source Sans Pro', size='100%', style='Medium' }, -- Text inside input widgets (e.g. combobox)
-   widget   = { face='Source Sans Pro', size='100%', style='Medium' } -- Text inside non-input widgets (e.g. button)
+   large    = { face='Noto Sans,Noto Sans UI', size='130%', style='Medium' }, -- Recommended text for headers
+   input    = { face='Noto Sans UI', size='100%', style='Regular' }, -- Text inside input widgets (e.g. combobox)
+   widget   = { face='Noto Sans UI', size='100%', style='Regular' } -- Text inside non-input widgets (e.g. button)
 }
 
 gui.fonts = scaledFonts(glFontDefaults, glStyle.fonts)
