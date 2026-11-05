@@ -416,7 +416,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if ((glConfig = objConfig::create::global(fl::Name("cfgSystemFonts"), fl::Path("fonts:fonts.cfg")))) {
       if (refresh) {
-         if (auto error = fnt::RefreshFonts(); error != ERR::Okay) {
+         if (auto error = fnt::RefreshFonts(std::string_view()); error != ERR::Okay) {
             cleanup();
             return error;
          }
@@ -730,15 +730,19 @@ RefreshFonts: Refreshes the system font list with up-to-date font information.
 Scans the `fonts:` volume and rebuilds the font database.
 
 Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style,
-metric and metadata information.  The `fonts:fonts.cfg` file is rewritten on completion.
+metric and metadata information.  The font database is saved to `fonts:fonts.cfg` on completion, unless an alternative
+location is specified in `Path`.
 
 Fonts registered with ~RegisterFont() are private to the process and are neither cleared nor saved by a refresh.
+
+-INPUT-
+strview Path: Optional.  Overrides the default `fonts:fonts.cfg` location that the font database is saved to.
 
 -ERRORS-
 Okay
 AccessObject: Access to the font database was denied, or the object does not exist.
 GetField: Failed to read font database entries after scanning.
-OpenFile: Failed to open `fonts:fonts.cfg` for writing.
+OpenFile: Failed to open the font database file for writing.
 
 -TAGS-
 blocking
@@ -746,7 +750,7 @@ blocking
 
 *********************************************************************************************************************/
 
-ERR RefreshFonts(void)
+ERR RefreshFonts(const std::string_view &Path)
 {
    kt::Log log(__FUNCTION__);
 
@@ -791,7 +795,7 @@ ERR RefreshFonts(void)
 
    // Save the font configuration file
 
-   objFile::create file = { fl::Path("fonts:fonts.cfg"), fl::Flags(FL::NEW|FL::WRITE) };
+   objFile::create file = { fl::Path(Path.empty() ? "fonts:fonts.cfg" : Path), fl::Flags(FL::NEW|FL::WRITE) };
    if (file.ok()) return glConfig->saveToObject(*file);
    else return log.warning(ERR::OpenFile);
 }
@@ -808,11 +812,18 @@ default is returned when no earlier name matches.
 Individual names may use the common wildcards `?` and `*`; for example, `Times New *` can match `Times New Roman` if
 it is available.  Families registered with ~RegisterFont() are tested before the font database.
 
-The returned `Result` is borrowed storage.  Copy it immediately if it needs to survive a later font database refresh.
+A family can be an alias of another, as declared by the `Alias` key in `fonts:options.cfg`.  Aliases are followed to
+the family that they refer to, and the name of the first alias that was matched is returned in `Alias`.  The alias's
+group in the font configuration can then be consulted for its `Style` and metric options.  `Alias` is empty if the
+family was not resolved through an alias.
+
+The returned `Result` and `Alias` are borrowed storage.  Copy them immediately if they need to survive a later font
+database refresh.
 
 -INPUT-
 strview String: A CSV family string to resolve.
 &strview Result: The resolved family name is returned in this parameter.
+&strview Alias: Optional.  Returns the name of the alias that the family was resolved through, or an empty string.
 
 -ERRORS-
 Okay
@@ -828,11 +839,12 @@ volatile-result, null-terminated-result, blocking, case-insensitive
 
 *********************************************************************************************************************/
 
-ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
+ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result, std::string_view *Alias)
 {
    kt::Log log(__FUNCTION__);
 
    if ((String.empty()) or (not Result)) return ERR::NullArgs;
+
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 5000);
    if (not config.granted()) return log.warning(ERR::AccessObject);
@@ -849,6 +861,7 @@ ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
 
       if (name.empty()) continue;
 
+      if (Alias) *Alias = std::string_view(); // Reset if an earlier name ended in an unresolved alias
       std::vector<std::string> visited_aliases;
 
       for (;;) {
@@ -889,6 +902,7 @@ ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
 
                      if (alias_loop) break;
 
+                     if ((Alias) and visited_aliases.empty()) *Alias = keys["Name"];
                      visited_aliases.push_back(keys["Name"]);
                      name = alias;
                      alias_restart = true;
@@ -910,6 +924,7 @@ ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result)
       }
    }
 
+   if (Alias) *Alias = std::string_view();
    log.msg("Failed to resolve family \"%.*s\"", int(String.size()), String.data());
    return ERR::Search;
 }

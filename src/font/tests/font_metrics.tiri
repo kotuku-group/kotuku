@@ -112,7 +112,7 @@ function setFont(Face, Size)
    processing.collect()
 end
 
-   --mFont.RefreshFonts()
+   mFont.RefreshFonts()
 
    glWindow = gui.window({ title='Widget Examples', insideWidth=600, insideHeight=400 })
    glViewport = glWindow.clientViewport({ aspectRatio = ARF_MEET })

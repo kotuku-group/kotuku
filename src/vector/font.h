@@ -111,17 +111,20 @@ class freetype_font {
 
             ft_point() : common_font(CF_FREETYPE) { }
 
-            ft_point(freetype_font &pFont, METRIC_GROUP &pMetrics, int pSize) : common_font(CF_FREETYPE) {
+            // Overrides are metric options from a family alias, which take precedence over the family's own.
+
+            ft_point(freetype_font &pFont, METRIC_GROUP &pMetrics, int pSize, const ConfigKeys &Overrides)
+               : common_font(CF_FREETYPE) {
                font = &pFont;
                set_axis(pMetrics);
                FT_Set_Var_Design_Coordinates(pFont.face, axis.size(), axis.data());
                pFont.active_size = this;
-               set_size(pSize);
+               set_size(pSize, Overrides);
             }
 
-            ft_point(freetype_font &pFont, int pSize) : common_font(CF_FREETYPE) {
+            ft_point(freetype_font &pFont, int pSize, const ConfigKeys &Overrides) : common_font(CF_FREETYPE) {
                font = &pFont;
-               set_size(pSize);
+               set_size(pSize, Overrides);
             }
 
             ~ft_point() {
@@ -131,7 +134,7 @@ class freetype_font {
                //if (ft_size) { FT_Done_Size(ft_size); ft_size = NULL; }
             }
 
-            void set_size(int Size) {
+            void set_size(int Size, const ConfigKeys &Overrides) {
                if (!FT_New_Size(font->face, &ft_size)) {
                   FT_Activate_Size(ft_size);
 
@@ -168,48 +171,50 @@ class freetype_font {
                   descent = std::abs(int26p6_to_dbl(ft_size->metrics.descender)) * metric_scale;
 
                   // Check if the client has applied metrics modifiers for this font.  The font module
-                  // comes with a tool, font_metrics.tiri, for helping with these modifiers.
+                  // comes with a tool, font_metrics.tiri, for helping with these modifiers.  Options from the
+                  // family's group are overridden by those of the alias that it was selected through, if any.
 
+                  auto apply_options = [this, &embolden](const ConfigKeys &Keys) {
+                     if (auto it = Keys.find("LineSpacing"); it != Keys.end()) {
+                        line_spacing *= std::stod(it->second);
+                     }
+                     if (auto it = Keys.find("Descent"); it != Keys.end()) {
+                        descent *= std::stod(it->second);
+                     }
+                     if (auto it = Keys.find("Ascent"); it != Keys.end()) {
+                        ascent *= std::stod(it->second);
+                     }
+                     if (auto it = Keys.find("Kerning"); it != Keys.end()) {
+                        kerning_enabled = not (kt::iequals(it->second, "No") or
+                           kt::iequals(it->second, "False") or (it->second IS "0"));
+                     }
+                     if (auto it = Keys.find("Embolden"); it != Keys.end()) {
+                        // Embolden = X[, Y] gives the strength in pixels at SMALL_TEXT_FULL and below.
+                        // A missing Y defaults to a third of X.
+                        double x = 0, y = -1;
+                        if (sscanf(it->second.c_str(), "%lf , %lf", &x, &y) >= 1) {
+                           if (y < 0) y = x / 3.0;
+                           embolden[0] = std::max(0.0, x);
+                           embolden[1] = std::max(0.0, y);
+                        }
+                     }
+                  };
+
+                  ConfigKeys options;
                   if (glFontConfig) {
                      kt::ScopedObjectLock<objConfig> config(glFontConfig, 500);
                      if (config.granted()) {
                         APTR group_ptr;
                         if (!glFontConfig->getData(group_ptr)) {
-                           auto apply_options = [this, &embolden](const ConfigKeys &Keys) {
-                              if (auto it = Keys.find("LineSpacing"); it != Keys.end()) {
-                                 line_spacing *= std::stod(it->second);
-                              }
-                              if (auto it = Keys.find("Descent"); it != Keys.end()) {
-                                 descent *= std::stod(it->second);
-                              }
-                              if (auto it = Keys.find("Ascent"); it != Keys.end()) {
-                                 ascent *= std::stod(it->second);
-                              }
-                              if (auto it = Keys.find("Kerning"); it != Keys.end()) {
-                                 kerning_enabled = not (kt::iequals(it->second, "No") or
-                                    kt::iequals(it->second, "False") or (it->second IS "0"));
-                              }
-                              if (auto it = Keys.find("Embolden"); it != Keys.end()) {
-                                 // Embolden = X[, Y] gives the strength in pixels at SMALL_TEXT_FULL and below.
-                                 // A missing Y defaults to a third of X.
-                                 double x = 0, y = -1;
-                                 if (sscanf(it->second.c_str(), "%lf , %lf", &x, &y) >= 1) {
-                                    if (y < 0) y = x / 3.0;
-                                    embolden[0] = std::max(0.0, x);
-                                    embolden[1] = std::max(0.0, y);
-                                 }
-                              }
-                           };
-
                            auto groups = (ConfigGroups *)group_ptr;
                            for (auto & [group, keys] : groups[0]) {
                               if (kt::iequals(group, font->face->family_name)) {
-                                 apply_options(keys);
+                                 options = keys;
                                  break;
                               }
                               else if (auto it = keys.find("Name"); it != keys.end()) {
                                  if (kt::iequals(it->second, font->face->family_name)) {
-                                    apply_options(keys);
+                                    options = keys;
                                     break;
                                  }
                               }
@@ -217,6 +222,9 @@ class freetype_font {
                         }
                      }
                   }
+
+                  for (auto & [key, value] : Overrides) options[key] = value;
+                  apply_options(options);
 
                   height  = ascent + descent;
 

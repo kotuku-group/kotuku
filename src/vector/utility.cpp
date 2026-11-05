@@ -577,6 +577,106 @@ static resolved_style resolve_style(kt::Log &Log, freetype_font &Font, const fon
 }
 
 //********************************************************************************************************************
+// Options that a family alias in fonts:options.cfg applies to the family that it refers to.  An alias can refer to
+// another alias, in which case the outer alias takes precedence for any option that both declare.
+
+struct alias_options {
+   std::string name;        // The style name of the outermost alias that declares one
+   std::string descriptors; // Style descriptors of all aliases, innermost first so that outer aliases win
+   ConfigKeys metrics;      // Metric options that override those of the family
+};
+
+static constexpr std::array<std::string_view, 5> ALIAS_METRIC_KEYS = {
+   "LineSpacing", "Descent", "Ascent", "Kerning", "Embolden"
+};
+
+static alias_options read_alias_options(kt::Log &Log, const std::string &Alias)
+{
+   alias_options result;
+   if ((Alias.empty()) or (not glFontConfig)) return result;
+
+   kt::ScopedObjectLock<objConfig> config(glFontConfig, 500);
+   if (not config.granted()) return result;
+
+   APTR group_ptr;
+   if (glFontConfig->getData(group_ptr) != ERR::Okay) return result;
+   auto groups = (ConfigGroups *)group_ptr;
+
+   // Collect the alias groups from the outermost inwards.  The chain ends at a group that has no Alias key, which
+   // is the target family.  The depth limit guards against cyclic aliases, which ResolveFamilyName() rejects.
+
+   std::vector<const ConfigKeys *> chain;
+   std::string name(Alias);
+   while (chain.size() < 8) {
+      const ConfigKeys *match = nullptr;
+      for (auto & [group, keys] : groups[0]) {
+         if (auto it = keys.find("Name"); (it != keys.end()) and kt::wildcmp(name, it->second)) {
+            match = &keys;
+            break;
+         }
+      }
+
+      if (not match) break;
+      auto it = match->find("Alias");
+      if ((it IS match->end()) or (it->second.empty())) break;
+      chain.push_back(match);
+      name = it->second;
+   }
+
+   for (auto keys = chain.rbegin(); keys != chain.rend(); keys++) {
+      if (auto it = (*keys)->find("Style"); it != (*keys)->end()) {
+         kt::font_traits::for_each_descriptor(it->second,
+            [&result](std::string_view Key, std::string_view Value, bool HasValue) {
+            if (HasValue) result.descriptors.append(Key).append("=").append(Value).append(";");
+            else result.name.assign(Value);
+         });
+      }
+
+      for (auto key : ALIAS_METRIC_KEYS) {
+         if (auto it = (*keys)->find(key); it != (*keys)->end()) result.metrics[std::string(key)] = it->second;
+      }
+   }
+
+   if ((not result.descriptors.empty()) or (not result.name.empty()) or (not result.metrics.empty())) {
+      Log.trace("Alias '%s' style: '%s%s%s'", Alias.c_str(), result.name.c_str(),
+         result.descriptors.empty() ? "" : ";", result.descriptors.c_str());
+   }
+   return result;
+}
+
+//********************************************************************************************************************
+// Merges the style of an alias with the client's style.  The client's style name is used unless it is absent or
+// 'Regular', in which case the alias's name applies.  The alias's descriptors precede the client's so that the
+// client takes precedence for any descriptor that both declare.
+
+static std::string merge_alias_style(const alias_options &Alias, std::string_view Style)
+{
+   if ((Alias.name.empty()) and (Alias.descriptors.empty())) return std::string(Style);
+
+   std::string_view name;
+   std::string descriptors;
+   kt::font_traits::for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
+      if (HasValue) descriptors.append(Key).append("=").append(Value).append(";");
+      else if (name.empty()) name = Value;
+   });
+
+   auto normal = kt::font_traits::normalise(name);
+   std::string result;
+   if ((normal.empty()) or (normal IS "regular") or (normal IS "normal")) {
+      result = Alias.name.empty() ? std::string("Regular") : Alias.name;
+   }
+   else result = name;
+
+   if (not Alias.descriptors.empty()) result.append(";").append(Alias.descriptors);
+   if (not descriptors.empty()) {
+      if (Alias.descriptors.empty()) result.append(";");
+      result.append(descriptors);
+   }
+   if (result.ends_with(';')) result.pop_back();
+   return result;
+}
+
+//********************************************************************************************************************
 // Returns a cached font handle for a family, style string and pixel size.  See the VectorText FontStyle field for
 // the style string syntax.  A Weight of 0 or 400 is treated as unset.
 
@@ -591,10 +691,20 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
 
    std::string family(Family.empty() ? "*" : Family);
    if (not family.ends_with("*")) family.append(",*");
-   std::string_view final_name;
-   if (!fnt::ResolveFamilyName(family, &final_name)) family.assign(final_name);
+   std::string_view final_name, alias_name;
+   std::string alias;
+   if (!fnt::ResolveFamilyName(family, &final_name, &alias_name)) {
+      alias.assign(alias_name);
+      family.assign(final_name);
+   }
 
-   auto spec = parse_font_style(Style);
+   // An alias can declare a Style that is merged with the client's, and metric options that override those of the
+   // family.  The metric options are applied per alias, so they are included in the style cache key.
+
+   auto alias_opts = read_alias_options(Log, alias);
+   std::string style = merge_alias_style(alias_opts, Style);
+
+   auto spec = parse_font_style(style);
    for (auto &warning : spec.warnings) Log.warning("%s", warning.c_str());
 
    if (Weight IS 400) Weight = 0;
@@ -602,8 +712,10 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    // Preserve numeric traits until SelectFont() matches them against the family's actual styles.  The Weight
    // argument seeds the request, while descriptors in Style retain their higher precedence.
 
-   std::string style(Style);
    if (Weight) style = "weight=" + std::to_string(Weight) + ";" + style;
+
+   std::string metric_key;
+   if (not alias_opts.metrics.empty()) metric_key = ";alias=" + alias;
 
    const int point_size = std::round(Size * (72.0 / DISPLAY_DPI));
    std::string location;
@@ -713,20 +825,20 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
          if (font.axes.empty()) { // Static face: the file is the style, so there are no coordinates to resolve
             if (not spec.tags.empty()) Log.trace("Axis tags are ignored by static faces.");
 
-            auto &sizes = font.style_cache[STATIC_STYLE_KEY];
+            auto &sizes = font.style_cache[STATIC_STYLE_KEY + metric_key];
             if (auto it = sizes.find(Size); it != sizes.end()) {
                *Handle = &it->second;
                return ERR::Okay;
             }
 
-            auto new_size = sizes.try_emplace(Size, font, Size);
+            auto new_size = sizes.try_emplace(Size, font, Size, alias_opts.metrics);
             if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
             *Handle = &new_size.first->second;
             return ERR::Okay;
          }
          else {
             auto resolved = resolve_style(Log, font, spec, Weight);
-            auto &sizes = font.style_cache[resolved.key];
+            auto &sizes = font.style_cache[resolved.key + metric_key];
             if (auto it = sizes.find(Size); it != sizes.end()) {
                *Handle = &it->second;
                return ERR::Okay;
@@ -740,7 +852,7 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
             }
 
             Log.trace("Resolved style '%s' for size %d.", resolved.key.c_str(), Size);
-            auto new_size = sizes.try_emplace(Size, font, resolved.coords, Size);
+            auto new_size = sizes.try_emplace(Size, font, resolved.coords, Size, alias_opts.metrics);
             if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
             *Handle = &new_size.first->second;
             return ERR::Okay;

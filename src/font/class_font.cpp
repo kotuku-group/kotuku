@@ -284,7 +284,7 @@ static ERR SET_Face(extFont *Self, const std::string_view &Value)
       std::string_view final_name;
       auto i = Value.find(':');
       auto face = Value.substr(0, i);
-      if (auto error = fnt::ResolveFamilyName(face, &final_name); !error) {
+      if (auto error = fnt::ResolveFamilyName(face, &final_name, nullptr); !error) {
          Self->Face.assign(final_name);
          if (i != std::string::npos) kt::Log().warning("Compound face values are deprecated.");
          return ERR::Okay;
