@@ -39,7 +39,14 @@ freetype_font::glyph & freetype_font::ft_point::get_glyph(uint32_t Unicode)
 
    // WARNING: FT_Load_Glyph leaks memory if you call it repeatedly for the same glyph (hence the importance of caching).
 
-   if (FT_Load_Glyph(font->face, path.glyph_index, font->glyph_flags|FT_LOAD_LINEAR_DESIGN)) return path;
+   // Small sizes always receive grid fitting.  Fonts that would otherwise load without any (stub-hinted TrueType
+   // fonts on the native loader) are switched to the light auto-hinter.  Layout is unaffected because the advances
+   // are taken from the unhinted linear advance.
+
+   auto load_flags = font->glyph_flags;
+   if (small_text and (load_flags & FT_LOAD_NO_AUTOHINT)) load_flags = FT_LOAD_TARGET_LIGHT;
+
+   if (FT_Load_Glyph(font->face, path.glyph_index, load_flags|FT_LOAD_LINEAR_DESIGN)) return path;
 
    // The hinted advance is rounded to whole pixels, which accumulates as visible spacing errors and disagrees with
    // the unrounded kerning.  The linear advance is the unhinted value in font units, including any variations, and
@@ -51,6 +58,13 @@ freetype_font::glyph & freetype_font::ft_point::get_glyph(uint32_t Unicode)
    }
    else path.adv_x = int26p6_to_dbl(font->face->glyph->advance.x);
    path.adv_y = int26p6_to_dbl(font->face->glyph->advance.y);
+
+   // Emboldening widens stems so that they cover at least one full pixel column.  The vertical strength is kept
+   // lower so that hinted horizontal stems stay on the grid.  The advances are left unchanged.
+
+   if ((embolden_x or embolden_y) and (font->face->glyph->format IS FT_GLYPH_FORMAT_OUTLINE)) {
+      FT_Outline_EmboldenXY(&font->face->glyph->outline, embolden_x, embolden_y);
+   }
 
    const FT_Outline &outline = font->face->glyph->outline;
 
