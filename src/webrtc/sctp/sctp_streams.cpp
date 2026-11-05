@@ -63,6 +63,7 @@ bool SctpAssociation::abandon_message(const std::shared_ptr<PolicyState> &Policy
       ppid = chunk.ppid;
       found = true;
       if (chunk.in_flight) flight_size -= chunk_bytes(chunk);
+      if (not chunk.adapter_accepted) release_buffered(chunk.stream, chunk.ppid, chunk.length);
       chunk.in_flight = chunk.retry = false;
       chunk.abandoned = true;
       chunk.payload.reset();
@@ -78,6 +79,7 @@ bool SctpAssociation::abandon_message(const std::shared_ptr<PolicyState> &Policy
       stream = it->stream;
       ppid = it->ppid;
       unsent_bytes -= payload->size() - it->offset;
+      release_buffered(stream, ppid, payload->size() - it->offset);
 
       if (found) {
          it = queued.erase(it);
@@ -92,22 +94,32 @@ bool SctpAssociation::abandon_message(const std::shared_ptr<PolicyState> &Policy
 
    Policy->abandoned = true;
 
-   // An owner may not yet have drained output.  Remove abandoned DATA from those records too.
+   // An owner may not yet have drained output.  Remove abandoned DATA from those records too.  A packet is only
+   // re-encoded if it loses a chunk.  The sent list is ordered by TSN.
+
+   auto abandoned_tsn = [this](uint32_t TSN) {
+      auto descriptor = std::lower_bound(sent.begin(), sent.end(), TSN,
+         [](const SentChunk &Chunk, uint32_t Value) { return int32_t(Chunk.tsn - Value) < 0; });
+      return descriptor != sent.end() and descriptor->tsn IS TSN and descriptor->abandoned;
+   };
 
    for (auto it = output.begin(); it != output.end();) {
       Packet parsed;
-      if (not parse(*it, parsed)) return fail(ERR::InvalidData);
+      if (not parse_local(*it, parsed)) return fail(ERR::InvalidData);
+
+      bool drop = std::any_of(parsed.chunks.begin(), parsed.chunks.end(), [&abandoned_tsn](const Item &Chunk) {
+         return Chunk.type IS DATA and abandoned_tsn(read32(Chunk.value, 0));
+      });
+
+      if (not drop) {
+         ++it;
+         continue;
+      }
 
       Encoder encoder(config.local_port, config.remote_port, remote.tag, config.packet_capacity);
       bool any = false;
       for (const auto &chunk : parsed.chunks) {
-         if (chunk.type IS DATA) {
-            auto tsn = read32(chunk.value, 0);
-            auto descriptor = std::find_if(sent.begin(), sent.end(), [tsn](const SentChunk &Sent) {
-               return Sent.tsn IS tsn;
-            });
-            if (descriptor != sent.end() and descriptor->abandoned) continue;
-         }
+         if (chunk.type IS DATA and abandoned_tsn(read32(chunk.value, 0))) continue;
          if (not encoder.chunk(uint8_t(chunk.type), chunk.flags, chunk.value)) return fail(ERR::BufferOverflow);
          any = true;
       }
@@ -134,6 +146,10 @@ bool SctpAssociation::abandon_message(const std::shared_ptr<PolicyState> &Policy
 
 bool SctpAssociation::expire_messages()
 {
+   // Reliable messages never expire, so a queue without partially reliable messages needs no scan.
+
+   if (not partial_message_count) return forward_progress();
+
    std::vector<std::shared_ptr<PolicyState>> abandoned;
    std::set<const PolicyState *> seen;
 

@@ -171,6 +171,7 @@ private:
    void collect_channel_events();
    void terminate_channels(ERR Error);
    void refresh_buffered();
+   [[nodiscard]] size_t channel_buffered(uint64_t Handle, const PublicChannel &Channel) const;
    void wake() { if (callbacks.wake) callbacks.wake(); }
 
    // Public channels queued before SCTP starts are opened later, so admission mirrors the SCTP channel limits.

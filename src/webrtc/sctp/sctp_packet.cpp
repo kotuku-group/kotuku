@@ -146,15 +146,17 @@ size_t chunk_count(std::span<const uint8_t> Data)
 }
 
 //********************************************************************************************************************
-// Parses and authenticates an SCTP packet.  The checksum is stored little-endian, unlike every other field.
+// Parses an SCTP packet, optionally authenticating it.  The checksum is stored little-endian, unlike every other field.
 
-bool parse(std::span<const uint8_t> Data, Packet &Result)
+static bool parse_packet(std::span<const uint8_t> Data, Packet &Result, bool Verify)
 {
    if (Data.size() < HEADER_SIZE + 4 or Data.size() > MAX_PACKET_SIZE) return false;
 
-   auto checksum = uint32_t(Data[8]) | (uint32_t(Data[9]) << 8) |
-      (uint32_t(Data[10]) << 16) | (uint32_t(Data[11]) << 24);
-   if (checksum != packet_crc(Data)) return false;
+   if (Verify) {
+      auto checksum = uint32_t(Data[8]) | (uint32_t(Data[9]) << 8) |
+         (uint32_t(Data[10]) << 16) | (uint32_t(Data[11]) << 24);
+      if (checksum != packet_crc(Data)) return false;
+   }
 
    Packet parsed;
    parsed.source_port = read16(Data, 0);
@@ -167,6 +169,12 @@ bool parse(std::span<const uint8_t> Data, Packet &Result)
    Result = std::move(parsed);
    return true;
 }
+
+bool parse(std::span<const uint8_t> Data, Packet &Result) { return parse_packet(Data, Result, true); }
+
+// Encoder::finish() has already checksummed a locally encoded packet; verifying it again only repeats that work.
+
+bool parse_local(std::span<const uint8_t> Data, Packet &Result) { return parse_packet(Data, Result, false); }
 
 //********************************************************************************************************************
 // Parses the parameter list found within an INIT, INIT ACK or RE-CONFIG chunk.

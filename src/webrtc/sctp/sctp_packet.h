@@ -56,6 +56,9 @@ uint32_t packet_crc(std::span<const uint8_t> Data);
 size_t chunk_count(std::span<const uint8_t> Data);
 
 bool parse(std::span<const uint8_t> Data, Packet &Result);
+
+// Parses a packet that this endpoint encoded, without verifying the checksum.  Never use it for received packets.
+bool parse_local(std::span<const uint8_t> Data, Packet &Result);
 bool parameters(std::span<const uint8_t> Data, std::vector<Item> &Result);
 bool append_parameter(std::vector<uint8_t> &Data, uint16_t Type, std::span<const uint8_t> Value);
 

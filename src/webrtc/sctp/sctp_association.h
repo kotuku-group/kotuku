@@ -127,7 +127,11 @@ public:
    [[nodiscard]] ERR release_message(uint16_t Stream, size_t Bytes);
    std::vector<std::vector<uint8_t>> take_output();
    std::vector<SctpEvent> take_events();
-   std::map<uint16_t, size_t> buffered_amounts() const;
+
+   // Application bytes per stream that the transport has not yet accepted.  Streams with no buffered bytes are
+   // omitted.  The totals are maintained incrementally and are not recomputed on access.
+   [[nodiscard]] const std::map<uint16_t, size_t> & buffered_amounts() const { return buffered_bytes; }
+   [[nodiscard]] size_t buffered_amount(uint16_t Stream) const;
    void output_accepted(std::span<const uint8_t> Packet);
    void abort(ERR Error = ERR::Failed);
    void close(); // Immediate owner teardown; shutdown() performs the wire handshake
@@ -200,6 +204,8 @@ private:
    bool shutdown_progress();
    void estimate_rto(uint64_t Sample);
    size_t chunk_bytes(const SentChunk &Chunk) const;
+   void release_buffered(uint16_t Stream, uint32_t PPID, size_t Bytes);
+   static bool buffered_ppid(uint32_t PPID) { return PPID IS 51 or PPID IS 53; } // Text and binary messages
    std::vector<uint8_t> data_value(const SentChunk &Chunk) const;
    bool live_transfer() const;
 
@@ -289,10 +295,15 @@ private:
    std::map<uint16_t, std::map<uint16_t, SctpMessage>> ordered_messages;
    std::vector<SctpMessage> messages;
    std::map<uint16_t, size_t> channel_send_bytes, channel_receive_bytes, channel_message_counts;
+
+   // Text and binary bytes per stream that are queued or packetised but not yet accepted by the transport, and not
+   // abandoned.  Charged by enqueue() and released by output_accepted(), abandonment and cumulative acknowledgement.
+   std::map<uint16_t, size_t> buffered_bytes;
    uint32_t next_tsn = 0, cumulative_tsn = 0, last_ack = 0, peer_window = 0, recovery_tsn = 0;
    size_t flight_size = 0, cwnd = 0, ssthresh = 0, partial_bytes = 0, path_mtu = 0;
    size_t retained_bytes = 0, unsent_bytes = 0, receive_bytes = 0, receive_records = 0, send_message_count = 0;
    size_t control_send_bytes = 0, control_message_count = 0;
+   size_t partial_message_count = 0; // Messages with a lifetime or retransmission limit, until fully acknowledged
    uint64_t srtt_us = 0, rttvar_us = 0;
    unsigned data_timeouts = 0, fast_count = 0, ack_packets = 0;
    uint64_t retransmission_count = 0;

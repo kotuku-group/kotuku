@@ -484,27 +484,85 @@ void adapter_accounting() {
    Pair pair;
    std::vector<uint8_t> bytes{0, 255, 7};
    CHECK(pair.a.enqueue(0, 53, bytes, false, pair.now) IS ERR::Okay);
-   CHECK(pair.a.buffered_amounts()[0] IS bytes.size());
+   CHECK(pair.a.buffered_amount(0) IS bytes.size());
    auto output = pair.a.take_output();
    CHECK(not output.empty());
    for (const auto &wire : output) pair.a.output_accepted(wire);
-   CHECK(pair.a.buffered_amounts()[0] IS 0);
+   CHECK(pair.a.buffered_amount(0) IS 0);
    CHECK(pair.a.diagnostics().retained_bytes IS bytes.size());
    // Drop the accepted originals.  Retransmissions must not re-charge public buffering.
    pair.run(300);
-   CHECK(pair.a.buffered_amounts()[0] IS 0);
+   CHECK(pair.a.buffered_amount(0) IS 0);
    CHECK(pair.a.diagnostics().retained_bytes IS 0);
    CHECK(pair.b.take_messages().size() IS 1);
    Pair expiry;
    SctpReliability policy; policy.max_lifetime_ms = 1;
    CHECK(expiry.a.enqueue(0, 53, std::vector<uint8_t>(5000, 9), false, 0, policy) IS ERR::Okay);
-   CHECK(expiry.a.buffered_amounts()[0] IS 5000);
+   CHECK(expiry.a.buffered_amount(0) IS 5000);
    CHECK(expiry.a.tick(1000) IS ERR::Okay);
-   CHECK(expiry.a.buffered_amounts()[0] IS 0);
+   CHECK(expiry.a.buffered_amount(0) IS 0);
    Pair control;
    CHECK(control.a.enqueue(0, 50, bytes, false, 0) IS ERR::Okay);
    CHECK(control.a.enqueue(1, 57, std::vector<uint8_t>{0}, false, 0) IS ERR::Okay);
    CHECK(control.a.buffered_amounts().empty());
+
+   // Streams are accounted independently.  Acknowledgement releases chunks that the owner never reported as
+   // accepted, and accepting a packet twice releases its bytes once.
+   Pair streams;
+   CHECK(streams.a.enqueue(0, 51, std::vector<uint8_t>(2000, 'a'), false, 0) IS ERR::Okay);
+   CHECK(streams.a.enqueue(2, 53, std::vector<uint8_t>(3000, 9), false, 0) IS ERR::Okay);
+   CHECK(streams.a.buffered_amount(0) IS 2000 and streams.a.buffered_amount(2) IS 3000);
+   CHECK(streams.a.buffered_amount(1) IS 0 and streams.a.buffered_amounts().size() IS 2);
+   auto first = streams.a.take_output();
+   CHECK(not first.empty());
+   if (not first.empty()) {
+      streams.a.output_accepted(first[0]);
+      auto total = streams.a.buffered_amount(0) + streams.a.buffered_amount(2);
+      CHECK(total < 5000);
+      streams.a.output_accepted(first[0]);
+      CHECK(streams.a.buffered_amount(0) + streams.a.buffered_amount(2) IS total);
+      for (auto &wire : first) CHECK(streams.b.feed(wire, streams.now) IS ERR::Okay);
+   }
+   streams.run(400);
+   CHECK(streams.a.buffered_amounts().empty());
+   CHECK(streams.a.diagnostics().retained_bytes IS 0);
+   CHECK(streams.b.take_messages().size() IS 2);
+
+   // Abandonment releases only the part of a message that the transport has not accepted.
+   Pair partial;
+   CHECK(partial.a.enqueue(0, 53, std::vector<uint8_t>(5000, 9), false, 0, policy) IS ERR::Okay);
+   CHECK(partial.a.enqueue(2, 53, std::vector<uint8_t>(700, 9), false, 0) IS ERR::Okay);
+   auto pending = partial.a.take_output();
+   CHECK(not pending.empty());
+   if (not pending.empty()) partial.a.output_accepted(pending[0]);
+   CHECK(partial.a.buffered_amount(0) < 5000);
+   CHECK(partial.a.tick(1000) IS ERR::Okay);
+   CHECK(partial.a.buffered_amount(0) IS 0 and partial.a.buffered_amount(2) IS 700);
+
+   // Abandonment removes expired DATA from undrained output and leaves other packets intact.  The initial
+   // congestion window admits both messages; the twin association shows the output before expiry.
+   auto data_bytes = [](SctpAssociation &Association, size_t &Expired, size_t &Reliable) {
+      Expired = Reliable = 0;
+      for (const auto &wire : Association.take_output()) {
+         Packet parsed;
+         CHECK(parse(wire, parsed));
+         for (const auto &chunk : parsed.chunks) {
+            if (chunk.type != DATA) continue;
+            (read16(chunk.value, 4) IS 0 ? Expired : Reliable) += chunk.value.size() - 12;
+         }
+      }
+   };
+   Pair undrained, twin;
+   for (auto *association : {&undrained.a, &twin.a}) {
+      CHECK(association->enqueue(2, 53, std::vector<uint8_t>(100, 5), false, 0) IS ERR::Okay);
+      CHECK(association->enqueue(0, 53, std::vector<uint8_t>(300, 9), false, 0, policy) IS ERR::Okay);
+   }
+   size_t expired_bytes, reliable_bytes;
+   data_bytes(twin.a, expired_bytes, reliable_bytes);
+   CHECK(expired_bytes IS 300 and reliable_bytes IS 100);
+   CHECK(undrained.a.tick(1000) IS ERR::Okay);
+   data_bytes(undrained.a, expired_bytes, reliable_bytes);
+   CHECK(expired_bytes IS 0 and reliable_bytes IS 100);
 }
 
 }

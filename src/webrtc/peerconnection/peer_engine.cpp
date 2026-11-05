@@ -1509,6 +1509,7 @@ ERR PeerConnection::send_channel(uint64_t Handle, std::span<const uint8_t> Paylo
 
    auto error = channels->send(uint16_t(it->second.id), Payload, Text, now_us());
    if (error IS ERR::Okay) {
+      // Enqueueing can expire messages on any stream, so preserve low-water notifications for every channel.
       refresh_buffered();
       wake();
    }
@@ -1569,17 +1570,24 @@ ERR PeerConnection::set_threshold(uint64_t Handle, size_t Value)
 }
 
 //********************************************************************************************************************
+// Returns the association's buffered amount for a channel that currently owns its stream.
+
+size_t PeerConnection::channel_buffered(uint64_t Handle, const PublicChannel &Channel) const
+{
+   if (not association or Channel.id < 0 or Channel.state IS SctpChannelState::CLOSED) return 0;
+   auto owner = stream_handles.find(uint16_t(Channel.id));
+   if (owner IS stream_handles.end() or owner->second != Handle) return 0;
+   return association->buffered_amount(uint16_t(Channel.id));
+}
+
+//********************************************************************************************************************
 // Updates each channel's buffered amount, and queues a buffered-amount-low event (a MESSAGE event with low set) when
 // an open channel crosses its threshold from above.
 
 void PeerConnection::refresh_buffered()
 {
-   auto amounts = association ? association->buffered_amounts() : std::map<uint16_t, size_t>{};
-
    for (auto &[handle, channel] : public_channels) {
-      auto owner = stream_handles.find(uint16_t(channel.id));
-      auto amount = channel.id >= 0 and channel.state != SctpChannelState::CLOSED and
-         owner != stream_handles.end() and owner->second IS handle ? amounts[uint16_t(channel.id)] : 0;
+      auto amount = channel_buffered(handle, channel);
 
       if (channel.buffered > channel.threshold and amount <= channel.threshold and
           channel.state IS SctpChannelState::OPEN and not channel.detached) {

@@ -54,6 +54,7 @@ void SctpAssociation::clear_transfer()
    send_sequences.clear();
    receive_sequences.clear();
    channel_send_bytes.clear();
+   buffered_bytes.clear();
    channel_receive_bytes.clear();
    channel_message_counts.clear();
 
@@ -68,6 +69,7 @@ void SctpAssociation::clear_transfer()
 
    transfer_ready = false;
    retained_bytes = unsent_bytes = receive_bytes = receive_records = flight_size = send_message_count = 0;
+   partial_message_count = 0;
    control_send_bytes = control_message_count = 0;
    recovering = sack_needed = congestion_limited = false;
    srtt_us = rttvar_us = 0;
@@ -231,8 +233,10 @@ ERR SctpAssociation::enqueue(uint16_t Stream, uint32_t PPID, std::span<const uin
    retained_bytes += Payload.size();
    unsent_bytes += Payload.size();
    channel_send_bytes[Stream] += Payload.size();
+   if (buffered_ppid(PPID)) buffered_bytes[Stream] += Payload.size();
    ++channel_message_counts[Stream];
    ++send_message_count;
+   if (Policy.partial()) ++partial_message_count;
 
    if (control) {
       control_send_bytes += Payload.size();
@@ -799,10 +803,15 @@ bool SctpAssociation::receive_sack(std::span<const uint8_t> Value)
       auto chunk = std::move(sent.front());
       sent.pop_front();
 
+      // Acknowledgement normally follows transport acceptance, but an owner is not required to report it.
+
+      if (not chunk.adapter_accepted and not chunk.abandoned) release_buffered(chunk.stream, chunk.ppid, chunk.length);
+
       if (chunk.policy.use_count() IS 1) {
          --channel_message_counts[chunk.stream];
          --send_message_count;
          if (chunk.ppid IS 50) --control_message_count;
+         if (chunk.policy->policy.partial()) --partial_message_count;
       }
 
       // Charge the complete shared allocation until its last descriptor is released.
@@ -1164,25 +1173,23 @@ bool SctpAssociation::transfer_tick()
 }
 
 //********************************************************************************************************************
-// Count original application bytes only.  Packetisation and retransmission do not imply adapter acceptance.
+// Buffered amounts count original application bytes only.  Packetisation and retransmission do not imply adapter
+// acceptance.
 
-std::map<uint16_t, size_t> SctpAssociation::buffered_amounts() const
+size_t SctpAssociation::buffered_amount(uint16_t Stream) const
 {
-   std::map<uint16_t, size_t> result;
+   auto it = buffered_bytes.find(Stream);
+   return it != buffered_bytes.end() ? it->second : 0;
+}
 
-   for (const auto &message : queued) {
-      if (message.payload and (message.ppid IS 51 or message.ppid IS 53)) {
-         result[message.stream] += message.payload->size() - message.offset;
-      }
-   }
+void SctpAssociation::release_buffered(uint16_t Stream, uint32_t PPID, size_t Bytes)
+{
+   if (not buffered_ppid(PPID) or not Bytes) return;
 
-   for (const auto &chunk : sent) {
-      if (not chunk.adapter_accepted and not chunk.abandoned and (chunk.ppid IS 51 or chunk.ppid IS 53)) {
-         result[chunk.stream] += chunk.length;
-      }
-   }
-
-   return result;
+   auto it = buffered_bytes.find(Stream);
+   if (it IS buffered_bytes.end()) return;
+   if (it->second > Bytes) it->second -= Bytes;
+   else buffered_bytes.erase(it);
 }
 
 //********************************************************************************************************************
@@ -1192,14 +1199,16 @@ std::map<uint16_t, size_t> SctpAssociation::buffered_amounts() const
 void SctpAssociation::output_accepted(std::span<const uint8_t> Packet)
 {
    sctp::Packet parsed;
-   if (not sctp::parse(Packet, parsed)) return;
+   if (not sctp::parse_local(Packet, parsed)) return;
 
    for (const auto &item : parsed.chunks) {
       if (item.type != sctp::DATA or item.value.size() < 12) continue;
       auto tsn = sctp::read32(item.value, 0);
       auto it = std::lower_bound(sent.begin(), sent.end(), tsn,
          [](const SentChunk &Chunk, uint32_t TSN) { return int32_t(Chunk.tsn - TSN) < 0; });
-      if (it != sent.end() and it->tsn IS tsn) it->adapter_accepted = true;
+      if (it IS sent.end() or it->tsn != tsn or it->adapter_accepted) continue;
+      it->adapter_accepted = true;
+      if (not it->abandoned) release_buffered(it->stream, it->ppid, it->length);
    }
 }
 

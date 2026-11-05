@@ -66,7 +66,13 @@ void vectors() {
       auto truncated = std::vector<uint8_t>(wire.begin(), wire.begin() + i);
       if (i >= HEADER_SIZE) checksum(truncated);
       CHECK(not parse(truncated, parsed));
+      CHECK(not parse_local(truncated, parsed));
    }
+   // parse_local() skips only checksum verification; structure is still validated.
+   auto unchecked = wire;
+   unchecked[8] ^= 1;
+   CHECK(not parse(unchecked, parsed));
+   CHECK(parse_local(unchecked, parsed) and parsed.chunks.size() IS 1 and parsed.chunks[0].type IS INIT);
 }
 void browser_captures() {
    for (auto role : {"client", "server"}) {
