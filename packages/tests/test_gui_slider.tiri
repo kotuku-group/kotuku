@@ -3,6 +3,12 @@
    module display as mGfx
    module vector as mVec
 
+-- Text widths are fractional, so layout sums that include them can differ from an exact value by rounding error.
+
+function near(A:num!, B:num!):bool
+   return math.abs(A - B) < 0.000001
+end
+
 function newSlider(Options:table!):<obj, table>
    local surface = obj.new('Surface', { width=500, height=300 })
    local scene = surface.new('VectorScene', { surface=surface })
@@ -673,7 +679,7 @@ end
    local surface <close>, slider = newSlider({ valuePos='out-max', step=1, min=0, max=10, value=5 })
    local track_width = slider.trackVP.width
    slider.setRange(-1000, 1000)
-   assert(slider.trackVP.width is track_width,
+   assert(near(slider.trackVP.width, track_width),
       'Default dimensions must expand for a wider readout while preserving the track length')
    slider.setValue(-1000)
    assert(slider.valueText.string is '-1000', 'Range changes must allow a wider signed value display')

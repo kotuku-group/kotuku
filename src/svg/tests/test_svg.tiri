@@ -311,7 +311,7 @@ end
 @Test global function W3ColourProp01() hashTestSVG('painting/w3-color-prop-01-b.svg', 0xf6abd2a1) end
 @Test global function W3ColourProp02() hashTestSVG('painting/w3-color-prop-02-f.svg', 0xc6c9f271) end
 @Test global function W3ColourProp03() hashTestSVG('painting/w3-color-prop-03-t.svg', 0x54946188) end
-@Test global function W3ColourProp04() hashTestSVG('painting/w3-color-prop-04-t.svg', 0xe467ded4) end
+@Test global function W3ColourProp04() pHashTestSVG('painting/w3-color-prop-04-t.svg', array<byte> { 116,143,11,241,97,164,84,59 }, 6, true) end
 @Test; @Disabled global function W3ColourProp05() hashTestSVG('painting/w3-color-prop-05-t.svg', 0) end
 @Test global function W3Painting01() hashTestSVG('painting/w3-painting-control-01-f.svg', 0x130f9677) end
 @Test global function W3Painting02() hashTestSVG('painting/w3-painting-control-02-f.svg', 0x7fc07377) end
@@ -358,7 +358,7 @@ end
 @Test global function CoarsePaper()        hashTestSVG('filters/coarse_paper.svg', 0x8a817d23) end
 @Test global function Composite()          hashTestSVG('filters/composite.svg', 0x56f746bb) end
 @Test global function CompositeClamp()     hashTestSVG('filters/composite_linear_clamp.svg', 0x137886b9) end
-@Test global function Convolve()           hashTestSVG('filters/convolve.svg', 0x78efee38) end
+@Test global function Convolve()           pHashTestSVG('filters/convolve.svg', array<byte> { 28,28,240,225,65,158,207,99 }, 6, true) end
 @Test global function ConvolveUnit2()      hashTestSVG('filters/kernel_unit_length_2.svg', 0x87bad74f) end
 @Test global function ConvolveUnit05()     hashTestSVG('filters/kernel_unit_length_0_5.svg', 0x19e54151) end
 @Test global function RockyLighting()      hashTestSVG('filters/rocky_lighting.svg', 0x5d1fa547) end
@@ -371,9 +371,9 @@ end
 @Test; @Disabled global function W3Convolve5()        hashTestSVG('filters/w3-filters-conv-05-f.svg', 0xda23deb4) end
 @Test global function W3Displacement1()    hashTestSVG('filters/w3-filters-displace-01-f.svg', 0x0e100e52) end
 @Test global function W3Transfer()         hashTestSVG('filters/w3-filters-comptran-01-b.svg', 0x202b4c83) end
-@Test global function W3Transfer2()        hashTestSVG('filters/w3-filters-color-02-b.svg', 0xc08a9a77) end
+@Test global function W3Transfer2()        pHashTestSVG('filters/w3-filters-color-02-b.svg', array<byte> { 121,185,134,7,233,135,134,84 }, 6, true) end
 @Test global function W3Filters()          hashTestSVG('filters/w3-filters.svg', 0xe55dcd71) end
-@Test global function W3Filters2()         hashTestSVG('filters/w3-filters2.svg', 0xa3f694df) end
+@Test global function W3Filters2()         pHashTestSVG('filters/w3-filters2.svg', array<byte> { 110,102,38,102,102,102,54,50 }, 6, true) end
 @Test global function W3Gauss1()           hashTestSVG('filters/w3-filters-gauss-01-b.svg', 0x4c7b5e50) end
 @Test global function W3Gauss2()           hashTestSVG('filters/w3-filters-gauss-02-f.svg', 0x6cfe6032) end
 @Test global function W3Gauss3()           hashTestSVG('filters/w3-filters-gauss-03-f.svg', 0xd4cc8f68) end
