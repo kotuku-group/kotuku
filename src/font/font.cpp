@@ -144,7 +144,7 @@ class extFont : public objFont {
 
 static ERR add_font_class(void);
 static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &);
-static void scan_truetype_folder(objConfig *);
+static void scan_scalable_folder(objConfig *);
 static void scan_fixed_folder(objConfig *);
 static ERR analyse_bmp_font(std::string_view, winfnt_header_fields *, std::string &, std::vector<uint16_t> &);
 static void string_size(extFont *, std::string_view, int, int, int *, int *);
@@ -763,14 +763,14 @@ ERR RefreshFonts(const std::string_view &Path)
    if (auto error = acClear(glConfig); error != ERR::Okay) return error; // Clear out existing font information
 
    scan_fixed_folder(glConfig);
-   scan_truetype_folder(glConfig);
+   scan_scalable_folder(glConfig);
 
    if (auto error = glConfig->sortByKey("", false); error != ERR::Okay) return error; // Sort by font name.
 
    // Create a style list for each font, e.g.
    //
    //    Bold Italic = fonts:fixed/courier.fon
-   //    Bold = fonts:truetype/Courier Prime Bold.ttf
+   //    Bold = fonts:scalable/Courier Prime Bold.ttf
    //    Styles = Bold,Bold Italic,Italic,Regular
 
    ConfigGroups *groups;
@@ -1130,27 +1130,27 @@ static ERR analyse_scalable_font(const std::string &Path, std::string_view FileN
 
 //********************************************************************************************************************
 
-static void scan_truetype_folder(objConfig *Config)
+static void scan_scalable_folder(objConfig *Config)
 {
    kt::Log log(__FUNCTION__);
 
-   log.branch("Scanning for truetype fonts.");
+   log.branch("Scanning for scalable fonts.");
 
-   std::string ttpath;
-   if (!ResolvePath("fonts:truetype/", RSF::NO_FILE_CHECK, &ttpath)) {
+   std::string sfpath;
+   if (!ResolvePath("fonts:scalable/", RSF::NO_FILE_CHECK, &sfpath)) {
       DirInfo *dir;
-      if (!OpenDir(ttpath, RDF::FILE, &dir)) {
+      if (!OpenDir(sfpath, RDF::FILE, &dir)) {
          LocalResource free_dir(dir);
 
-         auto ttpath_len = ttpath.size();
+         auto sfpath_len = sfpath.size();
          while (!ScanDir(dir)) {
-            ttpath.resize(ttpath_len);
-            ttpath.append(dir->Info->Name);
+            sfpath.resize(sfpath_len);
+            sfpath.append(dir->Info->Name);
 
             scalable_face face;
-            if (analyse_scalable_font(ttpath, dir->Info->Name, face) != ERR::Okay) continue;
+            if (analyse_scalable_font(sfpath, dir->Info->Name, face) != ERR::Okay) continue;
 
-            std::string path("fonts:truetype/");
+            std::string path("fonts:scalable/");
             path.append(dir->Info->Name);
 
             Config->write(face.family, "Name", face.family);
@@ -1160,7 +1160,7 @@ static void scan_truetype_folder(objConfig *Config)
             if (not face.axes.empty()) Config->write(face.family, "Axes", face.axes);
          }
       }
-      else log.warning("Failed to open the fonts:truetype/ directory.");
+      else log.warning("Failed to open the fonts:scalable/ directory.");
    }
 }
 

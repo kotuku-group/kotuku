@@ -328,7 +328,7 @@ end
 
    icon_pairs = {
       { path='fonts:fonts.cfg',            icon='icons:filetypes/text' },
-      { path='fonts:truetype/Micro-6.ttf', icon='icons:filetypes/font' },
+      { path='fonts:scalable/Micro-6.ttf', icon='icons:filetypes/font' },
       { path='temp:filesystem_tests/source.tiri',           icon='icons:filetypes/source' }
    }
 
