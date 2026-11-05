@@ -56,6 +56,11 @@ class freetype_font {
       };
 
       using METRIC_GROUP = std::vector<FT_Fixed>;
+
+      struct axis_info { // A variation axis of the face, in design units
+         uint32_t tag;
+         double minimum, def, maximum;
+      };
       using GLYPH_TABLE = ankerl::unordered_dense::map<uint32_t, glyph>; // Unicode to glyph lookup
 
       class ft_point : public common_font {
@@ -207,6 +212,7 @@ class freetype_font {
       FT_Face face = nullptr;
       STYLE_CACHE style_cache; // Lists all known styles and contains the glyph cache for each style
       METRIC_TABLE metrics; // For variable fonts, these are pre-defined metrics with style names
+      std::vector<axis_info> axes; // For variable fonts, the variation axes in face order
       FMETA meta = FMETA::NIL;
       int glyph_flags = 0;
       uint32_t family_hash = 0; // strihash() of the resolved family name that first loaded this face
@@ -215,9 +221,9 @@ class freetype_font {
       bool gpos_loaded = false;
 
       freetype_font()  { }
-      freetype_font(FT_Face pFace, STYLE_CACHE &pStyles, METRIC_TABLE &pMetrics, FMETA pMeta, uint32_t pFamilyHash,
-         HINT pHint)
-         : face(pFace), style_cache(pStyles), metrics(pMetrics), meta(pMeta), family_hash(pFamilyHash) {
+      freetype_font(FT_Face pFace, STYLE_CACHE &pStyles, METRIC_TABLE &pMetrics, std::vector<axis_info> &pAxes,
+         FMETA pMeta, uint32_t pFamilyHash, HINT pHint)
+         : face(pFace), style_cache(pStyles), metrics(pMetrics), axes(pAxes), meta(pMeta), family_hash(pFamilyHash) {
          set_hinting(pHint);
       }
 

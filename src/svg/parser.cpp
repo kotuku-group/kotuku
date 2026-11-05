@@ -140,6 +140,151 @@ static void set_kerning(objVectorText *Text, bool Enable)
 }
 
 //********************************************************************************************************************
+// Converts a CSS font property to VectorText FontStyle descriptors, e.g. 'font-stretch: condensed' to 'width=75'.
+// Returns false if the property is unsupported or the value is 'inherit', in which case the style is unchanged.  An
+// empty Result is valid and resets the property, e.g. 'font-style: normal'.
+
+static bool font_descriptors(uint32_t Hash, std::string_view Value, std::string &Result)
+{
+   namespace ft = kt::font_traits;
+   kt::Log log(__FUNCTION__);
+
+   Value = ft::trim(Value);
+   Result.clear();
+   if (iequals("inherit", Value)) return false;
+
+   auto format_number = [](double Number) {
+      char buffer[32];
+      auto end = std::to_chars(buffer, buffer + sizeof(buffer), Number).ptr;
+      return std::string(buffer, end);
+   };
+
+   switch (Hash) {
+      case SVF_font_stretch:
+      case SVF_font_width: // CSS: <percentage> | normal | ultra-condensed ... ultra-expanded
+         if (auto width = ft::parse_width(Value)) {
+            if (*width != 100) Result = "width=" + format_number(*width);
+            return true;
+         }
+         break;
+
+      case SVF_font_style: { // CSS: normal | italic | oblique <angle>?
+         auto keyword = Value.substr(0, Value.find_first_of(" \t"));
+         if (iequals("normal", keyword)) return true;
+         else if (iequals("italic", keyword)) { Result = "italic=yes"; return true; }
+         else if (iequals("oblique", keyword)) {
+            auto angle = ft::trim(Value.substr(keyword.size()));
+            if (angle.ends_with("deg")) angle.remove_suffix(3);
+            if (angle.empty()) { Result = "slant=14"; return true; } // CSS default oblique angle
+            else if (auto number = ft::parse_number(angle)) {
+               if (*number != 0) Result = "slant=" + format_number(*number);
+               return true;
+            }
+         }
+         break;
+      }
+
+      case SVF_font_variation_settings: { // CSS: normal | [ <string> <number> ]#
+         if (iequals("normal", Value)) return true;
+         std::string_view list(Value);
+         while (not list.empty()) {
+            auto end = list.find(',');
+            auto setting = ft::trim(list.substr(0, end));
+            list = (end IS std::string_view::npos) ? std::string_view() : list.substr(end + 1);
+            if (setting.size() < 7) continue; // Minimum of "abcd" 0
+
+            const char quote = setting.front();
+            if (((quote != '"') and (quote != '\'')) or (setting[5] != quote)) {
+               log.warning("Invalid font-variation-settings entry '%.*s'", int(setting.size()), setting.data());
+               continue;
+            }
+
+            if (auto number = ft::parse_number(setting.substr(6))) {
+               if (not Result.empty()) Result.push_back(';');
+               Result.append(setting.substr(1, 4)).append("=").append(format_number(*number));
+            }
+            else log.warning("Invalid font-variation-settings entry '%.*s'", int(setting.size()), setting.data());
+         }
+         return true;
+      }
+
+      case SVF_font_optical_sizing: // CSS: auto | none
+         if (iequals("auto", Value)) return true;
+         else if (iequals("none", Value)) { Result = "opsz=none"; return true; }
+         break;
+
+      default:
+         return false;
+   }
+
+   log.warning("No support for font property value '%.*s'", int(Value.size()), Value.data());
+   return false;
+}
+
+// Replaces the descriptors that are owned by the CSS font property Hash in Style with Descriptors.  This allows the
+// properties to be combined and inherited independently, so that a child's font-stretch does not discard a parent's
+// font-style.
+
+static void merge_font_style(std::string &Style, uint32_t Hash, std::string_view Descriptors)
+{
+   namespace ft = kt::font_traits;
+
+   auto owned = [Hash](std::string_view Key, std::string_view Value) {
+      auto key = ft::normalise(Key);
+      // Numeric opsz values belong to variation-settings; auto/none belong to optical-sizing.
+      const bool optical_coordinate = (Key IS "opsz") and ft::parse_number(Value).has_value();
+      switch (Hash) {
+         case SVF_font_stretch:
+         case SVF_font_width:              return key IS "width";
+         case SVF_font_style:              return (key IS "italic") or (key IS "slant");
+         case SVF_font_optical_sizing:     return (Key IS "opsz") and (not optical_coordinate);
+         case SVF_font_variation_settings: return (Key.size() IS 4) and
+                                             ((Key != "opsz") or optical_coordinate);
+         default:                          return false;
+      }
+   };
+
+   std::string result;
+   std::string optical_coordinate;
+   auto append = [&result](std::string_view Segment) {
+      if (not result.empty()) result.push_back(';');
+      result.append(Segment);
+   };
+
+   auto retain = [&](std::string_view Key, std::string_view Value, bool HasValue) {
+      if (not HasValue) append(Value);
+      else if ((Key IS "opsz") and ft::parse_number(Value)) optical_coordinate.assign(Value);
+      else append(std::string(Key) + "=" + std::string(Value));
+   };
+
+   ft::for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
+      if ((not HasValue) or (not owned(Key, Value))) retain(Key, Value, HasValue);
+   });
+
+   ft::for_each_descriptor(Descriptors, retain);
+   // Explicit variation coordinates override optical-sizing irrespective of property declaration order.  Keep
+   // the mode as well, so clearing variation-settings restores the inherited auto/none behaviour.
+   if (not optical_coordinate.empty()) append("opsz=" + optical_coordinate);
+   Style = result;
+}
+
+// Applies a CSS font property to the FontStyle of a VectorText.
+
+static void apply_font_property(objVectorText *Text, uint32_t Hash, std::string_view Value)
+{
+   std::string descriptors;
+   if (not font_descriptors(Hash, Value, descriptors)) return;
+
+   std::string_view current;
+   std::string style;
+   if (Text->getFontStyle(current) IS ERR::Okay) style.assign(current);
+   if (iequals("Regular", style)) style.clear();
+
+   merge_font_style(style, Hash, descriptors);
+   Text->setFontStyle(style.empty() ? std::string_view("Regular") : std::string_view(style));
+}
+
+//********************************************************************************************************************
 // Apply current state values to a new vector as its defaults.  Used for applying state to child vectors.
 // If you're adding more to this, matching code is needed in svgState::applyTag()
 
@@ -162,6 +307,7 @@ void svgState::applyStateToVector(objVector *Vector) const noexcept
       if (!m_font_family.empty()) vt->setFace(m_font_family);
       if (!m_font_size.empty())   vt->setFontSize(m_font_size);
       if (m_font_weight)          vt->setWeight(m_font_weight);
+      if (!m_font_style.empty())  vt->setFontStyle(m_font_style);
       if (m_font_kerning >= 0)    set_kerning(vt, m_font_kerning);
    }
 
@@ -301,6 +447,18 @@ void svgState::applyTag(const XTag &Tag) noexcept
                      log.warning("No support for font-weight value '%s'", val.c_str()); // Non-fatal
                      m_font_weight = 400;
                }
+            }
+            break;
+         }
+         case SVF_font_stretch:
+         case SVF_font_width:
+         case SVF_font_style:
+         case SVF_font_variation_settings:
+         case SVF_font_optical_sizing: {
+            std::string descriptors;
+            if (font_descriptors(strhash(Tag.Attribs[a].Name), val, descriptors)) {
+               merge_font_style(m_font_style, strhash(Tag.Attribs[a].Name), descriptors);
+               if (m_font_style.empty()) m_font_style = "Regular";
             }
             break;
          }
@@ -3736,24 +3894,14 @@ ERR svgState::set_property(objVector *Vector, uint32_t Hash, XTag &Tag, const st
                // c = 'font-size' to apply to available font
                return ERR::NoSupport;
 
-            case SVF_font_stretch: // NYI
-               //switch(strhash(StrValue)) {
-               //   case SVF_condensed:       vt->setStretch(VTS::CONDENSED)); return ERR::Okay;
-               //   case SVF_expanded:        vt->setStretch(VTS::EXPANDED)); return ERR::Okay;
-               //   case SVF_extra_condensed: vt->setStretch(VTS::EXTRA_CONDENSED)); return ERR::Okay;
-               //   case SVF_extra_expanded:  vt->setStretch(VTS::EXTRA_EXPANDED)); return ERR::Okay;
-               //   case SVF_narrower:        vt->setStretch(VTS::NARROWER)); return ERR::Okay;
-               //   case SVF_normal:          vt->setStretch(VTS::NORMAL)); return ERR::Okay;
-               //   case SVF_semi_condensed:  vt->setStretch(VTS::SEMI_CONDENSED)); return ERR::Okay;
-               //   case SVF_semi_expanded:   vt->setStretch(VTS::SEMI_EXPANDED)); return ERR::Okay;
-               //   case SVF_ultra_condensed: vt->setStretch(VTS::ULTRA_CONDENSED)); return ERR::Okay;
-               //   case SVF_ultra_expanded:  vt->setStretch(VTS::ULTRA_EXPANDED)); return ERR::Okay;
-               //   case SVF_wider:           vt->setStretch(VTS::WIDER)); return ERR::Okay;
-               //   default: log.warning("no support for font-stretch value '%s'", StrValue.c_str());
-               //}
-               return ERR::NoSupport;
+            case SVF_font_stretch:
+            case SVF_font_width:
+            case SVF_font_style:
+            case SVF_font_variation_settings:
+            case SVF_font_optical_sizing:
+               apply_font_property(vt, Hash, StrValue);
+               return ERR::Okay;
 
-            case SVF_font_style: return ERR::NoSupport;
             case SVF_font_variant: return ERR::NoSupport;
 
             case SVF_font_weight: { // SVG: normal | bold | bolder | lighter | inherit

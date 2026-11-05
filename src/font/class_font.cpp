@@ -503,8 +503,12 @@ static ERR SET_String(extFont *Self, const std::string_view &Value)
 -FIELD-
 Style: Determines font styling.
 
-Selects the preferred style for initialisation.  If the selected face does not provide that style, regular styling or
-the first registered style is used.
+Selects the preferred style for initialisation.  If the selected face does not provide that style, the nearest
+available style is chosen by width, then italic, then weight, so `Semi Bold` resolves to `Bold` if the face has no
+semi-bold style.
+
+The Style also accepts the `weight`, `width`, `italic` and `slant` descriptors of the VectorText `FontStyle` field, e.g.
+`weight=SemiBold;italic=yes`.  These only influence which style is chosen; variable font axes are not applied.
 
 Bitmap fonts are a special case if a bold or italic style is selected.  In this situation the system can automatically
 convert the font to that style even if the correct graphics set does not exist.

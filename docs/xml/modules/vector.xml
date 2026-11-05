@@ -340,13 +340,14 @@ Z: Close Path
     <tags>api-owns-result, non-null-result, blocking</tags>
     <input>
       <param type="STRVIEW" name="Family">The name of the font family to access.</param>
-      <param type="STRVIEW" name="Style">The preferred style to choose from the family.  Use <code>Regular</code> or <code>NULL</code> for the default.</param>
-      <param type="INT" name="Weight">Equivalent to CSS font-weight; a value of 400 or 0 will equate to normal.</param>
+      <param type="STRVIEW" name="Style">The preferred style name or style descriptors.  Use <code>Regular</code> or <code>NULL</code> for the default.</param>
+      <param type="INT" name="Weight">Equivalent to CSS font-weight, from 1 to 1000; a value of 400 or 0 is treated as unset.  A <code>weight</code> descriptor in the <code>Style</code> takes precedence.</param>
       <param type="INT" name="Size">The em size of the font in pixels, equivalent to the VectorText FontSize.  Use <code>pt * 96 / 72</code> to convert from points.</param>
       <param type="APTR *" name="Handle">The resulting font handle is returned here.</param>
     </input>
     <description>
 <p>For a given font family, style and size, this function returns a <code>Handle</code> that can be passed to font querying functions.</p>
+<p>The <code>Style</code> accepts the same style names and descriptors as the <class name="VectorText" field="FontStyle">VectorText.FontStyle</class> field, e.g. <code>Bold</code> or <code>weight=Medium;width=Condensed</code>.  Invalid descriptors are logged and ignored rather than returning an error.  Style strings that resolve to the same variable font coordinates, such as <code>weight=700</code> and <code>Bold</code>, return the same handle.</p>
 <p>The handle is deterministic and permanent, remaining valid for the lifetime of the program.</p>
     </description>
     <result type="ERR">

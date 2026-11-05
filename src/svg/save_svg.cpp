@@ -974,6 +974,68 @@ static ERR save_svg_scan_polygon(extSVG *Self, objXML *XML, objVector *Vector, i
    return error;
 }
 
+//********************************************************************************************************************
+// Converts a VectorText FontStyle to the CSS font properties font-weight, font-stretch, font-style,
+// font-variation-settings and font-optical-sizing.  Named styles are reduced to their weight, width and slope.
+// The Weight field overrides a named weight, while explicit weight descriptors override the field.
+
+static void save_font_style(XTag *Tag, std::string_view Style, int Weight)
+{
+   namespace ft = kt::font_traits;
+
+   auto number = [](double Value) {
+      char buffer[32];
+      auto end = std::to_chars(buffer, buffer + sizeof(buffer), Value).ptr;
+      return std::string(buffer, end);
+   };
+
+   const double weight = ft::style_traits(Style, Weight).weight;
+   std::optional<double> width, slant, opsz;
+   bool italic = false, opsz_none = false;
+   std::string variations;
+
+   ft::for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
+      if (not HasValue) {
+         auto traits = ft::name_traits(Value);
+         if (not traits.recognised) return;
+         if (traits.width != 100) width = traits.width;
+         italic = traits.italic;
+         return;
+      }
+
+      auto key = ft::normalise(Key);
+      if (Key IS "opsz") {
+         if (auto value = ft::parse_number(Value)) opsz = *value;
+         else if (auto mode = ft::normalise(Value); (mode IS "none") or (mode IS "auto")) {
+            opsz_none = mode IS "none";
+            opsz.reset();
+         }
+      }
+      else if (key IS "weight") return; // Already resolved with the Weight field and named style
+      else if (key IS "width") width = ft::parse_width(Value);
+      else if (key IS "italic") { if (auto v = ft::parse_bool(Value)) italic = *v; }
+      else if (key IS "slant") slant = ft::parse_number(Value);
+      else if (Key.size() IS 4) {
+         if (auto v = ft::parse_number(Value)) {
+            if (not variations.empty()) variations.append(", ");
+            variations.append("\"").append(Key).append("\" ").append(number(*v));
+         }
+      }
+   });
+
+   if (opsz) {
+      if (not variations.empty()) variations.append(", ");
+      variations.append("\"opsz\" ").append(number(*opsz));
+   }
+
+   if ((weight != 400) or (Weight != 400)) xml::NewAttrib(Tag, "font-weight", number(weight));
+   if (width) xml::NewAttrib(Tag, "font-stretch", number(*width) + "%");
+   if (slant and (*slant != 0)) xml::NewAttrib(Tag, "font-style", "oblique " + number(*slant) + "deg");
+   else if (italic) xml::NewAttrib(Tag, "font-style", "italic");
+   if (not variations.empty()) xml::NewAttrib(Tag, "font-variation-settings", variations);
+   if (opsz_none) xml::NewAttrib(Tag, "font-optical-sizing", "none");
+}
+
 //*********************************************************************************************************************
 
 static ERR save_svg_scan_text(extSVG *Self, objXML *XML, objVector *Vector, int Parent, int &ChildIndex)
@@ -1036,14 +1098,14 @@ static ERR save_svg_scan_text(extSVG *Self, objXML *XML, objVector *Vector, int 
    if ((!error) and (!(error = vt->getFace(sv))))
       xml::NewAttrib(tag, "font-family", sv);
 
-   if ((!error) and (!(error = vt->getWeight(weight))) and (weight != 400))
-      xml::NewAttrib(tag, "font-weight", weight);
+   if ((!error) and (!(error = vt->getWeight(weight))) and (!(error = vt->getFontStyle(sv))))
+      save_font_style(tag, sv, weight);
 
    std::string text;
    if ((!error) and (!(error = vt->getString(text))))
       error = XML->insertContent(tag->ID, XMI::CHILD, text, nullptr);
 
-   // TODO: lengthAdjust, font, font-size-adjust, font-stretch, font-style, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
+   // TODO: lengthAdjust, font, font-size-adjust, font-variant, text-anchor, kerning, letter-spacing, path-length, word-spacing, text-decoration
 
    if (!error) {
       ChildIndex = tag->ID;

@@ -26,14 +26,16 @@
     "config": "1.0",
     "gui": "1.0",
     "gui/button": "1.0",
+    "gui/checkbox": "1.0",
+    "gui/slider": "1.0",
     "gui/view": "1.0",
     "gui/window": "1.0"
   },
   "files": [
     {
       "path": "fontdialog.tiri",
-      "size": 15602,
-      "sha256": "f2ec7a69e87ea79f4b849d85d53f95f266cce53843fb0918a71781c45ff1518f",
+      "size": 20280,
+      "sha256": "0dacdc0a982ba5dc45019d56c7957053dbdbfdeed0ccddc8bab7a5b4acb70c4a",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

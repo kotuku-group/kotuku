@@ -2,6 +2,19 @@
 -- Flute tests for Font functionality
 
    module font as mFont
+   module vector as mVec
+
+@Test function NumericTraitsAreMatchedWithoutRounding()
+   local err, bold = check mFont.SelectFont('Courier Prime', 'Bold')
+   local _, selected = check mFont.SelectFont('Courier Prime', 'weight=501')
+   assert(selected is bold, 'A weight above 500 must prefer Bold over Regular')
+
+   local _, expected = check mVec.GetFontHandle('Courier Prime', 'Bold', 0, 24)
+   local _, described = check mVec.GetFontHandle('Courier Prime', 'weight=501', 0, 24)
+   local _, weighted = check mVec.GetFontHandle('Courier Prime', 'Regular', 501, 24)
+   assert(rawequal(described, expected), 'A numeric descriptor must select the Bold file without rounding')
+   assert(rawequal(weighted, expected), 'The Weight argument must select the Bold file without rounding')
+end
 
 @Test function SelectFont()
    err, path, meta = mFont.SelectFont("Noto Sans", "Regular")

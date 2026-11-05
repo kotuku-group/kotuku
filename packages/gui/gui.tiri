@@ -57,6 +57,7 @@ gui.fontList = thunk():table
       if entry.Alias then font.alias = entry.Alias end
 
       font.styles = entry.Styles ? entry.Styles.split(',') : array<str> { 'Medium' }
+      if entry.Axes then font.axes = entry.Axes.split(',') end -- Variable font axis tags, e.g. wght,wdth
 
       if entry.Points then
          sizes = array<int>

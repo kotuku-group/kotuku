@@ -286,8 +286,26 @@
       <access read="G" write="S">Get/Set</access>
       <type>STRING</type>
       <description>
-<p>Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).  Because TrueType fonts can use any style name that the designer chooses such as <code>Thin</code>, <code>Narrow</code> or <code>Wide</code>, read <code>fonts:fonts.cfg</code> for a definitive list of available style names.</p>
-<p>Errors are not returned if the style name is invalid or unavailable.</p>
+<p>The FontStyle selects a style from the font family.  It can be a style name, a list of style descriptors, or a style name followed by descriptors.  Descriptors are separated by <code>;</code> and take the form <code>key=value</code>.  Whitespace around each part is ignored.  Examples:</p>
+<pre>Bold Italic
+weight=Medium;width=ExtraCondensed
+Semi Bold;width=87.5%
+weight=550;slant=12;GRAD=-50
+italic=yes;weight=Light
+</pre>
+<p>Conventional style names are <code>Regular</code> (the default), <code>Bold</code>, <code>Italic</code> and <code>Bold Italic</code>.  Fonts can use any style name that the designer chooses, such as <code>Thin</code> or <code>Condensed Bold</code>; read <code>fonts:fonts.cfg</code> for the styles that are installed.</p>
+<p>The following descriptors are supported.  Keys and keywords are case-insensitive, and spaces, hyphens and underscores in keywords are ignored, so <code>ExtraCondensed</code> and <code>extra-condensed</code> are equivalent.</p>
+<list type="bullet">
+<li><code>weight</code>: A number from 1 to 1000, or a keyword: <code>Thin</code> or <code>Hairline</code> (100), <code>ExtraLight</code> or <code>UltraLight</code> (200), <code>Light</code> (300), <code>Regular</code>, <code>Normal</code> or <code>Book</code> (400), <code>Medium</code> (500), <code>SemiBold</code> or <code>DemiBold</code> (600), <code>Bold</code> (700), <code>ExtraBold</code> or <code>UltraBold</code> (800), <code>Black</code> or <code>Heavy</code> (900), <code>ExtraBlack</code> or <code>UltraBlack</code> (950).  Sets the <code>wght</code> axis.</li>
+<li><code>width</code>: A percentage such as <code>75%</code>, a plain number that is read as a percentage, or a keyword: <code>UltraCondensed</code> (50), <code>ExtraCondensed</code> (62.5), <code>Condensed</code> (75), <code>SemiCondensed</code> (87.5), <code>Normal</code> (100), <code>SemiExpanded</code> (112.5), <code>Expanded</code> (125), <code>ExtraExpanded</code> (150), <code>UltraExpanded</code> (200).  Sets the <code>wdth</code> axis.</li>
+<li><code>italic</code>: <code>yes</code>, <code>no</code>, <code>true</code>, <code>false</code>, <code>on</code>, <code>off</code>, <code>1</code> or <code>0</code>.  Selects the italic file of the family, and sets the <code>ital</code> axis if the font has one.</li>
+<li><code>slant</code>: An oblique angle in degrees, where positive values lean to the right as in CSS.  Sets the <code>slnt</code> axis to the negated value.</li>
+<li><code>opsz</code>: The optical size, which is a number, <code>auto</code> or <code>none</code>.  The default, <code>auto</code>, sets the optical size to the font size in points.  <code>none</code> uses the value of the named style or font default.</li>
+</list>
+<p>Any other four-character key is an OpenType axis tag, e.g. <code>GRAD=-50</code>.  Axis tags are case-sensitive.</p>
+<p>For variable fonts, the design coordinates are resolved in the following order, with later values taking precedence: the font defaults, the named style, the <fl>Weight</fl> field, the descriptors listed above, and finally axis tags.  Values are clamped to the range of each axis, and axes that the font does not have are ignored.  Strings that resolve to the same coordinates share the same cached font, so <code>weight=Bold</code> and <code>Bold</code> are equivalent.</p>
+<p>For fonts that are not variable, the family's file that is the nearest match is chosen with the CSS font matching order of width, then italic, then weight.  For instance, <code>weight=SemiBold</code> on a family that has no semi-bold file resolves to <code>Bold</code>.  Axis tags are ignored and no synthetic styles are produced.</p>
+<p>Errors are not returned if a style name or descriptor is invalid or unavailable.  Invalid descriptors are reported as warnings in the log and otherwise ignored.</p>
       </description>
     </field>
 
@@ -491,8 +509,9 @@
       <access read="G" write="S">Get/Set</access>
       <type>INT</type>
       <description>
-<p>The weight value determines the level of boldness in the text.  A default value of 400 will render the text in its normal state.  Lower values between 100 to 300 render the text in a light format, while high values in the range of 400 - 900 result in boldness.</p>
-<p>Please note that setting the Weight will give it priority over the <fl>FontStyle</fl> value.</p>
+<p>The Weight is equivalent to the CSS <code>font-weight</code> value, ranging from 1 to 1000.  The default of 400 renders text in its normal state.  Lower values such as 300 render light text, while higher values such as 700 render bold text.</p>
+<p>For variable fonts, the Weight sets the <code>wght</code> axis and takes precedence over the weight of a named <fl>FontStyle</fl>.  A <code>weight</code> descriptor in the <fl>FontStyle</fl> takes precedence over the Weight.  For other fonts, the Weight is used to choose the nearest matching file of the family.</p>
+<p>A Weight of 400 is treated as unset, and therefore cannot reset the weight of a named style such as <code>Bold</code>.</p>
       </description>
     </field>
 

@@ -893,12 +893,16 @@ GetFontHandle: Returns a cached handle for a font family, style and size.
 For a given font family, style and size, this function returns a `Handle` that can be passed to font querying
 functions.
 
+The `Style` accepts the same style names and descriptors as the @VectorText.FontStyle field, e.g. `Bold` or
+`weight=Medium;width=Condensed`.  Invalid descriptors are logged and ignored rather than returning an error.  Style
+strings that resolve to the same variable font coordinates, such as `weight=700` and `Bold`, return the same handle.
+
 The handle is deterministic and permanent, remaining valid for the lifetime of the program.
 
 -INPUT-
 strview Family: The name of the font family to access.
-strview Style: The preferred style to choose from the family.  Use `Regular` or `NULL` for the default.
-int Weight: Equivalent to CSS font-weight; a value of 400 or 0 will equate to normal.
+strview Style: The preferred style name or style descriptors.  Use `Regular` or `NULL` for the default.
+int Weight: Equivalent to CSS font-weight, from 1 to 1000; a value of 400 or 0 is treated as unset.  A `weight` descriptor in the `Style` takes precedence.
 int Size: The em size of the font in pixels, equivalent to the VectorText FontSize.  Use `pt * 96 / 72` to convert from points.
 &ptr Handle: The resulting font handle is returned here.
 

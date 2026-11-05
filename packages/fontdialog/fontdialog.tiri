@@ -4,7 +4,7 @@
 Documentation is available in the Kotuku Wiki.
 --]]
 
-   import 'gui', 'gui/listview', 'gui/window', 'gui/button', 'config'
+   import 'gui', 'gui/listview', 'gui/window', 'gui/button', 'gui/slider', 'gui/checkbox', 'config'
    include 'display', 'font'
 
    namespace gui
@@ -12,7 +12,115 @@ Documentation is available in the Kotuku Wiki.
 
    gui.dialog ?= { }
 
-SIZES <const> = array<int> { 6, 8, 10, 12, 14, 18, 24, 30, 36, 42, 50, 70, 90, 100, 120 }
+MIN_SIZE <const> = 4
+MAX_SIZE <const> = 200
+SIZE_TICKS <const> = array<double> { 4, 12, 24, 48, 72, 100, 150, 200 }
+WIDTH_TICKS <const> = array<double> { 50, 62.5, 75, 87.5, 100, 112.5, 125, 150, 200 }
+
+-- Style keywords, in the normalised form used by the font engine (lower case, no spaces, hyphens or underscores).
+
+WEIGHT_KEYWORDS <const> = {
+   thin=100, hairline=100, extralight=200, ultralight=200, light=300, regular=400, normal=400, book=400, medium=500,
+   semibold=600, demibold=600, bold=700, extrabold=800, ultrabold=800, black=900, heavy=900, extrablack=950,
+   ultrablack=950
+}
+
+WIDTH_KEYWORDS <const> = {
+   ultracondensed=50, extracondensed=62.5, condensed=75, semicondensed=87.5, semiexpanded=112.5, expanded=125,
+   extraexpanded=150, ultraexpanded=200
+}
+
+-- Conventional names for the weights that have one, used to keep simple selections as plain style names.
+
+WEIGHT_NAMES <const> = {
+   [100]='Thin', [200]='Extra Light', [300]='Light', [400]='Regular', [500]='Medium', [600]='Semi Bold', [700]='Bold',
+   [800]='Extra Bold', [900]='Black'
+}
+
+NORMALISE <const> = r'[\s_\-]+'
+
+function normalise(Value:str!):str
+   return NORMALISE.replace(Value, '').lower()
+end
+
+-- Reduce a style name such as 'Semi Condensed Bold Italic' to its weight, width and italic traits.
+
+function nameTraits(Name:str!):<num, num, bool>
+   name = normalise(Name)
+   italic = false
+   for word in values(array<str> { 'italic', 'oblique' }) do
+      pos = name.find(word)
+      if pos then
+         name = name.sub(0, pos) .. name.sub(pos + #word)
+         italic = true
+      end
+   end
+
+   width = 100
+   match = ''
+   for keyword, value in WIDTH_KEYWORDS do
+      if (#keyword > #match) and name.find(keyword) then
+         match = keyword
+         width = value
+      end
+   end
+
+   if #match > 0 then
+      pos = name.find(match)
+      name = name.sub(0, pos) .. name.sub(pos + #match)
+   end
+
+   return WEIGHT_KEYWORDS[name] ?? 400, width, italic
+end
+
+-- Read the weight, width and italic traits of a style name or style descriptor string, e.g.
+-- 'weight=Medium;width=Condensed;italic=yes'.
+
+function styleTraits(Style:str!):<num, num, bool>
+   weight, width, italic = 400, 100, false
+   named = false
+   for segment in values(Style.split(';')) do
+      segment = segment.trim()
+      if #segment is 0 then continue end
+      eq = segment.find('=')
+      if not eq then
+         if not named then
+            named = true
+            weight, width, italic = nameTraits(segment)
+         end
+         continue
+      end
+
+      key   = normalise(segment.sub(0, eq))
+      value = segment.sub(eq + 1).trim()
+      if key is 'weight' then
+         weight = tonumber(value) ?? WEIGHT_KEYWORDS[normalise(value)] ?? weight
+      elseif key is 'width' then
+         if value.endsWith('%') then value = value.sub(0, -1) end
+         width = tonumber(value) ?? WIDTH_KEYWORDS[normalise(value)] ?? ((normalise(value) is 'normal') ? 100 : width)
+      elseif key is 'italic' then
+         italic = normalise(value) in array<str> { 'yes', 'true', 'on', '1' }
+      end
+   end
+   return weight, width, italic
+end
+
+-- Build a style string from traits.  Selections that have a conventional name, e.g. 'Semi Bold Italic', are returned
+-- as that name so that they remain compatible with clients that only understand style names.
+
+function composeStyle(Weight:num!, Width:num!, Italic:bool):str
+   name = WEIGHT_NAMES[Weight]
+   if name and (Width is 100) then
+      if not Italic then return name end
+      return (name is 'Regular') ? 'Italic' : name .. ' Italic'
+   end
+
+   parts = array<str>
+   if Weight != 400 then parts.push(f'weight={Weight}') end
+   if Width != 100 then parts.push(f'width={Width}%') end
+   if Italic then parts.push('italic=yes') end
+   return (#parts > 0) ? parts.concat(';') : 'Regular'
+end
 
 gui.dialog.font = function(Options)
    self = entity { -- Public interface
@@ -35,7 +143,8 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.
 ]]
 
-   local vwSize, vwStyle, vwFace
+   local vwFace
+   local syncing = false -- True while sliders are updated by the dialog rather than the user
    local completing = false
    local closed = false
    local ready = false
@@ -131,31 +240,75 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       &prvFonts = resolve(gui.fontList)
    end
 
-   function showFontSizes(List)
-      sizes = array<table> { }
-      for i in {0 to #List} do
-         sizes.push({ id=List[i], name=List[i] })
-      end
-      vwSize.loadItems(sizes)
+   -- Resolve the face of a font list entry, following aliases.
+
+   function fontEntry(Face:str!):table
+      font = &prvFonts[Face]
+      if font?.alias then font = &prvFonts[font.alias] end
+      return font
    end
 
-   -- Refresh the style list for the selected face
-
-   function showStyles(Face)
-      styles = array<table> { }
-      if &prvFonts[Face].alias then Face = &prvFonts[Face].alias end
-      for v in values(&prvFonts[Face].styles) do
-         styles.push({ id=v, name=v })
-      end
-      vwStyle.loadItems(styles)
+   function updateStyle()
+      &style = composeStyle(&weight, &width, &italic)
+      refreshExample()
    end
 
-   function highlightSize(Size)
-      Size ?! return
-      vwSize.deselectAll()
-      vwSize.selectItems(function(Item)
-         if Item.id is Size then return true end
-      end)
+   -- Bitmap fonts must use an available size, preferring the largest not above the request.
+
+   function nearestFixedSize(Sizes:array<double>, Size:num):num
+      selected = Sizes[0]
+      for size in values(Sizes) do
+         if size <= Size and (selected > Size or size > selected) then
+            selected = size
+         elseif selected > Size and size < selected then
+            selected = size
+         end
+      end
+      return selected
+   end
+
+   -- Configure the sliders and italic option for the selected face.
+
+   function configureControls()
+      font = fontEntry(&face)
+      syncing = true
+      defer syncing = false end
+
+      if font?.sizes and (not font.scalable) and (#font.sizes > 0) then
+         sizes = array<double>
+         for size in values(font.sizes) do sizes.push(size) end
+         sizes.sort()
+         &pointSize = nearestFixedSize(sizes, &pointSize)
+         if sizes.first() < sizes.last() then
+            &sizeSlider.setRange(sizes.first(), sizes.last())
+            &sizeSlider.enable()
+         else
+            &sizeSlider.disable()
+         end
+         &sizeSlider.step = 1
+         &sizeSlider.setTicks(sizes)
+         &prvFixedSizes = sizes
+      else
+         &sizeSlider.setRange(MIN_SIZE, MAX_SIZE)
+         &sizeSlider.step = 0.5
+         &sizeSlider.setTicks(SIZE_TICKS)
+         &sizeSlider.enable()
+         &prvFixedSizes = nil
+      end
+      &sizeSlider.setValue(&pointSize, true)
+
+      -- Width is only variable if the face has a wdth axis or the family has width styles.
+
+      has_width = font?.axes and ('wdth' in font.axes)
+      has_italic = false
+      for style in values(font?.styles ?? array<str>) do
+         lower = style.lower()
+         if lower.find('condensed') or lower.find('expanded') then has_width = true end
+         if lower.find('italic') or lower.find('oblique') then has_italic = true end
+      end
+
+      if has_width then &widthSlider.enable() else &widthSlider.disable() end
+      if has_italic then &italicBox.enable() else &italicBox.disable() end
    end
 
    using self do
@@ -178,6 +331,8 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       end
 
       &style = Options.style ?? &style
+      local weight, width, italic = styleTraits(&style)
+      self.{ weight = weight, width = width, italic = italic }
       if Options.colour is <str> then
          &colour = gui.strToRGB(Options.colour)
       elseif Options.colour is <table> then
@@ -269,55 +424,85 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
 
       refreshExample()
 
-      -- Font size selection
+      -- Font size, weight, width and italic controls, stacked above the footer
 
-      vwSize = gui.listView({
-         x          = &exampleVP.x - gui.sizing.widget.gap - gui.rpixel('90dp'),
-         yOffset    = footer,
-         height     = gui.rpixel('210dp'),
-         width      = gui.rpixel('90dp'),
-         target     = &viewport,
-         style      = 'LongList',
-         sensitive  = true,
-         showIcons  = false,
-         textAttrib = 'name',
-         events = {
-            itemSelected = function(View:table!, Reason:str!, Item:table!)
+      control_width = &exampleVP.x - gui.sizing.widget.gap - &window.margins.left
+      label_width = gui.rpixel('90dp')
+
+      &italicBox = gui.checkbox({
+         target  = &viewport,
+         x       = &window.margins.left,
+         yOffset = footer,
+         label   = 'Italic',
+         value   = &italic,
+         events  = {
+            activate = function()
                using self do
-                  selection = Item.name
-                  &pointSize = math.clamp(selection, 4, 400)
-                  processing.collect()
-                  refreshExample()
+                  &italic = &italicBox.value
+                  updateStyle()
                end
             end
          }
       })
 
-      showFontSizes(SIZES)
+      footer += &italicBox.viewport.height + gui.sizing.widget.gap
 
-      -- Font style selection
-
-      vwStyle = gui.listView({
-         x            = &window.margins.left,
-         yOffset      = footer,
-         height       = gui.rpixel('210dp'),
-         width        = vwSize.viewport.x - gui.sizing.widget.gap - &window.margins.left,
-         target       = &viewport,
-         sensitive    = true,
-         showIcons    = false,
-         textAttrib   = 'name',
-         events = {
-            itemSelected = function(View:table!, Reason:str!, Item:table!)
-               using self do
-                  &style = Item.name
-                  processing.collect()
-                  refreshExample()
+      function newSlider(Label:str!, Min:num!, Max:num!, Step:num!, Ticks:array<double>, Value:num!,
+         Activate:func!):table
+         local slider = gui.slider({
+            target     = &viewport,
+            label      = Label,
+            labelWidth = label_width,
+            valuePos   = 'in-centre',
+            min        = Min,
+            max        = Max,
+            step       = Step,
+            ticks      = Ticks,
+            value      = math.clamp(Value, Min, Max),
+            x          = &window.margins.left,
+            yOffset    = footer,
+            width      = control_width,
+            events     = {
+               activate = function(NewValue)
+                  if syncing then return end
+                  using self do Activate(NewValue) end
                end
-            end
-         }
-      })
+            }
+         })
+         footer += slider.viewport.height + gui.sizing.widget.gap
+         return slider
+      end
 
-      footer += vwStyle.viewport.height + gui.sizing.widget.gap
+      &widthSlider = newSlider('Width:', 50, 200, 0.5, WIDTH_TICKS, &width, function(Value)
+         &width = Value
+         updateStyle()
+      end)
+
+      &weightSlider = newSlider('Weight:', 100, 900, 10, array<double> { 100, 400, 700, 900 }, &weight,
+         function(Value)
+            &weight = Value
+            updateStyle()
+         end)
+
+      &sizeSlider = newSlider('Size:', MIN_SIZE, MAX_SIZE, 0.5, SIZE_TICKS, &pointSize, function(Value)
+         if &prvFixedSizes then
+            -- Snap to the nearest size that the bitmap font provides.
+            nearest = &prvFixedSizes[0]
+            for size in values(&prvFixedSizes) do
+               if math.abs(size - Value) < math.abs(nearest - Value) then nearest = size end
+            end
+            Value = nearest
+            if &sizeSlider.value != nearest then
+               syncing = true
+               &sizeSlider.setValue(nearest, true)
+               syncing = false
+            end
+         end
+         if &pointSize != Value then
+            &pointSize = Value
+            refreshExample()
+         end
+      end)
 
       -- Available font faces
 
@@ -335,56 +520,7 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
                   assert(&prvFonts[Item.name], f'Font "{Item.name}" not recognised.')
 
                   &face = Item.name
-
-                  showStyles(Item.name)
-
-                  -- Highlight the correct style, trying to keep the current setting if possible.
-
-                  if &style and &prvFonts[&face] then
-                     supported = false
-                     face = &face
-                     if &prvFonts[face].alias then face = &prvFonts[face].alias end
-
-                     for v in values(&prvFonts[face].styles) do
-                        if v is &style then
-                           supported = true
-                           break
-                        end
-                     end
-
-                     if not supported then &style = 'Regular' end
-                  else
-                     &style = 'Regular'
-                  end
-
-                  -- The callback runs in the view's context, so &style must be read beforehand.
-
-                  vwStyle.selectItems(function(Item)
-                     if Item.id is &style then return true end
-                  end)
-
-                  font = &prvFonts[Item.name]
-                  if font.alias then font = &prvFonts[font.alias] end
-
-                  sizes = font.sizes
-                  if font.scalable or (not sizes??) then
-                     sizes = SIZES
-                  else
-                     -- Bitmap fonts must use an available size, preferring the largest not above the request.
-                     selected_size = sizes[0]
-                     for size in values(sizes) do
-                        if size <= &pointSize and (selected_size > &pointSize or size > selected_size) then
-                           selected_size = size
-                        elseif selected_size > &pointSize and size < selected_size then
-                           selected_size = size
-                        end
-                     end
-                     &pointSize = selected_size
-                  end
-
-                  showFontSizes(sizes)
-
-                  highlightSize(&pointSize)
+                  configureControls()
                   refreshExample()
                end
             end
@@ -407,14 +543,6 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
       vwFace.selectItems(function(Item)
          if Item.id is (Options.face ?? 'Noto Sans') then return true end
       end)
-
-      vwStyle.deselectAll()
-
-      vwStyle.selectItems(function(Item)
-         if Item.id is &style then return true end
-      end)
-
-      highlightSize(&pointSize)
 
       &window.moveToFront()
       &window.show(true)

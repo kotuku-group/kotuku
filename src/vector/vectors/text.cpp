@@ -1257,12 +1257,54 @@ static ERR TEXT_SET_FontSize(extVectorText *Self, const std::string_view &Value)
 -FIELD-
 FontStyle: Determines font styling.
 
-Unique styles for a font can be selected through the FontStyle field.  Conventional font styles are `Bold`,
-`Bold Italic`, `Italic` and `Regular` (the default).  Because TrueType fonts can use any style name that the
-designer chooses such as `Thin`, `Narrow` or `Wide`, read `fonts:fonts.cfg` for a definitive list of available
-style names.
+The FontStyle selects a style from the font family.  It can be a style name, a list of style descriptors, or a style
+name followed by descriptors.  Descriptors are separated by `;` and take the form `key=value`.  Whitespace around
+each part is ignored.  Examples:
 
-Errors are not returned if the style name is invalid or unavailable.
+<pre>
+Bold Italic
+weight=Medium;width=ExtraCondensed
+Semi Bold;width=87.5%
+weight=550;slant=12;GRAD=-50
+italic=yes;weight=Light
+</pre>
+
+Conventional style names are `Regular` (the default), `Bold`, `Italic` and `Bold Italic`.  Fonts can use any style
+name that the designer chooses, such as `Thin` or `Condensed Bold`; read `fonts:fonts.cfg` for the styles that are
+installed.
+
+The following descriptors are supported.  Keys and keywords are case-insensitive, and spaces, hyphens and underscores
+in keywords are ignored, so `ExtraCondensed` and `extra-condensed` are equivalent.
+
+<list type="bullet">
+<li>`weight`: A number from 1 to 1000, or a keyword: `Thin` or `Hairline` (100), `ExtraLight` or `UltraLight` (200),
+`Light` (300), `Regular`, `Normal` or `Book` (400), `Medium` (500), `SemiBold` or `DemiBold` (600), `Bold` (700),
+`ExtraBold` or `UltraBold` (800), `Black` or `Heavy` (900), `ExtraBlack` or `UltraBlack` (950).  Sets the `wght`
+axis.</li>
+<li>`width`: A percentage such as `75%`, a plain number that is read as a percentage, or a keyword: `UltraCondensed`
+(50), `ExtraCondensed` (62.5), `Condensed` (75), `SemiCondensed` (87.5), `Normal` (100), `SemiExpanded` (112.5),
+`Expanded` (125), `ExtraExpanded` (150), `UltraExpanded` (200).  Sets the `wdth` axis.</li>
+<li>`italic`: `yes`, `no`, `true`, `false`, `on`, `off`, `1` or `0`.  Selects the italic file of the family, and sets
+the `ital` axis if the font has one.</li>
+<li>`slant`: An oblique angle in degrees, where positive values lean to the right as in CSS.  Sets the `slnt` axis to
+the negated value.</li>
+<li>`opsz`: The optical size, which is a number, `auto` or `none`.  The default, `auto`, sets the optical size to the
+font size in points.  `none` uses the value of the named style or font default.</li>
+</list>
+
+Any other four-character key is an OpenType axis tag, e.g. `GRAD=-50`.  Axis tags are case-sensitive.
+
+For variable fonts, the design coordinates are resolved in the following order, with later values taking precedence:
+the font defaults, the named style, the #Weight field, the descriptors listed above, and finally axis tags.  Values
+are clamped to the range of each axis, and axes that the font does not have are ignored.  Strings that resolve to the
+same coordinates share the same cached font, so `weight=Bold` and `Bold` are equivalent.
+
+For fonts that are not variable, the family's file that is the nearest match is chosen with the CSS font matching
+order of width, then italic, then weight.  For instance, `weight=SemiBold` on a family that has no semi-bold file
+resolves to `Bold`.  Axis tags are ignored and no synthetic styles are produced.
+
+Errors are not returned if a style name or descriptor is invalid or unavailable.  Invalid descriptors are reported as
+warnings in the log and otherwise ignored.
 
 *********************************************************************************************************************/
 
@@ -1872,11 +1914,14 @@ static ERR TEXT_GET_WrappedLines(extVectorText *Self, int *Value)
 -FIELD-
 Weight: Defines the level of boldness in the text.
 
-The weight value determines the level of boldness in the text.  A default value of 400 will render the text in its
-normal state.  Lower values between 100 to 300 render the text in a light format, while high values in the range of
-400 - 900 result in boldness.
+The Weight is equivalent to the CSS `font-weight` value, ranging from 1 to 1000.  The default of 400 renders text in
+its normal state.  Lower values such as 300 render light text, while higher values such as 700 render bold text.
 
-Please note that setting the Weight will give it priority over the #FontStyle value.
+For variable fonts, the Weight sets the `wght` axis and takes precedence over the weight of a named #FontStyle.  A
+`weight` descriptor in the #FontStyle takes precedence over the Weight.  For other fonts, the Weight is used to choose
+the nearest matching file of the family.
+
+A Weight of 400 is treated as unset, and therefore cannot reset the weight of a named style such as `Bold`.
 -END-
 *********************************************************************************************************************/
 
@@ -1888,10 +1933,11 @@ static ERR TEXT_GET_Weight(extVectorText *Self, int *Value)
 
 static ERR TEXT_SET_Weight(extVectorText *Self, int Value)
 {
-   if ((Value >= 100) and (Value <= 900)) {
+   if ((Value >= 1) and (Value <= 1000)) {
+      if (Self->txWeight IS Value) return ERR::Okay;
       Self->txWeight = Value;
-      reset_path(Self);
-      return ERR::Okay;
+      if (Self->initialised()) return reset_font(Self);
+      else return ERR::Okay;
    }
    else return ERR::OutOfRange;
 }

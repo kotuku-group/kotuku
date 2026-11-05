@@ -12,6 +12,7 @@ the FreeType home page at www.freetype.org.
 //#include "font.h"
 #include "idl.h"
 #include "text_coverage_cache.h"
+#include "font_style.h"
 
 JUMPTABLE_DISPLAY
 JUMPTABLE_CORE
