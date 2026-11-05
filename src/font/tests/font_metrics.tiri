@@ -12,7 +12,17 @@ A simple test program for confirming that our fonts and reported metrics values 
 
 glFontSize = 30
 local glViewport, glWindow, glTextY
-local glFace
+local glFace, glStyle
+local glFontList:table
+
+-- Returns the style to use for Face.  'Regular' is preferred, and is always used for aliases so that the alias's own
+-- Style is applied.  Families without a Regular style use the first style in their list.
+
+local function faceStyle(Face:str):str
+   local rec = glFontList[Face]
+   if (not rec) or rec.alias or ('Regular' in rec.styles) then return 'Regular' end
+   return rec.styles[0] ?? 'Regular'
+end
 
 -- Hinting overrides applied through SetFontHinting().  The override persists for the process, so the chosen mode is
 -- remembered per family and reselected in the list when the family is chosen again.
@@ -27,10 +37,13 @@ function setFont(Face, Size)
    if glSmallText then glSmallText.free() end
    if glKernText then glKernText.free() end
 
-   glFace = Face
-   local _, fh = mVec.GetFontHandle(Face, "Regular", 0, Size)
+   glFace  = Face
+   glStyle = faceStyle(Face)
+   local _, fh = mVec.GetFontHandle(Face, glStyle, 0, Size)
    metrics = struct.new('FontMetrics')
    check mVec.GetFontMetrics(fh, metrics)
+
+   print(f'Font: {Face}; Style: {glStyle}; Size: {Size}/{(Size * 72/96)}; Height: {metrics.height}; Ascent: {metrics.ascent}; Descent: {metrics.descent}; LineSpacing: {metrics.lineSpacing}')
 
    if not glInitialised then
       -- CAP-HEIGHT: YELLOW
@@ -61,12 +74,13 @@ function setFont(Face, Size)
    baseline = glTextY + Size
 
    global glText = glViewport.new('vectortext', {
-      x        = glWindow.margins.left,
-      y        = baseline,
-      face     = Face,
-      fontSize = Size,
-      fill     = 'rgb(0,0,0)',
-      string   = f'{Face}; ÄĆÃÊgy; Size: {Size}/{(Size * 72/96)}; Height: {metrics.height}; ' ..
+      x         = glWindow.margins.left,
+      y         = baseline,
+      face      = Face,
+      fontStyle = glStyle,
+      fontSize  = Size,
+      fill      = 'rgb(0,0,0)',
+      string    = f'{Face}; ÄĆÃÊgy; Size: {Size}/{(Size * 72/96)}; Height: {metrics.height}; ' ..
          f'Ascent: {metrics.ascent}; Descent: {metrics.descent}; LineSpacing: {metrics.lineSpacing};\n' ..
          'ÄĆÃÊ The quick brown Fox jumped Over the lazy Dog'
    })
@@ -88,12 +102,13 @@ function setFont(Face, Size)
    glAscent.y2 = glText.y - metrics.ascent
 
    global glSmallText = glViewport.new('vectortext', {
-      x        = glWindow.margins.left,
-      y        = glText.y + metrics.lineSpacing * 2,
-      face     = Face,
-      fontSize = '8pt',
-      fill     = 'rgb(0,0,0)',
-      string   = 'ÄĆÃÊ The quick brown Fox jumped Over the lazy Dog'
+      x         = glWindow.margins.left,
+      y         = glText.y + metrics.lineSpacing * 2,
+      face      = Face,
+      fontStyle = glStyle,
+      fontSize  = '8pt',
+      fill      = 'rgb(0,0,0)',
+      string    = 'ÄĆÃÊ The quick brown Fox jumped Over the lazy Dog'
    })
 
    -- Pairs that are kerned by most fonts.  Compare against the toggle to see the effect of the font's kerning.
@@ -102,6 +117,7 @@ function setFont(Face, Size)
       x         = glWindow.margins.left,
       y         = glText.y + metrics.lineSpacing * 3,
       face      = Face,
+      fontStyle = glStyle,
       fontSize  = Size,
       fill      = 'rgb(0,0,0)',
       textFlags = glKerning ? 0 : VTXF_NO_KERNING,
@@ -119,9 +135,9 @@ end
 
    y = 6
    items = array<table> { }
-   list = resolve(gui.fontList)
+   glFontList = resolve(gui.fontList)
 
-   for _, rec in list.sortByKeys() do
+   for _, rec in glFontList.sortByKeys() do
       if not rec.hidden then
          items.push({ label=rec.name })
       end
