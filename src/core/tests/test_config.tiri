@@ -14,8 +14,8 @@ Sort = 3
   [Courier Sans]
 Name = Courier Sans
 Scalable=Yes
-Scale:Bold    = fonts:truetype/Courier Prime Sans Bold.ttf
-Scale:Bold Italic = fonts:truetype/Courier Prime Sans Bold Italic.ttf
+Scale:Bold    = fonts:scalable/Courier Prime Sans Bold.ttf
+Scale:Bold Italic = fonts:scalable/Courier Prime Sans Bold Italic.ttf
 Styles = Bold,Bold Italic,Italic,Regular
 Sort = 2
 
