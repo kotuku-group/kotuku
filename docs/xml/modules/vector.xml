@@ -119,7 +119,8 @@
     </input>
     <description>
 <p>This function returns the pixel width of a font character.  The character is specified as a Unicode value in the <code>Char</code> parameter.  Kerning can also be returned for positioning the character against a preceding character.  Pass the preceding character in <code>KChar</code> and a <code>Kerning</code> pointer to receive the horizontal adjustment.  If kerning information is not required, set <code>KChar</code> to zero and <code>Kerning</code> to <code>NULL</code>.</p>
-<p>The font's glyph spacing value is not used in calculating the character width.</p>
+<p>The kerning value is the font's pair adjustment for the active style instance, scaled from font units without rounding.  It is typically negative and is zero for pairs that the font does not kern.</p>
+<p>For scalable fonts the width is the glyph's unhinted advance, which is fractional.  The font's glyph spacing value is not used in calculating the character width.</p>
     </description>
     <result type="DOUBLE">The pixel width of the character, or <code>0</code> if <code>FontHandle</code> is <code>NULL</code>.</result>
   </function>
@@ -734,7 +735,7 @@ follow a <code>url()</code> reference.</li>
     </input>
     <description>
 <p>This function calculates the pixel width of <code>String</code> for a known font.  Line-feeds are treated as line breaks, so for multi-line strings the width of the longest line is returned.</p>
-<p>For scalable fonts, kerning is included when computing the distance between glyphs.</p>
+<p>For scalable fonts, the pair kerning defined by the font is included when computing the distance between glyphs.  The result is fractional because the glyph advances and kerning are scaled from font units without rounding.  Kerning does not apply across a line-feed.  Fonts that have <code>Kerning = No</code> in <code>fonts:options.cfg</code> are not kerned.</p>
     </description>
     <result type="DOUBLE">The pixel width of the string, or <code>0</code> if <code>FontHandle</code> or <code>String</code> is <code>NULL</code>.</result>
   </function>

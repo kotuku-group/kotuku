@@ -6,20 +6,15 @@ Documentation is available in the Kotuku Wiki.
 
 @Package(name="gui/view", version="1.0")
 
-   import 'gui'
-   import 'gui/libview'
+   import 'gui', 'gui/libview'
 
    namespace gui
-
-VSPACING <const> = 2
-EDGE     <const> = 4 -- Whitespace around the page
 
 rx_datetime <const> = <{ regex.new([[^(\d{4}-\d{1,2}-\d{1,2})[\sT]?(.*)$]]) }>
 rx_date <const> = <{ regex.new([[^(\d+)-(\d+)-(\d+)$]]) }>
 rx_time <const> = <{ regex.new([[^(\d{2}):(\d{2}):?(\d{0,2})$]]) }>
 
-local LINE_HEIGHT:num, FONT_HEIGHT:num, LINE_HEIGHT:num, FONT_HEIGHT:num, MARGIN:num
-local ICON_OFFSET:num, LINE_OFFSET:num, LINE_HEIGHT:num
+local LINE_HEIGHT:num, FONT_HEIGHT:num, MARGIN:num, ICON_OFFSET:num, LINE_OFFSET:num, EDGE:num
 
 glIconSize = 16
 glCounter = 1
@@ -345,6 +340,7 @@ end
 -- Set correct item coordinates after a sort operation
 
 function rearrangeItems(View)
+   VSPACING <const> = gui.rpixel('2dp')
    View.zones = { }
    View._last_y = EDGE
    y = EDGE
@@ -593,6 +589,8 @@ gui.columnView = function(Options):table
       View.columns ?! return
       Items ?! return
 
+      VSPACING <const> = gui.rpixel('2dp')
+
       width = View.frame.width - EDGE - EDGE
       y = View._last_y
 
@@ -713,6 +711,7 @@ gui.columnView = function(Options):table
       LINE_HEIGHT = math.round(LINE_HEIGHT * 1.2)
       ICON_OFFSET = math.round((LINE_HEIGHT - glIconSize) * 0.5)
       LINE_OFFSET = math.round((LINE_HEIGHT + ascent) * 0.5) -- Baseline that centres capitals in the line
+      EDGE        = math.round(LINE_HEIGHT * .15)
 
       View._fontHeight = FONT_HEIGHT
       View._lineHeight = LINE_HEIGHT

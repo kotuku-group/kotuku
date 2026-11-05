@@ -14,9 +14,6 @@ Documentation is available in the Kotuku Wiki.
 
    namespace gui
 
-VSPACING <const> = 1
-EDGE     <const> = 4
-
 function isFinite(Value:any):bool
    return Value is <num> and Value > -math.huge and Value < math.huge
 end
@@ -64,6 +61,8 @@ gui.listView = function(Options:table!):table
 
       line_height = math.round(line_height)
       row_height  = Options.rowHeight ?? line_height
+
+      VSPACING <const> = gui.rpixel('2dp')
 
       View._metrics = {
          lineHeight = line_height,
@@ -172,7 +171,8 @@ gui.listView = function(Options:table!):table
       if not vectors.highlight then
          if Reason is 'deselected' then return end
          vectors.highlight = vectors.viewport.new('VectorRectangle', {
-            roundX = 4, roundY = 4, width = '100%', height = '100%', visibility = VIS_HIDDEN
+            roundX = gui.rpixel('6dp'), roundY = gui.rpixel('6dp'),
+            width = '100%', height = '100%', visibility = VIS_HIDDEN
          })
          vectors.highlight.acMoveToBack()
       end
@@ -276,6 +276,7 @@ gui.listView = function(Options:table!):table
 
    function layoutRows(View:table!)
       m      = View._metrics
+      EDGE   = math.round(m.lineHeight * .15)
       y      = EDGE
       widest = 0
 
@@ -336,6 +337,8 @@ gui.listView = function(Options:table!):table
    -- Creates the row viewport.  Built-in content is drawn immediately because it is measured for the layout.
 
    function createRow(View:table!, Item:table!)
+      EDGE <const> = math.round(View._metrics.lineHeight * .15)
+
       Item._vectors ?= { }
       Item.viewState = { selected=false, highlighted=false, focused=false, disabled=false }
 

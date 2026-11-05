@@ -20,6 +20,21 @@ Support for bitmap fonts is included.  This feature is implemented by drawing bi
 and then rendering that to the viewport as a rectangular path.  It is recommended that this feature is only used for
 fast `1:1` rendering without transforms.  The user is otherwise better served through the use of scalable fonts.
 
+Scalable fonts are laid out with unhinted glyph advances, which are fractional and are not rounded to the pixel grid.
+Hinting only affects the glyph outlines, so the width of a string scales linearly with its font size.
+
+Scalable fonts are kerned by default, using the pair kerning that the font defines in its OpenType `GPOS` table, or in a
+legacy `kern` table.  Kerning follows the font's variable instance, so a bold style can kern differently to a regular
+one.  Like the advances, it is computed from font units without rounding, so it remains accurate when the text is scaled
+by transforms or viewBoxes.  Kerning applies to every adjacent pair of characters within a line, including spaces, but
+not across line breaks.  Set `NO_KERNING` in #TextFlags to disable it, which is the equivalent of the SVG `font-kerning`
+property having a value of `none`.  A font can also be excluded by setting `Kerning = No` in its section of
+`fonts:options.cfg`.
+
+Only pair kerning is supported.  Contextual kerning, ligatures, mark positioning and complex script shaping are not
+performed.  Kerning lookups are taken from the font's Latin script definition if it has one, otherwise from its default
+script.
+
 -END-
 
 Some notes about font rendering:
@@ -326,15 +341,6 @@ freetype_font::~freetype_font() {
 
 //********************************************************************************************************************
 
-inline double get_kerning(FT_Face Face, int Glyph, int PrevGlyph)
-{
-   if ((not Glyph) or (not PrevGlyph)) return 0;
-
-   FT_Vector delta;
-   FT_Get_Kerning(Face, PrevGlyph, Glyph, FT_KERNING_DEFAULT, &delta);
-   return int26p6_to_dbl(delta.x);
-}
-
 inline void report_change(extVectorText *Self)
 {
    Self->txCursorChanged = true;
@@ -424,7 +430,7 @@ static WordExtent segment_extent(const char *String, VTW Mode, bool WordStart)
 
 //********************************************************************************************************************
 
-static int string_width(extVectorText *Self, const std::string_view &String)
+static double string_width(extVectorText *Self, const std::string_view &String)
 {
    const std::lock_guard lock(glFontMutex);
 
@@ -432,14 +438,16 @@ static int string_width(extVectorText *Self, const std::string_view &String)
 
    FT_Activate_Size(pt->ft_size);
 
-   int len        = 0;
-   int widest     = 0;
+   const bool kern = (Self->txFlags & VTXF::NO_KERNING) IS VTXF::NIL;
+   double len     = 0;
+   double widest  = 0;
    int prev_glyph = 0;
    int i = 0;
    while (i < std::ssize(String)) {
       if (String[i] IS '\n') {
          if (widest < len) widest = len;
          len = 0;
+         prev_glyph = 0; // Kerning does not apply across lines
          i++;
       }
       else {
@@ -447,7 +455,7 @@ static int string_width(extVectorText *Self, const std::string_view &String)
          auto charlen = get_utf8(String, unicode, i);
          auto &glyph  = pt->get_glyph(unicode);
          len += glyph.adv_x * Self->txLetterSpacing;
-         len += get_kerning(pt->font->face, glyph.glyph_index, prev_glyph);
+         if (kern) len += pt->kerning(prev_glyph, glyph.glyph_index);
          prev_glyph = glyph.glyph_index;
          i += charlen;
       }
@@ -1534,6 +1542,7 @@ static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
    constexpr auto input_flags = VTXF::EDITABLE|VTXF::SELECTABLE;
    const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
+   if (((previous_flags ^ Value) & VTXF::NO_KERNING) != VTXF::NIL) reset_path(Self);
    if ((Value & VTXF::NO_AUTO_OFFSET) != VTXF::NIL) {
       Self->txXOffset = 0;
       Self->txYOffset = 0;
@@ -1800,11 +1809,13 @@ static ERR TEXT_SET_TextLength(extVectorText *Self, double Value)
 TextWidth: The pixel width of the widest line in the #String field.
 
 This field will return the pixel width of the widest line in the #String field.  The result is not modified by
-transforms.
+transforms.  Kerning is included unless `NO_KERNING` is set in #TextFlags.  For scalable fonts the width is
+fractional and is not rounded, so it can be used to position adjacent text exactly.  Round the value up if a whole
+pixel width that contains the text is required.
 
 *********************************************************************************************************************/
 
-static ERR TEXT_GET_TextWidth(extVectorText *Self, int *Value)
+static ERR TEXT_GET_TextWidth(extVectorText *Self, double *Value)
 {
    if (not Self->initialised()) return ERR::NotInitialised;
 
@@ -1812,7 +1823,7 @@ static ERR TEXT_GET_TextWidth(extVectorText *Self, int *Value)
       if (auto error = reset_font(Self); error != ERR::Okay) return error;
    }
 
-   int width = 0;
+   double width = 0;
    for (auto &line : Self->txLines) {
       if (Self->txBitmapFont) {
          auto w = fnt::StringWidth(Self->txBitmapFont, line, -1);
@@ -2975,7 +2986,7 @@ static const FieldArray clTextFields[] = {
    { "ShapeSubtract", FDF_VIRTUAL|FDF_OBJECTID|FDF_RW|FDF_PURE, TEXT_GET_ShapeSubtract, TEXT_SET_ShapeSubtract, CLASSID::VECTOR },
    { "TextLength",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_TextLength, TEXT_SET_TextLength },
    { "TextFlags",     FDF_VIRTUAL|FDF_INTFLAGS|FDF_RW|FDF_PURE, TEXT_GET_Flags, TEXT_SET_Flags, &clVectorTextVTXF },
-   { "TextWidth",     FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_TextWidth },
+   { "TextWidth",     FDF_VIRTUAL|FDF_DOUBLE|FDF_R, TEXT_GET_TextWidth },
    { "StartOffset",   FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_StartOffset, TEXT_SET_StartOffset },
    { "Spacing",       FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_Spacing, TEXT_SET_Spacing },
    { "Font",          FDF_VIRTUAL|FDF_OBJECT|FDF_I, nullptr, TEXT_SET_Font },

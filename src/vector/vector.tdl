@@ -175,7 +175,8 @@ module({ name='Vector', copyright='Paul Manias © 2010-2026', version=1.0, times
     "SECRET: Hide all characters from the UI by using generic symbols in place of glyphs.",
     "RASTER: Rasterise glyphs to a texture cache for very fast rendering.  This feature is not compatible with scalable graphics conventions.",
     "SELECTABLE: Allow mouse and keyboard selection and copying without user editing or a visible caret.",
-    "NO_AUTO_OFFSET: Leave text scrolling to its container; disables automatic cursor offsets.")
+    "NO_AUTO_OFFSET: Leave text scrolling to its container; disables automatic cursor offsets.",
+    "NO_KERNING: Disable the pair kerning defined by the font.  Equivalent to setting the CSS font-kerning property to `none`.")
 
   flags("VMF", { comment="Guide path flags" },
     "STRETCH: Applicable when used on @VectorText, the stretch option converts glyph outlines into paths, and then all end points and control points will be adjusted to be along the perpendicular vectors from the path, thereby stretching and possibly warping the glyphs.  With this approach, connected glyphs, such as in cursive scripts, will maintain their connections.",

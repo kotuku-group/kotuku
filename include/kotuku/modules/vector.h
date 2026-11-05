@@ -332,6 +332,7 @@ enum class VTXF : uint32_t {
    RASTER = 0x00000200,
    SELECTABLE = 0x00000400,
    NO_AUTO_OFFSET = 0x00000800,
+   NO_KERNING = 0x00001000,
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(VTXF)
@@ -4624,7 +4625,7 @@ class objVectorText : public objVector {
       return field->GetValue(this, &Value);
    }
 
-   inline ERR getTextWidth(int &Value) noexcept {
+   inline ERR getTextWidth(double &Value) noexcept {
       auto field = &this->Class->Dictionary[80];
       SetObjectContext(this, field, AC::NIL);
       auto error = field->GetValue(this, &Value);

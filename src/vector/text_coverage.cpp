@@ -109,10 +109,11 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
          uint32_t unicode;
          i += get_utf8(String, unicode, i);
          auto &glyph = Font->get_glyph(unicode);
-         double kx, ky;
-         get_kerning_xy(Font->font->face, glyph.glyph_index, previous, kx, ky);
-         pen_x += kx;
-         const double origin_x = X + pen_x;
+         auto adjustment = Font->positioning(previous, glyph.glyph_index);
+         pen_x += adjustment.first_advance;
+         const double placement = adjustment.second_placement +
+            Font->first_placement(glyph.glyph_index, String.substr(i));
+         const double origin_x = X + pen_x + placement;
          const double origin_y = Y + pen_y;
          if ((std::abs(origin_x) > glTextOriginLimit) or (std::abs(origin_y) > glTextOriginLimit) or
              (origin_x * 4 != std::round(origin_x * 4)) or (origin_y != std::floor(origin_y))) return false;
@@ -149,8 +150,8 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
             right_edge = std::max(right_edge, right);
             run.push_back({ std::move(mask), x, y });
          }
-         pen_x += glyph.adv_x;
-         pen_y += glyph.adv_y + ky;
+         pen_x += glyph.adv_x + adjustment.second_advance;
+         pen_y += glyph.adv_y;
          previous = glyph.glyph_index;
       }
    }

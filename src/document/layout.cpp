@@ -94,9 +94,9 @@ private:
       double left_margin = 0;
       int paragraph_bottom = 0;
       SEGINDEX line_seg_start = 0;
-      int word_width = 0;
+      double word_width = 0;
       int line_count = 0;
-      int16_t space_width = 0;
+      double space_width = 0;
       bool no_wrap = false;
       bool cursor_drawn = false;
       bool edit_mode = false;
@@ -132,9 +132,9 @@ private:
    double m_left_margin = 0;
    int m_paragraph_bottom = 0;   // Bottom Y coordinate of the current paragraph; defined on paragraph end.
    SEGINDEX m_line_seg_start = 0; // Set to the starting segment of a new line.  Resets on end_line() or wordwrap.  Used for ensuring that all distinct entries on the line use the same line height
-   int m_word_width   = 0;       // Pixel width of the current word
+   double m_word_width = 0;      // Pixel width of the current word
    int m_line_count   = 0;       // Increments at every line-end or word-wrap
-   int16_t m_space_width  = 0;       // Caches the pixel width of a single space in the current font.
+   double m_space_width = 0;     // Caches the pixel width of a single space in the current font.
    bool m_no_wrap      = false;   // Set to true when word-wrap is disabled.
    bool m_cursor_drawn = false;   // Set to true when the cursor has been drawn during scene graph creation.
    bool m_edit_mode    = false;   // Set to true when inside an area that allows user editing of the content.
@@ -348,7 +348,7 @@ private:
    void lay_row_end(bc_table *);
    TE   lay_table_end(bc_table &, double, double, double &, double &);
    WRAP lay_text();
-   int compute_word_width(const std::string &, const word_token &, int, int &);
+   double compute_word_width(const std::string &, const word_token &, int, int &);
 
    void apply_style(bc_font &);
    double calc_page_height();
@@ -832,18 +832,18 @@ void layout::lay_font_end()
 }
 
 //********************************************************************************************************************
-// Compute the pixel width of a word token by summing glyph advances with kerning.  Width is accumulated using the
-// same integer truncation semantics as the original per-glyph `m_word_width += glyph_advance(...)` path so cached
-// words preserve existing wrap points.  The InitKern parameter supports cross-text word continuation where the
+// Compute the pixel width of a word token by summing glyph advances with kerning.  Scalable fonts have fractional
+// advances, so the width must not be truncated; doing so would understate the rendered width of the word and allow
+// text to run past the wrap edge.  The InitKern parameter supports cross-text word continuation where the
 // previous character affects the first glyph's kerning.  LastChar receives the last unicode codepoint in the token for
 // subsequent kerning.
 //
 // NOTE: Bear in mind that the first word in a TEXT string could be a direct continuation of a previous TEXT word.
 // This can occur if the font colour is changed mid-word for example.
 
-int layout::compute_word_width(const std::string &Str, const word_token &Token, int InitKern, int &LastChar)
+double layout::compute_word_width(const std::string &Str, const word_token &Token, int InitKern, int &LastChar)
 {
-   int width = 0;
+   double width = 0;
    auto handle = m_font->handle;
    int kern = InitKern;
    for (unsigned i = Token.start; i < Token.stop; ) {
@@ -923,7 +923,7 @@ WRAP layout::lay_text()
             else {
                auto w = compute_word_width(str, tok, 0, last_char);
                if (w > MAX_WORD_TOKEN_WIDTH) {
-                  log.warning("Word width %d exceeds the legal limit of %d pixels.", w, MAX_WORD_TOKEN_WIDTH);
+                  log.warning("Word width %.0f exceeds the legal limit of %d pixels.", w, MAX_WORD_TOKEN_WIDTH);
                   Self->Error = ERR::InvalidData;
                   return WRAP::DO_NOTHING;
                }
@@ -939,7 +939,7 @@ WRAP layout::lay_text()
 
             auto w = compute_word_width(str, tok, m_kernchar, last_char);
             if (w > MAX_WORD_TOKEN_WIDTH) {
-               log.warning("Word width %d exceeds the legal limit of %d pixels.", w, MAX_WORD_TOKEN_WIDTH);
+               log.warning("Word width %.0f exceeds the legal limit of %d pixels.", w, MAX_WORD_TOKEN_WIDTH);
                Self->Error = ERR::InvalidData;
                return WRAP::DO_NOTHING;
             }
@@ -948,7 +948,7 @@ WRAP layout::lay_text()
          }
 
          if (m_word_width > MAX_WORD_TOKEN_WIDTH) {
-            log.warning("Word width %d exceeds the legal limit of %d pixels.", m_word_width, MAX_WORD_TOKEN_WIDTH);
+            log.warning("Word width %.0f exceeds the legal limit of %d pixels.", m_word_width, MAX_WORD_TOKEN_WIDTH);
             Self->Error = ERR::InvalidData;
             return WRAP::DO_NOTHING;
          }
@@ -1757,7 +1757,7 @@ extend_page:
          }
 
          if (set_segment_now) {
-            DLAYOUT("Setting line at code '%s', index %d, line.x: %g, m_word_width: %d",
+            DLAYOUT("Setting line at code '%s', index %d, line.x: %g, m_word_width: %g",
                std::string(strCodes[int(m_stream[0][idx].code)]).c_str(), m_line.index.index, m_line.x, m_word_width);
             finish_segment();
             new_segment(m_line.index, stream_char(idx), m_cursor_y, m_cursor_x - m_line.x, m_align_edge - m_line.x);
@@ -1798,7 +1798,7 @@ extend_page:
       if (idx >= INDEX(m_stream->size())) break;
 
 #ifdef DBG_LAYOUT_ESCAPE
-      DLAYOUT("ESC_%s Indexes: %d-%d-%d, WordWidth: %d",
+      DLAYOUT("ESC_%s Indexes: %d-%d-%d, WordWidth: %g",
          BC_NAME(m_stream[0], idx).c_str(), m_line.index.index, idx, m_word_index.index, m_word_width);
 #endif
 

@@ -22,7 +22,10 @@
   &lt;textPath xlink:href=&quot;#myTextPath2&quot;/&gt;
 &lt;/text&gt;
 </pre>
-<p>Support for bitmap fonts is included.  This feature is implemented by drawing bitmap characters to an internal <class name="VectorImage">VectorImage</class> and then rendering that to the viewport as a rectangular path.  It is recommended that this feature is only used for fast <code>1:1</code> rendering without transforms.  The user is otherwise better served through the use of scalable fonts.</p></description>
+<p>Support for bitmap fonts is included.  This feature is implemented by drawing bitmap characters to an internal <class name="VectorImage">VectorImage</class> and then rendering that to the viewport as a rectangular path.  It is recommended that this feature is only used for fast <code>1:1</code> rendering without transforms.  The user is otherwise better served through the use of scalable fonts.</p>
+<p>Scalable fonts are laid out with unhinted glyph advances, which are fractional and are not rounded to the pixel grid. Hinting only affects the glyph outlines, so the width of a string scales linearly with its font size.</p>
+<p>Scalable fonts are kerned by default, using the pair kerning that the font defines in its OpenType <code>GPOS</code> table, or in a legacy <code>kern</code> table.  Kerning follows the font's variable instance, so a bold style can kern differently to a regular one.  Like the advances, it is computed from font units without rounding, so it remains accurate when the text is scaled by transforms or viewBoxes.  Kerning applies to every adjacent pair of characters within a line, including spaces, but not across line breaks.  Set <code>NO_KERNING</code> in <fl>TextFlags</fl> to disable it, which is the equivalent of the SVG <code>font-kerning</code> property having a value of <code>none</code>.  A font can also be excluded by setting <code>Kerning = No</code> in its section of <code>fonts:options.cfg</code>.</p>
+<p>Only pair kerning is supported.  Contextual kerning, ligatures, mark positioning and complex script shaping are not performed.  Kerning lookups are taken from the font's Latin script definition if it has one, otherwise from its default script.</p></description>
     <source>
       <file path="vectors/">text.cpp</file>
     </source>
@@ -469,9 +472,9 @@
       <name>TextWidth</name>
       <comment>The pixel width of the widest line in the <fl>String</fl> field.</comment>
       <access read="G">Get</access>
-      <type>INT</type>
+      <type>DOUBLE</type>
       <description>
-<p>This field will return the pixel width of the widest line in the <fl>String</fl> field.  The result is not modified by transforms.</p>
+<p>This field will return the pixel width of the widest line in the <fl>String</fl> field.  The result is not modified by transforms.  Kerning is included unless <code>NO_KERNING</code> is set in <fl>TextFlags</fl>.  For scalable fonts the width is fractional and is not rounded, so it can be used to position adjacent text exactly.  Round the value up if a whole pixel width that contains the text is required.</p>
       </description>
     </field>
 
@@ -573,6 +576,7 @@
       <const name="EDITABLE">Allow user editing and selection of the text if the nearest viewport has the focus.  Implies SELECTABLE.</const>
       <const name="LINE_THROUGH">Enable a strike-through line in the text.</const>
       <const name="NO_AUTO_OFFSET">Leave text scrolling to its container; disables automatic cursor offsets.</const>
+      <const name="NO_KERNING">Disable the pair kerning defined by the font.  Equivalent to setting the CSS font-kerning property to <code>none</code>.</const>
       <const name="NO_SYS_KEYS">Disables support for system-keys that enable common key combinations such as Ctrl-C, Ctrl-X etc.</const>
       <const name="OVERLINE">Enable overlining of the text.</const>
       <const name="OVERWRITE">Turns on overwrite mode (if off, insert mode is enabled).</const>

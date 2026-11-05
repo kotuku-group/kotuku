@@ -145,6 +145,7 @@ struct svgState {
    double  m_fill_opacity;    // -1 if undefined
    double  m_stop_opacity;    // -1 if undefined
    int     m_font_weight;     // 0 if undefined
+   int     m_font_kerning = -1; // 1 if kerning is enabled, 0 if disabled, -1 if undefined
    RQ      m_path_quality;    // RQ::AUTO default
    VLJ     m_line_join;
    VLC     m_line_cap;
@@ -377,6 +378,7 @@ static constexpr auto SVF_flood_opacity       = strhash("flood-opacity");
 static constexpr auto SVF_focalPoint          = strhash("focalPoint");
 static constexpr auto SVF_font                = strhash("font");
 static constexpr auto SVF_font_family         = strhash("font-family");
+static constexpr auto SVF_font_kerning        = strhash("font-kerning");
 static constexpr auto SVF_font_size           = strhash("font-size");
 static constexpr auto SVF_font_size_adjust    = strhash("font-size-adjust");
 static constexpr auto SVF_font_stretch        = strhash("font-stretch");
@@ -407,6 +409,7 @@ static constexpr auto SVF_image_rendering     = strhash("image-rendering");
 static constexpr auto SVF_in                  = strhash("in");
 static constexpr auto SVF_in2                 = strhash("in2");
 static constexpr auto SVF_inherit             = strhash("inherit");
+static constexpr auto SVF_auto                = strhash("auto");
 static constexpr auto SVF_intercept           = strhash("intercept");
 static constexpr auto SVF_invert              = strhash("invert");
 static constexpr auto SVF_invertRGB           = strhash("invertRGB");
