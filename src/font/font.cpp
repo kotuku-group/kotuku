@@ -34,6 +34,9 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include FT_FREETYPE_H
 #include FT_MULTIPLE_MASTERS_H
 #include FT_SFNT_NAMES_H
+#include FT_TRUETYPE_TABLES_H
+#include FT_TRUETYPE_TAGS_H
+#include FT_OUTLINE_H
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
@@ -44,6 +47,10 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include <kotuku/modules/module.h>
 
 #include <sstream>
+#include <array>
+#include <cfloat>
+#include <set>
+#include <span>
 #include <kotuku/strings.hpp>
 #include <kotuku/font_traits.hpp>
 #include "../link/unicode.h"
@@ -84,12 +91,90 @@ static OBJECTPTR clFont = nullptr;
 static OBJECTPTR modDisplay = nullptr;
 static FT_Library glFTLibrary = nullptr;
 
+// Character sets that the font database reports coverage for.  Each set lists the inclusive ranges of its assigned
+// code points, so that a font covering every character of a set scores 100%.  The ids are written to the Coverage
+// key of fonts.cfg and form part of the database format.
+
+struct unicode_range { uint32_t first, last; };
+
+static constexpr unicode_range glBasicLatin[]   = { { 0x20, 0x7e } };
+static constexpr unicode_range glLatin1[]       = { { 0xa0, 0xff } };
+static constexpr unicode_range glLatinExtA[]    = { { 0x100, 0x17f } };
+static constexpr unicode_range glLatinExtB[]    = { { 0x180, 0x24f } };
+static constexpr unicode_range glPasifika[]     = { // Macron vowels, the ʻokina and the combining macron
+   { 0x100, 0x101 }, { 0x112, 0x113 }, { 0x12a, 0x12b }, { 0x14c, 0x14d }, { 0x16a, 0x16b }, { 0x2bb, 0x2bb },
+   { 0x304, 0x304 }
+};
+static constexpr unicode_range glVietnamese[]   = { // Latin Extended Additional, plus Đ Ơ Ư, the tone marks and ₫
+   { 0x110, 0x111 }, { 0x1a0, 0x1a1 }, { 0x1af, 0x1b0 }, { 0x300, 0x301 }, { 0x303, 0x303 }, { 0x309, 0x309 },
+   { 0x323, 0x323 }, { 0x1ea0, 0x1ef9 }, { 0x20ab, 0x20ab }
+};
+static constexpr unicode_range glGreek[]        = {
+   { 0x370, 0x377 }, { 0x37a, 0x37f }, { 0x384, 0x38a }, { 0x38c, 0x38c }, { 0x38e, 0x3a1 }, { 0x3a3, 0x3ff }
+};
+static constexpr unicode_range glCyrillic[]     = { { 0x400, 0x4ff } };
+static constexpr unicode_range glIPA[]          = { { 0x250, 0x2af } };
+static constexpr unicode_range glArrowsMath[]   = { { 0x2190, 0x22ff } };
+static constexpr unicode_range glBoxDrawing[]   = { { 0x2500, 0x257f } };
+static constexpr unicode_range glEmoji[]        = {
+   { 0x1f300, 0x1f64f }, { 0x1f680, 0x1f6d7 }, { 0x1f6dc, 0x1f6ec }, { 0x1f6f0, 0x1f6fc }, { 0x1f900, 0x1f9ff }
+};
+static constexpr unicode_range glCJK[]          = { { 0x4e00, 0x9fff } };
+
+struct coverage_set {
+   std::string_view id;
+   std::span<const unicode_range> ranges;
+
+   constexpr int total() const {
+      int count = 0;
+      for (auto &range : ranges) count += int(range.last - range.first + 1);
+      return count;
+   }
+
+   constexpr bool contains(uint32_t Unicode) const {
+      for (auto &range : ranges) {
+         if ((Unicode >= range.first) and (Unicode <= range.last)) return true;
+      }
+      return false;
+   }
+};
+
+static constexpr coverage_set glCoverageSets[] = {
+   { "basic-latin", glBasicLatin }, { "latin-1", glLatin1 }, { "latin-ext-a", glLatinExtA },
+   { "latin-ext-b", glLatinExtB }, { "pasifika", glPasifika }, { "vietnamese", glVietnamese }, { "greek", glGreek },
+   { "cyrillic", glCyrillic }, { "ipa", glIPA }, { "arrows-math", glArrowsMath }, { "box-drawing", glBoxDrawing },
+   { "emoji", glEmoji }, { "cjk", glCJK }
+};
+
+constexpr int COVERAGE_SETS = int(std::size(glCoverageSets));
+
+// The range of a variable font axis, in design units.
+
+struct axis_range {
+   std::string tag;
+   double min, def, max;
+};
+
+// Descriptive information for the font database, gathered from each file of a family and merged by add_details().
+
+struct family_details {
+   std::string cls;                           // Classification: Serif, Sans, Mono, Script, Display or Symbol
+   std::vector<axis_range> axes;              // Variable font axes, in the order declared by the font
+   std::set<std::string> features;            // OpenType layout feature tags, e.g. 'liga', 'kern'
+   std::array<int, COVERAGE_SETS> coverage{}; // Count of the characters covered in each of glCoverageSets
+   int characters = 0;                        // Total count of mapped characters
+   bool regular = false;                      // True if cls was taken from an upright regular face
+   bool analysed = false;
+
+   void merge(const family_details &);
+};
+
 // Information extracted from a scalable font file.
 
 struct scalable_face {
    std::string family;
    std::vector<std::string> styles; // Style names provided by the file
-   std::string axes;                // Axis tags of a variable font, e.g. 'wght,wdth'
+   family_details details;          // Only populated on request
    bool variable = false;
 };
 
@@ -143,9 +228,10 @@ class extFont : public objFont {
 #include "font_bitmap.cpp"
 
 static ERR add_font_class(void);
-static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &);
-static void scan_scalable_folder(objConfig *);
-static void scan_fixed_folder(objConfig *);
+static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &, bool = false);
+static void scan_scalable_folder(objConfig *, std::map<std::string, family_details> &);
+static void scan_fixed_folder(objConfig *, std::map<std::string, family_details> &);
+static void write_family_details(objConfig *, const std::map<std::string, family_details> &);
 static ERR analyse_bmp_font(std::string_view, winfnt_header_fields *, std::string &, std::vector<uint16_t> &);
 static void string_size(extFont *, std::string_view, int, int, int *, int *);
 
@@ -736,6 +822,34 @@ location is specified in `Path`.
 
 Fonts registered with ~RegisterFont() are private to the process and are neither cleared nor saved by a refresh.
 
+Each family is recorded as a group, keyed by family name, in which each style name refers to the file that provides
+it.  The following keys describe the family as a whole:
+
+<types type="Key">
+<type name="Name">The family name.</type>
+<type name="Styles">A sorted CSV list of the family's style names.</type>
+<type name="Scalable">`Yes` if the family is an outline font.  Bitmap families omit this key.</type>
+<type name="Variable">`Yes` if the family is a variable font.</type>
+<type name="Points">Bitmap families only: a CSV list of the point sizes available.</type>
+<type name="Class">The family's classification: `Serif`, `Sans`, `Mono`, `Script`, `Display` or `Symbol`.  The class is
+read from the OS/2 PANOSE and family class data of outline fonts and the pitch and family field of bitmap fonts.  If an
+outline font does not declare a class, its serifs are measured on the capital I and T.  The key is omitted if the class
+cannot be determined.</type>
+<type name="Axes">Variable families only: a CSV list of axis tags, e.g. `wght,wdth`.</type>
+<type name="AxisRanges">Variable families only: the range of each axis as `tag:min:default:max`, e.g.
+`wght:100:400:900,wdth:62.5:100:100`.  The ranges of all files in the family are combined.</type>
+<type name="Features">A sorted CSV list of the OpenType layout features found in the GSUB and GPOS tables, e.g.
+`kern,liga,tnum`.  A legacy `kern` table is reported as `kern`.</type>
+<type name="Coverage">The percentage of each character set that is mapped by the family, as `id:percent`, e.g.
+`basic-latin:100,greek:89`.  Percentages are rounded down, so `100` indicates complete coverage, and a set with any
+coverage reports at least `1`.  Sets that have no coverage are omitted.  The set ids are `basic-latin`, `latin-1`,
+`latin-ext-a`, `latin-ext-b`, `pasifika` (macron vowels and the ʻokina), `vietnamese`, `greek`, `cyrillic`, `ipa`,
+`arrows-math`, `box-drawing`, `emoji` and `cjk`.</type>
+<type name="Characters">The count of characters mapped by the family's largest file.</type>
+</types>
+
+Bitmap fonts are treated as Latin-1 for coverage purposes, which matches how the Font class maps their characters.
+
 -INPUT-
 strview Path: Optional.  Overrides the default `fonts:fonts.cfg` location that the font database is saved to.
 
@@ -762,8 +876,10 @@ ERR RefreshFonts(const std::string_view &Path)
 
    if (auto error = acClear(glConfig); error != ERR::Okay) return error; // Clear out existing font information
 
-   scan_fixed_folder(glConfig);
-   scan_scalable_folder(glConfig);
+   std::map<std::string, family_details> details;
+   scan_fixed_folder(glConfig, details);
+   scan_scalable_folder(glConfig, details);
+   write_family_details(glConfig, details);
 
    if (auto error = glConfig->sortByKey("", false); error != ERR::Okay) return error; // Sort by font name.
 
@@ -1044,11 +1160,229 @@ static std::string decode_sfnt_name(const FT_SfntName &Name)
 }
 
 //********************************************************************************************************************
-// Analyse a scalable font file and return its family name and the style names that it provides.  FileName is used to
-// name the family if the file does not declare one.  The caller must hold the glConfig lock, which serialises use of
-// glFTLibrary.
+// Convert an SFNT tag to its four character string, e.g. 'wght'.
 
-static ERR analyse_scalable_font(const std::string &Path, std::string_view FileName, scalable_face &Face)
+static std::string tag_string(FT_ULong Tag)
+{
+   return std::string({ char(Tag >> 24), char((Tag >> 16) & 0xff), char((Tag >> 8) & 0xff), char(Tag & 0xff) });
+}
+
+//********************************************************************************************************************
+// Classify a face as Serif, Sans, Mono, Script, Display or Symbol from its OS/2 table.  PANOSE is preferred, with the
+// IBM family class as a fallback.  An empty result means that the font does not declare a classification.
+
+static std::string_view classify_face(FT_Face Face)
+{
+   if (FT_IS_FIXED_WIDTH(Face)) return "Mono";
+
+   auto os2 = (TT_OS2 *)FT_Get_Sfnt_Table(Face, FT_SFNT_OS2);
+   if ((not os2) or (os2->version IS 0xffff)) return { };
+
+   // PANOSE: https://monotype.github.io/panose/pan1.htm
+
+   auto &panose = os2->panose;
+   switch (panose[0]) { // Family kind
+      case 2: // Latin Text
+         if (panose[3] IS 9) return "Mono"; // Proportion: monospaced
+         if ((panose[1] >= 11) and (panose[1] <= 15)) return "Sans"; // Serif style: sans variants, flared, rounded
+         if ((panose[1] >= 2) and (panose[1] <= 10)) return "Serif";
+         break;
+      case 3: return "Script";  // Latin Hand Written
+      case 4: return "Display"; // Latin Decorative
+      case 5: return "Symbol";  // Latin Symbol
+   }
+
+   // IBM font family class: https://learn.microsoft.com/en-us/typography/opentype/spec/ibmfc
+
+   switch (os2->sFamilyClass >> 8) {
+      case 1: case 2: case 3: case 4: case 5: case 7: return "Serif";
+      case 8:  return "Sans";
+      case 9:  return "Display"; // Ornamentals
+      case 10: return "Script";
+      case 12: return "Symbol";
+   }
+
+   return { };
+}
+
+//********************************************************************************************************************
+// Test for a serif at the foot of a glyph's stem.  A serif glyph is considerably wider just above the baseline than at
+// the middle of its stem, while a sans glyph is a plain stem.  Slices are compared rather than the bounding box, so
+// that the slant of an italic does not affect the result.  Returns false if the glyph cannot be measured.
+
+static bool measure_foot(FT_Face Face, FT_ULong Char, bool &Serif)
+{
+   auto glyph = FT_Get_Char_Index(Face, Char);
+   if (not glyph) return false;
+   if (FT_Load_Glyph(Face, glyph, FT_LOAD_NO_SCALE|FT_LOAD_NO_HINTING|FT_LOAD_NO_BITMAP)) return false;
+   if (Face->glyph->format != FT_GLYPH_FORMAT_OUTLINE) return false;
+
+   auto &outline = Face->glyph->outline;
+   if (outline.n_points < 4) return false;
+
+   FT_BBox box;
+   FT_Outline_Get_CBox(&outline, &box);
+   if (box.yMax <= box.yMin) return false;
+
+   // Return the horizontal extent of the outline at height Y.  Control points are treated as polygon vertices, which
+   // is sufficient for the straight edges of a stem.
+
+   auto slice_width = [&outline](double Y) {
+      double left = DBL_MAX, right = -DBL_MAX;
+      int start = 0;
+      for (int c=0; c < outline.n_contours; c++) {
+         int end = outline.contours[c];
+         for (int i=start; i <= end; i++) {
+            auto &a = outline.points[i];
+            auto &b = outline.points[(i IS end) ? start : i + 1];
+            if ((a.y <= Y) != (b.y <= Y)) {
+               double x = a.x + ((Y - a.y) * double(b.x - a.x) / double(b.y - a.y));
+               left  = std::min(left, x);
+               right = std::max(right, x);
+            }
+         }
+         start = end + 1;
+      }
+      return (right > left) ? right - left : 0.0;
+   };
+
+   const double height = box.yMax - box.yMin;
+   const double stem = slice_width(box.yMin + (height * 0.5));
+   const double foot = slice_width(box.yMin + (height * 0.02));
+   if ((stem <= 0) or (foot <= 0)) return false;
+   Serif = foot / stem > 1.5;
+   return true;
+}
+
+//********************************************************************************************************************
+// Classify a face that does not declare a classification by measuring its capital I and T.  Both must have serifs,
+// as pixel and display faces often give only the I serifs to distinguish it from l.
+
+static std::string_view measure_serifs(FT_Face Face)
+{
+   bool serif_i, serif_t;
+   if (not measure_foot(Face, 'I', serif_i)) return { };
+   if (not measure_foot(Face, 'T', serif_t)) return { };
+   return (serif_i and serif_t) ? "Serif" : "Sans";
+}
+
+//********************************************************************************************************************
+// Add the feature tags of a GSUB or GPOS table to Features.  Only the table header and feature records are read, as
+// the layout tables of large fonts can be sizeable.
+
+static void read_layout_features(FT_Face Face, FT_ULong Table, std::set<std::string> &Features)
+{
+   auto read = [Face, Table](FT_Long Offset, std::span<FT_Byte> Buffer) {
+      FT_ULong length = Buffer.size();
+      return not FT_Load_Sfnt_Table(Face, Table, Offset, Buffer.data(), &length);
+   };
+
+   std::array<FT_Byte, 8> header;
+   if (not read(0, header)) return;
+
+   FT_Long list = (header[6] << 8) | header[7]; // FeatureList offset
+   if (not list) return;
+
+   std::array<FT_Byte, 2> count_bytes;
+   if (not read(list, count_bytes)) return;
+
+   const int count = (count_bytes[0] << 8) | count_bytes[1];
+   if (not count) return;
+
+   std::vector<FT_Byte> records(size_t(count) * 6); // Tag (4 bytes), Feature offset (2 bytes)
+   if (not read(list + 2, records)) return;
+
+   for (int i=0; i < count; i++) {
+      std::string tag((const char *)records.data() + (i * 6), 4);
+      if (std::all_of(tag.begin(), tag.end(), [](char C) { return (C >= 0x20) and (C < 0x7f); })) {
+         kt::rtrim(tag);
+         if (not tag.empty()) Features.insert(tag);
+      }
+   }
+}
+
+//********************************************************************************************************************
+// Gather the classification, variable axis ranges, layout features and character coverage of a face.
+
+static void analyse_face_details(FT_Face Face, family_details &Details)
+{
+   Details.analysed = true;
+   Details.cls      = classify_face(Face);
+   if (Details.cls.empty()) Details.cls = measure_serifs(Face);
+   Details.regular  = not (Face->style_flags & (FT_STYLE_FLAG_ITALIC|FT_STYLE_FLAG_BOLD));
+
+   if (FT_HAS_MULTIPLE_MASTERS(Face)) {
+      FT_MM_Var *mvar;
+      if (not FT_Get_MM_Var(Face, &mvar)) {
+         for (FT_UInt a=0; a < mvar->num_axis; a++) {
+            auto &axis = mvar->axis[a];
+            Details.axes.push_back({ tag_string(axis.tag), axis.minimum / 65536.0, axis.def / 65536.0,
+               axis.maximum / 65536.0 });
+         }
+         FT_Done_MM_Var(glFTLibrary, mvar);
+      }
+   }
+
+   read_layout_features(Face, TTAG_GSUB, Details.features);
+   read_layout_features(Face, TTAG_GPOS, Details.features);
+
+   FT_ULong kern_length = 0; // A legacy kern table provides kerning without a GPOS 'kern' feature
+   if ((not FT_Load_Sfnt_Table(Face, TTAG_kern, 0, nullptr, &kern_length)) and (kern_length > 0)) {
+      Details.features.insert("kern");
+   }
+
+   // Count the mapped characters of each coverage set.  FT_Get_Next_Char() walks the active charmap, which FreeType
+   // selects as a Unicode map where the font provides one.
+
+   if ((Face->charmap) and (Face->charmap->encoding IS FT_ENCODING_UNICODE)) {
+      FT_UInt glyph;
+      for (auto code = FT_Get_First_Char(Face, &glyph); glyph; code = FT_Get_Next_Char(Face, code, &glyph)) {
+         Details.characters++;
+         for (int i=0; i < COVERAGE_SETS; i++) {
+            if (glCoverageSets[i].contains(uint32_t(code))) Details.coverage[i]++;
+         }
+      }
+   }
+}
+
+//********************************************************************************************************************
+// Merge the details of another file of the same family.  Axis ranges, features and coverage are combined, while the
+// classification of an upright regular face takes precedence.
+
+void family_details::merge(const family_details &Other)
+{
+   if (not Other.analysed) return;
+
+   if ((not analysed) or (cls.empty()) or ((Other.regular) and (not regular) and (not Other.cls.empty()))) {
+      cls = Other.cls;
+      regular = Other.regular;
+   }
+
+   for (auto &other : Other.axes) {
+      auto it = std::find_if(axes.begin(), axes.end(), [&other](const axis_range &Axis) {
+         return Axis.tag IS other.tag;
+      });
+
+      if (it IS axes.end()) axes.push_back(other);
+      else {
+         it->min = std::min(it->min, other.min);
+         it->max = std::max(it->max, other.max);
+         if (Other.regular) it->def = other.def;
+      }
+   }
+
+   features.insert(Other.features.begin(), Other.features.end());
+   for (int i=0; i < COVERAGE_SETS; i++) coverage[i] = std::max(coverage[i], Other.coverage[i]);
+   characters = std::max(characters, Other.characters);
+   analysed = true;
+}
+
+//********************************************************************************************************************
+// Analyse a scalable font file and return its family name and the style names that it provides.  FileName is used to
+// name the family if the file does not declare one.  If Details is true, the descriptive information for the font
+// database is also gathered.  The caller must hold the glConfig lock, which serialises use of glFTLibrary.
+
+static ERR analyse_scalable_font(const std::string &Path, std::string_view FileName, scalable_face &Face, bool Details)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1102,14 +1436,6 @@ static ERR analyse_scalable_font(const std::string &Path, std::string_view FileN
                   }
                }
             }
-
-            std::ostringstream axes;
-            for (unsigned a=0; a < mvar->num_axis; a++) {
-               if (a > 0) axes << ',';
-               auto tag = (unsigned char *)&mvar->axis[a].tag;
-               axes << tag[3] << tag[2] << tag[1] << tag[0];
-            }
-            Face.axes = axes.str();
          }
 
          FT_Done_MM_Var(glFTLibrary, mvar);
@@ -1124,13 +1450,15 @@ static ERR analyse_scalable_font(const std::string &Path, std::string_view FileN
 
    if (Face.styles.empty()) Face.styles.push_back("Regular");
 
+   if (Details) analyse_face_details(ftface, Face.details);
+
    FT_Done_Face(ftface);
    return ERR::Okay;
 }
 
 //********************************************************************************************************************
 
-static void scan_scalable_folder(objConfig *Config)
+static void scan_scalable_folder(objConfig *Config, std::map<std::string, family_details> &Details)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1148,7 +1476,7 @@ static void scan_scalable_folder(objConfig *Config)
             sfpath.append(dir->Info->Name);
 
             scalable_face face;
-            if (analyse_scalable_font(sfpath, dir->Info->Name, face) != ERR::Okay) continue;
+            if (analyse_scalable_font(sfpath, dir->Info->Name, face, true) != ERR::Okay) continue;
 
             std::string path("fonts:scalable/");
             path.append(dir->Info->Name);
@@ -1157,7 +1485,7 @@ static void scan_scalable_folder(objConfig *Config)
             Config->write(face.family, "Scalable", "Yes");
             if (face.variable) Config->write(face.family, "Variable", "Yes");
             for (auto &style : face.styles) Config->write(face.family, style, path);
-            if (not face.axes.empty()) Config->write(face.family, "Axes", face.axes);
+            Details[face.family].merge(face.details);
          }
       }
       else log.warning("Failed to open the fonts:scalable/ directory.");
@@ -1166,7 +1494,7 @@ static void scan_scalable_folder(objConfig *Config)
 
 //********************************************************************************************************************
 
-static void scan_fixed_folder(objConfig *Config)
+static void scan_fixed_folder(objConfig *Config, std::map<std::string, family_details> &Details)
 {
    kt::Log log(__FUNCTION__);
 
@@ -1243,11 +1571,80 @@ static void scan_fixed_folder(objConfig *Config)
             }
 
             Config->write(gs, "Points", out.str());
+
+            // The classification is declared by the family bits of the pitch and family field, as defined for the
+            // Windows LOGFONT structure.  Bitmap fonts map their characters to Latin-1 for rendering.
+
+            family_details details;
+            details.analysed = true;
+            details.regular  = style IS FTF::NIL;
+            if ((header.pixel_width) or (not (header.pitch_and_family & 1))) details.cls = "Mono";
+            else switch (header.pitch_and_family & 0xf0) {
+               case 0x10: details.cls = "Serif"; break;   // FF_ROMAN
+               case 0x20: details.cls = "Sans"; break;    // FF_SWISS
+               case 0x30: details.cls = "Mono"; break;    // FF_MODERN
+               case 0x40: details.cls = "Script"; break;  // FF_SCRIPT
+               case 0x50: details.cls = "Display"; break; // FF_DECORATIVE
+            }
+
+            for (uint32_t code=header.first_char; code <= header.last_char; code++) {
+               details.characters++;
+               for (int i=0; i < COVERAGE_SETS; i++) {
+                  if (glCoverageSets[i].contains(code)) details.coverage[i]++;
+               }
+            }
+
+            Details[group].merge(details);
          }
          else log.warning("Failed to analyse %.*s", int(location.size()), location.data());
       }
    }
    else log.warning("Failed to scan directory fonts:fixed/");
+}
+
+//********************************************************************************************************************
+// Write the merged details of each family to the font database.  Coverage is expressed as a percentage of each set,
+// rounded down so that 100 always indicates full coverage.  Sets with no coverage are omitted.
+
+static void write_family_details(objConfig *Config, const std::map<std::string, family_details> &Details)
+{
+   for (auto &[family, details] : Details) {
+      if (not details.analysed) continue;
+
+      if (not details.cls.empty()) Config->write(family, "Class", details.cls);
+
+      if (not details.axes.empty()) {
+         std::ostringstream tags, ranges;
+         for (size_t a=0; a < details.axes.size(); a++) {
+            auto &axis = details.axes[a];
+            if (a) { tags << ','; ranges << ','; }
+            tags << axis.tag;
+            ranges << axis.tag << ':' << axis.min << ':' << axis.def << ':' << axis.max;
+         }
+         Config->write(family, "Axes", tags.str());
+         Config->write(family, "AxisRanges", ranges.str());
+      }
+
+      if (not details.features.empty()) {
+         std::ostringstream out;
+         for (auto it = details.features.begin(); it != details.features.end(); it++) {
+            if (it != details.features.begin()) out << ',';
+            out << *it;
+         }
+         Config->write(family, "Features", out.str());
+      }
+
+      std::ostringstream coverage;
+      for (int i=0; i < COVERAGE_SETS; i++) {
+         if (not details.coverage[i]) continue;
+         auto pct = std::max(1, (details.coverage[i] * 100) / glCoverageSets[i].total());
+         if (coverage.tellp() > 0) coverage << ',';
+         coverage << glCoverageSets[i].id << ':' << pct;
+      }
+      if (coverage.tellp() > 0) Config->write(family, "Coverage", coverage.str());
+
+      Config->write(family, "Characters", std::to_string(details.characters));
+   }
 }
 
 //********************************************************************************************************************

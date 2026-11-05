@@ -1,6 +1,8 @@
 -- $TIRI
 -- Flute tests for Font functionality
 
+   import 'config'
+
    module font as mFont
    module vector as mVec
 
@@ -25,6 +27,49 @@ end
 
    err, path, meta = mFont.SelectFont("Does Not Exist", "Regular")
    assert(err != ERR_Okay, "SelectFont() returned error " .. mSys.GetErrorMsg(err))
+end
+
+@Test function RefreshFontsDescribesFamilies()
+   path = 'temp:font_test_refresh.cfg'
+   defer mSys.DeleteFile(path) end
+   check mFont.RefreshFonts(path)
+   db = config.decode(io.readAll(path))
+
+   -- Classification from OS/2 data, from bitmap headers, and by measuring serifs where the font declares none.
+   -- Micro gives only its I serifs, so it must not be classed as a serif face.
+
+   expected = {
+      ['Noto Sans'] = 'Sans', ['Noto Serif'] = 'Serif', ['Inconsolata'] = 'Mono', ['Courier Prime'] = 'Mono',
+      ['Crimson Pro'] = 'Serif', ['Spectral'] = 'Serif', ['Micro'] = 'Sans', ['Speedy'] = 'Mono',
+      ['Veranda'] = 'Sans', ['Noto Emoji'] = 'Symbol'
+   }
+   for family, cls in expected do
+      assert(db[family], f'{family} is missing from the font database')
+      assert(db[family].Class is cls, f'{family} should be classed {cls}, got {db[family].Class}')
+   end
+
+   sans = db['Noto Sans']
+   assert(sans.Axes is 'wght,wdth', 'Axes must list the axis tags in font order')
+   assert(sans.AxisRanges is 'wght:100:400:900,wdth:62.5:100:100', f'Unexpected axis ranges {sans.AxisRanges}')
+
+   features = sans.Features.split(',')
+   for tag in values(array<str> { 'kern', 'liga', 'smcp', 'tnum' }) do
+      assert(tag in features, f'Noto Sans should list the {tag} feature')
+   end
+
+   coverage = { }
+   for entry in values(sans.Coverage.split(',')) do
+      parts = entry.split(':')
+      coverage[parts[0]] = tonumber(parts[1])
+   end
+   for _, id in array<str> { 'basic-latin', 'latin-1', 'pasifika', 'vietnamese', 'cyrillic' } do
+      assert(coverage[id] is 100, f'Noto Sans should fully cover {id}, got {coverage[id]}')
+   end
+   assert(not ('cjk' in coverage), 'Sets without coverage must be omitted')
+   assert(tonumber(sans.Characters) > 1000, 'Characters must count the mapped characters')
+
+   assert(db['Speedy'].Coverage is 'basic-latin:100,latin-1:100', 'Bitmap coverage must follow the Latin-1 range')
+   assert(not db['Speedy'].Features, 'Bitmap fonts have no layout features')
 end
 
 @Test function ResolveFamily()
