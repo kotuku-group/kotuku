@@ -20,10 +20,10 @@
   <rect fill="white" stroke="blue" stroke-width="2" x="0" y="0" width="100%" height="100%"/>
 
   <g enable-background="new" >
-    <text font-family="Roboto" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="90">AaBbCcDd radius 0</text>
-    <text font-family="Roboto" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="180" filter="url(#Op1)" >AaBbCcDd radius 0-3</text>
-    <text font-family="Roboto" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="270" filter="url(#Op2)" >AaBbCcDd radius 3-0</text>
-    <text font-family="Roboto" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="360" filter="url(#Op3)" >AaBbCcDd radius 3-3</text>
-    <text font-family="Roboto" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="450" filter="url(#Op4)" >AaBbCcDd radius 1-1</text>
+    <text font-family="Noto Sans" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="90">AaBbCcDd radius 0</text>
+    <text font-family="Noto Sans" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="180" filter="url(#Op1)" >AaBbCcDd radius 0-3</text>
+    <text font-family="Noto Sans" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="270" filter="url(#Op2)" >AaBbCcDd radius 3-0</text>
+    <text font-family="Noto Sans" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="360" filter="url(#Op3)" >AaBbCcDd radius 3-3</text>
+    <text font-family="Noto Sans" font-size="75" fill="none" stroke="black" stroke-width="6" x="50" y="450" filter="url(#Op4)" >AaBbCcDd radius 1-1</text>
   </g>
 </svg>

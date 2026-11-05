@@ -727,7 +727,8 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
 -FUNCTION-
 RefreshFonts: Refreshes the system font list with up-to-date font information.
 
-Scans the `fonts:` volume and rebuilds the font database.
+Scans the `fonts:` volume and rebuilds the font database.  The tailored options in `fonts:options.cfg`, such as
+family aliases and metric modifiers, are merged into the database again once the refresh is complete.
 
 Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style,
 metric and metadata information.  The font database is saved to `fonts:fonts.cfg` on completion, unless an alternative
@@ -795,9 +796,16 @@ ERR RefreshFonts(const std::string_view &Path)
 
    // Save the font configuration file
 
+   ERR error;
    objFile::create file = { fl::Path(Path.empty() ? "fonts:fonts.cfg" : Path), fl::Flags(FL::NEW|FL::WRITE) };
-   if (file.ok()) return glConfig->saveToObject(*file);
-   else return log.warning(ERR::OpenFile);
+   if (file.ok()) error = glConfig->saveToObject(*file);
+   else error = log.warning(ERR::OpenFile);
+
+   // Restore the tailored font options, e.g. aliases and metric modifiers.  They are merged after saving so that the
+   // saved file remains machine-generated.
+
+   glConfig->mergeFile("fonts:options.cfg");
+   return error;
 }
 
 /*********************************************************************************************************************

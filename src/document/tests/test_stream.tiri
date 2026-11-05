@@ -158,7 +158,8 @@ end
       'count(/extract/stream//font[not(@face) or not(@pixel-size) or not(@size) or not(@size-unit)])')
    assert(missing_font_attrs is 0, 'Every font must expose face, pixel-size, size, and size-unit')
 
-   varied_faces = xpathNum(xml, 'count(/extract/stream//font[@face="Courier Prime"])')
+   -- 'courier' resolves to the Courier alias of Courier Prime.  Alias names are retained so that their options apply.
+   varied_faces = xpathNum(xml, 'count(/extract/stream//font[@face="Courier"])')
    assert(varied_faces > 0, 'fonts.rpl must preserve the expected font face')
 
    large_fonts = xpathNum(xml, 'count(/extract/stream//font[@size="20" and @size-unit="px"])')

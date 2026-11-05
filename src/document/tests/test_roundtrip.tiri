@@ -687,7 +687,8 @@ end
    italic = xpathNum(xml, 'count(/extract/stream//font[@style="Italic"])')
    assert(italic > 0, 'fonts.rpl must contain italic font byte-codes')
 
-   -- Verify the Courier Prime face from the fixture
-   courier = xpathNum(xml, 'count(/extract/stream//font[@face="Courier Prime"])')
-   assert(courier > 0, 'fonts.rpl must preserve the Courier Prime font face')
+   -- Verify the Courier face from the fixture.  It is an alias of Courier Prime and the alias name is retained so
+   -- that its options apply.
+   courier = xpathNum(xml, 'count(/extract/stream//font[@face="Courier"])')
+   assert(courier > 0, 'fonts.rpl must preserve the Courier font face')
 end

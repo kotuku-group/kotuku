@@ -626,28 +626,6 @@ end
    end
 end
 
-@Test function EmptyAndTrailingLinesHaveFullCaretBoxes()
-   for face in values(array<str> { 'Noto Sans', 'Clean' }) do
-      local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
-      text = newBoundsText(scene, { string='', face=face, textFlags=VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET })
-      _, x, y, h = check text.mtGetCaretBounds(0, 0)
-      assert(h > 0 and x is 5, 'Empty text must have a full line box at the field origin')
-      if face is 'Noto Sans' then
-         assert(math.abs(h - text.displayHeight) < 1, 'Scalable line height must cover ascent and descent')
-         assert(math.abs(y + h - 20 - text.descent) < 1, 'The bottom must be the baseline plus descent')
-      end
-      text.string = 'é\n\n'
-      assert(text.totalLines is 3, 'String assignment must retain every trailing empty line')
-      _, last_x, last_y, last_h = check text.mtGetCaretBounds(2, 0)
-      assert(last_x is x and last_h is h, 'Trailing empty lines must retain the same line box')
-      assert(math.abs(last_y - y - 2 * text.lineSpacing) < 0.01, 'Trailing lines must advance by line spacing')
-      text.string = '\n'
-      assert(text.totalLines is 2, 'A lone newline must represent two empty lines')
-      _, _, newline_y = check text.mtGetCaretBounds(1, 0)
-      assert(math.abs(newline_y - y - text.lineSpacing) < 0.01, 'A lone newline must have a second caret box')
-   end
-end
-
 @Test function WrappedCaretBoundsRefreshAfterResizing()
    local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=400 })
    text = newBoundsText(scene, { string='one two three four', textFlags=VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET })

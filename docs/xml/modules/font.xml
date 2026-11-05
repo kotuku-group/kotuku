@@ -47,7 +47,7 @@
       <param type="STRVIEW" name="Path">Optional.  Overrides the default <code>fonts:fonts.cfg</code> location that the font database is saved to.</param>
     </input>
     <description>
-<p>Scans the <code>fonts:</code> volume and rebuilds the font database.</p>
+<p>Scans the <code>fonts:</code> volume and rebuilds the font database.  The tailored options in <code>fonts:options.cfg</code>, such as family aliases and metric modifiers, are merged into the database again once the refresh is complete.</p>
 <p>Refreshing fonts can take an extensive amount of time because each font file must be analysed for family, style, metric and metadata information.  The font database is saved to <code>fonts:fonts.cfg</code> on completion, unless an alternative location is specified in <code>Path</code>.</p>
 <p>Fonts registered with <function>RegisterFont</function> are private to the process and are neither cleared nor saved by a refresh.</p>
     </description>
