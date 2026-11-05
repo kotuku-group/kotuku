@@ -89,15 +89,15 @@ end
 
 -----------------------------------------------------------------------------------------------------------------------
 
-@Test(priority=1) function Alignment()   crcTest('Alignment', 'alignment.rpl', { [1024] = 0x6bb3aa2c, [600] = 0x7318285f, [400] = 0xb4ba945f }, 0.1) end
+@Test(priority=1) function Alignment()   crcTest('Alignment', 'alignment.rpl', { [1024] = 0x0f0a1c84, [600] = 0x73a216cd, [400] = 0x815fc798 }, 0.1) end
 @Test(priority=4) function Dialog()      crcTest('Dialog', 'dialog.rpl', 0xd1b391cf, 0.01) end
-@Test(priority=4) function Fonts()       crcTest('Fonts', 'fonts.rpl', 0x8bf9495f, 0.02) end
+@Test(priority=4) function Fonts()       crcTest('Fonts', 'fonts.rpl', 0x19be26c2, 0.02) end
 @Test(priority=4) function Images()      crcTest('Images', 'images.rpl', 0x37f310d4, 0.02) end
-@Test(priority=4) function Layout()      crcTest('Layout', 'layout.rpl', 0xef85c830, 0.03) end
+@Test(priority=4) function Layout()      crcTest('Layout', 'layout.rpl', 0xfca36903, 0.03) end
 @Test(priority=4) function Links1()      crcTest('Links1', 'links.rpl', 0xf40e5d14, 0.02) end
-@Test(priority=4) function Links2()      crcTest('Links2', 'links.rpl?font=Noto Sans&font-size=16', 0x19e9d71a, 0.03) end
-@Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0xa63db457, 0.05) end
-@Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0x19dcf266, 0.03) end
-@Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0x401fa40e, 0.05) end
-@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0xa9fb6c41, 0.1) end
+@Test(priority=4) function Links2()      crcTest('Links2', 'links.rpl?font=Noto Sans&font-size=16', 0xfad5fde0, 0.03) end
+@Test(priority=4) function Lists()       crcTest('Lists', 'lists.rpl', 0xca4c94f8, 0.05) end
+@Test(priority=4) function Logic()       crcTest('Logic', 'logic.rpl', 0xc506f870, 0.03) end
+@Test(priority=4) function Paragraphs()  crcTest('Paragraphs', 'paragraphs.rpl', 0xa4a0ba99, 0.05) end
+@Test(priority=2) function Tables()      crcTest('Tables', 'tables.rpl', 0x1581bbd0, 0.1) end
 --@Test(priority=3) function Widgets()     crcTest('Widgets', 'widgets.rpl', 0xbf1021d5, 0.01) end
