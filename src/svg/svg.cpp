@@ -33,6 +33,7 @@ https://www.w3.org/Graphics/SVG/Test/Overview.html
 #include <kotuku/modules/script.h>
 #include <kotuku/modules/module.h>
 #include <kotuku/strings.hpp>
+#include <kotuku/font_traits.hpp>
 #include "svg_def.c"
 #include <katana.h>
 #include "../link/base64.h"
@@ -138,6 +139,7 @@ struct svgState {
    std::string m_stroke;      // Empty by default
    std::string m_font_size;
    std::string m_font_family;
+   std::string m_font_style;  // VectorText FontStyle descriptors from font-stretch, font-style etc; empty if undefined
    std::string m_display;
    std::string m_visibility;
    double  m_font_size_px;    // Converted from m_font_size
@@ -378,6 +380,9 @@ static constexpr auto SVF_flood_opacity       = strhash("flood-opacity");
 static constexpr auto SVF_focalPoint          = strhash("focalPoint");
 static constexpr auto SVF_font                = strhash("font");
 static constexpr auto SVF_font_family         = strhash("font-family");
+static constexpr auto SVF_font_optical_sizing = strhash("font-optical-sizing");
+static constexpr auto SVF_font_variation_settings = strhash("font-variation-settings");
+static constexpr auto SVF_font_width          = strhash("font-width");
 static constexpr auto SVF_font_kerning        = strhash("font-kerning");
 static constexpr auto SVF_font_size           = strhash("font-size");
 static constexpr auto SVF_font_size_adjust    = strhash("font-size-adjust");

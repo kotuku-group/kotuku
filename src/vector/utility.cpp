@@ -477,24 +477,108 @@ double read_unit(CSTRING &Value, bool &Percent)
 
 //********************************************************************************************************************
 
-std::string weight_to_style(std::string_view Style, int Weight)
+// Axis tags used by the friendly style descriptors.
+
+static constexpr uint32_t TAG_WGHT = make_axis_tag("wght");
+static constexpr uint32_t TAG_WDTH = make_axis_tag("wdth");
+static constexpr uint32_t TAG_SLNT = make_axis_tag("slnt");
+static constexpr uint32_t TAG_ITAL = make_axis_tag("ital");
+static constexpr uint32_t TAG_OPSZ = make_axis_tag("opsz");
+
+// The style cache key for static faces.  The file is the style, so all requests that select it share one entry.
+
+static const std::string STATIC_STYLE_KEY("static");
+
+struct resolved_style {
+   std::string key;                      // Canonical coordinates, e.g. 'wdth=75;wght=550'
+   freetype_font::METRIC_GROUP coords;   // Design coordinates in face axis order
+   int auto_opsz = -1;                   // Index of the opsz axis if the optical size follows the font size
+};
+
+//********************************************************************************************************************
+// Resolves the design coordinates of a variable face for a parsed style.  The precedence, from lowest to highest, is:
+// the face defaults, the named instance, the Weight value, friendly descriptors and raw axis tags.  Values are
+// clamped to the axis range, and axes that the face does not have are ignored.
+//
+// The key is built from the coordinates at 16.16 precision, sorted by tag, so that equivalent style strings share a
+// cache entry.  An automatic optical size depends on the font size, so it is excluded from the key and applied by
+// the caller.
+
+static resolved_style resolve_style(kt::Log &Log, freetype_font &Font, const font_style_spec &Spec, int Weight)
 {
-   std::string weight_name;
+   std::vector<double> coords(Font.axes.size());
+   for (size_t i=0; i < Font.axes.size(); i++) coords[i] = Font.axes[i].def;
 
-   if (Weight >= 700) weight_name = "Extra Bold";
-   else if (Weight >= 500) weight_name = "Bold";
-   else if (Weight <= 200) weight_name = "Extra Light";
-   else if (Weight <= 300) weight_name = "Light";
+   auto set_axis = [&Font, &coords](uint32_t Tag, double Value) {
+      for (size_t i=0; i < Font.axes.size(); i++) {
+         if (Font.axes[i].tag IS Tag) {
+            coords[i] = std::clamp(Value, Font.axes[i].minimum, Font.axes[i].maximum);
+            return true;
+         }
+      }
+      return false;
+   };
 
-   if (iequals("Italic", Style)) {
-      if (weight_name.empty()) return "Italic";
-      else return weight_name + " Italic";
+   if (not Spec.named.empty()) {
+      if (auto it = Font.metrics.find(Spec.named); it != Font.metrics.end()) {
+         for (size_t i=0; (i < it->second.size()) and (i < coords.size()); i++) {
+            coords[i] = double(it->second[i]) / 65536.0;
+         }
+      }
+      else if (auto traits = kt::font_traits::name_traits(Spec.named); traits.recognised) {
+         // The face has no instance of this name, e.g. 'Bold' in an italic file that names it 'Bold Italic', so the
+         // coordinates are derived from the traits of the name.
+         set_axis(TAG_WGHT, traits.weight);
+         set_axis(TAG_WDTH, traits.width);
+         if (traits.italic) set_axis(TAG_ITAL, 1);
+      }
+      else Log.warning("Font metrics do not support style '%s'", Spec.named.c_str());
    }
-   else if (!weight_name.empty()) return weight_name;
-   else return "Regular";
+
+   if (Weight) set_axis(TAG_WGHT, Weight);
+
+   if (Spec.weight) set_axis(TAG_WGHT, *Spec.weight);
+   if (Spec.width) set_axis(TAG_WDTH, *Spec.width);
+   if (Spec.slant) set_axis(TAG_SLNT, -*Spec.slant); // CSS oblique angles lean right, slnt values lean left
+   if (Spec.italic) set_axis(TAG_ITAL, *Spec.italic ? 1 : 0);
+
+   for (auto & [ tag, value ] : Spec.tags) {
+      if (not set_axis(tag, value)) Log.trace("Face has no '%s' axis.", axis_tag_name(tag).c_str());
+   }
+
+   if (Spec.opsz_mode IS font_style_spec::OPSZ::FIXED) set_axis(TAG_OPSZ, Spec.opsz);
+
+   resolved_style result;
+   result.coords.resize(coords.size());
+   for (size_t i=0; i < coords.size(); i++) result.coords[i] = FT_Fixed(std::lround(coords[i] * 65536.0));
+
+   std::vector<std::pair<std::string, std::string>> entries;
+   for (size_t i=0; i < Font.axes.size(); i++) {
+      std::string value;
+      if ((Font.axes[i].tag IS TAG_OPSZ) and (Spec.opsz_mode IS font_style_spec::OPSZ::AUTO)) {
+         result.auto_opsz = int(i);
+         value = "auto";
+      }
+      else {
+         char buffer[32];
+         auto end = std::to_chars(buffer, buffer + sizeof(buffer), double(result.coords[i]) / 65536.0).ptr;
+         value.assign(buffer, end);
+      }
+      entries.emplace_back(axis_tag_name(Font.axes[i].tag), std::move(value));
+   }
+
+   std::sort(entries.begin(), entries.end());
+   for (auto & [ tag, value ] : entries) {
+      if (not result.key.empty()) result.key.push_back(';');
+      result.key.append(tag).append("=").append(value);
+   }
+
+   return result;
 }
 
 //********************************************************************************************************************
+// Returns a cached font handle for a family, style string and pixel size.  See the VectorText FontStyle field for
+// the style string syntax.  A Weight of 0 or 400 is treated as unset.
 
 ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int Weight, int Size, common_font **Handle)
 {
@@ -510,12 +594,16 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    std::string_view final_name;
    if (!fnt::ResolveFamilyName(family, &final_name)) family.assign(final_name);
 
+   auto spec = parse_font_style(Style);
+   for (auto &warning : spec.warnings) Log.warning("%s", warning.c_str());
+
+   if (Weight IS 400) Weight = 0;
+
+   // Preserve numeric traits until SelectFont() matches them against the family's actual styles.  The Weight
+   // argument seeds the request, while descriptors in Style retain their higher precedence.
+
    std::string style(Style);
-   if ((Weight) and (Weight != 400)) {
-      // If a weight value is specified and is anything other than "Normal"/400 then it will
-      // override the named Style completely.
-      style = weight_to_style(Style, Weight);
-   }
+   if (Weight) style = "weight=" + std::to_string(Weight) + ";" + style;
 
    const int point_size = std::round(Size * (72.0 / DISPLAY_DPI));
    std::string location;
@@ -560,10 +648,17 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
 
                freetype_font::METRIC_TABLE metrics;
                freetype_font::STYLE_CACHE styles;
+               std::vector<freetype_font::axis_info> axes;
 
                if (FT_HAS_MULTIPLE_MASTERS(ftface)) {
                   FT_MM_Var *mvar;
                   if (!FT_Get_MM_Var(ftface, &mvar)) {
+                     for (FT_UInt a=0; a < mvar->num_axis; a++) {
+                        auto &axis = mvar->axis[a];
+                        axes.push_back({ uint32_t(axis.tag), double(axis.minimum) / 65536.0,
+                           double(axis.def) / 65536.0, double(axis.maximum) / 65536.0 });
+                     }
+
                      FT_UInt index;
                      if (!FT_Get_Default_Named_Instance(ftface, &index)) {
                         auto name_table_size = FT_Get_Sfnt_Name_Count(ftface);
@@ -594,7 +689,6 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
                                        set.push_back(mvar->namedstyle[s].coords[m]);
                                     }
                                     metrics.try_emplace(buffer, set);
-                                    styles.try_emplace(buffer);
                                     break;
                                  }
                               }
@@ -604,43 +698,53 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
                      FT_Done_MM_Var(glFTLibrary, mvar);
                   }
                }
-               else styles.try_emplace(style);
 
                const auto family_hash = strihash(family);
                auto hint = HINT::NIL;
                if (auto it = glHintOverrides.find(family_hash); it != glHintOverrides.end()) hint = it->second;
                glFreetypeFonts.try_emplace(key,
-                  std::make_unique<freetype_font>(ftface, styles, metrics, meta, family_hash, hint));
+                  std::make_unique<freetype_font>(ftface, styles, metrics, axes, meta, family_hash, hint));
             }
             else return Log.warning(ERR::ResolvePath);
          }
 
          auto &font = *glFreetypeFonts[key];
-         if (auto cache = font.style_cache.find(style); cache != font.style_cache.end()) {
-            freetype_font::SIZE_CACHE &sz = cache->second;
-            if (auto size = sz.find(Size); size IS sz.end()) {
-               // New font size entry required
 
-               if (font.metrics.contains(style)) {
-                  auto new_size = sz.try_emplace(Size, font, font.metrics[style], Size);
-                  if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
-                  *Handle = &new_size.first->second;
-                  return ERR::Okay;
-               }
-               else {
-                  if (!font.metrics.empty()) Log.warning("Font metrics do not support style '%s'", style.c_str());
-                  auto new_size = sz.try_emplace(Size, font, Size);
-                  if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
-                  *Handle = &new_size.first->second;
-                  return ERR::Okay;
-               }
-            }
-            else {
-               *Handle = &size->second;
+         if (font.axes.empty()) { // Static face: the file is the style, so there are no coordinates to resolve
+            if (not spec.tags.empty()) Log.trace("Axis tags are ignored by static faces.");
+
+            auto &sizes = font.style_cache[STATIC_STYLE_KEY];
+            if (auto it = sizes.find(Size); it != sizes.end()) {
+               *Handle = &it->second;
                return ERR::Okay;
             }
+
+            auto new_size = sizes.try_emplace(Size, font, Size);
+            if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
+            *Handle = &new_size.first->second;
+            return ERR::Okay;
          }
-         else return ERR::Search;
+         else {
+            auto resolved = resolve_style(Log, font, spec, Weight);
+            auto &sizes = font.style_cache[resolved.key];
+            if (auto it = sizes.find(Size); it != sizes.end()) {
+               *Handle = &it->second;
+               return ERR::Okay;
+            }
+
+            if (resolved.auto_opsz >= 0) {
+               // The optical size follows the font size in points, as defined by OpenType.
+               auto &axis = font.axes[resolved.auto_opsz];
+               auto opsz = std::clamp(Size * 72.0 / DISPLAY_DPI, axis.minimum, axis.maximum);
+               resolved.coords[resolved.auto_opsz] = FT_Fixed(std::lround(opsz * 65536.0));
+            }
+
+            Log.trace("Resolved style '%s' for size %d.", resolved.key.c_str(), Size);
+            auto new_size = sizes.try_emplace(Size, font, resolved.coords, Size);
+            if (!new_size.first->second.ft_size) return ERR::CreateResource; // Verify success
+            *Handle = &new_size.first->second;
+            return ERR::Okay;
+         }
       }
    }
    else return error;

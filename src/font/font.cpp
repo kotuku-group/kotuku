@@ -45,6 +45,7 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 
 #include <sstream>
 #include <kotuku/strings.hpp>
+#include <kotuku/font_traits.hpp>
 #include "../link/unicode.h"
 
 using namespace kt;
@@ -577,8 +578,16 @@ int StringWidth(objFont *Font, const std::string_view &String, int Chars)
 SelectFont: Searches for a 'best fitting' font file, based on family name and style.
 
 Resolves a font family `Name` and preferred `Style` to a font file path.  The family name must exist in the font
-database or have been registered with ~RegisterFont().  If the requested style is unavailable, the function falls back
-to the face's regular style or first registered style.
+database or have been registered with ~RegisterFont().
+
+The `Style` can be a style name such as `Semi Bold Italic`, or a style string with descriptors such as
+`weight=Medium;width=Condensed;italic=yes`.  The `weight`, `width`, `italic` and `slant` descriptors are used to choose
+the file; other descriptors are ignored here.  See the VectorText `FontStyle` field for the full syntax.
+
+If the requested style is unavailable, the nearest available style is chosen with the CSS font matching order: width
+first, then italic, then weight.  For instance, a request for `Semi Bold` on a family that only provides `Regular`,
+`Italic`, `Bold` and `Bold Italic` resolves to `Bold`.  Style names that do not describe a weight, width or slope are
+only chosen if the family has no other styles.
 
 Families registered with ~RegisterFont() are searched first and resolved exclusively from their registered files, so
 a private family will shadow a system family of the same name.  The `Meta` result for a private family includes the
@@ -633,31 +642,44 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
       return meta;
    };
 
-   auto get_font_path = [](ConfigKeys &Keys, const std::string &Style, std::string *Path) {
-      if (Keys.contains(Style)) {
-         *Path = Keys[Style];
-         return ERR::Okay;
-      }
-      else if (not iequals("Regular", Style)) {
-         if (Keys.contains("Regular")) {
-            *Path = Keys["Regular"];
-            return ERR::Okay;
+   std::string style_name = kt::font_traits::selection_name(Style);
+   kt::camelcase(style_name);
+   auto requested = kt::font_traits::style_traits(Style);
+   auto named_traits = kt::font_traits::name_traits(style_name);
+   // A generated name is only exact when it preserves all requested traits, without rounding.
+   const bool exact_name = (named_traits.weight IS requested.weight) and
+      (named_traits.width IS requested.width) and (named_traits.italic IS requested.italic);
+
+   // Returns the index of the available style that is the nearest match to the request.  Names that do not
+   // describe traits are only considered if no other names are available.
+
+   auto nearest_style = [&requested](const std::vector<std::string_view> &Names) {
+      std::vector<kt::font_traits::traits> candidates;
+      std::vector<int> index;
+      for (int pass=0; (pass < 2) and candidates.empty(); pass++) {
+         for (int i=0; i < int(Names.size()); i++) {
+            auto traits = kt::font_traits::name_traits(Names[i]);
+            if ((pass IS 0) and (not traits.recognised)) continue;
+            candidates.push_back(traits);
+            index.push_back(i);
          }
       }
-      return ERR::Search;
+      auto best = kt::font_traits::nearest_match(requested, candidates);
+      return (best >= 0) ? index[best] : -1;
    };
-
-   std::string style_name(Style);
-   kt::camelcase(style_name);
 
    for (auto &font : glPrivateFonts) {
       if (not iequals(Name, font.name)) continue;
 
-      auto path = font.find_style(style_name);
-      if ((not path) and (not iequals("Regular", style_name))) path = font.find_style("Regular");
+      auto path = exact_name ? font.find_style(style_name) : nullptr;
       if (not path) {
-         log.traceWarning("Requested style '%s' not available, choosing first style.", style_name.c_str());
-         path = &font.styles.front().second;
+         std::vector<std::string_view> names;
+         for (auto &[style, file] : font.styles) names.push_back(style);
+         auto best = nearest_style(names);
+         if (best < 0) return log.warning(ERR::Search);
+         log.trace("Requested style '%s' not available, choosing '%s'.", style_name.c_str(),
+            font.styles[best].first.c_str());
+         path = &font.styles[best].second;
       }
 
       *Path = *path;
@@ -668,26 +690,32 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
    for (auto & [group, keys] : groups[0]) {
       if (not iequals(Name, keys["Name"])) continue;
 
-      auto error = get_font_path(keys, style_name, Path);
-      if (!error) {
+      if (auto it = keys.find(style_name); exact_name and (it != keys.end())) {
+         *Path = it->second;
          if (Meta) *Meta = get_meta(keys);
          return ERR::Okay;
       }
-      else if (error != ERR::Search) return error;
 
-      log.traceWarning("Requested style '%s' not available, choosing first style.", style_name.c_str());
-
-      std::string styles = keys.contains("Styles") ? keys["Styles"] : "Regular";
-      auto end = styles.find(",");
-      if (end IS std::string::npos) end = styles.size();
-      std::string first_style = styles.substr(0, end);
-
-      if (keys.contains(first_style)) {
-         *Path = keys[first_style];
-         if (Meta) *Meta = get_meta(keys);
-         return ERR::Okay;
+      std::vector<std::string> styles;
+      if (auto it = keys.find("Styles"); it != keys.end()) {
+         std::string_view list(it->second);
+         while (not list.empty()) {
+            auto end = list.find(',');
+            auto name = kt::font_traits::trim(list.substr(0, end));
+            if ((not name.empty()) and keys.contains(std::string(name))) styles.emplace_back(name);
+            list = (end IS std::string_view::npos) ? std::string_view() : list.substr(end + 1);
+         }
       }
-      else return ERR::Search;
+      else if (keys.contains("Regular")) styles.emplace_back("Regular");
+
+      std::vector<std::string_view> names(styles.begin(), styles.end());
+      auto best = nearest_style(names);
+      if (best < 0) return ERR::Search;
+
+      log.trace("Requested style '%s' not available, choosing '%s'.", style_name.c_str(), styles[best].c_str());
+      *Path = keys[styles[best]];
+      if (Meta) *Meta = get_meta(keys);
+      return ERR::Okay;
    }
 
    log.warning("The \"%.*s\" font is not available.", int(Name.size()), Name.data());

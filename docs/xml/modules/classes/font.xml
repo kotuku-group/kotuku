@@ -317,7 +317,8 @@ external leading or descent.</li>
       <access read="R" write="S">Read/Set</access>
       <type>STRING</type>
       <description>
-<p>Selects the preferred style for initialisation.  If the selected face does not provide that style, regular styling or the first registered style is used.</p>
+<p>Selects the preferred style for initialisation.  If the selected face does not provide that style, the nearest available style is chosen by width, then italic, then weight, so <code>Semi Bold</code> resolves to <code>Bold</code> if the face has no semi-bold style.</p>
+<p>The Style also accepts the <code>weight</code>, <code>width</code>, <code>italic</code> and <code>slant</code> descriptors of the VectorText <code>FontStyle</code> field, e.g. <code>weight=SemiBold;italic=yes</code>.  These only influence which style is chosen; variable font axes are not applied.</p>
 <p>Bitmap fonts are a special case if a bold or italic style is selected.  In this situation the system can automatically convert the font to that style even if the correct graphics set does not exist.</p>
 <p>Conventional font styles are <code>Bold</code>, <code>Bold Italic</code>, <code>Italic</code> and <code>Regular</code> (the default).</p>
       </description>

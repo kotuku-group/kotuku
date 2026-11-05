@@ -84,3 +84,131 @@ end
    end
    assert((left is 32) and (top is 84), f'Expected the offset rectangle at 32,84, got {left},{top}')
 end
+
+-- CSS font properties map to VectorText FontStyle descriptors.  Each property replaces only its own descriptors, so
+-- properties set on different elements combine through inheritance.
+
+@Test function FontPropertiesMapToStyleDescriptors()
+   loadScene([[
+      <text id="stretch" font-family="Noto Sans" font-stretch="condensed">H</text>
+      <text id="percent" font-family="Noto Sans" font-width="87.5%">H</text>
+      <text id="oblique" font-family="Noto Sans" font-style="oblique 10deg">H</text>
+      <text id="oblique_default" font-family="Noto Sans" font-style="oblique">H</text>
+      <text id="italic" font-family="Noto Sans" font-style="italic">H</text>
+      <text id="variations" font-family="Noto Sans" font-variation-settings="'wght' 650, &quot;GRAD&quot; 50">H</text>
+      <text id="optical" font-family="Noto Sans" font-optical-sizing="none">H</text>
+      <text id="normal" font-family="Noto Sans" font-style="normal">H</text>
+      <g font-style="italic" font-stretch="expanded">
+         <text id="inherited" font-family="Noto Sans" font-stretch="semi-condensed">H</text>
+      </g>
+   ]])
+
+   function style(ID:str):str
+      return obj.find(ID).fontStyle
+   end
+
+   assert(style('stretch') is 'width=75', f'font-stretch: got {style("stretch")}')
+   assert(style('percent') is 'width=87.5', f'font-width: got {style("percent")}')
+   assert(style('oblique') is 'slant=10', f'font-style oblique: got {style("oblique")}')
+   assert(style('oblique_default') is 'slant=14', f'Default oblique angle: got {style("oblique_default")}')
+   assert(style('italic') is 'italic=yes', f'font-style italic: got {style("italic")}')
+   assert(style('variations') is 'wght=650;GRAD=50', f'font-variation-settings: got {style("variations")}')
+   assert(style('optical') is 'opsz=none', f'font-optical-sizing: got {style("optical")}')
+   assert(style('normal') is 'Regular', f'font-style normal: got {style("normal")}')
+   assert(style('inherited') is 'italic=yes;width=87.5',
+      f'A child font-stretch must keep the inherited font-style: got {style("inherited")}')
+
+   local italic = obj.find('italic')
+   local upright = obj.find('normal')
+   assert(italic.textWidth < upright.textWidth, 'Italic text must use the narrower italic face')
+end
+
+@Test function FontStyleIsSaved()
+   local scene = loadScene([[<text id="saved" x="0" y="50" font-family="Noto Sans" font-stretch="condensed"
+      font-style="oblique 12deg" font-variation-settings="'GRAD' -50">H</text>]])
+   local path = 'temp:svg_font_style.svg'
+   local svg = obj.new('svg', { target=scene })
+   local file = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+   check svg.acSaveToObject(file, 0)
+   file = nil
+   local saved = io.readAll(path)
+   mSys.DeleteFile(path)
+
+   assert(saved.find('font-stretch="75%"') != nil, 'font-stretch must be saved')
+   assert(saved.find('font-style="oblique 12deg"') != nil, 'The oblique angle must be saved')
+   assert(saved.find([[font-variation-settings="&quot;GRAD&quot; -50"]]) != nil or
+      saved.find([[font-variation-settings='"GRAD" -50']]) != nil, f'Variations must be saved: {saved}')
+end
+
+@Test function OpticalPropertiesInheritIndependently()
+   local scene = loadScene([[
+      <g font-optical-sizing="none" font-variation-settings="'opsz' 18, 'wght' 650">
+         <text id="reset_variations" font-variation-settings="normal">H</text>
+         <text id="replace_variations" font-variation-settings="'wght' 500">H</text>
+         <text id="reset_optical" font-optical-sizing="auto">H</text>
+      </g>
+      <g font-variation-settings="'opsz' 18" font-optical-sizing="none">
+         <text id="reverse_order">H</text>
+         <text id="reverse_reset" font-variation-settings="normal">H</text>
+      </g>
+   ]])
+
+   assert(obj.find('reset_variations').fontStyle is 'opsz=none',
+      'Resetting variation-settings must remove the numeric opsz and retain optical-sizing')
+   assert(obj.find('replace_variations').fontStyle is 'opsz=none;wght=500',
+      'Replacing variation-settings must remove the inherited numeric opsz')
+   assert(obj.find('reset_optical').fontStyle is 'wght=650;opsz=18',
+      'Resetting optical-sizing must retain explicit variation coordinates')
+   assert(obj.find('reverse_order').fontStyle is 'opsz=none;opsz=18',
+      'Explicit coordinates must override optical-sizing in either declaration order')
+   assert(obj.find('reverse_reset').fontStyle is 'opsz=none',
+      'Resetting variation-settings must restore the inherited optical mode in either order')
+end
+
+function saveFontScene(Scene:obj!):str
+   local path = 'temp:svg_font_roundtrip.svg'
+   defer mSys.DeleteFile(path) end
+   local svg = obj.new('svg', { target=Scene })
+   local file = obj.new('file', { path=path, flags=FL_NEW|FL_WRITE })
+   check svg.acSaveToObject(file, 0)
+   file = nil
+   return io.readAll(path)
+end
+
+@Test function FontWeightPrecedenceSurvivesSaving()
+   for case in values(array<table> {
+      { style='weight=700', weight=300, expected=700 },
+      { style='Bold', weight=300, expected=300 },
+      { style='Bold', weight=400, expected=700 },
+      { style='weight=400', weight=700, expected=400 }
+   }) do
+      local scene = loadScene('<g id="weight_container"/>')
+      obj.find('weight_container').new('VectorText', {
+         face='Noto Sans', string='H', fontStyle=case.style, weight=case.weight
+      })
+      local saved = saveFontScene(scene)
+      assert(saved.find(f'font-weight="{case.expected}"') != nil,
+         f'Expected effective weight {case.expected} in saved SVG: {saved}')
+      scene.free()
+
+      local reloaded <close> = obj.new('svg', { statement=saved })
+      local saved_again = saveFontScene(reloaded.scene)
+      assert(saved_again.find(f'font-weight="{case.expected}"') != nil or
+         (case.expected is 400 and saved_again.find('font-weight=') is nil),
+         f'Reloading must preserve effective weight {case.expected}: {saved_again}')
+   end
+end
+
+@Test function FixedOpticalSizeSurvivesSaving()
+   local scene = loadScene([[<text id="optical_roundtrip" font-family="Noto Sans"
+      font-optical-sizing="none" font-variation-settings="'opsz' 18">H</text>]])
+   local saved = saveFontScene(scene)
+   assert(saved.find('&quot;opsz&quot; 18') != nil or saved.find([["opsz" 18]]) != nil,
+      f'The fixed optical size must be saved as a variation: {saved}')
+   assert(saved.find('font-optical-sizing="none"') != nil, 'The independent optical mode must also be saved')
+   scene.free()
+
+   local reloaded <close> = obj.new('svg', { statement=saved })
+   assert(obj.find('optical_roundtrip').fontStyle is 'opsz=none;opsz=18',
+      'Reloading must preserve both the fixed optical coordinate and the optical mode')
+end
