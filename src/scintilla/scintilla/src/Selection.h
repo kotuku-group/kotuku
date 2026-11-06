@@ -8,61 +8,74 @@
 #ifndef SELECTION_H
 #define SELECTION_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
 
 class SelectionPosition {
-	int position;
-	int virtualSpace;
+	Sci::Position position = Sci::invalidPosition;
+	Sci::Position virtualSpace = 0;
 public:
-	explicit SelectionPosition(int position_=INVALID_POSITION, int virtualSpace_=0) : position(position_), virtualSpace(virtualSpace_) {
-		PLATFORM_ASSERT(virtualSpace < 800000);
+	constexpr SelectionPosition() noexcept = default;
+	constexpr explicit SelectionPosition(Sci::Position position_, Sci::Position virtualSpace_=0) noexcept : position(position_), virtualSpace(virtualSpace_) {
+		PLATFORM_ASSERT(virtualSpace < 800000000);
 		if (virtualSpace < 0)
 			virtualSpace = 0;
 	}
-	void Reset() {
+	bool Parse(std::string_view &Text);
+	void Reset() noexcept {
 		position = 0;
 		virtualSpace = 0;
 	}
-	void MoveForInsertDelete(bool insertion, int startChange, int length);
-	bool operator ==(const SelectionPosition &other) const {
-		return position == other.position && virtualSpace == other.virtualSpace;
+	void MoveForInsertDelete(bool insertion, Sci::Position startChange, Sci::Position length, bool moveForEqual) noexcept;
+	[[nodiscard]] constexpr bool operator ==(const SelectionPosition &other) const noexcept {
+		return (position == other.position) && (virtualSpace == other.virtualSpace);
 	}
-	bool operator <(const SelectionPosition &other) const;
-	bool operator >(const SelectionPosition &other) const;
-	bool operator <=(const SelectionPosition &other) const;
-	bool operator >=(const SelectionPosition &other) const;
-	int Position() const {
+	[[nodiscard]] constexpr bool operator !=(const SelectionPosition &other) const noexcept {
+		return (position != other.position) || (virtualSpace != other.virtualSpace);
+	}
+	[[nodiscard]] constexpr bool operator <(const SelectionPosition &other) const noexcept {
+		if (position == other.position)
+			return virtualSpace < other.virtualSpace;
+		return position < other.position;
+	}
+	[[nodiscard]] bool operator >(const SelectionPosition &other) const noexcept;
+	[[nodiscard]] bool operator <=(const SelectionPosition &other) const noexcept;
+	[[nodiscard]] bool operator >=(const SelectionPosition &other) const noexcept;
+	[[nodiscard]] Sci::Position Position() const noexcept {
 		return position;
 	}
-	void SetPosition(int position_) {
+	void SetPosition(Sci::Position position_) noexcept {
 		position = position_;
 		virtualSpace = 0;
 	}
-	int VirtualSpace() const {
+	[[nodiscard]] Sci::Position VirtualSpace() const noexcept {
 		return virtualSpace;
 	}
-	void SetVirtualSpace(int virtualSpace_) {
-		PLATFORM_ASSERT(virtualSpace_ < 800000);
+	[[nodiscard]] double VirtualSpaceWidth(double spaceWidth) const noexcept;
+	void SetVirtualSpace(Sci::Position virtualSpace_) noexcept {
+		PLATFORM_ASSERT(virtualSpace_ < 800000000);
 		if (virtualSpace_ >= 0)
 			virtualSpace = virtualSpace_;
 	}
-	void Add(int increment) {
+	void Add(Sci::Position increment) noexcept {
 		position = position + increment;
 	}
-	bool IsValid() const {
+	void AddVirtualSpace(Sci::Position increment) noexcept {
+		SetVirtualSpace(virtualSpace + increment);
+	}
+	[[nodiscard]] bool IsValid() const noexcept {
 		return position >= 0;
 	}
+	[[nodiscard]] std::string ToString() const;
 };
 
 // Ordered range to make drawing simpler
 struct SelectionSegment {
 	SelectionPosition start;
 	SelectionPosition end;
-	SelectionSegment() : start(), end() {
+	constexpr SelectionSegment() noexcept = default;
+	constexpr explicit SelectionSegment(SelectionPosition single) noexcept : start(single), end(single) {
 	}
-	SelectionSegment(SelectionPosition a, SelectionPosition b) {
+	constexpr SelectionSegment(SelectionPosition a, SelectionPosition b) noexcept {
 		if (a < b) {
 			start = a;
 			end = b;
@@ -71,14 +84,29 @@ struct SelectionSegment {
 			end = a;
 		}
 	}
-	bool Empty() const {
+	constexpr SelectionSegment(Sci::Position a, Sci::Position b) :
+		SelectionSegment(SelectionPosition(a), SelectionPosition(b)) {
+	}
+	[[nodiscard]] constexpr bool operator ==(const SelectionSegment &other) const noexcept {
+		return (start == other.start) && (end == other.end);
+	}
+	[[nodiscard]] bool Empty() const noexcept {
 		return start == end;
 	}
-	void Extend(SelectionPosition p) {
+	[[nodiscard]] Sci::Position Length() const noexcept {
+		return end.Position() - start.Position();
+	}
+	void Extend(SelectionPosition p) noexcept {
 		if (start > p)
 			start = p;
 		if (end < p)
 			end = p;
+	}
+	[[nodiscard]] SelectionSegment Subtract(Sci::Position increment) const noexcept {
+		SelectionSegment ret(start, end);
+		ret.start.Add(-increment);
+		ret.end.Add(-increment);
+		return ret;
 	}
 };
 
@@ -86,103 +114,128 @@ struct SelectionRange {
 	SelectionPosition caret;
 	SelectionPosition anchor;
 
-	SelectionRange() : caret(), anchor() {
+	constexpr SelectionRange() noexcept = default;
+	constexpr explicit SelectionRange(SelectionPosition single) noexcept : caret(single), anchor(single) {
 	}
-	SelectionRange(SelectionPosition single) : caret(single), anchor(single) {
+	constexpr explicit SelectionRange(Sci::Position single) noexcept : caret(single), anchor(single) {
 	}
-	SelectionRange(int single) : caret(single), anchor(single) {
+	constexpr SelectionRange(SelectionPosition caret_, SelectionPosition anchor_) noexcept : caret(caret_), anchor(anchor_) {
 	}
-	SelectionRange(SelectionPosition caret_, SelectionPosition anchor_) : caret(caret_), anchor(anchor_) {
+	constexpr SelectionRange(Sci::Position caret_, Sci::Position anchor_) noexcept : caret(caret_), anchor(anchor_) {
 	}
-	SelectionRange(int caret_, int anchor_) : caret(caret_), anchor(anchor_) {
+	bool Parse(std::string_view &Text);
+	[[nodiscard]] SelectionSegment AsSegment() const noexcept {
+		return {caret, anchor};
 	}
-	bool Empty() const {
+	[[nodiscard]] bool Empty() const noexcept {
 		return anchor == caret;
 	}
-	int Length() const;
-	// int Width() const;	// Like Length but takes virtual space into account
-	bool operator ==(const SelectionRange &other) const {
+	[[nodiscard]] Sci::Position Length() const noexcept;
+	// Sci::Position Width() const;	// Like Length but takes virtual space into account
+	bool operator ==(const SelectionRange &other) const noexcept {
 		return caret == other.caret && anchor == other.anchor;
 	}
-	bool operator <(const SelectionRange &other) const {
+	bool operator <(const SelectionRange &other) const noexcept {
 		return caret < other.caret || ((caret == other.caret) && (anchor < other.anchor));
 	}
-	void Reset() {
+	void Reset() noexcept {
 		anchor.Reset();
 		caret.Reset();
 	}
-	void ClearVirtualSpace() {
+	void ClearVirtualSpace() noexcept {
 		anchor.SetVirtualSpace(0);
 		caret.SetVirtualSpace(0);
 	}
-	bool Contains(int pos) const;
-	bool Contains(SelectionPosition sp) const;
-	bool ContainsCharacter(int posCharacter) const;
-	SelectionSegment Intersect(SelectionSegment check) const;
-	SelectionPosition Start() const {
+	void MoveForInsertDelete(bool insertion, Sci::Position startChange, Sci::Position length) noexcept;
+	[[nodiscard]] bool Contains(Sci::Position pos) const noexcept;
+	[[nodiscard]] bool Contains(SelectionPosition sp) const noexcept;
+	[[nodiscard]] bool ContainsCharacter(Sci::Position posCharacter) const noexcept;
+	[[nodiscard]] bool ContainsCharacter(SelectionPosition spCharacter) const noexcept;
+	[[nodiscard]] SelectionSegment Intersect(SelectionSegment check) const noexcept;
+	[[nodiscard]] SelectionPosition Start() const noexcept {
 		return (anchor < caret) ? anchor : caret;
 	}
-	SelectionPosition End() const {
+	[[nodiscard]] SelectionPosition End() const noexcept {
 		return (anchor < caret) ? caret : anchor;
 	}
-	bool Trim(SelectionRange range);
+	void StartSet(SelectionPosition sp) noexcept;
+	void EndSet(SelectionPosition sp) noexcept;
+	void Swap() noexcept;
+	bool Trim(SelectionRange range) noexcept;
+	void Truncate(Sci::Position length) noexcept;
 	// If range is all virtual collapse to start of virtual space
-	void MinimizeVirtualSpace();
+	void MinimizeVirtualSpace() noexcept;
+	bool BackSpaceVirtual() noexcept;
+	[[nodiscard]] std::string ToString() const;
 };
 
+// Deliberately an enum rather than an enum class to allow treating as bool
+enum InSelection { inNone, inMain, inAdditional };
+
 class Selection {
-	std::vector<SelectionRange> ranges;
-	std::vector<SelectionRange> rangesSaved;
+	using Ranges = std::vector<SelectionRange>;
+	Ranges ranges;
+	Ranges rangesSaved;
 	SelectionRange rangeRectangular;
 	size_t mainRange;
 	bool moveExtends;
 	bool tentativeMain;
 public:
-	enum selTypes { noSel, selStream, selRectangle, selLines, selThin };
-	selTypes selType;
+	enum class SelTypes { none, stream, rectangle, lines, thin };
+	SelTypes selType;
 
-	Selection();
-	~Selection();
-	bool IsRectangular() const;
-	int MainCaret() const;
-	int MainAnchor() const;
-	SelectionRange &Rectangular();
-	SelectionSegment Limits() const;
+	Selection();	// Allocates so may throw.
+	explicit Selection(std::string_view sv);
+
+	[[nodiscard]] bool IsRectangular() const noexcept;
+	[[nodiscard]] Sci::Position MainCaret() const noexcept;
+	[[nodiscard]] Sci::Position MainAnchor() const noexcept;
+	SelectionRange &Rectangular() noexcept;
+	[[nodiscard]] SelectionRange RectangularCopy() const noexcept;
+	[[nodiscard]] SelectionSegment Limits() const noexcept;
 	// This is for when you want to move the caret in response to a
 	// user direction command - for rectangular selections, use the range
 	// that covers all selected text otherwise return the main selection.
-	SelectionSegment LimitsForRectangularElseMain() const;
-	size_t Count() const;
-	size_t Main() const;
-	void SetMain(size_t r);
-	SelectionRange &Range(size_t r);
-	SelectionRange &RangeMain();
-	bool MoveExtends() const;
-	void SetMoveExtends(bool moveExtends_);
-	bool Empty() const;
-	SelectionPosition Last() const;
-	int Length() const;
-	void MovePositions(bool insertion, int startChange, int length);
-	void TrimSelection(SelectionRange range);
-	void SetSelection(SelectionRange range);
+	[[nodiscard]] SelectionSegment LimitsForRectangularElseMain() const noexcept;
+	[[nodiscard]] size_t Count() const noexcept;
+	[[nodiscard]] size_t Main() const noexcept;
+	void SetMain(size_t r) noexcept;
+	SelectionRange &Range(size_t r) noexcept;
+	[[nodiscard]] const SelectionRange &Range(size_t r) const noexcept;
+	SelectionRange &RangeMain() noexcept;
+	[[nodiscard]] const SelectionRange &RangeMain() const noexcept;
+	[[nodiscard]] SelectionPosition Start() const noexcept;
+	[[nodiscard]] bool MoveExtends() const noexcept;
+	void SetMoveExtends(bool moveExtends_) noexcept;
+	[[nodiscard]] bool Empty() const noexcept;
+	[[nodiscard]] SelectionPosition Last() const noexcept;
+	[[nodiscard]] Sci::Position Length() const noexcept;
+	void MovePositions(bool insertion, Sci::Position startChange, Sci::Position length) noexcept;
+	void TrimSelection(SelectionRange range) noexcept;
+	void TrimOtherSelections(size_t r, SelectionRange range) noexcept;
+	void SetSelection(SelectionRange range) noexcept;
 	void AddSelection(SelectionRange range);
 	void AddSelectionWithoutTrim(SelectionRange range);
+	void DropSelection(size_t r) noexcept;
+	void DropAdditionalRanges() noexcept;
 	void TentativeSelection(SelectionRange range);
-	void CommitTentative();
-	int CharacterInSelection(int posCharacter) const;
-	int InSelectionForEOL(int pos) const;
-	int VirtualSpaceFor(int pos) const;
-	void Clear();
-	void RemoveDuplicates();
-	void RotateMain();
-	bool Tentative() const { return tentativeMain; }
-	std::vector<SelectionRange> RangesCopy() const {
+	void CommitTentative() noexcept;
+	[[nodiscard]] InSelection RangeType(size_t r) const noexcept;
+	[[nodiscard]] InSelection CharacterInSelection(Sci::Position posCharacter) const noexcept;
+	[[nodiscard]] InSelection InSelectionForEOL(Sci::Position pos) const noexcept;
+	[[nodiscard]] Sci::Position VirtualSpaceFor(Sci::Position pos) const noexcept;
+	void Clear() noexcept;
+	void RemoveDuplicates() noexcept;
+	void RotateMain() noexcept;
+	[[nodiscard]] bool Tentative() const noexcept { return tentativeMain; }
+	[[nodiscard]] Ranges RangesCopy() const {
 		return ranges;
 	}
+	void SetRanges(const Ranges &rangesToSet);
+	void Truncate(Sci::Position length) noexcept;
+	[[nodiscard]] std::string ToString() const;
 };
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif

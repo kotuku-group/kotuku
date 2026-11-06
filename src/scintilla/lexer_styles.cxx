@@ -1,4 +1,4 @@
-// Semantic styles for the bundled Scintilla 2.28 lexers.  Unclassified styles inherit TextColour.
+// Semantic styles for the pinned Lexilla 5.5.5 lexers.  Unclassified styles inherit TextColour.
 // Recolouring does not reset fonts, document state or contracted folds.
 
 void ScintillaKTK::SetStyleColours()
@@ -19,12 +19,13 @@ void ScintillaKTK::SetStyleColours()
    switch (scintilla->Lexer) {
       case SCLEX::CPP:
          colour(scintilla->CommentColour, {
-            SCE_C_COMMENT, SCE_C_COMMENTLINE, SCE_C_COMMENTDOC, SCE_C_COMMENTLINEDOC, SCE_C_COMMENTDOCKEYWORD });
-         colour(scintilla->NumberColour, { SCE_C_NUMBER });
+            SCE_C_COMMENT, SCE_C_COMMENTLINE, SCE_C_COMMENTDOC, SCE_C_COMMENTLINEDOC, SCE_C_COMMENTDOCKEYWORD,
+            SCE_C_PREPROCESSORCOMMENT, SCE_C_PREPROCESSORCOMMENTDOC, SCE_C_TASKMARKER });
+         colour(scintilla->NumberColour, { SCE_C_NUMBER, SCE_C_USERLITERAL });
          colour(scintilla->KeywordColour, { SCE_C_WORD });
          colour(scintilla->StringColour, {
             SCE_C_STRING, SCE_C_CHARACTER, SCE_C_UUID, SCE_C_VERBATIM, SCE_C_STRINGRAW, SCE_C_TRIPLEVERBATIM,
-            SCE_C_REGEX });
+            SCE_C_REGEX, SCE_C_HASHQUOTEDSTRING, SCE_C_ESCAPESEQUENCE });
          colour(scintilla->PreprocessorColour, { SCE_C_PREPROCESSOR });
          colour(scintilla->OperatorColour, { SCE_C_OPERATOR });
          colour(scintilla->TypeColour, { SCE_C_WORD2, SCE_C_GLOBALCLASS });
@@ -39,7 +40,8 @@ void ScintillaKTK::SetStyleColours()
          colour(scintilla->PreprocessorColour, { SCE_LUA_PREPROCESSOR });
          colour(scintilla->OperatorColour, { SCE_LUA_OPERATOR });
          colour(scintilla->TypeColour, {
-            SCE_LUA_WORD2, SCE_LUA_WORD3, SCE_LUA_WORD4, SCE_LUA_WORD5, SCE_LUA_WORD6, SCE_LUA_WORD7, SCE_LUA_WORD8 });
+            SCE_LUA_WORD2, SCE_LUA_WORD3, SCE_LUA_WORD4, SCE_LUA_WORD5, SCE_LUA_WORD6, SCE_LUA_WORD7,
+            SCE_LUA_WORD8, SCE_LUA_LABEL });
          colour(scintilla->ErrorColour, { SCE_LUA_STRINGEOL });
          break;
 
@@ -47,9 +49,10 @@ void ScintillaKTK::SetStyleColours()
          colour(scintilla->CommentColour, { SCE_P_COMMENTLINE, SCE_P_COMMENTBLOCK });
          colour(scintilla->NumberColour, { SCE_P_NUMBER });
          colour(scintilla->KeywordColour, { SCE_P_WORD });
-         colour(scintilla->StringColour, { SCE_P_STRING, SCE_P_CHARACTER, SCE_P_TRIPLE, SCE_P_TRIPLEDOUBLE });
+         colour(scintilla->StringColour, { SCE_P_STRING, SCE_P_CHARACTER, SCE_P_TRIPLE, SCE_P_TRIPLEDOUBLE,
+            SCE_P_FSTRING, SCE_P_FCHARACTER, SCE_P_FTRIPLE, SCE_P_FTRIPLEDOUBLE });
          colour(scintilla->OperatorColour, { SCE_P_OPERATOR });
-         colour(scintilla->TypeColour, { SCE_P_CLASSNAME, SCE_P_DEFNAME, SCE_P_WORD2 });
+         colour(scintilla->TypeColour, { SCE_P_CLASSNAME, SCE_P_DEFNAME, SCE_P_WORD2, SCE_P_ATTRIBUTE });
          colour(scintilla->PreprocessorColour, { SCE_P_DECORATOR });
          colour(scintilla->ErrorColour, { SCE_P_STRINGEOL });
          break;
@@ -61,12 +64,14 @@ void ScintillaKTK::SetStyleColours()
          colour(scintilla->StringColour, {
             SCE_PL_STRING, SCE_PL_CHARACTER, SCE_PL_REGEX, SCE_PL_REGSUBST, SCE_PL_LONGQUOTE, SCE_PL_BACKTICKS,
             SCE_PL_HERE_DELIM, SCE_PL_HERE_Q, SCE_PL_HERE_QQ, SCE_PL_HERE_QX, SCE_PL_STRING_Q, SCE_PL_STRING_QQ,
-            SCE_PL_STRING_QX, SCE_PL_STRING_QR, SCE_PL_STRING_QW, SCE_PL_DATASECTION, SCE_PL_FORMAT });
+            SCE_PL_STRING_QX, SCE_PL_STRING_QR, SCE_PL_STRING_QW, SCE_PL_DATASECTION, SCE_PL_FORMAT, SCE_PL_XLAT });
          colour(scintilla->OperatorColour, { SCE_PL_OPERATOR, SCE_PL_PUNCTUATION });
          colour(scintilla->PreprocessorColour, { SCE_PL_PREPROCESSOR });
          colour(scintilla->TypeColour, {
             SCE_PL_SCALAR, SCE_PL_ARRAY, SCE_PL_HASH, SCE_PL_SYMBOLTABLE, SCE_PL_VARIABLE_INDEXER,
-            SCE_PL_SUB_PROTOTYPE, SCE_PL_FORMAT_IDENT });
+            SCE_PL_SUB_PROTOTYPE, SCE_PL_FORMAT_IDENT, SCE_PL_STRING_VAR, SCE_PL_REGEX_VAR,
+            SCE_PL_REGSUBST_VAR, SCE_PL_BACKTICKS_VAR, SCE_PL_HERE_QQ_VAR, SCE_PL_HERE_QX_VAR,
+            SCE_PL_STRING_QQ_VAR, SCE_PL_STRING_QX_VAR, SCE_PL_STRING_QR_VAR });
          colour(scintilla->ErrorColour, { SCE_PL_ERROR });
          break;
 
@@ -76,7 +81,7 @@ void ScintillaKTK::SetStyleColours()
             SCE_SQL_COMMENTDOCKEYWORD, SCE_SQL_SQLPLUS_COMMENT });
          colour(scintilla->NumberColour, { SCE_SQL_NUMBER });
          colour(scintilla->KeywordColour, { SCE_SQL_WORD });
-         colour(scintilla->StringColour, { SCE_SQL_STRING, SCE_SQL_CHARACTER });
+         colour(scintilla->StringColour, { SCE_SQL_STRING, SCE_SQL_CHARACTER, SCE_SQL_QOPERATOR });
          colour(scintilla->OperatorColour, { SCE_SQL_OPERATOR });
          colour(scintilla->PreprocessorColour, { SCE_SQL_SQLPLUS, SCE_SQL_SQLPLUS_PROMPT });
          colour(scintilla->TypeColour, {
@@ -86,7 +91,8 @@ void ScintillaKTK::SetStyleColours()
 
       case SCLEX::VB:
       case SCLEX::VBSCRIPT:
-         colour(scintilla->CommentColour, { SCE_B_COMMENT });
+         colour(scintilla->CommentColour, { SCE_B_COMMENT, SCE_B_COMMENTBLOCK, SCE_B_DOCLINE, SCE_B_DOCBLOCK,
+            SCE_B_DOCKEYWORD });
          colour(scintilla->NumberColour, { SCE_B_NUMBER, SCE_B_DATE, SCE_B_HEXNUMBER, SCE_B_BINNUMBER });
          colour(scintilla->KeywordColour, { SCE_B_KEYWORD });
          colour(scintilla->StringColour, { SCE_B_STRING });
@@ -109,8 +115,9 @@ void ScintillaKTK::SetStyleColours()
          colour(scintilla->ErrorColour, {
             SCE_ERR_PYTHON, SCE_ERR_GCC, SCE_ERR_MS, SCE_ERR_BORLAND, SCE_ERR_PERL, SCE_ERR_NET, SCE_ERR_LUA,
             SCE_ERR_PHP, SCE_ERR_ELF, SCE_ERR_IFC, SCE_ERR_IFORT, SCE_ERR_ABSF, SCE_ERR_TIDY, SCE_ERR_JAVA_STACK,
-            SCE_ERR_DIFF_DELETION });
-         colour(scintilla->PreprocessorColour, { SCE_ERR_CMD, SCE_ERR_CTAG, SCE_ERR_DIFF_MESSAGE });
+            SCE_ERR_DIFF_DELETION, SCE_ERR_BASH });
+         colour(scintilla->PreprocessorColour, { SCE_ERR_CMD, SCE_ERR_CTAG, SCE_ERR_DIFF_MESSAGE,
+            SCE_ERR_GCC_INCLUDED_FROM });
          colour(scintilla->TypeColour, { SCE_ERR_DIFF_CHANGED });
          colour(scintilla->StringColour, { SCE_ERR_DIFF_ADDITION });
          colour(scintilla->NumberColour, { SCE_ERR_VALUE });
@@ -136,8 +143,8 @@ void ScintillaKTK::SetStyleColours()
          colour(scintilla->CommentColour, { SCE_DIFF_COMMENT });
          colour(scintilla->PreprocessorColour, { SCE_DIFF_COMMAND, SCE_DIFF_HEADER });
          colour(scintilla->NumberColour, { SCE_DIFF_POSITION });
-         colour(scintilla->ErrorColour, { SCE_DIFF_DELETED });
-         colour(scintilla->StringColour, { SCE_DIFF_ADDED });
+         colour(scintilla->ErrorColour, { SCE_DIFF_DELETED, SCE_DIFF_PATCH_DELETE, SCE_DIFF_REMOVED_PATCH_DELETE });
+         colour(scintilla->StringColour, { SCE_DIFF_ADDED, SCE_DIFF_PATCH_ADD, SCE_DIFF_REMOVED_PATCH_ADD });
          colour(scintilla->TypeColour, { SCE_DIFF_CHANGED });
          break;
 
@@ -146,7 +153,7 @@ void ScintillaKTK::SetStyleColours()
          colour(scintilla->PreprocessorColour, { SCE_PAS_PREPROCESSOR, SCE_PAS_PREPROCESSOR2 });
          colour(scintilla->NumberColour, { SCE_PAS_NUMBER, SCE_PAS_HEXNUMBER });
          colour(scintilla->KeywordColour, { SCE_PAS_WORD });
-         colour(scintilla->StringColour, { SCE_PAS_STRING, SCE_PAS_CHARACTER });
+         colour(scintilla->StringColour, { SCE_PAS_STRING, SCE_PAS_CHARACTER, SCE_PAS_MULTILINESTRING });
          colour(scintilla->OperatorColour, { SCE_PAS_OPERATOR });
          colour(scintilla->TypeColour, { SCE_PAS_ASM });
          colour(scintilla->ErrorColour, { SCE_PAS_STRINGEOL });
@@ -159,7 +166,8 @@ void ScintillaKTK::SetStyleColours()
          colour(scintilla->StringColour, {
             SCE_RB_STRING, SCE_RB_CHARACTER, SCE_RB_REGEX, SCE_RB_BACKTICKS, SCE_RB_HERE_DELIM, SCE_RB_HERE_Q,
             SCE_RB_HERE_QQ, SCE_RB_HERE_QX, SCE_RB_STRING_Q, SCE_RB_STRING_QQ, SCE_RB_STRING_QX, SCE_RB_STRING_QR,
-            SCE_RB_STRING_QW, SCE_RB_DATASECTION });
+            SCE_RB_STRING_QW, SCE_RB_DATASECTION, SCE_RB_STRING_W, SCE_RB_STRING_I, SCE_RB_STRING_QI,
+            SCE_RB_STRING_QS });
          colour(scintilla->OperatorColour, { SCE_RB_OPERATOR });
          colour(scintilla->TypeColour, {
             SCE_RB_CLASSNAME, SCE_RB_DEFNAME, SCE_RB_GLOBAL, SCE_RB_SYMBOL, SCE_RB_MODULE_NAME, SCE_RB_INSTANCE_VAR,
@@ -170,7 +178,7 @@ void ScintillaKTK::SetStyleColours()
       case SCLEX::ASSEMBLER:
          colour(scintilla->CommentColour, { SCE_ASM_COMMENT, SCE_ASM_COMMENTBLOCK, SCE_ASM_COMMENTDIRECTIVE });
          colour(scintilla->NumberColour, { SCE_ASM_NUMBER });
-         colour(scintilla->StringColour, { SCE_ASM_STRING, SCE_ASM_CHARACTER });
+         colour(scintilla->StringColour, { SCE_ASM_STRING, SCE_ASM_CHARACTER, SCE_ASM_STRINGBACKQUOTE });
          colour(scintilla->OperatorColour, { SCE_ASM_OPERATOR });
          colour(scintilla->KeywordColour, { SCE_ASM_CPUINSTRUCTION, SCE_ASM_MATHINSTRUCTION, SCE_ASM_EXTINSTRUCTION });
          colour(scintilla->TypeColour, { SCE_ASM_REGISTER });
@@ -185,10 +193,10 @@ void ScintillaKTK::SetStyleColours()
             SCE_CSS_EXTENDED_PSEUDOELEMENT });
          colour(scintilla->TypeColour, {
             SCE_CSS_CLASS, SCE_CSS_IDENTIFIER, SCE_CSS_IDENTIFIER2, SCE_CSS_IDENTIFIER3, SCE_CSS_ID,
-            SCE_CSS_ATTRIBUTE, SCE_CSS_EXTENDED_IDENTIFIER });
+            SCE_CSS_ATTRIBUTE, SCE_CSS_EXTENDED_IDENTIFIER, SCE_CSS_VARIABLE });
          colour(scintilla->StringColour, { SCE_CSS_VALUE, SCE_CSS_DOUBLESTRING, SCE_CSS_SINGLESTRING });
          colour(scintilla->OperatorColour, { SCE_CSS_OPERATOR });
-         colour(scintilla->PreprocessorColour, { SCE_CSS_IMPORTANT, SCE_CSS_DIRECTIVE, SCE_CSS_MEDIA });
+         colour(scintilla->PreprocessorColour, { SCE_CSS_IMPORTANT, SCE_CSS_DIRECTIVE, SCE_CSS_GROUP_RULE });
          colour(scintilla->ErrorColour, { SCE_CSS_UNKNOWN_PSEUDOCLASS, SCE_CSS_UNKNOWN_IDENTIFIER });
          break;
 
@@ -240,8 +248,10 @@ void ScintillaKTK::SetStyleColours()
             SCE_HPA_NUMBER, SCE_HPHP_NUMBER });
          colour(scintilla->StringColour, {
             SCE_H_DOUBLESTRING, SCE_H_SINGLESTRING, SCE_H_VALUE, SCE_H_CDATA, SCE_H_SGML_DOUBLESTRING,
-            SCE_H_SGML_SIMPLESTRING, SCE_HJ_DOUBLESTRING, SCE_HJ_SINGLESTRING, SCE_HJ_REGEX, SCE_HJA_DOUBLESTRING,
-            SCE_HJA_SINGLESTRING, SCE_HJA_REGEX, SCE_HB_STRING, SCE_HBA_STRING, SCE_HP_STRING, SCE_HP_CHARACTER,
+            SCE_H_SGML_SIMPLESTRING, SCE_HJ_DOUBLESTRING, SCE_HJ_SINGLESTRING, SCE_HJ_REGEX,
+            SCE_HJ_TEMPLATELITERAL, SCE_HJA_DOUBLESTRING,
+            SCE_HJA_SINGLESTRING, SCE_HJA_REGEX, SCE_HJA_TEMPLATELITERAL, SCE_HB_STRING, SCE_HBA_STRING,
+            SCE_HP_STRING, SCE_HP_CHARACTER,
             SCE_HP_TRIPLE, SCE_HP_TRIPLEDOUBLE, SCE_HPA_STRING, SCE_HPA_CHARACTER, SCE_HPA_TRIPLE,
             SCE_HPA_TRIPLEDOUBLE, SCE_HPHP_HSTRING, SCE_HPHP_SIMPLESTRING });
          colour(scintilla->OperatorColour, {
@@ -277,12 +287,13 @@ void ScintillaKTK::SetStyleColours()
    // STYLE_CALLTIP (see the constructor) and highlight in the keyword colour.  Open pop-ups are repainted.
 
    auto pair = [](const RGB8 &Value) {
-      return Scintilla::ColourPair(Scintilla::ColourDesired(Value.Red, Value.Green, Value.Blue));
+      return Scintilla::Internal::ColourRGBA(Value.Red, Value.Green, Value.Blue);
    };
 
    auto &keyword = scintilla->KeywordColour;
    SendScintilla(SCI_CALLTIPSETFOREHLT, SCICOLOUR(keyword.Red, keyword.Green, keyword.Blue));
-   ct.SetForeBack(pair(text), pair(background));
+   ct.colourBG = pair(background);
+   ct.colourUnSel = pair(text);
    ct.colourShade = pair(scintilla->MarginColour);
    ct.colourLight = ct.colourShade;
    if (ct.wCallTip.Created()) ct.wCallTip.InvalidateAll();

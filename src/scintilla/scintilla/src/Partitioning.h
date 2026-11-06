@@ -8,37 +8,9 @@
 #ifndef PARTITIONING_H
 #define PARTITIONING_H
 
-/// A split vector of integers with a method for adding a value to all elements
-/// in a range.
-/// Used by the Partitioning class.
+#include <cstdlib>
 
-class SplitVectorWithRangeAdd : public SplitVector<int> {
-public:
-	SplitVectorWithRangeAdd(int growSize_) {
-		SetGrowSize(growSize_);
-		ReAllocate(growSize_);
-	}
-	~SplitVectorWithRangeAdd() {
-	}
-	void RangeAddDelta(int start, int end, int delta) {
-		// end is 1 past end, so end-start is number of elements to change
-		int i = 0;
-		int rangeLength = end - start;
-		int range1Length = rangeLength;
-		int part1Left = part1Length - start;
-		if (range1Length > part1Left)
-			range1Length = part1Left;
-		while (i < range1Length) {
-			body[start++] += delta;
-			i++;
-		}
-		start += gapLength;
-		while (i < rangeLength) {
-			body[start++] += delta;
-			i++;
-		}
-	}
-};
+namespace Scintilla::Internal {
 
 /// Divide an interval into multiple partitions.
 /// Useful for breaking a document down into sections such as lines.
@@ -47,85 +19,130 @@ public:
 /// When needed, positions after the interval are considered part of the last partition
 /// but the end of the last partition can be found with PositionFromPartition(last+1).
 
+template <typename T>
 class Partitioning {
 private:
 	// To avoid calculating all the partition positions whenever any text is inserted
 	// there may be a step somewhere in the list.
-	int stepPartition;
-	int stepLength;
-	SplitVectorWithRangeAdd *body;
+	T stepPartition;
+	T stepLength;
+	SplitVector<T> body;
+
+	// Deleted so SplitVectorWithRangeAdd objects can not be copied.
+	void RangeAddDelta(T start, T end, T delta) noexcept {
+		// end is 1 past end, so end-start is number of elements to change
+		const ptrdiff_t position = start;
+		ptrdiff_t i = 0;
+		const ptrdiff_t rangeLength = end - position;
+		ptrdiff_t range1Length = rangeLength;
+		const ptrdiff_t part1Left = body.GapPosition() - position;
+		if (range1Length > part1Left)
+			range1Length = part1Left;
+		T *writer = &body[position];
+		while (i < range1Length) {
+			*writer += delta;
+			writer++;
+			i++;
+		}
+		if (i < rangeLength) {
+			T *writer2 = &body[position + i];
+			while (i < rangeLength) {
+				*writer2 += delta;
+				writer2++;
+				i++;
+			}
+		}
+	}
 
 	// Move step forward
-	void ApplyStep(int partitionUpTo) {
+	void ApplyStep(T partitionUpTo) noexcept {
 		if (stepLength != 0) {
-			body->RangeAddDelta(stepPartition+1, partitionUpTo + 1, stepLength);
+			RangeAddDelta(stepPartition+1, partitionUpTo + 1, stepLength);
 		}
 		stepPartition = partitionUpTo;
-		if (stepPartition >= body->Length()-1) {
-			stepPartition = body->Length()-1;
+		if (stepPartition >= Partitions()) {
+			stepPartition = Partitions();
 			stepLength = 0;
 		}
 	}
 
 	// Move step backward
-	void BackStep(int partitionDownTo) {
+	void BackStep(T partitionDownTo) noexcept {
 		if (stepLength != 0) {
-			body->RangeAddDelta(partitionDownTo+1, stepPartition+1, -stepLength);
+			RangeAddDelta(partitionDownTo+1, stepPartition+1, -stepLength);
 		}
 		stepPartition = partitionDownTo;
 	}
-
-	void Allocate(int growSize) {
-		body = new SplitVectorWithRangeAdd(growSize);
-		stepPartition = 0;
-		stepLength = 0;
-		body->Insert(0, 0);	// This value stays 0 for ever
-		body->Insert(1, 0);	// This is the end of the first partition and will be the start of the second
-	}
-
+	static constexpr size_t initialGrowSize = 8;
 public:
-	Partitioning(int growSize) {
-		Allocate(growSize);
+	explicit Partitioning(size_t growSize=initialGrowSize) : stepPartition(0), stepLength(0), body(growSize) {
+		body.Insert(0, 0);	// This value stays 0 for ever
+		body.Insert(1, 0);	// This is the end of the first partition and will be the start of the second
 	}
 
-	~Partitioning() {
-		delete body;
-		body = 0;
+	[[nodiscard]] T Partitions() const noexcept {
+		return static_cast<T>(body.Length())-1;
 	}
 
-	int Partitions() const {
-		return body->Length()-1;
+	void ReAllocate(ptrdiff_t newSize) {
+		// + 1 accounts for initial element that is always 0.
+		body.ReAllocate(newSize + 1);
 	}
 
-	void InsertPartition(int partition, int pos) {
+	[[nodiscard]] T Length() const noexcept {
+		return PositionFromPartition(Partitions());
+	}
+
+	void InsertPartition(T partition, T pos) {
 		if (stepPartition < partition) {
 			ApplyStep(partition);
 		}
-		body->Insert(partition, pos);
+		body.Insert(partition, pos);
 		stepPartition++;
 	}
 
-	void SetPartitionStartPosition(int partition, int pos) {
-		ApplyStep(partition+1);
-		if ((partition < 0) || (partition > body->Length())) {
-			return;
+	void InsertPartitions(T partition, const T *positions, size_t length) {
+		if (stepPartition < partition) {
+			ApplyStep(partition);
 		}
-		body->SetValueAt(partition, pos);
+		body.InsertFromArray(partition, positions, 0, length);
+		stepPartition += static_cast<T>(length);
 	}
 
-	void InsertText(int partitionInsert, int delta) {
+	void InsertPartitionsWithCast(T partition, const ptrdiff_t *positions, size_t length) {
+		// Used for 64-bit builds when T is 32-bits
+		if (stepPartition < partition) {
+			ApplyStep(partition);
+		}
+		T *pInsertion = body.InsertEmpty(partition, length);
+		for (size_t i = 0; i < length; i++) {
+			pInsertion[i] = static_cast<T>(positions[i]);
+		}
+		stepPartition += static_cast<T>(length);
+	}
+
+	void SetPartitionStartPosition(T partition, T pos) noexcept {
+		ApplyStep(partition+1);
+		if ((partition < 0) || (partition >= body.Length())) {
+			return;
+		}
+		body.SetValueAt(partition, pos);
+	}
+
+	void InsertText(T partitionInsert, T delta) noexcept {
+		constexpr ptrdiff_t closePortion = 10;
 		// Point all the partitions after the insertion point further along in the buffer
 		if (stepLength != 0) {
 			if (partitionInsert >= stepPartition) {
 				// Fill in up to the new insertion point
 				ApplyStep(partitionInsert);
 				stepLength += delta;
-			} else if (partitionInsert >= (stepPartition - body->Length() / 10)) {
+			} else if (partitionInsert >= (stepPartition - (body.Length() / closePortion))) {
 				// Close to step but before so move step back
 				BackStep(partitionInsert);
 				stepLength += delta;
 			} else {
-				ApplyStep(body->Length()-1);
+				ApplyStep(Partitions());
 				stepPartition = partitionInsert;
 				stepLength = delta;
 			}
@@ -135,39 +152,40 @@ public:
 		}
 	}
 
-	void RemovePartition(int partition) {
+	void RemovePartition(T partition) {
 		if (partition > stepPartition) {
 			ApplyStep(partition);
 			stepPartition--;
 		} else {
 			stepPartition--;
 		}
-		body->Delete(partition);
+		body.Delete(partition);
 	}
 
-	int PositionFromPartition(int partition) const {
+	[[nodiscard]] T PositionFromPartition(T partition) const noexcept {
 		PLATFORM_ASSERT(partition >= 0);
-		PLATFORM_ASSERT(partition < body->Length());
-		if ((partition < 0) || (partition >= body->Length())) {
+		PLATFORM_ASSERT(partition < body.Length());
+		const ptrdiff_t lengthBody = body.Length();
+		if ((partition < 0) || (partition >= lengthBody)) {
 			return 0;
 		}
-		int pos = body->ValueAt(partition);
+		T pos = body.ValueAt(partition);
 		if (partition > stepPartition)
 			pos += stepLength;
 		return pos;
 	}
 
 	/// Return value in range [0 .. Partitions() - 1] even for arguments outside interval
-	int PartitionFromPosition(int pos) const {
-		if (body->Length() <= 1)
+	[[nodiscard]] T PartitionFromPosition(T pos) const noexcept {
+		if (body.Length() <= 1)
 			return 0;
-		if (pos >= (PositionFromPartition(body->Length()-1)))
-			return body->Length() - 1 - 1;
-		int lower = 0;
-		int upper = body->Length()-1;
+		if (pos >= (PositionFromPartition(Partitions())))
+			return Partitions() - 1;
+		T lower = 0;
+		T upper = Partitions();
 		do {
-			int middle = (upper + lower + 1) / 2; 	// Round high
-			int posMiddle = body->ValueAt(middle);
+			const T middle = (upper + lower + 1) / 2; 	// Round high
+			T posMiddle = body[middle];
 			if (middle > stepPartition)
 				posMiddle += stepLength;
 			if (pos < posMiddle) {
@@ -180,10 +198,48 @@ public:
 	}
 
 	void DeleteAll() {
-		int growSize = body->GetGrowSize();
-		delete body;
-		Allocate(growSize);
+		body.DeleteAll();
+		stepPartition = 0;
+		stepLength = 0;
+		body.Insert(0, 0);	// This value stays 0 for ever
+		body.Insert(1, 0);	// This is the end of the first partition and will be the start of the second
 	}
+
+	void Check() const {
+#ifdef CHECK_CORRECTNESS
+		if (Length() < 0) {
+			// Internal invariant failure: "Partitioning: Length can not be negative."
+			std::abort();
+		}
+		if (Partitions() < 1) {
+			// Internal invariant failure: "Partitioning: Must always have 1 or more partitions."
+			std::abort();
+		}
+		if (Length() == 0) {
+			if ((PositionFromPartition(0) != 0) || (PositionFromPartition(1) != 0)) {
+				// Internal invariant failure: "Partitioning: Invalid empty partitioning."
+				std::abort();
+			}
+		} else {
+			// Positions should be a strictly ascending sequence
+			for (T i = 0; i < Partitions(); i++) {
+				const T pos = PositionFromPartition(i);
+				const T posNext = PositionFromPartition(i+1);
+				if (pos > posNext) {
+					// Internal invariant failure: "Partitioning: Negative partition."
+					std::abort();
+				} else if (pos == posNext) {
+					// Internal invariant failure: "Partitioning: Empty partition."
+					std::abort();
+				}
+			}
+		}
+#endif
+	}
+
 };
+
+
+}
 
 #endif

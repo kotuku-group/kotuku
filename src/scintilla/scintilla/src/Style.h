@@ -8,85 +8,62 @@
 #ifndef STYLE_H
 #define STYLE_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
 
 struct FontSpecification {
-	const char *fontName;
-	bool bold;
-	bool italic;
-	int size;
-	int characterSet;
-	int extraFontFlag;
-	FontSpecification() :
-		fontName(0),
-		bold(false),
-		italic(false),
-		size(10),
-		characterSet(0),
-		extraFontFlag(0) {
-	}
-	bool EqualTo(const FontSpecification &other) const;
-};
+	static constexpr int sensibleFontSize = 10;
+	static constexpr int defaultFontSize = 10 * Scintilla::FontSizeMultiplier;
+	// fontName is allocated by a ViewStyle container object and may be null
+	const char *fontName = nullptr;
+	int size = defaultFontSize;
+	Scintilla::FontWeight weight = Scintilla::FontWeight::Normal;
+	Scintilla::FontStretch stretch = Scintilla::FontStretch::Normal;
+	bool italic = false;
+	Scintilla::CharacterSet characterSet = Scintilla::CharacterSet::Default;
+	Scintilla::FontQuality extraFontFlag = Scintilla::FontQuality::QualityDefault;
+	bool checkMonospaced = false;
 
-// Just like Font but only has a copy of the FontID so should not delete it
-class FontAlias : public Font {
-	// Private so FontAlias objects can not be copied
-	FontAlias(const FontAlias &);
-	FontAlias &operator=(const FontAlias &);
-public:
-	FontAlias();
-	virtual ~FontAlias();
-	void MakeAlias(Font &fontOrigin);
-	void ClearFont();
+	constexpr FontSpecification(const char *fontName_, int size_) noexcept :
+		fontName(fontName_), size(size_) {
+	}
+	bool operator==(const FontSpecification &other) const noexcept;
+	bool operator<(const FontSpecification &other) const noexcept;
 };
 
 struct FontMeasurements {
-	unsigned int lineHeight;
-	unsigned int ascent;
-	unsigned int descent;
-	unsigned int externalLeading;
-	unsigned int aveCharWidth;
-	unsigned int spaceWidth;
-	int sizeZoomed;
-	FontMeasurements();
-	void Clear();
+	XYPOSITION ascent = 1;
+	XYPOSITION descent = 1;
+	XYPOSITION capitalHeight = 1;	// Top of capital letter to baseline: ascent - internal leading
+	XYPOSITION aveCharWidth = 1;
+	XYPOSITION monospaceCharacterWidth = 1;
+	XYPOSITION spaceWidth = 1;
+	bool monospaceASCII = false;
+	int sizeZoomed = 2;
 };
 
 /**
  */
 class Style : public FontSpecification, public FontMeasurements {
 public:
-	ColourPair fore;
-	ColourPair back;
-	bool eolFilled;
-	bool underline;
-	enum ecaseForced {caseMixed, caseUpper, caseLower};
-	ecaseForced caseForce;
-	bool visible;
-	bool changeable;
-	bool hotspot;
+	ColourRGBA fore = black;
+	ColourRGBA back = white;
+	bool eolFilled = false;
+	bool underline = false;
+	enum class CaseForce {mixed, upper, lower, camel};
+	CaseForce caseForce = CaseForce::mixed;
+	bool visible = true;
+	bool changeable = true;
+	bool hotspot = false;
+	static constexpr size_t maxRepresentationLength = 5;	// UTF-8 + NUL
+	char invisibleRepresentation[maxRepresentationLength] {};
 
-	FontAlias font;
+	std::shared_ptr<Font> font;
 
-	Style();
-	Style(const Style &source);
-	~Style();
-	Style &operator=(const Style &source);
-	void Clear(ColourDesired fore_, ColourDesired back_,
-	           int size_,
-	           const char *fontName_, int characterSet_,
-	           bool bold_, bool italic_, bool eolFilled_,
-	           bool underline_, ecaseForced caseForce_,
-		   bool visible_, bool changeable_, bool hotspot_);
-	void ClearTo(const Style &source);
-	void Copy(Font &font_, const FontMeasurements &fm_);
-	bool IsProtected() const { return !(changeable && visible);}
+	explicit Style(const char *fontName_=nullptr) noexcept;
+	void Copy(std::shared_ptr<Font> font_, const FontMeasurements &fm_) noexcept;
+	[[nodiscard]] bool IsProtected() const noexcept { return !(changeable && visible);}
 };
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif

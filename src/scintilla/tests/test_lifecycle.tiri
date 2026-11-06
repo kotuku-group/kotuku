@@ -1,0 +1,116 @@
+   include 'scintilla', 'vector', 'display'
+
+function newEditor():<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=300 })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   return scene, viewport.new('Scintilla', { })
+end
+
+@Test function RepeatedCreateFreeWithQueuedEvents()
+   for _ in {0 to 30} do
+      local scene <close>, sci = newEditor()
+      sci.string = 'Before 😀 after\nsecond line'
+      check sci.mtInsertText('new ', 0)
+      sci.free()
+      processing.sleep(0)
+   end
+end
+
+@Test function PartialInitialisationCleanup()
+   for _ in {0 to 5} do
+      local editor = obj.new('Scintilla')
+      local failed = false
+      try
+         editor.init()
+      except e
+         failed = true
+      end
+      assert(failed, 'An editor without a viewport must fail initialisation')
+      editor.free()
+      processing.sleep(0)
+   end
+   local scene <close>, sci = newEditor()
+   sci.string = 'A later editor still works'
+   assert(sci.string is 'A later editor still works', 'Failed initialisation must not damage later editors')
+end
+
+@Test function UnicodeSearchUsesBytePositions()
+   local scene <close>, sci = newEditor()
+   sci.string = '😀é😀'
+   local search = sci.new('ScintillaSearch', { text='😀' })
+   check search.mtFind(0)
+   assert(search.start is 0 and search.end is 4, 'The non-BMP match spans four UTF-8 bytes')
+   check search.acNext()
+   assert(search.start is 6 and search.end is 10, 'Search results must remain byte offsets')
+end
+
+@Test function MalformedUTF8RoundTrip()
+   local scene <close>, sci = newEditor()
+   local text = 'prefix' .. string.char(0xf0, 0x28, 0x8c, 0x28) .. 'suffix'
+   sci.string = text
+   assert(sci.string is text, 'Malformed input must retain its original bytes')
+   local search = sci.new('ScintillaSearch', { text='suffix' })
+   check search.mtFind(0)
+   assert(search.start is 10, 'Search offsets must include malformed UTF-8 bytes')
+end
+
+@Test function RegexFailureRecovers()
+   local scene <close>, sci = newEditor()
+   sci.string = 'abc abc'
+   local search = sci.new('ScintillaSearch', { text='[', flags=STF_EXPRESSION })
+   assert(search.mtFind(0) is ERR_Search, 'The built-in regex engine reports invalid expressions as Search')
+   search.text = 'abc'
+   check search.mtFind(0)
+   assert(search.start is 0 and search.end is 3, 'A valid search must recover after a regex error')
+   assert(sci.mtReplaceText('[', 'x', STF_EXPRESSION, 0, -1) is ERR_Search,
+      'A failed built-in regex compilation must report Search')
+   check sci.mtReplaceText('abc', 'x', STF_EXPRESSION, 0, -1)
+   assert(sci.string is 'x x', 'Replacement must recover after a regex error')
+   check sci.acUndo()
+   assert(sci.string is 'abc abc', 'The successful replacement must remain one undo action')
+end
+
+@Test function FileFailureReleasesPartialSceneResources()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=300 })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   local sci = viewport.new('Scintilla')
+   sci.path = 'temp:scintilla_v5_missing_directory/missing.txt'
+   local name = 'sci' .. sci.id
+   local failed = false
+   try
+      sci.init()
+   except e
+      failed = true
+   end
+   assert(failed, 'A missing input file must fail after canvas and engine creation')
+   sci.free()
+   processing.sleep(0)
+   local err = scene.mtFindDef(name)
+   assert(err is ERR_Search, 'Freeing a partially initialised editor must release its image definition')
+end
+
+@Test function ExternalFocusSurvivesEditorDestruction()
+   local surface <close> = obj.new('Surface', { width=400, height=300 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { width=300, height=200 })
+   local focus = scene.new('VectorViewport', { width=300, height=200 })
+   local sci = host.new('Scintilla', { focus=focus, flags=SCIF_EDIT })
+   surface.acShow()
+   surface.acFocus()
+   focus.acFocus()
+   processing.sleep(0)
+   sci.free()
+
+   -- Vector retires the dead editor's weak-pinned keyboard callback before delivering input to the replacement.
+   local replacement = host.new('Scintilla', { focus=focus, flags=SCIF_EDIT })
+   focus.acFocus()
+   local event = array<int, 6>
+   event[0] = ('keypress').hash()
+   event[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   event[2] = KQ_PRESSED
+   event[3] = KEY_A
+   event[4] = 65
+   check mSys.BroadcastEvent(event, 24)
+   processing.sleep(0)
+   assert(replacement.string is 'A', 'The surviving focus viewport must deliver input only to its live editor')
+end

@@ -89,7 +89,6 @@ for one frame before the editor repaints.</li>
 *********************************************************************************************************************/
 
 //#define DEBUG
-#define NO_SSTRING
 #define INTERNATIONAL_INPUT
 #define PRV_SCINTILLA
 
@@ -111,67 +110,8 @@ for one frame before the editor repaints.</li>
 #include <cmath>
 #include <memory>
 
-#include "Platform.h"
-
-#include "ILexer.h"
-#include "Scintilla.h"
-
-#include "PropSetSimple.h"
-#ifdef SCI_LEXER
-#include "SciLexer.h"
-#include "LexerModule.h"
-#include "Catalogue.h"
-#endif
-#include "SplitVector.h"
-#include "Partitioning.h"
-#include "RunStyles.h"
-#include "ContractionState.h"
-#include "CellBuffer.h"
-#include "CallTip.h"
-#include "KeyMap.h"
-#include "Indicator.h"
-#include "XPM.h"
-#include "LineMarker.h"
-#include "Style.h"
-#include "ViewStyle.h"
-#include "AutoComplete.h"
-#include "CharacterSet.h"
-#include "CharClassify.h"
-#include "Decoration.h"
-#include "Document.h"
-#include "Selection.h"
-#include "PositionCache.h"
-#include "Editor.h"
-#include "ScintillaBase.h"
-
-
-#include "Platform.h"
-#include "Scintilla.h"
-#include "ScintillaWidget.h"
-#include "Partitioning.h"
-#include "RunStyles.h"
-#ifdef SCI_LEXER
-#include "SciLexer.h"
-#include "PropSetSimple.h"
-//#include "Accessor.h"
-//#include "KeyWords.h"
-#endif
-#include "CharClassify.h"
-#include "ContractionState.h"
-#include "SVector.h"
-#include "CellBuffer.h"
-#include "CallTip.h"
-#include "KeyMap.h"
-#include "Indicator.h"
-#include "XPM.h"
-#include "LineMarker.h"
-#include "Style.h"
-#include "AutoComplete.h"
-#include "ViewStyle.h"
-#include "Document.h"
-#include "Editor.h"
-#include "ScintillaBase.h"
-#include "UniConversion.h"
+#include "engine_headers.h"
+#include "Lexilla.h"
 
 #include <kotuku/main.h>
 #include <kotuku/modules/xml.h>
@@ -188,6 +128,7 @@ for one frame before the editor repaints.</li>
 #include "scintillakotuku.h"
 
 #include "module_def.c"
+#include "lexer_profiles.h"
 
 JUMPTABLE_CORE
 JUMPTABLE_DISPLAY
@@ -307,6 +248,7 @@ static ERR get_font_handles(std::string_view, int, APTR *);
 static void fonts_changed(extScintilla *);
 static void sync_page(extScintilla *);
 static void clear_bitmap(extScintilla *);
+static void clear_bitmap_border(extScintilla *);
 static ERR resize_bitmap(extScintilla *, int, int);
 static void invalidate_area(extScintilla *, int, int, int, int);
 static void paint_dirty(extScintilla *);
@@ -323,9 +265,9 @@ static int scaled(extScintilla *Self, int Value)
 
 // Scintilla draws opaque highlights beneath the text, and translucent highlights over it.
 
-static unsigned long int scintilla_alpha(uint8_t Alpha)
+static uptr_t scintilla_alpha(uint8_t Alpha)
 {
-   return (Alpha < 255) ? Alpha : (unsigned long int)SC_ALPHA_NOALPHA;
+   return (Alpha < 255) ? Alpha : (uptr_t)SC_ALPHA_NOALPHA;
 }
 static void check_modified_widths(extScintilla *);
 static void track_modified_lines(extScintilla *, int, int);
@@ -347,6 +289,11 @@ extern ERR init_search(void);
 static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 {
    CoreBase = argCoreBase;
+
+   kt::Log log("scintilla");
+   log.msg("Backend: v5; Scintilla 5.6.9; Lexilla 5.5.5");
+   // Initialise the upstream catalogue during serial module loading, before editor creation can occur on threads.
+   if (GetLexerCount() < 1) return ERR::InitModule;
 
    if (objModule::load("display", &modDisplay, &DisplayBase) != ERR::Okay) return ERR::InitModule;
    if (objModule::load("font", &modFont, &FontBase) != ERR::Okay) return ERR::InitModule;
@@ -500,7 +447,14 @@ static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result
 {
    auto Self = (extScintilla *)CurrentContext();
    hide_context_menu(Self);
-   if (Self->API) Self->API->panCancelPopups();
+   Self->HasFocus = false;
+   if (Self->API) {
+      Self->API->panSetFocus(false);
+      Self->API->panReleaseMouse();
+      Self->API->panCancelPopups();
+   }
+   Self->Drop.active = false;
+   Self->PrimaryDrop.active = false;
    Self->Viewport = nullptr;
    Self->Focus    = nullptr;
    Self->View     = nullptr;
@@ -643,7 +597,7 @@ static ERR feedback_page(objVectorViewport *Page, FM Event)
 // on entry, so it is used to resolve the client position before the editor can scroll.
 //
 // A release of the RMB opens the context menu at the scene position of the event, which is free of the transforms
-// that apply to the editor (see pan_menu.cxx).  Opening on release ensures that the button is no longer held when the
+// that apply to the editor (see kt_menu.cxx).  Opening on release ensures that the button is no longer held when the
 // menu appears under the pointer.
 //
 // Each wheel event scrolls by a fixed step because wheel values are not consistent between platforms.  Holding Ctrl
@@ -655,9 +609,10 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
    static const int WHEEL_COLUMNS = 6;
 
    auto Self = (extScintilla *)CurrentContext();
-   if (not Self->API) return ERR::Okay;
+   kt::ScopedObjectLock owner(Self);
+   if (not owner.granted() or not Self->API or Self->collecting()) return ERR::Okay;
 
-   for (auto event=Events; event; event=event->Next) {
+   for (auto event=Events; event and not Self->collecting(); event=event->Next) {
       if ((event->Flags & JTYPE::DRAG_ITEM) != JTYPE::NIL) {
          if (auto pointer = gfx::AccessPointer()) {
             std::string_view types;
@@ -688,7 +643,7 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
       if ((Self->Flags & SCIF::DISABLED) != SCIF::NIL) continue;
 
       if ((event->Flags & JTYPE::BUTTON) != JTYPE::NIL) {
-         // Scintilla handles held buttons through Tick(); a repeat is not a new selection or drag gesture.
+         // Scintilla handles held buttons through TickFor(); a repeat is not a new selection or drag gesture.
          if ((event->Flags & JTYPE::REPEATED) != JTYPE::NIL) continue;
          const auto time = (unsigned int)(event->Timestamp / 1000LL); // Scintilla measures time in milliseconds
          if (event->Value > 0) {
@@ -846,6 +801,18 @@ static void clear_bitmap(extScintilla *Self)
       Self->Bitmap->packPixel(bkgd.Red, bkgd.Green, bkgd.Blue, 255), BAF::FILL);
 }
 
+// The extra row and column cover fractional Canvas offsets but lie outside Scintilla's client clip.  Retained
+// pixels from a larger client or a scroll must not survive there, including before the deferred paint.
+
+static void clear_bitmap_border(extScintilla *Self)
+{
+   auto bitmap = Self->Bitmap;
+   const auto &background = Self->BkgdColour;
+   const auto colour = bitmap->packPixel(background.Red, background.Green, background.Blue, 255);
+   gfx::DrawRectangle(bitmap, Self->ViewWidth, 0, bitmap->Width - Self->ViewWidth, bitmap->Height, colour, BAF::FILL);
+   gfx::DrawRectangle(bitmap, 0, Self->ViewHeight, bitmap->Width, bitmap->Height - Self->ViewHeight, colour, BAF::FILL);
+}
+
 //********************************************************************************************************************
 // Resize the Bitmap while retaining its content.  The repaint that follows a resize is deferred, so the scene is drawn
 // with the resized Bitmap before Scintilla repaints it.  Retaining the content avoids the editor flashing to a blank
@@ -883,6 +850,7 @@ static ERR resize_bitmap(extScintilla *Self, int Width, int Height)
    if (bmp->Height > keep_height) {
       gfx::DrawRectangle(bmp, 0, keep_height, bmp->Width, bmp->Height - keep_height, colour, BAF::FILL);
    }
+   clear_bitmap_border(Self);
    return ERR::Okay;
 }
 
@@ -945,7 +913,7 @@ static void update_margin_width(extScintilla *Self)
       width = SCICALL(SCI_TEXTWIDTH, STYLE_LINENUMBER, sample.c_str());
    }
 
-   SCICALL(SCI_SETMARGINWIDTHN, 0, (long)width);
+   SCICALL(SCI_SETMARGINWIDTHN, 0, (sptr_t)width);
 }
 
 //********************************************************************************************************************
@@ -1123,7 +1091,10 @@ static ERR SCINTILLA_DataFeed(extScintilla *Self, struct acDataFeed *Args)
 
    if (!Args) return log.warning(ERR::NullArgs);
 
+   if (not Self->API) return ERR::NotInitialised;
+
    if (Args->Datatype IS DATA::TEXT) {
+      if (Self->API->panCheckLength(Args->Buffer.size()) != ERR::Okay) return ERR::OutOfRange;
       // Incoming text is appended to the end of the document
       SCICALL(SCI_APPENDTEXT, Args->Buffer.size(), (const char *)Args->Buffer.data());
    }
@@ -1175,11 +1146,11 @@ static ERR SCINTILLA_DefineMarker(extScintilla *Self, struct sci::DefineMarker *
 
    SCICALL(SCI_MARKERDEFINE, Args->Marker, symbol);
 
-   if (auto c = Args->Fore) SCICALL(SCI_MARKERSETFORE, Args->Marker, (long)SCICOLOUR(c->Red, c->Green, c->Blue));
+   if (auto c = Args->Fore) SCICALL(SCI_MARKERSETFORE, Args->Marker, (sptr_t)SCICOLOUR(c->Red, c->Green, c->Blue));
 
    if (auto c = Args->Bkgd) {
-      SCICALL(SCI_MARKERSETBACK, Args->Marker, (long)SCICOLOUR(c->Red, c->Green, c->Blue));
-      SCICALL(SCI_MARKERSETALPHA, Args->Marker, (c->Alpha < 255) ? long(c->Alpha) : long(SC_ALPHA_NOALPHA));
+      SCICALL(SCI_MARKERSETBACK, Args->Marker, (sptr_t)SCICOLOUR(c->Red, c->Green, c->Blue));
+      SCICALL(SCI_MARKERSETALPHA, Args->Marker, (c->Alpha < 255) ? sptr_t(c->Alpha) : sptr_t(SC_ALPHA_NOALPHA));
    }
 
    return ERR::Okay;
@@ -1365,7 +1336,8 @@ static ERR SCINTILLA_GetLine(extScintilla *Self, struct sci::GetLine *Args)
    if ((Args->Line < 0) or Args->Buffer.empty()) return log.warning(ERR::OutOfRange);
 
    // Includes line-end characters, of which there may be more than one.
-   int len = SCICALL(SCI_LINELENGTH, Args->Line);
+   int len;
+   if (not KotukuScintilla::PublicInteger(SCICALL(SCI_LINELENGTH, Args->Line), len)) return ERR::OutOfRange;
    if (std::ssize(Args->Buffer) > len) {
       SCICALL(SCI_GETLINE, Args->Line, (const char *)Args->Buffer.data());
       Args->Buffer[len] = 0;
@@ -1396,7 +1368,8 @@ static ERR SCINTILLA_GetPos(extScintilla *Self, struct sci::GetPos *Args)
 {
    if (!Args) return ERR::NullArgs;
 
-   Args->Pos = SCICALL(SCI_FINDCOLUMN, Args->Line, Args->Column);
+   if (not KotukuScintilla::PublicInteger(SCICALL(SCI_FINDCOLUMN, Args->Line, Args->Column), Args->Pos))
+      return ERR::OutOfRange;
    return ERR::Okay;
 }
 
@@ -1535,7 +1508,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    }
    else calc_longest_line(Self);
 
-   Self->API->SetLexer(int(Self->Lexer));
+   if (auto error = Self->API->SetLexer(Self->Lexer); error != ERR::Okay) return error;
 
    if (Self->LongestWidth >= scaled(Self, 60)) SCICALL(SCI_SETSCROLLWIDTH, Self->LongestWidth);
    else SCICALL(SCI_SETSCROLLWIDTH, 1UL);
@@ -1552,23 +1525,21 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    // Selected text will be inversed with these colours
 
-   auto &sf = Self->SelectFore, &sb = Self->SelectBkgd;
-   SCICALL(SCI_SETSELFORE, (unsigned long int)(sf.Alpha > 0), (long int)SCICOLOUR(sf.Red, sf.Green, sf.Blue));
-   SCICALL(SCI_SETSELBACK, (unsigned long int)(sb.Alpha > 0), (long int)SCICOLOUR(sb.Red, sb.Green, sb.Blue));
-   SCICALL(SCI_SETSELALPHA, scintilla_alpha(sb.Alpha));
+   SET_SelectFore(Self, &Self->SelectFore);
+   SET_SelectBkgd(Self, &Self->SelectBkgd);
 
    // Enable line colour for the line that contains the text cursor
 
    SCICALL(SCI_SETCARETLINEBACK, SCICOLOUR(Self->LineHighlight.Red, Self->LineHighlight.Green, Self->LineHighlight.Blue));
    SCICALL(SCI_SETCARETLINEBACKALPHA, scintilla_alpha(Self->LineHighlight.Alpha));
-   SCICALL(SCI_SETCARETLINEVISIBLE, (unsigned long int)(Self->LineHighlight.Alpha > 0));
+   SCICALL(SCI_SETCARETLINEVISIBLE, (uptr_t)(Self->LineHighlight.Alpha > 0));
 
    SCICALL(SCI_SETCARETFORE, SCICOLOUR(Self->CursorColour.Red, Self->CursorColour.Green, Self->CursorColour.Blue));
 
    // Show whitespace characters like tabs
 
-   if (Self->ShowWhitespace) SCICALL(SCI_SETVIEWWS, (long unsigned int)SCWS_VISIBLEALWAYS);
-   else SCICALL(SCI_SETVIEWWS, (long unsigned int)SCWS_INVISIBLE);
+   if (Self->ShowWhitespace) SCICALL(SCI_SETVIEWWS, (uptr_t)SCWS_VISIBLEALWAYS);
+   else SCICALL(SCI_SETVIEWWS, (uptr_t)SCWS_INVISIBLE);
 
    // Turn off buffered drawing because Kotuku surfaces already include buffer support
 
@@ -1598,7 +1569,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    apply_metrics(Self);
 
-   SCICALL(SCI_SETMARGINSENSITIVEN, 1, (long)Self->MarginClick.defined());
+   SCICALL(SCI_SETMARGINSENSITIVEN, 1, (sptr_t)Self->MarginClick.defined());
    Self->API->panSetFolding(Self->FoldingMarkers);
 
    if (Self->Wordwrap) SCICALL(SCI_SETWRAPMODE, 1UL);
@@ -1640,9 +1611,13 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
    int pos;
 
    if ((not Args) or (Args->String.empty())) return log.warning(ERR::NullArgs);
+   const auto removed = Args->Pos IS -2 ?
+      SCICALL(SCI_GETSELECTIONEND) - SCICALL(SCI_GETSELECTIONSTART) : 0;
+   if (Self->API->panCheckLength(Args->String.size(), removed) != ERR::Okay) return ERR::OutOfRange;
 
-   log.branch("Pos: %d, Text: %.*s", Args->Pos, std::min<int>(Args->String.size(), 10), Args->String.data());
+   log.branch("Pos: %d, Text: %.*s", Args->Pos, int(std::min(Args->String.size(), size_t(10))), Args->String.data());
 
+   const std::string text(Args->String);
    pos = Args->Pos;
    if (pos IS -1) {
       // Get the current cursor position
@@ -1652,7 +1627,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
       // Replace currently selected text
 
       SCICALL(SCI_BEGINUNDOACTION);
-      SCICALL(SCI_REPLACESEL, 0UL, Args->String.data());
+      SCICALL(SCI_REPLACESEL, 0UL, text.c_str());
       SCICALL(SCI_ENDUNDOACTION);
       return ERR::Okay;
    }
@@ -1661,7 +1636,7 @@ static ERR SCINTILLA_InsertText(extScintilla *Self, struct sci::InsertText *Args
    }
 
    SCICALL(SCI_BEGINUNDOACTION);
-   SCICALL(SCI_INSERTTEXT, pos, Args->String.data());
+   SCICALL(SCI_INSERTTEXT, pos, text.c_str());
    SCICALL(SCI_ENDUNDOACTION);
    return ERR::Okay;
 }
@@ -1712,7 +1687,13 @@ static ERR SCINTILLA_RemoveMarker(extScintilla *Self, struct sci::RemoveMarker *
    // Scintilla removes every instance of the marker from a line, including those that joining lines can produce.
 
    if (Args->Line IS -1) SCICALL(SCI_MARKERDELETEALL, Args->Marker);
-   else SCICALL(SCI_MARKERDELETE, Args->Line, Args->Marker);
+   else if (Args->Marker < 0) SCICALL(SCI_MARKERDELETE, Args->Line, Args->Marker);
+   else {
+      const auto mask = uptr_t(1) << Args->Marker;
+      while (SCICALL(SCI_MARKERGET, Args->Line) & mask) {
+         SCICALL(SCI_MARKERDELETE, Args->Line, Args->Marker);
+      }
+   }
    return ERR::Okay;
 }
 
@@ -1756,7 +1737,8 @@ static ERR SCINTILLA_ReplaceLine(extScintilla *Self, struct sci::ReplaceLine *Ar
 
    size_t length = Args->String.size();
    if ((Args->Length >= 0) and (size_t(Args->Length) < length)) length = Args->Length;
-   SCICALL(SCI_REPLACETARGET, (unsigned long)length, Args->String.data());
+   if (Self->API->panCheckLength(length, end - start) != ERR::Okay) return ERR::OutOfRange;
+   SCICALL(SCI_REPLACETARGET, (uptr_t)length, Args->String.data());
 
    return ERR::Okay;
 }
@@ -1810,7 +1792,9 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
       if (start IS end) return ERR::Search;
    }
 
-   int findlen = Args->Find.size();
+   if ((Args->Find.size() > size_t(KotukuScintilla::document_limit)) or
+       (Args->Replace.size() > size_t(KotukuScintilla::document_limit))) return ERR::OutOfRange;
+   const int findlen = int(Args->Find.size());
 
    int flags = (((Args->Flags & STF::CASE) != STF::NIL) ? SCFIND_MATCHCASE : 0) |
                 (((Args->Flags & STF::EXPRESSION) != STF::NIL) ? SCFIND_REGEXP : 0);
@@ -1823,33 +1807,51 @@ static ERR SCINTILLA_ReplaceText(extScintilla *Self, struct sci::ReplaceText *Ar
    // is not matched again.  The end position is adjusted by the difference between each match and its replacement.
 
    int total = 0;
+   ERR result = ERR::Okay;
    while (start <= end) {
       log.trace("Search between %d - %d", start, end);
 
       SCICALL(SCI_SETTARGETSTART, start);
       SCICALL(SCI_SETTARGETEND, end);
 
-      int pos = SCICALL(SCI_SEARCHINTARGET, findlen, Args->Find.data());
+      SCICALL(SCI_SETSTATUS, uptr_t(SC_STATUS_OK));
+      int pos;
+      if (not KotukuScintilla::PublicInteger(SCICALL(SCI_SEARCHINTARGET, findlen, Args->Find.data()), pos)) {
+         result = ERR::OutOfRange;
+         break;
+      }
+      if (SCICALL(SCI_GETSTATUS) IS SC_STATUS_WARN_REGEX) { result = ERR::Syntax; break; }
       if (pos IS -1) break;
 
       log.trace("Found keyword at %d", pos);
 
       int match_len = SCICALL(SCI_GETTARGETEND) - pos;
 
-      int len;
+      sptr_t len;
       if ((Args->Flags & STF::EXPRESSION) != STF::NIL) {
-         len = SCICALL(SCI_REPLACETARGETRE, (unsigned long)Args->Replace.size(), Args->Replace.data());
+         len = SCICALL(SCI_REPLACETARGETRE, (uptr_t)Args->Replace.size(), Args->Replace.data());
       }
-      else len = SCICALL(SCI_REPLACETARGET, (unsigned long)Args->Replace.size(), Args->Replace.data());
+      else len = SCICALL(SCI_REPLACETARGET, (uptr_t)Args->Replace.size(), Args->Replace.data());
 
-      end  += len - match_len;
-      start = pos + len;
-      if (!match_len) start++; // An empty match must not be repeated at the same position
+      if (len < 0) { result = ERR::OutOfRange; break; }
+      int next_end, next_start;
+      if (not KotukuScintilla::PublicInteger(sptr_t(end) + len - match_len, next_end) or
+          not KotukuScintilla::PublicInteger(sptr_t(pos) + len, next_start)) {
+         result = ERR::OutOfRange;
+         break;
+      }
+      end = next_end;
+      start = next_start;
       total++;
+      if (not match_len) {
+         if (start >= end) break;
+         start = int(SCICALL(SCI_POSITIONAFTER, start));
+      }
    }
 
    SCICALL(SCI_ENDUNDOACTION);
 
+   if (result != ERR::Okay) return result;
    if (total) return ERR::Okay;
    else return ERR::Search;
 }
@@ -1864,7 +1866,7 @@ Private
 
 static ERR SCINTILLA_ReportEvent(extScintilla *Self)
 {
-   if (Self->API) Self->API->panFlushCompletionReports();
+   if (Self->API and not Self->API->panFlushCompletionReports()) return ERR::Okay;
 
    if (Self->ReportEventFlags IS SEF::NIL) return ERR::Okay;
 
@@ -1902,7 +1904,8 @@ static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Arg
 
    if ((!Args) or (!Args->Dest)) return log.warning(ERR::NullArgs);
 
-   int len = SCICALL(SCI_GETLENGTH);
+   int len;
+   if (not KotukuScintilla::PublicInteger(SCICALL(SCI_GETLENGTH), len)) return ERR::OutOfRange;
 
    log.branch("To: %d, Size: %d", Args->Dest->UID, len);
 
@@ -2356,7 +2359,10 @@ The CursorCol and #CursorRow fields reflect the current row and column of the us
 
 static ERR GET_CursorCol(extScintilla *Self, int *Value)
 {
-   if (Self->initialised()) *Value = SCICALL(SCI_GETCOLUMN, SCICALL(SCI_GETCURRENTPOS));
+   if (Self->initialised()) {
+      if (not KotukuScintilla::PublicInteger(SCICALL(SCI_GETCOLUMN, SCICALL(SCI_GETCURRENTPOS)), *Value))
+         return ERR::OutOfRange;
+   }
    else *Value = 0;
    return ERR::Okay;
 }
@@ -2373,7 +2379,10 @@ The #CursorCol and CursorRow fields reflect the current row and column of the us
 
 static ERR GET_CursorRow(extScintilla *Self, int *Value)
 {
-   if (Self->initialised()) *Value = SCICALL(SCI_LINEFROMPOSITION, SCICALL(SCI_GETCURRENTPOS));
+   if (Self->initialised()) {
+      if (not KotukuScintilla::PublicInteger(SCICALL(SCI_LINEFROMPOSITION, SCICALL(SCI_GETCURRENTPOS)), *Value))
+         return ERR::OutOfRange;
+   }
    else *Value = 0;
    return ERR::Okay;
 }
@@ -2391,7 +2400,7 @@ static ERR SET_CursorColour(extScintilla *Self, RGB8 *Value)
 
    if (Self->initialised()) {
       auto &c = Self->CursorColour;
-      SCICALL(SCI_SETCARETFORE, (unsigned long int)SCICOLOUR(c.Red, c.Green, c.Blue));
+      SCICALL(SCI_SETCARETFORE, (uptr_t)SCICOLOUR(c.Red, c.Green, c.Blue));
    }
 
    return ERR::Okay;
@@ -2589,7 +2598,7 @@ static ERR SET_MarginClick(extScintilla *Self, FUNCTION *Value)
    }
    else Self->MarginClick.clear();
 
-   if (Self->API) SCICALL(SCI_SETMARGINSENSITIVEN, 1, (long)Self->MarginClick.defined());
+   if (Self->API) SCICALL(SCI_SETMARGINSENSITIVEN, 1, (sptr_t)Self->MarginClick.defined());
    return ERR::Okay;
 }
 
@@ -2609,12 +2618,9 @@ overrides any existing value.  The `Lexer` is left unchanged if the file name do
 
 static ERR SET_Lexer(extScintilla *Self, SCLEX Value)
 {
+   if (not find_lexer_profile(Value)) return ERR::NoSupport;
+   if (Self->API) return Self->API->SetLexer(Value);
    Self->Lexer = Value;
-   if (Self->initialised()) {
-      kt::Log log;
-      log.branch("Changing lexer to %d", int(Value));
-      Self->API->SetLexer(int(Self->Lexer));
-   }
    return ERR::Okay;
 }
 
@@ -2628,7 +2634,7 @@ LineCount: The total number of lines in the document.
 static ERR GET_LineCount(extScintilla *Self, int *Value)
 {
    if (Self->initialised()) {
-      *Value = SCICALL(SCI_GETLINECOUNT);
+      if (not KotukuScintilla::PublicInteger(SCICALL(SCI_GETLINECOUNT), *Value)) return ERR::OutOfRange;
       return ERR::Okay;
    }
    else return ERR::NotInitialised;
@@ -2653,7 +2659,7 @@ static ERR SET_LineHighlight(extScintilla *Self, RGB8 *Value)
    if (Self->initialised()) {
       SCICALL(SCI_SETCARETLINEBACK, SCICOLOUR(Self->LineHighlight.Red, Self->LineHighlight.Green, Self->LineHighlight.Blue));
       SCICALL(SCI_SETCARETLINEBACKALPHA, scintilla_alpha(Self->LineHighlight.Alpha));
-      SCICALL(SCI_SETCARETLINEVISIBLE, (unsigned long int)(Self->LineHighlight.Alpha > 0));
+      SCICALL(SCI_SETCARETLINEVISIBLE, (uptr_t)(Self->LineHighlight.Alpha > 0));
    }
 
    return ERR::Okay;
@@ -2801,11 +2807,11 @@ static ERR SET_ShowWhitespace(extScintilla *Self, int Value)
 {
    if (Value) {
       Self->ShowWhitespace = 1;
-      if (Self->initialised()) SCICALL(SCI_SETVIEWWS, (long unsigned int)SCWS_VISIBLEALWAYS);
+      if (Self->initialised()) SCICALL(SCI_SETVIEWWS, (uptr_t)SCWS_VISIBLEALWAYS);
    }
    else {
       Self->ShowWhitespace = 0;
-      if (Self->initialised()) SCICALL(SCI_SETVIEWWS, (long unsigned int)SCWS_INVISIBLE);
+      if (Self->initialised()) SCICALL(SCI_SETVIEWWS, (uptr_t)SCWS_INVISIBLE);
    }
    return ERR::Okay;
 }
@@ -2868,19 +2874,18 @@ default colour for additional selections.
 
 static ERR SET_SelectBkgd(extScintilla *Self, RGB8 *Value)
 {
-   if ((Value) and (Value->Alpha)) {
-      Self->SelectBkgd = *Value;
-      if (Self->initialised()) {
-         auto &c = Self->SelectBkgd;
-         SCICALL(SCI_SETSELBACK, (unsigned long int)true, (long int)SCICOLOUR(c.Red, c.Green, c.Blue));
-         SCICALL(SCI_SETSELALPHA, scintilla_alpha(c.Alpha));
-      }
-   }
-   else {
-      Self->SelectBkgd.Alpha = 0;
-      if (Self->initialised()) {
-         SCICALL(SCI_SETSELBACK, (unsigned long int)false, 0L);
-         SCICALL(SCI_SETSELALPHA, (unsigned long int)SC_ALPHA_NOALPHA);
+   if (Value) Self->SelectBkgd = *Value;
+   else Self->SelectBkgd.Alpha = 0;
+   if (Self->API) {
+      const auto &colour = Self->SelectBkgd;
+      SCICALL(SCI_SETSELALPHA, colour.Alpha ? scintilla_alpha(colour.Alpha) : uptr_t(SC_ALPHA_NOALPHA));
+      for (auto element : { Scintilla::Element::SelectionBack, Scintilla::Element::SelectionSecondaryBack,
+            Scintilla::Element::SelectionInactiveBack }) {
+         if (colour.Alpha) {
+            SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(element),
+               sptr_t(Scintilla::Internal::ColourRGBA(colour.Red, colour.Green, colour.Blue, colour.Alpha).AsInteger()));
+         }
+         else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(element));
       }
    }
    return ERR::Okay;
@@ -2898,16 +2903,18 @@ override.  Other alpha values are ignored and the colour is drawn opaquely.
 
 static ERR SET_SelectFore(extScintilla *Self, RGB8 *Value)
 {
-   if ((Value) and (Value->Alpha)) {
-      Self->SelectFore = *Value;
-      if (Self->initialised()) {
-         auto &c = Self->SelectFore;
-         SCICALL(SCI_SETSELFORE, (unsigned long int)true, (long int)SCICOLOUR(c.Red, c.Green, c.Blue));
+   if (Value) Self->SelectFore = *Value;
+   else Self->SelectFore.Alpha = 0;
+   if (Self->API) {
+      const auto &colour = Self->SelectFore;
+      for (auto element : { Scintilla::Element::SelectionText, Scintilla::Element::SelectionSecondaryText,
+            Scintilla::Element::SelectionInactiveText }) {
+         if (colour.Alpha) {
+            SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(element),
+               sptr_t(Scintilla::Internal::ColourRGBA(colour.Red, colour.Green, colour.Blue).AsInteger()));
+         }
+         else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(element));
       }
-   }
-   else {
-      Self->SelectFore.Alpha = 0;
-      if (Self->initialised()) SCICALL(SCI_SETSELFORE, (unsigned long int)false, 0L);
    }
    return ERR::Okay;
 }
@@ -2927,6 +2934,7 @@ method as the preferred alternative, as it is much more efficient with memory us
 static ERR GET_String(extScintilla *Self, std::string_view &Value)
 {
    auto len = SCICALL(SCI_GETLENGTH);
+   if ((len < 0) or (len > KotukuScintilla::document_limit)) return ERR::OutOfRange;
 
    Self->StringBuffer.clear();
    Self->StringBuffer.resize(len);
@@ -2937,8 +2945,12 @@ static ERR GET_String(extScintilla *Self, std::string_view &Value)
 
 static ERR SET_String(extScintilla *Self, const std::string_view &Value)
 {
+   if (Value.size() > size_t(KotukuScintilla::document_limit)) return ERR::OutOfRange;
    if (Self->initialised()) {
-      if (not Value.empty()) SCICALL(SCI_SETTEXT, 0UL, (const char *)Value.data());
+      if (not Value.empty()) {
+         const std::string text(Value);
+         SCICALL(SCI_SETTEXT, 0UL, text.c_str());
+      }
       else acClear(Self);
       calc_longest_line(Self); // Sets the scroll width, which determines the width of the Page
    }
@@ -3369,7 +3381,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
             }
             else error = ERR::BufferOverflow;
          }
-         else error = ERR::Okay; // File is empty
+         else { acClear(Self); error = ERR::Okay; }
       }
       else error = ERR::File;
 
@@ -3384,9 +3396,9 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
       for (i=0; i < std::size(glLexers); i++) {
          if (wildcmp(glLexers[i].File, Path)) {
             kt::Log log;
-            Self->Lexer = glLexers[i].Lexer;
+            error = SET_Lexer(Self, glLexers[i].Lexer);
+            if (error != ERR::Okay) break;
             log.branch("Lexer for the loaded file is %d.", int(Self->Lexer));
-            Self->API->SetLexer(int(Self->Lexer));
             break;
          }
       }
@@ -3512,13 +3524,19 @@ static void report_event(extScintilla *Self, SEF Event)
          Self->EventCallback.clear();
       }
 
-      if (Self->EventCallback.isC()) {
-         kt::SwitchContext ctx(Self->EventCallback.Context);
-         auto routine = (void (*)(extScintilla *, SEF, APTR)) Self->EventCallback.Routine;
-         routine(Self, Event, Self->EventCallback.Meta);
+      auto callback = Self->EventCallback;
+      if (not callback.defined() or Self->collecting()) return;
+      callback.pin();
+      const auto unpin = kt::Defer([&]() { callback.unpin(); });
+      if (callback.isC()) {
+         kt::SwitchContext ctx(callback.Context);
+         auto routine = (void (*)(extScintilla *, SEF, APTR)) callback.Routine;
+         routine(Self, Event, callback.Meta);
       }
-      else if (Self->EventCallback.isScript()) {
-         sc::Call(Self->EventCallback, std::to_array<ScriptArg>({ { "Scintilla", Self, FD_OBJECTPTR }, { "EventFlags", int64_t(Event) } }));
+      else if (callback.isScript()) {
+         sc::Call(callback, std::to_array<ScriptArg>({
+            { "Scintilla", Self, FD_OBJECTPTR }, { "EventFlags", int64_t(Event) }
+         }));
       }
    }
 }
@@ -3533,13 +3551,17 @@ static void report_margin_click(extScintilla *Self, SCMG Margin, int Line, KQ Qu
       Self->MarginClick.clear();
    }
 
-   if (Self->MarginClick.isC()) {
-      kt::SwitchContext ctx(Self->MarginClick.Context);
-      auto routine = (void (*)(extScintilla *, SCMG, int, KQ, APTR))Self->MarginClick.Routine;
-      routine(Self, Margin, Line, Qualifiers, Self->MarginClick.Meta);
+   auto callback = Self->MarginClick;
+   if (not callback.defined() or Self->collecting()) return;
+   callback.pin();
+   const auto unpin = kt::Defer([&]() { callback.unpin(); });
+   if (callback.isC()) {
+      kt::SwitchContext ctx(callback.Context);
+      auto routine = (void (*)(extScintilla *, SCMG, int, KQ, APTR))callback.Routine;
+      routine(Self, Margin, Line, Qualifiers, callback.Meta);
    }
-   else if (Self->MarginClick.isScript()) {
-      sc::Call(Self->MarginClick, std::to_array<ScriptArg>({
+   else if (callback.isScript()) {
+      sc::Call(callback, std::to_array<ScriptArg>({
          { "Scintilla", Self, FD_OBJECTPTR },
          { "Margin", int(Margin) },
          { "Line", Line },
@@ -3714,14 +3736,14 @@ static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
 
 //********************************************************************************************************************
 
-#include "pan_drag.cxx"
+#include "kt_drag.cxx"
 #include "class_scintilla_ext.cxx"
-#include "pan_classes.cxx"
-#include "pan_window.cxx"
-#include "pan_menu.cxx"
-#include "pan_surface.cxx"
-#include "pan_popup.cxx"
-#include "pan_listbox.cxx"
+#include "kt_classes.cxx"
+#include "kt_window.cxx"
+#include "kt_menu.cxx"
+#include "kt_surface.cxx"
+#include "kt_popup.cxx"
+#include "kt_listbox.cxx"
 
 //********************************************************************************************************************
 // Paint the Dirty region of the client into the Bitmap, then ask the scene to redraw the Canvas.  This is called from
@@ -3745,14 +3767,15 @@ static void paint_dirty(extScintilla *Self)
    bool disabled = (Self->Flags & SCIF::DISABLED) != SCIF::NIL;
    if (disabled) dirty = { 0, 0, Self->ViewWidth, Self->ViewHeight };
 
-   Self->API->panPaint(Scintilla::PRectangle(dirty.Left, dirty.Top, dirty.Right, dirty.Bottom));
+   Self->API->panPaint(Scintilla::Internal::PRectangle(dirty.Left, dirty.Top, dirty.Right, dirty.Bottom));
+   clear_bitmap_border(Self);
 
    if (disabled) {
       SurfacePan surface;
       surface.Init(Self->Bitmap, Self);
       auto &bkgd = Self->BkgdColour;
-      surface.BlendRectangle(Scintilla::PRectangle(0, 0, Self->Bitmap->Width, Self->Bitmap->Height),
-         Scintilla::ColourAllocated(SCICOLOUR(bkgd.Red, bkgd.Green, bkgd.Blue)), 160);
+      surface.BlendRectangle(Scintilla::Internal::PRectangle(0, 0, Self->Bitmap->Width, Self->Bitmap->Height),
+         Scintilla::Internal::ColourRGBA(SCICOLOUR(bkgd.Red, bkgd.Green, bkgd.Blue)), 160);
    }
 
    if ((Self->Canvas) and (Self->Scene) and (Self->Scene->SurfaceID)) acDraw(Self->Canvas);
@@ -3762,14 +3785,26 @@ static void paint_dirty(extScintilla *Self)
 
 extScintilla::~extScintilla() {
    if (KeyHandle) { UnsubscribeEvent(KeyHandle); KeyHandle = nullptr; }
+   if (TickTimer) { UpdateTimer(TickTimer, 0); TickTimer = nullptr; }
+   if (IdleTimer) { UpdateTimer(IdleTimer, 0); IdleTimer = nullptr; }
+   Drop.active = false;
+   PrimaryDrop.active = false;
+   if (Focus) {
+      kt::SwitchContext context(this);
+      Focus->subscribeFeedback(FM::NIL, C_FUNCTION(feedback_focus));
+      // Keyboard callbacks are weak-pinned by Vector and retired when this context terminates.
+      if (Focus != Viewport) UnsubscribeAction(Focus, AC::NIL);
+   }
+   if (Viewport) UnsubscribeAction(Viewport, AC::NIL);
+   // Input callbacks are weak-pinned by Vector too.  Retire them through its dispatcher rather than invalidating
+   // the active subscription iterator when a margin callback destroys the editor.
+   free_context_menu(this);
+
+   // Callbacks consult API; clear it before engine cancellation can close auxiliary windows.
+   auto api = std::exchange(API, nullptr);
    if (DragClipboard) { FreeResource(DragClipboard); DragClipboard = nullptr; }
    if (FileDrop.defined()) { FileDrop.unpin(); FileDrop.clear(); }
-   free_context_menu(this); // Before the API is deleted, because the script reports the menu closing
-
-   // The API is cleared first, because Scintilla closes its pop-ups while it is being destroyed.
-
-   auto api = API;
-   API = nullptr;
+   if (api) api->Finalise();
    delete api;
 
    if (EventCallback.defined()) {
@@ -3786,16 +3821,6 @@ extScintilla::~extScintilla() {
       CompletionCallback.unpin();
       CompletionCallback.clear();
    }
-
-   if (TickTimer) UpdateTimer(TickTimer, 0);
-   if (IdleTimer) UpdateTimer(IdleTimer, 0);
-
-   if (Focus) {
-      kt::SwitchContext ctx(this);
-      Focus->subscribeFeedback(FM::NIL, C_FUNCTION(feedback_focus));
-      if (Focus != Viewport) UnsubscribeAction(Focus, AC::NIL);
-   }
-   if (Viewport) UnsubscribeAction(Viewport, AC::NIL);
 
    if (Image) { // Freeing the image also removes its definition from the scene
       UnsubscribeAction(Image, AC::NIL);

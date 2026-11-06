@@ -3,6 +3,7 @@
 
 #include <format>
 
+#include "SciLexer.h"
 #include "lexer_styles.cxx"
 #include "lexer_keywords.cxx"
 
@@ -14,7 +15,6 @@ ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
 :  scintilla(Scintilla)
 {
    idle_on        = false;
-   ticking_on     = false;
    captured_mouse = false;
 
    // The platform Window is identified by the Kotuku Scintilla object (see pan_window.cxx)
@@ -39,12 +39,12 @@ ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
    // Margin 1 shows the client's markers and margin 2 shows the fold markers.  Their widths are managed by the Symbols
    // and FoldingMarkers fields, and the symbol margin is made sensitive while a MarginClick callback is defined.
 
-   SendScintilla(SCI_SETMARGINTYPEN, 1UL, long(SC_MARGIN_SYMBOL));
-   SendScintilla(SCI_SETMARGINMASKN, 1UL, long(~SC_MASK_FOLDERS));
-   SendScintilla(SCI_SETMARGINTYPEN, 2UL, long(SC_MARGIN_SYMBOL));
-   SendScintilla(SCI_SETMARGINMASKN, 2UL, long(SC_MASK_FOLDERS));
+   SendScintilla(SCI_SETMARGINTYPEN, 1UL, sptr_t(SC_MARGIN_SYMBOL));
+   SendScintilla(SCI_SETMARGINMASKN, 1UL, sptr_t(~SC_MASK_FOLDERS));
+   SendScintilla(SCI_SETMARGINTYPEN, 2UL, sptr_t(SC_MARGIN_SYMBOL));
+   SendScintilla(SCI_SETMARGINMASKN, 2UL, sptr_t(SC_MASK_FOLDERS));
    SendScintilla(SCI_SETMARGINSENSITIVEN, 2UL, 1L);
-   SendScintilla(SCI_SETFOLDFLAGS, (unsigned long)SC_FOLDFLAG_LINEAFTER_CONTRACTED);
+   SendScintilla(SCI_SETFOLDFLAGS, (uptr_t)SC_FOLDFLAG_LINEAFTER_CONTRACTED);
    DefineFoldMarkers();
 
    // We're always UTF-8
@@ -58,17 +58,30 @@ ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
 
 ScintillaKTK::~ScintillaKTK()
 {
+   Finalise();
+}
 
+void ScintillaKTK::InsertCharacter(std::string_view Text, Scintilla::CharacterSource Source)
+{
+   if (panCheckLength(Text.size()) IS ERR::Okay) ScintillaBase::InsertCharacter(Text, Source);
+   else errorStatus = Scintilla::Status::Failure;
 }
 
 //********************************************************************************************************************
 
 void ScintillaKTK::Finalise()
 {
-   kt::Log(__FUNCTION__).trace("");
-
-   SetTicking(false);
+   if (finalised) return;
+   finalised = true;
+   idle_on = false;
+   for (auto &ticker : tickers) ticker = {};
+   if (scintilla->TickTimer) { UpdateTimer(scintilla->TickTimer, 0); scintilla->TickTimer = nullptr; }
+   if (scintilla->IdleTimer) { UpdateTimer(scintilla->IdleTimer, 0); scintilla->IdleTimer = nullptr; }
+   completion_reports.clear();
+   scintilla->Drop.active = false;
+   scintilla->PrimaryDrop.active = false;
    ScintillaBase::Finalise();
+   calltip_popup.reset();
 }
 
 /*********************************************************************************************************************
@@ -109,7 +122,7 @@ ERR ScintillaKTK::panShowCompletions(int Length, std::string_view Candidates, SC
    if (ignore_case) {
       std::stable_sort(list.begin(), list.end(), [](std::string_view A, std::string_view B) {
          return std::lexicographical_compare(A.begin(), A.end(), B.begin(), B.end(), [](char X, char Y) {
-            return Scintilla::MakeUpperCase(X) < Scintilla::MakeUpperCase(Y);
+            return std::toupper((unsigned char)X) < std::toupper((unsigned char)Y);
          });
       });
    }
@@ -125,18 +138,18 @@ ERR ScintillaKTK::panShowCompletions(int Length, std::string_view Candidates, SC
 
    log.traceBranch("%d candidates, prefix length %d", int(list.size()), Length);
 
-   SendScintilla(SCI_AUTOCSETSEPARATOR, (unsigned long)'\n');
+   SendScintilla(SCI_AUTOCSETSEPARATOR, (uptr_t)'\n');
    SendScintilla(SCI_AUTOCSETTYPESEPARATOR, 0UL);
-   SendScintilla(SCI_AUTOCSETIGNORECASE, (unsigned long)ignore_case);
+   SendScintilla(SCI_AUTOCSETIGNORECASE, (uptr_t)ignore_case);
 
    // The engine's chooseSingle shortcut bypasses acceptance notifications and dropRestOfWord, and leaves an
    // existing list open.  Start the normal list and accept its matching candidate before it can be painted.
 
    SendScintilla(SCI_AUTOCSETCHOOSESINGLE, 0UL);
-   SendScintilla(SCI_AUTOCSETDROPRESTOFWORD, (unsigned long)((Flags & SCACF::DROP_REST_OF_WORD) != SCACF::NIL));
-   SendScintilla(SCI_AUTOCSHOW, (unsigned long)Length, joined.c_str());
+   SendScintilla(SCI_AUTOCSETDROPRESTOFWORD, (uptr_t)((Flags & SCACF::DROP_REST_OF_WORD) != SCACF::NIL));
+   SendScintilla(SCI_AUTOCSHOW, (uptr_t)Length, joined.c_str());
    if ((list.size() IS 1) and ((Flags & SCACF::CHOOSE_SINGLE) != SCACF::NIL) and (ac.Active())) {
-      AutoCompleteCompleted();
+      AutoCompleteCompleted(0, Scintilla::CompletionMethods::Command);
    }
    return ERR::Okay;
 }
@@ -157,9 +170,9 @@ ERR ScintillaKTK::panShowCallTip(int Pos, std::string_view Text, int HighlightSt
 
    std::string text(Text);
    calltip_pos = Pos;
-   SendScintilla(SCI_CALLTIPSHOW, (unsigned long)Pos, text.c_str());
+   SendScintilla(SCI_CALLTIPSHOW, (uptr_t)Pos, text.c_str());
    if ((HighlightStart >= 0) and (HighlightEnd > HighlightStart)) {
-      SendScintilla(SCI_CALLTIPSETHLT, (unsigned long)HighlightStart, long(HighlightEnd));
+      SendScintilla(SCI_CALLTIPSETHLT, (uptr_t)HighlightStart, sptr_t(HighlightEnd));
    }
    return ERR::Okay;
 }
@@ -192,7 +205,7 @@ int ScintillaKTK::panCompletionStart()
 //********************************************************************************************************************
 // Point is in the coordinate system of the call tip.  CallTipClick() reports SCN_CALLTIPCLICK.
 
-void ScintillaKTK::panCallTipClick(Scintilla::Point Point)
+void ScintillaKTK::panCallTipClick(Scintilla::Internal::Point Point)
 {
    ct.MouseClick(Point);
    CallTipClick();
@@ -206,8 +219,7 @@ void ScintillaKTK::panCallTipClick(Scintilla::Point Point)
 
 void ScintillaKTK::ReportCompletion(SCAC Event, int Position, int Value, CSTRING Text, bool Deferred)
 {
-   auto &callback = scintilla->CompletionCallback;
-   if (not callback.defined()) return;
+   if (scintilla->collecting() or not scintilla->CompletionCallback.defined()) return;
 
    if (Deferred) {
       completion_reports.push_back({ Event, Position, Value, Text ? Text : "" });
@@ -215,11 +227,16 @@ void ScintillaKTK::ReportCompletion(SCAC Event, int Position, int Value, CSTRING
       return;
    }
 
-   if (callback.stale()) {
-      callback.unpin();
-      callback.clear();
+   if (scintilla->CompletionCallback.stale()) {
+      scintilla->CompletionCallback.unpin();
+      scintilla->CompletionCallback.clear();
       return;
    }
+
+   // The client may replace the field while this callback is running.
+   auto callback = scintilla->CompletionCallback;
+   callback.pin();
+   const auto unpin = kt::Defer([&]() { callback.unpin(); });
 
    if (not Text) Text = "";
 
@@ -249,17 +266,26 @@ void ScintillaKTK::panCompletionClosed()
 }
 
 //********************************************************************************************************************
-// Called by the ReportEvent method.  The reports are moved out first because the callback can add more.
+// A callback may pump messages and enqueue more reports.  Finish the original batch before delivering those reports.
 
-void ScintillaKTK::panFlushCompletionReports()
+bool ScintillaKTK::panFlushCompletionReports()
 {
-   if (completion_reports.empty()) return;
+   if (flushing_reports or scintilla->collecting()) return false;
+   if (completion_reports.empty()) return true;
+
+   flushing_reports = true;
+   const auto reset = kt::Defer([&]() { flushing_reports = false; });
 
    auto reports = std::move(completion_reports);
    completion_reports.clear();
    for (auto &report : reports) {
+      if (scintilla->collecting()) return false;
       ReportCompletion(report.event, report.position, report.value, report.text.c_str(), false);
    }
+   if (scintilla->collecting()) return false;
+   // A nested ReportEvent may have consumed the action queued by the callback.
+   if (not completion_reports.empty()) QueueAction(sci::ReportEvent::id, scintilla->UID);
+   return true;
 }
 
 /*********************************************************************************************************************
@@ -293,18 +319,20 @@ void ScintillaKTK::SetHorizontalScrollPos()
 ** repaint for every character typed at the end of the widest line, and for every line added.
 */
 
-bool ScintillaKTK::ModifyScrollBars(int nMax, int nPage)
+bool ScintillaKTK::ModifyScrollBars(Sci::Line Max, Sci::Line Page)
 {
    kt::Log log(__FUNCTION__);
 
-   int height = (nMax - nPage + 1) * vs.lineHeight + scintilla->ViewHeight;
+   int height = (Max - Page + 1) * vs.lineHeight + scintilla->ViewHeight;
    int width  = scintilla->ViewWidth;
-   if (wrapState IS eWrapNone) width = std::max(width, scrollWidth + vs.fixedColumnWidth + vs.rightMarginWidth);
+   if (vs.wrap.state IS Scintilla::Wrap::None) {
+      width = std::max(width, scrollWidth + vs.fixedColumnWidth + vs.rightMarginWidth);
+   }
 
    if ((width IS scintilla->PageWidth) and (height IS scintilla->PageHeight) and
        (scintilla->Scale IS scintilla->PageScale)) return false;
 
-   log.traceBranch("Lines: %d/%d, Page: %dx%d", nMax, nPage, width, height);
+   log.traceBranch("Lines: %td/%td, Page: %dx%d", Max, Page, width, height);
    DwellEnd(true);
 
    scintilla->PageWidth  = width;
@@ -354,13 +382,13 @@ ERR ScintillaKTK::clipboard_failed(ERR Error, CSTRING Message)
 // Copy text to the clipboard.  The text is copied in the document's line ending mode.  Text.len includes the
 // terminating null.
 
-ERR ScintillaKTK::copy_to_clipboard(const Scintilla::SelectionText &Text)
+ERR ScintillaKTK::copy_to_clipboard(const Scintilla::Internal::SelectionText &Text)
 {
    kt::Log log(__FUNCTION__);
 
-   if ((not Text.s) or (Text.len <= 1)) return ERR::Okay;
+   if (Text.Empty()) return ERR::Okay;
 
-   std::string_view text(Text.s, size_t(Text.len - 1));
+   auto text = Text.AsView();
    log.traceBranch("%d bytes, rectangular: %c", int(text.size()), Text.rectangular ? 'Y' : 'N');
 
    objClipboard::create clipboard = { };
@@ -400,6 +428,7 @@ ERR ScintillaKTK::read_clipboard(std::string &Content)
    }
 
    if (size <= 0) return ERR::NoData;
+   if (size > KotukuScintilla::document_limit) return ERR::OutOfRange;
 
    Content.resize(size_t(size));
    int len;
@@ -436,21 +465,17 @@ ERR ScintillaKTK::paste_clipboard()
 
    const bool rectangular = (not glRectangularClip.empty()) and (content IS glRectangularClip);
 
+   if (convertPastes) content = Scintilla::Internal::Document::TransformLineEnds(content, pdoc->eolMode);
+   if (panCheckLength(content.size()) != ERR::Okay) return ERR::OutOfRange;
    log.traceBranch("%d bytes, rectangular: %c", int(content.size()), rectangular ? 'Y' : 'N');
 
    {
-      Scintilla::UndoGroup ug(pdoc);
-      ClearSelection(multiPasteMode IS SC_MULTIPASTE_EACH);
+      Scintilla::Internal::UndoGroup ug(pdoc);
+      ClearSelection(multiPasteMode IS Scintilla::MultiPaste::Each);
       auto start = sel.IsRectangular() ? sel.Rectangular().Start() : sel.Range(sel.Main()).Start();
 
-      if (rectangular) PasteRectangular(start, content.data(), int(content.size()));
-      else if (convertPastes) {
-         int len;
-         std::unique_ptr<char[]> text(Scintilla::Document::TransformLineEnds(&len, content.data(), content.size(),
-            pdoc->eolMode));
-         InsertPaste(start, text.get(), len);
-      }
-      else InsertPaste(start, content.data(), int(content.size()));
+      if (rectangular) PasteRectangular(start, content);
+      else InsertPaste(content);
    }
 
    calc_longest_line(scintilla);
@@ -461,9 +486,9 @@ ERR ScintillaKTK::paste_clipboard()
 //********************************************************************************************************************
 // Called by Scintilla for copy operations that do not go through Copy(), e.g. SCI_COPYRANGE and SCI_COPYTEXT.
 
-void ScintillaKTK::CopyToClipboard(const Scintilla::SelectionText &selectedText)
+void ScintillaKTK::CopyToClipboard(const Scintilla::Internal::SelectionText &Text)
 {
-   clip_error = copy_to_clipboard(selectedText);
+   clip_error = copy_to_clipboard(Text);
 }
 
 /*********************************************************************************************************************
@@ -479,7 +504,7 @@ ERR ScintillaKTK::cut_clipboard()
    pdoc->CheckReadOnly(); // Reports SCN_MODIFYATTEMPTRO
    if ((pdoc->IsReadOnly()) or (SelectionContainsProtected())) return ERR::ReadOnly;
 
-   Scintilla::SelectionText text;
+   Scintilla::Internal::SelectionText text;
    CopySelectionRange(&text);
    if (auto error = copy_to_clipboard(text); error != ERR::Okay) return error;
 
@@ -496,7 +521,7 @@ void ScintillaKTK::Copy()
    clip_error = ERR::Okay;
    if (SelectionEmpty()) return;
 
-   Scintilla::SelectionText text;
+   Scintilla::Internal::SelectionText text;
    CopySelectionRange(&text);
    clip_error = copy_to_clipboard(text);
 }
@@ -540,9 +565,9 @@ void ScintillaKTK::ClaimSelection()
    log.traceBranch();
    primarySelection = not SelectionEmpty();
    if (primarySelection) {
-      Scintilla::SelectionText text;
+      Scintilla::Internal::SelectionText text;
       CopySelectionRange(&text);
-      if (text.s and (text.len > 1)) gfx::SetPrimarySelection(std::string_view(text.s, text.len - 1));
+      if (not text.Empty()) gfx::SetPrimarySelection(text.AsView());
    }
 }
 
@@ -557,36 +582,50 @@ void ScintillaKTK::NotifyChange()
 //********************************************************************************************************************
 // Sometimes Scintilla will report events that have occurred in the text editor.
 
-void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
+void ScintillaKTK::NotifyParent(Scintilla::NotificationData Notification)
 {
+   const auto &scn = Notification;
    kt::Log log("SciMsg");
-   int code;
+   int position, length, line, lines_added;
+   if (not KotukuScintilla::PublicInteger(scn.position, position) or
+       not KotukuScintilla::PublicInteger(scn.length, length) or
+       not KotukuScintilla::PublicInteger(scn.line, line) or
+       not KotukuScintilla::PublicInteger(scn.linesAdded, lines_added)) {
+      log.warning(ERR::OutOfRange);
+      return;
+   }
+   const auto code = scn.nmhdr.code;
+   if (int(code) IS 0) return;
 
-   if (!(code = scn.nmhdr.code)) return;
-
-   if (code IS SCN_UPDATEUI) {
+   if (code IS Scintilla::Notification::UpdateUI) {
       // Either the text or styling of the document has changed or the selection range has changed. Now would be a good
       // time to update any container UI elements that depend on document or view state.  This was previously called
       // SCN_CHECKBRACE because a common use is to check whether the caret is next to a brace and set highlights on
       // this brace and its corresponding matching brace.
 
-      log.traceBranch("[UPDATEUI] $%x", scn.updated);
+      log.traceBranch("[UPDATEUI] $%x", int(scn.updated));
 
       // Update the cursor-row and cursor-column fields if they've changed.
 
       int pos = SendScintilla(SCI_GETCURRENTPOS);
       if (pos != oldpos) {
          oldpos = pos;
-         scintilla->CursorRow = SendScintilla(SCI_LINEFROMPOSITION, pos);
-         scintilla->CursorCol = SendScintilla(SCI_GETCOLUMN, pos);
-         if (SendScintilla(SCI_GETLEXER) IS SCLEX_CPP) braceMatch();
+         int row, column;
+         if (not KotukuScintilla::PublicInteger(SendScintilla(SCI_LINEFROMPOSITION, pos), row) or
+             not KotukuScintilla::PublicInteger(SendScintilla(SCI_GETCOLUMN, pos), column)) {
+            log.warning(ERR::OutOfRange);
+            return;
+         }
+         scintilla->CursorRow = row;
+         scintilla->CursorCol = column;
+         if (scintilla->Lexer IS SCLEX::CPP) braceMatch();
 
          // Event report has to be delayed, as we otherwise get interference in the drawing process.
          scintilla->ReportEventFlags |= SEF::CURSOR_POS;
          QueueAction(sci::ReportEvent::id, scintilla->UID);
       }
    }
-   else if (code IS SCN_STYLENEEDED) {
+   else if (code IS Scintilla::Notification::StyleNeeded) {
       // If you used SCLEX_CONTAINER to make the container act as the lexer, you will receive this notification when
       // Scintilla is about to display or print text that requires styling. You are required to style the text from the
       // line that contains the position returned by SCI_GETENDSTYLED up to the position passed in
@@ -594,15 +633,15 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       log.trace("[STYLENEEDED]");
 
-      //MyStyleRoutine(start, scn.position);
+      //MyStyleRoutine(start, position);
 
    }
-   else if (code IS SCN_DOUBLECLICK) {
+   else if (code IS Scintilla::Notification::DoubleClick) {
       // Mouse buttons have been interpreted as a double click
 
       log.trace("[DOUBLECLICK]");
    }
-   else if (code IS SCN_MODIFYATTEMPTRO) {
+   else if (code IS Scintilla::Notification::ModifyAttemptRO) {
       // An attempt has been made to modify the document when in read-only mode
 
       log.trace("[MODIFYATTEMPTRO]");
@@ -610,7 +649,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       scintilla->ReportEventFlags |= SEF::FAIL_RO;
       QueueAction(sci::ReportEvent::id, scintilla->UID);
    }
-   else if (code IS SCN_CHARADDED) {
+   else if (code IS Scintilla::Notification::CharAdded) {
       // This is sent when the user types an ordinary text character (as opposed to a command character) that is
       // entered into the text. The container can use this to decide to display a call tip or an auto completion list.
       // The character is in SCNotification.ch.
@@ -640,7 +679,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
                // Move the cursor to the start of the line, after following the indentation whitespace
                pos = SendScintilla(SCI_GETLINEINDENTPOSITION, row);
 
-               SendScintilla(SCI_SETSEL, (uint32_t)-1, pos);
+               SendScintilla(SCI_SETSEL, uptr_t(-1), pos);
             }
          }
       }
@@ -650,12 +689,12 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       ReportCompletion(SCAC::CHAR_ADDED, SendScintilla(SCI_GETCURRENTPOS), scn.ch, nullptr, false);
    }
-   else if (code IS SCN_SAVEPOINTREACHED) {
+   else if (code IS Scintilla::Notification::SavePointReached) {
       // The document is unmodified (recently saved)
 
       log.trace("[SAVEPOINTREACHED]");
    }
-   else if (code IS SCN_SAVEPOINTLEFT) {
+   else if (code IS Scintilla::Notification::SavePointLeft) {
       // The document has just been modified
 
       log.trace("[SAVEPOINTLEFT]");
@@ -669,12 +708,12 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
          SendScintilla(SCI_SETSAVEPOINT);
       }
    }
-   else if (code IS SCN_KEY) {
+   else if (code IS Scintilla::Notification::Key) {
       // Reports all keys pressed but not consumed by Scintilla
 
       log.trace("[KEY]");
    }
-   else if (code IS SCN_MODIFIED) {
+   else if (code IS Scintilla::Notification::Modified) {
       // This notification is sent when the text or styling of the document changes or is about to change. You can set
       // a mask for the notifications that are sent to the container with SCI_SETMODEVENTMASK. The notification
       // structure contains information about what changed, how the change occurred and whether this changed the number
@@ -682,21 +721,24 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       //
       // See HTML documentation for more information.
 
-      log.trace("[MODIFIED] Type: %d, Length: %d, LinesAdded: %d, Line: %d", scn.modificationType, scn.length, scn.linesAdded, scn.line);
+      log.trace("[MODIFIED] Type: %d, Length: %d, LinesAdded: %d, Line: %d",
+         int(scn.modificationType), length, lines_added, line);
 
-      if (scn.modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) {
+      if (int(scn.modificationType) & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) {
          scintilla->DocumentRevision++;
-         track_modified_lines(scintilla, SendScintilla(SCI_LINEFROMPOSITION, scn.position), scn.linesAdded);
+         track_modified_lines(scintilla, SendScintilla(SCI_LINEFROMPOSITION, position), lines_added);
       }
-      if (scn.modificationType & SC_MOD_CHANGEFOLD) FoldChanged(scn.line, scn.foldLevelNow, scn.foldLevelPrev);
+      if (int(scn.modificationType) & SC_MOD_CHANGEFOLD) {
+         FoldChanged(line, int(scn.foldLevelNow), int(scn.foldLevelPrev));
+      }
    }
-   else if (code IS SCEN_SETFOCUS) {
+   else if (code IS Scintilla::Notification::FocusIn) {
       log.trace("[SETFOCUS]");
    }
-   else if (code IS SCEN_KILLFOCUS) {
+   else if (code IS Scintilla::Notification::FocusOut) {
       log.trace("[KILLFOCUS]");
    }
-   else if (code IS SCN_MACRORECORD) {
+   else if (code IS Scintilla::Notification::MacroRecord) {
       // The SCI_STARTRECORD and SCI_STOPRECORD messages enable and disable macro recording. When enabled, each time a
       // recordable change occurs, the SCN_MACRORECORD notification is sent to the container. It is up to the container
       // to record the action. To see the complete list of SCI_* messages that are recordable, search the Scintilla
@@ -708,22 +750,24 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       log.trace("[MACRORECORD]");
    }
-   else if (code IS SCN_MARGINCLICK) {
+   else if (code IS Scintilla::Notification::MarginClick) {
       // The mouse was clicked inside a sensitive margin.  The position is the start of the clicked line.  A click in
       // the fold margin toggles the fold of a header line, and every click is then reported to the client.
 
-      int line = pdoc->LineFromPosition(scn.position);
+      int line = pdoc->LineFromPosition(position);
       log.traceBranch("[MARGINCLICK] Margin: %d, Line: %d", scn.margin, line);
 
-      if ((scn.margin IS 2) and (pdoc->GetLevel(line) & SC_FOLDLEVELHEADERFLAG)) ToggleContraction(line);
+      if ((scn.margin IS 2) and (pdoc->GetLevel(line) & SC_FOLDLEVELHEADERFLAG)) {
+         FoldLine(line, Scintilla::FoldAction::Toggle);
+      }
 
       KQ qualifiers = KQ::NIL;
-      if (scn.modifiers & SCI_SHIFT) qualifiers |= KQ::SHIFT;
-      if (scn.modifiers & SCI_CTRL)  qualifiers |= KQ::CTRL;
-      if (scn.modifiers & SCI_ALT)   qualifiers |= KQ::ALT;
+      if (int(scn.modifiers) & int(Scintilla::KeyMod::Shift)) qualifiers |= KQ::SHIFT;
+      if (int(scn.modifiers) & int(Scintilla::KeyMod::Ctrl))  qualifiers |= KQ::CTRL;
+      if (int(scn.modifiers) & int(Scintilla::KeyMod::Alt))   qualifiers |= KQ::ALT;
       report_margin_click(scintilla, SCMG(scn.margin), line, qualifiers);
    }
-   else if (code IS SCN_NEEDSHOWN) {
+   else if (code IS Scintilla::Notification::NeedShown) {
       // Scintilla has determined that a range of lines that is currently invisible should be made visible. An example of where this may be
       // needed is if the end of line of a contracted fold point is deleted. This message is sent to the container in case it wants to make the
       // line visible in some unusual way such as making the whole document visible. Most containers will just ensure each line in the range is
@@ -732,20 +776,20 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       // The range is inclusive of the line at position + length, as an insertion has a length of zero.
 
-      int first = SendScintilla(SCI_LINEFROMPOSITION, scn.position);
-      int last = SendScintilla(SCI_LINEFROMPOSITION, scn.position + scn.length);
+      int first = SendScintilla(SCI_LINEFROMPOSITION, position);
+      int last = SendScintilla(SCI_LINEFROMPOSITION, position + length);
 
       log.trace("[NEEDSHOWN] First: %d, Last: %d", first, last);
 
       for (int line=first; line <= last; line++) SendScintilla(SCI_ENSUREVISIBLE, line);
    }
-   else if (code IS SCN_PAINTED) {
+   else if (code IS Scintilla::Notification::Painted) {
       // Painting has just been done. Useful when you want to update some other widgets based on a change in Scintilla,
       // but want to have the paint occur first to appear more responsive. There is no other information in SCNotification.
 
       log.trace("[PAINTED]");
    }
-   else if (code IS SCN_USERLISTSELECTION) {
+   else if (code IS Scintilla::Notification::UserListSelection) {
       // The user has selected an item in a user list. The SCNotification fields used are:
       // Field   Usage
       // wParam  This is set to the listType parameter from the SCI_USERLISTSHOW message that initiated the list.
@@ -753,7 +797,7 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       log.trace("[USERLISTSELECTION]");
    }
-   else if (code IS SCN_DWELLSTART) {
+   else if (code IS Scintilla::Notification::DwellStart) {
       // Generated when the user keeps the mouse in one position for the dwell period (see SCI_SETMOUSEDWELLTIME).
       //
       // position: This is the nearest position in the document to the position where the mouse pointer was lingering.
@@ -761,35 +805,35 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 
       log.trace("[DWELLSTART]");
    }
-   else if (code IS SCN_DWELLEND) {
+   else if (code IS Scintilla::Notification::DwellEnd) {
       // Generated after a SCN_DWELLSTART and the mouse is moved or other activity such as key press indicates the dwell is over.
 
       log.trace("[DWELLEND]");
    }
-   else if (code IS SCN_ZOOM) {
+   else if (code IS Scintilla::Notification::Zoom) {
       // Unsupported/Redundant Scintilla feature
    }
-   else if (code IS SCN_HOTSPOTCLICK) {
+   else if (code IS Scintilla::Notification::HotSpotClick) {
       log.trace("[HOTSPOTCLICK]");
 
    }
-   else if (code IS SCN_HOTSPOTDOUBLECLICK) {
+   else if (code IS Scintilla::Notification::HotSpotDoubleClick) {
       // Generated when the user clicks or double clicks on text that is in a style with the hotspot attribute set. This notification can be
       // used to link to variable definitions or web pages. The position field is set the text position of the click or double click and
       // the modifiers field set to the key modifiers held down in a similar manner to SCN_KEY.
 
       log.trace("[HOTSPOTDOUBLECLICK]");
    }
-   else if (code IS SCN_CALLTIPCLICK) {
+   else if (code IS Scintilla::Notification::CallTipClick) {
       // Generated when the user clicks on a calltip. This notification can be used to display the next function prototype when a function name
       // is overloaded with different arguments. The position field is set to 1 if the click is in an up arrow, 2 if in a down arrow, and 0 if
       // elsewhere.
 
       log.trace("[CALLTIPCLICK]");
 
-      ReportCompletion(SCAC::CALL_TIP_CLICK, calltip_pos, scn.position, nullptr, true);
+      ReportCompletion(SCAC::CALL_TIP_CLICK, calltip_pos, position, nullptr, true);
    }
-   else if (code IS SCN_AUTOCSELECTION) {
+   else if (code IS Scintilla::Notification::AutoCSelection) {
       // The user has selected an item in an autocompletion list. The notification is sent before the selection is inserted. Automatic
       // insertion can be cancelled by sending a SCI_AUTOCCANCEL message before returning from the notification. The SCNotification fields
       // used are:
@@ -800,18 +844,19 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
       log.trace("[AUTOCSELECTION]");
 
       completion_selected = true;
-      ReportCompletion(SCAC::SELECTED, int(scn.lParam), 0, scn.text, true);
+      ReportCompletion(SCAC::SELECTED, position, 0, scn.text, true);
    }
-   else if (code IS SCN_AUTOCCANCELLED) {
+   else if (code IS Scintilla::Notification::AutoCCancelled) {
       // Not every cancellation is notified, so they are reported by panCompletionClosed() instead.
    }
-   else if (code IS SCN_AUTOCCHARDELETED) {
+   else if (code IS Scintilla::Notification::AutoCCharDeleted) {
       // A character was deleted while the completion list is open, which updates the selected item.
    }
-   else if (code IS 2012) {
-      // Deprecated
+   else if ((code IS Scintilla::Notification::AutoCCompleted) or
+            (code IS Scintilla::Notification::AutoCSelectionChange)) {
+      // Selection is reported once from AutoCSelection.  Highlight changes have no public callback equivalent.
    }
-   else log.traceWarning("Notification code %d unsupported.", code);
+   else log.traceWarning("Notification code %d unsupported.", int(code));
 }
 
 //********************************************************************************************************************
@@ -828,23 +873,23 @@ void ScintillaKTK::NotifyParent(Scintilla::SCNotification scn)
 ** would be exposed anyway.
 */
 
-void ScintillaKTK::ScrollText(int linesToMove)
+void ScintillaKTK::ScrollText(Sci::Line LinesToMove)
 {
    auto bmp = scintilla->Bitmap;
-   const int dy = linesToMove * vs.lineHeight;
+   const int dy = LinesToMove * vs.lineHeight;
    const int height = scintilla->ViewHeight;
    auto &dirty = scintilla->Dirty;
    const bool dirty_empty = (dirty.Right <= dirty.Left) or (dirty.Bottom <= dirty.Top);
 
    if ((not bmp) or (not bmp->Data) or (dy IS 0) or (std::abs(dy) * 2 >= height) or
-       (painted_top != topLine + linesToMove) or ((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or
+       (painted_top != topLine + LinesToMove) or ((scintilla->Flags & SCIF::DISABLED) != SCIF::NIL) or
        ((not dirty_empty) and (dirty.Top <= 0) and (dirty.Bottom >= height))) {
       painted_top = -1;
       Redraw();
       return;
    }
 
-   kt::Log(__FUNCTION__).trace("Lines: %d, Pixels: %d", linesToMove, dy);
+   kt::Log(__FUNCTION__).trace("Lines: %td, Pixels: %d", LinesToMove, dy);
 
    // The Bitmap is one row taller than the View, and every row is shifted.
 
@@ -860,6 +905,7 @@ void ScintillaKTK::ScrollText(int linesToMove)
    auto &bkgd = scintilla->BkgdColour;
    gfx::DrawRectangle(bmp, 0, (dy > 0) ? 0 : keep, bmp->Width, std::abs(dy),
       bmp->packPixel(bkgd.Red, bkgd.Green, bkgd.Blue, 255), BAF::FILL);
+   clear_bitmap_border(scintilla);
 
    if (not dirty_empty) {
       auto pending = dirty;
@@ -872,22 +918,25 @@ void ScintillaKTK::ScrollText(int linesToMove)
    else invalidate_area(scintilla, 0, height + dy - 1, scintilla->ViewWidth, height);
 }
 
-/*********************************************************************************************************************
-** Scintilla calls SetTicking(true) whenever the caret is shown at a new position.  The caret blink is restarted so that
-** the caret remains visible for a full period after it moves.  See UpdateTimers() for the conditions under which the
-** tick timer runs.
-*/
+// Each engine tick reason has its own deadline; the shared framework subscription polls them every 10 ms.
 
-void ScintillaKTK::SetTicking(bool On)
+bool ScintillaKTK::FineTickerRunning(TickReason Reason)
 {
-   kt::Log log(__FUNCTION__);
-   log.traceBranch("State: %d", On);
+   return tickers[size_t(Reason)].milliseconds > 0;
+}
 
-   ticking_on = On;
-   if (On) {
-      timer.ticksToWait = caret.period;
-      UpdateTimers();
-   }
+void ScintillaKTK::FineTickerStart(TickReason Reason, int Milliseconds, int)
+{
+   if (finalised) return;
+   auto &ticker = tickers[size_t(Reason)];
+   ticker.milliseconds = std::max(1, Milliseconds);
+   ticker.deadline = PreciseTime() + int64_t(ticker.milliseconds) * 1000;
+   UpdateTimers();
+}
+
+void ScintillaKTK::FineTickerCancel(TickReason Reason)
+{
+   tickers[size_t(Reason)] = {};
 }
 
 /*********************************************************************************************************************
@@ -897,8 +946,8 @@ void ScintillaKTK::SetTicking(bool On)
 
 bool ScintillaKTK::SetIdle(bool On)
 {
-   idle_on = On;
-   if (On) UpdateTimers();
+   idle_on = On and not finalised;
+   if (idle_on) UpdateTimers();
    return true;
 }
 
@@ -911,11 +960,12 @@ bool ScintillaKTK::SetIdle(bool On)
 
 void ScintillaKTK::UpdateTimers()
 {
+   if (finalised) return;
    kt::SwitchContext ctx(scintilla);
 
    if ((TickRequired()) and (not scintilla->TickTimer)) {
-      // Tick() counts down the caret period and other delays in steps of tickSize milliseconds.
-      SubscribeTimer(double(timer.tickSize) / 1000.0, C_FUNCTION(tick_timer), &scintilla->TickTimer);
+      // TickFor() dispatches only reasons whose independent deadlines have elapsed.
+      SubscribeTimer(0.01, C_FUNCTION(tick_timer), &scintilla->TickTimer);
    }
 
    if ((idle_on) and (not scintilla->IdleTimer)) {
@@ -923,15 +973,12 @@ void ScintillaKTK::UpdateTimers()
    }
 }
 
-/*********************************************************************************************************************
-** Ticking is only necessary for blinking the caret while the editor has the focus, and for scrolling while the mouse
-** is captured.  Tick() repeats the last mouse movement while the mouse is captured, which scrolls the document if the
-** pointer is held outside the client area.
-*/
+// Stop the shared subscription when no fine-ticker reason remains active.
 
 bool ScintillaKTK::TickRequired()
 {
-   return (HaveMouseCapture()) or ((ticking_on) and (hasFocus) and (caret.period > 0));
+   return not finalised and std::any_of(tickers.begin(), tickers.end(),
+      [](const auto &Ticker) { return Ticker.milliseconds > 0; });
 }
 
 //********************************************************************************************************************
@@ -940,7 +987,14 @@ bool ScintillaKTK::TickRequired()
 bool ScintillaKTK::panTick()
 {
    if (not TickRequired()) return false;
-   Tick(); // Goes to -> Editor::Tick()
+   const auto now = PreciseTime();
+   for (size_t i = 0; i < tickers.size(); i++) {
+      auto &ticker = tickers[i];
+      if ((ticker.milliseconds > 0) and (now >= ticker.deadline)) {
+         ticker.deadline = now + int64_t(ticker.milliseconds) * 1000;
+         TickFor(TickReason(i));
+      }
+   }
    return TickRequired();
 }
 
@@ -969,7 +1023,7 @@ void ScintillaKTK::SetMouseCapture(bool On)
 //********************************************************************************************************************
 // Scintilla shows the arrow over selected text and the reverse arrow over margins.
 
-void ScintillaKTK::DisplayCursor(Scintilla::Window::Cursor Cursor)
+void ScintillaKTK::DisplayCursor(Scintilla::Internal::Window::Cursor Cursor)
 {
    ScintillaBase::DisplayCursor(Cursor);
 }
@@ -983,24 +1037,68 @@ bool ScintillaKTK::HaveMouseCapture()
 
 //********************************************************************************************************************
 
-sptr_t ScintillaKTK::WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam)
+sptr_t ScintillaKTK::WndProc(Scintilla::Message Message, uptr_t WParam, sptr_t LParam)
 {
-   switch(iMessage) {
+   // The public framework contract retains int byte offsets.  Validate incoming lengths before the engine
+   // can grow a document beyond that contract; pointer payloads and signed sentinels stay pointer-sized.
+   size_t added = 0;
+   Sci::Position removed = 0;
+   bool changes_length = true;
+   switch (Message) {
+      case Scintilla::Message::SetText:
+         removed = pdoc->Length();
+         added = LParam ? std::strlen((const char *)LParam) : 0;
+         break;
+      case Scintilla::Message::InsertText:
+      case Scintilla::Message::ReplaceSel:
+         added = LParam ? std::strlen((const char *)LParam) : 0;
+         if (Message IS Scintilla::Message::ReplaceSel) removed = sel.Length();
+         break;
+      case Scintilla::Message::AddText:
+      case Scintilla::Message::AppendText:
+         added = WParam;
+         break;
+      case Scintilla::Message::ReplaceTarget:
+      case Scintilla::Message::ReplaceTargetRE:
+         if (not LParam) return -1;
+         added = (WParam IS uptr_t(-1)) ? std::strlen((const char *)LParam) : WParam;
+         removed = std::abs(targetRange.end.Position() - targetRange.start.Position());
+         if (Message IS Scintilla::Message::ReplaceTargetRE) {
+            if (added > size_t(KotukuScintilla::document_limit)) return -1;
+            Sci::Position length = Sci::Position(added);
+            const auto expanded = pdoc->SubstituteByPosition((const char *)LParam, &length);
+            if (not expanded) return 0;
+            if ((length < 0) or (panCheckLength(size_t(length), removed) != ERR::Okay)) {
+               errorStatus = Scintilla::Status::Failure;
+               return -1;
+            }
+            const std::string text(expanded, size_t(length));
+            return WndProc(Scintilla::Message::ReplaceTarget, text.size(), (sptr_t)text.data());
+         }
+         break;
+      default: changes_length = false; break;
+   }
+   if (changes_length and (panCheckLength(added, removed) != ERR::Okay)) {
+      errorStatus = Scintilla::Status::Failure;
+      return -1;
+   }
 
-   case SCI_GETDIRECTFUNCTION:
+   switch (Message) {
+
+   case Scintilla::Message::GetDirectFunction:
       return reinterpret_cast<sptr_t>(DirectFunction);
 
-   case SCI_GETDIRECTPOINTER:
+   case Scintilla::Message::GetDirectPointer:
       return reinterpret_cast<sptr_t>(this);
 
-   case SCI_CUT: // Editor::Cut() is not virtual
-      if (recordingMacro) NotifyMacroRecord(iMessage, wParam, lParam);
+   case Scintilla::Message::Cut: // Editor::Cut() is not virtual
+      if (recordingMacro) NotifyMacroRecord(Message, WParam, LParam);
       clip_error = cut_clipboard();
       SetLastXChosen();
       return 0;
 
-   case SCI_LINECUT: { // Cut the lines that the selection touches, as Editor::KeyCommand() does
-      if (recordingMacro) NotifyMacroRecord(iMessage, wParam, lParam);
+   case Scintilla::Message::LineCut: { // Cut the lines that the selection touches, as Editor::KeyCommand() does
+      if (recordingMacro) NotifyMacroRecord(Message, WParam, LParam);
       int start = pdoc->LineStart(pdoc->LineFromPosition(SelectionStart().Position()));
       int end = pdoc->LineStart(pdoc->LineFromPosition(SelectionEnd().Position()) + 1);
       SetSelection(start, end);
@@ -1010,23 +1108,27 @@ sptr_t ScintillaKTK::WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam
    }
 
    default:
-      return ScintillaBase::WndProc(iMessage, wParam, lParam);
+      return ScintillaBase::WndProc(Message, WParam, LParam);
    }
    return 0;
 }
 
 //********************************************************************************************************************
 
-sptr_t ScintillaKTK::DirectFunction(ScintillaKTK *sci, unsigned int iMessage, uptr_t wParam, sptr_t lParam)
+sptr_t ScintillaKTK::DirectFunction(sptr_t Context, unsigned int Message, uptr_t WParam, sptr_t LParam)
 {
-   return sci->WndProc(iMessage, wParam, lParam);
+   auto editor = (ScintillaKTK *)Context;
+   // Direct calls bypass Action(), so retain the owner until engine notifications and callbacks have returned.
+   kt::ScopedObjectLock owner(editor->scintilla);
+   if (not owner.granted()) return 0;
+   return editor->WndProc(Scintilla::Message(Message), WParam, LParam);
 }
 
 /*********************************************************************************************************************
 ** Do nothing; this is a Win32 support function.
 */
 
-sptr_t ScintillaKTK::DefWndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam)
+sptr_t ScintillaKTK::DefWndProc(Scintilla::Message, uptr_t, sptr_t)
 {
    return 0;
 }
@@ -1037,41 +1139,41 @@ sptr_t ScintillaKTK::DefWndProc(unsigned int iMessage, uptr_t wParam, sptr_t lPa
 ** line end) then the entire client is repainted immediately, as the GTK platform does.
 */
 
-void ScintillaKTK::panPaint(Scintilla::PRectangle Area)
+void ScintillaKTK::panPaint(Scintilla::Internal::PRectangle Area)
 {
    kt::Log log(__FUNCTION__);
 
-   if (this->paintState != notPainting) return; // Recursion prevention
+   if (this->paintState != PaintState::notPainting) return; // Recursion prevention
    if (not scintilla->Bitmap) return;
 
    auto rcClient = GetClientRectangle();
 
-   log.traceBranch("Area: %dx%d - %dx%d", Area.left, Area.top, Area.Width(), Area.Height());
+   log.traceBranch("Area: %.2fx%.2f - %.2fx%.2f", Area.left, Area.top, Area.Width(), Area.Height());
 
-   std::unique_ptr<Scintilla::Surface> surface(Scintilla::Surface::Allocate());
+   auto surface = Scintilla::Internal::Surface::Allocate(Scintilla::Technology::Default);
    if (not surface) return;
    surface->Init(scintilla->Bitmap, wMain.GetID());
 
-   this->paintState = painting;
+   this->paintState = PaintState::painting;
    this->rcPaint    = Area;
    this->paintingAllText = rcPaint.Contains(rcClient);
    this->Paint(surface.get(), rcPaint);
 
-   if (this->paintState IS paintAbandoned) {
-      this->paintState = painting;
+   if (this->paintState IS PaintState::abandoned) {
+      this->paintState = PaintState::painting;
       this->rcPaint    = rcClient;
       this->paintingAllText = true;
       this->Paint(surface.get(), rcPaint);
    }
 
-   this->paintState = notPainting;
+   this->paintState = PaintState::notPainting;
    painted_top = topLine;
 
    // Painted lines that are wider than the scroll width widen the Page, e.g. a proportional face can rank a line
    // below a narrower one in calc_longest_line().
 
-   if ((wrapState IS eWrapNone) and (lineWidthMaxSeen > 0)) {
-      grow_scroll_width(scintilla, lineWidthMaxSeen, scintilla->LongestLine);
+   if ((vs.wrap.state IS Scintilla::Wrap::None) and (view.lineWidthMaxSeen > 0)) {
+      grow_scroll_width(scintilla, view.lineWidthMaxSeen, scintilla->LongestLine);
    }
 }
 
@@ -1084,8 +1186,8 @@ void ScintillaKTK::panRedraw()
 }
 
 /*********************************************************************************************************************
-** Called on initialisation and whenever Face or FontSize changes.  SurfacePan::GetFont() reads the style handles
-** from the owning Scintilla object.
+** Called on initialisation and whenever the face, size or device scale changes.  All styles share the public
+** family and pixel size; weight and italic attributes remain specific to each style.
 */
 
 void ScintillaKTK::panFontChanged()
@@ -1093,6 +1195,11 @@ void ScintillaKTK::panFontChanged()
    kt::Log log(__FUNCTION__);
    log.traceBranch();
 
+   const int size = int(std::lround(scintilla->FontSize * scintilla->Scale * 72.0 * SC_FONT_SIZE_MULTIPLIER / 96.0));
+   for (size_t style = 0; style < vs.styles.size(); style++) {
+      SendScintilla(SCI_STYLESETFONT, style, scintilla->Face.c_str());
+      SendScintilla(SCI_STYLESETSIZEFRACTIONAL, style, size);
+   }
    this->InvalidateStyleRedraw();
    this->RefreshStyleData();
 }
@@ -1148,6 +1255,7 @@ void ScintillaKTK::panKeyDown(KEY Code, KQ Qualifiers, int Unicode)
    const bool altgr = ((Qualifiers & KQ::R_ALT) != KQ::NIL) and ((Qualifiers & KQ::L_ALT) IS KQ::NIL);
    const bool printable = ((Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) and (Unicode >= 0x20) and (Unicode != 0x7f);
 
+   const auto modifiers = Scintilla::KeyMod((shift ? 1 : 0) | (ctrl ? 2 : 0) | (alt ? 4 : 0));
    const bool read_only = (scintilla->Flags & SCIF::EDIT) IS SCIF::NIL;
 
    // Ctrl+Space requests completion candidates from the client.  It has no binding in Scintilla's key map.
@@ -1159,13 +1267,13 @@ void ScintillaKTK::panKeyDown(KEY Code, KQ Qualifiers, int Unicode)
 
    if (read_only) SendScintilla(SCI_SETREADONLY, 1UL);
 
-   if (int key = command_key(Code, printable)) KeyDown(key, shift, ctrl, alt);
+   if (int key = command_key(Code, printable)) KeyDownWithModifiers(Scintilla::Keys(key), modifiers, nullptr);
    else if ((printable) and ((altgr) or ((not ctrl) and (not alt)))) {
       char utf8[8];
       int len = UTF8WriteValue(Unicode, std::span<int8_t>((int8_t *)utf8, sizeof(utf8)));
-      if (len > 0) AddCharUTF(utf8, len);
+      if (len > 0) InsertCharacter(std::string_view(utf8, size_t(len)), Scintilla::CharacterSource::DirectInput);
    }
-   else if (int key = shortcut_key(Code)) KeyDown(key, shift, ctrl, alt);
+   else if (int key = shortcut_key(Code)) KeyDownWithModifiers(Scintilla::Keys(key), modifiers, nullptr);
 
    if (read_only) SendScintilla(SCI_SETREADONLY, 0UL);
 }
@@ -1182,9 +1290,10 @@ void ScintillaKTK::panMousePress(JET Button, double X, double Y, unsigned int Ti
    log.traceBranch("%.0fx%.0f", X, Y);
 
    if (Button IS JET::LMB) {
-      Scintilla::Point point(int(std::floor(X)), int(std::floor(Y)));
+      Scintilla::Internal::Point point(int(std::floor(X)), int(std::floor(Y)));
 
-      ButtonDown(point, Time, scintilla->KeyShift, scintilla->KeyCtrl, scintilla->KeyAlt);
+      ButtonDownWithModifiers(point, Time, Scintilla::KeyMod((scintilla->KeyShift ? 1 : 0) |
+         (scintilla->KeyCtrl ? 2 : 0) | (scintilla->KeyAlt ? 4 : 0)));
    }
    else if (Button IS JET::MMB) panPrimaryPaste(X, Y);
 }
@@ -1193,7 +1302,8 @@ void ScintillaKTK::panMousePress(JET Button, double X, double Y, unsigned int Ti
 
 void ScintillaKTK::panMouseMove(double X, double Y)
 {
-   ButtonMove(Scintilla::Point(int(std::floor(X)), int(std::floor(Y))));
+   ButtonMoveWithModifiers(Scintilla::Internal::Point(X, Y), (unsigned int)(PreciseTime() / 1000),
+      Scintilla::KeyMod((scintilla->KeyShift ? 1 : 0) | (scintilla->KeyCtrl ? 2 : 0) | (scintilla->KeyAlt ? 4 : 0)));
 }
 
 //********************************************************************************************************************
@@ -1204,7 +1314,8 @@ void ScintillaKTK::panMouseRelease(JET Button, double X, double Y, unsigned int 
    log.trace("%.0fx%.0f", X, Y);
 
    if ((Button IS JET::LMB) and (not drag_active)) {
-      ButtonUp(Scintilla::Point(int(std::floor(X)), int(std::floor(Y))), Time, scintilla->KeyCtrl);
+      ButtonUpWithModifiers(Scintilla::Internal::Point(X, Y), Time,
+         Scintilla::KeyMod((scintilla->KeyShift ? 1 : 0) | (scintilla->KeyCtrl ? 2 : 0) | (scintilla->KeyAlt ? 4 : 0)));
    }
 }
 
@@ -1217,7 +1328,7 @@ void ScintillaKTK::panReleaseMouse()
       if (auto pointer = gfx::AccessPointer()) { acDeactivate(pointer); ReleaseObject(pointer); }
       panEndDrag();
    }
-   if (HaveMouseCapture()) SetMouseCapture(false);
+   ChangeMouseCapture(false); // Cancel the scroll reason as well as the platform capture state.
 }
 
 //********************************************************************************************************************
@@ -1297,6 +1408,11 @@ void ScintillaKTK::panSyncPage()
 
 void ScintillaKTK::panSetFocus(bool Focus)
 {
+   if (not Focus) {
+      // A native drag no longer owns mouse capture and must survive focus moving to its destination.
+      if (HaveMouseCapture()) panReleaseMouse();
+      DwellEnd(true);
+   }
    if (Focus != hasFocus) SetFocusState(Focus);
 }
 
@@ -1375,7 +1491,7 @@ bool ScintillaKTK::panToggleFold(int Line)
 
    if (pdoc->GetLastChild(Line) <= Line) return false;
 
-   ToggleContraction(Line);
+   FoldLine(Line, Scintilla::FoldAction::Toggle);
    return true;
 }
 
@@ -1411,13 +1527,13 @@ void ScintillaKTK::DefineFoldMarkers()
 void ScintillaKTK::ExpandAllFolds()
 {
    int total = pdoc->LinesTotal();
-   bool changed = cs.HiddenLines();
+   bool changed = pcs->HiddenLines();
    for (int line=0; line < total; line++) {
-      if (cs.SetExpanded(line, true)) changed = true;
+      if (pcs->SetExpanded(line, true)) changed = true;
    }
 
    if (changed) {
-      cs.SetVisible(0, total - 1, true);
+      pcs->SetVisible(0, total - 1, true);
       SetScrollBars();
       Redraw();
    }
@@ -1433,19 +1549,19 @@ void ScintillaKTK::ExpandAllFolds()
 void ScintillaKTK::FoldChanged(int Line, int LevelNow, int LevelPrev)
 {
    if ((not (LevelPrev & SC_FOLDLEVELHEADERFLAG)) or (LevelNow & SC_FOLDLEVELHEADERFLAG)) return;
-   if (cs.GetExpanded(Line)) return;
+   if (pcs->GetExpanded(Line)) return;
 
-   cs.SetExpanded(Line, true);
-   if (not cs.GetVisible(Line)) return; // The lines are revealed when the enclosing fold is expanded
+   pcs->SetExpanded(Line, true);
+   if (not pcs->GetVisible(Line)) return; // The lines are revealed when the enclosing fold is expanded
 
    int last = Line;
-   for (int line=Line + 1; (line < pdoc->LinesTotal()) and (not cs.GetVisible(line)); line++) {
-      cs.SetExpanded(line, true);
+   for (int line=Line + 1; (line < pdoc->LinesTotal()) and (not pcs->GetVisible(line)); line++) {
+      pcs->SetExpanded(line, true);
       last = line;
    }
 
    if (last > Line) {
-      cs.SetVisible(Line + 1, last, true);
+      pcs->SetVisible(Line + 1, last, true);
       SetScrollBars();
       Redraw();
    }
@@ -1457,22 +1573,28 @@ void ScintillaKTK::FoldChanged(int Line, int LevelNow, int LevelPrev)
 ** again.
 */
 
-void ScintillaKTK::SetLexer(uptr_t LexID)
+ERR ScintillaKTK::SetLexer(SCLEX ID)
 {
-   kt::Log log(__FUNCTION__);
-   log.branch("Using lexer %d", (int)LexID);
+   auto profile = find_lexer_profile(ID);
+   if (not profile) return ERR::NoSupport;
+
+   // Create before touching the active document: factory failure preserves the lexer, folds and public field.
+   auto lexer = CreateLexer(profile->Factory);
+   if (not lexer) return ERR::Failed;
 
    ExpandAllFolds();
-   // ASP uses the HTML lexer with VBScript in server blocks.  NIL uses the null lexer rather than container styling.
-   auto lexer = LexID IS int(SCLEX::ASP) ? SCLEX_HTML : (LexID ? LexID : SCLEX_NULL);
-   SendScintilla(SCI_SETLEXER, lexer);
-   SendScintilla(SCI_SETSTYLEBITS, SendScintilla(SCI_GETSTYLEBITSNEEDED));
-   SendScintilla(SCI_SETPROPERTY, "asp.default.language", LexID IS int(SCLEX::ASP) ? "2" : "1");
+   // Document::LexInterface owns the instance and calls Release on replacement/destruction.  Even plain text uses
+   // Lexilla's null lexer; a null pointer would request container styling instead.
+   SendScintilla(SCI_SETILEXER, uptr_t(0), sptr_t(lexer));
+   scintilla->Lexer = ID;
+   SendScintilla(SCI_SETPROPERTY, "asp.default.language", ID IS SCLEX::ASP ? "2" : "1");
    SendScintilla(SCI_SETPROPERTY, "fold", scintilla->FoldingMarkers ? "1" : "0");
    SetKeywords();
    SetStyleColours();
+   SendScintilla(SCI_CLEARDOCUMENTSTYLE);
    SendScintilla(SCI_COLOURISE, 0, -1);
    InvalidateStyleRedraw();
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1481,7 +1603,7 @@ void ScintillaKTK::SetLexer(uptr_t LexID)
 
 void ScintillaKTK::braceMatch()
 {
-   long braceAtCaret, braceOpposite;
+   sptr_t braceAtCaret, braceOpposite;
 
    findMatchingBrace(braceAtCaret, braceOpposite, braceMode);
 
@@ -1494,22 +1616,22 @@ void ScintillaKTK::braceMatch()
 
       SendScintilla(SCI_BRACEHIGHLIGHT,braceAtCaret,braceOpposite);
 
-      long columnAtCaret = SendScintilla(SCI_GETCOLUMN,braceAtCaret);
-      long columnOpposite = SendScintilla(SCI_GETCOLUMN,braceOpposite);
+      sptr_t columnAtCaret = SendScintilla(SCI_GETCOLUMN,braceAtCaret);
+      sptr_t columnOpposite = SendScintilla(SCI_GETCOLUMN,braceOpposite);
 
       if (chBrace IS ':') {
-         long lineStart = SendScintilla(SCI_LINEFROMPOSITION,braceAtCaret);
-         long indentPos = SendScintilla(SCI_GETLINEINDENTPOSITION,lineStart);
-         long indentPosNext = SendScintilla(SCI_GETLINEINDENTPOSITION,lineStart + 1);
+         sptr_t lineStart = SendScintilla(SCI_LINEFROMPOSITION,braceAtCaret);
+         sptr_t indentPos = SendScintilla(SCI_GETLINEINDENTPOSITION,lineStart);
+         sptr_t indentPosNext = SendScintilla(SCI_GETLINEINDENTPOSITION,lineStart + 1);
          columnAtCaret = SendScintilla(SCI_GETCOLUMN,indentPos);
-         long columnAtCaretNext = SendScintilla(SCI_GETCOLUMN,indentPosNext);
-         long indentSize = SendScintilla(SCI_GETINDENT);
+         sptr_t columnAtCaretNext = SendScintilla(SCI_GETCOLUMN,indentPosNext);
+         sptr_t indentSize = SendScintilla(SCI_GETINDENT);
 
          if (columnAtCaretNext - indentSize > 1) columnAtCaret = columnAtCaretNext - indentSize;
          if (columnOpposite IS 0) columnOpposite = columnAtCaret;
       }
 
-      long column = columnAtCaret;
+      sptr_t column = columnAtCaret;
 
       if (column > columnOpposite) column = columnOpposite;
 
@@ -1521,9 +1643,9 @@ void ScintillaKTK::braceMatch()
 ** Check if the character at a position is a brace.
 */
 
-long ScintillaKTK::checkBrace(long pos,int brace_style)
+sptr_t ScintillaKTK::checkBrace(sptr_t pos,int brace_style)
 {
-   long brace_pos = -1;
+   sptr_t brace_pos = -1;
    char ch = SendScintilla(SCI_GETCHARAT,pos);
 
    if ((ch IS '{') or (ch IS '}')) {
@@ -1542,7 +1664,7 @@ long ScintillaKTK::checkBrace(long pos,int brace_style)
 ** Find a brace and it's match.  Return TRUE if the current position is inside a pair of braces.
 */
 
-bool ScintillaKTK::findMatchingBrace(long &brace,long &other,long mode)
+bool ScintillaKTK::findMatchingBrace(sptr_t &brace,sptr_t &other,sptr_t mode)
 {
    int brace_style;
 
@@ -1552,7 +1674,7 @@ bool ScintillaKTK::findMatchingBrace(long &brace,long &other,long mode)
    brace = -1;
    other = -1;
 
-   long caretPos = SendScintilla(SCI_GETCURRENTPOS);
+   sptr_t caretPos = SendScintilla(SCI_GETCURRENTPOS);
 
    if (caretPos > 0) brace = checkBrace(caretPos - 1,brace_style);
 
@@ -1586,8 +1708,8 @@ void ScintillaKTK::selectToMatchingBrace()
 // Move to the matching brace and optionally select the text.
 void ScintillaKTK::gotoMatchingBrace(bool select)
 {
-   long braceAtCaret;
-   long braceOpposite;
+   sptr_t braceAtCaret;
+   sptr_t braceOpposite;
 
    bool isInside = findMatchingBrace(braceAtCaret,braceOpposite,TRUE);
 
