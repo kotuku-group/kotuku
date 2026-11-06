@@ -54,6 +54,8 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include <charconv>
 #include <filesystem>
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <kotuku/strings.hpp>
 #include <kotuku/font_traits.hpp>
 #include "../link/unicode.h"
@@ -182,6 +184,14 @@ struct scalable_face {
    int faces = 1;                  // Number of faces in the collection
 };
 
+// Each file owns its analysis results so that workers never modify the font database or another worker's results.
+
+struct scalable_file {
+   std::string path;
+   std::string name;
+   std::vector<std::pair<int, scalable_face>> faces; // Face index and successful analysis result
+};
+
 // A family registered by RegisterFont().  Private fonts are held apart from the font database so that they are never
 // saved to fonts:fonts.cfg, are not shown in font lists and survive calls to RefreshFonts().  Access is serialised by
 // the glConfig lock.  A std::list is used so that names returned by ResolveFamilyName() remain valid.
@@ -232,7 +242,8 @@ class extFont : public objFont {
 #include "font_bitmap.cpp"
 
 static ERR add_font_class(void);
-static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &, bool = false, int = 0);
+static ERR analyse_scalable_font(FT_Library, const std::string &, std::string_view, scalable_face &,
+   bool = false, int = 0);
 static void scan_scalable_folder(objConfig *, std::map<std::string, family_details> &);
 static void scan_fixed_folder(objConfig *, std::map<std::string, family_details> &);
 static void scan_host_folders(objConfig *, const std::map<std::string, family_details> &,
@@ -1193,7 +1204,9 @@ ERR RegisterFont(const std::string_view &Path, std::string *Family)
    if (auto sep = file_name.find_last_of("/\\"); sep != std::string_view::npos) file_name.remove_prefix(sep + 1);
 
    scalable_face face;
-   if (auto error = analyse_scalable_font(resolved, file_name, face); error != ERR::Okay) return log.warning(error);
+   if (auto error = analyse_scalable_font(glFTLibrary, resolved, file_name, face); error != ERR::Okay) {
+      return log.warning(error);
+   }
 
    auto font = std::find_if(glPrivateFonts.begin(), glPrivateFonts.end(), [&face](const private_font &Font) {
       return iequals(Font.name, face.family);
@@ -1488,7 +1501,7 @@ static void read_layout_features(FT_Face Face, FT_ULong Table, std::set<std::str
 //********************************************************************************************************************
 // Gather the classification, variable axis ranges, layout features and character coverage of a face.
 
-static void analyse_face_details(FT_Face Face, family_details &Details)
+static void analyse_face_details(FT_Library Library, FT_Face Face, family_details &Details)
 {
    Details.analysed = true;
    Details.cls      = classify_face(Face);
@@ -1503,7 +1516,7 @@ static void analyse_face_details(FT_Face Face, family_details &Details)
             Details.axes.push_back({ tag_string(axis.tag), axis.minimum / 65536.0, axis.def / 65536.0,
                axis.maximum / 65536.0 });
          }
-         FT_Done_MM_Var(glFTLibrary, mvar);
+         FT_Done_MM_Var(Library, mvar);
       }
    }
 
@@ -1565,16 +1578,16 @@ void family_details::merge(const family_details &Other)
 // Analyse a scalable font file and return its family name and the style names that it provides.  FileName is used to
 // name the family if the file does not declare one.  If Details is true, the descriptive information for the font
 // database is also gathered.  FaceIndex selects a face in a collection, and Face.faces reports the collection size.
-// The caller must hold the glConfig lock, which serialises use of glFTLibrary.
+// Library must be exclusive to the calling thread.  Callers using glFTLibrary must hold the glConfig lock.
 
-static ERR analyse_scalable_font(const std::string &Path, std::string_view FileName, scalable_face &Face,
-   bool Details, int FaceIndex)
+static ERR analyse_scalable_font(FT_Library Library, const std::string &Path, std::string_view FileName,
+   scalable_face &Face, bool Details, int FaceIndex)
 {
    kt::Log log(__FUNCTION__);
 
    FT_Face ftface;
    FT_Open_Args open = { .flags = FT_OPEN_PATHNAME, .pathname = (FT_String *)Path.c_str() };
-   if (FT_Open_Face(glFTLibrary, &open, FaceIndex, &ftface)) return ERR::InvalidData;
+   if (FT_Open_Face(Library, &open, FaceIndex, &ftface)) return ERR::InvalidData;
 
    Face.faces = int(ftface->num_faces);
 
@@ -1626,7 +1639,7 @@ static ERR analyse_scalable_font(const std::string &Path, std::string_view FileN
             }
          }
 
-         FT_Done_MM_Var(glFTLibrary, mvar);
+         FT_Done_MM_Var(Library, mvar);
       }
    }
    else if ((ftface->style_name) and (not iequals("regular", ftface->style_name))) {
@@ -1643,10 +1656,55 @@ static ERR analyse_scalable_font(const std::string &Path, std::string_view FileN
 
    if (Face.styles.empty()) Face.styles.push_back("Regular");
 
-   if (Details) analyse_face_details(ftface, Face.details);
+   if (Details) analyse_face_details(Library, ftface, Face.details);
 
    FT_Done_Face(ftface);
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Analyse files in parallel, retaining discovery order for the later database merge.  Each worker has its own
+// FreeType library; the calling thread participates using glFTLibrary while holding the glConfig lock.  If a worker
+// cannot initialise FreeType, the remaining threads still consume all files.  Collections are only scanned for host
+// fonts, preserving the fonts: volume's existing use of face zero.
+
+static void analyse_scalable_files(std::vector<scalable_file> &Files, bool Collections = false)
+{
+   if (Files.empty()) return;
+
+   std::atomic<size_t> next_file = 0;
+   auto analyse = [&Files, &next_file, Collections](FT_Library Library) {
+      while (true) {
+         auto index = next_file.fetch_add(1, std::memory_order_relaxed);
+         if (index >= Files.size()) break;
+
+         auto &file = Files[index];
+         int faces = 1;
+         for (int face_index=0; face_index < faces; face_index++) {
+            scalable_face face;
+            auto error = analyse_scalable_font(Library, file.path, file.name, face, true, face_index);
+            if ((Collections) and (face_index IS 0)) faces = face.faces;
+            if (error IS ERR::Okay) file.faces.emplace_back(face_index, std::move(face));
+         }
+      }
+   };
+
+   // Limit simultaneous file reads and FreeType libraries on machines with many logical CPUs.
+
+   auto worker_count = std::min(Files.size(), size_t(std::clamp(std::thread::hardware_concurrency(), 1u, 8u)));
+   std::vector<std::jthread> workers;
+   workers.reserve(worker_count - 1);
+   for (size_t i=1; i < worker_count; i++) {
+      workers.emplace_back([&analyse]() {
+         FT_Library library = nullptr;
+         if (FT_Init_FreeType(&library)) return;
+         analyse(library);
+         FT_Done_FreeType(library);
+      });
+   }
+
+   analyse(glFTLibrary);
+   // workers join before analyse, next_file or Files can go out of scope or be read by the caller.
 }
 
 //********************************************************************************************************************
@@ -1663,16 +1721,16 @@ static void scan_scalable_folder(objConfig *Config, std::map<std::string, family
       if (!OpenDir(sfpath, RDF::FILE, &dir)) {
          LocalResource free_dir(dir);
 
-         auto sfpath_len = sfpath.size();
+         std::vector<scalable_file> files;
          while (!ScanDir(dir)) {
-            sfpath.resize(sfpath_len);
-            sfpath.append(dir->Info->Name);
+            files.push_back({ .path = sfpath + dir->Info->Name, .name = dir->Info->Name });
+         }
 
-            scalable_face face;
-            if (analyse_scalable_font(sfpath, dir->Info->Name, face, true) != ERR::Okay) continue;
-
-            std::string path("fonts:scalable/");
-            path.append(dir->Info->Name);
+         analyse_scalable_files(files);
+         for (auto &file : files) {
+            if (file.faces.empty()) continue;
+            auto &face = file.faces.front().second;
+            std::string path = "fonts:scalable/" + file.name;
 
             Config->write(face.family, "Name", face.family);
             Config->write(face.family, "Scalable", "Yes");
@@ -1738,7 +1796,7 @@ static void scan_host_folders(objConfig *Config, const std::map<std::string, fam
       return std::ranges::any_of(local_families, [Family](const std::string &Local) { return iequals(Family, Local); });
    };
 
-   std::set<std::pair<std::string, std::string>> host_styles; // Family and style pairs recorded so far
+   std::vector<scalable_file> files;
    std::set<std::filesystem::path> visited;
    const auto options = std::filesystem::directory_options::follow_directory_symlink |
       std::filesystem::directory_options::skip_permission_denied;
@@ -1771,38 +1829,37 @@ static void scan_host_folders(objConfig *Config, const std::map<std::string, fam
          auto file = std::filesystem::canonical(entry.path(), err);
          if ((err) or (not visited.insert(file).second)) continue;
 
-         auto path = file.string();
-         int faces = 1;
-         for (int face_index=0; face_index < faces; face_index++) {
-            scalable_face face;
-            auto error = analyse_scalable_font(path, file.filename().string(), face, true, face_index);
-            if (face_index IS 0) faces = face.faces; // A failed face does not truncate the rest of the collection
-            if (error != ERR::Okay) continue;
-
-            if (is_local(face.family)) {
-               log.detail("Family \"%s\" is provided by fonts:, skipping \"%s\"", face.family.c_str(), path.c_str());
-               continue;
-            }
-
-            bool recorded = false;
-            for (auto &style : face.styles) {
-               if (not host_styles.emplace(face.family, style).second) continue;
-               Config->write(face.family, style, path);
-               if (face_index > 0) Config->write(face.family, "FaceIndex:" + style, std::to_string(face_index));
-               recorded = true;
-            }
-
-            if (not recorded) continue;
-
-            Config->write(face.family, "Name", face.family);
-            Config->write(face.family, "Scalable", "Yes");
-            if (face.variable) Config->write(face.family, "Variable", "Yes");
-            Details[face.family].merge(face.details);
-         }
+         files.push_back({ .path = file.string(), .name = file.filename().string() });
       }
 
       if (iter_err) {
          log.warning("Scan of \"%s\" ended early: %s", canonical_root.string().c_str(), iter_err.message().c_str());
+      }
+   }
+
+   analyse_scalable_files(files, true);
+   std::set<std::pair<std::string, std::string>> host_styles; // Family and style pairs recorded so far
+   for (auto &file : files) {
+      for (auto &[face_index, face] : file.faces) {
+         if (is_local(face.family)) {
+            log.detail("Family \"%s\" is provided by fonts:, skipping \"%s\"", face.family.c_str(), file.path.c_str());
+            continue;
+         }
+
+         bool recorded = false;
+         for (auto &style : face.styles) {
+            if (not host_styles.emplace(face.family, style).second) continue;
+            Config->write(face.family, style, file.path);
+            if (face_index > 0) Config->write(face.family, "FaceIndex:" + style, std::to_string(face_index));
+            recorded = true;
+         }
+
+         if (not recorded) continue;
+
+         Config->write(face.family, "Name", face.family);
+         Config->write(face.family, "Scalable", "Yes");
+         if (face.variable) Config->write(face.family, "Variable", "Yes");
+         Details[face.family].merge(face.details);
       }
    }
 }
