@@ -3,7 +3,7 @@
 namespace fnt {
 extern int StringWidth(objFont * Font, const std::string_view & String, int Chars);
 extern int CharWidth(objFont * Font, uint32_t Char);
-extern ERR RefreshFonts(const std::string_view & Path);
+extern ERR RefreshFonts(const std::string_view & Path, RFF Flags);
 extern ERR SelectFont(const std::string_view & Name, const std::string_view & Style, std::string * Path, FMETA * Meta);
 extern ERR ResolveFamilyName(const std::string_view & String, std::string_view * Result, std::string_view * Alias);
 extern ERR RegisterFont(const std::string_view & Path, std::string * Family);
@@ -14,7 +14,7 @@ extern ERR RegisterFont(const std::string_view & Path, std::string * Family);
 #endif
 
 FDEF argsCharWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "Char", FD_INT|FD_UNSIGNED }, { 0, 0 } };
-FDEF argsRefreshFonts[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { 0, 0 } };
+FDEF argsRefreshFonts[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF argsRegisterFont[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Family", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "Result", FD_RESULT|FDF_CPPSTRING }, { "Alias", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsSelectFont[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Style", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { "Meta", FD_RESULT|FD_INT }, { 0, 0 } };
@@ -31,4 +31,4 @@ const struct Function glFunctions[] = {
 };
 
 #undef MOD_IDL
-#define MOD_IDL "c.FMETA:HIDDEN=0x20,HINT_INTERNAL=0x10,HINT_LIGHT=0x8,HINT_NORMAL=0x4,SCALED=0x1,VARIABLE=0x2\nc.FSS:ALL=0xffffffff,LINE=0xfffffffe\nc.FTF:BASE_LINE=0x2,BOLD=0x20000000,HEAVY_LINE=0x1,ITALIC=0x40000000\nc.HINT:INTERNAL=0x2,LIGHT=0x3,NORMAL=0x1\n"
+#define MOD_IDL "c.FMETA:HIDDEN=0x20,HINT_INTERNAL=0x10,HINT_LIGHT=0x8,HINT_NORMAL=0x4,SCALED=0x1,VARIABLE=0x2\nc.FSS:ALL=0xffffffff,LINE=0xfffffffe\nc.FTF:BASE_LINE=0x2,BOLD=0x20000000,HEAVY_LINE=0x1,ITALIC=0x40000000\nc.HINT:INTERNAL=0x2,LIGHT=0x3,NORMAL=0x1\nc.RFF:SCAN_HOST=0x1\n"

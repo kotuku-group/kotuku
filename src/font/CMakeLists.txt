@@ -24,5 +24,4 @@ target_sources (${MOD} PRIVATE "font.cpp" ${FT_SOURCE})
 target_link_libraries (${MOD} PUBLIC unicode)
 target_link_libraries (${MOD} PRIVATE ${MATH_LINK} freetype)
 
-# TODO: Kerning tests aren't working with the latest version of Freetype
 flute_test(${MOD} "${CMAKE_CURRENT_SOURCE_DIR}/tests/font_tests.tiri")
