@@ -32,6 +32,27 @@ gui.fontList = thunk():table
 
    fonts = { }
    catalogue = config.decode(io.readAll('fonts:fonts.cfg'))
+
+   -- Host fonts are recorded separately by RefreshFonts(RFF_SCAN_HOST).  As in the Font module, a family provided by
+   -- the fonts: volume takes precedence over a host family of the same name.
+
+   host = { }
+   host_names = { }
+   try
+      host = config.decode(io.readAll('user:config/host_fonts.cfg'))
+   end
+
+   if not table.empty(host) then
+      local_names = { }
+      for group_name in catalogue do local_names[group_name.lower()] = true end
+      for group_name, host_group in host do
+         if not local_names[group_name.lower()] then
+            catalogue[group_name] = host_group
+            host_names[group_name] = true
+         end
+      end
+   end
+
    options = { }
    try
       options = config.decode(io.readAll('fonts:options.cfg'))
@@ -101,6 +122,7 @@ gui.fontList = thunk():table
 
       font.hidden = (entry.Hidden ?? '').lower() is 'yes'
       font.scalable = (entry.Scalable ?? '').lower() is 'yes'
+      font.host = host_names[group_name] ?? false
       fonts[name] = font
    end
 

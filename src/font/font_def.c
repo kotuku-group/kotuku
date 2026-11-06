@@ -7,6 +7,7 @@ extern ERR RefreshFonts(const std::string_view & Path, RFF Flags);
 extern ERR SelectFont(const std::string_view & Name, const std::string_view & Style, std::string * Path, FMETA * Meta);
 extern ERR ResolveFamilyName(const std::string_view & String, std::string_view * Result, std::string_view * Alias);
 extern ERR RegisterFont(const std::string_view & Path, std::string * Family);
+extern ERR SelectFontFace(const std::string_view & Name, const std::string_view & Style, std::string * Path, FMETA * Meta, int * FaceIndex);
 
 } // namespace
 #ifndef FDEF
@@ -18,6 +19,7 @@ FDEF argsRefreshFonts[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRIN
 FDEF argsRegisterFont[] = { { "Error", FD_INT|FD_ERROR }, { "Path", FDF_CPPSTRING }, { "Family", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsResolveFamilyName[] = { { "Error", FD_INT|FD_ERROR }, { "String", FDF_CPPSTRING }, { "Result", FD_RESULT|FDF_CPPSTRING }, { "Alias", FD_RESULT|FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsSelectFont[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Style", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { "Meta", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF argsSelectFontFace[] = { { "Error", FD_INT|FD_ERROR }, { "Name", FDF_CPPSTRING }, { "Style", FDF_CPPSTRING }, { "Path", FD_RESULT|FD_MUTABLE|FDF_CPPSTRING }, { "Meta", FD_RESULT|FD_INT }, { "FaceIndex", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsStringWidth[] = { { "Result", FD_INT }, { "Font", FD_OBJECTPTR }, { "String", FDF_CPPSTRING }, { "Chars", FD_INT }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
@@ -27,6 +29,7 @@ const struct Function glFunctions[] = {
    { (APTR)fnt::SelectFont, "SelectFont", argsSelectFont },
    { (APTR)fnt::ResolveFamilyName, "ResolveFamilyName", argsResolveFamilyName },
    { (APTR)fnt::RegisterFont, "RegisterFont", argsRegisterFont },
+   { (APTR)fnt::SelectFontFace, "SelectFontFace", argsSelectFontFace },
    { nullptr, nullptr, nullptr }
 };
 

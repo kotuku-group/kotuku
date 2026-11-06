@@ -1994,6 +1994,22 @@ extern void set_text_final_xy(extVectorText *Vector)
 }
 
 //********************************************************************************************************************
+// Bitmap fonts are drawn from a texture rendered at their native size.  If the final transform is a plain translation,
+// it is rounded to whole pixels so that the texture is copied 1:1.  A fractional offset, such as a parent viewport at
+// x = 1.5, would otherwise cause the texture to be resampled, which blurs the glyphs and leaves filter artifacts.
+
+extern void align_raster_text(extVectorText *Vector)
+{
+   if (!Vector->txBitmapFont) return;
+
+   auto &t = Vector->Transform;
+   if ((t.sx IS 1.0) and (t.sy IS 1.0) and (t.shx IS 0.0) and (t.shy IS 0.0)) {
+      t.tx = std::round(t.tx);
+      t.ty = std::round(t.ty);
+   }
+}
+
+//********************************************************************************************************************
 // (Re)loads the font for a text object.  This is a resource intensive exercise that should be avoided until the object
 // is ready to initialise.
 

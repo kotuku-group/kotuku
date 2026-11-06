@@ -324,6 +324,7 @@ static ERR MODExpunge(void)
 }
 
 //********************************************************************************************************************
+
 static bool accepts_editor_drop(extScintilla *Self, std::string_view Types)
 {
    if ((not Self->API) or ((Self->Flags & SCIF::DISABLED) != SCIF::NIL)) return false;
@@ -488,7 +489,6 @@ static void notify_free_image(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
    Self->Image = nullptr;
 }
 
-
 //********************************************************************************************************************
 // Receiver for path changes on the View, including changes to the host's position, size and transforms.
 
@@ -627,6 +627,7 @@ static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
             ReleaseObject(pointer);
          }
       }
+
       // The pointer position is recorded while disabled, because the scene does not repeat a movement event if the
       // pointer has not moved.
 
@@ -1021,8 +1022,7 @@ static ERR SCINTILLA_AddMarker(extScintilla *Self, struct sci::AddMarker *Args)
 /*********************************************************************************************************************
 -ACTION-
 Clear: Clears all content from the editor.
-
-******************************************************************************/
+*********************************************************************************************************************/
 
 static ERR SCINTILLA_Clear(extScintilla *Self)
 {
@@ -1087,7 +1087,7 @@ static ERR SCINTILLA_Clipboard(extScintilla *Self, struct acClipboard *Args)
    else return log.warning(ERR::Args);
 }
 
-//*****************************************************************************
+//********************************************************************************************************************
 
 static ERR receive_drop(extScintilla *, struct acDataFeed *);
 
@@ -1429,7 +1429,7 @@ static ERR SCINTILLA_HidePopups(extScintilla *Self)
    return ERR::Okay;
 }
 
-//*****************************************************************************
+//********************************************************************************************************************
 
 static ERR SCINTILLA_Hide(extScintilla *Self)
 {
@@ -1439,7 +1439,7 @@ static ERR SCINTILLA_Hide(extScintilla *Self)
    else return ERR::Okay;
 }
 
-//*****************************************************************************
+//********************************************************************************************************************
 
 static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 {
@@ -3557,8 +3557,6 @@ static void report_margin_click(extScintilla *Self, SCMG Margin, int Line, KQ Qu
       }));
    }
 }
-
-//********************************************************************************************************************
 
 /*********************************************************************************************************************
 ** The scroll width determines the width of the Page, and is the pixel width of the widest line plus padding.  Exact

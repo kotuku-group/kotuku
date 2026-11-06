@@ -317,6 +317,7 @@ void gen_vector_path(extVector *Vector)
          set_text_final_xy((extVectorText *)Vector);
          Vector->Transform.reset();
          apply_parent_transforms(Vector, Vector->Transform);
+         align_raster_text((extVectorText *)Vector);
          Vector->Dirty = (Vector->Dirty & (~RC::TRANSFORM)) | RC::FINAL_PATH;
       }
 
