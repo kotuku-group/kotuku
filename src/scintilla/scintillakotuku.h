@@ -84,6 +84,9 @@ class extScintilla : public objScintilla {
    int    LongestWidth;        // Scroll width: the pixel width of the longest line, plus padding
    int    WidthCheckFirst = INT_MAX; // Range of modified lines to measure before the next paint
    int    WidthCheckLast = -1;
+   SCEOL EOLMode = SCEOL::LF;
+   SCGUIDE IndentationGuides = SCGUIDE::NONE;
+   int IndentWidth = 0;
    int    TabWidth;
    int    ViewWidth;           // Width of the View in client pixels, i.e. Scintilla's client area
    int    ViewHeight;          // Height of the View in client pixels
@@ -207,6 +210,8 @@ public:
       return KotukuScintilla::DocumentGrowth(pdoc->Length(), 0, 0);
    }
    bool panInNotification() const { return notification_depth > 0; }
+   void panRefreshFolds() { pdoc->EnsureStyledTo(pdoc->Length()); }
+   ERR panConvertEOLs(SCEOL Mode);
    ERR panReplaceRange(int Start, int End, std::string_view Text);
    void panEndDrag();
    bool panDragging() const { return drag_active; }

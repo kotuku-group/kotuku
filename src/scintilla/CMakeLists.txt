@@ -102,7 +102,7 @@ configure_file (tiri_keywords.h.in tiri_keywords.h @ONLY)
 # Run the same public suites in either build tree; never duplicate their bodies.
 
 foreach (SCINTILLA_TEST document render scroll repaint keyboard initial_focus clipboard margins highlighting
-      completion hidpi mouse drag_drop changes diagnostics)
+      completion hidpi mouse drag_drop changes diagnostics policy)
    flute_test (scintilla_${SCINTILLA_TEST}
       "${PROJECT_SOURCE_DIR}/src/scintilla/tests/test_scintilla_${SCINTILLA_TEST}.tiri")
 endforeach ()

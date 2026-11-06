@@ -46,6 +46,28 @@ static const struct FieldDef clScintillaLexer[] = {
    { nullptr, 0 }
 };
 
+static const struct FieldDef clScintillaSCGUIDE[] = {
+   { "None", 0x00000000 },
+   { "Real", 0x00000001 },
+   { "LookForward", 0x00000002 },
+   { "LookBoth", 0x00000003 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clScintillaSCEOL[] = {
+   { "Crlf", 0x00000000 },
+   { "Cr", 0x00000001 },
+   { "Lf", 0x00000002 },
+   { nullptr, 0 }
+};
+
+static const struct FieldDef clScintillaSCPOP[] = {
+   { "None", 0x00000000 },
+   { "Completions", 0x00000001 },
+   { "CallTip", 0x00000002 },
+   { nullptr, 0 }
+};
+
 FDEF maSetFont[] = { { "Face", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maReplaceText[] = { { "Find", FDF_CPPSTRING }, { "Replace", FDF_CPPSTRING }, { "Flags", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
 FDEF maDeleteLine[] = { { "Line", FD_INT }, { 0, 0 } };
@@ -74,6 +96,11 @@ FDEF maGetKeywords[] = { { "Set", FD_INT }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_B
 FDEF maSetLexerProperty[] = { { "Name", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
 FDEF maGetLexerProperty[] = { { "Name", FDF_CPPSTRING }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
 FDEF maColourise[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
+FDEF maConvertEOLs[] = { { "Mode", FD_INT }, { 0, 0 } };
+FDEF maExpandFold[] = { { "Line", FD_INT }, { 0, 0 } };
+FDEF maCollapseFold[] = { { "Line", FD_INT }, { 0, 0 } };
+FDEF maFoldAll[] = { { "Expanded", FD_INT }, { 0, 0 } };
+FDEF maGetFold[] = { { "Line", FD_INT }, { "Header", FD_RESULT|FD_INT }, { "Expanded", FD_RESULT|FD_INT }, { "Visible", FD_RESULT|FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clScintillaMethods[] = {
    { AC(-1), (APTR)SCINTILLA_SetFont, "SetFont", maSetFont, sizeof(struct sci::SetFont) },
@@ -110,6 +137,11 @@ static const struct MethodEntry clScintillaMethods[] = {
    { AC(-32), (APTR)SCINTILLA_SetLexerProperty, "SetLexerProperty", maSetLexerProperty, sizeof(struct sci::SetLexerProperty) },
    { AC(-33), (APTR)SCINTILLA_GetLexerProperty, "GetLexerProperty", maGetLexerProperty, sizeof(struct sci::GetLexerProperty) },
    { AC(-34), (APTR)SCINTILLA_Colourise, "Colourise", maColourise, sizeof(struct sci::Colourise) },
+   { AC(-35), (APTR)SCINTILLA_ConvertEOLs, "ConvertEOLs", maConvertEOLs, sizeof(struct sci::ConvertEOLs) },
+   { AC(-36), (APTR)SCINTILLA_ExpandFold, "ExpandFold", maExpandFold, sizeof(struct sci::ExpandFold) },
+   { AC(-37), (APTR)SCINTILLA_CollapseFold, "CollapseFold", maCollapseFold, sizeof(struct sci::CollapseFold) },
+   { AC(-38), (APTR)SCINTILLA_FoldAll, "FoldAll", maFoldAll, sizeof(struct sci::FoldAll) },
+   { AC(-39), (APTR)SCINTILLA_GetFold, "GetFold", maGetFold, sizeof(struct sci::GetFold) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 
