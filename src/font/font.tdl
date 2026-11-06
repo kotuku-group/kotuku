@@ -72,6 +72,7 @@ module({ name="Font", copyright="Paul Manias © 1998-2026", version=1.0, timesta
     "RefreshFonts",
     "SelectFont",
     "ResolveFamilyName",
-    "RegisterFont")
+    "RegisterFont",
+    "SelectFontFace")
 
 end)

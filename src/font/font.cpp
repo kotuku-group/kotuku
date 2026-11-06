@@ -51,6 +51,7 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include <cfloat>
 #include <set>
 #include <span>
+#include <charconv>
 #include <filesystem>
 #include <algorithm>
 #include <kotuku/strings.hpp>
@@ -178,6 +179,7 @@ struct scalable_face {
    std::vector<std::string> styles; // Style names provided by the file
    family_details details;          // Only populated on request
    bool variable = false;
+   int faces = 1;                  // Number of faces in the collection
 };
 
 // A family registered by RegisterFont().  Private fonts are held apart from the font database so that they are never
@@ -230,7 +232,7 @@ class extFont : public objFont {
 #include "font_bitmap.cpp"
 
 static ERR add_font_class(void);
-static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &, bool = false);
+static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &, bool = false, int = 0);
 static void scan_scalable_folder(objConfig *, std::map<std::string, family_details> &);
 static void scan_fixed_folder(objConfig *, std::map<std::string, family_details> &);
 static void scan_host_folders(objConfig *, const std::map<std::string, family_details> &,
@@ -724,6 +726,40 @@ blocking, case-insensitive
 
 ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta)
 {
+   return SelectFontFace(Name, Style, Path, Meta, nullptr);
+}
+
+/*********************************************************************************************************************
+
+-FUNCTION-
+SelectFontFace: Selects a font file and its face within a collection.
+
+Uses the same family and style matching as ~SelectFont(), and also returns the zero-based face index needed to open
+font collections with FreeType.  File paths remain ordinary paths without an encoded index.  Fonts whose database
+entries have no face index use face zero.
+
+-INPUT-
+strview Name: The font family name, matched case insensitively.
+strview Style: The preferred style name or style descriptors, as accepted by ~SelectFont().
+^&string Path: The selected font file path.
+&int(FMETA) Meta: Optional, receives the font metadata flags.
+&int FaceIndex: Optional, receives the zero-based face index within the selected file.
+
+-ERRORS-
+Okay
+NullArgs
+AccessObject
+Search
+
+-TAGS-
+blocking, case-insensitive
+-END-
+
+*********************************************************************************************************************/
+
+ERR SelectFontFace(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta,
+   int *FaceIndex)
+{
    kt::Log log(__FUNCTION__);
 
    log.branch("%.*s:%.*s", int(Name.size()), Name.data(), int(Style.size()), Style.data());
@@ -731,6 +767,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
    if (Name.empty() or (not Path)) return log.warning(ERR::NullArgs);
 
    *Path = "";
+   if (FaceIndex) *FaceIndex = 0;
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 5000);
    if (not config.granted()) return log.warning(ERR::AccessObject);
@@ -800,8 +837,19 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
    for (auto & [group, keys] : groups[0]) {
       if (not iequals(Name, keys["Name"])) continue;
 
+      auto set_face_index = [&keys, FaceIndex](const std::string &Style) {
+         if (not FaceIndex) return;
+         if (auto it = keys.find("FaceIndex:" + Style); it != keys.end()) {
+            int index = 0;
+            auto result = std::from_chars(it->second.data(), it->second.data() + it->second.size(), index);
+            if ((result.ec IS std::errc()) and (result.ptr IS it->second.data() + it->second.size()) and
+                (index >= 0) and (index <= 0xffff)) *FaceIndex = index;
+         }
+      };
+
       if (auto it = keys.find(style_name); exact_name and (it != keys.end())) {
          *Path = it->second;
+         set_face_index(style_name);
          if (Meta) *Meta = get_meta(keys);
          return ERR::Okay;
       }
@@ -824,6 +872,7 @@ ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std:
 
       log.trace("Requested style '%s' not available, choosing '%s'.", style_name.c_str(), styles[best].c_str());
       *Path = keys[styles[best]];
+      set_face_index(styles[best]);
       if (Meta) *Meta = get_meta(keys);
       return ERR::Okay;
    }
@@ -851,8 +900,9 @@ volume.  On Linux the folders are, in order: `$XDG_DATA_HOME/fonts` (defaulting 
 the `fonts` folder of each `$XDG_DATA_DIRS` entry (defaulting to `/usr/local/share:/usr/share`), `/usr/share/fonts` and
 `/usr/local/share/fonts`.  The folders are scanned recursively for `ttf`, `otf`, `ttc` and `otc` files, and host fonts
 are recorded by their absolute paths.  If a host family style is found in more than one folder, the first folder in the
-list above takes precedence.  Every face in a collection is scanned.  Its zero-based index is stored in the
-`FaceIndex:Style` key, where `Style` is the corresponding style name, and is returned by ~SelectFontFace().  Host
+list above takes precedence.  Every face in a collection is scanned.  For faces after the first, the zero-based index
+is stored in the `FaceIndex:Style` key, where `Style` is the corresponding style name, and is returned by
+~SelectFontFace().  A style without this key uses face zero.  Host
 scanning is not supported on other platforms at this time, and the flag is ignored there.
 
 Host fonts are saved to their own database at `user:config/host_fonts.cfg`, regardless of `Path`, so that the `fonts:`
@@ -1514,15 +1564,19 @@ void family_details::merge(const family_details &Other)
 //********************************************************************************************************************
 // Analyse a scalable font file and return its family name and the style names that it provides.  FileName is used to
 // name the family if the file does not declare one.  If Details is true, the descriptive information for the font
-// database is also gathered.  The caller must hold the glConfig lock, which serialises use of glFTLibrary.
+// database is also gathered.  FaceIndex selects a face in a collection, and Face.faces reports the collection size.
+// The caller must hold the glConfig lock, which serialises use of glFTLibrary.
 
-static ERR analyse_scalable_font(const std::string &Path, std::string_view FileName, scalable_face &Face, bool Details)
+static ERR analyse_scalable_font(const std::string &Path, std::string_view FileName, scalable_face &Face,
+   bool Details, int FaceIndex)
 {
    kt::Log log(__FUNCTION__);
 
    FT_Face ftface;
    FT_Open_Args open = { .flags = FT_OPEN_PATHNAME, .pathname = (FT_String *)Path.c_str() };
-   if (FT_Open_Face(glFTLibrary, &open, 0, &ftface)) return ERR::InvalidData;
+   if (FT_Open_Face(glFTLibrary, &open, FaceIndex, &ftface)) return ERR::InvalidData;
+
+   Face.faces = int(ftface->num_faces);
 
    if (not FT_IS_SCALABLE(ftface)) { // Sanity check
       FT_Done_Face(ftface);
@@ -1718,27 +1772,33 @@ static void scan_host_folders(objConfig *Config, const std::map<std::string, fam
          if ((err) or (not visited.insert(file).second)) continue;
 
          auto path = file.string();
-         scalable_face face;
-         if (analyse_scalable_font(path, file.filename().string(), face, true) != ERR::Okay) continue;
+         int faces = 1;
+         for (int face_index=0; face_index < faces; face_index++) {
+            scalable_face face;
+            auto error = analyse_scalable_font(path, file.filename().string(), face, true, face_index);
+            if (face_index IS 0) faces = face.faces; // A failed face does not truncate the rest of the collection
+            if (error != ERR::Okay) continue;
 
-         if (is_local(face.family)) {
-            log.detail("Family \"%s\" is provided by fonts:, skipping \"%s\"", face.family.c_str(), path.c_str());
-            continue;
+            if (is_local(face.family)) {
+               log.detail("Family \"%s\" is provided by fonts:, skipping \"%s\"", face.family.c_str(), path.c_str());
+               continue;
+            }
+
+            bool recorded = false;
+            for (auto &style : face.styles) {
+               if (not host_styles.emplace(face.family, style).second) continue;
+               Config->write(face.family, style, path);
+               if (face_index > 0) Config->write(face.family, "FaceIndex:" + style, std::to_string(face_index));
+               recorded = true;
+            }
+
+            if (not recorded) continue;
+
+            Config->write(face.family, "Name", face.family);
+            Config->write(face.family, "Scalable", "Yes");
+            if (face.variable) Config->write(face.family, "Variable", "Yes");
+            Details[face.family].merge(face.details);
          }
-
-         bool recorded = false;
-         for (auto &style : face.styles) {
-            if (not host_styles.emplace(face.family, style).second) continue;
-            Config->write(face.family, style, path);
-            recorded = true;
-         }
-
-         if (not recorded) continue;
-
-         Config->write(face.family, "Name", face.family);
-         Config->write(face.family, "Scalable", "Yes");
-         if (face.variable) Config->write(face.family, "Variable", "Yes");
-         Details[face.family].merge(face.details);
       }
 
       if (iter_err) {

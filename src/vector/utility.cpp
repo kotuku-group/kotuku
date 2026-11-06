@@ -720,7 +720,8 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
    const int point_size = std::round(Size * (72.0 / DISPLAY_DPI));
    std::string location;
    FMETA meta = FMETA::NIL;
-   if (auto error = fnt::SelectFont(family, style, &location, &meta); !error) {
+   int face_index = 0;
+   if (auto error = fnt::SelectFontFace(family, style, &location, &meta, &face_index); !error) {
       if ((meta & FMETA::SCALED) IS FMETA::NIL) { // Bitmap font
          auto key = strihash(style + ":" + std::to_string(point_size) + ":" + location);
 
@@ -742,18 +743,17 @@ ERR get_font(kt::Log &Log, std::string_view Family, std::string_view Style, int 
          else return ERR::CreateObject;
       }
       else {
-         // For scalable fonts the key is made from the location only, ensuring that the face file is loaded
-         // only once.  If the file is variable, it will contain multiple styles.  Otherwise, assume the file
-         // represents one type of style.
+         // Each face in a collection has its own glyph and variation caches.  Variable styles within a face
+         // continue to share that face's cache.
 
-         auto key = strihash(location);
+         auto key = strihash(location + ":" + std::to_string(face_index));
 
          if (!glFreetypeFonts.contains(key)) {
             std::string resolved;
             if (!ResolvePath(location, RSF::NIL, &resolved)) {
                FT_Face ftface;
                FT_Open_Args openargs = { .flags = FT_OPEN_PATHNAME, .pathname = resolved.data() };
-               if (FT_Open_Face(glFTLibrary, &openargs, 0, &ftface)) {
+               if (FT_Open_Face(glFTLibrary, &openargs, face_index, &ftface)) {
                   Log.warning("Fatal error in attempting to load font \"%s\".", resolved.c_str());
                   return ERR::File;
                }

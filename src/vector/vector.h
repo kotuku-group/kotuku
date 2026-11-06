@@ -1973,6 +1973,7 @@ static int get_utf8(const std::string_view &Value, uint32_t &Unicode, std::size_
 extern double glDisplayVDPI, glDisplayHDPI, glDisplayDPI;
 
 extern void set_text_final_xy(extVectorText *);
+extern void align_raster_text(extVectorText *);
 
 namespace vec {
 extern ERR DrawPath(objBitmap * Bitmap, APTR Path, double StrokeWidth, OBJECTPTR StrokeStyle, OBJECTPTR FillStyle);
