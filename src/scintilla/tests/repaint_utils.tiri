@@ -1,0 +1,48 @@
+-- Shared rendering and pixel comparisons for the incremental repaint suites.
+
+   module display as mGfx
+
+namespace repaint_utils { }
+
+-- Path changes detected during drawing queue the editor's repaint; draw again after dispatching it.
+
+function repaint_utils.render(Scene:obj)
+   check Scene.acDraw()
+   processing.sleep(0)
+   check Scene.acDraw()
+end
+
+-- Pack pixels immediately because ReadRGBPixel() results share a buffer.
+
+function repaint_utils.capture(Bitmap:obj):array<int>
+   local pixels = array<int> { }
+   for y in {0 to Bitmap.height} do
+      for x in {0 to Bitmap.width} do
+         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
+         pixels.push((p.red << 16) | (p.green << 8) | p.blue)
+      end
+   end
+   return pixels
+end
+
+function repaint_utils.assertFull(Scene:obj, Sci:obj, Bitmap:obj, Label:str)
+   repaint_utils.render(Scene)
+   local incremental = repaint_utils.capture(Bitmap)
+   Sci.bkgdColour = Sci.bkgdColour
+   repaint_utils.render(Scene)
+   local full = repaint_utils.capture(Bitmap)
+   local differences = 0
+   local first = nil
+   for i in {0 to #full} do
+      if incremental[i] != full[i] then
+         differences++
+         first ?= i
+      end
+   end
+   if first != nil then
+      local x = first % Bitmap.width
+      local y = math.floor(first / Bitmap.width)
+      assert(false, f'{Label}: {differences} pixels differ from a full repaint, first at {x},{y}: ' ..
+         f'{incremental[first]} vs {full[first]}')
+   end
+end

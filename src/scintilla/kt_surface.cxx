@@ -228,16 +228,16 @@ void SurfacePan::Copy(PRectangle Rect, Point From, Surface &Source)
 
 //********************************************************************************************************************
 
-void SurfacePan::DrawTextBase(PRectangle Rect, const Font &Font, XYPOSITION Baseline,
-   const char *String, int Length, ColourRGBA Fore)
+void SurfacePan::draw_text(PRectangle Rect, const Font *Font, XYPOSITION Baseline,
+   std::string_view Text, ColourRGBA Fore)
 {
-   if ((not bitmap) or (not scintilla) or (Length <= 0)) return;
+   if ((not bitmap) or (not scintilla) or Text.empty()) return;
 
-   if (auto handle = GetFont(Font)) {
+   if (auto handle = GetFont(*Font)) {
       BitmapClipper clipper(bitmap, cliprect);
       set_vector_colour(scintilla->FillColour, Fore, Fore.GetAlpha());
       std::string storage;
-      const auto text = vector_text(std::string_view(String, size_t(Length)), storage);
+      const auto text = vector_text(Text, storage);
       if (auto error = vec::DrawText(bitmap, handle, Rect.left, Baseline,
             text, scintilla->FillColour, nullptr); error != ERR::Okay) {
          kt::Log(__FUNCTION__).warning(error);
@@ -247,69 +247,55 @@ void SurfacePan::DrawTextBase(PRectangle Rect, const Font &Font, XYPOSITION Base
 
 //********************************************************************************************************************
 
-void SurfacePan::DrawTextNoClip(PRectangle Rect, const Font &Font, XYPOSITION Baseline, const char *String, int Length,
-                                 ColourRGBA Fore, ColourRGBA Back)
+void SurfacePan::DrawTextNoClipUTF8(PRectangle Rect, const Font *Font, XYPOSITION Baseline,
+   std::string_view Text, ColourRGBA Fore, ColourRGBA Back)
 {
    DBGDRAW("panDrawTextNoClip()","");
    FillRectangle(Rect, Back);
-   DrawTextBase(Rect, Font, Baseline, String, Length, Fore);
+   draw_text(Rect, Font, Baseline, Text, Fore);
 }
 
 //********************************************************************************************************************
 // Intersect the text rectangle with the current surface and bitmap clips for the duration of the run.
 
-void SurfacePan::DrawTextClipped(PRectangle Rect, const Font &Font, XYPOSITION Baseline,
-   const char *String, int Length, ColourRGBA Fore, ColourRGBA Back)
+void SurfacePan::DrawTextClippedUTF8(PRectangle Rect, const Font *Font, XYPOSITION Baseline,
+   std::string_view Text, ColourRGBA Fore, ColourRGBA Back)
 {
    DBGDRAW("panDrawTextClipped()", "");
    if (not bitmap) return;
    BitmapClipper clipper(bitmap, Rect);
    FillRectangle(Rect, Back);
-   DrawTextBase(Rect, Font, Baseline, String, Length, Fore);
+   draw_text(Rect, Font, Baseline, Text, Fore);
 }
 
 //********************************************************************************************************************
 // Avoid drawing spaces in transparent mode; i.e. only draw if there is at least one non-space char.
 
-void SurfacePan::DrawTextTransparent(PRectangle Rect, const Font &Font, XYPOSITION Baseline,
-   const char *String, int Length, ColourRGBA Fore)
+void SurfacePan::DrawTextTransparentUTF8(PRectangle Rect, const Font *Font, XYPOSITION Baseline,
+   std::string_view Text, ColourRGBA Fore)
 {
-   int i;
-
-   for (i=0; i < Length; i++) {
-      if (String[i] != ' ') {
-         DrawTextBase(Rect, Font, Baseline, String, Length, Fore);
-         return;
-      }
-   }
+   if (Text.find_first_not_of(' ') != std::string_view::npos) draw_text(Rect, Font, Baseline, Text, Fore);
 }
 
 //********************************************************************************************************************
 
-XYPOSITION SurfacePan::WidthText(const Font &Font, const char *String, int Length)
+XYPOSITION SurfacePan::WidthTextUTF8(const Font *Font, std::string_view Text)
 {
-   if (Length <= 0) return 0;
-   if (auto handle = GetFont(Font)) {
+   if (Text.empty()) return 0;
+   if (auto handle = GetFont(*Font)) {
       std::string storage;
-      return vec::StringWidth(handle, vector_text(std::string_view(String, size_t(Length)), storage), -1);
+      return vec::StringWidth(handle, vector_text(Text, storage), -1);
    }
    return 0;
 }
 
 //********************************************************************************************************************
-
-XYPOSITION SurfacePan::WidthChar(const Font &Font, char Char)
-{
-   return vec::CharWidth(GetFont(Font), uint8_t(Char), 0, nullptr);
-}
-
-//********************************************************************************************************************
 // LineSpacing includes the room above the cap height needed by accented capitals.
 
-int SurfacePan::Ascent(const Font &Font)
+XYPOSITION SurfacePan::Ascent(const Font *Font)
 {
    FontMetrics metrics;
-   if (vec::GetFontMetrics(GetFont(Font), &metrics) IS ERR::Okay) {
+   if (vec::GetFontMetrics(GetFont(*Font), &metrics) IS ERR::Okay) {
       return std::max(0, metrics.LineSpacing - metrics.Descent);
    }
    return 10;
@@ -317,32 +303,25 @@ int SurfacePan::Ascent(const Font &Font)
 
 //********************************************************************************************************************
 
-int SurfacePan::Descent(const Font &Font)
+XYPOSITION SurfacePan::Descent(const Font *Font)
 {
    FontMetrics metrics;
-   if (vec::GetFontMetrics(GetFont(Font), &metrics) IS ERR::Okay) return std::max(0, metrics.Descent);
+   if (vec::GetFontMetrics(GetFont(*Font), &metrics) IS ERR::Okay) return std::max(0, metrics.Descent);
    return 3;
 }
 
 //********************************************************************************************************************
 
-int SurfacePan::InternalLeading(const Font &)
-{
-   return 0;
-}
-
-//********************************************************************************************************************
-
-int SurfacePan::Height(const Font &Font)
+XYPOSITION SurfacePan::Height(const Font *Font)
 {
    return Ascent(Font) + Descent(Font);
 }
 
 //********************************************************************************************************************
 
-XYPOSITION SurfacePan::AverageCharWidth(const Font &Font)
+XYPOSITION SurfacePan::AverageCharWidth(const Font *Font)
 {
-   return WidthChar(Font, 'x');
+   return vec::CharWidth(GetFont(*Font), 'x', 0, nullptr);
 }
 
 //********************************************************************************************************************
@@ -590,16 +569,15 @@ void SurfacePan::MeasureWidthsUTF8(const Font *Font, std::string_view Text,
    }
 }
 
-std::string SurfacePan::normal_text(std::string_view Text) const
+std::string_view SurfacePan::normal_text(std::string_view Text, std::string &Storage) const
 {
-   if (mode.codePage != 0) return std::string(Text);
-   std::string text;
-   text.reserve(Text.size());
+   if (mode.codePage != 0) return Text;
+   Storage.reserve(Text.size());
    for (uint8_t byte : Text) {
-      if (byte < 0x80) text += char(byte);
-      else { text += char(0xc0 | (byte >> 6)); text += char(0x80 | (byte & 0x3f)); }
+      if (byte < 0x80) Storage += char(byte);
+      else { Storage += char(0xc0 | (byte >> 6)); Storage += char(0x80 | (byte & 0x3f)); }
    }
-   return text;
+   return Storage;
 }
 
 void SurfacePan::MeasureWidths(const Font *Font, std::string_view Text, XYPOSITION *Positions)

@@ -89,7 +89,6 @@ for one frame before the editor repaints.</li>
 *********************************************************************************************************************/
 
 //#define DEBUG
-#define INTERNATIONAL_INPUT
 #define PRV_SCINTILLA
 
 #define DBGDRAW(...) //FMSG
@@ -172,9 +171,6 @@ static const struct {
 };
 
 #define SCICOLOUR(red,green,blue) (((uint8_t)(blue))<<16)|(((uint8_t)(green))<<8)|((uint8_t)(red))
-#define SCIRED(c)   (uint8_t)(c)
-#define SCIGREEN(c) (uint8_t)(c>>8)
-#define SCIBLUE(c)  (uint8_t)(c>>16)
 #define SCICALL     Self->API->SendScintilla
 
 //********************************************************************************************************************
@@ -261,6 +257,16 @@ static void calc_longest_line(extScintilla *);
 static int scaled(extScintilla *Self, int Value)
 {
    return int(std::lround(Value * Self->Scale));
+}
+
+// Pin a copy before releasing the stored callback, including when Value aliases Callback.
+
+static void replace_callback(FUNCTION &Callback, const FUNCTION *Value)
+{
+   auto replacement = Value ? *Value : FUNCTION();
+   if (replacement.defined()) replacement.pin();
+   if (Callback.defined()) Callback.unpin();
+   Callback = replacement;
 }
 
 // Scintilla draws opaque highlights beneath the text, and translucent highlights over it.
@@ -2338,12 +2344,7 @@ static ERR GET_CompletionCallback(extScintilla *Self, FUNCTION * &Value)
 
 static ERR SET_CompletionCallback(extScintilla *Self, FUNCTION *Value)
 {
-   if (Self->CompletionCallback.defined()) Self->CompletionCallback.unpin();
-   if (Value) {
-      Self->CompletionCallback = *Value;
-      if (Self->CompletionCallback.defined()) Self->CompletionCallback.pin();
-   }
-   else Self->CompletionCallback.clear();
+   replace_callback(Self->CompletionCallback, Value);
    return ERR::Okay;
 }
 
@@ -2438,10 +2439,7 @@ static ERR GET_FileDrop(extScintilla *Self, FUNCTION * &Value)
 
 static ERR SET_FileDrop(extScintilla *Self, FUNCTION *Value)
 {
-   auto callback = Value ? *Value : FUNCTION();
-   if (callback.defined()) callback.pin();
-   if (Self->FileDrop.defined()) Self->FileDrop.unpin();
-   Self->FileDrop = callback;
+   replace_callback(Self->FileDrop, Value);
    return ERR::Okay;
 }
 
@@ -2591,12 +2589,7 @@ static ERR GET_MarginClick(extScintilla *Self, FUNCTION * &Value)
 
 static ERR SET_MarginClick(extScintilla *Self, FUNCTION *Value)
 {
-   if (Self->MarginClick.defined()) Self->MarginClick.unpin();
-   if (Value) {
-      Self->MarginClick = *Value;
-      if (Self->MarginClick.defined()) Self->MarginClick.pin();
-   }
-   else Self->MarginClick.clear();
+   replace_callback(Self->MarginClick, Value);
 
    if (Self->API) SCICALL(SCI_SETMARGINSENSITIVEN, 1, (sptr_t)Self->MarginClick.defined());
    return ERR::Okay;
@@ -2842,12 +2835,7 @@ static ERR GET_EventCallback(extScintilla *Self, FUNCTION * &Value)
 
 static ERR SET_EventCallback(extScintilla *Self, FUNCTION *Value)
 {
-   if (Self->EventCallback.defined()) Self->EventCallback.unpin();
-   if (Value) {
-      Self->EventCallback = *Value;
-      if (Self->EventCallback.defined()) Self->EventCallback.pin();
-   }
-   else Self->EventCallback.clear();
+   replace_callback(Self->EventCallback, Value);
    return ERR::Okay;
 }
 
@@ -3803,24 +3791,15 @@ extScintilla::~extScintilla() {
    // Callbacks consult API; clear it before engine cancellation can close auxiliary windows.
    auto api = std::exchange(API, nullptr);
    if (DragClipboard) { FreeResource(DragClipboard); DragClipboard = nullptr; }
-   if (FileDrop.defined()) { FileDrop.unpin(); FileDrop.clear(); }
+   replace_callback(FileDrop, nullptr);
    if (api) api->Finalise();
    delete api;
 
-   if (EventCallback.defined()) {
-      EventCallback.unpin();
-      EventCallback.clear();
-   }
+   replace_callback(EventCallback, nullptr);
 
-   if (MarginClick.defined()) {
-      MarginClick.unpin();
-      MarginClick.clear();
-   }
+   replace_callback(MarginClick, nullptr);
 
-   if (CompletionCallback.defined()) {
-      CompletionCallback.unpin();
-      CompletionCallback.clear();
-   }
+   replace_callback(CompletionCallback, nullptr);
 
    if (Image) { // Freeing the image also removes its definition from the scene
       UnsubscribeAction(Image, AC::NIL);

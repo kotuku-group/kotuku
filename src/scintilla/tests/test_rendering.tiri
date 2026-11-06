@@ -1,37 +1,9 @@
--- Plain-text repaint coverage remains runnable while the canonical styled/folding suites await Lexilla.
+-- Plain-text repaint coverage for bitmap and scalable fonts, alongside the styled and folding suites.
 -- Every incremental result must equal a forced full repaint through the public API.
 
    include 'scintilla', 'vector', 'display'
    module display as mGfx
-
-function render(Scene:obj)
-   check Scene.acDraw()
-   processing.sleep(0)
-   check Scene.acDraw()
-end
-
-function capture(Bitmap:obj):array<int>
-   local pixels = array<int> { }
-   for y in {0 to Bitmap.height} do
-      for x in {0 to Bitmap.width} do
-         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
-         pixels.push((p.red << 16) | (p.green << 8) | p.blue)
-      end
-   end
-   return pixels
-end
-
-function assertFull(Scene:obj, Sci:obj, Bitmap:obj, Label:str)
-   render(Scene)
-   local incremental = capture(Bitmap)
-   Sci.bkgdColour = Sci.bkgdColour
-   render(Scene)
-   local full = capture(Bitmap)
-   for i in {0 to #full} do
-      assert(incremental[i] is full[i],
-         f'{Label}: pixel {i % Bitmap.width},{math.floor(i / Bitmap.width)} differs: {incremental[i]} vs {full[i]}')
-   end
-end
+   import './repaint_utils'
 
 function compareRepaints(Face:str, Size:num)
    local scene <close> = obj.new('VectorScene', { pageWidth=280, pageHeight=130 })
@@ -46,39 +18,39 @@ function compareRepaints(Face:str, Size:num)
    check sci.mtDefineMarker(0, SCMK_CIRCLE, struct<RGB8> { red=255, green=255, blue=255, alpha=255 },
       struct<RGB8> { red=255, green=0, blue=0, alpha=255 })
    check sci.mtAddMarker(1, 0)
-   assertFull(scene, sci, bitmap, 'Initial document')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Initial document')
 
    check sci.mtSelectRange(3, 100)
-   assertFull(scene, sci, bitmap, 'Translucent selection')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Translucent selection')
    check sci.mtInsertText('inserted é😀\n', 5)
-   assertFull(scene, sci, bitmap, 'Multibyte insertion')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Multibyte insertion')
    check sci.mtReplaceLine(2, 'short line', -1)
-   assertFull(scene, sci, bitmap, 'Shorter replacement')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Shorter replacement')
    check sci.mtDeleteLine(3)
-   assertFull(scene, sci, bitmap, 'Deleted line')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Deleted line')
    for _, line in array<int> { 3, 5, 6, 4, 20, 19, 18, 50, 0 } do
       check sci.mtGotoLine(line)
-      assertFull(scene, sci, bitmap, f'Scroll to line {line}')
+      repaint_utils.assertFull(scene, sci, bitmap, f'Scroll to line {line}')
    end
 
    check sci.mtGotoLine(20)
-   render(scene)
+   repaint_utils.render(scene)
    check sci.mtInsertText('pending edit ', 0)
    check sci.mtGotoLine(21)
    check sci.mtGotoLine(22)
-   assertFull(scene, sci, bitmap, 'Pending edit and consecutive scrolls')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Pending edit and consecutive scrolls')
    check sci.mtScrollToPoint(30.5, 0)
-   assertFull(scene, sci, bitmap, 'Fractional horizontal scroll')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Fractional horizontal scroll')
    sci.lineNumbers = false
    sci.symbols = false
-   assertFull(scene, sci, bitmap, 'Hidden margins')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Hidden margins')
    sci.lineNumbers = true
    sci.symbols = true
    viewport.width = 210.5
    viewport.height = 105.25
-   assertFull(scene, sci, bitmap, 'Resized fractional viewport')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Resized fractional viewport')
    sci.fontSize = Size + 3
-   assertFull(scene, sci, bitmap, 'Font reload')
+   repaint_utils.assertFull(scene, sci, bitmap, 'Font reload')
 end
 
 @Test function BitmapIncrementalRepaints()
@@ -99,9 +71,9 @@ end
    scene.bitmap = bitmap
    sci.string = 'HHHH'
    check sci.mtSelectRange(0, 4)
-   render(scene)
+   repaint_utils.render(scene)
    sci.selectBkgd = '0,0,0,0'
-   render(scene)
+   repaint_utils.render(scene)
    local dark = 0
    for y in {0 to 13} do
       for x in {4 to 32} do
