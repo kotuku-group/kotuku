@@ -1144,7 +1144,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
 
     <constants lookup="RNF" comment="Switches for the Surface class' Flags field.">
       <const name="AFTER_COPY">Read-only.  Indicates that after-copy mode has been enabled.</const>
-      <const name="ASPECT_RATIO">When resizing, enforce the aspect ratio as defined by the diagonal from <class name="Surface" field="MinWidth">Surface.MinWidth</class>, <class name="Surface" field="MinHeight">Surface.MinHeight</class> to <class name="Surface" field="MaxWidth">Surface.MaxWidth</class>, <class name="Surface" field="MaxHeight">Surface.MaxHeight</class>.</const>
+      <const name="ASPECT_RATIO">When resizing, preserve the aspect ratio of the surface.  The ratio is that of the window when it is opened.</const>
       <const name="AUTO_QUIT">The surface object will send a quit message to its supporting process when and if the Close method is called.  This flag is typically used when a surface object represents a core window for an application.</const>
       <const name="COMPOSITE">Do not copy background information into the surface buffer - composite on the fly instead</const>
       <const name="DISABLED">This flag is set if the Disable action has been called on a surface object.  Calling the Enable action will turn off the flag setting.</const>

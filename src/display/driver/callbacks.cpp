@@ -12,10 +12,6 @@ Notes
 
 namespace display {
 
-constexpr int CALLBACK_AXIS_VERTICAL = 1;
-constexpr int CALLBACK_AXIS_HORIZONTAL = 2;
-constexpr int CALLBACK_AXIS_BOTH = 3;
-
 void DriverKeyPress(KQ Flags, KEY Value, int Printable)
 {
    if (Value IS KEY::NIL) return;
@@ -376,7 +372,7 @@ void DriverDPIChanged(OBJECTID SurfaceID)
 
 //********************************************************************************************************************
 // Called from WM_SIZE and WM_SIZING events to confirm that the requested window size is within the limits set by the
-// surface object.
+// surface object.  Aspect ratios are applied by the driver, which records the ratio in setSizeHints().
 
 void DriverConstrainWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int CurrentWidth, int CurrentHeight,
    int Axis)
@@ -395,27 +391,6 @@ void DriverConstrainWindowSize(OBJECTID SurfaceID, int &Width, int &Height, int 
       if ((min_height > 0) and (Height < min_height)) Height = min_height;
       if ((max_width > 0) and (Width > max_width))    Width  = max_width;
       if ((max_height > 0) and (Height > max_height)) Height = max_height;
-
-      if ((surface->Flags & RNF::ASPECT_RATIO) != RNF::NIL) {
-         if (Axis IS CALLBACK_AXIS_BOTH) {
-            if (min_width > min_height) {
-               auto scale = (double)min_height / (double)min_width;
-               Height = int(Width * scale);
-            }
-            else {
-               auto scale = (double)min_width / (double)min_height;
-               Width = int(Height * scale);
-            }
-         }
-         else if (Axis IS CALLBACK_AXIS_HORIZONTAL) {
-            auto scale = (double)min_height / (double)min_width;
-            Height = int(Width * scale);
-         }
-         else if (Axis IS CALLBACK_AXIS_VERTICAL) {
-            auto scale = (double)min_width / (double)min_height;
-            Width = int(Height * scale);
-         }
-      }
    }
 }
 

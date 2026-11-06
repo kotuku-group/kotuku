@@ -90,7 +90,7 @@ module({
     "COMPOSITE|NO_PRECOMPOSITE|POST_COMPOSITE: Do not copy background information into the surface buffer - composite on the fly instead",
     "FULL_SCREEN: Allow the surface to open as a new screen display",
     "IGNORE_FOCUS: Focus is diverted directly to the parent",
-    "ASPECT_RATIO: When resizing, enforce the aspect ratio as defined by the diagonal from @Surface.MinWidth, @Surface.MinHeight to @Surface.MaxWidth, @Surface.MaxHeight.",
+    "ASPECT_RATIO: When resizing, preserve the aspect ratio of the surface.  The ratio is that of the window when it is opened.",
     "MANUAL_RENDER: Skip bitmap clearing, skip draw callbacks, expose retained pixels.",
     { VOLATILE = "PRECOPY|AFTER_COPY|CURSOR" },
     { READ_ONLY = "HAS_FOCUS|CURSOR|AFTER_COPY" },

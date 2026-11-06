@@ -921,6 +921,12 @@ will be returned if it is not implemented.
 A negative value leaves the corresponding limit at the value set by the previous call, while zero removes it.  This
 convention is honoured by the X11 and Wayland drivers.
 
+The enforced aspect ratio is the proportion of the window's width and height at the time that `EnforceAspect` is 
+first set.  It is retained until a call clears `EnforceAspect`, so that it does not drift as the user resizes the
+window.  When the client resizes the window, the new dimensions become the enforced ratio.  The Windows driver 
+reads minimum and maximum sizes from the window's @Surface when the user resizes it, so on that platform only 
+`EnforceAspect` is taken from this call.
+
 Window managers ignore aspect ratio and maximum size hints when a window is maximised.  On X11, setting
 `EnforceAspect` therefore also asks the window manager to remove the window's maximise function, and clearing it
 restores that function.
@@ -933,7 +939,7 @@ int MinWidth: The minimum width of the window.
 int MinHeight: The minimum height of the window.
 int MaxWidth: The maximum width of the window.
 int MaxHeight: The maximum height of the window.
-int EnforceAspect: Set to true to enforce an aspect ratio that is scaled from MinWidth,MinHeight to MaxWidth,MaxHeight.
+int EnforceAspect: Set to true to preserve the window's current aspect ratio while it is resized.
 
 -ERRORS-
 Okay
