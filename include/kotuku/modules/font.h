@@ -38,6 +38,15 @@ enum class FMETA : uint32_t {
 
 DEFINE_ENUM_FLAG_OPERATORS(FMETA)
 
+// Options for the RefreshFonts() function.
+
+enum class RFF : uint32_t {
+   NIL = 0,
+   SCAN_HOST = 0x00000001,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(RFF)
+
 // Force hinting options for a font.
 
 enum class HINT : int8_t {
@@ -441,7 +450,7 @@ struct FontBase {
 #ifndef KOTUKU_STATIC
    int (*_StringWidth)(objFont *Font, const std::string_view &String, int Chars);
    int (*_CharWidth)(objFont *Font, uint32_t Char);
-   ERR (*_RefreshFonts)(const std::string_view &Path);
+   ERR (*_RefreshFonts)(const std::string_view &Path, RFF Flags);
    ERR (*_SelectFont)(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta);
    ERR (*_ResolveFamilyName)(const std::string_view &String, std::string_view *Result, std::string_view *Alias);
    ERR (*_RegisterFont)(const std::string_view &Path, std::string *Family);
@@ -453,7 +462,7 @@ extern struct FontBase *FontBase;
 namespace fnt {
 inline int StringWidth(objFont *Font, const std::string_view &String, int Chars) { return FontBase->_StringWidth(Font,String,Chars); }
 inline int CharWidth(objFont *Font, uint32_t Char) { return FontBase->_CharWidth(Font,Char); }
-inline ERR RefreshFonts(const std::string_view &Path) { return FontBase->_RefreshFonts(Path); }
+inline ERR RefreshFonts(const std::string_view &Path, RFF Flags) { return FontBase->_RefreshFonts(Path,Flags); }
 inline ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta) { return FontBase->_SelectFont(Name,Style,Path,Meta); }
 inline ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result, std::string_view *Alias) { return FontBase->_ResolveFamilyName(String,Result,Alias); }
 inline ERR RegisterFont(const std::string_view &Path, std::string *Family) { return FontBase->_RegisterFont(Path,Family); }
@@ -462,7 +471,7 @@ inline ERR RegisterFont(const std::string_view &Path, std::string *Family) { ret
 namespace fnt {
 extern int StringWidth(objFont *Font, const std::string_view &String, int Chars);
 extern int CharWidth(objFont *Font, uint32_t Char);
-extern ERR RefreshFonts(const std::string_view &Path);
+extern ERR RefreshFonts(const std::string_view &Path, RFF Flags);
 extern ERR SelectFont(const std::string_view &Name, const std::string_view &Style, std::string *Path, FMETA *Meta);
 extern ERR ResolveFamilyName(const std::string_view &String, std::string_view *Result, std::string_view *Alias);
 extern ERR RegisterFont(const std::string_view &Path, std::string *Family);

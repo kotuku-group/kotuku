@@ -189,6 +189,10 @@ coverage reports at least <code>1</code>.  Sets that have no coverage are omitte
       <const name="VARIABLE">This is a scalable font featuring variable metrics.</const>
     </constants>
 
+    <constants lookup="RFF" comment="Options for the RefreshFonts() function.">
+      <const name="SCAN_HOST">Include the host's native font folders in the scan.</const>
+    </constants>
+
   </types>
   <structs>
     <struct name="RGB8" comment="8-bit RGB colour value." typeName="RGB8">

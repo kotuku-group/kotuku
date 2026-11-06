@@ -85,9 +85,6 @@ foreach (SCINTILLA_TARGET scintilla scintilla_v5_engine)
    endif ()
 endforeach ()
 
-message (STATUS "Scintilla v5 backend: Scintilla 5.6.9; Lexilla 5.5.5; "
-   "native desktop/platform acceptance pending")
-
 # Keep the editor's Tiri keywords in step with the parser without linking to the Tiri module.
 
 set (TIRI_TOKEN_SOURCE "${PROJECT_SOURCE_DIR}/src/tiri/jit/src/parser/lexer_types.h")

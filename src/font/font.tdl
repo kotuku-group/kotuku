@@ -23,6 +23,9 @@ module({ name="Font", copyright="Paul Manias © 1998-2026", version=1.0, timesta
     "HIDDEN: The font should not appear in any named list shown to the user."
   )
 
+  flags("RFF", { comment="Options for the RefreshFonts() function." },
+    "SCAN_HOST: Include the host's native font folders in the scan.")
+
   enums("HINT", { type="char", start=1, comment="Force hinting options for a font." },
      "NORMAL: The hinting information provided by the font will be given preference.",
      "INTERNAL: The Freetype hinter will be forcibly imposed.",

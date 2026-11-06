@@ -51,6 +51,8 @@ Google Fonts Knowledge page: https://fonts.google.com/knowledge
 #include <cfloat>
 #include <set>
 #include <span>
+#include <filesystem>
+#include <algorithm>
 #include <kotuku/strings.hpp>
 #include <kotuku/font_traits.hpp>
 #include "../link/unicode.h"
@@ -231,6 +233,11 @@ static ERR add_font_class(void);
 static ERR analyse_scalable_font(const std::string &, std::string_view, scalable_face &, bool = false);
 static void scan_scalable_folder(objConfig *, std::map<std::string, family_details> &);
 static void scan_fixed_folder(objConfig *, std::map<std::string, family_details> &);
+static void scan_host_folders(objConfig *, const std::map<std::string, family_details> &,
+   std::map<std::string, family_details> &);
+static ERR build_style_lists(objConfig *);
+static ERR refresh_host_fonts(void);
+static void merge_host_fonts(objConfig *);
 static void write_family_details(objConfig *, const std::map<std::string, family_details> &);
 static ERR analyse_bmp_font(std::string_view, winfnt_header_fields *, std::string &, std::vector<uint16_t> &);
 static void string_size(extFont *, std::string_view, int, int, int *, int *);
@@ -474,6 +481,7 @@ static void string_size(extFont *Font, std::string_view String, int Chars, int W
 //********************************************************************************************************************
 
 static objConfig *glConfig = nullptr; // Font database
+static constexpr std::string_view HOST_FONTS_PATH = "user:config/host_fonts.cfg";
 
 static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 {
@@ -502,7 +510,7 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
    if ((glConfig = objConfig::create::global(fl::Name("cfgSystemFonts"), fl::Path("fonts:fonts.cfg")))) {
       if (refresh) {
-         if (auto error = fnt::RefreshFonts(std::string_view()); error != ERR::Okay) {
+         if (auto error = fnt::RefreshFonts(std::string_view(), RFF::SCAN_HOST); error != ERR::Okay) {
             cleanup();
             return error;
          }
@@ -515,9 +523,25 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
          return ERR::NoData;
       }
 
-      // Merge tailored font options into the machine-generated database
+      // Merge host fonts and tailored font options into the machine-generated database.  RefreshFonts() has
+      // already done this if a refresh was performed.
 
-      glConfig->mergeFile("fonts:options.cfg");
+      if (not refresh) {
+         if ((AnalysePath(HOST_FONTS_PATH, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+            if (objConfig::create host = { fl::Path(HOST_FONTS_PATH) }; host.ok()) merge_host_fonts(*host);
+         }
+         else if (auto error = refresh_host_fonts(); error != ERR::Okay) {
+            // Write an empty host database so that the failed scan is not repeated on every initialisation.  A
+            // RefreshFonts() call with SCAN_HOST will rebuild it.
+
+            log.warning("Host font scan failed: %s", GetErrorMsg(error));
+            objFile::create blank = { fl::Path(HOST_FONTS_PATH), fl::Flags(FL::NEW|FL::WRITE) };
+            if (not blank.ok()) {
+               log.warning("Unable to write a blank host font database to \"%s\"", HOST_FONTS_PATH.data());
+            }
+         }
+         glConfig->mergeFile("fonts:options.cfg");
+      }
    }
    else {
       log.error("Failed to load or prepare the font configuration file.");
@@ -822,6 +846,25 @@ location is specified in `Path`.
 
 Fonts registered with ~RegisterFont() are private to the process and are neither cleared nor saved by a refresh.
 
+If the `SCAN_HOST` flag is set, the host's native font folders are scanned for scalable fonts after the `fonts:`
+volume.  On Linux the folders are, in order: `$XDG_DATA_HOME/fonts` (defaulting to `~/.local/share/fonts`), `~/.fonts`,
+the `fonts` folder of each `$XDG_DATA_DIRS` entry (defaulting to `/usr/local/share:/usr/share`), `/usr/share/fonts` and
+`/usr/local/share/fonts`.  The folders are scanned recursively for `ttf`, `otf`, `ttc` and `otc` files, and host fonts
+are recorded by their absolute paths.  If a host family style is found in more than one folder, the first folder in the
+list above takes precedence.  Every face in a collection is scanned.  Its zero-based index is stored in the
+`FaceIndex:Style` key, where `Style` is the corresponding style name, and is returned by ~SelectFontFace().  Host
+scanning is not supported on other platforms at this time, and the flag is ignored there.
+
+Host fonts are saved to their own database at `user:config/host_fonts.cfg`, regardless of `Path`, so that the `fonts:`
+database remains exclusive to Kotuku's fonts.  The host database is merged into the font database after it is saved,
+and before `fonts:options.cfg`.  If `SCAN_HOST` is not set, the host database from an earlier scan is merged instead,
+if it exists.  Families provided by the `fonts:` volume take precedence and are never mixed with host files of the same
+name.  On module initialisation, a missing host database is built independently of an existing `fonts:` database;
+a failure to save that per-user cache does not prevent font loading.  To stop using host fonts, delete `user:config/host_fonts.cfg` and refresh the fonts.
+
+Host font folders can hold thousands of files, so expect a host scan to take considerably longer than a standard
+refresh.  Host fonts that are subsequently removed will remain in the host database until the next host scan.
+
 Each family is recorded as a group, keyed by family name, in which each style name refers to the file that provides
 it.  The following keys describe the family as a whole:
 
@@ -852,6 +895,7 @@ Bitmap fonts are treated as Latin-1 for coverage purposes, which matches how the
 
 -INPUT-
 strview Path: Optional.  Overrides the default `fonts:fonts.cfg` location that the font database is saved to.
+int(RFF) Flags: Optional flags.
 
 -ERRORS-
 Okay
@@ -865,11 +909,11 @@ blocking
 
 *********************************************************************************************************************/
 
-ERR RefreshFonts(const std::string_view &Path)
+ERR RefreshFonts(const std::string_view &Path, RFF Flags)
 {
    kt::Log log(__FUNCTION__);
 
-   log.branch();
+   log.branch("Flags: $%.8x", int(Flags));
 
    kt::ScopedObjectLock<objConfig> config(glConfig, 3000);
    if (not config.granted()) return log.warning(ERR::AccessObject);
@@ -881,34 +925,7 @@ ERR RefreshFonts(const std::string_view &Path)
    scan_scalable_folder(glConfig, details);
    write_family_details(glConfig, details);
 
-   if (auto error = glConfig->sortByKey("", false); error != ERR::Okay) return error; // Sort by font name.
-
-   // Create a style list for each font, e.g.
-   //
-   //    Bold Italic = fonts:fixed/courier.fon
-   //    Bold = fonts:scalable/Courier Prime Bold.ttf
-   //    Styles = Bold,Bold Italic,Italic,Regular
-
-   ConfigGroups *groups;
-   if (!glConfig->getGroups(groups)) {
-      for (auto & [group, keys] : *groups) {
-         std::list <std::string> styles;
-         for (auto & [k, v] : keys) {
-            if (not v.compare(0, 6, "fonts:")) styles.push_front(k);
-         }
-
-         styles.sort();
-         std::ostringstream style_list;
-         for (int i=0; not styles.empty(); i++) {
-            if (i) style_list << ",";
-            style_list << styles.front();
-            styles.pop_front();
-         }
-
-         keys["Styles"] = style_list.str();
-      }
-   }
-   else return log.warning(ERR::GetField);
+   if (auto error = build_style_lists(glConfig); error != ERR::Okay) return error;
 
    // Save the font configuration file
 
@@ -916,6 +933,23 @@ ERR RefreshFonts(const std::string_view &Path)
    objFile::create file = { fl::Path(Path.empty() ? "fonts:fonts.cfg" : Path), fl::Flags(FL::NEW|FL::WRITE) };
    if (file.ok()) error = glConfig->saveToObject(*file);
    else error = log.warning(ERR::OpenFile);
+
+   // Host fonts are kept in a separate database so that the fonts: database remains exclusive to Kotuku.  If the host
+   // is not scanned, the database from an earlier scan is used.
+
+   if ((Flags & RFF::SCAN_HOST) != RFF::NIL) {
+      if (auto host_error = refresh_host_fonts(); (host_error != ERR::Okay) and (error IS ERR::Okay)) {
+         error = host_error;
+      }
+   }
+   else {
+      LOC type;
+      if ((AnalysePath(HOST_FONTS_PATH, &type) IS ERR::Okay) and (type IS LOC::FILE)) {
+         if (objConfig::create host = { fl::Path(HOST_FONTS_PATH) }; host.ok()) {
+            merge_host_fonts(*host);
+         }
+      }
+   }
 
    // Restore the tailored font options, e.g. aliases and metric modifiers.  They are merged after saving so that the
    // saved file remains machine-generated.
@@ -1135,6 +1169,106 @@ ERR RegisterFont(const std::string_view &Path, std::string *Family)
 }
 
 } // namespace
+
+//********************************************************************************************************************
+// Sorts the families of a font database and creates a style list for each one, e.g.
+//
+//    Bold Italic = fonts:fixed/courier.fon
+//    Bold = fonts:scalable/Courier Prime Bold.ttf
+//    Styles = Bold,Bold Italic,Italic,Regular
+//
+// Style keys are identified by their values, which are either fonts: paths or absolute host paths.  No other key in a
+// family group has a value starting with '/'.
+
+static ERR build_style_lists(objConfig *Config)
+{
+   kt::Log log(__FUNCTION__);
+
+   if (auto error = Config->sortByKey("", false); error != ERR::Okay) return error; // Sort by font name.
+
+   ConfigGroups *groups;
+   if (Config->getGroups(groups) != ERR::Okay) return log.warning(ERR::GetField);
+
+   for (auto & [group, keys] : *groups) {
+      std::list <std::string> styles;
+      for (auto & [k, v] : keys) {
+         if ((v.starts_with("fonts:")) or (v.starts_with('/'))) styles.push_front(k);
+      }
+
+      styles.sort();
+      std::ostringstream style_list;
+      for (int i=0; not styles.empty(); i++) {
+         if (i) style_list << ",";
+         style_list << styles.front();
+         styles.pop_front();
+      }
+
+      keys["Styles"] = style_list.str();
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Merges a host font database into glConfig, which must be locked by the caller.  Host families that clash with a
+// family in glConfig are removed first, so that a family provided by the fonts: volume is never mixed with host files.
+// This can occur if a family is added to the fonts: volume after the host was scanned.
+
+static void merge_host_fonts(objConfig *Host)
+{
+   kt::Log log(__FUNCTION__);
+
+   ConfigGroups *local, *host;
+   if ((glConfig->getGroups(local) != ERR::Okay) or (Host->getGroups(host) != ERR::Okay)) return;
+
+   std::vector<std::string> clashes;
+   for (auto & [group, keys] : *host) {
+      auto clash = std::ranges::any_of(*local, [&group](const ConfigGroup &Local) {
+         return iequals(Local.first, group);
+      });
+      if (clash) clashes.push_back(group);
+   }
+
+   for (auto &name : clashes) {
+      log.detail("Host family \"%s\" is provided by fonts:, skipping.", name.c_str());
+      Host->deleteGroup(name);
+   }
+
+   glConfig->merge(Host);
+   glConfig->sortByKey("", false);
+}
+
+//********************************************************************************************************************
+// Builds only the per-user host database.  Saving the cache is optional during module initialisation; the scanned
+// fonts are still merged when saving fails.  The fonts: database is never written here.
+
+static ERR refresh_host_fonts(void)
+{
+   kt::Log log(__FUNCTION__);
+   kt::ScopedObjectLock<objConfig> config(glConfig, 3000);
+   if (not config.granted()) return log.warning(ERR::AccessObject);
+
+   ConfigGroups *groups;
+   if (glConfig->getGroups(groups) != ERR::Okay) return log.warning(ERR::GetField);
+   std::map<std::string, family_details> local;
+   for (auto &[family, keys] : *groups) local.try_emplace(family);
+
+   objConfig::create host = { };
+   if (not host.ok()) return log.warning(ERR::CreateObject);
+
+   std::map<std::string, family_details> details;
+   scan_host_folders(*host, local, details);
+   write_family_details(*host, details);
+   if (auto error = build_style_lists(*host); error != ERR::Okay) return error;
+
+   ERR error;
+   objFile::create host_file = { fl::Path(HOST_FONTS_PATH), fl::Flags(FL::NEW|FL::WRITE) };
+   if (host_file.ok()) error = host->saveToObject(*host_file);
+   else error = log.warning(ERR::OpenFile);
+
+   merge_host_fonts(*host);
+   return error;
+}
 
 //********************************************************************************************************************
 // Decode a UTF-16 big endian SFNT name to UTF-8.  A space is inserted wherever a capital follows a lower-case letter,
@@ -1448,6 +1582,11 @@ static ERR analyse_scalable_font(const std::string &Path, std::string_view FileN
    else if (style IS FTF::ITALIC) Face.styles.push_back("Italic");
    else if (style IS (FTF::BOLD|FTF::ITALIC)) Face.styles.push_back("Bold Italic");
 
+   // Some fonts pad their style names with whitespace, which would not survive a round trip through the config file.
+
+   for (auto &name : Face.styles) kt::trim(name);
+   std::erase_if(Face.styles, [](const std::string &Name) { return Name.empty(); });
+
    if (Face.styles.empty()) Face.styles.push_back("Regular");
 
    if (Details) analyse_face_details(ftface, Face.details);
@@ -1489,6 +1628,122 @@ static void scan_scalable_folder(objConfig *Config, std::map<std::string, family
          }
       }
       else log.warning("Failed to open the fonts:scalable/ directory.");
+   }
+}
+
+//********************************************************************************************************************
+// Returns the host's native font folders in order of precedence.  Relative XDG paths are invalid according to the XDG
+// Base Directory specification and are ignored.
+
+static std::vector<std::filesystem::path> host_font_folders(void)
+{
+   std::vector<std::filesystem::path> folders;
+#ifdef __linux__
+   auto home = getenv("HOME");
+   bool valid_home = (home) and (home[0] IS '/');
+
+   if (auto data_home = getenv("XDG_DATA_HOME"); (data_home) and (data_home[0] IS '/')) {
+      folders.emplace_back(std::filesystem::path(data_home) / "fonts");
+   }
+   else if (valid_home) folders.emplace_back(std::filesystem::path(home) / ".local/share/fonts");
+
+   if (valid_home) folders.emplace_back(std::filesystem::path(home) / ".fonts");
+
+   std::string_view data_dirs = "/usr/local/share:/usr/share";
+   if (auto env = getenv("XDG_DATA_DIRS"); (env) and (env[0])) data_dirs = env;
+
+   while (not data_dirs.empty()) {
+      auto end = data_dirs.find(':');
+      auto dir = data_dirs.substr(0, end);
+      if (dir.starts_with('/')) folders.emplace_back(std::filesystem::path(dir) / "fonts");
+      data_dirs = (end IS std::string_view::npos) ? std::string_view() : data_dirs.substr(end + 1);
+   }
+
+   folders.emplace_back("/usr/share/fonts");
+   folders.emplace_back("/usr/local/share/fonts");
+#endif
+   return folders;
+}
+
+//********************************************************************************************************************
+// Recursively scans the host's native font folders for scalable fonts.  Families already provided by the fonts: volume
+// are skipped so that local and host files are never mixed.  Folders and files are tracked by their canonical paths,
+// which prevents symbolic links from causing loops or duplicate entries.
+
+static void scan_host_folders(objConfig *Config, const std::map<std::string, family_details> &Local,
+   std::map<std::string, family_details> &Details)
+{
+   kt::Log log(__FUNCTION__);
+
+   log.branch("Scanning host font folders.");
+
+   std::vector<std::string> local_families;
+   for (auto &[family, details] : Local) local_families.push_back(family);
+
+   auto is_local = [&local_families](std::string_view Family) {
+      return std::ranges::any_of(local_families, [Family](const std::string &Local) { return iequals(Family, Local); });
+   };
+
+   std::set<std::pair<std::string, std::string>> host_styles; // Family and style pairs recorded so far
+   std::set<std::filesystem::path> visited;
+   const auto options = std::filesystem::directory_options::follow_directory_symlink |
+      std::filesystem::directory_options::skip_permission_denied;
+
+   for (auto &root : host_font_folders()) {
+      std::error_code err;
+      auto canonical_root = std::filesystem::canonical(root, err);
+      if ((err) or (not std::filesystem::is_directory(canonical_root, err))) continue;
+      if (not visited.insert(canonical_root).second) continue;
+
+      log.msg("Scanning folder \"%s\"", canonical_root.string().c_str());
+
+      std::error_code iter_err;
+      std::filesystem::recursive_directory_iterator it(canonical_root, options, iter_err), end;
+      for (; (not iter_err) and (it != end); it.increment(iter_err)) {
+         auto &entry = *it;
+
+         if (entry.is_directory(err)) {
+            auto folder = std::filesystem::canonical(entry.path(), err);
+            if ((err) or (not visited.insert(folder).second)) it.disable_recursion_pending();
+            continue;
+         }
+
+         if (not entry.is_regular_file(err)) continue;
+
+         auto ext = entry.path().extension().string();
+         if ((not iequals(ext, ".ttf")) and (not iequals(ext, ".otf")) and
+             (not iequals(ext, ".ttc")) and (not iequals(ext, ".otc"))) continue;
+
+         auto file = std::filesystem::canonical(entry.path(), err);
+         if ((err) or (not visited.insert(file).second)) continue;
+
+         auto path = file.string();
+         scalable_face face;
+         if (analyse_scalable_font(path, file.filename().string(), face, true) != ERR::Okay) continue;
+
+         if (is_local(face.family)) {
+            log.detail("Family \"%s\" is provided by fonts:, skipping \"%s\"", face.family.c_str(), path.c_str());
+            continue;
+         }
+
+         bool recorded = false;
+         for (auto &style : face.styles) {
+            if (not host_styles.emplace(face.family, style).second) continue;
+            Config->write(face.family, style, path);
+            recorded = true;
+         }
+
+         if (not recorded) continue;
+
+         Config->write(face.family, "Name", face.family);
+         Config->write(face.family, "Scalable", "Yes");
+         if (face.variable) Config->write(face.family, "Variable", "Yes");
+         Details[face.family].merge(face.details);
+      }
+
+      if (iter_err) {
+         log.warning("Scan of \"%s\" ended early: %s", canonical_root.string().c_str(), iter_err.message().c_str());
+      }
    }
 }
 
