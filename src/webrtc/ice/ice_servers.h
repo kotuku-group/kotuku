@@ -27,4 +27,8 @@ constexpr uint32_t POLICY_DISABLE_IPV6 = 8;
 
 ERR parse_ice_servers(std::string_view Text, std::vector<IceServer> &Result);
 
+// Splits a server authority, retaining Port when omitted.  Scheme and host validation belong to the caller.
+
+bool split_server_address(std::string_view Text, std::string_view &Host, uint16_t &Port, bool RequirePort = false);
+
 } // namespace rtc

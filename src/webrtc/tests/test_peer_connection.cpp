@@ -41,7 +41,90 @@ static uint64_t now_us() {
       std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
+// Compatibility syntax and lookup replacement must remain independent of IceServers' stricter URI grammar.
+
+static bool legacy_configuration()
+{
+   NumericPeerConnection peer;
+   for (auto text : {"127.0.0.1:3478", "STUN:127.0.0.1", "sTuN:127.0.0.1:65535", "[::1]:3478",
+        "stun:[::1]", "STUN:[::1]:1"}) {
+      if (peer.set_stun_server(text) != ERR::Okay) return false;
+   }
+   for (auto text : {"localhost", "[::1]", "stun://localhost", "stun:", "stun:localhost:",
+        "stun:localhost:0", "stun:localhost:65536", "stun:localhost:-1", "stun:localhost:12x",
+        "stun:localhost/path", "stun:user@localhost", "stun:localhost?transport=udp", "stun:[::1",
+        "stun:[::1]extra", "stun:::1", "stun:[]"}) {
+      if (peer.set_stun_server(text) != ERR::InvalidData) return false;
+   }
+   if (peer.set_stun_server("STUNS:localhost") != ERR::NoSupport) return false;
+
+   // Start, replace and cancel before processing any completion messages.  Repeat after warming the DNS cache to
+   // exercise resolveName()'s synchronous completion as well as worker delivery to a cancelled lookup's object ID.
+
+   for (int pass = 0; pass < 2; ++pass) {
+      NumericPeerConnection cancelled;
+      if (cancelled.set_stun_server("stun:localhost:3478") != ERR::Okay or
+          cancelled.set_stun_server("stun:localhost:3479") != ERR::Okay or
+          cancelled.set_stun_server("") != ERR::Okay or cancelled.create_offer() != ERR::Okay or
+          cancelled.gathering_state() != GatheringState::COMPLETE) return false;
+      NumericPeerConnection jobs;
+      if (jobs.set_ice_servers(R"([{"url":"stun:localhost:3478"},{"url":"stun:localhost:3479"}])") !=
+          ERR::Okay or jobs.create_offer() != ERR::Okay) return false;
+      jobs.close();
+      for (int tick = 0; tick < 5; ++tick) {
+         ProcessMessages(PMF::NIL, 1);
+         if (cancelled.tick(now_us()) != ERR::Okay or cancelled.gathering_error() != ERR::Okay or
+             cancelled.gathering_state() != GatheringState::COMPLETE) return false;
+      }
+   }
+   return true;
+}
+
+// Direct failures expose terminal channel state before notifying the peer, even if that callback closes the peer.
+
+static bool pending_failure(bool Relay, bool Close)
+{
+   NumericPeerConnection *peer = nullptr;
+   uint64_t handle = 0;
+   unsigned failures = 0, wakes = 0;
+   bool valid = true;
+   ERR expected = Relay ? ERR::Timeout : ERR::Disconnected;
+   PeerCallbacks callbacks;
+   callbacks.state = [&](PeerState State) {
+      if (State != PeerState::FAILED) return;
+      ++failures;
+      auto channel = peer->channel(handle);
+      valid = channel and channel->state IS SctpChannelState::CLOSED and channel->error IS expected;
+      if (Close) peer->close();
+   };
+   callbacks.wake = [&]() { ++wakes; };
+   NumericPeerConnection connection(callbacks);
+   peer = &connection;
+   SctpChannelOptions options;
+   options.label = "pending-failure";
+   if (Relay and connection.set_policy(POLICY_RELAY_ONLY | POLICY_NO_MDNS) != ERR::Okay) return false;
+   if (connection.create_channel(options, handle) != ERR::Okay or connection.create_offer() != ERR::Okay) return false;
+   wakes = 0;
+   if (Relay) {
+      if (connection.tick(now_us()) != expected) return false;
+   }
+   else connection.network_changed(now_us());
+   auto events = connection.take_channel_events();
+   if (not valid or failures != 1 or wakes != (Relay ? 0u : 1u) or events.size() != 2 or
+       events[0].handle != handle or events[0].type != SctpChannelEventType::ERROR or
+       events[0].error != expected or events[1].handle != handle or
+       events[1].type != SctpChannelEventType::CLOSE or
+       connection.state() != (Close ? PeerState::CLOSED : PeerState::FAILED)) return false;
+   connection.release_channel_events(events);
+   connection.close();
+   return connection.take_channel_events().empty() and failures IS 1;
+}
+
 static int run_test() {
+   if (not legacy_configuration()) return 70;
+   for (bool relay : {false, true}) for (bool close : {false, true}) {
+      if (not pending_failure(relay, close)) return 71;
+   }
    if (not rtc::test::turn_adapter_stall() or not rtc::test::turn_adapter_stall(false) or
        not rtc::test::turn_adapter_stall(false, true)) return 40;
    NumericPeerConnection *closing_pointer = nullptr;
@@ -334,8 +417,19 @@ static int run_test() {
        active_answer.ice_state() != ice::State::COMPLETED) return 28;
 
    // A synthetic recovery clock can start at zero; the pending flag owns deadline validity.
+   uint64_t recovery_channel = 0;
+   SctpChannelOptions recovery_options;
+   recovery_options.label = "recovery-pending";
+   if (active_offer.create_channel(recovery_options, recovery_channel) != ERR::Okay) return 45;
    active_offer.network_changed(0);
-   if (active_offer.tick(30000000) != ERR::Timeout or active_offer.state() != PeerState::FAILED) return 45;
+   if (active_offer.tick(30000000) != ERR::Timeout or active_offer.state() != PeerState::FAILED or
+       active_offer.sctp_state() != SctpState::FAILED) return 45;
+   auto recovery_events = active_offer.take_channel_events();
+   if (recovery_events.size() != 2 or recovery_events[0].handle != recovery_channel or
+       recovery_events[0].type != SctpChannelEventType::ERROR or recovery_events[0].error != ERR::Timeout or
+       recovery_events[1].handle != recovery_channel or recovery_events[1].type != SctpChannelEventType::CLOSE or
+       active_offer.tick(30000001) != ERR::Timeout or not active_offer.take_channel_events().empty()) return 45;
+   active_offer.release_channel_events(recovery_events);
 
    auto hosts = ice::gather_host_candidates(1, false, false);
    if (hosts.empty()) hosts = ice::gather_host_candidates(1, true, false);
@@ -363,80 +457,83 @@ static int run_test() {
       address.sin6_port = stun_address.sin_port;
       if (::bind(stun_ipv6_fd, (sockaddr *)&address, sizeof(address)) != 0) return 12;
    }
-   std::vector<std::string> gathered;
-   PeerCallbacks gather_callbacks;
-   gather_callbacks.candidate = [&](std::string_view Value) { gathered.emplace_back(Value); };
-   NumericPeerConnection gathering(gather_callbacks);
-   if (gathering.set_stun_server("STUNS:localhost") != ERR::NoSupport or
-       gathering.set_stun_server("stun://localhost") != ERR::InvalidData or
-       gathering.set_stun_server("stun:localhost:0") != ERR::InvalidData or
-       gathering.set_stun_server("STUN:localhost:" +
-          std::to_string(ntohs(stun_address.sin_port))) != ERR::Okay or
-       gathering.create_offer() != ERR::Okay or gathering.gathering_state() != GatheringState::GATHERING or
-       gathering.tick(now_us()) != ERR::Okay or gathering.gathering_state() != GatheringState::GATHERING or
-       gathered.empty()) return 13;
-   auto host_count = gathered.size();
-   auto pending_offer = gathering.local_description();
-   sdp::Description gathered_offer;
-   if (not sdp::parse(gathering.local_description(), gathered_offer) or
-       gathered_offer.data.candidates.size() != host_count) return 13;
+   for (bool legacy : {true, false}) {
+      std::vector<std::string> gathered;
+      PeerCallbacks gather_callbacks;
+      gather_callbacks.candidate = [&](std::string_view Value) { gathered.emplace_back(Value); };
+      NumericPeerConnection gathering(gather_callbacks);
+      auto port = std::to_string(ntohs(stun_address.sin_port));
+      auto configured = legacy ? gathering.set_stun_server("STUN:localhost:" + port) :
+         gathering.set_ice_servers("[{\"url\":\"stun:localhost:" + port + "\"}]");
+      if (not legacy and gathering.set_policy(POLICY_NO_MDNS | POLICY_DISABLE_IPV6) != ERR::Okay) return 13;
+      if (configured != ERR::Okay or
+          gathering.create_offer() != ERR::Okay or gathering.gathering_state() != GatheringState::GATHERING or
+          gathering.tick(now_us()) != ERR::Okay or gathering.gathering_state() != GatheringState::GATHERING or
+          gathered.empty()) return 13;
+      auto host_count = gathered.size();
+      auto pending_offer = gathering.local_description();
+      sdp::Description gathered_offer;
+      if (not sdp::parse(gathering.local_description(), gathered_offer) or
+          gathered_offer.data.candidates.size() != host_count) return 13;
 
-   std::array<uint8_t, 1500> buffer{};
-   sockaddr_storage requester{};
-   rtc::test::AddressSize requester_size = sizeof(requester);
-   int received = -1;
-   auto response_fd = stun_fd;
-   auto gather_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-   while (std::chrono::steady_clock::now() < gather_deadline and received < 0) {
-      received = rtc::test::receive_from(stun_fd, buffer.data(), buffer.size(), 0,
-         (sockaddr *)&requester, &requester_size);
-      if (received < 0 and stun_ipv6_fd != rtc::test::INVALID_SOCKET_VALUE) {
-         requester_size = sizeof(requester);
-         received = rtc::test::receive_from(stun_ipv6_fd, buffer.data(), buffer.size(), 0,
+      std::array<uint8_t, 1500> buffer{};
+      sockaddr_storage requester{};
+      rtc::test::AddressSize requester_size = sizeof(requester);
+      int received = -1;
+      auto response_fd = stun_fd;
+      auto gather_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+      while (std::chrono::steady_clock::now() < gather_deadline and received < 0) {
+         received = rtc::test::receive_from(stun_fd, buffer.data(), buffer.size(), 0,
             (sockaddr *)&requester, &requester_size);
-         if (received >= 0) response_fd = stun_ipv6_fd;
+         if (received < 0 and stun_ipv6_fd != rtc::test::INVALID_SOCKET_VALUE) {
+            requester_size = sizeof(requester);
+            received = rtc::test::receive_from(stun_ipv6_fd, buffer.data(), buffer.size(), 0,
+               (sockaddr *)&requester, &requester_size);
+            if (received >= 0) response_fd = stun_ipv6_fd;
+         }
+         if (received < 0) ProcessMessages(PMF::NIL, 10);
       }
-      if (received < 0) ProcessMessages(PMF::NIL, 10);
-   }
-   stun::Message request;
-   if (received <= 0 or not stun::parse(std::span<const uint8_t>(buffer.data(), size_t(received)), request)) return 14;
-   std::vector<uint8_t> mapped{ 0, 1, uint8_t((50000 ^ 0x2112) >> 8), uint8_t(50000 ^ 0x2112),
-      uint8_t(203 ^ 0x21), uint8_t(0 ^ 0x12), uint8_t(113 ^ 0xa4), uint8_t(9 ^ 0x42) };
-   bool ipv6_response = requester.ss_family IS AF_INET6;
-   if (ipv6_response) {
-      mapped.resize(20);
-      mapped[1] = 2;
-      std::array<uint8_t, 16> address{ 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9 };
-      constexpr std::array<uint8_t, 4> cookie{ 0x21, 0x12, 0xa4, 0x42 };
-      for (size_t i = 0; i < address.size(); ++i) {
-         mapped[4 + i] = address[i] ^ (i < 4 ? cookie[i] : request.transaction_id[i - 4]);
+      stun::Message request;
+      if (received <= 0 or
+          not stun::parse(std::span<const uint8_t>(buffer.data(), size_t(received)), request)) return 14;
+      std::vector<uint8_t> mapped{ 0, 1, uint8_t((50000 ^ 0x2112) >> 8), uint8_t(50000 ^ 0x2112),
+         uint8_t(203 ^ 0x21), uint8_t(0 ^ 0x12), uint8_t(113 ^ 0xa4), uint8_t(9 ^ 0x42) };
+      bool ipv6_response = requester.ss_family IS AF_INET6;
+      if (ipv6_response) {
+         mapped.resize(20);
+         mapped[1] = 2;
+         std::array<uint8_t, 16> address{ 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9 };
+         constexpr std::array<uint8_t, 4> cookie{ 0x21, 0x12, 0xa4, 0x42 };
+         for (size_t i = 0; i < address.size(); ++i) {
+            mapped[4 + i] = address[i] ^ (i < 4 ? cookie[i] : request.transaction_id[i - 4]);
+         }
       }
-   }
-   stun::Attribute attribute{ stun::ATTR_XOR_MAPPED_ADDRESS, mapped, 0 };
-   std::vector<uint8_t> response;
-   if (not stun::encode(stun::BINDING_SUCCESS, request.transaction_id,
-       std::span<const stun::Attribute>(&attribute, 1), {}, false, true, response) or
-       rtc::test::send_to(response_fd, response.data(), response.size(), 0,
-          (sockaddr *)&requester, requester_size) != int(response.size())) return 15;
-   while (std::chrono::steady_clock::now() < gather_deadline and gathered.size() <= host_count) {
-      ProcessMessages(PMF::NIL, 10);
-      if (gathering.tick(now_us()) != ERR::Okay) return 16;
-   }
-   ice::CandidateLine reflexive;
-   if (gathered.size() != host_count + 1 or not ice::parse_candidate(gathered.back(), reflexive) or
-       reflexive.candidate.type != ice::CandidateType::SERVER_REFLEXIVE or
-       reflexive.candidate.endpoint.port != 50000 or
-       reflexive.candidate.endpoint.ipv6 != ipv6_response or
-       reflexive.candidate.endpoint.address[0] != (ipv6_response ? 0x20 : 203) or
-       gathering.gathering_state() != GatheringState::COMPLETE) {
-      std::fprintf(stderr, "Gathered %zu of %zu candidates; last=%s; state=%d\n", gathered.size(),
-         host_count + 1, gathered.empty() ? "" : gathered.back().c_str(), int(gathering.gathering_state()));
-      return 17;
-   }
-   if (gathering.set_local_description(pending_offer) != ERR::Okay or
-       not sdp::parse(gathering.local_description(), gathered_offer) or
-       gathered_offer.data.candidates.size() != host_count + 1 or not gathered_offer.data.end_of_candidates) {
-      return 31;
+      stun::Attribute attribute{ stun::ATTR_XOR_MAPPED_ADDRESS, mapped, 0 };
+      std::vector<uint8_t> response;
+      if (not stun::encode(stun::BINDING_SUCCESS, request.transaction_id,
+          std::span<const stun::Attribute>(&attribute, 1), {}, false, true, response) or
+          rtc::test::send_to(response_fd, response.data(), response.size(), 0,
+             (sockaddr *)&requester, requester_size) != int(response.size())) return 15;
+      while (std::chrono::steady_clock::now() < gather_deadline and gathered.size() <= host_count) {
+         ProcessMessages(PMF::NIL, 10);
+         if (gathering.tick(now_us()) != ERR::Okay) return 16;
+      }
+      ice::CandidateLine reflexive;
+      if (gathered.size() != host_count + 1 or not ice::parse_candidate(gathered.back(), reflexive) or
+          reflexive.candidate.type != ice::CandidateType::SERVER_REFLEXIVE or
+          reflexive.candidate.endpoint.port != 50000 or
+          reflexive.candidate.endpoint.ipv6 != ipv6_response or
+          reflexive.candidate.endpoint.address[0] != (ipv6_response ? 0x20 : 203) or
+          gathering.gathering_state() != GatheringState::COMPLETE) {
+         std::fprintf(stderr, "Gathered %zu of %zu candidates; last=%s; state=%d\n", gathered.size(),
+            host_count + 1, gathered.empty() ? "" : gathered.back().c_str(), int(gathering.gathering_state()));
+         return 17;
+      }
+      if (gathering.set_local_description(pending_offer) != ERR::Okay or
+          not sdp::parse(gathering.local_description(), gathered_offer) or
+          gathered_offer.data.candidates.size() != host_count + 1 or not gathered_offer.data.end_of_candidates) {
+         return 31;
+      }
    }
 
    NumericPeerConnection unanswered;
