@@ -102,7 +102,8 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
      "CURSOR_POS: The cursor position has changed.",
      "FAIL_RO:    User attempt to edit read-only content.",
      "NEW_CHAR:   At least one new character has been inserted.",
-     "FAIL_CLIPBOARD: A cut, copy or paste failed because the clipboard could not be read or written.")
+     "FAIL_CLIPBOARD: A cut, copy or paste failed because the clipboard could not be read or written.",
+     "SELECTION: Selection changed, including anchor-only changes.  Delivery is deferred and coalesced.")
 
   flags("STF", { comment="Scintilla search flags." },
     "CASE:           Case sensitive search.",
@@ -111,6 +112,27 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     "BACKWARDS:      Search backwards.",
     "EXPRESSION:     Search text is a regular expression.",
     "WRAP:           Wrap search at the end of the document.")
+
+  constants("SCCHANGE", { type="int", comment="Document change operations." }, {
+    INSERT = "1: Insert Text at Position.",
+    DELETE = "2: Delete Length bytes at Position; Text contains the removed bytes."
+  })
+
+  constants("SCORIGIN", { type="int", comment="Backend edit origin; ordinary edits include user and API changes." }, {
+    EDIT = "0: An ordinary edit, including programmatic changes and file loading.",
+    UNDO = "1: An undo operation.",
+    REDO = "2: A redo operation."
+  })
+
+  structdef("ScintillaChange", {}, [[
+    large Revision        # Document revision after this operation.
+    int(SCCHANGE) Operation # Insertion or deletion.
+    int Position          # Zero-based byte offset before this operation.
+    int Length            # Number of inserted or deleted bytes.
+    int LinesAdded        # Signed change in document line count.
+    int(SCORIGIN) Origin  # Backend edit, undo or redo origin.
+    string Text           # Owned inserted or deleted bytes, including embedded NULs.
+  ]])
 
   methods("scintilla", "Sci", {
     { id=1,  name="SetFont" },
@@ -133,7 +155,11 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=18, name="ToggleFold" },
     { id=19, name="ShowCompletions" },
     { id=20, name="ShowCallTip" },
-    { id=21, name="HidePopups" }
+    { id=21, name="HidePopups" },
+    { id=22, name="GetTextRange" },
+    { id=23, name="ReplaceRange" },
+    { id=24, name="BeginUndoAction" },
+    { id=25, name="EndUndoAction" }
   })
 
   klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx", extended=true }, [[

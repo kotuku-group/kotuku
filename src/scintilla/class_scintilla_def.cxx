@@ -6,6 +6,7 @@ static const struct FieldDef clScintillaEventFlags[] = {
    { "FailRo", 0x00000004 },
    { "NewChar", 0x00000008 },
    { "FailClipboard", 0x00000010 },
+   { "Selection", 0x00000020 },
    { nullptr, 0 }
 };
 
@@ -60,6 +61,8 @@ FDEF maGetMarkers[] = { { "Line", FD_INT }, { "Markers", FD_RESULT|FD_INT }, { 0
 FDEF maToggleFold[] = { { "Line", FD_INT }, { 0, 0 } };
 FDEF maShowCompletions[] = { { "Length", FD_INT }, { "Candidates", FD_STR }, { "Flags", FD_INT }, { 0, 0 } };
 FDEF maShowCallTip[] = { { "Pos", FD_INT }, { "Text", FD_STR }, { "HighlightStart", FD_INT }, { "HighlightEnd", FD_INT }, { 0, 0 } };
+FDEF maGetTextRange[] = { { "Start", FD_INT }, { "End", FD_INT }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
+FDEF maReplaceRange[] = { { "Start", FD_INT }, { "End", FD_INT }, { "Text", FDF_CPPSTRING }, { 0, 0 } };
 
 static const struct MethodEntry clScintillaMethods[] = {
    { AC(-1), (APTR)SCINTILLA_SetFont, "SetFont", maSetFont, sizeof(struct sci::SetFont) },
@@ -83,6 +86,10 @@ static const struct MethodEntry clScintillaMethods[] = {
    { AC(-19), (APTR)SCINTILLA_ShowCompletions, "ShowCompletions", maShowCompletions, sizeof(struct sci::ShowCompletions) },
    { AC(-20), (APTR)SCINTILLA_ShowCallTip, "ShowCallTip", maShowCallTip, sizeof(struct sci::ShowCallTip) },
    { AC(-21), (APTR)SCINTILLA_HidePopups, "HidePopups", 0, 0 },
+   { AC(-22), (APTR)SCINTILLA_GetTextRange, "GetTextRange", maGetTextRange, sizeof(struct sci::GetTextRange) },
+   { AC(-23), (APTR)SCINTILLA_ReplaceRange, "ReplaceRange", maReplaceRange, sizeof(struct sci::ReplaceRange) },
+   { AC(-24), (APTR)SCINTILLA_BeginUndoAction, "BeginUndoAction", 0, 0 },
+   { AC(-25), (APTR)SCINTILLA_EndUndoAction, "EndUndoAction", 0, 0 },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

@@ -101,11 +101,20 @@ end
    local surface <close>, scene, source, target = fixture()
    target.string = 'abcdef'
    target.mtSelectRange(0, 4)
+   local changes = array<table> {}
+   target.changeCallback = function(Editor, Change) changes.push(Change) end
+   local revision = target.documentRevision
    local clipboard <close> = textSource('X&#13;\nY &amp; 三', true)
    externalDrop(surface, clipboard, string.char(DATA_TEXT), 310+4+7*2, 6)
    assert(target.string is 'abX\nY & 三cdef', f'Text must land at the drop position: {target.string}')
+   assert(#changes is 1 and changes[0].operation is SCCHANGE_INSERT and changes[0].position is 2,
+      'An accepted drop emits one insertion at its byte position')
+   assert(changes[0].text is 'X\nY & 三' and changes[0].revision is revision + 1,
+      'The change stream retains the accepted, decoded drop bytes')
    key(KEY_Z, KQ_L_CONTROL)
    assert(target.string is 'abcdef', 'A single undo must remove the whole accepted drop')
+   assert(#changes is 2 and changes[1].operation is SCCHANGE_DELETE and changes[1].origin is SCORIGIN_UNDO,
+      'Undoing the drop emits the matching deletion')
 end
 
 @Test function ReadOnlyAndDisabledDropsDoNotEdit()

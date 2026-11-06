@@ -172,6 +172,24 @@ for one frame before the editor repaints.</li>
     </method>
 
     <method>
+      <name>BeginUndoAction</name>
+      <comment>Begins a client undo group.</comment>
+      <prototype>ERR sci::BeginUndoAction(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = BeginUndoAction()</tiriPrototype>
+      <description>
+<p>BeginUndoAction() starts a group of edits that <action>Undo</action> and <action>Redo</action> will treat as a single step.  Every edit made until the matching call to <method>EndUndoAction</method> is added to the group, whether it originates from the client or the user.</p>
+<p>Groups can be nested.  Each call must be balanced by a call to <method>EndUndoAction</method>, and the group is closed only when the outermost call is ended.  Open groups are preserved when new content is loaded, and any groups that remain open when the Scintilla object is freed are closed automatically.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">The maximum nesting depth has been reached.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+      </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
       <name>DefineMarker</name>
       <comment>Defines the appearance of a marker.</comment>
       <prototype>ERR sci::DefineMarker(OBJECTPTR Object, INT Marker, SCMK Symbol, struct RGB8 * Fore, struct RGB8 * Bkgd)</prototype>
@@ -199,6 +217,23 @@ for one frame before the editor repaints.</li>
       <description>
 <p>This method will delete a single line at the position indicated by the Line parameter.  If no parameters are provided or the Line parameter is less than zero, the line at the current cursor position will be deleted.  If the index exceeds the total number of available lines, the last available line will be targeted.</p>
       </description>
+    </method>
+
+    <method>
+      <name>EndUndoAction</name>
+      <comment>Ends the innermost client undo group.</comment>
+      <prototype>ERR sci::EndUndoAction(OBJECTPTR Object)</prototype>
+      <tiriPrototype>err = EndUndoAction()</tiriPrototype>
+      <description>
+<p>EndUndoAction() closes the group most recently opened by <method>BeginUndoAction</method>.  When the outermost group is closed, the edits made within it are committed to the undo history as a single step.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args">There is no open undo group to end.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+      </result>
+      <tags>mutates-object</tags>
     </method>
 
     <method>
@@ -246,6 +281,30 @@ for one frame before the editor repaints.</li>
     </method>
 
     <method>
+      <name>GetTextRange</name>
+      <comment>Copies an exact byte range to a caller-supplied buffer.</comment>
+      <prototype>ERR sci::GetTextRange(OBJECTPTR Object, INT Start, INT End, std::span&lt;int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = GetTextRange(Start:num, End:num, Buffer:array)</tiriPrototype>
+      <input>
+        <param type="INT" name="Start">Inclusive byte offset, between zero and <fl>TextLength</fl>.</param>
+        <param type="INT" name="End">Exclusive byte offset, between <code>Start</code> and <fl>TextLength</fl>.  Negative sentinels such as <code>-1</code> are not supported.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">Destination with at least <code>End - Start + 1</code> bytes of capacity, allowing for the null terminator.</param>
+      </input>
+      <description>
+<p>GetTextRange() copies the document bytes from <code>Start</code> up to, but not including, <code>End</code> into <code>Buffer</code> and appends a terminating null byte.  Offsets are byte positions, so a range that splits a multi-byte UTF-8 character is copied as-is.  Embedded null bytes in the document are copied verbatim, so use <code>End - Start</code> rather than the null terminator to determine the length of the result.</p>
+<p>Unlike <method>GetLine</method>, the range is not limited to a single line and line-end characters are copied without modification.  The selection and cursor position are not affected.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange"><code>Start</code> is negative, <code>End</code> is less than <code>Start</code>, or <code>End</code> exceeds <fl>TextLength</fl>.</error>
+        <error code="BufferOverflow"><code>Buffer</code> is smaller than <code>End - Start + 1</code> bytes.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
       <name>GotoLine</name>
       <comment>Moves the cursor to any line in the document.</comment>
       <prototype>ERR sci::GotoLine(OBJECTPTR Object, INT Line)</prototype>
@@ -275,11 +334,11 @@ for one frame before the editor repaints.</li>
       <tiriPrototype>err = InsertText(String:str, Pos:num)</tiriPrototype>
       <input>
         <param type="STRVIEW" name="String">A text string to add.</param>
-        <param type="INT" name="Pos">-1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.</param>
+        <param type="INT" name="Pos">Byte offset; -1 inserts at the caret and -2 replaces the selection.</param>
       </input>
       <description>
 <p>Use InsertText to insert a string at any point in the document (if adding text to the end of the document, we recommend using data channels instead).</p>
-<p>You will need to specify the character position at which the provided String should be inserted.  Two special character positions are also supported as an alternative - a value of -1 inserts the text at the current cursor position and a value of -2 replaces currently selected text.</p>
+<p>Specify the zero-based UTF-8 byte position at which String should be inserted.  Two special positions are supported: a value of -1 inserts the text at the current cursor position and a value of -2 replaces currently selected text.</p>
       </description>
     </method>
 
@@ -305,11 +364,37 @@ for one frame before the editor repaints.</li>
       <input>
         <param type="INT" name="Line">Index of the line being targeted.</param>
         <param type="STRVIEW" name="String">The new string that will replace the line.</param>
-        <param type="INT" name="Length">The number of characters to replace the target with, or -1 for the entire source string.</param>
+        <param type="INT" name="Length">The number of bytes to replace the target with, or -1 for the entire source string.</param>
       </input>
       <description>
-<p>This method will replace an entire line with a new text string.  If the new string contains line feeds, then multiple lines will be inserted at the target position.  It is possible to limit the number of characters inserted from the source string by setting the Length parameter.  To insert all characters from the source string, set a Length of -1.</p>
+<p>This method will replace an entire line with a new text string.  If the new string contains line feeds, then multiple lines will be inserted at the target position.  It is possible to limit the number of bytes inserted from the source string by setting the Length parameter.  To insert all bytes from the source string, set a Length of -1.</p>
       </description>
+    </method>
+
+    <method>
+      <name>ReplaceRange</name>
+      <comment>Replaces an exact byte range without searching or assigning a selection.</comment>
+      <prototype>ERR sci::ReplaceRange(OBJECTPTR Object, INT Start, INT End, STRVIEW Text)</prototype>
+      <tiriPrototype>err = ReplaceRange(Start:num, End:num, Text:str)</tiriPrototype>
+      <input>
+        <param type="INT" name="Start">Inclusive byte offset, between zero and <fl>TextLength</fl>.</param>
+        <param type="INT" name="End">Exclusive byte offset, between <code>Start</code> and <fl>TextLength</fl>.  Negative sentinels such as <code>-1</code> are not supported.</param>
+        <param type="STRVIEW" name="Text">Replacement bytes.  An empty string deletes the range.  Embedded null bytes are supported.</param>
+      </input>
+      <description>
+<p>ReplaceRange() replaces the document bytes from <code>Start</code> up to, but not including, <code>End</code> with <code>Text</code>.  Setting <code>Start</code> and <code>End</code> to the same offset inserts <code>Text</code> at that position, and an empty <code>Text</code> deletes the range.  A call with an empty range and an empty <code>Text</code> succeeds without modifying the document.</p>
+<p>The replacement is recorded as a single undoable edit, increments <fl>DocumentRevision</fl> and is reported to <fl>ChangeCallback</fl> like any other edit.  Use <method>BeginUndoAction</method> and <method>EndUndoAction</method> to combine several replacements into one undo step.  The current selection is not replaced by <code>Text</code>, although selection and cursor positions after the range are shifted to account for the change in length.</p>
+<p>This method is intended for programmatic edits and is not restricted by the <code>SCIF::EDIT</code> flag.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">The range is invalid, or the replacement would exceed the maximum document length.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="ReadOnly">The document is temporarily read-only.</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>copies-input, mutates-object</tags>
     </method>
 
     <method>
@@ -350,11 +435,11 @@ for one frame before the editor repaints.</li>
       <prototype>ERR sci::SelectRange(OBJECTPTR Object, INT Start, INT End)</prototype>
       <tiriPrototype>err = SelectRange(Start:num, End:num)</tiriPrototype>
       <input>
-        <param type="INT" name="Start">The character at which the selection will start.</param>
-        <param type="INT" name="End">The character at which the selection will end.  If negative, the last character in the document will be targeted.</param>
+        <param type="INT" name="Start">The anchor byte offset.</param>
+        <param type="INT" name="End">The caret byte offset (exclusive for forward selections).  A negative value targets the document end.</param>
       </input>
       <description>
-<p>This method will select an area of text between a start and end point, measured in characters.  It can also deselect all text if no arguments are provided.</p>
+<p>Selects a half-open range using zero-based UTF-8 byte offsets.  Start is the anchor and End is the caret, so reversed bounds preserve selection direction.  Supplying no arguments or two zeroes collapses the selection at the current caret. Existing backend clamping and negative sentinels are preserved.</p>
       </description>
     </method>
 
@@ -465,6 +550,13 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
+      <name>Anchor</name>
+      <comment>The main selection anchor as a zero-based UTF-8 byte offset.  It may follow CurrentPos.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+    </field>
+
+    <field>
       <name>AutoIndent</name>
       <comment>If TRUE, enables auto-indenting when the user presses the enter key.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -482,6 +574,35 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
+      <name>CanRedo</name>
+      <comment>Reports whether the backend has an undone edit available to redo.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+    </field>
+
+    <field>
+      <name>CanUndo</name>
+      <comment>Reports whether the backend has an edit available to undo.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+    </field>
+
+    <field>
+      <name>ChangeCallback</name>
+      <comment>Receives an ordered stream of document byte changes after editing completes.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>FUNCTION</type>
+      <description>
+<p>Set this field with a function reference to receive a record of every insertion and deletion of text.  The prototype for the callback function is <code>Function(*Scintilla, struct(*ScintillaChange) Change)</code>.  Each <st>ScintillaChange</st> structure describes one change:</p>
+<struct lookup="ScintillaChange"/>
+<p>Every change is reported, whether it originates from user input, the clipboard, programmatic methods such as <method>ReplaceRange</method>, file loading, undo or redo.  Each record corresponds to exactly one increment of <fl>DocumentRevision</fl>, and records are delivered in the order that the changes occurred without being coalesced.  A client that starts with a copy of the document can therefore replay the stream to keep an exact mirror of the text.  An edit that replaces existing text is reported as a deletion followed by an insertion.  Edits made inside an undo group are reported individually.</p>
+<p>Delivery is deferred to the next cycle of message processing, after the editing call has returned.  Edits made from within the callback are queued and delivered after the current batch completes.</p>
+<p>Changes made while no callback is defined are not recorded.  Setting, replacing or clearing the callback discards any records that have not yet been delivered, including the remainder of a batch in progress.  If a script callback raises an error, the callback is cleared and its undelivered records are discarded.</p>
+<p>The <code>Change</code> structure is only valid for the duration of the callback, so C++ clients must copy any values that need to be retained.  Script clients receive their own copy of the record.</p>
+      </description>
+    </field>
+
+    <field>
       <name>CompletionCallback</name>
       <comment>Reports the events that relate to code completion and call tips.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -493,6 +614,13 @@ for one frame before the editor repaints.</li>
 <p><code>SCAC::REQUEST</code> and <code>SCAC::CHAR_ADDED</code> are reported as they occur, so the client can respond with <method>ShowCompletions</method> or <method>ShowCallTip</method>.  <code>Position</code> is the cursor position, and for <code>SCAC::CHAR_ADDED</code> the <code>Value</code> is the Unicode code point of the character that was typed.  The client usually examines the text that precedes the cursor to choose its candidates.  Ctrl+Space is reported only while the editor has the <code>SCIF::EDIT</code> flag.</p>
 <p><code>SCAC::SELECTED</code>, <code>SCAC::CANCELLED</code> and <code>SCAC::CALL_TIP_CLICK</code> are reported on the next cycle of message processing, after the editor has completed the operation.  For <code>SCAC::SELECTED</code>, the <code>Text</code> is the accepted candidate and <code>Position</code> is the start of the replaced text, and the candidate has already been inserted.  For <code>SCAC::CALL_TIP_CLICK</code>, <code>Position</code> is the position that the call tip refers to.  The <code>Text</code> is empty for every event other than <code>SCAC::SELECTED</code>.</p>
       </description>
+    </field>
+
+    <field>
+      <name>CurrentPos</name>
+      <comment>The main selection caret as a zero-based UTF-8 byte offset.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
     </field>
 
     <field>
@@ -519,6 +647,17 @@ for one frame before the editor repaints.</li>
       <type>INT</type>
       <description>
 <p>The <fl>CursorCol</fl> and CursorRow fields reflect the current row and column of the user's text cursor.  Use <fl>EventCallback</fl> and listen for the event <code>SEF::CURSOR_POS</code> to receive updates on changes to <fl>CursorCol</fl> and CursorRow.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>DocumentRevision</name>
+      <comment>Monotonically increasing revision of document text.</comment>
+      <access read="G">Get</access>
+      <type>INT64</type>
+      <description>
+<p>The DocumentRevision value starts at zero and is incremented for every insertion or deletion of text, including edits made by the user, programmatic changes, undo, redo and the loading of new content.  Styling, folding and selection changes do not affect the revision.  The value is never decremented, so undoing an edit does not restore an earlier revision.</p>
+<p>Clients can record the revision when caching information about the document, then compare it later to determine whether the text may have changed in the interim.  Each change reported to <fl>ChangeCallback</fl> carries the revision reached after that change in its <code>Revision</code> value.</p>
       </description>
     </field>
 
@@ -744,6 +883,31 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
+      <name>SelectedText</name>
+      <comment>Retrieves the contiguous byte span of the main selection.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>Returns the document bytes between the start and end of the main selection.  If the selection is empty, an empty string is returned.  When multiple or rectangular selections are active, only the main selection range is returned and additional ranges are ignored.  Line-end characters within the selection are returned without modification.</p>
+      </description>
+      <tags>api-owns-result</tags>
+    </field>
+
+    <field>
+      <name>SelectionEnd</name>
+      <comment>The exclusive upper byte offset of the main selection, independent of direction.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+    </field>
+
+    <field>
+      <name>SelectionStart</name>
+      <comment>The lower byte offset of the main selection, independent of selection direction.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
+    </field>
+
+    <field>
       <name>ShowWhitespace</name>
       <comment>White-space characters will be visible to the user when this field is TRUE.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -787,6 +951,13 @@ for one frame before the editor repaints.</li>
 <p>TextColour applies to plain text, identifiers and any unclassified styles.  Configure lexer and margin colours through <fl>ThemeXML</fl>.  Theme colours are stored independently for each editor and are retained across lexer changes.</p>
 <p>The defaults are a white background, black text and operators, grey comments, firebrick keywords, dark red strings, blue numbers, green directives and violet types.</p>
       </description>
+    </field>
+
+    <field>
+      <name>TextLength</name>
+      <comment>The document length in bytes, including tabs, CR and LF bytes.  An empty document has length zero.</comment>
+      <access read="G">Get</access>
+      <type>INT</type>
     </field>
 
     <field>
@@ -913,6 +1084,7 @@ for one frame before the editor repaints.</li>
       <const name="FAIL_RO">User attempt to edit read-only content.</const>
       <const name="MODIFIED">The content has changed to a modified state, i.e. the user has made an edit.  The modified state will remain until the content is saved.</const>
       <const name="NEW_CHAR">At least one new character has been inserted.</const>
+      <const name="SELECTION">Selection changed, including anchor-only changes.  Delivery is deferred and coalesced.</const>
     </constants>
 
     <constants lookup="STF" comment="Scintilla search flags.">
@@ -926,5 +1098,15 @@ for one frame before the editor repaints.</li>
 
   </types>
   <structs>
+    <struct name="ScintillaChange">
+      <field name="Revision" type="INT64">Document revision after this operation.</field>
+      <field name="Operation" type="SCCHANGE" lookup="SCCHANGE">Insertion or deletion.</field>
+      <field name="Position" type="INT">Zero-based byte offset before this operation.</field>
+      <field name="Length" type="INT">Number of inserted or deleted bytes.</field>
+      <field name="LinesAdded" type="INT">Signed change in document line count.</field>
+      <field name="Origin" type="SCORIGIN" lookup="SCORIGIN">Backend edit, undo or redo origin.</field>
+      <field name="Text" type="STRING">Owned inserted or deleted bytes, including embedded NULs.</field>
+    </struct>
+
   </structs>
 </book>
