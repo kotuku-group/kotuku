@@ -8,6 +8,8 @@ class SurfacePan;
 
 using namespace kt;
 
+#include "adapter_types.h"
+
 class extScintilla : public objScintilla {
    public:
    // Internal lexer and margin colours are configured through ThemeXML.
@@ -72,7 +74,7 @@ class extScintilla : public objScintilla {
    int    ViewWidth;           // Width of the View in client pixels, i.e. Scintilla's client area
    int    ViewHeight;          // Height of the View in client pixels
    int    MarginDigits;        // Number of digits that the line number margin is sized for
-   TIMER  TickTimer;           // Calls Tick() while the caret is blinking
+   TIMER  TickTimer;           // Runs the independent fine-ticker deadlines
    TIMER  IdleTimer;           // Calls Idle() while Scintilla has background work, e.g. word wrapping
    APTR   KeyHandle = nullptr; // Subscription to all keyboard events, which track the modifier keys
    SEF    ReportEventFlags;    // For delayed event reporting.
@@ -138,8 +140,8 @@ public:
    objVectorRectangle *canvas = nullptr;  // Displays the bitmap and receives pointer input
    objVectorImage *image = nullptr;       // Scene definition that wraps the bitmap for use as the canvas fill
    objBitmap *bitmap = nullptr;           // The content of the pop-up is painted into this bitmap
-   Scintilla::PRectangle rect;            // Requested position, in the client coordinates of the editor
-   Scintilla::Point anchor;               // Client position of the anchor when the rect was set
+   Scintilla::Internal::PRectangle rect;            // Requested position, in the client coordinates of the editor
+   Scintilla::Internal::Point anchor;               // Client position of the anchor when the rect was set
    double scene_x = 0, scene_y = 0;       // Position of the pop-up in the scene
    bool shown = false;
    bool dirty = false;                    // The bitmap needs to be repainted
@@ -155,61 +157,65 @@ public:
    virtual void closed() { }              // Called when Scintilla closes the pop-up
 
    ERR attach(extScintilla *Scintilla, CSTRING Name);
-   void set_position(Scintilla::PRectangle Rect);
+   void set_position(Scintilla::Internal::PRectangle Rect);
    void show(bool Show);
    void invalidate();
    bool place();
    void redraw();
    void release();
 
-   static PanPopup * find(Scintilla::WindowID ID);
+   static PanPopup * find(Scintilla::Internal::WindowID ID);
 };
 
 // This class inherits from ScintillaBase which inherits from Editor.  Responsible for a lot of the editing code.
 
-class ScintillaKTK : public Scintilla::ScintillaBase {
+class ScintillaKTK : public Scintilla::Internal::ScintillaBase {
 public:
    ScintillaKTK(extScintilla *Scintilla);
-   virtual ~ScintillaKTK();
-   virtual void Initialise() {};
-   virtual void Finalise();
-//    virtual void RefreshColourPalette(Palette &pal, bool want);
-//    virtual void AddCharUTF(char *s, unsigned int len, bool treatAsDBCS=false);
-//    virtual void CancelModes();
-//    virtual int KeyCommand(unsigned int iMessage);
-   virtual void CreateCallTipWindow(Scintilla::PRectangle rc);
-   virtual void AddToPopUp(const char *Label, int Command=0, bool Enabled=true);
-//    virtual void NotifyStyleToNeeded(int endStyleNeeded);
-   virtual void SetVerticalScrollPos();
-   virtual void SetHorizontalScrollPos();
-   virtual bool ModifyScrollBars(int nMax, int nPage);
-   virtual void ReconfigureScrollBars();
-   virtual void Copy();
-   virtual void Paste();
-   virtual void ClaimSelection();
+   ~ScintillaKTK() override;
+   void Initialise() override {};
+   void Finalise() override;
+   void CreateCallTipWindow(Scintilla::Internal::PRectangle Rect) override;
+   void AddToPopUp(const char *Label, int Command=0, bool Enabled=true) override;
+   void SetVerticalScrollPos() override;
+   void SetHorizontalScrollPos() override;
+   bool ModifyScrollBars(Sci::Line Max, Sci::Line Page) override;
+   void ReconfigureScrollBars() override;
+   void Copy() override;
+   void Paste() override;
+   void ClaimSelection() override;
    void StartDrag() override;
+   void InsertCharacter(std::string_view Text, Scintilla::CharacterSource Source) override;
+   ERR panCheckLength(size_t Added, Sci::Position Removed = 0) const {
+      return KotukuScintilla::DocumentGrowth(pdoc->Length(), Removed, Added) ? ERR::Okay : ERR::OutOfRange;
+   }
+   bool panPublicDocument() const {
+      return KotukuScintilla::DocumentGrowth(pdoc->Length(), 0, 0);
+   }
    void panEndDrag();
    bool panDragging() const { return drag_active; }
    int panDropPosition(double X, double Y);
    ERR panDropText(int Position, std::string_view Text, extScintilla *Source = nullptr);
    void panPrimaryPaste(double X, double Y);
-   virtual void NotifyChange();
+   void NotifyChange() override;
    // Called when Scintilla wants us to send a message to the parent of this widget
-   virtual void NotifyParent(Scintilla::SCNotification scn);
-   virtual void CopyToClipboard(const Scintilla::SelectionText &selectedText);
-   virtual void ScrollText(int linesToMove);
-   virtual void SetTicking(bool on);
-   virtual bool SetIdle(bool on);
-   virtual void SetMouseCapture(bool on);
-   virtual void DisplayCursor(Scintilla::Window::Cursor Cursor);
-   virtual bool HaveMouseCapture();
-   virtual sptr_t DefWndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam);
-   static sptr_t DirectFunction(ScintillaKTK *sci, unsigned int iMessage, uptr_t wParam, sptr_t lParam);
+   void NotifyParent(Scintilla::NotificationData Notification) override;
+   void CopyToClipboard(const Scintilla::Internal::SelectionText &Text) override;
+   void ScrollText(Sci::Line LinesToMove) override;
+   bool FineTickerRunning(TickReason Reason) override;
+   void FineTickerStart(TickReason Reason, int Milliseconds, int Tolerance) override;
+   void FineTickerCancel(TickReason Reason) override;
+   bool SetIdle(bool On) override;
+   void SetMouseCapture(bool On) override;
+   void DisplayCursor(Scintilla::Internal::Window::Cursor Cursor) override;
+   bool HaveMouseCapture() override;
+   sptr_t DefWndProc(Scintilla::Message Message, uptr_t WParam, sptr_t LParam) override;
+   static sptr_t DirectFunction(sptr_t Context, unsigned int Message, uptr_t WParam, sptr_t LParam);
 
    // Custom interfacing methods
 
    virtual void SetStyleColours();
-   virtual void panPaint(Scintilla::PRectangle Area);
+   virtual void panPaint(Scintilla::Internal::PRectangle Area);
    virtual void panRedraw();
    virtual void panFontChanged();
    virtual bool panTick();
@@ -242,43 +248,44 @@ public:
    int panCompletionStart();
    int panCallTipStart() { return calltip_pos; }
    int panLineHeight() { return vs.lineHeight; }
-   Scintilla::Point panLocation(int Pos) { return LocationFromPosition(Pos); }
-   void panPaintCallTip(Scintilla::Surface *Surface) { ct.PaintCT(Surface); }
-   void panCallTipClick(Scintilla::Point Point);
-   void panFlushCompletionReports();
+   Scintilla::Internal::Point panLocation(int Pos) { return LocationFromPosition(Pos); }
+   void panPaintCallTip(Scintilla::Internal::Surface *Surface) { ct.PaintCT(Surface); }
+   void panCallTipClick(Scintilla::Internal::Point Point);
+   bool panFlushCompletionReports();
    void panCompletionClosed();
 
    // Brace match handling
    virtual void braceMatch();
-   virtual long checkBrace(long pos,int brace_style);
-   virtual bool findMatchingBrace(long &brace,long &other,long mode);
+   virtual sptr_t checkBrace(sptr_t pos,int brace_style);
+   virtual bool findMatchingBrace(sptr_t &brace,sptr_t &other,sptr_t mode);
    virtual void gotoMatchingBrace(bool select);
    virtual void moveToMatchingBrace();
    virtual void selectToMatchingBrace();
 
    // Lexer handling
-   virtual void SetLexer(uptr_t wParam);
+   virtual ERR SetLexer(SCLEX ID);
 
    // Message handling
-   long SendScintilla(unsigned int msg,unsigned long wParam = 0, long lParam = 0) {
-      return WndProc(msg, wParam, lParam);
+   sptr_t SendScintilla(unsigned int Message, uptr_t WParam = 0, sptr_t LParam = 0) {
+      return WndProc(Scintilla::Message(Message), WParam, LParam);
    }
 
-   long SendScintilla(unsigned int msg,unsigned long wParam, const char *lParam) {
-      return WndProc(msg,wParam,reinterpret_cast<sptr_t>(lParam));
+   sptr_t SendScintilla(unsigned int Message, uptr_t WParam, const char *LParam) {
+      return SendScintilla(Message, WParam, (sptr_t)LParam);
    }
 
-   long SendScintilla(unsigned int msg,const char *lParam) {
-      return WndProc(msg,0UL,reinterpret_cast<sptr_t>(lParam));
+   sptr_t SendScintilla(unsigned int Message, const char *LParam) {
+      return SendScintilla(Message, 0, (sptr_t)LParam);
    }
 
-   long SendScintilla(unsigned int msg,const char *wParam, const char *lParam) {
-       return WndProc(msg,reinterpret_cast<uptr_t>(wParam),reinterpret_cast<sptr_t>(lParam));
+   sptr_t SendScintilla(unsigned int Message, const char *WParam, const char *LParam) {
+      return SendScintilla(Message, (uptr_t)WParam, (sptr_t)LParam);
    }
 
-public:
-   // Public so scintilla_send_message can use it
-   virtual sptr_t WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam);
+   sptr_t WndProc(Scintilla::Message Message, uptr_t WParam, sptr_t LParam) override;
+   bool ValidCodePage(int CodePage) const override { return CodePage IS SC_CP_UTF8; }
+   std::string UTF8FromEncoded(std::string_view Text) const override { return std::string(Text); }
+   std::string EncodedFromUTF8(std::string_view Text) const override { return std::string(Text); }
 
 private:
    void SetKeywords();
@@ -290,7 +297,7 @@ private:
    void UpdateTimers();
    bool TickRequired();
    ERR clipboard_failed(ERR Error, CSTRING Message);
-   ERR copy_to_clipboard(const Scintilla::SelectionText &Text);
+   ERR copy_to_clipboard(const Scintilla::Internal::SelectionText &Text);
    ERR read_clipboard(std::string &Content);
    ERR cut_clipboard();
    ERR paste_clipboard();
@@ -317,16 +324,27 @@ private:
    };
 
    std::vector<completion_report> completion_reports; // Deferred CompletionCallback reports
+   bool flushing_reports = false;
 
-   Scintilla::Selection drag_selection;
+   Scintilla::Internal::Selection drag_selection;
    int64_t drag_revision = 0;
    bool drag_active = false;
    int painted_top = -1;       // The topLine that the content of the Bitmap reflects, see ScrollText()
    int braceMode;
-   int oldpos = -1;
+   Sci::Position oldpos = -1;
+   bool finalised = false;
+   struct ticker {
+      int milliseconds = 0;
+      int64_t deadline = 0;
+   };
+   std::array<ticker, 5> tickers;
    ERR clip_error = ERR::Okay; // Result of the most recent cut, copy or paste
    uint8_t idle_on:1;
-   uint8_t ticking_on:1;
    uint8_t captured_mouse:1;
    extScintilla *scintilla;
 };
+
+// Match Scintilla's exported C direct-call ABI, including on platforms with 32-bit long.
+static_assert(std::is_same_v<decltype(&ScintillaKTK::DirectFunction), SciFnDirect>);
+static_assert(sizeof(sptr_t) IS sizeof(void *));
+static_assert(sizeof(uptr_t) IS sizeof(void *));

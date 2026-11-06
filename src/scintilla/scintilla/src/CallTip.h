@@ -8,80 +8,90 @@
 #ifndef CALLTIP_H
 #define CALLTIP_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
+
+struct Chunk {
+	size_t start;
+	size_t end;
+	constexpr Chunk(size_t start_=0, size_t end_=0) noexcept : start(start_), end(end_) {
+		assert(start <= end);
+	}
+	size_t Length() const noexcept;
+};
 
 /**
  */
 class CallTip {
-	int startHighlight;    // character offset to start and...
-	int endHighlight;      // ...end of highlighted text
-	char *val;
-	Font font;
+	Chunk highlight;    // character offset to start and end of highlighted text
+	std::string val;
+	std::shared_ptr<Font> font;
 	PRectangle rectUp;      // rectangle of last up angle in the tip
 	PRectangle rectDown;    // rectangle of last down arrow in the tip
 	int lineHeight;         // vertical line spacing
 	int offsetMain;         // The alignment point of the call tip
 	int tabSize;            // Tab size in pixels, <=0 no TAB expand
-	bool useStyleCallTip;   // if true, STYLE_CALLTIP should be used
+	bool useStyleCallTip;   // if true, StyleCallTip should be used
+	bool above;		// if true, display calltip above text
 
-	// Private so CallTip objects can not be copied
-	CallTip(const CallTip &);
-	CallTip &operator=(const CallTip &);
-	void DrawChunk(Surface *surface, int &x, const char *s,
-		int posStart, int posEnd, int ytext, PRectangle rcClient,
-		bool highlight, bool draw);
+	int DrawChunk(Surface *surface, int x, std::string_view sv,
+		int ytext, PRectangle rcClient, bool asHighlight, bool draw);
 	int PaintContents(Surface *surfaceWindow, bool draw);
-	bool IsTabCharacter(char c) const;
-	int NextTabPos(int x);
+	bool IsTabCharacter(char ch) const noexcept;
+	int NextTabPos(int x) const noexcept;
 
 public:
 	Window wCallTip;
 	Window wDraw;
 	bool inCallTipMode;
-	int posStartCallTip;
-	ColourPair colourBG;
-	ColourPair colourUnSel;
-	ColourPair colourSel;
-	ColourPair colourShade;
-	ColourPair colourLight;
+	Sci::Position posStartCallTip;
+	ColourRGBA colourBG;
+	ColourRGBA colourUnSel;
+	ColourRGBA colourSel;
+	ColourRGBA colourShade;
+	ColourRGBA colourLight;
 	int codePage;
 	int clickPlace;
 
-	CallTip();
-	~CallTip();
+	int insetX; // text inset in x from calltip border
+	int widthArrow;
+	int borderHeight;
+	int verticalOffset; // pixel offset up or down of the calltip with respect to the line
 
-	/// Claim or accept palette entries for the colours required to paint a calltip.
-	void RefreshColourPalette(Palette &pal, bool want);
+	CallTip() noexcept;
+	// Deleted so CallTip objects can not be copied.
+	CallTip(const CallTip &) = delete;
+	CallTip(CallTip &&) = delete;
+	CallTip &operator=(const CallTip &) = delete;
+	CallTip &operator=(CallTip &&) = delete;
+	~CallTip();
 
 	void PaintCT(Surface *surfaceWindow);
 
-	void MouseClick(Point pt);
+	void MouseClick(Point pt) noexcept;
 
 	/// Setup the calltip and return a rectangle of the area required.
-	PRectangle CallTipStart(int pos, Point pt, const char *defn,
-		const char *faceName, int size, int codePage_,
-		int characterSet, Window &wParent);
+	PRectangle CallTipStart(Sci::Position pos, Point pt, int textHeight, const char *defn,
+		int codePage_, Surface *surfaceMeasure, const std::shared_ptr<Font> &font_);
 
-	void CallTipCancel();
+	void CallTipCancel() noexcept;
 
 	/// Set a range of characters to be displayed in a highlight style.
 	/// Commonly used to highlight the current parameter.
-	void SetHighlight(int start, int end);
+	void SetHighlight(size_t start, size_t end);
 
 	/// Set the tab size in pixels for the call tip. 0 or -ve means no tab expand.
-	void SetTabSize(int tabSz);
+	void SetTabSize(int tabSz) noexcept;
+
+	/// Set calltip position.
+	void SetPosition(bool aboveText) noexcept;
 
 	/// Used to determine which STYLE_xxxx to use for call tip information
-	bool UseStyleCallTip() const { return useStyleCallTip;}
+	bool UseStyleCallTip() const noexcept;
 
 	// Modify foreground and background colours
-	void SetForeBack(const ColourPair &fore, const ColourPair &back);
+	void SetForeBack(ColourRGBA fore, ColourRGBA back) noexcept;
 };
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif

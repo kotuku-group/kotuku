@@ -1,6 +1,6 @@
 // Scintilla source code edit control
 /** @file XPM.h
- ** Define a class that holds data in the X Pixmap (XPM) format.
+ ** Define a classes to hold image data in the X Pixmap (XPM) and RGBA formats.
  **/
 // Copyright 1998-2003 by Neil Hodgson <neilh@scintilla.org>
 // The License.txt file describes the conditions under which this software may be distributed.
@@ -8,119 +8,80 @@
 #ifndef XPM_H
 #define XPM_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
 
 /**
  * Hold a pixmap in XPM format.
  */
 class XPM {
-	int pid;		// Assigned by container
-	int height;
-	int width;
-	int nColours;
-	char *data;
-	char codeTransparent;
-	char *codes;
-	ColourPair *colours;
-	ColourDesired ColourDesiredFromCode(int ch) const;
-	ColourAllocated ColourFromCode(int ch) const;
-	void FillRun(Surface *surface, int code, int startX, int y, int x);
-	char **lines;
-	ColourPair *colourCodeTable[256];
+	static constexpr size_t colourTableSize = 256;
+	int height=1;
+	int width=1;
+	int nColours=1;
+	std::vector<unsigned char> pixels;
+	ColourRGBA colourCodeTable[colourTableSize];
+	char codeTransparent=' ';
+	[[nodiscard]] ColourRGBA ColourFromCode(int ch) const noexcept;
+	void FillRun(Surface *surface, int code, int startX, int y, int x) const;
 public:
-	XPM(const char *textForm);
-	XPM(const char *const *linesForm);
-	~XPM();
+	explicit XPM(const char *textForm);
+	explicit XPM(const char *const *linesForm);
 	void Init(const char *textForm);
 	void Init(const char *const *linesForm);
-	void Clear();
-	/// Similar to same named method in ViewStyle:
-	void RefreshColourPalette(Palette &pal, bool want);
-	/// No palette used, so just copy the desired colours to the allocated colours
-	void CopyDesiredColours();
 	/// Decompose image into runs and use FillRectangle for each run
-	void Draw(Surface *surface, PRectangle &rc);
-	char **InLinesForm() { return lines; }
-	void SetId(int pid_) { pid = pid_; }
-	int GetId() const { return pid; }
-	int GetHeight() const { return height; }
-	int GetWidth() const { return width; }
-	void PixelAt(int x, int y, ColourDesired &colour, bool &transparent) const;
-	static const char **LinesFormFromTextForm(const char *textForm);
+	void Draw(Surface *surface, const PRectangle &rc);
+	[[nodiscard]] int GetHeight() const noexcept { return height; }
+	[[nodiscard]] int GetWidth() const noexcept { return width; }
+	[[nodiscard]] ColourRGBA PixelAt(int x, int y) const noexcept;
+private:
+	static std::vector<const char *>LinesFormFromTextForm(const char *textForm);
 };
 
 /**
- * A collection of pixmaps indexed by integer id.
- */
-class XPMSet {
-	XPM **set;	///< The stored XPMs.
-	int len;	///< Current number of XPMs.
-	int maximum;	///< Current maximum number of XPMs, increased by steps if reached.
-	int height;	///< Memorize largest height of the set.
-	int width;	///< Memorize largest width of the set.
-public:
-	XPMSet();
-	~XPMSet();
-	/// Remove all XPMs.
-	void Clear();
-	/// Add a XPM.
-	void Add(int ident, const char *textForm);
-	/// Get XPM by id.
-	XPM *Get(int ident);
-	/// Give the largest height of the set.
-	int GetHeight();
-	/// Give the largest width of the set.
-	int GetWidth();
-};
-
-/**
- * An translucent image stoed as a sequence of RGBA bytes.
+ * A translucent image stored as a sequence of RGBA bytes.
  */
 class RGBAImage {
-	// Private so RGBAImage objects can not be copied
-	RGBAImage(const RGBAImage &);
-	RGBAImage &operator=(const RGBAImage &);
 	int height;
 	int width;
+	float scale;
 	std::vector<unsigned char> pixelBytes;
 public:
-	RGBAImage(int width_, int height_, const unsigned char *pixels_);
-	RGBAImage(const XPM &xpm);
-	virtual ~RGBAImage();
-	int GetHeight() const { return height; }
-	int GetWidth() const { return width; }
-	int CountBytes() const;
-	const unsigned char *Pixels() const;
-	void SetPixel(int x, int y, ColourDesired colour, int alpha=0xff);
+	static constexpr size_t bytesPerPixel = 4;
+	RGBAImage(int width_, int height_, float scale_, const unsigned char *pixels_);
+	explicit RGBAImage(const XPM &xpm);
+	[[nodiscard]] int GetHeight() const noexcept { return height; }
+	[[nodiscard]] int GetWidth() const noexcept { return width; }
+	[[nodiscard]] float GetScale() const noexcept { return scale; }
+	[[nodiscard]] float GetScaledHeight() const noexcept;
+	[[nodiscard]] float GetScaledWidth() const noexcept;
+	[[nodiscard]] int CountBytes() const noexcept;
+	[[nodiscard]] const unsigned char *Pixels() const noexcept;
+	void SetPixel(int x, int y, ColourRGBA colour) noexcept;
+	static void BGRAFromRGBA(unsigned char *pixelsBGRA, const unsigned char *pixelsRGBA, size_t count) noexcept;
 };
 
 /**
  * A collection of RGBAImage pixmaps indexed by integer id.
  */
 class RGBAImageSet {
-	typedef std::map<int, RGBAImage*> ImageMap;
+	using ImageMap = std::map<int, std::unique_ptr<RGBAImage>>;
 	ImageMap images;
-	mutable int height;	///< Memorize largest height of the set.
-	mutable int width;	///< Memorize largest width of the set.
+	mutable int height = -1;	///< Memorize largest height of the set.
+	mutable int width = -1;	///< Memorize largest width of the set.
 public:
 	RGBAImageSet();
-	~RGBAImageSet();
 	/// Remove all images.
-	void Clear();
+	void Clear() noexcept;
 	/// Add an image.
-	void Add(int ident, RGBAImage *image);
+	void AddImage(int ident, std::unique_ptr<RGBAImage> image);
 	/// Get image by id.
 	RGBAImage *Get(int ident);
 	/// Give the largest height of the set.
-	int GetHeight() const;
+	[[nodiscard]] int GetHeight() const noexcept;
 	/// Give the largest width of the set.
-	int GetWidth() const;
+	[[nodiscard]] int GetWidth() const noexcept;
 };
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif

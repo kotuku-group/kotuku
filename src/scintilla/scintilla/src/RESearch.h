@@ -9,67 +9,63 @@
 #ifndef RESEARCH_H
 #define RESEARCH_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
-
-/*
- * The following defines are not meant to be changeable.
- * They are for readability only.
- */
-#define MAXCHR	256
-#define CHRBIT	8
-#define BITBLK	MAXCHR/CHRBIT
+namespace Scintilla::Internal {
 
 class CharacterIndexer {
 public:
-	virtual char CharAt(int index)=0;
-	virtual ~CharacterIndexer() {
-	}
+	virtual char CharAt(Sci::Position index) const=0;
+	virtual Sci::Position MovePositionOutsideChar(Sci::Position pos, [[maybe_unused]] Sci::Position moveDir) const noexcept=0;
 };
 
 class RESearch {
 
 public:
-	RESearch(CharClassify *charClassTable);
-	~RESearch();
-	bool GrabMatches(CharacterIndexer &ci);
-	const char *Compile(const char *pattern, int length, bool caseSensitive, bool posix);
-	int Execute(CharacterIndexer &ci, int lp, int endp);
-	int Substitute(CharacterIndexer &ci, char *src, char *dst);
+	explicit RESearch(CharClassify *charClassTable);
+	// No dynamic allocation so default copy constructor and assignment operator are OK.
+	void Clear();
+	const char *Compile(const char *pattern, Sci::Position length, bool caseSensitive, bool posix);
+	int Execute(const CharacterIndexer &ci, Sci::Position lp, Sci::Position endp);
+	void SetLineRange(Sci::Position startPos, Sci::Position endPos) noexcept {
+		lineStartPos = startPos;
+		lineEndPos = endPos;
+	}
 
-	enum { MAXTAG=10 };
-	enum { MAXNFA=2048 };
-	enum { NOTFOUND=-1 };
+	static constexpr int MAXTAG = 10;
+	static constexpr int NOTFOUND = -1;
 
-	int bopat[MAXTAG];
-	int eopat[MAXTAG];
-	char *pat[MAXTAG];
+	using MatchPositions = std::array<Sci::Position, MAXTAG>;
+	MatchPositions bopat;
+	MatchPositions eopat;
 
 private:
-	void Init();
-	void Clear();
-	void ChSet(unsigned char c);
-	void ChSetWithCase(unsigned char c, bool caseSensitive);
-	int GetBackslashExpression(const char *pattern, int &incr);
 
-	int PMatch(CharacterIndexer &ci, int lp, int endp, char *ap);
+	static constexpr int MAXNFA = 4096;
+	// The following constants are not meant to be changeable.
+	// They are for readability only.
+	static constexpr int MAXCHR = 256;
+	static constexpr int CHRBIT = 8;
+	static constexpr int BITBLK = MAXCHR / CHRBIT;
 
-	int bol;
-	int tagstk[MAXTAG];  /* subpat tag stack */
+	void ChSet(unsigned char c) noexcept;
+	void ChSetWithCase(unsigned char c, bool caseSensitive) noexcept;
+	int GetBackslashExpression(const char *pattern, int &incr) noexcept;
+
+	Sci::Position PMatch(const CharacterIndexer &ci, Sci::Position lp, Sci::Position endp, const char *ap);
+
+	// positions to match line start and line end
+	Sci::Position lineStartPos;
+	Sci::Position lineEndPos;
 	char nfa[MAXNFA];    /* automaton */
 	int sta;
-	unsigned char bittab[BITBLK]; /* bit table for CCL pre-set bits */
 	int failure;
+	std::array<unsigned char, BITBLK> bittab {}; /* bit table for CCL pre-set bits */
 	CharClassify *charClass;
-	bool iswordc(unsigned char x) {
+	bool iswordc(unsigned char x) const noexcept {
 		return charClass->IsWord(x);
 	}
 };
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif
 

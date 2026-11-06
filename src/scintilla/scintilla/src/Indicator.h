@@ -8,26 +8,54 @@
 #ifndef INDICATOR_H
 #define INDICATOR_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
+
+struct StyleAndColour {
+	Scintilla::IndicatorStyle style;
+	ColourRGBA fore;
+	StyleAndColour() noexcept : style(Scintilla::IndicatorStyle::Plain), fore(black) {
+	}
+	StyleAndColour(Scintilla::IndicatorStyle style_, ColourRGBA fore_ = black) noexcept : style(style_), fore(fore_) {
+	}
+	bool operator==(const StyleAndColour &other) const noexcept {
+		return (style == other.style) && (fore == other.fore);
+	}
+};
+
+constexpr int strokeWidthScale = 100;
+constexpr int strokeWidthMax = 10 * strokeWidthScale;
 
 /**
  */
 class Indicator {
 public:
-	int style;
+	enum class State { normal, hover };
+	StyleAndColour sacNormal;
+	StyleAndColour sacHover;
 	bool under;
-	ColourPair fore;
 	int fillAlpha;
 	int outlineAlpha;
-	Indicator() : style(INDIC_PLAIN), under(false), fore(ColourDesired(0,0,0)), fillAlpha(30), outlineAlpha(50) {
+	Scintilla::IndicFlag attributes;
+	XYPOSITION strokeWidth = 1.0f;
+	Indicator() noexcept : under(false), fillAlpha(30), outlineAlpha(50), attributes(Scintilla::IndicFlag::None) {
 	}
-	void Draw(Surface *surface, const PRectangle &rc, const PRectangle &rcLine);
+	Indicator(Scintilla::IndicatorStyle style_, ColourRGBA fore_= black, bool under_=false, int fillAlpha_=30, int outlineAlpha_=50) noexcept :
+		sacNormal(style_, fore_), sacHover(style_, fore_), under(under_), fillAlpha(fillAlpha_), outlineAlpha(outlineAlpha_), attributes(Scintilla::IndicFlag::None) {
+	}
+	void Draw(Surface *surface, const PRectangle &rc, const PRectangle &rcLine, const PRectangle &rcCharacter, State drawState, int value) const;
+	bool IsDynamic() const noexcept {
+		return !(sacNormal == sacHover);
+	}
+	bool OverridesTextFore() const noexcept {
+		return sacNormal.style == Scintilla::IndicatorStyle::TextFore || sacHover.style == Scintilla::IndicatorStyle::TextFore;
+	}
+	[[nodiscard]] Scintilla::IndicFlag Flags() const noexcept {
+		return attributes;
+	}
+	bool SetStyle(Scintilla::IndicatorStyle style) noexcept;
+	bool SetFore(ColourRGBA fore) noexcept;
 };
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif

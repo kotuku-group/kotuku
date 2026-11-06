@@ -8,162 +8,307 @@
 #ifndef POSITIONCACHE_H
 #define POSITIONCACHE_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
 
-static inline bool IsEOLChar(char ch) {
-	return (ch == '\r') || (ch == '\n');
-}
+/**
+* A point in document space.
+* Uses double for sufficient resolution in large (>20,000,000 line) documents.
+*/
+class PointDocument {
+public:
+	double x;
+	double y;
+
+	explicit PointDocument(double x_ = 0, double y_ = 0) noexcept : x(x_), y(y_) {
+	}
+
+	// Conversion from Point.
+	explicit PointDocument(Point pt) noexcept : x(pt.x), y(pt.y) {
+	}
+};
+
+// There are two points for some positions and this enumeration
+// can choose between the end of the first line or subline
+// and the start of the next line or subline.
+enum class PointEnd {
+	start = 0x0,
+	lineEnd = 0x1,
+	subLineEnd = 0x2,
+	endEither = lineEnd | subLineEnd,
+};
+
+class BidiData {
+public:
+	std::vector<std::shared_ptr<Font>> stylesFonts;
+	std::vector<XYPOSITION> widthReprs;
+	void Resize(size_t maxLineLength_);
+};
+
+using XWidth = float;
+
+// A protocol for providing tab stops without exposing all of EditView.
+struct TabStopProvider {
+	[[nodiscard]] virtual XYPOSITION NextTabstopPos(Sci::Line line, XYPOSITION x, XYPOSITION tabWidth) const noexcept = 0;
+};
+
+class XPositions {
+	// This struct has two phases with different meanings for the positions.
+	// During measuring, it holds the width of each byte.
+	// Then each is converted into positions offset from the expected value for its index
+	// assuming consistent character widths.
+	// This allows using 32-bit values over huge lines without overflowing precision.
+	// Expects reasonably consistent text throughout the line - a line with many text
+	// characters at one end and many representations at the other could have inadequate
+	// precision in middle, for example.
+	std::unique_ptr<XWidth[]> positions;
+	XYPOSITION characterWidthMean = 0.0;
+protected:
+	void SetSize(size_t size);
+	void Clear(size_t size);
+	void SetWidthMean(XYPOSITION characterWidthMean_) noexcept;
+	[[nodiscard]] XWidth GetValue(Sci::Position index) const noexcept;
+	void SetPosition(int index, XYPOSITION position) noexcept;
+public:
+	void SetValue(int index, XWidth width) const noexcept;	// Not logically const but required for use by BreakFinder
+	[[nodiscard]] XWidth *PositionsFor(int index) const noexcept;
+	[[nodiscard]] XYPOSITION GetPosition(Sci::Position index) const noexcept;
+	[[nodiscard]] XYPOSITION GetWidth(Sci::Position end, Sci::Position start) const noexcept;
+	[[nodiscard]] Interval Span(int start, int end) const noexcept;
+	[[nodiscard]] Interval SpanByte(int index) const noexcept;
+};
 
 /**
  */
-class LineLayout {
+class LineLayout : public XPositions {
 private:
-	friend class LineLayoutCache;
-	int *lineStarts;
-	int lenLineStarts;
+	std::unique_ptr<int []>lineStarts;
+	int lenLineStarts = 0;
 	/// Drawing is only performed for @a maxLineLength characters on each line.
-	int lineNumber;
-	bool inCache;
+	Sci::Line lineNumber;
 public:
-	enum { wrapWidthInfinite = 0x7ffffff };
-	int maxLineLength;
-	int numCharsInLine;
-	int numCharsBeforeEOL;
-	enum validLevel { llInvalid, llCheckTextAndStyle, llPositions, llLines } validity;
-	int xHighlightGuide;
-	bool highlightColumn;
-	Selection *psel;
-	bool containsCaret;
-	int edgeColumn;
-	char *chars;
-	unsigned char *styles;
-	int styleBitsSet;
-	char *indicators;
-	int *positions;
-	char bracePreviousStyles[2];
+	static constexpr int wrapWidthInfinite = 0x7ffffff;
 
-	// Hotspot support
-	int hsStart;
-	int hsEnd;
+	int maxLineLength = -1;
+	int numCharsInLine = 0;
+	int numCharsBeforeEOL = 0;
+	enum class ValidLevel { invalid, checkTextAndStyle, positions, lines };
+	ValidLevel validity = ValidLevel::invalid;
+	int xHighlightGuide = 0;
+	bool highlightColumn = false;
+	bool containsCaret = false;
+	unsigned char bracePreviousStyles[2]{};
+	int edgeColumn = 0;
+	std::unique_ptr<char[]> chars;
+	std::unique_ptr<unsigned char[]> styles;
+
+	std::unique_ptr<BidiData> bidiData;
 
 	// Wrapped line support
-	int widthLine;
-	int lines;
-	int wrapIndent; // In pixels
+	int widthLine = wrapWidthInfinite;
+	int lines = 1;
+	XYPOSITION wrapIndent = 0; // In pixels
 
-	LineLayout(int maxLineLength_);
-	virtual ~LineLayout();
+	LineLayout(Sci::Line lineNumber_, int maxLineLength_);
 	void Resize(int maxLineLength_);
-	void Free();
-	void Invalidate(validLevel validity_);
-	int LineStart(int line) const;
-	int LineLastVisible(int line) const;
-	bool InLine(int offset, int line) const;
-	void SetLineStart(int line, int start);
-	void SetBracesHighlight(Range rangeLine, Position braces[],
+	void ReSet(Sci::Line lineNumber_, Sci::Position maxLineLength_);
+	void EnsureBidiData();
+	void ClearPositions();
+	void Invalidate(ValidLevel validity_) noexcept;
+	Sci::Line LineNumber() const noexcept;
+	bool CanHold(Sci::Line lineDoc, int lineLength_) const noexcept;
+	int LineStart(int line) const noexcept;
+	int LineLength(int line) const noexcept;
+	enum class Scope { visibleOnly, includeEnd };
+	int LineLastVisible(int line, Scope scope) const noexcept;
+	Range SubLineRange(int subLine, Scope scope) const noexcept;
+	bool InLine(int offset, int line) const noexcept;
+	int SubLineFromPosition(int posInLine, PointEnd pe) const noexcept;
+	void AddLineStart(Sci::Position start);
+	void SetBracesHighlight(ForwardRange rangeLine, const Sci::Position braces[],
 		char bracesMatchStyle, int xHighlight, bool ignoreStyle);
-	void RestoreBracesHighlight(Range rangeLine, Position braces[], bool ignoreStyle);
-	int FindBefore(int x, int lower, int upper) const;
-	int EndLineStyle() const;
+	void RestoreBracesHighlight(ForwardRange rangeLine, const Sci::Position braces[], bool ignoreStyle);
+	int FindBefore(XYPOSITION x, Range range) const noexcept;
+	int FindPositionFromX(XYPOSITION x, Range range, bool charPosition) const noexcept;
+	Point PointFromPosition(int posInLine, int lineHeight, PointEnd pe) const noexcept;
+	XYPOSITION XInLine(Sci::Position index) const noexcept;
+	int EndLineStyle() const noexcept;
+	[[nodiscard]] int LastStyle() const noexcept;
+	void WrapLine(const Document *pdoc, Sci::Position posLineStart, Wrap wrapState, XYPOSITION wrapWidth);
+	void CalculatePositions(Sci::Line line, const TabStopProvider &tsp, const ViewStyle &vstyle) noexcept;
+};
+
+struct ScreenLine : public IScreenLine {
+	const LineLayout *ll;
+	size_t start;
+	size_t len;
+	XYPOSITION width;
+	XYPOSITION height;
+	int ctrlCharPadding;
+	XYPOSITION tabWidth;
+	int tabWidthMinimumPixels;
+
+	ScreenLine(const LineLayout *ll_, int subLine, const ViewStyle &vs, XYPOSITION width_, int tabWidthMinimumPixels_);
+	// Deleted so ScreenLine objects can not be copied.
+	ScreenLine(const ScreenLine &) = delete;
+	ScreenLine(ScreenLine &&) = delete;
+	void operator=(const ScreenLine &) = delete;
+	void operator=(ScreenLine &&) = delete;
+	virtual ~ScreenLine();
+
+	std::string_view Text() const override;
+	size_t Length() const override;
+	size_t RepresentationCount() const override;
+	XYPOSITION Width() const override;
+	XYPOSITION Height() const override;
+	XYPOSITION TabWidth() const override;
+	XYPOSITION TabWidthMinimumPixels() const override;
+	const Font *FontOfPosition(size_t position) const override;
+	XYPOSITION RepresentationWidth(size_t position) const override;
+	XYPOSITION TabPositionAfter(XYPOSITION xPosition) const override;
+};
+
+struct SignificantLines {
+	Sci::Line lineCaret;
+	Sci::Line lineTop;
+	Sci::Line linesOnScreen;
+	Scintilla::LineCache level;
+	bool LineMayCache(Sci::Line line) const noexcept;
 };
 
 /**
  */
 class LineLayoutCache {
-	int level;
-	int length;
-	int size;
-	LineLayout **cache;
-	bool allInvalidated;
+public:
+private:
+	Scintilla::LineCache level;
+	std::vector<std::shared_ptr<LineLayout>>cache;
+	LineLayout::ValidLevel maxValidity;
 	int styleClock;
-	int useCount;
-	void Allocate(int length_);
-	void AllocateForLevel(int linesOnScreen, int linesInDoc);
+	size_t EntryForLine(Sci::Line line) const noexcept;
+	void AllocateForLevel(Sci::Line linesOnScreen, Sci::Line linesInDoc);
 public:
 	LineLayoutCache();
+	// Deleted so LineLayoutCache objects can not be copied.
+	LineLayoutCache(const LineLayoutCache &) = delete;
+	LineLayoutCache(LineLayoutCache &&) = delete;
+	void operator=(const LineLayoutCache &) = delete;
+	void operator=(LineLayoutCache &&) = delete;
 	virtual ~LineLayoutCache();
-	void Deallocate();
-	enum {
-		llcNone=SC_CACHE_NONE,
-		llcCaret=SC_CACHE_CARET,
-		llcPage=SC_CACHE_PAGE,
-		llcDocument=SC_CACHE_DOCUMENT
-	};
-	void Invalidate(LineLayout::validLevel validity_);
-	void SetLevel(int level_);
-	int GetLevel() const { return level; }
-	LineLayout *Retrieve(int lineNumber, int lineCaret, int maxChars, int styleClock_,
-		int linesOnScreen, int linesInDoc);
-	void Dispose(LineLayout *ll);
+	void Deallocate() noexcept;
+	void Invalidate(LineLayout::ValidLevel validity_) noexcept;
+	void SetLevel(Scintilla::LineCache level_) noexcept;
+	Scintilla::LineCache GetLevel() const noexcept { return level; }
+	std::shared_ptr<LineLayout> Retrieve(Sci::Line lineNumber, Sci::Line lineCaret, int maxChars, int styleClock_,
+		Sci::Line linesOnScreen, Sci::Line linesInDoc);
 };
 
-class PositionCacheEntry {
-	unsigned int styleNumber:8;
-	unsigned int len:8;
-	unsigned int clock:16;
-	short *positions;
+class Representation {
 public:
-	PositionCacheEntry();
-	~PositionCacheEntry();
-	void Set(unsigned int styleNumber_, const char *s_, unsigned int len_, int *positions_, unsigned int clock);
-	void Clear();
-	bool Retrieve(unsigned int styleNumber_, const char *s_, unsigned int len_, int *positions_) const;
-	static int Hash(unsigned int styleNumber_, const char *s, unsigned int len);
-	bool NewerThan(const PositionCacheEntry &other) const;
-	void ResetClock();
+	static constexpr size_t maxLength = 200;
+	std::string stringRep;
+	RepresentationAppearance appearance;
+	ColourRGBA colour;
+	explicit Representation(std::string_view value="", RepresentationAppearance appearance_= RepresentationAppearance::Blob) :
+		stringRep(value), appearance(appearance_) {
+	}
 };
+
+constexpr size_t byteValues = 0x100;
+
+using MapRepresentation = std::map<unsigned int, Representation>;
+
+const char *ControlCharacterString(unsigned char ch) noexcept;
+void Hexits(char *hexits, int ch) noexcept;
+
+class SpecialRepresentations {
+	MapRepresentation mapReprs;
+	unsigned short startByteHasReprs[byteValues] {};
+	unsigned int maxKey = 0;
+	bool crlf = false;
+public:
+	void SetRepresentation(std::string_view charBytes, std::string_view value);
+	void SetRepresentationAppearance(std::string_view charBytes, RepresentationAppearance appearance);
+	void SetRepresentationColour(std::string_view charBytes, ColourRGBA colour);
+	void ClearRepresentation(std::string_view charBytes);
+	const Representation *GetRepresentation(std::string_view charBytes) const;
+	const Representation *RepresentationFromCharacter(std::string_view charBytes) const;
+	bool ContainsCrLf() const noexcept {
+		return crlf;
+	}
+	bool MayContain(unsigned char ch) const noexcept {
+		return startByteHasReprs[ch] != 0;
+	}
+	void Clear();
+	void SetDefaultRepresentations(int dbcsCodePage);
+};
+
+struct TextSegment {
+	int start;
+	int length;
+	const Representation *representation;
+	explicit TextSegment(int start_=0, int length_=0, const Representation *representation_=nullptr) noexcept :
+		start(start_), length(length_), representation(representation_) {
+	}
+	[[nodiscard]] int end() const noexcept {
+		return start + length;
+	}
+};
+
+using SingleByteWidths = XWidth[byteValues];
+
+// If a whole run is longer than lengthStartSubdivision then subdivide
+// into smaller runs at spaces or punctuation.
+constexpr int lengthStartSubdivision = 300;
 
 // Class to break a line of text into shorter runs at sensible places.
 class BreakFinder {
-	LineLayout *ll;
-	int lineStart;
-	int lineEnd;
-	int posLineStart;
+	const LineLayout *ll;
+	const ForwardRange lineRange;
 	int nextBreak;
-	int *selAndEdge;
-	unsigned int saeSize;
-	unsigned int saeLen;
+	std::vector<int> selAndEdge;
 	unsigned int saeCurrentPos;
 	int saeNext;
 	int subBreak;
-	Document *pdoc;
-	void Insert(int val);
+	const Document *pdoc;
+	const EncodingFamily encodingFamily;
+	const SpecialRepresentations *preprs;
+	void Insert(Sci::Position val);
 public:
-	// If a whole run is longer than lengthStartSubdivision then subdivide
-	// into smaller runs at spaces or punctuation.
-	enum { lengthStartSubdivision = 300 };
 	// Try to make each subdivided run lengthEachSubdivision or shorter.
-	enum { lengthEachSubdivision = 100 };
-	BreakFinder(LineLayout *ll_, int lineStart_, int lineEnd_, int posLineStart_,
-		int xStart, bool breakForSelection, Document *pdoc_);
-	~BreakFinder();
-	int First() const;
-	int Next();
+	static constexpr int lengthEachSubdivision = 100;
+	enum class BreakFor {
+		Text = 0,
+		Selection = 1,
+		Foreground = 2,
+		ForegroundAndSelection = 3,
+	};
+	BreakFinder(const LineLayout *ll_, const Selection *psel, ForwardRange lineRange_, Sci::Position posLineStart,
+		XYPOSITION xStart, BreakFor breakFor, const Document *pdoc_, const SpecialRepresentations *preprs_, const ViewStyle *pvsDraw);
+	// Deleted so BreakFinder objects can not be copied.
+	BreakFinder(const BreakFinder &) = delete;
+	BreakFinder(BreakFinder &&) = delete;
+	void operator=(const BreakFinder &) = delete;
+	void operator=(BreakFinder &&) = delete;
+	~BreakFinder() noexcept;
+	TextSegment Next();
+	bool More() const noexcept;
+	bool SetNextSingleByteWidth(const SingleByteWidths &singles) noexcept;
 };
 
-class PositionCache {
-	PositionCacheEntry *pces;
-	size_t size;
-	unsigned int clock;
-	bool allClear;
+constexpr size_t positionCacheDefaultSize = 0x400;
+
+class IPositionCache {
 public:
-	PositionCache();
-	~PositionCache();
-	void Clear();
-	void SetSize(size_t size_);
-	size_t GetSize() const { return size; }
-	void MeasureWidths(Surface *surface, ViewStyle &vstyle, unsigned int styleNumber,
-		const char *s, unsigned int len, int *positions, Document *pdoc);
+	virtual ~IPositionCache() = default;
+	virtual void Clear() noexcept = 0;
+	virtual void SetSize(size_t size_) = 0;
+	virtual size_t GetSize() const noexcept = 0;
+	virtual void MeasureWidths(Surface *surface, const ViewStyle &vstyle, unsigned int styleNumber,
+		bool unicode, std::string_view sv, XYPOSITION *positions, bool needsLocking) = 0;
 };
 
-inline bool IsSpaceOrTab(int ch) {
-	return ch == ' ' || ch == '\t';
-}
+std::unique_ptr<IPositionCache> CreatePositionCache();
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif

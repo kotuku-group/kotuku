@@ -1,0 +1,205 @@
+-- Scheduling and callback lifetime regressions specific to the v5 adapter.
+
+   include 'scintilla', 'vector', 'display'
+
+function newEditor():<obj, obj, obj, obj>
+   local surface = obj.new('Surface', { width=300, height=120 })
+   local scene = surface.new('VectorScene', { surface=surface, flags=VPF_IGNORE_TAB })
+   local host = scene.new('VectorViewport', { width='100%', height='100%' })
+   local sci = host.new('Scintilla', { flags=SCIF_EDIT, face='Clean', fontSize=11 })
+   check surface.acShow()
+   check surface.acFocus()
+   check host.acFocus()
+   processing.sleep(0)
+   return surface, scene, host, sci
+end
+
+function acceptCandidate(Sci:obj!, Text:str!)
+   check Sci.mtShowCompletions(0, Text, SCACF_CHOOSE_SINGLE)
+end
+
+@Test function DeferredReportsPreserveOrderDuringMessageProcessing()
+   local surface <close>, scene, host, sci = newEditor()
+   local events = array<str>
+   sci.completionCallback = function(Scintilla, Event, Position, Value, Text)
+      if Event is SCAC_SELECTED then
+         events.push(Text)
+         if Text is 'first' then
+            check Scintilla.mtShowCompletions(0, 'x\ny', 0)
+            check Scintilla.mtHidePopups()
+            processing.sleep(0)
+         end
+      elseif Event is SCAC_CANCELLED then
+         events.push('cancelled')
+      end
+   end
+   acceptCandidate(sci, 'first')
+   acceptCandidate(sci, 'second')
+   processing.sleep(0)
+   processing.sleep(0)
+   assert(#events is 3, f'Both acceptances and the cancellation must be delivered once, got {#events}')
+   assert(events[0] is 'first' and events[1] is 'second' and events[2] is 'cancelled',
+      f'Reentrant message processing must preserve report order, got {events.concat(",")}')
+   assert(sci.string is 'firstsecond', 'Callbacks must run after their completion edits have committed')
+end
+
+@Test function FreeingEditorStopsPendingCompletionReports()
+   local surface <close>, scene, host, sci = newEditor()
+   local received = 0
+   local editor_id = sci.id
+   sci.completionCallback = function(Scintilla, Event, Position, Value, Text)
+      if Event != SCAC_SELECTED then return end
+      received++
+      Scintilla.free()
+   end
+   acceptCandidate(sci, 'first')
+   acceptCandidate(sci, 'second')
+   processing.sleep(0)
+   processing.sleep(0.05)
+   assert(received is 1, f'An editor marked for destruction must stop delivering reports, got {received}')
+   assert(not obj.find(editor_id), 'The editor must be collected after its callback returns')
+end
+
+@Test function CompletionCallbackCanReplaceItself()
+   local surface <close>, scene, host, sci = newEditor()
+   local events = array<str>
+   sci.completionCallback = function(Scintilla, Event, Position, Value, Text)
+      if Event != SCAC_SELECTED then return end
+      events.push('original:' .. Text)
+      Scintilla.completionCallback = function(Editor, NextEvent, NextPosition, NextValue, NextText)
+         if NextEvent is SCAC_SELECTED then events.push('replacement:' .. NextText) end
+      end
+   end
+   acceptCandidate(sci, 'first')
+   acceptCandidate(sci, 'é😀')
+   processing.sleep(0)
+   assert(#events is 2 and events[0] is 'original:first' and events[1] is 'replacement:é😀',
+      'Replacing a running callback must preserve the copied UTF-8 text of the next report')
+end
+
+@Test function FreeingHostDuringCompletionKeepsDocumentUsable()
+   local surface <close>, scene, host, sci = newEditor()
+   -- A separate owner lets the document outlive its viewport.
+   local editor <close> = obj.new('Scintilla', { viewport=host, flags=SCIF_EDIT })
+   sci.free()
+   editor.completionCallback = function(Scintilla, Event, Position, Value, Text)
+      if Event is SCAC_SELECTED then host.free() end
+   end
+   acceptCandidate(editor, 'selected')
+   processing.sleep(0)
+   assert(editor.string is 'selected', 'Freeing the host from a callback must preserve the committed document')
+   assert(editor.activePopup is SCPOP_NONE, 'Host destruction must close auxiliary windows')
+   assert(editor.mtShowCallTip(-1, 'tip', 0, 0) is ERR_NotPossible, 'A detached editor must refuse new pop-ups')
+end
+
+function sendKey(Code:num!, Qualifiers:num!, Unicode:num)
+   local event = array<int, 6>
+   event[0] = ('keypress').hash()
+   event[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   event[2] = Qualifiers
+   event[3] = Code
+   event[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(event, 24)
+   processing.sleep(0)
+end
+
+@Test function CharacterCallbackCanFreeEditor()
+   local surface <close>, scene, host, sci = newEditor()
+   local received = 0
+   sci.completionCallback = function(Scintilla, Event, Position, Value, Text)
+      if Event is SCAC_CHAR_ADDED then
+         received++
+         Scintilla.free()
+      end
+   end
+   sendKey(KEY_A, KQ_PRESSED, 97)
+   processing.sleep(0.05)
+   assert(received is 1, 'Freeing an editor from a character callback must return safely through the engine')
+end
+
+@Test function RepeatedFocusLossAndDestructionWithActiveTimers()
+   for _ in {0 to 8} do
+      local surface <close>, scene, host, sci = newEditor()
+      local other = scene.new('VectorViewport', { width=1, height=1 })
+      sci.string = ('a long line of text ').rep(100)
+      sci.wordwrap = true
+      for _ in {0 to 3} do
+         check other.acFocus()
+         check host.acFocus()
+      end
+      check sci.mtShowCompletions(0, 'first\nsecond', 0)
+      sci.free()
+      processing.sleep(0.02)
+   end
+end
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local sign = (Value < 0) ? 2147483648 : 0
+   local mantissa, exponent = math.frexp(math.abs(Value))
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = sign + ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function openMenu(Surface:obj!)
+   check Surface.acDraw()
+   processing.sleep(0)
+   check Surface.acDraw()
+   feed(JET_ABS_XY, Surface.absX + 30, Surface.absY + 8)
+   feed(JET_RMB, 1, 0)
+   feed(JET_RMB, 0, 0)
+   processing.sleep(0)
+end
+
+@Test function ContextMenuEscapeRestoresEditorFocus()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = 'original'
+   openMenu(surface)
+   assert(not (host.flags has VF_HAS_FOCUS), 'The context menu must take focus from the editor')
+   sendKey(KEY_ESCAPE, KQ_PRESSED | KQ_NOT_PRINTABLE)
+   processing.sleep(0)
+   assert(host.flags has VF_HAS_FOCUS, 'Escape must restore focus to the editor')
+   sendKey(KEY_X, KQ_PRESSED, 120)
+   assert(sci.string is 'xoriginal', 'Typing after menu dismissal must reach the editor once')
+end
+
+@Test function ContextMenuCommandEditsOnceAndSupportsUndo()
+   local surface <close>, scene, host, sci = newEditor()
+   sci.string = 'one two'
+   check sci.mtSelectRange(0, 3)
+   openMenu(surface)
+   assert(not (host.flags has VF_HAS_FOCUS), 'The menu must receive its command shortcut')
+   sendKey(KEY_X, KQ_PRESSED | KQ_L_CTRL | KQ_NOT_PRINTABLE)
+   processing.sleep(0)
+   assert(sci.string is ' two', 'The menu Cut command must delete only the selection')
+   assert(host.flags has VF_HAS_FOCUS, 'An activated command must restore editor focus')
+   check sci.acUndo()
+   assert(sci.string is 'one two', 'The menu command must be a single undo action')
+end
+
+@Test function EditorDestructionClosesContextMenu()
+   local surface <close>, scene, host, sci = newEditor()
+   openMenu(surface)
+   assert(not (host.flags has VF_HAS_FOCUS), 'The context menu must be open before destruction')
+   sci.free()
+   processing.sleep(0)
+   local replacement = host.new('Scintilla', { flags=SCIF_EDIT })
+   check surface.acFocus()
+   check host.acFocus()
+   sendKey(KEY_A, KQ_PRESSED, 97)
+   assert(replacement.string is 'a', 'A freed menu must leave no keyboard subscriptions on its replacement')
+end

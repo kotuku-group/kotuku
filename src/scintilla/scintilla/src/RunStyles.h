@@ -10,41 +10,49 @@
 #ifndef RUNSTYLES_H
 #define RUNSTYLES_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
 
-class RunStyles {
-private:
-	Partitioning *starts;
-	SplitVector<int> *styles;
-	int RunFromPosition(int position) const;
-	int SplitRun(int position);
-	void RemoveRun(int run);
-	void RemoveRunIfEmpty(int run);
-	void RemoveRunIfSameAsPrevious(int run);
-public:
-	RunStyles();
-	~RunStyles();
-	int Length() const;
-	int ValueAt(int position) const;
-	int FindNextChange(int position, int end);
-	int StartRun(int position);
-	int EndRun(int position);
-	// Returns true if some values may have changed
-	bool FillRange(int &position, int value, int &fillLength);
-	void SetValueAt(int position, int value);
-	void InsertSpace(int position, int insertLength);
-	void DeleteAll();
-	void DeleteRange(int position, int deleteLength);
-	int Runs() const;
-	bool AllSame() const;
-	bool AllSameAs(int value) const;
-	int Find(int value, int start) const;
+// Return for RunStyles::FillRange reports if anything was changed and the
+// range that was changed. This may be trimmed from the requested range
+// when some of the requested range already had the requested value.
+template <typename DISTANCE>
+struct FillResult {
+	bool changed = false;
+	DISTANCE position {};
+	DISTANCE fillLength {};
 };
 
-#ifdef SCI_NAMESPACE
+template <typename DISTANCE, typename STYLE>
+class RunStyles {
+private:
+	Partitioning<DISTANCE> starts;
+	SplitVector<STYLE> styles;
+	[[nodiscard]] DISTANCE RunFromPosition(DISTANCE position) const noexcept;
+	[[nodiscard]] DISTANCE SplitRun(DISTANCE pos);
+	void RemoveRun(DISTANCE run);
+	void RemoveRunIfEmpty(DISTANCE run);
+	void RemoveRunIfSameAsPrevious(DISTANCE run);
+public:
+	RunStyles();
+	[[nodiscard]] DISTANCE Length() const noexcept;
+	[[nodiscard]] STYLE ValueAt(DISTANCE position) const noexcept;
+	[[nodiscard]] DISTANCE FindNextChange(DISTANCE position, DISTANCE end) const noexcept;
+	[[nodiscard]] DISTANCE StartRun(DISTANCE position) const noexcept;
+	[[nodiscard]] DISTANCE EndRun(DISTANCE position) const noexcept;
+	// Returns changed=true if some values may have changed
+	FillResult<DISTANCE> FillRange(DISTANCE position, STYLE value, DISTANCE fillLength);
+	void SetValueAt(DISTANCE position, STYLE value);
+	void InsertSpace(DISTANCE position, DISTANCE insertLength);
+	void DeleteAll();
+	void DeleteRange(DISTANCE position, DISTANCE deleteLength);
+	[[nodiscard]] DISTANCE Runs() const noexcept;
+	[[nodiscard]] bool AllSame() const noexcept;
+	[[nodiscard]] bool AllSameAs(STYLE value) const noexcept;
+	[[nodiscard]] DISTANCE Find(STYLE value, DISTANCE start) const noexcept;
+
+	void Check() const;
+};
+
 }
-#endif
 
 #endif

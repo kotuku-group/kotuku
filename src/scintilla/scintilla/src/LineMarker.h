@@ -8,69 +8,51 @@
 #ifndef LINEMARKER_H
 #define LINEMARKER_H
 
-#ifdef SCI_NAMESPACE
-namespace Scintilla {
-#endif
+namespace Scintilla::Internal {
 
+class XPM;
+class RGBAImage;
+
+typedef void (*DrawLineMarkerFn)(Surface *surface, const PRectangle &rcWhole, const Font *fontForCharacter, int tFold, Scintilla::MarginType marginStyle, const void *lineMarker);
 
 /**
  */
 class LineMarker {
 public:
-	enum typeOfFold { undefined, head, body, tail, headWithTail };
+	enum class FoldPart { undefined, head, body, tail, headWithTail };
 
-	int markType;
-	ColourPair fore;
-	ColourPair back;
-	ColourPair backSelected;
-	int alpha;
-	XPM *pxpm;
-	RGBAImage *image;
-	LineMarker() {
-		markType = SC_MARK_CIRCLE;
-		fore = ColourDesired(0,0,0);
-		back = ColourDesired(0xff,0xff,0xff);
-		backSelected = ColourDesired(0xff,0x00,0x00);
-		alpha = SC_ALPHA_NOALPHA;
-		pxpm = NULL;
-		image = NULL;
-	}
-	LineMarker(const LineMarker &) {
-		// Defined to avoid pxpm being blindly copied, not as real copy constructor
-		markType = SC_MARK_CIRCLE;
-		fore = ColourDesired(0,0,0);
-		back = ColourDesired(0xff,0xff,0xff);
-		backSelected = ColourDesired(0xff,0x00,0x00);
-		alpha = SC_ALPHA_NOALPHA;
-		pxpm = NULL;
-		image = NULL;
-	}
-	~LineMarker() {
-		delete pxpm;
-		delete image;
-	}
-	LineMarker &operator=(const LineMarker &) {
-		// Defined to avoid pxpm being blindly copied, not as real assignment operator
-		markType = SC_MARK_CIRCLE;
-		fore = ColourDesired(0,0,0);
-		back = ColourDesired(0xff,0xff,0xff);
-		backSelected = ColourDesired(0xff,0x00,0x00);
-		alpha = SC_ALPHA_NOALPHA;
-		delete pxpm;
-		pxpm = NULL;
-		delete image;
-		image = NULL;
-		return *this;
-	}
-	void RefreshColourPalette(Palette &pal, bool want);
+	Scintilla::MarkerSymbol markType = Scintilla::MarkerSymbol::Circle;
+	ColourRGBA fore = black;
+	ColourRGBA back = white;
+	ColourRGBA backSelected = ColourRGBA(maximumByte, 0, 0);	// Red default
+	Scintilla::Layer layer = Scintilla::Layer::Base;
+	Scintilla::Alpha alpha = Scintilla::Alpha::NoAlpha;
+	XYPOSITION strokeWidth = 1.0f;
+	std::unique_ptr<XPM> pxpm;
+	std::unique_ptr<RGBAImage> image;
+	/** Some platforms, notably PLAT_CURSES, do not support Scintilla's native
+	 * Draw function for drawing line markers. Allow those platforms to override
+	 * it instead of creating a new method(s) in the Surface class that existing
+	 * platforms must implement as empty. */
+	DrawLineMarkerFn customDraw = nullptr;
+
+	LineMarker() noexcept = default;
+	LineMarker(const LineMarker &other);
+	LineMarker(LineMarker &&) noexcept = default;
+	LineMarker &operator=(const LineMarker& other);
+	LineMarker &operator=(LineMarker&&) noexcept = default;
+	virtual ~LineMarker() = default;
+
+	ColourRGBA BackWithAlpha() const noexcept;
+
 	void SetXPM(const char *textForm);
 	void SetXPM(const char *const *linesForm);
-	void SetRGBAImage(Point sizeRGBAImage, const unsigned char *pixelsRGBAImage);
-	void Draw(Surface *surface, PRectangle &rc, Font &fontForCharacter, typeOfFold tFold);
+	void SetRGBAImage(Point sizeRGBAImage, float scale, const unsigned char *pixelsRGBAImage);
+	void AlignedPolygon(Surface *surface, const Point *pts, size_t npts) const;
+	void Draw(Surface *surface, const PRectangle &rcWhole, const Font *fontForCharacter, FoldPart part, Scintilla::MarginType marginStyle) const;
+	void DrawFoldingMark(Surface *surface, const PRectangle &rcWhole, FoldPart part) const;
 };
 
-#ifdef SCI_NAMESPACE
 }
-#endif
 
 #endif

@@ -28,30 +28,7 @@ to the start of the match.  The #Start and #End fields record the position of th
 #include <map>
 #include <algorithm>
 
-#include "Platform.h"
-#include "ILexer.h"
-#include "Scintilla.h"
-#include "PropSetSimple.h"
-#include "SplitVector.h"
-#include "Partitioning.h"
-#include "RunStyles.h"
-#include "ContractionState.h"
-#include "CellBuffer.h"
-#include "CallTip.h"
-#include "KeyMap.h"
-#include "Indicator.h"
-#include "XPM.h"
-#include "LineMarker.h"
-#include "Style.h"
-#include "ViewStyle.h"
-#include "AutoComplete.h"
-#include "CharClassify.h"
-#include "Decoration.h"
-#include "Document.h"
-#include "Selection.h"
-#include "PositionCache.h"
-#include "Editor.h"
-#include "ScintillaBase.h"
+#include "engine_headers.h"
 
 #include <kotuku/main.h>
 #include <kotuku/modules/display.h>
@@ -78,21 +55,23 @@ class extScintillaSearch : public objScintillaSearch {
 //********************************************************************************************************************
 // Record the user's selection as the range for STF::SCAN_SELECTION searches.
 
-static void record_selection(extScintillaSearch *Self)
+static ERR record_selection(extScintillaSearch *Self)
 {
-   Self->ScanStart = SCICALL(SCI_GETSELECTIONSTART);
-   Self->ScanEnd   = SCICALL(SCI_GETSELECTIONEND);
+   if (not KotukuScintilla::PublicInteger(SCICALL(SCI_GETSELECTIONSTART), Self->ScanStart) or
+       not KotukuScintilla::PublicInteger(SCICALL(SCI_GETSELECTIONEND), Self->ScanEnd)) return ERR::OutOfRange;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
 // Search for the Text between two positions.  If End is less than Start, the search is backwards.  Returns the
 // position of the match, or -1 if there is no match.  On success the Scintilla target is set to the match.
 
-static int search_range(extScintillaSearch *Self, int Start, int End)
+static sptr_t search_range(extScintillaSearch *Self, int Start, int End)
 {
    SCICALL(SCI_SETTARGETSTART, Start);
    SCICALL(SCI_SETTARGETEND, End);
-   return SCICALL(SCI_SEARCHINTARGET, (unsigned long)Self->Text.size(), Self->Text.c_str());
+   SCICALL(SCI_SETSTATUS, uptr_t(SC_STATUS_OK));
+   return SCICALL(SCI_SEARCHINTARGET, (uptr_t)Self->Text.size(), Self->Text.c_str());
 }
 
 //********************************************************************************************************************
@@ -104,6 +83,8 @@ static ERR search(extScintillaSearch *Self, int From, bool Backwards)
    kt::Log log(__FUNCTION__);
 
    if (Self->Text.empty()) return log.warning(ERR::FieldNotSet);
+   if ((Self->Text.size() > size_t(KotukuScintilla::document_limit)) or
+       not ((extScintilla *)Self->Scintilla)->API->panPublicDocument()) return ERR::OutOfRange;
 
    SCICALL(SCI_SETSEARCHFLAGS, (((Self->Flags & STF::CASE) != STF::NIL) ? SCFIND_MATCHCASE : 0) |
       (((Self->Flags & STF::EXPRESSION) != STF::NIL) ? SCFIND_REGEXP : 0));
@@ -124,18 +105,23 @@ static ERR search(extScintillaSearch *Self, int From, bool Backwards)
 
    log.trace("Search from %d %s within %d - %d", From, Backwards ? "backwards" : "forwards", range_start, range_end);
 
-   int pos = search_range(Self, From, Backwards ? range_start : range_end);
+   int pos;
+   if (not KotukuScintilla::PublicInteger(search_range(Self, From, Backwards ? range_start : range_end), pos))
+      return ERR::OutOfRange;
+   if (SCICALL(SCI_GETSTATUS) IS SC_STATUS_WARN_REGEX) return ERR::Syntax;
 
    if ((pos IS -1) and ((Self->Flags & STF::WRAP) != STF::NIL)) {
       log.trace("Wrap-around");
-      if (Backwards) pos = search_range(Self, range_end, range_start);
-      else pos = search_range(Self, range_start, range_end);
+      const auto result = Backwards ? search_range(Self, range_end, range_start) :
+         search_range(Self, range_start, range_end);
+      if (not KotukuScintilla::PublicInteger(result, pos)) return ERR::OutOfRange;
+      if (SCICALL(SCI_GETSTATUS) IS SC_STATUS_WARN_REGEX) return ERR::Syntax;
    }
 
    if (pos IS -1) return ERR::Search;
 
-   Self->Start = SCICALL(SCI_GETTARGETSTART);
-   Self->End   = SCICALL(SCI_GETTARGETEND);
+   if (not KotukuScintilla::PublicInteger(SCICALL(SCI_GETTARGETSTART), Self->Start) or
+       not KotukuScintilla::PublicInteger(SCICALL(SCI_GETTARGETEND), Self->End)) return ERR::OutOfRange;
 
    // Expand any folded lines that contain the match
 
@@ -162,7 +148,9 @@ static ERR continue_search(extScintillaSearch *Self, bool Backwards)
 {
    if (Self->Text.empty()) return kt::Log(__FUNCTION__).warning(ERR::FieldNotSet);
 
-   if (((Self->Flags & STF::SCAN_SELECTION) != STF::NIL) and (Self->ScanStart < 0)) record_selection(Self);
+   if (((Self->Flags & STF::SCAN_SELECTION) != STF::NIL) and (Self->ScanStart < 0)) {
+      if (auto error = record_selection(Self); error != ERR::Okay) return error;
+   }
 
    int from = SCICALL(SCI_GETCURRENTPOS);
    if (Self->Start >= 0) {
@@ -181,7 +169,7 @@ static ERR continue_search(extScintillaSearch *Self, bool Backwards)
                if ((Self->Flags & STF::WRAP) IS STF::NIL) return ERR::Search;
                from = Backwards ? range_end : range_start;
             }
-            else from += Backwards ? -1 : 1;
+            else from = int(SCICALL(Backwards ? SCI_POSITIONBEFORE : SCI_POSITIONAFTER, from));
          }
       }
    }
@@ -233,7 +221,7 @@ static ERR SCINTILLASEARCH_Find(extScintillaSearch *Self, struct ss::Find *Args)
 
    int from = Args->From;
    if ((Self->Flags & STF::SCAN_SELECTION) != STF::NIL) {
-      record_selection(Self);
+      if (auto error = record_selection(Self); error != ERR::Okay) return error;
       if (from < 0) from = backwards ? Self->ScanEnd : Self->ScanStart;
    }
    else if (from < 0) from = SCICALL(SCI_GETCURRENTPOS);
@@ -258,6 +246,8 @@ static ERR SCINTILLASEARCH_Init(extScintillaSearch *Self)
 
    if (!Self->Scintilla->initialised()) return log.warning(ERR::NotInitialised);
    if (Self->Text.empty()) return log.warning(ERR::FieldNotSet);
+   if ((Self->Text.size() > size_t(KotukuScintilla::document_limit)) or
+       not ((extScintilla *)Self->Scintilla)->API->panPublicDocument()) return ERR::OutOfRange;
 
    return ERR::Okay;
 }
