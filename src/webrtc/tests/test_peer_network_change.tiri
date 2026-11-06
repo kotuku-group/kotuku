@@ -37,9 +37,25 @@ function networkChangeLifecycle(Scenario:str)
    processing.sleep(0.3)
    assert(notifications is 1, 'Burst emitted duplicate restart requests')
    if scenario is 'fail' then
+      local failed = {}
+      local closes = 0
+      for _, child in array<obj> { channel, expiring, closing } do
+         child.onError = function(Child, Error)
+            assert(Child.state is WCS_CLOSED and Error is ERR_Timeout and Child.error is Error,
+               'Recovery failure was not visible before its channel error')
+            assert(not failed[Child.label], 'Recovery repeated a channel error')
+            failed[Child.label] = true
+         end
+         child.onClose = function(Child)
+            assert(failed[Child.label], 'Recovery closed a channel before its error')
+            closes += 1
+         end
+      end
       channelTest.waitFor(function() return first.state is RTCS_FAILED end, 32)
+      channelTest.waitFor(function() return closes is 3 end)
       assert(channel.state is WCS_CLOSED and first.error is ERR_Timeout, 'Permanent loss did not fail boundedly')
       check first.mtClose()
+      assert(closes is 3, 'Explicit close repeated recovery terminal notifications')
       assert(first.restartRequired is 0, 'Close retained a pending request')
       return
    end

@@ -136,14 +136,23 @@ private:
       std::vector<net::mdns::Address> addresses; // Preserve the private mapping for future selected-route privacy.
    };
 
-   struct ServerJob { // Gathering from one IceServers entry
-      PeerConnection *owner;
+   struct ServerJob { // Gathering from one IceServers entry, or the legacy StunServer
+      PeerConnection *owner = nullptr;
       IceServer server;
       objNetLookup *lookup = nullptr;
       std::vector<ice::Endpoint> endpoints; // Resolved addresses that have not yet been tried
       uint64_t started = 0, alternate = 0;
       bool scheduled = false, resolved = false, dispatched = false;
+      bool legacy = false;
+
+      ServerJob() = default;
+      ServerJob(const ServerJob &) = delete;
+      ServerJob & operator=(const ServerJob &) = delete;
+      ~ServerJob() { cancel_lookup(); }
+      void cancel_lookup();
    };
+
+   enum class Failure { GATHERING, NETWORK_CHANGE, RESTART, RECOVERY, TRANSPORT };
 
    // Gathering and routes
 
@@ -155,18 +164,21 @@ private:
    void finish_remote();
    static ERR server_lookup_complete(objNetLookup *Lookup, ERR Error, std::string_view HostName,
       const std::vector<IPAddress> &Addresses, APTR Context);
+   ERR prepare_lookup(ServerJob &Job);
+   bool expire_lookup(ServerJob &Job, uint64_t NowUs);
    void gather_servers(uint64_t NowUs);
    void cancel_servers();
-   static ERR lookup_complete(objNetLookup *Lookup, ERR Error, std::string_view HostName,
-      const std::vector<IPAddress> &Addresses, APTR Context);
    void resolved_stun_server(ERR Error, const std::vector<IPAddress> &Addresses);
    void release_lookup();
+   ERR progress_gathering(uint64_t NowUs);
 
    // Transport and channels
 
    [[nodiscard]] ERR ensure_socket(ice::Role IceRole, DtlsRole DtlsRole);
    [[nodiscard]] ERR configure_remote();
    void update_state();
+   void fail(ERR Error, Failure Source);
+   void fail_transport(ERR Error);
    [[nodiscard]] ERR pump_sctp(uint64_t NowUs);
    void collect_channel_events();
    void terminate_channels(ERR Error);
@@ -264,8 +276,7 @@ private:
    std::string local_ufrag;
    std::string local_password;
    ice::Endpoint stun_server;            // Legacy StunServer
-   objNetLookup *stun_lookup = nullptr;
-   uint16_t stun_port = 0;
+   ServerJob legacy_stun;                // Stable callback context, owned for the engine's lifetime
    ERR stun_lookup_error = ERR::Okay;
    bool stun_lookup_pending = false;
    bool local_sockets_ready = false;

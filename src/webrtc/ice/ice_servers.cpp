@@ -150,38 +150,17 @@ ERR url(std::string_view Text, IceServer &Server)
 
    if (Text.empty() or Text.find_first_of("/@#?\\ \t\r\n") != std::string_view::npos) return ERR::InvalidValue;
 
-   std::string_view host, port;
-   if (Text.starts_with('[')) {
-      auto close = Text.find(']');
-      if (close IS std::string_view::npos) return ERR::InvalidValue;
+   std::string_view host;
+   if (not split_server_address(Text, host, Server.port)) return ERR::InvalidValue;
 
-      host = Text.substr(1, close - 1);
+   if (Text.starts_with('[')) {
       ice::Endpoint parsed;
       if (not ice::parse_numeric_endpoint("[" + std::string(host) + "]:1", parsed)) return ERR::InvalidValue;
-
-      if (close + 1 < Text.size()) {
-         if (Text[close + 1] != ':') return ERR::InvalidValue;
-         port = Text.substr(close + 2);
-      }
    }
    else {
-      auto colon = Text.find(':');
-      host = Text.substr(0, colon);
-      if (colon != std::string_view::npos) port = Text.substr(colon + 1);
       if (host.find_first_of("[]") != std::string_view::npos) return ERR::InvalidValue;
       for (char ch : host) if (not ((ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or
           (ch >= '0' and ch <= '9') or ch IS '.' or ch IS '-')) return ERR::InvalidValue;
-   }
-
-   if (host.empty() or host.size() > 253 or (port.empty() and Text.ends_with(':'))) return ERR::InvalidValue;
-
-   if (not port.empty()) {
-      uint32_t number = 0;
-      auto [end, error] = std::from_chars(port.data(), port.data() + port.size(), number);
-      if (error != std::errc() or end != port.data() + port.size() or not number or number > 65535) {
-         return ERR::InvalidValue;
-      }
-      Server.port = uint16_t(number);
    }
 
    Server.host = host;
@@ -189,6 +168,45 @@ ERR url(std::string_view Text, IceServer &Server)
 }
 
 } // namespace
+
+//********************************************************************************************************************
+// Shares bracket and port parsing between IceServers URIs and the legacy STUN address syntax.  Legacy bare addresses
+// require an explicit port; URI callers retain their scheme's default port.  Host validation remains caller-specific.
+
+bool split_server_address(std::string_view Text, std::string_view &Host, uint16_t &Port, bool RequirePort)
+{
+   std::string_view port;
+   if (Text.starts_with('[')) {
+      auto close = Text.find(']');
+      if (close IS std::string_view::npos) return false;
+      Host = Text.substr(1, close - 1);
+      if (close + 1 < Text.size()) {
+         if (Text[close + 1] != ':') return false;
+         port = Text.substr(close + 2);
+      }
+      else if (RequirePort) return false;
+   }
+   else {
+      auto colon = Text.find(':');
+      if (colon IS std::string_view::npos) {
+         if (RequirePort) return false;
+         Host = Text;
+      }
+      else {
+         Host = Text.substr(0, colon);
+         port = Text.substr(colon + 1);
+      }
+   }
+
+   if (Host.empty() or Host.size() > 253 or (port.empty() and Text.ends_with(':'))) return false;
+   if (not port.empty()) {
+      uint32_t number = 0;
+      auto [end, error] = std::from_chars(port.data(), port.data() + port.size(), number);
+      if (error != std::errc() or end != port.data() + port.size() or not number or number > 65535) return false;
+      Port = uint16_t(number);
+   }
+   return true;
+}
 
 //********************************************************************************************************************
 // Parses the ICE server configuration.  At most eight servers are permitted.  TURN servers require credentials and

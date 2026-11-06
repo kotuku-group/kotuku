@@ -3,6 +3,30 @@
 #include <cstdio>
 
 int main() {
+   struct Valid {
+      const char *url, *host;
+      uint16_t port;
+      rtc::ServerTransport transport;
+   };
+   for (const auto &value : {
+        Valid{"stun:localhost", "localhost", 3478, rtc::ServerTransport::STUN},
+        Valid{"stun:[::1]:65535", "::1", 65535, rtc::ServerTransport::STUN},
+        Valid{"turn:127.0.0.1:1?transport=tcp", "127.0.0.1", 1, rtc::ServerTransport::TCP},
+        Valid{"turns:[::1]", "::1", 5349, rtc::ServerTransport::TLS}}) {
+      auto credentials = value.transport IS rtc::ServerTransport::STUN ? "" :
+         ",\"username\":\"user\",\"credential\":\"pass\"";
+      std::vector<rtc::IceServer> parsed;
+      if (rtc::parse_ice_servers(std::string("[{\"url\":\"") + value.url + "\"" + credentials + "}]", parsed)
+          != ERR::Okay or parsed.size() != 1 or parsed[0].host != value.host or parsed[0].port != value.port or
+          parsed[0].transport != value.transport) return 2;
+   }
+   for (auto url : {"STUN:localhost", "localhost:3478", "stun:[]", "stun:[localhost]", "stun:[::1]extra",
+        "stun:localhost:", "stun:localhost:0", "stun:localhost:65536", "stun:localhost:12x",
+        "stun:localhost:1:2", "stun:user@localhost", "stun:local_host", "stun:localhost?transport=udp"}) {
+      std::vector<rtc::IceServer> parsed;
+      if (rtc::parse_ice_servers(std::string("[{\"url\":\"") + url + "\"}]", parsed) IS ERR::Okay) return 3;
+   }
+
    const std::string prefix = R"([{"url":"turn:localhost","username":")";
    const std::string suffix = R"(","credential":"pass"}])";
    const std::string expected = "A\xc2\xa3\xe2\x82\xac\xf0\x9f\x98\x80";

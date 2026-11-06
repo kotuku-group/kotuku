@@ -25,7 +25,6 @@
 #include <openssl/rand.h>
 
 #include <algorithm>
-#include <charconv>
 #include <chrono>
 #include <utility>
 
@@ -76,76 +75,96 @@ bool stun_target(std::string_view Address, std::string_view &Host, uint16_t &Por
       return false;
    }
 
-   std::string_view port_text;
-   if (Address.starts_with('[')) {
-      auto close = Address.find(']');
-      if (close IS std::string_view::npos) return false;
-      Host = Address.substr(1, close - 1);
-      if (close + 1 < Address.size()) {
-         if (Address[close + 1] != ':') return false;
-         port_text = Address.substr(close + 2);
-      }
-      else if (not uri) return false;
-   }
-   else {
-      auto colon = Address.find(':');
-      if (colon IS std::string_view::npos) {
-         if (not uri) return false;
-         Host = Address;
-      }
-      else {
-         if (Address.find(':', colon + 1) != std::string_view::npos) return false;
-         Host = Address.substr(0, colon);
-         port_text = Address.substr(colon + 1);
-      }
-   }
-
-   if (Host.empty() or Host.size() > 253 or (port_text.empty() and Address.ends_with(':'))) return false;
-
    Port = 3478;
-   if (not port_text.empty()) {
-      uint32_t parsed = 0;
-      auto [end, error] = std::from_chars(port_text.data(), port_text.data() + port_text.size(), parsed);
-      if (error != std::errc() or end != port_text.data() + port_text.size() or parsed IS 0 or parsed > 65535) {
-         return false;
-      }
-      Port = uint16_t(parsed);
-   }
+   return split_server_address(Address, Host, Port, not uri);
+}
 
-   return true;
+//********************************************************************************************************************
+// Retains the first usable DNS result per permitted family, IPv4 first.  Legacy STUN additionally restricts families
+// to those with a local host interface; IceServers keeps both permitted families for staggered dispatch.
+
+std::vector<ice::Endpoint> server_endpoints(const std::vector<IPAddress> &Addresses, uint16_t Port,
+   bool IPv4, bool IPv6)
+{
+   std::vector<ice::Endpoint> result;
+   for (bool ipv6 : {false, true}) {
+      if (ipv6 ? not IPv6 : not IPv4) continue;
+      for (auto ip : Addresses) {
+         if (ip.Type != (ipv6 ? IPADDR::V6 : IPADDR::V4)) continue;
+         std::string text;
+         if (net::AddressToStr(&ip, &text) != ERR::Okay) continue;
+         ice::Endpoint endpoint;
+         if (not ice::parse_numeric_endpoint((ipv6 ? "[" : "") + text + (ipv6 ? "]:" : ":") +
+             std::to_string(Port), endpoint)) continue;
+         result.push_back(endpoint);
+         break;
+      }
+   }
+   return result;
 }
 
 } // namespace
 
 //********************************************************************************************************************
 
-PeerConnection::PeerConnection(PeerCallbacks Callbacks) : callbacks(std::move(Callbacks)) { }
+PeerConnection::PeerConnection(PeerCallbacks Callbacks) : callbacks(std::move(Callbacks))
+{
+   legacy_stun.owner = this;
+   legacy_stun.legacy = true;
+}
 
 PeerConnection::~PeerConnection() { close(); }
 
 //********************************************************************************************************************
-// Cancels the legacy StunServer lookup.
+// Cancels DNS owned by a gathering job, including the legacy StunServer job.
+
+void PeerConnection::ServerJob::cancel_lookup()
+{
+   if (lookup) {
+      FreeResource(lookup);
+      lookup = nullptr;
+   }
+}
+
+//********************************************************************************************************************
 
 void PeerConnection::release_lookup()
 {
-   if (stun_lookup) {
-      FreeResource(stun_lookup);
-      stun_lookup = nullptr;
-   }
+   legacy_stun.cancel_lookup();
    stun_lookup_pending = false;
 }
 
 //********************************************************************************************************************
-// NetLookup callback for the legacy StunServer.  Results for a superseded lookup are ignored.
+// Prepares a lookup with a stable job context before resolveName(), which can complete synchronously from cache.
+// Failed replacement leaves the previous lookup owned by its job.  NetLookup workers deliver by object ID, so
+// cancelling the object also prevents queued or late DNS results from accessing a retired job.
 
-ERR PeerConnection::lookup_complete(objNetLookup *Lookup, ERR Error, std::string_view,
-   const std::vector<IPAddress> &Addresses, APTR Context)
+ERR PeerConnection::prepare_lookup(ServerJob &Job)
 {
-   auto self = (PeerConnection *)Context;
-   if (self and Lookup IS self->stun_lookup and self->current_state != PeerState::CLOSED) {
-      self->resolved_stun_server(Error, Addresses);
+   auto lookup = objNetLookup::create::local();
+   if (not lookup) return ERR::CreateObject;
+   if (auto error = lookup->setCallback(C_FUNCTION(server_lookup_complete, &Job)); error != ERR::Okay) {
+      FreeResource(lookup);
+      return error;
    }
+
+   Job.cancel_lookup();
+   Job.lookup = lookup;
+   Job.resolved = false;
    return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// DNS has the same five-second budget for both interfaces.  Legacy STUN starts this budget when routes open;
+// IceServers starts it when the concurrency scheduler admits the job.
+
+bool PeerConnection::expire_lookup(ServerJob &Job, uint64_t NowUs)
+{
+   if (Job.resolved or NowUs - Job.started < 5000000) return false;
+   Job.cancel_lookup();
+   Job.resolved = true;
+   stun_lookup_error = ERR::Timeout;
+   return true;
 }
 
 //********************************************************************************************************************
@@ -164,31 +183,20 @@ void PeerConnection::resolved_stun_server(ERR Error, const std::vector<IPAddress
    auto hosts = ice::gather_host_candidates(1, false, not (policy & POLICY_DISABLE_IPV6));
    if (hosts.empty()) hosts = ice::gather_host_candidates(1, true, not (policy & POLICY_DISABLE_IPV6));
 
-   for (bool ipv6 : {false, true}) {
-      if (std::none_of(hosts.begin(), hosts.end(), [ipv6](const ice::Candidate &Candidate) {
-          return Candidate.endpoint.ipv6 IS ipv6;
-      })) continue;
-
-      for (auto ip : Addresses) {
-         if (ip.Type != (ipv6 ? IPADDR::V6 : IPADDR::V4)) continue;
-
-         std::string address_text;
-         if (net::AddressToStr(&ip, &address_text) != ERR::Okay) continue;
-
-         auto text = std::string(ipv6 ? "[" : "") + address_text +
-            (ipv6 ? "]" : "") + ":" + std::to_string(stun_port);
-         ice::Endpoint parsed;
-         if (not ice::parse_numeric_endpoint(text, parsed)) continue;
-
-         stun_server = parsed;
-         has_stun_server = true;
-         if (socket and local_sockets_ready and
-             not socket->start_server_reflexive(stun_server, now_us())) {
-            has_stun_server = false;
-            stun_lookup_error = ERR::NoSupport;
-         }
-         return;
+   auto has_family = [&](bool IPv6) {
+      return std::any_of(hosts.begin(), hosts.end(), [IPv6](const ice::Candidate &Candidate) {
+         return Candidate.endpoint.ipv6 IS IPv6;
+      });
+   };
+   auto endpoints = server_endpoints(Addresses, legacy_stun.server.port, has_family(false), has_family(true));
+   if (not endpoints.empty()) {
+      stun_server = endpoints.front();
+      has_stun_server = true;
+      if (socket and local_sockets_ready and not socket->start_server_reflexive(stun_server, now_us())) {
+         has_stun_server = false;
+         stun_lookup_error = ERR::NoSupport;
       }
+      return;
    }
 
    stun_lookup_error = ERR::NoSupport;
@@ -229,22 +237,15 @@ ERR PeerConnection::set_stun_server(std::string_view Address)
 
    if (numeric or host.find_first_of("[]:") != std::string_view::npos) return ERR::InvalidData;
 
-   auto lookup = objNetLookup::create::local();
-   if (not lookup) return ERR::CreateObject;
+   if (auto error = prepare_lookup(legacy_stun); error != ERR::Okay) return error;
 
-   if (auto error = lookup->setCallback(C_FUNCTION(lookup_complete, this)); error != ERR::Okay) {
-      FreeResource(lookup);
-      return error;
-   }
-
-   release_lookup();
-   stun_lookup = lookup;
    stun_lookup_pending = true;
    stun_lookup_error = ERR::Okay;
-   stun_port = port;
+   legacy_stun.server.port = port;
+   legacy_stun.server.host = host;
    has_stun_server = false;
 
-   if (auto error = lookup->resolveName(host); error != ERR::Okay) {
+   if (auto error = legacy_stun.lookup->resolveName(host); error != ERR::Okay) {
       release_lookup();
       return error;
    }
@@ -276,15 +277,11 @@ ERR PeerConnection::set_policy(uint32_t Flags)
 
 void PeerConnection::cancel_servers()
 {
-   for (auto &job : server_jobs) if (job->lookup) {
-      FreeResource(job->lookup);
-      job->lookup = nullptr;
-   }
    server_jobs.clear();
 }
 
 //********************************************************************************************************************
-// NetLookup callback for an IceServers job.  One address of each permitted family is retained, IPv4 first.
+// NetLookup callback shared by legacy STUN and IceServers jobs.  Results from a superseded lookup are ignored.
 
 ERR PeerConnection::server_lookup_complete(objNetLookup *Lookup, ERR Error, std::string_view,
    const std::vector<IPAddress> &Addresses, APTR Context)
@@ -293,25 +290,18 @@ ERR PeerConnection::server_lookup_complete(objNetLookup *Lookup, ERR Error, std:
    if (not job or Lookup != job->lookup or job->owner->current_state IS PeerState::CLOSED) return ERR::Okay;
 
    job->resolved = true;
+   if (job->legacy) {
+      job->owner->resolved_stun_server(Error, Addresses);
+      return ERR::Okay;
+   }
+
    if (Error != ERR::Okay) {
       job->owner->stun_lookup_error = Error;
       return ERR::Okay;
    }
 
-   for (bool ipv6 : {false, true}) {
-      if (ipv6 and (job->owner->policy & POLICY_DISABLE_IPV6)) continue;
-      for (auto ip : Addresses) {
-         if (ip.Type != (ipv6 ? IPADDR::V6 : IPADDR::V4)) continue;
-         std::string text;
-         if (net::AddressToStr(&ip, &text) != ERR::Okay) continue;
-         ice::Endpoint endpoint;
-         if (ice::parse_numeric_endpoint((ipv6 ? "[" : "") + text + (ipv6 ? "]:" : ":") +
-             std::to_string(job->server.port), endpoint)) {
-            job->endpoints.push_back(endpoint);
-            break;
-         }
-      }
-   }
+   job->endpoints = server_endpoints(Addresses, job->server.port, true,
+      not (job->owner->policy & POLICY_DISABLE_IPV6));
 
    return ERR::Okay;
 }
@@ -340,23 +330,14 @@ void PeerConnection::gather_servers(uint64_t NowUs)
             job->resolved = true;
          }
          else {
-            job->lookup = objNetLookup::create::local();
-            if (not job->lookup or job->lookup->setCallback(C_FUNCTION(server_lookup_complete, job.get())) !=
-                ERR::Okay or job->lookup->resolveName(job->server.host) != ERR::Okay) {
+            if (prepare_lookup(*job) != ERR::Okay or job->lookup->resolveName(job->server.host) != ERR::Okay) {
                job->resolved = true;
                stun_lookup_error = ERR::Failed;
             }
          }
       }
 
-      if (not job->resolved and NowUs - job->started >= 5000000) {
-         if (job->lookup) {
-            FreeResource(job->lookup);
-            job->lookup = nullptr;
-         }
-         job->resolved = true;
-         stun_lookup_error = ERR::Timeout;
-      }
+      (void)expire_lookup(*job, NowUs);
 
       if (not job->resolved or job->dispatched or socket->pending_relays() >= 4) continue;
       if (job->alternate and NowUs < job->alternate) continue;
@@ -463,6 +444,7 @@ ERR PeerConnection::gather_routes()
    }
 
    gathering_started = now_us();
+   legacy_stun.started = gathering_started;
    gather_state = (not (policy & (POLICY_NO_MDNS | POLICY_NO_HOST | POLICY_RELAY_ONLY)) or
       has_stun_server or stun_lookup_pending or not ice_servers.empty() or (policy & POLICY_RELAY_ONLY)) ?
       GatheringState::GATHERING : GatheringState::COMPLETE;
@@ -766,10 +748,7 @@ void PeerConnection::network_changed(uint64_t NowUs)
    if (socket->state() != DtlsState::CONNECTED) {
       // Initial DTLS negotiation has no retained session to recover through the supported restart contract.
       mdns_error = ERR::Disconnected;
-      current_state = PeerState::FAILED;
-      terminate_channels(mdns_error);
-      if (callbacks.state) callbacks.state(current_state);
-      wake();
+      fail(mdns_error, Failure::NETWORK_CHANGE);
       return;
    }
 
@@ -811,11 +790,7 @@ ERR PeerConnection::restart_routes(std::string Ufrag, std::string Password)
    auto error = gather_routes();
    if (error != ERR::Okay and current_state != PeerState::CLOSED) {
       mdns_error = error;
-      current_state = PeerState::FAILED;
-      if (association) association->abort(error);
-      terminate_channels(error);
-      if (callbacks.state) callbacks.state(current_state);
-      wake();
+      fail(error, Failure::RESTART);
    }
 
    return error;
@@ -1024,9 +999,7 @@ ERR PeerConnection::configure_remote()
    if (not socket->start_ice(now_us())) {
       // No registered host or relay remains.  Fail without exposing a numeric fallback.
       mdns_error = ERR::Timeout;
-      current_state = PeerState::FAILED;
-      terminate_channels(mdns_error);
-      if (callbacks.state) callbacks.state(current_state);
+      fail(mdns_error, Failure::GATHERING);
       return mdns_error;
    }
 
@@ -1069,6 +1042,44 @@ ERR PeerConnection::add_ice_candidate(std::string_view Text)
 }
 
 //********************************************************************************************************************
+// Preserves the terminal transition ordering of each failure source:
+// - Gathering and pre-DTLS network changes close channels without aborting SCTP.
+// - A restart aborts SCTP before closing channels; recovery timeout closes channels before aborting SCTP.
+// - Transport state closes channels first, then aborts a still-live association and clears its queued input.
+//   Transport errors already abort with their specific error in fail_transport(), before ICE state notification.
+// Every channel queues ERROR before CLOSE.  Direct failures always notify; derived transport state notifies only on
+// change.  Only restart and network-change failures request a wake, after the state callback (which may close us).
+
+void PeerConnection::fail(ERR Error, Failure Source)
+{
+   auto changed = current_state != PeerState::FAILED;
+   if (Source != Failure::TRANSPORT) current_state = PeerState::FAILED;
+
+   if (Source IS Failure::RESTART and association) association->abort(Error);
+   terminate_channels(Error);
+   if (Source IS Failure::RECOVERY and association) association->abort(Error);
+   if (Source IS Failure::TRANSPORT and association and association->state() != SctpState::FAILED) {
+      association->abort();
+      sctp_input.clear();
+      sctp_input_bytes = 0;
+   }
+
+   current_state = PeerState::FAILED;
+   if ((changed or Source != Failure::TRANSPORT) and callbacks.state) callbacks.state(current_state);
+   if (Source IS Failure::RESTART or Source IS Failure::NETWORK_CHANGE) wake();
+}
+
+//********************************************************************************************************************
+// A transport/pump error preserves its error on SCTP and channels before update_state() reports ICE and peer state.
+
+void PeerConnection::fail_transport(ERR Error)
+{
+   if (association) association->abort(Error);
+   terminate_channels(Error);
+   update_state();
+}
+
+//********************************************************************************************************************
 // Derives the connection state from ICE, DTLS and SCTP, and reports changes through the state callbacks.  A failed
 // connection aborts the association and closes every channel.
 
@@ -1098,12 +1109,9 @@ void PeerConnection::update_state()
       recovery_started = 0;
    }
 
-   if (next IS PeerState::FAILED) terminate_channels(ERR::Failed);
-
-   if (next IS PeerState::FAILED and association and association->state() != SctpState::FAILED) {
-      association->abort();
-      sctp_input.clear();
-      sctp_input_bytes = 0;
+   if (next IS PeerState::FAILED) {
+      fail(ERR::Failed, Failure::TRANSPORT);
+      return;
    }
 
    if (next != current_state) {
@@ -1126,10 +1134,7 @@ ERR PeerConnection::tick(uint64_t NowUs)
 
    if (needs_restart and NowUs - recovery_started >= 30000000) {
       mdns_error = ERR::Timeout;
-      current_state = PeerState::FAILED;
-      terminate_channels(ERR::Timeout);
-      if (association) association->abort(ERR::Timeout);
-      if (callbacks.state) callbacks.state(current_state);
+      fail(ERR::Timeout, Failure::RECOVERY);
       return ERR::Timeout;
    }
 
@@ -1137,89 +1142,89 @@ ERR PeerConnection::tick(uint64_t NowUs)
    if (current_state IS PeerState::CLOSED) return ERR::InvalidState;
 
    if (mdns_error != ERR::Okay) {
-      current_state = PeerState::FAILED;
-      terminate_channels(mdns_error);
-      if (callbacks.state) callbacks.state(current_state);
+      fail(mdns_error, Failure::GATHERING);
       return mdns_error;
    }
 
-   if (stun_lookup_pending and gathering_started and NowUs - gathering_started >= 5000000) {
-      release_lookup();
-      stun_lookup_error = ERR::Timeout;
-   }
+   if (stun_lookup_pending and gathering_started and expire_lookup(legacy_stun, NowUs)) stun_lookup_pending = false;
 
    if (socket and (ice_started or gather_state IS GatheringState::GATHERING)) {
       auto error = socket->handle_timeout(NowUs);
       if (error != ERR::Okay) {
-         if (association) association->abort(error);
-         terminate_channels(error);
-         update_state();
+         fail_transport(error);
          return error;
       }
 
-      if (gather_state IS GatheringState::GATHERING) gather_servers(NowUs);
-
-      for (const auto &candidate : socket->take_candidates()) {
-         ice::CandidateLine line;
-         line.foundation = "g" + std::to_string(local.data.candidates.size() + 1);
-         line.candidate = candidate;
-
-         // Related addresses are omitted: suppressed base addresses must not leak through relay/srflx SDP.
-
-         auto text = ice::format_candidate(line);
-         if (text.empty()) return ERR::Failed;
-         local.data.candidates.push_back(text);
-         local_changed();
-         if (callbacks.candidate) callbacks.candidate(text);
-         if (not socket or current_state IS PeerState::CLOSED) return ERR::InvalidState;
-      }
-
-      bool jobs_done = std::all_of(server_jobs.begin(), server_jobs.end(),
-         [](const auto &Job) { return Job->dispatched; });
-
-      if (gather_state IS GatheringState::GATHERING and ((jobs_done and not stun_lookup_pending and
-          not socket->gathering_pending() and (not mdns or not mdns->engine.pending())) or
-          NowUs - gathering_started >= 30000000)) {
-         gather_state = GatheringState::COMPLETE;
-         local.data.end_of_candidates = true;
-         local_changed();
-         cancel_servers();
-         socket->finish_gathering();
-         if (socket->gathering_error() != ERR::Okay) stun_lookup_error = socket->gathering_error();
-         refresh_local();
-
-         if (local.data.candidates.empty() and not (policy & (POLICY_NO_HOST | POLICY_RELAY_ONLY | POLICY_NO_MDNS))) {
-            mdns_error = ERR::Timeout;
-            current_state = PeerState::FAILED;
-            terminate_channels(mdns_error);
-            if (callbacks.state) callbacks.state(current_state);
-            return mdns_error;
-         }
-
-         if ((policy & POLICY_RELAY_ONLY) and socket->relay_error() != ERR::Okay) {
-            stun_lookup_error = socket->relay_error();
-            current_state = PeerState::FAILED;
-            terminate_channels(stun_lookup_error);
-            if (callbacks.state) callbacks.state(current_state);
-            return stun_lookup_error;
-         }
-      }
-      else refresh_local();
-
-      if (gather_state IS GatheringState::COMPLETE and local_committed and remote_committed and not ice_started) {
-         auto configured = configure_remote();
-         if (configured != ERR::Okay) return configured;
-      }
+      auto gathered = progress_gathering(NowUs);
+      if (gathered != ERR::Okay) return gathered;
 
       if (socket and current_state != PeerState::CLOSED) {
          auto sctp_error = pump_sctp(NowUs);
          if (sctp_error != ERR::Okay) {
-            if (association) association->abort(sctp_error);
-            terminate_channels(sctp_error);
+            fail_transport(sctp_error);
          }
-         update_state();
+         else update_state();
          if (sctp_error != ERR::Okay) return sctp_error;
       }
+   }
+
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
+// Advances server jobs, publishes candidates, completes gathering and applies deferred remote configuration.
+// Candidate callbacks may close the connection; retain the check before touching the socket again.
+
+ERR PeerConnection::progress_gathering(uint64_t NowUs)
+{
+   if (gather_state IS GatheringState::GATHERING) gather_servers(NowUs);
+
+   for (const auto &candidate : socket->take_candidates()) {
+      ice::CandidateLine line;
+      line.foundation = "g" + std::to_string(local.data.candidates.size() + 1);
+      line.candidate = candidate;
+
+      // Related addresses are omitted: suppressed base addresses must not leak through relay/srflx SDP.
+
+      auto text = ice::format_candidate(line);
+      if (text.empty()) return ERR::Failed;
+      local.data.candidates.push_back(text);
+      local_changed();
+      if (callbacks.candidate) callbacks.candidate(text);
+      if (not socket or current_state IS PeerState::CLOSED) return ERR::InvalidState;
+   }
+
+   bool jobs_done = std::all_of(server_jobs.begin(), server_jobs.end(),
+      [](const auto &Job) { return Job->dispatched; });
+
+   if (gather_state IS GatheringState::GATHERING and ((jobs_done and not stun_lookup_pending and
+       not socket->gathering_pending() and (not mdns or not mdns->engine.pending())) or
+       NowUs - gathering_started >= 30000000)) {
+      gather_state = GatheringState::COMPLETE;
+      local.data.end_of_candidates = true;
+      local_changed();
+      cancel_servers();
+      socket->finish_gathering();
+      if (socket->gathering_error() != ERR::Okay) stun_lookup_error = socket->gathering_error();
+      refresh_local();
+
+      if (local.data.candidates.empty() and not (policy & (POLICY_NO_HOST | POLICY_RELAY_ONLY | POLICY_NO_MDNS))) {
+         mdns_error = ERR::Timeout;
+         fail(mdns_error, Failure::GATHERING);
+         return mdns_error;
+      }
+
+      if ((policy & POLICY_RELAY_ONLY) and socket->relay_error() != ERR::Okay) {
+         stun_lookup_error = socket->relay_error();
+         fail(stun_lookup_error, Failure::GATHERING);
+         return stun_lookup_error;
+      }
+   }
+   else refresh_local();
+
+   if (gather_state IS GatheringState::COMPLETE and local_committed and remote_committed and not ice_started) {
+      auto configured = configure_remote();
+      if (configured != ERR::Okay) return configured;
    }
 
    return ERR::Okay;
