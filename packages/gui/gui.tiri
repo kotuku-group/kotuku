@@ -1815,7 +1815,7 @@ glStyleDefaults <const> = {
          gap       = 4,   -- Recommended gap between widgets (px at 96 DPI)
          margin    = 6,   -- Recommended internal margin for widgets (px at 96 DPI)
          labelGap  = 12,  -- Spacing between labels and the widget parts
-         edgeWidth = 1.5, -- Default stroke-width for widget edges (px at 96 DPI)
+         edgeWidth = 2,   -- Default stroke-width for widget edges (px at 96 DPI)
          edgeRound = 5    -- Default corner radius for widget edges (px at 96 DPI)
       }
    }
@@ -2665,13 +2665,13 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
       button = {
          bkgd      = { fill = Palette.bkgd, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
-         focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+         focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text      = { fill = Palette.text, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style },
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = Palette.prime, stroke = Palette.prime, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
             highlight = { fill = Palette.contrast, stroke = Palette.edge },
-            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
             text      = { fill = Palette.altText }
          }
       },
@@ -2739,13 +2739,13 @@ function darkTheme(Palette:table!, Edge:table!, Icon:func!):table
       },
       toolbar = {
          bkgd          = { fill = Palette.bkgd },
-         groupBorder   = { stroke = Palette.edge, strokeWidth = gui.pixel('1.5pt') },
+         groupBorder   = { stroke = Palette.edge, strokeWidth = gui.rpixel('1.5pt') },
          highlight     = { fill = Palette.contrast },
          icon          = Icon('fill(pearl)'),
          iconHighlight = Icon('fill(pearl)')
       },
       tooltip = {
-         bkgd = { fill = Palette.bkgd, roundX = gui.pixel('4pt'), roundY = gui.pixel('4pt'), strokeWidth = 2, stroke = Palette.edge },
+         bkgd = { fill = Palette.bkgd, roundX = gui.pixel('4pt'), roundY = gui.rpixel('4pt'), strokeWidth = 2, stroke = Palette.edge },
          text = { fill = Palette.text }
       },
       window = {
@@ -2771,7 +2771,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
          },
          border = {
             stroke      = Palette.mid,
-            strokeWidth = gui.pixel('1.5dp')
+            strokeWidth = gui.rpixel('1.5dp')
          },
          borderFocus = {
             stroke = Palette.contrast,
@@ -2795,13 +2795,13 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
       button = {
          bkgd      = { fill = Palette.inverse, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
          highlight = { fill = Palette.contrast },
-         focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+         focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
          text      = { fill = Palette.altText, face = gui.fonts.button.face, fontSize = string.format('%.2fpt', gui.fonts.button.size), fontStyle = gui.fonts.button.style, },
          disabled  = { },
          primary   = { -- Overrides for buttons created with the primary option
             bkgd      = { fill = Palette.prime, stroke = Palette.edge, strokeWidth = Edge.width, roundX = Edge.round, roundY = Edge.round, opacity = 1 },
             highlight = { fill = Palette.contrast, stroke = Palette.edge },
-            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width * 1.5 },
+            focus     = { stroke = Palette.contrast, strokeWidth = Edge.width },
             text      = { fill = Palette.altText }
          }
       },
@@ -2864,7 +2864,7 @@ function lightTheme(Palette:table!, Edge:table!, Icon:func!):table
       },
       toolbar = {
          bkgd          = { fill = Palette.surround },
-         groupBorder   = { stroke = Palette.inverse, strokeWidth = gui.pixel('1.5pt') },
+         groupBorder   = { stroke = Palette.inverse, strokeWidth = gui.rpixel('1.5pt') },
          highlight     = { fill = Palette.contrast },
          icon          = Icon('fill(carbon)'),
          iconHighlight = Icon('fill(pearl)')
