@@ -54,6 +54,8 @@ end
 
 @Test function EveryPublicLexerHasAProfile()
    local samples = array<table> {
+      { SCLEX_JSON, 'true', 'true', KEYWORD },
+      { SCLEX_MARKDOWN, '# Heading', 'Heading', KEYWORD, 2 },
       { SCLEX_CPP, 'int value;', 'int', KEYWORD },
       { SCLEX_TIRI, 'defer print(value) end', 'defer', KEYWORD },
       { SCLEX_PYTHON, 'def example():', 'def', KEYWORD },
@@ -348,5 +350,122 @@ end
       except ex
       end
       assert(not readable, f'{name} must not be publicly readable')
+   end
+end
+
+@Test function CustomKeywordsSurviveLexerSwitches()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
+   sci.string = 'Widget value;'
+   local revision = sci.documentRevision
+   local undo = sci.canUndo
+   check sci.mtSetKeywords(1, 'Widget')
+   check sci.mtColourise(0, sci.textLength)
+   render(scene)
+   expectToken(bmp, 'Widget', TYPE, 0, 0)
+   local buffer = array<byte, 256>
+   check sci.mtGetKeywords(1, buffer)
+   assert(buffer.getString(0, 6) is 'Widget', 'Keyword getter returns the override')
+   sci.lexer = SCLEX_JSON
+   sci.lexer = SCLEX_CPP
+   check sci.mtColourise(0, sci.textLength)
+   render(scene)
+   expectToken(bmp, 'Widget', TYPE, 0, 0)
+   assert(sci.documentRevision is revision and sci.canUndo is undo, 'Styling preserves revision and undo')
+   assert(sci.mtSetKeywords(99, 'bad') is ERR_NoSupport, 'Unsupported sets must fail')
+   assert(sci.mtSetKeywords(1, 'bad\0text') is ERR_Args, 'Embedded NUL must fail')
+   check sci.mtSetKeywords(1, '')
+   check sci.mtColourise(0, sci.textLength)
+   render(scene)
+   expectToken(bmp, 'Widget', TEXT, 0, 0)
+end
+
+@Test function LexerPropertiesAndNames()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_JSON })
+   sci.string = '// comment\ntrue'
+   check sci.mtSetLexerProperty('lexer.json.allow.comments', '1')
+   check sci.mtColourise(0, sci.textLength)
+   render(scene)
+   expectToken(bmp, '// comment', COMMENT, 0, 0)
+   assert(sci.mtSetLexerProperty('lexer.json.allow.comments', 'yes') is ERR_Args, 'Boolean validation')
+   assert(sci.mtSetLexerProperty('missing.property', '1') is ERR_NoSupport, 'Unknown property validation')
+   assert(sci.mtSetLexerProperty('fold', '1') is ERR_NoSupport, 'Folding is adapter-owned')
+   local buffer = array<byte, 32>
+   check sci.mtGetLexerProperty('lexer.json.allow.comments', buffer)
+   assert(buffer.getString(0, 1) is '1', 'Property getter returns the override')
+   sci.lexerName = 'markdown'
+   assert(sci.lexer is SCLEX_MARKDOWN and sci.lexerName is 'markdown', 'Names report numeric profiles')
+   sci.lexerName = 'json'
+   render(scene)
+   expectToken(bmp, '// comment', COMMENT, 0, 0)
+   assert(sci.supportedLexers.find('markdown') != nil and sci.supportedLexers.find('json') != nil,
+      'Enumeration includes new profiles')
+   local rejected = false
+   try
+      sci.lexerName = 'missing'
+   except ex
+      rejected = true
+   end
+   assert(rejected, 'Unknown lexer names must fail')
+   assert(sci.lexer is SCLEX_JSON, 'Failed selection preserves the current lexer')
+   sci.lexerName = 'lua'
+   assert(sci.lexer is SCLEX_TIRI and sci.lexerName is 'tiri', 'Aliases report their canonical profile')
+end
+
+@Test function DiagnosticThemeColoursAndExplicitColours()
+   local scene <close>, sci, bmp = newEditor()
+   sci.string = 'marked text'
+   check sci.mtDefineIndicator(8, SCIND_PLAIN, -1)
+   check sci.mtDefineIndicator(9, SCIND_PLAIN, 0x00ff00)
+   check sci.mtFillIndicator(8, 0, 6, 1)
+   check sci.mtFillIndicator(9, 7, 11, 2)
+   render(scene)
+   assert(pixelsOf(bmp, ERROR, 4, 0, 42, 16) > 0, 'Error underline renders')
+   assert(pixelsOf(bmp, '0,255,0', 53, 0, 28, 16) > 0, 'Explicit underline renders')
+   local theme <close> = obj.new('XML', { statement='<theme><palette error="blue"/></theme>' })
+   sci.themeXML = theme
+   render(scene)
+   assert(pixelsOf(bmp, '0,0,255', 4, 0, 42, 16) > 0, 'Theme references update')
+   assert(pixelsOf(bmp, '0,255,0', 53, 0, 28, 16) > 0, 'Explicit colours survive theme updates')
+end
+
+@Test function ConfigurationBuffersAndUnsupportedSettings()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP })
+   local buffer = array<byte, 4>
+   buffer[0] = 77
+   assert(sci.mtGetKeywords(0, buffer) is ERR_BufferOverflow, 'Keyword buffers include the terminator')
+   assert(buffer[0] is 77, 'Insufficient buffers must remain unchanged')
+   assert(sci.mtGetKeywords(-1, buffer) is ERR_NoSupport, 'Negative sets are unsupported')
+   sci.lexer = SCLEX_JSON
+   check sci.mtGetLexerProperty('lexer.json.allow.comments', buffer)
+   assert(buffer[0] is 0, 'Unset property overrides return an empty string')
+   check sci.mtSetLexerProperty('lexer.json.allow.comments', '1')
+   sci.lexer = SCLEX_CPP
+   assert(sci.mtGetLexerProperty('lexer.json.allow.comments', buffer) is ERR_NoSupport,
+      'Properties must be advertised by the selected lexer')
+   sci.lexer = SCLEX_JSON
+   check sci.mtGetLexerProperty('lexer.json.allow.comments', buffer)
+   assert(buffer[0] is 49 and buffer[1] is 0, 'The profile restores its own property override')
+   sci.lexer = SCLEX_MARKDOWN
+   assert(sci.mtSetKeywords(0, 'word') is ERR_NoSupport, 'Structural lexers can have no keyword sets')
+   assert(sci.mtColourise(1, 0) is ERR_OutOfRange, 'Recolouring validates ranges')
+   check sci.mtColourise(0, 0)
+end
+
+@Test function DetectsJSONAndMarkdownFiles()
+   local scene <close>, sci, bmp = newEditor({ flags=SCIF_DETECT_LEXER })
+   for sample in values(array<table> {
+      { 'temp:scintilla_phase3.json', 'true', SCLEX_JSON, 'true', 0 },
+      { 'temp:scintilla_phase3.md', '# Heading', SCLEX_MARKDOWN, 'Heading', 2 }
+   }) do
+      local path = sample[0]
+      defer mSys.DeleteFile(path) end
+      do
+         local file <close> = obj.new('File', { path=path, flags=FL_NEW|FL_WRITE })
+         check file.acWrite(sample[1])
+      end
+      sci.path = path
+      render(scene)
+      assert(sci.lexer is sample[2], 'File detection selects the new numeric profile')
+      expectToken(bmp, sample[3], KEYWORD, sample[4], 0)
    end
 end

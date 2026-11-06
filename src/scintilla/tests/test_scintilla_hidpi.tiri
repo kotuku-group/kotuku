@@ -350,3 +350,14 @@ end
       end
    end
 end
+
+@Test function DiagnosticIndicatorsUseDeviceScale()
+   for scale in values(array<double> { 1.5, 2 }) do
+      compareWithReference(scale, function(Editor)
+         check Editor.mtDefineIndicator(8, SCIND_SQUIGGLE, -1)
+         check Editor.mtFillIndicator(8, 0, 10, 1)
+         check Editor.mtDefineIndicator(9, SCIND_STRAIGHT_BOX, 0x00ff00)
+         check Editor.mtFillIndicator(9, 4, 12, 2)
+      end)
+   end
+end
