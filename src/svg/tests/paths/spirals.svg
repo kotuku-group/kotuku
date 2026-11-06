@@ -58,7 +58,7 @@
                  clockwise="false" stroke-linecap="square" stroke-linejoin="round"
                  fill="#67e8f9" stroke="#155e75" stroke-width="1"/>
 
-  <g font-family="DejaVu Sans" font-size="13" fill="#334155" text-anchor="middle">
+  <g font-family="Noto Sans" font-size="13" fill="#334155" text-anchor="middle">
     <text text-anchor="middle" x="740" y="210">Forward traversal</text>
     <text text-anchor="middle" x="930" y="210">reverse="true"</text>
     <text text-anchor="middle" x="520" y="425">Expanding: decay="1.6"</text>
@@ -69,7 +69,7 @@
     <text text-anchor="middle" x="730" y="640">thickness="12", round caps</text>
     <text text-anchor="middle" x="920" y="640">thickness="1%", square caps</text>
   </g>
-  <g font-family="DejaVu Sans" font-size="14" fill="#475569">
+  <g font-family="Noto Sans" font-size="14" fill="#475569">
     <text x="40" y="700">Filled dots mark path starts; the hollow dot marks the partial spiral's end.</text>
     <text x="40" y="725">Thickness percentages use the viewport's normalised diagonal.</text>
   </g>
