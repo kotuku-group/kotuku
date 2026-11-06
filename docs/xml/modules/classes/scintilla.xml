@@ -215,6 +215,28 @@ for one frame before the editor repaints.</li>
     </method>
 
     <method>
+      <name>CollapseFold</name>
+      <comment>Collapses a fold without toggling its current state.</comment>
+      <prototype>ERR sci::CollapseFold(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = CollapseFold(Line:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Line">Zero-based document line, or -1 for the caret line.</param>
+      </input>
+      <description>
+<p>Collapses the fold that starts at <code>Line</code>, hiding its child lines.  If the line does not start a fold, the innermost fold that contains it is collapsed.  The states of nested folds are retained and apply again when the fold is expanded with <method>ExpandFold</method>.  Collapsing a fold that is hidden within a collapsed ancestor records its state without expanding the ancestors.  Collapsing a fold that is already collapsed succeeds without change.</p>
+<p>Unlike <method>ToggleFold</method>, the result does not depend on the fold's current state.  Folding must be enabled with <fl>FoldingMarkers</fl>, and the document needs a <fl>Lexer</fl> that supports folding.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NothingDone">Folding is disabled, or the line has no fold containing child lines.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">Operation cannot complete because system is busy with an earlier operation</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
       <name>Colourise</name>
       <comment>Restyles a range of the document with the active lexer.</comment>
       <prototype>ERR sci::Colourise(OBJECTPTR Object, INT Start, INT End)</prototype>
@@ -233,6 +255,30 @@ for one frame before the editor repaints.</li>
         <error code="OutOfRange">The byte range is invalid.</error>
         <error code="NotInitialised">The resource has not been initialised</error>
         <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>ConvertEOLs</name>
+      <comment>Converts existing line endings as one undo operation.</comment>
+      <prototype>ERR sci::ConvertEOLs(OBJECTPTR Object, SCEOL Mode)</prototype>
+      <tiriPrototype>err = ConvertEOLs(Mode:num)</tiriPrototype>
+      <input>
+        <param type="SCEOL" name="Mode" lookup="SCEOL">The line-ending representation to apply to existing text.</param>
+      </input>
+      <description>
+<p>Converts every CR, LF and CRLF sequence in the document to the representation given by <code>Mode</code>, including documents with mixed line endings.  The conversion is recorded as a single undo action, so one <action>Undo</action> restores the original bytes.  It can also be nested inside a <method>BeginUndoAction</method> group.  A document that is empty or already uses <code>Mode</code> throughout is left unchanged and no undo step is created.</p>
+<types lookup="SCEOL"/>
+<p>This method does not alter <fl>EOLMode</fl>, which controls the line endings of subsequently entered text.  Set both to normalise a document and keep it consistent.  Conversion is a programmatic edit, so it does not require the <code>EDIT</code> flag in <fl>Flags</fl>.  It is reported through <fl>ChangeCallback</fl> and advances <fl>DocumentRevision</fl> like any other edit.</p>
+<p>The document length is checked before any text is modified, so a failed conversion leaves the content unchanged.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange"><code>Mode</code> is invalid, or the converted document would exceed the maximum document length.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The method was called from within a synchronous editor notification.</error>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
@@ -319,6 +365,28 @@ for one frame before the editor repaints.</li>
     </method>
 
     <method>
+      <name>ExpandFold</name>
+      <comment>Expands a fold without toggling its current state.</comment>
+      <prototype>ERR sci::ExpandFold(OBJECTPTR Object, INT Line)</prototype>
+      <tiriPrototype>err = ExpandFold(Line:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Line">Zero-based document line, or -1 for the caret line.</param>
+      </input>
+      <description>
+<p>Expands the fold that starts at <code>Line</code>.  If the line does not start a fold, the innermost fold that contains it is expanded.  Nested folds keep their own state, so a collapsed child fold remains collapsed.  If the fold is hidden within a collapsed ancestor, the ancestors are also expanded so that it becomes visible, and the caret may move to the fold's first line.  Expanding a fold that is already expanded and visible succeeds without change.</p>
+<p>Unlike <method>ToggleFold</method>, the result does not depend on the fold's current state.  Folding must be enabled with <fl>FoldingMarkers</fl>, and the document needs a <fl>Lexer</fl> that supports folding.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NothingDone">Folding is disabled, or the line has no fold containing child lines.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">Operation cannot complete because system is busy with an earlier operation</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
       <name>FillIndicator</name>
       <comment>Applies an application indicator to a byte range.</comment>
       <prototype>ERR sci::FillIndicator(OBJECTPTR Object, INT Indicator, INT Start, INT End, INT Value)</prototype>
@@ -343,6 +411,52 @@ for one frame before the editor repaints.</li>
         <error code="NullArgs">Function call missing argument value(s)</error>
       </result>
       <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>FoldAll</name>
+      <comment>Expands or collapses every fold, including nested folds.</comment>
+      <prototype>ERR sci::FoldAll(OBJECTPTR Object, INT Expanded)</prototype>
+      <tiriPrototype>err = FoldAll(Expanded:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Expanded">TRUE to expand every fold, FALSE to collapse every fold.</param>
+      </input>
+      <description>
+<p>Applies the same state to every fold in the document.  Collapsing marks every fold as collapsed, including folds nested within other folds, so expanding an outer fold afterwards with <method>ExpandFold</method> leaves its children collapsed.  Expanding clears all nested collapsed state.  Document text, undo history and <fl>DocumentRevision</fl> are not affected.</p>
+<p>Folding must be enabled with <fl>FoldingMarkers</fl>.  If the document contains no folds, the call succeeds and has no effect.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NothingDone">Folding is disabled.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">Operation cannot complete because system is busy with an earlier operation</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+    </method>
+
+    <method>
+      <name>GetFold</name>
+      <comment>Queries a line's containing fold and visibility using current lexer levels.</comment>
+      <prototype>ERR sci::GetFold(OBJECTPTR Object, INT Line, INT * Header, INT * Expanded, INT * Visible)</prototype>
+      <tiriPrototype>err, Header:num, Expanded:num, Visible:num = GetFold(Line:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Line">Zero-based document line, or -1 for the caret line.</param>
+        <param type="INT *" name="Header">Receives the line that starts the fold, or -1 if no fold applies.</param>
+        <param type="INT *" name="Expanded">Receives TRUE if the fold is expanded, or if no fold applies.</param>
+        <param type="INT *" name="Visible">Receives TRUE if the line is visible through all of its enclosing folds.</param>
+      </input>
+      <description>
+<p>Reports the fold that <method>ExpandFold</method> and <method>CollapseFold</method> would act on for <code>Line</code>: the fold that starts at the line, or otherwise the innermost fold that contains it.  Fold levels are brought up to date before the query, so the result reflects recent edits.  Document text, undo history and <fl>DocumentRevision</fl> are not affected.</p>
+<p>If <fl>FoldingMarkers</fl> is disabled or no fold applies, <code>Header</code> is -1 and <code>Expanded</code> is TRUE.  <code>Visible</code> is independent of <code>Expanded</code>: a line within an expanded fold is still hidden if any enclosing fold is collapsed.</p>
+<p>The result is a snapshot.  Edits move fold state with the lines of the document and can expand folds around edited text, while changing the <fl>Lexer</fl> or disabling <fl>FoldingMarkers</fl> expands every fold.  Fold state is not restored automatically after such changes.  A client that saves and restores folds must re-evaluate the headers against the current text, then collapse child folds before their parents.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">A value is outside of the valid range</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The method was called from within a synchronous editor notification, where fold levels cannot be refreshed.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
     </method>
 
     <method>
@@ -895,6 +1009,18 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
+      <name>EOLMode</name>
+      <comment>Line-ending policy for newly entered keyboard and clipboard text.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="SCEOL">INT</type>
+      <description>
+<p>Determines the line ending inserted when the user presses Enter, and the line endings applied to pasted and dropped text.  Rectangular copies also end each row with this line ending.  The default is <code>LF</code> on every platform.</p>
+<p>Changing this field does not modify existing text; use <method>ConvertEOLs</method> to normalise it.  Text supplied through <fl>String</fl>, <method>ReplaceText</method> and other programmatic operations keeps its original line endings, as does text loaded from a file. Loading does not detect or change this setting, so applications that want to match a file's line endings must inspect the text and set EOLMode explicitly.  <action>SaveToObject</action> writes the document bytes without conversion.</p>
+<types lookup="SCEOL"/>
+      </description>
+    </field>
+
+    <field>
       <name>EventCallback</name>
       <comment>Provides callbacks for global state changes.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -980,6 +1106,28 @@ for one frame before the editor repaints.</li>
       <type>INT</type>
       <description>
 <p>Sets a positive integer pixel size for every text style.  The default is 14 pixels.  This is not a point size and is independent of display density.  The size is expressed in the units of the <fl>View</fl>, so the fonts are loaded at the size multiplied by the device scale of the host, rounded to whole pixels.  Bitmap faces select their nearest supported point size and are not scaled. Set this field before or after initialisation.  Changing it reloads the font handles and updates layout and margins.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>IndentWidth</name>
+      <comment>Indentation width in fixed-width character columns, independently of tab stops.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>INT</type>
+      <description>
+<p>Sets the width of one indentation level, which determines how far keyboard indentation commands indent and outdent lines and the spacing of <fl>IndentationGuides</fl>.  This allows indentation to differ from <fl>TabWidth</fl>, which continues to control tab stops; for example, a width of 4 with tab stops at 8.  <fl>AllowTabs</fl> determines whether indentation is written with tab characters.  The default of 0 uses the <fl>TabWidth</fl> value.  Valid values range from 0 to 200.</p>
+<p><fl>AutoIndent</fl> is not affected, and continues to copy the leading whitespace of the previous line.  Changing this field does not modify existing whitespace.</p>
+      </description>
+    </field>
+
+    <field>
+      <name>IndentationGuides</name>
+      <comment>Controls the display of indentation guides without changing document text.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type lookup="SCGUIDE">INT</type>
+      <description>
+<p>Indentation guides are vertical lines drawn at each indentation level, spaced by <fl>IndentWidth</fl> or by <fl>TabWidth</fl> if IndentWidth is zero.  Modes that infer the indentation of blank lines also use the indentation behaviour of the active <fl>Lexer</fl>.  The setting is retained when the lexer or theme changes.  The default is <code>NONE</code>.</p>
+<types lookup="SCGUIDE"/>
       </description>
     </field>
 
@@ -1271,6 +1419,19 @@ for one frame before the editor repaints.</li>
       <const name="IGNORE_CASE">Candidates are matched to the typed prefix without regard to case.</const>
     </constants>
 
+    <constants lookup="SCEOL" comment="Document line-ending modes.">
+      <const name="CR">Carriage return.</const>
+      <const name="CRLF">Carriage return followed by line feed.</const>
+      <const name="LF">Line feed (the default).</const>
+    </constants>
+
+    <constants lookup="SCGUIDE" comment="Indentation guide display modes.">
+      <const name="LOOK_BOTH">Infer empty-line indentation from surrounding non-empty lines.</const>
+      <const name="LOOK_FORWARD">Infer empty-line indentation from the next non-empty line.</const>
+      <const name="NONE">No guides (the default).</const>
+      <const name="REAL">Guides within actual indentation.</const>
+    </constants>
+
     <constants lookup="SCIF" comment="Optional flags.">
       <const name="DETECT_LEXER">Automatic lexer detection will occur on initialisation and at any time that a source file is loaded.</const>
       <const name="DISABLED">Read-only.  This flag is set if the Scintilla object has been deactivated with the Disable action.</const>
@@ -1344,6 +1505,12 @@ for one frame before the editor repaints.</li>
       <const name="TCORNER_CURVE">A vertical line with a curved branch to the right.</const>
       <const name="UNDERLINE">Underlines the line's text with the marker's background colour.</const>
       <const name="VLINE">A vertical line through the line height.</const>
+    </constants>
+
+    <constants lookup="SCPOP" comment="Identifies the code assistance pop-up that is active.">
+      <const name="CALL_TIP">The call tip is active.</const>
+      <const name="COMPLETIONS">The completion list is active.</const>
+      <const name="NONE">No pop-up is active.</const>
     </constants>
 
     <constants lookup="SEF" comment="Flags for EventCallback and EventFlags">

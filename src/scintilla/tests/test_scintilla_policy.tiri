@@ -1,0 +1,317 @@
+-- Document insertion policy, explicit EOL conversion, indentation and deterministic nested folding.
+
+   include 'scintilla', 'vector', 'display'
+   module display as mGfx
+
+MIXED <const> = 'é\r\nsecond\rthird\nlast'
+NESTED <const> = 'outer {\n  inner {\n    body;\n  }\n  tail;\n}\noutside;'
+LOAD_PATH <const> = 'temp:scintilla_policy_load.txt'
+SAVE_PATH <const> = 'temp:scintilla_policy_save.txt'
+
+function newEditor(Options:table):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=300 })
+   local vp = scene.new('VectorViewport', { width='100%', height='100%' })
+   return scene, vp.new('Scintilla', Options ?? { })
+end
+
+function newInputEditor(Options:table):<obj, obj>
+   local surface = obj.new('Surface', { width=400, height=300 })
+   local scene = surface.new('VectorScene', { surface=surface, flags=VPF_IGNORE_TAB })
+   local vp = scene.new('VectorViewport', { width='100%', height='100%' })
+   local options = Options ?? { }
+   options.flags ?= SCIF_EDIT
+   local sci = vp.new('Scintilla', options)
+   surface.acShow()
+   surface.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, sci
+end
+
+function pressKey(Code:num!)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = KQ_PRESSED | KQ_NOT_PRINTABLE
+   ev[3] = Code
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function writeFile(Path:str!, Text:str!)
+   local file <close> = obj.new('File', { path=Path, flags=FL_NEW|FL_WRITE })
+   check file.acWrite(Text)
+end
+
+function assertFold(Sci:obj!, Line:num!, Header:num!, Expanded:num!, Visible:num!)
+   local err, header, expanded, visible = Sci.mtGetFold(Line)
+   check err
+   assert(header is Header, f'Line {Line}: header {header}, expected {Header}')
+   assert(expanded is Expanded, f'Line {Line}: expanded {expanded}, expected {Expanded}')
+   assert(visible is Visible, f'Line {Line}: visible {visible}, expected {Visible}')
+end
+
+@AfterAll function cleanup()
+   mSys.DeleteFile(LOAD_PATH)
+   mSys.DeleteFile(SAVE_PATH)
+end
+
+@Test function PolicyDefaultsAndValidation()
+   local scene <close>, sci = newEditor()
+   assert(sci.eolMode is SCEOL_LF, 'Insertion defaults to LF on every platform')
+   assert(sci.indentWidth is 0 and sci.tabWidth is 8, 'Indentation initially follows the legacy tab width')
+   assert(sci.indentationGuides is SCGUIDE_NONE, 'Guides initially remain hidden')
+   sci.string = MIXED
+   local revision:num = sci.documentRevision
+   sci.eolMode = SCEOL_CRLF
+   sci.indentWidth = 3
+   sci.indentationGuides = SCGUIDE_LOOK_BOTH
+   assert(sci.string is MIXED and sci.documentRevision is revision, 'Policy changes preserve document bytes')
+   assert(sci.set('eolMode', -1) is ERR_OutOfRange, 'Invalid EOL modes must fail')
+   assert(sci.set('eolMode', 3) is ERR_OutOfRange, 'Unknown EOL modes must fail')
+   assert(sci.set('indentWidth', -1) is ERR_OutOfRange, 'Negative indentation must fail')
+   assert(sci.set('indentWidth', 201) is ERR_OutOfRange, 'Excessive indentation must fail')
+   assert(sci.set('indentationGuides', 4) is ERR_OutOfRange, 'Unknown guide modes must fail')
+   assert(sci.eolMode is SCEOL_CRLF and sci.indentWidth is 3, 'Rejected settings retain previous values')
+   assert(sci.mtConvertEOLs(3) is ERR_OutOfRange and sci.string is MIXED, 'Invalid conversion is atomic')
+end
+
+@Test function ConvertMixedEndingsAndUndo()
+   local modes = array<int> { SCEOL_CRLF, SCEOL_CR, SCEOL_LF }
+   local endings = array<str> { '\r\n', '\r', '\n' }
+   for i in {0 to #modes} do
+      local scene <close>, sci = newEditor({ eolMode=SCEOL_CR })
+      -- Programmatic conversion works even without the user EDIT flag, and preserves embedded NULs and UTF-8.
+      local original = MIXED .. '\0end'
+      check sci.mtReplaceRange(0, 0, original)
+      local revision:num = sci.documentRevision
+      check sci.mtConvertEOLs(modes[i])
+      local expected = 'é' .. endings[i] .. 'second' .. endings[i] .. 'third' .. endings[i] .. 'last\0end'
+      assert(sci.string is expected, 'All mixed endings must convert while preserving other bytes')
+      assert(sci.eolMode is SCEOL_CR, 'Conversion must leave insertion policy unchanged')
+      assert(sci.documentRevision > revision, 'Conversion must emit ordinary revisions')
+      check sci.acUndo()
+      assert(sci.string is original, 'A single undo must restore all original endings')
+      check sci.acRedo()
+      assert(sci.string is expected, 'A single redo must restore the conversion')
+   end
+end
+
+@Test function ConversionNoOpAndOuterUndoGroup()
+   local scene <close>, sci = newEditor()
+   check sci.mtConvertEOLs(SCEOL_LF)
+   assert(sci.canUndo is 0, 'Empty conversion must create no undo step')
+   sci.string = MIXED
+   local revision:num = sci.documentRevision
+   check sci.mtBeginUndoAction()
+   check sci.mtConvertEOLs(SCEOL_CRLF)
+   check sci.mtReplaceRange(sci.textLength, sci.textLength, '!')
+   check sci.mtEndUndoAction()
+   check sci.acUndo()
+   assert(sci.string is MIXED, 'Conversion composes with an outer client undo group')
+   check sci.acRedo()
+   revision = sci.documentRevision
+   check sci.mtConvertEOLs(SCEOL_CRLF)
+   assert(sci.documentRevision is revision, 'Already normalised conversion must emit no edit')
+   check sci.acUndo()
+   assert(sci.string is MIXED, 'A no-op conversion must not mask the previous undo group')
+end
+
+@Test function LoadReloadAndSavePreserveBytes()
+   writeFile(LOAD_PATH, MIXED)
+   local scene <close>, sci = newEditor({ path=LOAD_PATH, eolMode=SCEOL_CRLF })
+   assert(sci.string is MIXED and sci.eolMode is SCEOL_CRLF, 'Load preserves bytes and explicit insertion policy')
+   sci.eolMode = SCEOL_CR
+   sci.string = 'replacement'
+   sci.path = LOAD_PATH
+   assert(sci.string is MIXED and sci.eolMode is SCEOL_CR, 'Reload preserves mixed endings and current policy')
+   do
+      local file <close> = obj.new('File', { path=SAVE_PATH, flags=FL_NEW|FL_WRITE })
+      check sci.acSaveToObject(file)
+   end
+   assert(io.readAll(SAVE_PATH) is MIXED, 'Saving must preserve exact bytes without a final newline')
+   local other_scene <close>, other = newEditor({ path=LOAD_PATH })
+   assert(other.eolMode is SCEOL_LF, 'Loading must not silently detect or change the default insertion policy')
+end
+
+@Test function KeyboardAndClipboardUseInsertionPolicy()
+   local modes = array<int> { SCEOL_CRLF, SCEOL_CR, SCEOL_LF }
+   local endings = array<str> { '\r\n', '\r', '\n' }
+   for i in {0 to #modes} do
+      local surface <close>, sci = newInputEditor({ eolMode=modes[i], autoIndent=false })
+      pressKey(KEY_ENTER)
+      assert(sci.string is endings[i], 'Enter must honour the mode supplied before initialisation')
+      sci.eolMode = SCEOL_LF
+      pressKey(KEY_ENTER)
+      assert(sci.string is endings[i] .. '\n', 'Changing policy affects the next Enter only')
+      sci.eolMode = modes[i]
+      local clip <close> = obj.new('Clipboard')
+      check clip.mtAddText('a\r\nb\rc\n')
+      sci.string = ''
+      check sci.acClipboard(CLIPMODE_PASTE)
+      assert(sci.string is 'a' .. endings[i] .. 'b' .. endings[i] .. 'c' .. endings[i],
+         'Paste must normalise mixed clipboard endings to the insertion policy')
+   end
+end
+
+@Test function IndependentIndentationAndTabs()
+   local surface <close>, sci = newInputEditor({ tabWidth=8, indentWidth=3, allowTabs=false })
+   pressKey(KEY_TAB)
+   assert(sci.string is '   ', 'Tab indentation uses independent indentation width')
+   sci.tabWidth = 6
+   pressKey(KEY_TAB)
+   assert(sci.string is '      ', 'Changing tab stops must not change an explicit indentation step')
+   sci.indentWidth = 0
+   sci.string = ''
+   pressKey(KEY_TAB)
+   assert(sci.string is '      ', 'Zero indentation width must follow the current tab width')
+   sci.allowTabs = true
+   sci.string = ''
+   pressKey(KEY_TAB)
+   assert(sci.string is '\t', 'AllowTabs continues to select actual tabs for indentation')
+   sci.indentationGuides = SCGUIDE_REAL
+   local revision:num = sci.documentRevision
+   sci.lexer = SCLEX_CPP
+   assert(sci.indentationGuides is SCGUIDE_REAL and sci.documentRevision is revision,
+      'Guides survive lexer changes without text edits')
+end
+
+@Test function DeterministicNestedFolds()
+   local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
+   sci.string = NESTED
+   local revision:num = sci.documentRevision
+   assertFold(sci, 2, 1, 1, 1)
+   check sci.mtCollapseFold(2) -- Resolve a non-header to the inner fold.
+   assertFold(sci, 2, 1, 0, 0)
+   check sci.mtCollapseFold(1)
+   check sci.mtCollapseFold(0)
+   assertFold(sci, 1, 1, 0, 0)
+   check sci.mtExpandFold(0)
+   check sci.mtExpandFold(0)
+   assertFold(sci, 1, 1, 0, 1)
+   assertFold(sci, 2, 1, 0, 0)
+   check sci.mtExpandFold(2)
+   assertFold(sci, 2, 1, 1, 1)
+   assertFold(sci, 6, -1, 1, 1)
+   assert(sci.mtCollapseFold(6) is ERR_NothingDone, 'Outside lines must not collapse an unrelated fold')
+   assert(sci.mtExpandFold(-2) is ERR_OutOfRange, 'Only -1 is a valid sentinel')
+   assert(sci.mtGetFold(sci.lineCount) is ERR_OutOfRange, 'Query must reject past-end lines')
+   assert(sci.string is NESTED and sci.documentRevision is revision, 'Folding must not modify document bytes')
+end
+
+@Test function FoldAllAndCaretSentinel()
+   local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
+   sci.string = NESTED
+   check sci.mtGotoLine(1)
+   check sci.mtCollapseFold(-1)
+   assertFold(sci, -1, 1, 0, 1)
+   check sci.mtFoldAll(0)
+   assertFold(sci, 0, 0, 0, 1)
+   assertFold(sci, 1, 1, 0, 0)
+   check sci.mtExpandFold(0)
+   assertFold(sci, 2, 1, 0, 0)
+   check sci.mtFoldAll(1)
+   assertFold(sci, 0, 0, 1, 1)
+   assertFold(sci, 2, 1, 1, 1)
+   check sci.mtFoldAll(1)
+   assertFold(sci, 2, 1, 1, 1)
+end
+
+@Test function FoldStateAfterEditsAndLexerChanges()
+   local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
+   sci.string = NESTED
+   check sci.mtFoldAll(0)
+   sci.lexer = SCLEX_TIRI
+   local err, header, expanded, visible = sci.mtGetFold(2)
+   check err
+   assert(expanded is 1 and visible is 1, 'Lexer switches must discard all collapsed state')
+   sci.lexer = SCLEX_CPP
+   check sci.mtFoldAll(0)
+   sci.foldingMarkers = false
+   assertFold(sci, 2, -1, 1, 1)
+   assert(sci.mtExpandFold(0) is ERR_NothingDone, 'Explicit folds require enabled folding')
+   assert(sci.mtFoldAll(0) is ERR_NothingDone, 'Fold-all requires enabled folding')
+   sci.foldingMarkers = true
+   check sci.mtCollapseFold(1)
+   check sci.mtReplaceRange(0, 0, '// prefix\n')
+   assertFold(sci, 3, 2, 0, 0)
+   check sci.mtExpandFold(2)
+   assertFold(sci, 3, 2, 1, 1)
+   sci.string = 'plain\ntext'
+   assertFold(sci, 0, -1, 1, 1)
+   check sci.mtFoldAll(0)
+   assert(sci.mtCollapseFold(0) is ERR_NothingDone, 'A fresh document must not restore stale fold identities')
+end
+
+@Test function NotificationGuardsPolicyAndFolds()
+   local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
+   sci.eventFlags = SEF_MODIFIED
+   local calls = 0
+   sci.eventCallback = function(Editor, Flags)
+      assert(Editor.mtConvertEOLs(SCEOL_CRLF) is ERR_Busy, 'Conversion must reject notification reentrancy')
+      assert(Editor.mtCollapseFold(0) is ERR_Busy, 'Folding must reject notification reentrancy')
+      assert(Editor.mtGetFold(0) is ERR_Busy, 'Fold queries cannot refresh levels during notifications')
+      assert(Editor.set('eolMode', SCEOL_CR) is ERR_Busy, 'Policy changes must reject notification reentrancy')
+      assert(Editor.set('indentWidth', 3) is ERR_Busy, 'Indentation changes must reject notification reentrancy')
+      assert(Editor.set('indentationGuides', SCGUIDE_REAL) is ERR_Busy, 'Guide changes must reject reentrancy')
+      calls++
+   end
+   check sci.mtReplaceRange(0, 0, NESTED)
+   sci.eventCallback = nil
+   assert(calls is 1 and sci.string is NESTED, 'Reentrant attempts must leave the initiating edit intact')
+end
+
+@Test function IndentationGuidesRenderAndClear()
+   local scene <close>, sci = newEditor({ face='Clean', fontSize=11, indentWidth=3, tabWidth=8,
+      lineHighlight='255,255,255,0' })
+   local bmp <close> = obj.new('Bitmap', { width=400, height=300, bitsPerPixel=32 })
+   scene.bitmap = bmp
+   sci.string = 'outer\n   child\n      nested\n   last\nend'
+   processing.sleep(0)
+   check scene.acDraw()
+   local before = array<int>
+   for y in {0 to 65} do
+      for x in {4 to 45} do
+         local rgb = mGfx.ReadRGBPixel(bmp, x, y)
+         before.push(rgb.red | (rgb.green << 8) | (rgb.blue << 16))
+      end
+   end
+   sci.indentationGuides = SCGUIDE_REAL
+   processing.sleep(0)
+   check scene.acDraw()
+   local differences = 0
+   local index = 0
+   for y in {0 to 65} do
+      for x in {4 to 45} do
+         local rgb = mGfx.ReadRGBPixel(bmp, x, y)
+         if (rgb.red | (rgb.green << 8) | (rgb.blue << 16)) != before[index] then differences++ end
+         index++
+      end
+   end
+   assert(differences > 0, 'Enabling guides must draw visible indentation strokes')
+   sci.indentationGuides = SCGUIDE_NONE
+   processing.sleep(0)
+   check scene.acDraw()
+   index = 0
+   for y in {0 to 65} do
+      for x in {4 to 45} do
+         local rgb = mGfx.ReadRGBPixel(bmp, x, y)
+         assert((rgb.red | (rgb.green << 8) | (rgb.blue << 16)) is before[index],
+            'Disabling guides must restore the original rendering')
+         index++
+      end
+   end
+end
+
+@Test function ExpandingHiddenHeaderRevealsAncestors()
+   local scene <close>, sci = newEditor({ lexer=SCLEX_CPP, foldingMarkers=true })
+   sci.string = NESTED
+   check sci.mtCollapseFold(0)
+   assertFold(sci, 1, 1, 1, 0)
+   check sci.mtCollapseFold(1)
+   assertFold(sci, 1, 1, 0, 0)
+   assertFold(sci, 0, 0, 0, 1)
+   check sci.mtExpandFold(1)
+   assertFold(sci, 0, 0, 1, 1)
+   assertFold(sci, 2, 1, 1, 1)
+end

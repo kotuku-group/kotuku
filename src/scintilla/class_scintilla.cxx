@@ -327,6 +327,14 @@ static ERR MODExpunge(void)
 
 //********************************************************************************************************************
 
+static std::string_view lexer_name(const LexerProfile &Profile)
+{
+   if (Profile.ID IS SCLEX::TIRI) return "tiri";
+   if (Profile.ID IS SCLEX::HTML) return "html";
+   if (Profile.ID IS SCLEX::ASP) return "asp";
+   return Profile.Factory;
+}
+
 static bool accepts_editor_drop(extScintilla *Self, std::string_view Types)
 {
    if ((not Self->API) or ((Self->Flags & SCIF::DISABLED) != SCIF::NIL)) return false;
@@ -2033,6 +2041,8 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    SCICALL(SCI_SETMARGINRIGHT, 0, 0L);
 
    SCICALL(SCI_SETTABWIDTH, Self->TabWidth);
+   SCICALL(SCI_SETINDENT, Self->IndentWidth);
+   SCICALL(SCI_SETINDENTATIONGUIDES, int(Self->IndentationGuides));
 
    // Selected text will be inversed with these colours
 
@@ -2066,7 +2076,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
 
    // Miscellaneous options
 
-   SCICALL(SCI_SETEOLMODE, SC_EOL_LF);
+   SCICALL(SCI_SETEOLMODE, int(Self->EOLMode));
 
    if (Self->AllowTabs) SCICALL(SCI_SETUSETABS, 1UL);
    else  SCICALL(SCI_SETUSETABS, 0UL);
@@ -2706,6 +2716,214 @@ static ERR SCINTILLA_ToggleFold(extScintilla *Self, struct sci::ToggleFold *Args
 
    log.branch("Line: %d", line);
    return Self->API->panToggleFold(line) ? ERR::Okay : ERR::NothingDone;
+}
+
+//********************************************************************************************************************
+// Resolve explicit fold operations against current lexer levels.  New methods retain ToggleFold's enclosing-fold rule.
+
+static ERR fold_line(extScintilla *Self, int Line, int &Header, int &Resolved)
+{
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   Resolved = Line IS -1 ? int(SCICALL(SCI_LINEFROMPOSITION, SCICALL(SCI_GETCURRENTPOS))) : Line;
+   if ((Resolved < 0) or (Resolved >= SCICALL(SCI_GETLINECOUNT))) return ERR::OutOfRange;
+   Header = -1;
+   if (Self->FoldingMarkers) {
+      Self->API->panRefreshFolds();
+      Header = (SCICALL(SCI_GETFOLDLEVEL, Resolved) & SC_FOLDLEVELHEADERFLAG) ? Resolved :
+         int(SCICALL(SCI_GETFOLDPARENT, Resolved));
+      if ((Header >= 0) and (SCICALL(SCI_GETLASTCHILD, Header, -1) <= Header)) Header = -1;
+   }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+ConvertEOLs: Converts existing line endings as one undo operation.
+
+Converts every CR, LF and CRLF sequence in the document to the representation given by `Mode`, including documents
+with mixed line endings.  The conversion is recorded as a single undo action, so one #Undo() restores the original
+bytes.  It can also be nested inside a #BeginUndoAction() group.  A document that is empty or already uses `Mode`
+throughout is left unchanged and no undo step is created.
+
+!SCEOL
+
+This method does not alter #EOLMode, which controls the line endings of subsequently entered text.  Set both to
+normalise a document and keep it consistent.  Conversion is a programmatic edit, so it does not require the `EDIT`
+flag in #Flags.  It is reported through #ChangeCallback and advances #DocumentRevision like any other edit.
+
+The document length is checked before any text is modified, so a failed conversion leaves the content unchanged.
+
+-INPUT-
+int(SCEOL) Mode: The line-ending representation to apply to existing text.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The method was called from within a synchronous editor notification.
+OutOfRange: `Mode` is invalid, or the converted document would exceed the maximum document length.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_ConvertEOLs(extScintilla *Self, struct sci::ConvertEOLs *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   if ((int(Args->Mode) < 0) or (int(Args->Mode) > 2)) return ERR::OutOfRange;
+   return Self->API->panConvertEOLs(Args->Mode);
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+ExpandFold: Expands a fold without toggling its current state.
+
+Expands the fold that starts at `Line`.  If the line does not start a fold, the innermost fold that contains it is
+expanded.  Nested folds keep their own state, so a collapsed child fold remains collapsed.  If the fold is hidden
+within a collapsed ancestor, the ancestors are also expanded so that it becomes visible, and the caret may move to the
+fold's first line.  Expanding a fold that is already expanded and visible succeeds without change.
+
+Unlike #ToggleFold(), the result does not depend on the fold's current state.  Folding must be enabled with
+#FoldingMarkers, and the document needs a #Lexer that supports folding.
+
+-INPUT-
+int Line: Zero-based document line, or -1 for the caret line.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy
+OutOfRange
+NothingDone: Folding is disabled, or the line has no fold containing child lines.
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_ExpandFold(extScintilla *Self, struct sci::ExpandFold *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   int header, line;
+   if (auto error = fold_line(Self, Args->Line, header, line); error != ERR::Okay) return error;
+   if (header < 0) return ERR::NothingDone;
+   SCICALL(SCI_FOLDLINE, header, SC_FOLDACTION_EXPAND);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+CollapseFold: Collapses a fold without toggling its current state.
+
+Collapses the fold that starts at `Line`, hiding its child lines.  If the line does not start a fold, the innermost fold
+that contains it is collapsed.  The states of nested folds are retained and apply again when the fold is expanded with
+#ExpandFold().  Collapsing a fold that is hidden within a collapsed ancestor records its state without expanding the
+ancestors.  Collapsing a fold that is already collapsed succeeds without change.
+
+Unlike #ToggleFold(), the result does not depend on the fold's current state.  Folding must be enabled with
+#FoldingMarkers, and the document needs a #Lexer that supports folding.
+
+-INPUT-
+int Line: Zero-based document line, or -1 for the caret line.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy
+OutOfRange
+NothingDone: Folding is disabled, or the line has no fold containing child lines.
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_CollapseFold(extScintilla *Self, struct sci::CollapseFold *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   int header, line;
+   if (auto error = fold_line(Self, Args->Line, header, line); error != ERR::Okay) return error;
+   if (header < 0) return ERR::NothingDone;
+   SCICALL(SCI_FOLDLINE, header, sptr_t(SC_FOLDACTION_CONTRACT));
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+FoldAll: Expands or collapses every fold, including nested folds.
+
+Applies the same state to every fold in the document.  Collapsing marks every fold as collapsed, including folds nested
+within other folds, so expanding an outer fold afterwards with #ExpandFold() leaves its children collapsed.  Expanding
+clears all nested collapsed state.  Document text, undo history and #DocumentRevision are not affected.
+
+Folding must be enabled with #FoldingMarkers.  If the document contains no folds, the call succeeds and has no effect.
+
+-INPUT-
+int Expanded: TRUE to expand every fold, FALSE to collapse every fold.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy
+NothingDone: Folding is disabled.
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_FoldAll(extScintilla *Self, struct sci::FoldAll *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   if (not Self->FoldingMarkers) return ERR::NothingDone;
+   Self->API->panRefreshFolds();
+   SCICALL(SCI_FOLDALL, Args->Expanded ? SC_FOLDACTION_EXPAND :
+      SC_FOLDACTION_CONTRACT | SC_FOLDACTION_CONTRACT_EVERY_LEVEL);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetFold: Queries a line's containing fold and visibility using current lexer levels.
+
+Reports the fold that #ExpandFold() and #CollapseFold() would act on for `Line`: the fold that starts at the line, or
+otherwise the innermost fold that contains it.  Fold levels are brought up to date before the query, so the result
+reflects recent edits.  Document text, undo history and #DocumentRevision are not affected.
+
+If #FoldingMarkers is disabled or no fold applies, `Header` is -1 and `Expanded` is TRUE.  `Visible` is independent
+of `Expanded`: a line within an expanded fold is still hidden if any enclosing fold is collapsed.
+
+The result is a snapshot.  Edits move fold state with the lines of the document and can expand folds around edited
+text, while changing the #Lexer or disabling #FoldingMarkers expands every fold.  Fold state is not restored
+automatically after such changes.  A client that saves and restores folds must re-evaluate the headers against the
+current text, then collapse child folds before their parents.
+
+-INPUT-
+int Line: Zero-based document line, or -1 for the caret line.
+&int Header: Receives the line that starts the fold, or -1 if no fold applies.
+&int Expanded: Receives TRUE if the fold is expanded, or if no fold applies.
+&int Visible: Receives TRUE if the line is visible through all of its enclosing folds.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The method was called from within a synchronous editor notification, where fold levels cannot be refreshed.
+OutOfRange
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_GetFold(extScintilla *Self, struct sci::GetFold *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   int header, line;
+   if (auto error = fold_line(Self, Args->Line, header, line); error != ERR::Okay) return error;
+   Args->Header = header;
+   Args->Expanded = header < 0 ? TRUE : int(SCICALL(SCI_GETFOLDEXPANDED, header));
+   Args->Visible = SCICALL(SCI_GETLINEVISIBLE, line);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -3722,6 +3940,94 @@ static ERR SET_Symbols(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+EOLMode: Line-ending policy for newly entered keyboard and clipboard text.
+Lookup: SCEOL
+
+Determines the line ending inserted when the user presses Enter, and the line endings applied to pasted and dropped
+text.  Rectangular copies also end each row with this line ending.  The default is `LF` on every platform.
+
+Changing this field does not modify existing text; use #ConvertEOLs() to normalise it.  Text supplied through #String,
+#ReplaceText() and other programmatic operations keeps its original line endings, as does text loaded from a file.
+Loading does not detect or change this setting, so applications that want to match a file's line endings must inspect
+the text and set EOLMode explicitly.  #SaveToObject() writes the document bytes without conversion.
+
+*********************************************************************************************************************/
+
+static ERR GET_EOLMode(extScintilla *Self, SCEOL *Value)
+{
+   *Value = Self->EOLMode;
+   return ERR::Okay;
+}
+
+static ERR SET_EOLMode(extScintilla *Self, SCEOL Value)
+{
+   if ((int(Value) < 0) or (int(Value) > 2)) return ERR::OutOfRange;
+   if (Self->API and Self->API->panInNotification()) return ERR::Busy;
+   Self->EOLMode = Value;
+   if (Self->API) SCICALL(SCI_SETEOLMODE, int(Value));
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+IndentWidth: Indentation width in fixed-width character columns, independently of tab stops.
+
+Sets the width of one indentation level, which determines how far keyboard indentation commands indent and outdent
+lines and the spacing of #IndentationGuides.  This allows indentation to differ from #TabWidth, which continues to
+control tab stops; for example, a width of 4 with tab stops at 8.  #AllowTabs determines whether indentation is written
+with tab characters.  The default of 0 uses the #TabWidth value.  Valid values range from 0 to 200.
+
+#AutoIndent is not affected, and continues to copy the leading whitespace of the previous line.  Changing this field
+does not modify existing whitespace.
+
+*********************************************************************************************************************/
+
+static ERR GET_IndentWidth(extScintilla *Self, int *Value)
+{
+   *Value = Self->IndentWidth;
+   return ERR::Okay;
+}
+
+static ERR SET_IndentWidth(extScintilla *Self, int Value)
+{
+   if ((Value < 0) or (Value > 200)) return ERR::OutOfRange;
+   if (Self->API and Self->API->panInNotification()) return ERR::Busy;
+   Self->IndentWidth = Value;
+   if (Self->API) SCICALL(SCI_SETINDENT, Value);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+IndentationGuides: Controls the display of indentation guides without changing document text.
+Lookup: SCGUIDE
+
+Indentation guides are vertical lines drawn at each indentation level, spaced by #IndentWidth or by #TabWidth if
+IndentWidth is zero.  Modes that infer the indentation of blank lines also use the indentation behaviour of the active
+#Lexer.  The setting is retained when the lexer or theme changes.  The default is `NONE`.
+
+*********************************************************************************************************************/
+
+static ERR GET_IndentationGuides(extScintilla *Self, SCGUIDE *Value)
+{
+   *Value = Self->IndentationGuides;
+   return ERR::Okay;
+}
+
+static ERR SET_IndentationGuides(extScintilla *Self, SCGUIDE Value)
+{
+   if ((int(Value) < 0) or (int(Value) > 3)) return ERR::OutOfRange;
+   if (Self->API and Self->API->panInNotification()) return ERR::Busy;
+   Self->IndentationGuides = Value;
+   if (Self->API) SCICALL(SCI_SETINDENTATIONGUIDES, int(Value));
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 TabWidth: The width of tab stops in the document, measured as fixed-width characters.
 
 *********************************************************************************************************************/
@@ -4678,14 +4984,6 @@ static-result, null-terminated-result
 
 *********************************************************************************************************************/
 
-static std::string_view lexer_name(const LexerProfile &Profile)
-{
-   if (Profile.ID IS SCLEX::TIRI) return "tiri";
-   if (Profile.ID IS SCLEX::HTML) return "html";
-   if (Profile.ID IS SCLEX::ASP) return "asp";
-   return Profile.Factory;
-}
-
 static ERR GET_LexerName(extScintilla *Self, std::string_view &Value)
 {
    auto profile = find_lexer_profile(Self->Lexer);
@@ -4697,10 +4995,13 @@ static ERR GET_LexerName(extScintilla *Self, std::string_view &Value)
 static ERR SET_LexerName(extScintilla *Self, const std::string_view &Value)
 {
    auto name = Value;
+
    if (name IS "lua") name = "tiri";
    else if (name IS "hypertext") name = "html";
    else if (name IS "none") name = "null";
+
    if (Self->API and Self->API->panInNotification()) return ERR::Busy;
+
    for (const auto &profile : glLexerProfiles) {
       if (name IS lexer_name(profile)) return SET_Lexer(Self, profile.ID);
    }
@@ -4734,13 +5035,7 @@ static ERR GET_SupportedLexers(extScintilla *, std::string_view &Value)
    return ERR::Okay;
 }
 
-
 #include "class_scintilla_def.cxx"
-
-static const struct FieldDef clActivePopup[] = {
-   { "None", int(SCPOP::NONE) }, { "Completions", int(SCPOP::COMPLETIONS) }, { "CallTip", int(SCPOP::CALL_TIP) },
-   { nullptr, 0 }
-};
 
 static const FieldArray clFields[] = {
    { "Face",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Face },
@@ -4764,37 +5059,39 @@ static const FieldArray clFields[] = {
    { "Lexer",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Lexer, &clScintillaLexer },
    { "Modified",       FDF_INT|FDF_RW, nullptr, SET_Modified },
    { "FontSize",       FDF_INT|FDF_RW, nullptr, SET_FontSize },
-
    // Virtual fields
-   { "ThemeXML",       FDF_OBJECT|FDF_W|FDF_PURE, nullptr, SET_ThemeXML, CLASSID::XML },
-   { "ActivePopup",    FDF_INT|FDF_LOOKUP|FDF_R,  GET_ActivePopup, nullptr, &clActivePopup },
-   { "AllowTabs",      FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
-   { "AutoIndent",     FDF_INT|FDF_RW|FDF_PURE,   GET_AutoIndent, SET_AutoIndent },
+   { "ThemeXML",           FDF_OBJECT|FDF_W|FDF_PURE, nullptr, SET_ThemeXML, CLASSID::XML },
+   { "ActivePopup",        FDF_INT|FDF_LOOKUP|FDF_R,  GET_ActivePopup, nullptr, &clScintillaSCPOP },
+   { "AllowTabs",          FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
+   { "AutoIndent",         FDF_INT|FDF_RW|FDF_PURE,   GET_AutoIndent, SET_AutoIndent },
    { "CompletionCallback", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_CompletionCallback, SET_CompletionCallback },
-   { "FileDrop",       FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FileDrop, SET_FileDrop },
-   { "FoldingMarkers", FDF_INT|FDF_RW|FDF_PURE,   GET_FoldingMarkers, SET_FoldingMarkers },
-   { "LineCount",      FDF_INT|FDF_R,             GET_LineCount },
-   { "LineNumbers",    FDF_INT|FDF_RW|FDF_PURE,   GET_LineNumbers, SET_LineNumbers },
-   { "MarginClick",    FDF_FUNCTION|FDF_RW|FDF_PURE, GET_MarginClick, SET_MarginClick },
-   { "Origin",         FDF_CPPSTRING|FDF_W, nullptr, SET_Origin },
-   { "ShowWhitespace", FDF_INT|FDF_RW|FDF_PURE,      GET_ShowWhitespace, SET_ShowWhitespace },
-   { "EventCallback",  FDF_FUNCTION|FDF_RW|FDF_PURE, GET_EventCallback, SET_EventCallback },
-   { "String",         FDF_CPPSTRING|FDF_RW,      GET_String, SET_String },
-   { "Symbols",        FDF_INT|FDF_RW|FDF_PURE,   GET_Symbols, SET_Symbols },
-   { "TabWidth",       FDF_INT|FDF_RW|FDF_PURE,   GET_TabWidth, SET_TabWidth },
-   { "Wordwrap",       FDF_INT|FDF_RW|FDF_PURE,   GET_Wordwrap, SET_Wordwrap },
-   { "CurrentPos",     FDF_INT|FDF_R, GET_CurrentPos },
-   { "Anchor",         FDF_INT|FDF_R, GET_Anchor },
-   { "SelectionStart", FDF_INT|FDF_R, GET_SelectionStart },
-   { "SelectionEnd",   FDF_INT|FDF_R, GET_SelectionEnd },
-   { "TextLength",     FDF_INT|FDF_R, GET_TextLength },
-   { "CanUndo",        FDF_INT|FDF_R, GET_CanUndo },
-   { "CanRedo",        FDF_INT|FDF_R, GET_CanRedo },
-   { "SelectedText",   FDF_CPPSTRING|FDF_R, GET_SelectedText },
-   { "ChangeCallback", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_ChangeCallback, SET_ChangeCallback },
-   { "DocumentRevision", FDF_INT64|FDF_R, GET_DocumentRevision },
-   { "LexerName",      FDF_CPPSTRING|FDF_RW, GET_LexerName, SET_LexerName },
-   { "SupportedLexers", FDF_CPPSTRING|FDF_R, GET_SupportedLexers },
+   { "FileDrop",           FDF_FUNCTION|FDF_RW|FDF_PURE, GET_FileDrop, SET_FileDrop },
+   { "FoldingMarkers",     FDF_INT|FDF_RW|FDF_PURE,   GET_FoldingMarkers, SET_FoldingMarkers },
+   { "LineCount",          FDF_INT|FDF_R,             GET_LineCount },
+   { "LineNumbers",        FDF_INT|FDF_RW|FDF_PURE,   GET_LineNumbers, SET_LineNumbers },
+   { "MarginClick",        FDF_FUNCTION|FDF_RW|FDF_PURE, GET_MarginClick, SET_MarginClick },
+   { "Origin",             FDF_CPPSTRING|FDF_W, nullptr, SET_Origin },
+   { "ShowWhitespace",     FDF_INT|FDF_RW|FDF_PURE,      GET_ShowWhitespace, SET_ShowWhitespace },
+   { "EventCallback",      FDF_FUNCTION|FDF_RW|FDF_PURE, GET_EventCallback, SET_EventCallback },
+   { "String",             FDF_CPPSTRING|FDF_RW,      GET_String, SET_String },
+   { "Symbols",            FDF_INT|FDF_RW|FDF_PURE,   GET_Symbols, SET_Symbols },
+   { "TabWidth",           FDF_INT|FDF_RW|FDF_PURE,   GET_TabWidth, SET_TabWidth },
+   { "Wordwrap",           FDF_INT|FDF_RW|FDF_PURE,   GET_Wordwrap, SET_Wordwrap },
+   { "CurrentPos",         FDF_INT|FDF_R, GET_CurrentPos },
+   { "Anchor",             FDF_INT|FDF_R, GET_Anchor },
+   { "SelectionStart",     FDF_INT|FDF_R, GET_SelectionStart },
+   { "SelectionEnd",       FDF_INT|FDF_R, GET_SelectionEnd },
+   { "TextLength",         FDF_INT|FDF_R, GET_TextLength },
+   { "CanUndo",            FDF_INT|FDF_R, GET_CanUndo },
+   { "CanRedo",            FDF_INT|FDF_R, GET_CanRedo },
+   { "SelectedText",       FDF_CPPSTRING|FDF_R, GET_SelectedText },
+   { "ChangeCallback",     FDF_FUNCTION|FDF_RW|FDF_PURE, GET_ChangeCallback, SET_ChangeCallback },
+   { "DocumentRevision",   FDF_INT64|FDF_R, GET_DocumentRevision },
+   { "LexerName",          FDF_CPPSTRING|FDF_RW, GET_LexerName, SET_LexerName },
+   { "SupportedLexers",    FDF_CPPSTRING|FDF_R, GET_SupportedLexers },
+   { "EOLMode",            FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GET_EOLMode, SET_EOLMode, &clScintillaSCEOL },
+   { "IndentWidth",        FDF_INT|FDF_RW|FDF_PURE, GET_IndentWidth, SET_IndentWidth },
+   { "IndentationGuides",  FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, GET_IndentationGuides, SET_IndentationGuides, &clScintillaSCGUIDE },
    END_FIELD
 };
 

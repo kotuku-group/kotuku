@@ -1503,6 +1503,34 @@ void ScintillaKTK::panSetFocus(bool Focus)
    if (Focus != hasFocus) SetFocusState(Focus);
 }
 
+//********************************************************************************************************************
+// Preflight the peak length, including the backend's insert-before-delete replacements.  This also handles NULs.
+
+ERR ScintillaKTK::panConvertEOLs(SCEOL Mode)
+{
+   if (not panPublicDocument()) return ERR::OutOfRange;
+   int64_t length = pdoc->Length();
+   for (Sci::Position pos = 0; pos < pdoc->Length(); pos++) {
+      const char ch = pdoc->CharAt(pos);
+      if (ch IS '\r') {
+         if (pdoc->CharAt(pos + 1) IS '\n') {
+            if (Mode != SCEOL::CRLF) length--;
+            pos++;
+         }
+         else if (Mode != SCEOL::CR) {
+            if (length >= KotukuScintilla::document_limit) return ERR::OutOfRange;
+            if (Mode IS SCEOL::CRLF) length++;
+         }
+      }
+      else if ((ch IS '\n') and (Mode != SCEOL::LF)) {
+         if (length >= KotukuScintilla::document_limit) return ERR::OutOfRange;
+         if (Mode IS SCEOL::CRLF) length++;
+      }
+   }
+   SendScintilla(SCI_CONVERTEOLS, int(Mode));
+   return ERR::Okay;
+}
+
 /*********************************************************************************************************************
 ** Enable or disable folding.  The lexers only compute fold levels while the 'fold' property is set.  Disabling folding
 ** expands every fold first, because the lines of a contracted fold could not be shown again.

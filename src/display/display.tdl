@@ -583,7 +583,7 @@ module({
     oid    OverObject      # Object positioned under the pointer
     int    ClickSlop       # Leniency value for determining whether the user intended to make a click or drag.
     int    DragFeedback    # Destination feedback: -1 unspecified, 0 rejected, 1 copy accepted.
-    ~oid DropSession # Native destination snapshot during synchronous delivery
+    ~oid   DropSession     # Native destination snapshot during synchronous delivery
   ]])
 
   methods('surface', 'Drw', {

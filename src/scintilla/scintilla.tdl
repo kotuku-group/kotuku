@@ -37,14 +37,27 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     JSON       = "120: JSON"
   })
 
+  constants("SCEOL", { type="int", comment="Document line-ending modes." }, {
+    CRLF = "0: Carriage return followed by line feed.",
+    CR   = "1: Carriage return.",
+    LF   = "2: Line feed (the default)."
+  })
+
+  constants("SCGUIDE", { type="int", comment="Indentation guide display modes." }, {
+    NONE         = "0: No guides (the default).",
+    REAL         = "1: Guides within actual indentation.",
+    LOOK_FORWARD = "2: Infer empty-line indentation from the next non-empty line.",
+    LOOK_BOTH    = "3: Infer empty-line indentation from surrounding non-empty lines."
+  })
+
   constants("SCIND", { type="int", comment="Supported diagnostic indicator appearances." }, {
-    PLAIN = "0: Underline.",
-    SQUIGGLE = "1: Wavy underline.",
-    BOX = "6: Outline box.",
-    ROUND_BOX = "7: Rounded box.",
+    PLAIN        = "0: Underline.",
+    SQUIGGLE     = "1: Wavy underline.",
+    BOX          = "6: Outline box.",
+    ROUND_BOX    = "7: Rounded box.",
     STRAIGHT_BOX = "8: Translucent background box.",
-    DASH = "9: Dashed underline.",
-    DOTS = "10: Dotted underline."
+    DASH         = "9: Dashed underline.",
+    DOTS         = "10: Dotted underline."
   })
 
   constants("SCMK", { type="int", comment="Marker symbols for DefineMarker(), as defined by the Scintilla library." }, {
@@ -137,13 +150,13 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
   })
 
   structdef("ScintillaChange", {}, [[
-    large Revision        # Document revision after this operation.
+    large Revision          # Document revision after this operation.
     int(SCCHANGE) Operation # Insertion or deletion.
-    int Position          # Zero-based byte offset before this operation.
-    int Length            # Number of inserted or deleted bytes.
-    int LinesAdded        # Signed change in document line count.
-    int(SCORIGIN) Origin  # Backend edit, undo or redo origin.
-    string Text           # Owned inserted or deleted bytes, including embedded NULs.
+    int Position            # Zero-based byte offset before this operation.
+    int Length              # Number of inserted or deleted bytes.
+    int LinesAdded          # Signed change in document line count.
+    int(SCORIGIN) Origin    # Backend edit, undo or redo origin.
+    string Text             # Owned inserted or deleted bytes, including embedded NULs.
   ]])
 
   methods("scintilla", "Sci", {
@@ -180,10 +193,20 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=31, name="GetKeywords" },
     { id=32, name="SetLexerProperty" },
     { id=33, name="GetLexerProperty" },
-    { id=34, name="Colourise" }
+    { id=34, name="Colourise" },
+    { id=35, name="ConvertEOLs" },
+    { id=36, name="ExpandFold" },
+    { id=37, name="CollapseFold" },
+    { id=38, name="FoldAll" },
+    { id=39, name="GetFold" }
   })
 
-  klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx", extended=true }, [[
+  klass("Scintilla", {
+    src={ "class_scintilla.cxx" },
+    output="class_scintilla_def.cxx",
+    references={ 'SCGUIDE', 'SCEOL', 'SCPOP' },
+    extended=true
+  }, [[
     string Face                  # Font family used for all text styles
     string Path                  # Source text file
     int(SEF) EventFlags          # SEF flags.  Indicates the events that will be reported.
