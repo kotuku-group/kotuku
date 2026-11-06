@@ -32,6 +32,7 @@ class extScintilla : public objScintilla {
       bool active = false;
    } Drop, PrimaryDrop;
    int64_t DocumentRevision = 0;
+   int ClientUndoDepth = 0;
    int PrimaryItem = 0;
    objClipboard *DragClipboard = nullptr;
    std::string DragText;
@@ -39,6 +40,7 @@ class extScintilla : public objScintilla {
    FUNCTION EventCallback;
    FUNCTION MarginClick;
    FUNCTION CompletionCallback;
+   FUNCTION ChangeCallback;
    objFile *FileStream;
    APTR FontHandles[4] = {};         // Regular, bold, italic and bold italic; shared vector module handles
    objVectorScene *Scene;        // The scene that hosts the Viewport
@@ -66,6 +68,7 @@ class extScintilla : public objScintilla {
    int    PageHeight;
    ScintillaKTK *API;
    std::string StringBuffer;
+   std::string SelectionBuffer;
    int    LongestLine;         // Longest line in the document
    int    LongestWidth;        // Scroll width: the pixel width of the longest line, plus padding
    int    WidthCheckFirst = INT_MAX; // Range of modified lines to measure before the next paint
@@ -192,6 +195,8 @@ public:
    bool panPublicDocument() const {
       return KotukuScintilla::DocumentGrowth(pdoc->Length(), 0, 0);
    }
+   bool panInNotification() const { return notification_depth > 0; }
+   ERR panReplaceRange(int Start, int End, std::string_view Text);
    void panEndDrag();
    bool panDragging() const { return drag_active; }
    int panDropPosition(double X, double Y);
@@ -249,6 +254,8 @@ public:
    void panPaintCallTip(Scintilla::Internal::Surface *Surface) { ct.PaintCT(Surface); }
    void panCallTipClick(Scintilla::Internal::Point Point);
    bool panFlushCompletionReports();
+   bool panFlushChangeReports();
+   void panResetChangeReports();
    void panCompletionClosed();
 
    // Brace match handling
@@ -282,6 +289,7 @@ public:
    std::string EncodedFromUTF8(std::string_view Text) const override { return std::string(Text); }
 
 private:
+   void QueueChangeDelivery();
    void SetKeywords();
    void DefineFoldMarkers();
    void ExpandAllFolds();
@@ -319,6 +327,11 @@ private:
    std::vector<completion_report> completion_reports; // Deferred CompletionCallback reports
    bool flushing_reports = false;
 
+   std::vector<ScintillaChange> change_reports;
+   uint64_t change_generation = 0;
+   bool flushing_changes = false;
+   bool change_report_queued = false;
+
    Scintilla::Internal::Selection drag_selection;
    int64_t drag_revision = 0;
    bool drag_active = false;
@@ -326,6 +339,7 @@ private:
    int braceMode;
    Sci::Position oldpos = -1;
    bool finalised = false;
+   int notification_depth = 0;
    struct ticker {
       int milliseconds = 0;
       int64_t deadline = 0;

@@ -1,0 +1,341 @@
+-- Lossless deferred text notifications and revision tracking through the public editor API.
+   include 'scintilla', 'vector', 'display'
+
+function newEditor(Options:table):<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
+   local host = scene.new('VectorViewport', { width='100%', height='100%' })
+   return scene, host.new('Scintilla', Options ?? {})
+end
+
+function subscribe(Sci:obj!):table
+   local state = { text=Sci.string ?? '', revision=Sci.documentRevision, changes=array<table> {} }
+   Sci.changeCallback = function(Editor, Change)
+      assert(Change.revision is state.revision + 1, 'Every text operation increments the revision exactly once')
+      assert(Change.length is #Change.text, 'The payload length counts all bytes, including NULs')
+      if Change.operation is SCCHANGE_INSERT then
+         local prefix = string.sub(state.text, 0, Change.position)
+         local suffix = string.sub(state.text, Change.position)
+         state.text = prefix .. Change.text .. suffix
+      else
+         assert(Change.operation is SCCHANGE_DELETE, 'Only actual insertions and deletions are text changes')
+         assert(string.sub(state.text, Change.position, Change.position + Change.length) is Change.text,
+            'Deleted bytes must match the mirror before the operation')
+         local prefix = string.sub(state.text, 0, Change.position)
+         local suffix = string.sub(state.text, Change.position + Change.length)
+         state.text = prefix .. suffix
+      end
+      state.revision = Change.revision
+      state.changes.push(Change)
+   end
+   return state
+end
+
+function verifyMirror(Sci:obj!, State:table!)
+   processing.sleep(0)
+   assert(State.text is (Sci.string ?? ''), 'Replaying the stream must reproduce the live document')
+   assert(State.revision is Sci.documentRevision, 'The mirror must reach the live revision')
+end
+
+@Test function ExactRecordsAndOwnedPayloads()
+   local scene <close>, sci = newEditor()
+   assert(sci.documentRevision is 0, 'An empty editor starts at revision zero')
+   local state = subscribe(sci)
+   check sci.mtReplaceRange(0, 0, 'é\t世界\r\n')
+   check sci.mtReplaceRange(2, 3, '\0X\n')
+   assert(#state.changes is 0, 'Changes must not be delivered inside the editing call')
+   assert(sci.documentRevision is 3, 'Replacement produces a delete and an insert')
+   verifyMirror(sci, state)
+   assert(#state.changes is 3, 'Every backend operation must have its own record')
+   assert(state.changes[0].text is 'é\t世界\r\n', 'Original text survives subsequent edits and dispatch')
+   assert(state.changes[0].linesAdded is 1, 'Inserted CRLF adds one line')
+   assert(state.changes[1].text is '\t' and state.changes[1].position is 2, 'Deletion reports removed bytes')
+   assert(state.changes[2].text is '\0X\n' and state.changes[2].linesAdded is 1, 'NULs and LF are retained')
+   assert(state.changes[2].origin is SCORIGIN_EDIT, 'Programmatic changes are ordinary backend edits')
+   local retained = state.changes[0]
+   sci.free()
+   assert(retained.text is 'é\t世界\r\n', 'Tiri owns copied records after editor destruction')
+end
+
+@Test function WholeDocumentLoadClearUndoAndRedo()
+   local scene <close>, sci = newEditor()
+   local state = subscribe(sci)
+   sci.string = 'first\nline'
+   sci.string = 'second\r\nline'
+   verifyMirror(sci, state)
+   local revision = sci.documentRevision
+   check sci.mtBeginUndoAction()
+   check sci.mtReplaceRange(0, 6, 'new')
+   check sci.mtInsertText('!', sci.textLength)
+   check sci.mtEndUndoAction()
+   verifyMirror(sci, state)
+   check sci.acUndo()
+   verifyMirror(sci, state)
+   assert(state.changes[#state.changes - 1].origin is SCORIGIN_UNDO, 'Undo operations identify their origin')
+   check sci.acRedo()
+   verifyMirror(sci, state)
+   assert(state.changes[#state.changes - 1].origin is SCORIGIN_REDO, 'Redo operations identify their origin')
+   check sci.acClear()
+   verifyMirror(sci, state)
+   assert(state.changes[#state.changes - 1].linesAdded is -1, 'Clearing reports removed lines')
+   assert(sci.documentRevision > revision, 'Undo and redo advance rather than reset revision')
+
+   local file <close> = obj.new('File', { path='temp:scintilla_changes.txt', flags=FL_NEW|FL_WRITE })
+   check file.acWrite('loaded\né')
+   file.free()
+   sci.path = 'temp:scintilla_changes.txt'
+   verifyMirror(sci, state)
+   assert(sci.canUndo is 0, 'Loading may clear history without resetting revisions or losing notifications')
+end
+
+@AfterAll function cleanup()
+   mSys.DeleteFile('temp:scintilla_changes.txt')
+end
+
+@Test function RevisionTracksUnsubscribedEditsAndIgnoresStyles()
+   local scene <close>, sci = newEditor()
+   sci.string = 'local value = 1\n'
+   assert(sci.documentRevision > 0, 'Unsubscribed text edits still advance revision')
+   local state = subscribe(sci)
+   local revision = sci.documentRevision
+   sci.lexer = SCLEX_TIRI
+   sci.fontSize = 16
+   check sci.mtSelectRange(1, 4)
+   check sci.mtReplaceRange(0, 0, '')
+   assert(sci.mtReplaceRange(-1, 0, 'invalid') is ERR_OutOfRange, 'Invalid edits are rejected')
+   processing.sleep(0)
+   assert(sci.documentRevision is revision and #state.changes is 0, 'Styling, selection and no-ops emit no records')
+   check sci.mtInsertText('!', sci.textLength)
+   check sci.mtInsertText('?', sci.textLength)
+   verifyMirror(sci, state)
+   assert(#state.changes is 2, 'Subsequent edits while already dirty must each be reported')
+end
+
+@Test function NestedEditsDoNotReenterAndRetainOrder()
+   local scene <close>, sci = newEditor()
+   local revisions = array<int> {}
+   local active = false
+   sci.changeCallback = function(Editor, Change)
+      assert(not active, 'Pumping messages must not recursively deliver changes')
+      active = true
+      revisions.push(Change.revision)
+      if #revisions is 1 then
+         check Editor.mtReplaceRange(Editor.textLength, Editor.textLength, 'nested')
+         processing.sleep(0)
+      end
+      active = false
+   end
+   check sci.mtReplaceRange(0, 0, 'first')
+   check sci.mtReplaceRange(5, 5, 'second')
+   processing.sleep(0)
+   assert(#revisions is 3, 'Nested edits are delivered after the original batch')
+   assert(revisions[0] is 1 and revisions[1] is 2 and revisions[2] is 3, 'Revisions retain global edit order')
+end
+
+@Test function ReplacementAndRemovalDiscardOldSubscription()
+   local scene <close>, sci = newEditor()
+   local old_calls = 0
+   sci.changeCallback = function(Editor, Change) old_calls++ end
+   check sci.mtReplaceRange(0, 0, 'discard')
+   local state = subscribe(sci)
+   check sci.mtReplaceRange(7, 7, ' keep')
+   verifyMirror(sci, state)
+   assert(old_calls is 0 and #state.changes is 1, 'A replacement callback starts from its new baseline')
+   check sci.mtReplaceRange(0, 0, 'pending')
+   sci.changeCallback = nil
+   processing.sleep(0)
+   assert(#state.changes is 1, 'Removing a callback discards pending records')
+   local calls = 0
+   sci.changeCallback = function(Editor, Change)
+      calls++
+      Editor.changeCallback = nil
+   end
+   check sci.mtReplaceRange(0, 0, 'one')
+   check sci.mtReplaceRange(0, 0, 'two')
+   processing.sleep(0)
+   assert(calls is 1, 'Removal during delivery discards the undelivered part of the batch')
+end
+
+@Test function DestroyDuringDeliveryAndBeforeDelivery()
+   local scene <close>, sci = newEditor()
+   local calls = 0
+   sci.changeCallback = function(Editor, Change)
+      calls++
+      Editor.free()
+   end
+   check sci.mtReplaceRange(0, 0, 'one')
+   check sci.mtReplaceRange(0, 0, 'two')
+   processing.sleep(0)
+   assert(calls is 1, 'Editor destruction stops the active batch')
+   local second_scene <close>, second = newEditor()
+   second.changeCallback = function(Editor, Change) calls++ end
+   check second.mtReplaceRange(0, 0, 'queued')
+   second_scene.free()
+   processing.sleep(0)
+   assert(calls is 1, 'Destroying the owner cancels queued editor delivery')
+end
+
+@Test function LargeQueueRetainsEveryByteAndRecord()
+   local scene <close>, sci = newEditor()
+   local state = subscribe(sci)
+   for i in {0 to 512} do
+      check sci.mtReplaceRange(sci.textLength, sci.textLength, f'{i}\né')
+   end
+   local large_text = ('a\0é\n').rep(300000)
+   check sci.mtReplaceRange(0, 0, large_text)
+   verifyMirror(sci, state)
+   assert(#state.changes is 513, 'The queue does not drop or coalesce records')
+   assert(state.changes[512].text is large_text, 'Large payloads are copied without truncation')
+end
+
+@Test function SelectionEventWithoutCaretMovement()
+   local surface <close> = obj.new('Surface', { width=300, height=120 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { width='100%', height='100%' })
+   local flags = 0
+   local sci = host.new('Scintilla', { eventFlags=SEF_SELECTION|SEF_CURSOR_POS,
+      eventCallback=function(Editor, Flags) flags = flags | Flags end })
+   sci.string = 'abcdef'
+   check sci.mtSelectRange(1, 4)
+   surface.acShow()
+   check surface.acDraw()
+   processing.sleep(0)
+   flags = 0
+   check sci.mtSelectRange(2, 4)
+   check surface.acDraw()
+   processing.sleep(0)
+   assert(sci.currentPos is 4 and sci.anchor is 2, 'Only the anchor moved')
+   assert(flags has SEF_SELECTION, 'An anchor change emits SELECTION independently of caret movement')
+   assert(not (flags has SEF_CURSOR_POS), 'An unchanged caret does not emit CURSOR_POS')
+end
+
+@Test function ReplacementDuringDeliveryStartsANewSubscription()
+   local scene <close>, sci = newEditor()
+   local old_calls, new_calls = 0, 0
+   sci.changeCallback = function(Editor, Change)
+      old_calls++
+      Editor.changeCallback = function(NextEditor, NextChange)
+         new_calls++
+         assert(NextChange.text is 'new', 'The new subscription excludes old pending records')
+      end
+      check Editor.mtReplaceRange(0, 0, 'new')
+   end
+   check sci.mtReplaceRange(0, 0, 'one')
+   check sci.mtReplaceRange(0, 0, 'two')
+   processing.sleep(0)
+   assert(old_calls is 1 and new_calls is 1, 'Replacing the callback stops the old batch and retains new edits')
+end
+
+@Test function PumpingInsideBackendNotificationDefersChangeDelivery()
+   local scene <close>, sci = newEditor()
+   local inside_notification = false
+   local calls = 0
+   sci.changeCallback = function(Editor, Change)
+      assert(not inside_notification, 'Changes cannot be dispatched inside a synchronous backend notification')
+      calls++
+   end
+   check sci.mtReplaceRange(0, 0, 'abc')
+   sci.modified = false
+   sci.eventFlags = SEF_MODIFIED
+   sci.eventCallback = function(Editor, Flags)
+      inside_notification = true
+      processing.sleep(0)
+      inside_notification = false
+   end
+   check sci.mtReplaceRange(3, 3, 'x')
+   processing.sleep(0)
+   assert(calls is 2, 'Pumping during modification does not lose queued records')
+end
+
+@Test function IndependentEditorSurvivesExternalHostDestruction()
+   local scene <close> = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
+   local host = scene.new('VectorViewport', { width='100%', height='100%' })
+   local sci <close> = scene.new('Scintilla', { viewport=host })
+   local state = subscribe(sci)
+   check sci.mtReplaceRange(0, 0, 'before')
+   host.free()
+   verifyMirror(sci, state)
+   check sci.mtReplaceRange(6, 6, ' after')
+   verifyMirror(sci, state)
+end
+
+@Test function TypedInputAndClipboardReplay()
+   local surface <close> = obj.new('Surface', { width=300, height=120 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local host = scene.new('VectorViewport', { width='100%', height='100%' })
+   local sci = host.new('Scintilla', { flags=SCIF_EDIT })
+   surface.acShow()
+   surface.acFocus()
+   host.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   local state = subscribe(sci)
+   local event = array<int, 6>
+   event[0] = ('keypress').hash()
+   event[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   event[2] = KQ_PRESSED
+   event[3] = KEY_A
+   event[4] = 97
+   check mSys.BroadcastEvent(event, 24)
+   verifyMirror(sci, state)
+   assert(sci.string is 'a', 'The focused editor receives typed input')
+   local clipboard <close> = obj.new('Clipboard')
+   check clipboard.mtAddText('é\n')
+   check sci.acClipboard(CLIPMODE_PASTE)
+   verifyMirror(sci, state)
+   check sci.mtSelectRange(0, sci.textLength)
+   check sci.acClipboard(CLIPMODE_CUT)
+   verifyMirror(sci, state)
+   assert(sci.textLength is 0, 'Clipboard cut emits the removed bytes')
+end
+
+@Test function FailedCallbackStopsItsSubscription()
+   local scene <close>, sci = newEditor()
+   local calls = 0
+   sci.changeCallback = function(Editor, Change)
+      calls++
+      return ERR_Failed
+   end
+   check sci.mtReplaceRange(0, 0, 'one')
+   check sci.mtReplaceRange(0, 0, 'two')
+   processing.sleep(0)
+   assert(calls is 1, 'A failed callback stops the remaining batch')
+   check sci.mtReplaceRange(0, 0, 'unsubscribed')
+   processing.sleep(0)
+   assert(calls is 1, 'A failed callback is removed before later edits')
+   local state = subscribe(sci)
+   check sci.mtReplaceRange(0, 0, 'recovered')
+   verifyMirror(sci, state)
+end
+
+@Test function InitialFileLoadIsPartOfTheRevisionStream()
+   local file = obj.new('File', { path='temp:scintilla_changes.txt', flags=FL_NEW|FL_WRITE })
+   check file.acWrite('initial\né')
+   file.free()
+   local changes = array<table> {}
+   local scene <close>, sci = newEditor({ path='temp:scintilla_changes.txt',
+      changeCallback=function(Editor, Change) changes.push(Change) end })
+   assert(sci.documentRevision is 1, 'Initial file insertion advances the revision from zero')
+   processing.sleep(0)
+   assert(#changes is 1 and changes[0].text is 'initial\né' and changes[0].revision is 1,
+      'A callback supplied before initialisation receives the file-load record')
+end
+
+@Test function FreedScriptContextIsDiscarded()
+   local scene <close>, sci = newEditor({ name='scintilla_changes_context' })
+   local script = obj.new('Tiri', { statement=[[
+      include 'scintilla'
+      local editor = obj.find('scintilla_changes_context')
+      editor.changeCallback = function(Editor, Change)
+         Editor.changeCallback = nil
+         check Editor.mtReplaceRange(0, Editor.textLength, 'stale')
+      end
+   ]] })
+   check script.acActivate()
+   check sci.mtReplaceRange(0, 0, 'queued')
+   script.free()
+   processing.sleep(0)
+   assert(sci.string is 'queued', 'Queued delivery cannot invoke a freed script context')
+   local state = subscribe(sci)
+   check sci.mtReplaceRange(0, 0, 'live')
+   verifyMirror(sci, state)
+end

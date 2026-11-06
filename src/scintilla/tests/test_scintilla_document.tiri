@@ -546,3 +546,205 @@ end
    assert(sci.set('fontSize', -1) is ERR_OutOfRange, 'A negative font size must be rejected')
    assert(sci.fontSize is 24, 'Rejected sizes must preserve the previous size')
 end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Selection inspection, exact byte ranges and client undo groups.
+
+function readRange(Sci:obj!, Start:num!, End:num!):str
+   local buffer = array<byte, (End - Start + 1)>
+   check Sci.mtGetTextRange(Start, End, buffer)
+   assert(buffer[End - Start] is 0, 'GetTextRange must append a NUL')
+   return buffer.getString(0, End - Start)
+end
+
+@Test function InspectSelectionDirectionAndBytes()
+   local scene <close>, vp, sci = newEditor()
+   local text = 'Aé\t世界\r\nZ\n'
+   sci.string = text
+   assert(sci.textLength is #text, 'TextLength counts UTF-8, tabs and both CRLF bytes')
+   check sci.mtSelectRange(10, 1)
+   assert(sci.currentPos is 1 and sci.anchor is 10, 'Caret and anchor retain reversed selection direction')
+   assert(sci.selectionStart is 1 and sci.selectionEnd is 10, 'Selection bounds are ordered byte positions')
+   assert(sci.selectedText is 'é\t世界', 'SelectedText returns the main selection byte span')
+   local saved = sci.selectedText
+   check sci.mtSelectRange(#text, #text)
+   assert(sci.currentPos is #text and sci.anchor is #text, 'The document end is a valid empty selection')
+   assert(sci.selectedText is nil, 'Empty SelectedText follows the framework nil string convention')
+   assert(saved is 'é\t世界', 'Tiri receives a copy independent of later field reads')
+   check sci.mtSelectRange(0, #text)
+   assert(sci.selectedText is text, 'The full document can be selected')
+end
+
+@Test function TextRangePreservesSelectionAndSearch()
+   local scene <close>, vp, sci = newEditor()
+   local text = 'é\t世界\r\nZ\n'
+   sci.string = text
+   check sci.mtSelectRange(9, 2)
+   local search = sci.new('ScintillaSearch', { text='世界' })
+   check search.mtFind(0)
+   check sci.mtSelectRange(9, 2)
+   assert(readRange(sci, 0, #text) is text, 'Full reads preserve line endings')
+   assert(readRange(sci, 1, 2) is text.sub(1, 2), 'Ranges may split a UTF-8 sequence without normalisation')
+   assert(readRange(sci, 10, 11) is '\n', 'CR and LF remain independently addressable bytes')
+   assert(readRange(sci, #text, #text) is '', 'An empty range at document end is valid')
+   assert(sci.currentPos is 2 and sci.anchor is 9, 'Reads preserve caret and anchor')
+   assert(search.start is 3 and search.end is 9, 'Reads leave recorded search bounds unchanged')
+end
+
+@Test function InvalidTextRangesLeaveStateUnchanged()
+   local scene <close>, vp, sci = newEditor()
+   sci.string = 'abc'
+   local buffer = array<byte, 4>
+   buffer.fill(127)
+   assert(sci.mtGetTextRange(-1, 2, buffer) is ERR_OutOfRange, 'Negative start has no sentinel meaning')
+   assert(sci.mtGetTextRange(2, 1, buffer) is ERR_OutOfRange, 'Reversed ranges are rejected')
+   assert(sci.mtGetTextRange(0, 4, buffer) is ERR_OutOfRange, 'End beyond document length is rejected')
+   assert(sci.mtGetTextRange(0, 2147483647, buffer) is ERR_OutOfRange, 'Extreme bounds are rejected')
+   assert(buffer[0] is 127 and buffer[3] is 127, 'Invalid reads leave the buffer unchanged')
+   local small = array<byte, 3>
+   small.fill(126)
+   assert(sci.mtGetTextRange(0, 3, small) is ERR_BufferOverflow, 'Capacity must include the terminator')
+   assert(small[0] is 126 and small[2] is 126, 'Insufficient capacity does not partially write')
+   assert(sci.mtReplaceRange(-1, 0, 'x') is ERR_OutOfRange, 'Negative replacement start is rejected')
+   assert(sci.mtReplaceRange(2, 1, 'x') is ERR_OutOfRange, 'Reversed replacement is rejected')
+   assert(sci.mtReplaceRange(0, 4, 'x') is ERR_OutOfRange, 'Replacement beyond the end is rejected')
+   assert(sci.string is 'abc', 'Invalid replacement requests leave text unchanged')
+end
+
+@Test function ReplaceRangeInsertionDeletionAndSelection()
+   local scene <close>, vp, sci = newEditor() -- No SCIF_EDIT: programmatic edits are permitted.
+   sci.string = 'abé\tcd\r\n'
+   check sci.mtSelectRange(7, 2)
+   check sci.mtReplaceRange(2, 4, '世界')
+   assert(sci.string is 'ab世界\tcd\r\n', 'Replacement uses bytes and preserves unrelated line endings')
+   assert(sci.currentPos is 8 and sci.anchor is 11, 'A nonempty selection start follows inserted text')
+   check sci.mtReplaceRange(sci.textLength, sci.textLength, 'Z')
+   assert(sci.string is 'ab世界\tcd\r\nZ', 'Equal endpoints insert at the document end')
+   check sci.mtReplaceRange(2, 8, '')
+   assert(sci.string is 'ab\tcd\r\nZ', 'Empty replacement deletes the exact range')
+   check sci.mtReplaceRange(0, sci.textLength, '')
+   assert(sci.textLength is 0, 'Deleting the entire document leaves zero bytes')
+   check sci.mtReplaceRange(0, 0, 'é')
+   check sci.mtReplaceRange(1, 2, 'X')
+   assert(readRange(sci, 0, 2) is string.char(0xc3) .. 'X', 'Replacement accepts interior UTF-8 boundaries')
+end
+
+@Test function ReplaceRangePreservesEmbeddedNUL()
+   local scene <close>, vp, sci = newEditor()
+   check sci.mtReplaceRange(0, 0, 'a\0b')
+   assert(sci.textLength is 3, 'Length-delimited replacement preserves embedded NUL bytes')
+   assert(readRange(sci, 0, 3) is 'a\0b', 'Range reads copy embedded NUL bytes')
+   check sci.mtSelectRange(0, 3)
+   assert(sci.selectedText is 'a\0b', 'SelectedText retains embedded NUL bytes')
+end
+
+@Test function NestedUndoGroupsAndAvailability()
+   local scene <close>, vp, sci = newEditor()
+   assert(sci.canUndo is 0 and sci.canRedo is 0, 'A new editor has no undo or redo history')
+   assert(sci.mtEndUndoAction() is ERR_Args, 'An unmatched end is rejected')
+   check sci.mtBeginUndoAction()
+   check sci.mtEndUndoAction()
+   check sci.mtReplaceRange(0, 0, '')
+   assert(sci.canUndo is 0, 'Empty groups and empty insertions create no undo history')
+   do
+      check sci.mtBeginUndoAction()
+      defer check sci.mtEndUndoAction() end
+      check sci.mtReplaceRange(0, 0, 'one')
+      check sci.mtBeginUndoAction()
+      check sci.mtInsertText(' two', 3) -- Existing editing method also opens an internal group.
+      check sci.mtEndUndoAction()
+      check sci.mtReplaceRange(0, 3, 'ONE')
+   end
+   assert(sci.string is 'ONE two' and sci.canUndo != 0 and sci.canRedo is 0, 'Edits update availability')
+   check sci.acUndo()
+   assert(sci.textLength is 0 and sci.canUndo is 0 and sci.canRedo != 0, 'One undo reverses the whole group')
+   check sci.acRedo()
+   assert(sci.string is 'ONE two' and sci.canRedo is 0, 'One redo restores the whole group')
+   check sci.acUndo()
+   check sci.mtReplaceRange(0, 0, 'new')
+   assert(sci.canRedo is 0, 'A new edit discards the redo branch')
+end
+
+@Test function InterruptedUndoGroupCleanup()
+   local scene <close>, vp, sci = newEditor()
+   local caught = false
+   try
+      check sci.mtBeginUndoAction()
+      defer check sci.mtEndUndoAction() end
+      check sci.mtReplaceRange(0, 0, 'first')
+      check sci.mtReplaceRange(0, 99, 'invalid')
+   except e
+      caught = true
+   end
+   assert(caught, 'The invalid request must interrupt the script scope')
+   assert(sci.mtEndUndoAction() is ERR_Args, 'Deferred cleanup closes the interrupted group')
+   check sci.mtReplaceRange(5, 5, ' second')
+   check sci.acUndo()
+   assert(sci.string is 'first', 'The next edit is outside the interrupted group')
+   check sci.acUndo()
+   assert(sci.textLength is 0, 'The interrupted group remains undoable')
+   check sci.mtBeginUndoAction()
+   check sci.mtBeginUndoAction()
+   check sci.mtReplaceRange(0, 0, 'freed with open groups')
+   sci.free()
+   processing.sleep(0)
+end
+
+@Test function NotificationCannotMutateRangesOrUndoBoundaries()
+   local scene <close>, vp, sci = newEditor()
+   sci.eventFlags = SEF_MODIFIED
+   local calls = 0
+   sci.eventCallback = function(Editor, Flags)
+      assert(Editor.mtReplaceRange(0, 0, 'nested') is ERR_Busy, 'Notification edits must report Busy')
+      assert(Editor.mtBeginUndoAction() is ERR_Busy, 'Notifications cannot open client undo groups')
+      assert(Editor.mtEndUndoAction() is ERR_Busy, 'Notifications cannot close the outer client group')
+      calls++
+   end
+   check sci.mtBeginUndoAction()
+   check sci.mtReplaceRange(0, 0, 'outer')
+   check sci.mtEndUndoAction()
+   assert(calls is 1 and sci.string is 'outer', 'Nested attempts leave the outer edit intact')
+   sci.eventCallback = nil
+   check sci.acUndo()
+   assert(sci.textLength is 0, 'The outer group remains balanced and undoable')
+end
+
+@Test function ReplacementUndoAndEndpointAdjustment()
+   local scene <close>, vp, sci = newEditor()
+   check sci.mtReplaceRange(0, 0, 'abcdef')
+   check sci.mtSelectRange(2, 2)
+   check sci.mtReplaceRange(2, 4, 'XYZ')
+   assert(sci.string is 'abXYZef', 'The exact range is replaced')
+   assert(sci.currentPos is 2 and sci.anchor is 2, 'An empty caret stays at an insertion at its position')
+   check sci.acUndo()
+   assert(sci.string is 'abcdef', 'One undo reverses both deletion and insertion')
+   check sci.acRedo()
+   assert(sci.string is 'abXYZef', 'One redo reapplies the replacement')
+   check sci.mtSelectRange(2, 5)
+   check sci.mtReplaceRange(5, 5, '!')
+   assert(sci.selectionStart is 2 and sci.selectionEnd is 5, 'Insertion at the selection end is excluded')
+   check sci.mtReplaceRange(2, 2, '?')
+   assert(sci.selectionStart is 3 and sci.selectionEnd is 6, 'Insertion at a nonempty start shifts both bounds')
+end
+
+@Test function UndoGroupAcrossFileReload()
+   writeTempFile('temp:scintilla_test.txt', 'loaded')
+   local scene <close>, vp, sci = newEditor()
+   check sci.mtBeginUndoAction()
+   check sci.mtReplaceRange(0, 0, 'old')
+   sci.path = 'temp:scintilla_test.txt'
+   assert(sci.canUndo is 0 and sci.canRedo is 0, 'File reload retains its existing undo-history reset')
+   check sci.mtReplaceRange(6, 6, ' suffix')
+   check sci.mtEndUndoAction()
+   check sci.acUndo()
+   assert(sci.string is 'loaded', 'The group remains balanced after file reload')
+end
+
+@Test function RangeMethodsRequireInitialisation()
+   local sci <close> = obj.new('Scintilla')
+   local buffer = array<byte, 1>
+   assert(sci.mtGetTextRange(0, 0, buffer) is ERR_NotInitialised, 'Range reads require initialisation')
+   assert(sci.mtReplaceRange(0, 0, '') is ERR_NotInitialised, 'Range writes require initialisation')
+   assert(sci.mtBeginUndoAction() is ERR_NotInitialised, 'Undo groups require initialisation')
+   assert(sci.mtEndUndoAction() is ERR_NotInitialised, 'Ending a group requires initialisation')
+end

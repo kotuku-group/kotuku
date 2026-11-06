@@ -584,6 +584,11 @@ void ScintillaKTK::NotifyChange()
 
 void ScintillaKTK::NotifyParent(Scintilla::NotificationData Notification)
 {
+   notification_depth++;
+   const auto leave_notification = kt::Defer([&]() {
+      notification_depth--;
+      if (not notification_depth) QueueChangeDelivery();
+   });
    const auto &scn = Notification;
    kt::Log log("SciMsg");
    int position, length, line, lines_added;
@@ -604,6 +609,11 @@ void ScintillaKTK::NotifyParent(Scintilla::NotificationData Notification)
       // this brace and its corresponding matching brace.
 
       log.traceBranch("[UPDATEUI] $%x", int(scn.updated));
+
+      if (int(scn.updated) & SC_UPDATE_SELECTION) {
+         scintilla->ReportEventFlags |= SEF::SELECTION;
+         QueueAction(sci::ReportEvent::id, scintilla->UID);
+      }
 
       // Update the cursor-row and cursor-column fields if they've changed.
 
@@ -726,6 +736,14 @@ void ScintillaKTK::NotifyParent(Scintilla::NotificationData Notification)
 
       if (int(scn.modificationType) & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) {
          scintilla->DocumentRevision++;
+         if (scintilla->ChangeCallback.defined() and not scintilla->collecting()) {
+            const auto operation = (int(scn.modificationType) & SC_MOD_INSERTTEXT) ?
+               SCCHANGE::INSERT : SCCHANGE::DELETE;
+            const auto origin = (int(scn.modificationType) & SC_PERFORMED_UNDO) ? SCORIGIN::UNDO :
+               ((int(scn.modificationType) & SC_PERFORMED_REDO) ? SCORIGIN::REDO : SCORIGIN::EDIT);
+            change_reports.push_back({ scintilla->DocumentRevision, operation, position, length, lines_added,
+               origin, std::string(scn.text, size_t(length)) });
+         }
          track_modified_lines(scintilla, SendScintilla(SCI_LINEFROMPOSITION, position), lines_added);
       }
       if (int(scn.modificationType) & SC_MOD_CHANGEFOLD) {
@@ -857,6 +875,75 @@ void ScintillaKTK::NotifyParent(Scintilla::NotificationData Notification)
       // Selection is reported once from AutoCSelection.  Highlight changes have no public callback equivalent.
    }
    else log.traceWarning("Notification code %d unsupported.", int(code));
+}
+
+//********************************************************************************************************************
+// Changes retain their text until dispatch.  Never call client code from a backend notification.
+
+void ScintillaKTK::QueueChangeDelivery()
+{
+   if (change_reports.empty() or change_report_queued or scintilla->collecting()) return;
+   change_report_queued = true;
+   if (auto error = QueueAction(sci::ReportEvent::id, scintilla->UID); error != ERR::Okay) {
+      change_report_queued = false;
+      kt::Log(__FUNCTION__).warning(error);
+   }
+}
+
+void ScintillaKTK::panResetChangeReports()
+{
+   change_generation++;
+   change_reports.clear();
+}
+
+bool ScintillaKTK::panFlushChangeReports()
+{
+   change_report_queued = false;
+   if (flushing_changes or panInNotification() or scintilla->collecting()) return false;
+   if (change_reports.empty()) return true;
+
+   flushing_changes = true;
+   const auto reset = kt::Defer([&]() { flushing_changes = false; });
+   const auto generation = change_generation;
+   auto reports = std::move(change_reports);
+   change_reports.clear();
+   for (const auto &report : reports) {
+      if (scintilla->collecting()) return false;
+      if (generation != change_generation) break;
+      if (scintilla->ChangeCallback.stale()) {
+         scintilla->ChangeCallback.unpin();
+         scintilla->ChangeCallback.clear();
+         panResetChangeReports();
+         break;
+      }
+      auto callback = scintilla->ChangeCallback;
+      if (not callback.defined()) break;
+      callback.pin();
+      const auto unpin = kt::Defer([&]() { callback.unpin(); });
+      if (callback.isC()) {
+         kt::SwitchContext ctx(callback.Context);
+         auto routine = (void (*)(extScintilla *, const ScintillaChange *, APTR))callback.Routine;
+         routine(scintilla, &report, callback.Meta);
+      }
+      else if (callback.isScript()) {
+         ERR result = ERR::Okay;
+         const auto error = sc::Call(callback, std::to_array<ScriptArg>({
+            { "Scintilla", scintilla, FD_OBJECTPTR },
+            { "ScintillaChange:Change", (APTR)&report, FD_STRUCT|FD_PTR }
+         }), result);
+         if ((error != ERR::Okay) or (result != ERR::Okay)) {
+            kt::Log(__FUNCTION__).warning(error != ERR::Okay ? error : result);
+            if (not scintilla->collecting() and (generation IS change_generation)) {
+               replace_callback(scintilla->ChangeCallback, nullptr);
+               panResetChangeReports();
+            }
+            break;
+         }
+      }
+   }
+   if (scintilla->collecting()) return false;
+   QueueChangeDelivery();
+   return true;
 }
 
 //********************************************************************************************************************
@@ -1647,4 +1734,24 @@ bool ScintillaKTK::findMatchingBrace(sptr_t &brace,sptr_t &other,sptr_t mode)
    }
 
    return isInside;
+}
+
+//********************************************************************************************************************
+
+ERR ScintillaKTK::panReplaceRange(int Start, int End, std::string_view Text)
+{
+   if (panInNotification()) return ERR::Busy;
+   if ((Start < 0) or (End < Start) or (End > pdoc->Length())) return ERR::OutOfRange;
+   if (panCheckLength(Text.size(), End - Start) != ERR::Okay) return ERR::OutOfRange;
+   if (pdoc->IsReadOnly()) return ERR::ReadOnly;
+   if ((Start IS End) and Text.empty()) return ERR::Okay;
+
+   // Copy before mutation: callers may supply a view into adapter-owned storage.
+   const std::string text(Text);
+   const auto saved_target = targetRange;
+   targetRange = Scintilla::Internal::SelectionSegment(
+      Scintilla::Internal::SelectionPosition(Start), Scintilla::Internal::SelectionPosition(End));
+   const auto result = SendScintilla(SCI_REPLACETARGET, text.size(), text.c_str());
+   targetRange = saved_target;
+   return result < 0 ? ERR::OutOfRange : ERR::Okay;
 }

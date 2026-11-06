@@ -153,21 +153,21 @@ static const struct {
    { "*.css",         SCLEX::CSS },
    { "*.diff",        SCLEX::DIFF },
    { "*.errorlist",   SCLEX::ERRORLIST },
-   { "*.lua|*.tiri", SCLEX::TIRI },
+   { "*.lua|*.tiri",  SCLEX::TIRI },
    { "*.dmd",         SCLEX::HTML },
    { "*.html|*.htm|*.xhtml", SCLEX::HTML },
    { "makefile|*.make", SCLEX::MAKEFILE },
-   { "*.pas",          SCLEX::PASCAL },
-   { "*.perl|*.pl",    SCLEX::PERL },
-   { "*.php",          SCLEX::PHPSCRIPT },
+   { "*.pas",           SCLEX::PASCAL },
+   { "*.perl|*.pl",     SCLEX::PERL },
+   { "*.php",           SCLEX::PHPSCRIPT },
    { "*.reb|*.rebol",   SCLEX::REBOL },
-   { "*.prop|*.cfg",   SCLEX::PROPERTIES },
-   { "*.py",           SCLEX::PYTHON },
-   { "*.ruby|*.rb",    SCLEX::RUBY },
-   { "*.sql",          SCLEX::SQL },
-   { "*.vb",           SCLEX::VB },
-   { "*.vbscript",     SCLEX::VBSCRIPT },
-   { "*.xml",          SCLEX::XML }
+   { "*.prop|*.cfg",    SCLEX::PROPERTIES },
+   { "*.py",            SCLEX::PYTHON },
+   { "*.ruby|*.rb",     SCLEX::RUBY },
+   { "*.sql",           SCLEX::SQL },
+   { "*.vb",            SCLEX::VB },
+   { "*.vbscript",      SCLEX::VBSCRIPT },
+   { "*.xml",           SCLEX::XML }
 };
 
 #define SCICOLOUR(red,green,blue) (((uint8_t)(blue))<<16)|(((uint8_t)(green))<<8)|((uint8_t)(red))
@@ -975,6 +975,9 @@ static void notify_write(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct
 
    SCICALL(SCI_SETUNDOCOLLECTION, 1UL); // Turn on undo
 
+   // Changing undo collection resets the backend nesting.  Resume outstanding client groups.
+   for (int depth = 0; depth < Self->ClientUndoDepth; depth++) SCICALL(SCI_BEGINUNDOACTION);
+
    Self->HoldModify = FALSE;
 }
 
@@ -1355,6 +1358,155 @@ static ERR SCINTILLA_GetLine(extScintilla *Self, struct sci::GetLine *Args)
 /*********************************************************************************************************************
 
 -METHOD-
+GetTextRange: Copies an exact byte range to a caller-supplied buffer.
+
+GetTextRange() copies the document bytes from `Start` up to, but not including, `End` into `Buffer` and appends a
+terminating null byte.  Offsets are byte positions, so a range that splits a multi-byte UTF-8 character is copied
+as-is.  Embedded null bytes in the document are copied verbatim, so use `End - Start` rather than the null terminator
+to determine the length of the result.
+
+Unlike #GetLine(), the range is not limited to a single line and line-end characters are copied without
+modification.  The selection and cursor position are not affected.
+
+-INPUT-
+int Start: Inclusive byte offset, between zero and #TextLength.
+int End: Exclusive byte offset, between `Start` and #TextLength.  Negative sentinels such as `-1` are not supported.
+^array(char) Buffer: Destination with at least `End - Start + 1` bytes of capacity, allowing for the null terminator.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+OutOfRange: `Start` is negative, `End` is less than `Start`, or `End` exceeds #TextLength.
+BufferOverflow: `Buffer` is smaller than `End - Start + 1` bytes.
+
+-TAGS-
+mutates-input
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_GetTextRange(extScintilla *Self, struct sci::GetTextRange *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   if ((Args->Start < 0) or (Args->End < Args->Start) or
+       (Args->End > SCICALL(SCI_GETLENGTH))) return ERR::OutOfRange;
+
+   const size_t length = size_t(Args->End - Args->Start);
+   if (Args->Buffer.size() <= length) return ERR::BufferOverflow;
+   if (not Args->Buffer.data()) return ERR::NullArgs;
+
+   Scintilla::TextRangeFull range { { Args->Start, Args->End }, (char *)Args->Buffer.data() };
+   SCICALL(SCI_GETTEXTRANGEFULL, 0, sptr_t(&range));
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+ReplaceRange: Replaces an exact byte range without searching or assigning a selection.
+
+ReplaceRange() replaces the document bytes from `Start` up to, but not including, `End` with `Text`.  Setting `Start`
+and `End` to the same offset inserts `Text` at that position, and an empty `Text` deletes the range.  A call with an
+empty range and an empty `Text` succeeds without modifying the document.
+
+The replacement is recorded as a single undoable edit, increments #DocumentRevision and is reported to
+#ChangeCallback like any other edit.  Use #BeginUndoAction() and #EndUndoAction() to combine several replacements into
+one undo step.  The current selection is not replaced by `Text`, although selection and cursor positions after the
+range are shifted to account for the change in length.
+
+This method is intended for programmatic edits and is not restricted by the `SCIF::EDIT` flag.
+
+-INPUT-
+int Start: Inclusive byte offset, between zero and #TextLength.
+int End: Exclusive byte offset, between `Start` and #TextLength.  Negative sentinels such as `-1` are not supported.
+strview Text: Replacement bytes.  An empty string deletes the range.  Embedded null bytes are supported.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+OutOfRange: The range is invalid, or the replacement would exceed the maximum document length.
+ReadOnly: The document is temporarily read-only.
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+
+-TAGS-
+copies-input, mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_ReplaceRange(extScintilla *Self, struct sci::ReplaceRange *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   return Self->API->panReplaceRange(Args->Start, Args->End, Args->Text);
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+BeginUndoAction: Begins a client undo group.
+
+BeginUndoAction() starts a group of edits that #Undo() and #Redo() will treat as a single step.  Every edit made until
+the matching call to #EndUndoAction() is added to the group, whether it originates from the client or the user.
+
+Groups can be nested.  Each call must be balanced by a call to #EndUndoAction(), and the group is closed only when
+the outermost call is ended.  Open groups are preserved when new content is loaded, and any groups that remain open
+when the Scintilla object is freed are closed automatically.
+
+-ERRORS-
+Okay
+NotInitialised
+OutOfRange: The maximum nesting depth has been reached.
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_BeginUndoAction(extScintilla *Self)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   if (Self->API->panInNotification()) return ERR::Busy;
+   if (Self->ClientUndoDepth IS INT_MAX) return ERR::OutOfRange;
+   SCICALL(SCI_BEGINUNDOACTION);
+   Self->ClientUndoDepth++;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+EndUndoAction: Ends the innermost client undo group.
+
+EndUndoAction() closes the group most recently opened by #BeginUndoAction().  When the outermost group is closed,
+the edits made within it are committed to the undo history as a single step.
+
+-ERRORS-
+Okay
+NotInitialised
+Args: There is no open undo group to end.
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_EndUndoAction(extScintilla *Self)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   if (Self->API->panInNotification()) return ERR::Busy;
+   if (not Self->ClientUndoDepth) return ERR::Args;
+   SCICALL(SCI_ENDUNDOACTION);
+   Self->ClientUndoDepth--;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
 GetPos: Returns the byte position of a given line and column number.
 
 This method converts a `Line` and `Column` index to the equivalent byte position within the text document.
@@ -1596,13 +1748,13 @@ InsertText: Inserts text into a document.
 Use InsertText to insert a string at any point in the document (if adding text to the end of the document, we recommend
 using data channels instead).
 
-You will need to specify the character position at which the provided String should be inserted.  Two special character
-positions are also supported as an alternative - a value of -1 inserts the text at the current cursor position and a
+Specify the zero-based UTF-8 byte position at which String should be inserted.  Two special positions are supported:
+a value of -1 inserts the text at the current cursor position and a
 value of -2 replaces currently selected text.
 
 -INPUT-
 strview String: A text string to add.
-int Pos: -1 inserts at the current cursor position, -2 replaces currently selected text, zero or above inserts at the character index indicated.
+int Pos: Byte offset; -1 inserts at the caret and -2 replaces the selection.
 
 -RESULT-
 Okay
@@ -1709,13 +1861,13 @@ static ERR SCINTILLA_RemoveMarker(extScintilla *Self, struct sci::RemoveMarker *
 ReplaceLine: Replaces a line with new text content.
 
 This method will replace an entire line with a new text string.  If the new string contains line feeds, then multiple
-lines will be inserted at the target position.  It is possible to limit the number of characters inserted from the
-source string by setting the Length parameter.  To insert all characters from the source string, set a Length of -1.
+lines will be inserted at the target position.  It is possible to limit the number of bytes inserted from the
+source string by setting the Length parameter.  To insert all bytes from the source string, set a Length of -1.
 
 -INPUT-
 int Line: Index of the line being targeted.
 strview String: The new string that will replace the line.
-int Length: The number of characters to replace the target with, or -1 for the entire source string.
+int Length: The number of bytes to replace the target with, or -1 for the entire source string.
 
 -RESULT-
 Okay:
@@ -1872,6 +2024,7 @@ Private
 
 static ERR SCINTILLA_ReportEvent(extScintilla *Self)
 {
+   if (Self->API and not Self->API->panFlushChangeReports()) return ERR::Okay;
    if (Self->API and not Self->API->panFlushCompletionReports()) return ERR::Okay;
 
    if (Self->ReportEventFlags IS SEF::NIL) return ERR::Okay;
@@ -1995,12 +2148,13 @@ static ERR SCINTILLA_ScrollToPoint(extScintilla *Self, struct sci::ScrollToPoint
 -METHOD-
 SelectRange: Selects a range of text, can also deselect all text.
 
-This method will select an area of text between a start and end point, measured in characters.  It can also deselect
-all text if no arguments are provided.
+Selects a half-open range using zero-based UTF-8 byte offsets.  Start is the anchor and End is the caret, so reversed
+bounds preserve selection direction.  Supplying no arguments or two zeroes collapses the selection at the current caret.
+Existing backend clamping and negative sentinels are preserved.
 
 -INPUT-
-int Start: The character at which the selection will start.
-int End: The character at which the selection will end.  If negative, the last character in the document will be targeted.
+int Start: The anchor byte offset.
+int End: The caret byte offset (exclusive for forward selections).  A negative value targets the document end.
 
 -RESULT-
 Okay:
@@ -2305,6 +2459,72 @@ static ERR SET_BkgdColour(extScintilla *Self, RGB8 *Value)
       Self->API->SetStyleColours();
    }
 
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+ChangeCallback: Receives an ordered stream of document byte changes after editing completes.
+
+Set this field with a function reference to receive a record of every insertion and deletion of text.  The
+prototype for the callback function is `Function(*Scintilla, struct(*ScintillaChange) Change)`.  Each
+!ScintillaChange structure describes one change:
+
+!ScintillaChange
+
+Every change is reported, whether it originates from user input, the clipboard, programmatic methods such as
+#ReplaceRange(), file loading, undo or redo.  Each record corresponds to exactly one increment of #DocumentRevision,
+and records are delivered in the order that the changes occurred without being coalesced.  A client that starts with
+a copy of the document can therefore replay the stream to keep an exact mirror of the text.  An edit that replaces
+existing text is reported as a deletion followed by an insertion.  Edits made inside an undo group are reported
+individually.
+
+Delivery is deferred to the next cycle of message processing, after the editing call has returned.  Edits made from
+within the callback are queued and delivered after the current batch completes.
+
+Changes made while no callback is defined are not recorded.  Setting, replacing or clearing the callback discards
+any records that have not yet been delivered, including the remainder of a batch in progress.  If a script callback
+raises an error, the callback is cleared and its undelivered records are discarded.
+
+The `Change` structure is only valid for the duration of the callback, so C++ clients must copy any values that need
+to be retained.  Script clients receive their own copy of the record.
+
+*********************************************************************************************************************/
+
+static ERR GET_ChangeCallback(extScintilla *Self, FUNCTION * &Value)
+{
+   if (not Self->ChangeCallback.defined()) return ERR::FieldNotSet;
+   Value = &Self->ChangeCallback;
+   return ERR::Okay;
+}
+
+static ERR SET_ChangeCallback(extScintilla *Self, FUNCTION *Value)
+{
+   if (Self->API) Self->API->panResetChangeReports();
+   replace_callback(Self->ChangeCallback, Value);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+DocumentRevision: Monotonically increasing revision of document text.
+
+The DocumentRevision value starts at zero and is incremented for every insertion or deletion of text, including
+edits made by the user, programmatic changes, undo, redo and the loading of new content.  Styling, folding and
+selection changes do not affect the revision.  The value is never decremented, so undoing an edit does not restore
+an earlier revision.
+
+Clients can record the revision when caching information about the document, then compare it later to determine
+whether the text may have changed in the interim.  Each change reported to #ChangeCallback carries the revision
+reached after that change in its `Revision` value.
+
+*********************************************************************************************************************/
+
+static ERR GET_DocumentRevision(extScintilla *Self, int64_t *Value)
+{
+   *Value = Self->DocumentRevision;
    return ERR::Okay;
 }
 
@@ -2681,6 +2901,73 @@ static ERR SET_LineNumbers(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
+EventCallback: Provides callbacks for global state changes.
+
+Set this field with a function reference to receive event notifications.  It must be set in conjunction with
+#EventFlags so that you can select the type of notifications that will be received.
+
+The callback function must be in the format `Function(*Scintilla, INT64 EventFlag)`.
+
+The EventFlag value will indicate the event that occurred.  Please see the #EventFlags field for a list of
+supported events and additional details.
+
+*********************************************************************************************************************/
+
+static ERR GET_EventCallback(extScintilla *Self, FUNCTION * &Value)
+{
+   if (Self->EventCallback.defined()) {
+      Value = &Self->EventCallback;
+      return ERR::Okay;
+   }
+   else return ERR::FieldNotSet;
+}
+
+static ERR SET_EventCallback(extScintilla *Self, FUNCTION *Value)
+{
+   replace_callback(Self->EventCallback, Value);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+EventFlags: Specifies events that need to be reported from the Scintilla object.
+
+To receive event notifications, set #EventCallback with a function reference and the EventFlags field with a mask that
+indicates the events that need to be received.
+
+-FIELD-
+Modified:  Returns `true` if the document has been modified and not saved.
+
+The Modified field controls the modification state of the document.  It is automatically changed to a value of TRUE
+when the user edits the document.  To receive notification of changes to the document state, you should subscribe to
+the Modified field.
+
+It is recommended that you manually set this field to `false` if the document is saved to disk.  The Scintilla class will
+not make this change for you automatically.
+
+*********************************************************************************************************************/
+
+static ERR SET_Modified(extScintilla *Self, int Value)
+{
+   if (Self->initialised()) {
+      if (Value) {
+         Self->Modified = TRUE;
+      }
+      else {
+         Self->Modified = FALSE;
+         SCICALL(SCI_SETSAVEPOINT); // Tell Scintilla that the document is unmodified
+      }
+
+      report_event(Self, SEF::MODIFIED);
+   }
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
 Origin: Sets the #Path field without loading the document.
 
 Setting the Origin will update #Path without updating the content of the Scintilla object.  Use for situations such as
@@ -2736,31 +3023,34 @@ static ERR SET_Path(extScintilla *Self, const std::string_view &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Modified:  Returns `true` if the document has been modified and not saved.
+SelectBkgd: Defines the background colour of selected text.  Supports alpha blending.
 
-The Modified field controls the modification state of the document.  It is automatically changed to a value of TRUE
-when the user edits the document.  To receive notification of changes to the document state, you should subscribe to
-the Modified field.
+An alpha value of zero disables the selection background.  An opaque colour is drawn beneath the selected text.  A
+translucent colour is blended over the selection after the text is drawn, in the same way as #LineHighlight, so that
+the text remains visible through it.  Consider disabling #SelectFore with a translucent background so that the
+selected text retains its styled colours.
 
-It is recommended that you manually set this field to `false` if the document is saved to disk.  The Scintilla class will
-not make this change for you automatically.
+The background of the main selection is affected.  The additional rows of a rectangular selection use Scintilla's
+default colour for additional selections.
 
 *********************************************************************************************************************/
 
-static ERR SET_Modified(extScintilla *Self, int Value)
+static ERR SET_SelectBkgd(extScintilla *Self, RGB8 *Value)
 {
-   if (Self->initialised()) {
-      if (Value) {
-         Self->Modified = TRUE;
+   if (Value) Self->SelectBkgd = *Value;
+   else Self->SelectBkgd.Alpha = 0;
+   if (Self->API) {
+      const auto &colour = Self->SelectBkgd;
+      SCICALL(SCI_SETSELALPHA, colour.Alpha ? scintilla_alpha(colour.Alpha) : uptr_t(SC_ALPHA_NOALPHA));
+      for (auto element : { Scintilla::Element::SelectionBack, Scintilla::Element::SelectionSecondaryBack,
+            Scintilla::Element::SelectionInactiveBack }) {
+         if (colour.Alpha) {
+            SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(element),
+               sptr_t(Scintilla::Internal::ColourRGBA(colour.Red, colour.Green, colour.Blue, colour.Alpha).AsInteger()));
+         }
+         else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(element));
       }
-      else {
-         Self->Modified = FALSE;
-         SCICALL(SCI_SETSAVEPOINT); // Tell Scintilla that the document is unmodified
-      }
-
-      report_event(Self, SEF::MODIFIED);
    }
-
    return ERR::Okay;
 }
 
@@ -2812,76 +3102,6 @@ static ERR SET_ShowWhitespace(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-EventCallback: Provides callbacks for global state changes.
-
-Set this field with a function reference to receive event notifications.  It must be set in conjunction with
-#EventFlags so that you can select the type of notifications that will be received.
-
-The callback function must be in the format `Function(*Scintilla, INT64 EventFlag)`.
-
-The EventFlag value will indicate the event that occurred.  Please see the #EventFlags field for a list of
-supported events and additional details.
-
-*********************************************************************************************************************/
-
-static ERR GET_EventCallback(extScintilla *Self, FUNCTION * &Value)
-{
-   if (Self->EventCallback.defined()) {
-      Value = &Self->EventCallback;
-      return ERR::Okay;
-   }
-   else return ERR::FieldNotSet;
-}
-
-static ERR SET_EventCallback(extScintilla *Self, FUNCTION *Value)
-{
-   replace_callback(Self->EventCallback, Value);
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-EventFlags: Specifies events that need to be reported from the Scintilla object.
-
-To receive event notifications, set #EventCallback with a function reference and the EventFlags field with a mask that
-indicates the events that need to be received.
-
--FIELD-
-SelectBkgd: Defines the background colour of selected text.  Supports alpha blending.
-
-An alpha value of zero disables the selection background.  An opaque colour is drawn beneath the selected text.  A
-translucent colour is blended over the selection after the text is drawn, in the same way as #LineHighlight, so that
-the text remains visible through it.  Consider disabling #SelectFore with a translucent background so that the
-selected text retains its styled colours.
-
-The background of the main selection is affected.  The additional rows of a rectangular selection use Scintilla's
-default colour for additional selections.
-
-*********************************************************************************************************************/
-
-static ERR SET_SelectBkgd(extScintilla *Self, RGB8 *Value)
-{
-   if (Value) Self->SelectBkgd = *Value;
-   else Self->SelectBkgd.Alpha = 0;
-   if (Self->API) {
-      const auto &colour = Self->SelectBkgd;
-      SCICALL(SCI_SETSELALPHA, colour.Alpha ? scintilla_alpha(colour.Alpha) : uptr_t(SC_ALPHA_NOALPHA));
-      for (auto element : { Scintilla::Element::SelectionBack, Scintilla::Element::SelectionSecondaryBack,
-            Scintilla::Element::SelectionInactiveBack }) {
-         if (colour.Alpha) {
-            SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(element),
-               sptr_t(Scintilla::Internal::ColourRGBA(colour.Red, colour.Green, colour.Blue, colour.Alpha).AsInteger()));
-         }
-         else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(element));
-      }
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
 SelectFore: Defines the colour of selected text.
 
 Selected text is drawn in this colour, overriding the colours of its style.  An alpha value of zero disables the
@@ -2904,6 +3124,129 @@ static ERR SET_SelectFore(extScintilla *Self, RGB8 *Value)
          else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(element));
       }
    }
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+CurrentPos: The main selection caret as a zero-based UTF-8 byte offset.
+
+*********************************************************************************************************************/
+
+static ERR GET_CurrentPos(extScintilla *Self, int *Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   const auto position = SCICALL(SCI_GETSELECTIONNCARET, SCICALL(SCI_GETMAINSELECTION));
+   return KotukuScintilla::PublicInteger(position, *Value) ? ERR::Okay : ERR::OutOfRange;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+Anchor: The main selection anchor as a zero-based UTF-8 byte offset.  It may follow CurrentPos.
+
+*********************************************************************************************************************/
+
+static ERR GET_Anchor(extScintilla *Self, int *Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   const auto position = SCICALL(SCI_GETSELECTIONNANCHOR, SCICALL(SCI_GETMAINSELECTION));
+   return KotukuScintilla::PublicInteger(position, *Value) ? ERR::Okay : ERR::OutOfRange;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SelectionStart: The lower byte offset of the main selection, independent of selection direction.
+
+*********************************************************************************************************************/
+
+static ERR GET_SelectionStart(extScintilla *Self, int *Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   const auto position = SCICALL(SCI_GETSELECTIONNSTART, SCICALL(SCI_GETMAINSELECTION));
+   return KotukuScintilla::PublicInteger(position, *Value) ? ERR::Okay : ERR::OutOfRange;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SelectionEnd: The exclusive upper byte offset of the main selection, independent of direction.
+
+*********************************************************************************************************************/
+
+static ERR GET_SelectionEnd(extScintilla *Self, int *Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   const auto position = SCICALL(SCI_GETSELECTIONNEND, SCICALL(SCI_GETMAINSELECTION));
+   return KotukuScintilla::PublicInteger(position, *Value) ? ERR::Okay : ERR::OutOfRange;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+TextLength: The document length in bytes, including tabs, CR and LF bytes.  An empty document has length zero.
+
+*********************************************************************************************************************/
+
+static ERR GET_TextLength(extScintilla *Self, int *Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   return KotukuScintilla::PublicInteger(SCICALL(SCI_GETLENGTH), *Value) ? ERR::Okay : ERR::OutOfRange;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+CanUndo: Reports whether the backend has an edit available to undo.
+
+*********************************************************************************************************************/
+
+static ERR GET_CanUndo(extScintilla *Self, int *Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   return KotukuScintilla::PublicInteger(SCICALL(SCI_CANUNDO), *Value) ? ERR::Okay : ERR::OutOfRange;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+CanRedo: Reports whether the backend has an undone edit available to redo.
+
+*********************************************************************************************************************/
+
+static ERR GET_CanRedo(extScintilla *Self, int *Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   return KotukuScintilla::PublicInteger(SCICALL(SCI_CANREDO), *Value) ? ERR::Okay : ERR::OutOfRange;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SelectedText: Retrieves the contiguous byte span of the main selection.
+
+Returns the document bytes between the start and end of the main selection.  If the selection is empty, an empty
+string is returned.  When multiple or rectangular selections are active, only the main selection range is returned
+and additional ranges are ignored.  Line-end characters within the selection are returned without modification.
+
+-TAGS-
+api-owns-result
+
+*********************************************************************************************************************/
+
+static ERR GET_SelectedText(extScintilla *Self, std::string_view &Value)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   const auto main = SCICALL(SCI_GETMAINSELECTION);
+   const auto start = SCICALL(SCI_GETSELECTIONNSTART, main);
+   const auto end = SCICALL(SCI_GETSELECTIONNEND, main);
+   if ((start < 0) or (end < start) or (end > KotukuScintilla::document_limit)) return ERR::OutOfRange;
+   Self->SelectionBuffer.resize(size_t(end - start));
+   Scintilla::TextRangeFull range { { start, end }, Self->SelectionBuffer.data() };
+   SCICALL(SCI_GETTEXTRANGEFULL, 0, sptr_t(&range));
+   Value = Self->SelectionBuffer;
    return ERR::Okay;
 }
 
@@ -3790,7 +4133,13 @@ extScintilla::~extScintilla() {
    auto api = std::exchange(API, nullptr);
    if (DragClipboard) { FreeResource(DragClipboard); DragClipboard = nullptr; }
    replace_callback(FileDrop, nullptr);
-   if (api) api->Finalise();
+   if (api) {
+      while (ClientUndoDepth > 0) {
+         api->SendScintilla(SCI_ENDUNDOACTION);
+         ClientUndoDepth--;
+      }
+      api->Finalise();
+   }
    delete api;
 
    replace_callback(EventCallback, nullptr);
@@ -3798,6 +4147,8 @@ extScintilla::~extScintilla() {
    replace_callback(MarginClick, nullptr);
 
    replace_callback(CompletionCallback, nullptr);
+
+   replace_callback(ChangeCallback, nullptr);
 
    if (Image) { // Freeing the image also removes its definition from the scene
       UnsubscribeAction(Image, AC::NIL);
@@ -3862,6 +4213,16 @@ static const FieldArray clFields[] = {
    { "Symbols",        FDF_INT|FDF_RW|FDF_PURE,   GET_Symbols, SET_Symbols },
    { "TabWidth",       FDF_INT|FDF_RW|FDF_PURE,   GET_TabWidth, SET_TabWidth },
    { "Wordwrap",       FDF_INT|FDF_RW|FDF_PURE,   GET_Wordwrap, SET_Wordwrap },
+   { "CurrentPos",     FDF_INT|FDF_R, GET_CurrentPos },
+   { "Anchor",         FDF_INT|FDF_R, GET_Anchor },
+   { "SelectionStart", FDF_INT|FDF_R, GET_SelectionStart },
+   { "SelectionEnd",   FDF_INT|FDF_R, GET_SelectionEnd },
+   { "TextLength",     FDF_INT|FDF_R, GET_TextLength },
+   { "CanUndo",        FDF_INT|FDF_R, GET_CanUndo },
+   { "CanRedo",        FDF_INT|FDF_R, GET_CanRedo },
+   { "SelectedText",   FDF_CPPSTRING|FDF_R, GET_SelectedText },
+   { "ChangeCallback", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_ChangeCallback, SET_ChangeCallback },
+   { "DocumentRevision", FDF_INT64|FDF_R, GET_DocumentRevision },
    END_FIELD
 };
 
