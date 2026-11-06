@@ -167,7 +167,67 @@ int winLookupSurfaceID(HWND Window)
    return int(int64_t(GetProp(Window, "SurfaceID")));
 }
 
+//********************************************************************************************************************
+// The enforced aspect ratio of a window is stored as window properties.  Zero dimensions remove the ratio.
+
+void winSetAspectRatio(HWND Window, int Width, int Height)
+{
+   if ((Width > 0) and (Height > 0)) {
+      SetProp(Window, "AspectWidth", (HANDLE)intptr_t(Width));
+      SetProp(Window, "AspectHeight", (HANDLE)intptr_t(Height));
+   }
+   else {
+      RemoveProp(Window, "AspectWidth");
+      RemoveProp(Window, "AspectHeight");
+   }
+}
+
+bool winGetAspectRatio(HWND Window, int &Width, int &Height)
+{
+   Width  = int(intptr_t(GetProp(Window, "AspectWidth")));
+   Height = int(intptr_t(GetProp(Window, "AspectHeight")));
+   return (Width > 0) and (Height > 0);
+}
+
 namespace display {
+
+//********************************************************************************************************************
+// Applies the surface's size limits and the aspect ratio recorded by setSizeHints() to a client area.  If the limits
+// cannot accommodate the ratio, the size limits take precedence.
+
+static void constrain_window_size(HWND Window, int &Width, int &Height, int CurrentWidth, int CurrentHeight, int Axis)
+{
+   auto surface_id = winLookupSurfaceID(Window);
+   if (not surface_id) return;
+   if ((Width IS CurrentWidth) and (Height IS CurrentHeight)) return;
+
+   CheckWindowSize(surface_id, Width, Height, CurrentWidth, CurrentHeight, Axis);
+
+   int aspect_width, aspect_height;
+   if (not winGetAspectRatio(Window, aspect_width, aspect_height)) return;
+
+   const bool vertical = (Axis IS AXIS_VERTICAL) or ((Axis IS AXIS_BOTH) and (aspect_width <= aspect_height));
+   if (vertical) {
+      Width = int((int64_t(Height) * aspect_width + (aspect_height / 2)) / aspect_height);
+   }
+   else Height = int((int64_t(Width) * aspect_height + (aspect_width / 2)) / aspect_width);
+
+   // The derived dimension may exceed its limits even though the dragged dimension was clamped.  Clamp it and
+   // adjust the dragged dimension to match, then enforce the limits once more in case they conflict with the ratio.
+
+   const int aspect_width_result = Width;
+   const int aspect_height_result = Height;
+   CheckWindowSize(surface_id, Width, Height, -1, -1, Axis);
+   if (vertical and (Width != aspect_width_result)) {
+      Height = int((int64_t(Width) * aspect_height + (aspect_width / 2)) / aspect_width);
+   }
+   else if ((not vertical) and (Height != aspect_height_result)) {
+      Width = int((int64_t(Height) * aspect_width + (aspect_height / 2)) / aspect_height);
+   }
+   else return;
+
+   CheckWindowSize(surface_id, Width, Height, -1, -1, Axis);
+}
 
 extern void RepaintWindow(int, int, int, int, int);
 
@@ -1167,17 +1227,15 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
 
          const int h_margins = ((winrect.right - winrect.left) - (client.right - client.left));
          const int v_margins = ((winrect.bottom - winrect.top) - (client.bottom - client.top));
-         auto surface_id = winLookupSurfaceID(window);
-
          int min_width = minmax->ptMinTrackSize.x - h_margins;
          int min_height = minmax->ptMinTrackSize.y - v_margins;
-         CheckWindowSize(surface_id, min_width, min_height, -1, -1, AXIS_BOTH);
+         constrain_window_size(window, min_width, min_height, -1, -1, AXIS_BOTH);
          minmax->ptMinTrackSize.x = min_width + h_margins;
          minmax->ptMinTrackSize.y = min_height + v_margins;
 
          int max_width = minmax->ptMaxTrackSize.x - h_margins;
          int max_height = minmax->ptMaxTrackSize.y - v_margins;
-         CheckWindowSize(surface_id, max_width, max_height, -1, -1, AXIS_BOTH);
+         constrain_window_size(window, max_width, max_height, -1, -1, AXIS_BOTH);
          minmax->ptMaxTrackSize.x = max_width + h_margins;
          minmax->ptMaxTrackSize.y = max_height + v_margins;
          return 0;
@@ -1202,10 +1260,10 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
          if (wParam & SIZE_MAXIMIZED) {
             WINDOWPLACEMENT win;
 
-            if (auto surface_id = winLookupSurfaceID(window)) {
+            if (winLookupSurfaceID(window)) {
                auto new_width  = cwidth;
                auto new_height = cheight;
-               CheckWindowSize(surface_id, new_width, new_height, cwidth, cheight, AXIS_BOTH);
+               constrain_window_size(window, new_width, new_height, cwidth, cheight, AXIS_BOTH);
                if ((new_width != cwidth) or (new_height != cheight)) {
                   ZeroMemory(&win, sizeof(WINDOWPLACEMENT));
                   win.length = sizeof(WINDOWPLACEMENT);
@@ -1257,7 +1315,7 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
                break;
          }
 
-         CheckWindowSize(winLookupSurfaceID(window), req_width, req_height, client.right - client.left, client.bottom - client.top, axis);
+         constrain_window_size(window, req_width, req_height, client.right - client.left, client.bottom - client.top, axis);
 
          rect->right  = rect->left + req_width + h_margins;
          rect->bottom = rect->top + req_height + v_margins;
@@ -1391,6 +1449,7 @@ static LRESULT CALLBACK WindowProcedure(HWND window, UINT msgcode, WPARAM wParam
                      return 0;
 
       case WM_DESTROY: MsgWindowDestroyed(winLookupSurfaceID(window));
+                       winSetAspectRatio(window, 0, 0);
                        return 0;
 
       case WM_SETFOCUS:

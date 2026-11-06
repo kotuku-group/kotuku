@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <fcntl.h>
+#include <numeric>
 #include <sys/shm.h>
 #include <string_view>
 #include <unistd.h>
@@ -255,6 +256,27 @@ static void set_motif_hints(X11Driver::State *State, X11WindowRecord *Record)
    auto property = XInternAtom(State->Connection, "_MOTIF_WM_HINTS", False);
    XChangeProperty(State->Connection, Record->Native, property, property, 32, PropModeReplace,
       (const unsigned char *)&hints, 5);
+}
+
+//********************************************************************************************************************
+// Sends the size limits and aspect ratio retained in the window record as WM_NORMAL_HINTS.  A zero AspectWidth means
+// that no aspect ratio is enforced.
+
+static void send_size_hints(X11Driver::State *State, X11WindowRecord *Window)
+{
+   XSizeHints hints = {};
+   if ((Window->MaxWidth > 0) and (Window->MaxHeight > 0)) {
+      hints.max_width = Window->MaxWidth; hints.max_height = Window->MaxHeight; hints.flags |= PMaxSize;
+   }
+   if ((Window->MinWidth > 0) and (Window->MinHeight > 0)) {
+      hints.min_width = Window->MinWidth; hints.min_height = Window->MinHeight; hints.flags |= PMinSize;
+   }
+   if ((Window->AspectWidth > 0) and (Window->AspectHeight > 0)) {
+      hints.flags |= PAspect;
+      hints.min_aspect = { Window->AspectWidth, Window->AspectHeight };
+      hints.max_aspect = { Window->AspectWidth, Window->AspectHeight };
+   }
+   XSetWMNormalHints(State->Connection, Window->Native, &hints);
 }
 
 //********************************************************************************************************************
@@ -1049,6 +1071,17 @@ ERR X11Driver::resizeWindow(HOSTWINDOW WindowHandle, int X, int Y, int Width, in
    // The frame for the new size is drawn after this call returns and is closed by present(), so the compositor
    // shows the new size and its content together.
 
+   // A size set by the client defines a new aspect ratio.  The hints are replaced before the request so that the
+   // window manager does not fit the new size to the old ratio, e.g. when a dialog grows to fit its content.
+
+   if ((window->AspectWidth > 0) and (window->AspectHeight > 0) and (Width > 0) and (Height > 0) and
+         (int64_t(Width) * window->AspectHeight != int64_t(Height) * window->AspectWidth)) {
+      const int gcd = std::gcd(Width, Height);
+      window->AspectWidth  = Width / gcd;
+      window->AspectHeight = Height / gcd;
+      send_size_hints(Data, window);
+   }
+
    x11_begin_frame(Data, window);
    if ((X != 0x7fffffff) and (Y != 0x7fffffff)) XMoveWindow(Data->Connection, window->Native, X, Y);
    XResizeWindow(Data->Connection, window->Native, Width, Height); return ERR::Okay;
@@ -1156,19 +1189,28 @@ ERR X11Driver::setSizeHints(HOSTWINDOW WindowHandle, int MinW, int MinH, int Max
    if (MaxW >= 0) window->MaxWidth  = MaxW;
    if (MaxH >= 0) window->MaxHeight = MaxH;
 
-   XSizeHints hints = {};
-   if ((window->MaxWidth > 0) and (window->MaxHeight > 0)) {
-      hints.max_width = window->MaxWidth; hints.max_height = window->MaxHeight; hints.flags |= PMaxSize;
+   // The aspect ratio is taken from the window's size when it is first enforced, as rounded minimum dimensions rarely
+   // describe the window's exact proportions.  A window manager would otherwise resize the window to fit the inexact
+   // ratio, e.g. 1180x742 becomes 1179x743 for a 295x186 minimum, and a fixed layout would be rendered off-scale.  The
+   // ratio is retained by later calls so that it does not drift as the user resizes the window; resizeWindow() replaces
+   // it when the client sets a new size.
+
+   if (not EnforceAspect) window->AspectWidth = window->AspectHeight = 0;
+   else if ((not window->AspectWidth) or (not window->AspectHeight)) {
+      XWindowAttributes attributes;
+      if ((XGetWindowAttributes(Data->Connection, window->Native, &attributes)) and
+          (attributes.width > 0) and (attributes.height > 0)) {
+         const int gcd = std::gcd(attributes.width, attributes.height);
+         window->AspectWidth  = attributes.width / gcd;
+         window->AspectHeight = attributes.height / gcd;
+      }
+      else if ((window->MinWidth > 0) and (window->MinHeight > 0)) { // Fall back to the minimum dimensions
+         window->AspectWidth  = window->MinWidth;
+         window->AspectHeight = window->MinHeight;
+      }
    }
-   if ((window->MinWidth > 0) and (window->MinHeight > 0)) {
-      hints.min_width = window->MinWidth; hints.min_height = window->MinHeight; hints.flags |= PMinSize;
-   }
-   if (EnforceAspect and (hints.flags & PMinSize)) {
-      hints.flags |= PAspect;
-      hints.min_aspect = { window->MinWidth, window->MinHeight };
-      hints.max_aspect = { window->MinWidth, window->MinHeight };
-   }
-   XSetWMNormalHints(Data->Connection, window->Native, &hints);
+
+   send_size_hints(Data, window);
 
    if (window->Owned and (window->Maximisable IS EnforceAspect)) {
       window->Maximisable = not EnforceAspect;

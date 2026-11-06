@@ -50,6 +50,8 @@ DEFINE_ENUM_FLAG_OPERATORS(CON)
 #endif
 
 int winLookupSurfaceID(HWND);
+void winSetAspectRatio(HWND, int, int);
+bool winGetAspectRatio(HWND, int &, int &);
 
 #ifdef __cplusplus
 namespace display {

@@ -39,6 +39,7 @@ struct X11WindowRecord {
    int64_t SyncRequest = 0;        // Value from a pending _NET_WM_SYNC_REQUEST message, or zero
    int MinWidth = 0, MinHeight = 0; // Size limits last applied by setSizeHints(); zero means no limit
    int MaxWidth = 0, MaxHeight = 0;
+   int AspectWidth = 0, AspectHeight = 0; // Enforced aspect ratio, taken from the window size; zero if not enforced
    bool SyncRequestExtended = false;
    bool FrameOpen = false;
    bool Owned = false;

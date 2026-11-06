@@ -5,6 +5,7 @@
 
 #include <cstdlib>
 #include <new>
+#include <numeric>
 #include <unordered_map>
 
 HINSTANCE glInstance = nullptr;
@@ -280,6 +281,21 @@ ERR Win32Driver::moveWindow(HOSTWINDOW Window, int X, int Y)
 ERR Win32Driver::resizeWindow(HOSTWINDOW Window, int X, int Y, int Width, int Height)
 {
    if (not Window) return ERR::NoSupport;
+
+   // A size set by the client defines a new aspect ratio, so that WM_GETMINMAXINFO does not fit the request to the old
+   // one, e.g. when a dialog grows to fit its content.  A request that echoes the current size, such as feedback from
+   // a user resize, leaves the ratio unchanged so that it does not drift.
+
+   int aspect_width, aspect_height;
+   RECT client;
+   if ((winGetAspectRatio(HWND(Window), aspect_width, aspect_height)) and (Width > 0) and (Height > 0) and
+         (GetClientRect(HWND(Window), &client)) and
+         ((Width != client.right - client.left) or (Height != client.bottom - client.top)) and
+         (int64_t(Width) * aspect_height != int64_t(Height) * aspect_width)) {
+      const int gcd = std::gcd(Width, Height);
+      winSetAspectRatio(HWND(Window), Width / gcd, Height / gcd);
+   }
+
    return winResizeWindow(HWND(Window), X, Y, Width, Height) ? ERR::Okay : ERR::Resize;
 }
 
@@ -311,9 +327,34 @@ ERR Win32Driver::setWindowTitle(HOSTWINDOW Window, CSTRING Title)
    return ERR::Okay;
 }
 
+// Size limits are read from the surface when Windows requests them, so only the aspect ratio is recorded here.  The
+// ratio is taken from the window's size when it is first enforced, as rounded minimum dimensions rarely describe the
+// window's exact proportions and a fixed layout would be rendered off-scale.  It is retained by later calls so that it
+// does not drift as the user resizes the window; resizeWindow() replaces it when the client sets a new size.
+
 ERR Win32Driver::setSizeHints(HOSTWINDOW Window, int MinW, int MinH, int MaxW, int MaxH, bool EnforceAspect)
 {
-   return ERR::NoSupport;
+   if (not Window) return ERR::NoSupport;
+
+   auto hwnd = HWND(Window);
+   if (not EnforceAspect) {
+      winSetAspectRatio(hwnd, 0, 0);
+      return ERR::Okay;
+   }
+
+   int aspect_width, aspect_height;
+   if (winGetAspectRatio(hwnd, aspect_width, aspect_height)) return ERR::Okay;
+
+   RECT client;
+   if ((GetClientRect(hwnd, &client)) and (client.right - client.left > 0) and (client.bottom - client.top > 0)) {
+      const int width  = client.right - client.left;
+      const int height = client.bottom - client.top;
+      const int gcd    = std::gcd(width, height);
+      winSetAspectRatio(hwnd, width / gcd, height / gcd);
+   }
+   else if ((MinW > 0) and (MinH > 0)) winSetAspectRatio(hwnd, MinW, MinH); // Fall back to the minimum dimensions
+
+   return ERR::Okay;
 }
 
 ERR Win32Driver::windowCoords(HOSTWINDOW Window, int &X, int &Y, int &Width, int &Height)
