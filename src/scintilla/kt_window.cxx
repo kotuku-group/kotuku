@@ -4,7 +4,7 @@
 // application window, but the View viewport that hosts the Scintilla client area.
 //
 // Windows that Scintilla creates for itself, i.e. the call tip and the completion list, reference a PanPopup instead
-// (see pan_popup.cxx).  PanPopup::find() distinguishes them from the editor.
+// (see kt_popup.cxx).  PanPopup::find() distinguishes them from the editor.
 
 inline extScintilla * get_scintilla(const Scintilla::Internal::Window *Win)
 {

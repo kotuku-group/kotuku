@@ -52,22 +52,6 @@ public:
    void Copy(PRectangle Rect, Point From, Surface &Source) override;
    void DrawRGBAImage(PRectangle Rect, int Width, int Height, const unsigned char *Pixels) override;
 
-   void DrawTextBase(PRectangle Rect, const Font &Font, XYPOSITION Baseline,
-      const char *String, int Length, ColourRGBA Fore);
-   void DrawTextNoClip(PRectangle Rect, const Font &Font, XYPOSITION Baseline, const char *String, int Length,
-      ColourRGBA Fore, ColourRGBA Back);
-   void DrawTextClipped(PRectangle Rect, const Font &Font, XYPOSITION Baseline, const char *String, int Length,
-      ColourRGBA Fore, ColourRGBA Back);
-   void DrawTextTransparent(PRectangle Rect, const Font &Font, XYPOSITION Baseline,
-      const char *String, int Length, ColourRGBA Fore);
-   XYPOSITION WidthText(const Font &Font, const char *String, int Length);
-   XYPOSITION WidthChar(const Font &Font, char Character);
-   int Ascent(const Font &Font);
-   int Descent(const Font &Font);
-   int InternalLeading(const Font &Font);
-   int Height(const Font &Font);
-   XYPOSITION AverageCharWidth(const Font &Font);
-
    void SetClip(PRectangle Rect) override;
    void FlushCachedState() override;
 
@@ -108,60 +92,41 @@ public:
    void FlushDrawing() override { } // Bitmap/vector operations are synchronous.
    void DrawTextNoClip(PRectangle Rect, const Font *Font,
       XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore, ColourRGBA Back) override {
-      const auto text = normal_text(Text);
-      DrawTextNoClip(Rect, *Font, Baseline, text.data(), int(text.size()), Fore, Back);
+      std::string storage;
+      DrawTextNoClipUTF8(Rect, Font, Baseline, normal_text(Text, storage), Fore, Back);
    }
    void DrawTextNoClipUTF8(PRectangle Rect, const Font *Font,
-      XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore, ColourRGBA Back) override {
-      DrawTextNoClip(Rect, *Font, Baseline, Text.data(), int(Text.size()), Fore, Back);
-   }
+      XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore, ColourRGBA Back) override;
    void DrawTextClipped(PRectangle Rect, const Font *Font,
       XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore, ColourRGBA Back) override {
-      const auto text = normal_text(Text);
-      DrawTextClipped(Rect, *Font, Baseline, text.data(), int(text.size()), Fore, Back);
+      std::string storage;
+      DrawTextClippedUTF8(Rect, Font, Baseline, normal_text(Text, storage), Fore, Back);
    }
    void DrawTextClippedUTF8(PRectangle Rect, const Font *Font,
-      XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore, ColourRGBA Back) override {
-      DrawTextClipped(Rect, *Font, Baseline, Text.data(), int(Text.size()), Fore, Back);
-   }
+      XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore, ColourRGBA Back) override;
    void DrawTextTransparent(PRectangle Rect, const Font *Font,
       XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore) override {
-      const auto text = normal_text(Text);
-      DrawTextTransparent(Rect, *Font, Baseline, text.data(), int(text.size()), Fore);
+      std::string storage;
+      DrawTextTransparentUTF8(Rect, Font, Baseline, normal_text(Text, storage), Fore);
    }
    void DrawTextTransparentUTF8(PRectangle Rect, const Font *Font,
-      XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore) override {
-      DrawTextTransparent(Rect, *Font, Baseline, Text.data(), int(Text.size()), Fore);
+      XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore) override;
+   void MeasureWidths(const Font *Font, std::string_view Text, XYPOSITION *Positions) override;
+   XYPOSITION WidthText(const Font *Font, std::string_view Text) override {
+      std::string storage;
+      return WidthTextUTF8(Font, normal_text(Text, storage));
    }
-   void MeasureWidths(const Font *Font, std::string_view Text,
-      XYPOSITION *Positions) override;
-   XYPOSITION WidthText(const Font *Font,
-      std::string_view Text) override {
-      const auto text = normal_text(Text);
-      return WidthText(*Font, text.data(), int(text.size()));
-   }
-   void MeasureWidthsUTF8(const Font *Font, std::string_view Text,
-      XYPOSITION *Positions) override;
-   XYPOSITION WidthTextUTF8(const Font *Font,
-      std::string_view Text) override { return WidthText(*Font, Text.data(), int(Text.size())); }
-   XYPOSITION Ascent(const Font *Font) override {
-      return Ascent(*Font);
-   }
-   XYPOSITION Descent(const Font *Font) override {
-      return Descent(*Font);
-   }
-   XYPOSITION InternalLeading(const Font *Font) override {
-      return InternalLeading(*Font);
-   }
-   XYPOSITION Height(const Font *Font) override {
-      return Height(*Font);
-   }
-   XYPOSITION AverageCharWidth(const Font *Font) override {
-      return AverageCharWidth(*Font);
-   }
+   void MeasureWidthsUTF8(const Font *Font, std::string_view Text, XYPOSITION *Positions) override;
+   XYPOSITION WidthTextUTF8(const Font *Font, std::string_view Text) override;
+   XYPOSITION Ascent(const Font *Font) override;
+   XYPOSITION Descent(const Font *Font) override;
+   XYPOSITION InternalLeading(const Font *) override { return 0; }
+   XYPOSITION Height(const Font *Font) override;
+   XYPOSITION AverageCharWidth(const Font *Font) override;
 
 private:
-   std::string normal_text(std::string_view Text) const;
+   std::string_view normal_text(std::string_view Text, std::string &Storage) const;
+   void draw_text(PRectangle Rect, const Font *Font, XYPOSITION Baseline, std::string_view Text, ColourRGBA Fore);
    APTR GetFont(const Font &Font);
    void draw_path(APTR Path, const ColourRGBA *Fill, int FillAlpha,
       const ColourRGBA *Stroke, int StrokeAlpha, double StrokeWidth = 1.0);

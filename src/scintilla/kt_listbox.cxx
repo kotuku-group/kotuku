@@ -153,7 +153,7 @@ Scintilla::Internal::PRectangle ListBoxImp::GetDesiredRect()
       SurfacePan surface;
       surface.Init((Scintilla::Internal::WindowID)scintilla);
       for (auto &item : items) {
-         width = std::max(width, int(std::ceil(surface.WidthText(font, item.c_str(), int(item.size())))));
+         width = std::max(width, int(std::ceil(surface.WidthTextUTF8(&font, item))));
       }
    }
 
@@ -316,8 +316,8 @@ void ListBoxImp::paint(SurfacePan &Surface)
 
    const bool scrollable = int(items.size()) > rows();
    const int right = width - POPUP_BORDER - (scrollable ? SCROLL_WIDTH : 0);
-   const int ascent = Surface.Ascent(font);
-   const int baseline = std::max(0, (line_height - Surface.Height(font)) / 2) + ascent;
+   const int ascent = int(Surface.Ascent(&font));
+   const int baseline = std::max(0, (line_height - int(Surface.Height(&font))) / 2) + ascent;
 
    for (int row=0; row < rows(); row++) {
       int index = top_row + row;
@@ -329,7 +329,7 @@ void ListBoxImp::paint(SurfacePan &Surface)
       if (index IS selection) Surface.FillRectangle(rc, sel_bkgd);
       rc.left += INSET;
       Surface.SetClip(rc);
-      Surface.DrawTextTransparent(rc, font, y + baseline, item.c_str(), int(item.size()),
+      Surface.DrawTextTransparentUTF8(rc, &font, y + baseline, item,
          index IS selection ? sel_fore : fore);
       Surface.PopClip();
    }

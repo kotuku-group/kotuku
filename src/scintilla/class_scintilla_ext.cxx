@@ -17,7 +17,7 @@ ScintillaKTK::ScintillaKTK(extScintilla *Scintilla)
    idle_on        = false;
    captured_mouse = false;
 
-   // The platform Window is identified by the Kotuku Scintilla object (see pan_window.cxx)
+   // The platform Window is identified by the Kotuku Scintilla object (see kt_window.cxx)
 
    wMain = Scintilla;
 
@@ -85,7 +85,7 @@ void ScintillaKTK::Finalise()
 }
 
 /*********************************************************************************************************************
-** Code assistance.  The completion list and call tip are displayed by pan_listbox.cxx and pan_popup.cxx, while the
+** Code assistance.  The completion list and call tip are displayed by kt_listbox.cxx and kt_popup.cxx, while the
 ** editing behaviour is ScintillaBase's.
 */
 
@@ -1134,7 +1134,7 @@ sptr_t ScintillaKTK::DefWndProc(Scintilla::Message, uptr_t, sptr_t)
 }
 
 /*********************************************************************************************************************
-** Paint an Area of the client into the Scintilla object's Bitmap.  Refer to pan_surface.cxx for the drawing routines.
+** Paint an Area of the client into the Scintilla object's Bitmap.  Refer to kt_surface.cxx for the drawing routines.
 ** If Scintilla abandons the paint because a wider area needs to be redrawn (for instance, styling has spilled over a
 ** line end) then the entire client is repainted immediately, as the GTK platform does.
 */
@@ -1417,50 +1417,6 @@ void ScintillaKTK::panSetFocus(bool Focus)
 }
 
 /*********************************************************************************************************************
-** Get the cursor position.
-*/
-
-void ScintillaKTK::panGetCursorPosition(int *line, int *index)
-{
-   int pos, lin, linpos;
-
-   pos = SendScintilla(SCI_GETCURRENTPOS);
-   lin = SendScintilla(SCI_LINEFROMPOSITION,pos);
-   linpos = SendScintilla(SCI_POSITIONFROMLINE,lin);
-
-   *line = lin;
-   *index = pos - linpos;
-}
-
-/*********************************************************************************************************************
-** Set the cursor position.
-*/
-
-void ScintillaKTK::panSetCursorPosition(int line, int index)
-{
-   kt::Log log(__FUNCTION__);
-   int pos, eol;
-
-   log.trace("Line: %d, Index: %d", line, index);
-
-   pos = SendScintilla(SCI_POSITIONFROMLINE,line) + index;
-   eol = SendScintilla(SCI_GETLINEENDPOSITION,line);
-
-   if (pos > eol) pos = eol;
-
-   SendScintilla(SCI_GOTOPOS, pos);
-}
-
-/*********************************************************************************************************************
-** Ensure a line is visible (expands folded zones).
-*/
-
-void ScintillaKTK::panEnsureLineVisible(int line)
-{
-   SendScintilla(SCI_ENSUREVISIBLEENFORCEPOLICY,line);
-}
-
-/*********************************************************************************************************************
 ** Enable or disable folding.  The lexers only compute fold levels while the 'fold' property is set.  Disabling folding
 ** expands every fold first, because the lines of a contracted fold could not be shown again.
 */
@@ -1691,44 +1647,4 @@ bool ScintillaKTK::findMatchingBrace(sptr_t &brace,sptr_t &other,sptr_t mode)
    }
 
    return isInside;
-}
-
-// Move to the matching brace.
-void ScintillaKTK::moveToMatchingBrace()
-{
-   gotoMatchingBrace(FALSE);
-}
-
-// Select to the matching brace.
-void ScintillaKTK::selectToMatchingBrace()
-{
-   gotoMatchingBrace(TRUE);
-}
-
-// Move to the matching brace and optionally select the text.
-void ScintillaKTK::gotoMatchingBrace(bool select)
-{
-   sptr_t braceAtCaret;
-   sptr_t braceOpposite;
-
-   bool isInside = findMatchingBrace(braceAtCaret,braceOpposite,TRUE);
-
-   if (braceOpposite >= 0) {
-      // Convert the character positions into caret positions based
-      // on whether the caret position was inside or outside the
-      // braces.
-      if (isInside) {
-         if (braceOpposite > braceAtCaret) braceAtCaret++;
-         else braceOpposite++;
-      }
-      else {
-         if (braceOpposite > braceAtCaret) braceOpposite++;
-         else braceAtCaret++;
-      }
-
-      //ensureLineVisible(SendScintilla(SCI_LINEFROMPOSITION,braceOpposite));
-
-      if (select) SendScintilla(SCI_SETSEL,braceAtCaret,braceOpposite);
-      else SendScintilla(SCI_SETSEL,braceOpposite,braceOpposite);
-   }
 }

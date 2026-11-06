@@ -1,4 +1,3 @@
-// Common engine include ordering, following upstream ScintillaBase.cxx.  This is not a legacy API emulation layer.
 #pragma once
 
 #include <type_traits>

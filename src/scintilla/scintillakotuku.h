@@ -47,7 +47,7 @@ class extScintilla : public objScintilla {
    objBitmap *Bitmap;            // Scintilla paints into this bitmap; it covers the visible area of the View
    objVectorColour *FillColour;  // Solid fill for shapes drawn with vec::DrawPath()
    objVectorColour *StrokeColour; // Solid stroke for shapes drawn with vec::DrawPath()
-   objScript *MenuScript;        // Hosts the context menu with gui/menu (see pan_menu.cxx)
+   objScript *MenuScript;        // Hosts the context menu with gui/menu (see kt_menu.cxx)
    ClipRectangle Dirty;          // Area of the client that is waiting to be repainted
    double Scale = 1.0;           // Device pixels per unit of the View.  Scintilla's client units are device pixels
    double PageScale = 1.0;       // Device scale used when the Page's dimensions were last set
@@ -130,7 +130,7 @@ class extScintilla : public objScintilla {
 /*********************************************************************************************************************
 ** Code assistance pop-ups, i.e. the call tip and the completion list, are Scintilla platform Windows that are displayed
 ** as separate viewports in the editor's scene.  The WindowID of a pop-up refers to its PanPopup, while the
-** WindowID of the editor refers to the extScintilla object.  See pan_popup.cxx.
+** WindowID of the editor refers to the extScintilla object.  See kt_popup.cxx.
 */
 
 class PanPopup {
@@ -231,9 +231,6 @@ public:
    virtual void panScrollBy(int Columns, int Lines);
    virtual void panSyncPage();
    virtual void panSetFocus(bool Focus);
-   virtual void panGetCursorPosition(int *line, int *index);
-   virtual void panSetCursorPosition(int line, int index);
-   virtual void panEnsureLineVisible(int line);
    virtual void panWordwrap(int);
    virtual void panSetFolding(bool Enable);
    virtual bool panToggleFold(int Line);
@@ -258,9 +255,6 @@ public:
    virtual void braceMatch();
    virtual sptr_t checkBrace(sptr_t pos,int brace_style);
    virtual bool findMatchingBrace(sptr_t &brace,sptr_t &other,sptr_t mode);
-   virtual void gotoMatchingBrace(bool select);
-   virtual void moveToMatchingBrace();
-   virtual void selectToMatchingBrace();
 
    // Lexer handling
    virtual ERR SetLexer(SCLEX ID);
@@ -292,7 +286,6 @@ private:
    void DefineFoldMarkers();
    void ExpandAllFolds();
    void FoldChanged(int Line, int LevelNow, int LevelPrev);
-   void NotifyKey(int key, int modifiers);
    void ReportCompletion(SCAC Event, int Position, int Value, CSTRING Text, bool Deferred);
    void UpdateTimers();
    bool TickRequired();

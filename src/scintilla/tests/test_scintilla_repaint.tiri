@@ -6,6 +6,7 @@
 
    include 'scintilla', 'vector', 'display'
    module display as mGfx
+   import './repaint_utils'
 
 PAGE_WIDTH  = 300
 PAGE_HEIGHT = 120
@@ -29,14 +30,6 @@ function newDocument(Lines:num):str
    return parts.concat('\n')
 end
 
--- Path changes such as resizing are detected while the scene is drawn, which queues the editor's repaint.
-
-function render(Scene:obj)
-   check Scene.acDraw()
-   processing.sleep(0)
-   check Scene.acDraw()
-end
-
 function newEditor(Options:table):<obj, obj, obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
@@ -51,42 +44,8 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    sci.string = newDocument(TOTAL_LINES)
-   render(scene)
+   repaint_utils.render(scene)
    return scene, vp, sci, bmp
-end
-
--- Pixels are packed so that captures can be compared without retaining ReadRGBPixel() results, which share a buffer.
-
-function capture(Bitmap:obj):array<int>
-   local pixels = array<int> { }
-   for y in {0 to PAGE_HEIGHT} do
-      for x in {0 to PAGE_WIDTH} do
-         local p = mGfx.ReadRGBPixel(Bitmap, x, y)
-         pixels.push((p.red << 16) | (p.green << 8) | p.blue)
-      end
-   end
-   return pixels
-end
-
-function assertSameAsFullRepaint(Sci:obj, Scene:obj, Bitmap:obj, Label:str)
-   render(Scene)
-   local incremental = capture(Bitmap)
-   Sci.bkgdColour = Sci.bkgdColour
-   render(Scene)
-   local full = capture(Bitmap)
-   local differences = 0
-   local first = nil
-   for i in {0 to #full} do
-      if incremental[i] != full[i] then
-         differences++
-         first ?= i
-      end
-   end
-   if first != nil then
-      local x = first % PAGE_WIDTH
-      local y = math.floor(first / PAGE_WIDTH)
-      assert(false, f'{Label}: {differences} pixels differ from a full repaint, first at {x},{y}')
-   end
 end
 
 function scrollToLine(Sci:obj, Line:num)
@@ -108,7 +67,7 @@ end
       line += delta
       scrollToLine(sci, line)
       assert(topLine(sci) is line, f'Expected top line {line}, got {topLine(sci)}')
-      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll by {delta} to line {line}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Scroll by {delta} to line {line}')
    end
 end
 
@@ -117,10 +76,10 @@ end
 @Test function ConsecutiveScrollsBeforePaint()
    local scene <close>, vp, sci, bmp = newEditor()
    scrollToLine(sci, 10)
-   render(scene)
+   repaint_utils.render(scene)
    for _, sequence in array<array> { array<int> { 11, 12, 13 }, array<int> { 12, 10, 9 }, array<int> { 14, 12, 18 } } do
       for _, line in sequence do scrollToLine(sci, line) end
-      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll sequence ending at line {sequence.last()}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Scroll sequence ending at line {sequence.last()}')
    end
 end
 
@@ -130,7 +89,7 @@ end
    local scene <close>, vp, sci, bmp = newEditor()
    for _, line in array<int> { 50, 44, 120, 115, 0 } do
       scrollToLine(sci, line)
-      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll to line {line}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Scroll to line {line}')
    end
 end
 
@@ -139,7 +98,7 @@ end
 @Test function PendingEditsSurviveScroll()
    local scene <close>, vp, sci, bmp = newEditor()
    scrollToLine(sci, 20)
-   render(scene)
+   repaint_utils.render(scene)
    local cases = array<table> {
       { line=22, delta=2 }, { line=27, delta=-3 }, { line=21, delta=4 }, { line=29, delta=1 }
    }
@@ -147,27 +106,27 @@ end
       local _, start = check sci.mtGetPos(case.line, 0)
       check sci.mtInsertText('/*edit*/', start)
       scrollToLine(sci, topLine(sci) + case.delta)
-      assertSameAsFullRepaint(sci, scene, bmp, f'Edit on line {case.line} then scroll by {case.delta}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Edit on line {case.line} then scroll by {case.delta}')
    end
 end
 
 @Test function HorizontalScroll()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.mtInsertText(('x').rep(200) .. '\n', 0)
-   render(scene)
+   repaint_utils.render(scene)
    for _, x in array<int> { 8, 64, 30, 0 } do
       check sci.mtScrollToPoint(x, 0)
-      assertSameAsFullRepaint(sci, scene, bmp, f'Horizontal scroll to {x}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Horizontal scroll to {x}')
    end
 end
 
 @Test function WrappedScroll()
    local scene <close>, vp, sci, bmp = newEditor({ wordwrap=true })
    check sci.mtInsertText(('word ').rep(80) .. '\n', 0)
-   render(scene)
+   repaint_utils.render(scene)
    for _, line in array<int> { 1, 3, 2, 8, 5 } do
       scrollToLine(sci, line)
-      assertSameAsFullRepaint(sci, scene, bmp, f'Wrapped scroll to line {line}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Wrapped scroll to line {line}')
    end
 end
 
@@ -176,11 +135,11 @@ end
    check sci.acDisable()
    for _, line in array<int> { 1, 3, 2 } do
       scrollToLine(sci, line)
-      assertSameAsFullRepaint(sci, scene, bmp, f'Disabled scroll to line {line}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Disabled scroll to line {line}')
    end
    check sci.acEnable()
    scrollToLine(sci, 4)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Scroll after enabling')
+   repaint_utils.assertFull(scene, sci, bmp, 'Scroll after enabling')
 end
 
 @Test function TrueTypeScroll()
@@ -189,7 +148,7 @@ end
    -- GotoLine scrolls by the smallest distance that shows the line, i.e. in single lines here.
    for _, line in array<int> { 12, 13, 15, 14, 2, 1 } do
       check sci.mtGotoLine(line)
-      assertSameAsFullRepaint(sci, scene, bmp, f'TrueType scroll to line {line}')
+      repaint_utils.assertFull(scene, sci, bmp, f'TrueType scroll to line {line}')
    end
 end
 
@@ -199,15 +158,15 @@ end
 @Test function TextEdits()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.mtInsertText('x', 5)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Insert a character')
+   repaint_utils.assertFull(scene, sci, bmp, 'Insert a character')
    check sci.mtInsertText('\n', 30)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Insert a line break')
+   repaint_utils.assertFull(scene, sci, bmp, 'Insert a line break')
    check sci.mtDeleteLine(2)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Delete a line')
+   repaint_utils.assertFull(scene, sci, bmp, 'Delete a line')
    check sci.mtReplaceLine(1, 'replaced line', -1)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Replace a line')
+   repaint_utils.assertFull(scene, sci, bmp, 'Replace a line')
    check sci.mtInsertText('"unterminated', 0)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Restyle following lines')
+   repaint_utils.assertFull(scene, sci, bmp, 'Restyle following lines')
 end
 
 @Test function SelectionChanges()
@@ -215,40 +174,40 @@ end
    for _, range in array<array> { array<int> { 5, 20 }, array<int> { 10, 140 }, array<int> { 140, 10 },
          array<int> { 60, 61 }, array<int> { 0, 0 } } do
       check sci.mtSelectRange(range[0], range[1])
-      assertSameAsFullRepaint(sci, scene, bmp, f'Select {range[0]} to {range[1]}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Select {range[0]} to {range[1]}')
    end
 end
 
 @Test function MarginWidthChange()
    local scene <close>, vp, sci, bmp = newEditor()
    sci.string = newDocument(98)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Two digit line numbers')
+   repaint_utils.assertFull(scene, sci, bmp, 'Two digit line numbers')
    check sci.mtInsertText('\nline\nline', -1)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Margin widens for three digits')
+   repaint_utils.assertFull(scene, sci, bmp, 'Margin widens for three digits')
    for _ in {0 to 3} do check sci.mtDeleteLine(0) end
-   assertSameAsFullRepaint(sci, scene, bmp, 'Margin narrows for two digits')
+   repaint_utils.assertFull(scene, sci, bmp, 'Margin narrows for two digits')
 end
 
 @Test function FoldToggle()
    local scene <close>, vp, sci, bmp = newEditor()
    check sci.mtToggleFold(0)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Contract a fold')
+   repaint_utils.assertFull(scene, sci, bmp, 'Contract a fold')
    scrollToLine(sci, 2)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Scroll below a contracted fold')
+   repaint_utils.assertFull(scene, sci, bmp, 'Scroll below a contracted fold')
    check sci.mtToggleFold(0)
-   assertSameAsFullRepaint(sci, scene, bmp, 'Expand a fold')
+   repaint_utils.assertFull(scene, sci, bmp, 'Expand a fold')
 end
 
 @Test function HostResize()
    local scene <close>, vp, sci, bmp = newEditor()
    scrollToLine(sci, 5)
-   render(scene)
+   repaint_utils.render(scene)
    for _, size in array<array> { array<int> { 200, 90 }, array<int> { 300, 120 }, array<int> { 250, 107 } } do
       vp.width = size[0]
       vp.height = size[1]
-      assertSameAsFullRepaint(sci, scene, bmp, f'Resize to {size[0]}x{size[1]}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Resize to {size[0]}x{size[1]}')
       scrollToLine(sci, topLine(sci) + 1)
-      assertSameAsFullRepaint(sci, scene, bmp, f'Scroll after resizing to {size[0]}x{size[1]}')
+      repaint_utils.assertFull(scene, sci, bmp, f'Scroll after resizing to {size[0]}x{size[1]}')
    end
 end
 
@@ -275,7 +234,7 @@ end
       check surface.acDraw()
       local bmp <close> = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
       check mGfx.CopySurface(surface.id, bmp, 0, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, 0, 0)
-      return capture(bmp)
+      return repaint_utils.capture(bmp)
    end
 
    snapshot()
