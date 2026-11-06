@@ -963,3 +963,24 @@ end
    local convert:any = string.toArray
    expect_nil_string_error(() => do convert(nil) end, 'string.toArray')
 end
+
+@Test function SubZeroStopTraceMustGuardLaterNonzeroStops()
+   jit.flush()
+   local stop = 0
+   for index in {0 to 300} do
+      if index is 200 then stop = 3 end
+      local result = string.sub('abcdef', 0, stop)
+      assert(#result is stop, 'A substring trace recorded with stop zero must handle later nonzero stops')
+   end
+
+end
+
+@Test function ByteZeroStopTraceMustGuardLaterNonzeroStops()
+   jit.flush()
+   local stop = 0
+   for index in {0 to 300} do
+      if index is 200 then stop = 1 end
+      local value = string.byte('abcdef', 0, stop)
+      assert(value is (stop is 0 ? nil : 97), 'A byte trace recorded with stop zero must guard its result count')
+   end
+end

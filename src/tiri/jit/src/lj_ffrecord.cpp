@@ -1540,6 +1540,7 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
          trend = lj_opt_narrow_toint(J, trend);
          end = argv2int(J, &rd->argv[2]);
          if (end IS 0) {
+            emitir(IRTGI(IR_EQ), trend, tr0);
             J->base[0] = lj_ir_kstr(J, &J2G(J)->strempty);
             return;
          }
@@ -1567,6 +1568,7 @@ static void recff_string_range(jit_State* J, RecordFFData* rd)
          trend = lj_opt_narrow_toint(J, J->base[2]);
          end = argv2int(J, &rd->argv[2]);
          if (end IS 0) {
+            emitir(IRTGI(IR_EQ), trend, tr0);
             rd->result_count = 0;
             return;
          }
