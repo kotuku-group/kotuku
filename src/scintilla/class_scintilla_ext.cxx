@@ -1625,6 +1625,10 @@ ERR ScintillaKTK::SetLexer(SCLEX ID)
    auto lexer = CreateLexer(profile->Factory);
    if (not lexer) return ERR::Failed;
 
+   // Properties are stored by the engine as well as the lexer.  Remove the previous profile's overrides.
+   for (const auto &[name, value] : scintilla->LexerSettings[scintilla->Lexer].properties) {
+      SendScintilla(SCI_SETPROPERTY, name.c_str(), "");
+   }
    ExpandAllFolds();
    // Document::LexInterface owns the instance and calls Release on replacement/destruction.  Even plain text uses
    // Lexilla's null lexer; a null pointer would request container styling instead.
@@ -1632,6 +1636,10 @@ ERR ScintillaKTK::SetLexer(SCLEX ID)
    scintilla->Lexer = ID;
    SendScintilla(SCI_SETPROPERTY, "asp.default.language", ID IS SCLEX::ASP ? "2" : "1");
    SendScintilla(SCI_SETPROPERTY, "fold", scintilla->FoldingMarkers ? "1" : "0");
+   if (ID IS SCLEX::MARKDOWN) SendScintilla(SCI_SETPROPERTY, "lexer.markdown.header.eolfill", "1");
+   for (const auto &[name, value] : scintilla->LexerSettings[ID].properties) {
+      SendScintilla(SCI_SETPROPERTY, name.c_str(), value.c_str());
+   }
    SetKeywords();
    SetStyleColours();
    SendScintilla(SCI_CLEARDOCUMENTSTYLE);

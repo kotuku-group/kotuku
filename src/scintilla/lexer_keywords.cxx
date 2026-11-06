@@ -117,57 +117,66 @@ static constexpr char glHtmlKeywords[] =
 
 void ScintillaKTK::SetKeywords()
 {
+   scintilla->ActiveKeywords.clear();
+   auto keywords = [this](int Set, const char *Text) {
+      scintilla->ActiveKeywords[Set] = Text;
+      SendScintilla(SCI_SETKEYWORDS, Set, Text);
+   };
    // A lexer switch can reuse an existing lexer instance.  Clear all sets before applying the new profile.
    for (int list=0; list < 9; list++) SendScintilla(SCI_SETKEYWORDS, list, "");
 
    switch (scintilla->Lexer) {
+      case SCLEX::JSON:
+         keywords(0, "false null true");
+         break;
+
       case SCLEX::CPP:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glCppKeywords);
+         keywords(0UL, glCppKeywords);
          break;
 
       case SCLEX::TIRI:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glTiriKeywords);
-         SendScintilla(SCI_SETKEYWORDS, 1,
+         keywords(0UL, glTiriKeywords);
+         keywords(1,
             "assert arg check collectgarbage exec forEach include ipairs loadFile module pairs print processing "
             "rawequal rawlen rawtype require subscribe subscribeEvent tonumber tostring type unsubscribe "
             "unsubscribeEvent values");
          break;
 
       case SCLEX::PYTHON:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glPythonKeywords);
+         keywords(0UL, glPythonKeywords);
          break;
 
       case SCLEX::PERL:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glPerlKeywords);
+         keywords(0UL, glPerlKeywords);
          break;
 
       case SCLEX::SQL:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glSqlKeywords);
+         keywords(0UL, glSqlKeywords);
          break;
 
       case SCLEX::VB:
       case SCLEX::VBSCRIPT:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glVbKeywords);
+         keywords(0UL, glVbKeywords);
          break;
 
       case SCLEX::BATCH:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glBatchKeywords);
+         keywords(0UL, glBatchKeywords);
          break;
 
       case SCLEX::PASCAL:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glPascalKeywords);
+         keywords(0UL, glPascalKeywords);
          break;
 
       case SCLEX::RUBY:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glRubyKeywords);
+         keywords(0UL, glRubyKeywords);
          break;
 
       case SCLEX::BASH:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glBashKeywords);
+         keywords(0UL, glBashKeywords);
          break;
 
       case SCLEX::REBOL:
-         SendScintilla(SCI_SETKEYWORDS, 0UL, glRebolKeywords);
+         keywords(0UL, glRebolKeywords);
          break;
 
       case SCLEX::HTML:
@@ -175,49 +184,52 @@ void ScintillaKTK::SetKeywords()
       case SCLEX::ASP:
       case SCLEX::PHPSCRIPT:
          // An empty XML element list accepts arbitrary application-specific tags and attributes.
-         if (scintilla->Lexer != SCLEX::XML) SendScintilla(SCI_SETKEYWORDS, 0UL, glHtmlKeywords);
-         SendScintilla(SCI_SETKEYWORDS, 1, glJavascriptKeywords);
-         SendScintilla(SCI_SETKEYWORDS, 2, glVbKeywords);
-         SendScintilla(SCI_SETKEYWORDS, 3, glPythonKeywords);
-         SendScintilla(SCI_SETKEYWORDS, 4, glPhpKeywords);
-         SendScintilla(SCI_SETKEYWORDS, 5,
+         if (scintilla->Lexer != SCLEX::XML) keywords(0UL, glHtmlKeywords);
+         keywords(1, glJavascriptKeywords);
+         keywords(2, glVbKeywords);
+         keywords(3, glPythonKeywords);
+         keywords(4, glPhpKeywords);
+         keywords(5,
             "doctype element attlist entity notation pcdata cdata implied required fixed");
          break;
 
       case SCLEX::ASSEMBLER:
-         SendScintilla(SCI_SETKEYWORDS, 0UL,
+         keywords(0UL,
             "adc add and b bl call cbz cmp dec div eor idiv imul inc int jmp je jne jz jnz lea ldr ldp mov mul "
             "nop not or pop push ret rol ror sal sar sbb shl shr stp str sub svc test xchg xor");
-         SendScintilla(SCI_SETKEYWORDS, 1, "fadd fdiv fld fmul fst fstp fsub");
-         SendScintilla(SCI_SETKEYWORDS, 2,
+         keywords(1, "fadd fdiv fld fmul fst fstp fsub");
+         keywords(2,
             "al ah ax bl bh bx cl ch cx dl dh dx eax ebx ecx edx esi edi ebp esp rax rbx rcx rdx rsi rdi rbp rsp "
             "r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15 x0 x1 x2 x3 x4 x5 x6 x7 x8 sp lr pc");
-         SendScintilla(SCI_SETKEYWORDS, 3, "align bits byte db dd dq dw equ extern global section segment word");
-         SendScintilla(SCI_SETKEYWORDS, 4, "byte dword far near ptr qword short word");
-         SendScintilla(SCI_SETKEYWORDS, 5, "addps addsd addss movaps movdqa movdqu movsd movss pxor subps xorps");
+         keywords(3, "align bits byte db dd dq dw equ extern global section segment word");
+         keywords(4, "byte dword far near ptr qword short word");
+         keywords(5, "addps addsd addss movaps movdqa movdqu movsd movss pxor subps xorps");
          break;
 
       case SCLEX::CSS:
-         SendScintilla(SCI_SETKEYWORDS, 0UL,
+         keywords(0UL,
             "background background-color background-image border border-color border-style border-width bottom "
             "clear color display float font font-family font-size font-style font-weight height left line-height "
             "list-style margin margin-bottom margin-left margin-right margin-top padding position right text-align "
             "text-decoration text-indent top vertical-align white-space width word-spacing");
-         SendScintilla(SCI_SETKEYWORDS, 1,
+         keywords(1,
             "active checked disabled empty enabled first-child first-of-type focus focus-visible focus-within "
             "hover is lang last-child last-of-type link not nth-child nth-of-type only-child root target visited "
             "where");
-         SendScintilla(SCI_SETKEYWORDS, 2,
+         keywords(2,
             "border-collapse border-spacing caption-side content cursor max-height max-width min-height min-width "
             "outline overflow table-layout visibility z-index");
-         SendScintilla(SCI_SETKEYWORDS, 3,
+         keywords(3,
             "align-items animation appearance aspect-ratio border-radius box-shadow box-sizing column-gap "
             "flex flex-basis flex-direction flex-grow flex-shrink flex-wrap gap grid grid-template-columns "
             "grid-template-rows justify-content object-fit opacity order overflow-x overflow-y row-gap "
             "text-overflow transform transition user-select");
-         SendScintilla(SCI_SETKEYWORDS, 4, "after before first-letter first-line marker placeholder selection");
+         keywords(4, "after before first-letter first-line marker placeholder selection");
          break;
 
       default: break; // Structural lexers such as Diff, Properties and Makefile do not consume keyword lists.
+   }
+   for (const auto &[set, text] : scintilla->LexerSettings[scintilla->Lexer].keywords) {
+      keywords(set, text.c_str());
    }
 }

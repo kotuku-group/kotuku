@@ -190,6 +190,88 @@ for one frame before the editor repaints.</li>
     </method>
 
     <method>
+      <name>ClearIndicator</name>
+      <comment>Removes an application indicator from a byte range.</comment>
+      <prototype>ERR sci::ClearIndicator(OBJECTPTR Object, INT Indicator, INT Start, INT End)</prototype>
+      <tiriPrototype>err = ClearIndicator(Indicator:num, Start:num, End:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Indicator">An indicator slot previously defined with <method>DefineIndicator</method>.</param>
+        <param type="INT" name="Start">Byte offset of the first byte to clear.</param>
+        <param type="INT" name="End">Byte offset immediately after the last byte to clear.  Must be between <code>Start</code> and <fl>TextLength</fl>.</param>
+      </input>
+      <description>
+<p>ClearIndicator() removes the marks of an indicator slot from the bytes in the range <code>Start</code> to <code>End</code>, leaving the marks of other slots untouched.  Marks that extend beyond either end of the range are trimmed rather than removed, so clearing the middle of a run leaves two separate runs.  To remove every mark in a slot, clear the range from zero to <fl>TextLength</fl>.</p>
+<p>The slot must have been defined with <method>DefineIndicator</method>.  Clearing a range does not modify the document, its undo history, <fl>DocumentRevision</fl> or the selection.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args"><code>Indicator</code> has not been defined.</error>
+        <error code="OutOfRange"><code>Indicator</code> is outside the range 8 to 31, or the byte range is invalid.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>Colourise</name>
+      <comment>Restyles a range of the document with the active lexer.</comment>
+      <prototype>ERR sci::Colourise(OBJECTPTR Object, INT Start, INT End)</prototype>
+      <tiriPrototype>err = Colourise(Start:num, End:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Start">Byte offset at which to start styling.</param>
+        <param type="INT" name="End">Byte offset at which to stop styling.  Must not be less than <code>Start</code> or greater than <fl>TextLength</fl>.</param>
+      </input>
+      <description>
+<p>Colourise() runs the active <fl>Lexer</fl> over the range <code>Start</code> to <code>End</code> immediately.  The lexer may begin styling from an earlier position if it needs preceding context to resolve the range correctly.</p>
+<p>Calls to <method>SetKeywords</method> and <method>SetLexerProperty</method> invalidate the existing styles, but the affected text is not restyled until it is next drawn.  Call Colourise() after such changes when the updated styles are needed straight away.  To restyle the entire document, use a range of zero to <fl>TextLength</fl>.  An empty range is accepted and has no effect.</p>
+<p>Styling does not modify the document, its undo history or <fl>DocumentRevision</fl>.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="OutOfRange">The byte range is invalid.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>DefineIndicator</name>
+      <comment>Defines the appearance of an application indicator slot.</comment>
+      <prototype>ERR sci::DefineIndicator(OBJECTPTR Object, INT Indicator, SCIND Style, INT Colour)</prototype>
+      <tiriPrototype>err = DefineIndicator(Indicator:num, Style:num, Colour:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Indicator">The application slot to define, from 8 to 31.</param>
+        <param type="SCIND" name="Style" lookup="SCIND">The visual style of the indicator.</param>
+        <param type="INT" name="Colour">An explicit <code>0xRRGGBB</code> colour, or a theme reference from <code>-1</code> to <code>-3</code>.</param>
+      </input>
+      <description>
+<p>Indicators annotate ranges of document text without altering the text or its lexical styling, and are typically used to highlight diagnostics such as compiler errors, warnings and search matches.  DefineIndicator() configures the appearance of a slot so that it can be applied to text with <method>FillIndicator</method> and <method>ClearIndicator</method>.</p>
+<p>Slots 8 to 31 are available to applications.  Lower slots are reserved for lexers and higher slots for input method composition.  Indicators are drawn beneath the text, and each slot is drawn independently so that overlapping ranges remain visible.  The available styles are:</p>
+<types lookup="SCIND"/>
+<p>The <code>Colour</code> is either an explicit colour in <code>0xRRGGBB</code> format or one of the following theme references, which follow the palette when it is changed through <fl>ThemeXML</fl>:</p>
+<list type="bullet">
+<li><code>-1</code>: The theme's <code>error</code> colour.</li>
+<li><code>-2</code>: The theme's <code>keyword</code> colour.</li>
+<li><code>-3</code>: The theme's <code>selectionBackground</code> colour, as reflected by <fl>SelectBkgd</fl>.</li>
+</list>
+<p>A slot can be redefined at any time.  Redefinition changes only the appearance; existing marks and their values are preserved.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args"><code>Style</code> is not a supported <code>SCIND</code> value.</error>
+        <error code="OutOfRange"><code>Indicator</code> is outside the range 8 to 31, or <code>Colour</code> is neither a valid colour nor a theme reference.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
       <name>DefineMarker</name>
       <comment>Defines the appearance of a marker.</comment>
       <prototype>ERR sci::DefineMarker(OBJECTPTR Object, INT Marker, SCMK Symbol, struct RGB8 * Fore, struct RGB8 * Bkgd)</prototype>
@@ -234,6 +316,107 @@ for one frame before the editor repaints.</li>
         <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
       </result>
       <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>FillIndicator</name>
+      <comment>Applies an application indicator to a byte range.</comment>
+      <prototype>ERR sci::FillIndicator(OBJECTPTR Object, INT Indicator, INT Start, INT End, INT Value)</prototype>
+      <tiriPrototype>err = FillIndicator(Indicator:num, Start:num, End:num, Value:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Indicator">An indicator slot previously defined with <method>DefineIndicator</method>.</param>
+        <param type="INT" name="Start">Byte offset of the first byte to mark.</param>
+        <param type="INT" name="End">Byte offset immediately after the last byte to mark.  Must be between <code>Start</code> and <fl>TextLength</fl>.</param>
+        <param type="INT" name="Value">A positive value to associate with the marked bytes.  Zero is reserved for unmarked bytes.</param>
+      </input>
+      <description>
+<p>FillIndicator() marks the bytes in the range <code>Start</code> to <code>End</code> with an indicator slot and associates <code>Value</code> with every marked byte.  The value is not interpreted by the editor; applications can use it to link a mark to their own data, such as an index into a list of diagnostic messages, and retrieve it later with <method>GetIndicator</method>.</p>
+<p>Filling a range overwrites any existing marks of the same slot within that range.  Marks in other slots are unaffected, so a byte can carry one value per slot.  Marks move with the text when the document is edited, and are trimmed when the text they cover is deleted.  Marks are not part of the undo history, so undoing a deletion does not restore them.  Offsets are not adjusted to UTF-8 character boundaries.</p>
+<p>The slot must have been defined with <method>DefineIndicator</method>.  Filling a range does not modify the document, its undo history, <fl>DocumentRevision</fl> or the selection.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args"><code>Indicator</code> has not been defined, or <code>Value</code> is not positive.</error>
+        <error code="OutOfRange"><code>Indicator</code> is outside the range 8 to 31, or the byte range is invalid.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object</tags>
+    </method>
+
+    <method>
+      <name>GetIndicator</name>
+      <comment>Reads the indicator value at a byte position and the extent of its run.</comment>
+      <prototype>ERR sci::GetIndicator(OBJECTPTR Object, INT Indicator, INT Position, INT * Value, INT * Start, INT * End)</prototype>
+      <tiriPrototype>err, Value:num, Start:num, End:num = GetIndicator(Indicator:num, Position:num)</tiriPrototype>
+      <input>
+        <param type="INT" name="Indicator">An indicator slot previously defined with <method>DefineIndicator</method>.</param>
+        <param type="INT" name="Position">Byte offset to inspect, from zero to <fl>TextLength</fl>.</param>
+        <param type="INT *" name="Value">Receives the value at <code>Position</code>, or zero if the byte is not marked.</param>
+        <param type="INT *" name="Start">Receives the byte offset of the first byte in the run.</param>
+        <param type="INT *" name="End">Receives the byte offset immediately after the last byte in the run.</param>
+      </input>
+      <description>
+<p>GetIndicator() returns the value that <method>FillIndicator</method> associated with the byte at <code>Position</code>, together with the bounds of the contiguous run of bytes that share that value.  If the byte is not marked, <code>Value</code> is zero and <code>Start</code> and <code>End</code> describe the surrounding run of unmarked bytes.</p>
+<p><code>Position</code> may equal <fl>TextLength</fl>, in which case <code>Value</code> is zero and both <code>Start</code> and <code>End</code> are set to <code>Position</code>.</p>
+<p>This method is safe to call from notification callbacks.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args"><code>Indicator</code> has not been defined.</error>
+        <error code="OutOfRange"><code>Indicator</code> is outside the range 8 to 31, or <code>Position</code> is outside the document.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>pure-query</tags>
+    </method>
+
+    <method>
+      <name>GetKeywords</name>
+      <comment>Copies a keyword set of the active lexer to a buffer.</comment>
+      <prototype>ERR sci::GetKeywords(OBJECTPTR Object, INT Set, std::span&lt;int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = GetKeywords(Set:num, Buffer:array)</tiriPrototype>
+      <input>
+        <param type="INT" name="Set">Zero-based index of the keyword set to read.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">Receives the keyword list as a null-terminated string.</param>
+      </input>
+      <description>
+<p>GetKeywords() copies the keyword list that the active <fl>Lexer</fl> is currently using for the keyword set <code>Set</code>.  The result is the list assigned with <method>SetKeywords</method> if one exists for the active lexer, otherwise it is the lexer's built-in default list, which may be empty.</p>
+<p>The number of keyword sets and their meaning depend on the lexer.  The buffer must have room for the keyword list and a terminating null byte.  If it is too small, the buffer is left unchanged.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="NoSupport">The active lexer does not provide keyword set <code>Set</code>.</error>
+        <error code="BufferOverflow"><code>Buffer</code> is too small for the keyword list and its terminator.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
+    </method>
+
+    <method>
+      <name>GetLexerProperty</name>
+      <comment>Copies a lexer property assigned by the client to a buffer.</comment>
+      <prototype>ERR sci::GetLexerProperty(OBJECTPTR Object, STRVIEW Name, std::span&lt;int8_t&gt; Buffer)</prototype>
+      <tiriPrototype>err = GetLexerProperty(Name:str, Buffer:array)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Name">The exact name of the property, as advertised by the active lexer.</param>
+        <param type="std::span&lt;int8_t&gt;" name="Buffer">Receives the property value as a null-terminated string.</param>
+      </input>
+      <description>
+<p>GetLexerProperty() copies the value that <method>SetLexerProperty</method> assigned to the property <code>Name</code> for the active <fl>Lexer</fl>.  If the property is supported but has not been assigned for this lexer, an empty string is returned; the lexer's internal default value is not reported.</p>
+<p>The property must be one advertised by the active lexer.  The <code>fold</code> and <code>asp.default.language</code> properties are managed by the Scintilla class and cannot be read with this method.  The buffer must have room for the value and a terminating null byte.  If it is too small, the buffer is left unchanged.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args"><code>Name</code> contains a null byte.</error>
+        <error code="NoSupport"><code>Name</code> is not a property advertised by the active lexer, or is reserved.</error>
+        <error code="BufferOverflow"><code>Buffer</code> is too small for the value and its terminator.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-input</tags>
     </method>
 
     <method>
@@ -464,6 +647,56 @@ for one frame before the editor repaints.</li>
         <error code="NullArgs">Function call missing argument value(s)</error>
         <error code="CreateResource">Failed to create a new resource</error>
       </result>
+    </method>
+
+    <method>
+      <name>SetKeywords</name>
+      <comment>Replaces a keyword set of the active lexer.</comment>
+      <prototype>ERR sci::SetKeywords(OBJECTPTR Object, INT Set, STRVIEW Keywords)</prototype>
+      <tiriPrototype>err = SetKeywords(Set:num, Keywords:str)</tiriPrototype>
+      <input>
+        <param type="INT" name="Set">Zero-based index of the keyword set to replace.</param>
+        <param type="STRVIEW" name="Keywords">Space-separated list of words to use for the set.</param>
+      </input>
+      <description>
+<p>SetKeywords() replaces the keyword list that the active <fl>Lexer</fl> uses for the keyword set <code>Set</code>.  Lexers use keyword sets to classify words, for instance as language keywords or type names, and the number of sets and their meaning depend on the lexer.  Some structural lexers, such as Markdown and Diff, have no keyword sets.</p>
+<p><code>Keywords</code> is a complete list of words separated by spaces, and replaces the lexer's built-in default list.  An empty string leaves the set empty; it does not restore the default list.</p>
+<p>The replacement is stored for the active lexer only, and is reapplied whenever that lexer is selected again.  The existing styles are invalidated and recalculated when the text is next drawn; call <method>Colourise</method> to apply the change immediately.  The document, its undo history and <fl>DocumentRevision</fl> are not affected.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args"><code>Keywords</code> contains a null byte.</error>
+        <error code="NoSupport">The active lexer does not provide keyword set <code>Set</code>.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object, copies-input</tags>
+    </method>
+
+    <method>
+      <name>SetLexerProperty</name>
+      <comment>Sets a configuration property of the active lexer.</comment>
+      <prototype>ERR sci::SetLexerProperty(OBJECTPTR Object, STRVIEW Name, STRVIEW Value)</prototype>
+      <tiriPrototype>err = SetLexerProperty(Name:str, Value:str)</tiriPrototype>
+      <input>
+        <param type="STRVIEW" name="Name">The exact name of the property, as advertised by the active lexer.</param>
+        <param type="STRVIEW" name="Value">The value to assign.</param>
+      </input>
+      <description>
+<p>SetLexerProperty() assigns a value to a property advertised by the active <fl>Lexer</fl>.  Lexer properties adjust how text is classified, for example <code>lexer.json.allow.comments</code> enables comment recognition in the JSON lexer.  The available properties depend on the lexer.  The <code>fold</code> and <code>asp.default.language</code> properties are managed by the Scintilla class and cannot be set with this method.</p>
+<p>Values are validated against the property's type.  Boolean properties accept only <code>0</code> or <code>1</code>, and integer properties accept only a decimal integer.  String properties accept any value that does not contain a null byte.</p>
+<p>The value is stored for the active lexer only.  It is removed from the editor when a different lexer is selected, and is reapplied whenever the lexer is selected again.  The current value can be read with <method>GetLexerProperty</method>.  The existing styles are invalidated and recalculated when the text is next drawn; call <method>Colourise</method> to apply the change immediately.</p>
+      </description>
+      <result>
+        <error code="Okay">Operation successful.</error>
+        <error code="Args"><code>Name</code> or <code>Value</code> contains a null byte, or <code>Value</code> is not valid for the property's type.</error>
+        <error code="NoSupport"><code>Name</code> is not a property advertised by the active lexer, or is reserved.</error>
+        <error code="NotInitialised">The resource has not been initialised</error>
+        <error code="Busy">The editor is dispatching a notification and cannot be modified until it returns.</error>
+        <error code="NullArgs">Function call missing argument value(s)</error>
+      </result>
+      <tags>mutates-object, copies-input</tags>
     </method>
 
     <method>
@@ -773,6 +1006,18 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
+      <name>LexerName</name>
+      <comment>Selects the lexer by name.</comment>
+      <access read="G" write="S">Get/Set</access>
+      <type>STRING</type>
+      <description>
+<p>LexerName is a name-based alternative to the <fl>Lexer</fl> field.  Reading it returns the canonical name of the active lexer, and writing it selects the lexer with the matching name, with the same effect as setting <fl>Lexer</fl>.  The list of valid names can be read from <fl>SupportedLexers</fl>.  Names are case-sensitive.</p>
+<p>The aliases <code>lua</code>, <code>hypertext</code> and <code>none</code> are accepted for <code>tiri</code>, <code>html</code> and <code>null</code> respectively, but the field always reports the canonical name.  Writing an unknown name fails with <code>ERR::NoSupport</code> and leaves the active lexer unchanged. The lexer cannot be changed while the editor is dispatching a notification.</p>
+      </description>
+      <tags>static-result, null-terminated-result</tags>
+    </field>
+
+    <field>
       <name>LineCount</name>
       <comment>The total number of lines in the document.</comment>
       <access read="G">Get</access>
@@ -925,6 +1170,17 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
+      <name>SupportedLexers</name>
+      <comment>Lists the names of all supported lexers.  This field is read-only.</comment>
+      <access read="G">Get</access>
+      <type>STRING</type>
+      <description>
+<p>Returns the canonical name of every lexer that can be assigned to <fl>LexerName</fl>, separated by newline characters.  The list includes <code>null</code>, which selects plain text.  The content of the list is fixed for the lifetime of the process.</p>
+      </description>
+      <tags>static-result, null-terminated-result</tags>
+    </field>
+
+    <field>
       <name>Symbols</name>
       <comment>Shows the symbol margin, in which markers are displayed.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -1022,6 +1278,16 @@ for one frame before the editor repaints.</li>
       <const name="EXT_PAGE">Extends the length of the document by one blank page.  This is a visual effect that only has an impact when the user scrolls to the end of the document.</const>
     </constants>
 
+    <constants lookup="SCIND" comment="Supported diagnostic indicator appearances.">
+      <const name="BOX">Outline box.</const>
+      <const name="DASH">Dashed underline.</const>
+      <const name="DOTS">Dotted underline.</const>
+      <const name="PLAIN">Underline.</const>
+      <const name="ROUND_BOX">Rounded box.</const>
+      <const name="SQUIGGLE">Wavy underline.</const>
+      <const name="STRAIGHT_BOX">Translucent background box.</const>
+    </constants>
+
     <constants lookup="SCLEX" comment="Scintilla Lexers.  These codes originate from the Scintilla library.">
       <const name="ASP">Active Server Pages</const>
       <const name="ASSEMBLER">Assembler</const>
@@ -1032,7 +1298,9 @@ for one frame before the editor repaints.</li>
       <const name="DIFF">Diff</const>
       <const name="ERRORLIST">ErrorList</const>
       <const name="HTML">HTML</const>
+      <const name="JSON">JSON</const>
       <const name="MAKEFILE">Makefile</const>
+      <const name="MARKDOWN">Markdown</const>
       <const name="PASCAL">Pascal</const>
       <const name="PERL">Perl</const>
       <const name="PHPSCRIPT">PHP Script</const>

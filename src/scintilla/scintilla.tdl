@@ -32,7 +32,19 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     CSS        = "38: CSS",
     BASH       = "62: Bash",
     PHPSCRIPT  = "69: PHP Script",
-    REBOL      = "71: Rebol"
+    REBOL      = "71: Rebol",
+    MARKDOWN   = "98: Markdown",
+    JSON       = "120: JSON"
+  })
+
+  constants("SCIND", { type="int", comment="Supported diagnostic indicator appearances." }, {
+    PLAIN = "0: Underline.",
+    SQUIGGLE = "1: Wavy underline.",
+    BOX = "6: Outline box.",
+    ROUND_BOX = "7: Rounded box.",
+    STRAIGHT_BOX = "8: Translucent background box.",
+    DASH = "9: Dashed underline.",
+    DOTS = "10: Dotted underline."
   })
 
   constants("SCMK", { type="int", comment="Marker symbols for DefineMarker(), as defined by the Scintilla library." }, {
@@ -159,7 +171,16 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     { id=22, name="GetTextRange" },
     { id=23, name="ReplaceRange" },
     { id=24, name="BeginUndoAction" },
-    { id=25, name="EndUndoAction" }
+    { id=25, name="EndUndoAction" },
+    { id=26, name="DefineIndicator" },
+    { id=27, name="FillIndicator" },
+    { id=28, name="ClearIndicator" },
+    { id=29, name="GetIndicator" },
+    { id=30, name="SetKeywords" },
+    { id=31, name="GetKeywords" },
+    { id=32, name="SetLexerProperty" },
+    { id=33, name="GetLexerProperty" },
+    { id=34, name="Colourise" }
   })
 
   klass("Scintilla", { src={ "class_scintilla.cxx" }, output="class_scintilla_def.cxx", extended=true }, [[

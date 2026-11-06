@@ -69,6 +69,17 @@ class extScintilla : public objScintilla {
    ScintillaKTK *API;
    std::string StringBuffer;
    std::string SelectionBuffer;
+   struct lexer_settings {
+      std::map<int, std::string> keywords;
+      std::map<std::string, std::string> properties;
+   };
+   std::map<SCLEX, lexer_settings> LexerSettings;
+   std::map<int, std::string> ActiveKeywords;
+   struct indicator_definition {
+      SCIND style;
+      int colour; // RGB, or -1 ErrorColour, -2 KeywordColour, -3 SelectBkgd
+   };
+   std::map<int, indicator_definition> Indicators;
    int    LongestLine;         // Longest line in the document
    int    LongestWidth;        // Scroll width: the pixel width of the longest line, plus padding
    int    WidthCheckFirst = INT_MAX; // Range of modified lines to measure before the next paint
@@ -262,6 +273,8 @@ public:
    virtual void braceMatch();
    virtual sptr_t checkBrace(sptr_t pos,int brace_style);
    virtual bool findMatchingBrace(sptr_t &brace,sptr_t &other,sptr_t mode);
+
+   void ApplyIndicators();
 
    // Lexer handling
    virtual ERR SetLexer(SCLEX ID);

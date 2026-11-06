@@ -1,0 +1,79 @@
+-- Public diagnostic ranges use exact document bytes and remain independent of lexer styles.
+   include 'scintilla', 'vector'
+
+function newEditor():<obj, obj>
+   local scene = obj.new('VectorScene', { pageWidth=400, pageHeight=200 })
+   local host = scene.new('VectorViewport', { width='100%', height='100%' })
+   return scene, host.new('Scintilla', {})
+end
+
+function expectRun(Sci:obj, Slot:num, Position:num, Value:num, Start:num, End:num)
+   local err, value, first, last = Sci.mtGetIndicator(Slot, Position)
+   assert(err is ERR_Okay, 'Indicator lookup must succeed')
+   assert(value is Value and first is Start and last is End,
+      f'Expected {Value} at [{Start},{End}), got {value} at [{first},{last})')
+end
+
+@Test function UnmarkedRunsCoverTheDocument()
+   local scene <close>, sci = newEditor()
+   check sci.mtDefineIndicator(8, SCIND_PLAIN, -1)
+   expectRun(sci, 8, 0, 0, 0, 0)
+   sci.string = 'abcdefgh'
+   expectRun(sci, 8, 0, 0, 0, 8)
+   expectRun(sci, 8, 3, 0, 0, 8)
+   expectRun(sci, 8, 7, 0, 0, 8)
+   expectRun(sci, 8, 8, 0, 8, 8)
+   check sci.mtFillIndicator(8, 2, 5, 1)
+   expectRun(sci, 8, 0, 0, 0, 2)
+   expectRun(sci, 8, 6, 0, 5, 8)
+   check sci.mtClearIndicator(8, 0, 8)
+   expectRun(sci, 8, 3, 0, 0, 8)
+   check sci.mtFillIndicator(8, 2, 5, 1)
+   check sci.mtReplaceRange(2, 5, '')
+   expectRun(sci, 8, 3, 0, 0, 5)
+end
+
+@Test function OverlapClearAndBoundaries()
+   local scene <close>, sci = newEditor()
+   sci.string = 'éabcdef'
+   local revision = sci.documentRevision
+   check sci.mtSelectRange(2, 5)
+   check sci.mtDefineIndicator(8, SCIND_SQUIGGLE, -1)
+   check sci.mtDefineIndicator(9, SCIND_STRAIGHT_BOX, 0x00ff00)
+   check sci.mtFillIndicator(8, 1, 6, 42)
+   check sci.mtFillIndicator(9, 3, 7, 99)
+   expectRun(sci, 8, 1, 42, 1, 6)
+   expectRun(sci, 9, 4, 99, 3, 7)
+   check sci.mtClearIndicator(8, 3, 5)
+   expectRun(sci, 8, 2, 42, 1, 3)
+   expectRun(sci, 8, 5, 42, 5, 6)
+   expectRun(sci, 9, 4, 99, 3, 7)
+   expectRun(sci, 8, sci.textLength, 0, sci.textLength, sci.textLength)
+   assert(sci.documentRevision is revision, 'Diagnostics must not change document revision')
+   assert(sci.selectionStart is 2 and sci.selectionEnd is 5, 'Diagnostics preserve selection')
+   check sci.mtFillIndicator(8, 0, 0, 1)
+   assert(sci.mtFillIndicator(8, 0, 1, 0) is ERR_Args, 'Zero is reserved for unmarked bytes')
+   assert(sci.mtFillIndicator(8, 4, 2, 1) is ERR_OutOfRange, 'Reversed ranges must fail')
+   assert(sci.mtFillIndicator(8, 0, 100, 1) is ERR_OutOfRange, 'Past-end ranges must fail')
+   assert(sci.mtDefineIndicator(7, SCIND_PLAIN, -1) is ERR_OutOfRange, 'Lexer slots are reserved')
+   assert(sci.mtDefineIndicator(32, SCIND_PLAIN, -1) is ERR_OutOfRange, 'IME slots are reserved')
+   assert(sci.mtFillIndicator(10, 0, 1, 1) is ERR_Args, 'Undefined slots must fail')
+end
+
+@Test function EditsAdjustMarksAndRedefinitionPreservesValues()
+   local scene <close>, sci = newEditor()
+   sci.string = 'abcdefgh'
+   check sci.mtDefineIndicator(8, SCIND_SQUIGGLE, -1)
+   check sci.mtFillIndicator(8, 2, 6, 7)
+   check sci.mtReplaceRange(0, 0, 'XY')
+   expectRun(sci, 8, 4, 7, 4, 8)
+   check sci.mtReplaceRange(5, 7, '')
+   expectRun(sci, 8, 4, 7, 4, 6)
+   check sci.mtDefineIndicator(8, SCIND_DOTS, 0x112233)
+   expectRun(sci, 8, 4, 7, 4, 6)
+   sci.lexer = SCLEX_JSON
+   expectRun(sci, 8, 4, 7, 4, 6)
+   check sci.mtClearIndicator(8, 0, sci.textLength)
+   local err, value = sci.mtGetIndicator(8, 4)
+   assert(err is ERR_Okay and value is 0, 'Clearing removes all marks')
+end

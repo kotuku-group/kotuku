@@ -22,6 +22,7 @@ static const struct FieldDef clScintillaLexer[] = {
    { "Errorlist", 0x0000000a },
    { "Makefile", 0x0000000b },
    { "Batch", 0x0000000c },
+   { "Json", 0x00000078 },
    { "Tiri", 0x0000000f },
    { "Diff", 0x00000010 },
    { "Pascal", 0x00000012 },
@@ -41,6 +42,7 @@ static const struct FieldDef clScintillaLexer[] = {
    { "Rebol", 0x00000047 },
    { "Vb", 0x00000008 },
    { "Properties", 0x00000009 },
+   { "Markdown", 0x00000062 },
    { nullptr, 0 }
 };
 
@@ -63,6 +65,15 @@ FDEF maShowCompletions[] = { { "Length", FD_INT }, { "Candidates", FD_STR }, { "
 FDEF maShowCallTip[] = { { "Pos", FD_INT }, { "Text", FD_STR }, { "HighlightStart", FD_INT }, { "HighlightEnd", FD_INT }, { 0, 0 } };
 FDEF maGetTextRange[] = { { "Start", FD_INT }, { "End", FD_INT }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
 FDEF maReplaceRange[] = { { "Start", FD_INT }, { "End", FD_INT }, { "Text", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maDefineIndicator[] = { { "Indicator", FD_INT }, { "Style", FD_INT }, { "Colour", FD_INT }, { 0, 0 } };
+FDEF maFillIndicator[] = { { "Indicator", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { "Value", FD_INT }, { 0, 0 } };
+FDEF maClearIndicator[] = { { "Indicator", FD_INT }, { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
+FDEF maGetIndicator[] = { { "Indicator", FD_INT }, { "Position", FD_INT }, { "Value", FD_RESULT|FD_INT }, { "Start", FD_RESULT|FD_INT }, { "End", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF maSetKeywords[] = { { "Set", FD_INT }, { "Keywords", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maGetKeywords[] = { { "Set", FD_INT }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
+FDEF maSetLexerProperty[] = { { "Name", FDF_CPPSTRING }, { "Value", FDF_CPPSTRING }, { 0, 0 } };
+FDEF maGetLexerProperty[] = { { "Name", FDF_CPPSTRING }, { "Buffer", FDF_SPAN|FD_MUTABLE|FD_BYTE }, { 0, 0 } };
+FDEF maColourise[] = { { "Start", FD_INT }, { "End", FD_INT }, { 0, 0 } };
 
 static const struct MethodEntry clScintillaMethods[] = {
    { AC(-1), (APTR)SCINTILLA_SetFont, "SetFont", maSetFont, sizeof(struct sci::SetFont) },
@@ -90,6 +101,15 @@ static const struct MethodEntry clScintillaMethods[] = {
    { AC(-23), (APTR)SCINTILLA_ReplaceRange, "ReplaceRange", maReplaceRange, sizeof(struct sci::ReplaceRange) },
    { AC(-24), (APTR)SCINTILLA_BeginUndoAction, "BeginUndoAction", 0, 0 },
    { AC(-25), (APTR)SCINTILLA_EndUndoAction, "EndUndoAction", 0, 0 },
+   { AC(-26), (APTR)SCINTILLA_DefineIndicator, "DefineIndicator", maDefineIndicator, sizeof(struct sci::DefineIndicator) },
+   { AC(-27), (APTR)SCINTILLA_FillIndicator, "FillIndicator", maFillIndicator, sizeof(struct sci::FillIndicator) },
+   { AC(-28), (APTR)SCINTILLA_ClearIndicator, "ClearIndicator", maClearIndicator, sizeof(struct sci::ClearIndicator) },
+   { AC(-29), (APTR)SCINTILLA_GetIndicator, "GetIndicator", maGetIndicator, sizeof(struct sci::GetIndicator) },
+   { AC(-30), (APTR)SCINTILLA_SetKeywords, "SetKeywords", maSetKeywords, sizeof(struct sci::SetKeywords) },
+   { AC(-31), (APTR)SCINTILLA_GetKeywords, "GetKeywords", maGetKeywords, sizeof(struct sci::GetKeywords) },
+   { AC(-32), (APTR)SCINTILLA_SetLexerProperty, "SetLexerProperty", maSetLexerProperty, sizeof(struct sci::SetLexerProperty) },
+   { AC(-33), (APTR)SCINTILLA_GetLexerProperty, "GetLexerProperty", maGetLexerProperty, sizeof(struct sci::GetLexerProperty) },
+   { AC(-34), (APTR)SCINTILLA_Colourise, "Colourise", maColourise, sizeof(struct sci::Colourise) },
    { AC::NIL, 0, 0, 0, 0 }
 };
 

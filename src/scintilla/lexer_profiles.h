@@ -29,7 +29,9 @@ inline constexpr LexerProfile glLexerProfiles[] = {
    { SCLEX::CSS, "css" },
    { SCLEX::BASH, "bash" },
    { SCLEX::PHPSCRIPT, "phpscript" },
-   { SCLEX::REBOL, "rebol" }
+   { SCLEX::REBOL, "rebol" },
+   { SCLEX::MARKDOWN, "markdown" },
+   { SCLEX::JSON, "json" }
 };
 
 inline const LexerProfile * find_lexer_profile(SCLEX ID)

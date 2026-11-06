@@ -167,7 +167,9 @@ static const struct {
    { "*.sql",           SCLEX::SQL },
    { "*.vb",            SCLEX::VB },
    { "*.vbscript",      SCLEX::VBSCRIPT },
-   { "*.xml",           SCLEX::XML }
+   { "*.xml",           SCLEX::XML },
+   { "*.json|*.jsonld",  SCLEX::JSON },
+   { "*.md|*.markdown",  SCLEX::MARKDOWN }
 };
 
 #define SCICOLOUR(red,green,blue) (((uint8_t)(blue))<<16)|(((uint8_t)(green))<<8)|((uint8_t)(red))
@@ -821,6 +823,76 @@ static void clear_bitmap_border(extScintilla *Self)
 }
 
 //********************************************************************************************************************
+// Shared validation for the public configuration API.  Reads remain safe in notification callbacks.
+
+static ERR config_ready(extScintilla *Self, bool Mutating = false)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   if (Mutating and Self->API->panInNotification()) return ERR::Busy;
+   return ERR::Okay;
+}
+
+static ERR indicator_range(extScintilla *Self, int Indicator, int Start, int End)
+{
+   if ((Indicator < 8) or (Indicator > 31)) return ERR::OutOfRange;
+   if (not Self->Indicators.contains(Indicator)) return ERR::Args;
+   if ((Start < 0) or (End < Start) or (End > SCICALL(SCI_GETLENGTH))) return ERR::OutOfRange;
+   return ERR::Okay;
+}
+
+void ScintillaKTK::ApplyIndicators()
+{
+   for (const auto &[id, definition] : scintilla->Indicators) {
+      int colour = definition.colour;
+      if (colour < 0) {
+         auto &rgb = colour IS -1 ? scintilla->ErrorColour :
+            (colour IS -2 ? scintilla->KeywordColour : scintilla->SelectBkgd);
+         colour = (rgb.Red << 16) | (rgb.Green << 8) | rgb.Blue;
+      }
+      SendScintilla(SCI_INDICSETSTYLE, id, int(definition.style));
+      SendScintilla(SCI_INDICSETFORE, id, ((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255));
+      SendScintilla(SCI_INDICSETUNDER, id, 1);
+      SendScintilla(SCI_INDICSETALPHA, id, 60);
+      SendScintilla(SCI_INDICSETOUTLINEALPHA, id, 180);
+   }
+   InvalidateStyleRedraw();
+}
+
+static std::string lexer_string(extScintilla *Self, unsigned int Message, uptr_t Parameter = 0)
+{
+   auto length = SCICALL(Message, Parameter);
+   std::string text(size_t(length) + 1, '\0');
+   SCICALL(Message, Parameter, text.data());
+   text.resize(size_t(length));
+   return text;
+}
+
+static bool has_lexer_property(extScintilla *Self, const std::string &Name)
+{
+   if (Name.empty() or (Name.find('\0') != std::string::npos) or (Name.find('\n') != std::string::npos)) return false;
+   if ((Name IS "fold") or (Name IS "asp.default.language")) return false;
+   auto names = "\n" + lexer_string(Self, SCI_PROPERTYNAMES) + "\n";
+   return names.find("\n" + Name + "\n") != std::string::npos;
+}
+
+static bool has_keyword_set(extScintilla *Self, int Set)
+{
+   auto sets = lexer_string(Self, SCI_DESCRIBEKEYWORDSETS);
+   int count = sets.empty() ? 0 : int(std::count(sets.begin(), sets.end(), '\n')) + 1;
+   if (not sets.empty() and sets.back() IS '\n') count--;
+   return (Set >= 0) and (Set < count);
+}
+
+static ERR copy_config_text(const std::string &Text, std::span<int8_t> Buffer)
+{
+   if (Buffer.size() <= Text.size()) return ERR::BufferOverflow;
+   if (not Buffer.data()) return ERR::NullArgs;
+   std::copy(Text.begin(), Text.end(), Buffer.begin());
+   Buffer[Text.size()] = 0;
+   return ERR::Okay;
+}
+
+//********************************************************************************************************************
 // Resize the Bitmap while retaining its content.  The repaint that follows a resize is deferred, so the scene is drawn
 // with the resized Bitmap before Scintilla repaints it.  Retaining the content avoids the editor flashing to a blank
 // background on every resize, which is persistent while a window is being resized interactively.  Bitmap resizing
@@ -1023,6 +1095,39 @@ static ERR SCINTILLA_AddMarker(extScintilla *Self, struct sci::AddMarker *Args)
 }
 
 /*********************************************************************************************************************
+
+-METHOD-
+BeginUndoAction: Begins a client undo group.
+
+BeginUndoAction() starts a group of edits that #Undo() and #Redo() will treat as a single step.  Every edit made until
+the matching call to #EndUndoAction() is added to the group, whether it originates from the client or the user.
+
+Groups can be nested.  Each call must be balanced by a call to #EndUndoAction(), and the group is closed only when
+the outermost call is ended.  Open groups are preserved when new content is loaded, and any groups that remain open
+when the Scintilla object is freed are closed automatically.
+
+-ERRORS-
+Okay
+NotInitialised
+OutOfRange: The maximum nesting depth has been reached.
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_BeginUndoAction(extScintilla *Self)
+{
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   if (Self->API->panInNotification()) return ERR::Busy;
+   if (Self->ClientUndoDepth IS INT_MAX) return ERR::OutOfRange;
+   SCICALL(SCI_BEGINUNDOACTION);
+   Self->ClientUndoDepth++;
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 -ACTION-
 Clear: Clears all content from the editor.
 *********************************************************************************************************************/
@@ -1088,6 +1193,149 @@ static ERR SCINTILLA_Clipboard(extScintilla *Self, struct acClipboard *Args)
       return Self->API->panClipboard(Args->Mode);
    }
    else return log.warning(ERR::Args);
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+ClearIndicator: Removes an application indicator from a byte range.
+
+ClearIndicator() removes the marks of an indicator slot from the bytes in the range `Start` to `End`, leaving the
+marks of other slots untouched.  Marks that extend beyond either end of the range are trimmed rather than removed, so
+clearing the middle of a run leaves two separate runs.  To remove every mark in a slot, clear the range from zero to
+#TextLength.
+
+The slot must have been defined with #DefineIndicator().  Clearing a range does not modify the document, its
+undo history, #DocumentRevision or the selection.
+
+-INPUT-
+int Indicator: An indicator slot previously defined with #DefineIndicator().
+int Start: Byte offset of the first byte to clear.
+int End: Byte offset immediately after the last byte to clear.  Must be between `Start` and #TextLength.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+OutOfRange: `Indicator` is outside the range 8 to 31, or the byte range is invalid.
+Args: `Indicator` has not been defined.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_ClearIndicator(extScintilla *Self, struct sci::ClearIndicator *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   if (auto error = indicator_range(Self, Args->Indicator, Args->Start, Args->End);
+       error != ERR::Okay) return error;
+   SCICALL(SCI_SETINDICATORCURRENT, Args->Indicator);
+   SCICALL(SCI_INDICATORCLEARRANGE, Args->Start, Args->End - Args->Start);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+DefineIndicator: Defines the appearance of an application indicator slot.
+
+Indicators annotate ranges of document text without altering the text or its lexical styling, and are typically used
+to highlight diagnostics such as compiler errors, warnings and search matches.  DefineIndicator() configures the
+appearance of a slot so that it can be applied to text with #FillIndicator() and #ClearIndicator().
+
+Slots 8 to 31 are available to applications.  Lower slots are reserved for lexers and higher slots for input method
+composition.  Indicators are drawn beneath the text, and each slot is drawn independently so that overlapping ranges
+remain visible.  The available styles are:
+
+!SCIND
+
+The `Colour` is either an explicit colour in `0xRRGGBB` format or one of the following theme references, which follow
+the palette when it is changed through #ThemeXML:
+
+<list type="bullet">
+<li>`-1`: The theme's `error` colour.</li>
+<li>`-2`: The theme's `keyword` colour.</li>
+<li>`-3`: The theme's `selectionBackground` colour, as reflected by #SelectBkgd.</li>
+</list>
+
+A slot can be redefined at any time.  Redefinition changes only the appearance; existing marks and their values are
+preserved.
+
+-INPUT-
+int Indicator: The application slot to define, from 8 to 31.
+int(SCIND) Style: The visual style of the indicator.
+int Colour: An explicit `0xRRGGBB` colour, or a theme reference from `-1` to `-3`.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+OutOfRange: `Indicator` is outside the range 8 to 31, or `Colour` is neither a valid colour nor a theme reference.
+Args: `Style` is not a supported `SCIND` value.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_DefineIndicator(extScintilla *Self, struct sci::DefineIndicator *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   if ((Args->Indicator < 8) or (Args->Indicator > 31) or
+       (Args->Colour < -3) or (Args->Colour > 0xffffff)) return ERR::OutOfRange;
+   switch (Args->Style) {
+      case SCIND::PLAIN: case SCIND::SQUIGGLE: case SCIND::BOX: case SCIND::ROUND_BOX:
+      case SCIND::STRAIGHT_BOX: case SCIND::DASH: case SCIND::DOTS: break;
+      default: return ERR::Args;
+   }
+   Self->Indicators[Args->Indicator] = { Args->Style, Args->Colour };
+   Self->API->ApplyIndicators();
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+Colourise: Restyles a range of the document with the active lexer.
+
+Colourise() runs the active #Lexer over the range `Start` to `End` immediately.  The lexer may begin styling from an
+earlier position if it needs preceding context to resolve the range correctly.
+
+Calls to #SetKeywords() and #SetLexerProperty() invalidate the existing styles, but the affected text is not restyled
+until it is next drawn.  Call Colourise() after such changes when the updated styles are needed straight away.  To
+restyle the entire document, use a range of zero to #TextLength.  An empty range is accepted and has no effect.
+
+Styling does not modify the document, its undo history or #DocumentRevision.
+
+-INPUT-
+int Start: Byte offset at which to start styling.
+int End: Byte offset at which to stop styling.  Must not be less than `Start` or greater than #TextLength.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+OutOfRange: The byte range is invalid.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_Colourise(extScintilla *Self, struct sci::Colourise *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   if ((Args->Start < 0) or (Args->End < Args->Start) or
+       (Args->End > SCICALL(SCI_GETLENGTH))) return ERR::OutOfRange;
+   if (Args->Start != Args->End) SCICALL(SCI_COLOURISE, Args->Start, Args->End);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -1275,6 +1523,55 @@ static ERR SCINTILLA_Enable(extScintilla *Self)
 }
 
 /*********************************************************************************************************************
+
+-METHOD-
+FillIndicator: Applies an application indicator to a byte range.
+
+FillIndicator() marks the bytes in the range `Start` to `End` with an indicator slot and associates `Value` with every
+marked byte.  The value is not interpreted by the editor; applications can use it to link a mark to their own data,
+such as an index into a list of diagnostic messages, and retrieve it later with #GetIndicator().
+
+Filling a range overwrites any existing marks of the same slot within that range.  Marks in other slots are
+unaffected, so a byte can carry one value per slot.  Marks move with the text when the document is edited, and are
+trimmed when the text they cover is deleted.  Marks are not part of the undo history, so undoing a deletion does not
+restore them.  Offsets are not adjusted to UTF-8 character boundaries.
+
+The slot must have been defined with #DefineIndicator().  Filling a range does not modify the document, its
+undo history, #DocumentRevision or the selection.
+
+-INPUT-
+int Indicator: An indicator slot previously defined with #DefineIndicator().
+int Start: Byte offset of the first byte to mark.
+int End: Byte offset immediately after the last byte to mark.  Must be between `Start` and #TextLength.
+int Value: A positive value to associate with the marked bytes.  Zero is reserved for unmarked bytes.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+OutOfRange: `Indicator` is outside the range 8 to 31, or the byte range is invalid.
+Args: `Indicator` has not been defined, or `Value` is not positive.
+
+-TAGS-
+mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_FillIndicator(extScintilla *Self, struct sci::FillIndicator *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   if (auto error = indicator_range(Self, Args->Indicator, Args->Start, Args->End);
+       error != ERR::Okay) return error;
+   if (Args->Value <= 0) return ERR::Args;
+   SCICALL(SCI_SETINDICATORCURRENT, Args->Indicator);
+   SCICALL(SCI_SETINDICATORVALUE, Args->Value);
+   SCICALL(SCI_INDICATORFILLRANGE, Args->Start, Args->End - Args->Start);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 -ACTION-
 Focus: Moves the user focus to the #Focus viewport.
 -END-
@@ -1289,32 +1586,131 @@ static ERR SCINTILLA_Focus(extScintilla *Self)
 /*********************************************************************************************************************
 
 -METHOD-
-GetMarkers: Returns the markers of a line.
+GetIndicator: Reads the indicator value at a byte position and the extent of its run.
 
-This method returns the markers that a line carries, as a bit mask in which bit `N` is set for marker `N`.  For
-example, a result of `0x5` indicates that the line carries markers 0 and 2.
+GetIndicator() returns the value that #FillIndicator() associated with the byte at `Position`, together with the
+bounds of the contiguous run of bytes that share that value.  If the byte is not marked, `Value` is zero and `Start`
+and `End` describe the surrounding run of unmarked bytes.
+
+`Position` may equal #TextLength, in which case `Value` is zero and both `Start` and `End` are set to `Position`.
+
+This method is safe to call from notification callbacks.
 
 -INPUT-
-int Line: The index of the line.
-&int Markers: The bit mask of the line's markers is returned here.
+int Indicator: An indicator slot previously defined with #DefineIndicator().
+int Position: Byte offset to inspect, from zero to #TextLength.
+&int Value: Receives the value at `Position`, or zero if the byte is not marked.
+&int Start: Receives the byte offset of the first byte in the run.
+&int End: Receives the byte offset immediately after the last byte in the run.
 
--RESULT-
-Okay:
-NullArgs:
-OutOfRange: The `Line` is out of range.
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+OutOfRange: `Indicator` is outside the range 8 to 31, or `Position` is outside the document.
+Args: `Indicator` has not been defined.
+
+-TAGS-
+pure-query
 
 *********************************************************************************************************************/
 
-static ERR SCINTILLA_GetMarkers(extScintilla *Self, struct sci::GetMarkers *Args)
+static ERR SCINTILLA_GetIndicator(extScintilla *Self, struct sci::GetIndicator *Args)
 {
-   kt::Log log;
-
-   if (!Args) return log.warning(ERR::NullArgs);
-   Args->Markers = 0;
-   if ((Args->Line < 0) or (Args->Line >= SCICALL(SCI_GETLINECOUNT))) return log.warning(ERR::OutOfRange);
-
-   Args->Markers = int(SCICALL(SCI_MARKERGET, Args->Line) & ~SC_MASK_FOLDERS);
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self); error != ERR::Okay) return error;
+   if (auto error = indicator_range(Self, Args->Indicator, Args->Position, Args->Position);
+       error != ERR::Okay) return error;
+   Args->Value = 0;
+   Args->Start = Args->End = Args->Position;
+   if (Args->Position IS SCICALL(SCI_GETLENGTH)) return ERR::Okay;
+   Args->Value = int(SCICALL(SCI_INDICATORVALUEAT, Args->Indicator, Args->Position));
+   Args->Start = int(SCICALL(SCI_INDICATORSTART, Args->Indicator, Args->Position));
+   Args->End = int(SCICALL(SCI_INDICATOREND, Args->Indicator, Args->Position));
+   // Scintilla discards empty decorations and returns zero boundaries for an absent slot.
+   if ((Args->Value IS 0) and (Args->End IS 0)) {
+      Args->Start = 0;
+      Args->End = int(SCICALL(SCI_GETLENGTH));
+   }
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetKeywords: Copies a keyword set of the active lexer to a buffer.
+
+GetKeywords() copies the keyword list that the active #Lexer is currently using for the keyword set `Set`.  The result
+is the list assigned with #SetKeywords() if one exists for the active lexer, otherwise it is the lexer's built-in
+default list, which may be empty.
+
+The number of keyword sets and their meaning depend on the lexer.  The buffer must have room for the keyword list and
+a terminating null byte.  If it is too small, the buffer is left unchanged.
+
+-INPUT-
+int Set: Zero-based index of the keyword set to read.
+^array(char) Buffer: Receives the keyword list as a null-terminated string.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+NoSupport: The active lexer does not provide keyword set `Set`.
+BufferOverflow: `Buffer` is too small for the keyword list and its terminator.
+
+-TAGS-
+mutates-input
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_GetKeywords(extScintilla *Self, struct sci::GetKeywords *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self); error != ERR::Okay) return error;
+   if (not has_keyword_set(Self, Args->Set)) return ERR::NoSupport;
+   return copy_config_text(Self->ActiveKeywords[Args->Set], Args->Buffer);
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetLexerProperty: Copies a lexer property assigned by the client to a buffer.
+
+GetLexerProperty() copies the value that #SetLexerProperty() assigned to the property `Name` for the active #Lexer.  If
+the property is supported but has not been assigned for this lexer, an empty string is returned; the lexer's internal
+default value is not reported.
+
+The property must be one advertised by the active lexer.  The `fold` and `asp.default.language` properties are managed
+by the Scintilla class and cannot be read with this method.  The buffer must have room for the value and a terminating
+null byte.  If it is too small, the buffer is left unchanged.
+
+-INPUT-
+strview Name: The exact name of the property, as advertised by the active lexer.
+^array(char) Buffer: Receives the property value as a null-terminated string.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+NoSupport: `Name` is not a property advertised by the active lexer, or is reserved.
+Args: `Name` contains a null byte.
+BufferOverflow: `Buffer` is too small for the value and its terminator.
+
+-TAGS-
+mutates-input
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_GetLexerProperty(extScintilla *Self, struct sci::GetLexerProperty *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self); error != ERR::Okay) return error;
+   std::string name(Args->Name);
+   if ((name.find('\0') != std::string::npos)) return ERR::Args;
+   if (not has_lexer_property(Self, name)) return ERR::NoSupport;
+   auto &properties = Self->LexerSettings[Self->Lexer].properties;
+   auto entry = properties.find(name);
+   return copy_config_text(entry IS properties.end() ? std::string() : entry->second, Args->Buffer);
 }
 
 /*********************************************************************************************************************
@@ -1353,6 +1749,37 @@ static ERR SCINTILLA_GetLine(extScintilla *Self, struct sci::GetLine *Args)
       return ERR::Okay;
    }
    else return ERR::BufferOverflow;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+GetMarkers: Returns the markers of a line.
+
+This method returns the markers that a line carries, as a bit mask in which bit `N` is set for marker `N`.  For
+example, a result of `0x5` indicates that the line carries markers 0 and 2.
+
+-INPUT-
+int Line: The index of the line.
+&int Markers: The bit mask of the line's markers is returned here.
+
+-RESULT-
+Okay:
+NullArgs:
+OutOfRange: The `Line` is out of range.
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_GetMarkers(extScintilla *Self, struct sci::GetMarkers *Args)
+{
+   kt::Log log;
+
+   if (!Args) return log.warning(ERR::NullArgs);
+   Args->Markers = 0;
+   if ((Args->Line < 0) or (Args->Line >= SCICALL(SCI_GETLINECOUNT))) return log.warning(ERR::OutOfRange);
+
+   Args->Markers = int(SCICALL(SCI_MARKERGET, Args->Line) & ~SC_MASK_FOLDERS);
+   return ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1398,80 +1825,6 @@ static ERR SCINTILLA_GetTextRange(extScintilla *Self, struct sci::GetTextRange *
 
    Scintilla::TextRangeFull range { { Args->Start, Args->End }, (char *)Args->Buffer.data() };
    SCICALL(SCI_GETTEXTRANGEFULL, 0, sptr_t(&range));
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--METHOD-
-ReplaceRange: Replaces an exact byte range without searching or assigning a selection.
-
-ReplaceRange() replaces the document bytes from `Start` up to, but not including, `End` with `Text`.  Setting `Start`
-and `End` to the same offset inserts `Text` at that position, and an empty `Text` deletes the range.  A call with an
-empty range and an empty `Text` succeeds without modifying the document.
-
-The replacement is recorded as a single undoable edit, increments #DocumentRevision and is reported to
-#ChangeCallback like any other edit.  Use #BeginUndoAction() and #EndUndoAction() to combine several replacements into
-one undo step.  The current selection is not replaced by `Text`, although selection and cursor positions after the
-range are shifted to account for the change in length.
-
-This method is intended for programmatic edits and is not restricted by the `SCIF::EDIT` flag.
-
--INPUT-
-int Start: Inclusive byte offset, between zero and #TextLength.
-int End: Exclusive byte offset, between `Start` and #TextLength.  Negative sentinels such as `-1` are not supported.
-strview Text: Replacement bytes.  An empty string deletes the range.  Embedded null bytes are supported.
-
--ERRORS-
-Okay
-NullArgs
-NotInitialised
-OutOfRange: The range is invalid, or the replacement would exceed the maximum document length.
-ReadOnly: The document is temporarily read-only.
-Busy: The editor is dispatching a notification and cannot be modified until it returns.
-
--TAGS-
-copies-input, mutates-object
-
-*********************************************************************************************************************/
-
-static ERR SCINTILLA_ReplaceRange(extScintilla *Self, struct sci::ReplaceRange *Args)
-{
-   if (not Args) return ERR::NullArgs;
-   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
-   return Self->API->panReplaceRange(Args->Start, Args->End, Args->Text);
-}
-
-/*********************************************************************************************************************
-
--METHOD-
-BeginUndoAction: Begins a client undo group.
-
-BeginUndoAction() starts a group of edits that #Undo() and #Redo() will treat as a single step.  Every edit made until
-the matching call to #EndUndoAction() is added to the group, whether it originates from the client or the user.
-
-Groups can be nested.  Each call must be balanced by a call to #EndUndoAction(), and the group is closed only when
-the outermost call is ended.  Open groups are preserved when new content is loaded, and any groups that remain open
-when the Scintilla object is freed are closed automatically.
-
--ERRORS-
-Okay
-NotInitialised
-OutOfRange: The maximum nesting depth has been reached.
-Busy: The editor is dispatching a notification and cannot be modified until it returns.
-
--TAGS-
-mutates-object
-
-*********************************************************************************************************************/
-
-static ERR SCINTILLA_BeginUndoAction(extScintilla *Self)
-{
-   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
-   if (Self->API->panInNotification()) return ERR::Busy;
-   if (Self->ClientUndoDepth IS INT_MAX) return ERR::OutOfRange;
-   SCICALL(SCI_BEGINUNDOACTION);
-   Self->ClientUndoDepth++;
    return ERR::Okay;
 }
 
@@ -1899,6 +2252,47 @@ static ERR SCINTILLA_ReplaceLine(extScintilla *Self, struct sci::ReplaceLine *Ar
    SCICALL(SCI_REPLACETARGET, (uptr_t)length, Args->String.data());
 
    return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+ReplaceRange: Replaces an exact byte range without searching or assigning a selection.
+
+ReplaceRange() replaces the document bytes from `Start` up to, but not including, `End` with `Text`.  Setting `Start`
+and `End` to the same offset inserts `Text` at that position, and an empty `Text` deletes the range.  A call with an
+empty range and an empty `Text` succeeds without modifying the document.
+
+The replacement is recorded as a single undoable edit, increments #DocumentRevision and is reported to
+#ChangeCallback like any other edit.  Use #BeginUndoAction() and #EndUndoAction() to combine several replacements into
+one undo step.  The current selection is not replaced by `Text`, although selection and cursor positions after the
+range are shifted to account for the change in length.
+
+This method is intended for programmatic edits and is not restricted by the `SCIF::EDIT` flag.
+
+-INPUT-
+int Start: Inclusive byte offset, between zero and #TextLength.
+int End: Exclusive byte offset, between `Start` and #TextLength.  Negative sentinels such as `-1` are not supported.
+strview Text: Replacement bytes.  An empty string deletes the range.  Embedded null bytes are supported.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+OutOfRange: The range is invalid, or the replacement would exceed the maximum document length.
+ReadOnly: The document is temporarily read-only.
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+
+-TAGS-
+copies-input, mutates-object
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_ReplaceRange(extScintilla *Self, struct sci::ReplaceRange *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (not Self->initialised() or not Self->API) return ERR::NotInitialised;
+   return Self->API->panReplaceRange(Args->Start, Args->End, Args->Text);
 }
 
 /*********************************************************************************************************************
@@ -2831,6 +3225,7 @@ overrides any existing value.  The `Lexer` is left unchanged if the file name do
 
 static ERR SET_Lexer(extScintilla *Self, SCLEX Value)
 {
+   if (Self->API and Self->API->panInNotification()) return ERR::Busy;
    if (not find_lexer_profile(Value)) return ERR::NoSupport;
    if (Self->API) return Self->API->SetLexer(Value);
    Self->Lexer = Value;
@@ -4163,7 +4558,182 @@ extScintilla::~extScintilla() {
    if (StrokeColour) FreeResource(StrokeColour);
 }
 
-//********************************************************************************************************************
+/*********************************************************************************************************************
+
+-METHOD-
+SetKeywords: Replaces a keyword set of the active lexer.
+
+SetKeywords() replaces the keyword list that the active #Lexer uses for the keyword set `Set`.  Lexers use keyword sets
+to classify words, for instance as language keywords or type names, and the number of sets and their meaning depend
+on the lexer.  Some structural lexers, such as Markdown and Diff, have no keyword sets.
+
+`Keywords` is a complete list of words separated by spaces, and replaces the lexer's built-in default list.  An empty
+string leaves the set empty; it does not restore the default list.
+
+The replacement is stored for the active lexer only, and is reapplied whenever that lexer is selected again.  The
+existing styles are invalidated and recalculated when the text is next drawn; call #Colourise() to apply the change
+immediately.  The document, its undo history and #DocumentRevision are not affected.
+
+-INPUT-
+int Set: Zero-based index of the keyword set to replace.
+strview Keywords: Space-separated list of words to use for the set.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+NoSupport: The active lexer does not provide keyword set `Set`.
+Args: `Keywords` contains a null byte.
+
+-TAGS-
+mutates-object, copies-input
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_SetKeywords(extScintilla *Self, struct sci::SetKeywords *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   if (not has_keyword_set(Self, Args->Set)) return ERR::NoSupport;
+   if (Args->Keywords.find('\0') != std::string_view::npos) return ERR::Args;
+   std::string text(Args->Keywords);
+   Self->LexerSettings[Self->Lexer].keywords[Args->Set] = text;
+   Self->ActiveKeywords[Args->Set] = text;
+   SCICALL(SCI_SETKEYWORDS, Args->Set, text.c_str());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-METHOD-
+SetLexerProperty: Sets a configuration property of the active lexer.
+
+SetLexerProperty() assigns a value to a property advertised by the active #Lexer.  Lexer properties adjust how text
+is classified, for example `lexer.json.allow.comments` enables comment recognition in the JSON lexer.  The available
+properties depend on the lexer.  The `fold` and `asp.default.language` properties are managed by the Scintilla class
+and cannot be set with this method.
+
+Values are validated against the property's type.  Boolean properties accept only `0` or `1`, and integer properties
+accept only a decimal integer.  String properties accept any value that does not contain a null byte.
+
+The value is stored for the active lexer only.  It is removed from the editor when a different lexer is selected, and
+is reapplied whenever the lexer is selected again.  The current value can be read with #GetLexerProperty().  The
+existing styles are invalidated and recalculated when the text is next drawn; call #Colourise() to apply the change
+immediately.
+
+-INPUT-
+strview Name: The exact name of the property, as advertised by the active lexer.
+strview Value: The value to assign.
+
+-ERRORS-
+Okay
+NullArgs
+NotInitialised
+Busy: The editor is dispatching a notification and cannot be modified until it returns.
+NoSupport: `Name` is not a property advertised by the active lexer, or is reserved.
+Args: `Name` or `Value` contains a null byte, or `Value` is not valid for the property's type.
+
+-TAGS-
+mutates-object, copies-input
+
+*********************************************************************************************************************/
+
+static ERR SCINTILLA_SetLexerProperty(extScintilla *Self, struct sci::SetLexerProperty *Args)
+{
+   if (not Args) return ERR::NullArgs;
+   if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+   std::string name(Args->Name), value(Args->Value);
+   if ((name.find('\0') != std::string::npos) or (value.find('\0') != std::string::npos)) return ERR::Args;
+   if (not has_lexer_property(Self, name)) return ERR::NoSupport;
+   auto type = SCICALL(SCI_PROPERTYTYPE, uptr_t(name.c_str()));
+   if (type IS SC_TYPE_BOOLEAN) {
+      if ((value != "0") and (value != "1")) return ERR::Args;
+   }
+   else if (type IS SC_TYPE_INTEGER) {
+      int number;
+      auto result = std::from_chars(value.data(), value.data() + value.size(), number);
+      if ((result.ec != std::errc()) or (result.ptr != value.data() + value.size())) return ERR::Args;
+   }
+   Self->LexerSettings[Self->Lexer].properties[name] = value;
+   SCICALL(SCI_SETPROPERTY, name.c_str(), value.c_str());
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+LexerName: Selects the lexer by name.
+
+LexerName is a name-based alternative to the #Lexer field.  Reading it returns the canonical name of the active lexer,
+and writing it selects the lexer with the matching name, with the same effect as setting #Lexer.  The list of valid
+names can be read from #SupportedLexers.  Names are case-sensitive.
+
+The aliases `lua`, `hypertext` and `none` are accepted for `tiri`, `html` and `null` respectively, but the field always
+reports the canonical name.  Writing an unknown name fails with `ERR::NoSupport` and leaves the active lexer unchanged.
+The lexer cannot be changed while the editor is dispatching a notification.
+
+-TAGS-
+static-result, null-terminated-result
+
+*********************************************************************************************************************/
+
+static std::string_view lexer_name(const LexerProfile &Profile)
+{
+   if (Profile.ID IS SCLEX::TIRI) return "tiri";
+   if (Profile.ID IS SCLEX::HTML) return "html";
+   if (Profile.ID IS SCLEX::ASP) return "asp";
+   return Profile.Factory;
+}
+
+static ERR GET_LexerName(extScintilla *Self, std::string_view &Value)
+{
+   auto profile = find_lexer_profile(Self->Lexer);
+   if (not profile) return ERR::NoSupport;
+   Value = lexer_name(*profile);
+   return ERR::Okay;
+}
+
+static ERR SET_LexerName(extScintilla *Self, const std::string_view &Value)
+{
+   auto name = Value;
+   if (name IS "lua") name = "tiri";
+   else if (name IS "hypertext") name = "html";
+   else if (name IS "none") name = "null";
+   if (Self->API and Self->API->panInNotification()) return ERR::Busy;
+   for (const auto &profile : glLexerProfiles) {
+      if (name IS lexer_name(profile)) return SET_Lexer(Self, profile.ID);
+   }
+   return ERR::NoSupport;
+}
+
+/*********************************************************************************************************************
+
+-FIELD-
+SupportedLexers: Lists the names of all supported lexers.  This field is read-only.
+
+Returns the canonical name of every lexer that can be assigned to #LexerName, separated by newline characters.  The
+list includes `null`, which selects plain text.  The content of the list is fixed for the lifetime of the process.
+
+-TAGS-
+static-result, null-terminated-result
+
+*********************************************************************************************************************/
+
+static ERR GET_SupportedLexers(extScintilla *, std::string_view &Value)
+{
+   static const std::string names = []() {
+      std::string result;
+      for (const auto &profile : glLexerProfiles) {
+         if (not result.empty()) result += '\n';
+         result += lexer_name(profile);
+      }
+      return result;
+   }();
+   Value = names;
+   return ERR::Okay;
+}
+
 
 #include "class_scintilla_def.cxx"
 
@@ -4223,6 +4793,8 @@ static const FieldArray clFields[] = {
    { "SelectedText",   FDF_CPPSTRING|FDF_R, GET_SelectedText },
    { "ChangeCallback", FDF_FUNCTION|FDF_RW|FDF_PURE, GET_ChangeCallback, SET_ChangeCallback },
    { "DocumentRevision", FDF_INT64|FDF_R, GET_DocumentRevision },
+   { "LexerName",      FDF_CPPSTRING|FDF_RW, GET_LexerName, SET_LexerName },
+   { "SupportedLexers", FDF_CPPSTRING|FDF_R, GET_SupportedLexers },
    END_FIELD
 };
 

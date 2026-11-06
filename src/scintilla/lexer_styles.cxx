@@ -17,6 +17,27 @@ void ScintillaKTK::SetStyleColours()
    }
 
    switch (scintilla->Lexer) {
+      case SCLEX::JSON:
+         colour(scintilla->KeywordColour, { SCE_JSON_KEYWORD, SCE_JSON_LDKEYWORD });
+         colour(scintilla->StringColour, { SCE_JSON_STRING, SCE_JSON_ESCAPESEQUENCE });
+         colour(scintilla->TypeColour, { SCE_JSON_PROPERTYNAME, SCE_JSON_URI, SCE_JSON_COMPACTIRI });
+         colour(scintilla->NumberColour, { SCE_JSON_NUMBER });
+         colour(scintilla->CommentColour, { SCE_JSON_LINECOMMENT, SCE_JSON_BLOCKCOMMENT });
+         colour(scintilla->OperatorColour, { SCE_JSON_OPERATOR });
+         colour(scintilla->ErrorColour, { SCE_JSON_ERROR, SCE_JSON_STRINGEOL });
+         break;
+
+      case SCLEX::MARKDOWN:
+         colour(scintilla->KeywordColour, { SCE_MARKDOWN_HEADER1, SCE_MARKDOWN_HEADER2, SCE_MARKDOWN_HEADER3,
+            SCE_MARKDOWN_HEADER4, SCE_MARKDOWN_HEADER5, SCE_MARKDOWN_HEADER6 });
+         colour(scintilla->TypeColour, { SCE_MARKDOWN_STRONG1, SCE_MARKDOWN_STRONG2, SCE_MARKDOWN_EM1,
+            SCE_MARKDOWN_EM2, SCE_MARKDOWN_LINK, SCE_MARKDOWN_FRONT_KEY });
+         colour(scintilla->StringColour, { SCE_MARKDOWN_CODE, SCE_MARKDOWN_CODE2, SCE_MARKDOWN_CODEBK });
+         colour(scintilla->CommentColour, { SCE_MARKDOWN_BLOCKQUOTE, SCE_MARKDOWN_FRONT });
+         colour(scintilla->OperatorColour, { SCE_MARKDOWN_ULIST_ITEM, SCE_MARKDOWN_OLIST_ITEM,
+            SCE_MARKDOWN_HRULE, SCE_MARKDOWN_STRIKEOUT, SCE_MARKDOWN_FRONT_MARK });
+         break;
+
       case SCLEX::CPP:
          colour(scintilla->CommentColour, {
             SCE_C_COMMENT, SCE_C_COMMENTLINE, SCE_C_COMMENTDOC, SCE_C_COMMENTLINEDOC, SCE_C_COMMENTDOCKEYWORD,
@@ -299,5 +320,5 @@ void ScintillaKTK::SetStyleColours()
    if (ct.wCallTip.Created()) ct.wCallTip.InvalidateAll();
    if ((ac.Active()) and (ac.lb->Created())) ac.lb->InvalidateAll();
 
-   InvalidateStyleRedraw();
+   ApplyIndicators();
 }
