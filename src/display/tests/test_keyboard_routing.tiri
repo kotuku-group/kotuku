@@ -131,6 +131,29 @@ end
    assert(parent_hits is 1 and child_hits is 0, 'Outer capture must take precedence over nested reservations')
 end
 
+@Test function OverrideReservationPrecedesAncestor()
+   local surface, root, child = scene()
+   local surface_hits, parent_hits, child_hits = 0, 0, 0
+   watch(surface, function() surface_hits++ end, { reserve=true, code=KEY_F2 })
+   watch(root, function() parent_hits++ end, { reserve=true, override=true, code=KEY_F2 })
+   watch(child, function() child_hits++ end, { reserve=true, override=true, code=KEY_F2 })
+   send(KEY_F2)
+   send(KEY_F2, KQ_RELEASED)
+   assert(child_hits is 2 and parent_hits is 0 and surface_hits is 0,
+      'The innermost override must take the press and its release')
+   check root.acFocus()
+   processing.sleep(0)
+   send(KEY_F2)
+   assert(parent_hits is 1 and surface_hits is 0, 'An override must still precede an outer default reservation')
+end
+
+@Test function OverrideRequiresReserve()
+   local surface, root, child = scene()
+   local err, handle = mGfx.SubscribeKeyboard(surface.id, 0, KBF_OVERRIDE, function() end)
+   if err is ERR_Okay then mGfx.UnsubscribeKeyboard(handle) end
+   assert(err is ERR_Args, 'OVERRIDE without RESERVE must be rejected, got ' .. mSys.GetErrorMsg(err))
+end
+
 @Test function OverlappingReservationsReportConflict()
    local surface, root, child = scene()
    watch(root, function() end, { reserve=true, required=KQ_CTRL, code=KEY_F2 })

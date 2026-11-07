@@ -26,7 +26,8 @@ module({
     "RESERVE: Exclusively own matching key combinations while the scope has focus.",
     "FOCUS: Internal C callback that supplies the active vector ancestry through SetKeyboardFocus().",
     "DEFAULT: Run after ordinary handlers at the same scope.",
-    "NO_REPEAT: Do not invoke the callback for repeated presses.")
+    "NO_REPEAT: Do not invoke the callback for repeated presses.",
+    "OVERRIDE: A reservation that takes precedence over matching reservations in enclosing scopes.")
 
   enums("WH", { type="int", start=1, comment="Events for WindowHook()" },
     "CLOSE",

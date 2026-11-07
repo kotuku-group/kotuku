@@ -661,20 +661,23 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <prototype>ERR gfx::ReserveKey(INT Handle, KQ Required, KQ Forbidden, int Code, INT Unicode)</prototype>
     <tiriPrototype>err = ReserveKey(Handle:num, Required:num, Forbidden:num, Code:num, Unicode:num)</tiriPrototype>
     <input>
-      <param type="INT" name="Handle">Keyboard registration handle.</param>
-      <param type="KQ" name="Required" lookup="KQ">Required Ctrl, Shift, Alt or Command modifiers.</param>
-      <param type="KQ" name="Forbidden" lookup="KQ">Forbidden modifiers.</param>
-      <param type="int" name="Code">Physical key code, or zero to match Unicode.</param>
-      <param type="INT" name="Unicode">Translated character, or zero to match Code.</param>
+      <param type="INT" name="Handle">Handle of a <code>KBF::RESERVE</code> registration, as returned by <function>SubscribeKeyboard</function>.</param>
+      <param type="KQ" name="Required" lookup="KQ">Modifiers that must be held.</param>
+      <param type="KQ" name="Forbidden" lookup="KQ">Modifiers that must not be held.</param>
+      <param type="int" name="Code">Key code to match, or zero if <code>Unicode</code> is used.</param>
+      <param type="INT" name="Unicode">Unicode character to match, or zero if <code>Code</code> is used.</param>
     </input>
     <description>
-<p>The registration must use <code>KBF::RESERVE</code>.  Set either Code or Unicode, leaving the other zero.  Required modifier groups such as <code>KQ::CTRL</code> match either side; a single-side flag matches that side.  Forbidden modifiers must be absent.  Other modifiers and lock flags are ignored.  Earlier ancestors take precedence over descendants.  Conflicting registrations at the same scope return <code>ERR::AlreadyDefined</code>; multiple alternatives within one registration are permitted.</p>
+<p>ReserveKey() adds a key combination to a registration that was created with the <code>KBF::RESERVE</code> flag.  While the registration's scope is in the focus path, a matching key press goes only to that registration, ahead of every ordinary handler (see <function>SubscribeKeyboard</function>).  A registration can hold several combinations; call ReserveKey() once for each.</p>
+<p>A combination identifies the key by exactly one of <code>Code</code> or <code>Unicode</code>.  Use <code>Code</code> to match a physical key regardless of keyboard layout, or <code>Unicode</code> to match the character the key produces.</p>
+<p>Modifiers are limited to the Ctrl, Shift, Alt and Command groups of <code>KQ</code>.  A group value such as <code>KQ::CTRL</code> in <code>Required</code> is satisfied by either the left or right key, whereas a side-specific value such as <code>KQ::L_CTRL</code> requires that side.  The event must not carry any modifier in <code>Forbidden</code>.  Modifiers not mentioned in either mask are ignored, so Ctrl+= with no forbidden modifiers also matches Ctrl+Shift+=.</p>
+<p>Two registrations with the same surface and scope cannot reserve combinations that could match the same event, and the second attempt fails with <code>ERR::AlreadyDefined</code>.  A <code>Code</code> combination and a <code>Unicode</code> combination are not treated as a conflict, even if one key event could match both.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="NotFound">A search routine in this function failed</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="AlreadyDefined">Attempted to change a value that cannot be redefined</error>
+      <error code="NotFound"><code>Handle</code> does not refer to an active registration.</error>
+      <error code="Args">The combination is invalid or can never match, or the registration lacks <code>KBF::RESERVE</code>.</error>
+      <error code="AlreadyDefined">The combination overlaps one reserved by another registration with the same surface and scope.</error>
     </result>
   </function>
 
@@ -968,20 +971,40 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <comment>Registers a keyboard action handler or observer.</comment>
     <prototype>ERR gfx::SubscribeKeyboard(OBJECTID SurfaceID, OBJECTID ObjectID, KBF Flags, FUNCTION * Callback, INT * Handle)</prototype>
     <tiriPrototype>err, Handle:num = SubscribeKeyboard(SurfaceID:obj, ObjectID:obj, Flags:num, Callback:func)</tiriPrototype>
+    <tags>callback-held</tags>
     <input>
-      <param type="OBJECTID" name="SurfaceID">Surface receiving the actions; zero registers a global fallback or observer.</param>
-      <param type="OBJECTID" name="ObjectID">Focus scope within SurfaceID, or zero for the surface.  Vector adapters supply eligible scopes.</param>
-      <param type="KBF" name="Flags" lookup="KBF">Subscription options.</param>
-      <param type="FUNCTION *" name="Callback">Keyboard callback.</param>
+      <param type="OBJECTID" name="SurfaceID">Surface that the registration is bound to.  Zero creates a global fallback or observer.</param>
+      <param type="OBJECTID" name="ObjectID">Object within <code>SurfaceID</code> that defines the focus scope, or zero to use the surface itself.</param>
+      <param type="KBF" name="Flags" lookup="KBF">Optional flags.</param>
+      <param type="FUNCTION *" name="Callback">Function that receives key events.</param>
       <param type="INT *" name="Handle">Receives the registration handle.</param>
     </input>
     <description>
-<p>Action handlers receive input while their surface is in the focus chain.  Object-scoped handlers run from the focused vector towards its ancestors, followed by surface handlers, then the handlers of each ancestor surface.  Return <code>KRES::HANDLED</code> to consume an event, <code>ERR::Terminate</code> to unsubscribe, or zero to continue.  A reservation takes precedence over ordinary handlers regardless of registration order. Observers receive every event and cannot consume it.  The C callback is <code>ERR callback(const evKey *, APTR Meta)</code>; script callbacks receive SurfaceID, Qualifiers, Code and Unicode.  Remove the handle with <function>UnsubscribeKeyboard</function>.</p>
+<p>SubscribeKeyboard() registers a callback with the keyboard broker, which routes each key event to the registrations that are eligible under the current user focus.  The handle returned in <code>Handle</code> must be released with <function>UnsubscribeKeyboard</function> when the registration is no longer required.</p>
+<p>A registration is bound to a scope.  If <code>SurfaceID</code> is set and <code>ObjectID</code> is zero, the scope is the surface itself.  If <code>ObjectID</code> is set, the scope is that object within the surface, normally a vector, and the registration is eligible only while the object is in the surface's active focus path (as supplied by <function>SetKeyboardFocus</function>).  If both values are zero, the registration is a global fallback that runs after all surface-bound registrations.  The callback is skipped if the <code>ObjectID</code> scope no longer exists.</p>
+<p>An <code>ObjectID</code> scope, <code>KBF::RESERVE</code> and <code>KBF::FOCUS</code> all require a <code>SurfaceID</code>.  <code>KBF::OBSERVER</code> cannot be combined with <code>KBF::RESERVE</code> or <code>KBF::FOCUS</code>, <code>KBF::OVERRIDE</code> requires <code>KBF::RESERVE</code>, and <code>KBF::FOCUS</code> is restricted to C callbacks.</p>
+<p>Key events are dispatched in the following order:</p>
+<list type="ordered">
+<li>Registrations with the <code>OBSERVER</code> flag receive every key event, whether or not a surface has the focus.  Their
+result is ignored, so an observer cannot consume input.</li>
+<li>If no surface has the focus, or the focused surface is hidden or disabled, dispatch stops.</li>
+<li>Registrations with the <code>RESERVE</code> flag are tested against the patterns added by <function>ReserveKey</function>.  The first match
+receives the event exclusively and no other handler is called.  Where reservations in several scopes match, the scope
+furthest from the focused object wins, unless a matching reservation has the <code>OVERRIDE</code> flag.  Those take precedence
+over all others, and among them the scope nearest the focused object wins.</li>
+<li>All other registrations in the focus path are called in turn, starting with the focused object and moving outwards
+through its enclosing scopes, its surface and that surface's ancestors.  Within one scope, <code>DEFAULT</code> registrations run
+after the others, and registrations of the same kind run in the order they were created.  Dispatch stops when a
+callback returns <code>KRES::HANDLED</code>.</li>
+</list>
+<p>A press and its repeats and release are treated as one sequence.  When a press is reserved or consumed, its repeats and release go only to the registration that took it, for as long as that registration remains in the focus path.  If the focus moves to another surface or scope before the release, the rest of the sequence is discarded.  A reservation created part-way through a sequence does not take the remainder of that sequence.</p>
+<p>The C++ prototype for <code>Callback</code> is <code>ERR callback(const evKey *Event, APTR Meta)</code>.  Script callbacks receive the arguments <code>SurfaceID</code>, <code>Qualifiers</code>, <code>Code</code> and <code>Unicode</code>, in which <code>Qualifiers</code> are <code>KQ</code> flags, <code>Code</code> is the raw <code>KEY</code> value and <code>Unicode</code> is the character produced by translating the key through the user's keymap.  The callback runs in the context of the object that owns it.  It can return <code>KRES::PASS</code> (<code>ERR::Okay</code>) to pass the event on, <code>KRES::HANDLED</code> to consume it, or <code>ERR::Terminate</code> to end the registration.  <code>ERR::Terminate</code> does not consume the event.</p>
+<types lookup="KBF"/>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
-      <error code="Args">Invalid arguments passed to function</error>
-      <error code="NullArgs">Function call missing argument value(s)</error>
+      <error code="Args"><code>SurfaceID</code> is not a <class name="Surface">Surface</class>, or the combination of <code>SurfaceID</code>, <code>ObjectID</code> and <code>Flags</code> is not permitted.</error>
+      <error code="NullArgs"><code>Callback</code> or <code>Handle</code> is <code>NULL</code>, or <code>Callback</code> is undefined.</error>
     </result>
   </function>
 
@@ -1047,11 +1070,12 @@ Alpha  = CFUnpackAlpha(Format,Colour)
     <comment>Removes a keyboard registration and its reservations.</comment>
     <prototype>ERR gfx::UnsubscribeKeyboard(INT Handle)</prototype>
     <tiriPrototype>err = UnsubscribeKeyboard(Handle:num)</tiriPrototype>
+    <tags>idempotent</tags>
     <input>
       <param type="INT" name="Handle">Handle returned by <function>SubscribeKeyboard</function>.</param>
     </input>
     <description>
-<p>A key sequence owned by a removed registration remains suppressed through its release.</p>
+<p>Removes a registration created by <function>SubscribeKeyboard</function>, together with any key combinations added to it by <function>ReserveKey</function>, and releases its callback.  The callback is not called again once this function returns, so it is safe to call this function from inside the registration's own callback.  An unknown or already-removed handle is ignored.</p>
     </description>
     <result type="ERR">
       <error code="Okay">Operation successful.</error>
@@ -1182,6 +1206,7 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="DEFAULT">Run after ordinary handlers at the same scope.</const>
       <const name="NO_REPEAT">Do not invoke the callback for repeated presses.</const>
       <const name="OBSERVER">Receive raw input independently of focus and consumption.  Cannot reserve or consume input.</const>
+      <const name="OVERRIDE">A reservation that takes precedence over matching reservations in enclosing scopes.</const>
       <const name="RESERVE">Exclusively own matching key combinations while the scope has focus.</const>
     </constants>
 

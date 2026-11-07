@@ -194,6 +194,7 @@ static int input_reserve(lua_State *Lua)
    if (option_bool("observer")) flags |= KBF::OBSERVER;
    if (option_bool("reserve")) flags |= KBF::RESERVE;
    if (option_bool("noRepeat")) flags |= KBF::NO_REPEAT;
+   if (option_bool("override")) flags |= KBF::OVERRIDE;
 
    if (auto input = new (lua_newuserdata(Lua, sizeof(struct finput))) finput {}) {
       luaL_getmetatable(Lua, "Tiri.input");
