@@ -553,8 +553,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
          if ((flags & FD_STRING) and (flags & FD_STORE) and field->GetValue) {
             if (not field->pure()) SetObjectContext(target, field, AC::NIL);
-            auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
-            auto error = get_field(target, Value);
+            auto error = field->GetValue(target, &Value);
             if (not field->pure()) RestoreObjectContext();
             return error;
          }
@@ -628,8 +627,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
                if (field->Flags & FD_STORE) return ERR::FieldTypeMismatch;
 
                SetObjectContext(target, field, AC::NIL);
-               auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-               auto error = get_field(target, Value);
+               auto error = field->GetValue(target, &Value);
                RestoreObjectContext();
                return error;
             }
@@ -711,8 +709,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
          if (field->Flags & FD_UNIT) {
             if (field->GetValue) {
                SetObjectContext(target, field, AC::NIL);
-               auto get_field = (ERR (*)(APTR, Unit &))field->GetValue;
-               auto error = get_field(target, Value);
+               auto error = field->GetValue(target, &Value);
                RestoreObjectContext();
                return error;
             }
@@ -763,8 +760,7 @@ struct alignas(8) Object { // Must be 64-bit aligned
 
          if (field->GetValue) {
             if (not field->pure()) SetObjectContext(target, field, AC::NIL);
-            auto get_field = (ERR (*)(APTR, std::span<T> &))field->GetValue;
-            auto error = get_field(target, Value);
+            auto error = field->GetValue(target, &Value);
             if (not field->pure()) RestoreObjectContext();
             return error;
          }
@@ -1090,7 +1086,7 @@ inline ERR acPause(OBJECTPTR Object, int Operation) {
 }
 
 inline ERR acRead(OBJECTPTR Object, std::span<int8_t> Buffer, int *Read = nullptr) {
-   struct acRead read = { Buffer };
+   struct acRead read = { Buffer, 0 };
    if (auto error = Action(AC::Read, Object, &read); error IS ERR::Okay) {
       if (Read) *Read = read.Result;
       return ERR::Okay;
@@ -1147,7 +1143,7 @@ inline ERR acUndo(OBJECTPTR Object, int Steps) {
 }
 
 inline ERR acWrite(OBJECTPTR Object, std::span<const int8_t> Buffer, int *Result = nullptr) {
-   struct acWrite write = { Buffer };
+   struct acWrite write = { Buffer, 0 };
    if (auto error = Action(AC::Write, Object, &write); error IS ERR::Okay) {
       if (Result) *Result = write.Result;
       return error;
@@ -1159,7 +1155,7 @@ inline ERR acWrite(OBJECTPTR Object, std::span<const int8_t> Buffer, int *Result
 }
 
 inline int acWriteResult(OBJECTPTR Object, std::span<const int8_t> Buffer) {
-   struct acWrite write = { Buffer };
+   struct acWrite write = { Buffer, 0 };
    if (Action(AC::Write, Object, &write) IS ERR::Okay) return write.Result;
    else return 0;
 }

@@ -934,7 +934,8 @@ it.  The following keys describe the family as a whole:
 <type name="Styles">A sorted CSV list of the family's style names.</type>
 <type name="Scalable">`Yes` if the family is an outline font.  Bitmap families omit this key.</type>
 <type name="Variable">`Yes` if the family is a variable font.</type>
-<type name="Points">Bitmap families only: a CSV list of the point sizes available.</type>
+<type name="Points">A CSV list of the point sizes available.  Bitmap families record their strikes.  A scalable family
+only has this key if it is defined in `fonts:options.cfg`, which restricts the family to the listed sizes.</type>
 <type name="Class">The family's classification: `Serif`, `Sans`, `Mono`, `Script`, `Display` or `Symbol`.  The class is
 read from the OS/2 PANOSE and family class data of outline fonts and the pitch and family field of bitmap fonts.  If an
 outline font does not declare a class, its serifs are measured on the capital I and T.  The key is omitted if the class
