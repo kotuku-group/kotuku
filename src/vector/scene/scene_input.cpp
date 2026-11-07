@@ -252,10 +252,34 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
    // NOTE: The ActiveVector refers to the vector that received the most recent input movement event.  It
    // receives wheel events and button presses.
 
-   for (auto input=Events; input; input=input->Next) {
-      if ((input->Flags & (JTYPE::ANCHORED|JTYPE::MOVEMENT)) != JTYPE::NIL) {
-         while ((input->Next) and ((input->Next->Flags & JTYPE::MOVEMENT) != JTYPE::NIL)) { // Consolidate movement
-            input = input->Next;
+   //
+   // A callback can process messages before it returns, e.g. while it waits on a dialog, which calls this function
+   // again for newer input.  Events are therefore queued on the scene and processed oldest first, so that a nested
+   // call completes the outer call's remaining events before its own.  InputGeneration reveals when a nested call
+   // has processed input that changes pointer state, in which case state computed by the outer call is out of date.
+
+   for (auto event=Events; event; event=event->Next) {
+      Self->PendingInput.push_back(*event);
+      Self->PendingInput.back().Next = nullptr;
+   }
+
+   InputEvent current;
+   auto input = &current;
+   uint32_t generation = Self->InputGeneration;
+
+   while (not Self->PendingInput.empty()) {
+      // Newer pointer state supersedes this cursor choice.  Wheel-only dispatch leaves the choice intact.
+      if (Self->InputGeneration != generation) cursor = PTC::NIL;
+      generation = Self->InputGeneration;
+
+      current = Self->PendingInput.front();
+      Self->PendingInput.pop_front();
+
+      if ((input->Flags & (JTYPE::ANCHORED|JTYPE::MOVEMENT)) != JTYPE::NIL) { // Consolidate movement
+         while ((not Self->PendingInput.empty()) and
+                ((Self->PendingInput.front().Flags & JTYPE::MOVEMENT) != JTYPE::NIL)) {
+            current = Self->PendingInput.front();
+            Self->PendingInput.pop_front();
          }
       }
 
@@ -304,6 +328,14 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          continue;
       }
 
+      // Wheel input and the ignored surface-enter event do not change pointer focus, capture, or cursor selection.
+      // In particular, dispatching a wheel event from an enter or movement callback must not abandon that callback's
+      // pending movement and cursor update.
+
+      if ((input->Type != JET::WHEEL) and (input->Type != JET::WHEEL_X) and (input->Type != JET::CROSSED_IN)) {
+         generation = ++Self->InputGeneration;
+      }
+
       // Focus management - clicking with the LMB can result in a change of focus.  Surfaces that cannot receive the
       // focus, such as pop-up menus, leave the vector focus with their owner so that keyboard input continues to
       // reach it.
@@ -350,14 +382,21 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                event.AbsY   = input->Y;
                event.X      = Self->ActiveVectorX;
                event.Y      = Self->ActiveVectorY;
-               send_input_events(lk_vector.obj, &event);
+
+               // The lock is updated before the callback, which may process newer input before it returns.  A
+               // release must not leave input captured, and a press must not lock after a nested release.
 
                if ((input->Type IS JET::LMB) and ((input->Flags & JTYPE::REPEATED) IS JTYPE::NIL)) {
                   Self->ButtonLock = input->Value ? target : 0;
                }
+
+               send_input_events(lk_vector.obj, &event);
             }
 
-            if (not Self->ButtonLock) {
+            // Hit testing after a release is skipped if a nested call has processed newer pointer input, because
+            // input->X,Y no longer reflects the pointer position.
+
+            if ((not Self->ButtonLock) and (Self->InputGeneration IS generation)) {
                // If the button has been released then we need to compute the correct cursor and check if
                // an enter event is required.  This code has been pulled from the JTYPE::MOVEMENT handler
                // and reduced appropriately.
@@ -394,6 +433,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
                   if (Self->ActiveVector != bounds.vector_id) {
                      send_enter_event(vector, input, bounds.x, bounds.y);
+                     if (Self->InputGeneration != generation) break; // Superseded by newer input
                      // The enter callback can change the cursor, so re-read it to apply the change immediately.
                      if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
                         cursor = vector->Cursor;
@@ -406,16 +446,18 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                      auto invert = ~vector->Transform; // Presume that prior path generation has configured the transform.
                      invert.transform(&tx, &ty);
 
-                     if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
-                        kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
-                        if (lock.granted()) send_left_event(lock.obj, vector, input, Self->ActiveVectorX, Self->ActiveVectorY);
-                     }
-
+                     const auto previous = Self->ActiveVector;
+                     const auto previous_x = Self->ActiveVectorX, previous_y = Self->ActiveVectorY;
                      Self->ActiveVector  = vector->UID;
                      Self->ActiveVectorX = tx;
                      Self->ActiveVectorY = ty;
-
                      processed = true;
+
+                     if ((previous) and (previous != vector->UID)) {
+                        kt::ScopedObjectLock<extVector> lock(previous);
+                        if (lock.granted()) send_left_event(lock.obj, vector, input, previous_x, previous_y);
+                        if (Self->InputGeneration != generation) break; // Superseded by newer input
+                     }
                   }
 
                   if (not cursor_set) continue; // Keep scanning in case an input boundary defines a cursor.
@@ -425,7 +467,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                // If no vectors received a hit for a movement message, we may need to inform the last active vector that the
                // cursor left its area.
 
-               if ((Self->ActiveVector) and (not processed)) {
+               if ((Self->ActiveVector) and (not processed) and (Self->InputGeneration IS generation)) {
                   kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
                   Self->ActiveVector = 0;
                   if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
@@ -436,6 +478,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
       else if ((input->Flags & (JTYPE::ANCHORED|JTYPE::MOVEMENT)) != JTYPE::NIL) {
          if (cursor IS PTC::NIL) cursor = PTC::DEFAULT;
          bool processed = false;
+         bool superseded = false; // A nested call processed newer input during a callback; stop processing this event
          bool cursor_set = false; // True once a vector selects a cursor, which can be PTC::DEFAULT
          // Iterate over a copy because callbacks can redraw the scene (e.g. by resizing the surface), which replaces
          // InputBoundaries and would invalidate the iterator.
@@ -476,6 +519,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
 
             if (Self->ActiveVector != bounds.vector_id) {
                send_enter_event(vector, input, bounds.x, bounds.y);
+               if (Self->InputGeneration != generation) { superseded = true; break; }
             }
 
             if (select_cursor and (not Self->ButtonLock) and (vector->Cursor != PTC::NIL)) {
@@ -504,7 +548,27 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                   event.AbsY   = input->Y;
                   event.X      = tx;
                   event.Y      = ty;
+
+                  // The active vector is updated before the callback, which may process newer input (such as a
+                  // button press that targets the active vector) before it returns.
+
+                  const auto previous = Self->ActiveVector;
+                  const auto previous_x = Self->ActiveVectorX, previous_y = Self->ActiveVectorY;
+                  Self->ActiveVector  = vector->UID;
+                  Self->ActiveVectorX = tx;
+                  Self->ActiveVectorY = ty;
+
+                  // Complete the previous vector's departure before the movement callback can dispatch newer input.
+                  // Nested dispatch now sees the new active vector and cannot recover this pending notification.
+
+                  if ((previous) and (previous != vector->UID)) {
+                     kt::ScopedObjectLock<extVector> lock(previous);
+                     if (lock.granted()) send_left_event(lock.obj, vector, input, previous_x, previous_y);
+                     if (Self->InputGeneration != generation) { superseded = true; break; }
+                  }
+
                   send_input_events(vector, &event);
+                  if (Self->InputGeneration != generation) { superseded = true; break; }
 
                   // Subscribers can change their cursor in response to movement, so re-read it to apply the change
                   // with this event rather than the next.
@@ -513,15 +577,6 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
                      cursor = vector->Cursor;
                      cursor_set = true;
                   }
-
-                  if ((Self->ActiveVector) and (Self->ActiveVector != vector->UID)) {
-                     kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
-                     if (lock.granted()) send_left_event(lock.obj, vector, input, Self->ActiveVectorX, Self->ActiveVectorY);
-                  }
-
-                  Self->ActiveVector  = vector->UID;
-                  Self->ActiveVectorX = tx;
-                  Self->ActiveVectorY = ty;
                }
 
                processed = true;
@@ -534,7 +589,7 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
          // If no vectors received a hit for a movement message, we may need to inform the last active vector that the
          // cursor left its area.
 
-         if ((Self->ActiveVector) and (not processed)) {
+         if ((Self->ActiveVector) and (not processed) and (not superseded)) {
             kt::ScopedObjectLock<extVector> lock(Self->ActiveVector);
             Self->ActiveVector = 0;
             if (lock.granted()) send_left_event(lock.obj, nullptr, input, Self->ActiveVectorX, Self->ActiveVectorY);
@@ -542,6 +597,8 @@ ERR scene_input_events(const InputEvent *Events, int Handle)
       }
       else log.warning("Unrecognised movement type %d", int(input->Type));
    }
+
+   if (Self->InputGeneration != generation) cursor = PTC::NIL; // A nested call applied a newer cursor
 
    // Events that do not select a cursor, such as wheel input, preserve the current cursor.
    if ((not Self->ButtonLock) and (cursor != PTC::NIL)) {

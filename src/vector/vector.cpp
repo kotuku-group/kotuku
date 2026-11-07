@@ -219,5 +219,13 @@ static ModHeader::STRUCTS glStructures = {
    { "VectorPoint",  { sizeof(VectorPoint),  alignof(VectorPoint)  } }
 };
 
-KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, nullptr, MOD_IDL, &glStructures)
+static void MODTest(std::string_view Options, int *Passed, int *Total)
+{
+#ifdef UNIT_TESTS
+   extern void vector_input_unit_tests(std::string_view, int &, int &);
+   vector_input_unit_tests(Options, *Passed, *Total);
+#endif
+}
+
+KOTUKU_MOD(MODInit, nullptr, MODOpen, MODExpunge, MODTest, MOD_IDL, &glStructures)
 extern "C" struct ModHeader * register_vector_module() { return &ModHeader; }

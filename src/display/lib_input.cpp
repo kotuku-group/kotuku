@@ -7,6 +7,8 @@ Name: Input
 *********************************************************************************************************************/
 
 #include "defs.h"
+#include <deque>
+#include <optional>
 
 static ankerl::unordered_dense::map<int, InputCallback> glInputCallbacks;
 static std::vector<std::pair<int, InputCallback>> glNewSubscriptions;
@@ -303,60 +305,61 @@ static bool input_event_match(const InputEvent &Event, const input_call &Sub)
       ((Event.Flags & Sub.input_mask) != JTYPE::NIL));
 }
 
+// Deliveries that have been prepared but not yet dispatched, oldest first.  An input callback can process messages
+// before it returns (e.g. by waiting on a dialog), which calls input_event_loop() again.  The nested call takes its
+// deliveries from the front of this queue, so it dispatches the outer call's remaining deliveries before any newer
+// events.  Every subscriber therefore receives its events in the order that they occurred.
+
+static std::deque<input_call> glInputDeliveries;
+
 void input_event_loop(HOSTHANDLE FD, APTR Data) // Data is undefined
 {
-   std::vector<InputEvent> input_events;
-   std::vector<input_call> input_buffer;
-
    {
       const std::lock_guard<std::recursive_mutex> lock(glInputLock);
 
-      if (glInputEvents.empty()) return;
+      if (not glInputEvents.empty()) {
+         std::vector<InputEvent> input_events;
+         input_events.swap(glInputEvents);
 
-      input_events.reserve(glInputEvents.size());
-      input_events.assign(glInputEvents.begin(), glInputEvents.end());
-      glInputEvents.clear();
+         // Buffer the callbacks that we need to make so that no conflicts occur with the input event queue
+         // or the callback queue.
 
-      // Buffer the callbacks that we need to make so that no conflicts occur with the input event queue
-      // or the callback queue.
+         for (auto it = glInputCallbacks.begin(); it != glInputCallbacks.end(); ) {
+            if (it->second.Callback.stale()) {
+               release_display_callback(it->second.Callback);
+               it = glInputCallbacks.erase(it);
+               continue;
+            }
 
-      input_buffer.reserve(glInputCallbacks.size());
-
-      for (auto it = glInputCallbacks.begin(); it != glInputCallbacks.end(); ) {
-         if (it->second.Callback.stale()) {
-            release_display_callback(it->second.Callback);
-            it = glInputCallbacks.erase(it);
-         }
-         else {
-            input_buffer.emplace_back(it->first, it->second);
+            input_call sub(it->first, it->second);
+            for (auto &event : input_events) {
+               if (input_event_match(event, sub)) sub.events.push_back(event);
+            }
+            if (not sub.events.empty()) glInputDeliveries.push_back(std::move(sub));
             it++;
          }
       }
    }
 
-   for (auto &sub : input_buffer) {
-      for (auto &event : input_events) {
-         if (input_event_match(event, sub)) sub.events.push_back(event);
-      }
-
-      for (size_t i=1; i < sub.events.size(); i++) {
-         sub.events[i - 1].Next = &sub.events[i];
-      }
-
-      if (not sub.events.empty()) sub.events.back().Next = nullptr;
-   }
-
-   for (auto &sub : input_buffer) {
-      if (sub.events.empty()) continue;
+   while (true) {
+      std::optional<input_call> delivery;
 
       {
-         // An earlier callback in this cycle may have removed the subscription, e.g. by freeing its owner.
          const std::lock_guard<std::recursive_mutex> lock(glInputLock);
-         if (not glInputCallbacks.contains(sub.handle)) continue;
+         if (glInputDeliveries.empty()) return;
+         delivery.emplace(std::move(glInputDeliveries.front()));
+         glInputDeliveries.pop_front();
+
+         // An earlier callback may have removed the subscription, e.g. by freeing its owner.
+         if (not glInputCallbacks.contains(delivery->handle)) continue;
       }
 
+      auto &sub = *delivery;
+      for (size_t i=1; i < sub.events.size(); i++) sub.events[i - 1].Next = &sub.events[i];
+      sub.events.back().Next = nullptr;
+
       auto &cb = sub.callback;
-      if (sub.callback.isC()) {
+      if (cb.isC()) {
          kt::ScopedObjectLock lock(OBJECTPTR(cb.Context), 2000); // Ensure that the object can't be removed until after input processing
          if (lock.granted()) {
             kt::SwitchContext ctx(cb.Context);
@@ -364,8 +367,8 @@ void input_event_loop(HOSTHANDLE FD, APTR Data) // Data is undefined
             func(sub.events.data(), sub.handle, cb.Meta);
          }
       }
-      else if (sub.callback.isScript()) {
-         sc::Call(sub.callback, std::to_array<ScriptArg>({
+      else if (cb.isScript()) {
+         sc::Call(cb, std::to_array<ScriptArg>({
             { "InputEvent:Events", sub.events.data(), FD_PTR|FDF_STRUCT },
             { "Handle", sub.handle }
          }));
