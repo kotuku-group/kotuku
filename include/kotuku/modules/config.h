@@ -132,7 +132,7 @@ class objConfig : public Object {
       return Action(AC::SaveToObject, this, &args);
    }
    inline ERR readValue(const std::string_view &Group, const std::string_view &Key, std::string_view * Data) noexcept {
-      struct cfg::ReadValue args = { Group, Key };
+      struct cfg::ReadValue args = { Group, Key, {} };
       ERR error = Action(AC(-1), this, &args);
       if (Data) *Data = args.Data;
       return error;
@@ -154,7 +154,7 @@ class objConfig : public Object {
       return Action(AC(-5), this, &args);
    }
    inline ERR getGroupFromIndex(int Index, std::string_view * Group) noexcept {
-      struct cfg::GetGroupFromIndex args = { Index };
+      struct cfg::GetGroupFromIndex args = { Index, {} };
       ERR error = Action(AC(-6), this, &args);
       if (Group) *Group = args.Group;
       return error;
@@ -181,14 +181,12 @@ class objConfig : public Object {
 
    inline ERR getKeyFilter(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[5];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getGroupFilter(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getFlags(CNF &Value) noexcept {

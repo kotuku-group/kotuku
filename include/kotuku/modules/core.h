@@ -1976,15 +1976,13 @@ class objMetaClass : public Object {
 
    inline ERR getFields(std::span<const struct FieldArray> &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      auto get_field = (ERR (*)(APTR, std::span<const struct FieldArray> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getDictionary(std::span<struct Field> &Value) noexcept {
       auto field = &this->Class->Dictionary[6];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<struct Field> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -2056,21 +2054,18 @@ class objMetaClass : public Object {
 
    inline ERR getActionTable(std::span<struct ActionEntry> &Value) noexcept {
       auto field = &this->Class->Dictionary[1];
-      auto get_field = (ERR (*)(APTR, std::span<struct ActionEntry> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getMethods(std::span<struct MethodEntry> &Value) noexcept {
       auto field = &this->Class->Dictionary[19];
-      auto get_field = (ERR (*)(APTR, std::span<struct MethodEntry> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getLocation(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[22];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -2078,16 +2073,14 @@ class objMetaClass : public Object {
    inline ERR getModule(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[25];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
 
    inline ERR getSubClasses(std::span<OBJECTPTR> &Value) noexcept {
       auto field = &this->Class->Dictionary[15];
-      auto get_field = (ERR (*)(APTR, std::span<OBJECTPTR> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getRootModule(OBJECTPTR &Value) noexcept {

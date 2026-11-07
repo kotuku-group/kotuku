@@ -26,8 +26,8 @@ enum class DRAG : int {
 
 enum class KRES : int {
    NIL = 0,
-   PASS = 0,
    HANDLED = 65536,
+   PASS = 0,
 };
 
 // Keyboard subscription options.
@@ -694,7 +694,7 @@ class objBitmap : public Object {
    inline ERR query() noexcept { return Action(AC::Query, this, nullptr); }
    template <class T> ERR read(std::span<int8_t> Buffer, T *Result) noexcept {
       static_assert(std::is_integral<T>::value, "Result value must be an integer type");
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       if (auto error = Action(AC::Read, this, &read); error IS ERR::Okay) {
          *Result = T(read.Result);
          return ERR::Okay;
@@ -702,7 +702,7 @@ class objBitmap : public Object {
       else { *Result = 0; return error; }
    }
    inline ERR read(std::span<int8_t> Buffer) noexcept {
-      struct acRead read = { Buffer };
+      struct acRead read = { Buffer, 0 };
       return Action(AC::Read, this, &read);
    }
    inline ERR resize(double Width, double Height, double Depth = 0) noexcept {
@@ -722,7 +722,7 @@ class objBitmap : public Object {
    inline ERR seekCurrent(double Offset) noexcept { return seek(Offset, SEEK::CURRENT); }
    inline ERR unlock() noexcept { return Action(AC::Unlock, this, nullptr); }
    inline ERR write(std::span<const int8_t> Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { Buffer };
+      struct acWrite write = { Buffer, 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -733,7 +733,7 @@ class objBitmap : public Object {
       }
    }
    inline ERR write(std::string Buffer, int *Result = nullptr) noexcept {
-      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()) };
+      struct acWrite write = { std::span((const int8_t *)Buffer.data(), Buffer.size()), 0 };
       if (auto error = Action(AC::Write, this, &write); error IS ERR::Okay) {
          if (Result) *Result = write.Result;
          return ERR::Okay;
@@ -789,8 +789,7 @@ class objBitmap : public Object {
    inline ERR getData(std::span<uint8_t> &Value) noexcept {
       auto field = &this->Class->Dictionary[27];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::span<uint8_t> &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -1302,8 +1301,7 @@ class objDisplay : public Object {
    inline ERR getManufacturer(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[40];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -1311,8 +1309,7 @@ class objDisplay : public Object {
    inline ERR getChipset(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[12];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }
@@ -1334,8 +1331,7 @@ class objDisplay : public Object {
 
    inline ERR getGamma(std::span<double> &Value) noexcept {
       auto field = &this->Class->Dictionary[23];
-      auto get_field = (ERR (*)(APTR, std::span<double> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getHDensity(int &Value) noexcept {
@@ -1350,8 +1346,7 @@ class objDisplay : public Object {
 
    inline ERR getIcon(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getInsideWidth(int &Value) noexcept {
@@ -1366,8 +1361,7 @@ class objDisplay : public Object {
 
    inline ERR getResizeFeedback(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getWindowHandle(APTR &Value) noexcept {
@@ -1377,8 +1371,7 @@ class objDisplay : public Object {
 
    inline ERR getTitle(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[24];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getTotalResolutions(int &Value) noexcept {
@@ -1553,14 +1546,12 @@ class objClipboard : public Object {
 
    inline ERR getDragEndHandler(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[2];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getRequestHandler(FUNCTION * &Value) noexcept {
       auto field = &this->Class->Dictionary[4];
-      auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
 
@@ -1863,14 +1854,12 @@ class objPointer : public Object {
 
    inline ERR getButtonOrder(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[9];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getDragDatatypes(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[0];
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
 

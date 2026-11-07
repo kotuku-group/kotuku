@@ -434,15 +434,13 @@ class objXML : public Object {
 
    inline ERR getTags(std::span<struct XTag> &Value) noexcept {
       auto field = &this->Class->Dictionary[17];
-      auto get_field = (ERR (*)(APTR, std::span<struct XTag> &))field->GetValue;
-      return get_field(this, Value);
+      return field->GetValue(this, &Value);
    }
 
    inline ERR getStatement(std::string &Value) noexcept {
       auto field = &this->Class->Dictionary[10];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

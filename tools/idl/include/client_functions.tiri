@@ -1092,7 +1092,8 @@ global function klass(Name:str, Options:table, Spec:str, Private:str, Custom:str
                      params ..= inlineParamType(param) .. pName(param)
 
                      if param.resultValue and param.basicType is 'std::string_view' then
-                        -- Do not embed a default value for string views
+                        if v?? then v ..= ', ' end
+                        v ..= '{}'
                         results = true
                      else
                         if v?? then v ..= ', ' end
