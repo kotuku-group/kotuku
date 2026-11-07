@@ -10,6 +10,7 @@ template<class... Args> void DBG_TRANSFORM(Args...) {
 }
 
 #include <array>
+#include <deque>
 #include <list>
 #include <memory>
 #include <optional>
@@ -931,6 +932,8 @@ class extVectorScene : public objVectorScene {
    std::unordered_set<extVectorViewport *> PendingResizeMsgs;
    ankerl::unordered_dense::map<extVector *, JTYPE> InputSubscriptions;
    std::set<extVector *, TabOrderedVector> KeyboardSubscriptions;
+   std::deque<InputEvent> PendingInput; // Input received by scene_input_events() and not yet processed, oldest first
+   uint32_t InputGeneration = 0; // Incremented when input changes pointer state; detects nested dispatch
    std::vector<class InputBoundary> InputBoundaries; // Defined on the fly each time that the scene is rendered.  Used to manage input events and cursor changes.
    ankerl::unordered_dense::map<extVectorViewport *, ankerl::unordered_dense::map<extVector *, FUNCTION>> ResizeSubscriptions;
    OBJECTID ButtonLock; // The vector currently holding a button lock

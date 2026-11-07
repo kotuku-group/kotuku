@@ -1,0 +1,97 @@
+-- Nested input dispatch must complete crossing notifications and preserve cursor choices across wheel input.
+
+   include 'display', 'vector'
+
+-- The normal FD dispatcher blocks recursive input callbacks.  The unit-test hook dispatches straight into the
+-- scene, as native input paths can do, so callbacks below exercise nested scene_input_events() calls.
+
+function feed(Scene:obj!, Type:num!, Value0:num!, Value1:num!)
+   local passed, total = mod.test('vector', f'input:{Scene.id}:{Type}:{Value0}:{Value1}')
+   assert(total is 1 and passed is total, 'The direct scene input dispatch failed')
+end
+
+function newScene():<obj, obj, obj, obj, obj>
+   local surface = obj.new('Surface', { width=100, height=100 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { x=0, y=0, width=100, height=100, cursor='default' })
+   root.new('VectorRectangle', { x=0, y=0, width=100, height=100, fill='#808080' })
+   local a = root.new('VectorViewport', { x=0, y=0, width=30, height=30, cursor='default' })
+   local b = root.new('VectorViewport', { x=30, y=0, width=30, height=30, cursor='hand' })
+   local c = root.new('VectorViewport', { x=60, y=0, width=30, height=30, cursor='crosshair' })
+   for vector in values(array<obj> { a, b, c }) do
+      vector.new('VectorRectangle', { x=0, y=0, width=30, height=30, fill='#ff0000' })
+      check vector.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg) end)
+   end
+   check root.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg) end)
+   return surface, a, b, c, scene
+end
+
+function drawScene(Surface:obj!, Scene:obj!)
+   check Surface.acShow()
+   check Surface.acDraw()
+   processing.sleep(0)
+   feed(Scene, JET_ABS_XY, 95, 95)
+   feed(Scene, JET_ABS_XY, 15, 15)
+end
+
+@Test function LeavePreviousVectorDuringNestedMovement()
+   local surface <close>, a, b, c, scene = newScene()
+   local left_a = 0
+   local left_b = 0
+   local nested = false
+   check a.mtSubscribeInput(JTYPE_CROSSING, function(Vector, Msg)
+      if Msg.type is JET_CROSSED_OUT then left_a++ end
+   end)
+   check b.mtSubscribeInput(JTYPE_CROSSING, function(Vector, Msg)
+      if Msg.type is JET_CROSSED_OUT then left_b++ end
+   end)
+   check b.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg)
+      if nested then return end
+      nested = true
+      feed(scene, JET_ABS_XY, 75, 15)
+   end)
+   drawScene(surface, scene)
+   left_a = 0
+   left_b = 0
+
+   feed(scene, JET_ABS_XY, 45, 15)
+   assert(nested, 'The movement callback did not dispatch nested input')
+   assert(left_a is 1, f'The previous vector received {left_a} leave events instead of 1')
+   assert(left_b is 1, f'The intermediate vector received {left_b} leave events instead of 1')
+   assert(surface.cursor is c.cursor, 'Nested movement must retain the newest cursor')
+end
+
+@Test function WheelDuringMovementPreservesCursor()
+   local surface <close>, a, b, c, scene = newScene()
+   local wheels = 0
+   check b.mtSubscribeInput(JTYPE_EXT_MOVEMENT, function(Vector, Msg)
+      if Msg.type is JET_WHEEL then wheels++ end
+   end)
+   check b.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg)
+      feed(scene, JET_WHEEL, 1, 0)
+   end)
+   drawScene(surface, scene)
+
+   feed(scene, JET_ABS_XY, 45, 15)
+   assert(wheels is 1, 'The movement callback did not dispatch the nested wheel event')
+   assert(surface.cursor is b.cursor, 'Nested wheel input must preserve the pending movement cursor')
+end
+
+@Test function WheelDuringEnterPreservesMovement()
+   local surface <close>, a, b, c, scene = newScene()
+   local moves = 0
+   local wheels = 0
+   check a.mtSubscribeInput(JTYPE_EXT_MOVEMENT, function(Vector, Msg)
+      if Msg.type is JET_WHEEL then wheels++ end
+   end)
+   check b.mtSubscribeInput(JTYPE_CROSSING, function(Vector, Msg)
+      if Msg.type is JET_CROSSED_IN then feed(scene, JET_WHEEL, 1, 0) end
+   end)
+   check b.mtSubscribeInput(JTYPE_MOVEMENT, function(Vector, Msg) moves++ end)
+   drawScene(surface, scene)
+
+   feed(scene, JET_ABS_XY, 45, 15)
+   assert(wheels is 1, 'The enter callback did not dispatch the nested wheel event')
+   assert(moves is 1, 'Nested wheel input must not discard the pending movement event')
+   assert(surface.cursor is b.cursor, 'Nested wheel input during entry must preserve the selected cursor')
+end

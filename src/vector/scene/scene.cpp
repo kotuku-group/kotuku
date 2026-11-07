@@ -1640,6 +1640,10 @@ static ERR scene_key_default(const evKey *Event, APTR Meta)
 
 #include "scene_input.cpp"
 
+#ifdef UNIT_TESTS
+#include "../tests/unit_input.cpp"
+#endif
+
 #include "scene_def.c"
 
 static const FieldArray clSceneFields[] = {
