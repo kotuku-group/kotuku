@@ -12,17 +12,19 @@ Name: Input
 namespace {
 
 struct key_pattern {
-   KQ required, forbidden;
-   KEY code;
-   int unicode;
+   KQ  required;  // Modifiers that must be held; a group such as KQ::CTRL accepts either side
+   KQ  forbidden; // Modifiers that must not be held
+   KEY code;      // Key code to match, or KEY::NIL if matching by unicode
+   int unicode;   // Unicode character to match, or zero if matching by code
 };
 
 struct key_subscription {
-   int handle;
-   OBJECTID surface, scope;
-   KBF flags;
-   FUNCTION callback;
-   std::vector<key_pattern> patterns;
+   int      handle;                   // Registration handle returned to the client
+   OBJECTID surface;                  // Surface the registration is bound to; zero for a global registration
+   OBJECTID scope;                    // Focus scope within the surface; zero if the scope is the surface itself
+   KBF      flags;                    // Subscription options
+   FUNCTION callback;                 // Client callback, pinned for the life of the registration
+   std::vector<key_pattern> patterns; // Reserved key combinations; used only with KBF::RESERVE
 
    ~key_subscription() {
       if (callback.defined()) {
@@ -34,21 +36,24 @@ struct key_subscription {
    }
 };
 
+// Tracks a key from its initial press to its release, keyed by key code in glKeyboardSequences.
+
 struct key_sequence {
-   OBJECTID surface, focus;
-   int owner;
-   uint64_t dispatch;
-   bool cancelled = false;
+   OBJECTID surface;           // Surface that had the user focus at the initial press
+   OBJECTID focus;             // Innermost focus scope at the initial press
+   int      owner;             // Handle of the registration that reserved or consumed the press; zero if none did
+   uint64_t dispatch;          // Dispatch that created the sequence, so that nested dispatches cannot claim it
+   bool     cancelled = false; // Focus moved away; remaining repeats and the release are discarded
 };
 
 // The dispatch path lists each focused surface's vector scopes followed by the surface itself, starting with the
 // focused leaf surface and continuing through its ancestors.  Owners identify the surface of each path entry.
 
 struct key_dispatch {
-   OBJECTID surface;
-   std::vector<OBJECTID> path;
-   std::vector<OBJECTID> owners;
-   uint64_t generation;
+   OBJECTID surface;              // Surface that had the user focus when dispatch began
+   std::vector<OBJECTID> path;    // Scopes in dispatch order, from the focused leaf outwards
+   std::vector<OBJECTID> owners;  // Surface owning each path entry, indexed in parallel with path
+   uint64_t generation;           // Snapshot of glKeyboardGeneration; a change aborts the dispatch
 };
 
 std::recursive_mutex glKeyboardLock;
@@ -62,6 +67,9 @@ uint64_t glKeyboardDispatch = 0;
 uint64_t glKeyboardGeneration = 0;
 
 //********************************************************************************************************************
+// Returns true if the qualifiers in Value satisfy a modifier specification.  Value must hold none of the Forbidden
+// flags.  A complete group in Required, such as KQ::CTRL, is satisfied by either side of the group, whereas a
+// side-specific flag such as KQ::L_CTRL must be present itself.  Flags outside of Required and Forbidden are ignored.
 
 bool modifiers_match(KQ Value, KQ Required, KQ Forbidden)
 {
@@ -80,6 +88,8 @@ bool modifiers_match(KQ Value, KQ Required, KQ Forbidden)
 }
 
 //********************************************************************************************************************
+// Returns true if a key event matches a reserved pattern, by its modifiers and either its key code or its Unicode
+// value.
 
 bool pattern_matches(const key_pattern &Pattern, const evKey &Event)
 {
@@ -89,8 +99,9 @@ bool pattern_matches(const key_pattern &Pattern, const evKey &Event)
 }
 
 //********************************************************************************************************************
-// ReserveKey() requires each pattern to use either a key code or a Unicode value.  Patterns of different kinds are
-// not conflicts: a key that matches both is resolved at dispatch by scope depth and registration order.
+// Returns true if some combination of qualifiers would match both patterns.  ReserveKey() requires each pattern to
+// use either a key code or a Unicode value.  Patterns of different kinds are not conflicts: a key that matches both
+// is resolved at dispatch by KBF::OVERRIDE, scope depth and registration order.
 
 bool patterns_overlap(const key_pattern &A, const key_pattern &B)
 {
@@ -106,6 +117,8 @@ bool patterns_overlap(const key_pattern &A, const key_pattern &B)
 }
 
 //********************************************************************************************************************
+// Returns true if Sub is still registered.  Dispatch works from a copy of the subscription list, so a callback can
+// remove registrations, including its own, before they are reached.
 
 bool subscription_live(const std::shared_ptr<key_subscription> &Sub)
 {
@@ -115,6 +128,10 @@ bool subscription_live(const std::shared_ptr<key_subscription> &Sub)
 }
 
 //********************************************************************************************************************
+// Calls a subscription's callback for a key event, in the context of the callback's owner.  The call is skipped, and
+// ERR::Okay returned, if the subscription has been removed, its owner cannot be locked or is terminating, its scope
+// object no longer exists, or the event is a repeat and KBF::NO_REPEAT is set.  A callback that returns
+// ERR::Terminate is unsubscribed.  Returns the callback's result.
 
 ERR call_key(const std::shared_ptr<key_subscription> &Sub, const evKey &Event)
 {
@@ -146,6 +163,9 @@ ERR call_key(const std::shared_ptr<key_subscription> &Sub, const evKey &Event)
 }
 
 //********************************************************************************************************************
+// Returns the position of a subscription's scope in the dispatch path, where zero is the focused leaf and higher
+// values are further out.  Global subscriptions are placed after the end of the path.  Returns -1 if the scope is
+// not in the path, or if the matching entry belongs to a different surface.
 
 int scope_depth(const key_subscription &Sub, const key_dispatch &Dispatch)
 {
@@ -161,6 +181,8 @@ int scope_depth(const key_subscription &Sub, const key_dispatch &Dispatch)
 }
 
 //********************************************************************************************************************
+// Returns true if a dispatch can continue: the user focus is unchanged and no focus path has changed since the
+// dispatch began.  Checked before each handler, as an earlier callback can move the focus.
 
 bool dispatch_current(const key_dispatch &Dispatch)
 {
@@ -170,6 +192,8 @@ bool dispatch_current(const key_dispatch &Dispatch)
 }
 
 //********************************************************************************************************************
+// Event handler for gui.surface.focus.  Cancels key sequences that began on a surface that no longer has the primary
+// focus, so their remaining repeats and releases are not delivered.
 
 void keyboard_focus_changed(evFocus *Event, int Size, APTR Meta)
 {
@@ -181,6 +205,10 @@ void keyboard_focus_changed(evFocus *Event, int Size, APTR Meta)
 }
 
 //********************************************************************************************************************
+// Event handler for io.keyboard.keypress, and the core of the keyboard broker.  Observers are called first.  If a
+// surface has the focus, the dispatch path is then built from the focus chain and the event goes to the winning
+// reservation, or failing that to ordinary handlers until one returns KRES::HANDLED.  Repeats and releases follow
+// the registration that took the initial press.  See SubscribeKeyboard() for the full rules.
 
 void route_keyboard(evKey *Event, int Size, APTR Meta)
 {
@@ -226,6 +254,10 @@ void route_keyboard(evKey *Event, int Size, APTR Meta)
       if (std::find(chain.begin(), chain.end(), sub->surface) != chain.end()) call_key(sub, event);
    }
 
+   // Build the dispatch path from the focus chain.  Each surface contributes its vector focus path (innermost scope
+   // first) followed by the surface itself, so the path runs from the focused leaf outwards.  The generation is
+   // recorded so that a focus path change during dispatch can be detected by dispatch_current().
+
    {
       const std::lock_guard lock(glKeyboardLock);
       for (auto surface_id : chain) {
@@ -242,8 +274,14 @@ void route_keyboard(evKey *Event, int Size, APTR Meta)
    const auto focus = dispatch.path.front();
    const bool released = (event.Qualifiers & KQ::RELEASED) != KQ::NIL;
    const bool repeated = (event.Qualifiers & KQ::REPEAT) != KQ::NIL;
-   std::shared_ptr<key_subscription> owner;
-   bool known = false;
+   std::shared_ptr<key_subscription> owner; // Registration that took the initial press, if any
+   bool known = false;                      // True if this repeat or release belongs to a tracked sequence
+
+   // Sequence tracking.  An initial press opens a sequence for its key code; a repeat or release continues it, and a
+   // release also closes it.  A continued sequence is dropped entirely if it was cancelled or the focused surface
+   // changed.  If a registration took the initial press, the event goes straight to that registration while its scope
+   // remains in the path.  If no registration took it, the event is dispatched normally, but only if the innermost
+   // focus scope is unchanged.
 
    {
       const std::lock_guard lock(glKeyboardLock);
@@ -263,15 +301,25 @@ void route_keyboard(evKey *Event, int Size, APTR Meta)
          }
          else if (saved.focus != focus) return;
       }
+
+      // A press, or a repeat with no tracked sequence, opens a new sequence with no owner.  A press of a key that is
+      // already tracked replaces the old sequence.  An untracked release is dispatched without being recorded.
+
       if (not released and not known) {
          glKeyboardSequences[int(event.Code)] = { dispatch.surface, focus, 0, dispatch_id };
       }
    }
 
+   // Repeats and releases of an owned sequence bypass all other handlers.
+
    if (owner) {
       call_key(owner, event);
       return;
    }
+
+   // Sort the eligible registrations into candidates.  Observers and focus adapters have already run, and
+   // registrations whose scope is not in the dispatch path are excluded.  A reservation is a candidate only if one of
+   // its patterns matches the event.
 
    std::vector<std::shared_ptr<key_subscription>> reservations, ordinary;
 
@@ -288,6 +336,9 @@ void route_keyboard(evKey *Event, int Size, APTR Meta)
       }
       else ordinary.push_back(sub);
    }
+
+   // Ordinary handlers run innermost scope first.  Within a scope, KBF::DEFAULT handlers run last and the rest keep
+   // registration order.
 
    auto order = [&](const auto &A, const auto &B) {
       auto a = scope_depth(*A, dispatch), b = scope_depth(*B, dispatch);
@@ -309,12 +360,20 @@ void route_keyboard(evKey *Event, int Size, APTR Meta)
       return a_override ? a < b : a > b;
    });
 
+   // Records the registration that took a press as the owner of its sequence.  The dispatch ID check stops this
+   // dispatch from claiming a sequence that a nested dispatch (for example one triggered by a callback pumping
+   // messages) has since replaced.  Releases are skipped because their sequence has already been closed.
+
    auto record_owner = [&](int Handle) {
       if (released) return;
       const std::lock_guard lock(glKeyboardLock);
       auto it = glKeyboardSequences.find(int(event.Code));
       if (it != glKeyboardSequences.end() and it->second.dispatch IS dispatch_id) it->second.owner = Handle;
    };
+
+   // The first live reservation takes the event exclusively, regardless of its callback's result.  Ownership is
+   // recorded before the call so that the sequence is already owned if the callback triggers a nested dispatch.  Each
+   // step first confirms that the focus has not moved since dispatch began.
 
    for (auto &sub : reservations) {
       if (not dispatch_current(dispatch)) return;
@@ -323,6 +382,9 @@ void route_keyboard(evKey *Event, int Size, APTR Meta)
       call_key(sub, event);
       return;
    }
+
+   // Without a reservation, ordinary handlers run in order until one returns KRES::HANDLED, which takes ownership
+   // of the sequence.  A handler that passes leaves the sequence unowned.
 
    for (auto &sub : ordinary) {
       if (not dispatch_current(dispatch)) return;
@@ -336,6 +398,8 @@ void route_keyboard(evKey *Event, int Size, APTR Meta)
 } // namespace
 
 //********************************************************************************************************************
+// Removes all keyboard registrations and event subscriptions when the module expires.  The registrations are
+// destroyed after the lock is released, so releasing their callbacks cannot re-enter the broker under the lock.
 
 void free_keyboard()
 {
