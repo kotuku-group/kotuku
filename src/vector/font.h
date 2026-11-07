@@ -85,15 +85,14 @@ class freetype_font {
             gpos_kerning::instance kern_instance; // GPOS kerning state for this style instance
             bool kern_ready = false; // True once kern_instance has the design coordinates of this style
             bool kerning_enabled = true; // False if the font configuration sets Kerning = No
-            bool small_text = false; // True if the size is below SMALL_TEXT_LIMIT
+            int16_t size = false; // True if the size is below SMALL_TEXT_LIMIT
             FT_Pos embolden_x = 0, embolden_y = 0; // Outline emboldening for small sizes, in 26.6 pixels
+            int16_t weight = 400; // Weight of the style (100 - 1000), see detect_weight()
 
-            // Small text is light-hinted and emboldened to counteract the thin, soft stems produced by linear-light
-            // blending.  Emboldening is only enabled by the Embolden option of a font family.  The strength is at
-            // its maximum for sizes up to SMALL_TEXT_FULL and tapers to zero at SMALL_TEXT_LIMIT.
-
-            static constexpr int SMALL_TEXT_LIMIT = 14;
-            static constexpr int SMALL_TEXT_FULL  = 8;
+            static constexpr int SMALL_TEXT_LIMIT = 10; // Special rules apply to text at or below this size
+            static constexpr int EMBOLDEN_TEXT_LIMIT = 14;
+            static constexpr int EMBOLDEN_TEXT_FULL  = 8;
+            static constexpr int CONTRAST_WEIGHT_LIMIT = 300; // Small text above this weight is not boosted
 
             glyph & get_glyph(uint32_t);
             gpos_kerning::adjustment positioning(int PrevGlyph, int Glyph);
@@ -101,6 +100,7 @@ class freetype_font {
                auto value = positioning(PrevGlyph, Glyph);
                return value.first_advance + value.second_advance;
             }
+
             double first_placement(int Glyph, const std::string_view &Remaining) {
                if (Remaining.empty()) return 0;
                int length;
@@ -147,7 +147,7 @@ class freetype_font {
 
                   if (font->face->units_per_EM) em_scale = double(Size) / double(font->face->units_per_EM);
 
-                  small_text = Size < SMALL_TEXT_LIMIT;
+                  size = Size;
                   double embolden[2] = { 0, 0 };
 
                   // The FreeType metrics are scaled by a fixed 72/96 (DISPLAY_DPI), which acts as a calibration
@@ -228,17 +228,46 @@ class freetype_font {
 
                   height  = ascent + descent;
 
-                  if (small_text) {
-                     const double range = SMALL_TEXT_LIMIT - SMALL_TEXT_FULL;
-                     auto taper = std::clamp(double(SMALL_TEXT_LIMIT - Size) / range, 0.0, 1.0);
+                  if (Size < EMBOLDEN_TEXT_LIMIT) {
+                     const double range = EMBOLDEN_TEXT_LIMIT - EMBOLDEN_TEXT_FULL;
+                     auto taper = std::clamp(double(EMBOLDEN_TEXT_LIMIT - Size) / range, 0.0, 1.0);
                      embolden_x = FT_Pos(std::lround(embolden[0] * taper * 64.0));
                      embolden_y = FT_Pos(std::lround(embolden[1] * taper * 64.0));
                   }
+
+                  weight = detect_weight();
                }
             }
 
-            void set_axis(METRIC_GROUP &metrics) {
+            // Returns the weight of this style on the CSS scale of 100 - 1000.  A variable face reports the value of
+            // its wght axis, otherwise the OS/2 weight class is used.  The OS/2 value of a variable face describes
+            // its default instance only, so the axis takes precedence.
+
+            int detect_weight() {
+               static constexpr FT_ULong TAG_WGHT = FT_MAKE_TAG('w', 'g', 'h', 't');
+               for (size_t i=0; (i < font->axes.size()) and (i < axis.size()); i++) {
+                  if (font->axes[i].tag IS TAG_WGHT) return int(std::lround(double(axis[i]) / 65536.0));
+               }
+
+               if (auto os2 = (TT_OS2 *)FT_Get_Sfnt_Table(font->face, FT_SFNT_OS2); os2 and (os2->version != 0xffff)) {
+                  // Some legacy fonts use the 1 - 9 scale of early Windows versions.
+                  if ((os2->usWeightClass >= 1) and (os2->usWeightClass <= 9)) return os2->usWeightClass * 100;
+                  if (os2->usWeightClass >= 100) return std::min(int(os2->usWeightClass), 1000);
+               }
+
+               return (font->face->style_flags & FT_STYLE_FLAG_BOLD) ? 700 : 400;
+            }
+
+            inline void set_axis(METRIC_GROUP &metrics) {
                axis = metrics;
+            }
+
+            // Small text receives a coverage boost, except for heavier weights whose stems are already wide enough
+            // to fill a pixel column; boosting them closes the counters.
+
+            inline bool increase_contrast() {
+               if (embolden_x or embolden_y) return false;
+               return size <= SMALL_TEXT_LIMIT or ((size <= EMBOLDEN_TEXT_LIMIT) and (weight <= CONTRAST_WEIGHT_LIMIT));
             }
       };
 

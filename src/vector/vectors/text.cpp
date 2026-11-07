@@ -322,6 +322,17 @@ class extVectorText : public extVector {
    }
 };
 
+//********************************************************************************************************************
+
+static const int * text_fill_gamma(extVector *Vector)
+{
+   if (Vector->classID() != CLASSID::VECTORTEXT) return nullptr;
+   auto font = ((extVectorText *)Vector)->txHandle;
+   if (font and (font->type IS CF_FREETYPE) and ((freetype_font::ft_point *)font)->increase_contrast()) {
+      return small_text_gamma();
+   }
+   return nullptr;
+}
 
 //********************************************************************************************************************
 // Nested editing helpers may move both endpoints several times.  Report only their final state, after OnChange.
