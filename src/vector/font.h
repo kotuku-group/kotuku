@@ -231,8 +231,8 @@ class freetype_font {
                   if (Size < EMBOLDEN_TEXT_LIMIT) {
                      const double range = EMBOLDEN_TEXT_LIMIT - EMBOLDEN_TEXT_FULL;
                      auto taper = std::clamp(double(EMBOLDEN_TEXT_LIMIT - Size) / range, 0.0, 1.0);
-                     embolden_x = FT_Pos(std::lround(embolden[0] * 64.0));
-                     embolden_y = FT_Pos(std::lround(embolden[1] * 64.0));
+                     embolden_x = FT_Pos(std::lround(embolden[0] * taper * 64.0));
+                     embolden_y = FT_Pos(std::lround(embolden[1] * taper * 64.0));
                   }
 
                   weight = detect_weight();

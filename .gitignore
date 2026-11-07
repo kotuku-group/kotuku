@@ -66,3 +66,8 @@ docs/kotuku*/
 tools/tiri_lsp/vscode_plugin/node_modules/
 
 !/CMakePresets.json
+# Optional Terminal module (https://github.com/kotuku-group/ghostty) and its generated files
+/src/terminal/
+/include/kotuku/modules/terminal.h
+/docs/xml/modules/terminal.xml
+/docs/xml/modules/classes/terminal.xml
