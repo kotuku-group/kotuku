@@ -44,7 +44,7 @@ freetype_font::glyph & freetype_font::ft_point::get_glyph(uint32_t Unicode)
    // are taken from the unhinted linear advance.
 
    auto load_flags = font->glyph_flags;
-   if (small_text and (load_flags & FT_LOAD_NO_AUTOHINT)) load_flags = FT_LOAD_TARGET_LIGHT;
+   if ((size <= EMBOLDEN_TEXT_LIMIT) and (load_flags & FT_LOAD_NO_AUTOHINT)) load_flags = FT_LOAD_TARGET_LIGHT;
 
    if (FT_Load_Glyph(font->face, path.glyph_index, load_flags|FT_LOAD_LINEAR_DESIGN)) return path;
 

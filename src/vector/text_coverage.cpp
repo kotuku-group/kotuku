@@ -13,9 +13,11 @@ static std::shared_ptr<const text_coverage> get_text_coverage(freetype_font::ft_
 
    // Reject oversized masks before allocating rasteriser cells or pixel storage.  The original path can draw
    // these glyphs without admitting them to the cache.
+
    const auto bounds = get_bounds(Glyph.path);
    if (std::max({ std::abs(bounds.left), std::abs(bounds.right), std::abs(bounds.top),
          std::abs(bounds.bottom) }) > glTextOriginLimit) return {};
+
    const double phase = Phase * 0.25;
    const double bound_width = std::ceil(bounds.right + phase) - std::floor(bounds.left + phase) + 1;
    const double bound_height = std::ceil(bounds.bottom) - std::floor(bounds.top) + 1;
@@ -23,13 +25,18 @@ static std::shared_ptr<const text_coverage> get_text_coverage(freetype_font::ft_
        (bound_width * bound_height > text_coverage_cache::BYTE_LIMIT)) return {};
 
    thread_local agg::rasterizer_scanline_aa<> raster;
+
    raster.reset();
+   raster.gamma(Font->increase_contrast() ? small_text_gamma() : nullptr);
+
    // AGG rounds exact half-subpixel ties away from zero.  Rasterising at a positive origin matches the bitmap
    // renderer's rounding; rasterising above a zero baseline would round some negative vertices differently.
+
    const int shift_x = 1 - int(std::floor(bounds.left + phase));
    const int shift_y = 1 - int(std::floor(bounds.top));
    agg::trans_affine_translation transform(phase + shift_x, shift_y);
    agg::conv_transform<agg::path_storage, agg::trans_affine> path(Glyph.path, transform);
+
    raster.add_path(path);
    if (not raster.rewind_scanlines()) return glTextCoverageCache.insert(key, {});
 
@@ -54,6 +61,7 @@ static std::shared_ptr<const text_coverage> get_text_coverage(freetype_font::ft_
 
    // Store exact coverage bytes rather than blending white into grey, which would round edge coverage twice.
    // Trim zero borders so neighbouring, disjoint glyphs do not appear to overlap at an integer edge.
+
    int x1 = width, y1 = height, x2 = 0, y2 = 0;
    for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
@@ -65,6 +73,7 @@ static std::shared_ptr<const text_coverage> get_text_coverage(freetype_font::ft_
          }
       }
    }
+
    text_coverage mask;
    if ((x2 > x1) and (y2 > y1)) {
       mask.left = left + x1 - shift_x;
@@ -93,14 +102,17 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
 {
    // Cache exact quarter-pixel X phases and whole-pixel baselines.  Preserve arbitrary fractional origins through
    // the original renderer instead of changing the public API's placement precision.
+
    if ((std::abs(Y) > glTextOriginLimit) or (Y != std::floor(Y))) return false;
 
    thread_local std::vector<covered_text_glyph> run;
    run.clear();
+
    auto release_masks = kt::Defer([&]() { run.clear(); });
    double pen_x = 0;
    double pen_y = 0;
    int right_edge = -0x7fffffff;
+
    {
       const std::lock_guard lock(glFontMutex);
       FT_Activate_Size(Font->ft_size);
@@ -108,30 +120,41 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
       for (size_t i = 0; i < String.size();) {
          uint32_t unicode;
          i += get_utf8(String, unicode, i);
+
          auto &glyph = Font->get_glyph(unicode);
          auto adjustment = Font->positioning(previous, glyph.glyph_index);
          pen_x += adjustment.first_advance;
+
          const double placement = adjustment.second_placement +
             Font->first_placement(glyph.glyph_index, String.substr(i));
          const double origin_x = X + pen_x + placement;
          const double origin_y = Y + pen_y;
+
          if ((std::abs(origin_x) > glTextOriginLimit) or (std::abs(origin_y) > glTextOriginLimit) or
              (origin_x * 4 != std::round(origin_x * 4)) or (origin_y != std::floor(origin_y))) return false;
+
          const int whole_x = int(std::floor(origin_x));
          const int phase = int((origin_x - whole_x) * 4);
+
          auto mask = get_text_coverage(Font, glyph, phase);
          if (not mask) return false;
+
          const int x = whole_x + mask->left;
          const int right = x + mask->width;
+
          // A glyph that ends left of the clip region draws nothing on either path, so it cannot affect the result.
          // Skipping it keeps horizontally scrolled text, which starts at negative positions, on the cached path.
+
          if (mask->width and mask->height and (right > Bitmap->Clip.Left)) {
             if ((whole_x + mask->source_left < 0) or (int(origin_y) + mask->source_top < 0)) return false;
+
             const int y = int(origin_y) + mask->top;
             const int bottom = y + mask->height;
+
             if (x < right_edge) {
                // Separate alpha blends are not equivalent to a single outline union where glyphs overlap.
                // Check actual coverage in intersecting boxes, including combining marks and negative kerning.
+
                for (const auto &prior : run) {
                   const int x1 = std::max(x, prior.x);
                   const int x2 = std::min(right, prior.x + prior.mask->width);
@@ -147,9 +170,11 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
                   }
                }
             }
+
             right_edge = std::max(right_edge, right);
             run.push_back({ std::move(mask), x, y });
          }
+
          pen_x += glyph.adv_x + adjustment.second_advance;
          pen_y += glyph.adv_y;
          previous = glyph.glyph_index;
@@ -159,11 +184,13 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
    Advance = pen_x;
    if (run.empty() or (Bitmap->Clip.Right <= Bitmap->Clip.Left) or
        (Bitmap->Clip.Bottom <= Bitmap->Clip.Top)) return true;
+
    agg::pixfmt_psl format;
    format.setBitmap(*Bitmap);
    agg::renderer_base<agg::pixfmt_psl> renderer(format);
    if (not renderer.clip_box(Bitmap->Clip.Left, Bitmap->Clip.Top, Bitmap->Clip.Right - 1,
          Bitmap->Clip.Bottom - 1)) return true;
+
    const agg::rgba8 colour(agg::rgba(Colour->Red, Colour->Green, Colour->Blue, Colour->Alpha));
    for (const auto &glyph : run) {
       const auto &mask = *glyph.mask;
@@ -180,5 +207,6 @@ static bool draw_covered_text(objBitmap *Bitmap, freetype_font::ft_point *Font, 
          }
       }
    }
+
    return true;
 }

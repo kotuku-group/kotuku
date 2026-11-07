@@ -2,6 +2,20 @@
 #include "agg_trans_single_path.h"
 
 extern void morph_text_carets(extVectorText *, const agg::trans_single_path &, double);
+static const int * text_fill_gamma(extVector *Vector);
+
+// A mild coverage boost compensates for the light appearance of small text under linear-light blending.
+// The immutable table is shared by scene fills, cached glyph coverage and direct outline drawing.
+
+const int * small_text_gamma()
+{
+   static const auto table = [] {
+      std::array<int, 256> result;
+      agg::rasterizer_scanline_aa<>::build_gamma(result, agg::gamma_power(1.0 / 1.2));
+      return result;
+   }();
+   return table.data();
+}
 
 //********************************************************************************************************************
 
@@ -336,6 +350,8 @@ void gen_vector_path(extVector *Vector)
             if (!Vector->FillRaster) return;
          }
          else Vector->FillRaster->reset();
+
+         Vector->FillRaster->gamma(text_fill_gamma(Vector));
 
          Vector->BasePath.approximation_scale(Vector->Transform.scale());
          agg::conv_transform<agg::path_storage, agg::trans_affine> fill_path(Vector->BasePath, Vector->Transform);

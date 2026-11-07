@@ -89,6 +89,7 @@ namespace agg { class gradient_sdf; }
 namespace agg { class gradient_worley; }
 class objVectorTransition;
 class extVectorText;
+extern const int * small_text_gamma();
 class extVector;
 class extVectorScene;
 class extFilterEffect;
