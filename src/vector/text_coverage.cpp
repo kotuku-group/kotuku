@@ -24,7 +24,6 @@ static std::shared_ptr<const text_coverage> get_text_coverage(freetype_font::ft_
 
    thread_local agg::rasterizer_scanline_aa<> raster;
    raster.reset();
-   raster.gamma(Font->small_text ? small_text_gamma() : nullptr);
    // AGG rounds exact half-subpixel ties away from zero.  Rasterising at a positive origin matches the bitmap
    // renderer's rounding; rasterising above a zero baseline would round some negative vertices differently.
    const int shift_x = 1 - int(std::floor(bounds.left + phase));
