@@ -8,7 +8,8 @@ set (FUNCTIONS # Full paths are required for add_custom_command() dependencies t
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_bitmap.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_display.cpp"
    "${CMAKE_CURRENT_SOURCE_DIR}/lib_cursor.cpp"
-   "${CMAKE_CURRENT_SOURCE_DIR}/lib_input.cpp")
+   "${CMAKE_CURRENT_SOURCE_DIR}/lib_input.cpp"
+   "${CMAKE_CURRENT_SOURCE_DIR}/lib_keyboard.cpp")
 
 set (DISPLAY_DRIVERS
    "${CMAKE_CURRENT_SOURCE_DIR}/driver/headless.cpp")
@@ -88,6 +89,7 @@ if (UNIT_TESTS)
    set_tests_properties (display_headless_driver PROPERTIES LABELS display)
 endif ()
 
+flute_test (display_keyboard_routing "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_keyboard_routing.tiri")
 flute_test (display_surface_focus "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_surface_focus.tiri")
 flute_test (display_capture "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_capture_display.tiri")
 if (UNIT_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux")

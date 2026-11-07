@@ -47,8 +47,7 @@ For drag and drop operations, data can be requested from a source as follows:
 JUMPTABLE_DISPLAY
 
 static int input_unsubscribe(lua_State *Lua);
-static void focus_event(evFocus *, int, lua_State *);
-static void key_event(evKey *, int, struct finput *);
+static ERR key_event(const evKey *, APTR);
 
 //********************************************************************************************************************
 
@@ -56,7 +55,7 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
 {
    if (Input->InputValue)  { luaL_unref(Lua, LUA_REGISTRYINDEX, Input->InputValue); Input->InputValue = 0; }
    release_tiri_function(Lua, &Input->Callback);
-   if (Input->KeyEvent)    { UnsubscribeEvent(Input->KeyEvent); Input->KeyEvent = nullptr; }
+   if (Input->KeyEvent)    { gfx::UnsubscribeKeyboard(Input->KeyEvent); Input->KeyEvent = 0; }
    if (Input->InputHandle) { gfx::UnsubscribeInput(Input->InputHandle); Input->InputHandle = 0; }
 }
 
@@ -113,6 +112,16 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
    return ERR::Okay;
 }
 
+static int input_reserve(lua_State *Lua)
+{
+   auto input = (struct finput *)get_meta(Lua, lua_upvalueindex(1), "Tiri.input");
+   if (not input or not input->KeyEvent) luaL_error(Lua, ERR::Args, "Active keyboard reservation required.");
+   auto error = gfx::ReserveKey(input->KeyEvent, KQ(luaL_checkinteger(Lua, 1)),
+      KQ(luaL_checkinteger(Lua, 2)), luaL_optinteger(Lua, 3, 0), luaL_optinteger(Lua, 4, 0));
+   if (error != ERR::Okay) luaL_error(Lua, error, "Invalid or conflicting key reservation.");
+   return 0;
+}
+
 //********************************************************************************************************************
 // Any Read accesses to the object will pass through here.
 
@@ -127,6 +136,11 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
       log.trace("input.index(#%d, %.*s)", input->SurfaceID, int(field.size()), field.data());
 
       switch (strihash(field)) {
+         case strhash("reserve"):
+            lua_pushvalue(Lua, 1);
+            lua_pushcclosure(Lua, input_reserve, 1);
+            return 1;
+
          case strhash("unsubscribe"):
             lua_pushvalue(Lua, 1); // Duplicate the interface reference
             lua_pushcclosure(Lua, input_unsubscribe, 1);
@@ -146,34 +160,40 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
 {
    kt::Log log("input.keyboard");
    auto tiri = Lua->script;
+   if (not modDisplay) {
+      auto error = objModule::load("display", &modDisplay, &DisplayBase);
+      if (error != ERR::Okay) luaL_error(Lua, error, "Failed to load Display for keyboard routing.");
+   }
 
    OBJECTID object_id;
    GCobject *obj;
    if ((obj = lj_lib_optobject(Lua, 1))) object_id = obj->uid;
    else object_id = lua_tointeger(Lua, 1);
 
-   if ((object_id) and (GetClassID(object_id) != CLASSID::SURFACE)) luaL_argerror(Lua, 1, "Surface object required.");
-
-   if (lua_type(Lua, 2) != LUA_TFUNCTION) luaL_argerror(Lua, 2, "Function reference required.");
-
-   log.traceBranch("Surface: %d", object_id);
-
-   bool sub_keyevent = false;
-   if (object_id) {
-      if (not tiri->FocusEventHandle) { // Monitor the focus state of the target surface with a global function.
-         if (auto error = SubscribeEvent(EVID_GUI_SURFACE_FOCUS, C_FUNCTION(focus_event, Lua),
-               &tiri->FocusEventHandle); error != ERR::Okay) {
-            luaL_error(Lua, error, "Failed to subscribe to surface focus events.");
-         }
+   OBJECTID surface_id = object_id, scope_id = 0;
+   if (object_id and GetClassID(object_id) != CLASSID::SURFACE) {
+      // Resolve vector scopes through their Scene field without loading or linking the Vector module.
+      kt::ScopedObjectLock target(object_id);
+      OBJECTPTR scene = nullptr;
+      if (not target.granted() or target->get(strhash("scene"), scene) != ERR::Okay or not scene or
+          scene->get(strhash("surface"), surface_id) != ERR::Okay) {
+         luaL_argerror(Lua, 1, "Surface or vector object required.");
       }
-
-      if (ScopedObjectLock<objSurface> surface(object_id, 5000); surface.granted()) {
-         if (surface->hasFocus()) sub_keyevent = true;
-      }
-      else luaL_error(Lua, ERR::AccessObject, "Failed to access surface #%d.", object_id);
+      if (not surface_id) luaL_argerror(Lua, 1, "Vector scene is not attached to a surface.");
+      scope_id = object_id;
    }
-   else sub_keyevent = true; // Global subscription independent of any surface.
-
+   if (lua_type(Lua, 2) != LUA_TFUNCTION) luaL_argerror(Lua, 2, "Function reference required.");
+   KBF flags = KBF::NIL;
+   auto option_bool = [&](CSTRING Name) {
+      if (not lua_istable(Lua, 3)) return false;
+      lua_getfield(Lua, 3, Name);
+      bool value = lua_toboolean(Lua, -1);
+      lua_pop(Lua, 1);
+      return value;
+   };
+   if (option_bool("observer")) flags |= KBF::OBSERVER;
+   if (option_bool("reserve")) flags |= KBF::RESERVE;
+   if (option_bool("noRepeat")) flags |= KBF::NO_REPEAT;
 
    if (auto input = new (lua_newuserdata(Lua, sizeof(struct finput))) finput {}) {
       luaL_getmetatable(Lua, "Tiri.input");
@@ -181,8 +201,8 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
 
       input->InputHandle = 0;
       input->Script      = Lua->script;
-      input->SurfaceID   = object_id;
-      input->KeyEvent    = nullptr;
+      input->SurfaceID   = surface_id;
+      input->KeyEvent    = 0;
       input->InputValue  = 0;
       input->Mask        = JTYPE::NIL;
       input->Mode        = FIM_KEYBOARD;
@@ -194,13 +214,24 @@ static void release_input_subscription(lua_State *Lua, struct finput *Input)
       lua_pushvalue(Lua, lua_gettop(Lua)); // Take a copy of the Tiri.input object
       input->InputValue = luaL_ref(Lua, LUA_REGISTRYINDEX);
 
-      if (sub_keyevent) {
-         if (auto error = SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, input),
-               &input->KeyEvent); error != ERR::Okay) {
-            if (input->InputValue) { luaL_unref(Lua, LUA_REGISTRYINDEX, input->InputValue); input->InputValue = 0; }
-            release_tiri_function(Lua, &input->Callback);
-            luaL_error(Lua, error, "Failed to subscribe to keyboard input events.");
-         }
+      auto callback = C_FUNCTION(key_event, input);
+      auto error = gfx::SubscribeKeyboard(surface_id, scope_id, flags, &callback, &input->KeyEvent);
+      if (error IS ERR::Okay and lua_istable(Lua, 3) and (flags & KBF::RESERVE) != KBF::NIL) {
+         auto option_int = [&](CSTRING Name) {
+            lua_getfield(Lua, 3, Name);
+            int value = lua_tointeger(Lua, -1);
+            lua_pop(Lua, 1);
+            return value;
+         };
+         auto required = KQ(option_int("required"));
+         auto forbidden = KQ(option_int("forbidden"));
+         auto code = option_int("code");
+         auto unicode = option_int("unicode");
+         if (code or unicode) error = gfx::ReserveKey(input->KeyEvent, required, forbidden, code, unicode);
+      }
+      if (error != ERR::Okay) {
+         release_input_subscription(Lua, input);
+         luaL_error(Lua, error, "Failed to subscribe to keyboard input.");
       }
 
       input->Next = tiri->InputList;
@@ -363,7 +394,7 @@ static void cancel_data_request(lua_State *Lua, extTiri *Self, OBJECTID SourceID
       lua_pushvalue(Lua, lua_gettop(Lua)); // Take a copy of the Tiri.input object
       input->InputValue = luaL_ref(Lua, LUA_REGISTRYINDEX);
       input->Script      = Lua->script;
-      input->KeyEvent    = nullptr;
+      input->KeyEvent    = 0;
       input->InputHandle = 0;
       input->Mask        = mask;
       input->Mode        = FIM_DEVICE;
@@ -412,7 +443,7 @@ static void cancel_data_request(lua_State *Lua, extTiri *Self, OBJECTID SourceID
 
    auto input = (struct finput *)lua_touserdata(Lua, 1);
    if (input) {
-      log.traceBranch("Surface: %d, CallbackRef: %u, KeyEvent: %p", input->SurfaceID,
+      log.traceBranch("Surface: %d, CallbackRef: %u, KeyEvent: %d", input->SurfaceID,
          input->Callback.procedureID(), input->KeyEvent);
 
       if (input->SurfaceID)   input->SurfaceID = 0;
@@ -440,14 +471,15 @@ static void cancel_data_request(lua_State *Lua, extTiri *Self, OBJECTID SourceID
 //********************************************************************************************************************
 // Key events should only be received when a monitored surface has the focus.
 
-static void key_event(evKey *Event, int Size, struct finput *Input)
+static ERR key_event(const evKey *Event, APTR Meta)
 {
+   auto input = (struct finput *)Meta;
    kt::Log log("input.key_event");
 
-   auto tiri = Input->Script;
+   auto tiri = input->Script;
    if (not tiri) {
-      log.trace("Input->Script undefined.");
-      return;
+      log.trace("input->Script undefined.");
+      return ERR::Okay;
    }
 
    log.traceBranch("Incoming keyboard input");
@@ -457,81 +489,29 @@ static void key_event(evKey *Event, int Size, struct finput *Input)
    int depth = GetResource(RES::LOG_DEPTH); // Required because thrown errors cause the debugger to lose its step position
    int top = lua_gettop(lua);
    LuaCallbackContextGuard callback_context(lua);
-   if (push_tiri_function(lua, Input->Callback, callback_context) != ERR::Okay) {
+   if (push_tiri_function(lua, input->Callback, callback_context) != ERR::Okay) {
       log.warning("Keyboard input callback is no longer valid.");
-      return;
+      return ERR::Okay;
    }
-   lua_rawgeti(lua, LUA_REGISTRYINDEX, Input->InputValue); // Arg: Input value registered by the client
-   lua_pushinteger(lua, Input->SurfaceID);  // Arg: Surface (if applicable)
+   lua_rawgeti(lua, LUA_REGISTRYINDEX, input->InputValue); // Arg: Input value registered by the client
+   lua_pushinteger(lua, input->SurfaceID);  // Arg: Surface (if applicable)
    lua_pushinteger(lua, uint32_t(Event->Qualifiers)); // Arg: Key Flags
    lua_pushinteger(lua, int(Event->Code));       // Arg: Key Value
    lua_pushinteger(lua, Event->Unicode);    // Arg: Unicode character
 
-   if (lua_pcall(lua, 5, 0, 0)) {
+   ERR result = ERR::Okay;
+   if (lua_pcall(lua, 5, 1, 0)) {
+      if (lua->CaughtError IS ERR::Terminate) result = ERR::Terminate;
       process_callback_error(tiri, "Keyboard event callback");
    }
+   else if (lua_type(lua, -1) IS LUA_TNUMBER) result = ERR(lua_tointeger(lua, -1));
 
    lua_settop(lua, top);
    SetResource(RES::LOG_DEPTH, depth);
 
+   if (result IS ERR::Terminate) release_input_subscription(lua, input);
    collect_garbage(lua);
-}
-
-//********************************************************************************************************************
-// This is a global function for monitoring the focus of surfaces that we want to filter on for keyboard input.
-
-static void focus_event(evFocus *Event, int Size, lua_State *Lua)
-{
-   kt::Log log(__FUNCTION__);
-
-   auto tiri = Lua->script;
-   if (not tiri) {
-      log.trace("Script undefined.");
-      return;
-   }
-
-   if ((Event->TotalWithFocus > 0) and (Event->TotalLostFocus > 0)) {
-      log.traceBranch("Incoming focus event targeting #%d, focus lost from #%d.", Event->FocusList[0],
-         Event->FocusList[Event->TotalWithFocus]);
-   }
-   else if (Event->TotalWithFocus > 0) {
-      log.traceBranch("Incoming focus event targeting #%d.", Event->FocusList[0]);
-   }
-   else if (Event->TotalLostFocus > 0) {
-      log.traceBranch("Incoming focus event lost from #%d.", Event->FocusList[Event->TotalWithFocus]);
-   }
-   else log.traceBranch("Incoming focus event with no focus changes.");
-
-   for (auto input=tiri->InputList; input; input=input->Next) {
-      if (input->Mode != FIM_KEYBOARD) continue;
-      if (input->KeyEvent) continue;
-
-      auto callback = C_FUNCTION(key_event, input);
-      for (int i=0; i < Event->TotalWithFocus; i++) {
-         if (input->SurfaceID IS Event->FocusList[i]) {
-            log.trace("Focus notification received for key events on surface #%d.", input->SurfaceID);
-            if (auto error = SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, callback, &input->KeyEvent);
-                  error != ERR::Okay) {
-               log.warning("Failed to subscribe to keyboard input events: %s", GetErrorMsg(error));
-            }
-            break;
-         }
-      }
-   }
-
-   for (auto input=tiri->InputList; input; input=input->Next) {
-      if (input->Mode != FIM_KEYBOARD) continue;
-      if (not input->KeyEvent) continue;
-
-      for (int i=0; i < Event->TotalLostFocus; i++) {
-         if (input->SurfaceID IS Event->FocusList[Event->TotalWithFocus+i]) {
-            log.trace("Lost focus notification received for key events on surface #%d.", input->SurfaceID);
-            UnsubscribeEvent(input->KeyEvent);
-            input->KeyEvent = nullptr;
-            break;
-         }
-      }
-   }
+   return result;
 }
 
 //********************************************************************************************************************
@@ -577,6 +557,6 @@ void register_input_class(lua_State *Lua)
 
    // Register input interface prototypes for compile-time type inference
    reg_iface_prototype("input", "subscribe", { TiriType::Any }, { TiriType::Num, TiriType::Any, TiriType::Num, TiriType::Func });
-   reg_iface_prototype("input", "keyboard", { TiriType::Any }, { TiriType::Any, TiriType::Func });
+   reg_iface_prototype("input", "keyboard", { TiriType::Any }, { TiriType::Any, TiriType::Func, TiriType::Table });
    reg_iface_prototype("input", "requestItem", {}, { TiriType::Any, TiriType::Num, TiriType::Any, TiriType::Func });
 }

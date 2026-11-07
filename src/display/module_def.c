@@ -32,6 +32,7 @@ FDEF argsReadPixel[] = { { "Result", FD_INT|FD_UNSIGNED }, { "Bitmap", FD_OBJECT
 FDEF argsReadPrimarySelection[] = { { "Error", FD_INT|FD_ERROR }, { "Recipient", FD_OBJECTID }, { "Item", FD_INT }, { 0, 0 } };
 FDEF argsReadRGBPixel[] = { { "Void", FD_VOID }, { "Bitmap", FD_OBJECTPTR }, { "X", FD_INT }, { "Y", FD_INT }, { "RGB8:RGB", FD_RESULT|FD_PTR|FD_STRUCT }, { 0, 0 } };
 FDEF argsResample[] = { { "Error", FD_INT|FD_ERROR }, { "Bitmap", FD_OBJECTPTR }, { "ColourFormat:ColourFormat", FD_PTR|FD_STRUCT }, { 0, 0 } };
+FDEF argsReserveKey[] = { { "Error", FD_INT|FD_ERROR }, { "Handle", FD_INT }, { "Required", FD_INT }, { "Forbidden", FD_INT }, { "Code", FD_INT }, { "Unicode", FD_INT }, { 0, 0 } };
 FDEF argsRestoreCursor[] = { { "Error", FD_INT|FD_ERROR }, { "Cursor", FD_INT }, { "Owner", FD_OBJECTID }, { 0, 0 } };
 FDEF argsScaleToDPI[] = { { "Result", FD_DOUBLE }, { "Value", FD_DOUBLE }, { 0, 0 } };
 FDEF argsScanDisplayModes[] = { { "Error", FD_INT|FD_ERROR }, { "Filter", FDF_CPPSTRING }, { "DisplayInfo:Info", FD_PTR|FD_STRUCT }, { 0, 0 } };
@@ -40,13 +41,16 @@ FDEF argsSetCursor[] = { { "Error", FD_INT|FD_ERROR }, { "Surface", FD_OBJECTID 
 FDEF argsSetCursorPos[] = { { "Error", FD_INT|FD_ERROR }, { "X", FD_DOUBLE }, { "Y", FD_DOUBLE }, { 0, 0 } };
 FDEF argsSetCustomCursor[] = { { "Error", FD_INT|FD_ERROR }, { "Surface", FD_OBJECTID }, { "Flags", FD_INT }, { "Bitmap", FD_OBJECTPTR }, { "HotX", FD_INT }, { "HotY", FD_INT }, { "Owner", FD_OBJECTID }, { 0, 0 } };
 FDEF argsSetHostOption[] = { { "Error", FD_INT|FD_ERROR }, { "Option", FD_INT }, { "Value", FD_INT64 }, { 0, 0 } };
+FDEF argsSetKeyboardFocus[] = { { "Error", FD_INT|FD_ERROR }, { "SurfaceID", FD_OBJECTID }, { "Objects", FD_PTR }, { "Count", FD_INT }, { 0, 0 } };
 FDEF argsSetModalSurface[] = { { "Result", FD_OBJECTID }, { "Surface", FD_OBJECTID }, { 0, 0 } };
 FDEF argsSetPrimarySelection[] = { { "Error", FD_INT|FD_ERROR }, { "Text", FDF_CPPSTRING }, { 0, 0 } };
 FDEF argsStartCursorDrag[] = { { "Error", FD_INT|FD_ERROR }, { "Source", FD_OBJECTID }, { "Item", FD_INT }, { "Datatypes", FDF_CPPSTRING }, { "Surface", FD_OBJECTID }, { 0, 0 } };
 FDEF argsSubscribeInput[] = { { "Error", FD_INT|FD_ERROR }, { "Callback", FD_FUNCTIONPTR }, { "SurfaceFilter", FD_OBJECTID }, { "Mask", FD_INT }, { "DeviceFilter", FD_OBJECTID }, { "Handle", FD_RESULT|FD_INT }, { 0, 0 } };
+FDEF argsSubscribeKeyboard[] = { { "Error", FD_INT|FD_ERROR }, { "SurfaceID", FD_OBJECTID }, { "ObjectID", FD_OBJECTID }, { "Flags", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { "Handle", FD_RESULT|FD_INT }, { 0, 0 } };
 FDEF argsSync[] = { { "Void", FD_VOID }, { "Bitmap", FD_OBJECTPTR }, { 0, 0 } };
 FDEF argsUnlockCursor[] = { { "Error", FD_INT|FD_ERROR }, { "Surface", FD_OBJECTID }, { 0, 0 } };
 FDEF argsUnsubscribeInput[] = { { "Error", FD_INT|FD_ERROR }, { "Handle", FD_INT }, { 0, 0 } };
+FDEF argsUnsubscribeKeyboard[] = { { "Error", FD_INT|FD_ERROR }, { "Handle", FD_INT }, { 0, 0 } };
 FDEF argsWindowHook[] = { { "Error", FD_INT|FD_ERROR }, { "SurfaceID", FD_OBJECTID }, { "Event", FD_INT }, { "Callback", FD_FUNCTIONPTR }, { 0, 0 } };
 
 const struct Function glFunctions[] = {
@@ -94,6 +98,10 @@ const struct Function glFunctions[] = {
    { (APTR)gfx::WindowHook, "WindowHook", argsWindowHook },
    { (APTR)gfx::SetPrimarySelection, "SetPrimarySelection", argsSetPrimarySelection },
    { (APTR)gfx::ReadPrimarySelection, "ReadPrimarySelection", argsReadPrimarySelection },
+   { (APTR)gfx::SubscribeKeyboard, "SubscribeKeyboard", argsSubscribeKeyboard },
+   { (APTR)gfx::UnsubscribeKeyboard, "UnsubscribeKeyboard", argsUnsubscribeKeyboard },
+   { (APTR)gfx::ReserveKey, "ReserveKey", argsReserveKey },
+   { (APTR)gfx::SetKeyboardFocus, "SetKeyboardFocus", argsSetKeyboardFocus },
    { nullptr, nullptr, nullptr }
 };
 

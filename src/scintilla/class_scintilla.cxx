@@ -281,7 +281,7 @@ static void check_modified_widths(extScintilla *);
 static void track_modified_lines(extScintilla *, int, int);
 static void grow_scroll_width(extScintilla *, int, int);
 static ERR key_event(objVectorViewport *, KQ, KEY, int);
-static void modifier_event(evKey *, int, APTR);
+static ERR modifier_event(const evKey *, APTR);
 static int command_key(KEY, bool);
 static int shortcut_key(KEY);
 static void report_event(extScintilla *, SEF Event);
@@ -2016,7 +2016,8 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    // Modifier keys are tracked from all keyboard events, because they can be pressed while another vector has the
    // focus and still apply to a subsequent click.
 
-   SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(modifier_event), &Self->KeyHandle);
+   auto modifier_callback = C_FUNCTION(modifier_event);
+   gfx::SubscribeKeyboard(0, 0, KBF::OBSERVER, &modifier_callback, &Self->KeyHandle);
 
    // Load a text file if required
 
@@ -4445,12 +4446,13 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
 // report it.  Keys pressed while the application window lacks the keyboard focus are not reported, so update_focus()
 // resets the state when the editor loses the focus.
 
-static void modifier_event(evKey *Event, int Size, APTR Meta)
+static ERR modifier_event(const evKey *Event, APTR Meta)
 {
    auto Self = (extScintilla *)CurrentContext();
    Self->KeyShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
    Self->KeyCtrl  = (Event->Qualifiers & KQ::CTRL) != KQ::NIL;
    Self->KeyAlt   = (Event->Qualifiers & KQ::ALT) != KQ::NIL;
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -4814,26 +4816,34 @@ static void paint_dirty(extScintilla *Self)
 //********************************************************************************************************************
 
 extScintilla::~extScintilla() {
-   if (KeyHandle) { UnsubscribeEvent(KeyHandle); KeyHandle = nullptr; }
+   if (KeyHandle) { gfx::UnsubscribeKeyboard(KeyHandle); KeyHandle = 0; }
    if (TickTimer) { UpdateTimer(TickTimer, 0); TickTimer = nullptr; }
    if (IdleTimer) { UpdateTimer(IdleTimer, 0); IdleTimer = nullptr; }
+
    Drop.active = false;
    PrimaryDrop.active = false;
+
    if (Focus) {
       kt::SwitchContext context(this);
       Focus->subscribeFeedback(FM::NIL, C_FUNCTION(feedback_focus));
       // Keyboard callbacks are weak-pinned by Vector and retired when this context terminates.
       if (Focus != Viewport) UnsubscribeAction(Focus, AC::NIL);
    }
+
    if (Viewport) UnsubscribeAction(Viewport, AC::NIL);
+
    // Input callbacks are weak-pinned by Vector too.  Retire them through its dispatcher rather than invalidating
    // the active subscription iterator when a margin callback destroys the editor.
+
    free_context_menu(this);
 
    // Callbacks consult API; clear it before engine cancellation can close auxiliary windows.
+
    auto api = std::exchange(API, nullptr);
    if (DragClipboard) { FreeResource(DragClipboard); DragClipboard = nullptr; }
+
    replace_callback(FileDrop, nullptr);
+
    if (api) {
       while (ClientUndoDepth > 0) {
          api->SendScintilla(SCI_ENDUNDOACTION);
@@ -4900,9 +4910,13 @@ mutates-object, copies-input
 static ERR SCINTILLA_SetKeywords(extScintilla *Self, struct sci::SetKeywords *Args)
 {
    if (not Args) return ERR::NullArgs;
+
    if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+
    if (not has_keyword_set(Self, Args->Set)) return ERR::NoSupport;
+
    if (Args->Keywords.find('\0') != std::string_view::npos) return ERR::Args;
+
    std::string text(Args->Keywords);
    Self->LexerSettings[Self->Lexer].keywords[Args->Set] = text;
    Self->ActiveKeywords[Args->Set] = text;
@@ -4949,9 +4963,11 @@ static ERR SCINTILLA_SetLexerProperty(extScintilla *Self, struct sci::SetLexerPr
 {
    if (not Args) return ERR::NullArgs;
    if (auto error = config_ready(Self, true); error != ERR::Okay) return error;
+
    std::string name(Args->Name), value(Args->Value);
    if ((name.find('\0') != std::string::npos) or (value.find('\0') != std::string::npos)) return ERR::Args;
    if (not has_lexer_property(Self, name)) return ERR::NoSupport;
+
    auto type = SCICALL(SCI_PROPERTYTYPE, uptr_t(name.c_str()));
    if (type IS SC_TYPE_BOOLEAN) {
       if ((value != "0") and (value != "1")) return ERR::Args;
@@ -4961,6 +4977,7 @@ static ERR SCINTILLA_SetLexerProperty(extScintilla *Self, struct sci::SetLexerPr
       auto result = std::from_chars(value.data(), value.data() + value.size(), number);
       if ((result.ec != std::errc()) or (result.ptr != value.data() + value.size())) return ERR::Args;
    }
+
    Self->LexerSettings[Self->Lexer].properties[name] = value;
    SCICALL(SCI_SETPROPERTY, name.c_str(), value.c_str());
    return ERR::Okay;

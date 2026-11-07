@@ -742,6 +742,7 @@ static ERR MODOpen(OBJECTPTR Module)
 
 static ERR MODExpunge(void)
 {
+   free_keyboard();
    ERR error = release_driver(true);
 
    if (clDisplay) {

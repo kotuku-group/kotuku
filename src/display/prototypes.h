@@ -45,5 +45,9 @@ extern ERR UnsubscribeInput(int Handle);
 extern ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION * Callback);
 extern ERR SetPrimarySelection(const std::string_view & Text);
 extern ERR ReadPrimarySelection(OBJECTID Recipient, int Item);
+extern ERR SubscribeKeyboard(OBJECTID SurfaceID, OBJECTID ObjectID, KBF Flags, FUNCTION * Callback, int * Handle);
+extern ERR UnsubscribeKeyboard(int Handle);
+extern ERR ReserveKey(int Handle, KQ Required, KQ Forbidden, int Code, int Unicode);
+extern ERR SetKeyboardFocus(OBJECTID SurfaceID, int * Objects, int Count);
 
 } // namespace

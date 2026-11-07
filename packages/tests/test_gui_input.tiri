@@ -1,0 +1,42 @@
+   import 'gui', 'gui/input'
+   include 'display', 'vector'
+
+function fixture(Options:table!):<obj, table, obj>
+   local surface = obj.new('Surface', { width=400, height=200 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local root = scene.new('VectorViewport', { width='100%', height='100%' })
+   Options.target = root
+   Options.width = 200
+   local input = gui.input(Options)
+   check surface.acShow()
+   check surface.acFocus()
+   check input._textClip.acFocus()
+   check surface.acDraw()
+   processing.sleep(0)
+   return surface, input, root
+end
+
+function sendKey(Code:num!, Qualifiers:num, Unicode:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = (Qualifiers ?? 0) | KQ_PRESSED | ((Unicode != nil) ? 0 : KQ_NOT_PRINTABLE)
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+@Test function KeypressCanConsumeBeforeAnAncestor()
+   local surface <close>, widget, root = fixture({ text='abc', events={
+      keypress=function(Event)
+         if Event.value is KEY_F2 then return KRES_HANDLED end
+      end
+   } })
+   local ancestor_hits = 0
+   root.mtSubscribeKeyboard(function() ancestor_hits++ end)
+   sendKey(KEY_F2)
+   assert(ancestor_hits is 0, 'Input keypress feedback must be able to consume before its ancestor')
+   sendKey(KEY_F3)
+   assert(ancestor_hits is 1, 'Unconsumed input feedback must continue to the ancestor')
+end

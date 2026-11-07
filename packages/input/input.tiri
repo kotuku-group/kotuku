@@ -516,9 +516,10 @@ gui.input = function(Options)
             reportActivate('activated', true)
          end
 
-         &events?.keypress({ qualifiers=Qualifiers, value=Value, unicode=Unicode })
+         local result = &events?.keypress({ qualifiers=Qualifiers, value=Value, unicode=Unicode })
 
          checkPlaceholder()
+         if result is KRES_HANDLED then return KRES_HANDLED end
       end)
 
       if &events.cursorEntry or &events.cursorExit then

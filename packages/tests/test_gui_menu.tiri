@@ -1,4 +1,4 @@
-   import 'gui', 'gui/menu', 'gui/menubar'
+   import 'gui', 'gui/menu', 'gui/menubar', 'gui/window'
    include 'display', 'vector'
    module vector as mVec
 
@@ -1598,4 +1598,37 @@ end
    assert(file.icon.fill is icon_fill and file.vectorText.fill is light.menubar.text.fill,
       'The item icon and text must return to the light theme')
    assert(bar.removeItem(3), 'Items must be removable after a restyle')
+end
+
+@Test function WindowZoomReservesMenuShortcutsButAllowsClicks()
+   for enabled in values(array<any> { true, false }) do
+      local hits = 0
+      local window = gui.window({ quit=false, zoom=enabled, tabPing=false, x=20, y=20,
+         insideWidth=500, insideHeight=200 })
+      defer window.surface?.free() end
+      local bar = gui.menubar({ target=window.viewport, createItems=function(Bar)
+         Bar.addItem('view', 'View', nil, nil, array<table> {
+            { label='Zoom In', key='+', qualifier='CTRL', onActivate=function() hits++ end }
+         })
+      end })
+      window.show()
+      window.surface.acFocus()
+      processing.sleep(0)
+      sendKey(KEY_EQUALS, KQ_PRESSED | KQ_CTRL | KQ_SHIFT, 43)
+      assert(hits is (enabled ? 0 : 1), 'Only windows with zoom disabled may dispatch the menu shortcut')
+      assert(window.zoom is (enabled ? 1.25 : 1), 'The window must zoom once when its keys are enabled')
+      sendKey(KEY_F10)
+      sendKey(KEY_DOWN)
+      local menu = bar._lookup.view.menu
+      assert(menu?.visible, 'The menu must still open with its reserved shortcut label')
+      menu.surface.acDraw()
+      processing.sleep(0)
+      local pointer = obj.find('SystemPointer')
+      pointer.surface = menu.surface.id
+      defer pointer.surface = 0 end
+      feed(JET_ABS_XY, menu.surface.absX + 10, menu.surface.absY + (menu._rows[0].y + 5) * menu.scale)
+      feed(JET_LMB, 1, 0)
+      feed(JET_LMB, 0, 0)
+      assert(hits is (enabled ? 1 : 2), 'Clicking an item with a reserved label must still activate it')
+   end
 end

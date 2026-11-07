@@ -1,0 +1,580 @@
+   include 'display', 'vector'
+   module display as mGfx
+
+function focusedText(String:str!):<obj, obj, obj>
+   local surface = obj.new('Surface', { width=400, height=240 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local viewport = scene.new('VectorViewport', { width='100%', height='100%' })
+   local text = viewport.new('VectorText', { string=String, textFlags=VTXF_EDITABLE, x=40, y=50, fontSize=20 })
+   surface.acShow()
+   surface.acFocus()
+   viewport.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, text, scene
+end
+
+-- Broadcast the evKey record to the event subscribed by VectorText, including optional printable/control values.
+function sendKey(Code:num!, Qualifiers:num, Unicode:num, Pressed:bool)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = (Qualifiers ?? 0) | ((Pressed is false) ? 0 : KQ_PRESSED) |
+      ((Unicode != nil) ? 0 : KQ_NOT_PRINTABLE)
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function assertCursor(Text:obj!, Row:num!, Column:num!)
+   assert(Text.cursorRow is Row and Text.cursorColumn is Column,
+      f'Expected cursor {Row},{Column}, got {Text.cursorRow},{Text.cursorColumn}')
+end
+
+@Test function CursorCallbacksReportOnceAfterKeysAndEdits()
+   local surface <close>, text = focusedText('abc\ndef')
+   events = array<str>
+   text.onChange = function(Text) events.push('change') end
+   text.onCursorMove = function(Text)
+      _, x, y, height = check Text.mtGetCaretBounds(-1, -1)
+      assert(height > 0, 'Key callbacks must have current geometry')
+      _, expected_x, expected_y = check Text.mtGetCaretBounds(Text.cursorRow, Text.cursorColumn)
+      assert(x is expected_x and y is expected_y, 'Callback geometry must describe the final cursor')
+      events.push('move')
+   end
+   sendKey(KEY_RIGHT)
+   assert(events.concat(',') is 'move', 'One arrow key must report one movement')
+   events.clear()
+   sendKey(KEY_A, KQ_CTRL)
+   assert(events.concat(',') is 'move', 'Select-all must coalesce both endpoint changes')
+   events.clear()
+   sendKey(KEY_ENTER)
+   assert(events.concat(',') is 'change,move', 'Selection replacement must report change before one move')
+   assert(text.string is '\n' and text.cursorRow is 1, 'The callback must follow the final edit layout')
+   events.clear()
+   sendKey(KEY_BACKSPACE)
+   assert(events.concat(',') is 'change,move', 'A deletion with temporary selection must report once')
+   events.clear()
+   sendKey(KEY_DELETE)
+   assert(#events is 0, 'A key that changes neither text nor position must stay silent')
+end
+
+@Test function CursorCallbackSeesTextRestoredByOnChange()
+   local surface <close>, text = focusedText('abc')
+   events = array<str>
+   text.onChange = function(Text)
+      events.push('change')
+      Text.string = 'restored\n'
+      Text.cursorRow = 1
+   end
+   callback_row, callback_y = 0, 0
+   text.onCursorMove = function(Text)
+      events.push('move')
+      callback_row = Text.cursorRow
+      _, _, callback_y = check Text.mtGetCaretBounds(-1, -1)
+   end
+   sendKey(KEY_Q, nil, 113)
+   assert(events.concat(',') is 'change,move',
+      f'OnChange corrections must coalesce into one final cursor callback, got {events.concat(",")}')
+   _, _, expected_y = check text.mtGetCaretBounds(1, 0)
+   assert(callback_row is 1 and callback_y is expected_y, 'The callback must see the corrected text layout')
+end
+
+@Test function CursorCallbacksCanAdjustTheCursorWithoutRecursing()
+   local surface <close>, text = focusedText('abc')
+   calls = 0
+   text.onCursorMove = function(Text)
+      calls++
+      Text.cursorColumn = 0
+   end
+   sendKey(KEY_RIGHT)
+   assert(calls is 1 and text.cursorColumn is 0, 'Cursor correction must not call the callback recursively')
+   sendKey(KEY_RIGHT)
+   assert(calls is 2 and text.cursorColumn is 0, 'The next key must compare against the corrected cursor')
+end
+
+@Test function ControlKReportsOnlyTextChanges()
+   for case in values(array<table> {
+      { text='abc', expected='', changes=1 },
+      { text='', expected='', changes=0 },
+      { text='\nabc', expected='abc', changes=1 },
+      { text='abc\n', expected='', changes=1 }
+   }) do
+      local surface <close>, text = focusedText(case.text)
+      local changes = 0
+      text.onChange = function(Text) changes++ end
+      sendKey(KEY_K, KQ_CTRL)
+      assert((text.string ?? '') is case.expected and changes is case.changes,
+         'Ctrl+K must report exactly once when deleting a line changes the string')
+      text.string = ''
+      sendKey(KEY_K, KQ_CTRL)
+      sendKey(KEY_K, KQ_CTRL)
+      assert(changes is case.changes, 'Deleting an empty final line must not report a text change')
+   end
+end
+
+@Test function ClearNotifiesOnceAndProgrammaticDeleteLineStaysSilent()
+   local surface <close>, text = focusedText('abc\ndef')
+   local changes = 0
+   text.onChange = function(Text) changes++ end
+   sendKey(KEY_CLEAR)
+   assert(text.string is 'def' and changes is 1, 'Clear must report one text change')
+   check text.mtDeleteLine(0)
+   assert((text.string ?? '') is '' and changes is 1, 'Programmatic DeleteLine must retain its silent behaviour')
+end
+
+function assertSelection(Text:obj!, Row:num!, Column:num!, EndRow:num!, EndColumn:num!, Expected:str!)
+   assertCursor(Text, EndRow, EndColumn)
+   local selected = Row != EndRow or Column != EndColumn
+   assert((Text.textFlags has VTXF_AREA_SELECTED) is selected, 'AREA_SELECTED must match the cursor and anchor')
+   if selected then
+      assert(Text.selectRow is Row and Text.selectColumn is Column,
+         f'Expected anchor {Row},{Column}, got {Text.selectRow},{Text.selectColumn}')
+   end
+   assert((Text.selectedText ?? '') is Expected,
+      f'Expected selected text "{Expected}", got "{Text.selectedText}"')
+end
+
+@Test function ShiftArrowsShrinkAndReverseUtf8Selection()
+   local surface <close>, text = focusedText('aé中z')
+   text.cursorColumn = 2
+   sendKey(KEY_RIGHT, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 3, '中')
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 2, '')
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 1, 'é')
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 0, 'aé')
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 0, 'aé')
+   sendKey(KEY_RIGHT, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 1, 'é')
+end
+
+@Test function ShiftArrowsCrossLogicalLineBreaks()
+   local surface <close>, text = focusedText('ab\ncd')
+   text.cursorRow = 1
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   assertSelection(text, 1, 0, 0, 2, '\n')
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   assertSelection(text, 1, 0, 0, 1, 'b\n')
+   sendKey(KEY_RIGHT, KQ_SHIFT)
+   assertSelection(text, 1, 0, 0, 2, '\n')
+   sendKey(KEY_RIGHT, KQ_SHIFT)
+   assertSelection(text, 1, 0, 1, 0, '')
+   sendKey(KEY_RIGHT, KQ_SHIFT)
+   assertSelection(text, 1, 0, 1, 1, 'c')
+end
+
+@Test function PlainArrowsCollapseBothSelectionDirections()
+   local surface <close>, text = focusedText('abcde\nxyz')
+   for reversed in {0 to 2} do
+      for key in values(array<int> { KEY_LEFT, KEY_RIGHT }) do
+         if reversed is 0 then check text.mtSelectArea(0, 1, 1, 2)
+         else check text.mtSelectArea(1, 2, 0, 1) end
+         sendKey(key)
+         if key is KEY_LEFT then assertCursor(text, 0, 1)
+         else assertCursor(text, 1, 2) end
+         assert(not (text.textFlags has VTXF_AREA_SELECTED), 'A plain arrow must collapse without an extra step')
+      end
+   end
+   check text.mtSelectArea(0, 1, 1, 2)
+   sendKey(KEY_LEFT, KQ_CTRL)
+   assertCursor(text, 0, 1)
+end
+
+@Test function ShiftHomeAndEndUseLogicalUtf8Columns()
+   local surface <close>, text = focusedText('first\né中ab')
+   text.cursorRow = 1
+   text.cursorColumn = 3
+   sendKey(KEY_HOME, KQ_SHIFT)
+   assertSelection(text, 1, 3, 1, 0, 'é中a')
+   sendKey(KEY_END, KQ_SHIFT)
+   assertSelection(text, 1, 3, 1, 4, 'b')
+   sendKey(KEY_HOME)
+   assertCursor(text, 1, 0)
+   assert(not (text.textFlags has VTXF_AREA_SELECTED), 'Home without Shift must collapse the selection')
+   sendKey(KEY_END)
+   assertCursor(text, 1, 4)
+end
+
+@Test function VerticalSelectionRetainsAnchorAndPreferredColumn()
+   local surface <close>, text = focusedText('abcdef\né\nuvwxyz')
+   text.cursorColumn = 5
+   sendKey(KEY_DOWN, KQ_SHIFT)
+   assertSelection(text, 0, 5, 1, 1, 'f\né')
+   sendKey(KEY_DOWN, KQ_SHIFT)
+   assertSelection(text, 0, 5, 2, 5, 'f\né\nuvwxy')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 0, 5, 1, 1, 'f\né')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 0, 5, 0, 5, '')
+   sendKey(KEY_DOWN)
+   assertCursor(text, 1, 1)
+   sendKey(KEY_DOWN)
+   assertCursor(text, 2, 5)
+   sendKey(KEY_HOME)
+   sendKey(KEY_UP)
+   assertCursor(text, 1, 0)
+   sendKey(KEY_UP)
+   assertCursor(text, 0, 0)
+end
+
+@Test function VerticalSelectionCanReverseAcrossEmptyRows()
+   local surface <close>, text = focusedText('abc\n\nxyz')
+   text.cursorRow = 1
+   sendKey(KEY_DOWN, KQ_SHIFT)
+   assertSelection(text, 1, 0, 2, 0, '\n')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 1, 0, 1, 0, '')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 1, 0, 0, 0, 'abc\n')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 1, 0, 0, 0, 'abc\n')
+   text.cursorColumn = 2
+   sendKey(KEY_DOWN)
+   assertCursor(text, 1, 0)
+   sendKey(KEY_DOWN)
+   assertCursor(text, 2, 2)
+end
+
+function wrappedText(Face:str!):<obj, obj>
+   local surface, text = focusedText('éééé ')
+   text.textFlags = text.textFlags | VTXF_NO_AUTO_OFFSET
+   text.face = Face
+   text.inlineSize = text.textWidth + 1 -- Exactly one four-character word per visual line.
+   text.string = 'éééé éééé éééé\né\néééé éééé\n\n'
+   return surface, text
+end
+
+@Test function TransitionVerticalNavigationUsesLogicalRows()
+   local surface <close>, text, scene = focusedText('abcdef\nx\nabcdef')
+   text.textFlags = text.textFlags | VTXF_NO_AUTO_OFFSET
+   text.inlineSize = 1000
+   local first = struct.new('Transition')
+   first.offset = 0
+   first.transform = 'translate(0 0)'
+   local last = struct.new('Transition')
+   last.offset = 1
+   last.transform = 'translate(0 12)'
+   local transition = scene.new('VectorTransition', { stops={ first, last } })
+   text.transition = transition
+   text.cursorColumn = 2
+   sendKey(KEY_DOWN)
+   assertCursor(text, 1, 1)
+   sendKey(KEY_DOWN)
+   assertCursor(text, 2, 2)
+   sendKey(KEY_UP)
+   assertCursor(text, 1, 1)
+   sendKey(KEY_UP)
+   assertCursor(text, 0, 2)
+   sendKey(KEY_DOWN, KQ_SHIFT)
+   assertSelection(text, 0, 2, 1, 1, 'cdef\nx')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 2, '')
+end
+
+@Test function WrappedVerticalNavigationFollowsVisualLines()
+   for face in values(array<str> { 'Noto Sans', 'Clean' }) do
+      local surface <close>, text = wrappedText(face)
+      text.cursorColumn = 7
+      sendKey(KEY_UP)
+      assertCursor(text, 0, 2)
+      sendKey(KEY_UP)
+      assertCursor(text, 0, 2)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 0, 7)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 0, 12)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 1, 1)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 2, 2)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 2, 7)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 3, 0)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 4, 0)
+      sendKey(KEY_DOWN)
+      assertCursor(text, 4, 0)
+      sendKey(KEY_UP)
+      assertCursor(text, 3, 0)
+      sendKey(KEY_UP)
+      assertCursor(text, 2, 7)
+      sendKey(KEY_UP)
+      assertCursor(text, 2, 2)
+      sendKey(KEY_UP)
+      assertCursor(text, 1, 1)
+      sendKey(KEY_UP)
+      assertCursor(text, 0, 12)
+   end
+end
+
+@Test function WrappedVerticalSelectionRetainsItsAnchor()
+   local surface <close>, text = wrappedText('Noto Sans')
+   text.cursorColumn = 2
+   sendKey(KEY_DOWN, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 7, 'éé éé')
+   sendKey(KEY_DOWN, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 12, 'éé éééé éé')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 7, 'éé éé')
+   sendKey(KEY_UP, KQ_SHIFT)
+   assertSelection(text, 0, 2, 0, 2, '')
+   sendKey(KEY_DOWN)
+   assertCursor(text, 0, 7)
+   assert(not (text.textFlags has VTXF_AREA_SELECTED), 'Plain movement must leave no selection')
+end
+
+@Test function WrappedVerticalNavigationResetsHorizontalPreference()
+   local surface <close>, text = wrappedText('Noto Sans')
+   text.cursorColumn = 12
+   sendKey(KEY_DOWN)
+   assertCursor(text, 1, 1)
+   sendKey(KEY_LEFT)
+   sendKey(KEY_DOWN)
+   assertCursor(text, 2, 0)
+   text.cursorColumn = 4
+   sendKey(KEY_UP)
+   assertCursor(text, 1, 1)
+   text.cursorColumn = 0
+   sendKey(KEY_UP)
+   assertCursor(text, 0, 10)
+end
+
+@Test function WrappedVerticalNavigationRetainsPixelPositionThroughNarrowText()
+   local surface <close>, text = focusedText('WWWW ')
+   text.textFlags = text.textFlags | VTXF_NO_AUTO_OFFSET
+   text.inlineSize = text.textWidth + 1
+   text.string = 'WWWW iiii WWWW'
+   text.cursorColumn = 2
+   sendKey(KEY_DOWN)
+   assertCursor(text, 0, 9)
+   sendKey(KEY_DOWN)
+   assertCursor(text, 0, 12)
+   sendKey(KEY_UP)
+   assertCursor(text, 0, 9)
+   sendKey(KEY_UP)
+   assertCursor(text, 0, 2)
+end
+
+@Test function WrappedVerticalNavigationRefreshesAfterResizing()
+   local surface <close>, text = wrappedText('Noto Sans')
+   local width = text.inlineSize
+   text.cursorColumn = 12
+   text.inlineSize = 1000
+   sendKey(KEY_UP)
+   assertCursor(text, 0, 12)
+   text.cursorColumn = 12 -- Begin a new vertical movement after the next resize.
+   text.inlineSize = width
+   sendKey(KEY_UP)
+   assertCursor(text, 0, 7)
+end
+
+@Test function ControlASelectsAllAndHonoursNoSystemKeys()
+   local surface <close>, text = focusedText('é\n中z')
+   local changes = 0
+   text.onChange = function(Text) changes++ end
+   sendKey(KEY_A, KQ_CTRL, 97)
+   assertSelection(text, 0, 0, 1, 2, 'é\n中z')
+   sendKey(KEY_A, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 0, 0, 1, 2, 'é\n中z')
+   text.textFlags = text.textFlags | VTXF_NO_SYS_KEYS
+   check text.mtSelectArea(0, 0, 0, 1)
+   sendKey(KEY_A, KQ_CTRL, 97)
+   assertSelection(text, 0, 0, 0, 1, 'é')
+   assert(text.string is 'é\n中z' and text.totalLines is 2 and changes is 0,
+      'Disabled Ctrl+A must neither edit text nor notify OnChange')
+   text.cursorRow = 1
+   text.cursorColumn = 2
+   sendKey(KEY_LEFT, KQ_CTRL)
+   assertCursor(text, 1, 1)
+end
+
+@Test function ControlArrowsUseUnicodeWordAndSeparatorRuns()
+   local surface <close>, text = focusedText('café_１２,　中𐐀٩ 😀!! tail')
+   local changes = 0
+   text.onChange = function(Text) changes++ end
+   for column in values(array<int> { 7, 9, 13, 17, 21, 21 }) do
+      sendKey(KEY_RIGHT, KQ_CTRL)
+      assertCursor(text, 0, column)
+   end
+   for column in values(array<int> { 17, 13, 9, 7, 0, 0 }) do
+      sendKey(KEY_LEFT, KQ_CTRL)
+      assertCursor(text, 0, column)
+   end
+   assert(changes is 0, 'Word navigation must not report text changes')
+end
+
+@Test function ControlShiftArrowsExtendAndShrinkByWord()
+   local surface <close>, text = focusedText('café_１２,　中𐐀٩ 😀!! tail')
+   sendKey(KEY_RIGHT, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 0, 0, 0, 7, 'café_１２')
+   sendKey(KEY_RIGHT, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 0, 0, 0, 9, 'café_１２,　')
+   sendKey(KEY_RIGHT, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 0, 0, 0, 13, 'café_１２,　中𐐀٩ ')
+   sendKey(KEY_LEFT, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 0, 0, 0, 9, 'café_１２,　')
+   sendKey(KEY_LEFT, KQ_CTRL | KQ_SHIFT)
+   sendKey(KEY_LEFT, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 0, 0, 0, 0, '')
+end
+
+@Test function ControlArrowsSkipWhitespaceAcrossEmptyLines()
+   local surface <close>, text = focusedText('one \n\n　 two\tthree')
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 2, 2)
+   sendKey(KEY_RIGHT, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 2, 2, 2, 6, 'two\t')
+   sendKey(KEY_LEFT, KQ_CTRL)
+   assertCursor(text, 2, 2)
+   sendKey(KEY_LEFT, KQ_CTRL | KQ_SHIFT)
+   assertSelection(text, 2, 2, 0, 0, 'one \n\n　 ')
+   text.string = '　 \t\n\n '
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 2, 1)
+   sendKey(KEY_LEFT, KQ_CTRL)
+   assertCursor(text, 0, 0)
+end
+
+@Test function EmptyTextAndIgnoredKeysKeepAValidSelection()
+   local surface <close>, text = focusedText('')
+   sendKey(KEY_A, KQ_CTRL)
+   sendKey(KEY_RIGHT, KQ_CTRL | KQ_SHIFT)
+   sendKey(KEY_LEFT, KQ_CTRL | KQ_SHIFT)
+   sendKey(KEY_UP, KQ_SHIFT)
+   sendKey(KEY_DOWN, KQ_SHIFT)
+   sendKey(KEY_HOME, KQ_SHIFT)
+   sendKey(KEY_END, KQ_SHIFT)
+   assertSelection(text, 0, 0, 0, 0, '')
+   text.string = 'abc'
+   check text.mtSelectArea(0, 0, 0, 2)
+   sendKey(KEY_ESCAPE)
+   sendKey(KEY_LEFT, KQ_SHIFT, nil, false)
+   sendKey(KEY_A, KQ_CTRL, nil, false)
+   assertSelection(text, 0, 0, 0, 2, 'ab')
+end
+
+@Test function TypingReplacesKeyboardSelectionOnce()
+   local surface <close>, text = focusedText('caféz')
+   local changes = 0
+   text.onChange = function(Text) changes++ end
+   sendKey(KEY_END)
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   sendKey(KEY_LEFT, KQ_SHIFT)
+   assertSelection(text, 0, 5, 0, 3, 'éz')
+   sendKey(KEY_Q, 0, 955)
+   assert(text.string is 'cafλ', 'Typing must replace a keyboard selection using character columns')
+   assertCursor(text, 0, 4)
+   assert(changes is 1, 'Replacing the selection must report exactly one text change')
+   sendKey(KEY_HOME, KQ_SHIFT)
+   sendKey(KEY_BACKSPACE)
+   assert((text.string ?? '') is '' and changes is 2, 'Backspace must delete a keyboard selection once')
+end
+
+@Test function KeyboardSelectionUpdatesHighlightPixels()
+   local surface <close>, text, scene = focusedText('MMMMMM')
+   local bitmap <close> = obj.new('Bitmap', { width=400, height=240, bitsPerPixel=32, bkgd='0,0,0,255' })
+   text.fill = 'black'
+   text.selectFill = '#00ff00'
+   scene.bitmap = bitmap
+   local step = text.textWidth / 6
+   text.cursorColumn = 1
+   sendKey(KEY_RIGHT, KQ_SHIFT)
+   sendKey(KEY_RIGHT, KQ_SHIFT)
+   check bitmap.acClear()
+   check scene.acDraw()
+   local inside = struct.toTable(mGfx.ReadRGBPixel(bitmap, math.floor(40 + step * 2.5), 45))
+   local outside = struct.toTable(mGfx.ReadRGBPixel(bitmap, math.floor(40 + step * 0.5), 45))
+   assert(inside.green > 240 and inside.red < 10 and outside.green < 10,
+      'Shift+arrows must draw the highlight over exactly the selected range')
+   sendKey(KEY_LEFT)
+   check bitmap.acClear()
+   check scene.acDraw()
+   inside = struct.toTable(mGfx.ReadRGBPixel(bitmap, math.floor(40 + step * 2.5), 45))
+   assert(inside.green < 10, 'Collapsing with an arrow must hide the highlight')
+end
+
+@Test function WordNavigationRefreshesAfterSameLengthUtf8Edits()
+   local surface <close>, text = focusedText('é 中')
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 0, 2)
+   check text.mtSelectArea(0, 1, 0, 2)
+   sendKey(KEY_Q, 0, 955)
+   assert(text.string is 'éλ中', 'Replacing whitespace must retain the UTF-8 suffix')
+   sendKey(KEY_HOME)
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 0, 3)
+   check text.mtSelectArea(0, 1, 0, 2)
+   sendKey(KEY_Q, 0, 32)
+   sendKey(KEY_HOME)
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 0, 2)
+   sendKey(KEY_BACKSPACE)
+   sendKey(KEY_HOME)
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 0, 2)
+   assert(text.string is 'é中', 'Deleting the separator must join the word')
+   text.string = '中 é'
+   sendKey(KEY_HOME)
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 0, 2)
+end
+
+@Test function WordNavigationSurvivesLineSplitsAndJoins()
+   local surface <close>, text = focusedText('ab cd\né 中\ntail word')
+   for row in {0 to 3} do
+      text.cursorRow = row
+      text.cursorColumn = 0
+      sendKey(KEY_RIGHT, KQ_CTRL)
+   end
+   text.cursorRow = 0
+   text.cursorColumn = 2
+   sendKey(KEY_ENTER)
+   assert(text.totalLines is 4, 'Splitting must insert one row')
+   text.cursorRow = 2
+   text.cursorColumn = 0
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 2, 2)
+   check text.mtSelectArea(0, 2, 2, 2)
+   sendKey(KEY_DELETE)
+   assert(text.totalLines is 2 and text.string is 'ab中\ntail word', 'Joining must preserve the UTF-8 endpoint')
+   sendKey(KEY_HOME)
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 1, 0)
+   text.cursorRow = 1
+   text.cursorColumn = 0
+   sendKey(KEY_RIGHT, KQ_CTRL)
+   assertCursor(text, 1, 5)
+end
+
+@Test function ControlEnterInsertsNothing()
+   local surface <close>, text = focusedText('abc')
+   changes = 0
+   text.onChange = function(Text) changes++ end
+   text.cursorColumn = 1
+   sendKey(KEY_ENTER, KQ_CTRL)
+   sendKey(KEY_NP_ENTER, KQ_CTRL)
+   assert(text.string is 'abc' and changes is 0, 'Ctrl+Enter must be left to the client')
+   sendKey(KEY_ENTER)
+   assert(text.string is 'a\nbc' and changes is 1, 'Enter without Ctrl must still split the line')
+end
+
+@Test function CtrlZoomCharactersDoNotEditTextButAltGrDoes()
+   local surface <close>, text = focusedText('abc')
+   local changes = 0
+   text.onChange = function() changes++ end
+   check text.mtSelectArea(0, 0, 0, 2)
+   sendKey(KEY_MINUS, KQ_CTRL, 45)
+   sendKey(KEY_ZERO, KQ_CTRL, 48)
+   sendKey(KEY_EQUALS, KQ_CTRL, 61)
+   sendKey(KEY_EQUALS, KQ_CTRL | KQ_SHIFT, 43)
+   assert(text.string is 'abc' and changes is 0, 'Ctrl punctuation and digits must not insert or delete text')
+   assert(text.textFlags has VTXF_AREA_SELECTED, 'Ignored Ctrl characters must preserve the selection')
+   sendKey(KEY_EQUALS, KQ_CTRL | KQ_ALT, 43)
+   assert(text.string is '+c' and changes is 1, 'AltGr printable input must still replace a selection')
+end

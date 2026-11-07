@@ -1266,7 +1266,7 @@ gui.initView = function(Options:table!, BuildUI, NewItems, PrepareView:func)
          if Code is KEY_R_ALT then vw.qualifiers = vw.qualifiers & ~KQ_R_ALT end
       end
       if vw._dropActive then updateDropFeedback(vw) end
-   end)
+   end, { observer=true })
 
    -- If the view is destroyed by its parent rather than free(), client cleanup callbacks still run once for each row
    -- while the row viewports remain valid.  The graphics are released by the parent.

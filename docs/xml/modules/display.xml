@@ -16,6 +16,7 @@
       <file path="src/display/">lib_cursor.cpp</file>
       <file path="src/display/">lib_input.cpp</file>
       <file path="src/display/">lib_surfaces.cpp</file>
+      <file path="src/display/">lib_keyboard.cpp</file>
     </source>
     <classes>
       <class>Bitmap</class>
@@ -654,6 +655,30 @@ Alpha  = CFUnpackAlpha(Format,Colour)
   </function>
 
   <function>
+    <name>ReserveKey</name>
+    <category>Input</category>
+    <comment>Adds a key combination to an exclusive keyboard registration.</comment>
+    <prototype>ERR gfx::ReserveKey(INT Handle, KQ Required, KQ Forbidden, int Code, INT Unicode)</prototype>
+    <tiriPrototype>err = ReserveKey(Handle:num, Required:num, Forbidden:num, Code:num, Unicode:num)</tiriPrototype>
+    <input>
+      <param type="INT" name="Handle">Keyboard registration handle.</param>
+      <param type="KQ" name="Required" lookup="KQ">Required Ctrl, Shift, Alt or Command modifiers.</param>
+      <param type="KQ" name="Forbidden" lookup="KQ">Forbidden modifiers.</param>
+      <param type="int" name="Code">Physical key code, or zero to match Unicode.</param>
+      <param type="INT" name="Unicode">Translated character, or zero to match Code.</param>
+    </input>
+    <description>
+<p>The registration must use <code>KBF::RESERVE</code>.  Set either Code or Unicode, leaving the other zero.  Required modifier groups such as <code>KQ::CTRL</code> match either side; a single-side flag matches that side.  Forbidden modifiers must be absent.  Other modifiers and lock flags are ignored.  Earlier ancestors take precedence over descendants.  Conflicting registrations at the same scope return <code>ERR::AlreadyDefined</code>; multiple alternatives within one registration are permitted.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="NotFound">A search routine in this function failed</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="AlreadyDefined">Attempted to change a value that cannot be redefined</error>
+    </result>
+  </function>
+
+  <function>
     <name>RestoreCursor</name>
     <category>Cursor</category>
     <comment>Returns the pointer image to its original state.</comment>
@@ -938,6 +963,29 @@ Alpha  = CFUnpackAlpha(Format,Colour)
   </function>
 
   <function>
+    <name>SubscribeKeyboard</name>
+    <category>Input</category>
+    <comment>Registers a keyboard action handler or observer.</comment>
+    <prototype>ERR gfx::SubscribeKeyboard(OBJECTID SurfaceID, OBJECTID ObjectID, KBF Flags, FUNCTION * Callback, INT * Handle)</prototype>
+    <tiriPrototype>err, Handle:num = SubscribeKeyboard(SurfaceID:obj, ObjectID:obj, Flags:num, Callback:func)</tiriPrototype>
+    <input>
+      <param type="OBJECTID" name="SurfaceID">Surface receiving the actions; zero registers a global fallback or observer.</param>
+      <param type="OBJECTID" name="ObjectID">Focus scope within SurfaceID, or zero for the surface.  Vector adapters supply eligible scopes.</param>
+      <param type="KBF" name="Flags" lookup="KBF">Subscription options.</param>
+      <param type="FUNCTION *" name="Callback">Keyboard callback.</param>
+      <param type="INT *" name="Handle">Receives the registration handle.</param>
+    </input>
+    <description>
+<p>Action handlers receive input while their surface is in the focus chain.  Object-scoped handlers run from the focused vector towards its ancestors, followed by surface handlers, then the handlers of each ancestor surface.  Return <code>KRES::HANDLED</code> to consume an event, <code>ERR::Terminate</code> to unsubscribe, or zero to continue.  A reservation takes precedence over ordinary handlers regardless of registration order. Observers receive every event and cannot consume it.  The C callback is <code>ERR callback(const evKey *, APTR Meta)</code>; script callbacks receive SurfaceID, Qualifiers, Code and Unicode.  Remove the handle with <function>UnsubscribeKeyboard</function>.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
+      <error code="Args">Invalid arguments passed to function</error>
+      <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
     <name>Sync</name>
     <category>Bitmap</category>
     <comment>Waits for the completion of all active bitmap operations.</comment>
@@ -990,6 +1038,23 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <error code="Okay">Operation successful.</error>
       <error code="NotFound">A search routine in this function failed</error>
       <error code="NullArgs">Function call missing argument value(s)</error>
+    </result>
+  </function>
+
+  <function>
+    <name>UnsubscribeKeyboard</name>
+    <category>Input</category>
+    <comment>Removes a keyboard registration and its reservations.</comment>
+    <prototype>ERR gfx::UnsubscribeKeyboard(INT Handle)</prototype>
+    <tiriPrototype>err = UnsubscribeKeyboard(Handle:num)</tiriPrototype>
+    <input>
+      <param type="INT" name="Handle">Handle returned by <function>SubscribeKeyboard</function>.</param>
+    </input>
+    <description>
+<p>A key sequence owned by a removed registration remains suppressed through its release.</p>
+    </description>
+    <result type="ERR">
+      <error code="Okay">Operation successful.</error>
     </result>
   </function>
 
@@ -1111,6 +1176,44 @@ Alpha  = CFUnpackAlpha(Format,Colour)
       <const name="REPEATED">Input is a repeated entry (i.e. user is holding down a button and a repetition timer is being triggered)</const>
       <const name="SECONDARY">Indicates to the receiver of this message that it is not the primary/original recipient</const>
       <const name="TOUCH">Contact input from a touch device; the Value field carries the contact ID</const>
+    </constants>
+
+    <constants lookup="KBF" comment="Keyboard subscription options.">
+      <const name="DEFAULT">Run after ordinary handlers at the same scope.</const>
+      <const name="NO_REPEAT">Do not invoke the callback for repeated presses.</const>
+      <const name="OBSERVER">Receive raw input independently of focus and consumption.  Cannot reserve or consume input.</const>
+      <const name="RESERVE">Exclusively own matching key combinations while the scope has focus.</const>
+    </constants>
+
+    <constants lookup="KQ" comment="Special qualifier flags">
+      <const name="ALT">Synonym for <code>L_ALT | R_ALT</code></const>
+      <const name="ALTGR">Synonym for <code>R_ALT</code></const>
+      <const name="CAPS_LOCK">Caps-Lock is on</const>
+      <const name="COMMAND">Synonym for <code>L_COMMAND | R_COMMAND</code></const>
+      <const name="CONTROL">Synonym for <code>L_CONTROL | R_CONTROL</code></const>
+      <const name="CTRL">Synonym for <code>L_CONTROL | R_CONTROL</code></const>
+      <const name="DEAD_KEY">This key will be affected by a previously pressed dead-key</const>
+      <const name="INFO">Synonym for <code>REPEAT | RELEASED | PRESSED | NOT_PRINTABLE | CAPS_LOCK</code></const>
+      <const name="INSTRUCTION_KEYS">Synonym for <code>ALT | CONTROL</code></const>
+      <const name="L_ALT">Left Alt is held</const>
+      <const name="L_COMMAND">Left Logo/Special</const>
+      <const name="L_CONTROL">Control Key is held</const>
+      <const name="L_CTRL">Control Key is held</const>
+      <const name="L_SHIFT">Left Shift is held</const>
+      <const name="NOT_PRINTABLE">The represented key value is not printable</const>
+      <const name="NUM_LOCK">NumLock is on</const>
+      <const name="NUM_PAD">Identifies numeric keypad keys</const>
+      <const name="PRESSED">Key is being held or tapped</const>
+      <const name="QUALIFIERS">Synonym for <code>SHIFT | COMMAND | ALT | CONTROL</code></const>
+      <const name="RELEASED">The key is being released</const>
+      <const name="REPEAT">This is a repeated key</const>
+      <const name="R_ALT">Right Alt is held</const>
+      <const name="R_COMMAND">Right Logo/Special</const>
+      <const name="R_CONTROL">Control Key is held</const>
+      <const name="R_CTRL">Control Key is held</const>
+      <const name="R_SHIFT">Right Shift is held</const>
+      <const name="SCR_LOCK">Scroll Lock is on</const>
+      <const name="SHIFT">Synonym for <code>L_SHIFT | R_SHIFT</code></const>
     </constants>
 
     <constants lookup="PTC" comment="Predefined cursor styles">

@@ -422,6 +422,12 @@ ERR Win32Driver::displayInfo(DisplayInfo &Info)
       else return ERR::AccessObject;
    }
 
+   if (window) {
+      // Report the current host state, including maximise and restore operations initiated by the titlebar.
+      if (IsZoomed(HWND(window))) Info.Flags |= SCR::MAXIMISE;
+      else Info.Flags &= ~SCR::MAXIMISE;
+   }
+
    if (winGetDisplayGeometry(HWND(window), Info.MonitorX, Info.MonitorY, Info.MonitorWidth, Info.MonitorHeight,
          Info.VirtualX, Info.VirtualY, Info.VirtualWidth, Info.VirtualHeight,
          Info.PhysicalWidth, Info.PhysicalHeight) IS ERR::Okay) {

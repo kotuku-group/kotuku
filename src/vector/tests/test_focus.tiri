@@ -8,7 +8,12 @@
 -- padded to 24 bytes.  The 64-bit event ID is composed as GetEventID() does, because a Tiri number cannot represent it
 -- exactly.
 
-function sendKey(Code:num!, Qualifiers:num)
+function sendKey(Code:num!, Qualifiers:num):nil
+   -- Tab traversal happens on release.  Give each synthetic release its own press so ownership from an earlier
+   -- destroyed test window cannot suppress it as an unmatched release.
+   if Code is KEY_TAB and Qualifiers and (Qualifiers has KQ_RELEASED) then
+      sendKey(Code, (Qualifiers & ~KQ_RELEASED) | KQ_PRESSED)
+   end
    local ev = array<int, 6>
    ev[0] = ('keypress').hash()
    ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)

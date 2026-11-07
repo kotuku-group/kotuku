@@ -1,0 +1,571 @@
+-- Tests for listview custom row content, custom highlighting, row lifecycle and in-place refresh.
+
+   import 'gui', 'gui/listview', 'gui/window'
+   include 'display', 'vector'
+
+function newView(Options:table!, Width:num, Height:num):<obj, table>
+   local surface = obj.new('Surface', { width=Width ?? 300, height=Height ?? 200 })
+   local scene = surface.new('VectorScene', { surface=surface })
+   local target = scene.new('VectorViewport', { width='100%', height='100%' })
+   Options.target = target
+   local view = gui.listView(Options)
+   surface.acShow()
+   surface.acFocus()
+   view.viewport.acFocus()
+   surface.acDraw()
+   processing.sleep(0)
+   return surface, view
+end
+
+function sendKey(Code:num!, Qualifiers:num!)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = Qualifiers
+   ev[3] = Code
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+-- Pointer hit testing uses the most recently drawn geometry, so the scene is drawn before the pointer moves.  The
+-- listview schedules redraws, and Surface.acDraw() is a no-op while one is pending, so the wait (longer than a frame
+-- at the minimum 25 FPS) lets the scheduled redraw run first.  Without it, fast builds can hit-test stale geometry.
+
+function hoverItem(View:table!, Item:table!)
+   processing.sleep(0.05)
+   View.scene.surface.acDraw()
+   processing.sleep(0)
+   local dims = View.itemDimensions(Item)
+   feed(JET_ABS_XY, View.scene.surface.absX + View.frame.x + View.page.x + dims.x + 10,
+      View.scene.surface.absY + View.frame.y + View.page.y + dims.y + 2)
+   assert(View.hItem is Item, 'Pointer must highlight the requested item')
+end
+
+function clickItem(View:table!, Item:table!)
+   hoverItem(View, Item)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+end
+
+function hoverAway()
+   feed(JET_ABS_XY, 1000, 1000)
+end
+
+function count(Log:array<str>!, Entry:str!):num
+   local total = 0
+   for entry in values(Log) do
+      if entry is Entry then total++ end
+   end
+   return total
+end
+
+-- A palette-style row: swatch, name, relationship glyph and hex value.  Content is created once and updated in
+-- place; 'layout' right-aligns the hex value to the row width.
+
+function paletteRow(Log:array<str>!)
+   return function(Item:table, Viewport:obj, Reason:str)
+      Log.push(f'{Item.name}:{Reason}')
+      if Reason is 'create' then
+         Item.content = {
+            swatch = Viewport.new('VectorRectangle', { x=4, y=2, width=12, height=12, fill=Item.colour ?? '#ff0000' }),
+            name   = Viewport.new('VectorText', { x=20, y=12, fontSize=10, string=Item.name, fill='#000000' }),
+            glyph  = Viewport.new('VectorText', { x=80, y=12, fontSize=10, string='=', fill='#000000' }),
+            hex    = Viewport.new('VectorText', { y=12, fontSize=10, align='right', string=Item.hex ?? '',
+               fill='#000000' })
+         }
+         Item.content.hex.x = Viewport.width - 4
+         Item._createWidth = Viewport.width
+      elseif Reason is 'update' then
+         Item.content.swatch.fill = Item.colour ?? '#ff0000'
+         Item.content.name.string = Item.name
+         Item.content.hex.string = Item.hex ?? ''
+      elseif Reason is 'layout' then
+         Item.content.hex.x = Viewport.width - 4
+         Item._layoutWidth = Viewport.width
+      elseif Reason is 'destroy' then
+         Item.content = nil
+      end
+   end
+end
+
+-- A lazily created highlight that is updated or hidden on later calls.
+
+function customHighlight(Log:array<str>!)
+   return function(Item:table, Viewport:obj, Reason:str)
+      Log.push(f'{Item.name}:{Reason}')
+      if not Item.highlightContent then
+         if Reason is 'deselected' then return end
+         Item.highlightContent = { rect = Viewport.new('VectorRectangle', { width='100%', height='100%' }) }
+         Item.highlightContent.rect.acMoveToBack()
+         Item.highlightCreated = (Item.highlightCreated ?? 0) + 1
+      end
+      local rect = Item.highlightContent.rect
+      rect.visibility = Reason is 'deselected' ? VIS_HIDDEN : VIS_VISIBLE
+      rect.fill = Reason is 'selected' ? '#0000ff' : '#00ff00'
+   end
+end
+
+@BeforeEach function resetPointer()
+   if obj.find('SystemPointer') then hoverAway() end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Test function HookCombinationsRender()
+   local items = { { name='a' }, { name='b' } }
+
+   -- Neither hook: built-in text and highlight
+   local s1 <close>, plain = newView({ items=items })
+   assert(plain.items[0]._vectors.text and plain.items[0].viewState, 'Default rows must render text and maintain state')
+   plain.selectItems(Item => Item.name is 'a')
+   assert(plain.items[0]._vectors.highlight.visibility is VIS_VISIBLE, 'Default highlight must show selection')
+   assert(plain.items[0]._vectors.text.fill is plain.theme.page.textSelect, 'Default text must recolour')
+
+   -- Content only: custom content with the built-in background
+   local content_log = array<str>
+   local s2 <close>, content = newView({ constructItem=paletteRow(content_log) })
+   content.addItems(items)
+   assert(count(content_log, 'a:create') is 1 and count(content_log, 'b:create') is 1, 'Each row is created once')
+   assert(not content.items[0]._vectors.text, 'A content hook must suppress the built-in text')
+   assert(content.items[0].content.swatch, 'Client content must be stored on the item')
+   content.selectItems(Item => Item.name is 'a')
+   assert(content.items[0]._vectors.highlight.visibility is VIS_VISIBLE,
+      'Content-only rows must retain the built-in selection background')
+   assert(content.items[0].content.name.fill != content.theme.page.textSelect,
+      'The built-in highlight must not recolour client children')
+
+   -- Highlight only: built-in content, client highlight, no built-in recolouring
+   local hl_log = array<str>
+   local s3 <close>, highlight = newView({ constructHighlight=customHighlight(hl_log) })
+   highlight.addItems(items)
+   assert(highlight.items[0]._vectors.text, 'Built-in content must be retained')
+   highlight.selectItems(Item => Item.name is 'a')
+   assert(hl_log[#hl_log-1] is 'a:selected', 'The highlight hook must receive the selected state')
+   assert(not highlight.items[0]._vectors.highlight, 'No built-in highlight is created when a hook is supplied')
+   assert(highlight.items[0]._vectors.text.fill is highlight.theme.page.text.fill,
+      'Built-in selection recolouring must be suppressed')
+
+   -- Both hooks
+   local both_log = array<str>
+   local s4 <close>, both = newView({ constructItem=paletteRow(both_log), constructHighlight=customHighlight(both_log) })
+   both.addItems(items)
+   assert(both_log[0] is 'a:create' and both_log[1] is 'a:deselected', 'Content is created before the highlight')
+   both.selectItems(Item => Item.name is 'b')
+   assert(not both.items[1]._vectors.highlight and both.items[1].highlightContent.rect.visibility is VIS_VISIBLE,
+      'Client highlight must replace the built-in highlight')
+end
+
+@Test function LifecycleCreatesAndCleansUpExactlyOnce()
+   local log = array<str>
+   local destroyed = array<str>
+   local options = {
+      constructItem=paletteRow(log),
+      destroyItem=function(Item, Viewport)
+         assert(Viewport.id and obj.find(Viewport.id), 'destroyItem must receive a valid viewport')
+         destroyed.push(Item.name)
+      end
+   }
+   local surface <close>, view = newView(options)
+
+   view.addItems({ { name='a' }, { name='b' }, { name='c' } })
+   local row_a = view.items[0]._vectors.viewport.id
+   view.removeItem(view.items[0])
+   assert(count(log, 'a:destroy') is 1 and #destroyed is 1 and destroyed[0] is 'a',
+      'Removal must call the destroy hooks once')
+   assert(not obj.find(row_a), 'Removal must release the row viewport')
+
+   view.loadItems({ { name='d' } })
+   assert(count(log, 'b:destroy') is 1 and count(log, 'c:destroy') is 1, 'Replacement must destroy every old row')
+   assert(count(log, 'd:create') is 1, 'Replacement rows are created once')
+
+   view.addItem({ name='e' })
+   view.free()
+   assert(count(log, 'd:destroy') is 1 and count(log, 'e:destroy') is 1, 'Explicit free must destroy every row')
+   assert(#destroyed is 5, 'destroyItem must run once for each row')
+
+   -- Parent destruction
+   local parent_log = array<str>
+   local s2, parented = newView({ constructItem=paletteRow(parent_log) })
+   parented.addItems({ { name='x' }, { name='y' } })
+   s2.free()
+   processing.sleep(0)
+   assert(count(parent_log, 'x:destroy') is 1 and count(parent_log, 'y:destroy') is 1,
+      'Parent destruction must destroy every row once')
+end
+
+@Test function CleanupAndCreationFailuresAreSurfaced()
+   local destroyed = 0
+   local surface <close>, view = newView({
+      constructItem=function(Item, Viewport, Reason)
+         if Reason is 'create' and Item.name is 'bad' then raise 'creation failed' end
+         if Reason is 'destroy' and Item.name is 'fragile' then raise 'cleanup failed' end
+      end,
+      destroyItem=function(Item, Viewport) destroyed++ end
+   })
+
+   local raised = false
+   try
+      view.addItems({ { name='good' }, { name='bad' }, { name='after' } })
+   except e
+      raised = e.message.find('creation failed') != nil
+   end
+   assert(raised, 'A failed create must be raised to the caller')
+   assert(#view.items is 2 and view.items[0].name is 'good' and view.items[1].name is 'after',
+      'The failed row must be removed while others remain')
+   assert(destroyed is 1, 'The partially created row must be released')
+   assert(not view._dispatching, 'The dispatch guard must be cleared after a failure')
+   assert(#view.zones is 2 and view.zones[1].y is view.items[1]._vectors.viewport.y,
+      'Rows after a failure must be laid out without gaps')
+
+   view.addItems({ { name='fragile' }, { name='sturdy' } })
+   local rows = array<int>
+   for item in values(view.items) do rows.push(item._vectors.viewport.id) end
+   raised = false
+   try
+      view.free()
+   except e
+      raised = e.message.find('cleanup failed') != nil
+   end
+   assert(raised, 'A cleanup failure must be reported')
+   for id in values(rows) do
+      assert(not obj.find(id), 'Every row must be released even when cleanup fails')
+   end
+end
+
+@Test function InitialConstructionFailureReleasesEveryRow()
+   for phase in values(array<str> { 'create', 'highlight' }) do
+      local surface <close> = obj.new('Surface', { width=300, height=200 })
+      local scene = surface.new('VectorScene', { surface=surface })
+      local target = scene.new('VectorViewport', { width='100%', height='100%' })
+      local rows = array<int>
+      local view_id:num
+      local destroyed = array<str>
+      local content_destroyed = array<str>
+      local raised = false
+
+      try
+         gui.listView({
+            target=target, items={ { name='good' }, { name='bad' }, { name='after' } },
+            constructItem=function(Item, Viewport, Reason)
+               if Reason is 'create' then
+                  rows.push(Viewport.id)
+                  view_id = Viewport.parent.parent.parent.id
+                  if phase is 'create' and Item.name is 'bad' then raise 'initial construction failed' end
+               elseif Reason is 'destroy' then
+                  content_destroyed.push(Item.name)
+                  if Item.name is 'good' then raise 'cleanup failed' end
+               end
+            end,
+            constructHighlight=function(Item, Viewport, Reason)
+               if phase is 'highlight' and Item.name is 'bad' then raise 'initial construction failed' end
+            end,
+            destroyItem=function(Item, Viewport)
+               assert(obj.find(Viewport.id), 'Cleanup must run while the row viewport is valid')
+               destroyed.push(Item.name)
+            end
+         })
+      except e
+         raised = e.message.find('initial construction failed') != nil
+      end
+
+      assert(raised, 'The original construction error must survive cleanup failures')
+      assert(#rows is 3 and #destroyed is 3, 'Every initial row must receive destroyItem exactly once')
+      assert(count(destroyed, 'good') is 1 and count(destroyed, 'bad') is 1 and count(destroyed, 'after') is 1,
+         'Failed and successful rows must each be released once')
+      assert(count(content_destroyed, 'good') is 1 and count(content_destroyed, 'after') is 1,
+         'Successfully created content must receive its destroy notification')
+      assert(count(content_destroyed, 'bad') is (phase is 'create' ? 0 : 1),
+         'Content cleanup must run only after its create callback succeeds')
+      for id in values(rows) do assert(not obj.find(id), 'No initial row may survive a failed constructor') end
+      assert(not obj.find(view_id), 'The failed view must release its main viewport')
+
+      surface.free()
+      assert(#destroyed is 3, 'Parent destruction must not repeat row cleanup')
+   end
+end
+
+@Test function RenderCallbacksCannotChangeStructure()
+   local holder = { }
+   local failure = nil
+   local surface <close>, view = newView({
+      constructItem=function(Item, Viewport, Reason)
+         if Reason is 'create' and Item.name is 'nested' then
+            try
+               holder.view.addItem({ name='inner' })
+            except e
+               failure = e.message
+            end
+         end
+      end
+   })
+   holder.view = view
+   view.addItem({ name='nested' })
+   assert(failure and failure.find('Render callbacks') != nil, 'Structural changes inside a hook must be rejected')
+   assert(#view.items is 1, 'The rejected change must not be applied')
+   view.addItem({ name='later' })
+   assert(#view.items is 2, 'Structural changes are permitted once the hook has returned')
+end
+
+@Test function HighlightStatesFollowPrecedence()
+   local log = array<str>
+   local selections = 0
+   local surface <close>, view = newView({
+      multiSelect=true, constructHighlight=customHighlight(log),
+      events={ itemSelected=function() selections++ end }
+   })
+   view.addItems({ { name='a' }, { name='b' } })
+   local a = view.items[0]
+
+   hoverItem(view, a)
+   assert(log[#log-1] is 'a:highlighted' and a.viewState.highlighted, 'Hover must report highlighted')
+   clickItem(view, a)
+   assert(log[#log-1] is 'a:selected' and a.viewState.selected, 'Selection must report selected')
+   assert(selections is 1, 'Rendering must not generate further selection events')
+
+   sendKey(KEY_L_CONTROL, KQ_PRESSED | KQ_L_CONTROL)
+   clickItem(view, a)
+   sendKey(KEY_L_CONTROL, KQ_RELEASED | KQ_L_CONTROL)
+   assert(not a._selected and log[#log-1] is 'a:highlighted', 'Deselecting under the pointer must report highlighted')
+
+   hoverAway()
+   assert(log[#log-1] is 'a:deselected', 'Moving away must report deselected')
+   assert(a.highlightCreated is 1, 'Repeated notifications must not create duplicate highlight vectors')
+   assert(selections is 1, 'Highlight changes must not generate selection events')
+end
+
+@Test function StateChangesReachContentAndHighlight()
+   local log = array<str>
+   local surface <close>, view = newView({ constructItem=paletteRow(log), constructHighlight=customHighlight(log) })
+   view.addItems({ { name='a' }, { name='b' } })
+   local a = view.items[0]
+   local b = view.items[1]
+
+   sendKey(KEY_HOME, KQ_PRESSED)
+   assert(view.kItem is a and a.viewState.focused, 'Keyboard navigation must set the focused row')
+   hoverItem(view, b)
+   assert(view.kItem is a and a.viewState.focused and not b.viewState.focused,
+      'Pointer hover must not move the keyboard target')
+   sendKey(KEY_ENTER, KQ_PRESSED)
+   assert(a._selected and not b._selected, 'Enter must act on the keyboard target, not the hovered row')
+
+   local before = count(log, 'a:state')
+   view.parentViewport.acFocus()
+   processing.sleep(0)
+   assert(not a.viewState.focused and count(log, 'a:state') is before + 1, 'Focus loss must notify the focused row')
+   view.viewport.acFocus()
+   processing.sleep(0)
+   assert(a.viewState.focused and count(log, 'a:state') is before + 2, 'Focus regain must notify the focused row')
+
+   view.disable()
+   assert(a.viewState.disabled and b.viewState.disabled and count(log, 'b:state') >= 1,
+      'Disabling the view must update every row')
+   view.enable()
+   assert(not a.viewState.disabled, 'Enabling the view must restore the state')
+end
+
+@Test function RefreshPreservesRowSelectionTargetAndScroll()
+   local log = array<str>
+   local items = { }
+   for i in {0 to 40} do items.insert({ name=f'item{i}', hex='#000000' }) end
+   local surface <close>, view = newView({ constructItem=paletteRow(log), scrollDirection='vertical' }, 200, 100)
+   view.addItems(items)
+
+   local target = view.items[30]
+   view.selectItems(Item => Item is target)
+   sendKey(KEY_END, KQ_PRESSED)
+   local key_target = view.kItem
+   view.revealItem(target)
+   local page_y = view.page.y
+   assert(page_y < 0, 'The list must be scrolled')
+
+   local vp_id = target._vectors.viewport.id
+   target.colour = '#00ff00'
+   view.refreshItem(target)
+   assert(target._vectors.viewport.id is vp_id, 'Refresh must preserve the row viewport')
+   assert(target.content.swatch.fill is '#00ff00', 'Refresh must update the content')
+   assert(count(log, 'item30:update') is 1, 'Refresh must dispatch one update')
+   assert(view.page.y is page_y and target._selected and view.kItem is key_target,
+      'Refresh must preserve scroll, selection and keyboard target')
+
+   -- Offscreen refresh through setItem
+   local offscreen = view.items[0]
+   view.setItem(offscreen, { hex='#123456' })
+   assert(offscreen.content.hex.string is '#123456', 'setItem must refresh content in place')
+   assert(view.page.y is page_y, 'setItem must preserve the scroll position')
+
+   local rejected = false
+   try
+      view.setItem(offscreen, { viewState={} })
+   except e
+      rejected = true
+   end
+   assert(rejected, 'setItem must reject reserved fields')
+
+   -- Hiding a row through setItem relayouts the view and deselects it
+   view.setItem(target, { hidden=true })
+   assert(not target._selected and target._vectors.viewport.visibility is VIS_HIDDEN, 'Hidden rows are deselected')
+   assert(view.items[31]._vectors.viewport.y is target._y, 'Following rows must move up')
+end
+
+@Test function TargetItemMovesTheKeyboardTarget()
+   local log = array<str>
+   local items = { }
+   for i in {0 to 40} do items.insert({ name=f'item{i}', hex='#000000' }) end
+   local surface <close>, view = newView({ constructItem=paletteRow(log), scrollDirection='vertical' }, 200, 100)
+   view.addItems(items)
+
+   local target = view.items[30]
+   view.targetItem(target)
+   assert(view.kItem is target and view.hItem is target, 'targetItem must set the keyboard target and highlight')
+   assert(view.page.y < 0, 'targetItem must scroll the target into view')
+   assert(not target._selected and #view.selectedItems() is 0, 'targetItem must not change the selection')
+   sendKey(KEY_DOWN, KQ_PRESSED)
+   assert(view.kItem is view.items[31], 'Navigation must continue from the new target')
+
+   view.setItem(view.items[5], { hidden=true })
+   view.targetItem(view.items[5])
+   assert(view.kItem is view.items[31], 'targetItem must ignore hidden items')
+end
+
+@Test function GeometryChangesNotifyCustomRows()
+   local log = array<str>
+   local surface <close>, view = newView({ constructItem=paletteRow(log), rowHeight=20, rowSpacing=2 }, 200, 100)
+   view.addItem({ name='first' })
+   local first = view.items[0]
+   assert(first._vectors.viewport.height is 20, 'rowHeight must set the row height')
+   local initial = first._createWidth
+   assert(initial is first._vectors.viewport.width, 'create must receive the settled row width')
+
+   -- Enough rows to require a vertical scrollbar, which narrows every row.
+   local more = { }
+   for i in {0 to 10} do more.insert({ name=f'more{i}' }) end
+   view.addItems(more)
+   assert(view.items[1]._vectors.viewport.y is first._vectors.viewport.y + 22, 'rowSpacing must separate rows')
+   assert(first._vectors.viewport.width < initial, 'The scrollbar must narrow the rows')
+   assert(count(log, 'first:layout') is 1 and first._layoutWidth is first._vectors.viewport.width,
+      'The width change must be reported once with the settled width')
+   assert(view.items[5]._createWidth is view.items[5]._vectors.viewport.width,
+      'Rows created with the scrollbar must receive the current width')
+
+   -- Resizing the host notifies rows once the frame geometry settles.
+   local before = count(log, 'first:layout')
+   view.viewport.width = 150
+   surface.acDraw()
+   processing.sleep(0)
+   processing.sleep(0)
+   assert(count(log, 'first:layout') is before + 1 and first._layoutWidth is first._vectors.viewport.width,
+      'Resizing must report the new row width')
+   assert(first.content.hex.x is first._vectors.viewport.width - 4, 'Layout must reposition client content')
+
+   -- Independent metrics
+   local s2 <close>, other = newView({ constructItem=paletteRow(array<str>), rowHeight=40 })
+   other.addItem({ name='tall' })
+   view.addItem({ name='short' })
+   assert(other.items[0]._vectors.viewport.height is 40 and view.items[#view.items-1]._vectors.viewport.height is 20,
+      'Each list must retain its own metrics')
+end
+
+@Test function RowsAndZonesStayConsistentThroughChanges()
+   local surface <close>, view = newView({ items={ { name='d' }, { name='b' }, { name='c' } } }, 200, 100)
+
+   function verify(Label:str!)
+      local expected = 0
+      local y = -1
+      for item in values(view.items) do
+         if item.hidden then continue end
+         local vp = item._vectors.viewport
+         assert(vp.y > y, f'{Label}: rows must be in display order')
+         y = vp.y
+         local zone = view.zones[expected]
+         assert(zone and zone.item is item and zone.y is vp.y and zone.height is vp.height,
+            f'{Label}: each row must have one matching zone')
+         expected++
+      end
+      assert(#view.zones is expected, f'{Label}: zones must not accumulate')
+   end
+
+   verify('initial')
+   view.addItem({ name='a' })
+   verify('append')
+   view.sortView('name', true)
+   assert(view.items[0].name is 'a' and view.items[3].name is 'd', 'Sorting must reorder items')
+   verify('sort')
+   view.addItem({ name='e' })
+   assert(view.items[4]._vectors.viewport.y > view.items[3]._vectors.viewport.y, 'Append after sort must follow')
+   verify('sort then append')
+   for i in {0 to 3} do
+      view.addItem({ name=f'x{i}' })
+      view.removeItem(view.items[1])
+   end
+   verify('repeated add and remove')
+
+   -- Removing the last row while scrolled to the bottom must clamp the scroll range
+   for i in {0 to 20} do view.addItem({ name=f'z{i}' }) end
+   local last = view.items[#view.items-1]
+   sendKey(KEY_END, KQ_PRESSED)
+   view.selectItems(Item => Item is last)
+   assert(view.kItem is last and view.page.y < 0, 'The view must be scrolled to the last row')
+   view.removeItem(last)
+   assert(view.page.y + view.page.height >= view.frame.height - 1, 'The scroll position must be clamped')
+   assert(view.kItem is nil and view.sItem is nil and view.hItem != last, 'No stale references may remain')
+   verify('remove last')
+   hoverItem(view, view.items[#view.items-1])
+end
+
+@Test function OptionsAreValidated()
+   local target_surface <close> = obj.new('Surface', { width=100, height=100 })
+   local scene = target_surface.new('VectorScene', { surface=target_surface })
+   local target = scene.new('VectorViewport', { width='100%', height='100%' })
+   for options in values({ { rowHeight=0 }, { rowHeight=0/0 }, { rowHeight=math.huge }, { rowSpacing=-1 },
+      { scrollDirection='diagonal' }, { constructItem='nope' } }) do
+      options.target = target
+      local raised = false
+      try
+         gui.listView(options)
+      except e
+         raised = true
+      end
+      assert(raised, 'Invalid options must be rejected')
+   end
+
+   local surface <close>, view = newView({ scrollDirection='vertical', items={ { name='a' } } })
+   assert(view.scrollbar.vbar and not view.scrollbar.hbar, 'scrollDirection must select the scrollbars')
+end
+
+-- A theme change redraws each custom row once with the 'update' reason, and refreshes each row's highlight.
+
+@Test function ThemeChangesUpdateCustomRows()
+   local reasons = { }
+   local highlights = 0
+   local surface <close>, view = newView({ items=array<table> { { name='x' }, { name='y' } },
+      constructItem=function(Item, Viewport, Reason) reasons[Reason] = (reasons[Reason] ?? 0) + 1 end,
+      constructHighlight=function(Item, Viewport, Reason) highlights++ end
+   })
+   local before = { reasons=table.clone(reasons), highlights=highlights }
+   local scene = view.viewport.scene
+   gui.broadcastTheme(scene, gui.setTheme(scene, 'dark'))
+   assert(reasons.update is (before.reasons.update ?? 0) + 2, f'Each row must get one update, got {reasons.update}')
+   assert(highlights is before.highlights + 2, 'Each row must have its highlight refreshed once')
+   assert(reasons.create is before.reasons.create, 'A theme change must not recreate the rows')
+end

@@ -14,6 +14,7 @@ Documentation is available in the Kotuku Wiki.
 
 DEFAULT_WIDTH  <const> = gui.rpixel('900dp')
 DEFAULT_HEIGHT <const> = gui.rpixel('600dp')
+ZOOM_STEP      <const> = 1.25
 
 function surfaceReference(Value)
    if Value is <table> then return Value.surface end
@@ -63,10 +64,12 @@ gui.window = function(Options:table!)
       icon         = Options.icon,
       client       = { }, -- Client margins
       margins      = Options.margins,
+      zoom         = 1.0, -- Read-only by convention; use setZoom() to change it
       surface      = nil, -- Client access to the surface is permitted
       viewport     = nil  -- The window's top-level viewport
    }, {
       __gc = function()
+         &_zoomKeyboard?.unsubscribe()
          local surface = &surface
          &surface = nil
          surface?.free()
@@ -113,6 +116,72 @@ gui.window = function(Options:table!)
       ClientHeight ?= &surface.height
       &surface.acResize(ClientWidth, ClientHeight, 0)
    end
+
+   function reportZoom(Level:num!)
+      if math.abs(Level - &zoom) < 0.0000001 then return end
+      &zoom = Level
+      &events?.zoom(Level)
+   end
+
+   self.setZoom = function(Level:num!)
+      if Level <= 0 or Level != Level or Level is math.huge then raise ERR_Args end
+      local surface = &surface
+      local width, height = surface.width, surface.height
+
+      if &aspectRatio then
+         local base_width, base_height = &_zoomBaseWidth, &_zoomBaseHeight
+         local lower = math.max(surface.minWidth / base_width, surface.minHeight / base_height)
+         local upper = math.huge
+         if surface.maxWidth > 0 then upper = math.min(upper, surface.maxWidth / base_width) end
+         if surface.maxHeight > 0 then upper = math.min(upper, surface.maxHeight / base_height) end
+
+         local err, info = mGfx.GetDisplayInfo(surface.display)
+         if err != ERR_Okay then return end
+         if info.flags has SCR_MAXIMISE then return end
+         local monitor_x, monitor_y = info.monitorX, info.monitorY
+         local monitor_width, monitor_height = info.monitorWidth, info.monitorHeight
+         if monitor_width <= 0 or monitor_height <= 0 then
+            -- Headless displays have no host geometry.  Use the default display dimensions in that case.
+            err, info = mGfx.GetDisplayInfo(0)
+            if err != ERR_Okay then return end
+            monitor_width, monitor_height = info.monitorWidth ?? info.width, info.monitorHeight ?? info.height
+         end
+         local frame_err:num, left:num, top:num, right:num, bottom:num = surface.display.mtGetFrame(0)
+         if frame_err is ERR_NoSupport then
+            left, top, right, bottom = &client.left, &client.top, &client.right, &client.bottom
+         elseif frame_err != ERR_Okay then
+            return
+         end
+         upper = math.min(upper, (monitor_width - left - right) / base_width,
+            (monitor_height - top - bottom) / base_height)
+         if upper < lower then return end -- The minimum window size cannot fit on this monitor.
+
+         -- Use the original proportions so that rounding to pixels does not accumulate across repeated steps.
+         local factor = math.clamp(Level, lower, upper)
+         local new_width, new_height = math.round(base_width * factor), math.round(base_height * factor)
+         if new_width is width and new_height is height then return end
+         local x = surface.x + (width - new_width) * 0.5
+         local y = surface.y + (height - new_height) * 0.5
+         x = math.clamp(x, monitor_x + left, monitor_x + monitor_width - right - new_width)
+         y = math.clamp(y, monitor_y + top, monitor_y + monitor_height - bottom - new_height)
+         check surface.acRedimension(math.round(x), math.round(y), 0, new_width, new_height, 0)
+      else
+         local lower = 0.25
+         local upper = math.min(4, width / surface.minWidth, height / surface.minHeight)
+         if surface.maxWidth > 0 then lower = math.max(lower, width / surface.maxWidth) end
+         if surface.maxHeight > 0 then lower = math.max(lower, height / surface.maxHeight) end
+         Level = math.clamp(Level, lower, upper)
+         if not &_zoomViewBox and Level is &zoom then return end
+         &_zoomViewBox = true
+         &viewport.{ viewX = 0, viewY = 0, viewWidth = width / Level, viewHeight = height / Level }
+         surface.mtScheduleRedraw()
+         reportZoom(Level)
+      end
+   end
+
+   self.zoomIn = function() &setZoom(&zoom * ZOOM_STEP) end
+   self.zoomOut = function() &setZoom(&zoom / ZOOM_STEP) end
+   self.resetZoom = function() &setZoom(1) end
 
    -- Changes the size of the position of the window in relation to its parent.  All dimensions refer to the
    -- border of the window.
@@ -281,8 +350,9 @@ gui.window = function(Options:table!)
       }
 
       if Options.aspectRatio then
-         -- The host derives the aspect ratio from the minimum size, so a minimum that is not fully specified takes the
-         -- window's proportions.  It defaults to a quarter of the window's size.
+         -- The host takes the aspect ratio from the window's size when it opens.  A minimum that is not fully specified
+         -- is completed from the window's proportions so that it agrees with that ratio.  It defaults to a quarter of
+         -- the window's size.
 
          ratio = surface_opts.width / surface_opts.height
          if Options.minWidth and Options.minHeight then
@@ -352,6 +422,7 @@ gui.window = function(Options:table!)
       &scene = &surface.new('VectorScene', {
          flags = Options.dragDrop ? VPF_RESIZE|VPF_DROP_TARGETS : VPF_RESIZE, surface = &surface
       })
+      &scene.state().zoomKeys = Options.zoom != false
 
       -- The scene is given a theme name of its own, so that setTheme() and Options.theme affect only this window and
       -- the popups that it opens.  Assigning the base theme first loads a custom theme or falls back to light.
@@ -394,6 +465,51 @@ gui.window = function(Options:table!)
          end
       end
    end -- using self
+
+   self._zoomBaseWidth = self.surface.width
+   self._zoomBaseHeight = self.surface.height
+
+   function[<weak> self] zoomResize(Surface, Args)
+      if &aspectRatio then
+         reportZoom(Surface.width / &_zoomBaseWidth)
+      elseif &_zoomViewBox then
+         &setZoom(&zoom)
+      end
+   end
+
+   self.surface.subscribe('redimension', zoomResize)
+
+   -- Keyboard shortcuts for zooming.
+
+   if Options.zoom != false then
+      function[<weak> self] zoomKeyboard(Handle, SurfaceID, Qualifiers, Code, Unicode)
+         if not (Qualifiers has KQ_PRESSED) then return end
+         if not (Qualifiers has KQ_CTRL) or (Qualifiers has (KQ_ALT | KQ_COMMAND)) then return end
+
+         if Code is KEY_EQUALS or Code is KEY_PLUS or Code is KEY_NP_PLUS or Unicode is 43 then
+            &zoomIn()
+         elseif Code is KEY_MINUS or Code is KEY_NP_MINUS or Unicode is 45 then
+            &zoomOut()
+         elseif Code is KEY_ZERO or Code is KEY_NP_0 then
+            &resetZoom()
+         end
+      end
+
+      reg = input.keyboard(self.surface, zoomKeyboard, { reserve=true })
+
+      try
+         for code in values(array<int> { KEY_EQUALS, KEY_PLUS, KEY_NP_PLUS, KEY_MINUS, KEY_NP_MINUS, KEY_ZERO, KEY_NP_0 }) do
+            reg.reserve(KQ_CTRL, KQ_ALT | KQ_COMMAND, code)
+         end
+         reg.reserve(KQ_CTRL, KQ_ALT | KQ_COMMAND, 0, 43)
+         reg.reserve(KQ_CTRL, KQ_ALT | KQ_COMMAND, 0, 45)
+      except e
+         reg.unsubscribe()
+         raise
+      end
+
+      self._zoomKeyboard = reg
+   end
 
    -- Weak bindings activate the window while dispatching events without retaining it.
 
@@ -442,6 +558,7 @@ gui.window = function(Options:table!)
          mSys.SendMessage(MSGID_QUIT)
       end
 
+      weak_self?._zoomKeyboard?.unsubscribe()
       if theme_name then gui.themes[theme_name] = nil end
       weak_self?.clear()
    end

@@ -615,8 +615,8 @@ static void native_snapshot_free(OBJECTPTR Object, ACTIONID, ERR, APTR, APTR Met
    if (kt::ScopedObjectLock<extPointer> pointer(participants->PointerID); pointer.granted()) {
       std::erase(pointer->PendingDrops, Object->UID);
       if (pointer->PendingDrops.empty() and not pointer->DragSourceID and pointer->DragKeyHandle) {
-         UnsubscribeEvent(pointer->DragKeyHandle);
-         pointer->DragKeyHandle = nullptr;
+         gfx::UnsubscribeKeyboard(pointer->DragKeyHandle);
+         pointer->DragKeyHandle = 0;
       }
    }
 }

@@ -28,8 +28,8 @@
   "files": [
     {
       "path": "window.tiri",
-      "size": 14248,
-      "sha256": "d553d80f2c220099c1a19db54bf631c9990b5ba699503ca7be970a7eb684b5fe",
+      "size": 21179,
+      "sha256": "411a6fc2f8f17287e7344f2ddb5655e2d700a4c1c85d328f6613af16921856cc",
       "mediaType": "application/vnd.kotuku.tiri"
     }
   ]

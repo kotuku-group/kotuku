@@ -2,7 +2,8 @@
 
 module({
     name="Display", copyright="Paul Manias © 2003-2026", version=1.0, status="stable", prefix="gfx", timestamp=20240611,
-    src={ "display.cpp", "lib_bitmap.cpp", "lib_display.cpp", "lib_cursor.cpp", "lib_input.cpp", "lib_surfaces.cpp" }
+    src={ "display.cpp", "lib_bitmap.cpp", "lib_display.cpp", "lib_cursor.cpp", "lib_input.cpp", "lib_surfaces.cpp",
+          "lib_keyboard.cpp" }
   }, function()
 
   restrict(function()
@@ -14,6 +15,18 @@ module({
     "NONE: The surface is not being dragged.",
     "ANCHOR: The surface is being dragged and the mouse pointer is anchored to the surface.",
     "NORMAL: The surface is being dragged.")
+
+  enums("KRES", { type="int", comment="Keyboard callback results." }, {
+    PASS = 0,
+    HANDLED = 65536
+  })
+
+  flags("KBF", { comment="Keyboard subscription options." },
+    "OBSERVER: Receive raw input independently of focus and consumption.  Cannot reserve or consume input.",
+    "RESERVE: Exclusively own matching key combinations while the scope has focus.",
+    "FOCUS: Internal C callback that supplies the active vector ancestry through SetKeyboardFocus().",
+    "DEFAULT: Run after ordinary handlers at the same scope.",
+    "NO_REPEAT: Do not invoke the callback for repeated presses.")
 
   enums("WH", { type="int", start=1, comment="Events for WindowHook()" },
     "CLOSE",
@@ -683,7 +696,11 @@ module({
     'UnsubscribeInput',
     'WindowHook',
     'SetPrimarySelection',
-    'ReadPrimarySelection')
+    'ReadPrimarySelection',
+    'SubscribeKeyboard',
+    'UnsubscribeKeyboard',
+    'ReserveKey',
+    'SetKeyboardFocus')
 
   c_insert([==[
 // Direct ColourFormat versions
