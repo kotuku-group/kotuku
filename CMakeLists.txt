@@ -1202,6 +1202,14 @@ if (NOT DISABLE_SCINTILLA AND NOT DISABLE_DISPLAY AND NOT DISABLE_VECTOR AND NOT
    list (APPEND LIB_LIST scintilla)
 endif ()
 
+# The Terminal module is optional and maintained separately at https://github.com/kotuku-group/ghostty.  It is built
+# if a developer has placed it in src/terminal.
+
+if (EXISTS "${PROJECT_SOURCE_DIR}/src/terminal/CMakeLists.txt")
+   add_subdirectory (src/terminal)
+   list (APPEND LIB_LIST terminal)
+endif ()
+
 if (NOT DISABLE_SVG AND NOT DISABLE_VECTOR AND NOT DISABLE_DISPLAY AND NOT DISABLE_FONT)
    add_subdirectory (src/svg)
    list (APPEND LIB_LIST svg)

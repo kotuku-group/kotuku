@@ -18,6 +18,7 @@ extern "C" ModHeader * register_image_module();
 extern "C" ModHeader * register_regex_module();
 extern "C" ModHeader * register_scintilla_module();
 extern "C" ModHeader * register_svg_module();
+extern "C" ModHeader * register_terminal_module();
 extern "C" ModHeader * register_vector_module();
 extern "C" ModHeader * register_websocket_module();
 extern "C" ModHeader * register_webrtc_module();
@@ -95,6 +96,10 @@ static void register_static_modules(void)
 
    #ifdef INC_MOD_SVG
    glStaticModules["svg"] = register_svg_module();
+   #endif
+
+   #ifdef INC_MOD_TERMINAL
+   glStaticModules["terminal"] = register_terminal_module();
    #endif
 
    #ifdef INC_MOD_VECTOR

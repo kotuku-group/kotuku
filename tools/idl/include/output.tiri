@@ -274,27 +274,8 @@ function outputGetValueCall(Field:table, FieldType:str, Indent:str)
       output(Indent .. 'Unit var(0, FD_DOUBLE);')
       output(Indent .. 'auto error = field->GetValue(this, &var);')
       output(Indent .. 'if (error IS ERR::Okay) Value = var.Value;')
-   elseif Field.flags has FD_UNIT then
-      outputResult('field->GetValue(this, &Value);')
-      return
-   elseif fieldIsSequence(Field) then
-      output(Indent .. f'auto get_field = (ERR (*)(APTR, std::span<{Field.innerType ?? Field.type}> &))field->GetValue;')
-      outputResult('get_field(this, Value);')
-      return
-   elseif Field.flags has FD_STRING then
-      if Field.flags has FD_ALLOC then
-         output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string &))field->GetValue;')
-         output(Indent .. 'auto error = get_field(this, Value);')
-      else
-         output(Indent .. 'auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;')
-         outputResult('get_field(this, Value);')
-         return
-      end
-   elseif Field.flags has FD_FUNCTION then
-      output(Indent .. 'auto get_field = (ERR (*)(APTR, FUNCTION * &))field->GetValue;')
-      outputResult('get_field(this, Value);')
-      return
-   else -- Suitable for primitives only.
+   else
+      -- GetValue takes an output address, including for reference-based string, sequence and callback getters.
       outputResult('field->GetValue(this, &Value);')
       return
    end

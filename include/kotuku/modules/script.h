@@ -169,8 +169,7 @@ class objScript : public Object {
    inline ERR getWorkingPath(std::string_view &Value) noexcept {
       auto field = &this->Class->Dictionary[8];
       SetObjectContext(this, field, AC::NIL);
-      auto get_field = (ERR (*)(APTR, std::string_view &))field->GetValue;
-      auto error = get_field(this, Value);
+      auto error = field->GetValue(this, &Value);
       RestoreObjectContext();
       return error;
    }

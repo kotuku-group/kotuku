@@ -30,6 +30,7 @@
 #cmakedefine INC_MOD_REGEX
 #cmakedefine INC_MOD_SCINTILLA
 #cmakedefine INC_MOD_SVG
+#cmakedefine INC_MOD_TERMINAL
 #cmakedefine INC_MOD_TIRI
 #cmakedefine INC_MOD_VECTOR
 #cmakedefine INC_MOD_WEBSOCKET
