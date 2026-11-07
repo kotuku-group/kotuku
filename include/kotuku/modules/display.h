@@ -22,6 +22,28 @@ enum class DRAG : int {
    NORMAL = 2,
 };
 
+// Keyboard callback results.
+
+enum class KRES : int {
+   NIL = 0,
+   PASS = 0,
+   HANDLED = 65536,
+};
+
+// Keyboard subscription options.
+
+enum class KBF : uint32_t {
+   NIL = 0,
+   OBSERVER = 0x00000001,
+   RESERVE = 0x00000002,
+   FOCUS = 0x00000004,
+   DEFAULT = 0x00000008,
+   NO_REPEAT = 0x00000010,
+   OVERRIDE = 0x00000020,
+};
+
+DEFINE_ENUM_FLAG_OPERATORS(KBF)
+
 // Events for WindowHook()
 
 enum class WH : int {
@@ -2396,6 +2418,10 @@ struct DisplayBase {
    ERR (*_WindowHook)(OBJECTID SurfaceID, WH Event, FUNCTION *Callback);
    ERR (*_SetPrimarySelection)(const std::string_view &Text);
    ERR (*_ReadPrimarySelection)(OBJECTID Recipient, int Item);
+   ERR (*_SubscribeKeyboard)(OBJECTID SurfaceID, OBJECTID ObjectID, KBF Flags, FUNCTION *Callback, int *Handle);
+   ERR (*_UnsubscribeKeyboard)(int Handle);
+   ERR (*_ReserveKey)(int Handle, KQ Required, KQ Forbidden, int Code, int Unicode);
+   ERR (*_SetKeyboardFocus)(OBJECTID SurfaceID, int *Objects, int Count);
 #endif // KOTUKU_STATIC
 };
 
@@ -2446,6 +2472,10 @@ inline ERR UnsubscribeInput(int Handle) { return DisplayBase->_UnsubscribeInput(
 inline ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback) { return DisplayBase->_WindowHook(SurfaceID,Event,Callback); }
 inline ERR SetPrimarySelection(const std::string_view &Text) { return DisplayBase->_SetPrimarySelection(Text); }
 inline ERR ReadPrimarySelection(OBJECTID Recipient, int Item) { return DisplayBase->_ReadPrimarySelection(Recipient,Item); }
+inline ERR SubscribeKeyboard(OBJECTID SurfaceID, OBJECTID ObjectID, KBF Flags, FUNCTION *Callback, int *Handle) { return DisplayBase->_SubscribeKeyboard(SurfaceID,ObjectID,Flags,Callback,Handle); }
+inline ERR UnsubscribeKeyboard(int Handle) { return DisplayBase->_UnsubscribeKeyboard(Handle); }
+inline ERR ReserveKey(int Handle, KQ Required, KQ Forbidden, int Code, int Unicode) { return DisplayBase->_ReserveKey(Handle,Required,Forbidden,Code,Unicode); }
+inline ERR SetKeyboardFocus(OBJECTID SurfaceID, int *Objects, int Count) { return DisplayBase->_SetKeyboardFocus(SurfaceID,Objects,Count); }
 } // namespace
 #else
 namespace gfx {
@@ -2493,6 +2523,10 @@ extern ERR UnsubscribeInput(int Handle);
 extern ERR WindowHook(OBJECTID SurfaceID, WH Event, FUNCTION *Callback);
 extern ERR SetPrimarySelection(const std::string_view &Text);
 extern ERR ReadPrimarySelection(OBJECTID Recipient, int Item);
+extern ERR SubscribeKeyboard(OBJECTID SurfaceID, OBJECTID ObjectID, KBF Flags, FUNCTION *Callback, int *Handle);
+extern ERR UnsubscribeKeyboard(int Handle);
+extern ERR ReserveKey(int Handle, KQ Required, KQ Forbidden, int Code, int Unicode);
+extern ERR SetKeyboardFocus(OBJECTID SurfaceID, int *Objects, int Count);
 } // namespace
 #endif // KOTUKU_STATIC
 

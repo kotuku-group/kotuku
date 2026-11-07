@@ -1,0 +1,252 @@
+   import 'gui/window', 'gui/button', 'gui/toolbar', 'gui/menu'
+   include 'display', 'vector'
+   module display as mGfx
+
+function sendKey(Code:num!, Qualifiers:num, Unicode:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = Qualifiers ?? KQ_PRESSED
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+function putDouble(Buffer:array<byte>!, Offset:num!, Value:num!)
+   if Value is 0 then return end
+   local mantissa, exponent = math.frexp(Value)
+   local fraction = ((mantissa * 2) - 1) * 1048576
+   local high = ((exponent + 1022) * 1048576) + math.floor(fraction)
+   local low = (fraction - math.floor(fraction)) * 4294967296
+   for i in {0 to 4} do
+      Buffer[Offset + i] = math.floor(low / (256 ** i)) % 256
+      Buffer[Offset + 4 + i] = math.floor(high / (256 ** i)) % 256
+   end
+end
+
+function feed(Type:num!, X:num!, Y:num!)
+   local input = array<byte, 40>
+   putDouble(input, 0, X)
+   putDouble(input, 8, Y)
+   input[32] = Type
+   check obj.find('SystemPointer').acDataFeed(nil, DATA_DEVICE_INPUT, input)
+   processing.sleep(0)
+end
+
+function click(Window:table!, X:num!, Y:num!)
+   local pointer = obj.find('SystemPointer')
+   pointer.surface = Window.surface.id
+   defer pointer.surface = 0 end
+   local surface = Window.surface
+   feed(JET_ABS_XY, surface.absX + X + 1, surface.absY + Y + 1)
+   feed(JET_ABS_XY, surface.absX + X, surface.absY + Y)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+end
+
+function zoomWindow(Options:table):table
+   Options ?= { }
+   Options.{ quit=false, tabPing=false, x=100, y=100 }
+   Options.insideWidth ?= 400
+   Options.insideHeight ?= 200
+   local window = gui.window(Options)
+   window.show()
+   window.surface.acFocus()
+   window.surface.acDraw()
+   processing.sleep(0)
+   return window
+end
+
+function assertZoom(Window:table!, Level:num!)
+   assert(math.abs(Window.zoom - Level) < 0.000001, f'Expected zoom {Level}, got {Window.zoom}')
+   if not Window.aspectRatio then
+      assert(math.abs(Window.viewport.viewWidth - Window.surface.width / Level) < 0.001,
+         'The top viewport must use the zoomed logical width')
+      assert(math.abs(Window.viewport.viewHeight - Window.surface.height / Level) < 0.001,
+         'The top viewport must use the zoomed logical height')
+   end
+end
+
+@Test function ReflowZoomKeysAndEvents()
+   local levels = array<double>
+   local window = zoomWindow({ events={ zoom=function(Level)
+      assert(&title is 'Zoom context', 'Zoom events must run in the window context')
+      levels.push(Level)
+   end }, title='Zoom context' })
+   defer window.surface?.free() end
+   local client = window.clientViewport({ viewWidth=400, viewHeight=200 })
+   local ctrl = KQ_PRESSED | KQ_CTRL
+   assert(window.scene.state().zoomKeys, 'Windows must reserve zoom keys by default')
+   for case in values(array<table> {
+      { code=KEY_EQUALS }, { code=KEY_EQUALS, extra=KQ_SHIFT }, { code=KEY_NP_PLUS },
+      { code=KEY_PLUS }, { code=KEY_R_SQUARE, unicode=43 }, { code=KEY_EQUALS, extra=KQ_REPEAT }
+   }) do
+      sendKey(case.code, ctrl | (case.extra ?? 0), case.unicode)
+      assertZoom(window, 1.25)
+      sendKey(KEY_NP_0, ctrl)
+      assertZoom(window, 1)
+   end
+   sendKey(KEY_MINUS, ctrl)
+   assertZoom(window, 0.8)
+   sendKey(KEY_ZERO, ctrl)
+   assertZoom(window, 1)
+   assert(#levels is 14, 'Each zoom change must report exactly one event')
+   window.resetZoom()
+   sendKey(KEY_EQUALS, KQ_RELEASED | KQ_CTRL)
+   sendKey(KEY_EQUALS, ctrl | KQ_ALT)
+   sendKey(KEY_EQUALS, ctrl | KQ_COMMAND)
+   assertZoom(window, 1)
+   assert(#levels is 14, 'No-op, released, AltGr and Command keys must not report zoom')
+   assert(client.viewWidth is 400 and client.viewHeight is 200, 'The app view box must remain unchanged')
+end
+
+@Test function ReflowZoomLimitsFollowSurfaceResizes()
+   local window = zoomWindow({ minWidth=200, minHeight=100, maxWidth=800, maxHeight=400 })
+   defer window.surface?.free() end
+   local resize_hits = 0
+   window.bkgd.resizeEvent = function() resize_hits++ end
+   window.setZoom(10)
+   assertZoom(window, 2)
+   window.zoomIn()
+   assertZoom(window, 2)
+   window.resizeClientArea(300, 150)
+   processing.sleep(0)
+   assertZoom(window, 1.5)
+   window.setZoom(0.1)
+   assertZoom(window, 0.375)
+   window.zoomOut()
+   assertZoom(window, 0.375)
+   window.resetZoom()
+   window.resizeClientArea(350, 175)
+   window.surface.acDraw()
+   processing.sleep(0)
+   assertZoom(window, 1)
+   assert(resize_hits > 0, 'Zoom must preserve the app background resize callback')
+end
+
+@Test function ReflowZoomAbsoluteBoundsAndFixedSize()
+   local window = zoomWindow()
+   defer window.surface?.free() end
+   window.setZoom(100)
+   assertZoom(window, 4)
+   window.setZoom(0.01)
+   assertZoom(window, 0.25)
+   local fixed = zoomWindow({ minWidth=400, minHeight=200, maxWidth=400, maxHeight=200 })
+   defer fixed.surface?.free() end
+   fixed.zoomIn()
+   fixed.zoomOut()
+   assert(fixed.zoom is 1 and fixed.viewport.viewWidth is 0, 'Fixed-size reflow windows stay at 1x')
+end
+
+@Test function ScalingZoomResizesWithinLimitsAndResets()
+   local changes = 0
+   local window = zoomWindow({ aspectRatio=true, minWidth=200, minHeight=100, maxWidth=600, maxHeight=300,
+      events={ zoom=function() changes++ end } })
+   defer window.surface?.free() end
+   local client = window.clientViewport({ viewWidth=400, viewHeight=200 })
+   local ctrl = KQ_CTRL | KQ_PRESSED
+   local centre_x = window.surface.x + window.surface.width / 2
+   local centre_y = window.surface.y + window.surface.height / 2
+   sendKey(KEY_EQUALS, ctrl)
+   assertZoom(window, 1.25)
+   assert(window.surface.width is 500 and window.surface.height is 250, 'Scaling zoom must resize both sides')
+   assert(window.surface.x + window.surface.width / 2 is centre_x and
+      window.surface.y + window.surface.height / 2 is centre_y, 'Scaling zoom must keep the centre when it fits')
+   window.setZoom(10)
+   assertZoom(window, 1.5)
+   assert(window.surface.width is 600 and window.surface.height is 300, 'Scaling zoom must stop at maxima')
+   window.setZoom(0.01)
+   assertZoom(window, 0.5)
+   assert(window.surface.width is 200 and window.surface.height is 100, 'Scaling zoom must stop at minima')
+   sendKey(KEY_ZERO, ctrl)
+   assertZoom(window, 1)
+   assert(window.surface.width is 400 and window.surface.height is 200, 'Reset must restore the base client size')
+   assert(changes is 4, 'Scaling changes must each report once')
+   window.resizeClientArea(500, 250)
+   processing.sleep(0)
+   assertZoom(window, 1.25)
+   sendKey(KEY_MINUS, ctrl)
+   assertZoom(window, 1)
+   assert(client.viewWidth is 400 and window.viewport.viewWidth is 0, 'Scaling must leave both view boxes alone')
+end
+
+@Test function DisabledZoomKeysStillAllowTheAPI()
+   local window = zoomWindow({ zoom=false })
+   defer window.surface?.free() end
+   sendKey(KEY_EQUALS, KQ_PRESSED | KQ_CTRL)
+   assert(window.zoom is 1 and not window.scene.state().zoomKeys, 'zoom=false must disable keys and reservation')
+   window.zoomIn()
+   assertZoom(window, 1.25)
+end
+
+@Test function ZoomedWidgetsReceivePointerInput()
+   local window = zoomWindow()
+   defer window.surface?.free() end
+   local hits = 0
+   local button = gui.button({ target=window.clientViewport(), x=40, y=30, label='Zoomed',
+      events={ activate=function() hits++ end } })
+   window.setZoom(2)
+   window.viewport.acDraw()
+   processing.sleep(0.05) -- Allow the scheduled scene redraw to refresh pointer input boundaries.
+   click(window, (button.viewport.x + 10) * 2, (button.viewport.y + 10) * 2)
+   assert(hits is 1, 'Pointer hit-testing must follow the ancestor zoom view box')
+end
+
+@Test function ScalingZoomUsesBothLimitsAndFitsItsMonitor()
+   local window = zoomWindow({ aspectRatio=true, minWidth=210, minHeight=120, maxWidth=700, maxHeight=260 })
+   defer window.surface?.free() end
+   window.setZoom(10)
+   assertZoom(window, 1.3)
+   assert(window.surface.width is 520 and window.surface.height is 260, 'The height maximum must cap both sides')
+   window.setZoom(0.1)
+   assertZoom(window, 0.6)
+   assert(window.surface.width is 240 and window.surface.height is 120, 'The height minimum must cap both sides')
+
+   local large = zoomWindow({ aspectRatio=true })
+   defer large.surface?.free() end
+   large.surface.{ x=900, y=700 }
+   large.setZoom(100)
+   local _, info = check mGfx.GetDisplayInfo(0)
+   local width, height = info.monitorWidth ?? info.width, info.monitorHeight ?? info.height
+   assert(large.surface.width <= width and large.surface.height <= height, 'Scaling zoom must fit the monitor')
+   assert(large.surface.x >= 0 and large.surface.y >= 0 and large.surface.x + large.surface.width <= width and
+      large.surface.y + large.surface.height <= height, 'The enlarged window must be moved back onto the monitor')
+   assert(math.abs(large.surface.width / large.surface.height - 2) < 0.01, 'Monitor clamping must preserve the ratio')
+end
+
+@Test function ScalingResetRestoresOddClientDimensions()
+   local window = zoomWindow({ aspectRatio=true, insideWidth=333, insideHeight=197 })
+   defer window.surface?.free() end
+   for i in {0 to 6} do
+      window.zoomIn()
+      window.zoomOut()
+   end
+   window.resetZoom()
+   assert(window.surface.width is 333 and window.surface.height is 197,
+      'Reset must restore both base dimensions without accumulated pixel rounding')
+end
+
+@Test function ZoomRejectsInvalidLevelsWithoutChangingTheWindow()
+   local window = zoomWindow()
+   defer window.surface?.free() end
+   for level in values(array<double> { 0, -1, math.huge, -math.huge, 0/0 }) do
+      local rejected = false
+      try
+         window.setZoom(level)
+      except e when ERR_Args
+         rejected = true
+      end
+      assert(rejected and window.zoom is 1, 'Non-positive and non-finite levels must raise ERR_Args without zooming')
+   end
+end
+
+@Test function ScalingZoomEventMayCloseItsWindow()
+   local window = zoomWindow({ aspectRatio=true, events={ zoom=function(Level)
+      assert(Level is 1.25, 'The event must receive the applied zoom before closing')
+      &surface.free()
+   end } })
+   defer window.surface?.free() end
+   window.zoomIn()
+   assert(window.surface is nil, 'A zoom event must be able to close the window without a later surface read')
+end

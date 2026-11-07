@@ -290,7 +290,7 @@ the <code>Focus</code> action.</type>
 <p>The SubscribeKeyboard() method provides a callback mechanism for handling keyboard events.  Events are reported when the vector or one of its children has the user focus.  It is a pre-requisite that the associated <class name="VectorScene">VectorScene</class> has been linked to a <class name="Surface">Surface</class>.</p>
 <p>The prototype for the callback is as follows, whereby <code>Qualifers</code> are <code>KQ</code> flags and the Code is a <code>K</code> constant representing the raw key value.  The <code>Unicode</code> value is the resulting character when the qualifier and code are translated through the user's keymap.</p>
 <p><code>ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);</code></p>
-<p>If the callback returns <code>ERR::Terminate</code> then the subscription will be ended.  All other error codes are ignored.</p>
+<p>If the callback returns <code>ERR::Terminate</code> then the subscription will be ended.  Returning <code>KRES::HANDLED</code> consumes the key and stops delivery to remaining callbacks, ancestors and surface shortcuts.  Zero and all other results continue delivery.  Keyboard delivery follows the focused vector towards its ancestors, independently of tab order. Focus-scoped reservations take precedence over these callbacks.</p>
       </description>
       <result>
         <error code="Okay">Operation successful.</error>

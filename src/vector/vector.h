@@ -847,12 +847,14 @@ class extVector : public objVector {
    std::unique_ptr<std::vector<FeedbackSubscription>> FeedbackSubscriptions;
    std::unique_ptr<std::vector<InputSubscription>> InputSubscriptions;
    std::unique_ptr<std::vector<FUNCTION>> KeyboardSubscriptions;
-   extVectorFilter     *Filter;
-   extVectorViewport   *ParentView;
+   std::unique_ptr<std::unordered_map<int, FUNCTION>> KeyboardOwners; // Key codes owned by a handler.  Null if unused.
    std::unique_ptr<DashedStroke> DashArray;
    std::unique_ptr<ClipMaskCache> ClipCache;
    std::unique_ptr<filter_bitmap> IsolatedBuffer;
+   extVectorFilter     *Filter;
+   extVectorViewport   *ParentView;
    JTYPE InputMask;
+   int   KeyboardHandle = 0;
    int   PathLength;
    RC    Dirty;
    uint16_t  TabOrder;
@@ -920,7 +922,8 @@ class extVectorScene : public objVectorScene {
 
    double ActiveVectorX, ActiveVectorY; // X,Y location of the active vector.
    agg::rendering_buffer *Buffer; // AGG representation of the target bitmap
-   APTR KeyHandle; // Keyboard subscription
+   int KeyHandle; // Keyboard focus adapter
+   int KeyDefaultHandle = 0;
    ankerl::unordered_dense::map<std::string, OBJECTPTR> Defs;
    std::unordered_set<extVectorViewport *> PendingResizeMsgs;
    ankerl::unordered_dense::map<extVector *, JTYPE> InputSubscriptions;
@@ -930,9 +933,6 @@ class extVectorScene : public objVectorScene {
    OBJECTID ButtonLock; // The vector currently holding a button lock
    OBJECTID ActiveVector; // The most recent vector to have received an input movement event.
    OBJECTID LastFocusID; // The foreground vector that held the focus when the scene last lost it.
-   int64_t KeyDispatchSeen; // The most recent key dispatch received by this scene.
-   int64_t KeyDispatchSkip; // A key dispatch to ignore because the scene gained the focus while it was in progress.
-   int64_t KeySubscribedDispatch; // The key dispatch in progress when the scene subscribed to key events, if any.
    OBJECTID DropTargetID; // The viewport receiving the drop that is currently being delivered.
    OBJECTID DragHoverID = 0; // Hover target, independently of normal pointer capture.
    double DropX, DropY; // Drop coordinates relative to DropTargetID, captured before delivery.
@@ -1328,7 +1328,7 @@ extern void render_scene_from_viewport(extVectorScene *, objBitmap *, objVectorV
 extern const FieldDef clAspectRatio[];
 extern std::recursive_mutex glVectorFocusLock;
 extern std::vector<extVector *> glVectorFocusList; // The first reference is the most foreground object with the focus
-extern APTR glKeyDispatchHandle;
+ERR route_vector_key(const evKey *, APTR);
 
 //********************************************************************************************************************
 // Generic function for setting the clip region of an AGG rasterizer

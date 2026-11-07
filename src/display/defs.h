@@ -289,7 +289,7 @@ class extPointer : public objPointer {
    bool     NativeDrag = false; // The host owns the primary-button and offer lifetime
    OBJECTID DropSessionID = 0; // Config snapshot exposed only during native delivery
    std::vector<OBJECTID> PendingDrops; // Owned by native transfers; IDs allow cancellation without retaining targets
-   APTR     DragKeyHandle = nullptr; // Keyboard subscription that cancels the drag on Escape
+   int      DragKeyHandle = 0; // Keyboard subscription that cancels the drag on Escape
    char     Device[32];
    std::string ButtonOrder;       // The order of the first 11 buttons can be changed here
    int16_t     ButtonOrderFlags[12]; // Button order represented as JD flags
@@ -708,3 +708,5 @@ class extBitmap : public objBitmap {
    extBitmap(objMetaClass *ClassPtr, OBJECTID ObjectID);
    ~extBitmap();
 };
+
+void free_keyboard();

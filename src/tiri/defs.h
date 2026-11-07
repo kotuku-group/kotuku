@@ -338,7 +338,7 @@ constexpr int FIM_DEVICE   = 2;
 struct finput {
    extTiri *Script;
    struct finput *Next;
-   APTR   KeyEvent;
+   int    KeyEvent;
    OBJECTID SurfaceID;
    int    InputHandle;
    FUNCTION Callback;

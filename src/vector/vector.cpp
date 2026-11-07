@@ -37,7 +37,6 @@ FT_Library glFTLibrary = nullptr;
 
 std::recursive_mutex glVectorFocusLock;
 std::vector<extVector *> glVectorFocusList; // The first reference is the most foreground object with the focus
-APTR glKeyDispatchHandle = nullptr;
 
 std::recursive_mutex glFontMutex;
 text_coverage_cache glTextCoverageCache;
@@ -121,7 +120,6 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
 
 static ERR MODExpunge(void)
 {
-   if (glKeyDispatchHandle) { UnsubscribeEvent(glKeyDispatchHandle); glKeyDispatchHandle = nullptr; }
 
    {
       const std::lock_guard lock(glFontMutex);

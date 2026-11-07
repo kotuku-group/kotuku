@@ -881,7 +881,10 @@ translated through the user's keymap.
 
 `ERR callback(*Viewport, INT Qualifiers, INT Code, INT Unicode);`
 
-If the callback returns `ERR::Terminate` then the subscription will be ended.  All other error codes are ignored.
+If the callback returns `ERR::Terminate` then the subscription will be ended.  Returning `KRES::HANDLED` consumes the
+key and stops delivery to remaining callbacks, ancestors and surface shortcuts.  Zero and all other results continue
+delivery.  Keyboard delivery follows the focused vector towards its ancestors, independently of tab order.
+Focus-scoped reservations take precedence over these callbacks.
 
 -INPUT-
 func Callback: Reference to a callback function that will receive input messages.
@@ -916,6 +919,12 @@ static ERR VECTOR_SubscribeKeyboard(extVector *Self, struct vec::SubscribeKeyboa
       if (!Self->KeyboardSubscriptions) return log.warning(ERR::AllocMemory);
    }
 
+   if (not Self->KeyboardHandle) {
+      auto callback = C_FUNCTION(route_vector_key, Self);
+      auto error = gfx::SubscribeKeyboard(Self->Scene->SurfaceID, Self->UID, KBF::NIL,
+         &callback, &Self->KeyboardHandle);
+      if (error != ERR::Okay) return error;
+   }
    ((extVectorScene *)Self->Scene)->KeyboardSubscriptions.emplace(Self);
 
    Args->Callback.pin();
@@ -2430,6 +2439,10 @@ double extVector::fixed_stroke_width()
 //********************************************************************************************************************
 
 extVector::~extVector() {
+   if (KeyboardHandle) gfx::UnsubscribeKeyboard(KeyboardHandle);
+   if (KeyboardOwners) {
+      for (auto &[code, owner] : *KeyboardOwners) owner.unpin();
+   }
    ClipCache.reset();
 
    if (FeedbackSubscriptions) {

@@ -144,9 +144,9 @@ end
             {
                menu={
                   id='zoom', label='Zoom', icon='tools/magnifier', items=array<table> {
-                     { id='zoom_in', label='Zoom In', qualifier='CTRL', key='+', onActivate=itemClicked },
-                     { id='zoom_out', label='Zoom Out', qualifier='CTRL', key='-', onActivate=itemClicked },
-                     { id='zoom_reset', label='Actual Size', qualifier='CTRL', key='0', onActivate=itemClicked }
+                     { id='zoom_in', label='Zoom In', qualifier='CTRL', key='+', onActivate=function() win.zoomIn() end },
+                     { id='zoom_out', label='Zoom Out', qualifier='CTRL', key='-', onActivate=function() win.zoomOut() end },
+                     { id='zoom_reset', label='Actual Size', qualifier='CTRL', key='0', onActivate=function() win.resetZoom() end }
                   }
                }
             }
@@ -596,7 +596,6 @@ end
    })
 
 
-
    try
       global sndAlarm = obj.new('sound', { path=glPath .. 'data/alarm.mp3', volume=0.2 })
    end
@@ -729,30 +728,8 @@ end
 
    gui.registerWidget(win.viewport, glThemeHook)
 
-   -- Zoom controls are kept in their own viewport above the client viewport so that they are unaffected by the zoom.
-   -- Zooming sets the client viewport's view box to a fraction of the window size, so content anchored to the right or
-   -- bottom edges is laid out again within the zoomed area.  A view box can't be removed once set, so it follows every
-   -- resize, including at a zoom of 1.
-
-   zoom = 1.0
-   ZOOM_STEP <const> = 1.25
-
-   function applyZoom()
-      viewport.{ viewX = 0, viewY = 0, viewWidth = win.surface.width / zoom, viewHeight = win.surface.height / zoom }
-      win.surface.mtScheduleRedraw()
-   end
-
-   function setZoom(Value:num)
-      zoom = math.min(4, math.max(0.25, Value))
-      applyZoom()
-   end
-
-   win.bkgd.resizeEvent = function(Viewport, Vector, X, Y, Width, Height)
-      if viewport.viewWidth > 0 then applyZoom() end
-   end
-
-   zoomViewport = win.viewport.new('VectorViewport', {
-      xOffset = gui.sizing.widget.gap, y = gui.sizing.widget.gap, width = 1, height = 1
+   themeViewport = win.viewport.new('VectorViewport', {
+      xOffset = gui.sizing.widget.gap, y = gui.sizing.widget.gap, width = 24, height = 24
    })
 
    -- The theme button switches the window between the light and dark themes with win.setTheme().  Widgets that
@@ -763,7 +740,7 @@ end
    end
 
    themeButton = gui.button({
-      target = zoomViewport,
+      target = themeViewport,
       icon   = themeIcon(),
       tip    = 'Toggle Light and Dark Theme',
       x = 0, y = 0, width = 24, height = 24,
@@ -774,28 +751,6 @@ end
          end
       }
    })
-
-   zoomOutButton = gui.button({
-      target = zoomViewport,
-      label  = '-',
-      tip    = 'Zoom Out',
-      x = themeButton.viewport.width + gui.sizing.widget.gap, y = 0, width = 24, height = 24,
-      events = { activate = function() setZoom(zoom / ZOOM_STEP) end }
-   })
-
-   zoomInButton = gui.button({
-      target = zoomViewport,
-      label  = '+',
-      tip    = 'Zoom In',
-      x = zoomOutButton.viewport.x + zoomOutButton.viewport.width + gui.sizing.widget.gap,
-      y = 0, width = 24, height = 24,
-      events = { activate = function() setZoom(zoom * ZOOM_STEP) end }
-   })
-
-   zoomViewport.{
-      width  = zoomInButton.viewport.x + zoomInButton.viewport.width,
-      height = math.max(themeButton.viewport.height, zoomOutButton.viewport.height, zoomInButton.viewport.height)
-   }
 
    win.show()
    processing.sleep() -- Will sleep until the window sends MSGID_QUIT

@@ -1,0 +1,391 @@
+-- Keyboard reservations and consumption share the same broker for surfaces, vectors and native text.
+
+   include 'display', 'vector'
+   module display as mGfx
+
+registrations = array<any>
+surfaces = array<obj>
+
+@AfterEach
+function cleanup()
+   for registration in values(registrations) do registration.unsubscribe() end
+   registrations.clear()
+   for surface in values(surfaces) do surface.free() end
+   surfaces.clear()
+   processing.sleep(0)
+end
+
+function watch(Target, Callback:func!, Options:table):any
+   local registration = input.keyboard(Target, Callback, Options)
+   registrations.push(registration)
+   return registration
+end
+
+function scene():<obj, obj, obj>
+   local surface = obj.new('Surface', { width=200, height=100 })
+   surfaces.push(surface)
+   local sc = surface.new('VectorScene', { surface=surface })
+   local root = sc.new('VectorViewport', { width=200, height=100 })
+   local child = root.new('VectorViewport', { width=100, height=100 })
+   surface.acShow()
+   surface.acFocus()
+   check child.acFocus()
+   processing.sleep(0)
+   return surface, root, child
+end
+
+function send(Code:num!, Qualifiers:num, Unicode:num)
+   local ev = array<int, 6>
+   ev[0] = ('keypress').hash()
+   ev[1] = (EVG_IO << 24) | (('keyboard').hash() & 0xffffff)
+   ev[2] = Qualifiers ?? KQ_PRESSED
+   ev[3] = Code
+   ev[4] = Unicode ?? 0
+   check mSys.BroadcastEvent(ev, 24)
+   processing.sleep(0)
+end
+
+@Test function ReservationPrecedesEarlierAndLaterSubscribers()
+   local surface, root, child = scene()
+   local ordinary, reserved, observed = 0, 0, 0
+   watch(surface, function() ordinary++ end)
+   root.mtSubscribeKeyboard(function() ordinary++ end)
+   watch(root, function() reserved++ end, {
+      reserve=true, required=KQ_CTRL, forbidden=KQ_ALT | KQ_COMMAND, code=KEY_EQUALS
+   })
+   watch(child, function() ordinary++ end)
+   watch(surface, function() ordinary++ end)
+   watch(nil, function() observed++; return KRES_HANDLED end, { observer=true })
+   send(KEY_EQUALS, KQ_PRESSED | KQ_R_CTRL | KQ_SHIFT | KQ_CAPS_LOCK, 43)
+   assert(reserved is 1 and ordinary is 0, 'Reservation must precede all ordinary subscribers')
+   assert(observed is 1, 'Raw observers must see consumed input')
+   send(KEY_EQUALS, KQ_RELEASED)
+   assert(reserved is 2 and ordinary is 0, 'Reserved release must follow its owner after Ctrl is released')
+   send(KEY_EQUALS, KQ_PRESSED | KQ_CTRL | KQ_ALT, 43)
+   assert(reserved is 2 and ordinary is 4, 'AltGr must bypass the reservation')
+end
+
+@Test function DetachedVectorScopeIsRejected()
+   local sc = obj.new('VectorScene', { pageWidth=100, pageHeight=100 })
+   local vp = sc.new('VectorViewport', { width=100, height=100 })
+   try
+      registrations.push(input.keyboard(vp, function() end))
+   except e
+   success
+      raise 'A vector scope without a surface must raise instead of registering a dead handler'
+   end
+   local err, handle = mGfx.SubscribeKeyboard(0, vp.id, 0, function() end)
+   if err is ERR_Okay then mGfx.UnsubscribeKeyboard(handle) end
+   assert(err is ERR_Args, 'The broker must reject an object scope without a surface, got ' .. mSys.GetErrorMsg(err))
+   sc.free()
+end
+
+@Test function ConsumptionFollowsFocusInsteadOfTabOrder()
+   local surface, root, child = scene()
+   root.tabOrder = 1
+   child.tabOrder = 255
+   local parent_hits, child_hits, surface_hits = 0, 0, 0
+   root.mtSubscribeKeyboard(function() parent_hits++ end)
+   child.mtSubscribeKeyboard(function() child_hits++; return KRES_HANDLED end)
+   watch(surface, function() surface_hits++ end)
+   send(KEY_A)
+   assert(child_hits is 1 and parent_hits is 0 and surface_hits is 0,
+      'The focused child must consume before its ancestor regardless of tab order')
+end
+
+@Test function LegacyResultsContinueAndTerminateUnsubscribes()
+   local surface, root, child = scene()
+   local first, second, last = 0, 0, 0
+   child.mtSubscribeKeyboard(function() first++; return ERR_Terminate end)
+   child.mtSubscribeKeyboard(function() second++; return ERR_Okay end)
+   root.mtSubscribeKeyboard(function() last++ end)
+   send(KEY_A)
+   send(KEY_A)
+   assert(first is 1 and second is 2 and last is 2, 'Legacy nil/Okay continue and Terminate removes only its handler')
+end
+
+@Test function ViewportReservationOnlyAppliesToFocusedBranch()
+   local surface, root, child = scene()
+   local sibling = root.new('VectorViewport', { width=100, height=100 })
+   local reserved, ordinary = 0, 0
+   watch(child, function() reserved++ end, { reserve=true, code=KEY_F2 })
+   watch(surface, function() ordinary++ end)
+   send(KEY_F2)
+   check sibling.acFocus()
+   send(KEY_F2)
+   check child.acFocus()
+   child.acDisable()
+   send(KEY_F2)
+   child.acEnable()
+   child.acHide()
+   send(KEY_F2)
+   assert(reserved is 1 and ordinary is 3, 'Inactive, disabled and hidden scopes must not reserve input')
+end
+
+@Test function AncestorReservationPrecedesDescendant()
+   local surface, root, child = scene()
+   local parent_hits, child_hits = 0, 0
+   watch(child, function() child_hits++ end, { reserve=true, code=KEY_F2 })
+   watch(root, function() parent_hits++ end, { reserve=true, code=KEY_F2 })
+   send(KEY_F2)
+   assert(parent_hits is 1 and child_hits is 0, 'Outer capture must take precedence over nested reservations')
+end
+
+@Test function OverrideReservationPrecedesAncestor()
+   local surface, root, child = scene()
+   local surface_hits, parent_hits, child_hits = 0, 0, 0
+   watch(surface, function() surface_hits++ end, { reserve=true, code=KEY_F2 })
+   watch(root, function() parent_hits++ end, { reserve=true, override=true, code=KEY_F2 })
+   watch(child, function() child_hits++ end, { reserve=true, override=true, code=KEY_F2 })
+   send(KEY_F2)
+   send(KEY_F2, KQ_RELEASED)
+   assert(child_hits is 2 and parent_hits is 0 and surface_hits is 0,
+      'The innermost override must take the press and its release')
+   check root.acFocus()
+   processing.sleep(0)
+   send(KEY_F2)
+   assert(parent_hits is 1 and surface_hits is 0, 'An override must still precede an outer default reservation')
+end
+
+@Test function OverrideRequiresReserve()
+   local surface, root, child = scene()
+   local err, handle = mGfx.SubscribeKeyboard(surface.id, 0, KBF_OVERRIDE, function() end)
+   if err is ERR_Okay then mGfx.UnsubscribeKeyboard(handle) end
+   assert(err is ERR_Args, 'OVERRIDE without RESERVE must be rejected, got ' .. mSys.GetErrorMsg(err))
+end
+
+@Test function OverlappingReservationsReportConflict()
+   local surface, root, child = scene()
+   watch(root, function() end, { reserve=true, required=KQ_CTRL, code=KEY_F2 })
+   local rejected = false
+   try
+      watch(root, function() end, { reserve=true, required=KQ_L_CTRL, code=KEY_F2 })
+   except e
+      assert(e.code is ERR_AlreadyDefined, 'Conflicts must have a stable error code')
+      rejected = true
+   end
+   assert(rejected, 'Overlapping reservations at the same scope must be rejected')
+   watch(root, function() end, { reserve=true, forbidden=KQ_CTRL, code=KEY_F2 })
+end
+
+@Test function CodeAndUnicodeReservationsCoexist()
+   local surface, root, child = scene()
+   local saves, zooms = 0, 0
+   watch(surface, function() saves++ end, { reserve=true, required=KQ_CTRL, code=KEY_S })
+   local zoom = watch(surface, function() zooms++ end, { reserve=true })
+   zoom.reserve(KQ_CTRL, KQ_ALT | KQ_COMMAND, 0, 43)
+   send(KEY_S, KQ_PRESSED | KQ_L_CTRL, 19)
+   send(KEY_EQUALS, KQ_PRESSED | KQ_L_CTRL | KQ_L_SHIFT, 43)
+   assert(saves is 1 and zooms is 1, 'A code reservation must not conflict with an unrelated Unicode reservation')
+
+   local rejected = false
+   try
+      watch(surface, function() end, { reserve=true, required=KQ_CTRL, unicode=43 })
+   except e
+      assert(e.code is ERR_AlreadyDefined, 'Duplicate Unicode reservations must report a conflict')
+      rejected = true
+   end
+   assert(rejected, 'Duplicate Unicode reservations at the same scope must be rejected')
+end
+
+@Test function AncestorSurfacesReceiveActions()
+   local parent = obj.new('Surface', { width=200, height=100 })
+   surfaces.push(parent)
+   local inner = parent.new('Surface', { width=50, height=50 })
+   parent.acShow()
+   inner.acShow()
+   check inner.acFocus()
+   processing.sleep(0)
+
+   local order = ''
+   watch(parent, function() order ..= 'parent;' end)
+   watch(inner, function() order ..= 'inner;' end)
+   send(KEY_A, KQ_PRESSED, 97)
+   assert(order is 'inner;parent;', 'Ancestor surfaces must follow the focused surface, got ' .. order)
+
+   order = ''
+   watch(inner, function() order ..= 'consumed;' return KRES_HANDLED end)
+   send(KEY_B, KQ_PRESSED, 98)
+   assert(order is 'inner;consumed;', 'Consumption on the focused surface must stop ancestors, got ' .. order)
+end
+
+@Test function AlternativesAndRepeatUseTheOriginalOwner()
+   local surface, root, child = scene()
+   local reserved, ordinary = 0, 0
+   local reservation = watch(root, function() reserved++ end, { reserve=true, noRepeat=true })
+   reservation.reserve(KQ_CTRL, KQ_ALT | KQ_COMMAND, KEY_NP_PLUS)
+   reservation.reserve(KQ_CTRL, KQ_ALT | KQ_COMMAND, 0, 43)
+   watch(surface, function() ordinary++ end)
+   send(KEY_NP_PLUS, KQ_PRESSED | KQ_L_CTRL, 43)
+   send(KEY_NP_PLUS, KQ_PRESSED | KQ_REPEAT | KQ_L_CTRL, 43)
+   send(KEY_NP_PLUS, KQ_RELEASED)
+   assert(reserved is 2 and ordinary is 0, 'Suppressed repeat remains owned through release')
+   send(KEY_A, KQ_PRESSED | KQ_R_CTRL, 43)
+   assert(reserved is 3, 'Unicode alternatives must reserve layout-specific key codes')
+end
+
+@Test function RemovingOwnerSuppressesItsRemainingSequence()
+   local surface, root, child = scene()
+   local ordinary = 0
+   local reservation = watch(root, function() end, { reserve=true, code=KEY_F2 })
+   watch(surface, function() ordinary++ end)
+   send(KEY_F2)
+   reservation.unsubscribe()
+   send(KEY_F2, KQ_PRESSED | KQ_REPEAT)
+   send(KEY_F2, KQ_RELEASED)
+   assert(ordinary is 0, 'Removing an owner must not leak its repeat or release')
+   send(KEY_F2)
+   assert(ordinary is 1, 'The next initial press must route normally')
+end
+
+@Test function NewReservationCannotClaimAnExistingPress()
+   local surface, root, child = scene()
+   local ordinary, reserved = 0, 0
+   watch(surface, function() ordinary++ end)
+   send(KEY_F2)
+   watch(root, function() reserved++ end, { reserve=true, code=KEY_F2 })
+   send(KEY_F2, KQ_PRESSED | KQ_REPEAT)
+   send(KEY_F2, KQ_RELEASED)
+   assert(ordinary is 3 and reserved is 0, 'New reservations must wait for a new initial press')
+end
+
+@Test function FocusChangeDoesNotDeliverToNewBranch()
+   local surface, root, child = scene()
+   local sibling = root.new('VectorViewport', { width=100, height=100 })
+   local parent_hits, sibling_hits = 0, 0
+   watch(child, function() sibling.acFocus() end)
+   watch(sibling, function() sibling_hits++ end)
+   watch(root, function() parent_hits++ end)
+   send(KEY_A)
+   send(KEY_A, KQ_RELEASED)
+   assert(parent_hits is 0 and sibling_hits is 0, 'A focus change must stop the event and suppress unmatched release')
+   send(KEY_A)
+   assert(sibling_hits is 1 and parent_hits is 1, 'Subsequent presses must reach the new focus branch')
+end
+
+@Test function CallbackCanUnsubscribeAnotherCallback()
+   local surface, root, child = scene()
+   local hits = 0
+   local other:any
+   watch(child, function() other.unsubscribe() end)
+   other = watch(child, function() hits++ end)
+   send(KEY_A)
+   assert(hits is 0, 'A removed registration in the dispatch snapshot must not be called')
+end
+
+@Test function ReservationProtectsNativeText()
+   local surface, root, child = scene()
+   local text = child.new('VectorText', { string='abc', fontSize=12, textFlags=VTXF_EDITABLE })
+   check child.acFocus()
+   local reserved = 0
+   watch(root, function() reserved++ end, { reserve=true, code=KEY_A })
+   send(KEY_A, KQ_PRESSED, 97)
+   assert(text.string is 'abc' and reserved is 1, 'Native text insertion must run behind reservations')
+end
+
+@Test function FocusedHandlerCanConsumeTabBeforeDefaultTraversal()
+   local surface, root, child = scene()
+   local sibling = root.new('VectorViewport', { width=100, height=100 })
+   sibling.mtSubscribeKeyboard(function() end)
+   local hits = 0
+   watch(child, function(Handle, SurfaceID, Qualifiers, Code)
+      if Code is KEY_TAB then hits++; return KRES_HANDLED end
+   end)
+   check child.acFocus()
+   send(KEY_TAB, KQ_PRESSED | KQ_NOT_PRINTABLE)
+   send(KEY_TAB, KQ_RELEASED | KQ_NOT_PRINTABLE)
+   assert(hits is 2, 'The focused handler must own Tab press and release')
+   assert(child.flags has VF_HAS_FOCUS, 'Consumed Tab must not trigger default traversal')
+end
+
+@Test function ReservationCanCloseItsSurface()
+   local surface, root, child = scene()
+   local hits = 0
+   watch(surface, function() surface.free() end, { reserve=true, code=KEY_F2 })
+   watch(surface, function() hits++ end)
+   send(KEY_F2)
+   assert(hits is 0, 'Closing a reserved surface must not dispatch the key to another handler')
+   surfaces.clear()
+end
+
+@Test function GlobalActionsRespectReservationsAndObserversRemainRaw()
+   local surface, root, child = scene()
+   local actions, observations = 0, 0
+   watch(nil, function() actions++ end)
+   watch(nil, function() observations++ end, { observer=true })
+   watch(root, function() end, { reserve=true, code=KEY_F2 })
+   send(KEY_F2)
+   assert(actions is 0 and observations is 1, 'Global actions must not bypass reserved input')
+   send(KEY_A)
+   assert(actions is 1 and observations is 2, 'Unreserved input must reach the global fallback')
+end
+
+@Test function NestedDispatchRetainsSeparateOwnership()
+   local surface, root, child = scene()
+   local child_hits, parent_hits = 0, 0
+   watch(child, function(Handle, SurfaceID, Qualifiers, Code)
+      child_hits++
+      if Code is KEY_A then send(KEY_B) end
+      return KRES_HANDLED
+   end)
+   watch(root, function() parent_hits++ end)
+   send(KEY_A)
+   send(KEY_B, KQ_RELEASED)
+   assert(child_hits is 3 and parent_hits is 0, 'Nested events must retain independent ownership')
+end
+
+@Test function VectorCallbackCanDestroyItsTarget()
+   local surface, root, child = scene()
+   local parent_hits = 0
+   child.mtSubscribeKeyboard(function()
+      child.free()
+      return KRES_HANDLED
+   end)
+   root.mtSubscribeKeyboard(function() parent_hits++ end)
+   send(KEY_A)
+   assert(parent_hits is 0, 'A consumed event must not bubble after its target is destroyed')
+   send(KEY_A)
+   assert(parent_hits is 1, 'A later press must reach the surviving focus ancestor')
+end
+
+@Test function MultipleScenesDoNotOverwriteTheActiveFocusPath()
+   local surface, root, child = scene()
+   local other_scene = surface.new('VectorScene', { surface=surface })
+   local other = other_scene.new('VectorViewport', { width=50, height=50 })
+   local child_hits, other_hits = 0, 0
+   watch(child, function() child_hits++ end)
+   watch(other, function() other_hits++ end)
+   check child.acFocus()
+   send(KEY_A)
+   assert(child_hits is 1 and other_hits is 0, 'Inactive scene adapters must not erase the active scene focus path')
+end
+
+@Test function VectorSequenceStaysWithTheConsumingCallback()
+   local surface, root, child = scene()
+   local first, second = 0, 0
+   child.mtSubscribeKeyboard(function(Vector, Qualifiers)
+      first++
+      if Qualifiers has KQ_PRESSED then return KRES_HANDLED end
+   end)
+   child.mtSubscribeKeyboard(function() second++ end)
+   send(KEY_A)
+   send(KEY_A, KQ_PRESSED | KQ_REPEAT)
+   send(KEY_A, KQ_RELEASED)
+   assert(first is 3 and second is 0, 'Release must not fall through to another callback on the consuming vector')
+end
+
+@Test function DeactivatedScopeCannotReclaimAHeldSequence()
+   local surface, root, child = scene()
+   local sibling = root.new('VectorViewport', { width=50, height=50 })
+   local hits, ordinary = 0, 0
+   watch(child, function() hits++ end, { reserve=true, code=KEY_F2 })
+   watch(surface, function() ordinary++ end)
+   send(KEY_F2)
+   check sibling.acFocus()
+   check child.acFocus()
+   send(KEY_F2, KQ_PRESSED | KQ_REPEAT)
+   send(KEY_F2, KQ_RELEASED)
+   assert(hits is 1 and ordinary is 0, 'A deactivated scope must not reclaim the remainder of a held sequence')
+   send(KEY_F2)
+   assert(hits is 2, 'A new press must reactivate the reservation')
+end

@@ -209,6 +209,7 @@ static void insert_char(class extVectorText *, int);
 static void generate_text(class extVectorText *, agg::path_storage &Path);
 static void raster_text_to_bitmap(class extVectorText *);
 static void key_event(evKey *, int, class extVectorText *);
+static ERR routed_text_key(const evKey *, APTR);
 static ERR reset_font(class extVectorText *, bool = false);
 static ERR text_input_events(class extVector *Vector, const InputEvent *Events);
 static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta);
@@ -258,7 +259,7 @@ class extVectorText : public extVector {
    std::string txAlias;  // The alias that txFamily was resolved through, if any
    std::string txFontStyle;
    std::string txFontSizeString;
-   APTR    txKeyEvent;
+   int     txKeyEvent;
    OBJECTID txFocusID;
    OBJECTID txShapeInsideID;   // Enable word-wrapping within this shape
    OBJECTID txShapeSubtractID; // Subtract this shape from the path defined by shape-inside
@@ -309,7 +310,7 @@ class extVectorText : public extVector {
       if (txSelection) FreeResource(txSelection);
       if (txBitmapImage)  FreeResource(txBitmapImage);
       if (txAlphaBitmap)  FreeResource(txAlphaBitmap);
-      if (txKeyEvent)     UnsubscribeEvent(txKeyEvent);
+      if (txKeyEvent)     gfx::UnsubscribeKeyboard(txKeyEvent);
       release_callback(txOnChange);
       release_callback(txOnCursorMove);
 
@@ -320,6 +321,7 @@ class extVectorText : public extVector {
       }
    }
 };
+
 
 //********************************************************************************************************************
 // Nested editing helpers may move both endpoints several times.  Report only their final state, after OnChange.
@@ -2059,7 +2061,9 @@ static void activate_text_input(extVectorText *Self)
    selection_changed(Self);
 
    if (not Self->txKeyEvent) {
-      SubscribeEvent(EVID_IO_KEYBOARD_KEYPRESS, C_FUNCTION(key_event, Self), &Self->txKeyEvent);
+      auto callback = C_FUNCTION(routed_text_key, Self);
+      gfx::SubscribeKeyboard(Self->Scene->SurfaceID, Self->txFocusID, KBF::DEFAULT,
+         &callback, &Self->txKeyEvent);
    }
 
    if (((Self->txFlags & VTXF::EDITABLE) != VTXF::NIL) and Self->txCursor.vector) {
@@ -2086,7 +2090,7 @@ static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventOb
       Self->txHasFocus = false;
       if (Self->txCursor.vector) Self->txCursor.vector->setVisibility(VIS::HIDDEN);
       if (Self->txCursor.timer)  { UpdateTimer(Self->txCursor.timer, 0); Self->txCursor.timer = 0; }
-      if (Self->txKeyEvent)      { UnsubscribeEvent(Self->txKeyEvent); Self->txKeyEvent = nullptr; }
+      if (Self->txKeyEvent)      { gfx::UnsubscribeKeyboard(Self->txKeyEvent); Self->txKeyEvent = 0; }
 
       Self->txDragging = false;
       Self->txDragPending = false;
@@ -2477,6 +2481,13 @@ static bool navigate_text(extVectorText *Self, const evKey *Event)
    return true;
 }
 
+static ERR routed_text_key(const evKey *Event, APTR Meta)
+{
+   auto event = *Event;
+   key_event(&event, sizeof(event), (extVectorText *)Meta);
+   return ERR::Okay; // Preserve the input widget's keypress feedback on its enclosing viewport.
+}
+
 static void key_event(evKey *Event, int Size, extVectorText *Self)
 {
    CursorUpdate update(Self);
@@ -2536,7 +2547,8 @@ static void key_event(evKey *Event, int Size, extVectorText *Self)
 
    if ((Self->txFlags & VTXF::EDITABLE) IS VTXF::NIL) return;
 
-   if ((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) { // and (!(Flags & KQ::INSTRUCTIONKEYS))
+   if (((Event->Qualifiers & KQ::NOT_PRINTABLE) IS KQ::NIL) and
+       (((Event->Qualifiers & KQ::CTRL) IS KQ::NIL) or ((Event->Qualifiers & KQ::ALT) != KQ::NIL))) {
       // Printable character handling
 
       insert_char(Self, Event->Unicode);

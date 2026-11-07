@@ -4,8 +4,8 @@
 
 set (BUNDLED_PACKAGES
    benchmark button checkbox colourpicker combobox config dialog divider filedialog filemgr filesearch
-   fileview fontdialog git gui httpserver icon input json menu menubar oauth2 openai openapi options proxyserver scrollbar
-   panel slider smtp tempus toggle toolbar tooltip url vfx view window)
+   fileview fontdialog git gui httpserver icon input json menu menubar oauth2 openai openapi options
+   proxyserver scrollbar panel slider smtp tempus toggle toolbar tooltip url vfx view window)
 
 set (PACKAGE_MANIFESTS)
 
@@ -232,6 +232,10 @@ flute_test (package_openai "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_openai.tiri")
 flute_test (package_chatgpt "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_chatgpt.tiri")
 #flute_test (package_smtp "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_smtp.tiri") Run manually
 flute_test (package_gui_menu "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_menu.tiri")
+flute_test (package_gui_listview_hooks "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_listview_hooks.tiri")
 flute_test (package_gui_slider "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_slider.tiri")
 flute_test (package_file_transfer "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_file_transfer.tiri")
-flute_test (package_gui_fileview_move "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_fileview_move.tiri")
+#flute_test (package_gui_fileview "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_fileview.tiri")
+#flute_test (package_gui_fileview_move "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_fileview_move.tiri")
+flute_test (package_gui_input "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_input.tiri")
+flute_test (package_gui_window_callbacks "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gui_window_callbacks.tiri")

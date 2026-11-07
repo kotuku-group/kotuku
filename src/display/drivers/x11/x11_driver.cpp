@@ -1323,6 +1323,37 @@ ERR X11Driver::displayInfo(DisplayInfo &Info)
 {
    if (not Data->Open) return ERR::NotInitialised;
 
+   if (Info.DisplayID) {
+      const std::lock_guard lock(Data->NativeLock);
+      for (const auto &[native, window] : Data->Windows) {
+         if ((not window->Display) or (window->Display->UID != Info.DisplayID)) continue;
+
+         // The window manager owns this property; a stored maximise request is not the current host state.
+         Info.Flags &= ~SCR::MAXIMISE;
+         const auto property = XInternAtom(Data->Connection, "_NET_WM_STATE", True);
+         if (property IS None) break;
+         Atom type = None;
+         int format = 0;
+         unsigned long count = 0, remaining = 0;
+         unsigned char *value = nullptr;
+         if ((XGetWindowProperty(Data->Connection, native, property, 0, 64, False, XA_ATOM,
+               &type, &format, &count, &remaining, &value) IS Success) and
+             (type IS XA_ATOM) and (format IS 32) and value) {
+            const auto horizontal = XInternAtom(Data->Connection, "_NET_WM_STATE_MAXIMIZED_HORZ", True);
+            const auto vertical = XInternAtom(Data->Connection, "_NET_WM_STATE_MAXIMIZED_VERT", True);
+            const auto states = (const Atom *)value;
+            bool maximised_x = false, maximised_y = false;
+            for (unsigned long i = 0; i < count; i++) {
+               if (states[i] IS horizontal) maximised_x = true;
+               if (states[i] IS vertical) maximised_y = true;
+            }
+            if (maximised_x and maximised_y) Info.Flags |= SCR::MAXIMISE;
+         }
+         if (value) XFree(value);
+         break;
+      }
+   }
+
    auto screen = DefaultScreen(Data->Connection);
    Info.MonitorX = Info.MonitorY = Info.VirtualX = Info.VirtualY = 0;
    Info.MonitorWidth = Info.VirtualWidth = DisplayWidth(Data->Connection, screen);

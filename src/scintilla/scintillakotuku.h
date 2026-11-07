@@ -93,7 +93,7 @@ class extScintilla : public objScintilla {
    int    MarginDigits;        // Number of digits that the line number margin is sized for
    TIMER  TickTimer;           // Runs the independent fine-ticker deadlines
    TIMER  IdleTimer;           // Calls Idle() while Scintilla has background work, e.g. word wrapping
-   APTR   KeyHandle = nullptr; // Subscription to all keyboard events, which track the modifier keys
+   int    KeyHandle = 0; // Subscription to all keyboard events, which track the modifier keys
    SEF    ReportEventFlags;    // For delayed event reporting.
    uint16_t KeyAlt:1;
    uint16_t KeyCtrl:1;
