@@ -1,4 +1,3 @@
-
 class objScintilla;
 class ScintillaKTK;
 class SurfacePan;
@@ -12,7 +11,13 @@ using namespace kt;
 
 class extScintilla : public objScintilla {
    public:
-   // Internal lexer and margin colours are configured through ThemeXML.
+   // The palette is configured and read back through ThemeXML.
+   RGB8 BkgdColour;
+   RGB8 TextColour;
+   RGB8 CursorColour;
+   RGB8 LineHighlight;
+   RGB8 SelectFore;
+   RGB8 SelectBkgd;
    RGB8 CommentColour;
    RGB8 KeywordColour;
    RGB8 StringColour;
@@ -23,6 +28,16 @@ class extScintilla : public objScintilla {
    RGB8 ErrorColour;
    RGB8 MarginColour;
    RGB8 MarginBkgd;
+   // Derived colours follow a source colour of the palette until they are set explicitly (see glThemeColours)
+   RGB8 Whitespace;
+   RGB8 IndentGuide;
+   RGB8 BraceMatch;
+   RGB8 BraceMismatch;
+   RGB8 BraceBkgd;
+   RGB8 SelectInactiveBkgd;
+   RGB8 SelectAdditionalBkgd;
+   uint32_t ThemeOverrides = 0; // Bit per glThemeColours entry; set when a derived colour no longer inherits
+   OBJECTID ThemeCacheID = 0; // XML object returned when ThemeXML is read; rewritten on each read
 
    struct pending_drop {
       OBJECTID source = 0;
@@ -77,9 +92,16 @@ class extScintilla : public objScintilla {
    std::map<int, std::string> ActiveKeywords;
    struct indicator_definition {
       SCIND style;
-      int colour; // RGB, or -1 ErrorColour, -2 KeywordColour, -3 SelectBkgd
+      int colour; // RGB, or -1 ErrorColour, -2 KeywordColour, -3 SelectBkgd; see theme_reference()
    };
    std::map<int, indicator_definition> Indicators;
+   struct marker_definition {
+      int symbol;
+      int fore;  // RGB, or a theme reference as for indicator_definition
+      int bkgd;
+      int alpha; // Applies to bkgd
+   };
+   std::map<int, marker_definition> Markers;
    int    LongestLine;         // Longest line in the document
    int    LongestWidth;        // Scroll width: the pixel width of the longest line, plus padding
    int    WidthCheckFirst = INT_MAX; // Range of modified lines to measure before the next paint
@@ -139,6 +161,22 @@ class extScintilla : public objScintilla {
       CursorColour  = RGB8 { 0, 0, 0, 255 };
       SelectFore    = RGB8 { 255, 255, 255, 255 };
       SelectBkgd    = RGB8 { 0, 0, 180, 255 };
+      Whitespace    = MarginColour;
+      IndentGuide   = MarginColour;
+      BraceMatch    = KeywordColour;
+      BraceMismatch = ErrorColour;
+      BraceBkgd     = MarginBkgd;
+      SelectInactiveBkgd   = SelectBkgd;
+      SelectAdditionalBkgd = SelectBkgd;
+   }
+
+   // Resolves a colour argument of DefineIndicator() or DefineMarker() to 0xRRGGBB.  Negative values refer to the
+   // theme: -1 error, -2 keyword, -3 selectionBackground.
+
+   int theme_reference(int Colour) const {
+      if (Colour >= 0) return Colour;
+      auto &rgb = (Colour IS -1) ? ErrorColour : ((Colour IS -2) ? KeywordColour : SelectBkgd);
+      return (rgb.Red << 16) | (rgb.Green << 8) | rgb.Blue;
    }
 
    ~extScintilla();
@@ -280,6 +318,7 @@ public:
    virtual bool findMatchingBrace(sptr_t &brace,sptr_t &other,sptr_t mode);
 
    void ApplyIndicators();
+   void ApplyMarkers();
 
    // Lexer handling
    virtual ERR SetLexer(SCLEX ID);

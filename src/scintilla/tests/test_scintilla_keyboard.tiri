@@ -7,6 +7,7 @@
 
    include 'scintilla', 'vector', 'display'
    module display as mGfx
+   import './theme_utils'
 
 PAGE_WIDTH  = 300
 PAGE_HEIGHT = 120
@@ -74,8 +75,7 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    options.face ?= 'Clean'
    options.fontSize ?= 11
    options.flags ?= SCIF_EDIT
-   options.lineHighlight ?= '255,255,255,0'
-   local sci = host.new('Scintilla', options)
+   local sci = host.new('Scintilla', theme_utils.options(options))
    surface.acShow()
    surface.acFocus()
    surface.acDraw()
@@ -406,7 +406,7 @@ end
 -- Caret presentation
 
 @Test function CaretLineHighlightRequiresFocus()
-   local surface <close>, scene, host, sci = newEditor({ lineHighlight='200,220,255,255' })
+   local surface <close>, scene, host, sci = newEditor({ palette={ lineHighlight='#c8dcff' } })
    sci.string = 'one\ntwo'
    local other = newFocusThief(scene)
 
@@ -428,7 +428,7 @@ end
 -- colour and the background, and must be uniform along the row.
 
 @Test function TranslucentCaretLineHighlight()
-   local surface <close>, scene, host, sci = newEditor({ lineHighlight='0,0,255,96' })
+   local surface <close>, scene, host, sci = newEditor({ palette={ lineHighlight='#0000ff60' } })
    sci.string = 'one\ntwo'
    local bmp = snapshot(surface)
    local first = colourAt(bmp, 150, LINE_HEIGHT / 2)
@@ -436,9 +436,58 @@ end
    assert(colourAt(bmp, 250, LINE_HEIGHT / 2) is first, 'The blended highlight must be uniform along the row')
    assert(colourAt(bmp, 150, LINE_HEIGHT + (LINE_HEIGHT / 2)) is '255,255,255', 'Other rows must not be highlighted')
 
-   sci.lineHighlight = '0,0,255,255'
+   theme_utils.apply(sci, { lineHighlight='blue' })
    local colour = colourAt(snapshot(surface), 150, LINE_HEIGHT / 2)
    assert(colour is '0,0,255', f'An opaque highlight must use the colour exactly, got {colour}')
+end
+
+-- The inactive and additional selection colours inherit selectionBackground until they are assigned.  Column 5 of
+-- each row is a space, so the probe sees the selection background rather than a glyph.
+
+SELECTION_X <const> = TEXT_LEFT + (5 * 7) + 3
+
+@Test function InactiveSelectionColour()
+   local surface <close>, scene, host, sci = newEditor({ palette={ selectionBackground='#008000' } })
+   sci.string = 'HHHH        end'
+   local other = newFocusThief(scene)
+   check sci.mtSelectRange(0, 10)
+   local row = LINE_HEIGHT / 2
+
+   local colour = colourAt(snapshot(surface), SELECTION_X, row)
+   assert(colour is '0,128,0', f'The focused selection must use selectionBackground, got {colour}')
+
+   check other.acFocus()
+   colour = colourAt(snapshot(surface), SELECTION_X, row)
+   assert(colour is '0,128,0', f'The inactive selection must inherit selectionBackground, got {colour}')
+
+   theme_utils.apply(sci, { selectionInactiveBackground='#c0c0c0' })
+   colour = colourAt(snapshot(surface), SELECTION_X, row)
+   assert(colour is '192,192,192', f'The inactive selection must use its assigned colour, got {colour}')
+
+   check host.acFocus()
+   colour = colourAt(snapshot(surface), SELECTION_X, row)
+   assert(colour is '0,128,0', f'Regaining the focus must restore selectionBackground, got {colour}')
+end
+
+@Test function AdditionalSelectionColour()
+   local surface <close>, scene, host, sci = newEditor({ palette={ selectionBackground='#008000' } })
+   sci.string = 'HHHH        end\nHHHH        end'
+   check sci.mtSelectRange(3, 3)
+   for i in {0 to 5} do pressKey(KEY_RIGHT, KQ_L_ALT | KQ_L_SHIFT) end
+   pressKey(KEY_DOWN, KQ_L_ALT | KQ_L_SHIFT)
+
+   local bmp = snapshot(surface)
+   local first = colourAt(bmp, SELECTION_X, LINE_HEIGHT / 2)
+   local second = colourAt(bmp, SELECTION_X, LINE_HEIGHT + (LINE_HEIGHT / 2))
+   assert(first is '0,128,0' and second is '0,128,0',
+      f'Both rows of a rectangular selection must inherit selectionBackground, got {first} and {second}')
+
+   theme_utils.apply(sci, { selectionAdditionalBackground='#c0c0c0' })
+   bmp = snapshot(surface)
+   first = colourAt(bmp, SELECTION_X, LINE_HEIGHT / 2)
+   second = colourAt(bmp, SELECTION_X, LINE_HEIGHT + (LINE_HEIGHT / 2))
+   assert(first is '192,192,192', f'The anchor row is an additional selection and uses its colour, got {first}')
+   assert(second is '0,128,0', f'The caret row is the main selection, got {second}')
 end
 
 @Test function CaretBlinksWhileFocused()

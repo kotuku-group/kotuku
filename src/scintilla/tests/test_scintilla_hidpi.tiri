@@ -8,6 +8,7 @@
    include 'scintilla', 'vector', 'display'
    module vector as mVec
    module display as mGfx
+   import './theme_utils'
 
 PAGE_WIDTH  = 300
 PAGE_HEIGHT = 120
@@ -27,8 +28,7 @@ function newEditor(Width:num!, Height:num!, Scale:num, Options:table):<obj, obj,
    local options = Options ?? { }
    options.face ?= FACE
    options.fontSize ?= 14
-   options.lineHighlight ?= '255,255,255,0'
-   local sci = host.new('Scintilla', options)
+   local sci = host.new('Scintilla', theme_utils.options(options))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    return scene, host, sci, bmp
@@ -322,7 +322,7 @@ end
       local host = scene.new('VectorViewport', { x=10, y=5, width=300, height=60 })
       local _, matrix = check host.mtNewMatrix()
       check mVec.Scale(matrix, scale, scale)
-      local sci = host.new('Scintilla', { face=FACE, fontSize=14, flags=SCIF_EDIT, lineHighlight='255,255,255,0' })
+      local sci = host.new('Scintilla', theme_utils.options({ face=FACE, fontSize=14, flags=SCIF_EDIT }))
       sci.string = 'first line\nabcdefghijklmnopqrstuvwxyz'
       check surface.acShow()
       check surface.acFocus()

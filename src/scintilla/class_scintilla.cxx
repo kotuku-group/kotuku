@@ -198,14 +198,11 @@ static ERR GET_Wordwrap(extScintilla *, int *);
 
 static ERR SET_AllowTabs(extScintilla *, int);
 static ERR SET_AutoIndent(extScintilla *, int);
-static ERR SET_BkgdColour(extScintilla *, RGB8 *);
 static ERR SET_CompletionCallback(extScintilla *, FUNCTION *);
-static ERR SET_CursorColour(extScintilla *, RGB8 *);
 static ERR SET_FileDrop(extScintilla *, FUNCTION *);
 static ERR SET_FoldingMarkers(extScintilla *, int);
 static ERR SET_LeftMargin(extScintilla *, int);
 static ERR SET_Lexer(extScintilla *, SCLEX);
-static ERR SET_LineHighlight(extScintilla *, RGB8 *);
 static ERR SET_LineNumbers(extScintilla *, int);
 static ERR SET_MarginClick(extScintilla *, FUNCTION *);
 static ERR SET_Path(extScintilla *, const std::string_view &);
@@ -214,12 +211,9 @@ static ERR SET_Origin(extScintilla *, const std::string_view &);
 static ERR SET_RightMargin(extScintilla *, int);
 static ERR SET_ShowWhitespace(extScintilla *, int);
 static ERR SET_EventCallback(extScintilla *, FUNCTION *);
-static ERR SET_SelectBkgd(extScintilla *, RGB8 *);
-static ERR SET_SelectFore(extScintilla *, RGB8 *);
 static ERR SET_String(extScintilla *, const std::string_view &);
 static ERR SET_Symbols(extScintilla *, int);
 static ERR SET_TabWidth(extScintilla *, int);
-static ERR SET_TextColour(extScintilla *, RGB8 *);
 static ERR SET_Wordwrap(extScintilla *, int);
 
 //********************************************************************************************************************
@@ -277,6 +271,57 @@ static uptr_t scintilla_alpha(uint8_t Alpha)
 {
    return (Alpha < 255) ? Alpha : (uptr_t)SC_ALPHA_NOALPHA;
 }
+
+//********************************************************************************************************************
+// Applies the caret, line highlight and selection colours of the theme to Scintilla.  Style colours are applied
+// separately by SetStyleColours().  An alpha of zero disables the line highlight and the selection overrides.
+
+static void apply_theme_elements(extScintilla *Self)
+{
+   if (not Self->API) return;
+
+   const auto &cursor = Self->CursorColour;
+   SCICALL(SCI_SETCARETFORE, (uptr_t)SCICOLOUR(cursor.Red, cursor.Green, cursor.Blue));
+
+   const auto &line = Self->LineHighlight;
+   SCICALL(SCI_SETCARETLINEBACK, SCICOLOUR(line.Red, line.Green, line.Blue));
+   SCICALL(SCI_SETCARETLINEBACKALPHA, scintilla_alpha(line.Alpha));
+   SCICALL(SCI_SETCARETLINEVISIBLE, (uptr_t)(line.Alpha > 0));
+
+   const auto &whitespace = Self->Whitespace;
+   SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(Scintilla::Element::WhiteSpace),
+      sptr_t(Scintilla::Internal::ColourRGBA(whitespace.Red, whitespace.Green, whitespace.Blue).AsInteger()));
+
+   // A colour with zero alpha resets its element to Scintilla's default.  Translucent background colours retain their
+   // alpha, which SCI_SETELEMENTCOLOUR applies after SCI_SETSELALPHA.
+
+   auto element_colour = [Self](Scintilla::Element Element, const RGB8 &Colour, bool Translucent) {
+      if (Colour.Alpha) {
+         auto alpha = Translucent ? Colour.Alpha : uint8_t(255);
+         SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(Element),
+            sptr_t(Scintilla::Internal::ColourRGBA(Colour.Red, Colour.Green, Colour.Blue, alpha).AsInteger()));
+      }
+      else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(Element));
+   };
+
+   using Scintilla::Element;
+   for (auto element : { Element::SelectionText, Element::SelectionAdditionalText, Element::SelectionSecondaryText,
+         Element::SelectionInactiveText, Element::SelectionInactiveAdditionalText }) {
+      element_colour(element, Self->SelectFore, false);
+   }
+
+   // The layer of every selection is decided by selectionBackground: an opaque colour is drawn beneath the text, and a
+   // translucent one is blended over it.
+
+   const auto &bkgd = Self->SelectBkgd;
+   SCICALL(SCI_SETSELALPHA, bkgd.Alpha ? scintilla_alpha(bkgd.Alpha) : uptr_t(SC_ALPHA_NOALPHA));
+   element_colour(Element::SelectionBack, bkgd, true);
+   element_colour(Element::SelectionSecondaryBack, bkgd, true);
+   element_colour(Element::SelectionAdditionalBack, Self->SelectAdditionalBkgd, true);
+   element_colour(Element::SelectionInactiveBack, Self->SelectInactiveBkgd, true);
+   element_colour(Element::SelectionInactiveAdditionalBack, Self->SelectInactiveBkgd, true);
+}
+
 static void check_modified_widths(extScintilla *);
 static void track_modified_lines(extScintilla *, int, int);
 static void grow_scroll_width(extScintilla *, int, int);
@@ -294,9 +339,9 @@ extern ERR init_search(void);
 
 //********************************************************************************************************************
 
-static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
+static ERR MODInit(OBJECTPTR, struct CoreBase *ArgCoreBase)
 {
-   CoreBase = argCoreBase;
+   CoreBase = ArgCoreBase;
 
    kt::Log log("scintilla");
    log.msg("Backend: v5; Scintilla 5.6.9; Lexilla 5.5.5");
@@ -411,12 +456,12 @@ static void notify_dragdrop(OBJECTPTR, ACTIONID, ERR Result, struct acDragDrop *
 //********************************************************************************************************************
 // The editor follows the enabled state of its host viewport.
 
-static void notify_disable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void notify_disable_viewport(OBJECTPTR, ACTIONID, ERR Result, APTR)
 {
    if (Result IS ERR::Okay) acDisable(CurrentContext());
 }
 
-static void notify_enable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void notify_enable_viewport(OBJECTPTR, ACTIONID, ERR Result, APTR)
 {
    if (Result IS ERR::Okay) acEnable(CurrentContext());
 }
@@ -425,7 +470,7 @@ static void notify_enable_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Resu
 // Receiver for focus changes on the Focus viewport.  The editor has the focus while the Focus viewport or any of its
 // children has the focus, which matches the delivery of keyboard input.
 
-static ERR feedback_focus(objVectorViewport *Viewport, FM Event)
+static ERR feedback_focus(objVectorViewport *, FM Event)
 {
    auto Self = (extScintilla *)CurrentContext();
    Self->HasFocus = (Event & (FM::HAS_FOCUS|FM::CHILD_HAS_FOCUS)) != FM::NIL;
@@ -460,7 +505,7 @@ static void update_focus(extScintilla *Self)
 //********************************************************************************************************************
 // The host viewport is being freed, which takes the View, Page and Canvas with it.
 
-static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void notify_free_viewport(OBJECTPTR, ACTIONID, ERR, APTR)
 {
    auto Self = (extScintilla *)CurrentContext();
    hide_context_menu(Self);
@@ -482,7 +527,7 @@ static void notify_free_viewport(OBJECTPTR Object, ACTIONID ActionID, ERR Result
 //********************************************************************************************************************
 // A Focus viewport that differs from the host Viewport is being freed.
 
-static void notify_free_focus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void notify_free_focus(OBJECTPTR, ACTIONID, ERR, APTR)
 {
    auto Self = (extScintilla *)CurrentContext();
    Self->Focus    = nullptr;
@@ -493,7 +538,7 @@ static void notify_free_focus(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 //********************************************************************************************************************
 // The image definition belongs to the scene and will be freed with it.
 
-static void notify_free_image(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void notify_free_image(OBJECTPTR, ACTIONID, ERR, APTR)
 {
    auto Self = (extScintilla *)CurrentContext();
    Self->Image = nullptr;
@@ -502,7 +547,7 @@ static void notify_free_image(OBJECTPTR Object, ACTIONID ActionID, ERR Result, A
 //********************************************************************************************************************
 // Receiver for path changes on the View, including changes to the host's position, size and transforms.
 
-static ERR feedback_view(objVectorViewport *View, FM Event)
+static ERR feedback_view(objVectorViewport *, FM)
 {
    auto Self = (extScintilla *)CurrentContext();
 
@@ -579,7 +624,7 @@ static void update_view(extScintilla *Self)
 // Receiver for path changes on the Page.  If the Page has been moved by a third party, such as a scrollbar, the editor
 // scrolls to match.  Scintilla scrolls by whole lines, so the Page is snapped to the nearest line.
 
-static ERR feedback_page(objVectorViewport *Page, FM Event)
+static ERR feedback_page(objVectorViewport *Page, FM)
 {
    auto Self = (extScintilla *)CurrentContext();
 
@@ -619,7 +664,7 @@ static ERR feedback_page(objVectorViewport *Page, FM Event)
 // Each wheel event scrolls by a fixed step because wheel values are not consistent between platforms.  Holding Ctrl
 // scrolls by a page.  Input events do not carry the modifier state, so the state that key_event() tracks is used.
 
-static ERR input_canvas(objVectorRectangle *Canvas, const InputEvent *Events)
+static ERR input_canvas(objVectorRectangle *, const InputEvent *Events)
 {
    static const int WHEEL_LINES = 3;
    static const int WHEEL_COLUMNS = 6;
@@ -713,7 +758,7 @@ struct view_corners {
    int count = 0;
 };
 
-static ERR trace_view_corner(objVector *Vector, int Index, int Command, double X, double Y, APTR Meta)
+static ERR trace_view_corner(objVector *, int, int, double X, double Y, APTR Meta)
 {
    auto corners = (view_corners *)Meta;
    if (corners->count >= 4) return ERR::Terminate;
@@ -851,12 +896,7 @@ static ERR indicator_range(extScintilla *Self, int Indicator, int Start, int End
 void ScintillaKTK::ApplyIndicators()
 {
    for (const auto &[id, definition] : scintilla->Indicators) {
-      int colour = definition.colour;
-      if (colour < 0) {
-         auto &rgb = colour IS -1 ? scintilla->ErrorColour :
-            (colour IS -2 ? scintilla->KeywordColour : scintilla->SelectBkgd);
-         colour = (rgb.Red << 16) | (rgb.Green << 8) | rgb.Blue;
-      }
+      int colour = scintilla->theme_reference(definition.colour);
       SendScintilla(SCI_INDICSETSTYLE, id, int(definition.style));
       SendScintilla(SCI_INDICSETFORE, id, ((colour & 255) << 16) | (colour & 0xff00) | ((colour >> 16) & 255));
       SendScintilla(SCI_INDICSETUNDER, id, 1);
@@ -864,6 +904,21 @@ void ScintillaKTK::ApplyIndicators()
       SendScintilla(SCI_INDICSETOUTLINEALPHA, id, 180);
    }
    InvalidateStyleRedraw();
+}
+
+// Markers are reapplied when the theme changes so that theme references follow the palette.  Scintilla's colours
+// are in 0xBBGGRR order.
+
+void ScintillaKTK::ApplyMarkers()
+{
+   auto bgr = [](int Colour) { return sptr_t(((Colour & 255) << 16) | (Colour & 0xff00) | ((Colour >> 16) & 255)); };
+   for (const auto &[id, definition] : scintilla->Markers) {
+      SendScintilla(SCI_MARKERDEFINE, id, definition.symbol);
+      SendScintilla(SCI_MARKERSETFORE, id, bgr(scintilla->theme_reference(definition.fore)));
+      SendScintilla(SCI_MARKERSETBACK, id, bgr(scintilla->theme_reference(definition.bkgd)));
+      SendScintilla(SCI_MARKERSETALPHA, id, (definition.alpha < 255) ? sptr_t(definition.alpha) :
+         sptr_t(SC_ALPHA_NOALPHA));
+   }
 }
 
 static std::string lexer_string(extScintilla *Self, unsigned int Message, uptr_t Parameter = 0)
@@ -1029,7 +1084,7 @@ static void apply_metrics(extScintilla *Self)
 
 //********************************************************************************************************************
 
-static void notify_write(OBJECTPTR Object, ACTIONID ActionID, ERR Result, struct acWrite *Args)
+static void notify_write(OBJECTPTR, ACTIONID, ERR Result, struct acWrite *Args)
 {
    kt::Log log(__FUNCTION__);
    auto Self = (extScintilla *)CurrentContext();
@@ -1266,7 +1321,7 @@ the palette when it is changed through #ThemeXML:
 <list type="bullet">
 <li>`-1`: The theme's `error` colour.</li>
 <li>`-2`: The theme's `keyword` colour.</li>
-<li>`-3`: The theme's `selectionBackground` colour, as reflected by #SelectBkgd.</li>
+<li>`-3`: The theme's `selectionBackground` colour.</li>
 </list>
 
 A slot can be redefined at any time.  Redefinition changes only the appearance; existing marks and their values are
@@ -1380,20 +1435,33 @@ already carry the marker are redrawn with the new definition.  Until it is defin
 a black outline and a white fill.
 
 Symbols are drawn in the symbol margin in the `Bkgd` colour, with the outline and any inner sign in the `Fore` colour.
-The `SCMK::BACKGROUND` and `SCMK::UNDERLINE` symbols are drawn in the text area instead, in the `Bkgd` colour.  If the
-alpha component of `Bkgd` is less than 255, these two symbols are blended over the line, which also tints its text.
-Otherwise they are drawn opaquely beneath the text.  The alpha components are ignored for all other symbols.
+The `SCMK::BACKGROUND` and `SCMK::UNDERLINE` symbols are drawn in the text area instead, in the `Bkgd` colour.  If
+`Alpha` is less than 255, these two symbols are blended over the line, which also tints its text.  Otherwise they are
+drawn opaquely beneath the text.  `Alpha` is ignored for all other symbols.
+
+Each colour is either an explicit colour in `0xRRGGBB` format or one of the following theme references, which follow
+the palette when it is changed through #ThemeXML:
+
+<list type="bullet">
+<li>`-1`: The theme's `error` colour.</li>
+<li>`-2`: The theme's `keyword` colour.</li>
+<li>`-3`: The theme's `selectionBackground` colour.</li>
+</list>
+
+A marker can be redefined at any time.  Each call replaces the complete definition, and lines that carry the marker
+retain it.
 
 -INPUT-
 int Marker: The marker number, from 0 to 24.
 int(SCMK) Symbol: The symbol to draw.
-struct(*RGB8) Fore: The foreground colour.  If `NULL`, the current colour is retained.
-struct(*RGB8) Bkgd: The background colour.  If `NULL`, the current colour is retained.
+int Fore: The foreground colour: an explicit `0xRRGGBB` colour, or a theme reference from `-1` to `-3`.
+int Bkgd: The background colour: an explicit `0xRRGGBB` colour, or a theme reference from `-1` to `-3`.
+int Alpha: The opacity of `Bkgd` for the `SCMK::BACKGROUND` and `SCMK::UNDERLINE` symbols, from 0 to 255.
 
 -RESULT-
 Okay:
 NullArgs:
-OutOfRange: The `Marker` is out of range.
+OutOfRange: The `Marker`, a colour or `Alpha` is out of range.
 InvalidValue: The `Symbol` is not supported.
 
 *********************************************************************************************************************/
@@ -1409,15 +1477,13 @@ static ERR SCINTILLA_DefineMarker(extScintilla *Self, struct sci::DefineMarker *
    if ((symbol < SC_MARK_CIRCLE) or (symbol > SC_MARK_UNDERLINE) or (symbol IS SC_MARK_PIXMAP) or
        (symbol IS SC_MARK_AVAILABLE)) return log.warning(ERR::InvalidValue);
 
-   SCICALL(SCI_MARKERDEFINE, Args->Marker, symbol);
-
-   if (auto c = Args->Fore) SCICALL(SCI_MARKERSETFORE, Args->Marker, (sptr_t)SCICOLOUR(c->Red, c->Green, c->Blue));
-
-   if (auto c = Args->Bkgd) {
-      SCICALL(SCI_MARKERSETBACK, Args->Marker, (sptr_t)SCICOLOUR(c->Red, c->Green, c->Blue));
-      SCICALL(SCI_MARKERSETALPHA, Args->Marker, (c->Alpha < 255) ? sptr_t(c->Alpha) : sptr_t(SC_ALPHA_NOALPHA));
+   for (auto colour : { Args->Fore, Args->Bkgd }) {
+      if ((colour < -3) or (colour > 0xffffff)) return log.warning(ERR::OutOfRange);
    }
+   if ((Args->Alpha < 0) or (Args->Alpha > 255)) return log.warning(ERR::OutOfRange);
 
+   Self->Markers[Args->Marker] = { symbol, Args->Fore, Args->Bkgd, Args->Alpha };
+   Self->API->ApplyMarkers();
    return ERR::Okay;
 }
 
@@ -1508,7 +1574,7 @@ processing, after which the scene is redrawn.
 
 *********************************************************************************************************************/
 
-static ERR SCINTILLA_Draw(extScintilla *Self, struct acDraw *Args)
+static ERR SCINTILLA_Draw(extScintilla *Self, struct acDraw *)
 {
    if (Self->API) Self->API->panRedraw();
    return ERR::Okay;
@@ -2045,18 +2111,9 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    SCICALL(SCI_SETINDENT, Self->IndentWidth);
    SCICALL(SCI_SETINDENTATIONGUIDES, int(Self->IndentationGuides));
 
-   // Selected text will be inversed with these colours
+   // Caret, current line and selection colours
 
-   SET_SelectFore(Self, &Self->SelectFore);
-   SET_SelectBkgd(Self, &Self->SelectBkgd);
-
-   // Enable line colour for the line that contains the text cursor
-
-   SCICALL(SCI_SETCARETLINEBACK, SCICOLOUR(Self->LineHighlight.Red, Self->LineHighlight.Green, Self->LineHighlight.Blue));
-   SCICALL(SCI_SETCARETLINEBACKALPHA, scintilla_alpha(Self->LineHighlight.Alpha));
-   SCICALL(SCI_SETCARETLINEVISIBLE, (uptr_t)(Self->LineHighlight.Alpha > 0));
-
-   SCICALL(SCI_SETCARETFORE, SCICOLOUR(Self->CursorColour.Red, Self->CursorColour.Green, Self->CursorColour.Blue));
+   apply_theme_elements(Self);
 
    // Show whitespace characters like tabs
 
@@ -2169,7 +2226,7 @@ Redo: Redo the most recently undone activity.
 
 *********************************************************************************************************************/
 
-static ERR SCINTILLA_Redo(extScintilla *Self, struct acRedo *Args)
+static ERR SCINTILLA_Redo(extScintilla *Self, struct acRedo *)
 {
    kt::Log log;
 
@@ -2979,7 +3036,7 @@ Undo: Undo the last user action.
 
 *********************************************************************************************************************/
 
-static ERR SCINTILLA_Undo(extScintilla *Self, struct acUndo *Args)
+static ERR SCINTILLA_Undo(extScintilla *Self, struct acUndo *)
 {
    kt::Log log;
 
@@ -3051,27 +3108,6 @@ static ERR SET_AutoIndent(extScintilla *Self, int Value)
 {
    if (Value) Self->AutoIndent = 1;
    else Self->AutoIndent = 0;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-BkgdColour: Defines the background colour.  Alpha blending is not supported.
-
-The BkgdColour applies to the text area and to all lexer styles.  The margins use their own colours.
-
-*********************************************************************************************************************/
-
-static ERR SET_BkgdColour(extScintilla *Self, RGB8 *Value)
-{
-   Self->BkgdColour = *Value;
-
-   if (Self->initialised()) {
-      clear_bitmap(Self); // The Bitmap extends beyond the client area that Scintilla paints
-      Self->API->SetStyleColours();
-   }
-
    return ERR::Okay;
 }
 
@@ -3218,25 +3254,6 @@ static ERR GET_CursorRow(extScintilla *Self, int *Value)
          return ERR::OutOfRange;
    }
    else *Value = 0;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-CursorColour: Defines the colour of the text cursor.  Alpha blending is not supported.
-
-*********************************************************************************************************************/
-
-static ERR SET_CursorColour(extScintilla *Self, RGB8 *Value)
-{
-   Self->CursorColour = *Value;
-
-   if (Self->initialised()) {
-      auto &c = Self->CursorColour;
-      SCICALL(SCI_SETCARETFORE, (uptr_t)SCICOLOUR(c.Red, c.Green, c.Blue));
-   }
-
    return ERR::Okay;
 }
 
@@ -3470,31 +3487,6 @@ static ERR GET_LineCount(extScintilla *Self, int *Value)
 /*********************************************************************************************************************
 
 -FIELD-
-LineHighlight: The colour to use when highlighting the line that contains the user's cursor.
-
-The highlight is shown while the editor has the focus.  An alpha value of zero disables it.  An opaque colour is drawn
-beneath the text, while a translucent colour is blended over the line, which also tints its text.  Translucent colours
-blend in the same way as a translucent vector fill, i.e. with the gamma-correct blending of the Vector module, so a
-50% colour appears lighter than an average of the sRGB values.
-
-*********************************************************************************************************************/
-
-static ERR SET_LineHighlight(extScintilla *Self, RGB8 *Value)
-{
-   Self->LineHighlight = *Value;
-
-   if (Self->initialised()) {
-      SCICALL(SCI_SETCARETLINEBACK, SCICOLOUR(Self->LineHighlight.Red, Self->LineHighlight.Green, Self->LineHighlight.Blue));
-      SCICALL(SCI_SETCARETLINEBACKALPHA, scintilla_alpha(Self->LineHighlight.Alpha));
-      SCICALL(SCI_SETCARETLINEVISIBLE, (uptr_t)(Self->LineHighlight.Alpha > 0));
-   }
-
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
 LineNumbers: Line numbers will appear on the left when this value is TRUE.
 
 *********************************************************************************************************************/
@@ -3637,40 +3629,6 @@ static ERR SET_Path(extScintilla *Self, const std::string_view &Value)
 /*********************************************************************************************************************
 
 -FIELD-
-SelectBkgd: Defines the background colour of selected text.  Supports alpha blending.
-
-An alpha value of zero disables the selection background.  An opaque colour is drawn beneath the selected text.  A
-translucent colour is blended over the selection after the text is drawn, in the same way as #LineHighlight, so that
-the text remains visible through it.  Consider disabling #SelectFore with a translucent background so that the
-selected text retains its styled colours.
-
-The background of the main selection is affected.  The additional rows of a rectangular selection use Scintilla's
-default colour for additional selections.
-
-*********************************************************************************************************************/
-
-static ERR SET_SelectBkgd(extScintilla *Self, RGB8 *Value)
-{
-   if (Value) Self->SelectBkgd = *Value;
-   else Self->SelectBkgd.Alpha = 0;
-   if (Self->API) {
-      const auto &colour = Self->SelectBkgd;
-      SCICALL(SCI_SETSELALPHA, colour.Alpha ? scintilla_alpha(colour.Alpha) : uptr_t(SC_ALPHA_NOALPHA));
-      for (auto element : { Scintilla::Element::SelectionBack, Scintilla::Element::SelectionSecondaryBack,
-            Scintilla::Element::SelectionInactiveBack }) {
-         if (colour.Alpha) {
-            SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(element),
-               sptr_t(Scintilla::Internal::ColourRGBA(colour.Red, colour.Green, colour.Blue, colour.Alpha).AsInteger()));
-         }
-         else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(element));
-      }
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
 RightMargin: Defines the amount of white-space at the right side of the page.
 
 The margin is expressed in the units of the #View, and is scaled with the content if the host is scaled.
@@ -3709,34 +3667,6 @@ static ERR SET_ShowWhitespace(extScintilla *Self, int Value)
    else {
       Self->ShowWhitespace = 0;
       if (Self->initialised()) SCICALL(SCI_SETVIEWWS, (uptr_t)SCWS_INVISIBLE);
-   }
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-SelectFore: Defines the colour of selected text.
-
-Selected text is drawn in this colour, overriding the colours of its style.  An alpha value of zero disables the
-override.  Other alpha values are ignored and the colour is drawn opaquely.
-
-*********************************************************************************************************************/
-
-static ERR SET_SelectFore(extScintilla *Self, RGB8 *Value)
-{
-   if (Value) Self->SelectFore = *Value;
-   else Self->SelectFore.Alpha = 0;
-   if (Self->API) {
-      const auto &colour = Self->SelectFore;
-      for (auto element : { Scintilla::Element::SelectionText, Scintilla::Element::SelectionSecondaryText,
-            Scintilla::Element::SelectionInactiveText }) {
-         if (colour.Alpha) {
-            SCICALL(SCI_SETELEMENTCOLOUR, uptr_t(element),
-               sptr_t(Scintilla::Internal::ColourRGBA(colour.Red, colour.Green, colour.Blue).AsInteger()));
-         }
-         else SCICALL(SCI_RESETELEMENTCOLOUR, uptr_t(element));
-      }
    }
    return ERR::Okay;
 }
@@ -4053,28 +3983,7 @@ static ERR SET_TabWidth(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-TextColour: Defines the default colour of foreground text.  Alpha blending is not supported.
-
-TextColour applies to plain text, identifiers and any unclassified styles.  Configure lexer and margin colours
-through #ThemeXML.  Theme colours are stored independently for each editor and are retained across lexer changes.
-
-The defaults are a white background, black text and operators, grey comments, firebrick keywords, dark red strings,
-blue numbers, green directives and violet types.
-
-*********************************************************************************************************************/
-
-static ERR SET_TextColour(extScintilla *Self, RGB8 *Value)
-{
-   Self->TextColour = *Value;
-   if (Self->initialised()) Self->API->SetStyleColours();
-
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-ThemeXML: Applies colours from a preconfigured XML object.  This field is write-only.
+ThemeXML: Configures the colour palette of the editor through an XML object.
 
 Assign an initialised @XML object containing one `theme` element with one `palette` child.  The palette's attributes
 specify SVG colour strings:
@@ -4090,17 +3999,139 @@ specify SVG colour strings:
 </pre>
 
 The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text.
-All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG
-colour names and colour functions such as `rgb()` and `oklch()` are accepted.  Gradients, painter lists and unknown
-attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the
-corresponding highlight or selection override.  Translucent lineHighlight and selectionBackground colours blend over
-the text, as described for #LineHighlight and #SelectBkgd.  Other alpha values produce opaque colours.
+All palette attributes are optional and case-sensitive.  Omitted colours retain their current values, so a single
+colour can be changed by assigning a palette with one attribute.  Hex colours, SVG colour names and colour functions
+such as `rgb()` and `oklch()` are accepted.  Gradients, painter lists and unknown attributes are rejected.
 
-The colours are copied during assignment and the XML object is not retained or modified.  Assigning before
+The attributes are applied as follows:
+
+<list type="bullet">
+<li>`background` fills the text area and applies to all lexer styles.  The margins use `marginBackground`.</li>
+<li>`text` applies to plain text, identifiers and any unclassified styles.</li>
+<li>`comment`, `keyword`, `string`, `number`, `operator`, `preprocessor`, `type` and `error` colour the semantic
+styles of the active lexer.</li>
+<li>`margin` and `marginBackground` colour the line number, symbol and fold margins.</li>
+<li>`cursor` colours the caret.</li>
+<li>`lineHighlight` colours the line that contains the caret while the editor has the focus.</li>
+<li>`selectionForeground` is drawn as the colour of selected text, overriding the colours of its style.</li>
+<li>`selectionBackground` is drawn behind the main selection.</li>
+</list>
+
+The following attributes are derived.  Each one follows the source colour shown in brackets until it is assigned, so
+themes that do not mention them remain consistent.  Assigning the value `inherit` restores the link to the source.
+
+<list type="bullet">
+<li>`whitespace` (`margin`) colours visible whitespace, as enabled by #ShowWhitespace.</li>
+<li>`indentGuide` (`margin`) colours the indentation guides, as enabled by #IndentationGuides.</li>
+<li>`braceMatch` (`keyword`) colours a brace and its matching partner while the caret is next to it.</li>
+<li>`braceMismatch` (`error`) colours a brace that has no partner while the caret is next to it.</li>
+<li>`braceBackground` (`marginBackground`) is drawn behind highlighted braces.</li>
+<li>`selectionInactiveBackground` (`selectionBackground`) is drawn behind the selection while the editor does not have
+the focus.</li>
+<li>`selectionAdditionalBackground` (`selectionBackground`) is drawn behind the additional rows of a rectangular
+selection.</li>
+</list>
+
+Alpha is ignored except for `lineHighlight` and the selection colours, where zero disables the highlight or override.
+A disabled `selectionInactiveBackground` uses the active colour, and a disabled `selectionAdditionalBackground` uses
+Scintilla's default colour for additional selections.  Other alpha values produce opaque colours, except that a
+translucent `lineHighlight` or `selectionBackground` is blended over the text after it is drawn, which also tints the
+text.  An opaque highlight is drawn beneath the text.  The `selectionBackground` decides the layer of all selections,
+so when it is translucent the inactive and additional selections are also blended over the text.  Translucent colours
+blend in the same way as a translucent vector fill, i.e. with the gamma-correct blending of the Vector module, so a 50%
+colour appears lighter than an average of the sRGB values.  Consider disabling `selectionForeground` with a
+translucent `selectionBackground` so that selected text retains its styled colours.
+
+The default palette is a white background, black text and operators, grey comments, firebrick keywords, dark red
+strings, blue numbers, green directives, violet types, a lavender line highlight, a black cursor, and white
+selected text on a dark blue background.  Theme colours are stored independently for each editor and are retained
+across lexer changes.
+
+The colours are copied during assignment and the assigned XML object is not retained or modified.  Assigning before
 initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or
 contracted folds.  Invalid themes leave all colours unchanged.
 
+Reading ThemeXML returns an @XML object that describes the full palette, with every attribute present.  Colours are
+expressed in `#RRGGBB` format, or `#RRGGBBAA` for translucent `lineHighlight` and selection colours, and derived
+colours that follow their source read as `inherit`.  The result can therefore be assigned back to this or another
+editor without loss.  The object belongs to the editor and is rewritten on each
+read, so copy any values that need to survive a later read.  Do not free it; it is released with the editor.
+
 *********************************************************************************************************************/
+
+// Derived colours name the colour that they inherit; sources are never derived themselves.  The position of each
+// entry is its bit in ThemeOverrides.
+
+static constexpr struct {
+   std::string_view Name;
+   RGB8 extScintilla::*Field;
+   bool Alpha; // The alpha channel is significant and is preserved on readback
+   RGB8 extScintilla::*Inherit = nullptr;
+} glThemeColours[] = {
+   { "comment", &extScintilla::CommentColour, false },
+   { "keyword", &extScintilla::KeywordColour, false },
+   { "string", &extScintilla::StringColour, false },
+   { "number", &extScintilla::NumberColour, false },
+   { "operator", &extScintilla::OperatorColour, false },
+   { "preprocessor", &extScintilla::PreprocessorColour, false },
+   { "type", &extScintilla::TypeColour, false },
+   { "error", &extScintilla::ErrorColour, false },
+   { "margin", &extScintilla::MarginColour, false },
+   { "marginBackground", &extScintilla::MarginBkgd, false },
+   { "text", &extScintilla::TextColour, false },
+   { "background", &extScintilla::BkgdColour, false },
+   { "cursor", &extScintilla::CursorColour, false },
+   { "lineHighlight", &extScintilla::LineHighlight, true },
+   { "selectionForeground", &extScintilla::SelectFore, true },
+   { "selectionBackground", &extScintilla::SelectBkgd, true },
+   { "whitespace", &extScintilla::Whitespace, false, &extScintilla::MarginColour },
+   { "indentGuide", &extScintilla::IndentGuide, false, &extScintilla::MarginColour },
+   { "braceMatch", &extScintilla::BraceMatch, false, &extScintilla::KeywordColour },
+   { "braceMismatch", &extScintilla::BraceMismatch, false, &extScintilla::ErrorColour },
+   { "braceBackground", &extScintilla::BraceBkgd, false, &extScintilla::MarginBkgd },
+   { "selectionInactiveBackground", &extScintilla::SelectInactiveBkgd, true, &extScintilla::SelectBkgd },
+   { "selectionAdditionalBackground", &extScintilla::SelectAdditionalBkgd, true, &extScintilla::SelectBkgd }
+};
+
+static_assert(std::size(glThemeColours) <= 32, "ThemeOverrides has a bit for each theme colour");
+
+static bool theme_inherits(const extScintilla *Self, size_t Index)
+{
+   return glThemeColours[Index].Inherit and not (Self->ThemeOverrides & (1u << Index));
+}
+
+static ERR GET_ThemeXML(extScintilla *Self, objXML **Value)
+{
+   std::string statement("<theme><palette");
+   for (size_t i=0; i < std::size(glThemeColours); i++) {
+      const auto &colour = glThemeColours[i];
+      if (theme_inherits(Self, i)) {
+         statement += std::format(" {}=\"inherit\"", colour.Name);
+         continue;
+      }
+      const auto &rgb = Self->*colour.Field;
+      statement += std::format(" {}=\"#{:02x}{:02x}{:02x}", colour.Name, int(rgb.Red), int(rgb.Green),
+         int(rgb.Blue));
+      if (colour.Alpha and (rgb.Alpha != 255)) statement += std::format("{:02x}", int(rgb.Alpha));
+      statement += '"';
+   }
+   statement += "/></theme>";
+
+   // The cache is referenced by ID because the client may free it despite being advised otherwise.
+
+   auto cache = Self->ThemeCacheID ? (objXML *)GetObjectPtr(Self->ThemeCacheID) : nullptr;
+   if (cache) {
+      if (auto error = cache->setStatement(statement); error != ERR::Okay) return error;
+   }
+   else {
+      kt::SwitchContext context(Self);
+      if (not (cache = objXML::create::local(fl::Statement(statement)))) return ERR::CreateObject;
+      Self->ThemeCacheID = cache->UID;
+   }
+
+   *Value = cache;
+   return ERR::Okay;
+}
 
 static ERR SET_ThemeXML(extScintilla *Self, objXML *Value)
 {
@@ -4136,35 +4167,22 @@ static ERR SET_ThemeXML(extScintilla *Self, objXML *Value)
       if (not ignorable(tag)) return ERR::Syntax;
    }
 
-   static constexpr struct {
-      std::string_view Name;
-      RGB8 extScintilla::*Field;
-   } colours[] = {
-      { "comment", &extScintilla::CommentColour },
-      { "keyword", &extScintilla::KeywordColour },
-      { "string", &extScintilla::StringColour },
-      { "number", &extScintilla::NumberColour },
-      { "operator", &extScintilla::OperatorColour },
-      { "preprocessor", &extScintilla::PreprocessorColour },
-      { "type", &extScintilla::TypeColour },
-      { "error", &extScintilla::ErrorColour },
-      { "margin", &extScintilla::MarginColour },
-      { "marginBackground", &extScintilla::MarginBkgd },
-      { "text", &extScintilla::TextColour },
-      { "background", &extScintilla::BkgdColour },
-      { "cursor", &extScintilla::CursorColour },
-      { "lineHighlight", &extScintilla::LineHighlight },
-      { "selectionForeground", &extScintilla::SelectFore },
-      { "selectionBackground", &extScintilla::SelectBkgd }
-   };
-
-   std::vector<std::pair<RGB8 extScintilla::*, RGB8>> updates;
+   std::vector<std::pair<size_t, std::optional<RGB8>>> updates; // An empty colour restores inheritance
    for (size_t i=1; i < palette->Attribs.size(); i++) {
       const auto &attribute = palette->Attribs[i];
-      auto colour = std::find_if(std::begin(colours), std::end(colours), [&attribute](const auto &Colour) {
-         return Colour.Name IS attribute.Name;
-      });
-      if (colour IS std::end(colours)) return ERR::Syntax;
+      auto colour = std::find_if(std::begin(glThemeColours), std::end(glThemeColours),
+         [&attribute](const auto &Colour) { return Colour.Name IS attribute.Name; });
+      if (colour IS std::end(glThemeColours)) return ERR::Syntax;
+      auto index = size_t(colour - std::begin(glThemeColours));
+
+      std::string_view value(attribute.Value);
+      auto first = value.find_first_not_of(" \t\r\n");
+      if (first != std::string_view::npos) value = value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
+      if (value IS "inherit") {
+         if (not colour->Inherit) return ERR::Syntax;
+         updates.emplace_back(index, std::nullopt);
+         continue;
+      }
 
       VectorPainter painter = {};
       std::string_view remainder;
@@ -4175,18 +4193,25 @@ static ERR SET_ThemeXML(extScintilla *Self, objXML *Value)
       if (not std::isfinite(rgb.Red) or not std::isfinite(rgb.Green) or not std::isfinite(rgb.Blue) or
           not std::isfinite(rgb.Alpha)) return ERR::Syntax;
       auto channel = [](float Value) { return uint8_t(std::lround(std::clamp(Value, 0.0f, 1.0f) * 255)); };
-      updates.emplace_back(colour->Field, RGB8 { channel(rgb.Red), channel(rgb.Green), channel(rgb.Blue),
+      updates.emplace_back(index, RGB8 { channel(rgb.Red), channel(rgb.Green), channel(rgb.Blue),
          channel(rgb.Alpha) });
    }
 
-   for (const auto &[field, colour] : updates) Self->*field = colour;
+   for (const auto &[index, colour] : updates) {
+      if (colour) {
+         Self->*glThemeColours[index].Field = *colour;
+         Self->ThemeOverrides |= 1u << index;
+      }
+      else Self->ThemeOverrides &= ~(1u << index);
+   }
+
+   for (size_t i=0; i < std::size(glThemeColours); i++) {
+      if (theme_inherits(Self, i)) Self->*glThemeColours[i].Field = Self->*glThemeColours[i].Inherit;
+   }
    if (Self->initialised()) {
       clear_bitmap(Self);
       Self->API->SetStyleColours();
-      SET_CursorColour(Self, &Self->CursorColour);
-      SET_LineHighlight(Self, &Self->LineHighlight);
-      SET_SelectFore(Self, &Self->SelectFore);
-      SET_SelectBkgd(Self, &Self->SelectBkgd);
+      apply_theme_elements(Self);
    }
    return ERR::Okay;
 }
@@ -4446,7 +4471,7 @@ static ERR load_file(extScintilla *Self, std::string_view Path)
 // report it.  Keys pressed while the application window lacks the keyboard focus are not reported, so update_focus()
 // resets the state when the editor loses the focus.
 
-static ERR modifier_event(const evKey *Event, APTR Meta)
+static ERR modifier_event(const evKey *Event, APTR)
 {
    auto Self = (extScintilla *)CurrentContext();
    Self->KeyShift = (Event->Qualifiers & KQ::SHIFT) != KQ::NIL;
@@ -4459,7 +4484,7 @@ static ERR modifier_event(const evKey *Event, APTR Meta)
 // Receiver for keyboard input from the Focus viewport.  The modifier state is also recorded here (see modifier_event())
 // in case the key was delivered to the viewport directly rather than broadcast.
 
-static ERR key_event(objVectorViewport *Viewport, KQ Qualifiers, KEY Code, int Unicode)
+static ERR key_event(objVectorViewport *, KQ Qualifiers, KEY Code, int Unicode)
 {
    auto Self = (extScintilla *)CurrentContext();
 
@@ -4752,14 +4777,14 @@ static void check_modified_widths(extScintilla *Self)
 //********************************************************************************************************************
 // The tick and idle timers end their own subscriptions when they are no longer required.  See UpdateTimers().
 
-static ERR tick_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
+static ERR tick_timer(extScintilla *Self, int64_t, int64_t)
 {
    if ((Self->API) and (Self->API->panTick())) return ERR::Okay;
    Self->TickTimer = nullptr;
    return ERR::Terminate;
 }
 
-static ERR idle_timer(extScintilla *Self, int64_t Elapsed, int64_t CurrentTime)
+static ERR idle_timer(extScintilla *Self, int64_t, int64_t)
 {
    if ((Self->API) and (Self->API->panIdle())) return ERR::Okay;
    Self->IdleTimer = nullptr;
@@ -4872,6 +4897,7 @@ extScintilla::~extScintilla() {
    if (Bitmap)      FreeResource(Bitmap);
    if (FillColour)  FreeResource(FillColour);
    if (StrokeColour) FreeResource(StrokeColour);
+   if (ThemeCacheID) FreeResource(ThemeCacheID);
 }
 
 /*********************************************************************************************************************
@@ -5065,19 +5091,13 @@ static const FieldArray clFields[] = {
    { "Page",           FDF_OBJECT|FDF_R, nullptr, nullptr, CLASSID::VECTORVIEWPORT },
    { "LeftMargin",     FDF_INT|FDF_RW, nullptr, SET_LeftMargin },
    { "RightMargin",    FDF_INT|FDF_RW, nullptr, SET_RightMargin },
-   { "LineHighlight",  FDF_STRUCT|FDF_RW, nullptr, SET_LineHighlight, "RGB8" },
-   { "SelectFore",     FDF_STRUCT|FDF_RW, nullptr, SET_SelectFore, "RGB8" },
-   { "SelectBkgd",     FDF_STRUCT|FDF_RW, nullptr, SET_SelectBkgd, "RGB8" },
-   { "BkgdColour",     FDF_STRUCT|FDF_RW, nullptr, SET_BkgdColour, "RGB8" },
-   { "CursorColour",   FDF_STRUCT|FDF_RW, nullptr, SET_CursorColour, "RGB8" },
-   { "TextColour",     FDF_STRUCT|FDF_RW, nullptr, SET_TextColour, "RGB8" },
    { "CursorRow",      FDF_INT|FDF_R, GET_CursorRow },
    { "CursorCol",      FDF_INT|FDF_R, GET_CursorCol },
    { "Lexer",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Lexer, &clScintillaLexer },
    { "Modified",       FDF_INT|FDF_RW, nullptr, SET_Modified },
    { "FontSize",       FDF_INT|FDF_RW, nullptr, SET_FontSize },
    // Virtual fields
-   { "ThemeXML",           FDF_OBJECT|FDF_W|FDF_PURE, nullptr, SET_ThemeXML, CLASSID::XML },
+   { "ThemeXML",           FDF_OBJECT|FDF_RW|FDF_PURE, GET_ThemeXML, SET_ThemeXML, CLASSID::XML },
    { "ActivePopup",        FDF_INT|FDF_LOOKUP|FDF_R,  GET_ActivePopup, nullptr, &clScintillaSCPOP },
    { "AllowTabs",          FDF_INT|FDF_RW|FDF_PURE,   GET_AllowTabs, SET_AllowTabs },
    { "AutoIndent",         FDF_INT|FDF_RW|FDF_PURE,   GET_AutoIndent, SET_AutoIndent },

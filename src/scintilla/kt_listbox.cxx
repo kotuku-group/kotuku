@@ -31,7 +31,7 @@ public:
    void SetFont(const Scintilla::Internal::Font *Font) override;
    void Create(Scintilla::Internal::Window &Parent, int ID, Scintilla::Internal::Point Location,
       int LineHeight, bool Unicode, Scintilla::Technology Technology) override;
-   void SetAverageCharWidth(int width) override;
+   void SetAverageCharWidth(int) override;
    void SetVisibleRows(int rows) override;
    virtual int GetVisibleRows() const;
    Scintilla::Internal::PRectangle GetDesiredRect() override;
@@ -43,8 +43,8 @@ public:
    int GetSelection() override;
    int Find(const char *prefix) override;
    std::string GetValue(int Index) override;
-   void RegisterImage(int type, const char *xpm_data) override;
-   void RegisterRGBAImage(int type, int width, int height, const unsigned char *pixelsImage) override;
+   void RegisterImage(int, const char *) override;
+   void RegisterRGBAImage(int, int, int, const unsigned char *) override;
    void ClearRegisteredImages() override;
    void SetDelegate(Scintilla::Internal::IListBoxDelegate *Delegate) override { delegate = Delegate; }
    void SetOptions(Scintilla::Internal::ListOptions Options) override { options = Options; invalidate(); }
@@ -97,12 +97,12 @@ void ListBoxImp::Create(Scintilla::Internal::Window &Parent, int, Scintilla::Int
 
 //********************************************************************************************************************
 
-void ListBoxImp::RegisterRGBAImage(int type, int width, int height, const unsigned char *pixelsImage)
+void ListBoxImp::RegisterRGBAImage(int, int, int, const unsigned char *)
 {
 
 }
 
-void ListBoxImp::RegisterImage(int type, const char *xpm_data)
+void ListBoxImp::RegisterImage(int, const char *)
 {
 
 }
@@ -123,7 +123,7 @@ void ListBoxImp::SetFont(const Scintilla::Internal::Font *Font)
 
 //********************************************************************************************************************
 
-void ListBoxImp::SetAverageCharWidth(int width)
+void ListBoxImp::SetAverageCharWidth(int)
 {
 
 }
@@ -182,9 +182,9 @@ void ListBoxImp::Clear() noexcept
 
 //********************************************************************************************************************
 
-void ListBoxImp::Append(char *s, int type)
+void ListBoxImp::Append(char *S, int)
 {
-   if (s) items.emplace_back(s);
+   if (S) items.emplace_back(S);
    invalidate();
 }
 

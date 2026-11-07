@@ -1,5 +1,5 @@
 -- Incremental repaint tests for the Scintilla class.  Every scenario renders the editor through its normal dirty-region
--- path, captures the result, then forces a full repaint and requires identical pixels.  Reassigning BkgdColour clears
+-- path, captures the result, then forces a full repaint and requires identical pixels.  Reassigning ThemeXML clears
 -- the whole Bitmap before repainting, so any area that the incremental path failed to repaint is exposed.
 --
 -- Vertical scrolls of up to ten lines shift the Bitmap and repaint only the exposed band (see ScrollText()).
@@ -7,6 +7,7 @@
    include 'scintilla', 'vector', 'display'
    module display as mGfx
    import './repaint_utils'
+   import './theme_utils'
 
 PAGE_WIDTH  = 300
 PAGE_HEIGHT = 120
@@ -39,8 +40,7 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    options.lexer ?= SCLEX_CPP
    options.lineNumbers ?= true
    options.foldingMarkers ?= true
-   options.lineHighlight ?= '255,255,255,0'
-   local sci = vp.new('Scintilla', options)
+   local sci = vp.new('Scintilla', theme_utils.options(options))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    sci.string = newDocument(TOTAL_LINES)
@@ -219,8 +219,8 @@ end
    local surface <close> = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
    local scene = surface.new('VectorScene', { surface=surface })
    local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   local sci = host.new('Scintilla', { face='Clean', fontSize=11, flags=SCIF_EDIT, lineNumbers=true,
-      lineHighlight='240,240,255,255' })
+   local sci = host.new('Scintilla', theme_utils.options({ face='Clean', fontSize=11, flags=SCIF_EDIT,
+      lineNumbers=true, palette={ lineHighlight='#f0f0ff' } }))
    sci.string = newDocument(TOTAL_LINES)
    check surface.acShow()
    check surface.acFocus()
@@ -241,7 +241,7 @@ end
    for _, line in array<int> { 1, 4, 3, 9, 10, 0 } do
       check sci.mtGotoLine(line)
       local incremental = snapshot()
-      sci.bkgdColour = sci.bkgdColour
+      sci.themeXML = sci.themeXML
       local full = snapshot()
       assert(incremental is full, f'The caret at line {line} must match a full repaint')
    end

@@ -217,12 +217,6 @@ module({ name="Scintilla", copyright="Paul Manias © 2005-2026", version=1.0, ti
     obj(VectorViewport) Page     # An internally created viewport that represents the document extent
     int LeftMargin               # Size of the left margin
     int RightMargin              # Size of the right margin
-    struct(RGB8) LineHighlight   # Background colour for the current line of the cursor
-    struct(RGB8) SelectFore      # Default colour for text highlighting (foreground)
-    struct(RGB8) SelectBkgd      # Default colour for text highlighting (background)
-    struct(RGB8) BkgdColour      # Colour for text background
-    struct(RGB8) CursorColour    # The colour of the cursor
-    struct(RGB8) TextColour      # The colour of foreground text
     int CursorRow                # Current cursor row
     int CursorCol                # Current cursor column
     int(SCLEX) Lexer             # Chosen lexer

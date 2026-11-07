@@ -302,7 +302,7 @@ for one frame before the editor repaints.</li>
 <list type="bullet">
 <li><code>-1</code>: The theme's <code>error</code> colour.</li>
 <li><code>-2</code>: The theme's <code>keyword</code> colour.</li>
-<li><code>-3</code>: The theme's <code>selectionBackground</code> colour, as reflected by <fl>SelectBkgd</fl>.</li>
+<li><code>-3</code>: The theme's <code>selectionBackground</code> colour.</li>
 </list>
 <p>A slot can be redefined at any time.  Redefinition changes only the appearance; existing marks and their values are preserved.</p>
       </description>
@@ -320,17 +320,25 @@ for one frame before the editor repaints.</li>
     <method>
       <name>DefineMarker</name>
       <comment>Defines the appearance of a marker.</comment>
-      <prototype>ERR sci::DefineMarker(OBJECTPTR Object, INT Marker, SCMK Symbol, struct RGB8 * Fore, struct RGB8 * Bkgd)</prototype>
-      <tiriPrototype>err = DefineMarker(Marker:num, Symbol:num, Fore:any, Bkgd:any)</tiriPrototype>
+      <prototype>ERR sci::DefineMarker(OBJECTPTR Object, INT Marker, SCMK Symbol, INT Fore, INT Bkgd, INT Alpha)</prototype>
+      <tiriPrototype>err = DefineMarker(Marker:num, Symbol:num, Fore:num, Bkgd:num, Alpha:num)</tiriPrototype>
       <input>
         <param type="INT" name="Marker">The marker number, from 0 to 24.</param>
         <param type="SCMK" name="Symbol" lookup="SCMK">The symbol to draw.</param>
-        <param type="struct RGB8 *" name="Fore">The foreground colour.  If <code>NULL</code>, the current colour is retained.</param>
-        <param type="struct RGB8 *" name="Bkgd">The background colour.  If <code>NULL</code>, the current colour is retained.</param>
+        <param type="INT" name="Fore">The foreground colour: an explicit <code>0xRRGGBB</code> colour, or a theme reference from <code>-1</code> to <code>-3</code>.</param>
+        <param type="INT" name="Bkgd">The background colour: an explicit <code>0xRRGGBB</code> colour, or a theme reference from <code>-1</code> to <code>-3</code>.</param>
+        <param type="INT" name="Alpha">The opacity of <code>Bkgd</code> for the <code>SCMK::BACKGROUND</code> and <code>SCMK::UNDERLINE</code> symbols, from 0 to 255.</param>
       </input>
       <description>
 <p>This method sets the symbol and colours of a marker, which can then be added to lines with <method>AddMarker</method>.  Lines that already carry the marker are redrawn with the new definition.  Until it is defined, a marker is drawn as a circle with a black outline and a white fill.</p>
-<p>Symbols are drawn in the symbol margin in the <code>Bkgd</code> colour, with the outline and any inner sign in the <code>Fore</code> colour. The <code>SCMK::BACKGROUND</code> and <code>SCMK::UNDERLINE</code> symbols are drawn in the text area instead, in the <code>Bkgd</code> colour.  If the alpha component of <code>Bkgd</code> is less than 255, these two symbols are blended over the line, which also tints its text. Otherwise they are drawn opaquely beneath the text.  The alpha components are ignored for all other symbols.</p>
+<p>Symbols are drawn in the symbol margin in the <code>Bkgd</code> colour, with the outline and any inner sign in the <code>Fore</code> colour. The <code>SCMK::BACKGROUND</code> and <code>SCMK::UNDERLINE</code> symbols are drawn in the text area instead, in the <code>Bkgd</code> colour.  If <code>Alpha</code> is less than 255, these two symbols are blended over the line, which also tints its text.  Otherwise they are drawn opaquely beneath the text.  <code>Alpha</code> is ignored for all other symbols.</p>
+<p>Each colour is either an explicit colour in <code>0xRRGGBB</code> format or one of the following theme references, which follow the palette when it is changed through <fl>ThemeXML</fl>:</p>
+<list type="bullet">
+<li><code>-1</code>: The theme's <code>error</code> colour.</li>
+<li><code>-2</code>: The theme's <code>keyword</code> colour.</li>
+<li><code>-3</code>: The theme's <code>selectionBackground</code> colour.</li>
+</list>
+<p>A marker can be redefined at any time.  Each call replaces the complete definition, and lines that carry the marker retain it.</p>
       </description>
     </method>
 
@@ -911,16 +919,6 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
-      <name>BkgdColour</name>
-      <comment>Defines the background colour.  Alpha blending is not supported.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>RGB8</type>
-      <description>
-<p>The BkgdColour applies to the text area and to all lexer styles.  The margins use their own colours.</p>
-      </description>
-    </field>
-
-    <field>
       <name>CanRedo</name>
       <comment>Reports whether the backend has an undone edit available to redo.</comment>
       <access read="G">Get</access>
@@ -978,13 +976,6 @@ for one frame before the editor repaints.</li>
       <description>
 <p>The CursorCol and <fl>CursorRow</fl> fields reflect the current row and column of the user's text cursor.  Use <fl>EventCallback</fl> and listen for the event <code>SEF::CURSOR_POS</code> to receive updates on changes to CursorCol and <fl>CursorRow</fl>.</p>
       </description>
-    </field>
-
-    <field>
-      <name>CursorColour</name>
-      <comment>Defines the colour of the text cursor.  Alpha blending is not supported.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>RGB8</type>
     </field>
 
     <field>
@@ -1173,16 +1164,6 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
-      <name>LineHighlight</name>
-      <comment>The colour to use when highlighting the line that contains the user's cursor.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>RGB8</type>
-      <description>
-<p>The highlight is shown while the editor has the focus.  An alpha value of zero disables it.  An opaque colour is drawn beneath the text, while a translucent colour is blended over the line, which also tints its text.  Translucent colours blend in the same way as a translucent vector fill, i.e. with the gamma-correct blending of the Vector module, so a 50% colour appears lighter than an average of the sRGB values.</p>
-      </description>
-    </field>
-
-    <field>
       <name>LineNumbers</name>
       <comment>Line numbers will appear on the left when this value is TRUE.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -1251,27 +1232,6 @@ for one frame before the editor repaints.</li>
       <type>INT</type>
       <description>
 <p>The margin is expressed in the units of the <fl>View</fl>, and is scaled with the content if the host is scaled.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>SelectBkgd</name>
-      <comment>Defines the background colour of selected text.  Supports alpha blending.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>RGB8</type>
-      <description>
-<p>An alpha value of zero disables the selection background.  An opaque colour is drawn beneath the selected text.  A translucent colour is blended over the selection after the text is drawn, in the same way as <fl>LineHighlight</fl>, so that the text remains visible through it.  Consider disabling <fl>SelectFore</fl> with a translucent background so that the selected text retains its styled colours.</p>
-<p>The background of the main selection is affected.  The additional rows of a rectangular selection use Scintilla's default colour for additional selections.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>SelectFore</name>
-      <comment>Defines the colour of selected text.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>RGB8</type>
-      <description>
-<p>Selected text is drawn in this colour, overriding the colours of its style.  An alpha value of zero disables the override.  Other alpha values are ignored and the colour is drawn opaquely.</p>
       </description>
     </field>
 
@@ -1347,17 +1307,6 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
-      <name>TextColour</name>
-      <comment>Defines the default colour of foreground text.  Alpha blending is not supported.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>RGB8</type>
-      <description>
-<p>TextColour applies to plain text, identifiers and any unclassified styles.  Configure lexer and margin colours through <fl>ThemeXML</fl>.  Theme colours are stored independently for each editor and are retained across lexer changes.</p>
-<p>The defaults are a white background, black text and operators, grey comments, firebrick keywords, dark red strings, blue numbers, green directives and violet types.</p>
-      </description>
-    </field>
-
-    <field>
       <name>TextLength</name>
       <comment>The document length in bytes, including tabs, CR and LF bytes.  An empty document has length zero.</comment>
       <access read="G">Get</access>
@@ -1366,8 +1315,8 @@ for one frame before the editor repaints.</li>
 
     <field>
       <name>ThemeXML</name>
-      <comment>Applies colours from a preconfigured XML object.  This field is write-only.</comment>
-      <access write="S">Set</access>
+      <comment>Configures the colour palette of the editor through an XML object.</comment>
+      <access read="G" write="S">Get/Set</access>
       <type>OBJECTPTR</type>
       <description>
 <p>Assign an initialised <class name="XML">XML</class> object containing one <code>theme</code> element with one <code>palette</code> child.  The palette's attributes specify SVG colour strings:</p>
@@ -1379,8 +1328,35 @@ for one frame before the editor repaints.</li>
        selectionBackground=&quot;#335588&quot;/&gt;
 &lt;/theme&gt;
 </pre>
-<p>The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text. All palette attributes are optional and case-sensitive.  Omitted colours retain their current values.  Hex colours, SVG colour names and colour functions such as <code>rgb()</code> and <code>oklch()</code> are accepted.  Gradients, painter lists and unknown attributes are rejected.  Alpha is ignored except for lineHighlight and selection colours, where zero disables the corresponding highlight or selection override.  Translucent lineHighlight and selectionBackground colours blend over the text, as described for <fl>LineHighlight</fl> and <fl>SelectBkgd</fl>.  Other alpha values produce opaque colours.</p>
-<p>The colours are copied during assignment and the XML object is not retained or modified.  Assigning before initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or contracted folds.  Invalid themes leave all colours unchanged.</p>
+<p>The theme element accepts no attributes, and the palette accepts no child elements or non-whitespace text. All palette attributes are optional and case-sensitive.  Omitted colours retain their current values, so a single colour can be changed by assigning a palette with one attribute.  Hex colours, SVG colour names and colour functions such as <code>rgb()</code> and <code>oklch()</code> are accepted.  Gradients, painter lists and unknown attributes are rejected.</p>
+<p>The attributes are applied as follows:</p>
+<list type="bullet">
+<li><code>background</code> fills the text area and applies to all lexer styles.  The margins use <code>marginBackground</code>.</li>
+<li><code>text</code> applies to plain text, identifiers and any unclassified styles.</li>
+<li><code>comment</code>, <code>keyword</code>, <code>string</code>, <code>number</code>, <code>operator</code>, <code>preprocessor</code>, <code>type</code> and <code>error</code> colour the semantic
+styles of the active lexer.</li>
+<li><code>margin</code> and <code>marginBackground</code> colour the line number, symbol and fold margins.</li>
+<li><code>cursor</code> colours the caret.</li>
+<li><code>lineHighlight</code> colours the line that contains the caret while the editor has the focus.</li>
+<li><code>selectionForeground</code> is drawn as the colour of selected text, overriding the colours of its style.</li>
+<li><code>selectionBackground</code> is drawn behind the main selection.</li>
+</list>
+<p>The following attributes are derived.  Each one follows the source colour shown in brackets until it is assigned, so themes that do not mention them remain consistent.  Assigning the value <code>inherit</code> restores the link to the source.</p>
+<list type="bullet">
+<li><code>whitespace</code> (<code>margin</code>) colours visible whitespace, as enabled by <fl>ShowWhitespace</fl>.</li>
+<li><code>indentGuide</code> (<code>margin</code>) colours the indentation guides, as enabled by <fl>IndentationGuides</fl>.</li>
+<li><code>braceMatch</code> (<code>keyword</code>) colours a brace and its matching partner while the caret is next to it.</li>
+<li><code>braceMismatch</code> (<code>error</code>) colours a brace that has no partner while the caret is next to it.</li>
+<li><code>braceBackground</code> (<code>marginBackground</code>) is drawn behind highlighted braces.</li>
+<li><code>selectionInactiveBackground</code> (<code>selectionBackground</code>) is drawn behind the selection while the editor does not have
+the focus.</li>
+<li><code>selectionAdditionalBackground</code> (<code>selectionBackground</code>) is drawn behind the additional rows of a rectangular
+selection.</li>
+</list>
+<p>Alpha is ignored except for <code>lineHighlight</code> and the selection colours, where zero disables the highlight or override. A disabled <code>selectionInactiveBackground</code> uses the active colour, and a disabled <code>selectionAdditionalBackground</code> uses Scintilla's default colour for additional selections.  Other alpha values produce opaque colours, except that a translucent <code>lineHighlight</code> or <code>selectionBackground</code> is blended over the text after it is drawn, which also tints the text.  An opaque highlight is drawn beneath the text.  The <code>selectionBackground</code> decides the layer of all selections, so when it is translucent the inactive and additional selections are also blended over the text.  Translucent colours blend in the same way as a translucent vector fill, i.e. with the gamma-correct blending of the Vector module, so a 50% colour appears lighter than an average of the sRGB values.  Consider disabling <code>selectionForeground</code> with a translucent <code>selectionBackground</code> so that selected text retains its styled colours.</p>
+<p>The default palette is a white background, black text and operators, grey comments, firebrick keywords, dark red strings, blue numbers, green directives, violet types, a lavender line highlight, a black cursor, and white selected text on a dark blue background.  Theme colours are stored independently for each editor and are retained across lexer changes.</p>
+<p>The colours are copied during assignment and the assigned XML object is not retained or modified.  Assigning before initialisation configures the initial colours; assigning afterwards repaints without changing text, selection or contracted folds.  Invalid themes leave all colours unchanged.</p>
+<p>Reading ThemeXML returns an <class name="XML">XML</class> object that describes the full palette, with every attribute present.  Colours are expressed in <code>#RRGGBB</code> format, or <code>#RRGGBBAA</code> for translucent <code>lineHighlight</code> and selection colours, and derived colours that follow their source read as <code>inherit</code>.  The result can therefore be assigned back to this or another editor without loss.  The object belongs to the editor and is rewritten on each read, so copy any values that need to survive a later read.  Do not free it; it is released with the editor.</p>
       </description>
     </field>
 
