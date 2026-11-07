@@ -3,6 +3,7 @@
 
    include 'scintilla', 'vector'
    module vector as mVec
+   import './theme_utils'
 
 -- Create a headless scene with a viewport, and a Scintilla object hosted by it.  Returns the scene (which owns
 -- everything else), the viewport and the editor.
@@ -498,9 +499,10 @@ end
 -- Setting the selection colours before initialisation dereferenced the uninitialised Scintilla API.
 
 @Test function SelectionColoursBeforeInit()
-   local scene <close>, vp, sci = newEditor({ selectFore='255,255,0,255', selectBkgd='0,128,0,255' })
-   assert(sci.selectFore.red is 255 and sci.selectFore.green is 255, 'SelectFore must retain its value')
-   assert(sci.selectBkgd.green is 128, 'SelectBkgd must retain its value')
+   local scene <close>, vp, sci = newEditor({
+      themeXML=theme_utils.xml({ selectionForeground='#ffff00', selectionBackground='#008000' }) })
+   assert(theme_utils.colour(sci, 'selectionForeground') is '#ffff00', 'The selection foreground must be retained')
+   assert(theme_utils.colour(sci, 'selectionBackground') is '#008000', 'The selection background must be retained')
 end
 
 -- The fonts used for measurement were global, so each editor was measured and drawn with the fonts of whichever

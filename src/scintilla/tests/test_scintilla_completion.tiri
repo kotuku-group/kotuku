@@ -8,6 +8,7 @@
    include 'scintilla', 'vector', 'display'
    module display as mGfx
    module vector as mVec
+   import './theme_utils'
 
 PAGE_WIDTH  = 300
 PAGE_HEIGHT = 120
@@ -118,7 +119,7 @@ function newEditor(Options:table):<obj, obj, obj, obj, array<str>>
       face          = 'Clean',
       fontSize      = 11,
       flags         = flags,
-      lineHighlight = '255,255,255,0',
+      themeXML      = theme_utils.xml({ lineHighlight='transparent' }),
       completionCallback = function(Scintilla, Event, Position, Value, Text)
          events.push(f'{Event}:{Position}:{Value}:{Text}')
       end
@@ -611,7 +612,7 @@ end
 
 @Test function ListUsesTheEditorColours()
    local surface <close>, scene, host, sci, events = newEditor()
-   sci.selectBkgd = '0,128,0,255'
+   theme_utils.apply(sci, { selectionBackground='#008000' })
    complete(sci, 'p', 'pairs\nprint')
    draw(surface)
    local bounds = popupBounds(scene, 'scicompletions')
@@ -619,8 +620,8 @@ end
    check mGfx.CopySurface(surface.id, bmp, 0, 0, 0, PAGE_WIDTH, PAGE_HEIGHT, 0, 0)
    local selected = colourAt(bmp, bounds.x + bounds.width - 4, bounds.y + 2)
    local unselected = colourAt(bmp, bounds.x + bounds.width - 4, bounds.y + 2 + LINE_HEIGHT)
-   assert(selected is '0,128,0', f'The selected row must use SelectBkgd, got {selected}')
-   assert(unselected is '255,255,255', f'Other rows must use BkgdColour, got {unselected}')
+   assert(selected is '0,128,0', f'The selected row must use the selection background, got {selected}')
+   assert(unselected is '255,255,255', f'Other rows must use the editor background, got {unselected}')
 end
 
 @Test function FreeingTheEditorRemovesPopups()

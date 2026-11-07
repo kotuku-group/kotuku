@@ -28,7 +28,7 @@ end
 function repaint_utils.assertFull(Scene:obj, Sci:obj, Bitmap:obj, Label:str)
    repaint_utils.render(Scene)
    local incremental = repaint_utils.capture(Bitmap)
-   Sci.bkgdColour = Sci.bkgdColour
+   Sci.themeXML = Sci.themeXML -- Reassigning the theme forces a full repaint
    repaint_utils.render(Scene)
    local full = repaint_utils.capture(Bitmap)
    local differences = 0

@@ -323,7 +323,7 @@ static bool popup_has_focus(extScintilla *Self)
 //********************************************************************************************************************
 // The scene or the editor's host is being freed, which takes the vectors of the pop-up with it.
 
-static void notify_free_popup(OBJECTPTR Object, ACTIONID ActionID, ERR Result, APTR Args)
+static void notify_free_popup(OBJECTPTR Object, ACTIONID, ERR, APTR)
 {
    for (auto popup : glPopups) {
       if ((OBJECTPTR)popup->viewport IS Object) {
@@ -388,7 +388,7 @@ public:
 // Called by CallTipShow() before the call tip is positioned and shown.  The call tip's Window is null if its vectors
 // cannot be created, in which case it is not displayed.
 
-void ScintillaKTK::CreateCallTipWindow(Scintilla::Internal::PRectangle Rect)
+void ScintillaKTK::CreateCallTipWindow(Scintilla::Internal::PRectangle)
 {
    kt::Log(__FUNCTION__).trace("");
 

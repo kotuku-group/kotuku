@@ -2,6 +2,7 @@
 
    include 'scintilla', 'vector', 'display'
    module display as mGfx
+   import './theme_utils'
 
 MIXED <const> = 'é\r\nsecond\rthird\nlast'
 NESTED <const> = 'outer {\n  inner {\n    body;\n  }\n  tail;\n}\noutside;'
@@ -262,8 +263,8 @@ end
 end
 
 @Test function IndentationGuidesRenderAndClear()
-   local scene <close>, sci = newEditor({ face='Clean', fontSize=11, indentWidth=3, tabWidth=8,
-      lineHighlight='255,255,255,0' })
+   local scene <close>, sci = newEditor(theme_utils.options({ face='Clean', fontSize=11, indentWidth=3,
+      tabWidth=8 }))
    local bmp <close> = obj.new('Bitmap', { width=400, height=300, bitsPerPixel=32 })
    scene.bitmap = bmp
    sci.string = 'outer\n   child\n      nested\n   last\nend'

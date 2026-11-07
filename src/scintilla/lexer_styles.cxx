@@ -289,15 +289,17 @@ void ScintillaKTK::SetStyleColours()
    }
 
    colour(scintilla->MarginColour, { STYLE_LINENUMBER });
-   colour(scintilla->KeywordColour, { STYLE_BRACELIGHT });
-   colour(scintilla->ErrorColour, { STYLE_BRACEBAD });
+   colour(scintilla->BraceMatch, { STYLE_BRACELIGHT });
+   colour(scintilla->BraceMismatch, { STYLE_BRACEBAD });
+   colour(scintilla->IndentGuide, { STYLE_INDENTGUIDE });
    auto &margin = scintilla->MarginBkgd;
    auto margin_colour = SCICOLOUR(margin.Red, margin.Green, margin.Blue);
    SendScintilla(SCI_STYLESETBACK, STYLE_LINENUMBER, margin_colour);
    SendScintilla(SCI_SETFOLDMARGINCOLOUR, 1, margin_colour);
    SendScintilla(SCI_SETFOLDMARGINHICOLOUR, 1, margin_colour);
-   SendScintilla(SCI_STYLESETBACK, STYLE_BRACELIGHT, margin_colour);
-   SendScintilla(SCI_STYLESETBACK, STYLE_BRACEBAD, margin_colour);
+   auto &brace = scintilla->BraceBkgd;
+   SendScintilla(SCI_STYLESETBACK, STYLE_BRACELIGHT, SCICOLOUR(brace.Red, brace.Green, brace.Blue));
+   SendScintilla(SCI_STYLESETBACK, STYLE_BRACEBAD, SCICOLOUR(brace.Red, brace.Green, brace.Blue));
    for (int marker=SC_MARKNUM_FOLDEREND; marker <= SC_MARKNUM_FOLDEROPEN; marker++) {
       SendScintilla(SCI_MARKERSETFORE, marker, margin_colour);
       auto &foreground = scintilla->MarginColour;
@@ -321,4 +323,5 @@ void ScintillaKTK::SetStyleColours()
    if ((ac.Active()) and (ac.lb->Created())) ac.lb->InvalidateAll();
 
    ApplyIndicators();
+   ApplyMarkers();
 }

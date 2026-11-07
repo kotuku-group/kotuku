@@ -1,0 +1,54 @@
+-- Shared construction and readback of Scintilla themes for the test suites.
+
+   include 'xml'
+
+namespace theme_utils { }
+
+-- Returns an XML theme containing the given palette attributes, e.g. { lineHighlight='transparent' }.  The editor
+-- copies the colours on assignment, so the result does not need to outlive it.
+
+function theme_utils.xml(Colours:table):obj
+   local attributes = ''
+   for name, value in Colours ?? { } do attributes ..= f' {name}="{value}"' end
+   return obj.new('XML', { statement=f'<theme><palette{attributes}/></theme>' })
+end
+
+-- Applies a partial palette.  Omitted colours retain their current values.
+
+function theme_utils.apply(Sci:obj, Colours:table)
+   local theme <close> = theme_utils.xml(Colours)
+   Sci.themeXML = theme
+end
+
+-- Moves the palette entry from editor creation options into a themeXML value.  The current line highlight is
+-- disabled unless the caller provides one, so that pixel probes are not affected by it.
+
+function theme_utils.options(Options:table):table
+   if Options.themeXML then raise 'Pass a palette table instead of themeXML to theme_utils.options()' end
+   local colours = Options.palette ?? { }
+   Options.palette = nil
+   colours.lineHighlight ?= 'transparent'
+   Options.themeXML = theme_utils.xml(colours)
+   return Options
+end
+
+-- Reads a palette colour back from the editor, in '#rrggbb' or '#rrggbbaa' format.
+
+function theme_utils.colour(Sci:obj, Name:str):str
+   local theme = Sci.themeXML
+   local _, index = check theme.mtSearch('/theme/palette')
+   local _, value = check theme.mtGetAttrib(index, Name)
+   return value
+end
+
+-- Reads a palette colour back from the editor as 0 - 255 channels.
+
+function theme_utils.rgb(Sci:obj, Name:str):table
+   local hex = theme_utils.colour(Sci, Name)
+   return {
+      red   = tonumber(hex.sub(1, 3), 16),
+      green = tonumber(hex.sub(3, 5), 16),
+      blue  = tonumber(hex.sub(5, 7), 16),
+      alpha = (#hex is 9) ? tonumber(hex.sub(7, 9), 16) : 255
+   }
+end

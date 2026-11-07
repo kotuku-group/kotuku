@@ -2,6 +2,7 @@
 
    include 'scintilla', 'vector', 'display'
    module display as mGfx
+   import './theme_utils'
 
 function caretVisible(Surface:obj!):bool
    processing.sleep(0)
@@ -29,7 +30,7 @@ function checkInitialFocus(ChildFocus:bool!, CustomFocus:bool!, Disabled:bool!)
    processing.sleep(0)
    if Disabled then check host.acDisable() end
 
-   local sci = host.new('Scintilla', { flags=SCIF_EDIT, focus=focus, lineHighlight='255,255,255,0' })
+   local sci = host.new('Scintilla', theme_utils.options({ flags=SCIF_EDIT, focus=focus }))
    assert(caretVisible(surface) != Disabled, 'The initial caret must reflect the focus and enabled state')
 
    if Disabled then
@@ -77,7 +78,7 @@ end
    check surface.acFocus()
    check other.acFocus()
 
-   local sci = host.new('Scintilla', { flags=SCIF_EDIT, lineHighlight='255,255,255,0' })
+   local sci = host.new('Scintilla', theme_utils.options({ flags=SCIF_EDIT }))
    assert(not caretVisible(surface), 'Creating an unfocused editor must leave its caret hidden')
    assert(other.flags has VF_HAS_FOCUS, 'Creating an editor must preserve the existing focus')
    check host.acFocus()

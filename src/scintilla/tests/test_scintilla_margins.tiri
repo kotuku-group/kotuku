@@ -9,6 +9,7 @@
 
    include 'scintilla', 'vector', 'display'
    module display as mGfx
+   import './theme_utils'
 
 PAGE_WIDTH   = 300
 PAGE_HEIGHT  = 120
@@ -22,9 +23,9 @@ MARGIN_WIDTH = 20
 FOLD_DOC = 'a {\nbbbbbb;\n}\ncccccccccc;'
 LINE_GLYPHS = array<int> { 3, 7, 1, 11 }
 
-RED    = struct<RGB8> { red=220, green=0, blue=0, alpha=255 }
-BLACK  = struct<RGB8> { red=0, green=0, blue=0, alpha=255 }
-YELLOW = struct<RGB8> { red=255, green=240, blue=120, alpha=255 }
+RED    = 0xdc0000
+BLACK  = 0x000000
+YELLOW = 0xfff078
 
 TEMP_FILE = 'temp:scintilla_margins.c'
 
@@ -37,8 +38,7 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local options = Options ?? { }
    options.face ?= 'Clean'
    options.fontSize ?= 11
-   options.lineHighlight ?= '255,255,255,0'
-   local sci = vp.new('Scintilla', options)
+   local sci = vp.new('Scintilla', theme_utils.options(options))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    return scene, vp, sci, bmp
@@ -141,7 +141,7 @@ end
 @Test function SymbolMarginShowsMarkers()
    local scene <close>, vp, sci, bmp = newEditor({ symbols=true })
    sci.string = 'zero\none\ntwo'
-   check sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED)
+   check sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED, 255)
    check sci.mtAddMarker(1, 0)
    render(scene)
 
@@ -156,7 +156,7 @@ end
    -- A marker that no visible margin can show is drawn as a highlight of the line's background instead.
    local scene <close>, vp, sci, bmp = newEditor()
    sci.string = 'zero\none\ntwo'
-   check sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED)
+   check sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED, 255)
    check sci.mtAddMarker(1, 0)
    render(scene)
    assert(colourAt(bmp, 200, LINE_HEIGHT + 6) is '220,0,0', 'Without the symbol margin, the line must be highlighted')
@@ -172,7 +172,7 @@ end
    -- Background markers are drawn in the text area, so they are visible without the symbol margin.
    local scene <close>, vp, sci, bmp = newEditor()
    sci.string = 'zero\none\ntwo'
-   check sci.mtDefineMarker(3, SCMK_BACKGROUND, BLACK, YELLOW)
+   check sci.mtDefineMarker(3, SCMK_BACKGROUND, BLACK, YELLOW, 255)
    check sci.mtAddMarker(2, 3)
    render(scene)
 
@@ -188,13 +188,38 @@ end
    render(scene)
    assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isRed) is 0, 'An undefined marker is not red')
 
-   check sci.mtDefineMarker(4, SCMK_FULL_RECT, BLACK, RED)
+   check sci.mtDefineMarker(4, SCMK_FULL_RECT, BLACK, RED, 255)
    render(scene)
    assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isRed) > 100, 'The line must be repainted with the new definition')
 
-   check sci.mtDefineMarker(4, SCMK_EMPTY, nil, nil)
+   check sci.mtDefineMarker(4, SCMK_EMPTY, BLACK, BLACK, 255)
    render(scene)
    assert(countOnRow(bmp, 0, 0, MARGIN_WIDTH, isRed) is 0, 'An EMPTY marker must not be drawn')
+end
+
+-- A theme reference follows the palette when the theme changes, while explicit colours are unaffected.
+
+@Test function MarkerThemeReferencesFollowThePalette()
+   local scene <close>, vp, sci, bmp = newEditor()
+   sci.string = 'zero\none\ntwo'
+   check sci.mtDefineMarker(3, SCMK_BACKGROUND, BLACK, -2, 255)
+   check sci.mtDefineMarker(4, SCMK_BACKGROUND, BLACK, YELLOW, 255)
+   check sci.mtAddMarker(1, 3)
+   check sci.mtAddMarker(2, 4)
+   render(scene)
+   local row = (Line => colourAt(bmp, 200, (Line * LINE_HEIGHT) + 6))
+   assert(row(1) is '178,34,34', f'A keyword reference must use the default keyword colour, got {row(1)}')
+
+   theme_utils.apply(sci, { keyword='#14f0a0' })
+   render(scene)
+   assert(row(1) is '20,240,160', f'A keyword reference must follow the theme, got {row(1)}')
+   assert(row(2) is '255,240,120', f'An explicit colour must not follow the theme, got {row(2)}')
+
+   -- A translucent background marker blends over the line.
+
+   check sci.mtDefineMarker(4, SCMK_BACKGROUND, BLACK, 0x0000ff, 128)
+   render(scene)
+   assert(row(2) != '0,0,255' and row(2) != '255,255,255', f'Alpha below 255 must blend the marker, got {row(2)}')
 end
 
 @Test function GetMarkersReportsMask()
@@ -278,10 +303,14 @@ end
    assert(sci.mtAddMarker(0, 25) is ERR_OutOfRange, 'Markers 25 to 31 are reserved for folding')
    assert(sci.mtAddMarker(0, -1) is ERR_OutOfRange, 'A negative marker is invalid')
    assert(sci.mtAddMarker(2, 0) is ERR_OutOfRange, 'A line past the end is invalid')
-   assert(sci.mtDefineMarker(25, SCMK_CIRCLE, nil, nil) is ERR_OutOfRange, 'Marker 25 is reserved')
-   assert(sci.mtDefineMarker(0, 25, nil, nil) is ERR_InvalidValue, 'Pixmap markers are unsupported')
-   assert(sci.mtDefineMarker(0, 30, nil, nil) is ERR_InvalidValue, 'Image markers are unsupported')
-   assert(sci.mtDefineMarker(0, -1, nil, nil) is ERR_InvalidValue, 'A negative symbol is invalid')
+   assert(sci.mtDefineMarker(25, SCMK_CIRCLE, BLACK, RED, 255) is ERR_OutOfRange, 'Marker 25 is reserved')
+   assert(sci.mtDefineMarker(0, 25, BLACK, RED, 255) is ERR_InvalidValue, 'Pixmap markers are unsupported')
+   assert(sci.mtDefineMarker(0, 30, BLACK, RED, 255) is ERR_InvalidValue, 'Image markers are unsupported')
+   assert(sci.mtDefineMarker(0, -1, BLACK, RED, 255) is ERR_InvalidValue, 'A negative symbol is invalid')
+   assert(sci.mtDefineMarker(0, SCMK_CIRCLE, -4, RED, 255) is ERR_OutOfRange, 'Theme references end at -3')
+   assert(sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, 0x1000000, 255) is ERR_OutOfRange, 'Colours are 24-bit')
+   assert(sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED, 256) is ERR_OutOfRange, 'Alpha is limited to 255')
+   assert(sci.mtDefineMarker(0, SCMK_CIRCLE, BLACK, RED, -1) is ERR_OutOfRange, 'A negative alpha is invalid')
    assert(sci.mtRemoveMarker(-2, 0) is ERR_OutOfRange, 'A line below -1 is invalid')
    assert(sci.mtRemoveMarker(0, 25) is ERR_OutOfRange, 'A reserved marker cannot be removed')
    assert(sci.mtGetMarkers(2) is ERR_OutOfRange, 'GetMarkers() must check the line')
@@ -516,11 +545,10 @@ function newSurfaceEditor(Options:table):<obj, obj>
    options.face ?= 'Clean'
    options.fontSize ?= 11
    options.flags ?= SCIF_EDIT
-   options.lineHighlight ?= '255,255,255,0'
    options.lexer ?= SCLEX_CPP
    options.symbols ?= true
    options.foldingMarkers ?= true
-   local sci = host.new('Scintilla', options)
+   local sci = host.new('Scintilla', theme_utils.options(options))
    sci.string = FOLD_DOC
    show(surface)
    surface.acFocus()

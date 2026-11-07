@@ -616,6 +616,7 @@ ERR DrawText(objBitmap *Bitmap, APTR FontHandle, double X, double Y, const std::
 
    thread_local SimpleVector text;
    text.mPath.remove_all();
+   text.mRaster.gamma(((freetype_font::ft_point *)FontHandle)->small_text ? small_text_gamma() : nullptr);
    double pen_x = 0;
    double pen_y = 0;
    {

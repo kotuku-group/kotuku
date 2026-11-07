@@ -6,6 +6,7 @@
 
    namespace gui { }
    import '../../../packages/gui/palettes_data'
+   import './theme_utils'
 
 WIDTH = 360
 HEIGHT = 160
@@ -23,8 +24,8 @@ function newEditor(Options:table):<obj, obj, obj>
    local options = Options ?? { }
    options.face = 'Clean'
    options.fontSize = 11
-   options.lineHighlight = '255,255,255,0'
    local sci = vp.new('Scintilla', options)
+   theme_utils.apply(sci, { lineHighlight='transparent' })
    local bmp = obj.new('Bitmap', { width=WIDTH, height=HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    return scene, sci, bmp
@@ -161,7 +162,7 @@ end
    assert(pixelsOf(bmp, '20,30,40', 250, 0, 20, HEIGHT) > 0, 'The document background must update')
    assert(pixelsOf(bmp, '45,55,65', 0, 0, 20, HEIGHT) > 0, 'The fold margin must update')
    expectToken(other_bmp, 'function', KEYWORD, 0, 0)
-   assert(sci.selectBkgd.red is 60, 'Selection colours must be writable after Init')
+   assert(theme_utils.rgb(sci, 'selectionBackground').red is 60, 'Selection colours must be writable after Init')
    assert(pixelsOf(bmp, '60,70,80', 87, 0, 49, 13) > 20, 'Theme updates must preserve the selection')
 
    sci.lexer = SCLEX_CPP
@@ -215,7 +216,7 @@ end
       sci.themeXML = theme
       render(scene)
       local keyword = paletteColour(palette.prime)
-      local background = sci.bkgdColour
+      local background = theme_utils.rgb(sci, 'background')
       expectToken(bmp, 'defer', f'{keyword.red},{keyword.green},{keyword.blue}', 0, 0)
       assert(pixelsOf(bmp, f'{background.red},{background.green},{background.blue}', 250, 0, 20, HEIGHT) > 0,
          'The editor must render the GUI palette background')
@@ -251,7 +252,7 @@ end
    expectToken(bmp, 'function', '20,240,160', 6, 1)
    assert(pixelsOf(bmp, '20,30,40', 60, 0, 200, 26) > 100,
       'Embedded script styles above STYLE_DEFAULT must use the document background')
-   sci.bkgdColour = '50,60,70,255'
+   theme_utils.apply(sci, { background='#323c46' })
    render(scene)
    assert(pixelsOf(bmp, '20,30,40', 0, 0, WIDTH, HEIGHT) is 0,
       'A theme update must replace backgrounds in every embedded script style')
@@ -314,7 +315,7 @@ end
       expectRejectedTheme(sci, invalid)
       render(scene)
       expectToken(bmp, 'defer', '0,255,0', 0, 0)
-      assert(sci.bkgdColour.red is 255 and sci.bkgdColour.green is 255 and sci.bkgdColour.blue is 255,
+      assert(theme_utils.colour(sci, 'background') is '#ffffff',
          'A rejected theme must leave earlier attributes unapplied')
    end
    expectRejectedTheme(sci, nil)
@@ -334,14 +335,15 @@ end
    sci.themeXML = theme
    render(scene)
    expectToken(bmp, 'defer', '0,255,0', 0, 0)
-   assert(sci.bkgdColour.red is 18, 'An empty palette must retain the current colours')
+   assert(theme_utils.rgb(sci, 'background').red is 18, 'An empty palette must retain the current colours')
 end
 
 @Test function ThemeAPIHidesIndividualColours()
    local scene <close>, sci, bmp = newEditor()
    for name in values(array<str> {
-      'themeXML', 'commentColour', 'keywordColour', 'stringColour', 'numberColour', 'operatorColour',
-      'preprocessorColour', 'typeColour', 'errorColour', 'marginColour', 'marginBkgd'
+      'commentColour', 'keywordColour', 'stringColour', 'numberColour', 'operatorColour', 'preprocessorColour',
+      'typeColour', 'errorColour', 'marginColour', 'marginBkgd', 'bkgdColour', 'textColour', 'cursorColour',
+      'lineHighlight', 'selectFore', 'selectBkgd'
    }) do
       local readable = false
       try
@@ -351,6 +353,101 @@ end
       end
       assert(not readable, f'{name} must not be publicly readable')
    end
+end
+
+-- Reading ThemeXML describes the full palette, so the result can be assigned to another editor without loss.
+
+@Test function ThemeXMLReadback()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_TIRI })
+   local expected = '<theme><palette comment="#808080" keyword="#b22222" string="#b00000" number="#0000ff" ' ..
+      'operator="#000000" preprocessor="#228b22" type="#9400d3" error="#ff0000" margin="#808080" ' ..
+      'marginBackground="#e0e0e0" text="#000000" background="#ffffff" cursor="#000000" ' ..
+      'lineHighlight="#00000000" selectionForeground="#ffffff" selectionBackground="#0000b4" ' ..
+      'whitespace="inherit" indentGuide="inherit" braceMatch="inherit" braceMismatch="inherit" ' ..
+      'braceBackground="inherit" selectionInactiveBackground="inherit" selectionAdditionalBackground="inherit"' ..
+      '/></theme>'
+   local err, statement = sci.themeXML.mtSerialise(0)
+   assert(err is ERR_Okay and statement is expected, f'The default palette must be readable, got {statement}')
+
+   theme_utils.apply(sci, { keyword='lime', background='rgb(20 30 40)', selectionBackground='#3c465080',
+      cursor='oklch(0.7 0.1 30)' })
+   assert(theme_utils.colour(sci, 'keyword') is '#00ff00', 'Named colours must read back in hex')
+   assert(theme_utils.colour(sci, 'background') is '#141e28', 'Colour functions must read back in hex')
+   assert(theme_utils.colour(sci, 'selectionBackground') is '#3c465080', 'Translucent selections must retain alpha')
+   assert(theme_utils.colour(sci, 'comment') is '#808080', 'Partial updates must retain other colours')
+   local first = sci.themeXML
+   local second = sci.themeXML
+   assert(first.id is second.id, 'Each read must reuse the editor-owned XML object')
+
+   -- Applying the readback to a second editor must reproduce the palette and its rendering.
+
+   local other_scene <close>, other, other_bmp = newEditor({ lexer=SCLEX_TIRI })
+   other.themeXML = sci.themeXML
+   local _, copy = other.themeXML.mtSerialise(0)
+   local _, source = sci.themeXML.mtSerialise(0)
+   assert(copy is source, 'A readback must round-trip without loss')
+   sci.string = 'defer value'
+   other.string = sci.string
+   render(scene)
+   render(other_scene)
+   expectToken(bmp, 'defer', '0,255,0', 0, 0)
+   expectToken(other_bmp, 'defer', '0,255,0', 0, 0)
+
+   -- Freeing the returned object is not supported, but the next read must recover.
+
+   do
+      local closed <close> = sci.themeXML
+   end
+   assert(theme_utils.colour(sci, 'keyword') is '#00ff00', 'A freed readback must be replaced on the next read')
+end
+
+-- Derived colours follow their source until they are assigned, and 'inherit' restores the link.  Line 2 of the
+-- document has six columns of indentation, which shows whitespace dots and an indentation guide at column 3.
+
+@Test function DerivedColoursFollowTheirSources()
+   local scene <close>, sci, bmp = newEditor({ lexer=SCLEX_CPP, showWhitespace=true, indentWidth=3,
+      indentationGuides=SCGUIDE_REAL })
+   sci.string = '{\n   {\n      x;\n   }\n}'
+   check sci.mtSelectRange(sci.textLength, sci.textLength)
+   local indent = (Colour => pixelsOf(bmp, Colour, 4, 26, 42, 13))
+
+   theme_utils.apply(sci, { margin='#ff00ff' })
+   render(scene)
+   assert(indent('255,0,255') > 0, 'Whitespace and guides must inherit the margin colour')
+
+   theme_utils.apply(sci, { whitespace='#00ffff' })
+   render(scene)
+   assert(indent('0,255,255') > 0, 'An assigned whitespace colour must be drawn')
+   assert(indent('255,0,255') > 0, 'The indentation guide must still inherit the margin colour')
+
+   theme_utils.apply(sci, { indentGuide='#ffff00', margin='#808080' })
+   render(scene)
+   assert(indent('255,255,0') > 0, 'An assigned guide colour must be drawn')
+   assert(indent('128,128,128') is 0, 'Assigned colours must not follow later changes to their source')
+
+   theme_utils.apply(sci, { whitespace='inherit', indentGuide='inherit' })
+   render(scene)
+   assert(indent('128,128,128') > 0, 'Inherit must restore the link to the source colour')
+   assert(indent('0,255,255') is 0 and indent('255,255,0') is 0, 'Inherit must replace the assigned colours')
+
+   -- The caret before the opening brace highlights it in braceMatch over braceBackground.
+
+   check sci.mtSelectRange(0, 0)
+   theme_utils.apply(sci, { keyword='#14f0a0', marginBackground='#405060' })
+   render(scene)
+   assert(pixelsOf(bmp, '20,240,160', 4, 0, 7, 13) > 0, 'A matched brace must inherit the keyword colour')
+   assert(pixelsOf(bmp, '64,80,96', 4, 0, 7, 13) > 0, 'The brace background must inherit the margin background')
+
+   theme_utils.apply(sci, { braceMatch='#ff8000', braceBackground='#102030' })
+   render(scene)
+   assert(pixelsOf(bmp, '255,128,0', 4, 0, 7, 13) > 0, 'An assigned brace colour must be drawn')
+   assert(pixelsOf(bmp, '16,32,48', 4, 0, 7, 13) > 0, 'An assigned brace background must be drawn')
+
+   sci.string = 'x}'
+   check sci.mtSelectRange(2, 2)
+   theme_utils.apply(sci, { error='#c00000' })
+   render(scene)
+   assert(pixelsOf(bmp, '192,0,0', 11, 0, 7, 13) > 0, 'An unmatched brace must inherit the error colour')
 end
 
 @Test function CustomKeywordsSurviveLexerSwitches()

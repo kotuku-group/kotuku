@@ -85,7 +85,7 @@ end
 //********************************************************************************************************************
 // Receives the reports of the context menu's script (see above).
 
-static void notify_menu_key(OBJECTPTR Script, ACTIONID ActionID, ERR Result, struct acSetKey *Args)
+static void notify_menu_key(OBJECTPTR, ACTIONID, ERR Result, struct acSetKey *Args)
 {
    auto Self = (extScintilla *)CurrentContext();
    if ((Result != ERR::Okay) or (not Args) or (not Self->API)) return;
@@ -318,7 +318,7 @@ void Scintilla::Internal::Menu::Destroy() noexcept
 // The Window identifies the Scintilla object (see kt_window.cxx).  The client point is ignored in favour of the scene
 // position that was recorded by ktContextMenu().
 
-void Scintilla::Internal::Menu::Show(Scintilla::Internal::Point Pt, const Window &Window)
+void Scintilla::Internal::Menu::Show(Scintilla::Internal::Point, const Window &Window)
 {
    if (auto scintilla = get_scintilla(&Window); (scintilla) and (scintilla->API)) {
       scintilla->API->panShowPopup();

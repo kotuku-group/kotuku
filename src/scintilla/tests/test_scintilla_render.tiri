@@ -8,6 +8,7 @@
    include 'scintilla', 'vector', 'display'
    module vector as mVec
    module display as mGfx
+   import './theme_utils'
 
 PAGE_WIDTH  = 300
 PAGE_HEIGHT = 120
@@ -23,8 +24,7 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local options = Options ?? { }
    options.face ?= 'Clean'
    options.fontSize ?= 11
-   options.lineHighlight ?= '255,255,255,0'
-   local sci = vp.new('Scintilla', options)
+   local sci = vp.new('Scintilla', theme_utils.options(options))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    return scene, vp, sci, bmp
@@ -89,15 +89,15 @@ end
 -- Background and text
 
 @Test function BackgroundColour()
-   local scene <close>, vp, sci, bmp = newEditor({ bkgdColour='250,240,200,255' })
+   local scene <close>, vp, sci, bmp = newEditor({ palette={ background='#faf0c8' } })
    sci.string = 'Hello'
    render(scene)
 
-   assert(colourAt(bmp, 200, 6) is '250,240,200', 'The text line beyond its end must use BkgdColour, got ' ..
+   assert(colourAt(bmp, 200, 6) is '250,240,200', 'The text line beyond its end must use the background, got ' ..
       colourAt(bmp, 200, 6))
-   assert(colourAt(bmp, 200, 60) is '250,240,200', 'The area beyond the last line must use BkgdColour, got ' ..
+   assert(colourAt(bmp, 200, 60) is '250,240,200', 'The area beyond the last line must use the background, got ' ..
       colourAt(bmp, 200, 60))
-   assert(colourAt(bmp, 1, 6) is '250,240,200', 'The left margin must use BkgdColour, got ' .. colourAt(bmp, 1, 6))
+   assert(colourAt(bmp, 1, 6) is '250,240,200', 'The left margin must use the background, got ' .. colourAt(bmp, 1, 6))
 end
 
 @Test function BackgroundColourChange()
@@ -106,11 +106,11 @@ end
    render(scene)
    assert(colourAt(bmp, 200, 6) is '255,255,255', 'The default background must be white')
 
-   sci.bkgdColour = '20,30,40,255'
+   theme_utils.apply(sci, { background='#141e28' })
    render(scene)
-   assert(colourAt(bmp, 200, 6) is '20,30,40', 'Changing BkgdColour must repaint the text lines, got ' ..
+   assert(colourAt(bmp, 200, 6) is '20,30,40', 'Changing the background must repaint the text lines, got ' ..
       colourAt(bmp, 200, 6))
-   assert(colourAt(bmp, 200, 60) is '20,30,40', 'Changing BkgdColour must repaint the empty area, got ' ..
+   assert(colourAt(bmp, 200, 60) is '20,30,40', 'Changing the background must repaint the empty area, got ' ..
       colourAt(bmp, 200, 60))
 end
 
@@ -127,12 +127,12 @@ end
 end
 
 @Test function TextColour()
-   local scene <close>, vp, sci, bmp = newEditor({ textColour='200,0,0,255' })
+   local scene <close>, vp, sci, bmp = newEditor({ palette={ text='#c80000' } })
    sci.string = 'Hello'
    render(scene)
 
    local red = countPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT, (R, G, B) => R is 200 and G is 0 and B is 0)
-   assert(red > 20, f'Plain text must be drawn in TextColour, found {red} pixels')
+   assert(red > 20, f'Plain text must be drawn in the text colour, found {red} pixels')
 end
 
 @Test function TextIsBaselineAligned()
@@ -165,16 +165,17 @@ end
 -- Selection and whitespace
 
 @Test function SelectionBackground()
-   local scene <close>, vp, sci, bmp = newEditor({ selectBkgd='0,128,0,255', selectFore='255,255,255,255' })
+   local scene <close>, vp, sci, bmp = newEditor({
+      palette={ selectionBackground='#008000', selectionForeground='white' } })
    sci.string = 'Hello World'
    check sci.mtSelectRange(0, 5)
    render(scene)
 
    local isSelection = (R, G, B) => R is 0 and G is 128 and B is 0
    local selected = countPixels(bmp, TEXT_LEFT, 0, 35, LINE_HEIGHT, isSelection)
-   assert(selected > 100, f'The selected text must be drawn over SelectBkgd, found {selected} pixels')
+   assert(selected > 100, f'The selected text must be drawn over the selection background, found {selected} pixels')
    assert(countPixels(bmp, TEXT_LEFT + 42, 0, 35, LINE_HEIGHT, isSelection) is 0,
-      'Unselected text must not use SelectBkgd')
+      'Unselected text must not use the selection background')
 end
 
 -- Translucent highlights blend like a translucent vector fill, i.e. with the framework's gamma-correct blending.  The
@@ -200,7 +201,8 @@ end
    local r, g, b = blendedOverWhite('#0000ff80')
    assert(r > 0 and r < 255 and b is 255, f'The reference blend must be translucent blue, got {r},{g},{b}')
 
-   local scene <close>, vp, sci, bmp = newEditor({ selectBkgd='0,0,255,128', selectFore='0,0,0,0' })
+   local scene <close>, vp, sci, bmp = newEditor({
+      palette={ selectionBackground='#0000ff80', selectionForeground='transparent' } })
    sci.string = 'HHHH        end'
    check sci.mtSelectRange(0, 12)
    render(scene)
@@ -215,19 +217,21 @@ end
    assert(colourAt(bmp, TEXT_LEFT + 2, LINE_HEIGHT + 4) is '255,255,255', 'Unselected rows must not be blended')
 
    -- An opaque colour returns to drawing the selection beneath the text.
-   sci.selectBkgd = '0,128,0,255'
+   theme_utils.apply(sci, { selectionBackground='#008000' })
    render(scene)
-   assert(colourAt(bmp, TEXT_LEFT + 40, 6) is '0,128,0', 'An opaque selection must use SelectBkgd exactly')
+   assert(colourAt(bmp, TEXT_LEFT + 40, 6) is '0,128,0', 'An opaque selection must use its colour exactly')
 end
 
 @Test function WhitespaceArrows()
-   -- Visible tabs are drawn as arrows, which use horizontal and diagonal lines.
-   local scene <close>, vp, sci, bmp = newEditor({ showWhitespace=true, tabWidth=8 })
+   -- Visible tabs are drawn as arrows, which use horizontal and diagonal lines in the whitespace colour.  The
+   -- default whitespace colour inherits the margin colour.
+   local scene <close>, vp, sci, bmp = newEditor({ showWhitespace=true, tabWidth=8, palette={ whitespace='red' } })
    sci.string = '\tX'
    render(scene)
 
-   local arrow = darkPixels(bmp, TEXT_LEFT + 1, 0, 50, LINE_HEIGHT)
-   assert(arrow > 10, f'A tab arrow must be drawn, found {arrow} pixels')
+   local isArrow = (R, G, B) => R > 128 and G < 100 and B < 100
+   local arrow = countPixels(bmp, TEXT_LEFT + 1, 0, 50, LINE_HEIGHT, isArrow)
+   assert(arrow > 10, f'A tab arrow must be drawn in the whitespace colour, found {arrow} pixels')
 end
 
 ----------------------------------------------------------------------------------------------------------------------
@@ -299,7 +303,7 @@ end
    local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local host = root.new('VectorViewport', { x=0, y=0, width=200, height=60 })
-   local sci = host.new('Scintilla', { bkgdColour='250,240,200,255' })
+   local sci = host.new('Scintilla', theme_utils.options({ palette={ background='#faf0c8' } }))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    sci.string = 'Hello\nWorld'
@@ -330,7 +334,7 @@ end
    local scene <close> = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local root = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local host = root.new('VectorViewport', { x=10.5, y=20.25, width=200, height=60 })
-   local sci = host.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
+   local sci = host.new('Scintilla', theme_utils.options({ face='Clean', fontSize=11 }))
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
    sci.string = 'Hello World\nSecond line'
@@ -388,12 +392,12 @@ end
    local bmp = obj.new('bitmap', { width=PAGE_WIDTH, height=PAGE_HEIGHT, bitsPerPixel=32 })
    scene.bitmap = bmp
 
-   local clean = left.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0' })
+   local clean = left.new('Scintilla', theme_utils.options({ face='Clean', fontSize=11 }))
    clean.string = 'H\nH\nH'
    render(scene)
    local reference = darkRowProfile(bmp, 0, 0, 20, 40)
 
-   local small = right.new('Scintilla', { face='Small', fontSize=11, lineHighlight='255,255,255,0' })
+   local small = right.new('Scintilla', theme_utils.options({ face='Small', fontSize=11 }))
    check small.mtSetFont('Small')
    small.string = 'H\nH\nH'
    render(scene)
@@ -416,7 +420,7 @@ end
       check file.acWrite('int x;')
    end
 
-   local scene <close>, vp, sci, bmp = newEditor({ flags=SCIF_DETECT_LEXER, bkgdColour='250,240,200,255' })
+   local scene <close>, vp, sci, bmp = newEditor({ flags=SCIF_DETECT_LEXER, palette={ background='#faf0c8' } })
    sci.string = 'Hello'
    render(scene)
    sci.path = path
@@ -440,7 +444,8 @@ end
 end
 
 @Test function MonospacedCombiningMarkSelection()
-   local scene <close>, vp, sci, bmp = newEditor({ face='Inconsolata', fontSize=20, selectBkgd='255,0,0,255' })
+   local scene <close>, vp, sci, bmp = newEditor({ face='Inconsolata', fontSize=20,
+      palette={ selectionBackground='red' } })
    local _, handle = check mVec.GetFontHandle(sci.face, 'Regular', 0, sci.fontSize)
    local text = 'i\u{0301}i'
    local width = math.floor(mVec.StringWidth(handle, text, -1) + 0.5)

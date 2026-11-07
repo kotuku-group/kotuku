@@ -4,19 +4,20 @@
    include 'scintilla', 'vector', 'display'
    module display as mGfx
    import './repaint_utils'
+   import './theme_utils'
 
 function compareRepaints(Face:str, Size:num)
    local scene <close> = obj.new('VectorScene', { pageWidth=280, pageHeight=130 })
    local viewport = scene.new('VectorViewport', { x=0.25, y=0.5, width=279, height=129 })
-   local sci = viewport.new('Scintilla', { face=Face, fontSize=Size, lineNumbers=true, symbols=true,
-      showWhitespace=true, lineHighlight='255,255,255,0', selectFore='0,0,0,0', selectBkgd='0,0,255,128' })
+   local sci = viewport.new('Scintilla', theme_utils.options({ face=Face, fontSize=Size, lineNumbers=true,
+      symbols=true, showWhitespace=true,
+      palette={ selectionForeground='transparent', selectionBackground='#0000ff80' } }))
    local bitmap <close> = obj.new('Bitmap', { width=280, height=130, bitsPerPixel=32 })
    scene.bitmap = bitmap
    local lines = array<str> { }
    for i in {0 to 100} do lines.push(f'{i}\tAV café 😀 é  more text and a long suffix') end
    sci.string = lines.concat('\n')
-   check sci.mtDefineMarker(0, SCMK_CIRCLE, struct<RGB8> { red=255, green=255, blue=255, alpha=255 },
-      struct<RGB8> { red=255, green=0, blue=0, alpha=255 })
+   check sci.mtDefineMarker(0, SCMK_CIRCLE, 0xffffff, 0xff0000, 255)
    check sci.mtAddMarker(1, 0)
    repaint_utils.assertFull(scene, sci, bitmap, 'Initial document')
 
@@ -65,14 +66,14 @@ end
 @Test function DisabledSelectionOverrideKeepsTextVisible()
    local scene <close> = obj.new('VectorScene', { pageWidth=140, pageHeight=40 })
    local viewport = scene.new('VectorViewport', { width=140, height=40 })
-   local sci = viewport.new('Scintilla', { face='Clean', fontSize=11, lineHighlight='255,255,255,0',
-      selectFore='0,0,0,255', selectBkgd='0,0,255,128' })
+   local sci = viewport.new('Scintilla', theme_utils.options({ face='Clean', fontSize=11,
+      palette={ selectionForeground='black', selectionBackground='#0000ff80' } }))
    local bitmap <close> = obj.new('Bitmap', { width=140, height=40, bitsPerPixel=32 })
    scene.bitmap = bitmap
    sci.string = 'HHHH'
    check sci.mtSelectRange(0, 4)
    repaint_utils.render(scene)
-   sci.selectBkgd = '0,0,0,0'
+   theme_utils.apply(sci, { selectionBackground='transparent' })
    repaint_utils.render(scene)
    local dark = 0
    for y in {0 to 13} do
@@ -81,5 +82,5 @@ end
          if p.red + p.green + p.blue < 100 then dark++ end
       end
    end
-   assert(dark > 20, 'Disabling SelectBkgd must restore base-layer selection without covering the text')
+   assert(dark > 20, 'Disabling selectionBackground must restore base-layer selection without covering the text')
 end
