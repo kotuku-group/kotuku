@@ -851,12 +851,12 @@ static ERR VECTOR_SubscribeInput(extVector *Self, struct vec::SubscribeInput *Ar
       mark_input_boundary_dirty(Self);
    }
    else if (Self->InputSubscriptions) { // Remove existing subscriptions for this callback
-      for (auto it=Self->InputSubscriptions->begin(); it != Self->InputSubscriptions->end(); ) {
-         if (Args->Callback IS it->Callback) {
-            release_callback(it->Callback);
-            it = Self->InputSubscriptions->erase(it);
+      for (size_t i=0; i < Self->InputSubscriptions->size(); ) {
+         if (Args->Callback IS (*Self->InputSubscriptions)[i].Callback) {
+            remove_input_subscription(Self, i);
+            if (not Self->InputDispatchDepth) continue; // Erased; the next entry now occupies this index
          }
-         else it++;
+         i++;
       }
 
       update_input_subscription_state(Self);
