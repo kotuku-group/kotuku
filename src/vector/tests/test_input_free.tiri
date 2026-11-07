@@ -95,3 +95,136 @@ end
    assert(counts.root - before is 2, f'The root received {counts.root - before} of 2 movement events over the ' ..
       'area of the freed child')
 end
+
+-- A callback that subscribes more callbacks to its own vector reallocates the subscription list mid-dispatch.  The
+-- remaining subscriptions must each receive the event once, and the new ones must remain subscribed.
+
+@Test function SubscribeDuringDispatch()
+   local calls = { first=0, second=0, added=0 }
+   local subscribed = false
+   local surface <close>, root, child, counts = newScene(function(Child)
+      Child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+         if (Msg.type != JET_LMB) or (Msg.value is 0) then return end
+         calls.first++
+         if subscribed then return end
+         subscribed = true
+         for i in {0 to 16} do
+            Vector.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+               if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.added++ end
+            end)
+         end
+      end)
+      Child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+         if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.second++ end
+      end)
+   end)
+
+   feed(JET_ABS_XY, 20, 20)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(calls.first is 1, f'The first callback was called {calls.first} times for one press')
+   assert(calls.second is 1, f'The second callback was called {calls.second} times for one press')
+
+   local added = calls.added
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(calls.second is 2, f'The second callback was called {calls.second} times for two presses')
+   assert(calls.added - added is 16, f'{calls.added - added} of 16 added callbacks received the second press')
+end
+
+-- A callback that unsubscribes a later callback mid-dispatch must stop it from receiving the event, and the
+-- subscription that follows it must still be called.
+
+@Test function UnsubscribeDuringDispatch()
+   local calls = { first=0, second=0, third=0 }
+   local second = function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.second++ end
+   end
+   local surface <close>, root, child, counts = newScene(function(Child)
+      Child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+         if (Msg.type is JET_LMB) and (Msg.value > 0) then
+            calls.first++
+            Vector.mtSubscribeInput(0, second)
+         end
+      end)
+      Child.mtSubscribeInput(JTYPE_BUTTON, second)
+      Child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+         if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.third++ end
+      end)
+   end)
+
+   feed(JET_ABS_XY, 20, 20)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(calls.first is 1, f'The first callback was called {calls.first} times for one press')
+   assert(calls.second is 0, f'The unsubscribed callback was called {calls.second} times')
+   assert(calls.third is 1, f'The third callback was called {calls.third} times for one press')
+end
+
+-- Removing both the current callback and an earlier one must not skip the remaining subscription.
+
+@Test function RemoveEarlierAndSelfDuringDispatch()
+   local calls = { first=0, second=0, third=0 }
+   local first = function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.first++ end
+   end
+   local second:func
+   second = function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value > 0) then
+         calls.second++
+         Vector.mtSubscribeInput(0, first)
+         Vector.mtSubscribeInput(0, second)
+      end
+   end
+   local surface <close>, root, child, counts = newScene(function(Child)
+      Child.mtSubscribeInput(JTYPE_BUTTON, first)
+      Child.mtSubscribeInput(JTYPE_BUTTON, second)
+      Child.mtSubscribeInput(JTYPE_BUTTON, function(Vector, Msg)
+         if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.third++ end
+      end)
+   end)
+   feed(JET_ABS_XY, 20, 20)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(calls.first is 1, 'The first callback did not receive the press')
+   assert(calls.second is 1, 'The second callback did not receive the press')
+   assert(calls.third is 1, f'Remaining callback received {calls.third} presses instead of 1')
+end
+
+-- Callbacks removed mid-dispatch leave cleared entries that are compacted when the dispatch finishes.  The removed
+-- callbacks must then be able to subscribe again, and each must receive the next event exactly once.
+
+@Test function ResubscribeAfterDispatchRemoval()
+   local calls = { a=0, b=0, c=0 }
+   local a = function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.a++ end
+   end
+   local b:func
+   b = function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value > 0) then
+         calls.b++
+         Vector.mtSubscribeInput(0, a)
+         Vector.mtSubscribeInput(0, b)
+      end
+   end
+   local c = function(Vector, Msg)
+      if (Msg.type is JET_LMB) and (Msg.value > 0) then calls.c++ end
+   end
+   local surface <close>, root, child, counts = newScene(function(Child)
+      Child.mtSubscribeInput(JTYPE_BUTTON, a)
+      Child.mtSubscribeInput(JTYPE_BUTTON, b)
+      Child.mtSubscribeInput(JTYPE_BUTTON, c)
+   end)
+
+   feed(JET_ABS_XY, 20, 20)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+
+   check child.mtSubscribeInput(JTYPE_BUTTON, a)
+   check child.mtSubscribeInput(JTYPE_BUTTON, b)
+   feed(JET_LMB, 1, 0)
+   feed(JET_LMB, 0, 0)
+   assert(calls.a is 2, f'A was called {calls.a - 1} times after subscribing again')
+   assert(calls.b is 2, f'B was called {calls.b - 1} times after subscribing again')
+   assert(calls.c is 2, f'C was called {calls.c} times for two presses')
+end

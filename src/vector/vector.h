@@ -859,6 +859,7 @@ class extVector : public objVector {
    int   PathLength;
    RC    Dirty;
    uint16_t  TabOrder;
+   uint16_t  InputDispatchDepth = 0; // Active send_input_events() calls on this vector, including nested calls
    uint16_t  Isolated:1;
    uint16_t  DisableFillColour:1;  // Bitmap fonts set this to true in order to disable colour fills
    uint16_t  ButtonLock:1;
@@ -867,6 +868,7 @@ class extVector : public objVector {
    uint16_t  Stroked:1;
    uint16_t  ValidState:1;         // Can be set to false during path generation if the shape is invalid
    uint16_t  RequiresRedraw:1;
+   uint16_t  InputSubscriptionsDirty:1 = 0; // InputSubscriptions holds cleared entries awaiting compaction
 
    extVector(objMetaClass *ClassPtr, OBJECTID ObjectID) : objVector(ClassPtr, ObjectID) {
       StrokeOpacity = 1.0;
@@ -1413,7 +1415,10 @@ static void mark_buffers_for_refresh(extVector *Vector)
 
 inline static bool has_input_subscriptions(const extVector *Vector)
 {
-   return (Vector->InputSubscriptions) and (not Vector->InputSubscriptions->empty());
+   if (not Vector->InputSubscriptions) return false;
+   return std::ranges::any_of(*Vector->InputSubscriptions, [](const InputSubscription &Sub) {
+      return Sub.Callback.defined();
+   });
 }
 
 inline static bool has_input_boundary(const extVector *Vector)
@@ -1442,6 +1447,30 @@ inline static void mark_input_boundary_dirty(extVector *Vector)
 {
    mark_buffers_for_refresh(Vector);
    if (Vector->Scene) ((extVectorScene *)Vector->Scene)->RefreshCursor = true;
+}
+
+//********************************************************************************************************************
+// Remove an input subscription.  While send_input_events() is traversing the list, the entry is cleared rather than
+// erased so that the positions of the remaining entries stay fixed.  The dispatcher compacts the list once the
+// outermost traversal has finished.  Call update_input_subscription_state() and mark_input_boundary_dirty() after
+// all removals are complete.
+
+inline static void remove_input_subscription(extVector *Vector, size_t Index)
+{
+   auto &subscriptions = *Vector->InputSubscriptions;
+   release_callback(subscriptions[Index].Callback); // Leaves the callback undefined
+   if (Vector->InputDispatchDepth) {
+      subscriptions[Index].Mask = JTYPE::NIL;
+      Vector->InputSubscriptionsDirty = true;
+   }
+   else subscriptions.erase(subscriptions.begin() + Index);
+}
+
+inline static void compact_input_subscriptions(extVector *Vector)
+{
+   if ((Vector->InputDispatchDepth) or (not Vector->InputSubscriptionsDirty)) return;
+   Vector->InputSubscriptionsDirty = false;
+   std::erase_if(*Vector->InputSubscriptions, [](const InputSubscription &Sub) { return not Sub.Callback.defined(); });
 }
 
 //********************************************************************************************************************

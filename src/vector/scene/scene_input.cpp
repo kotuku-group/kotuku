@@ -105,43 +105,57 @@ static void send_input_events(extVector *Vector, InputEvent *Event, bool Propaga
    //kt::Log log(__FUNCTION__);
    //log.branch("Vector: %d, Type: %d", Vector->UID, Event->Type);
 
-   bool consumed = false;
-   for (auto it=Vector->InputSubscriptions->begin(); it != Vector->InputSubscriptions->end(); ) {
-      if (input_disabled(Vector)) return;
-      auto &sub = *it;
+   // Callbacks can add or remove subscriptions on this vector, either directly or from nested message processing.
+   // Additions are appended and removals only clear their entry while InputDispatchDepth is set, so entry positions
+   // are stable and every subscription present at the start is visited once.  Appending can reallocate the list, so
+   // no reference to an entry is held across a callback.
 
-      if (sub.Callback.Context->terminating()) {
-         release_callback(sub.Callback);
-         it = Vector->InputSubscriptions->erase(it);
+   auto &subscriptions = *Vector->InputSubscriptions;
+   Vector->InputDispatchDepth++;
+   auto end_dispatch = kt::Defer([Vector]() {
+      Vector->InputDispatchDepth--;
+      compact_input_subscriptions(Vector);
+   });
+
+   bool consumed = false;
+   for (size_t index=0; index < subscriptions.size(); index++) {
+      if (input_disabled(Vector)) return;
+      if (not subscriptions[index].Callback.defined()) continue; // Removed during this traversal
+
+      if (subscriptions[index].Callback.Context->terminating()) {
+         remove_input_subscription(Vector, index);
+         update_input_subscription_state(Vector);
+         mark_input_boundary_dirty(Vector);
+         continue;
+      }
+
+      auto mask = subscriptions[index].Mask;
+      if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((mask & JTYPE::REPEATED) IS JTYPE::NIL)) continue;
+      if ((mask & Event->Mask) IS JTYPE::NIL) continue;
+
+      ERR result = ERR::Terminate;
+      consumed = true;
+      const FUNCTION callback = subscriptions[index].Callback;
+
+      if (callback.isC()) {
+         kt::SwitchContext ctx(callback.Context);
+         auto routine = (ERR (*)(objVector *, InputEvent *, APTR))callback.Routine;
+         result = routine(Vector, Event, callback.Meta);
+      }
+      else if (callback.isScript()) {
+         sc::Call(callback, std::to_array<ScriptArg>({
+            { "Vector", Vector, FDF_OBJECT },
+            { "InputEvent:Events", Event, FDF_STRUCT }
+         }), result);
+      }
+
+      // The callback may have unsubscribed itself, in which case its entry is already cleared.
+
+      if ((result IS ERR::Terminate) and (subscriptions[index].Callback.defined())) {
+         remove_input_subscription(Vector, index);
          update_input_subscription_state(Vector);
          mark_input_boundary_dirty(Vector);
       }
-      else if (((Event->Mask & JTYPE::REPEATED) != JTYPE::NIL) and ((sub.Mask & JTYPE::REPEATED) IS JTYPE::NIL)) it++;
-      else if ((sub.Mask & Event->Mask) != JTYPE::NIL) {
-         ERR result = ERR::Terminate;
-         consumed = true;
-
-         if (sub.Callback.isC()) {
-            kt::SwitchContext ctx(sub.Callback.Context);
-            auto callback = (ERR (*)(objVector *, InputEvent *, APTR))sub.Callback.Routine;
-            result = callback(Vector, Event, sub.Callback.Meta);
-         }
-         else if (sub.Callback.isScript()) {
-            sc::Call(sub.Callback, std::to_array<ScriptArg>({
-               { "Vector", Vector, FDF_OBJECT },
-               { "InputEvent:Events", Event, FDF_STRUCT }
-            }), result);
-         }
-
-         if (result IS ERR::Terminate) {
-            release_callback(sub.Callback);
-            it = Vector->InputSubscriptions->erase(it);
-            update_input_subscription_state(Vector);
-            mark_input_boundary_dirty(Vector);
-         }
-         else it++;
-      }
-      else it++;
    }
 
    // Wheel events bubble-up if they are not intercepted by the target vector.
