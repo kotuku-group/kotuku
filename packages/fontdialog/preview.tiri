@@ -1,0 +1,440 @@
+-- Preview: the Preview panel at the top of the centre column.  Its footer holds the Paragraph / Waterfall and the
+-- Compare / Edit text button groups.  The preview shows the sample text in the picker's current family, style, size,
+-- fill and letter case.  In Compare mode a frozen copy of the settings is shown beside the live settings, and
+-- clicking the frozen pane swaps the two.  While Edit text is pressed, the live paragraph is an editable VectorText
+-- and the sample text buttons are shown in the footer.
+
+   import 'gui', 'gui/layout', 'gui/panel', 'gui/button'
+
+   import './theme', './parts', './controls', './style', './sizing'
+
+   include 'vector', 'display'
+
+   namespace fontdialog_preview { }
+
+FOOTER_SEG_H <const> = 20 -- Height of the button groups in the panel footer
+FOOTER_SEG_SIZE <const> = 10
+SAMPLE_GAP <const> = 2  -- Between the sample buttons, as in a segmented group
+GROUP_GAP  <const> = 10 -- Between the button groups in the footer
+PANE_PAD_X <const> = 24
+PANE_PAD_Y <const> = 20
+TAG_H      <const> = 18
+WATERFALL  <const> = array<double> { 10, 12, 14, 18, 24, 32, 40, 56, 72, 96 }
+SIZE_COL   <const> = 34  -- Waterfall size column
+
+fontdialog_preview.TEXT = [[Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas varius dignissim sapien eu pellentesque. Ètiam libero velit, vehicula nec ante non, sodales ultricies metus. Phasellus commodo dolor turpis. Âliquam sed pellentesque magna, non luctus sapien. Ètiam molestie dui nibh, nec finibus velit molestie non. Ut feugiat maximus elit nec mattis. Suspendisse porta vestibulum faucibus. Sed iaculis placerat justo id lobortis. Interdum et malesuada fames ac ante ipsum primis in faucibus.
+
+Morbi tincidunt varius ante sit amet pulvinar. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Nulla ante orci, faucibus non odio viverra, tempus rutrum ex. Mauris sit amet hendrerit quam. Vestibulum tincidunt magna suscipit ultrices congue. Aliquam et blandit tellus, ut porta libero. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Cras vulputate congue eros sed placerat. Nunc eleifend nec felis sit amet fermentum. Cras suscipit ullamcorper eros, id consectetur quam blandit ac.
+
+Suspendisse sed diam ut sem euismod accumsan commodo vehicula sapien. Nullam nisl augue, suscipit vitae posuere sit amet, porttitor et ex. Duis at elit pellentesque, placerat risus in, placerat mauris. Nam in metus sed dui iaculis aliquam sed ut sem. In varius euismod quam, sed lobortis sem. Aliquam nec dui magna. Suspendisse lobortis enim vitae vestibulum accumsan. Pellentesque ac tincidunt est. Ut porta, arcu eu ornare placerat, urna urna venenatis est, at imperdiet lectus justo vel neque. Sed congue dolor eget erat dignissim sollicitudin. Aliquam mollis massa in est gravida faucibus.
+
+Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas non nisi vehicula, aliquam turpis in, mattis lectus. Dõnec magna metus, tempor fringilla metus ac, ultricies efficitur ante. Quisque at semper elit. Ut in purus in est venenatis interdum. Curabitur a dui mauris. Suspendisse potenti. Suspendisse tempus dictum ipsum, id condimentum nulla fermentum sed. Etiam mattis ligula lacus, a tempor felis sodales fermentum. Donec in risus vulputate, tempor neque vel, volutpat mauris. Integer placerat a nunc a aliquet. Phasellus quis porta leo. Etiam et arcu ex. Nunc dictum at ipsum eu dapibus.
+
+Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.]]
+
+SAMPLES <const> = array<table> {
+   { id = 'pangram',   label = 'Pangram',   text = 'The quick brown fox jumps over the lazy dog.' },
+   { id = 'paragraph', label = 'Paragraph' },
+   { id = 'glyphs',    label = 'Glyphs',
+      text = 'ABCDEFGHIJKLM nopqrstuvwxyz\n\nĀĒĪŌŪ āēīōū ÆØÅ æøå ß Œœ\n\n0123456789 ½ ¼ → ← ≠ ≤ ≥ € £ ¥ @ & §' },
+   { id = 'code',      label = 'Code',
+      text = 'fn main() -> Result<(), Error> {\n    let x = 0x1F; // != 0O1l |> =>\n}' }
+}
+
+----------------------------------------------------------------------------------------------------------------------
+
+function applyCase(Text:str!, Case:str):str
+   if Case is 'upper' then return Text.upper() end
+   if Case is 'lower' then return Text.lower() end
+   return Text
+end
+
+-- A one-line summary of a settings table, e.g. `Noto Sans · 20 px · Regular`.
+
+fontdialog_preview.summary = function(State:table!):str
+   return f'{State.font.name} · {fontdialog_sizing.formatSize(State.size, State.unit)} · ' ..
+      fontdialog_style.describe(State)
+end
+
+-- Create a VectorText in the given settings.  Bitmap families are rasterised.
+
+function sampleText(Target:obj!, State:table!, Fields:table!):obj
+   fields = table.merge({
+      face      = State.font.name,
+      fontSize  = f'{State.size}px',
+      fontStyle = fontdialog_style.fontStyle(State),
+      fill      = State.fill
+   }, Fields)
+   if State.font.tech is 'bitmap' then fields.textFlags = (fields.textFlags ?? 0) | VTXF_RASTER end
+   return Target.new('VectorText', fields)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create the Preview panel in the centre column.  The view and mode buttons are placed in the panel footer.
+@input Picker table
+@input Target viewport (the centre column)
+@input Options: x, y, width, height of the panel
+@result Table with `panel`, `update(Source)`, `setHeight(Height)`, `toggleCompare()` and `setEditing(On)`
+]])
+fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):table
+   t = Picker.tokens
+
+   self = {
+      frozen        = nil,
+      panes         = array<table>,
+      contentHeight = nil, -- Height of the page content
+      editing       = false,
+      liveSample    = nil, -- The editable VectorText, while editing
+      liveHeight    = 0,   -- Height of the live pane's content
+      frozenHeight  = 0,   -- Height of the frozen pane's content, in Compare mode
+      typing        = false
+   }
+
+   -- Preview panel.  The body scrolls vertically and has the page background, as the colour picker's Export panel
+   -- does.  The meta shows the settings summary or a hint.  The bottom padding makes room for the footer.
+
+   panel_theme = Picker.theme.panel
+   edge = panel_theme.bkgd.strokeWidth ?? 0
+   inset = math.ceil(edge)
+   divider_h = math.max(1, math.floor(edge))
+   footer_h = fontdialog_theme.PANEL_HEADER_H - 1 -- The footer matches the header, excluding its divider
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      title = 'Preview', scroll = 'vertical', truncate = 'meta',
+      padding = { bottom = divider_h + footer_h + inset },
+      theme = { bkgd = Picker.theme.page.bkgd },
+      events = {
+         -- The page fills the body and is extended to fit the content.  The content is not redrawn, as its width
+         -- does not change.
+
+         resize = function(Width, Height)
+            if self.contentHeight then self.panel?.page.height = math.max(Height, self.contentHeight) end
+         end
+      }
+   })
+
+   -- Footer, styled as the header: a divider above a strip in the header fill, with the panel's rounded corners
+   -- at the bottom.  It holds the view buttons at the left and the mode buttons at the right.
+
+   self.footer = self.panel.viewport.new('VectorViewport', {
+      name = 'PreviewFooter', x = 0, xOffset = 0, yOffset = 0, height = divider_h + footer_h + inset
+   })
+
+   self.footer.new('VectorRectangle', {
+      x = edge, xOffset = edge, y = 0, height = divider_h, fill = panel_theme.divider?.fill ?? t.border
+   })
+
+   round_x = panel_theme.bkgd.roundX or panel_theme.bkgd.roundY or 0
+   round_y = panel_theme.bkgd.roundY or round_x
+   round_x = math.max(0, round_x - (edge * 0.5))
+   round_y = math.max(0, round_y - (edge * 0.5))
+   self.footer.new('VectorRectangle', {
+      x = edge, xOffset = edge, y = divider_h, yOffset = edge,
+      rounding = array<double> { 0, 0, 0, 0, round_x, round_y, round_x, round_y },
+      fill = panel_theme.header?.fill ?? Picker.theme.page.bkgd.fill
+   })
+
+   seg_y = divider_h + math.floor((footer_h - FOOTER_SEG_H) * 0.5)
+   footer_pad = panel_theme.headerPad ?? 9
+
+   self.viewSeg = fontdialog_controls.segmented(Picker, self.footer, {
+      x = footer_pad, y = seg_y, height = FOOTER_SEG_H, size = FOOTER_SEG_SIZE, items = array<table> {
+         { id = 'para', label = 'Paragraph' }, { id = 'water', label = 'Waterfall' }
+      },
+      selected = Picker.state.view,
+      onChange = function(ID)
+         -- Only the paragraph view can be edited.
+         if (ID is 'water') and self.editing then self.setEditing(false, true) end
+         Picker.update({ view = ID }, 'view')
+      end
+   })
+
+   -- The mode buttons are held in a viewport anchored to the right of the footer.
+
+   mode_box = self.footer.new('VectorViewport', { xOffset = footer_pad, y = seg_y, width = 1, height = FOOTER_SEG_H })
+   self.modeSeg = fontdialog_controls.segmented(Picker, mode_box, {
+      height = FOOTER_SEG_H, size = FOOTER_SEG_SIZE, multi = true, items = array<table> {
+         { id = 'compare', label = 'Compare', icon = 'layout/column_two', tip = 'Compare with frozen settings (C)' },
+         { id = 'edit', label = 'Edit text', icon = 'tools/edit', tip = 'Edit the sample text in the preview' }
+      },
+      onChange = function(ID, Pressed)
+         if ID is 'compare' then self.setCompare(Pressed) else self.setEditing(Pressed) end
+      end
+   })
+   mode_box.width = self.modeSeg.width
+
+   -- Sample texts, shown in the footer while Edit text is pressed.  They are right aligned, to the left of the mode
+   -- buttons.
+
+   self.sampleRow = self.footer.new('VectorViewport', {
+      xOffset = footer_pad + self.modeSeg.width + GROUP_GAP, y = seg_y, width = 1, height = FOOTER_SEG_H,
+      visibility = VIS_HIDDEN
+   })
+
+   x = 0
+   self.sampleButtons = array<table>
+   for _, sample in SAMPLES do
+      btn = gui.button({
+         target = self.sampleRow, x = x, y = 0, height = FOOTER_SEG_H, label = sample.label, disabled = true,
+         theme = {
+            bkgd = { roundX = 3, roundY = 3 },
+            text = {
+               fontSize = f'{FOOTER_SEG_SIZE}px',
+               y = fontdialog_parts.baseline(0, FOOTER_SEG_H - 2, FOOTER_SEG_SIZE)
+            }
+         },
+         events = {
+            activate = function()
+               Picker.update({ text = sample.text ?? fontdialog_preview.TEXT }, 'sample')
+            end
+         }
+      })
+      self.sampleButtons.push(btn)
+      x += btn.viewport.width + SAMPLE_GAP
+   end
+   self.sampleRow.width = math.max(1, x - SAMPLE_GAP)
+
+   ----------------------------------------------------------------------------------------------------------------
+   -- The bottom of a paragraph sample.
+
+   function textBottom(Sample:obj!):num
+      return Sample.y + ((math.max(Sample.totalLines, Sample.wrappedLines ?? 0) - 0.5) * Sample.lineSpacing)
+   end
+
+   -- Size the page to the content.
+
+   function fitContent()
+      self.contentHeight = math.max(self.liveHeight, self.frozenHeight)
+      _, height = self.panel.bodySize()
+      self.panel.page.height = math.max(height, self.contentHeight)
+   end
+
+   -- Scroll the panel so that the caret of the editable text, and a margin around it, are in view.
+
+   function revealCaret()
+      live = self.liveSample
+      live ?! return
+      err, _, y, h = live.mtGetCaretBounds(-1, -1)
+      if err != ERR_Okay then return end
+      top = self.content.y + y - 8
+      bottom = self.content.y + y + h + 8
+      _, view_h = self.panel.bodySize()
+      view_top = -self.panel.page.y
+      if top < view_top then
+         self.panel.scrollbar.scrollPage(0, view_top - top)
+      elseif bottom > view_top + view_h then
+         self.panel.scrollbar.scrollPage(0, view_top + view_h - bottom)
+      end
+   end
+
+   -- The dialog's single-key shortcuts are suspended while the editable text has the focus.
+
+   function setTyping(Typing:bool)
+      if Typing is self.typing then return end
+      self.typing = Typing
+      Picker.typing(Typing)
+   end
+
+   function textChanged(Text:obj)
+      new_text = Text.string ?? ''
+      if new_text is Picker.state.text then return end
+      Picker.update({ text = new_text }, 'text')
+   end
+
+   -- Draw a pane of the preview in Settings at X, Width.  Returns the content height.  The live paragraph is
+   -- editable while Edit text is pressed; it shows the sample text without the letter case applied, so that the
+   -- edit does not store the converted text.
+
+   function drawPane(Page:obj!, Settings:table!, X:num!, Width:num!, Tag:str):num
+      pane = Page.new('VectorViewport', { x = X, y = 0, width = Width, height = '100%', overflow = VOF_HIDDEN })
+      self.panes.push({ viewport = pane, tag = Tag })
+      y = PANE_PAD_Y
+
+      if Tag then
+         live = Tag is 'Live'
+         tag = pane.new('VectorViewport', { x = PANE_PAD_X, y = y, width = 1, height = TAG_H })
+         tag_bkgd = tag.new('VectorRectangle', {
+            width = '100%', height = '100%', roundX = 3, roundY = 3,
+            fill = live ? Picker.theme.palette.prime : t.border
+         })
+         tag_text = fontdialog_parts.text(tag, {
+            x = 7, y = fontdialog_parts.baseline(0, TAG_H, 9.5), size = 9.5, face = fontdialog_parts.FACE_MONO,
+            fill = live ? Picker.theme.button.primary.text.fill : t.fg1, string = Tag.upper()
+         })
+         tag.width = math.ceil(tag_text.textWidth) + 14
+         caption = fontdialog_parts.text(pane, {
+            x = PANE_PAD_X + tag.width + 8, y = fontdialog_parts.baseline(y, TAG_H, 11), size = 11, fill = t.fg2
+         })
+         gui.layout.fitText(caption, fontdialog_preview.summary(Settings), Width - caption.x - PANE_PAD_X)
+         y += TAG_H + 16
+         if not live then
+            -- Clicking the frozen pane swaps it with the live settings.  Button input is delivered to the viewport
+            -- under the pointer rather than its parents, so the pane and its tag subscribe.
+
+            pane.cursor = 'hand'
+            for vp in values(array<obj> { pane, tag }) do
+               vp.mtSubscribeInput(JTYPE_BUTTON, function(Viewport:obj!, Events)
+                  ev = Events
+                  while ev do
+                     if (ev.type is JET_BUTTON_1) and (ev.value is 0) and self.frozen then
+                        processing.delayedCall(function() self.swapPanes() end)
+                        break
+                     end
+                     ev = ev.next
+                  end
+               end)
+            end
+         end
+      end
+
+      editable = self.editing and (Tag != 'Frozen') and (Settings.view != 'water')
+      text = editable ? Settings.text : applyCase(Settings.text, Settings.letterCase)
+      inline = Width - (PANE_PAD_X * 2)
+
+      if Settings.view is 'water' then
+         line = ''
+         for l in values(text.split('\n')) do
+            if #l.trim() > 0 then
+               line = l.trim()
+               break
+            end
+         end
+
+         sizes = fontdialog_sizing.fixed(Settings.font) ? fontdialog_sizing.strikes(Settings.font) : WATERFALL
+         for size in values(sizes) do
+            sample = sampleText(pane, Settings, {
+               x = PANE_PAD_X + SIZE_COL, fontSize = f'{size}px', string = line, lineLimit = 1
+            })
+            ascent = sample.displaySize
+            y += math.ceil(ascent)
+            sample.y = y
+            fontdialog_parts.text(pane, {
+               x = PANE_PAD_X, y = y, size = 10, face = fontdialog_parts.FACE_MONO, fill = t.fg3,
+               string = fontdialog_sizing.formatValue(size, Settings.unit ?? 'px')
+            })
+            y += math.ceil(size * 0.35) + 8
+         end
+      else
+         -- Alignment is not applied: VectorText aligns a wrapped block as a whole rather than line by line.
+
+         fields = { x = PANE_PAD_X, string = text, inlineSize = inline }
+         if editable then
+            -- EDITABLE must be set at initialisation.  The panel does the scrolling, so the text keeps its offset.
+            fields.{ textFlags = VTXF_EDITABLE | VTXF_NO_AUTO_OFFSET, onChange = textChanged,
+               onCursorMove = function() revealCaret() end }
+         end
+         sample = sampleText(pane, Settings, fields)
+         sample.y = y + math.ceil(sample.displaySize)
+         y = textBottom(sample)
+
+         if editable then
+            self.liveSample = sample
+            pane.cursor = 'text'
+            pane.mtSubscribeFeedback(FM_HAS_FOCUS | FM_CHILD_HAS_FOCUS | FM_LOST_FOCUS, function(Viewport:obj!, Event)
+               setTyping(Event != FM_LOST_FOCUS)
+            end)
+         end
+      end
+
+      return y + PANE_PAD_Y
+   end
+
+   -- Redraw the panes.
+
+   self.render = function()
+      setTyping(false) -- The focused pane, if any, is freed without a focus notification
+      self.content?.free()
+      self.panes = array<table>
+      self.liveSample = nil
+      page = self.panel.page
+      self.content = page.new('VectorViewport', {
+         x = 0, y = 0, width = '100%', height = '100%'
+      })
+      width = self.panel.bodySize()
+      width -= 12 -- Leave room for the scrollbar, so that showing it does not cover the text
+
+      if self.frozen then
+         half = math.floor(width * 0.5)
+         self.frozenHeight = drawPane(self.content, self.frozen, 0, half, 'Frozen')
+         self.liveHeight = drawPane(self.content, Picker.state, half, width - half, 'Live')
+         self.content.new('VectorRectangle', { x = half, y = 0, width = 1, height = '100%', fill = t.border })
+      else
+         self.frozenHeight = 0
+         self.liveHeight = drawPane(self.content, Picker.state, 0, width, nil)
+      end
+      fitContent()
+
+      page.acDraw()
+   end
+
+   self.swapPanes = function()
+      frozen = self.frozen
+      frozen ?! return
+      self.frozen = table.clone(Picker.state)
+      Picker.restore(frozen)
+   end
+
+   self.setCompare = function(On:bool)
+      self.frozen = On ? table.clone(Picker.state) : nil
+      self.modeSeg.set('compare', On)
+      self.update('compare')
+   end
+
+   self.toggleCompare = function()
+      self.setCompare(self.frozen is nil)
+   end
+
+   -- Change the height of the panel, e.g. when the dialog is resized vertically.
+
+   self.setHeight = function(Height:num!)
+      self.panel.viewport.height = math.max(1, Height)
+   end
+
+   -- Turn editing of the live paragraph on or off.  Editing selects the paragraph view.  NoRender is set when the
+   -- caller redraws the preview itself.
+
+   self.setEditing = function(On:bool, NoRender:bool)
+      On = On ?? false
+      self.editing = On
+      self.modeSeg.set('edit', On)
+      self.sampleRow.visibility = On ? VIS_VISIBLE : VIS_HIDDEN
+      for btn in values(self.sampleButtons) do
+         if On then btn.enable() else btn.disable() end
+      end
+
+      if On and (Picker.state.view is 'water') then
+         Picker.update({ view = 'para' }, 'edit')
+         return
+      end
+
+      if not NoRender then self.update('edit') end
+   end
+
+   self.update = function(Source:str)
+      s = Picker.state
+      if Source != 'view' then self.viewSeg.select(s.view) end
+
+      -- Typing in the preview changes the text that is already shown, so only the page size is updated.
+
+      if (Source is 'text') and self.liveSample then
+         self.liveHeight = textBottom(self.liveSample) + PANE_PAD_Y
+         fitContent()
+         return
+      end
+
+      if self.frozen then
+         self.panel.setMeta('Click the frozen pane to swap')
+      elseif self.editing then
+         self.panel.setMeta('Click the text to edit')
+      else
+         self.panel.setMeta(fontdialog_preview.summary(s))
+      end
+
+      self.render()
+   end
+
+   return self
+end

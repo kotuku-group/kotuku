@@ -1,0 +1,178 @@
+-- Glyph report panel: the family, its file format and the coverage of common character sets.  All of the information
+-- is read from the font database, which records the coverage of each set as a percentage of its assigned characters.
+
+   import 'gui', 'gui/layout', 'gui/panel', './theme', './parts'
+   import './controls', './catalogue'
+
+   namespace fontdialog_glyphs { }
+
+PAD      <const> = fontdialog_controls.PAD
+INFO_ROW <const> = 18
+COV_ROW  <const> = 19
+BAR_H    <const> = 4
+LABEL_W  <const> = 108
+VALUE_W  <const> = 36
+HIDE_BELOW <const> = 5 -- Sets with less coverage than this percentage are listed in the note instead
+
+-- The character sets reported by the font database's Coverage key, in display order.
+
+SETS <const> = array<table> {
+   { id = 'basic-latin', label = 'Basic Latin' },
+   { id = 'latin-1',     label = 'Latin-1 Supplement' },
+   { id = 'latin-ext-a', label = 'Latin Extended-A' },
+   { id = 'latin-ext-b', label = 'Latin Extended-B' },
+   { id = 'pasifika',    label = 'Māori & Pasifika' },
+   { id = 'vietnamese',  label = 'Vietnamese' },
+   { id = 'greek',       label = 'Greek' },
+   { id = 'cyrillic',    label = 'Cyrillic' },
+   { id = 'ipa',         label = 'IPA Extensions' },
+   { id = 'arrows-math', label = 'Arrows & Math' },
+   { id = 'box-drawing', label = 'Box Drawing' },
+   { id = 'emoji',       label = 'Emoji' },
+   { id = 'cjk',         label = 'CJK Unified' }
+}
+
+NOTE_GAP    <const> = 14 -- From the last coverage row to the note's baseline
+NOTE_BOTTOM <const> = 26 -- From the note's last baseline to the bottom of the panel
+
+-- The initial height, for a family covering ten sets.  update() sizes the panel to fit the family's coverage rows and
+-- the note.
+
+fontdialog_glyphs.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 8 + (INFO_ROW * 2) + 9 + (COV_ROW * 10) + NOTE_GAP +
+   NOTE_BOTTOM
+
+----------------------------------------------------------------------------------------------------------------------
+-- Blend two OKLCH colours (from gui.mtRGB.toOKLCH()) and return an oklch() string.  Lightness and chroma are linear,
+-- and the hue takes the shortest path around the colour wheel.
+
+function blendOKLCH(From:table!, To:table!, Ratio:num!):str
+   dh = To.okh - From.okh
+   if dh > 180 then dh -= 360 elseif dh < -180 then dh += 360 end
+   h = From.okh + (dh * Ratio)
+   if h < 0 then h += 360 elseif h >= 360 then h -= 360 end
+   return string.format('oklch(%.3f %.3f %.3f)', From.okl + ((To.okl - From.okl) * Ratio),
+      From.okc + ((To.okc - From.okc) * Ratio), h)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create the Glyph report panel.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width, onResize() (called after the panel height changes)
+@result Table with `panel`, `height` and `update(Source)`
+]])
+fontdialog_glyphs.new = function(Picker:table!, Target:obj!, Options:table!):table
+   t = Picker.tokens
+   inner = Options.width - (PAD * 2)
+   mono = fontdialog_parts.FACE_MONO
+   text = fontdialog_controls.text
+
+   self = { height = fontdialog_glyphs.HEIGHT, rows = array<table>, font = nil }
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
+      title = 'Glyph report', padding = fontdialog_parts.PANEL_PADDING
+   })
+
+   body = self.panel.body
+   y = 8
+
+   function infoRow(Label:str!):obj
+      base = fontdialog_parts.baseline(y, INFO_ROW, 11)
+      text(body, { x = PAD, y = base, size = 11, fill = t.fg3, string = Label })
+      value = text(body, { x = PAD + 56, y = base, size = 11, fill = t.fg0 })
+      y += INFO_ROW
+      return value
+   end
+
+   self.family = infoRow('Family')
+   self.format = infoRow('Format')
+   y += 4
+   fontdialog_controls.divider(Picker, body, PAD, y, inner)
+   y += 5
+
+   -- The coverage rows are created once and filled by update(), which hides the unused rows.
+
+   bar_x = PAD + LABEL_W
+   bar_w = inner - LABEL_W - VALUE_W - 6
+   self.covTop = y
+   for i in {0 to #SETS} do
+      row = { }
+      row.viewport = body.new('VectorViewport', { x = 0, y = y + (i * COV_ROW), width = '100%', height = COV_ROW })
+      base = fontdialog_parts.baseline(0, COV_ROW, 11)
+      row.label = text(row.viewport, { x = PAD, y = base, size = 11, fill = t.fg1 })
+      row.viewport.new('VectorRectangle', {
+         x = bar_x, y = (COV_ROW - BAR_H) * 0.5, width = bar_w, height = BAR_H, roundX = 2, roundY = 2,
+         fill = t.border
+      })
+      row.bar = row.viewport.new('VectorRectangle', {
+         x = bar_x, y = (COV_ROW - BAR_H) * 0.5, width = 1, height = BAR_H, roundX = 2, roundY = 2, fill = t.fg0
+      })
+      row.value = text(row.viewport, {
+         x = PAD + inner, y = base, size = 11, face = mono, fill = t.fg2, align = 'right'
+      })
+      row.barWidth = bar_w
+      self.rows.push(row)
+   end
+
+   self.note = text(body, { x = PAD, size = 10.5, fill = t.fg3 })
+   self.note.inlineSize = inner
+
+   self.update = function(Source:str)
+      font = Picker.state.font
+      if self.font is font then return end
+      self.font = font
+
+      self.family.string = font.name
+      format, _ = fontdialog_catalogue.format(font)
+      self.format.string = format
+
+      count = font.characters
+      self.panel.setMeta(f'{count} glyphs')
+
+      -- Bars blend in OKLCH from the palette's error colour at 0% to its success colour at 100%.
+
+      palette = Picker.theme.palette
+      bar_low = gui.strToRGB(palette.error).toOKLCH()
+      bar_high = gui.strToRGB(palette.success).toOKLCH()
+
+      hidden = array<str>
+      shown = 0
+      for _, set in SETS do
+         pct = font.coverage[set.id] ?? 0
+         if pct < HIDE_BELOW then
+            hidden.push(set.label)
+            continue
+         end
+         row = self.rows[shown]
+         row.viewport.visibility = VIS_VISIBLE
+         row.label.string = set.label
+         row.bar.width = math.max(1, row.barWidth * pct / 100)
+         row.bar.fill = blendOKLCH(bar_low, bar_high, math.clamp(pct / 100, 0, 1))
+         row.value.string = f'{pct}%'
+         row.value.fill = (pct is 100) ? t.fg2 : t.fg0
+         shown++
+      end
+      for i in {shown to #self.rows} do self.rows[i].viewport.visibility = VIS_HIDDEN end
+
+      note_y = self.covTop + (shown * COV_ROW) + NOTE_GAP
+      self.note.y = note_y
+      if #hidden > 0 then
+         self.note.string = f'Not shown (under {HIDE_BELOW}%): {hidden.concat(", ")}.'
+      else
+         self.note.string = f'All tracked sets are at least {HIDE_BELOW}% covered.'
+      end
+
+      lines = math.max(1, self.note.wrappedLines ?? 1)
+      height = fontdialog_theme.PANEL_HEADER_H + note_y + ((lines - 1) * self.note.lineSpacing) + NOTE_BOTTOM
+      if height != self.height then
+         self.height = height
+         self.panel.viewport.height = height
+         Options.onResize?()
+      end
+   end
+
+   return self
+end

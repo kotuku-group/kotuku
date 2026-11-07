@@ -1,0 +1,136 @@
+-- Vector building blocks for the font picker: text, key hints, combobox carets, slider thumb rings and panel padding.
+-- Builders that take a target viewport and an Options table expect the picker `tokens` (see fontdialog_theme.tokens()).
+
+   import 'gui'
+
+   namespace fontdialog_parts { }
+
+fontdialog_parts.FACE_UI   = gui.fonts.default.face
+fontdialog_parts.FACE_MONO = gui.fonts.filesys.face
+
+KEY_PAD <const> = 4
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Return the baseline that vertically centres a line of text of the given pixel size in a box.
+]])
+fontdialog_parts.baseline = function(Top:num!, Height:num!, Size:num!):num
+   return math.round(Top + ((Height + (Size * 0.72)) * 0.5))
+end
+
+function text(Viewport:obj, Options:table):obj
+   return Viewport.new('VectorText', {
+      x         = Options.x ?? 0,
+      y         = Options.y,
+      face      = Options.face ?? fontdialog_parts.FACE_UI,
+      fontSize  = f'{Options.size}px',
+      fontStyle = Options.style ?? 'Medium',
+      fill      = Options.fill,
+      string    = Options.string ?? '',
+      align     = Options.align ?? 'left',
+      lineLimit = 1
+   })
+end
+
+fontdialog_parts.text = text
+
+----------------------------------------------------------------------------------------------------------------------
+-- The picker's panels are gui.panel() widgets whose bodies meet the panel edges; their content applies its own
+-- insets.  The panel copies the padding table, so it can be shared.
+
+fontdialog_parts.PANEL_PADDING = { left = 0, right = 0, top = 0, bottom = 0 }
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Replace a combobox's drop-down icon with the design's small caret.
+]])
+fontdialog_parts.smallCaret = function(Box:table!, Tokens:table!)
+   icon = Box.iconRender
+   icon.fill = 'none'
+   x = math.round((icon.width - 7) * 0.5)
+   y = math.round((icon.height - 4) * 0.5)
+   icon.new('VectorPolygon', { points = f'{x},{y} {x + 7},{y} {x + 3.5},{y + 4}', closed = true, fill = Tokens.fg2 })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Draw a line of keyboard hints, for example `[Tab] cycle channel · [Alt / Ctrl] + drag = fine`.  Keys are drawn in
+small bordered boxes.
+@input Target viewport
+@input Options: x, y (top), height (line box), items (array of { key, text }), tokens
+@result The total width
+]])
+fontdialog_parts.hints = function(Viewport:obj!, Options:table!):num
+   t          = Options.tokens
+   height     = Options.height ?? 20
+   top        = Options.y ?? 0
+   x          = Options.x ?? 0
+   key_height = 20
+   key_top    = top + ((height - key_height) * 0.5)
+   baseline   = fontdialog_parts.baseline(top, height, 10)
+
+   for i, item in Options.items do
+      if i > 0 then
+         sep = text(Viewport, {
+            x = x, y = baseline, size = 10, face = fontdialog_parts.FACE_MONO, fill = t.fg3, string = '  ·  '
+         })
+         x += sep.textWidth
+      end
+
+      box = Viewport.new('VectorRectangle', {
+         x = x + 0.5, y = key_top + 0.5, width = 1, height = key_height - 1, roundX = 3, roundY = 3,
+         fill = t.panel, stroke = t.border, strokeWidth = 1
+      })
+
+      key = text(Viewport, {
+         x = x + KEY_PAD + 1, y = fontdialog_parts.baseline(key_top, key_height, 12), size = 12,
+         face = fontdialog_parts.FACE_MONO, fill = t.fg0, string = item.key
+      })
+
+      box.width = key.textWidth + (KEY_PAD * 2) + 1
+      x += box.width + 1
+
+      label = text(Viewport, {
+         x = x + 5, y = baseline, size = 14, face = fontdialog_parts.FACE_MONO, fill = t.fg1, string = item.text
+      })
+      x += 5 + label.textWidth
+   end
+
+   return x - (Options.x ?? 0)
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Add the design's rings to a channel slider's thumb: a 2 px ring in the panel colour inside a 1 px outer ring.
+The rings are placed behind the thumb bar, so the slider's thumbSize must be at least the bar height plus 6.
+@input Slider created with fontdialog_theme.channelSlider()
+@input tokens
+@result The outer ring, whose fill can be changed to show focus, and the inner ring
+]])
+fontdialog_parts.thumbRings = function(Slider:table!, Tokens:table!):<obj, obj>
+   bar = Slider.button
+   outer = Slider.thumbVP.new('VectorRectangle', {
+      x = bar.x - 3, y = bar.y - 3, width = bar.width + 6, height = bar.height + 6, roundX = 3, roundY = 3,
+      stroke = &theme.scheme is 'light' ? 'black' : 'white', fill=&theme.panel.bkgd.fill
+   })
+   outer.acMoveToBack()
+   return outer
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+-- Widget theme override for 11 px mono text in a box of the given height.  The widgets position their text from the
+-- default widget font, so the baseline and inset are given as well.  The text sits in a clip inset by the 1 px border.
+
+fontdialog_parts.monoText = function(Height:num, Inset:num):table
+   return {
+      text = {
+         face = fontdialog_parts.FACE_MONO, fontSize = '14px', x = Inset - 1,
+         y = fontdialog_parts.baseline(0, Height - 2, 11)
+      }
+   }
+end

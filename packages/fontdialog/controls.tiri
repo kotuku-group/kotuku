@@ -1,0 +1,367 @@
+-- Shared control builders for the font picker panels: labelled slider rows, segmented button groups, check rows,
+-- colour buttons and small labels.  They are styled with the colour picker's design tokens (fontdialog_theme) so that
+-- the two dialogs look the same.  Every builder takes the picker table, whose `tokens`, `theme` and `themeName` fields
+-- describe the window theme, and an Options table.
+
+   import 'gui', 'gui/button', 'gui/slider', 'gui/toggle', 'json'
+   import './theme', './parts'
+   include 'vector'
+
+   namespace fontdialog_controls { }
+
+fontdialog_controls.ROW_H     = 28 -- Height of a slider or segmented row
+fontdialog_controls.PAD       = 12 -- Inset of panel content from the panel edges
+fontdialog_controls.SEG_H     = 22 -- Height of a segmented button
+fontdialog_controls.COLOUR_H  = 30 -- Height of a colour button
+
+ROW_H        <const> = fontdialog_controls.ROW_H
+SEG_H        <const> = fontdialog_controls.SEG_H
+SLIDER_THUMB <const> = 24 -- Thumb box: the 18 px bar plus its rings
+SLIDER_TRACK <const> = 4
+LABEL_SIZE   <const> = 12
+VALUE_SIZE   <const> = 11
+SEG_SIZE     <const> = 11
+SEG_GAP      <const> = 2
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Draw a single line of text.  Options are those of fontdialog_parts.text(): x, y (baseline), size, face, fill,
+string, align and style.
+]])
+fontdialog_controls.text = function(Target:obj!, Options:table!):obj
+   return fontdialog_parts.text(Target, Options)
+end
+
+@Doc(text=[[
+@desc Draw a row label at the left of a row that starts at Y and is Height pixels tall.
+]])
+fontdialog_controls.label = function(Picker:table!, Target:obj!, X:num!, Y:num!, Height:num!, Text:str!):obj
+   return fontdialog_parts.text(Target, {
+      x = X, y = fontdialog_parts.baseline(Y, Height, LABEL_SIZE), size = LABEL_SIZE, fill = Picker.tokens.fg1,
+      string = Text
+   })
+end
+
+@Doc(text=[[
+@desc Draw a small heading inside a panel body, e.g. `OpenType features`.
+]])
+fontdialog_controls.subhead = function(Picker:table!, Target:obj!, X:num!, Y:num!, Text:str!):obj
+   return fontdialog_parts.text(Target, {
+      x = X, y = Y + 11, size = 11, fill = Picker.tokens.fg3, string = Text
+   })
+end
+
+@Doc(text=[[
+@desc Draw a horizontal divider across a panel body at Y.
+]])
+fontdialog_controls.divider = function(Picker:table!, Target:obj!, X:num!, Y:num!, Width:num!):obj
+   return Target.new('VectorRectangle', { x = X, y = Y, width = Width, height = 1, fill = Picker.tokens.border })
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create a slider row: a label, a slider in the colour picker's channel style and a right-aligned value.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width, label, min, max, step, value, format(Value):str, onChange(Value), labelWidth, valueWidth
+@result Table with `slider`, `valueText`, `set(Value)` (silent) and `setRange(Min, Max)`
+]])
+fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:table!):table
+   t       = Picker.tokens
+   x       = Options.x ?? 0
+   y       = Options.y ?? 0
+   width   = Options.width
+   label_w = Options.labelWidth ?? 76
+   value_w = Options.valueWidth ?? 46
+
+   row = { format = Options.format ?? (V => tostring(V)), syncing = false }
+
+   row.label = fontdialog_controls.label(Picker, Target, x, y, ROW_H, Options.label)
+
+   row.valueText = fontdialog_parts.text(Target, {
+      x = x + width, y = fontdialog_parts.baseline(y, ROW_H, VALUE_SIZE), size = VALUE_SIZE,
+      face = fontdialog_parts.FACE_MONO, fill = t.fg2, align = 'right'
+   })
+
+   -- The slider theme and thumb rings read the window theme from the context.
+
+   using Picker do
+      row.slider = gui.slider({
+         target    = Target,
+         x         = x + label_w,
+         y         = y + ((ROW_H - SLIDER_THUMB) * 0.5),
+         width     = width - label_w - value_w - 6,
+         thickness = SLIDER_TRACK,
+         thumbSize = SLIDER_THUMB,
+         min       = Options.min,
+         max       = Options.max,
+         step      = Options.step ?? 0,
+         value     = math.clamp(Options.value ?? Options.min, Options.min, Options.max),
+         theme     = fontdialog_theme.channelSlider(Picker.themeName, SLIDER_THUMB, nil),
+         events    = {
+            activate = function(Value)
+               row.valueText.string = row.format(Value)
+               if not row.syncing then Options.onChange?(Value) end
+            end
+         }
+      })
+      row.ring = fontdialog_parts.thumbRings(row.slider, t)
+   end
+
+   row.valueText.string = row.format(row.slider.value)
+
+   row.set = function(Value:num)
+      row.syncing = true
+      row.slider.setValue(math.clamp(Value, row.slider.min, row.slider.max), true)
+      row.syncing = false
+      row.valueText.string = row.format(row.slider.value)
+   end
+
+   row.setRange = function(Min:num!, Max:num!)
+      row.syncing = true
+      row.slider.setRange(Min, Max)
+      row.syncing = false
+      row.valueText.string = row.format(row.slider.value)
+   end
+
+   return row
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create a segmented group of buttons that abut, as used for Paragraph / Waterfall and the px / pt units.  A
+pressed button takes the primary button style.  In the default radio mode exactly one button is pressed; with
+`multi`, each button toggles independently.
+@input Picker table
+@input Target viewport
+@input Options: x, y, height, items (array of { id, label, icon, tip, width }), selected (an ID, or for `multi` a
+table of ID = true), multi, size (label font size), wrap (a width at which the buttons wrap to a new line),
+onChange(ID, Pressed)
+@result Table with `viewport` (the group's viewport, which can be a panel header item), `width`, `height`, `buttons`
+(ID = button), `pressed` (ID = true), `set(ID, Pressed)` and `select(ID)` (radio mode)
+]])
+fontdialog_controls.segmented = function(Picker:table!, Target:obj!, Options:table!):table
+   height  = Options.height ?? SEG_H
+   size    = Options.size ?? SEG_SIZE
+   primary = Picker.theme.button.primary
+   group   = Target.new('VectorViewport', { x = Options.x ?? 0, y = Options.y ?? 0, width = 1, height = height })
+
+   base_theme = {
+      bkgd = { roundX = 3, roundY = 3 },
+      text = { fontSize = f'{size}px', y = fontdialog_parts.baseline(0, height - 2, size) }
+   }
+
+   pressed_theme = {
+      bkgd = { fill = primary.bkgd.fill, stroke = primary.bkgd.stroke },
+      text = { fill = primary.text.fill }
+   }
+
+   seg = { viewport = group, buttons = { }, pressed = { }, order = array<str>, width = 0, height = height }
+
+   seg.set = function(ID:str!, Pressed:bool)
+      btn = seg.buttons[ID]
+      btn ?! return
+      Pressed = Pressed ?? false
+      if (seg.pressed[ID] ?? false) is Pressed then return end
+      seg.pressed[ID] = Pressed ? true : nil
+      btn.setTheme(Pressed ? pressed_theme : nil)
+   end
+
+   seg.select = function(ID:str)
+      for id in values(seg.order) do seg.set(id, id is ID) end
+   end
+
+   x = 0
+   y = 0
+   for _, item in Options.items do
+      btn = gui.button({
+         target = group, x = x, y = y, height = height, width = item.width,
+         label = item.label, icon = item.icon, tip = item.tip, theme = base_theme,
+         events = {
+            activate = function()
+               if Options.multi then
+                  pressed = not seg.pressed[item.id]
+                  seg.set(item.id, pressed)
+                  Options.onChange?(item.id, pressed)
+               elseif not seg.pressed[item.id] then
+                  seg.select(item.id)
+                  Options.onChange?(item.id, true)
+               end
+            end
+         }
+      })
+      seg.buttons[item.id] = btn
+      seg.order.push(item.id)
+
+      bw = btn.viewport.width
+      if Options.wrap and (x > 0) and (x + bw > Options.wrap) then
+         x = 0
+         y += height + SEG_GAP
+         btn.viewport.{ x = x, y = y }
+      end
+      x += bw + SEG_GAP
+      seg.width = math.max(seg.width, x - SEG_GAP)
+   end
+
+   seg.height = y + height
+   group.{ width = seg.width, height = seg.height }
+
+   if Options.multi then
+      for id, on in Options.selected ?? { } do seg.set(id, on) end
+   elseif Options.selected then
+      seg.select(Options.selected)
+   end
+
+   return seg
+end
+
+@Doc(text=[[
+@desc Create a labelled segmented row: a row label followed by a segmented group.
+@result The segmented table, with `label` set to the label's VectorText.
+]])
+fontdialog_controls.segmentedRow = function(Picker:table!, Target:obj!, Options:table!):table
+   x = Options.x ?? 0
+   y = Options.y ?? 0
+   label = fontdialog_controls.label(Picker, Target, x, y, ROW_H, Options.label)
+   seg = fontdialog_controls.segmented(Picker, Target, table.merge(Options, {
+      x = x + (Options.labelWidth ?? 76), y = y + ((ROW_H - SEG_H) * 0.5)
+   }))
+   seg.label = label
+   return seg
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create a check row: a toggle with a label, and optional muted note text after the label.
+@input Options: x, y, label, note, value, onToggle(Value)
+@result The toggle table, with `noteText` if a note was given.
+]])
+fontdialog_controls.checkRow = function(Picker:table!, Target:obj!, Options:table!):table
+   box = gui.toggle({
+      target = Target, x = Options.x ?? 0, y = Options.y ?? 0, label = Options.label, value = Options.value ?? false,
+      height = 16, theme = { window = { text = { fontSize = f'{LABEL_SIZE}px', fill = Picker.tokens.fg1 } } },
+      events = {
+         activate = function()
+            Options.onToggle?(&value)
+         end
+      }
+   })
+
+   if Options.note then
+      vp = box.viewport
+      box.noteText = fontdialog_parts.text(Target, {
+         x = vp.x + vp.width + 6, y = fontdialog_parts.baseline(vp.y, vp.height, 11), size = 11,
+         fill = Picker.tokens.fg3, string = Options.note
+      })
+   end
+   return box
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+function hexColour(Colour:table!):str
+   return string.format('#%02X%02X%02X', math.round(Colour.r * 255), math.round(Colour.g * 255),
+      math.round(Colour.b * 255))
+end
+
+@Doc(text=[[
+@desc Convert a CSS colour string to `#RRGGBB`.  A value that can't be parsed, such as a gradient reference, is returned
+unchanged.
+]])
+fontdialog_controls.toHex = function(Colour:str!):str
+   try
+      return hexColour(gui.strToRGB(Colour))
+   except ex
+      return Colour
+   end
+end
+
+@Doc(text=[[
+@desc Create a colour button: a swatch, the hex value and a `Colour Picker` note.  Clicking it opens the colour picker
+dialog with the current colour, and a chosen colour replaces it.
+@input Options: x, y, width, colour (CSS string), onChange(Hex)
+@result Table with `button`, `colour` and `set(Colour)`
+]])
+fontdialog_controls.colourButton = function(Picker:table!, Target:obj!, Options:table!):table
+   t      = Picker.tokens
+   height = fontdialog_controls.COLOUR_H
+   cb     = { colour = Options.colour }
+
+   -- The button is drawn as a sunk field, as the colour picker draws its value boxes.
+
+   cb.button = gui.button({
+      target = Target, x = Options.x ?? 0, y = Options.y ?? 0, width = Options.width, height = height,
+      tip = 'Opens the Colour Picker',
+      theme = {
+         bkgd = { fill = t.sunk, stroke = t.border, roundX = 4, roundY = 4 },
+         highlight = { fill = t.accentSoft }
+      },
+      events = {
+         activate = function()
+            -- Using a script to open the colour picker is more resource efficient (no pre-loading of the import)
+
+            cb.button.picker_script ?= obj<tiri> { string = [[
+               import 'gui/colourpicker', 'json'
+
+               proc = processing.new()
+
+               gui.dialog.colour({
+                  colour   = arg('colour'),
+                  title    = 'Select font colour',
+                  modal    = false,
+                  feedback = function(Colour)
+                     if Colour?? then
+                        script = obj.find('self')
+                        script.acSetKey('result', json.encode(Colour))
+                     end
+                     proc.signal()
+                  end
+               })
+
+               proc.sleep()
+            ]] }
+
+            cb.button.picker_script.acSetKey('colour', cb.colour)
+            cb.button.picker_script.acActivate()
+
+            _, result = cb.button.picker_script.acGetKey('result')
+            if result?? then
+               Colour = json.decode(result)
+               cb.set(hexColour(Colour))
+               Options.onChange?(cb.colour)
+            end
+         end
+      }
+   })
+
+   vp = cb.button.viewport
+   sw = height - 10
+   cb.swatch = vp.new('VectorRectangle', {
+      x = 5.5, y = 5.5, width = sw - 1, height = sw - 1, roundX = 3, roundY = 3,
+      stroke = t.swatchBorder, strokeWidth = 1
+   })
+
+   cb.hex = fontdialog_parts.text(vp, {
+      x = sw + 14, y = fontdialog_parts.baseline(0, height, 12), size = 12, face = fontdialog_parts.FACE_MONO,
+      fill = t.fg0
+   })
+
+   fontdialog_parts.text(vp, {
+      x = vp.width - 10, y = fontdialog_parts.baseline(0, height, 11), size = 11, fill = t.fg3, align = 'right',
+      string = 'Colour Picker  ›'
+   })
+
+   cb.set = function(Colour:str!)
+      cb.colour = Colour
+      cb.swatch.fill = Colour
+      cb.hex.string = Colour.upper()
+      vp.acDraw()
+   end
+
+   cb.set(Options.colour)
+   return cb
+end

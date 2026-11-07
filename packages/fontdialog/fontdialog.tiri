@@ -1,552 +1,535 @@
 @Package(name="gui/fontdialog", version="1.0")
 
 --[[
-Documentation is available in the Kotuku Wiki.
+Font picker dialog (prototype).  Open it with:
+
+   import 'gui/fontdialog'
+
+   gui.dialog.font({
+      face     = 'Noto Sans',            -- Optional initial family; the Body copy preset is used if omitted
+      size     = '12pt',                 -- Optional initial size: pixels (number) or e.g. '16px', '12pt'
+      pinned   = { 'Noto Sans' },        -- Optional families to pin to the top of the list
+      feedback = function(Result) ... end -- Result table, or nil on cancel
+   })
 --]]
 
-   import 'gui', 'gui/listview', 'gui/window', 'gui/button', 'gui/slider', 'gui/checkbox', 'config'
-   include 'display', 'font'
+   import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
+
+   import './theme', './parts', './catalogue', './controls', './fontlist', './preview', './sizing', './style'
+   import './glyphs', './fill', './stroke', './effects', './alignment'
+
+   include 'display'
 
    namespace gui
-   module font as mFont
 
    gui.dialog ?= { }
 
-MIN_SIZE <const> = 4
-MAX_SIZE <const> = 200
-SIZE_TICKS <const> = array<double> { 4, 12, 24, 48, 72, 100, 150, 200 }
-WIDTH_TICKS <const> = array<double> { 50, 62.5, 75, 87.5, 100, 112.5, 125, 150, 200 }
+COLUMN_WIDTHS <const> = array<int> { 312, 584, 284 }
+CLIENT_WIDTH  <const> = 1180
+BODY_HEIGHT   <const> = 700
+FOOTER_HEIGHT <const> = 42
+CLIENT_HEIGHT <const> = BODY_HEIGHT + FOOTER_HEIGHT
+FOOTER_PAD    <const> = 12
+FOOTER_GAP    <const> = 8
+BUTTON_HEIGHT <const> = 26
+SCREEN_FILL   <const> = 0.9 -- Maximum share of the monitor that the window may occupy when it opens or zooms
+ZOOM_STEP     <const> = 1.25
+MIN_SCALE     <const> = 0.5
+MAX_SCALE     <const> = 4
+MIN_PREVIEW   <const> = 220 -- Least height of the Preview panel, including its header and footer
 
--- Style keywords, in the normalised form used by the font engine (lower case, no spaces, hyphens or underscores).
+-- The columns abut.  Panels in adjacent columns are 12 px apart, matching the vertical gap between panels: each column
+-- leaves 6 px beside its neighbour and 14 px at the window edges, as in the colour picker.
 
-WEIGHT_KEYWORDS <const> = {
-   thin=100, hairline=100, extralight=200, ultralight=200, light=300, regular=400, normal=400, book=400, medium=500,
-   semibold=600, demibold=600, bold=700, extrabold=800, ultrabold=800, black=900, heavy=900, extrablack=950,
-   ultrablack=950
+EDGE_PAD <const> = 14
+SIDE_PAD <const> = 6
+GAP      <const> = 12
+
+LEFT_INNER   <const> = COLUMN_WIDTHS[0] - EDGE_PAD - SIDE_PAD
+CENTRE_INNER <const> = COLUMN_WIDTHS[1] - (SIDE_PAD * 2)
+RIGHT_INNER  <const> = COLUMN_WIDTHS[2] - SIDE_PAD - EDGE_PAD
+SCROLL_THICKNESS <const> = 10 -- The right column's scrollbar, which sits in its edge padding
+
+-- The least body height at which the centre column fits.  A shorter window scales the layout down to this height.
+
+MIN_BODY_HEIGHT <const> = EDGE_PAD + MIN_PREVIEW + GAP + fontdialog_sizing.HEIGHT + EDGE_PAD
+MIN_CLIENT_HEIGHT <const> = MIN_BODY_HEIGHT + FOOTER_HEIGHT
+
+DEFAULT_FACE <const> = 'Noto Sans'
+
+-- Presets.  The first available face of each is used.  Saving presets is not yet supported.
+
+PRESETS <const> = array<table> {
+   { name = 'Body copy',    faces = array<str> { 'Noto Serif', 'PT Serif', 'Crimson Pro' }, size = 19, weight = 400 },
+   { name = 'Headline',     faces = array<str> { 'Noto Sans', 'Inconsolata' }, size = 56, weight = 800 },
+   { name = 'Poster',       faces = array<str> { 'Libre Baskerville', 'Noto Serif' }, size = 64, weight = 700 },
+   { name = 'Code listing', faces = array<str> { 'Source Code Pro', 'Inconsolata', 'Courier Prime' }, size = 15,
+      weight = 400 }
 }
 
-WIDTH_KEYWORDS <const> = {
-   ultracondensed=50, extracondensed=62.5, condensed=75, semicondensed=87.5, semiexpanded=112.5, expanded=125,
-   extraexpanded=150, ultraexpanded=200
+STYLE_WEIGHTS <const> = {
+   [400] = 'Regular', [500] = 'Medium', [600] = 'Semi Bold', [700] = 'Bold', [800] = 'Extra Bold'
 }
 
--- Conventional names for the weights that have one, used to keep simple selections as plain style names.
+----------------------------------------------------------------------------------------------------------------------
+-- The settings for a family with everything else at its default.  Fill is the page text colour of the window theme.
 
-WEIGHT_NAMES <const> = {
-   [100]='Thin', [200]='Extra Light', [300]='Light', [400]='Regular', [500]='Medium', [600]='Semi Bold', [700]='Bold',
-   [800]='Extra Bold', [900]='Black'
-}
-
-NORMALISE <const> = r'[\s_\-]+'
-
-function normalise(Value:str!):str
-   return NORMALISE.replace(Value, '').lower()
+function freshState(Font:table!, Size:num, Fill:str):table
+   return {
+      font         = Font,
+      size         = fontdialog_sizing.snap(Font, Size ?? 20),
+      unit         = 'px',
+      lineHeight   = 1.45,
+      tracking     = 0,
+      wordSpace    = 0,
+      kerning      = 'metrics',
+      axes         = fontdialog_style.defaultAxes(Font),
+      italic       = false,
+      style        = fontdialog_style.defaultStyle(Font),
+      features     = { liga = true, kern = true },
+      fill         = Fill,
+      opacity      = 100,
+      strokeOn     = false,
+      strokeColour = '#EC3013',
+      strokeWidth  = 1,
+      strokePos    = 'outside',
+      strokeJoin   = 'miter',
+      shadowOn     = false,
+      shadowX      = 3,
+      shadowY      = 4,
+      shadowBlur   = 0,
+      glowOn       = false,
+      glowRadius   = 10,
+      blend        = 'Normal',
+      align        = 'left',
+      letterCase   = 'none',
+      paraSpace    = 0.8,
+      view         = 'para',
+      text         = fontdialog_preview.TEXT
+   }
 end
 
--- Reduce a style name such as 'Semi Condensed Bold Italic' to its weight, width and italic traits.
+----------------------------------------------------------------------------------------------------------------------
 
-function nameTraits(Name:str!):<num, num, bool>
-   name = normalise(Name)
-   italic = false
-   for word in values(array<str> { 'italic', 'oblique' }) do
-      pos = name.find(word)
-      if pos then
-         name = name.sub(0, pos) .. name.sub(pos + #word)
-         italic = true
-      end
-   end
+gui.dialog.font = function(Options:table)
+   Options ??= { }
 
-   width = 100
-   match = ''
-   for keyword, value in WIDTH_KEYWORDS do
-      if (#keyword > #match) and name.find(keyword) then
-         match = keyword
-         width = value
-      end
-   end
-
-   if #match > 0 then
-      pos = name.find(match)
-      name = name.sub(0, pos) .. name.sub(pos + #match)
-   end
-
-   return WEIGHT_KEYWORDS[name] ?? 400, width, italic
-end
-
--- Read the weight, width and italic traits of a style name or style descriptor string, e.g.
--- 'weight=Medium;width=Condensed;italic=yes'.
-
-function styleTraits(Style:str!):<num, num, bool>
-   weight, width, italic = 400, 100, false
-   named = false
-   for segment in values(Style.split(';')) do
-      segment = segment.trim()
-      if #segment is 0 then continue end
-      eq = segment.find('=')
-      if not eq then
-         if not named then
-            named = true
-            weight, width, italic = nameTraits(segment)
-         end
-         continue
-      end
-
-      key   = normalise(segment.sub(0, eq))
-      value = segment.sub(eq + 1).trim()
-      if key is 'weight' then
-         weight = tonumber(value) ?? WEIGHT_KEYWORDS[normalise(value)] ?? weight
-      elseif key is 'width' then
-         if value.endsWith('%') then value = value.sub(0, -1) end
-         width = tonumber(value) ?? WIDTH_KEYWORDS[normalise(value)] ?? ((normalise(value) is 'normal') ? 100 : width)
-      elseif key is 'italic' then
-         italic = normalise(value) in array<str> { 'yes', 'true', 'on', '1' }
-      end
-   end
-   return weight, width, italic
-end
-
--- Build a style string from traits.  Selections that have a conventional name, e.g. 'Semi Bold Italic', are returned
--- as that name so that they remain compatible with clients that only understand style names.
-
-function composeStyle(Weight:num!, Width:num!, Italic:bool):str
-   name = WEIGHT_NAMES[Weight]
-   if name and (Width is 100) then
-      if not Italic then return name end
-      return (name is 'Regular') ? 'Italic' : name .. ' Italic'
-   end
-
-   parts = array<str>
-   if Weight != 400 then parts.push(f'weight={Weight}') end
-   if Width != 100 then parts.push(f'width={Width}%') end
-   if Italic then parts.push('italic=yes') end
-   return (#parts > 0) ? parts.concat(';') : 'Regular'
-end
-
-gui.dialog.font = function(Options)
-   self = entity { -- Public interface
-      face      = 'Noto Sans',
-      pointSize = 12,
-      style     = 'Regular',
+   self = entity {
       feedback  = Options.feedback,
-      colour    = gui.srgb(0, 0, 0)
+      finished  = false,
+      isTyping  = false,
+      presets   = PRESETS,
+      pins      = { },
+      fonts     = nil,
+      state     = nil,
+      panels    = array<table>, -- Every panel module, in update order
+      rightPanels = array<table>, -- The right column's panels, in stacking order
+      bodyHeight  = BODY_HEIGHT, -- Height of the layout above the footer, in layout units
+      zoomHeight  = nil -- Layout height to keep while a zoom resizes the window
    }
 
-   lLongText = [[
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas varius dignissim sapien eu pellentesque. Ètiam libero velit, vehicula nec ante non, sodales ultricies metus. Phasellus commodo dolor turpis. Âliquam sed pellentesque magna, non luctus sapien. Ètiam molestie dui nibh, nec finibus velit molestie non. Ut feugiat maximus elit nec mattis. Suspendisse porta vestibulum faucibus. Sed iaculis placerat justo id lobortis. Interdum et malesuada fames ac ante ipsum primis in faucibus.
+   for name in values(Options.pinned ?? { }) do self.pins[name] = true end
 
-Morbi tincidunt varius ante sit amet pulvinar. Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. Nulla ante orci, faucibus non odio viverra, tempus rutrum ex. Mauris sit amet hendrerit quam. Vestibulum tincidunt magna suscipit ultrices congue. Aliquam et blandit tellus, ut porta libero. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Cras vulputate congue eros sed placerat. Nunc eleifend nec felis sit amet fermentum. Cras suscipit ullamcorper eros, id consectetur quam blandit ac.
-
-Suspendisse sed diam ut sem euismod accumsan commodo vehicula sapien. Nullam nisl augue, suscipit vitae posuere sit amet, porttitor et ex. Duis at elit pellentesque, placerat risus in, placerat mauris. Nam in metus sed dui iaculis aliquam sed ut sem. In varius euismod quam, sed lobortis sem. Aliquam nec dui magna. Suspendisse lobortis enim vitae vestibulum accumsan. Pellentesque ac tincidunt est. Ut porta, arcu eu ornare placerat, urna urna venenatis est, at imperdiet lectus justo vel neque. Sed congue dolor eget erat dignissim sollicitudin. Aliquam mollis massa in est gravida faucibus.
-
-Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas non nisi vehicula, aliquam turpis in, mattis lectus. Dõnec magna metus, tempor fringilla metus ac, ultricies efficitur ante. Quisque at semper elit. Ut in purus in est venenatis interdum. Curabitur a dui mauris. Suspendisse potenti. Suspendisse tempus dictum ipsum, id condimentum nulla fermentum sed. Etiam mattis ligula lacus, a tempor felis sodales fermentum. Donec in risus vulputate, tempor neque vel, volutpat mauris. Integer placerat a nunc a aliquet. Phasellus quis porta leo. Etiam et arcu ex. Nunc dictum at ipsum eu dapibus.
-
-Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.
-]]
-
-   local vwFace
-   local syncing = false -- True while sliders are updated by the dialog rather than the user
-   local completing = false
-   local closed = false
    local ready = false
-
-   function[self] closeDialog()
-      if closed then return end
-      closed = true
-      completing = true
-      defer
-         gui.dialog.active[&&] = nil
-         &clear()
-         processing.collect('defer')
-      end
-      &window?.surface?.free()
-   end
-
-   defer if not ready then closeDialog() end end
-
-   function[self] respond(Accepted:bool!)
-      if completing then return end
-      completing = true
-      defer closeDialog() end
-      &feedback?(Accepted)
-   end
-
-   self.close = function[self]() respond(false) end
-
-   function exampleMargin()
-      return math.round(&examplePage.width * 0.05)
-   end
-
-   self.refreshGuidelines = function()
-      if &exampleText then
-         seq       = ''
-         gap       = exampleMargin()
-         spacing   = &exampleText.lineSpacing
-         pageWidth = &examplePage.width
-         baseline  = &exampleText.y
-
-         x1 = gap
-         x2 = pageWidth - gap
-         for y in {baseline into &examplePage.height by spacing} do
-            seq ..= string.format('M%f,%f L%f,%f ', x1, y, x2, y)
-         end
-         &guidelines.sequence = seq
-
-         &exampleText.{ inlineSize = x2 - x1, x = gap }
-      else
-         &guidelines.sequence = 'M-1,-1 Z'
-      end
-   end
-
-   function refreshExample()
-      if not &guidelines then
-         local page_colour = gui.strToRGB(&window.theme.page.bkgd.fill)
-         line_col = (page_colour.luminance(page_colour) > 0.5) ? 'rgb(0 0 0 / .25)' :
-            'rgb(255 255 255 / .15)'
-         &guidelines = &examplePage.new('VectorPath', { strokeWidth = 0.5, stroke = line_col })
-      end
-
-      pageWidth = &examplePage.width
-      gap = exampleMargin()
-
-      &exampleText?.free()
-      &exampleText = nil
-
-      try
-         &exampleText = &examplePage.new('VectorText', {
-            x          = gap,
-            fill       = Options.colour ? tostring(&colour) : &window.theme.page.text.fill,
-            inlineSize = pageWidth - (gap * 2),
-            face       = &face,
-            fontSize   = &pointSize .. 'pt',
-            fontStyle  = &style,
-            string     = Options.example ?? lLongText,
-            textFlags  = VTXF_RASTER
-         })
-      except ex
-         msg(f'Failed to create example text for {&face} {&style}')
-      end
-
-      &exampleText?.y = math.floor(gap + &exampleText.displaySize)
-
-      &refreshGuidelines()
-
-      processing.collect()
-      &viewport.acDraw()
-   end
-
-   -- Load the system font catalogue and convert its Config strings to values used by the dialog.
-
-   function getFonts()
-      &prvFonts = resolve(gui.fontList)
-   end
-
-   -- Resolve the face of a font list entry, following aliases.
-
-   function fontEntry(Face:str!):table
-      font = &prvFonts[Face]
-      if font?.alias then font = &prvFonts[font.alias] end
-      return font
-   end
-
-   function updateStyle()
-      &style = composeStyle(&weight, &width, &italic)
-      refreshExample()
-   end
-
-   -- Bitmap fonts must use an available size, preferring the largest not above the request.
-
-   function nearestFixedSize(Sizes:array<double>, Size:num):num
-      selected = Sizes[0]
-      for size in values(Sizes) do
-         if size <= Size and (selected > Size or size > selected) then
-            selected = size
-         elseif selected > Size and size < selected then
-            selected = size
-         end
-      end
-      return selected
-   end
-
-   -- Configure the sliders and italic option for the selected face.
-
-   function configureControls()
-      font = fontEntry(&face)
-      syncing = true
-      defer syncing = false end
-
-      if font?.sizes and (not font.scalable) and (#font.sizes > 0) then
-         sizes = array<double>
-         for size in values(font.sizes) do sizes.push(size) end
-         sizes.sort()
-         &pointSize = nearestFixedSize(sizes, &pointSize)
-         if sizes.first() < sizes.last() then
-            &sizeSlider.setRange(sizes.first(), sizes.last())
-            &sizeSlider.enable()
-         else
-            &sizeSlider.disable()
-         end
-         &sizeSlider.step = 1
-         &sizeSlider.setTicks(sizes)
-         &prvFixedSizes = sizes
-      else
-         &sizeSlider.setRange(MIN_SIZE, MAX_SIZE)
-         &sizeSlider.step = 0.5
-         &sizeSlider.setTicks(SIZE_TICKS)
-         &sizeSlider.enable()
-         &prvFixedSizes = nil
-      end
-      &sizeSlider.setValue(&pointSize, true)
-
-      -- Width is only variable if the face has a wdth axis or the family has width styles.
-
-      has_width = font?.axes and ('wdth' in font.axes)
-      has_italic = false
-      for style in values(font?.styles ?? array<str>) do
-         lower = style.lower()
-         if lower.find('condensed') or lower.find('expanded') then has_width = true end
-         if lower.find('italic') or lower.find('oblique') then has_italic = true end
-      end
-
-      if has_width then &widthSlider.enable() else &widthSlider.disable() end
-      if has_italic then &italicBox.enable() else &italicBox.disable() end
-   end
+   defer if not ready then self.finish?(nil) end end
 
    using self do
-      getFonts()
+      &fonts = fontdialog_catalogue.load()
+      assert(#&fonts > 0, 'No fonts are installed.')
 
-      -- Disassemble any compact font face definition.  Trailing and empty parts are optional, e.g. 'Noto Sans' or
-      -- 'Noto Sans::Bold'.
-
-      if Options.face then
-         s = string.split(Options.face, ':') -- FaceName, Size, Style, Colour
-         s.resize(4) -- Missing parts are padded with nil
-         if s[0]?? then Options.face      = s[0] end
-         if s[1]?? then Options.pointSize = tonumber(s[1]) ?? Options.pointSize end
-         if s[2]?? then Options.style     = s[2] end
-         if s[3]?? then Options.colour    = s[3] end
+      function findFont(Name:str):table
+         for font in values(&fonts) do
+            if font.name is Name then return font end
+         end
+         return nil
       end
 
-      if Options.pointSize then
-         &pointSize = math.clamp(tonumber(Options.pointSize) ?? &pointSize, 4, 400)
+      -- State changes.  Panels call update() with the settings they change and a Source that names the change, so
+      -- that a panel can skip refreshing the control that made it.
+
+      &refresh = function(Source:str)
+         if &finished then return end
+         for panel in values(&panels) do panel.update(Source) end
+         &viewport.acDraw()
       end
 
-      &style = Options.style ?? &style
-      local weight, width, italic = styleTraits(&style)
-      self.{ weight = weight, width = width, italic = italic }
-      if Options.colour is <str> then
-         &colour = gui.strToRGB(Options.colour)
-      elseif Options.colour is <table> then
-         &colour = gui.nrgb(Options.colour.r, Options.colour.g, Options.colour.b, Options.colour.a)
+      &update = function(Patch:table!, Source:str)
+         if &finished then return end
+         for k, v in Patch do &state[k] = v end
+         &refresh(Source)
+      end
+
+      -- Replace every setting, e.g. when swapping the compare panes.
+
+      &restore = function(Settings:table!)
+         &state = table.clone(Settings)
+         &refresh('reset')
+      end
+
+      -- Select a family.  The size is kept (snapped to the family's fixed sizes) and the style settings return to
+      -- the family's defaults; fill, stroke, effects and layout settings are kept.
+
+      &selectFont = function(Font:table!)
+         if Font is &state.font then return end
+         &update({
+            font     = Font,
+            size     = fontdialog_sizing.snap(Font, &state.size),
+            axes     = fontdialog_style.defaultAxes(Font),
+            italic   = false,
+            style    = fontdialog_style.defaultStyle(Font),
+            features = { liga = true, kern = true }
+         }, 'font')
+      end
+
+      &presetState = function(Name:str!):table
+         preset = &presets.find(P => P.name is Name)
+         preset ?! return nil
+         font = nil
+         for face in values(preset.faces) do
+            font = findFont(face)
+            if font then break end
+         end
+         font ?! return nil
+
+         state = freshState(font, preset.size, &defaultFill)
+         if font.variable and (state.axes.wght != nil) then
+            state.axes.wght = preset.weight
+         else
+            name = STYLE_WEIGHTS[preset.weight]
+            if name and (name in font.styles) then state.style = name end
+         end
+         return state
+      end
+
+      &applyPreset = function(Name:str!)
+         state = &presetState(Name)
+         if not state then
+            &fontList.panel.flash('preset font missing')
+            return
+         end
+         state.text = &state.text
+         &state = state
+         &refresh('preset')
+      end
+
+      &typing = function(Typing:bool)
+         &isTyping = Typing
+      end
+
+      -- Sizing.  The layout is CLIENT_WIDTH units wide and is scaled to the width of the window.  The window's height
+      -- is not scaled: the layout reflows to fill it, with the font list, the Preview panel and the right column's
+      -- scrolling stack taking up the difference.  A window too short for MIN_CLIENT_HEIGHT scales the layout down
+      -- to fit instead.
+
+      &layout = function(BodyHeight:num!)
+         if BodyHeight is &bodyHeight then return end
+         &bodyHeight = BodyHeight
+
+         for col in values(&columns) do col.height = BodyHeight end
+         &fontList.panel.viewport.height = BodyHeight - (EDGE_PAD * 2)
+
+         lower_y = BodyHeight - EDGE_PAD - fontdialog_sizing.HEIGHT
+         &preview.setHeight(lower_y - GAP - EDGE_PAD)
+         &sizing.panel.viewport.y = lower_y
+         &style.panel.viewport.y = lower_y
+
+         &footer.y = BodyHeight
+         &viewport.acDraw()
+      end
+
+      &fit = function()
+         if &finished then return end
+         surface = &window.surface
+         if (surface.width <= 0) or (surface.height <= 0) then return end
+         height = math.max(MIN_CLIENT_HEIGHT, math.round(surface.height * CLIENT_WIDTH / surface.width))
+
+         -- After a zoom, the layout keeps its height unless the window was resized by more than rounding allows.
+
+         if &zoomHeight and (math.abs(height - &zoomHeight) <= 1) then height = &zoomHeight end
+         &zoomHeight = nil
+
+         &viewport.viewHeight = height
+         &layout(height - FOOTER_HEIGHT)
+      end
+
+      -- Zooming resizes the window to the new scale, so that the layout keeps its height.  The window is kept within
+      -- the monitor.
+
+      function setScale(Scale:num!)
+         surface = &window.surface
+         current = surface.width / CLIENT_WIDTH
+         monitor_width, monitor_height = &window.parentSize()
+         upper = MAX_SCALE
+         if (monitor_width ?? 0) > 0 then upper = math.min(upper, monitor_width * SCREEN_FILL / CLIENT_WIDTH) end
+         scale = math.clamp(Scale, MIN_SCALE, math.max(MIN_SCALE, upper))
+         if math.abs(scale - current) < 0.001 then return end
+
+         &zoomHeight = &bodyHeight + FOOTER_HEIGHT
+         height = &zoomHeight * scale
+         if (monitor_height ?? 0) > 0 then height = math.min(height, monitor_height * SCREEN_FILL) end
+         &window.resizeClientArea(math.round(CLIENT_WIDTH * scale), math.round(height))
+      end
+
+      -- Stack the right column's panels and size the scrolled page to fit them.
+
+      &layoutRight = function()
+         if #&rightPanels is 0 then return end
+         y = EDGE_PAD
+         for p in values(&rightPanels) do
+            p.panel.viewport.y = y
+            y += p.height + GAP
+         end
+         &rightPage.height = y - GAP + EDGE_PAD
+      end
+
+      -- Close the window and notify the client once.  Result is nil for a cancellation.
+
+      &finish = function(Result:table)
+         if &finished then return end
+         &finished = true
+         defer
+            gui.dialog.active[&&] = nil
+            processing.collect('defer')
+         end
+         local surface = &window?.surface
+         defer surface?.free() end
+
+         feedback = &feedback
+         &feedback = nil
+         &panels = array<table>
+         &rightPanels = array<table>
+         for field in values(array<str> {
+            'fontList', 'preview', 'sizing', 'style', 'glyphs', 'fill', 'stroke', 'effects', 'alignment',
+            'rightBar', 'rightPage', 'rightView', 'columns', 'footer', 'btnSelect', 'btnCancel', 'btnReset',
+            'viewport', 'window'
+         }) do self[field] = nil end
+
+         if feedback then feedback(Result) end
+      end
+
+      &apply = function()
+         if &finished then return end
+         s = &state
+         &finish({
+            face     = s.font.name,
+            style    = fontdialog_style.fontStyle(s),
+            size     = s.size,
+            fill     = s.fill,
+            settings = table.clone(s)
+         })
+      end
+
+      &cancel = function() &finish(nil) end
+
+      &reset = function()
+         &restore(&initialState)
       end
 
       &window = gui.window({
-         insideWidth  = gui.rpixel('1000dp'),
-         insideHeight = gui.rpixel('900dp'),
-         minWidth     = gui.rpixel('700dp'),
-         minHeight    = gui.rpixel('600dp'),
-         maxWidth     = gui.rpixel('1500dp'),
-         maxHeight    = gui.rpixel('1200dp'),
+         insideWidth  = CLIENT_WIDTH,
+         insideHeight = CLIENT_HEIGHT,
          quit         = false,
+         minWidth     = math.round(CLIENT_WIDTH * MIN_SCALE),
+         minHeight    = math.round(MIN_CLIENT_HEIGHT * MIN_SCALE),
          popOver      = Options.popOver,
-         icon         = 'items/font',
-         title        = Options.title ?? 'Select a font',
+         icon         = Options.icon ?? 'items/font',
+         title        = Options.title ?? 'Select Font',
          modal        = Options.modal ?? false,
+         themeName    = Options.theme,
          events = {
-            close = function()
-               respond(false)
+            close = function[<weak> &&](Window)
+               &finish(nil)
             end
          }
       })
+
+      &theme = &window.theme
 
       &window.surface.subscribe('free', function[<weak> &&]()
-         if not completing then closeDialog() end
+         &finish(nil)
+         if &themeName then gui.themes[&themeName] = nil end -- The derived theme is specific to this window
       end)
+
+      &themeName = fontdialog_theme.apply(&window.scene, 'fontdialog')
+      &tokens = fontdialog_theme.tokens(&themeName)
+      &defaultFill = fontdialog_controls.toHex(&theme.page.text.fill ?? '#000000')
+
+      -- Initial settings: the requested family, or the first preset.  A requested size overrides the preset's, and
+      -- is shown in points if it is a whole number of points once snapped to the family's fixed sizes.
+
+      size = fontdialog_sizing.parse(Options.size)
+      font = Options.face and findFont(Options.face)
+      if font then
+         &state = freshState(font, size, &defaultFill)
+      else
+         &state = &presetState(PRESETS[0].name) ?? freshState(findFont(DEFAULT_FACE) ?? &fonts[0], size,
+            &defaultFill)
+      end
+
+      if size then
+         &state.size = fontdialog_sizing.snap(&state.font, size)
+         &state.unit = fontdialog_sizing.preferredUnit(&state.size)
+      end
+
+      &initialState = table.clone(&state)
 
       &viewport = &window.clientViewport({
-         resizeEvent = function()
-            self.refreshGuidelines()
-         end
+         viewX = 0, viewY = 0, viewWidth = CLIENT_WIDTH, viewHeight = CLIENT_HEIGHT
       })
 
-      -- Okay and cancel buttons
+      &columns = array<obj>
+      x = 0
+      for _, width in COLUMN_WIDTHS do
+         &columns.push(&viewport.new('VectorViewport', { x = x, y = 0, width = width, height = BODY_HEIGHT }))
+         x += width
+      end
 
-      footer = &window.margins.bottom
+      -- Left column
 
-      okay = gui.button({
-         target  = &viewport,
-         label   = 'OK',
-         xOffset = gui.sizing.widget.gap,
-         yOffset = footer,
-         icon    = 'items/checkmark',
-         primary = true,
-         events  = {
-            activate = function()
-               respond(true)
-            end
+      &fontList = fontdialog_list.new(&&, &columns[0], {
+         x = EDGE_PAD, y = EDGE_PAD, width = LEFT_INNER, height = BODY_HEIGHT - (EDGE_PAD * 2)
+      })
+
+      -- Centre column: the preview above the Sizing and Style panels
+
+      lower_y = BODY_HEIGHT - EDGE_PAD - fontdialog_sizing.HEIGHT
+      half = math.floor((CENTRE_INNER - GAP) * 0.5)
+
+      &preview = fontdialog_preview.new(&&, &columns[1], {
+         x = SIDE_PAD, y = EDGE_PAD, width = CENTRE_INNER, height = lower_y - GAP - EDGE_PAD
+      })
+
+      &sizing = fontdialog_sizing.new(&&, &columns[1], { x = SIDE_PAD, y = lower_y, width = half })
+
+      &style = fontdialog_style.new(&&, &columns[1], {
+         x = SIDE_PAD + half + GAP, y = lower_y, width = CENTRE_INNER - half - GAP, height = fontdialog_sizing.HEIGHT
+      })
+
+      -- Right column: a scrolling stack of panels.  The scrollbar sits in the column's edge padding.
+
+      col = &columns[2]
+      &rightView = col.new('VectorViewport', { x = 0, y = 0, xOffset = 0, yOffset = 0, overflow = VOF_HIDDEN })
+      &rightPage = &rightView.new('VectorViewport', {
+         x = 0, y = 0, width = COLUMN_WIDTHS[2] - SCROLL_THICKNESS, height = BODY_HEIGHT
+      })
+      &rightBar = gui.scrollbar({
+         target = col, view = &rightView, page = &rightPage, direction = 'vertical',
+         theme = { scrollbar = { thickness = SCROLL_THICKNESS } }
+      })
+
+      right = { x = SIDE_PAD, y = 0, width = RIGHT_INNER }
+      &glyphs    = fontdialog_glyphs.new(&&, &rightPage, table.merge(right, {
+         onResize = function[<weak> &&]() &layoutRight() end
+      }))
+      &fill      = fontdialog_fill.new(&&, &rightPage, right)
+      &stroke    = fontdialog_stroke.new(&&, &rightPage, right)
+      &effects   = fontdialog_effects.new(&&, &rightPage, table.merge(right, {
+         onResize = function[<weak> &&]() &layoutRight() end
+      }))
+      &alignment = fontdialog_alignment.new(&&, &rightPage, right)
+
+      &rightPanels = array<table> { &glyphs, &fill, &stroke, &effects, &alignment }
+      &panels = array<table> {
+         &fontList, &sizing, &style, &glyphs, &fill, &stroke, &effects, &alignment, &preview
+      }
+      &layoutRight()
+
+      -- Footer: key hints and the dialog buttons
+
+      t = &tokens
+      &footer = &viewport.new('VectorViewport', {
+         x = 0, y = BODY_HEIGHT, width = CLIENT_WIDTH, height = FOOTER_HEIGHT
+      })
+      &footer.new('VectorRectangle', { x = 0, y = 0, width = '100%', height = 1, fill = t.border })
+
+      fontdialog_parts.hints(&footer, {
+         x = FOOTER_PAD, y = 0, height = FOOTER_HEIGHT, tokens = t.onWindow,
+         items = array<table> {
+            { key = 'Tab', text = 'next control' },
+            { key = 'Ctrl+F', text = 'search' },
+            { key = 'S', text = 'pin' },
+            { key = 'C', text = 'compare' }
          }
       })
 
-      cancel = gui.button({
-         target  = &viewport,
-         label   = 'Cancel',
-         xOffset = okay.viewport.width + (gui.sizing.widget.gap * 2),
-         yOffset = footer,
-         icon    = 'items/cancel',
-         events  = {
-            activate = function()
-               respond(false)
-            end
-         }
-      })
-
-      footer += okay.viewport.height + gui.sizing.widget.gap
-
-      -- Font example area
-
-      &exampleVP = &viewport.new('VectorViewport', {
-         x       = gui.rpixel('310dp'),
-         y       = &window.margins.top,
-         xOffset = &window.margins.right,
-         yOffset = footer
-      })
-
-      &exampleBkgd = &exampleVP.new('VectorRectangle', table.merge({
-         x = 0, y = 0, width = '100%', height = '100%'
-      }, table.merge(&window.theme.page.bkgd, &window.theme.page.border)))
-
-      &exampleView = &exampleVP.new('VectorViewport', {
-         x = gui.sizing.widget.gap, y = gui.sizing.widget.gap, xOffset = gui.sizing.widget.gap, yOffset = gui.sizing.widget.gap, overflow = VOF_HIDDEN
-      })
-
-      &examplePage = &exampleView.new('VectorViewport', {
-         name='view_page', width='100%', height='100%'
-      })
-
-      refreshExample()
-
-      -- Font size, weight, width and italic controls, stacked above the footer
-
-      control_width = &exampleVP.x - gui.sizing.widget.gap - &window.margins.left
-      label_width = gui.rpixel('90dp')
-
-      &italicBox = gui.checkbox({
-         target  = &viewport,
-         x       = &window.margins.left,
-         yOffset = footer,
-         label   = 'Italic',
-         value   = &italic,
-         events  = {
-            activate = function()
-               using self do
-                  &italic = &italicBox.value
-                  updateStyle()
-               end
-            end
-         }
-      })
-
-      footer += &italicBox.viewport.height + gui.sizing.widget.gap
-
-      function newSlider(Label:str!, Min:num!, Max:num!, Step:num!, Ticks:array<double>, Value:num!,
-         Activate:func!):table
-         local slider = gui.slider({
-            target     = &viewport,
-            label      = Label,
-            labelWidth = label_width,
-            valuePos   = 'in-centre',
-            min        = Min,
-            max        = Max,
-            step       = Step,
-            ticks      = Ticks,
-            value      = math.clamp(Value, Min, Max),
-            x          = &window.margins.left,
-            yOffset    = footer,
-            width      = control_width,
-            events     = {
-               activate = function(NewValue)
-                  if syncing then return end
-                  using self do Activate(NewValue) end
-               end
-            }
+      function footerButton(Text:str, Primary:bool, Activate:func):table
+         return gui.button({
+            target = &footer, y = (FOOTER_HEIGHT - BUTTON_HEIGHT) * 0.5, width = 100, height = BUTTON_HEIGHT,
+            label = Text, primary = Primary, events = { activate = Activate }
          })
-         footer += slider.viewport.height + gui.sizing.widget.gap
-         return slider
       end
 
-      &widthSlider = newSlider('Width:', 50, 200, 0.5, WIDTH_TICKS, &width, function(Value)
-         &width = Value
-         updateStyle()
-      end)
+      &btnSelect = footerButton(Options.okLabel ?? 'Select', true, function[&&]() &apply() end)
+      &btnCancel = footerButton(Options.cancelLabel ?? 'Cancel', false, function[&&]() &cancel() end)
+      &btnReset  = footerButton('Reset', false, function[&&]() &reset() end)
 
-      &weightSlider = newSlider('Weight:', 100, 900, 10, array<double> { 100, 400, 700, 900 }, &weight,
-         function(Value)
-            &weight = Value
-            updateStyle()
-         end)
-
-      &sizeSlider = newSlider('Size:', MIN_SIZE, MAX_SIZE, 0.5, SIZE_TICKS, &pointSize, function(Value)
-         if &prvFixedSizes then
-            -- Snap to the nearest size that the bitmap font provides.
-            nearest = &prvFixedSizes[0]
-            for size in values(&prvFixedSizes) do
-               if math.abs(size - Value) < math.abs(nearest - Value) then nearest = size end
-            end
-            Value = nearest
-            if &sizeSlider.value != nearest then
-               syncing = true
-               &sizeSlider.setValue(nearest, true)
-               syncing = false
-            end
-         end
-         if &pointSize != Value then
-            &pointSize = Value
-            refreshExample()
-         end
-      end)
-
-      -- Available font faces
-
-      vwFace = gui.listView({
-         x          = &window.margins.left,
-         y          = &window.margins.top,
-         width      = &exampleVP.x - gui.sizing.widget.gap - &window.margins.left,
-         yOffset    = footer,
-         target     = &viewport,
-         sensitive  = true,
-         textAttrib = 'name',
-         events = {
-            itemSelected = function(View, Reason, Item)
-               using self do
-                  assert(&prvFonts[Item.name], f'Font "{Item.name}" not recognised.')
-
-                  &face = Item.name
-                  configureControls()
-                  refreshExample()
-               end
-            end
-         }
-      })
-
-      faces = { }
-      for _, font in &prvFonts.sortByKeys() do
-         if font.hidden?? then continue end
-
-         new_font = { id=font.name, name=font.name }
-         if font.alias then font = &prvFonts[font.alias] end
-         new_font.icon = font.scalable ? 'items/font' : 'layout/text_sans'
-         faces.insert(new_font)
+      x = CLIENT_WIDTH - FOOTER_PAD
+      for btn in values(array<table> { &btnSelect, &btnCancel, &btnReset }) do
+         x -= btn.viewport.width
+         btn.viewport.x = x
+         x -= FOOTER_GAP
       end
-      vwFace.loadItems(faces)
 
-      -- Preselect list items based on the preferences supplied by the client.
+      -- Dialog keys.  The handler receives every key while the focus is anywhere in the client area:
+      --
+      --   Enter    Selects the font, unless a text box has the focus.
+      --   Escape   Cancels, unless a combobox menu is open; the combobox closes its menu instead.
+      --   Ctrl+F   Moves the focus to the search box.
+      --   S        Pins or unpins the current family, unless a text box has the focus.
+      --   C        Toggles Compare, unless a text box has the focus.
+      --
+      -- Actions are deferred so that the window isn't freed during the scene's key dispatch.
 
-      vwFace.selectItems(function(Item)
-         if Item.id is (Options.face ?? 'Noto Sans') then return true end
+      &viewport.tabOrder = 1
+      &viewport.mtSubscribeKeyboard(function(Viewport:obj!, Qualifiers:num!, Value:num!, Unicode)
+         if &finished or not (Qualifiers has KQ_PRESSED) or (Qualifiers has KQ_REPEAT) then return end
+
+         plain = not (Qualifiers has (KQ_CTRL | KQ_ALT | KQ_COMMAND))
+
+         if (Value is KEY_F) and (Qualifiers has KQ_CTRL) then
+            processing.delayedCall(function() &fontList?.focusSearch() end)
+         elseif Value is KEY_ESCAPE then
+            for box in values(array<table> { &fontList.presets, &effects.blend }) do
+               if box.menu?.visible then return end
+            end
+            processing.delayedCall(function() &cancel() end)
+         elseif &isTyping then
+            return
+         elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) then
+            processing.delayedCall(function() &apply() end)
+         elseif (Value is KEY_S) and plain then
+            font = &state.font
+            processing.delayedCall(function() &fontList?.togglePin(font) end)
+         elseif (Value is KEY_C) and plain then
+            processing.delayedCall(function() &preview?.toggleCompare() end)
+         end
       end)
+
+      &refresh('init')
+
+      -- The window's zoom keys change the scale (see setScale()) rather than the window's view box.
+
+      &window.zoomIn    = function[<weak> &&]() setScale(&window.surface.width * ZOOM_STEP / CLIENT_WIDTH) end
+      &window.zoomOut   = function[<weak> &&]() setScale(&window.surface.width / ZOOM_STEP / CLIENT_WIDTH) end
+      &window.resetZoom = function[<weak> &&]() setScale(1) end
+
+      &window.surface.subscribe('redimension', function[<weak> &&]() &fit() end)
+
+      -- Fit the window to the monitor: the width by scaling the layout down, and the height by reflowing it.
+
+      monitor_width, monitor_height = &window.parentSize()
+      scale = 1
+      height = CLIENT_HEIGHT
+      if (monitor_width ?? 0) > 0 then scale = math.min(1, monitor_width * SCREEN_FILL / CLIENT_WIDTH) end
+      height *= scale
+      if (monitor_height ?? 0) > 0 then height = math.min(height, monitor_height * SCREEN_FILL) end
+      if (scale < 1) or (height < CLIENT_HEIGHT) then
+         &window.resizeClientArea(math.floor(CLIENT_WIDTH * scale), math.floor(height))
+      end
+      &fit()
 
       &window.moveToFront()
       &window.show(true)
-      --vwFace.acFocus()
 
       gui.dialog.active[&&] = true
       ready = true
@@ -554,14 +537,31 @@ Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas 
    end
 end
 
-   -- This sub-routine is provided for languages other than Tiri to utilise the module.
+----------------------------------------------------------------------------------------------------------------------
+-- This sub-routine is provided for languages other than Tiri to use the interface.  Options are passed as script keys
+-- and the window ID is returned.  The outcome is written back to the script's keys before the window closes:
+-- 'response' is 'select' or 'cancel', and on Select 'face', 'style' and 'size' describe the font.
 
 @if(imported=false)
+   script = obj.find('self')
+   modal = arg('modal')
+
    dlg = gui.dialog.font({
-      popOver    = arg('popOver'),
-      target     = arg('target'),
-      modal      = arg('modal'),
-      icon       = arg('icon')
+      face     = arg('face'),
+      size     = arg('size'),
+      title    = arg('title'),
+      icon     = arg('icon'),
+      theme    = arg('theme'),
+      modal    = (modal is '1') or (modal is 'true'),
+      popOver  = tonumber(arg('popOver')),
+      feedback = function(Result:table)
+         if Result then
+            script.setKey('face', Result.face)
+            script.setKey('style', Result.style)
+            script.setKey('size', tostring(Result.size))
+         end
+         script.setKey('response', Result ? 'select' : 'cancel')
+      end
    })
 
    return dlg.window.surface.id
