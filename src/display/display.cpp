@@ -631,8 +631,10 @@ static ERR MODInit(OBJECTPTR argModule, struct CoreBase *argCoreBase)
    glDisplayInfo.DisplayID = 0xffffffff; // Indicate a refresh of the cache is required.
 
    // Register input dispatch after platform event sources so that newly queued input is handled before the task sleeps.
+   // Recursion is allowed so that input continues to flow while a callback processes messages, e.g. while it waits on
+   // a dialog.  input_event_loop() and scene_input_events() queue pending events so that nested calls preserve order.
 
-   RegisterFD((HOSTHANDLE)-2, RFD::ALWAYS_CALL, input_event_loop, nullptr);
+   RegisterFD((HOSTHANDLE)-2, RFD::ALWAYS_CALL|RFD::ALLOW_RECURSION, input_event_loop, nullptr);
 
    if (create_pointer_class() != ERR::Okay) return log.warning(ERR::AddClass);
    if (create_display_class() != ERR::Okay) return log.warning(ERR::AddClass);

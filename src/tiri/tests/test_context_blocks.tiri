@@ -214,3 +214,24 @@ end
          'Structurally valid context blocks after a terminator should survive bytecode serialisation')
    end
 end
+
+-- An early return that closes captured upvalues is emitted as CTXEND followed by UCLO.  UCLO always jumps, so the
+-- bytecode verifier must not follow a fall-through edge into the block with its descriptor already popped.
+
+@Test function EarlyReturnClosingUpvaluesSurvivesBytecodeRoundTrips()
+   local function factory():func
+      return function(Receiver:table, Flag:bool):num
+         using Receiver do
+            if not Flag then return 0 end
+            local read = function():any return Flag end
+            return &value + (read() and 1 or 0)
+         end
+      end
+   end
+
+   for stripped in values({ false, true }) do
+      local restored:func = exec(string.dump(factory, stripped))
+      assert(restored({ value = 42 }, false) is 0, 'The early return path should survive bytecode serialisation')
+      assert(restored({ value = 42 }, true) is 43, 'The block body should survive bytecode serialisation')
+   end
+end

@@ -178,3 +178,37 @@ end
 @Test function DelayedCallExists()
    assert(type(processing.delayedCall) is 'function', 'processing.delayedCall should be a function')
 end
+
+-----------------------------------------------------------------------------------------------------------------------
+-- A signal sent to an outer sleep while a nested sleep is active must wake the outer sleep once the nested one
+-- returns.  Previously the signal was dropped and the outer sleep ran to its timeout.
+
+@Test function NestedSleepPreservesOuterSignal()
+   processing.flush()
+   proc = processing.new({ timeout = 4 })
+
+   child = obj<tiri> { string = [[
+      err = processing.sleep(2)
+      self = obj.find('self')
+      self.acSetKey('result', tostring(err))
+   ]] }
+
+   err, timer = mSys.SubscribeTimer(0.1, function()
+      proc.signal()   -- Wakes the outer sleep, which is currently suspended beneath the child's sleep
+      child.acSignal()
+      return ERR_Terminate
+   end)
+
+   processing.delayedCall(function()
+      child.acActivate()
+   end)
+
+   start = mSys.PreciseTime()
+   err = proc.sleep()
+   elapsed = (mSys.PreciseTime() - start) / 1000000
+
+   _, child_result = child.acGetKey('result')
+   assert(child_result is tostring(ERR_Okay), f'The nested sleep should be woken by its signal, got {child_result}')
+   assert(err is ERR_Okay, f'The outer sleep should report its signal, got error {err}')
+   assert(elapsed < 1.5, f'The outer sleep should wake when the nested sleep returns, took {elapsed}s')
+end

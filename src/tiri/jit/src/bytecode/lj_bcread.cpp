@@ -574,7 +574,7 @@ static void bcread_bytecode(LexState *State, GCproto *pt, MSize sizebc)
          }
          if (op IS BC_RAISE or op IS BC_RETHROW) continue;
 
-         if (op IS BC_JMP) {
+         if (op IS BC_JMP or op IS BC_UCLO) { // Unconditional; UCLO closes upvalues and always jumps
             enqueue(ptrdiff_t(pc) + 1 + bc_j(bc[pc]), stack);
          }
          else if (bcmode_d(op) IS BCMjump) {
