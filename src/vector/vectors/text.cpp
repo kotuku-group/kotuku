@@ -75,6 +75,7 @@ where large glyphs were oriented around sharp corners.  The process would look s
 
 #include "agg_path_length.h"
 #include "text_word_ranges.h"
+#include "../font_def.h"
 
 const int DEFAULT_WEIGHT = 400;
 
@@ -211,6 +212,8 @@ static void raster_text_to_bitmap(class extVectorText *);
 static void key_event(evKey *, int, class extVectorText *);
 static ERR routed_text_key(const evKey *, APTR);
 static ERR reset_font(class extVectorText *, bool = false);
+static ERR update_text_effects(class extVectorText *);
+static void update_text_effect_region(class extVectorText *);
 static ERR text_input_events(class extVector *Vector, const InputEvent *Events);
 static ERR text_focus_event(class extVector *Vector, FM Event, OBJECTPTR EventObject, APTR Meta);
 static void activate_text_input(class extVectorText *);
@@ -259,6 +262,11 @@ class extVectorText : public extVector {
    std::string txAlias;  // The alias that txFamily was resolved through, if any
    std::string txFontStyle;
    std::string txFontSizeString;
+   std::string txTextStyle;  // Storage for reading the TextStyle field
+   font_def txDefinition;    // Keys of the last TextStyle values, including those that are not rendered yet
+   objVectorFilter *txEffects = nullptr; // Built from the shadow, glow and blend keys
+   double txEffectMargin = 0; // The reach of the effects beyond the text's bounds
+   bool txEffectsPending = false;
    int     txKeyEvent;
    OBJECTID txFocusID;
    OBJECTID txShapeInsideID;   // Enable word-wrapping within this shape
@@ -307,6 +315,7 @@ class extVectorText : public extVector {
       }
 
       if (txDragTimer) UpdateTimer(txDragTimer, 0);
+      if (txEffects) FreeResource(txEffects);
       if (txSelection) FreeResource(txSelection);
       if (txBitmapImage)  FreeResource(txBitmapImage);
       if (txAlphaBitmap)  FreeResource(txAlphaBitmap);
@@ -771,7 +780,8 @@ static ERR VECTORTEXT_Init(extVectorText *Self)
       }
    }
 
-   return reset_font(Self, true);
+   if (auto error = reset_font(Self, true); error != ERR::Okay) return error;
+   return Self->txEffectsPending ? update_text_effects(Self) : ERR::Okay;
 }
 
 /*********************************************************************************************************************
@@ -1274,6 +1284,129 @@ static ERR TEXT_SET_FontSize(extVectorText *Self, const std::string_view &Value)
 }
 
 /*********************************************************************************************************************
+
+-FIELD-
+TextStyle: A portable font definition that describes the complete appearance of the text.
+
+TextStyle reads and writes the whole font selection as a single string, for instance
+`face=Noto Sans; size=15px; weight=650; fill=#1d2433; shadow=3px 4px 0 rgba(0,0,0,0.4)`.  The keys are listed in the
+Font Definitions manual, and ~Vector.NormaliseTextStyle() can be used to validate them.  The field can be set before
+or after initialisation.
+
+Assignment overwrites the declared keys only, and an empty string has no effect.  Style keys update individually, so
+`italic=yes` retains an earlier `weight=650`.  An absent `fill` or `stroke` leaves the existing value unchanged and
+`stroke=none` clears the stroke.  If the string contains a malformed value then `ERR::Syntax` is returned and the
+settings are unchanged.
+
+The `shadow`, `glow` and `blend` keys are rendered through a @VectorFilter that belongs to the text, which replaces the
+value of #Filter while any of them is active.  `blend` requires a backdrop, which is provided by setting the
+`ISOLATED` flag on an enclosing viewport.  The `lineHeight`, `letterSpacing`, `wordSpacing` and `features` keys,
+`kerning`, and any `strokeAlign` other than `centre`, are stored and returned but are not rendered at present.
+
+Reading the field returns the canonical form of the current state, including changes that have been made through
+fields such as #Face and #FontSize.  The result can be assigned to another VectorText or saved.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_TextStyle(extVectorText *Self, std::string_view &Value)
+{
+   font_def def = Self->txDefinition;
+   def.style = parse_font_style(kt::font_traits::style_part(Self->txFontStyle));
+   if ((not def.style.weight) and (Self->txWeight) and (Self->txWeight != DEFAULT_WEIGHT)) {
+      def.style.weight = Self->txWeight;
+   }
+
+   def.face = Self->txFamily;
+
+   // The declared unit is retained for as long as it still describes the current size.
+
+   if ((not def.size) or (std::round(def.size->pixels(0)) != Self->txFontSize)) {
+      def.size = font_length { double(Self->txFontSize), font_length::UNIT::PX };
+   }
+
+   if (not Self->FillString.empty()) def.fill = Self->FillString;
+   else def.fill.reset();
+
+   if (not Self->StrokeString.empty()) def.stroke = Self->StrokeString;
+   else def.stroke.reset();
+
+   if ((not def.stroke_width) or (def.stroke_width->pixels(Self->txFontSize) != Self->StrokeWidth.Value)) {
+      if (Self->StrokeWidth.Value > 0) {
+         def.stroke_width = font_length { Self->StrokeWidth.Value, font_length::UNIT::PX };
+      }
+      else def.stroke_width.reset();
+   }
+
+   if ((Self->Opacity != 1.0) or def.opacity) def.opacity = Self->Opacity;
+
+   if ((Self->LineJoin != VLJ::MITER) or def.line_join) {
+      switch (Self->LineJoin) {
+         case VLJ::ROUND: def.line_join = "round"; break;
+         case VLJ::BEVEL: def.line_join = "bevel"; break;
+         default:         def.line_join = "miter"; break;
+      }
+   }
+
+   Self->txTextStyle = def.serialise();
+   Value = Self->txTextStyle;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value)
+{
+   kt::Log log;
+
+   font_def def;
+   if (auto error = parse_font_def(log, Value, def); error != ERR::Okay) return log.warning(error);
+
+   auto spec = parse_font_style(kt::font_traits::style_part(Self->txFontStyle));
+
+   font_def merged;
+   merged.style = std::move(spec);
+   merged.style.warnings.clear();
+   merged.merge(def);
+   auto style = merged.style_string();
+   Self->txFontStyle = style.empty() ? "Regular" : style;
+
+   if (def.size) {
+      Self->txFontSize = std::max(1.0, std::round(def.size->pixels(0)));
+      Self->txScaledFontSize = false;
+   }
+
+   Self->txDefinition.merge(def);
+
+   // TEXT_SET_Face() reloads the font, so that the size and style above are applied together with it.
+
+   if (def.face) {
+      if (auto error = TEXT_SET_Face(Self, *def.face); error != ERR::Okay) return error;
+   }
+   else if (Self->initialised()) {
+      if (auto error = reset_font(Self); error != ERR::Okay) return error;
+   }
+
+   if (def.fill) {
+      if (auto error = Self->setFill(*def.fill); error != ERR::Okay) return error;
+   }
+
+   if (def.opacity) Self->setOpacity(*def.opacity);
+   if (def.stroke) Self->setStroke(*def.stroke);
+   if (def.stroke_width) Self->setStrokeWidth(def.stroke_width->pixels(Self->txFontSize));
+
+   if (def.line_join) {
+      if (*def.line_join IS "round") Self->setLineJoin(VLJ::ROUND);
+      else if (*def.line_join IS "bevel") Self->setLineJoin(VLJ::BEVEL);
+      else Self->setLineJoin(VLJ::MITER);
+   }
+
+   if (def.shadow or def.glow or def.blend) {
+      if (Self->initialised()) return update_text_effects(Self);
+      Self->txEffectsPending = true;
+   }
+
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
 -FIELD-
 FontStyle: Determines font styling.
 
@@ -1312,7 +1445,8 @@ the negated value.</li>
 font size in points.  `none` uses the value of the named style or font default.</li>
 </list>
 
-Any other four-character key is an OpenType axis tag, e.g. `GRAD=-50`.  Axis tags are case-sensitive.
+A four-character key that is a registered axis (`wght`, `wdth`, `ital`, `slnt`, `opsz`) or has no lower-case letters
+is an OpenType axis tag, e.g. `GRAD=-50`.  Axis tags are case-sensitive.  Other lower-case keys are reserved.
 
 For variable fonts, the design coordinates are resolved in the following order, with later values taking precedence:
 the font defaults, the named style, the #Weight field, the descriptors listed above, and finally axis tags.  Values
@@ -1322,6 +1456,9 @@ same coordinates share the same cached font, so `weight=Bold` and `Bold` are equ
 For fonts that are not variable, the family's file that is the nearest match is chosen with the CSS font matching
 order of width, then italic, then weight.  For instance, `weight=SemiBold` on a family that has no semi-bold file
 resolves to `Bold`.  Axis tags are ignored and no synthetic styles are produced.
+
+A complete font definition, as described for #TextStyle, is also accepted.  Only its style keys are used, and the
+face, size and paint keys have no effect.  `style=Semi Bold` is an explicit spelling of a leading style name.
 
 Errors are not returned if a style name or descriptor is invalid or unavailable.  Invalid descriptors are reported as
 warnings in the log and otherwise ignored.
@@ -2020,6 +2157,170 @@ extern void align_raster_text(extVectorText *Vector)
       t.tx = std::round(t.tx);
       t.ty = std::round(t.ty);
    }
+}
+
+//********************************************************************************************************************
+// Replaces the filter that renders the text's shadow, glow and blend keys.  The filter is owned by the scene, as
+// filters must be, and is released with the text.
+
+static OP blend_operator(std::string_view Name)
+{
+   static const std::pair<std::string_view, OP> MODES[] = {
+      { "screen", OP::SCREEN }, { "multiply", OP::MULTIPLY }, { "lighten", OP::LIGHTEN }, { "darken", OP::DARKEN },
+      { "invert", OP::INVERT }, { "contrast", OP::CONTRAST }, { "dodge", OP::DODGE }, { "burn", OP::BURN },
+      { "hardlight", OP::HARD_LIGHT }, { "softlight", OP::SOFT_LIGHT }, { "difference", OP::DIFFERENCE },
+      { "exclusion", OP::EXCLUSION }, { "plus", OP::PLUS }, { "minus", OP::MINUS }, { "overlay", OP::OVERLAY }
+   };
+   for (auto & [ name, op ] : MODES) if (name IS Name) return op;
+   return OP::OVER;
+}
+
+template <class T> static T * new_text_effect(objVectorFilter *Filter, CLASSID Class)
+{
+   T *effect;
+   if (NewObject(Class, &effect) != ERR::Okay) return nullptr;
+   SetOwner(effect, Filter);
+   return effect;
+}
+
+// Appends a tinted copy of the text's alpha channel that has been offset and blurred.
+
+static objFilterEffect * add_text_effect_layer(objVectorFilter *Filter, double X, double Y, double Blur,
+   const std::string &Colour)
+{
+   VectorPainter painter;
+   if (vec::ReadPainter(nullptr, Colour, &painter, nullptr) != ERR::Okay) return nullptr;
+
+   auto offset = new_text_effect<objOffsetFX>(Filter, CLASSID::OFFSETFX);
+   if (not offset) return nullptr;
+   offset->setSourceType(VSF::ALPHA);
+   offset->setXOffset(X);
+   offset->setYOffset(Y);
+   if (offset->init() != ERR::Okay) return nullptr;
+   objFilterEffect *shape = offset;
+
+   if (Blur > 0) {
+      auto blur = new_text_effect<objBlurFX>(Filter, CLASSID::BLURFX);
+      if (not blur) return nullptr;
+      blur->setSX(Blur * 0.5); // CSS defines a blur radius as twice the standard deviation
+      blur->setSY(Blur * 0.5);
+      blur->setInput(shape);
+      if (blur->init() != ERR::Okay) return nullptr;
+      shape = blur;
+   }
+
+   auto flood = new_text_effect<objFloodFX>(Filter, CLASSID::FLOODFX);
+   if (not flood) return nullptr;
+   flood->setColour(painter.Colour);
+   if (flood->init() != ERR::Okay) return nullptr;
+
+   auto tint = new_text_effect<objCompositeFX>(Filter, CLASSID::COMPOSITEFX);
+   if (not tint) return nullptr;
+   tint->setOperator(OP::IN);
+   tint->setInput(flood);
+   tint->setMix(shape);
+   if (tint->init() != ERR::Okay) return nullptr;
+   return tint;
+}
+
+// Filter regions are relative to the bounding box, so the margin that the effects need is converted to that scale
+// whenever the bounds change.
+
+static void update_text_effect_region(extVectorText *Self)
+{
+   if (not Self->txEffects) return;
+   const double width  = std::max(1.0, Self->Bounds.width());
+   const double height = std::max(1.0, Self->Bounds.height());
+   const double margin = Self->txEffectMargin + 1.0;
+   Self->txEffects->X = Unit(-margin / width, FD_SCALED);
+   Self->txEffects->Y = Unit(-margin / height, FD_SCALED);
+   Self->txEffects->Width  = Unit(1.0 + (margin * 2.0 / width), FD_SCALED);
+   Self->txEffects->Height = Unit(1.0 + (margin * 2.0 / height), FD_SCALED);
+}
+
+static ERR update_text_effects(extVectorText *Self)
+{
+   kt::Log log(__FUNCTION__);
+
+   Self->txEffectsPending = false;
+
+   if (Self->txEffects) {
+      if (Self->Filter IS (extVectorFilter *)Self->txEffects) Self->Filter = nullptr;
+      FreeResource(Self->txEffects);
+      Self->txEffects = nullptr;
+   }
+
+   auto &def = Self->txDefinition;
+   auto shadows = def.shadow ? decode_shadow(*def.shadow) : std::vector<font_shadow_layer>();
+   double glow_radius = 0;
+   std::string glow_colour;
+   const bool glow = def.glow and (*def.glow != "none") and decode_glow(*def.glow, glow_radius, glow_colour);
+   const bool blended = def.blend and (*def.blend != "normal");
+
+   if (shadows.empty() and (not glow) and (not blended)) return ERR::Okay;
+
+   objVectorFilter *filter;
+   if (NewObject(CLASSID::VECTORFILTER, &filter) != ERR::Okay) return log.warning(ERR::NewObject);
+   SetOwner(filter, Self->Scene);
+   if (filter->init() != ERR::Okay) {
+      FreeResource(filter);
+      return log.warning(ERR::Init);
+   }
+
+   Self->txEffects = filter;
+   Self->txEffectMargin = 0;
+
+   std::vector<MergeSource> sources;
+
+   auto add = [&](double X, double Y, double Blur, const std::string &Colour) {
+      if (auto layer = add_text_effect_layer(filter, X, Y, Blur, Colour)) {
+         sources.emplace_back(VSF::REFERENCE, layer);
+         Self->txEffectMargin = std::max({ Self->txEffectMargin, std::abs(X) + (Blur * 1.5),
+            std::abs(Y) + (Blur * 1.5) });
+         return true;
+      }
+      return false;
+   };
+
+   bool built = true;
+   if (glow) built = add(0, 0, glow_radius, glow_colour);
+
+   // As in CSS, the first shadow in a list is drawn on top.
+
+   for (auto layer = shadows.rbegin(); built and (layer != shadows.rend()); layer++) {
+      built = add(layer->x, layer->y, layer->blur, layer->colour);
+   }
+
+   objFilterEffect *result = nullptr;
+   if (built and (not sources.empty())) {
+      sources.emplace_back(VSF::GRAPHIC);
+      auto merge = new_text_effect<objMergeFX>(filter, CLASSID::MERGEFX);
+      if (merge and (merge->setSourceList(sources) IS ERR::Okay) and (merge->init() IS ERR::Okay)) result = merge;
+      else built = false;
+   }
+
+   if (built and blended) {
+      auto composite = new_text_effect<objCompositeFX>(filter, CLASSID::COMPOSITEFX);
+      if (composite) {
+         composite->setOperator(blend_operator(*def.blend));
+         if (result) composite->setInput(result);
+         else composite->setSourceType(VSF::GRAPHIC);
+         composite->setMixType(VSF::BKGD);
+         if (composite->init() != ERR::Okay) built = false;
+      }
+      else built = false;
+   }
+
+   if (not built) {
+      FreeResource(filter);
+      Self->txEffects = nullptr;
+      return log.warning(ERR::CreateObject);
+   }
+
+   Self->Filter = (extVectorFilter *)filter;
+   update_text_effect_region(Self);
+   mark_buffers_for_refresh(Self);
+   return ERR::Okay;
 }
 
 //********************************************************************************************************************
@@ -3067,6 +3368,7 @@ static const FieldArray clTextFields[] = {
    { "Face",          FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW|FDF_PURE, TEXT_GET_Face, TEXT_SET_Face },
    { "FontSize",      FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_FontSize, TEXT_SET_FontSize },
    { "FontStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RI|FDF_PURE, TEXT_GET_FontStyle, TEXT_SET_FontStyle },
+   { "TextStyle",     FDF_VIRTUAL|FDF_CPPSTRING|FDF_RW, TEXT_GET_TextStyle, TEXT_SET_TextStyle },
    { "Descent",       FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_Descent },
    { "DisplayHeight", FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplayHeight },
    { "DisplaySize",   FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_DisplaySize },

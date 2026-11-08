@@ -347,7 +347,7 @@ APTR SurfacePan::GetFont(const Font &Font)
 {
    const auto &font = (const PanFont &)Font;
    if (font.handle) return font.handle;
-   return scintilla ? scintilla->FontHandles[0] : nullptr;
+   return scintilla ? scintilla->FontHandle : nullptr;
 }
 
 //********************************************************************************************************************

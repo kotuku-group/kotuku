@@ -35,8 +35,7 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=PAGE_WIDTH, pageHeight=PAGE_HEIGHT })
    local vp = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
-   options.face ?= 'Clean'
-   options.fontSize ?= 11
+   options.textStyle ?= 'face=Clean; size=11px'
    options.lexer ?= SCLEX_CPP
    options.lineNumbers ?= true
    options.foldingMarkers ?= true
@@ -143,7 +142,7 @@ end
 end
 
 @Test function TrueTypeScroll()
-   local scene <close>, vp, sci, bmp = newEditor({ face='Source Code Pro', fontSize=12 })
+   local scene <close>, vp, sci, bmp = newEditor({ textStyle='face=Source Code Pro; size=12px' })
    check sci.mtSelectRange(10, 120)
    -- GotoLine scrolls by the smallest distance that shows the line, i.e. in single lines here.
    for _, line in array<int> { 12, 13, 15, 14, 2, 1 } do
@@ -219,7 +218,7 @@ end
    local surface <close> = obj.new('Surface', { width=PAGE_WIDTH, height=PAGE_HEIGHT })
    local scene = surface.new('VectorScene', { surface=surface })
    local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
-   local sci = host.new('Scintilla', theme_utils.options({ face='Clean', fontSize=11, flags=SCIF_EDIT,
+   local sci = host.new('Scintilla', theme_utils.options({ textStyle='face=Clean; size=11px', flags=SCIF_EDIT,
       lineNumbers=true, palette={ lineHighlight='#f0f0ff' } }))
    sci.string = newDocument(TOTAL_LINES)
    check surface.acShow()

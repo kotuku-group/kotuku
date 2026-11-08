@@ -17,8 +17,8 @@
 <p>The Scintilla class provides advanced text editing capabilities that are suitable for modifying text files of any kind, as well as simple user input features for text input boxes.  The code is based on the Scintilla project at http://scintilla.org and it may be useful to study the official Scintilla documentation for further insight into its capabilities.</p>
 <p>The editor is hosted by a <class name="VectorViewport">VectorViewport</class>, which is referenced by <fl>Viewport</fl> and defaults to the Scintilla object's owner.  On initialisation the editor creates a <fl>View</fl> viewport that covers the host and clips the content, and a <fl>Page</fl> viewport within the View that represents the extent of the document.  Scrolling moves the Page within the View, so the View and Page can be passed to a scrollbar such as <code>gui/scrollbar</code> without further integration.  The visible text is painted into an internal bitmap that is drawn as the fill of a rectangle within the Page, and only the regions affected by edits, selection changes and scrolling are repainted.  The editor follows changes to the size of the host.  If the host is freed before the editor, the editor closes its pop-ups and releases its graphics, and operations that display content, such as <method>ShowCompletions</method>, fail with <code>ERR::NotPossible</code>.</p>
 <p>Keyboard input and the caret require the user focus, which is monitored through the <fl>Focus</fl> viewport.  The hosting <class name="VectorScene">VectorScene</class> must be linked to a <class name="Surface">Surface</class> for keyboard input, and should have the <code>VPF::IGNORE_TAB</code> flag if the Tab key is to reach the editor.</p>
-<p>Text is drawn by the Vector module with the font family in <fl>Face</fl> at the pixel size in <fl>FontSize</fl>.  Scalable and bitmap faces are supported, and all styles share the same family and size.  Lexer styles, margins, the caret, the line highlight and the selection are coloured from the per-editor palette, which is configured in one operation through <fl>ThemeXML</fl>.  Applications that use the GUI packages can build the theme from their GUI palette and reassign it when the palette changes.  The editor has no dependency on the GUI packages.</p>
-<p>Sizes and positions, including <fl>FontSize</fl>, <fl>LeftMargin</fl>, <fl>RightMargin</fl>, <method>ScrollToPoint</method> and the extent of the <fl>Page</fl>, are expressed in the units of the <fl>View</fl>.  If the host is scaled, the editor renders at the device resolution: the device scale is taken from all transforms and view boxes that apply to the <fl>View</fl>, the bitmap is sized in device pixels, and fonts, margins and the caret are drawn at that scale.  An editor in a host scaled by 1.5 therefore renders the same pixels as an unscaled editor with a <fl>FontSize</fl> that is 1.5 times larger, and pointer input is mapped to the same positions.  A change of scale, such as zooming the window, reloads the fonts and repaints the editor while retaining the top line and horizontal scroll position.  The completion list and call tip are closed by a change of scale.  The display density is not applied automatically; applications that use the GUI packages scale <fl>FontSize</fl> by <code>gui.interface.dpi / 96</code> as the other widgets do.</p>
+<p>Text is drawn by the Vector module with the font selected by <fl>TextStyle</fl>.  Scalable and bitmap faces are supported, and all styles share the same family and size.  Lexer styles, margins, the caret, the line highlight and the selection are coloured from the per-editor palette, which is configured in one operation through <fl>ThemeXML</fl>.  Applications that use the GUI packages can build the theme from their GUI palette and reassign it when the palette changes.  The editor has no dependency on the GUI packages.</p>
+<p>Sizes and positions, including the <fl>TextStyle</fl> size, <fl>LeftMargin</fl>, <fl>RightMargin</fl>, <method>ScrollToPoint</method> and the extent of the <fl>Page</fl>, are expressed in the units of the <fl>View</fl>.  If the host is scaled, the editor renders at the device resolution: the device scale is taken from all transforms and view boxes that apply to the <fl>View</fl>, the bitmap is sized in device pixels, and fonts, margins and the caret are drawn at that scale.  An editor in a host scaled by 1.5 therefore renders the same pixels as an unscaled editor with a <fl>TextStyle</fl> size that is 1.5 times larger, and pointer input is mapped to the same positions.  A change of scale, such as zooming the window, reloads the fonts and repaints the editor while retaining the top line and horizontal scroll position.  The completion list and call tip are closed by a change of scale.  The display density is not applied automatically; applications that use the GUI packages scale the <fl>TextStyle</fl> size by <code>gui.interface.dpi / 96</code> as the other widgets do.</p>
 <p>Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and Select All.  Items are disabled when they cannot be used: edits require <code>SCIF::EDIT</code>, Cut, Copy and Delete require a selection, and Paste requires text on the clipboard.  The menu is displayed with <code>gui/menu</code> at the pointer position, including over a transformed or scrolled host.  Closing the menu with Escape or by choosing an item returns the focus to the editor, while moving the focus elsewhere closes it without doing so.</p>
 <p>Code assistance is provided through a completion list and a call tip, which the client opens with <method>ShowCompletions</method> and <method>ShowCallTip</method>.  The <fl>CompletionCallback</fl> reports the events that typically prompt them, such as typed characters and Ctrl+Space, as well as accepted and cancelled completions.  Only one of the two pop-ups is open at a time.  They are drawn above the content of the scene with the editor's font and colours, are positioned at the text that they refer to, and are kept within the bounds of the scene.  They follow that text when the editor scrolls, and close if it scrolls out of view.  Pop-ups are drawn at the device scale of the host, but are not rotated with it, although their position follows it.  Refer to <method>ShowCompletions</method> for the keyboard and pointer interaction.</p>
 <p>Drag and drop requires the hosting <class name="VectorScene">VectorScene</class> to have <code>VPF::DROP_TARGETS</code> set.  The editor registers its visible <fl>View</fl> as a drop destination.  File paths are reported through <fl>FileDrop</fl>.  Text drops insert at the pointer's document position, preserve existing text, convert line endings to the document mode and require <code>SCIF::EDIT</code>.</p>
@@ -749,29 +749,6 @@ for one frame before the editor repaints.</li>
     </method>
 
     <method>
-      <name>SetFont</name>
-      <comment>Changes the font that is used for text display.</comment>
-      <prototype>ERR sci::SetFont(OBJECTPTR Object, STRVIEW Face)</prototype>
-      <tiriPrototype>err = SetFont(Face:str)</tiriPrototype>
-      <input>
-        <param type="STRVIEW" name="Face">The name of the new font face.</param>
-      </input>
-      <description>
-<p>Call SetFont() to change the font face that is used for displaying text.  The <code>Face</code> is a family name as accepted by the <fl>Face</fl> field, e.g. <code>Source Code Pro</code> or <code>Clean</code>.  The current <fl>FontSize</fl> in pixels is retained.</p>
-<p>If the new face is invalid or fails to load, the current font will remain unchanged.</p>
-      </description>
-      <result>
-        <error code="Okay">Operation successful.</error>
-        <error code="File">The font file could not be loaded.</error>
-        <error code="Search">No matching font could be resolved.</error>
-        <error code="ResolvePath">A call to ResolvePath() failed</error>
-        <error code="CreateObject">Failed to resolve the font handle.</error>
-        <error code="NullArgs">Function call missing argument value(s)</error>
-        <error code="CreateResource">Failed to create a new resource</error>
-      </result>
-    </method>
-
-    <method>
       <name>SetKeywords</name>
       <comment>Replaces a keyword set of the active lexer.</comment>
       <prototype>ERR sci::SetKeywords(OBJECTPTR Object, INT Set, STRVIEW Keywords)</prototype>
@@ -1035,17 +1012,6 @@ for one frame before the editor repaints.</li>
     </field>
 
     <field>
-      <name>Face</name>
-      <comment>The font family used for drawing and measuring document text.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>STRING</type>
-      <description>
-<p>Accepts a font family name supported by the vector module's GetFontHandle() function, including bitmap faces such as <code>Clean</code>.  The default is <code>Source Code Pro</code>.  Regular, bold, italic and bold italic styles share this family and <fl>FontSize</fl>.  Set this field before or after initialisation.  Changing it reloads the styles and updates layout and margins.  <method>SetFont</method> provides the same operation.  A failed resolution preserves the current face and handles.</p>
-<p>This field and <fl>FontSize</fl> replace the former Font object field; scripts must use these fields to customise fonts.</p>
-      </description>
-    </field>
-
-    <field>
       <name>FileDrop</name>
       <comment>A callback for receiving drag and drop file notifications.</comment>
       <access read="G" write="S">Get/Set</access>
@@ -1087,16 +1053,6 @@ for one frame before the editor repaints.</li>
       <description>
 <p>Set this field to <code>true</code> to enable code folding.  Folding is computed by the active <fl>Lexer</fl>, so a document without a lexer, or with a lexer that does not support folding, has no folds.  The fold margin is shown to the left of the text and marks each fold with a box that contains a plus (contracted) or minus (expanded) sign.  Clicking the box of a fold toggles it.  Folds can also be toggled with <method>ToggleFold</method>.</p>
 <p>The lines of a contracted fold are hidden.  They are shown again if the fold is expanded, if the cursor is moved into them with <method>GotoLine</method> or <method>SelectRange</method>, or if they are edited.  Setting FoldingMarkers to <code>false</code> expands every fold.</p>
-      </description>
-    </field>
-
-    <field>
-      <name>FontSize</name>
-      <comment>The font em size in pixels.</comment>
-      <access read="R" write="S">Read/Set</access>
-      <type>INT</type>
-      <description>
-<p>Sets a positive integer pixel size for every text style.  The default is 14 pixels.  This is not a point size and is independent of display density.  The size is expressed in the units of the <fl>View</fl>, so the fonts are loaded at the size multiplied by the device scale of the host, rounded to whole pixels.  Bitmap faces select their nearest supported point size and are not scaled. Set this field before or after initialisation.  Changing it reloads the font handles and updates layout and margins.</p>
       </description>
     </field>
 
@@ -1311,6 +1267,19 @@ for one frame before the editor repaints.</li>
       <comment>The document length in bytes, including tabs, CR and LF bytes.  An empty document has length zero.</comment>
       <access read="G">Get</access>
       <type>INT</type>
+    </field>
+
+    <field>
+      <name>TextStyle</name>
+      <comment>A font definition that selects the font used for drawing and measuring document text.</comment>
+      <access read="R" write="S">Read/Set</access>
+      <type>STRING</type>
+      <description>
+<p>TextStyle is the exclusive interface for selecting the editor's font, e.g. <code>face=Source Code Pro; size=14px; weight=500</code>.  Its syntax is shared with <class name="VectorText" field="TextStyle">VectorText.TextStyle</class>, and the default is <code>face=Source Code Pro; size=14px</code>.</p>
+<p>Assignment overwrites the declared keys only, and reading the field returns the canonical form of the accumulated definition.  The <code>face</code>, <code>size</code>, style and axis keys are honoured.  Other keys are retained but have no effect, as the theme palette owns colours.  Each style's bold and italic attributes are applied over the definition.</p>
+<p>The size is in the units of the <fl>View</fl>, so fonts are loaded at the size multiplied by the device scale of the host, rounded to whole pixels.  Bitmap faces select their nearest supported point size and are not scaled.  A value of <code>size</code> in points is converted at the fixed ratio of 96 / 72.</p>
+<p>Set this field before or after initialisation.  A change reloads the styles and updates layout and margins.  A malformed definition returns <code>ERR::Syntax</code>, and a failed font resolution retains the existing settings.</p>
+      </description>
     </field>
 
     <field>

@@ -175,6 +175,19 @@ function saveFontScene(Scene:obj!):str
    return io.readAll(path)
 end
 
+@Test function DefinitionKeysAreNotSavedAsAxes()
+   local scene = loadScene('<g id="defn_host"/>')
+   obj.find('defn_host').new('VectorText', {
+      string='H', face='Noto Sans', fontStyle='face=X; size=15; fill=#fff; glow=1 #000; style=Bold; GRAD=-50'
+   })
+   local saved = saveFontScene(scene)
+   assert(saved.find('GRAD') != nil, f'Real axis tags must be saved: {saved}')
+   for tag in values(array<str> { 'size', 'face', 'fill', 'glow' }) do
+      assert(saved.find(f'quot;{tag}') is nil, f'{tag} must not be saved as an axis: {saved}')
+   end
+   assert(saved.find('font-weight="700"') != nil, f'style= must be reduced to its traits: {saved}')
+end
+
 @Test function FontWeightPrecedenceSurvivesSaving()
    for case in values(array<table> {
       { style='weight=700', weight=300, expected=700 },

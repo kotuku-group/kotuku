@@ -98,7 +98,7 @@ end
    local state = subscribe(sci)
    local revision = sci.documentRevision
    sci.lexer = SCLEX_TIRI
-   sci.fontSize = 16
+   sci.textStyle = 'size=16px'
    check sci.mtSelectRange(1, 4)
    check sci.mtReplaceRange(0, 0, '')
    assert(sci.mtReplaceRange(-1, 0, 'invalid') is ERR_OutOfRange, 'Invalid edits are rejected')

@@ -26,20 +26,20 @@ Keyboard input and the caret require the user focus, which is monitored through 
 @VectorScene must be linked to a @Surface for keyboard input, and should have the `VPF::IGNORE_TAB` flag if the Tab
 key is to reach the editor.
 
-Text is drawn by the Vector module with the font family in #Face at the pixel size in #FontSize.  Scalable and bitmap
+Text is drawn by the Vector module with the font selected by #TextStyle.  Scalable and bitmap
 faces are supported, and all styles share the same family and size.  Lexer styles, margins, the caret, the line
 highlight and the selection are coloured from the per-editor palette, which is configured in one operation through
 #ThemeXML.  Applications that use the GUI packages can build the theme from their GUI palette and reassign it when
 the palette changes.  The editor has no dependency on the GUI packages.
 
-Sizes and positions, including #FontSize, #LeftMargin, #RightMargin, #ScrollToPoint() and the extent of the #Page,
+Sizes and positions, including #TextStyle sizes, #LeftMargin, #RightMargin, #ScrollToPoint() and the extent of the #Page,
 are expressed in the units of the #View.  If the host is scaled, the editor renders at the device resolution: the
 device scale is taken from all transforms and view boxes that apply to the #View, the bitmap is sized in device
 pixels, and fonts, margins and the caret are drawn at that scale.  An editor in a host scaled by 1.5 therefore renders
-the same pixels as an unscaled editor with a #FontSize that is 1.5 times larger, and pointer input is mapped to the
+the same pixels as an unscaled editor with a #TextStyle size that is 1.5 times larger, and pointer input is mapped to the
 same positions.  A change of scale, such as zooming the window, reloads the fonts and repaints the editor while
 retaining the top line and horizontal scroll position.  The completion list and call tip are closed by a change of
-scale.  The display density is not applied automatically; applications that use the GUI packages scale #FontSize by
+scale.  The display density is not applied automatically; applications that use the GUI packages scale the #TextStyle size by
 `gui.interface.dpi / 96` as the other widgets do.
 
 Releasing the right mouse button over the editor opens a context menu with Undo, Redo, Cut, Copy, Paste, Delete and
@@ -218,8 +218,8 @@ static ERR SET_Wordwrap(extScintilla *, int);
 
 //********************************************************************************************************************
 
-static ERR resolve_fonts(extScintilla *, std::string_view, int);
-static ERR SET_Face(extScintilla *, const std::string_view &);
+static ERR SET_TextStyle(extScintilla *, const std::string_view &);
+static ERR resolve_fonts(extScintilla *, const std::string &, const std::string &, int);
 static ERR create_scintilla(void);
 static ERR create_canvas(extScintilla *);
 static void queue_repaint(extScintilla *);
@@ -236,7 +236,6 @@ static void update_view(extScintilla *);
 static void align_canvas(extScintilla *);
 static void apply_metrics(extScintilla *);
 static bool face_scalable(std::string_view);
-static ERR get_font_handles(std::string_view, int, APTR *);
 static void fonts_changed(extScintilla *);
 static void sync_page(extScintilla *);
 static void clear_bitmap(extScintilla *);
@@ -602,9 +601,10 @@ static void update_view(extScintilla *Self)
       Self->PointerX *= Self->Scale / old_scale;
       Self->PointerY *= Self->Scale / old_scale;
 
-      APTR handles[4];
-      if (get_font_handles(Self->Face, scaled(Self, Self->FontSize), handles) IS ERR::Okay) {
-         std::copy(std::begin(handles), std::end(handles), Self->FontHandles);
+      APTR handle;
+      const int size = std::max(1, scaled(Self, Self->FontSize));
+      if (vec::GetFontHandle(Self->Face, Self->TextStyle, 0, size, &handle) IS ERR::Okay) {
+         Self->FontHandle = handle;
       }
 
       if (Self->API) {
@@ -2044,7 +2044,7 @@ static ERR SCINTILLA_Init(extScintilla *Self, APTR)
    Self->ScalableFace = face_scalable(Self->Face);
    if (auto error = create_canvas(Self); error != ERR::Okay) return error;
 
-   if (auto error = resolve_fonts(Self, Self->Face, Self->FontSize); error != ERR::Okay) return error;
+   if (auto error = resolve_fonts(Self, Self->TextStyle, Self->Face, Self->FontSize); error != ERR::Okay) return error;
 
    if (Self->Scene->SurfaceID) { // Make UI subscriptions as long as we're not headless
       // Keyboard input is delivered while the Focus viewport or one of its children has the focus.
@@ -2533,42 +2533,6 @@ static ERR SCINTILLA_SaveToObject(extScintilla *Self, struct acSaveToObject *Arg
    std::vector<char> buffer(len+1);
    SCICALL(SCI_GETTEXT, buffer.size(), (const char *)buffer.data());
    return acWrite(Args->Dest, std::span<const int8_t>((const int8_t *)buffer.data(), size_t(len)));
-}
-
-/*********************************************************************************************************************
-
--METHOD-
-SetFont: Changes the font that is used for text display.
-
-Call SetFont() to change the font face that is used for displaying text.  The `Face` is a family name as accepted by
-the #Face field, e.g. `Source Code Pro` or `Clean`.  The current #FontSize in pixels is retained.
-
-If the new face is invalid or fails to load, the current font will remain unchanged.
-
--INPUT-
-strview Face: The name of the new font face.
-
--ERRORS-
-Okay
-NullArgs
-CreateObject: Failed to resolve the font handle.
-Search: No matching font could be resolved.
-File: The font file could not be loaded.
-ResolvePath
-CreateResource
--END-
-
-*********************************************************************************************************************/
-
-static ERR SCINTILLA_SetFont(extScintilla *Self, struct sci::SetFont *Args)
-{
-   kt::Log log;
-
-   if ((not Args) or Args->Face.empty()) return log.warning(ERR::NullArgs);
-
-   log.branch("%.*s", int(Args->Face.size()), Args->Face.data());
-
-   return SET_Face(Self, Args->Face);
 }
 
 /*********************************************************************************************************************
@@ -3350,43 +3314,51 @@ static ERR SET_FoldingMarkers(extScintilla *Self, int Value)
 /*********************************************************************************************************************
 
 -FIELD-
-Face: The font family used for drawing and measuring document text.
+TextStyle: A font definition that selects the font used for drawing and measuring document text.
 
-Accepts a font family name supported by the vector module's GetFontHandle() function, including bitmap faces such
-as `Clean`.  The default is `Source Code Pro`.  Regular, bold, italic and bold italic styles share this family and
-#FontSize.  Set this field before or after initialisation.  Changing it reloads the styles and updates layout and
-margins.  #SetFont() provides the same operation.  A failed resolution preserves the current face and handles.
+TextStyle is the exclusive interface for selecting the editor's font, e.g. `face=Source Code Pro; size=14px;
+weight=500`.  Its syntax is shared with @VectorText.TextStyle, and the default is
+`face=Source Code Pro; size=14px`.
 
-This field and #FontSize replace the former Font object field; scripts must use these fields to customise fonts.
+Assignment overwrites the declared keys only, and reading the field returns the canonical form of the accumulated
+definition.  The `face`, `size`, style and axis keys are honoured.  Other keys are retained but have no effect, as the
+theme palette owns colours.  Each style's bold and italic attributes are applied over the definition.
 
-*********************************************************************************************************************/
+The size is in the units of the #View, so fonts are loaded at the size multiplied by the device scale of the host,
+rounded to whole pixels.  Bitmap faces select their nearest supported point size and are not scaled.  A value of
+`size` in points is converted at the fixed ratio of 96 / 72.
 
-static ERR SET_Face(extScintilla *Self, const std::string_view &Value)
-{
-   if (Value.empty()) return ERR::NullArgs;
-   if (Self->initialised()) return resolve_fonts(Self, Value, Self->FontSize);
-   Self->Face = Value;
-   return ERR::Okay;
-}
-
-/*********************************************************************************************************************
-
--FIELD-
-FontSize: The font em size in pixels.
-
-Sets a positive integer pixel size for every text style.  The default is 14 pixels.  This is not a point size and
-is independent of display density.  The size is expressed in the units of the #View, so the fonts are loaded at the
-size multiplied by the device scale of the host, rounded to whole pixels.  Bitmap faces select their nearest
-supported point size and are not scaled.
-Set this field before or after initialisation.  Changing it reloads the font handles and updates layout and margins.
+Set this field before or after initialisation.  A change reloads the styles and updates layout and margins.  A
+malformed definition returns `ERR::Syntax`, and a failed font resolution retains the existing settings.
 
 *********************************************************************************************************************/
 
-static ERR SET_FontSize(extScintilla *Self, int Value)
+static ERR SET_TextStyle(extScintilla *Self, const std::string_view &Value)
 {
-   if (Value <= 0) return ERR::OutOfRange;
-   if (Self->initialised()) return resolve_fonts(Self, Self->Face, Value);
-   Self->FontSize = Value;
+   kt::Log log;
+
+   if (Value.empty()) return ERR::Okay;
+
+   // Later keys override earlier ones, so appending the value merges it into the current definition.
+
+   std::string canonical;
+   const auto merged = Self->TextStyle + ";" + std::string(Value);
+   if (auto error = vec::NormaliseTextStyle(merged, &canonical); error != ERR::Okay) return log.warning(error);
+
+   KeyValue *result;
+   if (auto error = vec::ReadTextStyle(canonical, &result); error != ERR::Okay) return log.warning(error);
+   auto keys = (const KEYVALUE *)result;
+
+   std::string face(keys->at("face"));
+   std::string size(keys->at("size"));
+   const double number = std::stod(size);
+   const int pixels = std::max(1, int(std::lround(size.ends_with("pt") ? number * 96.0 / 72.0 : number)));
+
+   if (Self->initialised()) return resolve_fonts(Self, canonical, face, pixels);
+
+   Self->TextStyle = canonical;
+   Self->Face = face;
+   Self->FontSize = pixels;
    return ERR::Okay;
 }
 
@@ -4271,23 +4243,6 @@ static bool face_scalable(std::string_view Face)
    return (meta & FMETA::SCALED) != FMETA::NIL;
 }
 
-static ERR get_font_handles(std::string_view Face, int Size, APTR *Handles)
-{
-   kt::Log log(__FUNCTION__);
-   constexpr CSTRING styles[] = { "Regular", "Bold", "Italic", "Bold Italic" };
-
-   Size = std::max(1, Size);
-   if (auto error = vec::GetFontHandle(Face, styles[0], 0, Size, &Handles[0]); error != ERR::Okay) return error;
-
-   for (int i = 1; i < 4; i++) {
-      if (vec::GetFontHandle(Face, styles[i], 0, Size, &Handles[i]) != ERR::Okay) {
-         Handles[i] = Handles[0];
-         log.warning("Unable to resolve %.*s %s; using Regular.", int(Face.size()), Face.data(), styles[i]);
-      }
-   }
-   return ERR::Okay;
-}
-
 // Update the styles and the measurements that depend on the fonts.
 
 static void fonts_changed(extScintilla *Self)
@@ -4301,18 +4256,20 @@ static void fonts_changed(extScintilla *Self)
 // Fonts are loaded at the device scale, because Scintilla's client units are device pixels.  A change of face can
 // change the device scale, in which case the View is reconfigured for it.
 
-static ERR resolve_fonts(extScintilla *Self, std::string_view Face, int Size)
+static ERR resolve_fonts(extScintilla *Self, const std::string &Definition, const std::string &Face, int Size)
 {
    const bool scalable = face_scalable(Face);
    const double scale = device_scale(Self, scalable);
 
-   APTR handles[4];
-   if (auto error = get_font_handles(Face, int(std::lround(Size * scale)), handles); error != ERR::Okay) return error;
+   APTR handle;
+   if (auto error = vec::GetFontHandle(Face, Definition, 0, std::max(1, int(std::lround(Size * scale))), &handle);
+         error != ERR::Okay) return error;
 
+   Self->TextStyle = Definition;
    Self->Face = Face;
    Self->FontSize = Size;
    Self->ScalableFace = scalable;
-   std::copy(std::begin(handles), std::end(handles), Self->FontHandles);
+   Self->FontHandle = handle;
 
    if (Self->initialised()) {
       if (scale != Self->Scale) update_view(Self);
@@ -4706,7 +4663,7 @@ static void set_scroll_width(extScintilla *Self)
 
 static void calc_longest_line(extScintilla *Self)
 {
-   if (not Self->FontHandles[0]) return;
+   if (not Self->FontHandle) return;
 
    kt::Log log(__FUNCTION__);
    log.traceBranch("Wrap: %d", Self->Wordwrap);
@@ -4767,7 +4724,7 @@ static void check_modified_widths(extScintilla *Self)
    const int last  = std::clamp(Self->WidthCheckLast, 0, last_line);
    Self->WidthCheckFirst = INT_MAX;
    Self->WidthCheckLast  = -1;
-   if ((Self->Wordwrap) or (not Self->FontHandles[0])) return;
+   if ((Self->Wordwrap) or (not Self->FontHandle)) return;
 
    int line;
    int width = measure_widest_line(Self, first, last, line);
@@ -5081,7 +5038,7 @@ static ERR GET_SupportedLexers(extScintilla *, std::string_view &Value)
 #include "class_scintilla_def.cxx"
 
 static const FieldArray clFields[] = {
-   { "Face",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Face },
+   { "TextStyle",      FDF_CPPSTRING|FDF_RW, nullptr, SET_TextStyle },
    { "Path",           FDF_CPPSTRING|FDF_RW, nullptr, SET_Path },
    { "EventFlags",     FDF_INT|FDF_FLAGS|FDF_RW, nullptr, nullptr, &clScintillaEventFlags },
    { "Flags",          FDF_INTFLAGS|FDF_RI, nullptr, nullptr, &clScintillaFlags },
@@ -5095,7 +5052,6 @@ static const FieldArray clFields[] = {
    { "CursorCol",      FDF_INT|FDF_R, GET_CursorCol },
    { "Lexer",          FDF_INT|FDF_LOOKUP|FDF_RW, nullptr, SET_Lexer, &clScintillaLexer },
    { "Modified",       FDF_INT|FDF_RW, nullptr, SET_Modified },
-   { "FontSize",       FDF_INT|FDF_RW, nullptr, SET_FontSize },
    // Virtual fields
    { "ThemeXML",           FDF_OBJECT|FDF_RW|FDF_PURE, GET_ThemeXML, SET_ThemeXML, CLASSID::XML },
    { "ActivePopup",        FDF_INT|FDF_LOOKUP|FDF_R,  GET_ActivePopup, nullptr, &clScintillaSCPOP },

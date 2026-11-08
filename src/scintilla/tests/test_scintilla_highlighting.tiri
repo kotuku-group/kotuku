@@ -22,8 +22,7 @@ function newEditor(Options:table):<obj, obj, obj>
    local scene = obj.new('VectorScene', { pageWidth=WIDTH, pageHeight=HEIGHT })
    local vp = scene.new('VectorViewport', { width='100%', height='100%' })
    local options = Options ?? { }
-   options.face = 'Clean'
-   options.fontSize = 11
+   options.textStyle = 'face=Clean; size=11px'
    local sci = vp.new('Scintilla', options)
    theme_utils.apply(sci, { lineHighlight='transparent' })
    local bmp = obj.new('Bitmap', { width=WIDTH, height=HEIGHT, bitsPerPixel=32 })

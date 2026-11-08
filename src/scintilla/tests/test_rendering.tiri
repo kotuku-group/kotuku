@@ -9,7 +9,7 @@
 function compareRepaints(Face:str, Size:num)
    local scene <close> = obj.new('VectorScene', { pageWidth=280, pageHeight=130 })
    local viewport = scene.new('VectorViewport', { x=0.25, y=0.5, width=279, height=129 })
-   local sci = viewport.new('Scintilla', theme_utils.options({ face=Face, fontSize=Size, lineNumbers=true,
+   local sci = viewport.new('Scintilla', theme_utils.options({ textStyle=f'face={Face}; size={Size}px', lineNumbers=true,
       symbols=true, showWhitespace=true,
       palette={ selectionForeground='transparent', selectionBackground='#0000ff80' } }))
    local bitmap <close> = obj.new('Bitmap', { width=280, height=130, bitsPerPixel=32 })
@@ -50,7 +50,7 @@ function compareRepaints(Face:str, Size:num)
    viewport.width = 210.5
    viewport.height = 105.25
    repaint_utils.assertFull(scene, sci, bitmap, 'Resized fractional viewport')
-   sci.fontSize = Size + 3
+   sci.textStyle = f'size={Size + 3}px'
    repaint_utils.assertFull(scene, sci, bitmap, 'Font reload')
 end
 
@@ -66,7 +66,7 @@ end
 @Test function DisabledSelectionOverrideKeepsTextVisible()
    local scene <close> = obj.new('VectorScene', { pageWidth=140, pageHeight=40 })
    local viewport = scene.new('VectorViewport', { width=140, height=40 })
-   local sci = viewport.new('Scintilla', theme_utils.options({ face='Clean', fontSize=11,
+   local sci = viewport.new('Scintilla', theme_utils.options({ textStyle='face=Clean; size=11px',
       palette={ selectionForeground='black', selectionBackground='#0000ff80' } }))
    local bitmap <close> = obj.new('Bitmap', { width=140, height=40, bitsPerPixel=32 })
    scene.bitmap = bitmap

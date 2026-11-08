@@ -140,9 +140,19 @@ template <size_t N>
 }
 
 //********************************************************************************************************************
-// Calls Function(Key, Value) for each ';' separated segment of a style string, with whitespace trimmed.  Empty
-// segments are skipped.  A segment without '=' is passed with an empty Key and the segment as the Value.  A segment
-// with '=' always has HasValue set, even if the key or value is empty.
+// Calls Function(Key, Value) for each ';' separated segment of a style string, with whitespace trimmed and a pair of
+// enclosing quotes removed from the value.  Empty segments are skipped.  A segment without '=' is passed with an empty
+// Key and the segment as the Value.  A segment with '=' always has HasValue set, even if the key or value is empty.
+// Values cannot contain ';', with or without quotes.
+
+[[nodiscard]] inline std::string_view unquote(std::string_view Value) noexcept
+{
+   if ((Value.size() >= 2) and ((Value.front() IS '\'') or (Value.front() IS '"')) and
+         (Value.back() IS Value.front())) {
+      return Value.substr(1, Value.size() - 2);
+   }
+   return Value;
+}
 
 template <class T> void for_each_descriptor(std::string_view Style, T &&Function)
 {
@@ -153,7 +163,7 @@ template <class T> void for_each_descriptor(std::string_view Style, T &&Function
       if (segment.empty()) continue;
 
       if (auto eq = segment.find('='); eq != std::string_view::npos) {
-         Function(trim(segment.substr(0, eq)), trim(segment.substr(eq + 1)), true);
+         Function(trim(segment.substr(0, eq)), unquote(trim(segment.substr(eq + 1))), true);
       }
       else Function(std::string_view(), segment, false);
    }
@@ -162,6 +172,75 @@ template <class T> void for_each_descriptor(std::string_view Style, T &&Function
 [[nodiscard]] inline bool is_descriptor_string(std::string_view Style) noexcept
 {
    return Style.find_first_of("=;") != std::string_view::npos;
+}
+
+// A four character key is an OpenType axis tag if it is a registered axis, or if it has no lower case letters.  Other
+// lower case keys are reserved for the font definition schema.  Tags are case sensitive, so `FILL` is an axis and
+// `fill` is a definition key.
+
+[[nodiscard]] inline bool is_axis_tag(std::string_view Key) noexcept
+{
+   if (Key.size() != 4) return false;
+   if ((Key IS "wght") or (Key IS "wdth") or (Key IS "ital") or (Key IS "slnt") or (Key IS "opsz")) return true;
+   for (auto ch : Key) {
+      if ((ch <= 0x20) or (ch >= 0x7f) or ((ch >= 'a') and (ch <= 'z'))) return false;
+   }
+   return true;
+}
+
+// Definition keys describe a complete font selection.  They are valid in a style string, where they have no effect.
+
+[[nodiscard]] inline bool is_definition_key(std::string_view Key)
+{
+   static constexpr std::array<std::string_view, 16> KEYS = {
+      "face", "size", "features", "lineheight", "letterspacing", "wordspacing", "kerning", "fill", "opacity", "stroke",
+      "strokewidth", "strokealign", "linejoin", "shadow", "glow", "blend"
+   };
+
+   if (is_axis_tag(Key)) return false;
+   auto key = normalise(Key);
+   for (auto entry : KEYS) {
+      if (entry IS key) return true;
+   }
+   return false;
+}
+
+// Returns the style name declared by a style string.  The last `style` key takes precedence, then the first bare name.
+
+[[nodiscard]] inline std::string_view declared_name(std::string_view Style)
+{
+   std::string_view bare, keyed;
+   for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
+      if (not HasValue) { if (bare.empty()) bare = Value; }
+      else if ((normalise(Key) IS "style") and (not Value.empty())) keyed = Value;
+   });
+   return keyed.empty() ? bare : keyed;
+}
+
+// Reduces a style string or font definition to the part that selects a font: the style name, in leading position, and
+// its descriptors.  Definition keys are removed, so the result is suitable for caching and for merging.
+
+[[nodiscard]] inline std::string style_part(std::string_view Style)
+{
+   if (not is_descriptor_string(Style)) return std::string(Style);
+
+   std::string result(declared_name(Style));
+   bool first_bare = true;
+   auto append = [&result](std::string_view Key, std::string_view Value) {
+      if (not result.empty()) result.push_back(';');
+      if (not Key.empty()) result.append(Key).push_back('=');
+      result.append(Value);
+   };
+
+   for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
+      if (not HasValue) {
+         if (not first_bare) append({ }, Value);
+         first_bare = false;
+      }
+      else if ((normalise(Key) != "style") and (not is_definition_key(Key))) append(Key, Value);
+   });
+
+   return result;
 }
 
 //********************************************************************************************************************
@@ -219,21 +298,19 @@ template <class T> void for_each_descriptor(std::string_view Style, T &&Function
 [[nodiscard]] inline traits style_traits(std::string_view Style, double Weight = 0)
 {
    traits result;
-   bool named = false;
    std::optional<double> weight;
    if ((Weight > 0) and (Weight != 400)) weight = Weight;
 
+   if (auto name = declared_name(Style); not name.empty()) {
+      auto from_name = name_traits(name);
+      result.width  = from_name.width;
+      result.italic = from_name.italic;
+      result.recognised = from_name.recognised;
+      if (not weight) result.weight = from_name.weight;
+   }
+
    for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
-      if (not HasValue) {
-         if (named) return;
-         named = true;
-         auto from_name = name_traits(Value);
-         result.width  = from_name.width;
-         result.italic = from_name.italic;
-         result.recognised = from_name.recognised;
-         if (not weight) result.weight = from_name.weight;
-         return;
-      }
+      if (not HasValue) return;
 
       auto key = normalise(Key);
       if (key IS "weight") { if (auto v = parse_weight(Value)) weight = *v; }
@@ -282,14 +359,11 @@ template <size_t N>
 
 [[nodiscard]] inline std::string selection_name(std::string_view Style, double Weight = 0)
 {
-   std::string_view named;
+   auto named = declared_name(Style);
    bool traits_given = (Weight > 0) and (Weight != 400);
 
    for_each_descriptor(Style, [&](std::string_view Key, std::string_view Value, bool HasValue) {
-      if (not HasValue) {
-         if (named.empty()) named = Value;
-         return;
-      }
+      if (not HasValue) return;
       auto key = normalise(Key);
       if ((key IS "weight") or (key IS "width") or (key IS "italic") or (key IS "slant")) traits_given = true;
    });

@@ -6,7 +6,7 @@ function newEditor():<obj, obj, obj, obj>
    local surface = obj.new('Surface', { width=300, height=120 })
    local scene = surface.new('VectorScene', { surface=surface, flags=VPF_IGNORE_TAB })
    local host = scene.new('VectorViewport', { width='100%', height='100%' })
-   local sci = host.new('Scintilla', { flags=SCIF_EDIT, face='Clean', fontSize=11 })
+   local sci = host.new('Scintilla', { flags=SCIF_EDIT, textStyle='face=Clean; size=11px' })
    check surface.acShow()
    check surface.acFocus()
    check host.acFocus()

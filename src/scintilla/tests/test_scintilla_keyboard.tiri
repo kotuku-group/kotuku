@@ -72,8 +72,7 @@ function newEditor(Options:table):<obj, obj, obj, obj>
    local scene = surface.new('VectorScene', { surface=surface })
    local host = scene.new('VectorViewport', { x=0, y=0, width='100%', height='100%' })
    local options = Options ?? { }
-   options.face ?= 'Clean'
-   options.fontSize ?= 11
+   options.textStyle ?= 'face=Clean; size=11px'
    options.flags ?= SCIF_EDIT
    local sci = host.new('Scintilla', theme_utils.options(options))
    surface.acShow()
