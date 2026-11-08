@@ -198,6 +198,9 @@ bool try_cache(const std::string &Path, const Identity &Expected, const Identity
    if (ValidatePayload) {
       Counters.PayloadValidations++;
       if (not ValidatePayload(envelope.Payload, reason)) {
+         // Rejection of bytecode that the cache itself published indicates a writer/reader mismatch or a corrupt
+         // file, and the module will be rebuilt and republished on every run.  Report it beyond trace level.
+         kt::Log(__FUNCTION__).warning("Rejected cached bytecode '%s': %s", Path.c_str(), reason.c_str());
          Output.Diagnostic = std::move(reason);
          return false;
       }

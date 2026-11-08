@@ -578,6 +578,10 @@ StaticResultSet describe_object_call_results(const FunctionField *Fields, lua_St
          value.primary = TiriType::Str;
          value.nullable = not (type & FD_CPP) or (type & FD_MUTABLE);
       }
+      else if ((type & FD_STRUCT) and Fields[i].Name and is_keyvalue_struct(Fields[i].Name)) {
+         value.primary = TiriType::Table;
+         value.nullable = true;
+      }
       else if (type & FD_STRUCT) {
          value.primary = TiriType::Struct;
          value.nullable = true;
@@ -633,6 +637,9 @@ StaticResultSet describe_module_call_results(const FunctionField *Fields, lua_St
       value.proof = StaticProof::Trusted;
       value.nullable = true;
       if (Field.Type & FD_OBJECT) value.primary = TiriType::Object;
+      else if ((Field.Type & FD_STRUCT) and Field.Name and is_keyvalue_struct(Field.Name)) {
+         value.primary = TiriType::Table;
+      }
       else if (Field.Type & FD_STRUCT) {
          value.primary = TiriType::Struct;
          value.struct_def = resolve_struct(Field);
@@ -711,7 +718,7 @@ StaticResultSet describe_module_call_results(const FunctionField *Fields, lua_St
    }
    else if (direct.Type & FD_PTR) {
       StaticValueDescriptor value = describe_pointer(direct);
-      if ((direct.Type & FD_STRUCT) and not (direct.Type & FD_RESOURCE) and not value.struct_def) {
+      if ((value.primary IS TiriType::Struct) and not (direct.Type & FD_RESOURCE) and not value.struct_def) {
          value.primary = TiriType::Userdata;
       }
       append(value);

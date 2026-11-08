@@ -416,7 +416,15 @@ ParserResult<IrEmitUnit> IrEmitter::emit_plain_assignment(std::vector<PreparedAs
 
             ExpDesc value_expr;
             value_expr.init(ExpKind::NonReloc, value_slot);
-            this->emit_target_store(target.element_plan, &target.storage, &value_expr);
+
+            // An unannotated local takes its type from this value, so the first store needs no runtime contract,
+            // matching local declarations.  Annotated targets remain checked by the normal store path.
+
+            if (target.pending_type IS TiriType::Unknown) {
+               expr_free(&this->func_state, &value_expr);
+               expr_toreg(&this->func_state, &value_expr, target.storage.u.s.info);
+            }
+            else this->emit_target_store(target.element_plan, &target.storage, &value_expr);
          }
          else {
             // Existing target - copy value to it
