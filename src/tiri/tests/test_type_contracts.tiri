@@ -1593,3 +1593,36 @@ end
    assert(accept(resource) is 'compiler_capture_write_test',
       'An assignment in a closure should still establish the captured local type')
 end
+
+-- Assignments that mix a new local with a blank or existing target must treat that local's first store like a local
+-- declaration.  The disassembly is compared because a correctly inferred result behaves identically either way.
+
+@Test function MixedAssignmentFirstStoreMatchesDeclaration()
+   local function disassemble(Statement:str):str
+      local script = obj.new('tiri', { statement = Statement })
+      script.acQuery()
+      script.acActivate()
+      local _, disasm = script.mtDebugLog('disasm')
+      return disasm
+   end
+
+   local prefix = 'function pair():<num,str> return 1, "a" end\n'
+   local expected = disassemble(prefix .. 'local a, b = pair()').count('CONTRACT')
+   assert(disassemble(prefix .. 'a, b = pair()').count('CONTRACT') is expected, 'All new targets')
+   assert(disassemble(prefix .. '_, b = pair()').count('CONTRACT') is expected, 'Leading blank target')
+   assert(disassemble(prefix .. 'a, b, _ = pair()').count('CONTRACT') is expected, 'Trailing blank target')
+end
+
+@Test function MixedAssignmentAnnotatedTargetIsChecked()
+   expect_contract_failure(function()
+      _, value:str = 1, dynamic_value(2)
+   end, 'annotated mixed assignment')
+end
+
+@Test function MixedAssignmentLaterStoreIsChecked()
+   function pair():<num,str> return 1, 'a' end
+   expect_contract_failure(function()
+      _, value = pair()
+      value = dynamic_value(2)
+   end, 'reassigned mixed-assignment local')
+end
