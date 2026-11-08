@@ -209,6 +209,7 @@ gui.toggle = function(Options:table!):table
 
          if (Value is KEY_ENTER) or (Value is KEY_SPACE) or (Value is KEY_NP_ENTER) then
             toggleState()
+            return KRES_HANDLED
          end
       end)
 
