@@ -833,25 +833,34 @@ static void align_canvas(extScintilla *Self)
 // The Page is positioned at the negated scroll position, and the Canvas is positioned at the scroll position within
 // the Page so that it always covers the View.  Scroll positions are converted from client pixels to View units.
 
+// Reading a position can regenerate the scene graph.  That can run a client's feedback callback, in which the host
+// viewport can be freed, so the reference is tested after each read.  Returns false if the vector no longer exists.
+
+template <class T> static bool read_position(T * &Vector, Unit &X, Unit &Y)
+{
+   if (Vector) Vector->getX(X);
+   if (Vector) Vector->getY(Y);
+   return Vector != nullptr;
+}
+
 static void sync_page(extScintilla *Self)
 {
    if ((not Self->Page) or (not Self->Canvas)) return;
 
-   // Reading a position can regenerate the scene graph, which can scroll the editor through feedback_page(), so the
-   // scroll position is read afterwards.
+   // Reading a position can also scroll the editor through feedback_page(), so the scroll position is read afterwards.
 
    Unit x, y;
-   Self->Page->getX(x);
-   Self->Page->getY(y);
-   if (double(x) != -Self->ScrollX / Self->Scale) Self->Page->setX(-Self->ScrollX / Self->Scale);
-   if (double(y) != -Self->ScrollY / Self->Scale) Self->Page->setY(-Self->ScrollY / Self->Scale);
+   if (not read_position(Self->Page, x, y)) return;
+   const double page_x = -Self->ScrollX / Self->Scale;
+   const double page_y = -Self->ScrollY / Self->Scale;
+   if (double(x) != page_x) Self->Page->setX(page_x);
+   if ((Self->Page) and (double(y) != page_y)) Self->Page->setY(page_y);
 
-   Self->Canvas->getX(x);
-   Self->Canvas->getY(y);
+   if (not read_position(Self->Canvas, x, y)) return;
    const double canvas_x = Self->ScrollX / Self->Scale + Self->CanvasX;
    const double canvas_y = Self->ScrollY / Self->Scale + Self->CanvasY;
    if (double(x) != canvas_x) Self->Canvas->setX(canvas_x);
-   if (double(y) != canvas_y) Self->Canvas->setY(canvas_y);
+   if ((Self->Canvas) and (double(y) != canvas_y)) Self->Canvas->setY(canvas_y);
 }
 
 //********************************************************************************************************************
@@ -4770,6 +4779,7 @@ static void paint_dirty(extScintilla *Self)
    check_modified_widths(Self); // Can widen the Page before it is synchronised
    update_margin_width(Self); // A change to the margin width extends the Dirty region
    Self->API->panSyncPage();  // The Canvas must be positioned for the topLine that is about to be painted
+   if (not Self->Canvas) return; // The host viewport was freed by a client's feedback callback
 
    auto dirty = Self->Dirty;
    Self->Dirty = { 0, 0, 0, 0 };
