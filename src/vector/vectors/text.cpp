@@ -233,11 +233,11 @@ class extVectorText : public extVector {
    int txReportedRow = 0, txReportedColumn = 0, txReportedSelectRow = 0, txReportedSelectColumn = 0;
    bool txReportedSelection = false, txCursorChanged = false, txReportingCursor = false;
    double txInlineSize; // Enables word-wrapping
+   double txParagraphSpacing = 0; // Extra distance after each hard line break, in pixels
    VTW txWrapMode = VTW::WORD; // Permitted break points when word-wrapping
    Unit txX = Unit(0), txY = Unit(0);
    double txTextLength;
    double txFontSize;  // Em size in pixels (CSS px; FreeType runs at 72 DPI so 1pt = 1px).  Always a whole number.
-   double txLetterSpacing; // SVG: Acts as a multiplier or fixed unit addition to the spacing of each glyph
    double txWidth; // Width of the text computed by path generation.  Not for client use as GetBoundary() can be used for that.
    double txStartOffset; // TODO
    double txSpacing; // TODO
@@ -263,7 +263,7 @@ class extVectorText : public extVector {
    std::string txFontStyle;
    std::string txFontSizeString;
    std::string txTextStyle;  // Storage for reading the TextStyle field
-   font_def txDefinition;    // Keys of the last TextStyle values, including those that are not rendered yet
+   font_def txDefinition;    // Keys of the last TextStyle values.  Sole store for line height and spacing
    objVectorFilter *txEffects = nullptr; // Built from the shadow, glow and blend keys
    double txEffectMargin = 0; // The reach of the effects beyond the text's bounds
    bool txEffectsPending = false;
@@ -283,6 +283,31 @@ class extVectorText : public extVector {
       return (txFlags & (VTXF::EDITABLE|VTXF::SELECTABLE)) != VTXF::NIL;
    }
 
+   // The distance between baselines, given the natural pitch of the font.  A lineHeight with no unit is a multiple of
+   // the em size.  The result is a whole number so that baselines stay on the pixel grid.
+
+   double line_pitch(double Natural) const {
+      if (not txDefinition.line_height) return Natural;
+      auto &height = *txDefinition.line_height;
+      const bool multiple = height.unit IS font_length::UNIT::NONE;
+      const auto pitch = multiple ? height.value * txFontSize : height.pixels(txFontSize);
+      return std::max(1.0, std::round(pitch));
+   }
+
+   double letter_spacing() const {
+      return txDefinition.letter_spacing ? txDefinition.letter_spacing->pixels(txFontSize) : 0.0;
+   }
+
+   double word_spacing() const {
+      return txDefinition.word_spacing ? txDefinition.word_spacing->pixels(txFontSize) : 0.0;
+   }
+
+   // Paragraph spacing is a whole number so that baselines stay on the pixel grid.
+
+   double paragraph_spacing() const {
+      return std::round(txParagraphSpacing);
+   }
+
    // The wrap mode used by layout.  SECRET text always wraps at whitespace, so that the line breaks do not reveal
    // where symbols occur in the hidden string.
 
@@ -299,7 +324,6 @@ class extVectorText : public extVector {
       txCharLimit     = 0x7fffffff;
       txFamily        = "Noto Sans";
       Fill.Colour     = FRGB(1, 1, 1, 1);
-      txLetterSpacing = 1.0;
       DisableHitTesting = true;
    }
 
@@ -453,6 +477,17 @@ static WordExtent segment_extent(const char *String, VTW Mode, bool WordStart)
 
 //********************************************************************************************************************
 
+// True for the characters that receive word spacing.
+
+static constexpr bool is_word_gap(uint32_t Unicode)
+{
+   return (Unicode IS 0x20) or (Unicode IS 0xa0);
+}
+
+//********************************************************************************************************************
+// Letter spacing is applied between characters and not after the last character of a line.  Zero-advance glyphs such
+// as combining marks receive none, so that they stay attached to their base character.
+
 static double string_width(extVectorText *Self, const std::string_view &String)
 {
    const std::lock_guard lock(glFontMutex);
@@ -466,18 +501,27 @@ static double string_width(extVectorText *Self, const std::string_view &String)
    double widest  = 0;
    int prev_glyph = 0;
    int i = 0;
+   const double letter_spacing = Self->letter_spacing();
+   const double word_spacing = Self->word_spacing();
+   bool line_started = false;
    while (i < std::ssize(String)) {
       if (String[i] IS '\n') {
          if (widest < len) widest = len;
          len = 0;
          prev_glyph = 0; // Kerning does not apply across lines
+         line_started = false;
          i++;
       }
       else {
          uint32_t unicode;
          auto charlen = get_utf8(String, unicode, i);
          auto &glyph  = pt->get_glyph(unicode);
-         len += glyph.adv_x * Self->txLetterSpacing;
+         len += glyph.adv_x;
+         if (glyph.adv_x != 0) {
+            if (line_started) len += letter_spacing;
+            line_started = true;
+         }
+         if (is_word_gap(unicode)) len += word_spacing;
          if (kern) len += pt->kerning(prev_glyph, glyph.glyph_index);
          prev_glyph = glyph.glyph_index;
          i += charlen;
@@ -790,6 +834,10 @@ Align: Defines the alignment of the text string.
 
 This field specifies the horizontal alignment of the text string.  The standard alignment flags are supported in the
 form of `ALIGN::LEFT`, `ALIGN::HORIZONTAL` and `ALIGN::RIGHT`.
+
+Each line of multi-line or word-wrapped text is aligned individually about #X, so right-aligned rows end at #X and
+centred rows are centred on it.  Whitespace at the end of a word-wrapped row is ignored, and the alignment has no
+effect on text that follows a guide path.  To justify text, set `VTXF::JUSTIFY` in #TextFlags.
 
 In addition, the SVG equivalent values of `start`, `middle` and `end` are supported and map directly to the formerly
 mentioned align flags.
@@ -1300,8 +1348,8 @@ settings are unchanged.
 
 The `shadow`, `glow` and `blend` keys are rendered through a @VectorFilter that belongs to the text, which replaces the
 value of #Filter while any of them is active.  `blend` requires a backdrop, which is provided by setting the
-`ISOLATED` flag on an enclosing viewport.  The `lineHeight`, `letterSpacing`, `wordSpacing` and `features` keys,
-`kerning`, and any `strokeAlign` other than `centre`, are stored and returned but are not rendered at present.
+`ISOLATED` flag on an enclosing viewport.  The `features` key, a `kerning` value of `optical`, and any `strokeAlign`
+other than `centre`, are stored and returned but are not rendered at present.
 
 Reading the field returns the canonical form of the current state, including changes that have been made through
 fields such as #Face and #FontSize.  The result can be assigned to another VectorText or saved.
@@ -1338,6 +1386,9 @@ static ERR TEXT_GET_TextStyle(extVectorText *Self, std::string_view &Value)
    }
 
    if ((Self->Opacity != 1.0) or def.opacity) def.opacity = Self->Opacity;
+
+   if ((Self->txFlags & VTXF::NO_KERNING) != VTXF::NIL) def.kerning = "none";
+   else if (def.kerning and (*def.kerning IS "none")) def.kerning = "metrics";
 
    if ((Self->LineJoin != VLJ::MITER) or def.line_join) {
       switch (Self->LineJoin) {
@@ -1397,6 +1448,13 @@ static ERR TEXT_SET_TextStyle(extVectorText *Self, const std::string_view &Value
       else if (*def.line_join IS "bevel") Self->setLineJoin(VLJ::BEVEL);
       else Self->setLineJoin(VLJ::MITER);
    }
+
+   if (def.kerning) {
+      if (*def.kerning IS "none") Self->txFlags |= VTXF::NO_KERNING;
+      else Self->txFlags &= ~VTXF::NO_KERNING;
+   }
+
+   if (def.line_height or def.letter_spacing or def.word_spacing or def.kerning) reset_path(Self);
 
    if (def.shadow or def.glow or def.blend) {
       if (Self->initialised()) return update_text_effects(Self);
@@ -1561,24 +1619,133 @@ static ERR TEXT_SET_WrapMode(extVectorText *Self, VTW Value)
    return ERR::Okay;
 }
 
+//********************************************************************************************************************
+// The LineHeight, LetterSpacing and WordSpacing fields are shortcuts for the equivalent TextStyle keys.  A scaled Unit
+// is relative to the font size, and corresponds to a key in the unit given by ScaledUnit.
+
+static void get_length_unit(extVectorText *Self, const std::optional<font_length> &Length, Unit &Value)
+{
+   if (not Length) Value = Unit(0);
+   else if ((Length->unit IS font_length::UNIT::EM) or (Length->unit IS font_length::UNIT::NONE)) {
+      Value = Unit(Length->value, FD_SCALED);
+   }
+   else Value = Unit(Length->pixels(Self->txFontSize));
+}
+
+static void set_length_unit(extVectorText *Self, std::optional<font_length> &Length, const Unit &Value,
+   font_length::UNIT ScaledUnit)
+{
+   if ((not Value.defined()) or (Value.Value IS 0)) Length.reset();
+   else Length = font_length { Value.Value, Value.scaled() ? ScaledUnit : font_length::UNIT::PX };
+   reset_path(Self);
+}
+
 /*********************************************************************************************************************
 -FIELD-
-LetterSpacing: Private.  Currently unsupported.
--END-
+LetterSpacing: Additional space between characters.
+
+LetterSpacing adds a fixed distance between each pair of characters.  A number is a distance in pixels and a scaled
+value is relative to #FontSize, for example `2%` is 2% of the font size and follows any change to it.  Negative values
+bring the characters closer together.  The default of zero adds no spacing.
+
+No space is added after the last character of a line, and combining marks stay attached to their base character.
+#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `letterSpacing` key of #TextStyle,
+in which a scaled value is expressed with the `em` unit.  It has no effect on bitmap fonts.
+
 *********************************************************************************************************************/
 
-// SVG standard, presuming this inserts space as opposed to acting as a multiplier
-
-static ERR TEXT_GET_LetterSpacing(extVectorText *Self, double *Value)
+static ERR TEXT_GET_LetterSpacing(extVectorText *Self, Unit &Value)
 {
-   *Value = Self->txLetterSpacing;
+   get_length_unit(Self, Self->txDefinition.letter_spacing, Value);
    return ERR::Okay;
 }
 
-static ERR TEXT_SET_LetterSpacing(extVectorText *Self, double Value)
+static ERR TEXT_SET_LetterSpacing(extVectorText *Self, Unit &Value)
 {
-   Self->txLetterSpacing = Value;
-   reset_path(Self);
+   set_length_unit(Self, Self->txDefinition.letter_spacing, Value, font_length::UNIT::EM);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+WordSpacing: Additional space at the end of each word.
+
+WordSpacing adds a fixed distance to each space (U+0020) and non-breaking space (U+00A0).  A number is a distance in
+pixels and a scaled value is relative to #FontSize, for example `25%` is a quarter of the font size and follows any
+change to it.  The value can be negative.  The default of zero adds no spacing.
+
+#TextWidth and word-wrapping both include the spacing.  The field corresponds to the `wordSpacing` key of #TextStyle,
+in which a scaled value is expressed with the `em` unit.  It has no effect on bitmap fonts.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_WordSpacing(extVectorText *Self, Unit &Value)
+{
+   get_length_unit(Self, Self->txDefinition.word_spacing, Value);
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_WordSpacing(extVectorText *Self, Unit &Value)
+{
+   set_length_unit(Self, Self->txDefinition.word_spacing, Value, font_length::UNIT::EM);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+LineHeight: Overrides the distance between the baselines of consecutive lines.
+
+LineHeight replaces the font's natural line pitch.  A number is a distance in pixels and a scaled value is relative to
+#FontSize, for example `145%` is 1.45 times the font size and follows any change to it.  The default of zero uses the
+natural pitch of the font.  Negative values are not permitted.
+
+The pitch is rounded to a whole number of pixels and has a minimum of 1.  The first baseline remains at #Y, so the
+setting does not move the first line.  #LineSpacing reports the resulting pitch.
+
+The field corresponds to the `lineHeight` key of #TextStyle.  Note that a number with no unit is a multiple of the font
+size in that key, so `lineHeight=1.45` is equivalent to a field value of `145%`.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_LineHeight(extVectorText *Self, Unit &Value)
+{
+   get_length_unit(Self, Self->txDefinition.line_height, Value);
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_LineHeight(extVectorText *Self, Unit &Value)
+{
+   if (Value.defined() and (Value.Value < 0)) return ERR::OutOfRange;
+   set_length_unit(Self, Self->txDefinition.line_height, Value, font_length::UNIT::NONE);
+   return ERR::Okay;
+}
+
+/*********************************************************************************************************************
+-FIELD-
+ParagraphSpacing: Additional distance between paragraphs.
+
+ParagraphSpacing adds a fixed distance in pixels after each hard line break, on top of the normal distance between
+baselines.  Lines created by word-wrapping are unaffected, and no space is added after the last line.  The default of
+zero adds no spacing.  Negative values are not permitted.
+
+The distance is rounded to a whole number of pixels when applied, so that baselines stay on the pixel grid.  It is
+applicable to both scalable and bitmap fonts, and has no effect on guide paths.
+
+*********************************************************************************************************************/
+
+static ERR TEXT_GET_ParagraphSpacing(extVectorText *Self, double *Value)
+{
+   *Value = Self->txParagraphSpacing;
+   return ERR::Okay;
+}
+
+static ERR TEXT_SET_ParagraphSpacing(extVectorText *Self, double Value)
+{
+   if (Value < 0) return ERR::OutOfRange;
+   if (Value != Self->txParagraphSpacing) {
+      Self->txParagraphSpacing = Value;
+      reset_path(Self);
+   }
    return ERR::Okay;
 }
 
@@ -1607,8 +1774,9 @@ static ERR TEXT_SET_LineLimit(extVectorText *Self, int Value)
 -FIELD-
 LineSpacing: The number of pixels from one line to the next.
 
-This field can be queried for the vertical advance between each line of text.  The value is measured in the same pixel
-units as #FontSize, so it is unaffected by the display density and is subject to the same transforms as the text.
+This field can be queried for the vertical advance between each line of text, which reflects #LineHeight if it is set.
+The value is measured in the same pixel units as #FontSize, so it is unaffected by the display density and is subject
+to the same transforms as the text.
 
 *********************************************************************************************************************/
 
@@ -1619,11 +1787,11 @@ static ERR TEXT_GET_LineSpacing(extVectorText *Self, int *Value)
    }
 
    if (Self->txBitmapFont) {
-      *Value = Self->txBitmapFont->LineSpacing;
+      *Value = int(Self->line_pitch(Self->txBitmapFont->LineSpacing));
       return ERR::Okay;
    }
    else if (Self->txHandle->type IS CF_FREETYPE) {
-      *Value = ((freetype_font::ft_point *)Self->txHandle)->line_spacing;
+      *Value = int(Self->line_pitch(((freetype_font::ft_point *)Self->txHandle)->line_spacing));
       return ERR::Okay;
    }
    else {
@@ -1725,6 +1893,8 @@ static ERR TEXT_SET_StartOffset(extVectorText *Self, double Value)
 -FIELD-
 TextFlags: Controls text presentation, editing and selection.
 
+Text can be justified with `VTXF::JUSTIFY`, which requires #InlineSize.  Bitmap fonts and guide paths ignore the flag.
+
 -END-
 *********************************************************************************************************************/
 
@@ -1741,7 +1911,7 @@ static ERR TEXT_SET_Flags(extVectorText *Self, VTXF Value)
    constexpr auto input_flags = VTXF::EDITABLE|VTXF::SELECTABLE;
    const bool had_caret_geometry = Self->needs_caret_geometry();
    Self->txFlags = Value;
-   if (((previous_flags ^ Value) & VTXF::NO_KERNING) != VTXF::NIL) reset_path(Self);
+   if (((previous_flags ^ Value) & (VTXF::NO_KERNING|VTXF::JUSTIFY)) != VTXF::NIL) reset_path(Self);
    if ((Value & VTXF::NO_AUTO_OFFSET) != VTXF::NIL) {
       Self->txXOffset = 0;
       Self->txYOffset = 0;
@@ -2120,6 +2290,98 @@ static void calc_caret_position(TextLine &Line, agg::trans_affine &Transform, do
    Transform.transform(&bottom_x, &bottom_y);
    Line.chars.back().lineTop = std::min(top_y, bottom_y);
    Line.chars.back().lineHeight = std::abs(bottom_y - top_y);
+}
+
+//********************************************************************************************************************
+// One visual line of multi-line text, recorded so that it can be aligned once the width of the block is known.
+
+struct TextGap {
+   unsigned vertex; // First path vertex of the word that follows the gap
+   size_t column;   // Entry in TextLine::chars of the word that follows the gap
+};
+
+struct TextRow {
+   TextLine *line;
+   size_t first_char, end_char;       // Range of entries in line->chars
+   unsigned first_vertex, end_vertex; // Range of path vertices, not used by bitmap fonts
+   double width;                      // Excludes the trailing whitespace of a soft-wrapped line
+   bool soft_wrapped = false;         // True if the row was ended by word-wrapping, not a hard break
+   std::vector<TextGap> gaps = {};    // Only recorded for justified text
+};
+
+// Justification adjusts individual words, which isn't possible for bitmap fonts because they draw whole lines.
+
+static bool needs_justification(extVectorText *Vector)
+{
+   return ((Vector->txFlags & VTXF::JUSTIFY) != VTXF::NIL) and (Vector->txInlineSize > 0) and
+      (not Vector->GuidePath) and (not Vector->txBitmapFont);
+}
+
+// True if each visual line has to be positioned within the block.  Guide paths have no rows to align.
+
+static bool needs_row_alignment(extVectorText *Vector)
+{
+   if (needs_justification(Vector)) return true;
+   return (not Vector->GuidePath) and ((Vector->txAlignFlags & (ALIGN::RIGHT|ALIGN::HORIZONTAL)) != ALIGN::NIL);
+}
+
+// Bitmap fonts are drawn at whole pixels, so their shift has to be identical for the glyphs and the caret entries.
+
+static double row_alignment_shift(extVectorText *Vector, double Block, double Width)
+{
+   if ((Vector->txAlignFlags & ALIGN::RIGHT) != ALIGN::NIL) return Block - Width;
+   if ((Vector->txAlignFlags & ALIGN::HORIZONTAL) IS ALIGN::NIL) return 0;
+   return Vector->txBitmapFont ? std::floor((Block - Width) * 0.5) : (Block - Width) * 0.5;
+}
+
+// Moves a range of glyphs and caret entries.  Only X changes, which remains valid under a transition because each
+// glyph's transform is complete before it is appended.
+
+static void shift_text_range(agg::path_storage *Path, unsigned FirstVertex, unsigned EndVertex, TextLine &Line,
+   size_t FirstChar, size_t EndChar, double Shift)
+{
+   if (Path) {
+      for (auto vertex=FirstVertex; vertex < EndVertex; vertex++) {
+         double x, y;
+         if (agg::is_vertex(Path->vertex(vertex, &x, &y))) Path->modify_vertex(vertex, x + Shift, y);
+      }
+   }
+
+   for (auto i=FirstChar; i < EndChar; i++) {
+      Line.chars[i].x1 += Shift;
+      Line.chars[i].x2 += Shift;
+   }
+}
+
+// Stretches each soft-wrapped row to the inline size by dividing the spare width across its gaps.  Each word's shift
+// is derived from the total so that rounding errors cannot accumulate along the row.  Whitespace trailing the row
+// moves with the last word.
+
+static void justify_text_rows(std::vector<TextRow> &Rows, double InlineSize, agg::path_storage &Path)
+{
+   for (auto &row : Rows) {
+      const auto spare = InlineSize - row.width;
+      if ((not row.soft_wrapped) or row.gaps.empty() or (spare <= 0)) continue;
+
+      for (size_t g=0; g < row.gaps.size(); g++) {
+         const bool last = g + 1 IS row.gaps.size();
+         shift_text_range(&Path, row.gaps[g].vertex, last ? row.end_vertex : row.gaps[g + 1].vertex, *row.line,
+            row.gaps[g].column, last ? row.end_char : row.gaps[g + 1].column,
+            spare * double(g + 1) / double(row.gaps.size()));
+      }
+      row.width = InlineSize;
+   }
+}
+
+// Moves the caret entries of each row, and its glyphs if a Path is provided.
+
+static void align_text_rows(extVectorText *Vector, std::vector<TextRow> &Rows, double Block, agg::path_storage *Path)
+{
+   for (auto &row : Rows) {
+      const auto shift = row_alignment_shift(Vector, Block, row.width);
+      if (shift IS 0) continue;
+      shift_text_range(Path, row.first_vertex, row.end_vertex, *row.line, row.first_char, row.end_char, shift);
+   }
 }
 
 //********************************************************************************************************************
@@ -3376,7 +3638,10 @@ static const FieldArray clTextFields[] = {
    { "DY",            FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_DY, TEXT_SET_DY },
    { "InlineSize",    FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_InlineSize, TEXT_SET_InlineSize },
    { "WrapMode",      FDF_VIRTUAL|FDF_INT|FDF_LOOKUP|FDF_RW|FDF_PURE, TEXT_GET_WrapMode, TEXT_SET_WrapMode, &clVectorTextVTW },
-   { "LetterSpacing", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_LetterSpacing, TEXT_SET_LetterSpacing },
+   { "LetterSpacing", FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_LetterSpacing, TEXT_SET_LetterSpacing },
+   { "WordSpacing",   FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_WordSpacing, TEXT_SET_WordSpacing },
+   { "LineHeight",    FDF_VIRTUAL|FDF_UNIT|FDF_RW|FDF_PURE, TEXT_GET_LineHeight, TEXT_SET_LineHeight },
+   { "ParagraphSpacing", FDF_VIRTUAL|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_ParagraphSpacing, TEXT_SET_ParagraphSpacing },
    { "Point",         FDF_VIRTUAL|FDF_INT|FDF_R|FDF_PURE, TEXT_GET_Point },
    { "LineSpacing",   FDF_VIRTUAL|FDF_INT|FDF_R, TEXT_GET_LineSpacing },
    { "Rotate",        FDF_VIRTUAL|FDF_ARRAY|FDF_DOUBLE|FDF_RW|FDF_PURE, TEXT_GET_Rotate, TEXT_SET_Rotate },
