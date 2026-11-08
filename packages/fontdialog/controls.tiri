@@ -76,7 +76,21 @@ fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:tab
    label_w = Options.labelWidth ?? 76
    value_w = Options.valueWidth ?? 46
 
-   row = { format = Options.format ?? (V => tostring(V)), syncing = false }
+   row = { format = Options.format ?? (V => tostring(V)), syncing = false, pending = nil }
+
+   -- A drag delivers more positions than the preview can draw, so a change is made on the next message cycle and uses
+   -- the latest position.  Any input that follows the drag, such as a click on Select, is processed after this.
+
+   function queueChange(Value:num)
+      scheduled = row.pending != nil
+      row.pending = Value
+      if scheduled then return end
+      processing.delayedCall(function()
+         value = row.pending
+         row.pending = nil
+         if value != nil then Options.onChange?(value) end
+      end)
+   end
 
    row.label = fontdialog_controls.label(Picker, Target, x, y, ROW_H, Options.label)
 
@@ -103,7 +117,7 @@ fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:tab
          events    = {
             activate = function(Value)
                row.valueText.string = row.format(Value)
-               if not row.syncing then Options.onChange?(Value) end
+               if not row.syncing then queueChange(Value) end
             end
          }
       })
@@ -113,6 +127,7 @@ fontdialog_controls.sliderRow = function(Picker:table!, Target:obj!, Options:tab
    row.valueText.string = row.format(row.slider.value)
 
    row.set = function(Value:num)
+      row.pending = nil -- A value set by the picker supersedes a queued drag position
       row.syncing = true
       row.slider.setValue(math.clamp(Value, row.slider.min, row.slider.max), true)
       row.syncing = false
@@ -299,6 +314,32 @@ fontdialog_controls.toHex = function(Colour:str!):str
    except ex
       return Colour
    end
+end
+
+-- Only colour values have an alpha channel; a painter such as a gradient reference does not.
+
+function isColourValue(Colour:str!):bool
+   return Colour.startsWith('#') or Colour.startsWith('rgb')
+end
+
+@Doc(text=[[
+@desc Multiply the alpha channel of a colour by Percent, returning `#RRGGBBAA`.  An opaque setting returns the colour
+unchanged, as does a value that is not a colour, such as a gradient reference.
+]])
+fontdialog_controls.withAlpha = function(Colour:str!, Percent:num!):str
+   if (Percent >= 100) or (not isColourValue(Colour)) then return Colour end
+   rgb = gui.strToRGB(Colour)
+   return hexColour(rgb) .. string.format('%02X', math.round(rgb.a * Percent * 2.55))
+end
+
+@Doc(text=[[
+@desc Separate a colour into its opaque value and its alpha as a whole percentage.  The inverse of `withAlpha()`.
+]])
+fontdialog_controls.splitAlpha = function(Colour:str!):<str, num>
+   if not isColourValue(Colour) then return Colour, 100 end
+   rgb = gui.strToRGB(Colour)
+   if rgb.a >= 1 then return Colour, 100 end
+   return hexColour(rgb), math.round(rgb.a * 100)
 end
 
 @Doc(text=[[

@@ -1,5 +1,5 @@
--- Stroke panel: an optional outline, centred on the edges of the glyphs, with its colour, width and line join.  The
--- panel is disabled for bitmap families, which have no outlines.
+-- Stroke panel: an optional outline, centred on the edges of the glyphs, with its colour, opacity, width and line join.
+-- The panel is disabled for bitmap families, which have no outlines.
 
    import 'gui', 'gui/panel', 'gui/toggle', './theme', './parts', './controls', './style'
 
@@ -8,7 +8,7 @@
 PAD   <const> = fontdialog_controls.PAD
 ROW_H <const> = fontdialog_controls.ROW_H
 
-fontdialog_stroke.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fontdialog_controls.COLOUR_H + 4 + (ROW_H * 2) + 6
+fontdialog_stroke.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fontdialog_controls.COLOUR_H + 4 + (ROW_H * 3) + 6
 
 JOIN_ITEMS <const> = array<table> {
    { id = 'miter', label = 'Miter' }, { id = 'round', label = 'Round' }, { id = 'bevel', label = 'Bevel' }
@@ -50,6 +50,13 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
    })
    y += fontdialog_controls.COLOUR_H + 4
 
+   self.opacity = fontdialog_controls.sliderRow(Picker, body, {
+      x = PAD, y = y, width = inner, label = 'Opacity', min = 0, max = 100, step = 1, value = state.strokeOpacity,
+      format = function(V):str return f'{math.round(V)}%' end,
+      onChange = function(V) Picker.update({ strokeOpacity = V, strokeOn = true }, 'stroke') end
+   })
+   y += ROW_H
+
    self.width = fontdialog_controls.sliderRow(Picker, body, {
       x = PAD, y = y, width = inner, label = 'Width', min = 0, max = 8, step = 0.5, value = state.strokeWidth,
       format = function(V):str return f'{V} px' end,
@@ -69,7 +76,8 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
 
       if outlined != self.outlined then
          self.outlined = outlined
-         fontdialog_controls.setEnabled(array<table> { self.enabled, self.colour, self.width, self.join }, outlined)
+         fontdialog_controls.setEnabled(array<table> { self.enabled, self.colour, self.opacity, self.width, self.join },
+            outlined)
       end
 
       if outlined then
@@ -84,6 +92,7 @@ fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):tab
       end
       self.enabled.setState(stroke_on)
       self.colour.set(s.strokeColour)
+      self.opacity.set(s.strokeOpacity)
       self.width.set(s.strokeWidth)
       self.join.select(s.strokeJoin)
    end

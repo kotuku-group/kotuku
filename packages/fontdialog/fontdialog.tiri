@@ -1,32 +1,28 @@
 @Package(name="gui/fontdialog", version="1.0")
 
 --[[
-Font picker dialog (prototype).  Open it with:
-
    import 'gui/fontdialog'
 
    gui.dialog.font({
-      face      = 'Noto Sans, Arial',     -- Optional family list; the first installed family is used.  If there is
-                                          -- none, or face is omitted, the Body copy preset is used
-      size      = '12pt',                 -- Optional initial size: pixels (number) or e.g. '16px', '12pt'
-      pointSize = 12,                     -- Optional initial size in points; ignored if size is set
-      style     = 'Bold Italic',          -- Optional style name, or descriptors such as 'weight=550;italic=yes'
-      fill      = '#203040',              -- Optional text colour
-      example   = 'Sample text',          -- Optional preview text
-      bkgd      = '#203040',              -- Optional fill for the preview's background
-      fontDef   = 'face=Noto Sans; ...',  -- Optional font definition; its keys override the options above
-      pinned    = { 'Noto Sans' },        -- Optional families to pin to the top of the list
+      face      = 'Noto Sans, Arial',     -- family list
+      size      = '12pt',                 -- initial size: pixels (number) or e.g. '16px', '12pt'
+      style     = 'Bold Italic',          -- style name, or descriptors such as 'weight=550;italic=yes'
+      fill      = '#203040',            -- text colour
+      example   = 'Sample text',          -- preview text
+      bkgd      = '#203040',            -- fill for the preview's background
+      fontDef   = 'face=Noto Sans; ...',  -- font definition; its keys override the options above
+      resultFilter = { 'face', 'size' },  -- table or array of the key names to include in the Result
       feedback  = function(Result) ... end -- Result table, or nil on cancel
    })
 
-   Result holds face, style, size (px), pointSize, fill, fontDef and settings.  Stroke and effect settings are not
-   included for a bitmap family.
+   Result holds face, style, size (px), pointSize, fill, fontDef and settings, or only the keys named by resultFilter.
 --]]
 
    import 'gui', 'gui/window', 'gui/button', 'gui/scrollbar'
 
    import './theme', './parts', './catalogue', './controls', './fontlist', './preview', './sizing', './style'
    import './glyphs', './fill', './stroke', './effects', './alignment'
+   import 'gui/fontdialog/storage'
 
    include 'display'
 
@@ -67,8 +63,15 @@ MIN_CLIENT_HEIGHT <const> = MIN_BODY_HEIGHT + FOOTER_HEIGHT
 
 DEFAULT_FACE <const> = 'Noto Sans'
 
--- Presets.  The first available face of each is used.  A preset's `def` is a font definition.  Saved presets last for
--- the life of the dialog.
+-- The keys returned in the result when the client does not specify a resultFilter.
+
+glDefaultFilter <const> = array<str> {
+   'face', 'style', 'size', 'pointSize', 'fill', 'fontDef'
+   -- Not included: settings
+}
+
+-- Presets.  The first available face of each is used.  A preset's `def` is a font definition.  Presets saved by the
+-- user follow these, and are kept in fontdialog_storage.FILE along with the user's pins.
 
 PRESETS <const> = array<table> {
    { name = 'Body copy',    faces = array<str> { 'Noto Serif', 'PT Serif', 'Crimson Pro' },
@@ -96,10 +99,11 @@ function freshState(Font:table!, Size:num, Fill:str):table
       style        = fontdialog_style.defaultStyle(Font),
       features     = { liga = true, kern = true },
       fill         = Fill,
-      opacity      = 100,
+      opacity      = 100, -- Alpha of the fill
       strokeOn     = false,
       strokeColour = '#EC3013',
       strokeWidth  = 1,
+      strokeOpacity = 100,
       strokeJoin   = 'miter',
       shadowOn     = false,
       shadowX      = 3,
@@ -123,11 +127,13 @@ gui.dialog.font = function(Options:table)
 
    self = entity {
       feedback  = Options.feedback,
+      resultFilter = Options.resultFilter, -- Names of the keys to return in the result; nil uses glDefaultFilter
       previewBkgd = Options.bkgd, -- Overrides the fill of the preview's background
       finished  = false,
       isTyping  = false,
       presets   = PRESETS.clone(),
       pins      = { },
+      database  = fontdialog_storage.load(),
       fonts     = nil,
       state     = nil,
       panels    = array<table>, -- Every panel module, in update order
@@ -136,7 +142,7 @@ gui.dialog.font = function(Options:table)
       zoomHeight  = nil -- Layout height to keep while a zoom resizes the window
    }
 
-   for name in values(Options.pinned ?? { }) do self.pins[name] = true end
+   for name in values(self.database.pins) do self.pins[name] = true end
 
    local ready = false
    defer if not ready then self.finish?(nil) end end
@@ -199,7 +205,8 @@ gui.dialog.font = function(Options:table)
             axes     = fontdialog_style.defaultAxes(Font),
             italic   = false,
             style    = fontdialog_style.defaultStyle(Font),
-            features = { liga = true, kern = true }
+            features = { liga = true, kern = true },
+            text     = fontdialog_preview.textFor(Font, &state.text)
          }, 'font')
       end
 
@@ -219,11 +226,59 @@ gui.dialog.font = function(Options:table)
          return state
       end
 
+      -- Write the user's pins and presets.  A failure is reported in the font list, and the change lasts for the life
+      -- of the dialog.
+
+      &persist = function()
+         pins = array<str>
+         for name in &pins do pins.push(name) end
+         pins.sort()
+
+         presets = array<table>
+         for preset in values(&presets) do
+            if preset.user then presets.push({ name = preset.name, def = preset.def }) end
+         end
+
+         ok, message = fontdialog_storage.save(&database, pins, presets)
+         if not ok then &fontList.panel.flash(message) end
+      end
+
+      &addSavedPreset = function(Name:str!, Def:str!, Face:str!)
+         &presets.push({ name = Name, faces = array<str> { Face }, def = Def, user = true })
+      end
+
       &savePreset = function():str
-         def = fontdialog_style.fontDef(&state)
-         name = f'Saved {#&presets - #PRESETS + 1}'
-         &presets.push({ name = name, faces = array<str> { &state.font.name }, def = def })
+         local name:str
+         local number = 1
+         repeat
+            name = f'Saved {number}'
+            number++
+         until not &presets.find(P => P.name is name)
+         &addSavedPreset(name, fontdialog_style.fontDef(&state), &state.font.name)
+         &persist()
          return name
+      end
+
+      -- Returns true if the named preset was a saved preset and has been deleted.
+
+      &deletePreset = function(Name:str!):bool
+         index = &presets.findIndex(P => (P.name is Name) and P.user)
+         index ?= -1
+         if index < 0 then return false end
+         &presets.remove(index)
+         &persist()
+         return true
+      end
+
+      -- Saved presets with a duplicate name or an invalid definition are skipped.
+
+      for saved in values(&database.presets) do
+         try
+            face = fontdialog_style.readDef(saved.def).face
+            if face and not &presets.find(P => P.name is saved.name) then &addSavedPreset(saved.name, saved.def, face) end
+         except e
+            print(f'Font dialog: ignoring saved preset {saved.name}: {e.message}')
+         end
       end
 
       &applyPreset = function(Name:str!)
@@ -232,7 +287,7 @@ gui.dialog.font = function(Options:table)
             &fontList.panel.flash('preset font missing')
             return
          end
-         state.text = &state.text
+         state.text = fontdialog_preview.textFor(state.font, &state.text)
          &state = state
          &refresh('preset')
       end
@@ -335,7 +390,7 @@ gui.dialog.font = function(Options:table)
       &apply = function()
          if &finished then return end
          s = &state
-         &finish({
+         result = {
             face      = s.font.name,
             style     = fontdialog_style.fontStyle(s),
             size     = s.size,
@@ -343,7 +398,16 @@ gui.dialog.font = function(Options:table)
             fill      = s.fill,
             fontDef   = fontdialog_style.fontDef(s),
             settings  = fontdialog_style.resultSettings(s)
-         })
+         }
+
+         -- Not '??', which would replace an empty filter with the default.
+
+         key_filter = &resultFilter
+         key_filter ?= glDefaultFilter
+
+         filtered = { }
+         for key in values(key_filter) do filtered[key] = result[key] end
+         &finish(filtered)
       end
 
       &cancel = function() &finish(nil) end
@@ -382,15 +446,9 @@ gui.dialog.font = function(Options:table)
       &defaultFill = fontdialog_controls.toHex(&theme.page.text.fill ?? '#000000')
 
       -- Initial settings: the requested family, or the first preset.  A requested size overrides the preset's, and
-      -- is shown in points if requested through pointSize, or if it is a whole number of points once snapped to the
-      -- family's fixed sizes.  The other options are then applied, and fontDef last so that its keys take precedence.
+      -- is shown in points if it is a whole number of points once snapped to the family's fixed sizes.  The other options are then applied, and fontDef last so that its keys take precedence.
 
       size = fontdialog_sizing.parse(Options.size)
-      unit = nil
-      if (not size) and (Options.pointSize != nil) then
-         size = fontdialog_sizing.parse(f'{Options.pointSize}pt')
-         unit = 'pt'
-      end
 
       local definition:table
       if Options.fontDef?? then definition = fontdialog_style.readDef(Options.fontDef) end
@@ -405,12 +463,16 @@ gui.dialog.font = function(Options:table)
 
       if size then
          &state.size = fontdialog_sizing.snap(&state.font, size)
-         &state.unit = unit ?? fontdialog_sizing.preferredUnit(&state.size)
+         &state.unit = fontdialog_sizing.preferredUnit(&state.size)
       end
 
       if Options.style?? then fontdialog_style.applyDef(&state, Options.style) end
       if Options.fill?? then &state.fill = fontdialog_controls.toHex(Options.fill) end
-      if Options.example?? then &state.text = Options.example end
+      if Options.example?? then
+         &state.text = Options.example
+      else
+         &state.text = fontdialog_preview.sampleFor(&state.font)
+      end
 
       if definition then
          fontdialog_style.applyDef(&state, Options.fontDef)
@@ -598,7 +660,6 @@ end
    dlg = gui.dialog.font({
       face      = arg('face'),
       size      = arg('size'),
-      pointSize = arg('pointSize'),
       style     = arg('style'),
       fill      = arg('fill'),
       example   = arg('example'),

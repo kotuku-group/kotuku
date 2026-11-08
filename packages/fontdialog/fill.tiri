@@ -1,4 +1,4 @@
--- Fill panel: the text colour and opacity.
+-- Fill panel: the text colour and the opacity of the fill, which is its alpha channel.
 
    import 'gui', 'gui/panel', './theme', './parts', './controls'
 

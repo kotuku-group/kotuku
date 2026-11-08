@@ -12,7 +12,7 @@
    namespace fontdialog_catalogue { }
 
 -- Labels for the classifications recorded in the font database.  A family that the database could not classify has
--- no class, and is only listed when no classification filter is active.
+-- no class.
 
 CLASS_LABELS <const> = {
    serif = 'Serif', sans = 'Sans', mono = 'Mono', script = 'Script', display = 'Display', symbol = 'Symbol'

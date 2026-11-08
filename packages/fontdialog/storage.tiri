@@ -1,0 +1,87 @@
+@Package(name="gui/fontdialog", version="1.0")
+
+-- Persistence of the user's pinned families and saved presets, following the conventions of the colour picker's
+-- storage.tiri, which is private to that package: a missing file is distinct from an unreadable one, the file is
+-- replaced atomically, and a file that changed after it was read is not overwritten.
+
+   import 'json'
+
+   namespace fontdialog_storage { }
+
+fontdialog_storage.FILE = 'user:config/fontdialog.json'
+
+FORMAT_VERSION <const> = 1
+
+function readFile(Path:str!):str
+   err = mSys.AnalysePath(Path)
+   if err is ERR_FileNotFound then return nil end
+   if err != ERR_Okay then raise err, f'Cannot inspect {Path}' end
+   return io.readAll(Path)
+end
+
+function replaceFile(Path:str!, Text:str!)
+   temporary = f'{Path}.{mSys.PreciseTime()}-{mSys.AllocateID(IDTYPE_GLOBAL)}.tmp'
+   try
+      io.writeAll(temporary, Text)
+      file <close> = obj.new('File', { path = temporary })
+      check file.acRename(Path)
+   except e
+      try
+         file <close> = obj.new('File', { path = temporary })
+         file.mtDelete()
+      end
+      raise
+   end
+end
+
+@Doc(text=[[
+@desc Read the user's saved settings.  The result holds `pins` (array of family names) and `presets` (array of
+`{ name, def }`), and is given to `save()`.  A file that can't be read, or that isn't understood, is reported and marked
+`damaged` so that it will not be overwritten.
+]])
+fontdialog_storage.load = function():table
+   database = { pins = array<str>, presets = array<table>, damaged = false }
+   path = fontdialog_storage.FILE
+   try
+      text = readFile(path)
+      database.sourcePath, database.sourceText = path, text
+      if text?? then
+         data = json.decode(text.trim())
+         if (not (data is <table>)) or ((data.version ?? 0) > FORMAT_VERSION) then raise 'Unsupported format' end
+         for name in values(data.pins ?? { }) do
+            if name is <str> then database.pins.push(name) end
+         end
+         for preset in values(data.presets ?? { }) do
+            if (preset is <table>) and (preset.name is <str>) and (preset.def is <str>) then
+               database.presets.push({ name = preset.name, def = preset.def })
+            end
+         end
+      end
+   except e
+      database.damaged = true
+      print(f'Font dialog: not using {path}: {e.message}')
+   end
+   return database
+end
+
+@Doc(text=[[
+@desc Write the user's settings.  The file is replaced atomically, and not at all if it changed after it was read or
+if `load()` marked it as damaged.
+@result True on success, otherwise false and a message.
+]])
+fontdialog_storage.save = function(Database:table!, Pins:array<str>, Presets:array<table>):<bool, str>
+   if Database.damaged then return false, 'font settings file is damaged: not saved' end
+   path = fontdialog_storage.FILE
+   try
+      expected = (Database.sourcePath is path) ? Database.sourceText : nil
+      if readFile(path) != expected then
+         return false, 'font settings changed in another window: not saved'
+      end
+      text = json.encode({ version = FORMAT_VERSION, pins = Pins, presets = Presets })
+      replaceFile(path, text)
+      Database.sourcePath, Database.sourceText = path, text
+      return true
+   except e
+      return false, f'cannot save font settings: {e.message}'
+   end
+end

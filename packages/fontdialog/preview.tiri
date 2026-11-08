@@ -1,6 +1,6 @@
 -- Preview: the Preview panel at the top of the centre column.  Its footer holds the Paragraph / Waterfall and the
 -- Compare / Edit text button groups.  The preview shows the sample text in the picker's current family, style, size,
--- spacing, kerning, alignment, paint (fill, opacity, stroke and effects) and letter case.  In Compare mode a frozen copy of the settings is
+-- spacing, kerning, alignment, paint (fill, stroke and effects) and letter case.  In Compare mode a frozen copy of the settings is
 -- shown beside the live settings, and clicking the frozen pane swaps the two.  While Edit text is pressed, the live
 -- paragraph is an editable VectorText and the sample text buttons are shown in the footer.
 
@@ -32,6 +32,18 @@ Suspendisse sed diam ut sem euismod accumsan commodo vehicula sapien. Nullam nis
 Fusce auctor metus egestas commodo laoreet. Morbi sed venenatis augue. Maecenas non nisi vehicula, aliquam turpis in, mattis lectus. Dõnec magna metus, tempor fringilla metus ac, ultricies efficitur ante. Quisque at semper elit. Ut in purus in est venenatis interdum. Curabitur a dui mauris. Suspendisse potenti. Suspendisse tempus dictum ipsum, id condimentum nulla fermentum sed. Etiam mattis ligula lacus, a tempor felis sodales fermentum. Donec in risus vulputate, tempor neque vel, volutpat mauris. Integer placerat a nunc a aliquet. Phasellus quis porta leo. Etiam et arcu ex. Nunc dictum at ipsum eu dapibus.
 Ĉras metus mi, ultricies nec blandit condimentum, congue dapibus libero. Nulla eget ornare ante, ac efficitur turpis. Proin venenatis eget sapien vitae volutpat. In interdum id ante in aliquet. Quisque convallis lacus in gravida fringilla. Nam porta pellentesque turpis, ut efficitur neque suscipit vel. Morbi vitae consequat nisl. Donec turpis lorem, dapibus eget scelerisque quis, porttitor bibendum leo.]]
 
+-- The default sample for families that can't render Latin text, in order of preference.  These are the non-Latin
+-- character sets that the font database records.  A family without enough of any of them keeps the Latin sample.
+
+MIN_SCRIPT <const> = 50 -- Percentage of a character set that a family must cover for its sample to be used
+
+SCRIPT_SAMPLES <const> = array<table> {
+   { id = 'cyrillic', text = 'Съешь же ещё этих мягких французских булок, да выпей чаю.' },
+   { id = 'greek',    text = 'Η γρήγορη καφέ αλεπού πηδάει πάνω από το τεμπέλικο σκυλί.' },
+   { id = 'cjk',      text = '永和九年 岁在癸丑 暮春之初 会于会稽山阴之兰亭 修禊事也' },
+   { id = 'emoji',    text = '😀 🎉 🌏 🚀 🎨 🍕 🐦 ⭐' }
+}
+
 SAMPLES <const> = array<table> {
    { id = 'pangram',   label = 'Pangram',   text = 'The quick brown fox jumps over the lazy dog.' },
    { id = 'paragraph', label = 'Paragraph' },
@@ -42,6 +54,31 @@ SAMPLES <const> = array<table> {
 }
 
 ----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Return the default sample text for a family: a sample of a script that it covers if it can't render Latin text,
+otherwise the Latin paragraph.
+]])
+fontdialog_preview.sampleFor = function(Font:table!):str
+   if (Font.coverage['basic-latin'] ?? 0) < 60 then
+      for sample in values(SCRIPT_SAMPLES) do
+         if (Font.coverage[sample.id] ?? 0) >= MIN_SCRIPT then return sample.text end
+      end
+   end
+   return fontdialog_preview.TEXT
+end
+
+@Doc(text=[[
+@desc Return the text to show for a family, given the current text.  A default sample is replaced by the family's own
+default sample, and text that the user or the client provided is kept.
+]])
+fontdialog_preview.textFor = function(Font:table!, Text:str!):str
+   if Text is fontdialog_preview.TEXT then return fontdialog_preview.sampleFor(Font) end
+   for sample in values(SCRIPT_SAMPLES) do
+      if Text is sample.text then return fontdialog_preview.sampleFor(Font) end
+   end
+   return Text
+end
 
 -- Letter case conversion, which is UTF-8 aware for ASCII, Latin-1, Latin Extended-A, Greek and Cyrillic.  All of the
 -- mapped letters occupy one or two bytes.  Letters with no single-letter counterpart, such as `ß`, are left as they are.
@@ -326,7 +363,7 @@ fontdialog_preview.new = function(Picker:table!, Target:obj!, Options:table!):ta
          },
          events = {
             activate = function()
-               Picker.update({ text = sample.text ?? fontdialog_preview.TEXT }, 'sample')
+               Picker.update({ text = sample.text ?? fontdialog_preview.sampleFor(Picker.state.font) }, 'sample')
             end
          }
       })

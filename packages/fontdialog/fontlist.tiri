@@ -1,5 +1,5 @@
 -- Font list panel: search and classification filters, the list of installed families with pinned families first,
--- and the preset, Install and Remove controls.  Each row draws the family name in its own face.
+-- and the preset controls.  Each row draws the family name in its own face.
 --
 -- The list is a gui.listView with custom rows.  Section headings ('Pinned', 'All fonts') are rows of their own,
 -- which can't be selected.  Clicking a row's star pins or unpins the family; so does S while the list has the focus.
@@ -12,7 +12,8 @@
 
 PAD_X     <const> = 8   -- Inset of the search row and the list rows
 SEARCH_H  <const> = 24
-TOP_H     <const> = 8 + SEARCH_H + 8 -- The search row and its padding, above the divider
+FILTER_Y  <const> = 8 + SEARCH_H + 6
+TOP_H     <const> = FILTER_Y + fontdialog_controls.SEG_H + 8 -- The search and filter rows and their padding
 BOTTOM_H  <const> = 46 -- The preset row and its padding, below the lower divider
 BUTTON_H  <const> = 26
 ROW_H     <const> = 30
@@ -22,12 +23,21 @@ STAR_SIZE <const> = 12
 NAME_X    <const> = 30
 NAME_SIZE <const> = 16  -- Pixel size of the family names
 META_SIZE <const> = 10
-MIN_LATIN <const> = 60  -- Families covering less of Basic Latin than this percentage are not listed
+MIN_LATIN <const> = 60  -- Families covering less of Basic Latin than this are listed under Show all scripts
 
 CLASS_ITEMS <const> = array<table> {
    { id = 'serif', icon = 'layout/text_serif', tip = 'Serif' },
    { id = 'sans',  icon = 'layout/text_sans',  tip = 'Sans-serif' },
-   { id = 'mono',  icon = 'dev/braces',        tip = 'Monospace' }
+   { id = 'mono',  icon = 'dev/braces',        tip = 'Monospace' },
+   { id = 'other', icon = 'items/font',        tip = 'Other: script, display, symbol and unclassified' }
+}
+
+-- Classifications with a filter of their own.  Every other family, classified or not, belongs to 'other'.
+
+FILTERED_CLASSES <const> = { serif = true, sans = true, mono = true }
+
+SCRIPT_ITEMS <const> = array<table> {
+   { id = 'all', label = 'All scripts', tip = 'Show all scripts, including families with little or no Latin coverage' }
 }
 
 TECH_ITEMS <const> = array<table> {
@@ -139,7 +149,8 @@ end
 @Doc(text=[[
 @desc Create the font list panel.
 @input Picker table.  The picker provides `fonts` (the catalogue), `pins` (name = true), `selectFont(Font)`,
-`applyPreset(Name)`, `presets` (array of { name }) and `typing(Bool)`.
+`applyPreset(Name)`, `savePreset()`, `deletePreset(Name)`, `presets` (array of { name, user }), `persist()` and
+`typing(Bool)`.
 @input Target viewport
 @input Options: x, y, width, height.  The list follows the panel's height if the panel viewport is resized.
 @result Table with `panel`, `view`, `update(Source)`, `rebuild()`, `focusSearch()` and `togglePin(Font)`
@@ -147,7 +158,7 @@ end
 fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
    t = Picker.tokens
 
-   self = { query = '', classes = { }, techs = { } }
+   self = { query = '', classes = { }, techs = { }, allScripts = false, selectedPreset = Picker.presets[0]?.name }
 
    self.panel = gui.panel({
       target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
@@ -161,30 +172,8 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
    body_w, body_h = self.panel.bodySize()
    edge = math.ceil(self.panel.bkgd.strokeWidth ?? 0) -- Matches the panel's whole-pixel body inset
 
-   -- Filters, right-aligned on the search row.  An empty filter group admits every family.
-
-   filter_y = 8 + ((SEARCH_H - fontdialog_controls.SEG_H) * 0.5)
-
-   self.techFilter = fontdialog_controls.segmented(Picker, body, {
-      y = filter_y, items = TECH_ITEMS, multi = true,
-      onChange = function(ID, Pressed)
-         self.techs[ID] = Pressed ? true : nil
-         self.rebuild()
-      end
-   })
-   self.techFilter.viewport.x = body_w - PAD_X - self.techFilter.width
-
-   self.classFilter = fontdialog_controls.segmented(Picker, body, {
-      y = filter_y, items = CLASS_ITEMS, multi = true,
-      onChange = function(ID, Pressed)
-         self.classes[ID] = Pressed ? true : nil
-         self.rebuild()
-      end
-   })
-   self.classFilter.viewport.x = self.techFilter.viewport.x - 6 - self.classFilter.width
-
    self.search = gui.input({
-      target = body, x = PAD_X, y = 8, width = self.classFilter.viewport.x - 8 - PAD_X, height = SEARCH_H,
+      target = body, x = PAD_X, y = 8, width = body_w - (PAD_X * 2), height = SEARCH_H,
       placeholder = 'Search fonts',
       events = {
          change = function(Event)
@@ -195,6 +184,33 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
          lostFocus = function() Picker.typing(false) end
       }
    })
+
+   -- Filters, below the search row.  An empty filter group admits every family.
+
+   self.classFilter = fontdialog_controls.segmented(Picker, body, {
+      x = PAD_X, y = FILTER_Y, items = CLASS_ITEMS, multi = true,
+      onChange = function(ID, Pressed)
+         self.classes[ID] = Pressed ? true : nil
+         self.rebuild()
+      end
+   })
+
+   self.techFilter = fontdialog_controls.segmented(Picker, body, {
+      x = PAD_X + self.classFilter.width + 6, y = FILTER_Y, items = TECH_ITEMS, multi = true,
+      onChange = function(ID, Pressed)
+         self.techs[ID] = Pressed ? true : nil
+         self.rebuild()
+      end
+   })
+
+   self.scriptFilter = fontdialog_controls.segmented(Picker, body, {
+      y = FILTER_Y, items = SCRIPT_ITEMS, multi = true,
+      onChange = function(ID, Pressed)
+         self.allScripts = Pressed
+         self.rebuild()
+      end
+   })
+   self.scriptFilter.viewport.x = body_w - PAD_X - self.scriptFilter.width
 
    body.new('VectorRectangle', { x = edge, y = TOP_H, xOffset = edge, height = 1, fill = t.border })
 
@@ -264,42 +280,67 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       end
    end)
 
-   -- Bottom row: the preset selector, Save, Install and Remove.  The row has a viewport of its own, so that it can
-   -- follow the bottom of the panel when the dialog is resized vertically.
+   -- Bottom row: the preset selector, Save and Delete.  The row has a viewport of its own, so that it can follow the
+   -- bottom of the panel when the dialog is resized vertically.
 
    self.bottom = body.new('VectorViewport', { x = 0, y = body_h - BOTTOM_H, width = body_w, height = BOTTOM_H })
    bottom = self.bottom
    bottom.new('VectorRectangle', { x = edge, y = 0, xOffset = edge, height = 1, fill = t.border })
    button_y = 1 + ((BOTTOM_H - 1 - BUTTON_H) * 0.5)
 
-   self.btnRemove = gui.button({
-      target = bottom, y = button_y, height = BUTTON_H, icon = 'items/trash', tip = 'Remove font',
-      events = { activate = function() self.panel.flash('remove: not in prototype') end }
-   })
-   self.btnRemove.viewport.x = body_w - PAD_X - self.btnRemove.viewport.width
+   function presetItems():array<table>
+      items = array<table>
+      for preset in values(Picker.presets) do items.push({ label = preset.name }) end
+      return items
+   end
 
-   self.btnInstall = gui.button({
-      target = bottom, y = button_y, height = BUTTON_H, icon = 'items/add', tip = 'Install fonts',
-      events = { activate = function() self.panel.flash('install: not in prototype') end }
+   -- Only presets saved by the user can be deleted.
+
+   function trackPreset(Name:str)
+      self.selectedPreset = Name
+      preset = Picker.presets.find(P => P.name is Name)
+      if preset?.user then self.btnDelete.enable() else self.btnDelete.disable() end
+   end
+
+   self.btnDelete = gui.button({
+      target = bottom, y = button_y, height = BUTTON_H, icon = 'items/trash', tip = 'Delete saved preset',
+      disabled = true,
+      events = {
+         activate = function()
+            name = self.selectedPreset
+            if not Picker.deletePreset(name) then return end
+            self.presets.setItems(presetItems())
+            trackPreset(Picker.presets[0].name)
+            self.presets.setText(self.selectedPreset)
+            self.panel.flash('deleted ' .. name)
+         end
+      }
    })
-   self.btnInstall.viewport.x = self.btnRemove.viewport.x - 6 - self.btnInstall.viewport.width
+   self.btnDelete.viewport.x = body_w - PAD_X - self.btnDelete.viewport.width
 
    self.btnSave = gui.button({
       target = bottom, y = button_y, height = BUTTON_H, icon = 'items/file_save', tip = 'Save as preset',
-      events = { activate = function() self.panel.flash('saved as ' .. Picker.savePreset()) end }
+      events = {
+         activate = function()
+            name = Picker.savePreset()
+            self.presets.setItems(presetItems())
+            self.presets.setText(name)
+            trackPreset(name)
+            self.panel.flash('saved as ' .. name)
+         end
+      }
    })
-   self.btnSave.viewport.x = self.btnInstall.viewport.x - 6 - self.btnSave.viewport.width
-
-   preset_items = array<table>
-   for preset in values(Picker.presets) do preset_items.push({ label = preset.name }) end
+   self.btnSave.viewport.x = self.btnDelete.viewport.x - 6 - self.btnSave.viewport.width
 
    self.presets = gui.combobox({
       target = bottom, x = PAD_X, y = button_y, width = self.btnSave.viewport.x - 6 - PAD_X, height = BUTTON_H,
-      items = preset_items, text = Picker.presets[0]?.name,
+      items = presetItems(), text = Picker.presets[0]?.name,
       theme = { input = fontdialog_parts.monoText(BUTTON_H, 9) },
       events = {
          activate = function(Item)
-            Picker.applyPreset((Item is <table>) ? Item.label : Item)
+            name = (Item is <table>) ? Item.label : Item
+            trackPreset(name)
+            Picker.applyPreset(name)
          end
       }
    })
@@ -314,8 +355,8 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    ----------------------------------------------------------------------------------------------------------------
 
-   -- Families that can't render most of Basic Latin (e.g. emoji and symbol fonts) are left out of the list.  A family
-   -- without coverage data in the font database is treated as having none.
+   -- Families that can't render most of Basic Latin (e.g. other scripts, emoji and symbol fonts) are only listed under
+   -- Show all scripts.  A family without coverage data in the font database is treated as having none.
 
    function legible(Font:table!):bool
       return (Font.coverage['basic-latin'] ?? 0) >= MIN_LATIN
@@ -323,7 +364,10 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    function passes(Font:table!):bool
       if (#self.query > 0) and not Font.name.lower().find(self.query) then return false end
-      if not table.empty(self.classes) and not self.classes[Font.cls] then return false end
+      if not table.empty(self.classes) then
+         group = FILTERED_CLASSES[Font.cls] ? Font.cls : 'other'
+         if not self.classes[group] then return false end
+      end
       if not table.empty(self.techs) and not self.techs[Font.tech] then return false end
       return true
    end
@@ -344,7 +388,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       rest = array<table>
       total = 0
       for font in values(Picker.fonts) do
-         if not legible(font) then continue end
+         if not (self.allScripts or legible(font)) then continue end
          total++
          if not passes(font) then continue end
          if Picker.pins[font.name] then pinned.push(font) else rest.push(font) end
@@ -367,6 +411,7 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
 
    self.togglePin = function(Font:table!)
       Picker.pins[Font.name] = (not Picker.pins[Font.name]) ? true : nil
+      Picker.persist()
       self.rebuild()
       if self.view.sItem then self.view.revealItem(self.view.sItem) end
    end
@@ -375,13 +420,24 @@ fontdialog_list.new = function(Picker:table!, Target:obj!, Options:table!):table
       self.search.viewport.acFocus()
    end
 
+   -- The current family must have a row, so a family outside the Latin list turns on Show all scripts.
+
+   function revealScripts():bool
+      if self.allScripts or legible(Picker.state.font) then return false end
+      self.allScripts = true
+      self.scriptFilter.set('all', true)
+      return true
+   end
+
    self.update = function(Source:str)
       if (Source is 'font') or (Source is 'init') or (Source is 'reset') or (Source is 'preset') then
+         if revealScripts() then self.rebuild() end
          self.syncSelection()
          if self.view.sItem then self.view.revealItem(self.view.sItem) end
       end
    end
 
+   revealScripts()
    self.rebuild()
    return self
 end

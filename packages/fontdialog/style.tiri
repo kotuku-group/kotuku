@@ -185,7 +185,7 @@ end
 -- Settings that exist only for families with glyph outlines.
 
 OUTLINE_SETTINGS <const> = array<str> {
-   'strokeOn', 'strokeColour', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur', 'glowOn',
+   'strokeOn', 'strokeColour', 'strokeOpacity', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur', 'glowOn',
    'glowRadius', 'blend', 'tracking', 'wordSpace'
 }
 
@@ -227,18 +227,18 @@ fontdialog_style.resultSettings = function(State:table!):table
    return settings
 end
 
--- The definition keys for the fill, opacity, stroke and effects.  Keys that are switched off are stated, so that a
+-- The definition keys for the fill, stroke and effects.  The opacity of each is the alpha channel of its colour, so that
+-- one doesn't affect the other.  Keys that are switched off are stated, so that a
 -- definition assigned to an existing text clears them.  A bitmap family has neither stroke nor effects, and a change
 -- of family recreates the text, so those keys are left out for it.
 
 function paintParts(State:table!):array<str>
    parts = array<str>
-   parts.push(f'fill={State.fill}')
-   parts.push(f'opacity={State.opacity}%')
+   parts.push(f'fill={fontdialog_controls.withAlpha(State.fill, State.opacity)}')
    if not fontdialog_style.hasOutlines(State.font) then return parts end
 
    if State.strokeOn then
-      parts.push(f'stroke={State.strokeColour}')
+      parts.push(f'stroke={fontdialog_controls.withAlpha(State.strokeColour, State.strokeOpacity)}')
       parts.push(f'strokeWidth={State.strokeWidth}')
       parts.push(f'lineJoin={State.strokeJoin}')
    else
@@ -257,7 +257,7 @@ function paintParts(State:table!):array<str>
 end
 
 @Doc(text=[[
-@desc Return the font definition of the picker state's fill, opacity, stroke and effects, for the VectorText `textStyle`
+@desc Return the font definition of the picker state's fill, stroke and effects, for the VectorText `textStyle`
 field.  Every sample in the preview is painted from this definition.
 ]])
 fontdialog_style.paintDef = function(State:table!):str
@@ -386,12 +386,24 @@ fontdialog_style.applyDef = function(State:table!, Def:str!)
    if settings.letterSpacing then State.tracking = unitValue(settings.letterSpacing, 'em') * 1000 end
    if settings.wordSpacing then State.wordSpace = unitValue(settings.wordSpacing, 'em') end
    if settings.kerning then State.kerning = (settings.kerning is 'none') ? 'none' : 'metrics' end -- No optical kerning
-   if settings.fill then State.fill = settings.fill end
-   if settings.opacity then State.opacity = tonumber(settings.opacity) * 100 end
+
+   fill_alpha, stroke_alpha = 100, 100
+   if settings.fill then State.fill, fill_alpha = fontdialog_controls.splitAlpha(settings.fill) end
 
    if settings.stroke then
       State.strokeOn = settings.stroke != 'none'
-      if State.strokeOn then State.strokeColour = settings.stroke end
+      if State.strokeOn then State.strokeColour, stroke_alpha = fontdialog_controls.splitAlpha(settings.stroke) end
+   end
+
+   -- The dialog has no opacity for the text as a whole, so a definition's `opacity` key is applied to both colours.
+
+   if settings.opacity then
+      overall = tonumber(settings.opacity)
+      State.opacity = math.round(fill_alpha * overall)
+      State.strokeOpacity = math.round(stroke_alpha * overall)
+   else
+      if settings.fill then State.opacity = fill_alpha end
+      if State.strokeOn and settings.stroke then State.strokeOpacity = stroke_alpha end
    end
 
    if settings.strokeWidth then State.strokeWidth = unitValue(settings.strokeWidth, 'px') end
@@ -484,7 +496,7 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
 
          if font.italic then
             self.italicBox = fontdialog_controls.checkRow(Picker, content, {
-               x = PAD, y = y + 4, label = 'Italic', note = 'separate italic master', value = s.italic,
+               x = PAD, y = y + 4, label = 'Italic', value = s.italic,
                onToggle = function(Value) Picker.update({ italic = Value }, 'style') end
             })
             y += ROW_H
@@ -506,20 +518,17 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
          })
          y += self.styleSeg.height + 8
 
-         note = (font.tech is 'bitmap') ? 'Synthetic bold and italic are disabled.' :
-            'Missing weights are not synthesised.'
-         fontdialog_controls.text(content, {
-            x = PAD, y = y + 10, size = 11, fill = Picker.tokens.fg3, string = note
-         })
          y += 20
       end
 
       if font.tech != 'bitmap' then
          y += 6
-         fontdialog_controls.subhead(Picker, content, PAD, y, 'OpenType features')
-         y += 18
          items = FEATURES.filter((Feature) => Feature.id in font.features)
+
          if #items > 0 then
+            fontdialog_controls.subhead(Picker, content, PAD, y, 'OpenType features')
+            y += 18
+
             self.features = fontdialog_controls.segmented(Picker, content, {
                x = PAD, y = y, wrap = inner, items = items, multi = true, selected = s.features,
                onChange = function(ID, Pressed)
@@ -529,11 +538,6 @@ fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):tabl
                end
             })
             y += self.features.height
-         else
-            fontdialog_controls.text(content, {
-               x = PAD, y = y + 10, size = 11, fill = Picker.tokens.fg3, string = 'None of the common features.'
-            })
-            y += 20
          end
       end
 
