@@ -1,0 +1,223 @@
+
+   import 'gui'
+
+   namespace fontdialog_theme { }
+
+TOKENS <const> = {
+   light = {
+      panel  = 'oklch(1.000 0.000 89.876)', -- &theme.panel.bkgd.fill
+      sunk   = 'oklch(0.971 0.003 67.783)',
+      border = 'oklch(0.851 0.006 84.568)',
+      fg0    = 'oklch(0.119 0.011 80.573)', -- Primary text: values, font names, input and button text
+      fg1    = 'oklch(0.230 0.011 84.593)', -- Secondary text: labels and prose
+      fg2    = 'oklch(0.300 0.008 80.707)', -- Panel titles, headings and footer key caps
+      fg3    = 'oklch(0.490 0.006 84.573)', -- Muted text: panel meta, sub-labels, units and separators; small glyphs
+      accentSoft = 'oklch(0.949 0.025 249.951)'
+   },
+   dark = {
+      panel  = 'oklch(0.250 0.009 75.203)',
+      sunk   = 'oklch(0.189 0.008 67.334)',
+      border = 'oklch(0.320 0.010 73.540)',
+      fg0    = 'oklch(0.959 0.005 78.298)',
+      fg1    = 'oklch(0.821 0.006 84.569)',
+      fg2    = 'oklch(0.771 0.011 81.792)',
+      fg3    = 'oklch(0.717 0.009 73.717)',
+      accentSoft = 'oklch(0.301 0.061 258.288)'
+   }
+}
+
+-- Picker-only values that other widgets ignore.  They are the same for both schemes.
+
+EXTRAS <const> = {
+   ok = 'oklch(0.65 0.14 155)', -- Stars of Kotuku's own fonts in the font list
+   swatchBorder = 'oklch(0 0 0 / 0.12)'
+}
+
+-- The panels keep the design's pixel sizes rather than the density-scaled gui defaults.  The header height is pinned
+-- in the panel theme, so the picker's layout constants can include it before any panel exists.
+
+PANEL_HEADER <const> = 31 -- Panel header, excluding the divider
+
+fontdialog_theme.PANEL_HEADER_H = PANEL_HEADER + 1 -- Panel header including its divider
+
+THUMB_WIDTH  <const> = 3  -- Channel slider thumb bar
+THUMB_HEIGHT <const> = 18
+
+TEXT_CONTRAST <const> = 4.5   -- WCAG 2 AA minimum for normal text; no picker text reaches the large-text size
+MID_LUMINANCE <const> = 0.179 -- Background luminance at which black and white text have equal contrast
+
+ACCENT_SOFT_MIX <const> = { light = 0.12, dark = 0.2 } -- Proportion of the palette's prime colour in accentSoft
+
+-- The neutral tokens take their hue from the palette's bkgd colour.  Their chroma is scaled by the bkgd chroma relative
+-- to TINT_REFERENCE (the typical chroma of the design's neutrals), up to TINT_MAX_SCALE so that strongly coloured
+-- backgrounds give a tint rather than a colour.  An achromatic bkgd produces pure greys.
+
+TINT_REFERENCE <const> = 0.005
+TINT_MAX_SCALE <const> = 3
+
+NEUTRAL_KEYS <const> = array<str> {
+   'panel', 'sunk', 'border', 'fg0', 'fg1', 'fg2', 'fg3'
+}
+
+----------------------------------------------------------------------------------------------------------------------
+-- WCAG 2 contrast ratio between two gui RGB tables.
+
+function contrast(A:table, B:table):num
+   la = A.luminance()
+   lb = B.luminance()
+   return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+end
+
+-- Return Colour with its OKLCH lightness moved away from Bkgd until the pair reaches TEXT_CONTRAST, keeping the hue
+-- and chroma.  A colour that already passes is returned unchanged.
+
+function ensureContrast(Colour:str, Bkgd:table):str
+   rgb = gui.strToRGB(Colour)
+   if contrast(rgb, Bkgd) >= TEXT_CONTRAST then return Colour end
+
+   lch    = rgb.toOKLCH()
+   step   = (Bkgd.luminance() > MID_LUMINANCE) ? -0.005 : 0.005
+   l      = lch.okl
+   result = Colour
+   while (contrast(rgb, Bkgd) < TEXT_CONTRAST) and (l > 0) and (l < 1) do
+      l = math.clamp(l + step, 0, 1)
+      result = string.format('oklch(%.3f %.3f %.3f)', l, lch.okc, lch.okh)
+      rgb = gui.strToRGB(result)
+   end
+   return result
+end
+
+-- The text tokens meet TEXT_CONTRAST on the picker's own panel and sunk backgrounds.  The mode bar, centre column
+-- labels and footer are drawn on the window background, which comes from the user's gui palette, so their text
+-- colours are derived from the tokens against that background.  Only the fg values differ in the returned tokens.
+
+function windowTokens(Tokens:table, Theme:table):table
+   result = table.clone(Tokens)
+   fill   = Theme.window?.bkgd?.fill
+   if fill is nil then return result end
+
+   try
+      bkgd = gui.strToRGB(fill)
+      for key in values(array<str> { 'fg0', 'fg1', 'fg2', 'fg3' }) do
+         result[key] = ensureContrast(Tokens[key], bkgd)
+      end
+   except ex
+      msg(f'Window background "{fill}" is not a plain colour; window text is unadjusted.')
+   end
+   return result
+end
+
+-- Return the hue and chroma scale for tinting the neutral tokens to the palette's bkgd colour, or nil if the palette
+-- has no usable bkgd.
+
+function paletteTint(Palette:table):<num, num>
+   if not Palette?.bkgd then return nil end
+
+   try
+      lch = gui.strToRGB(Palette.bkgd).toOKLCH()
+      return lch.okh, math.min(lch.okc / TINT_REFERENCE, TINT_MAX_SCALE)
+   except ex
+      msg(f'Palette bkgd colour "{Palette.bkgd}" is not a plain colour; the neutral tokens are untinted.')
+   end
+
+   return nil
+end
+
+-- Rewrite the Keys of Tokens in place, giving each colour the Hue and its chroma multiplied by Scale.  Lightness and
+-- alpha are retained.
+
+function tint(Tokens:table, Keys:array<str>, Hue:num, Scale:num):nil
+   for key in values(Keys) do
+      if not Tokens[key] then raise f'Missing key "{key}"' end
+      lch = gui.strToRGB(Tokens[key]).toOKLCH()
+      lch.okh = Hue
+      lch.okc *= Scale
+      Tokens[key] = tostring(lch)
+   end
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- Write the values of Source into Target in place.  Nested tables are merged so that shared references in the
+-- target, such as the menubar.menu alias, keep pointing at the modified table.
+
+function overlay(Target:table, Source:table):nil
+   for k, v in Source do
+      if (v is <table>) and (Target[k] is <table>) then
+         overlay(Target[k], v)
+      else
+         Target[k] = v
+      end
+   end
+end
+
+-- The design tokens for a base theme's scheme, with the neutral tokens tinted to the hue of the palette's bkgd and the
+-- accent colours taken from the base theme's palette: prime for the accent and altText for text drawn on it.  The
+-- palette's values are used as given.  accentSoft is prime blended into the panel colour.
+
+function themeTokens(Scheme:str, Palette:table):table
+   t = table.clone(TOKENS[Scheme])
+   hue, scale = paletteTint(Palette)
+   if hue != nil then tint(t, NEUTRAL_KEYS, hue, scale) end
+   if not Palette?.prime then return t end
+
+   soft = gui.strToRGB(t.panel).interpolate(gui.strToRGB(Palette.prime), ACCENT_SOFT_MIX[Scheme])
+   t.accentSoft = tostring(soft.toOKLCH())
+   return t
+end
+
+-- Derive the picker theme from a gui theme.  The picker's design applies to the base theme's scheme, and the base
+-- theme's palette supplies the accent colours.
+
+function buildTheme(Base:table):table
+   scheme = (Base.scheme is 'dark') ? 'dark' : 'light'
+   t = themeTokens(scheme, Base.palette)
+   theme = table.clone(Base) -- Keeps the scheme, palette and init fields and the menubar.menu alias
+
+   overlay(theme, {
+      panel = {
+         headerHeight = PANEL_HEADER
+      }
+   })
+
+   theme.fontdialog = table.merge(t, EXTRAS)
+   theme.fontdialog.onWindow = windowTokens(theme.fontdialog, theme)
+   return theme
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+fontdialog_theme.apply = function(Scene:obj!, Prefix:str):str
+   base_name = gui.getThemeName(Scene)
+   name = f'{Prefix ?? "fontdialog"}-{base_name}'
+   gui.themes[name] = buildTheme(gui.themes[base_name])
+   gui.setTheme(Scene, name)
+   return name
+end
+
+fontdialog_theme.tokens = function(Name:str!):table
+   return gui.themes[Name].fontdialog
+end
+
+fontdialog_theme.channelSlider = function(Name:str!, ThumbSize:num!, Fill:str):table
+   t = gui.themes[Name].fontdialog
+   return {
+      bkgd = { -- Slider track
+         roundX = 2, roundY = 2,
+         fill = Fill ?? t.border,
+         stroke = t.border,
+         strokeWidth = 1,
+         opacity = 1
+      },
+      fore = { -- Inner thumb
+         x = (ThumbSize - THUMB_WIDTH) * 0.5, y = (ThumbSize - THUMB_HEIGHT) * 0.5,
+         width = THUMB_WIDTH, height = THUMB_HEIGHT,
+         roundX = 1, roundY = 1,
+         fill = &theme.scheme is 'light' ? 'black' : 'white',
+         stroke = 'none', strokeWidth = 0,
+         opacity = 1
+      },
+      -- Disable stroking on the inner thumb because we use a custom outer rectangle elsewhere
+      foreHighlight = { stroke = 'none' },
+      foreFocus     = { stroke = 'none' }
+   }
+end

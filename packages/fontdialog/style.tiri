@@ -1,0 +1,559 @@
+-- Style panel: the axes of a variable family, or the styles of a static or bitmap family, followed by the OpenType
+-- feature switches.  The content is rebuilt whenever the family changes.  Weight, width, italic and the static style
+-- and the other axes are applied to the preview.  The feature switches are recorded but not yet rendered.  This file
+-- also composes the font definitions: fontDef() for the result, and paintDef() for the preview.
+
+   import 'gui', 'gui/panel', './theme', './parts', './controls'
+
+   namespace fontdialog_style { }
+
+   module vector as mVec
+
+-- The number in a normalised value such as `15px`.  The result of replace() has a second value, so it is not passed
+-- directly to tonumber().
+
+function unitValue(Value:str!, Unit:str!):num
+   local text = Value.replace(Unit, '')
+   return tonumber(text)
+end
+
+function fontdialog_sizing_pixels(Size:str!):num
+   if Size.endsWith('pt') then return unitValue(Size, 'pt') * 96 / 72 end
+   return unitValue(Size, 'px')
+end
+
+PAD   <const> = fontdialog_controls.PAD
+ROW_H <const> = fontdialog_controls.ROW_H
+
+-- Labels and slider steps of the registered axes.  The ranges are read from the font database, and those of the
+-- OpenType specification are only used if the database has no range for an axis.
+
+AXES <const> = {
+   wght = { label = 'Weight',       min = 100, max = 900, default = 400, step = 1 },
+   wdth = { label = 'Width',        min = 50,  max = 200, default = 100, step = 0.5 },
+   opsz = { label = 'Optical size', min = 6,   max = 144, default = 14,  step = 1 },
+   slnt = { label = 'Slant',        min = -15, max = 0,   default = 0,   step = 1 },
+   ital = { label = 'Italic',       min = 0,   max = 1,   default = 0,   step = 1 }
+}
+
+-- Feature switches, offered for the features that a family provides according to the font database.
+
+FEATURES <const> = array<table> {
+   { id = 'liga', label = 'liga', tip = 'Standard ligatures' },
+   { id = 'kern', label = 'kern', tip = 'Kerning' },
+   { id = 'tnum', label = 'tnum', tip = 'Tabular figures' },
+   { id = 'onum', label = 'onum', tip = 'Oldstyle figures' },
+   { id = 'smcp', label = 'smcp', tip = 'Small capitals' },
+   { id = 'frac', label = 'frac', tip = 'Fractions' },
+   { id = 'zero', label = 'zero', tip = 'Slashed zero' }
+}
+
+WEIGHT_KEYWORDS <const> = {
+   thin = 100, hairline = 100, extralight = 200, ultralight = 200, light = 300, regular = 400, normal = 400, book = 400,
+   medium = 500, semibold = 600, demibold = 600, bold = 700, extrabold = 800, ultrabold = 800, black = 900, heavy = 900
+}
+
+WEIGHT_NAMES <const> = {
+   [100] = 'Thin', [200] = 'Extra Light', [300] = 'Light', [400] = 'Regular', [500] = 'Medium', [600] = 'Semi Bold',
+   [700] = 'Bold', [800] = 'Extra Bold', [900] = 'Black'
+}
+
+SPACES <const> = r'[\s_\-]+'
+
+----------------------------------------------------------------------------------------------------------------------
+-- The slider definition of an axis: its label and step from AXES, and its range from the font database.  The weight
+-- defaults to Regular where the range allows, as some families declare a lighter weight as their default instance.
+
+function axisDef(Font:table!, Tag:str!):table
+   reg = AXES[Tag]
+   def = {
+      label = reg?.label ?? Tag, min = reg?.min ?? 0, max = reg?.max ?? 1000, default = reg?.default ?? 0,
+      step = reg?.step ?? 1
+   }
+   span = Font.axisRanges?[Tag] -- NB: Not '??', which would replace a legitimate 0
+   if span then
+      if span.min != nil then def.min = span.min end
+      if span.max != nil then def.max = span.max end
+      if span.default != nil then def.default = span.default end
+   end
+   if (Tag is 'wght') and (def.min <= 400) and (def.max >= 400) then def.default = 400 end
+   return def
+end
+
+----------------------------------------------------------------------------------------------------------------------
+-- The weight and italic traits of a style name, for ordering static styles.
+
+function styleTraits(Name:str!):<num, bool>
+   name = SPACES.replace(Name, '').lower()
+   italic = false
+   for word in values(array<str> { 'italic', 'oblique' }) do
+      pos = name.find(word)
+      if pos then
+         name = name.sub(0, pos) .. name.sub(pos + #word)
+         italic = true
+      end
+   end
+   return WEIGHT_KEYWORDS[name] ?? 400, italic
+end
+
+-- Use the renderer's CSS weight preference order when an exact static weight is unavailable.
+
+function weightRank(Weight:num!, Target:num!):num
+   if Weight is Target then return 0 end
+   if (Target >= 400) and (Target <= 500) then
+      if (Weight > Target) and (Weight <= 500) then return 1000 + Weight - Target end
+      if Weight < Target then return 2000 + Target - Weight end
+      return 3000 + Weight - Target
+   elseif Target < 400 then
+      if Weight < Target then return 1000 + Target - Weight end
+      return 2000 + Weight - Target
+   else
+      if Weight > Target then return 1000 + Weight - Target end
+      return 2000 + Target - Weight
+   end
+end
+
+@Doc(text=[[
+@desc Return a family's styles ordered by italic, then weight.
+]])
+fontdialog_style.orderedStyles = function(Font:table!):array<str>
+   styles = Font.styles.clone()
+   styles.sort(function(A, B):bool
+      wa, ia = styleTraits(A)
+      wb, ib = styleTraits(B)
+      if ia != ib then return not ia end
+      if wa != wb then return wa < wb end
+      return A < B
+   end)
+   return styles
+end
+
+@Doc(text=[[
+@desc Return the default style of a family: Regular if it has one, otherwise the first style.
+]])
+fontdialog_style.defaultStyle = function(Font:table!):str
+   for style in values(Font.styles) do
+      if style is 'Regular' then return style end
+   end
+   return fontdialog_style.orderedStyles(Font)[0] ?? 'Regular'
+end
+
+@Doc(text=[[
+@desc Return the default axis values of a variable family as a table of tag = value.
+]])
+fontdialog_style.defaultAxes = function(Font:table!):table
+   axes = { }
+   for tag in values(Font.axes ?? array<str>) do
+      axes[tag] = axisDef(Font, tag).default
+   end
+   return axes
+end
+
+@Doc(text=[[
+@desc Return the VectorText fontStyle for the picker state.  Variable families are described by their weight, width
+and italic traits and any other axis that is away from its default, using a conventional style name where one exists.
+Static and bitmap families use the selected style name.
+]])
+fontdialog_style.fontStyle = function(State:table!):str
+   font = State.font
+   if not font.variable then return State.style end
+
+   weight = math.round(State.axes.wght ?? 400)
+   width  = State.axes.wdth ?? 100
+   name   = WEIGHT_NAMES[weight]
+
+   extras = array<str>
+   for tag in values(font.axes ?? array<str>) do
+      if (tag is 'wght') or (tag is 'wdth') or ((tag is 'ital') and State.italic) then continue end
+      value = State.axes[tag]
+      if (value != nil) and (value != axisDef(font, tag).default) then extras.push(f'{tag}={value}') end
+   end
+
+   if name and (width is 100) and (#extras is 0) then
+      if not State.italic then return name end
+      return (name is 'Regular') ? 'Italic' : name .. ' Italic'
+   end
+
+   parts = array<str>
+   parts.push(f'weight={weight}')
+   if width != 100 then parts.push(f'width={width}%') end
+   if State.italic then parts.push('italic=yes') end
+   for extra in values(extras) do parts.push(extra) end
+   return parts.concat(';')
+end
+
+-- Settings that exist only for families with glyph outlines.
+
+OUTLINE_SETTINGS <const> = array<str> {
+   'strokeOn', 'strokeColour', 'strokeOpacity', 'strokeWidth', 'strokeJoin', 'shadowOn', 'shadowX', 'shadowY', 'shadowBlur', 'glowOn',
+   'glowRadius', 'blend', 'tracking', 'wordSpace'
+}
+
+@Doc(text=[[
+@desc True if a family has glyph outlines.  Bitmap families are drawn as a textured block, to which a stroke or effect
+would apply as a whole, so the Stroke and Effects panels are unavailable for them.  Bitmap text is also drawn a line at
+a time, so tracking, word spacing and justification are unavailable.
+]])
+fontdialog_style.hasOutlines = function(Font:table!):bool
+   return Font.tech != 'bitmap'
+end
+
+@Doc(text=[[
+@desc True if the picker state renders with a blend mode.
+]])
+fontdialog_style.blended = function(State:table!):bool
+   return fontdialog_style.hasOutlines(State.font) and (State.blend != 'Normal')
+end
+
+@Doc(text=[[
+@desc The alignment that the picker state renders with.  A bitmap family can't be justified, so it is shown left
+aligned.
+]])
+fontdialog_style.textAlign = function(State:table!):str
+   if (State.align is 'justify') and (not fontdialog_style.hasOutlines(State.font)) then return 'left' end
+   return State.align
+end
+
+@Doc(text=[[
+@desc Return a copy of the picker state for the dialog's result.  Settings that a bitmap family can't render are left
+out for it.  The picker's own state keeps them, so that they return if a family with outlines is chosen.
+]])
+fontdialog_style.resultSettings = function(State:table!):table
+   settings = table.clone(State)
+   if not fontdialog_style.hasOutlines(State.font) then
+      for key in values(OUTLINE_SETTINGS) do settings[key] = nil end
+      settings.align = fontdialog_style.textAlign(State)
+   end
+   return settings
+end
+
+-- The definition keys for the fill, stroke and effects.  The opacity of each is the alpha channel of its colour, so that
+-- one doesn't affect the other.  Keys that are switched off are stated, so that a
+-- definition assigned to an existing text clears them.  A bitmap family has neither stroke nor effects, and a change
+-- of family recreates the text, so those keys are left out for it.
+
+function paintParts(State:table!):array<str>
+   parts = array<str>
+   parts.push(f'fill={fontdialog_controls.withAlpha(State.fill, State.opacity)}')
+   if not fontdialog_style.hasOutlines(State.font) then return parts end
+
+   if State.strokeOn then
+      parts.push(f'stroke={fontdialog_controls.withAlpha(State.strokeColour, State.strokeOpacity)}')
+      parts.push(f'strokeWidth={State.strokeWidth}')
+      parts.push(f'lineJoin={State.strokeJoin}')
+   else
+      parts.push('stroke=none')
+   end
+
+   if State.shadowOn then
+      parts.push(f'shadow={State.shadowX}px {State.shadowY}px {State.shadowBlur}px rgba(0,0,0,0.4)')
+   else
+      parts.push('shadow=none')
+   end
+
+   if State.glowOn then parts.push(f'glow={State.glowRadius}px {State.fill}') else parts.push('glow=none') end
+   parts.push(f'blend={State.blend}')
+   return parts
+end
+
+@Doc(text=[[
+@desc Return the font definition of the picker state's fill, stroke and effects, for the VectorText `textStyle`
+field.  Every sample in the preview is painted from this definition.
+]])
+fontdialog_style.paintDef = function(State:table!):str
+   return paintParts(State).concat('; ')
+end
+
+-- The definition keys for the line height and spacing.  Slider steps are rounded, as accumulated floating point error
+-- would otherwise appear in the definition.
+
+function tidy(Value:num!):num
+   return math.round(Value * 1000) / 1000
+end
+
+function layoutParts(State:table!):array<str>
+   parts = array<str>
+   parts.push(f'lineHeight={tidy(State.lineHeight)}')
+   if not fontdialog_style.hasOutlines(State.font) then return parts end
+   parts.push(f'letterSpacing={tidy(State.tracking / 1000)}em')
+   parts.push(f'wordSpacing={tidy(State.wordSpace)}em')
+   return parts
+end
+
+@Doc(text=[[
+@desc Return the font definition that a sample is drawn with, for the VectorText `textStyle` field: the paint settings
+of `paintDef()` and the line height and spacing.
+]])
+fontdialog_style.sampleDef = function(State:table!):str
+   parts = paintParts(State)
+   for part in values(layoutParts(State)) do parts.push(part) end
+   return parts.concat('; ')
+end
+
+@Doc(text=[[
+@desc Return the canonical font definition for the picker state.  Paragraph settings are not part of a definition.
+]])
+fontdialog_style.fontDef = function(State:table!):str
+   font = State.font
+   parts = array<str>
+   parts.push(f'face={font.name}')
+
+   if State.unit is 'pt' then
+      parts.push(f'size={State.size * 0.75}pt')
+   else
+      parts.push(f'size={State.size}px')
+   end
+
+   parts.push(fontdialog_style.fontStyle(State)) -- Includes any axis that is away from its default
+
+   features = array<str>
+   for tag, on in State.features do features.push(f'{tag} {on ? 1 : 0}') end
+   if #features > 0 then parts.push('features=' .. features.concat(', ')) end
+
+   for part in values(layoutParts(State)) do parts.push(part) end
+   parts.push(f'kerning={State.kerning}')
+   for part in values(paintParts(State)) do parts.push(part) end
+
+   _, result = check mVec.NormaliseTextStyle(parts.concat('; '))
+   return result
+end
+
+@Doc(text=[[
+@desc Return the keys of a font definition as a table of normalised strings.
+]])
+fontdialog_style.readDef = function(Def:str!):table
+   local _, result = check mVec.ReadTextStyle(Def)
+   return result
+end
+
+@Doc(text=[[
+@desc Copy the settings of a font definition to the picker state.  Keys that are absent leave the state unchanged.
+The `face` key is not applied here, because the family decides which axes and styles are available.
+]])
+fontdialog_style.applyDef = function(State:table!, Def:str!)
+   settings = fontdialog_style.readDef(Def)
+   font = State.font
+
+   if settings.size then
+      State.unit = settings.size.endsWith('pt') ? 'pt' : 'px'
+      State.size = fontdialog_sizing_pixels(settings.size)
+   end
+
+   if font.variable then
+      if settings.style then
+         for weight, name in WEIGHT_NAMES do
+            if name is settings.style.replace(' Italic', '') then State.axes.wght = weight end
+         end
+         if settings.style.endsWith('Italic') then State.italic = true end
+      end
+      if settings.weight and (State.axes.wght != nil) then State.axes.wght = tonumber(settings.weight) end
+      if settings.width and (State.axes.wdth != nil) then State.axes.wdth = unitValue(settings.width, '%') end
+      for tag, value in settings do
+         if (State.axes[tag] != nil) and (tag.size() is 4) then State.axes[tag] = tonumber(value) end
+      end
+   else
+      if settings.style and (settings.style in font.styles) then State.style = settings.style end
+
+      if settings.weight or settings.italic then
+         weight, italic = styleTraits(settings.style ?? State.style)
+         if settings.weight then weight = tonumber(settings.weight) end
+         if settings.italic then italic = settings.italic is 'yes' end
+
+         best_rank:num = nil
+         for name in values(fontdialog_style.orderedStyles(font)) do
+            candidate_weight, candidate_italic = styleTraits(name)
+            rank = weightRank(candidate_weight, weight)
+            if candidate_italic != italic then rank += 10000 end
+            if (best_rank is nil) or (rank < best_rank) then
+               best_rank = rank
+               State.style = name
+            end
+         end
+      end
+   end
+
+   if settings.italic then State.italic = settings.italic is 'yes' end
+
+   if settings.features and (settings.features != 'none') then
+      State.features = { }
+      for entry in values(settings.features.split(', ')) do
+         feature = entry.split(' ')
+         State.features[feature[0]] = feature[1] != '0'
+      end
+   end
+
+   if settings.lineHeight then State.lineHeight = tonumber(settings.lineHeight) end
+   if settings.letterSpacing then State.tracking = unitValue(settings.letterSpacing, 'em') * 1000 end
+   if settings.wordSpacing then State.wordSpace = unitValue(settings.wordSpacing, 'em') end
+   if settings.kerning then State.kerning = (settings.kerning is 'none') ? 'none' : 'metrics' end -- No optical kerning
+
+   fill_alpha, stroke_alpha = 100, 100
+   if settings.fill then State.fill, fill_alpha = fontdialog_controls.splitAlpha(settings.fill) end
+
+   if settings.stroke then
+      State.strokeOn = settings.stroke != 'none'
+      if State.strokeOn then State.strokeColour, stroke_alpha = fontdialog_controls.splitAlpha(settings.stroke) end
+   end
+
+   -- The dialog has no opacity for the text as a whole, so a definition's `opacity` key is applied to both colours.
+
+   if settings.opacity then
+      overall = tonumber(settings.opacity)
+      State.opacity = math.round(fill_alpha * overall)
+      State.strokeOpacity = math.round(stroke_alpha * overall)
+   else
+      if settings.fill then State.opacity = fill_alpha end
+      if State.strokeOn and settings.stroke then State.strokeOpacity = stroke_alpha end
+   end
+
+   if settings.strokeWidth then State.strokeWidth = unitValue(settings.strokeWidth, 'px') end
+   if settings.lineJoin then State.strokeJoin = settings.lineJoin end
+
+   if settings.shadow then
+      State.shadowOn = settings.shadow != 'none'
+      if State.shadowOn then
+         shadow = settings.shadow.split(' ')
+         State.shadowX, State.shadowY, State.shadowBlur = unitValue(shadow[0], 'px'),
+            unitValue(shadow[1], 'px'), unitValue(shadow[2], 'px')
+      end
+   end
+
+   if settings.glow then
+      State.glowOn = settings.glow != 'none'
+      if State.glowOn then State.glowRadius = unitValue(settings.glow.split(' ')[0], 'px') end
+   end
+
+   if settings.blend then State.blend = (settings.blend is 'burn') ? 'Colour Burn' : settings.blend.cap() end
+end
+
+@Doc(text=[[
+@desc Describe the style of the picker state for summaries, e.g. `wght 400 wdth 100` or `Bold Italic`.
+]])
+fontdialog_style.describe = function(State:table!):str
+   font = State.font
+   if not font.variable then return State.style end
+   parts = array<str>
+   for tag in values(font.axes) do
+      parts.push(f'{tag} {math.round(State.axes[tag] ?? 0)}')
+   end
+   if State.italic then parts.push('italic') end
+   return parts.concat(' ')
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Create the Style panel.  Its body scrolls, as a static family can have many styles.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width, height
+@result Table with `panel` and `update(Source)`
+]])
+fontdialog_style.new = function(Picker:table!, Target:obj!, Options:table!):table
+   self = { font = nil }
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = Options.height,
+      title = 'Style', scroll = 'vertical'
+   })
+
+   inner = Options.width - (PAD * 2)
+
+   -- Build the content for the current family in a viewport of its own, which is replaced when the family changes.
+
+   function build()
+      s = Picker.state
+      font = s.font
+      self.content?.free()
+      self.axisRows = { }
+      self.italicBox = nil
+      self.styleSeg = nil
+      self.features = nil
+
+      page = self.panel.page
+      content = page.new('VectorViewport', { x = 0, y = 0, width = '100%', height = 1 })
+      self.content = content
+      y = 8
+
+      if font.variable then
+         count = #font.axes
+         self.panel.setMeta(f'Variable · {count} {(count is 1) ? "axis" : "axes"}')
+
+         for tag in values(font.axes) do
+            def = axisDef(font, tag)
+            self.axisRows[tag] = fontdialog_controls.sliderRow(Picker, content, {
+               x = PAD, y = y, width = inner, label = def.label, min = def.min, max = def.max, step = def.step,
+               value = s.axes[tag] ?? def.default,
+               format = function(V):str return tostring(math.round(V)) end,
+               onChange = function(V)
+                  axes = table.clone(Picker.state.axes)
+                  axes[tag] = V
+                  Picker.update({ axes = axes }, 'style')
+               end
+            })
+            y += ROW_H
+         end
+
+         if font.italic then
+            self.italicBox = fontdialog_controls.checkRow(Picker, content, {
+               x = PAD, y = y + 4, label = 'Italic', value = s.italic,
+               onToggle = function(Value) Picker.update({ italic = Value }, 'style') end
+            })
+            y += ROW_H
+         end
+      else
+         styles = fontdialog_style.orderedStyles(font)
+         if font.tech is 'bitmap' then
+            count = #(font.sizes ?? array<int>)
+            self.panel.setMeta(f'Bitmap · {count} {(count is 1) ? "strike" : "strikes"}')
+         else
+            self.panel.setMeta(f'Static · {#styles} styles')
+         end
+
+         items = array<table>
+         for style in values(styles) do items.push({ id = style, label = style }) end
+         self.styleSeg = fontdialog_controls.segmented(Picker, content, {
+            x = PAD, y = y, wrap = inner, items = items, selected = s.style,
+            onChange = function(ID) Picker.update({ style = ID }, 'style') end
+         })
+         y += self.styleSeg.height + 8
+
+         y += 20
+      end
+
+      if font.tech != 'bitmap' then
+         y += 6
+         items = FEATURES.filter((Feature) => Feature.id in font.features)
+
+         if #items > 0 then
+            fontdialog_controls.subhead(Picker, content, PAD, y, 'OpenType features')
+            y += 18
+
+            self.features = fontdialog_controls.segmented(Picker, content, {
+               x = PAD, y = y, wrap = inner, items = items, multi = true, selected = s.features,
+               onChange = function(ID, Pressed)
+                  features = table.clone(Picker.state.features)
+                  features[ID] = Pressed ? true : nil
+                  Picker.update({ features = features }, 'style')
+               end
+            })
+            y += self.features.height
+         end
+      end
+
+      y += 10
+      content.height = y
+      page.height = y
+   end
+
+   self.update = function(Source:str)
+      if self.font != Picker.state.font then
+         self.font = Picker.state.font
+         build()
+      elseif (Source is 'reset') or (Source is 'preset') then
+         build()
+      end
+   end
+
+   return self
+end

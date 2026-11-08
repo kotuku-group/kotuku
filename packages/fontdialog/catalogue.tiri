@@ -1,0 +1,104 @@
+-- Font catalogue for the font picker.  Reads the installed families from the font database (gui.fontList) and
+-- describes each for the font list and the panels.  The classification, axis ranges, features and character coverage
+-- are recorded in the database by the Font module's RefreshFonts().  Every Font module call in the package is made
+-- here, because the compile-time interface of a package rejects the same native module being referenced from more
+-- than one of its source files.
+
+   import 'gui'
+   include 'font'
+
+   module font as mFont
+
+   namespace fontdialog_catalogue { }
+
+-- Labels for the classifications recorded in the font database.  A family that the database could not classify has
+-- no class.
+
+CLASS_LABELS <const> = {
+   serif = 'Serif', sans = 'Sans', mono = 'Mono', script = 'Script', display = 'Display', symbol = 'Symbol'
+}
+
+function hasItalic(Styles:array<str>):bool
+   for style in values(Styles ?? array<str>) do
+      lower = style.lower()
+      if lower.find('italic') or lower.find('oblique') then return true end
+   end
+   return false
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+@Doc(text=[[
+@desc Load the installed font families, sorted by name.  Hidden families and aliases are excluded.  Each entry is a
+table of `name`, `cls` (`serif`, `sans`, `mono`, `script`, `display`, `symbol`, or nil if the font database could not
+classify the family), `tech` (`scalable` or `bitmap`), `variable`, `axes` (array of axis tags, or nil), `axisRanges`
+(tag = `{ min, default, max }`, or nil), `features` (array of OpenType feature tags), `coverage` (character set id =
+percentage), `characters` (count of mapped characters), `styles` (array of style names), `sizes` (array of bitmap
+point sizes, or nil), `italic` (the family has italic styles), `host` (the family is provided by the host rather than
+the `fonts:` volume) and `meta`, the short description shown in the font
+list, e.g. `Serif · Var`.
+]])
+fontdialog_catalogue.load = function():array<table>
+   fonts = array<table>
+   for name, font in resolve(gui.fontList) do
+      if font.hidden or font.alias then continue end
+
+      cls = font.classification
+      tech = font.scalable ? 'scalable' : 'bitmap'
+      variable = font.scalable and (font.axes != nil) and (#font.axes > 0)
+      meta = array<str>
+      if CLASS_LABELS[cls] then meta.push(CLASS_LABELS[cls]) end
+      if tech is 'bitmap' then
+         meta.push('Bmp')
+      elseif variable then
+         meta.push('Var')
+      end
+
+      fonts.push({
+         name       = name,
+         cls        = cls,
+         tech       = tech,
+         variable   = variable,
+         axes       = variable ? font.axes : nil,
+         axisRanges = variable ? font.axisRanges : nil,
+         features   = font.features ?? array<str>,
+         coverage   = font.coverage ?? { },
+         characters = font.characters ?? 0,
+         styles     = font.styles,
+         sizes      = font.sizes,
+         italic     = hasItalic(font.styles),
+         host       = font.host,
+         meta       = meta.concat(' · ')
+      })
+   end
+
+   fonts.sort((A, B) => A.name.lower() < B.name.lower())
+   return fonts
+end
+
+----------------------------------------------------------------------------------------------------------------------
+
+FORMATS <const> = {
+   ttf = 'TrueType', otf = 'OpenType', ttc = 'TrueType Collection', woff2 = 'WOFF2', fon = 'Windows FON'
+}
+EXTENSION <const> = r'\.([A-Za-z0-9]+)$'
+
+@Doc(text=[[
+@desc Describe the file format of a family's regular face, e.g. `TrueType · Variable`, and return its path.  Returns
+`Unknown` and nil if the font database cannot resolve the family.
+]])
+fontdialog_catalogue.format = function(Font:table!):<str, str>
+   err, path = mFont.SelectFont(Font.name, 'Regular')
+   if err != ERR_Okay then return 'Unknown', nil end
+
+   ext = (EXTENSION.extract(path, 0) ?? '').lower()
+   text = FORMATS[ext] ?? ext.upper()
+   if Font.tech is 'bitmap' then
+      text ..= ' · Bitmap'
+   elseif Font.variable then
+      text ..= ' · Variable'
+   else
+      text ..= ' · Static'
+   end
+   return text, path
+end

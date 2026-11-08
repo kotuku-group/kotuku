@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "gui/fontdialog",
   "version": "1.0",
-  "description": "Font-selection dialog for Tiri graphical interfaces.",
+  "description": "Font selection dialog with live preview.",
   "entry": "fontdialog.tiri",
   "authors": [
     {
@@ -12,7 +12,7 @@
   ],
   "copyright": "Copyright © 2020-2026 Paul Manias",
   "license": "LGPL-2.1",
-  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-GUI-API",
+  "homepage": "https://github.com/kotuku-group/kotuku/wiki/Tiri-Widgets",
   "repository": "https://github.com/kotuku-group/kotuku.git",
   "keywords": [
     "dialog",
@@ -23,20 +23,123 @@
     "tiri": "1.0"
   },
   "dependencies": {
-    "config": "1.0",
     "gui": "1.0",
     "gui/button": "1.0",
-    "gui/checkbox": "1.0",
+    "gui/colourpicker": "1.0",
+    "gui/combobox": "1.0",
+    "gui/input": "1.0",
+    "gui/panel": "1.0",
+    "gui/scrollbar": "1.0",
     "gui/slider": "1.0",
+    "gui/toggle": "1.0",
     "gui/view": "1.0",
-    "gui/window": "1.0"
+    "gui/window": "1.0",
+    "json": "1.0"
   },
   "files": [
     {
-      "path": "fontdialog.tiri",
-      "size": 20280,
-      "sha256": "0dacdc0a982ba5dc45019d56c7957053dbdbfdeed0ccddc8bab7a5b4acb70c4a",
+      "path": "AGENTS.md",
+      "size": 7196,
+      "sha256": "ab6d2a429f41c272de77c0f88cccfc1fad902873328d8dd7d3df813851f0af4d",
+      "mediaType": "text/markdown"
+    },
+    {
+      "path": "alignment.tiri",
+      "size": 3333,
+      "sha256": "c743c6447eb0a01f74504ea4c7de3a95e74e419ddfe05d330251e9b4e0c8d61d",
       "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "catalogue.tiri",
+      "size": 4166,
+      "sha256": "e65959bfa4db03c1484aa566c8a2aeff608999e0d3d5591501b82b59186894c0",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "controls.tiri",
+      "size": 16425,
+      "sha256": "16d20fbbef2cf7ef4e5b2885ba6c9385eb378f2ab6265c0d26becdd0614acd1a",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "effects.tiri",
+      "size": 5740,
+      "sha256": "0e715e3e77cba5961f1bee2f9a2e152cff138c6964ba5c41b618f83e1a879aa7",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "fill.tiri",
+      "size": 1775,
+      "sha256": "e30879d54b852698d576a7f560f5c560260871c39acfe3bc2f03bbe990695f75",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "fontdialog.tiri",
+      "size": 27536,
+      "sha256": "170a15a657ae01a07bc37ed08c5530c0dbeb382904963599c4b920b980bb9cf4",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "fontlist.tiri",
+      "size": 17268,
+      "sha256": "de829dd16ab697dc9433e265a529273b1a0a48e739facb736ace0d4c1ebbd59d",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "glyphs.tiri",
+      "size": 6927,
+      "sha256": "dbbc3497212cbf9ec5d54015c6f4dd14504f9c8e0db11928e6245c40d51bc461",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "parts.tiri",
+      "size": 5429,
+      "sha256": "192d16bb600325d0c9a52d5ba41d2e46fbc8ce2af77841b3c28df1e77decf511",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "preview.tiri",
+      "size": 32139,
+      "sha256": "7944b5ad43769343ec1f26298ef7b6e3dbcfd8c2bd4630b0dde9730cb7c8b9f4",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "sizing.tiri",
+      "size": 9024,
+      "sha256": "ee0df252e7ebb971a7f57a422e906bfa6061ddc0198b119bb65207af5c4ad978",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "storage.tiri",
+      "size": 3299,
+      "sha256": "722aa313e096f0490099b99e580812eace100c9721ecfc896b89b2780295b982",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "stroke.tiri",
+      "size": 3755,
+      "sha256": "a9aac27f4a234842aeda66af1686a8e23709e5b98ab325291ae1163b0c22f7ac",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "style.tiri",
+      "size": 21628,
+      "sha256": "ef359777ae0cf3e4427739a6829cea638255ace4116324b834d4326ac33d4cca",
+      "mediaType": "application/vnd.kotuku.tiri"
+    },
+    {
+      "path": "theme.tiri",
+      "size": 8539,
+      "sha256": "1f8e7523ebdb0ea0c92229930bebe4f065b988811e0fbb2172f7693731c65790",
+      "mediaType": "application/vnd.kotuku.tiri"
+    }
+  ],
+  "exports": [
+    {
+      "gui/fontdialog": "fontdialog.tiri"
+    },
+    {
+      "gui/fontdialog/storage": "storage.tiri"
     }
   ]
 }

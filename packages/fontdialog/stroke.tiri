@@ -1,0 +1,101 @@
+-- Stroke panel: an optional outline, centred on the edges of the glyphs, with its colour, opacity, width and line join.
+-- The panel is disabled for bitmap families, which have no outlines.
+
+   import 'gui', 'gui/panel', 'gui/toggle', './theme', './parts', './controls', './style'
+
+   namespace fontdialog_stroke { }
+
+PAD   <const> = fontdialog_controls.PAD
+ROW_H <const> = fontdialog_controls.ROW_H
+
+fontdialog_stroke.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fontdialog_controls.COLOUR_H + 4 + (ROW_H * 3) + 6
+
+JOIN_ITEMS <const> = array<table> {
+   { id = 'miter', label = 'Miter' }, { id = 'round', label = 'Round' }, { id = 'bevel', label = 'Bevel' }
+}
+
+@Doc(text=[[
+@desc Create the Stroke panel.  The toggle in the header enables the stroke.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width
+@result Table with `panel`, `height` and `update(Source)`
+]])
+fontdialog_stroke.new = function(Picker:table!, Target:obj!, Options:table!):table
+   state = Picker.state
+   inner = Options.width - (PAD * 2)
+
+   self = { height = fontdialog_stroke.HEIGHT }
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
+      title = 'Stroke', padding = fontdialog_parts.PANEL_PADDING
+   })
+
+   self.enabled = self.panel.headerItem('trail', gui.toggle({
+      target = self.panel.header, value = state.strokeOn, height = 16,
+      events = {
+         activate = function()
+            Picker.update({ strokeOn = &value }, 'stroke')
+         end
+      }
+   }))
+
+   body = self.panel.body
+   y = 10
+
+   self.colour = fontdialog_controls.colourButton(Picker, body, {
+      x = PAD, y = y, width = inner, colour = state.strokeColour, title = 'Stroke Colour',
+      onChange = function(Colour) Picker.update({ strokeColour = Colour, strokeOn = true }, 'stroke') end
+   })
+   y += fontdialog_controls.COLOUR_H + 4
+
+   self.opacity = fontdialog_controls.sliderRow(Picker, body, {
+      x = PAD, y = y, width = inner, label = 'Opacity', min = 0, max = 100, step = 1, value = state.strokeOpacity,
+      format = function(V):str return f'{math.round(V)}%' end,
+      onChange = function(V) Picker.update({ strokeOpacity = V, strokeOn = true }, 'stroke') end
+   })
+   y += ROW_H
+
+   self.width = fontdialog_controls.sliderRow(Picker, body, {
+      x = PAD, y = y, width = inner, label = 'Width', min = 0, max = 8, step = 0.5, value = state.strokeWidth,
+      format = function(V):str return f'{V} px' end,
+      onChange = function(V) Picker.update({ strokeWidth = V, strokeOn = true }, 'stroke') end
+   })
+   y += ROW_H
+
+   self.join = fontdialog_controls.segmentedRow(Picker, body, {
+      x = PAD, y = y, label = 'Join', items = JOIN_ITEMS, selected = state.strokeJoin,
+      onChange = function(ID) Picker.update({ strokeJoin = ID }, 'stroke') end
+   })
+
+   self.update = function(Source:str)
+      s = Picker.state
+      outlined = fontdialog_style.hasOutlines(s.font)
+      stroke_on = s.strokeOn and outlined
+
+      if outlined != self.outlined then
+         self.outlined = outlined
+         fontdialog_controls.setEnabled(array<table> { self.enabled, self.colour, self.opacity, self.width, self.join },
+            outlined)
+      end
+
+      if outlined then
+         self.panel.setMeta(s.strokeOn ? f'{s.strokeWidth} px' : 'Off')
+      else
+         self.panel.setMeta('Scalable fonts only')
+      end
+
+      if Source is 'stroke' then
+         if self.enabled.value != s.strokeOn then self.enabled.setState(s.strokeOn) end
+         return
+      end
+      self.enabled.setState(stroke_on)
+      self.colour.set(s.strokeColour)
+      self.opacity.set(s.strokeOpacity)
+      self.width.set(s.strokeWidth)
+      self.join.select(s.strokeJoin)
+   end
+
+   return self
+end

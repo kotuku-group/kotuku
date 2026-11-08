@@ -1,0 +1,87 @@
+-- Alignment & layout panel: paragraph alignment, letter case and paragraph spacing.  Justify is disabled for bitmap
+-- families, which are drawn a line at a time.
+
+   import 'gui', 'gui/panel', './theme', './parts', './controls', './style'
+
+   namespace fontdialog_alignment { }
+
+PAD   <const> = fontdialog_controls.PAD
+ROW_H <const> = fontdialog_controls.ROW_H
+
+fontdialog_alignment.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 8 + (ROW_H * 3) + 8
+
+ALIGN_ITEMS <const> = array<table> {
+   { id = 'left',    icon = 'layout/align_left',    tip = 'Left',    width = 30 },
+   { id = 'centre',  icon = 'layout/align_center',  tip = 'Centre',  width = 30 },
+   { id = 'right',   icon = 'layout/align_right',   tip = 'Right',   width = 30 },
+   { id = 'justify', icon = 'layout/align_justify', tip = 'Justify', width = 30 }
+}
+
+ALIGN_NAMES <const> = { left = 'Left', centre = 'Centre', right = 'Right', justify = 'Justified' }
+
+CASE_ITEMS <const> = array<table> {
+   { id = 'none',  label = 'Aa', tip = 'As typed',   width = 30 },
+   { id = 'upper', label = 'AB', tip = 'Upper case', width = 30 },
+   { id = 'lower', label = 'ab', tip = 'Lower case', width = 30 },
+   { id = 'title', label = 'Ab', tip = 'Title case', width = 30 }
+}
+
+@Doc(text=[[
+@desc Create the Alignment & layout panel.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width
+@result Table with `panel`, `height` and `update(Source)`
+]])
+fontdialog_alignment.new = function(Picker:table!, Target:obj!, Options:table!):table
+   state = Picker.state
+   inner = Options.width - (PAD * 2)
+
+   self = { height = fontdialog_alignment.HEIGHT, outlined = true }
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
+      title = 'Alignment & layout', padding = fontdialog_parts.PANEL_PADDING
+   })
+
+   body = self.panel.body
+   y = 8
+
+   self.align = fontdialog_controls.segmentedRow(Picker, body, {
+      x = PAD, y = y, label = 'Align', items = ALIGN_ITEMS, selected = state.align,
+      onChange = function(ID) Picker.update({ align = ID }, 'alignment') end
+   })
+   y += ROW_H
+
+   self.letterCase = fontdialog_controls.segmentedRow(Picker, body, {
+      x = PAD, y = y, label = 'Case', items = CASE_ITEMS, selected = state.letterCase,
+      onChange = function(ID) Picker.update({ letterCase = ID }, 'alignment') end
+   })
+   y += ROW_H
+
+   self.paraSpace = fontdialog_controls.sliderRow(Picker, body, {
+      x = PAD, y = y, width = inner, label = 'Para space', min = 0, max = 2, step = 0.1, value = state.paraSpace,
+      format = function(V):str return string.format('%.1f em', V) end,
+      onChange = function(V) Picker.update({ paraSpace = V }, 'alignment') end
+   })
+
+   self.update = function(Source:str)
+      s = Picker.state
+      align = fontdialog_style.textAlign(s)
+      self.panel.setMeta(ALIGN_NAMES[align] ?? '')
+
+      outlined = fontdialog_style.hasOutlines(s.font)
+      if outlined != self.outlined then
+         self.outlined = outlined
+         fontdialog_controls.setEnabled(array<table> { self.align.buttons.justify }, outlined)
+         self.align.select(align)
+      end
+
+      if Source is 'alignment' then return end
+      self.align.select(align)
+      self.letterCase.select(s.letterCase)
+      self.paraSpace.set(s.paraSpace)
+   end
+
+   return self
+end

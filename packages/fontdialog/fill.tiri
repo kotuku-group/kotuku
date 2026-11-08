@@ -1,0 +1,51 @@
+-- Fill panel: the text colour and the opacity of the fill, which is its alpha channel.
+
+   import 'gui', 'gui/panel', './theme', './parts', './controls'
+
+   namespace fontdialog_fill { }
+
+PAD   <const> = fontdialog_controls.PAD
+ROW_H <const> = fontdialog_controls.ROW_H
+
+fontdialog_fill.HEIGHT = fontdialog_theme.PANEL_HEADER_H + 10 + fontdialog_controls.COLOUR_H + 4 + ROW_H + 6
+
+@Doc(text=[[
+@desc Create the Fill panel.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width
+@result Table with `panel`, `height` and `update(Source)`
+]])
+fontdialog_fill.new = function(Picker:table!, Target:obj!, Options:table!):table
+   state = Picker.state
+   inner = Options.width - (PAD * 2)
+
+   self = { height = fontdialog_fill.HEIGHT }
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
+      title = 'Fill', meta = 'Solid colour', padding = fontdialog_parts.PANEL_PADDING
+   })
+
+   body = self.panel.body
+
+   self.colour = fontdialog_controls.colourButton(Picker, body, {
+      x = PAD, y = 10, width = inner, colour = state.fill, title = 'Text Fill',
+      onChange = function(Colour) Picker.update({ fill = Colour }, 'fill') end
+   })
+
+   self.opacity = fontdialog_controls.sliderRow(Picker, body, {
+      x = PAD, y = 10 + fontdialog_controls.COLOUR_H + 4, width = inner, label = 'Opacity', min = 0, max = 100,
+      step = 1, value = state.opacity,
+      format = function(V):str return f'{math.round(V)}%' end,
+      onChange = function(V) Picker.update({ opacity = V }, 'fill') end
+   })
+
+   self.update = function(Source:str)
+      if Source is 'fill' then return end
+      self.colour.set(Picker.state.fill)
+      self.opacity.set(Picker.state.opacity)
+   end
+
+   return self
+end

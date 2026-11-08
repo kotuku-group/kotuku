@@ -1,0 +1,157 @@
+-- Effects panel: drop shadow, outer glow and blend mode.  Enabling an effect reveals its sliders and grows the panel,
+-- and the picker restacks the right column.  The panel is disabled for bitmap families, which have no outlines.
+
+   import 'gui', 'gui/panel', 'gui/combobox', './theme', './parts', './controls', './style'
+
+   namespace fontdialog_effects { }
+
+PAD     <const> = fontdialog_controls.PAD
+ROW_H   <const> = fontdialog_controls.ROW_H
+CHECK_H <const> = 26
+BLEND_H <const> = 24
+
+BLENDS <const> = array<str> {
+   'Normal', 'Multiply', 'Screen', 'Overlay', 'Darken', 'Lighten', 'Colour Burn', 'Difference'
+}
+
+@Doc(text=[[
+@desc Create the Effects panel.
+@input Picker table
+@input Target viewport
+@input Options: x, y, width, onResize() (called after the panel height changes)
+@result Table with `panel`, `height` and `update(Source)`
+]])
+fontdialog_effects.new = function(Picker:table!, Target:obj!, Options:table!):table
+   state = Picker.state
+   t = Picker.tokens
+   inner = Options.width - (PAD * 2)
+
+   self = { height = 100 }
+
+   self.panel = gui.panel({
+      target = Target, x = Options.x, y = Options.y, width = Options.width, height = self.height,
+      title = 'Effects', padding = fontdialog_parts.PANEL_PADDING
+   })
+
+   body = self.panel.body
+
+   function sliders(Rows:array<table>):table
+      group = { viewport = body.new('VectorViewport', { x = 0, width = '100%', height = #Rows * ROW_H }), rows = { } }
+      for i, row in Rows do
+         group.rows[row.key] = fontdialog_controls.sliderRow(Picker, group.viewport, {
+            x = PAD + 22, y = i * ROW_H, width = inner - 22, label = row.label, labelWidth = 54,
+            min = row.min, max = row.max, step = 1, value = state[row.key],
+            format = function(V):str return f'{V} px' end,
+            onChange = function(V) Picker.update({ [row.key] = V }, 'effects') end
+         })
+      end
+      return group
+   end
+
+   self.shadowBox = fontdialog_controls.checkRow(Picker, body, {
+      x = PAD, label = 'Drop shadow', value = state.shadowOn,
+      onToggle = function(Value) Picker.update({ shadowOn = Value }, 'effects-layout') end
+   })
+
+   self.shadow = sliders(array<table> {
+      { key = 'shadowX', label = 'X', min = -20, max = 20 },
+      { key = 'shadowY', label = 'Y', min = -20, max = 20 },
+      { key = 'shadowBlur', label = 'Blur', min = 0, max = 40 }
+   })
+
+   self.glowBox = fontdialog_controls.checkRow(Picker, body, {
+      x = PAD, label = 'Outer glow', value = state.glowOn,
+      onToggle = function(Value) Picker.update({ glowOn = Value }, 'effects-layout') end
+   })
+
+   self.glow = sliders(array<table> {
+      { key = 'glowRadius', label = 'Radius', min = 0, max = 40 }
+   })
+
+   self.blendLabel = fontdialog_controls.text(body, { x = PAD, size = 12, fill = t.fg1, string = 'Blend' })
+
+   self.blend = gui.combobox({
+      target = body, x = PAD + 76, width = inner - 76, height = BLEND_H, items = BLENDS.map(B => { label = B }),
+      text = state.blend, theme = { input = fontdialog_parts.monoText(BLEND_H, 9) },
+      events = {
+         activate = function(Item) Picker.update({ blend = (Item is <table>) ? Item.label : Item }, 'effects') end
+      }
+   })
+   fontdialog_parts.smallCaret(self.blend, t)
+
+   -- Stack the rows, showing the sliders of the enabled effects.
+
+   function showGroup(Group:table!, Visible:bool)
+      Group.viewport.visibility = Visible ? VIS_VISIBLE : VIS_HIDDEN
+      for row in values(Group.rows) do
+         if Visible then row.slider.enable() else row.slider.disable() end
+      end
+   end
+
+   function layout()
+      s = Picker.state
+      outlined = fontdialog_style.hasOutlines(s.font)
+      shadow_on, glow_on = s.shadowOn and outlined, s.glowOn and outlined
+      y = 8
+      self.shadowBox.viewport.y = y + ((CHECK_H - self.shadowBox.viewport.height) * 0.5)
+      y += CHECK_H
+      showGroup(self.shadow, shadow_on)
+      if shadow_on then
+         self.shadow.viewport.y = y
+         y += self.shadow.viewport.height
+      end
+      self.glowBox.viewport.y = y + ((CHECK_H - self.glowBox.viewport.height) * 0.5)
+      y += CHECK_H
+      showGroup(self.glow, glow_on)
+      if glow_on then
+         self.glow.viewport.y = y
+         y += self.glow.viewport.height
+      end
+      y += 6
+      self.blend.viewport.y = y
+      self.blendLabel.y = fontdialog_parts.baseline(y, BLEND_H, 12)
+      y += BLEND_H + 12
+
+      height = fontdialog_theme.PANEL_HEADER_H + y
+      if height != self.height then
+         self.height = height
+         self.panel.viewport.height = height
+         Options.onResize?()
+      end
+   end
+
+   self.update = function(Source:str)
+      s = Picker.state
+      outlined = fontdialog_style.hasOutlines(s.font)
+
+      if outlined != self.outlined then
+         self.outlined = outlined
+         fontdialog_controls.setEnabled(array<table> { self.shadowBox, self.glowBox, self.blend }, outlined)
+      end
+
+      parts = array<str>
+      if s.shadowOn then parts.push('Shadow') end
+      if s.glowOn then parts.push('Glow') end
+      if s.blend != 'Normal' then parts.push(s.blend) end
+      if not outlined then
+         self.panel.setMeta('Scalable fonts only')
+      else
+         self.panel.setMeta((#parts > 0) ? parts.concat(' · ') : 'None')
+      end
+
+      if (Source is 'effects') or (Source is 'effects-layout') then
+         if Source is 'effects-layout' then layout() end
+         return
+      end
+
+      self.shadowBox.setState(s.shadowOn and outlined)
+      self.glowBox.setState(s.glowOn and outlined)
+      for key, row in self.shadow.rows do row.set(s[key]) end
+      for key, row in self.glow.rows do row.set(s[key]) end
+      self.blend.setText(outlined ? s.blend : 'Normal')
+      layout()
+   end
+
+   layout()
+   return self
+end
