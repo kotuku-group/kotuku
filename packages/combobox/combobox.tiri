@@ -409,7 +409,7 @@ gui.combobox = function(Options:table)
                &menu.hide() return
             elseif (Value is KEY_ENTER) or (Value is KEY_NP_ENTER) or ((not &allowCustom) and (Value is KEY_SPACE)) then
                if (not &allowCustom) or &_menuNavigated then
-                  if &menu.activate() then return end
+                  if &menu.activate() then return KRES_HANDLED end
                end
             end
 
@@ -426,6 +426,7 @@ gui.combobox = function(Options:table)
             if &allowCustom then
                reportFeedback()
             end
+            return KRES_HANDLED
          end
       end)
 
